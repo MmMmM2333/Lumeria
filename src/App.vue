@@ -20,29 +20,10 @@
           <p>拖拽排序、跨页、悬停建文件夹、满页自动溢出到下一页。</p>
         </div>
 
-        <div class="toolbar">
-          <label>
-            行
-            <input v-model.number="draftRows" min="2" max="8" type="number" />
-          </label>
-          <label>
-            列
-            <input v-model.number="draftCols" min="3" max="10" type="number" />
-          </label>
-          <label>
-            文件夹行
-            <input v-model.number="draftFolderRows" min="2" max="6" type="number" />
-          </label>
-          <label>
-            文件夹列
-            <input v-model.number="draftFolderCols" min="2" max="8" type="number" />
-          </label>
-          <label class="toolbar-check">
-            <input v-model="isTextlessMode" type="checkbox" />
-            无字
-          </label>
-          <button type="button" :disabled="!!dragMeta" @click="applyGridConfig">应用布局</button>
-        </div>
+        <button class="settings-button" type="button" :disabled="!!dragMeta" aria-label="打开设置" @click="openSettingsPanel">
+          <SettingsIcon class="button-icon" />
+          <span>设置</span>
+        </button>
       </header>
 
       <div ref="searchRef" :class="cx('search-pill', isSearchMode && 'search-pill-active')">
@@ -88,30 +69,32 @@
                   :transition="layoutSpring"
                   tabindex="-1"
                 >
-                <template v-if="isSearchMode && page.length === 0">
-                  <div class="search-empty-state">没有找到匹配的应用</div>
-                </template>
-                <DesktopIcon
-                  v-for="(item, index) in getVisibleDesktopPage(page)"
-                  :key="item.id"
-                  :item="item"
-                  :source="{ type: isSearchMode ? 'search' : 'page', pageIndex: pageNumber, index }"
-                  :pending="!isSearchMode && pendingTargetId === item.id"
-                  :dragging="!isSearchMode && dragMeta && dragMeta.item.id === item.id"
-                  :folder-preview-page-size="folderPageSize"
-                  :draggable="!isSearchMode"
-                  :editing="isEditMode"
-                  :textless="isTextlessMode"
-                  :layout-enabled="desktopLayoutEnabled"
-                  :removable="item.type === 'app'"
-                  :selected="isIconSelected(isSearchMode ? 'search' : 'desktop', item.id, pageNumber)"
-                  :opening="isIconOpening(isSearchMode ? 'search' : 'desktop', item.id, pageNumber)"
-                  @pointerdown-icon="beginDrag"
-                  @open-app="openApp"
-                  @remove-app="removeAppById"
-                  @change-app-icon="updateAppCustomIcon"
-                  @reset-app-icon="resetAppCustomIcon"
-                />
+                  <template v-if="shouldRenderActivePage(pageNumber)">
+                    <template v-if="isSearchMode && page.length === 0">
+                      <div class="search-empty-state">没有找到匹配的应用</div>
+                    </template>
+                    <DesktopIcon
+                      v-for="(item, index) in getVisibleDesktopPage(page)"
+                      :key="item.id"
+                      :item="item"
+                      :source="{ type: isSearchMode ? 'search' : 'page', pageIndex: pageNumber, index }"
+                      :pending="!isSearchMode && pendingTargetId === item.id"
+                      :dragging="!isSearchMode && dragMeta && dragMeta.item.id === item.id"
+                      :folder-preview-page-size="folderPageSize"
+                      :draggable="!isSearchMode"
+                      :editing="isEditMode"
+                      :textless="isTextlessMode"
+                      :layout-enabled="desktopLayoutEnabled"
+                      :removable="item.type === 'app'"
+                      :selected="isIconSelected(isSearchMode ? 'search' : 'desktop', item.id, pageNumber)"
+                      :opening="isIconOpening(isSearchMode ? 'search' : 'desktop', item.id, pageNumber)"
+                      @pointerdown-icon="beginDrag"
+                      @open-app="openApp"
+                      @remove-app="removeAppById"
+                      @change-app-icon="updateAppCustomIcon"
+                      @reset-app-icon="resetAppCustomIcon"
+                    />
+                  </template>
                 </Motion>
               </section>
             </Motion>
@@ -140,6 +123,46 @@
         />
       </footer>
     </Motion>
+
+    <div v-if="isSettingsPanelOpen" class="settings-overlay" @pointerdown.self="closeSettingsPanel">
+      <section class="settings-panel" aria-label="设置">
+        <header class="settings-panel-header">
+          <div>
+            <h2>设置</h2>
+            <p>LaunchPad 显示偏好</p>
+          </div>
+          <button class="settings-close-button" type="button" aria-label="关闭设置" @click="closeSettingsPanel">×</button>
+        </header>
+
+        <div class="settings-grid">
+          <label class="settings-field">
+            <span>桌面行数</span>
+            <input v-model.number="draftRows" min="2" max="8" type="number" />
+          </label>
+          <label class="settings-field">
+            <span>桌面列数</span>
+            <input v-model.number="draftCols" min="3" max="10" type="number" />
+          </label>
+          <label class="settings-field">
+            <span>文件夹行数</span>
+            <input v-model.number="draftFolderRows" min="2" max="6" type="number" />
+          </label>
+          <label class="settings-field">
+            <span>文件夹列数</span>
+            <input v-model.number="draftFolderCols" min="2" max="8" type="number" />
+          </label>
+          <label class="settings-toggle">
+            <span>无字模式</span>
+            <input v-model="isTextlessMode" type="checkbox" />
+          </label>
+        </div>
+
+        <footer class="settings-actions">
+          <button class="settings-secondary-button" type="button" @click="closeSettingsPanel">取消</button>
+          <button class="settings-primary-button" type="button" :disabled="!!dragMeta" @click="applySettingsConfig">应用</button>
+        </footer>
+      </section>
+    </div>
 
     <div
       v-if="renderedFolder"
@@ -298,7 +321,7 @@
 <script setup>
 import { Motion } from "motion-v";
 import DesktopIcon from "./components/DesktopIcon.js";
-import { ChevronLeftIcon, ChevronRightIcon, SearchIcon } from "./components/Icons.js";
+import { ChevronLeftIcon, ChevronRightIcon, SearchIcon, SettingsIcon } from "./components/Icons.js";
 import { useLaunchpadController } from "./composables/useLaunchpadController.js";
 import "./styles/launchpad.css";
 
@@ -310,6 +333,7 @@ const {
   isHomeInteractionDisabled,
   isAppLaunching,
   isEditMode,
+  isSettingsPanelOpen,
   handleLaunchpadWheel,
   shellRef,
   homeShellInitial,
@@ -322,7 +346,9 @@ const {
   draftFolderRows,
   draftFolderCols,
   dragMeta,
-  applyGridConfig,
+  applySettingsConfig,
+  openSettingsPanel,
+  closeSettingsPanel,
   searchRef,
   isSearchMode,
   searchInputRef,
@@ -335,6 +361,7 @@ const {
   handleDesktopSurfacePointerDown,
   activePageIndex,
   activePages,
+  shouldRenderActivePage,
   commitActivePageIndex,
   goNextActivePage,
   desktopTrackMotionKey,

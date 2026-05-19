@@ -3,8 +3,19 @@ function getTauriInvoke() {
   return window.__TAURI__?.core?.invoke || null;
 }
 
+function getTauriEvent() {
+  if (typeof window === "undefined") return null;
+  return window.__TAURI__?.event || null;
+}
+
 export function isNativeBridgeAvailable() {
   return Boolean(getTauriInvoke());
+}
+
+export async function listenNativeEvent(eventName, handler) {
+  const event = getTauriEvent();
+  if (!event?.listen) return null;
+  return event.listen(eventName, handler);
 }
 
 export async function scanApps() {

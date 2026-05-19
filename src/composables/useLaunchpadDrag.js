@@ -271,12 +271,44 @@ export function useLaunchpadDrag(options) {
     lastPlacementCommit = { key, x: clientX, y: clientY };
   }
 
+  function moveTopLevelItemWithinCurrentPage(itemId, insertIndex) {
+    const currentPageIndex = options.pageIndex.value;
+    const page = options.pages.value[currentPageIndex];
+    if (!page) return false;
+
+    const currentIndex = page.findIndex((item) => item?.id === itemId);
+    if (currentIndex < 0) return false;
+
+    const safeIndex = clamp(insertIndex, 0, Math.min(options.pageSize.value, Math.max(0, page.length - 1)));
+    if (currentIndex === safeIndex) return true;
+
+    const nextPage = page.slice();
+    const [item] = nextPage.splice(currentIndex, 1);
+    nextPage.splice(safeIndex, 0, item);
+
+    const next = options.pages.value.slice();
+    next[currentPageIndex] = nextPage;
+    options.commitPages(next);
+    return true;
+  }
+
   function placeDraggedItemOnDesktop(clientX, clientY, placeOptions) {
     const activeDrag = dragRuntime;
     if (!activeDrag) return;
     const safeOptions = placeOptions || {};
     const insertIndex = calcPageInsertIndex(clientX, clientY);
     const key = placementKey("page", options.pageIndex.value, insertIndex);
+    const isAlreadyOnCurrentPage = Boolean((options.pages.value[options.pageIndex.value] || []).some((item) => item?.id === activeDrag.item.id));
+    if (isAlreadyOnCurrentPage) {
+      if (dragPlacement === key) return;
+      if (!shouldCommitPlacement(key, clientX, clientY, DESKTOP_SORT_MIN_DISTANCE, safeOptions.force)) return;
+      if (moveTopLevelItemWithinCurrentPage(activeDrag.item.id, insertIndex)) {
+        dragPlacement = key;
+        rememberPlacementCommit(key, clientX, clientY);
+        return;
+      }
+    }
+
     const isAlreadyVisible = Boolean(options.findTopLevel(options.pages.value, activeDrag.item.id));
     const needsMove = dragPlacement !== key || !isAlreadyVisible;
     if (!needsMove) return;

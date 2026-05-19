@@ -31,11 +31,13 @@ import {
   makePageSize,
 } from "../domain/launchpadLayout.js";
 import { runLaunchpadHelperTests } from "../domain/launchpadLayoutTests.js";
-import { isNativeBridgeAvailable, launchApp as launchNativeApp, loadLayout, saveLayout, scanApps } from "../api/launchpadApi.js";
+import { isNativeBridgeAvailable, launchApp as launchNativeApp, listenNativeEvent, loadLayout, saveLayout, scanApps } from "../api/launchpadApi.js";
 import { useLaunchpadDrag } from "./useLaunchpadDrag.js";
 import { useIconSelection } from "./useIconSelection.js";
 import { useLaunchpadKeyboard } from "./useLaunchpadKeyboard.js";
 import { getElementFromRef, usePageGridMetrics } from "./usePageGridMetrics.js";
+
+const USE_MOCK_DATA_IN_NATIVE = false;
 
 export function useLaunchpadController() {
   const gridRows = ref(DEFAULT_ROWS);
@@ -96,6 +98,7 @@ export function useLaunchpadController() {
   const isFolderAppLaunchClosing = ref(false);
   const isEditMode = ref(false);
   const isTextlessMode = ref(false);
+  const isSettingsPanelOpen = ref(false);
   const keyboardFocusArea = ref("desktop");
   const launchGhost = shallowRef(null);
   const openFolderId = ref(null);
@@ -132,6 +135,7 @@ export function useLaunchpadController() {
   let dragControls = null;
   let nativeLayoutReady = false;
   let nativeSaveTimer = null;
+  let unlistenSettingsEvent = null;
 
   const {
     clearOpeningIcon,
@@ -514,7 +518,7 @@ export function useLaunchpadController() {
   }
 
   function scheduleNativeLayoutSave() {
-    if (!nativeLayoutReady || !isNativeBridgeAvailable()) return;
+    if (!nativeLayoutReady || !shouldUseNativeCatalog()) return;
     clearNativeSaveTimer();
     nativeSaveTimer = window.setTimeout(async () => {
       nativeSaveTimer = null;
@@ -527,7 +531,7 @@ export function useLaunchpadController() {
   }
 
   async function loadNativeLaunchpadData() {
-    if (!isNativeBridgeAvailable()) return;
+    if (!shouldUseNativeCatalog()) return;
 
     try {
       const [nativeApps, savedLayout] = await Promise.all([scanApps(), loadLayout()]);
@@ -551,7 +555,7 @@ export function useLaunchpadController() {
   }
 
   async function launchNativeAppIfAvailable(app) {
-    if (!isNativeBridgeAvailable()) return;
+    if (!shouldUseNativeCatalog()) return;
     try {
       await launchNativeApp(app.id);
     } catch (error) {
@@ -561,6 +565,15 @@ export function useLaunchpadController() {
 
   function getDesktopGridProjectionKey(pageNumber) {
     return `${isSearchMode.value ? "search" : "desktop"}-grid-${pageNumber}-${desktopProjectionKeyMode.value}`;
+  }
+
+  function shouldRenderActivePage(pageNumber) {
+    const distance = Math.abs(pageNumber - activePageIndex.value);
+    return dragMeta.value ? distance === 0 : distance <= 1;
+  }
+
+  function shouldUseNativeCatalog() {
+    return isNativeBridgeAvailable() && !USE_MOCK_DATA_IN_NATIVE;
   }
 
   function setPageRef(node, targetPageIndex) {
@@ -580,7 +593,7 @@ export function useLaunchpadController() {
 
   function commitPages(next) {
     const isProduction = typeof process !== "undefined" && process.env && process.env.NODE_ENV === "production";
-    if (!isProduction) assertNoDuplicateItemIds(next);
+    if (!isProduction && !isDragActive()) assertNoDuplicateItemIds(next);
     pages.value = next;
     if (renderedFolder.value) commitFolderPageIndex(folderPageIndex.value);
   }
@@ -701,6 +714,20 @@ export function useLaunchpadController() {
   function applyGridConfig() {
     repackPagesForGrid(draftRows.value, draftCols.value, draftFolderRows.value, draftFolderCols.value);
     schedulePageGridMetrics();
+  }
+
+  function applySettingsConfig() {
+    applyGridConfig();
+    closeSettingsPanel();
+  }
+
+  function openSettingsPanel() {
+    if (isDragActive()) return;
+    isSettingsPanelOpen.value = true;
+  }
+
+  function closeSettingsPanel() {
+    isSettingsPanelOpen.value = false;
   }
 
   function handleSearchInput(event) {
@@ -1128,7 +1155,7 @@ export function useLaunchpadController() {
     if (!isDesktopOpen.value || isDragActive() || isAppLaunching.value) return;
 
     const target = event.target;
-    if (target?.closest?.(".icon-hit-target, .page-button, .page-dot, .search-pill, .toolbar, .launchpad-header, button, input, textarea, select")) {
+    if (target?.closest?.(".icon-hit-target, .page-button, .page-dot, .search-pill, .launchpad-header, button, input, textarea, select")) {
       return;
     }
 
@@ -1155,6 +1182,15 @@ export function useLaunchpadController() {
     window.addEventListener("resize", updatePageGridMetrics);
     schedulePageGridMetrics();
     loadNativeLaunchpadData();
+    if (isNativeBridgeAvailable()) {
+      listenNativeEvent("launchpad-open-settings", openSettingsPanel)
+        .then((unlisten) => {
+          unlistenSettingsEvent = unlisten;
+        })
+        .catch((error) => {
+          console.error("Failed to listen for native settings event", error);
+        });
+    }
 
     if (typeof ResizeObserver !== "undefined") {
       layoutResizeObserver = new ResizeObserver(updatePageGridMetrics);
@@ -1196,6 +1232,8 @@ export function useLaunchpadController() {
     clearAppLaunchTimer();
     clearLaunchGhostTimer();
     clearNativeSaveTimer();
+    unlistenSettingsEvent?.();
+    unlistenSettingsEvent = null;
     cancelLongPress();
     clearAltEditTimer();
     if (layoutResizeObserver) layoutResizeObserver.disconnect();
@@ -1214,6 +1252,7 @@ export function useLaunchpadController() {
     isHomeInteractionDisabled,
     isAppLaunching,
     isEditMode,
+    isSettingsPanelOpen,
     handleLaunchpadWheel,
     shellRef,
     homeShellInitial,
@@ -1227,6 +1266,9 @@ export function useLaunchpadController() {
     draftFolderCols,
     dragMeta,
     applyGridConfig,
+    applySettingsConfig,
+    openSettingsPanel,
+    closeSettingsPanel,
     searchRef,
     isSearchMode,
     searchInputRef,
@@ -1239,6 +1281,7 @@ export function useLaunchpadController() {
     handleDesktopSurfacePointerDown,
     activePageIndex,
     activePages,
+    shouldRenderActivePage,
     commitActivePageIndex,
     goNextActivePage,
     desktopTrackMotionKey,

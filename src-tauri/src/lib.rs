@@ -11,7 +11,11 @@ use std::{
     process::Command,
     sync::Mutex,
 };
-use tauri::{AppHandle, Manager, State};
+use tauri::{
+    menu::MenuBuilder,
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Emitter, Manager, State, WindowEvent,
+};
 #[cfg(target_os = "windows")]
 use windows::{
     core::HSTRING,
@@ -491,9 +495,71 @@ fn launch_path(_path: &str) -> Result<(), String> {
     Err("Launching apps is only implemented on Windows".to_string())
 }
 
+fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+fn open_settings(app: &AppHandle) {
+    show_main_window(app);
+    let _ = app.emit("launchpad-open-settings", ());
+}
+
+fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let menu = MenuBuilder::new(app)
+        .text("show", "显示 LaunchPad")
+        .text("settings", "设置")
+        .separator()
+        .text("quit", "退出")
+        .build()?;
+    let mut builder = TrayIconBuilder::new()
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .tooltip("LaunchPad");
+
+    if let Some(icon) = app.default_window_icon().cloned() {
+        builder = builder.icon(icon);
+    }
+
+    builder.build(app)?;
+    Ok(())
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
+        .setup(setup_tray)
+        .on_menu_event(|app, event| {
+            if event.id() == "show" {
+                show_main_window(app);
+            } else if event.id() == "settings" {
+                open_settings(app);
+            } else if event.id() == "quit" {
+                app.exit(0);
+            }
+        })
+        .on_tray_icon_event(|app, event| match event {
+            TrayIconEvent::Click {
+                button,
+                button_state,
+                ..
+            } if button == MouseButton::Left && button_state == MouseButtonState::Up => {
+                show_main_window(app);
+            }
+            TrayIconEvent::DoubleClick { button, .. } if button == MouseButton::Left => {
+                show_main_window(app);
+            }
+            _ => {}
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             scan_apps,
             load_layout,
