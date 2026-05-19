@@ -15,9 +15,20 @@
       :style="homeShellStyle"
     >
       <header ref="headerRef" class="launchpad-header">
-        <div>
-          <h1>Launchpad Desktop Vue</h1>
-          <p>拖拽排序、跨页、悬停建文件夹、满页自动溢出到下一页。</p>
+        <div ref="searchRef" :class="cx('search-pill', isSearchMode && 'search-pill-active')">
+          <SearchIcon class="hint-icon" />
+          <input
+            ref="searchInputRef"
+            class="search-input"
+            :value="searchQuery"
+            type="search"
+            placeholder="搜索应用"
+            aria-label="搜索应用"
+            @input="handleSearchInput"
+            @focus="keyboardFocusArea = 'search'"
+            @pointerdown.stop
+          />
+          <button v-if="isSearchMode" class="search-clear-button" type="button" aria-label="清除搜索" @click="clearSearch">×</button>
         </div>
 
         <button class="settings-button" type="button" :disabled="!!dragMeta" aria-label="打开设置" @click="openSettingsPanel">
@@ -26,21 +37,6 @@
         </button>
       </header>
 
-      <div ref="searchRef" :class="cx('search-pill', isSearchMode && 'search-pill-active')">
-        <SearchIcon class="hint-icon" />
-        <input
-          ref="searchInputRef"
-          class="search-input"
-          :value="searchQuery"
-          type="search"
-          placeholder="搜索应用"
-          aria-label="搜索应用"
-          @input="handleSearchInput"
-          @focus="keyboardFocusArea = 'search'"
-          @pointerdown.stop
-        />
-        <button v-if="isSearchMode" class="search-clear-button" type="button" aria-label="清除搜索" @click="clearSearch">×</button>
-      </div>
       <p v-if="isSearchMode" ref="searchSummaryRef" class="search-summary">
         搜索结果只展示应用，不展示文件夹；搜索视图不可拖拽。
       </p>

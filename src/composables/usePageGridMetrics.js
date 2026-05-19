@@ -57,10 +57,12 @@ export function usePageGridMetrics(options) {
     if (typeof window === "undefined") return;
     const root = getElementFromRef(rootRef);
     const main = getElementFromRef(desktopMainRef);
+    const header = getElementFromRef(headerRef);
+    const search = getElementFromRef(searchRef);
     const rootPadding = getVerticalPadding(root);
     const mainPadding = getVerticalPadding(main);
-    const headerHeight = getElementHeight(headerRef);
-    const searchHeight = getElementHeight(searchRef);
+    const headerHeight = header ? header.getBoundingClientRect().height : 0;
+    const searchHeight = search && !header?.contains(search) ? search.getBoundingClientRect().height : 0;
     const summaryElement = getElementFromRef(searchSummaryRef);
     const summaryHeight = summaryElement ? summaryElement.getBoundingClientRect().height + getVerticalMargin(summaryElement) : 0;
     const dotsHeight = getElementHeight(pageDotsRef);
