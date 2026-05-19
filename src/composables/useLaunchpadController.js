@@ -31,6 +31,7 @@ import {
   makePageSize,
 } from "../domain/launchpadLayout.js";
 import { runLaunchpadHelperTests } from "../domain/launchpadLayoutTests.js";
+import { isNativeBridgeAvailable, launchApp as launchNativeApp, loadLayout, saveLayout, scanApps } from "../api/launchpadApi.js";
 import { useLaunchpadDrag } from "./useLaunchpadDrag.js";
 import { useIconSelection } from "./useIconSelection.js";
 import { useLaunchpadKeyboard } from "./useLaunchpadKeyboard.js";
@@ -129,6 +130,8 @@ export function useLaunchpadController() {
   let isAltPressed = false;
   let layoutResizeObserver = null;
   let dragControls = null;
+  let nativeLayoutReady = false;
+  let nativeSaveTimer = null;
 
   const {
     clearOpeningIcon,
@@ -358,6 +361,204 @@ export function useLaunchpadController() {
     };
   });
 
+  function fallbackAppGlyph(name) {
+    return String(name || "A").trim().charAt(0).toUpperCase() || "A";
+  }
+
+  function normalizeNativeApp(app, index) {
+    const name = String(app?.name || "Application").trim() || "Application";
+    return {
+      ...app,
+      id: String(app?.id || `native-app-${index}`),
+      type: "app",
+      name,
+      iconDataUrl: app?.iconDataUrl || null,
+      emoji: app?.emoji || fallbackAppGlyph(name),
+    };
+  }
+
+  function mergeAppWithSavedIcon(app, savedItem) {
+    const next = cloneItem(app);
+    if (savedItem?.customIconDataUrl) next.customIconDataUrl = savedItem.customIconDataUrl;
+    return next;
+  }
+
+  function applyLayoutSettings(settings) {
+    if (!settings) return;
+    const rows = clamp(Number(settings.gridRows) || DEFAULT_ROWS, 2, 8);
+    const cols = clamp(Number(settings.gridCols) || DEFAULT_COLS, 3, 10);
+    const nextFolderRows = clamp(Number(settings.folderRows) || DEFAULT_FOLDER_ROWS, 2, 6);
+    const nextFolderCols = clamp(Number(settings.folderCols) || DEFAULT_FOLDER_COLS, 2, 8);
+
+    gridRows.value = rows;
+    gridCols.value = cols;
+    folderRows.value = nextFolderRows;
+    folderCols.value = nextFolderCols;
+    draftRows.value = rows;
+    draftCols.value = cols;
+    draftFolderRows.value = nextFolderRows;
+    draftFolderCols.value = nextFolderCols;
+    isTextlessMode.value = Boolean(settings.textless);
+  }
+
+  function mergeFolderWithCatalog(folder, catalog, usedAppIds) {
+    const sourcePages = Array.isArray(folder?.childPages) ? folder.childPages : chunkIntoPages(folder?.children || [], folderPageSize.value);
+    const childPages = sourcePages
+      .map((page) =>
+        (page || [])
+          .map((child) => {
+            const app = child?.id ? catalog.get(child.id) : null;
+            if (!app || usedAppIds.has(app.id)) return null;
+            usedAppIds.add(app.id);
+            return mergeAppWithSavedIcon(app, child);
+          })
+          .filter(Boolean)
+      )
+      .filter((page) => page.length > 0);
+
+    if (!childPages.length) return null;
+    return withFolderPages(
+      {
+        id: String(folder?.id || makeId("folder")),
+        type: "folder",
+        name: String(folder?.name || "新文件夹").slice(0, 32) || "新文件夹",
+      },
+      childPages
+    );
+  }
+
+  function appendAppsToPages(sourcePages, apps) {
+    const next = sourcePages.length ? sourcePages.map((page) => page.slice()) : [[]];
+    for (const app of apps) {
+      if (next[next.length - 1].length >= pageSize.value) next.push([]);
+      next[next.length - 1].push(cloneItem(app));
+    }
+    return compactPages(next, { folderPageSize: folderPageSize.value });
+  }
+
+  function fitPagesToGrid(sourcePages) {
+    const next = clonePages(sourcePages);
+    for (let i = 0; i < next.length; i += 1) {
+      while (next[i].length > pageSize.value) {
+        const overflow = next[i].pop();
+        ensurePage(next, i + 1);
+        next[i + 1].unshift(overflow);
+      }
+    }
+    return compactPages(next, { folderPageSize: folderPageSize.value });
+  }
+
+  function mergeNativeCatalogWithSavedLayout(apps, savedLayout) {
+    const catalog = new Map(apps.map((app) => [app.id, app]));
+    const usedAppIds = new Set();
+    const sourcePages = Array.isArray(savedLayout?.pages) ? savedLayout.pages : [];
+    const mergedPages = sourcePages.map((page) =>
+      (page || [])
+        .map((item) => {
+          if (item?.type === "folder") return mergeFolderWithCatalog(item, catalog, usedAppIds);
+          const app = item?.id ? catalog.get(item.id) : null;
+          if (!app || usedAppIds.has(app.id)) return null;
+          usedAppIds.add(app.id);
+          return mergeAppWithSavedIcon(app, item);
+        })
+        .filter(Boolean)
+    );
+    const newApps = apps.filter((app) => !usedAppIds.has(app.id));
+    return fitPagesToGrid(appendAppsToPages(mergedPages, newApps));
+  }
+
+  function createLayoutSnapshot() {
+    return {
+      version: 1,
+      pages: makeLayoutPages(pages.value),
+      settings: {
+        gridRows: gridRows.value,
+        gridCols: gridCols.value,
+        folderRows: folderRows.value,
+        folderCols: folderCols.value,
+        textless: isTextlessMode.value,
+      },
+    };
+  }
+
+  function makeLayoutPages(sourcePages) {
+    return (sourcePages || []).map((page) => (page || []).filter(Boolean).map(makeLayoutItem));
+  }
+
+  function makeLayoutItem(item) {
+    if (item.type === "folder") {
+      const sourcePages = Array.isArray(item.childPages) ? item.childPages : getFolderChildPages(item, folderPageSize.value);
+      const childPages = sourcePages.map((page) => (page || []).filter(Boolean).map(makeLayoutItem));
+      return {
+        id: item.id,
+        type: "folder",
+        name: item.name,
+        childPages,
+        children: childPages.flat(),
+      };
+    }
+
+    const clean = {
+      id: item.id,
+      type: "app",
+      name: item.name,
+      emoji: item.emoji,
+    };
+    if (item.customIconDataUrl) clean.customIconDataUrl = item.customIconDataUrl;
+    return clean;
+  }
+
+  function clearNativeSaveTimer() {
+    if (nativeSaveTimer) window.clearTimeout(nativeSaveTimer);
+    nativeSaveTimer = null;
+  }
+
+  function scheduleNativeLayoutSave() {
+    if (!nativeLayoutReady || !isNativeBridgeAvailable()) return;
+    clearNativeSaveTimer();
+    nativeSaveTimer = window.setTimeout(async () => {
+      nativeSaveTimer = null;
+      try {
+        await saveLayout(createLayoutSnapshot());
+      } catch (error) {
+        console.error("Failed to save LaunchPad layout", error);
+      }
+    }, 320);
+  }
+
+  async function loadNativeLaunchpadData() {
+    if (!isNativeBridgeAvailable()) return;
+
+    try {
+      const [nativeApps, savedLayout] = await Promise.all([scanApps(), loadLayout()]);
+      const apps = (nativeApps || []).map(normalizeNativeApp);
+      if (!apps.length) {
+        nativeLayoutReady = true;
+        return;
+      }
+
+      applyLayoutSettings(savedLayout?.settings);
+      pages.value = mergeNativeCatalogWithSavedLayout(apps, savedLayout);
+      commitPageIndex(pageIndex.value);
+      commitSearchPageIndex(searchPageIndex.value);
+      commitFolderPageIndex(folderPageIndex.value);
+      nativeLayoutReady = true;
+      schedulePageGridMetrics();
+    } catch (error) {
+      nativeLayoutReady = false;
+      console.error("Failed to load native LaunchPad data", error);
+    }
+  }
+
+  async function launchNativeAppIfAvailable(app) {
+    if (!isNativeBridgeAvailable()) return;
+    try {
+      await launchNativeApp(app.id);
+    } catch (error) {
+      console.error(`Failed to launch ${app.name}`, error);
+    }
+  }
+
   function getDesktopGridProjectionKey(pageNumber) {
     return `${isSearchMode.value ? "search" : "desktop"}-grid-${pageNumber}-${desktopProjectionKeyMode.value}`;
   }
@@ -423,6 +624,38 @@ export function useLaunchpadController() {
     if (!folder) return;
     folder.item.name = nextName;
     commitPages(next);
+  }
+
+  function updateAppCustomIcon(appId, dataUrl) {
+    if (!appId || isDragActive()) return;
+    const next = clonePages(pages.value);
+    let changed = false;
+
+    function updateItem(item) {
+      if (!item) return;
+      if (item.type === "app" && item.id === appId) {
+        if (dataUrl) item.customIconDataUrl = dataUrl;
+        else delete item.customIconDataUrl;
+        changed = true;
+        return;
+      }
+      if (item.type !== "folder") return;
+      for (const page of item.childPages || []) {
+        for (const child of page || []) updateItem(child);
+      }
+      item.children = (item.childPages || []).flat().filter(Boolean).map(cloneItem);
+    }
+
+    for (const page of next) {
+      for (const item of page) updateItem(item);
+    }
+    if (!changed) return;
+    commitPages(next);
+    schedulePageGridMetrics();
+  }
+
+  function resetAppCustomIcon(appId) {
+    updateAppCustomIcon(appId, null);
   }
 
   function repackPagesForGrid(nextRows, nextCols, nextFolderRows, nextFolderCols) {
@@ -701,6 +934,7 @@ export function useLaunchpadController() {
 
     const launchSource = normalizeLaunchSource(app, source);
     const shouldClearSearchAfterLaunch = isSearchMode.value;
+    launchNativeAppIfAvailable(app);
     startAppLaunchGhost(app, launchSource);
     openingIcon.value = launchSource;
     isAppLaunching.value = true;
@@ -912,6 +1146,7 @@ export function useLaunchpadController() {
 
   watch([gridRows, gridCols, folderRows, folderCols, isTextlessMode, isSearchMode], schedulePageGridMetrics, { flush: "post" });
   watch(activePages, schedulePageGridMetrics, { flush: "post" });
+  watch([pages, gridRows, gridCols, folderRows, folderCols, isTextlessMode], scheduleNativeLayoutSave, { flush: "post" });
 
   onMounted(() => {
     window.addEventListener("keydown", handleGlobalKeydown);
@@ -919,6 +1154,7 @@ export function useLaunchpadController() {
     window.addEventListener("blur", handleWindowBlur);
     window.addEventListener("resize", updatePageGridMetrics);
     schedulePageGridMetrics();
+    loadNativeLaunchpadData();
 
     if (typeof ResizeObserver !== "undefined") {
       layoutResizeObserver = new ResizeObserver(updatePageGridMetrics);
@@ -959,6 +1195,7 @@ export function useLaunchpadController() {
     clearDesktopCloseTimer();
     clearAppLaunchTimer();
     clearLaunchGhostTimer();
+    clearNativeSaveTimer();
     cancelLongPress();
     clearAltEditTimer();
     if (layoutResizeObserver) layoutResizeObserver.disconnect();
@@ -1020,6 +1257,8 @@ export function useLaunchpadController() {
     beginDrag,
     openApp,
     removeAppById,
+    updateAppCustomIcon,
+    resetAppCustomIcon,
     layoutSpring,
     pageDotsRef,
     renderedFolder,

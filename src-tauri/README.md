@@ -1,14 +1,16 @@
-# Native Backend Placeholder
+# Tauri Native Backend
 
-This folder is reserved for the future Tauri/Rust backend.
+This folder contains the Windows native shell for LaunchPad.
 
-Planned modules:
+Implemented commands:
 
-- `commands.rs`: Tauri command handlers matching `docs/frontend-backend-contract.md`
-- `catalog/`: Windows Start Menu and app catalog scanning
-- `layout_store.rs`: layout JSON persistence under the user app data directory
-- `launcher.rs`: Windows shell launch integration
-- `icons.rs`: icon extraction and cache management
+- `scan_apps`: scans user and system Start Menu folders for `.lnk`, `.url`, and `.exe` launch entries.
+- `load_layout`: loads `layout.json` from the app data directory.
+- `save_layout`: saves the current LaunchPad layout and settings.
+- `launch_app`: launches a catalog item by server-side `appId`.
 
-Do not add frontend code here. Vue code should call native features through
-`src/api/launchpadApi.js`.
+Known MVP limits:
+
+- Shortcut targets are not resolved yet; `.lnk` files are launched through the Windows shell.
+- Real application icon extraction is not implemented yet.
+- Packaged/UWP app discovery is not implemented yet.

@@ -1,4 +1,4 @@
-import { defineComponent, h } from "vue";
+import { defineComponent, h, ref } from "vue";
 import { Motion } from "motion-v";
 
 const springRest = { restDelta: 0.01, restSpeed: 0.01 };
@@ -59,8 +59,41 @@ export default defineComponent({
     selected: { type: Boolean, default: false },
     opening: { type: Boolean, default: false },
   },
-  emits: ["pointerdown-icon", "open-app", "remove-app"],
+  emits: ["pointerdown-icon", "open-app", "remove-app", "change-app-icon", "reset-app-icon"],
   setup(props, { emit }) {
+    const fileInputRef = ref(null);
+
+    function getIconSource(item) {
+      return item?.customIconDataUrl || item?.iconDataUrl || item?.iconUrl || null;
+    }
+
+    function renderAppIcon(item, compact) {
+      const iconSource = getIconSource(item);
+      if (iconSource) {
+        return h("img", {
+          class: cx("app-icon-image", compact && "app-icon-image-compact"),
+          src: iconSource,
+          alt: "",
+          draggable: "false",
+        });
+      }
+      return h("span", { class: compact ? "icon-emoji icon-emoji-compact" : "icon-emoji" }, item.emoji);
+    }
+
+    function renderFolderChild(child) {
+      if (!child) return "";
+      const iconSource = getIconSource(child);
+      if (iconSource) {
+        return h("img", {
+          class: "folder-child-image",
+          src: iconSource,
+          alt: "",
+          draggable: "false",
+        });
+      }
+      return child.emoji;
+    }
+
     function handlePointerDown(event) {
       if (!props.draggable) return;
       emit("pointerdown-icon", event, props.item, props.source);
@@ -76,6 +109,40 @@ export default defineComponent({
       event.stopPropagation();
       if (props.item.type !== "app") return;
       emit("remove-app", props.item.id);
+    }
+
+    function handleChooseIcon(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (props.item.type !== "app") return;
+      fileInputRef.value?.click?.();
+    }
+
+    function handleResetIcon(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (props.item.type !== "app") return;
+      emit("reset-app-icon", props.item.id);
+    }
+
+    function handleCustomIconInput(event) {
+      const input = event.target;
+      const file = input?.files?.[0];
+      if (!file || props.item.type !== "app") return;
+      if (!file.type.startsWith("image/")) {
+        input.value = "";
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") emit("change-app-icon", props.item.id, reader.result);
+        input.value = "";
+      };
+      reader.onerror = () => {
+        input.value = "";
+      };
+      reader.readAsDataURL(file);
     }
 
     return () => {
@@ -96,11 +163,11 @@ export default defineComponent({
 
       if (isFolder) {
         const folderChildren = getFolderPreviewSlots(item, props.folderPreviewPageSize).map((child, index) =>
-          h("div", { key: child ? child.id : `folder-empty-${index}`, class: cx("folder-child", !child && "folder-child-empty") }, child ? child.emoji : "")
+          h("div", { key: child ? child.id : `folder-empty-${index}`, class: cx("folder-child", !child && "folder-child-empty") }, renderFolderChild(child))
         );
         iconChildren.push(h("div", { class: "folder-thumb" }, folderChildren));
       } else {
-        iconChildren.push(h("span", { class: props.compact ? "icon-emoji icon-emoji-compact" : "icon-emoji" }, item.emoji));
+        iconChildren.push(renderAppIcon(item, props.compact));
       }
 
       const removeButton = props.editing && props.removable && item.type === "app"
@@ -115,6 +182,46 @@ export default defineComponent({
             },
             onClick: handleRemove,
           }, "×")
+        : null;
+      const chooseIconButton = props.editing && item.type === "app"
+        ? h("button", {
+            class: "change-app-icon-button",
+            type: "button",
+            title: `更换 ${item.name} 的图标`,
+            "aria-label": `更换 ${item.name} 的图标`,
+            onPointerdown: (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            },
+            onClick: handleChooseIcon,
+          }, "+")
+        : null;
+      const resetIconButton = props.editing && item.type === "app" && item.customIconDataUrl
+        ? h("button", {
+            class: "reset-app-icon-button",
+            type: "button",
+            title: `恢复 ${item.name} 的系统图标`,
+            "aria-label": `恢复 ${item.name} 的系统图标`,
+            onPointerdown: (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            },
+            onClick: handleResetIcon,
+          }, "↺")
+        : null;
+      const fileInput = props.editing && item.type === "app"
+        ? h("input", {
+            ref: fileInputRef,
+            class: "custom-icon-input",
+            type: "file",
+            accept: "image/*",
+            tabindex: "-1",
+            onPointerdown: (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            },
+            onChange: handleCustomIconInput,
+          })
         : null;
 
       const hitTargetAttrs = {
@@ -166,6 +273,9 @@ export default defineComponent({
                 h("div", hitTargetAttrs, [
                   h("div", { class: "icon-visual-wrap" }, [
                     removeButton,
+                    chooseIconButton,
+                    resetIconButton,
+                    fileInput,
                     h("div", { class: cx("icon-box", props.compact && "icon-box-compact") }, iconChildren),
                   ]),
                 ]),

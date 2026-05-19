@@ -468,6 +468,50 @@
   background: rgba(220, 38, 38, 0.92);
 }
 
+.change-app-icon-button,
+.reset-app-icon-button {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  border-radius: 999px;
+  color: white;
+  background: rgba(40, 40, 46, 0.86);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.24);
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.change-app-icon-button {
+  right: -8px;
+  top: -8px;
+}
+
+.reset-app-icon-button {
+  right: -8px;
+  bottom: -8px;
+  font-size: 13px;
+}
+
+.change-app-icon-button:hover,
+.reset-app-icon-button:hover {
+  background: rgba(37, 99, 235, 0.92);
+}
+
+.custom-icon-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 @keyframes icon-jiggle {
   0% { transform: translateY(-1px) rotate(-2deg); }
   100% { transform: translateY(1px) rotate(2deg); }
@@ -501,6 +545,21 @@
 .icon-box-compact { width: 62px; height: 62px; box-shadow: 0 8px 18px rgba(0, 0, 0, 0.12); }
 .icon-emoji { font-size: 38px; line-height: 1; }
 .icon-emoji-compact { font-size: 32px; }
+
+.app-icon-image {
+  display: block;
+  width: 54px;
+  height: 54px;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+  filter: drop-shadow(0 4px 7px rgba(0, 0, 0, 0.22));
+}
+
+.app-icon-image-compact {
+  width: 48px;
+  height: 48px;
+}
 
 .icon-name {
   max-width: 136px;
@@ -576,6 +635,16 @@
 }
 
 .drag-folder-child { background: rgba(255, 255, 255, 0.5); }
+
+.folder-child-image,
+.drag-folder-child-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
 
 .folder-overlay {
   position: fixed;
@@ -793,6 +862,16 @@
   line-height: 1;
 }
 
+.app-launch-ghost-image {
+  display: block;
+  width: 76%;
+  height: 76%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.24));
+}
+
 .drag-preview {
   pointer-events: none;
   position: fixed;
@@ -821,6 +900,15 @@
 }
 
 .drag-preview-emoji { font-size: 42px; line-height: 1; }
+.drag-preview-image {
+  display: block;
+  width: 58px;
+  height: 58px;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.24));
+}
 .drag-preview-name {
   max-width: 100px;
   margin-top: 8px;
@@ -848,5 +936,6 @@
   .page-button { width: 40px; height: 40px; }
   .icon-box { width: 60px; height: 60px; border-radius: 22px; }
   .icon-emoji { font-size: 32px; }
+  .app-icon-image { width: 48px; height: 48px; }
   .icon-name { max-width: 72px; font-size: 12px; }
 }

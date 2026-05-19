@@ -109,6 +109,8 @@
                   @pointerdown-icon="beginDrag"
                   @open-app="openApp"
                   @remove-app="removeAppById"
+                  @change-app-icon="updateAppCustomIcon"
+                  @reset-app-icon="resetAppCustomIcon"
                 />
                 </Motion>
               </section>
@@ -215,6 +217,8 @@
                     @pointerdown-icon="beginDrag"
                     @open-app="openApp"
                     @remove-app="removeAppById"
+                    @change-app-icon="updateAppCustomIcon"
+                    @reset-app-icon="resetAppCustomIcon"
                   />
                 </Motion>
               </section>
@@ -258,7 +262,8 @@
       :style="launchGhostStyle"
     >
       <div class="app-launch-ghost-box">
-        <span class="app-launch-ghost-emoji">{{ launchGhost.app.emoji }}</span>
+        <img v-if="getIconSource(launchGhost.app)" class="app-launch-ghost-image" :src="getIconSource(launchGhost.app)" alt="" draggable="false" />
+        <span v-else class="app-launch-ghost-emoji">{{ launchGhost.app.emoji }}</span>
       </div>
     </Motion>
 
@@ -278,9 +283,11 @@
             :key="child ? child.id : `drag-folder-empty-${index}`"
             :class="cx('drag-folder-child', !child && 'folder-child-empty')"
           >
-            <span v-if="child">{{ child.emoji }}</span>
+            <img v-if="getIconSource(child)" class="drag-folder-child-image" :src="getIconSource(child)" alt="" draggable="false" />
+            <span v-else-if="child">{{ child.emoji }}</span>
           </div>
         </div>
+        <img v-else-if="getIconSource(dragMeta.item)" class="drag-preview-image" :src="getIconSource(dragMeta.item)" alt="" draggable="false" />
         <span v-else class="drag-preview-emoji">{{ dragMeta.item.emoji }}</span>
       </div>
       <div v-if="!isTextlessMode" class="drag-preview-name">{{ dragMeta.item.name }}</div>
@@ -346,6 +353,8 @@ const {
   beginDrag,
   openApp,
   removeAppById,
+  updateAppCustomIcon,
+  resetAppCustomIcon,
   layoutSpring,
   pageDotsRef,
   renderedFolder,
@@ -380,4 +389,8 @@ const {
   dragPreviewSpring,
   folderPreviewSlots,
 } = useLaunchpadController();
+
+function getIconSource(item) {
+  return item?.customIconDataUrl || item?.iconDataUrl || item?.iconUrl || null;
+}
 </script>

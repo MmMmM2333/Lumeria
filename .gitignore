@@ -6,6 +6,7 @@ dist/
 
 # Tauri/Rust build output
 src-tauri/target/
+src-tauri/gen/
 
 # Local environment and tool state
 .env

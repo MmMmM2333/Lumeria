@@ -1,0 +1,30 @@
+[package]
+license = "GPL-3.0-only"
+name = "launchpad"
+version = "0.1.0"
+description = "Windows LaunchPad desktop shell"
+authors = ["Vibe Project"]
+edition = "2021"
+
+[lib]
+name = "launchpad_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "launchpad"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+png = "0.17"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+windows = { version = "0.61.3", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_System_Com",
+  "Win32_UI_Shell",
+] }
