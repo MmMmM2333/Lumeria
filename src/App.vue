@@ -1,0 +1,383 @@
+<template>
+  <div
+    ref="rootRef"
+    :class="cx('launchpad-root', isTextlessMode && 'launchpad-root-textless', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching')"
+    @wheel="handleLaunchpadWheel"
+  >
+    <div class="launchpad-bg" />
+
+    <Motion
+      ref="shellRef"
+      class="launchpad-shell"
+      :initial="homeShellInitial"
+      :animate="homeShellAnimate"
+      :transition="homeShellTransition"
+      :style="homeShellStyle"
+    >
+      <header ref="headerRef" class="launchpad-header">
+        <div>
+          <h1>Launchpad Desktop Vue</h1>
+          <p>拖拽排序、跨页、悬停建文件夹、满页自动溢出到下一页。</p>
+        </div>
+
+        <div class="toolbar">
+          <label>
+            行
+            <input v-model.number="draftRows" min="2" max="8" type="number" />
+          </label>
+          <label>
+            列
+            <input v-model.number="draftCols" min="3" max="10" type="number" />
+          </label>
+          <label>
+            文件夹行
+            <input v-model.number="draftFolderRows" min="2" max="6" type="number" />
+          </label>
+          <label>
+            文件夹列
+            <input v-model.number="draftFolderCols" min="2" max="8" type="number" />
+          </label>
+          <label class="toolbar-check">
+            <input v-model="isTextlessMode" type="checkbox" />
+            无字
+          </label>
+          <button type="button" :disabled="!!dragMeta" @click="applyGridConfig">应用布局</button>
+        </div>
+      </header>
+
+      <div ref="searchRef" :class="cx('search-pill', isSearchMode && 'search-pill-active')">
+        <SearchIcon class="hint-icon" />
+        <input
+          ref="searchInputRef"
+          class="search-input"
+          :value="searchQuery"
+          type="search"
+          placeholder="搜索应用"
+          aria-label="搜索应用"
+          @input="handleSearchInput"
+          @focus="keyboardFocusArea = 'search'"
+          @pointerdown.stop
+        />
+        <button v-if="isSearchMode" class="search-clear-button" type="button" aria-label="清除搜索" @click="clearSearch">×</button>
+      </div>
+      <p v-if="isSearchMode" ref="searchSummaryRef" class="search-summary">
+        搜索结果只展示应用，不展示文件夹；搜索视图不可拖拽。
+      </p>
+
+      <main ref="desktopMainRef" class="desktop-main" tabindex="-1" @focus="keyboardFocusArea = 'desktop'" @pointerdown="handleDesktopSurfacePointerDown">
+        <button class="page-button page-button-left" type="button" :disabled="activePageIndex === 0" aria-label="上一页" @pointerdown.stop @click="commitActivePageIndex(activePageIndex - 1)">
+          <ChevronLeftIcon class="button-icon" />
+        </button>
+
+        <div class="desktop-viewport">
+          <div class="desktop-track-clip">
+            <Motion
+              :key="desktopTrackMotionKey"
+              class="desktop-track"
+              :initial="activeDesktopTrackAnimate"
+              :animate="activeDesktopTrackAnimate"
+              :transition="activeDesktopTrackTransition"
+            >
+              <section v-for="(page, pageNumber) in activePages" :key="`${isSearchMode ? 'search' : 'desktop'}-${pageNumber}`" class="page-section" tabindex="-1">
+                <Motion
+                  :key="getDesktopGridProjectionKey(pageNumber)"
+                  :ref="(node) => setPageRef(node, pageNumber)"
+                  :layout="desktopLayoutEnabled"
+                  :class="cx('page-grid', isSearchMode && 'search-page-grid')"
+                  :style="[getActivePageGridStyle(page), pageGridMeasureStyle]"
+                  :transition="layoutSpring"
+                  tabindex="-1"
+                >
+                <template v-if="isSearchMode && page.length === 0">
+                  <div class="search-empty-state">没有找到匹配的应用</div>
+                </template>
+                <DesktopIcon
+                  v-for="(item, index) in getVisibleDesktopPage(page)"
+                  :key="item.id"
+                  :item="item"
+                  :source="{ type: isSearchMode ? 'search' : 'page', pageIndex: pageNumber, index }"
+                  :pending="!isSearchMode && pendingTargetId === item.id"
+                  :dragging="!isSearchMode && dragMeta && dragMeta.item.id === item.id"
+                  :folder-preview-page-size="folderPageSize"
+                  :draggable="!isSearchMode"
+                  :editing="isEditMode"
+                  :textless="isTextlessMode"
+                  :layout-enabled="desktopLayoutEnabled"
+                  :removable="item.type === 'app'"
+                  :selected="isIconSelected(isSearchMode ? 'search' : 'desktop', item.id, pageNumber)"
+                  :opening="isIconOpening(isSearchMode ? 'search' : 'desktop', item.id, pageNumber)"
+                  @pointerdown-icon="beginDrag"
+                  @open-app="openApp"
+                  @remove-app="removeAppById"
+                />
+                </Motion>
+              </section>
+            </Motion>
+          </div>
+        </div>
+
+        <button class="page-button page-button-right" type="button" :disabled="activePageIndex >= activePages.length - 1" aria-label="下一页" @pointerdown.stop @click="goNextActivePage">
+          <ChevronRightIcon class="button-icon" />
+        </button>
+
+        <template v-if="dragMeta">
+          <div class="edge-hint edge-hint-left" />
+          <div class="edge-hint edge-hint-right" />
+        </template>
+      </main>
+
+      <footer ref="pageDotsRef" class="page-dots">
+        <button
+          v-for="index in activePages.length"
+          :key="`${isSearchMode ? 'search-dot' : 'page-dot'}-${index}`"
+          type="button"
+          :class="cx('page-dot', index - 1 === activePageIndex && 'page-dot-active')"
+          :aria-label="`切换到第 ${index} 页`"
+          @pointerdown.stop
+          @click="commitActivePageIndex(index - 1)"
+        />
+      </footer>
+    </Motion>
+
+    <div
+      v-if="renderedFolder"
+      :key="renderedFolder.id"
+      :class="cx('folder-overlay', (isFolderClosing || isFolderAppLaunchClosing) && 'folder-overlay-closing')"
+      @pointerdown.self="handleFolderOverlayPointerDown"
+    >
+      <Motion
+        ref="folderPanelRef"
+        :class="cx('folder-panel', isFolderAppLaunchClosing && 'folder-panel-app-launching')"
+        tabindex="-1"
+        :initial="folderPanelInitial"
+        :animate="folderPanelAnimate"
+        :transition="panelSpring"
+        :style="folderPanelStyle"
+      >
+        <Motion
+          class="folder-panel-content"
+          :initial="folderContentInitial"
+          :animate="folderContentAnimate"
+          :transition="folderContentTransition"
+        >
+        <div class="folder-header">
+          <div class="folder-title-block">
+            <input
+              class="folder-name-input"
+              :value="renderedFolder.name"
+              :disabled="isFolderClosing"
+              maxlength="32"
+              aria-label="文件夹名称"
+              @input="renameFolder(renderedFolder.id, $event.target.value)"
+              @pointerdown.stop
+            />
+            <p>文件夹内使用紧凑数组排序；拖到两侧可切换或新建文件夹页。</p>
+          </div>
+          <div class="folder-count">{{ folderItemCount(renderedFolder) }} 个项目 · {{ folderRows }}×{{ folderCols }}</div>
+        </div>
+
+        <div class="folder-pages-shell">
+          <button
+            class="folder-page-zone folder-page-zone-left"
+            type="button"
+            :disabled="folderPageIndex === 0"
+            aria-label="文件夹上一页"
+            @pointerdown.stop
+            @click="turnFolderPage(-1)"
+          >
+            <ChevronLeftIcon class="button-icon" />
+          </button>
+
+          <div class="folder-viewport">
+            <Motion class="folder-track" :animate="folderTrackAnimate" :transition="desktopTrackTransition">
+              <section v-for="(page, pageNumber) in folderPages" :key="pageNumber" class="folder-page-section">
+                <Motion
+                  :ref="(node) => setFolderPageRef(node, pageNumber)"
+                  layout
+                  class="folder-grid"
+                  tabindex="-1"
+                  :style="folderGridStyle"
+                  :transition="layoutSpring"
+                >
+                  <DesktopIcon
+                    v-for="(child, index) in getVisibleFolderPage(page)"
+                    :key="child.id"
+                    :item="child"
+                    :source="{ type: 'folder', folderId: renderedFolder.id, index, pageIndex: pageNumber, slotIndex: index }"
+                    :pending="false"
+                    :dragging="dragMeta && dragMeta.item.id === child.id"
+                    :editing="isEditMode"
+                    :textless="isTextlessMode"
+                    :removable="child.type === 'app'"
+                    :selected="isIconSelected('folder', child.id, pageNumber, renderedFolder.id)"
+                    :opening="isIconOpening('folder', child.id, pageNumber, renderedFolder.id)"
+                    compact
+                    @pointerdown-icon="beginDrag"
+                    @open-app="openApp"
+                    @remove-app="removeAppById"
+                  />
+                </Motion>
+              </section>
+            </Motion>
+          </div>
+
+          <button
+            class="folder-page-zone folder-page-zone-right"
+            type="button"
+            :disabled="folderPageIndex >= folderPages.length - 1"
+            aria-label="文件夹下一页"
+            @pointerdown.stop
+            @click="turnFolderPage(1)"
+          >
+            <ChevronRightIcon class="button-icon" />
+          </button>
+        </div>
+
+        <footer v-if="folderPages.length > 1" class="folder-page-dots">
+          <button
+            v-for="index in folderPages.length"
+            :key="index"
+            type="button"
+            :class="cx('folder-page-dot', index - 1 === folderPageIndex && 'folder-page-dot-active')"
+            :aria-label="`切换到文件夹第 ${index} 页`"
+            @pointerdown.stop
+            @click="commitFolderPageIndex(index - 1)"
+          />
+        </footer>
+        </Motion>
+      </Motion>
+    </div>
+
+    <Motion
+      v-if="launchGhost"
+      key="app-launch-ghost"
+      class="app-launch-ghost"
+      :initial="{ opacity: 1, scale: 1 }"
+      :animate="{ opacity: 0, scale: 1.92 }"
+      :transition="appLaunchGhostTransition"
+      :style="launchGhostStyle"
+    >
+      <div class="app-launch-ghost-box">
+        <span class="app-launch-ghost-emoji">{{ launchGhost.app.emoji }}</span>
+      </div>
+    </Motion>
+
+    <Motion
+      v-if="dragMeta"
+      key="drag-preview"
+      ref="dragPreviewRef"
+      class="drag-preview"
+      :initial="{ opacity: 0 }"
+      :animate="{ opacity: 1 }"
+      :transition="dragPreviewSpring"
+    >
+      <div class="drag-preview-box">
+        <div v-if="dragMeta.item.type === 'folder'" class="drag-folder-thumb">
+          <div
+            v-for="(child, index) in folderPreviewSlots(dragMeta.item)"
+            :key="child ? child.id : `drag-folder-empty-${index}`"
+            :class="cx('drag-folder-child', !child && 'folder-child-empty')"
+          >
+            <span v-if="child">{{ child.emoji }}</span>
+          </div>
+        </div>
+        <span v-else class="drag-preview-emoji">{{ dragMeta.item.emoji }}</span>
+      </div>
+      <div v-if="!isTextlessMode" class="drag-preview-name">{{ dragMeta.item.name }}</div>
+    </Motion>
+  </div>
+</template>
+
+<script setup>
+import { Motion } from "motion-v";
+import DesktopIcon from "./components/DesktopIcon.js";
+import { ChevronLeftIcon, ChevronRightIcon, SearchIcon } from "./components/Icons.js";
+import { useLaunchpadController } from "./composables/useLaunchpadController.js";
+import "./styles/launchpad.css";
+
+const {
+  rootRef,
+  cx,
+  isTextlessMode,
+  isDesktopOpen,
+  isHomeInteractionDisabled,
+  isAppLaunching,
+  isEditMode,
+  handleLaunchpadWheel,
+  shellRef,
+  homeShellInitial,
+  homeShellAnimate,
+  homeShellTransition,
+  homeShellStyle,
+  headerRef,
+  draftRows,
+  draftCols,
+  draftFolderRows,
+  draftFolderCols,
+  dragMeta,
+  applyGridConfig,
+  searchRef,
+  isSearchMode,
+  searchInputRef,
+  searchQuery,
+  handleSearchInput,
+  keyboardFocusArea,
+  clearSearch,
+  searchSummaryRef,
+  desktopMainRef,
+  handleDesktopSurfacePointerDown,
+  activePageIndex,
+  activePages,
+  commitActivePageIndex,
+  goNextActivePage,
+  desktopTrackMotionKey,
+  activeDesktopTrackAnimate,
+  activeDesktopTrackTransition,
+  getDesktopGridProjectionKey,
+  setPageRef,
+  desktopLayoutEnabled,
+  getActivePageGridStyle,
+  pageGridMeasureStyle,
+  getVisibleDesktopPage,
+  pendingTargetId,
+  folderPageSize,
+  isIconSelected,
+  isIconOpening,
+  beginDrag,
+  openApp,
+  removeAppById,
+  layoutSpring,
+  pageDotsRef,
+  renderedFolder,
+  isFolderClosing,
+  isFolderAppLaunchClosing,
+  handleFolderOverlayPointerDown,
+  folderPanelRef,
+  folderPanelInitial,
+  folderPanelAnimate,
+  panelSpring,
+  folderPanelStyle,
+  folderContentInitial,
+  folderContentAnimate,
+  folderContentTransition,
+  renameFolder,
+  folderItemCount,
+  folderRows,
+  folderCols,
+  folderPageIndex,
+  turnFolderPage,
+  folderPages,
+  folderTrackAnimate,
+  desktopTrackTransition,
+  setFolderPageRef,
+  folderGridStyle,
+  getVisibleFolderPage,
+  commitFolderPageIndex,
+  launchGhost,
+  appLaunchGhostTransition,
+  launchGhostStyle,
+  dragPreviewRef,
+  dragPreviewSpring,
+  folderPreviewSlots,
+} = useLaunchpadController();
+</script>
