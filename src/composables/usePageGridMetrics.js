@@ -1,0 +1,98 @@
+import { computed, nextTick, ref } from "vue";
+
+function readCssPx(value) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function getDomRefElement(node) {
+  if (!node) return null;
+  return node.$el || node;
+}
+
+export function getElementFromRef(nodeRef) {
+  if (nodeRef && typeof nodeRef === "object" && "value" in nodeRef) return getDomRefElement(nodeRef.value);
+  return getDomRefElement(nodeRef);
+}
+
+function getElementHeight(nodeRef) {
+  const element = getElementFromRef(nodeRef);
+  return element ? element.getBoundingClientRect().height : 0;
+}
+
+function getVerticalPadding(element) {
+  if (!element || typeof window === "undefined") return 0;
+  const styles = window.getComputedStyle(element);
+  return readCssPx(styles.paddingTop) + readCssPx(styles.paddingBottom);
+}
+
+function getVerticalMargin(element) {
+  if (!element || typeof window === "undefined") return 0;
+  const styles = window.getComputedStyle(element);
+  return readCssPx(styles.marginTop) + readCssPx(styles.marginBottom);
+}
+
+export function usePageGridMetrics(options) {
+  const {
+    desktopMainRef,
+    getVisibleDesktopPage,
+    gridCols,
+    headerRef,
+    isSearchMode,
+    pageDotsRef,
+    pageGridStyle,
+    rootRef,
+    searchRef,
+    searchSummaryRef,
+  } = options;
+
+  const pageGridHeight = ref(0);
+  const pageGridMeasureStyle = computed(() =>
+    pageGridHeight.value > 0
+      ? { height: `${pageGridHeight.value}px`, minHeight: `${pageGridHeight.value}px` }
+      : {}
+  );
+
+  function updatePageGridMetrics() {
+    if (typeof window === "undefined") return;
+    const root = getElementFromRef(rootRef);
+    const main = getElementFromRef(desktopMainRef);
+    const rootPadding = getVerticalPadding(root);
+    const mainPadding = getVerticalPadding(main);
+    const headerHeight = getElementHeight(headerRef);
+    const searchHeight = getElementHeight(searchRef);
+    const summaryElement = getElementFromRef(searchSummaryRef);
+    const summaryHeight = summaryElement ? summaryElement.getBoundingClientRect().height + getVerticalMargin(summaryElement) : 0;
+    const dotsHeight = getElementHeight(pageDotsRef);
+    const chromeHeight = rootPadding + headerHeight + searchHeight + summaryHeight + dotsHeight + mainPadding;
+    const nextHeight = Math.max(280, Math.floor(window.innerHeight - chromeHeight));
+    pageGridHeight.value = nextHeight;
+  }
+
+  function schedulePageGridMetrics() {
+    nextTick(updatePageGridMetrics);
+  }
+
+  function getActivePageGridStyle(page) {
+    if (!isSearchMode.value) return pageGridStyle.value;
+    const visibleCount = getVisibleDesktopPage(page).length;
+    if (visibleCount > 0 && visibleCount < gridCols.value) {
+      return {
+        ...pageGridStyle.value,
+        gridTemplateColumns: `repeat(${visibleCount}, minmax(82px, 108px))`,
+        justifyContent: "center",
+        columnGap: "30px",
+        rowGap: "16px",
+      };
+    }
+    return pageGridStyle.value;
+  }
+
+  return {
+    getActivePageGridStyle,
+    pageGridHeight,
+    pageGridMeasureStyle,
+    schedulePageGridMetrics,
+    updatePageGridMetrics,
+  };
+}
