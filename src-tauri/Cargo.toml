@@ -5,6 +5,7 @@ version = "0.1.0"
 description = "Windows LaunchPad desktop shell"
 authors = ["Vibe Project"]
 edition = "2021"
+default-run = "launchpad"
 
 [lib]
 name = "launchpad_lib"
