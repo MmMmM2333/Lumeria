@@ -1,3 +1,9 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 html,
 body,
 #app {
@@ -18,7 +24,7 @@ body {
   --configured-app-icon-size: 72px;
   --app-icon-size: var(--configured-app-icon-size);
   --app-icon-radius: calc(var(--app-icon-size) * 0.371428);
-  --app-icon-image-size: calc(var(--app-icon-size) * 0.771428);
+  --app-icon-image-size: calc(var(--app-icon-size) * 1);
   --app-icon-emoji-size: calc(var(--app-icon-size) * 0.542857);
   --app-icon-cell-height: calc(var(--app-icon-size) + 34px);
   --textless-icon-cell-height: calc(var(--app-icon-size) + 12px);
@@ -38,7 +44,6 @@ body {
   overflow: hidden;
   color: white;
   padding: 20px;
-  box-sizing: border-box;
   background: transparent;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -143,7 +148,6 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: #1c2028;
   box-shadow: 0 32px 90px rgba(0, 0, 0, 0.36);
-  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -276,7 +280,6 @@ body {
   outline: none;
   color: white;
   background: rgba(0, 0, 0, 0.18);
-  box-sizing: border-box;
 }
 
 .settings-number-control {
@@ -454,7 +457,6 @@ body {
   outline: none;
   color: white;
   background: rgba(0, 0, 0, 0.2);
-  box-sizing: border-box;
 }
 
 .settings-list-actions {
@@ -601,7 +603,6 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: #1c2028;
   box-shadow: 0 32px 90px rgba(0, 0, 0, 0.42);
-  box-sizing: border-box;
 }
 
 .warning-dialog-icon {
@@ -731,7 +732,6 @@ body {
   height: 100%;
   overflow: hidden;
   padding: 0 56px;
-  box-sizing: border-box;
 }
 
 .desktop-track-clip {
@@ -755,7 +755,6 @@ body {
   flex: 0 0 100%;
   display: flex;
   padding: 0 16px;
-  box-sizing: border-box;
   overflow: visible;
   outline: none;
 }
@@ -772,9 +771,6 @@ body {
   padding: 34px 24px 24px;
   overflow: visible;
   border-radius: 38px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.08);
-  box-sizing: border-box;
   outline: none;
 }
 
@@ -1058,11 +1054,6 @@ body {
   height: var(--app-icon-size);
   flex-shrink: 0;
   overflow: visible;
-  border-radius: var(--app-icon-radius);
-  border: 1px solid rgba(255, 255, 255, 0.32);
-  background: rgba(255, 255, 255, 0.24);
-  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.16);
-  backdrop-filter: blur(20px);
   transition: transform 180ms ease;
   transform-origin: center center;
 }
@@ -1072,7 +1063,6 @@ body {
   width: var(--compact-icon-size);
   height: var(--compact-icon-size);
   border-radius: var(--compact-icon-radius);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.12);
 }
 .icon-emoji { font-size: var(--app-icon-emoji-size); line-height: 1; }
 .icon-emoji-compact { font-size: var(--compact-icon-emoji-size); }
@@ -1144,8 +1134,8 @@ body {
   box-shadow: inset 0 2px 8px rgba(255, 255, 255, 0.12);
 }
 
-.folder-thumb { width: var(--folder-thumb-size); height: var(--folder-thumb-size); padding: 6px; box-sizing: border-box; }
-.drag-folder-thumb { width: var(--drag-folder-thumb-size); height: var(--drag-folder-thumb-size); padding: 6px; }
+.folder-thumb { width: var(--folder-thumb-size); height: var(--folder-thumb-size); padding: 12.5%; border-radius: 25%; }
+.drag-folder-thumb { width: var(--drag-folder-thumb-size); height: var(--drag-folder-thumb-size); padding: 12.5%; border-radius: 25%; }
 
 .folder-child,
 .drag-folder-child {
@@ -1155,17 +1145,9 @@ body {
   min-width: 0;
   min-height: 0;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.45);
   font-size: 12px;
   line-height: 1;
 }
-
-.folder-child-empty {
-  background: rgba(255, 255, 255, 0.16);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
-}
-
-.drag-folder-child { background: rgba(255, 255, 255, 0.5); }
 
 .folder-child-image,
 .drag-folder-child-image {
@@ -1200,7 +1182,6 @@ body {
   background: rgba(255, 255, 255, 0.22);
   box-shadow: 0 40px 120px rgba(0, 0, 0, 0.42);
   backdrop-filter: blur(36px);
-  box-sizing: border-box;
   will-change: transform, opacity, border-radius;
   transform-origin: center center;
   overflow: hidden;
@@ -1299,7 +1280,6 @@ body {
   min-width: 100%;
   flex: 0 0 100%;
   padding: 0 12px;
-  box-sizing: border-box;
 }
 
 .folder-page-zone {
@@ -1337,7 +1317,6 @@ body {
   border-radius: 30px;
   border: 1px solid rgba(255, 255, 255, 0.15);
   background: rgba(0, 0, 0, 0.1);
-  box-sizing: border-box;
 }
 
 .folder-page-dots {
@@ -1423,11 +1402,6 @@ body {
   justify-content: center;
   width: var(--drag-preview-box-size);
   height: var(--drag-preview-box-size);
-  border-radius: calc(var(--app-icon-radius) + 2px);
-  border: 1px solid rgba(255, 255, 255, 0.42);
-  background: rgba(255, 255, 255, 0.28);
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.24);
-  backdrop-filter: blur(24px);
 }
 
 .drag-preview-emoji { font-size: calc(var(--app-icon-emoji-size) + 4px); line-height: 1; }
