@@ -6,12 +6,15 @@ import {
   DEFAULT_COLS,
   DEFAULT_FOLDER_COLS,
   DEFAULT_FOLDER_ROWS,
+  DEFAULT_ICON_SIZE,
   DEFAULT_ROWS,
   DESKTOP_CLOSE_DURATION,
   DESKTOP_CLOSE_SCALE,
   FOLDER_APP_LAUNCH_DURATION,
   FOLDER_CLOSE_DURATION,
   HOME_REVEAL_SETTLE_DURATION,
+  ICON_SIZE_MAX,
+  ICON_SIZE_MIN,
 } from "./launchpadConstants.js";
 import {
   appLaunchGhostTransition,
@@ -48,6 +51,8 @@ export function useLaunchpadController() {
   const draftCols = ref(DEFAULT_COLS);
   const draftFolderRows = ref(DEFAULT_FOLDER_ROWS);
   const draftFolderCols = ref(DEFAULT_FOLDER_COLS);
+  const iconSize = ref(DEFAULT_ICON_SIZE);
+  const draftIconSize = ref(DEFAULT_ICON_SIZE);
   const pageSize = computed(() => makePageSize(gridRows.value, gridCols.value));
   const folderPageSize = computed(() => makePageSize(folderRows.value, folderCols.value));
   const layoutHelpers = createLaunchpadLayoutHelpers({
@@ -100,6 +105,7 @@ export function useLaunchpadController() {
   const isEditMode = ref(false);
   const isTextlessMode = ref(false);
   const isSettingsPanelOpen = ref(false);
+  const warningDialog = shallowRef(null);
   const appManagerSelectedIds = ref([]);
   const hiddenAppIds = ref([]);
   const newAppName = ref("");
@@ -191,6 +197,9 @@ export function useLaunchpadController() {
   const isDesktopAnimatingClosed = computed(() => Boolean(!isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value));
   const shouldHideHomeShell = computed(() => Boolean((openFolderId.value && !isFolderClosing.value) || isDesktopAnimatingClosed.value));
   const isHomeInteractionDisabled = computed(() => Boolean(!isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value));
+  const rootStyle = computed(() => ({
+    "--configured-app-icon-size": `${iconSize.value}px`,
+  }));
   const homeShellInitial = { opacity: 0, scale: DESKTOP_CLOSE_SCALE, y: 0, filter: "blur(8px)" };
   const homeShellAnimate = computed(() => {
     if (isDesktopAnimatingClosed.value) return { opacity: 0, scale: DESKTOP_CLOSE_SCALE, y: 0, filter: "blur(8px)" };
@@ -375,6 +384,44 @@ export function useLaunchpadController() {
     };
   });
 
+  function clampIconSize(value) {
+    return clamp(Number(value) || DEFAULT_ICON_SIZE, ICON_SIZE_MIN, ICON_SIZE_MAX);
+  }
+
+  function changeDraftRows(delta) {
+    draftRows.value = clamp(Number(draftRows.value) + delta || DEFAULT_ROWS, 2, 8);
+  }
+
+  function changeDraftCols(delta) {
+    draftCols.value = clamp(Number(draftCols.value) + delta || DEFAULT_COLS, 3, 10);
+  }
+
+  function changeDraftFolderRows(delta) {
+    draftFolderRows.value = clamp(Number(draftFolderRows.value) + delta || DEFAULT_FOLDER_ROWS, 2, 6);
+  }
+
+  function changeDraftFolderCols(delta) {
+    draftFolderCols.value = clamp(Number(draftFolderCols.value) + delta || DEFAULT_FOLDER_COLS, 2, 8);
+  }
+
+  function changeDraftIconSize(delta) {
+    draftIconSize.value = clampIconSize(draftIconSize.value + delta);
+  }
+
+  function openWarningDialog(config) {
+    warningDialog.value = config;
+  }
+
+  function closeWarningDialog() {
+    warningDialog.value = null;
+  }
+
+  function confirmWarningDialog() {
+    const action = warningDialog.value?.onConfirm;
+    closeWarningDialog();
+    action?.();
+  }
+
   function fallbackAppGlyph(name) {
     return String(name || "A").trim().charAt(0).toUpperCase() || "A";
   }
@@ -426,15 +473,18 @@ export function useLaunchpadController() {
     const cols = clamp(Number(settings.gridCols) || DEFAULT_COLS, 3, 10);
     const nextFolderRows = clamp(Number(settings.folderRows) || DEFAULT_FOLDER_ROWS, 2, 6);
     const nextFolderCols = clamp(Number(settings.folderCols) || DEFAULT_FOLDER_COLS, 2, 8);
+    const nextIconSize = clampIconSize(settings.iconSize);
 
     gridRows.value = rows;
     gridCols.value = cols;
     folderRows.value = nextFolderRows;
     folderCols.value = nextFolderCols;
+    iconSize.value = nextIconSize;
     draftRows.value = rows;
     draftCols.value = cols;
     draftFolderRows.value = nextFolderRows;
     draftFolderCols.value = nextFolderCols;
+    draftIconSize.value = nextIconSize;
     isTextlessMode.value = Boolean(settings.textless);
     hiddenAppIds.value = Array.isArray(settings.hiddenAppIds) ? settings.hiddenAppIds.map(String) : [];
   }
@@ -515,6 +565,7 @@ export function useLaunchpadController() {
         gridCols: gridCols.value,
         folderRows: folderRows.value,
         folderCols: folderCols.value,
+        iconSize: iconSize.value,
         textless: isTextlessMode.value,
         hiddenAppIds: hiddenAppIds.value,
       },
@@ -740,10 +791,18 @@ export function useLaunchpadController() {
   }
 
   function confirmForceFillAllPages() {
-    const confirmed =
-      typeof window === "undefined" ||
-      window.confirm("强制填满页面会按当前顺序重新压实所有桌面页面，当前分页布局会被破坏。要继续吗？");
-    if (confirmed) forceFillAllPages();
+    if (typeof window === "undefined") {
+      forceFillAllPages();
+      return;
+    }
+
+    openWarningDialog({
+      title: "强制填满页面？",
+      message: "这会按当前顺序重新压实所有桌面页面，并破坏当前分页布局。",
+      confirmText: "强制填满",
+      cancelText: "取消",
+      onConfirm: forceFillAllPages,
+    });
   }
 
   async function rescanManagedApps() {
@@ -836,10 +895,12 @@ export function useLaunchpadController() {
     gridCols.value = cols;
     folderRows.value = nextFolderRowCount;
     folderCols.value = nextFolderColumnCount;
+    iconSize.value = clampIconSize(draftIconSize.value);
     draftRows.value = rows;
     draftCols.value = cols;
     draftFolderRows.value = nextFolderRowCount;
     draftFolderCols.value = nextFolderColumnCount;
+    draftIconSize.value = iconSize.value;
     commitPages(compacted);
     commitPageIndex(pageIndex.value);
     commitSearchPageIndex(searchPageIndex.value);
@@ -858,6 +919,7 @@ export function useLaunchpadController() {
 
   function openSettingsPanel() {
     if (isDragActive()) return;
+    draftIconSize.value = iconSize.value;
     isSettingsPanelOpen.value = true;
   }
 
@@ -1306,9 +1368,9 @@ export function useLaunchpadController() {
     if (!isDragActive()) commitOpenFolder(null);
   }
 
-  watch([gridRows, gridCols, folderRows, folderCols, isTextlessMode, isSearchMode], schedulePageGridMetrics, { flush: "post" });
+  watch([gridRows, gridCols, folderRows, folderCols, iconSize, isTextlessMode, isSearchMode], schedulePageGridMetrics, { flush: "post" });
   watch(activePages, schedulePageGridMetrics, { flush: "post" });
-  watch([pages, gridRows, gridCols, folderRows, folderCols, isTextlessMode, hiddenAppIds], scheduleNativeLayoutSave, { flush: "post" });
+  watch([pages, gridRows, gridCols, folderRows, folderCols, iconSize, isTextlessMode, hiddenAppIds], scheduleNativeLayoutSave, { flush: "post" });
   watch(managedApps, syncSelectedManagedApps, { flush: "post" });
 
   onMounted(() => {
@@ -1382,6 +1444,7 @@ export function useLaunchpadController() {
 
   return {
     rootRef,
+    rootStyle,
     cx,
     isTextlessMode,
     isDesktopOpen,
@@ -1400,6 +1463,12 @@ export function useLaunchpadController() {
     draftCols,
     draftFolderRows,
     draftFolderCols,
+    draftIconSize,
+    changeDraftRows,
+    changeDraftCols,
+    changeDraftFolderRows,
+    changeDraftFolderCols,
+    changeDraftIconSize,
     managedApps,
     appManagerSelectedIds,
     selectedManagedAppCount,
@@ -1412,6 +1481,9 @@ export function useLaunchpadController() {
     selectAllManagedApps,
     clearManagedAppSelection,
     confirmForceFillAllPages,
+    warningDialog,
+    closeWarningDialog,
+    confirmWarningDialog,
     rescanManagedApps,
     addManagedApp,
     deleteSelectedManagedApps,

@@ -2,6 +2,7 @@
   <div
     ref="rootRef"
     :class="cx('launchpad-root', isTextlessMode && 'launchpad-root-textless', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching')"
+    :style="rootStyle"
     @wheel="handleLaunchpadWheel"
   >
     <div class="launchpad-bg" />
@@ -136,22 +137,57 @@
               <h3>显示偏好</h3>
             </div>
             <div class="settings-grid">
-              <label class="settings-field">
+              <div class="settings-field">
                 <span>桌面行数</span>
-                <input v-model.number="draftRows" min="2" max="8" type="number" />
-              </label>
-              <label class="settings-field">
+                <div class="settings-number-control">
+                  <input v-model.number="draftRows" min="2" max="8" type="number" aria-label="桌面行数" />
+                  <div class="settings-number-buttons">
+                    <button type="button" aria-label="增加桌面行数" @click.prevent="changeDraftRows(1)"><ChevronUpIcon class="settings-number-icon" /></button>
+                    <button type="button" aria-label="减少桌面行数" @click.prevent="changeDraftRows(-1)"><ChevronDownIcon class="settings-number-icon" /></button>
+                  </div>
+                </div>
+              </div>
+              <div class="settings-field">
                 <span>桌面列数</span>
-                <input v-model.number="draftCols" min="3" max="10" type="number" />
-              </label>
-              <label class="settings-field">
+                <div class="settings-number-control">
+                  <input v-model.number="draftCols" min="3" max="10" type="number" aria-label="桌面列数" />
+                  <div class="settings-number-buttons">
+                    <button type="button" aria-label="增加桌面列数" @click.prevent="changeDraftCols(1)"><ChevronUpIcon class="settings-number-icon" /></button>
+                    <button type="button" aria-label="减少桌面列数" @click.prevent="changeDraftCols(-1)"><ChevronDownIcon class="settings-number-icon" /></button>
+                  </div>
+                </div>
+              </div>
+              <div class="settings-field">
                 <span>文件夹行数</span>
-                <input v-model.number="draftFolderRows" min="2" max="6" type="number" />
-              </label>
-              <label class="settings-field">
+                <div class="settings-number-control">
+                  <input v-model.number="draftFolderRows" min="2" max="6" type="number" aria-label="文件夹行数" />
+                  <div class="settings-number-buttons">
+                    <button type="button" aria-label="增加文件夹行数" @click.prevent="changeDraftFolderRows(1)"><ChevronUpIcon class="settings-number-icon" /></button>
+                    <button type="button" aria-label="减少文件夹行数" @click.prevent="changeDraftFolderRows(-1)"><ChevronDownIcon class="settings-number-icon" /></button>
+                  </div>
+                </div>
+              </div>
+              <div class="settings-field">
                 <span>文件夹列数</span>
-                <input v-model.number="draftFolderCols" min="2" max="8" type="number" />
-              </label>
+                <div class="settings-number-control">
+                  <input v-model.number="draftFolderCols" min="2" max="8" type="number" aria-label="文件夹列数" />
+                  <div class="settings-number-buttons">
+                    <button type="button" aria-label="增加文件夹列数" @click.prevent="changeDraftFolderCols(1)"><ChevronUpIcon class="settings-number-icon" /></button>
+                    <button type="button" aria-label="减少文件夹列数" @click.prevent="changeDraftFolderCols(-1)"><ChevronDownIcon class="settings-number-icon" /></button>
+                  </div>
+                </div>
+              </div>
+              <div class="settings-field">
+                <span>图标大小</span>
+                <div class="settings-number-control settings-number-control-wide">
+                  <input v-model.number="draftIconSize" min="48" max="96" type="number" aria-label="图标大小" />
+                  <span class="settings-number-unit">px</span>
+                  <div class="settings-number-buttons">
+                    <button type="button" aria-label="增大图标" @click.prevent="changeDraftIconSize(1)"><ChevronUpIcon class="settings-number-icon" /></button>
+                    <button type="button" aria-label="缩小图标" @click.prevent="changeDraftIconSize(-1)"><ChevronDownIcon class="settings-number-icon" /></button>
+                  </div>
+                </div>
+              </div>
               <label class="settings-toggle">
                 <span>无字模式</span>
                 <input v-model="isTextlessMode" type="checkbox" />
@@ -214,6 +250,22 @@
         <footer class="settings-actions">
           <button class="settings-secondary-button" type="button" @click="closeSettingsPanel">取消</button>
           <button class="settings-primary-button" type="button" :disabled="!!dragMeta" @click="applySettingsConfig">应用</button>
+        </footer>
+      </section>
+    </div>
+
+    <div v-if="warningDialog" class="warning-dialog-overlay" @wheel.stop @pointerdown.self="closeWarningDialog">
+      <section class="warning-dialog" role="alertdialog" aria-modal="true" :aria-label="warningDialog.title">
+        <div class="warning-dialog-icon">
+          <AlertTriangleIcon class="warning-dialog-svg" />
+        </div>
+        <div class="warning-dialog-content">
+          <h2>{{ warningDialog.title }}</h2>
+          <p>{{ warningDialog.message }}</p>
+        </div>
+        <footer class="warning-dialog-actions">
+          <button class="settings-secondary-button" type="button" @click="closeWarningDialog">{{ warningDialog.cancelText }}</button>
+          <button class="settings-warning-button" type="button" @click="confirmWarningDialog">{{ warningDialog.confirmText }}</button>
         </footer>
       </section>
     </div>
@@ -375,12 +427,13 @@
 <script setup>
 import { Motion } from "motion-v";
 import DesktopIcon from "./components/DesktopIcon.js";
-import { ChevronLeftIcon, ChevronRightIcon, SearchIcon, SettingsIcon } from "./components/Icons.js";
+import { AlertTriangleIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, SearchIcon, SettingsIcon } from "./components/Icons.js";
 import { useLaunchpadController } from "./composables/useLaunchpadController.js";
 import "./styles/launchpad.css";
 
 const {
   rootRef,
+  rootStyle,
   cx,
   isTextlessMode,
   isDesktopOpen,
@@ -399,6 +452,12 @@ const {
   draftCols,
   draftFolderRows,
   draftFolderCols,
+  draftIconSize,
+  changeDraftRows,
+  changeDraftCols,
+  changeDraftFolderRows,
+  changeDraftFolderCols,
+  changeDraftIconSize,
   managedApps,
   appManagerSelectedIds,
   selectedManagedAppCount,
@@ -411,6 +470,9 @@ const {
   selectAllManagedApps,
   clearManagedAppSelection,
   confirmForceFillAllPages,
+  warningDialog,
+  closeWarningDialog,
+  confirmWarningDialog,
   rescanManagedApps,
   addManagedApp,
   deleteSelectedManagedApps,
