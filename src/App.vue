@@ -120,37 +120,95 @@
       </footer>
     </Motion>
 
-    <div v-if="isSettingsPanelOpen" class="settings-overlay" @pointerdown.self="closeSettingsPanel">
+    <div v-if="isSettingsPanelOpen" class="settings-overlay" @wheel.stop @pointerdown.self="closeSettingsPanel">
       <section class="settings-panel" aria-label="设置">
         <header class="settings-panel-header">
           <div>
             <h2>设置</h2>
-            <p>LaunchPad 显示偏好</p>
+            <p>显示偏好与应用管理</p>
           </div>
           <button class="settings-close-button" type="button" aria-label="关闭设置" @click="closeSettingsPanel">×</button>
         </header>
 
-        <div class="settings-grid">
-          <label class="settings-field">
-            <span>桌面行数</span>
-            <input v-model.number="draftRows" min="2" max="8" type="number" />
-          </label>
-          <label class="settings-field">
-            <span>桌面列数</span>
-            <input v-model.number="draftCols" min="3" max="10" type="number" />
-          </label>
-          <label class="settings-field">
-            <span>文件夹行数</span>
-            <input v-model.number="draftFolderRows" min="2" max="6" type="number" />
-          </label>
-          <label class="settings-field">
-            <span>文件夹列数</span>
-            <input v-model.number="draftFolderCols" min="2" max="8" type="number" />
-          </label>
-          <label class="settings-toggle">
-            <span>无字模式</span>
-            <input v-model="isTextlessMode" type="checkbox" />
-          </label>
+        <div class="settings-panel-body">
+          <section class="settings-section" aria-label="显示偏好">
+            <div class="settings-section-header">
+              <h3>显示偏好</h3>
+            </div>
+            <div class="settings-grid">
+              <label class="settings-field">
+                <span>桌面行数</span>
+                <input v-model.number="draftRows" min="2" max="8" type="number" />
+              </label>
+              <label class="settings-field">
+                <span>桌面列数</span>
+                <input v-model.number="draftCols" min="3" max="10" type="number" />
+              </label>
+              <label class="settings-field">
+                <span>文件夹行数</span>
+                <input v-model.number="draftFolderRows" min="2" max="6" type="number" />
+              </label>
+              <label class="settings-field">
+                <span>文件夹列数</span>
+                <input v-model.number="draftFolderCols" min="2" max="8" type="number" />
+              </label>
+              <label class="settings-toggle">
+                <span>无字模式</span>
+                <input v-model="isTextlessMode" type="checkbox" />
+              </label>
+            </div>
+          </section>
+
+          <section class="settings-section" aria-label="页面整理">
+            <div class="settings-section-header">
+              <div>
+                <h3>页面整理</h3>
+                <p>强制填满页面会重新压实桌面项目，并破坏当前分页布局。</p>
+              </div>
+              <button class="settings-warning-button" type="button" :disabled="!!dragMeta" @click="confirmForceFillAllPages">强制填满</button>
+            </div>
+          </section>
+
+          <section class="settings-section" aria-label="应用管理">
+            <div class="settings-section-header">
+              <div>
+                <h3>应用管理</h3>
+                <p>{{ managedApps.length }} 个应用 · 已选择 {{ selectedManagedAppCount }} 个</p>
+              </div>
+              <div class="settings-inline-actions">
+                <button class="settings-secondary-button" type="button" :disabled="!canScanManagedApps || isScanningApps" @click="rescanManagedApps">
+                  {{ isScanningApps ? "扫描中" : "扫描应用" }}
+                </button>
+                <button class="settings-danger-button" type="button" :disabled="selectedManagedAppCount === 0" @click="deleteSelectedManagedApps">批量删除</button>
+              </div>
+            </div>
+
+            <div class="settings-add-app-row">
+              <input v-model="newAppName" type="text" maxlength="64" placeholder="应用名称" aria-label="应用名称" />
+              <input v-model="newAppTarget" type="text" placeholder="启动路径或 URL" aria-label="启动路径或 URL" />
+              <button class="settings-primary-button" type="button" :disabled="!canAddManagedApp" @click="addManagedApp">新增</button>
+            </div>
+
+            <div class="settings-list-actions">
+              <button class="settings-link-button" type="button" @click="selectAllManagedApps">全选</button>
+              <button class="settings-link-button" type="button" @click="clearManagedAppSelection">清空选择</button>
+            </div>
+
+            <div class="app-manager-list" role="list" aria-label="所有应用">
+              <label v-for="app in managedApps" :key="app.id" class="app-manager-item" role="listitem">
+                <input
+                  type="checkbox"
+                  :checked="appManagerSelectedIds.includes(app.id)"
+                  @change="toggleManagedAppSelection(app.id, $event.target.checked)"
+                />
+                <span class="app-manager-icon">
+                  <img v-if="getIconSource(app)" :src="getIconSource(app)" alt="" draggable="false" />
+                  <span v-else>{{ app.emoji }}</span>
+                </span>
+                <span class="app-manager-name">{{ app.name }}</span>
+              </label>
+            </div>
+          </section>
         </div>
 
         <footer class="settings-actions">
@@ -341,6 +399,21 @@ const {
   draftCols,
   draftFolderRows,
   draftFolderCols,
+  managedApps,
+  appManagerSelectedIds,
+  selectedManagedAppCount,
+  newAppName,
+  newAppTarget,
+  isScanningApps,
+  canAddManagedApp,
+  canScanManagedApps,
+  toggleManagedAppSelection,
+  selectAllManagedApps,
+  clearManagedAppSelection,
+  confirmForceFillAllPages,
+  rescanManagedApps,
+  addManagedApp,
+  deleteSelectedManagedApps,
   dragMeta,
   applySettingsConfig,
   openSettingsPanel,

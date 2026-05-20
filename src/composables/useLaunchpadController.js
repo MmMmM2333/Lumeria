@@ -62,6 +62,7 @@ export function useLaunchpadController() {
     getVisibleDesktopPage,
     getVisibleFolderPage,
     getVisibleFolderPages,
+    flattenTopLevelPages,
     makeId,
     makeApp,
     cloneItem,
@@ -99,6 +100,11 @@ export function useLaunchpadController() {
   const isEditMode = ref(false);
   const isTextlessMode = ref(false);
   const isSettingsPanelOpen = ref(false);
+  const appManagerSelectedIds = ref([]);
+  const hiddenAppIds = ref([]);
+  const newAppName = ref("");
+  const newAppTarget = ref("");
+  const isScanningApps = ref(false);
   const keyboardFocusArea = ref("desktop");
   const launchGhost = shallowRef(null);
   const openFolderId = ref(null);
@@ -166,6 +172,10 @@ export function useLaunchpadController() {
   const searchPages = computed(() => chunkIntoPages(searchApps.value, pageSize.value));
   const activePages = computed(() => (isSearchMode.value ? searchPages.value : pages.value));
   const activePageIndex = computed(() => (isSearchMode.value ? searchPageIndex.value : pageIndex.value));
+  const managedApps = computed(() => collectAppsFromPages(pages.value).sort((left, right) => left.name.localeCompare(right.name)));
+  const selectedManagedAppCount = computed(() => appManagerSelectedIds.value.length);
+  const canAddManagedApp = computed(() => newAppName.value.trim().length > 0 && newAppTarget.value.trim().length > 0);
+  const canScanManagedApps = computed(() => shouldUseNativeCatalog());
 
   const desktopTrackAnimate = computed(() => ({ x: `-${pageIndex.value * 100}%` }));
   const searchTrackAnimate = computed(() => ({ x: `-${searchPageIndex.value * 100}%` }));
@@ -369,6 +379,15 @@ export function useLaunchpadController() {
     return String(name || "A").trim().charAt(0).toUpperCase() || "A";
   }
 
+  function makeLaunchTarget(target) {
+    const value = String(target || "").trim();
+    if (!value) return null;
+    return {
+      kind: /^https?:\/\//i.test(value) ? "url" : "executable",
+      path: value,
+    };
+  }
+
   function normalizeNativeApp(app, index) {
     const name = String(app?.name || "Application").trim() || "Application";
     return {
@@ -376,6 +395,7 @@ export function useLaunchpadController() {
       id: String(app?.id || `native-app-${index}`),
       type: "app",
       name,
+      launchTarget: app?.launchTarget || app?.launch_target || null,
       iconDataUrl: app?.iconDataUrl || null,
       emoji: app?.emoji || fallbackAppGlyph(name),
     };
@@ -385,6 +405,19 @@ export function useLaunchpadController() {
     const next = cloneItem(app);
     if (savedItem?.customIconDataUrl) next.customIconDataUrl = savedItem.customIconDataUrl;
     return next;
+  }
+
+  function normalizeSavedCustomApp(item) {
+    if (!item || item.type !== "app" || !item.launchTarget) return null;
+    const name = String(item.name || "Application").trim() || "Application";
+    return {
+      ...item,
+      id: String(item.id || makeId("custom-app")),
+      type: "app",
+      name,
+      emoji: item.emoji || fallbackAppGlyph(name),
+      launchTarget: item.launchTarget,
+    };
   }
 
   function applyLayoutSettings(settings) {
@@ -403,6 +436,7 @@ export function useLaunchpadController() {
     draftFolderRows.value = nextFolderRows;
     draftFolderCols.value = nextFolderCols;
     isTextlessMode.value = Boolean(settings.textless);
+    hiddenAppIds.value = Array.isArray(settings.hiddenAppIds) ? settings.hiddenAppIds.map(String) : [];
   }
 
   function mergeFolderWithCatalog(folder, catalog, usedAppIds) {
@@ -411,7 +445,7 @@ export function useLaunchpadController() {
       .map((page) =>
         (page || [])
           .map((child) => {
-            const app = child?.id ? catalog.get(child.id) : null;
+            const app = child?.id ? catalog.get(child.id) || normalizeSavedCustomApp(child) : null;
             if (!app || usedAppIds.has(app.id)) return null;
             usedAppIds.add(app.id);
             return mergeAppWithSavedIcon(app, child);
@@ -460,7 +494,7 @@ export function useLaunchpadController() {
       (page || [])
         .map((item) => {
           if (item?.type === "folder") return mergeFolderWithCatalog(item, catalog, usedAppIds);
-          const app = item?.id ? catalog.get(item.id) : null;
+          const app = item?.id ? catalog.get(item.id) || normalizeSavedCustomApp(item) : null;
           if (!app || usedAppIds.has(app.id)) return null;
           usedAppIds.add(app.id);
           return mergeAppWithSavedIcon(app, item);
@@ -468,7 +502,8 @@ export function useLaunchpadController() {
         .filter(Boolean)
     );
     const newApps = apps.filter((app) => !usedAppIds.has(app.id));
-    return fitPagesToGrid(appendAppsToPages(mergedPages, newApps));
+    const hidden = new Set(hiddenAppIds.value);
+    return fitPagesToGrid(appendAppsToPages(mergedPages, newApps.filter((app) => !hidden.has(app.id))));
   }
 
   function createLayoutSnapshot() {
@@ -481,6 +516,7 @@ export function useLaunchpadController() {
         folderRows: folderRows.value,
         folderCols: folderCols.value,
         textless: isTextlessMode.value,
+        hiddenAppIds: hiddenAppIds.value,
       },
     };
   }
@@ -509,6 +545,7 @@ export function useLaunchpadController() {
       emoji: item.emoji,
     };
     if (item.customIconDataUrl) clean.customIconDataUrl = item.customIconDataUrl;
+    if (item.launchTarget) clean.launchTarget = item.launchTarget;
     return clean;
   }
 
@@ -536,7 +573,7 @@ export function useLaunchpadController() {
     try {
       const [nativeApps, savedLayout] = await Promise.all([scanApps(), loadLayout()]);
       const apps = (nativeApps || []).map(normalizeNativeApp);
-      if (!apps.length) {
+      if (!apps.length && !savedLayout) {
         nativeLayoutReady = true;
         return;
       }
@@ -669,6 +706,104 @@ export function useLaunchpadController() {
 
   function resetAppCustomIcon(appId) {
     updateAppCustomIcon(appId, null);
+  }
+
+  function syncSelectedManagedApps() {
+    const validIds = new Set(managedApps.value.map((app) => app.id));
+    appManagerSelectedIds.value = appManagerSelectedIds.value.filter((id) => validIds.has(id));
+  }
+
+  function toggleManagedAppSelection(appId, checked) {
+    if (!appId) return;
+    const selected = new Set(appManagerSelectedIds.value);
+    if (checked) selected.add(appId);
+    else selected.delete(appId);
+    appManagerSelectedIds.value = Array.from(selected);
+  }
+
+  function selectAllManagedApps() {
+    appManagerSelectedIds.value = managedApps.value.map((app) => app.id);
+  }
+
+  function clearManagedAppSelection() {
+    appManagerSelectedIds.value = [];
+  }
+
+  function forceFillAllPages() {
+    if (isDragActive()) return;
+    const items = flattenTopLevelPages(pages.value);
+    const filled = chunkIntoPages(items, pageSize.value);
+    commitPages(compactPages(filled, { folderPageSize: folderPageSize.value }));
+    commitPageIndex(0);
+    commitSearchPageIndex(0);
+    schedulePageGridMetrics();
+  }
+
+  function confirmForceFillAllPages() {
+    const confirmed =
+      typeof window === "undefined" ||
+      window.confirm("强制填满页面会按当前顺序重新压实所有桌面页面，当前分页布局会被破坏。要继续吗？");
+    if (confirmed) forceFillAllPages();
+  }
+
+  async function rescanManagedApps() {
+    if (!shouldUseNativeCatalog() || isScanningApps.value) return;
+    isScanningApps.value = true;
+    try {
+      const nativeApps = await scanApps();
+      const existingIds = new Set(collectAppsFromPages(pages.value).map((app) => app.id));
+      const missingApps = (nativeApps || [])
+        .map(normalizeNativeApp)
+        .filter((app) => !existingIds.has(app.id));
+      if (missingApps.length) {
+        const restoredIds = new Set(missingApps.map((app) => app.id));
+        hiddenAppIds.value = hiddenAppIds.value.filter((id) => !restoredIds.has(id));
+        commitPages(appendAppsToPages(pages.value, missingApps));
+        commitPageIndex(pageIndex.value);
+        commitSearchPageIndex(searchPageIndex.value);
+      }
+      syncSelectedManagedApps();
+      schedulePageGridMetrics();
+    } catch (error) {
+      console.error("Failed to scan apps", error);
+    } finally {
+      isScanningApps.value = false;
+    }
+  }
+
+  function addManagedApp() {
+    if (isDragActive()) return;
+    const name = newAppName.value.trim().slice(0, 64);
+    if (!name) return;
+    const launchTarget = makeLaunchTarget(newAppTarget.value);
+    if (!launchTarget) return;
+    const app = {
+      id: makeId("custom-app"),
+      type: "app",
+      name,
+      emoji: fallbackAppGlyph(name),
+      launchTarget,
+    };
+    commitPages(appendAppsToPages(pages.value, [app]));
+    newAppName.value = "";
+    newAppTarget.value = "";
+    commitPageIndex(pageIndex.value);
+    commitSearchPageIndex(searchPageIndex.value);
+    schedulePageGridMetrics();
+  }
+
+  function deleteSelectedManagedApps() {
+    if (isDragActive() || !appManagerSelectedIds.value.length) return;
+    const selectedIds = new Set(appManagerSelectedIds.value);
+    let next = pages.value;
+    for (const id of selectedIds) next = removeEverywhere(next, id);
+    hiddenAppIds.value = Array.from(new Set([...hiddenAppIds.value, ...selectedIds]));
+    commitPages(next);
+    clearManagedAppSelection();
+    commitPageIndex(pageIndex.value);
+    commitSearchPageIndex(searchPageIndex.value);
+    if (renderedFolder.value && openFolderId.value && !findFolder(pages.value, openFolderId.value)) commitOpenFolder(null);
+    schedulePageGridMetrics();
   }
 
   function repackPagesForGrid(nextRows, nextCols, nextFolderRows, nextFolderCols) {
@@ -1173,7 +1308,8 @@ export function useLaunchpadController() {
 
   watch([gridRows, gridCols, folderRows, folderCols, isTextlessMode, isSearchMode], schedulePageGridMetrics, { flush: "post" });
   watch(activePages, schedulePageGridMetrics, { flush: "post" });
-  watch([pages, gridRows, gridCols, folderRows, folderCols, isTextlessMode], scheduleNativeLayoutSave, { flush: "post" });
+  watch([pages, gridRows, gridCols, folderRows, folderCols, isTextlessMode, hiddenAppIds], scheduleNativeLayoutSave, { flush: "post" });
+  watch(managedApps, syncSelectedManagedApps, { flush: "post" });
 
   onMounted(() => {
     window.addEventListener("keydown", handleGlobalKeydown);
@@ -1264,6 +1400,21 @@ export function useLaunchpadController() {
     draftCols,
     draftFolderRows,
     draftFolderCols,
+    managedApps,
+    appManagerSelectedIds,
+    selectedManagedAppCount,
+    newAppName,
+    newAppTarget,
+    isScanningApps,
+    canAddManagedApp,
+    canScanManagedApps,
+    toggleManagedAppSelection,
+    selectAllManagedApps,
+    clearManagedAppSelection,
+    confirmForceFillAllPages,
+    rescanManagedApps,
+    addManagedApp,
+    deleteSelectedManagedApps,
     dragMeta,
     applyGridConfig,
     applySettingsConfig,

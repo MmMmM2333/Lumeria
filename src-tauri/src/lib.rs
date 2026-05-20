@@ -126,6 +126,7 @@ fn launch_app(app: AppHandle, app_id: String, state: State<'_, AppState>) -> Res
             let apps = scan_start_menu_apps(&icon_dir)?;
             apps.into_iter()
                 .find(|app| app.id == app_id)
+                .or_else(|| find_saved_layout_app(&app, &app_id).ok().flatten())
                 .ok_or_else(|| format!("Unknown app id: {app_id}"))?
         }
     };
@@ -135,6 +136,38 @@ fn launch_app(app: AppHandle, app_id: String, state: State<'_, AppState>) -> Res
         .path
         .ok_or_else(|| format!("App has no launch path: {}", app.name))?;
     launch_path(&path)
+}
+
+fn find_saved_layout_app(app: &AppHandle, app_id: &str) -> Result<Option<AppCatalogItem>, String> {
+    let path = layout_path(app)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let contents = fs::read_to_string(&path)
+        .map_err(|error| format!("Failed to read layout {}: {error}", path.display()))?;
+    let layout: serde_json::Value = serde_json::from_str(&contents)
+        .map_err(|error| format!("Failed to parse layout {}: {error}", path.display()))?;
+    Ok(find_app_in_layout_value(&layout, app_id))
+}
+
+fn find_app_in_layout_value(value: &serde_json::Value, app_id: &str) -> Option<AppCatalogItem> {
+    if value.get("type").and_then(serde_json::Value::as_str) == Some("app")
+        && value.get("id").and_then(serde_json::Value::as_str) == Some(app_id)
+        && value.get("launchTarget").is_some()
+    {
+        return serde_json::from_value(value.clone()).ok();
+    }
+
+    match value {
+        serde_json::Value::Array(items) => items
+            .iter()
+            .find_map(|item| find_app_in_layout_value(item, app_id)),
+        serde_json::Value::Object(map) => map
+            .values()
+            .find_map(|item| find_app_in_layout_value(item, app_id)),
+        _ => None,
+    }
 }
 
 fn layout_path(app: &AppHandle) -> Result<PathBuf, String> {
