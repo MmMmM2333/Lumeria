@@ -1,7 +1,7 @@
 import { nextTick, ref, shallowRef } from "vue";
 import {
   DESKTOP_SORT_MIN_DISTANCE,
-  FOLDER_HIT_ZONE_SCALE,
+  DRAG_INTENT_IDLE_DELAY,
   FOLDER_HOVER_DELAY,
   FOLDER_HOVER_STICKY_MARGIN,
   FOLDER_PAGE_EDGE_SIZE,
@@ -17,7 +17,6 @@ import {
   isPointInsideRect,
   makePreviewTransform,
   shouldCommitPlacementFromLast,
-  shrinkRect,
 } from "../domain/launchpadLayout.js";
 import { getDomRefElement } from "./usePageGridMetrics.js";
 
@@ -34,6 +33,7 @@ export function useLaunchpadDrag(options) {
   let pendingTimer = null;
   let pageTurnTimer = null;
   let folderPageTurnTimer = null;
+  let dragIntentTimer = null;
   let dragListenersAttached = false;
   let longPressState = null;
 
@@ -67,6 +67,11 @@ export function useLaunchpadDrag(options) {
   function clearFolderPageTurn() {
     if (folderPageTurnTimer) window.clearTimeout(folderPageTurnTimer.timer);
     folderPageTurnTimer = null;
+  }
+
+  function clearDragIntentTimer() {
+    if (dragIntentTimer) window.clearTimeout(dragIntentTimer);
+    dragIntentTimer = null;
   }
 
   function attachDragListeners() {
@@ -108,6 +113,7 @@ export function useLaunchpadDrag(options) {
   function endDrag() {
     const shouldClampFolderPage = Boolean(options.renderedFolder.value || options.openFolderId.value);
     detachDragListeners();
+    clearDragIntentTimer();
     cancelPreviewRaf();
     dragRuntime = null;
     dragMeta.value = null;
@@ -160,6 +166,20 @@ export function useLaunchpadDrag(options) {
     return { pageIndex: options.folderPageIndex.value, index: row * options.folderCols.value + col };
   }
 
+  function getDragVisualCenter(activeDrag) {
+    if (!activeDrag) return null;
+    const width = activeDrag.size?.width || 70;
+    const height = activeDrag.size?.height || 70;
+    return {
+      x: activeDrag.pointer.x - activeDrag.offset.x + width / 2,
+      y: activeDrag.pointer.y - activeDrag.offset.y + height / 2,
+    };
+  }
+
+  function getTopLevelTargetRect(node) {
+    return node?.querySelector?.(".icon-box")?.getBoundingClientRect?.() || node?.getBoundingClientRect?.() || null;
+  }
+
   function getTopLevelTargetAtPoint(clientX, clientY) {
     const elements = document.elementsFromPoint(clientX, clientY);
     for (const element of elements) {
@@ -167,14 +187,14 @@ export function useLaunchpadDrag(options) {
       const id = node?.getAttribute("data-top-item-id");
       if (!id || id === dragRuntime?.item.id) continue;
       const found = options.findTopLevel(options.pages.value, id);
-      if (found) return { item: found.item, node };
+      if (found) return { item: found.item, node, rect: getTopLevelTargetRect(node) };
     }
     return null;
   }
 
   function isInsideFolderHitZone(targetInfo, clientX, clientY) {
-    if (!targetInfo?.node) return false;
-    return isPointInsideRect(shrinkRect(targetInfo.node.getBoundingClientRect(), FOLDER_HIT_ZONE_SCALE), clientX, clientY);
+    const rect = targetInfo?.rect;
+    return rect ? isPointInsideRect(rect, clientX, clientY) : false;
   }
 
   function isInsideStickyFolderZone(clientX, clientY) {
@@ -183,8 +203,9 @@ export function useLaunchpadDrag(options) {
   }
 
   function lockFolderHoverTarget(targetInfo) {
-    if (!targetInfo?.node) return;
-    folderHover = { targetId: targetInfo.item.id, stickyRect: expandRect(targetInfo.node.getBoundingClientRect(), FOLDER_HOVER_STICKY_MARGIN) };
+    const rect = targetInfo?.rect;
+    if (!rect) return;
+    folderHover = { targetId: targetInfo.item.id, stickyRect: expandRect(rect, FOLDER_HOVER_STICKY_MARGIN) };
   }
 
   function startPendingFolderTarget(target) {
@@ -239,6 +260,51 @@ export function useLaunchpadDrag(options) {
     options.commitPages(options.removeEverywhere(options.pages.value, activeDrag.item.id));
     options.commitOpenFolder(folderId);
     options.commitFolderSession({ mode: "existing", folderId, hasEntered: false, openedAt: Date.now() });
+  }
+
+  function dropDraggedAppOnTopLevelTarget(targetInfo) {
+    const activeDrag = dragRuntime;
+    if (!activeDrag || activeDrag.item.type !== "app" || !targetInfo?.item) return false;
+
+    const target = options.findTopLevel(options.pages.value, targetInfo.item.id);
+    if (!target || target.item.id === activeDrag.item.id) return false;
+
+    if (target.item.type === "folder") {
+      const childPages = options.getFolderChildPages(target.item, options.folderPageSize.value);
+      const targetPageIndex = Math.max(0, childPages.length - 1);
+      const insertIndex = childPages[targetPageIndex]?.length || 0;
+      options.commitPages(
+        options.insertAppIntoFolder(
+          options.pages.value,
+          target.item.id,
+          activeDrag.item,
+          targetPageIndex,
+          insertIndex,
+          options.folderPageSize.value
+        )
+      );
+      dragPlacement = placementKey("folder-drop", target.item.id, targetPageIndex, insertIndex);
+      return true;
+    }
+
+    const withoutDragged = options.removeEverywhere(options.pages.value, activeDrag.item.id);
+    const latestTarget = options.findTopLevel(withoutDragged, target.item.id);
+    if (!latestTarget || latestTarget.item.type !== "app") return false;
+
+    const folderId = options.makeId("folder");
+    const originGeometry =
+      options.getTopLevelIconMotionGeometry(latestTarget.item.id, folderId) ||
+      options.getPageSlotMotionGeometry(folderId, latestTarget.pageIndex, latestTarget.index);
+    const next = options.clonePages(withoutDragged);
+    next[latestTarget.pageIndex][latestTarget.index] = options.withFolderPages(
+      { id: folderId, type: "folder", name: "新文件夹" },
+      [[options.cloneItem(latestTarget.item), options.cloneItem(activeDrag.item)]]
+    );
+
+    dragPlacement = placementKey("folder-drop", folderId);
+    options.commitPages(options.compactPages(next));
+    options.commitOpenFolder(folderId, { originGeometry });
+    return true;
   }
 
   function cancelFolderSessionAndReturnToDesktop(cancelOptions) {
@@ -445,9 +511,10 @@ export function useLaunchpadDrag(options) {
     if (!activeDrag) return;
 
     if (activeDrag.item.type === "app") {
-      const targetInfo = getTopLevelTargetAtPoint(clientX, clientY);
-      const targetStillSticky = pendingTimer && isInsideStickyFolderZone(clientX, clientY);
-      if (targetInfo && isInsideFolderHitZone(targetInfo, clientX, clientY)) {
+      const center = getDragVisualCenter(activeDrag) || { x: clientX, y: clientY };
+      const targetInfo = getTopLevelTargetAtPoint(center.x, center.y);
+      const targetStillSticky = pendingTimer && isInsideStickyFolderZone(center.x, center.y);
+      if (targetInfo && isInsideFolderHitZone(targetInfo, center.x, center.y)) {
         lockFolderHoverTarget(targetInfo);
         startPendingFolderTarget(targetInfo.item);
         return;
@@ -459,6 +526,25 @@ export function useLaunchpadDrag(options) {
     }
 
     placeDraggedItemOnDesktop(clientX, clientY);
+  }
+
+  function evaluateDragIntent() {
+    dragIntentTimer = null;
+    const activeDrag = dragRuntime;
+    if (!activeDrag || options.isLaunchpadInteractionBlocked()) return;
+
+    if (options.folderSession.value) {
+      handleFolderSessionMove(activeDrag.pointer.x, activeDrag.pointer.y);
+      return;
+    }
+
+    handleDefaultDesktopMove(activeDrag.pointer.x, activeDrag.pointer.y);
+  }
+
+  function scheduleDragIntentEvaluation() {
+    clearDragIntentTimer();
+    clearPendingTarget();
+    dragIntentTimer = window.setTimeout(evaluateDragIntent, DRAG_INTENT_IDLE_DELAY);
   }
 
   function cancelLongPress() {
@@ -499,6 +585,7 @@ export function useLaunchpadDrag(options) {
     longPressState = null;
 
     clearPendingTarget();
+    clearDragIntentTimer();
     clearPageTurn();
     clearFolderPageTurn();
 
@@ -507,6 +594,7 @@ export function useLaunchpadDrag(options) {
       source: lp.source,
       pointer: { x: lp.startPoint.x, y: lp.startPoint.y },
       offset: lp.offset,
+      size: lp.size,
       start: { x: lp.startPoint.x, y: lp.startPoint.y },
       hasMoved: false,
     };
@@ -539,6 +627,7 @@ export function useLaunchpadDrag(options) {
       source,
       startPoint: { x: event.clientX, y: event.clientY },
       offset: { x: event.clientX - rect.left, y: event.clientY - rect.top },
+      size: { width: rect.width, height: rect.height },
       timer: window.setTimeout(executeDragStart, LONG_PRESS_DELAY),
     };
 
@@ -565,8 +654,7 @@ export function useLaunchpadDrag(options) {
       handlePageEdgeTurn(event.clientX);
     }
 
-    if (options.folderSession.value && handleFolderSessionMove(event.clientX, event.clientY)) return;
-    handleDefaultDesktopMove(event.clientX, event.clientY);
+    scheduleDragIntentEvaluation();
   }
 
   function finishDrag(event) {
@@ -579,6 +667,11 @@ export function useLaunchpadDrag(options) {
 
     activeDrag.pointer = { x: event.clientX, y: event.clientY };
     schedulePreviewPosition(event.clientX, event.clientY);
+    clearDragIntentTimer();
+
+    const center = getDragVisualCenter(activeDrag);
+    const topLevelDropTarget = center ? getTopLevelTargetAtPoint(center.x, center.y) : null;
+    const shouldDropOnTopLevelTarget = topLevelDropTarget && isInsideFolderHitZone(topLevelDropTarget, center.x, center.y);
 
     clearPageTurn();
     clearFolderPageTurn();
@@ -590,6 +683,12 @@ export function useLaunchpadDrag(options) {
 
     if (!session && movedDistance <= 6 && activeDrag.item.type === "folder" && activeDrag.source.type === "page") {
       options.commitOpenFolder(activeDrag.item.id);
+      endDrag();
+      return;
+    }
+
+    if (!session && shouldDropOnTopLevelTarget && dropDraggedAppOnTopLevelTarget(topLevelDropTarget)) {
+      options.commitFolderSession(null);
       endDrag();
       return;
     }

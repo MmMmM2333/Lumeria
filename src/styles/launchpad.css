@@ -44,10 +44,7 @@ body {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background:
-    radial-gradient(circle at 24% 16%, rgba(255, 255, 255, 0.18), transparent 28%),
-    radial-gradient(circle at 78% 24%, rgba(96, 165, 250, 0.16), transparent 34%),
-    rgba(10, 12, 18, 0.28);
+  background: rgba(10, 12, 18, 0.28);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
