@@ -34,7 +34,7 @@
               class="search-input"
               :value="searchQuery"
               type="search"
-              placeholder="搜索应用"
+              placeholder="搜索"
               aria-label="搜索应用"
               @input="handleSearchInput"
               @focus="handleSearchFocus"

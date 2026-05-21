@@ -50,6 +50,7 @@ body {
 .launchpad-root,
 .launchpad-root * {
   -webkit-tap-highlight-color: transparent;
+  outline: none;
 }
 
 .launchpad-root-closed .launchpad-shell,
@@ -679,7 +680,7 @@ body {
   display: flex;
   align-items: center;
   gap: 7px;
-  width: 92px;
+  width: 52px;
   min-width: 0;
   max-width: 100%;
   transition: width 180ms ease;
