@@ -18,6 +18,10 @@ path = "src/main.rs"
 [[bin]]
 name = "icon_dump"
 path = "test_tools/icon_dump.rs"
+required-features = ["debug-tools"]
+
+[features]
+debug-tools = []
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
