@@ -16,19 +16,32 @@
       :style="homeShellStyle"
     >
       <header ref="headerRef" class="launchpad-header">
-        <div ref="searchRef" :class="cx('search-pill', isSearchMode && 'search-pill-active')">
-          <SearchIcon class="hint-icon" />
-          <input
-            ref="searchInputRef"
-            class="search-input"
-            :value="searchQuery"
-            type="search"
-            placeholder="搜索应用"
-            aria-label="搜索应用"
-            @input="handleSearchInput"
-            @focus="keyboardFocusArea = 'search'"
-            @pointerdown.stop
-          />
+        <div
+          ref="searchRef"
+          :class="cx(
+            'search-pill',
+            isSearchMode && 'search-pill-active',
+            hasSearchQuery && 'search-pill-has-query',
+            isSearchInputFocused && 'search-pill-focused',
+            !hasSearchQuery && !isSearchInputFocused && 'search-pill-centered',
+            (hasSearchQuery || isSearchInputFocused) && 'search-pill-left'
+          )"
+        >
+          <div class="search-pill-content">
+            <SearchIcon class="hint-icon" />
+            <input
+              ref="searchInputRef"
+              class="search-input"
+              :value="searchQuery"
+              type="search"
+              placeholder="搜索应用"
+              aria-label="搜索应用"
+              @input="handleSearchInput"
+              @focus="handleSearchFocus"
+              @blur="handleSearchBlur"
+              @pointerdown.stop
+            />
+          </div>
           <button v-if="isSearchMode" class="search-clear-button" type="button" aria-label="清除搜索" @click="clearSearch">×</button>
         </div>
 
@@ -426,6 +439,7 @@
 
 <script setup>
 import { Motion } from "motion-v";
+import { computed, ref } from "vue";
 import DesktopIcon from "./components/DesktopIcon.js";
 import { AlertTriangleIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, SearchIcon, SettingsIcon } from "./components/Icons.js";
 import { useLaunchpadController } from "./composables/useLaunchpadController.js";
@@ -547,6 +561,18 @@ const {
   dragPreviewSpring,
   folderPreviewSlots,
 } = useLaunchpadController();
+
+const isSearchInputFocused = ref(false);
+const hasSearchQuery = computed(() => searchQuery.value.trim().length > 0);
+
+function handleSearchFocus() {
+  keyboardFocusArea.value = "search";
+  isSearchInputFocused.value = true;
+}
+
+function handleSearchBlur() {
+  isSearchInputFocused.value = false;
+}
 
 function getIconSource(item) {
   return item?.customIconDataUrl || item?.iconDataUrl || item?.iconUrl || null;

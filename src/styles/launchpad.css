@@ -651,6 +651,7 @@ body {
   display: flex;
   align-items: center;
   justify-self: center;
+  justify-content: center;
   gap: 8px;
   width: 100%;
   padding: 8px 12px;
@@ -661,6 +662,21 @@ body {
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.1);
   backdrop-filter: blur(18px);
   font-size: 13px;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.search-pill-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(16px + 8px + 4.6em);
+  min-width: 0;
+  max-width: 100%;
+  transition: width 180ms ease;
+}
+
+.search-pill-left .search-pill-content {
+  width: 100%;
 }
 
 .search-pill-active {
