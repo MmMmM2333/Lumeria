@@ -127,7 +127,6 @@ export function useLaunchpadController() {
   const headerRef = ref(null);
   const searchRef = ref(null);
   const searchInputRef = ref(null);
-  const searchSummaryRef = ref(null);
   const desktopMainRef = ref(null);
   const pageDotsRef = ref(null);
   const folderPanelRef = ref(null);
@@ -266,7 +265,6 @@ export function useLaunchpadController() {
     pageGridStyle,
     rootRef,
     searchRef,
-    searchSummaryRef,
   });
   dragControls = useLaunchpadDrag({
     canCreateDesktopPageAfterDrag,
@@ -1481,7 +1479,6 @@ export function useLaunchpadController() {
     handleSearchInput,
     keyboardFocusArea,
     clearSearch,
-    searchSummaryRef,
     desktopMainRef,
     handleDesktopSurfacePointerDown,
     activePageIndex,

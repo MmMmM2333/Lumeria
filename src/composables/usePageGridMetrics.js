@@ -26,12 +26,6 @@ function getVerticalPadding(element) {
   return readCssPx(styles.paddingTop) + readCssPx(styles.paddingBottom);
 }
 
-function getVerticalMargin(element) {
-  if (!element || typeof window === "undefined") return 0;
-  const styles = window.getComputedStyle(element);
-  return readCssPx(styles.marginTop) + readCssPx(styles.marginBottom);
-}
-
 export function usePageGridMetrics(options) {
   const {
     desktopMainRef,
@@ -43,7 +37,6 @@ export function usePageGridMetrics(options) {
     pageGridStyle,
     rootRef,
     searchRef,
-    searchSummaryRef,
   } = options;
 
   const pageGridHeight = ref(0);
@@ -63,10 +56,8 @@ export function usePageGridMetrics(options) {
     const mainPadding = getVerticalPadding(main);
     const headerHeight = header ? header.getBoundingClientRect().height : 0;
     const searchHeight = search && !header?.contains(search) ? search.getBoundingClientRect().height : 0;
-    const summaryElement = getElementFromRef(searchSummaryRef);
-    const summaryHeight = summaryElement ? summaryElement.getBoundingClientRect().height + getVerticalMargin(summaryElement) : 0;
     const dotsHeight = getElementHeight(pageDotsRef);
-    const chromeHeight = rootPadding + headerHeight + searchHeight + summaryHeight + dotsHeight + mainPadding;
+    const chromeHeight = rootPadding + headerHeight + searchHeight + dotsHeight + mainPadding;
     const nextHeight = Math.max(280, Math.floor(window.innerHeight - chromeHeight));
     pageGridHeight.value = nextHeight;
   }

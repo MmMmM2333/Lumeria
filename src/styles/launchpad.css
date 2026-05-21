@@ -85,10 +85,10 @@ body {
 
 .launchpad-header {
   display: grid;
-  grid-template-columns: 1fr minmax(260px, 420px) 1fr;
+  grid-template-columns: 1fr minmax(240px, 348px) 1fr;
   align-items: center;
   gap: 16px;
-  padding: 12px 0;
+  padding: 14px 0 8px;
 }
 
 .launchpad-header::before {
@@ -100,23 +100,23 @@ body {
   align-items: center;
   justify-content: center;
   justify-self: end;
-  gap: 8px;
-  height: 40px;
-  padding: 0 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   color: white;
-  background: rgba(255, 255, 255, 0.13);
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.12);
-  backdrop-filter: blur(18px);
+  background: rgba(255, 255, 255, 0.11);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 8px 22px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   cursor: pointer;
-  font-size: 13px;
-  font-weight: 620;
-  transition: background 160ms ease, opacity 160ms ease;
+  transition: background 160ms ease, border-color 160ms ease, opacity 160ms ease;
 }
 
 .settings-button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.17);
 }
 
 .settings-button:disabled {
@@ -127,6 +127,15 @@ body {
 .settings-button .button-icon {
   width: 16px;
   height: 16px;
+}
+
+.settings-button span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .settings-overlay {
@@ -652,24 +661,26 @@ body {
   align-items: center;
   justify-self: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  padding: 8px 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  background: rgba(255, 255, 255, 0.14);
-  color: rgba(255, 255, 255, 0.86);
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.1);
-  backdrop-filter: blur(18px);
+  height: 35px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 0.82);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 8px 20px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(18px) saturate(120%);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
   font-size: 13px;
-  transition: background 160ms ease, border-color 160ms ease;
+  transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
 
 .search-pill-content {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: calc(16px + 8px + 4.6em);
+  gap: 7px;
+  width: 92px;
   min-width: 0;
   max-width: 100%;
   transition: width 180ms ease;
@@ -680,8 +691,9 @@ body {
 }
 
 .search-pill-active {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: rgba(255, 255, 255, 0.34);
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.13);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.13), 0 10px 24px rgba(0, 0, 0, 0.14);
 }
 
 .search-input {
@@ -692,10 +704,11 @@ body {
   color: white;
   background: transparent;
   font: inherit;
+  line-height: 1;
 }
 
 .search-input::placeholder {
-  color: rgba(255, 255, 255, 0.72);
+  color: rgba(255, 255, 255, 0.46);
 }
 
 .search-input::-webkit-search-decoration,
@@ -711,23 +724,16 @@ body {
   height: 22px;
   border: 0;
   border-radius: 999px;
-  color: rgba(49, 46, 129, 0.9);
-  background: rgba(255, 255, 255, 0.78);
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.18);
   cursor: pointer;
   font-size: 18px;
   line-height: 1;
 }
 
-.search-summary {
-  margin: 8px 0 0;
-  text-align: center;
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 13px;
-}
-
 .hint-icon {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   flex: none;
 }
 
@@ -866,22 +872,27 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 16px 0;
+  gap: 12px;
+  padding: 10px 0 18px;
 }
 
 .page-dot {
   width: 10px;
   height: 10px;
+  padding: 0;
   border: 0;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.28);
   cursor: pointer;
-  transition: width 180ms ease, background 180ms ease, box-shadow 180ms ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.16);
+  transition: background 160ms ease, transform 160ms ease;
 }
 
-.page-dot:hover { background: rgba(255, 255, 255, 0.7); }
-.page-dot-active { width: 32px; background: white; box-shadow: 0 0 16px rgba(255, 255, 255, 0.8); }
+.page-dot:hover { background: rgba(255, 255, 255, 0.5); }
+.page-dot-active {
+  background: rgba(255, 255, 255, 0.96);
+  transform: scale(1.02);
+}
 
 .icon-cell {
   position: relative;
@@ -1456,7 +1467,6 @@ body {
   .settings-add-app-row { grid-template-columns: 1fr; }
   .app-manager-list { grid-template-columns: 1fr; }
   .search-pill { justify-self: stretch; }
-  .search-summary { display: none; }
   .desktop-viewport { padding: 0 34px; }
   .page-section { padding: 0 8px; }
   .page-grid { padding: 28px 16px 16px; gap: 12px 8px; }

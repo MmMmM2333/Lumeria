@@ -51,10 +51,6 @@
         </button>
       </header>
 
-      <p v-if="isSearchMode" ref="searchSummaryRef" class="search-summary">
-        搜索结果只展示应用，不展示文件夹；搜索视图不可拖拽。
-      </p>
-
       <main ref="desktopMainRef" class="desktop-main" tabindex="-1" @focus="keyboardFocusArea = 'desktop'" @pointerdown="handleDesktopSurfacePointerDown">
         <button class="page-button page-button-left" type="button" :disabled="activePageIndex === 0" aria-label="上一页" @pointerdown.stop @click="commitActivePageIndex(activePageIndex - 1)">
           <ChevronLeftIcon class="button-icon" />
@@ -501,7 +497,6 @@ const {
   handleSearchInput,
   keyboardFocusArea,
   clearSearch,
-  searchSummaryRef,
   desktopMainRef,
   handleDesktopSurfacePointerDown,
   activePageIndex,
