@@ -107,9 +107,13 @@ export function useLaunchpadController() {
   const isSettingsPanelOpen = ref(false);
   const warningDialog = shallowRef(null);
   const appManagerSelectedIds = ref([]);
+  const appManagerSearchQuery = ref("");
+  const isAddingManagedApp = ref(false);
   const hiddenAppIds = ref([]);
   const newAppName = ref("");
   const newAppTarget = ref("");
+  const newAppArgs = ref("");
+  const newAppIconDataUrl = ref(null);
   const editingManagedAppId = ref(null);
   const editAppName = ref("");
   const editAppTarget = ref("");
@@ -186,8 +190,19 @@ export function useLaunchpadController() {
   const activePages = computed(() => (isSearchMode.value ? searchPages.value : pages.value));
   const activePageIndex = computed(() => (isSearchMode.value ? searchPageIndex.value : pageIndex.value));
   const managedApps = computed(() => collectAppsFromPages(pages.value).sort(compareAppsByDefaultOrder));
+  const filteredManagedApps = computed(() => {
+    const query = appManagerSearchQuery.value.trim().toLowerCase();
+    if (!query) return managedApps.value;
+    return managedApps.value.filter((app) => {
+      const name = String(app?.name || "").toLowerCase();
+      const target = getLaunchTargetPath(app).toLowerCase();
+      const args = String(app?.launchArgs || "").toLowerCase();
+      return name.includes(query) || target.includes(query) || args.includes(query);
+    });
+  });
   const selectedManagedAppCount = computed(() => appManagerSelectedIds.value.length);
   const canAddManagedApp = computed(() => newAppName.value.trim().length > 0 && newAppTarget.value.trim().length > 0);
+  const newManagedAppGlyph = computed(() => fallbackAppGlyph(newAppName.value));
   const canSaveEditingManagedApp = computed(() => editAppName.value.trim().length > 0 && editAppTarget.value.trim().length > 0);
   const editingManagedApp = computed(() => managedApps.value.find((app) => app.id === editingManagedAppId.value) || null);
   const canScanManagedApps = computed(() => shouldUseNativeCatalog());
@@ -866,7 +881,7 @@ export function useLaunchpadController() {
   }
 
   function syncSelectedManagedApps() {
-    const validIds = new Set(managedApps.value.map((app) => app.id));
+    const validIds = new Set(filteredManagedApps.value.map((app) => app.id));
     appManagerSelectedIds.value = appManagerSelectedIds.value.filter((id) => validIds.has(id));
   }
 
@@ -884,11 +899,46 @@ export function useLaunchpadController() {
   }
 
   function selectAllManagedApps() {
-    appManagerSelectedIds.value = managedApps.value.map((app) => app.id);
+    appManagerSelectedIds.value = filteredManagedApps.value.map((app) => app.id);
   }
 
   function clearManagedAppSelection() {
     appManagerSelectedIds.value = [];
+  }
+
+  function resetNewManagedAppDraft() {
+    newAppName.value = "";
+    newAppTarget.value = "";
+    newAppArgs.value = "";
+    newAppIconDataUrl.value = null;
+  }
+
+  function openAddManagedAppPage() {
+    if (isDragActive()) return;
+    resetNewManagedAppDraft();
+    isAddingManagedApp.value = true;
+  }
+
+  function closeAddManagedAppPage() {
+    isAddingManagedApp.value = false;
+    resetNewManagedAppDraft();
+  }
+
+  function handleNewAppIconChange(event) {
+    const input = event?.target;
+    const file = input?.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") newAppIconDataUrl.value = reader.result;
+    };
+    reader.readAsDataURL(file);
+    input.value = "";
+  }
+
+  function resetNewAppIcon() {
+    newAppIconDataUrl.value = null;
   }
 
   function openEditManagedApp(app) {
@@ -1059,6 +1109,7 @@ export function useLaunchpadController() {
     if (!name) return;
     const launchTarget = makeLaunchTarget(newAppTarget.value);
     if (!launchTarget) return;
+    const launchArgs = newAppArgs.value.trim();
     const app = {
       id: makeId("custom-app"),
       type: "app",
@@ -1066,9 +1117,10 @@ export function useLaunchpadController() {
       emoji: fallbackAppGlyph(name),
       launchTarget,
     };
+    if (launchArgs) app.launchArgs = launchArgs;
+    if (newAppIconDataUrl.value) app.customIconDataUrl = newAppIconDataUrl.value;
     commitPages(appendAppsToPages(pages.value, [app]));
-    newAppName.value = "";
-    newAppTarget.value = "";
+    closeAddManagedAppPage();
     commitPageIndex(pageIndex.value);
     commitSearchPageIndex(searchPageIndex.value);
     schedulePageGridMetrics();
@@ -1134,6 +1186,7 @@ export function useLaunchpadController() {
 
   function closeSettingsPanel() {
     isSettingsPanelOpen.value = false;
+    closeAddManagedAppPage();
   }
 
   function handleSearchInput(event) {
@@ -1575,7 +1628,7 @@ export function useLaunchpadController() {
   watch([gridRows, gridCols, folderRows, folderCols, iconSize, isTextlessMode, isSearchMode], schedulePageGridMetrics, { flush: "post" });
   watch(activePages, schedulePageGridMetrics, { flush: "post" });
   watch([pages, gridRows, gridCols, folderRows, folderCols, iconSize, isTextlessMode, hiddenAppIds], scheduleNativeLayoutSave, { flush: "post" });
-  watch(managedApps, syncManagedAppState, { flush: "post" });
+  watch(filteredManagedApps, syncManagedAppState, { flush: "post" });
 
   onMounted(() => {
     window.addEventListener("keydown", handleGlobalKeydown);
@@ -1658,10 +1711,16 @@ export function useLaunchpadController() {
     changeDraftFolderCols,
     changeDraftIconSize,
     managedApps,
+    filteredManagedApps,
     appManagerSelectedIds,
+    appManagerSearchQuery,
+    isAddingManagedApp,
     selectedManagedAppCount,
     newAppName,
     newAppTarget,
+    newAppArgs,
+    newAppIconDataUrl,
+    newManagedAppGlyph,
     editingManagedApp,
     editAppName,
     editAppTarget,
@@ -1675,6 +1734,10 @@ export function useLaunchpadController() {
     toggleManagedAppSelection,
     selectAllManagedApps,
     clearManagedAppSelection,
+    openAddManagedAppPage,
+    closeAddManagedAppPage,
+    handleNewAppIconChange,
+    resetNewAppIcon,
     openEditManagedApp,
     closeEditManagedApp,
     handleEditAppIconChange,

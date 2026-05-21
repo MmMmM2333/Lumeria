@@ -450,22 +450,20 @@ body {
   gap: 8px;
 }
 
-.settings-add-app-row {
-  display: grid;
-  grid-template-columns: minmax(120px, 0.8fr) minmax(180px, 1.2fr) auto;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.settings-add-app-row input {
-  min-width: 0;
+.app-manager-search {
+  width: 100%;
   height: 36px;
+  margin-bottom: 10px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 12px;
   padding: 0 11px;
   outline: none;
   color: white;
   background: rgba(0, 0, 0, 0.2);
+}
+
+.app-manager-search::placeholder {
+  color: rgba(255, 255, 255, 0.42);
 }
 
 .settings-list-actions {
@@ -1563,7 +1561,6 @@ body {
   .settings-grid { grid-template-columns: 1fr; }
   .settings-section-header { align-items: flex-start; flex-direction: column; }
   .settings-inline-actions { justify-content: flex-start; }
-  .settings-add-app-row { grid-template-columns: 1fr; }
   .app-manager-list { grid-template-columns: 1fr; }
   .search-pill { justify-self: stretch; }
   .page-grid { padding: 28px 58px 16px; gap: 12px 8px; }

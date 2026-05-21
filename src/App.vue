@@ -210,21 +210,18 @@
             <div class="settings-section-header">
               <div>
                 <h3>应用管理</h3>
-                <p>{{ managedApps.length }} 个应用 · 已选择 {{ selectedManagedAppCount }} 个</p>
+                <p>{{ filteredManagedApps.length }} / {{ managedApps.length }} 个应用 · 已选择 {{ selectedManagedAppCount }} 个</p>
               </div>
               <div class="settings-inline-actions">
                 <button class="settings-secondary-button" type="button" :disabled="!canScanManagedApps || isScanningApps" @click="rescanManagedApps">
                   {{ isScanningApps ? "扫描中" : "扫描应用" }}
                 </button>
+                <button class="settings-primary-button" type="button" @click="openAddManagedAppPage">新增应用</button>
                 <button class="settings-danger-button" type="button" :disabled="selectedManagedAppCount === 0" @click="deleteSelectedManagedApps">批量删除</button>
               </div>
             </div>
 
-            <div class="settings-add-app-row">
-              <input v-model="newAppName" type="text" maxlength="64" placeholder="应用名称" aria-label="应用名称" />
-              <input v-model="newAppTarget" type="text" placeholder="启动路径或 URL" aria-label="启动路径或 URL" />
-              <button class="settings-primary-button" type="button" :disabled="!canAddManagedApp" @click="addManagedApp">新增</button>
-            </div>
+            <input v-model="appManagerSearchQuery" class="app-manager-search" type="search" placeholder="搜索应用" aria-label="搜索应用" />
 
             <div class="settings-list-actions">
               <button class="settings-link-button" type="button" @click="selectAllManagedApps">全选</button>
@@ -232,7 +229,7 @@
             </div>
 
             <div class="app-manager-list" role="list" aria-label="所有应用">
-              <div v-for="app in managedApps" :key="app.id" class="app-manager-item" role="listitem">
+              <div v-for="app in filteredManagedApps" :key="app.id" class="app-manager-item" role="listitem">
                 <input
                   type="checkbox"
                   :aria-label="`选择 ${app.name}`"
@@ -259,6 +256,52 @@
         <footer class="settings-actions">
           <button class="settings-secondary-button" type="button" @click="closeSettingsPanel">取消</button>
           <button class="settings-primary-button" type="button" :disabled="!!dragMeta" @click="applySettingsConfig">应用</button>
+        </footer>
+      </section>
+    </div>
+
+    <div v-if="isAddingManagedApp" class="app-edit-overlay" @wheel.stop @pointerdown.self="closeAddManagedAppPage">
+      <section class="app-edit-dialog" role="dialog" aria-modal="true" aria-label="新增应用">
+        <header class="app-edit-header">
+          <div>
+            <h2>新增应用</h2>
+            <p>添加自定义应用到启动台</p>
+          </div>
+          <button class="settings-close-button" type="button" aria-label="关闭新增窗口" @click="closeAddManagedAppPage">×</button>
+        </header>
+
+        <div class="app-edit-body">
+          <div class="app-edit-icon-row">
+            <span class="app-edit-icon">
+              <img v-if="newAppIconDataUrl" :src="newAppIconDataUrl" alt="" draggable="false" />
+              <span v-else>{{ newManagedAppGlyph }}</span>
+            </span>
+            <div class="app-edit-icon-actions">
+              <label class="settings-secondary-button app-edit-upload-button">
+                更换图标
+                <input type="file" accept="image/*" aria-label="更换应用图标" @change="handleNewAppIconChange" />
+              </label>
+              <button class="settings-secondary-button" type="button" @click="resetNewAppIcon">恢复默认</button>
+            </div>
+          </div>
+
+          <label class="app-edit-field">
+            <span>应用名称</span>
+            <input v-model="newAppName" type="text" maxlength="64" aria-label="应用名称" />
+          </label>
+          <label class="app-edit-field">
+            <span>启动路径或 URL</span>
+            <input v-model="newAppTarget" type="text" aria-label="启动路径或 URL" />
+          </label>
+          <label class="app-edit-field">
+            <span>启动参数</span>
+            <input v-model="newAppArgs" type="text" aria-label="启动参数" />
+          </label>
+        </div>
+
+        <footer class="app-edit-actions">
+          <button class="settings-secondary-button" type="button" @click="closeAddManagedAppPage">取消</button>
+          <button class="settings-primary-button" type="button" :disabled="!canAddManagedApp" @click="addManagedApp">保存</button>
         </footer>
       </section>
     </div>
@@ -515,10 +558,16 @@ const {
   changeDraftFolderCols,
   changeDraftIconSize,
   managedApps,
+  filteredManagedApps,
   appManagerSelectedIds,
+  appManagerSearchQuery,
+  isAddingManagedApp,
   selectedManagedAppCount,
   newAppName,
   newAppTarget,
+  newAppArgs,
+  newAppIconDataUrl,
+  newManagedAppGlyph,
   editingManagedApp,
   editAppName,
   editAppTarget,
@@ -532,6 +581,10 @@ const {
   toggleManagedAppSelection,
   selectAllManagedApps,
   clearManagedAppSelection,
+  openAddManagedAppPage,
+  closeAddManagedAppPage,
+  handleNewAppIconChange,
+  resetNewAppIcon,
   openEditManagedApp,
   closeEditManagedApp,
   handleEditAppIconChange,
