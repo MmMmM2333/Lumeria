@@ -19,6 +19,8 @@ type AppCatalogItem = {
   type: "app";
   name: string;
   iconPath?: string;
+  iconDataUrl?: string;
+  customIconDataUrl?: string;
   emoji?: string;
   launchTarget: {
     kind: "shortcut" | "executable" | "url" | "appUserModelId";
@@ -35,7 +37,9 @@ type LaunchpadLayout = {
     gridCols: number;
     folderRows: number;
     folderCols: number;
+    iconSize: number;
     textless: boolean;
+    hiddenAppIds: string[];
   };
 };
 
@@ -55,6 +59,11 @@ type LaunchpadItem =
 ## Native Backend Notes
 
 The Windows backend should discover applications from Start Menu known folders
-first, then add registry or packaged-app discovery later. Launching should be
-done by resolving `appId` server-side and calling the Windows shell API, rather
-than trusting arbitrary paths from the UI.
+first, then add registry or packaged-app discovery later.
+
+`scan_apps` returns cached PNG icons as `iconDataUrl` when extraction succeeds.
+The frontend may persist `customIconDataUrl` for user-selected replacements.
+
+`launch_app` resolves `appId` server-side from the current native catalog first.
+If the app is not in the current catalog, the backend may fall back to a saved
+layout item with a `launchTarget`; this supports user-created custom apps.

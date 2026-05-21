@@ -33,7 +33,6 @@ import {
   cx,
   makePageSize,
 } from "../domain/launchpadLayout.js";
-import { runLaunchpadHelperTests } from "../domain/launchpadLayoutTests.js";
 import { isNativeBridgeAvailable, launchApp as launchNativeApp, listenNativeEvent, loadLayout, saveLayout, scanApps } from "../api/launchpadApi.js";
 import { useLaunchpadDrag } from "./useLaunchpadDrag.js";
 import { useIconSelection } from "./useIconSelection.js";
@@ -1398,23 +1397,6 @@ export function useLaunchpadController() {
       });
     }
 
-    if (!window.__LAUNCHPAD_VUE_GRID_TESTS_RAN__) {
-      window.__LAUNCHPAD_VUE_GRID_TESTS_RAN__ = true;
-      try {
-        runLaunchpadHelperTests({
-          helpers: layoutHelpers,
-          pageSize,
-          folderPageSize,
-          searchQuery,
-          gridRows,
-          gridCols,
-          getActivePageGridStyle,
-        });
-        console.info("Launchpad Vue grid helper tests passed");
-      } catch (error) {
-        console.error(error);
-      }
-    }
   });
 
   onBeforeUnmount(() => {

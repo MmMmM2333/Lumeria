@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "node src/domain/runLaunchpadLayoutTests.js",
     "build": "vite build",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"

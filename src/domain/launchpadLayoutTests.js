@@ -103,5 +103,3 @@ export function runLaunchpadHelperTests(context) {
   assert(isPointInsideRect(shrinkRect(rect, 0.5), 50, 50), "center point should be inside shrunk folder hit zone");
   assert(expandRect(rect, 10).right === 110, "expandRect should add sticky margin around target");
 }
-
-
