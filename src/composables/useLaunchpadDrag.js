@@ -1,4 +1,4 @@
-import { nextTick, ref, shallowRef } from "vue";
+import { nextTick, shallowRef } from "vue";
 import {
   DESKTOP_SORT_MIN_DISTANCE,
   DRAG_INTENT_IDLE_DELAY,
@@ -22,7 +22,6 @@ import { getDomRefElement } from "./usePageGridMetrics.js";
 
 export function useLaunchpadDrag(options) {
   const dragMeta = shallowRef(null);
-  const pendingTargetId = ref(null);
 
   let dragRuntime = null;
   let dragPlacement = null;
@@ -50,13 +49,11 @@ export function useLaunchpadDrag(options) {
     if (pendingTimer) window.clearTimeout(pendingTimer.timer);
     pendingTimer = null;
     folderHover = null;
-    pendingTargetId.value = null;
   }
 
   function clearPendingTimerButKeepSticky() {
     if (pendingTimer) window.clearTimeout(pendingTimer.timer);
     pendingTimer = null;
-    pendingTargetId.value = null;
   }
 
   function clearPageTurn() {
@@ -211,7 +208,6 @@ export function useLaunchpadDrag(options) {
   function startPendingFolderTarget(target) {
     if (pendingTimer?.targetId === target.id) return;
     clearPendingTimerButKeepSticky();
-    pendingTargetId.value = target.id;
 
     pendingTimer = {
       targetId: target.id,
@@ -723,6 +719,5 @@ export function useLaunchpadDrag(options) {
     detachDragListeners,
     dragMeta,
     isDragActive,
-    pendingTargetId,
   };
 }

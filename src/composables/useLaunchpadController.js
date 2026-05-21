@@ -330,7 +330,6 @@ export function useLaunchpadController() {
     detachDragListeners,
     dragMeta,
     isDragActive,
-    pendingTargetId,
   } = dragControls;
   const {
     handleGlobalKeydown,
@@ -778,15 +777,6 @@ export function useLaunchpadController() {
   function commitActivePageIndex(next) {
     if (isSearchMode.value) commitSearchPageIndex(next);
     else commitPageIndex(next);
-  }
-
-  function goNextActivePage() {
-    if (isSearchMode.value) {
-      if (searchPageIndex.value >= searchPages.value.length - 1) return;
-      commitSearchPageIndex(searchPageIndex.value + 1);
-      return;
-    }
-    goNextPage();
   }
 
   function commitFolderPageIndex(next, options) {
@@ -1433,16 +1423,11 @@ export function useLaunchpadController() {
     if (!isDesktopOpen.value || isDragActive() || isAppLaunching.value) return;
 
     const target = event.target;
-    if (target?.closest?.(".icon-hit-target, .page-button, .page-dot, .search-pill, .launchpad-header, button, input, textarea, select")) {
+    if (target?.closest?.(".icon-hit-target, .page-dot, .search-pill, .launchpad-header, button, input, textarea, select")) {
       return;
     }
 
     closeDesktop({ clearSearch: true });
-  }
-
-  function goNextPage() {
-    if (pageIndex.value >= pages.value.length - 1) return;
-    commitPageIndex(pageIndex.value + 1);
   }
 
   function handleFolderOverlayPointerDown() {
@@ -1571,7 +1556,6 @@ export function useLaunchpadController() {
     shouldRenderActivePage,
     shouldRenderStaticActivePage,
     commitActivePageIndex,
-    goNextActivePage,
     desktopTrackMotionKey,
     activeDesktopTrackAnimate,
     activeDesktopTrackTransition,
@@ -1581,7 +1565,6 @@ export function useLaunchpadController() {
     getActivePageGridStyle,
     pageGridMeasureStyle,
     getVisibleDesktopPage,
-    pendingTargetId,
     folderPageSize,
     isIconSelected,
     isIconOpening,

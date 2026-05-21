@@ -52,10 +52,6 @@
       </header>
 
       <main ref="desktopMainRef" class="desktop-main" tabindex="-1" @focus="keyboardFocusArea = 'desktop'" @pointerdown="handleDesktopSurfacePointerDown">
-        <button class="page-button page-button-left" type="button" :disabled="activePageIndex === 0" aria-label="上一页" @pointerdown.stop @click="commitActivePageIndex(activePageIndex - 1)">
-          <ChevronLeftIcon class="button-icon" />
-        </button>
-
         <div class="desktop-viewport">
           <div class="desktop-track-clip">
             <Motion
@@ -84,7 +80,6 @@
                       :key="item.id"
                       :item="item"
                       :source="{ type: isSearchMode ? 'search' : 'page', pageIndex: pageNumber, index }"
-                      :pending="!isSearchMode && pendingTargetId === item.id"
                       :dragging="!isSearchMode && dragMeta && dragMeta.item.id === item.id"
                       :folder-preview-page-size="folderPageSize"
                       :draggable="!isSearchMode"
@@ -112,15 +107,6 @@
             </Motion>
           </div>
         </div>
-
-        <button class="page-button page-button-right" type="button" :disabled="activePageIndex >= activePages.length - 1" aria-label="下一页" @pointerdown.stop @click="goNextActivePage">
-          <ChevronRightIcon class="button-icon" />
-        </button>
-
-        <template v-if="dragMeta">
-          <div class="edge-hint edge-hint-left" />
-          <div class="edge-hint edge-hint-right" />
-        </template>
       </main>
 
       <footer ref="pageDotsRef" class="page-dots">
@@ -350,7 +336,6 @@
                     :key="child.id"
                     :item="child"
                     :source="{ type: 'folder', folderId: renderedFolder.id, index, pageIndex: pageNumber, slotIndex: index }"
-                    :pending="false"
                     :dragging="dragMeta && dragMeta.item.id === child.id"
                     :editing="isEditMode"
                     :textless="isTextlessMode"
@@ -511,7 +496,6 @@ const {
   shouldRenderActivePage,
   shouldRenderStaticActivePage,
   commitActivePageIndex,
-  goNextActivePage,
   desktopTrackMotionKey,
   activeDesktopTrackAnimate,
   activeDesktopTrackTransition,
@@ -521,7 +505,6 @@ const {
   getActivePageGridStyle,
   pageGridMeasureStyle,
   getVisibleDesktopPage,
-  pendingTargetId,
   folderPageSize,
   isIconSelected,
   isIconOpening,

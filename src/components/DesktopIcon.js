@@ -47,7 +47,6 @@ export default defineComponent({
   props: {
     item: { type: Object, required: true },
     source: { type: Object, required: true },
-    pending: { type: Boolean, default: false },
     dragging: { type: Boolean, default: false },
     compact: { type: Boolean, default: false },
     folderPreviewPageSize: { type: Number, default: 9 },
@@ -149,17 +148,6 @@ export default defineComponent({
       const item = props.item;
       const isFolder = item.type === "folder";
       const iconChildren = [];
-
-      if (props.pending && !props.dragging) {
-        iconChildren.push(
-          h(Motion, {
-            class: "pending-ring",
-            initial: { opacity: 0.4, scale: 1 },
-            animate: { opacity: [0.35, 1, 0.35], scale: [1, 1.13, 1] },
-            transition: { duration: 0.38, repeat: Infinity, ease: "easeInOut" },
-          })
-        );
-      }
 
       if (isFolder) {
         const folderChildren = getFolderPreviewSlots(item, props.folderPreviewPageSize).map((child, index) =>
