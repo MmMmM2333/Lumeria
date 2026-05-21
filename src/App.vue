@@ -232,9 +232,10 @@
             </div>
 
             <div class="app-manager-list" role="list" aria-label="所有应用">
-              <label v-for="app in managedApps" :key="app.id" class="app-manager-item" role="listitem">
+              <div v-for="app in managedApps" :key="app.id" class="app-manager-item" role="listitem">
                 <input
                   type="checkbox"
+                  :aria-label="`选择 ${app.name}`"
                   :checked="appManagerSelectedIds.includes(app.id)"
                   @change="toggleManagedAppSelection(app.id, $event.target.checked)"
                 />
@@ -242,8 +243,15 @@
                   <img v-if="getIconSource(app)" :src="getIconSource(app)" alt="" draggable="false" />
                   <span v-else>{{ app.emoji }}</span>
                 </span>
-                <span class="app-manager-name">{{ app.name }}</span>
-              </label>
+                <span class="app-manager-details">
+                  <span class="app-manager-name">{{ app.name }}</span>
+                  <span class="app-manager-target">{{ getLaunchTargetPath(app) || "未设置启动路径" }}</span>
+                </span>
+                <span class="app-manager-actions">
+                  <button class="settings-secondary-button" type="button" @click="openEditManagedApp(app)">编辑</button>
+                  <button class="settings-danger-button" type="button" @click="deleteManagedApp(app.id)">删除</button>
+                </span>
+              </div>
             </div>
           </section>
         </div>
@@ -251,6 +259,52 @@
         <footer class="settings-actions">
           <button class="settings-secondary-button" type="button" @click="closeSettingsPanel">取消</button>
           <button class="settings-primary-button" type="button" :disabled="!!dragMeta" @click="applySettingsConfig">应用</button>
+        </footer>
+      </section>
+    </div>
+
+    <div v-if="editingManagedApp" class="app-edit-overlay" @wheel.stop @pointerdown.self="closeEditManagedApp">
+      <section class="app-edit-dialog" role="dialog" aria-modal="true" aria-label="编辑应用">
+        <header class="app-edit-header">
+          <div>
+            <h2>编辑应用</h2>
+            <p>{{ editingManagedApp.name }}</p>
+          </div>
+          <button class="settings-close-button" type="button" aria-label="关闭编辑窗口" @click="closeEditManagedApp">×</button>
+        </header>
+
+        <div class="app-edit-body">
+          <div class="app-edit-icon-row">
+            <span class="app-edit-icon">
+              <img v-if="editAppIconDataUrl || getIconSource(editingManagedApp)" :src="editAppIconDataUrl || getIconSource(editingManagedApp)" alt="" draggable="false" />
+              <span v-else>{{ editingManagedApp.emoji }}</span>
+            </span>
+            <div class="app-edit-icon-actions">
+              <label class="settings-secondary-button app-edit-upload-button">
+                更换图标
+                <input type="file" accept="image/*" aria-label="更换应用图标" @change="handleEditAppIconChange" />
+              </label>
+              <button class="settings-secondary-button" type="button" @click="resetEditAppIcon">恢复默认</button>
+            </div>
+          </div>
+
+          <label class="app-edit-field">
+            <span>应用名称</span>
+            <input v-model="editAppName" type="text" maxlength="64" aria-label="应用名称" />
+          </label>
+          <label class="app-edit-field">
+            <span>启动路径或 URL</span>
+            <input v-model="editAppTarget" type="text" aria-label="启动路径或 URL" />
+          </label>
+          <label class="app-edit-field">
+            <span>启动参数</span>
+            <input v-model="editAppArgs" type="text" aria-label="启动参数" />
+          </label>
+        </div>
+
+        <footer class="app-edit-actions">
+          <button class="settings-secondary-button" type="button" @click="closeEditManagedApp">取消</button>
+          <button class="settings-primary-button" type="button" :disabled="!canSaveEditingManagedApp" @click="saveEditingManagedApp">保存</button>
         </footer>
       </section>
     </div>
@@ -465,12 +519,25 @@ const {
   selectedManagedAppCount,
   newAppName,
   newAppTarget,
+  editingManagedApp,
+  editAppName,
+  editAppTarget,
+  editAppArgs,
+  editAppIconDataUrl,
   isScanningApps,
   canAddManagedApp,
+  canSaveEditingManagedApp,
   canScanManagedApps,
+  getLaunchTargetPath,
   toggleManagedAppSelection,
   selectAllManagedApps,
   clearManagedAppSelection,
+  openEditManagedApp,
+  closeEditManagedApp,
+  handleEditAppIconChange,
+  resetEditAppIcon,
+  saveEditingManagedApp,
+  deleteManagedApp,
   confirmForceFillAllPages,
   warningDialog,
   closeWarningDialog,

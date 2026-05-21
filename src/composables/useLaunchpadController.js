@@ -110,6 +110,11 @@ export function useLaunchpadController() {
   const hiddenAppIds = ref([]);
   const newAppName = ref("");
   const newAppTarget = ref("");
+  const editingManagedAppId = ref(null);
+  const editAppName = ref("");
+  const editAppTarget = ref("");
+  const editAppArgs = ref("");
+  const editAppIconDataUrl = ref(null);
   const isScanningApps = ref(false);
   const keyboardFocusArea = ref("desktop");
   const launchGhost = shallowRef(null);
@@ -180,9 +185,11 @@ export function useLaunchpadController() {
   const searchPages = computed(() => chunkIntoPages(searchApps.value, pageSize.value));
   const activePages = computed(() => (isSearchMode.value ? searchPages.value : pages.value));
   const activePageIndex = computed(() => (isSearchMode.value ? searchPageIndex.value : pageIndex.value));
-  const managedApps = computed(() => collectAppsFromPages(pages.value).sort((left, right) => left.name.localeCompare(right.name)));
+  const managedApps = computed(() => collectAppsFromPages(pages.value).sort(compareAppsByDefaultOrder));
   const selectedManagedAppCount = computed(() => appManagerSelectedIds.value.length);
   const canAddManagedApp = computed(() => newAppName.value.trim().length > 0 && newAppTarget.value.trim().length > 0);
+  const canSaveEditingManagedApp = computed(() => editAppName.value.trim().length > 0 && editAppTarget.value.trim().length > 0);
+  const editingManagedApp = computed(() => managedApps.value.find((app) => app.id === editingManagedAppId.value) || null);
   const canScanManagedApps = computed(() => shouldUseNativeCatalog());
 
   const desktopTrackAnimate = computed(() => ({ x: `-${pageIndex.value * 100}%` }));
@@ -435,6 +442,19 @@ export function useLaunchpadController() {
     };
   }
 
+  function compareAppsByDefaultOrder(left, right) {
+    const leftName = String(left?.name || "").toLowerCase();
+    const rightName = String(right?.name || "").toLowerCase();
+    if (leftName < rightName) return -1;
+    if (leftName > rightName) return 1;
+
+    const leftId = String(left?.id || "");
+    const rightId = String(right?.id || "");
+    if (leftId < rightId) return -1;
+    if (leftId > rightId) return 1;
+    return 0;
+  }
+
   function normalizeNativeApp(app, index) {
     const name = String(app?.name || "Application").trim() || "Application";
     return {
@@ -443,6 +463,7 @@ export function useLaunchpadController() {
       type: "app",
       name,
       launchTarget: app?.launchTarget || app?.launch_target || null,
+      launchArgs: typeof app?.launchArgs === "string" ? app.launchArgs : "",
       iconDataUrl: app?.iconDataUrl || null,
       emoji: app?.emoji || fallbackAppGlyph(name),
     };
@@ -450,6 +471,10 @@ export function useLaunchpadController() {
 
   function mergeAppWithSavedIcon(app, savedItem) {
     const next = cloneItem(app);
+    if (savedItem?.name) next.name = String(savedItem.name).slice(0, 64);
+    if (savedItem?.emoji) next.emoji = savedItem.emoji;
+    if (savedItem?.launchTarget) next.launchTarget = savedItem.launchTarget;
+    if (typeof savedItem?.launchArgs === "string") next.launchArgs = savedItem.launchArgs;
     if (savedItem?.customIconDataUrl) next.customIconDataUrl = savedItem.customIconDataUrl;
     return next;
   }
@@ -464,6 +489,7 @@ export function useLaunchpadController() {
       name,
       emoji: item.emoji || fallbackAppGlyph(name),
       launchTarget: item.launchTarget,
+      launchArgs: typeof item.launchArgs === "string" ? item.launchArgs : "",
     };
   }
 
@@ -597,6 +623,7 @@ export function useLaunchpadController() {
     };
     if (item.customIconDataUrl) clean.customIconDataUrl = item.customIconDataUrl;
     if (item.launchTarget) clean.launchTarget = item.launchTarget;
+    if (item.launchArgs) clean.launchArgs = item.launchArgs;
     return clean;
   }
 
@@ -830,9 +857,22 @@ export function useLaunchpadController() {
     updateAppCustomIcon(appId, null);
   }
 
+  function getLaunchTargetPath(app) {
+    return app?.launchTarget?.path || "";
+  }
+
+  function syncEditingManagedApp() {
+    if (editingManagedAppId.value && !editingManagedApp.value) closeEditManagedApp();
+  }
+
   function syncSelectedManagedApps() {
     const validIds = new Set(managedApps.value.map((app) => app.id));
     appManagerSelectedIds.value = appManagerSelectedIds.value.filter((id) => validIds.has(id));
+  }
+
+  function syncManagedAppState() {
+    syncEditingManagedApp();
+    syncSelectedManagedApps();
   }
 
   function toggleManagedAppSelection(appId, checked) {
@@ -849,6 +889,118 @@ export function useLaunchpadController() {
 
   function clearManagedAppSelection() {
     appManagerSelectedIds.value = [];
+  }
+
+  function openEditManagedApp(app) {
+    if (!app || isDragActive()) return;
+    editingManagedAppId.value = app.id;
+    editAppName.value = app.name || "";
+    editAppTarget.value = getLaunchTargetPath(app);
+    editAppArgs.value = typeof app.launchArgs === "string" ? app.launchArgs : "";
+    editAppIconDataUrl.value = app.customIconDataUrl || null;
+  }
+
+  function closeEditManagedApp() {
+    editingManagedAppId.value = null;
+    editAppName.value = "";
+    editAppTarget.value = "";
+    editAppArgs.value = "";
+    editAppIconDataUrl.value = null;
+  }
+
+  function handleEditAppIconChange(event) {
+    const input = event?.target;
+    const file = input?.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") editAppIconDataUrl.value = reader.result;
+    };
+    reader.readAsDataURL(file);
+    input.value = "";
+  }
+
+  function resetEditAppIcon() {
+    editAppIconDataUrl.value = null;
+  }
+
+  function updateManagedAppEverywhere(appId, updater) {
+    if (!appId || typeof updater !== "function") return false;
+    const next = clonePages(pages.value);
+    let changed = false;
+
+    function updateItem(item) {
+      if (!item) return;
+      if (item.type === "app" && item.id === appId) {
+        updater(item);
+        changed = true;
+        return;
+      }
+      if (item.type !== "folder") return;
+      for (const page of item.childPages || []) {
+        for (const child of page || []) updateItem(child);
+      }
+      item.children = (item.childPages || []).flat().filter(Boolean).map(cloneItem);
+    }
+
+    for (const page of next) {
+      for (const item of page) updateItem(item);
+    }
+    if (!changed) return false;
+    commitPages(next);
+    return true;
+  }
+
+  function saveEditingManagedApp() {
+    if (isDragActive() || !editingManagedAppId.value || !canSaveEditingManagedApp.value) return;
+    const name = editAppName.value.trim().slice(0, 64);
+    const launchTarget = makeLaunchTarget(editAppTarget.value);
+    if (!name || !launchTarget) return;
+    const launchArgs = editAppArgs.value.trim();
+    const customIcon = editAppIconDataUrl.value;
+
+    const changed = updateManagedAppEverywhere(editingManagedAppId.value, (item) => {
+      item.name = name;
+      item.emoji = fallbackAppGlyph(name);
+      item.launchTarget = launchTarget;
+      if (launchArgs) item.launchArgs = launchArgs;
+      else delete item.launchArgs;
+      if (customIcon) item.customIconDataUrl = customIcon;
+      else delete item.customIconDataUrl;
+    });
+
+    if (!changed) return;
+    closeEditManagedApp();
+    commitPageIndex(pageIndex.value);
+    commitSearchPageIndex(searchPageIndex.value);
+    schedulePageGridMetrics();
+  }
+
+  function deleteManagedApps(appIds) {
+    if (isDragActive()) return;
+    const ids = Array.from(new Set((appIds || []).filter(Boolean)));
+    if (!ids.length) return;
+
+    let next = pages.value;
+    for (const id of ids) next = removeEverywhere(next, id);
+    hiddenAppIds.value = Array.from(new Set([...hiddenAppIds.value, ...ids]));
+    commitPages(next);
+    const deletedIds = new Set(ids);
+    appManagerSelectedIds.value = appManagerSelectedIds.value.filter((id) => !deletedIds.has(id));
+    if (deletedIds.has(editingManagedAppId.value)) closeEditManagedApp();
+    commitPageIndex(pageIndex.value);
+    commitSearchPageIndex(searchPageIndex.value);
+    if (renderedFolder.value && openFolderId.value && !findFolder(pages.value, openFolderId.value)) commitOpenFolder(null);
+    schedulePageGridMetrics();
+  }
+
+  function deleteManagedApp(appId) {
+    deleteManagedApps([appId]);
+  }
+
+  function deleteSelectedManagedApps() {
+    deleteManagedApps(appManagerSelectedIds.value);
   }
 
   function forceFillAllPages() {
@@ -892,7 +1044,7 @@ export function useLaunchpadController() {
         commitPageIndex(pageIndex.value);
         commitSearchPageIndex(searchPageIndex.value);
       }
-      syncSelectedManagedApps();
+      syncManagedAppState();
       schedulePageGridMetrics();
     } catch (error) {
       console.error("Failed to scan apps", error);
@@ -919,20 +1071,6 @@ export function useLaunchpadController() {
     newAppTarget.value = "";
     commitPageIndex(pageIndex.value);
     commitSearchPageIndex(searchPageIndex.value);
-    schedulePageGridMetrics();
-  }
-
-  function deleteSelectedManagedApps() {
-    if (isDragActive() || !appManagerSelectedIds.value.length) return;
-    const selectedIds = new Set(appManagerSelectedIds.value);
-    let next = pages.value;
-    for (const id of selectedIds) next = removeEverywhere(next, id);
-    hiddenAppIds.value = Array.from(new Set([...hiddenAppIds.value, ...selectedIds]));
-    commitPages(next);
-    clearManagedAppSelection();
-    commitPageIndex(pageIndex.value);
-    commitSearchPageIndex(searchPageIndex.value);
-    if (renderedFolder.value && openFolderId.value && !findFolder(pages.value, openFolderId.value)) commitOpenFolder(null);
     schedulePageGridMetrics();
   }
 
@@ -1437,7 +1575,7 @@ export function useLaunchpadController() {
   watch([gridRows, gridCols, folderRows, folderCols, iconSize, isTextlessMode, isSearchMode], schedulePageGridMetrics, { flush: "post" });
   watch(activePages, schedulePageGridMetrics, { flush: "post" });
   watch([pages, gridRows, gridCols, folderRows, folderCols, iconSize, isTextlessMode, hiddenAppIds], scheduleNativeLayoutSave, { flush: "post" });
-  watch(managedApps, syncSelectedManagedApps, { flush: "post" });
+  watch(managedApps, syncManagedAppState, { flush: "post" });
 
   onMounted(() => {
     window.addEventListener("keydown", handleGlobalKeydown);
@@ -1524,12 +1662,25 @@ export function useLaunchpadController() {
     selectedManagedAppCount,
     newAppName,
     newAppTarget,
+    editingManagedApp,
+    editAppName,
+    editAppTarget,
+    editAppArgs,
+    editAppIconDataUrl,
     isScanningApps,
     canAddManagedApp,
+    canSaveEditingManagedApp,
     canScanManagedApps,
+    getLaunchTargetPath,
     toggleManagedAppSelection,
     selectAllManagedApps,
     clearManagedAppSelection,
+    openEditManagedApp,
+    closeEditManagedApp,
+    handleEditAppIconChange,
+    resetEditAppIcon,
+    saveEditingManagedApp,
+    deleteManagedApp,
     confirmForceFillAllPages,
     warningDialog,
     closeWarningDialog,

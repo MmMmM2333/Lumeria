@@ -142,6 +142,7 @@ fn make_catalog_item(path: &Path, icon_dir: &Path) -> AppCatalogItem {
             path: Some(path_string),
             app_user_model_id: None,
         },
+        launch_args: None,
     }
 }
 

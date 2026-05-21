@@ -73,7 +73,8 @@ fn save_layout(app: AppHandle, layout: serde_json::Value) -> Result<(), String> 
 
 #[tauri::command]
 fn launch_app(app: AppHandle, app_id: String, state: State<'_, AppState>) -> Result<(), String> {
-    let target = {
+    let saved_app = find_saved_layout_app(&app, &app_id).ok().flatten();
+    let catalog_app = {
         let catalog = state
             .catalog
             .lock()
@@ -81,14 +82,13 @@ fn launch_app(app: AppHandle, app_id: String, state: State<'_, AppState>) -> Res
         catalog.get(&app_id).cloned()
     };
 
-    let app = match target {
+    let app = match saved_app.or(catalog_app) {
         Some(app) => app,
         None => {
             let icon_dir = icon_cache_dir(&app)?;
             let apps = scan_start_menu_apps(&icon_dir)?;
             apps.into_iter()
                 .find(|app| app.id == app_id)
-                .or_else(|| find_saved_layout_app(&app, &app_id).ok().flatten())
                 .ok_or_else(|| format!("Unknown app id: {app_id}"))?
         }
     };
@@ -97,7 +97,7 @@ fn launch_app(app: AppHandle, app_id: String, state: State<'_, AppState>) -> Res
         .launch_target
         .path
         .ok_or_else(|| format!("App has no launch path: {}", app.name))?;
-    launch_path(&path)
+    launch_path(&path, app.launch_args.as_deref())
 }
 
 pub fn run() {

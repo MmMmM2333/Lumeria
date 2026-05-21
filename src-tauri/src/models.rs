@@ -14,6 +14,8 @@ pub(crate) struct AppCatalogItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) emoji: Option<String>,
     pub(crate) launch_target: LaunchTarget,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) launch_args: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
