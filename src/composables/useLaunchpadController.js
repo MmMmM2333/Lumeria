@@ -40,6 +40,7 @@ import { useLaunchpadKeyboard } from "./useLaunchpadKeyboard.js";
 import { getElementFromRef, usePageGridMetrics } from "./usePageGridMetrics.js";
 
 const USE_MOCK_DATA_IN_NATIVE = false;
+const PAGE_JUMP_RENDER_RELEASE_DELAY = 900;
 
 export function useLaunchpadController() {
   const gridRows = ref(DEFAULT_ROWS);
@@ -121,6 +122,7 @@ export function useLaunchpadController() {
   const folderSession = shallowRef(null);
   const isHomeRevealSettling = ref(false);
   const desktopProjectionEpoch = ref(0);
+  const transientPageRenderRange = ref(null);
 
   const rootRef = ref(null);
   const shellRef = ref(null);
@@ -140,6 +142,8 @@ export function useLaunchpadController() {
   let launchGhostTimer = null;
   let folderAppLaunchTimer = null;
   let altEditTimer = null;
+  let pageJumpRenderTimer = null;
+  let pageJumpRenderRequestId = 0;
   let isAltPressed = false;
   let layoutResizeObserver = null;
   let dragControls = null;
@@ -654,7 +658,87 @@ export function useLaunchpadController() {
 
   function shouldRenderActivePage(pageNumber) {
     const distance = Math.abs(pageNumber - activePageIndex.value);
-    return dragMeta.value ? distance === 0 : distance <= 1;
+    if (dragMeta.value) return distance === 0;
+
+    const transientRange = transientPageRenderRange.value;
+    const activeMode = isSearchMode.value ? "search" : "desktop";
+    if (transientRange?.mode === activeMode) {
+      return Math.abs(pageNumber - transientRange.from) <= 1 || Math.abs(pageNumber - transientRange.to) <= 1;
+    }
+
+    return distance <= 1;
+  }
+
+  function shouldRenderStaticActivePage(pageNumber) {
+    if (dragMeta.value || shouldRenderActivePage(pageNumber)) return false;
+
+    const transientRange = transientPageRenderRange.value;
+    const activeMode = isSearchMode.value ? "search" : "desktop";
+    if (transientRange?.mode === activeMode && pageNumber >= transientRange.from && pageNumber <= transientRange.to) return true;
+
+    return false;
+  }
+
+  function clearPageJumpRenderRange() {
+    pageJumpRenderRequestId += 1;
+    if (pageJumpRenderTimer) window.clearTimeout(pageJumpRenderTimer);
+    pageJumpRenderTimer = null;
+    transientPageRenderRange.value = null;
+  }
+
+  function schedulePageJumpRenderRelease() {
+    if (pageJumpRenderTimer) window.clearTimeout(pageJumpRenderTimer);
+    pageJumpRenderTimer = window.setTimeout(() => {
+      pageJumpRenderTimer = null;
+      transientPageRenderRange.value = null;
+    }, PAGE_JUMP_RENDER_RELEASE_DELAY);
+  }
+
+  function requestAnimationFrameOnce(callback) {
+    if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
+      callback();
+      return;
+    }
+    window.requestAnimationFrame(callback);
+  }
+
+  function commitPageIndexNow(next) {
+    pageIndex.value = clamp(next, 0, Math.max(0, pages.value.length - 1));
+  }
+
+  function commitSearchPageIndexNow(next) {
+    searchPageIndex.value = clamp(next, 0, Math.max(0, searchPages.value.length - 1));
+  }
+
+  function commitPageIndexWithRenderRange(mode, current, requested, maxIndex, commitNow) {
+    const next = clamp(requested, 0, maxIndex);
+    const distance = Math.abs(next - current);
+    if (distance <= 1 || isDragActive() || current < 0 || current > maxIndex) {
+      clearPageJumpRenderRange();
+      commitNow(next);
+      return;
+    }
+
+    if (pageJumpRenderTimer) window.clearTimeout(pageJumpRenderTimer);
+    pageJumpRenderTimer = null;
+    const requestId = (pageJumpRenderRequestId += 1);
+    transientPageRenderRange.value = {
+      mode,
+      from: Math.min(current, next),
+      to: Math.max(current, next),
+    };
+
+    nextTick(() => {
+      if (requestId !== pageJumpRenderRequestId) return;
+      if (!transientPageRenderRange.value || transientPageRenderRange.value.mode !== mode) return;
+      requestAnimationFrameOnce(() => {
+        if (requestId !== pageJumpRenderRequestId) return;
+        const range = transientPageRenderRange.value;
+        if (!range || range.mode !== mode || next < range.from || next > range.to) return;
+        commitNow(next);
+        schedulePageJumpRenderRelease();
+      });
+    });
   }
 
   function shouldUseNativeCatalog() {
@@ -684,11 +768,11 @@ export function useLaunchpadController() {
   }
 
   function commitPageIndex(next) {
-    pageIndex.value = clamp(next, 0, Math.max(0, pages.value.length - 1));
+    commitPageIndexWithRenderRange("desktop", pageIndex.value, next, Math.max(0, pages.value.length - 1), commitPageIndexNow);
   }
 
   function commitSearchPageIndex(next) {
-    searchPageIndex.value = clamp(next, 0, Math.max(0, searchPages.value.length - 1));
+    commitPageIndexWithRenderRange("search", searchPageIndex.value, next, Math.max(0, searchPages.value.length - 1), commitSearchPageIndexNow);
   }
 
   function commitActivePageIndex(next) {
@@ -1409,6 +1493,7 @@ export function useLaunchpadController() {
     clearDesktopCloseTimer();
     clearAppLaunchTimer();
     clearLaunchGhostTimer();
+    clearPageJumpRenderRange();
     clearNativeSaveTimer();
     unlistenSettingsEvent?.();
     unlistenSettingsEvent = null;
@@ -1484,6 +1569,7 @@ export function useLaunchpadController() {
     activePageIndex,
     activePages,
     shouldRenderActivePage,
+    shouldRenderStaticActivePage,
     commitActivePageIndex,
     goNextActivePage,
     desktopTrackMotionKey,

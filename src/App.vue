@@ -101,6 +101,12 @@
                       @reset-app-icon="resetAppCustomIcon"
                     />
                   </template>
+                  <StaticPagePreview
+                    v-else-if="shouldRenderStaticActivePage(pageNumber)"
+                    :items="getVisibleDesktopPage(page)"
+                    :folder-preview-page-size="folderPageSize"
+                    :textless="isTextlessMode"
+                  />
                 </Motion>
               </section>
             </Motion>
@@ -437,6 +443,7 @@
 import { Motion } from "motion-v";
 import { computed, ref } from "vue";
 import DesktopIcon from "./components/DesktopIcon.js";
+import StaticPagePreview from "./components/StaticPagePreview.js";
 import { AlertTriangleIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, SearchIcon, SettingsIcon } from "./components/Icons.js";
 import { useLaunchpadController } from "./composables/useLaunchpadController.js";
 import "./styles/launchpad.css";
@@ -502,6 +509,7 @@ const {
   activePageIndex,
   activePages,
   shouldRenderActivePage,
+  shouldRenderStaticActivePage,
   commitActivePageIndex,
   goNextActivePage,
   desktopTrackMotionKey,

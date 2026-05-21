@@ -963,6 +963,10 @@ body {
 .icon-hit-target-draggable:active { cursor: grabbing; }
 .icon-hit-target-clickable { cursor: pointer; }
 .icon-hit-target:hover { z-index: 15; }
+.static-icon-cell,
+.static-icon-hit-target {
+  pointer-events: none;
+}
 
 .icon-visual-wrap {
   position: relative;
@@ -1086,6 +1090,7 @@ body {
 }
 
 .icon-hit-target:hover .icon-box { transform: translateY(-4px); }
+.static-icon-cell .icon-hit-target:hover .icon-box { transform: none; }
 .icon-box-compact {
   width: var(--compact-icon-size);
   height: var(--compact-icon-size);
