@@ -1,4 +1,5 @@
 mod catalog;
+mod file_dialog;
 mod icons;
 mod launcher;
 mod layout_store;
@@ -8,10 +9,13 @@ mod tray;
 
 use std::{collections::HashMap, fs, sync::Mutex};
 
-use catalog::{icon_cache_dir, scan_start_menu_apps};
+use catalog::{icon_cache_dir, icon_file_data_url, scan_start_menu_apps, stable_app_id};
+use file_dialog::{pick_launch_file as pick_native_launch_file, PickedLaunchFile};
+use icons::cache_app_icon_choices;
 use launcher::launch_path;
 use layout_store::{find_saved_layout_app, layout_path};
 use models::AppCatalogItem;
+use serde::Serialize;
 use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconEvent},
     AppHandle, State, WindowEvent,
@@ -24,6 +28,13 @@ pub use icons::debug_extract_icon_png;
 #[derive(Default)]
 struct AppState {
     catalog: Mutex<HashMap<String, AppCatalogItem>>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppIconChoice {
+    id: String,
+    icon_data_url: String,
 }
 
 #[tauri::command]
@@ -69,6 +80,37 @@ fn save_layout(app: AppHandle, layout: serde_json::Value) -> Result<(), String> 
         .map_err(|error| format!("Failed to serialize layout: {error}"))?;
     fs::write(&path, contents)
         .map_err(|error| format!("Failed to write layout {}: {error}", path.display()))
+}
+
+#[tauri::command]
+fn pick_launch_file(app: AppHandle) -> Result<Option<PickedLaunchFile>, String> {
+    pick_native_launch_file(&app)
+}
+
+#[tauri::command]
+fn load_app_icon_choices(
+    app: AppHandle,
+    target_path: String,
+) -> Result<Vec<AppIconChoice>, String> {
+    let path = std::path::Path::new(target_path.trim());
+    if path.as_os_str().is_empty() || !path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let icon_dir = icon_cache_dir(&app)?;
+    let app_id = stable_app_id(&target_path);
+    let choices = cache_app_icon_choices(path, &icon_dir, &app_id)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, path)| {
+            let icon_data_url = icon_file_data_url(path.to_str()?)?;
+            Some(AppIconChoice {
+                id: format!("{app_id}-icon-{index}"),
+                icon_data_url,
+            })
+        })
+        .collect();
+    Ok(choices)
 }
 
 #[tauri::command]
@@ -136,6 +178,8 @@ pub fn run() {
             scan_apps,
             load_layout,
             save_layout,
+            pick_launch_file,
+            load_app_icon_choices,
             launch_app
         ])
         .run(tauri::generate_context!())

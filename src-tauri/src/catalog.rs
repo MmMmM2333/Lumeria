@@ -146,7 +146,7 @@ fn make_catalog_item(path: &Path, icon_dir: &Path) -> AppCatalogItem {
     }
 }
 
-fn stable_app_id(path: &str) -> String {
+pub(crate) fn stable_app_id(path: &str) -> String {
     let mut hasher = DefaultHasher::new();
     path.to_lowercase().hash(&mut hasher);
     format!("win-app-{:x}", hasher.finish())
@@ -159,7 +159,7 @@ fn app_glyph(name: &str) -> String {
         .unwrap_or_else(|| "A".to_string())
 }
 
-fn icon_file_data_url(path: &str) -> Option<String> {
+pub(crate) fn icon_file_data_url(path: &str) -> Option<String> {
     let bytes = fs::read(path).ok()?;
     Some(format!("data:image/png;base64,{}", encode_base64(&bytes)))
 }

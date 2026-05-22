@@ -9,6 +9,8 @@ commands.
 - `scan_apps() -> AppCatalogItem[]`
 - `load_layout() -> LaunchpadLayout | null`
 - `save_layout(layout: LaunchpadLayout) -> void`
+- `pick_launch_file() -> PickedLaunchFile | null`
+- `load_app_icon_choices(targetPath: string) -> AppIconChoice[]`
 - `launch_app(appId: string) -> void`
 
 ## Data Shapes
@@ -43,6 +45,18 @@ type LaunchpadLayout = {
   };
 };
 
+type PickedLaunchFile = {
+  name: string;
+  path: string;
+  launchArgs: string;
+  iconDataUrl?: string;
+};
+
+type AppIconChoice = {
+  id: string;
+  iconDataUrl: string;
+};
+
 type LaunchpadPage = LaunchpadItem[];
 
 type LaunchpadItem =
@@ -63,6 +77,9 @@ first, then add registry or packaged-app discovery later.
 
 `scan_apps` returns cached PNG icons as `iconDataUrl` when extraction succeeds.
 The frontend may persist `customIconDataUrl` for user-selected replacements.
+
+`load_app_icon_choices` returns cached PNG data URLs for icons discovered in a
+local `.exe`, `.dll`, `.ico`, or `.lnk` target.
 
 `launch_app` resolves `appId` server-side from the current native catalog first.
 If the app is not in the current catalog, the backend may fall back to a saved

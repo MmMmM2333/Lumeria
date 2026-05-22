@@ -1,4 +1,4 @@
-import { defineComponent, h, ref } from "vue";
+import { defineComponent, h } from "vue";
 import { Motion } from "motion-v";
 
 const springRest = { restDelta: 0.01, restSpeed: 0.01 };
@@ -58,10 +58,8 @@ export default defineComponent({
     selected: { type: Boolean, default: false },
     opening: { type: Boolean, default: false },
   },
-  emits: ["pointerdown-icon", "open-app", "remove-app", "change-app-icon", "reset-app-icon"],
+  emits: ["pointerdown-icon", "open-app", "remove-app", "choose-app-icon", "reset-app-icon"],
   setup(props, { emit }) {
-    const fileInputRef = ref(null);
-
     function getIconSource(item) {
       return item?.customIconDataUrl || item?.iconDataUrl || item?.iconUrl || null;
     }
@@ -114,7 +112,7 @@ export default defineComponent({
       event.preventDefault();
       event.stopPropagation();
       if (props.item.type !== "app") return;
-      fileInputRef.value?.click?.();
+      emit("choose-app-icon", props.item.id);
     }
 
     function handleResetIcon(event) {
@@ -122,26 +120,6 @@ export default defineComponent({
       event.stopPropagation();
       if (props.item.type !== "app") return;
       emit("reset-app-icon", props.item.id);
-    }
-
-    function handleCustomIconInput(event) {
-      const input = event.target;
-      const file = input?.files?.[0];
-      if (!file || props.item.type !== "app") return;
-      if (!file.type.startsWith("image/")) {
-        input.value = "";
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === "string") emit("change-app-icon", props.item.id, reader.result);
-        input.value = "";
-      };
-      reader.onerror = () => {
-        input.value = "";
-      };
-      reader.readAsDataURL(file);
     }
 
     return () => {
@@ -197,21 +175,6 @@ export default defineComponent({
             onClick: handleResetIcon,
           }, "↺")
         : null;
-      const fileInput = props.editing && item.type === "app"
-        ? h("input", {
-            ref: fileInputRef,
-            class: "custom-icon-input",
-            type: "file",
-            accept: "image/*",
-            tabindex: "-1",
-            onPointerdown: (event) => {
-              event.preventDefault();
-              event.stopPropagation();
-            },
-            onChange: handleCustomIconInput,
-          })
-        : null;
-
       const hitTargetAttrs = {
         class: cx(
           "icon-hit-target",
@@ -263,7 +226,6 @@ export default defineComponent({
                     removeButton,
                     chooseIconButton,
                     resetIconButton,
-                    fileInput,
                     h("div", { class: cx("icon-box", props.compact && "icon-box-compact") }, iconChildren),
                   ]),
                 ]),

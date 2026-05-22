@@ -696,21 +696,6 @@ body {
   gap: 8px;
 }
 
-.app-edit-upload-button {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.app-edit-upload-button input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
 .app-edit-field {
   display: grid;
   gap: 7px;
@@ -728,11 +713,151 @@ body {
   background: rgba(0, 0, 0, 0.2);
 }
 
+.app-edit-target-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
 .app-edit-actions {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
   margin-top: 18px;
+}
+
+.icon-chooser-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 124;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.48);
+}
+
+.icon-chooser-dialog {
+  width: min(560px, 92vw);
+  max-height: min(720px, 92vh);
+  padding: 20px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #1c2028;
+  box-shadow: 0 32px 90px rgba(0, 0, 0, 0.44);
+  overflow: auto;
+}
+
+.icon-chooser-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.icon-chooser-header h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.icon-chooser-header p {
+  margin: 5px 0 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 12px;
+}
+
+.icon-chooser-body {
+  display: grid;
+  gap: 16px;
+}
+
+.icon-chooser-section {
+  display: grid;
+  gap: 10px;
+}
+
+.icon-chooser-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.icon-chooser-section-header h3 {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.icon-chooser-section-header span {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+}
+
+.icon-chooser-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 10px;
+}
+
+.icon-chooser-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  color: white;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.icon-chooser-option:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.14);
+  transform: translateY(-1px);
+}
+
+.icon-chooser-option img {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+}
+
+.icon-chooser-empty {
+  display: flex;
+  align-items: center;
+  min-height: 76px;
+  border: 1px dashed rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  padding: 0 14px;
+  color: rgba(255, 255, 255, 0.56);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 12px;
+}
+
+.icon-chooser-upload-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 96px;
+  height: 36px;
+  line-height: 1;
+  width: fit-content;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.icon-chooser-upload-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
 }
 
 .warning-dialog-overlay {
@@ -1158,14 +1283,6 @@ body {
 .change-app-icon-button:hover,
 .reset-app-icon-button:hover {
   background: rgba(37, 99, 235, 0.92);
-}
-
-.custom-icon-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
 }
 
 @keyframes icon-jiggle {

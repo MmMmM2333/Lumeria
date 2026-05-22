@@ -92,7 +92,7 @@
                       @pointerdown-icon="beginDrag"
                       @open-app="openApp"
                       @remove-app="removeAppById"
-                      @change-app-icon="updateAppCustomIcon"
+                      @choose-app-icon="openExistingAppIconChooser"
                       @reset-app-icon="resetAppCustomIcon"
                     />
                   </template>
@@ -277,10 +277,7 @@
               <span v-else>{{ newManagedAppGlyph }}</span>
             </span>
             <div class="app-edit-icon-actions">
-              <label class="settings-secondary-button app-edit-upload-button">
-                更换图标
-                <input type="file" accept="image/*" aria-label="更换应用图标" @change="handleNewAppIconChange" />
-              </label>
+              <button class="settings-secondary-button" type="button" @click="openNewAppIconChooser">更换图标</button>
               <button class="settings-secondary-button" type="button" @click="resetNewAppIcon">恢复默认</button>
             </div>
           </div>
@@ -291,7 +288,12 @@
           </label>
           <label class="app-edit-field">
             <span>启动路径或 URL</span>
-            <input v-model="newAppTarget" type="text" aria-label="启动路径或 URL" />
+            <span class="app-edit-target-row">
+              <input v-model="newAppTarget" type="text" aria-label="启动路径或 URL" />
+              <button class="settings-secondary-button" type="button" :disabled="!canScanManagedApps || isBrowsingNewAppTarget" @click="browseNewAppLaunchFile">
+                {{ isBrowsingNewAppTarget ? "选择中" : "浏览" }}
+              </button>
+            </span>
           </label>
           <label class="app-edit-field">
             <span>启动参数</span>
@@ -319,14 +321,11 @@
         <div class="app-edit-body">
           <div class="app-edit-icon-row">
             <span class="app-edit-icon">
-              <img v-if="editAppIconDataUrl || getIconSource(editingManagedApp)" :src="editAppIconDataUrl || getIconSource(editingManagedApp)" alt="" draggable="false" />
+              <img v-if="editingAppIconSource" :src="editingAppIconSource" alt="" draggable="false" />
               <span v-else>{{ editingManagedApp.emoji }}</span>
             </span>
             <div class="app-edit-icon-actions">
-              <label class="settings-secondary-button app-edit-upload-button">
-                更换图标
-                <input type="file" accept="image/*" aria-label="更换应用图标" @change="handleEditAppIconChange" />
-              </label>
+              <button class="settings-secondary-button" type="button" @click="openEditAppIconChooser">更换图标</button>
               <button class="settings-secondary-button" type="button" @click="resetEditAppIcon">恢复默认</button>
             </div>
           </div>
@@ -337,7 +336,12 @@
           </label>
           <label class="app-edit-field">
             <span>启动路径或 URL</span>
-            <input v-model="editAppTarget" type="text" aria-label="启动路径或 URL" />
+            <span class="app-edit-target-row">
+              <input v-model="editAppTarget" type="text" aria-label="启动路径或 URL" />
+              <button class="settings-secondary-button" type="button" :disabled="!canScanManagedApps || isBrowsingEditAppTarget" @click="browseEditAppLaunchFile">
+                {{ isBrowsingEditAppTarget ? "选择中" : "浏览" }}
+              </button>
+            </span>
           </label>
           <label class="app-edit-field">
             <span>启动参数</span>
@@ -349,6 +353,51 @@
           <button class="settings-secondary-button" type="button" @click="closeEditManagedApp">取消</button>
           <button class="settings-primary-button" type="button" :disabled="!canSaveEditingManagedApp" @click="saveEditingManagedApp">保存</button>
         </footer>
+      </section>
+    </div>
+
+    <div v-if="iconChooser" class="icon-chooser-overlay" @wheel.stop @pointerdown.self="closeIconChooser">
+      <section class="icon-chooser-dialog" role="dialog" aria-modal="true" :aria-label="iconChooser.title">
+        <header class="icon-chooser-header">
+          <div>
+            <h2>{{ iconChooser.title }}</h2>
+            <p>{{ iconChooser.subtitle }}</p>
+          </div>
+          <button class="settings-close-button" type="button" aria-label="关闭图标选择" @click="closeIconChooser">×</button>
+        </header>
+
+        <div class="icon-chooser-body">
+          <section class="icon-chooser-section" aria-label="应用内图标">
+            <div class="icon-chooser-section-header">
+              <h3>应用内图标</h3>
+              <span v-if="iconChoices.length">{{ iconChoices.length }} 个</span>
+            </div>
+            <div v-if="isLoadingIconChoices" class="icon-chooser-empty">正在读取</div>
+            <div v-else-if="iconChoices.length" class="icon-chooser-grid">
+              <button
+                v-for="choice in iconChoices"
+                :key="choice.id"
+                class="icon-chooser-option"
+                type="button"
+                aria-label="选择应用内图标"
+                @click="chooseIconCandidate(choice)"
+              >
+                <img :src="choice.iconDataUrl" alt="" draggable="false" />
+              </button>
+            </div>
+            <div v-else class="icon-chooser-empty">没有可用图标</div>
+          </section>
+
+          <section class="icon-chooser-section" aria-label="本地图片">
+            <div class="icon-chooser-section-header">
+              <h3>本地图片</h3>
+            </div>
+            <label class="settings-secondary-button icon-chooser-upload-button">
+              选择图片
+              <input type="file" accept="image/*" aria-label="从硬盘选择图片" @change="handleIconChooserUpload" />
+            </label>
+          </section>
+        </div>
       </section>
     </div>
 
@@ -443,7 +492,7 @@
                     @pointerdown-icon="beginDrag"
                     @open-app="openApp"
                     @remove-app="removeAppById"
-                    @change-app-icon="updateAppCustomIcon"
+                    @choose-app-icon="openExistingAppIconChooser"
                     @reset-app-icon="resetAppCustomIcon"
                   />
                 </Motion>
@@ -567,12 +616,15 @@ const {
   newAppTarget,
   newAppArgs,
   newAppIconDataUrl,
+  isBrowsingNewAppTarget,
   newManagedAppGlyph,
   editingManagedApp,
   editAppName,
   editAppTarget,
   editAppArgs,
   editAppIconDataUrl,
+  isEditAppIconReset,
+  isBrowsingEditAppTarget,
   isScanningApps,
   canAddManagedApp,
   canSaveEditingManagedApp,
@@ -583,12 +635,21 @@ const {
   clearManagedAppSelection,
   openAddManagedAppPage,
   closeAddManagedAppPage,
-  handleNewAppIconChange,
+  openNewAppIconChooser,
   resetNewAppIcon,
+  browseNewAppLaunchFile,
   openEditManagedApp,
   closeEditManagedApp,
-  handleEditAppIconChange,
+  openEditAppIconChooser,
   resetEditAppIcon,
+  browseEditAppLaunchFile,
+  iconChooser,
+  iconChoices,
+  isLoadingIconChoices,
+  closeIconChooser,
+  chooseIconCandidate,
+  handleIconChooserUpload,
+  openExistingAppIconChooser,
   saveEditingManagedApp,
   deleteManagedApp,
   confirmForceFillAllPages,
@@ -631,7 +692,6 @@ const {
   beginDrag,
   openApp,
   removeAppById,
-  updateAppCustomIcon,
   resetAppCustomIcon,
   layoutSpring,
   pageDotsRef,
@@ -670,6 +730,11 @@ const {
 
 const isSearchInputFocused = ref(false);
 const hasSearchQuery = computed(() => searchQuery.value.trim().length > 0);
+const editingAppIconSource = computed(() => {
+  if (editAppIconDataUrl.value) return editAppIconDataUrl.value;
+  if (isEditAppIconReset.value) return getDefaultIconSource(editingManagedApp.value);
+  return getIconSource(editingManagedApp.value);
+});
 
 function handleSearchFocus() {
   keyboardFocusArea.value = "search";
@@ -682,5 +747,9 @@ function handleSearchBlur() {
 
 function getIconSource(item) {
   return item?.customIconDataUrl || item?.iconDataUrl || item?.iconUrl || null;
+}
+
+function getDefaultIconSource(item) {
+  return item?.iconDataUrl || item?.iconUrl || null;
 }
 </script>

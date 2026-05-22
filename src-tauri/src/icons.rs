@@ -1,6 +1,7 @@
 #[cfg(target_os = "windows")]
 use png::{BitDepth, ColorType, Encoder};
 use std::{
+    collections::HashSet,
     env, fs,
     fs::File,
     io::BufWriter,
@@ -46,6 +47,42 @@ pub(crate) fn cache_app_icon(path: &Path, icon_dir: &Path, app_id: &str) -> Opti
     extract_icon_png(path, &icon_path)
         .ok()
         .map(|_| icon_path.to_string_lossy().to_string())
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn cache_app_icon_choices(path: &Path, icon_dir: &Path, app_id: &str) -> Vec<PathBuf> {
+    let mut output_paths = Vec::new();
+    let mut seen = HashSet::new();
+
+    for (source_index, source) in icon_choice_sources(path).into_iter().enumerate() {
+        for icon_index in icon_choice_indexes(&source.path, source.icon_index) {
+            let output_path = icon_dir.join(format!(
+                "{app_id}-choice-v1-{source_index}-{}.png",
+                icon_index_key(icon_index)
+            ));
+            if !output_path.exists()
+                && extract_resource_icon_png(&source.path, &output_path, icon_index).is_err()
+            {
+                continue;
+            }
+            if let Ok(bytes) = fs::read(&output_path) {
+                if seen.insert(bytes) {
+                    output_paths.push(output_path);
+                }
+            }
+        }
+    }
+
+    output_paths
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn cache_app_icon_choices(
+    _path: &Path,
+    _icon_dir: &Path,
+    _app_id: &str,
+) -> Vec<PathBuf> {
+    Vec::new()
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -220,6 +257,74 @@ fn extract_resource_icon_png(
         }
         Some("ico") => extract_ico_png(source_path, output_path),
         _ => Err("Path is not a supported icon resource file".to_string()),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn icon_choice_sources(path: &Path) -> Vec<IconSource> {
+    if extension(path).as_deref() == Some("lnk") {
+        let mut sources = resolve_shortcut_icon_sources(path);
+        if sources.is_empty() {
+            sources.push(IconSource {
+                path: path.to_path_buf(),
+                icon_index: None,
+            });
+        }
+        return sources;
+    }
+
+    vec![IconSource {
+        path: path.to_path_buf(),
+        icon_index: None,
+    }]
+}
+
+#[cfg(target_os = "windows")]
+fn icon_choice_indexes(source_path: &Path, preferred_index: Option<i32>) -> Vec<Option<i32>> {
+    match extension(source_path).as_deref() {
+        Some("exe") | Some("dll") => enum_pe_icon_indexes(source_path, preferred_index),
+        Some("ico") => vec![None],
+        _ => Vec::new(),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn enum_pe_icon_indexes(source_path: &Path, preferred_index: Option<i32>) -> Vec<Option<i32>> {
+    let source = HSTRING::from(source_path.to_string_lossy().as_ref());
+    let module = unsafe {
+        LoadLibraryExW(
+            &source,
+            None,
+            LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE,
+        )
+    };
+    let Ok(module) = module else {
+        return preferred_index.into_iter().map(Some).collect();
+    };
+    let _guard = LibraryGuard(module);
+    let names = match enum_group_icon_names(module) {
+        Ok(names) => names,
+        Err(_) => return preferred_index.into_iter().map(Some).collect(),
+    };
+    if names.is_empty() {
+        return preferred_index.into_iter().map(Some).collect();
+    }
+
+    let mut indexes = Vec::new();
+    if let Some(preferred_index) = preferred_index {
+        indexes.push(Some(preferred_index));
+    }
+    indexes.extend((0..names.len()).map(|index| Some(index as i32)));
+    indexes.dedup();
+    indexes
+}
+
+#[cfg(target_os = "windows")]
+fn icon_index_key(icon_index: Option<i32>) -> String {
+    match icon_index {
+        Some(index) if index < 0 => format!("id{}", index.unsigned_abs()),
+        Some(index) => index.to_string(),
+        None => "default".to_string(),
     }
 }
 

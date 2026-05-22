@@ -33,7 +33,7 @@ import {
   cx,
   makePageSize,
 } from "../domain/launchpadLayout.js";
-import { isNativeBridgeAvailable, launchApp as launchNativeApp, listenNativeEvent, loadLayout, saveLayout, scanApps } from "../api/launchpadApi.js";
+import { isNativeBridgeAvailable, launchApp as launchNativeApp, listenNativeEvent, loadAppIconChoices, loadLayout, pickLaunchFile, saveLayout, scanApps } from "../api/launchpadApi.js";
 import { useLaunchpadDrag } from "./useLaunchpadDrag.js";
 import { useIconSelection } from "./useIconSelection.js";
 import { useLaunchpadKeyboard } from "./useLaunchpadKeyboard.js";
@@ -114,12 +114,18 @@ export function useLaunchpadController() {
   const newAppTarget = ref("");
   const newAppArgs = ref("");
   const newAppIconDataUrl = ref(null);
+  const isBrowsingNewAppTarget = ref(false);
   const editingManagedAppId = ref(null);
   const editAppName = ref("");
   const editAppTarget = ref("");
   const editAppArgs = ref("");
   const editAppIconDataUrl = ref(null);
+  const isEditAppIconReset = ref(false);
+  const isBrowsingEditAppTarget = ref(false);
   const isScanningApps = ref(false);
+  const iconChooser = shallowRef(null);
+  const iconChoices = ref([]);
+  const isLoadingIconChoices = ref(false);
   const keyboardFocusArea = ref("desktop");
   const launchGhost = shallowRef(null);
   const openFolderId = ref(null);
@@ -159,6 +165,7 @@ export function useLaunchpadController() {
   let nativeLayoutReady = false;
   let nativeSaveTimer = null;
   let unlistenSettingsEvent = null;
+  let iconChooserRequestId = 0;
 
   const {
     clearOpeningIcon,
@@ -921,24 +928,49 @@ export function useLaunchpadController() {
 
   function closeAddManagedAppPage() {
     isAddingManagedApp.value = false;
+    if (iconChooser.value?.target === "new") closeIconChooser();
     resetNewManagedAppDraft();
   }
 
-  function handleNewAppIconChange(event) {
+  function readImageFileAsDataUrl(event, callback) {
     const input = event?.target;
     const file = input?.files?.[0];
     if (!file) return;
+    if (file.type && !file.type.startsWith("image/")) {
+      input.value = "";
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = () => {
-      if (typeof reader.result === "string") newAppIconDataUrl.value = reader.result;
+      if (typeof reader.result === "string") callback(reader.result);
+      input.value = "";
+    };
+    reader.onerror = () => {
+      input.value = "";
     };
     reader.readAsDataURL(file);
-    input.value = "";
   }
 
   function resetNewAppIcon() {
     newAppIconDataUrl.value = null;
+  }
+
+  async function browseNewAppLaunchFile() {
+    if (!shouldUseNativeCatalog() || isBrowsingNewAppTarget.value) return;
+    isBrowsingNewAppTarget.value = true;
+    try {
+      const selectedFile = await pickLaunchFile();
+      if (!selectedFile) return;
+      newAppName.value = String(selectedFile.name || "").trim() || newAppName.value;
+      newAppTarget.value = String(selectedFile.path || "").trim();
+      newAppArgs.value = String(selectedFile.launchArgs || "").trim();
+      newAppIconDataUrl.value = selectedFile.iconDataUrl || null;
+    } catch (error) {
+      console.error("Failed to pick launch file", error);
+    } finally {
+      isBrowsingNewAppTarget.value = false;
+    }
   }
 
   function openEditManagedApp(app) {
@@ -948,31 +980,149 @@ export function useLaunchpadController() {
     editAppTarget.value = getLaunchTargetPath(app);
     editAppArgs.value = typeof app.launchArgs === "string" ? app.launchArgs : "";
     editAppIconDataUrl.value = app.customIconDataUrl || null;
+    isEditAppIconReset.value = false;
   }
 
   function closeEditManagedApp() {
     editingManagedAppId.value = null;
+    if (iconChooser.value?.target === "edit") closeIconChooser();
     editAppName.value = "";
     editAppTarget.value = "";
     editAppArgs.value = "";
     editAppIconDataUrl.value = null;
-  }
-
-  function handleEditAppIconChange(event) {
-    const input = event?.target;
-    const file = input?.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") editAppIconDataUrl.value = reader.result;
-    };
-    reader.readAsDataURL(file);
-    input.value = "";
+    isEditAppIconReset.value = false;
   }
 
   function resetEditAppIcon() {
     editAppIconDataUrl.value = null;
+    isEditAppIconReset.value = true;
+  }
+
+  async function browseEditAppLaunchFile() {
+    if (!shouldUseNativeCatalog() || isBrowsingEditAppTarget.value) return;
+    isBrowsingEditAppTarget.value = true;
+    try {
+      const selectedFile = await pickLaunchFile();
+      if (!selectedFile) return;
+      editAppName.value = String(selectedFile.name || "").trim() || editAppName.value;
+      editAppTarget.value = String(selectedFile.path || "").trim();
+      editAppArgs.value = String(selectedFile.launchArgs || "").trim();
+      editAppIconDataUrl.value = selectedFile.iconDataUrl || null;
+      isEditAppIconReset.value = false;
+    } catch (error) {
+      console.error("Failed to pick launch file", error);
+    } finally {
+      isBrowsingEditAppTarget.value = false;
+    }
+  }
+
+  function normalizeIconChoices(choices) {
+    return (choices || [])
+      .map((choice, index) => ({
+        id: String(choice?.id || `icon-choice-${index}`),
+        iconDataUrl: choice?.iconDataUrl || choice?.icon_data_url || null,
+      }))
+      .filter((choice) => choice.iconDataUrl);
+  }
+
+  function getIconChooserSourcePath(chooser) {
+    if (chooser?.target === "new") return newAppTarget.value.trim();
+    if (chooser?.target === "edit") return editAppTarget.value.trim();
+    if (chooser?.target === "existing") {
+      const app = managedApps.value.find((item) => item.id === chooser.appId);
+      return getLaunchTargetPath(app).trim();
+    }
+    return "";
+  }
+
+  async function loadIconChoicesForChooser(chooser) {
+    const requestId = (iconChooserRequestId += 1);
+    iconChoices.value = [];
+    const targetPath = getIconChooserSourcePath(chooser);
+    if (!targetPath || !shouldUseNativeCatalog()) {
+      isLoadingIconChoices.value = false;
+      return;
+    }
+
+    isLoadingIconChoices.value = true;
+    try {
+      const choices = await loadAppIconChoices(targetPath);
+      if (requestId !== iconChooserRequestId) return;
+      iconChoices.value = normalizeIconChoices(choices);
+    } catch (error) {
+      if (requestId === iconChooserRequestId) iconChoices.value = [];
+      console.error("Failed to load app icon choices", error);
+    } finally {
+      if (requestId === iconChooserRequestId) isLoadingIconChoices.value = false;
+    }
+  }
+
+  function openIconChooser(chooser) {
+    if (!chooser || isDragActive()) return;
+    iconChooser.value = chooser;
+    loadIconChoicesForChooser(chooser);
+  }
+
+  function openNewAppIconChooser() {
+    openIconChooser({
+      target: "new",
+      title: "更换图标",
+      subtitle: newAppName.value.trim() || "新增应用",
+    });
+  }
+
+  function openEditAppIconChooser() {
+    openIconChooser({
+      target: "edit",
+      title: "更换图标",
+      subtitle: editAppName.value.trim() || editingManagedApp.value?.name || "编辑应用",
+    });
+  }
+
+  function openExistingAppIconChooser(appId) {
+    if (!appId) return;
+    const app = managedApps.value.find((item) => item.id === appId);
+    if (!app) return;
+    openIconChooser({
+      target: "existing",
+      appId,
+      title: "更换图标",
+      subtitle: app.name || "应用",
+    });
+  }
+
+  function closeIconChooser() {
+    iconChooserRequestId += 1;
+    iconChooser.value = null;
+    iconChoices.value = [];
+    isLoadingIconChoices.value = false;
+  }
+
+  function applyIconChooserDataUrl(dataUrl) {
+    if (!dataUrl || !iconChooser.value) return;
+    if (iconChooser.value.target === "new") {
+      newAppIconDataUrl.value = dataUrl;
+      closeIconChooser();
+      return;
+    }
+    if (iconChooser.value.target === "edit") {
+      editAppIconDataUrl.value = dataUrl;
+      isEditAppIconReset.value = false;
+      closeIconChooser();
+      return;
+    }
+    if (iconChooser.value.target === "existing") {
+      updateAppCustomIcon(iconChooser.value.appId, dataUrl);
+      closeIconChooser();
+    }
+  }
+
+  function chooseIconCandidate(choice) {
+    applyIconChooserDataUrl(choice?.iconDataUrl);
+  }
+
+  function handleIconChooserUpload(event) {
+    readImageFileAsDataUrl(event, applyIconChooserDataUrl);
   }
 
   function updateManagedAppEverywhere(appId, updater) {
@@ -1720,12 +1870,15 @@ export function useLaunchpadController() {
     newAppTarget,
     newAppArgs,
     newAppIconDataUrl,
+    isBrowsingNewAppTarget,
     newManagedAppGlyph,
     editingManagedApp,
     editAppName,
     editAppTarget,
     editAppArgs,
     editAppIconDataUrl,
+    isEditAppIconReset,
+    isBrowsingEditAppTarget,
     isScanningApps,
     canAddManagedApp,
     canSaveEditingManagedApp,
@@ -1736,12 +1889,21 @@ export function useLaunchpadController() {
     clearManagedAppSelection,
     openAddManagedAppPage,
     closeAddManagedAppPage,
-    handleNewAppIconChange,
+    openNewAppIconChooser,
     resetNewAppIcon,
+    browseNewAppLaunchFile,
     openEditManagedApp,
     closeEditManagedApp,
-    handleEditAppIconChange,
+    openEditAppIconChooser,
     resetEditAppIcon,
+    browseEditAppLaunchFile,
+    iconChooser,
+    iconChoices,
+    isLoadingIconChoices,
+    closeIconChooser,
+    chooseIconCandidate,
+    handleIconChooserUpload,
+    openExistingAppIconChooser,
     saveEditingManagedApp,
     deleteManagedApp,
     confirmForceFillAllPages,

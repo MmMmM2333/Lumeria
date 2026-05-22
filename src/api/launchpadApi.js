@@ -36,6 +36,18 @@ export async function saveLayout(layout) {
   return invoke("save_layout", { layout });
 }
 
+export async function pickLaunchFile() {
+  const invoke = getTauriInvoke();
+  if (!invoke) return null;
+  return invoke("pick_launch_file");
+}
+
+export async function loadAppIconChoices(targetPath) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return [];
+  return invoke("load_app_icon_choices", { targetPath });
+}
+
 export async function launchApp(appId) {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
