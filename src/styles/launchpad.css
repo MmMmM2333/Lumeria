@@ -1647,7 +1647,7 @@ body {
   --folder-shell-side-padding: 58px;
   display: block;
   min-height: var(--folder-shell-min-height);
-  padding: 46px var(--folder-shell-side-padding) 58px;
+  padding: 54px var(--folder-shell-side-padding) 66px;
   border-radius: 48px;
   background: rgba(236, 240, 244, 0.34);
   box-shadow:

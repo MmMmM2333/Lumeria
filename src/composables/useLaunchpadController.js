@@ -202,11 +202,11 @@ export function useLaunchpadController() {
     return clamp(maxRowCount, 1, folderRows.value);
   });
   const folderGridHeight = computed(() => {
-    const iconCellHeight = iconSize.value + (isTextlessMode.value ? 12 : 48);
+    const iconCellHeight = iconSize.value + (isTextlessMode.value ? 12 : 56);
     return visibleFolderRowCount.value * iconCellHeight + Math.max(0, visibleFolderRowCount.value - 1) * 24;
   });
   const folderShellMinHeight = computed(() => {
-    return folderGridHeight.value + 108;
+    return folderGridHeight.value + 120;
   });
 
   const isSearchMode = computed(() => searchQuery.value.trim().length > 0);
@@ -394,6 +394,7 @@ export function useLaunchpadController() {
     commitOpenFolder,
     commitPageIndex,
     commitSearchPageIndex,
+    finishHomeRevealSettleWindow,
     focusDesktopSurface,
     folderPageIndex,
     folderPages,
@@ -407,6 +408,7 @@ export function useLaunchpadController() {
     isDragActive,
     isFolderAppLaunchClosing,
     isFolderClosing,
+    isHomeRevealSettling,
     isSearchMode,
     keyboardFocusArea,
     moveSelectionByArrow,
