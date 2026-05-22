@@ -89,6 +89,7 @@
                       :layout-enabled="desktopLayoutEnabled"
                       :removable="item.type === 'app'"
                       :selected="isIconSelected(isSearchMode ? 'search' : 'desktop', item.id, pageNumber)"
+                      :drop-target="!isSearchMode && dragFolderTargetId === item.id"
                       :opening="isIconOpening(isSearchMode ? 'search' : 'desktop', item.id, pageNumber)"
                       @pointerdown-icon="beginDrag"
                       @open-app="openApp"
@@ -490,33 +491,18 @@
           :transition="folderContentTransition"
         >
         <div class="folder-header">
-          <div class="folder-title-block">
-            <input
-              class="folder-name-input"
-              :value="renderedFolder.name"
-              :disabled="isFolderClosing"
-              maxlength="32"
-              aria-label="文件夹名称"
-              @input="renameFolder(renderedFolder.id, $event.target.value)"
-              @pointerdown.stop
-            />
-            <p>文件夹内使用紧凑数组排序；拖到两侧可切换或新建文件夹页。</p>
-          </div>
-          <div class="folder-count">{{ folderItemCount(renderedFolder) }} 个项目 · {{ folderRows }}×{{ folderCols }}</div>
+          <input
+            class="folder-name-input"
+            :value="renderedFolder.name"
+            :disabled="isFolderClosing"
+            maxlength="32"
+            aria-label="文件夹名称"
+            @input="renameFolder(renderedFolder.id, $event.target.value)"
+            @pointerdown.stop
+          />
         </div>
 
         <div class="folder-pages-shell">
-          <button
-            class="folder-page-zone folder-page-zone-left"
-            type="button"
-            :disabled="folderPageIndex === 0"
-            aria-label="文件夹上一页"
-            @pointerdown.stop
-            @click="turnFolderPage(-1)"
-          >
-            <ChevronLeftIcon class="button-icon" />
-          </button>
-
           <div class="folder-viewport">
             <Motion class="folder-track" :animate="folderTrackAnimate" :transition="desktopTrackTransition">
               <section v-for="(page, pageNumber) in folderPages" :key="pageNumber" class="folder-page-section">
@@ -528,53 +514,49 @@
                   :style="folderGridStyle"
                   :transition="layoutSpring"
                 >
-                  <DesktopIcon
-                    v-for="(child, index) in getVisibleFolderPage(page)"
-                    :key="child.id"
-                    :item="child"
-                    :source="{ type: 'folder', folderId: renderedFolder.id, index, pageIndex: pageNumber, slotIndex: index }"
-                    :dragging="dragMeta && dragMeta.item.id === child.id"
-                    :editing="isEditMode"
+                  <template v-if="shouldRenderFolderPage(pageNumber)">
+                    <DesktopIcon
+                      v-for="(child, index) in getVisibleFolderPage(page)"
+                      :key="child.id"
+                      :item="child"
+                      :source="{ type: 'folder', folderId: renderedFolder.id, index, pageIndex: pageNumber, slotIndex: index }"
+                      :dragging="dragMeta && dragMeta.item.id === child.id"
+                      :editing="isEditMode"
+                      :textless="isTextlessMode"
+                      :removable="child.type === 'app'"
+                      :selected="isIconSelected('folder', child.id, pageNumber, renderedFolder.id)"
+                      :opening="isIconOpening('folder', child.id, pageNumber, renderedFolder.id)"
+                      @pointerdown-icon="beginDrag"
+                      @open-app="openApp"
+                      @context-menu-icon="openIconContextMenu"
+                      @remove-app="removeAppById"
+                      @choose-app-icon="openExistingAppIconChooser"
+                      @reset-app-icon="resetAppCustomIcon"
+                    />
+                  </template>
+                  <StaticPagePreview
+                    v-else-if="shouldRenderStaticFolderPage(pageNumber)"
+                    :items="getVisibleFolderPage(page)"
+                    :folder-preview-page-size="folderPageSize"
                     :textless="isTextlessMode"
-                    :removable="child.type === 'app'"
-                    :selected="isIconSelected('folder', child.id, pageNumber, renderedFolder.id)"
-                    :opening="isIconOpening('folder', child.id, pageNumber, renderedFolder.id)"
-                    compact
-                    @pointerdown-icon="beginDrag"
-                    @open-app="openApp"
-                    @context-menu-icon="openIconContextMenu"
-                    @remove-app="removeAppById"
-                    @choose-app-icon="openExistingAppIconChooser"
-                    @reset-app-icon="resetAppCustomIcon"
                   />
                 </Motion>
               </section>
             </Motion>
           </div>
 
-          <button
-            class="folder-page-zone folder-page-zone-right"
-            type="button"
-            :disabled="folderPageIndex >= folderPages.length - 1"
-            aria-label="文件夹下一页"
-            @pointerdown.stop
-            @click="turnFolderPage(1)"
-          >
-            <ChevronRightIcon class="button-icon" />
-          </button>
+          <footer v-if="folderPages.length > 1" class="folder-page-dots">
+            <button
+              v-for="index in folderPages.length"
+              :key="index"
+              type="button"
+              :class="cx('page-dot', index - 1 === folderPageIndex && 'page-dot-active')"
+              :aria-label="`切换到文件夹第 ${index} 页`"
+              @pointerdown.stop
+              @click="commitFolderPageIndex(index - 1)"
+            />
+          </footer>
         </div>
-
-        <footer v-if="folderPages.length > 1" class="folder-page-dots">
-          <button
-            v-for="index in folderPages.length"
-            :key="index"
-            type="button"
-            :class="cx('folder-page-dot', index - 1 === folderPageIndex && 'folder-page-dot-active')"
-            :aria-label="`切换到文件夹第 ${index} 页`"
-            @pointerdown.stop
-            @click="commitFolderPageIndex(index - 1)"
-          />
-        </footer>
         </Motion>
       </Motion>
     </div>
@@ -634,7 +616,7 @@ import { Motion } from "motion-v";
 import { computed, ref } from "vue";
 import DesktopIcon from "./components/DesktopIcon.js";
 import StaticPagePreview from "./components/StaticPagePreview.js";
-import { AlertTriangleIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, SearchIcon, SettingsIcon } from "./components/Icons.js";
+import { AlertTriangleIcon, ChevronDownIcon, ChevronUpIcon, SearchIcon, SettingsIcon } from "./components/Icons.js";
 import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "./composables/launchpadConstants.js";
 import { useLaunchpadController } from "./composables/useLaunchpadController.js";
 import "./styles/launchpad.css";
@@ -729,6 +711,7 @@ const {
   rescanManagedApps,
   addManagedApp,
   deleteSelectedManagedApps,
+  dragFolderTargetId,
   dragMeta,
   applySettingsConfig,
   openSettingsPanel,
@@ -746,6 +729,8 @@ const {
   activePages,
   shouldRenderActivePage,
   shouldRenderStaticActivePage,
+  shouldRenderFolderPage,
+  shouldRenderStaticFolderPage,
   commitActivePageIndex,
   desktopTrackMotionKey,
   activeDesktopTrackAnimate,
@@ -778,11 +763,7 @@ const {
   folderContentAnimate,
   folderContentTransition,
   renameFolder,
-  folderItemCount,
-  folderRows,
-  folderCols,
   folderPageIndex,
-  turnFolderPage,
   folderPages,
   folderTrackAnimate,
   desktopTrackTransition,

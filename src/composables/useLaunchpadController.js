@@ -63,7 +63,6 @@ export function useLaunchpadController() {
   const {
     getFolderChildPages,
     withFolderPages,
-    folderItemCount,
     folderPreviewSlots,
     getVisibleDesktopPage,
     getVisibleFolderPage,
@@ -194,6 +193,21 @@ export function useLaunchpadController() {
     const minPageCount = dragControls?.isDragActive() && openFolderId.value === renderedFolder.value.id ? folderPageIndex.value + 1 : 1;
     return getVisibleFolderPages(renderedFolder.value, folderPageSize.value, minPageCount);
   });
+  const visibleFolderRowCount = computed(() => {
+    const columnCount = Math.max(1, folderCols.value);
+    const maxRowCount = folderPages.value.reduce((maxRows, page) => {
+      const visibleCount = getVisibleFolderPage(page).length;
+      return Math.max(maxRows, Math.ceil(visibleCount / columnCount) || 1);
+    }, 1);
+    return clamp(maxRowCount, 1, folderRows.value);
+  });
+  const folderGridHeight = computed(() => {
+    const iconCellHeight = iconSize.value + (isTextlessMode.value ? 12 : 48);
+    return visibleFolderRowCount.value * iconCellHeight + Math.max(0, visibleFolderRowCount.value - 1) * 24;
+  });
+  const folderShellMinHeight = computed(() => {
+    return folderGridHeight.value + 108;
+  });
 
   const isSearchMode = computed(() => searchQuery.value.trim().length > 0);
   const searchApps = computed(() => filterAppsForSearch(collectAppsFromPages(pages.value), searchQuery.value));
@@ -278,6 +292,8 @@ export function useLaunchpadController() {
       : { opacity: 1, scale: 1, y: 0 };
   });
   const folderPanelStyle = computed(() => ({
+    "--folder-grid-height": `${folderGridHeight.value}px`,
+    "--folder-shell-min-height": `${folderShellMinHeight.value}px`,
     transformOrigin: "center center",
     pointerEvents: isFolderAppLaunchClosing.value ? "none" : "auto",
   }));
@@ -287,7 +303,7 @@ export function useLaunchpadController() {
   }));
   const folderGridStyle = computed(() => ({
     gridTemplateColumns: `repeat(${folderCols.value}, minmax(0, 1fr))`,
-    gridTemplateRows: `repeat(${folderRows.value}, minmax(0, 1fr))`,
+    gridTemplateRows: `repeat(${visibleFolderRowCount.value}, minmax(0, 1fr))`,
   }));
   const {
     getActivePageGridStyle,
@@ -327,7 +343,6 @@ export function useLaunchpadController() {
     folderPages,
     folderPageSize,
     folderPanelRef,
-    folderRows,
     folderSession,
     getFolderChildPages,
     getPageSlotMotionGeometry,
@@ -351,6 +366,7 @@ export function useLaunchpadController() {
     removeEverywhere,
     renderedFolder,
     replaceFolderWithItem,
+    visibleFolderRowCount,
     withFolderPages,
     wouldFolderInsertOverflow,
     wouldTopLevelInsertOverflow,
@@ -363,6 +379,7 @@ export function useLaunchpadController() {
     clearPageTurn,
     clearPendingTarget,
     detachDragListeners,
+    dragFolderTargetId,
     dragMeta,
     isDragActive,
   } = dragControls;
@@ -733,6 +750,27 @@ export function useLaunchpadController() {
     return false;
   }
 
+  function shouldRenderFolderPage(pageNumber) {
+    const distance = Math.abs(pageNumber - folderPageIndex.value);
+    if (dragMeta.value) return distance === 0;
+
+    const transientRange = transientPageRenderRange.value;
+    if (transientRange?.mode === "folder") {
+      return Math.abs(pageNumber - transientRange.from) <= 1 || Math.abs(pageNumber - transientRange.to) <= 1;
+    }
+
+    return distance <= 1;
+  }
+
+  function shouldRenderStaticFolderPage(pageNumber) {
+    if (dragMeta.value || shouldRenderFolderPage(pageNumber)) return false;
+
+    const transientRange = transientPageRenderRange.value;
+    if (transientRange?.mode === "folder" && pageNumber >= transientRange.from && pageNumber <= transientRange.to) return true;
+
+    return false;
+  }
+
   function clearPageJumpRenderRange() {
     pageJumpRenderRequestId += 1;
     if (pageJumpRenderTimer) window.clearTimeout(pageJumpRenderTimer);
@@ -762,6 +800,10 @@ export function useLaunchpadController() {
 
   function commitSearchPageIndexNow(next) {
     searchPageIndex.value = clamp(next, 0, Math.max(0, searchPages.value.length - 1));
+  }
+
+  function commitFolderPageIndexNow(next, maxIndex) {
+    folderPageIndex.value = clamp(next, 0, maxIndex);
   }
 
   function commitPageIndexWithRenderRange(mode, current, requested, maxIndex, commitNow) {
@@ -837,11 +879,7 @@ export function useLaunchpadController() {
   function commitFolderPageIndex(next, options) {
     const allowCreate = Boolean(options?.allowCreate);
     const maxIndex = Math.max(0, folderPages.value.length - 1 + (allowCreate ? 1 : 0));
-    folderPageIndex.value = clamp(next, 0, maxIndex);
-  }
-
-  function turnFolderPage(direction) {
-    commitFolderPageIndex(folderPageIndex.value + direction);
+    commitPageIndexWithRenderRange("folder", folderPageIndex.value, next, maxIndex, (value) => commitFolderPageIndexNow(value, maxIndex));
   }
 
   function renameFolder(folderId, name) {
@@ -1967,6 +2005,7 @@ export function useLaunchpadController() {
     rescanManagedApps,
     addManagedApp,
     deleteSelectedManagedApps,
+    dragFolderTargetId,
     dragMeta,
     applyGridConfig,
     applySettingsConfig,
@@ -1985,6 +2024,8 @@ export function useLaunchpadController() {
     activePages,
     shouldRenderActivePage,
     shouldRenderStaticActivePage,
+    shouldRenderFolderPage,
+    shouldRenderStaticFolderPage,
     commitActivePageIndex,
     desktopTrackMotionKey,
     activeDesktopTrackAnimate,
@@ -2018,11 +2059,7 @@ export function useLaunchpadController() {
     folderContentAnimate,
     folderContentTransition,
     renameFolder,
-    folderItemCount,
-    folderRows,
-    folderCols,
     folderPageIndex,
-    turnFolderPage,
     folderPages,
     folderTrackAnimate,
     desktopTrackTransition,

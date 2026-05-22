@@ -56,6 +56,7 @@ export default defineComponent({
     layoutEnabled: { type: Boolean, default: true },
     removable: { type: Boolean, default: false },
     selected: { type: Boolean, default: false },
+    dropTarget: { type: Boolean, default: false },
     opening: { type: Boolean, default: false },
   },
   emits: ["pointerdown-icon", "open-app", "context-menu-icon", "remove-app", "choose-app-icon", "reset-app-icon"],
@@ -222,6 +223,7 @@ export default defineComponent({
             props.dragging && "icon-cell-dragging",
             props.editing && "icon-cell-editing",
             props.selected && "icon-cell-selected",
+            props.dropTarget && "icon-cell-drop-target",
             props.opening && "icon-cell-opening"
           ),
           style: { visibility: props.dragging ? "hidden" : "visible" },
@@ -229,7 +231,7 @@ export default defineComponent({
         {
           default: () => [
             h("div", { class: cx("icon-jiggle-wrap", props.editing && "icon-cell-jiggling") }, [
-              h("div", { class: cx("icon-selection-frame", props.selected && "icon-selection-frame-selected") }, [
+              h("div", { class: cx("icon-selection-frame", props.selected && "icon-selection-frame-selected", props.dropTarget && "icon-selection-frame-drop-target") }, [
                 h("div", hitTargetAttrs, [
                   h("div", { class: "icon-visual-wrap" }, [
                     removeButton,

@@ -22,6 +22,7 @@ import { getDomRefElement } from "./usePageGridMetrics.js";
 
 export function useLaunchpadDrag(options) {
   const dragMeta = shallowRef(null);
+  const dragFolderTargetId = shallowRef(null);
 
   let dragRuntime = null;
   let dragPlacement = null;
@@ -49,6 +50,7 @@ export function useLaunchpadDrag(options) {
     if (pendingTimer) window.clearTimeout(pendingTimer.timer);
     pendingTimer = null;
     folderHover = null;
+    dragFolderTargetId.value = null;
   }
 
   function clearPendingTimerButKeepSticky() {
@@ -114,6 +116,7 @@ export function useLaunchpadDrag(options) {
     cancelPreviewRaf();
     dragRuntime = null;
     dragMeta.value = null;
+    dragFolderTargetId.value = null;
     dragPlacement = null;
     folderHover = null;
     lastPlacementCommit = null;
@@ -154,13 +157,15 @@ export function useLaunchpadDrag(options) {
     }
 
     const rect = grid.getBoundingClientRect();
-    const cellWidth = rect.width / options.folderCols.value;
-    const cellHeight = rect.height / options.folderRows.value;
+    const columnCount = Math.max(1, options.folderCols.value);
+    const rowCount = Math.max(1, options.visibleFolderRowCount.value);
+    const cellWidth = rect.width / columnCount;
+    const cellHeight = rect.height / rowCount;
     const x = clamp(clientX - rect.left, 0, Math.max(1, rect.width - 1));
     const y = clamp(clientY - rect.top, 0, Math.max(1, rect.height - 1));
-    const col = clamp(Math.floor(x / cellWidth), 0, options.folderCols.value - 1);
-    const row = clamp(Math.floor(y / cellHeight), 0, options.folderRows.value - 1);
-    return { pageIndex: options.folderPageIndex.value, index: row * options.folderCols.value + col };
+    const col = clamp(Math.floor(x / cellWidth), 0, columnCount - 1);
+    const row = clamp(Math.floor(y / cellHeight), 0, rowCount - 1);
+    return { pageIndex: options.folderPageIndex.value, index: row * columnCount + col };
   }
 
   function getDragVisualCenter(activeDrag) {
@@ -203,6 +208,7 @@ export function useLaunchpadDrag(options) {
     const rect = targetInfo?.rect;
     if (!rect) return;
     folderHover = { targetId: targetInfo.item.id, stickyRect: expandRect(rect, FOLDER_HOVER_STICKY_MARGIN) };
+    dragFolderTargetId.value = targetInfo.item.id;
   }
 
   function startPendingFolderTarget(target) {
@@ -597,13 +603,16 @@ export function useLaunchpadDrag(options) {
 
     dragRuntime = nextDrag;
     dragMeta.value = { item: nextDrag.item, source: nextDrag.source };
-    dragPlacement = lp.source.type === "page" ? placementKey("page", lp.source.pageIndex, lp.source.index) : null;
+    dragPlacement = lp.source.type === "page"
+      ? placementKey("page", lp.source.pageIndex, lp.source.index)
+      : lp.source.type === "folder"
+        ? placementKey("folder", lp.source.folderId, lp.source.pageIndex, lp.source.index)
+        : null;
     lastPlacementCommit = { key: dragPlacement, x: lp.startPoint.x, y: lp.startPoint.y };
     attachDragListeners();
     nextTick(() => schedulePreviewPosition(lp.startPoint.x, lp.startPoint.y));
 
     if (lp.source.type === "folder") {
-      options.commitPages(options.removeEverywhere(options.pages.value, lp.item.id, { preserveFolderIds: [lp.source.folderId] }));
       options.commitFolderSession({ mode: "source-folder", folderId: lp.source.folderId, hasEntered: true, openedAt: Date.now() });
     }
   }
@@ -717,6 +726,7 @@ export function useLaunchpadDrag(options) {
     clearPageTurn,
     clearPendingTarget,
     detachDragListeners,
+    dragFolderTargetId,
     dragMeta,
     isDragActive,
   };
