@@ -179,9 +179,12 @@
                 </div>
               </div>
               <div class="settings-field">
-                <span>图标大小</span>
+                <span class="settings-field-copy">
+                  <span>图标大小</span>
+                  <span class="settings-field-hint">{{ ICON_SIZE_MIN }}-{{ ICON_SIZE_MAX }}px</span>
+                </span>
                 <div class="settings-number-control settings-number-control-wide">
-                  <input v-model.number="draftIconSize" min="48" max="96" type="number" aria-label="图标大小" />
+                  <input v-model.number="draftIconSize" :min="ICON_SIZE_MIN" :max="ICON_SIZE_MAX" :step="ICON_SIZE_STEP" type="number" aria-label="图标大小" />
                   <span class="settings-number-unit">px</span>
                   <div class="settings-number-buttons">
                     <button type="button" aria-label="增大图标" @click.prevent="changeDraftIconSize(1)"><ChevronUpIcon class="settings-number-icon" /></button>
@@ -622,6 +625,7 @@ import { computed, ref } from "vue";
 import DesktopIcon from "./components/DesktopIcon.js";
 import StaticPagePreview from "./components/StaticPagePreview.js";
 import { AlertTriangleIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, SearchIcon, SettingsIcon } from "./components/Icons.js";
+import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "./composables/launchpadConstants.js";
 import { useLaunchpadController } from "./composables/useLaunchpadController.js";
 import "./styles/launchpad.css";
 

@@ -15,6 +15,7 @@ import {
   HOME_REVEAL_SETTLE_DURATION,
   ICON_SIZE_MAX,
   ICON_SIZE_MIN,
+  ICON_SIZE_STEP,
 } from "./launchpadConstants.js";
 import {
   appLaunchGhostTransition,
@@ -438,8 +439,8 @@ export function useLaunchpadController() {
     draftFolderCols.value = clamp(Number(draftFolderCols.value) + delta || DEFAULT_FOLDER_COLS, 2, 8);
   }
 
-  function changeDraftIconSize(delta) {
-    draftIconSize.value = clampIconSize(draftIconSize.value + delta);
+  function changeDraftIconSize(direction) {
+    draftIconSize.value = clampIconSize(draftIconSize.value + direction * ICON_SIZE_STEP);
   }
 
   function openWarningDialog(config) {

@@ -26,13 +26,13 @@ body {
   --app-icon-radius: calc(var(--app-icon-size) * 0.371428);
   --app-icon-image-size: calc(var(--app-icon-size) * 1);
   --app-icon-emoji-size: calc(var(--app-icon-size) * 0.542857);
-  --app-icon-cell-height: calc(var(--app-icon-size) + 34px);
+  --app-icon-cell-height: calc(var(--app-icon-size) + 48px);
   --textless-icon-cell-height: calc(var(--app-icon-size) + 12px);
   --compact-icon-size: calc(var(--app-icon-size) * 0.885714);
   --compact-icon-radius: var(--app-icon-radius);
   --compact-icon-image-size: calc(var(--app-icon-size) * 0.685714);
   --compact-icon-emoji-size: calc(var(--app-icon-size) * 0.457142);
-  --compact-icon-cell-height: calc(var(--compact-icon-size) + 32px);
+  --compact-icon-cell-height: calc(var(--compact-icon-size) + 44px);
   --textless-compact-icon-cell-height: calc(var(--compact-icon-size) + 8px);
   --folder-thumb-size: var(--app-icon-image-size);
   --drag-preview-box-size: var(--app-icon-size);
@@ -289,6 +289,19 @@ body {
   outline: none;
   color: white;
   background: rgba(0, 0, 0, 0.18);
+}
+
+.settings-field-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.settings-field-hint {
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 11px;
+  line-height: 1.25;
+  white-space: nowrap;
 }
 
 .settings-number-control {
@@ -1241,7 +1254,7 @@ body {
   justify-content: flex-start;
   max-width: 100%;
   min-width: 0;
-  padding: 10px 20px 10px;
+  padding: 10px 12px 10px;
   border-radius: 26px;
   background: transparent;
   pointer-events: none;
@@ -1412,18 +1425,23 @@ body {
 }
 
 .icon-name {
-  max-width: 136px;
+  max-width: 160px;
   margin-top: 8px;
   padding: 2px 8px;
   pointer-events: none;
+  display: -webkit-box;
   overflow: hidden;
   text-align: center;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   border-radius: 999px;
   color: white;
   font-size: 13px;
   font-weight: 520;
+  line-height: 1.22;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
 }
 
