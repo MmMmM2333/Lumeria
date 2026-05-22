@@ -731,7 +731,7 @@ export function useLaunchpadController() {
 
   function shouldRenderActivePage(pageNumber) {
     const distance = Math.abs(pageNumber - activePageIndex.value);
-    if (dragMeta.value) return distance === 0;
+    if (dragMeta.value) return distance <= 1;
 
     const transientRange = transientPageRenderRange.value;
     const activeMode = isSearchMode.value ? "search" : "desktop";
@@ -754,7 +754,7 @@ export function useLaunchpadController() {
 
   function shouldRenderFolderPage(pageNumber) {
     const distance = Math.abs(pageNumber - folderPageIndex.value);
-    if (dragMeta.value) return distance === 0;
+    if (dragMeta.value) return distance <= 1;
 
     const transientRange = transientPageRenderRange.value;
     if (transientRange?.mode === "folder") {

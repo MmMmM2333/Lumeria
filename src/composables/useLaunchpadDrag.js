@@ -436,8 +436,7 @@ export function useLaunchpadDrag(options) {
   }
 
   function handlePageEdgeTurn(clientX) {
-    const width = window.innerWidth;
-    const direction = clientX > width - PAGE_EDGE_SIZE ? 1 : clientX < PAGE_EDGE_SIZE ? -1 : 0;
+    const direction = getPageEdgeDirection(clientX);
     if (!direction) {
       clearPageTurn();
       return;
@@ -448,38 +447,61 @@ export function useLaunchpadDrag(options) {
     pageTurnTimer = {
       direction,
       timer: window.setTimeout(() => {
+        pageTurnTimer = null;
         const currentPage = options.pageIndex.value;
+        let didTurn = false;
         dragPlacement = null;
         lastPlacementCommit = null;
         if (direction < 0) {
-          options.commitPageIndex(Math.max(0, currentPage - 1));
-          return;
+          if (currentPage <= 0) return;
+          options.commitPageIndex(currentPage - 1);
+          didTurn = true;
+        } else {
+          if (currentPage >= options.pages.value.length - 1) {
+            const draggedItemId = dragRuntime?.item?.id;
+            if (!options.canCreateDesktopPageAfterDrag(options.pages.value, currentPage, draggedItemId)) return;
+            options.commitPages([...options.pages.value, []]);
+          }
+          options.commitPageIndex(currentPage + 1);
+          didTurn = true;
         }
-        if (currentPage >= options.pages.value.length - 1) {
-          const draggedItemId = dragRuntime?.item?.id;
-          if (!options.canCreateDesktopPageAfterDrag(options.pages.value, currentPage, draggedItemId)) return;
-          options.commitPages([...options.pages.value, []]);
-        }
-        options.commitPageIndex(currentPage + 1);
+        if (didTurn) nextTick(schedulePageEdgeTurnFromCurrentPointer);
       }, PAGE_TURN_DELAY),
     };
   }
 
-  function handleFolderPageEdgeTurn(clientX, clientY) {
+  function getPageEdgeDirection(clientX) {
+    const width = window.innerWidth;
+    return clientX > width - PAGE_EDGE_SIZE ? 1 : clientX < PAGE_EDGE_SIZE ? -1 : 0;
+  }
+
+  function schedulePageEdgeTurnFromCurrentPointer() {
+    if (!dragRuntime || options.folderSession.value || options.openFolderId.value) return;
+    const pointer = dragRuntime.pointer;
+    if (!pointer || !getPageEdgeDirection(pointer.x)) return;
+    handlePageEdgeTurn(pointer.x);
+  }
+
+  function getFolderPageEdgeDirection(clientX, clientY) {
     const panel = getDomRefElement(options.folderPanelRef.value);
     const rect = panel?.getBoundingClientRect();
-    if (!rect || !isPointInsideRect(rect, clientX, clientY)) {
-      clearFolderPageTurn();
-      return;
-    }
+    if (!rect || !isPointInsideRect(rect, clientX, clientY)) return 0;
 
     const direction = clientX < rect.left + FOLDER_PAGE_EDGE_SIZE ? -1 : clientX > rect.right - FOLDER_PAGE_EDGE_SIZE ? 1 : 0;
-    if (!direction) {
-      clearFolderPageTurn();
-      return;
-    }
+    if (direction < 0 && options.folderPageIndex.value <= 0) return 0;
+    return direction;
+  }
 
-    if (direction < 0 && options.folderPageIndex.value <= 0) {
+  function scheduleFolderPageEdgeTurnFromCurrentPointer() {
+    if (!dragRuntime || (!options.folderSession.value && !options.openFolderId.value)) return;
+    const pointer = dragRuntime.pointer;
+    if (!pointer || !getFolderPageEdgeDirection(pointer.x, pointer.y)) return;
+    handleFolderPageEdgeTurn(pointer.x, pointer.y);
+  }
+
+  function handleFolderPageEdgeTurn(clientX, clientY) {
+    const direction = getFolderPageEdgeDirection(clientX, clientY);
+    if (!direction) {
       clearFolderPageTurn();
       return;
     }
@@ -490,11 +512,16 @@ export function useLaunchpadDrag(options) {
     folderPageTurnTimer = {
       direction,
       timer: window.setTimeout(() => {
+        folderPageTurnTimer = null;
         const currentPage = options.folderPageIndex.value;
+        let didTurn = false;
         dragPlacement = null;
         lastPlacementCommit = null;
-        if (direction < 0) options.commitFolderPageIndex(currentPage - 1);
-        else {
+        if (direction < 0) {
+          if (currentPage <= 0) return;
+          options.commitFolderPageIndex(currentPage - 1);
+          didTurn = true;
+        } else {
           const isCreatingNewPage = currentPage >= options.folderPages.value.length - 1;
           if (isCreatingNewPage) {
             const folder = options.openFolderId.value ? options.findFolder(options.pages.value, options.openFolderId.value)?.item : null;
@@ -502,8 +529,9 @@ export function useLaunchpadDrag(options) {
             if (!options.canCreateFolderPageAfterDrag(folder, currentPage, draggedItemId, options.folderPageSize.value)) return;
           }
           options.commitFolderPageIndex(currentPage + 1, { allowCreate: true });
+          didTurn = true;
         }
-        folderPageTurnTimer = null;
+        if (didTurn) nextTick(scheduleFolderPageEdgeTurnFromCurrentPointer);
       }, PAGE_TURN_DELAY),
     };
   }
