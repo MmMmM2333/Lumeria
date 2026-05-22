@@ -108,6 +108,9 @@ export function useLaunchpadController() {
   const warningDialog = shallowRef(null);
   const appManagerSelectedIds = ref([]);
   const appManagerSearchQuery = ref("");
+  const isScanResultDialogOpen = ref(false);
+  const scanResultApps = ref([]);
+  const scanResultSelectedIds = ref([]);
   const isAddingManagedApp = ref(false);
   const hiddenAppIds = ref([]);
   const newAppName = ref("");
@@ -208,6 +211,8 @@ export function useLaunchpadController() {
     });
   });
   const selectedManagedAppCount = computed(() => appManagerSelectedIds.value.length);
+  const scanResultSelectedCount = computed(() => scanResultSelectedIds.value.length);
+  const canAddScannedApps = computed(() => scanResultSelectedCount.value > 0);
   const canAddManagedApp = computed(() => newAppName.value.trim().length > 0 && newAppTarget.value.trim().length > 0);
   const newManagedAppGlyph = computed(() => fallbackAppGlyph(newAppName.value));
   const canSaveEditingManagedApp = computed(() => editAppName.value.trim().length > 0 && editAppTarget.value.trim().length > 0);
@@ -913,6 +918,28 @@ export function useLaunchpadController() {
     appManagerSelectedIds.value = [];
   }
 
+  function toggleScanResultSelection(appId, checked) {
+    if (!appId) return;
+    const selected = new Set(scanResultSelectedIds.value);
+    if (checked) selected.add(appId);
+    else selected.delete(appId);
+    scanResultSelectedIds.value = Array.from(selected);
+  }
+
+  function selectAllScanResultApps() {
+    scanResultSelectedIds.value = scanResultApps.value.map((app) => app.id);
+  }
+
+  function clearScanResultSelection() {
+    scanResultSelectedIds.value = [];
+  }
+
+  function closeScanResultDialog() {
+    isScanResultDialogOpen.value = false;
+    scanResultApps.value = [];
+    scanResultSelectedIds.value = [];
+  }
+
   function resetNewManagedAppDraft() {
     newAppName.value = "";
     newAppTarget.value = "";
@@ -1237,20 +1264,35 @@ export function useLaunchpadController() {
       const missingApps = (nativeApps || [])
         .map(normalizeNativeApp)
         .filter((app) => !existingIds.has(app.id));
-      if (missingApps.length) {
-        const restoredIds = new Set(missingApps.map((app) => app.id));
-        hiddenAppIds.value = hiddenAppIds.value.filter((id) => !restoredIds.has(id));
-        commitPages(appendAppsToPages(pages.value, missingApps));
-        commitPageIndex(pageIndex.value);
-        commitSearchPageIndex(searchPageIndex.value);
-      }
+      scanResultApps.value = missingApps;
+      scanResultSelectedIds.value = missingApps.map((app) => app.id);
+      isScanResultDialogOpen.value = true;
       syncManagedAppState();
-      schedulePageGridMetrics();
     } catch (error) {
       console.error("Failed to scan apps", error);
     } finally {
       isScanningApps.value = false;
     }
+  }
+
+  function addSelectedScannedApps() {
+    if (isDragActive() || !canAddScannedApps.value) return;
+    const selectedIds = new Set(scanResultSelectedIds.value);
+    const existingIds = new Set(collectAppsFromPages(pages.value).map((app) => app.id));
+    const selectedApps = scanResultApps.value.filter((app) => selectedIds.has(app.id) && !existingIds.has(app.id));
+    if (!selectedApps.length) {
+      closeScanResultDialog();
+      return;
+    }
+
+    const restoredIds = new Set(selectedApps.map((app) => app.id));
+    hiddenAppIds.value = hiddenAppIds.value.filter((id) => !restoredIds.has(id));
+    commitPages(appendAppsToPages(pages.value, selectedApps));
+    closeScanResultDialog();
+    commitPageIndex(pageIndex.value);
+    commitSearchPageIndex(searchPageIndex.value);
+    syncManagedAppState();
+    schedulePageGridMetrics();
   }
 
   function addManagedApp() {
@@ -1337,6 +1379,7 @@ export function useLaunchpadController() {
   function closeSettingsPanel() {
     isSettingsPanelOpen.value = false;
     closeAddManagedAppPage();
+    closeScanResultDialog();
   }
 
   function handleSearchInput(event) {
@@ -1864,6 +1907,11 @@ export function useLaunchpadController() {
     filteredManagedApps,
     appManagerSelectedIds,
     appManagerSearchQuery,
+    isScanResultDialogOpen,
+    scanResultApps,
+    scanResultSelectedIds,
+    scanResultSelectedCount,
+    canAddScannedApps,
     isAddingManagedApp,
     selectedManagedAppCount,
     newAppName,
@@ -1887,6 +1935,11 @@ export function useLaunchpadController() {
     toggleManagedAppSelection,
     selectAllManagedApps,
     clearManagedAppSelection,
+    toggleScanResultSelection,
+    selectAllScanResultApps,
+    clearScanResultSelection,
+    closeScanResultDialog,
+    addSelectedScannedApps,
     openAddManagedAppPage,
     closeAddManagedAppPage,
     openNewAppIconChooser,

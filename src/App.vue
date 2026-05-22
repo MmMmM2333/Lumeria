@@ -260,6 +260,52 @@
       </section>
     </div>
 
+    <div v-if="isScanResultDialogOpen" class="scan-result-overlay" @wheel.stop @pointerdown.self="closeScanResultDialog">
+      <section class="scan-result-dialog" role="dialog" aria-modal="true" aria-label="扫描结果">
+        <header class="scan-result-header">
+          <div>
+            <h2>扫描结果</h2>
+            <p>发现 {{ scanResultApps.length }} 个可添加应用 · 已选择 {{ scanResultSelectedCount }} 个</p>
+          </div>
+          <button class="settings-close-button" type="button" aria-label="关闭扫描结果" @click="closeScanResultDialog">×</button>
+        </header>
+
+        <div class="scan-result-body">
+          <div v-if="scanResultApps.length" class="settings-list-actions">
+            <button class="settings-link-button" type="button" @click="selectAllScanResultApps">全选</button>
+            <button class="settings-link-button" type="button" @click="clearScanResultSelection">清空选择</button>
+          </div>
+
+          <div v-if="scanResultApps.length" class="app-manager-list scan-result-list" role="list" aria-label="可添加应用">
+            <label v-for="app in scanResultApps" :key="app.id" class="app-manager-item scan-result-item" role="listitem">
+              <input
+                type="checkbox"
+                :aria-label="`选择 ${app.name}`"
+                :checked="scanResultSelectedIds.includes(app.id)"
+                @change="toggleScanResultSelection(app.id, $event.target.checked)"
+              />
+              <span class="app-manager-icon">
+                <img v-if="getIconSource(app)" :src="getIconSource(app)" alt="" draggable="false" />
+                <span v-else>{{ app.emoji }}</span>
+              </span>
+              <span class="app-manager-details">
+                <span class="app-manager-name">{{ app.name }}</span>
+                <span class="app-manager-target">{{ getLaunchTargetPath(app) || "未设置启动路径" }}</span>
+                <span v-if="app.launchArgs" class="app-manager-target">参数：{{ app.launchArgs }}</span>
+              </span>
+            </label>
+          </div>
+
+          <div v-else class="scan-result-empty">没有发现可添加的应用</div>
+        </div>
+
+        <footer class="scan-result-actions">
+          <button class="settings-secondary-button" type="button" @click="closeScanResultDialog">取消</button>
+          <button class="settings-primary-button" type="button" :disabled="!canAddScannedApps" @click="addSelectedScannedApps">添加所选</button>
+        </footer>
+      </section>
+    </div>
+
     <div v-if="isAddingManagedApp" class="app-edit-overlay" @wheel.stop @pointerdown.self="closeAddManagedAppPage">
       <section class="app-edit-dialog" role="dialog" aria-modal="true" aria-label="新增应用">
         <header class="app-edit-header">
@@ -610,6 +656,11 @@ const {
   filteredManagedApps,
   appManagerSelectedIds,
   appManagerSearchQuery,
+  isScanResultDialogOpen,
+  scanResultApps,
+  scanResultSelectedIds,
+  scanResultSelectedCount,
+  canAddScannedApps,
   isAddingManagedApp,
   selectedManagedAppCount,
   newAppName,
@@ -633,6 +684,11 @@ const {
   toggleManagedAppSelection,
   selectAllManagedApps,
   clearManagedAppSelection,
+  toggleScanResultSelection,
+  selectAllScanResultApps,
+  clearScanResultSelection,
+  closeScanResultDialog,
+  addSelectedScannedApps,
   openAddManagedAppPage,
   closeAddManagedAppPage,
   openNewAppIconChooser,
