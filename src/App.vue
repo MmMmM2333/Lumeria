@@ -4,6 +4,7 @@
     :class="cx('launchpad-root', isTextlessMode && 'launchpad-root-textless', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching')"
     :style="rootStyle"
     @wheel="handleLaunchpadWheel"
+    @pointerdown="closeIconContextMenu"
   >
     <div class="launchpad-bg" />
 
@@ -91,6 +92,7 @@
                       :opening="isIconOpening(isSearchMode ? 'search' : 'desktop', item.id, pageNumber)"
                       @pointerdown-icon="beginDrag"
                       @open-app="openApp"
+                      @context-menu-icon="openIconContextMenu"
                       @remove-app="removeAppById"
                       @choose-app-icon="openExistingAppIconChooser"
                       @reset-app-icon="resetAppCustomIcon"
@@ -540,6 +542,7 @@
                     compact
                     @pointerdown-icon="beginDrag"
                     @open-app="openApp"
+                    @context-menu-icon="openIconContextMenu"
                     @remove-app="removeAppById"
                     @choose-app-icon="openExistingAppIconChooser"
                     @reset-app-icon="resetAppCustomIcon"
@@ -590,6 +593,13 @@
         <span v-else class="app-launch-ghost-emoji">{{ launchGhost.app.emoji }}</span>
       </div>
     </Motion>
+
+    <div v-if="iconContextMenu" class="icon-context-menu-layer" @pointerdown.self="closeIconContextMenu" @contextmenu.prevent>
+      <div class="icon-context-menu" :style="iconContextMenuStyle" role="menu" :aria-label="`${iconContextMenu.app.name} 菜单`" @pointerdown.stop>
+        <button type="button" role="menuitem" @click="openContextMenuApp">打开</button>
+        <button type="button" role="menuitem" @click="editContextMenuApp">编辑</button>
+      </div>
+    </div>
 
     <Motion
       v-if="dragMeta"
@@ -789,7 +799,15 @@ const {
 } = useLaunchpadController();
 
 const isSearchInputFocused = ref(false);
+const iconContextMenu = ref(null);
 const hasSearchQuery = computed(() => searchQuery.value.trim().length > 0);
+const iconContextMenuStyle = computed(() => {
+  if (!iconContextMenu.value) return {};
+  return {
+    left: `${iconContextMenu.value.x}px`,
+    top: `${iconContextMenu.value.y}px`,
+  };
+});
 const editingAppIconSource = computed(() => {
   if (editAppIconDataUrl.value) return editAppIconDataUrl.value;
   if (isEditAppIconReset.value) return getDefaultIconSource(editingManagedApp.value);
@@ -803,6 +821,39 @@ function handleSearchFocus() {
 
 function handleSearchBlur() {
   isSearchInputFocused.value = false;
+}
+
+function openIconContextMenu(event, app, source) {
+  if (!app || app.type !== "app") return;
+  const menuWidth = 172;
+  const menuHeight = 116;
+  const margin = 8;
+  const maxX = Math.max(margin, window.innerWidth - menuWidth - margin);
+  const maxY = Math.max(margin, window.innerHeight - menuHeight - margin);
+  iconContextMenu.value = {
+    app,
+    source,
+    x: Math.min(Math.max(event.clientX, margin), maxX),
+    y: Math.min(Math.max(event.clientY, margin), maxY),
+  };
+}
+
+function closeIconContextMenu() {
+  iconContextMenu.value = null;
+}
+
+function openContextMenuApp() {
+  const menu = iconContextMenu.value;
+  if (!menu) return;
+  closeIconContextMenu();
+  openApp(menu.app, menu.source);
+}
+
+function editContextMenuApp() {
+  const menu = iconContextMenu.value;
+  if (!menu) return;
+  closeIconContextMenu();
+  openEditManagedApp(menu.app);
 }
 
 function getIconSource(item) {

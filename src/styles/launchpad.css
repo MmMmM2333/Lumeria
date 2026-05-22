@@ -1445,6 +1445,48 @@ body {
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
 }
 
+.icon-context-menu-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 88;
+}
+
+.icon-context-menu {
+  position: fixed;
+  display: grid;
+  gap: 4px;
+  width: 172px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 18px;
+  background: rgba(28, 32, 40, 0.88);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(22px);
+}
+
+.icon-context-menu button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 40px;
+  min-width: 0;
+  border: 0;
+  border-radius: 12px;
+  padding: 0 14px;
+  color: rgba(255, 255, 255, 0.88);
+  background: transparent;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 580;
+  text-align: left;
+}
+
+.icon-context-menu button:hover,
+.icon-context-menu button:focus-visible {
+  color: white;
+  background: rgba(255, 255, 255, 0.12);
+}
+
 .launchpad-root-textless .icon-cell {
   height: var(--textless-icon-cell-height);
   justify-content: center;
@@ -1697,11 +1739,6 @@ body {
   justify-content: center;
   width: 100%;
   height: 100%;
-  border-radius: var(--app-icon-radius);
-  border: 1px solid rgba(255, 255, 255, 0.32);
-  background: rgba(255, 255, 255, 0.24);
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.24);
-  backdrop-filter: blur(20px);
 }
 
 .app-launch-ghost-emoji {
@@ -1711,8 +1748,8 @@ body {
 
 .app-launch-ghost-image {
   display: block;
-  width: 76%;
-  height: 76%;
+  width: var(--app-icon-image-size);
+  height: var(--app-icon-image-size);
   object-fit: contain;
   pointer-events: none;
   user-select: none;

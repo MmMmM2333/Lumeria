@@ -58,7 +58,7 @@ export default defineComponent({
     selected: { type: Boolean, default: false },
     opening: { type: Boolean, default: false },
   },
-  emits: ["pointerdown-icon", "open-app", "remove-app", "choose-app-icon", "reset-app-icon"],
+  emits: ["pointerdown-icon", "open-app", "context-menu-icon", "remove-app", "choose-app-icon", "reset-app-icon"],
   setup(props, { emit }) {
     function getIconSource(item) {
       return item?.customIconDataUrl || item?.iconDataUrl || item?.iconUrl || null;
@@ -92,6 +92,7 @@ export default defineComponent({
     }
 
     function handlePointerDown(event) {
+      if (event.button === 2) return;
       if (!props.draggable) return;
       emit("pointerdown-icon", event, props.item, props.source);
     }
@@ -99,6 +100,13 @@ export default defineComponent({
     function handleClick() {
       if (props.draggable || props.item.type !== "app") return;
       emit("open-app", props.item, props.source);
+    }
+
+    function handleContextMenu(event) {
+      if (props.item.type !== "app") return;
+      event.preventDefault();
+      event.stopPropagation();
+      emit("context-menu-icon", event, props.item, props.source);
     }
 
     function handleRemove(event) {
@@ -190,6 +198,7 @@ export default defineComponent({
         "data-top-item-kind": props.source.type === "page" ? item.type : undefined,
         onPointerdown: handlePointerDown,
         onClick: handleClick,
+        onContextmenu: handleContextMenu,
       };
 
       return h(
