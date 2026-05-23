@@ -1,42 +1,32 @@
-use std::process::Command;
 #[cfg(target_os = "windows")]
 pub(crate) fn launch_path(path: &str, launch_args: Option<&str>) -> Result<(), String> {
-    let mut command = Command::new("cmd");
-    command.args(["/C", "start", "", path]);
-    for arg in split_launch_args(launch_args.unwrap_or("")) {
-        command.arg(arg);
-    }
-    command
-        .spawn()
-        .map_err(|error| format!("Failed to launch {path}: {error}"))?;
-    Ok(())
-}
+    use windows::{
+        core::HSTRING,
+        Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
+    };
 
-#[cfg(target_os = "windows")]
-fn split_launch_args(value: &str) -> Vec<String> {
-    let mut args = Vec::new();
-    let mut current = String::new();
-    let mut in_quotes = false;
+    let file = HSTRING::from(path);
+    let parameters = launch_args
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(HSTRING::from);
 
-    for character in value.chars() {
-        if character == '"' {
-            in_quotes = !in_quotes;
-            continue;
-        }
-        if character.is_whitespace() && !in_quotes {
-            if !current.is_empty() {
-                args.push(current);
-                current = String::new();
+    let result = unsafe {
+        match parameters.as_ref() {
+            Some(parameters) => {
+                ShellExecuteW(None, None, &file, parameters, None, SW_SHOWNORMAL)
             }
-            continue;
+            None => ShellExecuteW(None, None, &file, None, None, SW_SHOWNORMAL),
         }
-        current.push(character);
+    };
+    let result_code = result.0 as usize;
+    if result_code <= 32 {
+        return Err(format!(
+            "Failed to launch {path}: ShellExecuteW returned {result_code}"
+        ));
     }
 
-    if !current.is_empty() {
-        args.push(current);
-    }
-    args
+    Ok(())
 }
 
 #[cfg(not(target_os = "windows"))]

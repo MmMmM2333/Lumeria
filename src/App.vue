@@ -453,6 +453,15 @@
       </section>
     </div>
 
+    <div v-if="layoutRecoveryNotice" class="layout-recovery-notice" role="status" aria-live="polite">
+      <div class="layout-recovery-copy">
+        <strong>{{ layoutRecoveryNotice.title }}</strong>
+        <span>{{ layoutRecoveryNotice.message }}</span>
+        <small v-if="layoutRecoveryNotice.backupPath">{{ layoutRecoveryNotice.backupPath }}</small>
+      </div>
+      <button class="layout-recovery-close" type="button" aria-label="关闭布局恢复提示" @click="closeLayoutRecoveryNotice">×</button>
+    </div>
+
     <div v-if="warningDialog" class="warning-dialog-overlay" @wheel.stop @pointerdown.self="closeWarningDialog">
       <section class="warning-dialog" role="alertdialog" aria-modal="true" :aria-label="warningDialog.title">
         <div class="warning-dialog-icon">
@@ -708,6 +717,8 @@ const {
   warningDialog,
   closeWarningDialog,
   confirmWarningDialog,
+  layoutRecoveryNotice,
+  closeLayoutRecoveryNotice,
   rescanManagedApps,
   addManagedApp,
   deleteSelectedManagedApps,

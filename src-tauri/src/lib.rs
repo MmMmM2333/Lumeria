@@ -7,18 +7,20 @@ mod models;
 mod path_utils;
 mod tray;
 
-use std::{collections::HashMap, fs, sync::Mutex};
+use std::{collections::HashMap, sync::Mutex};
 
 use catalog::{icon_cache_dir, icon_file_data_url, scan_start_menu_apps, stable_app_id};
 use file_dialog::{pick_launch_file as pick_native_launch_file, PickedLaunchFile};
 use icons::cache_app_icon_choices;
 use launcher::launch_path;
-use layout_store::{find_saved_layout_app, layout_path};
+use layout_store::{
+    find_saved_layout_app, load_layout as load_saved_layout, save_layout as save_saved_layout,
+};
 use models::AppCatalogItem;
 use serde::Serialize;
 use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconEvent},
-    AppHandle, State, WindowEvent,
+    AppHandle, Emitter, State, WindowEvent,
 };
 use tray::{open_settings, setup_tray, show_main_window};
 
@@ -52,34 +54,16 @@ fn scan_apps(app: AppHandle, state: State<'_, AppState>) -> Result<Vec<AppCatalo
 
 #[tauri::command]
 fn load_layout(app: AppHandle) -> Result<Option<serde_json::Value>, String> {
-    let path = layout_path(&app)?;
-    if !path.exists() {
-        return Ok(None);
+    let result = load_saved_layout(&app)?;
+    if let Some(recovery) = result.recovery {
+        let _ = app.emit("launchpad-layout-recovered", recovery);
     }
-
-    let contents = fs::read_to_string(&path)
-        .map_err(|error| format!("Failed to read layout {}: {error}", path.display()))?;
-    let layout = serde_json::from_str(&contents)
-        .map_err(|error| format!("Failed to parse layout {}: {error}", path.display()))?;
-    Ok(Some(layout))
+    Ok(result.layout)
 }
 
 #[tauri::command]
 fn save_layout(app: AppHandle, layout: serde_json::Value) -> Result<(), String> {
-    let path = layout_path(&app)?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "Failed to create layout directory {}: {error}",
-                parent.display()
-            )
-        })?;
-    }
-
-    let contents = serde_json::to_string_pretty(&layout)
-        .map_err(|error| format!("Failed to serialize layout: {error}"))?;
-    fs::write(&path, contents)
-        .map_err(|error| format!("Failed to write layout {}: {error}", path.display()))
+    save_saved_layout(&app, &layout)
 }
 
 #[tauri::command]

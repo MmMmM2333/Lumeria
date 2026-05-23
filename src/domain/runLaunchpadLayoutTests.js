@@ -1,4 +1,5 @@
 import { createLaunchpadLayoutHelpers, makePageSize } from "./launchpadLayout.js";
+import { runLaunchpadDataTests } from "./launchpadDataTests.js";
 import { runLaunchpadHelperTests } from "./launchpadLayoutTests.js";
 
 const state = {
@@ -56,5 +57,6 @@ runLaunchpadHelperTests({
   gridCols: state.gridCols,
   getActivePageGridStyle,
 });
+runLaunchpadDataTests();
 
 console.info("Launchpad layout helper tests passed");
