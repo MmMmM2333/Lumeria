@@ -15,6 +15,7 @@ export const PAGE_EDGE_SIZE = 92;
 export const FOLDER_PAGE_EDGE_SIZE = 82;
 export const PAGE_TURN_DELAY = 800;
 export const FOLDER_CLOSE_DURATION = 360;
+export const SETTINGS_PANEL_CLOSE_DURATION = 260;
 export const HOME_REVEAL_SETTLE_DURATION = 560;
 export const FOLDER_HOVER_STICKY_MARGIN = 34;
 export const DESKTOP_SORT_MIN_DISTANCE = 18;

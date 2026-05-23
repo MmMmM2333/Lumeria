@@ -125,146 +125,220 @@
       </footer>
     </Motion>
 
-    <div v-if="isSettingsPanelOpen" class="settings-overlay" @wheel.stop @pointerdown.self="closeSettingsPanel">
-      <section class="settings-panel" aria-label="设置">
+    <Motion
+      v-if="shouldRenderSettingsPanel"
+      key="settings-overlay"
+      :class="cx('settings-overlay', !isSettingsPanelOpen && 'settings-overlay-closing')"
+      :initial="{ opacity: 0 }"
+      :animate="settingsOverlayAnimate"
+      :transition="{ duration: 0.16 }"
+      @wheel.stop
+      @pointerdown.self="closeSettingsPanel"
+    >
+      <Motion
+        class="settings-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="设置"
+        :initial="settingsPanelInitial"
+        :animate="settingsPanelAnimate"
+        :transition="panelSpring"
+      >
         <header class="settings-panel-header">
           <div>
             <h2>设置</h2>
-            <p>显示偏好与应用管理</p>
           </div>
           <button class="settings-close-button" type="button" aria-label="关闭设置" @click="closeSettingsPanel">×</button>
         </header>
 
+        <nav class="settings-tabs" role="tablist" aria-label="设置分类">
+          <button
+            v-for="tab in settingsTabs"
+            :key="tab.id"
+            type="button"
+            role="tab"
+            :class="cx('settings-tab', activeSettingsTab === tab.id && 'settings-tab-active')"
+            :aria-selected="activeSettingsTab === tab.id"
+            :tabindex="activeSettingsTab === tab.id ? 0 : -1"
+            @click="activeSettingsTab = tab.id"
+          >
+            {{ tab.label }}
+          </button>
+        </nav>
+
         <div class="settings-panel-body">
-          <section class="settings-section" aria-label="显示偏好">
-            <div class="settings-section-header">
-              <h3>显示偏好</h3>
-            </div>
-            <div class="settings-grid">
-              <div class="settings-field">
-                <span>桌面行数</span>
-                <div class="settings-number-control">
-                  <input v-model.number="draftRows" min="2" max="8" type="number" aria-label="桌面行数" />
-                  <div class="settings-number-buttons">
-                    <button type="button" aria-label="增加桌面行数" @click.prevent="changeDraftRows(1)"><ChevronUpIcon class="settings-number-icon" /></button>
-                    <button type="button" aria-label="减少桌面行数" @click.prevent="changeDraftRows(-1)"><ChevronDownIcon class="settings-number-icon" /></button>
+          <div v-if="activeSettingsTab === 'general'" class="settings-tab-panel" role="tabpanel" aria-label="通用">
+            <section class="settings-section" aria-label="通用">
+              <div class="settings-section-header">
+                <h3>通用</h3>
+              </div>
+              <div class="settings-options">
+                <label class="settings-option settings-option-disabled">
+                  <span class="settings-option-copy">
+                    <span>开机自启</span>
+                    <span class="settings-field-hint">登录 Windows 后自动打开 LaunchPad</span>
+                  </span>
+                  <input type="checkbox" aria-label="开机自启" disabled />
+                </label>
+                <div class="settings-option settings-option-disabled">
+                  <span class="settings-option-copy">
+                    <span>快捷键</span>
+                    <span class="settings-field-hint">快速显示或隐藏 LaunchPad</span>
+                  </span>
+                  <div class="settings-hotkey-control">
+                    <kbd>未设置</kbd>
+                    <button class="settings-secondary-button" type="button" disabled>录制</button>
                   </div>
                 </div>
               </div>
-              <div class="settings-field">
-                <span>桌面列数</span>
-                <div class="settings-number-control">
-                  <input v-model.number="draftCols" min="3" max="10" type="number" aria-label="桌面列数" />
-                  <div class="settings-number-buttons">
-                    <button type="button" aria-label="增加桌面列数" @click.prevent="changeDraftCols(1)"><ChevronUpIcon class="settings-number-icon" /></button>
-                    <button type="button" aria-label="减少桌面列数" @click.prevent="changeDraftCols(-1)"><ChevronDownIcon class="settings-number-icon" /></button>
+            </section>
+          </div>
+
+          <div v-else-if="activeSettingsTab === 'interface'" class="settings-tab-panel" role="tabpanel" aria-label="界面">
+            <section class="settings-section" aria-label="显示偏好">
+              <div class="settings-section-header">
+                <h3>显示偏好</h3>
+              </div>
+              <div class="settings-grid">
+                <div class="settings-field settings-field-wide settings-grid-layout-field">
+                  <span>桌面布局</span>
+                  <div class="settings-grid-layout-control" aria-label="桌面布局">
+                    <div class="settings-number-control">
+                      <input v-model.number="draftRows" min="2" max="8" type="number" aria-label="桌面行数" />
+                      <div class="settings-number-buttons">
+                        <button type="button" aria-label="增加桌面行数" @click.prevent="changeDraftRows(1)"><ChevronUpIcon class="settings-number-icon" /></button>
+                        <button type="button" aria-label="减少桌面行数" @click.prevent="changeDraftRows(-1)"><ChevronDownIcon class="settings-number-icon" /></button>
+                      </div>
+                    </div>
+                    <span class="settings-grid-layout-separator">×</span>
+                    <div class="settings-number-control">
+                      <input v-model.number="draftCols" min="3" max="10" type="number" aria-label="桌面列数" />
+                      <div class="settings-number-buttons">
+                        <button type="button" aria-label="增加桌面列数" @click.prevent="changeDraftCols(1)"><ChevronUpIcon class="settings-number-icon" /></button>
+                        <button type="button" aria-label="减少桌面列数" @click.prevent="changeDraftCols(-1)"><ChevronDownIcon class="settings-number-icon" /></button>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div class="settings-field">
-                <span>文件夹行数</span>
-                <div class="settings-number-control">
-                  <input v-model.number="draftFolderRows" min="2" max="6" type="number" aria-label="文件夹行数" />
-                  <div class="settings-number-buttons">
-                    <button type="button" aria-label="增加文件夹行数" @click.prevent="changeDraftFolderRows(1)"><ChevronUpIcon class="settings-number-icon" /></button>
-                    <button type="button" aria-label="减少文件夹行数" @click.prevent="changeDraftFolderRows(-1)"><ChevronDownIcon class="settings-number-icon" /></button>
+                <div class="settings-field settings-field-wide settings-grid-layout-field">
+                  <span>文件夹布局</span>
+                  <div class="settings-grid-layout-control" aria-label="文件夹布局">
+                    <div class="settings-number-control">
+                      <input v-model.number="draftFolderRows" min="2" max="6" type="number" aria-label="文件夹行数" />
+                      <div class="settings-number-buttons">
+                        <button type="button" aria-label="增加文件夹行数" @click.prevent="changeDraftFolderRows(1)"><ChevronUpIcon class="settings-number-icon" /></button>
+                        <button type="button" aria-label="减少文件夹行数" @click.prevent="changeDraftFolderRows(-1)"><ChevronDownIcon class="settings-number-icon" /></button>
+                      </div>
+                    </div>
+                    <span class="settings-grid-layout-separator">×</span>
+                    <div class="settings-number-control">
+                      <input v-model.number="draftFolderCols" min="2" max="8" type="number" aria-label="文件夹列数" />
+                      <div class="settings-number-buttons">
+                        <button type="button" aria-label="增加文件夹列数" @click.prevent="changeDraftFolderCols(1)"><ChevronUpIcon class="settings-number-icon" /></button>
+                        <button type="button" aria-label="减少文件夹列数" @click.prevent="changeDraftFolderCols(-1)"><ChevronDownIcon class="settings-number-icon" /></button>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div class="settings-field">
-                <span>文件夹列数</span>
-                <div class="settings-number-control">
-                  <input v-model.number="draftFolderCols" min="2" max="8" type="number" aria-label="文件夹列数" />
-                  <div class="settings-number-buttons">
-                    <button type="button" aria-label="增加文件夹列数" @click.prevent="changeDraftFolderCols(1)"><ChevronUpIcon class="settings-number-icon" /></button>
-                    <button type="button" aria-label="减少文件夹列数" @click.prevent="changeDraftFolderCols(-1)"><ChevronDownIcon class="settings-number-icon" /></button>
+                <div class="settings-field settings-field-wide">
+                  <span class="settings-field-copy">
+                    <span>图标大小</span>
+                    <span class="settings-field-hint">{{ ICON_SIZE_MIN }}-{{ ICON_SIZE_MAX }}px</span>
+                  </span>
+                  <div class="settings-number-control settings-number-control-wide">
+                    <input v-model.number="draftIconSize" :min="ICON_SIZE_MIN" :max="ICON_SIZE_MAX" :step="ICON_SIZE_STEP" type="number" aria-label="图标大小" />
+                    <span class="settings-number-unit">px</span>
+                    <div class="settings-number-buttons">
+                      <button type="button" aria-label="增大图标" @click.prevent="changeDraftIconSize(1)"><ChevronUpIcon class="settings-number-icon" /></button>
+                      <button type="button" aria-label="缩小图标" @click.prevent="changeDraftIconSize(-1)"><ChevronDownIcon class="settings-number-icon" /></button>
+                    </div>
                   </div>
                 </div>
+                <label class="settings-toggle">
+                  <span>无字模式</span>
+                  <input v-model="isTextlessMode" type="checkbox" />
+                </label>
               </div>
-              <div class="settings-field">
-                <span class="settings-field-copy">
-                  <span>图标大小</span>
-                  <span class="settings-field-hint">{{ ICON_SIZE_MIN }}-{{ ICON_SIZE_MAX }}px</span>
-                </span>
-                <div class="settings-number-control settings-number-control-wide">
-                  <input v-model.number="draftIconSize" :min="ICON_SIZE_MIN" :max="ICON_SIZE_MAX" :step="ICON_SIZE_STEP" type="number" aria-label="图标大小" />
-                  <span class="settings-number-unit">px</span>
-                  <div class="settings-number-buttons">
-                    <button type="button" aria-label="增大图标" @click.prevent="changeDraftIconSize(1)"><ChevronUpIcon class="settings-number-icon" /></button>
-                    <button type="button" aria-label="缩小图标" @click.prevent="changeDraftIconSize(-1)"><ChevronDownIcon class="settings-number-icon" /></button>
-                  </div>
+            </section>
+
+            <section class="settings-section" aria-label="整理空位">
+              <div class="settings-section-header">
+                <div>
+                  <h3>整理空位</h3>
+                  <p>根据当前行列布局，将App向前整理以填补空位</p>
+                </div>
+                <button class="settings-warning-button" type="button" :disabled="!!dragMeta" @click="confirmForceFillAllPages">重新整理</button>
+              </div>
+            </section>
+          </div>
+
+          <div v-else-if="activeSettingsTab === 'apps'" class="settings-tab-panel" role="tabpanel" aria-label="Apps">
+            <section class="settings-section" aria-label="应用管理">
+              <div class="settings-section-header">
+                <div>
+                  <h3>应用管理</h3>
+                  <p>{{ filteredManagedApps.length }} / {{ managedApps.length }} 个应用 · 已选择 {{ selectedManagedAppCount }} 个</p>
+                </div>
+                <div class="settings-inline-actions">
+                  <button class="settings-secondary-button" type="button" :disabled="!canScanManagedApps || isScanningApps" @click="rescanManagedApps">
+                    {{ isScanningApps ? "扫描中" : "扫描应用" }}
+                  </button>
+                  <button class="settings-primary-button" type="button" @click="openAddManagedAppPage">新增应用</button>
+                  <button class="settings-danger-button" type="button" :disabled="selectedManagedAppCount === 0" @click="deleteSelectedManagedApps">批量删除</button>
                 </div>
               </div>
-              <label class="settings-toggle">
-                <span>无字模式</span>
-                <input v-model="isTextlessMode" type="checkbox" />
-              </label>
-            </div>
-          </section>
 
-          <section class="settings-section" aria-label="页面整理">
-            <div class="settings-section-header">
-              <div>
-                <h3>页面整理</h3>
-                <p>强制填满页面会重新压实桌面项目，并破坏当前分页布局。</p>
+              <input v-model="appManagerSearchQuery" class="app-manager-search" type="search" placeholder="搜索应用" aria-label="搜索应用" />
+
+              <div class="settings-list-actions">
+                <button class="settings-link-button" type="button" @click="selectAllManagedApps">全选</button>
+                <button class="settings-link-button" type="button" @click="clearManagedAppSelection">清空选择</button>
               </div>
-              <button class="settings-warning-button" type="button" :disabled="!!dragMeta" @click="confirmForceFillAllPages">强制填满</button>
-            </div>
-          </section>
 
-          <section class="settings-section" aria-label="应用管理">
-            <div class="settings-section-header">
-              <div>
-                <h3>应用管理</h3>
-                <p>{{ filteredManagedApps.length }} / {{ managedApps.length }} 个应用 · 已选择 {{ selectedManagedAppCount }} 个</p>
+              <div class="app-manager-list" role="list" aria-label="所有应用">
+                <div v-for="app in filteredManagedApps" :key="app.id" class="app-manager-item" role="listitem">
+                  <input
+                    type="checkbox"
+                    :aria-label="`选择 ${app.name}`"
+                    :checked="appManagerSelectedIds.includes(app.id)"
+                    @change="toggleManagedAppSelection(app.id, $event.target.checked)"
+                  />
+                  <span class="app-manager-icon">
+                    <img v-if="getIconSource(app)" :src="getIconSource(app)" alt="" draggable="false" />
+                    <span v-else>{{ app.emoji }}</span>
+                  </span>
+                  <span class="app-manager-details">
+                    <span class="app-manager-name">{{ app.name }}</span>
+                    <span class="app-manager-target">{{ getLaunchTargetPath(app) || "未设置启动路径" }}</span>
+                  </span>
+                  <span class="app-manager-actions">
+                    <button class="settings-secondary-button" type="button" @click="openEditManagedApp(app)">编辑</button>
+                    <button class="settings-danger-button" type="button" @click="deleteManagedApp(app.id)">删除</button>
+                  </span>
+                </div>
               </div>
-              <div class="settings-inline-actions">
-                <button class="settings-secondary-button" type="button" :disabled="!canScanManagedApps || isScanningApps" @click="rescanManagedApps">
-                  {{ isScanningApps ? "扫描中" : "扫描应用" }}
-                </button>
-                <button class="settings-primary-button" type="button" @click="openAddManagedAppPage">新增应用</button>
-                <button class="settings-danger-button" type="button" :disabled="selectedManagedAppCount === 0" @click="deleteSelectedManagedApps">批量删除</button>
+            </section>
+          </div>
+
+          <div v-else class="settings-tab-panel" role="tabpanel" aria-label="关于">
+            <section class="settings-section" aria-label="关于">
+              <div class="settings-section-header">
+                <h3>关于</h3>
               </div>
-            </div>
-
-            <input v-model="appManagerSearchQuery" class="app-manager-search" type="search" placeholder="搜索应用" aria-label="搜索应用" />
-
-            <div class="settings-list-actions">
-              <button class="settings-link-button" type="button" @click="selectAllManagedApps">全选</button>
-              <button class="settings-link-button" type="button" @click="clearManagedAppSelection">清空选择</button>
-            </div>
-
-            <div class="app-manager-list" role="list" aria-label="所有应用">
-              <div v-for="app in filteredManagedApps" :key="app.id" class="app-manager-item" role="listitem">
-                <input
-                  type="checkbox"
-                  :aria-label="`选择 ${app.name}`"
-                  :checked="appManagerSelectedIds.includes(app.id)"
-                  @change="toggleManagedAppSelection(app.id, $event.target.checked)"
-                />
-                <span class="app-manager-icon">
-                  <img v-if="getIconSource(app)" :src="getIconSource(app)" alt="" draggable="false" />
-                  <span v-else>{{ app.emoji }}</span>
-                </span>
-                <span class="app-manager-details">
-                  <span class="app-manager-name">{{ app.name }}</span>
-                  <span class="app-manager-target">{{ getLaunchTargetPath(app) || "未设置启动路径" }}</span>
-                </span>
-                <span class="app-manager-actions">
-                  <button class="settings-secondary-button" type="button" @click="openEditManagedApp(app)">编辑</button>
-                  <button class="settings-danger-button" type="button" @click="deleteManagedApp(app.id)">删除</button>
-                </span>
+              <div class="settings-about-card">
+                <span class="settings-about-name">LaunchPad</span>
+                <span class="settings-about-version">版本 {{ appVersion }}</span>
               </div>
-            </div>
-          </section>
+            </section>
+          </div>
         </div>
 
-        <footer class="settings-actions">
+        <footer v-if="activeSettingsTab === 'interface'" class="settings-actions">
           <button class="settings-secondary-button" type="button" @click="closeSettingsPanel">取消</button>
           <button class="settings-primary-button" type="button" :disabled="!!dragMeta" @click="applySettingsConfig">应用</button>
         </footer>
-      </section>
-    </div>
+      </Motion>
+    </Motion>
 
     <div v-if="isScanResultDialogOpen" class="scan-result-overlay" @wheel.stop @pointerdown.self="closeScanResultDialog">
       <section class="scan-result-dialog" role="dialog" aria-modal="true" aria-label="扫描结果">
@@ -628,6 +702,7 @@ import StaticPagePreview from "./components/StaticPagePreview.js";
 import { AlertTriangleIcon, ChevronDownIcon, ChevronUpIcon, SearchIcon, SettingsIcon } from "./components/Icons.js";
 import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "./composables/launchpadConstants.js";
 import { useLaunchpadController } from "./composables/useLaunchpadController.js";
+import appPackage from "../package.json";
 import "./styles/launchpad.css";
 
 const {
@@ -640,6 +715,10 @@ const {
   isAppLaunching,
   isEditMode,
   isSettingsPanelOpen,
+  shouldRenderSettingsPanel,
+  settingsOverlayAnimate,
+  settingsPanelInitial,
+  settingsPanelAnimate,
   handleLaunchpadWheel,
   shellRef,
   homeShellInitial,
@@ -792,6 +871,14 @@ const {
 
 const isSearchInputFocused = ref(false);
 const iconContextMenu = ref(null);
+const activeSettingsTab = ref("general");
+const appVersion = appPackage.version;
+const settingsTabs = [
+  { id: "general", label: "通用" },
+  { id: "interface", label: "界面" },
+  { id: "apps", label: "Apps" },
+  { id: "about", label: "关于" },
+];
 const hasSearchQuery = computed(() => searchQuery.value.trim().length > 0);
 const iconContextMenuStyle = computed(() => {
   if (!iconContextMenu.value) return {};

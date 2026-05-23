@@ -149,9 +149,13 @@ body {
   background: rgba(0, 0, 0, 0.32);
 }
 
+.settings-overlay-closing {
+  pointer-events: none;
+}
+
 .settings-panel {
   width: min(720px, 92vw);
-  max-height: min(760px, calc(100vh - 48px));
+  height: min(760px, calc(100vh - 48px));
   padding: 22px;
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -195,6 +199,45 @@ body {
   cursor: pointer;
   font-size: 22px;
   line-height: 1;
+}
+
+.settings-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 16px;
+  padding: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.settings-tab {
+  min-width: 0;
+  height: 34px;
+  border: 0;
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.62);
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 620;
+}
+
+.settings-tab:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.settings-tab-active {
+  color: #171923;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.settings-tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .settings-panel-body {
@@ -247,6 +290,10 @@ body {
   margin-bottom: 12px;
 }
 
+.settings-section-header:last-child {
+  margin-bottom: 0;
+}
+
 .settings-section-header h3 {
   margin: 0;
   font-size: 15px;
@@ -295,6 +342,27 @@ body {
   display: grid;
   min-width: 0;
   gap: 3px;
+}
+
+.settings-field-wide {
+  grid-column: 1 / -1;
+}
+
+.settings-grid-layout-field {
+  align-items: center;
+}
+
+.settings-grid-layout-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.settings-grid-layout-separator {
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 13px;
+  line-height: 1;
 }
 
 .settings-field-hint {
@@ -396,6 +464,62 @@ body {
 
 .settings-toggle {
   grid-column: 1 / -1;
+}
+
+.settings-options {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 13px;
+}
+
+.settings-option-disabled {
+  opacity: 0.68;
+}
+
+.settings-option-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.settings-option input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.settings-hotkey-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.settings-hotkey-control kbd {
+  display: inline-flex;
+  align-items: center;
+  min-width: 72px;
+  height: 32px;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.58);
+  background: rgba(0, 0, 0, 0.18);
+  font: inherit;
+  font-size: 12px;
 }
 
 .settings-toggle input {
@@ -525,6 +649,7 @@ body {
 }
 
 .settings-toggle input,
+.settings-option input[type="checkbox"],
 .app-manager-item input {
   position: relative;
   display: grid;
@@ -541,12 +666,14 @@ body {
 }
 
 .settings-toggle input:hover,
+.settings-option input[type="checkbox"]:hover,
 .app-manager-item input:hover {
   border-color: rgba(255, 255, 255, 0.4);
   background: rgba(255, 255, 255, 0.08);
 }
 
 .settings-toggle input:focus-visible,
+.settings-option input[type="checkbox"]:focus-visible,
 .app-manager-item input:focus-visible {
   outline: none;
   border-color: rgba(255, 255, 255, 0.78);
@@ -554,6 +681,7 @@ body {
 }
 
 .settings-toggle input::after,
+.settings-option input[type="checkbox"]::after,
 .app-manager-item input::after {
   content: "";
   width: 5px;
@@ -566,15 +694,37 @@ body {
 }
 
 .settings-toggle input:checked,
+.settings-option input[type="checkbox"]:checked,
 .app-manager-item input:checked {
   border-color: rgba(255, 255, 255, 0.92);
   background: rgba(255, 255, 255, 0.92);
 }
 
 .settings-toggle input:checked::after,
+.settings-option input[type="checkbox"]:checked::after,
 .app-manager-item input:checked::after {
   opacity: 1;
   transform: translateY(-1px) rotate(45deg) scale(1);
+}
+
+.settings-about-card {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.settings-about-name {
+  color: white;
+  font-size: 18px;
+  font-weight: 680;
+  line-height: 1.2;
+}
+
+.settings-about-version {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 13px;
 }
 
 .app-manager-icon {
@@ -1873,6 +2023,8 @@ body {
   }
   .settings-panel { width: min(560px, 94vw); padding: 18px; }
   .settings-grid { grid-template-columns: 1fr; }
+  .settings-grid-layout-field { align-items: flex-start; flex-direction: column; }
+  .settings-grid-layout-control { width: 100%; justify-content: flex-end; }
   .settings-section-header { align-items: flex-start; flex-direction: column; }
   .settings-inline-actions { justify-content: flex-start; }
   .app-manager-list { grid-template-columns: 1fr; }
