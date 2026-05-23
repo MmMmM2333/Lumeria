@@ -204,6 +204,12 @@ export function useLaunchpadDrag(options) {
     return isPointInsideRect(folderHover.stickyRect, clientX, clientY);
   }
 
+  function isPendingFolderTargetStillActive(activeDrag, targetId) {
+    if (!activeDrag || activeDrag.item.type !== "app" || folderHover?.targetId !== targetId) return false;
+    const center = getDragVisualCenter(activeDrag) || activeDrag.pointer;
+    return isInsideStickyFolderZone(center.x, center.y);
+  }
+
   function lockFolderHoverTarget(targetInfo) {
     const rect = targetInfo?.rect;
     if (!rect) return;
@@ -219,7 +225,10 @@ export function useLaunchpadDrag(options) {
       targetId: target.id,
       timer: window.setTimeout(() => {
         const activeDrag = dragRuntime;
-        if (!activeDrag || activeDrag.item.type !== "app") return;
+        if (!isPendingFolderTargetStillActive(activeDrag, target.id)) {
+          clearPendingTarget();
+          return;
+        }
         const latestTarget = options.findTopLevel(options.pages.value, target.id)?.item;
         if (!latestTarget || latestTarget.id === activeDrag.item.id) return;
         clearPendingTarget();
@@ -573,7 +582,6 @@ export function useLaunchpadDrag(options) {
 
   function scheduleDragIntentEvaluation() {
     clearDragIntentTimer();
-    clearPendingTarget();
     dragIntentTimer = window.setTimeout(evaluateDragIntent, DRAG_INTENT_IDLE_DELAY);
   }
 
