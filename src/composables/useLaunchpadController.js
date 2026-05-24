@@ -44,6 +44,16 @@ import { useLaunchpadNative } from "./useLaunchpadNative.js";
 import { getElementFromRef, usePageGridMetrics } from "./usePageGridMetrics.js";
 
 const PAGE_JUMP_RENDER_RELEASE_DELAY = 900;
+const FOLDER_ROW_GAP = 24;
+const FOLDER_MIN_ROW_GAP = 10;
+const FOLDER_SELECTION_FRAME_SAFE_AREA = 24;
+const FOLDER_MIN_EFFECTIVE_ICON_SIZE = 20;
+const FOLDER_ICON_SIZE_MODE_CUSTOM = "custom";
+const FOLDER_ICON_SIZE_MODE_GLOBAL = "global";
+
+function roundPx(value) {
+  return Math.round(value * 100) / 100;
+}
 
 export function useLaunchpadController() {
   const gridRows = ref(DEFAULT_ROWS);
@@ -55,7 +65,11 @@ export function useLaunchpadController() {
   const draftFolderRows = ref(DEFAULT_FOLDER_ROWS);
   const draftFolderCols = ref(DEFAULT_FOLDER_COLS);
   const iconSize = ref(DEFAULT_ICON_SIZE);
+  const folderIconSizeMode = ref(FOLDER_ICON_SIZE_MODE_GLOBAL);
+  const folderIconSize = ref(DEFAULT_ICON_SIZE);
   const draftIconSize = ref(DEFAULT_ICON_SIZE);
+  const draftFolderIconSizeMode = ref(FOLDER_ICON_SIZE_MODE_GLOBAL);
+  const draftFolderIconSize = ref(DEFAULT_ICON_SIZE);
   const pageSize = computed(() => makePageSize(gridRows.value, gridCols.value));
   const folderPageSize = computed(() => makePageSize(folderRows.value, folderCols.value));
   const layoutHelpers = createLaunchpadLayoutHelpers({
@@ -136,6 +150,7 @@ export function useLaunchpadController() {
   const folderClosingSnapshot = shallowRef(null);
   const folderMotionGeometry = ref({ id: null, x: 0, y: 36, scaleX: 0.1, scaleY: 0.16, borderRadius: 26 });
   const folderSession = shallowRef(null);
+  const folderViewportHeight = ref(0);
   const isHomeRevealSettling = ref(false);
   const desktopProjectionEpoch = ref(0);
   const transientPageRenderRange = ref(null);
@@ -148,6 +163,7 @@ export function useLaunchpadController() {
   const desktopMainRef = ref(null);
   const pageDotsRef = ref(null);
   const folderPanelRef = ref(null);
+  const folderViewportRef = ref(null);
   const dragPreviewRef = ref(null);
   const pageRefs = [];
   const folderPageRefs = [];
@@ -163,6 +179,8 @@ export function useLaunchpadController() {
   let pageJumpRenderRequestId = 0;
   let isAltPressed = false;
   let layoutResizeObserver = null;
+  let folderViewportResizeObserver = null;
+  let observedFolderViewportElement = null;
   let dragControls = null;
 
   const {
@@ -196,12 +214,48 @@ export function useLaunchpadController() {
     }, 1);
     return clamp(maxRowCount, 1, folderRows.value);
   });
+  const effectiveFolderIconSize = computed(() =>
+    folderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_CUSTOM ? folderIconSize.value : iconSize.value
+  );
   const folderGridHeight = computed(() => {
-    const iconCellHeight = iconSize.value + (isTextlessMode.value ? 12 : 56);
-    return visibleFolderRowCount.value * iconCellHeight + Math.max(0, visibleFolderRowCount.value - 1) * 24;
+    const iconCellHeight = effectiveFolderIconSize.value + (isTextlessMode.value ? 12 : 56);
+    const selectionFrameSafeArea = isTextlessMode.value ? 0 : FOLDER_SELECTION_FRAME_SAFE_AREA;
+    return visibleFolderRowCount.value * iconCellHeight
+      + Math.max(0, visibleFolderRowCount.value - 1) * FOLDER_ROW_GAP
+      + selectionFrameSafeArea;
   });
   const folderShellMinHeight = computed(() => {
     return folderGridHeight.value + 120;
+  });
+  const folderCompressionMetrics = computed(() => {
+    const rowCount = Math.max(1, visibleFolderRowCount.value);
+    const baseFolderIconSize = effectiveFolderIconSize.value;
+    const idealIconCellHeight = baseFolderIconSize + (isTextlessMode.value ? 12 : 56);
+    const idealSafeArea = isTextlessMode.value ? 0 : FOLDER_SELECTION_FRAME_SAFE_AREA;
+    const idealHeight = Math.max(1, folderGridHeight.value);
+    const availableHeight = Math.max(1, folderViewportHeight.value || idealHeight);
+    const coarseScale = clamp(availableHeight / idealHeight, 0, 1);
+    const rowGap = roundPx(clamp(FOLDER_ROW_GAP * coarseScale, FOLDER_MIN_ROW_GAP, FOLDER_ROW_GAP));
+    const safeArea = roundPx(idealSafeArea * coarseScale);
+    const gapTotal = Math.max(0, rowCount - 1) * rowGap;
+    const rowHeight = Math.max(0, (availableHeight - gapTotal - safeArea) / rowCount);
+    const minIconScale = Math.min(1, FOLDER_MIN_EFFECTIVE_ICON_SIZE / Math.max(1, baseFolderIconSize));
+    const contentScale = clamp(rowHeight / Math.max(1, idealIconCellHeight), minIconScale, 1);
+    const effectiveIconSize = roundPx(baseFolderIconSize * contentScale);
+
+    return {
+      effectiveIconSize,
+      iconNameFontSize: roundPx(clamp(13 * contentScale, 10, 13)),
+      iconNameLineClamp: contentScale < 0.78 ? 1 : 2,
+      iconNameMarginTop: roundPx(clamp(8 * contentScale, 2, 8)),
+      iconNamePaddingX: roundPx(clamp(8 * contentScale, 4, 8)),
+      iconNamePaddingY: roundPx(clamp(2 * contentScale, 0, 2)),
+      rowGap,
+      safeArea,
+      selectionFrameMinWidthExtra: roundPx(clamp(44 * contentScale, 20, 44)),
+      selectionFramePaddingX: roundPx(clamp(12 * contentScale, 6, 12)),
+      selectionFramePaddingY: roundPx(clamp(10 * contentScale, 4, 10)),
+    };
   });
 
   const isSearchMode = computed(() => searchQuery.value.trim().length > 0);
@@ -270,6 +324,17 @@ export function useLaunchpadController() {
   const folderPanelStyle = computed(() => ({
     "--folder-grid-height": `${folderGridHeight.value}px`,
     "--folder-shell-min-height": `${folderShellMinHeight.value}px`,
+    "--folder-icon-name-font-size": `${folderCompressionMetrics.value.iconNameFontSize}px`,
+    "--folder-icon-name-line-clamp": folderCompressionMetrics.value.iconNameLineClamp,
+    "--folder-icon-name-margin-top": `${folderCompressionMetrics.value.iconNameMarginTop}px`,
+    "--folder-icon-name-padding-x": `${folderCompressionMetrics.value.iconNamePaddingX}px`,
+    "--folder-icon-name-padding-y": `${folderCompressionMetrics.value.iconNamePaddingY}px`,
+    "--folder-icon-size": `${folderCompressionMetrics.value.effectiveIconSize}px`,
+    "--folder-row-gap": `${folderCompressionMetrics.value.rowGap}px`,
+    "--folder-selection-frame-min-width": `calc(var(--folder-icon-size) + ${folderCompressionMetrics.value.selectionFrameMinWidthExtra}px)`,
+    "--folder-selection-frame-padding-x": `${folderCompressionMetrics.value.selectionFramePaddingX}px`,
+    "--folder-selection-frame-padding-y": `${folderCompressionMetrics.value.selectionFramePaddingY}px`,
+    "--folder-selection-frame-safe-area": `${folderCompressionMetrics.value.safeArea}px`,
     transformOrigin: "center center",
     pointerEvents: isFolderAppLaunchClosing.value ? "none" : "auto",
   }));
@@ -342,10 +407,14 @@ export function useLaunchpadController() {
     createLayoutSnapshot,
     draftCols,
     draftFolderCols,
+    draftFolderIconSize,
+    draftFolderIconSizeMode,
     draftFolderRows,
     draftIconSize,
     draftRows,
     folderCols,
+    folderIconSize,
+    folderIconSizeMode,
     folderPageIndex,
     folderRows,
     gridCols,
@@ -569,6 +638,10 @@ export function useLaunchpadController() {
     return clamp(Number(value) || DEFAULT_ICON_SIZE, ICON_SIZE_MIN, ICON_SIZE_MAX);
   }
 
+  function normalizeFolderIconSizeMode(value) {
+    return value === FOLDER_ICON_SIZE_MODE_CUSTOM ? FOLDER_ICON_SIZE_MODE_CUSTOM : FOLDER_ICON_SIZE_MODE_GLOBAL;
+  }
+
   function changeDraftRows(delta) {
     draftRows.value = clamp(Number(draftRows.value) + delta || DEFAULT_ROWS, 2, 8);
   }
@@ -587,6 +660,23 @@ export function useLaunchpadController() {
 
   function changeDraftIconSize(direction) {
     draftIconSize.value = clampIconSize(draftIconSize.value + direction * ICON_SIZE_STEP);
+  }
+
+  function changeDraftFolderIconSize(direction) {
+    draftFolderIconSize.value = clampIconSize(draftFolderIconSize.value + direction * ICON_SIZE_STEP);
+  }
+
+  function setDraftFolderIconSizeMode(mode) {
+    const nextMode = normalizeFolderIconSizeMode(mode);
+    if (
+      nextMode === FOLDER_ICON_SIZE_MODE_CUSTOM
+      && draftFolderIconSizeMode.value !== FOLDER_ICON_SIZE_MODE_CUSTOM
+      && folderIconSizeMode.value !== FOLDER_ICON_SIZE_MODE_CUSTOM
+    ) {
+      draftFolderIconSize.value = clampIconSize(draftIconSize.value);
+    }
+    draftFolderIconSizeMode.value = nextMode;
+    draftFolderIconSize.value = clampIconSize(draftFolderIconSize.value);
   }
 
   function openWarningDialog(config) {
@@ -797,9 +887,9 @@ export function useLaunchpadController() {
     }
 
     openWarningDialog({
-      title: "强制填满页面？",
-      message: "这会按当前顺序重新压实所有桌面页面，并破坏当前分页布局。",
-      confirmText: "强制填满",
+      title: "重新整理桌面页面？",
+      message: "这会按当前顺序压实所有桌面页面，可能改变当前分页布局。",
+      confirmText: "重新整理",
       cancelText: "取消",
       onConfirm: forceFillAllPages,
     });
@@ -836,11 +926,15 @@ export function useLaunchpadController() {
     folderRows.value = nextFolderRowCount;
     folderCols.value = nextFolderColumnCount;
     iconSize.value = clampIconSize(draftIconSize.value);
+    folderIconSizeMode.value = normalizeFolderIconSizeMode(draftFolderIconSizeMode.value);
+    folderIconSize.value = clampIconSize(draftFolderIconSize.value);
     draftRows.value = rows;
     draftCols.value = cols;
     draftFolderRows.value = nextFolderRowCount;
     draftFolderCols.value = nextFolderColumnCount;
     draftIconSize.value = iconSize.value;
+    draftFolderIconSizeMode.value = folderIconSizeMode.value;
+    draftFolderIconSize.value = folderIconSize.value;
     commitPages(compacted);
     commitPageIndex(pageIndex.value);
     commitSearchPageIndex(searchPageIndex.value);
@@ -905,6 +999,8 @@ export function useLaunchpadController() {
     clearSettingsPanelCloseTimer();
     settingsPanelMotionGeometry.value = makeSettingsPanelGeometryFromRect(getSettingsButtonRect(event) || getCenterSettingsRect());
     draftIconSize.value = iconSize.value;
+    draftFolderIconSizeMode.value = folderIconSizeMode.value;
+    draftFolderIconSize.value = folderIconSize.value;
     isSettingsPanelClosing.value = false;
     isSettingsPanelOpen.value = true;
   }
@@ -1361,9 +1457,45 @@ export function useLaunchpadController() {
     if (!isDragActive()) commitOpenFolder(null);
   }
 
+  function updateFolderViewportHeight() {
+    const element = getElementFromRef(folderViewportRef);
+    const nextHeight = element ? roundPx(element.getBoundingClientRect().height) : 0;
+    if (Math.abs(folderViewportHeight.value - nextHeight) > 0.1) folderViewportHeight.value = nextHeight;
+  }
+
+  function scheduleFolderViewportMetrics() {
+    nextTick(updateFolderViewportHeight);
+  }
+
+  function disconnectFolderViewportObserver() {
+    if (folderViewportResizeObserver) folderViewportResizeObserver.disconnect();
+    folderViewportResizeObserver = null;
+    observedFolderViewportElement = null;
+  }
+
+  function observeFolderViewport() {
+    const element = getElementFromRef(folderViewportRef);
+    if (element === observedFolderViewportElement) {
+      updateFolderViewportHeight();
+      return;
+    }
+
+    disconnectFolderViewportObserver();
+    observedFolderViewportElement = element;
+
+    if (element && typeof ResizeObserver !== "undefined") {
+      folderViewportResizeObserver = new ResizeObserver(updateFolderViewportHeight);
+      folderViewportResizeObserver.observe(element);
+    }
+
+    updateFolderViewportHeight();
+  }
+
   watch([gridRows, gridCols, folderRows, folderCols, iconSize, isTextlessMode, isSearchMode], schedulePageGridMetrics, { flush: "post" });
+  watch([renderedFolder, folderRows, folderCols, effectiveFolderIconSize, isTextlessMode, visibleFolderRowCount], scheduleFolderViewportMetrics, { flush: "post" });
+  watch(folderViewportRef, observeFolderViewport, { flush: "post" });
   watch(activePages, schedulePageGridMetrics, { flush: "post" });
-  watch([pages, gridRows, gridCols, folderRows, folderCols, iconSize, isTextlessMode, hiddenAppIds], scheduleNativeLayoutSave, { flush: "post" });
+  watch([pages, gridRows, gridCols, folderRows, folderCols, iconSize, folderIconSizeMode, folderIconSize, isTextlessMode, hiddenAppIds], scheduleNativeLayoutSave, { flush: "post" });
   watch(filteredManagedApps, syncManagedAppState, { flush: "post" });
 
   onMounted(() => {
@@ -1371,7 +1503,9 @@ export function useLaunchpadController() {
     window.addEventListener("keyup", handleAltKeyUp);
     window.addEventListener("blur", handleWindowBlur);
     window.addEventListener("resize", updatePageGridMetrics);
+    window.addEventListener("resize", updateFolderViewportHeight);
     schedulePageGridMetrics();
+    scheduleFolderViewportMetrics();
     registerNativeEventListeners().finally(loadNativeLaunchpadData);
 
     if (typeof ResizeObserver !== "undefined") {
@@ -1404,10 +1538,12 @@ export function useLaunchpadController() {
     clearAltEditTimer();
     if (layoutResizeObserver) layoutResizeObserver.disconnect();
     layoutResizeObserver = null;
+    disconnectFolderViewportObserver();
     window.removeEventListener("keydown", handleGlobalKeydown);
     window.removeEventListener("keyup", handleAltKeyUp);
     window.removeEventListener("blur", handleWindowBlur);
     window.removeEventListener("resize", updatePageGridMetrics);
+    window.removeEventListener("resize", updateFolderViewportHeight);
   });
 
   return {
@@ -1436,11 +1572,15 @@ export function useLaunchpadController() {
     draftFolderRows,
     draftFolderCols,
     draftIconSize,
+    draftFolderIconSizeMode,
+    draftFolderIconSize,
     changeDraftRows,
     changeDraftCols,
     changeDraftFolderRows,
     changeDraftFolderCols,
     changeDraftIconSize,
+    changeDraftFolderIconSize,
+    setDraftFolderIconSizeMode,
     managedApps,
     filteredManagedApps,
     appManagerSelectedIds,
@@ -1552,6 +1692,7 @@ export function useLaunchpadController() {
     isFolderAppLaunchClosing,
     handleFolderOverlayPointerDown,
     folderPanelRef,
+    folderViewportRef,
     folderPanelInitial,
     folderPanelAnimate,
     panelSpring,

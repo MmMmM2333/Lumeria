@@ -368,6 +368,48 @@ body {
   flex: 0 0 auto;
 }
 
+.settings-folder-icon-size-control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.settings-segmented-control {
+  display: inline-flex;
+  height: 34px;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.settings-segmented-button {
+  min-width: 74px;
+  padding: 0 12px;
+  border: 0;
+  color: rgba(255, 255, 255, 0.64);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.settings-segmented-button + .settings-segmented-button {
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.settings-segmented-button:hover {
+  color: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.settings-segmented-button-active {
+  color: white;
+  background: rgba(255, 255, 255, 0.18);
+}
+
 .settings-grid-layout-separator {
   color: rgba(255, 255, 255, 0.46);
   font-size: 13px;
@@ -1210,8 +1252,10 @@ body {
 }
 
 .warning-dialog-svg {
+  display: block;
   width: 22px;
   height: 22px;
+  overflow: visible;
 }
 
 .warning-dialog-content {
@@ -1452,6 +1496,7 @@ body {
 }
 
 .icon-cell-compact {
+  --selection-frame-min-width: calc(var(--compact-icon-size) + 44px);
   width: calc(var(--compact-icon-size) + 24px);
   height: var(--compact-icon-cell-height);
 }
@@ -1479,7 +1524,7 @@ body {
   align-items: center;
   justify-content: flex-start;
   max-width: 100%;
-  min-width: 0;
+  min-width: min(100%, var(--selection-frame-min-width, calc(var(--app-icon-size) + 44px)));
   padding: 10px 12px 10px;
   border-radius: 26px;
   background: transparent;
@@ -1739,11 +1784,13 @@ body {
 }
 
 .launchpad-root-textless .icon-cell {
+  --selection-frame-min-width: var(--textless-icon-cell-height);
   height: var(--textless-icon-cell-height);
   justify-content: center;
 }
 
 .launchpad-root-textless .icon-cell-compact {
+  --selection-frame-min-width: var(--textless-compact-icon-cell-height);
   height: var(--textless-compact-icon-cell-height);
 }
 
@@ -1870,9 +1917,14 @@ body {
 .folder-pages-shell {
   position: relative;
   --folder-shell-side-padding: 58px;
+  --folder-shell-vertical-padding: 118px;
+  --folder-shell-max-height: max(420px, calc(100vh - 168px));
+  --folder-shell-height: min(var(--folder-shell-min-height), var(--folder-shell-max-height));
+  --folder-viewport-height: max(280px, calc(var(--folder-shell-height) - var(--folder-shell-vertical-padding)));
   display: block;
-  min-height: var(--folder-shell-min-height);
-  padding: 54px var(--folder-shell-side-padding) 66px;
+  height: var(--folder-shell-height);
+  min-height: 0;
+  padding: 64px var(--folder-shell-side-padding) 54px;
   border-radius: 48px;
   background: rgba(236, 240, 244, 0.34);
   box-shadow:
@@ -1886,8 +1938,8 @@ body {
   position: relative;
   display: flex;
   width: calc(100% + var(--folder-shell-side-padding) + var(--folder-shell-side-padding));
-  height: var(--folder-grid-height);
-  min-height: var(--folder-grid-height);
+  height: var(--folder-viewport-height);
+  min-height: var(--folder-viewport-height);
   margin: 0 calc(0px - var(--folder-shell-side-padding));
   min-width: 0;
   overflow: hidden;
@@ -1913,19 +1965,43 @@ body {
 }
 
 .folder-grid {
+  --app-icon-size: var(--folder-icon-size);
+  --app-icon-radius: calc(var(--app-icon-size) * 0.371428);
+  --app-icon-image-size: calc(var(--app-icon-size) * 1);
+  --app-icon-emoji-size: calc(var(--app-icon-size) * 0.542857);
+  --folder-thumb-size: var(--app-icon-image-size);
+  --selection-frame-min-width: var(--folder-selection-frame-min-width);
   display: grid;
   justify-content: center;
   align-content: start;
+  align-items: stretch;
   justify-items: center;
-  height: var(--folder-grid-height);
-  min-height: var(--folder-grid-height);
+  height: var(--folder-viewport-height);
+  min-height: var(--folder-viewport-height);
   width: 100%;
-  gap: 24px 0;
-  padding: 0 var(--folder-shell-side-padding);
+  gap: var(--folder-row-gap) 0;
+  padding: 0 var(--folder-shell-side-padding) var(--folder-selection-frame-safe-area);
   overflow: visible;
   border-radius: 0;
   border: 0;
   background: transparent;
+}
+
+.folder-grid .icon-cell {
+  --selection-frame-min-width: var(--folder-selection-frame-min-width);
+  height: 100%;
+  min-height: 0;
+}
+
+.folder-grid .icon-selection-frame {
+  padding: var(--folder-selection-frame-padding-y) var(--folder-selection-frame-padding-x);
+}
+
+.folder-grid .icon-name {
+  margin-top: var(--folder-icon-name-margin-top);
+  padding: var(--folder-icon-name-padding-y) var(--folder-icon-name-padding-x);
+  font-size: var(--folder-icon-name-font-size);
+  -webkit-line-clamp: var(--folder-icon-name-line-clamp);
 }
 
 .folder-page-dots {
@@ -2034,6 +2110,8 @@ body {
   .settings-grid { grid-template-columns: 1fr; }
   .settings-grid-layout-field { align-items: flex-start; flex-direction: column; }
   .settings-grid-layout-control { width: 100%; justify-content: flex-end; }
+  .settings-folder-icon-size-field { align-items: flex-start; flex-direction: column; }
+  .settings-folder-icon-size-control { width: 100%; flex-wrap: wrap; }
   .settings-section-header { align-items: flex-start; flex-direction: column; }
   .settings-inline-actions { justify-content: flex-start; }
   .app-manager-list { grid-template-columns: 1fr; }

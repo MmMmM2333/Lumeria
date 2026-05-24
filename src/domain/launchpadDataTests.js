@@ -88,11 +88,14 @@ export function runLaunchpadDataTests() {
     folderRows: state.folderRows,
     folderCols: state.folderCols,
     iconSize: 64,
+    folderIconSizeMode: "custom",
+    folderIconSize: 88,
     textless: true,
     hiddenAppIds: ["hidden"],
   });
   assert(snapshot.version === 1, "layout snapshots should use version 1");
   assert(snapshot.settings.textless === true && snapshot.settings.hiddenAppIds[0] === "hidden", "layout snapshots should include settings");
+  assert(snapshot.settings.folderIconSizeMode === "custom" && snapshot.settings.folderIconSize === 88, "layout snapshots should include folder icon size settings");
   assert(!("iconDataUrl" in snapshot.pages[0][0]), "layout snapshots should omit catalog icon data");
   assert(snapshot.pages[0][0].customIconDataUrl === "data:custom-a", "layout snapshots should preserve custom icon data");
   assert(snapshot.pages[0][1].children.length === 2, "folder snapshots should include flat children for compatibility");

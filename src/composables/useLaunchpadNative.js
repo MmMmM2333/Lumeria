@@ -19,6 +19,8 @@ import {
 } from "../api/launchpadApi.js";
 
 const USE_MOCK_DATA_IN_NATIVE = false;
+const FOLDER_ICON_SIZE_MODE_CUSTOM = "custom";
+const FOLDER_ICON_SIZE_MODE_GLOBAL = "global";
 
 export function useLaunchpadNative(options) {
   let nativeLayoutReady = false;
@@ -43,17 +45,25 @@ export function useLaunchpadNative(options) {
     const nextFolderRows = clamp(Number(settings.folderRows) || DEFAULT_FOLDER_ROWS, 2, 6);
     const nextFolderCols = clamp(Number(settings.folderCols) || DEFAULT_FOLDER_COLS, 2, 8);
     const nextIconSize = options.clampIconSize(settings.iconSize);
+    const nextFolderIconSizeMode = settings.folderIconSizeMode === FOLDER_ICON_SIZE_MODE_CUSTOM
+      ? FOLDER_ICON_SIZE_MODE_CUSTOM
+      : FOLDER_ICON_SIZE_MODE_GLOBAL;
+    const nextFolderIconSize = options.clampIconSize(settings.folderIconSize ?? nextIconSize);
 
     options.gridRows.value = rows;
     options.gridCols.value = cols;
     options.folderRows.value = nextFolderRows;
     options.folderCols.value = nextFolderCols;
     options.iconSize.value = nextIconSize;
+    options.folderIconSizeMode.value = nextFolderIconSizeMode;
+    options.folderIconSize.value = nextFolderIconSize;
     options.draftRows.value = rows;
     options.draftCols.value = cols;
     options.draftFolderRows.value = nextFolderRows;
     options.draftFolderCols.value = nextFolderCols;
     options.draftIconSize.value = nextIconSize;
+    options.draftFolderIconSizeMode.value = nextFolderIconSizeMode;
+    options.draftFolderIconSize.value = nextFolderIconSize;
     options.isTextlessMode.value = Boolean(settings.textless);
     options.hiddenAppIds.value = Array.isArray(settings.hiddenAppIds)
       ? settings.hiddenAppIds.map(String)
@@ -83,6 +93,8 @@ export function useLaunchpadNative(options) {
           folderRows: options.folderRows.value,
           folderCols: options.folderCols.value,
           iconSize: options.iconSize.value,
+          folderIconSizeMode: options.folderIconSizeMode.value,
+          folderIconSize: options.folderIconSize.value,
           textless: options.isTextlessMode.value,
           hiddenAppIds: options.hiddenAppIds.value,
         }));

@@ -179,6 +179,26 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
         }
     }
 
+    if let Some(value) = object.get("folderIconSize") {
+        let size = value
+            .as_u64()
+            .ok_or_else(|| "layout settings.folderIconSize must be a positive integer".to_string())?;
+        if size == 0 {
+            return Err("layout settings.folderIconSize must be a positive integer".to_string());
+        }
+    }
+
+    if let Some(value) = object.get("folderIconSizeMode") {
+        match value.as_str() {
+            Some("global" | "custom") => {}
+            _ => {
+                return Err(
+                    "layout settings.folderIconSizeMode must be global or custom".to_string(),
+                );
+            }
+        }
+    }
+
     object
         .get("textless")
         .and_then(Value::as_bool)
@@ -451,6 +471,8 @@ mod tests {
                 "folderRows": 3,
                 "folderCols": 4,
                 "iconSize": 64,
+                "folderIconSizeMode": "custom",
+                "folderIconSize": 88,
                 "textless": false,
                 "hiddenAppIds": ["hidden-app"]
             }

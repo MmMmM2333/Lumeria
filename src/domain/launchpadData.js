@@ -187,6 +187,8 @@ export function createLaunchpadDataHelpers(options) {
         folderRows: state.folderRows,
         folderCols: state.folderCols,
         iconSize: state.iconSize,
+        folderIconSizeMode: state.folderIconSizeMode,
+        folderIconSize: state.folderIconSize,
         textless: state.textless,
         hiddenAppIds: state.hiddenAppIds,
       },

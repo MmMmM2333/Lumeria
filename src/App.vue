@@ -254,6 +254,38 @@
                     </div>
                   </div>
                 </div>
+                <div class="settings-field settings-field-wide settings-folder-icon-size-field">
+                  <span class="settings-field-copy">
+                    <span>文件夹图标大小</span>
+                    <span class="settings-field-hint">{{ ICON_SIZE_MIN }}-{{ ICON_SIZE_MAX }}px</span>
+                  </span>
+                  <div class="settings-folder-icon-size-control">
+                    <div class="settings-segmented-control" aria-label="文件夹图标大小模式">
+                      <button
+                        type="button"
+                        :class="cx('settings-segmented-button', draftFolderIconSizeMode === 'global' && 'settings-segmented-button-active')"
+                        @click="setDraftFolderIconSizeMode('global')"
+                      >
+                        跟随全局
+                      </button>
+                      <button
+                        type="button"
+                        :class="cx('settings-segmented-button', draftFolderIconSizeMode === 'custom' && 'settings-segmented-button-active')"
+                        @click="setDraftFolderIconSizeMode('custom')"
+                      >
+                        自定义
+                      </button>
+                    </div>
+                    <div v-if="draftFolderIconSizeMode === 'custom'" class="settings-number-control settings-number-control-wide">
+                      <input v-model.number="draftFolderIconSize" :min="ICON_SIZE_MIN" :max="ICON_SIZE_MAX" :step="ICON_SIZE_STEP" type="number" aria-label="文件夹图标大小" />
+                      <span class="settings-number-unit">px</span>
+                      <div class="settings-number-buttons">
+                        <button type="button" aria-label="增大文件夹图标" @click.prevent="changeDraftFolderIconSize(1)"><ChevronUpIcon class="settings-number-icon" /></button>
+                        <button type="button" aria-label="缩小文件夹图标" @click.prevent="changeDraftFolderIconSize(-1)"><ChevronDownIcon class="settings-number-icon" /></button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
                 <label class="settings-toggle">
                   <span>无字模式</span>
                   <input v-model="isTextlessMode" type="checkbox" />
@@ -586,7 +618,7 @@
         </div>
 
         <div class="folder-pages-shell">
-          <div class="folder-viewport">
+          <div ref="folderViewportRef" class="folder-viewport">
             <Motion class="folder-track" :animate="folderTrackAnimate" :transition="desktopTrackTransition">
               <section v-for="(page, pageNumber) in folderPages" :key="pageNumber" class="folder-page-section">
                 <Motion
@@ -731,11 +763,15 @@ const {
   draftFolderRows,
   draftFolderCols,
   draftIconSize,
+  draftFolderIconSizeMode,
+  draftFolderIconSize,
   changeDraftRows,
   changeDraftCols,
   changeDraftFolderRows,
   changeDraftFolderCols,
   changeDraftIconSize,
+  changeDraftFolderIconSize,
+  setDraftFolderIconSizeMode,
   managedApps,
   filteredManagedApps,
   appManagerSelectedIds,
