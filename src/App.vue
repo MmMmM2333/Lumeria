@@ -4,7 +4,7 @@
     :class="cx('launchpad-root', isTextlessMode && 'launchpad-root-textless', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching')"
     :style="rootStyle"
     @wheel="handleLaunchpadWheel"
-    @pointerdown="closeIconContextMenu"
+    @pointerdown="handleLaunchpadSurfacePointerDown"
   >
     <div class="launchpad-bg" />
 
@@ -52,7 +52,7 @@
         </button>
       </header>
 
-      <main ref="desktopMainRef" class="desktop-main" tabindex="-1" @focus="keyboardFocusArea = 'desktop'" @pointerdown="handleDesktopSurfacePointerDown">
+      <main ref="desktopMainRef" class="desktop-main" tabindex="-1" @focus="keyboardFocusArea = 'desktop'">
         <div class="desktop-viewport">
           <div class="desktop-track-clip">
             <Motion
@@ -596,7 +596,7 @@
         tabindex="-1"
         :initial="folderPanelInitial"
         :animate="folderPanelAnimate"
-        :transition="panelSpring"
+        :transition="folderPanelTransition"
         :style="folderPanelStyle"
       >
         <Motion
@@ -691,7 +691,7 @@
       </div>
     </Motion>
 
-    <div v-if="iconContextMenu" class="icon-context-menu-layer" @pointerdown.self="closeIconContextMenu" @contextmenu.prevent>
+    <div v-if="iconContextMenu" class="icon-context-menu-layer" @contextmenu.prevent>
       <div class="icon-context-menu" :style="iconContextMenuStyle" role="menu" :aria-label="`${iconContextMenu.app.name} 菜单`" @pointerdown.stop>
         <button type="button" role="menuitem" @click="openContextMenuApp">打开</button>
         <button type="button" role="menuitem" @click="editContextMenuApp">编辑</button>
@@ -883,6 +883,7 @@ const {
   folderPanelRef,
   folderPanelInitial,
   folderPanelAnimate,
+  folderPanelTransition,
   panelSpring,
   folderPanelStyle,
   folderContentInitial,
@@ -955,6 +956,14 @@ function openIconContextMenu(event, app, source) {
 
 function closeIconContextMenu() {
   iconContextMenu.value = null;
+}
+
+function handleLaunchpadSurfacePointerDown(event) {
+  if (iconContextMenu.value) {
+    closeIconContextMenu();
+    return;
+  }
+  handleDesktopSurfacePointerDown(event);
 }
 
 function openContextMenuApp() {

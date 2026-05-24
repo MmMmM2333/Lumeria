@@ -1855,7 +1855,7 @@ body {
   width: min(1480px, calc(100vw - clamp(144px, 18vw, 336px)));
   padding: 0;
   border-radius: 42px;
-  will-change: transform, opacity, border-radius;
+  will-change: transform, opacity, filter, border-radius;
   transform-origin: center center;
   overflow: visible;
   outline: none;

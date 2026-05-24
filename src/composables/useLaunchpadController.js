@@ -297,10 +297,11 @@ export function useLaunchpadController() {
     x: folderMotionGeometry.value.x,
     y: folderMotionGeometry.value.y,
     borderRadius: `${folderMotionGeometry.value.borderRadius}px`,
+    filter: "blur(0px)",
   }));
   const folderPanelAnimate = computed(() => {
     if (isFolderAppLaunchClosing.value) {
-      return { opacity: 0, scaleX: 1.08, scaleY: 1.08, x: 0, y: 0, borderRadius: "46px" };
+      return { opacity: 0, scaleX: 1.08, scaleY: 1.08, x: 0, y: 0, borderRadius: "46px", filter: "blur(0px)" };
     }
     if (isFolderClosing.value) {
       return {
@@ -310,10 +311,19 @@ export function useLaunchpadController() {
         x: folderMotionGeometry.value.x,
         y: folderMotionGeometry.value.y,
         borderRadius: `${folderMotionGeometry.value.borderRadius}px`,
+        filter: "blur(0px)",
       };
     }
-    return { opacity: 1, scaleX: 1, scaleY: 1, x: 0, y: 0, borderRadius: "42px" };
+    if (isDesktopAnimatingClosed.value) {
+      return { opacity: 0, scaleX: DESKTOP_CLOSE_SCALE, scaleY: DESKTOP_CLOSE_SCALE, x: 0, y: 0, borderRadius: "42px", filter: "blur(8px)" };
+    }
+    return { opacity: 1, scaleX: 1, scaleY: 1, x: 0, y: 0, borderRadius: "42px", filter: "blur(0px)" };
   });
+  const folderPanelTransition = computed(() => (
+    isDesktopAnimatingClosed.value || (isHomeRevealSettling.value && openFolderId.value && !isFolderClosing.value)
+      ? homeShellTransition
+      : panelSpring
+  ));
   const folderContentInitial = { opacity: 0, scale: 0.94, y: 18 };
   const folderContentAnimate = computed(() => {
     if (isFolderAppLaunchClosing.value) return { opacity: 0, scale: 1.08, y: 0 };
@@ -1442,10 +1452,26 @@ export function useLaunchpadController() {
   }
 
   function handleDesktopSurfacePointerDown(event) {
+    if (event?.button !== 0) return;
     if (!isDesktopOpen.value || isDragActive() || isAppLaunching.value) return;
 
     const target = event.target;
-    if (target?.closest?.(".icon-hit-target, .page-dot, .search-pill, .launchpad-header, button, input, textarea, select")) {
+    if (target?.closest?.([
+      ".icon-hit-target",
+      ".page-dot",
+      ".search-pill",
+      ".settings-overlay",
+      ".scan-result-overlay",
+      ".app-edit-overlay",
+      ".icon-chooser-overlay",
+      ".warning-dialog-overlay",
+      ".folder-overlay",
+      ".icon-context-menu-layer",
+      "button",
+      "input",
+      "textarea",
+      "select",
+    ].join(", "))) {
       return;
     }
 
@@ -1695,6 +1721,7 @@ export function useLaunchpadController() {
     folderViewportRef,
     folderPanelInitial,
     folderPanelAnimate,
+    folderPanelTransition,
     panelSpring,
     folderPanelStyle,
     folderContentInitial,
