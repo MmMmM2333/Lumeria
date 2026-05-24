@@ -20,9 +20,13 @@ use models::AppCatalogItem;
 use serde::Serialize;
 use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconEvent},
-    AppHandle, Emitter, State, WindowEvent,
+    AppHandle, Emitter, Manager, State, WindowEvent,
 };
-use tray::{open_settings, setup_tray, show_main_window};
+use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
+use tray::{
+    disable_main_window_transitions, open_main_window, open_settings, refresh_main_window_effects,
+    set_main_window_fullscreen, setup_tray, trigger_main_window_shortcut, CLOSE_DESKTOP_EVENT,
+};
 
 #[cfg(all(target_os = "windows", debug_assertions))]
 pub use icons::debug_extract_icon_png;
@@ -126,6 +130,20 @@ fn launch_app(app: AppHandle, app_id: String, state: State<'_, AppState>) -> Res
     launch_path(&path, app.launch_args.as_deref())
 }
 
+#[tauri::command]
+fn hide_main_window(app: AppHandle) {
+    tray::hide_main_window(&app);
+}
+
+#[tauri::command]
+fn set_main_window_effects_enabled(
+    app: AppHandle,
+    enabled: bool,
+    open_sequence: Option<u64>,
+) -> Result<(), String> {
+    tray::set_main_window_effects_enabled(&app, enabled, open_sequence)
+}
+
 fn select_launch_app(
     catalog_app: Option<AppCatalogItem>,
     saved_app: Option<AppCatalogItem>,
@@ -133,13 +151,51 @@ fn select_launch_app(
     catalog_app.or(saved_app)
 }
 
+fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    setup_tray(app)?;
+    if let Err(error) = set_main_window_fullscreen(app.handle()) {
+        eprintln!("Failed to fullscreen LaunchPad window: {error}");
+    }
+    if let Err(error) = disable_main_window_transitions(app.handle()) {
+        eprintln!("Failed to disable LaunchPad window transitions: {error}");
+    }
+    setup_global_shortcuts(app);
+    Ok(())
+}
+
+fn setup_global_shortcuts(app: &mut tauri::App) {
+    let plugin = tauri_plugin_global_shortcut::Builder::new()
+        .with_shortcut("alt+space")
+        .map(|builder| {
+            builder.with_handler(|app, shortcut, event| {
+                if event.state == ShortcutState::Pressed
+                    && shortcut.matches(Modifiers::ALT, Code::Space)
+                {
+                    trigger_main_window_shortcut(app);
+                }
+            })
+        });
+
+    let plugin = match plugin {
+        Ok(plugin) => plugin.build(),
+        Err(error) => {
+            eprintln!("Failed to create LaunchPad shortcut: {error}");
+            return;
+        }
+    };
+
+    if let Err(error) = app.handle().plugin(plugin) {
+        eprintln!("Failed to register LaunchPad shortcut Alt+Space: {error}");
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
-        .setup(setup_tray)
+        .setup(setup_app)
         .on_menu_event(|app, event| {
             if event.id() == "show" {
-                show_main_window(app);
+                open_main_window(app);
             } else if event.id() == "settings" {
                 open_settings(app);
             } else if event.id() == "quit" {
@@ -152,18 +208,20 @@ pub fn run() {
                 button_state,
                 ..
             } if button == MouseButton::Left && button_state == MouseButtonState::Up => {
-                show_main_window(app);
+                open_main_window(app);
             }
             TrayIconEvent::DoubleClick { button, .. } if button == MouseButton::Left => {
-                show_main_window(app);
+                open_main_window(app);
             }
             _ => {}
         })
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
+        .on_window_event(|window, event| match event {
+            WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
-                let _ = window.hide();
+                let _ = window.emit(CLOSE_DESKTOP_EVENT, ());
             }
+            WindowEvent::Focused(true) => refresh_main_window_effects(window.app_handle()),
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             scan_apps,
@@ -171,7 +229,9 @@ pub fn run() {
             save_layout,
             pick_launch_file,
             load_app_icon_choices,
-            launch_app
+            launch_app,
+            hide_main_window,
+            set_main_window_effects_enabled
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri app");
@@ -218,6 +278,9 @@ mod tests {
         let selected = select_launch_app(None, Some(app_item("app", "C:/Saved/App.exe")))
             .expect("saved app should be selected");
 
-        assert_eq!(selected.launch_target.path.as_deref(), Some("C:/Saved/App.exe"));
+        assert_eq!(
+            selected.launch_target.path.as_deref(),
+            Some("C:/Saved/App.exe")
+        );
     }
 }

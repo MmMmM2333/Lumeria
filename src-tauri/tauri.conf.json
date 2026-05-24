@@ -26,7 +26,7 @@
           "color": "#10141FCC"
         },
         "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --ignore-gpu-blocklist --enable-gpu-rasterization --enable-zero-copy --enable-accelerated-2d-canvas",
-        "fullscreen": false
+        "fullscreen": true
       }
     ]
   },

@@ -1,4 +1,5 @@
 import {
+  DESKTOP_CLOSE_DURATION,
   DEFAULT_COLS,
   DEFAULT_FOLDER_COLS,
   DEFAULT_FOLDER_ROWS,
@@ -7,20 +8,28 @@ import {
 import { clamp } from "../domain/launchpadLayout.js";
 import { normalizeNativeApp } from "../domain/launchpadData.js";
 import {
+  hideMainWindow,
   isNativeBridgeAvailable,
   launchApp as launchNativeApp,
   listenNativeEvent,
   loadLayout,
   saveLayout,
   scanApps,
+  setMainWindowEffectsEnabled,
 } from "../api/launchpadApi.js";
 
 const USE_MOCK_DATA_IN_NATIVE = false;
 
 export function useLaunchpadNative(options) {
   let nativeLayoutReady = false;
+  let nativeWindowEffectsUpdate = Promise.resolve();
   let nativeSaveTimer = null;
+  let nativeWindowHideTimer = null;
+  let nativeWindowOpenSequence = null;
+  let unlistenCloseDesktopEvent = null;
+  let unlistenOpenDesktopEvent = null;
   let unlistenSettingsEvent = null;
+  let unlistenToggleDesktopEvent = null;
   let unlistenLayoutRecoveredEvent = null;
 
   function shouldUseNativeCatalog() {
@@ -54,6 +63,11 @@ export function useLaunchpadNative(options) {
   function clearNativeSaveTimer() {
     if (nativeSaveTimer) window.clearTimeout(nativeSaveTimer);
     nativeSaveTimer = null;
+  }
+
+  function clearNativeWindowHideTimer() {
+    if (nativeWindowHideTimer) window.clearTimeout(nativeWindowHideTimer);
+    nativeWindowHideTimer = null;
   }
 
   function scheduleNativeLayoutSave() {
@@ -115,9 +129,41 @@ export function useLaunchpadNative(options) {
     }
   }
 
+  function setNativeWindowEffectsEnabled(enabled) {
+    if (!isNativeBridgeAvailable()) return;
+    const openSequence = enabled ? null : nativeWindowOpenSequence;
+    nativeWindowEffectsUpdate = nativeWindowEffectsUpdate
+      .catch(() => {})
+      .then(() => setMainWindowEffectsEnabled(enabled, openSequence))
+      .catch((error) => {
+        console.error("Failed to update LaunchPad window effects", error);
+      });
+  }
+
   function registerNativeEventListeners() {
     if (!isNativeBridgeAvailable()) return Promise.resolve();
     return Promise.all([
+      listenNativeEvent("launchpad-open-desktop", openDesktopFromNativeShortcut)
+        .then((unlisten) => {
+          unlistenOpenDesktopEvent = unlisten;
+        })
+        .catch((error) => {
+          console.error("Failed to listen for native desktop open event", error);
+        }),
+      listenNativeEvent("launchpad-toggle-desktop", toggleDesktopFromNativeShortcut)
+        .then((unlisten) => {
+          unlistenToggleDesktopEvent = unlisten;
+        })
+        .catch((error) => {
+          console.error("Failed to listen for native desktop toggle event", error);
+        }),
+      listenNativeEvent("launchpad-close-desktop", closeDesktopFromNativeWindow)
+        .then((unlisten) => {
+          unlistenCloseDesktopEvent = unlisten;
+        })
+        .catch((error) => {
+          console.error("Failed to listen for native desktop close event", error);
+        }),
       listenNativeEvent("launchpad-open-settings", options.openSettingsPanel)
         .then((unlisten) => {
           unlistenSettingsEvent = unlisten;
@@ -136,19 +182,81 @@ export function useLaunchpadNative(options) {
   }
 
   function clearNativeEventListeners() {
+    clearNativeWindowHideTimer();
+    unlistenOpenDesktopEvent?.();
+    unlistenOpenDesktopEvent = null;
+    unlistenToggleDesktopEvent?.();
+    unlistenToggleDesktopEvent = null;
+    unlistenCloseDesktopEvent?.();
+    unlistenCloseDesktopEvent = null;
     unlistenSettingsEvent?.();
     unlistenSettingsEvent = null;
     unlistenLayoutRecoveredEvent?.();
     unlistenLayoutRecoveredEvent = null;
   }
 
+  function rememberNativeWindowOpenSequence(event) {
+    const nextSequence = Number(event?.payload);
+    if (Number.isFinite(nextSequence) && nextSequence > 0) {
+      nativeWindowOpenSequence = nextSequence;
+    }
+  }
+
+  function openDesktopFromNativeShortcut(event) {
+    rememberNativeWindowOpenSequence(event);
+    clearNativeWindowHideTimer();
+    if (options.isDesktopOpen.value) {
+      options.focusDesktopSurface?.();
+      return;
+    }
+    options.openDesktop();
+  }
+
+  function hideNativeWindowAfterCloseAnimation() {
+    clearNativeWindowHideTimer();
+    nativeWindowHideTimer = window.setTimeout(async () => {
+      nativeWindowHideTimer = null;
+      hideNativeWindow();
+    }, DESKTOP_CLOSE_DURATION);
+  }
+
+  async function hideNativeWindow() {
+    if (!isNativeBridgeAvailable()) return;
+    clearNativeWindowHideTimer();
+    try {
+      await hideMainWindow();
+    } catch (error) {
+      console.error("Failed to hide LaunchPad window", error);
+    }
+  }
+
+  function toggleDesktopFromNativeShortcut(event) {
+    rememberNativeWindowOpenSequence(event);
+    if (options.isDesktopOpen.value) {
+      options.closeDesktop({ clearSearch: false });
+      hideNativeWindowAfterCloseAnimation();
+    } else {
+      openDesktopFromNativeShortcut();
+    }
+  }
+
+  function closeDesktopFromNativeWindow() {
+    if (options.isDesktopOpen.value) {
+      options.closeDesktop({ clearSearch: false });
+    }
+    hideNativeWindowAfterCloseAnimation();
+  }
+
   return {
     clearNativeEventListeners,
     clearNativeSaveTimer,
+    hideNativeWindow,
+    hideNativeWindowAfterCloseAnimation,
     loadNativeLaunchpadData,
     launchNativeAppIfAvailable,
     registerNativeEventListeners,
     scheduleNativeLayoutSave,
+    setNativeWindowEffectsEnabled,
     shouldUseNativeCatalog,
   };
 }

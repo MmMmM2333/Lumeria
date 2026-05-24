@@ -325,13 +325,17 @@ export function useLaunchpadController() {
   const {
     clearNativeEventListeners,
     clearNativeSaveTimer,
+    hideNativeWindow,
+    hideNativeWindowAfterCloseAnimation,
     loadNativeLaunchpadData,
     launchNativeAppIfAvailable,
     registerNativeEventListeners,
     scheduleNativeLayoutSave,
+    setNativeWindowEffectsEnabled,
     shouldUseNativeCatalog,
   } = useLaunchpadNative({
     clampIconSize,
+    closeDesktop,
     commitFolderPageIndex,
     commitPageIndex,
     commitSearchPageIndex,
@@ -346,11 +350,14 @@ export function useLaunchpadController() {
     folderRows,
     gridCols,
     gridRows,
+    focusDesktopSurface,
     handleLayoutRecovered,
     hiddenAppIds,
     iconSize,
+    isDesktopOpen,
     isTextlessMode,
     mergeNativeCatalogWithSavedLayout,
+    openDesktop,
     openSettingsPanel,
     pageIndex,
     pages,
@@ -520,6 +527,7 @@ export function useLaunchpadController() {
     folderPanelRef,
     getCurrentIconScope,
     handleAltKeyDown,
+    hideNativeWindowAfterCloseAnimation,
     isAltKeyEvent,
     isAppLaunching,
     isDesktopClosing,
@@ -1089,6 +1097,7 @@ export function useLaunchpadController() {
   function closeDesktop(options) {
     if (isDragActive()) return;
     cancelLongPress();
+    setNativeWindowEffectsEnabled(false);
     const shouldClearSearchAfterClose = Boolean(options?.clearSearch && isSearchMode.value);
     clearSelectedIcon();
     keyboardFocusArea.value = "desktop";
@@ -1159,6 +1168,7 @@ export function useLaunchpadController() {
       clearOpeningIcon();
       isAppLaunching.value = false;
       clearAppLaunchTimer();
+      hideNativeWindow();
     }, APP_LAUNCH_DURATION);
   }
 
@@ -1344,6 +1354,7 @@ export function useLaunchpadController() {
     }
 
     closeDesktop({ clearSearch: true });
+    hideNativeWindowAfterCloseAnimation();
   }
 
   function handleFolderOverlayPointerDown() {

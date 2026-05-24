@@ -54,3 +54,17 @@ export async function launchApp(appId) {
   await invoke("launch_app", { appId });
   return true;
 }
+
+export async function hideMainWindow() {
+  const invoke = getTauriInvoke();
+  if (!invoke) return false;
+  await invoke("hide_main_window");
+  return true;
+}
+
+export async function setMainWindowEffectsEnabled(enabled, openSequence = null) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return false;
+  await invoke("set_main_window_effects_enabled", { enabled, openSequence });
+  return true;
+}

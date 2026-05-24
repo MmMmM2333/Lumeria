@@ -178,6 +178,7 @@ export function useLaunchpadKeyboard(options) {
     }
 
     options.closeDesktop({ clearSearch: false });
+    options.hideNativeWindowAfterCloseAnimation?.();
   }
 
   function handleGlobalKeydown(event) {

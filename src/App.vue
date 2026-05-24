@@ -186,7 +186,7 @@
                     <span class="settings-field-hint">快速显示或隐藏 LaunchPad</span>
                   </span>
                   <div class="settings-hotkey-control">
-                    <kbd>未设置</kbd>
+                    <kbd>Alt + Space</kbd>
                     <button class="settings-secondary-button" type="button" disabled>录制</button>
                   </div>
                 </div>

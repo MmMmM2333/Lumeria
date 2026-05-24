@@ -66,9 +66,18 @@ body {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  opacity: 1;
   background: rgba(10, 12, 18, 0.28);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  transition: opacity 360ms ease, background 360ms ease;
+  will-change: opacity, background;
+}
+
+.launchpad-root-closed .launchpad-bg,
+.launchpad-root-app-launching .launchpad-bg {
+  opacity: 0;
+  background: rgba(10, 12, 18, 0);
 }
 
 .launchpad-shell {
