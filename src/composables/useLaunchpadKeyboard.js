@@ -232,6 +232,11 @@ export function useLaunchpadKeyboard(options) {
       return;
     }
 
+    if (!isTypingInInput && !event.ctrlKey && !event.metaKey && !event.altKey && event.key === " " && !options.searchQuery.value) {
+      event.preventDefault();
+      return;
+    }
+
     if (!isTypingInInput && !event.ctrlKey && !event.metaKey && !event.altKey && event.key && event.key.length === 1) {
       event.preventDefault();
       appendDesktopSearchText(event.key);
