@@ -1,45 +1,11 @@
 import { defineComponent, h } from "vue";
 import { Motion } from "motion-v";
+import { getFolderPreviewSlots } from "../domain/launchpadLayout.js";
 
 const springRest = { restDelta: 0.01, restSpeed: 0.01 };
 
 function cx() {
   return Array.prototype.slice.call(arguments).filter(Boolean).join(" ");
-}
-
-function chunkIntoPages(items, size) {
-  const pageSize = Math.max(1, size || 1);
-  const chunks = [];
-  for (let i = 0; i < items.length; i += pageSize) {
-    chunks.push(items.slice(i, i + pageSize));
-  }
-  return chunks.length ? chunks : [[]];
-}
-
-function trimFolderSlots(children) {
-  return (children || []).filter(Boolean);
-}
-
-function compactFolderPages(folderPages) {
-  const pages = (folderPages || []).map((page) => trimFolderSlots(page)).filter((page) => page.length > 0);
-  return pages.length ? pages : [[]];
-}
-
-function getFolderChildPages(folder, size) {
-  const pageSize = Math.max(1, Number(size) || 9);
-  if (Array.isArray(folder?.childPages)) return compactFolderPages(folder.childPages);
-  return chunkIntoPages(trimFolderSlots(folder?.children || []), pageSize);
-}
-
-function getFolderPreviewSlots(folderOrChildren, pageSize) {
-  const safePageSize = Math.max(1, Number(pageSize) || 9);
-  const previewLimit = Math.min(9, safePageSize);
-  const firstPage = Array.isArray(folderOrChildren)
-    ? trimFolderSlots(folderOrChildren).slice(0, safePageSize)
-    : getFolderChildPages(folderOrChildren, safePageSize)[0] || [];
-  const slots = firstPage.slice(0, previewLimit).map((child) => (child ? child : null));
-  while (slots.length < 9) slots.push(null);
-  return slots;
 }
 
 export default defineComponent({

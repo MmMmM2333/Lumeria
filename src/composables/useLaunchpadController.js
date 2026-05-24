@@ -35,20 +35,14 @@ import {
   cx,
   makePageSize,
 } from "../domain/launchpadLayout.js";
-import {
-  compareAppsByDefaultOrder,
-  createLaunchpadDataHelpers,
-  fallbackAppGlyph,
-  makeLaunchTarget,
-  normalizeNativeApp,
-} from "../domain/launchpadData.js";
-import { isNativeBridgeAvailable, launchApp as launchNativeApp, listenNativeEvent, loadAppIconChoices, loadLayout, pickLaunchFile, saveLayout, scanApps } from "../api/launchpadApi.js";
+import { createLaunchpadDataHelpers } from "../domain/launchpadData.js";
+import { useLaunchpadApps } from "./useLaunchpadApps.js";
 import { useLaunchpadDrag } from "./useLaunchpadDrag.js";
 import { useIconSelection } from "./useIconSelection.js";
 import { useLaunchpadKeyboard } from "./useLaunchpadKeyboard.js";
+import { useLaunchpadNative } from "./useLaunchpadNative.js";
 import { getElementFromRef, usePageGridMetrics } from "./usePageGridMetrics.js";
 
-const USE_MOCK_DATA_IN_NATIVE = false;
 const PAGE_JUMP_RENDER_RELEASE_DELAY = 900;
 
 export function useLaunchpadController() {
@@ -132,29 +126,7 @@ export function useLaunchpadController() {
   const settingsPanelMotionGeometry = ref({ x: 0, y: 0, scaleX: 0.08, scaleY: 0.06, borderRadius: 18 });
   const warningDialog = shallowRef(null);
   const layoutRecoveryNotice = shallowRef(null);
-  const appManagerSelectedIds = ref([]);
-  const appManagerSearchQuery = ref("");
-  const isScanResultDialogOpen = ref(false);
-  const scanResultApps = ref([]);
-  const scanResultSelectedIds = ref([]);
-  const isAddingManagedApp = ref(false);
   const hiddenAppIds = ref([]);
-  const newAppName = ref("");
-  const newAppTarget = ref("");
-  const newAppArgs = ref("");
-  const newAppIconDataUrl = ref(null);
-  const isBrowsingNewAppTarget = ref(false);
-  const editingManagedAppId = ref(null);
-  const editAppName = ref("");
-  const editAppTarget = ref("");
-  const editAppArgs = ref("");
-  const editAppIconDataUrl = ref(null);
-  const isEditAppIconReset = ref(false);
-  const isBrowsingEditAppTarget = ref(false);
-  const isScanningApps = ref(false);
-  const iconChooser = shallowRef(null);
-  const iconChoices = ref([]);
-  const isLoadingIconChoices = ref(false);
   const keyboardFocusArea = ref("desktop");
   const launchGhost = shallowRef(null);
   const openFolderId = ref(null);
@@ -192,11 +164,6 @@ export function useLaunchpadController() {
   let isAltPressed = false;
   let layoutResizeObserver = null;
   let dragControls = null;
-  let nativeLayoutReady = false;
-  let nativeSaveTimer = null;
-  let unlistenSettingsEvent = null;
-  let unlistenLayoutRecoveredEvent = null;
-  let iconChooserRequestId = 0;
 
   const {
     clearOpeningIcon,
@@ -242,25 +209,6 @@ export function useLaunchpadController() {
   const searchPages = computed(() => chunkIntoPages(searchApps.value, pageSize.value));
   const activePages = computed(() => (isSearchMode.value ? searchPages.value : pages.value));
   const activePageIndex = computed(() => (isSearchMode.value ? searchPageIndex.value : pageIndex.value));
-  const managedApps = computed(() => collectAppsFromPages(pages.value).sort(compareAppsByDefaultOrder));
-  const filteredManagedApps = computed(() => {
-    const query = appManagerSearchQuery.value.trim().toLowerCase();
-    if (!query) return managedApps.value;
-    return managedApps.value.filter((app) => {
-      const name = String(app?.name || "").toLowerCase();
-      const target = getLaunchTargetPath(app).toLowerCase();
-      const args = String(app?.launchArgs || "").toLowerCase();
-      return name.includes(query) || target.includes(query) || args.includes(query);
-    });
-  });
-  const selectedManagedAppCount = computed(() => appManagerSelectedIds.value.length);
-  const scanResultSelectedCount = computed(() => scanResultSelectedIds.value.length);
-  const canAddScannedApps = computed(() => scanResultSelectedCount.value > 0);
-  const canAddManagedApp = computed(() => newAppName.value.trim().length > 0 && newAppTarget.value.trim().length > 0);
-  const newManagedAppGlyph = computed(() => fallbackAppGlyph(newAppName.value));
-  const canSaveEditingManagedApp = computed(() => editAppName.value.trim().length > 0 && editAppTarget.value.trim().length > 0);
-  const editingManagedApp = computed(() => managedApps.value.find((app) => app.id === editingManagedAppId.value) || null);
-  const canScanManagedApps = computed(() => shouldUseNativeCatalog());
 
   const desktopTrackAnimate = computed(() => ({ x: `-${pageIndex.value * 100}%` }));
   const searchTrackAnimate = computed(() => ({ x: `-${searchPageIndex.value * 100}%` }));
@@ -374,6 +322,41 @@ export function useLaunchpadController() {
     rootRef,
     searchRef,
   });
+  const {
+    clearNativeEventListeners,
+    clearNativeSaveTimer,
+    loadNativeLaunchpadData,
+    launchNativeAppIfAvailable,
+    registerNativeEventListeners,
+    scheduleNativeLayoutSave,
+    shouldUseNativeCatalog,
+  } = useLaunchpadNative({
+    clampIconSize,
+    commitFolderPageIndex,
+    commitPageIndex,
+    commitSearchPageIndex,
+    createLayoutSnapshot,
+    draftCols,
+    draftFolderCols,
+    draftFolderRows,
+    draftIconSize,
+    draftRows,
+    folderCols,
+    folderPageIndex,
+    folderRows,
+    gridCols,
+    gridRows,
+    handleLayoutRecovered,
+    hiddenAppIds,
+    iconSize,
+    isTextlessMode,
+    mergeNativeCatalogWithSavedLayout,
+    openSettingsPanel,
+    pageIndex,
+    pages,
+    schedulePageGridMetrics,
+    searchPageIndex,
+  });
   dragControls = useLaunchpadDrag({
     canCreateDesktopPageAfterDrag,
     canCreateFolderPageAfterDrag,
@@ -436,6 +419,89 @@ export function useLaunchpadController() {
     dragMeta,
     isDragActive,
   } = dragControls;
+  const {
+    addManagedApp,
+    addSelectedScannedApps,
+    appManagerSearchQuery,
+    appManagerSelectedIds,
+    browseEditAppLaunchFile,
+    browseNewAppLaunchFile,
+    canAddManagedApp,
+    canAddScannedApps,
+    canSaveEditingManagedApp,
+    canScanManagedApps,
+    chooseIconCandidate,
+    clearManagedAppSelection,
+    clearScanResultSelection,
+    closeAddManagedAppPage,
+    closeEditManagedApp,
+    closeIconChooser,
+    closeScanResultDialog,
+    deleteManagedApp,
+    deleteSelectedManagedApps,
+    editAppArgs,
+    editAppIconDataUrl,
+    editingManagedApp,
+    editAppName,
+    editAppTarget,
+    filteredManagedApps,
+    getLaunchTargetPath,
+    handleIconChooserUpload,
+    iconChooser,
+    iconChoices,
+    isAddingManagedApp,
+    isBrowsingEditAppTarget,
+    isBrowsingNewAppTarget,
+    isEditAppIconReset,
+    isLoadingIconChoices,
+    isScanningApps,
+    isScanResultDialogOpen,
+    managedApps,
+    newAppArgs,
+    newAppIconDataUrl,
+    newAppName,
+    newAppTarget,
+    newManagedAppGlyph,
+    openAddManagedAppPage,
+    openEditAppIconChooser,
+    openEditManagedApp,
+    openExistingAppIconChooser,
+    openNewAppIconChooser,
+    rescanManagedApps,
+    resetAppCustomIcon,
+    resetEditAppIcon,
+    resetNewAppIcon,
+    saveEditingManagedApp,
+    scanResultApps,
+    scanResultSelectedCount,
+    scanResultSelectedIds,
+    selectAllManagedApps,
+    selectAllScanResultApps,
+    selectedManagedAppCount,
+    syncManagedAppState,
+    toggleManagedAppSelection,
+    toggleScanResultSelection,
+    updateAppCustomIcon,
+  } = useLaunchpadApps({
+    appendAppsToPages,
+    cloneItem,
+    clonePages,
+    collectAppsFromPages,
+    commitOpenFolder,
+    commitPageIndex,
+    commitPages,
+    commitSearchPageIndex,
+    findFolder,
+    hiddenAppIds,
+    isDragActive,
+    makeId,
+    openFolderId,
+    pages,
+    removeEverywhere,
+    renderedFolder,
+    schedulePageGridMetrics,
+    shouldUseNativeCatalog,
+  });
   const {
     handleGlobalKeydown,
     handleLaunchpadWheel,
@@ -540,88 +606,6 @@ export function useLaunchpadController() {
 
   function closeLayoutRecoveryNotice() {
     layoutRecoveryNotice.value = null;
-  }
-
-  function applyLayoutSettings(settings) {
-    if (!settings) return;
-    const rows = clamp(Number(settings.gridRows) || DEFAULT_ROWS, 2, 8);
-    const cols = clamp(Number(settings.gridCols) || DEFAULT_COLS, 3, 10);
-    const nextFolderRows = clamp(Number(settings.folderRows) || DEFAULT_FOLDER_ROWS, 2, 6);
-    const nextFolderCols = clamp(Number(settings.folderCols) || DEFAULT_FOLDER_COLS, 2, 8);
-    const nextIconSize = clampIconSize(settings.iconSize);
-
-    gridRows.value = rows;
-    gridCols.value = cols;
-    folderRows.value = nextFolderRows;
-    folderCols.value = nextFolderCols;
-    iconSize.value = nextIconSize;
-    draftRows.value = rows;
-    draftCols.value = cols;
-    draftFolderRows.value = nextFolderRows;
-    draftFolderCols.value = nextFolderCols;
-    draftIconSize.value = nextIconSize;
-    isTextlessMode.value = Boolean(settings.textless);
-    hiddenAppIds.value = Array.isArray(settings.hiddenAppIds) ? settings.hiddenAppIds.map(String) : [];
-  }
-
-  function clearNativeSaveTimer() {
-    if (nativeSaveTimer) window.clearTimeout(nativeSaveTimer);
-    nativeSaveTimer = null;
-  }
-
-  function scheduleNativeLayoutSave() {
-    if (!nativeLayoutReady || !shouldUseNativeCatalog()) return;
-    clearNativeSaveTimer();
-    nativeSaveTimer = window.setTimeout(async () => {
-      nativeSaveTimer = null;
-      try {
-        await saveLayout(createLayoutSnapshot({
-          pages: pages.value,
-          gridRows: gridRows.value,
-          gridCols: gridCols.value,
-          folderRows: folderRows.value,
-          folderCols: folderCols.value,
-          iconSize: iconSize.value,
-          textless: isTextlessMode.value,
-          hiddenAppIds: hiddenAppIds.value,
-        }));
-      } catch (error) {
-        console.error("Failed to save LaunchPad layout", error);
-      }
-    }, 320);
-  }
-
-  async function loadNativeLaunchpadData() {
-    if (!shouldUseNativeCatalog()) return;
-
-    try {
-      const [nativeApps, savedLayout] = await Promise.all([scanApps(), loadLayout()]);
-      const apps = (nativeApps || []).map(normalizeNativeApp);
-      if (!apps.length && !savedLayout) {
-        nativeLayoutReady = true;
-        return;
-      }
-
-      applyLayoutSettings(savedLayout?.settings);
-      pages.value = mergeNativeCatalogWithSavedLayout(apps, savedLayout, hiddenAppIds.value);
-      commitPageIndex(pageIndex.value);
-      commitSearchPageIndex(searchPageIndex.value);
-      commitFolderPageIndex(folderPageIndex.value);
-      nativeLayoutReady = true;
-      schedulePageGridMetrics();
-    } catch (error) {
-      nativeLayoutReady = false;
-      console.error("Failed to load native LaunchPad data", error);
-    }
-  }
-
-  async function launchNativeAppIfAvailable(app) {
-    if (!shouldUseNativeCatalog()) return;
-    try {
-      await launchNativeApp(app.id);
-    } catch (error) {
-      console.error(`Failed to launch ${app.name}`, error);
-    }
   }
 
   function getDesktopGridProjectionKey(pageNumber) {
@@ -738,30 +722,6 @@ export function useLaunchpadController() {
     });
   }
 
-  function shouldUseNativeCatalog() {
-    return isNativeBridgeAvailable() && !USE_MOCK_DATA_IN_NATIVE;
-  }
-
-  function registerNativeEventListeners() {
-    if (!isNativeBridgeAvailable()) return Promise.resolve();
-    return Promise.all([
-      listenNativeEvent("launchpad-open-settings", openSettingsPanel)
-        .then((unlisten) => {
-          unlistenSettingsEvent = unlisten;
-        })
-        .catch((error) => {
-          console.error("Failed to listen for native settings event", error);
-        }),
-      listenNativeEvent("launchpad-layout-recovered", handleLayoutRecovered)
-        .then((unlisten) => {
-          unlistenLayoutRecoveredEvent = unlisten;
-        })
-        .catch((error) => {
-          console.error("Failed to listen for layout recovery event", error);
-        }),
-    ]);
-  }
-
   function setPageRef(node, targetPageIndex) {
     if (!node) return;
     pageRefs[targetPageIndex] = node.$el || node;
@@ -812,384 +772,6 @@ export function useLaunchpadController() {
     commitPages(next);
   }
 
-  function updateAppCustomIcon(appId, dataUrl) {
-    if (!appId || isDragActive()) return;
-    const next = clonePages(pages.value);
-    let changed = false;
-
-    function updateItem(item) {
-      if (!item) return;
-      if (item.type === "app" && item.id === appId) {
-        if (dataUrl) item.customIconDataUrl = dataUrl;
-        else delete item.customIconDataUrl;
-        changed = true;
-        return;
-      }
-      if (item.type !== "folder") return;
-      for (const page of item.childPages || []) {
-        for (const child of page || []) updateItem(child);
-      }
-      item.children = (item.childPages || []).flat().filter(Boolean).map(cloneItem);
-    }
-
-    for (const page of next) {
-      for (const item of page) updateItem(item);
-    }
-    if (!changed) return;
-    commitPages(next);
-    schedulePageGridMetrics();
-  }
-
-  function resetAppCustomIcon(appId) {
-    updateAppCustomIcon(appId, null);
-  }
-
-  function getLaunchTargetPath(app) {
-    return app?.launchTarget?.path || "";
-  }
-
-  function syncEditingManagedApp() {
-    if (editingManagedAppId.value && !editingManagedApp.value) closeEditManagedApp();
-  }
-
-  function syncSelectedManagedApps() {
-    const validIds = new Set(filteredManagedApps.value.map((app) => app.id));
-    appManagerSelectedIds.value = appManagerSelectedIds.value.filter((id) => validIds.has(id));
-  }
-
-  function syncManagedAppState() {
-    syncEditingManagedApp();
-    syncSelectedManagedApps();
-  }
-
-  function toggleManagedAppSelection(appId, checked) {
-    if (!appId) return;
-    const selected = new Set(appManagerSelectedIds.value);
-    if (checked) selected.add(appId);
-    else selected.delete(appId);
-    appManagerSelectedIds.value = Array.from(selected);
-  }
-
-  function selectAllManagedApps() {
-    appManagerSelectedIds.value = filteredManagedApps.value.map((app) => app.id);
-  }
-
-  function clearManagedAppSelection() {
-    appManagerSelectedIds.value = [];
-  }
-
-  function toggleScanResultSelection(appId, checked) {
-    if (!appId) return;
-    const selected = new Set(scanResultSelectedIds.value);
-    if (checked) selected.add(appId);
-    else selected.delete(appId);
-    scanResultSelectedIds.value = Array.from(selected);
-  }
-
-  function selectAllScanResultApps() {
-    scanResultSelectedIds.value = scanResultApps.value.map((app) => app.id);
-  }
-
-  function clearScanResultSelection() {
-    scanResultSelectedIds.value = [];
-  }
-
-  function closeScanResultDialog() {
-    isScanResultDialogOpen.value = false;
-    scanResultApps.value = [];
-    scanResultSelectedIds.value = [];
-  }
-
-  function resetNewManagedAppDraft() {
-    newAppName.value = "";
-    newAppTarget.value = "";
-    newAppArgs.value = "";
-    newAppIconDataUrl.value = null;
-  }
-
-  function openAddManagedAppPage() {
-    if (isDragActive()) return;
-    resetNewManagedAppDraft();
-    isAddingManagedApp.value = true;
-  }
-
-  function closeAddManagedAppPage() {
-    isAddingManagedApp.value = false;
-    if (iconChooser.value?.target === "new") closeIconChooser();
-    resetNewManagedAppDraft();
-  }
-
-  function readImageFileAsDataUrl(event, callback) {
-    const input = event?.target;
-    const file = input?.files?.[0];
-    if (!file) return;
-    if (file.type && !file.type.startsWith("image/")) {
-      input.value = "";
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") callback(reader.result);
-      input.value = "";
-    };
-    reader.onerror = () => {
-      input.value = "";
-    };
-    reader.readAsDataURL(file);
-  }
-
-  function resetNewAppIcon() {
-    newAppIconDataUrl.value = null;
-  }
-
-  async function browseNewAppLaunchFile() {
-    if (!shouldUseNativeCatalog() || isBrowsingNewAppTarget.value) return;
-    isBrowsingNewAppTarget.value = true;
-    try {
-      const selectedFile = await pickLaunchFile();
-      if (!selectedFile) return;
-      newAppName.value = String(selectedFile.name || "").trim() || newAppName.value;
-      newAppTarget.value = String(selectedFile.path || "").trim();
-      newAppArgs.value = String(selectedFile.launchArgs || "").trim();
-      newAppIconDataUrl.value = selectedFile.iconDataUrl || null;
-    } catch (error) {
-      console.error("Failed to pick launch file", error);
-    } finally {
-      isBrowsingNewAppTarget.value = false;
-    }
-  }
-
-  function openEditManagedApp(app) {
-    if (!app || isDragActive()) return;
-    editingManagedAppId.value = app.id;
-    editAppName.value = app.name || "";
-    editAppTarget.value = getLaunchTargetPath(app);
-    editAppArgs.value = typeof app.launchArgs === "string" ? app.launchArgs : "";
-    editAppIconDataUrl.value = app.customIconDataUrl || null;
-    isEditAppIconReset.value = false;
-  }
-
-  function closeEditManagedApp() {
-    editingManagedAppId.value = null;
-    if (iconChooser.value?.target === "edit") closeIconChooser();
-    editAppName.value = "";
-    editAppTarget.value = "";
-    editAppArgs.value = "";
-    editAppIconDataUrl.value = null;
-    isEditAppIconReset.value = false;
-  }
-
-  function resetEditAppIcon() {
-    editAppIconDataUrl.value = null;
-    isEditAppIconReset.value = true;
-  }
-
-  async function browseEditAppLaunchFile() {
-    if (!shouldUseNativeCatalog() || isBrowsingEditAppTarget.value) return;
-    isBrowsingEditAppTarget.value = true;
-    try {
-      const selectedFile = await pickLaunchFile();
-      if (!selectedFile) return;
-      editAppName.value = String(selectedFile.name || "").trim() || editAppName.value;
-      editAppTarget.value = String(selectedFile.path || "").trim();
-      editAppArgs.value = String(selectedFile.launchArgs || "").trim();
-      editAppIconDataUrl.value = selectedFile.iconDataUrl || null;
-      isEditAppIconReset.value = false;
-    } catch (error) {
-      console.error("Failed to pick launch file", error);
-    } finally {
-      isBrowsingEditAppTarget.value = false;
-    }
-  }
-
-  function normalizeIconChoices(choices) {
-    return (choices || [])
-      .map((choice, index) => ({
-        id: String(choice?.id || `icon-choice-${index}`),
-        iconDataUrl: choice?.iconDataUrl || choice?.icon_data_url || null,
-      }))
-      .filter((choice) => choice.iconDataUrl);
-  }
-
-  function getIconChooserSourcePath(chooser) {
-    if (chooser?.target === "new") return newAppTarget.value.trim();
-    if (chooser?.target === "edit") return editAppTarget.value.trim();
-    if (chooser?.target === "existing") {
-      const app = managedApps.value.find((item) => item.id === chooser.appId);
-      return getLaunchTargetPath(app).trim();
-    }
-    return "";
-  }
-
-  async function loadIconChoicesForChooser(chooser) {
-    const requestId = (iconChooserRequestId += 1);
-    iconChoices.value = [];
-    const targetPath = getIconChooserSourcePath(chooser);
-    if (!targetPath || !shouldUseNativeCatalog()) {
-      isLoadingIconChoices.value = false;
-      return;
-    }
-
-    isLoadingIconChoices.value = true;
-    try {
-      const choices = await loadAppIconChoices(targetPath);
-      if (requestId !== iconChooserRequestId) return;
-      iconChoices.value = normalizeIconChoices(choices);
-    } catch (error) {
-      if (requestId === iconChooserRequestId) iconChoices.value = [];
-      console.error("Failed to load app icon choices", error);
-    } finally {
-      if (requestId === iconChooserRequestId) isLoadingIconChoices.value = false;
-    }
-  }
-
-  function openIconChooser(chooser) {
-    if (!chooser || isDragActive()) return;
-    iconChooser.value = chooser;
-    loadIconChoicesForChooser(chooser);
-  }
-
-  function openNewAppIconChooser() {
-    openIconChooser({
-      target: "new",
-      title: "更换图标",
-      subtitle: newAppName.value.trim() || "新增应用",
-    });
-  }
-
-  function openEditAppIconChooser() {
-    openIconChooser({
-      target: "edit",
-      title: "更换图标",
-      subtitle: editAppName.value.trim() || editingManagedApp.value?.name || "编辑应用",
-    });
-  }
-
-  function openExistingAppIconChooser(appId) {
-    if (!appId) return;
-    const app = managedApps.value.find((item) => item.id === appId);
-    if (!app) return;
-    openIconChooser({
-      target: "existing",
-      appId,
-      title: "更换图标",
-      subtitle: app.name || "应用",
-    });
-  }
-
-  function closeIconChooser() {
-    iconChooserRequestId += 1;
-    iconChooser.value = null;
-    iconChoices.value = [];
-    isLoadingIconChoices.value = false;
-  }
-
-  function applyIconChooserDataUrl(dataUrl) {
-    if (!dataUrl || !iconChooser.value) return;
-    if (iconChooser.value.target === "new") {
-      newAppIconDataUrl.value = dataUrl;
-      closeIconChooser();
-      return;
-    }
-    if (iconChooser.value.target === "edit") {
-      editAppIconDataUrl.value = dataUrl;
-      isEditAppIconReset.value = false;
-      closeIconChooser();
-      return;
-    }
-    if (iconChooser.value.target === "existing") {
-      updateAppCustomIcon(iconChooser.value.appId, dataUrl);
-      closeIconChooser();
-    }
-  }
-
-  function chooseIconCandidate(choice) {
-    applyIconChooserDataUrl(choice?.iconDataUrl);
-  }
-
-  function handleIconChooserUpload(event) {
-    readImageFileAsDataUrl(event, applyIconChooserDataUrl);
-  }
-
-  function updateManagedAppEverywhere(appId, updater) {
-    if (!appId || typeof updater !== "function") return false;
-    const next = clonePages(pages.value);
-    let changed = false;
-
-    function updateItem(item) {
-      if (!item) return;
-      if (item.type === "app" && item.id === appId) {
-        updater(item);
-        changed = true;
-        return;
-      }
-      if (item.type !== "folder") return;
-      for (const page of item.childPages || []) {
-        for (const child of page || []) updateItem(child);
-      }
-      item.children = (item.childPages || []).flat().filter(Boolean).map(cloneItem);
-    }
-
-    for (const page of next) {
-      for (const item of page) updateItem(item);
-    }
-    if (!changed) return false;
-    commitPages(next);
-    return true;
-  }
-
-  function saveEditingManagedApp() {
-    if (isDragActive() || !editingManagedAppId.value || !canSaveEditingManagedApp.value) return;
-    const name = editAppName.value.trim().slice(0, 64);
-    const launchTarget = makeLaunchTarget(editAppTarget.value);
-    if (!name || !launchTarget) return;
-    const launchArgs = editAppArgs.value.trim();
-    const customIcon = editAppIconDataUrl.value;
-
-    const changed = updateManagedAppEverywhere(editingManagedAppId.value, (item) => {
-      item.name = name;
-      item.emoji = fallbackAppGlyph(name);
-      item.launchTarget = launchTarget;
-      if (launchArgs) item.launchArgs = launchArgs;
-      else delete item.launchArgs;
-      if (customIcon) item.customIconDataUrl = customIcon;
-      else delete item.customIconDataUrl;
-    });
-
-    if (!changed) return;
-    closeEditManagedApp();
-    commitPageIndex(pageIndex.value);
-    commitSearchPageIndex(searchPageIndex.value);
-    schedulePageGridMetrics();
-  }
-
-  function deleteManagedApps(appIds) {
-    if (isDragActive()) return;
-    const ids = Array.from(new Set((appIds || []).filter(Boolean)));
-    if (!ids.length) return;
-
-    let next = pages.value;
-    for (const id of ids) next = removeEverywhere(next, id);
-    hiddenAppIds.value = Array.from(new Set([...hiddenAppIds.value, ...ids]));
-    commitPages(next);
-    const deletedIds = new Set(ids);
-    appManagerSelectedIds.value = appManagerSelectedIds.value.filter((id) => !deletedIds.has(id));
-    if (deletedIds.has(editingManagedAppId.value)) closeEditManagedApp();
-    commitPageIndex(pageIndex.value);
-    commitSearchPageIndex(searchPageIndex.value);
-    if (renderedFolder.value && openFolderId.value && !findFolder(pages.value, openFolderId.value)) commitOpenFolder(null);
-    schedulePageGridMetrics();
-  }
-
-  function deleteManagedApp(appId) {
-    deleteManagedApps([appId]);
-  }
-
-  function deleteSelectedManagedApps() {
-    deleteManagedApps(appManagerSelectedIds.value);
-  }
-
   function forceFillAllPages() {
     if (isDragActive()) return;
     const items = flattenTopLevelPages(pages.value);
@@ -1213,69 +795,6 @@ export function useLaunchpadController() {
       cancelText: "取消",
       onConfirm: forceFillAllPages,
     });
-  }
-
-  async function rescanManagedApps() {
-    if (!shouldUseNativeCatalog() || isScanningApps.value) return;
-    isScanningApps.value = true;
-    try {
-      const nativeApps = await scanApps();
-      const existingIds = new Set(collectAppsFromPages(pages.value).map((app) => app.id));
-      const missingApps = (nativeApps || [])
-        .map(normalizeNativeApp)
-        .filter((app) => !existingIds.has(app.id));
-      scanResultApps.value = missingApps;
-      scanResultSelectedIds.value = missingApps.map((app) => app.id);
-      isScanResultDialogOpen.value = true;
-      syncManagedAppState();
-    } catch (error) {
-      console.error("Failed to scan apps", error);
-    } finally {
-      isScanningApps.value = false;
-    }
-  }
-
-  function addSelectedScannedApps() {
-    if (isDragActive() || !canAddScannedApps.value) return;
-    const selectedIds = new Set(scanResultSelectedIds.value);
-    const existingIds = new Set(collectAppsFromPages(pages.value).map((app) => app.id));
-    const selectedApps = scanResultApps.value.filter((app) => selectedIds.has(app.id) && !existingIds.has(app.id));
-    if (!selectedApps.length) {
-      closeScanResultDialog();
-      return;
-    }
-
-    const restoredIds = new Set(selectedApps.map((app) => app.id));
-    hiddenAppIds.value = hiddenAppIds.value.filter((id) => !restoredIds.has(id));
-    commitPages(appendAppsToPages(pages.value, selectedApps));
-    closeScanResultDialog();
-    commitPageIndex(pageIndex.value);
-    commitSearchPageIndex(searchPageIndex.value);
-    syncManagedAppState();
-    schedulePageGridMetrics();
-  }
-
-  function addManagedApp() {
-    if (isDragActive()) return;
-    const name = newAppName.value.trim().slice(0, 64);
-    if (!name) return;
-    const launchTarget = makeLaunchTarget(newAppTarget.value);
-    if (!launchTarget) return;
-    const launchArgs = newAppArgs.value.trim();
-    const app = {
-      id: makeId("custom-app"),
-      type: "app",
-      name,
-      emoji: fallbackAppGlyph(name),
-      launchTarget,
-    };
-    if (launchArgs) app.launchArgs = launchArgs;
-    if (newAppIconDataUrl.value) app.customIconDataUrl = newAppIconDataUrl.value;
-    commitPages(appendAppsToPages(pages.value, [app]));
-    closeAddManagedAppPage();
-    commitPageIndex(pageIndex.value);
-    commitSearchPageIndex(searchPageIndex.value);
-    schedulePageGridMetrics();
   }
 
   function repackPagesForGrid(nextRows, nextCols, nextFolderRows, nextFolderCols) {
@@ -1869,10 +1388,7 @@ export function useLaunchpadController() {
     clearLaunchGhostTimer();
     clearPageJumpRenderRange();
     clearNativeSaveTimer();
-    unlistenSettingsEvent?.();
-    unlistenSettingsEvent = null;
-    unlistenLayoutRecoveredEvent?.();
-    unlistenLayoutRecoveredEvent = null;
+    clearNativeEventListeners();
     cancelLongPress();
     clearAltEditTimer();
     if (layoutResizeObserver) layoutResizeObserver.disconnect();

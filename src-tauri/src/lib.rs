@@ -108,7 +108,7 @@ fn launch_app(app: AppHandle, app_id: String, state: State<'_, AppState>) -> Res
         catalog.get(&app_id).cloned()
     };
 
-    let app = match saved_app.or(catalog_app) {
+    let app = match select_launch_app(catalog_app, saved_app) {
         Some(app) => app,
         None => {
             let icon_dir = icon_cache_dir(&app)?;
@@ -124,6 +124,13 @@ fn launch_app(app: AppHandle, app_id: String, state: State<'_, AppState>) -> Res
         .path
         .ok_or_else(|| format!("App has no launch path: {}", app.name))?;
     launch_path(&path, app.launch_args.as_deref())
+}
+
+fn select_launch_app(
+    catalog_app: Option<AppCatalogItem>,
+    saved_app: Option<AppCatalogItem>,
+) -> Option<AppCatalogItem> {
+    catalog_app.or(saved_app)
 }
 
 pub fn run() {
@@ -168,4 +175,49 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri app");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::LaunchTarget;
+
+    fn app_item(id: &str, path: &str) -> AppCatalogItem {
+        AppCatalogItem {
+            id: id.to_string(),
+            item_type: "app".to_string(),
+            name: id.to_string(),
+            icon_path: None,
+            icon_data_url: None,
+            emoji: None,
+            launch_target: LaunchTarget {
+                kind: "executable".to_string(),
+                path: Some(path.to_string()),
+                app_user_model_id: None,
+            },
+            launch_args: None,
+        }
+    }
+
+    #[test]
+    fn select_launch_app_prefers_current_catalog() {
+        let selected = select_launch_app(
+            Some(app_item("app", "C:/Current/App.exe")),
+            Some(app_item("app", "C:/Saved/App.exe")),
+        )
+        .expect("app should be selected");
+
+        assert_eq!(
+            selected.launch_target.path.as_deref(),
+            Some("C:/Current/App.exe")
+        );
+    }
+
+    #[test]
+    fn select_launch_app_falls_back_to_saved_layout() {
+        let selected = select_launch_app(None, Some(app_item("app", "C:/Saved/App.exe")))
+            .expect("saved app should be selected");
+
+        assert_eq!(selected.launch_target.path.as_deref(), Some("C:/Saved/App.exe"));
+    }
 }

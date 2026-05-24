@@ -44,6 +44,32 @@ export function chunkIntoPages(items, size) {
   return chunks.length ? chunks : [[]];
 }
 
+function trimPreviewFolderSlots(children) {
+  return (children || []).filter(Boolean);
+}
+
+function compactPreviewFolderPages(folderPages) {
+  const pages = (folderPages || []).map((page) => trimPreviewFolderSlots(page)).filter((page) => page.length > 0);
+  return pages.length ? pages : [[]];
+}
+
+function getPreviewFolderChildPages(folder, size) {
+  const pageSize = Math.max(1, Number(size) || 9);
+  if (Array.isArray(folder?.childPages)) return compactPreviewFolderPages(folder.childPages);
+  return chunkIntoPages(trimPreviewFolderSlots(folder?.children || []), pageSize);
+}
+
+export function getFolderPreviewSlots(folderOrChildren, pageSize) {
+  const safePageSize = Math.max(1, Number(pageSize) || 9);
+  const previewLimit = Math.min(9, safePageSize);
+  const firstPage = Array.isArray(folderOrChildren)
+    ? trimPreviewFolderSlots(folderOrChildren).slice(0, safePageSize)
+    : getPreviewFolderChildPages(folderOrChildren, safePageSize)[0] || [];
+  const slots = firstPage.slice(0, previewLimit).map((child) => (child ? child : null));
+  while (slots.length < 9) slots.push(null);
+  return slots;
+}
+
 export function shouldCommitPlacementFromLast(last, clientX, clientY, minDistance, force) {
   if (force) return true;
   if (!last) return true;
@@ -105,17 +131,6 @@ export function createLaunchpadLayoutHelpers(options) {
 
   function folderItemCount(folder) {
     return flattenFolderPages(getFolderChildPages(folder, getFolderPageSize())).length;
-  }
-
-  function getFolderPreviewSlots(folderOrChildren, pageSize) {
-    const safePageSize = Math.max(1, Number(pageSize) || 9);
-    const previewLimit = Math.min(9, safePageSize);
-    const firstPage = Array.isArray(folderOrChildren)
-      ? trimFolderSlots(folderOrChildren).slice(0, safePageSize)
-      : getFolderChildPages(folderOrChildren, safePageSize)[0] || [];
-    const slots = firstPage.slice(0, previewLimit).map((child) => (child ? child : null));
-    while (slots.length < 9) slots.push(null);
-    return slots;
   }
 
   function folderPreviewSlots(folder) {

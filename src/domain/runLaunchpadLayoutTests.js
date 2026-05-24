@@ -1,4 +1,5 @@
 import { createLaunchpadLayoutHelpers, makePageSize } from "./launchpadLayout.js";
+import { runLaunchpadDragTests } from "../composables/useLaunchpadDragTests.js";
 import { runLaunchpadDataTests } from "./launchpadDataTests.js";
 import { runLaunchpadHelperTests } from "./launchpadLayoutTests.js";
 
@@ -58,5 +59,6 @@ runLaunchpadHelperTests({
   getActivePageGridStyle,
 });
 runLaunchpadDataTests();
+runLaunchpadDragTests();
 
 console.info("Launchpad layout helper tests passed");

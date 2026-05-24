@@ -20,6 +20,30 @@ import {
 } from "../domain/launchpadLayout.js";
 import { getDomRefElement } from "./usePageGridMetrics.js";
 
+export function isPrimaryPointerStartEvent(event) {
+  if (!event) return false;
+  if (typeof event.button === "number" && event.button !== 0) return false;
+  if (typeof event.buttons === "number" && (event.buttons & 1) !== 1) return false;
+  return true;
+}
+
+export function isPrimaryPointerMoveEvent(event) {
+  if (!event) return false;
+  return typeof event.buttons !== "number" || (event.buttons & 1) === 1;
+}
+
+export function isSamePointerEvent(pointerId, event) {
+  return pointerId == null || event?.pointerId == null || pointerId === event.pointerId;
+}
+
+export function isPrimaryPointerReleaseEvent(event) {
+  return event?.type === "pointercancel" || typeof event?.button !== "number" || event.button === 0;
+}
+
+export function shouldFinishDragForPointerEvent(activeDrag, event) {
+  return isSamePointerEvent(activeDrag?.pointerId, event) && isPrimaryPointerReleaseEvent(event);
+}
+
 export function useLaunchpadDrag(options) {
   const dragMeta = shallowRef(null);
   const dragFolderTargetId = shallowRef(null);
@@ -35,6 +59,7 @@ export function useLaunchpadDrag(options) {
   let folderPageTurnTimer = null;
   let dragIntentTimer = null;
   let dragListenersAttached = false;
+  let dragContextMenuListenerAttached = false;
   let longPressState = null;
 
   function isDragActive() {
@@ -79,14 +104,36 @@ export function useLaunchpadDrag(options) {
     window.addEventListener("pointermove", updateDragPointer, { passive: false });
     window.addEventListener("pointerup", finishDrag);
     window.addEventListener("pointercancel", finishDrag);
+    attachDragContextMenuListener();
   }
 
   function detachDragListeners() {
-    if (!dragListenersAttached) return;
-    dragListenersAttached = false;
-    window.removeEventListener("pointermove", updateDragPointer);
-    window.removeEventListener("pointerup", finishDrag);
-    window.removeEventListener("pointercancel", finishDrag);
+    if (dragListenersAttached) {
+      dragListenersAttached = false;
+      window.removeEventListener("pointermove", updateDragPointer);
+      window.removeEventListener("pointerup", finishDrag);
+      window.removeEventListener("pointercancel", finishDrag);
+    }
+    if (!longPressState) detachDragContextMenuListener();
+  }
+
+  function attachDragContextMenuListener() {
+    if (dragContextMenuListenerAttached) return;
+    dragContextMenuListenerAttached = true;
+    window.addEventListener("contextmenu", suppressDragContextMenu, true);
+  }
+
+  function detachDragContextMenuListener() {
+    if (!dragContextMenuListenerAttached) return;
+    dragContextMenuListenerAttached = false;
+    window.removeEventListener("contextmenu", suppressDragContextMenu, true);
+  }
+
+  function suppressDragContextMenu(event) {
+    if (!dragRuntime && !longPressState) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
   }
 
   function updatePreviewElement() {
@@ -592,16 +639,25 @@ export function useLaunchpadDrag(options) {
     window.removeEventListener("pointermove", handleLongPressMove);
     window.removeEventListener("pointerup", handleLongPressUp);
     window.removeEventListener("pointercancel", handleLongPressUp);
+    if (!dragRuntime) detachDragContextMenuListener();
   }
 
   function handleLongPressMove(event) {
     if (!longPressState) return;
+    if (!isSamePointerEvent(longPressState.pointerId, event)) return;
+    if (!isPrimaryPointerMoveEvent(event)) return;
     const dist = Math.hypot(event.clientX - longPressState.startPoint.x, event.clientY - longPressState.startPoint.y);
     if (dist > LONG_PRESS_MOVE_THRESHOLD) cancelLongPress();
   }
 
-  function handleLongPressUp(_event) {
+  function handleLongPressUp(event) {
     if (!longPressState) return;
+    if (!isSamePointerEvent(longPressState.pointerId, event)) return;
+    if (event.type === "pointercancel") {
+      cancelLongPress();
+      return;
+    }
+    if (!isPrimaryPointerReleaseEvent(event)) return;
     const lp = longPressState;
     cancelLongPress();
     if (options.isLaunchpadInteractionBlocked()) return;
@@ -654,6 +710,8 @@ export function useLaunchpadDrag(options) {
   }
 
   function beginDrag(event, item, source) {
+    if (!isPrimaryPointerStartEvent(event)) return;
+
     event.preventDefault();
     event.stopPropagation();
 
@@ -666,6 +724,7 @@ export function useLaunchpadDrag(options) {
     longPressState = {
       item: options.cloneItem(item),
       source,
+      pointerId: event.pointerId,
       startPoint: { x: event.clientX, y: event.clientY },
       offset: { x: event.clientX - rect.left, y: event.clientY - rect.top },
       size: { width: rect.width, height: rect.height },
@@ -675,11 +734,14 @@ export function useLaunchpadDrag(options) {
     window.addEventListener("pointermove", handleLongPressMove);
     window.addEventListener("pointerup", handleLongPressUp);
     window.addEventListener("pointercancel", handleLongPressUp);
+    attachDragContextMenuListener();
   }
 
   function updateDragPointer(event) {
     const activeDrag = dragRuntime;
     if (!activeDrag) return;
+    if (!isSamePointerEvent(activeDrag.pointerId, event)) return;
+    if (!isPrimaryPointerMoveEvent(event)) return;
 
     event.preventDefault();
     const distance = Math.hypot(event.clientX - activeDrag.start.x, event.clientY - activeDrag.start.y);
@@ -701,6 +763,11 @@ export function useLaunchpadDrag(options) {
   function finishDrag(event) {
     const activeDrag = dragRuntime;
     if (!activeDrag) return;
+    if (!shouldFinishDragForPointerEvent(activeDrag, event)) return;
+    if (event.type === "pointercancel") {
+      endDrag();
+      return;
+    }
     if (options.isLaunchpadInteractionBlocked()) {
       endDrag();
       return;
