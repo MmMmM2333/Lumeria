@@ -612,7 +612,10 @@
             :disabled="isFolderClosing"
             maxlength="32"
             aria-label="文件夹名称"
-            @input="renameFolder(renderedFolder.id, $event.target.value)"
+            @focus="rememberFolderNameBeforeEdit(renderedFolder.name)"
+            @input="handleFolderNameInput(renderedFolder.id, $event)"
+            @blur="restoreEmptyFolderName(renderedFolder.id, $event)"
+            @keydown.enter.prevent.stop="$event.target.blur()"
             @pointerdown.stop
           />
         </div>
@@ -908,6 +911,7 @@ const {
 
 const isSearchInputFocused = ref(false);
 const iconContextMenu = ref(null);
+const folderNameBeforeEdit = ref("");
 const activeSettingsTab = ref("general");
 const appVersion = appPackage.version;
 const settingsTabs = [
@@ -937,6 +941,24 @@ function handleSearchFocus() {
 
 function handleSearchBlur() {
   isSearchInputFocused.value = false;
+}
+
+function rememberFolderNameBeforeEdit(name) {
+  folderNameBeforeEdit.value = String(name || "新文件夹").slice(0, 32);
+}
+
+function handleFolderNameInput(folderId, event) {
+  const nextName = String(event?.target?.value || "").slice(0, 32);
+  if (!nextName) return;
+  renameFolder(folderId, nextName);
+}
+
+function restoreEmptyFolderName(folderId, event) {
+  const input = event?.target;
+  if (input?.value) return;
+  const fallbackName = folderNameBeforeEdit.value || renderedFolder.value?.name || "新文件夹";
+  if (input) input.value = fallbackName;
+  renameFolder(folderId, fallbackName);
 }
 
 function openIconContextMenu(event, app, source) {
