@@ -40,6 +40,7 @@ import { useLaunchpadDrag } from "./useLaunchpadDrag.js";
 import { useIconSelection } from "./useIconSelection.js";
 import { useLaunchpadKeyboard } from "./useLaunchpadKeyboard.js";
 import { useLaunchpadNative } from "./useLaunchpadNative.js";
+import { useLaunchpadNotices } from "./useLaunchpadNotices.js";
 import { getElementFromRef, usePageGridMetrics } from "./usePageGridMetrics.js";
 import { useSettingsPanelFlow } from "./useSettingsPanelFlow.js";
 
@@ -135,8 +136,6 @@ export function useLaunchpadController() {
   const isFolderAppLaunchClosing = ref(false);
   const isEditMode = ref(false);
   const isTextlessMode = ref(false);
-  const warningDialog = shallowRef(null);
-  const layoutRecoveryNotice = shallowRef(null);
   const hiddenAppIds = ref([]);
   const keyboardFocusArea = ref("desktop");
   const launchGhost = shallowRef(null);
@@ -390,6 +389,15 @@ export function useLaunchpadController() {
     iconSize,
     isDragActive: () => isDragActive(),
   });
+  const {
+    closeLayoutRecoveryNotice,
+    closeWarningDialog,
+    confirmWarningDialog,
+    handleLayoutRecovered,
+    layoutRecoveryNotice,
+    openWarningDialog,
+    warningDialog,
+  } = useLaunchpadNotices();
   const {
     clearNativeEventListeners,
     clearNativeSaveTimer,
@@ -682,33 +690,6 @@ export function useLaunchpadController() {
     }
     draftFolderIconSizeMode.value = nextMode;
     draftFolderIconSize.value = clampIconSize(draftFolderIconSize.value);
-  }
-
-  function openWarningDialog(config) {
-    warningDialog.value = config;
-  }
-
-  function closeWarningDialog() {
-    warningDialog.value = null;
-  }
-
-  function confirmWarningDialog() {
-    const action = warningDialog.value?.onConfirm;
-    closeWarningDialog();
-    action?.();
-  }
-
-  function handleLayoutRecovered(event) {
-    const payload = event?.payload || {};
-    layoutRecoveryNotice.value = {
-      title: "布局已恢复",
-      message: "检测到布局文件损坏，已备份原文件并恢复默认布局。",
-      backupPath: payload.backupPath || payload.backup_path || "",
-    };
-  }
-
-  function closeLayoutRecoveryNotice() {
-    layoutRecoveryNotice.value = null;
   }
 
   function getDesktopGridProjectionKey(pageNumber) {
