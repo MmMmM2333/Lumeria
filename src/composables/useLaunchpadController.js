@@ -42,10 +42,10 @@ import { useIconSelection } from "./useIconSelection.js";
 import { useLaunchpadKeyboard } from "./useLaunchpadKeyboard.js";
 import { useLaunchpadNative } from "./useLaunchpadNative.js";
 import { useLaunchpadNotices } from "./useLaunchpadNotices.js";
+import { usePageRenderRange } from "./usePageRenderRange.js";
 import { getElementFromRef, usePageGridMetrics } from "./usePageGridMetrics.js";
 import { useSettingsPanelFlow } from "./useSettingsPanelFlow.js";
 
-const PAGE_JUMP_RENDER_RELEASE_DELAY = 900;
 const FOLDER_ROW_GAP = 24;
 const FOLDER_MIN_ROW_GAP = 10;
 const FOLDER_SELECTION_FRAME_SAFE_AREA = 24;
@@ -148,7 +148,6 @@ export function useLaunchpadController() {
   const folderSession = shallowRef(null);
   const isHomeRevealSettling = ref(false);
   const desktopProjectionEpoch = ref(0);
-  const transientPageRenderRange = ref(null);
 
   const rootRef = ref(null);
   const shellRef = ref(null);
@@ -168,8 +167,6 @@ export function useLaunchpadController() {
   let appLaunchTimer = null;
   let launchGhostTimer = null;
   let folderAppLaunchTimer = null;
-  let pageJumpRenderTimer = null;
-  let pageJumpRenderRequestId = 0;
   let layoutResizeObserver = null;
   let dragControls = null;
 
@@ -372,6 +369,30 @@ export function useLaunchpadController() {
     rootRef,
     searchRef,
   });
+  let isDragActiveHandler = () => false;
+  let getDragMetaHandler = () => null;
+  const {
+    clearPageJumpRenderRange,
+    commitActivePageIndex,
+    commitFolderPageIndex,
+    commitPageIndex,
+    commitSearchPageIndex,
+    shouldRenderActivePage,
+    shouldRenderFolderPage,
+    shouldRenderStaticActivePage,
+    shouldRenderStaticFolderPage,
+  } = usePageRenderRange({
+    activePageIndex,
+    folderPageIndex,
+    folderPages,
+    getDragMeta: () => getDragMetaHandler(),
+    isDragActive: () => isDragActiveHandler(),
+    isSearchMode,
+    pageIndex,
+    pages,
+    searchPageIndex,
+    searchPages,
+  });
   let closeAddManagedAppPageHandler = () => {};
   let closeScanResultDialogHandler = () => {};
   const {
@@ -511,6 +532,8 @@ export function useLaunchpadController() {
     dragMeta,
     isDragActive,
   } = dragControls;
+  isDragActiveHandler = isDragActive;
+  getDragMetaHandler = () => dragMeta.value;
   const {
     clearAltEditTimer,
     handleAltKeyDown,
@@ -711,116 +734,6 @@ export function useLaunchpadController() {
     return `${isSearchMode.value ? "search" : "desktop"}-grid-${pageNumber}-${desktopProjectionKeyMode.value}`;
   }
 
-  function shouldRenderActivePage(pageNumber) {
-    const distance = Math.abs(pageNumber - activePageIndex.value);
-    if (dragMeta.value) return distance <= 1;
-
-    const transientRange = transientPageRenderRange.value;
-    const activeMode = isSearchMode.value ? "search" : "desktop";
-    if (transientRange?.mode === activeMode) {
-      return Math.abs(pageNumber - transientRange.from) <= 1 || Math.abs(pageNumber - transientRange.to) <= 1;
-    }
-
-    return distance <= 1;
-  }
-
-  function shouldRenderStaticActivePage(pageNumber) {
-    if (dragMeta.value || shouldRenderActivePage(pageNumber)) return false;
-
-    const transientRange = transientPageRenderRange.value;
-    const activeMode = isSearchMode.value ? "search" : "desktop";
-    if (transientRange?.mode === activeMode && pageNumber >= transientRange.from && pageNumber <= transientRange.to) return true;
-
-    return false;
-  }
-
-  function shouldRenderFolderPage(pageNumber) {
-    const distance = Math.abs(pageNumber - folderPageIndex.value);
-    if (dragMeta.value) return distance <= 1;
-
-    const transientRange = transientPageRenderRange.value;
-    if (transientRange?.mode === "folder") {
-      return Math.abs(pageNumber - transientRange.from) <= 1 || Math.abs(pageNumber - transientRange.to) <= 1;
-    }
-
-    return distance <= 1;
-  }
-
-  function shouldRenderStaticFolderPage(pageNumber) {
-    if (dragMeta.value || shouldRenderFolderPage(pageNumber)) return false;
-
-    const transientRange = transientPageRenderRange.value;
-    if (transientRange?.mode === "folder" && pageNumber >= transientRange.from && pageNumber <= transientRange.to) return true;
-
-    return false;
-  }
-
-  function clearPageJumpRenderRange() {
-    pageJumpRenderRequestId += 1;
-    if (pageJumpRenderTimer) window.clearTimeout(pageJumpRenderTimer);
-    pageJumpRenderTimer = null;
-    transientPageRenderRange.value = null;
-  }
-
-  function schedulePageJumpRenderRelease() {
-    if (pageJumpRenderTimer) window.clearTimeout(pageJumpRenderTimer);
-    pageJumpRenderTimer = window.setTimeout(() => {
-      pageJumpRenderTimer = null;
-      transientPageRenderRange.value = null;
-    }, PAGE_JUMP_RENDER_RELEASE_DELAY);
-  }
-
-  function requestAnimationFrameOnce(callback) {
-    if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
-      callback();
-      return;
-    }
-    window.requestAnimationFrame(callback);
-  }
-
-  function commitPageIndexNow(next) {
-    pageIndex.value = clamp(next, 0, Math.max(0, pages.value.length - 1));
-  }
-
-  function commitSearchPageIndexNow(next) {
-    searchPageIndex.value = clamp(next, 0, Math.max(0, searchPages.value.length - 1));
-  }
-
-  function commitFolderPageIndexNow(next, maxIndex) {
-    folderPageIndex.value = clamp(next, 0, maxIndex);
-  }
-
-  function commitPageIndexWithRenderRange(mode, current, requested, maxIndex, commitNow) {
-    const next = clamp(requested, 0, maxIndex);
-    const distance = Math.abs(next - current);
-    if (distance <= 1 || isDragActive() || current < 0 || current > maxIndex) {
-      clearPageJumpRenderRange();
-      commitNow(next);
-      return;
-    }
-
-    if (pageJumpRenderTimer) window.clearTimeout(pageJumpRenderTimer);
-    pageJumpRenderTimer = null;
-    const requestId = (pageJumpRenderRequestId += 1);
-    transientPageRenderRange.value = {
-      mode,
-      from: Math.min(current, next),
-      to: Math.max(current, next),
-    };
-
-    nextTick(() => {
-      if (requestId !== pageJumpRenderRequestId) return;
-      if (!transientPageRenderRange.value || transientPageRenderRange.value.mode !== mode) return;
-      requestAnimationFrameOnce(() => {
-        if (requestId !== pageJumpRenderRequestId) return;
-        const range = transientPageRenderRange.value;
-        if (!range || range.mode !== mode || next < range.from || next > range.to) return;
-        commitNow(next);
-        schedulePageJumpRenderRelease();
-      });
-    });
-  }
-
   function setPageRef(node, targetPageIndex) {
     if (!node) return;
     pageRefs[targetPageIndex] = node.$el || node;
@@ -841,25 +754,6 @@ export function useLaunchpadController() {
     if (!isProduction && !isDragActive()) assertNoDuplicateItemIds(next);
     pages.value = next;
     if (renderedFolder.value) commitFolderPageIndex(folderPageIndex.value);
-  }
-
-  function commitPageIndex(next) {
-    commitPageIndexWithRenderRange("desktop", pageIndex.value, next, Math.max(0, pages.value.length - 1), commitPageIndexNow);
-  }
-
-  function commitSearchPageIndex(next) {
-    commitPageIndexWithRenderRange("search", searchPageIndex.value, next, Math.max(0, searchPages.value.length - 1), commitSearchPageIndexNow);
-  }
-
-  function commitActivePageIndex(next) {
-    if (isSearchMode.value) commitSearchPageIndex(next);
-    else commitPageIndex(next);
-  }
-
-  function commitFolderPageIndex(next, options) {
-    const allowCreate = Boolean(options?.allowCreate);
-    const maxIndex = Math.max(0, folderPages.value.length - 1 + (allowCreate ? 1 : 0));
-    commitPageIndexWithRenderRange("folder", folderPageIndex.value, next, maxIndex, (value) => commitFolderPageIndexNow(value, maxIndex));
   }
 
   function renameFolder(folderId, name) {
