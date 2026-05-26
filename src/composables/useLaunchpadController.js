@@ -1,7 +1,6 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { appSeeds } from "../mocks/appSeeds.js";
 import {
-  ALT_EDIT_DELAY,
   APP_LAUNCH_DURATION,
   DEFAULT_COLS,
   DEFAULT_FOLDER_COLS,
@@ -35,6 +34,7 @@ import {
   makePageSize,
 } from "../domain/launchpadLayout.js";
 import { createLaunchpadDataHelpers } from "../domain/launchpadData.js";
+import { useAltEditMode } from "./useAltEditMode.js";
 import { useLaunchpadApps } from "./useLaunchpadApps.js";
 import { useLaunchpadDrag } from "./useLaunchpadDrag.js";
 import { useIconSelection } from "./useIconSelection.js";
@@ -134,7 +134,6 @@ export function useLaunchpadController() {
   const isDesktopClosing = ref(false);
   const isAppLaunching = ref(false);
   const isFolderAppLaunchClosing = ref(false);
-  const isEditMode = ref(false);
   const isTextlessMode = ref(false);
   const hiddenAppIds = ref([]);
   const keyboardFocusArea = ref("desktop");
@@ -169,10 +168,8 @@ export function useLaunchpadController() {
   let appLaunchTimer = null;
   let launchGhostTimer = null;
   let folderAppLaunchTimer = null;
-  let altEditTimer = null;
   let pageJumpRenderTimer = null;
   let pageJumpRenderRequestId = 0;
-  let isAltPressed = false;
   let layoutResizeObserver = null;
   let folderViewportResizeObserver = null;
   let observedFolderViewportElement = null;
@@ -506,6 +503,16 @@ export function useLaunchpadController() {
     dragMeta,
     isDragActive,
   } = dragControls;
+  const {
+    clearAltEditTimer,
+    handleAltKeyDown,
+    handleAltKeyUp,
+    handleWindowBlur,
+    isAltKeyEvent,
+    isEditMode,
+  } = useAltEditMode({
+    isDragActive,
+  });
   const {
     addManagedApp,
     addSelectedScannedApps,
@@ -1326,40 +1333,6 @@ export function useLaunchpadController() {
 
   function commitFolderSession(next) {
     folderSession.value = next;
-  }
-
-  function clearAltEditTimer() {
-    if (altEditTimer) window.clearTimeout(altEditTimer);
-    altEditTimer = null;
-  }
-
-  function enterEditModeFromAlt() {
-    altEditTimer = null;
-    if (isAltPressed) isEditMode.value = true;
-  }
-
-  function isAltKeyEvent(event) {
-    return event.key === "Alt" || event.key === "Option" || event.code === "AltLeft" || event.code === "AltRight";
-  }
-
-  function handleAltKeyDown(event) {
-    if (!isAltKeyEvent(event) || event.repeat || isAltPressed || isDragActive()) return;
-    isAltPressed = true;
-    clearAltEditTimer();
-    altEditTimer = window.setTimeout(enterEditModeFromAlt, ALT_EDIT_DELAY);
-  }
-
-  function handleAltKeyUp(event) {
-    if (!isAltKeyEvent(event)) return;
-    isAltPressed = false;
-    clearAltEditTimer();
-    isEditMode.value = false;
-  }
-
-  function handleWindowBlur() {
-    isAltPressed = false;
-    clearAltEditTimer();
-    isEditMode.value = false;
   }
 
   function handleDesktopSurfacePointerDown(event) {
