@@ -25,7 +25,7 @@ body {
   --app-icon-size: var(--configured-app-icon-size);
   --app-icon-radius: calc(var(--app-icon-size) * 0.371428);
   --app-icon-image-size: calc(var(--app-icon-size) * 1);
-  --app-icon-emoji-size: calc(var(--app-icon-size) * 0.542857);
+  --app-icon-emoji-size: calc(var(--app-icon-size) * 1);
   --app-icon-cell-height: calc(var(--app-icon-size) + 48px);
   --textless-icon-cell-height: calc(var(--app-icon-size) + 12px);
   --compact-icon-size: calc(var(--app-icon-size) * 0.885714);

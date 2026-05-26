@@ -1485,7 +1485,9 @@ export function useLaunchpadController() {
 
   function updateFolderViewportHeight() {
     const element = getElementFromRef(folderViewportRef);
-    const nextHeight = element ? roundPx(element.getBoundingClientRect().height) : 0;
+    // Ancestor panel animations use transforms; layout height avoids reading the scaled rect.
+    const layoutHeight = element ? element.offsetHeight || element.clientHeight || element.getBoundingClientRect().height : 0;
+    const nextHeight = roundPx(layoutHeight);
     if (Math.abs(folderViewportHeight.value - nextHeight) > 0.1) folderViewportHeight.value = nextHeight;
   }
 
