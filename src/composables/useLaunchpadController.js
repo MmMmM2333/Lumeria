@@ -35,6 +35,7 @@ import {
 } from "../domain/launchpadLayout.js";
 import { createLaunchpadDataHelpers } from "../domain/launchpadData.js";
 import { useAltEditMode } from "./useAltEditMode.js";
+import { useFolderMotionGeometry } from "./useFolderMotionGeometry.js";
 import { useFolderViewportMetrics } from "./useFolderViewportMetrics.js";
 import { useLaunchpadApps } from "./useLaunchpadApps.js";
 import { useLaunchpadDrag } from "./useLaunchpadDrag.js";
@@ -144,7 +145,6 @@ export function useLaunchpadController() {
   const folderPageIndex = ref(0);
   const isFolderClosing = ref(false);
   const folderClosingSnapshot = shallowRef(null);
-  const folderMotionGeometry = ref({ id: null, x: 0, y: 36, scaleX: 0.1, scaleY: 0.16, borderRadius: 26 });
   const folderSession = shallowRef(null);
   const isHomeRevealSettling = ref(false);
   const desktopProjectionEpoch = ref(0);
@@ -202,6 +202,17 @@ export function useLaunchpadController() {
     if (!renderedFolder.value) return [];
     const minPageCount = dragControls?.isDragActive() && openFolderId.value === renderedFolder.value.id ? folderPageIndex.value + 1 : 1;
     return getVisibleFolderPages(renderedFolder.value, folderPageSize.value, minPageCount);
+  });
+  const {
+    folderMotionGeometry,
+    getFolderIconMotionGeometry,
+    getPageSlotMotionGeometry,
+    getTopLevelIconMotionGeometry,
+  } = useFolderMotionGeometry({
+    folderPages,
+    gridCols,
+    gridRows,
+    pageRefs,
   });
   const visibleFolderRowCount = computed(() => {
     const columnCount = Math.max(1, folderCols.value);
@@ -1111,63 +1122,6 @@ export function useLaunchpadController() {
 
   function escapeAttributeValue(value) {
     return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  }
-
-  function getFolderPanelTargetSize() {
-    if (typeof window === "undefined") return { width: 760, height: 420 };
-    const width = Math.min(760, window.innerWidth * 0.94);
-    const hasFolderDots = folderPages.value.length > 1;
-    const estimatedContentHeight = 28 * 2 + 62 + 18 + 268 + (hasFolderDots ? 26 : 0);
-    const height = Math.min(Math.max(360, estimatedContentHeight), Math.max(280, window.innerHeight - 48));
-    return { width, height };
-  }
-
-  function getFallbackFolderMotionGeometry(folderId) {
-    return { id: folderId || null, x: 0, y: 36, scaleX: 0.1, scaleY: 0.16, borderRadius: 26 };
-  }
-
-  function makeFolderMotionGeometryFromRect(folderId, rect) {
-    if (!rect || typeof window === "undefined") return getFallbackFolderMotionGeometry(folderId);
-    const target = getFolderPanelTargetSize();
-    return {
-      id: folderId || null,
-      x: rect.left + rect.width / 2 - window.innerWidth / 2,
-      y: rect.top + rect.height / 2 - window.innerHeight / 2,
-      scaleX: clamp(rect.width / target.width, 0.06, 0.3),
-      scaleY: clamp(rect.height / target.height, 0.08, 0.32),
-      borderRadius: Math.min(30, rect.width * 0.38),
-    };
-  }
-
-  function getTopLevelIconMotionGeometry(sourceItemId, motionId) {
-    const safeId = escapeAttributeValue(sourceItemId);
-    const node = safeId ? document.querySelector(`[data-top-item-id="${safeId}"] .icon-box`) : null;
-    const rect = node?.getBoundingClientRect();
-    return rect ? makeFolderMotionGeometryFromRect(motionId || sourceItemId, rect) : null;
-  }
-
-  function getPageSlotMotionGeometry(folderId, targetPageIndex, targetIndex) {
-    if (typeof window === "undefined") return null;
-    const page = pageRefs[targetPageIndex];
-    const rect = page?.getBoundingClientRect?.();
-    if (!rect) return null;
-
-    const col = clamp(targetIndex % gridCols.value, 0, Math.max(0, gridCols.value - 1));
-    const row = clamp(Math.floor(targetIndex / gridCols.value), 0, Math.max(0, gridRows.value - 1));
-    const cellWidth = rect.width / Math.max(1, gridCols.value);
-    const cellHeight = rect.height / Math.max(1, gridRows.value);
-    const boxSize = Math.min(70, cellWidth, cellHeight);
-    const boxRect = {
-      left: rect.left + col * cellWidth + (cellWidth - boxSize) / 2,
-      top: rect.top + row * cellHeight + (cellHeight - boxSize) / 2,
-      width: boxSize,
-      height: boxSize,
-    };
-    return makeFolderMotionGeometryFromRect(folderId, boxRect);
-  }
-
-  function getFolderIconMotionGeometry(folderId) {
-    return getTopLevelIconMotionGeometry(folderId, folderId) || getFallbackFolderMotionGeometry(folderId);
   }
 
   function clearFolderCloseTimer() {
