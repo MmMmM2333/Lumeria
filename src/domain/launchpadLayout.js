@@ -175,9 +175,18 @@ export function createLaunchpadLayoutHelpers(options) {
   }
 
   function makeApp(seed, index) {
-    const name = seed[0];
-    const emoji = seed[1];
-    return { id: `app-${index}-${name.toLowerCase().replace(/\s+/g, "-")}`, type: "app", name, emoji };
+    const source = Array.isArray(seed) ? { name: seed[0], emoji: seed[1] } : { ...seed };
+    const type = source.type === "folder" ? "folder" : "app";
+    const name = String(source.name || "App");
+    const id = source.id || `${type}-${index}-${name.toLowerCase().replace(/\s+/g, "-")}`;
+    const item = { ...source, id, type, name, emoji: source.emoji || "◼️" };
+    if (type === "folder") {
+      const childPages = Array.isArray(source.childPages)
+        ? source.childPages
+        : chunkIntoPages(source.children || [], getFolderPageSize());
+      return withFolderPages(item, childPages);
+    }
+    return item;
   }
 
   function cloneItem(item) {

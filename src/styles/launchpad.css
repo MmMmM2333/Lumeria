@@ -31,7 +31,7 @@ body {
   --compact-icon-size: calc(var(--app-icon-size) * 0.885714);
   --compact-icon-radius: var(--app-icon-radius);
   --compact-icon-image-size: calc(var(--app-icon-size) * 0.685714);
-  --compact-icon-emoji-size: calc(var(--app-icon-size) * 0.457142);
+  --compact-icon-emoji-size: var(--compact-icon-size);
   --compact-icon-cell-height: calc(var(--compact-icon-size) + 44px);
   --textless-compact-icon-cell-height: calc(var(--compact-icon-size) + 8px);
   --folder-thumb-size: var(--app-icon-image-size);
@@ -1968,7 +1968,7 @@ body {
   --app-icon-size: var(--folder-icon-size);
   --app-icon-radius: calc(var(--app-icon-size) * 0.371428);
   --app-icon-image-size: calc(var(--app-icon-size) * 1);
-  --app-icon-emoji-size: calc(var(--app-icon-size) * 0.542857);
+  --app-icon-emoji-size: calc(var(--app-icon-size) * 1);
   --folder-thumb-size: var(--app-icon-image-size);
   --selection-frame-min-width: var(--folder-selection-frame-min-width);
   display: grid;
@@ -2073,7 +2073,7 @@ body {
   height: var(--drag-preview-box-size);
 }
 
-.drag-preview-emoji { font-size: calc(var(--app-icon-emoji-size) + 4px); line-height: 1; }
+.drag-preview-emoji { font-size: var(--app-icon-emoji-size); line-height: 1; }
 .drag-preview-image {
   display: block;
   width: var(--app-icon-image-size);
