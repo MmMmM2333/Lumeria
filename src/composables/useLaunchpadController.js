@@ -35,6 +35,7 @@ import {
 } from "../domain/launchpadLayout.js";
 import { createLaunchpadDataHelpers } from "../domain/launchpadData.js";
 import { useAltEditMode } from "./useAltEditMode.js";
+import { useFolderViewportMetrics } from "./useFolderViewportMetrics.js";
 import { useLaunchpadApps } from "./useLaunchpadApps.js";
 import { useLaunchpadDrag } from "./useLaunchpadDrag.js";
 import { useIconSelection } from "./useIconSelection.js";
@@ -145,7 +146,6 @@ export function useLaunchpadController() {
   const folderClosingSnapshot = shallowRef(null);
   const folderMotionGeometry = ref({ id: null, x: 0, y: 36, scaleX: 0.1, scaleY: 0.16, borderRadius: 26 });
   const folderSession = shallowRef(null);
-  const folderViewportHeight = ref(0);
   const isHomeRevealSettling = ref(false);
   const desktopProjectionEpoch = ref(0);
   const transientPageRenderRange = ref(null);
@@ -171,9 +171,17 @@ export function useLaunchpadController() {
   let pageJumpRenderTimer = null;
   let pageJumpRenderRequestId = 0;
   let layoutResizeObserver = null;
-  let folderViewportResizeObserver = null;
-  let observedFolderViewportElement = null;
   let dragControls = null;
+
+  const {
+    disconnectFolderViewportObserver,
+    folderViewportHeight,
+    observeFolderViewport,
+    scheduleFolderViewportMetrics,
+    updateFolderViewportHeight,
+  } = useFolderViewportMetrics({
+    folderViewportRef,
+  });
 
   const {
     clearOpeningIcon,
@@ -1365,42 +1373,6 @@ export function useLaunchpadController() {
 
   function handleFolderOverlayPointerDown() {
     if (!isDragActive()) commitOpenFolder(null);
-  }
-
-  function updateFolderViewportHeight() {
-    const element = getElementFromRef(folderViewportRef);
-    // Ancestor panel animations use transforms; layout height avoids reading the scaled rect.
-    const layoutHeight = element ? element.offsetHeight || element.clientHeight || element.getBoundingClientRect().height : 0;
-    const nextHeight = roundPx(layoutHeight);
-    if (Math.abs(folderViewportHeight.value - nextHeight) > 0.1) folderViewportHeight.value = nextHeight;
-  }
-
-  function scheduleFolderViewportMetrics() {
-    nextTick(updateFolderViewportHeight);
-  }
-
-  function disconnectFolderViewportObserver() {
-    if (folderViewportResizeObserver) folderViewportResizeObserver.disconnect();
-    folderViewportResizeObserver = null;
-    observedFolderViewportElement = null;
-  }
-
-  function observeFolderViewport() {
-    const element = getElementFromRef(folderViewportRef);
-    if (element === observedFolderViewportElement) {
-      updateFolderViewportHeight();
-      return;
-    }
-
-    disconnectFolderViewportObserver();
-    observedFolderViewportElement = element;
-
-    if (element && typeof ResizeObserver !== "undefined") {
-      folderViewportResizeObserver = new ResizeObserver(updateFolderViewportHeight);
-      folderViewportResizeObserver.observe(element);
-    }
-
-    updateFolderViewportHeight();
   }
 
   watch([gridRows, gridCols, folderRows, folderCols, iconSize, isTextlessMode, isSearchMode], schedulePageGridMetrics, { flush: "post" });
