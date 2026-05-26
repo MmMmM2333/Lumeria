@@ -27,21 +27,21 @@
 
       <nav class="settings-tabs" role="tablist" aria-label="设置分类">
         <button
-          v-for="tab in state.settingsTabs"
+          v-for="tab in settingsTabs"
           :key="tab.id"
           type="button"
           role="tab"
-          :class="cx('settings-tab', state.activeSettingsTab.value === tab.id && 'settings-tab-active')"
-          :aria-selected="state.activeSettingsTab.value === tab.id"
-          :tabindex="state.activeSettingsTab.value === tab.id ? 0 : -1"
-          @click="state.activeSettingsTab.value = tab.id"
+          :class="cx('settings-tab', activeSettingsTab === tab.id && 'settings-tab-active')"
+          :aria-selected="activeSettingsTab === tab.id"
+          :tabindex="activeSettingsTab === tab.id ? 0 : -1"
+          @click="activeSettingsTab = tab.id"
         >
           {{ tab.label }}
         </button>
       </nav>
 
       <div class="settings-panel-body">
-        <div v-if="state.activeSettingsTab.value === 'general'" class="settings-tab-panel" role="tabpanel" aria-label="通用">
+        <div v-if="activeSettingsTab === 'general'" class="settings-tab-panel" role="tabpanel" aria-label="通用">
           <section class="settings-section" aria-label="通用">
             <div class="settings-section-header">
               <h3>通用</h3>
@@ -68,7 +68,7 @@
           </section>
         </div>
 
-        <div v-else-if="state.activeSettingsTab.value === 'interface'" class="settings-tab-panel" role="tabpanel" aria-label="界面">
+        <div v-else-if="activeSettingsTab === 'interface'" class="settings-tab-panel" role="tabpanel" aria-label="界面">
           <section class="settings-section" aria-label="显示偏好">
             <div class="settings-section-header">
               <h3>显示偏好</h3>
@@ -178,7 +178,7 @@
           </section>
         </div>
 
-        <div v-else-if="state.activeSettingsTab.value === 'apps'" class="settings-tab-panel" role="tabpanel" aria-label="Apps">
+        <div v-else-if="activeSettingsTab === 'apps'" class="settings-tab-panel" role="tabpanel" aria-label="Apps">
           <section class="settings-section" aria-label="应用管理">
             <div class="settings-section-header">
               <div>
@@ -210,7 +210,7 @@
                   @change="state.toggleManagedAppSelection(app.id, $event.target.checked)"
                 />
                 <span class="app-manager-icon">
-                  <img v-if="state.getIconSource(app)" :src="state.getIconSource(app)" alt="" draggable="false" />
+                  <img v-if="getIconSource(app)" :src="getIconSource(app)" alt="" draggable="false" />
                   <span v-else>{{ app.emoji }}</span>
                 </span>
                 <span class="app-manager-details">
@@ -239,7 +239,7 @@
         </div>
       </div>
 
-      <footer v-if="state.activeSettingsTab.value === 'interface'" class="settings-actions">
+      <footer v-if="activeSettingsTab === 'interface'" class="settings-actions">
         <button class="settings-secondary-button" type="button" @click="state.closeSettingsPanel">取消</button>
         <button class="settings-primary-button" type="button" :disabled="!!state.dragMeta.value" @click="state.applySettingsConfig">应用</button>
       </footer>
@@ -249,11 +249,21 @@
 
 <script setup>
 import { Motion } from "motion-v";
+import { ref } from "vue";
 import { ChevronDownIcon, ChevronUpIcon } from "./Icons.js";
 import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "../composables/launchpadConstants.js";
+import { getIconSource } from "../domain/iconSource.js";
 import { cx } from "../domain/launchpadLayout.js";
 
 defineProps({
   state: { type: Object, required: true },
 });
+
+const activeSettingsTab = ref("general");
+const settingsTabs = [
+  { id: "general", label: "通用" },
+  { id: "interface", label: "界面" },
+  { id: "apps", label: "Apps" },
+  { id: "about", label: "关于" },
+];
 </script>

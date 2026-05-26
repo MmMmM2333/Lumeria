@@ -27,9 +27,9 @@
             :disabled="state.isFolderClosing.value"
             maxlength="32"
             aria-label="文件夹名称"
-            @focus="state.rememberFolderNameBeforeEdit(state.renderedFolder.value.name)"
-            @input="state.handleFolderNameInput(state.renderedFolder.value.id, $event)"
-            @blur="state.restoreEmptyFolderName(state.renderedFolder.value.id, $event)"
+            @focus="rememberFolderNameBeforeEdit(state.renderedFolder.value.name)"
+            @input="handleFolderNameInput(state.renderedFolder.value.id, $event)"
+            @blur="restoreEmptyFolderName(state.renderedFolder.value.id, $event)"
             @keydown.enter.prevent.stop="$event.target.blur()"
             @pointerdown.stop
           />
@@ -97,15 +97,17 @@
 
 <script setup>
 import { Motion } from "motion-v";
+import { ref } from "vue";
 import DesktopIcon from "./DesktopIcon.js";
 import StaticPagePreview from "./StaticPagePreview.js";
 import { cx } from "../domain/launchpadLayout.js";
 
-defineProps({
+const props = defineProps({
   state: { type: Object, required: true },
 });
 
 const emit = defineEmits(["pointerdown-icon", "open-app", "context-menu-icon"]);
+const folderNameBeforeEdit = ref("");
 
 function bindRef(target, node) {
   if (target && typeof target === "object" && "value" in target) target.value = node;
@@ -113,5 +115,23 @@ function bindRef(target, node) {
 
 function forward(eventName, args) {
   emit(eventName, ...args);
+}
+
+function rememberFolderNameBeforeEdit(name) {
+  folderNameBeforeEdit.value = String(name || "新文件夹").slice(0, 32);
+}
+
+function handleFolderNameInput(folderId, event) {
+  const nextName = String(event?.target?.value || "").slice(0, 32);
+  if (!nextName) return;
+  props.state.renameFolder(folderId, nextName);
+}
+
+function restoreEmptyFolderName(folderId, event) {
+  const input = event?.target;
+  if (input?.value) return;
+  const fallbackName = folderNameBeforeEdit.value || props.state.renderedFolder.value?.name || "新文件夹";
+  if (input) input.value = fallbackName;
+  props.state.renameFolder(folderId, fallbackName);
 }
 </script>

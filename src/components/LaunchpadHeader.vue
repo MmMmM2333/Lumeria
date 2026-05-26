@@ -21,8 +21,8 @@
           placeholder="搜索"
           aria-label="搜索应用"
           @input="$emit('search-input', $event)"
-          @focus="$emit('search-focus')"
-          @blur="$emit('search-blur')"
+          @focus="handleSearchFocus"
+          @blur="handleSearchBlur"
           @pointerdown.stop
         />
       </div>
@@ -37,21 +37,33 @@
 </template>
 
 <script setup>
+import { computed, ref } from "vue";
 import { SearchIcon, SettingsIcon } from "./Icons.js";
 import { cx } from "../domain/launchpadLayout.js";
 
-defineProps({
+const props = defineProps({
   dragDisabled: { type: Boolean, default: false },
   domRefs: { type: Object, required: true },
-  hasSearchQuery: { type: Boolean, default: false },
-  isSearchInputFocused: { type: Boolean, default: false },
   isSearchMode: { type: Boolean, default: false },
   searchQuery: { type: String, default: "" },
 });
 
-defineEmits(["search-input", "search-focus", "search-blur", "clear-search", "open-settings"]);
+const emit = defineEmits(["search-input", "search-focus", "search-blur", "clear-search", "open-settings"]);
+
+const isSearchInputFocused = ref(false);
+const hasSearchQuery = computed(() => props.searchQuery.trim().length > 0);
 
 function bindRef(target, node) {
   if (target && typeof target === "object" && "value" in target) target.value = node;
+}
+
+function handleSearchFocus() {
+  isSearchInputFocused.value = true;
+  emit("search-focus");
+}
+
+function handleSearchBlur() {
+  isSearchInputFocused.value = false;
+  emit("search-blur");
 }
 </script>

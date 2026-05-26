@@ -24,7 +24,7 @@
               @change="state.toggleScanResultSelection(app.id, $event.target.checked)"
             />
             <span class="app-manager-icon">
-              <img v-if="state.getIconSource(app)" :src="state.getIconSource(app)" alt="" draggable="false" />
+              <img v-if="getIconSource(app)" :src="getIconSource(app)" alt="" draggable="false" />
               <span v-else>{{ app.emoji }}</span>
             </span>
             <span class="app-manager-details">
@@ -106,7 +106,7 @@
       <div class="app-edit-body">
         <div class="app-edit-icon-row">
           <span class="app-edit-icon">
-            <img v-if="state.editingAppIconSource.value" :src="state.editingAppIconSource.value" alt="" draggable="false" />
+            <img v-if="editingAppIconSource" :src="editingAppIconSource" alt="" draggable="false" />
             <span v-else>{{ state.editingManagedApp.value.emoji }}</span>
           </span>
           <div class="app-edit-icon-actions">
@@ -213,9 +213,17 @@
 </template>
 
 <script setup>
+import { computed } from "vue";
 import { AlertTriangleIcon } from "./Icons.js";
+import { getDefaultIconSource, getIconSource } from "../domain/iconSource.js";
 
-defineProps({
+const props = defineProps({
   state: { type: Object, required: true },
+});
+
+const editingAppIconSource = computed(() => {
+  if (props.state.editAppIconDataUrl.value) return props.state.editAppIconDataUrl.value;
+  if (props.state.isEditAppIconReset.value) return getDefaultIconSource(props.state.editingManagedApp.value);
+  return getIconSource(props.state.editingManagedApp.value);
 });
 </script>

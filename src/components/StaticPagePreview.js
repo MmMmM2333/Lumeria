@@ -1,12 +1,9 @@
 import { defineComponent, h } from "vue";
+import { getIconSource } from "../domain/iconSource.js";
 import { getFolderPreviewSlots } from "../domain/launchpadLayout.js";
 
 function cx() {
   return Array.prototype.slice.call(arguments).filter(Boolean).join(" ");
-}
-
-function getIconSource(item) {
-  return item?.customIconDataUrl || item?.iconDataUrl || item?.iconUrl || null;
 }
 
 function renderAppIcon(item) {

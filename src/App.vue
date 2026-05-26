@@ -19,13 +19,10 @@
       <LaunchpadHeader
         :dom-refs="headerDomRefs"
         :drag-disabled="!!dragMeta"
-        :has-search-query="hasSearchQuery"
-        :is-search-input-focused="isSearchInputFocused"
         :is-search-mode="isSearchMode"
         :search-query="searchQuery"
         @search-input="handleSearchInput"
-        @search-focus="handleSearchFocus"
-        @search-blur="handleSearchBlur"
+        @search-focus="keyboardFocusArea = 'search'"
         @clear-search="clearSearch"
         @open-settings="openSettingsPanel"
       />
@@ -83,13 +80,18 @@
       @open-app="openApp"
       @context-menu-icon="openIconContextMenu"
     />
-    <LaunchpadOverlays :state="overlayState" @open-context-app="openContextMenuApp" @edit-context-app="editContextMenuApp" />
+    <LaunchpadOverlays
+      ref="launchpadOverlaysRef"
+      :state="overlayState"
+      @open-context-app="openApp"
+      @edit-context-app="openEditManagedApp"
+    />
   </div>
 </template>
 
 <script setup>
 import { Motion } from "motion-v";
-import { computed, ref } from "vue";
+import { ref } from "vue";
 import DesktopPager from "./components/DesktopPager.vue";
 import FolderOverlay from "./components/FolderOverlay.vue";
 import LaunchpadDialogs from "./components/LaunchpadDialogs.vue";
@@ -270,36 +272,13 @@ const {
   folderPreviewSlots,
 } = useLaunchpadController();
 
-const isSearchInputFocused = ref(false);
-const iconContextMenu = ref(null);
-const folderNameBeforeEdit = ref("");
-const activeSettingsTab = ref("general");
 const appVersion = appPackage.version;
-const settingsTabs = [
-  { id: "general", label: "通用" },
-  { id: "interface", label: "界面" },
-  { id: "apps", label: "Apps" },
-  { id: "about", label: "关于" },
-];
-const hasSearchQuery = computed(() => searchQuery.value.trim().length > 0);
-const iconContextMenuStyle = computed(() => {
-  if (!iconContextMenu.value) return {};
-  return {
-    left: `${iconContextMenu.value.x}px`,
-    top: `${iconContextMenu.value.y}px`,
-  };
-});
-const editingAppIconSource = computed(() => {
-  if (editAppIconDataUrl.value) return editAppIconDataUrl.value;
-  if (isEditAppIconReset.value) return getDefaultIconSource(editingManagedApp.value);
-  return getIconSource(editingManagedApp.value);
-});
+const launchpadOverlaysRef = ref(null);
 
 const headerDomRefs = { headerRef, searchRef, searchInputRef };
 const desktopDomRefs = { desktopMainRef };
 
 const settingsPanelState = {
-  activeSettingsTab,
   appManagerSearchQuery,
   appManagerSelectedIds,
   appVersion,
@@ -325,7 +304,6 @@ const settingsPanelState = {
   draftRows,
   dragMeta,
   filteredManagedApps,
-  getIconSource,
   getLaunchTargetPath,
   isScanningApps,
   isSettingsPanelOpen,
@@ -341,7 +319,6 @@ const settingsPanelState = {
   settingsOverlayAnimate,
   settingsPanelAnimate,
   settingsPanelInitial,
-  settingsTabs,
   shouldRenderSettingsPanel,
   toggleManagedAppSelection,
 };
@@ -366,11 +343,10 @@ const dialogState = {
   closeWarningDialog,
   confirmWarningDialog,
   editAppArgs,
+  editAppIconDataUrl,
   editAppName,
   editAppTarget,
-  editingAppIconSource,
   editingManagedApp,
-  getIconSource,
   getLaunchTargetPath,
   handleIconChooserUpload,
   iconChooser,
@@ -378,6 +354,7 @@ const dialogState = {
   isAddingManagedApp,
   isBrowsingEditAppTarget,
   isBrowsingNewAppTarget,
+  isEditAppIconReset,
   isLoadingIconChoices,
   isScanResultDialogOpen,
   layoutRecoveryNotice,
@@ -419,7 +396,6 @@ const folderOverlayState = {
   folderTrackAnimate,
   folderViewportRef,
   getVisibleFolderPage,
-  handleFolderNameInput,
   handleFolderOverlayPointerDown,
   isEditMode,
   isFolderAppLaunchClosing,
@@ -429,11 +405,10 @@ const folderOverlayState = {
   isTextlessMode,
   layoutSpring,
   openExistingAppIconChooser,
-  rememberFolderNameBeforeEdit,
+  renameFolder,
   removeAppById,
   renderedFolder,
   resetAppCustomIcon,
-  restoreEmptyFolderName,
   setFolderPageRef,
   shouldRenderFolderPage,
   shouldRenderStaticFolderPage,
@@ -446,87 +421,19 @@ const overlayState = {
   dragPreviewRef,
   dragPreviewSpring,
   folderPreviewSlots,
-  getIconSource,
-  iconContextMenu,
-  iconContextMenuStyle,
   isTextlessMode,
   launchGhost,
   launchGhostStyle,
 };
 
-function handleSearchFocus() {
-  keyboardFocusArea.value = "search";
-  isSearchInputFocused.value = true;
-}
-
-function handleSearchBlur() {
-  isSearchInputFocused.value = false;
-}
-
-function rememberFolderNameBeforeEdit(name) {
-  folderNameBeforeEdit.value = String(name || "新文件夹").slice(0, 32);
-}
-
-function handleFolderNameInput(folderId, event) {
-  const nextName = String(event?.target?.value || "").slice(0, 32);
-  if (!nextName) return;
-  renameFolder(folderId, nextName);
-}
-
-function restoreEmptyFolderName(folderId, event) {
-  const input = event?.target;
-  if (input?.value) return;
-  const fallbackName = folderNameBeforeEdit.value || renderedFolder.value?.name || "新文件夹";
-  if (input) input.value = fallbackName;
-  renameFolder(folderId, fallbackName);
-}
-
 function openIconContextMenu(event, app, source) {
-  if (!app || app.type !== "app") return;
-  const menuWidth = 172;
-  const menuHeight = 116;
-  const margin = 8;
-  const maxX = Math.max(margin, window.innerWidth - menuWidth - margin);
-  const maxY = Math.max(margin, window.innerHeight - menuHeight - margin);
-  iconContextMenu.value = {
-    app,
-    source,
-    x: Math.min(Math.max(event.clientX, margin), maxX),
-    y: Math.min(Math.max(event.clientY, margin), maxY),
-  };
-}
-
-function closeIconContextMenu() {
-  iconContextMenu.value = null;
+  launchpadOverlaysRef.value?.openIconContextMenu(event, app, source);
 }
 
 function handleLaunchpadSurfacePointerDown(event) {
-  if (iconContextMenu.value) {
-    closeIconContextMenu();
+  if (launchpadOverlaysRef.value?.closeIconContextMenu()) {
     return;
   }
   handleDesktopSurfacePointerDown(event);
-}
-
-function openContextMenuApp() {
-  const menu = iconContextMenu.value;
-  if (!menu) return;
-  closeIconContextMenu();
-  openApp(menu.app, menu.source);
-}
-
-function editContextMenuApp() {
-  const menu = iconContextMenu.value;
-  if (!menu) return;
-  closeIconContextMenu();
-  openEditManagedApp(menu.app);
-}
-
-function getIconSource(item) {
-  return item?.customIconDataUrl || item?.iconDataUrl || item?.iconUrl || null;
-}
-
-function getDefaultIconSource(item) {
-  return item?.iconDataUrl || item?.iconUrl || null;
 }
 </script>

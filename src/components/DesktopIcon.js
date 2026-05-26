@@ -1,5 +1,6 @@
 import { defineComponent, h } from "vue";
 import { Motion } from "motion-v";
+import { getIconSource } from "../domain/iconSource.js";
 import { getFolderPreviewSlots } from "../domain/launchpadLayout.js";
 
 const springRest = { restDelta: 0.01, restSpeed: 0.01 };
@@ -27,10 +28,6 @@ export default defineComponent({
   },
   emits: ["pointerdown-icon", "open-app", "context-menu-icon", "remove-app", "choose-app-icon", "reset-app-icon"],
   setup(props, { emit }) {
-    function getIconSource(item) {
-      return item?.customIconDataUrl || item?.iconDataUrl || item?.iconUrl || null;
-    }
-
     function renderAppIcon(item, compact) {
       const iconSource = getIconSource(item);
       if (iconSource) {
