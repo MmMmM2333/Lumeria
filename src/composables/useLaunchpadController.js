@@ -1260,13 +1260,15 @@ export function useLaunchpadController() {
 
     const launchSource = normalizeLaunchSource(app, source);
     const shouldClearSearchAfterLaunch = isSearchMode.value;
-    launchNativeAppIfAvailable(app);
     startAppLaunchGhost(app, launchSource);
     openingIcon.value = launchSource;
     isAppLaunching.value = true;
 
     if (renderedFolder.value || openFolderId.value) startFolderAppLaunchClose();
     closeDesktop({ clearSearch: false });
+    window.setTimeout(() => {
+      launchNativeAppIfAvailable(app);
+    }, 0);
 
     clearAppLaunchTimer();
     appLaunchTimer = window.setTimeout(() => {
