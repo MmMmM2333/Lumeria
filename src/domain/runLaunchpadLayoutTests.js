@@ -6,6 +6,7 @@ import { runLaunchpadIconActivationTests } from "../composables/useLaunchpadIcon
 import { runLaunchpadLaunchFlowTests } from "../composables/useLaunchpadLaunchFlowTests.js";
 import { runLaunchpadSearchTests } from "../composables/useLaunchpadSearchTests.js";
 import { runLaunchpadSettingsConfigTests } from "../composables/useLaunchpadSettingsConfigTests.js";
+import { runLaunchpadViewStateTests } from "../composables/useLaunchpadViewStateTests.js";
 import { runLaunchpadDataTests } from "./launchpadDataTests.js";
 import { runLaunchpadHelperTests } from "./launchpadLayoutTests.js";
 import { runPageRenderRangeTests } from "../composables/usePageRenderRangeTests.js";
@@ -70,6 +71,7 @@ runLaunchpadDragTests();
 runLaunchpadFolderFlowTests();
 runLaunchpadIconActivationTests();
 await runLaunchpadLaunchFlowTests();
+runLaunchpadViewStateTests();
 runFolderLayoutStylesTests();
 runLaunchpadSettingsConfigTests();
 await runLaunchpadSearchTests();

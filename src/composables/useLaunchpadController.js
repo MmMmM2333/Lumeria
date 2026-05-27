@@ -6,18 +6,7 @@ import {
   DEFAULT_FOLDER_ROWS,
   DEFAULT_ICON_SIZE,
   DEFAULT_ROWS,
-  DESKTOP_CLOSE_SCALE,
 } from "./launchpadConstants.js";
-import {
-  appLaunchGhostTransition,
-  desktopTrackTransition,
-  dragPreviewSpring,
-  folderContentTransition,
-  homeShellTransition,
-  instantTrackTransition,
-  layoutSpring,
-  panelSpring,
-} from "./launchpadMotion.js";
 import {
   chunkIntoPages,
   createLaunchpadLayoutHelpers,
@@ -39,6 +28,7 @@ import { useLaunchpadKeyboard } from "./useLaunchpadKeyboard.js";
 import { useLaunchpadNative } from "./useLaunchpadNative.js";
 import { useLaunchpadNotices } from "./useLaunchpadNotices.js";
 import { useLaunchpadSearch } from "./useLaunchpadSearch.js";
+import { useLaunchpadViewState } from "./useLaunchpadViewState.js";
 import {
   FOLDER_ICON_SIZE_MODE_CUSTOM,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
@@ -341,76 +331,50 @@ export function useLaunchpadController() {
   });
   openAppHandler = openApp;
 
-  const desktopTrackAnimate = computed(() => ({ x: `-${pageIndex.value * 100}%` }));
-  const searchTrackAnimate = computed(() => ({ x: `-${searchPageIndex.value * 100}%` }));
-  const activeDesktopTrackAnimate = computed(() => (isSearchMode.value ? searchTrackAnimate.value : desktopTrackAnimate.value));
-  const shouldFreezeDesktopProjection = computed(() => Boolean(isFolderLayerActive.value || isHomeRevealSettling.value || !isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value));
-  const shouldSnapDesktopTrack = computed(() => Boolean(isFolderLayerActive.value || isHomeRevealSettling.value || !isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value));
-  const desktopLayoutEnabled = computed(() => !shouldFreezeDesktopProjection.value);
-  const desktopProjectionKeyMode = computed(() => (desktopLayoutEnabled.value ? `enabled-${desktopProjectionEpoch.value}` : "frozen"));
-  const activeDesktopTrackTransition = computed(() => (shouldSnapDesktopTrack.value ? instantTrackTransition : desktopTrackTransition));
-  const desktopTrackMotionKey = computed(() => `${isDesktopOpen.value ? "open" : "closed"}-${isSearchMode.value ? "search" : "desktop"}-${shouldSnapDesktopTrack.value ? "snap" : "spring"}`);
-  const folderTrackAnimate = computed(() => ({ x: `-${folderPageIndex.value * 100}%` }));
-  const isDesktopAnimatingClosed = computed(() => Boolean(!isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value));
-  const shouldHideHomeShell = computed(() => Boolean((openFolderId.value && !isFolderClosing.value) || isDesktopAnimatingClosed.value));
-  const isHomeInteractionDisabled = computed(() => Boolean(!isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value));
-  const rootStyle = computed(() => ({
-    "--configured-app-icon-size": `${iconSize.value}px`,
-  }));
-  const homeShellInitial = { opacity: 0, scale: DESKTOP_CLOSE_SCALE, y: 0, filter: "blur(8px)" };
-  const homeShellAnimate = computed(() => {
-    if (isDesktopAnimatingClosed.value) return { opacity: 0, scale: DESKTOP_CLOSE_SCALE, y: 0, filter: "blur(8px)" };
-    if (openFolderId.value && !isFolderClosing.value) return { opacity: 0, scale: 0.92, y: 44, filter: "blur(6px)" };
-    return { opacity: 1, scale: 1, y: 0, filter: "blur(0px)" };
+  const {
+    activeDesktopTrackAnimate,
+    activeDesktopTrackTransition,
+    appLaunchGhostTransition,
+    desktopLayoutEnabled,
+    desktopTrackMotionKey,
+    desktopTrackTransition,
+    dragPreviewSpring,
+    folderContentAnimate,
+    folderContentInitial,
+    folderContentTransition,
+    folderPanelAnimate,
+    folderPanelInitial,
+    folderPanelTransition,
+    folderTrackAnimate,
+    getDesktopGridProjectionKey,
+    homeShellAnimate,
+    homeShellInitial,
+    homeShellStyle,
+    homeShellTransition,
+    isHomeInteractionDisabled,
+    layoutSpring,
+    pageGridStyle,
+    panelSpring,
+    rootStyle,
+  } = useLaunchpadViewState({
+    desktopProjectionEpoch,
+    folderMotionGeometry,
+    folderPageIndex,
+    gridCols,
+    gridRows,
+    iconSize,
+    isAppLaunching,
+    isDesktopClosing,
+    isDesktopOpen,
+    isFolderAppLaunchClosing,
+    isFolderClosing,
+    isFolderLayerActive,
+    isHomeRevealSettling,
+    isSearchMode,
+    openFolderId,
+    pageIndex,
+    searchPageIndex,
   });
-  const homeShellStyle = computed(() => ({
-    pointerEvents: shouldHideHomeShell.value || isHomeInteractionDisabled.value ? "none" : "auto",
-  }));
-  const folderPanelInitial = computed(() => ({
-    opacity: 0.92,
-    scaleX: folderMotionGeometry.value.scaleX,
-    scaleY: folderMotionGeometry.value.scaleY,
-    x: folderMotionGeometry.value.x,
-    y: folderMotionGeometry.value.y,
-    borderRadius: `${folderMotionGeometry.value.borderRadius}px`,
-    filter: "blur(0px)",
-  }));
-  const folderPanelAnimate = computed(() => {
-    if (isFolderAppLaunchClosing.value) {
-      return { opacity: 0, scaleX: 1.08, scaleY: 1.08, x: 0, y: 0, borderRadius: "46px", filter: "blur(0px)" };
-    }
-    if (isFolderClosing.value) {
-      return {
-        opacity: 0,
-        scaleX: folderMotionGeometry.value.scaleX,
-        scaleY: folderMotionGeometry.value.scaleY,
-        x: folderMotionGeometry.value.x,
-        y: folderMotionGeometry.value.y,
-        borderRadius: `${folderMotionGeometry.value.borderRadius}px`,
-        filter: "blur(0px)",
-      };
-    }
-    if (isDesktopAnimatingClosed.value) {
-      return { opacity: 0, scaleX: DESKTOP_CLOSE_SCALE, scaleY: DESKTOP_CLOSE_SCALE, x: 0, y: 0, borderRadius: "42px", filter: "blur(8px)" };
-    }
-    return { opacity: 1, scaleX: 1, scaleY: 1, x: 0, y: 0, borderRadius: "42px", filter: "blur(0px)" };
-  });
-  const folderPanelTransition = computed(() => (
-    isDesktopAnimatingClosed.value || (isHomeRevealSettling.value && openFolderId.value && !isFolderClosing.value)
-      ? homeShellTransition
-      : panelSpring
-  ));
-  const folderContentInitial = { opacity: 0, scale: 0.94, y: 18 };
-  const folderContentAnimate = computed(() => {
-    if (isFolderAppLaunchClosing.value) return { opacity: 0, scale: 1.08, y: 0 };
-    return isFolderClosing.value
-      ? { opacity: 0, scale: 0.96, y: 12 }
-      : { opacity: 1, scale: 1, y: 0 };
-  });
-  const pageGridStyle = computed(() => ({
-    gridTemplateColumns: `repeat(${gridCols.value}, minmax(0, 1fr))`,
-    gridTemplateRows: `repeat(${gridRows.value}, minmax(0, 1fr))`,
-  }));
   const {
     getActivePageGridStyle,
     pageGridMeasureStyle,
@@ -782,10 +746,6 @@ export function useLaunchpadController() {
     selectedIcon,
     selectionMatchesScope,
   });
-  function getDesktopGridProjectionKey(pageNumber) {
-    return `${isSearchMode.value ? "search" : "desktop"}-grid-${pageNumber}-${desktopProjectionKeyMode.value}`;
-  }
-
   function setPageRef(node, targetPageIndex) {
     if (!node) return;
     pageRefs[targetPageIndex] = node.$el || node;

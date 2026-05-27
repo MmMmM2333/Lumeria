@@ -1,0 +1,95 @@
+import { ref } from "vue";
+import {
+  desktopTrackTransition,
+  homeShellTransition,
+  instantTrackTransition,
+  panelSpring,
+} from "./launchpadMotion.js";
+import { useLaunchpadViewState } from "./useLaunchpadViewState.js";
+
+function createViewState(overrides = {}) {
+  const state = {
+    desktopProjectionEpoch: ref(overrides.desktopProjectionEpoch ?? 2),
+    folderMotionGeometry: ref(overrides.folderMotionGeometry ?? {
+      borderRadius: 18,
+      scaleX: 0.2,
+      scaleY: 0.3,
+      x: 12,
+      y: 24,
+    }),
+    folderPageIndex: ref(overrides.folderPageIndex ?? 1),
+    gridCols: ref(overrides.gridCols ?? 5),
+    gridRows: ref(overrides.gridRows ?? 7),
+    iconSize: ref(overrides.iconSize ?? 64),
+    isAppLaunching: ref(Boolean(overrides.isAppLaunching)),
+    isDesktopClosing: ref(Boolean(overrides.isDesktopClosing)),
+    isDesktopOpen: ref(overrides.isDesktopOpen ?? true),
+    isFolderAppLaunchClosing: ref(Boolean(overrides.isFolderAppLaunchClosing)),
+    isFolderClosing: ref(Boolean(overrides.isFolderClosing)),
+    isFolderLayerActive: ref(Boolean(overrides.isFolderLayerActive)),
+    isHomeRevealSettling: ref(Boolean(overrides.isHomeRevealSettling)),
+    isSearchMode: ref(Boolean(overrides.isSearchMode)),
+    openFolderId: ref(overrides.openFolderId ?? null),
+    pageIndex: ref(overrides.pageIndex ?? 2),
+    searchPageIndex: ref(overrides.searchPageIndex ?? 3),
+  };
+
+  return {
+    state,
+    view: useLaunchpadViewState(state),
+  };
+}
+
+export function runLaunchpadViewStateTests() {
+  const assert = (condition, message) => {
+    if (!condition) throw new Error(`[Launchpad view state test failed] ${message}`);
+  };
+
+  const desktop = createViewState();
+  assert(desktop.view.rootStyle.value["--configured-app-icon-size"] === "64px", "root style should expose configured icon size");
+  assert(desktop.view.activeDesktopTrackAnimate.value.x === "-200%", "desktop track should use desktop page index outside search");
+  assert(desktop.view.folderTrackAnimate.value.x === "-100%", "folder track should use folder page index");
+  assert(desktop.view.desktopLayoutEnabled.value, "desktop layout should be enabled when nothing is animating");
+  assert(desktop.view.activeDesktopTrackTransition.value === desktopTrackTransition, "desktop track should use spring transition when not snapping");
+  assert(desktop.view.desktopTrackMotionKey.value === "open-desktop-spring", "desktop motion key should describe open desktop spring state");
+  assert(desktop.view.getDesktopGridProjectionKey(4) === "desktop-grid-4-enabled-2", "projection key should include enabled epoch");
+  assert(desktop.view.homeShellAnimate.value.opacity === 1, "home shell should be visible in the idle desktop state");
+  assert(desktop.view.homeShellStyle.value.pointerEvents === "auto", "home shell should allow pointer events in the idle desktop state");
+  assert(desktop.view.folderPanelInitial.value.x === 12, "folder panel initial state should use motion geometry");
+  assert(desktop.view.folderPanelAnimate.value.opacity === 1, "folder panel should be visible in the idle state");
+  assert(desktop.view.folderPanelTransition.value === panelSpring, "folder panel should use panel spring in the idle state");
+  assert(desktop.view.folderContentAnimate.value.opacity === 1, "folder content should be visible in the idle state");
+  assert(desktop.view.pageGridStyle.value.gridTemplateColumns === "repeat(5, minmax(0, 1fr))", "page grid columns should follow grid columns");
+  assert(desktop.view.pageGridStyle.value.gridTemplateRows === "repeat(7, minmax(0, 1fr))", "page grid rows should follow grid rows");
+
+  const search = createViewState({ isSearchMode: true });
+  assert(search.view.activeDesktopTrackAnimate.value.x === "-300%", "search track should use search page index in search mode");
+  assert(search.view.desktopTrackMotionKey.value === "open-search-spring", "desktop motion key should describe search mode");
+  assert(search.view.getDesktopGridProjectionKey(1) === "search-grid-1-enabled-2", "projection key should include search mode");
+
+  const closed = createViewState({ isDesktopOpen: false });
+  assert(!closed.view.desktopLayoutEnabled.value, "desktop layout should be disabled when closed");
+  assert(closed.view.activeDesktopTrackTransition.value === instantTrackTransition, "closed desktop should snap track transitions");
+  assert(closed.view.desktopTrackMotionKey.value === "closed-desktop-snap", "closed desktop should use snap motion key");
+  assert(closed.view.homeShellAnimate.value.opacity === 0, "closed desktop should hide home shell");
+  assert(closed.view.homeShellStyle.value.pointerEvents === "none", "closed desktop should disable home shell pointer events");
+  assert(closed.view.folderPanelAnimate.value.filter === "blur(8px)", "closed desktop should blur folder panel");
+
+  const openFolder = createViewState({ openFolderId: "folder-1", isFolderLayerActive: true });
+  assert(!openFolder.view.desktopLayoutEnabled.value, "open folder should freeze desktop layout");
+  assert(openFolder.view.homeShellAnimate.value.y === 44, "open folder should move home shell down");
+  assert(openFolder.view.homeShellStyle.value.pointerEvents === "none", "open folder should disable home shell pointer events");
+  assert(openFolder.view.getDesktopGridProjectionKey(0) === "desktop-grid-0-frozen", "frozen desktop should use frozen projection key");
+
+  const closingFolder = createViewState({ isFolderClosing: true, isFolderLayerActive: true });
+  assert(closingFolder.view.folderPanelAnimate.value.opacity === 0, "closing folder should hide folder panel");
+  assert(closingFolder.view.folderPanelAnimate.value.x === 12, "closing folder should animate back to geometry x");
+  assert(closingFolder.view.folderContentAnimate.value.y === 12, "closing folder should move folder content down");
+
+  const launchClosing = createViewState({ isFolderAppLaunchClosing: true, isFolderLayerActive: true });
+  assert(launchClosing.view.folderPanelAnimate.value.scaleX === 1.08, "app launch folder close should expand folder panel");
+  assert(launchClosing.view.folderContentAnimate.value.scale === 1.08, "app launch folder close should expand folder content");
+
+  const settling = createViewState({ isHomeRevealSettling: true, isFolderLayerActive: true, openFolderId: "folder-1" });
+  assert(settling.view.folderPanelTransition.value === homeShellTransition, "home reveal settling should use home shell transition for folder panel");
+}
