@@ -1,0 +1,116 @@
+import { nextTick, ref } from "vue";
+import { useLaunchpadSearch } from "./useLaunchpadSearch.js";
+
+const testApps = [
+  { id: "mail", type: "app", name: "Mail" },
+  { id: "calendar", type: "app", name: "Calendar" },
+  { id: "mail-plus", type: "app", name: "Mail Plus" },
+];
+
+function createSearchFlow(overrides = {}) {
+  const calls = {
+    clearSelectedIcon: 0,
+    commitOpenFolder: [],
+    commitSearchPageIndex: [],
+    schedulePageGridMetrics: 0,
+    selectFirstIconInCurrentScope: [],
+  };
+  const pages = ref(overrides.pages ?? [[testApps[0], testApps[1]], [testApps[2]]]);
+  const pageIndex = ref(overrides.pageIndex ?? 1);
+  const searchPageIndex = ref(overrides.searchPageIndex ?? 2);
+  const openFolderId = ref(overrides.openFolderId ?? "folder-1");
+  const pageSize = ref(overrides.pageSize ?? 1);
+  const search = useLaunchpadSearch({
+    clearSelectedIcon: () => {
+      calls.clearSelectedIcon += 1;
+    },
+    collectAppsFromPages: (sourcePages) => sourcePages.flatMap((page) => page.filter((item) => item.type === "app")),
+    commitOpenFolder: (value) => {
+      calls.commitOpenFolder.push(value);
+      openFolderId.value = value;
+    },
+    commitSearchPageIndex: (value) => {
+      calls.commitSearchPageIndex.push(value);
+      searchPageIndex.value = value;
+    },
+    filterAppsForSearch: (apps, query) => {
+      const normalized = query.trim().toLowerCase();
+      if (!normalized) return apps;
+      return apps.filter((app) => app.name.toLowerCase().includes(normalized));
+    },
+    isDragActive: () => Boolean(overrides.isDragActive),
+    openFolderId,
+    pageIndex,
+    pages,
+    pageSize,
+    schedulePageGridMetrics: () => {
+      calls.schedulePageGridMetrics += 1;
+    },
+    searchPageIndex,
+    selectFirstIconInCurrentScope: (options) => calls.selectFirstIconInCurrentScope.push(options),
+  });
+
+  return {
+    calls,
+    openFolderId,
+    pageIndex,
+    pages,
+    search,
+    searchPageIndex,
+  };
+}
+
+export async function runLaunchpadSearchTests() {
+  const assert = (condition, message) => {
+    if (!condition) throw new Error(`[Launchpad search test failed] ${message}`);
+  };
+
+  const initial = createSearchFlow();
+  assert(!initial.search.isSearchMode.value, "empty search should not enter search mode");
+  assert(initial.search.activePages.value === initial.pages.value, "empty search should use desktop pages as active pages");
+  assert(initial.search.activePageIndex.value === initial.pageIndex.value, "empty search should use the desktop page index");
+
+  const input = createSearchFlow();
+  input.search.handleSearchInput({ target: { value: " mail " } });
+  assert(input.search.searchQuery.value === " mail ", "search input should preserve the raw query value");
+  assert(input.search.isSearchMode.value, "non-empty search should enter search mode");
+  assert(input.search.searchPages.value.length === 2, "search results should be chunked by page size");
+  assert(input.search.activePages.value === input.search.searchPages.value, "search mode should use search pages as active pages");
+  assert(input.search.activePageIndex.value === 0, "search input should reset the active search page index");
+  assert(input.openFolderId.value === null, "typing a search should close an open folder when not dragging");
+  assert(input.calls.commitSearchPageIndex.join(",") === "0", "typing a search should reset search pagination");
+  assert(input.calls.commitOpenFolder.length === 1 && input.calls.commitOpenFolder[0] === null, "typing a search should request folder close with null");
+  assert(input.calls.schedulePageGridMetrics === 1, "typing a search should schedule page metrics");
+  await nextTick();
+  assert(input.calls.selectFirstIconInCurrentScope.length === 1, "typing a search should select the first result on next tick");
+  assert(input.calls.selectFirstIconInCurrentScope[0].force === true, "search result selection should force focus");
+  assert(input.calls.clearSelectedIcon === 0, "typing a non-empty search should not clear selection immediately");
+
+  input.search.clearSearch();
+  assert(input.search.searchQuery.value === "", "clearSearch should clear the query");
+  assert(input.calls.commitSearchPageIndex.join(",") === "0,0", "clearSearch should reset search pagination");
+  assert(input.calls.clearSelectedIcon === 1, "clearSearch should clear selection by default");
+  assert(input.calls.schedulePageGridMetrics === 2, "clearSearch should schedule metrics");
+
+  const selectFirst = createSearchFlow();
+  selectFirst.search.clearSearch({ selectFirst: true });
+  await nextTick();
+  assert(selectFirst.calls.selectFirstIconInCurrentScope.length === 1, "clearSearch can select the first icon on request");
+  assert(selectFirst.calls.clearSelectedIcon === 0, "clearSearch should not clear selection when selecting the first icon");
+
+  const keepSelection = createSearchFlow();
+  keepSelection.search.clearSearch({ keepSelection: true });
+  assert(keepSelection.calls.clearSelectedIcon === 0, "clearSearch should preserve selection when requested");
+  await nextTick();
+  assert(keepSelection.calls.selectFirstIconInCurrentScope.length === 0, "keepSelection should not schedule first-icon selection");
+
+  const dragActive = createSearchFlow({ isDragActive: true });
+  dragActive.search.handleSearchInput({ target: { value: "mail" } });
+  assert(dragActive.openFolderId.value === "folder-1", "drag-active search input should not close the open folder");
+  assert(dragActive.calls.commitOpenFolder.length === 0, "drag-active search input should not request folder close");
+
+  const blankInput = createSearchFlow();
+  blankInput.search.handleSearchInput({ target: { value: "" } });
+  assert(blankInput.calls.clearSelectedIcon === 1, "blank search input should clear selection");
+  assert(blankInput.calls.selectFirstIconInCurrentScope.length === 0, "blank search input should not select the first result");
+}

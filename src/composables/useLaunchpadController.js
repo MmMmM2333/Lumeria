@@ -41,6 +41,7 @@ import { useIconSelection } from "./useIconSelection.js";
 import { useLaunchpadKeyboard } from "./useLaunchpadKeyboard.js";
 import { useLaunchpadNative } from "./useLaunchpadNative.js";
 import { useLaunchpadNotices } from "./useLaunchpadNotices.js";
+import { useLaunchpadSearch } from "./useLaunchpadSearch.js";
 import {
   FOLDER_ICON_SIZE_MODE_CUSTOM,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
@@ -122,7 +123,6 @@ export function useLaunchpadController() {
 
   const pages = shallowRef(initialPages);
   const pageIndex = ref(0);
-  const searchQuery = ref("");
   const searchPageIndex = ref(0);
   const isDesktopOpen = ref(true);
   const isDesktopClosing = ref(false);
@@ -224,11 +224,30 @@ export function useLaunchpadController() {
     isFolderAppLaunchClosing,
   });
 
-  const isSearchMode = computed(() => searchQuery.value.trim().length > 0);
-  const searchApps = computed(() => filterAppsForSearch(collectAppsFromPages(pages.value), searchQuery.value));
-  const searchPages = computed(() => chunkIntoPages(searchApps.value, pageSize.value));
-  const activePages = computed(() => (isSearchMode.value ? searchPages.value : pages.value));
-  const activePageIndex = computed(() => (isSearchMode.value ? searchPageIndex.value : pageIndex.value));
+  let commitSearchPageIndexHandler = () => {};
+  const {
+    activePageIndex,
+    activePages,
+    clearSearch,
+    handleSearchInput,
+    isSearchMode,
+    searchPages,
+    searchQuery,
+  } = useLaunchpadSearch({
+    clearSelectedIcon,
+    collectAppsFromPages,
+    commitOpenFolder,
+    commitSearchPageIndex: (next) => commitSearchPageIndexHandler(next),
+    filterAppsForSearch,
+    isDragActive: () => isDragActive(),
+    openFolderId,
+    pageIndex,
+    pages,
+    pageSize,
+    schedulePageGridMetrics: () => schedulePageGridMetrics(),
+    searchPageIndex,
+    selectFirstIconInCurrentScope,
+  });
 
   const desktopTrackAnimate = computed(() => ({ x: `-${pageIndex.value * 100}%` }));
   const searchTrackAnimate = computed(() => ({ x: `-${searchPageIndex.value * 100}%` }));
@@ -341,6 +360,7 @@ export function useLaunchpadController() {
     searchPageIndex,
     searchPages,
   });
+  commitSearchPageIndexHandler = commitSearchPageIndex;
   let closeAddManagedAppPageHandler = () => {};
   let closeScanResultDialogHandler = () => {};
   const {
@@ -735,24 +755,6 @@ export function useLaunchpadController() {
       cancelText: "取消",
       onConfirm: forceFillAllPages,
     });
-  }
-
-  function handleSearchInput(event) {
-    const nextQuery = event?.target?.value || "";
-    searchQuery.value = nextQuery;
-    commitSearchPageIndex(0);
-    if (nextQuery.trim() && !isDragActive() && openFolderId.value) commitOpenFolder(null);
-    if (nextQuery.trim()) nextTick(() => selectFirstIconInCurrentScope({ force: true }));
-    else clearSelectedIcon();
-    schedulePageGridMetrics();
-  }
-
-  function clearSearch(options) {
-    searchQuery.value = "";
-    commitSearchPageIndex(0);
-    if (options?.selectFirst) nextTick(() => selectFirstIconInCurrentScope({ force: true }));
-    else if (!options?.keepSelection) clearSelectedIcon();
-    schedulePageGridMetrics();
   }
 
   function getCurrentIconScope() {
