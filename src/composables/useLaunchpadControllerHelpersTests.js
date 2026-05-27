@@ -22,7 +22,9 @@ export function runLaunchpadControllerHelpersTests() {
   assert(pages.value[0].length === 2 && pages.value[1].length === 1, "seed pages should follow the current page size");
   assert(pages.value[0][0].type === "app", "seed items should be normalized into app records");
   assert(pages.value[0][0].name === "Alpha", "seed app names should be preserved");
+  assert(typeof helpers.chunkIntoPages === "function", "page chunking helper should be returned");
   assert(typeof helpers.cloneItem === "function", "layout helpers should be returned");
+  assert(typeof helpers.withFolderPages === "function", "folder page helper should be returned");
   assert(typeof helpers.createLayoutSnapshot === "function", "data helpers should be returned");
 
   const folder = {

@@ -21,7 +21,6 @@ import { useLaunchpadSurfaceInteractions } from "./useLaunchpadSurfaceInteractio
 import { useLaunchpadViewState } from "./useLaunchpadViewState.js";
 import {
   FOLDER_ICON_SIZE_MODE_CUSTOM,
-  FOLDER_ICON_SIZE_MODE_GLOBAL,
   useLaunchpadSettingsConfig,
 } from "./useLaunchpadSettingsConfig.js";
 import { usePageRenderRange } from "./usePageRenderRange.js";
@@ -71,6 +70,7 @@ export function useLaunchpadController() {
     assertNoDuplicateItemIds,
     canCreateDesktopPageAfterDrag,
     canCreateFolderPageAfterDrag,
+    chunkIntoPages,
     cloneItem,
     clonePages,
     collectAppsFromPages,
@@ -96,6 +96,7 @@ export function useLaunchpadController() {
     removeEverywhere,
     repackFoldersForPageSize,
     replaceFolderWithItem,
+    withFolderPages,
     wouldTopLevelInsertOverflow,
     wouldFolderInsertOverflow,
   } = useLaunchpadControllerHelpers({

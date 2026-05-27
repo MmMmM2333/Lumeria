@@ -32,6 +32,7 @@ export function useLaunchpadControllerHelpers(options) {
   pages.value = chunkIntoPages(seeds.map(layoutHelpers.makeApp), pageSize.value);
 
   return {
+    chunkIntoPages,
     ...layoutHelpers,
     ...dataHelpers,
   };
