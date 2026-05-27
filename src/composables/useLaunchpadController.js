@@ -1,13 +1,11 @@
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { appSeeds } from "../mocks/appSeeds.js";
 import {
-  APP_LAUNCH_DURATION,
   DEFAULT_COLS,
   DEFAULT_FOLDER_COLS,
   DEFAULT_FOLDER_ROWS,
   DEFAULT_ICON_SIZE,
   DEFAULT_ROWS,
-  DESKTOP_CLOSE_DURATION,
   DESKTOP_CLOSE_SCALE,
   FOLDER_APP_LAUNCH_DURATION,
   FOLDER_CLOSE_DURATION,
@@ -37,6 +35,7 @@ import { useFolderViewportMetrics } from "./useFolderViewportMetrics.js";
 import { useLaunchpadApps } from "./useLaunchpadApps.js";
 import { useLaunchpadDrag } from "./useLaunchpadDrag.js";
 import { useLaunchpadIconActivation } from "./useLaunchpadIconActivation.js";
+import { useLaunchpadLaunchFlow } from "./useLaunchpadLaunchFlow.js";
 import { useIconSelection } from "./useIconSelection.js";
 import { useLaunchpadKeyboard } from "./useLaunchpadKeyboard.js";
 import { useLaunchpadNative } from "./useLaunchpadNative.js";
@@ -124,14 +123,10 @@ export function useLaunchpadController() {
   const pages = shallowRef(initialPages);
   const pageIndex = ref(0);
   const searchPageIndex = ref(0);
-  const isDesktopOpen = ref(true);
-  const isDesktopClosing = ref(false);
-  const isAppLaunching = ref(false);
   const isFolderAppLaunchClosing = ref(false);
   const isTextlessMode = ref(false);
   const hiddenAppIds = ref([]);
   const keyboardFocusArea = ref("desktop");
-  const launchGhost = shallowRef(null);
   const openFolderId = ref(null);
   const renderedFolderId = ref(null);
   const folderPageIndex = ref(0);
@@ -155,12 +150,14 @@ export function useLaunchpadController() {
   const folderPageRefs = [];
   let folderCloseTimer = null;
   let homeRevealSettleTimer = null;
-  let desktopCloseTimer = null;
-  let appLaunchTimer = null;
-  let launchGhostTimer = null;
   let folderAppLaunchTimer = null;
   let layoutResizeObserver = null;
   let dragControls = null;
+  let cancelLongPressHandler = () => {};
+  let hideNativeWindowHandler = () => {};
+  let launchNativeAppIfAvailableHandler = () => {};
+  let openAppHandler = () => {};
+  let setNativeWindowEffectsEnabledHandler = () => {};
 
   const {
     disconnectFolderViewportObserver,
@@ -278,7 +275,7 @@ export function useLaunchpadController() {
     isFolderAppLaunchClosing,
     isFolderClosing,
     isSearchMode: () => isSearchMode.value,
-    openApp,
+    openApp: (app, source) => openAppHandler(app, source),
     openFolderId,
     pageIndex,
     pages,
@@ -286,6 +283,44 @@ export function useLaunchpadController() {
     selectFirstIconInCurrentScope,
   });
   getCurrentIconScopeHandler = getCurrentIconScope;
+  const {
+    clearAppLaunchTimer,
+    clearDesktopCloseTimer,
+    clearLaunchGhostTimer,
+    closeDesktop,
+    focusDesktopSurface,
+    isAppLaunching,
+    isDesktopClosing,
+    isDesktopOpen,
+    isLaunchpadInteractionBlocked,
+    launchGhost,
+    launchGhostStyle,
+    openApp,
+    openDesktop,
+  } = useLaunchpadLaunchFlow({
+    cancelLongPress: () => cancelLongPressHandler(),
+    clearOpeningIcon,
+    clearSearch,
+    clearSelectedIcon,
+    cloneItem,
+    desktopMainRef,
+    getLaunchIconRect,
+    hasFolderLayer: () => Boolean(renderedFolder.value || openFolderId.value),
+    hideNativeWindow: () => hideNativeWindowHandler(),
+    isDragActive: () => isDragActive(),
+    isFolderAppLaunchClosing,
+    isSearchMode: () => isSearchMode.value,
+    keyboardFocusArea,
+    launchNativeAppIfAvailable: (app) => launchNativeAppIfAvailableHandler(app),
+    normalizeLaunchSource,
+    openingIcon,
+    schedulePageGridMetrics: () => schedulePageGridMetrics(),
+    searchInputRef,
+    setNativeWindowEffectsEnabled: (enabled) => setNativeWindowEffectsEnabledHandler(enabled),
+    startFolderAppLaunchClose,
+    startHomeRevealSettleWindow,
+  });
+  openAppHandler = openApp;
 
   const desktopTrackAnimate = computed(() => ({ x: `-${pageIndex.value * 100}%` }));
   const searchTrackAnimate = computed(() => ({ x: `-${searchPageIndex.value * 100}%` }));
@@ -520,6 +555,9 @@ export function useLaunchpadController() {
     schedulePageGridMetrics,
     searchPageIndex,
   });
+  hideNativeWindowHandler = hideNativeWindow;
+  launchNativeAppIfAvailableHandler = launchNativeAppIfAvailable;
+  setNativeWindowEffectsEnabledHandler = setNativeWindowEffectsEnabled;
   dragControls = useLaunchpadDrag({
     canCreateDesktopPageAfterDrag,
     canCreateFolderPageAfterDrag,
@@ -582,6 +620,7 @@ export function useLaunchpadController() {
     dragMeta,
     isDragActive,
   } = dragControls;
+  cancelLongPressHandler = cancelLongPress;
   isDragActiveHandler = isDragActive;
   getDragMetaHandler = () => dragMeta.value;
   const {
@@ -724,17 +763,6 @@ export function useLaunchpadController() {
     selectedIcon,
     selectionMatchesScope,
   });
-  const launchGhostStyle = computed(() => {
-    const ghost = launchGhost.value;
-    if (!ghost?.rect) return {};
-    return {
-      left: `${ghost.rect.left}px`,
-      top: `${ghost.rect.top}px`,
-      width: `${ghost.rect.width}px`,
-      height: `${ghost.rect.height}px`,
-    };
-  });
-
   function getDesktopGridProjectionKey(pageNumber) {
     return `${isSearchMode.value ? "search" : "desktop"}-grid-${pageNumber}-${desktopProjectionKeyMode.value}`;
   }
@@ -795,84 +823,9 @@ export function useLaunchpadController() {
     });
   }
 
-  function isLaunchpadInteractionBlocked() {
-    return Boolean(!isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value || isFolderAppLaunchClosing.value);
-  }
-
-  function startAppLaunchGhost(app, launchSource) {
-    const rect = getLaunchIconRect(launchSource);
-    if (!rect) {
-      clearLaunchGhost();
-      return;
-    }
-    clearLaunchGhostTimer();
-    launchGhost.value = { app: cloneItem(app), rect };
-    launchGhostTimer = window.setTimeout(clearLaunchGhost, APP_LAUNCH_DURATION + 100);
-  }
-
-  function clearDesktopCloseTimer() {
-    if (desktopCloseTimer) window.clearTimeout(desktopCloseTimer);
-    desktopCloseTimer = null;
-  }
-
-  function clearAppLaunchTimer() {
-    if (appLaunchTimer) window.clearTimeout(appLaunchTimer);
-    appLaunchTimer = null;
-  }
-
-  function clearLaunchGhostTimer() {
-    if (launchGhostTimer) window.clearTimeout(launchGhostTimer);
-    launchGhostTimer = null;
-  }
-
-  function clearLaunchGhost() {
-    clearLaunchGhostTimer();
-    launchGhost.value = null;
-  }
-
   function clearFolderAppLaunchTimer() {
     if (folderAppLaunchTimer) window.clearTimeout(folderAppLaunchTimer);
     folderAppLaunchTimer = null;
-  }
-
-  function focusDesktopSurface() {
-    keyboardFocusArea.value = "desktop";
-    const element = getElementFromRef(desktopMainRef);
-    element?.focus?.({ preventScroll: true });
-  }
-
-  function closeDesktop(options) {
-    if (isDragActive()) return;
-    cancelLongPress();
-    setNativeWindowEffectsEnabled(false);
-    const shouldClearSearchAfterClose = Boolean(options?.clearSearch && isSearchMode.value);
-    clearSelectedIcon();
-    keyboardFocusArea.value = "desktop";
-    searchInputRef.value?.blur?.();
-    isDesktopClosing.value = true;
-    isDesktopOpen.value = false;
-    clearDesktopCloseTimer();
-    desktopCloseTimer = window.setTimeout(() => {
-      if (shouldClearSearchAfterClose) clearSearch({ keepSelection: false });
-      isDesktopClosing.value = false;
-      clearDesktopCloseTimer();
-    }, DESKTOP_CLOSE_DURATION);
-  }
-
-  function openDesktop() {
-    clearDesktopCloseTimer();
-    clearAppLaunchTimer();
-    clearLaunchGhost();
-    clearOpeningIcon();
-    startHomeRevealSettleWindow();
-    isDesktopClosing.value = false;
-    isAppLaunching.value = false;
-    isDesktopOpen.value = true;
-    keyboardFocusArea.value = "desktop";
-    nextTick(() => {
-      schedulePageGridMetrics();
-      focusDesktopSurface();
-    });
   }
 
   function startFolderAppLaunchClose() {
@@ -894,31 +847,6 @@ export function useLaunchpadController() {
       folderPageRefs.length = 0;
       clearFolderAppLaunchTimer();
     }, FOLDER_APP_LAUNCH_DURATION);
-  }
-
-  function openApp(app, source) {
-    if (!app || app.type !== "app" || isDragActive() || isLaunchpadInteractionBlocked()) return;
-
-    const launchSource = normalizeLaunchSource(app, source);
-    const shouldClearSearchAfterLaunch = isSearchMode.value;
-    startAppLaunchGhost(app, launchSource);
-    openingIcon.value = launchSource;
-    isAppLaunching.value = true;
-
-    if (renderedFolder.value || openFolderId.value) startFolderAppLaunchClose();
-    closeDesktop({ clearSearch: false });
-    window.setTimeout(() => {
-      launchNativeAppIfAvailable(app);
-    }, 0);
-
-    clearAppLaunchTimer();
-    appLaunchTimer = window.setTimeout(() => {
-      if (shouldClearSearchAfterLaunch) clearSearch({ keepSelection: false });
-      clearOpeningIcon();
-      isAppLaunching.value = false;
-      clearAppLaunchTimer();
-      hideNativeWindow();
-    }, APP_LAUNCH_DURATION);
   }
 
   function removeAppById(appId) {
