@@ -7,9 +7,6 @@ import {
   DEFAULT_ICON_SIZE,
   DEFAULT_ROWS,
   DESKTOP_CLOSE_SCALE,
-  FOLDER_APP_LAUNCH_DURATION,
-  FOLDER_CLOSE_DURATION,
-  HOME_REVEAL_SETTLE_DURATION,
 } from "./launchpadConstants.js";
 import {
   appLaunchGhostTransition,
@@ -34,6 +31,7 @@ import { useFolderMotionGeometry } from "./useFolderMotionGeometry.js";
 import { useFolderViewportMetrics } from "./useFolderViewportMetrics.js";
 import { useLaunchpadApps } from "./useLaunchpadApps.js";
 import { useLaunchpadDrag } from "./useLaunchpadDrag.js";
+import { useLaunchpadFolderFlow } from "./useLaunchpadFolderFlow.js";
 import { useLaunchpadIconActivation } from "./useLaunchpadIconActivation.js";
 import { useLaunchpadLaunchFlow } from "./useLaunchpadLaunchFlow.js";
 import { useIconSelection } from "./useIconSelection.js";
@@ -123,18 +121,10 @@ export function useLaunchpadController() {
   const pages = shallowRef(initialPages);
   const pageIndex = ref(0);
   const searchPageIndex = ref(0);
-  const isFolderAppLaunchClosing = ref(false);
   const isTextlessMode = ref(false);
   const hiddenAppIds = ref([]);
   const keyboardFocusArea = ref("desktop");
-  const openFolderId = ref(null);
-  const renderedFolderId = ref(null);
   const folderPageIndex = ref(0);
-  const isFolderClosing = ref(false);
-  const folderClosingSnapshot = shallowRef(null);
-  const folderSession = shallowRef(null);
-  const isHomeRevealSettling = ref(false);
-  const desktopProjectionEpoch = ref(0);
 
   const rootRef = ref(null);
   const shellRef = ref(null);
@@ -148,9 +138,6 @@ export function useLaunchpadController() {
   const dragPreviewRef = ref(null);
   const pageRefs = [];
   const folderPageRefs = [];
-  let folderCloseTimer = null;
-  let homeRevealSettleTimer = null;
-  let folderAppLaunchTimer = null;
   let layoutResizeObserver = null;
   let dragControls = null;
   let cancelLongPressHandler = () => {};
@@ -189,15 +176,42 @@ export function useLaunchpadController() {
     selectionMatchesScope,
   } = useIconSelection({ getCurrentIconScope: () => getCurrentIconScopeHandler() });
 
-  const renderedFolder = computed(() => {
-    if (!renderedFolderId.value) return folderClosingSnapshot.value;
-    return findFolder(pages.value, renderedFolderId.value)?.item || folderClosingSnapshot.value;
-  });
-
-  const folderPages = computed(() => {
-    if (!renderedFolder.value) return [];
-    const minPageCount = dragControls?.isDragActive() && openFolderId.value === renderedFolder.value.id ? folderPageIndex.value + 1 : 1;
-    return getVisibleFolderPages(renderedFolder.value, folderPageSize.value, minPageCount);
+  let getFolderIconMotionGeometryHandler = () => null;
+  let getFolderMotionGeometryHandler = () => null;
+  let setFolderMotionGeometryHandler = () => {};
+  let clearFolderPageTurnHandler = () => {};
+  const {
+    clearFolderAppLaunchTimer,
+    clearFolderCloseTimer,
+    clearHomeRevealSettleTimer,
+    commitFolderSession,
+    commitOpenFolder,
+    desktopProjectionEpoch,
+    finishHomeRevealSettleWindow,
+    folderPages,
+    folderSession,
+    isFolderAppLaunchClosing,
+    isFolderClosing,
+    isFolderLayerActive,
+    isHomeRevealSettling,
+    openFolderId,
+    renderedFolder,
+    startFolderAppLaunchClose,
+    startHomeRevealSettleWindow,
+  } = useLaunchpadFolderFlow({
+    clearFolderPageTurn: () => clearFolderPageTurnHandler(),
+    cloneItem,
+    findFolder,
+    folderPageIndex,
+    folderPageRefs,
+    folderPageSize,
+    getFolderIconMotionGeometry: (folderId) => getFolderIconMotionGeometryHandler(folderId),
+    getFolderMotionGeometry: () => getFolderMotionGeometryHandler(),
+    getVisibleFolderPages,
+    isDragActive: () => dragControls?.isDragActive() || false,
+    pageRefs,
+    pages,
+    setFolderMotionGeometry: (next) => setFolderMotionGeometryHandler(next),
   });
   const {
     folderMotionGeometry,
@@ -210,6 +224,11 @@ export function useLaunchpadController() {
     gridRows,
     pageRefs,
   });
+  getFolderIconMotionGeometryHandler = getFolderIconMotionGeometry;
+  getFolderMotionGeometryHandler = () => folderMotionGeometry.value;
+  setFolderMotionGeometryHandler = (next) => {
+    folderMotionGeometry.value = next;
+  };
   const {
     effectiveFolderIconSize,
     folderGridStyle,
@@ -325,7 +344,6 @@ export function useLaunchpadController() {
   const desktopTrackAnimate = computed(() => ({ x: `-${pageIndex.value * 100}%` }));
   const searchTrackAnimate = computed(() => ({ x: `-${searchPageIndex.value * 100}%` }));
   const activeDesktopTrackAnimate = computed(() => (isSearchMode.value ? searchTrackAnimate.value : desktopTrackAnimate.value));
-  const isFolderLayerActive = computed(() => Boolean(openFolderId.value || renderedFolderId.value || isFolderClosing.value || isFolderAppLaunchClosing.value));
   const shouldFreezeDesktopProjection = computed(() => Boolean(isFolderLayerActive.value || isHomeRevealSettling.value || !isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value));
   const shouldSnapDesktopTrack = computed(() => Boolean(isFolderLayerActive.value || isHomeRevealSettling.value || !isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value));
   const desktopLayoutEnabled = computed(() => !shouldFreezeDesktopProjection.value);
@@ -621,6 +639,7 @@ export function useLaunchpadController() {
     isDragActive,
   } = dragControls;
   cancelLongPressHandler = cancelLongPress;
+  clearFolderPageTurnHandler = clearFolderPageTurn;
   isDragActiveHandler = isDragActive;
   getDragMetaHandler = () => dragMeta.value;
   const {
@@ -823,32 +842,6 @@ export function useLaunchpadController() {
     });
   }
 
-  function clearFolderAppLaunchTimer() {
-    if (folderAppLaunchTimer) window.clearTimeout(folderAppLaunchTimer);
-    folderAppLaunchTimer = null;
-  }
-
-  function startFolderAppLaunchClose() {
-    if (!renderedFolder.value || isFolderAppLaunchClosing.value) return;
-    const closingId = renderedFolderId.value || openFolderId.value || renderedFolder.value.id;
-    const current = closingId ? findFolder(pages.value, closingId)?.item : null;
-    folderClosingSnapshot.value = current ? cloneItem(current) : cloneItem(renderedFolder.value);
-    openFolderId.value = null;
-    isFolderClosing.value = false;
-    isFolderAppLaunchClosing.value = true;
-    clearFolderPageTurn();
-    clearFolderCloseTimer();
-    clearFolderAppLaunchTimer();
-    folderAppLaunchTimer = window.setTimeout(() => {
-      renderedFolderId.value = null;
-      folderClosingSnapshot.value = null;
-      isFolderAppLaunchClosing.value = false;
-      folderPageIndex.value = 0;
-      folderPageRefs.length = 0;
-      clearFolderAppLaunchTimer();
-    }, FOLDER_APP_LAUNCH_DURATION);
-  }
-
   function removeAppById(appId) {
     if (!appId || isDragActive()) return;
     cancelLongPress();
@@ -858,73 +851,6 @@ export function useLaunchpadController() {
     if (openedFolderId && !findFolder(next, openedFolderId)) commitOpenFolder(null);
     commitPageIndex(pageIndex.value);
     commitSearchPageIndex(searchPageIndex.value);
-  }
-
-  function clearFolderCloseTimer() {
-    if (folderCloseTimer) window.clearTimeout(folderCloseTimer);
-    folderCloseTimer = null;
-  }
-
-  function clearHomeRevealSettleTimer() {
-    if (homeRevealSettleTimer) window.clearTimeout(homeRevealSettleTimer);
-    homeRevealSettleTimer = null;
-  }
-
-  function finishHomeRevealSettleWindow() {
-    clearHomeRevealSettleTimer();
-    if (!isHomeRevealSettling.value) return;
-    desktopProjectionEpoch.value += 1;
-    isHomeRevealSettling.value = false;
-    pageRefs.length = 0;
-  }
-
-  function startHomeRevealSettleWindow() {
-    clearHomeRevealSettleTimer();
-    isHomeRevealSettling.value = true;
-    homeRevealSettleTimer = window.setTimeout(finishHomeRevealSettleWindow, HOME_REVEAL_SETTLE_DURATION);
-  }
-
-  function commitOpenFolder(next, options) {
-    if (next) {
-      const isSameFolder = openFolderId.value === next && renderedFolderId.value === next;
-      const originGeometry = options?.originGeometry;
-      clearFolderCloseTimer();
-      clearFolderAppLaunchTimer();
-      finishHomeRevealSettleWindow();
-      isFolderClosing.value = false;
-      isFolderAppLaunchClosing.value = false;
-      folderClosingSnapshot.value = null;
-      folderMotionGeometry.value = originGeometry ? { ...originGeometry, id: next } : getFolderIconMotionGeometry(next);
-      openFolderId.value = next;
-      renderedFolderId.value = next;
-      if (!isSameFolder) folderPageIndex.value = 0;
-      return;
-    }
-
-    const closingId = renderedFolderId.value || openFolderId.value;
-    const current = closingId ? findFolder(pages.value, closingId)?.item : null;
-    const fallback = renderedFolder.value;
-    folderClosingSnapshot.value = current ? cloneItem(current) : fallback ? cloneItem(fallback) : null;
-    if (!folderMotionGeometry.value?.id || folderMotionGeometry.value.id !== closingId) {
-      folderMotionGeometry.value = getFolderIconMotionGeometry(closingId);
-    }
-    openFolderId.value = null;
-    isFolderClosing.value = true;
-    startHomeRevealSettleWindow();
-    clearFolderPageTurn();
-    clearFolderCloseTimer();
-    folderCloseTimer = window.setTimeout(() => {
-      renderedFolderId.value = null;
-      folderClosingSnapshot.value = null;
-      isFolderClosing.value = false;
-      folderPageIndex.value = 0;
-      folderPageRefs.length = 0;
-      clearFolderCloseTimer();
-    }, FOLDER_CLOSE_DURATION);
-  }
-
-  function commitFolderSession(next) {
-    folderSession.value = next;
   }
 
   function handleDesktopSurfacePointerDown(event) {
