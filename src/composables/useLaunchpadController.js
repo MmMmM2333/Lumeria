@@ -25,7 +25,6 @@ import {
 } from "./launchpadMotion.js";
 import {
   chunkIntoPages,
-  clamp,
   createLaunchpadLayoutHelpers,
   cx,
   makePageSize,
@@ -37,6 +36,7 @@ import { useFolderMotionGeometry } from "./useFolderMotionGeometry.js";
 import { useFolderViewportMetrics } from "./useFolderViewportMetrics.js";
 import { useLaunchpadApps } from "./useLaunchpadApps.js";
 import { useLaunchpadDrag } from "./useLaunchpadDrag.js";
+import { useLaunchpadIconActivation } from "./useLaunchpadIconActivation.js";
 import { useIconSelection } from "./useIconSelection.js";
 import { useLaunchpadKeyboard } from "./useLaunchpadKeyboard.js";
 import { useLaunchpadNative } from "./useLaunchpadNative.js";
@@ -172,6 +172,13 @@ export function useLaunchpadController() {
     folderViewportRef,
   });
 
+  let getCurrentIconScopeHandler = () => ({
+    area: "desktop",
+    pageIndex: 0,
+    folderId: null,
+    items: [],
+    columns: gridCols.value,
+  });
   const {
     clearOpeningIcon,
     clearSelectedIcon,
@@ -183,7 +190,7 @@ export function useLaunchpadController() {
     selectFirstIconInCurrentScope,
     selectedIcon,
     selectionMatchesScope,
-  } = useIconSelection({ getCurrentIconScope });
+  } = useIconSelection({ getCurrentIconScope: () => getCurrentIconScopeHandler() });
 
   const renderedFolder = computed(() => {
     if (!renderedFolderId.value) return folderClosingSnapshot.value;
@@ -248,6 +255,37 @@ export function useLaunchpadController() {
     searchPageIndex,
     selectFirstIconInCurrentScope,
   });
+  const {
+    getCurrentIconScope,
+    getLaunchIconRect,
+    normalizeLaunchSource,
+    openSelectedIcon,
+  } = useLaunchpadIconActivation({
+    clearSelectedIcon,
+    commitOpenFolder,
+    findInFolder,
+    findSelectedItem,
+    findTopLevel,
+    folderCols,
+    folderPageIndex,
+    getFolderPages: () => folderPages.value,
+    getRenderedFolder: () => renderedFolder.value,
+    getSearchPages: () => searchPages.value,
+    getSelectedIcon: () => selectedIcon.value,
+    getVisibleDesktopPage,
+    getVisibleFolderPage,
+    gridCols,
+    isFolderAppLaunchClosing,
+    isFolderClosing,
+    isSearchMode: () => isSearchMode.value,
+    openApp,
+    openFolderId,
+    pageIndex,
+    pages,
+    searchPageIndex,
+    selectFirstIconInCurrentScope,
+  });
+  getCurrentIconScopeHandler = getCurrentIconScope;
 
   const desktopTrackAnimate = computed(() => ({ x: `-${pageIndex.value * 100}%` }));
   const searchTrackAnimate = computed(() => ({ x: `-${searchPageIndex.value * 100}%` }));
@@ -757,116 +795,8 @@ export function useLaunchpadController() {
     });
   }
 
-  function getCurrentIconScope() {
-    if (renderedFolder.value && (openFolderId.value || isFolderClosing.value || isFolderAppLaunchClosing.value)) {
-      const pageNumber = clamp(folderPageIndex.value, 0, Math.max(0, folderPages.value.length - 1));
-      return {
-        area: "folder",
-        pageIndex: pageNumber,
-        folderId: renderedFolder.value.id,
-        items: getVisibleFolderPage(folderPages.value[pageNumber] || []),
-        columns: folderCols.value,
-      };
-    }
-
-    if (isSearchMode.value) {
-      const pageNumber = clamp(searchPageIndex.value, 0, Math.max(0, searchPages.value.length - 1));
-      return {
-        area: "search",
-        pageIndex: pageNumber,
-        folderId: null,
-        items: getVisibleDesktopPage(searchPages.value[pageNumber] || []),
-        columns: gridCols.value,
-      };
-    }
-
-    const pageNumber = clamp(pageIndex.value, 0, Math.max(0, pages.value.length - 1));
-    return {
-      area: "desktop",
-      pageIndex: pageNumber,
-      folderId: null,
-      items: getVisibleDesktopPage(pages.value[pageNumber] || []),
-      columns: gridCols.value,
-    };
-  }
-
   function isLaunchpadInteractionBlocked() {
     return Boolean(!isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value || isFolderAppLaunchClosing.value);
-  }
-
-  function openSelectedIcon() {
-    const selected = findSelectedItem();
-    if (!selected) {
-      selectFirstIconInCurrentScope({ force: true });
-      return;
-    }
-
-    if (selected.item.type === "folder" && selected.scope.area === "desktop") {
-      commitOpenFolder(selected.item.id);
-      clearSelectedIcon();
-      return;
-    }
-
-    if (selected.item.type === "app") {
-      const source =
-        selected.scope.area === "folder"
-          ? { type: "folder", folderId: selected.scope.folderId, pageIndex: selected.scope.pageIndex }
-          : { type: selected.scope.area === "search" ? "search" : "page", pageIndex: selected.scope.pageIndex };
-      openApp(selected.item, source);
-    }
-  }
-
-  function normalizeLaunchSource(app, source) {
-    if (source?.type === "folder") {
-      return { area: "folder", id: app.id, pageIndex: source.pageIndex ?? 0, folderId: source.folderId || renderedFolder.value?.id || null };
-    }
-    if (source?.type === "search") {
-      return { area: "search", id: app.id, pageIndex: source.pageIndex ?? searchPageIndex.value, folderId: null };
-    }
-    if (source?.type === "page") {
-      return { area: "desktop", id: app.id, pageIndex: source.pageIndex ?? pageIndex.value, folderId: null };
-    }
-
-    const selected = selectedIcon.value;
-    if (selected?.id === app.id) return { ...selected };
-
-    if (renderedFolder.value) {
-      const inFolder = findInFolder(pages.value, renderedFolder.value.id, app.id);
-      if (inFolder) return { area: "folder", id: app.id, pageIndex: inFolder.pageIndex, folderId: renderedFolder.value.id };
-    }
-
-    if (isSearchMode.value) {
-      for (let currentPage = 0; currentPage < searchPages.value.length; currentPage += 1) {
-        if ((searchPages.value[currentPage] || []).some((item) => item.id === app.id)) {
-          return { area: "search", id: app.id, pageIndex: currentPage, folderId: null };
-        }
-      }
-    }
-
-    const topLevel = findTopLevel(pages.value, app.id);
-    if (topLevel) return { area: "desktop", id: app.id, pageIndex: topLevel.pageIndex, folderId: null };
-    return { area: "desktop", id: app.id, pageIndex: pageIndex.value, folderId: null };
-  }
-
-  function makeLaunchIconSelector(launchSource) {
-    if (!launchSource?.id) return null;
-    const id = escapeAttributeValue(launchSource.id);
-    const area = escapeAttributeValue(launchSource.area);
-    const page = Number.isFinite(Number(launchSource.pageIndex)) ? Number(launchSource.pageIndex) : 0;
-    let selector = `.icon-hit-target[data-launch-item-id="${id}"][data-launch-area="${area}"][data-launch-page-index="${page}"]`;
-    if (launchSource.area === "folder" && launchSource.folderId) {
-      selector += `[data-launch-folder-id="${escapeAttributeValue(launchSource.folderId)}"]`;
-    }
-    return `${selector} .icon-box`;
-  }
-
-  function getLaunchIconRect(launchSource) {
-    if (typeof document === "undefined") return null;
-    const selector = makeLaunchIconSelector(launchSource);
-    const node = selector ? document.querySelector(selector) : null;
-    const rect = node?.getBoundingClientRect?.();
-    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
-    return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
   }
 
   function startAppLaunchGhost(app, launchSource) {
@@ -1000,10 +930,6 @@ export function useLaunchpadController() {
     if (openedFolderId && !findFolder(next, openedFolderId)) commitOpenFolder(null);
     commitPageIndex(pageIndex.value);
     commitSearchPageIndex(searchPageIndex.value);
-  }
-
-  function escapeAttributeValue(value) {
-    return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   }
 
   function clearFolderCloseTimer() {
