@@ -27,6 +27,7 @@ import { useIconSelection } from "./useIconSelection.js";
 import { useLaunchpadKeyboard } from "./useLaunchpadKeyboard.js";
 import { useLaunchpadNative } from "./useLaunchpadNative.js";
 import { useLaunchpadNotices } from "./useLaunchpadNotices.js";
+import { useLaunchpadPageCommands } from "./useLaunchpadPageCommands.js";
 import { useLaunchpadSearch } from "./useLaunchpadSearch.js";
 import { useLaunchpadViewState } from "./useLaunchpadViewState.js";
 import {
@@ -416,6 +417,45 @@ export function useLaunchpadController() {
     searchPages,
   });
   commitSearchPageIndexHandler = commitSearchPageIndex;
+  const {
+    closeLayoutRecoveryNotice,
+    closeWarningDialog,
+    confirmWarningDialog,
+    handleLayoutRecovered,
+    layoutRecoveryNotice,
+    openWarningDialog,
+    warningDialog,
+  } = useLaunchpadNotices();
+  const {
+    commitPages,
+    confirmForceFillAllPages,
+    removeAppById,
+    renameFolder,
+  } = useLaunchpadPageCommands({
+    assertNoDuplicateItemIds,
+    cancelLongPress: () => cancelLongPressHandler(),
+    chunkIntoPages,
+    clonePages,
+    compactPages,
+    commitFolderPageIndex,
+    commitOpenFolder,
+    commitPageIndex,
+    commitSearchPageIndex,
+    findFolder,
+    flattenTopLevelPages,
+    folderPageIndex,
+    folderPageSize,
+    isDragActive: () => isDragActiveHandler(),
+    openFolderId,
+    openWarningDialog,
+    pageIndex,
+    pages,
+    pageSize,
+    removeEverywhere,
+    renderedFolder,
+    schedulePageGridMetrics,
+    searchPageIndex,
+  });
   let closeAddManagedAppPageHandler = () => {};
   let closeScanResultDialogHandler = () => {};
   const {
@@ -482,15 +522,6 @@ export function useLaunchpadController() {
     schedulePageGridMetrics,
     searchPageIndex,
   });
-  const {
-    closeLayoutRecoveryNotice,
-    closeWarningDialog,
-    confirmWarningDialog,
-    handleLayoutRecovered,
-    layoutRecoveryNotice,
-    openWarningDialog,
-    warningDialog,
-  } = useLaunchpadNotices();
   const {
     clearNativeEventListeners,
     clearNativeSaveTimer,
@@ -754,63 +785,6 @@ export function useLaunchpadController() {
   function setFolderPageRef(node, targetPageIndex) {
     if (!node) return;
     folderPageRefs[targetPageIndex] = node.$el || node;
-  }
-
-  function placementKey(kind) {
-    const parts = Array.prototype.slice.call(arguments, 1);
-    return `${kind}:${parts.join(":")}`;
-  }
-
-  function commitPages(next) {
-    const isProduction = typeof process !== "undefined" && process.env && process.env.NODE_ENV === "production";
-    if (!isProduction && !isDragActive()) assertNoDuplicateItemIds(next);
-    pages.value = next;
-    if (renderedFolder.value) commitFolderPageIndex(folderPageIndex.value);
-  }
-
-  function renameFolder(folderId, name) {
-    const nextName = String(name || "").slice(0, 32) || "新文件夹";
-    const next = clonePages(pages.value);
-    const folder = findFolder(next, folderId);
-    if (!folder) return;
-    folder.item.name = nextName;
-    commitPages(next);
-  }
-
-  function forceFillAllPages() {
-    if (isDragActive()) return;
-    const items = flattenTopLevelPages(pages.value);
-    const filled = chunkIntoPages(items, pageSize.value);
-    commitPages(compactPages(filled, { folderPageSize: folderPageSize.value }));
-    commitPageIndex(0);
-    commitSearchPageIndex(0);
-    schedulePageGridMetrics();
-  }
-
-  function confirmForceFillAllPages() {
-    if (typeof window === "undefined") {
-      forceFillAllPages();
-      return;
-    }
-
-    openWarningDialog({
-      title: "重新整理桌面页面？",
-      message: "这会按当前顺序压实所有桌面页面，可能改变当前分页布局。",
-      confirmText: "重新整理",
-      cancelText: "取消",
-      onConfirm: forceFillAllPages,
-    });
-  }
-
-  function removeAppById(appId) {
-    if (!appId || isDragActive()) return;
-    cancelLongPress();
-    const openedFolderId = openFolderId.value;
-    const next = removeEverywhere(pages.value, appId);
-    commitPages(next);
-    if (openedFolderId && !findFolder(next, openedFolderId)) commitOpenFolder(null);
-    commitPageIndex(pageIndex.value);
-    commitSearchPageIndex(searchPageIndex.value);
   }
 
   function handleDesktopSurfacePointerDown(event) {
