@@ -1,6 +1,7 @@
 import { createLaunchpadLayoutHelpers, makePageSize } from "./launchpadLayout.js";
 import { runFolderLayoutStylesTests } from "../composables/useFolderLayoutStylesTests.js";
 import { runLaunchpadDragTests } from "../composables/useLaunchpadDragTests.js";
+import { runLaunchpadControllerHelpersTests } from "../composables/useLaunchpadControllerHelpersTests.js";
 import { runLaunchpadControllerStateTests } from "../composables/useLaunchpadControllerStateTests.js";
 import { runLaunchpadFolderFlowTests } from "../composables/useLaunchpadFolderFlowTests.js";
 import { runLaunchpadIconActivationTests } from "../composables/useLaunchpadIconActivationTests.js";
@@ -72,6 +73,7 @@ runLaunchpadHelperTests({
 });
 runLaunchpadDataTests();
 runLaunchpadDragTests();
+runLaunchpadControllerHelpersTests();
 runLaunchpadControllerStateTests();
 runLaunchpadFolderFlowTests();
 runLaunchpadIconActivationTests();

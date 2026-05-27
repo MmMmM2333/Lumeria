@@ -1,11 +1,6 @@
-import { appSeeds } from "../mocks/appSeeds.js";
-import {
-  chunkIntoPages,
-  createLaunchpadLayoutHelpers,
-  cx,
-} from "../domain/launchpadLayout.js";
-import { createLaunchpadDataHelpers } from "../domain/launchpadData.js";
+import { cx } from "../domain/launchpadLayout.js";
 import { useAltEditMode } from "./useAltEditMode.js";
+import { useLaunchpadControllerHelpers } from "./useLaunchpadControllerHelpers.js";
 import { useLaunchpadControllerState } from "./useLaunchpadControllerState.js";
 import { useFolderLayoutStyles } from "./useFolderLayoutStyles.js";
 import { useFolderMotionGeometry } from "./useFolderMotionGeometry.js";
@@ -71,58 +66,43 @@ export function useLaunchpadController() {
     searchRef,
     shellRef,
   } = useLaunchpadControllerState();
-  const layoutHelpers = createLaunchpadLayoutHelpers({
-    getPageSize: () => pageSize.value,
-    getFolderPageSize: () => folderPageSize.value,
-  });
   const {
-    getFolderChildPages,
-    withFolderPages,
+    appendAppsToPages,
+    assertNoDuplicateItemIds,
+    canCreateDesktopPageAfterDrag,
+    canCreateFolderPageAfterDrag,
+    cloneItem,
+    clonePages,
+    collectAppsFromPages,
+    compactPages,
+    createLayoutSnapshot,
+    ensurePage,
+    filterAppsForSearch,
+    findFolder,
+    findInFolder,
+    findTopLevel,
+    flattenTopLevelPages,
     folderPreviewSlots,
+    getFolderChildPages,
     getVisibleDesktopPage,
     getVisibleFolderPage,
     getVisibleFolderPages,
-    flattenTopLevelPages,
-    makeId,
-    makeApp,
-    cloneItem,
-    clonePages,
-    compactPages,
-    ensurePage,
-    findTopLevel,
-    findFolder,
-    findInFolder,
-    collectAppsFromPages,
-    filterAppsForSearch,
-    canCreateDesktopPageAfterDrag,
-    canCreateFolderPageAfterDrag,
-    assertNoDuplicateItemIds,
-    removeEverywhere,
     insertTopLevelItem,
-    previewTopLevelItemWithoutOverflow,
     insertAppIntoFolder,
+    makeId,
+    mergeNativeCatalogWithSavedLayout,
     previewAppIntoFolderWithoutOverflow,
+    previewTopLevelItemWithoutOverflow,
+    removeEverywhere,
+    repackFoldersForPageSize,
+    replaceFolderWithItem,
     wouldTopLevelInsertOverflow,
     wouldFolderInsertOverflow,
-    replaceFolderWithItem,
-    repackFoldersForPageSize,
-  } = layoutHelpers;
-  const {
-    appendAppsToPages,
-    createLayoutSnapshot,
-    mergeNativeCatalogWithSavedLayout,
-  } = createLaunchpadDataHelpers({
-    cloneItem,
-    clonePages,
-    compactPages,
-    ensurePage,
-    getFolderChildPages,
-    getFolderPageSize: () => folderPageSize.value,
-    getPageSize: () => pageSize.value,
-    makeId,
-    withFolderPages,
+  } = useLaunchpadControllerHelpers({
+    folderPageSize,
+    pageSize,
+    pages,
   });
-  pages.value = chunkIntoPages(appSeeds.map(makeApp), pageSize.value);
   let dragControls = null;
   let cancelLongPressHandler = () => {};
   let hideNativeWindowHandler = () => {};
