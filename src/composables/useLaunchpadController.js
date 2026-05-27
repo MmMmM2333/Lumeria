@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, ref, shallowRef } from "vue";
 import { appSeeds } from "../mocks/appSeeds.js";
 import {
   DEFAULT_COLS,
@@ -25,6 +25,7 @@ import { useLaunchpadIconActivation } from "./useLaunchpadIconActivation.js";
 import { useLaunchpadLaunchFlow } from "./useLaunchpadLaunchFlow.js";
 import { useIconSelection } from "./useIconSelection.js";
 import { useLaunchpadKeyboard } from "./useLaunchpadKeyboard.js";
+import { useLaunchpadLifecycle } from "./useLaunchpadLifecycle.js";
 import { useLaunchpadNative } from "./useLaunchpadNative.js";
 import { useLaunchpadNotices } from "./useLaunchpadNotices.js";
 import { useLaunchpadPageCommands } from "./useLaunchpadPageCommands.js";
@@ -37,7 +38,7 @@ import {
   useLaunchpadSettingsConfig,
 } from "./useLaunchpadSettingsConfig.js";
 import { usePageRenderRange } from "./usePageRenderRange.js";
-import { getElementFromRef, usePageGridMetrics } from "./usePageGridMetrics.js";
+import { usePageGridMetrics } from "./usePageGridMetrics.js";
 import { useSettingsPanelFlow } from "./useSettingsPanelFlow.js";
 
 export function useLaunchpadController() {
@@ -130,7 +131,6 @@ export function useLaunchpadController() {
   const dragPreviewRef = ref(null);
   const pageRefs = [];
   const folderPageRefs = [];
-  let layoutResizeObserver = null;
   let dragControls = null;
   let cancelLongPressHandler = () => {};
   let hideNativeWindowHandler = () => {};
@@ -794,59 +794,59 @@ export function useLaunchpadController() {
     pageRefs,
   });
 
-  watch([gridRows, gridCols, folderRows, folderCols, iconSize, isTextlessMode, isSearchMode], schedulePageGridMetrics, { flush: "post" });
-  watch([renderedFolder, folderRows, folderCols, effectiveFolderIconSize, isTextlessMode, visibleFolderRowCount], scheduleFolderViewportMetrics, { flush: "post" });
-  watch(folderViewportRef, observeFolderViewport, { flush: "post" });
-  watch(activePages, schedulePageGridMetrics, { flush: "post" });
-  watch([pages, gridRows, gridCols, folderRows, folderCols, iconSize, folderIconSizeMode, folderIconSize, isTextlessMode, hiddenAppIds], scheduleNativeLayoutSave, { flush: "post" });
-  watch(filteredManagedApps, syncManagedAppState, { flush: "post" });
-
-  onMounted(() => {
-    window.addEventListener("keydown", handleGlobalKeydown);
-    window.addEventListener("keyup", handleAltKeyUp);
-    window.addEventListener("blur", handleWindowBlur);
-    window.addEventListener("resize", updatePageGridMetrics);
-    window.addEventListener("resize", updateFolderViewportHeight);
-    schedulePageGridMetrics();
-    scheduleFolderViewportMetrics();
-    registerNativeEventListeners().finally(loadNativeLaunchpadData);
-
-    if (typeof ResizeObserver !== "undefined") {
-      layoutResizeObserver = new ResizeObserver(updatePageGridMetrics);
-      [rootRef, headerRef, searchRef, desktopMainRef, pageDotsRef].forEach((nodeRef) => {
-        const element = getElementFromRef(nodeRef);
-        if (element) layoutResizeObserver.observe(element);
-      });
-    }
-
-  });
-
-  onBeforeUnmount(() => {
-    detachDragListeners();
-    cancelPreviewRaf();
-    clearPendingTarget();
-    clearPageTurn();
-    clearFolderPageTurn();
-    clearFolderCloseTimer();
-    clearFolderAppLaunchTimer();
-    clearSettingsPanelCloseTimer();
-    clearHomeRevealSettleTimer();
-    clearDesktopCloseTimer();
-    clearAppLaunchTimer();
-    clearLaunchGhostTimer();
-    clearPageJumpRenderRange();
-    clearNativeSaveTimer();
-    clearNativeEventListeners();
-    cancelLongPress();
-    clearAltEditTimer();
-    if (layoutResizeObserver) layoutResizeObserver.disconnect();
-    layoutResizeObserver = null;
-    disconnectFolderViewportObserver();
-    window.removeEventListener("keydown", handleGlobalKeydown);
-    window.removeEventListener("keyup", handleAltKeyUp);
-    window.removeEventListener("blur", handleWindowBlur);
-    window.removeEventListener("resize", updatePageGridMetrics);
-    window.removeEventListener("resize", updateFolderViewportHeight);
+  useLaunchpadLifecycle({
+    activePages,
+    cancelLongPress,
+    cancelPreviewRaf,
+    clearAltEditTimer,
+    clearAppLaunchTimer,
+    clearDesktopCloseTimer,
+    clearFolderAppLaunchTimer,
+    clearFolderCloseTimer,
+    clearFolderPageTurn,
+    clearHomeRevealSettleTimer,
+    clearLaunchGhostTimer,
+    clearNativeEventListeners,
+    clearNativeSaveTimer,
+    clearPageJumpRenderRange,
+    clearPageTurn,
+    clearPendingTarget,
+    clearSettingsPanelCloseTimer,
+    desktopMainRef,
+    detachDragListeners,
+    disconnectFolderViewportObserver,
+    effectiveFolderIconSize,
+    filteredManagedApps,
+    folderCols,
+    folderIconSize,
+    folderIconSizeMode,
+    folderRows,
+    folderViewportRef,
+    gridCols,
+    gridRows,
+    handleAltKeyUp,
+    handleGlobalKeydown,
+    handleWindowBlur,
+    headerRef,
+    hiddenAppIds,
+    iconSize,
+    isSearchMode,
+    isTextlessMode,
+    loadNativeLaunchpadData,
+    observeFolderViewport,
+    pageDotsRef,
+    pages,
+    registerNativeEventListeners,
+    renderedFolder,
+    rootRef,
+    scheduleFolderViewportMetrics,
+    scheduleNativeLayoutSave,
+    schedulePageGridMetrics,
+    searchRef,
+    syncManagedAppState,
+    updateFolderViewportHeight,
+    updatePageGridMetrics,
+    visibleFolderRowCount,
   });
 
   return {
