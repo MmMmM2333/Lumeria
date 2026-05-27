@@ -1,7 +1,9 @@
 import { createLaunchpadLayoutHelpers, makePageSize } from "./launchpadLayout.js";
+import { runFolderLayoutStylesTests } from "../composables/useFolderLayoutStylesTests.js";
 import { runLaunchpadDragTests } from "../composables/useLaunchpadDragTests.js";
 import { runLaunchpadDataTests } from "./launchpadDataTests.js";
 import { runLaunchpadHelperTests } from "./launchpadLayoutTests.js";
+import { runPageRenderRangeTests } from "../composables/usePageRenderRangeTests.js";
 
 const state = {
   searchQuery: { value: "" },
@@ -60,5 +62,7 @@ runLaunchpadHelperTests({
 });
 runLaunchpadDataTests();
 runLaunchpadDragTests();
+runFolderLayoutStylesTests();
+await runPageRenderRangeTests();
 
 console.info("Launchpad layout helper tests passed");
