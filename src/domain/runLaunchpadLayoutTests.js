@@ -7,6 +7,7 @@ import { runLaunchpadLaunchFlowTests } from "../composables/useLaunchpadLaunchFl
 import { runLaunchpadPageCommandsTests } from "../composables/useLaunchpadPageCommandsTests.js";
 import { runLaunchpadSearchTests } from "../composables/useLaunchpadSearchTests.js";
 import { runLaunchpadSettingsConfigTests } from "../composables/useLaunchpadSettingsConfigTests.js";
+import { runLaunchpadSurfaceInteractionsTests } from "../composables/useLaunchpadSurfaceInteractionsTests.js";
 import { runLaunchpadViewStateTests } from "../composables/useLaunchpadViewStateTests.js";
 import { runLaunchpadDataTests } from "./launchpadDataTests.js";
 import { runLaunchpadHelperTests } from "./launchpadLayoutTests.js";
@@ -73,6 +74,7 @@ runLaunchpadFolderFlowTests();
 runLaunchpadIconActivationTests();
 await runLaunchpadLaunchFlowTests();
 runLaunchpadPageCommandsTests();
+runLaunchpadSurfaceInteractionsTests();
 runLaunchpadViewStateTests();
 runFolderLayoutStylesTests();
 runLaunchpadSettingsConfigTests();

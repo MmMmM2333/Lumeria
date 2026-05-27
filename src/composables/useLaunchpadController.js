@@ -29,6 +29,7 @@ import { useLaunchpadNative } from "./useLaunchpadNative.js";
 import { useLaunchpadNotices } from "./useLaunchpadNotices.js";
 import { useLaunchpadPageCommands } from "./useLaunchpadPageCommands.js";
 import { useLaunchpadSearch } from "./useLaunchpadSearch.js";
+import { useLaunchpadSurfaceInteractions } from "./useLaunchpadSurfaceInteractions.js";
 import { useLaunchpadViewState } from "./useLaunchpadViewState.js";
 import {
   FOLDER_ICON_SIZE_MODE_CUSTOM,
@@ -777,47 +778,21 @@ export function useLaunchpadController() {
     selectedIcon,
     selectionMatchesScope,
   });
-  function setPageRef(node, targetPageIndex) {
-    if (!node) return;
-    pageRefs[targetPageIndex] = node.$el || node;
-  }
-
-  function setFolderPageRef(node, targetPageIndex) {
-    if (!node) return;
-    folderPageRefs[targetPageIndex] = node.$el || node;
-  }
-
-  function handleDesktopSurfacePointerDown(event) {
-    if (event?.button !== 0) return;
-    if (!isDesktopOpen.value || isDragActive() || isAppLaunching.value) return;
-
-    const target = event.target;
-    if (target?.closest?.([
-      ".icon-hit-target",
-      ".page-dot",
-      ".search-pill",
-      ".settings-overlay",
-      ".scan-result-overlay",
-      ".app-edit-overlay",
-      ".icon-chooser-overlay",
-      ".warning-dialog-overlay",
-      ".folder-overlay",
-      ".icon-context-menu-layer",
-      "button",
-      "input",
-      "textarea",
-      "select",
-    ].join(", "))) {
-      return;
-    }
-
-    closeDesktop({ clearSearch: true });
-    hideNativeWindowAfterCloseAnimation();
-  }
-
-  function handleFolderOverlayPointerDown() {
-    if (!isDragActive()) commitOpenFolder(null);
-  }
+  const {
+    handleDesktopSurfacePointerDown,
+    handleFolderOverlayPointerDown,
+    setFolderPageRef,
+    setPageRef,
+  } = useLaunchpadSurfaceInteractions({
+    closeDesktop,
+    commitOpenFolder,
+    folderPageRefs,
+    hideNativeWindowAfterCloseAnimation,
+    isAppLaunching,
+    isDesktopOpen,
+    isDragActive,
+    pageRefs,
+  });
 
   watch([gridRows, gridCols, folderRows, folderCols, iconSize, isTextlessMode, isSearchMode], schedulePageGridMetrics, { flush: "post" });
   watch([renderedFolder, folderRows, folderCols, effectiveFolderIconSize, isTextlessMode, visibleFolderRowCount], scheduleFolderViewportMetrics, { flush: "post" });
