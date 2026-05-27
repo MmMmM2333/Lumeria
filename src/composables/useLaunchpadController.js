@@ -12,9 +12,6 @@ import {
   FOLDER_APP_LAUNCH_DURATION,
   FOLDER_CLOSE_DURATION,
   HOME_REVEAL_SETTLE_DURATION,
-  ICON_SIZE_MAX,
-  ICON_SIZE_MIN,
-  ICON_SIZE_STEP,
 } from "./launchpadConstants.js";
 import {
   appLaunchGhostTransition,
@@ -44,12 +41,14 @@ import { useIconSelection } from "./useIconSelection.js";
 import { useLaunchpadKeyboard } from "./useLaunchpadKeyboard.js";
 import { useLaunchpadNative } from "./useLaunchpadNative.js";
 import { useLaunchpadNotices } from "./useLaunchpadNotices.js";
+import {
+  FOLDER_ICON_SIZE_MODE_CUSTOM,
+  FOLDER_ICON_SIZE_MODE_GLOBAL,
+  useLaunchpadSettingsConfig,
+} from "./useLaunchpadSettingsConfig.js";
 import { usePageRenderRange } from "./usePageRenderRange.js";
 import { getElementFromRef, usePageGridMetrics } from "./usePageGridMetrics.js";
 import { useSettingsPanelFlow } from "./useSettingsPanelFlow.js";
-
-const FOLDER_ICON_SIZE_MODE_CUSTOM = "custom";
-const FOLDER_ICON_SIZE_MODE_GLOBAL = "global";
 
 export function useLaunchpadController() {
   const gridRows = ref(DEFAULT_ROWS);
@@ -365,6 +364,50 @@ export function useLaunchpadController() {
     isDragActive: () => isDragActive(),
   });
   const {
+    applyGridConfig,
+    applySettingsConfig,
+    changeDraftCols,
+    changeDraftFolderCols,
+    changeDraftFolderIconSize,
+    changeDraftFolderRows,
+    changeDraftIconSize,
+    changeDraftRows,
+    clampIconSize,
+    setDraftFolderIconSizeMode,
+  } = useLaunchpadSettingsConfig({
+    clonePages,
+    closeSettingsPanel,
+    commitFolderPageIndex,
+    commitPageIndex,
+    commitPages,
+    commitSearchPageIndex,
+    compactPages,
+    draftCols,
+    draftFolderCols,
+    draftFolderIconSize,
+    draftFolderIconSizeMode,
+    draftFolderRows,
+    draftIconSize,
+    draftRows,
+    ensurePage,
+    folderCols,
+    folderIconSize,
+    folderIconSizeMode,
+    folderPageIndex,
+    folderPageSize,
+    folderRows,
+    gridCols,
+    gridRows,
+    iconSize,
+    isDragActive: () => isDragActive(),
+    pageIndex,
+    pageSize,
+    pages,
+    repackFoldersForPageSize,
+    schedulePageGridMetrics,
+    searchPageIndex,
+  });
+  const {
     closeLayoutRecoveryNotice,
     closeWarningDialog,
     confirmWarningDialog,
@@ -634,51 +677,6 @@ export function useLaunchpadController() {
     };
   });
 
-  function clampIconSize(value) {
-    return clamp(Number(value) || DEFAULT_ICON_SIZE, ICON_SIZE_MIN, ICON_SIZE_MAX);
-  }
-
-  function normalizeFolderIconSizeMode(value) {
-    return value === FOLDER_ICON_SIZE_MODE_CUSTOM ? FOLDER_ICON_SIZE_MODE_CUSTOM : FOLDER_ICON_SIZE_MODE_GLOBAL;
-  }
-
-  function changeDraftRows(delta) {
-    draftRows.value = clamp(Number(draftRows.value) + delta || DEFAULT_ROWS, 2, 8);
-  }
-
-  function changeDraftCols(delta) {
-    draftCols.value = clamp(Number(draftCols.value) + delta || DEFAULT_COLS, 3, 10);
-  }
-
-  function changeDraftFolderRows(delta) {
-    draftFolderRows.value = clamp(Number(draftFolderRows.value) + delta || DEFAULT_FOLDER_ROWS, 2, 6);
-  }
-
-  function changeDraftFolderCols(delta) {
-    draftFolderCols.value = clamp(Number(draftFolderCols.value) + delta || DEFAULT_FOLDER_COLS, 2, 8);
-  }
-
-  function changeDraftIconSize(direction) {
-    draftIconSize.value = clampIconSize(draftIconSize.value + direction * ICON_SIZE_STEP);
-  }
-
-  function changeDraftFolderIconSize(direction) {
-    draftFolderIconSize.value = clampIconSize(draftFolderIconSize.value + direction * ICON_SIZE_STEP);
-  }
-
-  function setDraftFolderIconSizeMode(mode) {
-    const nextMode = normalizeFolderIconSizeMode(mode);
-    if (
-      nextMode === FOLDER_ICON_SIZE_MODE_CUSTOM
-      && draftFolderIconSizeMode.value !== FOLDER_ICON_SIZE_MODE_CUSTOM
-      && folderIconSizeMode.value !== FOLDER_ICON_SIZE_MODE_CUSTOM
-    ) {
-      draftFolderIconSize.value = clampIconSize(draftIconSize.value);
-    }
-    draftFolderIconSizeMode.value = nextMode;
-    draftFolderIconSize.value = clampIconSize(draftFolderIconSize.value);
-  }
-
   function getDesktopGridProjectionKey(pageNumber) {
     return `${isSearchMode.value ? "search" : "desktop"}-grid-${pageNumber}-${desktopProjectionKeyMode.value}`;
   }
@@ -737,62 +735,6 @@ export function useLaunchpadController() {
       cancelText: "取消",
       onConfirm: forceFillAllPages,
     });
-  }
-
-  function repackPagesForGrid(nextRows, nextCols, nextFolderRows, nextFolderCols) {
-    if (isDragActive()) return;
-    const rows = clamp(Number(nextRows) || DEFAULT_ROWS, 2, 8);
-    const cols = clamp(Number(nextCols) || DEFAULT_COLS, 3, 10);
-    const nextFolderRowCount = clamp(Number(nextFolderRows) || DEFAULT_FOLDER_ROWS, 2, 6);
-    const nextFolderColumnCount = clamp(Number(nextFolderCols) || DEFAULT_FOLDER_COLS, 2, 8);
-    const newPageSize = makePageSize(rows, cols);
-    const oldPageSize = pageSize.value;
-    const oldFolderPageSize = folderPageSize.value;
-    const newFolderPageSize = makePageSize(nextFolderRowCount, nextFolderColumnCount);
-
-    let next = clonePages(pages.value);
-
-    if (newPageSize < oldPageSize) {
-      for (let i = 0; i < next.length; i++) {
-        while (next[i].length > newPageSize) {
-          const overflow = next[i].pop();
-          ensurePage(next, i + 1);
-          next[i + 1].unshift(overflow);
-        }
-      }
-    }
-
-    next = repackFoldersForPageSize(next, oldFolderPageSize, newFolderPageSize);
-    const compacted = compactPages(next, { folderPageSize: newFolderPageSize });
-
-    gridRows.value = rows;
-    gridCols.value = cols;
-    folderRows.value = nextFolderRowCount;
-    folderCols.value = nextFolderColumnCount;
-    iconSize.value = clampIconSize(draftIconSize.value);
-    folderIconSizeMode.value = normalizeFolderIconSizeMode(draftFolderIconSizeMode.value);
-    folderIconSize.value = clampIconSize(draftFolderIconSize.value);
-    draftRows.value = rows;
-    draftCols.value = cols;
-    draftFolderRows.value = nextFolderRowCount;
-    draftFolderCols.value = nextFolderColumnCount;
-    draftIconSize.value = iconSize.value;
-    draftFolderIconSizeMode.value = folderIconSizeMode.value;
-    draftFolderIconSize.value = folderIconSize.value;
-    commitPages(compacted);
-    commitPageIndex(pageIndex.value);
-    commitSearchPageIndex(searchPageIndex.value);
-    commitFolderPageIndex(folderPageIndex.value);
-  }
-
-  function applyGridConfig() {
-    repackPagesForGrid(draftRows.value, draftCols.value, draftFolderRows.value, draftFolderCols.value);
-    schedulePageGridMetrics();
-  }
-
-  function applySettingsConfig() {
-    applyGridConfig();
-    closeSettingsPanel();
   }
 
   function handleSearchInput(event) {
