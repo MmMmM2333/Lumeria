@@ -17,7 +17,8 @@ export function getElementFromRef(nodeRef) {
 
 function getElementHeight(nodeRef) {
   const element = getElementFromRef(nodeRef);
-  return element ? element.getBoundingClientRect().height : 0;
+  if (!element) return 0;
+  return element.offsetHeight || element.clientHeight || element.getBoundingClientRect().height;
 }
 
 function getVerticalPadding(element) {
@@ -54,8 +55,8 @@ export function usePageGridMetrics(options) {
     const search = getElementFromRef(searchRef);
     const rootPadding = getVerticalPadding(root);
     const mainPadding = getVerticalPadding(main);
-    const headerHeight = header ? header.getBoundingClientRect().height : 0;
-    const searchHeight = search && !header?.contains(search) ? search.getBoundingClientRect().height : 0;
+    const headerHeight = header ? getElementHeight(header) : 0;
+    const searchHeight = search && !header?.contains(search) ? getElementHeight(search) : 0;
     const dotsHeight = getElementHeight(pageDotsRef);
     const chromeHeight = rootPadding + headerHeight + searchHeight + dotsHeight + mainPadding;
     const nextHeight = Math.max(280, Math.floor(window.innerHeight - chromeHeight));
