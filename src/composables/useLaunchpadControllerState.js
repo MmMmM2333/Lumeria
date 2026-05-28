@@ -7,7 +7,10 @@ import {
   DEFAULT_ROWS,
 } from "./launchpadConstants.js";
 import { makePageSize } from "../domain/launchpadLayout.js";
-import { DEFAULT_SCAN_ROOTS } from "../domain/launchpadData.js";
+import {
+  DEFAULT_SCAN_KEYWORD_BLACKLIST,
+  DEFAULT_SCAN_ROOTS,
+} from "../domain/launchpadData.js";
 import { FOLDER_ICON_SIZE_MODE_GLOBAL } from "./useLaunchpadSettingsConfig.js";
 
 export function useLaunchpadControllerState() {
@@ -34,6 +37,8 @@ export function useLaunchpadControllerState() {
   const isTextlessMode = ref(false);
   const hiddenAppIds = ref([]);
   const scanRoots = ref(DEFAULT_SCAN_ROOTS.map((root) => ({ ...root })));
+  const scanKeywordBlacklist = ref([...DEFAULT_SCAN_KEYWORD_BLACKLIST]);
+  const scanAppBlacklist = ref([]);
   const showMissingLaunchTargetBadge = ref(true);
   const launchTargetStatusById = ref({});
   const keyboardFocusArea = ref("desktop");
@@ -85,6 +90,8 @@ export function useLaunchpadControllerState() {
     pageSize,
     pages,
     rootRef,
+    scanAppBlacklist,
+    scanKeywordBlacklist,
     scanRoots,
     searchInputRef,
     searchPageIndex,

@@ -18,6 +18,7 @@ export const DEFAULT_SCAN_ROOTS = [
     removable: true,
   },
 ];
+export const DEFAULT_SCAN_KEYWORD_BLACKLIST = ["卸载", "uninstall"];
 
 export function fallbackAppGlyph(name) {
   return String(name || "A").trim().charAt(0).toUpperCase() || "A";
@@ -80,6 +81,68 @@ export function normalizeScanRoots(roots) {
       };
     })
     .filter(Boolean);
+}
+
+export function normalizeScanKeywordBlacklist(keywords) {
+  const seen = new Set();
+  return (Array.isArray(keywords) ? keywords : [])
+    .map((keyword) => String(keyword || "").trim())
+    .filter((keyword) => {
+      const key = keyword.toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+export function normalizeAppPathKey(path) {
+  return String(path || "").trim().replace(/\\/g, "/").toLowerCase();
+}
+
+export function normalizeScanAppBlacklist(apps) {
+  const seen = new Set();
+  return (Array.isArray(apps) ? apps : [])
+    .map((app) => {
+      const sourceKey = typeof app?.sourceKey === "string" ? app.sourceKey.trim() : "";
+      const path = typeof app?.path === "string" ? app.path.trim() : "";
+      const name = typeof app?.name === "string" ? app.name.trim() : "";
+      const blockedAt = typeof app?.blockedAt === "string" ? app.blockedAt : null;
+      if (!sourceKey && !path) return null;
+      const sourceKeyKey = sourceKey ? `source:${sourceKey.toLowerCase()}` : "";
+      const pathKey = path ? `path:${normalizeAppPathKey(path)}` : "";
+      if ((sourceKeyKey && seen.has(sourceKeyKey)) || (pathKey && seen.has(pathKey))) return null;
+      if (sourceKeyKey) seen.add(sourceKeyKey);
+      if (pathKey) seen.add(pathKey);
+      return {
+        sourceKey: sourceKey || null,
+        path: path || null,
+        name: name || path || sourceKey,
+        blockedAt,
+      };
+    })
+    .filter(Boolean);
+}
+
+export function makeScanAppBlacklistEntry(app) {
+  const sourceKey = typeof app?.sourceKey === "string" ? app.sourceKey : null;
+  const path = app?.source?.absolutePath || app?.launchTarget?.path || null;
+  return {
+    sourceKey,
+    path,
+    name: String(app?.name || path || sourceKey || "Application"),
+    blockedAt: new Date().toISOString(),
+  };
+}
+
+export function isAppBlockedByScanBlacklist(app, blacklist) {
+  const normalized = normalizeScanAppBlacklist(blacklist);
+  if (!normalized.length) return false;
+  const sourceKey = typeof app?.sourceKey === "string" ? app.sourceKey.toLowerCase() : "";
+  const pathKey = normalizeAppPathKey(app?.source?.absolutePath || app?.launchTarget?.path);
+  return normalized.some((blocked) => {
+    if (blocked.sourceKey && sourceKey && blocked.sourceKey.toLowerCase() === sourceKey) return true;
+    return Boolean(blocked.path && pathKey && normalizeAppPathKey(blocked.path) === pathKey);
+  });
 }
 
 export function createLaunchpadDataHelpers(options) {
@@ -255,6 +318,8 @@ export function createLaunchpadDataHelpers(options) {
         textless: state.textless,
         hiddenAppIds: state.hiddenAppIds,
         scanRoots: normalizeScanRoots(state.scanRoots),
+        scanKeywordBlacklist: normalizeScanKeywordBlacklist(state.scanKeywordBlacklist),
+        scanAppBlacklist: normalizeScanAppBlacklist(state.scanAppBlacklist),
         showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge !== false,
       },
     };

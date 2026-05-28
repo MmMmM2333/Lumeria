@@ -1,4 +1,12 @@
-import { createLaunchpadDataHelpers, makeLaunchTarget, normalizeNativeApp } from "./launchpadData.js";
+import {
+  createLaunchpadDataHelpers,
+  isAppBlockedByScanBlacklist,
+  makeLaunchTarget,
+  makeScanAppBlacklistEntry,
+  normalizeNativeApp,
+  normalizeScanAppBlacklist,
+  normalizeScanKeywordBlacklist,
+} from "./launchpadData.js";
 import { createLaunchpadLayoutHelpers, makePageSize } from "./launchpadLayout.js";
 
 export function runLaunchpadDataTests() {
@@ -43,6 +51,16 @@ export function runLaunchpadDataTests() {
   assert(normalized.emoji === "N", "native app should derive a fallback glyph");
   assert(makeLaunchTarget("https://example.com").kind === "url", "http targets should become url launch targets");
   assert(makeLaunchTarget("C:/Tools/App.exe").kind === "executable", "local targets should become executable launch targets");
+  assert(normalizeScanKeywordBlacklist([" uninstall ", "UNINSTALL", "", "卸载"]).join(",") === "uninstall,卸载", "scan keywords should be trimmed and deduplicated");
+  const blockedEntry = makeScanAppBlacklistEntry({
+    name: "Blocked",
+    sourceKey: "scan-root:root:blocked.lnk",
+    launchTarget: { path: "C:\\Apps\\Blocked.lnk" },
+  });
+  const normalizedBlacklist = normalizeScanAppBlacklist([blockedEntry, { path: "C:/Apps/Blocked.lnk" }]);
+  assert(normalizedBlacklist.length === 1, "scan app blacklist should deduplicate source-key matches");
+  assert(isAppBlockedByScanBlacklist({ sourceKey: "scan-root:root:blocked.lnk" }, normalizedBlacklist), "scan app blacklist should match source keys");
+  assert(isAppBlockedByScanBlacklist({ launchTarget: { path: "C:/Apps/Blocked.lnk" } }, normalizedBlacklist), "scan app blacklist should match normalized paths");
 
   const catalogApps = [
     { id: "a", type: "app", name: "A", emoji: "A", iconPath: "C:/Icons/a.png", iconDataUrl: "data:a", launchTarget: { kind: "shortcut", path: "a.lnk" } },

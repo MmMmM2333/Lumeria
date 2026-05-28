@@ -222,6 +222,55 @@
             </div>
           </section>
 
+          <section class="settings-section" aria-label="扫描过滤">
+            <div class="settings-section-header">
+              <div>
+                <h3>扫描过滤</h3>
+                <p>{{ state.scanKeywordBlacklist.value.length }} 个关键字 · {{ state.scanAppBlacklist.value.length }} 个忽略应用</p>
+              </div>
+            </div>
+
+            <div class="scan-filter-block">
+              <div class="scan-filter-header">
+                <span>关键字黑名单</span>
+              </div>
+              <div class="scan-keyword-editor">
+                <input
+                  v-model="state.newScanKeyword.value"
+                  class="scan-keyword-input"
+                  type="text"
+                  placeholder="输入关键字"
+                  aria-label="新增扫描过滤关键字"
+                  @keydown.enter.prevent="state.addScanKeywordBlacklistItem"
+                />
+                <button class="settings-secondary-button" type="button" @click="state.addScanKeywordBlacklistItem">添加</button>
+              </div>
+              <div v-if="state.scanKeywordBlacklist.value.length" class="scan-keyword-list">
+                <span v-for="(keyword, index) in state.scanKeywordBlacklist.value" :key="`${keyword}-${index}`" class="scan-keyword-chip">
+                  <span>{{ keyword }}</span>
+                  <button type="button" :aria-label="`移除关键字 ${keyword}`" @click="state.removeScanKeywordBlacklistItem(index)">×</button>
+                </span>
+              </div>
+              <div v-else class="settings-empty-state">没有关键字</div>
+            </div>
+
+            <div class="scan-filter-block">
+              <div class="scan-filter-header">
+                <span>忽略的应用</span>
+              </div>
+              <div v-if="state.scanAppBlacklist.value.length" class="scan-blocked-app-list">
+                <div v-for="(app, index) in state.scanAppBlacklist.value" :key="`${app.sourceKey || app.path}-${index}`" class="scan-blocked-app-item">
+                  <span class="scan-root-details">
+                    <span class="scan-root-name">{{ app.name || "未命名应用" }}</span>
+                    <span class="scan-blocked-app-path">{{ app.path || app.sourceKey }}</span>
+                  </span>
+                  <button class="settings-secondary-button" type="button" @click="state.removeScanAppBlacklistItem(index)">恢复扫描</button>
+                </div>
+              </div>
+              <div v-else class="settings-empty-state">没有忽略的应用</div>
+            </div>
+          </section>
+
           <section class="settings-section" aria-label="应用管理">
             <div class="settings-section-header">
               <div>
@@ -233,6 +282,7 @@
                   {{ state.isScanningApps.value ? "扫描中" : "扫描应用" }}
                 </button>
                 <button class="settings-primary-button" type="button" @click="state.openAddManagedAppPage">新增应用</button>
+                <button class="settings-secondary-button" type="button" :disabled="state.selectedManagedAppCount.value === 0" @click="state.ignoreSelectedManagedApps">批量忽略</button>
                 <button class="settings-danger-button" type="button" :disabled="state.selectedManagedAppCount.value === 0" @click="state.deleteSelectedManagedApps">批量删除</button>
               </div>
             </div>
@@ -262,6 +312,7 @@
                 </span>
                 <span class="app-manager-actions">
                   <button class="settings-secondary-button" type="button" @click="state.openEditManagedApp(app)">编辑</button>
+                  <button class="settings-secondary-button" type="button" @click="state.ignoreManagedApp(app)">忽略</button>
                   <button class="settings-danger-button" type="button" @click="state.deleteManagedApp(app.id)">删除</button>
                 </span>
               </div>

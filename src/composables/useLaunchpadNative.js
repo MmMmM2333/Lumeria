@@ -6,7 +6,12 @@ import {
   DEFAULT_ROWS,
 } from "./launchpadConstants.js";
 import { clamp } from "../domain/launchpadLayout.js";
-import { normalizeScanRoots } from "../domain/launchpadData.js";
+import {
+  DEFAULT_SCAN_KEYWORD_BLACKLIST,
+  normalizeScanAppBlacklist,
+  normalizeScanKeywordBlacklist,
+  normalizeScanRoots,
+} from "../domain/launchpadData.js";
 import {
   checkLaunchTargets,
   convertFilePathToAssetUrl,
@@ -73,6 +78,10 @@ export function useLaunchpadNative(options) {
       ? settings.hiddenAppIds.map(String)
       : [];
     options.scanRoots.value = normalizeScanRoots(settings.scanRoots);
+    options.scanKeywordBlacklist.value = Array.isArray(settings.scanKeywordBlacklist)
+      ? normalizeScanKeywordBlacklist(settings.scanKeywordBlacklist)
+      : [...DEFAULT_SCAN_KEYWORD_BLACKLIST];
+    options.scanAppBlacklist.value = normalizeScanAppBlacklist(settings.scanAppBlacklist);
     options.showMissingLaunchTargetBadge.value = settings.showMissingLaunchTargetBadge !== false;
   }
 
@@ -104,6 +113,8 @@ export function useLaunchpadNative(options) {
           textless: options.isTextlessMode.value,
           hiddenAppIds: options.hiddenAppIds.value,
           scanRoots: options.scanRoots.value,
+          scanKeywordBlacklist: options.scanKeywordBlacklist.value,
+          scanAppBlacklist: options.scanAppBlacklist.value,
           showMissingLaunchTargetBadge: options.showMissingLaunchTargetBadge.value,
         }));
       } catch (error) {

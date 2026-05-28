@@ -1,5 +1,5 @@
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap},
+    collections::{hash_map::DefaultHasher, HashMap, HashSet},
     env, fs,
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
@@ -24,6 +24,39 @@ pub(crate) struct ScanRoot {
     pub(crate) path: String,
     #[serde(default = "default_enabled")]
     pub(crate) enabled: bool,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ScanFilters {
+    #[serde(default)]
+    pub(crate) keyword_blacklist: Vec<String>,
+    #[serde(default)]
+    pub(crate) app_blacklist: Vec<ScanAppBlacklistItem>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ScanAppBlacklistItem {
+    #[serde(default)]
+    pub(crate) source_key: Option<String>,
+    #[serde(default)]
+    pub(crate) path: Option<String>,
+}
+
+struct NormalizedScanFilters {
+    keyword_blacklist: Vec<String>,
+    blocked_source_keys: HashSet<String>,
+    blocked_paths: HashSet<String>,
+}
+
+struct CatalogCandidate {
+    id: String,
+    name: String,
+    kind: String,
+    path_string: String,
+    relative_path: String,
+    source_key: String,
 }
 
 fn default_enabled() -> bool {
@@ -56,15 +89,17 @@ pub(crate) fn scan_start_menu_apps(icon_dir: &Path) -> Result<Vec<AppCatalogItem
             enabled: true,
         })
         .collect();
-    scan_apps_from_roots(&roots, icon_dir)
+    scan_apps_from_roots(&roots, icon_dir, &ScanFilters::default())
 }
 
 pub(crate) fn scan_apps_from_roots(
     roots: &[ScanRoot],
     icon_dir: &Path,
+    filters: &ScanFilters,
 ) -> Result<Vec<AppCatalogItem>, String> {
     let mut apps = Vec::new();
     let mut seen_paths = HashMap::new();
+    let filters = NormalizedScanFilters::from(filters);
 
     for root in roots.iter().filter(|root| root.enabled) {
         let root_path = expand_scan_root_path(&root.path);
@@ -73,6 +108,7 @@ pub(crate) fn scan_apps_from_roots(
             &root_path,
             &root_path,
             icon_dir,
+            &filters,
             &mut apps,
             &mut seen_paths,
         )?;
@@ -106,6 +142,7 @@ fn collect_apps_from_dir(
     root_dir: &Path,
     dir: &Path,
     icon_dir: &Path,
+    filters: &NormalizedScanFilters,
     apps: &mut Vec<AppCatalogItem>,
     seen_paths: &mut HashMap<String, ()>,
 ) -> Result<(), String> {
@@ -127,7 +164,7 @@ fn collect_apps_from_dir(
         };
         let path = entry.path();
         if path.is_dir() {
-            collect_apps_from_dir(root, root_dir, &path, icon_dir, apps, seen_paths)?;
+            collect_apps_from_dir(root, root_dir, &path, icon_dir, filters, apps, seen_paths)?;
             continue;
         }
 
@@ -140,7 +177,12 @@ fn collect_apps_from_dir(
             continue;
         }
 
-        apps.push(make_catalog_item(root, root_dir, &path, icon_dir));
+        let candidate = make_catalog_candidate(root, root_dir, &path);
+        if should_skip_candidate(&candidate, &filters) {
+            continue;
+        }
+
+        apps.push(make_catalog_item(root, &path, icon_dir, candidate));
     }
 
     Ok(())
@@ -153,12 +195,7 @@ fn is_supported_launch_file(path: &Path) -> bool {
     )
 }
 
-fn make_catalog_item(
-    root: &ScanRoot,
-    root_dir: &Path,
-    path: &Path,
-    icon_dir: &Path,
-) -> AppCatalogItem {
+fn make_catalog_candidate(root: &ScanRoot, root_dir: &Path, path: &Path) -> CatalogCandidate {
     let name = path
         .file_stem()
         .and_then(|value| value.to_str())
@@ -183,35 +220,118 @@ fn make_catalog_item(
         root.id,
         normalize_source_relative_path(&relative_path)
     );
-    let icon_path = cache_app_icon(path, icon_dir, &id);
+
+    CatalogCandidate {
+        id,
+        name,
+        kind,
+        path_string,
+        relative_path,
+        source_key,
+    }
+}
+
+fn make_catalog_item(
+    root: &ScanRoot,
+    path: &Path,
+    icon_dir: &Path,
+    candidate: CatalogCandidate,
+) -> AppCatalogItem {
+    let icon_path = cache_app_icon(path, icon_dir, &candidate.id);
     let icon_data_url = icon_path.as_deref().and_then(icon_file_data_url);
 
     AppCatalogItem {
-        id,
+        id: candidate.id,
         item_type: "app".to_string(),
-        name: if name.is_empty() {
+        name: if candidate.name.is_empty() {
             "Application".to_string()
         } else {
-            name.clone()
+            candidate.name.clone()
         },
         icon_path,
         icon_data_url,
-        emoji: Some(app_glyph(&name)),
+        emoji: Some(app_glyph(&candidate.name)),
         launch_target: LaunchTarget {
-            kind,
-            path: Some(path_string.clone()),
+            kind: candidate.kind,
+            path: Some(candidate.path_string.clone()),
             app_user_model_id: None,
         },
         launch_args: None,
-        source_key: Some(source_key),
+        source_key: Some(candidate.source_key.clone()),
         source: Some(AppSource {
             source_type: root.root_type.clone(),
             root_id: root.id.clone(),
             root_label: root.label.clone(),
-            relative_path,
-            absolute_path: path_string.clone(),
+            relative_path: candidate.relative_path,
+            absolute_path: candidate.path_string,
         }),
     }
+}
+
+impl NormalizedScanFilters {
+    fn from(filters: &ScanFilters) -> Self {
+        let mut keyword_seen = HashSet::new();
+        let keyword_blacklist = filters
+            .keyword_blacklist
+            .iter()
+            .filter_map(|keyword| {
+                let normalized = normalize_match_text(keyword);
+                if normalized.is_empty() || !keyword_seen.insert(normalized.clone()) {
+                    return None;
+                }
+                Some(normalized)
+            })
+            .collect();
+
+        let blocked_source_keys = filters
+            .app_blacklist
+            .iter()
+            .filter_map(|item| item.source_key.as_deref())
+            .map(normalize_match_text)
+            .filter(|value| !value.is_empty())
+            .collect();
+
+        let blocked_paths = filters
+            .app_blacklist
+            .iter()
+            .filter_map(|item| item.path.as_deref())
+            .map(normalize_path_key)
+            .filter(|value| !value.is_empty())
+            .collect();
+
+        Self {
+            keyword_blacklist,
+            blocked_source_keys,
+            blocked_paths,
+        }
+    }
+}
+
+fn should_skip_candidate(candidate: &CatalogCandidate, filters: &NormalizedScanFilters) -> bool {
+    matches_keyword_blacklist(candidate, filters)
+        || filters
+            .blocked_source_keys
+            .contains(&normalize_match_text(&candidate.source_key))
+        || filters
+            .blocked_paths
+            .contains(&normalize_path_key(&candidate.path_string))
+}
+
+fn matches_keyword_blacklist(
+    candidate: &CatalogCandidate,
+    filters: &NormalizedScanFilters,
+) -> bool {
+    if filters.keyword_blacklist.is_empty() {
+        return false;
+    }
+
+    let name = normalize_match_text(&candidate.name);
+    let relative_path = normalize_path_key(&candidate.relative_path);
+    let absolute_path = normalize_path_key(&candidate.path_string);
+
+    filters.keyword_blacklist.iter().any(|keyword| {
+        name.contains(keyword) || relative_path.contains(keyword) || absolute_path.contains(keyword)
+    })
 }
 
 fn expand_scan_root_path(path: &str) -> PathBuf {
@@ -227,6 +347,14 @@ fn expand_scan_root_path(path: &str) -> PathBuf {
 
 fn normalize_source_relative_path(path: &str) -> String {
     path.replace('\\', "/").to_lowercase()
+}
+
+fn normalize_match_text(value: &str) -> String {
+    value.trim().to_lowercase()
+}
+
+fn normalize_path_key(value: &str) -> String {
+    normalize_match_text(&value.replace('\\', "/"))
 }
 
 pub(crate) fn stable_app_id(path: &str) -> String {
@@ -271,4 +399,82 @@ fn encode_base64(bytes: &[u8]) -> String {
     }
 
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_candidate(name: &str, path: &str, relative_path: &str) -> CatalogCandidate {
+        CatalogCandidate {
+            id: "app".to_string(),
+            name: name.to_string(),
+            kind: "shortcut".to_string(),
+            path_string: path.to_string(),
+            relative_path: relative_path.to_string(),
+            source_key: format!(
+                "scan-root:root:{}",
+                normalize_source_relative_path(relative_path)
+            ),
+        }
+    }
+
+    #[test]
+    fn scan_filters_match_keywords_before_icon_extraction() {
+        let filters = NormalizedScanFilters::from(&ScanFilters {
+            keyword_blacklist: vec!["卸载".to_string(), "UNINSTALL".to_string()],
+            app_blacklist: Vec::new(),
+        });
+
+        assert!(should_skip_candidate(
+            &test_candidate(
+                "卸载 Example",
+                r"C:\Apps\Example\Uninstall.lnk",
+                "Example/Uninstall.lnk"
+            ),
+            &filters
+        ));
+        assert!(should_skip_candidate(
+            &test_candidate(
+                "Example",
+                r"C:\Apps\Example\uninstall helper.lnk",
+                "Example/uninstall helper.lnk"
+            ),
+            &filters
+        ));
+        assert!(!should_skip_candidate(
+            &test_candidate("Example", r"C:\Apps\Example\App.lnk", "Example/App.lnk"),
+            &filters
+        ));
+    }
+
+    #[test]
+    fn scan_filters_match_blocked_source_key_or_path() {
+        let filters = NormalizedScanFilters::from(&ScanFilters {
+            keyword_blacklist: Vec::new(),
+            app_blacklist: vec![
+                ScanAppBlacklistItem {
+                    source_key: Some("scan-root:root:tools/app.lnk".to_string()),
+                    path: None,
+                },
+                ScanAppBlacklistItem {
+                    source_key: None,
+                    path: Some(r"C:\Apps\Other\App.url".to_string()),
+                },
+            ],
+        });
+
+        assert!(should_skip_candidate(
+            &test_candidate("App", r"C:\Apps\Tools\App.lnk", "Tools/App.lnk"),
+            &filters
+        ));
+        assert!(should_skip_candidate(
+            &test_candidate("Other", r"C:\Apps\Other\App.url", "Other/App.url"),
+            &filters
+        ));
+        assert!(!should_skip_candidate(
+            &test_candidate("Keep", r"C:\Apps\Keep\App.lnk", "Keep/App.lnk"),
+            &filters
+        ));
+    }
 }

@@ -2,8 +2,12 @@ import { computed, ref, shallowRef } from "vue";
 import {
   compareAppsByDefaultOrder,
   fallbackAppGlyph,
+  isAppBlockedByScanBlacklist,
+  makeScanAppBlacklistEntry,
   makeLaunchTarget,
   normalizeNativeApp,
+  normalizeScanAppBlacklist,
+  normalizeScanKeywordBlacklist,
   normalizeScanRoots,
 } from "../domain/launchpadData.js";
 import { loadAppIconChoices, pickLaunchFile, scanApps } from "../api/launchpadApi.js";
@@ -14,6 +18,7 @@ export function useLaunchpadApps(options) {
   const isScanResultDialogOpen = ref(false);
   const scanResultApps = ref([]);
   const scanResultSelectedIds = ref([]);
+  const newScanKeyword = ref("");
   const isAddingManagedApp = ref(false);
   const newAppName = ref("");
   const newAppTarget = ref("");
@@ -155,6 +160,28 @@ export function useLaunchpadApps(options) {
         removable: true,
       },
     ]);
+  }
+
+  function addScanKeywordBlacklistItem() {
+    const keyword = newScanKeyword.value.trim();
+    if (!keyword) return;
+    options.scanKeywordBlacklist.value = normalizeScanKeywordBlacklist([
+      ...options.scanKeywordBlacklist.value,
+      keyword,
+    ]);
+    newScanKeyword.value = "";
+  }
+
+  function removeScanKeywordBlacklistItem(index) {
+    options.scanKeywordBlacklist.value = normalizeScanKeywordBlacklist(
+      options.scanKeywordBlacklist.value.filter((_, itemIndex) => itemIndex !== index)
+    );
+  }
+
+  function removeScanAppBlacklistItem(index) {
+    options.scanAppBlacklist.value = normalizeScanAppBlacklist(
+      options.scanAppBlacklist.value.filter((_, itemIndex) => itemIndex !== index)
+    );
   }
 
   function toggleScanResultSelection(appId, checked) {
@@ -471,12 +498,38 @@ export function useLaunchpadApps(options) {
     deleteManagedApps(appManagerSelectedIds.value);
   }
 
+  function ignoreManagedApp(app) {
+    if (!app || options.isDragActive()) return;
+    const entry = makeScanAppBlacklistEntry(app);
+    options.scanAppBlacklist.value = normalizeScanAppBlacklist([
+      ...options.scanAppBlacklist.value,
+      entry,
+    ]);
+    deleteManagedApps([app.id]);
+  }
+
+  function ignoreSelectedManagedApps() {
+    if (options.isDragActive() || selectedManagedAppCount.value === 0) return;
+    const selectedIds = new Set(appManagerSelectedIds.value);
+    const selectedApps = managedApps.value.filter((app) => selectedIds.has(app.id));
+    if (!selectedApps.length) return;
+    options.scanAppBlacklist.value = normalizeScanAppBlacklist([
+      ...options.scanAppBlacklist.value,
+      ...selectedApps.map(makeScanAppBlacklistEntry),
+    ]);
+    deleteManagedApps(selectedApps.map((app) => app.id));
+  }
+
   async function rescanManagedApps() {
     if (!options.shouldUseNativeCatalog() || isScanningApps.value) return;
     isScanningApps.value = true;
     try {
       const enabledRoots = normalizeScanRoots(options.scanRoots.value).filter((root) => root.enabled);
-      const nativeApps = await scanApps(enabledRoots);
+      const scanFilters = {
+        keywordBlacklist: normalizeScanKeywordBlacklist(options.scanKeywordBlacklist.value),
+        appBlacklist: normalizeScanAppBlacklist(options.scanAppBlacklist.value),
+      };
+      const nativeApps = await scanApps(enabledRoots, scanFilters);
       const now = new Date().toISOString();
       const scannedRootIds = new Set(enabledRoots.map((root) => root.id));
       options.scanRoots.value = options.scanRoots.value.map((root) =>
@@ -487,6 +540,7 @@ export function useLaunchpadApps(options) {
       const existingSourceKeys = new Set(existingApps.map((app) => app.sourceKey).filter(Boolean));
       const missingApps = (nativeApps || [])
         .map(normalizeNativeApp)
+        .filter((app) => !isAppBlockedByScanBlacklist(app, scanFilters.appBlacklist))
         .filter((app) => !existingIds.has(app.id) && !existingSourceKeys.has(app.sourceKey));
       scanResultApps.value = missingApps;
       scanResultSelectedIds.value = missingApps.map((app) => app.id);
@@ -551,6 +605,7 @@ export function useLaunchpadApps(options) {
 
   return {
     addManagedApp,
+    addScanKeywordBlacklistItem,
     addScanRoot,
     addSelectedScannedApps,
     appManagerSearchQuery,
@@ -582,6 +637,8 @@ export function useLaunchpadApps(options) {
     iconChooser,
     iconChoices,
     isAddingManagedApp,
+    ignoreManagedApp,
+    ignoreSelectedManagedApps,
     isBrowsingEditAppTarget,
     isBrowsingNewAppTarget,
     isEditAppIconReset,
@@ -593,6 +650,7 @@ export function useLaunchpadApps(options) {
     newAppIconDataUrl,
     newAppName,
     newAppTarget,
+    newScanKeyword,
     newManagedAppGlyph,
     openAddManagedAppPage,
     openEditAppIconChooser,
@@ -616,6 +674,8 @@ export function useLaunchpadApps(options) {
     toggleScanResultSelection,
     toggleScanRootEnabled,
     removeScanRoot,
+    removeScanAppBlacklistItem,
+    removeScanKeywordBlacklistItem,
     updateAppCustomIcon,
   };
 }

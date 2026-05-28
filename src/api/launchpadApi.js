@@ -29,10 +29,10 @@ export async function listenNativeEvent(eventName, handler) {
   return event.listen(eventName, handler);
 }
 
-export async function scanApps(roots = []) {
+export async function scanApps(roots = [], filters = {}) {
   const invoke = getTauriInvoke();
   if (!invoke) return null;
-  return invoke("scan_apps", { roots });
+  return invoke("scan_apps", { roots, filters });
 }
 
 export async function loadLayout() {

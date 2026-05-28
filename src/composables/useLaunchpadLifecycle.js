@@ -20,6 +20,8 @@ export function registerLaunchpadLifecycleWatchers(options, watchFn = watch) {
     observeFolderViewport,
     pages,
     renderedFolder,
+    scanAppBlacklist,
+    scanKeywordBlacklist,
     scanRoots,
     scheduleFolderViewportMetrics,
     scheduleLaunchTargetStatusCheck,
@@ -34,7 +36,7 @@ export function registerLaunchpadLifecycleWatchers(options, watchFn = watch) {
   watchFn([renderedFolder, folderRows, folderCols, effectiveFolderIconSize, isTextlessMode, visibleFolderRowCount], scheduleFolderViewportMetrics, { flush: "post" });
   watchFn(folderViewportRef, observeFolderViewport, { flush: "post" });
   watchFn(activePages, schedulePageGridMetrics, { flush: "post" });
-  watchFn([pages, gridRows, gridCols, folderRows, folderCols, iconSize, folderIconSizeMode, folderIconSize, isTextlessMode, hiddenAppIds, scanRoots, showMissingLaunchTargetBadge], scheduleNativeLayoutSave, { flush: "post" });
+  watchFn([pages, gridRows, gridCols, folderRows, folderCols, iconSize, folderIconSizeMode, folderIconSize, isTextlessMode, hiddenAppIds, scanRoots, scanKeywordBlacklist, scanAppBlacklist, showMissingLaunchTargetBadge], scheduleNativeLayoutSave, { flush: "post" });
   watchFn([pages, showMissingLaunchTargetBadge], scheduleLaunchTargetStatusCheck, { flush: "post" });
   watchFn(filteredManagedApps, syncManagedAppState, { flush: "post" });
 }

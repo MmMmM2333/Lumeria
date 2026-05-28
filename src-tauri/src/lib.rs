@@ -11,7 +11,7 @@ use std::{collections::HashMap, sync::Mutex};
 
 use catalog::{
     icon_cache_dir, icon_file_data_url, scan_apps_from_roots, scan_start_menu_apps, stable_app_id,
-    ScanRoot,
+    ScanFilters, ScanRoot,
 };
 use file_dialog::{pick_launch_file as pick_native_launch_file, PickedLaunchFile};
 use icons::cache_app_icon_choices;
@@ -79,9 +79,11 @@ fn scan_apps(
     app: AppHandle,
     state: State<'_, AppState>,
     roots: Vec<ScanRoot>,
+    filters: Option<ScanFilters>,
 ) -> Result<Vec<AppCatalogItem>, String> {
     let icon_dir = icon_cache_dir(&app)?;
-    let apps = scan_apps_from_roots(&roots, &icon_dir)?;
+    let filters = filters.unwrap_or_default();
+    let apps = scan_apps_from_roots(&roots, &icon_dir, &filters)?;
     let mut catalog = state
         .catalog
         .lock()
