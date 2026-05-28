@@ -25,7 +25,7 @@ use tauri::AppHandle;
 use crate::{
     catalog::{icon_cache_dir, icon_file_data_url, stable_app_id},
     icons::cache_app_icon,
-    path_utils::extension,
+    path_utils::{extension, windows_api_path},
 };
 
 #[derive(Clone, Debug, Serialize)]
@@ -149,7 +149,7 @@ fn resolve_shortcut(path: &Path) -> Option<ShortcutInfo> {
     let shell_link =
         unsafe { CoCreateInstance::<_, IShellLinkW>(&ShellLink, None, CLSCTX_INPROC_SERVER).ok()? };
     let persist_file = shell_link.cast::<IPersistFile>().ok()?;
-    let shortcut = HSTRING::from(path.to_string_lossy().as_ref());
+    let shortcut = HSTRING::from(windows_api_path(path));
     unsafe { persist_file.Load(&shortcut, STGM_READ).ok()? };
 
     let mut target_path = [0u16; 1024];

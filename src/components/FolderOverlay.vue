@@ -59,6 +59,7 @@
                       :removable="child.type === 'app'"
                       :selected="state.isIconSelected('folder', child.id, pageNumber, state.renderedFolder.value.id)"
                       :opening="state.isIconOpening('folder', child.id, pageNumber, state.renderedFolder.value.id)"
+                      :launch-target-status="state.showMissingLaunchTargetBadge.value ? state.launchTargetStatusById.value[child.id] : null"
                       @pointerdown-icon="(...args) => forward('pointerdown-icon', args)"
                       @open-app="(...args) => forward('open-app', args)"
                       @context-menu-icon="(...args) => forward('context-menu-icon', args)"

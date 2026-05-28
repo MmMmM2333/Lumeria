@@ -1,5 +1,24 @@
 import { chunkIntoPages } from "./launchpadLayout.js";
 
+export const DEFAULT_SCAN_ROOTS = [
+  {
+    id: "root-start-menu-user",
+    type: "startMenuUser",
+    label: "用户开始菜单",
+    path: "%APPDATA%/Microsoft/Windows/Start Menu/Programs",
+    enabled: true,
+    removable: true,
+  },
+  {
+    id: "root-start-menu-system",
+    type: "startMenuSystem",
+    label: "系统开始菜单",
+    path: "%ProgramData%/Microsoft/Windows/Start Menu/Programs",
+    enabled: true,
+    removable: true,
+  },
+];
+
 export function fallbackAppGlyph(name) {
   return String(name || "A").trim().charAt(0).toUpperCase() || "A";
 }
@@ -36,8 +55,31 @@ export function normalizeNativeApp(app, index) {
     launchTarget: app?.launchTarget || app?.launch_target || null,
     launchArgs: typeof app?.launchArgs === "string" ? app.launchArgs : "",
     iconDataUrl: app?.iconDataUrl || null,
+    iconPath: app?.iconPath || app?.icon_path || null,
     emoji: app?.emoji || fallbackAppGlyph(name),
+    sourceKey: typeof app?.sourceKey === "string" ? app.sourceKey : app?.source_key || null,
+    source: app?.source || null,
   };
+}
+
+export function normalizeScanRoots(roots) {
+  const source = Array.isArray(roots) && roots.length ? roots : DEFAULT_SCAN_ROOTS;
+  return source
+    .map((root, index) => {
+      const path = String(root?.path || "").trim();
+      if (!path) return null;
+      const label = String(root?.label || path).trim() || path;
+      return {
+        id: String(root?.id || `root-${index}`),
+        type: String(root?.type || "customDirectory"),
+        label,
+        path,
+        enabled: root?.enabled !== false,
+        removable: root?.removable !== false,
+        lastScannedAt: typeof root?.lastScannedAt === "string" ? root.lastScannedAt : null,
+      };
+    })
+    .filter(Boolean);
 }
 
 export function createLaunchpadDataHelpers(options) {
@@ -55,11 +97,16 @@ export function createLaunchpadDataHelpers(options) {
 
   function mergeAppWithSavedIcon(app, savedItem) {
     const next = cloneItem(app);
+    if (savedItem?.id) next.id = String(savedItem.id);
     if (savedItem?.name) next.name = String(savedItem.name).slice(0, 64);
     if (savedItem?.emoji) next.emoji = savedItem.emoji;
     if (savedItem?.launchTarget) next.launchTarget = savedItem.launchTarget;
     if (typeof savedItem?.launchArgs === "string") next.launchArgs = savedItem.launchArgs;
     if (savedItem?.customIconDataUrl) next.customIconDataUrl = savedItem.customIconDataUrl;
+    if (savedItem?.iconPath) next.iconPath = savedItem.iconPath;
+    if (savedItem?.iconDataUrl) next.iconDataUrl = savedItem.iconDataUrl;
+    if (savedItem?.sourceKey) next.sourceKey = savedItem.sourceKey;
+    if (savedItem?.source) next.source = savedItem.source;
     return next;
   }
 
@@ -74,10 +121,13 @@ export function createLaunchpadDataHelpers(options) {
       emoji: item.emoji || fallbackAppGlyph(name),
       launchTarget: item.launchTarget,
       launchArgs: typeof item.launchArgs === "string" ? item.launchArgs : "",
+      iconPath: item.iconPath || null,
+      sourceKey: item.sourceKey || null,
+      source: item.source || null,
     };
   }
 
-  function mergeFolderWithCatalog(folder, catalog, usedAppIds) {
+  function mergeFolderWithCatalog(folder, catalog, catalogBySourceKey, usedAppIds, usedSourceKeys) {
     const sourcePages = Array.isArray(folder?.childPages)
       ? folder.childPages
       : chunkIntoPages(folder?.children || [], getFolderPageSize());
@@ -85,9 +135,12 @@ export function createLaunchpadDataHelpers(options) {
       .map((page) =>
         (page || [])
           .map((child) => {
-            const app = child?.id ? catalog.get(child.id) || normalizeSavedCustomApp(child) : null;
+            const app = child?.sourceKey
+              ? catalogBySourceKey.get(child.sourceKey) || catalog.get(child.id) || normalizeSavedCustomApp(child)
+              : child?.id ? catalog.get(child.id) || normalizeSavedCustomApp(child) : null;
             if (!app || usedAppIds.has(app.id)) return null;
             usedAppIds.add(app.id);
+            if (child?.sourceKey || app.sourceKey) usedSourceKeys.add(child?.sourceKey || app.sourceKey);
             return mergeAppWithSavedIcon(app, child);
           })
           .filter(Boolean)
@@ -128,21 +181,28 @@ export function createLaunchpadDataHelpers(options) {
 
   function mergeNativeCatalogWithSavedLayout(apps, savedLayout, hiddenAppIds) {
     const catalog = new Map(apps.map((app) => [app.id, app]));
+    const catalogBySourceKey = new Map(
+      apps.filter((app) => app.sourceKey).map((app) => [app.sourceKey, app])
+    );
     const usedAppIds = new Set();
+    const usedSourceKeys = new Set();
     const sourcePages = Array.isArray(savedLayout?.pages) ? savedLayout.pages : [];
     const mergedPages = sourcePages.map((page) =>
       (page || [])
         .map((item) => {
-          if (item?.type === "folder") return mergeFolderWithCatalog(item, catalog, usedAppIds);
-          const app = item?.id ? catalog.get(item.id) || normalizeSavedCustomApp(item) : null;
+          if (item?.type === "folder") return mergeFolderWithCatalog(item, catalog, catalogBySourceKey, usedAppIds, usedSourceKeys);
+          const app = item?.sourceKey
+            ? catalogBySourceKey.get(item.sourceKey) || catalog.get(item.id) || normalizeSavedCustomApp(item)
+            : item?.id ? catalog.get(item.id) || normalizeSavedCustomApp(item) : null;
           if (!app || usedAppIds.has(app.id)) return null;
           usedAppIds.add(app.id);
+          if (item?.sourceKey || app.sourceKey) usedSourceKeys.add(item?.sourceKey || app.sourceKey);
           return mergeAppWithSavedIcon(app, item);
         })
         .filter(Boolean)
     );
     const hidden = new Set(hiddenAppIds || []);
-    const newApps = apps.filter((app) => !usedAppIds.has(app.id) && !hidden.has(app.id));
+    const newApps = apps.filter((app) => !usedAppIds.has(app.id) && !usedSourceKeys.has(app.sourceKey) && !hidden.has(app.id));
     return fitPagesToGrid(appendAppsToPages(mergedPages, newApps));
   }
 
@@ -172,8 +232,11 @@ export function createLaunchpadDataHelpers(options) {
       emoji: item.emoji,
     };
     if (item.customIconDataUrl) clean.customIconDataUrl = item.customIconDataUrl;
+    if (item.iconPath) clean.iconPath = item.iconPath;
     if (item.launchTarget) clean.launchTarget = item.launchTarget;
     if (item.launchArgs) clean.launchArgs = item.launchArgs;
+    if (item.sourceKey) clean.sourceKey = item.sourceKey;
+    if (item.source) clean.source = item.source;
     return clean;
   }
 
@@ -191,6 +254,8 @@ export function createLaunchpadDataHelpers(options) {
         folderIconSize: state.folderIconSize,
         textless: state.textless,
         hiddenAppIds: state.hiddenAppIds,
+        scanRoots: normalizeScanRoots(state.scanRoots),
+        showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge !== false,
       },
     };
   }

@@ -180,9 +180,9 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
     }
 
     if let Some(value) = object.get("folderIconSize") {
-        let size = value
-            .as_u64()
-            .ok_or_else(|| "layout settings.folderIconSize must be a positive integer".to_string())?;
+        let size = value.as_u64().ok_or_else(|| {
+            "layout settings.folderIconSize must be a positive integer".to_string()
+        })?;
         if size == 0 {
             return Err("layout settings.folderIconSize must be a positive integer".to_string());
         }
@@ -304,7 +304,9 @@ fn require_string_field(
 ) -> Result<(), String> {
     match object.get(key).and_then(Value::as_str) {
         Some(value) if !value.is_empty() => Ok(()),
-        _ => Err(format!("layout item {label}.{key} must be a non-empty string")),
+        _ => Err(format!(
+            "layout item {label}.{key} must be a non-empty string"
+        )),
     }
 }
 
@@ -411,10 +413,7 @@ mod tests {
     use serde_json::json;
 
     fn test_dir(name: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "launchpad-{name}-{}",
-            timestamp_nanos()
-        ));
+        let path = std::env::temp_dir().join(format!("launchpad-{name}-{}", timestamp_nanos()));
         fs::create_dir_all(&path).expect("create test directory");
         path
     }
@@ -500,7 +499,10 @@ mod tests {
 
         write_file_atomic(&path, "new").expect("write atomically");
 
-        assert_eq!(fs::read_to_string(&path).expect("read replaced file"), "new");
+        assert_eq!(
+            fs::read_to_string(&path).expect("read replaced file"),
+            "new"
+        );
         let temp_files: Vec<_> = fs::read_dir(&dir)
             .expect("read test directory")
             .filter_map(Result::ok)

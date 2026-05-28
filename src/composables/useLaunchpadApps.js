@@ -4,6 +4,7 @@ import {
   fallbackAppGlyph,
   makeLaunchTarget,
   normalizeNativeApp,
+  normalizeScanRoots,
 } from "../domain/launchpadData.js";
 import { loadAppIconChoices, pickLaunchFile, scanApps } from "../api/launchpadApi.js";
 
@@ -50,7 +51,7 @@ export function useLaunchpadApps(options) {
   const newManagedAppGlyph = computed(() => fallbackAppGlyph(newAppName.value));
   const canSaveEditingManagedApp = computed(() => editAppName.value.trim().length > 0 && editAppTarget.value.trim().length > 0);
   const editingManagedApp = computed(() => managedApps.value.find((app) => app.id === editingManagedAppId.value) || null);
-  const canScanManagedApps = computed(() => options.shouldUseNativeCatalog());
+  const canScanManagedApps = computed(() => options.shouldUseNativeCatalog() && options.scanRoots.value.some((root) => root.enabled));
 
   function getLaunchTargetPath(app) {
     return app?.launchTarget?.path || "";
@@ -116,6 +117,44 @@ export function useLaunchpadApps(options) {
 
   function clearManagedAppSelection() {
     appManagerSelectedIds.value = [];
+  }
+
+  function toggleMissingLaunchTargetBadge(checked) {
+    options.showMissingLaunchTargetBadge.value = Boolean(checked);
+  }
+
+  function toggleScanRootEnabled(rootId, checked) {
+    options.scanRoots.value = normalizeScanRoots(
+      options.scanRoots.value.map((root) =>
+        root.id === rootId ? { ...root, enabled: Boolean(checked) } : root
+      )
+    );
+  }
+
+  function changeScanRootPath(rootId, path) {
+    options.scanRoots.value = normalizeScanRoots(
+      options.scanRoots.value.map((root) =>
+        root.id === rootId ? { ...root, path: String(path || "") } : root
+      )
+    );
+  }
+
+  function removeScanRoot(rootId) {
+    options.scanRoots.value = options.scanRoots.value.filter((root) => root.id !== rootId);
+  }
+
+  function addScanRoot() {
+    options.scanRoots.value = normalizeScanRoots([
+      ...options.scanRoots.value,
+      {
+        id: options.makeId("root"),
+        type: "customDirectory",
+        label: "自定义目录",
+        path: "C:/",
+        enabled: true,
+        removable: true,
+      },
+    ]);
   }
 
   function toggleScanResultSelection(appId, checked) {
@@ -436,11 +475,19 @@ export function useLaunchpadApps(options) {
     if (!options.shouldUseNativeCatalog() || isScanningApps.value) return;
     isScanningApps.value = true;
     try {
-      const nativeApps = await scanApps();
-      const existingIds = new Set(options.collectAppsFromPages(options.pages.value).map((app) => app.id));
+      const enabledRoots = normalizeScanRoots(options.scanRoots.value).filter((root) => root.enabled);
+      const nativeApps = await scanApps(enabledRoots);
+      const now = new Date().toISOString();
+      const scannedRootIds = new Set(enabledRoots.map((root) => root.id));
+      options.scanRoots.value = options.scanRoots.value.map((root) =>
+        scannedRootIds.has(root.id) ? { ...root, lastScannedAt: now } : root
+      );
+      const existingApps = options.collectAppsFromPages(options.pages.value);
+      const existingIds = new Set(existingApps.map((app) => app.id));
+      const existingSourceKeys = new Set(existingApps.map((app) => app.sourceKey).filter(Boolean));
       const missingApps = (nativeApps || [])
         .map(normalizeNativeApp)
-        .filter((app) => !existingIds.has(app.id));
+        .filter((app) => !existingIds.has(app.id) && !existingSourceKeys.has(app.sourceKey));
       scanResultApps.value = missingApps;
       scanResultSelectedIds.value = missingApps.map((app) => app.id);
       isScanResultDialogOpen.value = true;
@@ -455,8 +502,15 @@ export function useLaunchpadApps(options) {
   function addSelectedScannedApps() {
     if (options.isDragActive() || !canAddScannedApps.value) return;
     const selectedIds = new Set(scanResultSelectedIds.value);
-    const existingIds = new Set(options.collectAppsFromPages(options.pages.value).map((app) => app.id));
-    const selectedApps = scanResultApps.value.filter((app) => selectedIds.has(app.id) && !existingIds.has(app.id));
+    const existingApps = options.collectAppsFromPages(options.pages.value);
+    const existingIds = new Set(existingApps.map((app) => app.id));
+    const existingSourceKeys = new Set(existingApps.map((app) => app.sourceKey).filter(Boolean));
+    const selectedApps = scanResultApps.value
+      .filter((app) => selectedIds.has(app.id) && !existingIds.has(app.id) && !existingSourceKeys.has(app.sourceKey))
+      .map((app) => ({
+        ...app,
+        id: options.makeId("app"),
+      }));
     if (!selectedApps.length) {
       closeScanResultDialog();
       return;
@@ -497,6 +551,7 @@ export function useLaunchpadApps(options) {
 
   return {
     addManagedApp,
+    addScanRoot,
     addSelectedScannedApps,
     appManagerSearchQuery,
     appManagerSelectedIds,
@@ -507,6 +562,7 @@ export function useLaunchpadApps(options) {
     canSaveEditingManagedApp,
     canScanManagedApps,
     chooseIconCandidate,
+    changeScanRootPath,
     clearManagedAppSelection,
     clearScanResultSelection,
     closeAddManagedAppPage,
@@ -554,9 +610,12 @@ export function useLaunchpadApps(options) {
     selectAllManagedApps,
     selectAllScanResultApps,
     selectedManagedAppCount,
+    toggleMissingLaunchTargetBadge,
     syncManagedAppState,
     toggleManagedAppSelection,
     toggleScanResultSelection,
+    toggleScanRootEnabled,
+    removeScanRoot,
     updateAppCustomIcon,
   };
 }

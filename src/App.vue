@@ -45,11 +45,13 @@
         :is-icon-selected="isIconSelected"
         :is-search-mode="isSearchMode"
         :is-textless-mode="isTextlessMode"
+        :launch-target-status-by-id="launchTargetStatusById"
         :layout-spring="layoutSpring"
         :page-grid-measure-style="pageGridMeasureStyle"
         :set-page-ref="setPageRef"
         :should-render-active-page="shouldRenderActivePage"
         :should-render-static-active-page="shouldRenderStaticActivePage"
+        :show-missing-launch-target-badge="showMissingLaunchTargetBadge"
         @desktop-focus="keyboardFocusArea = 'desktop'"
         @pointerdown-icon="beginDrag"
         @open-app="openApp"
@@ -165,6 +167,8 @@ const {
   canAddManagedApp,
   canSaveEditingManagedApp,
   canScanManagedApps,
+  addScanRoot,
+  changeScanRootPath,
   getLaunchTargetPath,
   toggleManagedAppSelection,
   selectAllManagedApps,
@@ -200,8 +204,13 @@ const {
   layoutRecoveryNotice,
   closeLayoutRecoveryNotice,
   rescanManagedApps,
+  removeScanRoot,
   addManagedApp,
   deleteSelectedManagedApps,
+  scanRoots,
+  showMissingLaunchTargetBadge,
+  toggleMissingLaunchTargetBadge,
+  toggleScanRootEnabled,
   dragFolderTargetId,
   dragMeta,
   applySettingsConfig,
@@ -234,6 +243,7 @@ const {
   getVisibleDesktopPage,
   folderPageSize,
   isIconSelected,
+  launchTargetStatusById,
   isIconOpening,
   beginDrag,
   openApp,
@@ -284,6 +294,8 @@ const settingsPanelState = {
   appVersion,
   applySettingsConfig,
   canScanManagedApps,
+  addScanRoot,
+  changeScanRootPath,
   changeDraftCols,
   changeDraftFolderCols,
   changeDraftFolderIconSize,
@@ -312,7 +324,9 @@ const settingsPanelState = {
   openAddManagedAppPage,
   openEditManagedApp,
   panelSpring,
+  removeScanRoot,
   rescanManagedApps,
+  scanRoots,
   selectedManagedAppCount,
   selectAllManagedApps,
   setDraftFolderIconSizeMode,
@@ -320,7 +334,10 @@ const settingsPanelState = {
   settingsPanelAnimate,
   settingsPanelInitial,
   shouldRenderSettingsPanel,
+  showMissingLaunchTargetBadge,
   toggleManagedAppSelection,
+  toggleMissingLaunchTargetBadge,
+  toggleScanRootEnabled,
 };
 
 const dialogState = {
@@ -403,6 +420,7 @@ const folderOverlayState = {
   isIconOpening,
   isIconSelected,
   isTextlessMode,
+  launchTargetStatusById,
   layoutSpring,
   openExistingAppIconChooser,
   renameFolder,
@@ -412,6 +430,7 @@ const folderOverlayState = {
   setFolderPageRef,
   shouldRenderFolderPage,
   shouldRenderStaticFolderPage,
+  showMissingLaunchTargetBadge,
 };
 
 const overlayState = {

@@ -638,6 +638,52 @@ body {
   gap: 8px;
 }
 
+.scan-root-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.scan-root-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.scan-root-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+}
+
+.scan-root-details {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.scan-root-name {
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 13px;
+  font-weight: 620;
+}
+
+.scan-root-path {
+  width: 100%;
+  height: 32px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  padding: 0 10px;
+  color: white;
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 12px;
+}
+
 .app-manager-search {
   width: 100%;
   height: 36px;
@@ -701,7 +747,8 @@ body {
 
 .settings-toggle input,
 .settings-option input[type="checkbox"],
-.app-manager-item input {
+.app-manager-item input,
+.scan-root-item input[type="checkbox"] {
   position: relative;
   display: grid;
   place-content: center;
@@ -718,14 +765,16 @@ body {
 
 .settings-toggle input:hover,
 .settings-option input[type="checkbox"]:hover,
-.app-manager-item input:hover {
+.app-manager-item input:hover,
+.scan-root-item input[type="checkbox"]:hover {
   border-color: rgba(255, 255, 255, 0.4);
   background: rgba(255, 255, 255, 0.08);
 }
 
 .settings-toggle input:focus-visible,
 .settings-option input[type="checkbox"]:focus-visible,
-.app-manager-item input:focus-visible {
+.app-manager-item input:focus-visible,
+.scan-root-item input[type="checkbox"]:focus-visible {
   outline: none;
   border-color: rgba(255, 255, 255, 0.78);
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.12);
@@ -733,7 +782,8 @@ body {
 
 .settings-toggle input::after,
 .settings-option input[type="checkbox"]::after,
-.app-manager-item input::after {
+.app-manager-item input::after,
+.scan-root-item input[type="checkbox"]::after {
   content: "";
   width: 5px;
   height: 9px;
@@ -746,14 +796,16 @@ body {
 
 .settings-toggle input:checked,
 .settings-option input[type="checkbox"]:checked,
-.app-manager-item input:checked {
+.app-manager-item input:checked,
+.scan-root-item input[type="checkbox"]:checked {
   border-color: rgba(255, 255, 255, 0.92);
   background: rgba(255, 255, 255, 0.92);
 }
 
 .settings-toggle input:checked::after,
 .settings-option input[type="checkbox"]:checked::after,
-.app-manager-item input:checked::after {
+.app-manager-item input:checked::after,
+.scan-root-item input[type="checkbox"]:checked::after {
   opacity: 1;
   transform: translateY(-1px) rotate(45deg) scale(1);
 }
@@ -1654,6 +1706,27 @@ body {
 .change-app-icon-button:hover,
 .reset-app-icon-button:hover {
   background: rgba(37, 99, 235, 0.92);
+}
+
+.missing-launch-target-badge {
+  position: absolute;
+  right: -8px;
+  bottom: -8px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  border-radius: 999px;
+  color: white;
+  background: #b84a54;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.24);
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: none;
 }
 
 @keyframes icon-jiggle {

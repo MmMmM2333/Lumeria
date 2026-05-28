@@ -179,6 +179,49 @@
         </div>
 
         <div v-else-if="activeSettingsTab === 'apps'" class="settings-tab-panel" role="tabpanel" aria-label="Apps">
+          <section class="settings-section" aria-label="扫描来源">
+            <div class="settings-section-header">
+              <div>
+                <h3>扫描来源</h3>
+                <p>{{ state.scanRoots.value.filter((root) => root.enabled).length }} / {{ state.scanRoots.value.length }} 个来源已启用</p>
+              </div>
+              <div class="settings-inline-actions">
+                <button class="settings-secondary-button" type="button" @click="state.addScanRoot">新增来源</button>
+              </div>
+            </div>
+            <label class="settings-toggle">
+              <span>显示失效路径标记</span>
+              <input
+                :checked="state.showMissingLaunchTargetBadge.value"
+                type="checkbox"
+                aria-label="显示失效路径标记"
+                @change="state.toggleMissingLaunchTargetBadge($event.target.checked)"
+              />
+            </label>
+            <div class="scan-root-list">
+              <div v-for="root in state.scanRoots.value" :key="root.id" class="scan-root-item">
+                <input
+                  type="checkbox"
+                  :checked="root.enabled"
+                  :aria-label="`启用 ${root.label}`"
+                  @change="state.toggleScanRootEnabled(root.id, $event.target.checked)"
+                />
+                <span class="scan-root-details">
+                  <span class="scan-root-name">{{ root.label }}</span>
+                  <input
+                    class="scan-root-path"
+                    :value="root.path"
+                    type="text"
+                    :aria-label="`${root.label} 路径`"
+                    @change="state.changeScanRootPath(root.id, $event.target.value)"
+                  />
+                  <span v-if="root.lastScannedAt" class="settings-field-hint">上次扫描 {{ root.lastScannedAt }}</span>
+                </span>
+                <button class="settings-danger-button" type="button" :disabled="!root.removable" @click="state.removeScanRoot(root.id)">删除</button>
+              </div>
+            </div>
+          </section>
+
           <section class="settings-section" aria-label="应用管理">
             <div class="settings-section-header">
               <div>

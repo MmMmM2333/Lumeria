@@ -9,7 +9,7 @@ use std::{
     slice,
 };
 
-use crate::path_utils::extension;
+use crate::path_utils::{extension, windows_api_path};
 
 #[cfg(target_os = "windows")]
 use windows::{
@@ -115,7 +115,7 @@ pub fn debug_extract_icon_png(source_path: &Path, output_path: &Path) -> Result<
 #[cfg(target_os = "windows")]
 fn extract_shell_icon_png(source_path: &Path, output_path: &Path) -> Result<(), String> {
     let _com_guard = ComGuard::new();
-    let source = HSTRING::from(source_path.to_string_lossy().as_ref());
+    let source = HSTRING::from(windows_api_path(source_path));
     let factory: IShellItemImageFactory = unsafe {
         SHCreateItemFromParsingName(&source, None::<&IBindCtx>)
             .map_err(|error| format!("Failed to create shell item image factory: {error}"))?
@@ -290,7 +290,7 @@ fn icon_choice_indexes(source_path: &Path, preferred_index: Option<i32>) -> Vec<
 
 #[cfg(target_os = "windows")]
 fn enum_pe_icon_indexes(source_path: &Path, preferred_index: Option<i32>) -> Vec<Option<i32>> {
-    let source = HSTRING::from(source_path.to_string_lossy().as_ref());
+    let source = HSTRING::from(windows_api_path(source_path));
     let module = unsafe {
         LoadLibraryExW(
             &source,
@@ -340,7 +340,7 @@ fn resolve_shortcut_icon_sources(path: &Path) -> Vec<IconSource> {
     let Ok(persist_file) = shell_link.cast::<IPersistFile>() else {
         return sources;
     };
-    let shortcut = HSTRING::from(path.to_string_lossy().as_ref());
+    let shortcut = HSTRING::from(windows_api_path(path));
     if unsafe { persist_file.Load(&shortcut, STGM_READ) }.is_err() {
         return sources;
     }
@@ -434,7 +434,7 @@ fn extract_pe_resource_icon_png(
     output_path: &Path,
     icon_index: Option<i32>,
 ) -> Result<(), String> {
-    let source = HSTRING::from(source_path.to_string_lossy().as_ref());
+    let source = HSTRING::from(windows_api_path(source_path));
     let module = unsafe {
         LoadLibraryExW(
             &source,

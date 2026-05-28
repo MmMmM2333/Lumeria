@@ -103,7 +103,7 @@ fn run() -> Result<(), String> {
     })?;
 
     let _com_guard = ComGuard::new();
-    let source = HSTRING::from(source_path.to_string_lossy().as_ref());
+    let source = HSTRING::from(source_path.to_string_lossy().replace('/', "\\"));
     let factory: IShellItemImageFactory = unsafe {
         SHCreateItemFromParsingName(&source, None::<&IBindCtx>)
             .map_err(|error| format!("Failed to create shell item image factory: {error}"))?

@@ -55,6 +55,7 @@ function createLifecycleOptions() {
       iconSize: ref(64),
       isSearchMode: ref(false),
       isTextlessMode: ref(false),
+      launchTargetStatusById: ref({}),
       loadNativeLaunchpadData: makeCall("loadNativeLaunchpadData"),
       observeFolderViewport: makeCall("observeFolderViewport"),
       pages: ref([]),
@@ -63,9 +64,12 @@ function createLifecycleOptions() {
         return Promise.resolve();
       },
       renderedFolder: ref(null),
+      scanRoots: ref([]),
       scheduleFolderViewportMetrics: makeCall("scheduleFolderViewportMetrics"),
+      scheduleLaunchTargetStatusCheck: makeCall("scheduleLaunchTargetStatusCheck"),
       scheduleNativeLayoutSave: makeCall("scheduleNativeLayoutSave"),
       schedulePageGridMetrics: makeCall("schedulePageGridMetrics"),
+      showMissingLaunchTargetBadge: ref(true),
       syncManagedAppState: makeCall("syncManagedAppState"),
       updateFolderViewportHeight: makeCall("updateFolderViewportHeight"),
       updatePageGridMetrics: makeCall("updatePageGridMetrics"),
@@ -101,11 +105,12 @@ export async function runLaunchpadLifecycleTests() {
   registerLaunchpadLifecycleWatchers(options, (source, callback, config) => {
     watchers.push({ source, callback, config });
   });
-  assert(watchers.length === 6, "lifecycle should register all controller watchers");
+  assert(watchers.length === 7, "lifecycle should register all controller watchers");
   assert(watchers.every((item) => item.config.flush === "post"), "lifecycle watchers should flush after render");
   assert(watchers[0].callback === options.schedulePageGridMetrics, "layout setting watcher should refresh page metrics");
   assert(watchers[2].source === options.folderViewportRef, "folder viewport watcher should observe the viewport ref");
-  assert(watchers[5].callback === options.syncManagedAppState, "managed app watcher should sync app state");
+  assert(watchers[5].callback === options.scheduleLaunchTargetStatusCheck, "launch target watcher should refresh path status");
+  assert(watchers[6].callback === options.syncManagedAppState, "managed app watcher should sync app state");
 
   const observed = [];
   const ObserverCtor = class {

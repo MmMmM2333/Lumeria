@@ -8,6 +8,17 @@ function getTauriEvent() {
   return window.__TAURI__?.event || null;
 }
 
+export function convertFilePathToAssetUrl(filePath) {
+  if (typeof window === "undefined") return null;
+  const convertFileSrc = window.__TAURI__?.core?.convertFileSrc;
+  if (!convertFileSrc || !filePath) return null;
+  try {
+    return convertFileSrc(filePath);
+  } catch {
+    return null;
+  }
+}
+
 export function isNativeBridgeAvailable() {
   return Boolean(getTauriInvoke());
 }
@@ -18,10 +29,10 @@ export async function listenNativeEvent(eventName, handler) {
   return event.listen(eventName, handler);
 }
 
-export async function scanApps() {
+export async function scanApps(roots = []) {
   const invoke = getTauriInvoke();
   if (!invoke) return null;
-  return invoke("scan_apps");
+  return invoke("scan_apps", { roots });
 }
 
 export async function loadLayout() {
@@ -46,6 +57,18 @@ export async function loadAppIconChoices(targetPath) {
   const invoke = getTauriInvoke();
   if (!invoke) return [];
   return invoke("load_app_icon_choices", { targetPath });
+}
+
+export async function loadCachedAppIcons(icons) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return [];
+  return invoke("load_cached_app_icons", { icons });
+}
+
+export async function checkLaunchTargets(targets) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return [];
+  return invoke("check_launch_targets", { targets });
 }
 
 export async function launchApp(appId) {

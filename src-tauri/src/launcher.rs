@@ -13,9 +13,7 @@ pub(crate) fn launch_path(path: &str, launch_args: Option<&str>) -> Result<(), S
 
     let result = unsafe {
         match parameters.as_ref() {
-            Some(parameters) => {
-                ShellExecuteW(None, None, &file, parameters, None, SW_SHOWNORMAL)
-            }
+            Some(parameters) => ShellExecuteW(None, None, &file, parameters, None, SW_SHOWNORMAL),
             None => ShellExecuteW(None, None, &file, None, None, SW_SHOWNORMAL),
         }
     };

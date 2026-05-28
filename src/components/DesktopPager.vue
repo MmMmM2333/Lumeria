@@ -38,6 +38,7 @@
                   :selected="isIconSelected(isSearchMode ? 'search' : 'desktop', item.id, pageNumber)"
                   :drop-target="!isSearchMode && dragFolderTargetId === item.id"
                   :opening="isIconOpening(isSearchMode ? 'search' : 'desktop', item.id, pageNumber)"
+                  :launch-target-status="showMissingLaunchTargetBadge ? launchTargetStatusById[item.id] : null"
                   @pointerdown-icon="(...args) => forward('pointerdown-icon', args)"
                   @open-app="(...args) => forward('open-app', args)"
                   @context-menu-icon="(...args) => forward('context-menu-icon', args)"
@@ -84,11 +85,13 @@ defineProps({
   isIconSelected: { type: Function, required: true },
   isSearchMode: { type: Boolean, default: false },
   isTextlessMode: { type: Boolean, default: false },
+  launchTargetStatusById: { type: Object, default: () => ({}) },
   layoutSpring: { type: Object, required: true },
   pageGridMeasureStyle: { type: Object, required: true },
   setPageRef: { type: Function, required: true },
   shouldRenderActivePage: { type: Function, required: true },
   shouldRenderStaticActivePage: { type: Function, required: true },
+  showMissingLaunchTargetBadge: { type: Boolean, default: true },
 });
 
 const emit = defineEmits([

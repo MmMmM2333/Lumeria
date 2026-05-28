@@ -45,7 +45,7 @@ export function runLaunchpadDataTests() {
   assert(makeLaunchTarget("C:/Tools/App.exe").kind === "executable", "local targets should become executable launch targets");
 
   const catalogApps = [
-    { id: "a", type: "app", name: "A", emoji: "A", iconDataUrl: "data:a", launchTarget: { kind: "shortcut", path: "a.lnk" } },
+    { id: "a", type: "app", name: "A", emoji: "A", iconPath: "C:/Icons/a.png", iconDataUrl: "data:a", launchTarget: { kind: "shortcut", path: "a.lnk" } },
     { id: "b", type: "app", name: "B", emoji: "B", launchTarget: { kind: "shortcut", path: "b.lnk" } },
     { id: "c", type: "app", name: "C", emoji: "C", launchTarget: { kind: "shortcut", path: "c.lnk" } },
     { id: "hidden", type: "app", name: "Hidden", emoji: "H", launchTarget: { kind: "shortcut", path: "hidden.lnk" } },
@@ -97,6 +97,7 @@ export function runLaunchpadDataTests() {
   assert(snapshot.settings.textless === true && snapshot.settings.hiddenAppIds[0] === "hidden", "layout snapshots should include settings");
   assert(snapshot.settings.folderIconSizeMode === "custom" && snapshot.settings.folderIconSize === 88, "layout snapshots should include folder icon size settings");
   assert(!("iconDataUrl" in snapshot.pages[0][0]), "layout snapshots should omit catalog icon data");
+  assert(snapshot.pages[0][0].iconPath === "C:/Icons/a.png", "layout snapshots should preserve cached icon paths");
   assert(snapshot.pages[0][0].customIconDataUrl === "data:custom-a", "layout snapshots should preserve custom icon data");
   assert(snapshot.pages[0][1].children.length === 2, "folder snapshots should include flat children for compatibility");
 }

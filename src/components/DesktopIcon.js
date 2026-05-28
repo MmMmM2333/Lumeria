@@ -25,6 +25,7 @@ export default defineComponent({
     selected: { type: Boolean, default: false },
     dropTarget: { type: Boolean, default: false },
     opening: { type: Boolean, default: false },
+    launchTargetStatus: { type: String, default: null },
   },
   emits: ["pointerdown-icon", "open-app", "context-menu-icon", "remove-app", "choose-app-icon", "reset-app-icon"],
   setup(props, { emit }) {
@@ -147,6 +148,13 @@ export default defineComponent({
             onClick: handleResetIcon,
           }, "↺")
         : null;
+      const missingBadge = item.type === "app" && props.launchTargetStatus === "missing"
+        ? h("span", {
+            class: "missing-launch-target-badge",
+            title: "启动路径不存在",
+            "aria-label": "启动路径不存在",
+          }, "!")
+        : null;
       const hitTargetAttrs = {
         class: cx(
           "icon-hit-target",
@@ -201,6 +209,7 @@ export default defineComponent({
                     chooseIconButton,
                     resetIconButton,
                     h("div", { class: cx("icon-box", props.compact && "icon-box-compact") }, iconChildren),
+                    missingBadge,
                   ]),
                 ]),
                 !props.textless ? h("div", { class: "icon-name" }, item.name) : null,
