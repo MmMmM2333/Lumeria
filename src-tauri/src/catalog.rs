@@ -2,6 +2,7 @@ use std::{
     collections::{hash_map::DefaultHasher, HashMap, HashSet},
     env, fs,
     hash::{Hash, Hasher},
+    io::ErrorKind,
     path::{Path, PathBuf},
 };
 
@@ -148,7 +149,7 @@ fn collect_apps_from_dir(
 ) -> Result<(), String> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) if is_skippable_scan_dir_error(error.kind()) => return Ok(()),
         Err(error) => {
             return Err(format!(
                 "Failed to read app directory {}: {error}",
@@ -193,6 +194,10 @@ fn is_supported_launch_file(path: &Path) -> bool {
         extension(path).as_deref(),
         Some("lnk") | Some("url") | Some("exe")
     )
+}
+
+fn is_skippable_scan_dir_error(kind: ErrorKind) -> bool {
+    matches!(kind, ErrorKind::NotFound | ErrorKind::PermissionDenied)
 }
 
 fn make_catalog_candidate(root: &ScanRoot, root_dir: &Path, path: &Path) -> CatalogCandidate {

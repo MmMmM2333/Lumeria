@@ -1,4 +1,5 @@
 import { cx } from "../domain/launchpadLayout.js";
+import { isNativeBridgeAvailable } from "../api/launchpadApi.js";
 import { useAltEditMode } from "./useAltEditMode.js";
 import { useLaunchpadControllerHelpers } from "./useLaunchpadControllerHelpers.js";
 import { useLaunchpadControllerState } from "./useLaunchpadControllerState.js";
@@ -108,6 +109,7 @@ export function useLaunchpadController() {
     folderPageSize,
     pageSize,
     pages,
+    seedEnabled: !isNativeBridgeAvailable(),
   });
   let dragControls = null;
   let cancelLongPressHandler = () => {};

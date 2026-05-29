@@ -10,6 +10,7 @@ export function useLaunchpadControllerHelpers(options) {
     folderPageSize,
     pageSize,
     pages,
+    seedEnabled = true,
     seeds = appSeeds,
   } = options;
 
@@ -29,7 +30,7 @@ export function useLaunchpadControllerHelpers(options) {
     withFolderPages: layoutHelpers.withFolderPages,
   });
 
-  pages.value = chunkIntoPages(seeds.map(layoutHelpers.makeApp), pageSize.value);
+  pages.value = seedEnabled ? chunkIntoPages(seeds.map(layoutHelpers.makeApp), pageSize.value) : [[]];
 
   return {
     chunkIntoPages,

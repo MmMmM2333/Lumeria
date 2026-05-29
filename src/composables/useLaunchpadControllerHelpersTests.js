@@ -27,6 +27,18 @@ export function runLaunchpadControllerHelpersTests() {
   assert(typeof helpers.withFolderPages === "function", "folder page helper should be returned");
   assert(typeof helpers.createLayoutSnapshot === "function", "data helpers should be returned");
 
+  const nativePages = shallowRef([]);
+  useLaunchpadControllerHelpers({
+    folderPageSize: ref(2),
+    pageSize: ref(2),
+    pages: nativePages,
+    seedEnabled: false,
+    seeds: [
+      { name: "Hidden Seed", emoji: "H" },
+    ],
+  });
+  assert(nativePages.value.length === 1 && nativePages.value[0].length === 0, "disabled seeds should initialize an empty page");
+
   const folder = {
     id: "folder",
     type: "folder",

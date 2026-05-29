@@ -8,6 +8,8 @@ import {
 import { clamp } from "../domain/launchpadLayout.js";
 import {
   DEFAULT_SCAN_KEYWORD_BLACKLIST,
+  isAppBlockedByScanBlacklist,
+  normalizeNativeApp,
   normalizeScanAppBlacklist,
   normalizeScanKeywordBlacklist,
   normalizeScanRoots,
@@ -22,6 +24,7 @@ import {
   loadCachedAppIcons,
   loadLayout,
   saveLayout,
+  scanApps,
   setMainWindowEffectsEnabled,
 } from "../api/launchpadApi.js";
 
@@ -37,6 +40,7 @@ export function useLaunchpadNative(options) {
   let nativeSaveTimer = null;
   let nativeWindowHideTimer = null;
   let nativeWindowOpenSequence = null;
+  let launchTargetStatusCheckRequestId = 0;
   let unlistenCloseDesktopEvent = null;
   let unlistenOpenDesktopEvent = null;
   let unlistenSettingsEvent = null;
@@ -129,7 +133,21 @@ export function useLaunchpadNative(options) {
     try {
       const savedLayout = await loadLayout();
       if (!savedLayout) {
+        options.pages.value = [[]];
+        const nativeApps = await scanInitialNativeApps();
+        options.pages.value = options.mergeNativeCatalogWithSavedLayout(
+          nativeApps,
+          { version: 1, pages: [] },
+          options.hiddenAppIds.value
+        );
+        options.pages.value = applyCachedIconAssetUrls(options.pages.value);
+        options.commitPageIndex(options.pageIndex.value);
+        options.commitSearchPageIndex(options.searchPageIndex.value);
+        options.commitFolderPageIndex(options.folderPageIndex.value);
         nativeLayoutReady = true;
+        hydrateCachedAppIcons();
+        options.schedulePageGridMetrics();
+        scheduleLaunchTargetStatusCheck();
         return;
       }
 
@@ -151,6 +169,24 @@ export function useLaunchpadNative(options) {
       nativeLayoutReady = false;
       console.error("Failed to load native LaunchPad data", error);
     }
+  }
+
+  async function scanInitialNativeApps() {
+    const enabledRoots = normalizeScanRoots(options.scanRoots.value).filter((root) => root.enabled);
+    if (!enabledRoots.length) return [];
+    const scanFilters = {
+      keywordBlacklist: normalizeScanKeywordBlacklist(options.scanKeywordBlacklist.value),
+      appBlacklist: normalizeScanAppBlacklist(options.scanAppBlacklist.value),
+    };
+    const nativeApps = await scanApps(enabledRoots, scanFilters);
+    const now = new Date().toISOString();
+    const scannedRootIds = new Set(enabledRoots.map((root) => root.id));
+    options.scanRoots.value = options.scanRoots.value.map((root) =>
+      scannedRootIds.has(root.id) ? { ...root, lastScannedAt: now } : root
+    );
+    return (nativeApps || [])
+      .map(normalizeNativeApp)
+      .filter((app) => !isAppBlockedByScanBlacklist(app, scanFilters.appBlacklist));
   }
 
   function applyCachedIconAssetUrls(sourcePages) {
@@ -237,24 +273,28 @@ export function useLaunchpadNative(options) {
   }
 
   function scheduleLaunchTargetStatusCheck() {
+    const requestId = (launchTargetStatusCheckRequestId += 1);
     if (!options.showMissingLaunchTargetBadge.value || !isNativeBridgeAvailable()) {
       options.launchTargetStatusById.value = {};
       return;
     }
-    window.setTimeout(checkCurrentLaunchTargets, 0);
+    window.setTimeout(() => checkCurrentLaunchTargets(requestId), 0);
   }
 
-  async function checkCurrentLaunchTargets() {
+  async function checkCurrentLaunchTargets(requestId) {
+    if (requestId !== launchTargetStatusCheckRequestId) return;
     if (!options.showMissingLaunchTargetBadge.value || !isNativeBridgeAvailable()) return;
     const apps = options.collectAppsFromPages(options.pages.value)
       .filter((app) => app?.id && app.launchTarget)
       .map((app) => ({ id: app.id, launchTarget: app.launchTarget }));
     if (!apps.length) {
+      if (requestId !== launchTargetStatusCheckRequestId) return;
       options.launchTargetStatusById.value = {};
       return;
     }
     try {
       const results = await checkLaunchTargets(apps);
+      if (requestId !== launchTargetStatusCheckRequestId || !options.showMissingLaunchTargetBadge.value) return;
       options.launchTargetStatusById.value = Object.fromEntries(
         (results || []).map((result) => [result.id, result.status])
       );

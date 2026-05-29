@@ -155,8 +155,8 @@ export function useLaunchpadApps(options) {
         id: options.makeId("root"),
         type: "customDirectory",
         label: "自定义目录",
-        path: "C:/",
-        enabled: true,
+        path: "%USERPROFILE%/Desktop",
+        enabled: false,
         removable: true,
       },
     ]);
@@ -560,11 +560,7 @@ export function useLaunchpadApps(options) {
     const existingIds = new Set(existingApps.map((app) => app.id));
     const existingSourceKeys = new Set(existingApps.map((app) => app.sourceKey).filter(Boolean));
     const selectedApps = scanResultApps.value
-      .filter((app) => selectedIds.has(app.id) && !existingIds.has(app.id) && !existingSourceKeys.has(app.sourceKey))
-      .map((app) => ({
-        ...app,
-        id: options.makeId("app"),
-      }));
+      .filter((app) => selectedIds.has(app.id) && !existingIds.has(app.id) && !existingSourceKeys.has(app.sourceKey));
     if (!selectedApps.length) {
       closeScanResultDialog();
       return;
