@@ -186,6 +186,7 @@
                 <p>{{ state.scanRoots.value.filter((root) => root.enabled).length }} / {{ state.scanRoots.value.length }} 个来源已启用</p>
               </div>
               <div class="settings-inline-actions">
+                <button class="settings-secondary-button" type="button" @click="state.confirmResetScanRoots">还原默认来源</button>
                 <button class="settings-secondary-button" type="button" @click="state.addScanRoot">新增来源</button>
               </div>
             </div>
@@ -207,15 +208,31 @@
                   @change="state.toggleScanRootEnabled(root.id, $event.target.checked)"
                 />
                 <span class="scan-root-details">
-                  <span class="scan-root-name">{{ root.label }}</span>
                   <input
-                    class="scan-root-path"
-                    :value="root.path"
+                    class="scan-root-label"
+                    :value="root.label"
                     type="text"
-                    :aria-label="`${root.label} 路径`"
-                    @change="state.changeScanRootPath(root.id, $event.target.value)"
+                    :aria-label="`${root.label} 标签`"
+                    @change="state.changeScanRootLabel(root.id, $event.target.value)"
                   />
-                  <span v-if="root.lastScannedAt" class="settings-field-hint">上次扫描 {{ root.lastScannedAt }}</span>
+                  <span class="scan-root-path-row">
+                    <input
+                      class="scan-root-path"
+                      :value="root.path"
+                      type="text"
+                      :aria-label="`${root.label} 路径`"
+                      @change="state.changeScanRootPath(root.id, $event.target.value)"
+                    />
+                    <button
+                      class="settings-secondary-button scan-root-browse-button"
+                      type="button"
+                      :disabled="!state.canBrowseScanRoots.value || state.isBrowsingScanRoot(root.id)"
+                      @click="state.browseScanRootDirectory(root.id)"
+                    >
+                      {{ state.isBrowsingScanRoot(root.id) ? "选择中" : "浏览" }}
+                    </button>
+                  </span>
+                  <span v-if="root.lastScannedAt" class="settings-field-hint">上次扫描 {{ formatScanTime(root.lastScannedAt) }}</span>
                 </span>
                 <button class="settings-danger-button" type="button" :disabled="!root.removable" @click="state.removeScanRoot(root.id)">删除</button>
               </div>
@@ -360,4 +377,17 @@ const settingsTabs = [
   { id: "apps", label: "Apps" },
   { id: "about", label: "关于" },
 ];
+
+function formatScanTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(date);
+}
 </script>

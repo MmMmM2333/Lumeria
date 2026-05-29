@@ -1,5 +1,6 @@
 import { computed, ref, shallowRef } from "vue";
 import {
+  DEFAULT_SCAN_ROOTS,
   compareAppsByDefaultOrder,
   fallbackAppGlyph,
   isAppBlockedByScanBlacklist,
@@ -10,7 +11,7 @@ import {
   normalizeScanKeywordBlacklist,
   normalizeScanRoots,
 } from "../domain/launchpadData.js";
-import { loadAppIconChoices, pickLaunchFile, scanApps } from "../api/launchpadApi.js";
+import { loadAppIconChoices, pickLaunchFile, pickScanRootDirectory, scanApps } from "../api/launchpadApi.js";
 
 export function useLaunchpadApps(options) {
   const appManagerSelectedIds = ref([]);
@@ -33,6 +34,7 @@ export function useLaunchpadApps(options) {
   const isEditAppIconReset = ref(false);
   const isBrowsingEditAppTarget = ref(false);
   const isScanningApps = ref(false);
+  const browsingScanRootIds = ref([]);
   const iconChooser = shallowRef(null);
   const iconChoices = ref([]);
   const isLoadingIconChoices = ref(false);
@@ -56,6 +58,7 @@ export function useLaunchpadApps(options) {
   const newManagedAppGlyph = computed(() => fallbackAppGlyph(newAppName.value));
   const canSaveEditingManagedApp = computed(() => editAppName.value.trim().length > 0 && editAppTarget.value.trim().length > 0);
   const editingManagedApp = computed(() => managedApps.value.find((app) => app.id === editingManagedAppId.value) || null);
+  const canBrowseScanRoots = computed(() => options.shouldUseNativeCatalog());
   const canScanManagedApps = computed(() => options.shouldUseNativeCatalog() && options.scanRoots.value.some((root) => root.enabled));
 
   function getLaunchTargetPath(app) {
@@ -144,6 +147,14 @@ export function useLaunchpadApps(options) {
     );
   }
 
+  function changeScanRootLabel(rootId, label) {
+    options.scanRoots.value = normalizeScanRoots(
+      options.scanRoots.value.map((root) =>
+        root.id === rootId ? { ...root, label: String(label || "") } : root
+      )
+    );
+  }
+
   function removeScanRoot(rootId) {
     options.scanRoots.value = options.scanRoots.value.filter((root) => root.id !== rootId);
   }
@@ -160,6 +171,45 @@ export function useLaunchpadApps(options) {
         removable: true,
       },
     ]);
+  }
+
+  function resetScanRootsToDefaults() {
+    options.scanRoots.value = DEFAULT_SCAN_ROOTS.map((root) => ({ ...root }));
+  }
+
+  function confirmResetScanRoots() {
+    options.openWarningDialog?.({
+      title: "还原默认来源",
+      message: "将移除当前自定义扫描来源，并恢复为用户开始菜单和系统开始菜单。",
+      cancelText: "取消",
+      confirmText: "还原",
+      onConfirm: resetScanRootsToDefaults,
+    });
+  }
+
+  function setBrowsingScanRoot(rootId, browsing) {
+    const ids = new Set(browsingScanRootIds.value);
+    if (browsing) ids.add(rootId);
+    else ids.delete(rootId);
+    browsingScanRootIds.value = Array.from(ids);
+  }
+
+  function isBrowsingScanRoot(rootId) {
+    return browsingScanRootIds.value.includes(rootId);
+  }
+
+  async function browseScanRootDirectory(rootId) {
+    if (!options.shouldUseNativeCatalog() || !rootId || isBrowsingScanRoot(rootId)) return;
+    setBrowsingScanRoot(rootId, true);
+    try {
+      const selectedPath = await pickScanRootDirectory();
+      if (!selectedPath) return;
+      changeScanRootPath(rootId, selectedPath);
+    } catch (error) {
+      console.error("Failed to pick scan root directory", error);
+    } finally {
+      setBrowsingScanRoot(rootId, false);
+    }
   }
 
   function addScanKeywordBlacklistItem() {
@@ -611,9 +661,12 @@ export function useLaunchpadApps(options) {
     canAddManagedApp,
     canAddScannedApps,
     canSaveEditingManagedApp,
+    canBrowseScanRoots,
     canScanManagedApps,
+    browseScanRootDirectory,
     chooseIconCandidate,
     changeScanRootPath,
+    changeScanRootLabel,
     clearManagedAppSelection,
     clearScanResultSelection,
     closeAddManagedAppPage,
@@ -637,6 +690,7 @@ export function useLaunchpadApps(options) {
     ignoreSelectedManagedApps,
     isBrowsingEditAppTarget,
     isBrowsingNewAppTarget,
+    isBrowsingScanRoot,
     isEditAppIconReset,
     isLoadingIconChoices,
     isScanningApps,
@@ -670,6 +724,7 @@ export function useLaunchpadApps(options) {
     toggleScanResultSelection,
     toggleScanRootEnabled,
     removeScanRoot,
+    confirmResetScanRoots,
     removeScanAppBlacklistItem,
     removeScanKeywordBlacklistItem,
     updateAppCustomIcon,

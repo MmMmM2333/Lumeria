@@ -13,7 +13,10 @@ use catalog::{
     icon_cache_dir, icon_file_data_url, scan_apps_from_roots, scan_start_menu_apps, stable_app_id,
     ScanFilters, ScanRoot,
 };
-use file_dialog::{pick_launch_file as pick_native_launch_file, PickedLaunchFile};
+use file_dialog::{
+    pick_launch_file as pick_native_launch_file,
+    pick_scan_root_directory as pick_native_scan_root_directory, PickedLaunchFile,
+};
 use icons::cache_app_icon_choices;
 use launcher::launch_path;
 use layout_store::{
@@ -123,6 +126,11 @@ fn save_layout(app: AppHandle, layout: serde_json::Value) -> Result<(), String> 
 #[tauri::command]
 fn pick_launch_file(app: AppHandle) -> Result<Option<PickedLaunchFile>, String> {
     pick_native_launch_file(&app)
+}
+
+#[tauri::command]
+fn pick_scan_root_directory() -> Result<Option<String>, String> {
+    pick_native_scan_root_directory()
 }
 
 #[tauri::command]
@@ -331,6 +339,7 @@ pub fn run() {
             load_layout,
             save_layout,
             pick_launch_file,
+            pick_scan_root_directory,
             load_app_icon_choices,
             load_cached_app_icons,
             check_launch_targets,

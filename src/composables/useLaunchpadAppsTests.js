@@ -25,6 +25,7 @@ export async function runLaunchpadAppsTests() {
   };
 
   await withMockTauri(async (command) => {
+    if (command === "pick_scan_root_directory") return "D:\\Tools";
     if (command !== "scan_apps") throw new Error(`Unexpected invoke: ${command}`);
     return [
       {
@@ -39,6 +40,7 @@ export async function runLaunchpadAppsTests() {
     const pages = shallowRef([[]]);
     const hiddenAppIds = ref(["win-app-1"]);
     const scanRoots = ref([{ id: "root", type: "customDirectory", label: "Root", path: "C:/Apps", enabled: true }]);
+    const warningDialogs = [];
     const apps = useLaunchpadApps({
       appendAppsToPages: (_sourcePages, selectedApps) => [selectedApps.map((app) => ({ ...app }))],
       cloneItem: (item) => (item ? { ...item } : item),
@@ -55,6 +57,7 @@ export async function runLaunchpadAppsTests() {
       isDragActive: () => false,
       makeId: () => "generated-app-id",
       openFolderId: ref(null),
+      openWarningDialog: (config) => warningDialogs.push(config),
       pageIndex: ref(0),
       pages,
       removeEverywhere: (sourcePages) => sourcePages,
@@ -72,6 +75,18 @@ export async function runLaunchpadAppsTests() {
     const addedRoot = scanRoots.value[1];
     assert(addedRoot.enabled === false, "new scan roots should not be enabled by default");
     assert(addedRoot.path !== "C:/", "new scan roots should not default to the full system drive");
+
+    apps.changeScanRootLabel("root", "工具目录");
+    assert(scanRoots.value[0].label === "工具目录", "scan root labels should be editable");
+
+    await apps.browseScanRootDirectory("root");
+    assert(scanRoots.value[0].path === "D:\\Tools", "scan root browse should update the selected path");
+
+    apps.confirmResetScanRoots();
+    assert(scanRoots.value[0].id === "root", "default reset should wait for confirmation");
+    assert(warningDialogs.length === 1, "default reset should open a confirmation dialog");
+    warningDialogs[0].onConfirm();
+    assert(scanRoots.value.map((root) => root.id).join(",") === "root-start-menu-user,root-start-menu-system", "confirmed reset should restore default scan roots");
 
     await apps.rescanManagedApps();
     apps.addSelectedScannedApps();

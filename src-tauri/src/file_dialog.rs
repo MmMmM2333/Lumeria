@@ -14,7 +14,8 @@ use windows::{
         },
         UI::Shell::{
             Common::COMDLG_FILTERSPEC, FileOpenDialog, IFileOpenDialog, IShellLinkW, ShellLink,
-            FOS_FILEMUSTEXIST, FOS_FORCEFILESYSTEM, SIGDN_FILESYSPATH, SLGP_UNCPRIORITY,
+            FOS_FILEMUSTEXIST, FOS_FORCEFILESYSTEM, FOS_PATHMUSTEXIST, FOS_PICKFOLDERS,
+            SIGDN_FILESYSPATH, SLGP_UNCPRIORITY,
         },
     },
 };
@@ -56,6 +57,22 @@ pub(crate) fn pick_launch_file(
 }
 
 #[cfg(target_os = "windows")]
+pub(crate) fn pick_scan_root_directory() -> Result<Option<String>, String> {
+    let _com_guard = ComGuard::new();
+    let result = unsafe { pick_scan_root_directory_inner() };
+    match result {
+        Ok(path) => Ok(Some(path)),
+        Err(error) if error.code() == HRESULT::from_win32(ERROR_CANCELLED.0) => Ok(None),
+        Err(error) => Err(format!("Failed to pick scan root directory: {error}")),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn pick_scan_root_directory() -> Result<Option<String>, String> {
+    Err("Picking scan root directories is only implemented on Windows".to_string())
+}
+
+#[cfg(target_os = "windows")]
 unsafe fn pick_launch_file_inner() -> windows::core::Result<String> {
     let dialog: IFileOpenDialog =
         unsafe { CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)? };
@@ -88,6 +105,26 @@ unsafe fn pick_launch_file_inner() -> windows::core::Result<String> {
             HRESULT::from_win32(ERROR_CANCELLED.0),
             "Unsupported launch file type",
         ))
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn pick_scan_root_directory_inner() -> windows::core::Result<String> {
+    let dialog: IFileOpenDialog =
+        unsafe { CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)? };
+
+    unsafe {
+        dialog.SetTitle(&HSTRING::from("选择扫描来源"))?;
+        dialog.SetOptions(FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_PICKFOLDERS)?;
+        dialog.Show(None)?;
+    }
+
+    let item = unsafe { dialog.GetResult()? };
+    let display_name = unsafe { item.GetDisplayName(SIGDN_FILESYSPATH)? };
+    unsafe {
+        let value = display_name.to_string()?;
+        CoTaskMemFree(Some(display_name.as_ptr().cast()));
+        Ok(value)
     }
 }
 
