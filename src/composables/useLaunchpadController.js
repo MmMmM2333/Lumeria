@@ -116,6 +116,7 @@ export function useLaunchpadController() {
   let hideNativeWindowHandler = () => {};
   let launchNativeAppIfAvailableHandler = () => {};
   let openAppHandler = () => {};
+  let openLaunchErrorDialogHandler = () => {};
   let setNativeWindowEffectsEnabledHandler = () => {};
 
   const {
@@ -303,11 +304,14 @@ export function useLaunchpadController() {
     isSearchMode: () => isSearchMode.value,
     keyboardFocusArea,
     launchNativeAppIfAvailable: (app) => launchNativeAppIfAvailableHandler(app),
+    launchTargetStatusById,
     normalizeLaunchSource,
+    openLaunchErrorDialog: (config) => openLaunchErrorDialogHandler(config),
     openingIcon,
     schedulePageGridMetrics: () => schedulePageGridMetrics(),
     searchInputRef,
     setNativeWindowEffectsEnabled: (enabled) => setNativeWindowEffectsEnabledHandler(enabled),
+    shouldValidateLaunchTarget: () => isNativeBridgeAvailable(),
     startFolderAppLaunchClose,
     startHomeRevealSettleWindow,
   });
@@ -399,14 +403,18 @@ export function useLaunchpadController() {
   });
   commitSearchPageIndexHandler = commitSearchPageIndex;
   const {
+    clearWarningDialogTimer,
     closeLayoutRecoveryNotice,
     closeWarningDialog,
     confirmWarningDialog,
     handleLayoutRecovered,
+    isWarningDialogOpen,
     layoutRecoveryNotice,
+    openLaunchErrorDialog,
     openWarningDialog,
     warningDialog,
   } = useLaunchpadNotices();
+  openLaunchErrorDialogHandler = openLaunchErrorDialog;
   const {
     commitPages,
     confirmForceFillAllPages,
@@ -822,6 +830,7 @@ export function useLaunchpadController() {
     clearPageTurn,
     clearPendingTarget,
     clearSettingsPanelCloseTimer,
+    clearWarningDialogTimer,
     desktopMainRef,
     detachDragListeners,
     disconnectFolderViewportObserver,
@@ -967,6 +976,7 @@ export function useLaunchpadController() {
     saveEditingManagedApp,
     deleteManagedApp,
     confirmForceFillAllPages,
+    isWarningDialogOpen,
     warningDialog,
     closeWarningDialog,
     confirmWarningDialog,

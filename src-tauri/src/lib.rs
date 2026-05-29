@@ -17,7 +17,7 @@ use file_dialog::{
     pick_scan_root_directory as pick_native_scan_root_directory, PickedLaunchFile,
 };
 use icons::cache_app_icon_choices;
-use launcher::launch_path;
+use launcher::{launch_path, LaunchPathError, LaunchPathErrorKind};
 use layout_store::{
     find_layout_app, load_layout as load_saved_layout, save_layout as save_saved_layout,
 };
@@ -204,37 +204,62 @@ fn launch_app(
     request: LaunchAppRequest,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    match launch_app_inner(&app, request, state) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            show_launch_error_message(&error);
+            Err(error.log_message())
+        }
+    }
+}
+
+fn launch_app_inner(
+    app_handle: &AppHandle,
+    request: LaunchAppRequest,
+    state: State<'_, AppState>,
+) -> Result<(), LaunchFailure> {
     let app_id = request.id.trim().to_string();
     if app_id.is_empty() {
-        return Err("App id is required".to_string());
+        return Err(LaunchFailure::missing_launch_info(
+            request.name,
+            "App id is required".to_string(),
+        ));
     }
 
     let request_app = launch_request_app(&request);
-    let saved_layout = load_saved_layout(&app)
-        .ok()
-        .and_then(|result| result.layout);
+    if let Some(app) = request_app {
+        return launch_selected_app(app);
+    }
+
+    let saved_layout = load_saved_layout(app_handle)
+        .map(|result| result.layout)
+        .map_err(|error| LaunchFailure::layout_read_failed(request.name.clone(), error))?;
     let saved_app = saved_layout
         .as_ref()
         .and_then(|layout| find_layout_app(layout, &app_id));
     let catalog_app = {
-        let catalog = state
-            .catalog
-            .lock()
-            .map_err(|_| "Failed to lock app catalog".to_string())?;
+        let catalog = state.catalog.lock().map_err(|_| {
+            LaunchFailure::layout_read_failed(
+                request.name.clone(),
+                "Failed to lock app catalog".to_string(),
+            )
+        })?;
         catalog.get(&app_id).cloned()
     };
 
-    let app = match select_launch_app(request_app, catalog_app, saved_app) {
+    let app = match select_launch_app(None, catalog_app, saved_app) {
         Some(app) => app,
-        None => find_app_in_saved_scan_roots(&app, saved_layout.as_ref(), &app_id)?
-            .ok_or_else(|| format!("Unknown app id: {app_id}"))?,
+        None => find_app_in_saved_scan_roots(app_handle, saved_layout.as_ref(), &app_id)
+            .map_err(|error| LaunchFailure::layout_read_failed(request.name.clone(), error))?
+            .ok_or_else(|| {
+                LaunchFailure::missing_launch_info(
+                    request.name.clone(),
+                    format!("Unknown app id: {app_id}"),
+                )
+            })?,
     };
 
-    let path = app
-        .launch_target
-        .path
-        .ok_or_else(|| format!("App has no launch path: {}", app.name))?;
-    launch_path(&path, app.launch_args.as_deref())
+    launch_selected_app(app)
 }
 
 #[tauri::command]
@@ -249,6 +274,170 @@ fn set_main_window_effects_enabled(
     open_sequence: Option<u64>,
 ) -> Result<(), String> {
     tray::set_main_window_effects_enabled(&app, enabled, open_sequence)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum LaunchFailureKind {
+    AccessDenied,
+    BrokenShortcut,
+    LayoutReadFailed,
+    MissingLaunchInfo,
+    NoAssociation,
+    TargetNotFound,
+    UnsupportedTarget,
+    WindowsLaunchFailed,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct LaunchFailure {
+    app_name: String,
+    kind: LaunchFailureKind,
+    detail: String,
+}
+
+impl LaunchFailure {
+    fn new(app_name: impl Into<String>, kind: LaunchFailureKind, detail: String) -> Self {
+        Self {
+            app_name: normalize_launch_app_name(app_name.into()),
+            kind,
+            detail,
+        }
+    }
+
+    fn missing_launch_info(app_name: impl Into<String>, detail: String) -> Self {
+        Self::new(app_name, LaunchFailureKind::MissingLaunchInfo, detail)
+    }
+
+    fn layout_read_failed(app_name: impl Into<String>, detail: String) -> Self {
+        Self::new(app_name, LaunchFailureKind::LayoutReadFailed, detail)
+    }
+
+    fn from_launch_path_error(app_name: impl Into<String>, error: LaunchPathError) -> Self {
+        let kind = match error.kind {
+            LaunchPathErrorKind::AccessDenied => LaunchFailureKind::AccessDenied,
+            LaunchPathErrorKind::BrokenShortcut => LaunchFailureKind::BrokenShortcut,
+            LaunchPathErrorKind::NoAssociation => LaunchFailureKind::NoAssociation,
+            LaunchPathErrorKind::TargetNotFound => LaunchFailureKind::TargetNotFound,
+            #[cfg(not(target_os = "windows"))]
+            LaunchPathErrorKind::UnsupportedPlatform => LaunchFailureKind::WindowsLaunchFailed,
+            LaunchPathErrorKind::WindowsLaunchFailed => LaunchFailureKind::WindowsLaunchFailed,
+        };
+        Self::new(app_name, kind, error.detail)
+    }
+
+    fn user_message(&self) -> String {
+        let name = &self.app_name;
+        let (reason, suggestion) = match self.kind {
+            LaunchFailureKind::AccessDenied => (
+                "没有权限打开此应用。",
+                "请检查文件权限，或尝试以管理员身份运行目标程序。",
+            ),
+            LaunchFailureKind::BrokenShortcut => (
+                "这个快捷方式可能已损坏。",
+                "请在 LaunchPad 中重新选择快捷方式或目标程序。",
+            ),
+            LaunchFailureKind::LayoutReadFailed => (
+                "LaunchPad 无法读取此应用的保存信息。",
+                "请重新扫描应用，或重新添加此应用。",
+            ),
+            LaunchFailureKind::MissingLaunchInfo => (
+                "启动路径不完整，无法打开。",
+                "请在 LaunchPad 中重新选择启动文件。",
+            ),
+            LaunchFailureKind::NoAssociation => (
+                "系统没有可用于打开此目标的默认应用。",
+                "请检查默认浏览器或文件关联设置。",
+            ),
+            LaunchFailureKind::TargetNotFound => (
+                "找不到启动文件。它可能已被移动、删除或卸载。",
+                "请在 LaunchPad 中编辑此应用的启动路径。",
+            ),
+            LaunchFailureKind::UnsupportedTarget => {
+                ("暂不支持这种启动类型。", "请改用本地程序、快捷方式或链接。")
+            }
+            LaunchFailureKind::WindowsLaunchFailed => (
+                "Windows 未能打开此应用。",
+                "请确认目标程序可以从资源管理器正常打开。",
+            ),
+        };
+        format!("无法打开“{name}”。\n\n{reason}\n\n建议：{suggestion}")
+    }
+
+    fn log_message(&self) -> String {
+        format!("{:?}: {}", self.kind, self.detail)
+    }
+}
+
+fn normalize_launch_app_name(name: String) -> String {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        "此应用".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn launch_selected_app(app: AppCatalogItem) -> Result<(), LaunchFailure> {
+    let kind = app.launch_target.kind.as_str();
+    if kind == "appUserModelId" {
+        return Err(LaunchFailure::new(
+            app.name,
+            LaunchFailureKind::UnsupportedTarget,
+            "AppUserModelId launch targets are not supported yet".to_string(),
+        ));
+    }
+    if !matches!(kind, "executable" | "shortcut" | "url") {
+        return Err(LaunchFailure::new(
+            app.name,
+            LaunchFailureKind::UnsupportedTarget,
+            format!("Unsupported launch target kind: {kind}"),
+        ));
+    }
+
+    let path = app
+        .launch_target
+        .path
+        .filter(|path| !path.trim().is_empty())
+        .ok_or_else(|| {
+            LaunchFailure::missing_launch_info(
+                app.name.clone(),
+                "App has no launch path".to_string(),
+            )
+        })?;
+    if matches!(kind, "executable" | "shortcut") && !std::path::Path::new(&path).exists() {
+        return Err(LaunchFailure::new(
+            app.name,
+            LaunchFailureKind::TargetNotFound,
+            format!("Launch target does not exist: {path}"),
+        ));
+    }
+
+    launch_path(&path, app.launch_args.as_deref())
+        .map_err(|error| LaunchFailure::from_launch_path_error(app.name, error))
+}
+
+#[cfg(target_os = "windows")]
+fn show_launch_error_message(error: &LaunchFailure) {
+    use windows::{
+        core::HSTRING,
+        Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK, MB_SETFOREGROUND},
+    };
+
+    let message = HSTRING::from(error.user_message());
+    let title = HSTRING::from("无法打开应用");
+    unsafe {
+        let _ = MessageBoxW(
+            None,
+            &message,
+            &title,
+            MB_OK | MB_ICONERROR | MB_SETFOREGROUND,
+        );
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn show_launch_error_message(error: &LaunchFailure) {
+    eprintln!("{}", error.user_message());
 }
 
 fn launch_request_app(request: &LaunchAppRequest) -> Option<AppCatalogItem> {
@@ -470,6 +659,25 @@ mod tests {
         }
     }
 
+    fn app_item_with_kind(id: &str, kind: &str, path: Option<&str>) -> AppCatalogItem {
+        AppCatalogItem {
+            id: id.to_string(),
+            item_type: "app".to_string(),
+            name: id.to_string(),
+            icon_path: None,
+            icon_data_url: None,
+            emoji: None,
+            launch_target: LaunchTarget {
+                kind: kind.to_string(),
+                path: path.map(str::to_string),
+                app_user_model_id: None,
+            },
+            launch_args: None,
+            source_key: None,
+            source: None,
+        }
+    }
+
     #[test]
     fn select_launch_app_prefers_request_payload() {
         let selected = select_launch_app(
@@ -545,5 +753,29 @@ mod tests {
             filters.app_blacklist[0].source_key.as_deref(),
             Some("scan-root:root:blocked.lnk")
         );
+    }
+
+    #[test]
+    fn launch_selected_app_rejects_unsupported_target_before_shell() {
+        let error = launch_selected_app(app_item_with_kind("app", "appUserModelId", None))
+            .expect_err("unsupported targets should fail before shell launch");
+
+        assert_eq!(error.kind, LaunchFailureKind::UnsupportedTarget);
+        assert!(error.user_message().contains("暂不支持"));
+        assert!(error.user_message().contains("建议："));
+    }
+
+    #[test]
+    fn launch_selected_app_rejects_missing_local_path_before_shell() {
+        let error = launch_selected_app(app_item_with_kind(
+            "app",
+            "executable",
+            Some("C:/LaunchPad/Missing.exe"),
+        ))
+        .expect_err("missing local paths should fail before shell launch");
+
+        assert_eq!(error.kind, LaunchFailureKind::TargetNotFound);
+        assert!(error.user_message().contains("找不到启动文件"));
+        assert!(error.user_message().contains("建议："));
     }
 }

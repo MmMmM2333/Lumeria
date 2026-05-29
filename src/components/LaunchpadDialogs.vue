@@ -195,24 +195,43 @@
     <button class="layout-recovery-close" type="button" aria-label="关闭布局恢复提示" @click="state.closeLayoutRecoveryNotice">×</button>
   </div>
 
-  <div v-if="state.warningDialog.value" class="warning-dialog-overlay" @wheel.stop @pointerdown.self="state.closeWarningDialog">
-    <section class="warning-dialog" role="alertdialog" aria-modal="true" :aria-label="state.warningDialog.value.title">
+  <Motion
+    v-if="state.warningDialog.value"
+    key="warning-dialog-overlay"
+    :class="['warning-dialog-overlay', !state.isWarningDialogOpen.value && 'warning-dialog-overlay-closing']"
+    :initial="{ opacity: 0 }"
+    :animate="{ opacity: state.isWarningDialogOpen.value ? 1 : 0 }"
+    :transition="{ duration: 0.14, ease: 'easeOut' }"
+    @wheel.stop
+    @pointerdown.self="state.closeWarningDialog"
+  >
+    <Motion
+      class="warning-dialog"
+      role="alertdialog"
+      aria-modal="true"
+      :aria-label="state.warningDialog.value.title"
+      :initial="{ opacity: 0, scale: 0.96 }"
+      :animate="state.isWarningDialogOpen.value ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.96 }"
+      :transition="{ duration: 0.16, ease: 'easeOut' }"
+    >
       <div class="warning-dialog-icon">
         <AlertTriangleIcon class="warning-dialog-svg" />
       </div>
       <div class="warning-dialog-content">
         <h2>{{ state.warningDialog.value.title }}</h2>
         <p>{{ state.warningDialog.value.message }}</p>
+        <p v-if="state.warningDialog.value.suggestion" class="warning-dialog-suggestion">建议：{{ state.warningDialog.value.suggestion }}</p>
       </div>
       <footer class="warning-dialog-actions">
-        <button class="settings-secondary-button" type="button" @click="state.closeWarningDialog">{{ state.warningDialog.value.cancelText }}</button>
-        <button class="settings-warning-button" type="button" @click="state.confirmWarningDialog">{{ state.warningDialog.value.confirmText }}</button>
+        <button v-if="state.warningDialog.value.cancelText" class="settings-secondary-button" type="button" @click="state.closeWarningDialog">{{ state.warningDialog.value.cancelText }}</button>
+        <button v-if="state.warningDialog.value.confirmText" class="settings-warning-button" type="button" @click="state.confirmWarningDialog">{{ state.warningDialog.value.confirmText }}</button>
       </footer>
-    </section>
-  </div>
+    </Motion>
+  </Motion>
 </template>
 
 <script setup>
+import { Motion } from "motion-v";
 import { computed } from "vue";
 import { AlertTriangleIcon } from "./Icons.js";
 import { getDefaultIconSource, getIconSource } from "../domain/iconSource.js";

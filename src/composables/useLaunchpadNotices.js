@@ -1,15 +1,49 @@
-import { shallowRef } from "vue";
+import { ref, shallowRef } from "vue";
+
+const WARNING_DIALOG_CLOSE_DURATION = 180;
+
+function getTimerHost() {
+  return typeof window === "undefined" ? globalThis : window;
+}
 
 export function useLaunchpadNotices() {
   const warningDialog = shallowRef(null);
+  const isWarningDialogOpen = ref(false);
   const layoutRecoveryNotice = shallowRef(null);
+  let warningDialogCloseTimer = null;
+
+  function clearWarningDialogTimer() {
+    if (warningDialogCloseTimer) getTimerHost().clearTimeout(warningDialogCloseTimer);
+    warningDialogCloseTimer = null;
+  }
+
+  function showWarningDialog(config) {
+    clearWarningDialogTimer();
+    warningDialog.value = config;
+    isWarningDialogOpen.value = true;
+  }
 
   function openWarningDialog(config) {
-    warningDialog.value = config;
+    showWarningDialog(config);
+  }
+
+  function openLaunchErrorDialog(config) {
+    showWarningDialog({
+      title: config?.title || "无法打开应用",
+      message: config?.message || "LaunchPad 无法打开此应用。",
+      suggestion: config?.suggestion || "",
+      confirmText: "知道了",
+    });
   }
 
   function closeWarningDialog() {
-    warningDialog.value = null;
+    if (!warningDialog.value) return;
+    isWarningDialogOpen.value = false;
+    clearWarningDialogTimer();
+    warningDialogCloseTimer = getTimerHost().setTimeout(() => {
+      warningDialog.value = null;
+      clearWarningDialogTimer();
+    }, WARNING_DIALOG_CLOSE_DURATION);
   }
 
   function confirmWarningDialog() {
@@ -32,11 +66,14 @@ export function useLaunchpadNotices() {
   }
 
   return {
+    clearWarningDialogTimer,
     closeLayoutRecoveryNotice,
     closeWarningDialog,
     confirmWarningDialog,
     handleLayoutRecovered,
+    isWarningDialogOpen,
     layoutRecoveryNotice,
+    openLaunchErrorDialog,
     openWarningDialog,
     warningDialog,
   };

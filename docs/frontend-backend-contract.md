@@ -159,4 +159,6 @@ recently edited apps can launch before the debounced layout save reaches disk.
 If the request has no `launchTarget`, the backend falls back to the current
 native catalog item and saved layout item. If those are unavailable, it rescans
 the saved layout's `scanRoots` with the saved `scanKeywordBlacklist` and
-`scanAppBlacklist` filters.
+`scanAppBlacklist` filters. Launch failures after the frontend has started the
+close animation are surfaced by the native backend with a Windows message box
+using user-facing reason and suggestion text.

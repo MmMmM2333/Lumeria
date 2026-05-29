@@ -12,7 +12,7 @@ Implemented commands:
 - `load_app_icon_choices`: extracts available icon choices from `.exe`, `.dll`, `.ico`, or `.lnk` targets.
 - `check_launch_targets`: checks whether local launch paths still exist.
 - `load_cached_app_icons`: reads cached icon PNGs from the app icon cache for layout hydration.
-- `launch_app`: launches the current frontend launch payload, with catalog and saved-layout fallbacks.
+- `launch_app`: launches the current frontend launch payload, with catalog and saved-layout fallbacks. Native launch failures are shown with a Windows message box that includes a reason and suggested action.
 - `hide_main_window`: hides the main LaunchPad window after close animations.
 - `set_main_window_effects_enabled`: toggles acrylic window effects during open/close transitions.
 

@@ -41,6 +41,7 @@ function createLaunchFlow(overrides = {}) {
     clearSelectedIcon: 0,
     hideNativeWindow: 0,
     launchNativeAppIfAvailable: [],
+    openLaunchErrorDialog: [],
     schedulePageGridMetrics: 0,
     setNativeWindowEffectsEnabled: [],
     startFolderAppLaunchClose: 0,
@@ -84,13 +85,16 @@ function createLaunchFlow(overrides = {}) {
     isSearchMode: () => Boolean(overrides.isSearchMode),
     keyboardFocusArea,
     launchNativeAppIfAvailable: (app) => calls.launchNativeAppIfAvailable.push(app.id),
+    launchTargetStatusById: ref(overrides.launchTargetStatusById || {}),
     normalizeLaunchSource: (app, source) => source ?? { area: "desktop", id: app.id, pageIndex: 0 },
+    openLaunchErrorDialog: (config) => calls.openLaunchErrorDialog.push(config),
     openingIcon,
     schedulePageGridMetrics: () => {
       calls.schedulePageGridMetrics += 1;
     },
     searchInputRef,
     setNativeWindowEffectsEnabled: (enabled) => calls.setNativeWindowEffectsEnabled.push(enabled),
+    shouldValidateLaunchTarget: () => Boolean(overrides.shouldValidateLaunchTarget),
     startFolderAppLaunchClose: () => {
       calls.startFolderAppLaunchClose += 1;
     },
@@ -169,6 +173,25 @@ export async function runLaunchpadLaunchFlowTests() {
     dragBlocked.flow.openApp(launchApp, source);
     assert(!dragBlocked.flow.isAppLaunching.value, "drag-active launches should be ignored");
     assert(dragBlocked.calls.launchNativeAppIfAvailable.length === 0, "drag-active launches should not call native launch");
+
+    const missingTarget = createLaunchFlow({ shouldValidateLaunchTarget: true });
+    missingTarget.flow.openApp(launchApp, source);
+    assert(!missingTarget.flow.isAppLaunching.value, "missing launch targets should not start launch animation");
+    assert(missingTarget.calls.openLaunchErrorDialog.length === 1, "missing launch targets should open an in-launchpad error dialog");
+
+    const missingPath = createLaunchFlow({
+      shouldValidateLaunchTarget: true,
+      launchTargetStatusById: { "missing-app": "missing" },
+    });
+    missingPath.flow.openApp({
+      id: "missing-app",
+      type: "app",
+      name: "Missing App",
+      launchTarget: { kind: "shortcut", path: "C:/Missing.lnk" },
+    }, source);
+    assert(!missingPath.flow.isAppLaunching.value, "known missing paths should not start launch animation");
+    assert(missingPath.calls.openLaunchErrorDialog[0].message.includes("找不到"), "known missing paths should explain that the file is missing");
+    assert(missingPath.calls.openLaunchErrorDialog[0].suggestion.includes("编辑"), "known missing paths should put the suggestion in a separate field");
   } finally {
     if (originalWindow === undefined) {
       delete globalThis.window;

@@ -5,6 +5,8 @@ import {
 } from "./launchpadConstants.js";
 import { getElementFromRef } from "./usePageGridMetrics.js";
 
+const PATH_LAUNCH_TARGET_KINDS = new Set(["shortcut", "executable", "url"]);
+
 export function useLaunchpadLaunchFlow(options) {
   const isDesktopOpen = ref(true);
   const isDesktopClosing = ref(false);
@@ -66,6 +68,58 @@ export function useLaunchpadLaunchFlow(options) {
     launchGhostTimer = window.setTimeout(clearLaunchGhost, APP_LAUNCH_DURATION + 100);
   }
 
+  function getLaunchPreflightError(app) {
+    if (!options.shouldValidateLaunchTarget?.()) return null;
+    const name = String(app?.name || "此应用");
+    if (!app?.id) {
+      return {
+        title: "无法打开应用",
+        message: `“${name}”缺少应用标识，无法打开。`,
+        suggestion: "请重新添加此应用。",
+      };
+    }
+
+    const target = app.launchTarget;
+    if (!target) {
+      return {
+        title: "无法打开应用",
+        message: `“${name}”没有启动路径。`,
+        suggestion: "请在设置中重新选择启动文件。",
+      };
+    }
+
+    const kind = String(target.kind || "");
+    if (kind === "appUserModelId") {
+      return {
+        title: "无法打开应用",
+        message: `暂不支持打开“${name}”的这种启动类型。`,
+        suggestion: "请改用本地程序、快捷方式或链接。",
+      };
+    }
+    if (!PATH_LAUNCH_TARGET_KINDS.has(kind)) {
+      return {
+        title: "无法打开应用",
+        message: `“${name}”的启动类型无效。`,
+        suggestion: "请重新选择启动文件。",
+      };
+    }
+    if (!String(target.path || "").trim()) {
+      return {
+        title: "无法打开应用",
+        message: `“${name}”的启动路径为空。`,
+        suggestion: "请在设置中重新选择启动文件。",
+      };
+    }
+    if (options.launchTargetStatusById?.value?.[app.id] === "missing") {
+      return {
+        title: "无法打开应用",
+        message: `找不到“${name}”的启动文件。它可能已被移动、删除或卸载。`,
+        suggestion: "请在设置中编辑此应用的启动路径。",
+      };
+    }
+    return null;
+  }
+
   function closeDesktop(closeOptions) {
     if (options.isDragActive()) return;
     options.cancelLongPress();
@@ -102,6 +156,11 @@ export function useLaunchpadLaunchFlow(options) {
 
   function openApp(app, source) {
     if (!app || app.type !== "app" || options.isDragActive() || isLaunchpadInteractionBlocked()) return;
+    const launchError = getLaunchPreflightError(app);
+    if (launchError) {
+      options.openLaunchErrorDialog?.(launchError);
+      return;
+    }
 
     const launchSource = options.normalizeLaunchSource(app, source);
     const shouldClearSearchAfterLaunch = options.isSearchMode();
