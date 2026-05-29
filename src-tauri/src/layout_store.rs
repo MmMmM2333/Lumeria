@@ -32,16 +32,8 @@ pub(crate) fn save_layout(app: &AppHandle, layout: &Value) -> Result<(), String>
     save_layout_to_path(&path, layout)
 }
 
-pub(crate) fn find_saved_layout_app(
-    app: &AppHandle,
-    app_id: &str,
-) -> Result<Option<AppCatalogItem>, String> {
-    let path = layout_path(app)?;
-    let result = load_layout_from_path(&path)?;
-    Ok(result
-        .layout
-        .as_ref()
-        .and_then(|layout| find_app_in_layout_value(layout, app_id)))
+pub(crate) fn find_layout_app(layout: &Value, app_id: &str) -> Option<AppCatalogItem> {
+    find_app_in_layout_value(layout, app_id)
 }
 
 fn load_layout_from_path(path: &Path) -> Result<LoadLayoutResult, String> {

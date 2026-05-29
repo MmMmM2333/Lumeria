@@ -77,10 +77,19 @@ export async function checkLaunchTargets(targets) {
   return invoke("check_launch_targets", { targets });
 }
 
-export async function launchApp(appId) {
+function makeLaunchAppRequest(app) {
+  return {
+    id: String(app?.id || ""),
+    name: String(app?.name || "Application"),
+    launchTarget: app?.launchTarget || null,
+    launchArgs: typeof app?.launchArgs === "string" ? app.launchArgs : "",
+  };
+}
+
+export async function launchApp(app) {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
-  await invoke("launch_app", { appId });
+  await invoke("launch_app", { request: makeLaunchAppRequest(app) });
   return true;
 }
 

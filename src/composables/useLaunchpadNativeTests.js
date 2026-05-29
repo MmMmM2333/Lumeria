@@ -118,6 +118,25 @@ export async function runLaunchpadNativeTests() {
     assert(calls.schedulePageGridMetrics === 1, "initial native load should refresh grid metrics");
   });
 
+  await withMockTauri(async (command, args) => {
+    if (command !== "launch_app") throw new Error(`Unexpected invoke: ${command}`);
+    assert(args.request.id === "custom-app", "native launch should pass the current app id");
+    assert(args.request.name === "Custom App", "native launch should pass the current app name");
+    assert(args.request.launchTarget.path === "C:/Tools/Custom.exe", "native launch should pass the current launch target");
+    assert(args.request.launchArgs === "--profile dev", "native launch should pass the current launch arguments");
+  }, async () => {
+    const { options } = makeOptions();
+    const native = useLaunchpadNative(options);
+
+    await native.launchNativeAppIfAvailable({
+      id: "custom-app",
+      type: "app",
+      name: "Custom App",
+      launchTarget: { kind: "executable", path: "C:/Tools/Custom.exe" },
+      launchArgs: "--profile dev",
+    });
+  });
+
   const pendingChecks = [];
   await withMockTauri((command, args) => {
     if (command !== "check_launch_targets") throw new Error(`Unexpected invoke: ${command}`);

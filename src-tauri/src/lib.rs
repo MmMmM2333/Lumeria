@@ -10,8 +10,7 @@ mod tray;
 use std::{collections::HashMap, sync::Mutex};
 
 use catalog::{
-    icon_cache_dir, icon_file_data_url, scan_apps_from_roots, scan_start_menu_apps, stable_app_id,
-    ScanFilters, ScanRoot,
+    icon_cache_dir, icon_file_data_url, scan_apps_from_roots, stable_app_id, ScanFilters, ScanRoot,
 };
 use file_dialog::{
     pick_launch_file as pick_native_launch_file,
@@ -20,7 +19,7 @@ use file_dialog::{
 use icons::cache_app_icon_choices;
 use launcher::launch_path;
 use layout_store::{
-    find_saved_layout_app, load_layout as load_saved_layout, save_layout as save_saved_layout,
+    find_layout_app, load_layout as load_saved_layout, save_layout as save_saved_layout,
 };
 use models::AppCatalogItem;
 use serde::{Deserialize, Serialize};
@@ -75,6 +74,15 @@ struct LaunchTargetCheckRequest {
 struct LaunchTargetCheckResult {
     id: String,
     status: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LaunchAppRequest {
+    id: String,
+    name: String,
+    launch_target: Option<models::LaunchTarget>,
+    launch_args: Option<String>,
 }
 
 #[tauri::command]
@@ -191,8 +199,23 @@ fn load_cached_app_icons(
 }
 
 #[tauri::command]
-fn launch_app(app: AppHandle, app_id: String, state: State<'_, AppState>) -> Result<(), String> {
-    let saved_app = find_saved_layout_app(&app, &app_id).ok().flatten();
+fn launch_app(
+    app: AppHandle,
+    request: LaunchAppRequest,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let app_id = request.id.trim().to_string();
+    if app_id.is_empty() {
+        return Err("App id is required".to_string());
+    }
+
+    let request_app = launch_request_app(&request);
+    let saved_layout = load_saved_layout(&app)
+        .ok()
+        .and_then(|result| result.layout);
+    let saved_app = saved_layout
+        .as_ref()
+        .and_then(|layout| find_layout_app(layout, &app_id));
     let catalog_app = {
         let catalog = state
             .catalog
@@ -201,15 +224,10 @@ fn launch_app(app: AppHandle, app_id: String, state: State<'_, AppState>) -> Res
         catalog.get(&app_id).cloned()
     };
 
-    let app = match select_launch_app(catalog_app, saved_app) {
+    let app = match select_launch_app(request_app, catalog_app, saved_app) {
         Some(app) => app,
-        None => {
-            let icon_dir = icon_cache_dir(&app)?;
-            let apps = scan_start_menu_apps(&icon_dir)?;
-            apps.into_iter()
-                .find(|app| app.id == app_id)
-                .ok_or_else(|| format!("Unknown app id: {app_id}"))?
-        }
+        None => find_app_in_saved_scan_roots(&app, saved_layout.as_ref(), &app_id)?
+            .ok_or_else(|| format!("Unknown app id: {app_id}"))?,
     };
 
     let path = app
@@ -233,19 +251,95 @@ fn set_main_window_effects_enabled(
     tray::set_main_window_effects_enabled(&app, enabled, open_sequence)
 }
 
+fn launch_request_app(request: &LaunchAppRequest) -> Option<AppCatalogItem> {
+    let launch_target = request.launch_target.clone()?;
+    let name = request.name.trim();
+    Some(AppCatalogItem {
+        id: request.id.trim().to_string(),
+        item_type: "app".to_string(),
+        name: if name.is_empty() {
+            "Application".to_string()
+        } else {
+            name.to_string()
+        },
+        icon_path: None,
+        icon_data_url: None,
+        emoji: None,
+        launch_target,
+        launch_args: request
+            .launch_args
+            .clone()
+            .filter(|args| !args.trim().is_empty()),
+        source_key: None,
+        source: None,
+    })
+}
+
+fn find_app_in_saved_scan_roots(
+    app: &AppHandle,
+    saved_layout: Option<&serde_json::Value>,
+    app_id: &str,
+) -> Result<Option<AppCatalogItem>, String> {
+    let Some((roots, filters)) = saved_scan_config(saved_layout) else {
+        return Ok(None);
+    };
+    if roots.is_empty() {
+        return Ok(None);
+    }
+
+    let icon_dir = icon_cache_dir(app)?;
+    Ok(scan_apps_from_roots(&roots, &icon_dir, &filters)?
+        .into_iter()
+        .find(|app| app.id == app_id))
+}
+
+fn saved_scan_config(
+    saved_layout: Option<&serde_json::Value>,
+) -> Option<(Vec<ScanRoot>, ScanFilters)> {
+    let settings = saved_layout?.get("settings")?;
+    let roots = settings
+        .get("scanRoots")
+        .cloned()
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or_default();
+    let filters = saved_scan_filters(settings);
+    Some((roots, filters))
+}
+
+fn saved_scan_filters(settings: &serde_json::Value) -> ScanFilters {
+    let mut value = serde_json::Map::new();
+    value.insert(
+        "keywordBlacklist".to_string(),
+        settings
+            .get("scanKeywordBlacklist")
+            .cloned()
+            .unwrap_or_else(|| serde_json::Value::Array(Vec::new())),
+    );
+    value.insert(
+        "appBlacklist".to_string(),
+        settings
+            .get("scanAppBlacklist")
+            .cloned()
+            .unwrap_or_else(|| serde_json::Value::Array(Vec::new())),
+    );
+    serde_json::from_value(serde_json::Value::Object(value)).unwrap_or_default()
+}
+
 fn select_launch_app(
+    request_app: Option<AppCatalogItem>,
     catalog_app: Option<AppCatalogItem>,
     saved_app: Option<AppCatalogItem>,
 ) -> Option<AppCatalogItem> {
-    match (catalog_app, saved_app) {
-        (Some(mut catalog), Some(saved)) => {
+    match (request_app, catalog_app, saved_app) {
+        (Some(request), _, _) => Some(request),
+        (None, Some(mut catalog), Some(saved)) => {
             catalog.launch_target = saved.launch_target;
             catalog.launch_args = saved.launch_args;
             Some(catalog)
         }
-        (Some(catalog), None) => Some(catalog),
-        (None, Some(saved)) => Some(saved),
-        (None, None) => None,
+        (None, Some(catalog), None) => Some(catalog),
+        (None, None, Some(saved)) => Some(saved),
+        (None, None, None) => None,
     }
 }
 
@@ -355,6 +449,7 @@ pub fn run() {
 mod tests {
     use super::*;
     use crate::models::LaunchTarget;
+    use serde_json::json;
 
     fn app_item(id: &str, path: &str) -> AppCatalogItem {
         AppCatalogItem {
@@ -376,8 +471,24 @@ mod tests {
     }
 
     #[test]
+    fn select_launch_app_prefers_request_payload() {
+        let selected = select_launch_app(
+            Some(app_item("app", "C:/Request/App.exe")),
+            Some(app_item("app", "C:/Current/App.exe")),
+            Some(app_item("app", "C:/Saved/App.exe")),
+        )
+        .expect("app should be selected");
+
+        assert_eq!(
+            selected.launch_target.path.as_deref(),
+            Some("C:/Request/App.exe")
+        );
+    }
+
+    #[test]
     fn select_launch_app_uses_saved_launch_fields_over_catalog() {
         let selected = select_launch_app(
+            None,
             Some(app_item("app", "C:/Current/App.exe")),
             Some(app_item("app", "C:/Saved/App.exe")),
         )
@@ -391,12 +502,48 @@ mod tests {
 
     #[test]
     fn select_launch_app_falls_back_to_saved_layout() {
-        let selected = select_launch_app(None, Some(app_item("app", "C:/Saved/App.exe")))
+        let selected = select_launch_app(None, None, Some(app_item("app", "C:/Saved/App.exe")))
             .expect("saved app should be selected");
 
         assert_eq!(
             selected.launch_target.path.as_deref(),
             Some("C:/Saved/App.exe")
+        );
+    }
+
+    #[test]
+    fn saved_scan_config_reads_saved_roots_and_filters() {
+        let layout = json!({
+            "settings": {
+                "scanRoots": [
+                    {
+                        "id": "root",
+                        "type": "customDirectory",
+                        "label": "Tools",
+                        "path": "C:/Tools",
+                        "enabled": true
+                    }
+                ],
+                "scanKeywordBlacklist": ["uninstall"],
+                "scanAppBlacklist": [
+                    {
+                        "sourceKey": "scan-root:root:blocked.lnk",
+                        "path": "C:/Tools/Blocked.lnk",
+                        "name": "Blocked"
+                    }
+                ]
+            }
+        });
+
+        let (roots, filters) = saved_scan_config(Some(&layout)).expect("scan config");
+
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].id, "root");
+        assert_eq!(filters.keyword_blacklist, vec!["uninstall"]);
+        assert_eq!(filters.app_blacklist.len(), 1);
+        assert_eq!(
+            filters.app_blacklist[0].source_key.as_deref(),
+            Some("scan-root:root:blocked.lnk")
         );
     }
 }

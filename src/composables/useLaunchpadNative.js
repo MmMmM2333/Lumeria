@@ -306,7 +306,7 @@ export function useLaunchpadNative(options) {
   async function launchNativeAppIfAvailable(app) {
     if (!shouldUseNativeCatalog()) return;
     try {
-      await launchNativeApp(app.id);
+      await launchNativeApp(app);
     } catch (error) {
       console.error(`Failed to launch ${app.name}`, error);
     }

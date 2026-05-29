@@ -1,7 +1,6 @@
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     env, fs,
-    hash::{Hash, Hasher},
     io::ErrorKind,
     path::{Path, PathBuf},
 };
@@ -78,21 +77,6 @@ pub(crate) fn icon_cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(icon_dir)
 }
 
-pub(crate) fn scan_start_menu_apps(icon_dir: &Path) -> Result<Vec<AppCatalogItem>, String> {
-    let roots: Vec<ScanRoot> = start_menu_roots()
-        .into_iter()
-        .enumerate()
-        .map(|(index, path)| ScanRoot {
-            id: format!("legacy-start-menu-{index}"),
-            root_type: "startMenu".to_string(),
-            label: "Start Menu".to_string(),
-            path: path.to_string_lossy().to_string(),
-            enabled: true,
-        })
-        .collect();
-    scan_apps_from_roots(&roots, icon_dir, &ScanFilters::default())
-}
-
 pub(crate) fn scan_apps_from_roots(
     roots: &[ScanRoot],
     icon_dir: &Path,
@@ -122,20 +106,6 @@ pub(crate) fn scan_apps_from_roots(
             .then_with(|| left.id.cmp(&right.id))
     });
     Ok(apps)
-}
-
-fn start_menu_roots() -> Vec<PathBuf> {
-    let mut roots = Vec::new();
-
-    if let Ok(appdata) = env::var("APPDATA") {
-        roots.push(PathBuf::from(appdata).join("Microsoft\\Windows\\Start Menu\\Programs"));
-    }
-
-    if let Ok(program_data) = env::var("ProgramData") {
-        roots.push(PathBuf::from(program_data).join("Microsoft\\Windows\\Start Menu\\Programs"));
-    }
-
-    roots
 }
 
 fn collect_apps_from_dir(
@@ -363,9 +333,10 @@ fn normalize_path_key(value: &str) -> String {
 }
 
 pub(crate) fn stable_app_id(path: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    path.to_lowercase().hash(&mut hasher);
-    format!("win-app-{:x}", hasher.finish())
+    let normalized = path.to_lowercase();
+    let hash = blake3::hash(normalized.as_bytes());
+    let hex = hash.to_hex();
+    format!("win-app-{}", &hex[..32])
 }
 
 fn app_glyph(name: &str) -> String {
@@ -481,5 +452,15 @@ mod tests {
             &test_candidate("Keep", r"C:\Apps\Keep\App.lnk", "Keep/App.lnk"),
             &filters
         ));
+    }
+
+    #[test]
+    fn stable_app_id_uses_fixed_length_case_insensitive_hash() {
+        let id = stable_app_id(r"C:\Apps\Example.lnk");
+
+        assert!(id.starts_with("win-app-"));
+        assert_eq!(id.len(), "win-app-".len() + 32);
+        assert_eq!(id, stable_app_id(r"c:\apps\example.lnk"));
+        assert_ne!(id, stable_app_id(r"C:\Apps\Other.lnk"));
     }
 }
