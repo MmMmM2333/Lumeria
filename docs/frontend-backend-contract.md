@@ -157,6 +157,15 @@ Scanned `.url` files are local shell shortcuts. They should be returned as
 checks behave like `.lnk` shortcuts. Literal HTTP(S) targets remain
 `launchTarget.kind: "url"`.
 
+`pick_launch_file` accepts `.exe`, `.lnk`, and `.url` files. Local `.lnk` and
+`.url` selections are returned as `launchTarget.kind: "shortcut"` with the
+selected file path.
+
+`launchArgs` is only supported for `launchTarget.kind: "executable"`. The
+frontend should not persist or send launch arguments for shortcuts, URL files,
+literal HTTP(S) URLs, or AppUserModelId targets; the backend ignores them for
+non-executable targets.
+
 `load_app_icon_choices` returns cached PNG data URLs for icons discovered in a
 local `.exe`, `.dll`, `.ico`, or `.lnk` target.
 

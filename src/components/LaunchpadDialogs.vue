@@ -30,7 +30,7 @@
             <span class="app-manager-details">
               <span class="app-manager-name">{{ app.name }}</span>
               <span class="app-manager-target">{{ state.getLaunchTargetPath(app) || "未设置启动路径" }}</span>
-              <span v-if="app.launchArgs" class="app-manager-target">参数：{{ app.launchArgs }}</span>
+              <span v-if="app.launchTarget?.kind === 'executable' && app.launchArgs" class="app-manager-target">参数：{{ app.launchArgs }}</span>
             </span>
           </label>
         </div>
@@ -80,7 +80,7 @@
             </button>
           </span>
         </label>
-        <label class="app-edit-field">
+        <label v-if="state.canEditNewAppArgs.value" class="app-edit-field">
           <span>启动参数</span>
           <input v-model="state.newAppArgs.value" type="text" aria-label="启动参数" />
         </label>
@@ -128,7 +128,7 @@
             </button>
           </span>
         </label>
-        <label class="app-edit-field">
+        <label v-if="state.canEditAppArgs.value" class="app-edit-field">
           <span>启动参数</span>
           <input v-model="state.editAppArgs.value" type="text" aria-label="启动参数" />
         </label>

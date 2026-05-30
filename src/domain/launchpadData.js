@@ -60,13 +60,14 @@ export function compareAppsByDefaultOrder(left, right) {
 
 export function normalizeNativeApp(app, index) {
   const name = String(app?.name || "Application").trim() || "Application";
+  const launchTarget = app?.launchTarget || app?.launch_target || null;
   return {
     ...app,
     id: String(app?.id || `native-app-${index}`),
     type: "app",
     name,
-    launchTarget: app?.launchTarget || app?.launch_target || null,
-    launchArgs: typeof app?.launchArgs === "string" ? app.launchArgs : "",
+    launchTarget,
+    launchArgs: launchTarget?.kind === "executable" && typeof app?.launchArgs === "string" ? app.launchArgs : "",
     iconDataUrl: app?.iconDataUrl || null,
     iconPath: app?.iconPath || app?.icon_path || null,
     emoji: app?.emoji || fallbackAppGlyph(name),
@@ -76,7 +77,7 @@ export function normalizeNativeApp(app, index) {
 }
 
 export function normalizeScanRoots(roots) {
-  const source = Array.isArray(roots) && roots.length ? roots : DEFAULT_SCAN_ROOTS;
+  const source = Array.isArray(roots) ? roots : DEFAULT_SCAN_ROOTS;
   return source
     .map((root, index) => {
       const path = String(root?.path || "").trim();
@@ -178,7 +179,8 @@ export function createLaunchpadDataHelpers(options) {
     if (savedItem?.name) next.name = String(savedItem.name).slice(0, 64);
     if (savedItem?.emoji) next.emoji = savedItem.emoji;
     if (savedItem?.launchTarget) next.launchTarget = savedItem.launchTarget;
-    if (typeof savedItem?.launchArgs === "string") next.launchArgs = savedItem.launchArgs;
+    if (next.launchTarget?.kind === "executable" && typeof savedItem?.launchArgs === "string") next.launchArgs = savedItem.launchArgs;
+    else delete next.launchArgs;
     if (savedItem?.customIconDataUrl) next.customIconDataUrl = savedItem.customIconDataUrl;
     if (savedItem?.iconPath) next.iconPath = savedItem.iconPath;
     if (savedItem?.sourceKey) next.sourceKey = savedItem.sourceKey;
@@ -196,7 +198,7 @@ export function createLaunchpadDataHelpers(options) {
       name,
       emoji: item.emoji || fallbackAppGlyph(name),
       launchTarget: item.launchTarget,
-      launchArgs: typeof item.launchArgs === "string" ? item.launchArgs : "",
+      launchArgs: item.launchTarget?.kind === "executable" && typeof item.launchArgs === "string" ? item.launchArgs : "",
       iconPath: item.iconPath || null,
       sourceKey: item.sourceKey || null,
       source: item.source || null,
@@ -310,7 +312,7 @@ export function createLaunchpadDataHelpers(options) {
     if (item.customIconDataUrl) clean.customIconDataUrl = item.customIconDataUrl;
     if (item.iconPath) clean.iconPath = item.iconPath;
     if (item.launchTarget) clean.launchTarget = item.launchTarget;
-    if (item.launchArgs) clean.launchArgs = item.launchArgs;
+    if (item.launchTarget?.kind === "executable" && item.launchArgs) clean.launchArgs = item.launchArgs;
     if (item.sourceKey) clean.sourceKey = item.sourceKey;
     if (item.source) clean.source = item.source;
     return clean;

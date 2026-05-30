@@ -412,7 +412,12 @@ fn launch_selected_app(app: AppCatalogItem) -> Result<(), LaunchFailure> {
         ));
     }
 
-    launch_path(&path, app.launch_args.as_deref())
+    let launch_args = if kind == "executable" {
+        app.launch_args.as_deref()
+    } else {
+        None
+    };
+    launch_path(&path, launch_args)
         .map_err(|error| LaunchFailure::from_launch_path_error(app.name, error))
 }
 
@@ -443,6 +448,14 @@ fn show_launch_error_message(error: &LaunchFailure) {
 fn launch_request_app(request: &LaunchAppRequest) -> Option<AppCatalogItem> {
     let launch_target = request.launch_target.clone()?;
     let name = request.name.trim();
+    let launch_args = if launch_target.kind == "executable" {
+        request
+            .launch_args
+            .clone()
+            .filter(|args| !args.trim().is_empty())
+    } else {
+        None
+    };
     Some(AppCatalogItem {
         id: request.id.trim().to_string(),
         item_type: "app".to_string(),
@@ -455,10 +468,7 @@ fn launch_request_app(request: &LaunchAppRequest) -> Option<AppCatalogItem> {
         icon_data_url: None,
         emoji: None,
         launch_target,
-        launch_args: request
-            .launch_args
-            .clone()
-            .filter(|args| !args.trim().is_empty()),
+        launch_args,
         source_key: None,
         source: None,
     })
@@ -676,6 +686,35 @@ mod tests {
             source_key: None,
             source: None,
         }
+    }
+
+    fn launch_request(kind: &str, launch_args: Option<&str>) -> LaunchAppRequest {
+        LaunchAppRequest {
+            id: "app".to_string(),
+            name: "App".to_string(),
+            launch_target: Some(LaunchTarget {
+                kind: kind.to_string(),
+                path: Some("C:/Apps/App.exe".to_string()),
+                app_user_model_id: None,
+            }),
+            launch_args: launch_args.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn launch_request_app_keeps_executable_args() {
+        let app = launch_request_app(&launch_request("executable", Some("--profile dev")))
+            .expect("request app should exist");
+
+        assert_eq!(app.launch_args.as_deref(), Some("--profile dev"));
+    }
+
+    #[test]
+    fn launch_request_app_drops_non_executable_args() {
+        let app = launch_request_app(&launch_request("shortcut", Some("--profile dev")))
+            .expect("request app should exist");
+
+        assert!(app.launch_args.is_none());
     }
 
     #[test]

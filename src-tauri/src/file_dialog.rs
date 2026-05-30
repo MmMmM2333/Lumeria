@@ -78,7 +78,7 @@ unsafe fn pick_launch_file_inner() -> windows::core::Result<String> {
     let dialog: IFileOpenDialog =
         unsafe { CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)? };
     let launch_files_name = HSTRING::from("Applications and shortcuts");
-    let launch_files_spec = HSTRING::from("*.exe;*.lnk");
+    let launch_files_spec = HSTRING::from("*.exe;*.lnk;*.url");
     let filters = [COMDLG_FILTERSPEC {
         pszName: PCWSTR(launch_files_name.as_ptr()),
         pszSpec: PCWSTR(launch_files_spec.as_ptr()),
@@ -131,7 +131,10 @@ unsafe fn pick_scan_root_directory_inner() -> windows::core::Result<String> {
 
 #[cfg(target_os = "windows")]
 fn is_supported_launch_file(path: &Path) -> bool {
-    matches!(extension(path).as_deref(), Some("exe") | Some("lnk"))
+    matches!(
+        extension(path).as_deref(),
+        Some("exe") | Some("lnk") | Some("url")
+    )
 }
 
 #[cfg(target_os = "windows")]
@@ -152,11 +155,11 @@ fn make_picked_launch_file(
         .and_then(icon_file_data_url);
     let launch_path = windows_api_path(selected_path);
     let launch_target = LaunchTarget {
-        kind: if extension(selected_path).as_deref() == Some("lnk") {
-            "shortcut".to_string()
-        } else {
-            "executable".to_string()
-        },
+        kind: match extension(selected_path).as_deref() {
+            Some("exe") => "executable",
+            _ => "shortcut",
+        }
+        .to_string(),
         path: Some(launch_path.clone()),
         app_user_model_id: None,
     };
@@ -195,5 +198,18 @@ impl Drop for ComGuard {
                 CoUninitialize();
             }
         }
+    }
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn supported_launch_files_include_url_shortcuts() {
+        assert!(is_supported_launch_file(Path::new("C:/Apps/App.exe")));
+        assert!(is_supported_launch_file(Path::new("C:/Apps/App.lnk")));
+        assert!(is_supported_launch_file(Path::new("C:/Apps/App.url")));
+        assert!(!is_supported_launch_file(Path::new("C:/Apps/readme.txt")));
     }
 }

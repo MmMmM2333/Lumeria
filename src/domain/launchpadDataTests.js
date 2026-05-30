@@ -56,6 +56,7 @@ export function runLaunchpadDataTests() {
   assert(makeLaunchTarget("C:/Tools/App.url").kind === "shortcut", "local .url targets should become shortcut launch targets");
   assert(makeLaunchTarget("C:/Tools/App.exe").kind === "executable", "local targets should become executable launch targets");
   assert(normalizeScanKeywordBlacklist([" uninstall ", "UNINSTALL", "", "卸载"]).join(",") === "uninstall,卸载", "scan keywords should be trimmed and deduplicated");
+  assert(normalizeScanRoots([]).length === 0, "empty scan roots should stay empty");
   const normalizedRoot = normalizeScanRoots([{ id: "root", label: "Root", path: "C:/Apps" }])[0];
   assert(!("lastScannedAt" in normalizedRoot), "scan roots should omit absent optional fields");
   const blockedEntry = makeScanAppBlacklistEntry({
@@ -104,6 +105,7 @@ export function runLaunchpadDataTests() {
   assert(merged[0][0].customIconDataUrl === "data:custom-a", "saved custom icons should be preserved");
   assert(merged[0][1].type === "folder", "saved folders should be preserved");
   assert(merged[0][1].children.map((item) => item.id).join(",") === "b,custom", "folder merge should keep custom apps and remove duplicate app ids");
+  assert(!("launchArgs" in merged[0][1].children[1]), "non-executable custom apps should not preserve launch args");
   assert(merged[1].map((item) => item.id).join(",") === "c", "new visible catalog apps should append after saved pages");
   assert(!merged.flat().some((item) => item.id === "hidden"), "hidden catalog apps should not be appended");
 
@@ -130,4 +132,5 @@ export function runLaunchpadDataTests() {
   assert(snapshot.pages[0][0].iconPath === "C:/Icons/a.png", "layout snapshots should preserve cached icon paths");
   assert(snapshot.pages[0][0].customIconDataUrl === "data:custom-a", "layout snapshots should preserve custom icon data");
   assert(snapshot.pages[0][1].children.length === 2, "folder snapshots should include flat children for compatibility");
+  assert(!("launchArgs" in snapshot.pages[0][1].children[1]), "layout snapshots should omit non-executable launch args");
 }

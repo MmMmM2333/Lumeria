@@ -329,53 +329,97 @@ fn validate_layout_app_item(
         validate_optional_string_field(object, key, label)?;
     }
 
-    if let Some(launch_target) = object.get("launchTarget") {
-        validate_launch_target(launch_target, &format!("{label}.launchTarget"))?;
+    let launch_target = object
+        .get("launchTarget")
+        .ok_or_else(|| format!("layout item {label}.launchTarget is required"))?;
+    let launch_kind = validate_launch_target(launch_target, &format!("{label}.launchTarget"))?;
+    if launch_kind != "executable" && object.get("launchArgs").is_some() {
+        return Err(format!(
+            "layout item {label}.launchArgs is only supported for executable launch targets"
+        ));
     }
 
     Ok(())
 }
 
-fn validate_launch_target(launch_target: &Value, label: &str) -> Result<(), String> {
+fn validate_launch_target(launch_target: &Value, label: &str) -> Result<String, String> {
     let object = launch_target
         .as_object()
         .ok_or_else(|| format!("layout item {label} must be an object"))?;
-    require_string_field(object, "kind", label)?;
-    validate_optional_string_field(object, "path", label)?;
-    validate_optional_string_field(object, "appUserModelId", label)
+    let kind = require_non_empty_string_field(object, "kind", label)?;
+    match kind.as_str() {
+        "shortcut" | "executable" | "url" => {
+            require_non_empty_string_field(object, "path", label)?;
+            validate_optional_string_field(object, "appUserModelId", label)?;
+        }
+        "appUserModelId" => {
+            require_non_empty_string_field(object, "appUserModelId", label)?;
+            validate_optional_string_field(object, "path", label)?;
+        }
+        _ => {
+            return Err(format!(
+                "layout item {label}.kind must be shortcut, executable, url, or appUserModelId"
+            ))
+        }
+    }
+    Ok(kind)
 }
 
 fn validate_layout_folder_item(
     object: &serde_json::Map<String, Value>,
     label: &str,
 ) -> Result<(), String> {
-    if let Some(child_pages) = object.get("childPages") {
-        let pages = child_pages
-            .as_array()
-            .ok_or_else(|| format!("layout item {label}.childPages must be an array"))?;
-        for (page_index, page) in pages.iter().enumerate() {
-            let children = page.as_array().ok_or_else(|| {
-                format!("layout item {label}.childPages[{page_index}] must be an array")
-            })?;
-            for (child_index, child) in children.iter().enumerate() {
-                validate_layout_item(
-                    child,
-                    &format!("{label}.childPages[{page_index}][{child_index}]"),
-                )?;
-            }
+    let child_pages = object
+        .get("childPages")
+        .ok_or_else(|| format!("layout item {label}.childPages is required"))?;
+    let pages = child_pages
+        .as_array()
+        .ok_or_else(|| format!("layout item {label}.childPages must be an array"))?;
+    let mut flattened_children = Vec::new();
+    for (page_index, page) in pages.iter().enumerate() {
+        let children = page.as_array().ok_or_else(|| {
+            format!("layout item {label}.childPages[{page_index}] must be an array")
+        })?;
+        for (child_index, child) in children.iter().enumerate() {
+            validate_layout_folder_child(
+                child,
+                &format!("{label}.childPages[{page_index}][{child_index}]"),
+            )?;
+            flattened_children.push(child.clone());
         }
     }
 
-    if let Some(children) = object.get("children") {
-        let children = children
-            .as_array()
-            .ok_or_else(|| format!("layout item {label}.children must be an array"))?;
-        for (child_index, child) in children.iter().enumerate() {
-            validate_layout_item(child, &format!("{label}.children[{child_index}]"))?;
+    let children = object
+        .get("children")
+        .ok_or_else(|| format!("layout item {label}.children is required"))?;
+    let children = children
+        .as_array()
+        .ok_or_else(|| format!("layout item {label}.children must be an array"))?;
+    if children.len() != flattened_children.len() {
+        return Err(format!(
+            "layout item {label}.children must match flattened childPages"
+        ));
+    }
+    for (child_index, child) in children.iter().enumerate() {
+        validate_layout_folder_child(child, &format!("{label}.children[{child_index}]"))?;
+        if child != &flattened_children[child_index] {
+            return Err(format!(
+                "layout item {label}.children must match flattened childPages"
+            ));
         }
     }
 
     Ok(())
+}
+
+fn validate_layout_folder_child(child: &Value, label: &str) -> Result<(), String> {
+    let object = child
+        .as_object()
+        .ok_or_else(|| format!("layout item {label} must be an object"))?;
+    if object.get("type").and_then(Value::as_str) != Some("app") {
+        return Err(format!("layout item {label}.type must be app"));
+    }
+    validate_layout_item(child, label)
 }
 
 fn require_string_field(
@@ -703,6 +747,80 @@ mod tests {
         let error = save_layout_to_path(&path, &invalid).expect_err("scanRoots should fail");
 
         assert!(error.contains("scanRoots"));
+        assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_requires_app_launch_target() {
+        let dir = test_dir("invalid-app-launch-target");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        invalid["pages"][0][0]
+            .as_object_mut()
+            .expect("app object")
+            .remove("launchTarget");
+
+        let error = save_layout_to_path(&path, &invalid).expect_err("launchTarget should fail");
+
+        assert!(error.contains("launchTarget"));
+        assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_rejects_invalid_launch_target_kind() {
+        let dir = test_dir("invalid-launch-target-kind");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        invalid["pages"][0][0]["launchTarget"]["kind"] = json!("document");
+
+        let error = save_layout_to_path(&path, &invalid).expect_err("kind should fail");
+
+        assert!(error.contains("kind"));
+        assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_rejects_launch_args_for_shortcuts() {
+        let dir = test_dir("invalid-shortcut-launch-args");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        invalid["pages"][0][0]["launchArgs"] = json!("--profile dev");
+
+        let error = save_layout_to_path(&path, &invalid).expect_err("launchArgs should fail");
+
+        assert!(error.contains("launchArgs"));
+        assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_allows_launch_args_for_executables() {
+        let dir = test_dir("valid-executable-launch-args");
+        let path = dir.join("layout.json");
+        let mut valid = valid_layout();
+        valid["pages"][0][0]["launchTarget"]["kind"] = json!("executable");
+        valid["pages"][0][0]["launchTarget"]["path"] = json!("C:/Apps/App A.exe");
+        valid["pages"][0][0]["launchArgs"] = json!("--profile dev");
+
+        save_layout_to_path(&path, &valid).expect("executable launchArgs should save");
+
+        assert!(path.exists(), "valid layout should be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_requires_folder_child_contract() {
+        let dir = test_dir("invalid-folder-contract");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        invalid["pages"][0][1]["children"] = json!([]);
+
+        let error = save_layout_to_path(&path, &invalid).expect_err("children should fail");
+
+        assert!(error.contains("children"));
         assert!(!path.exists(), "invalid layout should not be written");
         fs::remove_dir_all(dir).expect("remove test directory");
     }

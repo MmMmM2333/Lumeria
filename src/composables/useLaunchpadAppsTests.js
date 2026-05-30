@@ -103,6 +103,7 @@ export async function runLaunchpadAppsTests() {
     await apps.browseNewAppLaunchFile();
     assert(apps.newAppTarget.value === "C:\\Tools\\Shortcut.lnk", "launch file browse should use the native launch target path");
     assert(apps.canAddManagedApp.value, "browsed shortcut files should be addable");
+    assert(!apps.canEditNewAppArgs.value, "shortcut targets should not expose launch args");
     apps.closeAddManagedAppPage();
     scanRoots.value = scanRoots.value.map((root) => ({ ...root, enabled: true }));
 
@@ -111,5 +112,20 @@ export async function runLaunchpadAppsTests() {
 
     assert(pages.value[0][0].id === "win-app-1", "adding scanned apps should preserve native stable ids");
     assert(hiddenAppIds.value.length === 0, "adding scanned apps should unhide the preserved native id");
+
+    apps.openAddManagedAppPage();
+    apps.newAppName.value = "URL App";
+    apps.newAppTarget.value = "https://example.com";
+    apps.newAppArgs.value = "--ignored";
+    apps.addManagedApp();
+    assert(!("launchArgs" in pages.value[0][0]), "URL apps should not save launch args");
+
+    apps.openAddManagedAppPage();
+    apps.newAppName.value = "Exe App";
+    apps.newAppTarget.value = "C:/Tools/App.exe";
+    apps.newAppArgs.value = "--profile dev";
+    assert(apps.canEditNewAppArgs.value, "executable targets should expose launch args");
+    apps.addManagedApp();
+    assert(pages.value[0][0].launchArgs === "--profile dev", "executable apps should save launch args");
   });
 }

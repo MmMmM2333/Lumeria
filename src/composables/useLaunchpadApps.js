@@ -61,9 +61,19 @@ export function useLaunchpadApps(options) {
   const canBrowseScanRoots = computed(() => options.shouldUseNativeCatalog());
   const canBrowseLaunchFile = computed(() => options.shouldUseNativeCatalog());
   const canScanManagedApps = computed(() => options.shouldUseNativeCatalog() && options.scanRoots.value.some((root) => root.enabled));
+  const canEditNewAppArgs = computed(() => canUseLaunchArgsForTarget(newAppTarget.value));
+  const canEditAppArgs = computed(() => canUseLaunchArgsForTarget(editAppTarget.value));
 
   function getLaunchTargetPath(app) {
     return app?.launchTarget?.path || "";
+  }
+
+  function canUseLaunchArgsForTarget(target) {
+    return makeLaunchTarget(target)?.kind === "executable";
+  }
+
+  function launchArgsForTarget(launchTarget, value) {
+    return launchTarget?.kind === "executable" ? value.trim() : "";
   }
 
   function updateAppCustomIcon(appId, dataUrl) {
@@ -308,7 +318,7 @@ export function useLaunchpadApps(options) {
       if (!selectedFile) return;
       newAppName.value = String(selectedFile.name || "").trim() || newAppName.value;
       newAppTarget.value = String(selectedFile.launchTarget?.path || selectedFile.path || "").trim();
-      newAppArgs.value = String(selectedFile.launchArgs || "").trim();
+      newAppArgs.value = selectedFile.launchTarget?.kind === "executable" ? String(selectedFile.launchArgs || "").trim() : "";
       newAppIconDataUrl.value = selectedFile.iconDataUrl || null;
     } catch (error) {
       console.error("Failed to pick launch file", error);
@@ -350,7 +360,7 @@ export function useLaunchpadApps(options) {
       if (!selectedFile) return;
       editAppName.value = String(selectedFile.name || "").trim() || editAppName.value;
       editAppTarget.value = String(selectedFile.launchTarget?.path || selectedFile.path || "").trim();
-      editAppArgs.value = String(selectedFile.launchArgs || "").trim();
+      editAppArgs.value = selectedFile.launchTarget?.kind === "executable" ? String(selectedFile.launchArgs || "").trim() : "";
       editAppIconDataUrl.value = selectedFile.iconDataUrl || null;
       isEditAppIconReset.value = false;
     } catch (error) {
@@ -501,7 +511,7 @@ export function useLaunchpadApps(options) {
     const name = editAppName.value.trim().slice(0, 64);
     const launchTarget = makeLaunchTarget(editAppTarget.value);
     if (!name || !launchTarget) return;
-    const launchArgs = editAppArgs.value.trim();
+    const launchArgs = launchArgsForTarget(launchTarget, editAppArgs.value);
     const customIcon = editAppIconDataUrl.value;
 
     const changed = updateManagedAppEverywhere(editingManagedAppId.value, (item) => {
@@ -633,7 +643,7 @@ export function useLaunchpadApps(options) {
     if (!name) return;
     const launchTarget = makeLaunchTarget(newAppTarget.value);
     if (!launchTarget) return;
-    const launchArgs = newAppArgs.value.trim();
+    const launchArgs = launchArgsForTarget(launchTarget, newAppArgs.value);
     const app = {
       id: options.makeId("custom-app"),
       type: "app",
@@ -662,6 +672,8 @@ export function useLaunchpadApps(options) {
     canAddManagedApp,
     canAddScannedApps,
     canSaveEditingManagedApp,
+    canEditAppArgs,
+    canEditNewAppArgs,
     canBrowseScanRoots,
     canBrowseLaunchFile,
     canScanManagedApps,
