@@ -254,6 +254,8 @@ fn validate_scan_roots(value: &Value) -> Result<(), String> {
         require_bool_field(object, "enabled", &label)?;
         require_bool_field(object, "removable", &label)?;
         validate_optional_object_string_field(object, "lastScannedAt", &label)?;
+        validate_optional_positive_integer_field(object, "maxDepth", &label)?;
+        validate_optional_positive_integer_field(object, "maxEntries", &label)?;
     }
     Ok(())
 }
@@ -324,8 +326,13 @@ fn validate_layout_app_item(
             "layout item {label}.iconDataUrl must not be persisted"
         ));
     }
+    if object.contains_key("customIconDataUrl") {
+        return Err(format!(
+            "layout item {label}.customIconDataUrl must not be persisted"
+        ));
+    }
 
-    for key in ["emoji", "iconPath", "customIconDataUrl", "launchArgs"] {
+    for key in ["emoji", "iconPath", "customIconPath", "launchArgs"] {
         validate_optional_string_field(object, key, label)?;
     }
 
@@ -465,6 +472,22 @@ fn validate_optional_object_string_field(
 ) -> Result<(), String> {
     if object.get(key).is_some_and(|value| !value.is_string()) {
         return Err(format!("{label}.{key} must be a string"));
+    }
+    Ok(())
+}
+
+fn validate_optional_positive_integer_field(
+    object: &serde_json::Map<String, Value>,
+    key: &str,
+    label: &str,
+) -> Result<(), String> {
+    if let Some(value) = object.get(key) {
+        let number = value
+            .as_u64()
+            .ok_or_else(|| format!("{label}.{key} must be a positive integer"))?;
+        if number == 0 {
+            return Err(format!("{label}.{key} must be a positive integer"));
+        }
     }
     Ok(())
 }
@@ -730,6 +753,21 @@ mod tests {
         let error = save_layout_to_path(&path, &invalid).expect_err("iconDataUrl should fail");
 
         assert!(error.contains("iconDataUrl"));
+        assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_rejects_persisted_custom_icon_data() {
+        let dir = test_dir("invalid-custom-icon-data-url");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        invalid["pages"][0][0]["customIconDataUrl"] = json!("data:image/png;base64,abc");
+
+        let error = save_layout_to_path(&path, &invalid)
+            .expect_err("customIconDataUrl should fail");
+
+        assert!(error.contains("customIconDataUrl"));
         assert!(!path.exists(), "invalid layout should not be written");
         fs::remove_dir_all(dir).expect("remove test directory");
     }

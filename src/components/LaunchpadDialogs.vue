@@ -5,6 +5,7 @@
         <div>
           <h2>扫描结果</h2>
           <p>发现 {{ state.scanResultApps.value.length }} 个可添加应用 · 已选择 {{ state.scanResultSelectedCount.value }} 个</p>
+          <p v-if="state.scanResultWarnings.value.length" class="settings-field-hint">部分目录因权限、链接或扫描限制被跳过</p>
         </div>
         <button class="settings-close-button" type="button" aria-label="关闭扫描结果" @click="state.closeScanResultDialog">×</button>
       </header>

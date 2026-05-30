@@ -135,7 +135,7 @@ export default defineComponent({
             onClick: handleChooseIcon,
           }, "+")
         : null;
-      const resetIconButton = props.editing && item.type === "app" && item.customIconDataUrl
+      const resetIconButton = props.editing && item.type === "app" && (item.customIconPath || item.customIconDataUrl)
         ? h("button", {
             class: "reset-app-icon-button",
             type: "button",

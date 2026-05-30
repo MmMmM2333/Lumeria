@@ -80,7 +80,7 @@ export function runLaunchpadDataTests() {
     version: 1,
     pages: [
       [
-        { id: "a", type: "app", name: "Renamed A", customIconDataUrl: "data:custom-a", iconDataUrl: "data:saved-a" },
+        { id: "a", type: "app", name: "Renamed A", customIconPath: "C:/Icons/custom-a.png", iconDataUrl: "data:saved-a" },
         {
           id: "folder",
           type: "folder",
@@ -102,7 +102,7 @@ export function runLaunchpadDataTests() {
   assert(merged.length === 2, "new non-hidden catalog apps should overflow to a second page when the first page is full");
   assert(merged[0][0].name === "Renamed A", "saved app names should override catalog names");
   assert(merged[0][0].iconDataUrl === "data:a", "saved catalog icon data should not override native catalog icons");
-  assert(merged[0][0].customIconDataUrl === "data:custom-a", "saved custom icons should be preserved");
+  assert(merged[0][0].customIconPath === "C:/Icons/custom-a.png", "saved custom icon paths should be preserved");
   assert(merged[0][1].type === "folder", "saved folders should be preserved");
   assert(merged[0][1].children.map((item) => item.id).join(",") === "b,custom", "folder merge should keep custom apps and remove duplicate app ids");
   assert(!("launchArgs" in merged[0][1].children[1]), "non-executable custom apps should not preserve launch args");
@@ -130,7 +130,7 @@ export function runLaunchpadDataTests() {
   assert(snapshot.settings.showMissingLaunchTargetBadge === true, "layout snapshots should include missing target badge preference");
   assert(!("iconDataUrl" in snapshot.pages[0][0]), "layout snapshots should omit catalog icon data");
   assert(snapshot.pages[0][0].iconPath === "C:/Icons/a.png", "layout snapshots should preserve cached icon paths");
-  assert(snapshot.pages[0][0].customIconDataUrl === "data:custom-a", "layout snapshots should preserve custom icon data");
+  assert(snapshot.pages[0][0].customIconPath === "C:/Icons/custom-a.png", "layout snapshots should preserve custom icon paths");
   assert(snapshot.pages[0][1].children.length === 2, "folder snapshots should include flat children for compatibility");
   assert(!("launchArgs" in snapshot.pages[0][1].children[1]), "layout snapshots should omit non-executable launch args");
 }

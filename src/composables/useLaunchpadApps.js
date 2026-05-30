@@ -11,25 +11,41 @@ import {
   normalizeScanKeywordBlacklist,
   normalizeScanRoots,
 } from "../domain/launchpadData.js";
-import { loadAppIconChoices, pickLaunchFile, pickScanRootDirectory, scanApps } from "../api/launchpadApi.js";
+import { cacheCustomIcon, loadAppIconChoices, pickLaunchFile, pickScanRootDirectory, scanApps } from "../api/launchpadApi.js";
+import { ICON_SIZE_MAX } from "./launchpadConstants.js";
+
+const CUSTOM_ICON_SOURCE_MAX_BYTES = 10 * 1024 * 1024;
+const CUSTOM_ICON_DATA_URL_MAX_LENGTH = 1_400_000;
+const CUSTOM_ICON_MIN_SOURCE_SIZE = 16;
+const CUSTOM_ICON_OUTPUT_MIN_SIZE = ICON_SIZE_MAX;
+const CUSTOM_ICON_OUTPUT_MAX_SIZE = ICON_SIZE_MAX * 2;
+
+export function getCustomIconCanvasSize(width, height) {
+  const sourceMax = Math.max(Number(width) || 0, Number(height) || 0);
+  if (sourceMax <= 0) return CUSTOM_ICON_OUTPUT_MIN_SIZE;
+  return Math.min(CUSTOM_ICON_OUTPUT_MAX_SIZE, Math.max(CUSTOM_ICON_OUTPUT_MIN_SIZE, sourceMax));
+}
 
 export function useLaunchpadApps(options) {
   const appManagerSelectedIds = ref([]);
   const appManagerSearchQuery = ref("");
   const isScanResultDialogOpen = ref(false);
   const scanResultApps = ref([]);
+  const scanResultWarnings = ref([]);
   const scanResultSelectedIds = ref([]);
   const newScanKeyword = ref("");
   const isAddingManagedApp = ref(false);
   const newAppName = ref("");
   const newAppTarget = ref("");
   const newAppArgs = ref("");
+  const newAppIconPath = ref(null);
   const newAppIconDataUrl = ref(null);
   const isBrowsingNewAppTarget = ref(false);
   const editingManagedAppId = ref(null);
   const editAppName = ref("");
   const editAppTarget = ref("");
   const editAppArgs = ref("");
+  const editAppIconPath = ref(null);
   const editAppIconDataUrl = ref(null);
   const isEditAppIconReset = ref(false);
   const isBrowsingEditAppTarget = ref(false);
@@ -76,15 +92,20 @@ export function useLaunchpadApps(options) {
     return launchTarget?.kind === "executable" ? value.trim() : "";
   }
 
-  function updateAppCustomIcon(appId, dataUrl) {
+  function updateAppCustomIcon(appId, icon) {
     if (!appId || options.isDragActive()) return;
     const next = options.clonePages(options.pages.value);
     let changed = false;
+    const customIconPath = icon?.iconPath || null;
+    const customIconDataUrl = icon?.iconDataUrl || null;
 
     function updateItem(item) {
       if (!item) return;
       if (item.type === "app" && item.id === appId) {
-        if (dataUrl) item.customIconDataUrl = dataUrl;
+        if (customIconPath) item.customIconPath = customIconPath;
+        else delete item.customIconPath;
+        delete item.customIconUrl;
+        if (customIconDataUrl) item.customIconDataUrl = customIconDataUrl;
         else delete item.customIconDataUrl;
         changed = true;
         return;
@@ -180,6 +201,8 @@ export function useLaunchpadApps(options) {
         path: "%USERPROFILE%/Desktop",
         enabled: false,
         removable: true,
+        maxDepth: 3,
+        maxEntries: 5000,
       },
     ]);
   }
@@ -264,6 +287,7 @@ export function useLaunchpadApps(options) {
   function closeScanResultDialog() {
     isScanResultDialogOpen.value = false;
     scanResultApps.value = [];
+    scanResultWarnings.value = [];
     scanResultSelectedIds.value = [];
   }
 
@@ -271,6 +295,7 @@ export function useLaunchpadApps(options) {
     newAppName.value = "";
     newAppTarget.value = "";
     newAppArgs.value = "";
+    newAppIconPath.value = null;
     newAppIconDataUrl.value = null;
   }
 
@@ -286,27 +311,116 @@ export function useLaunchpadApps(options) {
     resetNewManagedAppDraft();
   }
 
-  function readImageFileAsDataUrl(event, callback) {
+  function openIconErrorDialog(message) {
+    options.openWarningDialog?.({
+      title: "无法使用此图标",
+      message,
+      confirmText: "知道了",
+    });
+  }
+
+  function loadImageFromFile(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const image = new Image();
+      image.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve(image);
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("图片无法读取。"));
+      };
+      image.src = url;
+    });
+  }
+
+  function canvasToPngDataUrl(canvas) {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error("图标压缩失败。"));
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === "string") resolve(reader.result);
+          else reject(new Error("图标压缩失败。"));
+        };
+        reader.onerror = () => reject(new Error("图标压缩失败。"));
+        reader.readAsDataURL(blob);
+      }, "image/png");
+    });
+  }
+
+  async function normalizeCustomIconFile(file) {
+    if (!file.type || !file.type.startsWith("image/")) {
+      throw new Error("请选择图片文件。");
+    }
+    if (file.size > CUSTOM_ICON_SOURCE_MAX_BYTES) {
+      throw new Error("图片文件过大，请选择 10MB 以内的图片。");
+    }
+
+    const image = await loadImageFromFile(file);
+    const width = image.naturalWidth || image.width;
+    const height = image.naturalHeight || image.height;
+    if (width < CUSTOM_ICON_MIN_SOURCE_SIZE || height < CUSTOM_ICON_MIN_SOURCE_SIZE) {
+      throw new Error("图片尺寸过小，请选择至少 16x16 的图片。");
+    }
+
+    const canvasSize = getCustomIconCanvasSize(width, height);
+    const scale = Math.min(canvasSize / width, canvasSize / height);
+    const drawWidth = Math.max(1, Math.round(width * scale));
+    const drawHeight = Math.max(1, Math.round(height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = canvasSize;
+    canvas.height = canvasSize;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("图标压缩失败。");
+    context.clearRect(0, 0, canvasSize, canvasSize);
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(
+      image,
+      Math.round((canvasSize - drawWidth) / 2),
+      Math.round((canvasSize - drawHeight) / 2),
+      drawWidth,
+      drawHeight
+    );
+
+    const dataUrl = await canvasToPngDataUrl(canvas);
+    if (dataUrl.length > CUSTOM_ICON_DATA_URL_MAX_LENGTH) {
+      throw new Error("压缩后的图标仍然过大，请换一张更简单的图片。");
+    }
+    return dataUrl;
+  }
+
+  async function cacheCustomIconDataUrl(dataUrl) {
+    if (!options.shouldUseNativeCatalog()) return { iconDataUrl: dataUrl, iconPath: null };
+    const cached = await cacheCustomIcon(dataUrl);
+    if (!cached?.iconPath) throw new Error("图标缓存失败。");
+    return {
+      iconPath: cached.iconPath,
+      iconDataUrl: cached.iconDataUrl || dataUrl,
+    };
+  }
+
+  async function readImageFileAsCustomIcon(event, callback) {
     const input = event?.target;
     const file = input?.files?.[0];
     if (!file) return;
-    if (file.type && !file.type.startsWith("image/")) {
+    try {
+      const dataUrl = await normalizeCustomIconFile(file);
+      callback(await cacheCustomIconDataUrl(dataUrl));
+    } catch (error) {
+      openIconErrorDialog(error?.message || "图标处理失败。");
+    } finally {
       input.value = "";
-      return;
     }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") callback(reader.result);
-      input.value = "";
-    };
-    reader.onerror = () => {
-      input.value = "";
-    };
-    reader.readAsDataURL(file);
   }
 
   function resetNewAppIcon() {
+    newAppIconPath.value = null;
     newAppIconDataUrl.value = null;
   }
 
@@ -319,6 +433,7 @@ export function useLaunchpadApps(options) {
       newAppName.value = String(selectedFile.name || "").trim() || newAppName.value;
       newAppTarget.value = String(selectedFile.launchTarget?.path || selectedFile.path || "").trim();
       newAppArgs.value = selectedFile.launchTarget?.kind === "executable" ? String(selectedFile.launchArgs || "").trim() : "";
+      newAppIconPath.value = selectedFile.iconPath || null;
       newAppIconDataUrl.value = selectedFile.iconDataUrl || null;
     } catch (error) {
       console.error("Failed to pick launch file", error);
@@ -333,6 +448,7 @@ export function useLaunchpadApps(options) {
     editAppName.value = app.name || "";
     editAppTarget.value = getLaunchTargetPath(app);
     editAppArgs.value = typeof app.launchArgs === "string" ? app.launchArgs : "";
+    editAppIconPath.value = app.customIconPath || null;
     editAppIconDataUrl.value = app.customIconDataUrl || null;
     isEditAppIconReset.value = false;
   }
@@ -343,11 +459,13 @@ export function useLaunchpadApps(options) {
     editAppName.value = "";
     editAppTarget.value = "";
     editAppArgs.value = "";
+    editAppIconPath.value = null;
     editAppIconDataUrl.value = null;
     isEditAppIconReset.value = false;
   }
 
   function resetEditAppIcon() {
+    editAppIconPath.value = null;
     editAppIconDataUrl.value = null;
     isEditAppIconReset.value = true;
   }
@@ -361,6 +479,7 @@ export function useLaunchpadApps(options) {
       editAppName.value = String(selectedFile.name || "").trim() || editAppName.value;
       editAppTarget.value = String(selectedFile.launchTarget?.path || selectedFile.path || "").trim();
       editAppArgs.value = selectedFile.launchTarget?.kind === "executable" ? String(selectedFile.launchArgs || "").trim() : "";
+      editAppIconPath.value = selectedFile.iconPath || null;
       editAppIconDataUrl.value = selectedFile.iconDataUrl || null;
       isEditAppIconReset.value = false;
     } catch (error) {
@@ -374,6 +493,7 @@ export function useLaunchpadApps(options) {
     return (choices || [])
       .map((choice, index) => ({
         id: String(choice?.id || `icon-choice-${index}`),
+        iconPath: choice?.iconPath || choice?.icon_path || null,
         iconDataUrl: choice?.iconDataUrl || choice?.icon_data_url || null,
       }))
       .filter((choice) => choice.iconDataUrl);
@@ -452,31 +572,33 @@ export function useLaunchpadApps(options) {
     isLoadingIconChoices.value = false;
   }
 
-  function applyIconChooserDataUrl(dataUrl) {
-    if (!dataUrl || !iconChooser.value) return;
+  function applyIconChooserIcon(icon) {
+    if (!icon?.iconDataUrl || !iconChooser.value) return;
     if (iconChooser.value.target === "new") {
-      newAppIconDataUrl.value = dataUrl;
+      newAppIconPath.value = icon.iconPath || null;
+      newAppIconDataUrl.value = icon.iconDataUrl;
       closeIconChooser();
       return;
     }
     if (iconChooser.value.target === "edit") {
-      editAppIconDataUrl.value = dataUrl;
+      editAppIconPath.value = icon.iconPath || null;
+      editAppIconDataUrl.value = icon.iconDataUrl;
       isEditAppIconReset.value = false;
       closeIconChooser();
       return;
     }
     if (iconChooser.value.target === "existing") {
-      updateAppCustomIcon(iconChooser.value.appId, dataUrl);
+      updateAppCustomIcon(iconChooser.value.appId, icon);
       closeIconChooser();
     }
   }
 
   function chooseIconCandidate(choice) {
-    applyIconChooserDataUrl(choice?.iconDataUrl);
+    applyIconChooserIcon(choice);
   }
 
   function handleIconChooserUpload(event) {
-    readImageFileAsDataUrl(event, applyIconChooserDataUrl);
+    readImageFileAsCustomIcon(event, applyIconChooserIcon);
   }
 
   function updateManagedAppEverywhere(appId, updater) {
@@ -512,7 +634,8 @@ export function useLaunchpadApps(options) {
     const launchTarget = makeLaunchTarget(editAppTarget.value);
     if (!name || !launchTarget) return;
     const launchArgs = launchArgsForTarget(launchTarget, editAppArgs.value);
-    const customIcon = editAppIconDataUrl.value;
+    const customIconPath = editAppIconPath.value;
+    const customIconDataUrl = editAppIconDataUrl.value;
 
     const changed = updateManagedAppEverywhere(editingManagedAppId.value, (item) => {
       item.name = name;
@@ -520,7 +643,10 @@ export function useLaunchpadApps(options) {
       item.launchTarget = launchTarget;
       if (launchArgs) item.launchArgs = launchArgs;
       else delete item.launchArgs;
-      if (customIcon) item.customIconDataUrl = customIcon;
+      if (customIconPath) item.customIconPath = customIconPath;
+      else delete item.customIconPath;
+      delete item.customIconUrl;
+      if (customIconDataUrl) item.customIconDataUrl = customIconDataUrl;
       else delete item.customIconDataUrl;
     });
 
@@ -590,7 +716,7 @@ export function useLaunchpadApps(options) {
         keywordBlacklist: normalizeScanKeywordBlacklist(options.scanKeywordBlacklist.value),
         appBlacklist: normalizeScanAppBlacklist(options.scanAppBlacklist.value),
       };
-      const nativeApps = await scanApps(enabledRoots, scanFilters);
+      const scanResult = await scanApps(enabledRoots, scanFilters);
       const now = new Date().toISOString();
       const scannedRootIds = new Set(enabledRoots.map((root) => root.id));
       options.scanRoots.value = options.scanRoots.value.map((root) =>
@@ -599,11 +725,12 @@ export function useLaunchpadApps(options) {
       const existingApps = options.collectAppsFromPages(options.pages.value);
       const existingIds = new Set(existingApps.map((app) => app.id));
       const existingSourceKeys = new Set(existingApps.map((app) => app.sourceKey).filter(Boolean));
-      const missingApps = (nativeApps || [])
+      const missingApps = (scanResult?.apps || [])
         .map(normalizeNativeApp)
         .filter((app) => !isAppBlockedByScanBlacklist(app, scanFilters.appBlacklist))
         .filter((app) => !existingIds.has(app.id) && !existingSourceKeys.has(app.sourceKey));
       scanResultApps.value = missingApps;
+      scanResultWarnings.value = scanResult?.warnings || [];
       scanResultSelectedIds.value = missingApps.map((app) => app.id);
       isScanResultDialogOpen.value = true;
       syncManagedAppState();
@@ -652,6 +779,7 @@ export function useLaunchpadApps(options) {
       launchTarget,
     };
     if (launchArgs) app.launchArgs = launchArgs;
+    if (newAppIconPath.value) app.customIconPath = newAppIconPath.value;
     if (newAppIconDataUrl.value) app.customIconDataUrl = newAppIconDataUrl.value;
     options.commitPages(options.appendAppsToPages(options.pages.value, [app]));
     closeAddManagedAppPage();
@@ -690,6 +818,7 @@ export function useLaunchpadApps(options) {
     deleteManagedApp,
     deleteSelectedManagedApps,
     editAppArgs,
+    editAppIconPath,
     editAppIconDataUrl,
     editingManagedApp,
     editAppName,
@@ -711,6 +840,7 @@ export function useLaunchpadApps(options) {
     isScanResultDialogOpen,
     managedApps,
     newAppArgs,
+    newAppIconPath,
     newAppIconDataUrl,
     newAppName,
     newAppTarget,
@@ -727,6 +857,7 @@ export function useLaunchpadApps(options) {
     resetNewAppIcon,
     saveEditingManagedApp,
     scanResultApps,
+    scanResultWarnings,
     scanResultSelectedCount,
     scanResultSelectedIds,
     selectAllManagedApps,

@@ -32,7 +32,18 @@ export async function listenNativeEvent(eventName, handler) {
 export async function scanApps(roots = [], filters = {}) {
   const invoke = getTauriInvoke();
   if (!invoke) return null;
-  return invoke("scan_apps", { roots, filters });
+  return normalizeScanAppsResult(await invoke("scan_apps", { roots, filters }));
+}
+
+export function normalizeScanAppsResult(result) {
+  if (Array.isArray(result)) {
+    return { apps: result, warnings: [], stats: null };
+  }
+  return {
+    apps: Array.isArray(result?.apps) ? result.apps : [],
+    warnings: Array.isArray(result?.warnings) ? result.warnings : [],
+    stats: result?.stats || null,
+  };
 }
 
 export async function loadLayout() {
@@ -63,6 +74,12 @@ export async function loadAppIconChoices(targetPath) {
   const invoke = getTauriInvoke();
   if (!invoke) return [];
   return invoke("load_app_icon_choices", { targetPath });
+}
+
+export async function cacheCustomIcon(dataUrl) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return null;
+  return invoke("cache_custom_icon", { dataUrl });
 }
 
 export async function loadCachedAppIcons(icons) {

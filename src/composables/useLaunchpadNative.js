@@ -179,12 +179,15 @@ export function useLaunchpadNative(options) {
       appBlacklist: normalizeScanAppBlacklist(options.scanAppBlacklist.value),
     };
     const nativeApps = await scanApps(enabledRoots, scanFilters);
+    if (nativeApps?.warnings?.length) {
+      console.warn("LaunchPad scan completed with warnings", nativeApps.warnings);
+    }
     const now = new Date().toISOString();
     const scannedRootIds = new Set(enabledRoots.map((root) => root.id));
     options.scanRoots.value = options.scanRoots.value.map((root) =>
       scannedRootIds.has(root.id) ? { ...root, lastScannedAt: now } : root
     );
-    return (nativeApps || [])
+    return (nativeApps?.apps || [])
       .map(normalizeNativeApp)
       .filter((app) => !isAppBlockedByScanBlacklist(app, scanFilters.appBlacklist));
   }
@@ -199,7 +202,9 @@ export function useLaunchpadNative(options) {
     if (!item) return item;
     if (item.type === "app") {
       const iconUrl = item.iconPath ? convertFilePathToAssetUrl(item.iconPath) : null;
-      return iconUrl ? { ...item, iconUrl } : item;
+      const customIconUrl = item.customIconPath ? convertFilePathToAssetUrl(item.customIconPath) : null;
+      if (iconUrl || customIconUrl) return { ...item, iconUrl, customIconUrl };
+      return item;
     }
     if (item.type !== "folder") return item;
     const childPages = (item.childPages || []).map((page) =>

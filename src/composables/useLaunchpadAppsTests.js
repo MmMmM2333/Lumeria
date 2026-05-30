@@ -1,5 +1,5 @@
 import { ref, shallowRef } from "vue";
-import { useLaunchpadApps } from "./useLaunchpadApps.js";
+import { getCustomIconCanvasSize, useLaunchpadApps } from "./useLaunchpadApps.js";
 
 function withMockTauri(invoke, run) {
   const originalWindow = globalThis.window;
@@ -23,6 +23,10 @@ export async function runLaunchpadAppsTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Launchpad apps test failed] ${message}`);
   };
+
+  assert(getCustomIconCanvasSize(128, 128) === 128, "128px custom icons should not be upscaled to 256px");
+  assert(getCustomIconCanvasSize(64, 64) === 128, "small custom icons should be normalized to the UI max size");
+  assert(getCustomIconCanvasSize(512, 256) === 256, "large non-square custom icons should be capped at the high-DPI size");
 
   await withMockTauri(async (command) => {
     if (command === "pick_scan_root_directory") return "D:\\Tools";

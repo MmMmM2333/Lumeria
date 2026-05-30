@@ -36,6 +36,7 @@ pub(crate) struct PickedLaunchFile {
     path: String,
     launch_target: LaunchTarget,
     launch_args: String,
+    icon_path: Option<String>,
     icon_data_url: Option<String>,
 }
 
@@ -150,9 +151,8 @@ fn make_picked_launch_file(
     let icon_source = selected_path;
     let icon_dir = icon_cache_dir(app)?;
     let icon_id = stable_app_id(&icon_source.to_string_lossy());
-    let icon_data_url = cache_app_icon(icon_source, &icon_dir, &icon_id)
-        .as_deref()
-        .and_then(icon_file_data_url);
+    let icon_path = cache_app_icon(icon_source, &icon_dir, &icon_id);
+    let icon_data_url = icon_path.as_deref().and_then(icon_file_data_url);
     let launch_path = windows_api_path(selected_path);
     let launch_target = LaunchTarget {
         kind: match extension(selected_path).as_deref() {
@@ -173,6 +173,7 @@ fn make_picked_launch_file(
         path: launch_path,
         launch_target,
         launch_args: String::new(),
+        icon_path,
         icon_data_url,
     })
 }

@@ -6,12 +6,13 @@ commands.
 
 ## Commands
 
-- `scan_apps(roots: ScanRoot[], filters?: ScanFilters) -> AppCatalogItem[]`
+- `scan_apps(roots: ScanRoot[], filters?: ScanFilters) -> ScanAppsResult`
 - `load_layout() -> LaunchpadLayout | null`
 - `save_layout(layout: LaunchpadLayout) -> void`
 - `pick_launch_file() -> PickedLaunchFile | null`
 - `pick_scan_root_directory() -> string | null`
 - `load_app_icon_choices(targetPath: string) -> AppIconChoice[]`
+- `cache_custom_icon(dataUrl: string) -> CachedCustomIconResult`
 - `load_cached_app_icons(icons: CachedAppIconRequest[]) -> CachedAppIconResult[]`
 - `check_launch_targets(targets: LaunchTargetCheckRequest[]) -> LaunchTargetCheckResult[]`
 - `launch_app(request: LaunchAppRequest) -> void`
@@ -27,7 +28,8 @@ type AppCatalogItem = {
   name: string;
   iconPath?: string;
   iconDataUrl?: string;
-  customIconDataUrl?: string;
+  customIconPath?: string;
+  customIconUrl?: string;
   emoji?: string;
   launchTarget: {
     kind: "shortcut" | "executable" | "url" | "appUserModelId";
@@ -52,7 +54,27 @@ type ScanRoot = {
   path: string;
   enabled: boolean;
   removable: boolean;
+  maxDepth?: number;
+  maxEntries?: number;
   lastScannedAt?: string;
+};
+
+type ScanAppsResult = {
+  apps: AppCatalogItem[];
+  warnings: ScanWarning[];
+  stats: {
+    dirsVisited: number;
+    entriesSeen: number;
+    appsFound: number;
+    limitReached: boolean;
+  };
+};
+
+type ScanWarning = {
+  rootId: string;
+  rootLabel: string;
+  kind: "maxDepthReached" | "maxEntriesReached" | "skippedDirectory" | "cycleSkipped" | "linkSkipped" | string;
+  message: string;
 };
 
 type ScanFilters = {
@@ -92,11 +114,18 @@ type PickedLaunchFile = {
   path: string;
   launchTarget: AppCatalogItem["launchTarget"];
   launchArgs: string;
+  iconPath?: string;
   iconDataUrl?: string;
 };
 
 type AppIconChoice = {
   id: string;
+  iconPath: string;
+  iconDataUrl: string;
+};
+
+type CachedCustomIconResult = {
+  iconPath: string;
   iconDataUrl: string;
 };
 
@@ -146,11 +175,18 @@ The frontend owns the configured scan roots. The Windows backend scans only the
 enabled roots passed to `scan_apps`; Start Menu folders are default scan roots,
 not hard-coded startup behavior.
 
-`scan_apps` returns cached PNG icons as `iconDataUrl` when extraction succeeds.
+`scan_apps` is bounded by per-root recursion and entry limits. It skips repeated
+directories, symlinks, junctions, and reparse points; warnings describe skipped
+or truncated scans. It returns cached PNG icons as `iconDataUrl` when extraction succeeds.
 The frontend persists `iconPath` for scanned default icons and hydrates those
 paths with `load_cached_app_icons` on startup. It should not persist catalog
-`iconDataUrl` in layout JSON. The frontend may persist `customIconDataUrl` for
-user-selected replacements.
+`iconDataUrl` in layout JSON.
+
+User-selected custom icons are normalized by the frontend before being passed to
+`cache_custom_icon`. The backend stores accepted PNG data URLs under the app data
+icon cache and returns `customIconPath`. Layout JSON must persist
+`customIconPath`, not `customIconDataUrl`; any data URL is runtime-only preview
+state.
 
 Scanned `.url` files are local shell shortcuts. They should be returned as
 `launchTarget.kind: "shortcut"` with the local `.url` file path so missing-file

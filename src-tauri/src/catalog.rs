@@ -5,7 +5,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use serde::Deserialize;
+#[cfg(target_os = "windows")]
+use std::os::windows::fs::MetadataExt;
+
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 use crate::{
@@ -24,6 +27,10 @@ pub(crate) struct ScanRoot {
     pub(crate) path: String,
     #[serde(default = "default_enabled")]
     pub(crate) enabled: bool,
+    #[serde(default)]
+    pub(crate) max_depth: Option<usize>,
+    #[serde(default)]
+    pub(crate) max_entries: Option<usize>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -59,6 +66,45 @@ struct CatalogCandidate {
     source_key: String,
 }
 
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ScanAppsResult {
+    pub(crate) apps: Vec<AppCatalogItem>,
+    pub(crate) warnings: Vec<ScanWarning>,
+    pub(crate) stats: ScanStats,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ScanWarning {
+    root_id: String,
+    root_label: String,
+    kind: String,
+    message: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ScanStats {
+    dirs_visited: usize,
+    entries_seen: usize,
+    apps_found: usize,
+    limit_reached: bool,
+}
+
+struct ScanLimits {
+    max_depth: usize,
+    max_entries: usize,
+}
+
+const START_MENU_MAX_DEPTH: usize = 8;
+const CUSTOM_DIRECTORY_MAX_DEPTH: usize = 3;
+const DEFAULT_MAX_ENTRIES: usize = 5_000;
+const MAX_CONFIGURED_DEPTH: usize = 32;
+const MAX_CONFIGURED_ENTRIES: usize = 50_000;
+#[cfg(target_os = "windows")]
+const FILE_ATTRIBUTE_REPARSE_POINT_VALUE: u32 = 0x400;
+
 fn default_enabled() -> bool {
     true
 }
@@ -81,13 +127,18 @@ pub(crate) fn scan_apps_from_roots(
     roots: &[ScanRoot],
     icon_dir: &Path,
     filters: &ScanFilters,
-) -> Result<Vec<AppCatalogItem>, String> {
+) -> Result<ScanAppsResult, String> {
     let mut apps = Vec::new();
     let mut seen_paths = HashMap::new();
     let filters = NormalizedScanFilters::from(filters);
+    let mut warnings = Vec::new();
+    let mut stats = ScanStats::default();
 
     for root in roots.iter().filter(|root| root.enabled) {
         let root_path = expand_scan_root_path(&root.path);
+        let mut visited_dirs = HashSet::new();
+        let mut root_entries_seen = 0usize;
+        let limits = scan_limits(root);
         collect_apps_from_dir(
             root,
             &root_path,
@@ -96,6 +147,12 @@ pub(crate) fn scan_apps_from_roots(
             &filters,
             &mut apps,
             &mut seen_paths,
+            &mut visited_dirs,
+            &mut warnings,
+            &mut stats,
+            &limits,
+            &mut root_entries_seen,
+            0,
         )?;
     }
 
@@ -105,7 +162,12 @@ pub(crate) fn scan_apps_from_roots(
             .cmp(&right.name.to_lowercase())
             .then_with(|| left.id.cmp(&right.id))
     });
-    Ok(apps)
+    stats.apps_found = apps.len();
+    Ok(ScanAppsResult {
+        apps,
+        warnings,
+        stats,
+    })
 }
 
 fn collect_apps_from_dir(
@@ -116,10 +178,74 @@ fn collect_apps_from_dir(
     filters: &NormalizedScanFilters,
     apps: &mut Vec<AppCatalogItem>,
     seen_paths: &mut HashMap<String, ()>,
+    visited_dirs: &mut HashSet<PathBuf>,
+    warnings: &mut Vec<ScanWarning>,
+    stats: &mut ScanStats,
+    limits: &ScanLimits,
+    root_entries_seen: &mut usize,
+    depth: usize,
 ) -> Result<(), String> {
+    if is_link_or_reparse_point(dir) {
+        push_scan_warning_once(
+            warnings,
+            root,
+            "linkSkipped",
+            "Symbolic links and reparse points were skipped while scanning.".to_string(),
+        );
+        return Ok(());
+    }
+
+    if depth > limits.max_depth {
+        push_scan_warning_once(
+            warnings,
+            root,
+            "maxDepthReached",
+            format!("Skipped directories deeper than {} levels.", limits.max_depth),
+        );
+        stats.limit_reached = true;
+        return Ok(());
+    }
+
+    let canonical_dir = match dir.canonicalize() {
+        Ok(path) => path,
+        Err(error) if is_skippable_scan_dir_error(error.kind()) => {
+            push_scan_warning_once(
+                warnings,
+                root,
+                "skippedDirectory",
+                "Some directories were skipped because they were unavailable.".to_string(),
+            );
+            return Ok(());
+        }
+        Err(error) => {
+            return Err(format!(
+                "Failed to resolve app directory {}: {error}",
+                dir.display()
+            ))
+        }
+    };
+    if !visited_dirs.insert(canonical_dir) {
+        push_scan_warning_once(
+            warnings,
+            root,
+            "cycleSkipped",
+            "A repeated directory was skipped while scanning.".to_string(),
+        );
+        return Ok(());
+    }
+    stats.dirs_visited += 1;
+
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
-        Err(error) if is_skippable_scan_dir_error(error.kind()) => return Ok(()),
+        Err(error) if is_skippable_scan_dir_error(error.kind()) => {
+            push_scan_warning_once(
+                warnings,
+                root,
+                "skippedDirectory",
+                "Some directories were skipped because they were unavailable.".to_string(),
+            );
+            return Ok(());
+        }
         Err(error) => {
             return Err(format!(
                 "Failed to read app directory {}: {error}",
@@ -134,8 +260,49 @@ fn collect_apps_from_dir(
             Err(_) => continue,
         };
         let path = entry.path();
-        if path.is_dir() {
-            collect_apps_from_dir(root, root_dir, &path, icon_dir, filters, apps, seen_paths)?;
+        if *root_entries_seen >= limits.max_entries {
+            stats.limit_reached = true;
+            push_scan_warning_once(
+                warnings,
+                root,
+                "maxEntriesReached",
+                format!("Stopped scanning after {} entries.", limits.max_entries),
+            );
+            return Ok(());
+        }
+        *root_entries_seen += 1;
+        stats.entries_seen += 1;
+
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(_) => continue,
+        };
+        if file_type.is_symlink() || is_reparse_point(&path) {
+            push_scan_warning_once(
+                warnings,
+                root,
+                "linkSkipped",
+                "Symbolic links and reparse points were skipped while scanning.".to_string(),
+            );
+            continue;
+        }
+
+        if file_type.is_dir() {
+            collect_apps_from_dir(
+                root,
+                root_dir,
+                &path,
+                icon_dir,
+                filters,
+                apps,
+                seen_paths,
+                visited_dirs,
+                warnings,
+                stats,
+                limits,
+                root_entries_seen,
+                depth + 1,
+            )?;
             continue;
         }
 
@@ -157,6 +324,73 @@ fn collect_apps_from_dir(
     }
 
     Ok(())
+}
+
+fn scan_limits(root: &ScanRoot) -> ScanLimits {
+    let default_depth = if root.root_type == "customDirectory" {
+        CUSTOM_DIRECTORY_MAX_DEPTH
+    } else {
+        START_MENU_MAX_DEPTH
+    };
+    ScanLimits {
+        max_depth: root
+            .max_depth
+            .unwrap_or(default_depth)
+            .min(MAX_CONFIGURED_DEPTH),
+        max_entries: root
+            .max_entries
+            .unwrap_or(DEFAULT_MAX_ENTRIES)
+            .clamp(1, MAX_CONFIGURED_ENTRIES),
+    }
+}
+
+fn push_scan_warning_once(
+    warnings: &mut Vec<ScanWarning>,
+    root: &ScanRoot,
+    kind: impl Into<String>,
+    message: String,
+) {
+    let kind = kind.into();
+    if warnings
+        .iter()
+        .any(|warning| warning.root_id == root.id && warning.kind == kind)
+    {
+        return;
+    }
+    warnings.push(ScanWarning {
+        root_id: root.id.clone(),
+        root_label: root.label.clone(),
+        kind,
+        message,
+    });
+}
+
+fn is_link_or_reparse_point(path: &Path) -> bool {
+    fs::symlink_metadata(path)
+        .map(|metadata| metadata.file_type().is_symlink() || is_reparse_metadata(&metadata))
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
+fn is_reparse_point(path: &Path) -> bool {
+    fs::symlink_metadata(path)
+        .map(|metadata| is_reparse_metadata(&metadata))
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
+fn is_reparse_metadata(metadata: &fs::Metadata) -> bool {
+    metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT_VALUE != 0
+}
+
+#[cfg(not(target_os = "windows"))]
+fn is_reparse_point(_path: &Path) -> bool {
+    false
+}
+
+#[cfg(not(target_os = "windows"))]
+fn is_reparse_metadata(_metadata: &fs::Metadata) -> bool {
+    false
 }
 
 fn is_supported_launch_file(path: &Path) -> bool {
@@ -471,6 +705,8 @@ mod tests {
             label: "Root".to_string(),
             path: r"C:\Apps".to_string(),
             enabled: true,
+            max_depth: None,
+            max_entries: None,
         };
         let candidate = make_catalog_candidate(
             &root,
@@ -480,5 +716,39 @@ mod tests {
 
         assert_eq!(candidate.kind, "shortcut");
         assert_eq!(candidate.path_string, r"C:\Apps\Example.url");
+    }
+
+    #[test]
+    fn scan_respects_max_depth() {
+        let base = env::temp_dir().join(format!(
+            "launchpad-scan-depth-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        let nested = base.join("one").join("two");
+        fs::create_dir_all(&nested).expect("create nested test directory");
+        let icon_dir = base.join("icons");
+        fs::create_dir_all(&icon_dir).expect("create icon directory");
+        let root = ScanRoot {
+            id: "root".to_string(),
+            root_type: "customDirectory".to_string(),
+            label: "Root".to_string(),
+            path: base.to_string_lossy().to_string(),
+            enabled: true,
+            max_depth: Some(1),
+            max_entries: Some(100),
+        };
+
+        let result = scan_apps_from_roots(&[root], &icon_dir, &ScanFilters::default())
+            .expect("scan should complete");
+
+        assert!(result.stats.limit_reached);
+        assert!(result
+            .warnings
+            .iter()
+            .any(|warning| warning.kind == "maxDepthReached"));
+        fs::remove_dir_all(base).expect("remove test directory");
     }
 }

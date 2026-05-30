@@ -10,7 +10,8 @@ mod tray;
 use std::{collections::HashMap, sync::Mutex};
 
 use catalog::{
-    icon_cache_dir, icon_file_data_url, scan_apps_from_roots, stable_app_id, ScanFilters, ScanRoot,
+    icon_cache_dir, icon_file_data_url, scan_apps_from_roots, stable_app_id, ScanAppsResult,
+    ScanFilters, ScanRoot,
 };
 use file_dialog::{
     pick_launch_file as pick_native_launch_file,
@@ -45,6 +46,7 @@ struct AppState {
 #[serde(rename_all = "camelCase")]
 struct AppIconChoice {
     id: String,
+    icon_path: String,
     icon_data_url: String,
 }
 
@@ -59,6 +61,13 @@ struct CachedAppIconRequest {
 #[serde(rename_all = "camelCase")]
 struct CachedAppIconResult {
     id: String,
+    icon_data_url: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CachedCustomIconResult {
+    icon_path: String,
     icon_data_url: String,
 }
 
@@ -91,17 +100,17 @@ fn scan_apps(
     state: State<'_, AppState>,
     roots: Vec<ScanRoot>,
     filters: Option<ScanFilters>,
-) -> Result<Vec<AppCatalogItem>, String> {
+) -> Result<ScanAppsResult, String> {
     let icon_dir = icon_cache_dir(&app)?;
     let filters = filters.unwrap_or_default();
-    let apps = scan_apps_from_roots(&roots, &icon_dir, &filters)?;
+    let result = scan_apps_from_roots(&roots, &icon_dir, &filters)?;
     let mut catalog = state
         .catalog
         .lock()
         .map_err(|_| "Failed to lock app catalog".to_string())?;
     catalog.clear();
-    catalog.extend(apps.iter().cloned().map(|app| (app.id.clone(), app)));
-    Ok(apps)
+    catalog.extend(result.apps.iter().cloned().map(|app| (app.id.clone(), app)));
+    Ok(result)
 }
 
 #[tauri::command]
@@ -160,11 +169,36 @@ fn load_app_icon_choices(
             let icon_data_url = icon_file_data_url(path.to_str()?)?;
             Some(AppIconChoice {
                 id: format!("{app_id}-icon-{index}"),
+                icon_path: path.to_string_lossy().to_string(),
                 icon_data_url,
             })
         })
         .collect();
     Ok(choices)
+}
+
+#[tauri::command]
+fn cache_custom_icon(app: AppHandle, data_url: String) -> Result<CachedCustomIconResult, String> {
+    let bytes = decode_custom_icon_data_url(&data_url)?;
+    let hash = blake3::hash(&bytes);
+    let hex = hash.to_hex();
+    let icon_dir = icon_cache_dir(&app)?;
+    let icon_path = icon_dir.join(format!("custom-icon-{}.png", &hex[..32]));
+    if !icon_path.exists() {
+        std::fs::write(&icon_path, &bytes).map_err(|error| {
+            format!(
+                "Failed to write custom icon {}: {error}",
+                icon_path.display()
+            )
+        })?;
+    }
+    let icon_path = icon_path.to_string_lossy().to_string();
+    let icon_data_url = icon_file_data_url(&icon_path)
+        .ok_or_else(|| "Failed to read cached custom icon".to_string())?;
+    Ok(CachedCustomIconResult {
+        icon_path,
+        icon_data_url,
+    })
 }
 
 #[tauri::command]
@@ -488,6 +522,7 @@ fn find_app_in_saved_scan_roots(
 
     let icon_dir = icon_cache_dir(app)?;
     Ok(scan_apps_from_roots(&roots, &icon_dir, &filters)?
+        .apps
         .into_iter()
         .find(|app| app.id == app_id))
 }
@@ -634,6 +669,7 @@ pub fn run() {
             pick_launch_file,
             pick_scan_root_directory,
             load_app_icon_choices,
+            cache_custom_icon,
             load_cached_app_icons,
             check_launch_targets,
             launch_app,
@@ -642,6 +678,67 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri app");
+}
+
+const CUSTOM_ICON_DATA_URL_PREFIX: &str = "data:image/png;base64,";
+const MAX_CUSTOM_ICON_DATA_URL_LENGTH: usize = 1_400_000;
+const MAX_CUSTOM_ICON_BYTES: usize = 1_048_576;
+
+fn decode_custom_icon_data_url(data_url: &str) -> Result<Vec<u8>, String> {
+    let trimmed = data_url.trim();
+    if trimmed.len() > MAX_CUSTOM_ICON_DATA_URL_LENGTH {
+        return Err("Custom icon data URL is too large".to_string());
+    }
+    let encoded = trimmed
+        .strip_prefix(CUSTOM_ICON_DATA_URL_PREFIX)
+        .ok_or_else(|| "Custom icons must be PNG data URLs".to_string())?;
+    let bytes = decode_base64(encoded)?;
+    if bytes.len() > MAX_CUSTOM_ICON_BYTES {
+        return Err("Custom icon image is too large".to_string());
+    }
+    if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Err("Custom icon data is not a PNG image".to_string());
+    }
+    Ok(bytes)
+}
+
+fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
+    let mut output = Vec::with_capacity(input.len() * 3 / 4);
+    let mut buffer = 0u32;
+    let mut bits = 0u8;
+    let mut padding_started = false;
+
+    for byte in input.bytes() {
+        let value = match byte {
+            b'A'..=b'Z' => Some(byte - b'A'),
+            b'a'..=b'z' => Some(byte - b'a' + 26),
+            b'0'..=b'9' => Some(byte - b'0' + 52),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            b'=' => {
+                padding_started = true;
+                None
+            }
+            b'\r' | b'\n' | b'\t' | b' ' => None,
+            _ => return Err("Custom icon data URL has invalid base64".to_string()),
+        };
+
+        let Some(value) = value else {
+            continue;
+        };
+        if padding_started {
+            return Err("Custom icon data URL has invalid base64 padding".to_string());
+        }
+        buffer = (buffer << 6) | u32::from(value);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            output.push((buffer >> bits) as u8);
+            buffer &= (1 << bits) - 1;
+        }
+    }
+
+    Ok(output)
 }
 
 #[cfg(test)]
@@ -816,5 +913,21 @@ mod tests {
         assert_eq!(error.kind, LaunchFailureKind::TargetNotFound);
         assert!(error.user_message().contains("找不到启动文件"));
         assert!(error.user_message().contains("建议："));
+    }
+
+    #[test]
+    fn decode_custom_icon_accepts_png_data_urls() {
+        let bytes = decode_custom_icon_data_url("data:image/png;base64,iVBORw0KGgo=")
+            .expect("png data url should decode");
+
+        assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+    }
+
+    #[test]
+    fn decode_custom_icon_rejects_non_png_data_urls() {
+        let error = decode_custom_icon_data_url("data:image/jpeg;base64,abcd")
+            .expect_err("non-png data urls should fail");
+
+        assert!(error.contains("PNG"));
     }
 }

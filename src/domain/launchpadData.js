@@ -8,6 +8,8 @@ export const DEFAULT_SCAN_ROOTS = [
     path: "%APPDATA%/Microsoft/Windows/Start Menu/Programs",
     enabled: true,
     removable: true,
+    maxDepth: 8,
+    maxEntries: 10000,
   },
   {
     id: "root-start-menu-system",
@@ -16,6 +18,8 @@ export const DEFAULT_SCAN_ROOTS = [
     path: "%ProgramData%/Microsoft/Windows/Start Menu/Programs",
     enabled: true,
     removable: true,
+    maxDepth: 8,
+    maxEntries: 10000,
   },
 ];
 export const DEFAULT_SCAN_KEYWORD_BLACKLIST = ["卸载", "uninstall"];
@@ -70,6 +74,7 @@ export function normalizeNativeApp(app, index) {
     launchArgs: launchTarget?.kind === "executable" && typeof app?.launchArgs === "string" ? app.launchArgs : "",
     iconDataUrl: app?.iconDataUrl || null,
     iconPath: app?.iconPath || app?.icon_path || null,
+    customIconPath: app?.customIconPath || app?.custom_icon_path || null,
     emoji: app?.emoji || fallbackAppGlyph(name),
     sourceKey: typeof app?.sourceKey === "string" ? app.sourceKey : app?.source_key || null,
     source: app?.source || null,
@@ -92,6 +97,10 @@ export function normalizeScanRoots(roots) {
         removable: root?.removable !== false,
       };
       if (typeof root?.lastScannedAt === "string") normalized.lastScannedAt = root.lastScannedAt;
+      const maxDepth = Number(root?.maxDepth);
+      if (Number.isFinite(maxDepth) && maxDepth > 0) normalized.maxDepth = Math.floor(maxDepth);
+      const maxEntries = Number(root?.maxEntries);
+      if (Number.isFinite(maxEntries) && maxEntries > 0) normalized.maxEntries = Math.floor(maxEntries);
       return normalized;
     })
     .filter(Boolean);
@@ -181,7 +190,7 @@ export function createLaunchpadDataHelpers(options) {
     if (savedItem?.launchTarget) next.launchTarget = savedItem.launchTarget;
     if (next.launchTarget?.kind === "executable" && typeof savedItem?.launchArgs === "string") next.launchArgs = savedItem.launchArgs;
     else delete next.launchArgs;
-    if (savedItem?.customIconDataUrl) next.customIconDataUrl = savedItem.customIconDataUrl;
+    if (savedItem?.customIconPath) next.customIconPath = savedItem.customIconPath;
     if (savedItem?.iconPath) next.iconPath = savedItem.iconPath;
     if (savedItem?.sourceKey) next.sourceKey = savedItem.sourceKey;
     if (savedItem?.source) next.source = savedItem.source;
@@ -200,6 +209,7 @@ export function createLaunchpadDataHelpers(options) {
       launchTarget: item.launchTarget,
       launchArgs: item.launchTarget?.kind === "executable" && typeof item.launchArgs === "string" ? item.launchArgs : "",
       iconPath: item.iconPath || null,
+      customIconPath: item.customIconPath || null,
       sourceKey: item.sourceKey || null,
       source: item.source || null,
     };
@@ -309,7 +319,7 @@ export function createLaunchpadDataHelpers(options) {
       name: item.name,
       emoji: item.emoji,
     };
-    if (item.customIconDataUrl) clean.customIconDataUrl = item.customIconDataUrl;
+    if (item.customIconPath) clean.customIconPath = item.customIconPath;
     if (item.iconPath) clean.iconPath = item.iconPath;
     if (item.launchTarget) clean.launchTarget = item.launchTarget;
     if (item.launchTarget?.kind === "executable" && item.launchArgs) clean.launchArgs = item.launchArgs;
