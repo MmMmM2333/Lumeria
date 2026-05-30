@@ -7,7 +7,7 @@ Implemented commands:
 - `scan_apps`: scans the enabled scan roots passed by the frontend for `.lnk`, `.url`, and `.exe` launch entries.
 - `load_layout`: loads `layout.json` from the app data directory.
 - `save_layout`: saves the current LaunchPad layout and settings.
-- `pick_launch_file`: opens a Windows file picker for `.exe` and `.lnk` launch targets.
+- `pick_launch_file`: opens a Windows file picker for `.exe` and `.lnk` launch targets and returns the selected native launch target.
 - `pick_scan_root_directory`: opens a Windows folder picker for custom scan roots.
 - `load_app_icon_choices`: extracts available icon choices from `.exe`, `.dll`, `.ico`, or `.lnk` targets.
 - `check_launch_targets`: checks whether local launch paths still exist.
@@ -18,5 +18,5 @@ Implemented commands:
 
 Known MVP limits:
 
-- Directory scanning keeps `.lnk` entries as shell-launched shortcuts.
+- Directory scanning keeps `.lnk` and `.url` entries as shell-launched local shortcuts.
 - Packaged/UWP app discovery is not implemented yet.

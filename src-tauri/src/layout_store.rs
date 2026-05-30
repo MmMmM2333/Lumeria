@@ -204,6 +204,95 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
         return Err("layout settings.hiddenAppIds must contain strings".to_string());
     }
 
+    validate_scan_roots(
+        object
+            .get("scanRoots")
+            .ok_or_else(|| "layout settings.scanRoots must be an array".to_string())?,
+    )?;
+    validate_string_array(
+        object
+            .get("scanKeywordBlacklist")
+            .ok_or_else(|| "layout settings.scanKeywordBlacklist must be an array".to_string())?,
+        "layout settings.scanKeywordBlacklist",
+    )?;
+    validate_scan_app_blacklist(
+        object
+            .get("scanAppBlacklist")
+            .ok_or_else(|| "layout settings.scanAppBlacklist must be an array".to_string())?,
+    )?;
+    object
+        .get("showMissingLaunchTargetBadge")
+        .and_then(Value::as_bool)
+        .ok_or_else(|| {
+            "layout settings.showMissingLaunchTargetBadge must be a boolean".to_string()
+        })?;
+
+    Ok(())
+}
+
+fn validate_scan_roots(value: &Value) -> Result<(), String> {
+    let roots = value
+        .as_array()
+        .ok_or_else(|| "layout settings.scanRoots must be an array".to_string())?;
+    for (index, root) in roots.iter().enumerate() {
+        let label = format!("layout settings.scanRoots[{index}]");
+        let object = root
+            .as_object()
+            .ok_or_else(|| format!("{label} must be an object"))?;
+        require_non_empty_string_field(object, "id", &label)?;
+        let root_type = require_non_empty_string_field(object, "type", &label)?;
+        if !matches!(
+            root_type.as_str(),
+            "startMenuUser" | "startMenuSystem" | "customDirectory"
+        ) {
+            return Err(format!(
+                "{label}.type must be startMenuUser, startMenuSystem, or customDirectory"
+            ));
+        }
+        require_non_empty_string_field(object, "label", &label)?;
+        require_non_empty_string_field(object, "path", &label)?;
+        require_bool_field(object, "enabled", &label)?;
+        require_bool_field(object, "removable", &label)?;
+        validate_optional_object_string_field(object, "lastScannedAt", &label)?;
+    }
+    Ok(())
+}
+
+fn validate_scan_app_blacklist(value: &Value) -> Result<(), String> {
+    let items = value
+        .as_array()
+        .ok_or_else(|| "layout settings.scanAppBlacklist must be an array".to_string())?;
+    for (index, item) in items.iter().enumerate() {
+        let label = format!("layout settings.scanAppBlacklist[{index}]");
+        let object = item
+            .as_object()
+            .ok_or_else(|| format!("{label} must be an object"))?;
+        validate_optional_object_string_field(object, "sourceKey", &label)?;
+        validate_optional_object_string_field(object, "path", &label)?;
+        validate_optional_object_string_field(object, "name", &label)?;
+        validate_optional_object_string_field(object, "blockedAt", &label)?;
+        let has_source_key = object
+            .get("sourceKey")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty());
+        let has_path = object
+            .get("path")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty());
+        if !has_source_key && !has_path {
+            return Err(format!("{label} must include sourceKey or path"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_string_array(value: &Value, label: &str) -> Result<(), String> {
+    let items = value
+        .as_array()
+        .ok_or_else(|| format!("{label} must be an array"))?;
+    if items.iter().any(|value| !value.is_string()) {
+        return Err(format!("{label} must contain strings"));
+    }
     Ok(())
 }
 
@@ -230,13 +319,13 @@ fn validate_layout_app_item(
     object: &serde_json::Map<String, Value>,
     label: &str,
 ) -> Result<(), String> {
-    for key in [
-        "emoji",
-        "iconPath",
-        "iconDataUrl",
-        "customIconDataUrl",
-        "launchArgs",
-    ] {
+    if object.contains_key("iconDataUrl") {
+        return Err(format!(
+            "layout item {label}.iconDataUrl must not be persisted"
+        ));
+    }
+
+    for key in ["emoji", "iconPath", "customIconDataUrl", "launchArgs"] {
         validate_optional_string_field(object, key, label)?;
     }
 
@@ -300,6 +389,40 @@ fn require_string_field(
             "layout item {label}.{key} must be a non-empty string"
         )),
     }
+}
+
+fn require_non_empty_string_field(
+    object: &serde_json::Map<String, Value>,
+    key: &str,
+    label: &str,
+) -> Result<String, String> {
+    match object.get(key).and_then(Value::as_str) {
+        Some(value) if !value.is_empty() => Ok(value.to_string()),
+        _ => Err(format!("{label}.{key} must be a non-empty string")),
+    }
+}
+
+fn require_bool_field(
+    object: &serde_json::Map<String, Value>,
+    key: &str,
+    label: &str,
+) -> Result<(), String> {
+    object
+        .get(key)
+        .and_then(Value::as_bool)
+        .ok_or_else(|| format!("{label}.{key} must be a boolean"))?;
+    Ok(())
+}
+
+fn validate_optional_object_string_field(
+    object: &serde_json::Map<String, Value>,
+    key: &str,
+    label: &str,
+) -> Result<(), String> {
+    if object.get(key).is_some_and(|value| !value.is_string()) {
+        return Err(format!("{label}.{key} must be a string"));
+    }
+    Ok(())
 }
 
 fn validate_optional_string_field(
@@ -465,7 +588,26 @@ mod tests {
                 "folderIconSizeMode": "custom",
                 "folderIconSize": 88,
                 "textless": false,
-                "hiddenAppIds": ["hidden-app"]
+                "hiddenAppIds": ["hidden-app"],
+                "scanRoots": [
+                    {
+                        "id": "root-start-menu-user",
+                        "type": "startMenuUser",
+                        "label": "用户开始菜单",
+                        "path": "%APPDATA%/Microsoft/Windows/Start Menu/Programs",
+                        "enabled": true,
+                        "removable": true
+                    }
+                ],
+                "scanKeywordBlacklist": ["卸载", "uninstall"],
+                "scanAppBlacklist": [
+                    {
+                        "sourceKey": "scan-root:root-start-menu-user:blocked.lnk",
+                        "name": "Blocked",
+                        "blockedAt": "2026-05-31T00:00:00.000Z"
+                    }
+                ],
+                "showMissingLaunchTargetBadge": true
             }
         })
     }
@@ -530,6 +672,37 @@ mod tests {
         let error = save_layout_to_path(&path, &invalid).expect_err("invalid layout should fail");
 
         assert!(error.contains("hiddenAppIds"));
+        assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_rejects_persisted_catalog_icon_data() {
+        let dir = test_dir("invalid-icon-data-url");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        invalid["pages"][0][0]["iconDataUrl"] = json!("data:image/png;base64,abc");
+
+        let error = save_layout_to_path(&path, &invalid).expect_err("iconDataUrl should fail");
+
+        assert!(error.contains("iconDataUrl"));
+        assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_requires_documented_scan_settings() {
+        let dir = test_dir("invalid-scan-settings");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        invalid["settings"]
+            .as_object_mut()
+            .expect("settings object")
+            .remove("scanRoots");
+
+        let error = save_layout_to_path(&path, &invalid).expect_err("scanRoots should fail");
+
+        assert!(error.contains("scanRoots"));
         assert!(!path.exists(), "invalid layout should not be written");
         fs::remove_dir_all(dir).expect("remove test directory");
     }

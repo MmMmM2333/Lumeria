@@ -26,6 +26,14 @@ export async function runLaunchpadAppsTests() {
 
   await withMockTauri(async (command) => {
     if (command === "pick_scan_root_directory") return "D:\\Tools";
+    if (command === "pick_launch_file") {
+      return {
+        name: "Shortcut",
+        path: "C:\\Tools\\Shortcut.lnk",
+        launchTarget: { kind: "shortcut", path: "C:\\Tools\\Shortcut.lnk" },
+        launchArgs: "",
+      };
+    }
     if (command !== "scan_apps") throw new Error(`Unexpected invoke: ${command}`);
     return [
       {
@@ -87,6 +95,16 @@ export async function runLaunchpadAppsTests() {
     assert(warningDialogs.length === 1, "default reset should open a confirmation dialog");
     warningDialogs[0].onConfirm();
     assert(scanRoots.value.map((root) => root.id).join(",") === "root-start-menu-user,root-start-menu-system", "confirmed reset should restore default scan roots");
+
+    scanRoots.value = scanRoots.value.map((root) => ({ ...root, enabled: false }));
+    assert(apps.canBrowseLaunchFile.value, "native file browsing should not require enabled scan roots");
+    assert(!apps.canScanManagedApps.value, "app scanning should still require enabled scan roots");
+    apps.openAddManagedAppPage();
+    await apps.browseNewAppLaunchFile();
+    assert(apps.newAppTarget.value === "C:\\Tools\\Shortcut.lnk", "launch file browse should use the native launch target path");
+    assert(apps.canAddManagedApp.value, "browsed shortcut files should be addable");
+    apps.closeAddManagedAppPage();
+    scanRoots.value = scanRoots.value.map((root) => ({ ...root, enabled: true }));
 
     await apps.rescanManagedApps();
     apps.addSelectedScannedApps();

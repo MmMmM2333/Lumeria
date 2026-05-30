@@ -59,6 +59,7 @@ export function useLaunchpadApps(options) {
   const canSaveEditingManagedApp = computed(() => editAppName.value.trim().length > 0 && editAppTarget.value.trim().length > 0);
   const editingManagedApp = computed(() => managedApps.value.find((app) => app.id === editingManagedAppId.value) || null);
   const canBrowseScanRoots = computed(() => options.shouldUseNativeCatalog());
+  const canBrowseLaunchFile = computed(() => options.shouldUseNativeCatalog());
   const canScanManagedApps = computed(() => options.shouldUseNativeCatalog() && options.scanRoots.value.some((root) => root.enabled));
 
   function getLaunchTargetPath(app) {
@@ -306,7 +307,7 @@ export function useLaunchpadApps(options) {
       const selectedFile = await pickLaunchFile();
       if (!selectedFile) return;
       newAppName.value = String(selectedFile.name || "").trim() || newAppName.value;
-      newAppTarget.value = String(selectedFile.path || "").trim();
+      newAppTarget.value = String(selectedFile.launchTarget?.path || selectedFile.path || "").trim();
       newAppArgs.value = String(selectedFile.launchArgs || "").trim();
       newAppIconDataUrl.value = selectedFile.iconDataUrl || null;
     } catch (error) {
@@ -348,7 +349,7 @@ export function useLaunchpadApps(options) {
       const selectedFile = await pickLaunchFile();
       if (!selectedFile) return;
       editAppName.value = String(selectedFile.name || "").trim() || editAppName.value;
-      editAppTarget.value = String(selectedFile.path || "").trim();
+      editAppTarget.value = String(selectedFile.launchTarget?.path || selectedFile.path || "").trim();
       editAppArgs.value = String(selectedFile.launchArgs || "").trim();
       editAppIconDataUrl.value = selectedFile.iconDataUrl || null;
       isEditAppIconReset.value = false;
@@ -662,6 +663,7 @@ export function useLaunchpadApps(options) {
     canAddScannedApps,
     canSaveEditingManagedApp,
     canBrowseScanRoots,
+    canBrowseLaunchFile,
     canScanManagedApps,
     browseScanRootDirectory,
     chooseIconCandidate,

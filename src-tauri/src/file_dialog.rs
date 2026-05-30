@@ -1,21 +1,20 @@
 #[cfg(target_os = "windows")]
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Serialize;
 
 #[cfg(target_os = "windows")]
 use windows::{
-    core::{Interface, HRESULT, HSTRING, PCWSTR},
+    core::{HRESULT, HSTRING, PCWSTR},
     Win32::{
         Foundation::ERROR_CANCELLED,
         System::Com::{
-            CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, IPersistFile,
-            CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, STGM_READ,
+            CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_INPROC_SERVER,
+            COINIT_APARTMENTTHREADED,
         },
         UI::Shell::{
-            Common::COMDLG_FILTERSPEC, FileOpenDialog, IFileOpenDialog, IShellLinkW, ShellLink,
-            FOS_FILEMUSTEXIST, FOS_FORCEFILESYSTEM, FOS_PATHMUSTEXIST, FOS_PICKFOLDERS,
-            SIGDN_FILESYSPATH, SLGP_UNCPRIORITY,
+            Common::COMDLG_FILTERSPEC, FileOpenDialog, IFileOpenDialog, FOS_FILEMUSTEXIST,
+            FOS_FORCEFILESYSTEM, FOS_PATHMUSTEXIST, FOS_PICKFOLDERS, SIGDN_FILESYSPATH,
         },
     },
 };
@@ -26,6 +25,7 @@ use tauri::AppHandle;
 use crate::{
     catalog::{icon_cache_dir, icon_file_data_url, stable_app_id},
     icons::cache_app_icon,
+    models::LaunchTarget,
     path_utils::{extension, windows_api_path},
 };
 
@@ -34,6 +34,7 @@ use crate::{
 pub(crate) struct PickedLaunchFile {
     name: String,
     path: String,
+    launch_target: LaunchTarget,
     launch_args: String,
     icon_data_url: Option<String>,
 }
@@ -138,15 +139,6 @@ fn make_picked_launch_file(
     app: &AppHandle,
     selected_path: &Path,
 ) -> Result<PickedLaunchFile, String> {
-    let shortcut = if extension(selected_path).as_deref() == Some("lnk") {
-        resolve_shortcut(selected_path)
-    } else {
-        None
-    };
-    let launch_path = shortcut
-        .as_ref()
-        .and_then(|info| info.target_path.clone())
-        .unwrap_or_else(|| selected_path.to_path_buf());
     let name = selected_path
         .file_stem()
         .and_then(|value| value.to_str())
@@ -158,6 +150,16 @@ fn make_picked_launch_file(
     let icon_data_url = cache_app_icon(icon_source, &icon_dir, &icon_id)
         .as_deref()
         .and_then(icon_file_data_url);
+    let launch_path = windows_api_path(selected_path);
+    let launch_target = LaunchTarget {
+        kind: if extension(selected_path).as_deref() == Some("lnk") {
+            "shortcut".to_string()
+        } else {
+            "executable".to_string()
+        },
+        path: Some(launch_path.clone()),
+        app_user_model_id: None,
+    };
 
     Ok(PickedLaunchFile {
         name: if name.is_empty() {
@@ -165,76 +167,11 @@ fn make_picked_launch_file(
         } else {
             name.to_string()
         },
-        path: launch_path.to_string_lossy().to_string(),
-        launch_args: shortcut
-            .as_ref()
-            .map(|info| info.arguments.clone())
-            .unwrap_or_default(),
+        path: launch_path,
+        launch_target,
+        launch_args: String::new(),
         icon_data_url,
     })
-}
-
-#[cfg(target_os = "windows")]
-#[derive(Clone, Debug)]
-struct ShortcutInfo {
-    target_path: Option<PathBuf>,
-    arguments: String,
-}
-
-#[cfg(target_os = "windows")]
-fn resolve_shortcut(path: &Path) -> Option<ShortcutInfo> {
-    let shell_link =
-        unsafe { CoCreateInstance::<_, IShellLinkW>(&ShellLink, None, CLSCTX_INPROC_SERVER).ok()? };
-    let persist_file = shell_link.cast::<IPersistFile>().ok()?;
-    let shortcut = HSTRING::from(windows_api_path(path));
-    unsafe { persist_file.Load(&shortcut, STGM_READ).ok()? };
-
-    let mut target_path = [0u16; 1024];
-    let resolved_target = unsafe {
-        shell_link
-            .GetPath(
-                &mut target_path,
-                std::ptr::null_mut(),
-                SLGP_UNCPRIORITY.0 as u32,
-            )
-            .ok()
-            .and_then(|_| path_from_wide_buffer(&target_path))
-    };
-
-    let mut arguments = [0u16; 2048];
-    let resolved_arguments = unsafe {
-        shell_link
-            .GetArguments(&mut arguments)
-            .ok()
-            .and_then(|_| string_from_wide_buffer(&arguments))
-            .unwrap_or_default()
-    };
-
-    Some(ShortcutInfo {
-        target_path: resolved_target,
-        arguments: resolved_arguments,
-    })
-}
-
-#[cfg(target_os = "windows")]
-fn path_from_wide_buffer(buffer: &[u16]) -> Option<PathBuf> {
-    let value = string_from_wide_buffer(buffer)?;
-    let path = PathBuf::from(value.trim_matches('"').trim());
-    path.exists().then_some(path)
-}
-
-#[cfg(target_os = "windows")]
-fn string_from_wide_buffer(buffer: &[u16]) -> Option<String> {
-    let length = buffer
-        .iter()
-        .position(|value| *value == 0)
-        .unwrap_or(buffer.len());
-    if length == 0 {
-        return None;
-    }
-    let value = String::from_utf16_lossy(&buffer[..length]);
-    let value = value.trim().to_string();
-    (!value.is_empty()).then_some(value)
 }
 
 #[cfg(target_os = "windows")]

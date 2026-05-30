@@ -180,7 +180,6 @@ fn make_catalog_candidate(root: &ScanRoot, root_dir: &Path, path: &Path) -> Cata
     let path_string = windows_api_path(path);
     let kind = match extension(path).as_deref() {
         Some("exe") => "executable",
-        Some("url") => "url",
         _ => "shortcut",
     }
     .to_string();
@@ -462,5 +461,24 @@ mod tests {
         assert_eq!(id.len(), "win-app-".len() + 32);
         assert_eq!(id, stable_app_id(r"c:\apps\example.lnk"));
         assert_ne!(id, stable_app_id(r"C:\Apps\Other.lnk"));
+    }
+
+    #[test]
+    fn url_files_are_treated_as_local_shortcuts() {
+        let root = ScanRoot {
+            id: "root".to_string(),
+            root_type: "customDirectory".to_string(),
+            label: "Root".to_string(),
+            path: r"C:\Apps".to_string(),
+            enabled: true,
+        };
+        let candidate = make_catalog_candidate(
+            &root,
+            Path::new(r"C:\Apps"),
+            Path::new(r"C:\Apps\Example.url"),
+        );
+
+        assert_eq!(candidate.kind, "shortcut");
+        assert_eq!(candidate.path_string, r"C:\Apps\Example.url");
     }
 }

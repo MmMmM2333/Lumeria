@@ -6,6 +6,7 @@ import {
   normalizeNativeApp,
   normalizeScanAppBlacklist,
   normalizeScanKeywordBlacklist,
+  normalizeScanRoots,
 } from "./launchpadData.js";
 import { createLaunchpadLayoutHelpers, makePageSize } from "./launchpadLayout.js";
 
@@ -50,8 +51,13 @@ export function runLaunchpadDataTests() {
   assert(normalized.launchTarget.path === "native.lnk", "native app should normalize snake_case launch targets");
   assert(normalized.emoji === "N", "native app should derive a fallback glyph");
   assert(makeLaunchTarget("https://example.com").kind === "url", "http targets should become url launch targets");
+  assert(makeLaunchTarget("https://example.com/file.url").kind === "url", "http targets ending in .url should stay url launch targets");
+  assert(makeLaunchTarget("C:/Tools/App.lnk").kind === "shortcut", "local .lnk targets should become shortcut launch targets");
+  assert(makeLaunchTarget("C:/Tools/App.url").kind === "shortcut", "local .url targets should become shortcut launch targets");
   assert(makeLaunchTarget("C:/Tools/App.exe").kind === "executable", "local targets should become executable launch targets");
   assert(normalizeScanKeywordBlacklist([" uninstall ", "UNINSTALL", "", "卸载"]).join(",") === "uninstall,卸载", "scan keywords should be trimmed and deduplicated");
+  const normalizedRoot = normalizeScanRoots([{ id: "root", label: "Root", path: "C:/Apps" }])[0];
+  assert(!("lastScannedAt" in normalizedRoot), "scan roots should omit absent optional fields");
   const blockedEntry = makeScanAppBlacklistEntry({
     name: "Blocked",
     sourceKey: "scan-root:root:blocked.lnk",
@@ -59,6 +65,7 @@ export function runLaunchpadDataTests() {
   });
   const normalizedBlacklist = normalizeScanAppBlacklist([blockedEntry, { path: "C:/Apps/Blocked.lnk" }]);
   assert(normalizedBlacklist.length === 1, "scan app blacklist should deduplicate source-key matches");
+  assert(!("path" in normalizeScanAppBlacklist([{ sourceKey: "source-only" }])[0]), "scan blacklist should omit absent optional paths");
   assert(isAppBlockedByScanBlacklist({ sourceKey: "scan-root:root:blocked.lnk" }, normalizedBlacklist), "scan app blacklist should match source keys");
   assert(isAppBlockedByScanBlacklist({ launchTarget: { path: "C:/Apps/Blocked.lnk" } }, normalizedBlacklist), "scan app blacklist should match normalized paths");
 
@@ -72,7 +79,7 @@ export function runLaunchpadDataTests() {
     version: 1,
     pages: [
       [
-        { id: "a", type: "app", name: "Renamed A", customIconDataUrl: "data:custom-a" },
+        { id: "a", type: "app", name: "Renamed A", customIconDataUrl: "data:custom-a", iconDataUrl: "data:saved-a" },
         {
           id: "folder",
           type: "folder",
@@ -93,6 +100,7 @@ export function runLaunchpadDataTests() {
   const merged = dataHelpers.mergeNativeCatalogWithSavedLayout(catalogApps, savedLayout, ["hidden"]);
   assert(merged.length === 2, "new non-hidden catalog apps should overflow to a second page when the first page is full");
   assert(merged[0][0].name === "Renamed A", "saved app names should override catalog names");
+  assert(merged[0][0].iconDataUrl === "data:a", "saved catalog icon data should not override native catalog icons");
   assert(merged[0][0].customIconDataUrl === "data:custom-a", "saved custom icons should be preserved");
   assert(merged[0][1].type === "folder", "saved folders should be preserved");
   assert(merged[0][1].children.map((item) => item.id).join(",") === "b,custom", "folder merge should keep custom apps and remove duplicate app ids");
@@ -114,6 +122,10 @@ export function runLaunchpadDataTests() {
   assert(snapshot.version === 1, "layout snapshots should use version 1");
   assert(snapshot.settings.textless === true && snapshot.settings.hiddenAppIds[0] === "hidden", "layout snapshots should include settings");
   assert(snapshot.settings.folderIconSizeMode === "custom" && snapshot.settings.folderIconSize === 88, "layout snapshots should include folder icon size settings");
+  assert(Array.isArray(snapshot.settings.scanRoots), "layout snapshots should include scan roots");
+  assert(Array.isArray(snapshot.settings.scanKeywordBlacklist), "layout snapshots should include scan keyword blacklist");
+  assert(Array.isArray(snapshot.settings.scanAppBlacklist), "layout snapshots should include scan app blacklist");
+  assert(snapshot.settings.showMissingLaunchTargetBadge === true, "layout snapshots should include missing target badge preference");
   assert(!("iconDataUrl" in snapshot.pages[0][0]), "layout snapshots should omit catalog icon data");
   assert(snapshot.pages[0][0].iconPath === "C:/Icons/a.png", "layout snapshots should preserve cached icon paths");
   assert(snapshot.pages[0][0].customIconDataUrl === "data:custom-a", "layout snapshots should preserve custom icon data");

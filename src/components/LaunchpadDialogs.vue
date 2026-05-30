@@ -75,7 +75,7 @@
           <span>启动路径或 URL</span>
           <span class="app-edit-target-row">
             <input v-model="state.newAppTarget.value" type="text" aria-label="启动路径或 URL" />
-            <button class="settings-secondary-button" type="button" :disabled="!state.canScanManagedApps.value || state.isBrowsingNewAppTarget.value" @click="state.browseNewAppLaunchFile">
+            <button class="settings-secondary-button" type="button" :disabled="!state.canBrowseLaunchFile.value || state.isBrowsingNewAppTarget.value" @click="state.browseNewAppLaunchFile">
               {{ state.isBrowsingNewAppTarget.value ? "选择中" : "浏览" }}
             </button>
           </span>
@@ -123,7 +123,7 @@
           <span>启动路径或 URL</span>
           <span class="app-edit-target-row">
             <input v-model="state.editAppTarget.value" type="text" aria-label="启动路径或 URL" />
-            <button class="settings-secondary-button" type="button" :disabled="!state.canScanManagedApps.value || state.isBrowsingEditAppTarget.value" @click="state.browseEditAppLaunchFile">
+            <button class="settings-secondary-button" type="button" :disabled="!state.canBrowseLaunchFile.value || state.isBrowsingEditAppTarget.value" @click="state.browseEditAppLaunchFile">
               {{ state.isBrowsingEditAppTarget.value ? "选择中" : "浏览" }}
             </button>
           </span>

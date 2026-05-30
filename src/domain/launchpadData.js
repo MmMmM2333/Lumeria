@@ -27,8 +27,20 @@ export function fallbackAppGlyph(name) {
 export function makeLaunchTarget(target) {
   const value = String(target || "").trim();
   if (!value) return null;
+  if (/^https?:\/\//i.test(value)) {
+    return {
+      kind: "url",
+      path: value,
+    };
+  }
+  if (/\.(lnk|url)$/i.test(value)) {
+    return {
+      kind: "shortcut",
+      path: value,
+    };
+  }
   return {
-    kind: /^https?:\/\//i.test(value) ? "url" : "executable",
+    kind: "executable",
     path: value,
   };
 }
@@ -70,15 +82,16 @@ export function normalizeScanRoots(roots) {
       const path = String(root?.path || "").trim();
       if (!path) return null;
       const label = String(root?.label || path).trim() || path;
-      return {
+      const normalized = {
         id: String(root?.id || `root-${index}`),
         type: String(root?.type || "customDirectory"),
         label,
         path,
         enabled: root?.enabled !== false,
         removable: root?.removable !== false,
-        lastScannedAt: typeof root?.lastScannedAt === "string" ? root.lastScannedAt : null,
       };
+      if (typeof root?.lastScannedAt === "string") normalized.lastScannedAt = root.lastScannedAt;
+      return normalized;
     })
     .filter(Boolean);
 }
@@ -113,12 +126,13 @@ export function normalizeScanAppBlacklist(apps) {
       if ((sourceKeyKey && seen.has(sourceKeyKey)) || (pathKey && seen.has(pathKey))) return null;
       if (sourceKeyKey) seen.add(sourceKeyKey);
       if (pathKey) seen.add(pathKey);
-      return {
-        sourceKey: sourceKey || null,
-        path: path || null,
+      const normalized = {
         name: name || path || sourceKey,
-        blockedAt,
       };
+      if (sourceKey) normalized.sourceKey = sourceKey;
+      if (path) normalized.path = path;
+      if (blockedAt) normalized.blockedAt = blockedAt;
+      return normalized;
     })
     .filter(Boolean);
 }
@@ -167,7 +181,6 @@ export function createLaunchpadDataHelpers(options) {
     if (typeof savedItem?.launchArgs === "string") next.launchArgs = savedItem.launchArgs;
     if (savedItem?.customIconDataUrl) next.customIconDataUrl = savedItem.customIconDataUrl;
     if (savedItem?.iconPath) next.iconPath = savedItem.iconPath;
-    if (savedItem?.iconDataUrl) next.iconDataUrl = savedItem.iconDataUrl;
     if (savedItem?.sourceKey) next.sourceKey = savedItem.sourceKey;
     if (savedItem?.source) next.source = savedItem.source;
     return next;
