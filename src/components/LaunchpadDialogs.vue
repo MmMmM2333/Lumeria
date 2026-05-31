@@ -196,6 +196,25 @@
     <button class="layout-recovery-close" type="button" aria-label="关闭布局恢复提示" @click="state.closeLayoutRecoveryNotice">×</button>
   </div>
 
+  <div v-if="state.layoutSaveNotice.value" class="layout-recovery-notice layout-save-notice" role="status" aria-live="polite">
+    <div class="layout-recovery-copy">
+      <strong>{{ state.layoutSaveNotice.value.title }}</strong>
+      <span>{{ state.layoutSaveNotice.value.message }}</span>
+      <small v-if="state.layoutSaveNotice.value.detail">{{ state.layoutSaveNotice.value.detail }}</small>
+    </div>
+    <div class="layout-notice-actions">
+      <button
+        v-if="state.layoutSaveNotice.value.actionText"
+        class="layout-notice-action"
+        type="button"
+        @click="state.layoutSaveNotice.value.onAction?.()"
+      >
+        {{ state.layoutSaveNotice.value.actionText }}
+      </button>
+      <button class="layout-recovery-close" type="button" aria-label="关闭布局保存提示" @click="state.closeLayoutSaveNotice">×</button>
+    </div>
+  </div>
+
   <Motion
     v-if="state.warningDialog.value"
     key="warning-dialog-overlay"

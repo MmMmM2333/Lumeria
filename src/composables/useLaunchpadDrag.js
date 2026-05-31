@@ -686,6 +686,7 @@ export function useLaunchpadDrag(options) {
     const nextDrag = {
       item: lp.item,
       source: lp.source,
+      pointerId: lp.pointerId,
       pointer: { x: lp.startPoint.x, y: lp.startPoint.y },
       offset: lp.offset,
       size: lp.size,

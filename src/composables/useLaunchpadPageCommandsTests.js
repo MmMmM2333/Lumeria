@@ -4,7 +4,10 @@ import {
   createLaunchpadLayoutHelpers,
   makePageSize,
 } from "../domain/launchpadLayout.js";
-import { useLaunchpadPageCommands } from "./useLaunchpadPageCommands.js";
+import {
+  shouldAssertLaunchpadLayout,
+  useLaunchpadPageCommands,
+} from "./useLaunchpadPageCommands.js";
 
 const appA = { id: "app-a", type: "app", name: "App A" };
 const appB = { id: "app-b", type: "app", name: "App B" };
@@ -98,6 +101,15 @@ export function runLaunchpadPageCommandsTests() {
   assert(commit.pages.value === nextPages, "commitPages should store the next pages");
   assert(commit.calls.assertNoDuplicateItemIds === 1, "commitPages should assert duplicate ids when not dragging");
   assert(commit.calls.commitFolderPageIndex.join(",") === "3", "commitPages should reclamp folder page when a folder is rendered");
+
+  const originalNodeEnv = process.env.NODE_ENV;
+  try {
+    process.env.NODE_ENV = "production";
+    assert(!shouldAssertLaunchpadLayout(), "layout duplicate assertions should be disabled in production fallback mode");
+  } finally {
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
+  }
 
   const dragCommit = createPageCommands({ isDragActive: true, renderedFolder: folder });
   dragCommit.commands.commitPages([[appC]]);

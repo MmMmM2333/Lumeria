@@ -42,7 +42,7 @@ pub(crate) struct PickedLaunchFile {
 
 #[cfg(target_os = "windows")]
 pub(crate) fn pick_launch_file(app: &AppHandle) -> Result<Option<PickedLaunchFile>, String> {
-    let _com_guard = ComGuard::new();
+    let _com_guard = ComGuard::new()?;
     let result = unsafe { pick_launch_file_inner() };
     match result {
         Ok(path) => make_picked_launch_file(app, Path::new(&path)).map(Some),
@@ -60,7 +60,7 @@ pub(crate) fn pick_launch_file(
 
 #[cfg(target_os = "windows")]
 pub(crate) fn pick_scan_root_directory() -> Result<Option<String>, String> {
-    let _com_guard = ComGuard::new();
+    let _com_guard = ComGuard::new()?;
     let result = unsafe { pick_scan_root_directory_inner() };
     match result {
         Ok(path) => Ok(Some(path)),
@@ -185,9 +185,10 @@ struct ComGuard {
 
 #[cfg(target_os = "windows")]
 impl ComGuard {
-    fn new() -> Self {
-        let initialized = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_ok() };
-        Self { initialized }
+    fn new() -> Result<Self, String> {
+        unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.ok()
+            .map_err(|error| format!("Failed to initialize COM apartment: {error}"))?;
+        Ok(Self { initialized: true })
     }
 }
 

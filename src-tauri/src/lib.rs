@@ -162,7 +162,7 @@ fn load_app_icon_choices(
 
     let icon_dir = icon_cache_dir(&app)?;
     let app_id = stable_app_id(&target_path);
-    let choices = cache_app_icon_choices(path, &icon_dir, &app_id)
+    let choices = cache_app_icon_choices(path, &icon_dir, &app_id)?
         .into_iter()
         .enumerate()
         .filter_map(|(index, path)| {

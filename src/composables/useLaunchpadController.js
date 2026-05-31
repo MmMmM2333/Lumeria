@@ -403,15 +403,20 @@ export function useLaunchpadController() {
   });
   commitSearchPageIndexHandler = commitSearchPageIndex;
   const {
+    clearLayoutSaveNoticeTimer,
     clearWarningDialogTimer,
     closeLayoutRecoveryNotice,
+    closeLayoutSaveNotice,
     closeWarningDialog,
     confirmWarningDialog,
     handleLayoutRecovered,
     isWarningDialogOpen,
     layoutRecoveryNotice,
+    layoutSaveNotice,
     openLaunchErrorDialog,
     openWarningDialog,
+    showLayoutSaveFailed,
+    showLayoutSaveRecovered,
     warningDialog,
   } = useLaunchpadNotices();
   openLaunchErrorDialogHandler = openLaunchErrorDialog;
@@ -549,6 +554,8 @@ export function useLaunchpadController() {
     gridRows,
     focusDesktopSurface,
     handleLayoutRecovered,
+    showLayoutSaveFailed,
+    showLayoutSaveRecovered,
     hiddenAppIds,
     iconSize,
     isDesktopOpen,
@@ -757,10 +764,40 @@ export function useLaunchpadController() {
   });
   closeAddManagedAppPageHandler = closeAddManagedAppPage;
   closeScanResultDialogHandler = closeScanResultDialog;
+
+  function closeTopmostModalFromKeyboard() {
+    if (warningDialog.value) {
+      closeWarningDialog();
+      return true;
+    }
+    if (iconChooser.value) {
+      closeIconChooser();
+      return true;
+    }
+    if (editingManagedApp.value) {
+      closeEditManagedApp();
+      return true;
+    }
+    if (isAddingManagedApp.value) {
+      closeAddManagedAppPage();
+      return true;
+    }
+    if (isScanResultDialogOpen.value) {
+      closeScanResultDialog();
+      return true;
+    }
+    if (isSettingsPanelOpen.value) {
+      closeSettingsPanel();
+      return true;
+    }
+    return false;
+  }
+
   const {
     handleGlobalKeydown,
     handleLaunchpadWheel,
   } = useLaunchpadKeyboard({
+    closeTopmostModal: closeTopmostModalFromKeyboard,
     clearSearch,
     clearSelectedIcon,
     closeDesktop,
@@ -830,6 +867,7 @@ export function useLaunchpadController() {
     clearFolderPageTurn,
     clearHomeRevealSettleTimer,
     clearLaunchGhostTimer,
+    clearLayoutSaveNoticeTimer,
     clearNativeEventListeners,
     clearNativeSaveTimer,
     clearPageJumpRenderRange,
@@ -993,7 +1031,9 @@ export function useLaunchpadController() {
     closeWarningDialog,
     confirmWarningDialog,
     layoutRecoveryNotice,
+    layoutSaveNotice,
     closeLayoutRecoveryNotice,
+    closeLayoutSaveNotice,
     confirmResetScanRoots,
     rescanManagedApps,
     addManagedApp,

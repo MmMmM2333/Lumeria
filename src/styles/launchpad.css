@@ -1401,6 +1401,30 @@ body {
   background: rgba(255, 255, 255, 0.16);
 }
 
+.layout-notice-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.layout-notice-action {
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.layout-notice-action:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.18);
+}
+
 .warning-dialog-overlay {
   position: fixed;
   inset: 0;

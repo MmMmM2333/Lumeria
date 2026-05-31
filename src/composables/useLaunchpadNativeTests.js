@@ -35,6 +35,8 @@ function makeOptions(overrides = {}) {
     gridCols: ref(6),
     gridRows: ref(4),
     handleLayoutRecovered: () => {},
+    showLayoutSaveFailed: () => {},
+    showLayoutSaveRecovered: () => {},
     hiddenAppIds: ref([]),
     iconSize: ref(64),
     isDesktopOpen: ref(true),
@@ -163,5 +165,48 @@ export async function runLaunchpadNativeTests() {
     pendingChecks[0].resolve([{ id: "app-a", status: "missing" }]);
     await firstCheck;
     assert(!("app-a" in options.launchTargetStatusById.value), "stale status checks should not overwrite newer state");
+  });
+
+  let saveAttempts = 0;
+  await withMockTauri(async (command) => {
+    if (command === "load_layout") return null;
+    if (command === "scan_apps") return { apps: [], warnings: [], stats: null };
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    if (command === "save_layout") {
+      saveAttempts += 1;
+      if (saveAttempts === 1) throw new Error("disk full");
+      return null;
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async (timers) => {
+    const originalConsoleError = console.error;
+    const saveFailures = [];
+    let saveRecoveredCount = 0;
+    console.error = () => {};
+    try {
+      const { options } = makeOptions({
+        showLayoutSaveFailed: (config) => saveFailures.push(config),
+        showLayoutSaveRecovered: () => {
+          saveRecoveredCount += 1;
+        },
+      });
+      const native = useLaunchpadNative(options);
+
+      await native.loadNativeLaunchpadData();
+      timers.length = 0;
+      native.scheduleNativeLayoutSave();
+      await timers.shift()();
+
+      assert(saveFailures.length === 1, "failed native saves should surface a save notice");
+      assert(saveFailures[0].retryCount === 1, "failed native saves should include retry count");
+      assert(typeof saveFailures[0].onRetry === "function", "failed native saves should expose retry action");
+
+      await saveFailures[0].onRetry();
+      assert(saveAttempts === 2, "retry action should attempt to save again");
+      assert(saveRecoveredCount === 1, "successful retry should surface recovered save notice");
+    } finally {
+      console.error = originalConsoleError;
+    }
   });
 }

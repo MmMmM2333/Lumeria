@@ -1,7 +1,11 @@
+export function shouldAssertLaunchpadLayout() {
+  if (typeof import.meta.env?.DEV === "boolean") return import.meta.env.DEV;
+  return typeof process === "undefined" || process.env?.NODE_ENV !== "production";
+}
+
 export function useLaunchpadPageCommands(options) {
   function commitPages(next) {
-    const isProduction = typeof process !== "undefined" && process.env && process.env.NODE_ENV === "production";
-    if (!isProduction && !options.isDragActive()) options.assertNoDuplicateItemIds(next);
+    if (shouldAssertLaunchpadLayout() && !options.isDragActive()) options.assertNoDuplicateItemIds(next);
     options.pages.value = next;
     if (options.renderedFolder.value) options.commitFolderPageIndex(options.folderPageIndex.value);
   }

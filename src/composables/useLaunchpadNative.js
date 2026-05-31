@@ -41,6 +41,8 @@ export function useLaunchpadNative(options) {
   let nativeWindowHideTimer = null;
   let nativeWindowOpenSequence = null;
   let launchTargetStatusCheckRequestId = 0;
+  let nativeSaveFailureCount = 0;
+  let hadNativeSaveFailure = false;
   let unlistenCloseDesktopEvent = null;
   let unlistenOpenDesktopEvent = null;
   let unlistenSettingsEvent = null;
@@ -99,31 +101,55 @@ export function useLaunchpadNative(options) {
     nativeWindowHideTimer = null;
   }
 
+  function createCurrentLayoutSnapshot() {
+    return options.createLayoutSnapshot({
+      pages: options.pages.value,
+      gridRows: options.gridRows.value,
+      gridCols: options.gridCols.value,
+      folderRows: options.folderRows.value,
+      folderCols: options.folderCols.value,
+      iconSize: options.iconSize.value,
+      folderIconSizeMode: options.folderIconSizeMode.value,
+      folderIconSize: options.folderIconSize.value,
+      textless: options.isTextlessMode.value,
+      hiddenAppIds: options.hiddenAppIds.value,
+      scanRoots: options.scanRoots.value,
+      scanKeywordBlacklist: options.scanKeywordBlacklist.value,
+      scanAppBlacklist: options.scanAppBlacklist.value,
+      showMissingLaunchTargetBadge: options.showMissingLaunchTargetBadge.value,
+    });
+  }
+
+  async function saveCurrentNativeLayout() {
+    try {
+      await saveLayout(createCurrentLayoutSnapshot());
+      if (hadNativeSaveFailure) options.showLayoutSaveRecovered?.();
+      hadNativeSaveFailure = false;
+      nativeSaveFailureCount = 0;
+    } catch (error) {
+      hadNativeSaveFailure = true;
+      nativeSaveFailureCount += 1;
+      options.showLayoutSaveFailed?.({
+        error,
+        retryCount: nativeSaveFailureCount,
+        onRetry: retryNativeLayoutSave,
+      });
+      console.error("Failed to save LaunchPad layout", error);
+    }
+  }
+
+  function retryNativeLayoutSave() {
+    if (!nativeLayoutReady || !shouldUseNativeCatalog()) return Promise.resolve();
+    clearNativeSaveTimer();
+    return saveCurrentNativeLayout();
+  }
+
   function scheduleNativeLayoutSave() {
     if (!nativeLayoutReady || !shouldUseNativeCatalog()) return;
     clearNativeSaveTimer();
     nativeSaveTimer = window.setTimeout(async () => {
       nativeSaveTimer = null;
-      try {
-        await saveLayout(options.createLayoutSnapshot({
-          pages: options.pages.value,
-          gridRows: options.gridRows.value,
-          gridCols: options.gridCols.value,
-          folderRows: options.folderRows.value,
-          folderCols: options.folderCols.value,
-          iconSize: options.iconSize.value,
-          folderIconSizeMode: options.folderIconSizeMode.value,
-          folderIconSize: options.folderIconSize.value,
-          textless: options.isTextlessMode.value,
-          hiddenAppIds: options.hiddenAppIds.value,
-          scanRoots: options.scanRoots.value,
-          scanKeywordBlacklist: options.scanKeywordBlacklist.value,
-          scanAppBlacklist: options.scanAppBlacklist.value,
-          showMissingLaunchTargetBadge: options.showMissingLaunchTargetBadge.value,
-        }));
-      } catch (error) {
-        console.error("Failed to save LaunchPad layout", error);
-      }
+      await saveCurrentNativeLayout();
     }, 320);
   }
 

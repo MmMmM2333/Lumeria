@@ -5,6 +5,7 @@ import { runLaunchpadControllerHelpersTests } from "../composables/useLaunchpadC
 import { runLaunchpadControllerStateTests } from "../composables/useLaunchpadControllerStateTests.js";
 import { runLaunchpadFolderFlowTests } from "../composables/useLaunchpadFolderFlowTests.js";
 import { runLaunchpadIconActivationTests } from "../composables/useLaunchpadIconActivationTests.js";
+import { runLaunchpadKeyboardTests } from "../composables/useLaunchpadKeyboardTests.js";
 import { runLaunchpadLaunchFlowTests } from "../composables/useLaunchpadLaunchFlowTests.js";
 import { runLaunchpadLifecycleTests } from "../composables/useLaunchpadLifecycleTests.js";
 import { runLaunchpadAppsTests } from "../composables/useLaunchpadAppsTests.js";
@@ -74,11 +75,12 @@ runLaunchpadHelperTests({
   getActivePageGridStyle,
 });
 runLaunchpadDataTests();
-runLaunchpadDragTests();
+await runLaunchpadDragTests();
 runLaunchpadControllerHelpersTests();
 runLaunchpadControllerStateTests();
 runLaunchpadFolderFlowTests();
 runLaunchpadIconActivationTests();
+runLaunchpadKeyboardTests();
 await runLaunchpadLaunchFlowTests();
 await runLaunchpadLifecycleTests();
 await runLaunchpadAppsTests();

@@ -165,6 +165,8 @@ export function useLaunchpadKeyboard(options) {
 
   function handleEscapeKey(event) {
     event.preventDefault();
+    if (options.closeTopmostModal?.()) return;
+
     if (hasFolderInteractionLayer() && !options.isFolderAppLaunchClosing.value) {
       options.commitOpenFolder(null);
       options.clearSelectedIcon();

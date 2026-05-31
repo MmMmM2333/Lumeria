@@ -50,11 +50,15 @@ pub(crate) fn cache_app_icon(path: &Path, icon_dir: &Path, app_id: &str) -> Opti
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn cache_app_icon_choices(path: &Path, icon_dir: &Path, app_id: &str) -> Vec<PathBuf> {
+pub(crate) fn cache_app_icon_choices(
+    path: &Path,
+    icon_dir: &Path,
+    app_id: &str,
+) -> Result<Vec<PathBuf>, String> {
     let mut output_paths = Vec::new();
     let mut seen = HashSet::new();
 
-    for (source_index, source) in icon_choice_sources(path).into_iter().enumerate() {
+    for (source_index, source) in icon_choice_sources(path)?.into_iter().enumerate() {
         for icon_index in icon_choice_indexes(&source.path, source.icon_index) {
             let output_path = icon_dir.join(format!(
                 "{app_id}-choice-v1-{source_index}-{}.png",
@@ -73,7 +77,7 @@ pub(crate) fn cache_app_icon_choices(path: &Path, icon_dir: &Path, app_id: &str)
         }
     }
 
-    output_paths
+    Ok(output_paths)
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -81,8 +85,8 @@ pub(crate) fn cache_app_icon_choices(
     _path: &Path,
     _icon_dir: &Path,
     _app_id: &str,
-) -> Vec<PathBuf> {
-    Vec::new()
+) -> Result<Vec<PathBuf>, String> {
+    Ok(Vec::new())
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -97,7 +101,7 @@ fn extract_icon_png(source_path: &Path, output_path: &Path) -> Result<(), String
     }
 
     if extension(source_path).as_deref() == Some("lnk") {
-        for source in resolve_shortcut_icon_sources(source_path) {
+        for source in resolve_shortcut_icon_sources(source_path)? {
             if extract_resource_icon_png(&source.path, output_path, source.icon_index).is_ok() {
                 return Ok(());
             }
@@ -114,7 +118,7 @@ pub fn debug_extract_icon_png(source_path: &Path, output_path: &Path) -> Result<
 
 #[cfg(target_os = "windows")]
 fn extract_shell_icon_png(source_path: &Path, output_path: &Path) -> Result<(), String> {
-    let _com_guard = ComGuard::new();
+    let _com_guard = ComGuard::new()?;
     let source = HSTRING::from(windows_api_path(source_path));
     let factory: IShellItemImageFactory = unsafe {
         SHCreateItemFromParsingName(&source, None::<&IBindCtx>)
@@ -261,22 +265,22 @@ fn extract_resource_icon_png(
 }
 
 #[cfg(target_os = "windows")]
-fn icon_choice_sources(path: &Path) -> Vec<IconSource> {
+fn icon_choice_sources(path: &Path) -> Result<Vec<IconSource>, String> {
     if extension(path).as_deref() == Some("lnk") {
-        let mut sources = resolve_shortcut_icon_sources(path);
+        let mut sources = resolve_shortcut_icon_sources(path)?;
         if sources.is_empty() {
             sources.push(IconSource {
                 path: path.to_path_buf(),
                 icon_index: None,
             });
         }
-        return sources;
+        return Ok(sources);
     }
 
-    vec![IconSource {
+    Ok(vec![IconSource {
         path: path.to_path_buf(),
         icon_index: None,
-    }]
+    }])
 }
 
 #[cfg(target_os = "windows")]
@@ -329,20 +333,20 @@ fn icon_index_key(icon_index: Option<i32>) -> String {
 }
 
 #[cfg(target_os = "windows")]
-fn resolve_shortcut_icon_sources(path: &Path) -> Vec<IconSource> {
-    let _com_guard = ComGuard::new();
+fn resolve_shortcut_icon_sources(path: &Path) -> Result<Vec<IconSource>, String> {
+    let _com_guard = ComGuard::new()?;
     let mut sources = Vec::new();
     let shell_link =
         unsafe { CoCreateInstance::<_, IShellLinkW>(&ShellLink, None, CLSCTX_INPROC_SERVER) };
     let Ok(shell_link) = shell_link else {
-        return sources;
+        return Ok(sources);
     };
     let Ok(persist_file) = shell_link.cast::<IPersistFile>() else {
-        return sources;
+        return Ok(sources);
     };
     let shortcut = HSTRING::from(windows_api_path(path));
     if unsafe { persist_file.Load(&shortcut, STGM_READ) }.is_err() {
-        return sources;
+        return Ok(sources);
     }
 
     let mut icon_path = [0u16; 1024];
@@ -376,7 +380,7 @@ fn resolve_shortcut_icon_sources(path: &Path) -> Vec<IconSource> {
         }
     }
 
-    sources
+    Ok(sources)
 }
 
 #[cfg(target_os = "windows")]
@@ -979,9 +983,10 @@ struct ComGuard {
 
 #[cfg(target_os = "windows")]
 impl ComGuard {
-    fn new() -> Self {
-        let initialized = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_ok() };
-        Self { initialized }
+    fn new() -> Result<Self, String> {
+        unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.ok()
+            .map_err(|error| format!("Failed to initialize COM apartment: {error}"))?;
+        Ok(Self { initialized: true })
     }
 }
 
