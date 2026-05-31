@@ -23,6 +23,7 @@ export function runLaunchpadControllerStateTests() {
   assert(state.folderIconSize.value === DEFAULT_ICON_SIZE, "folder icon size should use the default");
   assert(state.folderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_GLOBAL, "folder icon mode should default to global");
   assert(state.draftFolderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_GLOBAL, "draft folder icon mode should default to global");
+  assert(state.draftIsTextlessMode.value === false, "draft textless mode should start disabled");
   assert(state.pageSize.value === DEFAULT_ROWS * DEFAULT_COLS, "page size should derive from desktop grid dimensions");
   assert(state.folderPageSize.value === DEFAULT_FOLDER_ROWS * DEFAULT_FOLDER_COLS, "folder page size should derive from folder grid dimensions");
 

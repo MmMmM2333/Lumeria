@@ -82,6 +82,7 @@ export function useLaunchpadNative(options) {
     options.draftFolderIconSizeMode.value = nextFolderIconSizeMode;
     options.draftFolderIconSize.value = nextFolderIconSize;
     options.isTextlessMode.value = Boolean(settings.textless);
+    options.draftIsTextlessMode.value = options.isTextlessMode.value;
     options.hiddenAppIds.value = Array.isArray(settings.hiddenAppIds)
       ? settings.hiddenAppIds.map(String)
       : [];

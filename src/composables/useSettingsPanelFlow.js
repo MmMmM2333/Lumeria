@@ -1,6 +1,7 @@
 import { computed, ref } from "vue";
 import { clamp } from "../domain/launchpadLayout.js";
 import { SETTINGS_PANEL_CLOSE_DURATION } from "./launchpadConstants.js";
+import { syncLaunchpadSettingsDraftsFromState } from "./useLaunchpadSettingsConfig.js";
 
 export function useSettingsPanelFlow(options) {
   const isSettingsPanelOpen = ref(false);
@@ -81,9 +82,7 @@ export function useSettingsPanelFlow(options) {
     if (options.isDragActive()) return;
     clearSettingsPanelCloseTimer();
     settingsPanelMotionGeometry.value = makeSettingsPanelGeometryFromRect(getSettingsButtonRect(event) || getCenterSettingsRect());
-    options.draftIconSize.value = options.iconSize.value;
-    options.draftFolderIconSizeMode.value = options.folderIconSizeMode.value;
-    options.draftFolderIconSize.value = options.folderIconSize.value;
+    syncLaunchpadSettingsDraftsFromState(options);
     isSettingsPanelClosing.value = false;
     isSettingsPanelOpen.value = true;
   }
@@ -91,6 +90,7 @@ export function useSettingsPanelFlow(options) {
   function closeSettingsPanel() {
     if (!isSettingsPanelOpen.value || isSettingsPanelClosing.value) return;
     clearSettingsPanelCloseTimer();
+    syncLaunchpadSettingsDraftsFromState(options);
     options.closeAddManagedAppPage();
     options.closeScanResultDialog();
     isSettingsPanelOpen.value = false;

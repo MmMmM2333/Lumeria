@@ -51,21 +51,45 @@ function createDragHarness() {
   const pages = shallowRef([[app]]);
   const pageIndex = ref(0);
   const folderPageIndex = ref(0);
+  const folderSession = ref(null);
+  const openFolderId = ref(null);
   const calls = {
     commitFolderSession: [],
+    commitOpenFolder: [],
     commitPageIndex: [],
     commitPages: [],
   };
+  function cloneItem(item) {
+    return item ? { ...item } : item;
+  }
+  function clonePages(sourcePages) {
+    return sourcePages.map((page) => page.map((item) => ({ ...item })));
+  }
+  function insertTopLevelItem(sourcePages, item, targetPageIndex, insertIndex) {
+    const next = clonePages(sourcePages);
+    while (next.length <= targetPageIndex) next.push([]);
+    next[targetPageIndex].splice(Math.max(0, Math.min(insertIndex, next[targetPageIndex].length)), 0, cloneItem(item));
+    return next;
+  }
+  function replaceFolderWithItem(sourcePages, folderId, item) {
+    return sourcePages.map((page) => page.map((entry) => (entry.id === folderId ? cloneItem(item) : { ...entry })));
+  }
   const drag = useLaunchpadDrag({
     canCreateDesktopPageAfterDrag: () => false,
     canCreateFolderPageAfterDrag: () => false,
-    cloneItem: (item) => ({ ...item }),
-    clonePages: (sourcePages) => sourcePages.map((page) => page.map((item) => ({ ...item }))),
+    cloneItem,
+    clonePages,
     commitFolderPageIndex: (value) => {
       folderPageIndex.value = value;
     },
-    commitFolderSession: (value) => calls.commitFolderSession.push(value),
-    commitOpenFolder: () => {},
+    commitFolderSession: (value) => {
+      calls.commitFolderSession.push(value);
+      folderSession.value = value;
+    },
+    commitOpenFolder: (value) => {
+      calls.commitOpenFolder.push(value);
+      openFolderId.value = value;
+    },
     commitPageIndex: (value) => {
       calls.commitPageIndex.push(value);
       pageIndex.value = value;
@@ -92,20 +116,20 @@ function createDragHarness() {
     folderPages: ref([[]]),
     folderPageSize: ref(16),
     folderPanelRef: ref(null),
-    folderSession: ref(null),
+    folderSession,
     getFolderChildPages: () => [[]],
     getPageSlotMotionGeometry: () => null,
     getTopLevelIconMotionGeometry: () => null,
     gridCols: ref(7),
     gridRows: ref(5),
     insertAppIntoFolder: (sourcePages) => sourcePages,
-    insertTopLevelItem: (sourcePages) => sourcePages,
+    insertTopLevelItem,
     isFolderLayerActive: ref(false),
     isHomeRevealSettling: ref(false),
     isLaunchpadInteractionBlocked: () => false,
     makeId: (prefix) => `${prefix}-id`,
     openApp: () => {},
-    openFolderId: ref(null),
+    openFolderId,
     pageIndex,
     pageRefs: [
       {
@@ -115,18 +139,18 @@ function createDragHarness() {
     pages,
     pageSize: ref(35),
     previewAppIntoFolderWithoutOverflow: (sourcePages) => sourcePages,
-    previewTopLevelItemWithoutOverflow: (sourcePages) => sourcePages,
+    previewTopLevelItemWithoutOverflow: insertTopLevelItem,
     removeEverywhere: (sourcePages, itemId) =>
       sourcePages.map((page) => page.filter((item) => item.id !== itemId)),
     renderedFolder: ref(null),
-    replaceFolderWithItem: (sourcePages) => sourcePages,
+    replaceFolderWithItem,
     visibleFolderRowCount: ref(4),
     withFolderPages: (folder, childPages) => ({ ...folder, childPages, children: childPages.flat() }),
     wouldFolderInsertOverflow: () => false,
     wouldTopLevelInsertOverflow: () => false,
   });
 
-  return { app, calls, drag };
+  return { app, calls, drag, folderSession, openFolderId, pages };
 }
 
 function makePointerDownEvent(pointerId, target) {
@@ -178,5 +202,36 @@ export async function runLaunchpadDragTests() {
 
     listeners.get("pointerup")({ type: "pointerup", pointerId: 41, button: 0, clientX: 40, clientY: 50 });
     assert(drag.dragMeta.value === null, "matching pointerup should finish the active drag");
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const { app, drag, folderSession, pages } = createDragHarness();
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+      querySelector: () => null,
+    };
+    const targetApp = { id: "app-b", type: "app", name: "App B" };
+    pages.value = [
+      [
+        {
+          id: "folder-created",
+          type: "folder",
+          name: "新文件夹",
+          childPages: [[targetApp]],
+        },
+      ],
+    ];
+
+    drag.beginDrag(makePointerDownEvent(51, target), app, { type: "page", pageIndex: 0, index: 0 });
+    Array.from(timers.values())[0]();
+    await nextTick();
+    folderSession.value = { mode: "created", folderId: "folder-created", targetApp, hasEntered: false, openedAt: 1 };
+
+    listeners.get("pointercancel")({ type: "pointercancel", pointerId: 51, button: 0, clientX: 40, clientY: 50 });
+
+    const ids = pages.value.flat().map((item) => item.id).sort().join(",");
+    assert(drag.dragMeta.value === null, "pointercancel should finish an active drag");
+    assert(folderSession.value === null, "pointercancel should clear a pending folder session");
+    assert(ids === "app-a,app-b", "pointercancel should restore dragged and target apps to the desktop");
   });
 }

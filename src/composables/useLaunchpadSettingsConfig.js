@@ -21,6 +21,17 @@ export function normalizeFolderIconSizeMode(value) {
   return value === FOLDER_ICON_SIZE_MODE_CUSTOM ? FOLDER_ICON_SIZE_MODE_CUSTOM : FOLDER_ICON_SIZE_MODE_GLOBAL;
 }
 
+export function syncLaunchpadSettingsDraftsFromState(options) {
+  options.draftRows.value = options.gridRows.value;
+  options.draftCols.value = options.gridCols.value;
+  options.draftFolderRows.value = options.folderRows.value;
+  options.draftFolderCols.value = options.folderCols.value;
+  options.draftIconSize.value = options.iconSize.value;
+  options.draftFolderIconSizeMode.value = options.folderIconSizeMode.value;
+  options.draftFolderIconSize.value = options.folderIconSize.value;
+  options.draftIsTextlessMode.value = options.isTextlessMode.value;
+}
+
 export function useLaunchpadSettingsConfig(options) {
   function clampIconSize(value) {
     return clampLaunchpadIconSize(value);
@@ -121,6 +132,8 @@ export function useLaunchpadSettingsConfig(options) {
 
   function applySettingsConfig() {
     applyGridConfig();
+    if (!options.isDragActive()) options.isTextlessMode.value = Boolean(options.draftIsTextlessMode.value);
+    syncLaunchpadSettingsDraftsFromState(options);
     options.closeSettingsPanel();
   }
 

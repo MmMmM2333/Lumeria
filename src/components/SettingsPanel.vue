@@ -162,7 +162,7 @@
               </div>
               <label class="settings-toggle">
                 <span>无字模式</span>
-                <input v-model="state.isTextlessMode.value" type="checkbox" />
+                <input v-model="state.draftIsTextlessMode.value" type="checkbox" />
               </label>
             </div>
           </section>

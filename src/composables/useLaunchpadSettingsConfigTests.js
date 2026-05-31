@@ -4,6 +4,7 @@ import {
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   clampLaunchpadIconSize,
   normalizeFolderIconSizeMode,
+  syncLaunchpadSettingsDraftsFromState,
   useLaunchpadSettingsConfig,
 } from "./useLaunchpadSettingsConfig.js";
 
@@ -36,6 +37,8 @@ function createSettingsConfig(overrides = {}) {
     draftIconSize: refValue(overrides.draftIconSize ?? 72),
     draftFolderIconSizeMode: refValue(overrides.draftFolderIconSizeMode ?? FOLDER_ICON_SIZE_MODE_CUSTOM),
     draftFolderIconSize: refValue(overrides.draftFolderIconSize ?? 80),
+    draftIsTextlessMode: refValue(overrides.draftIsTextlessMode ?? false),
+    isTextlessMode: refValue(overrides.isTextlessMode ?? false),
     pages: refValue(overrides.pages ?? [makeItems(6)]),
     pageIndex: refValue(overrides.pageIndex ?? 2),
     searchPageIndex: refValue(overrides.searchPageIndex ?? 1),
@@ -82,6 +85,7 @@ function createSettingsConfig(overrides = {}) {
     draftFolderIconSizeMode: state.draftFolderIconSizeMode,
     draftFolderRows: state.draftFolderRows,
     draftIconSize: state.draftIconSize,
+    draftIsTextlessMode: state.draftIsTextlessMode,
     draftRows: state.draftRows,
     ensurePage: helpers.ensurePage,
     folderCols: state.folderCols,
@@ -94,6 +98,7 @@ function createSettingsConfig(overrides = {}) {
     gridRows: state.gridRows,
     iconSize: state.iconSize,
     isDragActive: () => Boolean(overrides.isDragActive),
+    isTextlessMode: state.isTextlessMode,
     pageIndex: state.pageIndex,
     pageSize,
     pages: state.pages,
@@ -117,6 +122,32 @@ export function runLaunchpadSettingsConfigTests() {
   assert(clampLaunchpadIconSize("bad") === 64, "icon size clamp should fall back to the default");
   assert(normalizeFolderIconSizeMode(FOLDER_ICON_SIZE_MODE_CUSTOM) === FOLDER_ICON_SIZE_MODE_CUSTOM, "custom folder icon mode should be preserved");
   assert(normalizeFolderIconSizeMode("unknown") === FOLDER_ICON_SIZE_MODE_GLOBAL, "unknown folder icon modes should fall back to global");
+
+  const sync = createSettingsConfig({
+    draftRows: 8,
+    draftCols: 10,
+    draftFolderRows: 6,
+    draftFolderCols: 8,
+    draftIconSize: 128,
+    draftFolderIconSizeMode: FOLDER_ICON_SIZE_MODE_CUSTOM,
+    draftFolderIconSize: 120,
+    draftIsTextlessMode: false,
+    gridRows: 4,
+    gridCols: 5,
+    folderRows: 3,
+    folderCols: 4,
+    iconSize: 72,
+    folderIconSizeMode: FOLDER_ICON_SIZE_MODE_GLOBAL,
+    folderIconSize: 72,
+    isTextlessMode: true,
+  });
+  syncLaunchpadSettingsDraftsFromState(sync.state);
+  assert(sync.state.draftRows.value === 4 && sync.state.draftCols.value === 5, "sync should reset desktop draft dimensions from current settings");
+  assert(sync.state.draftFolderRows.value === 3 && sync.state.draftFolderCols.value === 4, "sync should reset folder draft dimensions from current settings");
+  assert(sync.state.draftIconSize.value === 72, "sync should reset icon draft size from current settings");
+  assert(sync.state.draftFolderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_GLOBAL, "sync should reset folder icon mode from current settings");
+  assert(sync.state.draftFolderIconSize.value === 72, "sync should reset folder icon size from current settings");
+  assert(sync.state.draftIsTextlessMode.value === true, "sync should reset textless draft from current settings");
 
   const draft = createSettingsConfig({
     draftCols: 10,
@@ -157,6 +188,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(apply.state.iconSize.value === 72, "desktop icon size should apply from the draft value");
   assert(apply.state.folderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_CUSTOM, "folder icon mode should apply from the draft value");
   assert(apply.state.folderIconSize.value === 80, "folder icon size should apply from the draft value");
+  assert(apply.state.isTextlessMode.value === false, "textless mode should apply from the draft value");
   assert(apply.calls.commitPages.length === 1, "applying settings should commit repacked pages");
   assert(apply.calls.commitPages[0].length === 2, "shrinking page capacity should overflow items to another page");
   assert(apply.calls.commitPageIndex.join(",") === "2", "applying settings should reclamp the desktop page index");
@@ -164,6 +196,14 @@ export function runLaunchpadSettingsConfigTests() {
   assert(apply.calls.commitFolderPageIndex.join(",") === "1", "applying settings should reclamp the folder page index");
   assert(apply.calls.schedulePageGridMetrics === 1, "applying settings should schedule page metrics");
   assert(apply.calls.closeSettingsPanel === 1, "applying settings from the panel should close it");
+
+  const textless = createSettingsConfig({
+    draftIsTextlessMode: true,
+    isTextlessMode: false,
+  });
+  textless.config.applySettingsConfig();
+  assert(textless.state.isTextlessMode.value === true, "applying settings should commit draft textless mode");
+  assert(textless.state.draftIsTextlessMode.value === true, "applying settings should sync the textless draft");
 
   const dragActive = createSettingsConfig({ isDragActive: true });
   dragActive.config.applyGridConfig();

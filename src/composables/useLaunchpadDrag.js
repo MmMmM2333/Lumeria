@@ -766,6 +766,7 @@ export function useLaunchpadDrag(options) {
     if (!activeDrag) return;
     if (!shouldFinishDragForPointerEvent(activeDrag, event)) return;
     if (event.type === "pointercancel") {
+      if (options.folderSession.value) cancelFolderSessionAndReturnToDesktop({ force: true });
       endDrag();
       return;
     }

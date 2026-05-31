@@ -35,6 +35,7 @@ export function useLaunchpadControllerState() {
   const pageIndex = ref(0);
   const searchPageIndex = ref(0);
   const isTextlessMode = ref(false);
+  const draftIsTextlessMode = ref(false);
   const hiddenAppIds = ref([]);
   const scanRoots = ref(DEFAULT_SCAN_ROOTS.map((root) => ({ ...root })));
   const scanKeywordBlacklist = ref([...DEFAULT_SCAN_KEYWORD_BLACKLIST]);
@@ -65,6 +66,7 @@ export function useLaunchpadControllerState() {
     draftFolderIconSizeMode,
     draftFolderRows,
     draftIconSize,
+    draftIsTextlessMode,
     draftRows,
     dragPreviewRef,
     folderCols,

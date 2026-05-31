@@ -26,6 +26,7 @@ function makeOptions(overrides = {}) {
     draftFolderIconSizeMode: ref("global"),
     draftFolderRows: ref(3),
     draftIconSize: ref(64),
+    draftIsTextlessMode: ref(false),
     draftRows: ref(4),
     folderCols: ref(4),
     folderIconSize: ref(64),
@@ -138,7 +139,7 @@ export async function runLaunchpadNativeTests() {
       return {
         version: 1,
         pages: [[{ id: "loaded-app", type: "app", name: "Loaded", launchTarget: { kind: "shortcut", path: "Loaded.lnk" } }]],
-        settings: {},
+        settings: { textless: true },
       };
     }
     if (command === "load_cached_app_icons") return [];
@@ -170,6 +171,8 @@ export async function runLaunchpadNativeTests() {
       assert(loadAttempts === 2, "layout load retry should attempt to load again");
       assert(loadRecoveredCount === 1, "successful layout retry should surface a recovered notice");
       assert(options.pages.value[0][0].id === "loaded-app", "successful layout retry should apply the loaded layout");
+      assert(options.isTextlessMode.value === true, "successful layout retry should apply textless mode");
+      assert(options.draftIsTextlessMode.value === true, "successful layout retry should sync the textless draft");
     } finally {
       console.error = originalConsoleError;
     }
