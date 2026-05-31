@@ -35,6 +35,8 @@ function makeOptions(overrides = {}) {
     gridCols: ref(6),
     gridRows: ref(4),
     handleLayoutRecovered: () => {},
+    showLayoutLoadFailed: () => {},
+    showLayoutLoadRecovered: () => {},
     showLayoutSaveFailed: () => {},
     showLayoutSaveRecovered: () => {},
     hiddenAppIds: ref([]),
@@ -118,6 +120,51 @@ export async function runLaunchpadNativeTests() {
     assert(Boolean(options.scanRoots.value[0].lastScannedAt), "initial native scan should mark roots as scanned");
     assert(calls.commitPageIndex.join(",") === "0", "initial native load should reclamp desktop page");
     assert(calls.schedulePageGridMetrics === 1, "initial native load should refresh grid metrics");
+  });
+
+  let loadAttempts = 0;
+  await withMockTauri(async (command) => {
+    if (command === "load_layout") {
+      loadAttempts += 1;
+      if (loadAttempts === 1) throw new Error("layout locked");
+      return {
+        version: 1,
+        pages: [[{ id: "loaded-app", type: "app", name: "Loaded", launchTarget: { kind: "shortcut", path: "Loaded.lnk" } }]],
+        settings: {},
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async (timers) => {
+    const originalConsoleError = console.error;
+    const loadFailures = [];
+    let loadRecoveredCount = 0;
+    console.error = () => {};
+    try {
+      const { options } = makeOptions({
+        mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+        showLayoutLoadFailed: (config) => loadFailures.push(config),
+        showLayoutLoadRecovered: () => {
+          loadRecoveredCount += 1;
+        },
+      });
+      const native = useLaunchpadNative(options);
+
+      await native.loadNativeLaunchpadData();
+      assert(loadFailures.length === 1, "failed native loads should surface a persistent notice");
+      assert(typeof loadFailures[0].onRetry === "function", "failed native loads should expose retry action");
+
+      native.scheduleNativeLayoutSave();
+      assert(timers.length === 0, "native saves should not be scheduled while the layout is not ready");
+
+      await loadFailures[0].onRetry();
+      assert(loadAttempts === 2, "layout load retry should attempt to load again");
+      assert(loadRecoveredCount === 1, "successful layout retry should surface a recovered notice");
+      assert(options.pages.value[0][0].id === "loaded-app", "successful layout retry should apply the loaded layout");
+    } finally {
+      console.error = originalConsoleError;
+    }
   });
 
   await withMockTauri(async (command, args) => {

@@ -31,7 +31,7 @@
           "effects": ["acrylic"],
           "color": "#10141FCC"
         },
-        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --ignore-gpu-blocklist --enable-gpu-rasterization --enable-zero-copy --enable-accelerated-2d-canvas",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI --ignore-gpu-blocklist --enable-gpu-rasterization --enable-zero-copy --enable-accelerated-2d-canvas",
         "fullscreen": true
       }
     ]

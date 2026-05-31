@@ -132,4 +132,61 @@ export async function runLaunchpadAppsTests() {
     apps.addManagedApp();
     assert(pages.value[0][0].launchArgs === "--profile dev", "executable apps should save launch args");
   });
+
+  await withMockTauri(async (command) => {
+    if (command === "pick_scan_root_directory") throw new Error("folder denied");
+    if (command === "pick_launch_file") throw new Error("file denied");
+    if (command === "scan_apps") throw new Error("scan denied");
+    if (command === "load_app_icon_choices") throw new Error("icons denied");
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const originalConsoleError = console.error;
+    const pages = shallowRef([[{ id: "app", type: "app", name: "App", launchTarget: { kind: "executable", path: "C:/Apps/App.exe" } }]]);
+    const warningDialogs = [];
+    console.error = () => {};
+    try {
+      const apps = useLaunchpadApps({
+        appendAppsToPages: (_sourcePages, selectedApps) => [selectedApps.map((app) => ({ ...app }))],
+        cloneItem: (item) => (item ? { ...item } : item),
+        clonePages: (sourcePages) => sourcePages.map((page) => page.map((item) => ({ ...item }))),
+        collectAppsFromPages: (sourcePages) => sourcePages.flatMap((page) => page.filter((item) => item?.type === "app")),
+        commitOpenFolder: () => {},
+        commitPageIndex: () => {},
+        commitPages: (next) => {
+          pages.value = next;
+        },
+        commitSearchPageIndex: () => {},
+        findFolder: () => null,
+        hiddenAppIds: ref([]),
+        isDragActive: () => false,
+        makeId: () => "generated-app-id",
+        openFolderId: ref(null),
+        openWarningDialog: (config) => warningDialogs.push(config),
+        pageIndex: ref(0),
+        pages,
+        removeEverywhere: (sourcePages) => sourcePages,
+        renderedFolder: ref(null),
+        schedulePageGridMetrics: () => {},
+        scanAppBlacklist: ref([]),
+        scanKeywordBlacklist: ref([]),
+        scanRoots: ref([{ id: "root", type: "customDirectory", label: "Root", path: "C:/Apps", enabled: true }]),
+        shouldUseNativeCatalog: () => true,
+        showMissingLaunchTargetBadge: ref(true),
+        searchPageIndex: ref(0),
+      });
+
+      await apps.browseScanRootDirectory("root");
+      apps.openAddManagedAppPage();
+      await apps.browseNewAppLaunchFile();
+      await apps.rescanManagedApps();
+      apps.newAppTarget.value = "C:/Apps/App.exe";
+      apps.openNewAppIconChooser();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      assert(warningDialogs.map((dialog) => dialog.title).join(",") === "无法选择扫描来源,无法选择启动文件,无法扫描应用", "failed native app actions should show warning dialogs");
+      assert(apps.iconChoicesError.value.includes("无法读取应用内图标"), "failed icon choice loads should show an inline error");
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
 }

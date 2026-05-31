@@ -53,6 +53,7 @@ export function useLaunchpadApps(options) {
   const browsingScanRootIds = ref([]);
   const iconChooser = shallowRef(null);
   const iconChoices = ref([]);
+  const iconChoicesError = ref("");
   const isLoadingIconChoices = ref(false);
   let iconChooserRequestId = 0;
 
@@ -232,6 +233,20 @@ export function useLaunchpadApps(options) {
     return browsingScanRootIds.value.includes(rootId);
   }
 
+  function getOperationErrorDetail(error) {
+    return String(error?.message || error || "").trim();
+  }
+
+  function openOperationFailedDialog(config, error) {
+    const detail = getOperationErrorDetail(error);
+    options.openWarningDialog?.({
+      title: config.title,
+      message: config.message,
+      suggestion: [config.suggestion, detail && `错误信息：${detail}`].filter(Boolean).join(" "),
+      confirmText: "知道了",
+    });
+  }
+
   async function browseScanRootDirectory(rootId) {
     if (!options.shouldUseNativeCatalog() || !rootId || isBrowsingScanRoot(rootId)) return;
     setBrowsingScanRoot(rootId, true);
@@ -240,6 +255,11 @@ export function useLaunchpadApps(options) {
       if (!selectedPath) return;
       changeScanRootPath(rootId, selectedPath);
     } catch (error) {
+      openOperationFailedDialog({
+        title: "无法选择扫描来源",
+        message: "LaunchPad 无法打开目录选择器。",
+        suggestion: "请重试，或检查系统文件选择权限。",
+      }, error);
       console.error("Failed to pick scan root directory", error);
     } finally {
       setBrowsingScanRoot(rootId, false);
@@ -436,6 +456,11 @@ export function useLaunchpadApps(options) {
       newAppIconPath.value = selectedFile.iconPath || null;
       newAppIconDataUrl.value = selectedFile.iconDataUrl || null;
     } catch (error) {
+      openOperationFailedDialog({
+        title: "无法选择启动文件",
+        message: "LaunchPad 无法打开文件选择器。",
+        suggestion: "请重试，或手动填写启动路径。",
+      }, error);
       console.error("Failed to pick launch file", error);
     } finally {
       isBrowsingNewAppTarget.value = false;
@@ -483,6 +508,11 @@ export function useLaunchpadApps(options) {
       editAppIconDataUrl.value = selectedFile.iconDataUrl || null;
       isEditAppIconReset.value = false;
     } catch (error) {
+      openOperationFailedDialog({
+        title: "无法选择启动文件",
+        message: "LaunchPad 无法打开文件选择器。",
+        suggestion: "请重试，或手动填写启动路径。",
+      }, error);
       console.error("Failed to pick launch file", error);
     } finally {
       isBrowsingEditAppTarget.value = false;
@@ -512,6 +542,7 @@ export function useLaunchpadApps(options) {
   async function loadIconChoicesForChooser(chooser) {
     const requestId = (iconChooserRequestId += 1);
     iconChoices.value = [];
+    iconChoicesError.value = "";
     const targetPath = getIconChooserSourcePath(chooser);
     if (!targetPath || !options.shouldUseNativeCatalog()) {
       isLoadingIconChoices.value = false;
@@ -524,7 +555,10 @@ export function useLaunchpadApps(options) {
       if (requestId !== iconChooserRequestId) return;
       iconChoices.value = normalizeIconChoices(choices);
     } catch (error) {
-      if (requestId === iconChooserRequestId) iconChoices.value = [];
+      if (requestId === iconChooserRequestId) {
+        iconChoices.value = [];
+        iconChoicesError.value = "无法读取应用内图标，请重试。";
+      }
       console.error("Failed to load app icon choices", error);
     } finally {
       if (requestId === iconChooserRequestId) isLoadingIconChoices.value = false;
@@ -569,6 +603,7 @@ export function useLaunchpadApps(options) {
     iconChooserRequestId += 1;
     iconChooser.value = null;
     iconChoices.value = [];
+    iconChoicesError.value = "";
     isLoadingIconChoices.value = false;
   }
 
@@ -735,6 +770,11 @@ export function useLaunchpadApps(options) {
       isScanResultDialogOpen.value = true;
       syncManagedAppState();
     } catch (error) {
+      openOperationFailedDialog({
+        title: "无法扫描应用",
+        message: "LaunchPad 无法扫描当前应用来源。",
+        suggestion: "请检查扫描来源是否仍可访问，然后重试。",
+      }, error);
       console.error("Failed to scan apps", error);
     } finally {
       isScanningApps.value = false;
@@ -828,6 +868,7 @@ export function useLaunchpadApps(options) {
     handleIconChooserUpload,
     iconChooser,
     iconChoices,
+    iconChoicesError,
     isAddingManagedApp,
     ignoreManagedApp,
     ignoreSelectedManagedApps,

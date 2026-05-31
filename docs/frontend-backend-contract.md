@@ -210,6 +210,12 @@ recently edited apps can launch before the debounced layout save reaches disk.
 If the request has no `launchTarget`, the backend falls back to the current
 native catalog item and saved layout item. If those are unavailable, it rescans
 the saved layout's `scanRoots` with the saved `scanKeywordBlacklist` and
-`scanAppBlacklist` filters. Launch failures after the frontend has started the
-close animation are surfaced by the native backend with a Windows message box
-using user-facing reason and suggestion text.
+`scanAppBlacklist` filters.
+
+Launch UX is intentionally optimistic: the frontend performs only synchronous
+preflight validation before starting the close/ghost animation, then calls
+`launch_app` asynchronously on a zero-delay timer. It should not wait for native
+launch completion before playing the animation, because that adds visible launch
+latency. Runtime launch failures after the frontend has started the animation
+are surfaced by the native backend with a Windows message box using user-facing
+reason and suggestion text.

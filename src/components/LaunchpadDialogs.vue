@@ -159,6 +159,7 @@
             <span v-if="state.iconChoices.value.length">{{ state.iconChoices.value.length }} 个</span>
           </div>
           <div v-if="state.isLoadingIconChoices.value" class="icon-chooser-empty">正在读取</div>
+          <div v-else-if="state.iconChoicesError.value" class="icon-chooser-empty">{{ state.iconChoicesError.value }}</div>
           <div v-else-if="state.iconChoices.value.length" class="icon-chooser-grid">
             <button
               v-for="choice in state.iconChoices.value"

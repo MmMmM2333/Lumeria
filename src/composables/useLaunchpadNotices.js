@@ -102,6 +102,30 @@ export function useLaunchpadNotices() {
     layoutSaveNoticeTimer = getTimerHost().setTimeout(closeLayoutSaveNotice, LAYOUT_SAVE_NOTICE_CLOSE_DURATION);
   }
 
+  function showLayoutLoadFailed(config) {
+    clearLayoutSaveNoticeTimer();
+    const retryCount = Number(config?.retryCount) || 1;
+    const detail = String(config?.error?.message || config?.error || "").trim();
+    layoutSaveNotice.value = {
+      title: "本地布局载入失败",
+      message: retryCount > 1
+        ? `当前更改不会保存。已失败 ${retryCount} 次。`
+        : "当前更改不会保存，请重试载入本地布局。",
+      detail,
+      actionText: "重试",
+      onAction: config?.onRetry,
+    };
+  }
+
+  function showLayoutLoadRecovered() {
+    clearLayoutSaveNoticeTimer();
+    layoutSaveNotice.value = {
+      title: "本地布局已载入",
+      message: "之后的更改会正常保存。",
+    };
+    layoutSaveNoticeTimer = getTimerHost().setTimeout(closeLayoutSaveNotice, LAYOUT_SAVE_NOTICE_CLOSE_DURATION);
+  }
+
   return {
     clearLayoutSaveNoticeTimer,
     clearWarningDialogTimer,
@@ -115,6 +139,8 @@ export function useLaunchpadNotices() {
     layoutSaveNotice,
     openLaunchErrorDialog,
     openWarningDialog,
+    showLayoutLoadFailed,
+    showLayoutLoadRecovered,
     showLayoutSaveFailed,
     showLayoutSaveRecovered,
     warningDialog,

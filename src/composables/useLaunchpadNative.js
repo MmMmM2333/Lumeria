@@ -41,6 +41,8 @@ export function useLaunchpadNative(options) {
   let nativeWindowHideTimer = null;
   let nativeWindowOpenSequence = null;
   let launchTargetStatusCheckRequestId = 0;
+  let nativeLoadFailureCount = 0;
+  let hadNativeLoadFailure = false;
   let nativeSaveFailureCount = 0;
   let hadNativeSaveFailure = false;
   let unlistenCloseDesktopEvent = null;
@@ -144,6 +146,21 @@ export function useLaunchpadNative(options) {
     return saveCurrentNativeLayout();
   }
 
+  function retryNativeLayoutLoad() {
+    if (!shouldUseNativeCatalog()) return Promise.resolve();
+    return loadNativeLaunchpadData();
+  }
+
+  function finishNativeLayoutLoad() {
+    nativeLayoutReady = true;
+    if (hadNativeLoadFailure) options.showLayoutLoadRecovered?.();
+    hadNativeLoadFailure = false;
+    nativeLoadFailureCount = 0;
+    hydrateCachedAppIcons();
+    options.schedulePageGridMetrics();
+    scheduleLaunchTargetStatusCheck();
+  }
+
   function scheduleNativeLayoutSave() {
     if (!nativeLayoutReady || !shouldUseNativeCatalog()) return;
     clearNativeSaveTimer();
@@ -170,10 +187,7 @@ export function useLaunchpadNative(options) {
         options.commitPageIndex(options.pageIndex.value);
         options.commitSearchPageIndex(options.searchPageIndex.value);
         options.commitFolderPageIndex(options.folderPageIndex.value);
-        nativeLayoutReady = true;
-        hydrateCachedAppIcons();
-        options.schedulePageGridMetrics();
-        scheduleLaunchTargetStatusCheck();
+        finishNativeLayoutLoad();
         return;
       }
 
@@ -187,12 +201,16 @@ export function useLaunchpadNative(options) {
       options.commitPageIndex(options.pageIndex.value);
       options.commitSearchPageIndex(options.searchPageIndex.value);
       options.commitFolderPageIndex(options.folderPageIndex.value);
-      nativeLayoutReady = true;
-      hydrateCachedAppIcons();
-      options.schedulePageGridMetrics();
-      scheduleLaunchTargetStatusCheck();
+      finishNativeLayoutLoad();
     } catch (error) {
       nativeLayoutReady = false;
+      hadNativeLoadFailure = true;
+      nativeLoadFailureCount += 1;
+      options.showLayoutLoadFailed?.({
+        error,
+        retryCount: nativeLoadFailureCount,
+        onRetry: retryNativeLayoutLoad,
+      });
       console.error("Failed to load native LaunchPad data", error);
     }
   }
