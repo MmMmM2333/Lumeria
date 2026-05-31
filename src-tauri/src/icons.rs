@@ -727,7 +727,7 @@ fn write_dib_icon_as_png(
     let xor_offset = header_size + palette_entries * 4;
     let xor_stride = dib_xor_stride(width, bit_count)?;
     let mask_offset = xor_offset + xor_stride * height as usize;
-    let mask_stride = (((width + 31) / 32) * 4) as usize;
+    let mask_stride = (width.div_ceil(32) * 4) as usize;
     if data.len() < xor_offset + xor_stride * height as usize {
         return Err("Icon bitmap XOR data is truncated".to_string());
     }
@@ -775,6 +775,7 @@ fn write_dib_icon_as_png(
 }
 
 #[cfg(target_os = "windows")]
+#[allow(clippy::too_many_arguments)]
 fn read_dib_pixel(
     data: &[u8],
     row_offset: usize,
@@ -815,7 +816,11 @@ fn read_dib_pixel(
         }
         4 => {
             let value = data[row_offset + x / 2];
-            let index = if x % 2 == 0 { value >> 4 } else { value & 0x0f } as usize;
+            let index = if x.is_multiple_of(2) {
+                value >> 4
+            } else {
+                value & 0x0f
+            } as usize;
             read_palette_color(data, header_size, palette_entries, index, transparent)
         }
         1 => {
@@ -864,7 +869,7 @@ fn dib_xor_stride(width: u32, bit_count: u16) -> Result<usize, String> {
     let bits = width
         .checked_mul(bit_count as u32)
         .ok_or_else(|| "Icon bitmap row is too wide".to_string())?;
-    Ok((((bits + 31) / 32) * 4) as usize)
+    Ok((bits.div_ceil(32) * 4) as usize)
 }
 
 #[cfg(target_os = "windows")]

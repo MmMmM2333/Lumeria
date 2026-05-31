@@ -512,9 +512,8 @@ fn write_file_atomic(path: &Path, contents: &str) -> Result<(), String> {
         )
     })?;
 
-    replace_file(&temp_path, path).map_err(|error| {
+    replace_file(&temp_path, path).inspect_err(|_| {
         let _ = fs::remove_file(&temp_path);
-        error
     })
 }
 

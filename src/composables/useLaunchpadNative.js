@@ -188,6 +188,7 @@ export function useLaunchpadNative(options) {
         options.commitSearchPageIndex(options.searchPageIndex.value);
         options.commitFolderPageIndex(options.folderPageIndex.value);
         finishNativeLayoutLoad();
+        scheduleNativeLayoutSave();
         return;
       }
 

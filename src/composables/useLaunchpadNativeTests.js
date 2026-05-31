@@ -95,6 +95,7 @@ export async function runLaunchpadNativeTests() {
     if (!condition) throw new Error(`[Launchpad native test failed] ${message}`);
   };
 
+  const initialSaveLayouts = [];
   await withMockTauri(async (command, args) => {
     if (command === "load_layout") return null;
     if (command === "scan_apps") {
@@ -106,8 +107,12 @@ export async function runLaunchpadNativeTests() {
     }
     if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
+    if (command === "save_layout") {
+      initialSaveLayouts.push(args.layout);
+      return null;
+    }
     throw new Error(`Unexpected invoke: ${command}`);
-  }, async () => {
+  }, async (timers) => {
     const { calls, options } = makeOptions({
       pages: [[{ id: "mock", type: "app", name: "Mock" }]],
       scanAppBlacklist: ref([{ path: "C:/Apps/Blocked.lnk" }]),
@@ -115,9 +120,12 @@ export async function runLaunchpadNativeTests() {
     const native = useLaunchpadNative(options);
 
     await native.loadNativeLaunchpadData();
+    await Promise.all(timers.splice(0).map((timer) => timer()));
 
     assert(options.pages.value[0].map((app) => app.id).join(",") === "win-app-good", "missing native layout should replace mock pages with scanned apps");
     assert(Boolean(options.scanRoots.value[0].lastScannedAt), "initial native scan should mark roots as scanned");
+    assert(initialSaveLayouts.length === 1, "initial native scan should be persisted after load completes");
+    assert(initialSaveLayouts[0].pages[0][0].id === "win-app-good", "initial native save should include scanned apps");
     assert(calls.commitPageIndex.join(",") === "0", "initial native load should reclamp desktop page");
     assert(calls.schedulePageGridMetrics === 1, "initial native load should refresh grid metrics");
   });

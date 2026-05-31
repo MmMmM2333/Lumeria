@@ -170,6 +170,7 @@ pub(crate) fn scan_apps_from_roots(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_apps_from_dir(
     root: &ScanRoot,
     root_dir: &Path,
@@ -316,7 +317,7 @@ fn collect_apps_from_dir(
         }
 
         let candidate = make_catalog_candidate(root, root_dir, &path);
-        if should_skip_candidate(&candidate, &filters) {
+        if should_skip_candidate(&candidate, filters) {
             continue;
         }
 

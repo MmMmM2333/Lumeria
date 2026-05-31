@@ -649,7 +649,10 @@ pub fn run() {
             } if button == MouseButton::Left && button_state == MouseButtonState::Up => {
                 open_main_window(app);
             }
-            TrayIconEvent::DoubleClick { button, .. } if button == MouseButton::Left => {
+            TrayIconEvent::DoubleClick {
+                button: MouseButton::Left,
+                ..
+            } => {
                 open_main_window(app);
             }
             _ => {}
