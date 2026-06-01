@@ -7,7 +7,15 @@ mod models;
 mod path_utils;
 mod tray;
 
-use std::{collections::HashMap, sync::Mutex, thread, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
+    thread,
+    time::Duration,
+};
 
 use catalog::{
     icon_cache_dir, icon_file_data_url, scan_apps_from_roots, stable_app_id, ScanAppsResult,
@@ -35,7 +43,8 @@ use tray::{
 };
 
 const QUIT_REQUESTED_EVENT: &str = "launchpad-quit-requested";
-const QUIT_FALLBACK_DELAY_MS: u64 = 3_000;
+const QUIT_FALLBACK_DELAY_MS: u64 = 15_000;
+static QUIT_ACKNOWLEDGED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(all(target_os = "windows", debug_assertions))]
 pub use icons::debug_extract_icon_png;
@@ -93,6 +102,16 @@ struct LaunchTargetCheckResult {
 struct LaunchAppRequest {
     id: String,
     name: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LaunchFailureReport {
+    kind: String,
+    title: String,
+    message: String,
+    suggestion: String,
+    detail: String,
 }
 
 #[tauri::command]
@@ -238,14 +257,8 @@ fn launch_app(
     app: AppHandle,
     request: LaunchAppRequest,
     state: State<'_, AppState>,
-) -> Result<(), String> {
-    match launch_app_inner(&app, request, state) {
-        Ok(()) => Ok(()),
-        Err(error) => {
-            show_launch_error_message(&error);
-            Err(error.log_message())
-        }
-    }
+) -> Result<(), LaunchFailureReport> {
+    launch_app_inner(&app, request, state).map_err(|error| error.report())
 }
 
 fn launch_app_inner(
@@ -300,6 +313,20 @@ fn hide_main_window(app: AppHandle) {
 #[tauri::command]
 fn quit_app(app: AppHandle) {
     app.exit(0);
+}
+
+#[tauri::command]
+fn confirm_quit_after_save(app: AppHandle, saved: bool) {
+    if !saved {
+        eprintln!("Quitting LaunchPad after layout save failed or was skipped");
+    }
+    QUIT_ACKNOWLEDGED.store(true, Ordering::Relaxed);
+    app.exit(0);
+}
+
+#[tauri::command]
+fn show_launch_error_message(report: LaunchFailureReport) {
+    show_launch_error_report(&report);
 }
 
 #[tauri::command]
@@ -360,7 +387,7 @@ impl LaunchFailure {
         Self::new(app_name, kind, error.detail)
     }
 
-    fn user_message(&self) -> String {
+    fn report(&self) -> LaunchFailureReport {
         let name = &self.app_name;
         let (reason, suggestion) = match self.kind {
             LaunchFailureKind::AccessDenied => (
@@ -395,11 +422,26 @@ impl LaunchFailure {
                 "请确认目标程序可以从资源管理器正常打开。",
             ),
         };
-        format!("无法打开“{name}”。\n\n{reason}\n\n建议：{suggestion}")
+        LaunchFailureReport {
+            kind: self.kind_code().to_string(),
+            title: "无法打开应用".to_string(),
+            message: format!("无法打开“{name}”。\n\n{reason}"),
+            suggestion: suggestion.to_string(),
+            detail: self.detail.clone(),
+        }
     }
 
-    fn log_message(&self) -> String {
-        format!("{:?}: {}", self.kind, self.detail)
+    fn kind_code(&self) -> &'static str {
+        match self.kind {
+            LaunchFailureKind::AccessDenied => "accessDenied",
+            LaunchFailureKind::BrokenShortcut => "brokenShortcut",
+            LaunchFailureKind::LayoutReadFailed => "layoutReadFailed",
+            LaunchFailureKind::MissingLaunchInfo => "missingLaunchInfo",
+            LaunchFailureKind::NoAssociation => "noAssociation",
+            LaunchFailureKind::TargetNotFound => "targetNotFound",
+            LaunchFailureKind::UnsupportedTarget => "unsupportedTarget",
+            LaunchFailureKind::WindowsLaunchFailed => "windowsLaunchFailed",
+        }
     }
 }
 
@@ -457,14 +499,15 @@ fn launch_selected_app(app: AppCatalogItem) -> Result<(), LaunchFailure> {
 }
 
 #[cfg(target_os = "windows")]
-fn show_launch_error_message(error: &LaunchFailure) {
+fn show_launch_error_report(report: &LaunchFailureReport) {
     use windows::{
         core::HSTRING,
         Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK, MB_SETFOREGROUND},
     };
 
-    let message = HSTRING::from(error.user_message());
-    let title = HSTRING::from("无法打开应用");
+    let body = format!("{}\n\n建议：{}", report.message, report.suggestion);
+    let message = HSTRING::from(body);
+    let title = HSTRING::from(report.title.as_str());
     unsafe {
         let _ = MessageBoxW(
             None,
@@ -476,8 +519,8 @@ fn show_launch_error_message(error: &LaunchFailure) {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn show_launch_error_message(error: &LaunchFailure) {
-    eprintln!("{}", error.user_message());
+fn show_launch_error_report(report: &LaunchFailureReport) {
+    eprintln!("{}\n\n建议：{}", report.message, report.suggestion);
 }
 
 fn find_app_in_saved_scan_roots(
@@ -599,11 +642,15 @@ fn setup_global_shortcuts(app: &mut tauri::App) {
 }
 
 fn request_app_quit(app: &AppHandle) {
+    QUIT_ACKNOWLEDGED.store(false, Ordering::Relaxed);
     let _ = app.emit(QUIT_REQUESTED_EVENT, ());
     let app = app.clone();
     thread::spawn(move || {
         thread::sleep(Duration::from_millis(QUIT_FALLBACK_DELAY_MS));
-        app.exit(0);
+        if !QUIT_ACKNOWLEDGED.load(Ordering::Relaxed) {
+            eprintln!("LaunchPad quit request timed out; forcing exit");
+            app.exit(0);
+        }
     });
 }
 
@@ -656,6 +703,8 @@ pub fn run() {
             check_launch_targets,
             launch_app,
             hide_main_window,
+            confirm_quit_after_save,
+            show_launch_error_message,
             quit_app,
             set_main_window_effects_enabled
         ])
@@ -852,8 +901,9 @@ mod tests {
             .expect_err("unsupported targets should fail before shell launch");
 
         assert_eq!(error.kind, LaunchFailureKind::UnsupportedTarget);
-        assert!(error.user_message().contains("暂不支持"));
-        assert!(error.user_message().contains("建议："));
+        let report = error.report();
+        assert!(report.message.contains("暂不支持"));
+        assert!(report.suggestion.contains("改用"));
     }
 
     #[test]
@@ -866,8 +916,9 @@ mod tests {
         .expect_err("missing local paths should fail before shell launch");
 
         assert_eq!(error.kind, LaunchFailureKind::TargetNotFound);
-        assert!(error.user_message().contains("找不到启动文件"));
-        assert!(error.user_message().contains("建议："));
+        let report = error.report();
+        assert!(report.message.contains("找不到启动文件"));
+        assert!(report.suggestion.contains("编辑"));
     }
 
     #[test]

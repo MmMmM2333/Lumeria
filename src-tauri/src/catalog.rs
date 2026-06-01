@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    env, fs,
+    fs,
     io::ErrorKind,
     path::{Path, PathBuf},
 };
@@ -546,15 +546,35 @@ fn matches_keyword_blacklist(
     })
 }
 
+#[cfg(target_os = "windows")]
 fn expand_scan_root_path(path: &str) -> PathBuf {
-    let mut expanded = path.to_string();
-    for (name, value) in env::vars() {
-        let token = format!("%{name}%");
-        if expanded.contains(&token) {
-            expanded = expanded.replace(&token, &value);
-        }
+    use windows::{
+        core::PCWSTR,
+        Win32::System::Environment::ExpandEnvironmentStringsW,
+    };
+
+    let source: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+    let required = unsafe { ExpandEnvironmentStringsW(PCWSTR(source.as_ptr()), None) };
+    if required == 0 {
+        return PathBuf::from(path);
     }
-    PathBuf::from(expanded)
+
+    let mut buffer = vec![0u16; required as usize];
+    let written = unsafe { ExpandEnvironmentStringsW(PCWSTR(source.as_ptr()), Some(&mut buffer)) };
+    if written == 0 || written as usize > buffer.len() {
+        return PathBuf::from(path);
+    }
+
+    let end = buffer
+        .iter()
+        .position(|value| *value == 0)
+        .unwrap_or(buffer.len());
+    PathBuf::from(String::from_utf16_lossy(&buffer[..end]))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn expand_scan_root_path(path: &str) -> PathBuf {
+    PathBuf::from(path)
 }
 
 fn normalize_source_relative_path(path: &str) -> String {
@@ -617,6 +637,7 @@ fn encode_base64(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::env;
 
     fn test_candidate(name: &str, path: &str, relative_path: &str) -> CatalogCandidate {
         CatalogCandidate {

@@ -125,6 +125,7 @@ export function useLaunchpadController() {
     prepareNativeLaunch: () => true,
     setFolderMotionGeometry: () => {},
     setNativeWindowEffectsEnabled: () => {},
+    showNativeLaunchError: () => {},
   });
   const {
     appendAppsToPages,
@@ -350,6 +351,7 @@ export function useLaunchpadController() {
     schedulePageGridMetrics: () => schedulePageGridMetrics(),
     searchInputRef,
     setNativeWindowEffectsEnabled: (enabled) => deferredHandlers.call("setNativeWindowEffectsEnabled", enabled),
+    showNativeLaunchError: (error) => deferredHandlers.call("showNativeLaunchError", error),
     shouldValidateLaunchTarget: () => isNativeBridgeAvailable(),
     startFolderAppLaunchClose,
     startHomeRevealSettleWindow,
@@ -580,6 +582,7 @@ export function useLaunchpadController() {
     scheduleNativeLayoutSave,
     scheduleLaunchTargetStatusCheck,
     setNativeWindowEffectsEnabled,
+    showNativeLaunchError,
     shouldUseNativeCatalog,
   } = useLaunchpadNative({
     clampIconSize,
@@ -634,6 +637,7 @@ export function useLaunchpadController() {
   deferredHandlers.set("launchNativeAppIfAvailable", launchNativeAppIfAvailable);
   deferredHandlers.set("prepareNativeLaunch", prepareNativeLaunch);
   deferredHandlers.set("setNativeWindowEffectsEnabled", setNativeWindowEffectsEnabled);
+  deferredHandlers.set("showNativeLaunchError", showNativeLaunchError);
   dragControls = useLaunchpadDrag({
     canCreateDesktopPageAfterDrag,
     canCreateFolderPageAfterDrag,

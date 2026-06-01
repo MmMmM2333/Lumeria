@@ -16,6 +16,7 @@ import {
 } from "../domain/launchpadData.js";
 import {
   checkLaunchTargets,
+  confirmQuitAfterSave,
   convertFilePathToAssetUrl,
   hideMainWindow,
   isNativeBridgeAvailable,
@@ -23,10 +24,10 @@ import {
   listenNativeEvent,
   loadCachedAppIcons,
   loadLayout,
-  quitApp,
   saveLayout,
   scanApps,
   setMainWindowEffectsEnabled,
+  showLaunchErrorMessage,
 } from "../api/launchpadApi.js";
 
 const USE_MOCK_DATA_IN_NATIVE = false;
@@ -493,6 +494,37 @@ export function useLaunchpadNative(options) {
       return true;
     } catch (error) {
       console.error(`Failed to launch ${app.name}`, error);
+      return normalizeLaunchErrorReport(error, app);
+    }
+  }
+
+  function normalizeLaunchErrorReport(error, app) {
+    const fallbackName = String(app?.name || "此应用").trim() || "此应用";
+    if (error && typeof error === "object" && typeof error.message === "string") {
+      return {
+        kind: String(error.kind || "windowsLaunchFailed"),
+        title: String(error.title || "无法打开应用"),
+        message: error.message,
+        suggestion: String(error.suggestion || "请确认目标程序可以从资源管理器正常打开。"),
+        detail: String(error.detail || ""),
+      };
+    }
+    return {
+      kind: "windowsLaunchFailed",
+      title: "无法打开应用",
+      message: `无法打开“${fallbackName}”。\n\nWindows 未能打开此应用。`,
+      suggestion: "请确认目标程序可以从资源管理器正常打开。",
+      detail: String(error?.message || error || ""),
+    };
+  }
+
+  async function showNativeLaunchError(error) {
+    if (!shouldUseNativeCatalog() || !error) return false;
+    try {
+      await showLaunchErrorMessage(error);
+      return true;
+    } catch (showError) {
+      console.error("Failed to show LaunchPad launch error", showError);
       return false;
     }
   }
@@ -637,15 +669,16 @@ export function useLaunchpadNative(options) {
   async function quitFromNativeRequest() {
     if (quitRequestInProgress) return;
     quitRequestInProgress = true;
+    let saved = false;
     try {
-      await flushNativeLayoutSave();
+      saved = await flushNativeLayoutSave();
     } catch (error) {
       console.error("Failed to save LaunchPad layout before quit", error);
     } finally {
       try {
-        await quitApp();
+        await confirmQuitAfterSave(saved);
       } catch (error) {
-        console.error("Failed to quit LaunchPad", error);
+        console.error("Failed to confirm LaunchPad quit", error);
         quitRequestInProgress = false;
       }
     }
@@ -666,6 +699,7 @@ export function useLaunchpadNative(options) {
     scheduleNativeLayoutSave,
     scheduleLaunchTargetStatusCheck,
     setNativeWindowEffectsEnabled,
+    showNativeLaunchError,
     shouldUseNativeCatalog,
   };
 }

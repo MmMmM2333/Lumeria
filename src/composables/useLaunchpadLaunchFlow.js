@@ -167,6 +167,11 @@ export function useLaunchpadLaunchFlow(options) {
   function startPreparedAppLaunch(app, source) {
     const launchSource = options.normalizeLaunchSource(app, source);
     const shouldClearSearchAfterLaunch = options.isSearchMode();
+    const launchSession = {
+      animationDone: false,
+      error: null,
+      shown: false,
+    };
     startAppLaunchGhost(app, launchSource);
     options.openingIcon.value = launchSource;
     isAppLaunching.value = true;
@@ -174,7 +179,16 @@ export function useLaunchpadLaunchFlow(options) {
     if (options.hasFolderLayer()) options.startFolderAppLaunchClose();
     closeDesktop({ clearSearch: false });
     window.setTimeout(() => {
-      options.launchNativeAppIfAvailable(app);
+      Promise.resolve(options.launchNativeAppIfAvailable(app))
+        .then((result) => {
+          if (result && result !== true) {
+            launchSession.error = result;
+            maybeShowLaunchErrorAfterAnimation(launchSession);
+          }
+        })
+        .catch((error) => {
+          console.error(`Failed to launch ${app.name}`, error);
+        });
     }, 0);
 
     clearAppLaunchTimer();
@@ -183,8 +197,16 @@ export function useLaunchpadLaunchFlow(options) {
       options.clearOpeningIcon();
       isAppLaunching.value = false;
       clearAppLaunchTimer();
-      options.hideNativeWindow();
+      launchSession.animationDone = true;
+      Promise.resolve(options.hideNativeWindow())
+        .finally(() => maybeShowLaunchErrorAfterAnimation(launchSession));
     }, APP_LAUNCH_DURATION);
+  }
+
+  function maybeShowLaunchErrorAfterAnimation(launchSession) {
+    if (!launchSession || launchSession.shown || !launchSession.animationDone || !launchSession.error) return;
+    launchSession.shown = true;
+    options.showNativeLaunchError?.(launchSession.error);
   }
 
   function openApp(app, source) {

@@ -129,6 +129,13 @@ export async function launchApp(app) {
   return true;
 }
 
+export async function showLaunchErrorMessage(error) {
+  const invoke = getTauriInvoke();
+  if (!invoke || !error) return false;
+  await invoke("show_launch_error_message", { report: error });
+  return true;
+}
+
 export async function hideMainWindow() {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
@@ -147,5 +154,12 @@ export async function quitApp() {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
   await invoke("quit_app");
+  return true;
+}
+
+export async function confirmQuitAfterSave(saved) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return false;
+  await invoke("confirm_quit_after_save", { saved: Boolean(saved) });
   return true;
 }

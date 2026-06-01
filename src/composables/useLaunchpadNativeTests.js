@@ -139,7 +139,7 @@ export async function runLaunchpadNativeTests() {
   });
 
   let loadAttempts = 0;
-  await withMockTauri(async (command) => {
+  await withMockTauri(async (command, args) => {
     if (command === "load_layout") {
       loadAttempts += 1;
       if (loadAttempts === 1) throw new Error("layout locked");
@@ -330,7 +330,7 @@ export async function runLaunchpadNativeTests() {
 
   const pendingFlushSaves = [];
   let flushSaveCount = 0;
-  await withMockTauri(async (command) => {
+  await withMockTauri(async (command, args) => {
     if (command === "load_layout") {
       return {
         version: 1,
@@ -368,7 +368,7 @@ export async function runLaunchpadNativeTests() {
 
   const quitCommands = [];
   const quitEventHandlers = new Map();
-  await withMockTauri(async (command) => {
+  await withMockTauri(async (command, args) => {
     if (command === "load_layout") {
       return {
         version: 1,
@@ -378,7 +378,10 @@ export async function runLaunchpadNativeTests() {
     }
     if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
-    if (command === "save_layout" || command === "quit_app") {
+    if (command === "save_layout" || command === "confirm_quit_after_save") {
+      if (command === "confirm_quit_after_save") {
+        assert(args.saved === true, "quit confirmation should report successful layout save");
+      }
       quitCommands.push(command);
       return null;
     }
@@ -395,12 +398,51 @@ export async function runLaunchpadNativeTests() {
     native.scheduleNativeLayoutSave();
     await quitEventHandlers.get("launchpad-quit-requested")();
 
-    assert(quitCommands.join(",") === "save_layout,quit_app", "native quit requests should flush pending layout saves before quitting");
+    assert(quitCommands.join(",") === "save_layout,confirm_quit_after_save", "native quit requests should flush pending layout saves before confirming quit");
   }, {
     listen: async (eventName, handler) => {
       quitEventHandlers.set(eventName, handler);
       return () => quitEventHandlers.delete(eventName);
     },
+  });
+
+  const launchFailureCommands = [];
+  await withMockTauri(async (command, args) => {
+    if (command === "launch_app") {
+      launchFailureCommands.push(command);
+      throw {
+        kind: "targetNotFound",
+        title: "无法打开应用",
+        message: "无法打开“Missing App”。\n\n找不到启动文件。",
+        suggestion: "请在 LaunchPad 中编辑此应用的启动路径。",
+        detail: "missing",
+      };
+    }
+    if (command === "show_launch_error_message") {
+      launchFailureCommands.push(command);
+      assert(args.report.kind === "targetNotFound", "native launch error dialog should receive the structured failure kind");
+      assert(args.report.suggestion.includes("编辑"), "native launch error dialog should receive the structured suggestion");
+      return null;
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      const { options } = makeOptions();
+      const native = useLaunchpadNative(options);
+
+      const failure = await native.launchNativeAppIfAvailable({
+        id: "missing-app",
+        type: "app",
+        name: "Missing App",
+      });
+      assert(failure.kind === "targetNotFound", "failed native launches should return structured launch errors");
+      await native.showNativeLaunchError(failure);
+      assert(launchFailureCommands.join(",") === "launch_app,show_launch_error_message", "launch errors should be shown by an explicit native dialog command");
+    } finally {
+      console.error = originalConsoleError;
+    }
   });
 
   await withMockTauri(async (command) => {

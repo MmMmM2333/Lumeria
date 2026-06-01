@@ -44,6 +44,7 @@ function createLaunchFlow(overrides = {}) {
     openLaunchErrorDialog: [],
     schedulePageGridMetrics: 0,
     setNativeWindowEffectsEnabled: [],
+    showNativeLaunchError: [],
     startFolderAppLaunchClose: 0,
     startHomeRevealSettleWindow: 0,
   };
@@ -85,7 +86,10 @@ function createLaunchFlow(overrides = {}) {
     isFolderAppLaunchClosing: ref(Boolean(overrides.isFolderAppLaunchClosing)),
     isSearchMode: () => Boolean(overrides.isSearchMode),
     keyboardFocusArea,
-    launchNativeAppIfAvailable: (app) => calls.launchNativeAppIfAvailable.push(app.id),
+    launchNativeAppIfAvailable: (app) => {
+      calls.launchNativeAppIfAvailable.push(app.id);
+      return overrides.launchNativeAppResult ?? true;
+    },
     launchTargetStatusById: ref(overrides.launchTargetStatusById || {}),
     normalizeLaunchSource: (app, source) => source ?? { area: "desktop", id: app.id, pageIndex: 0 },
     openLaunchErrorDialog: (config) => calls.openLaunchErrorDialog.push(config),
@@ -96,6 +100,7 @@ function createLaunchFlow(overrides = {}) {
     },
     searchInputRef,
     setNativeWindowEffectsEnabled: (enabled) => calls.setNativeWindowEffectsEnabled.push(enabled),
+    showNativeLaunchError: (error) => calls.showNativeLaunchError.push(error),
     shouldValidateLaunchTarget: () => Boolean(overrides.shouldValidateLaunchTarget),
     startFolderAppLaunchClose: () => {
       calls.startFolderAppLaunchClose += 1;
@@ -114,6 +119,12 @@ function createLaunchFlow(overrides = {}) {
     openingIcon,
     searchInputRef,
   };
+}
+
+async function flushMicrotasks(count = 1) {
+  for (let index = 0; index < count; index += 1) {
+    await Promise.resolve();
+  }
 }
 
 export async function runLaunchpadLaunchFlowTests() {
@@ -170,6 +181,22 @@ export async function runLaunchpadLaunchFlowTests() {
     assert(launch.calls.hideNativeWindow === 1, "app launch should hide the native window after the animation");
     timers.runDelay(APP_LAUNCH_DURATION + 100);
     assert(launch.flow.launchGhost.value === null, "launch ghost should clear after its timer");
+
+    const launchError = {
+      kind: "targetNotFound",
+      title: "无法打开应用",
+      message: "无法打开应用。",
+      suggestion: "请检查路径。",
+    };
+    const failedLaunch = createLaunchFlow({ launchNativeAppResult: launchError });
+    failedLaunch.flow.openApp(launchApp, source);
+    timers.runDelay(0);
+    await flushMicrotasks(2);
+    assert(failedLaunch.calls.showNativeLaunchError.length === 0, "native launch errors should wait for the launch animation");
+    timers.runDelay(APP_LAUNCH_DURATION);
+    await flushMicrotasks(2);
+    assert(failedLaunch.calls.hideNativeWindow === 1, "failed app launches should still hide the native window after animation");
+    assert(failedLaunch.calls.showNativeLaunchError[0] === launchError, "native launch errors should show after the launch animation");
 
     const blockedByCriticalSave = createLaunchFlow({
       prepareNativeLaunch: () => false,
