@@ -55,7 +55,7 @@
                   <span>开机自启</span>
                   <span class="settings-field-hint">登录 Windows 后自动打开 LaunchPad</span>
                 </span>
-                <input type="checkbox" aria-label="开机自启" disabled />
+                <input name="autoStart" type="checkbox" aria-label="开机自启" disabled />
               </label>
               <div class="settings-option settings-option-disabled">
                 <span class="settings-option-copy">
@@ -81,7 +81,7 @@
                 <span>桌面布局</span>
                 <div class="settings-grid-layout-control" aria-label="桌面布局">
                   <div class="settings-number-control">
-                    <input v-model.number="state.draftRows.value" min="2" max="8" type="number" aria-label="桌面行数" />
+                    <input v-model.number="state.draftRows.value" name="desktopRows" min="2" max="8" type="number" aria-label="桌面行数" />
                     <div class="settings-number-buttons">
                       <button type="button" aria-label="增加桌面行数" @click.prevent="state.changeDraftRows(1)"><ChevronUpIcon class="settings-number-icon" /></button>
                       <button type="button" aria-label="减少桌面行数" @click.prevent="state.changeDraftRows(-1)"><ChevronDownIcon class="settings-number-icon" /></button>
@@ -89,7 +89,7 @@
                   </div>
                   <span class="settings-grid-layout-separator">×</span>
                   <div class="settings-number-control">
-                    <input v-model.number="state.draftCols.value" min="3" max="10" type="number" aria-label="桌面列数" />
+                    <input v-model.number="state.draftCols.value" name="desktopCols" min="3" max="10" type="number" aria-label="桌面列数" />
                     <div class="settings-number-buttons">
                       <button type="button" aria-label="增加桌面列数" @click.prevent="state.changeDraftCols(1)"><ChevronUpIcon class="settings-number-icon" /></button>
                       <button type="button" aria-label="减少桌面列数" @click.prevent="state.changeDraftCols(-1)"><ChevronDownIcon class="settings-number-icon" /></button>
@@ -101,7 +101,7 @@
                 <span>文件夹布局</span>
                 <div class="settings-grid-layout-control" aria-label="文件夹布局">
                   <div class="settings-number-control">
-                    <input v-model.number="state.draftFolderRows.value" min="2" max="6" type="number" aria-label="文件夹行数" />
+                    <input v-model.number="state.draftFolderRows.value" name="folderRows" min="2" max="6" type="number" aria-label="文件夹行数" />
                     <div class="settings-number-buttons">
                       <button type="button" aria-label="增加文件夹行数" @click.prevent="state.changeDraftFolderRows(1)"><ChevronUpIcon class="settings-number-icon" /></button>
                       <button type="button" aria-label="减少文件夹行数" @click.prevent="state.changeDraftFolderRows(-1)"><ChevronDownIcon class="settings-number-icon" /></button>
@@ -109,7 +109,7 @@
                   </div>
                   <span class="settings-grid-layout-separator">×</span>
                   <div class="settings-number-control">
-                    <input v-model.number="state.draftFolderCols.value" min="2" max="8" type="number" aria-label="文件夹列数" />
+                    <input v-model.number="state.draftFolderCols.value" name="folderCols" min="2" max="8" type="number" aria-label="文件夹列数" />
                     <div class="settings-number-buttons">
                       <button type="button" aria-label="增加文件夹列数" @click.prevent="state.changeDraftFolderCols(1)"><ChevronUpIcon class="settings-number-icon" /></button>
                       <button type="button" aria-label="减少文件夹列数" @click.prevent="state.changeDraftFolderCols(-1)"><ChevronDownIcon class="settings-number-icon" /></button>
@@ -123,7 +123,7 @@
                   <span class="settings-field-hint">{{ ICON_SIZE_MIN }}-{{ ICON_SIZE_MAX }}px</span>
                 </span>
                 <div class="settings-number-control settings-number-control-wide">
-                  <input v-model.number="state.draftIconSize.value" :min="ICON_SIZE_MIN" :max="ICON_SIZE_MAX" :step="ICON_SIZE_STEP" type="number" aria-label="图标大小" />
+                  <input v-model.number="state.draftIconSize.value" name="iconSize" :min="ICON_SIZE_MIN" :max="ICON_SIZE_MAX" :step="ICON_SIZE_STEP" type="number" aria-label="图标大小" />
                   <span class="settings-number-unit">px</span>
                   <div class="settings-number-buttons">
                     <button type="button" aria-label="增大图标" @click.prevent="state.changeDraftIconSize(1)"><ChevronUpIcon class="settings-number-icon" /></button>
@@ -154,7 +154,7 @@
                     </button>
                   </div>
                   <div v-if="state.draftFolderIconSizeMode.value === 'custom'" class="settings-number-control settings-number-control-wide">
-                    <input v-model.number="state.draftFolderIconSize.value" :min="ICON_SIZE_MIN" :max="ICON_SIZE_MAX" :step="ICON_SIZE_STEP" type="number" aria-label="文件夹图标大小" />
+                    <input v-model.number="state.draftFolderIconSize.value" name="folderIconSize" :min="ICON_SIZE_MIN" :max="ICON_SIZE_MAX" :step="ICON_SIZE_STEP" type="number" aria-label="文件夹图标大小" />
                     <span class="settings-number-unit">px</span>
                     <div class="settings-number-buttons">
                       <button type="button" aria-label="增大文件夹图标" @click.prevent="state.changeDraftFolderIconSize(1)"><ChevronUpIcon class="settings-number-icon" /></button>
@@ -165,7 +165,7 @@
               </div>
               <label class="settings-toggle">
                 <span>无字模式</span>
-                <input v-model="state.draftIsTextlessMode.value" type="checkbox" />
+                <input v-model="state.draftIsTextlessMode.value" name="textlessMode" type="checkbox" />
               </label>
             </div>
           </section>
@@ -205,6 +205,7 @@
             <div class="scan-root-list">
               <div v-for="root in state.scanRoots.value" :key="root.id" class="scan-root-item">
                 <input
+                  :name="`scanRootEnabled-${root.id}`"
                   type="checkbox"
                   :checked="root.enabled"
                   :aria-label="`启用 ${root.label}`"
@@ -213,6 +214,7 @@
                 <span class="scan-root-details">
                   <input
                     class="scan-root-label"
+                    :name="`scanRootLabel-${root.id}`"
                     :value="root.label"
                     type="text"
                     :aria-label="`${root.label} 标签`"
@@ -221,6 +223,7 @@
                   <span class="scan-root-path-row">
                     <input
                       class="scan-root-path"
+                      :name="`scanRootPath-${root.id}`"
                       :value="root.path"
                       type="text"
                       :aria-label="`${root.label} 路径`"
@@ -258,6 +261,7 @@
                 <input
                   v-model="state.newScanKeyword.value"
                   class="scan-keyword-input"
+                  name="newScanKeyword"
                   type="text"
                   placeholder="输入关键字"
                   aria-label="新增扫描过滤关键字"
@@ -307,7 +311,7 @@
               </div>
             </div>
 
-            <input v-model="state.appManagerSearchQuery.value" class="app-manager-search" type="search" placeholder="搜索应用" aria-label="搜索应用" />
+            <input v-model="state.appManagerSearchQuery.value" class="app-manager-search" name="appManagerSearch" type="search" placeholder="搜索应用" aria-label="搜索应用" />
 
             <div class="settings-list-actions">
               <button class="settings-link-button" type="button" @click="state.selectAllManagedApps">全选</button>
@@ -317,6 +321,7 @@
             <div class="app-manager-list" role="list" aria-label="所有应用">
               <div v-for="app in state.filteredManagedApps.value" :key="app.id" class="app-manager-item" role="listitem">
                 <input
+                  :name="`managedAppSelection-${app.id}`"
                   type="checkbox"
                   :aria-label="`选择 ${app.name}`"
                   :checked="state.appManagerSelectedIds.value.includes(app.id)"

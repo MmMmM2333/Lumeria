@@ -15,7 +15,9 @@
         <SearchIcon class="hint-icon" />
         <input
           :ref="(node) => bindRef(domRefs.searchInputRef, node)"
+          id="launchpad-search"
           class="search-input"
+          name="launchpadSearch"
           :value="searchQuery"
           type="search"
           placeholder="搜索"

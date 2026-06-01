@@ -7,7 +7,7 @@ mod models;
 mod path_utils;
 mod tray;
 
-use std::{collections::HashMap, sync::Mutex};
+use std::{collections::HashMap, sync::Mutex, thread, time::Duration};
 
 use catalog::{
     icon_cache_dir, icon_file_data_url, scan_apps_from_roots, stable_app_id, ScanAppsResult,
@@ -33,6 +33,9 @@ use tray::{
     disable_main_window_transitions, open_main_window, open_settings, refresh_main_window_effects,
     set_main_window_fullscreen, setup_tray, trigger_main_window_shortcut, CLOSE_DESKTOP_EVENT,
 };
+
+const QUIT_REQUESTED_EVENT: &str = "launchpad-quit-requested";
+const QUIT_FALLBACK_DELAY_MS: u64 = 3_000;
 
 #[cfg(all(target_os = "windows", debug_assertions))]
 pub use icons::debug_extract_icon_png;
@@ -292,6 +295,11 @@ fn launch_app_inner(
 #[tauri::command]
 fn hide_main_window(app: AppHandle) {
     tray::hide_main_window(&app);
+}
+
+#[tauri::command]
+fn quit_app(app: AppHandle) {
+    app.exit(0);
 }
 
 #[tauri::command]
@@ -590,6 +598,15 @@ fn setup_global_shortcuts(app: &mut tauri::App) {
     }
 }
 
+fn request_app_quit(app: &AppHandle) {
+    let _ = app.emit(QUIT_REQUESTED_EVENT, ());
+    let app = app.clone();
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(QUIT_FALLBACK_DELAY_MS));
+        app.exit(0);
+    });
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
@@ -600,7 +617,7 @@ pub fn run() {
             } else if event.id() == "settings" {
                 open_settings(app);
             } else if event.id() == "quit" {
-                app.exit(0);
+                request_app_quit(app);
             }
         })
         .on_tray_icon_event(|app, event| match event {
@@ -639,6 +656,7 @@ pub fn run() {
             check_launch_targets,
             launch_app,
             hide_main_window,
+            quit_app,
             set_main_window_effects_enabled
         ])
         .run(tauri::generate_context!())

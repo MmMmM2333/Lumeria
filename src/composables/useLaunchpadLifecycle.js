@@ -105,6 +105,7 @@ export function runLaunchpadBeforeUnmountEffects(options, layoutResizeObserver =
     clearLayoutSaveNoticeTimer,
     clearNativeEventListeners,
     clearNativeSaveTimer,
+    flushNativeLayoutSave,
     clearPageJumpRenderRange,
     clearPageTurn,
     clearPendingTarget,
@@ -135,7 +136,8 @@ export function runLaunchpadBeforeUnmountEffects(options, layoutResizeObserver =
   clearLaunchGhostTimer();
   clearLayoutSaveNoticeTimer?.();
   clearPageJumpRenderRange();
-  clearNativeSaveTimer();
+  if (flushNativeLayoutSave) flushNativeLayoutSave();
+  else clearNativeSaveTimer();
   clearNativeEventListeners();
   cancelLongPress();
   clearAltEditTimer();

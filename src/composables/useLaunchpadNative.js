@@ -23,6 +23,7 @@ import {
   listenNativeEvent,
   loadCachedAppIcons,
   loadLayout,
+  quitApp,
   saveLayout,
   scanApps,
   setMainWindowEffectsEnabled,
@@ -41,7 +42,7 @@ export function useLaunchpadNative(options) {
   let nativeWindowHideTimer = null;
   let nativeWindowOpenSequence = null;
   let nativeEventListenerGeneration = 0;
-  let launchCriticalSavePromise = null;
+  let nativeSavePromise = null;
   let launchCriticalDirtyRevision = 0;
   let launchTargetStatusCheckRequestId = 0;
   let launchTargetStatusRecordsById = {};
@@ -56,6 +57,8 @@ export function useLaunchpadNative(options) {
   let unlistenSettingsEvent = null;
   let unlistenToggleDesktopEvent = null;
   let unlistenLayoutRecoveredEvent = null;
+  let unlistenQuitRequestedEvent = null;
+  let quitRequestInProgress = false;
 
   function shouldUseNativeCatalog() {
     return isNativeBridgeAvailable() && !USE_MOCK_DATA_IN_NATIVE;
@@ -163,16 +166,20 @@ export function useLaunchpadNative(options) {
     }
   }
 
+  function runNativeLayoutSave() {
+    if (!nativeSavePromise) {
+      nativeSavePromise = saveCurrentNativeLayout()
+        .finally(() => {
+          nativeSavePromise = null;
+        });
+    }
+    return nativeSavePromise;
+  }
+
   function saveLaunchCriticalLayout() {
     if (!nativeLayoutReady || !shouldUseNativeCatalog()) return true;
     clearNativeSaveTimer();
-    if (!launchCriticalSavePromise) {
-      launchCriticalSavePromise = saveCurrentNativeLayout()
-        .finally(() => {
-          launchCriticalSavePromise = null;
-        });
-    }
-    return launchCriticalSavePromise.then((saved) => {
+    return runNativeLayoutSave().then((saved) => {
       if (!saved || !launchCriticalDirtyAppIds.size) return saved;
       return saveLaunchCriticalLayout();
     });
@@ -195,7 +202,7 @@ export function useLaunchpadNative(options) {
   function retryNativeLayoutSave() {
     if (!nativeLayoutReady || !shouldUseNativeCatalog()) return Promise.resolve(false);
     clearNativeSaveTimer();
-    return saveCurrentNativeLayout();
+    return runNativeLayoutSave();
   }
 
   function retryNativeLayoutLoad() {
@@ -218,8 +225,18 @@ export function useLaunchpadNative(options) {
     clearNativeSaveTimer();
     nativeSaveTimer = window.setTimeout(async () => {
       nativeSaveTimer = null;
-      await saveCurrentNativeLayout();
+      await runNativeLayoutSave();
     }, 320);
+  }
+
+  async function flushNativeLayoutSave() {
+    if (!nativeLayoutReady || !shouldUseNativeCatalog()) return true;
+    clearNativeSaveTimer();
+    let saved = await runNativeLayoutSave();
+    if (!saved) return false;
+    if (layoutSignature(createCurrentLayoutSnapshot()) === lastSavedLayoutSignature) return true;
+    saved = await runNativeLayoutSave();
+    return Boolean(saved);
   }
 
   async function loadNativeLaunchpadData() {
@@ -538,6 +555,13 @@ export function useLaunchpadNative(options) {
         .catch((error) => {
           console.error("Failed to listen for layout recovery event", error);
         }),
+      listenNativeEvent("launchpad-quit-requested", quitFromNativeRequest)
+        .then(keepUnlisten((unlisten) => {
+          unlistenQuitRequestedEvent = unlisten;
+        }))
+        .catch((error) => {
+          console.error("Failed to listen for native quit event", error);
+        }),
     ]);
   }
 
@@ -554,6 +578,8 @@ export function useLaunchpadNative(options) {
     unlistenSettingsEvent = null;
     unlistenLayoutRecoveredEvent?.();
     unlistenLayoutRecoveredEvent = null;
+    unlistenQuitRequestedEvent?.();
+    unlistenQuitRequestedEvent = null;
   }
 
   function rememberNativeWindowOpenSequence(event) {
@@ -608,9 +634,27 @@ export function useLaunchpadNative(options) {
     hideNativeWindowAfterCloseAnimation();
   }
 
+  async function quitFromNativeRequest() {
+    if (quitRequestInProgress) return;
+    quitRequestInProgress = true;
+    try {
+      await flushNativeLayoutSave();
+    } catch (error) {
+      console.error("Failed to save LaunchPad layout before quit", error);
+    } finally {
+      try {
+        await quitApp();
+      } catch (error) {
+        console.error("Failed to quit LaunchPad", error);
+        quitRequestInProgress = false;
+      }
+    }
+  }
+
   return {
     clearNativeEventListeners,
     clearNativeSaveTimer,
+    flushNativeLayoutSave,
     hideNativeWindow,
     hideNativeWindowAfterCloseAnimation,
     getLaunchTargetStatus,

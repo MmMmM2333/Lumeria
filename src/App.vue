@@ -30,6 +30,7 @@
       <DesktopPager
         :active-desktop-track-animate="activeDesktopTrackAnimate"
         :active-desktop-track-transition="activeDesktopTrackTransition"
+        :active-page-index="activePageIndex"
         :active-pages="activePages"
         :desktop-layout-enabled="desktopLayoutEnabled"
         :desktop-track-motion-key="desktopTrackMotionKey"

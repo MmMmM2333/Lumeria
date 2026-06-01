@@ -19,6 +19,7 @@
         <div v-if="state.scanResultApps.value.length" class="app-manager-list scan-result-list" role="list" aria-label="可添加应用">
           <label v-for="app in state.scanResultApps.value" :key="app.id" class="app-manager-item scan-result-item" role="listitem">
             <input
+              :name="`scanResultSelection-${app.id}`"
               type="checkbox"
               :aria-label="`选择 ${app.name}`"
               :checked="state.scanResultSelectedIds.value.includes(app.id)"
@@ -70,12 +71,12 @@
 
         <label class="app-edit-field">
           <span>应用名称</span>
-          <input v-model="state.newAppName.value" type="text" maxlength="64" aria-label="应用名称" />
+          <input v-model="state.newAppName.value" name="newAppName" type="text" maxlength="64" aria-label="应用名称" />
         </label>
         <label class="app-edit-field">
           <span>启动路径或 URL</span>
           <span class="app-edit-target-row">
-            <input v-model="state.newAppTarget.value" type="text" aria-label="启动路径或 URL" />
+            <input v-model="state.newAppTarget.value" name="newAppTarget" type="text" aria-label="启动路径或 URL" />
             <button class="settings-secondary-button" type="button" :disabled="!state.canBrowseLaunchFile.value || state.isBrowsingNewAppTarget.value" @click="state.browseNewAppLaunchFile">
               {{ state.isBrowsingNewAppTarget.value ? "选择中" : "浏览" }}
             </button>
@@ -83,7 +84,7 @@
         </label>
         <label v-if="state.canEditNewAppArgs.value" class="app-edit-field">
           <span>启动参数</span>
-          <input v-model="state.newAppArgs.value" type="text" aria-label="启动参数" />
+          <input v-model="state.newAppArgs.value" name="newAppArgs" type="text" aria-label="启动参数" />
         </label>
       </div>
 
@@ -118,12 +119,12 @@
 
         <label class="app-edit-field">
           <span>应用名称</span>
-          <input v-model="state.editAppName.value" type="text" maxlength="64" aria-label="应用名称" />
+          <input v-model="state.editAppName.value" name="editAppName" type="text" maxlength="64" aria-label="应用名称" />
         </label>
         <label class="app-edit-field">
           <span>启动路径或 URL</span>
           <span class="app-edit-target-row">
-            <input v-model="state.editAppTarget.value" type="text" aria-label="启动路径或 URL" />
+            <input v-model="state.editAppTarget.value" name="editAppTarget" type="text" aria-label="启动路径或 URL" />
             <button class="settings-secondary-button" type="button" :disabled="!state.canBrowseLaunchFile.value || state.isBrowsingEditAppTarget.value" @click="state.browseEditAppLaunchFile">
               {{ state.isBrowsingEditAppTarget.value ? "选择中" : "浏览" }}
             </button>
@@ -131,7 +132,7 @@
         </label>
         <label v-if="state.canEditAppArgs.value" class="app-edit-field">
           <span>启动参数</span>
-          <input v-model="state.editAppArgs.value" type="text" aria-label="启动参数" />
+          <input v-model="state.editAppArgs.value" name="editAppArgs" type="text" aria-label="启动参数" />
         </label>
       </div>
 
@@ -181,7 +182,7 @@
           </div>
           <label class="settings-secondary-button icon-chooser-upload-button">
             选择图片
-            <input type="file" accept="image/*" aria-label="从硬盘选择图片" @change="state.handleIconChooserUpload" />
+            <input name="customIconFile" type="file" accept="image/*" aria-label="从硬盘选择图片" @change="state.handleIconChooserUpload" />
           </label>
         </section>
       </div>

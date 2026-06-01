@@ -142,3 +142,10 @@ export async function setMainWindowEffectsEnabled(enabled, openSequence = null) 
   await invoke("set_main_window_effects_enabled", { enabled, openSequence });
   return true;
 }
+
+export async function quitApp() {
+  const invoke = getTauriInvoke();
+  if (!invoke) return false;
+  await invoke("quit_app");
+  return true;
+}

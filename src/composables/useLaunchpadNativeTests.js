@@ -328,6 +328,81 @@ export async function runLaunchpadNativeTests() {
     assert(criticalCommands.join(",") === "save_layout,launch_app", "critical saves should complete before native launch");
   });
 
+  const pendingFlushSaves = [];
+  let flushSaveCount = 0;
+  await withMockTauri(async (command) => {
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{ id: "flush-app", type: "app", name: "Flush App", launchTarget: { kind: "shortcut", path: "C:/Tools/Flush.lnk" } }]],
+        settings: {},
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    if (command === "save_layout") {
+      flushSaveCount += 1;
+      return new Promise((resolve) => {
+        pendingFlushSaves.push(resolve);
+      });
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async (timers) => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    timers.length = 0;
+    native.scheduleNativeLayoutSave();
+    assert(timers.length === 1, "debounced native saves should be scheduled before flush");
+    const firstFlush = native.flushNativeLayoutSave();
+    const secondFlush = native.flushNativeLayoutSave();
+    assert(timers.length === 0, "flushing native saves should cancel pending debounce timers");
+    assert(flushSaveCount === 1, "concurrent flushes should share the in-flight native save");
+    pendingFlushSaves[0](null);
+    assert(await firstFlush, "first flush should resolve after the save succeeds");
+    assert(await secondFlush, "second flush should resolve after the shared save succeeds");
+  });
+
+  const quitCommands = [];
+  const quitEventHandlers = new Map();
+  await withMockTauri(async (command) => {
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{ id: "quit-app", type: "app", name: "Quit App", launchTarget: { kind: "shortcut", path: "C:/Tools/Quit.lnk" } }]],
+        settings: {},
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    if (command === "save_layout" || command === "quit_app") {
+      quitCommands.push(command);
+      return null;
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async (timers) => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await native.registerNativeEventListeners();
+    timers.length = 0;
+    native.scheduleNativeLayoutSave();
+    await quitEventHandlers.get("launchpad-quit-requested")();
+
+    assert(quitCommands.join(",") === "save_layout,quit_app", "native quit requests should flush pending layout saves before quitting");
+  }, {
+    listen: async (eventName, handler) => {
+      quitEventHandlers.set(eventName, handler);
+      return () => quitEventHandlers.delete(eventName);
+    },
+  });
+
   await withMockTauri(async (command) => {
     if (command === "load_layout") {
       return {
@@ -420,14 +495,14 @@ export async function runLaunchpadNativeTests() {
     const native = useLaunchpadNative(options);
 
     const registerPromise = native.registerNativeEventListeners();
-    assert(pendingNativeListeners.length === 5, "native event listener registration should request all listeners");
+    assert(pendingNativeListeners.length === 6, "native event listener registration should request all listeners");
     native.clearNativeEventListeners();
     for (const pending of pendingNativeListeners) {
       pending.resolve(() => staleUnlistenEvents.push(pending.eventName));
     }
     await registerPromise;
 
-    assert(staleUnlistenEvents.length === 5, "late native listener registrations should be immediately unlistened after cleanup");
+    assert(staleUnlistenEvents.length === 6, "late native listener registrations should be immediately unlistened after cleanup");
   }, {
     listen: (eventName) => new Promise((resolve) => {
       pendingNativeListeners.push({ eventName, resolve });

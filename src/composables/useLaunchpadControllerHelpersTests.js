@@ -1,4 +1,5 @@
 import { ref, shallowRef } from "vue";
+import { createDeferredHandlers } from "./useLaunchpadController.js";
 import { useLaunchpadControllerHelpers } from "./useLaunchpadControllerHelpers.js";
 
 export function runLaunchpadControllerHelpersTests() {
@@ -50,4 +51,12 @@ export function runLaunchpadControllerHelpersTests() {
     textless: true,
   });
   assert(snapshot.pages[0][0].children.length === 1, "data helpers should use the shared folder child helpers");
+
+  const deferredHandlers = createDeferredHandlers({
+    value: () => "fallback",
+  });
+  assert(deferredHandlers.call("value") === "fallback", "deferred handlers should use defaults before binding");
+  deferredHandlers.set("value", (next) => `bound:${next}`);
+  assert(deferredHandlers.call("value", "ready") === "bound:ready", "deferred handlers should call bound functions");
+  assert(deferredHandlers.call("missing") === undefined, "missing deferred handlers should be no-ops");
 }

@@ -23,6 +23,7 @@
         <div class="folder-header">
           <input
             class="folder-name-input"
+            name="folderName"
             :value="state.renderedFolder.value.name"
             :disabled="state.isFolderClosing.value"
             maxlength="32"
@@ -38,7 +39,13 @@
         <div class="folder-pages-shell">
           <div :ref="(node) => bindRef(state.folderViewportRef, node)" class="folder-viewport">
             <Motion class="folder-track" :animate="state.folderTrackAnimate.value" :transition="state.desktopTrackTransition">
-              <section v-for="(page, pageNumber) in state.folderPages.value" :key="pageNumber" class="folder-page-section">
+              <section
+                v-for="(page, pageNumber) in state.folderPages.value"
+                :key="pageNumber"
+                class="folder-page-section"
+                :aria-hidden="pageNumber === state.folderPageIndex.value ? null : 'true'"
+                :inert="pageNumber !== state.folderPageIndex.value"
+              >
                 <Motion
                   :ref="(node) => state.setFolderPageRef(node, pageNumber)"
                   layout

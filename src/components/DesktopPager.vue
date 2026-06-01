@@ -9,7 +9,14 @@
           :animate="activeDesktopTrackAnimate"
           :transition="activeDesktopTrackTransition"
         >
-          <section v-for="(page, pageNumber) in activePages" :key="`${isSearchMode ? 'search' : 'desktop'}-${pageNumber}`" class="page-section" tabindex="-1">
+          <section
+            v-for="(page, pageNumber) in activePages"
+            :key="`${isSearchMode ? 'search' : 'desktop'}-${pageNumber}`"
+            class="page-section"
+            :aria-hidden="pageNumber === activePageIndex ? null : 'true'"
+            :inert="pageNumber !== activePageIndex"
+            tabindex="-1"
+          >
             <Motion
               :key="getDesktopGridProjectionKey(pageNumber)"
               :ref="(node) => setPageRef(node, pageNumber)"
@@ -70,6 +77,7 @@ import { cx } from "../domain/launchpadLayout.js";
 defineProps({
   activeDesktopTrackAnimate: { type: Object, required: true },
   activeDesktopTrackTransition: { type: Object, required: true },
+  activePageIndex: { type: Number, required: true },
   activePages: { type: Array, required: true },
   desktopLayoutEnabled: { type: Boolean, default: true },
   desktopTrackMotionKey: { type: String, required: true },
