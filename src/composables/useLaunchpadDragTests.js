@@ -46,7 +46,7 @@ async function withMockPointerEnvironment(run) {
   }
 }
 
-function createDragHarness() {
+function createDragHarness(overrides = {}) {
   const app = { id: "app-a", type: "app", name: "App A" };
   const pages = shallowRef([[app]]);
   const pageIndex = ref(0);
@@ -75,8 +75,8 @@ function createDragHarness() {
     return sourcePages.map((page) => page.map((entry) => (entry.id === folderId ? cloneItem(item) : { ...entry })));
   }
   const drag = useLaunchpadDrag({
-    canCreateDesktopPageAfterDrag: () => false,
-    canCreateFolderPageAfterDrag: () => false,
+    canCreateDesktopPageAfterDrag: overrides.canCreateDesktopPageAfterDrag || (() => false),
+    canCreateFolderPageAfterDrag: overrides.canCreateFolderPageAfterDrag || (() => false),
     cloneItem,
     clonePages,
     commitFolderPageIndex: (value) => {
@@ -166,6 +166,20 @@ function makePointerDownEvent(pointerId, target) {
   };
 }
 
+function runNextTimer(timers) {
+  const next = timers.entries().next().value;
+  if (!next) return;
+  const [id, callback] = next;
+  timers.delete(id);
+  callback();
+}
+
+function flushTimers(timers) {
+  const pending = Array.from(timers.entries());
+  timers.clear();
+  for (const [, callback] of pending) callback();
+}
+
 export async function runLaunchpadDragTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Launchpad drag test failed] ${message}`);
@@ -233,5 +247,36 @@ export async function runLaunchpadDragTests() {
     assert(drag.dragMeta.value === null, "pointercancel should finish an active drag");
     assert(folderSession.value === null, "pointercancel should clear a pending folder session");
     assert(ids === "app-a,app-b", "pointercancel should restore dragged and target apps to the desktop");
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const { app, calls, drag, pages } = createDragHarness({
+      canCreateDesktopPageAfterDrag: () => true,
+    });
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+      querySelector: () => null,
+    };
+
+    drag.beginDrag(makePointerDownEvent(61, target), app, { type: "page", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+    assert(drag.dragMeta.value?.item.id === "app-a", "long press should enter active drag state before edge turn");
+
+    listeners.get("pointermove")({
+      type: "pointermove",
+      pointerId: 61,
+      buttons: 1,
+      clientX: 1018,
+      clientY: 50,
+      preventDefault: () => {},
+    });
+    assert(timers.size > 0, "edge drag should arm delayed timers before cancellation");
+
+    listeners.get("pointercancel")({ type: "pointercancel", pointerId: 61, button: 0, clientX: 1018, clientY: 50 });
+    flushTimers(timers);
+
+    assert(pages.value.length === 1, "pointercancel should clear page-turn timers before they can create a page");
+    assert(!calls.commitPageIndex.includes(1), "pointercancel should not allow a delayed page turn after drag end");
   });
 }

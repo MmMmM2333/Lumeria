@@ -160,6 +160,8 @@ export function useLaunchpadDrag(options) {
     const shouldClampFolderPage = Boolean(options.renderedFolder.value || options.openFolderId.value);
     detachDragListeners();
     clearDragIntentTimer();
+    clearPageTurn();
+    clearFolderPageTurn();
     cancelPreviewRaf();
     dragRuntime = null;
     dragMeta.value = null;
