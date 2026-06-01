@@ -10,13 +10,16 @@
     @pointerdown.self="state.closeSettingsPanel"
   >
     <Motion
+      ref="settingsPanelRef"
       class="settings-panel"
       role="dialog"
       aria-modal="true"
       aria-label="设置"
+      tabindex="-1"
       :initial="state.settingsPanelInitial.value"
       :animate="state.settingsPanelAnimate.value"
       :transition="state.panelSpring"
+      @keydown="handleSettingsPanelKeydown"
     >
       <header class="settings-panel-header">
         <div>
@@ -360,23 +363,38 @@
 
 <script setup>
 import { Motion } from "motion-v";
-import { ref } from "vue";
+import { nextTick, ref, watch } from "vue";
 import { ChevronDownIcon, ChevronUpIcon } from "./Icons.js";
 import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "../composables/launchpadConstants.js";
+import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
 import { getIconSource } from "../domain/iconSource.js";
 import { cx } from "../domain/launchpadLayout.js";
 
-defineProps({
+const props = defineProps({
   state: { type: Object, required: true },
 });
 
 const activeSettingsTab = ref("general");
+const settingsPanelRef = ref(null);
 const settingsTabs = [
   { id: "general", label: "通用" },
   { id: "interface", label: "界面" },
   { id: "apps", label: "Apps" },
   { id: "about", label: "关于" },
 ];
+
+watch(
+  () => props.state.isSettingsPanelOpen.value,
+  async (isOpen) => {
+    if (!isOpen) return;
+    await nextTick();
+    focusModalElement(settingsPanelRef);
+  }
+);
+
+function handleSettingsPanelKeydown(event) {
+  handleModalKeydown(event, settingsPanelRef, props.state.closeSettingsPanel);
+}
 
 function formatScanTime(value) {
   const date = new Date(value);

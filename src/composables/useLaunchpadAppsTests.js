@@ -1,21 +1,14 @@
 import { ref, shallowRef } from "vue";
+import { setLaunchpadApiBridgeForTests } from "../api/launchpadApi.js";
 import { getCustomIconCanvasSize, useLaunchpadApps } from "./useLaunchpadApps.js";
 
 function withMockTauri(invoke, run) {
-  const originalWindow = globalThis.window;
-  globalThis.window = {
-    __TAURI__: {
-      core: {
-        invoke,
-      },
-    },
-  };
+  setLaunchpadApiBridgeForTests({ invoke });
 
   return Promise.resolve()
     .then(run)
     .finally(() => {
-      if (originalWindow === undefined) delete globalThis.window;
-      else globalThis.window = originalWindow;
+      setLaunchpadApiBridgeForTests(null);
     });
 }
 

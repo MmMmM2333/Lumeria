@@ -1,4 +1,5 @@
 import { ref, shallowRef } from "vue";
+import { setLaunchpadApiBridgeForTests } from "../api/launchpadApi.js";
 import { useLaunchpadNative } from "./useLaunchpadNative.js";
 
 function makeOptions(overrides = {}) {
@@ -66,16 +67,12 @@ function makeOptions(overrides = {}) {
 function withMockTauri(invoke, run) {
   const originalWindow = globalThis.window;
   const timers = [];
+  setLaunchpadApiBridgeForTests({
+    convertFileSrc: (path) => `asset://${path}`,
+    invoke,
+    listen: async () => () => {},
+  });
   globalThis.window = {
-    __TAURI__: {
-      core: {
-        convertFileSrc: (path) => `asset://${path}`,
-        invoke,
-      },
-      event: {
-        listen: async () => () => {},
-      },
-    },
     clearTimeout: () => {},
     setTimeout: (callback) => {
       timers.push(callback);
@@ -86,6 +83,7 @@ function withMockTauri(invoke, run) {
   return Promise.resolve()
     .then(() => run(timers))
     .finally(() => {
+      setLaunchpadApiBridgeForTests(null);
       if (originalWindow === undefined) delete globalThis.window;
       else globalThis.window = originalWindow;
     });

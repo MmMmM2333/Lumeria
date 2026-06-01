@@ -184,8 +184,6 @@ export function useLaunchpadKeyboard(options) {
   }
 
   function handleGlobalKeydown(event) {
-    options.handleAltKeyDown(event);
-
     if (isDevOpenDesktopShortcut(event)) {
       event.preventDefault();
       if (!options.isDesktopOpen.value) options.openDesktop();
@@ -194,15 +192,19 @@ export function useLaunchpadKeyboard(options) {
 
     if (!options.isDesktopOpen.value || options.isDesktopClosing.value || options.isAppLaunching.value) return;
     if (options.isDragActive()) return;
+
+    if (event.key === "Escape") {
+      handleEscapeKey(event);
+      return;
+    }
+
+    if (options.isModalOpen?.()) return;
+
+    options.handleAltKeyDown(event);
     if (options.isAltKeyEvent(event)) return;
 
     if (event.key === "Tab") {
       handleTabKey(event);
-      return;
-    }
-
-    if (event.key === "Escape") {
-      handleEscapeKey(event);
       return;
     }
 

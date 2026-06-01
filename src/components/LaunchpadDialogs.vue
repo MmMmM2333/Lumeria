@@ -1,6 +1,6 @@
 <template>
   <div v-if="state.isScanResultDialogOpen.value" class="scan-result-overlay" @wheel.stop @pointerdown.self="state.closeScanResultDialog">
-    <section class="scan-result-dialog" role="dialog" aria-modal="true" aria-label="扫描结果">
+    <section ref="scanResultDialogRef" class="scan-result-dialog" role="dialog" aria-modal="true" aria-label="扫描结果" tabindex="-1" @keydown="handleDialogKeydown($event, scanResultDialogRef, state.closeScanResultDialog)">
       <header class="scan-result-header">
         <div>
           <h2>扫描结果</h2>
@@ -47,7 +47,7 @@
   </div>
 
   <div v-if="state.isAddingManagedApp.value" class="app-edit-overlay" @wheel.stop @pointerdown.self="state.closeAddManagedAppPage">
-    <section class="app-edit-dialog" role="dialog" aria-modal="true" aria-label="新增应用">
+    <section ref="addAppDialogRef" class="app-edit-dialog" role="dialog" aria-modal="true" aria-label="新增应用" tabindex="-1" @keydown="handleDialogKeydown($event, addAppDialogRef, state.closeAddManagedAppPage)">
       <header class="app-edit-header">
         <div>
           <h2>新增应用</h2>
@@ -95,7 +95,7 @@
   </div>
 
   <div v-if="state.editingManagedApp.value" class="app-edit-overlay" @wheel.stop @pointerdown.self="state.closeEditManagedApp">
-    <section class="app-edit-dialog" role="dialog" aria-modal="true" aria-label="编辑应用">
+    <section ref="editAppDialogRef" class="app-edit-dialog" role="dialog" aria-modal="true" aria-label="编辑应用" tabindex="-1" @keydown="handleDialogKeydown($event, editAppDialogRef, state.closeEditManagedApp)">
       <header class="app-edit-header">
         <div>
           <h2>编辑应用</h2>
@@ -143,7 +143,7 @@
   </div>
 
   <div v-if="state.iconChooser.value" class="icon-chooser-overlay" @wheel.stop @pointerdown.self="state.closeIconChooser">
-    <section class="icon-chooser-dialog" role="dialog" aria-modal="true" :aria-label="state.iconChooser.value.title">
+    <section ref="iconChooserDialogRef" class="icon-chooser-dialog" role="dialog" aria-modal="true" :aria-label="state.iconChooser.value.title" tabindex="-1" @keydown="handleDialogKeydown($event, iconChooserDialogRef, state.closeIconChooser)">
       <header class="icon-chooser-header">
         <div>
           <h2>{{ state.iconChooser.value.title }}</h2>
@@ -227,13 +227,16 @@
     @pointerdown.self="state.closeWarningDialog"
   >
     <Motion
+      ref="warningDialogRef"
       class="warning-dialog"
       role="alertdialog"
       aria-modal="true"
       :aria-label="state.warningDialog.value.title"
+      tabindex="-1"
       :initial="{ opacity: 0, scale: 0.96 }"
       :animate="state.isWarningDialogOpen.value ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.96 }"
       :transition="{ duration: 0.16, ease: 'easeOut' }"
+      @keydown="handleDialogKeydown($event, warningDialogRef, state.closeWarningDialog)"
     >
       <div class="warning-dialog-icon">
         <AlertTriangleIcon class="warning-dialog-svg" />
@@ -253,12 +256,28 @@
 
 <script setup>
 import { Motion } from "motion-v";
-import { computed } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { AlertTriangleIcon } from "./Icons.js";
+import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
 import { getDefaultIconSource, getIconSource } from "../domain/iconSource.js";
 
 const props = defineProps({
   state: { type: Object, required: true },
+});
+
+const scanResultDialogRef = ref(null);
+const addAppDialogRef = ref(null);
+const editAppDialogRef = ref(null);
+const iconChooserDialogRef = ref(null);
+const warningDialogRef = ref(null);
+
+const activeDialog = computed(() => {
+  if (props.state.warningDialog.value) return { id: "warning", ref: warningDialogRef };
+  if (props.state.iconChooser.value) return { id: "iconChooser", ref: iconChooserDialogRef };
+  if (props.state.editingManagedApp.value) return { id: "editApp", ref: editAppDialogRef };
+  if (props.state.isAddingManagedApp.value) return { id: "addApp", ref: addAppDialogRef };
+  if (props.state.isScanResultDialogOpen.value) return { id: "scanResult", ref: scanResultDialogRef };
+  return null;
 });
 
 const editingAppIconSource = computed(() => {
@@ -266,4 +285,18 @@ const editingAppIconSource = computed(() => {
   if (props.state.isEditAppIconReset.value) return getDefaultIconSource(props.state.editingManagedApp.value);
   return getIconSource(props.state.editingManagedApp.value);
 });
+
+watch(
+  () => activeDialog.value?.id,
+  async () => {
+    const dialog = activeDialog.value;
+    if (!dialog) return;
+    await nextTick();
+    focusModalElement(dialog.ref);
+  }
+);
+
+function handleDialogKeydown(event, dialogRef, onEscape) {
+  handleModalKeydown(event, dialogRef, onEscape);
+}
 </script>

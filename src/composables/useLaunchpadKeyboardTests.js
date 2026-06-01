@@ -8,7 +8,10 @@ function createKeyboard(overrides = {}) {
     closeDesktop: [],
     closeTopmostModal: 0,
     commitOpenFolder: [],
+    focusDesktopSurface: 0,
     hideNativeWindowAfterCloseAnimation: 0,
+    moveSelectionByArrow: [],
+    openSelectedIcon: 0,
   };
   const keyboard = useLaunchpadKeyboard({
     clearSearch: () => {
@@ -27,7 +30,9 @@ function createKeyboard(overrides = {}) {
     commitPageIndex: () => {},
     commitSearchPageIndex: () => {},
     finishHomeRevealSettleWindow: () => {},
-    focusDesktopSurface: () => {},
+    focusDesktopSurface: () => {
+      calls.focusDesktopSurface += 1;
+    },
     folderPageIndex: ref(0),
     folderPages: ref([[]]),
     folderPanelRef: ref(null),
@@ -44,12 +49,15 @@ function createKeyboard(overrides = {}) {
     isFolderAppLaunchClosing: ref(false),
     isFolderClosing: ref(false),
     isHomeRevealSettling: ref(false),
+    isModalOpen: () => Boolean(overrides.hasModal),
     isSearchMode: ref(Boolean(overrides.isSearchMode)),
     keyboardFocusArea: ref("desktop"),
-    moveSelectionByArrow: () => {},
+    moveSelectionByArrow: (key) => calls.moveSelectionByArrow.push(key),
     openDesktop: () => {},
     openFolderId: ref(overrides.openFolderId || null),
-    openSelectedIcon: () => {},
+    openSelectedIcon: () => {
+      calls.openSelectedIcon += 1;
+    },
     pageIndex: ref(0),
     pages: ref([[]]),
     renderedFolder: ref(overrides.renderedFolder || null),
@@ -93,6 +101,24 @@ export function runLaunchpadKeyboardTests() {
   assert(modal.calls.closeTopmostModal === 1, "Escape should ask the modal layer to close first");
   assert(modal.calls.clearSearch === 0, "modal Escape should not clear search behind the modal");
   assert(modal.calls.closeDesktop.length === 0, "modal Escape should not close the desktop behind the modal");
+
+  const modalTab = createKeyboard({ hasModal: true });
+  const tabEvent = makeKeyEvent("Tab");
+  modalTab.keyboard.handleGlobalKeydown(tabEvent);
+  assert(tabEvent.preventDefaultCalled === 0, "modal Tab should be left to the dialog focus trap");
+  assert(modalTab.calls.focusDesktopSurface === 0, "modal Tab should not move focus to the desktop");
+
+  const modalEnter = createKeyboard({ hasModal: true });
+  const enterEvent = makeKeyEvent("Enter");
+  modalEnter.keyboard.handleGlobalKeydown(enterEvent);
+  assert(enterEvent.preventDefaultCalled === 0, "modal Enter should not be consumed by desktop activation");
+  assert(modalEnter.calls.openSelectedIcon === 0, "modal Enter should not open the selected desktop icon");
+
+  const modalArrow = createKeyboard({ hasModal: true });
+  const arrowEvent = makeKeyEvent("ArrowDown");
+  modalArrow.keyboard.handleGlobalKeydown(arrowEvent);
+  assert(arrowEvent.preventDefaultCalled === 0, "modal Arrow keys should not be consumed by desktop navigation");
+  assert(modalArrow.calls.moveSelectionByArrow.length === 0, "modal Arrow keys should not move desktop selection");
 
   const desktop = createKeyboard();
   const desktopEscape = makeKeyEvent("Escape");

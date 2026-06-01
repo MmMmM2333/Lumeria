@@ -812,6 +812,17 @@ export function useLaunchpadController() {
     return false;
   }
 
+  function isModalOpenForKeyboard() {
+    return Boolean(
+      warningDialog.value ||
+      iconChooser.value ||
+      editingManagedApp.value ||
+      isAddingManagedApp.value ||
+      isScanResultDialogOpen.value ||
+      isSettingsPanelOpen.value
+    );
+  }
+
   const {
     handleGlobalKeydown,
     handleLaunchpadWheel,
@@ -840,6 +851,7 @@ export function useLaunchpadController() {
     isFolderAppLaunchClosing,
     isFolderClosing,
     isHomeRevealSettling,
+    isModalOpen: isModalOpenForKeyboard,
     isSearchMode,
     keyboardFocusArea,
     moveSelectionByArrow,

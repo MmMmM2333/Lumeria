@@ -1,16 +1,37 @@
-function getTauriInvoke() {
-  if (typeof window === "undefined") return null;
-  return window.__TAURI__?.core?.invoke || null;
+import { convertFileSrc as tauriConvertFileSrc, invoke as tauriInvoke, isTauri } from "@tauri-apps/api/core";
+import { listen as tauriListen } from "@tauri-apps/api/event";
+
+let bridgeOverride = null;
+
+export function setLaunchpadApiBridgeForTests(bridge) {
+  bridgeOverride = bridge || null;
 }
 
-function getTauriEvent() {
-  if (typeof window === "undefined") return null;
-  return window.__TAURI__?.event || null;
+function canUseTauriBridge() {
+  if (typeof window === "undefined") return false;
+  try {
+    return isTauri();
+  } catch {
+    return false;
+  }
+}
+
+function getTauriBridge() {
+  if (bridgeOverride) return bridgeOverride;
+  if (!canUseTauriBridge()) return null;
+  return {
+    convertFileSrc: tauriConvertFileSrc,
+    invoke: tauriInvoke,
+    listen: tauriListen,
+  };
+}
+
+function getTauriInvoke() {
+  return getTauriBridge()?.invoke || null;
 }
 
 export function convertFilePathToAssetUrl(filePath) {
-  if (typeof window === "undefined") return null;
-  const convertFileSrc = window.__TAURI__?.core?.convertFileSrc;
+  const convertFileSrc = getTauriBridge()?.convertFileSrc;
   if (!convertFileSrc || !filePath) return null;
   try {
     return convertFileSrc(filePath);
@@ -20,13 +41,13 @@ export function convertFilePathToAssetUrl(filePath) {
 }
 
 export function isNativeBridgeAvailable() {
-  return Boolean(getTauriInvoke());
+  return Boolean(getTauriBridge()?.invoke);
 }
 
 export async function listenNativeEvent(eventName, handler) {
-  const event = getTauriEvent();
-  if (!event?.listen) return null;
-  return event.listen(eventName, handler);
+  const listen = getTauriBridge()?.listen;
+  if (!listen) return null;
+  return listen(eventName, handler);
 }
 
 export async function scanApps(roots = [], filters = {}) {
