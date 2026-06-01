@@ -90,8 +90,6 @@ struct LaunchTargetCheckResult {
 struct LaunchAppRequest {
     id: String,
     name: String,
-    launch_target: Option<models::LaunchTarget>,
-    launch_args: Option<String>,
 }
 
 #[tauri::command]
@@ -260,11 +258,6 @@ fn launch_app_inner(
         ));
     }
 
-    let request_app = launch_request_app(&request);
-    if let Some(app) = request_app {
-        return launch_selected_app(app);
-    }
-
     let saved_layout = load_saved_layout(app_handle)
         .map(|result| result.layout)
         .map_err(|error| LaunchFailure::layout_read_failed(request.name.clone(), error))?;
@@ -281,7 +274,7 @@ fn launch_app_inner(
         catalog.get(&app_id).cloned()
     };
 
-    let app = match select_launch_app(None, catalog_app, saved_app) {
+    let app = match select_launch_app(catalog_app, saved_app) {
         Some(app) => app,
         None => find_app_in_saved_scan_roots(app_handle, saved_layout.as_ref(), &app_id)
             .map_err(|error| LaunchFailure::layout_read_failed(request.name.clone(), error))?
@@ -479,35 +472,6 @@ fn show_launch_error_message(error: &LaunchFailure) {
     eprintln!("{}", error.user_message());
 }
 
-fn launch_request_app(request: &LaunchAppRequest) -> Option<AppCatalogItem> {
-    let launch_target = request.launch_target.clone()?;
-    let name = request.name.trim();
-    let launch_args = if launch_target.kind == "executable" {
-        request
-            .launch_args
-            .clone()
-            .filter(|args| !args.trim().is_empty())
-    } else {
-        None
-    };
-    Some(AppCatalogItem {
-        id: request.id.trim().to_string(),
-        item_type: "app".to_string(),
-        name: if name.is_empty() {
-            "Application".to_string()
-        } else {
-            name.to_string()
-        },
-        icon_path: None,
-        icon_data_url: None,
-        emoji: None,
-        launch_target,
-        launch_args,
-        source_key: None,
-        source: None,
-    })
-}
-
 fn find_app_in_saved_scan_roots(
     app: &AppHandle,
     saved_layout: Option<&serde_json::Value>,
@@ -560,20 +524,18 @@ fn saved_scan_filters(settings: &serde_json::Value) -> ScanFilters {
 }
 
 fn select_launch_app(
-    request_app: Option<AppCatalogItem>,
     catalog_app: Option<AppCatalogItem>,
     saved_app: Option<AppCatalogItem>,
 ) -> Option<AppCatalogItem> {
-    match (request_app, catalog_app, saved_app) {
-        (Some(request), _, _) => Some(request),
-        (None, Some(mut catalog), Some(saved)) => {
+    match (catalog_app, saved_app) {
+        (Some(mut catalog), Some(saved)) => {
             catalog.launch_target = saved.launch_target;
             catalog.launch_args = saved.launch_args;
             Some(catalog)
         }
-        (None, Some(catalog), None) => Some(catalog),
-        (None, None, Some(saved)) => Some(saved),
-        (None, None, None) => None,
+        (Some(catalog), None) => Some(catalog),
+        (None, Some(saved)) => Some(saved),
+        (None, None) => None,
     }
 }
 
@@ -788,54 +750,26 @@ mod tests {
         }
     }
 
-    fn launch_request(kind: &str, launch_args: Option<&str>) -> LaunchAppRequest {
-        LaunchAppRequest {
-            id: "app".to_string(),
-            name: "App".to_string(),
-            launch_target: Some(LaunchTarget {
-                kind: kind.to_string(),
-                path: Some("C:/Apps/App.exe".to_string()),
-                app_user_model_id: None,
-            }),
-            launch_args: launch_args.map(str::to_string),
-        }
-    }
-
     #[test]
-    fn launch_request_app_keeps_executable_args() {
-        let app = launch_request_app(&launch_request("executable", Some("--profile dev")))
-            .expect("request app should exist");
+    fn launch_request_ignores_renderer_launch_fields() {
+        let request: LaunchAppRequest = serde_json::from_value(json!({
+            "id": "app",
+            "name": "App",
+            "launchTarget": {
+                "kind": "executable",
+                "path": "C:/Renderer/App.exe"
+            },
+            "launchArgs": "--profile dev"
+        }))
+        .expect("extra launch fields should be ignored");
 
-        assert_eq!(app.launch_args.as_deref(), Some("--profile dev"));
-    }
-
-    #[test]
-    fn launch_request_app_drops_non_executable_args() {
-        let app = launch_request_app(&launch_request("shortcut", Some("--profile dev")))
-            .expect("request app should exist");
-
-        assert!(app.launch_args.is_none());
-    }
-
-    #[test]
-    fn select_launch_app_prefers_request_payload() {
-        let selected = select_launch_app(
-            Some(app_item("app", "C:/Request/App.exe")),
-            Some(app_item("app", "C:/Current/App.exe")),
-            Some(app_item("app", "C:/Saved/App.exe")),
-        )
-        .expect("app should be selected");
-
-        assert_eq!(
-            selected.launch_target.path.as_deref(),
-            Some("C:/Request/App.exe")
-        );
+        assert_eq!(request.id, "app");
+        assert_eq!(request.name, "App");
     }
 
     #[test]
     fn select_launch_app_uses_saved_launch_fields_over_catalog() {
         let selected = select_launch_app(
-            None,
             Some(app_item("app", "C:/Current/App.exe")),
             Some(app_item("app", "C:/Saved/App.exe")),
         )
@@ -849,7 +783,7 @@ mod tests {
 
     #[test]
     fn select_launch_app_falls_back_to_saved_layout() {
-        let selected = select_launch_app(None, None, Some(app_item("app", "C:/Saved/App.exe")))
+        let selected = select_launch_app(None, Some(app_item("app", "C:/Saved/App.exe")))
             .expect("saved app should be selected");
 
         assert_eq!(

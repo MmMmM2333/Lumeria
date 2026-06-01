@@ -119,8 +119,6 @@ function makeLaunchAppRequest(app) {
   return {
     id: String(app?.id || ""),
     name: String(app?.name || "Application"),
-    launchTarget: app?.launchTarget || null,
-    launchArgs: app?.launchTarget?.kind === "executable" && typeof app?.launchArgs === "string" ? app.launchArgs : "",
   };
 }
 

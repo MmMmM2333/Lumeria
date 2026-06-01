@@ -180,8 +180,8 @@ export async function runLaunchpadNativeTests() {
     if (command !== "launch_app") throw new Error(`Unexpected invoke: ${command}`);
     assert(args.request.id === "custom-app", "native launch should pass the current app id");
     assert(args.request.name === "Custom App", "native launch should pass the current app name");
-    assert(args.request.launchTarget.path === "C:/Tools/Custom.exe", "native launch should pass the current launch target");
-    assert(args.request.launchArgs === "--profile dev", "native launch should pass the current launch arguments");
+    assert(!("launchTarget" in args.request), "native launch should not pass launch target from the renderer");
+    assert(!("launchArgs" in args.request), "native launch should not pass launch arguments from the renderer");
   }, async () => {
     const { options } = makeOptions();
     const native = useLaunchpadNative(options);
