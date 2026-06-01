@@ -454,18 +454,18 @@ fn normalize_launch_app_name(name: String) -> String {
     }
 }
 
-fn launch_selected_app(app: AppCatalogItem) -> Result<(), LaunchFailure> {
+fn resolve_launch_path(app: &AppCatalogItem) -> Result<(String, Option<&str>), LaunchFailure> {
     let kind = app.launch_target.kind.as_str();
     if kind == "appUserModelId" {
         return Err(LaunchFailure::new(
-            app.name,
+            app.name.clone(),
             LaunchFailureKind::UnsupportedTarget,
             "AppUserModelId launch targets are not supported yet".to_string(),
         ));
     }
     if !matches!(kind, "executable" | "shortcut" | "url") {
         return Err(LaunchFailure::new(
-            app.name,
+            app.name.clone(),
             LaunchFailureKind::UnsupportedTarget,
             format!("Unsupported launch target kind: {kind}"),
         ));
@@ -474,7 +474,9 @@ fn launch_selected_app(app: AppCatalogItem) -> Result<(), LaunchFailure> {
     let path = app
         .launch_target
         .path
+        .as_ref()
         .filter(|path| !path.trim().is_empty())
+        .cloned()
         .ok_or_else(|| {
             LaunchFailure::missing_launch_info(
                 app.name.clone(),
@@ -483,7 +485,7 @@ fn launch_selected_app(app: AppCatalogItem) -> Result<(), LaunchFailure> {
         })?;
     if matches!(kind, "executable" | "shortcut") && !std::path::Path::new(&path).exists() {
         return Err(LaunchFailure::new(
-            app.name,
+            app.name.clone(),
             LaunchFailureKind::TargetNotFound,
             format!("Launch target does not exist: {path}"),
         ));
@@ -494,6 +496,11 @@ fn launch_selected_app(app: AppCatalogItem) -> Result<(), LaunchFailure> {
     } else {
         None
     };
+    Ok((path, launch_args))
+}
+
+fn launch_selected_app(app: AppCatalogItem) -> Result<(), LaunchFailure> {
+    let (path, launch_args) = resolve_launch_path(&app)?;
     launch_path(&path, launch_args)
         .map_err(|error| LaunchFailure::from_launch_path_error(app.name, error))
 }
@@ -738,6 +745,8 @@ fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
     let mut output = Vec::with_capacity(input.len() * 3 / 4);
     let mut buffer = 0u32;
     let mut bits = 0u8;
+    let mut data_chars = 0usize;
+    let mut padding_count = 0usize;
     let mut padding_started = false;
 
     for byte in input.bytes() {
@@ -749,6 +758,10 @@ fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
             b'/' => Some(63),
             b'=' => {
                 padding_started = true;
+                padding_count += 1;
+                if padding_count > 2 {
+                    return Err("Custom icon data URL has invalid base64 padding".to_string());
+                }
                 None
             }
             b'\r' | b'\n' | b'\t' | b' ' => None,
@@ -761,6 +774,7 @@ fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
         if padding_started {
             return Err("Custom icon data URL has invalid base64 padding".to_string());
         }
+        data_chars += 1;
         buffer = (buffer << 6) | u32::from(value);
         bits += 6;
         if bits >= 8 {
@@ -768,6 +782,23 @@ fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
             output.push((buffer >> bits) as u8);
             buffer &= (1 << bits) - 1;
         }
+    }
+
+    if data_chars % 4 == 1 {
+        return Err("Custom icon data URL has invalid base64 length".to_string());
+    }
+    if padding_count > 0 {
+        let expected_padding = match data_chars % 4 {
+            2 => 2,
+            3 => 1,
+            _ => return Err("Custom icon data URL has invalid base64 padding".to_string()),
+        };
+        if padding_count != expected_padding {
+            return Err("Custom icon data URL has invalid base64 padding".to_string());
+        }
+    }
+    if bits > 0 && buffer != 0 {
+        return Err("Custom icon data URL has invalid base64 trailing bits".to_string());
     }
 
     Ok(output)
@@ -922,6 +953,16 @@ mod tests {
     }
 
     #[test]
+    fn resolve_launch_path_allows_urls_without_local_path_check() {
+        let app = app_item_with_kind("web-app", "url", Some("https://example.com/app"));
+
+        let (path, launch_args) = resolve_launch_path(&app).expect("urls should be launchable");
+
+        assert_eq!(path, "https://example.com/app");
+        assert_eq!(launch_args, None);
+    }
+
+    #[test]
     fn decode_custom_icon_accepts_png_data_urls() {
         let bytes = decode_custom_icon_data_url("data:image/png;base64,iVBORw0KGgo=")
             .expect("png data url should decode");
@@ -935,5 +976,26 @@ mod tests {
             .expect_err("non-png data urls should fail");
 
         assert!(error.contains("PNG"));
+    }
+
+    #[test]
+    fn decode_base64_rejects_invalid_length() {
+        let error = decode_base64("A").expect_err("single base64 sextet should fail");
+
+        assert!(error.contains("length"));
+    }
+
+    #[test]
+    fn decode_base64_rejects_invalid_padding() {
+        let error = decode_base64("AAAA=").expect_err("unexpected padding should fail");
+
+        assert!(error.contains("padding"));
+    }
+
+    #[test]
+    fn decode_base64_rejects_non_zero_trailing_bits() {
+        let error = decode_base64("AB==").expect_err("non-zero trailing bits should fail");
+
+        assert!(error.contains("trailing bits"));
     }
 }
