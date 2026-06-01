@@ -70,9 +70,10 @@ export function getFolderPreviewSlots(folderOrChildren, pageSize) {
   return slots;
 }
 
-export function shouldCommitPlacementFromLast(last, clientX, clientY, minDistance, force) {
+export function shouldCommitPlacementFromLast(last, key, clientX, clientY, minDistance, force) {
   if (force) return true;
   if (!last) return true;
+  if (last.key !== key) return true;
   const distance = Math.hypot(clientX - last.x, clientY - last.y);
   return distance >= minDistance;
 }

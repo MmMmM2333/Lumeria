@@ -14,7 +14,7 @@ use tauri::{AppHandle, Manager};
 use crate::{
     icons::cache_app_icon,
     models::{AppCatalogItem, AppSource, LaunchTarget},
-    path_utils::{extension, windows_api_path},
+    path_utils::{expand_windows_env_vars, extension, windows_api_path},
 };
 
 #[derive(Clone, Debug, Deserialize)]
@@ -548,28 +548,7 @@ fn matches_keyword_blacklist(
 
 #[cfg(target_os = "windows")]
 fn expand_scan_root_path(path: &str) -> PathBuf {
-    use windows::{
-        core::PCWSTR,
-        Win32::System::Environment::ExpandEnvironmentStringsW,
-    };
-
-    let source: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
-    let required = unsafe { ExpandEnvironmentStringsW(PCWSTR(source.as_ptr()), None) };
-    if required == 0 {
-        return PathBuf::from(path);
-    }
-
-    let mut buffer = vec![0u16; required as usize];
-    let written = unsafe { ExpandEnvironmentStringsW(PCWSTR(source.as_ptr()), Some(&mut buffer)) };
-    if written == 0 || written as usize > buffer.len() {
-        return PathBuf::from(path);
-    }
-
-    let end = buffer
-        .iter()
-        .position(|value| *value == 0)
-        .unwrap_or(buffer.len());
-    PathBuf::from(String::from_utf16_lossy(&buffer[..end]))
+    PathBuf::from(expand_windows_env_vars(path))
 }
 
 #[cfg(not(target_os = "windows"))]

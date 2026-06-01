@@ -42,8 +42,9 @@ export function runLaunchpadHelperTests(context) {
   assert(chunkIntoPages([a, b, c], 2).length === 2, "custom page size should repack into more pages when capacity shrinks");
   assert(chunkIntoPages([a, b, c], 9).length === 1, "custom page size should merge pages when capacity grows");
   assert(flattenTopLevelPages([[a], [b, c]]).map((item) => item.id).join("") === "abc", "flattenTopLevelPages should preserve row-major order");
-  assert(shouldCommitPlacementFromLast(null, 0, 0, 18, false), "placement should commit when no previous point exists");
-  assert(!shouldCommitPlacementFromLast({ x: 0, y: 0 }, 6, 6, 18, false), "placement should not commit under distance threshold");
+  assert(shouldCommitPlacementFromLast(null, "page:0:0", 0, 0, 18, false), "placement should commit when no previous point exists");
+  assert(!shouldCommitPlacementFromLast({ key: "page:0:0", x: 0, y: 0 }, "page:0:0", 6, 6, 18, false), "placement should not commit under distance threshold");
+  assert(shouldCommitPlacementFromLast({ key: "page:0:0", x: 0, y: 0 }, "page:0:1", 6, 6, 18, false), "placement should commit when the placement key changes");
   assert(makePreviewTransform({ x: 100, y: 120 }, { x: 10, y: 20 }).includes("translate3d(90px, 100px, 0)"), "drag preview transform should subtract the pointer offset");
 
   const overflow = insertTopLevelItem([[...Array.from({ length: 2 }, (_, index) => ({ ...a, id: `full-${index}` }))]], c, 0, 0, 2);

@@ -390,7 +390,7 @@ export function useLaunchpadDrag(options) {
   }
 
   function shouldCommitPlacement(key, clientX, clientY, minDistance, force) {
-    return shouldCommitPlacementFromLast(lastPlacementCommit, clientX, clientY, minDistance, Boolean(force));
+    return shouldCommitPlacementFromLast(lastPlacementCommit, key, clientX, clientY, minDistance, Boolean(force));
   }
 
   function rememberPlacementCommit(key, clientX, clientY) {

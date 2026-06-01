@@ -2,14 +2,14 @@
 use png::{BitDepth, ColorType, Encoder};
 use std::{
     collections::HashSet,
-    env, fs,
+    fs,
     fs::File,
     io::BufWriter,
     path::{Path, PathBuf},
     slice,
 };
 
-use crate::path_utils::{extension, windows_api_path};
+use crate::path_utils::{expand_windows_env_vars, extension, windows_api_path};
 
 #[cfg(target_os = "windows")]
 use windows::{
@@ -393,43 +393,12 @@ fn path_from_wide_buffer(buffer: &[u16]) -> Option<PathBuf> {
         return None;
     }
     let value = String::from_utf16_lossy(&buffer[..length]);
-    let value = expand_percent_env_vars(value.trim_matches('"').trim());
+    let value = expand_windows_env_vars(value.trim_matches('"').trim());
     if value.is_empty() {
         return None;
     }
     let path = PathBuf::from(value);
     path.exists().then_some(path)
-}
-
-#[cfg(target_os = "windows")]
-fn expand_percent_env_vars(value: &str) -> String {
-    let mut output = String::with_capacity(value.len());
-    let chars: Vec<char> = value.chars().collect();
-    let mut index = 0;
-    while index < chars.len() {
-        if chars[index] != '%' {
-            output.push(chars[index]);
-            index += 1;
-            continue;
-        }
-        let Some(end) = chars[index + 1..]
-            .iter()
-            .position(|character| *character == '%')
-        else {
-            output.push(chars[index]);
-            index += 1;
-            continue;
-        };
-        let end = index + 1 + end;
-        let key: String = chars[index + 1..end].iter().collect();
-        if let Ok(value) = env::var(&key) {
-            output.push_str(&value);
-        } else {
-            output.extend(chars[index..=end].iter());
-        }
-        index = end + 1;
-    }
-    output
 }
 
 #[cfg(target_os = "windows")]
