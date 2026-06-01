@@ -73,10 +73,13 @@ function withMockTauri(invoke, run) {
     listen: async () => () => {},
   });
   globalThis.window = {
-    clearTimeout: () => {},
+    clearTimeout: (timer) => {
+      const index = timers.indexOf(timer);
+      if (index >= 0) timers.splice(index, 1);
+    },
     setTimeout: (callback) => {
       timers.push(callback);
-      return timers.length;
+      return callback;
     },
   };
 
@@ -176,16 +179,40 @@ export async function runLaunchpadNativeTests() {
     }
   });
 
+  const launchCommands = [];
   await withMockTauri(async (command, args) => {
-    if (command !== "launch_app") throw new Error(`Unexpected invoke: ${command}`);
-    assert(args.request.id === "custom-app", "native launch should pass the current app id");
-    assert(args.request.name === "Custom App", "native launch should pass the current app name");
-    assert(!("launchTarget" in args.request), "native launch should not pass launch target from the renderer");
-    assert(!("launchArgs" in args.request), "native launch should not pass launch arguments from the renderer");
-  }, async () => {
-    const { options } = makeOptions();
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{ id: "custom-app", type: "app", name: "Custom App", launchTarget: { kind: "executable", path: "C:/Tools/Custom.exe" } }]],
+        settings: {},
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    if (command === "save_layout") {
+      launchCommands.push(command);
+      assert(args.layout.pages[0][0].id === "custom-app", "native launch should flush the current layout before launching");
+      return null;
+    }
+    if (command === "launch_app") {
+      launchCommands.push(command);
+      assert(args.request.id === "custom-app", "native launch should pass the current app id");
+      assert(args.request.name === "Custom App", "native launch should pass the current app name");
+      assert(!("launchTarget" in args.request), "native launch should not pass launch target from the renderer");
+      assert(!("launchArgs" in args.request), "native launch should not pass launch arguments from the renderer");
+      return null;
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async (timers) => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
     const native = useLaunchpadNative(options);
 
+    await native.loadNativeLaunchpadData();
+    timers.length = 0;
+    native.scheduleNativeLayoutSave();
     await native.launchNativeAppIfAvailable({
       id: "custom-app",
       type: "app",
@@ -193,6 +220,46 @@ export async function runLaunchpadNativeTests() {
       launchTarget: { kind: "executable", path: "C:/Tools/Custom.exe" },
       launchArgs: "--profile dev",
     });
+    assert(launchCommands.join(",") === "save_layout,launch_app", "native launch should save before invoking launch_app");
+    assert(timers.length === 0, "native launch flush should clear the pending debounced save");
+  });
+
+  await withMockTauri(async (command) => {
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{ id: "custom-app", type: "app", name: "Custom App", launchTarget: { kind: "shortcut", path: "C:/Tools/Custom.lnk" } }]],
+        settings: {},
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    if (command === "save_layout") throw new Error("disk full");
+    if (command === "launch_app") throw new Error("launch_app should not run after a failed launch flush");
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async (timers) => {
+    const originalConsoleError = console.error;
+    const saveFailures = [];
+    console.error = () => {};
+    try {
+      const { options } = makeOptions({
+        mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+        showLayoutSaveFailed: (config) => saveFailures.push(config),
+      });
+      const native = useLaunchpadNative(options);
+
+      await native.loadNativeLaunchpadData();
+      timers.length = 0;
+      await native.launchNativeAppIfAvailable({
+        id: "custom-app",
+        type: "app",
+        name: "Custom App",
+        launchTarget: { kind: "shortcut", path: "C:/Tools/Custom.lnk" },
+      });
+      assert(saveFailures.length === 1, "failed launch flush should surface a save notice");
+    } finally {
+      console.error = originalConsoleError;
+    }
   });
 
   const pendingChecks = [];
@@ -221,6 +288,26 @@ export async function runLaunchpadNativeTests() {
     pendingChecks[0].resolve([{ id: "app-a", status: "missing" }]);
     await firstCheck;
     assert(!("app-a" in options.launchTargetStatusById.value), "stale status checks should not overwrite newer state");
+  });
+
+  await withMockTauri((command) => {
+    if (command === "check_launch_targets") return [{ id: "app", status: "missing" }];
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async (timers) => {
+    const { options } = makeOptions({
+      pages: [[{ id: "app", type: "app", name: "App", launchTarget: { kind: "shortcut", path: "A.lnk" } }]],
+    });
+    const native = useLaunchpadNative(options);
+
+    native.scheduleLaunchTargetStatusCheck();
+    await timers.shift()();
+    assert(options.launchTargetStatusById.value.app === "missing", "missing status should apply to the checked target");
+    assert(native.getLaunchTargetStatus(options.pages.value[0][0]) === "missing", "native status lookup should match the checked target");
+
+    options.pages.value = [[{ id: "app", type: "app", name: "App", launchTarget: { kind: "shortcut", path: "B.lnk" } }]];
+    native.scheduleLaunchTargetStatusCheck();
+    assert(!("app" in options.launchTargetStatusById.value), "changing launch target should clear stale missing status before recheck");
+    assert(native.getLaunchTargetStatus(options.pages.value[0][0]) === null, "native status lookup should ignore stale target records");
   });
 
   let saveAttempts = 0;

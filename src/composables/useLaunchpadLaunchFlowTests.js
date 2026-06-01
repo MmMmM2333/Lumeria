@@ -76,6 +76,7 @@ function createLaunchFlow(overrides = {}) {
     cloneItem: (item) => ({ ...item }),
     desktopMainRef,
     getLaunchIconRect: () => overrides.launchRect ?? { left: 12, top: 24, width: 48, height: 56 },
+    getLaunchTargetStatus: overrides.getLaunchTargetStatus,
     hasFolderLayer: () => Boolean(overrides.hasFolderLayer),
     hideNativeWindow: () => {
       calls.hideNativeWindow += 1;
@@ -192,6 +193,19 @@ export async function runLaunchpadLaunchFlowTests() {
     assert(!missingPath.flow.isAppLaunching.value, "known missing paths should not start launch animation");
     assert(missingPath.calls.openLaunchErrorDialog[0].message.includes("找不到"), "known missing paths should explain that the file is missing");
     assert(missingPath.calls.openLaunchErrorDialog[0].suggestion.includes("编辑"), "known missing paths should put the suggestion in a separate field");
+
+    const refreshedPath = createLaunchFlow({
+      shouldValidateLaunchTarget: true,
+      launchTargetStatusById: { "missing-app": "missing" },
+      getLaunchTargetStatus: () => null,
+    });
+    refreshedPath.flow.openApp({
+      id: "missing-app",
+      type: "app",
+      name: "Missing App",
+      launchTarget: { kind: "shortcut", path: "C:/Fixed.lnk" },
+    }, source);
+    assert(refreshedPath.flow.isAppLaunching.value, "target-aware status lookup should ignore stale missing status for a changed path");
   } finally {
     if (originalWindow === undefined) {
       delete globalThis.window;

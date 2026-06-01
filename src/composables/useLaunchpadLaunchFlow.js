@@ -110,7 +110,7 @@ export function useLaunchpadLaunchFlow(options) {
         suggestion: "请在设置中重新选择启动文件。",
       };
     }
-    if (options.launchTargetStatusById?.value?.[app.id] === "missing") {
+    if (currentLaunchTargetStatus(app) === "missing") {
       return {
         title: "无法打开应用",
         message: `找不到“${name}”的启动文件。它可能已被移动、删除或卸载。`,
@@ -118,6 +118,11 @@ export function useLaunchpadLaunchFlow(options) {
       };
     }
     return null;
+  }
+
+  function currentLaunchTargetStatus(app) {
+    if (typeof options.getLaunchTargetStatus === "function") return options.getLaunchTargetStatus(app);
+    return options.launchTargetStatusById?.value?.[app.id] || null;
   }
 
   function closeDesktop(closeOptions) {

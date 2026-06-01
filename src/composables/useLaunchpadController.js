@@ -114,6 +114,7 @@ export function useLaunchpadController() {
   });
   let dragControls = null;
   let cancelLongPressHandler = () => {};
+  let getLaunchTargetStatusHandler = (app) => launchTargetStatusById.value[String(app?.id || "")] || null;
   let hideNativeWindowHandler = () => {};
   let launchNativeAppIfAvailableHandler = () => {};
   let openAppHandler = () => {};
@@ -304,6 +305,7 @@ export function useLaunchpadController() {
     isFolderAppLaunchClosing,
     isSearchMode: () => isSearchMode.value,
     keyboardFocusArea,
+    getLaunchTargetStatus: (app) => getLaunchTargetStatusHandler(app),
     launchNativeAppIfAvailable: (app) => launchNativeAppIfAvailableHandler(app),
     launchTargetStatusById,
     normalizeLaunchSource,
@@ -534,6 +536,7 @@ export function useLaunchpadController() {
   const {
     clearNativeEventListeners,
     clearNativeSaveTimer,
+    getLaunchTargetStatus,
     hideNativeWindow,
     hideNativeWindowAfterCloseAnimation,
     loadNativeLaunchpadData,
@@ -591,6 +594,7 @@ export function useLaunchpadController() {
     searchPageIndex,
     showMissingLaunchTargetBadge,
   });
+  getLaunchTargetStatusHandler = getLaunchTargetStatus;
   hideNativeWindowHandler = hideNativeWindow;
   launchNativeAppIfAvailableHandler = launchNativeAppIfAvailable;
   setNativeWindowEffectsEnabledHandler = setNativeWindowEffectsEnabled;

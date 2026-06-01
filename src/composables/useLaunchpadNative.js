@@ -41,6 +41,7 @@ export function useLaunchpadNative(options) {
   let nativeWindowHideTimer = null;
   let nativeWindowOpenSequence = null;
   let launchTargetStatusCheckRequestId = 0;
+  let launchTargetStatusRecordsById = {};
   let nativeLoadFailureCount = 0;
   let hadNativeLoadFailure = false;
   let nativeSaveFailureCount = 0;
@@ -129,6 +130,7 @@ export function useLaunchpadNative(options) {
       if (hadNativeSaveFailure) options.showLayoutSaveRecovered?.();
       hadNativeSaveFailure = false;
       nativeSaveFailureCount = 0;
+      return true;
     } catch (error) {
       hadNativeSaveFailure = true;
       nativeSaveFailureCount += 1;
@@ -138,11 +140,18 @@ export function useLaunchpadNative(options) {
         onRetry: retryNativeLayoutSave,
       });
       console.error("Failed to save LaunchPad layout", error);
+      return false;
     }
   }
 
   function retryNativeLayoutSave() {
-    if (!nativeLayoutReady || !shouldUseNativeCatalog()) return Promise.resolve();
+    if (!nativeLayoutReady || !shouldUseNativeCatalog()) return Promise.resolve(false);
+    clearNativeSaveTimer();
+    return saveCurrentNativeLayout();
+  }
+
+  function flushNativeLayoutSave() {
+    if (!nativeLayoutReady || !shouldUseNativeCatalog()) return Promise.resolve(true);
     clearNativeSaveTimer();
     return saveCurrentNativeLayout();
   }
@@ -326,37 +335,97 @@ export function useLaunchpadNative(options) {
   function scheduleLaunchTargetStatusCheck() {
     const requestId = (launchTargetStatusCheckRequestId += 1);
     if (!options.showMissingLaunchTargetBadge.value || !isNativeBridgeAvailable()) {
-      options.launchTargetStatusById.value = {};
+      clearLaunchTargetStatuses();
       return;
     }
+    pruneLaunchTargetStatusesForCurrentApps();
     window.setTimeout(() => checkCurrentLaunchTargets(requestId), 0);
   }
 
   async function checkCurrentLaunchTargets(requestId) {
     if (requestId !== launchTargetStatusCheckRequestId) return;
     if (!options.showMissingLaunchTargetBadge.value || !isNativeBridgeAvailable()) return;
-    const apps = options.collectAppsFromPages(options.pages.value)
-      .filter((app) => app?.id && app.launchTarget)
-      .map((app) => ({ id: app.id, launchTarget: app.launchTarget }));
+    const apps = collectLaunchTargetChecks();
     if (!apps.length) {
       if (requestId !== launchTargetStatusCheckRequestId) return;
-      options.launchTargetStatusById.value = {};
+      clearLaunchTargetStatuses();
       return;
     }
+    const targetSignatureById = new Map(apps.map((app) => [app.id, app.targetSignature]));
     try {
-      const results = await checkLaunchTargets(apps);
-      if (requestId !== launchTargetStatusCheckRequestId || !options.showMissingLaunchTargetBadge.value) return;
-      options.launchTargetStatusById.value = Object.fromEntries(
-        (results || []).map((result) => [result.id, result.status])
+      const results = await checkLaunchTargets(
+        apps.map((app) => ({ id: app.id, launchTarget: app.launchTarget }))
       );
+      if (requestId !== launchTargetStatusCheckRequestId || !options.showMissingLaunchTargetBadge.value) return;
+      const currentSignatureById = new Map(
+        collectLaunchTargetChecks().map((app) => [app.id, app.targetSignature])
+      );
+      launchTargetStatusRecordsById = Object.fromEntries(
+        (results || [])
+          .map((result) => {
+            const id = String(result?.id || "");
+            const targetSignature = targetSignatureById.get(id);
+            if (!id || !targetSignature || currentSignatureById.get(id) !== targetSignature) return null;
+            return [id, { status: result.status, targetSignature }];
+          })
+          .filter(Boolean)
+      );
+      pruneLaunchTargetStatusesForCurrentApps();
     } catch (error) {
       console.error("Failed to check LaunchPad app paths", error);
     }
   }
 
+  function collectLaunchTargetChecks() {
+    return options.collectAppsFromPages(options.pages.value)
+      .filter((app) => app?.id && app.launchTarget)
+      .map((app) => ({
+        id: String(app.id),
+        launchTarget: app.launchTarget,
+        targetSignature: launchTargetSignature(app.launchTarget),
+      }));
+  }
+
+  function launchTargetSignature(launchTarget) {
+    return JSON.stringify([
+      String(launchTarget?.kind || ""),
+      String(launchTarget?.path || "").trim(),
+      String(launchTarget?.appUserModelId || "").trim(),
+    ]);
+  }
+
+  function clearLaunchTargetStatuses() {
+    launchTargetStatusRecordsById = {};
+    options.launchTargetStatusById.value = {};
+  }
+
+  function pruneLaunchTargetStatusesForCurrentApps() {
+    const currentSignatureById = new Map(
+      collectLaunchTargetChecks().map((app) => [app.id, app.targetSignature])
+    );
+    const nextRecords = {};
+    const nextStatuses = {};
+    for (const [id, record] of Object.entries(launchTargetStatusRecordsById)) {
+      if (currentSignatureById.get(id) !== record.targetSignature) continue;
+      nextRecords[id] = record;
+      nextStatuses[id] = record.status;
+    }
+    launchTargetStatusRecordsById = nextRecords;
+    options.launchTargetStatusById.value = nextStatuses;
+  }
+
+  function getLaunchTargetStatus(app) {
+    const id = String(app?.id || "");
+    const record = launchTargetStatusRecordsById[id];
+    if (!record || record.targetSignature !== launchTargetSignature(app?.launchTarget)) return null;
+    return record.status;
+  }
+
   async function launchNativeAppIfAvailable(app) {
     if (!shouldUseNativeCatalog()) return;
     try {
+      const saved = await flushNativeLayoutSave();
+      if (!saved) return;
       await launchNativeApp(app);
     } catch (error) {
       console.error(`Failed to launch ${app.name}`, error);
@@ -486,6 +555,7 @@ export function useLaunchpadNative(options) {
     clearNativeSaveTimer,
     hideNativeWindow,
     hideNativeWindowAfterCloseAnimation,
+    getLaunchTargetStatus,
     loadNativeLaunchpadData,
     launchNativeAppIfAvailable,
     registerNativeEventListeners,
