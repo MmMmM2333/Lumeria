@@ -152,8 +152,6 @@ type LaunchTargetCheckResult = {
 type LaunchAppRequest = {
   id: string;
   name: string;
-  launchTarget?: AppCatalogItem["launchTarget"];
-  launchArgs?: string;
 };
 
 type LaunchpadPage = LaunchpadItem[];
@@ -168,6 +166,11 @@ type LaunchpadItem =
       children: AppCatalogItem[];
     };
 ```
+
+Layout item ids must be unique across top-level items and folder
+`childPages`. Folder `children` is a flattened compatibility mirror of
+`childPages`; the backend validates that it matches `childPages` rather than
+treating it as a second set of items.
 
 ## Native Backend Notes
 
@@ -205,17 +208,19 @@ non-executable targets.
 `load_app_icon_choices` returns cached PNG data URLs for icons discovered in a
 local `.exe`, `.dll`, `.ico`, or `.lnk` target.
 
-`launch_app` accepts the frontend's current launch payload so newly added or
-recently edited apps can launch before the debounced layout save reaches disk.
-If the request has no `launchTarget`, the backend falls back to the current
-native catalog item and saved layout item. If those are unavailable, it rescans
-the saved layout's `scanRoots` with the saved `scanKeywordBlacklist` and
-`scanAppBlacklist` filters.
+Before calling `launch_app`, the frontend flushes any pending layout save so
+newly added or recently edited apps are available from persisted state. The
+request carries only app `id` and `name`; the backend does not trust
+renderer-supplied launch targets or arguments. It resolves launch fields from
+the current native catalog item and saved layout item. If those are unavailable,
+it rescans the saved layout's `scanRoots` with the saved
+`scanKeywordBlacklist` and `scanAppBlacklist` filters.
 
 Launch UX is intentionally optimistic: the frontend performs only synchronous
 preflight validation before starting the close/ghost animation, then calls
-`launch_app` asynchronously on a zero-delay timer. It should not wait for native
-launch completion before playing the animation, because that adds visible launch
-latency. Runtime launch failures after the frontend has started the animation
-are surfaced by the native backend with a Windows message box using user-facing
-reason and suggestion text.
+`launch_app` asynchronously on a zero-delay timer. The native launch path may
+wait for the layout flush, but the animation should not wait for native launch
+completion because that adds visible launch latency. Save failures stop the
+native launch and surface a layout-save notice; runtime launch failures after
+the animation starts are surfaced by the native backend with a Windows message
+box using user-facing reason and suggestion text.

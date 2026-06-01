@@ -989,7 +989,8 @@ struct ComGuard {
 #[cfg(target_os = "windows")]
 impl ComGuard {
     fn new() -> Result<Self, String> {
-        unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.ok()
+        unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }
+            .ok()
             .map_err(|error| format!("Failed to initialize COM apartment: {error}"))?;
         Ok(Self { initialized: true })
     }

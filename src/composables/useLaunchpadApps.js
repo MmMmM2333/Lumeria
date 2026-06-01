@@ -607,6 +607,15 @@ export function useLaunchpadApps(options) {
     isLoadingIconChoices.value = false;
   }
 
+  function isSameIconChooser(left, right) {
+    return Boolean(
+      left &&
+      right &&
+      left.target === right.target &&
+      String(left.appId || "") === String(right.appId || "")
+    );
+  }
+
   function applyIconChooserIcon(icon) {
     if (!icon?.iconDataUrl || !iconChooser.value) return;
     if (iconChooser.value.target === "new") {
@@ -633,7 +642,12 @@ export function useLaunchpadApps(options) {
   }
 
   function handleIconChooserUpload(event) {
-    readImageFileAsCustomIcon(event, applyIconChooserIcon);
+    const requestId = iconChooserRequestId;
+    const chooser = iconChooser.value ? { ...iconChooser.value } : null;
+    readImageFileAsCustomIcon(event, (icon) => {
+      if (requestId !== iconChooserRequestId || !isSameIconChooser(chooser, iconChooser.value)) return;
+      applyIconChooserIcon(icon);
+    });
   }
 
   function updateManagedAppEverywhere(appId, updater) {

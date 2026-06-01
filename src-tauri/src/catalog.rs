@@ -201,7 +201,10 @@ fn collect_apps_from_dir(
             warnings,
             root,
             "maxDepthReached",
-            format!("Skipped directories deeper than {} levels.", limits.max_depth),
+            format!(
+                "Skipped directories deeper than {} levels.",
+                limits.max_depth
+            ),
         );
         stats.limit_reached = true;
         return Ok(());

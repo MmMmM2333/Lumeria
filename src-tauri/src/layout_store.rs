@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
@@ -134,12 +135,15 @@ fn validate_layout_value(layout: &Value) -> Result<(), String> {
         .get("pages")
         .and_then(Value::as_array)
         .ok_or_else(|| "layout pages must be an array".to_string())?;
+    let mut item_ids = HashSet::new();
     for (page_index, page) in pages.iter().enumerate() {
         let items = page
             .as_array()
             .ok_or_else(|| format!("layout pages[{page_index}] must be an array"))?;
         for (item_index, item) in items.iter().enumerate() {
-            validate_layout_item(item, &format!("pages[{page_index}][{item_index}]"))?;
+            let label = format!("pages[{page_index}][{item_index}]");
+            validate_layout_item(item, &label)?;
+            register_layout_item_ids(item, &label, &mut item_ids)?;
         }
     }
 
@@ -294,6 +298,45 @@ fn validate_string_array(value: &Value, label: &str) -> Result<(), String> {
         .ok_or_else(|| format!("{label} must be an array"))?;
     if items.iter().any(|value| !value.is_string()) {
         return Err(format!("{label} must contain strings"));
+    }
+    Ok(())
+}
+
+fn register_layout_item_ids(
+    item: &Value,
+    label: &str,
+    seen_ids: &mut HashSet<String>,
+) -> Result<(), String> {
+    let object = item
+        .as_object()
+        .ok_or_else(|| format!("layout item {label} must be an object"))?;
+    let id = object
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("layout item {label}.id must be a non-empty string"))?;
+    if !seen_ids.insert(id.to_string()) {
+        return Err(format!("layout item id must be unique: {id}"));
+    }
+
+    if object.get("type").and_then(Value::as_str) != Some("folder") {
+        return Ok(());
+    }
+
+    let child_pages = object
+        .get("childPages")
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("layout item {label}.childPages must be an array"))?;
+    for (page_index, page) in child_pages.iter().enumerate() {
+        let children = page.as_array().ok_or_else(|| {
+            format!("layout item {label}.childPages[{page_index}] must be an array")
+        })?;
+        for (child_index, child) in children.iter().enumerate() {
+            register_layout_item_ids(
+                child,
+                &format!("{label}.childPages[{page_index}][{child_index}]"),
+                seen_ids,
+            )?;
+        }
     }
     Ok(())
 }
@@ -763,8 +806,8 @@ mod tests {
         let mut invalid = valid_layout();
         invalid["pages"][0][0]["customIconDataUrl"] = json!("data:image/png;base64,abc");
 
-        let error = save_layout_to_path(&path, &invalid)
-            .expect_err("customIconDataUrl should fail");
+        let error =
+            save_layout_to_path(&path, &invalid).expect_err("customIconDataUrl should fail");
 
         assert!(error.contains("customIconDataUrl"));
         assert!(!path.exists(), "invalid layout should not be written");
@@ -858,6 +901,21 @@ mod tests {
         let error = save_layout_to_path(&path, &invalid).expect_err("children should fail");
 
         assert!(error.contains("children"));
+        assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_rejects_duplicate_item_ids() {
+        let dir = test_dir("invalid-duplicate-ids");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        invalid["pages"][0][1]["childPages"][0][0]["id"] = json!("app-a");
+        invalid["pages"][0][1]["children"][0]["id"] = json!("app-a");
+
+        let error = save_layout_to_path(&path, &invalid).expect_err("duplicate ids should fail");
+
+        assert!(error.contains("unique"));
         assert!(!path.exists(), "invalid layout should not be written");
         fs::remove_dir_all(dir).expect("remove test directory");
     }

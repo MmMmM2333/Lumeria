@@ -283,10 +283,14 @@ export function useLaunchpadNative(options) {
       const batch = requests.slice(index, index + batchSize);
       try {
         const results = await loadCachedAppIcons(batch);
+        const iconPathById = new Map(batch.map((item) => [item.id, item.iconPath]));
         const iconDataById = new Map(
           (results || [])
             .filter((item) => item?.id && item.iconDataUrl)
-            .map((item) => [item.id, item.iconDataUrl])
+            .map((item) => [item.id, {
+              iconPath: iconPathById.get(item.id),
+              iconDataUrl: item.iconDataUrl,
+            }])
         );
         if (!iconDataById.size) continue;
         options.pages.value = applyCachedIconDataUrls(options.pages.value, iconDataById);
@@ -318,8 +322,10 @@ export function useLaunchpadNative(options) {
   function applyCachedIconDataUrlToItem(item, iconDataById) {
     if (!item) return item;
     if (item.type === "app") {
-      const iconDataUrl = iconDataById.get(item.id);
-      return iconDataUrl ? { ...item, iconDataUrl } : item;
+      const iconData = iconDataById.get(item.id);
+      return iconData?.iconDataUrl && iconData.iconPath === item.iconPath
+        ? { ...item, iconDataUrl: iconData.iconDataUrl }
+        : item;
     }
     if (item.type !== "folder") return item;
     const childPages = (item.childPages || []).map((page) =>

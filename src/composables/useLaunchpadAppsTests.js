@@ -12,6 +12,77 @@ function withMockTauri(invoke, run) {
     });
 }
 
+function installCustomIconDomMocks() {
+  const originalURL = globalThis.URL;
+  const originalCreateObjectURL = globalThis.URL?.createObjectURL;
+  const originalRevokeObjectURL = globalThis.URL?.revokeObjectURL;
+  const originalImage = globalThis.Image;
+  const originalFileReader = globalThis.FileReader;
+  const originalDocument = globalThis.document;
+  const defer = (callback) => Promise.resolve().then(callback);
+
+  if (!globalThis.URL) globalThis.URL = {};
+  globalThis.URL.createObjectURL = () => "blob:launchpad-test";
+  globalThis.URL.revokeObjectURL = () => {};
+  globalThis.Image = class {
+    constructor() {
+      this.naturalWidth = 128;
+      this.naturalHeight = 128;
+    }
+
+    set src(value) {
+      this._src = value;
+      defer(() => this.onload?.());
+    }
+  };
+  globalThis.FileReader = class {
+    readAsDataURL() {
+      this.result = "data:image/png;base64,uploaded";
+      defer(() => this.onload?.());
+    }
+  };
+  globalThis.document = {
+    createElement(tagName) {
+      if (tagName !== "canvas") return null;
+      return {
+        width: 0,
+        height: 0,
+        getContext: () => ({
+          clearRect: () => {},
+          drawImage: () => {},
+        }),
+        toBlob: (callback) => defer(() => callback({ type: "image/png" })),
+      };
+    },
+  };
+
+  return () => {
+    if (originalURL === undefined) {
+      delete globalThis.URL;
+    } else {
+      globalThis.URL = originalURL;
+      if (originalCreateObjectURL === undefined) delete globalThis.URL.createObjectURL;
+      else globalThis.URL.createObjectURL = originalCreateObjectURL;
+      if (originalRevokeObjectURL === undefined) delete globalThis.URL.revokeObjectURL;
+      else globalThis.URL.revokeObjectURL = originalRevokeObjectURL;
+    }
+    if (originalImage === undefined) delete globalThis.Image;
+    else globalThis.Image = originalImage;
+    if (originalFileReader === undefined) delete globalThis.FileReader;
+    else globalThis.FileReader = originalFileReader;
+    if (originalDocument === undefined) delete globalThis.document;
+    else globalThis.document = originalDocument;
+  };
+}
+
+async function waitForCondition(condition) {
+  for (let index = 0; index < 20; index += 1) {
+    if (condition()) return true;
+    await Promise.resolve();
+  }
+  return false;
+}
+
 export async function runLaunchpadAppsTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Launchpad apps test failed] ${message}`);
@@ -124,6 +195,75 @@ export async function runLaunchpadAppsTests() {
     assert(apps.canEditNewAppArgs.value, "executable targets should expose launch args");
     apps.addManagedApp();
     assert(pages.value[0][0].launchArgs === "--profile dev", "executable apps should save launch args");
+  });
+
+  const pendingCustomIconCaches = [];
+  await withMockTauri(async (command) => {
+    if (command === "load_app_icon_choices") return [];
+    if (command === "cache_custom_icon") {
+      return new Promise((resolve) => {
+        pendingCustomIconCaches.push(resolve);
+      });
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const restoreCustomIconDomMocks = installCustomIconDomMocks();
+    try {
+      const pages = shallowRef([[
+        { id: "app-a", type: "app", name: "A", launchTarget: { kind: "executable", path: "C:/Apps/A.exe" } },
+        { id: "app-b", type: "app", name: "B", launchTarget: { kind: "executable", path: "C:/Apps/B.exe" } },
+      ]]);
+      let commitCount = 0;
+      const apps = useLaunchpadApps({
+        appendAppsToPages: (_sourcePages, selectedApps) => [selectedApps.map((app) => ({ ...app }))],
+        cloneItem: (item) => (item ? { ...item } : item),
+        clonePages: (sourcePages) => sourcePages.map((page) => page.map((item) => ({ ...item }))),
+        collectAppsFromPages: (sourcePages) => sourcePages.flatMap((page) => page.filter((item) => item?.type === "app")),
+        commitOpenFolder: () => {},
+        commitPageIndex: () => {},
+        commitPages: (next) => {
+          commitCount += 1;
+          pages.value = next;
+        },
+        commitSearchPageIndex: () => {},
+        findFolder: () => null,
+        hiddenAppIds: ref([]),
+        isDragActive: () => false,
+        makeId: () => "generated-app-id",
+        openFolderId: ref(null),
+        openWarningDialog: () => {},
+        pageIndex: ref(0),
+        pages,
+        removeEverywhere: (sourcePages) => sourcePages,
+        renderedFolder: ref(null),
+        schedulePageGridMetrics: () => {},
+        scanAppBlacklist: ref([]),
+        scanKeywordBlacklist: ref([]),
+        scanRoots: ref([{ id: "root", type: "customDirectory", label: "Root", path: "C:/Apps", enabled: true }]),
+        shouldUseNativeCatalog: () => true,
+        showMissingLaunchTargetBadge: ref(true),
+        searchPageIndex: ref(0),
+      });
+      const uploadInput = {
+        files: [{ type: "image/png", size: 512 }],
+        value: "C:\\fakepath\\icon.png",
+      };
+
+      apps.openExistingAppIconChooser("app-a");
+      apps.handleIconChooserUpload({ target: uploadInput });
+      assert(await waitForCondition(() => pendingCustomIconCaches.length === 1), "custom icon upload should reach the native cache");
+      apps.openExistingAppIconChooser("app-b");
+      pendingCustomIconCaches[0]({
+        iconPath: "C:/Icons/custom.png",
+        iconDataUrl: "data:image/png;base64,cached",
+      });
+      await waitForCondition(() => uploadInput.value === "");
+
+      assert(commitCount === 0, "stale custom icon uploads should not update a later icon chooser");
+      assert(!pages.value.flat().some((app) => app.customIconDataUrl), "stale custom icon data should not be saved to any app");
+    } finally {
+      restoreCustomIconDomMocks();
+    }
   });
 
   await withMockTauri(async (command) => {

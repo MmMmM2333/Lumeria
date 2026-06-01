@@ -92,6 +92,12 @@ function withMockTauri(invoke, run) {
     });
 }
 
+async function flushMicrotasks(count = 1) {
+  for (let index = 0; index < count; index += 1) {
+    await Promise.resolve();
+  }
+}
+
 export async function runLaunchpadNativeTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Launchpad native test failed] ${message}`);
@@ -177,6 +183,49 @@ export async function runLaunchpadNativeTests() {
     } finally {
       console.error = originalConsoleError;
     }
+  });
+
+  const pendingIconLoads = [];
+  await withMockTauri((command, args) => {
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{
+          id: "icon-app",
+          type: "app",
+          name: "Icon App",
+          iconPath: "C:/Icons/old.png",
+          launchTarget: { kind: "shortcut", path: "Icon App.lnk" },
+        }]],
+        settings: {},
+      };
+    }
+    if (command === "load_cached_app_icons") {
+      return new Promise((resolve) => {
+        pendingIconLoads.push({ args, resolve });
+      });
+    }
+    if (command === "check_launch_targets") return [];
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    assert(pendingIconLoads.length === 1, "native load should request cached icon hydration");
+    assert(pendingIconLoads[0].args.icons[0].iconPath === "C:/Icons/old.png", "icon hydration should request the original icon path");
+
+    options.pages.value = [[{
+      ...options.pages.value[0][0],
+      iconPath: "C:/Icons/new.png",
+    }]];
+    pendingIconLoads[0].resolve([{ id: "icon-app", iconDataUrl: "data:image/png;base64,old" }]);
+    await flushMicrotasks(3);
+
+    assert(options.pages.value[0][0].iconPath === "C:/Icons/new.png", "current icon path should be preserved");
+    assert(!("iconDataUrl" in options.pages.value[0][0]), "stale cached icon data should not overwrite a newer icon path");
   });
 
   const launchCommands = [];
