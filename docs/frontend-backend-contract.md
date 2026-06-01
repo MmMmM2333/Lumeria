@@ -208,19 +208,20 @@ non-executable targets.
 `load_app_icon_choices` returns cached PNG data URLs for icons discovered in a
 local `.exe`, `.dll`, `.ico`, or `.lnk` target.
 
-Before calling `launch_app`, the frontend flushes any pending layout save so
-newly added or recently edited apps are available from persisted state. The
-request carries only app `id` and `name`; the backend does not trust
-renderer-supplied launch targets or arguments. It resolves launch fields from
-the current native catalog item and saved layout item. If those are unavailable,
-it rescans the saved layout's `scanRoots` with the saved
-`scanKeywordBlacklist` and `scanAppBlacklist` filters.
+Before calling `launch_app`, the frontend ensures launch-critical layout changes
+for that app, such as newly added custom apps or edited launch fields, are
+persisted. Non-critical layout changes such as drag ordering, page placement,
+settings, and icons may remain on the debounced save path. The request carries
+only app `id` and `name`; the backend does not trust renderer-supplied launch
+targets or arguments. It resolves launch fields from the current native catalog
+item and saved layout item. If those are unavailable, it rescans the saved
+layout's `scanRoots` with the saved `scanKeywordBlacklist` and
+`scanAppBlacklist` filters.
 
 Launch UX is intentionally optimistic: the frontend performs only synchronous
 preflight validation before starting the close/ghost animation, then calls
-`launch_app` asynchronously on a zero-delay timer. The native launch path may
-wait for the layout flush, but the animation should not wait for native launch
-completion because that adds visible launch latency. Save failures stop the
-native launch and surface a layout-save notice; runtime launch failures after
-the animation starts are surfaced by the native backend with a Windows message
-box using user-facing reason and suggestion text.
+`launch_app` asynchronously on a zero-delay timer. If launch-critical save
+preparation fails, the animation does not start and the frontend surfaces a
+layout-save notice. Runtime launch failures after the animation starts are
+surfaced by the native backend with a Windows message box using user-facing
+reason and suggestion text.

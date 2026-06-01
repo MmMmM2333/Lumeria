@@ -15,6 +15,7 @@ export function useLaunchpadLaunchFlow(options) {
   let desktopCloseTimer = null;
   let appLaunchTimer = null;
   let launchGhostTimer = null;
+  let launchPrepareRequestId = 0;
 
   const launchGhostStyle = computed(() => {
     const ghost = launchGhost.value;
@@ -120,6 +121,10 @@ export function useLaunchpadLaunchFlow(options) {
     return null;
   }
 
+  function isPromiseLike(value) {
+    return Boolean(value && typeof value.then === "function");
+  }
+
   function currentLaunchTargetStatus(app) {
     if (typeof options.getLaunchTargetStatus === "function") return options.getLaunchTargetStatus(app);
     return options.launchTargetStatusById?.value?.[app.id] || null;
@@ -159,14 +164,7 @@ export function useLaunchpadLaunchFlow(options) {
     });
   }
 
-  function openApp(app, source) {
-    if (!app || app.type !== "app" || options.isDragActive() || isLaunchpadInteractionBlocked()) return;
-    const launchError = getLaunchPreflightError(app);
-    if (launchError) {
-      options.openLaunchErrorDialog?.(launchError);
-      return;
-    }
-
+  function startPreparedAppLaunch(app, source) {
     const launchSource = options.normalizeLaunchSource(app, source);
     const shouldClearSearchAfterLaunch = options.isSearchMode();
     startAppLaunchGhost(app, launchSource);
@@ -187,6 +185,33 @@ export function useLaunchpadLaunchFlow(options) {
       clearAppLaunchTimer();
       options.hideNativeWindow();
     }, APP_LAUNCH_DURATION);
+  }
+
+  function openApp(app, source) {
+    if (!app || app.type !== "app" || options.isDragActive() || isLaunchpadInteractionBlocked()) return;
+    const launchError = getLaunchPreflightError(app);
+    if (launchError) {
+      options.openLaunchErrorDialog?.(launchError);
+      return;
+    }
+
+    const requestId = (launchPrepareRequestId += 1);
+    const prepared = options.prepareNativeLaunch?.(app);
+    if (!isPromiseLike(prepared)) {
+      if (prepared === false) return;
+      startPreparedAppLaunch(app, source);
+      return;
+    }
+
+    prepared
+      .then((ready) => {
+        if (requestId !== launchPrepareRequestId || !ready) return;
+        if (!isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value || options.isDragActive()) return;
+        startPreparedAppLaunch(app, source);
+      })
+      .catch((error) => {
+        console.error(`Failed to prepare ${app.name} for launch`, error);
+      });
   }
 
   return {

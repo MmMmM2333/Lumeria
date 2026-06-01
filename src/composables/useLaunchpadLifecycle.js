@@ -61,7 +61,7 @@ export function createLaunchpadLayoutResizeObserver(options, ResizeObserverCtor 
   return layoutResizeObserver;
 }
 
-export function runLaunchpadMountedEffects(options, ResizeObserverCtor = globalThis.ResizeObserver) {
+export function runLaunchpadMountedEffects(options, ResizeObserverCtor = globalThis.ResizeObserver, lifecycle = null) {
   const {
     handleAltKeyUp,
     handleGlobalKeydown,
@@ -81,12 +81,16 @@ export function runLaunchpadMountedEffects(options, ResizeObserverCtor = globalT
   window.addEventListener("resize", updateFolderViewportHeight);
   schedulePageGridMetrics();
   scheduleFolderViewportMetrics();
-  registerNativeEventListeners().finally(loadNativeLaunchpadData);
+  if (lifecycle) lifecycle.active = true;
+  registerNativeEventListeners().finally(() => {
+    if (lifecycle && !lifecycle.active) return;
+    loadNativeLaunchpadData();
+  });
 
   return createLaunchpadLayoutResizeObserver(options, ResizeObserverCtor);
 }
 
-export function runLaunchpadBeforeUnmountEffects(options, layoutResizeObserver = null) {
+export function runLaunchpadBeforeUnmountEffects(options, layoutResizeObserver = null, lifecycle = null) {
   const {
     cancelLongPress,
     cancelPreviewRaf,
@@ -115,6 +119,7 @@ export function runLaunchpadBeforeUnmountEffects(options, layoutResizeObserver =
     updatePageGridMetrics,
   } = options;
 
+  if (lifecycle) lifecycle.active = false;
   detachDragListeners();
   cancelPreviewRaf();
   clearPendingTarget();
@@ -145,15 +150,16 @@ export function runLaunchpadBeforeUnmountEffects(options, layoutResizeObserver =
 
 export function useLaunchpadLifecycle(options) {
   let layoutResizeObserver = null;
+  const lifecycle = { active: false };
 
   registerLaunchpadLifecycleWatchers(options);
 
   onMounted(() => {
-    layoutResizeObserver = runLaunchpadMountedEffects(options);
+    layoutResizeObserver = runLaunchpadMountedEffects(options, globalThis.ResizeObserver, lifecycle);
   });
 
   onBeforeUnmount(() => {
-    runLaunchpadBeforeUnmountEffects(options, layoutResizeObserver);
+    runLaunchpadBeforeUnmountEffects(options, layoutResizeObserver, lifecycle);
     layoutResizeObserver = null;
   });
 }

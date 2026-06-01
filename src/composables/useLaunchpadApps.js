@@ -700,6 +700,7 @@ export function useLaunchpadApps(options) {
     });
 
     if (!changed) return;
+    options.markLaunchCriticalLayoutDirty?.(editingManagedAppId.value);
     closeEditManagedApp();
     options.commitPageIndex(options.pageIndex.value);
     options.commitSearchPageIndex(options.searchPageIndex.value);
@@ -836,6 +837,7 @@ export function useLaunchpadApps(options) {
     if (newAppIconPath.value) app.customIconPath = newAppIconPath.value;
     if (newAppIconDataUrl.value) app.customIconDataUrl = newAppIconDataUrl.value;
     options.commitPages(options.appendAppsToPages(options.pages.value, [app]));
+    options.markLaunchCriticalLayoutDirty?.(app.id);
     closeAddManagedAppPage();
     options.commitPageIndex(options.pageIndex.value);
     options.commitSearchPageIndex(options.searchPageIndex.value);

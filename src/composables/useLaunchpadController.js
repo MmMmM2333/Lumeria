@@ -117,6 +117,7 @@ export function useLaunchpadController() {
   let getLaunchTargetStatusHandler = (app) => launchTargetStatusById.value[String(app?.id || "")] || null;
   let hideNativeWindowHandler = () => {};
   let launchNativeAppIfAvailableHandler = () => {};
+  let prepareNativeLaunchHandler = () => true;
   let openAppHandler = () => {};
   let openLaunchErrorDialogHandler = () => {};
   let setNativeWindowEffectsEnabledHandler = () => {};
@@ -311,6 +312,7 @@ export function useLaunchpadController() {
     normalizeLaunchSource,
     openLaunchErrorDialog: (config) => openLaunchErrorDialogHandler(config),
     openingIcon,
+    prepareNativeLaunch: (app) => prepareNativeLaunchHandler(app),
     schedulePageGridMetrics: () => schedulePageGridMetrics(),
     searchInputRef,
     setNativeWindowEffectsEnabled: (enabled) => setNativeWindowEffectsEnabledHandler(enabled),
@@ -541,6 +543,8 @@ export function useLaunchpadController() {
     hideNativeWindowAfterCloseAnimation,
     loadNativeLaunchpadData,
     launchNativeAppIfAvailable,
+    markLaunchCriticalLayoutDirty,
+    prepareNativeLaunch,
     registerNativeEventListeners,
     scheduleNativeLayoutSave,
     scheduleLaunchTargetStatusCheck,
@@ -597,6 +601,7 @@ export function useLaunchpadController() {
   getLaunchTargetStatusHandler = getLaunchTargetStatus;
   hideNativeWindowHandler = hideNativeWindow;
   launchNativeAppIfAvailableHandler = launchNativeAppIfAvailable;
+  prepareNativeLaunchHandler = prepareNativeLaunch;
   setNativeWindowEffectsEnabledHandler = setNativeWindowEffectsEnabled;
   dragControls = useLaunchpadDrag({
     canCreateDesktopPageAfterDrag,
@@ -773,6 +778,7 @@ export function useLaunchpadController() {
     hiddenAppIds,
     isDragActive,
     makeId,
+    markLaunchCriticalLayoutDirty,
     openFolderId,
     openWarningDialog,
     pages,

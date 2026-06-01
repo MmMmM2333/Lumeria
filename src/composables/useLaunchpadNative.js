@@ -40,12 +40,17 @@ export function useLaunchpadNative(options) {
   let nativeSaveTimer = null;
   let nativeWindowHideTimer = null;
   let nativeWindowOpenSequence = null;
+  let nativeEventListenerGeneration = 0;
+  let launchCriticalSavePromise = null;
+  let launchCriticalDirtyRevision = 0;
   let launchTargetStatusCheckRequestId = 0;
   let launchTargetStatusRecordsById = {};
+  let lastSavedLayoutSignature = "";
   let nativeLoadFailureCount = 0;
   let hadNativeLoadFailure = false;
   let nativeSaveFailureCount = 0;
   let hadNativeSaveFailure = false;
+  const launchCriticalDirtyAppIds = new Set();
   let unlistenCloseDesktopEvent = null;
   let unlistenOpenDesktopEvent = null;
   let unlistenSettingsEvent = null;
@@ -124,9 +129,23 @@ export function useLaunchpadNative(options) {
     });
   }
 
+  function layoutSignature(layout) {
+    return JSON.stringify(layout);
+  }
+
   async function saveCurrentNativeLayout() {
+    const layout = createCurrentLayoutSnapshot();
+    const signature = layoutSignature(layout);
+    const saveDirtyRevision = launchCriticalDirtyRevision;
+    if (signature === lastSavedLayoutSignature) {
+      if (saveDirtyRevision === launchCriticalDirtyRevision) launchCriticalDirtyAppIds.clear();
+      return true;
+    }
+
     try {
-      await saveLayout(createCurrentLayoutSnapshot());
+      await saveLayout(layout);
+      lastSavedLayoutSignature = signature;
+      if (saveDirtyRevision === launchCriticalDirtyRevision) launchCriticalDirtyAppIds.clear();
       if (hadNativeSaveFailure) options.showLayoutSaveRecovered?.();
       hadNativeSaveFailure = false;
       nativeSaveFailureCount = 0;
@@ -144,14 +163,37 @@ export function useLaunchpadNative(options) {
     }
   }
 
-  function retryNativeLayoutSave() {
-    if (!nativeLayoutReady || !shouldUseNativeCatalog()) return Promise.resolve(false);
+  function saveLaunchCriticalLayout() {
+    if (!nativeLayoutReady || !shouldUseNativeCatalog()) return true;
     clearNativeSaveTimer();
-    return saveCurrentNativeLayout();
+    if (!launchCriticalSavePromise) {
+      launchCriticalSavePromise = saveCurrentNativeLayout()
+        .finally(() => {
+          launchCriticalSavePromise = null;
+        });
+    }
+    return launchCriticalSavePromise.then((saved) => {
+      if (!saved || !launchCriticalDirtyAppIds.size) return saved;
+      return saveLaunchCriticalLayout();
+    });
   }
 
-  function flushNativeLayoutSave() {
-    if (!nativeLayoutReady || !shouldUseNativeCatalog()) return Promise.resolve(true);
+  function markLaunchCriticalLayoutDirty(appId) {
+    const id = String(appId || "").trim();
+    if (id) launchCriticalDirtyAppIds.add(id);
+    launchCriticalDirtyRevision += 1;
+    return saveLaunchCriticalLayout();
+  }
+
+  function prepareNativeLaunch(app) {
+    if (!shouldUseNativeCatalog()) return true;
+    const appId = String(app?.id || "").trim();
+    if (!appId || !launchCriticalDirtyAppIds.has(appId)) return true;
+    return saveLaunchCriticalLayout();
+  }
+
+  function retryNativeLayoutSave() {
+    if (!nativeLayoutReady || !shouldUseNativeCatalog()) return Promise.resolve(false);
     clearNativeSaveTimer();
     return saveCurrentNativeLayout();
   }
@@ -430,11 +472,11 @@ export function useLaunchpadNative(options) {
   async function launchNativeAppIfAvailable(app) {
     if (!shouldUseNativeCatalog()) return;
     try {
-      const saved = await flushNativeLayoutSave();
-      if (!saved) return;
       await launchNativeApp(app);
+      return true;
     } catch (error) {
       console.error(`Failed to launch ${app.name}`, error);
+      return false;
     }
   }
 
@@ -451,39 +493,48 @@ export function useLaunchpadNative(options) {
 
   function registerNativeEventListeners() {
     if (!isNativeBridgeAvailable()) return Promise.resolve();
+    clearNativeEventListeners();
+    const generation = nativeEventListenerGeneration;
+    const keepUnlisten = (setter) => (unlisten) => {
+      if (generation !== nativeEventListenerGeneration) {
+        unlisten?.();
+        return;
+      }
+      setter(unlisten);
+    };
     return Promise.all([
       listenNativeEvent("launchpad-open-desktop", openDesktopFromNativeShortcut)
-        .then((unlisten) => {
+        .then(keepUnlisten((unlisten) => {
           unlistenOpenDesktopEvent = unlisten;
-        })
+        }))
         .catch((error) => {
           console.error("Failed to listen for native desktop open event", error);
         }),
       listenNativeEvent("launchpad-toggle-desktop", toggleDesktopFromNativeShortcut)
-        .then((unlisten) => {
+        .then(keepUnlisten((unlisten) => {
           unlistenToggleDesktopEvent = unlisten;
-        })
+        }))
         .catch((error) => {
           console.error("Failed to listen for native desktop toggle event", error);
         }),
       listenNativeEvent("launchpad-close-desktop", closeDesktopFromNativeWindow)
-        .then((unlisten) => {
+        .then(keepUnlisten((unlisten) => {
           unlistenCloseDesktopEvent = unlisten;
-        })
+        }))
         .catch((error) => {
           console.error("Failed to listen for native desktop close event", error);
         }),
       listenNativeEvent("launchpad-open-settings", options.openSettingsPanel)
-        .then((unlisten) => {
+        .then(keepUnlisten((unlisten) => {
           unlistenSettingsEvent = unlisten;
-        })
+        }))
         .catch((error) => {
           console.error("Failed to listen for native settings event", error);
         }),
       listenNativeEvent("launchpad-layout-recovered", options.handleLayoutRecovered)
-        .then((unlisten) => {
+        .then(keepUnlisten((unlisten) => {
           unlistenLayoutRecoveredEvent = unlisten;
-        })
+        }))
         .catch((error) => {
           console.error("Failed to listen for layout recovery event", error);
         }),
@@ -491,6 +542,7 @@ export function useLaunchpadNative(options) {
   }
 
   function clearNativeEventListeners() {
+    nativeEventListenerGeneration += 1;
     clearNativeWindowHideTimer();
     unlistenOpenDesktopEvent?.();
     unlistenOpenDesktopEvent = null;
@@ -564,6 +616,8 @@ export function useLaunchpadNative(options) {
     getLaunchTargetStatus,
     loadNativeLaunchpadData,
     launchNativeAppIfAvailable,
+    markLaunchCriticalLayoutDirty,
+    prepareNativeLaunch,
     registerNativeEventListeners,
     scheduleNativeLayoutSave,
     scheduleLaunchTargetStatusCheck,

@@ -117,6 +117,7 @@ export async function runLaunchpadAppsTests() {
     const hiddenAppIds = ref(["win-app-1"]);
     const scanRoots = ref([{ id: "root", type: "customDirectory", label: "Root", path: "C:/Apps", enabled: true }]);
     const warningDialogs = [];
+    const launchCriticalDirtyIds = [];
     const apps = useLaunchpadApps({
       appendAppsToPages: (_sourcePages, selectedApps) => [selectedApps.map((app) => ({ ...app }))],
       cloneItem: (item) => (item ? { ...item } : item),
@@ -132,6 +133,7 @@ export async function runLaunchpadAppsTests() {
       hiddenAppIds,
       isDragActive: () => false,
       makeId: () => "generated-app-id",
+      markLaunchCriticalLayoutDirty: (appId) => launchCriticalDirtyIds.push(appId),
       openFolderId: ref(null),
       openWarningDialog: (config) => warningDialogs.push(config),
       pageIndex: ref(0),
@@ -187,6 +189,7 @@ export async function runLaunchpadAppsTests() {
     apps.newAppArgs.value = "--ignored";
     apps.addManagedApp();
     assert(!("launchArgs" in pages.value[0][0]), "URL apps should not save launch args");
+    assert(launchCriticalDirtyIds.includes("generated-app-id"), "new custom apps should mark launch-critical layout dirty");
 
     apps.openAddManagedAppPage();
     apps.newAppName.value = "Exe App";
@@ -195,6 +198,10 @@ export async function runLaunchpadAppsTests() {
     assert(apps.canEditNewAppArgs.value, "executable targets should expose launch args");
     apps.addManagedApp();
     assert(pages.value[0][0].launchArgs === "--profile dev", "executable apps should save launch args");
+    apps.openEditManagedApp(pages.value[0][0]);
+    apps.editAppArgs.value = "--profile prod";
+    apps.saveEditingManagedApp();
+    assert(launchCriticalDirtyIds.length >= 3, "edited app launch fields should mark launch-critical layout dirty");
   });
 
   const pendingCustomIconCaches = [];

@@ -90,6 +90,7 @@ function createLaunchFlow(overrides = {}) {
     normalizeLaunchSource: (app, source) => source ?? { area: "desktop", id: app.id, pageIndex: 0 },
     openLaunchErrorDialog: (config) => calls.openLaunchErrorDialog.push(config),
     openingIcon,
+    prepareNativeLaunch: overrides.prepareNativeLaunch,
     schedulePageGridMetrics: () => {
       calls.schedulePageGridMetrics += 1;
     },
@@ -169,6 +170,28 @@ export async function runLaunchpadLaunchFlowTests() {
     assert(launch.calls.hideNativeWindow === 1, "app launch should hide the native window after the animation");
     timers.runDelay(APP_LAUNCH_DURATION + 100);
     assert(launch.flow.launchGhost.value === null, "launch ghost should clear after its timer");
+
+    const blockedByCriticalSave = createLaunchFlow({
+      prepareNativeLaunch: () => false,
+    });
+    blockedByCriticalSave.flow.openApp(launchApp, source);
+    assert(!blockedByCriticalSave.flow.isAppLaunching.value, "failed launch preparation should not start launch animation");
+    timers.runDelay(0);
+    assert(blockedByCriticalSave.calls.launchNativeAppIfAvailable.length === 0, "failed launch preparation should not call native launch");
+    timers.runDelay(APP_LAUNCH_DURATION);
+    assert(blockedByCriticalSave.calls.hideNativeWindow === 0, "failed launch preparation should not hide the native window");
+
+    let resolvePrepareLaunch;
+    const delayedPrepare = createLaunchFlow({
+      prepareNativeLaunch: () => new Promise((resolve) => {
+        resolvePrepareLaunch = resolve;
+      }),
+    });
+    delayedPrepare.flow.openApp(launchApp, source);
+    assert(!delayedPrepare.flow.isAppLaunching.value, "pending launch preparation should delay launch animation");
+    resolvePrepareLaunch(true);
+    await Promise.resolve();
+    assert(delayedPrepare.flow.isAppLaunching.value, "successful async launch preparation should start launch animation");
 
     const dragBlocked = createLaunchFlow({ isDragActive: true });
     dragBlocked.flow.openApp(launchApp, source);

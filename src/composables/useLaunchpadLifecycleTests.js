@@ -123,6 +123,8 @@ export async function runLaunchpadLifecycleTests() {
     observe(element) {
       observed.push(element.id);
     }
+
+    disconnect() {}
   };
   const observer = createLaunchpadLayoutResizeObserver(options, ObserverCtor);
   assert(observer.callback === options.updatePageGridMetrics, "layout ResizeObserver should update page metrics");
@@ -141,6 +143,23 @@ export async function runLaunchpadLifecycleTests() {
   });
 
   await Promise.resolve();
+
+  let resolveNativeRegistration;
+  const { calls: unmountedLoadCalls, options: unmountedLoadOptions } = createLifecycleOptions();
+  unmountedLoadOptions.registerNativeEventListeners = () => {
+    unmountedLoadCalls.push("registerNativeEventListeners");
+    return new Promise((resolve) => {
+      resolveNativeRegistration = resolve;
+    });
+  };
+  const lifecycle = { active: false };
+  withMockWindow(() => {
+    const mountedObserver = runLaunchpadMountedEffects(unmountedLoadOptions, ObserverCtor, lifecycle);
+    runLaunchpadBeforeUnmountEffects(unmountedLoadOptions, mountedObserver, lifecycle);
+  });
+  resolveNativeRegistration();
+  await Promise.resolve();
+  assert(!unmountedLoadCalls.includes("loadNativeLaunchpadData"), "native layout load should not run after unmount");
 
   withMockWindow((events) => {
     const { calls, options: unmountOptions } = createLifecycleOptions();

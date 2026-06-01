@@ -64,13 +64,13 @@ function makeOptions(overrides = {}) {
   return { calls, options };
 }
 
-function withMockTauri(invoke, run) {
+function withMockTauri(invoke, run, bridgeOverrides = {}) {
   const originalWindow = globalThis.window;
   const timers = [];
   setLaunchpadApiBridgeForTests({
     convertFileSrc: (path) => `asset://${path}`,
     invoke,
-    listen: async () => () => {},
+    listen: bridgeOverrides.listen || (async () => () => {}),
   });
   globalThis.window = {
     clearTimeout: (timer) => {
@@ -241,7 +241,7 @@ export async function runLaunchpadNativeTests() {
     if (command === "check_launch_targets") return [];
     if (command === "save_layout") {
       launchCommands.push(command);
-      assert(args.layout.pages[0][0].id === "custom-app", "native launch should flush the current layout before launching");
+      assert(args.layout.pages[0][0].id === "custom-app", "debounced native saves should persist the current layout");
       return null;
     }
     if (command === "launch_app") {
@@ -269,8 +269,63 @@ export async function runLaunchpadNativeTests() {
       launchTarget: { kind: "executable", path: "C:/Tools/Custom.exe" },
       launchArgs: "--profile dev",
     });
-    assert(launchCommands.join(",") === "save_layout,launch_app", "native launch should save before invoking launch_app");
-    assert(timers.length === 0, "native launch flush should clear the pending debounced save");
+    assert(launchCommands.join(",") === "launch_app", "non-critical pending saves should not block native launch");
+    assert(timers.length === 1, "non-critical pending saves should remain debounced after launch");
+    await timers.shift()();
+    assert(launchCommands.join(",") === "launch_app,save_layout", "debounced save should still run after non-critical launch");
+  });
+
+  const pendingCriticalSaves = [];
+  const criticalCommands = [];
+  await withMockTauri(async (command, args) => {
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{ id: "custom-app", type: "app", name: "Custom App", launchTarget: { kind: "shortcut", path: "C:/Tools/Custom.lnk" } }]],
+        settings: {},
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    if (command === "save_layout") {
+      criticalCommands.push(command);
+      assert(args.layout.pages[0][0].id === "custom-app", "critical native saves should persist the current app");
+      return new Promise((resolve) => {
+        pendingCriticalSaves.push(resolve);
+      });
+    }
+    if (command === "launch_app") {
+      criticalCommands.push(command);
+      return null;
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async (timers) => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    timers.length = 0;
+    const savePromise = native.markLaunchCriticalLayoutDirty("custom-app");
+    assert(pendingCriticalSaves.length === 1, "critical layout changes should save immediately");
+    let prepared = false;
+    const preparePromise = native.prepareNativeLaunch({ id: "custom-app" }).then((result) => {
+      prepared = result;
+    });
+    await flushMicrotasks(2);
+    assert(prepared === false, "critical launch preparation should wait for the save");
+    pendingCriticalSaves[0](null);
+    await savePromise;
+    await preparePromise;
+    assert(prepared === true, "critical launch preparation should succeed after the save");
+    await native.launchNativeAppIfAvailable({
+      id: "custom-app",
+      type: "app",
+      name: "Custom App",
+      launchTarget: { kind: "shortcut", path: "C:/Tools/Custom.lnk" },
+    });
+    assert(criticalCommands.join(",") === "save_layout,launch_app", "critical saves should complete before native launch");
   });
 
   await withMockTauri(async (command) => {
@@ -284,7 +339,7 @@ export async function runLaunchpadNativeTests() {
     if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     if (command === "save_layout") throw new Error("disk full");
-    if (command === "launch_app") throw new Error("launch_app should not run after a failed launch flush");
+    if (command === "launch_app") throw new Error("launch_app should not run after a failed critical save");
     throw new Error(`Unexpected invoke: ${command}`);
   }, async (timers) => {
     const originalConsoleError = console.error;
@@ -299,13 +354,10 @@ export async function runLaunchpadNativeTests() {
 
       await native.loadNativeLaunchpadData();
       timers.length = 0;
-      await native.launchNativeAppIfAvailable({
-        id: "custom-app",
-        type: "app",
-        name: "Custom App",
-        launchTarget: { kind: "shortcut", path: "C:/Tools/Custom.lnk" },
-      });
-      assert(saveFailures.length === 1, "failed launch flush should surface a save notice");
+      await native.markLaunchCriticalLayoutDirty("custom-app");
+      const prepared = await native.prepareNativeLaunch({ id: "custom-app" });
+      assert(prepared === false, "failed critical saves should block native launch preparation");
+      assert(saveFailures.length >= 1, "failed critical saves should surface a save notice");
     } finally {
       console.error = originalConsoleError;
     }
@@ -357,6 +409,29 @@ export async function runLaunchpadNativeTests() {
     native.scheduleLaunchTargetStatusCheck();
     assert(!("app" in options.launchTargetStatusById.value), "changing launch target should clear stale missing status before recheck");
     assert(native.getLaunchTargetStatus(options.pages.value[0][0]) === null, "native status lookup should ignore stale target records");
+  });
+
+  const pendingNativeListeners = [];
+  const staleUnlistenEvents = [];
+  await withMockTauri(async () => {
+    throw new Error("layout should not load during listener cleanup test");
+  }, async () => {
+    const { options } = makeOptions();
+    const native = useLaunchpadNative(options);
+
+    const registerPromise = native.registerNativeEventListeners();
+    assert(pendingNativeListeners.length === 5, "native event listener registration should request all listeners");
+    native.clearNativeEventListeners();
+    for (const pending of pendingNativeListeners) {
+      pending.resolve(() => staleUnlistenEvents.push(pending.eventName));
+    }
+    await registerPromise;
+
+    assert(staleUnlistenEvents.length === 5, "late native listener registrations should be immediately unlistened after cleanup");
+  }, {
+    listen: (eventName) => new Promise((resolve) => {
+      pendingNativeListeners.push({ eventName, resolve });
+    }),
   });
 
   let saveAttempts = 0;
