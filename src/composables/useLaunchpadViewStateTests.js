@@ -1,6 +1,8 @@
 import { ref } from "vue";
 import {
   desktopTrackTransition,
+  folderContentCloseTransition,
+  folderPanelCloseTransition,
   homeShellTransition,
   instantTrackTransition,
   panelSpring,
@@ -91,9 +93,12 @@ export function runLaunchpadViewStateTests() {
   assert(openFolder.view.getDesktopGridProjectionKey(0) === "desktop-grid-0-frozen", "frozen desktop should use frozen projection key");
 
   const closingFolder = createViewState({ isFolderClosing: true, isFolderLayerActive: true });
-  assert(closingFolder.view.folderPanelAnimate.value.opacity === 0, "closing folder should hide folder panel");
+  assert(closingFolder.view.folderPanelAnimate.value.opacity === 1, "closing folder should keep folder panel visible during geometry collapse");
   assert(closingFolder.view.folderPanelAnimate.value.x === 12, "closing folder should animate back to geometry x");
-  assert(closingFolder.view.folderContentAnimate.value.y === 12, "closing folder should move folder content down");
+  assert(closingFolder.view.folderPanelTransition.value === folderPanelCloseTransition, "closing folder should use the dedicated close transition for the panel");
+  assert(closingFolder.view.folderContentAnimate.value.y === 4, "closing folder should only nudge folder content down");
+  assert(closingFolder.view.folderContentAnimate.value.scale === 0.985, "closing folder should keep content scale close to resting");
+  assert(closingFolder.view.folderContentTransition.value === folderContentCloseTransition, "closing folder should use the dedicated close transition for content");
 
   const launchClosing = createViewState({ isFolderAppLaunchClosing: true, isFolderLayerActive: true });
   assert(launchClosing.view.folderPanelAnimate.value.scaleX === 1.08, "app launch folder close should expand folder panel");

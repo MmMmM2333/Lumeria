@@ -1,5 +1,5 @@
 import { ref, shallowRef } from "vue";
-import { createDeferredHandlers } from "./useLaunchpadController.js";
+import { createDeferredHandlers, shouldPlayFolderOpenIconGhosts } from "./useLaunchpadController.js";
 import { useLaunchpadControllerHelpers } from "./useLaunchpadControllerHelpers.js";
 
 export function runLaunchpadControllerHelpersTests() {
@@ -59,4 +59,30 @@ export function runLaunchpadControllerHelpersTests() {
   deferredHandlers.set("value", (next) => `bound:${next}`);
   assert(deferredHandlers.call("value", "ready") === "bound:ready", "deferred handlers should call bound functions");
   assert(deferredHandlers.call("missing") === undefined, "missing deferred handlers should be no-ops");
+
+  assert(!shouldPlayFolderOpenIconGhosts(null), "empty folder open requests should not play folder-open icon ghosts");
+  assert(shouldPlayFolderOpenIconGhosts("folder", {
+    isFolderAppLaunchClosing: ref(false),
+    isFolderClosing: ref(false),
+    openFolderId: ref(null),
+    renderedFolder: ref(null),
+  }), "opening a closed folder should play folder-open icon ghosts");
+  assert(!shouldPlayFolderOpenIconGhosts("folder", {
+    isFolderAppLaunchClosing: ref(false),
+    isFolderClosing: ref(false),
+    openFolderId: ref("folder"),
+    renderedFolder: ref({ id: "folder" }),
+  }), "refreshing the already-open folder should not replay folder-open icon ghosts");
+  assert(shouldPlayFolderOpenIconGhosts("folder", {
+    isFolderAppLaunchClosing: ref(false),
+    isFolderClosing: ref(false),
+    openFolderId: ref("other-folder"),
+    renderedFolder: ref({ id: "other-folder" }),
+  }), "switching to another folder should play folder-open icon ghosts");
+  assert(shouldPlayFolderOpenIconGhosts("folder", {
+    isFolderAppLaunchClosing: ref(false),
+    isFolderClosing: ref(true),
+    openFolderId: ref("folder"),
+    renderedFolder: ref({ id: "folder" }),
+  }), "reopening a closing folder should play folder-open icon ghosts");
 }

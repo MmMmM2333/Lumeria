@@ -18,7 +18,7 @@
         class="folder-panel-content"
         :initial="state.folderContentInitial"
         :animate="state.folderContentAnimate.value"
-        :transition="state.folderContentTransition"
+        :transition="state.folderContentTransition.value"
       >
         <div class="folder-header">
           <input
@@ -68,6 +68,9 @@
                       :removable="child.type === 'app'"
                       :selected="state.isIconSelected('folder', child.id, pageNumber, state.renderedFolder.value.id)"
                       :opening="state.isIconOpening('folder', child.id, pageNumber, state.renderedFolder.value.id)"
+                      :ghosted="state.isFolderOpeningIconGhosted(state.renderedFolder.value.id, child.id) || state.isFolderClosingIconGhosted(state.renderedFolder.value.id, child.id)"
+                      :emerging="state.isFolderOpenIconAnimationActive.value && pageNumber === state.folderPageIndex.value && !state.isFolderOpeningIconGhosted(state.renderedFolder.value.id, child.id) && !state.isFolderClosingIconGhosted(state.renderedFolder.value.id, child.id)"
+                      :emerging-delay="state.getFolderOpenExtraIconDelay(index)"
                       :launch-target-status="state.showMissingLaunchTargetBadge.value ? state.launchTargetStatusById.value[child.id] : null"
                       @pointerdown-icon="(...args) => forward('pointerdown-icon', args)"
                       @open-app="(...args) => forward('open-app', args)"
@@ -100,6 +103,32 @@
             />
           </footer>
         </div>
+
+        <div v-if="state.folderOpenIconGhosts.value.length" class="folder-open-icon-ghost-layer" aria-hidden="true">
+          <Motion
+            v-for="ghost in state.folderOpenIconGhosts.value"
+            :key="ghost.key"
+            class="folder-open-icon-ghost"
+            :initial="state.getFolderOpenIconGhostInitial(ghost)"
+            :animate="state.getFolderOpenIconGhostAnimate(ghost)"
+            :transition="state.getFolderOpenIconGhostTransition(ghost)"
+            :style="state.getFolderOpenIconGhostStyle(ghost)"
+            @motioncomplete="state.completeFolderOpenIconGhost(ghost.key)"
+          >
+            <div class="icon-selection-frame folder-open-icon-ghost-frame">
+              <div class="icon-hit-target folder-open-icon-ghost-hit-target">
+                <div class="icon-visual-wrap">
+                  <div class="icon-box">
+                    <img v-if="getIconSource(ghost.item)" class="app-icon-image" :src="getIconSource(ghost.item)" alt="" draggable="false" />
+                    <span v-else class="icon-emoji">{{ ghost.item.emoji }}</span>
+                  </div>
+                  <MissingLaunchTargetBadge :status="state.showMissingLaunchTargetBadge.value ? state.launchTargetStatusById.value[ghost.item.id] : null" />
+                </div>
+              </div>
+              <div v-if="!state.isTextlessMode.value" class="icon-name folder-open-icon-ghost-name">{{ ghost.item.name }}</div>
+            </div>
+          </Motion>
+        </div>
       </Motion>
     </Motion>
   </div>
@@ -109,7 +138,9 @@
 import { Motion } from "motion-v";
 import { ref } from "vue";
 import DesktopIcon from "./DesktopIcon.js";
+import MissingLaunchTargetBadge from "./MissingLaunchTargetBadge.js";
 import StaticPagePreview from "./StaticPagePreview.js";
+import { getIconSource } from "../domain/iconSource.js";
 import { cx } from "../domain/launchpadLayout.js";
 
 const props = defineProps({

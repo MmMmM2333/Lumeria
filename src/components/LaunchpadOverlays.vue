@@ -14,6 +14,32 @@
     </div>
   </Motion>
 
+  <div v-if="state.folderCloseIconGhosts.value.length" class="folder-close-icon-ghost-layer" aria-hidden="true">
+    <Motion
+      v-for="ghost in state.folderCloseIconGhosts.value"
+      :key="ghost.key"
+      class="folder-close-icon-ghost"
+      :initial="state.getFolderCloseIconGhostInitial(ghost)"
+      :animate="state.getFolderCloseIconGhostAnimate(ghost)"
+      :transition="state.getFolderCloseIconGhostTransition(ghost)"
+      :style="state.getFolderCloseIconGhostStyle(ghost)"
+      @motioncomplete="state.completeFolderCloseIconGhost(ghost.key)"
+    >
+      <div class="icon-selection-frame folder-close-icon-ghost-frame">
+        <div class="icon-hit-target folder-close-icon-ghost-hit-target">
+          <div class="icon-visual-wrap">
+            <div class="icon-box">
+              <img v-if="getIconSource(ghost.item)" class="app-icon-image" :src="getIconSource(ghost.item)" alt="" draggable="false" />
+              <span v-else class="icon-emoji">{{ ghost.item.emoji }}</span>
+            </div>
+            <MissingLaunchTargetBadge :status="state.showMissingLaunchTargetBadge.value ? state.launchTargetStatusById.value[ghost.item.id] : null" />
+          </div>
+        </div>
+        <div v-if="!state.isTextlessMode.value" class="icon-name folder-close-icon-ghost-name">{{ ghost.item.name }}</div>
+      </div>
+    </Motion>
+  </div>
+
   <div v-if="iconContextMenu" class="icon-context-menu-layer" @contextmenu.prevent>
     <div class="icon-context-menu" :style="iconContextMenuStyle" role="menu" :aria-label="`${iconContextMenu.app.name} 菜单`" @pointerdown.stop>
       <button type="button" role="menuitem" @click="openContextMenuApp">打开</button>
@@ -51,6 +77,7 @@
 <script setup>
 import { Motion } from "motion-v";
 import { computed, ref } from "vue";
+import MissingLaunchTargetBadge from "./MissingLaunchTargetBadge.js";
 import { getIconSource } from "../domain/iconSource.js";
 import { cx } from "../domain/launchpadLayout.js";
 

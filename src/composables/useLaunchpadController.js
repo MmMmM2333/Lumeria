@@ -8,6 +8,7 @@ import { useFolderMotionGeometry } from "./useFolderMotionGeometry.js";
 import { useFolderViewportMetrics } from "./useFolderViewportMetrics.js";
 import { useLaunchpadApps } from "./useLaunchpadApps.js";
 import { useLaunchpadDrag } from "./useLaunchpadDrag.js";
+import { useFolderOpenIconGhosts } from "./useFolderOpenIconGhosts.js";
 import { useLaunchpadFolderFlow } from "./useLaunchpadFolderFlow.js";
 import { useLaunchpadIconActivation } from "./useLaunchpadIconActivation.js";
 import { useLaunchpadLaunchFlow } from "./useLaunchpadLaunchFlow.js";
@@ -54,6 +55,17 @@ export function createDeferredHandlers(defaults = {}) {
       else delete handlers[name];
     },
   };
+}
+
+export function shouldPlayFolderOpenIconGhosts(next, state) {
+  if (!next) return false;
+  const openFolderId = state?.openFolderId?.value || null;
+  const renderedFolderId = state?.renderedFolder?.value?.id || null;
+  const isSameOpenFolder = openFolderId === next &&
+    renderedFolderId === next &&
+    !state?.isFolderClosing?.value &&
+    !state?.isFolderAppLaunchClosing?.value;
+  return !isSameOpenFolder;
 }
 
 export function useLaunchpadController() {
@@ -194,11 +206,40 @@ export function useLaunchpadController() {
   } = useIconSelection({ getCurrentIconScope: () => deferredHandlers.call("getCurrentIconScope") });
 
   const {
+    captureFolderCloseIconGhosts,
+    captureFolderPreviewIconGhosts,
+    clearFolderCloseIconGhosts,
+    clearFolderOpenIconGhosts,
+    completeFolderCloseIconGhost,
+    completeFolderOpenIconGhost,
+    folderCloseIconGhosts,
+    folderOpenIconGhosts,
+    getFolderCloseIconGhostAnimate,
+    getFolderCloseIconGhostInitial,
+    getFolderCloseIconGhostStyle,
+    getFolderCloseIconGhostTransition,
+    getFolderOpenExtraIconDelay,
+    getFolderOpenIconGhostAnimate,
+    getFolderOpenIconGhostInitial,
+    getFolderOpenIconGhostStyle,
+    getFolderOpenIconGhostTransition,
+    isFolderCloseIconAnimationActive,
+    isFolderOpenIconAnimationActive,
+    isFolderClosingIconGhosted,
+    isFolderOpeningIconGhosted,
+    playFolderCloseIconGhosts,
+    playFolderOpenIconGhosts,
+  } = useFolderOpenIconGhosts({
+    cloneItem,
+    folderPreviewSlots,
+  });
+
+  const {
     clearFolderAppLaunchTimer,
     clearFolderCloseTimer,
     clearHomeRevealSettleTimer,
     commitFolderSession,
-    commitOpenFolder,
+    commitOpenFolder: commitOpenFolderNow,
     desktopProjectionEpoch,
     finishHomeRevealSettleWindow,
     folderPages,
@@ -226,6 +267,36 @@ export function useLaunchpadController() {
     pages,
     setFolderMotionGeometry: (next) => deferredHandlers.call("setFolderMotionGeometry", next),
   });
+
+  function commitOpenFolder(next, commitOptions) {
+    if (!next) {
+      const closingFolder = renderedFolder.value;
+      const closingFolderPage = closingFolder ? getVisibleFolderPage(folderPages.value[folderPageIndex.value] || []) : [];
+      const capturedCloseGhosts = captureFolderCloseIconGhosts(closingFolder, closingFolderPage);
+      clearFolderOpenIconGhosts();
+      commitOpenFolderNow(next, commitOptions);
+      playFolderCloseIconGhosts(closingFolder?.id, capturedCloseGhosts);
+      return;
+    }
+
+    clearFolderCloseIconGhosts();
+    if (!shouldPlayFolderOpenIconGhosts(next, {
+      isFolderAppLaunchClosing,
+      isFolderClosing,
+      openFolderId,
+      renderedFolder,
+    })) {
+      commitOpenFolderNow(next, commitOptions);
+      return;
+    }
+
+    const folder = findFolder(pages.value, next)?.item || null;
+    const openingFolderPage = folder ? getVisibleFolderPage(getFolderChildPages(folder, folderPageSize.value)[0] || []) : [];
+    const capturedGhosts = captureFolderPreviewIconGhosts(folder, openingFolderPage);
+    commitOpenFolderNow(next, commitOptions);
+    playFolderOpenIconGhosts(next, capturedGhosts);
+  }
+
   const {
     folderMotionGeometry,
     getFolderIconMotionGeometry,
@@ -948,6 +1019,8 @@ export function useLaunchpadController() {
     clearFolderAppLaunchTimer,
     clearFolderCloseTimer,
     clearFolderPageTurn,
+    clearFolderCloseIconGhosts,
+    clearFolderOpenIconGhosts,
     clearHomeRevealSettleTimer,
     clearLaunchGhostTimer,
     clearLayoutSaveNoticeTimer,
@@ -1205,8 +1278,25 @@ export function useLaunchpadController() {
     launchGhost,
     appLaunchGhostTransition,
     launchGhostStyle,
+    completeFolderOpenIconGhost,
+    completeFolderCloseIconGhost,
+    folderCloseIconGhosts,
+    folderOpenIconGhosts,
+    getFolderCloseIconGhostAnimate,
+    getFolderCloseIconGhostInitial,
+    getFolderCloseIconGhostStyle,
+    getFolderCloseIconGhostTransition,
+    getFolderOpenExtraIconDelay,
+    getFolderOpenIconGhostAnimate,
+    getFolderOpenIconGhostInitial,
+    getFolderOpenIconGhostStyle,
+    getFolderOpenIconGhostTransition,
     dragPreviewRef,
     dragPreviewSpring,
     folderPreviewSlots,
+    isFolderCloseIconAnimationActive,
+    isFolderOpenIconAnimationActive,
+    isFolderClosingIconGhosted,
+    isFolderOpeningIconGhosted,
   };
 }

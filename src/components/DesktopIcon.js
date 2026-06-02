@@ -2,6 +2,7 @@ import { defineComponent, h } from "vue";
 import { Motion } from "motion-v";
 import { getIconSource } from "../domain/iconSource.js";
 import { getFolderPreviewSlots } from "../domain/launchpadLayout.js";
+import MissingLaunchTargetBadge from "./MissingLaunchTargetBadge.js";
 
 const springRest = { restDelta: 0.01, restSpeed: 0.01 };
 
@@ -24,6 +25,9 @@ export default defineComponent({
     removable: { type: Boolean, default: false },
     selected: { type: Boolean, default: false },
     dropTarget: { type: Boolean, default: false },
+    ghosted: { type: Boolean, default: false },
+    emerging: { type: Boolean, default: false },
+    emergingDelay: { type: Number, default: 0 },
     opening: { type: Boolean, default: false },
     launchTargetStatus: { type: String, default: null },
   },
@@ -47,13 +51,13 @@ export default defineComponent({
       const iconSource = getIconSource(child);
       if (iconSource) {
         return h("img", {
-          class: "folder-child-image",
+          class: "folder-child-visual folder-child-image",
           src: iconSource,
           alt: "",
           draggable: "false",
         });
       }
-      return child.emoji;
+      return h("span", { class: "folder-child-visual folder-child-emoji" }, child.emoji);
     }
 
     function handlePointerDown(event) {
@@ -109,7 +113,13 @@ export default defineComponent({
 
       if (isFolder) {
         const folderChildren = getFolderPreviewSlots(item, props.folderPreviewPageSize).map((child, index) =>
-          h("div", { key: child ? child.id : `folder-empty-${index}`, class: cx("folder-child", !child && "folder-child-empty") }, renderFolderChild(child))
+          h("div", {
+            key: child ? child.id : `folder-empty-${index}`,
+            class: cx("folder-child", !child && "folder-child-empty"),
+            "data-folder-preview-folder-id": props.source.type === "page" && child ? item.id : undefined,
+            "data-folder-preview-child-id": props.source.type === "page" && child ? child.id : undefined,
+            "data-folder-preview-slot-index": props.source.type === "page" && child ? index : undefined,
+          }, renderFolderChild(child))
         );
         iconChildren.push(h("div", { class: "folder-thumb" }, folderChildren));
       } else {
@@ -155,12 +165,8 @@ export default defineComponent({
             onClick: handleResetIcon,
           }, "↺")
         : null;
-      const missingBadge = item.type === "app" && props.launchTargetStatus === "missing"
-        ? h("span", {
-            class: "missing-launch-target-badge",
-            title: "启动路径不存在",
-            "aria-label": "启动路径不存在",
-          }, "!")
+      const missingBadge = item.type === "app"
+        ? h(MissingLaunchTargetBadge, { status: props.launchTargetStatus })
         : null;
       const hitTargetAttrs = {
         class: cx(
@@ -182,7 +188,11 @@ export default defineComponent({
 
       const cellChildren = [
         h("div", { class: cx("icon-jiggle-wrap", props.editing && "icon-cell-jiggling") }, [
-          h("div", { class: cx("icon-selection-frame", props.selected && "icon-selection-frame-selected", props.dropTarget && "icon-selection-frame-drop-target") }, [
+          h("div", {
+            class: cx("icon-selection-frame", props.selected && "icon-selection-frame-selected", props.dropTarget && "icon-selection-frame-drop-target"),
+            "data-folder-open-folder-id": props.source.type === "folder" ? props.source.folderId : undefined,
+            "data-folder-open-child-id": props.source.type === "folder" ? item.id : undefined,
+          }, [
             h("div", hitTargetAttrs, [
               h("div", { class: "icon-visual-wrap" }, [
                 removeButton,
@@ -196,6 +206,9 @@ export default defineComponent({
           ]),
         ]),
       ];
+      const cellStyle = { visibility: props.dragging ? "hidden" : "visible" };
+      if (props.emerging) cellStyle["--folder-open-icon-delay"] = `${props.emergingDelay}ms`;
+
       const cellAttrs = {
         class: cx(
           "icon-cell",
@@ -204,9 +217,11 @@ export default defineComponent({
           props.editing && "icon-cell-editing",
           props.selected && "icon-cell-selected",
           props.dropTarget && "icon-cell-drop-target",
+          props.ghosted && "icon-cell-ghosted",
+          props.emerging && "icon-cell-emerging",
           props.opening && "icon-cell-opening"
         ),
-        style: { visibility: props.dragging ? "hidden" : "visible" },
+        style: cellStyle,
       };
 
       if (!props.layoutEnabled && !props.opening && !props.dragging) {

@@ -4,7 +4,9 @@ import {
   appLaunchGhostTransition,
   desktopTrackTransition,
   dragPreviewSpring,
+  folderContentCloseTransition,
   folderContentTransition,
+  folderPanelCloseTransition,
   homeShellTransition,
   instantTrackTransition,
   layoutSpring,
@@ -77,7 +79,7 @@ export function useLaunchpadViewState(options) {
     }
     if (options.isFolderClosing.value) {
       return {
-        opacity: 0,
+        opacity: 1,
         scaleX: options.folderMotionGeometry.value.scaleX,
         scaleY: options.folderMotionGeometry.value.scaleY,
         x: options.folderMotionGeometry.value.x,
@@ -91,18 +93,22 @@ export function useLaunchpadViewState(options) {
     }
     return { opacity: 1, scaleX: 1, scaleY: 1, x: 0, y: 0, borderRadius: "42px", filter: "blur(0px)" };
   });
-  const folderPanelTransition = computed(() => (
-    isDesktopAnimatingClosed.value || (options.isHomeRevealSettling.value && options.openFolderId.value && !options.isFolderClosing.value)
+  const folderPanelTransition = computed(() => {
+    if (options.isFolderClosing.value) return folderPanelCloseTransition;
+    return isDesktopAnimatingClosed.value || (options.isHomeRevealSettling.value && options.openFolderId.value && !options.isFolderClosing.value)
       ? homeShellTransition
-      : panelSpring
-  ));
+      : panelSpring;
+  });
   const folderContentInitial = { opacity: 0, scale: 0.94, y: 18 };
   const folderContentAnimate = computed(() => {
     if (options.isFolderAppLaunchClosing.value) return { opacity: 0, scale: 1.08, y: 0 };
     return options.isFolderClosing.value
-      ? { opacity: 0, scale: 0.96, y: 12 }
+      ? { opacity: 0, scale: 0.985, y: 4 }
       : { opacity: 1, scale: 1, y: 0 };
   });
+  const activeFolderContentTransition = computed(() => (
+    options.isFolderClosing.value ? folderContentCloseTransition : folderContentTransition
+  ));
   const pageGridStyle = computed(() => ({
     gridTemplateColumns: `repeat(${options.gridCols.value}, minmax(0, 1fr))`,
     gridTemplateRows: `repeat(${options.gridRows.value}, minmax(0, 1fr))`,
@@ -122,7 +128,7 @@ export function useLaunchpadViewState(options) {
     dragPreviewSpring,
     folderContentAnimate,
     folderContentInitial,
-    folderContentTransition,
+    folderContentTransition: activeFolderContentTransition,
     folderLayoutEnabled,
     folderPanelAnimate,
     folderPanelInitial,
