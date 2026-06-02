@@ -40,6 +40,7 @@
         :folder-page-size="folderPageSize"
         :get-active-page-grid-style="getActivePageGridStyle"
         :get-desktop-grid-projection-key="getDesktopGridProjectionKey"
+        :get-desktop-page-render-mode="getDesktopPageRenderMode"
         :get-visible-desktop-page="getVisibleDesktopPage"
         :is-edit-mode="isEditMode"
         :is-icon-opening="isIconOpening"
@@ -50,8 +51,6 @@
         :layout-spring="layoutSpring"
         :page-grid-measure-style="pageGridMeasureStyle"
         :set-page-ref="setPageRef"
-        :should-render-active-page="shouldRenderActivePage"
-        :should-render-static-active-page="shouldRenderStaticActivePage"
         :show-missing-launch-target-badge="showMissingLaunchTargetBadge"
         @desktop-focus="keyboardFocusArea = 'desktop'"
         @pointerdown-icon="beginDrag"
@@ -259,15 +258,12 @@ const {
   handleDesktopSurfacePointerDown,
   activePageIndex,
   activePages,
-  shouldRenderActivePage,
-  shouldRenderStaticActivePage,
-  shouldRenderFolderPage,
-  shouldRenderStaticFolderPage,
   commitActivePageIndex,
   desktopTrackMotionKey,
   activeDesktopTrackAnimate,
   activeDesktopTrackTransition,
   getDesktopGridProjectionKey,
+  getDesktopPageRenderMode,
   setPageRef,
   desktopLayoutEnabled,
   getActivePageGridStyle,

@@ -46,15 +46,16 @@
                 :aria-hidden="pageNumber === state.folderPageIndex.value ? null : 'true'"
                 :inert="pageNumber !== state.folderPageIndex.value"
               >
-                <Motion
+                <component
+                  :is="state.folderLayoutEnabled.value ? Motion : 'div'"
                   :ref="(node) => state.setFolderPageRef(node, pageNumber)"
-                  layout
+                  :layout="state.folderLayoutEnabled.value ? true : undefined"
                   class="folder-grid"
                   tabindex="-1"
                   :style="state.folderGridStyle.value"
-                  :transition="state.layoutSpring"
+                  :transition="state.folderLayoutEnabled.value ? state.layoutSpring : undefined"
                 >
-                  <template v-if="state.shouldRenderFolderPage(pageNumber)">
+                  <template v-if="state.getFolderPageRenderMode(pageNumber) === 'interactive'">
                     <DesktopIcon
                       v-for="(child, index) in state.getVisibleFolderPage(page)"
                       :key="child.id"
@@ -63,6 +64,7 @@
                       :dragging="state.dragMeta.value && state.dragMeta.value.item.id === child.id"
                       :editing="state.isEditMode.value"
                       :textless="state.isTextlessMode.value"
+                      :layout-enabled="state.folderLayoutEnabled.value"
                       :removable="child.type === 'app'"
                       :selected="state.isIconSelected('folder', child.id, pageNumber, state.renderedFolder.value.id)"
                       :opening="state.isIconOpening('folder', child.id, pageNumber, state.renderedFolder.value.id)"
@@ -76,12 +78,12 @@
                     />
                   </template>
                   <StaticPagePreview
-                    v-else-if="state.shouldRenderStaticFolderPage(pageNumber)"
+                    v-else-if="state.getFolderPageRenderMode(pageNumber) === 'static-real'"
                     :items="state.getVisibleFolderPage(page)"
                     :folder-preview-page-size="state.folderPageSize.value"
                     :textless="state.isTextlessMode.value"
                   />
-                </Motion>
+                </component>
               </section>
             </Motion>
           </div>

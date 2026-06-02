@@ -22,6 +22,8 @@ export function useLaunchpadViewState(options) {
     options.isDesktopClosing.value ||
     options.isAppLaunching.value
   ));
+  const isLayoutProjectionRequested = computed(() => Boolean(options.isLayoutProjectionActive?.value));
+  const isSearchLayoutProjectionRequested = computed(() => Boolean(options.isSearchMode.value));
   const shouldSnapDesktopTrack = computed(() => Boolean(
     options.isFolderLayerActive.value ||
     options.isHomeRevealSettling.value ||
@@ -29,7 +31,18 @@ export function useLaunchpadViewState(options) {
     options.isDesktopClosing.value ||
     options.isAppLaunching.value
   ));
-  const desktopLayoutEnabled = computed(() => !shouldFreezeDesktopProjection.value);
+  const desktopLayoutEnabled = computed(() => Boolean(
+    (isLayoutProjectionRequested.value || isSearchLayoutProjectionRequested.value) &&
+    !shouldFreezeDesktopProjection.value
+  ));
+  const folderLayoutEnabled = computed(() => Boolean(
+    isLayoutProjectionRequested.value &&
+    options.isDesktopOpen.value &&
+    !options.isDesktopClosing.value &&
+    !options.isAppLaunching.value &&
+    !options.isFolderClosing.value &&
+    !options.isFolderAppLaunchClosing.value
+  ));
   const desktopProjectionKeyMode = computed(() => (desktopLayoutEnabled.value ? `enabled-${options.desktopProjectionEpoch.value}` : "frozen"));
   const activeDesktopTrackTransition = computed(() => (shouldSnapDesktopTrack.value ? instantTrackTransition : desktopTrackTransition));
   const desktopTrackMotionKey = computed(() => `${options.isDesktopOpen.value ? "open" : "closed"}-${options.isSearchMode.value ? "search" : "desktop"}-${shouldSnapDesktopTrack.value ? "snap" : "spring"}`);
@@ -110,6 +123,7 @@ export function useLaunchpadViewState(options) {
     folderContentAnimate,
     folderContentInitial,
     folderContentTransition,
+    folderLayoutEnabled,
     folderPanelAnimate,
     folderPanelInitial,
     folderPanelTransition,

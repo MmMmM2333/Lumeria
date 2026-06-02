@@ -1781,12 +1781,15 @@ body {
 .icon-hit-target-draggable:active { cursor: grabbing; }
 .icon-hit-target-clickable { cursor: pointer; }
 .icon-hit-target:hover { z-index: 15; }
-.static-icon-cell,
-.static-icon-hit-target {
+.static-icon-cell {
+  box-sizing: border-box;
+  padding: 10px 12px;
+  contain: layout paint style;
   pointer-events: none;
 }
 
-.icon-visual-wrap {
+.icon-visual-wrap,
+.static-icon-visual {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -1936,7 +1939,7 @@ body {
 }
 
 .icon-hit-target:hover .icon-box { transform: translateY(-4px); }
-.static-icon-cell .icon-hit-target:hover .icon-box { transform: none; }
+.static-icon-box { transition: none; }
 .icon-box-compact {
   width: var(--compact-icon-size);
   height: var(--compact-icon-size);
@@ -2231,6 +2234,10 @@ body {
   --selection-frame-min-width: var(--folder-selection-frame-min-width);
   height: 100%;
   min-height: 0;
+}
+
+.folder-grid .static-icon-cell {
+  padding: var(--folder-selection-frame-padding-y) var(--folder-selection-frame-padding-x);
 }
 
 .folder-grid .icon-selection-frame {

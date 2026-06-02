@@ -102,6 +102,7 @@ export function runLaunchpadBeforeUnmountEffects(options, layoutResizeObserver =
     clearFolderPageTurn,
     clearHomeRevealSettleTimer,
     clearLaunchGhostTimer,
+    clearLayoutProjectionRelease,
     clearLayoutSaveNoticeTimer,
     clearNativeEventListeners,
     clearNativeSaveTimer,
@@ -128,6 +129,7 @@ export function runLaunchpadBeforeUnmountEffects(options, layoutResizeObserver =
   clearFolderPageTurn();
   clearFolderCloseTimer();
   clearFolderAppLaunchTimer();
+  clearLayoutProjectionRelease?.(true);
   clearSettingsPanelCloseTimer();
   clearWarningDialogTimer();
   clearHomeRevealSettleTimer();

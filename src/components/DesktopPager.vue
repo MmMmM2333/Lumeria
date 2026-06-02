@@ -17,16 +17,17 @@
             :inert="pageNumber !== activePageIndex"
             tabindex="-1"
           >
-            <Motion
+            <component
+              :is="desktopLayoutEnabled ? Motion : 'div'"
               :key="getDesktopGridProjectionKey(pageNumber)"
               :ref="(node) => setPageRef(node, pageNumber)"
-              :layout="desktopLayoutEnabled"
+              :layout="desktopLayoutEnabled ? true : undefined"
               :class="cx('page-grid', isSearchMode && 'search-page-grid')"
               :style="[getActivePageGridStyle(page), pageGridMeasureStyle]"
-              :transition="layoutSpring"
+              :transition="desktopLayoutEnabled ? layoutSpring : undefined"
               tabindex="-1"
             >
-              <template v-if="shouldRenderActivePage(pageNumber)">
+              <template v-if="getDesktopPageRenderMode(pageNumber) === 'interactive'">
                 <template v-if="isSearchMode && page.length === 0">
                   <div class="search-empty-state">没有找到匹配的应用</div>
                 </template>
@@ -55,12 +56,12 @@
                 />
               </template>
               <StaticPagePreview
-                v-else-if="shouldRenderStaticActivePage(pageNumber)"
+                v-else-if="getDesktopPageRenderMode(pageNumber) === 'static-real'"
                 :items="getVisibleDesktopPage(page)"
                 :folder-preview-page-size="folderPageSize"
                 :textless="isTextlessMode"
               />
-            </Motion>
+            </component>
           </section>
         </Motion>
       </div>
@@ -87,6 +88,7 @@ defineProps({
   folderPageSize: { type: Number, required: true },
   getActivePageGridStyle: { type: Function, required: true },
   getDesktopGridProjectionKey: { type: Function, required: true },
+  getDesktopPageRenderMode: { type: Function, required: true },
   getVisibleDesktopPage: { type: Function, required: true },
   isEditMode: { type: Boolean, default: false },
   isIconOpening: { type: Function, required: true },
@@ -97,8 +99,6 @@ defineProps({
   layoutSpring: { type: Object, required: true },
   pageGridMeasureStyle: { type: Object, required: true },
   setPageRef: { type: Function, required: true },
-  shouldRenderActivePage: { type: Function, required: true },
-  shouldRenderStaticActivePage: { type: Function, required: true },
   showMissingLaunchTargetBadge: { type: Boolean, default: true },
 });
 

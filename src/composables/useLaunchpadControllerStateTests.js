@@ -39,6 +39,7 @@ export function runLaunchpadControllerStateTests() {
   assert(state.searchPageIndex.value === 0, "search page index should start at zero");
   assert(state.folderPageIndex.value === 0, "folder page index should start at zero");
   assert(state.keyboardFocusArea.value === "desktop", "keyboard focus should start on the desktop");
+  assert(state.isLayoutProjectionActive.value === false, "layout projection should start disabled");
   assert(state.isTextlessMode.value === false, "textless mode should start disabled");
   assert(Array.isArray(state.hiddenAppIds.value) && state.hiddenAppIds.value.length === 0, "hidden app ids should start empty");
 

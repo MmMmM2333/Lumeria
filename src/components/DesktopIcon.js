@@ -99,6 +99,13 @@ export default defineComponent({
       const item = props.item;
       const isFolder = item.type === "folder";
       const iconChildren = [];
+      const motionTransition = {
+        opacity: { duration: props.opening ? 0.22 : 0.12 },
+        scale: props.opening ? { type: "spring", stiffness: 260, damping: 21, mass: 0.8, ...springRest } : { duration: 0.12 },
+      };
+      if (props.layoutEnabled) {
+        motionTransition.layout = { type: "spring", stiffness: 520, damping: 34, mass: 0.75, ...springRest };
+      }
 
       if (isFolder) {
         const folderChildren = getFolderPreviewSlots(item, props.folderPreviewPageSize).map((child, index) =>
@@ -173,9 +180,43 @@ export default defineComponent({
         onContextmenu: handleContextMenu,
       };
 
+      const cellChildren = [
+        h("div", { class: cx("icon-jiggle-wrap", props.editing && "icon-cell-jiggling") }, [
+          h("div", { class: cx("icon-selection-frame", props.selected && "icon-selection-frame-selected", props.dropTarget && "icon-selection-frame-drop-target") }, [
+            h("div", hitTargetAttrs, [
+              h("div", { class: "icon-visual-wrap" }, [
+                removeButton,
+                chooseIconButton,
+                resetIconButton,
+                h("div", { class: cx("icon-box", props.compact && "icon-box-compact") }, iconChildren),
+                missingBadge,
+              ]),
+            ]),
+            !props.textless ? h("div", { class: "icon-name" }, item.name) : null,
+          ]),
+        ]),
+      ];
+      const cellAttrs = {
+        class: cx(
+          "icon-cell",
+          props.compact && "icon-cell-compact",
+          props.dragging && "icon-cell-dragging",
+          props.editing && "icon-cell-editing",
+          props.selected && "icon-cell-selected",
+          props.dropTarget && "icon-cell-drop-target",
+          props.opening && "icon-cell-opening"
+        ),
+        style: { visibility: props.dragging ? "hidden" : "visible" },
+      };
+
+      if (!props.layoutEnabled && !props.opening && !props.dragging) {
+        return h("div", cellAttrs, cellChildren);
+      }
+
       return h(
         Motion,
         {
+          ...cellAttrs,
           layout: props.layoutEnabled ? "position" : false,
           initial: false,
           animate: {
@@ -183,40 +224,9 @@ export default defineComponent({
             scale: props.opening ? 1.82 : 1,
             rotate: 0,
           },
-          transition: {
-            layout: { type: "spring", stiffness: 520, damping: 34, mass: 0.75, ...springRest },
-            opacity: { duration: props.opening ? 0.22 : 0.12 },
-            scale: props.opening ? { type: "spring", stiffness: 260, damping: 21, mass: 0.8, ...springRest } : { duration: 0.12 },
-          },
-          class: cx(
-            "icon-cell",
-            props.compact && "icon-cell-compact",
-            props.dragging && "icon-cell-dragging",
-            props.editing && "icon-cell-editing",
-            props.selected && "icon-cell-selected",
-            props.dropTarget && "icon-cell-drop-target",
-            props.opening && "icon-cell-opening"
-          ),
-          style: { visibility: props.dragging ? "hidden" : "visible" },
+          transition: motionTransition,
         },
-        {
-          default: () => [
-            h("div", { class: cx("icon-jiggle-wrap", props.editing && "icon-cell-jiggling") }, [
-              h("div", { class: cx("icon-selection-frame", props.selected && "icon-selection-frame-selected", props.dropTarget && "icon-selection-frame-drop-target") }, [
-                h("div", hitTargetAttrs, [
-                  h("div", { class: "icon-visual-wrap" }, [
-                    removeButton,
-                    chooseIconButton,
-                    resetIconButton,
-                    h("div", { class: cx("icon-box", props.compact && "icon-box-compact") }, iconChildren),
-                    missingBadge,
-                  ]),
-                ]),
-                !props.textless ? h("div", { class: "icon-name" }, item.name) : null,
-              ]),
-            ]),
-          ],
-        }
+        { default: () => cellChildren }
       );
     };
   },

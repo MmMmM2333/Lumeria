@@ -2,6 +2,9 @@ import { nextTick, ref } from "vue";
 import { clamp } from "../domain/launchpadLayout.js";
 
 const PAGE_JUMP_RENDER_RELEASE_DELAY = 900;
+const PAGE_RENDER_EMPTY = "empty";
+const PAGE_RENDER_INTERACTIVE = "interactive";
+const PAGE_RENDER_STATIC_REAL = "static-real";
 
 export function usePageRenderRange(options) {
   const transientPageRenderRange = ref(null);
@@ -12,48 +15,43 @@ export function usePageRenderRange(options) {
     return Boolean(options.getDragMeta?.());
   }
 
-  function shouldRenderActivePage(pageNumber) {
-    const distance = Math.abs(pageNumber - options.activePageIndex.value);
-    if (hasActiveDrag()) return distance <= 1;
+  function getPageRenderMode(pageNumber, mode, activePageIndex) {
+    const distance = Math.abs(pageNumber - activePageIndex);
+    if (hasActiveDrag()) return distance <= 1 ? PAGE_RENDER_INTERACTIVE : PAGE_RENDER_EMPTY;
 
     const transientRange = transientPageRenderRange.value;
-    const activeMode = options.isSearchMode.value ? "search" : "desktop";
-    if (transientRange?.mode === activeMode) {
-      return Math.abs(pageNumber - transientRange.from) <= 1 || Math.abs(pageNumber - transientRange.to) <= 1;
+    if (transientRange?.mode === mode) {
+      if (pageNumber === transientRange.from || pageNumber === transientRange.to) return PAGE_RENDER_INTERACTIVE;
+      if (pageNumber > transientRange.from && pageNumber < transientRange.to) return PAGE_RENDER_STATIC_REAL;
+      return PAGE_RENDER_EMPTY;
     }
 
-    return distance <= 1;
+    return Math.abs(pageNumber - activePageIndex) <= 1 ? PAGE_RENDER_INTERACTIVE : PAGE_RENDER_EMPTY;
+  }
+
+  function getDesktopPageRenderMode(pageNumber) {
+    const activeMode = options.isSearchMode.value ? "search" : "desktop";
+    return getPageRenderMode(pageNumber, activeMode, options.activePageIndex.value);
+  }
+
+  function getFolderPageRenderMode(pageNumber) {
+    return getPageRenderMode(pageNumber, "folder", options.folderPageIndex.value);
+  }
+
+  function shouldRenderActivePage(pageNumber) {
+    return getDesktopPageRenderMode(pageNumber) === PAGE_RENDER_INTERACTIVE;
   }
 
   function shouldRenderStaticActivePage(pageNumber) {
-    if (hasActiveDrag() || shouldRenderActivePage(pageNumber)) return false;
-
-    const transientRange = transientPageRenderRange.value;
-    const activeMode = options.isSearchMode.value ? "search" : "desktop";
-    if (transientRange?.mode === activeMode && pageNumber >= transientRange.from && pageNumber <= transientRange.to) return true;
-
-    return false;
+    return getDesktopPageRenderMode(pageNumber) === PAGE_RENDER_STATIC_REAL;
   }
 
   function shouldRenderFolderPage(pageNumber) {
-    const distance = Math.abs(pageNumber - options.folderPageIndex.value);
-    if (hasActiveDrag()) return distance <= 1;
-
-    const transientRange = transientPageRenderRange.value;
-    if (transientRange?.mode === "folder") {
-      return Math.abs(pageNumber - transientRange.from) <= 1 || Math.abs(pageNumber - transientRange.to) <= 1;
-    }
-
-    return distance <= 1;
+    return getFolderPageRenderMode(pageNumber) === PAGE_RENDER_INTERACTIVE;
   }
 
   function shouldRenderStaticFolderPage(pageNumber) {
-    if (hasActiveDrag() || shouldRenderFolderPage(pageNumber)) return false;
-
-    const transientRange = transientPageRenderRange.value;
-    if (transientRange?.mode === "folder" && pageNumber >= transientRange.from && pageNumber <= transientRange.to) return true;
-
-    return false;
+    return getFolderPageRenderMode(pageNumber) === PAGE_RENDER_STATIC_REAL;
   }
 
   function clearPageJumpRenderRange() {
@@ -147,6 +145,8 @@ export function usePageRenderRange(options) {
     commitFolderPageIndex,
     commitPageIndex,
     commitSearchPageIndex,
+    getDesktopPageRenderMode,
+    getFolderPageRenderMode,
     shouldRenderActivePage,
     shouldRenderFolderPage,
     shouldRenderStaticActivePage,

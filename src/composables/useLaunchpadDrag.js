@@ -20,6 +20,8 @@ import {
 } from "../domain/launchpadLayout.js";
 import { getDomRefElement } from "./usePageGridMetrics.js";
 
+const LAYOUT_PROJECTION_RELEASE_DELAY = 260;
+
 export function isPrimaryPointerStartEvent(event) {
   if (!event) return false;
   if (typeof event.button === "number" && event.button !== 0) return false;
@@ -58,6 +60,7 @@ export function useLaunchpadDrag(options) {
   let pageTurnTimer = null;
   let folderPageTurnTimer = null;
   let dragIntentTimer = null;
+  let layoutProjectionReleaseTimer = null;
   let dragListenersAttached = false;
   let dragContextMenuListenerAttached = false;
   let longPressState = null;
@@ -96,6 +99,31 @@ export function useLaunchpadDrag(options) {
   function clearDragIntentTimer() {
     if (dragIntentTimer) window.clearTimeout(dragIntentTimer);
     dragIntentTimer = null;
+  }
+
+  function setLayoutProjectionActive(active) {
+    if (options.isLayoutProjectionActive && typeof options.isLayoutProjectionActive === "object" && "value" in options.isLayoutProjectionActive) {
+      options.isLayoutProjectionActive.value = Boolean(active);
+    }
+  }
+
+  function clearLayoutProjectionRelease(reset = false) {
+    if (layoutProjectionReleaseTimer) window.clearTimeout(layoutProjectionReleaseTimer);
+    layoutProjectionReleaseTimer = null;
+    if (reset) setLayoutProjectionActive(false);
+  }
+
+  function activateLayoutProjection() {
+    clearLayoutProjectionRelease();
+    setLayoutProjectionActive(true);
+  }
+
+  function scheduleLayoutProjectionRelease() {
+    clearLayoutProjectionRelease();
+    layoutProjectionReleaseTimer = window.setTimeout(() => {
+      layoutProjectionReleaseTimer = null;
+      setLayoutProjectionActive(false);
+    }, LAYOUT_PROJECTION_RELEASE_DELAY);
   }
 
   function attachDragListeners() {
@@ -171,6 +199,7 @@ export function useLaunchpadDrag(options) {
     lastPlacementCommit = null;
     if (shouldClampFolderPage) options.commitFolderPageIndex(options.folderPageIndex.value);
     options.commitPageIndex(options.pageIndex.value);
+    scheduleLayoutProjectionRelease();
   }
 
   function calcPageInsertIndex(clientX, clientY, targetPageIndex) {
@@ -697,6 +726,7 @@ export function useLaunchpadDrag(options) {
     };
 
     dragRuntime = nextDrag;
+    activateLayoutProjection();
     dragMeta.value = { item: nextDrag.item, source: nextDrag.source };
     dragPlacement = lp.source.type === "page"
       ? placementKey("page", lp.source.pageIndex, lp.source.index)
@@ -830,6 +860,7 @@ export function useLaunchpadDrag(options) {
     cancelLongPress,
     cancelPreviewRaf,
     clearFolderPageTurn,
+    clearLayoutProjectionRelease,
     clearPageTurn,
     clearPendingTarget,
     detachDragListeners,

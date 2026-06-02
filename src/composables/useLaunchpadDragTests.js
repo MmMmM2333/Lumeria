@@ -51,6 +51,7 @@ function createDragHarness(overrides = {}) {
   const pages = shallowRef([[app]]);
   const pageIndex = ref(0);
   const folderPageIndex = ref(0);
+  const isLayoutProjectionActive = ref(false);
   const folderSession = ref(null);
   const openFolderId = ref(null);
   const calls = {
@@ -126,6 +127,7 @@ function createDragHarness(overrides = {}) {
     insertTopLevelItem,
     isFolderLayerActive: ref(false),
     isHomeRevealSettling: ref(false),
+    isLayoutProjectionActive,
     isLaunchpadInteractionBlocked: () => false,
     makeId: (prefix) => `${prefix}-id`,
     openApp: () => {},
@@ -150,7 +152,7 @@ function createDragHarness(overrides = {}) {
     wouldTopLevelInsertOverflow: () => false,
   });
 
-  return { app, calls, drag, folderSession, openFolderId, pages };
+  return { app, calls, drag, folderSession, isLayoutProjectionActive, openFolderId, pages };
 }
 
 function makePointerDownEvent(pointerId, target) {
@@ -200,22 +202,26 @@ export async function runLaunchpadDragTests() {
   assert(shouldFinishDragForPointerEvent(activeDrag, { type: "pointercancel", pointerId: 8, button: 2 }), "matching pointercancel should always finish drag");
 
   await withMockPointerEnvironment(async ({ listeners, timers }) => {
-    const { app, drag } = createDragHarness();
+    const { app, drag, isLayoutProjectionActive } = createDragHarness();
     const target = {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
       querySelector: () => null,
     };
 
     drag.beginDrag(makePointerDownEvent(41, target), app, { type: "page", pageIndex: 0, index: 0 });
-    Array.from(timers.values())[0]();
+    runNextTimer(timers);
     await nextTick();
     assert(drag.dragMeta.value?.item.id === "app-a", "long press should enter active drag state");
+    assert(isLayoutProjectionActive.value, "active drag should enable layout projection");
 
     listeners.get("pointerup")({ type: "pointerup", pointerId: 42, button: 0, clientX: 40, clientY: 50 });
     assert(drag.dragMeta.value?.item.id === "app-a", "different pointerup should not finish an active drag");
 
     listeners.get("pointerup")({ type: "pointerup", pointerId: 41, button: 0, clientX: 40, clientY: 50 });
     assert(drag.dragMeta.value === null, "matching pointerup should finish the active drag");
+    assert(isLayoutProjectionActive.value, "layout projection should remain briefly active after drag end");
+    flushTimers(timers);
+    assert(!isLayoutProjectionActive.value, "layout projection should release after the drag settle window");
   });
 
   await withMockPointerEnvironment(async ({ listeners, timers }) => {
@@ -237,7 +243,7 @@ export async function runLaunchpadDragTests() {
     ];
 
     drag.beginDrag(makePointerDownEvent(51, target), app, { type: "page", pageIndex: 0, index: 0 });
-    Array.from(timers.values())[0]();
+    runNextTimer(timers);
     await nextTick();
     folderSession.value = { mode: "created", folderId: "folder-created", targetApp, hasEntered: false, openedAt: 1 };
 

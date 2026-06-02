@@ -141,6 +141,7 @@ export function createFolderOverlayState(controller) {
     folderContentInitial: controller.folderContentInitial,
     folderContentTransition: controller.folderContentTransition,
     folderGridStyle: controller.folderGridStyle,
+    folderLayoutEnabled: controller.folderLayoutEnabled,
     folderPageIndex: controller.folderPageIndex,
     folderPageSize: controller.folderPageSize,
     folderPages: controller.folderPages,
@@ -151,6 +152,7 @@ export function createFolderOverlayState(controller) {
     folderPanelTransition: controller.folderPanelTransition,
     folderTrackAnimate: controller.folderTrackAnimate,
     folderViewportRef: controller.folderViewportRef,
+    getFolderPageRenderMode: controller.getFolderPageRenderMode,
     getVisibleFolderPage: controller.getVisibleFolderPage,
     handleFolderOverlayPointerDown: controller.handleFolderOverlayPointerDown,
     isEditMode: controller.isEditMode,
@@ -167,8 +169,6 @@ export function createFolderOverlayState(controller) {
     renderedFolder: controller.renderedFolder,
     resetAppCustomIcon: controller.resetAppCustomIcon,
     setFolderPageRef: controller.setFolderPageRef,
-    shouldRenderFolderPage: controller.shouldRenderFolderPage,
-    shouldRenderStaticFolderPage: controller.shouldRenderStaticFolderPage,
     showMissingLaunchTargetBadge: controller.showMissingLaunchTargetBadge,
   };
 }

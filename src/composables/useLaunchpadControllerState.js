@@ -42,6 +42,7 @@ export function useLaunchpadControllerState() {
   const scanAppBlacklist = ref([]);
   const showMissingLaunchTargetBadge = ref(true);
   const launchTargetStatusById = ref({});
+  const isLayoutProjectionActive = ref(false);
   const keyboardFocusArea = ref("desktop");
   const folderPageIndex = ref(0);
 
@@ -83,6 +84,7 @@ export function useLaunchpadControllerState() {
     headerRef,
     hiddenAppIds,
     iconSize,
+    isLayoutProjectionActive,
     isTextlessMode,
     launchTargetStatusById,
     keyboardFocusArea,

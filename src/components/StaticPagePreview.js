@@ -13,6 +13,7 @@ function renderAppIcon(item) {
       class: "app-icon-image",
       src: iconSource,
       alt: "",
+      decoding: "async",
       draggable: "false",
     });
   }
@@ -27,6 +28,7 @@ function renderFolderChild(child) {
       class: "folder-child-image",
       src: iconSource,
       alt: "",
+      decoding: "async",
       draggable: "false",
     });
   }
@@ -47,16 +49,10 @@ function renderStaticIcon(item, folderPreviewPageSize, textless) {
     : [renderAppIcon(item)];
 
   return h("div", { key: item.id, class: "icon-cell static-icon-cell", "aria-hidden": "true" }, [
-    h("div", { class: "icon-jiggle-wrap" }, [
-      h("div", { class: "icon-selection-frame" }, [
-        h("div", { class: "icon-hit-target static-icon-hit-target" }, [
-          h("div", { class: "icon-visual-wrap" }, [
-            h("div", { class: "icon-box" }, iconChildren),
-          ]),
-        ]),
-        !textless ? h("div", { class: "icon-name" }, item.name) : null,
-      ]),
+    h("div", { class: "static-icon-visual" }, [
+      h("div", { class: "icon-box static-icon-box" }, iconChildren),
     ]),
+    !textless ? h("div", { class: "icon-name" }, item.name) : null,
   ]);
 }
 

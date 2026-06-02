@@ -28,6 +28,7 @@ function createViewState(overrides = {}) {
     isFolderClosing: ref(Boolean(overrides.isFolderClosing)),
     isFolderLayerActive: ref(Boolean(overrides.isFolderLayerActive)),
     isHomeRevealSettling: ref(Boolean(overrides.isHomeRevealSettling)),
+    isLayoutProjectionActive: ref(Boolean(overrides.isLayoutProjectionActive)),
     isSearchMode: ref(Boolean(overrides.isSearchMode)),
     openFolderId: ref(overrides.openFolderId ?? null),
     pageIndex: ref(overrides.pageIndex ?? 2),
@@ -49,10 +50,11 @@ export function runLaunchpadViewStateTests() {
   assert(desktop.view.rootStyle.value["--configured-app-icon-size"] === "64px", "root style should expose configured icon size");
   assert(desktop.view.activeDesktopTrackAnimate.value.x === "-200%", "desktop track should use desktop page index outside search");
   assert(desktop.view.folderTrackAnimate.value.x === "-100%", "folder track should use folder page index");
-  assert(desktop.view.desktopLayoutEnabled.value, "desktop layout should be enabled when nothing is animating");
+  assert(!desktop.view.desktopLayoutEnabled.value, "desktop layout should be disabled outside drag projection windows");
+  assert(!desktop.view.folderLayoutEnabled.value, "folder layout should be disabled outside drag projection windows");
   assert(desktop.view.activeDesktopTrackTransition.value === desktopTrackTransition, "desktop track should use spring transition when not snapping");
   assert(desktop.view.desktopTrackMotionKey.value === "open-desktop-spring", "desktop motion key should describe open desktop spring state");
-  assert(desktop.view.getDesktopGridProjectionKey(4) === "desktop-grid-4-enabled-2", "projection key should include enabled epoch");
+  assert(desktop.view.getDesktopGridProjectionKey(4) === "desktop-grid-4-frozen", "projection key should stay frozen outside drag projection windows");
   assert(desktop.view.homeShellAnimate.value.opacity === 1, "home shell should be visible in the idle desktop state");
   assert(desktop.view.homeShellStyle.value.pointerEvents === "auto", "home shell should allow pointer events in the idle desktop state");
   assert(desktop.view.folderPanelInitial.value.x === 12, "folder panel initial state should use motion geometry");
@@ -62,15 +64,22 @@ export function runLaunchpadViewStateTests() {
   assert(desktop.view.pageGridStyle.value.gridTemplateColumns === "repeat(5, minmax(0, 1fr))", "page grid columns should follow grid columns");
   assert(desktop.view.pageGridStyle.value.gridTemplateRows === "repeat(7, minmax(0, 1fr))", "page grid rows should follow grid rows");
 
+  const projecting = createViewState({ isLayoutProjectionActive: true });
+  assert(projecting.view.desktopLayoutEnabled.value, "desktop layout should be enabled during drag projection windows");
+  assert(projecting.view.folderLayoutEnabled.value, "folder layout should be enabled during drag projection windows");
+  assert(projecting.view.getDesktopGridProjectionKey(4) === "desktop-grid-4-enabled-2", "projection key should include enabled epoch during drag projection windows");
+
   const search = createViewState({ isSearchMode: true });
   assert(search.view.activeDesktopTrackAnimate.value.x === "-300%", "search track should use search page index in search mode");
+  assert(search.view.desktopLayoutEnabled.value, "desktop layout should be enabled in search mode so results can move");
+  assert(!search.view.folderLayoutEnabled.value, "folder layout should stay disabled for search-only projection");
   assert(search.view.desktopTrackMotionKey.value === "open-search-spring", "desktop motion key should describe search mode");
-  assert(search.view.getDesktopGridProjectionKey(1) === "search-grid-1-enabled-2", "projection key should include search mode");
+  assert(search.view.getDesktopGridProjectionKey(1) === "search-grid-1-enabled-2", "projection key should include search mode while enabled");
 
-  const closed = createViewState({ isDesktopOpen: false });
+  const closed = createViewState({ isDesktopOpen: false, isSearchMode: true });
   assert(!closed.view.desktopLayoutEnabled.value, "desktop layout should be disabled when closed");
   assert(closed.view.activeDesktopTrackTransition.value === instantTrackTransition, "closed desktop should snap track transitions");
-  assert(closed.view.desktopTrackMotionKey.value === "closed-desktop-snap", "closed desktop should use snap motion key");
+  assert(closed.view.desktopTrackMotionKey.value === "closed-search-snap", "closed search should use snap motion key");
   assert(closed.view.homeShellAnimate.value.opacity === 0, "closed desktop should hide home shell");
   assert(closed.view.homeShellStyle.value.pointerEvents === "none", "closed desktop should disable home shell pointer events");
   assert(closed.view.folderPanelAnimate.value.filter === "blur(8px)", "closed desktop should blur folder panel");
