@@ -1662,6 +1662,10 @@ body {
   align-content: start;
 }
 
+.search-page-grid .icon-name {
+  max-width: min(220px, 100%);
+}
+
 .search-empty-state {
   grid-column: 1 / -1;
   align-self: center;

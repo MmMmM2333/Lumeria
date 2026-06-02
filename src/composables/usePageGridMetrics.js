@@ -1,5 +1,7 @@
 import { computed, nextTick, ref } from "vue";
 
+const SEARCH_RESULT_SLOT_WIDTH = "clamp(132px, 12vw, 220px)";
+
 function readCssPx(value) {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -73,9 +75,10 @@ export function usePageGridMetrics(options) {
     if (visibleCount > 0 && visibleCount < gridCols.value) {
       return {
         ...pageGridStyle.value,
-        gridTemplateColumns: `repeat(${visibleCount}, minmax(82px, 108px))`,
+        gridTemplateColumns: `repeat(${visibleCount}, minmax(0, ${SEARCH_RESULT_SLOT_WIDTH}))`,
         justifyContent: "center",
-        columnGap: "30px",
+        justifyItems: "center",
+        columnGap: "0px",
         rowGap: "16px",
       };
     }
