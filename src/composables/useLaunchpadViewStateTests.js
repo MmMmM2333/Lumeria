@@ -61,6 +61,7 @@ export function runLaunchpadViewStateTests() {
   assert(desktop.view.homeShellStyle.value.pointerEvents === "auto", "home shell should allow pointer events in the idle desktop state");
   assert(desktop.view.folderPanelInitial.value.x === 12, "folder panel initial state should use motion geometry");
   assert(desktop.view.folderPanelAnimate.value.opacity === 1, "folder panel should be visible in the idle state");
+  assert(desktop.view.folderPanelAnimate.value.borderRadius === "48px", "folder panel resting radius should match the visible folder shell");
   assert(desktop.view.folderPanelTransition.value === panelSpring, "folder panel should use panel spring in the idle state");
   assert(desktop.view.folderContentAnimate.value.opacity === 1, "folder content should be visible in the idle state");
   assert(desktop.view.pageGridStyle.value.gridTemplateColumns === "repeat(5, minmax(0, 1fr))", "page grid columns should follow grid columns");
@@ -85,6 +86,7 @@ export function runLaunchpadViewStateTests() {
   assert(closed.view.homeShellAnimate.value.opacity === 0, "closed desktop should hide home shell");
   assert(closed.view.homeShellStyle.value.pointerEvents === "none", "closed desktop should disable home shell pointer events");
   assert(closed.view.folderPanelAnimate.value.filter === "blur(8px)", "closed desktop should blur folder panel");
+  assert(closed.view.folderPanelAnimate.value.borderRadius === "48px", "closed desktop folder panel target radius should not introduce a post-open radius snap");
 
   const openFolder = createViewState({ openFolderId: "folder-1", isFolderLayerActive: true });
   assert(!openFolder.view.desktopLayoutEnabled.value, "open folder should freeze desktop layout");

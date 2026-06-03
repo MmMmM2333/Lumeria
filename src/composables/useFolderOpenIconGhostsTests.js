@@ -6,6 +6,7 @@ import {
   makeFolderGridFrameSelector,
   makeFolderPreviewChildSelector,
   makeFolderPreviewChildVisualSelector,
+  makeFolderPreviewFrameSelector,
   projectTargetGridSlotIntoSourceBounds,
   useFolderOpenIconGhosts,
 } from "./useFolderOpenIconGhosts.js";
@@ -80,6 +81,10 @@ export async function runFolderOpenIconGhostsTests() {
     "preview visual selector should escape attribute values",
   );
   assert(
+    makeFolderPreviewFrameSelector('folder"1') === '[data-top-item-id="folder\\"1"] .folder-thumb',
+    "preview frame selector should escape attribute values",
+  );
+  assert(
     makeFolderGridChildSelector('folder"1', 'child"1') === '.icon-hit-target[data-launch-area="folder"][data-launch-folder-id="folder\\"1"][data-launch-item-id="child\\"1"] .icon-box',
     "folder grid selector should escape attribute values",
   );
@@ -105,11 +110,59 @@ export async function runFolderOpenIconGhostsTests() {
   const originalDocument = globalThis.document;
   const originalWindow = globalThis.window;
   const timers = createTimerWindow();
+  const targetLabelNode = createNode(
+    { left: 252, top: 248, width: 61, height: 14 },
+    {
+      style: {
+        fontSize: "11px",
+        lineHeight: "13.5px",
+        marginTop: "4px",
+        overflow: "hidden",
+        overflowWrap: "anywhere",
+        paddingLeft: "5px",
+        paddingTop: "1px",
+        textOverflow: "ellipsis",
+        whiteSpace: "normal",
+        webkitLineClamp: "1",
+        wordBreak: "break-word",
+      },
+    }
+  );
   const nodes = new Map([
     [".folder-panel-content", createNode({ left: 50, top: 60, width: 400, height: 300 }, { offsetWidth: 800, offsetHeight: 600 })],
+    [".folder-pages-shell", createNode(
+      { left: 220, top: 180, width: 360, height: 240 },
+      {
+        style: {
+          backdropFilter: "blur(44px) saturate(122%)",
+          backgroundColor: "rgba(236, 240, 244, 0.34)",
+          borderRadius: "48px",
+          boxShadow: "0 30px 86px rgba(0, 0, 0, 0.14)",
+        },
+      },
+    )],
+    [makeFolderPreviewFrameSelector(folder.id), createNode(
+      { left: 50, top: 80, width: 72, height: 72 },
+      {
+        style: {
+          backgroundColor: "rgba(255, 255, 255, 0.3)",
+          borderRadius: "18px",
+          boxShadow: "inset 0 2px 8px rgba(255, 255, 255, 0.12)",
+        },
+      },
+    )],
     [makeFolderPreviewChildSelector(folder.id, child.id), createNode({ left: 1, top: 2, width: 18, height: 18 })],
     [makeFolderPreviewChildVisualSelector(folder.id, child.id), createNode({ left: 70, top: 90, width: 6, height: 6 })],
-    [makeFolderGridFrameSelector(folder.id, child.id), createNode({ left: 250, top: 210, width: 80, height: 60 })],
+    [makeFolderGridFrameSelector(folder.id, child.id), createNode(
+      { left: 250, top: 210, width: 80, height: 60 },
+      {
+        children: new Map([[".icon-name", targetLabelNode]]),
+        style: {
+          paddingLeft: "7px",
+          paddingTop: "5px",
+        },
+      }
+    )],
     [makeFolderGridChildSelector(folder.id, child.id), createNode({ left: 270, top: 220, width: 32, height: 32 })],
   ]);
 
@@ -132,22 +185,34 @@ export async function runFolderOpenIconGhostsTests() {
 
     ghosts.playFolderOpenIconGhosts(folder.id, captured);
     assert(ghosts.isFolderOpenIconAnimationActive.value, "play should immediately mark the folder icon animation active");
+    assert(ghosts.isFolderOpenFrameGhostPending.value, "play should keep the real shell on source material while target frame geometry is measured");
     assert(ghosts.isFolderOpeningIconGhosted(folder.id, child.id), "play should immediately hide matching target icons");
     await nextTick();
+    assert(!ghosts.isFolderOpenFrameGhostPending.value, "publishing the frame ghost should clear the real shell material handoff");
     assert(ghosts.folderOpenIconGhosts.value.length === 1, "play should publish ghosts after target geometry is available");
     const ghost = ghosts.folderOpenIconGhosts.value[0];
-    assert(ghost.from.left === 40 && ghost.from.width === 12, "play should project the target geometry into the source preview bounds");
-    assert(ghost.to.left === 400 && ghost.to.width === 160, "play should map target frame geometry into folder content space");
-    assert(ghost.toIcon.left === 440 && ghost.toIcon.width === 64, "play should map target icon geometry into folder content space");
+    assert(ghost.from.left === 70 && ghost.from.width === 6, "play should keep measured preview icons in viewport space");
+    assert(ghost.to.left === 250 && ghost.to.width === 80, "play should keep target frame geometry in resting viewport space");
+    assert(ghost.toIcon.left === 270 && ghost.toIcon.width === 32, "play should keep target icon geometry in resting viewport space");
+    assert(ghosts.isFolderOpeningPreviewGhosted(folder.id, child.id), "measured preview child should be hidden while its open ghost owns the handoff");
+    assert(ghosts.isFolderOpeningPreviewFrameGhosted(folder.id), "source preview frame should be hidden while the frame ghost owns the handoff");
+    const frameGhost = ghosts.folderOpenFrameGhost.value;
+    assert(frameGhost?.from.left === 50 && frameGhost.to.left === 220, "frame state should map from source preview frame to target shell in viewport space");
+    assert(frameGhost.fromMetrics.backgroundColor === "rgba(255, 255, 255, 0.3)", "frame state should capture source frame visual metrics");
+    assert(frameGhost.toMetrics.borderRadius === "48px", "frame state should capture target shell visual metrics");
     const motionStyle = ghosts.getFolderOpenIconGhostStyle(ghost);
-    assert(motionStyle.left === "400px" && motionStyle.top === "300px", "ghost style should pin the Motion layer to the target frame");
-    assert(motionStyle.width === "160px" && motionStyle.height === "120px", "ghost style should use target frame size");
+    assert(motionStyle.left === "250px" && motionStyle.top === "210px", "ghost style should pin the Motion layer to the target frame");
+    assert(motionStyle.width === "80px" && motionStyle.height === "60px", "ghost style should use target frame size");
+    assert(motionStyle["--app-icon-size"] === "32px", "ghost style should preserve the target folder icon size");
+    assert(motionStyle["--folder-icon-name-line-height"] === "13.5px", "ghost label should preserve the target label line height");
+    assert(motionStyle["--folder-icon-name-white-space"] === "normal", "ghost label should preserve the target label wrapping mode");
+    assert(motionStyle["--folder-icon-name-overflow-wrap"] === "anywhere", "ghost label should preserve the target label overflow wrapping");
     assert(motionStyle["--folder-open-label-delay"] === "120ms", "ghost label delay should include the slot delay");
     assert(!("transform" in motionStyle), "ghost movement should be delegated to Motion transform values");
     const initial = ghosts.getFolderOpenIconGhostInitial(ghost);
-    assertAlmostEqual(initial.x, -367.5, "initial Motion x should align the ghost icon with the projected source icon");
-    assertAlmostEqual(initial.y, -243.75, "initial Motion y should align the ghost icon with the projected source icon");
-    assert(initial.scaleX === 12 / 64 && initial.scaleY === 12 / 64, "initial Motion scale should match source-to-target icon size ratio");
+    assertAlmostEqual(initial.x, -183.75, "initial Motion x should align the ghost icon with the source preview icon");
+    assertAlmostEqual(initial.y, -121.875, "initial Motion y should align the ghost icon with the source preview icon");
+    assert(initial.scaleX === 6 / 32 && initial.scaleY === 6 / 32, "initial Motion scale should match source-to-target icon size ratio");
     const animate = ghosts.getFolderOpenIconGhostAnimate(ghost);
     assert(animate.x === 0 && animate.y === 0 && animate.scaleX === 1 && animate.scaleY === 1, "animate target should settle at identity transform");
     const transition = ghosts.getFolderOpenIconGhostTransition(ghost);
@@ -156,11 +221,15 @@ export async function runFolderOpenIconGhostsTests() {
     ghosts.completeFolderOpenIconGhost("stale-key");
     assert(ghosts.folderOpenIconGhosts.value.length === 1, "stale completion should not clear current ghosts");
     assert(ghosts.isFolderOpeningIconGhosted(folder.id, child.id), "stale completion should not reveal matching target icons");
+    assert(ghosts.isFolderOpeningPreviewGhosted(folder.id, child.id), "stale completion should not reveal matching source preview icons");
 
     ghosts.completeFolderOpenIconGhost(ghost.key);
     assert(ghosts.folderOpenIconGhosts.value.length === 0, "ghosts should clear after Motion completion");
     assert(!ghosts.isFolderOpenIconAnimationActive.value, "completion should mark the folder icon animation inactive");
+    assert(!ghosts.isFolderOpenFrameGhostPending.value, "completion should leave no pending frame material handoff");
     assert(!ghosts.isFolderOpeningIconGhosted(folder.id, child.id), "completion should reveal matching target icons");
+    assert(!ghosts.isFolderOpeningPreviewGhosted(folder.id, child.id), "completion should reveal matching source preview icons");
+    assert(!ghosts.isFolderOpeningPreviewFrameGhosted(folder.id), "completion should reveal the source preview frame");
 
     const gridFolder = { id: "folder-grid", type: "folder", name: "Grid Folder" };
     const gridChildren = Array.from({ length: 10 }, (_, index) => ({ id: `grid-child-${index}`, type: "app", name: `Child ${index + 1}` }));
@@ -220,9 +289,10 @@ export async function runFolderOpenIconGhostsTests() {
     const ninthIndexGhost = openedGridGhosts.find((candidate) => candidate.slotIndex === 9);
     assert(seventhIndexGhost.targetColumnCount === 7, "target column count should be inferred from the measured folder grid");
     assertAlmostEqual(seventhIndexGhost.previewFrom.left, 110, "slot 7 should retain its measured 3x3 preview position for diagnostics");
-    assertAlmostEqual(seventhIndexGhost.from.left, 100.67532467532467, "slot 7 should project from target-grid row 2 column 1, not the 3x3 row 3 column 2 slot");
-    assertAlmostEqual(seventhIndexGhost.from.top, 68.31818181818181, "slot 7 should project to the target-grid second row inside the source bounds");
-    assertAlmostEqual(eighthIndexGhost.from.left, 104.3896103896104, "slot 8 should project from target-grid row 2 column 2");
+    assertAlmostEqual(seventhIndexGhost.from.left, 110, "slot 7 should start from its real 3x3 preview position for a seamless source handoff");
+    assertAlmostEqual(seventhIndexGhost.from.top, 70, "slot 7 should keep its real 3x3 preview row for a seamless source handoff");
+    assertAlmostEqual(eighthIndexGhost.from.left, 120, "slot 8 should start from its real 3x3 preview position for a seamless source handoff");
+    assertAlmostEqual(eighthIndexGhost.from.top, 70, "slot 8 should keep its real 3x3 preview row for a seamless source handoff");
     assert(ninthIndexGhost.synthetic === true, "slot 9 should remain marked as synthetic after measurement");
     assert(ninthIndexGhost.previewFrom === null, "slot 9 should not report a measured preview rect");
     assertAlmostEqual(ninthIndexGhost.from.left, 108.1038961038961, "slot 9 should project from target-grid row 2 column 3");

@@ -43,6 +43,8 @@
         :get-desktop-page-render-mode="getDesktopPageRenderMode"
         :get-visible-desktop-page="getVisibleDesktopPage"
         :is-edit-mode="isEditMode"
+        :is-folder-opening-preview-ghosted="isFolderOpeningPreviewGhosted"
+        :is-folder-opening-preview-frame-ghosted="isFolderOpeningPreviewFrameGhosted"
         :is-icon-opening="isIconOpening"
         :is-icon-selected="isIconSelected"
         :is-search-mode="isSearchMode"
@@ -273,6 +275,8 @@ const {
   isIconSelected,
   launchTargetStatusById,
   isIconOpening,
+  isFolderOpeningPreviewFrameGhosted,
+  isFolderOpeningPreviewGhosted,
   beginDrag,
   openApp,
   removeAppById,

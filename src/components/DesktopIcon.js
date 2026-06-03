@@ -29,6 +29,8 @@ export default defineComponent({
     emerging: { type: Boolean, default: false },
     emergingDelay: { type: Number, default: 0 },
     opening: { type: Boolean, default: false },
+    isFolderPreviewChildGhosted: { type: Function, default: () => false },
+    isFolderPreviewFrameGhosted: { type: Function, default: () => false },
     launchTargetStatus: { type: String, default: null },
   },
   emits: ["pointerdown-icon", "open-app", "context-menu-icon", "remove-app", "choose-app-icon", "reset-app-icon"],
@@ -115,13 +117,19 @@ export default defineComponent({
         const folderChildren = getFolderPreviewSlots(item, props.folderPreviewPageSize).map((child, index) =>
           h("div", {
             key: child ? child.id : `folder-empty-${index}`,
-            class: cx("folder-child", !child && "folder-child-empty"),
+            class: cx(
+              "folder-child",
+              !child && "folder-child-empty",
+              props.source.type === "page" && child && props.isFolderPreviewChildGhosted(item.id, child.id) && "folder-child-ghosted"
+            ),
             "data-folder-preview-folder-id": props.source.type === "page" && child ? item.id : undefined,
             "data-folder-preview-child-id": props.source.type === "page" && child ? child.id : undefined,
             "data-folder-preview-slot-index": props.source.type === "page" && child ? index : undefined,
           }, renderFolderChild(child))
         );
-        iconChildren.push(h("div", { class: "folder-thumb" }, folderChildren));
+        iconChildren.push(h("div", {
+          class: cx("folder-thumb", props.source.type === "page" && props.isFolderPreviewFrameGhosted(item.id) && "folder-thumb-frame-ghosted"),
+        }, folderChildren));
       } else {
         iconChildren.push(renderAppIcon(item, props.compact));
       }

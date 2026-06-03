@@ -36,7 +36,7 @@
           />
         </div>
 
-        <div class="folder-pages-shell">
+        <div :class="cx('folder-pages-shell', state.isFolderOpenFrameGhostPending.value && 'folder-pages-shell-frame-pending', state.isFolderOpenIconAnimationActive.value && 'folder-pages-shell-frame-opening')">
           <div :ref="(node) => bindRef(state.folderViewportRef, node)" class="folder-viewport">
             <Motion class="folder-track" :animate="state.folderTrackAnimate.value" :transition="state.desktopTrackTransition">
               <section
@@ -104,31 +104,6 @@
           </footer>
         </div>
 
-        <div v-if="state.folderOpenIconGhosts.value.length" class="folder-open-icon-ghost-layer" aria-hidden="true">
-          <Motion
-            v-for="ghost in state.folderOpenIconGhosts.value"
-            :key="ghost.key"
-            class="folder-open-icon-ghost"
-            :initial="state.getFolderOpenIconGhostInitial(ghost)"
-            :animate="state.getFolderOpenIconGhostAnimate(ghost)"
-            :transition="state.getFolderOpenIconGhostTransition(ghost)"
-            :style="state.getFolderOpenIconGhostStyle(ghost)"
-            @motioncomplete="state.completeFolderOpenIconGhost(ghost.key)"
-          >
-            <div class="icon-selection-frame folder-open-icon-ghost-frame">
-              <div class="icon-hit-target folder-open-icon-ghost-hit-target">
-                <div class="icon-visual-wrap">
-                  <div class="icon-box">
-                    <img v-if="getIconSource(ghost.item)" class="app-icon-image" :src="getIconSource(ghost.item)" alt="" draggable="false" />
-                    <span v-else class="icon-emoji">{{ ghost.item.emoji }}</span>
-                  </div>
-                  <MissingLaunchTargetBadge :status="state.showMissingLaunchTargetBadge.value ? state.launchTargetStatusById.value[ghost.item.id] : null" />
-                </div>
-              </div>
-              <div v-if="!state.isTextlessMode.value" class="icon-name folder-open-icon-ghost-name">{{ ghost.item.name }}</div>
-            </div>
-          </Motion>
-        </div>
       </Motion>
     </Motion>
   </div>
@@ -138,9 +113,7 @@
 import { Motion } from "motion-v";
 import { ref } from "vue";
 import DesktopIcon from "./DesktopIcon.js";
-import MissingLaunchTargetBadge from "./MissingLaunchTargetBadge.js";
 import StaticPagePreview from "./StaticPagePreview.js";
-import { getIconSource } from "../domain/iconSource.js";
 import { cx } from "../domain/launchpadLayout.js";
 
 const props = defineProps({

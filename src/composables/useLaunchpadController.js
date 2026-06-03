@@ -224,9 +224,12 @@ export function useLaunchpadController() {
     getFolderOpenIconGhostStyle,
     getFolderOpenIconGhostTransition,
     isFolderCloseIconAnimationActive,
+    isFolderOpenFrameGhostPending,
     isFolderOpenIconAnimationActive,
     isFolderClosingIconGhosted,
     isFolderOpeningIconGhosted,
+    isFolderOpeningPreviewFrameGhosted,
+    isFolderOpeningPreviewGhosted,
     playFolderCloseIconGhosts,
     playFolderOpenIconGhosts,
   } = useFolderOpenIconGhosts({
@@ -1295,8 +1298,11 @@ export function useLaunchpadController() {
     dragPreviewSpring,
     folderPreviewSlots,
     isFolderCloseIconAnimationActive,
+    isFolderOpenFrameGhostPending,
     isFolderOpenIconAnimationActive,
     isFolderClosingIconGhosted,
     isFolderOpeningIconGhosted,
+    isFolderOpeningPreviewFrameGhosted,
+    isFolderOpeningPreviewGhosted,
   };
 }

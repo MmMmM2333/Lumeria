@@ -14,6 +14,32 @@
     </div>
   </Motion>
 
+  <div v-if="state.folderOpenIconGhosts.value.length" class="folder-open-icon-ghost-layer" aria-hidden="true">
+    <Motion
+      v-for="ghost in state.folderOpenIconGhosts.value"
+      :key="ghost.key"
+      class="folder-open-icon-ghost"
+      :initial="state.getFolderOpenIconGhostInitial(ghost)"
+      :animate="state.getFolderOpenIconGhostAnimate(ghost)"
+      :transition="state.getFolderOpenIconGhostTransition(ghost)"
+      :style="state.getFolderOpenIconGhostStyle(ghost)"
+      @motioncomplete="state.completeFolderOpenIconGhost(ghost.key)"
+    >
+      <div class="icon-selection-frame folder-open-icon-ghost-frame">
+        <div class="icon-hit-target folder-open-icon-ghost-hit-target">
+          <div class="icon-visual-wrap">
+            <div class="icon-box">
+              <img v-if="getIconSource(ghost.item)" class="app-icon-image" :src="getIconSource(ghost.item)" alt="" draggable="false" />
+              <span v-else class="icon-emoji">{{ ghost.item.emoji }}</span>
+            </div>
+            <MissingLaunchTargetBadge :status="state.showMissingLaunchTargetBadge.value ? state.launchTargetStatusById.value[ghost.item.id] : null" />
+          </div>
+        </div>
+        <div v-if="!state.isTextlessMode.value" class="icon-name folder-open-icon-ghost-name">{{ ghost.item.name }}</div>
+      </div>
+    </Motion>
+  </div>
+
   <div v-if="state.folderCloseIconGhosts.value.length" class="folder-close-icon-ghost-layer" aria-hidden="true">
     <Motion
       v-for="ghost in state.folderCloseIconGhosts.value"

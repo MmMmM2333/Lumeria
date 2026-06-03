@@ -5,9 +5,22 @@ const FOLDER_ROW_GAP = 24;
 const FOLDER_MIN_ROW_GAP = 10;
 const FOLDER_SELECTION_FRAME_SAFE_AREA = 24;
 const FOLDER_MIN_EFFECTIVE_ICON_SIZE = 20;
+const FOLDER_SHELL_MAX_HEIGHT_MIN = 420;
+const FOLDER_SHELL_VIEWPORT_OFFSET = 168;
+const FOLDER_SHELL_VERTICAL_PADDING = 118;
+const FOLDER_VIEWPORT_MIN_HEIGHT = 280;
 
 function roundPx(value) {
   return Math.round(value * 100) / 100;
+}
+
+function getInitialFolderViewportHeight(shellMinHeight) {
+  const viewportHeight = Number(globalThis.window?.innerHeight);
+  if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) return Math.max(1, shellMinHeight - FOLDER_SHELL_VERTICAL_PADDING);
+
+  const shellMaxHeight = Math.max(FOLDER_SHELL_MAX_HEIGHT_MIN, viewportHeight - FOLDER_SHELL_VIEWPORT_OFFSET);
+  const shellHeight = Math.min(shellMinHeight, shellMaxHeight);
+  return Math.max(FOLDER_VIEWPORT_MIN_HEIGHT, shellHeight - FOLDER_SHELL_VERTICAL_PADDING);
 }
 
 export function useFolderLayoutStyles(options) {
@@ -42,7 +55,8 @@ export function useFolderLayoutStyles(options) {
     const idealIconCellHeight = baseFolderIconSize + 56;
     const idealSafeArea = FOLDER_SELECTION_FRAME_SAFE_AREA;
     const idealHeight = Math.max(1, folderGridHeight.value);
-    const availableHeight = Math.max(1, options.folderViewportHeight.value || idealHeight);
+    const initialViewportHeight = getInitialFolderViewportHeight(folderShellMinHeight.value);
+    const availableHeight = Math.max(1, options.folderViewportHeight.value || initialViewportHeight || idealHeight);
     const coarseScale = clamp(availableHeight / idealHeight, 0, 1);
     const rowGap = roundPx(clamp(FOLDER_ROW_GAP * coarseScale, FOLDER_MIN_ROW_GAP, FOLDER_ROW_GAP));
     const safeArea = roundPx(idealSafeArea * coarseScale);

@@ -45,6 +45,11 @@ export function makeFolderPreviewChildVisualSelector(folderId, childId) {
   return childSelector ? `${childSelector} .folder-child-visual` : null;
 }
 
+export function makeFolderPreviewFrameSelector(folderId) {
+  if (!folderId) return null;
+  return `[data-top-item-id="${escapeAttributeValue(folderId)}"] .folder-thumb`;
+}
+
 export function makeFolderGridFrameSelector(folderId, childId) {
   if (!folderId || !childId) return null;
   return `.icon-selection-frame[data-folder-open-folder-id="${escapeAttributeValue(folderId)}"][data-folder-open-child-id="${escapeAttributeValue(childId)}"]`;
@@ -93,10 +98,27 @@ function cloneItemStyleMetrics(node) {
     framePaddingX: numberValue("paddingLeft", 12),
     framePaddingY: numberValue("paddingTop", 10),
     iconNameFontSize: labelNumberValue("fontSize", 13),
+    iconNameLineHeight: labelStyle?.lineHeight || "1.22",
     iconNameLineClamp: Number.parseInt(labelStyle?.webkitLineClamp, 10) || 2,
     iconNameMarginTop: labelNumberValue("marginTop", 8),
+    iconNameOverflow: labelStyle?.overflow || "hidden",
+    iconNameOverflowWrap: labelStyle?.overflowWrap || "normal",
     iconNamePaddingX: labelNumberValue("paddingLeft", 8),
     iconNamePaddingY: labelNumberValue("paddingTop", 2),
+    iconNameTextOverflow: labelStyle?.textOverflow || "ellipsis",
+    iconNameWhiteSpace: labelStyle?.whiteSpace || "normal",
+    iconNameWordBreak: labelStyle?.wordBreak || "break-word",
+  };
+}
+
+function cloneFrameStyleMetrics(node) {
+  const getComputedStyle = typeof window !== "undefined" ? window.getComputedStyle : null;
+  const style = node && typeof getComputedStyle === "function" ? getComputedStyle(node) : null;
+  return {
+    backdropFilter: style?.backdropFilter || style?.webkitBackdropFilter || "none",
+    backgroundColor: style?.backgroundColor || "rgba(255, 255, 255, 0.3)",
+    borderRadius: style?.borderTopLeftRadius || style?.borderRadius || "18px",
+    boxShadow: style?.boxShadow || "none",
   };
 }
 
@@ -215,25 +237,6 @@ function makeRestingViewportRectMapper(element) {
       top,
       width: right - left,
       height: bottom - top,
-    };
-  };
-}
-
-function makeLocalRectMapper(element) {
-  const viewportRect = getNodeRect(element);
-  const localWidth = Number(element?.offsetWidth || 0);
-  const localHeight = Number(element?.offsetHeight || 0);
-  if (!viewportRect || viewportRect.width <= 0 || viewportRect.height <= 0 || localWidth <= 0 || localHeight <= 0) return null;
-
-  const scaleX = localWidth / viewportRect.width;
-  const scaleY = localHeight / viewportRect.height;
-  return (rect) => {
-    if (!rect) return null;
-    return {
-      left: (rect.left - viewportRect.left) * scaleX,
-      top: (rect.top - viewportRect.top) * scaleY,
-      width: rect.width * scaleX,
-      height: rect.height * scaleY,
     };
   };
 }
@@ -399,9 +402,44 @@ function optionsSafeFolderPreviewSlots(folder, options) {
   return options.folderPreviewSlots(folder) || [];
 }
 
+function makeFolderOpenMeasurementScope() {
+  if (typeof document === "undefined") return { root: null, dispose: () => {} };
+  const overlayNode = document.querySelector(".folder-overlay");
+  const clone = overlayNode?.cloneNode?.(true);
+  if (!clone?.querySelector) return { root: document, dispose: () => {} };
+
+  clone.setAttribute("aria-hidden", "true");
+  clone.style.visibility = "hidden";
+  clone.style.pointerEvents = "none";
+  clone.style.zIndex = "-1";
+  clone.style.transition = "none";
+
+  const panelNode = clone.querySelector(".folder-panel");
+  if (panelNode?.style) {
+    panelNode.style.transform = "none";
+    panelNode.style.opacity = "1";
+    panelNode.style.filter = "none";
+    panelNode.style.transition = "none";
+  }
+  const contentNode = clone.querySelector(".folder-panel-content");
+  if (contentNode?.style) {
+    contentNode.style.transform = "none";
+    contentNode.style.opacity = "1";
+    contentNode.style.transition = "none";
+  }
+  (overlayNode.parentElement || document.body).appendChild(clone);
+  return {
+    root: clone,
+    dispose: () => clone.remove?.(),
+  };
+}
+
 export function useFolderOpenIconGhosts(options) {
+  const folderOpenFrameGhost = shallowRef(null);
+  const isFolderOpenFrameGhostPending = shallowRef(false);
   const folderOpenIconGhosts = shallowRef([]);
   const folderOpenIconGhostedKeys = shallowRef(new Set());
+  const folderOpenPreviewGhostedKeys = shallowRef(new Set());
   const folderCloseIconGhosts = shallowRef([]);
   const folderCloseIconGhostedKeys = shallowRef(new Set());
   const isFolderOpenIconAnimationActive = computed(() => folderOpenIconGhostedKeys.value.size > 0);
@@ -414,8 +452,11 @@ export function useFolderOpenIconGhosts(options) {
   function clearFolderOpenIconGhosts() {
     folderOpenIconGhostRequestId += 1;
     completedFolderOpenIconGhostKeys.clear();
+    folderOpenFrameGhost.value = null;
+    isFolderOpenFrameGhostPending.value = false;
     folderOpenIconGhosts.value = [];
     folderOpenIconGhostedKeys.value = new Set();
+    folderOpenPreviewGhostedKeys.value = new Set();
   }
 
   function clearFolderCloseIconGhosts() {
@@ -426,11 +467,28 @@ export function useFolderOpenIconGhosts(options) {
   }
 
   function getFolderOpenIconGhostStyle(ghost) {
+    const metrics = ghost.styleMetrics || {};
     return {
       left: `${ghost.to.left}px`,
       top: `${ghost.to.top}px`,
       width: `${ghost.to.width}px`,
       height: `${ghost.to.height}px`,
+      "--app-icon-size": `${ghost.toIcon.width}px`,
+      "--app-icon-image-size": `${ghost.toIcon.width}px`,
+      "--app-icon-emoji-size": `${ghost.toIcon.width}px`,
+      "--folder-icon-name-font-size": `${metrics.iconNameFontSize || 13}px`,
+      "--folder-icon-name-line-height": metrics.iconNameLineHeight || "1.22",
+      "--folder-icon-name-line-clamp": metrics.iconNameLineClamp || 2,
+      "--folder-icon-name-margin-top": `${metrics.iconNameMarginTop ?? 8}px`,
+      "--folder-icon-name-overflow": metrics.iconNameOverflow || "hidden",
+      "--folder-icon-name-overflow-wrap": metrics.iconNameOverflowWrap || "normal",
+      "--folder-icon-name-padding-x": `${metrics.iconNamePaddingX ?? 8}px`,
+      "--folder-icon-name-padding-y": `${metrics.iconNamePaddingY ?? 2}px`,
+      "--folder-icon-name-text-overflow": metrics.iconNameTextOverflow || "ellipsis",
+      "--folder-icon-name-white-space": metrics.iconNameWhiteSpace || "normal",
+      "--folder-icon-name-word-break": metrics.iconNameWordBreak || "break-word",
+      "--folder-selection-frame-padding-x": `${metrics.framePaddingX ?? 12}px`,
+      "--folder-selection-frame-padding-y": `${metrics.framePaddingY ?? 10}px`,
       "--folder-open-label-delay": `${getFolderOpenIconDelay(ghost) + 120}ms`,
     };
   }
@@ -473,10 +531,16 @@ export function useFolderOpenIconGhosts(options) {
       "--app-icon-image-size": `${ghost.fromIcon.width}px`,
       "--app-icon-emoji-size": `${ghost.fromIcon.width}px`,
       "--folder-icon-name-font-size": `${metrics.iconNameFontSize || 13}px`,
+      "--folder-icon-name-line-height": metrics.iconNameLineHeight || "1.22",
       "--folder-icon-name-line-clamp": metrics.iconNameLineClamp || 2,
       "--folder-icon-name-margin-top": `${metrics.iconNameMarginTop ?? 8}px`,
+      "--folder-icon-name-overflow": metrics.iconNameOverflow || "hidden",
+      "--folder-icon-name-overflow-wrap": metrics.iconNameOverflowWrap || "normal",
       "--folder-icon-name-padding-x": `${metrics.iconNamePaddingX ?? 8}px`,
       "--folder-icon-name-padding-y": `${metrics.iconNamePaddingY ?? 2}px`,
+      "--folder-icon-name-text-overflow": metrics.iconNameTextOverflow || "ellipsis",
+      "--folder-icon-name-white-space": metrics.iconNameWhiteSpace || "normal",
+      "--folder-icon-name-word-break": metrics.iconNameWordBreak || "break-word",
       "--folder-selection-frame-padding-x": `${metrics.framePaddingX ?? 12}px`,
       "--folder-selection-frame-padding-y": `${metrics.framePaddingY ?? 10}px`,
     };
@@ -517,8 +581,11 @@ export function useFolderOpenIconGhosts(options) {
     if (completedFolderOpenIconGhostKeys.size < folderOpenIconGhosts.value.length) return;
 
     completedFolderOpenIconGhostKeys.clear();
+    folderOpenFrameGhost.value = null;
+    isFolderOpenFrameGhostPending.value = false;
     folderOpenIconGhosts.value = [];
     folderOpenIconGhostedKeys.value = new Set();
+    folderOpenPreviewGhostedKeys.value = new Set();
   }
 
   function completeFolderCloseIconGhost(key) {
@@ -535,6 +602,8 @@ export function useFolderOpenIconGhosts(options) {
 
   function captureFolderPreviewIconGhosts(folder, openingChildren) {
     if (!folder?.id || typeof document === "undefined") return [];
+    const sourceFrameNode = document.querySelector(makeFolderPreviewFrameSelector(folder.id));
+    const sourceFrame = getNodeRect(sourceFrameNode);
     const previewGhosts = optionsSafeFolderPreviewSlots(folder, options)
       .map((child, previewSlotIndex) => {
         if (!child?.id) return null;
@@ -546,6 +615,8 @@ export function useFolderOpenIconGhosts(options) {
           from,
           item: options.cloneItem(child),
           previewSlotIndex,
+          sourceFrame,
+          sourceFrameMetrics: cloneFrameStyleMetrics(sourceFrameNode),
         };
       })
       .filter(Boolean);
@@ -563,6 +634,8 @@ export function useFolderOpenIconGhosts(options) {
           item: options.cloneItem(child),
           previewSlotIndex: previewGhost?.previewSlotIndex ?? null,
           slotIndex,
+          sourceFrame,
+          sourceFrameMetrics: cloneFrameStyleMetrics(sourceFrameNode),
           sourceBounds,
           synthetic: !previewGhost,
         };
@@ -646,6 +719,8 @@ export function useFolderOpenIconGhosts(options) {
     if (!folderId || !capturedGhosts?.length || typeof document === "undefined") return;
     const requestId = (folderOpenIconGhostRequestId += 1);
     completedFolderOpenIconGhostKeys.clear();
+    folderOpenFrameGhost.value = null;
+    isFolderOpenFrameGhostPending.value = true;
     folderOpenIconGhosts.value = [];
     folderOpenIconGhostedKeys.value = new Set(capturedGhosts.map((ghost) => makeFolderOpenIconGhostedKey(folderId, ghost.item.id)));
 
@@ -653,23 +728,27 @@ export function useFolderOpenIconGhosts(options) {
       if (requestId !== folderOpenIconGhostRequestId) return;
       requestAnimationFrameTwice(() => {
         if (requestId !== folderOpenIconGhostRequestId) return;
-        const toLocalRect = makeLocalRectMapper(document.querySelector(".folder-panel-content"));
-        const measuredGhosts = toLocalRect
-          ? capturedGhosts
+        const measurementScope = makeFolderOpenMeasurementScope();
+        let measurement;
+        try {
+          measurement = (() => {
+            const root = measurementScope.root || document;
+            const measured = capturedGhosts
               .map((ghost) => {
                 const frameSelector = makeFolderGridFrameSelector(folderId, ghost.item.id);
                 const iconSelector = makeFolderGridChildSelector(folderId, ghost.item.id);
-                const frameNode = frameSelector ? document.querySelector(frameSelector) : null;
-                const iconBoxNode = iconSelector ? document.querySelector(iconSelector) : null;
-                const previewFrom = toLocalRect(ghost.from);
-                const sourceBounds = toLocalRect(ghost.sourceBounds);
-                const to = toLocalRect(getNodeRect(frameNode));
-                const toIcon = toLocalRect(getNodeRect(iconBoxNode));
+                const frameNode = frameSelector ? root.querySelector(frameSelector) : null;
+                const iconBoxNode = iconSelector ? root.querySelector(iconSelector) : null;
+                const previewFrom = cloneRect(ghost.from);
+                const sourceBounds = cloneRect(ghost.sourceBounds);
+                const to = getNodeRect(frameNode);
+                const toIcon = getNodeRect(iconBoxNode);
                 if ((!previewFrom && !sourceBounds) || !to || !toIcon) return null;
                 return {
                   ...ghost,
                   previewFrom,
                   sourceBounds,
+                  styleMetrics: cloneItemStyleMetrics(frameNode),
                   targetGridColumnCount: getGridTrackCount(frameNode, "gridTemplateColumns"),
                   targetGridRowCount: getGridTrackCount(frameNode, "gridTemplateRows"),
                   key: `${folderId}-${ghost.item.id}-${ghost.slotIndex}-${requestId}`,
@@ -678,8 +757,18 @@ export function useFolderOpenIconGhosts(options) {
                   toIcon,
                 };
               })
-              .filter(Boolean)
-          : [];
+              .filter(Boolean);
+            const frameNode = root.querySelector(".folder-pages-shell");
+            return {
+              measuredGhosts: measured,
+              targetFrame: getNodeRect(frameNode),
+              targetFrameNode: frameNode,
+            };
+          })();
+        } finally {
+          measurementScope.dispose();
+        }
+        const { measuredGhosts, targetFrame, targetFrameNode } = measurement || {};
 
         const sourceBounds = getRectBounds(measuredGhosts.map((ghost) => ghost.sourceBounds || ghost.previewFrom));
         const sourceMetrics = getSourcePreviewMetrics(sourceBounds, measuredGhosts.map((ghost) => ghost.previewFrom));
@@ -687,7 +776,7 @@ export function useFolderOpenIconGhosts(options) {
         const targetRowCount = inferTargetRowCount(measuredGhosts, targetColumnCount);
         const ghosts = measuredGhosts
           .map((ghost) => {
-            const from = targetColumnCount === FOLDER_OPEN_PREVIEW_COLUMNS && !ghost.synthetic && ghost.previewFrom
+            const from = !ghost.synthetic && ghost.previewFrom
               ? ghost.previewFrom
               : projectTargetGridSlotIntoSourceBounds(sourceBounds, ghost.slotIndex, targetColumnCount, targetRowCount, sourceMetrics) || ghost.previewFrom;
             if (!from) return null;
@@ -704,7 +793,25 @@ export function useFolderOpenIconGhosts(options) {
           clearFolderOpenIconGhosts();
           return;
         }
+        const sourceFrame = measuredGhosts.find((ghost) => ghost.sourceFrame)?.sourceFrame || sourceBounds;
+        isFolderOpenFrameGhostPending.value = false;
+        folderOpenFrameGhost.value = sourceFrame && targetFrame
+          ? {
+              folderId,
+              key: `${folderId}-frame-${requestId}`,
+              from: sourceFrame,
+              fromMetrics: measuredGhosts.find((ghost) => ghost.sourceFrameMetrics)?.sourceFrameMetrics || cloneFrameStyleMetrics(null),
+              requestId,
+              to: targetFrame,
+              toMetrics: cloneFrameStyleMetrics(targetFrameNode),
+            }
+          : null;
         folderOpenIconGhostedKeys.value = new Set(ghosts.map((ghost) => makeFolderOpenIconGhostedKey(folderId, ghost.item.id)));
+        folderOpenPreviewGhostedKeys.value = new Set(
+          ghosts
+            .filter((ghost) => !ghost.synthetic && ghost.previewSlotIndex != null)
+            .map((ghost) => makeFolderOpenIconGhostedKey(folderId, ghost.item.id))
+        );
         folderOpenIconGhosts.value = ghosts;
       });
     });
@@ -730,6 +837,14 @@ export function useFolderOpenIconGhosts(options) {
     return folderOpenIconGhostedKeys.value.has(makeFolderOpenIconGhostedKey(folderId, childId));
   }
 
+  function isFolderOpeningPreviewGhosted(folderId, childId) {
+    return folderOpenPreviewGhostedKeys.value.has(makeFolderOpenIconGhostedKey(folderId, childId));
+  }
+
+  function isFolderOpeningPreviewFrameGhosted(folderId) {
+    return Boolean(folderId && folderOpenFrameGhost.value?.folderId === folderId);
+  }
+
   function isFolderClosingIconGhosted(folderId, childId) {
     return folderCloseIconGhostedKeys.value.has(makeFolderOpenIconGhostedKey(folderId, childId));
   }
@@ -742,6 +857,7 @@ export function useFolderOpenIconGhosts(options) {
     completeFolderCloseIconGhost,
     completeFolderOpenIconGhost,
     folderCloseIconGhosts,
+    folderOpenFrameGhost,
     folderOpenIconGhosts,
     getFolderOpenExtraIconDelay,
     getFolderCloseIconGhostAnimate,
@@ -753,9 +869,12 @@ export function useFolderOpenIconGhosts(options) {
     getFolderOpenIconGhostStyle,
     getFolderOpenIconGhostTransition,
     isFolderCloseIconAnimationActive,
+    isFolderOpenFrameGhostPending,
     isFolderOpenIconAnimationActive,
     isFolderClosingIconGhosted,
     isFolderOpeningIconGhosted,
+    isFolderOpeningPreviewFrameGhosted,
+    isFolderOpeningPreviewGhosted,
     playFolderCloseIconGhosts,
     playFolderOpenIconGhosts,
   };

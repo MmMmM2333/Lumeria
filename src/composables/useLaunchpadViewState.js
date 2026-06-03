@@ -89,9 +89,9 @@ export function useLaunchpadViewState(options) {
       };
     }
     if (isDesktopAnimatingClosed.value) {
-      return { opacity: 0, scaleX: DESKTOP_CLOSE_SCALE, scaleY: DESKTOP_CLOSE_SCALE, x: 0, y: 0, borderRadius: "42px", filter: "blur(8px)" };
+      return { opacity: 0, scaleX: DESKTOP_CLOSE_SCALE, scaleY: DESKTOP_CLOSE_SCALE, x: 0, y: 0, borderRadius: "48px", filter: "blur(8px)" };
     }
-    return { opacity: 1, scaleX: 1, scaleY: 1, x: 0, y: 0, borderRadius: "42px", filter: "blur(0px)" };
+    return { opacity: 1, scaleX: 1, scaleY: 1, x: 0, y: 0, borderRadius: "48px", filter: "blur(0px)" };
   });
   const folderPanelTransition = computed(() => {
     if (options.isFolderClosing.value) return folderPanelCloseTransition;

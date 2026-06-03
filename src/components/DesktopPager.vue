@@ -46,6 +46,8 @@
                   :selected="isIconSelected(isSearchMode ? 'search' : 'desktop', item.id, pageNumber)"
                   :drop-target="!isSearchMode && dragFolderTargetId === item.id"
                   :opening="isIconOpening(isSearchMode ? 'search' : 'desktop', item.id, pageNumber)"
+                  :is-folder-preview-child-ghosted="isFolderOpeningPreviewGhosted"
+                  :is-folder-preview-frame-ghosted="isFolderOpeningPreviewFrameGhosted"
                   :launch-target-status="showMissingLaunchTargetBadge ? launchTargetStatusById[item.id] : null"
                   @pointerdown-icon="(...args) => forward('pointerdown-icon', args)"
                   @open-app="(...args) => forward('open-app', args)"
@@ -91,6 +93,8 @@ defineProps({
   getDesktopPageRenderMode: { type: Function, required: true },
   getVisibleDesktopPage: { type: Function, required: true },
   isEditMode: { type: Boolean, default: false },
+  isFolderOpeningPreviewFrameGhosted: { type: Function, default: () => false },
+  isFolderOpeningPreviewGhosted: { type: Function, default: () => false },
   isIconOpening: { type: Function, required: true },
   isIconSelected: { type: Function, required: true },
   isSearchMode: { type: Boolean, default: false },

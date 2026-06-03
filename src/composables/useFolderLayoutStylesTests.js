@@ -90,4 +90,19 @@ export function runFolderLayoutStylesTests() {
   assert(compressedCellHeight < 128, "constrained folders should compress the icon cell height");
   assert(compressedIconSize < 72, "constrained folders should compress the icon size");
   assert(compressedIconSize >= 20, "folder compression should preserve the minimum effective icon size");
+
+  const originalWindow = globalThis.window;
+  globalThis.window = { innerHeight: 620 };
+  try {
+    const initiallyMeasured = createFolderLayoutStyles({
+      folderPages: [makeItems(35)],
+      folderViewportHeight: 0,
+    });
+    const initiallyMeasuredIconSize = Number.parseFloat(initiallyMeasured.folderPanelStyle.value["--folder-icon-size"]);
+    assert(initiallyMeasuredIconSize < 72, "unmeasured constrained folders should use the viewport estimate instead of flashing at full size");
+    assert(initiallyMeasured.folderPanelStyle.value["--folder-icon-name-line-clamp"] === 1, "unmeasured constrained folders should keep compressed label clamping");
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
 }
