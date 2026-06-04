@@ -7,7 +7,6 @@
       (state.isFolderClosing.value || state.isFolderAppLaunchClosing.value) && 'pixi-folder-overlay-closing',
     ]"
     @pointerdown.stop.prevent
-    @pointerup.stop.prevent
   >
     <div ref="hostRef" class="pixi-folder-host" />
     <input
@@ -15,7 +14,7 @@
       class="folder-name-input pixi-folder-name-input"
       name="pixiFolderName"
       :value="state.renderedFolder.value.name"
-      :disabled="state.isFolderClosing.value || state.isFolderAppLaunchClosing.value"
+      :disabled="state.isFolderClosing.value || state.isFolderAppLaunchClosing.value || isFolderGhostTransitionActive"
       :style="folderNameInputStyle"
       maxlength="32"
       aria-label="文件夹名称"
@@ -66,6 +65,11 @@ let layer = null;
 let resizeObserver = null;
 let destroyed = false;
 
+const isFolderGhostTransitionActive = computed(() => Boolean(
+  props.state.isFolderOpenIconAnimationActive?.value ||
+  props.state.isFolderCloseIconAnimationActive?.value
+));
+
 function handleResize() {
   app?.resize?.();
   renderPixi();
@@ -73,10 +77,12 @@ function handleResize() {
 
 const folderNameInputStyle = computed(() => {
   const panel = panelGeometry.value?.panel;
+  const isHidden = props.state.isFolderClosing.value || props.state.isFolderAppLaunchClosing.value || isFolderGhostTransitionActive.value;
   if (!panel) return { opacity: 0, pointerEvents: "none" };
   return {
     left: `${panel.left + panel.width / 2 - 180}px`,
-    opacity: props.state.isFolderClosing.value || props.state.isFolderAppLaunchClosing.value ? 0 : 1,
+    opacity: isHidden ? 0 : 1,
+    pointerEvents: isHidden ? "none" : "auto",
     top: `${panel.top - 44}px`,
     width: "360px",
   };
@@ -84,12 +90,12 @@ const folderNameInputStyle = computed(() => {
 
 const folderPageDotsStyle = computed(() => {
   const panel = panelGeometry.value?.panel;
-  const isClosing = props.state.isFolderClosing.value || props.state.isFolderAppLaunchClosing.value;
+  const isHidden = props.state.isFolderClosing.value || props.state.isFolderAppLaunchClosing.value || isFolderGhostTransitionActive.value;
   if (!panel) return { opacity: 0, pointerEvents: "none" };
   return {
     left: `${panel.left}px`,
-    opacity: isClosing ? 0 : 1,
-    pointerEvents: isClosing ? "none" : "auto",
+    opacity: isHidden ? 0 : 1,
+    pointerEvents: isHidden ? "none" : "auto",
     top: `${panel.top + panel.height - 32}px`,
     width: `${panel.width}px`,
   };
@@ -97,6 +103,12 @@ const folderPageDotsStyle = computed(() => {
 
 function getHostRect() {
   return hostRef.value?.getBoundingClientRect?.() || { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+}
+
+function getFolderGhostKey(ghosts, itemId, slotIndex) {
+  const items = Array.isArray(ghosts) ? ghosts : [];
+  const matchingSlot = items.find((ghost) => ghost.item?.id === itemId && ghost.slotIndex === slotIndex);
+  return matchingSlot?.key || items.find((ghost) => ghost.item?.id === itemId)?.key || null;
 }
 
 function renderPixi() {
@@ -111,6 +123,12 @@ function renderPixi() {
     folderPanelRef: props.state.folderPanelRef,
     folderPanelStyle: props.state.folderPanelStyle.value,
     folderViewportRef: props.state.folderViewportRef,
+    completeFolderCloseIconGhost: props.state.completeFolderCloseIconGhost,
+    completeFolderOpenIconGhost: props.state.completeFolderOpenIconGhost,
+    folderCloseIconGhosts: props.state.folderCloseIconGhosts?.value,
+    folderOpenIconGhosts: props.state.folderOpenIconGhosts?.value,
+    getFolderCloseIconGhostKey: (itemId, slotIndex) => getFolderGhostKey(props.state.folderCloseIconGhosts?.value, itemId, slotIndex),
+    getFolderOpenIconGhostKey: (itemId, slotIndex) => getFolderGhostKey(props.state.folderOpenIconGhosts?.value, itemId, slotIndex),
     getVisibleFolderPage: props.state.getVisibleFolderPage,
     getFolderPageRenderMode: props.state.getFolderPageRenderMode,
     height: Math.max(1, rect.height),
@@ -118,8 +136,6 @@ function renderPixi() {
     isEditMode: props.state.isEditMode.value,
     isFolderAppLaunchClosing: props.state.isFolderAppLaunchClosing.value,
     isFolderClosing: props.state.isFolderClosing.value,
-    isFolderClosingIconGhosted: props.state.isFolderClosingIconGhosted,
-    isFolderOpeningIconGhosted: props.state.isFolderOpeningIconGhosted,
     isIconOpening: props.state.isIconOpening,
     isIconSelected: props.state.isIconSelected,
     isTextlessMode: props.state.isTextlessMode.value,
@@ -146,10 +162,16 @@ function destroyPixi() {
   window.removeEventListener("resize", handleResize);
   resizeObserver?.disconnect();
   resizeObserver = null;
-  app?.destroy(true);
-  hostRef.value?.replaceChildren?.();
+  const currentApp = app;
+  const currentLayer = layer;
   app = null;
   layer = null;
+  if (currentLayer) {
+    currentApp?.stage?.removeChild(currentLayer);
+    currentLayer.destroy({ children: true });
+  }
+  currentApp?.destroy(true);
+  hostRef.value?.replaceChildren?.();
   clearIconBoundsRegistry();
   clearIconTextureCache();
 }
@@ -199,12 +221,16 @@ onMounted(async () => {
 watchEffect(() => {
   void props.state.dragMeta.value;
   void props.state.folderGridStyle.value;
+  void props.state.folderCloseIconGhosts?.value;
+  void props.state.folderOpenIconGhosts?.value;
   void props.state.folderPageIndex.value;
   void props.state.folderPages.value;
   void props.state.folderPanelStyle.value;
   void props.state.isEditMode.value;
   void props.state.isFolderAppLaunchClosing.value;
+  void props.state.isFolderCloseIconAnimationActive?.value;
   void props.state.isFolderClosing.value;
+  void props.state.isFolderOpenIconAnimationActive?.value;
   void props.state.isTextlessMode.value;
   void props.state.launchTargetStatusById.value;
   void props.state.renderedFolder.value;

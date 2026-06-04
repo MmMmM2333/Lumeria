@@ -11,6 +11,7 @@ let lastTime = 0;
 
 const springRest = Object.freeze({ restDelta: 0.01, restSpeed: 0.01 });
 export const pageTrackSpring = Object.freeze({ stiffness: 190, damping: 28, mass: 0.9, ...springRest });
+export const panelSpring = Object.freeze({ stiffness: 340, damping: 31, mass: 0.9, ...springRest });
 
 function nowMs() {
   if (typeof performance !== "undefined" && typeof performance.now === "function") return performance.now();

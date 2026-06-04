@@ -104,8 +104,12 @@ export function getFolderGridMetrics(options) {
   const cols = Math.max(1, Number(options.cols) || 1);
   const rows = Math.max(1, Number(options.rows) || 1);
   const rowGap = Math.max(0, Number(options.rowGap) || 18);
+  const availableCellHeight = Math.max(1, (grid.height - rowGap * Math.max(0, rows - 1)) / rows);
+  const fixedCellHeight = Number(options.fixedCellHeight);
   const cellWidth = grid.width / cols;
-  const cellHeight = Math.max(1, (grid.height - rowGap * Math.max(0, rows - 1)) / rows);
+  const cellHeight = Number.isFinite(fixedCellHeight) && fixedCellHeight > 0
+    ? Math.min(fixedCellHeight, availableCellHeight)
+    : availableCellHeight;
   return {
     cellHeight,
     cellWidth,

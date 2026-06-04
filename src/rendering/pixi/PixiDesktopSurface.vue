@@ -120,10 +120,16 @@ function destroyPixi() {
   window.removeEventListener("resize", handleResize);
   resizeObserver?.disconnect();
   resizeObserver = null;
-  app?.destroy(true);
-  hostRef.value?.replaceChildren?.();
+  const currentApp = app;
+  const currentLayer = layer;
   app = null;
   layer = null;
+  if (currentLayer) {
+    currentApp?.stage?.removeChild(currentLayer);
+    currentLayer.destroy({ children: true });
+  }
+  currentApp?.destroy(true);
+  hostRef.value?.replaceChildren?.();
   clearIconBoundsRegistry();
   clearIconTextureCache();
 }

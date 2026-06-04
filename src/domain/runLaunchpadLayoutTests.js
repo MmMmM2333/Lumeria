@@ -21,7 +21,9 @@ import { runLaunchpadDataTests } from "./launchpadDataTests.js";
 import { runIconSourceTests } from "./iconSourceTests.js";
 import { runLaunchpadHelperTests } from "./launchpadLayoutTests.js";
 import { runPageRenderRangeTests } from "../composables/usePageRenderRangeTests.js";
+import { runPixiEaseTests } from "../rendering/pixi/animation/easesTests.js";
 import { runSpringMotionTests } from "../rendering/pixi/animation/springMotionTests.js";
+import { runGridGeometryTests } from "../rendering/pixi/geometry/gridGeometryTests.js";
 import { runStageCoordinatesTests } from "../rendering/pixi/geometry/stageCoordinatesTests.js";
 
 const state = {
@@ -100,7 +102,9 @@ runLaunchpadSettingsConfigTests();
 runSettingsPanelFlowTests();
 await runLaunchpadSearchTests();
 await runPageRenderRangeTests();
+runPixiEaseTests();
 runSpringMotionTests();
+runGridGeometryTests();
 runStageCoordinatesTests();
 
 console.info("Launchpad layout helper tests passed");

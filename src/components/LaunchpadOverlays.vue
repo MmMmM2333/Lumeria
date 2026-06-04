@@ -14,7 +14,7 @@
     </div>
   </Motion>
 
-  <div v-if="state.folderOpenIconGhosts.value.length" class="folder-open-icon-ghost-layer" aria-hidden="true">
+  <div v-if="shouldRenderFolderGhostLayers && state.folderOpenIconGhosts.value.length" class="folder-open-icon-ghost-layer" aria-hidden="true">
     <Motion
       v-for="ghost in state.folderOpenIconGhosts.value"
       :key="ghost.key"
@@ -40,7 +40,7 @@
     </Motion>
   </div>
 
-  <div v-if="state.folderCloseIconGhosts.value.length" class="folder-close-icon-ghost-layer" aria-hidden="true">
+  <div v-if="shouldRenderFolderGhostLayers && state.folderCloseIconGhosts.value.length" class="folder-close-icon-ghost-layer" aria-hidden="true">
     <Motion
       v-for="ghost in state.folderCloseIconGhosts.value"
       :key="ghost.key"
@@ -102,17 +102,20 @@
 
 <script setup>
 import { Motion } from "motion-v";
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import MissingLaunchTargetBadge from "./MissingLaunchTargetBadge.js";
 import { getIconSource } from "../domain/iconSource.js";
 import { cx } from "../domain/launchpadLayout.js";
 
-defineProps({
+const props = defineProps({
   state: { type: Object, required: true },
 });
 
 const emit = defineEmits(["open-context-app", "edit-context-app"]);
 const iconContextMenu = ref(null);
+const hiddenFolderGhostCompletionDelay = 650;
+const hiddenFolderGhostTimers = new Map();
+const shouldRenderFolderGhostLayers = computed(() => props.state.renderFolderGhostLayers !== false);
 const iconContextMenuStyle = computed(() => {
   if (!iconContextMenu.value) return {};
   return {
@@ -123,6 +126,40 @@ const iconContextMenuStyle = computed(() => {
 
 function bindRef(target, node) {
   if (target && typeof target === "object" && "value" in target) target.value = node;
+}
+
+function clearHiddenFolderGhostTimer(timerKey) {
+  const timer = hiddenFolderGhostTimers.get(timerKey);
+  if (!timer) return;
+  clearTimeout(timer);
+  hiddenFolderGhostTimers.delete(timerKey);
+}
+
+function clearHiddenFolderGhostTimers() {
+  for (const timerKey of hiddenFolderGhostTimers.keys()) clearHiddenFolderGhostTimer(timerKey);
+}
+
+function scheduleHiddenFolderGhostCompletions(kind, ghosts) {
+  const items = Array.isArray(ghosts) ? ghosts : [];
+  const activeTimerKeys = new Set(items.map((ghost) => `${kind}:${ghost.key}`));
+  for (const timerKey of hiddenFolderGhostTimers.keys()) {
+    if (timerKey.startsWith(`${kind}:`) && !activeTimerKeys.has(timerKey)) clearHiddenFolderGhostTimer(timerKey);
+  }
+  if (shouldRenderFolderGhostLayers.value) {
+    for (const timerKey of activeTimerKeys) clearHiddenFolderGhostTimer(timerKey);
+    return;
+  }
+
+  const complete = kind === "open" ? props.state.completeFolderOpenIconGhost : props.state.completeFolderCloseIconGhost;
+  for (const ghost of items) {
+    const timerKey = `${kind}:${ghost.key}`;
+    if (hiddenFolderGhostTimers.has(timerKey)) continue;
+    const timer = window.setTimeout(() => {
+      hiddenFolderGhostTimers.delete(timerKey);
+      complete?.(ghost.key);
+    }, hiddenFolderGhostCompletionDelay);
+    hiddenFolderGhostTimers.set(timerKey, timer);
+  }
 }
 
 function openIconContextMenu(event, app, source) {
@@ -160,6 +197,25 @@ function editContextMenuApp() {
   closeIconContextMenu();
   emit("edit-context-app", menu.app);
 }
+
+watch(
+  () => props.state.folderOpenIconGhosts.value,
+  (ghosts) => scheduleHiddenFolderGhostCompletions("open", ghosts),
+  { immediate: true }
+);
+
+watch(
+  () => props.state.folderCloseIconGhosts.value,
+  (ghosts) => scheduleHiddenFolderGhostCompletions("close", ghosts),
+  { immediate: true }
+);
+
+watch(shouldRenderFolderGhostLayers, () => {
+  scheduleHiddenFolderGhostCompletions("open", props.state.folderOpenIconGhosts.value);
+  scheduleHiddenFolderGhostCompletions("close", props.state.folderCloseIconGhosts.value);
+});
+
+onBeforeUnmount(clearHiddenFolderGhostTimers);
 
 defineExpose({
   closeIconContextMenu,

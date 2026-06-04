@@ -2,6 +2,7 @@ import { Application } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "./devHmr.js";
 
 export async function createPixiApp(host, options = {}) {
+  host?.replaceChildren?.();
   const app = new Application();
   await app.init({
     antialias: true,
@@ -12,7 +13,6 @@ export async function createPixiApp(host, options = {}) {
     resizeTo: options.resizeTo || host,
   });
   app.canvas.className = options.className || "pixi-launchpad-canvas";
-  host.replaceChildren?.();
   host.appendChild(app.canvas);
   app.start?.();
   return app;

@@ -134,14 +134,18 @@ export function createDialogState(controller) {
 export function createFolderOverlayState(controller) {
   return {
     beginDrag: controller.beginDrag,
+    completeFolderCloseIconGhost: controller.completeFolderCloseIconGhost,
+    completeFolderOpenIconGhost: controller.completeFolderOpenIconGhost,
     commitFolderPageIndex: controller.commitFolderPageIndex,
     desktopTrackTransition: controller.desktopTrackTransition,
     dragMeta: controller.dragMeta,
     folderContentAnimate: controller.folderContentAnimate,
     folderContentInitial: controller.folderContentInitial,
     folderContentTransition: controller.folderContentTransition,
+    folderCloseIconGhosts: controller.folderCloseIconGhosts,
     folderGridStyle: controller.folderGridStyle,
     folderLayoutEnabled: controller.folderLayoutEnabled,
+    folderOpenIconGhosts: controller.folderOpenIconGhosts,
     folderPageIndex: controller.folderPageIndex,
     folderPageSize: controller.folderPageSize,
     folderPages: controller.folderPages,
@@ -158,6 +162,7 @@ export function createFolderOverlayState(controller) {
     handleFolderOverlayPointerDown: controller.handleFolderOverlayPointerDown,
     isEditMode: controller.isEditMode,
     isFolderAppLaunchClosing: controller.isFolderAppLaunchClosing,
+    isFolderCloseIconAnimationActive: controller.isFolderCloseIconAnimationActive,
     isFolderClosing: controller.isFolderClosing,
     isFolderOpenFrameGhostPending: controller.isFolderOpenFrameGhostPending,
     isFolderOpenIconAnimationActive: controller.isFolderOpenIconAnimationActive,
@@ -202,6 +207,7 @@ export function createOverlayState(controller) {
     launchGhost: controller.launchGhost,
     launchTargetStatusById: controller.launchTargetStatusById,
     launchGhostStyle: controller.launchGhostStyle,
+    renderFolderGhostLayers: false,
     showMissingLaunchTargetBadge: controller.showMissingLaunchTargetBadge,
   };
 }
