@@ -1,3 +1,5 @@
+import { reloadOnPixiHotUpdate } from "../devHmr.js";
+
 export function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -117,3 +119,5 @@ export function getFolderGridMetrics(options) {
     rows,
   };
 }
+
+reloadOnPixiHotUpdate(import.meta.hot);

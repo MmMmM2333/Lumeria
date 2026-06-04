@@ -2172,6 +2172,12 @@ body {
   transition: opacity 140ms ease;
 }
 
+.pixi-folder-page-dots {
+  position: fixed;
+  z-index: 52;
+  transition: opacity 140ms ease;
+}
+
 .folder-overlay-closing {
   pointer-events: none;
 }

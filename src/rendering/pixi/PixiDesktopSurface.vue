@@ -14,6 +14,9 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watchEffect } from "vue";
 import { createPixiApp } from "./createPixiApp.js";
 import { DesktopLayer } from "./scene/DesktopLayer.js";
+import { clearIconTextureCache } from "./assets/iconTextureCache.js";
+import { clearIconBoundsRegistry } from "./geometry/iconBoundsRegistry.js";
+import { reloadOnPixiHotUpdate } from "./devHmr.js";
 
 const props = defineProps({
   activePageIndex: { type: Number, required: true },
@@ -104,6 +107,7 @@ function renderPixi() {
 }
 
 function handleIconAction(action, event, item, source) {
+  if (action === "open") emit("open-app", item, source);
   if (action === "pointerdown") emit("pointerdown-icon", event, item, source);
   if (action === "context-menu") emit("context-menu-icon", event, item, source);
   if (action === "remove") emit("remove-app", item.id);
@@ -111,14 +115,29 @@ function handleIconAction(action, event, item, source) {
   if (action === "reset-icon") emit("reset-app-icon", item.id);
 }
 
+function destroyPixi() {
+  destroyed = true;
+  window.removeEventListener("resize", handleResize);
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+  app?.destroy(true);
+  hostRef.value?.replaceChildren?.();
+  app = null;
+  layer = null;
+  clearIconBoundsRegistry();
+  clearIconTextureCache();
+}
+
 onMounted(async () => {
   destroyed = false;
   if (props.domRefs?.desktopMainRef) props.domRefs.desktopMainRef.value = mainRef.value;
-  app = await createPixiApp(hostRef.value, { className: "pixi-launchpad-canvas" });
+  const nextApp = await createPixiApp(hostRef.value, { className: "pixi-launchpad-canvas" });
   if (destroyed) {
-    app.destroy(true);
+    nextApp.destroy(true);
+    hostRef.value?.replaceChildren?.();
     return;
   }
+  app = nextApp;
   layer = new DesktopLayer({ onIconAction: handleIconAction });
   app.stage.addChild(layer);
   resizeObserver = new ResizeObserver(handleResize);
@@ -145,13 +164,10 @@ watchEffect(() => {
   renderPixi();
 });
 
-onBeforeUnmount(() => {
-  destroyed = true;
-  window.removeEventListener("resize", handleResize);
-  resizeObserver?.disconnect();
-  resizeObserver = null;
-  app?.destroy(true);
-  app = null;
-  layer = null;
-});
+onBeforeUnmount(destroyPixi);
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(destroyPixi);
+  reloadOnPixiHotUpdate(import.meta.hot);
+}
 </script>

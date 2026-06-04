@@ -1,5 +1,6 @@
 import { Container, Graphics, Rectangle, Sprite, Text } from "pixi.js";
 import { gsap } from "gsap";
+import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getCachedIconTexture } from "../assets/iconTextureCache.js";
 import { mapLocalRectToStageRect } from "../geometry/stageCoordinates.js";
 import { getFolderPreviewSlots } from "../../../domain/launchpadLayout.js";
@@ -60,6 +61,7 @@ export class IconNode extends Container {
     this.stageWidth = 1;
     this.textless = false;
     this.isFolder = false;
+    this.clickIntent = null;
     this.onAction = options.onAction || (() => {});
 
     this.selectionFrame = new Graphics();
@@ -95,10 +97,13 @@ export class IconNode extends Container {
     this.eventMode = "static";
     this.cursor = "pointer";
     this.on("pointerdown", (event) => this.handlePointerDown(event));
+    this.on("pointerup", (event) => this.handlePointerUp(event));
+    this.on("pointerupoutside", () => this.cancelClickIntent());
     this.on("rightdown", (event) => this.handleContextMenu(event));
   }
 
   setState(state) {
+    state = { draggable: true, ...state };
     this.item = state.item;
     this.source = state.source;
     this.iconSize = state.iconSize || 64;
@@ -108,6 +113,8 @@ export class IconNode extends Container {
     this.isFolder = state.item?.type === "folder";
     this.state = state;
     this.hitArea = new Rectangle(-state.cellWidth / 2, -state.cellHeight / 2, state.cellWidth, state.cellHeight);
+    this.eventMode = state.interactive === false ? "none" : "static";
+    this.cursor = state.interactive === false ? "default" : "pointer";
     this.visible = !state.dragging && !state.ghosted;
     this.alpha = state.opening ? 0 : 1;
     this.scale.set(state.opening ? 1.08 : 1);
@@ -170,7 +177,32 @@ export class IconNode extends Container {
       this.onAction(action, original, this.item, this.source, this);
       return;
     }
+    if (!this.state?.draggable) {
+      this.clickIntent = this.item?.type === "app"
+        ? { x: original.clientX ?? 0, y: original.clientY ?? 0, pointerId: original.pointerId }
+        : null;
+      original?.preventDefault?.();
+      return;
+    }
     this.onAction("pointerdown", original, this.item, this.source, this);
+  }
+
+  handlePointerUp(event) {
+    if (this.state?.draggable || !this.clickIntent || this.item?.type !== "app") {
+      this.cancelClickIntent();
+      return;
+    }
+    const original = event?.nativeEvent || event;
+    if (this.clickIntent.pointerId != null && original?.pointerId != null && this.clickIntent.pointerId !== original.pointerId) return;
+    const distance = Math.hypot((original.clientX ?? 0) - this.clickIntent.x, (original.clientY ?? 0) - this.clickIntent.y);
+    this.cancelClickIntent();
+    if (distance > 8) return;
+    original?.preventDefault?.();
+    this.onAction("open", original, this.item, this.source, this);
+  }
+
+  cancelClickIntent() {
+    this.clickIntent = null;
   }
 
   handleContextMenu(event) {
@@ -375,3 +407,5 @@ export class IconNode extends Container {
     super.destroy(options);
   }
 }
+
+reloadOnPixiHotUpdate(import.meta.hot);

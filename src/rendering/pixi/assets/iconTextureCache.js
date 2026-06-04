@@ -1,5 +1,6 @@
 import { Texture } from "pixi.js";
 import { getPixiIconTextureSource } from "../../../domain/iconSource.js";
+import { reloadOnPixiHotUpdate } from "../devHmr.js";
 
 const textureCache = new Map();
 const failedTextureSources = new Set();
@@ -72,3 +73,5 @@ export function clearIconTextureCache() {
   pendingTextureLoads.clear();
   textureLoadListeners.clear();
 }
+
+reloadOnPixiHotUpdate(import.meta.hot);

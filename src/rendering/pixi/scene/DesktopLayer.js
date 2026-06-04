@@ -1,5 +1,6 @@
 import { Container, Text } from "pixi.js";
 import { gsap } from "gsap";
+import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getDesktopGridMetrics, getGridSlotRect, makeRect } from "../geometry/gridGeometry.js";
 import { makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import {
@@ -90,6 +91,8 @@ export class DesktopLayer extends Container {
     const seen = new Set();
     pages.forEach((page, pageIndex) => {
       const visibleItems = state.getVisibleDesktopPage(page);
+      const renderMode = state.getDesktopPageRenderMode?.(pageIndex) || "interactive";
+      const isInteractivePage = renderMode === "interactive";
       const metrics = getDesktopGridMetrics({
         cols: state.gridCols,
         height: state.height,
@@ -102,6 +105,7 @@ export class DesktopLayer extends Container {
         const gridRect = makeRect(metrics.gridLeft, metrics.gridTop, metrics.gridWidth, metrics.gridHeight);
         state.setPageRef(makeStageVirtualElement(state.stageRect, state.width, state.height, gridRect), pageIndex);
       }
+      if (renderMode === "empty") return;
 
       visibleItems.forEach((item, index) => {
         const slot = getGridSlotRect(metrics, index);
@@ -131,19 +135,21 @@ export class DesktopLayer extends Container {
           cellHeight: slot.height,
           cellWidth: slot.width,
           compact: sizing.compact,
-          dragging: !state.isSearchMode && state.dragMeta?.item?.id === item.id,
-          dropTarget: !state.isSearchMode && state.dragFolderTargetId === item.id,
-          editing: state.isEditMode,
+          dragging: isInteractivePage && !state.isSearchMode && state.dragMeta?.item?.id === item.id,
+          draggable: isInteractivePage && !state.isSearchMode,
+          dropTarget: isInteractivePage && !state.isSearchMode && state.dragFolderTargetId === item.id,
+          editing: isInteractivePage && state.isEditMode,
           folderPreviewPageSize: state.folderPageSize,
-          ghosted: item.type === "folder" && state.isFolderOpeningPreviewFrameGhosted?.(item.id),
+          ghosted: isInteractivePage && item.type === "folder" && state.isFolderOpeningPreviewFrameGhosted?.(item.id),
           hasCustomIcon: Boolean(item.customIconPath || item.customIconDataUrl),
           iconSize: sizing.iconSize,
+          interactive: isInteractivePage,
           item,
           jiggleSeed: pageIndex * 100 + index,
-          launchTargetStatus: state.showMissingLaunchTargetBadge ? state.launchTargetStatusById?.[item.id] : null,
-          opening: state.isIconOpening?.(state.isSearchMode ? "search" : "desktop", item.id, pageIndex),
+          launchTargetStatus: isInteractivePage && state.showMissingLaunchTargetBadge ? state.launchTargetStatusById?.[item.id] : null,
+          opening: isInteractivePage && state.isIconOpening?.(state.isSearchMode ? "search" : "desktop", item.id, pageIndex),
           removable: item.type === "app",
-          selected: state.isIconSelected?.(state.isSearchMode ? "search" : "desktop", item.id, pageIndex),
+          selected: isInteractivePage && state.isIconSelected?.(state.isSearchMode ? "search" : "desktop", item.id, pageIndex),
           source,
           singleLineLabel: sizing.singleLineLabel,
           stageHeight: state.height,
@@ -151,14 +157,16 @@ export class DesktopLayer extends Container {
           textless: state.isTextlessMode,
         });
 
-        const area = sourceArea(source);
-        const iconBounds = node.getIconBounds(state.stageRect);
-        registerLaunchIconBounds(
-          { area, folderId: null, id: item.id, pageIndex },
-          iconBounds,
-          { area, id: item.id, item, pageIndex }
-        );
-        if (item.type === "folder") this.registerFolderChildren(item, node, state, pageIndex);
+        if (isInteractivePage) {
+          const area = sourceArea(source);
+          const iconBounds = node.getIconBounds(state.stageRect);
+          registerLaunchIconBounds(
+            { area, folderId: null, id: item.id, pageIndex },
+            iconBounds,
+            { area, id: item.id, item, pageIndex }
+          );
+          if (item.type === "folder") this.registerFolderChildren(item, node, state, pageIndex);
+        }
       });
     });
 
@@ -191,3 +199,5 @@ export class DesktopLayer extends Container {
     this.onIconAction(action, event, item, source, node);
   }
 }
+
+reloadOnPixiHotUpdate(import.meta.hot);

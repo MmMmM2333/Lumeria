@@ -1,3 +1,5 @@
+import { reloadOnPixiHotUpdate } from "../devHmr.js";
+
 function safeNumber(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
@@ -43,3 +45,5 @@ export function makeStageVirtualElement(stageRect, stageWidth, stageHeight, loca
     getBoundingClientRect: () => visualRect,
   };
 }
+
+reloadOnPixiHotUpdate(import.meta.hot);

@@ -1,4 +1,5 @@
 import { Application } from "pixi.js";
+import { reloadOnPixiHotUpdate } from "./devHmr.js";
 
 export async function createPixiApp(host, options = {}) {
   const app = new Application();
@@ -11,7 +12,10 @@ export async function createPixiApp(host, options = {}) {
     resizeTo: options.resizeTo || host,
   });
   app.canvas.className = options.className || "pixi-launchpad-canvas";
+  host.replaceChildren?.();
   host.appendChild(app.canvas);
   app.start?.();
   return app;
 }
+
+reloadOnPixiHotUpdate(import.meta.hot);

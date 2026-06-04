@@ -1,3 +1,5 @@
+import { reloadOnPixiHotUpdate } from "../devHmr.js";
+
 const launchIconBounds = new Map();
 const topLevelBounds = new Map();
 const folderPreviewChildBounds = new Map();
@@ -79,3 +81,11 @@ export function clearFolderPreviewChildBounds(folderId) {
 export function getFolderPreviewChildBounds(folderId, childId, slotIndex) {
   return cloneRect(folderPreviewChildBounds.get(`${folderId}:${childId}:${slotIndex}`));
 }
+
+export function clearIconBoundsRegistry() {
+  launchIconBounds.clear();
+  topLevelBounds.clear();
+  folderPreviewChildBounds.clear();
+}
+
+reloadOnPixiHotUpdate(import.meta.hot);

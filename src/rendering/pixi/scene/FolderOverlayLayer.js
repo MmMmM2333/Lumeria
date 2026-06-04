@@ -1,5 +1,6 @@
 import { Container, Graphics, Rectangle, Text } from "pixi.js";
 import { gsap } from "gsap";
+import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { folderCloseDuration, folderCloseEase, folderOpenDuration, folderOpenEase, layoutDuration, layoutEase } from "../animation/eases.js";
 import { getFolderGridMetrics, getFolderPanelGeometry, getGridSlotRect, parseRepeatCount, readPx } from "../geometry/gridGeometry.js";
 import { makeStageVirtualElement } from "../geometry/stageCoordinates.js";
@@ -129,6 +130,9 @@ export class FolderOverlayLayer extends Container {
     const closingGhostTargets = [];
     (state.folderPages || []).forEach((page, pageIndex) => {
       const visibleItems = state.getVisibleFolderPage(page);
+      const renderMode = state.getFolderPageRenderMode?.(pageIndex) || "interactive";
+      const isInteractivePage = renderMode === "interactive";
+      if (renderMode === "empty") return;
       visibleItems.forEach((item, index) => {
         const slot = getGridSlotRect(localMetrics, index);
         const x = pageIndex * geometry.grid.width + slot.left + slot.width / 2;
@@ -156,22 +160,24 @@ export class FolderOverlayLayer extends Container {
           cellHeight: slot.height,
           cellWidth: slot.width,
           compact: false,
-          dragging: state.dragMeta?.item?.id === item.id,
+          dragging: isInteractivePage && state.dragMeta?.item?.id === item.id,
+          draggable: isInteractivePage,
           dropTarget: false,
-          editing: state.isEditMode,
+          editing: isInteractivePage && state.isEditMode,
           folderPreviewPageSize: state.folderPageSize,
-          ghosted: this.openingGhostKeys?.has(item.id) ||
+          ghosted: isInteractivePage && (this.openingGhostKeys?.has(item.id) ||
             this.closingGhostKeys?.has(item.id) ||
             state.isFolderOpeningIconGhosted?.(state.renderedFolder.id, item.id) ||
-            state.isFolderClosingIconGhosted?.(state.renderedFolder.id, item.id),
+            state.isFolderClosingIconGhosted?.(state.renderedFolder.id, item.id)),
           hasCustomIcon: Boolean(item.customIconPath || item.customIconDataUrl),
           iconSize,
+          interactive: isInteractivePage,
           item,
           jiggleSeed: pageIndex * 100 + index,
-          launchTargetStatus: state.showMissingLaunchTargetBadge ? state.launchTargetStatusById?.[item.id] : null,
-          opening: state.isIconOpening?.("folder", item.id, pageIndex, state.renderedFolder.id),
+          launchTargetStatus: isInteractivePage && state.showMissingLaunchTargetBadge ? state.launchTargetStatusById?.[item.id] : null,
+          opening: isInteractivePage && state.isIconOpening?.("folder", item.id, pageIndex, state.renderedFolder.id),
           removable: item.type === "app",
-          selected: state.isIconSelected?.("folder", item.id, pageIndex, state.renderedFolder.id),
+          selected: isInteractivePage && state.isIconSelected?.("folder", item.id, pageIndex, state.renderedFolder.id),
           source,
           stageHeight: state.height,
           stageWidth: state.width,
@@ -179,12 +185,14 @@ export class FolderOverlayLayer extends Container {
         });
 
         const iconBounds = node.getIconBounds(state.stageRect);
-        registerLaunchIconBounds(
-          { area: "folder", folderId: state.renderedFolder.id, id: item.id, pageIndex },
-          iconBounds,
-          { area: "folder", folderId: state.renderedFolder.id, id: item.id, item, pageIndex }
-        );
-        if (isNewFolder && !isClosing && pageIndex === state.folderPageIndex && index < 9) {
+        if (isInteractivePage) {
+          registerLaunchIconBounds(
+            { area: "folder", folderId: state.renderedFolder.id, id: item.id, pageIndex },
+            iconBounds,
+            { area: "folder", folderId: state.renderedFolder.id, id: item.id, item, pageIndex }
+          );
+        }
+        if (isInteractivePage && isNewFolder && !isClosing && pageIndex === state.folderPageIndex && index < 9) {
           openingGhostTargets.push({
             cellHeight: slot.height,
             cellWidth: slot.width,
@@ -195,7 +203,7 @@ export class FolderOverlayLayer extends Container {
             targetY: geometry.panel.top + y - (state.isTextlessMode ? 0 : 14),
           });
         }
-        if (state.isFolderClosing && pageIndex === state.folderPageIndex) {
+        if (isInteractivePage && state.isFolderClosing && pageIndex === state.folderPageIndex) {
           const folderRect = getTopLevelIconBounds(state.renderedFolder.id);
           closingGhostTargets.push({
             cellHeight: slot.height,
@@ -277,12 +285,14 @@ export class FolderOverlayLayer extends Container {
         cellWidth: target.cellWidth,
         compact: true,
         dragging: false,
+        draggable: false,
         dropTarget: false,
         editing: false,
         folderPreviewPageSize: state.folderPageSize,
         ghosted: false,
         hasCustomIcon: false,
         iconSize: target.iconSize,
+        interactive: false,
         item: target.item,
         launchTargetStatus: null,
         opening: false,
@@ -349,12 +359,14 @@ export class FolderOverlayLayer extends Container {
         cellWidth: target.cellWidth,
         compact: true,
         dragging: false,
+        draggable: false,
         dropTarget: false,
         editing: false,
         folderPreviewPageSize: state.folderPageSize,
         ghosted: false,
         hasCustomIcon: false,
         iconSize: target.iconSize,
+        interactive: false,
         item: target.item,
         launchTargetStatus: null,
         opening: false,
@@ -484,3 +496,5 @@ export class FolderOverlayLayer extends Container {
     this.onIconAction(action, event, item, source, node);
   }
 }
+
+reloadOnPixiHotUpdate(import.meta.hot);

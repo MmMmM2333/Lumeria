@@ -24,6 +24,22 @@
       @keydown.enter.prevent.stop="$event.target.blur()"
       @pointerdown.stop
     />
+    <footer
+      v-if="state.renderedFolder.value && state.folderPages.value.length > 1"
+      class="folder-page-dots pixi-folder-page-dots"
+      :style="folderPageDotsStyle"
+      @pointerdown.stop
+    >
+      <button
+        v-for="index in state.folderPages.value.length"
+        :key="index"
+        type="button"
+        :class="['page-dot', index - 1 === state.folderPageIndex.value && 'page-dot-active']"
+        :aria-label="`切换到文件夹第 ${index} 页`"
+        @pointerdown.stop
+        @click="state.commitFolderPageIndex(index - 1)"
+      />
+    </footer>
   </div>
 </template>
 
@@ -31,6 +47,9 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watchEffect } from "vue";
 import { createPixiApp } from "./createPixiApp.js";
 import { FolderOverlayLayer } from "./scene/FolderOverlayLayer.js";
+import { clearIconTextureCache } from "./assets/iconTextureCache.js";
+import { clearIconBoundsRegistry } from "./geometry/iconBoundsRegistry.js";
+import { reloadOnPixiHotUpdate } from "./devHmr.js";
 
 const props = defineProps({
   state: { type: Object, required: true },
@@ -63,6 +82,19 @@ const folderNameInputStyle = computed(() => {
   };
 });
 
+const folderPageDotsStyle = computed(() => {
+  const panel = panelGeometry.value?.panel;
+  const isClosing = props.state.isFolderClosing.value || props.state.isFolderAppLaunchClosing.value;
+  if (!panel) return { opacity: 0, pointerEvents: "none" };
+  return {
+    left: `${panel.left}px`,
+    opacity: isClosing ? 0 : 1,
+    pointerEvents: isClosing ? "none" : "auto",
+    top: `${panel.top + panel.height - 32}px`,
+    width: `${panel.width}px`,
+  };
+});
+
 function getHostRect() {
   return hostRef.value?.getBoundingClientRect?.() || { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
 }
@@ -80,6 +112,7 @@ function renderPixi() {
     folderPanelStyle: props.state.folderPanelStyle.value,
     folderViewportRef: props.state.folderViewportRef,
     getVisibleFolderPage: props.state.getVisibleFolderPage,
+    getFolderPageRenderMode: props.state.getFolderPageRenderMode,
     height: Math.max(1, rect.height),
     iconSize: Number.parseFloat(props.state.folderPanelStyle.value?.["--folder-icon-size"]) || 64,
     isEditMode: props.state.isEditMode.value,
@@ -100,11 +133,25 @@ function renderPixi() {
 }
 
 function handleIconAction(action, event, item, source) {
+  if (action === "open") emit("open-app", item, source);
   if (action === "pointerdown") emit("pointerdown-icon", event, item, source);
   if (action === "context-menu") emit("context-menu-icon", event, item, source);
   if (action === "remove") props.state.removeAppById(item.id);
   if (action === "choose-icon") props.state.openExistingAppIconChooser(item.id);
   if (action === "reset-icon") props.state.resetAppCustomIcon(item.id);
+}
+
+function destroyPixi() {
+  destroyed = true;
+  window.removeEventListener("resize", handleResize);
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+  app?.destroy(true);
+  hostRef.value?.replaceChildren?.();
+  app = null;
+  layer = null;
+  clearIconBoundsRegistry();
+  clearIconTextureCache();
 }
 
 function handleFolderNameInput(event) {
@@ -130,11 +177,13 @@ function restoreEmptyFolderName(event) {
 
 onMounted(async () => {
   destroyed = false;
-  app = await createPixiApp(hostRef.value, { className: "pixi-launchpad-canvas" });
+  const nextApp = await createPixiApp(hostRef.value, { className: "pixi-launchpad-canvas" });
   if (destroyed) {
-    app.destroy(true);
+    nextApp.destroy(true);
+    hostRef.value?.replaceChildren?.();
     return;
   }
+  app = nextApp;
   layer = new FolderOverlayLayer({
     onIconAction: handleIconAction,
     onOutsidePointerDown: () => props.state.handleFolderOverlayPointerDown(),
@@ -163,13 +212,10 @@ watchEffect(() => {
   renderPixi();
 });
 
-onBeforeUnmount(() => {
-  destroyed = true;
-  window.removeEventListener("resize", handleResize);
-  resizeObserver?.disconnect();
-  resizeObserver = null;
-  app?.destroy(true);
-  app = null;
-  layer = null;
-});
+onBeforeUnmount(destroyPixi);
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(destroyPixi);
+  reloadOnPixiHotUpdate(import.meta.hot);
+}
 </script>
