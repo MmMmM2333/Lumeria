@@ -9,7 +9,8 @@ import {
   registerFolderPreviewChildBounds,
   registerLaunchIconBounds,
 } from "../geometry/iconBoundsRegistry.js";
-import { desktopPageDuration, desktopPageEase, layoutDuration, layoutEase, quickDuration, quickEase } from "../animation/eases.js";
+import { layoutDuration, layoutEase, quickDuration, quickEase } from "../animation/eases.js";
+import { pageTrackSpring, springTo, stopTargetSprings } from "../animation/springMotion.js";
 import { IconNode } from "../nodes/IconNode.js";
 
 function sourceArea(source) {
@@ -74,12 +75,7 @@ export class DesktopLayer extends Container {
     const activePageIndex = state.activePageIndex || 0;
     const targetX = -activePageIndex * state.width;
     const shouldSnap = state.shouldSnapTrack;
-    gsap.to(this.pageTrack, {
-      duration: shouldSnap ? 0 : desktopPageDuration,
-      ease: desktopPageEase,
-      overwrite: "auto",
-      x: targetX,
-    });
+    springTo(this.pageTrack, "x", targetX, pageTrackSpring, { snap: shouldSnap });
 
     clearLaunchIconBounds(state.isSearchMode ? "search" : "desktop");
     for (const page of pages) {
@@ -197,6 +193,11 @@ export class DesktopLayer extends Container {
   handleIconAction(action, originalEvent, item, source, node) {
     const event = makeSyntheticPointerEvent(originalEvent, node);
     this.onIconAction(action, event, item, source, node);
+  }
+
+  destroy(options) {
+    stopTargetSprings(this.pageTrack);
+    super.destroy(options);
   }
 }
 

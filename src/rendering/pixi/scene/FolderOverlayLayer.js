@@ -2,6 +2,7 @@ import { Container, Graphics, Rectangle, Text } from "pixi.js";
 import { gsap } from "gsap";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { folderCloseDuration, folderCloseEase, folderOpenDuration, folderOpenEase, layoutDuration, layoutEase } from "../animation/eases.js";
+import { pageTrackSpring, springTo, stopTargetSprings } from "../animation/springMotion.js";
 import { getFolderGridMetrics, getFolderPanelGeometry, getGridSlotRect, parseRepeatCount, readPx } from "../geometry/gridGeometry.js";
 import { makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import { getFolderPreviewChildBounds, getTopLevelIconBounds, registerLaunchIconBounds } from "../geometry/iconBoundsRegistry.js";
@@ -79,6 +80,7 @@ export class FolderOverlayLayer extends Container {
     if (!this.visible) {
       this.currentFolderId = null;
       this.sizeKey = null;
+      stopTargetSprings(this.pageTrack);
       this.clearOpeningGhosts();
       this.clearClosingGhosts();
       return null;
@@ -122,7 +124,7 @@ export class FolderOverlayLayer extends Container {
       .rect(localGridLeft, localGridTop, geometry.grid.width, Math.max(geometry.grid.height, geometry.panel.height - localGridTop - 20))
       .fill({ color: 0xffffff, alpha: 1 });
     const targetTrackX = -state.folderPageIndex * geometry.grid.width;
-    gsap.to(this.pageTrack, { duration: layoutDuration, ease: layoutEase, overwrite: "auto", x: targetTrackX });
+    springTo(this.pageTrack, "x", targetTrackX, pageTrackSpring);
 
     this.bindFakeRefs(state, geometry);
     const seen = new Set();
@@ -494,6 +496,11 @@ export class FolderOverlayLayer extends Container {
   handleIconAction(action, originalEvent, item, source, node) {
     const event = makeSyntheticPointerEvent(originalEvent, node);
     this.onIconAction(action, event, item, source, node);
+  }
+
+  destroy(options) {
+    stopTargetSprings(this.pageTrack);
+    super.destroy(options);
   }
 }
 
