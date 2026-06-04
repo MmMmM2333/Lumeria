@@ -22,7 +22,7 @@ import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
 
 const GHOST_REVEAL_FALLBACK_PADDING_MS = 140;
 const CLOSING_FRAME_PADDING = 48;
-const CLOSING_FRAME_CONTAIN_RELEASE_START = 0.88;
+const CLOSING_FRAME_CONTAIN_RELEASE_START = 0.6;
 const CLOSING_FRAME_TAIL_DURATION = 0.04;
 const CLOSING_GHOST_MAX_DELAY = 0.06;
 const CLOSING_GHOST_MIN_VISIBLE_ALPHA = 0.02;
@@ -181,6 +181,9 @@ export class FolderOverlayLayer extends Container {
     this.iconNodes = new Map();
     this.openingGhostRevealTimer = null;
     this.closingGhostRevealTimer = null;
+    this.closingFrameComplete = false;
+    this.completedClosingControllerGhostKeys = [];
+    this.completedClosingPreviewGhosts = [];
     this.onIconAction = options.onIconAction || (() => {});
     this.onOutsidePointerDown = options.onOutsidePointerDown || (() => {});
     this.addChild(this.frameGhost);
@@ -447,10 +450,28 @@ export class FolderOverlayLayer extends Container {
     this.rebuildPageTrackMask();
   }
 
-  finishClosingGhostTransition() {
-    if (this.openingGhostKeys?.size || this.closingGhostKeys?.size) return;
+  flushCompletedClosingControllerGhosts(state) {
+    const keys = this.completedClosingControllerGhostKeys || [];
+    this.completedClosingControllerGhostKeys = [];
+    for (const key of keys) state.completeFolderCloseIconGhost?.(key);
+  }
+
+  clearCompletedClosingPreviewGhosts() {
+    const ghosts = this.completedClosingPreviewGhosts || [];
+    this.completedClosingPreviewGhosts = [];
+    for (const ghost of ghosts) {
+      killTweensDeep(ghost);
+      if (!ghost.destroyed) ghost.destroy({ children: true });
+    }
+  }
+
+  finishClosingGhostTransition(state) {
+    if (this.openingGhostKeys?.size || this.closingGhostKeys?.size || !this.closingFrameComplete) return;
     this.clearClosingGhostRevealTimer();
     this.pageTrack.visible = false;
+    this.flushCompletedClosingControllerGhosts(state);
+    const defer = globalThis.requestAnimationFrame || ((callback) => globalThis.setTimeout?.(callback, 0));
+    defer(() => this.clearCompletedClosingPreviewGhosts());
   }
 
   clearOpeningGhosts() {
@@ -470,6 +491,9 @@ export class FolderOverlayLayer extends Container {
   clearClosingGhosts() {
     this.clearClosingGhostRevealTimer();
     this.closingGhostKeys?.clear();
+    this.closingFrameComplete = false;
+    this.completedClosingControllerGhostKeys = [];
+    this.completedClosingPreviewGhosts = [];
     this.clearFrameGhost();
     this.pageTrack.visible = true;
     this.revealIconNodes();
@@ -571,9 +595,11 @@ export class FolderOverlayLayer extends Container {
         if (options.preserveOnComplete) {
           this.frameGhostState = frame;
           this.drawFrameGhost(frame, options);
+          options.onComplete?.();
           return;
         }
         this.clearFrameGhost({ panelMaterialAlpha: options.panelMaterialFinalAlpha ?? 1 });
+        options.onComplete?.();
       },
     });
   }
@@ -766,10 +792,29 @@ export class FolderOverlayLayer extends Container {
     ghost.closingComplete = true;
     this.closingGhostKeys?.delete(target.item.id);
     const controllerGhostKey = target.controllerGhostKey || state.getFolderCloseIconGhostKey?.(target.item.id, target.index);
-    if (controllerGhostKey) state.completeFolderCloseIconGhost?.(controllerGhostKey);
-    this.finishClosingGhostTransition();
+    if (controllerGhostKey) this.completedClosingControllerGhostKeys.push(controllerGhostKey);
     killTweensDeep(ghost);
+    if (target.isThumbnailChild && !ghost.destroyed) {
+      const targetRect = makeLocalRect(target.targetRect, state.stageRect);
+      const labelOffset = state.isTextlessMode ? 0 : 14;
+      const scale = Math.max(0.14, target.targetRect.width / Math.max(1, target.iconSize));
+      ghost.position.set(
+        targetRect.left + targetRect.width / 2,
+        targetRect.top + targetRect.height / 2 + labelOffset * scale
+      );
+      ghost.scale.set(scale);
+      ghost.alpha = 1;
+      this.completedClosingPreviewGhosts.push(ghost);
+      this.finishClosingGhostTransition(state);
+      return;
+    }
+    this.finishClosingGhostTransition(state);
     if (!ghost.destroyed) ghost.destroy({ children: true });
+  }
+
+  completeClosingFrameGhost(state) {
+    this.closingFrameComplete = true;
+    this.finishClosingGhostTransition(state);
   }
 
   startClosingGhosts(state, targets, folderRect, panelRect) {
@@ -777,6 +822,9 @@ export class FolderOverlayLayer extends Container {
     this.clearClosingGhosts();
     this.closingGhostFolderId = state.renderedFolder?.id || null;
     this.closingGhostKeys = new Set();
+    this.closingFrameComplete = false;
+    this.completedClosingControllerGhostKeys = [];
+    this.completedClosingPreviewGhosts = [];
     const usableTargets = (targets || []).filter((target) => target.sourceRect && target.targetRect);
     if (!usableTargets.length) return;
     const maxDelay = getMaxGridGhostDelay(usableTargets, CLOSING_GHOST_MAX_DELAY);
@@ -797,6 +845,7 @@ export class FolderOverlayLayer extends Container {
       panelMaterialFinalAlpha: 0,
       panelMaterialFromAlpha: 0,
       panelMaterialToAlpha: 0,
+      onComplete: () => this.completeClosingFrameGhost(state),
       preserveOnComplete: true,
       toFillAlpha: thumb.fillAlpha,
       toFillColor: thumb.fillColor,
