@@ -38,7 +38,9 @@ export function useFolderViewportMetrics(options) {
     disconnectFolderViewportObserver();
     observedFolderViewportElement = element;
 
-    if (element && typeof ResizeObserver !== "undefined") {
+    const canObserveElement = element && typeof ResizeObserver !== "undefined" &&
+      (typeof Element === "undefined" || element instanceof Element);
+    if (canObserveElement) {
       folderViewportResizeObserver = new ResizeObserver(updateFolderViewportHeight);
       folderViewportResizeObserver.observe(element);
     }

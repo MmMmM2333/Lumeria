@@ -33,6 +33,7 @@ import {
 const USE_MOCK_DATA_IN_NATIVE = false;
 const FOLDER_ICON_SIZE_MODE_CUSTOM = "custom";
 const FOLDER_ICON_SIZE_MODE_GLOBAL = "global";
+const CUSTOM_ICON_HYDRATION_ID_PREFIX = "__custom_icon__:";
 const MIN_ICON_HYDRATION_BATCH_SIZE = 20;
 const MAX_ICON_HYDRATION_BATCH_SIZE = 80;
 
@@ -334,24 +335,15 @@ export function useLaunchpadNative(options) {
 
   async function hydrateCachedAppIcons() {
     if (!isNativeBridgeAvailable()) return;
-    const requests = options.collectAppsFromPages(options.pages.value)
-      .filter((app) => app?.id && app.iconPath && !app.iconDataUrl)
-      .map((app) => ({ id: app.id, iconPath: app.iconPath }));
+    const requests = collectIconHydrationRequests();
     if (!requests.length) return;
     const batchSize = getIconHydrationBatchSize();
     for (let index = 0; index < requests.length; index += batchSize) {
       const batch = requests.slice(index, index + batchSize);
       try {
-        const results = await loadCachedAppIcons(batch);
-        const iconPathById = new Map(batch.map((item) => [item.id, item.iconPath]));
-        const iconDataById = new Map(
-          (results || [])
-            .filter((item) => item?.id && item.iconDataUrl)
-            .map((item) => [item.id, {
-              iconPath: iconPathById.get(item.id),
-              iconDataUrl: item.iconDataUrl,
-            }])
-        );
+        const results = await loadCachedAppIcons(batch.map((item) => ({ id: item.id, iconPath: item.iconPath })));
+        const requestById = new Map(batch.map((item) => [item.id, item]));
+        const iconDataById = collectHydratedIconDataByAppId(results, requestById);
         if (!iconDataById.size) continue;
         options.pages.value = applyCachedIconDataUrls(options.pages.value, iconDataById);
         options.schedulePageGridMetrics();
@@ -359,6 +351,49 @@ export function useLaunchpadNative(options) {
         console.error("Failed to load cached LaunchPad icons", error);
       }
     }
+  }
+
+  function collectIconHydrationRequests() {
+    const requests = [];
+    for (const app of options.collectAppsFromPages(options.pages.value)) {
+      if (!app?.id) continue;
+      if (app.iconPath && !app.iconDataUrl) {
+        requests.push({
+          appId: app.id,
+          id: app.id,
+          iconPath: app.iconPath,
+          kind: "catalog",
+        });
+      }
+      if (app.customIconPath && !app.customIconDataUrl) {
+        requests.push({
+          appId: app.id,
+          id: `${CUSTOM_ICON_HYDRATION_ID_PREFIX}${app.id}`,
+          iconPath: app.customIconPath,
+          kind: "custom",
+        });
+      }
+    }
+    return requests;
+  }
+
+  function collectHydratedIconDataByAppId(results, requestById) {
+    const iconDataById = new Map();
+    for (const item of results || []) {
+      if (!item?.id || !item.iconDataUrl) continue;
+      const request = requestById.get(item.id);
+      if (!request) continue;
+      let record = iconDataById.get(request.appId);
+      if (!record) {
+        record = {};
+        iconDataById.set(request.appId, record);
+      }
+      record[request.kind] = {
+        iconDataUrl: item.iconDataUrl,
+        iconPath: request.iconPath,
+      };
+    }
+    return iconDataById;
   }
 
   function getIconHydrationBatchSize() {
@@ -383,9 +418,15 @@ export function useLaunchpadNative(options) {
     if (!item) return item;
     if (item.type === "app") {
       const iconData = iconDataById.get(item.id);
-      return iconData?.iconDataUrl && iconData.iconPath === item.iconPath
-        ? { ...item, iconDataUrl: iconData.iconDataUrl }
-        : item;
+      if (!iconData) return item;
+      const next = { ...item };
+      if (iconData.catalog?.iconDataUrl && iconData.catalog.iconPath === item.iconPath) {
+        next.iconDataUrl = iconData.catalog.iconDataUrl;
+      }
+      if (iconData.custom?.iconDataUrl && iconData.custom.iconPath === item.customIconPath) {
+        next.customIconDataUrl = iconData.custom.iconDataUrl;
+      }
+      return next;
     }
     if (item.type !== "folder") return item;
     const childPages = (item.childPages || []).map((page) =>

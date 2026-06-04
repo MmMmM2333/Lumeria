@@ -6,3 +6,7 @@ Consult this revision's package lockfiles and the exact upstream distributions
 for versions and applicable notices. Preserve those notices in distributions
 and satisfy any source-availability requirements of the components included.
 Brand assets are governed separately by TRADEMARKS.md.
+
+GSAP 3.15.0 is subject to its own Standard No Charge GSAP License.
+See GSAP-COMBINATION-PERMISSION.md for the limited permission for original
+project code; it does not grant rights to GSAP itself.

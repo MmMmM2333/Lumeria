@@ -1,4 +1,5 @@
 import { clamp } from "../domain/launchpadLayout.js";
+import { getLaunchIconBounds } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 
 export function escapeLaunchAttributeValue(value) {
   return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
@@ -17,6 +18,8 @@ export function makeLaunchIconSelector(launchSource) {
 }
 
 export function getLaunchIconRect(launchSource, sourceDocument = globalThis.document) {
+  const pixiRect = getLaunchIconBounds(launchSource);
+  if (pixiRect) return pixiRect;
   if (!sourceDocument) return null;
   const selector = makeLaunchIconSelector(launchSource);
   const node = selector ? sourceDocument.querySelector(selector) : null;

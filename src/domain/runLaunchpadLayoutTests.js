@@ -18,8 +18,10 @@ import { runSettingsPanelFlowTests } from "../composables/useSettingsPanelFlowTe
 import { runLaunchpadSurfaceInteractionsTests } from "../composables/useLaunchpadSurfaceInteractionsTests.js";
 import { runLaunchpadViewStateTests } from "../composables/useLaunchpadViewStateTests.js";
 import { runLaunchpadDataTests } from "./launchpadDataTests.js";
+import { runIconSourceTests } from "./iconSourceTests.js";
 import { runLaunchpadHelperTests } from "./launchpadLayoutTests.js";
 import { runPageRenderRangeTests } from "../composables/usePageRenderRangeTests.js";
+import { runStageCoordinatesTests } from "../rendering/pixi/geometry/stageCoordinatesTests.js";
 
 const state = {
   searchQuery: { value: "" },
@@ -77,6 +79,7 @@ runLaunchpadHelperTests({
   getActivePageGridStyle,
 });
 runLaunchpadDataTests();
+runIconSourceTests();
 await runLaunchpadDragTests();
 runLaunchpadControllerHelpersTests();
 runLaunchpadControllerStateTests();
@@ -96,5 +99,6 @@ runLaunchpadSettingsConfigTests();
 runSettingsPanelFlowTests();
 await runLaunchpadSearchTests();
 await runPageRenderRangeTests();
+runStageCoordinatesTests();
 
 console.info("Launchpad layout helper tests passed");

@@ -35,3 +35,8 @@ Contributions to covered project code are accepted under GPL-3.0-only unless a
 separate, explicit arrangement is made with the copyright holder. Contributors
 retain their copyright. Original upstream notices must be preserved when copying
 or adapting third-party material.
+
+## Additional permission for this revision
+
+This revision uses GSAP 3.15.0. See GSAP-COMBINATION-PERMISSION.md for the
+limited additional permission under GPLv3 section 7; GSAP retains its own terms.

@@ -27,30 +27,26 @@
         @open-settings="openSettingsPanel"
       />
 
-      <DesktopPager
-        :active-desktop-track-animate="activeDesktopTrackAnimate"
-        :active-desktop-track-transition="activeDesktopTrackTransition"
+      <PixiDesktopSurface
         :active-page-index="activePageIndex"
         :active-pages="activePages"
-        :desktop-layout-enabled="desktopLayoutEnabled"
         :desktop-track-motion-key="desktopTrackMotionKey"
         :dom-refs="desktopDomRefs"
         :drag-folder-target-id="dragFolderTargetId"
         :drag-meta="dragMeta"
         :folder-page-size="folderPageSize"
-        :get-active-page-grid-style="getActivePageGridStyle"
-        :get-desktop-grid-projection-key="getDesktopGridProjectionKey"
         :get-desktop-page-render-mode="getDesktopPageRenderMode"
         :get-visible-desktop-page="getVisibleDesktopPage"
+        :grid-cols="gridCols"
+        :grid-rows="gridRows"
+        :icon-size="iconSize"
         :is-edit-mode="isEditMode"
-        :is-folder-opening-preview-ghosted="isFolderOpeningPreviewGhosted"
         :is-folder-opening-preview-frame-ghosted="isFolderOpeningPreviewFrameGhosted"
         :is-icon-opening="isIconOpening"
         :is-icon-selected="isIconSelected"
         :is-search-mode="isSearchMode"
         :is-textless-mode="isTextlessMode"
         :launch-target-status-by-id="launchTargetStatusById"
-        :layout-spring="layoutSpring"
         :page-grid-measure-style="pageGridMeasureStyle"
         :set-page-ref="setPageRef"
         :show-missing-launch-target-badge="showMissingLaunchTargetBadge"
@@ -78,7 +74,7 @@
 
     <SettingsPanel :state="settingsPanelState" />
     <LaunchpadDialogs :state="dialogState" />
-    <FolderOverlay
+    <PixiFolderOverlay
       :state="folderOverlayState"
       @pointerdown-icon="beginDrag"
       @open-app="openApp"
@@ -96,12 +92,12 @@
 <script setup>
 import { Motion } from "motion-v";
 import { ref } from "vue";
-import DesktopPager from "./components/DesktopPager.vue";
-import FolderOverlay from "./components/FolderOverlay.vue";
 import LaunchpadDialogs from "./components/LaunchpadDialogs.vue";
 import LaunchpadHeader from "./components/LaunchpadHeader.vue";
 import LaunchpadOverlays from "./components/LaunchpadOverlays.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
+import PixiDesktopSurface from "./rendering/pixi/PixiDesktopSurface.vue";
+import PixiFolderOverlay from "./rendering/pixi/PixiFolderOverlay.vue";
 import { useLaunchpadController } from "./composables/useLaunchpadController.js";
 import {
   createDialogState,
@@ -117,6 +113,9 @@ const {
   rootRef,
   rootStyle,
   cx,
+  gridRows,
+  gridCols,
+  iconSize,
   isTextlessMode,
   isDesktopOpen,
   isHomeInteractionDisabled,

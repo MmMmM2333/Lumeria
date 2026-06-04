@@ -228,6 +228,48 @@ export async function runLaunchpadNativeTests() {
     assert(!("iconDataUrl" in options.pages.value[0][0]), "stale cached icon data should not overwrite a newer icon path");
   });
 
+  const iconHydrationRequests = [];
+  await withMockTauri((command, args) => {
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{
+          id: "custom-icon-app",
+          type: "app",
+          name: "Custom Icon App",
+          iconPath: "C:/Icons/catalog.png",
+          customIconPath: "C:/Icons/custom.png",
+          launchTarget: { kind: "shortcut", path: "Custom Icon App.lnk" },
+        }]],
+        settings: {},
+      };
+    }
+    if (command === "load_cached_app_icons") {
+      iconHydrationRequests.push(args.icons);
+      return [
+        { id: "custom-icon-app", iconDataUrl: "data:image/png;base64,catalog" },
+        { id: "__custom_icon__:custom-icon-app", iconDataUrl: "data:image/png;base64,custom" },
+      ];
+    }
+    if (command === "check_launch_targets") return [];
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+
+    assert(iconHydrationRequests.length === 1, "native load should request icon hydration once");
+    assert(iconHydrationRequests[0].length === 2, "icon hydration should request catalog and custom icon paths");
+    assert(iconHydrationRequests[0][0].iconPath === "C:/Icons/catalog.png", "catalog hydration should request the catalog icon path");
+    assert(iconHydrationRequests[0][1].iconPath === "C:/Icons/custom.png", "custom hydration should request the custom icon path");
+    assert(options.pages.value[0][0].iconDataUrl === "data:image/png;base64,catalog", "catalog icon hydration should apply data URL");
+    assert(options.pages.value[0][0].customIconDataUrl === "data:image/png;base64,custom", "custom icon hydration should apply data URL");
+  });
+
   const launchCommands = [];
   await withMockTauri(async (command, args) => {
     if (command === "load_layout") {

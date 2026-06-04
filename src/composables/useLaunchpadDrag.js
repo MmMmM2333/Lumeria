@@ -19,6 +19,7 @@ import {
   shouldCommitPlacementFromLast,
 } from "../domain/launchpadLayout.js";
 import { getDomRefElement } from "./usePageGridMetrics.js";
+import { getTopLevelTargetAtPoint as getPixiTopLevelTargetAtPoint } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 
 const LAYOUT_PROJECTION_RELEASE_DELAY = 260;
 
@@ -261,6 +262,11 @@ export function useLaunchpadDrag(options) {
   }
 
   function getTopLevelTargetAtPoint(clientX, clientY) {
+    const pixiTarget = getPixiTopLevelTargetAtPoint(clientX, clientY, dragRuntime?.item.id);
+    if (pixiTarget?.id) {
+      const found = options.findTopLevel(options.pages.value, pixiTarget.id);
+      if (found) return { item: found.item, node: null, rect: pixiTarget.rect };
+    }
     const elements = document.elementsFromPoint(clientX, clientY);
     for (const element of elements) {
       const node = element.closest?.("[data-top-item-id]");
