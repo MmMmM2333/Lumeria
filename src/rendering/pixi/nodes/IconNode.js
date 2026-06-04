@@ -74,7 +74,19 @@ export class IconNode extends Container {
       style: { align: "center", fill: 0xffffff, fontSize: 64, lineHeight: 64 },
     });
     this.labelText = makeLabelText();
-    this.missingBadge = new Graphics();
+    this.missingBadge = new Container();
+    this.missingBadgeBackground = new Graphics();
+    this.missingBadgeText = new Text({
+      text: "!",
+      style: {
+        align: "center",
+        fill: 0xffffff,
+        fontFamily: "Inter, Segoe UI, sans-serif",
+        fontSize: 12,
+        fontWeight: "800",
+        lineHeight: 12,
+      },
+    });
     this.removeButton = makeEditButton();
     this.changeButton = makeEditButton();
     this.resetButton = makeEditButton();
@@ -82,6 +94,10 @@ export class IconNode extends Container {
 
     this.iconSprite.anchor.set(0.5);
     this.emojiText.anchor.set(0.5);
+    this.missingBadge.visible = false;
+    this.missingBadgeText.anchor.set(0.5);
+    this.missingBadge.addChild(this.missingBadgeBackground);
+    this.missingBadge.addChild(this.missingBadgeText);
     this.addChild(this.selectionFrame);
     this.addChild(this.jiggleWrap);
     this.jiggleWrap.addChild(this.visualWrap);
@@ -359,13 +375,23 @@ export class IconNode extends Container {
   }
 
   renderMissingBadge(state) {
-    this.missingBadge.clear();
+    this.missingBadge.visible = false;
+    this.missingBadgeBackground.clear();
     if (!state.launchTargetStatus || state.launchTargetStatus !== "missing") return;
-    const radius = Math.max(5, this.iconSize * 0.11);
-    this.missingBadge
-      .circle(this.iconSize / 2 - radius, -this.iconSize / 2 + radius, radius)
-      .fill({ color: 0xff4d4d, alpha: 0.92 })
-      .stroke({ color: 0xffffff, alpha: 0.9, width: 1 });
+
+    const radius = Math.max(8, Math.min(12, this.iconSize * 0.18));
+    const edgeOffset = Math.max(2, radius * 0.36);
+    const fontSize = Math.max(10, Math.round(radius * 1.35));
+    this.missingBadge.visible = true;
+    this.missingBadge.position.set(this.iconSize / 2 - edgeOffset, this.iconSize / 2 - edgeOffset);
+    this.missingBadgeBackground
+      .circle(0, 0, radius)
+      .fill({ color: 0xb84a54, alpha: 1 })
+      .stroke({ color: 0xffffff, alpha: 0.92, width: Math.max(1, radius * 0.18) });
+    this.missingBadgeText.text = "!";
+    this.missingBadgeText.style.fontSize = fontSize;
+    this.missingBadgeText.style.lineHeight = fontSize;
+    this.missingBadgeText.position.set(0, -Math.max(0.5, radius * 0.06));
   }
 
   renderLabel(state) {

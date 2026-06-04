@@ -568,7 +568,9 @@ export class FolderOverlayLayer extends Container {
         iconSize: target.iconSize,
         interactive: false,
         item: target.item,
-        launchTargetStatus: null,
+        launchTargetStatus: target.item?.type === "app" && state.showMissingLaunchTargetBadge
+          ? state.launchTargetStatusById?.[target.item.id]
+          : null,
         opening: false,
         removable: false,
         selected: false,
@@ -631,7 +633,7 @@ export class FolderOverlayLayer extends Container {
       fromRadius: 48,
       fromStrokeAlpha: 0.24,
       panelMaterialFinalAlpha: 0,
-      panelMaterialFromAlpha: 1,
+      panelMaterialFromAlpha: 0,
       panelMaterialToAlpha: 0,
       toFillAlpha: 0.22,
       toRadius: getFrameRadius(folderRect),
@@ -658,7 +660,9 @@ export class FolderOverlayLayer extends Container {
         iconSize: target.iconSize,
         interactive: false,
         item: target.item,
-        launchTargetStatus: null,
+        launchTargetStatus: target.item?.type === "app" && state.showMissingLaunchTargetBadge
+          ? state.launchTargetStatusById?.[target.item.id]
+          : null,
         opening: false,
         removable: false,
         selected: false,
@@ -725,6 +729,17 @@ export class FolderOverlayLayer extends Container {
         this.panel.scale.set(0.12, 0.16);
       }
       this.panel.alpha = 0.94;
+    }
+
+    if (state.isFolderClosing && sourceRect) {
+      stopTargetSprings(this.panel);
+      stopTargetSprings(this.panel.scale);
+      gsap.killTweensOf(this.panel);
+      gsap.killTweensOf(this.panel.scale);
+      this.panel.position.set(targetX, targetY);
+      this.panel.scale.set(1);
+      this.panel.alpha = 0;
+      return;
     }
 
     if (isClosing && sourceRect) {
