@@ -4,6 +4,7 @@ import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getCachedIconTexture } from "../assets/iconTextureCache.js";
 import { mapLocalRectToStageRect } from "../geometry/stageCoordinates.js";
 import { getFolderPreviewSlots } from "../../../domain/launchpadLayout.js";
+import { getFolderThumbMetrics } from "./folderThumbMetrics.js";
 
 function safeName(value) {
   const text = String(value || "");
@@ -321,11 +322,11 @@ export class IconNode extends Container {
 
   renderFolderThumb(state) {
     const size = this.iconSize;
-    const radius = Math.max(14, size * 0.26);
+    const thumb = getFolderThumbMetrics(size);
     this.folderThumb.clear()
-      .roundRect(-size / 2, -size / 2, size, size, radius)
-      .fill({ color: 0xffffff, alpha: 0.22 })
-      .stroke({ color: 0xffffff, alpha: 0.26, width: 1 });
+      .roundRect(-size / 2, -size / 2, size, size, thumb.radius)
+      .fill({ color: thumb.fillColor, alpha: thumb.fillAlpha })
+      .stroke({ color: thumb.strokeColor, alpha: thumb.strokeAlpha, width: thumb.strokeWidth });
 
     while (this.folderChildNodes.length < 9) {
       const childContainer = new Container();
@@ -340,9 +341,6 @@ export class IconNode extends Container {
     }
 
     const slots = getFolderPreviewSlots(this.item, state.folderPreviewPageSize);
-    const childSize = Math.max(8, size * 0.25);
-    const gap = Math.max(2, size * 0.045);
-    const start = -((childSize * 3 + gap * 2) / 2) + childSize / 2;
     for (let index = 0; index < 9; index += 1) {
       const child = slots[index];
       const node = this.folderChildNodes[index];
@@ -350,7 +348,7 @@ export class IconNode extends Container {
       const childEmoji = node.children[1];
       const col = index % 3;
       const row = Math.floor(index / 3);
-      node.position.set(start + col * (childSize + gap), start + row * (childSize + gap));
+      node.position.set(thumb.start + col * (thumb.childSize + thumb.gap), thumb.start + row * (thumb.childSize + thumb.gap));
       node.visible = Boolean(child);
       if (!child) continue;
       const childId = child.id;
@@ -364,11 +362,11 @@ export class IconNode extends Container {
       childEmoji.visible = !texture;
       if (texture) {
         childSprite.texture = texture;
-        childSprite.width = childSize;
-        childSprite.height = childSize;
+        childSprite.width = thumb.childSize;
+        childSprite.height = thumb.childSize;
       } else {
         childEmoji.text = child.emoji || "◼";
-        childEmoji.style.fontSize = childSize;
+        childEmoji.style.fontSize = thumb.childSize;
       }
     }
     this.renderMissingBadge({ ...state, launchTargetStatus: null });

@@ -18,6 +18,7 @@ import { makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import { getFolderPreviewChildBounds, getTopLevelIconBounds, registerLaunchIconBounds } from "../geometry/iconBoundsRegistry.js";
 import { IconNode } from "../nodes/IconNode.js";
 import { getFolderPreviewSlots } from "../../../domain/launchpadLayout.js";
+import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
 
 const GHOST_REVEAL_FALLBACK_PADDING_MS = 140;
 const CLOSING_FRAME_PADDING = 48;
@@ -505,8 +506,8 @@ export class FolderOverlayLayer extends Container {
     }
     this.frameGhost.clear()
       .roundRect(drawRect.left, drawRect.top, drawRect.width, drawRect.height, drawRect.radius)
-      .fill({ color: 0xf7f8ff, alpha: drawRect.fillAlpha })
-      .stroke({ color: 0xffffff, alpha: drawRect.strokeAlpha, width: 1 });
+      .fill({ color: Math.round(drawRect.fillColor ?? 0xf7f8ff), alpha: drawRect.fillAlpha })
+      .stroke({ color: Math.round(drawRect.strokeColor ?? 0xffffff), alpha: drawRect.strokeAlpha, width: drawRect.strokeWidth ?? 1 });
   }
 
   startFrameGhost(fromRect, toRect, options = {}) {
@@ -524,11 +525,14 @@ export class FolderOverlayLayer extends Container {
     this.frameGhost.alpha = options.frameGhostFromAlpha ?? 1;
     const frame = {
       fillAlpha: options.fromFillAlpha ?? 0.22,
+      fillColor: options.fromFillColor ?? 0xf7f8ff,
       height: fromRect.height,
       left: fromRect.left,
       progress: 0,
       radius: options.fromRadius ?? getFrameRadius(fromRect),
       strokeAlpha: options.fromStrokeAlpha ?? 0.26,
+      strokeColor: options.fromStrokeColor ?? 0xffffff,
+      strokeWidth: options.fromStrokeWidth ?? 1,
       top: fromRect.top,
       width: fromRect.width,
     };
@@ -552,15 +556,25 @@ export class FolderOverlayLayer extends Container {
       duration,
       ease,
       fillAlpha: options.toFillAlpha ?? 0.26,
+      fillColor: options.toFillColor ?? frame.fillColor,
       height: toRect.height,
       left: toRect.left,
       progress: 1,
       radius: options.toRadius ?? getFrameRadius(toRect, 48),
       strokeAlpha: options.toStrokeAlpha ?? 0.24,
+      strokeColor: options.toStrokeColor ?? frame.strokeColor,
+      strokeWidth: options.toStrokeWidth ?? frame.strokeWidth,
       top: toRect.top,
       width: toRect.width,
       onUpdate: () => this.drawFrameGhost(frame, options),
-      onComplete: () => this.clearFrameGhost({ panelMaterialAlpha: options.panelMaterialFinalAlpha ?? 1 }),
+      onComplete: () => {
+        if (options.preserveOnComplete) {
+          this.frameGhostState = frame;
+          this.drawFrameGhost(frame, options);
+          return;
+        }
+        this.clearFrameGhost({ panelMaterialAlpha: options.panelMaterialFinalAlpha ?? 1 });
+      },
     });
   }
 
@@ -766,21 +780,30 @@ export class FolderOverlayLayer extends Container {
     const usableTargets = (targets || []).filter((target) => target.sourceRect && target.targetRect);
     if (!usableTargets.length) return;
     const maxDelay = getMaxGridGhostDelay(usableTargets, CLOSING_GHOST_MAX_DELAY);
+    const thumb = getFolderThumbMetrics(folderRect.width);
     this.startFrameGhost(panelRect, makeLocalRect(folderRect, state.stageRect), {
       containmentProvider: () => this.getClosingGhostContentBounds(CLOSING_FRAME_PADDING),
       containmentReleaseStart: CLOSING_FRAME_CONTAIN_RELEASE_START,
       duration: Math.max(folderPanelCloseDuration, maxDelay + folderCloseDuration + CLOSING_FRAME_TAIL_DURATION),
       ease: folderCloseEase,
       fadeStart: 0.86,
+      frameGhostToAlpha: 1,
       fromFillAlpha: 0.26,
+      fromFillColor: thumb.fillColor,
       fromRadius: 48,
       fromStrokeAlpha: 0.24,
+      fromStrokeColor: thumb.strokeColor,
+      fromStrokeWidth: thumb.strokeWidth,
       panelMaterialFinalAlpha: 0,
       panelMaterialFromAlpha: 0,
       panelMaterialToAlpha: 0,
-      toFillAlpha: 0.22,
-      toRadius: getFrameRadius(folderRect),
-      toStrokeAlpha: 0.26,
+      preserveOnComplete: true,
+      toFillAlpha: thumb.fillAlpha,
+      toFillColor: thumb.fillColor,
+      toRadius: thumb.radius,
+      toStrokeAlpha: thumb.strokeAlpha,
+      toStrokeColor: thumb.strokeColor,
+      toStrokeWidth: thumb.strokeWidth,
     });
 
     this.pageTrack.visible = false;
