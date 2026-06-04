@@ -315,7 +315,7 @@ export class FolderOverlayLayer extends Container {
       gsap.killTweensOf(node);
       gsap.to(node, { alpha: 0, duration: 0.14, onComplete: () => node.destroy({ children: true }) });
     }
-    this.pageTrack.visible = !this.hasActiveIconGhosts();
+    this.pageTrack.visible = !this.openingGhostKeys?.size && !this.closingGhostKeys?.size;
     return geometry;
   }
 
@@ -509,6 +509,28 @@ export class FolderOverlayLayer extends Container {
     previousMask?.destroy?.();
   }
 
+  finishOpeningGhostTransition() {
+    if (this.openingGhostKeys?.size) return;
+    this.clearOpeningGhostRevealTimer();
+    this.revealIconNodes();
+    this.pageTrack.visible = true;
+    this.rebuildPageTrackMask();
+    const ghosts = this.openingGhostLayer.removeChildren();
+    for (const ghost of ghosts) {
+      killTweensDeep(ghost);
+      ghost.destroy?.({ children: true });
+    }
+  }
+
+  completeOpeningGhost(state, target, ghost) {
+    this.openingGhostKeys?.delete(target.item.id);
+    const controllerGhostKey = target.controllerGhostKey || state.getFolderOpenIconGhostKey?.(target.item.id, target.index);
+    if (controllerGhostKey) state.completeFolderOpenIconGhost?.(controllerGhostKey);
+    ghost.alpha = 1;
+    ghost.scale.set(1);
+    this.finishOpeningGhostTransition();
+  }
+
   startOpeningGhosts(state, targets, folderRect, panelRect) {
     this.clearOpeningGhosts();
     this.openingGhostKeys = new Set();
@@ -583,14 +605,7 @@ export class FolderOverlayLayer extends Container {
         x: toX,
         y: toY,
         delay,
-        onComplete: () => {
-          this.openingGhostKeys.delete(target.item.id);
-          const controllerGhostKey = target.controllerGhostKey || state.getFolderOpenIconGhostKey?.(target.item.id, target.index);
-          if (controllerGhostKey) state.completeFolderOpenIconGhost?.(controllerGhostKey);
-          this.finishIconGhostTransition();
-          killTweensDeep(ghost);
-          ghost.destroy({ children: true });
-        },
+        onComplete: () => this.completeOpeningGhost(state, target, ghost),
       });
       gsap.to(ghost.scale, {
         duration: folderOpenGhostDuration,
