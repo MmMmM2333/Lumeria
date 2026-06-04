@@ -32,6 +32,7 @@ const props = defineProps({
   gridRows: { type: Number, required: true },
   iconSize: { type: Number, required: true },
   isEditMode: { type: Boolean, default: false },
+  folderSourceGhostedId: { type: String, default: null },
   isFolderOpeningPreviewFrameGhosted: { type: Function, default: () => false },
   isIconOpening: { type: Function, required: true },
   isIconSelected: { type: Function, required: true },
@@ -92,6 +93,7 @@ function renderPixi() {
     height: Math.max(1, height),
     iconSize: props.iconSize,
     isEditMode: props.isEditMode,
+    folderSourceGhostedId: props.folderSourceGhostedId,
     isFolderOpeningPreviewFrameGhosted: props.isFolderOpeningPreviewFrameGhosted,
     isIconOpening: props.isIconOpening,
     isIconSelected: props.isIconSelected,
@@ -163,6 +165,7 @@ watchEffect(() => {
   void props.gridRows;
   void props.iconSize;
   void props.isEditMode;
+  void props.folderSourceGhostedId;
   void props.isSearchMode;
   void props.isTextlessMode;
   void props.launchTargetStatusById;

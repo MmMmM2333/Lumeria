@@ -17,8 +17,16 @@ import { getFolderGridMetrics, getFolderPanelGeometry, getGridSlotRect, parseRep
 import { makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import { getFolderPreviewChildBounds, getTopLevelIconBounds, registerLaunchIconBounds } from "../geometry/iconBoundsRegistry.js";
 import { IconNode } from "../nodes/IconNode.js";
+import { getFolderPreviewSlots } from "../../../domain/launchpadLayout.js";
 
 const GHOST_REVEAL_FALLBACK_PADDING_MS = 140;
+const CLOSING_FRAME_PADDING = 48;
+const CLOSING_FRAME_CONTAIN_RELEASE_START = 0.88;
+const CLOSING_FRAME_TAIL_DURATION = 0.04;
+const CLOSING_GHOST_MAX_DELAY = 0.06;
+const CLOSING_GHOST_MIN_VISIBLE_ALPHA = 0.02;
+const CLOSING_EXTRA_GHOST_ALPHA_DURATION = 0.12;
+const CLOSING_EXTRA_GHOST_ALPHA_HOLD = 0.16;
 
 function makeSyntheticPointerEvent(original, node) {
   const native = original?.nativeEvent || original || {};
@@ -59,6 +67,12 @@ function makeIconRect(centerX, centerY, size) {
   };
 }
 
+function makeFolderCenterCollapseRect(folderRect) {
+  if (!folderRect) return null;
+  const size = Math.max(4, Math.min(folderRect.width, folderRect.height) * 0.18);
+  return makeIconRect(folderRect.left + folderRect.width / 2, folderRect.top + folderRect.height / 2, size);
+}
+
 function makeProjectedPreviewRect(folderRect, slotIndex, columnCount = 3, rowCount = 3) {
   if (!folderRect) return null;
   const safeIndex = Math.max(0, Number(slotIndex) || 0);
@@ -90,6 +104,48 @@ function getGridGhostDelay(index, columnCount, maxDelay = 0.18) {
   const row = Math.floor(safeIndex / columns);
   const col = safeIndex % columns;
   return Math.min(maxDelay, row * 0.022 + col * 0.01);
+}
+
+function getMaxGridGhostDelay(targets, maxDelay) {
+  return (targets || []).reduce((delay, target) =>
+    Math.max(delay, getGridGhostDelay(target.index, target.columnCount, maxDelay)), 0);
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+function lerp(from, to, progress) {
+  return from + (to - from) * progress;
+}
+
+function lerpFrameRect(fromRect, toRect, progress) {
+  const t = clamp01(progress);
+  return {
+    ...toRect,
+    height: lerp(fromRect.height, toRect.height, t),
+    left: lerp(fromRect.left, toRect.left, t),
+    radius: lerp(fromRect.radius, toRect.radius, t),
+    top: lerp(fromRect.top, toRect.top, t),
+    width: lerp(fromRect.width, toRect.width, t),
+  };
+}
+
+function expandRectToContain(rect, bounds) {
+  if (!rect || !bounds) return rect;
+  const left = Math.min(rect.left, bounds.left);
+  const top = Math.min(rect.top, bounds.top);
+  const right = Math.max(rect.left + rect.width, bounds.left + bounds.width);
+  const bottom = Math.max(rect.top + rect.height, bounds.top + bounds.height);
+  const expanded = {
+    ...rect,
+    height: bottom - top,
+    left,
+    top,
+    width: right - left,
+  };
+  expanded.radius = Math.max(rect.radius, getFrameRadius(expanded, rect.radius));
+  return expanded;
 }
 
 function findControllerGhostKey(ghosts, itemId, slotIndex) {
@@ -204,6 +260,11 @@ export class FolderOverlayLayer extends Container {
     const seen = new Set();
     const openingGhostTargets = [];
     const closingGhostTargets = [];
+    const previewSlotById = new Map(
+      getFolderPreviewSlots(state.renderedFolder, state.folderPageSize)
+        .map((item, previewSlotIndex) => (item?.id ? [item.id, previewSlotIndex] : null))
+        .filter(Boolean)
+    );
     (state.folderPages || []).forEach((page, pageIndex) => {
       const visibleItems = state.getVisibleFolderPage(page);
       const renderMode = state.getFolderPageRenderMode?.(pageIndex) || "interactive";
@@ -267,8 +328,13 @@ export class FolderOverlayLayer extends Container {
           );
         }
         if (isInteractivePage && isNewFolder && !isClosing && pageIndex === state.folderPageIndex) {
-          const sourceRect = getFolderPreviewChildBounds(state.renderedFolder.id, item.id, index) ||
-            makeProjectedPreviewRect(folderRect, index, cols, rows);
+          const previewSlotIndex = previewSlotById.get(item.id);
+          const isThumbnailChild = previewSlotIndex != null;
+          const sourceRect = isThumbnailChild
+            ? getFolderPreviewChildBounds(state.renderedFolder.id, item.id, previewSlotIndex) ||
+              makeProjectedPreviewRect(folderRect, previewSlotIndex, 3, 3)
+            : getFolderPreviewChildBounds(state.renderedFolder.id, item.id, index) ||
+              makeProjectedPreviewRect(folderRect, index, cols, rows);
           const targetCenterX = geometry.panel.left + x + targetTrackX;
           const targetCenterY = geometry.panel.top + y - (state.isTextlessMode ? 0 : 14);
           openingGhostTargets.push({
@@ -277,24 +343,32 @@ export class FolderOverlayLayer extends Container {
             cellWidth: slot.width,
             iconSize,
             index,
+            isThumbnailChild,
             item,
+            previewSlotIndex,
             controllerGhostKey: findControllerGhostKey(state.folderOpenIconGhosts, item.id, index),
             sourceRect,
             targetRect: makeIconRect(targetCenterX, targetCenterY, iconSize),
           });
         }
         if (isInteractivePage && state.isFolderClosing && pageIndex === state.folderPageIndex) {
+          const previewSlotIndex = previewSlotById.get(item.id);
+          const isThumbnailChild = previewSlotIndex != null;
           closingGhostTargets.push({
             columnCount: cols,
             cellHeight: slot.height,
             cellWidth: slot.width,
             iconSize,
             index,
+            isThumbnailChild,
             item,
+            previewSlotIndex,
             controllerGhostKey: findControllerGhostKey(state.folderCloseIconGhosts, item.id, index),
             sourceRect: iconBounds,
-            targetRect: getFolderPreviewChildBounds(state.renderedFolder.id, item.id, index) ||
-              makeProjectedPreviewRect(folderRect, index, cols, rows),
+            targetRect: isThumbnailChild
+              ? getFolderPreviewChildBounds(state.renderedFolder.id, item.id, previewSlotIndex) ||
+                makeProjectedPreviewRect(folderRect, previewSlotIndex, 3, 3)
+              : makeFolderCenterCollapseRect(folderRect),
           });
         }
       });
@@ -315,7 +389,7 @@ export class FolderOverlayLayer extends Container {
       gsap.killTweensOf(node);
       gsap.to(node, { alpha: 0, duration: 0.14, onComplete: () => node.destroy({ children: true }) });
     }
-    this.pageTrack.visible = !this.openingGhostKeys?.size && !this.closingGhostKeys?.size;
+    this.pageTrack.visible = !state.isFolderClosing && !this.openingGhostKeys?.size && !this.closingGhostKeys?.size;
     return geometry;
   }
 
@@ -348,8 +422,7 @@ export class FolderOverlayLayer extends Container {
 
   scheduleClosingGhostRevealFallback(targets) {
     this.clearClosingGhostRevealTimer();
-    const maxDelay = (targets || []).reduce((delay, target) =>
-      Math.max(delay, getGridGhostDelay(target.index, target.columnCount, 0.16)), 0);
+    const maxDelay = getMaxGridGhostDelay(targets, CLOSING_GHOST_MAX_DELAY);
     const timeoutMs = Math.round((maxDelay + folderCloseDuration) * 1000 + GHOST_REVEAL_FALLBACK_PADDING_MS);
     this.closingGhostRevealTimer = globalThis.setTimeout?.(() => {
       this.closingGhostRevealTimer = null;
@@ -371,6 +444,12 @@ export class FolderOverlayLayer extends Container {
     this.revealIconNodes();
     this.pageTrack.visible = true;
     this.rebuildPageTrackMask();
+  }
+
+  finishClosingGhostTransition() {
+    if (this.openingGhostKeys?.size || this.closingGhostKeys?.size) return;
+    this.clearClosingGhostRevealTimer();
+    this.pageTrack.visible = false;
   }
 
   clearOpeningGhosts() {
@@ -415,11 +494,19 @@ export class FolderOverlayLayer extends Container {
     this.panelMaterial.alpha = options.panelMaterialAlpha ?? 1;
   }
 
-  drawFrameGhost(rect) {
+  drawFrameGhost(rect, options = {}) {
+    const containment = options.containmentProvider?.(rect);
+    const containedRect = expandRectToContain(rect, containment);
+    let drawRect = containedRect;
+    if (containment && typeof options.containmentReleaseStart === "number") {
+      const releaseRange = Math.max(0.01, 1 - options.containmentReleaseStart);
+      const releaseProgress = clamp01(((rect.progress ?? 0) - options.containmentReleaseStart) / releaseRange);
+      drawRect = lerpFrameRect(containedRect, rect, releaseProgress * releaseProgress * (3 - 2 * releaseProgress));
+    }
     this.frameGhost.clear()
-      .roundRect(rect.left, rect.top, rect.width, rect.height, rect.radius)
-      .fill({ color: 0xf7f8ff, alpha: rect.fillAlpha })
-      .stroke({ color: 0xffffff, alpha: rect.strokeAlpha, width: 1 });
+      .roundRect(drawRect.left, drawRect.top, drawRect.width, drawRect.height, drawRect.radius)
+      .fill({ color: 0xf7f8ff, alpha: drawRect.fillAlpha })
+      .stroke({ color: 0xffffff, alpha: drawRect.strokeAlpha, width: 1 });
   }
 
   startFrameGhost(fromRect, toRect, options = {}) {
@@ -439,13 +526,14 @@ export class FolderOverlayLayer extends Container {
       fillAlpha: options.fromFillAlpha ?? 0.22,
       height: fromRect.height,
       left: fromRect.left,
+      progress: 0,
       radius: options.fromRadius ?? getFrameRadius(fromRect),
       strokeAlpha: options.fromStrokeAlpha ?? 0.26,
       top: fromRect.top,
       width: fromRect.width,
     };
     this.frameGhostState = frame;
-    this.drawFrameGhost(frame);
+    this.drawFrameGhost(frame, options);
     gsap.to(this.panelMaterial, {
       alpha: options.panelMaterialToAlpha ?? 1,
       delay: duration * fadeStart,
@@ -466,13 +554,52 @@ export class FolderOverlayLayer extends Container {
       fillAlpha: options.toFillAlpha ?? 0.26,
       height: toRect.height,
       left: toRect.left,
+      progress: 1,
       radius: options.toRadius ?? getFrameRadius(toRect, 48),
       strokeAlpha: options.toStrokeAlpha ?? 0.24,
       top: toRect.top,
       width: toRect.width,
-      onUpdate: () => this.drawFrameGhost(frame),
+      onUpdate: () => this.drawFrameGhost(frame, options),
       onComplete: () => this.clearFrameGhost({ panelMaterialAlpha: options.panelMaterialFinalAlpha ?? 1 }),
     });
+  }
+
+  getClosingGhostContentBounds(padding = 0) {
+    let left = Infinity;
+    let top = Infinity;
+    let right = -Infinity;
+    let bottom = -Infinity;
+    for (const ghost of this.closingGhostLayer.children || []) {
+      if (!ghost || ghost.destroyed || ghost.alpha <= CLOSING_GHOST_MIN_VISIBLE_ALPHA) continue;
+      const iconSize = Math.max(1, ghost.iconSize || ghost.state?.iconSize || 64);
+      const scaleX = Math.abs(ghost.scale?.x ?? 1);
+      const scaleY = Math.abs(ghost.scale?.y ?? 1);
+      const visualOffsetY = ghost.textless ? 0 : -14;
+      const centerX = ghost.x;
+      const centerY = ghost.y + visualOffsetY * scaleY;
+      const halfWidth = iconSize * scaleX / 2;
+      const halfHeight = iconSize * scaleY / 2;
+      left = Math.min(left, centerX - halfWidth);
+      top = Math.min(top, centerY - halfHeight);
+      right = Math.max(right, centerX + halfWidth);
+      bottom = Math.max(bottom, centerY + halfHeight);
+      if (ghost.labelText?.visible && ghost.labelText.alpha > CLOSING_GHOST_MIN_VISIBLE_ALPHA) {
+        const labelY = ghost.y + (iconSize / 2 - 6) * scaleY;
+        const labelWidth = Math.max(72, Math.min(160, ghost.state?.cellWidth || 120)) * scaleX;
+        const labelHeight = 24 * scaleY;
+        left = Math.min(left, ghost.x - labelWidth / 2);
+        right = Math.max(right, ghost.x + labelWidth / 2);
+        top = Math.min(top, labelY);
+        bottom = Math.max(bottom, labelY + labelHeight);
+      }
+    }
+    if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(right) || !Number.isFinite(bottom)) return null;
+    return {
+      height: bottom - top + padding * 2,
+      left: left - padding,
+      top: top - padding,
+      width: right - left + padding * 2,
+    };
   }
 
   refreshPageTrackMask() {
@@ -588,6 +715,7 @@ export class FolderOverlayLayer extends Container {
       const labelDelay = delay + folderOpenGhostDuration * 0.58;
       ghost.position.set(fromX, fromY);
       ghost.scale.set(scale);
+      ghost.alpha = target.isThumbnailChild ? 1 : 0;
       if (ghost.labelText?.visible) {
         ghost.labelText.alpha = 0;
         ghost.labelText.scale.set(0.94);
@@ -619,6 +747,17 @@ export class FolderOverlayLayer extends Container {
     }
   }
 
+  completeClosingGhost(state, target, ghost) {
+    if (!ghost || ghost.closingComplete) return;
+    ghost.closingComplete = true;
+    this.closingGhostKeys?.delete(target.item.id);
+    const controllerGhostKey = target.controllerGhostKey || state.getFolderCloseIconGhostKey?.(target.item.id, target.index);
+    if (controllerGhostKey) state.completeFolderCloseIconGhost?.(controllerGhostKey);
+    this.finishClosingGhostTransition();
+    killTweensDeep(ghost);
+    if (!ghost.destroyed) ghost.destroy({ children: true });
+  }
+
   startClosingGhosts(state, targets, folderRect, panelRect) {
     this.clearOpeningGhosts();
     this.clearClosingGhosts();
@@ -626,9 +765,13 @@ export class FolderOverlayLayer extends Container {
     this.closingGhostKeys = new Set();
     const usableTargets = (targets || []).filter((target) => target.sourceRect && target.targetRect);
     if (!usableTargets.length) return;
+    const maxDelay = getMaxGridGhostDelay(usableTargets, CLOSING_GHOST_MAX_DELAY);
     this.startFrameGhost(panelRect, makeLocalRect(folderRect, state.stageRect), {
-      duration: folderPanelCloseDuration,
+      containmentProvider: () => this.getClosingGhostContentBounds(CLOSING_FRAME_PADDING),
+      containmentReleaseStart: CLOSING_FRAME_CONTAIN_RELEASE_START,
+      duration: Math.max(folderPanelCloseDuration, maxDelay + folderCloseDuration + CLOSING_FRAME_TAIL_DURATION),
       ease: folderCloseEase,
+      fadeStart: 0.86,
       fromFillAlpha: 0.26,
       fromRadius: 48,
       fromStrokeAlpha: 0.24,
@@ -646,6 +789,7 @@ export class FolderOverlayLayer extends Container {
       const ghost = new IconNode();
       ghost.eventMode = "none";
       ghost.stageRect = state.stageRect;
+      ghost.isThumbnailChild = Boolean(target.isThumbnailChild);
       ghost.setState({
         cellHeight: target.cellHeight,
         cellWidth: target.cellWidth,
@@ -677,7 +821,8 @@ export class FolderOverlayLayer extends Container {
       const fromY = sourceRect.top + sourceRect.height / 2 + labelOffset;
       const toX = targetRect.left + targetRect.width / 2;
       const toY = targetRect.top + targetRect.height / 2 + labelOffset * scale;
-      const delay = getGridGhostDelay(target.index, target.columnCount, 0.16);
+      const delay = getGridGhostDelay(target.index, target.columnCount, CLOSING_GHOST_MAX_DELAY);
+      const alphaDelay = delay + folderCloseDuration * CLOSING_EXTRA_GHOST_ALPHA_HOLD;
       ghost.position.set(fromX, fromY);
       ghost.scale.set(1);
       if (ghost.labelText?.visible) {
@@ -691,21 +836,21 @@ export class FolderOverlayLayer extends Container {
       }
 
       gsap.to(ghost, {
-        alpha: 0,
         delay,
         duration: folderCloseDuration,
         ease: folderCloseEase,
         x: toX,
         y: toY,
-        onComplete: () => {
-          this.closingGhostKeys.delete(target.item.id);
-          const controllerGhostKey = target.controllerGhostKey || state.getFolderCloseIconGhostKey?.(target.item.id, target.index);
-          if (controllerGhostKey) state.completeFolderCloseIconGhost?.(controllerGhostKey);
-          this.finishIconGhostTransition();
-          killTweensDeep(ghost);
-          ghost.destroy({ children: true });
-        },
+        onComplete: () => this.completeClosingGhost(state, target, ghost),
       });
+      if (!target.isThumbnailChild) {
+        gsap.to(ghost, {
+          alpha: 0,
+          delay: alphaDelay,
+          duration: CLOSING_EXTRA_GHOST_ALPHA_DURATION,
+          ease: "power2.in",
+        });
+      }
       gsap.to(ghost.scale, {
         delay,
         duration: folderCloseDuration,

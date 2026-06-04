@@ -590,14 +590,15 @@ export function useFolderOpenIconGhosts(options) {
 
   function completeFolderCloseIconGhost(key) {
     const ghost = folderCloseIconGhosts.value.find((candidate) => candidate.key === key);
-    if (!ghost || ghost.requestId !== folderCloseIconGhostRequestId) return;
+    if (!ghost || ghost.requestId !== folderCloseIconGhostRequestId) return false;
 
     completedFolderCloseIconGhostKeys.add(key);
-    if (completedFolderCloseIconGhostKeys.size < folderCloseIconGhosts.value.length) return;
+    if (completedFolderCloseIconGhostKeys.size < folderCloseIconGhosts.value.length) return false;
 
     completedFolderCloseIconGhostKeys.clear();
     folderCloseIconGhosts.value = [];
     folderCloseIconGhostedKeys.value = new Set();
+    return true;
   }
 
   function captureFolderPreviewIconGhosts(folder, openingChildren) {

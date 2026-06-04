@@ -136,7 +136,10 @@ export class DesktopLayer extends Container {
           dropTarget: isInteractivePage && !state.isSearchMode && state.dragFolderTargetId === item.id,
           editing: isInteractivePage && state.isEditMode,
           folderPreviewPageSize: state.folderPageSize,
-          ghosted: isInteractivePage && item.type === "folder" && state.isFolderOpeningPreviewFrameGhosted?.(item.id),
+          ghosted: isInteractivePage && item.type === "folder" && (
+            state.folderSourceGhostedId === item.id ||
+            state.isFolderOpeningPreviewFrameGhosted?.(item.id)
+          ),
           hasCustomIcon: Boolean(item.customIconPath || item.customIconDataUrl),
           iconSize: sizing.iconSize,
           interactive: isInteractivePage,

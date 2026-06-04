@@ -2,6 +2,7 @@ import { ref } from "vue";
 import {
   FOLDER_APP_LAUNCH_DURATION,
   FOLDER_CLOSE_DURATION,
+  FOLDER_CLOSE_GHOST_FALLBACK_DURATION,
   HOME_REVEAL_SETTLE_DURATION,
 } from "./launchpadConstants.js";
 import { useLaunchpadFolderFlow } from "./useLaunchpadFolderFlow.js";
@@ -146,6 +147,24 @@ export function runLaunchpadFolderFlowTests() {
     timers.runDelay(HOME_REVEAL_SETTLE_DURATION);
     assert(!close.flow.isHomeRevealSettling.value, "home reveal timer should finish settle state");
     assert(close.flow.desktopProjectionEpoch.value === 1, "home reveal timer should advance projection epoch");
+
+    const closeWithGhosts = createFolderFlow();
+    closeWithGhosts.flow.commitOpenFolder("folder-1");
+    closeWithGhosts.folderPageIndex.value = 2;
+    closeWithGhosts.folderPageRefs.push({ id: "extra-folder-page" });
+    closeWithGhosts.flow.commitOpenFolder(null, { waitForCloseGhosts: true });
+    timers.runDelay(FOLDER_CLOSE_DURATION);
+    assert(closeWithGhosts.flow.isFolderClosing.value, "ghost handoff close should not finish on the DOM close duration");
+    assert(closeWithGhosts.flow.renderedFolder.value?.id === "folder-1", "ghost handoff close should keep the rendered folder until handoff completion");
+    closeWithGhosts.flow.finishFolderClose();
+    assert(!closeWithGhosts.flow.isFolderClosing.value, "ghost handoff completion should clear folder closing state");
+    assert(closeWithGhosts.flow.renderedFolder.value === null, "ghost handoff completion should clear rendered folder");
+
+    const closeWithGhostFallback = createFolderFlow();
+    closeWithGhostFallback.flow.commitOpenFolder("folder-1");
+    closeWithGhostFallback.flow.commitOpenFolder(null, { waitForCloseGhosts: true });
+    timers.runDelay(FOLDER_CLOSE_GHOST_FALLBACK_DURATION);
+    assert(!closeWithGhostFallback.flow.isFolderClosing.value, "ghost handoff fallback should clear folder closing state");
 
     const launchClose = createFolderFlow();
     launchClose.flow.commitOpenFolder("folder-1");

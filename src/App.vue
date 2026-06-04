@@ -41,6 +41,7 @@
         :grid-rows="gridRows"
         :icon-size="iconSize"
         :is-edit-mode="isEditMode"
+        :folder-source-ghosted-id="folderSourceGhostedId"
         :is-folder-opening-preview-frame-ghosted="isFolderOpeningPreviewFrameGhosted"
         :is-icon-opening="isIconOpening"
         :is-icon-selected="isIconSelected"
@@ -91,7 +92,7 @@
 
 <script setup>
 import { Motion } from "motion-v";
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import LaunchpadDialogs from "./components/LaunchpadDialogs.vue";
 import LaunchpadHeader from "./components/LaunchpadHeader.vue";
 import LaunchpadOverlays from "./components/LaunchpadOverlays.vue";
@@ -282,6 +283,7 @@ const {
   resetAppCustomIcon,
   layoutSpring,
   pageDotsRef,
+  openFolderId,
   renderedFolder,
   isFolderClosing,
   isFolderAppLaunchClosing,
@@ -323,6 +325,13 @@ const settingsPanelState = createSettingsPanelState(controller, appVersion);
 const dialogState = createDialogState(controller);
 const folderOverlayState = createFolderOverlayState(controller);
 const overlayState = createOverlayState(controller);
+
+const folderSourceGhostedId = computed(() => {
+  const folderId = renderedFolder.value?.id || openFolderId.value;
+  if (!folderId) return null;
+  if (openFolderId.value || isFolderClosing.value || isFolderAppLaunchClosing.value) return folderId;
+  return isFolderOpeningPreviewFrameGhosted(folderId) ? folderId : null;
+});
 
 function openIconContextMenu(event, app, source) {
   launchpadOverlaysRef.value?.openIconContextMenu(event, app, source);

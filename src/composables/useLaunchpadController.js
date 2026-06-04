@@ -210,7 +210,7 @@ export function useLaunchpadController() {
     captureFolderPreviewIconGhosts,
     clearFolderCloseIconGhosts,
     clearFolderOpenIconGhosts,
-    completeFolderCloseIconGhost,
+    completeFolderCloseIconGhost: completeFolderCloseIconGhostNow,
     completeFolderOpenIconGhost,
     folderCloseIconGhosts,
     folderOpenIconGhosts,
@@ -244,6 +244,7 @@ export function useLaunchpadController() {
     commitFolderSession,
     commitOpenFolder: commitOpenFolderNow,
     desktopProjectionEpoch,
+    finishFolderClose,
     finishHomeRevealSettleWindow,
     folderPages,
     folderSession,
@@ -277,7 +278,10 @@ export function useLaunchpadController() {
       const closingFolderPage = closingFolder ? getVisibleFolderPage(folderPages.value[folderPageIndex.value] || []) : [];
       const capturedCloseGhosts = captureFolderCloseIconGhosts(closingFolder, closingFolderPage);
       clearFolderOpenIconGhosts();
-      commitOpenFolderNow(next, commitOptions);
+      commitOpenFolderNow(next, {
+        ...commitOptions,
+        waitForCloseGhosts: capturedCloseGhosts.length > 0,
+      });
       playFolderCloseIconGhosts(closingFolder?.id, capturedCloseGhosts);
       return;
     }
@@ -298,6 +302,12 @@ export function useLaunchpadController() {
     const capturedGhosts = captureFolderPreviewIconGhosts(folder, openingFolderPage);
     commitOpenFolderNow(next, commitOptions);
     playFolderOpenIconGhosts(next, capturedGhosts);
+  }
+
+  function completeFolderCloseIconGhost(key) {
+    const isComplete = completeFolderCloseIconGhostNow(key);
+    if (isComplete) finishFolderClose();
+    return isComplete;
   }
 
   const {
@@ -1257,6 +1267,7 @@ export function useLaunchpadController() {
     resetAppCustomIcon,
     layoutSpring,
     pageDotsRef,
+    openFolderId,
     renderedFolder,
     isFolderClosing,
     isFolderAppLaunchClosing,

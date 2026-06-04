@@ -2,6 +2,7 @@ import { computed, ref, shallowRef } from "vue";
 import {
   FOLDER_APP_LAUNCH_DURATION,
   FOLDER_CLOSE_DURATION,
+  FOLDER_CLOSE_GHOST_FALLBACK_DURATION,
   HOME_REVEAL_SETTLE_DURATION,
 } from "./launchpadConstants.js";
 
@@ -60,6 +61,15 @@ export function useLaunchpadFolderFlow(options) {
     homeRevealSettleTimer = window.setTimeout(finishHomeRevealSettleWindow, HOME_REVEAL_SETTLE_DURATION);
   }
 
+  function finishFolderClose() {
+    renderedFolderId.value = null;
+    folderClosingSnapshot.value = null;
+    isFolderClosing.value = false;
+    options.folderPageIndex.value = 0;
+    options.folderPageRefs.length = 0;
+    clearFolderCloseTimer();
+  }
+
   function startFolderAppLaunchClose() {
     if (!renderedFolder.value || isFolderAppLaunchClosing.value) return;
     const closingId = renderedFolderId.value || openFolderId.value || renderedFolder.value.id;
@@ -111,14 +121,10 @@ export function useLaunchpadFolderFlow(options) {
     startHomeRevealSettleWindow();
     options.clearFolderPageTurn();
     clearFolderCloseTimer();
-    folderCloseTimer = window.setTimeout(() => {
-      renderedFolderId.value = null;
-      folderClosingSnapshot.value = null;
-      isFolderClosing.value = false;
-      options.folderPageIndex.value = 0;
-      options.folderPageRefs.length = 0;
-      clearFolderCloseTimer();
-    }, FOLDER_CLOSE_DURATION);
+    folderCloseTimer = window.setTimeout(
+      finishFolderClose,
+      commitOptions?.waitForCloseGhosts ? FOLDER_CLOSE_GHOST_FALLBACK_DURATION : FOLDER_CLOSE_DURATION
+    );
   }
 
   function commitFolderSession(next) {
@@ -132,6 +138,7 @@ export function useLaunchpadFolderFlow(options) {
     commitFolderSession,
     commitOpenFolder,
     desktopProjectionEpoch,
+    finishFolderClose,
     finishHomeRevealSettleWindow,
     folderClosingSnapshot,
     folderPages,
