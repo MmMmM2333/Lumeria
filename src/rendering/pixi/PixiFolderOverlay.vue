@@ -43,7 +43,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watchEffect } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect } from "vue";
 import { createPixiApp } from "./createPixiApp.js";
 import { FolderOverlayLayer } from "./scene/FolderOverlayLayer.js";
 import { clearIconTextureCache } from "./assets/iconTextureCache.js";
@@ -60,6 +60,8 @@ const overlayRef = ref(null);
 const hostRef = ref(null);
 const folderNameBeforeEdit = ref("");
 const panelGeometry = ref(null);
+const titleFrame = ref(null);
+const closingTitleStartOpacity = ref(1);
 let app = null;
 let layer = null;
 let resizeObserver = null;
@@ -71,21 +73,41 @@ const isFolderGhostTransitionActive = computed(() => Boolean(
   props.state.isFolderCloseIconAnimationActive?.value
 ));
 
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+function getFolderTitleOpenOpacity(frame) {
+  const progress = clamp01(frame?.progress ?? 1);
+  return clamp01((progress - 0.18) / 0.28);
+}
+
+function getFolderTitleOpacity(frame, isClosing) {
+  if (!isClosing) return getFolderTitleOpenOpacity(frame);
+  const progress = clamp01(frame?.progress ?? 0);
+  return closingTitleStartOpacity.value * clamp01(1 - progress / 0.28);
+}
+
 function handleResize() {
   app?.resize?.();
   renderPixi();
 }
 
 const folderNameInputStyle = computed(() => {
-  const panel = panelGeometry.value?.panel;
-  const isHidden = props.state.isFolderClosing.value || props.state.isFolderAppLaunchClosing.value || isFolderGhostTransitionActive.value;
-  if (!panel) return { opacity: 0, pointerEvents: "none" };
+  const frame = titleFrame.value || panelGeometry.value?.panel;
+  const isClosing = props.state.isFolderClosing.value || props.state.isFolderAppLaunchClosing.value;
+  if (!frame) return { opacity: 0, pointerEvents: "none" };
+  const width = 360;
+  const opacity = getFolderTitleOpacity(frame, isClosing);
+  const isInteractive = opacity >= 0.99 && !isClosing && !isFolderGhostTransitionActive.value;
   return {
-    left: `${panel.left + panel.width / 2 - 180}px`,
-    opacity: isHidden ? 0 : 1,
-    pointerEvents: isHidden ? "none" : "auto",
-    top: `${panel.top - 44}px`,
-    width: "360px",
+    left: `${frame.left + frame.width / 2 - width / 2}px`,
+    filter: opacity < 0.98 ? "blur(2px)" : "blur(0px)",
+    opacity,
+    pointerEvents: isInteractive ? "auto" : "none",
+    top: `${frame.top - 44}px`,
+    transform: "translate3d(0, 0, 0)",
+    width: `${width}px`,
   };
 });
 
@@ -178,6 +200,8 @@ function destroyPixi() {
   app = null;
   layer = null;
   didWarmInitialFrame = false;
+  panelGeometry.value = null;
+  titleFrame.value = null;
   if (currentLayer) {
     currentApp?.stage?.removeChild(currentLayer);
     currentLayer.destroy({ children: true });
@@ -187,6 +211,17 @@ function destroyPixi() {
   clearIconBoundsRegistry();
   clearIconTextureCache();
 }
+
+watch(
+  () => Boolean(props.state.isFolderClosing.value || props.state.isFolderAppLaunchClosing.value),
+  (isClosing, wasClosing) => {
+    if (isClosing && !wasClosing) {
+      closingTitleStartOpacity.value = getFolderTitleOpenOpacity(titleFrame.value || panelGeometry.value?.panel);
+      return;
+    }
+    if (!isClosing) closingTitleStartOpacity.value = 1;
+  }
+);
 
 function handleFolderNameInput(event) {
   const folder = props.state.renderedFolder.value;
@@ -221,6 +256,9 @@ onMounted(async () => {
   layer = new FolderOverlayLayer({
     onIconAction: handleIconAction,
     onOutsidePointerDown: () => props.state.handleFolderOverlayPointerDown(),
+    onTitleFrameChange: (frame) => {
+      titleFrame.value = frame;
+    },
   });
   app.stage.addChild(layer);
   resizeObserver = new ResizeObserver(handleResize);

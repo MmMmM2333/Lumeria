@@ -121,6 +121,7 @@ export class IconNode extends Container {
 
   setState(state) {
     state = { draggable: true, ...state };
+    const wasGhosted = Boolean(this.state?.ghosted);
     this.item = state.item;
     this.source = state.source;
     this.iconSize = state.iconSize || 64;
@@ -140,6 +141,7 @@ export class IconNode extends Container {
     this.renderLabel(state);
     this.renderEditButtons(state);
     this.updateJiggle(state);
+    if (this.isFolder && wasGhosted && !state.ghosted && !state.dragging && !state.opening) this.revealLabelAfterGhost();
   }
 
   getIconBounds(stageRect) {
@@ -411,6 +413,17 @@ export class IconNode extends Container {
     this.labelText.style.wordWrapWidth = Math.max(72, Math.min(160, state.cellWidth * 0.84));
     this.labelText.anchor.set(0.5, 0);
     this.labelText.position.set(0, this.iconSize / 2 + 8 + (this.textless ? 0 : -14));
+  }
+
+  revealLabelAfterGhost() {
+    if (!this.labelText.visible) return;
+    gsap.killTweensOf(this.labelText);
+    this.labelText.alpha = 0;
+    gsap.to(this.labelText, {
+      alpha: 1,
+      duration: 0.18,
+      ease: "power2.out",
+    });
   }
 
   renderEditButtons(state) {

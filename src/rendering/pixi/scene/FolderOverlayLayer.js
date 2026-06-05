@@ -286,6 +286,11 @@ export class FolderOverlayLayer extends Container {
     this.completedClosingPreviewGhosts = [];
     this.onIconAction = options.onIconAction || (() => { });
     this.onOutsidePointerDown = options.onOutsidePointerDown || (() => { });
+    this.onTitleFrameChange = options.onTitleFrameChange || (() => { });
+    this.titleFrameKey = null;
+    this.panelTitleOpening = false;
+    this.panelTitleStartScaleX = 1;
+    this.panelTitleStartScaleY = 1;
     this.addChild(this.frameGhost);
     this.addChild(this.panel);
     this.panel.addChild(this.panelMaterial);
@@ -310,6 +315,7 @@ export class FolderOverlayLayer extends Container {
       stopTargetSprings(this.panel.scale);
       this.clearOpeningGhosts();
       this.clearClosingGhosts();
+      this.notifyTitleFrame(null);
       return null;
     }
     this.hitArea = new Rectangle(0, 0, state.width, state.height);
@@ -495,6 +501,10 @@ export class FolderOverlayLayer extends Container {
       gsap.to(node, { alpha: 0, duration: 0.14, onComplete: () => node.destroy({ children: true }) });
     }
     this.pageTrack.visible = !state.isFolderClosing && !this.openingGhostKeys?.size && !this.closingGhostKeys?.size;
+    if (!this.frameGhostState) {
+      if (!isClosing) this.notifyPanelTitleFrame(geometry.panel);
+      else this.notifyTitleFrame(geometry.panel);
+    }
     return geometry;
   }
 
@@ -620,6 +630,61 @@ export class FolderOverlayLayer extends Container {
     this.panelMaterial.alpha = options.panelMaterialAlpha ?? 1;
   }
 
+  notifyTitleFrame(rect) {
+    if (!rect) {
+      if (this.titleFrameKey === null) return;
+      this.titleFrameKey = null;
+      this.onTitleFrameChange(null);
+      return;
+    }
+    const frame = {
+      height: rect.height,
+      left: rect.left,
+      progress: rect.progress ?? 1,
+      top: rect.top,
+      width: rect.width,
+    };
+    const key = [
+      Math.round(frame.left * 100),
+      Math.round(frame.top * 100),
+      Math.round(frame.width * 100),
+      Math.round(frame.height * 100),
+      Math.round(frame.progress * 1000),
+    ].join(":");
+    if (key === this.titleFrameKey) return;
+    this.titleFrameKey = key;
+    this.onTitleFrameChange(frame);
+  }
+
+  getPanelTitleProgress() {
+    if (!this.panelTitleOpening) return 1;
+    const progressX = this.panelTitleStartScaleX >= 1
+      ? 1
+      : (this.panel.scale.x - this.panelTitleStartScaleX) / (1 - this.panelTitleStartScaleX);
+    const progressY = this.panelTitleStartScaleY >= 1
+      ? 1
+      : (this.panel.scale.y - this.panelTitleStartScaleY) / (1 - this.panelTitleStartScaleY);
+    return clamp01(Math.max(progressX, progressY));
+  }
+
+  notifyPanelTitleFrame(panelRect) {
+    if (!panelRect) {
+      this.notifyTitleFrame(null);
+      return;
+    }
+    const scaleX = Number(this.panel.scale?.x) || 1;
+    const scaleY = Number(this.panel.scale?.y) || 1;
+    const pivotX = Number(this.panel.pivot?.x) || panelRect.width / 2;
+    const pivotY = Number(this.panel.pivot?.y) || panelRect.height / 2;
+    this.notifyTitleFrame({
+      height: panelRect.height * Math.abs(scaleY),
+      left: this.panel.x - pivotX * scaleX,
+      progress: this.getPanelTitleProgress(),
+      top: this.panel.y - pivotY * scaleY,
+      width: panelRect.width * Math.abs(scaleX),
+    });
+  }
+
   drawFrameGhost(rect, options = {}) {
     const containment = options.containmentProvider?.(rect);
     const containedRect = expandRectToContain(rect, containment);
@@ -634,6 +699,7 @@ export class FolderOverlayLayer extends Container {
       .roundRect(drawRect.left, drawRect.top, drawRect.width, drawRect.height, drawRect.radius)
       .fill({ color: Math.round(drawRect.fillColor ?? 0xf7f8ff), alpha: drawRect.fillAlpha })
       .stroke({ color: Math.round(drawRect.strokeColor ?? 0xffffff), alpha: drawRect.strokeAlpha, width: drawRect.strokeWidth ?? 1 });
+    if (options.notifyTitleFrame !== false) this.notifyTitleFrame(drawRect);
   }
 
   startFrameGhost(fromRect, toRect, options = {}) {
@@ -820,6 +886,7 @@ export class FolderOverlayLayer extends Container {
       fromFillAlpha: 0.22,
       fromRadius: getFrameRadius(folderRect),
       fromStrokeAlpha: 0.26,
+      notifyTitleFrame: false,
       toFillAlpha: 0.26,
       toRadius: 48,
       toStrokeAlpha: 0.24,
@@ -1107,9 +1174,14 @@ export class FolderOverlayLayer extends Container {
         this.panel.scale.set(0.12, 0.16);
       }
       this.panel.alpha = 0.94;
+      this.panelTitleOpening = !isClosing;
+      this.panelTitleStartScaleX = this.panel.scale.x;
+      this.panelTitleStartScaleY = this.panel.scale.y;
+      if (!isClosing) this.notifyPanelTitleFrame(panelRect);
     }
 
     if (state.isFolderClosing && sourceRect) {
+      this.panelTitleOpening = false;
       stopTargetSprings(this.panel);
       stopTargetSprings(this.panel.scale);
       gsap.killTweensOf(this.panel);
@@ -1119,6 +1191,7 @@ export class FolderOverlayLayer extends Container {
     }
 
     if (isClosing && sourceRect) {
+      this.panelTitleOpening = false;
       stopTargetSprings(this.panel);
       stopTargetSprings(this.panel.scale);
       gsap.to(this.panel, {
@@ -1139,6 +1212,7 @@ export class FolderOverlayLayer extends Container {
       return;
     }
 
+    const notifyPanelTitleFrame = () => this.notifyPanelTitleFrame(panelRect);
     gsap.to(this.panel, {
       alpha: isClosing ? 0 : 1,
       duration: folderOpenDuration,
@@ -1146,6 +1220,7 @@ export class FolderOverlayLayer extends Container {
       overwrite: "auto",
     });
     if (isClosing) {
+      this.panelTitleOpening = false;
       stopTargetSprings(this.panel);
       stopTargetSprings(this.panel.scale);
       gsap.to(this.panel, { duration: folderOpenDuration, ease: folderOpenEase, overwrite: "auto", x: targetX, y: targetY });
@@ -1155,10 +1230,11 @@ export class FolderOverlayLayer extends Container {
 
     gsap.killTweensOf(this.panel, "x,y");
     gsap.killTweensOf(this.panel.scale, "x,y");
-    springTo(this.panel, "x", targetX, panelSpring);
-    springTo(this.panel, "y", targetY, panelSpring);
-    springTo(this.panel.scale, "x", 1, panelSpring);
-    springTo(this.panel.scale, "y", 1, panelSpring);
+    springTo(this.panel, "x", targetX, panelSpring, { onComplete: notifyPanelTitleFrame, onUpdate: notifyPanelTitleFrame });
+    springTo(this.panel, "y", targetY, panelSpring, { onComplete: notifyPanelTitleFrame, onUpdate: notifyPanelTitleFrame });
+    springTo(this.panel.scale, "x", 1, panelSpring, { onComplete: notifyPanelTitleFrame, onUpdate: notifyPanelTitleFrame });
+    springTo(this.panel.scale, "y", 1, panelSpring, { onComplete: notifyPanelTitleFrame, onUpdate: notifyPanelTitleFrame });
+    notifyPanelTitleFrame();
   }
 
   drawPanel(panel) {
