@@ -387,9 +387,9 @@ export class FolderOverlayLayer extends Container {
     const localGridTop = geometry.grid.top - geometry.panel.top;
     const localMetrics = { ...metrics, gridLeft: localGridLeft, gridTop: localGridTop };
     this.pageMaskRect = {
-      left: localGridLeft,
+      left: 0,
       top: localGridTop,
-      width: geometry.grid.width,
+      width: geometry.panel.width,
       height: Math.max(geometry.grid.height, geometry.panel.height - localGridTop - 20),
     };
     this.drawPageMask(this.pageMask, this.pageMaskRect);

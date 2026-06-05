@@ -79,6 +79,12 @@ export function runLaunchpadViewStateTests() {
   assert(search.view.desktopTrackMotionKey.value === "open-search-spring", "desktop motion key should describe search mode");
   assert(search.view.getDesktopGridProjectionKey(1) === "search-grid-1-enabled-2", "projection key should include search mode while enabled");
 
+  const closingDesktop = createViewState({ isDesktopOpen: false, isDesktopClosing: true, isSearchMode: true });
+  assert(!closingDesktop.view.desktopLayoutEnabled.value, "closing desktop should freeze layout projection");
+  assert(closingDesktop.view.activeDesktopTrackTransition.value === desktopTrackTransition, "closing desktop should keep page track springing");
+  assert(closingDesktop.view.desktopTrackMotionKey.value === "open-search-spring", "closing desktop should avoid remounting the page track");
+  assert(closingDesktop.view.homeShellAnimate.value.opacity === 0, "closing desktop should still hide home shell");
+
   const closed = createViewState({ isDesktopOpen: false, isSearchMode: true });
   assert(!closed.view.desktopLayoutEnabled.value, "desktop layout should be disabled when closed");
   assert(closed.view.activeDesktopTrackTransition.value === instantTrackTransition, "closed desktop should snap track transitions");

@@ -26,11 +26,11 @@ export function useLaunchpadViewState(options) {
   ));
   const isLayoutProjectionRequested = computed(() => Boolean(options.isLayoutProjectionActive?.value));
   const isSearchLayoutProjectionRequested = computed(() => Boolean(options.isSearchMode.value));
+  const isDesktopFullyClosed = computed(() => Boolean(!options.isDesktopOpen.value && !options.isDesktopClosing.value));
   const shouldSnapDesktopTrack = computed(() => Boolean(
     options.isFolderLayerActive.value ||
     options.isHomeRevealSettling.value ||
-    !options.isDesktopOpen.value ||
-    options.isDesktopClosing.value ||
+    isDesktopFullyClosed.value ||
     options.isAppLaunching.value
   ));
   const desktopLayoutEnabled = computed(() => Boolean(
@@ -47,7 +47,8 @@ export function useLaunchpadViewState(options) {
   ));
   const desktopProjectionKeyMode = computed(() => (desktopLayoutEnabled.value ? `enabled-${options.desktopProjectionEpoch.value}` : "frozen"));
   const activeDesktopTrackTransition = computed(() => (shouldSnapDesktopTrack.value ? instantTrackTransition : desktopTrackTransition));
-  const desktopTrackMotionKey = computed(() => `${options.isDesktopOpen.value ? "open" : "closed"}-${options.isSearchMode.value ? "search" : "desktop"}-${shouldSnapDesktopTrack.value ? "snap" : "spring"}`);
+  const desktopTrackVisibilityKey = computed(() => (options.isDesktopOpen.value || (options.isDesktopClosing.value && !options.isAppLaunching.value) ? "open" : "closed"));
+  const desktopTrackMotionKey = computed(() => `${desktopTrackVisibilityKey.value}-${options.isSearchMode.value ? "search" : "desktop"}-${shouldSnapDesktopTrack.value ? "snap" : "spring"}`);
   const folderTrackAnimate = computed(() => ({ x: `-${options.folderPageIndex.value * 100}%` }));
   const isDesktopAnimatingClosed = computed(() => Boolean(!options.isDesktopOpen.value || options.isDesktopClosing.value || options.isAppLaunching.value));
   const shouldHideHomeShell = computed(() => Boolean((options.openFolderId.value && !options.isFolderClosing.value) || isDesktopAnimatingClosed.value));
