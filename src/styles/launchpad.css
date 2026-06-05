@@ -2155,10 +2155,6 @@ body {
   pointer-events: none;
 }
 
-.pixi-folder-overlay-closing {
-  pointer-events: none;
-}
-
 .pixi-folder-host {
   position: absolute;
   inset: 0;

@@ -1021,6 +1021,8 @@ export function useLaunchpadController() {
     isAppLaunching,
     isDesktopOpen,
     isDragActive,
+    isFolderAppLaunchClosing,
+    isFolderClosing,
     pageRefs,
   });
 
@@ -1293,6 +1295,7 @@ export function useLaunchpadController() {
     folderGridStyle,
     getVisibleFolderPage,
     getFolderPageRenderMode,
+    commitOpenFolder,
     commitFolderPageIndex,
     launchGhost,
     appLaunchGhostTransition,

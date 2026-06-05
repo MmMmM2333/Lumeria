@@ -255,6 +255,7 @@ onMounted(async () => {
   app = nextApp;
   layer = new FolderOverlayLayer({
     onIconAction: handleIconAction,
+    onClosingFolderPointerDown: (folderId) => props.state.commitOpenFolder(folderId),
     onOutsidePointerDown: () => props.state.handleFolderOverlayPointerDown(),
     onTitleFrameChange: (frame) => {
       titleFrame.value = frame;

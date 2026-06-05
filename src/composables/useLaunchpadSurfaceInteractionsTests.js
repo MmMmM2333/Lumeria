@@ -19,6 +19,8 @@ function createSurfaceInteractions(overrides = {}) {
     },
     isAppLaunching: ref(Boolean(overrides.isAppLaunching)),
     isDesktopOpen: ref(overrides.isDesktopOpen ?? true),
+    isFolderAppLaunchClosing: ref(Boolean(overrides.isFolderAppLaunchClosing)),
+    isFolderClosing: ref(Boolean(overrides.isFolderClosing)),
     isDragActive: () => isDragActive.value,
     pageRefs,
   });
@@ -78,6 +80,14 @@ export function runLaunchpadSurfaceInteractionsTests() {
   const launching = createSurfaceInteractions({ isAppLaunching: true });
   launching.interactions.handleDesktopSurfacePointerDown(makePointerEvent());
   assert(launching.calls.closeDesktop.length === 0, "app-launching desktop pointer down should be ignored");
+
+  const folderClosing = createSurfaceInteractions({ isFolderClosing: true });
+  folderClosing.interactions.handleDesktopSurfacePointerDown(makePointerEvent());
+  assert(folderClosing.calls.closeDesktop.length === 0, "folder-closing desktop pointer down should be ignored");
+
+  const folderAppLaunchClosing = createSurfaceInteractions({ isFolderAppLaunchClosing: true });
+  folderAppLaunchClosing.interactions.handleDesktopSurfacePointerDown(makePointerEvent());
+  assert(folderAppLaunchClosing.calls.closeDesktop.length === 0, "folder app-launch closing desktop pointer down should be ignored");
 
   const dragging = createSurfaceInteractions({ isDragActive: true });
   dragging.interactions.handleDesktopSurfacePointerDown(makePointerEvent());

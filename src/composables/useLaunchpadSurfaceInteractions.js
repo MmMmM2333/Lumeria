@@ -29,6 +29,7 @@ export function useLaunchpadSurfaceInteractions(options) {
   function handleDesktopSurfacePointerDown(event) {
     if (event?.button !== 0) return;
     if (!options.isDesktopOpen.value || options.isDragActive() || options.isAppLaunching.value) return;
+    if (options.isFolderClosing?.value || options.isFolderAppLaunchClosing?.value) return;
 
     if (event.target?.closest?.(DESKTOP_SURFACE_IGNORED_SELECTOR)) return;
 

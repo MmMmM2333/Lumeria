@@ -136,6 +136,7 @@ export function createFolderOverlayState(controller) {
     beginDrag: controller.beginDrag,
     completeFolderCloseIconGhost: controller.completeFolderCloseIconGhost,
     completeFolderOpenIconGhost: controller.completeFolderOpenIconGhost,
+    commitOpenFolder: controller.commitOpenFolder,
     commitFolderPageIndex: controller.commitFolderPageIndex,
     desktopTrackTransition: controller.desktopTrackTransition,
     dragMeta: controller.dragMeta,

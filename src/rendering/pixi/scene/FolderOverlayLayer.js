@@ -66,6 +66,28 @@ function makeLocalRect(rect, stageRect) {
   };
 }
 
+function cloneRect(rect) {
+  if (!rect) return null;
+  return {
+    height: rect.height,
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+  };
+}
+
+function isPointInRect(x, y, rect) {
+  return Boolean(rect) &&
+    x >= rect.left &&
+    x <= rect.left + rect.width &&
+    y >= rect.top &&
+    y <= rect.top + rect.height;
+}
+
+function makePreviewChildKey(childId, slotIndex) {
+  return `${childId}:${slotIndex}`;
+}
+
 function makeIconRect(centerX, centerY, size) {
   return {
     left: centerX - size / 2,
@@ -285,6 +307,7 @@ export class FolderOverlayLayer extends Container {
     this.completedClosingControllerGhostKeys = [];
     this.completedClosingPreviewGhosts = [];
     this.onIconAction = options.onIconAction || (() => { });
+    this.onClosingFolderPointerDown = options.onClosingFolderPointerDown || (() => { });
     this.onOutsidePointerDown = options.onOutsidePointerDown || (() => { });
     this.onTitleFrameChange = options.onTitleFrameChange || (() => { });
     this.titleFrameKey = null;
@@ -309,12 +332,15 @@ export class FolderOverlayLayer extends Container {
     this.visible = Boolean(state.renderedFolder);
     if (!this.visible) {
       this.currentFolderId = null;
+      this.isClosing = false;
+      this.isUserFolderClosing = false;
       this.sizeKey = null;
       stopTargetSprings(this.pageTrack);
       stopTargetSprings(this.panel);
       stopTargetSprings(this.panel.scale);
       this.clearOpeningGhosts();
       this.clearClosingGhosts();
+      this.stableFolderCloseTarget = null;
       if (state.folderPanelRef) state.folderPanelRef.value = null;
       if (state.folderViewportRef) state.folderViewportRef.value = null;
       this.notifyTitleFrame(null);
@@ -333,8 +359,12 @@ export class FolderOverlayLayer extends Container {
       panelStyle: state.folderPanelStyle,
       width: state.width,
     });
-    const isNewFolder = this.currentFolderId !== state.renderedFolder?.id;
     const isClosing = Boolean(state.isFolderClosing || state.isFolderAppLaunchClosing);
+    const wasClosing = Boolean(this.isClosing);
+    if (wasClosing && !isClosing && this.currentFolderId === state.renderedFolder?.id) this.currentFolderId = null;
+    const isNewFolder = this.currentFolderId !== state.renderedFolder?.id;
+    this.isClosing = isClosing;
+    this.isUserFolderClosing = Boolean(state.isFolderClosing);
     this.panelGeometry = geometry.panel;
     this.drawPanel(geometry.panel);
     this.panel.pivot.set(geometry.panel.width / 2, geometry.panel.height / 2);
@@ -368,13 +398,35 @@ export class FolderOverlayLayer extends Container {
     springTo(this.pageTrack, "x", targetTrackX, pageTrackSpring);
     const folderRect = getTopLevelIconBounds(state.renderedFolder.id);
     const folderThumbRect = getTopLevelFolderThumbBounds(state.renderedFolder.id) || folderRect;
+    const previewSlots = getFolderPreviewSlots(state.renderedFolder, state.folderPageSize);
+    if (!isClosing && state.renderedFolder?.id && folderRect && (!this.stableFolderCloseTarget ||
+      this.stableFolderCloseTarget.folderId !== state.renderedFolder.id)) {
+      const previewChildRects = new Map();
+      previewSlots.forEach((item, previewSlotIndex) => {
+        if (!item?.id) return;
+        const childRect = getFolderPreviewChildBounds(state.renderedFolder.id, item.id, previewSlotIndex);
+        if (childRect) previewChildRects.set(makePreviewChildKey(item.id, previewSlotIndex), cloneRect(childRect));
+      });
+      this.stableFolderCloseTarget = {
+        folderId: state.renderedFolder.id,
+        iconRect: cloneRect(folderRect),
+        previewChildRects,
+        thumbRect: cloneRect(folderThumbRect),
+      };
+    }
+    const closeIconRect = isClosing && this.stableFolderCloseTarget?.folderId === state.renderedFolder.id
+      ? this.stableFolderCloseTarget.iconRect || folderRect
+      : folderRect;
+    const closeThumbRect = isClosing && this.stableFolderCloseTarget?.folderId === state.renderedFolder.id
+      ? this.stableFolderCloseTarget.thumbRect || closeIconRect
+      : folderThumbRect;
 
     this.bindFakeRefs(state, geometry);
     const seen = new Set();
     const openingGhostTargets = [];
     const closingGhostTargets = [];
     const previewSlotById = new Map(
-      getFolderPreviewSlots(state.renderedFolder, state.folderPageSize)
+      previewSlots
         .map((item, previewSlotIndex) => (item?.id ? [item.id, previewSlotIndex] : null))
         .filter(Boolean)
     );
@@ -467,6 +519,9 @@ export class FolderOverlayLayer extends Container {
         if (isInteractivePage && state.isFolderClosing && pageIndex === state.folderPageIndex) {
           const previewSlotIndex = previewSlotById.get(item.id);
           const isThumbnailChild = previewSlotIndex != null;
+          const stablePreviewChildRect = isThumbnailChild && this.stableFolderCloseTarget?.folderId === state.renderedFolder.id
+            ? this.stableFolderCloseTarget.previewChildRects?.get(makePreviewChildKey(item.id, previewSlotIndex))
+            : null;
           closingGhostTargets.push({
             columnCount: cols,
             cellHeight: slot.height,
@@ -479,9 +534,8 @@ export class FolderOverlayLayer extends Container {
             controllerGhostKey: findControllerGhostKey(state.folderCloseIconGhosts, item.id, index),
             sourceRect: iconBounds,
             targetRect: isThumbnailChild
-              ? getFolderPreviewChildBounds(state.renderedFolder.id, item.id, previewSlotIndex) ||
-              makeProjectedPreviewRect(folderThumbRect, previewSlotIndex, 3, 3)
-              : makeFolderCenterCollapseRect(folderThumbRect),
+              ? stablePreviewChildRect || makeProjectedPreviewRect(closeThumbRect, previewSlotIndex, 3, 3)
+              : makeFolderCenterCollapseRect(closeThumbRect),
           });
         }
       });
@@ -489,7 +543,7 @@ export class FolderOverlayLayer extends Container {
 
     if (isNewFolder && !isClosing) this.startOpeningGhosts(state, openingGhostTargets, folderRect, geometry.panel);
     if (state.isFolderClosing && this.closingGhostFolderId !== state.renderedFolder.id) {
-      this.startClosingGhosts(state, closingGhostTargets, folderThumbRect, geometry.panel);
+      this.startClosingGhosts(state, closingGhostTargets, closeThumbRect, geometry.panel);
     }
     if (!state.isFolderClosing && this.closingGhostFolderId) {
       this.closingGhostFolderId = null;
@@ -1260,8 +1314,22 @@ export class FolderOverlayLayer extends Container {
     const native = event?.nativeEvent || event;
     native.preventDefault?.();
     native.stopPropagation?.();
-    const x = native.clientX - this.stageRect.left;
-    const y = native.clientY - this.stageRect.top;
+
+    const clientX = native.clientX ?? (this.stageRect?.left || 0) + (event?.global?.x || 0);
+    const clientY = native.clientY ?? (this.stageRect?.top || 0) + (event?.global?.y || 0);
+    if (this.isClosing) {
+      const closeTarget = this.stableFolderCloseTarget;
+      if (this.isUserFolderClosing &&
+        closeTarget?.folderId &&
+        (isPointInRect(clientX, clientY, closeTarget.thumbRect) ||
+          isPointInRect(clientX, clientY, closeTarget.iconRect))) {
+        this.onClosingFolderPointerDown(closeTarget.folderId, native);
+      }
+      return;
+    }
+
+    const x = clientX - this.stageRect.left;
+    const y = clientY - this.stageRect.top;
     const panel = this.panelGeometry;
     if (!panel) return;
     if (x < panel.left || x > panel.left + panel.width || y < panel.top || y > panel.top + panel.height) {
