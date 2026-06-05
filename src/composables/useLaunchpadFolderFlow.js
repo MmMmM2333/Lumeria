@@ -67,6 +67,7 @@ export function useLaunchpadFolderFlow(options) {
     isFolderClosing.value = false;
     options.folderPageIndex.value = 0;
     options.folderPageRefs.length = 0;
+    options.resetFolderViewportMetrics?.();
     clearFolderCloseTimer();
   }
 
@@ -87,6 +88,7 @@ export function useLaunchpadFolderFlow(options) {
       isFolderAppLaunchClosing.value = false;
       options.folderPageIndex.value = 0;
       options.folderPageRefs.length = 0;
+      options.resetFolderViewportMetrics?.();
       clearFolderAppLaunchTimer();
     }, FOLDER_APP_LAUNCH_DURATION);
   }
@@ -101,6 +103,7 @@ export function useLaunchpadFolderFlow(options) {
       isFolderClosing.value = false;
       isFolderAppLaunchClosing.value = false;
       folderClosingSnapshot.value = null;
+      if (!isSameFolder) options.resetFolderViewportMetrics?.();
       options.setFolderMotionGeometry(originGeometry ? { ...originGeometry, id: next } : options.getFolderIconMotionGeometry(next));
       openFolderId.value = next;
       renderedFolderId.value = next;

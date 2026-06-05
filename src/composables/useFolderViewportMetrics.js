@@ -22,6 +22,10 @@ export function useFolderViewportMetrics(options) {
     nextTick(updateFolderViewportHeight);
   }
 
+  function resetFolderViewportMetrics() {
+    if (folderViewportHeight.value !== 0) folderViewportHeight.value = 0;
+  }
+
   function disconnectFolderViewportObserver() {
     if (folderViewportResizeObserver) folderViewportResizeObserver.disconnect();
     folderViewportResizeObserver = null;
@@ -52,6 +56,7 @@ export function useFolderViewportMetrics(options) {
     disconnectFolderViewportObserver,
     folderViewportHeight,
     observeFolderViewport,
+    resetFolderViewportMetrics,
     scheduleFolderViewportMetrics,
     updateFolderViewportHeight,
   };

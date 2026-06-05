@@ -315,6 +315,8 @@ export class FolderOverlayLayer extends Container {
       stopTargetSprings(this.panel.scale);
       this.clearOpeningGhosts();
       this.clearClosingGhosts();
+      if (state.folderPanelRef) state.folderPanelRef.value = null;
+      if (state.folderViewportRef) state.folderViewportRef.value = null;
       this.notifyTitleFrame(null);
       return null;
     }

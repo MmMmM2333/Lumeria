@@ -186,6 +186,7 @@ export function useLaunchpadController() {
     disconnectFolderViewportObserver,
     folderViewportHeight,
     observeFolderViewport,
+    resetFolderViewportMetrics,
     scheduleFolderViewportMetrics,
     updateFolderViewportHeight,
   } = useFolderViewportMetrics({
@@ -269,6 +270,7 @@ export function useLaunchpadController() {
     isDragActive: () => dragControls?.isDragActive() || false,
     pageRefs,
     pages,
+    resetFolderViewportMetrics,
     setFolderMotionGeometry: (next) => deferredHandlers.call("setFolderMotionGeometry", next),
   });
 
