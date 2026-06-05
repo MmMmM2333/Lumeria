@@ -14,9 +14,11 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watchEffect } from "vue";
 import { createPixiApp } from "./createPixiApp.js";
 import { DesktopLayer } from "./scene/DesktopLayer.js";
-import { clearIconTextureCache } from "./assets/iconTextureCache.js";
+import { clearIconTextureCache, preloadIconTextures } from "./assets/iconTextureCache.js";
 import { clearIconBoundsRegistry } from "./geometry/iconBoundsRegistry.js";
 import { reloadOnPixiHotUpdate } from "./devHmr.js";
+
+const FOLDER_TEXTURE_PREWARM_LIMIT = 80;
 
 const props = defineProps({
   activePageIndex: { type: Number, required: true },
@@ -60,6 +62,7 @@ let app = null;
 let layer = null;
 let resizeObserver = null;
 let destroyed = false;
+let folderTexturePrewarmTimer = null;
 
 function handleResize() {
   app?.resize?.();
@@ -108,6 +111,43 @@ function renderPixi() {
   });
 }
 
+function clearFolderTexturePrewarmTimer() {
+  if (folderTexturePrewarmTimer == null) return;
+  window.clearTimeout(folderTexturePrewarmTimer);
+  folderTexturePrewarmTimer = null;
+}
+
+function getFirstFolderPageItems(folder) {
+  if (Array.isArray(folder?.childPages)) return folder.childPages[0] || [];
+  return folder?.children || [];
+}
+
+function collectFolderTexturePrewarmItems() {
+  const page = props.activePages?.[props.activePageIndex] || [];
+  const visibleItems = props.getVisibleDesktopPage?.(page) || [];
+  const items = [];
+  for (const item of visibleItems) {
+    if (item?.type !== "folder") continue;
+    const firstPageItems = getFirstFolderPageItems(item).slice(0, props.folderPageSize);
+    for (const child of firstPageItems) {
+      if (!child) continue;
+      items.push(child);
+      if (items.length >= FOLDER_TEXTURE_PREWARM_LIMIT) return items;
+    }
+  }
+  return items;
+}
+
+function scheduleFolderTexturePrewarm() {
+  if (!app) return;
+  clearFolderTexturePrewarmTimer();
+  folderTexturePrewarmTimer = window.setTimeout(() => {
+    folderTexturePrewarmTimer = null;
+    if (destroyed) return;
+    preloadIconTextures(collectFolderTexturePrewarmItems());
+  }, 0);
+}
+
 function handleIconAction(action, event, item, source) {
   if (action === "open") emit("open-app", item, source);
   if (action === "pointerdown") emit("pointerdown-icon", event, item, source);
@@ -126,6 +166,7 @@ function destroyPixi() {
   const currentLayer = layer;
   app = null;
   layer = null;
+  clearFolderTexturePrewarmTimer();
   if (currentLayer) {
     currentApp?.stage?.removeChild(currentLayer);
     currentLayer.destroy({ children: true });
@@ -153,6 +194,7 @@ onMounted(async () => {
   window.addEventListener("resize", handleResize);
   await nextTick();
   renderPixi();
+  scheduleFolderTexturePrewarm();
 });
 
 watchEffect(() => {
@@ -170,7 +212,9 @@ watchEffect(() => {
   void props.isTextlessMode;
   void props.launchTargetStatusById;
   void props.pageGridMeasureStyle;
+  void props.folderPageSize;
   renderPixi();
+  scheduleFolderTexturePrewarm();
 });
 
 onBeforeUnmount(destroyPixi);

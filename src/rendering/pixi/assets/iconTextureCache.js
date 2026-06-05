@@ -67,6 +67,16 @@ export function getCachedIconTexture(item, onLoad) {
   return null;
 }
 
+export function preloadIconTextures(items) {
+  const seen = new Set();
+  for (const item of items || []) {
+    const source = getPixiIconTextureSource(item);
+    if (!source || seen.has(source) || textureCache.has(source) || failedTextureSources.has(source)) continue;
+    seen.add(source);
+    requestTextureLoad(source);
+  }
+}
+
 export function clearIconTextureCache() {
   textureCache.clear();
   failedTextureSources.clear();

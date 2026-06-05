@@ -64,6 +64,7 @@ let app = null;
 let layer = null;
 let resizeObserver = null;
 let destroyed = false;
+let didWarmInitialFrame = false;
 
 const isFolderGhostTransitionActive = computed(() => Boolean(
   props.state.isFolderOpenIconAnimationActive?.value ||
@@ -148,6 +149,16 @@ function renderPixi() {
   });
 }
 
+function renderInitialWarmFrame() {
+  if (didWarmInitialFrame || !app) return;
+  didWarmInitialFrame = true;
+  if (typeof app.render === "function") {
+    app.render();
+    return;
+  }
+  app.renderer?.render?.(app.stage);
+}
+
 function handleIconAction(action, event, item, source) {
   if (action === "open") emit("open-app", item, source);
   if (action === "pointerdown") emit("pointerdown-icon", event, item, source);
@@ -166,6 +177,7 @@ function destroyPixi() {
   const currentLayer = layer;
   app = null;
   layer = null;
+  didWarmInitialFrame = false;
   if (currentLayer) {
     currentApp?.stage?.removeChild(currentLayer);
     currentLayer.destroy({ children: true });
@@ -216,6 +228,7 @@ onMounted(async () => {
   window.addEventListener("resize", handleResize);
   await nextTick();
   renderPixi();
+  renderInitialWarmFrame();
 });
 
 watchEffect(() => {
