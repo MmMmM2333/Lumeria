@@ -2564,6 +2564,8 @@ body {
 }
 
 .drag-preview-box {
+  position: relative;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2581,18 +2583,22 @@ body {
   user-select: none;
 }
 .drag-preview-name {
-  max-width: 100px;
+  display: -webkit-box;
+  max-width: 160px;
   margin-top: 8px;
   padding: 2px 8px;
   overflow: hidden;
+  text-align: center;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.22);
+  white-space: normal;
+  word-break: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   color: white;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 520;
-  backdrop-filter: blur(12px);
+  line-height: 1.22;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
 }
 
 @media (max-width: 760px) {
