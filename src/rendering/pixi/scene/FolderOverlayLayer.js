@@ -395,7 +395,12 @@ export class FolderOverlayLayer extends Container {
     this.drawPageMask(this.pageMask, this.pageMaskRect);
     this.refreshPageTrackMask();
     const targetTrackX = -state.folderPageIndex * geometry.grid.width;
-    springTo(this.pageTrack, "x", targetTrackX, pageTrackSpring);
+    if (isNewFolder && !isClosing) {
+      stopTargetSprings(this.pageTrack);
+      this.pageTrack.x = targetTrackX;
+    } else {
+      springTo(this.pageTrack, "x", targetTrackX, pageTrackSpring);
+    }
     const folderRect = getTopLevelIconBounds(state.renderedFolder.id);
     const folderThumbRect = getTopLevelFolderThumbBounds(state.renderedFolder.id) || folderRect;
     const previewSlots = getFolderPreviewSlots(state.renderedFolder, state.folderPageSize);
