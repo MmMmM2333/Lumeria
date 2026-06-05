@@ -132,6 +132,23 @@ function lerp(from, to, progress) {
   return from + (to - from) * progress;
 }
 
+function lerpColor(from, to, progress) {
+  const t = clamp01(progress);
+  const fromColor = Math.max(0, Math.min(0xffffff, Math.round(Number(from) || 0)));
+  const toColor = Math.max(0, Math.min(0xffffff, Math.round(Number(to) || 0)));
+  const fromR = (fromColor >> 16) & 0xff;
+  const fromG = (fromColor >> 8) & 0xff;
+  const fromB = fromColor & 0xff;
+  const toR = (toColor >> 16) & 0xff;
+  const toG = (toColor >> 8) & 0xff;
+  const toB = toColor & 0xff;
+  return (
+    (Math.round(lerp(fromR, toR, t)) << 16) |
+    (Math.round(lerp(fromG, toG, t)) << 8) |
+    Math.round(lerp(fromB, toB, t))
+  );
+}
+
 function lerpFrameRect(fromRect, toRect, progress) {
   const t = clamp01(progress);
   return {
@@ -161,10 +178,75 @@ function expandRectToContain(rect, bounds) {
   return expanded;
 }
 
+function expandBounds(bounds, rect) {
+  if (!rect) return bounds;
+  const left = Math.min(bounds?.left ?? Infinity, rect.left);
+  const top = Math.min(bounds?.top ?? Infinity, rect.top);
+  const right = Math.max(bounds?.right ?? -Infinity, rect.left + rect.width);
+  const bottom = Math.max(bounds?.bottom ?? -Infinity, rect.top + rect.height);
+  return { bottom, left, right, top };
+}
+
 function getClosingFramePadding(progress) {
   const fadeRange = Math.max(0.01, CLOSING_FRAME_PADDING_RELEASE_END - CLOSING_FRAME_CONTAIN_RELEASE_START);
   const fadeProgress = (clamp01(progress) - CLOSING_FRAME_CONTAIN_RELEASE_START) / fadeRange;
   return CLOSING_FRAME_PADDING * (1 - smoothstep(fadeProgress));
+}
+
+function cloneFrameSnapshot(frame) {
+  if (!frame) return null;
+  return {
+    fillAlpha: frame.fillAlpha,
+    fillColor: frame.fillColor,
+    height: frame.height,
+    left: frame.left,
+    radius: frame.radius,
+    strokeAlpha: frame.strokeAlpha,
+    strokeColor: frame.strokeColor,
+    strokeWidth: frame.strokeWidth,
+    top: frame.top,
+    width: frame.width,
+  };
+}
+
+function makeFrameSnapshotFromBounds(bounds, padding, styleFrame) {
+  if (!bounds) return null;
+  const rect = {
+    height: bounds.bottom - bounds.top + padding * 2,
+    left: bounds.left - padding,
+    top: bounds.top - padding,
+    width: bounds.right - bounds.left + padding * 2,
+  };
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  return {
+    ...rect,
+    fillAlpha: styleFrame?.fillAlpha,
+    fillColor: styleFrame?.fillColor,
+    radius: getFrameRadius(rect, styleFrame?.radius ?? 48),
+    strokeAlpha: styleFrame?.strokeAlpha,
+    strokeColor: styleFrame?.strokeColor,
+    strokeWidth: styleFrame?.strokeWidth,
+  };
+}
+
+function makeOpeningInterruptionFrame(targets, stageRect, styleFrame) {
+  let bounds = null;
+  for (const target of targets || []) {
+    const iconRect = makeLocalRect(target.sourceRect, stageRect);
+    if (!iconRect) continue;
+    bounds = expandBounds(bounds, iconRect);
+    if (target.sourceLabelAlpha == null || target.sourceLabelAlpha <= 0) continue;
+    const scale = target.sourceScale ?? 1;
+    const labelWidth = Math.max(72, Math.min(160, target.cellWidth || 120)) * scale;
+    const labelTop = iconRect.top + iconRect.height - 6 * scale;
+    bounds = expandBounds(bounds, {
+      height: 24 * scale,
+      left: iconRect.left + iconRect.width / 2 - labelWidth / 2,
+      top: labelTop,
+      width: labelWidth,
+    });
+  }
+  return makeFrameSnapshotFromBounds(bounds, CLOSING_FRAME_PADDING, styleFrame);
 }
 
 function findControllerGhostKey(ghosts, itemId, slotIndex) {
@@ -563,19 +645,23 @@ export class FolderOverlayLayer extends Container {
     const ease = options.ease ?? folderOpenGhostEase;
     const fadeStart = Math.max(0, Math.min(0.95, options.fadeStart ?? 0.72));
     const fadeDuration = Math.max(0.01, duration * (1 - fadeStart));
+    const fromFillColor = options.fromFillColor ?? 0xf7f8ff;
+    const toFillColor = options.toFillColor ?? fromFillColor;
+    const fromStrokeColor = options.fromStrokeColor ?? 0xffffff;
+    const toStrokeColor = options.toStrokeColor ?? fromStrokeColor;
     this.panelMaterial.visible = true;
     this.panelMaterial.alpha = options.panelMaterialFromAlpha ?? 0;
     this.frameGhost.visible = true;
     this.frameGhost.alpha = options.frameGhostFromAlpha ?? 1;
     const frame = {
       fillAlpha: options.fromFillAlpha ?? 0.22,
-      fillColor: options.fromFillColor ?? 0xf7f8ff,
+      fillColor: fromFillColor,
       height: fromRect.height,
       left: fromRect.left,
       progress: 0,
       radius: options.fromRadius ?? getFrameRadius(fromRect),
       strokeAlpha: options.fromStrokeAlpha ?? 0.26,
-      strokeColor: options.fromStrokeColor ?? 0xffffff,
+      strokeColor: fromStrokeColor,
       strokeWidth: options.fromStrokeWidth ?? 1,
       top: fromRect.top,
       width: fromRect.width,
@@ -600,18 +686,22 @@ export class FolderOverlayLayer extends Container {
       duration,
       ease,
       fillAlpha: options.toFillAlpha ?? 0.26,
-      fillColor: options.toFillColor ?? frame.fillColor,
       height: toRect.height,
       left: toRect.left,
       progress: 1,
       radius: options.toRadius ?? getFrameRadius(toRect, 48),
       strokeAlpha: options.toStrokeAlpha ?? 0.24,
-      strokeColor: options.toStrokeColor ?? frame.strokeColor,
       strokeWidth: options.toStrokeWidth ?? frame.strokeWidth,
       top: toRect.top,
       width: toRect.width,
-      onUpdate: () => this.drawFrameGhost(frame, options),
+      onUpdate: () => {
+        frame.fillColor = lerpColor(fromFillColor, toFillColor, frame.progress);
+        frame.strokeColor = lerpColor(fromStrokeColor, toStrokeColor, frame.progress);
+        this.drawFrameGhost(frame, options);
+      },
       onComplete: () => {
+        frame.fillColor = toFillColor;
+        frame.strokeColor = toStrokeColor;
         if (options.preserveOnComplete) {
           this.frameGhostState = frame;
           this.drawFrameGhost(frame, options);
@@ -762,6 +852,8 @@ export class FolderOverlayLayer extends Container {
         removable: false,
         selected: false,
         source: { type: "folder-open-ghost", pageIndex: state.folderPageIndex },
+        stageHeight: state.height,
+        stageWidth: state.width,
         textless: state.isTextlessMode,
       });
       const sourceRect = makeLocalRect(target.sourceRect, state.stageRect);
@@ -837,7 +929,39 @@ export class FolderOverlayLayer extends Container {
     this.finishClosingGhostTransition(state);
   }
 
+  captureOpeningInterruption(state, targets) {
+    if (!this.openingGhostKeys?.size) return null;
+    const targetByItemId = new Map((targets || []).map((target) => [target.item?.id, target]));
+    const interruptedTargets = [];
+
+    for (const ghost of this.openingGhostLayer.children || []) {
+      const baseTarget = targetByItemId.get(ghost.item?.id);
+      if (!baseTarget || ghost.destroyed) continue;
+      const sourceRect = ghost.getIconBounds(state.stageRect);
+      if (!sourceRect) continue;
+      interruptedTargets.push({
+        ...baseTarget,
+        interrupted: true,
+        sourceAlpha: ghost.alpha,
+        sourceLabelAlpha: ghost.labelText?.alpha,
+        sourceRect,
+        sourceScale: Math.max(0.14, sourceRect.width / Math.max(1, baseTarget.iconSize)),
+      });
+    }
+
+    const frameRect = cloneFrameSnapshot(this.frameGhostState);
+    const contentFrameRect = makeOpeningInterruptionFrame(interruptedTargets, state.stageRect, frameRect);
+
+    return {
+      frameRect: contentFrameRect || frameRect,
+      targets: interruptedTargets.length ? interruptedTargets : targets,
+    };
+  }
+
   startClosingGhosts(state, targets, folderRect, panelRect) {
+    const interruption = this.captureOpeningInterruption(state, targets);
+    const closeFrameFromRect = interruption?.frameRect || panelRect;
+    const closeTargets = interruption?.targets || targets;
     this.clearOpeningGhosts();
     this.clearClosingGhosts();
     this.closingGhostFolderId = state.renderedFolder?.id || null;
@@ -845,28 +969,34 @@ export class FolderOverlayLayer extends Container {
     this.closingFrameComplete = false;
     this.completedClosingControllerGhostKeys = [];
     this.completedClosingPreviewGhosts = [];
-    const usableTargets = (targets || []).filter((target) => target.sourceRect && target.targetRect);
+    const usableTargets = (closeTargets || []).filter((target) => target.sourceRect && target.targetRect);
     if (!usableTargets.length) return;
-    const maxDelay = getMaxGridGhostDelay(usableTargets, CLOSING_GHOST_MAX_DELAY);
+    const isInterruptedClose = Boolean(interruption);
+    const maxDelay = isInterruptedClose ? 0 : getMaxGridGhostDelay(usableTargets, CLOSING_GHOST_MAX_DELAY);
+    const frameDuration = Math.max(
+      isInterruptedClose ? folderCloseDuration : folderPanelCloseDuration,
+      maxDelay + folderCloseDuration + CLOSING_FRAME_TAIL_DURATION
+    );
     const thumb = getFolderThumbMetrics(folderRect.width);
-    this.startFrameGhost(panelRect, makeLocalRect(folderRect, state.stageRect), {
-      containmentProvider: (frame) => {
+    const shouldContainClosingGhosts = !isInterruptedClose;
+    this.startFrameGhost(closeFrameFromRect, makeLocalRect(folderRect, state.stageRect), {
+      containmentProvider: shouldContainClosingGhosts ? (frame) => {
         const progress = frame.progress ?? 0;
         if (progress >= CLOSING_FRAME_PADDING_RELEASE_END) return null;
         return this.getClosingGhostContentBounds(getClosingFramePadding(progress));
-      },
+      } : null,
       containmentReleaseEnd: CLOSING_FRAME_PADDING_RELEASE_END,
       containmentReleaseStart: CLOSING_FRAME_CONTAIN_RELEASE_START,
-      duration: Math.max(folderPanelCloseDuration, maxDelay + folderCloseDuration + CLOSING_FRAME_TAIL_DURATION),
-      ease: folderCloseFrameEase,
+      duration: frameDuration,
+      ease: isInterruptedClose ? folderCloseEase : folderCloseFrameEase,
       fadeStart: 0.86,
       frameGhostToAlpha: 1,
-      fromFillAlpha: 0.26,
-      fromFillColor: thumb.fillColor,
-      fromRadius: 48,
-      fromStrokeAlpha: 0.24,
-      fromStrokeColor: thumb.strokeColor,
-      fromStrokeWidth: thumb.strokeWidth,
+      fromFillAlpha: interruption?.frameRect?.fillAlpha ?? 0.26,
+      fromFillColor: interruption?.frameRect?.fillColor ?? thumb.fillColor,
+      fromRadius: interruption?.frameRect?.radius ?? 48,
+      fromStrokeAlpha: interruption?.frameRect?.strokeAlpha ?? 0.24,
+      fromStrokeColor: interruption?.frameRect?.strokeColor ?? thumb.strokeColor,
+      fromStrokeWidth: interruption?.frameRect?.strokeWidth ?? thumb.strokeWidth,
       panelMaterialFinalAlpha: 0,
       panelMaterialFromAlpha: 0,
       panelMaterialToAlpha: 0,
@@ -908,21 +1038,27 @@ export class FolderOverlayLayer extends Container {
         removable: false,
         selected: false,
         source: { type: "folder-close-ghost", pageIndex: state.folderPageIndex },
+        stageHeight: state.height,
+        stageWidth: state.width,
         textless: state.isTextlessMode,
       });
       const sourceRect = makeLocalRect(target.sourceRect, state.stageRect);
       const targetRect = makeLocalRect(target.targetRect, state.stageRect);
       const labelOffset = state.isTextlessMode ? 0 : 14;
+      const sourceScale = target.sourceScale ?? 1;
+      const sourceAlpha = target.sourceAlpha ?? 1;
       const scale = Math.max(0.14, target.targetRect.width / Math.max(1, target.iconSize));
       const fromX = sourceRect.left + sourceRect.width / 2;
-      const fromY = sourceRect.top + sourceRect.height / 2 + labelOffset;
+      const fromY = sourceRect.top + sourceRect.height / 2 + labelOffset * sourceScale;
       const toX = targetRect.left + targetRect.width / 2;
       const toY = targetRect.top + targetRect.height / 2 + labelOffset * scale;
-      const delay = getGridGhostDelay(target.index, target.columnCount, CLOSING_GHOST_MAX_DELAY);
+      const delay = target.interrupted ? 0 : getGridGhostDelay(target.index, target.columnCount, CLOSING_GHOST_MAX_DELAY);
       const alphaDelay = delay + folderCloseDuration * CLOSING_EXTRA_GHOST_ALPHA_HOLD;
       ghost.position.set(fromX, fromY);
-      ghost.scale.set(1);
+      ghost.scale.set(sourceScale);
+      ghost.alpha = sourceAlpha;
       if (ghost.labelText?.visible) {
+        if (target.sourceLabelAlpha != null) ghost.labelText.alpha = target.sourceLabelAlpha;
         gsap.to(ghost.labelText, { alpha: 0, delay, duration: 0.1, ease: "power2.in" });
         gsap.to(ghost.labelText.scale, { x: 0.94, y: 0.94, delay, duration: 0.1, ease: "power2.in" });
       }
@@ -978,8 +1114,6 @@ export class FolderOverlayLayer extends Container {
       stopTargetSprings(this.panel.scale);
       gsap.killTweensOf(this.panel);
       gsap.killTweensOf(this.panel.scale);
-      this.panel.position.set(targetX, targetY);
-      this.panel.scale.set(1);
       this.panel.alpha = 0;
       return;
     }
