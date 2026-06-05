@@ -5,6 +5,7 @@
     tabindex="-1"
     :style="pageGridMeasureStyle"
     @focus="$emit('desktop-focus')"
+    @contextmenu.stop.prevent
   >
     <div ref="hostRef" class="pixi-desktop-host" />
   </main>

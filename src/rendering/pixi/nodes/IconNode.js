@@ -6,15 +6,71 @@ import { mapLocalRectToStageRect } from "../geometry/stageCoordinates.js";
 import { getFolderPreviewSlots } from "../../../domain/launchpadLayout.js";
 import { getFolderThumbMetrics } from "./folderThumbMetrics.js";
 
-function safeName(value) {
-  const text = String(value || "");
-  return text.length > 28 ? `${text.slice(0, 26)}...` : text;
+function plainName(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
 }
 
 function fitSingleLineName(value, fontSize, maxWidth) {
-  const text = safeName(value);
-  const maxChars = Math.max(4, Math.floor(maxWidth / Math.max(1, fontSize * 0.58)));
-  return text.length > maxChars ? `${text.slice(0, Math.max(1, maxChars - 3))}...` : text;
+  return truncateNameToWidth(plainName(value), fontSize, maxWidth);
+}
+
+function estimateLabelWidth(text, fontSize) {
+  return Array.from(String(text || "")).reduce((width, char) => {
+    if (/\s/.test(char)) return width + fontSize * 0.34;
+    if (/[\u4e00-\u9fff]/.test(char)) return width + fontSize;
+    if (/[ilI.,'`|!]/.test(char)) return width + fontSize * 0.36;
+    if (/[MW@#%&]/.test(char)) return width + fontSize * 0.82;
+    return width + fontSize * 0.58;
+  }, 0);
+}
+
+function truncateNameToWidth(text, fontSize, maxWidth) {
+  const value = String(text || "");
+  if (!value || estimateLabelWidth(value, fontSize) <= maxWidth) return value;
+  const ellipsis = "...";
+  let result = "";
+  for (const char of Array.from(value)) {
+    const next = `${result}${char}`;
+    if (estimateLabelWidth(`${next}${ellipsis}`, fontSize) > maxWidth) break;
+    result = next;
+  }
+  return `${result.trimEnd() || Array.from(value)[0] || ""}${ellipsis}`;
+}
+
+function splitLabelLine(text, fontSize, maxWidth) {
+  const value = String(text || "");
+  if (estimateLabelWidth(value, fontSize) <= maxWidth) return [value, ""];
+
+  const chars = Array.from(value);
+  let breakAt = 0;
+  let lastSoftBreak = -1;
+  for (let index = 0; index < chars.length; index += 1) {
+    const candidate = chars.slice(0, index + 1).join("");
+    if (estimateLabelWidth(candidate, fontSize) > maxWidth) break;
+    breakAt = index + 1;
+    if (/[\s\-_/()]/.test(chars[index])) lastSoftBreak = index + 1;
+  }
+
+  const splitAt = lastSoftBreak > 1 ? lastSoftBreak : Math.max(1, breakAt);
+  return [
+    chars.slice(0, splitAt).join("").trimEnd(),
+    chars.slice(splitAt).join("").trimStart(),
+  ];
+}
+
+function fitWrappedName(value, fontSize, maxWidth) {
+  let rest = plainName(value);
+  const lines = [];
+  while (rest && lines.length < 2) {
+    if (lines.length === 1) {
+      lines.push(truncateNameToWidth(rest, fontSize, maxWidth));
+      break;
+    }
+    const [line, next] = splitLabelLine(rest, fontSize, maxWidth);
+    lines.push(line);
+    rest = next;
+  }
+  return lines.join("\n");
 }
 
 function makeLabelText(fontSize = 13) {
@@ -50,6 +106,11 @@ function setCentered(displayObject, x, y) {
   displayObject.anchor?.set?.(0.5);
   displayObject.position.set(x, y);
 }
+
+const EDIT_BUTTON_HIT_PADDING = 12;
+const SELECTION_FRAME_MIN_PADDING_X = 12;
+const SELECTION_FRAME_PADDING_TOP = 10;
+const SELECTION_FRAME_PADDING_BOTTOM = 8;
 
 export class IconNode extends Container {
   constructor(options = {}) {
@@ -130,16 +191,16 @@ export class IconNode extends Container {
     this.textless = Boolean(state.textless);
     this.isFolder = state.item?.type === "folder";
     this.state = state;
-    this.hitArea = new Rectangle(-state.cellWidth / 2, -state.cellHeight / 2, state.cellWidth, state.cellHeight);
     this.eventMode = state.interactive === false ? "none" : "static";
     this.cursor = state.interactive === false ? "default" : "pointer";
     this.visible = !state.dragging && !state.ghosted;
     this.alpha = state.opening ? 0 : 1;
     this.scale.set(state.opening ? 1.08 : 1);
-    this.renderFrame(state);
     this.renderVisual(state);
     this.renderLabel(state);
     this.renderEditButtons(state);
+    this.renderFrame(state);
+    this.updateHitArea(state);
     this.updateJiggle(state);
     if (this.isFolder && wasGhosted && !state.ghosted && !state.dragging && !state.opening) this.revealLabelAfterGhost();
   }
@@ -198,6 +259,10 @@ export class IconNode extends Container {
     }
     const action = this.getEditActionAt(event);
     if (action) {
+      event?.stopPropagation?.();
+      original?.preventDefault?.();
+      original?.stopPropagation?.();
+      original?.stopImmediatePropagation?.();
       this.onAction(action, original, this.item, this.source, this);
       return;
     }
@@ -232,6 +297,9 @@ export class IconNode extends Container {
   handleContextMenu(event) {
     const original = event?.nativeEvent || event;
     if (this.item?.type !== "app") return;
+    original?.preventDefault?.();
+    original?.stopPropagation?.();
+    original?.stopImmediatePropagation?.();
     this.onAction("context-menu", original, this.item, this.source, this);
   }
 
@@ -252,21 +320,71 @@ export class IconNode extends Container {
     return Math.hypot(x, y) <= 12;
   }
 
+  getVisualOffsetY() {
+    return this.textless ? 0 : -14;
+  }
+
+  updateHitArea(state) {
+    const editPadding = state.editing && this.item?.type === "app" ? EDIT_BUTTON_HIT_PADDING : 0;
+    const visualOffsetY = this.getVisualOffsetY();
+    this.hitArea = new Rectangle(
+      -this.iconSize / 2 - editPadding,
+      visualOffsetY - this.iconSize / 2 - editPadding,
+      this.iconSize + editPadding * 2,
+      this.iconSize + editPadding * 2
+    );
+  }
+
+  getSelectionFrameRect() {
+    const visualOffsetY = this.getVisualOffsetY();
+    let left = -this.iconSize / 2;
+    let right = this.iconSize / 2;
+    let top = visualOffsetY - this.iconSize / 2;
+    let bottom = visualOffsetY + this.iconSize / 2;
+
+    if (this.labelText.visible) {
+      const fallbackWidth = Number(this.labelText.style?.wordWrapWidth) || 160;
+      const lineHeight = Number(this.labelText.style?.lineHeight) || 16;
+      const fontSize = Number(this.labelText.style?.fontSize) || 13;
+      const textLines = String(this.labelText.text || "").split("\n");
+      const rawEstimatedWidth = Math.max(...textLines.map((line) => estimateLabelWidth(line, fontSize)));
+      const estimatedWidth = Math.min(fallbackWidth, rawEstimatedWidth);
+      const estimatedLines = Math.max(1, textLines.length);
+      const labelWidth = Math.max(0, Math.min(fallbackWidth, Number(this.labelText.width) || estimatedWidth));
+      const labelHeight = Math.max(0, Number(this.labelText.height) || estimatedLines * lineHeight);
+      left = Math.min(left, -labelWidth / 2);
+      right = Math.max(right, labelWidth / 2);
+      top = Math.min(top, this.labelText.y);
+      bottom = Math.max(bottom, this.labelText.y + labelHeight);
+    }
+
+    const minWidth = this.iconSize + SELECTION_FRAME_MIN_PADDING_X * 2;
+    const contentWidth = right - left;
+    const height = bottom - top + SELECTION_FRAME_PADDING_TOP + SELECTION_FRAME_PADDING_BOTTOM;
+    const width = Math.max(height, minWidth, contentWidth + SELECTION_FRAME_MIN_PADDING_X * 2);
+    return {
+      height,
+      left: -width / 2,
+      top: top - SELECTION_FRAME_PADDING_TOP,
+      width,
+    };
+  }
+
   renderFrame(state) {
-    const width = Math.max(this.iconSize + 44, state.cellWidth * 0.62);
-    const height = this.textless ? this.iconSize + 18 : this.iconSize + 48;
-    const top = -height / 2 + 4;
+    const rect = this.getSelectionFrameRect();
+    const radius = Math.min(28, Math.max(18, this.iconSize * 0.32));
     this.selectionFrame.clear();
     if (state.selected || state.dropTarget) {
+      const isDropTarget = Boolean(state.dropTarget);
       this.selectionFrame
-        .roundRect(-width / 2, top, width, height, 18)
-        .fill({ color: 0xffffff, alpha: state.dropTarget ? 0.18 : 0.1 })
-        .stroke({ color: 0xffffff, alpha: state.dropTarget ? 0.9 : 0.42, width: state.dropTarget ? 2 : 1 });
+        .roundRect(rect.left, rect.top, rect.width, rect.height, radius)
+        .fill({ color: isDropTarget ? 0xffffff : 0x000000, alpha: isDropTarget ? 0.18 : 0.3 })
+        .stroke({ color: 0xffffff, alpha: isDropTarget ? 0.9 : 0.12, width: isDropTarget ? 2 : 1 });
     }
   }
 
   renderVisual(state) {
-    this.visualWrap.position.set(0, this.textless ? 0 : -14);
+    this.visualWrap.position.set(0, this.getVisualOffsetY());
     this.folderThumb.visible = this.isFolder;
     this.iconSprite.visible = false;
     this.emojiText.visible = false;
@@ -404,13 +522,14 @@ export class IconNode extends Container {
     if (!this.labelText.visible) return;
     const fontSize = state.compact ? 12 : 13;
     const singleLine = Boolean(state.singleLineLabel);
-    this.labelText.text = singleLine
-      ? fitSingleLineName(this.item?.name, fontSize, Math.max(56, state.cellWidth * 0.9))
-      : safeName(this.item?.name);
+    const wrapWidth = Math.max(72, Math.min(160, state.cellWidth * 0.84));
     this.labelText.style.fontSize = fontSize;
     this.labelText.style.lineHeight = Math.round(fontSize * 1.22);
     this.labelText.style.wordWrap = !singleLine;
-    this.labelText.style.wordWrapWidth = Math.max(72, Math.min(160, state.cellWidth * 0.84));
+    this.labelText.style.wordWrapWidth = wrapWidth;
+    this.labelText.text = singleLine
+      ? fitSingleLineName(this.item?.name, fontSize, Math.max(56, state.cellWidth * 0.9))
+      : fitWrappedName(this.item?.name, fontSize, wrapWidth);
     this.labelText.anchor.set(0.5, 0);
     this.labelText.position.set(0, this.iconSize / 2 + 8 + (this.textless ? 0 : -14));
   }

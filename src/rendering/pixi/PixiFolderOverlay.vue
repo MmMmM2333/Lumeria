@@ -7,6 +7,7 @@
       (state.isFolderClosing.value || state.isFolderAppLaunchClosing.value) && 'pixi-folder-overlay-closing',
     ]"
     @pointerdown.stop.prevent
+    @contextmenu.stop.prevent
   >
     <div ref="hostRef" class="pixi-folder-host" />
     <input

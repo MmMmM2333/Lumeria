@@ -49,7 +49,7 @@ function getDesktopIconSizing(state, slot) {
   return {
     compact,
     iconSize,
-    singleLineLabel: compact && !state.isTextlessMode,
+    singleLineLabel: false,
   };
 }
 
