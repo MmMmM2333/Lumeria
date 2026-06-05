@@ -62,15 +62,29 @@ const folderNameBeforeEdit = ref("");
 const panelGeometry = ref(null);
 const titleFrame = ref(null);
 const closingTitleStartOpacity = ref(1);
+const folderPageDotsVisible = ref(false);
+const FOLDER_PAGE_DOTS_REVEAL_PROGRESS = 0.995;
 let app = null;
 let layer = null;
 let resizeObserver = null;
 let destroyed = false;
 let didWarmInitialFrame = false;
+let folderPageDotsRevealFrame = null;
 
 const isFolderGhostTransitionActive = computed(() => Boolean(
   props.state.isFolderOpenIconAnimationActive?.value ||
   props.state.isFolderCloseIconAnimationActive?.value
+));
+
+const isFolderPageDotsBlocked = computed(() => Boolean(
+  props.state.isFolderClosing.value ||
+  props.state.isFolderAppLaunchClosing.value ||
+  props.state.isFolderOpenFrameGhostPending?.value ||
+  isFolderGhostTransitionActive.value
+));
+
+const isFolderPageDotsReady = computed(() => (
+  clamp01(titleFrame.value?.progress ?? 0) >= FOLDER_PAGE_DOTS_REVEAL_PROGRESS
 ));
 
 function clamp01(value) {
@@ -113,13 +127,20 @@ const folderNameInputStyle = computed(() => {
 
 const folderPageDotsStyle = computed(() => {
   const panel = panelGeometry.value?.panel;
-  const isHidden = props.state.isFolderClosing.value || props.state.isFolderAppLaunchClosing.value || isFolderGhostTransitionActive.value;
+  const grid = panelGeometry.value?.grid;
+  const isHidden = isFolderPageDotsBlocked.value || !folderPageDotsVisible.value;
   if (!panel) return { opacity: 0, pointerEvents: "none" };
+  const height = 20;
+  const bottomPaddingTop = grid ? grid.top + grid.height : panel.top + panel.height - 54;
+  const bottomPaddingHeight = Math.max(0, panel.top + panel.height - bottomPaddingTop);
   return {
+    bottom: "auto",
+    height: `${height}px`,
     left: `${panel.left}px`,
     opacity: isHidden ? 0 : 1,
     pointerEvents: isHidden ? "none" : "auto",
-    top: `${panel.top + panel.height - 32}px`,
+    right: "auto",
+    top: `${bottomPaddingTop + bottomPaddingHeight / 2 - height / 2}px`,
     width: `${panel.width}px`,
   };
 });
@@ -195,6 +216,7 @@ function destroyPixi() {
   window.removeEventListener("resize", handleResize);
   resizeObserver?.disconnect();
   resizeObserver = null;
+  cancelFolderPageDotsReveal();
   const currentApp = app;
   const currentLayer = layer;
   app = null;
@@ -212,6 +234,24 @@ function destroyPixi() {
   clearIconTextureCache();
 }
 
+function cancelFolderPageDotsReveal() {
+  if (folderPageDotsRevealFrame == null) return;
+  window.cancelAnimationFrame(folderPageDotsRevealFrame);
+  folderPageDotsRevealFrame = null;
+}
+
+function scheduleFolderPageDotsReveal() {
+  cancelFolderPageDotsReveal();
+  folderPageDotsRevealFrame = window.requestAnimationFrame(() => {
+    folderPageDotsRevealFrame = null;
+    if (!props.state.renderedFolder.value ||
+      props.state.folderPages.value.length <= 1 ||
+      isFolderPageDotsBlocked.value ||
+      !isFolderPageDotsReady.value) return;
+    folderPageDotsVisible.value = true;
+  });
+}
+
 watch(
   () => Boolean(props.state.isFolderClosing.value || props.state.isFolderAppLaunchClosing.value),
   (isClosing, wasClosing) => {
@@ -221,6 +261,22 @@ watch(
     }
     if (!isClosing) closingTitleStartOpacity.value = 1;
   }
+);
+
+watch(
+  () => ({
+    blocked: isFolderPageDotsBlocked.value,
+    folderId: props.state.renderedFolder.value?.id || null,
+    pageCount: props.state.folderPages.value.length,
+    ready: isFolderPageDotsReady.value,
+  }),
+  (state, previous) => {
+    const canShow = Boolean(state.folderId && state.pageCount > 1 && !state.blocked && state.ready);
+    cancelFolderPageDotsReveal();
+    if (!canShow || state.folderId !== previous?.folderId) folderPageDotsVisible.value = false;
+    if (canShow) scheduleFolderPageDotsReveal();
+  },
+  { immediate: true }
 );
 
 function handleFolderNameInput(event) {
