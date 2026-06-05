@@ -2,6 +2,7 @@ import { reloadOnPixiHotUpdate } from "../devHmr.js";
 
 const launchIconBounds = new Map();
 const topLevelBounds = new Map();
+const topLevelFolderThumbBounds = new Map();
 const folderPreviewChildBounds = new Map();
 
 function makeLaunchKey(source) {
@@ -31,10 +32,19 @@ export function registerLaunchIconBounds(source, rect, meta = {}) {
   if (source.area === "desktop") topLevelBounds.set(source.id, { ...safeRect, meta });
 }
 
+export function registerTopLevelFolderThumbBounds(id, rect, meta = {}) {
+  const safeRect = cloneRect(rect);
+  if (!id || !safeRect) return;
+  topLevelFolderThumbBounds.set(id, { ...safeRect, meta });
+}
+
 export function unregisterLaunchIconBounds(source) {
   const key = makeLaunchKey(source);
   if (key) launchIconBounds.delete(key);
-  if (source?.area === "desktop" && source.id) topLevelBounds.delete(source.id);
+  if ((source?.area === "desktop" || source?.area === "search") && source.id) topLevelFolderThumbBounds.delete(source.id);
+  if (source?.area === "desktop" && source.id) {
+    topLevelBounds.delete(source.id);
+  }
 }
 
 export function clearLaunchIconBounds(scope) {
@@ -42,9 +52,15 @@ export function clearLaunchIconBounds(scope) {
     if (!scope || key.startsWith(`${scope}:`)) launchIconBounds.delete(key);
     if (value?.meta?.area === "desktop" && (!scope || scope === "desktop")) {
       topLevelBounds.delete(value.meta.id);
+      topLevelFolderThumbBounds.delete(value.meta.id);
     }
   }
-  if (!scope || scope === "desktop") topLevelBounds.clear();
+  for (const [id, value] of topLevelFolderThumbBounds) {
+    if (!scope || value?.meta?.area === scope) topLevelFolderThumbBounds.delete(id);
+  }
+  if (!scope || scope === "desktop") {
+    topLevelBounds.clear();
+  }
 }
 
 export function getLaunchIconBounds(source) {
@@ -54,6 +70,10 @@ export function getLaunchIconBounds(source) {
 
 export function getTopLevelIconBounds(id) {
   return cloneRect(topLevelBounds.get(id));
+}
+
+export function getTopLevelFolderThumbBounds(id) {
+  return cloneRect(topLevelFolderThumbBounds.get(id));
 }
 
 export function getTopLevelTargetAtPoint(x, y, excludeId = null) {
@@ -85,6 +105,7 @@ export function getFolderPreviewChildBounds(folderId, childId, slotIndex) {
 export function clearIconBoundsRegistry() {
   launchIconBounds.clear();
   topLevelBounds.clear();
+  topLevelFolderThumbBounds.clear();
   folderPreviewChildBounds.clear();
 }
 

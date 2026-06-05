@@ -4,6 +4,7 @@ import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import {
   folderCloseDuration,
   folderCloseEase,
+  folderCloseFrameEase,
   folderOpenDuration,
   folderOpenEase,
   folderOpenGhostDuration,
@@ -15,14 +16,20 @@ import {
 import { pageTrackSpring, panelSpring, springTo, stopTargetSprings } from "../animation/springMotion.js";
 import { getFolderGridMetrics, getFolderPanelGeometry, getGridSlotRect, parseRepeatCount, readPx } from "../geometry/gridGeometry.js";
 import { makeStageVirtualElement } from "../geometry/stageCoordinates.js";
-import { getFolderPreviewChildBounds, getTopLevelIconBounds, registerLaunchIconBounds } from "../geometry/iconBoundsRegistry.js";
+import {
+  getFolderPreviewChildBounds,
+  getTopLevelFolderThumbBounds,
+  getTopLevelIconBounds,
+  registerLaunchIconBounds,
+} from "../geometry/iconBoundsRegistry.js";
 import { IconNode } from "../nodes/IconNode.js";
 import { getFolderPreviewSlots } from "../../../domain/launchpadLayout.js";
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
 
 const GHOST_REVEAL_FALLBACK_PADDING_MS = 140;
 const CLOSING_FRAME_PADDING = 48;
-const CLOSING_FRAME_CONTAIN_RELEASE_START = 0.6;
+const CLOSING_FRAME_CONTAIN_RELEASE_START = 0.45;
+const CLOSING_FRAME_PADDING_RELEASE_END = 0.82;
 const CLOSING_FRAME_TAIL_DURATION = 0.04;
 const CLOSING_GHOST_MAX_DELAY = 0.06;
 const CLOSING_GHOST_MIN_VISIBLE_ALPHA = 0.02;
@@ -116,6 +123,11 @@ function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
 }
 
+function smoothstep(value) {
+  const t = clamp01(value);
+  return t * t * (3 - 2 * t);
+}
+
 function lerp(from, to, progress) {
   return from + (to - from) * progress;
 }
@@ -147,6 +159,12 @@ function expandRectToContain(rect, bounds) {
   };
   expanded.radius = Math.max(rect.radius, getFrameRadius(expanded, rect.radius));
   return expanded;
+}
+
+function getClosingFramePadding(progress) {
+  const fadeRange = Math.max(0.01, CLOSING_FRAME_PADDING_RELEASE_END - CLOSING_FRAME_CONTAIN_RELEASE_START);
+  const fadeProgress = (clamp01(progress) - CLOSING_FRAME_CONTAIN_RELEASE_START) / fadeRange;
+  return CLOSING_FRAME_PADDING * (1 - smoothstep(fadeProgress));
 }
 
 function findControllerGhostKey(ghosts, itemId, slotIndex) {
@@ -184,8 +202,8 @@ export class FolderOverlayLayer extends Container {
     this.closingFrameComplete = false;
     this.completedClosingControllerGhostKeys = [];
     this.completedClosingPreviewGhosts = [];
-    this.onIconAction = options.onIconAction || (() => {});
-    this.onOutsidePointerDown = options.onOutsidePointerDown || (() => {});
+    this.onIconAction = options.onIconAction || (() => { });
+    this.onOutsidePointerDown = options.onOutsidePointerDown || (() => { });
     this.addChild(this.frameGhost);
     this.addChild(this.panel);
     this.panel.addChild(this.panelMaterial);
@@ -259,6 +277,7 @@ export class FolderOverlayLayer extends Container {
     const targetTrackX = -state.folderPageIndex * geometry.grid.width;
     springTo(this.pageTrack, "x", targetTrackX, pageTrackSpring);
     const folderRect = getTopLevelIconBounds(state.renderedFolder.id);
+    const folderThumbRect = getTopLevelFolderThumbBounds(state.renderedFolder.id) || folderRect;
 
     this.bindFakeRefs(state, geometry);
     const seen = new Set();
@@ -336,9 +355,9 @@ export class FolderOverlayLayer extends Container {
           const isThumbnailChild = previewSlotIndex != null;
           const sourceRect = isThumbnailChild
             ? getFolderPreviewChildBounds(state.renderedFolder.id, item.id, previewSlotIndex) ||
-              makeProjectedPreviewRect(folderRect, previewSlotIndex, 3, 3)
+            makeProjectedPreviewRect(folderRect, previewSlotIndex, 3, 3)
             : getFolderPreviewChildBounds(state.renderedFolder.id, item.id, index) ||
-              makeProjectedPreviewRect(folderRect, index, cols, rows);
+            makeProjectedPreviewRect(folderRect, index, cols, rows);
           const targetCenterX = geometry.panel.left + x + targetTrackX;
           const targetCenterY = geometry.panel.top + y - (state.isTextlessMode ? 0 : 14);
           openingGhostTargets.push({
@@ -371,8 +390,8 @@ export class FolderOverlayLayer extends Container {
             sourceRect: iconBounds,
             targetRect: isThumbnailChild
               ? getFolderPreviewChildBounds(state.renderedFolder.id, item.id, previewSlotIndex) ||
-                makeProjectedPreviewRect(folderRect, previewSlotIndex, 3, 3)
-              : makeFolderCenterCollapseRect(folderRect),
+              makeProjectedPreviewRect(folderThumbRect, previewSlotIndex, 3, 3)
+              : makeFolderCenterCollapseRect(folderThumbRect),
           });
         }
       });
@@ -380,7 +399,7 @@ export class FolderOverlayLayer extends Container {
 
     if (isNewFolder && !isClosing) this.startOpeningGhosts(state, openingGhostTargets, folderRect, geometry.panel);
     if (state.isFolderClosing && this.closingGhostFolderId !== state.renderedFolder.id) {
-      this.startClosingGhosts(state, closingGhostTargets, folderRect, geometry.panel);
+      this.startClosingGhosts(state, closingGhostTargets, folderThumbRect, geometry.panel);
     }
     if (!state.isFolderClosing && this.closingGhostFolderId) {
       this.closingGhostFolderId = null;
@@ -524,9 +543,10 @@ export class FolderOverlayLayer extends Container {
     const containedRect = expandRectToContain(rect, containment);
     let drawRect = containedRect;
     if (containment && typeof options.containmentReleaseStart === "number") {
-      const releaseRange = Math.max(0.01, 1 - options.containmentReleaseStart);
+      const releaseEnd = options.containmentReleaseEnd ?? 1;
+      const releaseRange = Math.max(0.01, releaseEnd - options.containmentReleaseStart);
       const releaseProgress = clamp01(((rect.progress ?? 0) - options.containmentReleaseStart) / releaseRange);
-      drawRect = lerpFrameRect(containedRect, rect, releaseProgress * releaseProgress * (3 - 2 * releaseProgress));
+      drawRect = lerpFrameRect(containedRect, rect, smoothstep(releaseProgress));
     }
     this.frameGhost.clear()
       .roundRect(drawRect.left, drawRect.top, drawRect.width, drawRect.height, drawRect.radius)
@@ -830,10 +850,15 @@ export class FolderOverlayLayer extends Container {
     const maxDelay = getMaxGridGhostDelay(usableTargets, CLOSING_GHOST_MAX_DELAY);
     const thumb = getFolderThumbMetrics(folderRect.width);
     this.startFrameGhost(panelRect, makeLocalRect(folderRect, state.stageRect), {
-      containmentProvider: () => this.getClosingGhostContentBounds(CLOSING_FRAME_PADDING),
+      containmentProvider: (frame) => {
+        const progress = frame.progress ?? 0;
+        if (progress >= CLOSING_FRAME_PADDING_RELEASE_END) return null;
+        return this.getClosingGhostContentBounds(getClosingFramePadding(progress));
+      },
+      containmentReleaseEnd: CLOSING_FRAME_PADDING_RELEASE_END,
       containmentReleaseStart: CLOSING_FRAME_CONTAIN_RELEASE_START,
       duration: Math.max(folderPanelCloseDuration, maxDelay + folderCloseDuration + CLOSING_FRAME_TAIL_DURATION),
-      ease: folderCloseEase,
+      ease: folderCloseFrameEase,
       fadeStart: 0.86,
       frameGhostToAlpha: 1,
       fromFillAlpha: 0.26,

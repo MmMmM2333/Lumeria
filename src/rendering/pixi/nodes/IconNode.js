@@ -146,6 +146,11 @@ export class IconNode extends Container {
     return this.getVisualBounds(this.visualWrap, stageRect, this.iconSize);
   }
 
+  getFolderThumbBounds(stageRect) {
+    if (!this.isFolder) return null;
+    return this.getVisualBounds(this.folderThumb, stageRect, this.iconSize);
+  }
+
   getFolderPreviewChildBounds(stageRect, slotIndex) {
     const node = this.folderChildNodes[slotIndex];
     if (!node) return null;

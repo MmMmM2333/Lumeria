@@ -8,6 +8,7 @@ import {
   clearLaunchIconBounds,
   registerFolderPreviewChildBounds,
   registerLaunchIconBounds,
+  registerTopLevelFolderThumbBounds,
 } from "../geometry/iconBoundsRegistry.js";
 import { layoutDuration, layoutEase, quickDuration, quickEase } from "../animation/eases.js";
 import { pageTrackSpring, springTo, stopTargetSprings } from "../animation/springMotion.js";
@@ -164,7 +165,11 @@ export class DesktopLayer extends Container {
             iconBounds,
             { area, id: item.id, item, pageIndex }
           );
-          if (item.type === "folder") this.registerFolderChildren(item, node, state, pageIndex);
+          if (item.type === "folder") {
+            const folderThumbBounds = node.getFolderThumbBounds(state.stageRect);
+            registerTopLevelFolderThumbBounds(item.id, folderThumbBounds, { area, id: item.id, item, pageIndex });
+            this.registerFolderChildren(item, node, state, pageIndex);
+          }
         }
       });
     });
