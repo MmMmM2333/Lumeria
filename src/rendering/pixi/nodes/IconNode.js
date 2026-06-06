@@ -466,14 +466,14 @@ export class IconNode extends Container {
   renderFrame(state) {
     const rect = this.getSelectionFrameRect();
     const radius = Math.min(28, Math.max(18, this.iconSize * 0.32));
-    const isFolderHover = Boolean(this.isFolder && state.folderHoverState?.targetId === this.item?.id);
+    const isFolderDropHover = Boolean(this.isFolder && state.folderHoverState?.targetId === this.item?.id);
     const isAppFolderCreateHover = Boolean(!this.isFolder && state.folderHoverState?.targetId === this.item?.id && state.folderHoverState?.targetType === "app");
     this.selectionFrame.clear();
-    if (state.selected || (state.dropTarget && !isAppFolderCreateHover) || isFolderHover) {
-      const isDropTarget = Boolean((state.dropTarget && !isAppFolderCreateHover) || isFolderHover);
+    if (state.selected || (state.dropTarget && !isAppFolderCreateHover && !isFolderDropHover)) {
+      const isDropTarget = Boolean(state.dropTarget && !isAppFolderCreateHover && !isFolderDropHover);
       this.selectionFrame
         .roundRect(rect.left, rect.top, rect.width, rect.height, radius)
-        .fill({ color: isDropTarget ? 0xffffff : 0x000000, alpha: isFolderHover ? 0.22 : isDropTarget ? 0.18 : 0.3 })
+        .fill({ color: isDropTarget ? 0xffffff : 0x000000, alpha: isDropTarget ? 0.18 : 0.3 })
         .stroke({ color: 0xffffff, alpha: isDropTarget ? 0.9 : 0.12, width: isDropTarget ? 2 : 1 });
     }
   }

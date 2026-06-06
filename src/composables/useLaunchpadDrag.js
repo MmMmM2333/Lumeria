@@ -3,7 +3,6 @@ import {
   DESKTOP_SORT_MIN_DISTANCE,
   DRAG_INTENT_IDLE_DELAY,
   FOLDER_DRAG_SORT_GATE_DURATION,
-  FOLDER_HOVER_DELAY,
   FOLDER_HOVER_STICKY_MARGIN,
   FOLDER_PAGE_EDGE_SIZE,
   FOLDER_SORT_MIN_DISTANCE,
@@ -28,10 +27,12 @@ const LAYOUT_PROJECTION_RELEASE_DELAY = 260;
 const DRAG_RELEASE_DURATION_MS = 180;
 const DRAG_RELEASE_GHOST_PADDING_MS = 60;
 const DRAG_RELEASE_TARGET_RESOLVE_FRAMES = 3;
-const FOLDER_HOVER_FLASH_DURATION_MS = 560;
+const FOLDER_HOVER_SETTLE_MS = 660;
+const FOLDER_HOVER_FLASH_TOTAL_MS = 540;
+const FOLDER_HOVER_OPEN_BUFFER_MS = 20;
 const FOLDER_HOVER_RESTORE_BEFORE_OPEN_MS = 90;
-const FOLDER_HOVER_FLASH_DELAY_MS = Math.max(0, FOLDER_HOVER_DELAY - FOLDER_HOVER_FLASH_DURATION_MS);
-const FOLDER_HOVER_OPENING_DELAY_MS = Math.max(0, FOLDER_HOVER_DELAY - FOLDER_HOVER_RESTORE_BEFORE_OPEN_MS);
+const FOLDER_HOVER_OPEN_DELAY_MS = FOLDER_HOVER_SETTLE_MS + FOLDER_HOVER_FLASH_TOTAL_MS + FOLDER_HOVER_OPEN_BUFFER_MS;
+const FOLDER_HOVER_OPENING_DELAY_MS = Math.max(0, FOLDER_HOVER_OPEN_DELAY_MS - FOLDER_HOVER_RESTORE_BEFORE_OPEN_MS);
 
 export function isPrimaryPointerStartEvent(event) {
   if (!event) return false;
@@ -624,7 +625,7 @@ export function useLaunchpadDrag(options) {
       targetId: target.id,
       flashTimer: window.setTimeout(() => {
         if (isPendingFolderTargetReady(target.id)) setPendingFolderPhase(target.id, "flash");
-      }, FOLDER_HOVER_FLASH_DELAY_MS),
+      }, FOLDER_HOVER_SETTLE_MS),
       openingTimer: window.setTimeout(() => {
         if (isPendingFolderTargetReady(target.id)) setPendingFolderPhase(target.id, "opening");
       }, FOLDER_HOVER_OPENING_DELAY_MS),
@@ -637,7 +638,7 @@ export function useLaunchpadDrag(options) {
         clearPendingTarget();
         if (latestTarget.type === "folder") openExistingFolderForDrop(latestTarget.id);
         else createFolderForDrop(latestTarget.id);
-      }, FOLDER_HOVER_DELAY),
+      }, FOLDER_HOVER_OPEN_DELAY_MS),
     };
   }
 

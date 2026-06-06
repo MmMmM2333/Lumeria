@@ -6,7 +6,6 @@ export const DEFAULT_ICON_SIZE = 64;
 export const ICON_SIZE_MIN = 32;
 export const ICON_SIZE_MAX = 128;
 export const ICON_SIZE_STEP = 8;
-export const FOLDER_HOVER_DELAY = 720;
 export const FOLDER_DRAG_SORT_GATE_DURATION = 430;
 export const DRAG_INTENT_IDLE_DELAY = 140;
 export const LONG_PRESS_DELAY = 420;
