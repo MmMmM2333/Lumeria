@@ -1,4 +1,4 @@
-import { Container, Graphics, Rectangle, Text } from "pixi.js";
+import { Container, Graphics, Rectangle, Sprite, Text } from "pixi.js";
 import { gsap } from "gsap";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import {
@@ -16,7 +16,6 @@ import {
 import { pageTrackSpring, panelSpring, springTo, stopTargetSprings } from "../animation/springMotion.js";
 import { getFolderGridMetrics, getFolderPanelGeometry, getGridSlotRect, parseRepeatCount, readPx } from "../geometry/gridGeometry.js";
 import {
-  getIconLabelLocalY,
   getIconLabelTopFromVisualRect,
   getIconNodeOffsetFromVisualCenter,
   getIconVisualOffsetY,
@@ -36,18 +35,23 @@ import {
 } from "./dragVisibility.js";
 import { getFolderPageMaskRect } from "./folderOverlayGeometry.js";
 import { IconNode } from "../nodes/IconNode.js";
+import { getCachedIconTexture } from "../assets/iconTextureCache.js";
 import { getFolderPreviewSlots } from "../../../domain/launchpadLayout.js";
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
 
 const GHOST_REVEAL_FALLBACK_PADDING_MS = 140;
 const CLOSING_FRAME_PADDING = 48;
-const CLOSING_FRAME_CONTAIN_RELEASE_START = 0.45;
-const CLOSING_FRAME_PADDING_RELEASE_END = 0.82;
 const CLOSING_FRAME_TAIL_DURATION = 0.04;
 const CLOSING_GHOST_MAX_DELAY = 0.06;
-const CLOSING_GHOST_MIN_VISIBLE_ALPHA = 0.02;
 const CLOSING_EXTRA_GHOST_ALPHA_DURATION = 0.12;
 const CLOSING_EXTRA_GHOST_ALPHA_HOLD = 0.16;
+const CLOSING_PREVIEW_SWAP_PROGRESS = 0.92;
+const CLOSING_PREVIEW_SWAP_DURATION = 0.18;
+const CLOSING_PREVIEW_SWAP_START_SCALE = 1.02;
+const CLOSING_PREVIEW_ICON_DURATION = 0.22;
+const CLOSING_PREVIEW_ICON_ROW_STAGGER = 0.01;
+const CLOSING_PREVIEW_ICON_COLUMN_STAGGER = 0.008;
+const CLOSING_PREVIEW_ICON_START_SCALE = 1.08;
 
 function makeSyntheticPointerEvent(original, node) {
   const native = original?.nativeEvent || original || {};
@@ -99,6 +103,10 @@ function isPointInRect(x, y, rect) {
 
 function makePreviewChildKey(childId, slotIndex) {
   return `${childId}:${slotIndex}`;
+}
+
+function makeClosingPreviewSwapKey(folderId, pageIndex) {
+  return `closing-preview-swap:${folderId || "folder"}:${pageIndex}`;
 }
 
 function makeIconRect(centerX, centerY, size) {
@@ -162,11 +170,6 @@ function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
 }
 
-function smoothstep(value) {
-  const t = clamp01(value);
-  return t * t * (3 - 2 * t);
-}
-
 function lerp(from, to, progress) {
   return from + (to - from) * progress;
 }
@@ -188,35 +191,6 @@ function lerpColor(from, to, progress) {
   );
 }
 
-function lerpFrameRect(fromRect, toRect, progress) {
-  const t = clamp01(progress);
-  return {
-    ...toRect,
-    height: lerp(fromRect.height, toRect.height, t),
-    left: lerp(fromRect.left, toRect.left, t),
-    radius: lerp(fromRect.radius, toRect.radius, t),
-    top: lerp(fromRect.top, toRect.top, t),
-    width: lerp(fromRect.width, toRect.width, t),
-  };
-}
-
-function expandRectToContain(rect, bounds) {
-  if (!rect || !bounds) return rect;
-  const left = Math.min(rect.left, bounds.left);
-  const top = Math.min(rect.top, bounds.top);
-  const right = Math.max(rect.left + rect.width, bounds.left + bounds.width);
-  const bottom = Math.max(rect.top + rect.height, bounds.top + bounds.height);
-  const expanded = {
-    ...rect,
-    height: bottom - top,
-    left,
-    top,
-    width: right - left,
-  };
-  expanded.radius = Math.max(rect.radius, getFrameRadius(expanded, rect.radius));
-  return expanded;
-}
-
 function expandBounds(bounds, rect) {
   if (!rect) return bounds;
   const left = Math.min(bounds?.left ?? Infinity, rect.left);
@@ -226,10 +200,15 @@ function expandBounds(bounds, rect) {
   return { bottom, left, right, top };
 }
 
-function getClosingFramePadding(progress) {
-  const fadeRange = Math.max(0.01, CLOSING_FRAME_PADDING_RELEASE_END - CLOSING_FRAME_CONTAIN_RELEASE_START);
-  const fadeProgress = (clamp01(progress) - CLOSING_FRAME_CONTAIN_RELEASE_START) / fadeRange;
-  return CLOSING_FRAME_PADDING * (1 - smoothstep(fadeProgress));
+function makeBoundsRect(bounds, padding = 0) {
+  if (!bounds || !Number.isFinite(bounds.left) || !Number.isFinite(bounds.top) ||
+    !Number.isFinite(bounds.right) || !Number.isFinite(bounds.bottom)) return null;
+  return {
+    height: bounds.bottom - bounds.top + padding * 2,
+    left: bounds.left - padding,
+    top: bounds.top - padding,
+    width: bounds.right - bounds.left + padding * 2,
+  };
 }
 
 function cloneFrameSnapshot(frame) {
@@ -301,6 +280,45 @@ function killTweensDeep(node) {
   for (const child of node.children || []) killTweensDeep(child);
 }
 
+function ensureClosingPreviewSwapState(layer) {
+  if (!layer.closingPreviewSwapKeys) layer.closingPreviewSwapKeys = new Set();
+  if (layer.closingPreviewSwapLayer && !layer.closingPreviewSwapLayer.destroyed) {
+    return layer.closingPreviewSwapLayer;
+  }
+  layer.closingPreviewSwapLayer = new Container();
+  const closingIndex = layer.children?.indexOf?.(layer.closingGhostLayer);
+  if (closingIndex >= 0) layer.addChildAt(layer.closingPreviewSwapLayer, closingIndex + 1);
+  else layer.addChild(layer.closingPreviewSwapLayer);
+  return layer.closingPreviewSwapLayer;
+}
+
+function clearClosingPreviewSwapLayer(layer) {
+  layer.closingPreviewSwapKeys?.clear();
+  const swapLayer = layer.closingPreviewSwapLayer;
+  if (!swapLayer || swapLayer.destroyed) return;
+  const ghosts = swapLayer.removeChildren();
+  for (const ghost of ghosts) {
+    killTweensDeep(ghost);
+    ghost.destroy?.({ children: true });
+  }
+}
+
+function ensureClosingFrameMaskState(layer) {
+  if (layer.closingFrameMask && !layer.closingFrameMask.destroyed) return layer.closingFrameMask;
+  layer.closingFrameMask = new Graphics();
+  const frameIndex = layer.children?.indexOf?.(layer.frameGhost);
+  if (frameIndex >= 0) layer.addChildAt(layer.closingFrameMask, frameIndex + 1);
+  else layer.addChild(layer.closingFrameMask);
+  return layer.closingFrameMask;
+}
+
+function clearClosingFrameMask(layer) {
+  const mask = layer.closingFrameMask;
+  if (layer.closingGhostLayer?.mask === mask) layer.closingGhostLayer.mask = null;
+  if (layer.closingPreviewSwapLayer?.mask === mask) layer.closingPreviewSwapLayer.mask = null;
+  mask?.clear?.();
+}
+
 export class FolderOverlayLayer extends Container {
   constructor(options = {}) {
     super();
@@ -308,11 +326,13 @@ export class FolderOverlayLayer extends Container {
     this.panelMaterial = new Graphics();
     this.frameGhost = new Graphics();
     this.frameGhost.visible = false;
+    this.closingFrameMask = new Graphics();
     this.pageMask = new Graphics();
     this.pageMaskRect = null;
     this.pageTrack = new Container();
     this.openingGhostLayer = new Container();
     this.closingGhostLayer = new Container();
+    this.closingPreviewSwapLayer = new Container();
     this.folderTitle = new Text({
       text: "",
       style: { fill: 0xffffff, fontSize: 18, fontWeight: "620", fontFamily: "Inter, Segoe UI, sans-serif" },
@@ -321,6 +341,7 @@ export class FolderOverlayLayer extends Container {
     this.openingGhostRevealTimer = null;
     this.closingGhostRevealTimer = null;
     this.closingFrameComplete = false;
+    this.closingPreviewSwapKeys = new Set();
     this.completedClosingControllerGhostKeys = [];
     this.completedClosingPreviewGhosts = [];
     this.onIconAction = options.onIconAction || (() => { });
@@ -332,6 +353,7 @@ export class FolderOverlayLayer extends Container {
     this.panelTitleStartScaleX = 1;
     this.panelTitleStartScaleY = 1;
     this.addChild(this.frameGhost);
+    this.addChild(this.closingFrameMask);
     this.addChild(this.panel);
     this.panel.addChild(this.panelMaterial);
     this.panel.addChild(this.pageMask);
@@ -339,6 +361,7 @@ export class FolderOverlayLayer extends Container {
     this.panel.addChild(this.folderTitle);
     this.addChild(this.openingGhostLayer);
     this.addChild(this.closingGhostLayer);
+    this.addChild(this.closingPreviewSwapLayer);
     this.pageTrack.mask = this.pageMask;
     this.eventMode = "static";
     this.on("pointerdown", (event) => this.handlePointerDown(event));
@@ -364,6 +387,8 @@ export class FolderOverlayLayer extends Container {
       this.notifyTitleFrame(null);
       return null;
     }
+    ensureClosingPreviewSwapState(this);
+    ensureClosingFrameMaskState(this);
     this.hitArea = new Rectangle(0, 0, state.width, state.height);
     const sizeKey = `${state.width}x${state.height}`;
     if (this.sizeKey && this.sizeKey !== sizeKey) {
@@ -570,9 +595,14 @@ export class FolderOverlayLayer extends Container {
       });
     });
 
+    const closingPreviewSwapTargets = state.isFolderClosing && state.folderPageIndex > 0
+      ? this.makeClosingPreviewSwapTargets(state, previewSlots, closeThumbRect)
+      : [];
     if (isNewFolder && !isClosing) this.startOpeningGhosts(state, openingGhostTargets, folderRect, geometry.panel);
     if (state.isFolderClosing && this.closingGhostFolderId !== state.renderedFolder.id) {
-      this.startClosingGhosts(state, closingGhostTargets, closeThumbRect, geometry.panel);
+      this.startClosingGhosts(state, closingGhostTargets, closeThumbRect, geometry.panel, {
+        previewSwapTargets: closingPreviewSwapTargets,
+      });
     }
     if (!state.isFolderClosing && this.closingGhostFolderId) {
       this.closingGhostFolderId = null;
@@ -585,7 +615,10 @@ export class FolderOverlayLayer extends Container {
       gsap.killTweensOf(node);
       gsap.to(node, { alpha: 0, duration: 0.14, onComplete: () => node.destroy({ children: true }) });
     }
-    this.pageTrack.visible = !state.isFolderClosing && !this.openingGhostKeys?.size && !this.closingGhostKeys?.size;
+    this.pageTrack.visible = !state.isFolderClosing &&
+      !this.openingGhostKeys?.size &&
+      !this.closingGhostKeys?.size &&
+      !this.closingPreviewSwapKeys?.size;
     if (!this.frameGhostState) {
       if (!isClosing) this.notifyPanelTitleFrame(geometry.panel);
       else this.notifyTitleFrame(geometry.panel);
@@ -593,8 +626,20 @@ export class FolderOverlayLayer extends Container {
     return geometry;
   }
 
+  makeClosingPreviewSwapTargets(state, previewSlots, folderRect) {
+    if (!state.renderedFolder?.id || !folderRect) return [];
+    return (previewSlots || []).slice(0, 9).map((item, previewSlotIndex) => {
+      if (!item?.id) return null;
+      const stablePreviewChildRect = this.stableFolderCloseTarget?.folderId === state.renderedFolder.id
+        ? this.stableFolderCloseTarget.previewChildRects?.get(makePreviewChildKey(item.id, previewSlotIndex))
+        : null;
+      const targetRect = stablePreviewChildRect || makeProjectedPreviewRect(folderRect, previewSlotIndex, 3, 3);
+      return targetRect ? { item, previewSlotIndex, targetRect } : null;
+    }).filter(Boolean);
+  }
+
   hasActiveIconGhosts() {
-    return Boolean(this.openingGhostKeys?.size || this.closingGhostKeys?.size);
+    return Boolean(this.openingGhostKeys?.size || this.closingGhostKeys?.size || this.closingPreviewSwapKeys?.size);
   }
 
   clearOpeningGhostRevealTimer() {
@@ -623,10 +668,12 @@ export class FolderOverlayLayer extends Container {
   scheduleClosingGhostRevealFallback(targets) {
     this.clearClosingGhostRevealTimer();
     const maxDelay = getMaxGridGhostDelay(targets, CLOSING_GHOST_MAX_DELAY);
-    const timeoutMs = Math.round((maxDelay + folderCloseDuration) * 1000 + GHOST_REVEAL_FALLBACK_PADDING_MS);
+    const timeoutMs = Math.round(
+      (maxDelay + folderCloseDuration + CLOSING_PREVIEW_SWAP_DURATION) * 1000 + GHOST_REVEAL_FALLBACK_PADDING_MS
+    );
     this.closingGhostRevealTimer = globalThis.setTimeout?.(() => {
       this.closingGhostRevealTimer = null;
-      if (this.closingGhostKeys?.size) this.clearClosingGhosts();
+      if (this.closingGhostKeys?.size || this.closingPreviewSwapKeys?.size) this.clearClosingGhosts();
     }, timeoutMs) || null;
   }
 
@@ -662,12 +709,18 @@ export class FolderOverlayLayer extends Container {
   }
 
   finishClosingGhostTransition(state) {
-    if (this.openingGhostKeys?.size || this.closingGhostKeys?.size || !this.closingFrameComplete) return;
+    if (this.openingGhostKeys?.size ||
+      this.closingGhostKeys?.size ||
+      this.closingPreviewSwapKeys?.size ||
+      !this.closingFrameComplete) return;
     this.clearClosingGhostRevealTimer();
     this.pageTrack.visible = false;
     this.flushCompletedClosingControllerGhosts(state);
     const defer = globalThis.requestAnimationFrame || ((callback) => globalThis.setTimeout?.(callback, 0));
-    defer(() => this.clearCompletedClosingPreviewGhosts());
+    defer(() => {
+      this.clearCompletedClosingPreviewGhosts();
+      clearClosingPreviewSwapLayer(this);
+    });
   }
 
   clearOpeningGhosts() {
@@ -687,6 +740,7 @@ export class FolderOverlayLayer extends Container {
   clearClosingGhosts() {
     this.clearClosingGhostRevealTimer();
     this.closingGhostKeys?.clear();
+    this.closingPreviewSwapKeys?.clear();
     this.closingFrameComplete = false;
     this.completedClosingControllerGhostKeys = [];
     this.completedClosingPreviewGhosts = [];
@@ -699,6 +753,7 @@ export class FolderOverlayLayer extends Container {
       killTweensDeep(ghost);
       ghost.destroy?.({ children: true });
     }
+    clearClosingPreviewSwapLayer(this);
   }
 
   clearFrameGhost(options = {}) {
@@ -711,6 +766,7 @@ export class FolderOverlayLayer extends Container {
     this.frameGhost.clear();
     this.frameGhost.visible = false;
     this.frameGhost.alpha = 0;
+    clearClosingFrameMask(this);
     this.panelMaterial.visible = true;
     this.panelMaterial.alpha = options.panelMaterialAlpha ?? 1;
   }
@@ -770,20 +826,26 @@ export class FolderOverlayLayer extends Container {
     });
   }
 
+  enableClosingFrameMask() {
+    const mask = ensureClosingFrameMaskState(this);
+    this.closingGhostLayer.mask = mask;
+    ensureClosingPreviewSwapState(this).mask = mask;
+  }
+
+  drawClosingFrameMask(rect) {
+    const mask = ensureClosingFrameMaskState(this);
+    mask.clear()
+      .roundRect(rect.left, rect.top, rect.width, rect.height, rect.radius)
+      .fill({ color: 0xffffff, alpha: 1 });
+  }
+
   drawFrameGhost(rect, options = {}) {
-    const containment = options.containmentProvider?.(rect);
-    const containedRect = expandRectToContain(rect, containment);
-    let drawRect = containedRect;
-    if (containment && typeof options.containmentReleaseStart === "number") {
-      const releaseEnd = options.containmentReleaseEnd ?? 1;
-      const releaseRange = Math.max(0.01, releaseEnd - options.containmentReleaseStart);
-      const releaseProgress = clamp01(((rect.progress ?? 0) - options.containmentReleaseStart) / releaseRange);
-      drawRect = lerpFrameRect(containedRect, rect, smoothstep(releaseProgress));
-    }
+    const drawRect = rect;
     this.frameGhost.clear()
       .roundRect(drawRect.left, drawRect.top, drawRect.width, drawRect.height, drawRect.radius)
       .fill({ color: Math.round(drawRect.fillColor ?? 0xf7f8ff), alpha: drawRect.fillAlpha })
       .stroke({ color: Math.round(drawRect.strokeColor ?? 0xffffff), alpha: drawRect.strokeAlpha, width: drawRect.strokeWidth ?? 1 });
+    if (options.updateClosingMask) this.drawClosingFrameMask(drawRect);
     if (options.notifyTitleFrame !== false) this.notifyTitleFrame(drawRect);
   }
 
@@ -849,6 +911,7 @@ export class FolderOverlayLayer extends Container {
         frame.fillColor = lerpColor(fromFillColor, toFillColor, frame.progress);
         frame.strokeColor = lerpColor(fromStrokeColor, toStrokeColor, frame.progress);
         this.drawFrameGhost(frame, options);
+        options.onUpdate?.(frame);
       },
       onComplete: () => {
         frame.fillColor = toFillColor;
@@ -863,44 +926,6 @@ export class FolderOverlayLayer extends Container {
         options.onComplete?.();
       },
     });
-  }
-
-  getClosingGhostContentBounds(padding = 0) {
-    let left = Infinity;
-    let top = Infinity;
-    let right = -Infinity;
-    let bottom = -Infinity;
-    for (const ghost of this.closingGhostLayer.children || []) {
-      if (!ghost || ghost.destroyed || ghost.alpha <= CLOSING_GHOST_MIN_VISIBLE_ALPHA) continue;
-      const iconSize = Math.max(1, ghost.iconSize || ghost.state?.iconSize || 64);
-      const scaleX = Math.abs(ghost.scale?.x ?? 1);
-      const scaleY = Math.abs(ghost.scale?.y ?? 1);
-      const visualOffsetY = getIconVisualOffsetY(ghost.textless);
-      const centerX = ghost.x;
-      const centerY = ghost.y + visualOffsetY * scaleY;
-      const halfWidth = iconSize * scaleX / 2;
-      const halfHeight = iconSize * scaleY / 2;
-      left = Math.min(left, centerX - halfWidth);
-      top = Math.min(top, centerY - halfHeight);
-      right = Math.max(right, centerX + halfWidth);
-      bottom = Math.max(bottom, centerY + halfHeight);
-      if (ghost.labelText?.visible && ghost.labelText.alpha > CLOSING_GHOST_MIN_VISIBLE_ALPHA) {
-        const labelY = ghost.y + getIconLabelLocalY(iconSize, ghost.textless) * scaleY;
-        const labelWidth = Math.max(72, Math.min(160, ghost.state?.cellWidth || 120)) * scaleX;
-        const labelHeight = 24 * scaleY;
-        left = Math.min(left, ghost.x - labelWidth / 2);
-        right = Math.max(right, ghost.x + labelWidth / 2);
-        top = Math.min(top, labelY);
-        bottom = Math.max(bottom, labelY + labelHeight);
-      }
-    }
-    if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(right) || !Number.isFinite(bottom)) return null;
-    return {
-      height: bottom - top + padding * 2,
-      left: left - padding,
-      top: top - padding,
-      width: right - left + padding * 2,
-    };
   }
 
   refreshPageTrackMask() {
@@ -1110,7 +1135,139 @@ export class FolderOverlayLayer extends Container {
     };
   }
 
-  startClosingGhosts(state, targets, folderRect, panelRect) {
+  createClosingPreviewSwapIcon(item, size) {
+    const ghost = new Container();
+    const sprite = new Sprite();
+    const emoji = new Text({ text: "", style: { align: "center", fill: 0xffffff, fontSize: size, lineHeight: size } });
+    ghost.eventMode = "none";
+    ghost.item = item;
+    ghost.iconSize = size;
+    sprite.anchor.set(0.5);
+    emoji.anchor.set(0.5);
+    ghost.addChild(sprite);
+    ghost.addChild(emoji);
+
+    const render = () => {
+      const texture = getCachedIconTexture(item, () => {
+        if (ghost.destroyed) return;
+        render();
+      }, ghost);
+      sprite.visible = Boolean(texture);
+      emoji.visible = !texture;
+      if (texture) {
+        sprite.texture = texture;
+        sprite.width = size;
+        sprite.height = size;
+        return;
+      }
+      emoji.text = item?.emoji || "◼";
+      emoji.style.fontSize = size;
+      emoji.style.lineHeight = size;
+    };
+    render();
+    return ghost;
+  }
+
+  completeClosingPreviewSwapGhost(state, key, root, iconsWrap) {
+    if (!this.closingPreviewSwapKeys?.has(key)) return;
+    this.closingPreviewSwapKeys.delete(key);
+    gsap.killTweensOf(root);
+    gsap.killTweensOf(iconsWrap);
+    gsap.killTweensOf(iconsWrap.scale);
+    root.alpha = 1;
+    iconsWrap.position.set(iconsWrap.pivot.x, iconsWrap.pivot.y);
+    iconsWrap.scale.set(1);
+    this.finishClosingGhostTransition(state);
+  }
+
+  startClosingPreviewSwapGhosts(state, targets) {
+    clearClosingPreviewSwapLayer(this);
+    if (!targets?.length || state.folderPageIndex <= 0) return;
+
+    const localTargets = [];
+    let bounds = null;
+    for (const target of targets) {
+      const rect = makeLocalRect(target.targetRect, state.stageRect);
+      if (!rect || rect.width <= 0 || rect.height <= 0) continue;
+      localTargets.push({ ...target, rect });
+      bounds = expandBounds(bounds, rect);
+    }
+    const maskRect = makeBoundsRect(bounds, 2);
+    if (!localTargets.length || !maskRect) return;
+
+    const key = makeClosingPreviewSwapKey(state.renderedFolder?.id, state.folderPageIndex);
+    const root = new Container();
+    const mask = new Graphics();
+    const iconsWrap = new Container();
+    const centerX = maskRect.left + maskRect.width / 2;
+    const centerY = maskRect.top + maskRect.height / 2;
+
+    root.eventMode = "none";
+    root.alpha = 0.86;
+    mask.rect(maskRect.left, maskRect.top, maskRect.width, maskRect.height).fill({ color: 0xffffff, alpha: 1 });
+    iconsWrap.mask = mask;
+    iconsWrap.pivot.set(centerX, centerY);
+    iconsWrap.position.set(centerX, centerY);
+    iconsWrap.scale.set(CLOSING_PREVIEW_SWAP_START_SCALE);
+    root.addChild(mask);
+    root.addChild(iconsWrap);
+    ensureClosingPreviewSwapState(this).addChild(root);
+    this.closingPreviewSwapKeys.add(key);
+
+    const iconMotions = [];
+    for (const target of localTargets) {
+      const size = Math.max(3, Math.min(target.rect.width, target.rect.height));
+      const ghost = this.createClosingPreviewSwapIcon(target.item, size);
+      const finalX = target.rect.left + target.rect.width / 2;
+      const finalY = target.rect.top + target.rect.height / 2;
+      const slotIndex = Math.max(0, Number(target.previewSlotIndex) || 0);
+      const col = slotIndex % 3;
+      const row = Math.floor(slotIndex / 3);
+      const jitterX = (((slotIndex * 17) % 5) - 2) * size * 0.018;
+      const jitterY = (((slotIndex * 13) % 5) - 2) * size * 0.018;
+      const startOffsetX = size * (0.9 - col * 0.16 + row * 0.08) + jitterX;
+      const startOffsetY = size * (0.72 - row * 0.12 + col * 0.06) + jitterY;
+      const delay = row * CLOSING_PREVIEW_ICON_ROW_STAGGER + col * CLOSING_PREVIEW_ICON_COLUMN_STAGGER;
+      ghost.position.set(finalX - startOffsetX, finalY - startOffsetY);
+      ghost.scale.set(CLOSING_PREVIEW_ICON_START_SCALE + (4 - row - col) * 0.006);
+      ghost.alpha = 0.78;
+      iconsWrap.addChild(ghost);
+      iconMotions.push({ delay, ghost, x: finalX, y: finalY });
+    }
+
+    const timeline = gsap.timeline({
+      onComplete: () => this.completeClosingPreviewSwapGhost(state, key, root, iconsWrap),
+    });
+    timeline
+      .to(root, { alpha: 1, duration: 0.08, ease: "power1.out" }, 0)
+      .to(iconsWrap.scale, {
+        x: 1,
+        y: 1,
+        duration: CLOSING_PREVIEW_SWAP_DURATION,
+        ease: "power2.out",
+      }, 0);
+    for (const motion of iconMotions) {
+      timeline
+        .to(motion.ghost, {
+          alpha: 1,
+          duration: CLOSING_PREVIEW_ICON_DURATION,
+          ease: "power2.out",
+          x: motion.x,
+          y: motion.y,
+        }, motion.delay)
+        .to(motion.ghost.scale, {
+          duration: CLOSING_PREVIEW_ICON_DURATION,
+          ease: "power2.out",
+          x: 1,
+          y: 1,
+        }, motion.delay);
+    }
+  }
+
+  startClosingGhosts(state, targets, folderRect, panelRect, options = {}) {
+    const {
+      previewSwapTargets = [],
+    } = options;
     const interruption = this.captureOpeningInterruption(state, targets);
     const closeFrameFromRect = interruption?.frameRect || panelRect;
     const closeTargets = interruption?.targets || targets;
@@ -1124,21 +1281,21 @@ export class FolderOverlayLayer extends Container {
     const usableTargets = (closeTargets || []).filter((target) => target.sourceRect && target.targetRect);
     if (!usableTargets.length) return;
     const isInterruptedClose = Boolean(interruption);
-    const maxDelay = isInterruptedClose ? 0 : getMaxGridGhostDelay(usableTargets, CLOSING_GHOST_MAX_DELAY);
+    const frameMaxDelay = isInterruptedClose ? 0 : CLOSING_GHOST_MAX_DELAY;
     const frameDuration = Math.max(
       isInterruptedClose ? folderCloseDuration : folderPanelCloseDuration,
-      maxDelay + folderCloseDuration + CLOSING_FRAME_TAIL_DURATION
+      frameMaxDelay + folderCloseDuration + CLOSING_FRAME_TAIL_DURATION
     );
     const thumb = getFolderThumbMetrics(folderRect.width);
-    const shouldContainClosingGhosts = !isInterruptedClose;
+    let closingPreviewSwapStarted = false;
+    const startClosingPreviewSwapWhenReady = (frame) => {
+      if (closingPreviewSwapStarted || isInterruptedClose || !previewSwapTargets?.length) return;
+      if ((frame?.progress ?? 0) < CLOSING_PREVIEW_SWAP_PROGRESS) return;
+      closingPreviewSwapStarted = true;
+      this.startClosingPreviewSwapGhosts(state, previewSwapTargets);
+    };
+    this.enableClosingFrameMask();
     this.startFrameGhost(closeFrameFromRect, makeLocalRect(folderRect, state.stageRect), {
-      containmentProvider: shouldContainClosingGhosts ? (frame) => {
-        const progress = frame.progress ?? 0;
-        if (progress >= CLOSING_FRAME_PADDING_RELEASE_END) return null;
-        return this.getClosingGhostContentBounds(getClosingFramePadding(progress));
-      } : null,
-      containmentReleaseEnd: CLOSING_FRAME_PADDING_RELEASE_END,
-      containmentReleaseStart: CLOSING_FRAME_CONTAIN_RELEASE_START,
       duration: frameDuration,
       ease: isInterruptedClose ? folderCloseEase : folderCloseFrameEase,
       fadeStart: 0.86,
@@ -1152,7 +1309,11 @@ export class FolderOverlayLayer extends Container {
       panelMaterialFinalAlpha: 0,
       panelMaterialFromAlpha: 0,
       panelMaterialToAlpha: 0,
-      onComplete: () => this.completeClosingFrameGhost(state),
+      onComplete: () => {
+        startClosingPreviewSwapWhenReady({ progress: 1 });
+        this.completeClosingFrameGhost(state);
+      },
+      onUpdate: startClosingPreviewSwapWhenReady,
       preserveOnComplete: true,
       toFillAlpha: thumb.fillAlpha,
       toFillColor: thumb.fillColor,
@@ -1160,6 +1321,7 @@ export class FolderOverlayLayer extends Container {
       toStrokeAlpha: thumb.strokeAlpha,
       toStrokeColor: thumb.strokeColor,
       toStrokeWidth: thumb.strokeWidth,
+      updateClosingMask: true,
     });
 
     this.pageTrack.visible = false;
