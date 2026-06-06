@@ -78,10 +78,6 @@ export function shouldCommitPlacementFromLast(last, key, clientX, clientY, minDi
   return distance >= minDistance;
 }
 
-export function makePreviewTransform(pointer, offset) {
-  return `translate3d(${pointer.x - offset.x}px, ${pointer.y - offset.y}px, 0) scale(1.12) rotate(-5deg)`;
-}
-
 export function createLaunchpadLayoutHelpers(options) {
   const getPageSize = options.getPageSize;
   const getFolderPageSize = options.getFolderPageSize;

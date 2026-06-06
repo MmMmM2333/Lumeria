@@ -4,6 +4,7 @@ import {
   isPrimaryPointerStartEvent,
   shouldFinishDragForPointerEvent,
 } from "./useLaunchpadDrag.js";
+import { clearIconBoundsRegistry, registerLaunchIconBounds } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 import { nextTick, ref, shallowRef } from "vue";
 
 async function withMockPointerEnvironment(run) {
@@ -25,10 +26,10 @@ async function withMockPointerEnvironment(run) {
       callback();
       return 1;
     },
-    setTimeout: (callback) => {
+    setTimeout: (callback, delay = 0) => {
       const id = nextTimerId;
       nextTimerId += 1;
-      timers.set(id, callback);
+      timers.set(id, { callback, delay });
       return id;
     },
   };
@@ -59,6 +60,7 @@ function createDragHarness(overrides = {}) {
     commitOpenFolder: [],
     commitPageIndex: [],
     commitPages: [],
+    insertAppIntoFolder: [],
   };
   function cloneItem(item) {
     return item ? { ...item } : item;
@@ -75,6 +77,27 @@ function createDragHarness(overrides = {}) {
   function replaceFolderWithItem(sourcePages, folderId, item) {
     return sourcePages.map((page) => page.map((entry) => (entry.id === folderId ? cloneItem(item) : { ...entry })));
   }
+  function removeEverywhere(sourcePages, itemId) {
+    return sourcePages.map((page) => page
+      .filter((item) => item.id !== itemId)
+      .map((item) => {
+        if (item.type !== "folder") return { ...item };
+        const childPages = (item.childPages || []).map((childPage) => childPage.filter((child) => child.id !== itemId).map(cloneItem));
+        return { ...item, childPages, children: childPages.flat() };
+      }));
+  }
+  function insertAppIntoFolder(sourcePages, folderId, item, targetPageIndex, insertIndex) {
+    calls.insertAppIntoFolder.push({ folderId, insertIndex, item, targetPageIndex });
+    return sourcePages.map((page) => page.map((entry) => {
+      if (entry.id !== folderId) return { ...entry };
+      const childPages = (entry.childPages || [[]]).map((childPage) => childPage.map(cloneItem));
+      while (childPages.length <= targetPageIndex) childPages.push([]);
+      childPages[targetPageIndex].splice(insertIndex, 0, cloneItem(item));
+      return { ...entry, childPages, children: childPages.flat() };
+    }));
+  }
+  const folderPanelRef = overrides.folderPanelRef || ref(null);
+  const folderPageRefs = overrides.folderPageRefs || [];
   const drag = useLaunchpadDrag({
     canCreateDesktopPageAfterDrag: overrides.canCreateDesktopPageAfterDrag || (() => false),
     canCreateFolderPageAfterDrag: overrides.canCreateFolderPageAfterDrag || (() => false),
@@ -100,7 +123,6 @@ function createDragHarness(overrides = {}) {
       pages.value = next;
     },
     compactPages: (next) => next,
-    dragPreviewRef: ref({ style: {} }),
     findFolder: () => null,
     findInFolder: () => null,
     findTopLevel: (sourcePages, id) => {
@@ -113,17 +135,17 @@ function createDragHarness(overrides = {}) {
     finishHomeRevealSettleWindow: () => {},
     folderCols: ref(4),
     folderPageIndex,
-    folderPageRefs: [],
+    folderPageRefs,
     folderPages: ref([[]]),
     folderPageSize: ref(16),
-    folderPanelRef: ref(null),
+    folderPanelRef,
     folderSession,
     getFolderChildPages: () => [[]],
     getPageSlotMotionGeometry: () => null,
     getTopLevelIconMotionGeometry: () => null,
     gridCols: ref(7),
     gridRows: ref(5),
-    insertAppIntoFolder: (sourcePages) => sourcePages,
+    insertAppIntoFolder,
     insertTopLevelItem,
     isFolderLayerActive: ref(false),
     isHomeRevealSettling: ref(false),
@@ -142,8 +164,7 @@ function createDragHarness(overrides = {}) {
     pageSize: ref(35),
     previewAppIntoFolderWithoutOverflow: (sourcePages) => sourcePages,
     previewTopLevelItemWithoutOverflow: insertTopLevelItem,
-    removeEverywhere: (sourcePages, itemId) =>
-      sourcePages.map((page) => page.filter((item) => item.id !== itemId)),
+    removeEverywhere,
     renderedFolder: ref(null),
     replaceFolderWithItem,
     visibleFolderRowCount: ref(4),
@@ -152,7 +173,7 @@ function createDragHarness(overrides = {}) {
     wouldTopLevelInsertOverflow: () => false,
   });
 
-  return { app, calls, drag, folderSession, isLayoutProjectionActive, openFolderId, pages };
+  return { app, calls, drag, folderPanelRef, folderSession, isLayoutProjectionActive, openFolderId, pages };
 }
 
 function makePointerDownEvent(pointerId, target) {
@@ -169,17 +190,17 @@ function makePointerDownEvent(pointerId, target) {
 }
 
 function runNextTimer(timers) {
-  const next = timers.entries().next().value;
+  const next = Array.from(timers.entries()).sort((a, b) => a[1].delay - b[1].delay)[0];
   if (!next) return;
-  const [id, callback] = next;
+  const [id, timer] = next;
   timers.delete(id);
-  callback();
+  timer.callback();
 }
 
 function flushTimers(timers) {
-  const pending = Array.from(timers.entries());
+  const pending = Array.from(timers.entries()).sort((a, b) => a[1].delay - b[1].delay);
   timers.clear();
-  for (const [, callback] of pending) callback();
+  for (const [, timer] of pending) timer.callback();
 }
 
 export async function runLaunchpadDragTests() {
@@ -212,6 +233,10 @@ export async function runLaunchpadDragTests() {
     runNextTimer(timers);
     await nextTick();
     assert(drag.dragMeta.value?.item.id === "app-a", "long press should enter active drag state");
+    assert(drag.dragPreviewState.value?.item.id === "app-a", "active drag should expose a preview item");
+    assert(drag.dragPreviewState.value?.pointer.x === 24 && drag.dragPreviewState.value?.pointer.y === 32, "drag preview should track the pointer position");
+    assert(drag.dragPreviewState.value?.offset.x === 14 && drag.dragPreviewState.value?.offset.y === 20, "drag preview should preserve the pointer offset from the icon");
+    assert(Math.round(drag.dragPreviewState.value?.cellSize.width) === 100, "drag preview should include the source cell width");
     assert(isLayoutProjectionActive.value, "active drag should enable layout projection");
 
     listeners.get("pointerup")({ type: "pointerup", pointerId: 42, button: 0, clientX: 40, clientY: 50 });
@@ -219,6 +244,7 @@ export async function runLaunchpadDragTests() {
 
     listeners.get("pointerup")({ type: "pointerup", pointerId: 41, button: 0, clientX: 40, clientY: 50 });
     assert(drag.dragMeta.value === null, "matching pointerup should finish the active drag");
+    assert(drag.dragPreviewState.value === null, "finished drag should clear preview state");
     assert(isLayoutProjectionActive.value, "layout projection should remain briefly active after drag end");
     flushTimers(timers);
     assert(!isLayoutProjectionActive.value, "layout projection should release after the drag settle window");
@@ -284,5 +310,92 @@ export async function runLaunchpadDragTests() {
 
     assert(pages.value.length === 1, "pointercancel should clear page-turn timers before they can create a page");
     assert(!calls.commitPageIndex.includes(1), "pointercancel should not allow a delayed page turn after drag end");
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const folderPanelRef = ref({ getBoundingClientRect: () => ({ left: 100, top: 100, right: 400, bottom: 400, width: 300, height: 300 }) });
+    const folderPageRefs = [{ getBoundingClientRect: () => ({ left: 120, top: 120, right: 400, bottom: 340, width: 280, height: 220 }) }];
+    const { app, drag, folderSession, openFolderId, pages } = createDragHarness({ folderPageRefs, folderPanelRef });
+    const folder = { id: "folder-1", type: "folder", name: "Folder", childPages: [[app]], children: [app] };
+    pages.value = [[folder]];
+    openFolderId.value = "folder-1";
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+      querySelector: () => null,
+    };
+
+    drag.beginDrag(makePointerDownEvent(71, target), app, { type: "folder", folderId: "folder-1", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+    assert(folderSession.value?.mode === "source-folder", "folder-sourced drag should enter a folder session");
+
+    listeners.get("pointermove")({
+      type: "pointermove",
+      pointerId: 71,
+      buttons: 1,
+      clientX: 20,
+      clientY: 20,
+      preventDefault: () => {},
+    });
+    runNextTimer(timers);
+
+    assert(openFolderId.value === null, "leaving an entered folder should start closing the folder");
+    assert(!pages.value[0].some((item) => item.id === "app-a"), "leaving a folder should not sort the dragged item onto the desktop before the close gate finishes");
+
+    runNextTimer(timers);
+    assert(pages.value[0].some((item) => item.id === "app-a"), "close gate completion should return the dragged item to the desktop");
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const folder = { id: "folder-1", type: "folder", name: "Folder", childPages: [[]], children: [] };
+    clearIconBoundsRegistry();
+    registerLaunchIconBounds(
+      { area: "desktop", id: "folder-1", pageIndex: 0 },
+      { left: 100, top: 100, width: 80, height: 80 },
+      { area: "desktop", id: "folder-1", item: folder, pageIndex: 0 }
+    );
+    const folderPanelRef = ref({ getBoundingClientRect: () => ({ left: 100, top: 100, right: 500, bottom: 420, width: 400, height: 320 }) });
+    const folderPageRefs = [{ getBoundingClientRect: () => ({ left: 120, top: 120, right: 400, bottom: 340, width: 280, height: 220 }) }];
+    const { app, calls, drag, folderSession, openFolderId, pages } = createDragHarness({ folderPageRefs, folderPanelRef });
+    pages.value = [[app, folder]];
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+      querySelector: () => null,
+    };
+
+    drag.beginDrag(makePointerDownEvent(81, target), app, { type: "page", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+
+    listeners.get("pointermove")({
+      type: "pointermove",
+      pointerId: 81,
+      buttons: 1,
+      clientX: 132,
+      clientY: 132,
+      preventDefault: () => {},
+    });
+    runNextTimer(timers);
+    runNextTimer(timers);
+
+    assert(openFolderId.value === "folder-1", "hovering a folder target should open it for drag");
+    assert(folderSession.value?.mode === "existing", "hovering an existing folder should enter an existing-folder drag session");
+    assert(Array.from(timers.values()).some((timer) => timer.delay > 400), "opening a folder during drag should arm a sort gate timer");
+
+    listeners.get("pointermove")({
+      type: "pointermove",
+      pointerId: 81,
+      buttons: 1,
+      clientX: 160,
+      clientY: 160,
+      preventDefault: () => {},
+    });
+    assert(Array.from(timers.values()).some((timer) => timer.delay === 140), "moving inside an opening folder should schedule a short drag intent evaluation");
+    runNextTimer(timers);
+    assert(calls.insertAppIntoFolder.length === 0, "folder open gate should delay folder sorting while the open animation is running");
+
+    for (let index = 0; index < 5 && calls.insertAppIntoFolder.length === 0; index += 1) runNextTimer(timers);
+    assert(calls.insertAppIntoFolder.length === 1, "folder open gate completion should allow folder sorting at the current pointer");
+    clearIconBoundsRegistry();
   });
 }

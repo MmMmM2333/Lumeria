@@ -81,6 +81,14 @@
       @open-app="openApp"
       @context-menu-icon="openIconContextMenu"
     />
+    <PixiDragPreviewOverlay
+      :folder-page-size="folderPageSize"
+      :icon-size="iconSize"
+      :is-textless-mode="isTextlessMode"
+      :launch-target-status-by-id="launchTargetStatusById"
+      :preview-state="dragPreviewState"
+      :show-missing-launch-target-badge="showMissingLaunchTargetBadge"
+    />
     <LaunchpadOverlays
       ref="launchpadOverlaysRef"
       :state="overlayState"
@@ -98,6 +106,7 @@ import LaunchpadHeader from "./components/LaunchpadHeader.vue";
 import LaunchpadOverlays from "./components/LaunchpadOverlays.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import PixiDesktopSurface from "./rendering/pixi/PixiDesktopSurface.vue";
+import PixiDragPreviewOverlay from "./rendering/pixi/PixiDragPreviewOverlay.vue";
 import PixiFolderOverlay from "./rendering/pixi/PixiFolderOverlay.vue";
 import { useLaunchpadController } from "./composables/useLaunchpadController.js";
 import {
@@ -246,6 +255,7 @@ const {
   isBrowsingScanRoot,
   dragFolderTargetId,
   dragMeta,
+  dragPreviewState,
   applySettingsConfig,
   openSettingsPanel,
   closeSettingsPanel,
@@ -310,9 +320,6 @@ const {
   launchGhost,
   appLaunchGhostTransition,
   launchGhostStyle,
-  dragPreviewRef,
-  dragPreviewSpring,
-  folderPreviewSlots,
 } = controller;
 
 const appVersion = appPackage.version;

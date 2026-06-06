@@ -9,5 +9,4 @@ export const folderContentTransition = { duration: 0.16, ease: "easeOut" };
 export const folderPanelCloseTransition = { duration: 0.38, ease: [0.4, 0, 0.2, 1] };
 export const folderContentCloseTransition = { duration: 0.34, ease: [0.4, 0, 0.2, 1] };
 export const instantTrackTransition = { duration: 0 };
-export const dragPreviewSpring = { duration: 0.08 };
 export const appLaunchGhostTransition = { duration: APP_LAUNCH_DURATION / 1000, ease: "easeOut" };

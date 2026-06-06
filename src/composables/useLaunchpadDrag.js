@@ -2,6 +2,7 @@ import { nextTick, shallowRef } from "vue";
 import {
   DESKTOP_SORT_MIN_DISTANCE,
   DRAG_INTENT_IDLE_DELAY,
+  FOLDER_DRAG_SORT_GATE_DURATION,
   FOLDER_HOVER_DELAY,
   FOLDER_HOVER_STICKY_MARGIN,
   FOLDER_PAGE_EDGE_SIZE,
@@ -15,7 +16,6 @@ import {
   clamp,
   expandRect,
   isPointInsideRect,
-  makePreviewTransform,
   shouldCommitPlacementFromLast,
 } from "../domain/launchpadLayout.js";
 import { getDomRefElement } from "./usePageGridMetrics.js";
@@ -50,6 +50,7 @@ export function shouldFinishDragForPointerEvent(activeDrag, event) {
 export function useLaunchpadDrag(options) {
   const dragMeta = shallowRef(null);
   const dragFolderTargetId = shallowRef(null);
+  const dragPreviewState = shallowRef(null);
 
   let dragRuntime = null;
   let dragPlacement = null;
@@ -61,6 +62,9 @@ export function useLaunchpadDrag(options) {
   let pageTurnTimer = null;
   let folderPageTurnTimer = null;
   let dragIntentTimer = null;
+  let dragSortGateTimer = null;
+  let dragSortBlocked = false;
+  let pendingDesktopReturn = null;
   let layoutProjectionReleaseTimer = null;
   let dragListenersAttached = false;
   let dragContextMenuListenerAttached = false;
@@ -100,6 +104,32 @@ export function useLaunchpadDrag(options) {
   function clearDragIntentTimer() {
     if (dragIntentTimer) window.clearTimeout(dragIntentTimer);
     dragIntentTimer = null;
+  }
+
+  function clearDragSortGateTimer() {
+    if (dragSortGateTimer) window.clearTimeout(dragSortGateTimer);
+    dragSortGateTimer = null;
+  }
+
+  function isDragSortingBlocked() {
+    return dragSortBlocked;
+  }
+
+  function scheduleDragSortGateEvaluation() {
+    if (dragSortGateTimer) return;
+    blockDragSorting();
+  }
+
+  function releaseDragSortGate() {
+    dragSortGateTimer = null;
+    dragSortBlocked = false;
+    evaluateDragIntent();
+  }
+
+  function blockDragSorting(duration = FOLDER_DRAG_SORT_GATE_DURATION) {
+    dragSortBlocked = true;
+    clearDragSortGateTimer();
+    dragSortGateTimer = window.setTimeout(releaseDragSortGate, duration);
   }
 
   function setLayoutProjectionActive(active) {
@@ -165,18 +195,37 @@ export function useLaunchpadDrag(options) {
     event.stopImmediatePropagation?.();
   }
 
-  function updatePreviewElement() {
+  function getSourceCellSize(source) {
+    const isFolderSource = source?.type === "folder";
+    const pageRef = isFolderSource ? options.folderPageRefs[source.pageIndex] : options.pageRefs[source?.pageIndex];
+    const rect = pageRef?.getBoundingClientRect?.();
+    if (!rect) return null;
+    const cols = Math.max(1, Number((isFolderSource ? options.folderCols : options.gridCols).value) || 1);
+    const rowSource = isFolderSource ? options.visibleFolderRowCount : options.gridRows;
+    const rows = Math.max(1, Number(rowSource.value) || 1);
+    return {
+      height: rect.height / rows,
+      width: rect.width / cols,
+    };
+  }
+
+  function updatePreviewState() {
     previewRafId = 0;
     if (!pendingPreviewPoint || !dragRuntime) return;
-    const preview = getDomRefElement(options.dragPreviewRef.value);
-    if (!preview) return;
-    preview.style.transform = makePreviewTransform(pendingPreviewPoint, dragRuntime.offset);
+    dragPreviewState.value = {
+      cellSize: { ...dragRuntime.cellSize },
+      item: dragRuntime.item,
+      offset: { ...dragRuntime.offset },
+      pointer: { ...pendingPreviewPoint },
+      size: { ...dragRuntime.size },
+      source: dragRuntime.source,
+    };
   }
 
   function schedulePreviewPosition(clientX, clientY) {
     pendingPreviewPoint = { x: clientX, y: clientY };
     if (previewRafId) return;
-    previewRafId = window.requestAnimationFrame(updatePreviewElement);
+    previewRafId = window.requestAnimationFrame(updatePreviewState);
   }
 
   function cancelPreviewRaf() {
@@ -189,11 +238,15 @@ export function useLaunchpadDrag(options) {
     const shouldClampFolderPage = Boolean(options.renderedFolder.value || options.openFolderId.value);
     detachDragListeners();
     clearDragIntentTimer();
+    clearDragSortGateTimer();
     clearPageTurn();
     clearFolderPageTurn();
     cancelPreviewRaf();
     dragRuntime = null;
     dragMeta.value = null;
+    dragPreviewState.value = null;
+    dragSortBlocked = false;
+    pendingDesktopReturn = null;
     dragFolderTargetId.value = null;
     dragPlacement = null;
     folderHover = null;
@@ -345,6 +398,7 @@ export function useLaunchpadDrag(options) {
     options.commitPages(options.compactPages(next));
     options.commitOpenFolder(folderId, { originGeometry });
     options.commitFolderSession({ mode: "created", folderId, targetApp: options.cloneItem(target.item), hasEntered: false, openedAt: Date.now() });
+    blockDragSorting();
   }
 
   function openExistingFolderForDrop(folderId) {
@@ -355,6 +409,7 @@ export function useLaunchpadDrag(options) {
     options.commitPages(options.removeEverywhere(options.pages.value, activeDrag.item.id));
     options.commitOpenFolder(folderId);
     options.commitFolderSession({ mode: "existing", folderId, hasEntered: false, openedAt: Date.now() });
+    blockDragSorting();
   }
 
   function dropDraggedAppOnTopLevelTarget(targetInfo) {
@@ -402,12 +457,11 @@ export function useLaunchpadDrag(options) {
     return true;
   }
 
-  function cancelFolderSessionAndReturnToDesktop(cancelOptions) {
+  function commitDraggedItemToDesktop(session, commitOptions) {
     const activeDrag = dragRuntime;
-    const session = options.folderSession.value;
     if (!activeDrag || !session) return;
 
-    const safeOptions = cancelOptions || {};
+    const safeOptions = commitOptions || {};
     let next = options.removeEverywhere(options.pages.value, activeDrag.item.id);
     if (session.mode === "created" && session.targetApp) next = options.replaceFolderWithItem(next, session.folderId, session.targetApp);
     const insertIndex = calcPageInsertIndex(activeDrag.pointer.x, activeDrag.pointer.y);
@@ -417,11 +471,40 @@ export function useLaunchpadDrag(options) {
       : options.previewTopLevelItemWithoutOverflow(next, activeDrag.item, options.pageIndex.value, insertIndex, options.pageSize.value);
     dragPlacement = placementKey("page", options.pageIndex.value, insertIndex);
 
+    options.commitPages(next);
+    options.commitFolderPageIndex(options.folderPageIndex.value);
+  }
+
+  function commitPendingDesktopReturn(commitOptions) {
+    if (!pendingDesktopReturn) return;
+    const pending = pendingDesktopReturn;
+    pendingDesktopReturn = null;
+    commitDraggedItemToDesktop(pending.session, { force: Boolean(commitOptions?.force || pending.force) });
+  }
+
+  function cancelFolderSessionAndReturnToDesktop(cancelOptions) {
+    const activeDrag = dragRuntime;
+    const session = options.folderSession.value;
+    if (!activeDrag || !session) return;
+
+    const safeOptions = cancelOptions || {};
     options.commitOpenFolder(null);
     options.commitFolderSession(null);
-    options.commitPages(next);
     clearPendingTarget();
-    options.commitFolderPageIndex(options.folderPageIndex.value);
+
+    if (safeOptions.deferSort) {
+      pendingDesktopReturn = {
+        force: Boolean(safeOptions.force),
+        session: {
+          ...session,
+          targetApp: session.targetApp ? options.cloneItem(session.targetApp) : null,
+        },
+      };
+      blockDragSorting();
+      return;
+    }
+
+    commitDraggedItemToDesktop(session, safeOptions);
   }
 
   function shouldCommitPlacement(key, clientX, clientY, minDistance, force) {
@@ -518,13 +601,13 @@ export function useLaunchpadDrag(options) {
 
     if (inside) {
       if (!session.hasEntered) options.commitFolderSession({ ...session, hasEntered: true });
-      if (isInsideCurrentFolderGrid(clientX, clientY)) placeDraggedItemInFolder(folderId, clientX, clientY);
+      if (!isDragSortingBlocked() && isInsideCurrentFolderGrid(clientX, clientY)) placeDraggedItemInFolder(folderId, clientX, clientY);
       return true;
     }
 
     if (!session.hasEntered) return true;
 
-    cancelFolderSessionAndReturnToDesktop();
+    cancelFolderSessionAndReturnToDesktop({ deferSort: true });
     return true;
   }
 
@@ -656,6 +739,13 @@ export function useLaunchpadDrag(options) {
     const activeDrag = dragRuntime;
     if (!activeDrag || options.isLaunchpadInteractionBlocked()) return;
 
+    if (isDragSortingBlocked()) {
+      scheduleDragSortGateEvaluation();
+      return;
+    }
+
+    commitPendingDesktopReturn();
+
     if (options.folderSession.value) {
       handleFolderSessionMove(activeDrag.pointer.x, activeDrag.pointer.y);
       return;
@@ -721,6 +811,7 @@ export function useLaunchpadDrag(options) {
     clearFolderPageTurn();
 
     const nextDrag = {
+      cellSize: lp.cellSize,
       item: lp.item,
       source: lp.source,
       pointerId: lp.pointerId,
@@ -760,7 +851,9 @@ export function useLaunchpadDrag(options) {
 
     const iconBox = event.currentTarget.querySelector(".icon-box");
     const rect = iconBox ? iconBox.getBoundingClientRect() : event.currentTarget.getBoundingClientRect();
+    const cellSize = getSourceCellSize(source) || { height: rect.height, width: rect.width };
     longPressState = {
+      cellSize,
       item: options.cloneItem(item),
       source,
       pointerId: event.pointerId,
@@ -805,6 +898,7 @@ export function useLaunchpadDrag(options) {
     if (!shouldFinishDragForPointerEvent(activeDrag, event)) return;
     if (event.type === "pointercancel") {
       if (options.folderSession.value) cancelFolderSessionAndReturnToDesktop({ force: true });
+      else commitPendingDesktopReturn({ force: true });
       endDrag();
       return;
     }
@@ -816,6 +910,7 @@ export function useLaunchpadDrag(options) {
     activeDrag.pointer = { x: event.clientX, y: event.clientY };
     schedulePreviewPosition(event.clientX, event.clientY);
     clearDragIntentTimer();
+    commitPendingDesktopReturn({ force: true });
 
     const center = getDragVisualCenter(activeDrag);
     const topLevelDropTarget = center ? getTopLevelTargetAtPoint(center.x, center.y) : null;
@@ -872,6 +967,7 @@ export function useLaunchpadDrag(options) {
     detachDragListeners,
     dragFolderTargetId,
     dragMeta,
+    dragPreviewState,
     isDragActive,
   };
 }

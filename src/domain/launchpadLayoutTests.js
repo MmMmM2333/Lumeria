@@ -3,7 +3,6 @@ import {
   expandRect,
   isPointInsideRect,
   makePageSize,
-  makePreviewTransform,
   shouldCommitPlacementFromLast,
   shrinkRect,
 } from "./launchpadLayout.js";
@@ -45,7 +44,6 @@ export function runLaunchpadHelperTests(context) {
   assert(shouldCommitPlacementFromLast(null, "page:0:0", 0, 0, 18, false), "placement should commit when no previous point exists");
   assert(!shouldCommitPlacementFromLast({ key: "page:0:0", x: 0, y: 0 }, "page:0:0", 6, 6, 18, false), "placement should not commit under distance threshold");
   assert(shouldCommitPlacementFromLast({ key: "page:0:0", x: 0, y: 0 }, "page:0:1", 6, 6, 18, false), "placement should commit when the placement key changes");
-  assert(makePreviewTransform({ x: 100, y: 120 }, { x: 10, y: 20 }).includes("translate3d(90px, 100px, 0)"), "drag preview transform should subtract the pointer offset");
 
   const overflow = insertTopLevelItem([[...Array.from({ length: 2 }, (_, index) => ({ ...a, id: `full-${index}` }))]], c, 0, 0, 2);
   assert(overflow.length === 2 && overflow[0].length === 2 && overflow[1].length === 1, "insertTopLevelItem should overflow according to custom page size");

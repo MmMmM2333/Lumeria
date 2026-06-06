@@ -1,0 +1,120 @@
+<template>
+  <div class="pixi-drag-preview-overlay" aria-hidden="true">
+    <div ref="hostRef" class="pixi-drag-preview-host" />
+  </div>
+</template>
+
+<script setup>
+import { nextTick, onBeforeUnmount, onMounted, ref, watchEffect } from "vue";
+import { getFolderPreviewSlots } from "../../domain/launchpadLayout.js";
+import { createPixiApp } from "./createPixiApp.js";
+import { preloadIconTextures } from "./assets/iconTextureCache.js";
+import { reloadOnPixiHotUpdate } from "./devHmr.js";
+import { DragPreviewLayer } from "./scene/DragPreviewLayer.js";
+
+const props = defineProps({
+  folderPageSize: { type: Number, required: true },
+  iconSize: { type: Number, required: true },
+  isTextlessMode: { type: Boolean, default: false },
+  launchTargetStatusById: { type: Object, default: () => ({}) },
+  previewState: { type: Object, default: null },
+  showMissingLaunchTargetBadge: { type: Boolean, default: true },
+});
+
+const hostRef = ref(null);
+let app = null;
+let layer = null;
+let resizeObserver = null;
+let destroyed = false;
+
+function getHostMetrics() {
+  const host = hostRef.value;
+  const rect = host?.getBoundingClientRect?.() || { left: 0, top: 0, width: 1, height: 1 };
+  return {
+    rect,
+    height: host?.offsetHeight || host?.clientHeight || rect.height || window.innerHeight || 1,
+    width: host?.offsetWidth || host?.clientWidth || rect.width || window.innerWidth || 1,
+  };
+}
+
+function collectPreviewTextureItems(previewState) {
+  const item = previewState?.item;
+  if (!item) return [];
+  if (item.type !== "folder") return [item];
+  return getFolderPreviewSlots(item, props.folderPageSize).filter(Boolean);
+}
+
+function renderPixi() {
+  if (!app || !layer || !hostRef.value) return;
+  preloadIconTextures(collectPreviewTextureItems(props.previewState));
+  const { height, rect, width } = getHostMetrics();
+  layer.update({
+    folderPageSize: props.folderPageSize,
+    height: Math.max(1, height),
+    iconSize: props.iconSize,
+    isTextlessMode: props.isTextlessMode,
+    launchTargetStatusById: props.launchTargetStatusById,
+    previewState: props.previewState,
+    showMissingLaunchTargetBadge: props.showMissingLaunchTargetBadge,
+    stageRect: rect,
+    width: Math.max(1, width),
+  });
+}
+
+function handleResize() {
+  app?.resize?.();
+  renderPixi();
+}
+
+function destroyPixi() {
+  destroyed = true;
+  window.removeEventListener("resize", handleResize);
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+  const currentApp = app;
+  const currentLayer = layer;
+  app = null;
+  layer = null;
+  if (currentLayer) {
+    currentApp?.stage?.removeChild(currentLayer);
+    currentLayer.destroy({ children: true });
+  }
+  currentApp?.destroy(true);
+  hostRef.value?.replaceChildren?.();
+}
+
+onMounted(async () => {
+  destroyed = false;
+  const nextApp = await createPixiApp(hostRef.value, { className: "pixi-launchpad-canvas" });
+  if (destroyed) {
+    nextApp.destroy(true);
+    hostRef.value?.replaceChildren?.();
+    return;
+  }
+  app = nextApp;
+  layer = new DragPreviewLayer();
+  app.stage.addChild(layer);
+  resizeObserver = new ResizeObserver(handleResize);
+  resizeObserver.observe(hostRef.value);
+  window.addEventListener("resize", handleResize);
+  await nextTick();
+  renderPixi();
+});
+
+watchEffect(() => {
+  void props.folderPageSize;
+  void props.iconSize;
+  void props.isTextlessMode;
+  void props.launchTargetStatusById;
+  void props.previewState;
+  void props.showMissingLaunchTargetBadge;
+  renderPixi();
+});
+
+onBeforeUnmount(destroyPixi);
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(destroyPixi);
+  reloadOnPixiHotUpdate(import.meta.hot);
+}
+</script>

@@ -55,7 +55,6 @@ export function useLaunchpadControllerState() {
   const pageDotsRef = ref(null);
   const folderPanelRef = ref(null);
   const folderViewportRef = ref(null);
-  const dragPreviewRef = ref(null);
   const pageRefs = [];
   const folderPageRefs = [];
 
@@ -69,7 +68,6 @@ export function useLaunchpadControllerState() {
     draftIconSize,
     draftIsTextlessMode,
     draftRows,
-    dragPreviewRef,
     folderCols,
     folderIconSize,
     folderIconSizeMode,

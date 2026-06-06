@@ -73,32 +73,6 @@
     </div>
   </div>
 
-  <Motion
-    v-if="dragPreviewItem"
-    key="drag-preview"
-    :ref="(node) => bindRef(state.dragPreviewRef, node)"
-    class="drag-preview"
-    :initial="{ opacity: 0 }"
-    :animate="{ opacity: 1 }"
-    :transition="state.dragPreviewSpring"
-  >
-    <div class="drag-preview-box">
-      <div v-if="dragPreviewItem.type === 'folder'" class="drag-folder-thumb">
-        <div
-          v-for="(child, index) in state.folderPreviewSlots(dragPreviewItem)"
-          :key="child ? child.id : `drag-folder-empty-${index}`"
-          :class="cx('drag-folder-child', !child && 'folder-child-empty')"
-        >
-          <img v-if="getIconSource(child)" class="drag-folder-child-image" :src="getIconSource(child)" alt="" draggable="false" />
-          <span v-else-if="child">{{ child.emoji }}</span>
-        </div>
-      </div>
-      <img v-else-if="getIconSource(dragPreviewItem)" class="drag-preview-image" :src="getIconSource(dragPreviewItem)" alt="" draggable="false" />
-      <span v-else class="drag-preview-emoji">{{ dragPreviewItem.emoji }}</span>
-      <MissingLaunchTargetBadge :status="dragPreviewLaunchTargetStatus" />
-    </div>
-    <div v-if="!state.isTextlessMode.value" class="drag-preview-name">{{ dragPreviewItem.name }}</div>
-  </Motion>
 </template>
 
 <script setup>
@@ -106,7 +80,6 @@ import { Motion } from "motion-v";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import MissingLaunchTargetBadge from "./MissingLaunchTargetBadge.js";
 import { getIconSource } from "../domain/iconSource.js";
-import { cx } from "../domain/launchpadLayout.js";
 
 const props = defineProps({
   state: { type: Object, required: true },
@@ -117,12 +90,6 @@ const iconContextMenu = ref(null);
 const hiddenFolderGhostCompletionDelay = 650;
 const hiddenFolderGhostTimers = new Map();
 const shouldRenderFolderGhostLayers = computed(() => props.state.renderFolderGhostLayers !== false);
-const dragPreviewItem = computed(() => props.state.dragMeta.value?.item ?? null);
-const dragPreviewLaunchTargetStatus = computed(() => {
-  const item = dragPreviewItem.value;
-  if (!item || item.type !== "app" || !props.state.showMissingLaunchTargetBadge.value) return null;
-  return props.state.launchTargetStatusById.value?.[item.id] ?? null;
-});
 const iconContextMenuStyle = computed(() => {
   if (!iconContextMenu.value) return {};
   return {
@@ -130,10 +97,6 @@ const iconContextMenuStyle = computed(() => {
     top: `${iconContextMenu.value.y}px`,
   };
 });
-
-function bindRef(target, node) {
-  if (target && typeof target === "object" && "value" in target) target.value = node;
-}
 
 function clearHiddenFolderGhostTimer(timerKey) {
   const timer = hiddenFolderGhostTimers.get(timerKey);

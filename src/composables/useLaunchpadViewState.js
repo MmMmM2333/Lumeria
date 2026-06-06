@@ -3,7 +3,6 @@ import { DESKTOP_CLOSE_SCALE } from "./launchpadConstants.js";
 import {
   appLaunchGhostTransition,
   desktopTrackTransition,
-  dragPreviewSpring,
   folderContentCloseTransition,
   folderContentTransition,
   folderPanelCloseTransition,
@@ -126,7 +125,6 @@ export function useLaunchpadViewState(options) {
     desktopLayoutEnabled,
     desktopTrackMotionKey,
     desktopTrackTransition,
-    dragPreviewSpring,
     folderContentAnimate,
     folderContentInitial,
     folderContentTransition: activeFolderContentTransition,

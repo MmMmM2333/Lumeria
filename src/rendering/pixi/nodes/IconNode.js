@@ -383,6 +383,10 @@ export class IconNode extends Container {
     }
   }
 
+  hideFolderChildren() {
+    for (const node of this.folderChildNodes) node.visible = false;
+  }
+
   renderVisual(state) {
     this.visualWrap.position.set(0, this.getVisualOffsetY());
     this.folderThumb.visible = this.isFolder;
@@ -394,6 +398,7 @@ export class IconNode extends Container {
       return;
     }
 
+    this.hideFolderChildren();
     const itemId = this.item?.id;
     const texture = getCachedIconTexture(this.item, () => {
       if (this.destroyed || this.item?.id !== itemId || !this.state) return;
