@@ -15,14 +15,19 @@ import {
 } from "../animation/eases.js";
 import { pageTrackSpring, panelSpring, springTo, stopTargetSprings } from "../animation/springMotion.js";
 import { getFolderGridMetrics, getFolderPanelGeometry, getGridSlotRect, parseRepeatCount, readPx } from "../geometry/gridGeometry.js";
-import { makeStageVirtualElement } from "../geometry/stageCoordinates.js";
+import { makeStageVirtualElement, mapLocalRectToStageRect } from "../geometry/stageCoordinates.js";
 import {
   clearLaunchIconBounds,
   getFolderPreviewChildBounds,
   getTopLevelFolderThumbBounds,
   getTopLevelIconBounds,
   registerLaunchIconBounds,
+  registerLaunchIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
+import {
+  isActiveDraggedLaunchItem,
+  isReleaseGhostLaunchItem,
+} from "./dragVisibility.js";
 import { IconNode } from "../nodes/IconNode.js";
 import { getFolderPreviewSlots } from "../../../domain/launchpadLayout.js";
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
@@ -96,6 +101,10 @@ function makeIconRect(centerX, centerY, size) {
     width: size,
     height: size,
   };
+}
+
+function makeTargetIconBounds(stageRect, stageWidth, stageHeight, centerX, centerY, size) {
+  return mapLocalRectToStageRect(stageRect, stageWidth, stageHeight, makeIconRect(centerX, centerY, size));
 }
 
 function makeFolderCenterCollapseRect(folderRect) {
@@ -448,6 +457,8 @@ export class FolderOverlayLayer extends Container {
         const y = slot.top + slot.height / 2;
         const source = { type: "folder", folderId: state.renderedFolder.id, index, pageIndex, slotIndex: index };
         const key = `${state.renderedFolder.id}:${pageIndex}:${item.id}`;
+        const isActiveDraggedItem = isActiveDraggedLaunchItem(item, state);
+        const isReleaseGhostItem = isReleaseGhostLaunchItem(item, state);
         seen.add(key);
         let node = this.iconNodes.get(key);
         if (!node) {
@@ -469,13 +480,15 @@ export class FolderOverlayLayer extends Container {
           cellHeight: slot.height,
           cellWidth: slot.width,
           compact: false,
-          dragging: isInteractivePage && state.dragMeta?.item?.id === item.id,
+          dragging: isActiveDraggedItem,
           draggable: isInteractivePage,
           dropTarget: false,
           editing: isInteractivePage && state.isEditMode,
           folderPreviewPageSize: state.folderPageSize,
-          ghosted: isInteractivePage && (this.openingGhostKeys?.has(item.id) ||
-            this.closingGhostKeys?.has(item.id)),
+          ghosted: isReleaseGhostItem ||
+            (isInteractivePage && (
+            this.openingGhostKeys?.has(item.id) ||
+            this.closingGhostKeys?.has(item.id))),
           hasCustomIcon: Boolean(item.customIconPath || item.customIconDataUrl),
           iconSize,
           interactive: isInteractivePage,
@@ -496,10 +509,17 @@ export class FolderOverlayLayer extends Container {
           registerLaunchIconBounds(
             { area: "folder", folderId: state.renderedFolder.id, id: item.id, pageIndex },
             iconBounds,
-            { area: "folder", folderId: state.renderedFolder.id, id: item.id, item, pageIndex }
+            { area: "folder", folderId: state.renderedFolder.id, id: item.id, index, item, pageIndex }
+          );
+          const targetCenterX = geometry.panel.left + x + targetTrackX;
+          const targetCenterY = geometry.panel.top + y - (state.isTextlessMode ? 0 : 14);
+          registerLaunchIconTargetBounds(
+            { area: "folder", folderId: state.renderedFolder.id, id: item.id, pageIndex },
+            makeTargetIconBounds(state.stageRect, state.width, state.height, targetCenterX, targetCenterY, iconSize),
+            { area: "folder", folderId: state.renderedFolder.id, id: item.id, index, item, pageIndex }
           );
         }
-        if (isInteractivePage && isNewFolder && !isClosing && pageIndex === state.folderPageIndex) {
+        if (isInteractivePage && !isActiveDraggedItem && !isReleaseGhostItem && isNewFolder && !isClosing && pageIndex === state.folderPageIndex) {
           const previewSlotIndex = previewSlotById.get(item.id);
           const isThumbnailChild = previewSlotIndex != null;
           const sourceRect = isThumbnailChild

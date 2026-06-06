@@ -4,7 +4,11 @@ import {
   isPrimaryPointerStartEvent,
   shouldFinishDragForPointerEvent,
 } from "./useLaunchpadDrag.js";
-import { clearIconBoundsRegistry, registerLaunchIconBounds } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
+import {
+  clearIconBoundsRegistry,
+  registerLaunchIconBounds,
+  registerLaunchIconTargetBounds,
+} from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 import { nextTick, ref, shallowRef } from "vue";
 
 async function withMockPointerEnvironment(run) {
@@ -68,6 +72,27 @@ function createDragHarness(overrides = {}) {
   function clonePages(sourcePages) {
     return sourcePages.map((page) => page.map((item) => ({ ...item })));
   }
+  function getFolderChildPages(folder) {
+    if (Array.isArray(folder?.childPages)) return folder.childPages;
+    return folder?.children?.length ? [folder.children] : [[]];
+  }
+  function findFolder(sourcePages, folderId) {
+    for (let currentPageIndex = 0; currentPageIndex < sourcePages.length; currentPageIndex += 1) {
+      const index = sourcePages[currentPageIndex].findIndex((item) => item.id === folderId && item.type === "folder");
+      if (index >= 0) return { pageIndex: currentPageIndex, index, item: sourcePages[currentPageIndex][index] };
+    }
+    return null;
+  }
+  function findInFolder(sourcePages, folderId, itemId) {
+    const folder = findFolder(sourcePages, folderId)?.item;
+    if (!folder) return null;
+    const childPages = getFolderChildPages(folder);
+    for (let pageIndex = 0; pageIndex < childPages.length; pageIndex += 1) {
+      const index = childPages[pageIndex].findIndex((child) => child?.id === itemId);
+      if (index >= 0) return { folder, pageIndex, index, item: childPages[pageIndex][index] };
+    }
+    return null;
+  }
   function insertTopLevelItem(sourcePages, item, targetPageIndex, insertIndex) {
     const next = clonePages(sourcePages);
     while (next.length <= targetPageIndex) next.push([]);
@@ -88,7 +113,7 @@ function createDragHarness(overrides = {}) {
   }
   function insertAppIntoFolder(sourcePages, folderId, item, targetPageIndex, insertIndex) {
     calls.insertAppIntoFolder.push({ folderId, insertIndex, item, targetPageIndex });
-    return sourcePages.map((page) => page.map((entry) => {
+    return removeEverywhere(sourcePages, item.id).map((page) => page.map((entry) => {
       if (entry.id !== folderId) return { ...entry };
       const childPages = (entry.childPages || [[]]).map((childPage) => childPage.map(cloneItem));
       while (childPages.length <= targetPageIndex) childPages.push([]);
@@ -121,10 +146,11 @@ function createDragHarness(overrides = {}) {
     commitPages: (next) => {
       calls.commitPages.push(next);
       pages.value = next;
+      overrides.onCommitPages?.(next);
     },
     compactPages: (next) => next,
-    findFolder: () => null,
-    findInFolder: () => null,
+    findFolder,
+    findInFolder,
     findTopLevel: (sourcePages, id) => {
       for (let currentPageIndex = 0; currentPageIndex < sourcePages.length; currentPageIndex += 1) {
         const index = sourcePages[currentPageIndex].findIndex((item) => item.id === id);
@@ -140,7 +166,7 @@ function createDragHarness(overrides = {}) {
     folderPageSize: ref(16),
     folderPanelRef,
     folderSession,
-    getFolderChildPages: () => [[]],
+    getFolderChildPages,
     getPageSlotMotionGeometry: () => null,
     getTopLevelIconMotionGeometry: () => null,
     gridCols: ref(7),
@@ -151,6 +177,7 @@ function createDragHarness(overrides = {}) {
     isHomeRevealSettling: ref(false),
     isLayoutProjectionActive,
     isLaunchpadInteractionBlocked: () => false,
+    isTextlessMode: ref(false),
     makeId: (prefix) => `${prefix}-id`,
     openApp: () => {},
     openFolderId,
@@ -248,6 +275,76 @@ export async function runLaunchpadDragTests() {
     assert(isLayoutProjectionActive.value, "layout projection should remain briefly active after drag end");
     flushTimers(timers);
     assert(!isLayoutProjectionActive.value, "layout projection should release after the drag settle window");
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const { app, drag } = createDragHarness();
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+      querySelector: () => null,
+    };
+
+    drag.beginDrag(makePointerDownEvent(91, target), app, { type: "page", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+
+    listeners.get("pointerup")({ type: "pointerup", pointerId: 91, button: 0, clientX: 690, clientY: 490 });
+    await nextTick();
+
+    const rect = drag.dragReleaseState.value?.targetRect;
+    assert(Math.round(rect?.left) === 18 && Math.round(rect?.top) === 4, "desktop release should animate to the committed compact visual slot, not the empty pointer slot");
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    clearIconBoundsRegistry();
+    const { app, drag, pages } = createDragHarness({
+      onCommitPages: () => {
+        registerLaunchIconTargetBounds(
+          { area: "desktop", id: "app-a", pageIndex: 0 },
+          { left: 123, top: 45, width: 64, height: 64 },
+          { area: "desktop", id: "app-a", index: 1, pageIndex: 0 }
+        );
+      },
+    });
+    pages.value = [[app, { id: "app-b", type: "app", name: "App B" }]];
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+      querySelector: () => null,
+    };
+
+    drag.beginDrag(makePointerDownEvent(93, target), app, { type: "page", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+
+    listeners.get("pointerup")({ type: "pointerup", pointerId: 93, button: 0, clientX: 690, clientY: 490 });
+    await nextTick();
+
+    const rect = drag.dragReleaseState.value?.targetRect;
+    assert(Math.round(rect?.left) === 123 && Math.round(rect?.top) === 45, "desktop release should prefer Pixi target bounds over fallback slot geometry");
+    clearIconBoundsRegistry();
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const folderPanelRef = ref({ getBoundingClientRect: () => ({ left: 100, top: 100, right: 500, bottom: 420, width: 400, height: 320 }) });
+    const folderPageRefs = [{ getBoundingClientRect: () => ({ left: 120, top: 120, right: 400, bottom: 340, width: 280, height: 220 }) }];
+    const { app, drag, openFolderId, pages } = createDragHarness({ folderPageRefs, folderPanelRef });
+    const folder = { id: "folder-1", type: "folder", name: "Folder", childPages: [[app]], children: [app] };
+    pages.value = [[folder]];
+    openFolderId.value = "folder-1";
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+      querySelector: () => null,
+    };
+
+    drag.beginDrag(makePointerDownEvent(92, target), app, { type: "folder", folderId: "folder-1", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+
+    listeners.get("pointerup")({ type: "pointerup", pointerId: 92, button: 0, clientX: 390, clientY: 330 });
+    await nextTick();
+
+    const rect = drag.dragReleaseState.value?.targetRect;
+    assert(Math.round(rect?.left) === 128 && Math.round(rect?.top) === 106, "folder release should animate to the committed compact visual slot, not the empty pointer slot");
   });
 
   await withMockPointerEnvironment(async ({ listeners, timers }) => {

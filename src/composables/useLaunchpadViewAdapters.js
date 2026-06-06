@@ -140,6 +140,7 @@ export function createFolderOverlayState(controller) {
     commitFolderPageIndex: controller.commitFolderPageIndex,
     desktopTrackTransition: controller.desktopTrackTransition,
     dragMeta: controller.dragMeta,
+    dragReleaseState: controller.dragReleaseState,
     folderContentAnimate: controller.folderContentAnimate,
     folderContentInitial: controller.folderContentInitial,
     folderContentTransition: controller.folderContentTransition,

@@ -1,6 +1,7 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 
 const launchIconBounds = new Map();
+const launchIconTargetBounds = new Map();
 const topLevelBounds = new Map();
 const topLevelFolderThumbBounds = new Map();
 const folderPreviewChildBounds = new Map();
@@ -54,6 +55,13 @@ export function registerLaunchIconBounds(source, rect, meta = {}) {
   if (source.area === "desktop") topLevelBounds.set(source.id, { ...safeRect, meta });
 }
 
+export function registerLaunchIconTargetBounds(source, rect, meta = {}) {
+  const key = makeLaunchKey(source);
+  const safeRect = cloneRect(rect);
+  if (!key || !safeRect) return;
+  launchIconTargetBounds.set(key, { ...safeRect, meta });
+}
+
 export function registerTopLevelFolderThumbBounds(id, rect, meta = {}) {
   const safeRect = cloneRect(rect);
   if (!id || !safeRect) return;
@@ -63,6 +71,7 @@ export function registerTopLevelFolderThumbBounds(id, rect, meta = {}) {
 export function unregisterLaunchIconBounds(source) {
   const key = makeLaunchKey(source);
   if (key) launchIconBounds.delete(key);
+  if (key) launchIconTargetBounds.delete(key);
   if ((source?.area === "desktop" || source?.area === "search") && source.id) topLevelFolderThumbBounds.delete(source.id);
   if (source?.area === "desktop" && source.id) {
     topLevelBounds.delete(source.id);
@@ -79,6 +88,9 @@ export function clearLaunchIconBounds(scope, folderId = null) {
       topLevelFolderThumbBounds.delete(value.meta.id);
     }
   }
+  for (const [key, value] of launchIconTargetBounds) {
+    if (shouldClearLaunchBounds(key, value, criteria)) launchIconTargetBounds.delete(key);
+  }
   for (const [id, value] of topLevelFolderThumbBounds) {
     if (shouldClearAll || value?.meta?.area === criteria.area) topLevelFolderThumbBounds.delete(id);
   }
@@ -90,6 +102,23 @@ export function clearLaunchIconBounds(scope, folderId = null) {
 export function getLaunchIconBounds(source) {
   const key = makeLaunchKey(source);
   return key ? cloneRect(launchIconBounds.get(key)) : null;
+}
+
+function matchesExpectedMeta(meta, expected) {
+  if (!expected) return true;
+  for (const key of ["area", "folderId", "id", "index", "pageIndex"]) {
+    if (expected[key] == null) continue;
+    if (meta?.[key] !== expected[key]) return false;
+  }
+  return true;
+}
+
+export function getLaunchIconTargetBounds(source, expected = null) {
+  const key = makeLaunchKey(source);
+  if (!key) return null;
+  const value = launchIconTargetBounds.get(key);
+  if (!value || !matchesExpectedMeta(value.meta, expected)) return null;
+  return cloneRect(value);
 }
 
 export function getTopLevelIconBounds(id) {
@@ -128,6 +157,7 @@ export function getFolderPreviewChildBounds(folderId, childId, slotIndex) {
 
 export function clearIconBoundsRegistry() {
   launchIconBounds.clear();
+  launchIconTargetBounds.clear();
   topLevelBounds.clear();
   topLevelFolderThumbBounds.clear();
   folderPreviewChildBounds.clear();

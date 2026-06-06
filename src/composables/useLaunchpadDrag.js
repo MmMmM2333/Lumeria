@@ -19,9 +19,15 @@ import {
   shouldCommitPlacementFromLast,
 } from "../domain/launchpadLayout.js";
 import { getDomRefElement } from "./usePageGridMetrics.js";
-import { getTopLevelTargetAtPoint as getPixiTopLevelTargetAtPoint } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
+import {
+  getLaunchIconTargetBounds,
+  getTopLevelTargetAtPoint as getPixiTopLevelTargetAtPoint,
+} from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 
 const LAYOUT_PROJECTION_RELEASE_DELAY = 260;
+const DRAG_RELEASE_DURATION_MS = 180;
+const DRAG_RELEASE_GHOST_PADDING_MS = 60;
+const DRAG_RELEASE_TARGET_RESOLVE_FRAMES = 3;
 
 export function isPrimaryPointerStartEvent(event) {
   if (!event) return false;
@@ -51,6 +57,7 @@ export function useLaunchpadDrag(options) {
   const dragMeta = shallowRef(null);
   const dragFolderTargetId = shallowRef(null);
   const dragPreviewState = shallowRef(null);
+  const dragReleaseState = shallowRef(null);
 
   let dragRuntime = null;
   let dragPlacement = null;
@@ -69,6 +76,9 @@ export function useLaunchpadDrag(options) {
   let dragListenersAttached = false;
   let dragContextMenuListenerAttached = false;
   let longPressState = null;
+  let dragReleaseTimer = null;
+  let dragReleaseResolveRaf = 0;
+  let dragReleaseKey = 0;
 
   function isDragActive() {
     return Boolean(dragRuntime);
@@ -232,6 +242,218 @@ export function useLaunchpadDrag(options) {
     if (previewRafId) window.cancelAnimationFrame(previewRafId);
     previewRafId = 0;
     pendingPreviewPoint = null;
+  }
+
+  function clearDragReleaseResolve() {
+    if (dragReleaseResolveRaf) window.cancelAnimationFrame(dragReleaseResolveRaf);
+    dragReleaseResolveRaf = 0;
+  }
+
+  function clearDragRelease() {
+    if (dragReleaseTimer) window.clearTimeout(dragReleaseTimer);
+    clearDragReleaseResolve();
+    dragReleaseTimer = null;
+    dragReleaseState.value = null;
+  }
+
+  function scheduleDragReleaseClear() {
+    if (dragReleaseTimer) window.clearTimeout(dragReleaseTimer);
+    dragReleaseTimer = window.setTimeout(() => {
+      dragReleaseTimer = null;
+      dragReleaseState.value = null;
+    }, DRAG_RELEASE_DURATION_MS + DRAG_RELEASE_GHOST_PADDING_MS);
+  }
+
+  function getReleaseTextless() {
+    return Boolean(options.isTextlessMode?.value);
+  }
+
+  function getReleaseVisualOffsetY() {
+    return getReleaseTextless() ? 0 : -14;
+  }
+
+  function makeCenteredRect(centerX, centerY, width, height = width) {
+    return {
+      height,
+      left: centerX - width / 2,
+      top: centerY - height / 2,
+      width,
+    };
+  }
+
+  function getRefRect(refs, index) {
+    return refs?.[index]?.getBoundingClientRect?.() || null;
+  }
+
+  function cloneClientRect(rect) {
+    if (!rect) return null;
+    return {
+      height: Number(rect.height) || 0,
+      left: Number(rect.left) || 0,
+      top: Number(rect.top) || 0,
+      width: Number(rect.width) || 0,
+    };
+  }
+
+  function getDesktopTargetIconSize(cellWidth, cellHeight, fallbackSize) {
+    const configuredSize = Math.max(1, Number(options.iconSize?.value) || Number(fallbackSize) || 64);
+    return Math.max(1, Math.min(configuredSize, cellWidth, cellHeight));
+  }
+
+  function getFolderTargetIconSize(cellWidth, cellHeight, fallbackSize) {
+    const configuredSize = Math.max(1, Number(options.effectiveFolderIconSize?.value) || Number(fallbackSize) || 56);
+    return Math.max(1, Math.min(configuredSize, 56, cellWidth, cellHeight));
+  }
+
+  function getPageSlotReleaseRect(pageIndex, index, fallbackSize) {
+    const rect = getRefRect(options.pageRefs, pageIndex);
+    if (!rect) return null;
+    const cols = Math.max(1, Number(options.gridCols.value) || 1);
+    const rows = Math.max(1, Number(options.gridRows.value) || 1);
+    const cellWidth = rect.width / cols;
+    const cellHeight = rect.height / rows;
+    const safeIndex = clamp(index, 0, Math.max(0, cols * rows - 1));
+    const col = safeIndex % cols;
+    const row = Math.floor(safeIndex / cols);
+    const size = getDesktopTargetIconSize(cellWidth, cellHeight, fallbackSize);
+    return makeCenteredRect(rect.left + col * cellWidth + cellWidth / 2, rect.top + row * cellHeight + cellHeight / 2 + getReleaseVisualOffsetY(), size);
+  }
+
+  function getFolderSlotReleaseRect(pageIndex, index, fallbackSize) {
+    const rect = getRefRect(options.folderPageRefs, pageIndex);
+    if (!rect) return null;
+    const cols = Math.max(1, Number(options.folderCols.value) || 1);
+    const rows = Math.max(1, Number(options.visibleFolderRowCount.value) || 1);
+    const cellWidth = rect.width / cols;
+    const cellHeight = rect.height / rows;
+    const safeIndex = clamp(index, 0, Math.max(0, cols * rows - 1));
+    const col = safeIndex % cols;
+    const row = Math.floor(safeIndex / cols);
+    const size = getFolderTargetIconSize(cellWidth, cellHeight, fallbackSize);
+    return makeCenteredRect(rect.left + col * cellWidth + cellWidth / 2, rect.top + row * cellHeight + cellHeight / 2 + getReleaseVisualOffsetY(), size);
+  }
+
+  function getCommittedTopLevelReleaseRect(itemId, fallbackSize) {
+    const target = options.findTopLevel(options.pages.value, itemId);
+    return target ? getPageSlotReleaseRect(target.pageIndex, target.index, fallbackSize) : null;
+  }
+
+  function getCommittedFolderReleaseRect(folderId, itemId, fallbackSize) {
+    const target = options.findInFolder(options.pages.value, folderId, itemId);
+    return target ? getFolderSlotReleaseRect(target.pageIndex, target.index, fallbackSize) : null;
+  }
+
+  function getCommittedTopLevelTargetBounds(itemId) {
+    const target = options.findTopLevel(options.pages.value, itemId);
+    if (!target) return null;
+    return getLaunchIconTargetBounds(
+      { area: "desktop", folderId: null, id: itemId, pageIndex: target.pageIndex },
+      { area: "desktop", id: itemId, index: target.index, pageIndex: target.pageIndex }
+    );
+  }
+
+  function getCommittedFolderTargetBounds(folderId, itemId) {
+    const target = options.findInFolder(options.pages.value, folderId, itemId);
+    if (!target) return null;
+    return getLaunchIconTargetBounds(
+      { area: "folder", folderId, id: itemId, pageIndex: target.pageIndex },
+      { area: "folder", folderId, id: itemId, index: target.index, pageIndex: target.pageIndex }
+    );
+  }
+
+  function getPointerReleaseRect(activeDrag) {
+    if (!activeDrag) return null;
+    const width = Math.max(1, Number(activeDrag.size?.width) || 64);
+    const height = Math.max(1, Number(activeDrag.size?.height) || width);
+    const offset = activeDrag.offset || { x: width / 2, y: height / 2 };
+    const pointer = activeDrag.pointer || { x: 0, y: 0 };
+    return {
+      height,
+      left: pointer.x - offset.x,
+      top: pointer.y - offset.y,
+      width,
+    };
+  }
+
+  function startPendingDragRelease() {
+    const activeDrag = dragRuntime;
+    if (!activeDrag) {
+      clearDragRelease();
+      return null;
+    }
+    if (dragReleaseTimer) window.clearTimeout(dragReleaseTimer);
+    clearDragReleaseResolve();
+    dragReleaseTimer = null;
+    dragReleaseKey += 1;
+    const key = `release-${dragReleaseKey}-${activeDrag.item.id}`;
+    dragReleaseState.value = {
+      cellSize: { ...activeDrag.cellSize },
+      duration: DRAG_RELEASE_DURATION_MS / 1000,
+      item: options.cloneItem(activeDrag.item),
+      key,
+      offset: { ...activeDrag.offset },
+      pointer: { ...activeDrag.pointer },
+      size: { ...activeDrag.size },
+      source: activeDrag.source,
+      targetRect: null,
+      targetVersion: 0,
+      textless: getReleaseTextless(),
+    };
+    return key;
+  }
+
+  function setDragReleaseTarget(releaseKey, targetRect, fallbackRect = null) {
+    const current = dragReleaseState.value;
+    if (!current || current.key !== releaseKey) return false;
+    const targetCandidate = cloneClientRect(targetRect);
+    const fallbackCandidate = cloneClientRect(fallbackRect);
+    const pointerCandidate = getPointerReleaseRect(current);
+    const safeTargetRect = targetCandidate?.width && targetCandidate?.height
+      ? targetCandidate
+      : fallbackCandidate?.width && fallbackCandidate?.height
+        ? fallbackCandidate
+        : pointerCandidate;
+    if (!safeTargetRect?.width || !safeTargetRect?.height) {
+      clearDragRelease();
+      return false;
+    }
+    dragReleaseState.value = {
+      ...current,
+      targetRect: safeTargetRect,
+      targetVersion: (Number(current.targetVersion) || 0) + 1,
+    };
+    scheduleDragReleaseClear();
+    return true;
+  }
+
+  function scheduleDragReleaseTargetResolve(releaseKey, resolveTargetRect, fallbackRect) {
+    clearDragReleaseResolve();
+    let attempts = 0;
+    const tryResolve = () => {
+      dragReleaseResolveRaf = 0;
+      if (!dragReleaseState.value || dragReleaseState.value.key !== releaseKey) return;
+      const targetRect = typeof resolveTargetRect === "function" ? resolveTargetRect() : null;
+      if (targetRect) {
+        setDragReleaseTarget(releaseKey, targetRect, fallbackRect);
+        return;
+      }
+      attempts += 1;
+      if (attempts < DRAG_RELEASE_TARGET_RESOLVE_FRAMES) {
+        dragReleaseResolveRaf = window.requestAnimationFrame(tryResolve);
+        return;
+      }
+      setDragReleaseTarget(releaseKey, null, fallbackRect);
+    };
+    nextTick(() => {
+      if (!dragReleaseState.value || dragReleaseState.value.key !== releaseKey) return;
+      dragReleaseResolveRaf = window.requestAnimationFrame(tryResolve);
+    });
+  }
+
+  function startDragRelease(targetRect) {
+    const releaseKey = startPendingDragRelease();
+    if (!releaseKey) return;
+    setDragReleaseTarget(releaseKey, targetRect);
   }
 
   function endDrag() {
@@ -848,6 +1070,7 @@ export function useLaunchpadDrag(options) {
     if (options.isLaunchpadInteractionBlocked() || dragRuntime || longPressState) return;
 
     cancelLongPress();
+    clearDragRelease();
 
     const iconBox = event.currentTarget.querySelector(".icon-box");
     const rect = iconBox ? iconBox.getBoundingClientRect() : event.currentTarget.getBoundingClientRect();
@@ -899,10 +1122,12 @@ export function useLaunchpadDrag(options) {
     if (event.type === "pointercancel") {
       if (options.folderSession.value) cancelFolderSessionAndReturnToDesktop({ force: true });
       else commitPendingDesktopReturn({ force: true });
+      clearDragRelease();
       endDrag();
       return;
     }
     if (options.isLaunchpadInteractionBlocked()) {
+      clearDragRelease();
       endDrag();
       return;
     }
@@ -926,11 +1151,13 @@ export function useLaunchpadDrag(options) {
 
     if (!session && movedDistance <= 6 && activeDrag.item.type === "folder" && activeDrag.source.type === "page") {
       options.commitOpenFolder(activeDrag.item.id);
+      clearDragRelease();
       endDrag();
       return;
     }
 
     if (!session && shouldDropOnTopLevelTarget && dropDraggedAppOnTopLevelTarget(topLevelDropTarget)) {
+      startDragRelease(topLevelDropTarget.rect);
       options.commitFolderSession(null);
       endDrag();
       return;
@@ -941,15 +1168,30 @@ export function useLaunchpadDrag(options) {
       const rect = panel?.getBoundingClientRect();
       const inside = rect ? isPointInsideRect(rect, event.clientX, event.clientY) : true;
       if (!inside) {
+        const insertIndex = calcPageInsertIndex(event.clientX, event.clientY);
+        const fallbackReleaseRect = getPageSlotReleaseRect(options.pageIndex.value, insertIndex, activeDrag.size?.width);
         cancelFolderSessionAndReturnToDesktop({ force: true });
+        const releaseKey = startPendingDragRelease();
+        const releaseRect = getCommittedTopLevelReleaseRect(activeDrag.item.id, activeDrag.size?.width) || fallbackReleaseRect;
+        scheduleDragReleaseTargetResolve(releaseKey, () => getCommittedTopLevelTargetBounds(activeDrag.item.id), releaseRect);
         endDrag();
         return;
       }
+      const folderTarget = calcFolderInsertTarget(event.clientX, event.clientY);
+      const fallbackReleaseRect = getFolderSlotReleaseRect(folderTarget.pageIndex, folderTarget.index, activeDrag.size?.width);
       placeDraggedItemInFolder(folderId, event.clientX, event.clientY, { force: true });
+      const releaseKey = startPendingDragRelease();
+      const releaseRect = getCommittedFolderReleaseRect(folderId, activeDrag.item.id, activeDrag.size?.width) || fallbackReleaseRect;
+      scheduleDragReleaseTargetResolve(releaseKey, () => getCommittedFolderTargetBounds(folderId, activeDrag.item.id), releaseRect);
       options.commitOpenFolder(folderId);
       options.commitFolderSession(null);
     } else {
+      const insertIndex = calcPageInsertIndex(event.clientX, event.clientY);
+      const fallbackReleaseRect = getPageSlotReleaseRect(options.pageIndex.value, insertIndex, activeDrag.size?.width);
       placeDraggedItemOnDesktop(event.clientX, event.clientY, { force: true });
+      const releaseKey = startPendingDragRelease();
+      const releaseRect = getCommittedTopLevelReleaseRect(activeDrag.item.id, activeDrag.size?.width) || fallbackReleaseRect;
+      scheduleDragReleaseTargetResolve(releaseKey, () => getCommittedTopLevelTargetBounds(activeDrag.item.id), releaseRect);
       options.commitFolderSession(null);
     }
 
@@ -961,6 +1203,7 @@ export function useLaunchpadDrag(options) {
     cancelLongPress,
     cancelPreviewRaf,
     clearFolderPageTurn,
+    clearDragRelease,
     clearLayoutProjectionRelease,
     clearPageTurn,
     clearPendingTarget,
@@ -968,6 +1211,7 @@ export function useLaunchpadDrag(options) {
     dragFolderTargetId,
     dragMeta,
     dragPreviewState,
+    dragReleaseState,
     isDragActive,
   };
 }

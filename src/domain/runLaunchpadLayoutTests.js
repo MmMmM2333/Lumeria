@@ -27,6 +27,7 @@ import { runGridGeometryTests } from "../rendering/pixi/geometry/gridGeometryTes
 import { runStageCoordinatesTests } from "../rendering/pixi/geometry/stageCoordinatesTests.js";
 import { runIconBoundsRegistryTests } from "../rendering/pixi/geometry/iconBoundsRegistryTests.js";
 import { runIconTextureCacheTests } from "../rendering/pixi/assets/iconTextureCacheTests.js";
+import { runDragVisibilityTests } from "../rendering/pixi/scene/dragVisibilityTests.js";
 
 const state = {
   searchQuery: { value: "" },
@@ -109,6 +110,7 @@ runSpringMotionTests();
 runGridGeometryTests();
 runStageCoordinatesTests();
 runIconBoundsRegistryTests();
+runDragVisibilityTests();
 await runIconTextureCacheTests();
 
 console.info("Launchpad layout helper tests passed");

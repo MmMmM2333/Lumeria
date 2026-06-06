@@ -34,6 +34,7 @@
         :dom-refs="desktopDomRefs"
         :drag-folder-target-id="dragFolderTargetId"
         :drag-meta="dragMeta"
+        :drag-release-ghost-id="dragReleaseGhostId"
         :folder-page-size="folderPageSize"
         :get-desktop-page-render-mode="getDesktopPageRenderMode"
         :get-visible-desktop-page="getVisibleDesktopPage"
@@ -87,6 +88,7 @@
       :is-textless-mode="isTextlessMode"
       :launch-target-status-by-id="launchTargetStatusById"
       :preview-state="dragPreviewState"
+      :release-state="dragReleaseState"
       :show-missing-launch-target-badge="showMissingLaunchTargetBadge"
     />
     <LaunchpadOverlays
@@ -256,6 +258,7 @@ const {
   dragFolderTargetId,
   dragMeta,
   dragPreviewState,
+  dragReleaseState,
   applySettingsConfig,
   openSettingsPanel,
   closeSettingsPanel,
@@ -332,6 +335,8 @@ const settingsPanelState = createSettingsPanelState(controller, appVersion);
 const dialogState = createDialogState(controller);
 const folderOverlayState = createFolderOverlayState(controller);
 const overlayState = createOverlayState(controller);
+
+const dragReleaseGhostId = computed(() => dragReleaseState.value?.item?.id || null);
 
 const folderSourceGhostedId = computed(() => {
   const folderId = renderedFolder.value?.id || openFolderId.value;

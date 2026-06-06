@@ -172,6 +172,7 @@ function renderPixi() {
     completeFolderOpenIconGhost: props.state.completeFolderOpenIconGhost,
     folderCloseIconGhosts: props.state.folderCloseIconGhosts?.value,
     folderOpenIconGhosts: props.state.folderOpenIconGhosts?.value,
+    dragReleaseGhostId: props.state.dragReleaseState?.value?.item?.id || null,
     getFolderCloseIconGhostKey: (itemId, slotIndex) => getFolderGhostKey(props.state.folderCloseIconGhosts?.value, itemId, slotIndex),
     getFolderOpenIconGhostKey: (itemId, slotIndex) => getFolderGhostKey(props.state.folderOpenIconGhosts?.value, itemId, slotIndex),
     getVisibleFolderPage: props.state.getVisibleFolderPage,
@@ -329,6 +330,7 @@ onMounted(async () => {
 
 watchEffect(() => {
   void props.state.dragMeta.value;
+  void props.state.dragReleaseState?.value;
   void props.state.folderGridStyle.value;
   void props.state.folderCloseIconGhosts?.value;
   void props.state.folderOpenIconGhosts?.value;

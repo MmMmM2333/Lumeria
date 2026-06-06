@@ -111,6 +111,7 @@ const EDIT_BUTTON_HIT_PADDING = 12;
 const SELECTION_FRAME_MIN_PADDING_X = 12;
 const SELECTION_FRAME_PADDING_TOP = 10;
 const SELECTION_FRAME_PADDING_BOTTOM = 8;
+const PRESSED_VISUAL_ALPHA = 0.58;
 
 export class IconNode extends Container {
   constructor(options = {}) {
@@ -124,6 +125,7 @@ export class IconNode extends Container {
     this.textless = false;
     this.isFolder = false;
     this.clickIntent = null;
+    this.pressedPointerId = null;
     this.onAction = options.onAction || (() => {});
 
     this.selectionFrame = new Graphics();
@@ -176,7 +178,8 @@ export class IconNode extends Container {
     this.cursor = "pointer";
     this.on("pointerdown", (event) => this.handlePointerDown(event));
     this.on("pointerup", (event) => this.handlePointerUp(event));
-    this.on("pointerupoutside", () => this.cancelClickIntent());
+    this.on("pointerupoutside", () => this.cancelPressAndClickIntent());
+    this.on("pointercancel", () => this.cancelPressAndClickIntent());
     this.on("rightdown", (event) => this.handleContextMenu(event));
   }
 
@@ -196,6 +199,7 @@ export class IconNode extends Container {
     this.visible = !state.dragging && !state.ghosted;
     this.alpha = state.opening ? 0 : 1;
     this.scale.set(state.opening ? 1.08 : 1);
+    if (state.dragging || state.ghosted || state.opening || state.interactive === false) this.setPressed(false, { immediate: true });
     this.renderVisual(state);
     this.renderLabel(state);
     this.renderEditButtons(state);
@@ -266,6 +270,7 @@ export class IconNode extends Container {
       this.onAction(action, original, this.item, this.source, this);
       return;
     }
+    this.setPressed(true, { pointerId: original?.pointerId });
     if (!this.state?.draggable) {
       this.clickIntent = this.item?.type === "app"
         ? { x: original.clientX ?? 0, y: original.clientY ?? 0, pointerId: original.pointerId }
@@ -277,6 +282,7 @@ export class IconNode extends Container {
   }
 
   handlePointerUp(event) {
+    this.setPressed(false);
     if (this.state?.draggable || !this.clickIntent || this.item?.type !== "app") {
       this.cancelClickIntent();
       return;
@@ -294,7 +300,30 @@ export class IconNode extends Container {
     this.clickIntent = null;
   }
 
+  cancelPressAndClickIntent() {
+    this.setPressed(false);
+    this.cancelClickIntent();
+  }
+
+  setPressed(pressed, options = {}) {
+    const nextAlpha = pressed ? PRESSED_VISUAL_ALPHA : 1;
+    if (pressed) this.pressedPointerId = options.pointerId ?? this.pressedPointerId;
+    else this.pressedPointerId = null;
+    gsap.killTweensOf(this.visualWrap, "alpha");
+    if (options.immediate) {
+      this.visualWrap.alpha = nextAlpha;
+      return;
+    }
+    gsap.to(this.visualWrap, {
+      alpha: nextAlpha,
+      duration: pressed ? 0.06 : 0.14,
+      ease: "power2.out",
+      overwrite: "auto",
+    });
+  }
+
   handleContextMenu(event) {
+    this.setPressed(false);
     const original = event?.nativeEvent || event;
     if (this.item?.type !== "app") return;
     original?.preventDefault?.();

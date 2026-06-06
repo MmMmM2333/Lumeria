@@ -28,6 +28,7 @@ const props = defineProps({
   domRefs: { type: Object, required: true },
   dragFolderTargetId: { type: String, default: null },
   dragMeta: { type: Object, default: null },
+  dragReleaseGhostId: { type: String, default: null },
   folderPageSize: { type: Number, required: true },
   getDesktopPageRenderMode: { type: Function, required: true },
   getVisibleDesktopPage: { type: Function, required: true },
@@ -89,6 +90,7 @@ function renderPixi() {
     desktopTrackMotionKey: props.desktopTrackMotionKey,
     dragFolderTargetId: props.dragFolderTargetId,
     dragMeta: props.dragMeta,
+    dragReleaseGhostId: props.dragReleaseGhostId,
     folderPageSize: props.folderPageSize,
     getDesktopPageRenderMode: props.getDesktopPageRenderMode,
     getVisibleDesktopPage: props.getVisibleDesktopPage,
@@ -204,6 +206,7 @@ watchEffect(() => {
   void props.desktopTrackMotionKey;
   void props.dragFolderTargetId;
   void props.dragMeta;
+  void props.dragReleaseGhostId;
   void props.gridCols;
   void props.gridRows;
   void props.iconSize;

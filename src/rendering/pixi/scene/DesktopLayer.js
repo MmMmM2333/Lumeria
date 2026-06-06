@@ -2,22 +2,41 @@ import { Container, Text } from "pixi.js";
 import { gsap } from "gsap";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getDesktopGridMetrics, getGridSlotRect, makeRect } from "../geometry/gridGeometry.js";
-import { makeStageVirtualElement } from "../geometry/stageCoordinates.js";
+import { makeStageVirtualElement, mapLocalRectToStageRect } from "../geometry/stageCoordinates.js";
 import {
   clearFolderPreviewChildBounds,
   clearLaunchIconBounds,
   registerFolderPreviewChildBounds,
   registerLaunchIconBounds,
+  registerLaunchIconTargetBounds,
   registerTopLevelFolderThumbBounds,
 } from "../geometry/iconBoundsRegistry.js";
 import { layoutDuration, layoutEase, quickDuration, quickEase } from "../animation/eases.js";
 import { pageTrackSpring, springTo, stopTargetSprings } from "../animation/springMotion.js";
+import {
+  isActiveDraggedLaunchItem,
+  isReleaseGhostLaunchItem,
+} from "./dragVisibility.js";
 import { IconNode } from "../nodes/IconNode.js";
 
 function sourceArea(source) {
   if (source.type === "folder") return "folder";
   if (source.type === "search") return "search";
   return "desktop";
+}
+
+function getVisualOffsetY(textless) {
+  return textless ? 0 : -14;
+}
+
+function makeTargetIconBounds(stageRect, stageWidth, stageHeight, centerX, centerY, size, textless) {
+  const visualCenterY = centerY + getVisualOffsetY(textless);
+  return mapLocalRectToStageRect(stageRect, stageWidth, stageHeight, {
+    left: centerX - size / 2,
+    top: visualCenterY - size / 2,
+    width: size,
+    height: size,
+  });
 }
 
 function makeSyntheticPointerEvent(original, node) {
@@ -111,6 +130,8 @@ export class DesktopLayer extends Container {
         const y = slot.top + slot.height / 2;
         const source = { type: state.isSearchMode ? "search" : "page", pageIndex, index };
         const key = `${source.type}:${pageIndex}:${item.id}`;
+        const isActiveDraggedItem = isActiveDraggedLaunchItem(item, state);
+        const isReleaseGhostItem = isReleaseGhostLaunchItem(item, state);
         seen.add(key);
         let node = this.iconNodes.get(key);
         if (!node) {
@@ -132,15 +153,18 @@ export class DesktopLayer extends Container {
           cellHeight: slot.height,
           cellWidth: slot.width,
           compact: sizing.compact,
-          dragging: isInteractivePage && !state.isSearchMode && state.dragMeta?.item?.id === item.id,
+          dragging: !state.isSearchMode && isActiveDraggedItem,
           draggable: isInteractivePage && !state.isSearchMode,
           dropTarget: isInteractivePage && !state.isSearchMode && state.dragFolderTargetId === item.id,
           editing: isInteractivePage && state.isEditMode,
           folderPreviewPageSize: state.folderPageSize,
-          ghosted: isInteractivePage && item.type === "folder" && (
-            state.folderSourceGhostedId === item.id ||
-            state.isFolderOpeningPreviewFrameGhosted?.(item.id)
-          ),
+          ghosted: isReleaseGhostItem ||
+            (isInteractivePage && (
+            (item.type === "folder" && (
+              state.folderSourceGhostedId === item.id ||
+              state.isFolderOpeningPreviewFrameGhosted?.(item.id)
+            ))
+          )),
           hasCustomIcon: Boolean(item.customIconPath || item.customIconDataUrl),
           iconSize: sizing.iconSize,
           interactive: isInteractivePage,
@@ -163,7 +187,12 @@ export class DesktopLayer extends Container {
           registerLaunchIconBounds(
             { area, folderId: null, id: item.id, pageIndex },
             iconBounds,
-            { area, id: item.id, item, pageIndex }
+            { area, id: item.id, index, item, pageIndex }
+          );
+          registerLaunchIconTargetBounds(
+            { area, folderId: null, id: item.id, pageIndex },
+            makeTargetIconBounds(state.stageRect, state.width, state.height, targetX + x, y, sizing.iconSize, state.isTextlessMode),
+            { area, id: item.id, index, item, pageIndex }
           );
           if (item.type === "folder") {
             const folderThumbBounds = node.getFolderThumbBounds(state.stageRect);

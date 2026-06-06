@@ -18,6 +18,7 @@ const props = defineProps({
   isTextlessMode: { type: Boolean, default: false },
   launchTargetStatusById: { type: Object, default: () => ({}) },
   previewState: { type: Object, default: null },
+  releaseState: { type: Object, default: null },
   showMissingLaunchTargetBadge: { type: Boolean, default: true },
 });
 
@@ -46,7 +47,7 @@ function collectPreviewTextureItems(previewState) {
 
 function renderPixi() {
   if (!app || !layer || !hostRef.value) return;
-  preloadIconTextures(collectPreviewTextureItems(props.previewState));
+  preloadIconTextures(collectPreviewTextureItems(props.previewState || props.releaseState));
   const { height, rect, width } = getHostMetrics();
   layer.update({
     folderPageSize: props.folderPageSize,
@@ -55,6 +56,7 @@ function renderPixi() {
     isTextlessMode: props.isTextlessMode,
     launchTargetStatusById: props.launchTargetStatusById,
     previewState: props.previewState,
+    releaseState: props.releaseState,
     showMissingLaunchTargetBadge: props.showMissingLaunchTargetBadge,
     stageRect: rect,
     width: Math.max(1, width),
@@ -107,6 +109,7 @@ watchEffect(() => {
   void props.isTextlessMode;
   void props.launchTargetStatusById;
   void props.previewState;
+  void props.releaseState;
   void props.showMissingLaunchTargetBadge;
   renderPixi();
 });
