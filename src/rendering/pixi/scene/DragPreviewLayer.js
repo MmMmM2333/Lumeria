@@ -2,6 +2,7 @@ import { Container } from "pixi.js";
 import { gsap } from "gsap";
 import { IconNode } from "../nodes/IconNode.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 
 const DRAG_PREVIEW_ROTATION = 0;
 const DRAG_PREVIEW_SCALE = 1.12;
@@ -9,10 +10,6 @@ const DRAG_PREVIEW_FOLDER_HOVER_SCALE = 0.92;
 const DRAG_PREVIEW_LIFT_DURATION = 0.16;
 const DRAG_PREVIEW_FOLDER_SCALE_DURATION = 0.14;
 const DRAG_RELEASE_DURATION = 0.18;
-
-function getVisualOffsetY(textless) {
-  return textless ? 0 : -14;
-}
 
 export class DragPreviewLayer extends Container {
   constructor() {
@@ -88,7 +85,7 @@ export class DragPreviewLayer extends Container {
     });
     this.previewNode.position.set(
       visualLeft + iconSize / 2,
-      visualTop + iconSize / 2 - getVisualOffsetY(state.isTextlessMode)
+      visualTop + iconSize / 2 - getIconVisualOffsetY(state.isTextlessMode)
     );
     this.previewNode.rotation = DRAG_PREVIEW_ROTATION;
     if (isNewPreview) {
@@ -128,7 +125,7 @@ export class DragPreviewLayer extends Container {
     const hasTargetRect = Boolean(targetRect?.width && targetRect?.height);
     const nextKey = `${release.key || makePreviewKey(release)}:${release.targetVersion ?? 0}:${hasTargetRect ? "target" : "pending"}`;
     const textless = Boolean(release.textless ?? state.isTextlessMode);
-    const visualOffsetY = getVisualOffsetY(textless);
+    const visualOffsetY = getIconVisualOffsetY(textless);
     const visualLeft = pointer.x - stageRect.left - offset.x;
     const visualTop = pointer.y - stageRect.top - offset.y;
     const targetScale = hasTargetRect ? Math.max(0.1, targetRect.width / iconSize) : 1;

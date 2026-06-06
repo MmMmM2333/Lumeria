@@ -15,6 +15,12 @@ import {
 } from "../animation/eases.js";
 import { pageTrackSpring, panelSpring, springTo, stopTargetSprings } from "../animation/springMotion.js";
 import { getFolderGridMetrics, getFolderPanelGeometry, getGridSlotRect, parseRepeatCount, readPx } from "../geometry/gridGeometry.js";
+import {
+  getIconLabelLocalY,
+  getIconLabelTopFromVisualRect,
+  getIconNodeOffsetFromVisualCenter,
+  getIconVisualOffsetY,
+} from "../geometry/iconMetrics.js";
 import { makeStageVirtualElement, mapLocalRectToStageRect } from "../geometry/stageCoordinates.js";
 import {
   clearLaunchIconBounds,
@@ -271,7 +277,7 @@ function makeOpeningInterruptionFrame(targets, stageRect, styleFrame) {
     if (target.sourceLabelAlpha == null || target.sourceLabelAlpha <= 0) continue;
     const scale = target.sourceScale ?? 1;
     const labelWidth = Math.max(72, Math.min(160, target.cellWidth || 120)) * scale;
-    const labelTop = iconRect.top + iconRect.height - 6 * scale;
+    const labelTop = getIconLabelTopFromVisualRect(iconRect, scale);
     bounds = expandBounds(bounds, {
       height: 24 * scale,
       left: iconRect.left + iconRect.width / 2 - labelWidth / 2,
@@ -508,7 +514,7 @@ export class FolderOverlayLayer extends Container {
             { area: "folder", folderId: state.renderedFolder.id, id: item.id, index, item, pageIndex }
           );
           const targetCenterX = geometry.panel.left + x + targetTrackX;
-          const targetCenterY = geometry.panel.top + y - (state.isTextlessMode ? 0 : 14);
+          const targetCenterY = geometry.panel.top + y + getIconVisualOffsetY(state.isTextlessMode);
           registerLaunchIconTargetBounds(
             { area: "folder", folderId: state.renderedFolder.id, id: item.id, pageIndex },
             makeTargetIconBounds(state.stageRect, state.width, state.height, targetCenterX, targetCenterY, iconSize),
@@ -524,7 +530,7 @@ export class FolderOverlayLayer extends Container {
             : getFolderPreviewChildBounds(state.renderedFolder.id, item.id, index) ||
             makeProjectedPreviewRect(folderRect, index, cols, rows);
           const targetCenterX = geometry.panel.left + x + targetTrackX;
-          const targetCenterY = geometry.panel.top + y - (state.isTextlessMode ? 0 : 14);
+          const targetCenterY = geometry.panel.top + y + getIconVisualOffsetY(state.isTextlessMode);
           openingGhostTargets.push({
             columnCount: cols,
             cellHeight: slot.height,
@@ -869,7 +875,7 @@ export class FolderOverlayLayer extends Container {
       const iconSize = Math.max(1, ghost.iconSize || ghost.state?.iconSize || 64);
       const scaleX = Math.abs(ghost.scale?.x ?? 1);
       const scaleY = Math.abs(ghost.scale?.y ?? 1);
-      const visualOffsetY = ghost.textless ? 0 : -14;
+      const visualOffsetY = getIconVisualOffsetY(ghost.textless);
       const centerX = ghost.x;
       const centerY = ghost.y + visualOffsetY * scaleY;
       const halfWidth = iconSize * scaleX / 2;
@@ -879,7 +885,7 @@ export class FolderOverlayLayer extends Container {
       right = Math.max(right, centerX + halfWidth);
       bottom = Math.max(bottom, centerY + halfHeight);
       if (ghost.labelText?.visible && ghost.labelText.alpha > CLOSING_GHOST_MIN_VISIBLE_ALPHA) {
-        const labelY = ghost.y + (iconSize / 2 - 6) * scaleY;
+        const labelY = ghost.y + getIconLabelLocalY(iconSize, ghost.textless) * scaleY;
         const labelWidth = Math.max(72, Math.min(160, ghost.state?.cellWidth || 120)) * scaleX;
         const labelHeight = 24 * scaleY;
         left = Math.min(left, ghost.x - labelWidth / 2);
@@ -1003,7 +1009,7 @@ export class FolderOverlayLayer extends Container {
         textless: state.isTextlessMode,
       });
       const sourceRect = makeLocalRect(target.sourceRect, state.stageRect);
-      const labelOffset = state.isTextlessMode ? 0 : 14;
+      const labelOffset = getIconNodeOffsetFromVisualCenter(state.isTextlessMode);
       const scale = Math.max(0.16, target.sourceRect.width / Math.max(1, target.iconSize));
       const fromX = sourceRect.left + sourceRect.width / 2;
       const fromY = sourceRect.top + sourceRect.height / 2 + labelOffset * scale;
@@ -1054,7 +1060,7 @@ export class FolderOverlayLayer extends Container {
     killTweensDeep(ghost);
     if (target.isThumbnailChild && !ghost.destroyed) {
       const targetRect = makeLocalRect(target.targetRect, state.stageRect);
-      const labelOffset = state.isTextlessMode ? 0 : 14;
+      const labelOffset = getIconNodeOffsetFromVisualCenter(state.isTextlessMode);
       const scale = Math.max(0.14, target.targetRect.width / Math.max(1, target.iconSize));
       ghost.position.set(
         targetRect.left + targetRect.width / 2,
@@ -1190,7 +1196,7 @@ export class FolderOverlayLayer extends Container {
       });
       const sourceRect = makeLocalRect(target.sourceRect, state.stageRect);
       const targetRect = makeLocalRect(target.targetRect, state.stageRect);
-      const labelOffset = state.isTextlessMode ? 0 : 14;
+      const labelOffset = getIconNodeOffsetFromVisualCenter(state.isTextlessMode);
       const sourceScale = target.sourceScale ?? 1;
       const sourceAlpha = target.sourceAlpha ?? 1;
       const scale = Math.max(0.14, target.targetRect.width / Math.max(1, target.iconSize));

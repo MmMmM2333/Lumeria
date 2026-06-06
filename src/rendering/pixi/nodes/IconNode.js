@@ -2,6 +2,7 @@ import { Container, Graphics, Rectangle, Sprite, Text } from "pixi.js";
 import { gsap } from "gsap";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getCachedIconTexture } from "../assets/iconTextureCache.js";
+import { getIconLabelLocalY, getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { mapLocalRectToStageRect } from "../geometry/stageCoordinates.js";
 import { getFolderThumbMetrics } from "./folderThumbMetrics.js";
 import { getFolderPreviewMotionPlan } from "./folderThumbPreviewMotion.js";
@@ -414,7 +415,7 @@ export class IconNode extends Container {
   }
 
   getVisualOffsetY() {
-    return this.textless ? 0 : -14;
+    return getIconVisualOffsetY(this.textless);
   }
 
   updateHitArea(state) {
@@ -942,7 +943,7 @@ export class IconNode extends Container {
       ? fitSingleLineName(this.item?.name, fontSize, Math.max(56, state.cellWidth * 0.9))
       : fitWrappedName(this.item?.name, fontSize, wrapWidth);
     this.labelText.anchor.set(0.5, 0);
-    this.labelText.position.set(0, this.iconSize / 2 + 8 + (this.textless ? 0 : -14));
+    this.labelText.position.set(0, getIconLabelLocalY(this.iconSize, this.textless));
   }
 
   revealLabelAfterGhost() {

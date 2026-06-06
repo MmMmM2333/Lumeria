@@ -2,6 +2,7 @@ import { Container, Text } from "pixi.js";
 import { gsap } from "gsap";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getDesktopGridMetrics, getGridSlotRect, makeRect } from "../geometry/gridGeometry.js";
+import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { makeStageVirtualElement, mapLocalRectToStageRect } from "../geometry/stageCoordinates.js";
 import {
   clearFolderPreviewChildBounds,
@@ -25,12 +26,8 @@ function sourceArea(source) {
   return "desktop";
 }
 
-function getVisualOffsetY(textless) {
-  return textless ? 0 : -14;
-}
-
 function makeTargetIconBounds(stageRect, stageWidth, stageHeight, centerX, centerY, size, textless) {
-  const visualCenterY = centerY + getVisualOffsetY(textless);
+  const visualCenterY = centerY + getIconVisualOffsetY(textless);
   return mapLocalRectToStageRect(stageRect, stageWidth, stageHeight, {
     left: centerX - size / 2,
     top: visualCenterY - size / 2,
