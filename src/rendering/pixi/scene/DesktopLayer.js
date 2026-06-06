@@ -157,6 +157,9 @@ export class DesktopLayer extends Container {
           draggable: isInteractivePage && !state.isSearchMode,
           dropTarget: isInteractivePage && !state.isSearchMode && state.dragFolderTargetId === item.id,
           editing: isInteractivePage && state.isEditMode,
+          folderHoverState: isInteractivePage && !state.isSearchMode && state.dragFolderHoverState?.targetId === item.id
+            ? state.dragFolderHoverState
+            : null,
           folderPreviewPageSize: state.folderPageSize,
           ghosted: isReleaseGhostItem ||
             (isInteractivePage && (

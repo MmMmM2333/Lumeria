@@ -26,6 +26,7 @@ const props = defineProps({
   activePages: { type: Array, required: true },
   desktopTrackMotionKey: { type: String, required: true },
   domRefs: { type: Object, required: true },
+  dragFolderHoverState: { type: Object, default: null },
   dragFolderTargetId: { type: String, default: null },
   dragMeta: { type: Object, default: null },
   dragReleaseGhostId: { type: String, default: null },
@@ -88,6 +89,7 @@ function renderPixi() {
     activePageIndex: props.activePageIndex,
     activePages: props.activePages,
     desktopTrackMotionKey: props.desktopTrackMotionKey,
+    dragFolderHoverState: props.dragFolderHoverState,
     dragFolderTargetId: props.dragFolderTargetId,
     dragMeta: props.dragMeta,
     dragReleaseGhostId: props.dragReleaseGhostId,
@@ -204,6 +206,7 @@ watchEffect(() => {
   void props.activePageIndex;
   void props.activePages;
   void props.desktopTrackMotionKey;
+  void props.dragFolderHoverState;
   void props.dragFolderTargetId;
   void props.dragMeta;
   void props.dragReleaseGhostId;

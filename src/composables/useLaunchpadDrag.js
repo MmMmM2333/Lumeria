@@ -28,6 +28,10 @@ const LAYOUT_PROJECTION_RELEASE_DELAY = 260;
 const DRAG_RELEASE_DURATION_MS = 180;
 const DRAG_RELEASE_GHOST_PADDING_MS = 60;
 const DRAG_RELEASE_TARGET_RESOLVE_FRAMES = 3;
+const FOLDER_HOVER_FLASH_DURATION_MS = 560;
+const FOLDER_HOVER_RESTORE_BEFORE_OPEN_MS = 90;
+const FOLDER_HOVER_FLASH_DELAY_MS = Math.max(0, FOLDER_HOVER_DELAY - FOLDER_HOVER_FLASH_DURATION_MS);
+const FOLDER_HOVER_OPENING_DELAY_MS = Math.max(0, FOLDER_HOVER_DELAY - FOLDER_HOVER_RESTORE_BEFORE_OPEN_MS);
 
 export function isPrimaryPointerStartEvent(event) {
   if (!event) return false;
@@ -55,6 +59,7 @@ export function shouldFinishDragForPointerEvent(activeDrag, event) {
 
 export function useLaunchpadDrag(options) {
   const dragMeta = shallowRef(null);
+  const dragFolderHoverState = shallowRef(null);
   const dragFolderTargetId = shallowRef(null);
   const dragPreviewState = shallowRef(null);
   const dragReleaseState = shallowRef(null);
@@ -79,6 +84,7 @@ export function useLaunchpadDrag(options) {
   let dragReleaseTimer = null;
   let dragReleaseResolveRaf = 0;
   let dragReleaseKey = 0;
+  let dragFolderHoverKey = 0;
 
   function isDragActive() {
     return Boolean(dragRuntime);
@@ -90,15 +96,23 @@ export function useLaunchpadDrag(options) {
   }
 
   function clearPendingTarget() {
-    if (pendingTimer) window.clearTimeout(pendingTimer.timer);
+    clearPendingFolderTimers();
     pendingTimer = null;
     folderHover = null;
+    dragFolderHoverState.value = null;
     dragFolderTargetId.value = null;
   }
 
   function clearPendingTimerButKeepSticky() {
-    if (pendingTimer) window.clearTimeout(pendingTimer.timer);
+    clearPendingFolderTimers();
     pendingTimer = null;
+  }
+
+  function clearPendingFolderTimers() {
+    if (!pendingTimer) return;
+    if (pendingTimer.flashTimer) window.clearTimeout(pendingTimer.flashTimer);
+    if (pendingTimer.openingTimer) window.clearTimeout(pendingTimer.openingTimer);
+    if (pendingTimer.timer) window.clearTimeout(pendingTimer.timer);
   }
 
   function clearPageTurn() {
@@ -469,6 +483,7 @@ export function useLaunchpadDrag(options) {
     dragPreviewState.value = null;
     dragSortBlocked = false;
     pendingDesktopReturn = null;
+    dragFolderHoverState.value = null;
     dragFolderTargetId.value = null;
     dragPlacement = null;
     folderHover = null;
@@ -572,8 +587,33 @@ export function useLaunchpadDrag(options) {
   function lockFolderHoverTarget(targetInfo) {
     const rect = targetInfo?.rect;
     if (!rect) return;
-    folderHover = { targetId: targetInfo.item.id, stickyRect: expandRect(rect, FOLDER_HOVER_STICKY_MARGIN) };
-    dragFolderTargetId.value = targetInfo.item.id;
+    const targetId = targetInfo.item.id;
+    folderHover = { targetId, stickyRect: expandRect(rect, FOLDER_HOVER_STICKY_MARGIN) };
+    dragFolderTargetId.value = targetId;
+    if (dragFolderHoverState.value?.targetId === targetId) return;
+    dragFolderHoverKey += 1;
+    dragFolderHoverState.value = {
+      key: `folder-hover-${dragFolderHoverKey}`,
+      phase: "hover",
+      startedAt: Date.now(),
+      targetId,
+      targetType: targetInfo.item.type,
+    };
+  }
+
+  function setPendingFolderPhase(targetId, phase) {
+    const current = dragFolderHoverState.value;
+    if (!current || current.targetId !== targetId) return;
+    dragFolderHoverState.value = { ...current, phase };
+  }
+
+  function isPendingFolderTargetReady(targetId) {
+    const activeDrag = dragRuntime;
+    if (!isPendingFolderTargetStillActive(activeDrag, targetId)) {
+      clearPendingTarget();
+      return false;
+    }
+    return true;
   }
 
   function startPendingFolderTarget(target) {
@@ -582,14 +622,18 @@ export function useLaunchpadDrag(options) {
 
     pendingTimer = {
       targetId: target.id,
+      flashTimer: window.setTimeout(() => {
+        if (isPendingFolderTargetReady(target.id)) setPendingFolderPhase(target.id, "flash");
+      }, FOLDER_HOVER_FLASH_DELAY_MS),
+      openingTimer: window.setTimeout(() => {
+        if (isPendingFolderTargetReady(target.id)) setPendingFolderPhase(target.id, "opening");
+      }, FOLDER_HOVER_OPENING_DELAY_MS),
       timer: window.setTimeout(() => {
         const activeDrag = dragRuntime;
-        if (!isPendingFolderTargetStillActive(activeDrag, target.id)) {
-          clearPendingTarget();
-          return;
-        }
+        if (!isPendingFolderTargetStillActive(activeDrag, target.id)) return clearPendingTarget();
         const latestTarget = options.findTopLevel(options.pages.value, target.id)?.item;
-        if (!latestTarget || latestTarget.id === activeDrag.item.id) return;
+        if (!latestTarget || latestTarget.id === activeDrag.item.id) return clearPendingTarget();
+        setPendingFolderPhase(target.id, "opening");
         clearPendingTarget();
         if (latestTarget.type === "folder") openExistingFolderForDrop(latestTarget.id);
         else createFolderForDrop(latestTarget.id);
@@ -1208,6 +1252,7 @@ export function useLaunchpadDrag(options) {
     clearPageTurn,
     clearPendingTarget,
     detachDragListeners,
+    dragFolderHoverState,
     dragFolderTargetId,
     dragMeta,
     dragPreviewState,

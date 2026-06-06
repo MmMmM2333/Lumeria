@@ -32,6 +32,7 @@
         :active-pages="activePages"
         :desktop-track-motion-key="desktopTrackMotionKey"
         :dom-refs="desktopDomRefs"
+        :drag-folder-hover-state="dragFolderHoverState"
         :drag-folder-target-id="dragFolderTargetId"
         :drag-meta="dragMeta"
         :drag-release-ghost-id="dragReleaseGhostId"
@@ -89,6 +90,7 @@
       :launch-target-status-by-id="launchTargetStatusById"
       :preview-state="dragPreviewState"
       :release-state="dragReleaseState"
+      :folder-hover-state="dragFolderHoverState"
       :show-missing-launch-target-badge="showMissingLaunchTargetBadge"
     />
     <LaunchpadOverlays
@@ -255,6 +257,7 @@ const {
   toggleMissingLaunchTargetBadge,
   toggleScanRootEnabled,
   isBrowsingScanRoot,
+  dragFolderHoverState,
   dragFolderTargetId,
   dragMeta,
   dragPreviewState,

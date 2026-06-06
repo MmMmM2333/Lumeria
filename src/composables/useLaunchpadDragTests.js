@@ -473,9 +473,16 @@ export async function runLaunchpadDragTests() {
       preventDefault: () => {},
     });
     runNextTimer(timers);
+    assert(drag.dragFolderHoverState.value?.targetId === "folder-1", "hovering a folder target should expose the Pixi hover target");
+    assert(drag.dragFolderHoverState.value?.phase === "hover", "folder target hover should start in the hover phase");
+    runNextTimer(timers);
+    assert(drag.dragFolderHoverState.value?.phase === "flash", "folder target hover should enter the flash phase before opening");
+    runNextTimer(timers);
+    assert(drag.dragFolderHoverState.value?.phase === "opening", "folder target hover should restore the drag preview before opening");
     runNextTimer(timers);
 
     assert(openFolderId.value === "folder-1", "hovering a folder target should open it for drag");
+    assert(drag.dragFolderHoverState.value === null, "opening a folder target should clear Pixi hover state");
     assert(folderSession.value?.mode === "existing", "hovering an existing folder should enter an existing-folder drag session");
     assert(Array.from(timers.values()).some((timer) => timer.delay > 400), "opening a folder during drag should arm a sort gate timer");
 
@@ -493,6 +500,50 @@ export async function runLaunchpadDragTests() {
 
     for (let index = 0; index < 5 && calls.insertAppIntoFolder.length === 0; index += 1) runNextTimer(timers);
     assert(calls.insertAppIntoFolder.length === 1, "folder open gate completion should allow folder sorting at the current pointer");
+    clearIconBoundsRegistry();
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const folder = { id: "folder-2", type: "folder", name: "Folder", childPages: [[]], children: [] };
+    clearIconBoundsRegistry();
+    registerLaunchIconBounds(
+      { area: "desktop", id: "folder-2", pageIndex: 0 },
+      { left: 100, top: 100, width: 80, height: 80 },
+      { area: "desktop", id: "folder-2", item: folder, pageIndex: 0 }
+    );
+    const { app, drag, pages } = createDragHarness();
+    pages.value = [[app, folder]];
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+      querySelector: () => null,
+    };
+
+    drag.beginDrag(makePointerDownEvent(82, target), app, { type: "page", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+
+    listeners.get("pointermove")({
+      type: "pointermove",
+      pointerId: 82,
+      buttons: 1,
+      clientX: 132,
+      clientY: 132,
+      preventDefault: () => {},
+    });
+    runNextTimer(timers);
+    assert(drag.dragFolderHoverState.value?.targetId === "folder-2", "folder hover state should be set while hovering a folder");
+
+    listeners.get("pointermove")({
+      type: "pointermove",
+      pointerId: 82,
+      buttons: 1,
+      clientX: 300,
+      clientY: 132,
+      preventDefault: () => {},
+    });
+    runNextTimer(timers);
+    assert(drag.dragFolderHoverState.value === null, "leaving the folder sticky zone should clear folder hover state");
+    assert(!Array.from(timers.values()).some((timer) => timer.delay > 400), "leaving the folder sticky zone should cancel delayed folder hover timers");
     clearIconBoundsRegistry();
   });
 }

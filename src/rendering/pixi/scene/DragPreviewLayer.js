@@ -5,7 +5,9 @@ import { reloadOnPixiHotUpdate } from "../devHmr.js";
 
 const DRAG_PREVIEW_ROTATION = 0;
 const DRAG_PREVIEW_SCALE = 1.12;
+const DRAG_PREVIEW_FOLDER_HOVER_SCALE = 0.92;
 const DRAG_PREVIEW_LIFT_DURATION = 0.16;
+const DRAG_PREVIEW_FOLDER_SCALE_DURATION = 0.14;
 const DRAG_RELEASE_DURATION = 0.18;
 
 function getVisualOffsetY(textless) {
@@ -19,6 +21,7 @@ export class DragPreviewLayer extends Container {
     this.previewNode.eventMode = "none";
     this.addChild(this.previewNode);
     this.previewKey = null;
+    this.previewScaleKey = null;
     this.releaseKey = null;
     this.visible = false;
   }
@@ -32,6 +35,7 @@ export class DragPreviewLayer extends Container {
     const preview = state.previewState;
     if (!preview?.item) {
       this.previewKey = null;
+      this.previewScaleKey = null;
       this.releaseKey = null;
       gsap.killTweensOf(this.previewNode);
       gsap.killTweensOf(this.previewNode.scale);
@@ -50,6 +54,8 @@ export class DragPreviewLayer extends Container {
     const isNewPreview = this.previewKey !== nextKey || !this.previewNode.visible;
     const visualLeft = pointer.x - stageRect.left - offset.x;
     const visualTop = pointer.y - stageRect.top - offset.y;
+    const targetScale = getPreviewTargetScale(state.folderHoverState);
+    const nextScaleKey = `${nextKey}:${targetScale}`;
 
     this.previewKey = nextKey;
     this.releaseKey = null;
@@ -72,6 +78,7 @@ export class DragPreviewLayer extends Container {
         ? state.launchTargetStatusById?.[preview.item.id] || null
         : null,
       opening: false,
+      preserveNodeScale: true,
       removable: false,
       selected: false,
       source: preview.source,
@@ -91,10 +98,21 @@ export class DragPreviewLayer extends Container {
         duration: DRAG_PREVIEW_LIFT_DURATION,
         ease: "power3.out",
         overwrite: "auto",
-        x: DRAG_PREVIEW_SCALE,
-        y: DRAG_PREVIEW_SCALE,
+        x: targetScale,
+        y: targetScale,
       });
+    } else if (this.previewScaleKey !== nextScaleKey) {
+      gsap.to(this.previewNode.scale, {
+        duration: DRAG_PREVIEW_FOLDER_SCALE_DURATION,
+        ease: "power3.out",
+        overwrite: "auto",
+        x: targetScale,
+        y: targetScale,
+      });
+    } else if (!gsap.isTweening(this.previewNode.scale)) {
+      this.previewNode.scale.set(targetScale);
     }
+    this.previewScaleKey = nextScaleKey;
     this.previewNode.eventMode = "none";
   }
 
@@ -142,6 +160,7 @@ export class DragPreviewLayer extends Container {
         ? state.launchTargetStatusById?.[release.item.id] || null
         : null,
       opening: false,
+      preserveNodeScale: true,
       removable: false,
       selected: false,
       source: release.source,
@@ -154,6 +173,7 @@ export class DragPreviewLayer extends Container {
     if (this.releaseKey === nextKey) return;
     this.releaseKey = nextKey;
     this.previewKey = null;
+    this.previewScaleKey = null;
     gsap.killTweensOf(this.previewNode);
     gsap.killTweensOf(this.previewNode.scale);
     this.previewNode.alpha = 1;
@@ -184,6 +204,14 @@ export class DragPreviewLayer extends Container {
     gsap.killTweensOf(this.previewNode.scale);
     super.destroy(options);
   }
+}
+
+function getPreviewTargetScale(folderHoverState) {
+  const phase = folderHoverState?.phase;
+  if (folderHoverState?.targetType === "folder" && (phase === "hover" || phase === "flash")) {
+    return DRAG_PREVIEW_FOLDER_HOVER_SCALE;
+  }
+  return DRAG_PREVIEW_SCALE;
 }
 
 function makePreviewKey(preview) {

@@ -14,6 +14,7 @@ import { DragPreviewLayer } from "./scene/DragPreviewLayer.js";
 
 const props = defineProps({
   folderPageSize: { type: Number, required: true },
+  folderHoverState: { type: Object, default: null },
   iconSize: { type: Number, required: true },
   isTextlessMode: { type: Boolean, default: false },
   launchTargetStatusById: { type: Object, default: () => ({}) },
@@ -50,6 +51,7 @@ function renderPixi() {
   preloadIconTextures(collectPreviewTextureItems(props.previewState || props.releaseState));
   const { height, rect, width } = getHostMetrics();
   layer.update({
+    folderHoverState: props.folderHoverState,
     folderPageSize: props.folderPageSize,
     height: Math.max(1, height),
     iconSize: props.iconSize,
@@ -104,6 +106,7 @@ onMounted(async () => {
 });
 
 watchEffect(() => {
+  void props.folderHoverState;
   void props.folderPageSize;
   void props.iconSize;
   void props.isTextlessMode;
