@@ -9,7 +9,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watchEffect } from "vue";
 import { getFolderPreviewSlots } from "../../domain/launchpadLayout.js";
 import { createPixiApp } from "./createPixiApp.js";
 import { preloadIconTextures } from "./assets/iconTextureCache.js";
-import { reloadOnPixiHotUpdate } from "./devHmr.js";
+import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { DragPreviewLayer } from "./scene/DragPreviewLayer.js";
 
 const props = defineProps({
@@ -70,7 +70,8 @@ function handleResize() {
   renderPixi();
 }
 
-function destroyPixi() {
+function destroyPixi(options = {}) {
+  const deep = options.deep !== false;
   destroyed = true;
   window.removeEventListener("resize", handleResize);
   resizeObserver?.disconnect();
@@ -81,9 +82,10 @@ function destroyPixi() {
   layer = null;
   if (currentLayer) {
     currentApp?.stage?.removeChild(currentLayer);
-    currentLayer.destroy({ children: true });
+    if (deep) currentLayer.destroy({ children: true });
   }
-  currentApp?.destroy(true);
+  if (deep) currentApp?.destroy(true);
+  else currentApp?.stop?.();
   hostRef.value?.replaceChildren?.();
 }
 
@@ -120,7 +122,7 @@ watchEffect(() => {
 onBeforeUnmount(destroyPixi);
 
 if (import.meta.hot) {
-  import.meta.hot.dispose(destroyPixi);
+  import.meta.hot.dispose(() => disposePixiForHotReload(destroyPixi));
   reloadOnPixiHotUpdate(import.meta.hot);
 }
 </script>

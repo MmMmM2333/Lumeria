@@ -49,7 +49,7 @@ import { createPixiApp } from "./createPixiApp.js";
 import { FolderOverlayLayer } from "./scene/FolderOverlayLayer.js";
 import { clearIconTextureCache } from "./assets/iconTextureCache.js";
 import { clearIconBoundsRegistry } from "./geometry/iconBoundsRegistry.js";
-import { reloadOnPixiHotUpdate } from "./devHmr.js";
+import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 
 const props = defineProps({
   state: { type: Object, required: true },
@@ -213,7 +213,8 @@ function handleIconAction(action, event, item, source) {
   if (action === "reset-icon") props.state.resetAppCustomIcon(item.id);
 }
 
-function destroyPixi() {
+function destroyPixi(options = {}) {
+  const deep = options.deep !== false;
   destroyed = true;
   window.removeEventListener("resize", handleResize);
   resizeObserver?.disconnect();
@@ -228,12 +229,13 @@ function destroyPixi() {
   titleFrame.value = null;
   if (currentLayer) {
     currentApp?.stage?.removeChild(currentLayer);
-    currentLayer.destroy({ children: true });
+    if (deep) currentLayer.destroy({ children: true });
   }
-  currentApp?.destroy(true);
+  if (deep) currentApp?.destroy(true);
+  else currentApp?.stop?.();
   hostRef.value?.replaceChildren?.();
   clearIconBoundsRegistry();
-  clearIconTextureCache();
+  if (deep) clearIconTextureCache();
 }
 
 function cancelFolderPageDotsReveal() {
@@ -352,7 +354,7 @@ watchEffect(() => {
 onBeforeUnmount(destroyPixi);
 
 if (import.meta.hot) {
-  import.meta.hot.dispose(destroyPixi);
+  import.meta.hot.dispose(() => disposePixiForHotReload(destroyPixi));
   reloadOnPixiHotUpdate(import.meta.hot);
 }
 </script>

@@ -11,6 +11,15 @@ export function requestPixiHotReload() {
   reload();
 }
 
+export function disposePixiForHotReload(destroyPixi) {
+  requestPixiHotReload();
+  try {
+    destroyPixi?.({ deep: false });
+  } catch (error) {
+    console.warn("[pixi-hmr] skipped deep destroy before reload", error);
+  }
+}
+
 export function reloadOnPixiHotUpdate(hot) {
   if (!hot) return;
   hot.accept(() => requestPixiHotReload());

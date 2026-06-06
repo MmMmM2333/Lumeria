@@ -17,7 +17,7 @@ import { createPixiApp } from "./createPixiApp.js";
 import { DesktopLayer } from "./scene/DesktopLayer.js";
 import { clearIconTextureCache, preloadIconTextures } from "./assets/iconTextureCache.js";
 import { clearIconBoundsRegistry } from "./geometry/iconBoundsRegistry.js";
-import { reloadOnPixiHotUpdate } from "./devHmr.js";
+import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 
 const FOLDER_TEXTURE_PREWARM_LIMIT = 80;
 
@@ -162,7 +162,8 @@ function handleIconAction(action, event, item, source) {
   if (action === "reset-icon") emit("reset-app-icon", item.id);
 }
 
-function destroyPixi() {
+function destroyPixi(options = {}) {
+  const deep = options.deep !== false;
   destroyed = true;
   window.removeEventListener("resize", handleResize);
   resizeObserver?.disconnect();
@@ -174,12 +175,13 @@ function destroyPixi() {
   clearFolderTexturePrewarmTimer();
   if (currentLayer) {
     currentApp?.stage?.removeChild(currentLayer);
-    currentLayer.destroy({ children: true });
+    if (deep) currentLayer.destroy({ children: true });
   }
-  currentApp?.destroy(true);
+  if (deep) currentApp?.destroy(true);
+  else currentApp?.stop?.();
   hostRef.value?.replaceChildren?.();
   clearIconBoundsRegistry();
-  clearIconTextureCache();
+  if (deep) clearIconTextureCache();
 }
 
 onMounted(async () => {
@@ -227,7 +229,7 @@ watchEffect(() => {
 onBeforeUnmount(destroyPixi);
 
 if (import.meta.hot) {
-  import.meta.hot.dispose(destroyPixi);
+  import.meta.hot.dispose(() => disposePixiForHotReload(destroyPixi));
   reloadOnPixiHotUpdate(import.meta.hot);
 }
 </script>
