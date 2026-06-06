@@ -20,6 +20,7 @@ import {
 import { getDomRefElement } from "./usePageGridMetrics.js";
 import {
   getLaunchIconTargetBounds,
+  getTopLevelIconBounds,
   getTopLevelTargetAtPoint as getPixiTopLevelTargetAtPoint,
 } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 
@@ -33,6 +34,7 @@ const FOLDER_HOVER_OPEN_BUFFER_MS = 20;
 const FOLDER_HOVER_RESTORE_BEFORE_OPEN_MS = 90;
 const FOLDER_HOVER_OPEN_DELAY_MS = FOLDER_HOVER_SETTLE_MS + FOLDER_HOVER_FLASH_TOTAL_MS + FOLDER_HOVER_OPEN_BUFFER_MS;
 const FOLDER_HOVER_OPENING_DELAY_MS = Math.max(0, FOLDER_HOVER_OPEN_DELAY_MS - FOLDER_HOVER_RESTORE_BEFORE_OPEN_MS);
+const FOLDER_HOVER_ESCAPE_MARGIN = 64;
 
 export function isPrimaryPointerStartEvent(event) {
   if (!event) return false;
@@ -548,6 +550,49 @@ export function useLaunchpadDrag(options) {
     };
   }
 
+  function getDragVisualRect(activeDrag) {
+    if (!activeDrag) return null;
+    const width = activeDrag.size?.width || 70;
+    const height = activeDrag.size?.height || 70;
+    return {
+      bottom: activeDrag.pointer.y - activeDrag.offset.y + height,
+      height,
+      left: activeDrag.pointer.x - activeDrag.offset.x,
+      right: activeDrag.pointer.x - activeDrag.offset.x + width,
+      top: activeDrag.pointer.y - activeDrag.offset.y,
+      width,
+    };
+  }
+
+  function rectsIntersect(a, b) {
+    if (!a || !b) return false;
+    return a.left <= b.right && a.right >= b.left && a.top <= b.bottom && a.bottom >= b.top;
+  }
+
+  function getStableTopLevelTargetBounds(found) {
+    if (!found?.item?.id) return null;
+    const source = { area: "desktop", folderId: null, id: found.item.id, pageIndex: found.pageIndex };
+    return getLaunchIconTargetBounds(
+      source,
+      { area: "desktop", id: found.item.id, index: found.index, pageIndex: found.pageIndex }
+    ) || getLaunchIconTargetBounds(
+      source,
+      { area: "desktop", id: found.item.id, pageIndex: found.pageIndex }
+    );
+  }
+
+  function normalizeTopLevelTarget(found, fallbackRect = null, node = null) {
+    if (!found?.item) return null;
+    const rect = getStableTopLevelTargetBounds(found) || fallbackRect;
+    return rect ? { item: found.item, node, rect } : null;
+  }
+
+  function getTopLevelTargetById(targetId) {
+    if (!targetId || targetId === dragRuntime?.item.id) return null;
+    const found = options.findTopLevel(options.pages.value, targetId);
+    return normalizeTopLevelTarget(found, getTopLevelIconBounds(targetId));
+  }
+
   function getTopLevelTargetRect(node) {
     return node?.querySelector?.(".icon-box")?.getBoundingClientRect?.() || node?.getBoundingClientRect?.() || null;
   }
@@ -556,7 +601,8 @@ export function useLaunchpadDrag(options) {
     const pixiTarget = getPixiTopLevelTargetAtPoint(clientX, clientY, dragRuntime?.item.id);
     if (pixiTarget?.id) {
       const found = options.findTopLevel(options.pages.value, pixiTarget.id);
-      if (found) return { item: found.item, node: null, rect: pixiTarget.rect };
+      const target = normalizeTopLevelTarget(found, pixiTarget.rect);
+      if (target) return target;
     }
     const elements = document.elementsFromPoint(clientX, clientY);
     for (const element of elements) {
@@ -564,14 +610,36 @@ export function useLaunchpadDrag(options) {
       const id = node?.getAttribute("data-top-item-id");
       if (!id || id === dragRuntime?.item.id) continue;
       const found = options.findTopLevel(options.pages.value, id);
-      if (found) return { item: found.item, node, rect: getTopLevelTargetRect(node) };
+      const target = normalizeTopLevelTarget(found, getTopLevelTargetRect(node), node);
+      if (target) return target;
     }
     return null;
   }
 
-  function isInsideFolderHitZone(targetInfo, clientX, clientY) {
+  function getTopLevelTargetForDrag(activeDrag, center) {
+    if (!activeDrag || !center) return null;
+    const pointTarget = getTopLevelTargetAtPoint(center.x, center.y);
+    if (pointTarget) return pointTarget;
+
+    const dragRect = getDragVisualRect(activeDrag);
+    if (!dragRect) return null;
+    const pageIndex = options.pageIndex.value;
+    const page = options.pages.value[pageIndex] || [];
+    for (let index = 0; index < page.length; index += 1) {
+      const item = page[index];
+      if (!item?.id || item.id === activeDrag.item.id) continue;
+      const target = normalizeTopLevelTarget({ item, pageIndex, index });
+      if (target && rectsIntersect(expandRect(target.rect, 6), dragRect)) return target;
+    }
+    return null;
+  }
+
+  function isInsideFolderHitZone(targetInfo, clientX, clientY, activeDrag = null) {
     const rect = targetInfo?.rect;
-    return rect ? isPointInsideRect(rect, clientX, clientY) : false;
+    if (!rect) return false;
+    if (isPointInsideRect(rect, clientX, clientY)) return true;
+    const dragRect = getDragVisualRect(activeDrag);
+    return rectsIntersect(expandRect(rect, 6), dragRect);
   }
 
   function isInsideStickyFolderZone(clientX, clientY) {
@@ -579,17 +647,39 @@ export function useLaunchpadDrag(options) {
     return isPointInsideRect(folderHover.stickyRect, clientX, clientY);
   }
 
+  function refreshFolderHoverTarget(targetId) {
+    const targetInfo = getTopLevelTargetById(targetId);
+    if (!targetInfo) return null;
+    const margin = pendingTimer?.targetId === targetId ? FOLDER_HOVER_ESCAPE_MARGIN : FOLDER_HOVER_STICKY_MARGIN;
+    folderHover = { targetId, stickyRect: expandRect(targetInfo.rect, margin) };
+    return targetInfo;
+  }
+
+  function getLockedTopLevelDropTarget(activeDrag) {
+    const targetId = folderHover?.targetId || pendingTimer?.targetId;
+    if (!targetId) return null;
+    const targetInfo = refreshFolderHoverTarget(targetId);
+    if (!targetInfo) return null;
+    const center = getDragVisualCenter(activeDrag) || activeDrag?.pointer;
+    if (!center) return null;
+    if (isInsideStickyFolderZone(center.x, center.y) || isInsideFolderHitZone(targetInfo, center.x, center.y, activeDrag)) return targetInfo;
+    return null;
+  }
+
   function isPendingFolderTargetStillActive(activeDrag, targetId) {
     if (!activeDrag || activeDrag.item.type !== "app" || folderHover?.targetId !== targetId) return false;
+    const targetInfo = refreshFolderHoverTarget(targetId);
+    if (!targetInfo) return false;
     const center = getDragVisualCenter(activeDrag) || activeDrag.pointer;
-    return isInsideStickyFolderZone(center.x, center.y);
+    return isInsideStickyFolderZone(center.x, center.y) || isInsideFolderHitZone(targetInfo, center.x, center.y, activeDrag);
   }
 
   function lockFolderHoverTarget(targetInfo) {
     const rect = targetInfo?.rect;
     if (!rect) return;
     const targetId = targetInfo.item.id;
-    folderHover = { targetId, stickyRect: expandRect(rect, FOLDER_HOVER_STICKY_MARGIN) };
+    const margin = pendingTimer?.targetId === targetId ? FOLDER_HOVER_ESCAPE_MARGIN : FOLDER_HOVER_STICKY_MARGIN;
+    folderHover = { targetId, stickyRect: expandRect(rect, margin) };
     dragFolderTargetId.value = targetId;
     if (dragFolderHoverState.value?.targetId === targetId) return;
     dragFolderHoverKey += 1;
@@ -985,14 +1075,17 @@ export function useLaunchpadDrag(options) {
 
     if (activeDrag.item.type === "app") {
       const center = getDragVisualCenter(activeDrag) || { x: clientX, y: clientY };
-      const targetInfo = getTopLevelTargetAtPoint(center.x, center.y);
-      const targetStillSticky = pendingTimer && isInsideStickyFolderZone(center.x, center.y);
-      if (targetInfo && isInsideFolderHitZone(targetInfo, center.x, center.y)) {
+      const lockedTarget = getLockedTopLevelDropTarget(activeDrag);
+      if (lockedTarget) {
+        lockFolderHoverTarget(lockedTarget);
+        return;
+      }
+      const targetInfo = getTopLevelTargetForDrag(activeDrag, center);
+      if (targetInfo && isInsideFolderHitZone(targetInfo, center.x, center.y, activeDrag)) {
         lockFolderHoverTarget(targetInfo);
         startPendingFolderTarget(targetInfo.item);
         return;
       }
-      if (targetStillSticky) return;
       clearPendingTarget();
     } else {
       clearPendingTarget();
@@ -1183,8 +1276,11 @@ export function useLaunchpadDrag(options) {
     commitPendingDesktopReturn({ force: true });
 
     const center = getDragVisualCenter(activeDrag);
-    const topLevelDropTarget = center ? getTopLevelTargetAtPoint(center.x, center.y) : null;
-    const shouldDropOnTopLevelTarget = topLevelDropTarget && isInsideFolderHitZone(topLevelDropTarget, center.x, center.y);
+    const lockedTopLevelDropTarget = getLockedTopLevelDropTarget(activeDrag);
+    const topLevelDropTarget = lockedTopLevelDropTarget || (center ? getTopLevelTargetForDrag(activeDrag, center) : null);
+    const shouldDropOnTopLevelTarget =
+      Boolean(lockedTopLevelDropTarget) ||
+      Boolean(topLevelDropTarget && isInsideFolderHitZone(topLevelDropTarget, center.x, center.y, activeDrag));
 
     clearPageTurn();
     clearFolderPageTurn();

@@ -546,4 +546,69 @@ export async function runLaunchpadDragTests() {
     assert(!Array.from(timers.values()).some((timer) => timer.delay > 400), "leaving the folder sticky zone should cancel delayed folder hover timers");
     clearIconBoundsRegistry();
   });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const folder = { id: "folder-3", type: "folder", name: "Folder", childPages: [[]], children: [] };
+    clearIconBoundsRegistry();
+    registerLaunchIconBounds(
+      { area: "desktop", id: "folder-3", pageIndex: 0 },
+      { left: 100, top: 100, width: 80, height: 80 },
+      { area: "desktop", id: "folder-3", item: folder, pageIndex: 0 }
+    );
+    registerLaunchIconTargetBounds(
+      { area: "desktop", id: "folder-3", pageIndex: 0 },
+      { left: 100, top: 100, width: 80, height: 80 },
+      { area: "desktop", id: "folder-3", index: 1, item: folder, pageIndex: 0 }
+    );
+    const { app, calls, drag, pages } = createDragHarness();
+    pages.value = [[app, folder]];
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+      querySelector: () => null,
+    };
+
+    drag.beginDrag(makePointerDownEvent(83, target), app, { type: "page", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+
+    listeners.get("pointermove")({
+      type: "pointermove",
+      pointerId: 83,
+      buttons: 1,
+      clientX: 132,
+      clientY: 132,
+      preventDefault: () => {},
+    });
+    runNextTimer(timers);
+    assert(drag.dragFolderHoverState.value?.targetId === "folder-3", "folder hover state should lock the target before layout motion");
+
+    clearIconBoundsRegistry();
+    registerLaunchIconBounds(
+      { area: "desktop", id: "folder-3", pageIndex: 0 },
+      { left: 400, top: 100, width: 80, height: 80 },
+      { area: "desktop", id: "folder-3", item: folder, pageIndex: 0 }
+    );
+    registerLaunchIconTargetBounds(
+      { area: "desktop", id: "folder-3", pageIndex: 0 },
+      { left: 220, top: 100, width: 80, height: 80 },
+      { area: "desktop", id: "folder-3", index: 1, item: folder, pageIndex: 0 }
+    );
+
+    listeners.get("pointermove")({
+      type: "pointermove",
+      pointerId: 83,
+      buttons: 1,
+      clientX: 232,
+      clientY: 132,
+      preventDefault: () => {},
+    });
+    runNextTimer(timers);
+    assert(drag.dragFolderHoverState.value?.targetId === "folder-3", "moving target bounds should refresh the locked folder hover target");
+    assert(calls.commitPages.length === 0, "locked folder hover should block desktop sorting while the target is still sticky");
+
+    listeners.get("pointerup")({ type: "pointerup", pointerId: 83, button: 0, clientX: 232, clientY: 132 });
+    assert(calls.insertAppIntoFolder.length === 1, "pointerup should prefer the locked folder target over moving visual bounds");
+    assert(calls.insertAppIntoFolder[0].folderId === "folder-3", "locked folder drop should use the original folder id");
+    clearIconBoundsRegistry();
+  });
 }
