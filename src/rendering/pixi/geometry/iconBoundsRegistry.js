@@ -24,6 +24,28 @@ function cloneRect(rect) {
   };
 }
 
+function normalizeClearScope(scope, folderId) {
+  if (scope && typeof scope === "object") {
+    const targetFolderId = scope.folderId ?? null;
+    return {
+      area: scope.area || (targetFolderId ? "folder" : null),
+      folderId: targetFolderId,
+    };
+  }
+  return {
+    area: scope || null,
+    folderId: folderId ?? null,
+  };
+}
+
+function shouldClearLaunchBounds(key, value, criteria) {
+  if (!criteria.area && criteria.folderId == null) return true;
+  if (criteria.area && !key.startsWith(`${criteria.area}:`)) return false;
+  if (criteria.folderId == null) return true;
+  const folderId = String(criteria.folderId);
+  return value?.meta?.folderId === folderId || key.startsWith(`folder:${folderId}:`);
+}
+
 export function registerLaunchIconBounds(source, rect, meta = {}) {
   const key = makeLaunchKey(source);
   const safeRect = cloneRect(rect);
@@ -47,18 +69,20 @@ export function unregisterLaunchIconBounds(source) {
   }
 }
 
-export function clearLaunchIconBounds(scope) {
+export function clearLaunchIconBounds(scope, folderId = null) {
+  const criteria = normalizeClearScope(scope, folderId);
+  const shouldClearAll = !criteria.area && criteria.folderId == null;
   for (const [key, value] of launchIconBounds) {
-    if (!scope || key.startsWith(`${scope}:`)) launchIconBounds.delete(key);
-    if (value?.meta?.area === "desktop" && (!scope || scope === "desktop")) {
+    if (shouldClearLaunchBounds(key, value, criteria)) launchIconBounds.delete(key);
+    if (value?.meta?.area === "desktop" && (shouldClearAll || criteria.area === "desktop")) {
       topLevelBounds.delete(value.meta.id);
       topLevelFolderThumbBounds.delete(value.meta.id);
     }
   }
   for (const [id, value] of topLevelFolderThumbBounds) {
-    if (!scope || value?.meta?.area === scope) topLevelFolderThumbBounds.delete(id);
+    if (shouldClearAll || value?.meta?.area === criteria.area) topLevelFolderThumbBounds.delete(id);
   }
-  if (!scope || scope === "desktop") {
+  if (shouldClearAll || criteria.area === "desktop") {
     topLevelBounds.clear();
   }
 }

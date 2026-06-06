@@ -11,17 +11,17 @@ function notifyTextureLoaded(source) {
   const listeners = textureLoadListeners.get(source);
   textureLoadListeners.delete(source);
   if (!listeners) return;
-  for (const listener of listeners) listener();
+  for (const listener of listeners.values()) listener();
 }
 
-function addTextureLoadListener(source, listener) {
+function addTextureLoadListener(source, listener, listenerKey = listener) {
   if (typeof listener !== "function") return;
   let listeners = textureLoadListeners.get(source);
   if (!listeners) {
-    listeners = new Set();
+    listeners = new Map();
     textureLoadListeners.set(source, listeners);
   }
-  listeners.add(listener);
+  listeners.set(listenerKey, listener);
 }
 
 function loadTextureFromImage(source) {
@@ -58,11 +58,11 @@ function requestTextureLoad(source) {
   pendingTextureLoads.set(source, pending);
 }
 
-export function getCachedIconTexture(item, onLoad) {
+export function getCachedIconTexture(item, onLoad, listenerKey = onLoad) {
   const source = getPixiIconTextureSource(item);
   if (!source) return null;
   if (textureCache.has(source)) return textureCache.get(source);
-  if (!failedTextureSources.has(source)) addTextureLoadListener(source, onLoad);
+  if (!failedTextureSources.has(source)) addTextureLoadListener(source, onLoad, listenerKey);
   requestTextureLoad(source);
   return null;
 }

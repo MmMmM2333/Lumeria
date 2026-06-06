@@ -17,6 +17,7 @@ import { pageTrackSpring, panelSpring, springTo, stopTargetSprings } from "../an
 import { getFolderGridMetrics, getFolderPanelGeometry, getGridSlotRect, parseRepeatCount, readPx } from "../geometry/gridGeometry.js";
 import { makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import {
+  clearLaunchIconBounds,
   getFolderPreviewChildBounds,
   getTopLevelFolderThumbBounds,
   getTopLevelIconBounds,
@@ -329,6 +330,7 @@ export class FolderOverlayLayer extends Container {
 
   update(state) {
     this.stageRect = state.stageRect;
+    clearLaunchIconBounds("folder");
     this.visible = Boolean(state.renderedFolder);
     if (!this.visible) {
       this.currentFolderId = null;

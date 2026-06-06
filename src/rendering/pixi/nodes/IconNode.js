@@ -403,7 +403,7 @@ export class IconNode extends Container {
     const texture = getCachedIconTexture(this.item, () => {
       if (this.destroyed || this.item?.id !== itemId || !this.state) return;
       this.renderVisual(this.state);
-    });
+    }, this);
     if (texture) {
       this.iconSprite.visible = true;
       this.iconSprite.texture = texture;
@@ -487,7 +487,7 @@ export class IconNode extends Container {
         const slots = getFolderPreviewSlots(this.item, this.state.folderPreviewPageSize);
         if (!slots.some((slot) => slot?.id === childId)) return;
         this.renderFolderThumb(this.state);
-      });
+      }, this);
       childSprite.visible = Boolean(texture);
       childEmoji.visible = !texture;
       if (texture) {
