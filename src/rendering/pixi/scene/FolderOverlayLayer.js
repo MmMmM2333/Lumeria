@@ -28,6 +28,7 @@ import {
   isActiveDraggedLaunchItem,
   isReleaseGhostLaunchItem,
 } from "./dragVisibility.js";
+import { getFolderPageMaskRect } from "./folderOverlayGeometry.js";
 import { IconNode } from "../nodes/IconNode.js";
 import { getFolderPreviewSlots } from "../../../domain/launchpadLayout.js";
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
@@ -397,12 +398,7 @@ export class FolderOverlayLayer extends Container {
     const localGridLeft = geometry.grid.left - geometry.panel.left;
     const localGridTop = geometry.grid.top - geometry.panel.top;
     const localMetrics = { ...metrics, gridLeft: localGridLeft, gridTop: localGridTop };
-    this.pageMaskRect = {
-      left: 0,
-      top: localGridTop,
-      width: geometry.panel.width,
-      height: Math.max(geometry.grid.height, geometry.panel.height - localGridTop - 20),
-    };
+    this.pageMaskRect = getFolderPageMaskRect(geometry, localGridLeft, localGridTop);
     this.drawPageMask(this.pageMask, this.pageMaskRect);
     this.refreshPageTrackMask();
     const targetTrackX = -state.folderPageIndex * geometry.grid.width;
