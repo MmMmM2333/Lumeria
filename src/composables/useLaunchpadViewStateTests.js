@@ -1,5 +1,9 @@
 import { ref } from "vue";
 import {
+  BACKGROUND_RENDER_MODE_IMAGE,
+  BACKGROUND_RENDER_MODE_MATERIAL,
+} from "./useLaunchpadSettingsConfig.js";
+import {
   desktopTrackTransition,
   folderContentCloseTransition,
   folderPanelCloseTransition,
@@ -12,6 +16,8 @@ import { useLaunchpadViewState } from "./useLaunchpadViewState.js";
 function createViewState(overrides = {}) {
   const state = {
     desktopProjectionEpoch: ref(overrides.desktopProjectionEpoch ?? 2),
+    backgroundRenderMode: ref(overrides.backgroundRenderMode ?? BACKGROUND_RENDER_MODE_MATERIAL),
+    backgroundImageOpacity: ref(overrides.backgroundImageOpacity ?? 46),
     folderMotionGeometry: ref(overrides.folderMotionGeometry ?? {
       borderRadius: 18,
       scaleX: 0.2,
@@ -50,6 +56,7 @@ export function runLaunchpadViewStateTests() {
 
   const desktop = createViewState();
   assert(desktop.view.rootStyle.value["--configured-app-icon-size"] === "64px", "root style should expose configured icon size");
+  assert(desktop.view.rootStyle.value["--launchpad-background-image-opacity"] === "0", "root style should hide the background image in material mode");
   assert(desktop.view.activeDesktopTrackAnimate.value.x === "-200%", "desktop track should use desktop page index outside search");
   assert(desktop.view.folderTrackAnimate.value.x === "-100%", "folder track should use folder page index");
   assert(!desktop.view.desktopLayoutEnabled.value, "desktop layout should be disabled outside drag projection windows");
@@ -66,6 +73,9 @@ export function runLaunchpadViewStateTests() {
   assert(desktop.view.folderContentAnimate.value.opacity === 1, "folder content should be visible in the idle state");
   assert(desktop.view.pageGridStyle.value.gridTemplateColumns === "repeat(5, minmax(0, 1fr))", "page grid columns should follow grid columns");
   assert(desktop.view.pageGridStyle.value.gridTemplateRows === "repeat(7, minmax(0, 1fr))", "page grid rows should follow grid rows");
+
+  const imageBackground = createViewState({ backgroundRenderMode: BACKGROUND_RENDER_MODE_IMAGE, backgroundImageOpacity: 58 });
+  assert(imageBackground.view.rootStyle.value["--launchpad-background-image-opacity"] === "0.58", "root style should expose image opacity in image background mode");
 
   const projecting = createViewState({ isLayoutProjectionActive: true });
   assert(projecting.view.desktopLayoutEnabled.value, "desktop layout should be enabled during drag projection windows");

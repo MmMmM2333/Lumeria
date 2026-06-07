@@ -1,5 +1,7 @@
 import { createLaunchpadLayoutHelpers, makePageSize } from "../domain/launchpadLayout.js";
 import {
+  BACKGROUND_RENDER_MODE_IMAGE,
+  BACKGROUND_RENDER_MODE_MATERIAL,
   FOLDER_ICON_SIZE_MODE_CUSTOM,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
@@ -7,7 +9,9 @@ import {
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
   WINDOW_EFFECT_MATERIAL_MICA,
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
+  clampBackgroundImageOpacity,
   clampLaunchpadIconSize,
+  normalizeBackgroundRenderMode,
   normalizeWindowEffectAppearance,
   normalizeWindowEffectMaterial,
   normalizeFolderIconSizeMode,
@@ -46,9 +50,13 @@ function createSettingsConfig(overrides = {}) {
     draftFolderIconSizeMode: refValue(overrides.draftFolderIconSizeMode ?? FOLDER_ICON_SIZE_MODE_CUSTOM),
     draftFolderIconSize: refValue(overrides.draftFolderIconSize ?? 80),
     draftIsTextlessMode: refValue(overrides.draftIsTextlessMode ?? false),
+    draftBackgroundRenderMode: refValue(overrides.draftBackgroundRenderMode ?? BACKGROUND_RENDER_MODE_MATERIAL),
+    draftBackgroundImageOpacity: refValue(overrides.draftBackgroundImageOpacity ?? 46),
     draftWindowEffectMaterial: refValue(overrides.draftWindowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
     draftWindowEffectAppearance: refValue(overrides.draftWindowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_DARK),
     isTextlessMode: refValue(overrides.isTextlessMode ?? false),
+    backgroundRenderMode: refValue(overrides.backgroundRenderMode ?? BACKGROUND_RENDER_MODE_MATERIAL),
+    backgroundImageOpacity: refValue(overrides.backgroundImageOpacity ?? 46),
     windowEffectMaterial: refValue(overrides.windowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
     windowEffectAppearance: refValue(overrides.windowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_DARK),
     windowEffectsSupport: refValue(overrides.windowEffectsSupport ?? {
@@ -102,6 +110,8 @@ function createSettingsConfig(overrides = {}) {
     },
     commitSearchPageIndex: (value) => calls.commitSearchPageIndex.push(value),
     compactPages: helpers.compactPages,
+    draftBackgroundImageOpacity: state.draftBackgroundImageOpacity,
+    draftBackgroundRenderMode: state.draftBackgroundRenderMode,
     draftCols: state.draftCols,
     draftFolderCols: state.draftFolderCols,
     draftFolderIconSize: state.draftFolderIconSize,
@@ -124,6 +134,8 @@ function createSettingsConfig(overrides = {}) {
     iconSize: state.iconSize,
     isDragActive: () => Boolean(overrides.isDragActive),
     isTextlessMode: state.isTextlessMode,
+    backgroundImageOpacity: state.backgroundImageOpacity,
+    backgroundRenderMode: state.backgroundRenderMode,
     pageIndex: state.pageIndex,
     pageSize,
     pages: state.pages,
@@ -150,6 +162,11 @@ export function runLaunchpadSettingsConfigTests() {
   assert(clampLaunchpadIconSize("bad") === 64, "icon size clamp should fall back to the default");
   assert(normalizeFolderIconSizeMode(FOLDER_ICON_SIZE_MODE_CUSTOM) === FOLDER_ICON_SIZE_MODE_CUSTOM, "custom folder icon mode should be preserved");
   assert(normalizeFolderIconSizeMode("unknown") === FOLDER_ICON_SIZE_MODE_GLOBAL, "unknown folder icon modes should fall back to global");
+  assert(normalizeBackgroundRenderMode(BACKGROUND_RENDER_MODE_IMAGE) === BACKGROUND_RENDER_MODE_IMAGE, "image background mode should be preserved");
+  assert(normalizeBackgroundRenderMode("unknown") === BACKGROUND_RENDER_MODE_MATERIAL, "unknown background modes should fall back to material");
+  assert(clampBackgroundImageOpacity(-12) === 0, "background image opacity should clamp to the minimum");
+  assert(clampBackgroundImageOpacity(120) === 100, "background image opacity should clamp to the maximum");
+  assert(clampBackgroundImageOpacity("bad") === 46, "invalid background image opacity should fall back to the default");
   assert(normalizeWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_MICA) === WINDOW_EFFECT_MATERIAL_MICA, "mica window effect material should be preserved");
   assert(normalizeWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_MICA_ALT) === WINDOW_EFFECT_MATERIAL_MICA_ALT, "mica alt window effect material should be preserved");
   assert(normalizeWindowEffectMaterial("unknown") === WINDOW_EFFECT_MATERIAL_ACRYLIC, "unknown window effect materials should fall back to acrylic");
@@ -173,6 +190,8 @@ export function runLaunchpadSettingsConfigTests() {
     draftFolderIconSizeMode: FOLDER_ICON_SIZE_MODE_CUSTOM,
     draftFolderIconSize: 120,
     draftIsTextlessMode: false,
+    draftBackgroundRenderMode: BACKGROUND_RENDER_MODE_IMAGE,
+    draftBackgroundImageOpacity: 12,
     gridRows: 4,
     gridCols: 5,
     folderRows: 3,
@@ -181,6 +200,8 @@ export function runLaunchpadSettingsConfigTests() {
     folderIconSizeMode: FOLDER_ICON_SIZE_MODE_GLOBAL,
     folderIconSize: 72,
     isTextlessMode: true,
+    backgroundRenderMode: BACKGROUND_RENDER_MODE_MATERIAL,
+    backgroundImageOpacity: 58,
     windowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
     windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
   });
@@ -191,6 +212,8 @@ export function runLaunchpadSettingsConfigTests() {
   assert(sync.state.draftFolderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_GLOBAL, "sync should reset folder icon mode from current settings");
   assert(sync.state.draftFolderIconSize.value === 72, "sync should reset folder icon size from current settings");
   assert(sync.state.draftIsTextlessMode.value === true, "sync should reset textless draft from current settings");
+  assert(sync.state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_MATERIAL, "sync should reset background render draft from current settings");
+  assert(sync.state.draftBackgroundImageOpacity.value === 58, "sync should reset background opacity draft from current settings");
   assert(sync.state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "sync should reset window effect material draft from current settings");
   assert(sync.state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "sync should reset window effect appearance draft from current settings");
 
@@ -227,12 +250,21 @@ export function runLaunchpadSettingsConfigTests() {
   assert(windowEffectMode.state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_ACRYLIC, "unavailable window effect materials should not be selected");
   windowEffectMode.config.setDraftWindowEffectAppearance(WINDOW_EFFECT_APPEARANCE_LIGHT);
   assert(windowEffectMode.state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "window effect appearance should update from segmented controls");
+  const backgroundMode = createSettingsConfig();
+  backgroundMode.config.setDraftBackgroundRenderMode(BACKGROUND_RENDER_MODE_IMAGE);
+  backgroundMode.config.setDraftBackgroundImageOpacity(120);
+  assert(backgroundMode.state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE, "background render mode should update from segmented controls");
+  assert(backgroundMode.state.draftBackgroundImageOpacity.value === 100, "background opacity should clamp from slider input");
+  backgroundMode.config.changeDraftBackgroundImageOpacity(-120);
+  assert(backgroundMode.state.draftBackgroundImageOpacity.value === 0, "background opacity step changes should clamp to the minimum");
 
   const apply = createSettingsConfig({
     gridCols: 3,
     gridRows: 3,
     draftCols: 3,
     draftRows: 2,
+    draftBackgroundRenderMode: BACKGROUND_RENDER_MODE_IMAGE,
+    draftBackgroundImageOpacity: 67,
     draftWindowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
     draftWindowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
     pages: [makeItems(7)],
@@ -244,6 +276,8 @@ export function runLaunchpadSettingsConfigTests() {
   assert(apply.state.folderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_CUSTOM, "folder icon mode should apply from the draft value");
   assert(apply.state.folderIconSize.value === 80, "folder icon size should apply from the draft value");
   assert(apply.state.isTextlessMode.value === false, "textless mode should apply from the draft value");
+  assert(apply.state.backgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE, "background render mode should apply from the draft value");
+  assert(apply.state.backgroundImageOpacity.value === 67, "background opacity should apply from the draft value");
   assert(apply.state.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "window effect material should apply from the draft value");
   assert(apply.state.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "window effect appearance should apply from the draft value");
   assert(apply.calls.commitPages.length === 1, "applying settings should commit repacked pages");

@@ -12,6 +12,8 @@ import {
   DEFAULT_SCAN_ROOTS,
 } from "../domain/launchpadData.js";
 import {
+  BACKGROUND_RENDER_MODE_MATERIAL,
+  DEFAULT_BACKGROUND_IMAGE_OPACITY,
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
@@ -33,6 +35,10 @@ export function useLaunchpadControllerState() {
   const draftIconSize = ref(DEFAULT_ICON_SIZE);
   const draftFolderIconSizeMode = ref(FOLDER_ICON_SIZE_MODE_GLOBAL);
   const draftFolderIconSize = ref(DEFAULT_ICON_SIZE);
+  const backgroundRenderMode = ref(BACKGROUND_RENDER_MODE_MATERIAL);
+  const backgroundImageOpacity = ref(DEFAULT_BACKGROUND_IMAGE_OPACITY);
+  const draftBackgroundRenderMode = ref(BACKGROUND_RENDER_MODE_MATERIAL);
+  const draftBackgroundImageOpacity = ref(DEFAULT_BACKGROUND_IMAGE_OPACITY);
   const windowEffectsSupport = ref({ ...DEFAULT_WINDOW_EFFECTS_SUPPORT });
   const windowEffectMaterial = ref(WINDOW_EFFECT_MATERIAL_ACRYLIC);
   const windowEffectAppearance = ref(WINDOW_EFFECT_APPEARANCE_DARK);
@@ -69,7 +75,11 @@ export function useLaunchpadControllerState() {
   const folderPageRefs = [];
 
   return {
+    backgroundImageOpacity,
+    backgroundRenderMode,
     desktopMainRef,
+    draftBackgroundImageOpacity,
+    draftBackgroundRenderMode,
     draftCols,
     draftFolderCols,
     draftFolderIconSize,

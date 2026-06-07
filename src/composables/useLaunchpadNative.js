@@ -32,6 +32,8 @@ import {
 } from "../api/launchpadApi.js";
 import {
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
+  clampBackgroundImageOpacity,
+  normalizeBackgroundRenderMode,
   normalizeWindowEffectAppearance,
   normalizeWindowEffectsSupport,
   resolveWindowEffectMaterialForSupport,
@@ -89,6 +91,8 @@ export function useLaunchpadNative(options) {
       options.windowEffectsSupport.value
     );
     const nextWindowEffectAppearance = normalizeWindowEffectAppearance(settings.windowEffectAppearance);
+    const nextBackgroundRenderMode = normalizeBackgroundRenderMode(settings.backgroundRenderMode);
+    const nextBackgroundImageOpacity = clampBackgroundImageOpacity(settings.backgroundImageOpacity);
 
     options.gridRows.value = rows;
     options.gridCols.value = cols;
@@ -110,6 +114,10 @@ export function useLaunchpadNative(options) {
     options.windowEffectAppearance.value = nextWindowEffectAppearance;
     options.draftWindowEffectMaterial.value = nextWindowEffectMaterial;
     options.draftWindowEffectAppearance.value = nextWindowEffectAppearance;
+    options.backgroundRenderMode.value = nextBackgroundRenderMode;
+    options.backgroundImageOpacity.value = nextBackgroundImageOpacity;
+    options.draftBackgroundRenderMode.value = nextBackgroundRenderMode;
+    options.draftBackgroundImageOpacity.value = nextBackgroundImageOpacity;
     options.hiddenAppIds.value = Array.isArray(settings.hiddenAppIds)
       ? settings.hiddenAppIds.map(String)
       : [];
@@ -147,6 +155,8 @@ export function useLaunchpadNative(options) {
       scanKeywordBlacklist: options.scanKeywordBlacklist.value,
       scanAppBlacklist: options.scanAppBlacklist.value,
       showMissingLaunchTargetBadge: options.showMissingLaunchTargetBadge.value,
+      backgroundRenderMode: options.backgroundRenderMode.value,
+      backgroundImageOpacity: options.backgroundImageOpacity.value,
       windowEffectMaterial: options.windowEffectMaterial.value,
       windowEffectAppearance: options.windowEffectAppearance.value,
     });

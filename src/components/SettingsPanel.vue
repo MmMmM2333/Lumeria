@@ -142,6 +142,43 @@
                   </div>
                 </div>
               </div>
+              <div class="settings-field settings-field-wide settings-background-field">
+                <span class="settings-field-copy">
+                  <span>背景渲染</span>
+                  <span class="settings-field-hint">{{ backgroundRenderHint }}</span>
+                </span>
+                <div class="settings-background-controls">
+                  <div class="settings-segmented-control" aria-label="背景渲染">
+                    <button
+                      type="button"
+                      :class="cx('settings-segmented-button', state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_MATERIAL && 'settings-segmented-button-active')"
+                      @click="state.setDraftBackgroundRenderMode(BACKGROUND_RENDER_MODE_MATERIAL)"
+                    >
+                      系统材质
+                    </button>
+                    <button
+                      type="button"
+                      :class="cx('settings-segmented-button', state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE && 'settings-segmented-button-active')"
+                      @click="state.setDraftBackgroundRenderMode(BACKGROUND_RENDER_MODE_IMAGE)"
+                    >
+                      图片
+                    </button>
+                  </div>
+                  <label v-if="state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE" class="settings-opacity-control">
+                    <span>透明度</span>
+                    <input
+                      :value="state.draftBackgroundImageOpacity.value"
+                      :min="BACKGROUND_IMAGE_OPACITY_MIN"
+                      :max="BACKGROUND_IMAGE_OPACITY_MAX"
+                      :step="BACKGROUND_IMAGE_OPACITY_STEP"
+                      type="range"
+                      aria-label="背景图片透明度"
+                      @input="state.setDraftBackgroundImageOpacity($event.target.value)"
+                    />
+                    <span class="settings-opacity-value">{{ state.draftBackgroundImageOpacity.value }}%</span>
+                  </label>
+                </div>
+              </div>
               <div class="settings-field settings-field-wide settings-grid-layout-field">
                 <span>桌面布局</span>
                 <div class="settings-grid-layout-control" aria-label="桌面布局">
@@ -437,6 +474,11 @@ import { computed, nextTick, ref, watch } from "vue";
 import { ChevronDownIcon, ChevronUpIcon } from "./Icons.js";
 import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "../composables/launchpadConstants.js";
 import {
+  BACKGROUND_IMAGE_OPACITY_MAX,
+  BACKGROUND_IMAGE_OPACITY_MIN,
+  BACKGROUND_IMAGE_OPACITY_STEP,
+  BACKGROUND_RENDER_MODE_IMAGE,
+  BACKGROUND_RENDER_MODE_MATERIAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_APPEARANCE_LIGHT,
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
@@ -479,6 +521,11 @@ const windowEffectMaterialNotes = computed(() => [
 ]);
 const hasWindowEffectMaterialChoice = computed(() =>
   windowEffectMaterialNotes.value.some((item) => item.available)
+);
+const backgroundRenderHint = computed(() =>
+  props.state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE
+    ? "图片叠加在窗口材质上方"
+    : "仅显示 Acrylic / Mica 材质"
 );
 const windowEffectsSupportHint = computed(() => {
   const availableLabels = windowEffectMaterialNotes.value

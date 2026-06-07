@@ -2,6 +2,8 @@ import { ref, shallowRef } from "vue";
 import { setLaunchpadApiBridgeForTests } from "../api/launchpadApi.js";
 import { useLaunchpadNative } from "./useLaunchpadNative.js";
 import {
+  BACKGROUND_RENDER_MODE_IMAGE,
+  BACKGROUND_RENDER_MODE_MATERIAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_APPEARANCE_LIGHT,
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
@@ -33,6 +35,8 @@ function makeOptions(overrides = {}) {
     draftFolderIconSize: ref(64),
     draftFolderIconSizeMode: ref("global"),
     draftFolderRows: ref(3),
+    draftBackgroundImageOpacity: ref(46),
+    draftBackgroundRenderMode: ref(BACKGROUND_RENDER_MODE_MATERIAL),
     draftIconSize: ref(64),
     draftIsTextlessMode: ref(false),
     draftRows: ref(4),
@@ -54,6 +58,8 @@ function makeOptions(overrides = {}) {
     iconSize: ref(64),
     isDesktopOpen: ref(true),
     isTextlessMode: ref(false),
+    backgroundImageOpacity: ref(46),
+    backgroundRenderMode: ref(BACKGROUND_RENDER_MODE_MATERIAL),
     windowEffectAppearance: ref(WINDOW_EFFECT_APPEARANCE_DARK),
     windowEffectMaterial: ref(WINDOW_EFFECT_MATERIAL_ACRYLIC),
     windowEffectsSupport: ref({
@@ -167,6 +173,8 @@ export async function runLaunchpadNativeTests() {
     assert(Boolean(options.scanRoots.value[0].lastScannedAt), "initial native scan should mark roots as scanned");
     assert(initialSaveLayouts.length === 1, "initial native scan should be persisted after load completes");
     assert(initialSaveLayouts[0].pages[0][0].id === "win-app-good", "initial native save should include scanned apps");
+    assert(initialSaveLayouts[0].settings.backgroundRenderMode === BACKGROUND_RENDER_MODE_MATERIAL, "native saves should include background render mode");
+    assert(initialSaveLayouts[0].settings.backgroundImageOpacity === 46, "native saves should include background image opacity");
     assert(calls.commitPageIndex.join(",") === "0", "initial native load should reclamp desktop page");
     assert(calls.schedulePageGridMetrics === 1, "initial native load should refresh grid metrics");
   });
@@ -236,6 +244,8 @@ export async function runLaunchpadNativeTests() {
         settings: {
           windowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
           windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
+          backgroundRenderMode: BACKGROUND_RENDER_MODE_IMAGE,
+          backgroundImageOpacity: 64,
         },
       };
     }
@@ -258,6 +268,10 @@ export async function runLaunchpadNativeTests() {
     assert(options.windowEffectsSupport.value.supportsMica === true && options.windowEffectsSupport.value.supportsMicaAlt === true, "native load should apply window effect support");
     assert(options.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "native load should apply saved window effect material");
     assert(options.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "native load should apply saved window effect appearance");
+    assert(options.backgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE, "native load should apply saved background render mode");
+    assert(options.backgroundImageOpacity.value === 64, "native load should apply saved background opacity");
+    assert(options.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE, "native load should sync background render draft");
+    assert(options.draftBackgroundImageOpacity.value === 64, "native load should sync background opacity draft");
     assert(effectsCommands.length === 1, "native load should refresh window effects once");
     assert(effectsCommands[0].enabled === true, "window effect refresh should enable effects");
     assert(effectsCommands[0].material === WINDOW_EFFECT_MATERIAL_MICA_ALT, "window effect refresh should pass the selected material");

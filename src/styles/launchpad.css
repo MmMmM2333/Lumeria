@@ -42,6 +42,7 @@ body {
   --folder-shell-material-background: rgba(236, 240, 244, 0.34);
   --folder-shell-material-filter: blur(44px) saturate(122%);
   --folder-shell-material-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 30px 86px rgba(0, 0, 0, 0.14);
+  --launchpad-background-image-opacity: 0;
   height: 100vh;
   min-height: 100vh;
   max-height: 100vh;
@@ -72,17 +73,37 @@ body {
   inset: 0;
   pointer-events: none;
   opacity: 1;
-  background: rgba(10, 12, 18, 0.28);
+  overflow: hidden;
+  background: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  transition: opacity 360ms ease, background 360ms ease;
-  will-change: opacity, background;
+  transition: opacity 360ms ease;
+  will-change: opacity;
+}
+
+.launchpad-bg::before,
+.launchpad-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.launchpad-bg::before {
+  background-image: url("../assets/launchpad-test-background.png");
+  background-position: center;
+  background-size: cover;
+  opacity: var(--launchpad-background-image-opacity, 0);
+  transform: scale(1.02);
+  transition: opacity 180ms ease;
+}
+
+.launchpad-bg::after {
+  background: rgba(10, 12, 18, 0.28);
 }
 
 .launchpad-root-closed .launchpad-bg,
 .launchpad-root-app-launching .launchpad-bg {
   opacity: 0;
-  background: rgba(10, 12, 18, 0);
 }
 
 .launchpad-shell {
@@ -587,6 +608,50 @@ body {
 
 .settings-window-effect-note-disabled {
   opacity: 0.48;
+}
+
+.settings-background-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.settings-background-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.settings-opacity-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  min-width: 210px;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 12px;
+}
+
+.settings-opacity-control input[type="range"] {
+  width: 118px;
+  height: auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  accent-color: rgba(255, 255, 255, 0.92);
+  background: transparent;
+}
+
+.settings-opacity-value {
+  width: 34px;
+  color: rgba(255, 255, 255, 0.78);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .settings-options {
@@ -2642,6 +2707,10 @@ body {
   .settings-window-effect-field { grid-template-columns: 1fr; }
   .settings-window-effect-controls { justify-content: flex-start; width: 100%; }
   .settings-window-effect-notes { grid-template-columns: 1fr; }
+  .settings-background-field { grid-template-columns: 1fr; align-items: flex-start; }
+  .settings-background-controls { justify-content: flex-start; width: 100%; }
+  .settings-opacity-control { width: 100%; min-width: 0; }
+  .settings-opacity-control input[type="range"] { width: auto; flex: 1 1 auto; }
   .settings-folder-icon-size-field { align-items: flex-start; flex-direction: column; }
   .settings-folder-icon-size-control { width: 100%; flex-wrap: wrap; }
   .settings-section-header { align-items: flex-start; flex-direction: column; }

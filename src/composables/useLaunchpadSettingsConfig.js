@@ -12,6 +12,12 @@ import { clamp, makePageSize } from "../domain/launchpadLayout.js";
 
 export const FOLDER_ICON_SIZE_MODE_CUSTOM = "custom";
 export const FOLDER_ICON_SIZE_MODE_GLOBAL = "global";
+export const BACKGROUND_RENDER_MODE_MATERIAL = "material";
+export const BACKGROUND_RENDER_MODE_IMAGE = "image";
+export const BACKGROUND_IMAGE_OPACITY_MIN = 0;
+export const BACKGROUND_IMAGE_OPACITY_MAX = 100;
+export const BACKGROUND_IMAGE_OPACITY_STEP = 1;
+export const DEFAULT_BACKGROUND_IMAGE_OPACITY = 46;
 export const WINDOW_EFFECT_MATERIAL_ACRYLIC = "acrylic";
 export const WINDOW_EFFECT_MATERIAL_MICA = "mica";
 export const WINDOW_EFFECT_MATERIAL_MICA_ALT = "micaAlt";
@@ -31,6 +37,16 @@ export function clampLaunchpadIconSize(value) {
 
 export function normalizeFolderIconSizeMode(value) {
   return value === FOLDER_ICON_SIZE_MODE_CUSTOM ? FOLDER_ICON_SIZE_MODE_CUSTOM : FOLDER_ICON_SIZE_MODE_GLOBAL;
+}
+
+export function normalizeBackgroundRenderMode(value) {
+  return value === BACKGROUND_RENDER_MODE_IMAGE ? BACKGROUND_RENDER_MODE_IMAGE : BACKGROUND_RENDER_MODE_MATERIAL;
+}
+
+export function clampBackgroundImageOpacity(value) {
+  const opacity = Number(value);
+  if (!Number.isFinite(opacity)) return DEFAULT_BACKGROUND_IMAGE_OPACITY;
+  return clamp(Math.round(opacity), BACKGROUND_IMAGE_OPACITY_MIN, BACKGROUND_IMAGE_OPACITY_MAX);
 }
 
 export function normalizeWindowEffectMaterial(value) {
@@ -82,6 +98,8 @@ export function syncLaunchpadSettingsDraftsFromState(options) {
   options.draftFolderIconSizeMode.value = options.folderIconSizeMode.value;
   options.draftFolderIconSize.value = options.folderIconSize.value;
   options.draftIsTextlessMode.value = options.isTextlessMode.value;
+  options.draftBackgroundRenderMode.value = options.backgroundRenderMode.value;
+  options.draftBackgroundImageOpacity.value = options.backgroundImageOpacity.value;
   options.draftWindowEffectMaterial.value = options.windowEffectMaterial.value;
   options.draftWindowEffectAppearance.value = options.windowEffectAppearance.value;
 }
@@ -126,6 +144,20 @@ export function useLaunchpadSettingsConfig(options) {
     }
     options.draftFolderIconSizeMode.value = nextMode;
     options.draftFolderIconSize.value = clampIconSize(options.draftFolderIconSize.value);
+  }
+
+  function setDraftBackgroundRenderMode(mode) {
+    options.draftBackgroundRenderMode.value = normalizeBackgroundRenderMode(mode);
+  }
+
+  function setDraftBackgroundImageOpacity(value) {
+    options.draftBackgroundImageOpacity.value = clampBackgroundImageOpacity(value);
+  }
+
+  function changeDraftBackgroundImageOpacity(direction) {
+    setDraftBackgroundImageOpacity(
+      Number(options.draftBackgroundImageOpacity.value) + direction * BACKGROUND_IMAGE_OPACITY_STEP
+    );
   }
 
   function canUseWindowEffectMaterial(material) {
@@ -201,6 +233,8 @@ export function useLaunchpadSettingsConfig(options) {
   function applySettingsConfig() {
     applyGridConfig();
     if (!options.isDragActive()) options.isTextlessMode.value = Boolean(options.draftIsTextlessMode.value);
+    options.backgroundRenderMode.value = normalizeBackgroundRenderMode(options.draftBackgroundRenderMode.value);
+    options.backgroundImageOpacity.value = clampBackgroundImageOpacity(options.draftBackgroundImageOpacity.value);
     options.windowEffectMaterial.value = resolveWindowEffectMaterialForSupport(
       options.draftWindowEffectMaterial.value,
       options.windowEffectsSupport.value
@@ -214,6 +248,7 @@ export function useLaunchpadSettingsConfig(options) {
   return {
     applyGridConfig,
     applySettingsConfig,
+    changeDraftBackgroundImageOpacity,
     changeDraftCols,
     changeDraftFolderCols,
     changeDraftFolderIconSize,
@@ -222,6 +257,8 @@ export function useLaunchpadSettingsConfig(options) {
     changeDraftRows,
     clampIconSize,
     canUseWindowEffectMaterial,
+    setDraftBackgroundImageOpacity,
+    setDraftBackgroundRenderMode,
     setDraftFolderIconSizeMode,
     setDraftWindowEffectAppearance,
     setDraftWindowEffectMaterial,

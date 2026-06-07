@@ -7,6 +7,8 @@ import {
 } from "./launchpadConstants.js";
 import { useLaunchpadControllerState } from "./useLaunchpadControllerState.js";
 import {
+  BACKGROUND_RENDER_MODE_MATERIAL,
+  DEFAULT_BACKGROUND_IMAGE_OPACITY,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
@@ -28,6 +30,10 @@ export function runLaunchpadControllerStateTests() {
   assert(state.folderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_GLOBAL, "folder icon mode should default to global");
   assert(state.draftFolderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_GLOBAL, "draft folder icon mode should default to global");
   assert(state.draftIsTextlessMode.value === false, "draft textless mode should start disabled");
+  assert(state.backgroundRenderMode.value === BACKGROUND_RENDER_MODE_MATERIAL, "background render mode should default to material");
+  assert(state.backgroundImageOpacity.value === DEFAULT_BACKGROUND_IMAGE_OPACITY, "background image opacity should use the default");
+  assert(state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_MATERIAL, "draft background render mode should default to material");
+  assert(state.draftBackgroundImageOpacity.value === DEFAULT_BACKGROUND_IMAGE_OPACITY, "draft background image opacity should use the default");
   assert(state.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_ACRYLIC, "window effect material should default to acrylic");
   assert(state.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_DARK, "window effect appearance should default to dark");
   assert(state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_ACRYLIC, "draft window effect material should default to acrylic");

@@ -1,4 +1,4 @@
-import { chunkIntoPages } from "./launchpadLayout.js";
+import { chunkIntoPages, clamp } from "./launchpadLayout.js";
 
 export const DEFAULT_SCAN_ROOTS = [
   {
@@ -329,6 +329,7 @@ export function createLaunchpadDataHelpers(options) {
   }
 
   function createLayoutSnapshot(state) {
+    const backgroundImageOpacity = Number(state.backgroundImageOpacity);
     return {
       version: 1,
       pages: makeLayoutPages(state.pages),
@@ -346,6 +347,8 @@ export function createLaunchpadDataHelpers(options) {
         scanKeywordBlacklist: normalizeScanKeywordBlacklist(state.scanKeywordBlacklist),
         scanAppBlacklist: normalizeScanAppBlacklist(state.scanAppBlacklist),
         showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge !== false,
+        backgroundRenderMode: state.backgroundRenderMode === "image" ? "image" : "material",
+        backgroundImageOpacity: Number.isFinite(backgroundImageOpacity) ? clamp(Math.round(backgroundImageOpacity), 0, 100) : 46,
         windowEffectMaterial: state.windowEffectMaterial === "mica" || state.windowEffectMaterial === "micaAlt" ? state.windowEffectMaterial : "acrylic",
         windowEffectAppearance: state.windowEffectAppearance === "light" ? "light" : "dark",
       },

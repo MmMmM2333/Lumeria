@@ -21,6 +21,8 @@ function createLifecycleOptions() {
     calls,
     options: {
       activePages: ref([]),
+      backgroundImageOpacity: ref(46),
+      backgroundRenderMode: ref("material"),
       cancelLongPress: makeCall("cancelLongPress"),
       cancelPreviewRaf: makeCall("cancelPreviewRaf"),
       clearAltEditTimer: makeCall("clearAltEditTimer"),

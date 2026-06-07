@@ -1,5 +1,7 @@
 import { ref } from "vue";
 import {
+  BACKGROUND_RENDER_MODE_IMAGE,
+  BACKGROUND_RENDER_MODE_MATERIAL,
   FOLDER_ICON_SIZE_MODE_CUSTOM,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
@@ -40,6 +42,8 @@ function createSettingsPanelFlowHarness(overrides = {}) {
     folderIconSizeMode: ref(overrides.folderIconSizeMode ?? FOLDER_ICON_SIZE_MODE_GLOBAL),
     folderIconSize: ref(overrides.folderIconSize ?? 72),
     isTextlessMode: ref(overrides.isTextlessMode ?? true),
+    backgroundRenderMode: ref(overrides.backgroundRenderMode ?? BACKGROUND_RENDER_MODE_IMAGE),
+    backgroundImageOpacity: ref(overrides.backgroundImageOpacity ?? 58),
     windowEffectMaterial: ref(overrides.windowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_MICA_ALT),
     windowEffectAppearance: ref(overrides.windowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_LIGHT),
     draftRows: ref(overrides.draftRows ?? 8),
@@ -50,6 +54,8 @@ function createSettingsPanelFlowHarness(overrides = {}) {
     draftFolderIconSizeMode: ref(overrides.draftFolderIconSizeMode ?? FOLDER_ICON_SIZE_MODE_CUSTOM),
     draftFolderIconSize: ref(overrides.draftFolderIconSize ?? 120),
     draftIsTextlessMode: ref(overrides.draftIsTextlessMode ?? false),
+    draftBackgroundRenderMode: ref(overrides.draftBackgroundRenderMode ?? BACKGROUND_RENDER_MODE_MATERIAL),
+    draftBackgroundImageOpacity: ref(overrides.draftBackgroundImageOpacity ?? 12),
     draftWindowEffectMaterial: ref(overrides.draftWindowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
     draftWindowEffectAppearance: ref(overrides.draftWindowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_DARK),
   };
@@ -87,6 +93,8 @@ export function runSettingsPanelFlowTests() {
     assert(state.draftFolderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_GLOBAL, "opening settings should reset folder icon mode draft");
     assert(state.draftFolderIconSize.value === 72, "opening settings should reset folder icon size draft");
     assert(state.draftIsTextlessMode.value === true, "opening settings should reset textless draft");
+    assert(state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE, "opening settings should reset background render draft");
+    assert(state.draftBackgroundImageOpacity.value === 58, "opening settings should reset background opacity draft");
     assert(state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "opening settings should reset window effect material draft");
     assert(state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "opening settings should reset window effect appearance draft");
 
@@ -98,6 +106,8 @@ export function runSettingsPanelFlowTests() {
     state.draftFolderIconSizeMode.value = FOLDER_ICON_SIZE_MODE_CUSTOM;
     state.draftFolderIconSize.value = 40;
     state.draftIsTextlessMode.value = false;
+    state.draftBackgroundRenderMode.value = BACKGROUND_RENDER_MODE_MATERIAL;
+    state.draftBackgroundImageOpacity.value = 4;
     state.draftWindowEffectMaterial.value = WINDOW_EFFECT_MATERIAL_ACRYLIC;
     state.draftWindowEffectAppearance.value = WINDOW_EFFECT_APPEARANCE_DARK;
 
@@ -109,6 +119,8 @@ export function runSettingsPanelFlowTests() {
     assert(state.draftFolderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_GLOBAL, "closing settings should discard folder icon mode draft");
     assert(state.draftFolderIconSize.value === 72, "closing settings should discard folder icon size draft");
     assert(state.draftIsTextlessMode.value === true, "closing settings should discard textless draft");
+    assert(state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE, "closing settings should discard background render draft");
+    assert(state.draftBackgroundImageOpacity.value === 58, "closing settings should discard background opacity draft");
     assert(state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "closing settings should discard window effect material draft");
     assert(state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "closing settings should discard window effect appearance draft");
     assert(calls.closeAddManagedAppPage === 1, "closing settings should close add managed app flow");
