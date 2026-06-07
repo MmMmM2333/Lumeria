@@ -18,6 +18,7 @@ import { DesktopLayer } from "./scene/DesktopLayer.js";
 import { clearIconTextureCache, preloadIconTextures } from "./assets/iconTextureCache.js";
 import { clearIconBoundsRegistry } from "./geometry/iconBoundsRegistry.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
+import { getPixiHostMetrics } from "./pixiHostMetrics.js";
 
 const FOLDER_TEXTURE_PREWARM_LIMIT = 80;
 
@@ -72,19 +73,9 @@ function handleResize() {
   renderPixi();
 }
 
-function getHostMetrics() {
-  const host = hostRef.value;
-  const rect = host?.getBoundingClientRect?.() || { left: 0, top: 0, width: 1, height: 1 };
-  return {
-    rect,
-    height: host?.offsetHeight || host?.clientHeight || rect.height || 1,
-    width: host?.offsetWidth || host?.clientWidth || rect.width || 1,
-  };
-}
-
 function renderPixi() {
   if (!app || !layer || !hostRef.value) return;
-  const { height, rect, width } = getHostMetrics();
+  const { height, rect, width } = getPixiHostMetrics(hostRef.value);
   layer.update({
     activePageIndex: props.activePageIndex,
     activePages: props.activePages,

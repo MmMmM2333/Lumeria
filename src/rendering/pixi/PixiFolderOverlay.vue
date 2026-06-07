@@ -50,6 +50,7 @@ import { FolderOverlayLayer } from "./scene/FolderOverlayLayer.js";
 import { clearIconTextureCache } from "./assets/iconTextureCache.js";
 import { clearIconBoundsRegistry } from "./geometry/iconBoundsRegistry.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
+import { getPixiHostRect, getViewportFallbackSize } from "./pixiHostMetrics.js";
 
 const props = defineProps({
   state: { type: Object, required: true },
@@ -147,7 +148,7 @@ const folderPageDotsStyle = computed(() => {
 });
 
 function getHostRect() {
-  return hostRef.value?.getBoundingClientRect?.() || { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+  return getPixiHostRect(hostRef.value, getViewportFallbackSize());
 }
 
 function getFolderGhostKey(ghosts, itemId, slotIndex) {

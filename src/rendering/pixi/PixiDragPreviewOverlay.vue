@@ -10,6 +10,7 @@ import { getFolderPreviewSlots } from "../../domain/launchpadLayout.js";
 import { createPixiApp } from "./createPixiApp.js";
 import { preloadIconTextures } from "./assets/iconTextureCache.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
+import { getPixiHostMetrics, getViewportFallbackSize } from "./pixiHostMetrics.js";
 import { DragPreviewLayer } from "./scene/DragPreviewLayer.js";
 
 const props = defineProps({
@@ -29,16 +30,6 @@ let layer = null;
 let resizeObserver = null;
 let destroyed = false;
 
-function getHostMetrics() {
-  const host = hostRef.value;
-  const rect = host?.getBoundingClientRect?.() || { left: 0, top: 0, width: 1, height: 1 };
-  return {
-    rect,
-    height: host?.offsetHeight || host?.clientHeight || rect.height || window.innerHeight || 1,
-    width: host?.offsetWidth || host?.clientWidth || rect.width || window.innerWidth || 1,
-  };
-}
-
 function collectPreviewTextureItems(previewState) {
   const item = previewState?.item;
   if (!item) return [];
@@ -49,7 +40,7 @@ function collectPreviewTextureItems(previewState) {
 function renderPixi() {
   if (!app || !layer || !hostRef.value) return;
   preloadIconTextures(collectPreviewTextureItems(props.previewState || props.releaseState));
-  const { height, rect, width } = getHostMetrics();
+  const { height, rect, width } = getPixiHostMetrics(hostRef.value, getViewportFallbackSize());
   layer.update({
     folderHoverState: props.folderHoverState,
     folderPageSize: props.folderPageSize,
