@@ -25,8 +25,13 @@ import {
   startFrameGhost as startFrameGhostState,
 } from "./folderFrameGhost.js";
 import {
+  getMaxFolderGhostGridDelay,
+  makeClosingGhostMotion,
+  makeCompletedClosingPreviewMotion,
+  makeOpeningGhostMotion,
+} from "./folderIconGhostMotion.js";
+import {
   getIconLabelTopFromVisualRect,
-  getIconNodeOffsetFromVisualCenter,
   getIconVisualOffsetY,
 } from "../geometry/iconMetrics.js";
 import { makeStageVirtualElement } from "../geometry/stageCoordinates.js";
@@ -91,19 +96,6 @@ function isPointInRect(x, y, rect) {
 
 function makeClosingPreviewSwapKey(folderId, pageIndex) {
   return `closing-preview-swap:${folderId || "folder"}:${pageIndex}`;
-}
-
-function getGridGhostDelay(index, columnCount, maxDelay = 0.18) {
-  const safeIndex = Math.max(0, Number(index) || 0);
-  const columns = Math.max(1, Number(columnCount) || 1);
-  const row = Math.floor(safeIndex / columns);
-  const col = safeIndex % columns;
-  return Math.min(maxDelay, row * 0.022 + col * 0.01);
-}
-
-function getMaxGridGhostDelay(targets, maxDelay) {
-  return (targets || []).reduce((delay, target) =>
-    Math.max(delay, getGridGhostDelay(target.index, target.columnCount, maxDelay)), 0);
 }
 
 function clamp01(value) {
@@ -535,8 +527,7 @@ export class FolderOverlayLayer extends Container {
 
   scheduleOpeningGhostRevealFallback(targets) {
     this.clearOpeningGhostRevealTimer();
-    const maxDelay = (targets || []).reduce((delay, target) =>
-      Math.max(delay, getGridGhostDelay(target.index, target.columnCount, 0.18)), 0);
+    const maxDelay = getMaxFolderGhostGridDelay(targets, 0.18);
     const timeoutMs = Math.round((maxDelay + folderOpenGhostDuration) * 1000 + GHOST_REVEAL_FALLBACK_PADDING_MS);
     this.openingGhostRevealTimer = globalThis.setTimeout?.(() => {
       this.openingGhostRevealTimer = null;
@@ -546,7 +537,7 @@ export class FolderOverlayLayer extends Container {
 
   scheduleClosingGhostRevealFallback(targets) {
     this.clearClosingGhostRevealTimer();
-    const maxDelay = getMaxGridGhostDelay(targets, CLOSING_GHOST_MAX_DELAY);
+    const maxDelay = getMaxFolderGhostGridDelay(targets, CLOSING_GHOST_MAX_DELAY);
     const timeoutMs = Math.round(
       (maxDelay + folderCloseDuration + CLOSING_PREVIEW_FALLBACK_DURATION) * 1000 + GHOST_REVEAL_FALLBACK_PADDING_MS
     );
@@ -815,23 +806,19 @@ export class FolderOverlayLayer extends Container {
         stageWidth: state.width,
         textless: state.isTextlessMode,
       });
-      const sourceRect = makeLocalRect(target.sourceRect, state.stageRect);
-      const labelOffset = getIconNodeOffsetFromVisualCenter(state.isTextlessMode);
-      const scale = Math.max(0.16, target.sourceRect.width / Math.max(1, target.iconSize));
-      const fromX = sourceRect.left + sourceRect.width / 2;
-      const fromY = sourceRect.top + sourceRect.height / 2 + labelOffset * scale;
-      const toX = target.targetRect.left + target.targetRect.width / 2;
-      const toY = target.targetRect.top + target.targetRect.height / 2 + labelOffset;
-      const delay = getGridGhostDelay(target.index, target.columnCount, 0.18);
-      const labelDelay = delay + folderOpenGhostDuration * 0.58;
-      ghost.position.set(fromX, fromY);
-      ghost.scale.set(scale);
-      ghost.alpha = target.isThumbnailChild ? 1 : 0;
+      const motion = makeOpeningGhostMotion(target, {
+        isTextlessMode: state.isTextlessMode,
+        openDuration: folderOpenGhostDuration,
+        stageRect: state.stageRect,
+      });
+      ghost.position.set(motion.fromX, motion.fromY);
+      ghost.scale.set(motion.scale);
+      ghost.alpha = motion.alpha;
       if (ghost.labelText?.visible) {
         ghost.labelText.alpha = 0;
         ghost.labelText.scale.set(0.94);
-        gsap.to(ghost.labelText, { alpha: 1, delay: labelDelay, duration: 0.13, ease: "power2.out" });
-        gsap.to(ghost.labelText.scale, { x: 1, y: 1, delay: labelDelay, duration: 0.13, ease: "power2.out" });
+        gsap.to(ghost.labelText, { alpha: 1, delay: motion.labelDelay, duration: 0.13, ease: "power2.out" });
+        gsap.to(ghost.labelText.scale, { x: 1, y: 1, delay: motion.labelDelay, duration: 0.13, ease: "power2.out" });
       }
       this.openingGhostLayer.addChild(ghost);
       this.openingGhostKeys.add(target.item.id);
@@ -843,9 +830,9 @@ export class FolderOverlayLayer extends Container {
         alpha: 1,
         duration: folderOpenGhostDuration,
         ease: folderOpenGhostEase,
-        x: toX,
-        y: toY,
-        delay,
+        x: motion.toX,
+        y: motion.toY,
+        delay: motion.delay,
         onComplete: () => this.completeOpeningGhost(state, target, ghost),
       });
       gsap.to(ghost.scale, {
@@ -853,7 +840,7 @@ export class FolderOverlayLayer extends Container {
         ease: folderOpenGhostEase,
         x: 1,
         y: 1,
-        delay,
+        delay: motion.delay,
       });
     }
   }
@@ -866,14 +853,12 @@ export class FolderOverlayLayer extends Container {
     if (controllerGhostKey) this.completedClosingControllerGhostKeys.push(controllerGhostKey);
     killTweensDeep(ghost);
     if (target.isThumbnailChild && !ghost.destroyed) {
-      const targetRect = makeLocalRect(target.targetRect, state.stageRect);
-      const labelOffset = getIconNodeOffsetFromVisualCenter(state.isTextlessMode);
-      const scale = Math.max(0.14, target.targetRect.width / Math.max(1, target.iconSize));
-      ghost.position.set(
-        targetRect.left + targetRect.width / 2,
-        targetRect.top + targetRect.height / 2 + labelOffset * scale
-      );
-      ghost.scale.set(scale);
+      const motion = makeCompletedClosingPreviewMotion(target, {
+        isTextlessMode: state.isTextlessMode,
+        stageRect: state.stageRect,
+      });
+      ghost.position.set(motion.x, motion.y);
+      ghost.scale.set(motion.scale);
       ghost.alpha = 1;
       this.completedClosingPreviewGhosts.push(ghost);
       this.finishClosingGhostTransition(state);
@@ -1137,25 +1122,19 @@ export class FolderOverlayLayer extends Container {
         stageWidth: state.width,
         textless: state.isTextlessMode,
       });
-      const sourceRect = makeLocalRect(target.sourceRect, state.stageRect);
-      const targetRect = makeLocalRect(target.targetRect, state.stageRect);
-      const labelOffset = getIconNodeOffsetFromVisualCenter(state.isTextlessMode);
-      const sourceScale = target.sourceScale ?? 1;
-      const sourceAlpha = target.sourceAlpha ?? 1;
-      const scale = Math.max(0.14, target.targetRect.width / Math.max(1, target.iconSize));
-      const fromX = sourceRect.left + sourceRect.width / 2;
-      const fromY = sourceRect.top + sourceRect.height / 2 + labelOffset * sourceScale;
-      const toX = targetRect.left + targetRect.width / 2;
-      const toY = targetRect.top + targetRect.height / 2 + labelOffset * scale;
-      const delay = 0;
-      const alphaDelay = delay + folderCloseDuration * CLOSING_EXTRA_GHOST_ALPHA_HOLD;
-      ghost.position.set(fromX, fromY);
-      ghost.scale.set(sourceScale);
-      ghost.alpha = sourceAlpha;
+      const motion = makeClosingGhostMotion(target, {
+        alphaHold: CLOSING_EXTRA_GHOST_ALPHA_HOLD,
+        closeDuration: folderCloseDuration,
+        isTextlessMode: state.isTextlessMode,
+        stageRect: state.stageRect,
+      });
+      ghost.position.set(motion.fromX, motion.fromY);
+      ghost.scale.set(motion.sourceScale);
+      ghost.alpha = motion.sourceAlpha;
       if (ghost.labelText?.visible) {
         if (target.sourceLabelAlpha != null) ghost.labelText.alpha = target.sourceLabelAlpha;
-        gsap.to(ghost.labelText, { alpha: 0, delay, duration: 0.1, ease: "power2.in" });
-        gsap.to(ghost.labelText.scale, { x: 0.94, y: 0.94, delay, duration: 0.1, ease: "power2.in" });
+        gsap.to(ghost.labelText, { alpha: 0, delay: motion.delay, duration: 0.1, ease: "power2.in" });
+        gsap.to(ghost.labelText.scale, { x: 0.94, y: 0.94, delay: motion.delay, duration: 0.1, ease: "power2.in" });
       }
       this.closingGhostLayer.addChild(ghost);
       this.closingGhostKeys.add(target.item.id);
@@ -1164,27 +1143,27 @@ export class FolderOverlayLayer extends Container {
       }
 
       gsap.to(ghost, {
-        delay,
+        delay: motion.delay,
         duration: folderCloseDuration,
         ease: folderCloseEase,
-        x: toX,
-        y: toY,
+        x: motion.toX,
+        y: motion.toY,
         onComplete: () => this.completeClosingGhost(state, target, ghost),
       });
       if (!target.isThumbnailChild) {
         gsap.to(ghost, {
           alpha: 0,
-          delay: alphaDelay,
+          delay: motion.alphaDelay,
           duration: CLOSING_EXTRA_GHOST_ALPHA_DURATION,
           ease: "power2.in",
         });
       }
       gsap.to(ghost.scale, {
-        delay,
+        delay: motion.delay,
         duration: folderCloseDuration,
         ease: folderCloseEase,
-        x: scale,
-        y: scale,
+        x: motion.scale,
+        y: motion.scale,
       });
     }
   }
