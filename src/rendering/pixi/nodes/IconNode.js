@@ -20,6 +20,13 @@ import {
 } from "./folderThumbDrawing.js";
 import { getFolderThumbMetrics } from "./folderThumbMetrics.js";
 import { getFolderPreviewMotionPlan } from "./folderThumbPreviewMotion.js";
+import {
+  getActiveAppFolderCreateHoverState as getActiveAppFolderCreateHoverStateForIcon,
+  getActiveFolderHoverState as getActiveFolderHoverStateForIcon,
+  getAppFolderCreateTargetPadding as getAppFolderCreateTargetPaddingForIcon,
+  getFolderHoverTargetPadding as getFolderHoverTargetPaddingForIcon,
+  getFolderPreviewPlanKey,
+} from "./iconFolderHoverState.js";
 import { fitSingleLineName, fitWrappedName } from "./iconLabelLayout.js";
 import {
   drawSelectionFrame,
@@ -65,17 +72,11 @@ function setCentered(displayObject, x, y) {
 }
 
 const PRESSED_VISUAL_ALPHA = 0.58;
-const FOLDER_HOVER_PADDING_RATIO = 0.16;
-const FOLDER_HOVER_PADDING_MIN = 6;
-const FOLDER_HOVER_PADDING_MAX = 14;
 const FOLDER_HOVER_FRAME_DURATION = 0.18;
 const FOLDER_HOVER_RESET_DURATION = 0.16;
 const FOLDER_THUMB_SCROLL_DURATION = 0.46;
 const APP_FOLDER_CREATE_DIM_ALPHA = 0.48;
 const APP_FOLDER_CREATE_DIM_DURATION = 0.12;
-const APP_FOLDER_CREATE_PADDING_RATIO = 0.18;
-const APP_FOLDER_CREATE_PADDING_MIN = 8;
-const APP_FOLDER_CREATE_PADDING_MAX = 16;
 const APP_FOLDER_CREATE_FRAME_DURATION = 0.16;
 
 export class IconNode extends Container {
@@ -506,10 +507,7 @@ export class IconNode extends Container {
   }
 
   getFolderHoverTargetPadding() {
-    return Math.max(
-      FOLDER_HOVER_PADDING_MIN,
-      Math.min(FOLDER_HOVER_PADDING_MAX, this.iconSize * FOLDER_HOVER_PADDING_RATIO)
-    );
+    return getFolderHoverTargetPaddingForIcon(this.iconSize);
   }
 
   getFolderHoverPadding() {
@@ -537,9 +535,11 @@ export class IconNode extends Container {
   }
 
   getActiveFolderHoverState(state) {
-    const hoverState = state.folderHoverState;
-    if (!this.isFolder || hoverState?.targetId !== this.item?.id || hoverState.targetType !== "folder") return null;
-    return hoverState;
+    return getActiveFolderHoverStateForIcon({
+      hoverState: state.folderHoverState,
+      isFolder: this.isFolder,
+      itemId: this.item?.id,
+    });
   }
 
   updateFolderHoverAnimation(state, plan) {
@@ -563,7 +563,7 @@ export class IconNode extends Container {
       });
     }
 
-    const planKey = `${hoverState.key}:${plan.endY}:${plan.items.map((item) => item?.id || "").join("|")}`;
+    const planKey = getFolderPreviewPlanKey(hoverState, plan);
     if (this.folderHoverKey !== hoverState.key || this.folderPreviewPlanKey !== planKey) {
       this.folderHoverKey = hoverState.key;
       this.folderPreviewPlanKey = planKey;
@@ -631,16 +631,16 @@ export class IconNode extends Container {
   }
 
   getActiveAppFolderCreateHoverState(state) {
-    const hoverState = state.folderHoverState;
-    if (this.isFolder || this.item?.type !== "app" || hoverState?.targetId !== this.item?.id || hoverState.targetType !== "app") return null;
-    return hoverState;
+    return getActiveAppFolderCreateHoverStateForIcon({
+      hoverState: state.folderHoverState,
+      isFolder: this.isFolder,
+      itemId: this.item?.id,
+      itemType: this.item?.type,
+    });
   }
 
   getAppFolderCreateTargetPadding() {
-    return Math.max(
-      APP_FOLDER_CREATE_PADDING_MIN,
-      Math.min(APP_FOLDER_CREATE_PADDING_MAX, this.iconSize * APP_FOLDER_CREATE_PADDING_RATIO)
-    );
+    return getAppFolderCreateTargetPaddingForIcon(this.iconSize);
   }
 
   drawAppFolderCreateBackdrop() {
