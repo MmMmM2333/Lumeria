@@ -1,4 +1,8 @@
-import { getFolderPageMaskRect, resolveOpeningInterruptionFrame } from "./folderOverlayGeometry.js";
+import {
+  getClosingPreviewTiming,
+  getFolderPageMaskRect,
+  resolveOpeningInterruptionFrame,
+} from "./folderOverlayGeometry.js";
 
 export function runFolderOverlayLayerTests() {
   const assert = (condition, message) => {
@@ -32,4 +36,21 @@ export function runFolderOverlayLayerTests() {
     resolveOpeningInterruptionFrame(null, null, oneRowContentRect) === oneRowContentRect,
     "interrupted close should use content bounds only as a last fallback"
   );
+
+  const nearlyEqual = (a, b) => Math.abs(a - b) < 0.0001;
+  const compactTiming = getClosingPreviewTiming({ height: 490 }, { height: 70 });
+  assert(compactTiming.progress === 0.76, "compact folder preview swap should keep the default start progress");
+  assert(compactTiming.iconDuration === 0.22, "compact folder preview icons should keep the default duration");
+  assert(compactTiming.swapDuration === 0.18, "compact folder preview wrap should keep the default duration");
+
+  const midTiming = getClosingPreviewTiming({ height: 665 }, { height: 70 });
+  assert(nearlyEqual(midTiming.factor, 0.5), "preview timing should scale from the panel-to-thumbnail ratio");
+  assert(nearlyEqual(midTiming.progress, 0.72), "mid-height preview swap should start between compact and tall timings");
+  assert(nearlyEqual(midTiming.iconDuration, 0.24), "mid-height preview icons should interpolate duration");
+  assert(nearlyEqual(midTiming.swapDuration, 0.2), "mid-height preview wrap should interpolate duration");
+
+  const tallTiming = getClosingPreviewTiming({ height: 840 }, { height: 70 });
+  assert(tallTiming.progress === 0.68, "tall folder preview swap should start earlier");
+  assert(tallTiming.iconDuration === 0.26, "tall folder preview icons should run slightly longer");
+  assert(tallTiming.swapDuration === 0.22, "tall folder preview wrap should run slightly longer");
 }

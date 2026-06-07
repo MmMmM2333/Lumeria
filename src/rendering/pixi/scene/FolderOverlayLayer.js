@@ -4,12 +4,12 @@ import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import {
   folderCloseDuration,
   folderCloseEase,
-  folderCloseFrameEase,
   folderOpenDuration,
   folderOpenEase,
   folderOpenGhostDuration,
   folderOpenGhostEase,
   folderPanelCloseDuration,
+  folderPreviewSettleEase,
   layoutDuration,
   layoutEase,
 } from "../animation/eases.js";
@@ -33,7 +33,7 @@ import {
   isActiveDraggedLaunchItem,
   isReleaseGhostLaunchItem,
 } from "./dragVisibility.js";
-import { getFolderPageMaskRect, resolveOpeningInterruptionFrame } from "./folderOverlayGeometry.js";
+import { getClosingPreviewTiming, getFolderPageMaskRect, resolveOpeningInterruptionFrame } from "./folderOverlayGeometry.js";
 import { makeIconRect, makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { IconNode } from "../nodes/IconNode.js";
 import { getCachedIconTexture } from "../assets/iconTextureCache.js";
@@ -46,13 +46,13 @@ const CLOSING_FRAME_TAIL_DURATION = 0.04;
 const CLOSING_GHOST_MAX_DELAY = 0.06;
 const CLOSING_EXTRA_GHOST_ALPHA_DURATION = 0.12;
 const CLOSING_EXTRA_GHOST_ALPHA_HOLD = 0.16;
-const CLOSING_PREVIEW_SWAP_PROGRESS = 0.92;
-const CLOSING_PREVIEW_SWAP_DURATION = 0.18;
+const CLOSING_PREVIEW_FALLBACK_DURATION = 0.22;
 const CLOSING_PREVIEW_SWAP_START_SCALE = 1.02;
-const CLOSING_PREVIEW_ICON_DURATION = 0.22;
 const CLOSING_PREVIEW_ICON_ROW_STAGGER = 0.01;
 const CLOSING_PREVIEW_ICON_COLUMN_STAGGER = 0.008;
 const CLOSING_PREVIEW_ICON_START_SCALE = 1.08;
+const CLOSING_PREVIEW_ICON_OUTSIDE_MARGIN = 0.35;
+const CLOSING_PREVIEW_ICON_OUTSIDE_SPREAD = 0.12;
 
 function makeLocalRect(rect, stageRect) {
   if (!rect) return null;
@@ -637,7 +637,7 @@ export class FolderOverlayLayer extends Container {
     this.clearClosingGhostRevealTimer();
     const maxDelay = getMaxGridGhostDelay(targets, CLOSING_GHOST_MAX_DELAY);
     const timeoutMs = Math.round(
-      (maxDelay + folderCloseDuration + CLOSING_PREVIEW_SWAP_DURATION) * 1000 + GHOST_REVEAL_FALLBACK_PADDING_MS
+      (maxDelay + folderCloseDuration + CLOSING_PREVIEW_FALLBACK_DURATION) * 1000 + GHOST_REVEAL_FALLBACK_PADDING_MS
     );
     this.closingGhostRevealTimer = globalThis.setTimeout?.(() => {
       this.closingGhostRevealTimer = null;
@@ -1148,7 +1148,7 @@ export class FolderOverlayLayer extends Container {
     this.finishClosingGhostTransition(state);
   }
 
-  startClosingPreviewSwapGhosts(state, targets) {
+  startClosingPreviewSwapGhosts(state, targets, timing = getClosingPreviewTiming()) {
     clearClosingPreviewSwapLayer(this);
     if (!targets?.length || state.folderPageIndex <= 0) return;
 
@@ -1193,10 +1193,11 @@ export class FolderOverlayLayer extends Container {
       const row = Math.floor(slotIndex / 3);
       const jitterX = (((slotIndex * 17) % 5) - 2) * size * 0.018;
       const jitterY = (((slotIndex * 13) % 5) - 2) * size * 0.018;
-      const startOffsetX = size * (0.9 - col * 0.16 + row * 0.08) + jitterX;
-      const startOffsetY = size * (0.72 - row * 0.12 + col * 0.06) + jitterY;
+      const outsideOffset = size * (0.5 + CLOSING_PREVIEW_ICON_OUTSIDE_MARGIN);
+      const startX = maskRect.left - outsideOffset - col * size * CLOSING_PREVIEW_ICON_OUTSIDE_SPREAD + jitterX;
+      const startY = maskRect.top - outsideOffset - row * size * CLOSING_PREVIEW_ICON_OUTSIDE_SPREAD + jitterY;
       const delay = row * CLOSING_PREVIEW_ICON_ROW_STAGGER + col * CLOSING_PREVIEW_ICON_COLUMN_STAGGER;
-      ghost.position.set(finalX - startOffsetX, finalY - startOffsetY);
+      ghost.position.set(startX, startY);
       ghost.scale.set(CLOSING_PREVIEW_ICON_START_SCALE + (4 - row - col) * 0.006);
       ghost.alpha = 0.78;
       iconsWrap.addChild(ghost);
@@ -1211,21 +1212,21 @@ export class FolderOverlayLayer extends Container {
       .to(iconsWrap.scale, {
         x: 1,
         y: 1,
-        duration: CLOSING_PREVIEW_SWAP_DURATION,
-        ease: "power2.out",
+        duration: timing.swapDuration,
+        ease: folderPreviewSettleEase,
       }, 0);
     for (const motion of iconMotions) {
       timeline
         .to(motion.ghost, {
           alpha: 1,
-          duration: CLOSING_PREVIEW_ICON_DURATION,
-          ease: "power2.out",
+          duration: timing.iconDuration,
+          ease: folderPreviewSettleEase,
           x: motion.x,
           y: motion.y,
         }, motion.delay)
         .to(motion.ghost.scale, {
-          duration: CLOSING_PREVIEW_ICON_DURATION,
-          ease: "power2.out",
+          duration: timing.iconDuration,
+          ease: folderPreviewSettleEase,
           x: 1,
           y: 1,
         }, motion.delay);
@@ -1249,23 +1250,21 @@ export class FolderOverlayLayer extends Container {
     const usableTargets = (closeTargets || []).filter((target) => target.sourceRect && target.targetRect);
     if (!usableTargets.length) return;
     const isInterruptedClose = Boolean(interruption);
-    const frameMaxDelay = isInterruptedClose ? 0 : CLOSING_GHOST_MAX_DELAY;
-    const frameDuration = Math.max(
-      isInterruptedClose ? folderCloseDuration : folderPanelCloseDuration,
-      frameMaxDelay + folderCloseDuration + CLOSING_FRAME_TAIL_DURATION
-    );
+    const frameDuration = folderCloseDuration + CLOSING_FRAME_TAIL_DURATION;
+    const closeFrameToRect = makeLocalRect(folderRect, state.stageRect);
+    const previewTiming = getClosingPreviewTiming(closeFrameFromRect, closeFrameToRect);
     const thumb = getFolderThumbMetrics(folderRect.width);
     let closingPreviewSwapStarted = false;
     const startClosingPreviewSwapWhenReady = (frame) => {
       if (closingPreviewSwapStarted || isInterruptedClose || !previewSwapTargets?.length) return;
-      if ((frame?.progress ?? 0) < CLOSING_PREVIEW_SWAP_PROGRESS) return;
+      if ((frame?.progress ?? 0) < previewTiming.progress) return;
       closingPreviewSwapStarted = true;
-      this.startClosingPreviewSwapGhosts(state, previewSwapTargets);
+      this.startClosingPreviewSwapGhosts(state, previewSwapTargets, previewTiming);
     };
     this.enableClosingFrameMask();
-    this.startFrameGhost(closeFrameFromRect, makeLocalRect(folderRect, state.stageRect), {
+    this.startFrameGhost(closeFrameFromRect, closeFrameToRect, {
       duration: frameDuration,
-      ease: isInterruptedClose ? folderCloseEase : folderCloseFrameEase,
+      ease: folderCloseEase,
       fadeStart: 0.86,
       frameGhostToAlpha: 1,
       fromFillAlpha: interruption?.frameRect?.fillAlpha ?? 0.26,
@@ -1334,7 +1333,7 @@ export class FolderOverlayLayer extends Container {
       const fromY = sourceRect.top + sourceRect.height / 2 + labelOffset * sourceScale;
       const toX = targetRect.left + targetRect.width / 2;
       const toY = targetRect.top + targetRect.height / 2 + labelOffset * scale;
-      const delay = target.interrupted ? 0 : getGridGhostDelay(target.index, target.columnCount, CLOSING_GHOST_MAX_DELAY);
+      const delay = 0;
       const alphaDelay = delay + folderCloseDuration * CLOSING_EXTRA_GHOST_ALPHA_HOLD;
       ghost.position.set(fromX, fromY);
       ghost.scale.set(sourceScale);
