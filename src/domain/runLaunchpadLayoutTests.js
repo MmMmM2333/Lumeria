@@ -27,6 +27,7 @@ import { runGridGeometryTests } from "../rendering/pixi/geometry/gridGeometryTes
 import { runStageCoordinatesTests } from "../rendering/pixi/geometry/stageCoordinatesTests.js";
 import { runIconBoundsRegistryTests } from "../rendering/pixi/geometry/iconBoundsRegistryTests.js";
 import { runIconTextureCacheTests } from "../rendering/pixi/assets/iconTextureCacheTests.js";
+import { runIconLabelLayoutTests } from "../rendering/pixi/nodes/iconLabelLayoutTests.js";
 import { runFolderThumbPreviewMotionTests } from "../rendering/pixi/nodes/folderThumbPreviewMotionTests.js";
 import { runDragVisibilityTests } from "../rendering/pixi/scene/dragVisibilityTests.js";
 import { runFolderOverlayLayerTests } from "../rendering/pixi/scene/FolderOverlayLayerTests.js";
@@ -113,6 +114,7 @@ runSpringMotionTests();
 runGridGeometryTests();
 runStageCoordinatesTests();
 runIconBoundsRegistryTests();
+runIconLabelLayoutTests();
 runFolderThumbPreviewMotionTests();
 runDragVisibilityTests();
 runFolderOverlayLayerTests();
