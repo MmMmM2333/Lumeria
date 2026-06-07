@@ -16,6 +16,15 @@ import {
 import { pageTrackSpring, panelSpring, springTo, stopTargetSprings } from "../animation/springMotion.js";
 import { getFolderGridMetrics, getFolderPanelGeometry, getGridSlotRect, parseRepeatCount, readPx } from "../geometry/gridGeometry.js";
 import {
+  clearFrameGhost as clearFrameGhostState,
+  drawClosingFrameMask as drawClosingFrameMaskState,
+  drawFrameGhost as drawFrameGhostState,
+  enableClosingFrameMask as enableClosingFrameMaskState,
+  ensureClosingFrameMaskState,
+  getFrameRadius,
+  startFrameGhost as startFrameGhostState,
+} from "./folderFrameGhost.js";
+import {
   getIconLabelTopFromVisualRect,
   getIconNodeOffsetFromVisualCenter,
   getIconVisualOffsetY,
@@ -84,11 +93,6 @@ function makeClosingPreviewSwapKey(folderId, pageIndex) {
   return `closing-preview-swap:${folderId || "folder"}:${pageIndex}`;
 }
 
-function getFrameRadius(rect, fallback = 18) {
-  if (!rect) return fallback;
-  return Math.max(14, Math.min(48, Math.min(rect.width, rect.height) * 0.26));
-}
-
 function getGridGhostDelay(index, columnCount, maxDelay = 0.18) {
   const safeIndex = Math.max(0, Number(index) || 0);
   const columns = Math.max(1, Number(columnCount) || 1);
@@ -104,27 +108,6 @@ function getMaxGridGhostDelay(targets, maxDelay) {
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
-}
-
-function lerp(from, to, progress) {
-  return from + (to - from) * progress;
-}
-
-function lerpColor(from, to, progress) {
-  const t = clamp01(progress);
-  const fromColor = Math.max(0, Math.min(0xffffff, Math.round(Number(from) || 0)));
-  const toColor = Math.max(0, Math.min(0xffffff, Math.round(Number(to) || 0)));
-  const fromR = (fromColor >> 16) & 0xff;
-  const fromG = (fromColor >> 8) & 0xff;
-  const fromB = fromColor & 0xff;
-  const toR = (toColor >> 16) & 0xff;
-  const toG = (toColor >> 8) & 0xff;
-  const toB = toColor & 0xff;
-  return (
-    (Math.round(lerp(fromR, toR, t)) << 16) |
-    (Math.round(lerp(fromG, toG, t)) << 8) |
-    Math.round(lerp(fromB, toB, t))
-  );
 }
 
 function expandBounds(bounds, rect) {
@@ -237,22 +220,6 @@ function clearClosingPreviewSwapLayer(layer) {
     killTweensDeep(ghost);
     ghost.destroy?.({ children: true });
   }
-}
-
-function ensureClosingFrameMaskState(layer) {
-  if (layer.closingFrameMask && !layer.closingFrameMask.destroyed) return layer.closingFrameMask;
-  layer.closingFrameMask = new Graphics();
-  const frameIndex = layer.children?.indexOf?.(layer.frameGhost);
-  if (frameIndex >= 0) layer.addChildAt(layer.closingFrameMask, frameIndex + 1);
-  else layer.addChild(layer.closingFrameMask);
-  return layer.closingFrameMask;
-}
-
-function clearClosingFrameMask(layer) {
-  const mask = layer.closingFrameMask;
-  if (layer.closingGhostLayer?.mask === mask) layer.closingGhostLayer.mask = null;
-  if (layer.closingPreviewSwapLayer?.mask === mask) layer.closingPreviewSwapLayer.mask = null;
-  mask?.clear?.();
 }
 
 export class FolderOverlayLayer extends Container {
@@ -669,18 +636,7 @@ export class FolderOverlayLayer extends Container {
   }
 
   clearFrameGhost(options = {}) {
-    if (this.frameGhostState) {
-      gsap.killTweensOf(this.frameGhostState);
-      this.frameGhostState = null;
-    }
-    gsap.killTweensOf(this.frameGhost);
-    gsap.killTweensOf(this.panelMaterial);
-    this.frameGhost.clear();
-    this.frameGhost.visible = false;
-    this.frameGhost.alpha = 0;
-    clearClosingFrameMask(this);
-    this.panelMaterial.visible = true;
-    this.panelMaterial.alpha = options.panelMaterialAlpha ?? 1;
+    clearFrameGhostState(this, options);
   }
 
   notifyTitleFrame(rect) {
@@ -739,105 +695,19 @@ export class FolderOverlayLayer extends Container {
   }
 
   enableClosingFrameMask() {
-    const mask = ensureClosingFrameMaskState(this);
-    this.closingGhostLayer.mask = mask;
-    ensureClosingPreviewSwapState(this).mask = mask;
+    enableClosingFrameMaskState(this);
   }
 
   drawClosingFrameMask(rect) {
-    const mask = ensureClosingFrameMaskState(this);
-    mask.clear()
-      .roundRect(rect.left, rect.top, rect.width, rect.height, rect.radius)
-      .fill({ color: 0xffffff, alpha: 1 });
+    drawClosingFrameMaskState(this, rect);
   }
 
   drawFrameGhost(rect, options = {}) {
-    const drawRect = rect;
-    this.frameGhost.clear()
-      .roundRect(drawRect.left, drawRect.top, drawRect.width, drawRect.height, drawRect.radius)
-      .fill({ color: Math.round(drawRect.fillColor ?? 0xf7f8ff), alpha: drawRect.fillAlpha })
-      .stroke({ color: Math.round(drawRect.strokeColor ?? 0xffffff), alpha: drawRect.strokeAlpha, width: drawRect.strokeWidth ?? 1 });
-    if (options.updateClosingMask) this.drawClosingFrameMask(drawRect);
-    if (options.notifyTitleFrame !== false) this.notifyTitleFrame(drawRect);
+    drawFrameGhostState(this, rect, options);
   }
 
   startFrameGhost(fromRect, toRect, options = {}) {
-    if (!fromRect || !toRect) return;
-    if (this.frameGhostState) gsap.killTweensOf(this.frameGhostState);
-    gsap.killTweensOf(this.frameGhost);
-    gsap.killTweensOf(this.panelMaterial);
-    const duration = options.duration ?? folderOpenGhostDuration;
-    const ease = options.ease ?? folderOpenGhostEase;
-    const fadeStart = Math.max(0, Math.min(0.95, options.fadeStart ?? 0.72));
-    const fadeDuration = Math.max(0.01, duration * (1 - fadeStart));
-    const fromFillColor = options.fromFillColor ?? 0xf7f8ff;
-    const toFillColor = options.toFillColor ?? fromFillColor;
-    const fromStrokeColor = options.fromStrokeColor ?? 0xffffff;
-    const toStrokeColor = options.toStrokeColor ?? fromStrokeColor;
-    this.panelMaterial.visible = true;
-    this.panelMaterial.alpha = options.panelMaterialFromAlpha ?? 0;
-    this.frameGhost.visible = true;
-    this.frameGhost.alpha = options.frameGhostFromAlpha ?? 1;
-    const frame = {
-      fillAlpha: options.fromFillAlpha ?? 0.22,
-      fillColor: fromFillColor,
-      height: fromRect.height,
-      left: fromRect.left,
-      progress: 0,
-      radius: options.fromRadius ?? getFrameRadius(fromRect),
-      strokeAlpha: options.fromStrokeAlpha ?? 0.26,
-      strokeColor: fromStrokeColor,
-      strokeWidth: options.fromStrokeWidth ?? 1,
-      top: fromRect.top,
-      width: fromRect.width,
-    };
-    this.frameGhostState = frame;
-    this.drawFrameGhost(frame, options);
-    gsap.to(this.panelMaterial, {
-      alpha: options.panelMaterialToAlpha ?? 1,
-      delay: duration * fadeStart,
-      duration: fadeDuration,
-      ease,
-      overwrite: "auto",
-    });
-    gsap.to(this.frameGhost, {
-      alpha: options.frameGhostToAlpha ?? 0,
-      delay: duration * fadeStart,
-      duration: fadeDuration,
-      ease,
-      overwrite: "auto",
-    });
-    gsap.to(frame, {
-      duration,
-      ease,
-      fillAlpha: options.toFillAlpha ?? 0.26,
-      height: toRect.height,
-      left: toRect.left,
-      progress: 1,
-      radius: options.toRadius ?? getFrameRadius(toRect, 48),
-      strokeAlpha: options.toStrokeAlpha ?? 0.24,
-      strokeWidth: options.toStrokeWidth ?? frame.strokeWidth,
-      top: toRect.top,
-      width: toRect.width,
-      onUpdate: () => {
-        frame.fillColor = lerpColor(fromFillColor, toFillColor, frame.progress);
-        frame.strokeColor = lerpColor(fromStrokeColor, toStrokeColor, frame.progress);
-        this.drawFrameGhost(frame, options);
-        options.onUpdate?.(frame);
-      },
-      onComplete: () => {
-        frame.fillColor = toFillColor;
-        frame.strokeColor = toStrokeColor;
-        if (options.preserveOnComplete) {
-          this.frameGhostState = frame;
-          this.drawFrameGhost(frame, options);
-          options.onComplete?.();
-          return;
-        }
-        this.clearFrameGhost({ panelMaterialAlpha: options.panelMaterialFinalAlpha ?? 1 });
-        options.onComplete?.();
-      },
-    });
+    startFrameGhostState(this, fromRect, toRect, options);
   }
 
   refreshPageTrackMask() {
