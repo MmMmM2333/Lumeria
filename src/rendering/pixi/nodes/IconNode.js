@@ -5,6 +5,10 @@ import { getCachedIconTexture } from "../assets/iconTextureCache.js";
 import { getIconLabelLocalY, getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { mapLocalRectToStageRect } from "../geometry/stageCoordinates.js";
 import {
+  drawEditButton as drawEditButtonGraphic,
+  drawMissingBadge,
+} from "./iconControlDrawing.js";
+import {
   drawAppFolderCreateBackdrop as drawAppFolderCreateBackdropGraphic,
   drawAppFolderCreateFlashOverlay as drawAppFolderCreateFlashOverlayGraphic,
   drawFolderFlashOverlay as drawFolderFlashOverlayGraphic,
@@ -813,23 +817,7 @@ export class IconNode extends Container {
   }
 
   renderMissingBadge(state) {
-    this.missingBadge.visible = false;
-    this.missingBadgeBackground.clear();
-    if (!state.launchTargetStatus || state.launchTargetStatus !== "missing") return;
-
-    const radius = Math.max(8, Math.min(12, this.iconSize * 0.18));
-    const edgeOffset = Math.max(2, radius * 0.36);
-    const fontSize = Math.max(10, Math.round(radius * 1.35));
-    this.missingBadge.visible = true;
-    this.missingBadge.position.set(this.iconSize / 2 - edgeOffset, this.iconSize / 2 - edgeOffset);
-    this.missingBadgeBackground
-      .circle(0, 0, radius)
-      .fill({ color: 0xb84a54, alpha: 1 })
-      .stroke({ color: 0xffffff, alpha: 0.92, width: Math.max(1, radius * 0.18) });
-    this.missingBadgeText.text = "!";
-    this.missingBadgeText.style.fontSize = fontSize;
-    this.missingBadgeText.style.lineHeight = fontSize;
-    this.missingBadgeText.position.set(0, -Math.max(0.5, radius * 0.06));
+    drawMissingBadge(this.missingBadge, this.missingBadgeBackground, this.missingBadgeText, this.iconSize, state.launchTargetStatus);
   }
 
   renderLabel(state) {
@@ -867,15 +855,7 @@ export class IconNode extends Container {
   }
 
   drawEditButton(button, x, y, label, visible) {
-    button.visible = Boolean(visible);
-    if (!visible) return;
-    button.position.set(x, y);
-    button.background.clear()
-      .circle(0, 0, 11)
-      .fill({ color: 0x111827, alpha: 0.84 })
-      .stroke({ color: 0xffffff, alpha: 0.7, width: 1 });
-    button.textNode.text = label;
-    button.textNode.style.fontSize = label === "×" ? 17 : 13;
+    drawEditButtonGraphic(button, x, y, label, visible);
   }
 
   destroy(options) {
