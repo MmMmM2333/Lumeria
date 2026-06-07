@@ -38,4 +38,59 @@ export function makeFolderIconTargetCenter(options = {}) {
   };
 }
 
+export function makeFolderIconNodeState(options = {}) {
+  const {
+    closingGhostKeys = null,
+    folderId = null,
+    folderPageSize = 0,
+    iconSize = 64,
+    isActiveDraggedItem = false,
+    isEditMode = false,
+    isIconOpening = null,
+    isIconSelected = null,
+    isInteractivePage = false,
+    isReleaseGhostItem = false,
+    isTextlessMode = false,
+    item = null,
+    launchTargetStatusById = null,
+    openingGhostKeys = null,
+    pageIndex = 0,
+    showMissingLaunchTargetBadge = true,
+    slot = null,
+    source = null,
+    stageHeight = 1,
+    stageWidth = 1,
+  } = options;
+  const itemId = item?.id;
+  const ghosted = Boolean(isReleaseGhostItem ||
+    (isInteractivePage && (
+      openingGhostKeys?.has(itemId) ||
+      closingGhostKeys?.has(itemId)
+    )));
+  return {
+    cellHeight: slot?.height,
+    cellWidth: slot?.width,
+    compact: false,
+    dragging: isActiveDraggedItem,
+    draggable: isInteractivePage,
+    dropTarget: false,
+    editing: isInteractivePage && isEditMode,
+    folderPreviewPageSize: folderPageSize,
+    ghosted,
+    hasCustomIcon: Boolean(item?.customIconPath || item?.customIconDataUrl),
+    iconSize,
+    interactive: isInteractivePage,
+    item,
+    jiggleSeed: Math.max(0, Number(pageIndex) || 0) * 100 + (Number(source?.index) || 0),
+    launchTargetStatus: isInteractivePage && showMissingLaunchTargetBadge ? launchTargetStatusById?.[itemId] : null,
+    opening: isInteractivePage && isIconOpening?.("folder", itemId, pageIndex, folderId),
+    removable: item?.type === "app",
+    selected: isInteractivePage && isIconSelected?.("folder", itemId, pageIndex, folderId),
+    source,
+    stageHeight,
+    stageWidth,
+    textless: isTextlessMode,
+  };
+}
+
 reloadOnPixiHotUpdate(import.meta.hot);

@@ -45,7 +45,11 @@ import {
   isReleaseGhostLaunchItem,
 } from "./dragVisibility.js";
 import { getClosingPreviewTiming, getFolderPageMaskRect, resolveOpeningInterruptionFrame } from "./folderOverlayGeometry.js";
-import { makeFolderIconRenderPlan, makeFolderIconTargetCenter } from "./folderOverlayIconPlan.js";
+import {
+  makeFolderIconNodeState,
+  makeFolderIconRenderPlan,
+  makeFolderIconTargetCenter,
+} from "./folderOverlayIconPlan.js";
 import { cloneFrameSnapshot, makeOpeningInterruptionFrame } from "./folderOpeningInterruptionFrame.js";
 import {
   findFolderGhostKey,
@@ -296,33 +300,28 @@ export class FolderOverlayLayer extends Container {
         }
 
         node.stageRect = state.stageRect;
-        node.setState({
-          cellHeight: slot.height,
-          cellWidth: slot.width,
-          compact: false,
-          dragging: isActiveDraggedItem,
-          draggable: isInteractivePage,
-          dropTarget: false,
-          editing: isInteractivePage && state.isEditMode,
-          folderPreviewPageSize: state.folderPageSize,
-          ghosted: isReleaseGhostItem ||
-            (isInteractivePage && (
-            this.openingGhostKeys?.has(item.id) ||
-            this.closingGhostKeys?.has(item.id))),
-          hasCustomIcon: Boolean(item.customIconPath || item.customIconDataUrl),
+        node.setState(makeFolderIconNodeState({
+          closingGhostKeys: this.closingGhostKeys,
+          folderId: state.renderedFolder.id,
+          folderPageSize: state.folderPageSize,
           iconSize,
-          interactive: isInteractivePage,
+          isActiveDraggedItem,
+          isEditMode: state.isEditMode,
+          isIconOpening: state.isIconOpening,
+          isIconSelected: state.isIconSelected,
+          isInteractivePage,
+          isReleaseGhostItem,
+          isTextlessMode: state.isTextlessMode,
           item,
-          jiggleSeed: pageIndex * 100 + index,
-          launchTargetStatus: isInteractivePage && state.showMissingLaunchTargetBadge ? state.launchTargetStatusById?.[item.id] : null,
-          opening: isInteractivePage && state.isIconOpening?.("folder", item.id, pageIndex, state.renderedFolder.id),
-          removable: item.type === "app",
-          selected: isInteractivePage && state.isIconSelected?.("folder", item.id, pageIndex, state.renderedFolder.id),
+          launchTargetStatusById: state.launchTargetStatusById,
+          openingGhostKeys: this.openingGhostKeys,
+          pageIndex,
+          showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge,
+          slot,
           source,
           stageHeight: state.height,
           stageWidth: state.width,
-          textless: state.isTextlessMode,
-        });
+        }));
 
         const iconBounds = node.getIconBounds(state.stageRect);
         if (isInteractivePage) {
