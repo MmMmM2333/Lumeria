@@ -31,7 +31,6 @@ import {
   makeOpeningGhostMotion,
 } from "./folderIconGhostMotion.js";
 import { makeClosingPreviewSwapPlan } from "./folderPreviewSwapMotion.js";
-import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { makeStageLocalRect, makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import {
   clearLaunchIconBounds,
@@ -46,6 +45,7 @@ import {
   isReleaseGhostLaunchItem,
 } from "./dragVisibility.js";
 import { getClosingPreviewTiming, getFolderPageMaskRect, resolveOpeningInterruptionFrame } from "./folderOverlayGeometry.js";
+import { makeFolderIconRenderPlan, makeFolderIconTargetCenter } from "./folderOverlayIconPlan.js";
 import { cloneFrameSnapshot, makeOpeningInterruptionFrame } from "./folderOpeningInterruptionFrame.js";
 import {
   findFolderGhostKey,
@@ -268,10 +268,15 @@ export class FolderOverlayLayer extends Container {
       if (renderMode === "empty") return;
       visibleItems.forEach((item, index) => {
         const slot = getGridSlotRect(localMetrics, index);
-        const x = pageIndex * geometry.grid.width + slot.left + slot.width / 2;
-        const y = slot.top + slot.height / 2;
-        const source = { type: "folder", folderId: state.renderedFolder.id, index, pageIndex, slotIndex: index };
-        const key = `${state.renderedFolder.id}:${pageIndex}:${item.id}`;
+        const iconPlan = makeFolderIconRenderPlan({
+          folderId: state.renderedFolder.id,
+          geometry,
+          index,
+          item,
+          pageIndex,
+          slot,
+        });
+        const { key, source, x, y } = iconPlan;
         const isActiveDraggedItem = isActiveDraggedLaunchItem(item, state);
         const isReleaseGhostItem = isReleaseGhostLaunchItem(item, state);
         seen.add(key);
@@ -326,17 +331,15 @@ export class FolderOverlayLayer extends Container {
             iconBounds,
             { area: "folder", folderId: state.renderedFolder.id, id: item.id, index, item, pageIndex }
           );
-          const targetCenterX = geometry.panel.left + x + targetTrackX;
-          const targetCenterY = geometry.panel.top + y + getIconVisualOffsetY(state.isTextlessMode);
+          const targetCenter = makeFolderIconTargetCenter({ geometry, isTextlessMode: state.isTextlessMode, targetTrackX, x, y });
           registerLaunchIconTargetBounds(
             { area: "folder", folderId: state.renderedFolder.id, id: item.id, pageIndex },
-            makeTargetIconBounds(state.stageRect, state.width, state.height, targetCenterX, targetCenterY, iconSize),
+            makeTargetIconBounds(state.stageRect, state.width, state.height, targetCenter.x, targetCenter.y, iconSize),
             { area: "folder", folderId: state.renderedFolder.id, id: item.id, index, item, pageIndex }
           );
         }
         if (isInteractivePage && !isActiveDraggedItem && !isReleaseGhostItem && isNewFolder && !isClosing && pageIndex === state.folderPageIndex) {
-          const targetCenterX = geometry.panel.left + x + targetTrackX;
-          const targetCenterY = geometry.panel.top + y + getIconVisualOffsetY(state.isTextlessMode);
+          const targetCenter = makeFolderIconTargetCenter({ geometry, isTextlessMode: state.isTextlessMode, targetTrackX, x, y });
           openingGhostTargets.push(makeOpeningGhostTarget({
             cellHeight: slot.height,
             cellWidth: slot.width,
@@ -350,8 +353,8 @@ export class FolderOverlayLayer extends Container {
               getFolderPreviewChildBounds(state.renderedFolder.id, targetItem.id, slotIndex),
             previewSlotById,
             rows,
-            targetCenterX,
-            targetCenterY,
+            targetCenterX: targetCenter.x,
+            targetCenterY: targetCenter.y,
           }));
         }
         if (isInteractivePage && state.isFolderClosing && pageIndex === state.folderPageIndex) {

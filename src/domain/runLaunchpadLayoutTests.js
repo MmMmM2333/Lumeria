@@ -40,6 +40,7 @@ import { runDragVisibilityTests } from "../rendering/pixi/scene/dragVisibilityTe
 import { runDragPreviewMotionTests } from "../rendering/pixi/scene/dragPreviewMotionTests.js";
 import { runFolderFrameGhostTests } from "../rendering/pixi/scene/folderFrameGhostTests.js";
 import { runFolderIconGhostMotionTests } from "../rendering/pixi/scene/folderIconGhostMotionTests.js";
+import { runFolderOverlayIconPlanTests } from "../rendering/pixi/scene/folderOverlayIconPlanTests.js";
 import { runFolderOpeningInterruptionFrameTests } from "../rendering/pixi/scene/folderOpeningInterruptionFrameTests.js";
 import { runFolderOverlayLayerTests } from "../rendering/pixi/scene/FolderOverlayLayerTests.js";
 import { runFolderOverlayTargetsTests } from "../rendering/pixi/scene/folderOverlayTargetsTests.js";
@@ -140,6 +141,7 @@ runDragVisibilityTests();
 runDragPreviewMotionTests();
 runFolderFrameGhostTests();
 runFolderIconGhostMotionTests();
+runFolderOverlayIconPlanTests();
 runFolderOpeningInterruptionFrameTests();
 runFolderOverlayLayerTests();
 runFolderOverlayTargetsTests();
