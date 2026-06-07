@@ -26,4 +26,22 @@ export function runStageCoordinatesTests() {
   assert(element.offsetWidth === 20 && element.offsetHeight === 30, "virtual element should expose layout size");
   assert(rect.left === 10 && rect.top === 20, "virtual element rect should expose visual position");
   assert(rect.width === 10 && rect.height === 15, "virtual element rect should expose visual size");
+
+  const stageScales = [
+    { label: "1080p css stage", rect: { left: 0, top: 0, width: 1920, height: 1080 }, stageWidth: 1920, stageHeight: 1080 },
+    { label: "2x backing stage", rect: { left: 0, top: 0, width: 1920, height: 1080 }, stageWidth: 3840, stageHeight: 2160 },
+    { label: "4k css stage", rect: { left: 24, top: 18, width: 3840, height: 2160 }, stageWidth: 3840, stageHeight: 2160 },
+  ];
+  for (const config of stageScales) {
+    const localRect = { left: config.stageWidth * 0.25, top: config.stageHeight * 0.2, width: config.stageWidth * 0.1, height: config.stageHeight * 0.12 };
+    const scaled = mapLocalRectToStageRect(config.rect, config.stageWidth, config.stageHeight, localRect);
+    const scaleX = config.rect.width / config.stageWidth;
+    const scaleY = config.rect.height / config.stageHeight;
+    assert(scaled.left === config.rect.left + localRect.left * scaleX, `${config.label} should scale local x into css pixels`);
+    assert(scaled.top === config.rect.top + localRect.top * scaleY, `${config.label} should scale local y into css pixels`);
+    assert(scaled.width === localRect.width * scaleX, `${config.label} should scale width into css pixels`);
+    assert(scaled.height === localRect.height * scaleY, `${config.label} should scale height into css pixels`);
+    assert(scaled.right <= config.rect.left + config.rect.width, `${config.label} should keep right edge inside stage`);
+    assert(scaled.bottom <= config.rect.top + config.rect.height, `${config.label} should keep bottom edge inside stage`);
+  }
 }

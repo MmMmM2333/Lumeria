@@ -14,6 +14,12 @@ export function runFolderOverlayTargetsTests() {
     if (!condition) throw new Error(`[Pixi folder overlay targets test failed] ${message}`);
   };
   const nearlyEqual = (a, b) => Math.abs(a - b) < 0.0001;
+  const assertRectInside = (rect, bounds, message) => {
+    assert(rect.left >= bounds.left, `${message}: left should stay inside bounds`);
+    assert(rect.top >= bounds.top, `${message}: top should stay inside bounds`);
+    assert(rect.left + rect.width <= bounds.left + bounds.width, `${message}: right should stay inside bounds`);
+    assert(rect.top + rect.height <= bounds.top + bounds.height, `${message}: bottom should stay inside bounds`);
+  };
 
   const folderRect = { height: 90, left: 10, top: 20, width: 90 };
   const folderThumbRect = { height: 72, left: 14, top: 24, width: 72 };
@@ -26,6 +32,19 @@ export function runFolderOverlayTargetsTests() {
   const projected = makeProjectedPreviewRect(folderRect, 4, 3, 3);
   assert(nearlyEqual(projected.left + projected.width / 2, 55), "projected rect should place slot centers by grid column");
   assert(nearlyEqual(projected.top + projected.height / 2, 65), "projected rect should place slot centers by grid row");
+
+  const previewSizes = [
+    { label: "compact thumbnail", rect: { height: 54, left: 12, top: 18, width: 54 } },
+    { label: "regular thumbnail", rect: { height: 72, left: 14, top: 24, width: 72 } },
+    { label: "4k thumbnail", rect: { height: 120, left: 40, top: 56, width: 120 } },
+  ];
+  for (const previewSize of previewSizes) {
+    for (let slotIndex = 0; slotIndex < 9; slotIndex += 1) {
+      const previewRect = makeProjectedPreviewRect(previewSize.rect, slotIndex, 3, 3);
+      assertRectInside(previewRect, previewSize.rect, `${previewSize.label} slot ${slotIndex}`);
+      assert(previewRect.width === previewRect.height, `${previewSize.label} slot ${slotIndex} should stay square`);
+    }
+  }
 
   const stableTarget = makeStableFolderCloseTarget({
     folderId: "folder-1",

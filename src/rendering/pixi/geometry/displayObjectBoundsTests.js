@@ -54,6 +54,18 @@ export function runDisplayObjectBoundsTests() {
   assert(fallback.left === 25 && fallback.top === 30, "fallback bounds should offset the local rect from global position");
   assert(fallback.width === 10 && fallback.height === 20, "fallback bounds should preserve source dimensions");
 
+  const scaledStage = mapDisplayObjectLocalRectToStageRect({
+    node: {
+      getGlobalTransform: () => makeMatrix(({ x, y }) => ({ x, y })),
+    },
+    rect: getCenteredLocalRect(96),
+    stageHeight: 2160,
+    stageRect: { left: 0, top: 0, width: 1920, height: 1080 },
+    stageWidth: 3840,
+  });
+  assert(scaledStage.left === -24 && scaledStage.top === -24, "2x backing stage should scale transformed bounds into css pixels");
+  assert(scaledStage.width === 48 && scaledStage.height === 48, "2x backing stage should scale display object dimensions");
+
   const missingTransform = mapDisplayObjectLocalRectToStageRect({
     node: { getGlobalTransform: () => null },
     rect: { left: 0, top: 0, width: 10, height: 10 },
