@@ -1,6 +1,13 @@
 import { ref, shallowRef } from "vue";
 import { setLaunchpadApiBridgeForTests } from "../api/launchpadApi.js";
 import { useLaunchpadNative } from "./useLaunchpadNative.js";
+import {
+  WINDOW_EFFECT_APPEARANCE_DARK,
+  WINDOW_EFFECT_APPEARANCE_LIGHT,
+  WINDOW_EFFECT_MATERIAL_ACRYLIC,
+  WINDOW_EFFECT_MATERIAL_MICA,
+  WINDOW_EFFECT_MATERIAL_MICA_ALT,
+} from "./useLaunchpadSettingsConfig.js";
 
 function makeOptions(overrides = {}) {
   const { pages: initialPages, ...optionOverrides } = overrides;
@@ -29,6 +36,8 @@ function makeOptions(overrides = {}) {
     draftIconSize: ref(64),
     draftIsTextlessMode: ref(false),
     draftRows: ref(4),
+    draftWindowEffectAppearance: ref(WINDOW_EFFECT_APPEARANCE_DARK),
+    draftWindowEffectMaterial: ref(WINDOW_EFFECT_MATERIAL_ACRYLIC),
     folderCols: ref(4),
     folderIconSize: ref(64),
     folderIconSizeMode: ref("global"),
@@ -45,6 +54,15 @@ function makeOptions(overrides = {}) {
     iconSize: ref(64),
     isDesktopOpen: ref(true),
     isTextlessMode: ref(false),
+    windowEffectAppearance: ref(WINDOW_EFFECT_APPEARANCE_DARK),
+    windowEffectMaterial: ref(WINDOW_EFFECT_MATERIAL_ACRYLIC),
+    windowEffectsSupport: ref({
+      platform: "unknown",
+      build: null,
+      supportsAcrylic: false,
+      supportsMica: false,
+      supportsMicaAlt: false,
+    }),
     launchTargetStatusById: ref({}),
     mergeNativeCatalogWithSavedLayout: (apps) => [apps],
     openDesktop: () => {},
@@ -67,9 +85,24 @@ function makeOptions(overrides = {}) {
 function withMockTauri(invoke, run, bridgeOverrides = {}) {
   const originalWindow = globalThis.window;
   const timers = [];
+  const defaultEffectsSupport = {
+    platform: "windows",
+    build: 22621,
+    supportsAcrylic: true,
+    supportsMica: true,
+    supportsMicaAlt: true,
+  };
   setLaunchpadApiBridgeForTests({
     convertFileSrc: (path) => `asset://${path}`,
-    invoke,
+    invoke: (command, args) => {
+      if (command === "get_main_window_effects_support" && !bridgeOverrides.passWindowEffectsSupport) {
+        return defaultEffectsSupport;
+      }
+      if (command === "set_main_window_effects_enabled" && !bridgeOverrides.passWindowEffectsCommand) {
+        return null;
+      }
+      return invoke(command, args);
+    },
     listen: bridgeOverrides.listen || (async () => () => {}),
   });
   globalThis.window = {
@@ -183,6 +216,135 @@ export async function runLaunchpadNativeTests() {
     } finally {
       console.error = originalConsoleError;
     }
+  });
+
+  const effectsCommands = [];
+  await withMockTauri(async (command, args) => {
+    if (command === "get_main_window_effects_support") {
+      return {
+        platform: "windows",
+        build: 22621,
+        supportsAcrylic: true,
+        supportsMica: true,
+        supportsMicaAlt: true,
+      };
+    }
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{ id: "effects-app", type: "app", name: "Effects", launchTarget: { kind: "shortcut", path: "Effects.lnk" } }]],
+        settings: {
+          windowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
+          windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    if (command === "set_main_window_effects_enabled") {
+      effectsCommands.push(args);
+      return null;
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+
+    assert(options.windowEffectsSupport.value.supportsMica === true && options.windowEffectsSupport.value.supportsMicaAlt === true, "native load should apply window effect support");
+    assert(options.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "native load should apply saved window effect material");
+    assert(options.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "native load should apply saved window effect appearance");
+    assert(effectsCommands.length === 1, "native load should refresh window effects once");
+    assert(effectsCommands[0].enabled === true, "window effect refresh should enable effects");
+    assert(effectsCommands[0].material === WINDOW_EFFECT_MATERIAL_MICA_ALT, "window effect refresh should pass the selected material");
+    assert(effectsCommands[0].appearance === WINDOW_EFFECT_APPEARANCE_LIGHT, "window effect refresh should pass the selected appearance");
+  }, {
+    passWindowEffectsCommand: true,
+    passWindowEffectsSupport: true,
+  });
+
+  await withMockTauri(async (command) => {
+    if (command === "get_main_window_effects_support") {
+      return {
+        platform: "windows",
+        build: 19045,
+        supportsAcrylic: true,
+        supportsMica: false,
+        supportsMicaAlt: false,
+      };
+    }
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[]],
+        settings: {
+          windowEffectMaterial: "mica",
+          windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    if (command === "set_main_window_effects_enabled") return null;
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+
+    assert(options.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_ACRYLIC, "unsupported saved mica material should fall back to acrylic");
+    assert(options.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "material fallback should preserve saved appearance");
+  }, {
+    passWindowEffectsCommand: true,
+    passWindowEffectsSupport: true,
+  });
+
+  await withMockTauri(async (command) => {
+    if (command === "get_main_window_effects_support") {
+      return {
+        platform: "windows",
+        build: 22000,
+        supportsAcrylic: true,
+        supportsMica: true,
+        supportsMicaAlt: false,
+      };
+    }
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[]],
+        settings: {
+          windowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
+          windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    if (command === "set_main_window_effects_enabled") return null;
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+
+    assert(options.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA, "unsupported saved mica alt material should fall back to mica when available");
+    assert(options.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "mica alt fallback should preserve saved appearance");
+  }, {
+    passWindowEffectsCommand: true,
+    passWindowEffectsSupport: true,
   });
 
   const pendingIconLoads = [];

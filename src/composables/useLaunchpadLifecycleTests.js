@@ -79,6 +79,8 @@ function createLifecycleOptions() {
       updateFolderViewportHeight: makeCall("updateFolderViewportHeight"),
       updatePageGridMetrics: makeCall("updatePageGridMetrics"),
       visibleFolderRowCount: ref(7),
+      windowEffectAppearance: ref("dark"),
+      windowEffectMaterial: ref("acrylic"),
       ...refs,
     },
   };

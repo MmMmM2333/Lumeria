@@ -346,6 +346,8 @@ export function createLaunchpadDataHelpers(options) {
         scanKeywordBlacklist: normalizeScanKeywordBlacklist(state.scanKeywordBlacklist),
         scanAppBlacklist: normalizeScanAppBlacklist(state.scanAppBlacklist),
         showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge !== false,
+        windowEffectMaterial: state.windowEffectMaterial === "mica" || state.windowEffectMaterial === "micaAlt" ? state.windowEffectMaterial : "acrylic",
+        windowEffectAppearance: state.windowEffectAppearance === "light" ? "light" : "dark",
       },
     };
   }

@@ -79,6 +79,8 @@ export function useLaunchpadController() {
     draftIconSize,
     draftIsTextlessMode,
     draftRows,
+    draftWindowEffectAppearance,
+    draftWindowEffectMaterial,
     folderCols,
     folderIconSize,
     folderIconSizeMode,
@@ -111,6 +113,9 @@ export function useLaunchpadController() {
     searchRef,
     showMissingLaunchTargetBadge,
     shellRef,
+    windowEffectAppearance,
+    windowEffectMaterial,
+    windowEffectsSupport,
   } = useLaunchpadControllerState();
   const deferredHandlers = createDeferredHandlers({
     cancelLongPress: () => {},
@@ -600,6 +605,8 @@ export function useLaunchpadController() {
     draftIconSize,
     draftIsTextlessMode,
     draftRows,
+    draftWindowEffectAppearance,
+    draftWindowEffectMaterial,
     folderCols,
     folderIconSize,
     folderIconSizeMode,
@@ -609,10 +616,13 @@ export function useLaunchpadController() {
     iconSize,
     isDragActive: () => isDragActive(),
     isTextlessMode,
+    windowEffectAppearance,
+    windowEffectMaterial,
   });
   const {
     applyGridConfig,
     applySettingsConfig,
+    canUseWindowEffectMaterial,
     changeDraftCols,
     changeDraftFolderCols,
     changeDraftFolderIconSize,
@@ -621,7 +631,10 @@ export function useLaunchpadController() {
     changeDraftRows,
     clampIconSize,
     setDraftFolderIconSizeMode,
+    setDraftWindowEffectAppearance,
+    setDraftWindowEffectMaterial,
   } = useLaunchpadSettingsConfig({
+    applyNativeWindowEffects: () => deferredHandlers.call("setNativeWindowEffectsEnabled", true),
     clonePages,
     closeSettingsPanel,
     commitFolderPageIndex,
@@ -637,6 +650,8 @@ export function useLaunchpadController() {
     draftIconSize,
     draftIsTextlessMode,
     draftRows,
+    draftWindowEffectAppearance,
+    draftWindowEffectMaterial,
     ensurePage,
     folderCols,
     folderIconSize,
@@ -655,6 +670,9 @@ export function useLaunchpadController() {
     repackFoldersForPageSize,
     schedulePageGridMetrics,
     searchPageIndex,
+    windowEffectAppearance,
+    windowEffectMaterial,
+    windowEffectsSupport,
   });
   const {
     clearNativeEventListeners,
@@ -691,6 +709,8 @@ export function useLaunchpadController() {
     draftIconSize,
     draftIsTextlessMode,
     draftRows,
+    draftWindowEffectAppearance,
+    draftWindowEffectMaterial,
     folderCols,
     folderIconSize,
     folderIconSizeMode,
@@ -720,6 +740,9 @@ export function useLaunchpadController() {
     scanRoots,
     searchPageIndex,
     showMissingLaunchTargetBadge,
+    windowEffectAppearance,
+    windowEffectMaterial,
+    windowEffectsSupport,
   });
   deferredHandlers.set("getLaunchTargetStatus", getLaunchTargetStatus);
   deferredHandlers.set("hideNativeWindow", hideNativeWindow);
@@ -1096,6 +1119,8 @@ export function useLaunchpadController() {
     updateFolderViewportHeight,
     updatePageGridMetrics,
     visibleFolderRowCount,
+    windowEffectAppearance,
+    windowEffectMaterial,
   });
 
   return {
@@ -1131,6 +1156,11 @@ export function useLaunchpadController() {
     draftIsTextlessMode,
     draftFolderIconSizeMode,
     draftFolderIconSize,
+    draftWindowEffectAppearance,
+    draftWindowEffectMaterial,
+    windowEffectAppearance,
+    windowEffectMaterial,
+    windowEffectsSupport,
     changeDraftRows,
     changeDraftCols,
     changeDraftFolderRows,
@@ -1138,6 +1168,9 @@ export function useLaunchpadController() {
     changeDraftIconSize,
     changeDraftFolderIconSize,
     setDraftFolderIconSizeMode,
+    setDraftWindowEffectAppearance,
+    setDraftWindowEffectMaterial,
+    canUseWindowEffectMaterial,
     managedApps,
     filteredManagedApps,
     appManagerSelectedIds,

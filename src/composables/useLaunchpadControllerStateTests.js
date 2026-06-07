@@ -6,7 +6,11 @@ import {
   DEFAULT_ROWS,
 } from "./launchpadConstants.js";
 import { useLaunchpadControllerState } from "./useLaunchpadControllerState.js";
-import { FOLDER_ICON_SIZE_MODE_GLOBAL } from "./useLaunchpadSettingsConfig.js";
+import {
+  FOLDER_ICON_SIZE_MODE_GLOBAL,
+  WINDOW_EFFECT_APPEARANCE_DARK,
+  WINDOW_EFFECT_MATERIAL_ACRYLIC,
+} from "./useLaunchpadSettingsConfig.js";
 
 export function runLaunchpadControllerStateTests() {
   const assert = (condition, message) => {
@@ -24,6 +28,11 @@ export function runLaunchpadControllerStateTests() {
   assert(state.folderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_GLOBAL, "folder icon mode should default to global");
   assert(state.draftFolderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_GLOBAL, "draft folder icon mode should default to global");
   assert(state.draftIsTextlessMode.value === false, "draft textless mode should start disabled");
+  assert(state.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_ACRYLIC, "window effect material should default to acrylic");
+  assert(state.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_DARK, "window effect appearance should default to dark");
+  assert(state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_ACRYLIC, "draft window effect material should default to acrylic");
+  assert(state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_DARK, "draft window effect appearance should default to dark");
+  assert(state.windowEffectsSupport.value.supportsAcrylic === false, "window effect support should start unavailable before native detection");
   assert(state.pageSize.value === DEFAULT_ROWS * DEFAULT_COLS, "page size should derive from desktop grid dimensions");
   assert(state.folderPageSize.value === DEFAULT_FOLDER_ROWS * DEFAULT_FOLDER_COLS, "folder page size should derive from folder grid dimensions");
 

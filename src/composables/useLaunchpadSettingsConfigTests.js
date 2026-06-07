@@ -2,8 +2,16 @@ import { createLaunchpadLayoutHelpers, makePageSize } from "../domain/launchpadL
 import {
   FOLDER_ICON_SIZE_MODE_CUSTOM,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
+  WINDOW_EFFECT_APPEARANCE_DARK,
+  WINDOW_EFFECT_APPEARANCE_LIGHT,
+  WINDOW_EFFECT_MATERIAL_ACRYLIC,
+  WINDOW_EFFECT_MATERIAL_MICA,
+  WINDOW_EFFECT_MATERIAL_MICA_ALT,
   clampLaunchpadIconSize,
+  normalizeWindowEffectAppearance,
+  normalizeWindowEffectMaterial,
   normalizeFolderIconSizeMode,
+  resolveWindowEffectMaterialForSupport,
   syncLaunchpadSettingsDraftsFromState,
   useLaunchpadSettingsConfig,
 } from "./useLaunchpadSettingsConfig.js";
@@ -38,13 +46,25 @@ function createSettingsConfig(overrides = {}) {
     draftFolderIconSizeMode: refValue(overrides.draftFolderIconSizeMode ?? FOLDER_ICON_SIZE_MODE_CUSTOM),
     draftFolderIconSize: refValue(overrides.draftFolderIconSize ?? 80),
     draftIsTextlessMode: refValue(overrides.draftIsTextlessMode ?? false),
+    draftWindowEffectMaterial: refValue(overrides.draftWindowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
+    draftWindowEffectAppearance: refValue(overrides.draftWindowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_DARK),
     isTextlessMode: refValue(overrides.isTextlessMode ?? false),
+    windowEffectMaterial: refValue(overrides.windowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
+    windowEffectAppearance: refValue(overrides.windowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_DARK),
+    windowEffectsSupport: refValue(overrides.windowEffectsSupport ?? {
+      platform: "windows",
+      build: 22621,
+      supportsAcrylic: true,
+      supportsMica: true,
+      supportsMicaAlt: true,
+    }),
     pages: refValue(overrides.pages ?? [makeItems(6)]),
     pageIndex: refValue(overrides.pageIndex ?? 2),
     searchPageIndex: refValue(overrides.searchPageIndex ?? 1),
     folderPageIndex: refValue(overrides.folderPageIndex ?? 1),
   };
   const calls = {
+    applyNativeWindowEffects: 0,
     closeSettingsPanel: 0,
     commitFolderPageIndex: [],
     commitPageIndex: [],
@@ -67,6 +87,9 @@ function createSettingsConfig(overrides = {}) {
     getFolderPageSize: () => folderPageSize.value,
   });
   const config = useLaunchpadSettingsConfig({
+    applyNativeWindowEffects: () => {
+      calls.applyNativeWindowEffects += 1;
+    },
     clonePages: helpers.clonePages,
     closeSettingsPanel: () => {
       calls.closeSettingsPanel += 1;
@@ -87,6 +110,8 @@ function createSettingsConfig(overrides = {}) {
     draftIconSize: state.draftIconSize,
     draftIsTextlessMode: state.draftIsTextlessMode,
     draftRows: state.draftRows,
+    draftWindowEffectAppearance: state.draftWindowEffectAppearance,
+    draftWindowEffectMaterial: state.draftWindowEffectMaterial,
     ensurePage: helpers.ensurePage,
     folderCols: state.folderCols,
     folderIconSize: state.folderIconSize,
@@ -107,6 +132,9 @@ function createSettingsConfig(overrides = {}) {
       calls.schedulePageGridMetrics += 1;
     },
     searchPageIndex: state.searchPageIndex,
+    windowEffectAppearance: state.windowEffectAppearance,
+    windowEffectMaterial: state.windowEffectMaterial,
+    windowEffectsSupport: state.windowEffectsSupport,
   });
 
   return { calls, config, state };
@@ -122,6 +150,19 @@ export function runLaunchpadSettingsConfigTests() {
   assert(clampLaunchpadIconSize("bad") === 64, "icon size clamp should fall back to the default");
   assert(normalizeFolderIconSizeMode(FOLDER_ICON_SIZE_MODE_CUSTOM) === FOLDER_ICON_SIZE_MODE_CUSTOM, "custom folder icon mode should be preserved");
   assert(normalizeFolderIconSizeMode("unknown") === FOLDER_ICON_SIZE_MODE_GLOBAL, "unknown folder icon modes should fall back to global");
+  assert(normalizeWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_MICA) === WINDOW_EFFECT_MATERIAL_MICA, "mica window effect material should be preserved");
+  assert(normalizeWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_MICA_ALT) === WINDOW_EFFECT_MATERIAL_MICA_ALT, "mica alt window effect material should be preserved");
+  assert(normalizeWindowEffectMaterial("unknown") === WINDOW_EFFECT_MATERIAL_ACRYLIC, "unknown window effect materials should fall back to acrylic");
+  assert(normalizeWindowEffectAppearance(WINDOW_EFFECT_APPEARANCE_LIGHT) === WINDOW_EFFECT_APPEARANCE_LIGHT, "light window effect appearance should be preserved");
+  assert(normalizeWindowEffectAppearance("unknown") === WINDOW_EFFECT_APPEARANCE_DARK, "unknown window effect appearances should fall back to dark");
+  assert(
+    resolveWindowEffectMaterialForSupport(WINDOW_EFFECT_MATERIAL_MICA, { supportsAcrylic: true, supportsMica: false, supportsMicaAlt: false }) === WINDOW_EFFECT_MATERIAL_ACRYLIC,
+    "mica should fall back to acrylic when the system does not support mica"
+  );
+  assert(
+    resolveWindowEffectMaterialForSupport(WINDOW_EFFECT_MATERIAL_MICA_ALT, { supportsAcrylic: true, supportsMica: true, supportsMicaAlt: false }) === WINDOW_EFFECT_MATERIAL_MICA,
+    "mica alt should fall back to mica when the system supports mica"
+  );
 
   const sync = createSettingsConfig({
     draftRows: 8,
@@ -140,6 +181,8 @@ export function runLaunchpadSettingsConfigTests() {
     folderIconSizeMode: FOLDER_ICON_SIZE_MODE_GLOBAL,
     folderIconSize: 72,
     isTextlessMode: true,
+    windowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
+    windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
   });
   syncLaunchpadSettingsDraftsFromState(sync.state);
   assert(sync.state.draftRows.value === 4 && sync.state.draftCols.value === 5, "sync should reset desktop draft dimensions from current settings");
@@ -148,6 +191,8 @@ export function runLaunchpadSettingsConfigTests() {
   assert(sync.state.draftFolderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_GLOBAL, "sync should reset folder icon mode from current settings");
   assert(sync.state.draftFolderIconSize.value === 72, "sync should reset folder icon size from current settings");
   assert(sync.state.draftIsTextlessMode.value === true, "sync should reset textless draft from current settings");
+  assert(sync.state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "sync should reset window effect material draft from current settings");
+  assert(sync.state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "sync should reset window effect appearance draft from current settings");
 
   const draft = createSettingsConfig({
     draftCols: 10,
@@ -174,12 +219,22 @@ export function runLaunchpadSettingsConfigTests() {
   assert(folderIconMode.state.draftFolderIconSize.value === 96, "switching to custom should seed from the desktop draft size");
   folderIconMode.config.changeDraftFolderIconSize(10);
   assert(folderIconMode.state.draftFolderIconSize.value === 128, "folder icon draft size should clamp after step changes");
+  const windowEffectMode = createSettingsConfig({
+    draftWindowEffectMaterial: WINDOW_EFFECT_MATERIAL_ACRYLIC,
+    windowEffectsSupport: { supportsAcrylic: true, supportsMica: false, supportsMicaAlt: false },
+  });
+  windowEffectMode.config.setDraftWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_MICA_ALT);
+  assert(windowEffectMode.state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_ACRYLIC, "unavailable window effect materials should not be selected");
+  windowEffectMode.config.setDraftWindowEffectAppearance(WINDOW_EFFECT_APPEARANCE_LIGHT);
+  assert(windowEffectMode.state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "window effect appearance should update from segmented controls");
 
   const apply = createSettingsConfig({
     gridCols: 3,
     gridRows: 3,
     draftCols: 3,
     draftRows: 2,
+    draftWindowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
+    draftWindowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
     pages: [makeItems(7)],
   });
   apply.config.applySettingsConfig();
@@ -189,12 +244,15 @@ export function runLaunchpadSettingsConfigTests() {
   assert(apply.state.folderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_CUSTOM, "folder icon mode should apply from the draft value");
   assert(apply.state.folderIconSize.value === 80, "folder icon size should apply from the draft value");
   assert(apply.state.isTextlessMode.value === false, "textless mode should apply from the draft value");
+  assert(apply.state.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "window effect material should apply from the draft value");
+  assert(apply.state.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "window effect appearance should apply from the draft value");
   assert(apply.calls.commitPages.length === 1, "applying settings should commit repacked pages");
   assert(apply.calls.commitPages[0].length === 2, "shrinking page capacity should overflow items to another page");
   assert(apply.calls.commitPageIndex.join(",") === "2", "applying settings should reclamp the desktop page index");
   assert(apply.calls.commitSearchPageIndex.join(",") === "1", "applying settings should reclamp the search page index");
   assert(apply.calls.commitFolderPageIndex.join(",") === "1", "applying settings should reclamp the folder page index");
   assert(apply.calls.schedulePageGridMetrics === 1, "applying settings should schedule page metrics");
+  assert(apply.calls.applyNativeWindowEffects === 1, "applying settings should refresh native window effects");
   assert(apply.calls.closeSettingsPanel === 1, "applying settings from the panel should close it");
 
   const textless = createSettingsConfig({

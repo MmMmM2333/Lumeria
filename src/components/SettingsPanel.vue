@@ -77,6 +77,71 @@
               <h3>显示偏好</h3>
             </div>
             <div class="settings-grid">
+              <div class="settings-field settings-field-wide settings-window-effect-field">
+                <span class="settings-field-copy">
+                  <span>窗口材质</span>
+                  <span class="settings-field-hint">{{ windowEffectsSupportHint }}</span>
+                </span>
+                <div class="settings-window-effect-controls">
+                  <div class="settings-segmented-control" aria-label="窗口材质">
+                    <button
+                      type="button"
+                      :class="cx('settings-segmented-button', state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_ACRYLIC && 'settings-segmented-button-active')"
+                      :disabled="!state.canUseWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_ACRYLIC)"
+                      @click="state.setDraftWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_ACRYLIC)"
+                    >
+                      Acrylic
+                    </button>
+                    <button
+                      type="button"
+                      :class="cx('settings-segmented-button', state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA && 'settings-segmented-button-active')"
+                      :disabled="!state.canUseWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_MICA)"
+                      @click="state.setDraftWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_MICA)"
+                    >
+                      Mica
+                    </button>
+                    <button
+                      type="button"
+                      :class="cx('settings-segmented-button', state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT && 'settings-segmented-button-active')"
+                      :disabled="!state.canUseWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_MICA_ALT)"
+                      @click="state.setDraftWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_MICA_ALT)"
+                    >
+                      Mica Alt
+                    </button>
+                  </div>
+                  <div class="settings-segmented-control" aria-label="窗口材质明暗">
+                    <button
+                      type="button"
+                      :class="cx('settings-segmented-button', state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT && 'settings-segmented-button-active')"
+                      :disabled="!hasWindowEffectMaterialChoice"
+                      @click="state.setDraftWindowEffectAppearance(WINDOW_EFFECT_APPEARANCE_LIGHT)"
+                    >
+                      浅色
+                    </button>
+                    <button
+                      type="button"
+                      :class="cx('settings-segmented-button', state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_DARK && 'settings-segmented-button-active')"
+                      :disabled="!hasWindowEffectMaterialChoice"
+                      @click="state.setDraftWindowEffectAppearance(WINDOW_EFFECT_APPEARANCE_DARK)"
+                    >
+                      深色
+                    </button>
+                  </div>
+                </div>
+                <div class="settings-window-effect-notes" aria-label="窗口材质说明">
+                  <div
+                    v-for="item in windowEffectMaterialNotes"
+                    :key="item.material"
+                    :class="cx('settings-window-effect-note', !item.available && 'settings-window-effect-note-disabled')"
+                  >
+                    <span class="settings-window-effect-note-title">
+                      <span>{{ item.label }}</span>
+                      <span>{{ item.version }}</span>
+                    </span>
+                    <span>{{ item.description }}</span>
+                  </div>
+                </div>
+              </div>
               <div class="settings-field settings-field-wide settings-grid-layout-field">
                 <span>桌面布局</span>
                 <div class="settings-grid-layout-control" aria-label="桌面布局">
@@ -368,9 +433,16 @@
 
 <script setup>
 import { Motion } from "motion-v";
-import { nextTick, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { ChevronDownIcon, ChevronUpIcon } from "./Icons.js";
 import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "../composables/launchpadConstants.js";
+import {
+  WINDOW_EFFECT_APPEARANCE_DARK,
+  WINDOW_EFFECT_APPEARANCE_LIGHT,
+  WINDOW_EFFECT_MATERIAL_ACRYLIC,
+  WINDOW_EFFECT_MATERIAL_MICA,
+  WINDOW_EFFECT_MATERIAL_MICA_ALT,
+} from "../composables/useLaunchpadSettingsConfig.js";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
 import { getIconSource } from "../domain/iconSource.js";
 import { cx } from "../domain/launchpadLayout.js";
@@ -381,6 +453,39 @@ const props = defineProps({
 
 const activeSettingsTab = ref("general");
 const settingsPanelRef = ref(null);
+const windowEffectsSupport = computed(() => props.state.windowEffectsSupport.value || {});
+const windowEffectMaterialNotes = computed(() => [
+  {
+    material: WINDOW_EFFECT_MATERIAL_ACRYLIC,
+    label: "Acrylic",
+    version: "Windows 10 1809+ / 17763+",
+    description: "半透明模糊，背景变化更明显",
+    available: Boolean(windowEffectsSupport.value.supportsAcrylic),
+  },
+  {
+    material: WINDOW_EFFECT_MATERIAL_MICA,
+    label: "Mica",
+    version: "Windows 11 21H2+ / 22000+",
+    description: "桌面采样，观感更稳定，资源占用更低",
+    available: Boolean(windowEffectsSupport.value.supportsMica),
+  },
+  {
+    material: WINDOW_EFFECT_MATERIAL_MICA_ALT,
+    label: "Mica Alt",
+    version: "Windows 11 22H2+ / 22621+",
+    description: "Mica 变体，层次更强，适合分层窗口",
+    available: Boolean(windowEffectsSupport.value.supportsMicaAlt),
+  },
+]);
+const hasWindowEffectMaterialChoice = computed(() =>
+  windowEffectMaterialNotes.value.some((item) => item.available)
+);
+const windowEffectsSupportHint = computed(() => {
+  const availableLabels = windowEffectMaterialNotes.value
+    .filter((item) => item.available)
+    .map((item) => item.label);
+  return availableLabels.length ? `${availableLabels.join(" / ")} 可用` : "当前系统不可用";
+});
 const settingsTabs = [
   { id: "general", label: "通用" },
   { id: "interface", label: "界面" },

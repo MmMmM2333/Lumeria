@@ -21,6 +21,7 @@ export function createSettingsPanelState(controller, appVersion) {
     closeSettingsPanel: controller.closeSettingsPanel,
     confirmForceFillAllPages: controller.confirmForceFillAllPages,
     confirmResetScanRoots: controller.confirmResetScanRoots,
+    canUseWindowEffectMaterial: controller.canUseWindowEffectMaterial,
     deleteManagedApp: controller.deleteManagedApp,
     deleteSelectedManagedApps: controller.deleteSelectedManagedApps,
     draftCols: controller.draftCols,
@@ -31,6 +32,8 @@ export function createSettingsPanelState(controller, appVersion) {
     draftIconSize: controller.draftIconSize,
     draftIsTextlessMode: controller.draftIsTextlessMode,
     draftRows: controller.draftRows,
+    draftWindowEffectAppearance: controller.draftWindowEffectAppearance,
+    draftWindowEffectMaterial: controller.draftWindowEffectMaterial,
     dragMeta: controller.dragMeta,
     filteredManagedApps: controller.filteredManagedApps,
     getLaunchTargetPath: controller.getLaunchTargetPath,
@@ -55,6 +58,8 @@ export function createSettingsPanelState(controller, appVersion) {
     selectedManagedAppCount: controller.selectedManagedAppCount,
     selectAllManagedApps: controller.selectAllManagedApps,
     setDraftFolderIconSizeMode: controller.setDraftFolderIconSizeMode,
+    setDraftWindowEffectAppearance: controller.setDraftWindowEffectAppearance,
+    setDraftWindowEffectMaterial: controller.setDraftWindowEffectMaterial,
     settingsOverlayAnimate: controller.settingsOverlayAnimate,
     settingsPanelAnimate: controller.settingsPanelAnimate,
     settingsPanelInitial: controller.settingsPanelInitial,
@@ -63,6 +68,7 @@ export function createSettingsPanelState(controller, appVersion) {
     toggleManagedAppSelection: controller.toggleManagedAppSelection,
     toggleMissingLaunchTargetBadge: controller.toggleMissingLaunchTargetBadge,
     toggleScanRootEnabled: controller.toggleScanRootEnabled,
+    windowEffectsSupport: controller.windowEffectsSupport,
   };
 }
 

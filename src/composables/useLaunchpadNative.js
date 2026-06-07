@@ -18,6 +18,7 @@ import {
   checkLaunchTargets,
   confirmQuitAfterSave,
   convertFilePathToAssetUrl,
+  getMainWindowEffectsSupport,
   hideMainWindow,
   isNativeBridgeAvailable,
   launchApp as launchNativeApp,
@@ -29,6 +30,12 @@ import {
   setMainWindowEffectsEnabled,
   showLaunchErrorMessage,
 } from "../api/launchpadApi.js";
+import {
+  DEFAULT_WINDOW_EFFECTS_SUPPORT,
+  normalizeWindowEffectAppearance,
+  normalizeWindowEffectsSupport,
+  resolveWindowEffectMaterialForSupport,
+} from "./useLaunchpadSettingsConfig.js";
 
 const USE_MOCK_DATA_IN_NATIVE = false;
 const FOLDER_ICON_SIZE_MODE_CUSTOM = "custom";
@@ -77,6 +84,11 @@ export function useLaunchpadNative(options) {
       ? FOLDER_ICON_SIZE_MODE_CUSTOM
       : FOLDER_ICON_SIZE_MODE_GLOBAL;
     const nextFolderIconSize = options.clampIconSize(settings.folderIconSize ?? nextIconSize);
+    const nextWindowEffectMaterial = resolveWindowEffectMaterialForSupport(
+      settings.windowEffectMaterial,
+      options.windowEffectsSupport.value
+    );
+    const nextWindowEffectAppearance = normalizeWindowEffectAppearance(settings.windowEffectAppearance);
 
     options.gridRows.value = rows;
     options.gridCols.value = cols;
@@ -94,6 +106,10 @@ export function useLaunchpadNative(options) {
     options.draftFolderIconSize.value = nextFolderIconSize;
     options.isTextlessMode.value = Boolean(settings.textless);
     options.draftIsTextlessMode.value = options.isTextlessMode.value;
+    options.windowEffectMaterial.value = nextWindowEffectMaterial;
+    options.windowEffectAppearance.value = nextWindowEffectAppearance;
+    options.draftWindowEffectMaterial.value = nextWindowEffectMaterial;
+    options.draftWindowEffectAppearance.value = nextWindowEffectAppearance;
     options.hiddenAppIds.value = Array.isArray(settings.hiddenAppIds)
       ? settings.hiddenAppIds.map(String)
       : [];
@@ -131,6 +147,8 @@ export function useLaunchpadNative(options) {
       scanKeywordBlacklist: options.scanKeywordBlacklist.value,
       scanAppBlacklist: options.scanAppBlacklist.value,
       showMissingLaunchTargetBadge: options.showMissingLaunchTargetBadge.value,
+      windowEffectMaterial: options.windowEffectMaterial.value,
+      windowEffectAppearance: options.windowEffectAppearance.value,
     });
   }
 
@@ -220,6 +238,7 @@ export function useLaunchpadNative(options) {
     hydrateCachedAppIcons();
     options.schedulePageGridMetrics();
     scheduleLaunchTargetStatusCheck();
+    setNativeWindowEffectsEnabled(true);
   }
 
   function scheduleNativeLayoutSave() {
@@ -245,6 +264,7 @@ export function useLaunchpadNative(options) {
     if (!shouldUseNativeCatalog()) return;
 
     try {
+      await refreshNativeWindowEffectsSupport();
       const savedLayout = await loadLayout();
       if (!savedLayout) {
         options.pages.value = [[]];
@@ -285,6 +305,33 @@ export function useLaunchpadNative(options) {
       });
       console.error("Failed to load native LaunchPad data", error);
     }
+  }
+
+  async function refreshNativeWindowEffectsSupport() {
+    if (!isNativeBridgeAvailable()) {
+      applyNativeWindowEffectsSupport(DEFAULT_WINDOW_EFFECTS_SUPPORT);
+      return;
+    }
+    try {
+      applyNativeWindowEffectsSupport(await getMainWindowEffectsSupport());
+    } catch (error) {
+      applyNativeWindowEffectsSupport(DEFAULT_WINDOW_EFFECTS_SUPPORT);
+      console.error("Failed to load LaunchPad window effects support", error);
+    }
+  }
+
+  function applyNativeWindowEffectsSupport(support) {
+    const normalizedSupport = normalizeWindowEffectsSupport(support);
+    options.windowEffectsSupport.value = normalizedSupport;
+    const nextMaterial = resolveWindowEffectMaterialForSupport(
+      options.windowEffectMaterial.value,
+      normalizedSupport
+    );
+    const nextAppearance = normalizeWindowEffectAppearance(options.windowEffectAppearance.value);
+    options.windowEffectMaterial.value = nextMaterial;
+    options.windowEffectAppearance.value = nextAppearance;
+    options.draftWindowEffectMaterial.value = nextMaterial;
+    options.draftWindowEffectAppearance.value = nextAppearance;
   }
 
   async function scanInitialNativeApps() {
@@ -573,9 +620,14 @@ export function useLaunchpadNative(options) {
   function setNativeWindowEffectsEnabled(enabled) {
     if (!isNativeBridgeAvailable()) return;
     const openSequence = enabled ? null : nativeWindowOpenSequence;
+    const material = resolveWindowEffectMaterialForSupport(
+      options.windowEffectMaterial.value,
+      options.windowEffectsSupport.value
+    );
+    const appearance = normalizeWindowEffectAppearance(options.windowEffectAppearance.value);
     nativeWindowEffectsUpdate = nativeWindowEffectsUpdate
       .catch(() => {})
-      .then(() => setMainWindowEffectsEnabled(enabled, openSequence))
+      .then(() => setMainWindowEffectsEnabled(enabled, openSequence, { material, appearance }))
       .catch((error) => {
         console.error("Failed to update LaunchPad window effects", error);
       });

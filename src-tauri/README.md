@@ -14,7 +14,8 @@ Implemented commands:
 - `load_cached_app_icons`: reads cached icon PNGs from the app icon cache for layout hydration.
 - `launch_app`: launches by app id/name after the frontend persists launch-critical changes for that app. The backend resolves the launch target from the native catalog, saved layout, or saved-root rescan, and does not accept renderer-supplied launch targets or arguments. Launch arguments are used only for saved `.exe` targets. Native launch failures are shown with a Windows message box that includes a reason and suggested action.
 - `hide_main_window`: hides the main LaunchPad window after close animations.
-- `set_main_window_effects_enabled`: toggles acrylic window effects during open/close transitions.
+- `get_main_window_effects_support`: reports Windows build support for Acrylic, Mica, and Mica Alt.
+- `set_main_window_effects_enabled`: toggles and updates Acrylic/Mica/Mica Alt window effects during open/close transitions.
 
 Known MVP limits:
 

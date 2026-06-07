@@ -120,6 +120,8 @@ export function runLaunchpadDataTests() {
     folderIconSize: 88,
     textless: true,
     hiddenAppIds: ["hidden"],
+    windowEffectMaterial: "mica",
+    windowEffectAppearance: "light",
   });
   assert(snapshot.version === 1, "layout snapshots should use version 1");
   assert(snapshot.settings.textless === true && snapshot.settings.hiddenAppIds[0] === "hidden", "layout snapshots should include settings");
@@ -128,6 +130,7 @@ export function runLaunchpadDataTests() {
   assert(Array.isArray(snapshot.settings.scanKeywordBlacklist), "layout snapshots should include scan keyword blacklist");
   assert(Array.isArray(snapshot.settings.scanAppBlacklist), "layout snapshots should include scan app blacklist");
   assert(snapshot.settings.showMissingLaunchTargetBadge === true, "layout snapshots should include missing target badge preference");
+  assert(snapshot.settings.windowEffectMaterial === "mica" && snapshot.settings.windowEffectAppearance === "light", "layout snapshots should include window effect settings");
   assert(!("iconDataUrl" in snapshot.pages[0][0]), "layout snapshots should omit catalog icon data");
   assert(snapshot.pages[0][0].iconPath === "C:/Icons/a.png", "layout snapshots should preserve cached icon paths");
   assert(snapshot.pages[0][0].customIconPath === "C:/Icons/custom-a.png", "layout snapshots should preserve custom icon paths");

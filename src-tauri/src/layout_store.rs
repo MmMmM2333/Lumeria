@@ -230,6 +230,27 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
         .ok_or_else(|| {
             "layout settings.showMissingLaunchTargetBadge must be a boolean".to_string()
         })?;
+    if let Some(value) = object.get("windowEffectMaterial") {
+        match value.as_str() {
+            Some("acrylic" | "mica" | "micaAlt" | "mica-alt") => {}
+            _ => {
+                return Err(
+                    "layout settings.windowEffectMaterial must be acrylic, mica, or micaAlt"
+                        .to_string(),
+                );
+            }
+        }
+    }
+    if let Some(value) = object.get("windowEffectAppearance") {
+        match value.as_str() {
+            Some("dark" | "light") => {}
+            _ => {
+                return Err(
+                    "layout settings.windowEffectAppearance must be dark or light".to_string(),
+                );
+            }
+        }
+    }
 
     Ok(())
 }
@@ -716,7 +737,9 @@ mod tests {
                         "blockedAt": "2026-05-31T00:00:00.000Z"
                     }
                 ],
-                "showMissingLaunchTargetBadge": true
+                "showMissingLaunchTargetBadge": true,
+                "windowEffectMaterial": "mica",
+                "windowEffectAppearance": "light"
             }
         })
     }

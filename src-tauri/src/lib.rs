@@ -330,12 +330,25 @@ fn show_launch_error_message(report: LaunchFailureReport) {
 }
 
 #[tauri::command]
+fn get_main_window_effects_support() -> tray::MainWindowEffectsSupport {
+    tray::main_window_effects_support()
+}
+
+#[tauri::command]
 fn set_main_window_effects_enabled(
     app: AppHandle,
     enabled: bool,
     open_sequence: Option<u64>,
+    material: Option<String>,
+    appearance: Option<String>,
 ) -> Result<(), String> {
-    tray::set_main_window_effects_enabled(&app, enabled, open_sequence)
+    tray::set_main_window_effects_enabled(
+        &app,
+        enabled,
+        open_sequence,
+        material.as_deref(),
+        appearance.as_deref(),
+    )
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -713,6 +726,7 @@ pub fn run() {
             confirm_quit_after_save,
             show_launch_error_message,
             quit_app,
+            get_main_window_effects_support,
             set_main_window_effects_enabled
         ])
         .run(tauri::generate_context!())

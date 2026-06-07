@@ -12,6 +12,18 @@ import { clamp, makePageSize } from "../domain/launchpadLayout.js";
 
 export const FOLDER_ICON_SIZE_MODE_CUSTOM = "custom";
 export const FOLDER_ICON_SIZE_MODE_GLOBAL = "global";
+export const WINDOW_EFFECT_MATERIAL_ACRYLIC = "acrylic";
+export const WINDOW_EFFECT_MATERIAL_MICA = "mica";
+export const WINDOW_EFFECT_MATERIAL_MICA_ALT = "micaAlt";
+export const WINDOW_EFFECT_APPEARANCE_DARK = "dark";
+export const WINDOW_EFFECT_APPEARANCE_LIGHT = "light";
+export const DEFAULT_WINDOW_EFFECTS_SUPPORT = Object.freeze({
+  platform: "unknown",
+  build: null,
+  supportsAcrylic: false,
+  supportsMica: false,
+  supportsMicaAlt: false,
+});
 
 export function clampLaunchpadIconSize(value) {
   return clamp(Number(value) || DEFAULT_ICON_SIZE, ICON_SIZE_MIN, ICON_SIZE_MAX);
@@ -19,6 +31,46 @@ export function clampLaunchpadIconSize(value) {
 
 export function normalizeFolderIconSizeMode(value) {
   return value === FOLDER_ICON_SIZE_MODE_CUSTOM ? FOLDER_ICON_SIZE_MODE_CUSTOM : FOLDER_ICON_SIZE_MODE_GLOBAL;
+}
+
+export function normalizeWindowEffectMaterial(value) {
+  if (value === WINDOW_EFFECT_MATERIAL_MICA) return WINDOW_EFFECT_MATERIAL_MICA;
+  if (value === WINDOW_EFFECT_MATERIAL_MICA_ALT || value === "mica-alt") return WINDOW_EFFECT_MATERIAL_MICA_ALT;
+  return WINDOW_EFFECT_MATERIAL_ACRYLIC;
+}
+
+export function normalizeWindowEffectAppearance(value) {
+  return value === WINDOW_EFFECT_APPEARANCE_LIGHT ? WINDOW_EFFECT_APPEARANCE_LIGHT : WINDOW_EFFECT_APPEARANCE_DARK;
+}
+
+export function normalizeWindowEffectsSupport(support) {
+  const build = Number(support?.build);
+  return {
+    platform: String(support?.platform || DEFAULT_WINDOW_EFFECTS_SUPPORT.platform),
+    build: Number.isFinite(build) && build > 0 ? Math.floor(build) : null,
+    supportsAcrylic: Boolean(support?.supportsAcrylic),
+    supportsMica: Boolean(support?.supportsMica),
+    supportsMicaAlt: Boolean(support?.supportsMicaAlt),
+  };
+}
+
+export function isWindowEffectMaterialAvailable(material, support) {
+  const normalizedMaterial = normalizeWindowEffectMaterial(material);
+  const normalizedSupport = normalizeWindowEffectsSupport(support);
+  if (normalizedMaterial === WINDOW_EFFECT_MATERIAL_MICA) return normalizedSupport.supportsMica;
+  if (normalizedMaterial === WINDOW_EFFECT_MATERIAL_MICA_ALT) return normalizedSupport.supportsMicaAlt;
+  return normalizedSupport.supportsAcrylic;
+}
+
+export function resolveWindowEffectMaterialForSupport(material, support) {
+  const normalizedMaterial = normalizeWindowEffectMaterial(material);
+  const normalizedSupport = normalizeWindowEffectsSupport(support);
+  if (isWindowEffectMaterialAvailable(normalizedMaterial, normalizedSupport)) return normalizedMaterial;
+  if (normalizedMaterial === WINDOW_EFFECT_MATERIAL_MICA_ALT && normalizedSupport.supportsMica) return WINDOW_EFFECT_MATERIAL_MICA;
+  if (normalizedSupport.supportsAcrylic) return WINDOW_EFFECT_MATERIAL_ACRYLIC;
+  if (normalizedSupport.supportsMica) return WINDOW_EFFECT_MATERIAL_MICA;
+  if (normalizedSupport.supportsMicaAlt) return WINDOW_EFFECT_MATERIAL_MICA_ALT;
+  return WINDOW_EFFECT_MATERIAL_ACRYLIC;
 }
 
 export function syncLaunchpadSettingsDraftsFromState(options) {
@@ -30,6 +82,8 @@ export function syncLaunchpadSettingsDraftsFromState(options) {
   options.draftFolderIconSizeMode.value = options.folderIconSizeMode.value;
   options.draftFolderIconSize.value = options.folderIconSize.value;
   options.draftIsTextlessMode.value = options.isTextlessMode.value;
+  options.draftWindowEffectMaterial.value = options.windowEffectMaterial.value;
+  options.draftWindowEffectAppearance.value = options.windowEffectAppearance.value;
 }
 
 export function useLaunchpadSettingsConfig(options) {
@@ -72,6 +126,20 @@ export function useLaunchpadSettingsConfig(options) {
     }
     options.draftFolderIconSizeMode.value = nextMode;
     options.draftFolderIconSize.value = clampIconSize(options.draftFolderIconSize.value);
+  }
+
+  function canUseWindowEffectMaterial(material) {
+    return isWindowEffectMaterialAvailable(material, options.windowEffectsSupport.value);
+  }
+
+  function setDraftWindowEffectMaterial(material) {
+    const nextMaterial = normalizeWindowEffectMaterial(material);
+    if (!canUseWindowEffectMaterial(nextMaterial)) return;
+    options.draftWindowEffectMaterial.value = nextMaterial;
+  }
+
+  function setDraftWindowEffectAppearance(appearance) {
+    options.draftWindowEffectAppearance.value = normalizeWindowEffectAppearance(appearance);
   }
 
   function repackPagesForGrid(nextRows, nextCols, nextFolderRows, nextFolderCols) {
@@ -133,7 +201,13 @@ export function useLaunchpadSettingsConfig(options) {
   function applySettingsConfig() {
     applyGridConfig();
     if (!options.isDragActive()) options.isTextlessMode.value = Boolean(options.draftIsTextlessMode.value);
+    options.windowEffectMaterial.value = resolveWindowEffectMaterialForSupport(
+      options.draftWindowEffectMaterial.value,
+      options.windowEffectsSupport.value
+    );
+    options.windowEffectAppearance.value = normalizeWindowEffectAppearance(options.draftWindowEffectAppearance.value);
     syncLaunchpadSettingsDraftsFromState(options);
+    options.applyNativeWindowEffects?.();
     options.closeSettingsPanel();
   }
 
@@ -147,6 +221,9 @@ export function useLaunchpadSettingsConfig(options) {
     changeDraftIconSize,
     changeDraftRows,
     clampIconSize,
+    canUseWindowEffectMaterial,
     setDraftFolderIconSizeMode,
+    setDraftWindowEffectAppearance,
+    setDraftWindowEffectMaterial,
   };
 }

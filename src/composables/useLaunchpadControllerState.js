@@ -11,7 +11,12 @@ import {
   DEFAULT_SCAN_KEYWORD_BLACKLIST,
   DEFAULT_SCAN_ROOTS,
 } from "../domain/launchpadData.js";
-import { FOLDER_ICON_SIZE_MODE_GLOBAL } from "./useLaunchpadSettingsConfig.js";
+import {
+  DEFAULT_WINDOW_EFFECTS_SUPPORT,
+  FOLDER_ICON_SIZE_MODE_GLOBAL,
+  WINDOW_EFFECT_APPEARANCE_DARK,
+  WINDOW_EFFECT_MATERIAL_ACRYLIC,
+} from "./useLaunchpadSettingsConfig.js";
 
 export function useLaunchpadControllerState() {
   const gridRows = ref(DEFAULT_ROWS);
@@ -28,6 +33,11 @@ export function useLaunchpadControllerState() {
   const draftIconSize = ref(DEFAULT_ICON_SIZE);
   const draftFolderIconSizeMode = ref(FOLDER_ICON_SIZE_MODE_GLOBAL);
   const draftFolderIconSize = ref(DEFAULT_ICON_SIZE);
+  const windowEffectsSupport = ref({ ...DEFAULT_WINDOW_EFFECTS_SUPPORT });
+  const windowEffectMaterial = ref(WINDOW_EFFECT_MATERIAL_ACRYLIC);
+  const windowEffectAppearance = ref(WINDOW_EFFECT_APPEARANCE_DARK);
+  const draftWindowEffectMaterial = ref(WINDOW_EFFECT_MATERIAL_ACRYLIC);
+  const draftWindowEffectAppearance = ref(WINDOW_EFFECT_APPEARANCE_DARK);
   const pageSize = computed(() => makePageSize(gridRows.value, gridCols.value));
   const folderPageSize = computed(() => makePageSize(folderRows.value, folderCols.value));
 
@@ -68,6 +78,8 @@ export function useLaunchpadControllerState() {
     draftIconSize,
     draftIsTextlessMode,
     draftRows,
+    draftWindowEffectAppearance,
+    draftWindowEffectMaterial,
     folderCols,
     folderIconSize,
     folderIconSizeMode,
@@ -100,5 +112,8 @@ export function useLaunchpadControllerState() {
     showMissingLaunchTargetBadge,
     searchRef,
     shellRef,
+    windowEffectAppearance,
+    windowEffectMaterial,
+    windowEffectsSupport,
   };
 }

@@ -405,9 +405,14 @@ body {
   border-left: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-.settings-segmented-button:hover {
+.settings-segmented-button:hover:not(:disabled) {
   color: rgba(255, 255, 255, 0.86);
   background: rgba(255, 255, 255, 0.08);
+}
+
+.settings-segmented-button:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
 }
 
 .settings-segmented-button-active {
@@ -520,6 +525,68 @@ body {
 
 .settings-toggle {
   grid-column: 1 / -1;
+}
+
+.settings-window-effect-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.settings-window-effect-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.settings-window-effect-notes {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+
+.settings-window-effect-note {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.13);
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.settings-window-effect-note-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.settings-window-effect-note-title span:first-child {
+  white-space: nowrap;
+}
+
+.settings-window-effect-note-title span:last-child {
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 10px;
+  font-weight: 520;
+  line-height: 1.2;
+  text-align: right;
+}
+
+.settings-window-effect-note-disabled {
+  opacity: 0.48;
 }
 
 .settings-options {
@@ -2572,6 +2639,9 @@ body {
   .settings-grid { grid-template-columns: 1fr; }
   .settings-grid-layout-field { align-items: flex-start; flex-direction: column; }
   .settings-grid-layout-control { width: 100%; justify-content: flex-end; }
+  .settings-window-effect-field { grid-template-columns: 1fr; }
+  .settings-window-effect-controls { justify-content: flex-start; width: 100%; }
+  .settings-window-effect-notes { grid-template-columns: 1fr; }
   .settings-folder-icon-size-field { align-items: flex-start; flex-direction: column; }
   .settings-folder-icon-size-control { width: 100%; flex-wrap: wrap; }
   .settings-section-header { align-items: flex-start; flex-direction: column; }

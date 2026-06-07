@@ -143,10 +143,21 @@ export async function hideMainWindow() {
   return true;
 }
 
-export async function setMainWindowEffectsEnabled(enabled, openSequence = null) {
+export async function getMainWindowEffectsSupport() {
+  const invoke = getTauriInvoke();
+  if (!invoke) return null;
+  return invoke("get_main_window_effects_support");
+}
+
+export async function setMainWindowEffectsEnabled(enabled, openSequence = null, options = {}) {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
-  await invoke("set_main_window_effects_enabled", { enabled, openSequence });
+  await invoke("set_main_window_effects_enabled", {
+    enabled,
+    openSequence,
+    material: options?.material,
+    appearance: options?.appearance,
+  });
   return true;
 }
 
