@@ -1,0 +1,89 @@
+import { makeFolderOverlayRenderPlan } from "./folderOverlayRenderPlan.js";
+
+export function runFolderOverlayRenderPlanTests() {
+  const assert = (condition, message) => {
+    if (!condition) throw new Error(`[Pixi folder overlay render plan test failed] ${message}`);
+  };
+
+  const folder = { id: "folder-1" };
+  const appA = { id: "app-a", type: "app" };
+  const appB = { id: "app-b", type: "app" };
+  const appC = { id: "app-c", type: "app" };
+  const geometry = {
+    grid: { width: 500 },
+    panel: { left: 100, top: 60 },
+  };
+  const localMetrics = {
+    cellHeight: 80,
+    cellWidth: 100,
+    cols: 2,
+    gapX: 0,
+    gapY: 12,
+    gridLeft: 20,
+    gridTop: 30,
+  };
+
+  const plan = makeFolderOverlayRenderPlan({
+    closeThumbRect: { height: 72, left: 10, top: 20, width: 72 },
+    cols: 2,
+    dragMeta: { item: appB },
+    folderCloseIconGhosts: [{ item: appA, key: "close-a", slotIndex: 0 }],
+    folderId: folder.id,
+    folderOpenIconGhosts: [{ item: appA, key: "open-a", slotIndex: 0 }],
+    folderPageIndex: 0,
+    folderPages: [[appA, appB], [appC]],
+    folderPageSize: 4,
+    geometry,
+    getFolderPageRenderMode: (pageIndex) => pageIndex === 1 ? "empty" : "interactive",
+    getVisibleFolderPage: (page) => page,
+    iconSize: 56,
+    isEditMode: true,
+    isFolderClosing: false,
+    isIconOpening: (area, itemId) => area === "folder" && itemId === "app-a",
+    isIconSelected: (area, itemId) => area === "folder" && itemId === "app-a",
+    isNewFolder: true,
+    localMetrics,
+    previewSlots: [appA],
+    rows: 2,
+    stageHeight: 900,
+    stageWidth: 1440,
+    targetTrackX: 0,
+  });
+
+  assert(plan.entries.length === 2, "render plan should skip empty pages");
+  const [entryA, entryB] = plan.entries;
+  assert(entryA.key === "folder-1:0:app-a", "entry should expose the folder icon key");
+  assert(entryA.x === 70 && entryA.y === 70, "entry should expose folder-local icon coordinates");
+  assert(entryA.nodeState.draggable && entryA.nodeState.editing, "interactive entries should keep draggable edit state");
+  assert(entryA.nodeState.opening && entryA.nodeState.selected, "entry node state should preserve selected/opening lookups");
+  assert(entryA.openingGhostInput?.controllerGhostKey === "open-a", "eligible opening entries should expose ghost input");
+  assert(!entryA.closingGhostInput, "non-closing plans should not expose closing ghost input");
+  assert(entryB.isActiveDraggedItem, "entries should expose active dragged state");
+  assert(!entryB.openingGhostInput, "dragged entries should not create opening ghost input");
+
+  const closingPlan = makeFolderOverlayRenderPlan({
+    closeThumbRect: { height: 72, left: 10, top: 20, width: 72 },
+    cols: 2,
+    folderCloseIconGhosts: [{ item: appA, key: "close-a", slotIndex: 0 }],
+    folderId: folder.id,
+    folderPageIndex: 1,
+    folderPages: [[appA], [appC]],
+    geometry,
+    getFolderPageRenderMode: () => "interactive",
+    getVisibleFolderPage: (page) => page,
+    iconSize: 56,
+    isFolderClosing: true,
+    localMetrics,
+    previewSlots: [appA],
+    stableFolderCloseTarget: {
+      folderId: folder.id,
+      previewChildRects: new Map([["app-a:0", { height: 12, left: 30, top: 40, width: 12 }]]),
+    },
+  });
+
+  assert(closingPlan.entries.length === 2, "closing plan should keep interactive pages in range");
+  assert(!closingPlan.entries[0].closingGhostInput, "closing ghost input should only target the active folder page");
+  assert(closingPlan.entries[1].closingGhostInput?.item.id === "app-c", "active closing page entry should expose closing input");
+  assert(closingPlan.closingPreviewSwapTargets.length === 1, "closing second page should expose preview swap targets");
+  assert(closingPlan.closingPreviewSwapTargets[0].targetRect.left === 30, "preview swap should reuse stable target rects");
+}

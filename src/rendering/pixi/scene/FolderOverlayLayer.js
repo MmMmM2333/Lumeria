@@ -14,7 +14,7 @@ import {
   layoutEase,
 } from "../animation/eases.js";
 import { pageTrackSpring, panelSpring, springTo, stopTargetSprings } from "../animation/springMotion.js";
-import { getFolderGridMetrics, getFolderPanelGeometry, getGridSlotRect, parseRepeatCount, readPx } from "../geometry/gridGeometry.js";
+import { getFolderGridMetrics, getFolderPanelGeometry, parseRepeatCount, readPx } from "../geometry/gridGeometry.js";
 import {
   clearFrameGhost as clearFrameGhostState,
   drawClosingFrameMask as drawClosingFrameMaskState,
@@ -40,24 +40,13 @@ import {
   registerLaunchIconBounds,
   registerLaunchIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
-import {
-  isActiveDraggedLaunchItem,
-  isReleaseGhostLaunchItem,
-} from "./dragVisibility.js";
 import { getClosingPreviewTiming, getFolderPageMaskRect, resolveOpeningInterruptionFrame } from "./folderOverlayGeometry.js";
-import {
-  makeFolderIconNodeState,
-  makeFolderIconRenderPlan,
-  makeFolderIconTargetCenter,
-} from "./folderOverlayIconPlan.js";
+import { makeFolderOverlayRenderPlan } from "./folderOverlayRenderPlan.js";
 import { cloneFrameSnapshot, makeOpeningInterruptionFrame } from "./folderOpeningInterruptionFrame.js";
 import {
-  findFolderGhostKey,
   getStableFolderCloseRects,
   makeClosingGhostTarget,
-  makeClosingPreviewSwapTargets,
   makeOpeningGhostTarget,
-  makePreviewSlotById,
   makeStableFolderCloseTarget,
 } from "./folderOverlayTargets.js";
 import { makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
@@ -264,125 +253,94 @@ export class FolderOverlayLayer extends Container {
     const seen = new Set();
     const openingGhostTargets = [];
     const closingGhostTargets = [];
-    const previewSlotById = makePreviewSlotById(previewSlots);
-    (state.folderPages || []).forEach((page, pageIndex) => {
-      const visibleItems = state.getVisibleFolderPage(page);
-      const renderMode = state.getFolderPageRenderMode?.(pageIndex) || "interactive";
-      const isInteractivePage = renderMode === "interactive";
-      if (renderMode === "empty") return;
-      visibleItems.forEach((item, index) => {
-        const slot = getGridSlotRect(localMetrics, index);
-        const iconPlan = makeFolderIconRenderPlan({
-          folderId: state.renderedFolder.id,
-          geometry,
-          index,
-          item,
-          pageIndex,
-          slot,
-        });
-        const { key, source, x, y } = iconPlan;
-        const isActiveDraggedItem = isActiveDraggedLaunchItem(item, state);
-        const isReleaseGhostItem = isReleaseGhostLaunchItem(item, state);
-        seen.add(key);
-        let node = this.iconNodes.get(key);
-        if (!node) {
-          node = new IconNode({
-            onAction: (action, originalEvent, actionItem, actionSource, iconNode) =>
-              this.handleIconAction(action, originalEvent, actionItem, actionSource, iconNode),
-          });
-          node.alpha = 0;
-          node.position.set(x, y + 10);
-          this.iconNodes.set(key, node);
-          this.pageTrack.addChild(node);
-          gsap.to(node, { alpha: 1, y, delay: Math.min(0.18, index * 0.012), duration: 0.24, ease: folderOpenEase });
-        } else {
-          gsap.to(node, { duration: layoutDuration, ease: layoutEase, overwrite: "auto", x, y });
-        }
-
-        node.stageRect = state.stageRect;
-        node.setState(makeFolderIconNodeState({
-          closingGhostKeys: this.closingGhostKeys,
-          folderId: state.renderedFolder.id,
-          folderPageSize: state.folderPageSize,
-          iconSize,
-          isActiveDraggedItem,
-          isEditMode: state.isEditMode,
-          isIconOpening: state.isIconOpening,
-          isIconSelected: state.isIconSelected,
-          isInteractivePage,
-          isReleaseGhostItem,
-          isTextlessMode: state.isTextlessMode,
-          item,
-          launchTargetStatusById: state.launchTargetStatusById,
-          openingGhostKeys: this.openingGhostKeys,
-          pageIndex,
-          showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge,
-          slot,
-          source,
-          stageHeight: state.height,
-          stageWidth: state.width,
-        }));
-
-        const iconBounds = node.getIconBounds(state.stageRect);
-        if (isInteractivePage) {
-          registerLaunchIconBounds(
-            { area: "folder", folderId: state.renderedFolder.id, id: item.id, pageIndex },
-            iconBounds,
-            { area: "folder", folderId: state.renderedFolder.id, id: item.id, index, item, pageIndex }
-          );
-          const targetCenter = makeFolderIconTargetCenter({ geometry, isTextlessMode: state.isTextlessMode, targetTrackX, x, y });
-          registerLaunchIconTargetBounds(
-            { area: "folder", folderId: state.renderedFolder.id, id: item.id, pageIndex },
-            makeTargetIconBounds(state.stageRect, state.width, state.height, targetCenter.x, targetCenter.y, iconSize),
-            { area: "folder", folderId: state.renderedFolder.id, id: item.id, index, item, pageIndex }
-          );
-        }
-        if (isInteractivePage && !isActiveDraggedItem && !isReleaseGhostItem && isNewFolder && !isClosing && pageIndex === state.folderPageIndex) {
-          const targetCenter = makeFolderIconTargetCenter({ geometry, isTextlessMode: state.isTextlessMode, targetTrackX, x, y });
-          openingGhostTargets.push(makeOpeningGhostTarget({
-            cellHeight: slot.height,
-            cellWidth: slot.width,
-            cols,
-            iconSize,
-            index,
-            item,
-            controllerGhostKey: findFolderGhostKey(state.folderOpenIconGhosts, item.id, index),
-            folderRect,
-            getPreviewChildRect: (targetItem, slotIndex) =>
-              getFolderPreviewChildBounds(state.renderedFolder.id, targetItem.id, slotIndex),
-            previewSlotById,
-            rows,
-            targetCenterX: targetCenter.x,
-            targetCenterY: targetCenter.y,
-          }));
-        }
-        if (isInteractivePage && state.isFolderClosing && pageIndex === state.folderPageIndex) {
-          closingGhostTargets.push(makeClosingGhostTarget({
-            cellHeight: slot.height,
-            cellWidth: slot.width,
-            closeThumbRect,
-            cols,
-            folderId: state.renderedFolder.id,
-            iconBounds,
-            iconSize,
-            index,
-            item,
-            controllerGhostKey: findFolderGhostKey(state.folderCloseIconGhosts, item.id, index),
-            previewSlotById,
-            stableFolderCloseTarget: this.stableFolderCloseTarget,
-          }));
-        }
-      });
+    const renderPlan = makeFolderOverlayRenderPlan({
+      closeThumbRect,
+      closingGhostKeys: this.closingGhostKeys,
+      cols,
+      dragMeta: state.dragMeta,
+      dragReleaseGhostId: state.dragReleaseGhostId,
+      folderCloseIconGhosts: state.folderCloseIconGhosts,
+      folderId: state.renderedFolder.id,
+      folderOpenIconGhosts: state.folderOpenIconGhosts,
+      folderPageIndex: state.folderPageIndex,
+      folderPages: state.folderPages,
+      folderPageSize: state.folderPageSize,
+      geometry,
+      getFolderPageRenderMode: state.getFolderPageRenderMode,
+      getVisibleFolderPage: state.getVisibleFolderPage,
+      iconSize,
+      isClosing,
+      isEditMode: state.isEditMode,
+      isFolderClosing: state.isFolderClosing,
+      isIconOpening: state.isIconOpening,
+      isIconSelected: state.isIconSelected,
+      isNewFolder,
+      isTextlessMode: state.isTextlessMode,
+      launchTargetStatusById: state.launchTargetStatusById,
+      localMetrics,
+      openingGhostKeys: this.openingGhostKeys,
+      previewSlots,
+      rows,
+      showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge,
+      stableFolderCloseTarget: this.stableFolderCloseTarget,
+      stageHeight: state.height,
+      stageWidth: state.width,
+      targetTrackX,
     });
 
-    const closingPreviewSwapTargets = state.isFolderClosing && state.folderPageIndex > 0
-      ? makeClosingPreviewSwapTargets({
-        folderId: state.renderedFolder.id,
-        folderRect: closeThumbRect,
-        previewSlots,
-        stableFolderCloseTarget: this.stableFolderCloseTarget,
-      })
-      : [];
+    for (const entry of renderPlan.entries) {
+      const { index, isInteractivePage, item, key, nodeState, pageIndex, targetCenter, x, y } = entry;
+      seen.add(key);
+      let node = this.iconNodes.get(key);
+      if (!node) {
+        node = new IconNode({
+          onAction: (action, originalEvent, actionItem, actionSource, iconNode) =>
+            this.handleIconAction(action, originalEvent, actionItem, actionSource, iconNode),
+        });
+        node.alpha = 0;
+        node.position.set(x, y + 10);
+        this.iconNodes.set(key, node);
+        this.pageTrack.addChild(node);
+        gsap.to(node, { alpha: 1, y, delay: Math.min(0.18, index * 0.012), duration: 0.24, ease: folderOpenEase });
+      } else {
+        gsap.to(node, { duration: layoutDuration, ease: layoutEase, overwrite: "auto", x, y });
+      }
+
+      node.stageRect = state.stageRect;
+      node.setState(nodeState);
+
+      const iconBounds = node.getIconBounds(state.stageRect);
+      if (isInteractivePage) {
+        registerLaunchIconBounds(
+          { area: "folder", folderId: state.renderedFolder.id, id: item.id, pageIndex },
+          iconBounds,
+          { area: "folder", folderId: state.renderedFolder.id, id: item.id, index, item, pageIndex }
+        );
+        registerLaunchIconTargetBounds(
+          { area: "folder", folderId: state.renderedFolder.id, id: item.id, pageIndex },
+          makeTargetIconBounds(state.stageRect, state.width, state.height, targetCenter.x, targetCenter.y, iconSize),
+          { area: "folder", folderId: state.renderedFolder.id, id: item.id, index, item, pageIndex }
+        );
+      }
+      if (entry.openingGhostInput) {
+        openingGhostTargets.push(makeOpeningGhostTarget({
+          ...entry.openingGhostInput,
+          folderRect,
+          getPreviewChildRect: (targetItem, slotIndex) =>
+            getFolderPreviewChildBounds(state.renderedFolder.id, targetItem.id, slotIndex),
+        }));
+      }
+      if (entry.closingGhostInput) {
+        closingGhostTargets.push(makeClosingGhostTarget({
+          ...entry.closingGhostInput,
+          closeThumbRect,
+          iconBounds,
+          stableFolderCloseTarget: this.stableFolderCloseTarget,
+        }));
+      }
+    }
+
+    const closingPreviewSwapTargets = renderPlan.closingPreviewSwapTargets;
     if (isNewFolder && !isClosing) this.startOpeningGhosts(state, openingGhostTargets, folderRect, geometry.panel);
     if (state.isFolderClosing && this.closingGhostFolderId !== state.renderedFolder.id) {
       this.startClosingGhosts(state, closingGhostTargets, closeThumbRect, geometry.panel, {
