@@ -6,7 +6,9 @@
     @wheel="handleLaunchpadWheel"
     @pointerdown="handleLaunchpadSurfacePointerDown"
   >
-    <div class="launchpad-bg" />
+    <div class="launchpad-bg">
+      <div class="launchpad-bg-image" :style="backgroundImageStyle" />
+    </div>
 
     <Motion
       ref="shellRef"
@@ -126,6 +128,7 @@ const controller = useLaunchpadController();
 const {
   rootRef,
   rootStyle,
+  backgroundImageStyle,
   cx,
   gridRows,
   gridCols,

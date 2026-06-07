@@ -18,6 +18,7 @@ function createViewState(overrides = {}) {
     desktopProjectionEpoch: ref(overrides.desktopProjectionEpoch ?? 2),
     backgroundRenderMode: ref(overrides.backgroundRenderMode ?? BACKGROUND_RENDER_MODE_MATERIAL),
     backgroundImageOpacity: ref(overrides.backgroundImageOpacity ?? 46),
+    backgroundImageUrl: ref(overrides.backgroundImageUrl ?? null),
     folderMotionGeometry: ref(overrides.folderMotionGeometry ?? {
       borderRadius: 18,
       scaleX: 0.2,
@@ -76,6 +77,8 @@ export function runLaunchpadViewStateTests() {
 
   const imageBackground = createViewState({ backgroundRenderMode: BACKGROUND_RENDER_MODE_IMAGE, backgroundImageOpacity: 58 });
   assert(imageBackground.view.rootStyle.value["--launchpad-background-image-opacity"] === "0.58", "root style should expose image opacity in image background mode");
+  const customImageBackground = createViewState({ backgroundImageUrl: "asset://C:/Images/wallpaper.webp" });
+  assert(customImageBackground.view.backgroundImageStyle.value.backgroundImage === "url(\"asset://C:/Images/wallpaper.webp\")", "background image style should expose custom asset urls");
 
   const projecting = createViewState({ isLayoutProjectionActive: true });
   assert(projecting.view.desktopLayoutEnabled.value, "desktop layout should be enabled during drag projection windows");

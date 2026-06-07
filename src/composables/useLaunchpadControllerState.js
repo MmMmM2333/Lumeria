@@ -37,8 +37,13 @@ export function useLaunchpadControllerState() {
   const draftFolderIconSize = ref(DEFAULT_ICON_SIZE);
   const backgroundRenderMode = ref(BACKGROUND_RENDER_MODE_MATERIAL);
   const backgroundImageOpacity = ref(DEFAULT_BACKGROUND_IMAGE_OPACITY);
+  const backgroundImagePath = ref(null);
+  const backgroundImageUrl = ref(null);
   const draftBackgroundRenderMode = ref(BACKGROUND_RENDER_MODE_MATERIAL);
   const draftBackgroundImageOpacity = ref(DEFAULT_BACKGROUND_IMAGE_OPACITY);
+  const draftBackgroundImagePath = ref(null);
+  const draftBackgroundImageUrl = ref(null);
+  const isChoosingBackgroundImage = ref(false);
   const windowEffectsSupport = ref({ ...DEFAULT_WINDOW_EFFECTS_SUPPORT });
   const windowEffectMaterial = ref(WINDOW_EFFECT_MATERIAL_ACRYLIC);
   const windowEffectAppearance = ref(WINDOW_EFFECT_APPEARANCE_DARK);
@@ -76,9 +81,13 @@ export function useLaunchpadControllerState() {
 
   return {
     backgroundImageOpacity,
+    backgroundImagePath,
+    backgroundImageUrl,
     backgroundRenderMode,
     desktopMainRef,
     draftBackgroundImageOpacity,
+    draftBackgroundImagePath,
+    draftBackgroundImageUrl,
     draftBackgroundRenderMode,
     draftCols,
     draftFolderCols,
@@ -104,6 +113,7 @@ export function useLaunchpadControllerState() {
     headerRef,
     hiddenAppIds,
     iconSize,
+    isChoosingBackgroundImage,
     isLayoutProjectionActive,
     isTextlessMode,
     launchTargetStatusById,

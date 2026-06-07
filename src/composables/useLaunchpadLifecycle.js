@@ -5,6 +5,7 @@ export function registerLaunchpadLifecycleWatchers(options, watchFn = watch) {
   const {
     activePages,
     backgroundImageOpacity,
+    backgroundImagePath,
     backgroundRenderMode,
     effectiveFolderIconSize,
     filteredManagedApps,
@@ -40,7 +41,7 @@ export function registerLaunchpadLifecycleWatchers(options, watchFn = watch) {
   watchFn([renderedFolder, folderRows, folderCols, effectiveFolderIconSize, isTextlessMode, visibleFolderRowCount], scheduleFolderViewportMetrics, { flush: "post" });
   watchFn(folderViewportRef, observeFolderViewport, { flush: "post" });
   watchFn(activePages, schedulePageGridMetrics, { flush: "post" });
-  watchFn([pages, gridRows, gridCols, folderRows, folderCols, iconSize, folderIconSizeMode, folderIconSize, isTextlessMode, hiddenAppIds, scanRoots, scanKeywordBlacklist, scanAppBlacklist, showMissingLaunchTargetBadge, backgroundRenderMode, backgroundImageOpacity, windowEffectMaterial, windowEffectAppearance], scheduleNativeLayoutSave, { flush: "post" });
+  watchFn([pages, gridRows, gridCols, folderRows, folderCols, iconSize, folderIconSizeMode, folderIconSize, isTextlessMode, hiddenAppIds, scanRoots, scanKeywordBlacklist, scanAppBlacklist, showMissingLaunchTargetBadge, backgroundRenderMode, backgroundImageOpacity, backgroundImagePath, windowEffectMaterial, windowEffectAppearance], scheduleNativeLayoutSave, { flush: "post" });
   watchFn([pages, showMissingLaunchTargetBadge], scheduleLaunchTargetStatusCheck, { flush: "post" });
   watchFn(filteredManagedApps, syncManagedAppState, { flush: "post" });
 }

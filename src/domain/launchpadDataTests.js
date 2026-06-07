@@ -122,6 +122,7 @@ export function runLaunchpadDataTests() {
     hiddenAppIds: ["hidden"],
     backgroundRenderMode: "image",
     backgroundImageOpacity: 62,
+    backgroundImagePath: " C:/Images/custom.webp ",
     windowEffectMaterial: "mica",
     windowEffectAppearance: "light",
   });
@@ -133,6 +134,7 @@ export function runLaunchpadDataTests() {
   assert(Array.isArray(snapshot.settings.scanAppBlacklist), "layout snapshots should include scan app blacklist");
   assert(snapshot.settings.showMissingLaunchTargetBadge === true, "layout snapshots should include missing target badge preference");
   assert(snapshot.settings.backgroundRenderMode === "image" && snapshot.settings.backgroundImageOpacity === 62, "layout snapshots should include background settings");
+  assert(snapshot.settings.backgroundImagePath === "C:/Images/custom.webp", "layout snapshots should include the trimmed custom background image path");
   assert(snapshot.settings.windowEffectMaterial === "mica" && snapshot.settings.windowEffectAppearance === "light", "layout snapshots should include window effect settings");
   assert(!("iconDataUrl" in snapshot.pages[0][0]), "layout snapshots should omit catalog icon data");
   assert(snapshot.pages[0][0].iconPath === "C:/Icons/a.png", "layout snapshots should preserve cached icon paths");

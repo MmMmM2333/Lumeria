@@ -14,7 +14,7 @@
     "security": {
       "assetProtocol": {
         "enable": true,
-        "scope": ["$APPDATA/icons/**"]
+        "scope": ["$APPDATA/icons/**", "$APPDATA/backgrounds/**"]
       }
     },
     "windows": [

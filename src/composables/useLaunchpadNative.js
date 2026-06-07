@@ -33,6 +33,7 @@ import {
 import {
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
   clampBackgroundImageOpacity,
+  normalizeBackgroundImagePath,
   normalizeBackgroundRenderMode,
   normalizeWindowEffectAppearance,
   normalizeWindowEffectsSupport,
@@ -93,6 +94,8 @@ export function useLaunchpadNative(options) {
     const nextWindowEffectAppearance = normalizeWindowEffectAppearance(settings.windowEffectAppearance);
     const nextBackgroundRenderMode = normalizeBackgroundRenderMode(settings.backgroundRenderMode);
     const nextBackgroundImageOpacity = clampBackgroundImageOpacity(settings.backgroundImageOpacity);
+    const nextBackgroundImagePath = normalizeBackgroundImagePath(settings.backgroundImagePath);
+    const nextBackgroundImageUrl = nextBackgroundImagePath ? convertFilePathToAssetUrl(nextBackgroundImagePath) : null;
 
     options.gridRows.value = rows;
     options.gridCols.value = cols;
@@ -116,8 +119,12 @@ export function useLaunchpadNative(options) {
     options.draftWindowEffectAppearance.value = nextWindowEffectAppearance;
     options.backgroundRenderMode.value = nextBackgroundRenderMode;
     options.backgroundImageOpacity.value = nextBackgroundImageOpacity;
+    options.backgroundImagePath.value = nextBackgroundImagePath;
+    options.backgroundImageUrl.value = nextBackgroundImageUrl;
     options.draftBackgroundRenderMode.value = nextBackgroundRenderMode;
     options.draftBackgroundImageOpacity.value = nextBackgroundImageOpacity;
+    options.draftBackgroundImagePath.value = nextBackgroundImagePath;
+    options.draftBackgroundImageUrl.value = nextBackgroundImageUrl;
     options.hiddenAppIds.value = Array.isArray(settings.hiddenAppIds)
       ? settings.hiddenAppIds.map(String)
       : [];
@@ -157,6 +164,7 @@ export function useLaunchpadNative(options) {
       showMissingLaunchTargetBadge: options.showMissingLaunchTargetBadge.value,
       backgroundRenderMode: options.backgroundRenderMode.value,
       backgroundImageOpacity: options.backgroundImageOpacity.value,
+      backgroundImagePath: options.backgroundImagePath.value,
       windowEffectMaterial: options.windowEffectMaterial.value,
       windowEffectAppearance: options.windowEffectAppearance.value,
     });

@@ -44,6 +44,8 @@ function createSettingsPanelFlowHarness(overrides = {}) {
     isTextlessMode: ref(overrides.isTextlessMode ?? true),
     backgroundRenderMode: ref(overrides.backgroundRenderMode ?? BACKGROUND_RENDER_MODE_IMAGE),
     backgroundImageOpacity: ref(overrides.backgroundImageOpacity ?? 58),
+    backgroundImagePath: ref(overrides.backgroundImagePath ?? "C:/Images/current.png"),
+    backgroundImageUrl: ref(overrides.backgroundImageUrl ?? "asset://current"),
     windowEffectMaterial: ref(overrides.windowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_MICA_ALT),
     windowEffectAppearance: ref(overrides.windowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_LIGHT),
     draftRows: ref(overrides.draftRows ?? 8),
@@ -56,6 +58,8 @@ function createSettingsPanelFlowHarness(overrides = {}) {
     draftIsTextlessMode: ref(overrides.draftIsTextlessMode ?? false),
     draftBackgroundRenderMode: ref(overrides.draftBackgroundRenderMode ?? BACKGROUND_RENDER_MODE_MATERIAL),
     draftBackgroundImageOpacity: ref(overrides.draftBackgroundImageOpacity ?? 12),
+    draftBackgroundImagePath: ref(overrides.draftBackgroundImagePath ?? null),
+    draftBackgroundImageUrl: ref(overrides.draftBackgroundImageUrl ?? null),
     draftWindowEffectMaterial: ref(overrides.draftWindowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
     draftWindowEffectAppearance: ref(overrides.draftWindowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_DARK),
   };
@@ -95,6 +99,8 @@ export function runSettingsPanelFlowTests() {
     assert(state.draftIsTextlessMode.value === true, "opening settings should reset textless draft");
     assert(state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE, "opening settings should reset background render draft");
     assert(state.draftBackgroundImageOpacity.value === 58, "opening settings should reset background opacity draft");
+    assert(state.draftBackgroundImagePath.value === "C:/Images/current.png", "opening settings should reset background image path draft");
+    assert(state.draftBackgroundImageUrl.value === "asset://current", "opening settings should reset background image url draft");
     assert(state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "opening settings should reset window effect material draft");
     assert(state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "opening settings should reset window effect appearance draft");
 
@@ -108,6 +114,8 @@ export function runSettingsPanelFlowTests() {
     state.draftIsTextlessMode.value = false;
     state.draftBackgroundRenderMode.value = BACKGROUND_RENDER_MODE_MATERIAL;
     state.draftBackgroundImageOpacity.value = 4;
+    state.draftBackgroundImagePath.value = "C:/Images/draft.png";
+    state.draftBackgroundImageUrl.value = "asset://draft";
     state.draftWindowEffectMaterial.value = WINDOW_EFFECT_MATERIAL_ACRYLIC;
     state.draftWindowEffectAppearance.value = WINDOW_EFFECT_APPEARANCE_DARK;
 
@@ -121,6 +129,8 @@ export function runSettingsPanelFlowTests() {
     assert(state.draftIsTextlessMode.value === true, "closing settings should discard textless draft");
     assert(state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE, "closing settings should discard background render draft");
     assert(state.draftBackgroundImageOpacity.value === 58, "closing settings should discard background opacity draft");
+    assert(state.draftBackgroundImagePath.value === "C:/Images/current.png", "closing settings should discard background image path draft");
+    assert(state.draftBackgroundImageUrl.value === "asset://current", "closing settings should discard background image url draft");
     assert(state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "closing settings should discard window effect material draft");
     assert(state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "closing settings should discard window effect appearance draft");
     assert(calls.closeAddManagedAppPage === 1, "closing settings should close add managed app flow");

@@ -81,16 +81,18 @@ body {
   will-change: opacity;
 }
 
-.launchpad-bg::before,
 .launchpad-bg::after {
   content: "";
   position: absolute;
   inset: 0;
 }
 
-.launchpad-bg::before {
+.launchpad-bg-image {
+  position: absolute;
+  inset: 0;
   background-image: url("../assets/launchpad-test-background.png");
   background-position: center;
+  background-repeat: no-repeat;
   background-size: cover;
   opacity: var(--launchpad-background-image-opacity, 0);
   transform: scale(1.02);
@@ -613,15 +615,22 @@ body {
 .settings-background-field {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: start;
 }
 
 .settings-background-controls {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.settings-background-mode-row,
+.settings-background-image-controls {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
-  min-width: 0;
   flex-wrap: wrap;
 }
 
@@ -652,6 +661,20 @@ body {
   color: rgba(255, 255, 255, 0.78);
   font-variant-numeric: tabular-nums;
   text-align: right;
+}
+
+.settings-background-image-name {
+  max-width: 250px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-background-image-button {
+  height: 32px;
+  padding: 0 12px;
 }
 
 .settings-options {
@@ -2708,7 +2731,10 @@ body {
   .settings-window-effect-controls { justify-content: flex-start; width: 100%; }
   .settings-window-effect-notes { grid-template-columns: 1fr; }
   .settings-background-field { grid-template-columns: 1fr; align-items: flex-start; }
-  .settings-background-controls { justify-content: flex-start; width: 100%; }
+  .settings-background-controls { justify-items: start; width: 100%; }
+  .settings-background-mode-row,
+  .settings-background-image-controls { justify-content: flex-start; width: 100%; }
+  .settings-background-image-name { max-width: 100%; }
   .settings-opacity-control { width: 100%; min-width: 0; }
   .settings-opacity-control input[type="range"] { width: auto; flex: 1 1 auto; }
   .settings-folder-icon-size-field { align-items: flex-start; flex-direction: column; }

@@ -85,6 +85,12 @@ export async function pickLaunchFile() {
   return invoke("pick_launch_file");
 }
 
+export async function pickBackgroundImage() {
+  const invoke = getTauriInvoke();
+  if (!invoke) return null;
+  return invoke("pick_background_image");
+}
+
 export async function pickScanRootDirectory() {
   const invoke = getTauriInvoke();
   if (!invoke) return null;

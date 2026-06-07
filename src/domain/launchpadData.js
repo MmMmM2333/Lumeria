@@ -330,6 +330,7 @@ export function createLaunchpadDataHelpers(options) {
 
   function createLayoutSnapshot(state) {
     const backgroundImageOpacity = Number(state.backgroundImageOpacity);
+    const backgroundImagePath = typeof state.backgroundImagePath === "string" ? state.backgroundImagePath.trim() : "";
     return {
       version: 1,
       pages: makeLayoutPages(state.pages),
@@ -349,6 +350,7 @@ export function createLaunchpadDataHelpers(options) {
         showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge !== false,
         backgroundRenderMode: state.backgroundRenderMode === "image" ? "image" : "material",
         backgroundImageOpacity: Number.isFinite(backgroundImageOpacity) ? clamp(Math.round(backgroundImageOpacity), 0, 100) : 46,
+        backgroundImagePath: backgroundImagePath || null,
         windowEffectMaterial: state.windowEffectMaterial === "mica" || state.windowEffectMaterial === "micaAlt" ? state.windowEffectMaterial : "acrylic",
         windowEffectAppearance: state.windowEffectAppearance === "light" ? "light" : "dark",
       },

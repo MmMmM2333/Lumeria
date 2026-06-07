@@ -60,6 +60,13 @@ export function useLaunchpadViewState(options) {
     if (options.backgroundRenderMode.value !== BACKGROUND_RENDER_MODE_IMAGE) return 0;
     return clampBackgroundImageOpacity(options.backgroundImageOpacity.value) / 100;
   });
+  const backgroundImageStyle = computed(() => {
+    const imageUrl = options.backgroundImageUrl?.value;
+    if (!imageUrl) return {};
+    return {
+      backgroundImage: `url(${JSON.stringify(imageUrl)})`,
+    };
+  });
   const rootStyle = computed(() => ({
     "--configured-app-icon-size": `${options.iconSize.value}px`,
     "--launchpad-background-image-opacity": `${backgroundImageCssOpacity.value}`,
@@ -131,6 +138,7 @@ export function useLaunchpadViewState(options) {
     activeDesktopTrackAnimate,
     activeDesktopTrackTransition,
     appLaunchGhostTransition,
+    backgroundImageStyle,
     desktopLayoutEnabled,
     desktopTrackMotionKey,
     desktopTrackTransition,

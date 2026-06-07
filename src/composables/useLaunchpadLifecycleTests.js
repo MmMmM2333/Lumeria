@@ -22,6 +22,7 @@ function createLifecycleOptions() {
     options: {
       activePages: ref([]),
       backgroundImageOpacity: ref(46),
+      backgroundImagePath: ref(null),
       backgroundRenderMode: ref("material"),
       cancelLongPress: makeCall("cancelLongPress"),
       cancelPreviewRaf: makeCall("cancelPreviewRaf"),

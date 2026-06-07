@@ -36,6 +36,8 @@ function makeOptions(overrides = {}) {
     draftFolderIconSizeMode: ref("global"),
     draftFolderRows: ref(3),
     draftBackgroundImageOpacity: ref(46),
+    draftBackgroundImagePath: ref(null),
+    draftBackgroundImageUrl: ref(null),
     draftBackgroundRenderMode: ref(BACKGROUND_RENDER_MODE_MATERIAL),
     draftIconSize: ref(64),
     draftIsTextlessMode: ref(false),
@@ -59,6 +61,8 @@ function makeOptions(overrides = {}) {
     isDesktopOpen: ref(true),
     isTextlessMode: ref(false),
     backgroundImageOpacity: ref(46),
+    backgroundImagePath: ref(null),
+    backgroundImageUrl: ref(null),
     backgroundRenderMode: ref(BACKGROUND_RENDER_MODE_MATERIAL),
     windowEffectAppearance: ref(WINDOW_EFFECT_APPEARANCE_DARK),
     windowEffectMaterial: ref(WINDOW_EFFECT_MATERIAL_ACRYLIC),
@@ -175,6 +179,7 @@ export async function runLaunchpadNativeTests() {
     assert(initialSaveLayouts[0].pages[0][0].id === "win-app-good", "initial native save should include scanned apps");
     assert(initialSaveLayouts[0].settings.backgroundRenderMode === BACKGROUND_RENDER_MODE_MATERIAL, "native saves should include background render mode");
     assert(initialSaveLayouts[0].settings.backgroundImageOpacity === 46, "native saves should include background image opacity");
+    assert(initialSaveLayouts[0].settings.backgroundImagePath === null, "native saves should include an empty background image path");
     assert(calls.commitPageIndex.join(",") === "0", "initial native load should reclamp desktop page");
     assert(calls.schedulePageGridMetrics === 1, "initial native load should refresh grid metrics");
   });
@@ -246,6 +251,7 @@ export async function runLaunchpadNativeTests() {
           windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
           backgroundRenderMode: BACKGROUND_RENDER_MODE_IMAGE,
           backgroundImageOpacity: 64,
+          backgroundImagePath: "C:/Images/wallpaper.webp",
         },
       };
     }
@@ -270,8 +276,12 @@ export async function runLaunchpadNativeTests() {
     assert(options.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "native load should apply saved window effect appearance");
     assert(options.backgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE, "native load should apply saved background render mode");
     assert(options.backgroundImageOpacity.value === 64, "native load should apply saved background opacity");
+    assert(options.backgroundImagePath.value === "C:/Images/wallpaper.webp", "native load should apply saved background image path");
+    assert(options.backgroundImageUrl.value === "asset://C:/Images/wallpaper.webp", "native load should derive a background image asset url");
     assert(options.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE, "native load should sync background render draft");
     assert(options.draftBackgroundImageOpacity.value === 64, "native load should sync background opacity draft");
+    assert(options.draftBackgroundImagePath.value === "C:/Images/wallpaper.webp", "native load should sync background image path draft");
+    assert(options.draftBackgroundImageUrl.value === "asset://C:/Images/wallpaper.webp", "native load should sync background image url draft");
     assert(effectsCommands.length === 1, "native load should refresh window effects once");
     assert(effectsCommands[0].enabled === true, "window effect refresh should enable effects");
     assert(effectsCommands[0].material === WINDOW_EFFECT_MATERIAL_MICA_ALT, "window effect refresh should pass the selected material");

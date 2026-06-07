@@ -22,8 +22,10 @@ use catalog::{
     ScanFilters, ScanRoot,
 };
 use file_dialog::{
+    pick_background_image as pick_native_background_image,
     pick_launch_file as pick_native_launch_file,
-    pick_scan_root_directory as pick_native_scan_root_directory, PickedLaunchFile,
+    pick_scan_root_directory as pick_native_scan_root_directory, PickedBackgroundImage,
+    PickedLaunchFile,
 };
 use icons::cache_app_icon_choices;
 use launcher::{launch_path, LaunchPathError, LaunchPathErrorKind};
@@ -163,6 +165,11 @@ fn save_layout(app: AppHandle, layout: serde_json::Value) -> Result<(), String> 
 #[tauri::command]
 fn pick_launch_file(app: AppHandle) -> Result<Option<PickedLaunchFile>, String> {
     pick_native_launch_file(&app)
+}
+
+#[tauri::command]
+fn pick_background_image(app: AppHandle) -> Result<Option<PickedBackgroundImage>, String> {
+    pick_native_background_image(&app)
 }
 
 #[tauri::command]
@@ -716,6 +723,7 @@ pub fn run() {
             load_layout,
             save_layout,
             pick_launch_file,
+            pick_background_image,
             pick_scan_root_directory,
             load_app_icon_choices,
             cache_custom_icon,

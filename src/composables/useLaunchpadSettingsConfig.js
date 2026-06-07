@@ -8,6 +8,10 @@ import {
   ICON_SIZE_MIN,
   ICON_SIZE_STEP,
 } from "./launchpadConstants.js";
+import {
+  convertFilePathToAssetUrl,
+  pickBackgroundImage,
+} from "../api/launchpadApi.js";
 import { clamp, makePageSize } from "../domain/launchpadLayout.js";
 
 export const FOLDER_ICON_SIZE_MODE_CUSTOM = "custom";
@@ -47,6 +51,11 @@ export function clampBackgroundImageOpacity(value) {
   const opacity = Number(value);
   if (!Number.isFinite(opacity)) return DEFAULT_BACKGROUND_IMAGE_OPACITY;
   return clamp(Math.round(opacity), BACKGROUND_IMAGE_OPACITY_MIN, BACKGROUND_IMAGE_OPACITY_MAX);
+}
+
+export function normalizeBackgroundImagePath(value) {
+  const path = typeof value === "string" ? value.trim() : "";
+  return path || null;
 }
 
 export function normalizeWindowEffectMaterial(value) {
@@ -100,6 +109,10 @@ export function syncLaunchpadSettingsDraftsFromState(options) {
   options.draftIsTextlessMode.value = options.isTextlessMode.value;
   options.draftBackgroundRenderMode.value = options.backgroundRenderMode.value;
   options.draftBackgroundImageOpacity.value = options.backgroundImageOpacity.value;
+  options.draftBackgroundImagePath.value = normalizeBackgroundImagePath(options.backgroundImagePath.value);
+  options.draftBackgroundImageUrl.value = options.draftBackgroundImagePath.value
+    ? options.backgroundImageUrl.value || convertFilePathToAssetUrl(options.draftBackgroundImagePath.value)
+    : null;
   options.draftWindowEffectMaterial.value = options.windowEffectMaterial.value;
   options.draftWindowEffectAppearance.value = options.windowEffectAppearance.value;
 }
@@ -158,6 +171,28 @@ export function useLaunchpadSettingsConfig(options) {
     setDraftBackgroundImageOpacity(
       Number(options.draftBackgroundImageOpacity.value) + direction * BACKGROUND_IMAGE_OPACITY_STEP
     );
+  }
+
+  async function chooseDraftBackgroundImage() {
+    if (options.isChoosingBackgroundImage.value) return;
+    options.isChoosingBackgroundImage.value = true;
+    try {
+      const selected = await pickBackgroundImage();
+      const imagePath = normalizeBackgroundImagePath(selected?.imagePath);
+      if (!imagePath) return;
+      options.draftBackgroundImagePath.value = imagePath;
+      options.draftBackgroundImageUrl.value = convertFilePathToAssetUrl(imagePath);
+      options.draftBackgroundRenderMode.value = BACKGROUND_RENDER_MODE_IMAGE;
+    } catch (error) {
+      console.error("Failed to choose LaunchPad background image", error);
+    } finally {
+      options.isChoosingBackgroundImage.value = false;
+    }
+  }
+
+  function clearDraftBackgroundImage() {
+    options.draftBackgroundImagePath.value = null;
+    options.draftBackgroundImageUrl.value = null;
   }
 
   function canUseWindowEffectMaterial(material) {
@@ -235,6 +270,10 @@ export function useLaunchpadSettingsConfig(options) {
     if (!options.isDragActive()) options.isTextlessMode.value = Boolean(options.draftIsTextlessMode.value);
     options.backgroundRenderMode.value = normalizeBackgroundRenderMode(options.draftBackgroundRenderMode.value);
     options.backgroundImageOpacity.value = clampBackgroundImageOpacity(options.draftBackgroundImageOpacity.value);
+    options.backgroundImagePath.value = normalizeBackgroundImagePath(options.draftBackgroundImagePath.value);
+    options.backgroundImageUrl.value = options.backgroundImagePath.value
+      ? options.draftBackgroundImageUrl.value || convertFilePathToAssetUrl(options.backgroundImagePath.value)
+      : null;
     options.windowEffectMaterial.value = resolveWindowEffectMaterialForSupport(
       options.draftWindowEffectMaterial.value,
       options.windowEffectsSupport.value
@@ -255,7 +294,9 @@ export function useLaunchpadSettingsConfig(options) {
     changeDraftFolderRows,
     changeDraftIconSize,
     changeDraftRows,
+    chooseDraftBackgroundImage,
     clampIconSize,
+    clearDraftBackgroundImage,
     canUseWindowEffectMaterial,
     setDraftBackgroundImageOpacity,
     setDraftBackgroundRenderMode,

@@ -1,5 +1,8 @@
 #[cfg(target_os = "windows")]
-use std::path::Path;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use serde::Serialize;
 
@@ -20,7 +23,7 @@ use windows::{
 };
 
 #[cfg(target_os = "windows")]
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::{
     catalog::{icon_cache_dir, icon_file_data_url, stable_app_id},
@@ -40,6 +43,13 @@ pub(crate) struct PickedLaunchFile {
     icon_data_url: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PickedBackgroundImage {
+    name: String,
+    image_path: String,
+}
+
 #[cfg(target_os = "windows")]
 pub(crate) fn pick_launch_file(app: &AppHandle) -> Result<Option<PickedLaunchFile>, String> {
     let _com_guard = ComGuard::new()?;
@@ -56,6 +66,26 @@ pub(crate) fn pick_launch_file(
     _app: &tauri::AppHandle,
 ) -> Result<Option<PickedLaunchFile>, String> {
     Err("Picking launch files is only implemented on Windows".to_string())
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn pick_background_image(
+    app: &AppHandle,
+) -> Result<Option<PickedBackgroundImage>, String> {
+    let _com_guard = ComGuard::new()?;
+    let result = unsafe { pick_background_image_inner() };
+    match result {
+        Ok(path) => cache_picked_background_image(app, Path::new(&path)).map(Some),
+        Err(error) if error.code() == HRESULT::from_win32(ERROR_CANCELLED.0) => Ok(None),
+        Err(error) => Err(format!("Failed to pick background image: {error}")),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn pick_background_image(
+    _app: &tauri::AppHandle,
+) -> Result<Option<PickedBackgroundImage>, String> {
+    Err("Picking background images is only implemented on Windows".to_string())
 }
 
 #[cfg(target_os = "windows")]
@@ -111,6 +141,33 @@ unsafe fn pick_launch_file_inner() -> windows::core::Result<String> {
 }
 
 #[cfg(target_os = "windows")]
+unsafe fn pick_background_image_inner() -> windows::core::Result<String> {
+    let dialog: IFileOpenDialog =
+        unsafe { CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)? };
+    let image_files_name = HSTRING::from("Image files");
+    let image_files_spec = HSTRING::from("*.png;*.jpg;*.jpeg;*.webp");
+    let filters = [COMDLG_FILTERSPEC {
+        pszName: PCWSTR(image_files_name.as_ptr()),
+        pszSpec: PCWSTR(image_files_spec.as_ptr()),
+    }];
+
+    unsafe {
+        dialog.SetTitle(&HSTRING::from("选择背景图片"))?;
+        dialog.SetFileTypes(&filters)?;
+        dialog.SetOptions(FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST)?;
+        dialog.Show(None)?;
+    }
+
+    let item = unsafe { dialog.GetResult()? };
+    let display_name = unsafe { item.GetDisplayName(SIGDN_FILESYSPATH)? };
+    unsafe {
+        let value = display_name.to_string()?;
+        CoTaskMemFree(Some(display_name.as_ptr().cast()));
+        Ok(value)
+    }
+}
+
+#[cfg(target_os = "windows")]
 unsafe fn pick_scan_root_directory_inner() -> windows::core::Result<String> {
     let dialog: IFileOpenDialog =
         unsafe { CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)? };
@@ -135,6 +192,14 @@ fn is_supported_launch_file(path: &Path) -> bool {
     matches!(
         extension(path).as_deref(),
         Some("exe") | Some("lnk") | Some("url")
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn is_supported_background_image(path: &Path) -> bool {
+    matches!(
+        extension(path).as_deref(),
+        Some("png") | Some("jpg") | Some("jpeg") | Some("webp")
     )
 }
 
@@ -179,6 +244,76 @@ fn make_picked_launch_file(
 }
 
 #[cfg(target_os = "windows")]
+const MAX_BACKGROUND_IMAGE_BYTES: u64 = 30 * 1024 * 1024;
+
+#[cfg(target_os = "windows")]
+fn background_cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Failed to resolve app data directory: {error}"))?;
+    let background_dir = data_dir.join("backgrounds");
+    fs::create_dir_all(&background_dir).map_err(|error| {
+        format!(
+            "Failed to create background cache directory {}: {error}",
+            background_dir.display()
+        )
+    })?;
+    Ok(background_dir)
+}
+
+#[cfg(target_os = "windows")]
+fn cache_picked_background_image(
+    app: &AppHandle,
+    selected_path: &Path,
+) -> Result<PickedBackgroundImage, String> {
+    if !is_supported_background_image(selected_path) {
+        return Err("Background images must be PNG, JPG, JPEG, or WEBP files".to_string());
+    }
+    let metadata = fs::metadata(selected_path).map_err(|error| {
+        format!(
+            "Failed to read background image {}: {error}",
+            selected_path.display()
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err("Background image must be a file".to_string());
+    }
+    if metadata.len() > MAX_BACKGROUND_IMAGE_BYTES {
+        return Err("Background image is larger than 30 MB".to_string());
+    }
+
+    let bytes = fs::read(selected_path).map_err(|error| {
+        format!(
+            "Failed to read background image {}: {error}",
+            selected_path.display()
+        )
+    })?;
+    let hash = blake3::hash(&bytes);
+    let hex = hash.to_hex();
+    let extension = extension(selected_path).unwrap_or_else(|| "png".to_string());
+    let background_dir = background_cache_dir(app)?;
+    let background_path = background_dir.join(format!("background-{}.{}", &hex[..32], extension));
+    if !background_path.exists() {
+        fs::write(&background_path, &bytes).map_err(|error| {
+            format!(
+                "Failed to cache background image {}: {error}",
+                background_path.display()
+            )
+        })?;
+    }
+
+    Ok(PickedBackgroundImage {
+        name: selected_path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("Background image")
+            .to_string(),
+        image_path: windows_api_path(&background_path),
+    })
+}
+
+#[cfg(target_os = "windows")]
 struct ComGuard {
     initialized: bool,
 }
@@ -214,5 +349,27 @@ mod tests {
         assert!(is_supported_launch_file(Path::new("C:/Apps/App.lnk")));
         assert!(is_supported_launch_file(Path::new("C:/Apps/App.url")));
         assert!(!is_supported_launch_file(Path::new("C:/Apps/readme.txt")));
+    }
+
+    #[test]
+    fn supported_background_images_are_limited_to_static_images() {
+        assert!(is_supported_background_image(Path::new(
+            "C:/Images/wallpaper.png"
+        )));
+        assert!(is_supported_background_image(Path::new(
+            "C:/Images/wallpaper.jpg"
+        )));
+        assert!(is_supported_background_image(Path::new(
+            "C:/Images/wallpaper.jpeg"
+        )));
+        assert!(is_supported_background_image(Path::new(
+            "C:/Images/wallpaper.webp"
+        )));
+        assert!(!is_supported_background_image(Path::new(
+            "C:/Images/wallpaper.gif"
+        )));
+        assert!(!is_supported_background_image(Path::new(
+            "C:/Images/wallpaper.exe"
+        )));
     }
 }

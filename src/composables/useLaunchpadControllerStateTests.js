@@ -32,8 +32,13 @@ export function runLaunchpadControllerStateTests() {
   assert(state.draftIsTextlessMode.value === false, "draft textless mode should start disabled");
   assert(state.backgroundRenderMode.value === BACKGROUND_RENDER_MODE_MATERIAL, "background render mode should default to material");
   assert(state.backgroundImageOpacity.value === DEFAULT_BACKGROUND_IMAGE_OPACITY, "background image opacity should use the default");
+  assert(state.backgroundImagePath.value === null, "background image path should default to the built-in image");
+  assert(state.backgroundImageUrl.value === null, "background image url should default to the built-in image");
   assert(state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_MATERIAL, "draft background render mode should default to material");
   assert(state.draftBackgroundImageOpacity.value === DEFAULT_BACKGROUND_IMAGE_OPACITY, "draft background image opacity should use the default");
+  assert(state.draftBackgroundImagePath.value === null, "draft background image path should default to the built-in image");
+  assert(state.draftBackgroundImageUrl.value === null, "draft background image url should default to the built-in image");
+  assert(state.isChoosingBackgroundImage.value === false, "background image picker state should start idle");
   assert(state.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_ACRYLIC, "window effect material should default to acrylic");
   assert(state.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_DARK, "window effect appearance should default to dark");
   assert(state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_ACRYLIC, "draft window effect material should default to acrylic");

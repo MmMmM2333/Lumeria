@@ -148,35 +148,56 @@
                   <span class="settings-field-hint">{{ backgroundRenderHint }}</span>
                 </span>
                 <div class="settings-background-controls">
-                  <div class="settings-segmented-control" aria-label="背景渲染">
+                  <div class="settings-background-mode-row">
+                    <div class="settings-segmented-control" aria-label="背景渲染">
+                      <button
+                        type="button"
+                        :class="cx('settings-segmented-button', state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_MATERIAL && 'settings-segmented-button-active')"
+                        @click="state.setDraftBackgroundRenderMode(BACKGROUND_RENDER_MODE_MATERIAL)"
+                      >
+                        系统材质
+                      </button>
+                      <button
+                        type="button"
+                        :class="cx('settings-segmented-button', state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE && 'settings-segmented-button-active')"
+                        @click="state.setDraftBackgroundRenderMode(BACKGROUND_RENDER_MODE_IMAGE)"
+                      >
+                        图片
+                      </button>
+                    </div>
+                    <label v-if="state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE" class="settings-opacity-control">
+                      <span>透明度</span>
+                      <input
+                        :value="state.draftBackgroundImageOpacity.value"
+                        :min="BACKGROUND_IMAGE_OPACITY_MIN"
+                        :max="BACKGROUND_IMAGE_OPACITY_MAX"
+                        :step="BACKGROUND_IMAGE_OPACITY_STEP"
+                        type="range"
+                        aria-label="背景图片透明度"
+                        @input="state.setDraftBackgroundImageOpacity($event.target.value)"
+                      />
+                      <span class="settings-opacity-value">{{ state.draftBackgroundImageOpacity.value }}%</span>
+                    </label>
+                  </div>
+                  <div v-if="state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE" class="settings-background-image-controls">
+                    <span class="settings-background-image-name">{{ draftBackgroundImageName }}</span>
                     <button
+                      class="settings-secondary-button settings-background-image-button"
                       type="button"
-                      :class="cx('settings-segmented-button', state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_MATERIAL && 'settings-segmented-button-active')"
-                      @click="state.setDraftBackgroundRenderMode(BACKGROUND_RENDER_MODE_MATERIAL)"
+                      :disabled="state.isChoosingBackgroundImage.value"
+                      @click="state.chooseDraftBackgroundImage"
                     >
-                      系统材质
+                      {{ state.isChoosingBackgroundImage.value ? "选择中" : "选择图片" }}
                     </button>
                     <button
+                      class="settings-secondary-button settings-background-image-button"
                       type="button"
-                      :class="cx('settings-segmented-button', state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE && 'settings-segmented-button-active')"
-                      @click="state.setDraftBackgroundRenderMode(BACKGROUND_RENDER_MODE_IMAGE)"
+                      :disabled="!state.draftBackgroundImagePath.value"
+                      @click="state.clearDraftBackgroundImage"
                     >
-                      图片
+                      恢复默认
                     </button>
                   </div>
-                  <label v-if="state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE" class="settings-opacity-control">
-                    <span>透明度</span>
-                    <input
-                      :value="state.draftBackgroundImageOpacity.value"
-                      :min="BACKGROUND_IMAGE_OPACITY_MIN"
-                      :max="BACKGROUND_IMAGE_OPACITY_MAX"
-                      :step="BACKGROUND_IMAGE_OPACITY_STEP"
-                      type="range"
-                      aria-label="背景图片透明度"
-                      @input="state.setDraftBackgroundImageOpacity($event.target.value)"
-                    />
-                    <span class="settings-opacity-value">{{ state.draftBackgroundImageOpacity.value }}%</span>
-                  </label>
                 </div>
               </div>
               <div class="settings-field settings-field-wide settings-grid-layout-field">
@@ -527,6 +548,12 @@ const backgroundRenderHint = computed(() =>
     ? "图片叠加在窗口材质上方"
     : "仅显示 Acrylic / Mica 材质"
 );
+const draftBackgroundImageName = computed(() => {
+  const path = String(props.state.draftBackgroundImagePath.value || "").trim();
+  if (!path) return "使用内置图片";
+  const name = path.split(/[\\/]/).filter(Boolean).pop() || "";
+  return /^background-[a-f0-9]{32}\./i.test(name) ? "自定义图片" : name || "自定义图片";
+});
 const windowEffectsSupportHint = computed(() => {
   const availableLabels = windowEffectMaterialNotes.value
     .filter((item) => item.available)
