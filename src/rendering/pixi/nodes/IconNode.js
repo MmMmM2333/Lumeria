@@ -6,7 +6,7 @@ import {
   getCenteredLocalRect,
   mapDisplayObjectLocalRectToStageRect,
 } from "../geometry/displayObjectBounds.js";
-import { getIconLabelLocalY, getIconVisualOffsetY } from "../geometry/iconMetrics.js";
+import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import {
   drawEditButton as drawEditButtonGraphic,
   drawMissingBadge,
@@ -27,7 +27,7 @@ import {
   getFolderHoverTargetPadding as getFolderHoverTargetPaddingForIcon,
   getFolderPreviewPlanKey,
 } from "./iconFolderHoverState.js";
-import { fitSingleLineName, fitWrappedName } from "./iconLabelLayout.js";
+import { getIconLabelRenderState } from "./iconLabelLayout.js";
 import {
   drawSelectionFrame,
   getSelectionFrameRect as getSelectionFrameRectForIcon,
@@ -769,20 +769,23 @@ export class IconNode extends Container {
   }
 
   renderLabel(state) {
-    this.labelText.visible = !this.textless;
+    const labelState = getIconLabelRenderState({
+      cellWidth: state.cellWidth,
+      compact: state.compact,
+      iconSize: this.iconSize,
+      itemName: this.item?.name,
+      singleLineLabel: state.singleLineLabel,
+      textless: this.textless,
+    });
+    this.labelText.visible = labelState.visible;
     if (!this.labelText.visible) return;
-    const fontSize = state.compact ? 12 : 13;
-    const singleLine = Boolean(state.singleLineLabel);
-    const wrapWidth = Math.max(72, Math.min(160, state.cellWidth * 0.84));
-    this.labelText.style.fontSize = fontSize;
-    this.labelText.style.lineHeight = Math.round(fontSize * 1.22);
-    this.labelText.style.wordWrap = !singleLine;
-    this.labelText.style.wordWrapWidth = wrapWidth;
-    this.labelText.text = singleLine
-      ? fitSingleLineName(this.item?.name, fontSize, Math.max(56, state.cellWidth * 0.9))
-      : fitWrappedName(this.item?.name, fontSize, wrapWidth);
-    this.labelText.anchor.set(0.5, 0);
-    this.labelText.position.set(0, getIconLabelLocalY(this.iconSize, this.textless));
+    this.labelText.style.fontSize = labelState.fontSize;
+    this.labelText.style.lineHeight = labelState.lineHeight;
+    this.labelText.style.wordWrap = labelState.wordWrap;
+    this.labelText.style.wordWrapWidth = labelState.wordWrapWidth;
+    this.labelText.text = labelState.text;
+    this.labelText.anchor.set(labelState.anchorX, labelState.anchorY);
+    this.labelText.position.set(labelState.x, labelState.y);
   }
 
   revealLabelAfterGhost() {

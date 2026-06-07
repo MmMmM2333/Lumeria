@@ -1,4 +1,5 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import { getIconLabelLocalY } from "../geometry/iconMetrics.js";
 
 export function plainName(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -65,6 +66,36 @@ export function fitWrappedName(value, fontSize, maxWidth) {
     rest = next;
   }
   return lines.join("\n");
+}
+
+export function getIconLabelRenderState(options = {}) {
+  const {
+    cellWidth = 0,
+    compact = false,
+    iconSize = 64,
+    itemName = null,
+    singleLineLabel = false,
+    textless = false,
+  } = options;
+  if (textless) return { visible: false };
+
+  const fontSize = compact ? 12 : 13;
+  const singleLine = Boolean(singleLineLabel);
+  const wrapWidth = Math.max(72, Math.min(160, cellWidth * 0.84));
+  return {
+    anchorX: 0.5,
+    anchorY: 0,
+    fontSize,
+    lineHeight: Math.round(fontSize * 1.22),
+    text: singleLine
+      ? fitSingleLineName(itemName, fontSize, Math.max(56, cellWidth * 0.9))
+      : fitWrappedName(itemName, fontSize, wrapWidth),
+    visible: true,
+    wordWrap: !singleLine,
+    wordWrapWidth: wrapWidth,
+    x: 0,
+    y: getIconLabelLocalY(iconSize, textless),
+  };
 }
 
 reloadOnPixiHotUpdate(import.meta.hot);
