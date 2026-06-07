@@ -34,7 +34,15 @@ import {
   isReleaseGhostLaunchItem,
 } from "./dragVisibility.js";
 import { getClosingPreviewTiming, getFolderPageMaskRect, resolveOpeningInterruptionFrame } from "./folderOverlayGeometry.js";
-import { makeIconRect, makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
+import {
+  getStableFolderCloseRects,
+  makeClosingGhostTarget,
+  makeClosingPreviewSwapTargets,
+  makeOpeningGhostTarget,
+  makePreviewSlotById,
+  makeStableFolderCloseTarget,
+} from "./folderOverlayTargets.js";
+import { makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { IconNode } from "../nodes/IconNode.js";
 import { getCachedIconTexture } from "../assets/iconTextureCache.js";
 import { getFolderPreviewSlots } from "../../../domain/launchpadLayout.js";
@@ -64,16 +72,6 @@ function makeLocalRect(rect, stageRect) {
   };
 }
 
-function cloneRect(rect) {
-  if (!rect) return null;
-  return {
-    height: rect.height,
-    left: rect.left,
-    top: rect.top,
-    width: rect.width,
-  };
-}
-
 function isPointInRect(x, y, rect) {
   return Boolean(rect) &&
     x >= rect.left &&
@@ -82,38 +80,8 @@ function isPointInRect(x, y, rect) {
     y <= rect.top + rect.height;
 }
 
-function makePreviewChildKey(childId, slotIndex) {
-  return `${childId}:${slotIndex}`;
-}
-
 function makeClosingPreviewSwapKey(folderId, pageIndex) {
   return `closing-preview-swap:${folderId || "folder"}:${pageIndex}`;
-}
-
-function makeFolderCenterCollapseRect(folderRect) {
-  if (!folderRect) return null;
-  const size = Math.max(4, Math.min(folderRect.width, folderRect.height) * 0.18);
-  return makeIconRect(folderRect.left + folderRect.width / 2, folderRect.top + folderRect.height / 2, size);
-}
-
-function makeProjectedPreviewRect(folderRect, slotIndex, columnCount = 3, rowCount = 3) {
-  if (!folderRect) return null;
-  const safeIndex = Math.max(0, Number(slotIndex) || 0);
-  const columns = Math.max(1, Math.floor(Number(columnCount) || 3));
-  const rows = Math.max(1, Math.floor(Number(rowCount) || 3));
-  const col = Math.min(columns - 1, safeIndex % columns);
-  const row = Math.min(rows - 1, Math.floor(safeIndex / columns));
-  const cellWidth = folderRect.width / columns;
-  const cellHeight = folderRect.height / rows;
-  const size = Math.max(3, Math.min(cellWidth, cellHeight) * 0.62);
-  const centerX = folderRect.left + cellWidth * col + cellWidth / 2;
-  const centerY = folderRect.top + cellHeight * row + cellHeight / 2;
-  return {
-    left: centerX - size / 2,
-    top: centerY - size / 2,
-    width: size,
-    height: size,
-  };
 }
 
 function getFrameRadius(rect, fallback = 18) {
@@ -412,35 +380,28 @@ export class FolderOverlayLayer extends Container {
     const previewSlots = getFolderPreviewSlots(state.renderedFolder, state.folderPageSize);
     if (!isClosing && state.renderedFolder?.id && folderRect && (!this.stableFolderCloseTarget ||
       this.stableFolderCloseTarget.folderId !== state.renderedFolder.id)) {
-      const previewChildRects = new Map();
-      previewSlots.forEach((item, previewSlotIndex) => {
-        if (!item?.id) return;
-        const childRect = getFolderPreviewChildBounds(state.renderedFolder.id, item.id, previewSlotIndex);
-        if (childRect) previewChildRects.set(makePreviewChildKey(item.id, previewSlotIndex), cloneRect(childRect));
-      });
-      this.stableFolderCloseTarget = {
+      this.stableFolderCloseTarget = makeStableFolderCloseTarget({
         folderId: state.renderedFolder.id,
-        iconRect: cloneRect(folderRect),
-        previewChildRects,
-        thumbRect: cloneRect(folderThumbRect),
-      };
+        folderRect,
+        folderThumbRect,
+        getPreviewChildRect: (item, previewSlotIndex) =>
+          getFolderPreviewChildBounds(state.renderedFolder.id, item.id, previewSlotIndex),
+        previewSlots,
+      });
     }
-    const closeIconRect = isClosing && this.stableFolderCloseTarget?.folderId === state.renderedFolder.id
-      ? this.stableFolderCloseTarget.iconRect || folderRect
-      : folderRect;
-    const closeThumbRect = isClosing && this.stableFolderCloseTarget?.folderId === state.renderedFolder.id
-      ? this.stableFolderCloseTarget.thumbRect || closeIconRect
-      : folderThumbRect;
+    const { closeThumbRect } = getStableFolderCloseRects({
+      folderId: state.renderedFolder.id,
+      folderRect,
+      folderThumbRect,
+      isClosing,
+      stableFolderCloseTarget: this.stableFolderCloseTarget,
+    });
 
     this.bindFakeRefs(state, geometry);
     const seen = new Set();
     const openingGhostTargets = [];
     const closingGhostTargets = [];
-    const previewSlotById = new Map(
-      previewSlots
-        .map((item, previewSlotIndex) => (item?.id ? [item.id, previewSlotIndex] : null))
-        .filter(Boolean)
-    );
+    const previewSlotById = makePreviewSlotById(previewSlots);
     (state.folderPages || []).forEach((page, pageIndex) => {
       const visibleItems = state.getVisibleFolderPage(page);
       const renderMode = state.getFolderPageRenderMode?.(pageIndex) || "interactive";
@@ -515,56 +476,51 @@ export class FolderOverlayLayer extends Container {
           );
         }
         if (isInteractivePage && !isActiveDraggedItem && !isReleaseGhostItem && isNewFolder && !isClosing && pageIndex === state.folderPageIndex) {
-          const previewSlotIndex = previewSlotById.get(item.id);
-          const isThumbnailChild = previewSlotIndex != null;
-          const sourceRect = isThumbnailChild
-            ? getFolderPreviewChildBounds(state.renderedFolder.id, item.id, previewSlotIndex) ||
-            makeProjectedPreviewRect(folderRect, previewSlotIndex, 3, 3)
-            : getFolderPreviewChildBounds(state.renderedFolder.id, item.id, index) ||
-            makeProjectedPreviewRect(folderRect, index, cols, rows);
           const targetCenterX = geometry.panel.left + x + targetTrackX;
           const targetCenterY = geometry.panel.top + y + getIconVisualOffsetY(state.isTextlessMode);
-          openingGhostTargets.push({
-            columnCount: cols,
+          openingGhostTargets.push(makeOpeningGhostTarget({
             cellHeight: slot.height,
             cellWidth: slot.width,
+            cols,
             iconSize,
             index,
-            isThumbnailChild,
             item,
-            previewSlotIndex,
             controllerGhostKey: findControllerGhostKey(state.folderOpenIconGhosts, item.id, index),
-            sourceRect,
-            targetRect: makeIconRect(targetCenterX, targetCenterY, iconSize),
-          });
+            folderRect,
+            getPreviewChildRect: (targetItem, slotIndex) =>
+              getFolderPreviewChildBounds(state.renderedFolder.id, targetItem.id, slotIndex),
+            previewSlotById,
+            rows,
+            targetCenterX,
+            targetCenterY,
+          }));
         }
         if (isInteractivePage && state.isFolderClosing && pageIndex === state.folderPageIndex) {
-          const previewSlotIndex = previewSlotById.get(item.id);
-          const isThumbnailChild = previewSlotIndex != null;
-          const stablePreviewChildRect = isThumbnailChild && this.stableFolderCloseTarget?.folderId === state.renderedFolder.id
-            ? this.stableFolderCloseTarget.previewChildRects?.get(makePreviewChildKey(item.id, previewSlotIndex))
-            : null;
-          closingGhostTargets.push({
-            columnCount: cols,
+          closingGhostTargets.push(makeClosingGhostTarget({
             cellHeight: slot.height,
             cellWidth: slot.width,
+            closeThumbRect,
+            cols,
+            folderId: state.renderedFolder.id,
+            iconBounds,
             iconSize,
             index,
-            isThumbnailChild,
             item,
-            previewSlotIndex,
             controllerGhostKey: findControllerGhostKey(state.folderCloseIconGhosts, item.id, index),
-            sourceRect: iconBounds,
-            targetRect: isThumbnailChild
-              ? stablePreviewChildRect || makeProjectedPreviewRect(closeThumbRect, previewSlotIndex, 3, 3)
-              : makeFolderCenterCollapseRect(closeThumbRect),
-          });
+            previewSlotById,
+            stableFolderCloseTarget: this.stableFolderCloseTarget,
+          }));
         }
       });
     });
 
     const closingPreviewSwapTargets = state.isFolderClosing && state.folderPageIndex > 0
-      ? this.makeClosingPreviewSwapTargets(state, previewSlots, closeThumbRect)
+      ? makeClosingPreviewSwapTargets({
+        folderId: state.renderedFolder.id,
+        folderRect: closeThumbRect,
+        previewSlots,
+        stableFolderCloseTarget: this.stableFolderCloseTarget,
+      })
       : [];
     if (isNewFolder && !isClosing) this.startOpeningGhosts(state, openingGhostTargets, folderRect, geometry.panel);
     if (state.isFolderClosing && this.closingGhostFolderId !== state.renderedFolder.id) {
@@ -592,18 +548,6 @@ export class FolderOverlayLayer extends Container {
       else this.notifyTitleFrame(geometry.panel);
     }
     return geometry;
-  }
-
-  makeClosingPreviewSwapTargets(state, previewSlots, folderRect) {
-    if (!state.renderedFolder?.id || !folderRect) return [];
-    return (previewSlots || []).slice(0, 9).map((item, previewSlotIndex) => {
-      if (!item?.id) return null;
-      const stablePreviewChildRect = this.stableFolderCloseTarget?.folderId === state.renderedFolder.id
-        ? this.stableFolderCloseTarget.previewChildRects?.get(makePreviewChildKey(item.id, previewSlotIndex))
-        : null;
-      const targetRect = stablePreviewChildRect || makeProjectedPreviewRect(folderRect, previewSlotIndex, 3, 3);
-      return targetRect ? { item, previewSlotIndex, targetRect } : null;
-    }).filter(Boolean);
   }
 
   hasActiveIconGhosts() {

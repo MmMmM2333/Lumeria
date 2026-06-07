@@ -31,6 +31,7 @@ import { runIconLabelLayoutTests } from "../rendering/pixi/nodes/iconLabelLayout
 import { runFolderThumbPreviewMotionTests } from "../rendering/pixi/nodes/folderThumbPreviewMotionTests.js";
 import { runDragVisibilityTests } from "../rendering/pixi/scene/dragVisibilityTests.js";
 import { runFolderOverlayLayerTests } from "../rendering/pixi/scene/FolderOverlayLayerTests.js";
+import { runFolderOverlayTargetsTests } from "../rendering/pixi/scene/folderOverlayTargetsTests.js";
 import { runIconSceneHelpersTests } from "../rendering/pixi/scene/iconSceneHelpersTests.js";
 
 const state = {
@@ -118,6 +119,7 @@ runIconLabelLayoutTests();
 runFolderThumbPreviewMotionTests();
 runDragVisibilityTests();
 runFolderOverlayLayerTests();
+runFolderOverlayTargetsTests();
 runIconSceneHelpersTests();
 await runIconTextureCacheTests();
 

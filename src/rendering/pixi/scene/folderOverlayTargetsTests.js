@@ -1,0 +1,116 @@
+import {
+  getStableFolderCloseRects,
+  makeClosingGhostTarget,
+  makeClosingPreviewSwapTargets,
+  makeOpeningGhostTarget,
+  makePreviewChildKey,
+  makePreviewSlotById,
+  makeProjectedPreviewRect,
+  makeStableFolderCloseTarget,
+} from "./folderOverlayTargets.js";
+
+export function runFolderOverlayTargetsTests() {
+  const assert = (condition, message) => {
+    if (!condition) throw new Error(`[Pixi folder overlay targets test failed] ${message}`);
+  };
+  const nearlyEqual = (a, b) => Math.abs(a - b) < 0.0001;
+
+  const folderRect = { height: 90, left: 10, top: 20, width: 90 };
+  const folderThumbRect = { height: 72, left: 14, top: 24, width: 72 };
+  const childRect = { height: 14, left: 30, top: 44, width: 14 };
+  const previewSlots = [{ id: "app-a" }, { id: "app-b" }, { id: "app-c" }];
+  const previewSlotById = makePreviewSlotById(previewSlots);
+
+  assert(previewSlotById.get("app-b") === 1, "preview slot lookup should map item ids to thumbnail slots");
+
+  const projected = makeProjectedPreviewRect(folderRect, 4, 3, 3);
+  assert(nearlyEqual(projected.left + projected.width / 2, 55), "projected rect should place slot centers by grid column");
+  assert(nearlyEqual(projected.top + projected.height / 2, 65), "projected rect should place slot centers by grid row");
+
+  const stableTarget = makeStableFolderCloseTarget({
+    folderId: "folder-1",
+    folderRect,
+    folderThumbRect,
+    getPreviewChildRect: (item, slotIndex) => item.id === "app-b" && slotIndex === 1 ? childRect : null,
+    previewSlots,
+  });
+  assert(stableTarget.folderId === "folder-1", "stable close target should keep the folder id");
+  assert(stableTarget.iconRect !== folderRect && stableTarget.iconRect.left === folderRect.left, "stable icon rect should be cloned");
+  assert(
+    stableTarget.previewChildRects.get(makePreviewChildKey("app-b", 1)).left === childRect.left,
+    "stable close target should cache available preview child bounds"
+  );
+
+  const closeRects = getStableFolderCloseRects({
+    folderId: "folder-1",
+    folderRect: { height: 10, left: 0, top: 0, width: 10 },
+    folderThumbRect: { height: 10, left: 0, top: 0, width: 10 },
+    isClosing: true,
+    stableFolderCloseTarget: stableTarget,
+  });
+  assert(closeRects.closeThumbRect.left === folderThumbRect.left, "closing should prefer the stable thumbnail bounds");
+
+  const openingTarget = makeOpeningGhostTarget({
+    cellHeight: 80,
+    cellWidth: 100,
+    cols: 5,
+    controllerGhostKey: "open-ghost",
+    folderRect,
+    getPreviewChildRect: (item, slotIndex) => item.id === "app-b" && slotIndex === 1 ? childRect : null,
+    iconSize: 56,
+    index: 5,
+    item: { id: "app-b" },
+    previewSlotById,
+    rows: 2,
+    targetCenterX: 200,
+    targetCenterY: 300,
+  });
+  assert(openingTarget.isThumbnailChild && openingTarget.previewSlotIndex === 1, "opening target should identify thumbnail children");
+  assert(openingTarget.sourceRect === childRect, "opening target should use registered preview bounds first");
+  assert(openingTarget.targetRect.left === 172 && openingTarget.targetRect.top === 272, "opening target should build a centered icon target");
+
+  const closingTarget = makeClosingGhostTarget({
+    cellHeight: 80,
+    cellWidth: 100,
+    closeThumbRect: folderThumbRect,
+    cols: 5,
+    controllerGhostKey: "close-ghost",
+    folderId: "folder-1",
+    iconBounds: { height: 56, left: 150, top: 160, width: 56 },
+    iconSize: 56,
+    index: 5,
+    item: { id: "app-b" },
+    previewSlotById,
+    stableFolderCloseTarget: stableTarget,
+  });
+  assert(closingTarget.isThumbnailChild, "closing target should identify thumbnail children");
+  assert(closingTarget.targetRect.left === childRect.left, "closing target should use stable preview bounds first");
+
+  const fallbackClosingTarget = makeClosingGhostTarget({
+    cellHeight: 80,
+    cellWidth: 100,
+    closeThumbRect: folderThumbRect,
+    cols: 5,
+    folderId: "folder-1",
+    iconBounds: { height: 56, left: 150, top: 160, width: 56 },
+    iconSize: 56,
+    index: 6,
+    item: { id: "app-z" },
+    previewSlotById,
+    stableFolderCloseTarget: stableTarget,
+  });
+  assert(!fallbackClosingTarget.isThumbnailChild, "non-preview children should collapse to the folder center");
+  assert(
+    nearlyEqual(fallbackClosingTarget.targetRect.left + fallbackClosingTarget.targetRect.width / 2, 50),
+    "non-preview closing targets should collapse to the thumbnail center"
+  );
+
+  const swapTargets = makeClosingPreviewSwapTargets({
+    folderId: "folder-1",
+    folderRect: folderThumbRect,
+    previewSlots,
+    stableFolderCloseTarget: stableTarget,
+  });
+  assert(swapTargets.length === 3, "preview swap should emit one target per visible preview slot");
+  assert(swapTargets[1].targetRect.left === childRect.left, "preview swap should reuse stable preview child bounds");
+}
