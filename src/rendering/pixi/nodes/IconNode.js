@@ -17,7 +17,11 @@ import {
 } from "./folderThumbDrawing.js";
 import { getFolderThumbMetrics } from "./folderThumbMetrics.js";
 import { getFolderPreviewMotionPlan } from "./folderThumbPreviewMotion.js";
-import { estimateLabelWidth, fitSingleLineName, fitWrappedName } from "./iconLabelLayout.js";
+import { fitSingleLineName, fitWrappedName } from "./iconLabelLayout.js";
+import {
+  drawSelectionFrame,
+  getSelectionFrameRect as getSelectionFrameRectForIcon,
+} from "./iconSelectionFrame.js";
 
 function makeLabelText(fontSize = 13) {
   return new Text({
@@ -54,9 +58,6 @@ function setCentered(displayObject, x, y) {
 }
 
 const EDIT_BUTTON_HIT_PADDING = 12;
-const SELECTION_FRAME_MIN_PADDING_X = 12;
-const SELECTION_FRAME_PADDING_TOP = 10;
-const SELECTION_FRAME_PADDING_BOTTOM = 8;
 const PRESSED_VISUAL_ALPHA = 0.58;
 const FOLDER_HOVER_PADDING_RATIO = 0.16;
 const FOLDER_HOVER_PADDING_MIN = 6;
@@ -375,53 +376,23 @@ export class IconNode extends Container {
   }
 
   getSelectionFrameRect() {
-    const visualOffsetY = this.getVisualOffsetY();
-    let left = -this.iconSize / 2;
-    let right = this.iconSize / 2;
-    let top = visualOffsetY - this.iconSize / 2;
-    let bottom = visualOffsetY + this.iconSize / 2;
-
-    if (this.labelText.visible) {
-      const fallbackWidth = Number(this.labelText.style?.wordWrapWidth) || 160;
-      const lineHeight = Number(this.labelText.style?.lineHeight) || 16;
-      const fontSize = Number(this.labelText.style?.fontSize) || 13;
-      const textLines = String(this.labelText.text || "").split("\n");
-      const rawEstimatedWidth = Math.max(...textLines.map((line) => estimateLabelWidth(line, fontSize)));
-      const estimatedWidth = Math.min(fallbackWidth, rawEstimatedWidth);
-      const estimatedLines = Math.max(1, textLines.length);
-      const labelWidth = Math.max(0, Math.min(fallbackWidth, Number(this.labelText.width) || estimatedWidth));
-      const labelHeight = Math.max(0, Number(this.labelText.height) || estimatedLines * lineHeight);
-      left = Math.min(left, -labelWidth / 2);
-      right = Math.max(right, labelWidth / 2);
-      top = Math.min(top, this.labelText.y);
-      bottom = Math.max(bottom, this.labelText.y + labelHeight);
-    }
-
-    const minWidth = this.iconSize + SELECTION_FRAME_MIN_PADDING_X * 2;
-    const contentWidth = right - left;
-    const height = bottom - top + SELECTION_FRAME_PADDING_TOP + SELECTION_FRAME_PADDING_BOTTOM;
-    const width = Math.max(height, minWidth, contentWidth + SELECTION_FRAME_MIN_PADDING_X * 2);
-    return {
-      height,
-      left: -width / 2,
-      top: top - SELECTION_FRAME_PADDING_TOP,
-      width,
-    };
+    return getSelectionFrameRectForIcon({
+      iconSize: this.iconSize,
+      labelText: this.labelText,
+      visualOffsetY: this.getVisualOffsetY(),
+    });
   }
 
   renderFrame(state) {
     const rect = this.getSelectionFrameRect();
-    const radius = Math.min(28, Math.max(18, this.iconSize * 0.32));
     const isFolderDropHover = Boolean(this.isFolder && state.folderHoverState?.targetId === this.item?.id);
     const isAppFolderCreateHover = Boolean(!this.isFolder && state.folderHoverState?.targetId === this.item?.id && state.folderHoverState?.targetType === "app");
-    this.selectionFrame.clear();
-    if (state.selected || (state.dropTarget && !isAppFolderCreateHover && !isFolderDropHover)) {
-      const isDropTarget = Boolean(state.dropTarget && !isAppFolderCreateHover && !isFolderDropHover);
-      this.selectionFrame
-        .roundRect(rect.left, rect.top, rect.width, rect.height, radius)
-        .fill({ color: isDropTarget ? 0xffffff : 0x000000, alpha: isDropTarget ? 0.18 : 0.3 })
-        .stroke({ color: 0xffffff, alpha: isDropTarget ? 0.9 : 0.12, width: isDropTarget ? 2 : 1 });
-    }
+    drawSelectionFrame(this.selectionFrame, rect, this.iconSize, {
+      dropTarget: state.dropTarget,
+      isAppFolderCreateHover,
+      isFolderDropHover,
+      selected: state.selected,
+    });
   }
 
   hideFolderChildren() {

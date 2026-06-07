@@ -30,6 +30,7 @@ import { runIconTextureCacheTests } from "../rendering/pixi/assets/iconTextureCa
 import { runPixiHostMetricsTests } from "../rendering/pixi/pixiHostMetricsTests.js";
 import { runIconControlDrawingTests } from "../rendering/pixi/nodes/iconControlDrawingTests.js";
 import { runIconLabelLayoutTests } from "../rendering/pixi/nodes/iconLabelLayoutTests.js";
+import { runIconSelectionFrameTests } from "../rendering/pixi/nodes/iconSelectionFrameTests.js";
 import { runFolderThumbDrawingTests } from "../rendering/pixi/nodes/folderThumbDrawingTests.js";
 import { runFolderThumbPreviewMotionTests } from "../rendering/pixi/nodes/folderThumbPreviewMotionTests.js";
 import { runDragVisibilityTests } from "../rendering/pixi/scene/dragVisibilityTests.js";
@@ -123,6 +124,7 @@ runIconBoundsRegistryTests();
 runPixiHostMetricsTests();
 runIconControlDrawingTests();
 runIconLabelLayoutTests();
+runIconSelectionFrameTests();
 runFolderThumbDrawingTests();
 runFolderThumbPreviewMotionTests();
 runDragVisibilityTests();
