@@ -31,10 +31,7 @@ import {
   makeOpeningGhostMotion,
 } from "./folderIconGhostMotion.js";
 import { makeClosingPreviewSwapPlan } from "./folderPreviewSwapMotion.js";
-import {
-  getIconLabelTopFromVisualRect,
-  getIconVisualOffsetY,
-} from "../geometry/iconMetrics.js";
+import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { makeStageLocalRect, makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import {
   clearLaunchIconBounds,
@@ -49,6 +46,7 @@ import {
   isReleaseGhostLaunchItem,
 } from "./dragVisibility.js";
 import { getClosingPreviewTiming, getFolderPageMaskRect, resolveOpeningInterruptionFrame } from "./folderOverlayGeometry.js";
+import { cloneFrameSnapshot, makeOpeningInterruptionFrame } from "./folderOpeningInterruptionFrame.js";
 import {
   findFolderGhostKey,
   getStableFolderCloseRects,
@@ -65,7 +63,6 @@ import { getFolderPreviewSlots } from "../../../domain/launchpadLayout.js";
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
 
 const GHOST_REVEAL_FALLBACK_PADDING_MS = 140;
-const CLOSING_FRAME_PADDING = 48;
 const CLOSING_FRAME_TAIL_DURATION = 0.04;
 const CLOSING_GHOST_MAX_DELAY = 0.06;
 const CLOSING_EXTRA_GHOST_ALPHA_DURATION = 0.12;
@@ -85,71 +82,6 @@ function makeClosingPreviewSwapKey(folderId, pageIndex) {
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
-}
-
-function expandBounds(bounds, rect) {
-  if (!rect) return bounds;
-  const left = Math.min(bounds?.left ?? Infinity, rect.left);
-  const top = Math.min(bounds?.top ?? Infinity, rect.top);
-  const right = Math.max(bounds?.right ?? -Infinity, rect.left + rect.width);
-  const bottom = Math.max(bounds?.bottom ?? -Infinity, rect.top + rect.height);
-  return { bottom, left, right, top };
-}
-
-function cloneFrameSnapshot(frame) {
-  if (!frame) return null;
-  return {
-    fillAlpha: frame.fillAlpha,
-    fillColor: frame.fillColor,
-    height: frame.height,
-    left: frame.left,
-    radius: frame.radius,
-    strokeAlpha: frame.strokeAlpha,
-    strokeColor: frame.strokeColor,
-    strokeWidth: frame.strokeWidth,
-    top: frame.top,
-    width: frame.width,
-  };
-}
-
-function makeFrameSnapshotFromBounds(bounds, padding, styleFrame) {
-  if (!bounds) return null;
-  const rect = {
-    height: bounds.bottom - bounds.top + padding * 2,
-    left: bounds.left - padding,
-    top: bounds.top - padding,
-    width: bounds.right - bounds.left + padding * 2,
-  };
-  if (rect.width <= 0 || rect.height <= 0) return null;
-  return {
-    ...rect,
-    fillAlpha: styleFrame?.fillAlpha,
-    fillColor: styleFrame?.fillColor,
-    radius: getFrameRadius(rect, styleFrame?.radius ?? 48),
-    strokeAlpha: styleFrame?.strokeAlpha,
-    strokeColor: styleFrame?.strokeColor,
-    strokeWidth: styleFrame?.strokeWidth,
-  };
-}
-
-function makeOpeningInterruptionFrame(targets, stageRect, styleFrame) {
-  let bounds = null;
-  for (const target of targets || []) {
-    const iconRect = makeStageLocalRect(target.sourceRect, stageRect);
-    if (!iconRect) continue;
-    bounds = expandBounds(bounds, iconRect);
-    if (target.sourceLabelAlpha == null || target.sourceLabelAlpha <= 0) continue;
-    const scale = target.sourceScale ?? 1;
-    const labelWidth = Math.max(72, Math.min(160, target.cellWidth || 120)) * scale;
-    const labelTop = getIconLabelTopFromVisualRect(iconRect, scale);
-    bounds = expandBounds(bounds, {
-      height: 24 * scale,
-      left: iconRect.left + iconRect.width / 2 - labelWidth / 2,
-      top: labelTop,
-      width: labelWidth,
-    });
-  }
-  return makeFrameSnapshotFromBounds(bounds, CLOSING_FRAME_PADDING, styleFrame);
 }
 
 function killTweensDeep(node) {

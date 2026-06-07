@@ -39,6 +39,7 @@ import { runFolderThumbPreviewMotionTests } from "../rendering/pixi/nodes/folder
 import { runDragVisibilityTests } from "../rendering/pixi/scene/dragVisibilityTests.js";
 import { runFolderFrameGhostTests } from "../rendering/pixi/scene/folderFrameGhostTests.js";
 import { runFolderIconGhostMotionTests } from "../rendering/pixi/scene/folderIconGhostMotionTests.js";
+import { runFolderOpeningInterruptionFrameTests } from "../rendering/pixi/scene/folderOpeningInterruptionFrameTests.js";
 import { runFolderOverlayLayerTests } from "../rendering/pixi/scene/FolderOverlayLayerTests.js";
 import { runFolderOverlayTargetsTests } from "../rendering/pixi/scene/folderOverlayTargetsTests.js";
 import { runFolderPreviewSwapMotionTests } from "../rendering/pixi/scene/folderPreviewSwapMotionTests.js";
@@ -137,6 +138,7 @@ runFolderThumbPreviewMotionTests();
 runDragVisibilityTests();
 runFolderFrameGhostTests();
 runFolderIconGhostMotionTests();
+runFolderOpeningInterruptionFrameTests();
 runFolderOverlayLayerTests();
 runFolderOverlayTargetsTests();
 runFolderPreviewSwapMotionTests();
