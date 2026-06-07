@@ -13,7 +13,6 @@ import { nextTick, ref, shallowRef } from "vue";
 
 async function withMockPointerEnvironment(run) {
   const originalWindow = globalThis.window;
-  const originalDocument = globalThis.document;
   const listeners = new Map();
   const timers = new Map();
   let nextTimerId = 1;
@@ -37,17 +36,12 @@ async function withMockPointerEnvironment(run) {
       return id;
     },
   };
-  globalThis.document = {
-    elementsFromPoint: () => [],
-  };
 
   try {
     await run({ listeners, timers });
   } finally {
     if (originalWindow === undefined) delete globalThis.window;
     else globalThis.window = originalWindow;
-    if (originalDocument === undefined) delete globalThis.document;
-    else globalThis.document = originalDocument;
   }
 }
 
@@ -253,7 +247,6 @@ export async function runLaunchpadDragTests() {
     const { app, drag, isLayoutProjectionActive } = createDragHarness();
     const target = {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
-      querySelector: () => null,
     };
 
     drag.beginDrag(makePointerDownEvent(41, target), app, { type: "page", pageIndex: 0, index: 0 });
@@ -281,7 +274,6 @@ export async function runLaunchpadDragTests() {
     const { app, drag } = createDragHarness();
     const target = {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
-      querySelector: () => null,
     };
 
     drag.beginDrag(makePointerDownEvent(91, target), app, { type: "page", pageIndex: 0, index: 0 });
@@ -309,7 +301,6 @@ export async function runLaunchpadDragTests() {
     pages.value = [[app, { id: "app-b", type: "app", name: "App B" }]];
     const target = {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
-      querySelector: () => null,
     };
 
     drag.beginDrag(makePointerDownEvent(93, target), app, { type: "page", pageIndex: 0, index: 0 });
@@ -333,7 +324,6 @@ export async function runLaunchpadDragTests() {
     openFolderId.value = "folder-1";
     const target = {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
-      querySelector: () => null,
     };
 
     drag.beginDrag(makePointerDownEvent(92, target), app, { type: "folder", folderId: "folder-1", pageIndex: 0, index: 0 });
@@ -351,7 +341,6 @@ export async function runLaunchpadDragTests() {
     const { app, drag, folderSession, pages } = createDragHarness();
     const target = {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
-      querySelector: () => null,
     };
     const targetApp = { id: "app-b", type: "app", name: "App B" };
     pages.value = [
@@ -384,7 +373,6 @@ export async function runLaunchpadDragTests() {
     });
     const target = {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
-      querySelector: () => null,
     };
 
     drag.beginDrag(makePointerDownEvent(61, target), app, { type: "page", pageIndex: 0, index: 0 });
@@ -418,7 +406,6 @@ export async function runLaunchpadDragTests() {
     openFolderId.value = "folder-1";
     const target = {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
-      querySelector: () => null,
     };
 
     drag.beginDrag(makePointerDownEvent(71, target), app, { type: "folder", folderId: "folder-1", pageIndex: 0, index: 0 });
@@ -457,7 +444,6 @@ export async function runLaunchpadDragTests() {
     pages.value = [[app, folder]];
     const target = {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
-      querySelector: () => null,
     };
 
     drag.beginDrag(makePointerDownEvent(81, target), app, { type: "page", pageIndex: 0, index: 0 });
@@ -515,7 +501,6 @@ export async function runLaunchpadDragTests() {
     pages.value = [[app, folder]];
     const target = {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
-      querySelector: () => null,
     };
 
     drag.beginDrag(makePointerDownEvent(82, target), app, { type: "page", pageIndex: 0, index: 0 });
@@ -564,7 +549,6 @@ export async function runLaunchpadDragTests() {
     pages.value = [[app, folder]];
     const target = {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
-      querySelector: () => null,
     };
 
     drag.beginDrag(makePointerDownEvent(83, target), app, { type: "page", pageIndex: 0, index: 0 });

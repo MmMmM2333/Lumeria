@@ -102,7 +102,7 @@ export function runLaunchpadSurfaceInteractionsTests() {
     closestMatch: true,
   }));
   assert(ignoredTarget.calls.closeDesktop.length === 0, "desktop pointer down inside ignored UI should be ignored");
-  assert(capturedSelector.includes(".icon-hit-target") && capturedSelector.includes("button"), "ignored selector should include interactive UI targets");
+  assert(capturedSelector.includes(".page-dot") && capturedSelector.includes("button"), "ignored selector should include interactive UI targets");
 
   const folderOverlay = createSurfaceInteractions();
   folderOverlay.interactions.handleFolderOverlayPointerDown();

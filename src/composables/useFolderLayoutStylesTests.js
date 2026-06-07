@@ -18,7 +18,6 @@ function createFolderLayoutStyles(overrides = {}) {
   const folderIconSize = ref(overrides.folderIconSize ?? 88);
   const iconSize = ref(overrides.iconSize ?? 72);
   const folderViewportHeight = ref(overrides.folderViewportHeight ?? 320);
-  const isFolderAppLaunchClosing = ref(false);
 
   return useFolderLayoutStyles({
     customFolderIconSizeMode: "custom",
@@ -30,7 +29,6 @@ function createFolderLayoutStyles(overrides = {}) {
     folderViewportHeight,
     getVisibleFolderPage: (page) => (page || []).slice(0, folderRows.value * folderCols.value),
     iconSize,
-    isFolderAppLaunchClosing,
   });
 }
 
@@ -100,7 +98,6 @@ export function runFolderLayoutStylesTests() {
     });
     const initiallyMeasuredIconSize = Number.parseFloat(initiallyMeasured.folderPanelStyle.value["--folder-icon-size"]);
     assert(initiallyMeasuredIconSize < 72, "unmeasured constrained folders should use the viewport estimate instead of flashing at full size");
-    assert(initiallyMeasured.folderPanelStyle.value["--folder-icon-name-line-clamp"] === 1, "unmeasured constrained folders should keep compressed label clamping");
   } finally {
     if (originalWindow === undefined) delete globalThis.window;
     else globalThis.window = originalWindow;

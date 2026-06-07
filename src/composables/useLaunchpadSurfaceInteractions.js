@@ -1,5 +1,4 @@
 const DESKTOP_SURFACE_IGNORED_SELECTOR = [
-  ".icon-hit-target",
   ".page-dot",
   ".search-pill",
   ".settings-overlay",
@@ -7,7 +6,6 @@ const DESKTOP_SURFACE_IGNORED_SELECTOR = [
   ".app-edit-overlay",
   ".icon-chooser-overlay",
   ".warning-dialog-overlay",
-  ".folder-overlay",
   ".icon-context-menu-layer",
   "button",
   "input",

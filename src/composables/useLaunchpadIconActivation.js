@@ -1,31 +1,10 @@
 import { clamp } from "../domain/launchpadLayout.js";
 import { getLaunchIconBounds } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 
-export function escapeLaunchAttributeValue(value) {
-  return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
-
-export function makeLaunchIconSelector(launchSource) {
-  if (!launchSource?.id) return null;
-  const id = escapeLaunchAttributeValue(launchSource.id);
-  const area = escapeLaunchAttributeValue(launchSource.area);
-  const page = Number.isFinite(Number(launchSource.pageIndex)) ? Number(launchSource.pageIndex) : 0;
-  let selector = `.icon-hit-target[data-launch-item-id="${id}"][data-launch-area="${area}"][data-launch-page-index="${page}"]`;
-  if (launchSource.area === "folder" && launchSource.folderId) {
-    selector += `[data-launch-folder-id="${escapeLaunchAttributeValue(launchSource.folderId)}"]`;
-  }
-  return `${selector} .icon-box`;
-}
-
-export function getLaunchIconRect(launchSource, sourceDocument = globalThis.document) {
+export function getLaunchIconRect(launchSource) {
   const pixiRect = getLaunchIconBounds(launchSource);
   if (pixiRect) return pixiRect;
-  if (!sourceDocument) return null;
-  const selector = makeLaunchIconSelector(launchSource);
-  const node = selector ? sourceDocument.querySelector(selector) : null;
-  const rect = node?.getBoundingClientRect?.();
-  if (!rect || rect.width <= 0 || rect.height <= 0) return null;
-  return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+  return null;
 }
 
 export function useLaunchpadIconActivation(options) {
@@ -125,7 +104,6 @@ export function useLaunchpadIconActivation(options) {
   return {
     getCurrentIconScope,
     getLaunchIconRect,
-    makeLaunchIconSelector,
     normalizeLaunchSource,
     openSelectedIcon,
   };

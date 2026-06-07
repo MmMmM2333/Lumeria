@@ -83,9 +83,9 @@ export async function runPageRenderRangeTests() {
     const { pageIndex, range } = createPageRenderRange({ pageIndex: 0 });
     range.commitPageIndex(1);
     assert(pageIndex.value === 1, "adjacent desktop page commits should be immediate");
-    assert(range.shouldRenderActivePage(0), "neighbor pages should render after adjacent commits");
-    assert(range.shouldRenderActivePage(2), "next neighbor pages should render after adjacent commits");
-    assert(!range.shouldRenderStaticActivePage(3), "adjacent commits should not create static transient pages");
+    assert(range.getDesktopPageRenderMode(0) === "interactive", "neighbor pages should render after adjacent commits");
+    assert(range.getDesktopPageRenderMode(2) === "interactive", "next neighbor pages should render after adjacent commits");
+    assert(range.getDesktopPageRenderMode(3) === "empty", "adjacent commits should not create static transient pages");
     assert(range.getDesktopPageRenderMode(1) === "interactive", "current desktop page should use interactive rendering");
   });
 
@@ -93,19 +93,19 @@ export async function runPageRenderRangeTests() {
     const { pageIndex, range } = createPageRenderRange({ pageIndex: 0 });
     range.commitPageIndex(5);
     assert(pageIndex.value === 0, "long desktop jumps should wait for the render bridge before committing");
-    assert(range.shouldRenderActivePage(0), "long jumps should keep the source page rendered");
-    assert(range.shouldRenderActivePage(5), "long jumps should render the target page");
+    assert(range.getDesktopPageRenderMode(0) === "interactive", "long jumps should keep the source page rendered");
+    assert(range.getDesktopPageRenderMode(5) === "interactive", "long jumps should render the target page");
     assert(range.getDesktopPageRenderMode(1) === "static-real", "long jumps should statically render the source-side middle page");
-    assert(range.shouldRenderStaticActivePage(2), "long jumps should statically render bridged pages");
-    assert(range.shouldRenderStaticActivePage(3), "long jumps should statically render all bridged middle pages");
+    assert(range.getDesktopPageRenderMode(2) === "static-real", "long jumps should statically render bridged pages");
+    assert(range.getDesktopPageRenderMode(3) === "static-real", "long jumps should statically render all bridged middle pages");
     assert(range.getDesktopPageRenderMode(4) === "static-real", "long jumps should statically render the target-side middle page");
 
     await flushPageJump();
     assert(pageIndex.value === 5, "long desktop jumps should commit after the render bridge is ready");
     assert(range.getDesktopPageRenderMode(4) === "static-real", "bridged target neighbors should remain static until release");
     flushTimeouts();
-    assert(!range.shouldRenderStaticActivePage(2), "release timers should clear bridged static pages");
-    assert(range.shouldRenderActivePage(4), "target neighbors should become interactive after bridged pages release");
+    assert(range.getDesktopPageRenderMode(2) === "empty", "release timers should clear bridged static pages");
+    assert(range.getDesktopPageRenderMode(4) === "interactive", "target neighbors should become interactive after bridged pages release");
   });
 
   await withFakeWindow(async () => {
@@ -113,7 +113,7 @@ export async function runPageRenderRangeTests() {
     const { pageIndex, range } = createPageRenderRange({ dragMeta, pageIndex: 0 });
     range.commitPageIndex(5);
     assert(pageIndex.value === 5, "drag-active desktop jumps should commit immediately");
-    assert(!range.shouldRenderStaticActivePage(2), "drag-active jumps should not create static transient pages");
+    assert(range.getDesktopPageRenderMode(2) === "empty", "drag-active jumps should not create static transient pages");
   });
 
   await withFakeWindow(async ({ flushTimeouts }) => {
@@ -123,15 +123,15 @@ export async function runPageRenderRangeTests() {
     });
     range.commitFolderPageIndex(4, { allowCreate: true });
     assert(folderPageIndex.value === 0, "long folder jumps should wait for the render bridge before committing");
-    assert(range.shouldRenderFolderPage(0), "folder jumps should keep the source page rendered");
-    assert(range.shouldRenderFolderPage(4), "folder jumps should render the allowed create target page");
+    assert(range.getFolderPageRenderMode(0) === "interactive", "folder jumps should keep the source page rendered");
+    assert(range.getFolderPageRenderMode(4) === "interactive", "folder jumps should render the allowed create target page");
     assert(range.getFolderPageRenderMode(1) === "static-real", "folder jumps should statically render bridged middle pages");
-    assert(range.shouldRenderStaticFolderPage(2), "folder jumps should statically render bridged pages");
+    assert(range.getFolderPageRenderMode(2) === "static-real", "folder jumps should statically render bridged pages");
 
     await flushPageJump();
     assert(folderPageIndex.value === 4, "folder jumps should allow committing to the create page");
     flushTimeouts();
-    assert(!range.shouldRenderStaticFolderPage(1), "folder release timers should clear bridged static pages");
+    assert(range.getFolderPageRenderMode(1) === "empty", "folder release timers should clear bridged static pages");
   });
 
   await withFakeWindow(async () => {

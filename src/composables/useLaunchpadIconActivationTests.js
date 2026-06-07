@@ -1,10 +1,12 @@
 import { ref } from "vue";
 import {
-  escapeLaunchAttributeValue,
   getLaunchIconRect,
-  makeLaunchIconSelector,
   useLaunchpadIconActivation,
 } from "./useLaunchpadIconActivation.js";
+import {
+  clearIconBoundsRegistry,
+  registerLaunchIconBounds,
+} from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 
 const desktopApp = { id: "desktop-app", type: "app", name: "Desktop App" };
 const folderApp = { id: "folder-app", type: "app", name: "Folder App" };
@@ -97,33 +99,12 @@ export function runLaunchpadIconActivationTests() {
     if (!condition) throw new Error(`[Launchpad icon activation test failed] ${message}`);
   };
 
-  assert(escapeLaunchAttributeValue('id"\\x') === 'id\\"\\\\x', "selector attributes should escape quotes and slashes");
-  assert(makeLaunchIconSelector(null) === null, "selector creation should ignore missing launch sources");
-  assert(
-    makeLaunchIconSelector({ area: "folder", folderId: 'folder"1', id: 'app"1', pageIndex: 2 })
-      === '.icon-hit-target[data-launch-item-id="app\\"1"][data-launch-area="folder"][data-launch-page-index="2"][data-launch-folder-id="folder\\"1"] .icon-box',
-    "folder launch selectors should include escaped folder ids",
-  );
-
-  const queried = [];
-  const rect = getLaunchIconRect(
-    { area: "desktop", id: "desktop-app", pageIndex: 0 },
-    {
-      querySelector(selector) {
-        queried.push(selector);
-        return { getBoundingClientRect: () => ({ left: 12, top: 24, width: 36, height: 48 }) };
-      },
-    },
-  );
-  assert(queried[0].includes('data-launch-item-id="desktop-app"'), "rect lookup should query the launch selector");
+  clearIconBoundsRegistry();
+  assert(getLaunchIconRect({ area: "desktop", id: "desktop-app", pageIndex: 0 }) === null, "rect lookup should return null without pixi bounds");
+  registerLaunchIconBounds({ area: "desktop", id: "desktop-app", pageIndex: 0 }, { left: 12, top: 24, width: 36, height: 48 });
+  const rect = getLaunchIconRect({ area: "desktop", id: "desktop-app", pageIndex: 0 });
   assert(rect.left === 12 && rect.width === 36, "rect lookup should return plain geometry");
-  assert(
-    getLaunchIconRect(
-      { area: "desktop", id: "desktop-app", pageIndex: 0 },
-      { querySelector: () => ({ getBoundingClientRect: () => ({ left: 0, top: 0, width: 0, height: 10 }) }) },
-    ) === null,
-    "rect lookup should ignore empty geometry",
-  );
+  clearIconBoundsRegistry();
 
   const desktop = createIconActivation({ pageIndex: 1 });
   const desktopScope = desktop.activation.getCurrentIconScope();

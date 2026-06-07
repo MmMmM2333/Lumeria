@@ -1,7 +1,5 @@
 import { computed, nextTick, ref } from "vue";
 
-const SEARCH_RESULT_SLOT_WIDTH = "clamp(132px, 12vw, 220px)";
-
 function readCssPx(value) {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -32,12 +30,8 @@ function getVerticalPadding(element) {
 export function usePageGridMetrics(options) {
   const {
     desktopMainRef,
-    getVisibleDesktopPage,
-    gridCols,
     headerRef,
-    isSearchMode,
     pageDotsRef,
-    pageGridStyle,
     rootRef,
     searchRef,
   } = options;
@@ -69,24 +63,7 @@ export function usePageGridMetrics(options) {
     nextTick(updatePageGridMetrics);
   }
 
-  function getActivePageGridStyle(page) {
-    if (!isSearchMode.value) return pageGridStyle.value;
-    const visibleCount = getVisibleDesktopPage(page).length;
-    if (visibleCount > 0 && visibleCount < gridCols.value) {
-      return {
-        ...pageGridStyle.value,
-        gridTemplateColumns: `repeat(${visibleCount}, minmax(0, ${SEARCH_RESULT_SLOT_WIDTH}))`,
-        justifyContent: "center",
-        justifyItems: "center",
-        columnGap: "0px",
-        rowGap: "16px",
-      };
-    }
-    return pageGridStyle.value;
-  }
-
   return {
-    getActivePageGridStyle,
     pageGridHeight,
     pageGridMeasureStyle,
     schedulePageGridMetrics,

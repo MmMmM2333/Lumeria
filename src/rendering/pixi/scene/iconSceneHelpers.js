@@ -28,7 +28,6 @@ export function makeSyntheticPointerEvent(original, node) {
     clientY: native.clientY ?? 0,
     currentTarget: {
       getBoundingClientRect: () => bounds,
-      querySelector: () => null,
     },
     pointerId: native.pointerId,
     preventDefault: () => native.preventDefault?.(),

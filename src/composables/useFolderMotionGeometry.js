@@ -4,10 +4,6 @@ import { getTopLevelIconBounds } from "../rendering/pixi/geometry/iconBoundsRegi
 
 const DEFAULT_FOLDER_MOTION_GEOMETRY = { id: null, x: 0, y: 36, scaleX: 0.1, scaleY: 0.16, borderRadius: 26 };
 
-function escapeAttributeValue(value) {
-  return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
-
 export function useFolderMotionGeometry(options) {
   const folderMotionGeometry = ref(getFallbackFolderMotionGeometry(null));
 
@@ -40,11 +36,7 @@ export function useFolderMotionGeometry(options) {
   function getTopLevelIconMotionGeometry(sourceItemId, motionId) {
     const pixiRect = getTopLevelIconBounds(sourceItemId);
     if (pixiRect) return makeFolderMotionGeometryFromRect(motionId || sourceItemId, pixiRect);
-    if (typeof document === "undefined") return null;
-    const safeId = escapeAttributeValue(sourceItemId);
-    const node = safeId ? document.querySelector(`[data-top-item-id="${safeId}"] .icon-box`) : null;
-    const rect = node?.getBoundingClientRect();
-    return rect ? makeFolderMotionGeometryFromRect(motionId || sourceItemId, rect) : null;
+    return null;
   }
 
   function getPageSlotMotionGeometry(folderId, targetPageIndex, targetIndex) {

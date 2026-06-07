@@ -74,27 +74,6 @@ const helpers = createLaunchpadLayoutHelpers({
   getFolderPageSize: () => folderPageSize.value,
 });
 
-function getPageGridStyle() {
-  return {
-    gridTemplateRows: `repeat(${state.gridRows.value}, minmax(0, 1fr))`,
-    gridTemplateColumns: `repeat(${state.gridCols.value}, minmax(0, 1fr))`,
-  };
-}
-
-function getActivePageGridStyle(page) {
-  const visibleCount = helpers.getVisibleDesktopPage(page).length;
-  if (state.searchQuery.value.trim() && visibleCount > 0 && visibleCount < state.gridCols.value) {
-    return {
-      ...getPageGridStyle(),
-      gridTemplateColumns: `repeat(${visibleCount}, minmax(82px, 108px))`,
-      justifyContent: "center",
-      columnGap: "30px",
-      rowGap: "16px",
-    };
-  }
-  return getPageGridStyle();
-}
-
 runLaunchpadHelperTests({
   helpers,
   pageSize,
@@ -102,7 +81,6 @@ runLaunchpadHelperTests({
   searchQuery: state.searchQuery,
   gridRows: state.gridRows,
   gridCols: state.gridCols,
-  getActivePageGridStyle,
 });
 runLaunchpadDataTests();
 runIconSourceTests();

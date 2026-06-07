@@ -6,29 +6,11 @@ import {
 } from "./useLaunchpadSettingsConfig.js";
 import {
   appLaunchGhostTransition,
-  desktopTrackTransition,
-  folderContentCloseTransition,
-  folderContentTransition,
-  folderPanelCloseTransition,
   homeShellTransition,
-  instantTrackTransition,
-  layoutSpring,
   panelSpring,
 } from "./launchpadMotion.js";
 
 export function useLaunchpadViewState(options) {
-  const desktopTrackAnimate = computed(() => ({ x: `-${options.pageIndex.value * 100}%` }));
-  const searchTrackAnimate = computed(() => ({ x: `-${options.searchPageIndex.value * 100}%` }));
-  const activeDesktopTrackAnimate = computed(() => (options.isSearchMode.value ? searchTrackAnimate.value : desktopTrackAnimate.value));
-  const shouldFreezeDesktopProjection = computed(() => Boolean(
-    options.isFolderLayerActive.value ||
-    options.isHomeRevealSettling.value ||
-    !options.isDesktopOpen.value ||
-    options.isDesktopClosing.value ||
-    options.isAppLaunching.value
-  ));
-  const isLayoutProjectionRequested = computed(() => Boolean(options.isLayoutProjectionActive?.value));
-  const isSearchLayoutProjectionRequested = computed(() => Boolean(options.isSearchMode.value));
   const isDesktopFullyClosed = computed(() => Boolean(!options.isDesktopOpen.value && !options.isDesktopClosing.value));
   const shouldSnapDesktopTrack = computed(() => Boolean(
     options.isFolderLayerActive.value ||
@@ -36,23 +18,8 @@ export function useLaunchpadViewState(options) {
     isDesktopFullyClosed.value ||
     options.isAppLaunching.value
   ));
-  const desktopLayoutEnabled = computed(() => Boolean(
-    (isLayoutProjectionRequested.value || isSearchLayoutProjectionRequested.value) &&
-    !shouldFreezeDesktopProjection.value
-  ));
-  const folderLayoutEnabled = computed(() => Boolean(
-    isLayoutProjectionRequested.value &&
-    options.isDesktopOpen.value &&
-    !options.isDesktopClosing.value &&
-    !options.isAppLaunching.value &&
-    !options.isFolderClosing.value &&
-    !options.isFolderAppLaunchClosing.value
-  ));
-  const desktopProjectionKeyMode = computed(() => (desktopLayoutEnabled.value ? `enabled-${options.desktopProjectionEpoch.value}` : "frozen"));
-  const activeDesktopTrackTransition = computed(() => (shouldSnapDesktopTrack.value ? instantTrackTransition : desktopTrackTransition));
   const desktopTrackVisibilityKey = computed(() => (options.isDesktopOpen.value || (options.isDesktopClosing.value && !options.isAppLaunching.value) ? "open" : "closed"));
   const desktopTrackMotionKey = computed(() => `${desktopTrackVisibilityKey.value}-${options.isSearchMode.value ? "search" : "desktop"}-${shouldSnapDesktopTrack.value ? "snap" : "spring"}`);
-  const folderTrackAnimate = computed(() => ({ x: `-${options.folderPageIndex.value * 100}%` }));
   const isDesktopAnimatingClosed = computed(() => Boolean(!options.isDesktopOpen.value || options.isDesktopClosing.value || options.isAppLaunching.value));
   const shouldHideHomeShell = computed(() => Boolean((options.openFolderId.value && !options.isFolderClosing.value) || isDesktopAnimatingClosed.value));
   const isHomeInteractionDisabled = computed(() => Boolean(!options.isDesktopOpen.value || options.isDesktopClosing.value || options.isAppLaunching.value));
@@ -80,84 +47,16 @@ export function useLaunchpadViewState(options) {
   const homeShellStyle = computed(() => ({
     pointerEvents: shouldHideHomeShell.value || isHomeInteractionDisabled.value ? "none" : "auto",
   }));
-  const folderPanelInitial = computed(() => ({
-    opacity: 0.92,
-    scaleX: options.folderMotionGeometry.value.scaleX,
-    scaleY: options.folderMotionGeometry.value.scaleY,
-    x: options.folderMotionGeometry.value.x,
-    y: options.folderMotionGeometry.value.y,
-    borderRadius: `${options.folderMotionGeometry.value.borderRadius}px`,
-    filter: "blur(0px)",
-  }));
-  const folderPanelAnimate = computed(() => {
-    if (options.isFolderAppLaunchClosing.value) {
-      return { opacity: 0, scaleX: 1.08, scaleY: 1.08, x: 0, y: 0, borderRadius: "46px", filter: "blur(0px)" };
-    }
-    if (options.isFolderClosing.value) {
-      return {
-        opacity: 1,
-        scaleX: options.folderMotionGeometry.value.scaleX,
-        scaleY: options.folderMotionGeometry.value.scaleY,
-        x: options.folderMotionGeometry.value.x,
-        y: options.folderMotionGeometry.value.y,
-        borderRadius: `${options.folderMotionGeometry.value.borderRadius}px`,
-        filter: "blur(0px)",
-      };
-    }
-    if (isDesktopAnimatingClosed.value) {
-      return { opacity: 0, scaleX: DESKTOP_CLOSE_SCALE, scaleY: DESKTOP_CLOSE_SCALE, x: 0, y: 0, borderRadius: "48px", filter: "blur(8px)" };
-    }
-    return { opacity: 1, scaleX: 1, scaleY: 1, x: 0, y: 0, borderRadius: "48px", filter: "blur(0px)" };
-  });
-  const folderPanelTransition = computed(() => {
-    if (options.isFolderClosing.value) return folderPanelCloseTransition;
-    return isDesktopAnimatingClosed.value || (options.isHomeRevealSettling.value && options.openFolderId.value && !options.isFolderClosing.value)
-      ? homeShellTransition
-      : panelSpring;
-  });
-  const folderContentInitial = { opacity: 0, scale: 0.94, y: 18 };
-  const folderContentAnimate = computed(() => {
-    if (options.isFolderAppLaunchClosing.value) return { opacity: 0, scale: 1.08, y: 0 };
-    return options.isFolderClosing.value
-      ? { opacity: 0, scale: 0.985, y: 4 }
-      : { opacity: 1, scale: 1, y: 0 };
-  });
-  const activeFolderContentTransition = computed(() => (
-    options.isFolderClosing.value ? folderContentCloseTransition : folderContentTransition
-  ));
-  const pageGridStyle = computed(() => ({
-    gridTemplateColumns: `repeat(${options.gridCols.value}, minmax(0, 1fr))`,
-    gridTemplateRows: `repeat(${options.gridRows.value}, minmax(0, 1fr))`,
-  }));
-
-  function getDesktopGridProjectionKey(pageNumber) {
-    return `${options.isSearchMode.value ? "search" : "desktop"}-grid-${pageNumber}-${desktopProjectionKeyMode.value}`;
-  }
 
   return {
-    activeDesktopTrackAnimate,
-    activeDesktopTrackTransition,
     appLaunchGhostTransition,
     backgroundImageStyle,
-    desktopLayoutEnabled,
     desktopTrackMotionKey,
-    desktopTrackTransition,
-    folderContentAnimate,
-    folderContentInitial,
-    folderContentTransition: activeFolderContentTransition,
-    folderLayoutEnabled,
-    folderPanelAnimate,
-    folderPanelInitial,
-    folderPanelTransition,
-    folderTrackAnimate,
-    getDesktopGridProjectionKey,
     homeShellAnimate,
     homeShellInitial,
     homeShellStyle,
     homeShellTransition,
     isHomeInteractionDisabled,
-    layoutSpring,
-    pageGridStyle,
     panelSpring,
     rootStyle,
   };

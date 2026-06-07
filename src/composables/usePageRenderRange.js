@@ -38,22 +38,6 @@ export function usePageRenderRange(options) {
     return getPageRenderMode(pageNumber, "folder", options.folderPageIndex.value);
   }
 
-  function shouldRenderActivePage(pageNumber) {
-    return getDesktopPageRenderMode(pageNumber) === PAGE_RENDER_INTERACTIVE;
-  }
-
-  function shouldRenderStaticActivePage(pageNumber) {
-    return getDesktopPageRenderMode(pageNumber) === PAGE_RENDER_STATIC_REAL;
-  }
-
-  function shouldRenderFolderPage(pageNumber) {
-    return getFolderPageRenderMode(pageNumber) === PAGE_RENDER_INTERACTIVE;
-  }
-
-  function shouldRenderStaticFolderPage(pageNumber) {
-    return getFolderPageRenderMode(pageNumber) === PAGE_RENDER_STATIC_REAL;
-  }
-
   function clearPageJumpRenderRange() {
     pageJumpRenderRequestId += 1;
     if (pageJumpRenderTimer) window.clearTimeout(pageJumpRenderTimer);
@@ -147,9 +131,5 @@ export function usePageRenderRange(options) {
     commitSearchPageIndex,
     getDesktopPageRenderMode,
     getFolderPageRenderMode,
-    shouldRenderActivePage,
-    shouldRenderFolderPage,
-    shouldRenderStaticActivePage,
-    shouldRenderStaticFolderPage,
   };
 }

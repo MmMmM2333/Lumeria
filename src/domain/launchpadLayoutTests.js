@@ -8,7 +8,7 @@ import {
 } from "./launchpadLayout.js";
 
 export function runLaunchpadHelperTests(context) {
-  const { helpers, pageSize, folderPageSize, searchQuery, gridRows, gridCols, getActivePageGridStyle } = context;
+  const { helpers, pageSize, folderPageSize } = context;
   const {
     canCreateDesktopPageAfterDrag,
     canCreateFolderPageAfterDrag,
@@ -60,18 +60,6 @@ export function runLaunchpadHelperTests(context) {
   const searchApps = collectAppsFromPages([[a, { ...folder, childPages: [[b]], children: [b] }]]);
   assert(searchApps.length === 2 && searchApps.every((item) => item.type === "app"), "search collection should flatten apps and exclude folders");
   assert(filterAppsForSearch(searchApps, " b ")[0].id === "b", "search should match app names case-insensitively after trimming");
-  const savedSearchQuery = searchQuery.value;
-  const savedGridRows = gridRows.value;
-  const savedGridCols = gridCols.value;
-  searchQuery.value = "active-test";
-  gridRows.value = 6;
-  gridCols.value = 6;
-  const centeredSearchGridStyle = getActivePageGridStyle([a, b]);
-  assert(centeredSearchGridStyle.gridTemplateRows === "repeat(6, minmax(0, 1fr))", "single-row search results should preserve the configured row template");
-  assert(centeredSearchGridStyle.gridTemplateColumns.includes("repeat(2"), "single-row search results should use a centered compact column template");
-  searchQuery.value = savedSearchQuery;
-  gridRows.value = savedGridRows;
-  gridCols.value = savedGridCols;
   const folderSlots = insertAppIntoFolder([[{ ...folder, children: [b, null, c] }]], "folder", a, 0, 1, 4);
   assert(getFolderChildPages(findFolder(folderSlots, "folder")?.item, 4)[0].map((item) => item.id).join("") === "bac", "insertAppIntoFolder should compact a folder page before sorting");
   const fullFolder = { id: "full-folder", type: "folder", name: "Full", childPages: [[a, b]], children: [a, b] };

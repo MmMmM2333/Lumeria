@@ -593,24 +593,11 @@ export function useLaunchpadDrag(options) {
     return normalizeTopLevelTarget(found, getTopLevelIconBounds(targetId));
   }
 
-  function getTopLevelTargetRect(node) {
-    return node?.querySelector?.(".icon-box")?.getBoundingClientRect?.() || node?.getBoundingClientRect?.() || null;
-  }
-
   function getTopLevelTargetAtPoint(clientX, clientY) {
     const pixiTarget = getPixiTopLevelTargetAtPoint(clientX, clientY, dragRuntime?.item.id);
     if (pixiTarget?.id) {
       const found = options.findTopLevel(options.pages.value, pixiTarget.id);
       const target = normalizeTopLevelTarget(found, pixiTarget.rect);
-      if (target) return target;
-    }
-    const elements = document.elementsFromPoint(clientX, clientY);
-    for (const element of elements) {
-      const node = element.closest?.("[data-top-item-id]");
-      const id = node?.getAttribute("data-top-item-id");
-      if (!id || id === dragRuntime?.item.id) continue;
-      const found = options.findTopLevel(options.pages.value, id);
-      const target = normalizeTopLevelTarget(found, getTopLevelTargetRect(node), node);
       if (target) return target;
     }
     return null;
@@ -1210,8 +1197,7 @@ export function useLaunchpadDrag(options) {
     cancelLongPress();
     clearDragRelease();
 
-    const iconBox = event.currentTarget.querySelector(".icon-box");
-    const rect = iconBox ? iconBox.getBoundingClientRect() : event.currentTarget.getBoundingClientRect();
+    const rect = event.currentTarget.getBoundingClientRect?.() || null;
     const cellSize = getSourceCellSize(source) || { height: rect.height, width: rect.width };
     longPressState = {
       cellSize,
