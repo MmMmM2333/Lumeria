@@ -4,6 +4,13 @@ import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getCachedIconTexture } from "../assets/iconTextureCache.js";
 import { getIconLabelLocalY, getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { mapLocalRectToStageRect } from "../geometry/stageCoordinates.js";
+import {
+  drawAppFolderCreateBackdrop as drawAppFolderCreateBackdropGraphic,
+  drawAppFolderCreateFlashOverlay as drawAppFolderCreateFlashOverlayGraphic,
+  drawFolderFlashOverlay as drawFolderFlashOverlayGraphic,
+  drawFolderPreviewMask as drawFolderPreviewMaskGraphic,
+  drawFolderThumbFrame as drawFolderThumbFrameGraphic,
+} from "./folderThumbDrawing.js";
 import { getFolderThumbMetrics } from "./folderThumbMetrics.js";
 import { getFolderPreviewMotionPlan } from "./folderThumbPreviewMotion.js";
 import { estimateLabelWidth, fitSingleLineName, fitWrappedName } from "./iconLabelLayout.js";
@@ -558,33 +565,15 @@ export class IconNode extends Container {
   }
 
   drawFolderThumbFrame(size, thumb) {
-    const padding = this.getFolderHoverPadding();
-    const frameSize = size + padding * 2;
-    const radius = thumb.radius + padding * 0.72;
-    this.folderThumb.clear()
-      .roundRect(-frameSize / 2, -frameSize / 2, frameSize, frameSize, radius)
-      .fill({ color: thumb.fillColor, alpha: thumb.fillAlpha })
-      .stroke({ color: thumb.strokeColor, alpha: thumb.strokeAlpha, width: thumb.strokeWidth });
+    drawFolderThumbFrameGraphic(this.folderThumb, size, thumb, this.getFolderHoverPadding());
   }
 
   drawFolderPreviewMask(thumb) {
-    const maskPadding = Math.max(0.5, this.iconSize * 0.01);
-    const left = thumb.start - thumb.childSize / 2 - maskPadding;
-    const top = thumb.start - thumb.childSize / 2 - maskPadding;
-    const width = thumb.childSize * 3 + thumb.gap * 2 + maskPadding * 2;
-    const height = thumb.childSize * 3 + thumb.gap * 2 + maskPadding * 2;
-    this.folderPreviewMask.clear()
-      .rect(left, top, width, height)
-      .fill({ color: 0xffffff, alpha: 1 });
+    drawFolderPreviewMaskGraphic(this.folderPreviewMask, this.iconSize, thumb);
   }
 
   drawFolderFlashOverlay(size, thumb) {
-    const padding = this.getFolderHoverPadding();
-    const frameSize = size + padding * 2;
-    const radius = thumb.radius + padding * 0.72;
-    this.folderFlashOverlay.clear()
-      .roundRect(-frameSize / 2, -frameSize / 2, frameSize, frameSize, radius)
-      .fill({ color: 0xffffff, alpha: 1 });
+    drawFolderFlashOverlayGraphic(this.folderFlashOverlay, size, thumb, this.getFolderHoverPadding());
   }
 
   redrawFolderHoverFrame() {
@@ -703,31 +692,11 @@ export class IconNode extends Container {
   }
 
   drawAppFolderCreateBackdrop() {
-    const alpha = Math.max(0, Math.min(1, Number(this.appFolderCreateFrame.alpha) || 0));
-    const padding = Math.max(0, Number(this.appFolderCreateFrame.padding) || 0);
-    this.folderCreateBackdrop.clear();
-    if (alpha <= 0.001) {
-      this.folderCreateBackdrop.visible = false;
-      return;
-    }
-    const thumb = getFolderThumbMetrics(this.iconSize);
-    const size = this.iconSize + padding * 2;
-    const radius = thumb.radius + padding * 0.72;
-    this.folderCreateBackdrop.visible = true;
-    this.folderCreateBackdrop
-      .roundRect(-size / 2, -size / 2, size, size, radius)
-      .fill({ color: thumb.fillColor, alpha: 0.3 * alpha })
-      .stroke({ color: thumb.strokeColor, alpha: 0.36 * alpha, width: thumb.strokeWidth });
+    drawAppFolderCreateBackdropGraphic(this.folderCreateBackdrop, this.iconSize, this.appFolderCreateFrame);
   }
 
   drawAppFolderCreateFlashOverlay() {
-    const padding = Math.max(0, Number(this.appFolderCreateFrame.padding) || 0);
-    const thumb = getFolderThumbMetrics(this.iconSize);
-    const size = this.iconSize + padding * 2;
-    const radius = thumb.radius + padding * 0.72;
-    this.folderCreateFlashOverlay.clear()
-      .roundRect(-size / 2, -size / 2, size, size, radius)
-      .fill({ color: 0xffffff, alpha: 1 });
+    drawAppFolderCreateFlashOverlayGraphic(this.folderCreateFlashOverlay, this.iconSize, this.appFolderCreateFrame);
   }
 
   redrawAppFolderCreateFrame() {
