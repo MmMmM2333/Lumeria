@@ -25,6 +25,7 @@ const FOLDER_TEXTURE_PREWARM_LIMIT = 80;
 const props = defineProps({
   activePageIndex: { type: Number, required: true },
   activePages: { type: Array, required: true },
+  desktopProjectionEpoch: { type: Number, default: 0 },
   desktopTrackMotionKey: { type: String, required: true },
   domRefs: { type: Object, required: true },
   dragFolderHoverState: { type: Object, default: null },
@@ -198,6 +199,7 @@ onMounted(async () => {
 watchEffect(() => {
   void props.activePageIndex;
   void props.activePages;
+  void props.desktopProjectionEpoch;
   void props.desktopTrackMotionKey;
   void props.dragFolderHoverState;
   void props.dragFolderTargetId;

@@ -19,6 +19,7 @@ import {
 } from "../domain/launchpadLayout.js";
 import { getDomRefElement } from "./usePageGridMetrics.js";
 import {
+  getLaunchIconBounds,
   getLaunchIconTargetBounds,
   getTopLevelIconBounds,
   getTopLevelTargetAtPoint as getPixiTopLevelTargetAtPoint,
@@ -35,6 +36,7 @@ const FOLDER_HOVER_RESTORE_BEFORE_OPEN_MS = 90;
 const FOLDER_HOVER_OPEN_DELAY_MS = FOLDER_HOVER_SETTLE_MS + FOLDER_HOVER_FLASH_TOTAL_MS + FOLDER_HOVER_OPEN_BUFFER_MS;
 const FOLDER_HOVER_OPENING_DELAY_MS = Math.max(0, FOLDER_HOVER_OPEN_DELAY_MS - FOLDER_HOVER_RESTORE_BEFORE_OPEN_MS);
 const FOLDER_HOVER_ESCAPE_MARGIN = 64;
+const SETTLED_DRAG_START_FRAMES = 3;
 
 export function isPrimaryPointerStartEvent(event) {
   if (!event) return false;
@@ -88,14 +90,60 @@ export function useLaunchpadDrag(options) {
   let dragReleaseResolveRaf = 0;
   let dragReleaseKey = 0;
   let dragFolderHoverKey = 0;
+  let settledDragStartRaf = 0;
 
   function isDragActive() {
-    return Boolean(dragRuntime);
+    return Boolean(dragRuntime || dragReleaseState.value);
   }
 
   function placementKey(kind) {
     const parts = Array.prototype.slice.call(arguments, 1);
     return `${kind}:${parts.join(":")}`;
+  }
+
+  function getLaunchBoundsArea(source) {
+    if (source?.type === "folder") return "folder";
+    if (source?.type === "search") return "search";
+    return "desktop";
+  }
+
+  function shouldRefreshLongPressBoundsOnStart() {
+    return Boolean(options.isHomeRevealSettling.value && !options.isFolderLayerActive.value);
+  }
+
+  function cloneRect(rect) {
+    if (!rect) return null;
+    return {
+      height: rect.height,
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+    };
+  }
+
+  function resolveLongPressSourceRect(lp) {
+    if (!lp?.refreshBoundsOnStart) return lp?.rect || null;
+    return getLaunchIconBounds({
+      area: getLaunchBoundsArea(lp.source),
+      folderId: lp.source?.folderId,
+      id: lp.item?.id,
+      pageIndex: lp.source?.pageIndex,
+    }) || lp.rect || null;
+  }
+
+  function getLongPressDragGeometry(lp) {
+    const rect = resolveLongPressSourceRect(lp);
+    if (!rect) return { offset: lp.offset, size: lp.size };
+    return {
+      offset: {
+        x: lp.startPoint.x - rect.left,
+        y: lp.startPoint.y - rect.top,
+      },
+      size: {
+        height: rect.height,
+        width: rect.width,
+      },
+    };
   }
 
   function clearPendingTarget() {
@@ -213,6 +261,17 @@ export function useLaunchpadDrag(options) {
     if (!dragContextMenuListenerAttached) return;
     dragContextMenuListenerAttached = false;
     window.removeEventListener("contextmenu", suppressDragContextMenu, true);
+  }
+
+  function detachLongPressListeners() {
+    window.removeEventListener("pointermove", handleLongPressMove);
+    window.removeEventListener("pointerup", handleLongPressUp);
+    window.removeEventListener("pointercancel", handleLongPressUp);
+  }
+
+  function clearSettledDragStartRaf() {
+    if (settledDragStartRaf) window.cancelAnimationFrame(settledDragStartRaf);
+    settledDragStartRaf = 0;
   }
 
   function suppressDragContextMenu(event) {
@@ -1110,9 +1169,8 @@ export function useLaunchpadDrag(options) {
     if (!longPressState) return;
     window.clearTimeout(longPressState.timer);
     longPressState = null;
-    window.removeEventListener("pointermove", handleLongPressMove);
-    window.removeEventListener("pointerup", handleLongPressUp);
-    window.removeEventListener("pointercancel", handleLongPressUp);
+    clearSettledDragStartRaf();
+    detachLongPressListeners();
     if (!dragRuntime) detachDragContextMenuListener();
   }
 
@@ -1134,22 +1192,19 @@ export function useLaunchpadDrag(options) {
     if (!isPrimaryPointerReleaseEvent(event)) return;
     const lp = longPressState;
     cancelLongPress();
+    if (lp.awaitingDragStart) return;
     if (options.isLaunchpadInteractionBlocked()) return;
     if (lp.item.type === "app") options.openApp(lp.item, lp.source);
     else if (lp.item.type === "folder" && lp.source.type === "page") options.commitOpenFolder(lp.item.id);
   }
 
-  function executeDragStart() {
-    const lp = longPressState;
-    if (!lp) return;
+  function startLongPressDrag(lp) {
+    if (longPressState !== lp) return;
     if (options.isLaunchpadInteractionBlocked()) {
       cancelLongPress();
       return;
     }
-    if (options.isHomeRevealSettling.value && !options.isFolderLayerActive.value) options.finishHomeRevealSettleWindow();
-    window.removeEventListener("pointermove", handleLongPressMove);
-    window.removeEventListener("pointerup", handleLongPressUp);
-    window.removeEventListener("pointercancel", handleLongPressUp);
+    detachLongPressListeners();
     longPressState = null;
 
     clearPendingTarget();
@@ -1157,14 +1212,15 @@ export function useLaunchpadDrag(options) {
     clearPageTurn();
     clearFolderPageTurn();
 
+    const geometry = getLongPressDragGeometry(lp);
     const nextDrag = {
       cellSize: lp.cellSize,
       item: lp.item,
       source: lp.source,
       pointerId: lp.pointerId,
       pointer: { x: lp.startPoint.x, y: lp.startPoint.y },
-      offset: lp.offset,
-      size: lp.size,
+      offset: geometry.offset,
+      size: geometry.size,
       start: { x: lp.startPoint.x, y: lp.startPoint.y },
       hasMoved: false,
     };
@@ -1186,6 +1242,47 @@ export function useLaunchpadDrag(options) {
     }
   }
 
+  function requestSettledDragStartFrame(lp, remainingFrames) {
+    settledDragStartRaf = window.requestAnimationFrame(() => {
+      settledDragStartRaf = 0;
+      if (longPressState !== lp) return;
+      if (remainingFrames > 1) {
+        requestSettledDragStartFrame(lp, remainingFrames - 1);
+        return;
+      }
+      startLongPressDrag(lp);
+    });
+  }
+
+  function scheduleSettledDragStart(lp) {
+    lp.awaitingDragStart = true;
+    lp.refreshBoundsOnStart = true;
+    window.removeEventListener("pointermove", handleLongPressMove);
+    nextTick(() => {
+      if (longPressState !== lp) return;
+      requestSettledDragStartFrame(lp, SETTLED_DRAG_START_FRAMES);
+    });
+  }
+
+  function executeDragStart() {
+    const lp = longPressState;
+    if (!lp) return;
+    if (options.isLaunchpadInteractionBlocked()) {
+      cancelLongPress();
+      return;
+    }
+    if (options.isHomeRevealSettling.value && !options.isFolderLayerActive.value) {
+      options.finishHomeRevealSettleWindow();
+      scheduleSettledDragStart(lp);
+      return;
+    }
+    if (lp.refreshBoundsOnStart) {
+      scheduleSettledDragStart(lp);
+      return;
+    }
+    startLongPressDrag(lp);
+  }
+
   function beginDrag(event, item, source) {
     if (!isPrimaryPointerStartEvent(event)) return;
 
@@ -1202,6 +1299,8 @@ export function useLaunchpadDrag(options) {
     longPressState = {
       cellSize,
       item: options.cloneItem(item),
+      rect: cloneRect(rect),
+      refreshBoundsOnStart: shouldRefreshLongPressBoundsOnStart(),
       source,
       pointerId: event.pointerId,
       startPoint: { x: event.clientX, y: event.clientY },
@@ -1274,15 +1373,6 @@ export function useLaunchpadDrag(options) {
 
     const session = options.folderSession.value;
     const folderId = options.openFolderId.value;
-    const movedDistance = Math.hypot(event.clientX - activeDrag.start.x, event.clientY - activeDrag.start.y);
-
-    if (!session && movedDistance <= 6 && activeDrag.item.type === "folder" && activeDrag.source.type === "page") {
-      options.commitOpenFolder(activeDrag.item.id);
-      clearDragRelease();
-      endDrag();
-      return;
-    }
-
     if (!session && shouldDropOnTopLevelTarget && dropDraggedAppOnTopLevelTarget(topLevelDropTarget)) {
       startDragRelease(topLevelDropTarget.rect);
       options.commitFolderSession(null);

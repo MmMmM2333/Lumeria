@@ -1304,6 +1304,7 @@ export function useLaunchpadController() {
     activePageIndex,
     activePages,
     commitActivePageIndex,
+    desktopProjectionEpoch,
     desktopTrackMotionKey,
     getDesktopPageRenderMode,
     setPageRef,

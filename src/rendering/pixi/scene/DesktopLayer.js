@@ -149,6 +149,7 @@ export class DesktopLayer extends Container {
           singleLineLabel: sizing.singleLineLabel,
           stageHeight: state.height,
           stageWidth: state.width,
+          suppressLabelRevealAfterGhost: isReleaseGhostItem,
           textless: state.isTextlessMode,
         });
 

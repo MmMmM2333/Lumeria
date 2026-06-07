@@ -32,6 +32,7 @@
       <PixiDesktopSurface
         :active-page-index="activePageIndex"
         :active-pages="activePages"
+        :desktop-projection-epoch="desktopProjectionEpoch"
         :desktop-track-motion-key="desktopTrackMotionKey"
         :dom-refs="desktopDomRefs"
         :drag-folder-hover-state="dragFolderHoverState"
@@ -171,6 +172,7 @@ const {
   activePageIndex,
   activePages,
   commitActivePageIndex,
+  desktopProjectionEpoch,
   desktopTrackMotionKey,
   getDesktopPageRenderMode,
   setPageRef,

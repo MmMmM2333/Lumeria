@@ -152,7 +152,7 @@ function createDragHarness(overrides = {}) {
       }
       return null;
     },
-    finishHomeRevealSettleWindow: () => {},
+    finishHomeRevealSettleWindow: overrides.finishHomeRevealSettleWindow || (() => {}),
     folderCols: ref(4),
     folderPageIndex,
     folderPageRefs,
@@ -167,8 +167,8 @@ function createDragHarness(overrides = {}) {
     gridRows: ref(5),
     insertAppIntoFolder,
     insertTopLevelItem,
-    isFolderLayerActive: ref(false),
-    isHomeRevealSettling: ref(false),
+    isFolderLayerActive: overrides.isFolderLayerActive || ref(false),
+    isHomeRevealSettling: overrides.isHomeRevealSettling || ref(false),
     isLayoutProjectionActive,
     isLaunchpadInteractionBlocked: () => false,
     isTextlessMode: ref(false),
@@ -268,6 +268,83 @@ export async function runLaunchpadDragTests() {
     assert(isLayoutProjectionActive.value, "layout projection should remain briefly active after drag end");
     flushTimers(timers);
     assert(!isLayoutProjectionActive.value, "layout projection should release after the drag settle window");
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
+    clearIconBoundsRegistry();
+    const isHomeRevealSettling = ref(true);
+    let finishSettleCalls = 0;
+    const { app, drag } = createDragHarness({
+      finishHomeRevealSettleWindow: () => {
+        finishSettleCalls += 1;
+        isHomeRevealSettling.value = false;
+        registerLaunchIconBounds(
+          { area: "desktop", id: "app-a", pageIndex: 0 },
+          { left: 20, top: 22, width: 64, height: 64 },
+          { area: "desktop", id: "app-a", index: 0, pageIndex: 0 }
+        );
+      },
+      isHomeRevealSettling,
+    });
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+    };
+
+    drag.beginDrag(makePointerDownEvent(42, target), app, { type: "page", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+    await nextTick();
+
+    assert(finishSettleCalls === 1, "first drag after desktop reveal should finish the settle window");
+    assert(drag.dragPreviewState.value?.offset.x === 4 && drag.dragPreviewState.value?.offset.y === 10, "settled desktop drag should recompute pointer offset from fresh Pixi bounds");
+    clearIconBoundsRegistry();
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
+    clearIconBoundsRegistry();
+    const isHomeRevealSettling = ref(true);
+    const { app, drag } = createDragHarness({
+      isHomeRevealSettling,
+    });
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+    };
+
+    drag.beginDrag(makePointerDownEvent(43, target), app, { type: "page", pageIndex: 0, index: 0 });
+    isHomeRevealSettling.value = false;
+    registerLaunchIconBounds(
+      { area: "desktop", id: "app-a", pageIndex: 0 },
+      { left: 20, top: 22, width: 64, height: 64 },
+      { area: "desktop", id: "app-a", index: 0, pageIndex: 0 }
+    );
+    runNextTimer(timers);
+    await nextTick();
+    await nextTick();
+
+    assert(drag.dragPreviewState.value?.offset.x === 4 && drag.dragPreviewState.value?.offset.y === 10, "desktop drag should refresh bounds when pointerdown happened during reveal settle");
+    clearIconBoundsRegistry();
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const { calls, drag, pages } = createDragHarness();
+    const folder = { id: "folder-a", type: "folder", name: "Folder A", childPages: [[]], children: [] };
+    pages.value = [[folder]];
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+    };
+
+    drag.beginDrag(makePointerDownEvent(88, target), folder, { type: "page", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+
+    listeners.get("pointerup")({ type: "pointerup", pointerId: 88, button: 0, clientX: 24, clientY: 32 });
+    await nextTick();
+
+    assert(calls.commitOpenFolder.length === 0, "dropping a long-pressed folder without movement should not open it");
+    assert(drag.dragReleaseState.value?.item.id === "folder-a", "dropping a long-pressed folder without movement should run release animation");
+    assert(drag.isDragActive(), "drag release animation should keep surface interactions blocked");
+    flushTimers(timers);
+    assert(!drag.isDragActive(), "drag should become inactive after release animation cleanup");
   });
 
   await withMockPointerEnvironment(async ({ listeners, timers }) => {
