@@ -30,6 +30,7 @@ import {
   makeCompletedClosingPreviewMotion,
   makeOpeningGhostMotion,
 } from "./folderIconGhostMotion.js";
+import { makeClosingPreviewSwapPlan } from "./folderPreviewSwapMotion.js";
 import {
   getIconLabelTopFromVisualRect,
   getIconVisualOffsetY,
@@ -70,13 +71,6 @@ const CLOSING_GHOST_MAX_DELAY = 0.06;
 const CLOSING_EXTRA_GHOST_ALPHA_DURATION = 0.12;
 const CLOSING_EXTRA_GHOST_ALPHA_HOLD = 0.16;
 const CLOSING_PREVIEW_FALLBACK_DURATION = 0.22;
-const CLOSING_PREVIEW_SWAP_START_SCALE = 1.02;
-const CLOSING_PREVIEW_ICON_ROW_STAGGER = 0.01;
-const CLOSING_PREVIEW_ICON_COLUMN_STAGGER = 0.008;
-const CLOSING_PREVIEW_ICON_START_SCALE = 1.08;
-const CLOSING_PREVIEW_ICON_OUTSIDE_MARGIN = 0.35;
-const CLOSING_PREVIEW_ICON_OUTSIDE_SPREAD = 0.12;
-
 function isPointInRect(x, y, rect) {
   return Boolean(rect) &&
     x >= rect.left &&
@@ -100,17 +94,6 @@ function expandBounds(bounds, rect) {
   const right = Math.max(bounds?.right ?? -Infinity, rect.left + rect.width);
   const bottom = Math.max(bounds?.bottom ?? -Infinity, rect.top + rect.height);
   return { bottom, left, right, top };
-}
-
-function makeBoundsRect(bounds, padding = 0) {
-  if (!bounds || !Number.isFinite(bounds.left) || !Number.isFinite(bounds.top) ||
-    !Number.isFinite(bounds.right) || !Number.isFinite(bounds.bottom)) return null;
-  return {
-    height: bounds.bottom - bounds.top + padding * 2,
-    left: bounds.left - padding,
-    top: bounds.top - padding,
-    width: bounds.right - bounds.left + padding * 2,
-  };
 }
 
 function cloneFrameSnapshot(frame) {
@@ -936,56 +919,34 @@ export class FolderOverlayLayer extends Container {
     clearClosingPreviewSwapLayer(this);
     if (!targets?.length || state.folderPageIndex <= 0) return;
 
-    const localTargets = [];
-    let bounds = null;
-    for (const target of targets) {
-      const rect = makeStageLocalRect(target.targetRect, state.stageRect);
-      if (!rect || rect.width <= 0 || rect.height <= 0) continue;
-      localTargets.push({ ...target, rect });
-      bounds = expandBounds(bounds, rect);
-    }
-    const maskRect = makeBoundsRect(bounds, 2);
-    if (!localTargets.length || !maskRect) return;
+    const plan = makeClosingPreviewSwapPlan(targets, { stageRect: state.stageRect });
+    if (!plan) return;
 
     const key = makeClosingPreviewSwapKey(state.renderedFolder?.id, state.folderPageIndex);
     const root = new Container();
     const mask = new Graphics();
     const iconsWrap = new Container();
-    const centerX = maskRect.left + maskRect.width / 2;
-    const centerY = maskRect.top + maskRect.height / 2;
 
     root.eventMode = "none";
     root.alpha = 0.86;
-    mask.rect(maskRect.left, maskRect.top, maskRect.width, maskRect.height).fill({ color: 0xffffff, alpha: 1 });
+    mask.rect(plan.maskRect.left, plan.maskRect.top, plan.maskRect.width, plan.maskRect.height).fill({ color: 0xffffff, alpha: 1 });
     iconsWrap.mask = mask;
-    iconsWrap.pivot.set(centerX, centerY);
-    iconsWrap.position.set(centerX, centerY);
-    iconsWrap.scale.set(CLOSING_PREVIEW_SWAP_START_SCALE);
+    iconsWrap.pivot.set(plan.centerX, plan.centerY);
+    iconsWrap.position.set(plan.centerX, plan.centerY);
+    iconsWrap.scale.set(plan.wrapStartScale);
     root.addChild(mask);
     root.addChild(iconsWrap);
     ensureClosingPreviewSwapState(this).addChild(root);
     this.closingPreviewSwapKeys.add(key);
 
     const iconMotions = [];
-    for (const target of localTargets) {
-      const size = Math.max(3, Math.min(target.rect.width, target.rect.height));
-      const ghost = this.createClosingPreviewSwapIcon(target.item, size);
-      const finalX = target.rect.left + target.rect.width / 2;
-      const finalY = target.rect.top + target.rect.height / 2;
-      const slotIndex = Math.max(0, Number(target.previewSlotIndex) || 0);
-      const col = slotIndex % 3;
-      const row = Math.floor(slotIndex / 3);
-      const jitterX = (((slotIndex * 17) % 5) - 2) * size * 0.018;
-      const jitterY = (((slotIndex * 13) % 5) - 2) * size * 0.018;
-      const outsideOffset = size * (0.5 + CLOSING_PREVIEW_ICON_OUTSIDE_MARGIN);
-      const startX = maskRect.left - outsideOffset - col * size * CLOSING_PREVIEW_ICON_OUTSIDE_SPREAD + jitterX;
-      const startY = maskRect.top - outsideOffset - row * size * CLOSING_PREVIEW_ICON_OUTSIDE_SPREAD + jitterY;
-      const delay = row * CLOSING_PREVIEW_ICON_ROW_STAGGER + col * CLOSING_PREVIEW_ICON_COLUMN_STAGGER;
-      ghost.position.set(startX, startY);
-      ghost.scale.set(CLOSING_PREVIEW_ICON_START_SCALE + (4 - row - col) * 0.006);
+    for (const motion of plan.iconMotions) {
+      const ghost = this.createClosingPreviewSwapIcon(motion.item, motion.size);
+      ghost.position.set(motion.fromX, motion.fromY);
+      ghost.scale.set(motion.fromScale);
       ghost.alpha = 0.78;
       iconsWrap.addChild(ghost);
-      iconMotions.push({ delay, ghost, x: finalX, y: finalY });
+      iconMotions.push({ ...motion, ghost });
     }
 
     const timeline = gsap.timeline({
@@ -1005,8 +966,8 @@ export class FolderOverlayLayer extends Container {
           alpha: 1,
           duration: timing.iconDuration,
           ease: folderPreviewSettleEase,
-          x: motion.x,
-          y: motion.y,
+          x: motion.toX,
+          y: motion.toY,
         }, motion.delay)
         .to(motion.ghost.scale, {
           duration: timing.iconDuration,
