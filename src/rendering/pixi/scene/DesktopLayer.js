@@ -3,7 +3,7 @@ import { gsap } from "gsap";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getDesktopGridMetrics, getGridSlotRect, makeRect } from "../geometry/gridGeometry.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
-import { makeStageVirtualElement, mapLocalRectToStageRect } from "../geometry/stageCoordinates.js";
+import { makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import {
   clearFolderPreviewChildBounds,
   clearLaunchIconBounds,
@@ -18,42 +18,13 @@ import {
   isActiveDraggedLaunchItem,
   isReleaseGhostLaunchItem,
 } from "./dragVisibility.js";
+import { makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { IconNode } from "../nodes/IconNode.js";
 
 function sourceArea(source) {
   if (source.type === "folder") return "folder";
   if (source.type === "search") return "search";
   return "desktop";
-}
-
-function makeTargetIconBounds(stageRect, stageWidth, stageHeight, centerX, centerY, size, textless) {
-  const visualCenterY = centerY + getIconVisualOffsetY(textless);
-  return mapLocalRectToStageRect(stageRect, stageWidth, stageHeight, {
-    left: centerX - size / 2,
-    top: visualCenterY - size / 2,
-    width: size,
-    height: size,
-  });
-}
-
-function makeSyntheticPointerEvent(original, node) {
-  const native = original?.nativeEvent || original || {};
-  const bounds = node.getIconBounds(node.stageRect || { left: 0, top: 0 });
-  return {
-    button: native.button ?? 0,
-    buttons: native.buttons ?? 1,
-    clientX: native.clientX ?? 0,
-    clientY: native.clientY ?? 0,
-    currentTarget: {
-      getBoundingClientRect: () => bounds,
-      querySelector: () => null,
-    },
-    pointerId: native.pointerId,
-    preventDefault: () => native.preventDefault?.(),
-    stopPropagation: () => native.stopPropagation?.(),
-    target: native.target,
-    type: native.type || "pointerdown",
-  };
 }
 
 function getDesktopIconSizing(state, slot) {
@@ -191,7 +162,15 @@ export class DesktopLayer extends Container {
           );
           registerLaunchIconTargetBounds(
             { area, folderId: null, id: item.id, pageIndex },
-            makeTargetIconBounds(state.stageRect, state.width, state.height, targetX + x, y, sizing.iconSize, state.isTextlessMode),
+            makeTargetIconBounds(
+              state.stageRect,
+              state.width,
+              state.height,
+              targetX + x,
+              y,
+              sizing.iconSize,
+              getIconVisualOffsetY(state.isTextlessMode)
+            ),
             { area, id: item.id, index, item, pageIndex }
           );
           if (item.type === "folder") {

@@ -20,7 +20,7 @@ import {
   getIconNodeOffsetFromVisualCenter,
   getIconVisualOffsetY,
 } from "../geometry/iconMetrics.js";
-import { makeStageVirtualElement, mapLocalRectToStageRect } from "../geometry/stageCoordinates.js";
+import { makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import {
   clearLaunchIconBounds,
   getFolderPreviewChildBounds,
@@ -34,6 +34,7 @@ import {
   isReleaseGhostLaunchItem,
 } from "./dragVisibility.js";
 import { getFolderPageMaskRect, resolveOpeningInterruptionFrame } from "./folderOverlayGeometry.js";
+import { makeIconRect, makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { IconNode } from "../nodes/IconNode.js";
 import { getCachedIconTexture } from "../assets/iconTextureCache.js";
 import { getFolderPreviewSlots } from "../../../domain/launchpadLayout.js";
@@ -52,26 +53,6 @@ const CLOSING_PREVIEW_ICON_DURATION = 0.22;
 const CLOSING_PREVIEW_ICON_ROW_STAGGER = 0.01;
 const CLOSING_PREVIEW_ICON_COLUMN_STAGGER = 0.008;
 const CLOSING_PREVIEW_ICON_START_SCALE = 1.08;
-
-function makeSyntheticPointerEvent(original, node) {
-  const native = original?.nativeEvent || original || {};
-  const bounds = node.getIconBounds(node.stageRect || { left: 0, top: 0 });
-  return {
-    button: native.button ?? 0,
-    buttons: native.buttons ?? 1,
-    clientX: native.clientX ?? 0,
-    clientY: native.clientY ?? 0,
-    currentTarget: {
-      getBoundingClientRect: () => bounds,
-      querySelector: () => null,
-    },
-    pointerId: native.pointerId,
-    preventDefault: () => native.preventDefault?.(),
-    stopPropagation: () => native.stopPropagation?.(),
-    target: native.target,
-    type: native.type || "pointerdown",
-  };
-}
 
 function makeLocalRect(rect, stageRect) {
   if (!rect) return null;
@@ -107,19 +88,6 @@ function makePreviewChildKey(childId, slotIndex) {
 
 function makeClosingPreviewSwapKey(folderId, pageIndex) {
   return `closing-preview-swap:${folderId || "folder"}:${pageIndex}`;
-}
-
-function makeIconRect(centerX, centerY, size) {
-  return {
-    left: centerX - size / 2,
-    top: centerY - size / 2,
-    width: size,
-    height: size,
-  };
-}
-
-function makeTargetIconBounds(stageRect, stageWidth, stageHeight, centerX, centerY, size) {
-  return mapLocalRectToStageRect(stageRect, stageWidth, stageHeight, makeIconRect(centerX, centerY, size));
 }
 
 function makeFolderCenterCollapseRect(folderRect) {

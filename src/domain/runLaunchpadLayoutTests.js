@@ -30,6 +30,7 @@ import { runIconTextureCacheTests } from "../rendering/pixi/assets/iconTextureCa
 import { runFolderThumbPreviewMotionTests } from "../rendering/pixi/nodes/folderThumbPreviewMotionTests.js";
 import { runDragVisibilityTests } from "../rendering/pixi/scene/dragVisibilityTests.js";
 import { runFolderOverlayLayerTests } from "../rendering/pixi/scene/FolderOverlayLayerTests.js";
+import { runIconSceneHelpersTests } from "../rendering/pixi/scene/iconSceneHelpersTests.js";
 
 const state = {
   searchQuery: { value: "" },
@@ -115,6 +116,7 @@ runIconBoundsRegistryTests();
 runFolderThumbPreviewMotionTests();
 runDragVisibilityTests();
 runFolderOverlayLayerTests();
+runIconSceneHelpersTests();
 await runIconTextureCacheTests();
 
 console.info("Launchpad layout helper tests passed");
