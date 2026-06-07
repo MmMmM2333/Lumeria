@@ -30,6 +30,7 @@ import {
   makeCompletedClosingPreviewMotion,
   makeOpeningGhostMotion,
 } from "./folderIconGhostMotion.js";
+import { makeFolderGhostIconNodeState } from "./folderGhostIconState.js";
 import { makeClosingPreviewSwapPlan } from "./folderPreviewSwapMotion.js";
 import { makeStageLocalRect, makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import {
@@ -641,31 +642,7 @@ export class FolderOverlayLayer extends Container {
       const ghost = new IconNode();
       ghost.eventMode = "none";
       ghost.stageRect = state.stageRect;
-      ghost.setState({
-        cellHeight: target.cellHeight,
-        cellWidth: target.cellWidth,
-        compact: false,
-        dragging: false,
-        draggable: false,
-        dropTarget: false,
-        editing: false,
-        folderPreviewPageSize: state.folderPageSize,
-        ghosted: false,
-        hasCustomIcon: false,
-        iconSize: target.iconSize,
-        interactive: false,
-        item: target.item,
-        launchTargetStatus: target.item?.type === "app" && state.showMissingLaunchTargetBadge
-          ? state.launchTargetStatusById?.[target.item.id]
-          : null,
-        opening: false,
-        removable: false,
-        selected: false,
-        source: { type: "folder-open-ghost", pageIndex: state.folderPageIndex },
-        stageHeight: state.height,
-        stageWidth: state.width,
-        textless: state.isTextlessMode,
-      });
+      ghost.setState(makeFolderGhostIconNodeState({ sourceType: "folder-open-ghost", state, target }));
       const motion = makeOpeningGhostMotion(target, {
         isTextlessMode: state.isTextlessMode,
         openDuration: folderOpenGhostDuration,
@@ -935,31 +912,7 @@ export class FolderOverlayLayer extends Container {
       ghost.eventMode = "none";
       ghost.stageRect = state.stageRect;
       ghost.isThumbnailChild = Boolean(target.isThumbnailChild);
-      ghost.setState({
-        cellHeight: target.cellHeight,
-        cellWidth: target.cellWidth,
-        compact: false,
-        dragging: false,
-        draggable: false,
-        dropTarget: false,
-        editing: false,
-        folderPreviewPageSize: state.folderPageSize,
-        ghosted: false,
-        hasCustomIcon: false,
-        iconSize: target.iconSize,
-        interactive: false,
-        item: target.item,
-        launchTargetStatus: target.item?.type === "app" && state.showMissingLaunchTargetBadge
-          ? state.launchTargetStatusById?.[target.item.id]
-          : null,
-        opening: false,
-        removable: false,
-        selected: false,
-        source: { type: "folder-close-ghost", pageIndex: state.folderPageIndex },
-        stageHeight: state.height,
-        stageWidth: state.width,
-        textless: state.isTextlessMode,
-      });
+      ghost.setState(makeFolderGhostIconNodeState({ sourceType: "folder-close-ghost", state, target }));
       const motion = makeClosingGhostMotion(target, {
         alphaHold: CLOSING_EXTRA_GHOST_ALPHA_HOLD,
         closeDuration: folderCloseDuration,
