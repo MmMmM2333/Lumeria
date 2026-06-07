@@ -2,8 +2,11 @@ import { Container, Graphics, Rectangle, Sprite, Text } from "pixi.js";
 import { gsap } from "gsap";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getCachedIconTexture } from "../assets/iconTextureCache.js";
+import {
+  getCenteredLocalRect,
+  mapDisplayObjectLocalRectToStageRect,
+} from "../geometry/displayObjectBounds.js";
 import { getIconLabelLocalY, getIconVisualOffsetY } from "../geometry/iconMetrics.js";
-import { mapLocalRectToStageRect } from "../geometry/stageCoordinates.js";
 import {
   drawEditButton as drawEditButtonGraphic,
   drawMissingBadge,
@@ -219,53 +222,23 @@ export class IconNode extends Container {
   }
 
   getVisualBounds(node, stageRect, size) {
-    const halfSize = size / 2;
-    const matrix = node.getGlobalTransform?.();
-    if (!matrix?.apply) {
-      const global = node.getGlobalPosition();
-      return mapLocalRectToStageRect(stageRect, this.stageWidth, this.stageHeight, {
-        left: global.x - halfSize,
-        top: global.y - halfSize,
-        width: size,
-        height: size,
-      });
-    }
-    const points = [
-      matrix.apply({ x: -halfSize, y: -halfSize }),
-      matrix.apply({ x: halfSize, y: -halfSize }),
-      matrix.apply({ x: -halfSize, y: halfSize }),
-      matrix.apply({ x: halfSize, y: halfSize }),
-    ];
-    const left = Math.min(...points.map((point) => point.x));
-    const top = Math.min(...points.map((point) => point.y));
-    const right = Math.max(...points.map((point) => point.x));
-    const bottom = Math.max(...points.map((point) => point.y));
-    return mapLocalRectToStageRect(stageRect, this.stageWidth, this.stageHeight, {
-      left,
-      top,
-      width: right - left,
-      height: bottom - top,
+    return mapDisplayObjectLocalRectToStageRect({
+      allowGlobalFallback: true,
+      node,
+      rect: getCenteredLocalRect(size),
+      stageHeight: this.stageHeight,
+      stageRect,
+      stageWidth: this.stageWidth,
     });
   }
 
   getLocalVisualBounds(node, stageRect, rect) {
-    const matrix = node.getGlobalTransform?.();
-    if (!matrix?.apply) return null;
-    const points = [
-      matrix.apply({ x: rect.left, y: rect.top }),
-      matrix.apply({ x: rect.left + rect.width, y: rect.top }),
-      matrix.apply({ x: rect.left, y: rect.top + rect.height }),
-      matrix.apply({ x: rect.left + rect.width, y: rect.top + rect.height }),
-    ];
-    const left = Math.min(...points.map((point) => point.x));
-    const top = Math.min(...points.map((point) => point.y));
-    const right = Math.max(...points.map((point) => point.x));
-    const bottom = Math.max(...points.map((point) => point.y));
-    return mapLocalRectToStageRect(stageRect, this.stageWidth, this.stageHeight, {
-      left,
-      top,
-      width: right - left,
-      height: bottom - top,
+    return mapDisplayObjectLocalRectToStageRect({
+      node,
+      rect,
+      stageHeight: this.stageHeight,
+      stageRect,
+      stageWidth: this.stageWidth,
     });
   }
 
