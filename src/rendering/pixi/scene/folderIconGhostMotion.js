@@ -1,16 +1,7 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { folderCloseDuration, folderOpenGhostDuration } from "../animation/eases.js";
 import { getIconNodeOffsetFromVisualCenter } from "../geometry/iconMetrics.js";
-
-function makeLocalRect(rect, stageRect) {
-  if (!rect) return null;
-  return {
-    left: rect.left - stageRect.left,
-    top: rect.top - stageRect.top,
-    width: rect.width,
-    height: rect.height,
-  };
-}
+import { makeStageLocalRect } from "../geometry/stageCoordinates.js";
 
 export function getFolderGhostGridDelay(index, columnCount, maxDelay = 0.18) {
   const safeIndex = Math.max(0, Number(index) || 0);
@@ -31,7 +22,7 @@ export function makeOpeningGhostMotion(target, options = {}) {
     openDuration = folderOpenGhostDuration,
     stageRect,
   } = options;
-  const sourceRect = makeLocalRect(target.sourceRect, stageRect);
+  const sourceRect = makeStageLocalRect(target.sourceRect, stageRect);
   const labelOffset = getIconNodeOffsetFromVisualCenter(isTextlessMode);
   const scale = Math.max(0.16, target.sourceRect.width / Math.max(1, target.iconSize));
   const fromX = sourceRect.left + sourceRect.width / 2;
@@ -54,7 +45,7 @@ export function makeOpeningGhostMotion(target, options = {}) {
 
 export function makeCompletedClosingPreviewMotion(target, options = {}) {
   const { isTextlessMode = false, stageRect } = options;
-  const targetRect = makeLocalRect(target.targetRect, stageRect);
+  const targetRect = makeStageLocalRect(target.targetRect, stageRect);
   const labelOffset = getIconNodeOffsetFromVisualCenter(isTextlessMode);
   const scale = Math.max(0.14, target.targetRect.width / Math.max(1, target.iconSize));
   return {
@@ -72,8 +63,8 @@ export function makeClosingGhostMotion(target, options = {}) {
     isTextlessMode = false,
     stageRect,
   } = options;
-  const sourceRect = makeLocalRect(target.sourceRect, stageRect);
-  const targetRect = makeLocalRect(target.targetRect, stageRect);
+  const sourceRect = makeStageLocalRect(target.sourceRect, stageRect);
+  const targetRect = makeStageLocalRect(target.targetRect, stageRect);
   const labelOffset = getIconNodeOffsetFromVisualCenter(isTextlessMode);
   const sourceScale = target.sourceScale ?? 1;
   const sourceAlpha = target.sourceAlpha ?? 1;

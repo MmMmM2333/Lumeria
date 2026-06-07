@@ -33,6 +33,16 @@ export function mapLocalRectToStageRect(stageRect, stageWidth, stageHeight, rect
   };
 }
 
+export function makeStageLocalRect(rect, stageRect) {
+  if (!rect) return null;
+  return {
+    height: rect.height,
+    left: safeNumber(rect.left) - safeNumber(stageRect?.left),
+    top: safeNumber(rect.top) - safeNumber(stageRect?.top),
+    width: rect.width,
+  };
+}
+
 export function makeStageVirtualElement(stageRect, stageWidth, stageHeight, localRect) {
   const visualRect = mapLocalRectToStageRect(stageRect, stageWidth, stageHeight, localRect);
   const layoutWidth = Math.max(0, safeNumber(localRect?.width, visualRect.width));

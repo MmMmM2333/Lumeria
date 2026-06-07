@@ -34,7 +34,7 @@ import {
   getIconLabelTopFromVisualRect,
   getIconVisualOffsetY,
 } from "../geometry/iconMetrics.js";
-import { makeStageVirtualElement } from "../geometry/stageCoordinates.js";
+import { makeStageLocalRect, makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import {
   clearLaunchIconBounds,
   getFolderPreviewChildBounds,
@@ -75,16 +75,6 @@ const CLOSING_PREVIEW_ICON_COLUMN_STAGGER = 0.008;
 const CLOSING_PREVIEW_ICON_START_SCALE = 1.08;
 const CLOSING_PREVIEW_ICON_OUTSIDE_MARGIN = 0.35;
 const CLOSING_PREVIEW_ICON_OUTSIDE_SPREAD = 0.12;
-
-function makeLocalRect(rect, stageRect) {
-  if (!rect) return null;
-  return {
-    left: rect.left - stageRect.left,
-    top: rect.top - stageRect.top,
-    width: rect.width,
-    height: rect.height,
-  };
-}
 
 function isPointInRect(x, y, rect) {
   return Boolean(rect) &&
@@ -161,7 +151,7 @@ function makeFrameSnapshotFromBounds(bounds, padding, styleFrame) {
 function makeOpeningInterruptionFrame(targets, stageRect, styleFrame) {
   let bounds = null;
   for (const target of targets || []) {
-    const iconRect = makeLocalRect(target.sourceRect, stageRect);
+    const iconRect = makeStageLocalRect(target.sourceRect, stageRect);
     if (!iconRect) continue;
     bounds = expandBounds(bounds, iconRect);
     if (target.sourceLabelAlpha == null || target.sourceLabelAlpha <= 0) continue;
@@ -763,7 +753,7 @@ export class FolderOverlayLayer extends Container {
     const usableTargets = (targets || []).filter((target) => target.sourceRect && target.targetRect);
 
     if (!usableTargets.length) return;
-    this.startFrameGhost(makeLocalRect(folderRect, state.stageRect), panelRect, {
+    this.startFrameGhost(makeStageLocalRect(folderRect, state.stageRect), panelRect, {
       duration: folderOpenGhostDuration,
       ease: folderOpenGhostEase,
       fromFillAlpha: 0.22,
@@ -954,7 +944,7 @@ export class FolderOverlayLayer extends Container {
     const localTargets = [];
     let bounds = null;
     for (const target of targets) {
-      const rect = makeLocalRect(target.targetRect, state.stageRect);
+      const rect = makeStageLocalRect(target.targetRect, state.stageRect);
       if (!rect || rect.width <= 0 || rect.height <= 0) continue;
       localTargets.push({ ...target, rect });
       bounds = expandBounds(bounds, rect);
@@ -1050,7 +1040,7 @@ export class FolderOverlayLayer extends Container {
     if (!usableTargets.length) return;
     const isInterruptedClose = Boolean(interruption);
     const frameDuration = folderCloseDuration + CLOSING_FRAME_TAIL_DURATION;
-    const closeFrameToRect = makeLocalRect(folderRect, state.stageRect);
+    const closeFrameToRect = makeStageLocalRect(folderRect, state.stageRect);
     const previewTiming = getClosingPreviewTiming(closeFrameFromRect, closeFrameToRect);
     const thumb = getFolderThumbMetrics(folderRect.width);
     let closingPreviewSwapStarted = false;

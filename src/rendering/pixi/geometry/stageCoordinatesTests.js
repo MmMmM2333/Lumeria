@@ -1,4 +1,4 @@
-import { makeStageVirtualElement, mapLocalRectToStageRect } from "./stageCoordinates.js";
+import { makeStageLocalRect, makeStageVirtualElement, mapLocalRectToStageRect } from "./stageCoordinates.js";
 
 export function runStageCoordinatesTests() {
   const assert = (condition, message) => {
@@ -26,6 +26,14 @@ export function runStageCoordinatesTests() {
   assert(element.offsetWidth === 20 && element.offsetHeight === 30, "virtual element should expose layout size");
   assert(rect.left === 10 && rect.top === 20, "virtual element rect should expose visual position");
   assert(rect.width === 10 && rect.height === 15, "virtual element rect should expose visual size");
+
+  const local = makeStageLocalRect(
+    { left: 130, top: 260, width: 48, height: 56 },
+    { left: 100, top: 200, width: 800, height: 600 }
+  );
+  assert(local.left === 30 && local.top === 60, "stage local rect should subtract the stage origin");
+  assert(local.width === 48 && local.height === 56, "stage local rect should preserve dimensions");
+  assert(makeStageLocalRect(null, { left: 0, top: 0 }) === null, "stage local rect should stay nullable");
 
   const stageScales = [
     { label: "1080p css stage", rect: { left: 0, top: 0, width: 1920, height: 1080 }, stageWidth: 1920, stageHeight: 1080 },
