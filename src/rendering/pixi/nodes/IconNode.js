@@ -22,6 +22,10 @@ import {
   drawSelectionFrame,
   getSelectionFrameRect as getSelectionFrameRectForIcon,
 } from "./iconSelectionFrame.js";
+import {
+  getEditButtonActionAt,
+  getIconHitAreaRect,
+} from "./iconInteractionGeometry.js";
 
 function makeLabelText(fontSize = 13) {
   return new Text({
@@ -57,7 +61,6 @@ function setCentered(displayObject, x, y) {
   displayObject.position.set(x, y);
 }
 
-const EDIT_BUTTON_HIT_PADDING = 12;
 const PRESSED_VISUAL_ALPHA = 0.58;
 const FOLDER_HOVER_PADDING_RATIO = 0.16;
 const FOLDER_HOVER_PADDING_MIN = 6;
@@ -346,18 +349,15 @@ export class IconNode extends Container {
   getEditActionAt(event) {
     if (!this.state?.editing || this.item?.type !== "app") return null;
     const point = event.getLocalPosition?.(this.visualWrap);
-    if (!point) return null;
-    if (this.isInsideButton(point, this.removeButton) && this.state.removable) return "remove";
-    if (this.isInsideButton(point, this.changeButton)) return "choose-icon";
-    if (this.isInsideButton(point, this.resetButton) && this.state.hasCustomIcon) return "reset-icon";
-    return null;
-  }
-
-  isInsideButton(point, button) {
-    if (!button.visible) return false;
-    const x = point.x - button.x;
-    const y = point.y - button.y;
-    return Math.hypot(x, y) <= 12;
+    return getEditButtonActionAt(point, {
+      changeButton: this.changeButton,
+      editing: this.state.editing,
+      hasCustomIcon: this.state.hasCustomIcon,
+      itemType: this.item?.type,
+      removable: this.state.removable,
+      removeButton: this.removeButton,
+      resetButton: this.resetButton,
+    });
   }
 
   getVisualOffsetY() {
@@ -365,13 +365,17 @@ export class IconNode extends Container {
   }
 
   updateHitArea(state) {
-    const editPadding = state.editing && this.item?.type === "app" ? EDIT_BUTTON_HIT_PADDING : 0;
-    const visualOffsetY = this.getVisualOffsetY();
+    const rect = getIconHitAreaRect({
+      editing: state.editing,
+      iconSize: this.iconSize,
+      itemType: this.item?.type,
+      visualOffsetY: this.getVisualOffsetY(),
+    });
     this.hitArea = new Rectangle(
-      -this.iconSize / 2 - editPadding,
-      visualOffsetY - this.iconSize / 2 - editPadding,
-      this.iconSize + editPadding * 2,
-      this.iconSize + editPadding * 2
+      rect.left,
+      rect.top,
+      rect.width,
+      rect.height
     );
   }
 
