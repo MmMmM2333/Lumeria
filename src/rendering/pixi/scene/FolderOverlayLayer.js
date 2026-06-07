@@ -33,7 +33,7 @@ import {
   isActiveDraggedLaunchItem,
   isReleaseGhostLaunchItem,
 } from "./dragVisibility.js";
-import { getFolderPageMaskRect } from "./folderOverlayGeometry.js";
+import { getFolderPageMaskRect, resolveOpeningInterruptionFrame } from "./folderOverlayGeometry.js";
 import { IconNode } from "../nodes/IconNode.js";
 import { getCachedIconTexture } from "../assets/iconTextureCache.js";
 import { getFolderPreviewSlots } from "../../../domain/launchpadLayout.js";
@@ -1106,7 +1106,7 @@ export class FolderOverlayLayer extends Container {
     this.finishClosingGhostTransition(state);
   }
 
-  captureOpeningInterruption(state, targets) {
+  captureOpeningInterruption(state, targets, panelRect) {
     if (!this.openingGhostKeys?.size) return null;
     const targetByItemId = new Map((targets || []).map((target) => [target.item?.id, target]));
     const interruptedTargets = [];
@@ -1130,7 +1130,7 @@ export class FolderOverlayLayer extends Container {
     const contentFrameRect = makeOpeningInterruptionFrame(interruptedTargets, state.stageRect, frameRect);
 
     return {
-      frameRect: contentFrameRect || frameRect,
+      frameRect: resolveOpeningInterruptionFrame(frameRect, panelRect, contentFrameRect),
       targets: interruptedTargets.length ? interruptedTargets : targets,
     };
   }
@@ -1268,7 +1268,7 @@ export class FolderOverlayLayer extends Container {
     const {
       previewSwapTargets = [],
     } = options;
-    const interruption = this.captureOpeningInterruption(state, targets);
+    const interruption = this.captureOpeningInterruption(state, targets, panelRect);
     const closeFrameFromRect = interruption?.frameRect || panelRect;
     const closeTargets = interruption?.targets || targets;
     this.clearOpeningGhosts();
