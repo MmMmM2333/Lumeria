@@ -16,7 +16,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watchEffect } from "vue";
 import { createPixiApp } from "./createPixiApp.js";
 import { DesktopLayer } from "./scene/DesktopLayer.js";
 import { clearIconTextureCache, preloadIconTextures } from "./assets/iconTextureCache.js";
-import { clearIconBoundsRegistry } from "./geometry/iconBoundsRegistry.js";
+import { clearDesktopIconBounds } from "./geometry/iconBoundsRegistry.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { getPixiHostMetrics } from "./pixiHostMetrics.js";
 
@@ -171,7 +171,7 @@ function destroyPixi(options = {}) {
   if (deep) currentApp?.destroy(true);
   else currentApp?.stop?.();
   hostRef.value?.replaceChildren?.();
-  clearIconBoundsRegistry();
+  clearDesktopIconBounds();
   if (deep) clearIconTextureCache();
 }
 

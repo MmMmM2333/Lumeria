@@ -151,6 +151,16 @@ export function clearFolderPreviewChildBounds(folderId) {
   }
 }
 
+export function clearDesktopIconBounds() {
+  clearLaunchIconBounds("desktop");
+  clearLaunchIconBounds("search");
+}
+
+export function clearFolderIconBounds(folderId = null) {
+  clearLaunchIconBounds(folderId ? { area: "folder", folderId } : "folder");
+  clearFolderPreviewChildBounds(folderId);
+}
+
 export function getFolderPreviewChildBounds(folderId, childId, slotIndex) {
   return cloneRect(folderPreviewChildBounds.get(`${folderId}:${childId}:${slotIndex}`));
 }

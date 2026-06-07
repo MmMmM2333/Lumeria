@@ -1,11 +1,17 @@
 import {
+  clearDesktopIconBounds,
+  clearFolderIconBounds,
   clearIconBoundsRegistry,
   clearLaunchIconBounds,
+  getFolderPreviewChildBounds,
   getLaunchIconBounds,
   getLaunchIconTargetBounds,
+  getTopLevelFolderThumbBounds,
   getTopLevelIconBounds,
+  registerFolderPreviewChildBounds,
   registerLaunchIconBounds,
   registerLaunchIconTargetBounds,
+  registerTopLevelFolderThumbBounds,
 } from "./iconBoundsRegistry.js";
 
 function rect(left) {
@@ -51,6 +57,43 @@ export function runIconBoundsRegistryTests() {
   assert(!getLaunchIconBounds({ area: "folder", folderId: "folder-2", id: "folder-app-2", pageIndex: 0 }), "folder area clear should remove remaining folder bounds");
   assert(!getLaunchIconTargetBounds({ area: "folder", folderId: "folder-2", id: "folder-app-2", pageIndex: 0 }), "folder area clear should remove remaining folder target bounds");
   assert(getLaunchIconBounds({ area: "desktop", id: "desktop-app", pageIndex: 0 }), "folder area clear should still keep desktop bounds");
+
+  clearIconBoundsRegistry();
+  registerLaunchIconBounds(
+    { area: "desktop", id: "desktop-folder", pageIndex: 0 },
+    rect(10),
+    { area: "desktop", id: "desktop-folder", pageIndex: 0 }
+  );
+  registerTopLevelFolderThumbBounds("desktop-folder", rect(12), { area: "desktop", id: "desktop-folder", pageIndex: 0 });
+  registerLaunchIconBounds(
+    { area: "folder", folderId: "folder-1", id: "folder-app-1", pageIndex: 0 },
+    rect(40),
+    { area: "folder", folderId: "folder-1", id: "folder-app-1", pageIndex: 0 }
+  );
+  registerFolderPreviewChildBounds("folder-1", "folder-app-1", 0, rect(44));
+
+  clearFolderIconBounds();
+  assert(getTopLevelIconBounds("desktop-folder"), "folder scoped icon clear should keep desktop top-level icon bounds");
+  assert(getTopLevelFolderThumbBounds("desktop-folder"), "folder scoped icon clear should keep desktop folder thumb bounds");
+  assert(!getLaunchIconBounds({ area: "folder", folderId: "folder-1", id: "folder-app-1", pageIndex: 0 }), "folder scoped icon clear should remove folder launch bounds");
+  assert(!getFolderPreviewChildBounds("folder-1", "folder-app-1", 0), "folder scoped icon clear should remove folder preview child bounds");
+
+  registerLaunchIconBounds(
+    { area: "search", id: "search-app", pageIndex: 0 },
+    rect(80),
+    { area: "search", id: "search-app", pageIndex: 0 }
+  );
+  registerLaunchIconBounds(
+    { area: "folder", folderId: "folder-2", id: "folder-app-2", pageIndex: 0 },
+    rect(90),
+    { area: "folder", folderId: "folder-2", id: "folder-app-2", pageIndex: 0 }
+  );
+
+  clearDesktopIconBounds();
+  assert(!getLaunchIconBounds({ area: "desktop", id: "desktop-folder", pageIndex: 0 }), "desktop scoped icon clear should remove desktop launch bounds");
+  assert(!getLaunchIconBounds({ area: "search", id: "search-app", pageIndex: 0 }), "desktop scoped icon clear should remove search launch bounds");
+  assert(!getTopLevelIconBounds("desktop-folder"), "desktop scoped icon clear should remove desktop top-level bounds");
+  assert(getLaunchIconBounds({ area: "folder", folderId: "folder-2", id: "folder-app-2", pageIndex: 0 }), "desktop scoped icon clear should keep folder launch bounds");
 
   clearIconBoundsRegistry();
 }

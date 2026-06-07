@@ -49,7 +49,7 @@ import { createPixiApp } from "./createPixiApp.js";
 import { FolderOverlayLayer } from "./scene/FolderOverlayLayer.js";
 import { findFolderGhostKey } from "./scene/folderOverlayTargets.js";
 import { clearIconTextureCache } from "./assets/iconTextureCache.js";
-import { clearIconBoundsRegistry } from "./geometry/iconBoundsRegistry.js";
+import { clearFolderIconBounds } from "./geometry/iconBoundsRegistry.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { getPixiHostRect, getViewportFallbackSize } from "./pixiHostMetrics.js";
 
@@ -230,7 +230,7 @@ function destroyPixi(options = {}) {
   if (deep) currentApp?.destroy(true);
   else currentApp?.stop?.();
   hostRef.value?.replaceChildren?.();
-  clearIconBoundsRegistry();
+  clearFolderIconBounds();
   if (deep) clearIconTextureCache();
 }
 
