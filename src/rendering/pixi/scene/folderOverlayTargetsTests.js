@@ -1,4 +1,5 @@
 import {
+  findFolderGhostKey,
   getStableFolderCloseRects,
   makeClosingGhostTarget,
   makeClosingPreviewSwapTargets,
@@ -28,6 +29,14 @@ export function runFolderOverlayTargetsTests() {
   const previewSlotById = makePreviewSlotById(previewSlots);
 
   assert(previewSlotById.get("app-b") === 1, "preview slot lookup should map item ids to thumbnail slots");
+  const ghostKeys = [
+    { item: { id: "app-a" }, key: "app-a-slot-0", slotIndex: 0 },
+    { item: { id: "app-a" }, key: "app-a-slot-2", slotIndex: 2 },
+    { item: { id: "app-b" }, key: "app-b-fallback" },
+  ];
+  assert(findFolderGhostKey(ghostKeys, "app-a", 2) === "app-a-slot-2", "ghost key lookup should prefer an exact slot match");
+  assert(findFolderGhostKey(ghostKeys, "app-b", 1) === "app-b-fallback", "ghost key lookup should fall back to an item match");
+  assert(findFolderGhostKey(ghostKeys, "app-z", 0) === null, "ghost key lookup should stay nullable for missing items");
 
   const projected = makeProjectedPreviewRect(folderRect, 4, 3, 3);
   assert(nearlyEqual(projected.left + projected.width / 2, 55), "projected rect should place slot centers by grid column");

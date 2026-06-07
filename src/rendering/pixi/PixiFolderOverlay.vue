@@ -47,6 +47,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect } from "vue";
 import { createPixiApp } from "./createPixiApp.js";
 import { FolderOverlayLayer } from "./scene/FolderOverlayLayer.js";
+import { findFolderGhostKey } from "./scene/folderOverlayTargets.js";
 import { clearIconTextureCache } from "./assets/iconTextureCache.js";
 import { clearIconBoundsRegistry } from "./geometry/iconBoundsRegistry.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
@@ -151,12 +152,6 @@ function getHostRect() {
   return getPixiHostRect(hostRef.value, getViewportFallbackSize());
 }
 
-function getFolderGhostKey(ghosts, itemId, slotIndex) {
-  const items = Array.isArray(ghosts) ? ghosts : [];
-  const matchingSlot = items.find((ghost) => ghost.item?.id === itemId && ghost.slotIndex === slotIndex);
-  return matchingSlot?.key || items.find((ghost) => ghost.item?.id === itemId)?.key || null;
-}
-
 function renderPixi() {
   if (!app || !layer || !hostRef.value) return;
   const rect = getHostRect();
@@ -174,8 +169,8 @@ function renderPixi() {
     folderCloseIconGhosts: props.state.folderCloseIconGhosts?.value,
     folderOpenIconGhosts: props.state.folderOpenIconGhosts?.value,
     dragReleaseGhostId: props.state.dragReleaseState?.value?.item?.id || null,
-    getFolderCloseIconGhostKey: (itemId, slotIndex) => getFolderGhostKey(props.state.folderCloseIconGhosts?.value, itemId, slotIndex),
-    getFolderOpenIconGhostKey: (itemId, slotIndex) => getFolderGhostKey(props.state.folderOpenIconGhosts?.value, itemId, slotIndex),
+    getFolderCloseIconGhostKey: (itemId, slotIndex) => findFolderGhostKey(props.state.folderCloseIconGhosts?.value, itemId, slotIndex),
+    getFolderOpenIconGhostKey: (itemId, slotIndex) => findFolderGhostKey(props.state.folderOpenIconGhosts?.value, itemId, slotIndex),
     getVisibleFolderPage: props.state.getVisibleFolderPage,
     getFolderPageRenderMode: props.state.getFolderPageRenderMode,
     height: Math.max(1, rect.height),

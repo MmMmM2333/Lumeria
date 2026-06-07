@@ -49,6 +49,7 @@ import {
 } from "./dragVisibility.js";
 import { getClosingPreviewTiming, getFolderPageMaskRect, resolveOpeningInterruptionFrame } from "./folderOverlayGeometry.js";
 import {
+  findFolderGhostKey,
   getStableFolderCloseRects,
   makeClosingGhostTarget,
   makeClosingPreviewSwapTargets,
@@ -166,12 +167,6 @@ function makeOpeningInterruptionFrame(targets, stageRect, styleFrame) {
     });
   }
   return makeFrameSnapshotFromBounds(bounds, CLOSING_FRAME_PADDING, styleFrame);
-}
-
-function findControllerGhostKey(ghosts, itemId, slotIndex) {
-  const items = Array.isArray(ghosts) ? ghosts : [];
-  const matchingSlot = items.find((ghost) => ghost.item?.id === itemId && ghost.slotIndex === slotIndex);
-  return matchingSlot?.key || items.find((ghost) => ghost.item?.id === itemId)?.key || null;
 }
 
 function killTweensDeep(node) {
@@ -434,7 +429,7 @@ export class FolderOverlayLayer extends Container {
             iconSize,
             index,
             item,
-            controllerGhostKey: findControllerGhostKey(state.folderOpenIconGhosts, item.id, index),
+            controllerGhostKey: findFolderGhostKey(state.folderOpenIconGhosts, item.id, index),
             folderRect,
             getPreviewChildRect: (targetItem, slotIndex) =>
               getFolderPreviewChildBounds(state.renderedFolder.id, targetItem.id, slotIndex),
@@ -455,7 +450,7 @@ export class FolderOverlayLayer extends Container {
             iconSize,
             index,
             item,
-            controllerGhostKey: findControllerGhostKey(state.folderCloseIconGhosts, item.id, index),
+            controllerGhostKey: findFolderGhostKey(state.folderCloseIconGhosts, item.id, index),
             previewSlotById,
             stableFolderCloseTarget: this.stableFolderCloseTarget,
           }));

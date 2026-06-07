@@ -23,6 +23,12 @@ export function makePreviewSlotById(previewSlots) {
   );
 }
 
+export function findFolderGhostKey(ghosts, itemId, slotIndex) {
+  const items = Array.isArray(ghosts) ? ghosts : [];
+  const matchingSlot = items.find((ghost) => ghost.item?.id === itemId && ghost.slotIndex === slotIndex);
+  return matchingSlot?.key || items.find((ghost) => ghost.item?.id === itemId)?.key || null;
+}
+
 export function makeFolderCenterCollapseRect(folderRect) {
   if (!folderRect) return null;
   const size = Math.max(4, Math.min(folderRect.width, folderRect.height) * 0.18);
