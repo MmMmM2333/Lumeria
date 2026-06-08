@@ -51,12 +51,14 @@ const FOLDER_ICON_SIZE_MODE_GLOBAL = "global";
 const CUSTOM_ICON_HYDRATION_ID_PREFIX = "__custom_icon__:";
 const MIN_ICON_HYDRATION_BATCH_SIZE = 20;
 const MAX_ICON_HYDRATION_BATCH_SIZE = 80;
+const WINDOWS_WALLPAPER_REFRESH_INTERVAL_MS = 5000;
 
 export function useLaunchpadNative(options) {
   let nativeLayoutReady = false;
   let nativeWindowEffectsUpdate = Promise.resolve();
   let nativeSaveTimer = null;
   let nativeWindowHideTimer = null;
+  let nativeWallpaperRefreshTimer = null;
   let nativeWindowOpenSequence = null;
   let nativeEventListenerGeneration = 0;
   let nativeSavePromise = null;
@@ -154,6 +156,11 @@ export function useLaunchpadNative(options) {
   function clearNativeWindowHideTimer() {
     if (nativeWindowHideTimer) window.clearTimeout(nativeWindowHideTimer);
     nativeWindowHideTimer = null;
+  }
+
+  function clearNativeWallpaperRefreshTimer() {
+    if (nativeWallpaperRefreshTimer) window.clearTimeout(nativeWallpaperRefreshTimer);
+    nativeWallpaperRefreshTimer = null;
   }
 
   function createCurrentLayoutSnapshot() {
@@ -268,6 +275,7 @@ export function useLaunchpadNative(options) {
     options.schedulePageGridMetrics();
     scheduleLaunchTargetStatusCheck();
     setNativeWindowEffectsEnabled(true);
+    syncWindowsWallpaperRefreshTimer();
   }
 
   function scheduleNativeLayoutSave() {
@@ -296,18 +304,39 @@ export function useLaunchpadNative(options) {
       const imagePath = normalizeBackgroundImagePath(selected?.imagePath);
       if (!imagePath) return false;
       const imageUrl = convertFilePathToAssetUrl(imagePath);
+      if (options.backgroundImagePath.value === imagePath && options.backgroundImageUrl.value === imageUrl) {
+        return false;
+      }
       options.backgroundImagePath.value = imagePath;
       options.backgroundImageUrl.value = imageUrl;
       if (options.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER) {
         options.draftBackgroundImagePath.value = imagePath;
         options.draftBackgroundImageUrl.value = imageUrl;
       }
-      scheduleNativeLayoutSave();
       return true;
     } catch (error) {
       console.error("Failed to refresh Windows desktop wallpaper background", error);
       return false;
     }
+  }
+
+  function shouldPollWindowsWallpaperBackground() {
+    return Boolean(
+      isNativeBridgeAvailable()
+      && options.isDesktopOpen.value
+      && options.backgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER
+    );
+  }
+
+  function syncWindowsWallpaperRefreshTimer() {
+    clearNativeWallpaperRefreshTimer();
+    if (!shouldPollWindowsWallpaperBackground()) return;
+    nativeWallpaperRefreshTimer = window.setTimeout(async () => {
+      nativeWallpaperRefreshTimer = null;
+      const changed = await refreshWindowsWallpaperBackground();
+      if (changed) scheduleNativeLayoutSave();
+      syncWindowsWallpaperRefreshTimer();
+    }, WINDOWS_WALLPAPER_REFRESH_INTERVAL_MS);
   }
 
   async function loadNativeLaunchpadData() {
@@ -745,6 +774,7 @@ export function useLaunchpadNative(options) {
   function clearNativeEventListeners() {
     nativeEventListenerGeneration += 1;
     clearNativeWindowHideTimer();
+    clearNativeWallpaperRefreshTimer();
     unlistenOpenDesktopEvent?.();
     unlistenOpenDesktopEvent = null;
     unlistenToggleDesktopEvent?.();
@@ -768,7 +798,9 @@ export function useLaunchpadNative(options) {
 
   function openDesktopFromNativeShortcut(event) {
     rememberNativeWindowOpenSequence(event);
-    refreshWindowsWallpaperBackground();
+    refreshWindowsWallpaperBackground().then((changed) => {
+      if (changed) scheduleNativeLayoutSave();
+    }).finally(syncWindowsWallpaperRefreshTimer);
     clearNativeWindowHideTimer();
     if (options.isDesktopOpen.value) {
       options.focusDesktopSurface?.();
@@ -778,6 +810,7 @@ export function useLaunchpadNative(options) {
   }
 
   function hideNativeWindowAfterCloseAnimation() {
+    clearNativeWallpaperRefreshTimer();
     clearNativeWindowHideTimer();
     nativeWindowHideTimer = window.setTimeout(async () => {
       nativeWindowHideTimer = null;
@@ -806,6 +839,7 @@ export function useLaunchpadNative(options) {
   }
 
   function closeDesktopFromNativeWindow() {
+    clearNativeWallpaperRefreshTimer();
     if (options.isDesktopOpen.value) {
       options.closeDesktop({ clearSearch: false });
     }
@@ -846,6 +880,7 @@ export function useLaunchpadNative(options) {
     scheduleLaunchTargetStatusCheck,
     setNativeWindowEffectsEnabled,
     showNativeLaunchError,
+    syncWindowsWallpaperRefreshTimer,
     shouldUseNativeCatalog,
   };
 }

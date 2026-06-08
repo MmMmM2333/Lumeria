@@ -690,6 +690,7 @@ export function useLaunchpadController() {
     scheduleLaunchTargetStatusCheck,
     setNativeWindowEffectsEnabled,
     showNativeLaunchError,
+    syncWindowsWallpaperRefreshTimer,
     shouldUseNativeCatalog,
   } = useLaunchpadNative({
     backgroundEffect,
@@ -1111,6 +1112,7 @@ export function useLaunchpadController() {
     hiddenAppIds,
     iconSize,
     isSearchMode,
+    isDesktopOpen,
     isTextlessMode,
     launchTargetStatusById,
     loadNativeLaunchpadData,
@@ -1129,6 +1131,7 @@ export function useLaunchpadController() {
     schedulePageGridMetrics,
     searchRef,
     showMissingLaunchTargetBadge,
+    syncWindowsWallpaperRefreshTimer,
     syncManagedAppState,
     updateFolderViewportHeight,
     updatePageGridMetrics,

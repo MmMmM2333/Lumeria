@@ -19,6 +19,7 @@ export function registerLaunchpadLifecycleWatchers(options, watchFn = watch) {
     gridRows,
     hiddenAppIds,
     iconSize,
+    isDesktopOpen,
     isSearchMode,
     isTextlessMode,
     observeFolderViewport,
@@ -32,6 +33,7 @@ export function registerLaunchpadLifecycleWatchers(options, watchFn = watch) {
     scheduleNativeLayoutSave,
     schedulePageGridMetrics,
     showMissingLaunchTargetBadge,
+    syncWindowsWallpaperRefreshTimer,
     syncManagedAppState,
     visibleFolderRowCount,
     windowEffectAppearance,
@@ -45,6 +47,7 @@ export function registerLaunchpadLifecycleWatchers(options, watchFn = watch) {
   watchFn([pages, gridRows, gridCols, folderRows, folderCols, iconSize, folderIconSizeMode, folderIconSize, isTextlessMode, hiddenAppIds, scanRoots, scanKeywordBlacklist, scanAppBlacklist, showMissingLaunchTargetBadge, backgroundSource, backgroundEffect, backgroundImageOpacity, backgroundImagePath, windowEffectMaterial, windowEffectAppearance], scheduleNativeLayoutSave, { flush: "post" });
   watchFn([pages, showMissingLaunchTargetBadge], scheduleLaunchTargetStatusCheck, { flush: "post" });
   watchFn(filteredManagedApps, syncManagedAppState, { flush: "post" });
+  watchFn([backgroundSource, isDesktopOpen], syncWindowsWallpaperRefreshTimer, { flush: "post" });
 }
 
 export function createLaunchpadLayoutResizeObserver(options, ResizeObserverCtor = globalThis.ResizeObserver) {
