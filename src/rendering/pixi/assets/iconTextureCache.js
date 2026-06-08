@@ -6,6 +6,7 @@ const textureCache = new Map();
 const failedTextureSources = new Set();
 const pendingTextureLoads = new Map();
 const textureLoadListeners = new Map();
+let textureCacheGeneration = 0;
 
 function notifyTextureLoaded(source) {
   const listeners = textureLoadListeners.get(source);
@@ -30,7 +31,7 @@ function loadTextureFromImage(source) {
     image.decoding = "async";
     image.onload = () => {
       try {
-        resolve(Texture.from(image));
+        resolve(Texture.from(image, true));
       } catch (error) {
         reject(error);
       }
@@ -40,20 +41,32 @@ function loadTextureFromImage(source) {
   });
 }
 
+function destroyCachedTexture(texture) {
+  if (!texture || texture.destroyed) return;
+  texture.destroy(true);
+}
+
 function requestTextureLoad(source) {
   if (pendingTextureLoads.has(source) || failedTextureSources.has(source)) return;
-  const pending = loadTextureFromImage(source)
+  const generation = textureCacheGeneration;
+  let pending = null;
+  pending = loadTextureFromImage(source)
     .then((texture) => {
+      if (generation !== textureCacheGeneration) {
+        destroyCachedTexture(texture);
+        return;
+      }
       textureCache.set(source, texture);
       failedTextureSources.delete(source);
       notifyTextureLoaded(source);
     })
     .catch(() => {
+      if (generation !== textureCacheGeneration) return;
       failedTextureSources.add(source);
       notifyTextureLoaded(source);
     })
     .finally(() => {
-      pendingTextureLoads.delete(source);
+      if (pendingTextureLoads.get(source) === pending) pendingTextureLoads.delete(source);
     });
   pendingTextureLoads.set(source, pending);
 }
@@ -78,6 +91,8 @@ export function preloadIconTextures(items) {
 }
 
 export function clearIconTextureCache() {
+  textureCacheGeneration += 1;
+  for (const texture of textureCache.values()) destroyCachedTexture(texture);
   textureCache.clear();
   failedTextureSources.clear();
   pendingTextureLoads.clear();

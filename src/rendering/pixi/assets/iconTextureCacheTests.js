@@ -6,6 +6,13 @@ async function flushTextureLoad() {
 
 function installMockImage(images) {
   return class MockImage {
+    constructor() {
+      this.height = 16;
+      this.naturalHeight = 16;
+      this.naturalWidth = 16;
+      this.width = 16;
+    }
+
     set src(value) {
       this._src = value;
       images.push(this);
@@ -33,8 +40,25 @@ export async function runIconTextureCacheTests() {
   };
 
   const previousImage = globalThis.Image;
+  const previousHtmlImageElement = globalThis.HTMLImageElement;
   const images = [];
-  globalThis.Image = installMockImage(images);
+  const MockImage = installMockImage(images);
+  globalThis.Image = MockImage;
+  globalThis.HTMLImageElement = MockImage;
+  if (!("navigator" in globalThis)) {
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { userAgent: "node" },
+    });
+  }
+  const { Texture } = await import("pixi.js");
+  const originalTextureFrom = Texture.from;
+  const textureFromCalls = [];
+  Texture.from = (resource, skipCache) => {
+    const texture = originalTextureFrom(resource, skipCache);
+    textureFromCalls.push({ resource, skipCache, texture });
+    return texture;
+  };
   const { clearIconTextureCache, getCachedIconTexture } = await importIconTextureCache();
 
   try {
@@ -59,9 +83,45 @@ export async function runIconTextureCacheTests() {
     images[0].onerror();
     await flushTextureLoad();
     assert(sharedCalls.sort().join(",") === "a,b", "different listener keys should both be notified");
+
+    clearIconTextureCache();
+    images.length = 0;
+    textureFromCalls.length = 0;
+    const loadedItem = { id: "app-3", iconDataUrl: "data:image/png;base64,third" };
+    const loadedCalls = [];
+    assert(getCachedIconTexture(loadedItem, () => loadedCalls.push("loaded"), { key: "loaded" }) === null, "missing texture should return null while loading");
+    assert(images.length === 1, "successful texture load should create one image request");
+    images[0].onload();
+    await flushTextureLoad();
+    assert(loadedCalls.join(",") === "loaded", "successful texture load should notify listeners");
+    assert(textureFromCalls.length === 1, "successful texture load should create one Pixi texture");
+    assert(textureFromCalls[0].skipCache === true, "Pixi texture creation should skip the global Pixi cache");
+    const cachedTexture = getCachedIconTexture(loadedItem);
+    assert(cachedTexture === textureFromCalls[0].texture, "loaded texture should be returned from the local icon cache");
+    clearIconTextureCache();
+    assert(cachedTexture.destroyed, "clearing the local icon cache should destroy cached textures");
+
+    images.length = 0;
+    textureFromCalls.length = 0;
+    const staleItem = { id: "app-4", iconDataUrl: "data:image/png;base64,fourth" };
+    const staleCalls = [];
+    getCachedIconTexture(staleItem, () => staleCalls.push("stale"), { key: "stale" });
+    assert(images.length === 1, "pending texture load should create one image request");
+    const staleImage = images[0];
+    clearIconTextureCache();
+    staleImage.onload();
+    await flushTextureLoad();
+    assert(staleCalls.length === 0, "stale pending texture loads should not notify cleared listeners");
+    assert(textureFromCalls.length === 1, "stale pending texture load should still create a texture before generation check");
+    assert(textureFromCalls[0].texture.destroyed, "stale pending texture load should destroy its texture instead of caching it");
+    assert(getCachedIconTexture(staleItem) === null, "stale pending texture load should not repopulate the local cache");
+    assert(images.length === 2, "a fresh request should be required after stale pending load is ignored");
   } finally {
     clearIconTextureCache();
+    Texture.from = originalTextureFrom;
     if (previousImage === undefined) delete globalThis.Image;
     else globalThis.Image = previousImage;
+    if (previousHtmlImageElement === undefined) delete globalThis.HTMLImageElement;
+    else globalThis.HTMLImageElement = previousHtmlImageElement;
   }
 }
