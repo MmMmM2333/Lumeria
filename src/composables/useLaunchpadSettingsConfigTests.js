@@ -1,7 +1,10 @@
 import { createLaunchpadLayoutHelpers, makePageSize } from "../domain/launchpadLayout.js";
 import {
-  BACKGROUND_RENDER_MODE_IMAGE,
-  BACKGROUND_RENDER_MODE_MATERIAL,
+  BACKGROUND_EFFECT_DIMMED,
+  BACKGROUND_EFFECT_NONE,
+  BACKGROUND_SOURCE_CUSTOM_IMAGE,
+  BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
   FOLDER_ICON_SIZE_MODE_CUSTOM,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
@@ -12,10 +15,11 @@ import {
   clampBackgroundImageOpacity,
   clampLaunchpadIconSize,
   normalizeBackgroundImagePath,
-  normalizeBackgroundRenderMode,
+  normalizeBackgroundEffect,
   normalizeWindowEffectAppearance,
   normalizeWindowEffectMaterial,
   normalizeFolderIconSizeMode,
+  normalizeBackgroundSource,
   resolveWindowEffectMaterialForSupport,
   syncLaunchpadSettingsDraftsFromState,
   useLaunchpadSettingsConfig,
@@ -51,14 +55,16 @@ function createSettingsConfig(overrides = {}) {
     draftFolderIconSizeMode: refValue(overrides.draftFolderIconSizeMode ?? FOLDER_ICON_SIZE_MODE_CUSTOM),
     draftFolderIconSize: refValue(overrides.draftFolderIconSize ?? 80),
     draftIsTextlessMode: refValue(overrides.draftIsTextlessMode ?? false),
-    draftBackgroundRenderMode: refValue(overrides.draftBackgroundRenderMode ?? BACKGROUND_RENDER_MODE_MATERIAL),
+    draftBackgroundSource: refValue(overrides.draftBackgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
+    draftBackgroundEffect: refValue(overrides.draftBackgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     draftBackgroundImageOpacity: refValue(overrides.draftBackgroundImageOpacity ?? 46),
     draftBackgroundImagePath: refValue(overrides.draftBackgroundImagePath ?? null),
     draftBackgroundImageUrl: refValue(overrides.draftBackgroundImageUrl ?? null),
     draftWindowEffectMaterial: refValue(overrides.draftWindowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
     draftWindowEffectAppearance: refValue(overrides.draftWindowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_DARK),
     isTextlessMode: refValue(overrides.isTextlessMode ?? false),
-    backgroundRenderMode: refValue(overrides.backgroundRenderMode ?? BACKGROUND_RENDER_MODE_MATERIAL),
+    backgroundSource: refValue(overrides.backgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
+    backgroundEffect: refValue(overrides.backgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     backgroundImageOpacity: refValue(overrides.backgroundImageOpacity ?? 46),
     backgroundImagePath: refValue(overrides.backgroundImagePath ?? null),
     backgroundImageUrl: refValue(overrides.backgroundImageUrl ?? null),
@@ -119,7 +125,8 @@ function createSettingsConfig(overrides = {}) {
     draftBackgroundImageOpacity: state.draftBackgroundImageOpacity,
     draftBackgroundImagePath: state.draftBackgroundImagePath,
     draftBackgroundImageUrl: state.draftBackgroundImageUrl,
-    draftBackgroundRenderMode: state.draftBackgroundRenderMode,
+    draftBackgroundSource: state.draftBackgroundSource,
+    draftBackgroundEffect: state.draftBackgroundEffect,
     draftCols: state.draftCols,
     draftFolderCols: state.draftFolderCols,
     draftFolderIconSize: state.draftFolderIconSize,
@@ -145,7 +152,8 @@ function createSettingsConfig(overrides = {}) {
     backgroundImageOpacity: state.backgroundImageOpacity,
     backgroundImagePath: state.backgroundImagePath,
     backgroundImageUrl: state.backgroundImageUrl,
-    backgroundRenderMode: state.backgroundRenderMode,
+    backgroundSource: state.backgroundSource,
+    backgroundEffect: state.backgroundEffect,
     isChoosingBackgroundImage: state.isChoosingBackgroundImage,
     pageIndex: state.pageIndex,
     pageSize,
@@ -173,8 +181,11 @@ export function runLaunchpadSettingsConfigTests() {
   assert(clampLaunchpadIconSize("bad") === 64, "icon size clamp should fall back to the default");
   assert(normalizeFolderIconSizeMode(FOLDER_ICON_SIZE_MODE_CUSTOM) === FOLDER_ICON_SIZE_MODE_CUSTOM, "custom folder icon mode should be preserved");
   assert(normalizeFolderIconSizeMode("unknown") === FOLDER_ICON_SIZE_MODE_GLOBAL, "unknown folder icon modes should fall back to global");
-  assert(normalizeBackgroundRenderMode(BACKGROUND_RENDER_MODE_IMAGE) === BACKGROUND_RENDER_MODE_IMAGE, "image background mode should be preserved");
-  assert(normalizeBackgroundRenderMode("unknown") === BACKGROUND_RENDER_MODE_MATERIAL, "unknown background modes should fall back to material");
+  assert(normalizeBackgroundSource(BACKGROUND_SOURCE_CUSTOM_IMAGE) === BACKGROUND_SOURCE_CUSTOM_IMAGE, "custom image background source should be preserved");
+  assert(normalizeBackgroundSource(BACKGROUND_SOURCE_WINDOWS_WALLPAPER) === BACKGROUND_SOURCE_WINDOWS_WALLPAPER, "windows wallpaper background source should be preserved");
+  assert(normalizeBackgroundSource("unknown") === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "unknown background sources should fall back to system material");
+  assert(normalizeBackgroundEffect(BACKGROUND_EFFECT_NONE) === BACKGROUND_EFFECT_NONE, "none background effect should be preserved");
+  assert(normalizeBackgroundEffect("unknown") === BACKGROUND_EFFECT_DIMMED, "unknown background effects should fall back to dimmed");
   assert(normalizeBackgroundImagePath(" C:/Images/wallpaper.png ") === "C:/Images/wallpaper.png", "background image paths should be trimmed");
   assert(normalizeBackgroundImagePath("") === null, "empty background image paths should become null");
   assert(clampBackgroundImageOpacity(-12) === 0, "background image opacity should clamp to the minimum");
@@ -203,7 +214,8 @@ export function runLaunchpadSettingsConfigTests() {
     draftFolderIconSizeMode: FOLDER_ICON_SIZE_MODE_CUSTOM,
     draftFolderIconSize: 120,
     draftIsTextlessMode: false,
-    draftBackgroundRenderMode: BACKGROUND_RENDER_MODE_IMAGE,
+    draftBackgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
+    draftBackgroundEffect: BACKGROUND_EFFECT_NONE,
     draftBackgroundImageOpacity: 12,
     draftBackgroundImagePath: "C:/Draft/old.png",
     draftBackgroundImageUrl: "asset://draft",
@@ -215,7 +227,8 @@ export function runLaunchpadSettingsConfigTests() {
     folderIconSizeMode: FOLDER_ICON_SIZE_MODE_GLOBAL,
     folderIconSize: 72,
     isTextlessMode: true,
-    backgroundRenderMode: BACKGROUND_RENDER_MODE_MATERIAL,
+    backgroundSource: BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+    backgroundEffect: BACKGROUND_EFFECT_DIMMED,
     backgroundImageOpacity: 58,
     backgroundImagePath: "C:/Images/current.png",
     backgroundImageUrl: "asset://current",
@@ -229,7 +242,8 @@ export function runLaunchpadSettingsConfigTests() {
   assert(sync.state.draftFolderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_GLOBAL, "sync should reset folder icon mode from current settings");
   assert(sync.state.draftFolderIconSize.value === 72, "sync should reset folder icon size from current settings");
   assert(sync.state.draftIsTextlessMode.value === true, "sync should reset textless draft from current settings");
-  assert(sync.state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_MATERIAL, "sync should reset background render draft from current settings");
+  assert(sync.state.draftBackgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "sync should reset background source draft from current settings");
+  assert(sync.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "sync should reset background effect draft from current settings");
   assert(sync.state.draftBackgroundImageOpacity.value === 58, "sync should reset background opacity draft from current settings");
   assert(sync.state.draftBackgroundImagePath.value === "C:/Images/current.png", "sync should reset background image path draft from current settings");
   assert(sync.state.draftBackgroundImageUrl.value === "asset://current", "sync should reset background image url draft from current settings");
@@ -270,9 +284,11 @@ export function runLaunchpadSettingsConfigTests() {
   windowEffectMode.config.setDraftWindowEffectAppearance(WINDOW_EFFECT_APPEARANCE_LIGHT);
   assert(windowEffectMode.state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "window effect appearance should update from segmented controls");
   const backgroundMode = createSettingsConfig();
-  backgroundMode.config.setDraftBackgroundRenderMode(BACKGROUND_RENDER_MODE_IMAGE);
+  backgroundMode.config.setDraftBackgroundSource(BACKGROUND_SOURCE_CUSTOM_IMAGE);
+  backgroundMode.config.setDraftBackgroundEffect(BACKGROUND_EFFECT_NONE);
   backgroundMode.config.setDraftBackgroundImageOpacity(120);
-  assert(backgroundMode.state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE, "background render mode should update from segmented controls");
+  assert(backgroundMode.state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "background source should update from segmented controls");
+  assert(backgroundMode.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_NONE, "background effect should update from segmented controls");
   assert(backgroundMode.state.draftBackgroundImageOpacity.value === 100, "background opacity should clamp from slider input");
   backgroundMode.config.changeDraftBackgroundImageOpacity(-120);
   assert(backgroundMode.state.draftBackgroundImageOpacity.value === 0, "background opacity step changes should clamp to the minimum");
@@ -287,7 +303,8 @@ export function runLaunchpadSettingsConfigTests() {
     gridRows: 3,
     draftCols: 3,
     draftRows: 2,
-    draftBackgroundRenderMode: BACKGROUND_RENDER_MODE_IMAGE,
+    draftBackgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
+    draftBackgroundEffect: BACKGROUND_EFFECT_DIMMED,
     draftBackgroundImageOpacity: 67,
     draftBackgroundImagePath: "C:/Images/applied.webp",
     draftBackgroundImageUrl: "asset://applied",
@@ -302,7 +319,8 @@ export function runLaunchpadSettingsConfigTests() {
   assert(apply.state.folderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_CUSTOM, "folder icon mode should apply from the draft value");
   assert(apply.state.folderIconSize.value === 80, "folder icon size should apply from the draft value");
   assert(apply.state.isTextlessMode.value === false, "textless mode should apply from the draft value");
-  assert(apply.state.backgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE, "background render mode should apply from the draft value");
+  assert(apply.state.backgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "background source should apply from the draft value");
+  assert(apply.state.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "background effect should apply from the draft value");
   assert(apply.state.backgroundImageOpacity.value === 67, "background opacity should apply from the draft value");
   assert(apply.state.backgroundImagePath.value === "C:/Images/applied.webp", "background image path should apply from the draft value");
   assert(apply.state.backgroundImageUrl.value === "asset://applied", "background image url should apply from the draft value");

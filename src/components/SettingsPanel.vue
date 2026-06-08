@@ -144,28 +144,53 @@
               </div>
               <div class="settings-field settings-field-wide settings-background-field">
                 <span class="settings-field-copy">
-                  <span>背景渲染</span>
+                  <span>背景</span>
                   <span class="settings-field-hint">{{ backgroundRenderHint }}</span>
                 </span>
                 <div class="settings-background-controls">
                   <div class="settings-background-mode-row">
-                    <div class="settings-segmented-control" aria-label="背景渲染">
+                    <div class="settings-segmented-control" aria-label="背景来源">
                       <button
                         type="button"
-                        :class="cx('settings-segmented-button', state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_MATERIAL && 'settings-segmented-button-active')"
-                        @click="state.setDraftBackgroundRenderMode(BACKGROUND_RENDER_MODE_MATERIAL)"
+                        :class="cx('settings-segmented-button', state.draftBackgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL && 'settings-segmented-button-active')"
+                        @click="state.setDraftBackgroundSource(BACKGROUND_SOURCE_SYSTEM_MATERIAL)"
                       >
                         系统材质
                       </button>
                       <button
                         type="button"
-                        :class="cx('settings-segmented-button', state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE && 'settings-segmented-button-active')"
-                        @click="state.setDraftBackgroundRenderMode(BACKGROUND_RENDER_MODE_IMAGE)"
+                        :class="cx('settings-segmented-button', state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE && 'settings-segmented-button-active')"
+                        :disabled="state.isChoosingBackgroundImage.value"
+                        @click="state.draftBackgroundImagePath.value ? state.setDraftBackgroundSource(BACKGROUND_SOURCE_CUSTOM_IMAGE) : state.chooseDraftBackgroundImage()"
                       >
                         图片
                       </button>
+                      <button
+                        type="button"
+                        :class="cx('settings-segmented-button', state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER && 'settings-segmented-button-active')"
+                        :disabled="state.isChoosingBackgroundImage.value"
+                        @click="state.useDraftDesktopWallpaper"
+                      >
+                        桌面壁纸
+                      </button>
                     </div>
-                    <label v-if="state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE" class="settings-opacity-control">
+                    <div class="settings-segmented-control" aria-label="背景效果">
+                      <button
+                        type="button"
+                        :class="cx('settings-segmented-button', state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED && 'settings-segmented-button-active')"
+                        @click="state.setDraftBackgroundEffect(BACKGROUND_EFFECT_DIMMED)"
+                      >
+                        柔化遮罩
+                      </button>
+                      <button
+                        type="button"
+                        :class="cx('settings-segmented-button', state.draftBackgroundEffect.value === BACKGROUND_EFFECT_NONE && 'settings-segmented-button-active')"
+                        @click="state.setDraftBackgroundEffect(BACKGROUND_EFFECT_NONE)"
+                      >
+                        无
+                      </button>
+                    </div>
+                    <label v-if="doesDraftBackgroundUseImage" class="settings-opacity-control">
                       <span>透明度</span>
                       <input
                         :value="state.draftBackgroundImageOpacity.value"
@@ -179,15 +204,25 @@
                       <span class="settings-opacity-value">{{ state.draftBackgroundImageOpacity.value }}%</span>
                     </label>
                   </div>
-                  <div v-if="state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE" class="settings-background-image-controls">
+                  <div v-if="doesDraftBackgroundUseImage" class="settings-background-image-controls">
                     <span class="settings-background-image-name">{{ draftBackgroundImageName }}</span>
                     <button
+                      v-if="isDraftCustomImage"
                       class="settings-secondary-button settings-background-image-button"
                       type="button"
                       :disabled="state.isChoosingBackgroundImage.value"
                       @click="state.chooseDraftBackgroundImage"
                     >
                       {{ state.isChoosingBackgroundImage.value ? "选择中" : "选择图片" }}
+                    </button>
+                    <button
+                      v-if="isDraftWindowsWallpaper"
+                      class="settings-secondary-button settings-background-image-button"
+                      type="button"
+                      :disabled="state.isChoosingBackgroundImage.value"
+                      @click="state.useDraftDesktopWallpaper"
+                    >
+                      {{ state.isChoosingBackgroundImage.value ? "同步中" : "刷新壁纸" }}
                     </button>
                     <button
                       class="settings-secondary-button settings-background-image-button"
@@ -495,11 +530,15 @@ import { computed, nextTick, ref, watch } from "vue";
 import { ChevronDownIcon, ChevronUpIcon } from "./Icons.js";
 import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "../composables/launchpadConstants.js";
 import {
+  BACKGROUND_EFFECT_DIMMED,
+  BACKGROUND_EFFECT_NONE,
   BACKGROUND_IMAGE_OPACITY_MAX,
   BACKGROUND_IMAGE_OPACITY_MIN,
   BACKGROUND_IMAGE_OPACITY_STEP,
-  BACKGROUND_RENDER_MODE_IMAGE,
-  BACKGROUND_RENDER_MODE_MATERIAL,
+  BACKGROUND_SOURCE_CUSTOM_IMAGE,
+  BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
+  backgroundSourceUsesImage,
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_APPEARANCE_LIGHT,
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
@@ -544,14 +583,20 @@ const hasWindowEffectMaterialChoice = computed(() =>
   windowEffectMaterialNotes.value.some((item) => item.available)
 );
 const backgroundRenderHint = computed(() =>
-  props.state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE
-    ? "图片叠加在窗口材质上方"
-    : "仅显示 Acrylic / Mica 材质"
+  props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE
+    ? "自定义图片叠加在窗口材质上方"
+    : props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER
+      ? "跟随当前 Windows 桌面壁纸"
+      : "仅显示 Acrylic / Mica 材质"
 );
+const doesDraftBackgroundUseImage = computed(() => backgroundSourceUsesImage(props.state.draftBackgroundSource.value));
+const isDraftCustomImage = computed(() => props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE);
+const isDraftWindowsWallpaper = computed(() => props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER);
 const draftBackgroundImageName = computed(() => {
   const path = String(props.state.draftBackgroundImagePath.value || "").trim();
-  if (!path) return "使用内置图片";
+  if (!path) return isDraftWindowsWallpaper.value ? "等待同步桌面壁纸" : "使用内置图片";
   const name = path.split(/[\\/]/).filter(Boolean).pop() || "";
+  if (isDraftWindowsWallpaper.value && /^background-[a-f0-9]{32}\./i.test(name)) return "当前桌面壁纸";
   return /^background-[a-f0-9]{32}\./i.test(name) ? "自定义图片" : name || "自定义图片";
 });
 const windowEffectsSupportHint = computed(() => {

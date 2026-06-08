@@ -19,6 +19,9 @@ use windows::{
             Common::COMDLG_FILTERSPEC, FileOpenDialog, IFileOpenDialog, FOS_FILEMUSTEXIST,
             FOS_FORCEFILESYSTEM, FOS_PATHMUSTEXIST, FOS_PICKFOLDERS, SIGDN_FILESYSPATH,
         },
+        UI::WindowsAndMessaging::{
+            SystemParametersInfoW, SPI_GETDESKWALLPAPER, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+        },
     },
 };
 
@@ -79,6 +82,25 @@ pub(crate) fn pick_background_image(
         Err(error) if error.code() == HRESULT::from_win32(ERROR_CANCELLED.0) => Ok(None),
         Err(error) => Err(format!("Failed to pick background image: {error}")),
     }
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn get_desktop_wallpaper_background(
+    app: &AppHandle,
+) -> Result<Option<PickedBackgroundImage>, String> {
+    let path = current_desktop_wallpaper_path()?;
+    let path = path.trim();
+    if path.is_empty() {
+        return Ok(None);
+    }
+    cache_background_image(app, Path::new(path), "Windows desktop wallpaper").map(Some)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn get_desktop_wallpaper_background(
+    _app: &tauri::AppHandle,
+) -> Result<Option<PickedBackgroundImage>, String> {
+    Err("Desktop wallpaper backgrounds are only implemented on Windows".to_string())
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -204,6 +226,34 @@ fn is_supported_background_image(path: &Path) -> bool {
 }
 
 #[cfg(target_os = "windows")]
+fn detect_background_image_extension(path: &Path, bytes: &[u8]) -> Option<&'static str> {
+    match extension(path).as_deref() {
+        Some("png") => Some("png"),
+        Some("jpg") | Some("jpeg") => Some("jpg"),
+        Some("webp") => Some("webp"),
+        Some("bmp") => Some("bmp"),
+        _ => detect_background_image_extension_from_bytes(bytes),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn detect_background_image_extension_from_bytes(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Some("png");
+    }
+    if bytes.starts_with(b"\xff\xd8\xff") {
+        return Some("jpg");
+    }
+    if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && bytes[8..12] == *b"WEBP" {
+        return Some("webp");
+    }
+    if bytes.starts_with(b"BM") {
+        return Some("bmp");
+    }
+    None
+}
+
+#[cfg(target_os = "windows")]
 fn make_picked_launch_file(
     app: &AppHandle,
     selected_path: &Path,
@@ -270,6 +320,15 @@ fn cache_picked_background_image(
     if !is_supported_background_image(selected_path) {
         return Err("Background images must be PNG, JPG, JPEG, or WEBP files".to_string());
     }
+    cache_background_image(app, selected_path, "Background image")
+}
+
+#[cfg(target_os = "windows")]
+fn cache_background_image(
+    app: &AppHandle,
+    selected_path: &Path,
+    fallback_name: &str,
+) -> Result<PickedBackgroundImage, String> {
     let metadata = fs::metadata(selected_path).map_err(|error| {
         format!(
             "Failed to read background image {}: {error}",
@@ -291,7 +350,9 @@ fn cache_picked_background_image(
     })?;
     let hash = blake3::hash(&bytes);
     let hex = hash.to_hex();
-    let extension = extension(selected_path).unwrap_or_else(|| "png".to_string());
+    let extension = detect_background_image_extension(selected_path, &bytes).ok_or_else(|| {
+        "Background image must be a PNG, JPG, JPEG, WEBP, or BMP file".to_string()
+    })?;
     let background_dir = background_cache_dir(app)?;
     let background_path = background_dir.join(format!("background-{}.{}", &hex[..32], extension));
     if !background_path.exists() {
@@ -307,10 +368,30 @@ fn cache_picked_background_image(
         name: selected_path
             .file_name()
             .and_then(|value| value.to_str())
-            .unwrap_or("Background image")
+            .unwrap_or(fallback_name)
             .to_string(),
         image_path: windows_api_path(&background_path),
     })
+}
+
+#[cfg(target_os = "windows")]
+fn current_desktop_wallpaper_path() -> Result<String, String> {
+    const MAX_WALLPAPER_PATH_CHARS: usize = 32768;
+    let mut buffer = vec![0u16; MAX_WALLPAPER_PATH_CHARS];
+    unsafe {
+        SystemParametersInfoW(
+            SPI_GETDESKWALLPAPER,
+            buffer.len() as u32,
+            Some(buffer.as_mut_ptr().cast()),
+            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+        )
+        .map_err(|error| format!("Failed to read Windows desktop wallpaper path: {error}"))?;
+    }
+    let end = buffer
+        .iter()
+        .position(|value| *value == 0)
+        .unwrap_or(buffer.len());
+    Ok(String::from_utf16_lossy(&buffer[..end]))
 }
 
 #[cfg(target_os = "windows")]

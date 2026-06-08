@@ -2,8 +2,10 @@ import { ref, shallowRef } from "vue";
 import { setLaunchpadApiBridgeForTests } from "../api/launchpadApi.js";
 import { useLaunchpadNative } from "./useLaunchpadNative.js";
 import {
-  BACKGROUND_RENDER_MODE_IMAGE,
-  BACKGROUND_RENDER_MODE_MATERIAL,
+  BACKGROUND_EFFECT_DIMMED,
+  BACKGROUND_SOURCE_CUSTOM_IMAGE,
+  BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_APPEARANCE_LIGHT,
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
@@ -38,7 +40,8 @@ function makeOptions(overrides = {}) {
     draftBackgroundImageOpacity: ref(46),
     draftBackgroundImagePath: ref(null),
     draftBackgroundImageUrl: ref(null),
-    draftBackgroundRenderMode: ref(BACKGROUND_RENDER_MODE_MATERIAL),
+    draftBackgroundSource: ref(BACKGROUND_SOURCE_SYSTEM_MATERIAL),
+    draftBackgroundEffect: ref(BACKGROUND_EFFECT_DIMMED),
     draftIconSize: ref(64),
     draftIsTextlessMode: ref(false),
     draftRows: ref(4),
@@ -63,7 +66,8 @@ function makeOptions(overrides = {}) {
     backgroundImageOpacity: ref(46),
     backgroundImagePath: ref(null),
     backgroundImageUrl: ref(null),
-    backgroundRenderMode: ref(BACKGROUND_RENDER_MODE_MATERIAL),
+    backgroundSource: ref(BACKGROUND_SOURCE_SYSTEM_MATERIAL),
+    backgroundEffect: ref(BACKGROUND_EFFECT_DIMMED),
     windowEffectAppearance: ref(WINDOW_EFFECT_APPEARANCE_DARK),
     windowEffectMaterial: ref(WINDOW_EFFECT_MATERIAL_ACRYLIC),
     windowEffectsSupport: ref({
@@ -177,7 +181,8 @@ export async function runLaunchpadNativeTests() {
     assert(Boolean(options.scanRoots.value[0].lastScannedAt), "initial native scan should mark roots as scanned");
     assert(initialSaveLayouts.length === 1, "initial native scan should be persisted after load completes");
     assert(initialSaveLayouts[0].pages[0][0].id === "win-app-good", "initial native save should include scanned apps");
-    assert(initialSaveLayouts[0].settings.backgroundRenderMode === BACKGROUND_RENDER_MODE_MATERIAL, "native saves should include background render mode");
+    assert(initialSaveLayouts[0].settings.backgroundSource === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "native saves should include background source");
+    assert(initialSaveLayouts[0].settings.backgroundEffect === BACKGROUND_EFFECT_DIMMED, "native saves should include background effect");
     assert(initialSaveLayouts[0].settings.backgroundImageOpacity === 46, "native saves should include background image opacity");
     assert(initialSaveLayouts[0].settings.backgroundImagePath === null, "native saves should include an empty background image path");
     assert(calls.commitPageIndex.join(",") === "0", "initial native load should reclamp desktop page");
@@ -249,7 +254,8 @@ export async function runLaunchpadNativeTests() {
         settings: {
           windowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
           windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
-          backgroundRenderMode: BACKGROUND_RENDER_MODE_IMAGE,
+          backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
+          backgroundEffect: BACKGROUND_EFFECT_DIMMED,
           backgroundImageOpacity: 64,
           backgroundImagePath: "C:/Images/wallpaper.webp",
         },
@@ -274,11 +280,13 @@ export async function runLaunchpadNativeTests() {
     assert(options.windowEffectsSupport.value.supportsMica === true && options.windowEffectsSupport.value.supportsMicaAlt === true, "native load should apply window effect support");
     assert(options.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "native load should apply saved window effect material");
     assert(options.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "native load should apply saved window effect appearance");
-    assert(options.backgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE, "native load should apply saved background render mode");
+    assert(options.backgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "native load should apply saved background source");
+    assert(options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should apply saved background effect");
     assert(options.backgroundImageOpacity.value === 64, "native load should apply saved background opacity");
     assert(options.backgroundImagePath.value === "C:/Images/wallpaper.webp", "native load should apply saved background image path");
     assert(options.backgroundImageUrl.value === "asset://C:/Images/wallpaper.webp", "native load should derive a background image asset url");
-    assert(options.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE, "native load should sync background render draft");
+    assert(options.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "native load should sync background source draft");
+    assert(options.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should sync background effect draft");
     assert(options.draftBackgroundImageOpacity.value === 64, "native load should sync background opacity draft");
     assert(options.draftBackgroundImagePath.value === "C:/Images/wallpaper.webp", "native load should sync background image path draft");
     assert(options.draftBackgroundImageUrl.value === "asset://C:/Images/wallpaper.webp", "native load should sync background image url draft");
@@ -289,6 +297,47 @@ export async function runLaunchpadNativeTests() {
   }, {
     passWindowEffectsCommand: true,
     passWindowEffectsSupport: true,
+  });
+
+  const wallpaperSaves = [];
+  await withMockTauri(async (command, args) => {
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{ id: "wallpaper-app", type: "app", name: "Wallpaper", launchTarget: { kind: "shortcut", path: "Wallpaper.lnk" } }]],
+        settings: {
+          backgroundSource: BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
+          backgroundEffect: BACKGROUND_EFFECT_DIMMED,
+          backgroundImageOpacity: 72,
+          backgroundImagePath: "C:/Cached/old-wallpaper.jpg",
+        },
+      };
+    }
+    if (command === "get_desktop_wallpaper_background") {
+      return { name: "Windows wallpaper", imagePath: "C:/Cached/current-wallpaper.jpg" };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    if (command === "save_layout") {
+      wallpaperSaves.push(args.layout);
+      return null;
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async (timers) => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+    await Promise.all(timers.splice(0).map((timer) => timer()));
+
+    assert(options.backgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER, "native load should keep windows wallpaper as the background source");
+    assert(options.backgroundImagePath.value === "C:/Cached/current-wallpaper.jpg", "native load should refresh the cached desktop wallpaper path");
+    assert(options.backgroundImageUrl.value === "asset://C:/Cached/current-wallpaper.jpg", "native load should derive the refreshed wallpaper asset url");
+    assert(wallpaperSaves.length === 1, "refreshed desktop wallpaper backgrounds should be persisted after native load");
+    assert(wallpaperSaves[0].settings.backgroundImagePath === "C:/Cached/current-wallpaper.jpg", "persisted layouts should include the refreshed wallpaper path");
   });
 
   await withMockTauri(async (command) => {

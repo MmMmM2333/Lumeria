@@ -1,7 +1,8 @@
 import { computed } from "vue";
 import { DESKTOP_CLOSE_SCALE } from "./launchpadConstants.js";
 import {
-  BACKGROUND_RENDER_MODE_IMAGE,
+  BACKGROUND_EFFECT_NONE,
+  backgroundSourceUsesImage,
   clampBackgroundImageOpacity,
 } from "./useLaunchpadSettingsConfig.js";
 import {
@@ -24,9 +25,12 @@ export function useLaunchpadViewState(options) {
   const shouldHideHomeShell = computed(() => Boolean((options.openFolderId.value && !options.isFolderClosing.value) || isDesktopAnimatingClosed.value));
   const isHomeInteractionDisabled = computed(() => Boolean(!options.isDesktopOpen.value || options.isDesktopClosing.value || options.isAppLaunching.value));
   const backgroundImageCssOpacity = computed(() => {
-    if (options.backgroundRenderMode.value !== BACKGROUND_RENDER_MODE_IMAGE) return 0;
+    if (!backgroundSourceUsesImage(options.backgroundSource.value)) return 0;
     return clampBackgroundImageOpacity(options.backgroundImageOpacity.value) / 100;
   });
+  const backgroundOverlayOpacity = computed(() => (
+    options.backgroundEffect.value === BACKGROUND_EFFECT_NONE ? 0 : 0.28
+  ));
   const backgroundImageStyle = computed(() => {
     const imageUrl = options.backgroundImageUrl?.value;
     if (!imageUrl) return {};
@@ -37,6 +41,7 @@ export function useLaunchpadViewState(options) {
   const rootStyle = computed(() => ({
     "--configured-app-icon-size": `${options.iconSize.value}px`,
     "--launchpad-background-image-opacity": `${backgroundImageCssOpacity.value}`,
+    "--launchpad-background-overlay-opacity": `${backgroundOverlayOpacity.value}`,
   }));
   const homeShellInitial = { opacity: 0, scale: DESKTOP_CLOSE_SCALE, y: 0, filter: "blur(8px)" };
   const homeShellAnimate = computed(() => {

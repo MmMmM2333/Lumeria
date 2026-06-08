@@ -10,14 +10,18 @@ import {
 } from "./launchpadConstants.js";
 import {
   convertFilePathToAssetUrl,
+  getDesktopWallpaperBackground,
   pickBackgroundImage,
 } from "../api/launchpadApi.js";
 import { clamp, makePageSize } from "../domain/launchpadLayout.js";
 
 export const FOLDER_ICON_SIZE_MODE_CUSTOM = "custom";
 export const FOLDER_ICON_SIZE_MODE_GLOBAL = "global";
-export const BACKGROUND_RENDER_MODE_MATERIAL = "material";
-export const BACKGROUND_RENDER_MODE_IMAGE = "image";
+export const BACKGROUND_SOURCE_SYSTEM_MATERIAL = "systemMaterial";
+export const BACKGROUND_SOURCE_CUSTOM_IMAGE = "customImage";
+export const BACKGROUND_SOURCE_WINDOWS_WALLPAPER = "windowsWallpaper";
+export const BACKGROUND_EFFECT_NONE = "none";
+export const BACKGROUND_EFFECT_DIMMED = "dimmed";
 export const BACKGROUND_IMAGE_OPACITY_MIN = 0;
 export const BACKGROUND_IMAGE_OPACITY_MAX = 100;
 export const BACKGROUND_IMAGE_OPACITY_STEP = 1;
@@ -43,8 +47,19 @@ export function normalizeFolderIconSizeMode(value) {
   return value === FOLDER_ICON_SIZE_MODE_CUSTOM ? FOLDER_ICON_SIZE_MODE_CUSTOM : FOLDER_ICON_SIZE_MODE_GLOBAL;
 }
 
-export function normalizeBackgroundRenderMode(value) {
-  return value === BACKGROUND_RENDER_MODE_IMAGE ? BACKGROUND_RENDER_MODE_IMAGE : BACKGROUND_RENDER_MODE_MATERIAL;
+export function normalizeBackgroundSource(value) {
+  if (value === BACKGROUND_SOURCE_CUSTOM_IMAGE) return BACKGROUND_SOURCE_CUSTOM_IMAGE;
+  if (value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER) return BACKGROUND_SOURCE_WINDOWS_WALLPAPER;
+  return BACKGROUND_SOURCE_SYSTEM_MATERIAL;
+}
+
+export function normalizeBackgroundEffect(value) {
+  return value === BACKGROUND_EFFECT_NONE ? BACKGROUND_EFFECT_NONE : BACKGROUND_EFFECT_DIMMED;
+}
+
+export function backgroundSourceUsesImage(source) {
+  const normalizedSource = normalizeBackgroundSource(source);
+  return normalizedSource === BACKGROUND_SOURCE_CUSTOM_IMAGE || normalizedSource === BACKGROUND_SOURCE_WINDOWS_WALLPAPER;
 }
 
 export function clampBackgroundImageOpacity(value) {
@@ -107,7 +122,8 @@ export function syncLaunchpadSettingsDraftsFromState(options) {
   options.draftFolderIconSizeMode.value = options.folderIconSizeMode.value;
   options.draftFolderIconSize.value = options.folderIconSize.value;
   options.draftIsTextlessMode.value = options.isTextlessMode.value;
-  options.draftBackgroundRenderMode.value = options.backgroundRenderMode.value;
+  options.draftBackgroundSource.value = options.backgroundSource.value;
+  options.draftBackgroundEffect.value = options.backgroundEffect.value;
   options.draftBackgroundImageOpacity.value = options.backgroundImageOpacity.value;
   options.draftBackgroundImagePath.value = normalizeBackgroundImagePath(options.backgroundImagePath.value);
   options.draftBackgroundImageUrl.value = options.draftBackgroundImagePath.value
@@ -159,8 +175,17 @@ export function useLaunchpadSettingsConfig(options) {
     options.draftFolderIconSize.value = clampIconSize(options.draftFolderIconSize.value);
   }
 
-  function setDraftBackgroundRenderMode(mode) {
-    options.draftBackgroundRenderMode.value = normalizeBackgroundRenderMode(mode);
+  function setDraftBackgroundSource(source) {
+    const nextSource = normalizeBackgroundSource(source);
+    options.draftBackgroundSource.value = nextSource;
+    if (!backgroundSourceUsesImage(nextSource)) {
+      options.draftBackgroundImagePath.value = null;
+      options.draftBackgroundImageUrl.value = null;
+    }
+  }
+
+  function setDraftBackgroundEffect(effect) {
+    options.draftBackgroundEffect.value = normalizeBackgroundEffect(effect);
   }
 
   function setDraftBackgroundImageOpacity(value) {
@@ -182,9 +207,28 @@ export function useLaunchpadSettingsConfig(options) {
       if (!imagePath) return;
       options.draftBackgroundImagePath.value = imagePath;
       options.draftBackgroundImageUrl.value = convertFilePathToAssetUrl(imagePath);
-      options.draftBackgroundRenderMode.value = BACKGROUND_RENDER_MODE_IMAGE;
+      options.draftBackgroundSource.value = BACKGROUND_SOURCE_CUSTOM_IMAGE;
+      options.draftBackgroundEffect.value = BACKGROUND_EFFECT_DIMMED;
     } catch (error) {
       console.error("Failed to choose LaunchPad background image", error);
+    } finally {
+      options.isChoosingBackgroundImage.value = false;
+    }
+  }
+
+  async function useDraftDesktopWallpaper() {
+    if (options.isChoosingBackgroundImage.value) return;
+    options.isChoosingBackgroundImage.value = true;
+    try {
+      const selected = await getDesktopWallpaperBackground();
+      const imagePath = normalizeBackgroundImagePath(selected?.imagePath);
+      if (!imagePath) return;
+      options.draftBackgroundImagePath.value = imagePath;
+      options.draftBackgroundImageUrl.value = convertFilePathToAssetUrl(imagePath);
+      options.draftBackgroundSource.value = BACKGROUND_SOURCE_WINDOWS_WALLPAPER;
+      options.draftBackgroundEffect.value = BACKGROUND_EFFECT_DIMMED;
+    } catch (error) {
+      console.error("Failed to use Windows desktop wallpaper", error);
     } finally {
       options.isChoosingBackgroundImage.value = false;
     }
@@ -193,6 +237,7 @@ export function useLaunchpadSettingsConfig(options) {
   function clearDraftBackgroundImage() {
     options.draftBackgroundImagePath.value = null;
     options.draftBackgroundImageUrl.value = null;
+    options.draftBackgroundSource.value = BACKGROUND_SOURCE_SYSTEM_MATERIAL;
   }
 
   function canUseWindowEffectMaterial(material) {
@@ -268,9 +313,17 @@ export function useLaunchpadSettingsConfig(options) {
   function applySettingsConfig() {
     applyGridConfig();
     if (!options.isDragActive()) options.isTextlessMode.value = Boolean(options.draftIsTextlessMode.value);
-    options.backgroundRenderMode.value = normalizeBackgroundRenderMode(options.draftBackgroundRenderMode.value);
+    const nextBackgroundSource = normalizeBackgroundSource(options.draftBackgroundSource.value);
+    const nextBackgroundUsesImage = backgroundSourceUsesImage(nextBackgroundSource);
+    const nextBackgroundImagePath = nextBackgroundUsesImage
+      ? normalizeBackgroundImagePath(options.draftBackgroundImagePath.value)
+      : null;
+    options.backgroundSource.value = nextBackgroundImagePath
+      ? nextBackgroundSource
+      : BACKGROUND_SOURCE_SYSTEM_MATERIAL;
+    options.backgroundEffect.value = normalizeBackgroundEffect(options.draftBackgroundEffect.value);
     options.backgroundImageOpacity.value = clampBackgroundImageOpacity(options.draftBackgroundImageOpacity.value);
-    options.backgroundImagePath.value = normalizeBackgroundImagePath(options.draftBackgroundImagePath.value);
+    options.backgroundImagePath.value = nextBackgroundImagePath;
     options.backgroundImageUrl.value = options.backgroundImagePath.value
       ? options.draftBackgroundImageUrl.value || convertFilePathToAssetUrl(options.backgroundImagePath.value)
       : null;
@@ -299,9 +352,11 @@ export function useLaunchpadSettingsConfig(options) {
     clearDraftBackgroundImage,
     canUseWindowEffectMaterial,
     setDraftBackgroundImageOpacity,
-    setDraftBackgroundRenderMode,
+    setDraftBackgroundEffect,
+    setDraftBackgroundSource,
     setDraftFolderIconSizeMode,
     setDraftWindowEffectAppearance,
     setDraftWindowEffectMaterial,
+    useDraftDesktopWallpaper,
   };
 }

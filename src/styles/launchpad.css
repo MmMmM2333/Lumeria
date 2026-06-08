@@ -27,6 +27,7 @@ body {
   --app-icon-image-size: calc(var(--app-icon-size) * 1);
   --app-icon-emoji-size: calc(var(--app-icon-size) * 1);
   --launchpad-background-image-opacity: 0;
+  --launchpad-background-overlay-opacity: 0.28;
   height: 100vh;
   min-height: 100vh;
   max-height: 100vh;
@@ -82,7 +83,7 @@ body {
 }
 
 .launchpad-bg::after {
-  background: rgba(10, 12, 18, 0.28);
+  background: rgba(10, 12, 18, var(--launchpad-background-overlay-opacity, 0.28));
 }
 
 .launchpad-root-closed .launchpad-bg,

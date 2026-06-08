@@ -22,6 +22,7 @@ use catalog::{
     ScanFilters, ScanRoot,
 };
 use file_dialog::{
+    get_desktop_wallpaper_background as get_native_desktop_wallpaper_background,
     pick_background_image as pick_native_background_image,
     pick_launch_file as pick_native_launch_file,
     pick_scan_root_directory as pick_native_scan_root_directory, PickedBackgroundImage,
@@ -170,6 +171,13 @@ fn pick_launch_file(app: AppHandle) -> Result<Option<PickedLaunchFile>, String> 
 #[tauri::command]
 fn pick_background_image(app: AppHandle) -> Result<Option<PickedBackgroundImage>, String> {
     pick_native_background_image(&app)
+}
+
+#[tauri::command]
+fn get_desktop_wallpaper_background(
+    app: AppHandle,
+) -> Result<Option<PickedBackgroundImage>, String> {
+    get_native_desktop_wallpaper_background(&app)
 }
 
 #[tauri::command]
@@ -724,6 +732,7 @@ pub fn run() {
             save_layout,
             pick_launch_file,
             pick_background_image,
+            get_desktop_wallpaper_background,
             pick_scan_root_directory,
             load_app_icon_choices,
             cache_custom_icon,

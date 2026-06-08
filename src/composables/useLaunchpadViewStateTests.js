@@ -1,7 +1,8 @@
 import { ref } from "vue";
 import {
-  BACKGROUND_RENDER_MODE_IMAGE,
-  BACKGROUND_RENDER_MODE_MATERIAL,
+  BACKGROUND_EFFECT_DIMMED,
+  BACKGROUND_SOURCE_CUSTOM_IMAGE,
+  BACKGROUND_SOURCE_SYSTEM_MATERIAL,
 } from "./useLaunchpadSettingsConfig.js";
 import {
   appLaunchGhostTransition,
@@ -12,7 +13,8 @@ import { useLaunchpadViewState } from "./useLaunchpadViewState.js";
 
 function createViewState(overrides = {}) {
   const state = {
-    backgroundRenderMode: ref(overrides.backgroundRenderMode ?? BACKGROUND_RENDER_MODE_MATERIAL),
+    backgroundSource: ref(overrides.backgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
+    backgroundEffect: ref(overrides.backgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     backgroundImageOpacity: ref(overrides.backgroundImageOpacity ?? 46),
     backgroundImageUrl: ref(overrides.backgroundImageUrl ?? null),
     iconSize: ref(overrides.iconSize ?? 64),
@@ -47,7 +49,7 @@ export function runLaunchpadViewStateTests() {
   assert(desktop.view.homeShellTransition === homeShellTransition, "view state should expose the home shell transition");
   assert(desktop.view.panelSpring === panelSpring, "view state should expose the settings panel spring");
 
-  const imageBackground = createViewState({ backgroundRenderMode: BACKGROUND_RENDER_MODE_IMAGE, backgroundImageOpacity: 58 });
+  const imageBackground = createViewState({ backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE, backgroundImageOpacity: 58 });
   assert(imageBackground.view.rootStyle.value["--launchpad-background-image-opacity"] === "0.58", "root style should expose image opacity in image background mode");
   const customImageBackground = createViewState({ backgroundImageUrl: "asset://C:/Images/wallpaper.webp" });
   assert(customImageBackground.view.backgroundImageStyle.value.backgroundImage === "url(\"asset://C:/Images/wallpaper.webp\")", "background image style should expose custom asset urls");

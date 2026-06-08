@@ -12,7 +12,8 @@ import {
   DEFAULT_SCAN_ROOTS,
 } from "../domain/launchpadData.js";
 import {
-  BACKGROUND_RENDER_MODE_MATERIAL,
+  BACKGROUND_EFFECT_DIMMED,
+  BACKGROUND_SOURCE_SYSTEM_MATERIAL,
   DEFAULT_BACKGROUND_IMAGE_OPACITY,
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
@@ -35,11 +36,13 @@ export function useLaunchpadControllerState() {
   const draftIconSize = ref(DEFAULT_ICON_SIZE);
   const draftFolderIconSizeMode = ref(FOLDER_ICON_SIZE_MODE_GLOBAL);
   const draftFolderIconSize = ref(DEFAULT_ICON_SIZE);
-  const backgroundRenderMode = ref(BACKGROUND_RENDER_MODE_MATERIAL);
+  const backgroundSource = ref(BACKGROUND_SOURCE_SYSTEM_MATERIAL);
+  const backgroundEffect = ref(BACKGROUND_EFFECT_DIMMED);
   const backgroundImageOpacity = ref(DEFAULT_BACKGROUND_IMAGE_OPACITY);
   const backgroundImagePath = ref(null);
   const backgroundImageUrl = ref(null);
-  const draftBackgroundRenderMode = ref(BACKGROUND_RENDER_MODE_MATERIAL);
+  const draftBackgroundSource = ref(BACKGROUND_SOURCE_SYSTEM_MATERIAL);
+  const draftBackgroundEffect = ref(BACKGROUND_EFFECT_DIMMED);
   const draftBackgroundImageOpacity = ref(DEFAULT_BACKGROUND_IMAGE_OPACITY);
   const draftBackgroundImagePath = ref(null);
   const draftBackgroundImageUrl = ref(null);
@@ -83,12 +86,14 @@ export function useLaunchpadControllerState() {
     backgroundImageOpacity,
     backgroundImagePath,
     backgroundImageUrl,
-    backgroundRenderMode,
+    backgroundEffect,
+    backgroundSource,
     desktopMainRef,
+    draftBackgroundEffect,
     draftBackgroundImageOpacity,
     draftBackgroundImagePath,
     draftBackgroundImageUrl,
-    draftBackgroundRenderMode,
+    draftBackgroundSource,
     draftCols,
     draftFolderCols,
     draftFolderIconSize,

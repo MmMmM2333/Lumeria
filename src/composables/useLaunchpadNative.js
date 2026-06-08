@@ -18,6 +18,7 @@ import {
   checkLaunchTargets,
   confirmQuitAfterSave,
   convertFilePathToAssetUrl,
+  getDesktopWallpaperBackground,
   getMainWindowEffectsSupport,
   hideMainWindow,
   isNativeBridgeAvailable,
@@ -32,9 +33,13 @@ import {
 } from "../api/launchpadApi.js";
 import {
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
+  BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
+  backgroundSourceUsesImage,
   clampBackgroundImageOpacity,
+  normalizeBackgroundEffect,
   normalizeBackgroundImagePath,
-  normalizeBackgroundRenderMode,
+  normalizeBackgroundSource,
   normalizeWindowEffectAppearance,
   normalizeWindowEffectsSupport,
   resolveWindowEffectMaterialForSupport,
@@ -92,9 +97,12 @@ export function useLaunchpadNative(options) {
       options.windowEffectsSupport.value
     );
     const nextWindowEffectAppearance = normalizeWindowEffectAppearance(settings.windowEffectAppearance);
-    const nextBackgroundRenderMode = normalizeBackgroundRenderMode(settings.backgroundRenderMode);
+    const nextBackgroundSource = normalizeBackgroundSource(settings.backgroundSource);
+    const nextBackgroundEffect = normalizeBackgroundEffect(settings.backgroundEffect);
     const nextBackgroundImageOpacity = clampBackgroundImageOpacity(settings.backgroundImageOpacity);
-    const nextBackgroundImagePath = normalizeBackgroundImagePath(settings.backgroundImagePath);
+    const nextBackgroundImagePath = backgroundSourceUsesImage(nextBackgroundSource)
+      ? normalizeBackgroundImagePath(settings.backgroundImagePath)
+      : null;
     const nextBackgroundImageUrl = nextBackgroundImagePath ? convertFilePathToAssetUrl(nextBackgroundImagePath) : null;
 
     options.gridRows.value = rows;
@@ -117,11 +125,13 @@ export function useLaunchpadNative(options) {
     options.windowEffectAppearance.value = nextWindowEffectAppearance;
     options.draftWindowEffectMaterial.value = nextWindowEffectMaterial;
     options.draftWindowEffectAppearance.value = nextWindowEffectAppearance;
-    options.backgroundRenderMode.value = nextBackgroundRenderMode;
+    options.backgroundSource.value = nextBackgroundImagePath ? nextBackgroundSource : BACKGROUND_SOURCE_SYSTEM_MATERIAL;
+    options.backgroundEffect.value = nextBackgroundEffect;
     options.backgroundImageOpacity.value = nextBackgroundImageOpacity;
     options.backgroundImagePath.value = nextBackgroundImagePath;
     options.backgroundImageUrl.value = nextBackgroundImageUrl;
-    options.draftBackgroundRenderMode.value = nextBackgroundRenderMode;
+    options.draftBackgroundSource.value = options.backgroundSource.value;
+    options.draftBackgroundEffect.value = nextBackgroundEffect;
     options.draftBackgroundImageOpacity.value = nextBackgroundImageOpacity;
     options.draftBackgroundImagePath.value = nextBackgroundImagePath;
     options.draftBackgroundImageUrl.value = nextBackgroundImageUrl;
@@ -162,7 +172,8 @@ export function useLaunchpadNative(options) {
       scanKeywordBlacklist: options.scanKeywordBlacklist.value,
       scanAppBlacklist: options.scanAppBlacklist.value,
       showMissingLaunchTargetBadge: options.showMissingLaunchTargetBadge.value,
-      backgroundRenderMode: options.backgroundRenderMode.value,
+      backgroundSource: options.backgroundSource.value,
+      backgroundEffect: options.backgroundEffect.value,
       backgroundImageOpacity: options.backgroundImageOpacity.value,
       backgroundImagePath: options.backgroundImagePath.value,
       windowEffectMaterial: options.windowEffectMaterial.value,
@@ -278,6 +289,27 @@ export function useLaunchpadNative(options) {
     return Boolean(saved);
   }
 
+  async function refreshWindowsWallpaperBackground() {
+    if (options.backgroundSource.value !== BACKGROUND_SOURCE_WINDOWS_WALLPAPER) return false;
+    try {
+      const selected = await getDesktopWallpaperBackground();
+      const imagePath = normalizeBackgroundImagePath(selected?.imagePath);
+      if (!imagePath) return false;
+      const imageUrl = convertFilePathToAssetUrl(imagePath);
+      options.backgroundImagePath.value = imagePath;
+      options.backgroundImageUrl.value = imageUrl;
+      if (options.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER) {
+        options.draftBackgroundImagePath.value = imagePath;
+        options.draftBackgroundImageUrl.value = imageUrl;
+      }
+      scheduleNativeLayoutSave();
+      return true;
+    } catch (error) {
+      console.error("Failed to refresh Windows desktop wallpaper background", error);
+      return false;
+    }
+  }
+
   async function loadNativeLaunchpadData() {
     if (!shouldUseNativeCatalog()) return;
 
@@ -302,6 +334,7 @@ export function useLaunchpadNative(options) {
       }
 
       applyLayoutSettings(savedLayout?.settings);
+      const refreshedWallpaperBackground = await refreshWindowsWallpaperBackground();
       options.pages.value = options.mergeNativeCatalogWithSavedLayout(
         [],
         savedLayout,
@@ -312,6 +345,7 @@ export function useLaunchpadNative(options) {
       options.commitSearchPageIndex(options.searchPageIndex.value);
       options.commitFolderPageIndex(options.folderPageIndex.value);
       finishNativeLayoutLoad();
+      if (refreshedWallpaperBackground) scheduleNativeLayoutSave();
     } catch (error) {
       nativeLayoutReady = false;
       hadNativeLoadFailure = true;
@@ -734,6 +768,7 @@ export function useLaunchpadNative(options) {
 
   function openDesktopFromNativeShortcut(event) {
     rememberNativeWindowOpenSequence(event);
+    refreshWindowsWallpaperBackground();
     clearNativeWindowHideTimer();
     if (options.isDesktopOpen.value) {
       options.focusDesktopSurface?.();

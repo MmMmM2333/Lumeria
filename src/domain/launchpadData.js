@@ -331,6 +331,9 @@ export function createLaunchpadDataHelpers(options) {
   function createLayoutSnapshot(state) {
     const backgroundImageOpacity = Number(state.backgroundImageOpacity);
     const backgroundImagePath = typeof state.backgroundImagePath === "string" ? state.backgroundImagePath.trim() : "";
+    const backgroundSource = state.backgroundSource === "customImage" || state.backgroundSource === "windowsWallpaper"
+      ? state.backgroundSource
+      : "systemMaterial";
     return {
       version: 1,
       pages: makeLayoutPages(state.pages),
@@ -348,9 +351,12 @@ export function createLaunchpadDataHelpers(options) {
         scanKeywordBlacklist: normalizeScanKeywordBlacklist(state.scanKeywordBlacklist),
         scanAppBlacklist: normalizeScanAppBlacklist(state.scanAppBlacklist),
         showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge !== false,
-        backgroundRenderMode: state.backgroundRenderMode === "image" ? "image" : "material",
+        backgroundSource,
+        backgroundEffect: state.backgroundEffect === "none" ? "none" : "dimmed",
         backgroundImageOpacity: Number.isFinite(backgroundImageOpacity) ? clamp(Math.round(backgroundImageOpacity), 0, 100) : 46,
-        backgroundImagePath: backgroundImagePath || null,
+        backgroundImagePath: backgroundSource === "customImage" || backgroundSource === "windowsWallpaper"
+          ? backgroundImagePath || null
+          : null,
         windowEffectMaterial: state.windowEffectMaterial === "mica" || state.windowEffectMaterial === "micaAlt" ? state.windowEffectMaterial : "acrylic",
         windowEffectAppearance: state.windowEffectAppearance === "light" ? "light" : "dark",
       },

@@ -1,7 +1,9 @@
 import { ref } from "vue";
 import {
-  BACKGROUND_RENDER_MODE_IMAGE,
-  BACKGROUND_RENDER_MODE_MATERIAL,
+  BACKGROUND_EFFECT_DIMMED,
+  BACKGROUND_EFFECT_NONE,
+  BACKGROUND_SOURCE_CUSTOM_IMAGE,
+  BACKGROUND_SOURCE_SYSTEM_MATERIAL,
   FOLDER_ICON_SIZE_MODE_CUSTOM,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
@@ -42,7 +44,8 @@ function createSettingsPanelFlowHarness(overrides = {}) {
     folderIconSizeMode: ref(overrides.folderIconSizeMode ?? FOLDER_ICON_SIZE_MODE_GLOBAL),
     folderIconSize: ref(overrides.folderIconSize ?? 72),
     isTextlessMode: ref(overrides.isTextlessMode ?? true),
-    backgroundRenderMode: ref(overrides.backgroundRenderMode ?? BACKGROUND_RENDER_MODE_IMAGE),
+    backgroundSource: ref(overrides.backgroundSource ?? BACKGROUND_SOURCE_CUSTOM_IMAGE),
+    backgroundEffect: ref(overrides.backgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     backgroundImageOpacity: ref(overrides.backgroundImageOpacity ?? 58),
     backgroundImagePath: ref(overrides.backgroundImagePath ?? "C:/Images/current.png"),
     backgroundImageUrl: ref(overrides.backgroundImageUrl ?? "asset://current"),
@@ -56,7 +59,8 @@ function createSettingsPanelFlowHarness(overrides = {}) {
     draftFolderIconSizeMode: ref(overrides.draftFolderIconSizeMode ?? FOLDER_ICON_SIZE_MODE_CUSTOM),
     draftFolderIconSize: ref(overrides.draftFolderIconSize ?? 120),
     draftIsTextlessMode: ref(overrides.draftIsTextlessMode ?? false),
-    draftBackgroundRenderMode: ref(overrides.draftBackgroundRenderMode ?? BACKGROUND_RENDER_MODE_MATERIAL),
+    draftBackgroundSource: ref(overrides.draftBackgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
+    draftBackgroundEffect: ref(overrides.draftBackgroundEffect ?? BACKGROUND_EFFECT_NONE),
     draftBackgroundImageOpacity: ref(overrides.draftBackgroundImageOpacity ?? 12),
     draftBackgroundImagePath: ref(overrides.draftBackgroundImagePath ?? null),
     draftBackgroundImageUrl: ref(overrides.draftBackgroundImageUrl ?? null),
@@ -97,7 +101,8 @@ export function runSettingsPanelFlowTests() {
     assert(state.draftFolderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_GLOBAL, "opening settings should reset folder icon mode draft");
     assert(state.draftFolderIconSize.value === 72, "opening settings should reset folder icon size draft");
     assert(state.draftIsTextlessMode.value === true, "opening settings should reset textless draft");
-    assert(state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE, "opening settings should reset background render draft");
+    assert(state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "opening settings should reset background source draft");
+    assert(state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "opening settings should reset background effect draft");
     assert(state.draftBackgroundImageOpacity.value === 58, "opening settings should reset background opacity draft");
     assert(state.draftBackgroundImagePath.value === "C:/Images/current.png", "opening settings should reset background image path draft");
     assert(state.draftBackgroundImageUrl.value === "asset://current", "opening settings should reset background image url draft");
@@ -112,7 +117,8 @@ export function runSettingsPanelFlowTests() {
     state.draftFolderIconSizeMode.value = FOLDER_ICON_SIZE_MODE_CUSTOM;
     state.draftFolderIconSize.value = 40;
     state.draftIsTextlessMode.value = false;
-    state.draftBackgroundRenderMode.value = BACKGROUND_RENDER_MODE_MATERIAL;
+    state.draftBackgroundSource.value = BACKGROUND_SOURCE_SYSTEM_MATERIAL;
+    state.draftBackgroundEffect.value = BACKGROUND_EFFECT_NONE;
     state.draftBackgroundImageOpacity.value = 4;
     state.draftBackgroundImagePath.value = "C:/Images/draft.png";
     state.draftBackgroundImageUrl.value = "asset://draft";
@@ -127,7 +133,8 @@ export function runSettingsPanelFlowTests() {
     assert(state.draftFolderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_GLOBAL, "closing settings should discard folder icon mode draft");
     assert(state.draftFolderIconSize.value === 72, "closing settings should discard folder icon size draft");
     assert(state.draftIsTextlessMode.value === true, "closing settings should discard textless draft");
-    assert(state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE, "closing settings should discard background render draft");
+    assert(state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "closing settings should discard background source draft");
+    assert(state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "closing settings should discard background effect draft");
     assert(state.draftBackgroundImageOpacity.value === 58, "closing settings should discard background opacity draft");
     assert(state.draftBackgroundImagePath.value === "C:/Images/current.png", "closing settings should discard background image path draft");
     assert(state.draftBackgroundImageUrl.value === "asset://current", "closing settings should discard background image url draft");
