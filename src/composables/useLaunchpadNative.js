@@ -1,3 +1,4 @@
+import { ref } from "vue";
 import {
   DESKTOP_CLOSE_DURATION,
   DEFAULT_COLS,
@@ -32,11 +33,15 @@ import {
   showLaunchErrorMessage,
 } from "../api/launchpadApi.js";
 import {
+  BACKGROUND_EFFECT_DIMMED,
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
   BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
+  backgroundEffectUsesPixi,
   backgroundSourceUsesImage,
+  clampBackgroundBaseOpacity,
   clampBackgroundImageOpacity,
+  normalizeBackgroundBaseColor,
   normalizeBackgroundEffect,
   normalizeBackgroundImagePath,
   normalizeBackgroundSource,
@@ -55,6 +60,7 @@ const WINDOWS_WALLPAPER_REFRESH_INTERVAL_MS = 5000;
 
 export function useLaunchpadNative(options) {
   let nativeLayoutReady = false;
+  const isNativeLayoutReady = ref(!shouldUseNativeCatalog());
   let nativeWindowEffectsUpdate = Promise.resolve();
   let nativeSaveTimer = null;
   let nativeWindowHideTimer = null;
@@ -101,11 +107,16 @@ export function useLaunchpadNative(options) {
     const nextWindowEffectAppearance = normalizeWindowEffectAppearance(settings.windowEffectAppearance);
     const nextBackgroundSource = normalizeBackgroundSource(settings.backgroundSource);
     const nextBackgroundEffect = normalizeBackgroundEffect(settings.backgroundEffect);
+    const nextBackgroundBaseColor = normalizeBackgroundBaseColor(settings.backgroundBaseColor);
+    const nextBackgroundBaseOpacity = clampBackgroundBaseOpacity(settings.backgroundBaseOpacity);
     const nextBackgroundImageOpacity = clampBackgroundImageOpacity(settings.backgroundImageOpacity);
     const nextBackgroundImagePath = backgroundSourceUsesImage(nextBackgroundSource)
       ? normalizeBackgroundImagePath(settings.backgroundImagePath)
       : null;
     const nextBackgroundImageUrl = nextBackgroundImagePath ? convertFilePathToAssetUrl(nextBackgroundImagePath) : null;
+    const nextEffectiveBackgroundEffect = backgroundEffectUsesPixi(nextBackgroundEffect) && !nextBackgroundImagePath
+      ? BACKGROUND_EFFECT_DIMMED
+      : nextBackgroundEffect;
 
     options.gridRows.value = rows;
     options.gridCols.value = cols;
@@ -128,12 +139,16 @@ export function useLaunchpadNative(options) {
     options.draftWindowEffectMaterial.value = nextWindowEffectMaterial;
     options.draftWindowEffectAppearance.value = nextWindowEffectAppearance;
     options.backgroundSource.value = nextBackgroundImagePath ? nextBackgroundSource : BACKGROUND_SOURCE_SYSTEM_MATERIAL;
-    options.backgroundEffect.value = nextBackgroundEffect;
+    options.backgroundEffect.value = nextEffectiveBackgroundEffect;
+    options.backgroundBaseColor.value = nextBackgroundBaseColor;
+    options.backgroundBaseOpacity.value = nextBackgroundBaseOpacity;
     options.backgroundImageOpacity.value = nextBackgroundImageOpacity;
     options.backgroundImagePath.value = nextBackgroundImagePath;
     options.backgroundImageUrl.value = nextBackgroundImageUrl;
     options.draftBackgroundSource.value = options.backgroundSource.value;
-    options.draftBackgroundEffect.value = nextBackgroundEffect;
+    options.draftBackgroundEffect.value = nextEffectiveBackgroundEffect;
+    options.draftBackgroundBaseColor.value = nextBackgroundBaseColor;
+    options.draftBackgroundBaseOpacity.value = nextBackgroundBaseOpacity;
     options.draftBackgroundImageOpacity.value = nextBackgroundImageOpacity;
     options.draftBackgroundImagePath.value = nextBackgroundImagePath;
     options.draftBackgroundImageUrl.value = nextBackgroundImageUrl;
@@ -179,6 +194,8 @@ export function useLaunchpadNative(options) {
       scanKeywordBlacklist: options.scanKeywordBlacklist.value,
       scanAppBlacklist: options.scanAppBlacklist.value,
       showMissingLaunchTargetBadge: options.showMissingLaunchTargetBadge.value,
+      backgroundBaseColor: options.backgroundBaseColor.value,
+      backgroundBaseOpacity: options.backgroundBaseOpacity.value,
       backgroundSource: options.backgroundSource.value,
       backgroundEffect: options.backgroundEffect.value,
       backgroundImageOpacity: options.backgroundImageOpacity.value,
@@ -268,6 +285,7 @@ export function useLaunchpadNative(options) {
 
   function finishNativeLayoutLoad() {
     nativeLayoutReady = true;
+    isNativeLayoutReady.value = true;
     if (hadNativeLoadFailure) options.showLayoutLoadRecovered?.();
     hadNativeLoadFailure = false;
     nativeLoadFailureCount = 0;
@@ -341,6 +359,7 @@ export function useLaunchpadNative(options) {
 
   async function loadNativeLaunchpadData() {
     if (!shouldUseNativeCatalog()) return;
+    isNativeLayoutReady.value = false;
 
     try {
       await refreshNativeWindowEffectsSupport();
@@ -377,6 +396,7 @@ export function useLaunchpadNative(options) {
       if (refreshedWallpaperBackground) scheduleNativeLayoutSave();
     } catch (error) {
       nativeLayoutReady = false;
+      isNativeLayoutReady.value = false;
       hadNativeLoadFailure = true;
       nativeLoadFailureCount += 1;
       options.showLayoutLoadFailed?.({
@@ -871,6 +891,7 @@ export function useLaunchpadNative(options) {
     hideNativeWindow,
     hideNativeWindowAfterCloseAnimation,
     getLaunchTargetStatus,
+    isNativeLayoutReady,
     loadNativeLaunchpadData,
     launchNativeAppIfAvailable,
     markLaunchCriticalLayoutDirty,

@@ -21,6 +21,8 @@ function createLifecycleOptions() {
     calls,
     options: {
       activePages: ref([]),
+      backgroundBaseColor: ref("#10141f"),
+      backgroundBaseOpacity: ref(28),
       backgroundImageOpacity: ref(46),
       backgroundImagePath: ref(null),
       backgroundSource: ref("systemMaterial"),

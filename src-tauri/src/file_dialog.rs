@@ -114,11 +114,74 @@ pub(crate) fn get_desktop_wallpaper_background(
     cache_desktop_wallpaper_image(app, Path::new(path)).map(Some)
 }
 
+#[cfg(target_os = "windows")]
+pub(crate) fn cached_background_image_data_url(
+    app: &AppHandle,
+    image_path: &str,
+) -> Result<Option<String>, String> {
+    let image_path = image_path.trim();
+    if image_path.is_empty() {
+        return Ok(None);
+    }
+
+    let background_dir = background_cache_dir(app)?;
+    let canonical_background_dir = background_dir.canonicalize().map_err(|error| {
+        format!(
+            "Failed to resolve background cache directory {}: {error}",
+            background_dir.display()
+        )
+    })?;
+    let canonical_image_path = match PathBuf::from(image_path).canonicalize() {
+        Ok(path) => path,
+        Err(_) => return Ok(None),
+    };
+    if !canonical_image_path.starts_with(&canonical_background_dir) {
+        return Ok(None);
+    }
+
+    let metadata = fs::metadata(&canonical_image_path).map_err(|error| {
+        format!(
+            "Failed to read background image {}: {error}",
+            canonical_image_path.display()
+        )
+    })?;
+    if !metadata.is_file() {
+        return Ok(None);
+    }
+    if metadata.len() > MAX_BACKGROUND_IMAGE_BYTES {
+        return Err("Background image is larger than 30 MB".to_string());
+    }
+
+    let bytes = fs::read(&canonical_image_path).map_err(|error| {
+        format!(
+            "Failed to read background image {}: {error}",
+            canonical_image_path.display()
+        )
+    })?;
+    let extension =
+        detect_background_image_extension(&canonical_image_path, &bytes).ok_or_else(|| {
+            "Background image must be a PNG, JPG, JPEG, WEBP, or BMP file".to_string()
+        })?;
+    let mime_type = background_image_mime_type(extension);
+    Ok(Some(format!(
+        "data:{mime_type};base64,{}",
+        encode_base64(&bytes)
+    )))
+}
+
 #[cfg(not(target_os = "windows"))]
 pub(crate) fn get_desktop_wallpaper_background(
     _app: &tauri::AppHandle,
 ) -> Result<Option<PickedBackgroundImage>, String> {
     Err("Desktop wallpaper backgrounds are only implemented on Windows".to_string())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn cached_background_image_data_url(
+    _app: &tauri::AppHandle,
+    _image_path: &str,
+) -> Result<Option<String>, String> {
+    Ok(None)
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -269,6 +332,43 @@ fn detect_background_image_extension_from_bytes(bytes: &[u8]) -> Option<&'static
         return Some("bmp");
     }
     None
+}
+
+#[cfg(target_os = "windows")]
+fn background_image_mime_type(extension: &str) -> &'static str {
+    match extension {
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        _ => "image/png",
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn encode_base64(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
+
+    for chunk in bytes.chunks(3) {
+        let first = chunk[0];
+        let second = *chunk.get(1).unwrap_or(&0);
+        let third = *chunk.get(2).unwrap_or(&0);
+
+        output.push(TABLE[(first >> 2) as usize] as char);
+        output.push(TABLE[(((first & 0b0000_0011) << 4) | (second >> 4)) as usize] as char);
+        output.push(if chunk.len() > 1 {
+            TABLE[(((second & 0b0000_1111) << 2) | (third >> 6)) as usize] as char
+        } else {
+            '='
+        });
+        output.push(if chunk.len() > 2 {
+            TABLE[(third & 0b0011_1111) as usize] as char
+        } else {
+            '='
+        });
+    }
+
+    output
 }
 
 #[cfg(target_os = "windows")]

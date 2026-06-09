@@ -1,13 +1,28 @@
 <template>
   <div
     ref="rootRef"
-    :class="cx('launchpad-root', isTextlessMode && 'launchpad-root-textless', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching')"
-    :style="rootStyle"
+    :class="cx('launchpad-root', isTextlessMode && 'launchpad-root-textless', isStartupMaskMounted && 'launchpad-root-startup-masked', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching')"
+    :style="launchpadRootStyle"
     @wheel="handleLaunchpadWheel"
     @pointerdown="handleLaunchpadSurfacePointerDown"
   >
     <div class="launchpad-bg">
-      <div class="launchpad-bg-image" :style="backgroundImageStyle" />
+      <PixiBackgroundSurface
+        v-if="hasMountedPixiBackgroundEffect"
+        v-show="isPixiBackgroundVisible"
+        :active="shouldRenderPixiBackgroundEffect"
+        :background-effect="backgroundEffect"
+        :background-image-opacity="backgroundImageOpacity"
+        :background-image-path="backgroundImagePath"
+        :background-image-url="backgroundImageUrl"
+        @ready="handlePixiBackgroundReady"
+      />
+      <div
+        v-for="layer in backgroundImageLayerViews"
+        :key="layer.id"
+        class="launchpad-bg-image"
+        :style="layer.style"
+      />
     </div>
 
     <Motion
@@ -102,16 +117,22 @@
       @open-context-app="openApp"
       @edit-context-app="openEditManagedApp"
     />
+    <div
+      v-if="isStartupMaskMounted"
+      :class="cx('launchpad-startup-mask', !isStartupMaskVisible && 'launchpad-startup-mask-hidden')"
+      aria-hidden="true"
+    />
   </div>
 </template>
 
 <script setup>
 import { Motion } from "motion-v";
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import LaunchpadDialogs from "./components/LaunchpadDialogs.vue";
 import LaunchpadHeader from "./components/LaunchpadHeader.vue";
 import LaunchpadOverlays from "./components/LaunchpadOverlays.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
+import PixiBackgroundSurface from "./rendering/pixi/PixiBackgroundSurface.vue";
 import PixiDesktopSurface from "./rendering/pixi/PixiDesktopSurface.vue";
 import PixiDragPreviewOverlay from "./rendering/pixi/PixiDragPreviewOverlay.vue";
 import PixiFolderOverlay from "./rendering/pixi/PixiFolderOverlay.vue";
@@ -129,7 +150,11 @@ const controller = useLaunchpadController();
 const {
   rootRef,
   rootStyle,
-  backgroundImageStyle,
+  backgroundEffect,
+  backgroundImageOpacity,
+  backgroundImagePath,
+  backgroundImageUrl,
+  shouldRenderPixiBackgroundEffect,
   cx,
   gridRows,
   gridCols,
@@ -138,6 +163,7 @@ const {
   isDesktopOpen,
   isHomeInteractionDisabled,
   isAppLaunching,
+  isNativeLayoutReady,
   isEditMode,
   isSettingsPanelOpen,
   shouldRenderSettingsPanel,
@@ -196,6 +222,316 @@ const {
 
 const appVersion = appPackage.version;
 const launchpadOverlaysRef = ref(null);
+const BACKGROUND_MEDIA_FADE_MS = 220;
+const PIXI_BACKGROUND_HANDOFF_DELAY_MS = 220;
+const STARTUP_MASK_FADE_MS = 260;
+const STARTUP_MASK_MAX_WAIT_MS = 8000;
+const hasMountedPixiBackgroundEffect = ref(false);
+const isPixiBackgroundVisible = ref(false);
+const hasRenderedPixiBackground = ref(false);
+const hasCompositedStartupBackground = ref(false);
+const isStartupMaskMounted = ref(true);
+const isStartupMaskVisible = ref(true);
+const backgroundImageLayers = ref([
+  { id: "background-image-a", url: null, visible: false },
+  { id: "background-image-b", url: null, visible: false },
+]);
+let pixiBackgroundHideTimer = null;
+let startupMaskRemoveTimer = null;
+let startupMaskMaxWaitTimer = null;
+let startupBackgroundFrame = null;
+let backgroundImageGeneration = 0;
+let backgroundImageShowFrame = null;
+let backgroundImageClearTimer = null;
+let activeBackgroundImageLayerIndex = 0;
+
+function parseCssOpacity(value) {
+  const number = Number.parseFloat(value);
+  return Number.isFinite(number) ? Math.min(1, Math.max(0, number)) : 0;
+}
+
+function backgroundImageUrlStyle(url) {
+  return `url(${JSON.stringify(url)})`;
+}
+
+const targetBackgroundImageOpacity = computed(() => (
+  parseCssOpacity(rootStyle.value["--launchpad-background-image-opacity"])
+));
+
+const targetBackgroundOverlayOpacity = computed(() => (
+  parseCssOpacity(rootStyle.value["--launchpad-background-overlay-opacity"])
+));
+
+const hasVisibleBackgroundImageLayer = computed(() => (
+  backgroundImageLayers.value.some((layer) => layer.url && layer.visible)
+));
+
+const shouldGateBackgroundOverlay = computed(() => Boolean(
+  backgroundImageUrl.value || hasVisibleBackgroundImageLayer.value
+));
+
+const launchpadRootStyle = computed(() => {
+  const nextStyle = { ...rootStyle.value };
+  if (shouldGateBackgroundOverlay.value) {
+    nextStyle["--launchpad-background-overlay-opacity"] = `${targetBackgroundOverlayOpacity.value * (hasVisibleBackgroundImageLayer.value ? 1 : 0)}`;
+  }
+  return nextStyle;
+});
+
+const backgroundImageLayerViews = computed(() => (
+  backgroundImageLayers.value.map((layer) => ({
+    id: layer.id,
+    style: {
+      backgroundImage: layer.url ? backgroundImageUrlStyle(layer.url) : "none",
+      opacity: `${targetBackgroundImageOpacity.value * (layer.visible ? 1 : 0)}`,
+    },
+  }))
+));
+
+const isStartupBackgroundTargetReady = computed(() => {
+  if (!isNativeLayoutReady.value) return false;
+  if (shouldRenderPixiBackgroundEffect.value) return hasRenderedPixiBackground.value;
+  if (backgroundImageUrl.value && targetBackgroundImageOpacity.value > 0) {
+    return hasVisibleBackgroundImageLayer.value;
+  }
+  return true;
+});
+
+const isStartupBackgroundReady = computed(() => (
+  isStartupBackgroundTargetReady.value && hasCompositedStartupBackground.value
+));
+
+function clearPixiBackgroundHideTimer() {
+  if (pixiBackgroundHideTimer == null) return;
+  window.clearTimeout(pixiBackgroundHideTimer);
+  pixiBackgroundHideTimer = null;
+}
+
+function hidePixiBackgroundAfterHandoff() {
+  clearPixiBackgroundHideTimer();
+  pixiBackgroundHideTimer = window.setTimeout(() => {
+    pixiBackgroundHideTimer = null;
+    if (!shouldRenderPixiBackgroundEffect.value) {
+      isPixiBackgroundVisible.value = false;
+    }
+  }, PIXI_BACKGROUND_HANDOFF_DELAY_MS);
+}
+
+function clearStartupMaskTimers() {
+  if (startupMaskRemoveTimer != null) {
+    window.clearTimeout(startupMaskRemoveTimer);
+    startupMaskRemoveTimer = null;
+  }
+  if (startupMaskMaxWaitTimer != null) {
+    window.clearTimeout(startupMaskMaxWaitTimer);
+    startupMaskMaxWaitTimer = null;
+  }
+  if (startupBackgroundFrame != null) {
+    window.cancelAnimationFrame(startupBackgroundFrame);
+    startupBackgroundFrame = null;
+  }
+}
+
+function releaseStartupMask() {
+  if (!isStartupMaskMounted.value || !isStartupMaskVisible.value) return;
+  isStartupMaskVisible.value = false;
+  if (startupMaskMaxWaitTimer != null) {
+    window.clearTimeout(startupMaskMaxWaitTimer);
+    startupMaskMaxWaitTimer = null;
+  }
+  startupMaskRemoveTimer = window.setTimeout(() => {
+    startupMaskRemoveTimer = null;
+    isStartupMaskMounted.value = false;
+  }, STARTUP_MASK_FADE_MS);
+}
+
+function releaseStartupMaskAfterTimeout() {
+  if (!isStartupBackgroundReady.value) {
+    console.warn("LaunchPad startup mask timed out before the background was fully ready");
+  }
+  releaseStartupMask();
+}
+
+function resetStartupBackgroundComposite() {
+  if (!isStartupMaskMounted.value) return;
+  hasCompositedStartupBackground.value = false;
+  if (startupBackgroundFrame != null) {
+    window.cancelAnimationFrame(startupBackgroundFrame);
+    startupBackgroundFrame = null;
+  }
+}
+
+function markStartupBackgroundComposited() {
+  if (!isStartupMaskMounted.value || startupBackgroundFrame != null) return;
+  startupBackgroundFrame = window.requestAnimationFrame(() => {
+    startupBackgroundFrame = window.requestAnimationFrame(() => {
+      startupBackgroundFrame = null;
+      if (isStartupBackgroundTargetReady.value) {
+        hasCompositedStartupBackground.value = true;
+      }
+    });
+  });
+}
+
+function handlePixiBackgroundReady() {
+  hasRenderedPixiBackground.value = true;
+}
+
+function clearBackgroundImageShowFrame() {
+  if (backgroundImageShowFrame == null) return;
+  window.cancelAnimationFrame(backgroundImageShowFrame);
+  backgroundImageShowFrame = null;
+}
+
+function clearBackgroundImageClearTimer() {
+  if (backgroundImageClearTimer == null) return;
+  window.clearTimeout(backgroundImageClearTimer);
+  backgroundImageClearTimer = null;
+}
+
+function scheduleHiddenBackgroundImageCleanup() {
+  clearBackgroundImageClearTimer();
+  backgroundImageClearTimer = window.setTimeout(() => {
+    backgroundImageClearTimer = null;
+    backgroundImageLayers.value = backgroundImageLayers.value.map((layer) => (
+      layer.visible ? layer : { ...layer, url: null }
+    ));
+  }, BACKGROUND_MEDIA_FADE_MS);
+}
+
+function hideBackgroundImageLayers() {
+  clearBackgroundImageShowFrame();
+  backgroundImageLayers.value = backgroundImageLayers.value.map((layer) => ({
+    ...layer,
+    visible: false,
+  }));
+  scheduleHiddenBackgroundImageCleanup();
+}
+
+function revealBackgroundImageLayer(url, generation) {
+  if (generation !== backgroundImageGeneration) return;
+  clearBackgroundImageShowFrame();
+  clearBackgroundImageClearTimer();
+
+  const existingIndex = backgroundImageLayers.value.findIndex((layer) => layer.url === url);
+  const nextIndex = existingIndex >= 0 ? existingIndex : 1 - activeBackgroundImageLayerIndex;
+  backgroundImageLayers.value = backgroundImageLayers.value.map((layer, index) => (
+    index === nextIndex ? { ...layer, url, visible: false } : layer
+  ));
+
+  backgroundImageShowFrame = window.requestAnimationFrame(() => {
+    backgroundImageShowFrame = window.requestAnimationFrame(() => {
+      backgroundImageShowFrame = null;
+      if (generation !== backgroundImageGeneration) return;
+      activeBackgroundImageLayerIndex = nextIndex;
+      backgroundImageLayers.value = backgroundImageLayers.value.map((layer, index) => ({
+        ...layer,
+        visible: index === nextIndex && layer.url === url,
+      }));
+      scheduleHiddenBackgroundImageCleanup();
+    });
+  });
+}
+
+function preloadBackgroundImage(url) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    let settled = false;
+    const resolveLoadedImage = async () => {
+      if (settled) return;
+      settled = true;
+      try {
+        await image.decode?.();
+      } catch {
+        // The image is still usable after onload even when decode() is unavailable or rejects.
+      }
+      resolve();
+    };
+    image.decoding = "async";
+    image.onload = resolveLoadedImage;
+    image.onerror = () => reject(new Error(`Failed to load background image: ${url}`));
+    image.src = url;
+    if (image.complete && image.naturalWidth > 0) {
+      void resolveLoadedImage();
+    }
+  });
+}
+
+async function loadVisibleBackgroundImage(url, generation) {
+  try {
+    await preloadBackgroundImage(url);
+    revealBackgroundImageLayer(url, generation);
+  } catch (error) {
+    if (generation === backgroundImageGeneration) {
+      console.warn("Failed to prepare background image for fade-in", error);
+    }
+  }
+}
+
+function clearBackgroundImageTimers() {
+  backgroundImageGeneration += 1;
+  clearBackgroundImageShowFrame();
+  clearBackgroundImageClearTimer();
+}
+
+watch(
+  shouldRenderPixiBackgroundEffect,
+  (shouldRender) => {
+    if (shouldRender) {
+      clearPixiBackgroundHideTimer();
+      hasMountedPixiBackgroundEffect.value = true;
+      isPixiBackgroundVisible.value = true;
+      return;
+    }
+    if (hasMountedPixiBackgroundEffect.value) hidePixiBackgroundAfterHandoff();
+  },
+  { immediate: true }
+);
+
+watch(
+  () => [shouldRenderPixiBackgroundEffect.value, backgroundImagePath.value, backgroundImageUrl.value, backgroundEffect.value],
+  () => {
+    hasRenderedPixiBackground.value = false;
+    resetStartupBackgroundComposite();
+  }
+);
+
+watch(
+  backgroundImageUrl,
+  (nextUrl) => {
+    const generation = ++backgroundImageGeneration;
+    clearBackgroundImageShowFrame();
+    if (!nextUrl) {
+      hideBackgroundImageLayers();
+      return;
+    }
+    void loadVisibleBackgroundImage(nextUrl, generation);
+  },
+  { immediate: true }
+);
+
+watch(
+  isStartupBackgroundTargetReady,
+  (ready) => {
+    if (ready) markStartupBackgroundComposited();
+    else resetStartupBackgroundComposite();
+  },
+  { immediate: true }
+);
+
+watch(
+  isStartupBackgroundReady,
+  (ready) => {
+    if (ready) releaseStartupMask();
+  },
+  { immediate: true }
+);
+
+startupMaskMaxWaitTimer = window.setTimeout(releaseStartupMaskAfterTimeout, STARTUP_MASK_MAX_WAIT_MS);
+
+onBeforeUnmount(clearPixiBackgroundHideTimer);
+onBeforeUnmount(clearStartupMaskTimers);
+onBeforeUnmount(clearBackgroundImageTimers);
 
 const headerDomRefs = { headerRef, searchRef, searchInputRef };
 const desktopDomRefs = { desktopMainRef };

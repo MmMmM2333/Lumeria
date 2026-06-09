@@ -147,6 +147,15 @@ export function normalizeScanAppBlacklist(apps) {
     .filter(Boolean);
 }
 
+function normalizeLayoutBackgroundBaseColor(value) {
+  const color = typeof value === "string" ? value.trim() : "";
+  if (/^#[0-9a-fA-F]{6}$/.test(color)) return color.toLowerCase();
+  if (/^#[0-9a-fA-F]{3}$/.test(color)) {
+    return `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`.toLowerCase();
+  }
+  return "#10141f";
+}
+
 export function makeScanAppBlacklistEntry(app) {
   const sourceKey = typeof app?.sourceKey === "string" ? app.sourceKey : null;
   const path = app?.source?.absolutePath || app?.launchTarget?.path || null;
@@ -329,11 +338,16 @@ export function createLaunchpadDataHelpers(options) {
   }
 
   function createLayoutSnapshot(state) {
+    const backgroundBaseOpacity = Number(state.backgroundBaseOpacity);
     const backgroundImageOpacity = Number(state.backgroundImageOpacity);
     const backgroundImagePath = typeof state.backgroundImagePath === "string" ? state.backgroundImagePath.trim() : "";
+    const backgroundBaseColor = normalizeLayoutBackgroundBaseColor(state.backgroundBaseColor);
     const backgroundSource = state.backgroundSource === "customImage" || state.backgroundSource === "windowsWallpaper"
       ? state.backgroundSource
       : "systemMaterial";
+    const windowEffectMaterial = state.windowEffectMaterial === "none" || state.windowEffectMaterial === "mica" || state.windowEffectMaterial === "micaAlt"
+      ? state.windowEffectMaterial
+      : "acrylic";
     return {
       version: 1,
       pages: makeLayoutPages(state.pages),
@@ -351,13 +365,17 @@ export function createLaunchpadDataHelpers(options) {
         scanKeywordBlacklist: normalizeScanKeywordBlacklist(state.scanKeywordBlacklist),
         scanAppBlacklist: normalizeScanAppBlacklist(state.scanAppBlacklist),
         showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge !== false,
+        backgroundBaseColor,
+        backgroundBaseOpacity: Number.isFinite(backgroundBaseOpacity) ? clamp(Math.round(backgroundBaseOpacity), 0, 100) : 28,
         backgroundSource,
-        backgroundEffect: state.backgroundEffect === "none" ? "none" : "dimmed",
+        backgroundEffect: state.backgroundEffect === "none" || state.backgroundEffect === "blur" || state.backgroundEffect === "acrylicWebgl"
+          ? state.backgroundEffect
+          : "dimmed",
         backgroundImageOpacity: Number.isFinite(backgroundImageOpacity) ? clamp(Math.round(backgroundImageOpacity), 0, 100) : 46,
         backgroundImagePath: backgroundSource === "customImage" || backgroundSource === "windowsWallpaper"
           ? backgroundImagePath || null
           : null,
-        windowEffectMaterial: state.windowEffectMaterial === "mica" || state.windowEffectMaterial === "micaAlt" ? state.windowEffectMaterial : "acrylic",
+        windowEffectMaterial,
         windowEffectAppearance: state.windowEffectAppearance === "light" ? "light" : "dark",
       },
     };

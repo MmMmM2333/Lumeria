@@ -26,6 +26,8 @@ body {
   --app-icon-radius: calc(var(--app-icon-size) * 0.371428);
   --app-icon-image-size: calc(var(--app-icon-size) * 1);
   --app-icon-emoji-size: calc(var(--app-icon-size) * 1);
+  --launchpad-background-base-color: #10141f;
+  --launchpad-background-base-opacity: 0.28;
   --launchpad-background-image-opacity: 0;
   --launchpad-background-overlay-opacity: 0.28;
   height: 100vh;
@@ -64,30 +66,85 @@ body {
   will-change: opacity;
 }
 
+.launchpad-bg::before,
 .launchpad-bg::after {
   content: "";
   position: absolute;
   inset: 0;
 }
 
+.launchpad-bg::before {
+  background: var(--launchpad-background-base-color, #10141f);
+  opacity: var(--launchpad-background-base-opacity, 0.28);
+}
+
 .launchpad-bg-image {
   position: absolute;
   inset: 0;
-  background-image: url("../assets/launchpad-test-background.png");
+  background-image: none;
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
-  opacity: var(--launchpad-background-image-opacity, 0);
+  opacity: 0;
   transform: scale(1.02);
-  transition: opacity 180ms ease;
+  transition: opacity 220ms ease;
+}
+
+.pixi-background-surface,
+.pixi-background-host {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.pixi-background-surface {
+  z-index: 0;
+}
+
+.pixi-background-fallback {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  transform: scale(1.02);
+}
+
+.pixi-background-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .launchpad-bg::after {
-  background: rgba(10, 12, 18, var(--launchpad-background-overlay-opacity, 0.28));
+  background: rgb(10, 12, 18);
+  opacity: var(--launchpad-background-overlay-opacity, 0.28);
+  transition: opacity 220ms ease;
+}
+
+.launchpad-root-startup-masked .launchpad-bg-image,
+.launchpad-root-startup-masked .launchpad-bg::after {
+  transition: none;
 }
 
 .launchpad-root-closed .launchpad-bg,
 .launchpad-root-app-launching .launchpad-bg {
+  opacity: 0;
+}
+
+.launchpad-startup-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  pointer-events: auto;
+  background: #10141f;
+  opacity: 1;
+  transition: opacity 260ms ease;
+}
+
+.launchpad-startup-mask-hidden {
+  pointer-events: none;
   opacity: 0;
 }
 
@@ -551,7 +608,7 @@ body {
 .settings-window-effect-notes {
   display: grid;
   grid-column: 1 / -1;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   width: 100%;
 }
@@ -615,6 +672,43 @@ body {
   justify-content: flex-end;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.settings-color-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 12px;
+}
+
+.settings-color-swatch {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.settings-color-swatch input[type="color"] {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.settings-color-value {
+  width: 68px;
+  color: rgba(255, 255, 255, 0.78);
+  font-variant-numeric: tabular-nums;
+  text-transform: lowercase;
 }
 
 .settings-opacity-control {
@@ -2000,6 +2094,7 @@ body {
   .settings-background-mode-row,
   .settings-background-image-controls { justify-content: flex-start; width: 100%; }
   .settings-background-image-name { max-width: 100%; }
+  .settings-color-control { width: 100%; }
   .settings-opacity-control { width: 100%; min-width: 0; }
   .settings-opacity-control input[type="range"] { width: auto; flex: 1 1 auto; }
   .settings-folder-icon-size-field { align-items: flex-start; flex-direction: column; }

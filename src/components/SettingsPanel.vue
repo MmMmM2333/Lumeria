@@ -79,18 +79,25 @@
             <div class="settings-grid">
               <div class="settings-field settings-field-wide settings-window-effect-field">
                 <span class="settings-field-copy">
-                  <span>窗口材质</span>
+                  <span>窗口底材</span>
                   <span class="settings-field-hint">{{ windowEffectsSupportHint }}</span>
                 </span>
                 <div class="settings-window-effect-controls">
-                  <div class="settings-segmented-control" aria-label="窗口材质">
+                  <div class="settings-segmented-control" aria-label="窗口底材">
+                    <button
+                      type="button"
+                      :class="cx('settings-segmented-button', state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_NONE && 'settings-segmented-button-active')"
+                      @click="state.setDraftWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_NONE)"
+                    >
+                      无材质
+                    </button>
                     <button
                       type="button"
                       :class="cx('settings-segmented-button', state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_ACRYLIC && 'settings-segmented-button-active')"
                       :disabled="!state.canUseWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_ACRYLIC)"
                       @click="state.setDraftWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_ACRYLIC)"
                     >
-                      Acrylic
+                      透明磨砂
                     </button>
                     <button
                       type="button"
@@ -109,11 +116,11 @@
                       Mica Alt
                     </button>
                   </div>
-                  <div class="settings-segmented-control" aria-label="窗口材质明暗">
+                  <div class="settings-segmented-control" aria-label="窗口底材明暗">
                     <button
                       type="button"
                       :class="cx('settings-segmented-button', state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT && 'settings-segmented-button-active')"
-                      :disabled="!hasWindowEffectMaterialChoice"
+                      :disabled="!canEditWindowEffectAppearance"
                       @click="state.setDraftWindowEffectAppearance(WINDOW_EFFECT_APPEARANCE_LIGHT)"
                     >
                       浅色
@@ -121,7 +128,7 @@
                     <button
                       type="button"
                       :class="cx('settings-segmented-button', state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_DARK && 'settings-segmented-button-active')"
-                      :disabled="!hasWindowEffectMaterialChoice"
+                      :disabled="!canEditWindowEffectAppearance"
                       @click="state.setDraftWindowEffectAppearance(WINDOW_EFFECT_APPEARANCE_DARK)"
                     >
                       深色
@@ -144,18 +151,53 @@
               </div>
               <div class="settings-field settings-field-wide settings-background-field">
                 <span class="settings-field-copy">
-                  <span>背景</span>
-                  <span class="settings-field-hint">{{ backgroundRenderHint }}</span>
+                  <span>背景底色</span>
+                  <span class="settings-field-hint">位于图片层下方</span>
                 </span>
                 <div class="settings-background-controls">
                   <div class="settings-background-mode-row">
-                    <div class="settings-segmented-control" aria-label="背景来源">
+                    <label class="settings-color-control">
+                      <span>颜色</span>
+                      <span class="settings-color-swatch">
+                        <input
+                          :value="state.draftBackgroundBaseColor.value"
+                          type="color"
+                          aria-label="背景底色"
+                          @input="state.setDraftBackgroundBaseColor($event.target.value)"
+                        />
+                      </span>
+                      <span class="settings-color-value">{{ state.draftBackgroundBaseColor.value }}</span>
+                    </label>
+                    <label class="settings-opacity-control">
+                      <span>不透明度</span>
+                      <input
+                        :value="state.draftBackgroundBaseOpacity.value"
+                        :min="BACKGROUND_BASE_OPACITY_MIN"
+                        :max="BACKGROUND_BASE_OPACITY_MAX"
+                        :step="BACKGROUND_BASE_OPACITY_STEP"
+                        type="range"
+                        aria-label="背景底色不透明度"
+                        @input="state.setDraftBackgroundBaseOpacity($event.target.value)"
+                      />
+                      <span class="settings-opacity-value">{{ state.draftBackgroundBaseOpacity.value }}%</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div class="settings-field settings-field-wide settings-background-field">
+                <span class="settings-field-copy">
+                  <span>图片层</span>
+                  <span class="settings-field-hint">{{ backgroundSourceHint }}</span>
+                </span>
+                <div class="settings-background-controls">
+                  <div class="settings-background-mode-row">
+                    <div class="settings-segmented-control" aria-label="图片来源">
                       <button
                         type="button"
                         :class="cx('settings-segmented-button', state.draftBackgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL && 'settings-segmented-button-active')"
                         @click="state.setDraftBackgroundSource(BACKGROUND_SOURCE_SYSTEM_MATERIAL)"
                       >
-                        系统材质
+                        无图片
                       </button>
                       <button
                         type="button"
@@ -163,7 +205,7 @@
                         :disabled="state.isChoosingBackgroundImage.value"
                         @click="state.draftBackgroundImagePath.value ? state.setDraftBackgroundSource(BACKGROUND_SOURCE_CUSTOM_IMAGE) : state.chooseDraftBackgroundImage()"
                       >
-                        图片
+                        自定义图片
                       </button>
                       <button
                         type="button"
@@ -174,24 +216,8 @@
                         桌面壁纸
                       </button>
                     </div>
-                    <div class="settings-segmented-control" aria-label="背景效果">
-                      <button
-                        type="button"
-                        :class="cx('settings-segmented-button', state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED && 'settings-segmented-button-active')"
-                        @click="state.setDraftBackgroundEffect(BACKGROUND_EFFECT_DIMMED)"
-                      >
-                        柔化遮罩
-                      </button>
-                      <button
-                        type="button"
-                        :class="cx('settings-segmented-button', state.draftBackgroundEffect.value === BACKGROUND_EFFECT_NONE && 'settings-segmented-button-active')"
-                        @click="state.setDraftBackgroundEffect(BACKGROUND_EFFECT_NONE)"
-                      >
-                        无
-                      </button>
-                    </div>
                     <label v-if="doesDraftBackgroundUseImage" class="settings-opacity-control">
-                      <span>透明度</span>
+                      <span>图片透明度</span>
                       <input
                         :value="state.draftBackgroundImageOpacity.value"
                         :min="BACKGROUND_IMAGE_OPACITY_MIN"
@@ -232,6 +258,50 @@
                     >
                       恢复默认
                     </button>
+                  </div>
+                </div>
+              </div>
+              <div class="settings-field settings-field-wide settings-background-field">
+                <span class="settings-field-copy">
+                  <span>图片效果</span>
+                  <span class="settings-field-hint">{{ backgroundEffectHint }}</span>
+                </span>
+                <div class="settings-background-controls">
+                  <div class="settings-background-mode-row">
+                    <div class="settings-segmented-control" aria-label="图片效果">
+                      <button
+                        type="button"
+                        :class="cx('settings-segmented-button', state.draftBackgroundEffect.value === BACKGROUND_EFFECT_NONE && 'settings-segmented-button-active')"
+                        :disabled="!doesDraftBackgroundUseImage"
+                        @click="state.setDraftBackgroundEffect(BACKGROUND_EFFECT_NONE)"
+                      >
+                        原图
+                      </button>
+                      <button
+                        type="button"
+                        :class="cx('settings-segmented-button', state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED && 'settings-segmented-button-active')"
+                        :disabled="!doesDraftBackgroundUseImage"
+                        @click="state.setDraftBackgroundEffect(BACKGROUND_EFFECT_DIMMED)"
+                      >
+                        暗化
+                      </button>
+                      <button
+                        type="button"
+                        :class="cx('settings-segmented-button', state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR && 'settings-segmented-button-active')"
+                        :disabled="!doesDraftBackgroundUseImage"
+                        @click="state.setDraftBackgroundEffect(BACKGROUND_EFFECT_BLUR)"
+                      >
+                        模糊
+                      </button>
+                      <button
+                        type="button"
+                        :class="cx('settings-segmented-button', state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL && 'settings-segmented-button-active')"
+                        :disabled="!doesDraftBackgroundUseImage"
+                        @click="state.setDraftBackgroundEffect(BACKGROUND_EFFECT_ACRYLIC_WEBGL)"
+                      >
+                        Acrylic
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -530,8 +600,13 @@ import { computed, nextTick, ref, watch } from "vue";
 import { ChevronDownIcon, ChevronUpIcon } from "./Icons.js";
 import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "../composables/launchpadConstants.js";
 import {
+  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_BLUR,
   BACKGROUND_EFFECT_DIMMED,
   BACKGROUND_EFFECT_NONE,
+  BACKGROUND_BASE_OPACITY_MAX,
+  BACKGROUND_BASE_OPACITY_MIN,
+  BACKGROUND_BASE_OPACITY_STEP,
   BACKGROUND_IMAGE_OPACITY_MAX,
   BACKGROUND_IMAGE_OPACITY_MIN,
   BACKGROUND_IMAGE_OPACITY_STEP,
@@ -541,6 +616,7 @@ import {
   backgroundSourceUsesImage,
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_APPEARANCE_LIGHT,
+  WINDOW_EFFECT_MATERIAL_NONE,
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
   WINDOW_EFFECT_MATERIAL_MICA,
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
@@ -558,8 +634,15 @@ const settingsPanelRef = ref(null);
 const windowEffectsSupport = computed(() => props.state.windowEffectsSupport.value || {});
 const windowEffectMaterialNotes = computed(() => [
   {
+    material: WINDOW_EFFECT_MATERIAL_NONE,
+    label: "无材质",
+    version: "全部系统",
+    description: "关闭系统材质，只显示底色与图片层",
+    available: true,
+  },
+  {
     material: WINDOW_EFFECT_MATERIAL_ACRYLIC,
-    label: "Acrylic",
+    label: "透明磨砂",
     version: "Windows 10 1809+ / 17763+",
     description: "半透明模糊，背景变化更明显",
     available: Boolean(windowEffectsSupport.value.supportsAcrylic),
@@ -579,19 +662,31 @@ const windowEffectMaterialNotes = computed(() => [
     available: Boolean(windowEffectsSupport.value.supportsMicaAlt),
   },
 ]);
-const hasWindowEffectMaterialChoice = computed(() =>
-  windowEffectMaterialNotes.value.some((item) => item.available)
-);
-const backgroundRenderHint = computed(() =>
-  props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE
-    ? "自定义图片叠加在窗口材质上方"
-    : props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER
-      ? "跟随当前 Windows 桌面壁纸"
-      : "仅显示 Acrylic / Mica 材质"
+const canEditWindowEffectAppearance = computed(() =>
+  props.state.draftWindowEffectMaterial.value !== WINDOW_EFFECT_MATERIAL_NONE
+  && props.state.canUseWindowEffectMaterial(props.state.draftWindowEffectMaterial.value)
 );
 const doesDraftBackgroundUseImage = computed(() => backgroundSourceUsesImage(props.state.draftBackgroundSource.value));
 const isDraftCustomImage = computed(() => props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE);
 const isDraftWindowsWallpaper = computed(() => props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER);
+const backgroundSourceHint = computed(() =>
+  props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE
+    ? "自定义图片叠在底色上方"
+    : props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER
+      ? "跟随当前 Windows 桌面壁纸"
+      : "不叠加图片"
+);
+const backgroundEffectHint = computed(() =>
+  doesDraftBackgroundUseImage.value
+    ? props.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+      ? "WebGL Acrylic 风格合成"
+      : props.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR
+        ? "仅模糊图片层"
+      : props.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED
+        ? "叠加暗化遮罩"
+        : "直接显示图片"
+    : "选择图片后可用"
+);
 const draftBackgroundImageName = computed(() => {
   const path = String(props.state.draftBackgroundImagePath.value || "").trim();
   if (!path) return isDraftWindowsWallpaper.value ? "等待同步桌面壁纸" : "使用内置图片";

@@ -2,12 +2,17 @@ import { ref, shallowRef } from "vue";
 import { setLaunchpadApiBridgeForTests } from "../api/launchpadApi.js";
 import { useLaunchpadNative } from "./useLaunchpadNative.js";
 import {
+  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_BLUR,
   BACKGROUND_EFFECT_DIMMED,
   BACKGROUND_SOURCE_CUSTOM_IMAGE,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
   BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
+  DEFAULT_BACKGROUND_BASE_COLOR,
+  DEFAULT_BACKGROUND_BASE_OPACITY,
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_APPEARANCE_LIGHT,
+  WINDOW_EFFECT_MATERIAL_NONE,
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
   WINDOW_EFFECT_MATERIAL_MICA,
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
@@ -37,6 +42,8 @@ function makeOptions(overrides = {}) {
     draftFolderIconSize: ref(64),
     draftFolderIconSizeMode: ref("global"),
     draftFolderRows: ref(3),
+    draftBackgroundBaseColor: ref(DEFAULT_BACKGROUND_BASE_COLOR),
+    draftBackgroundBaseOpacity: ref(DEFAULT_BACKGROUND_BASE_OPACITY),
     draftBackgroundImageOpacity: ref(46),
     draftBackgroundImagePath: ref(null),
     draftBackgroundImageUrl: ref(null),
@@ -63,6 +70,8 @@ function makeOptions(overrides = {}) {
     iconSize: ref(64),
     isDesktopOpen: ref(true),
     isTextlessMode: ref(false),
+    backgroundBaseColor: ref(DEFAULT_BACKGROUND_BASE_COLOR),
+    backgroundBaseOpacity: ref(DEFAULT_BACKGROUND_BASE_OPACITY),
     backgroundImageOpacity: ref(46),
     backgroundImagePath: ref(null),
     backgroundImageUrl: ref(null),
@@ -173,16 +182,20 @@ export async function runLaunchpadNativeTests() {
       scanAppBlacklist: ref([{ path: "C:/Apps/Blocked.lnk" }]),
     });
     const native = useLaunchpadNative(options);
+    assert(native.isNativeLayoutReady.value === false, "native layout should not be ready before the initial native load");
 
     await native.loadNativeLaunchpadData();
     await Promise.all(timers.splice(0).map((timer) => timer()));
 
+    assert(native.isNativeLayoutReady.value === true, "native layout should be ready after the initial native load");
     assert(options.pages.value[0].map((app) => app.id).join(",") === "win-app-good", "missing native layout should replace mock pages with scanned apps");
     assert(Boolean(options.scanRoots.value[0].lastScannedAt), "initial native scan should mark roots as scanned");
     assert(initialSaveLayouts.length === 1, "initial native scan should be persisted after load completes");
     assert(initialSaveLayouts[0].pages[0][0].id === "win-app-good", "initial native save should include scanned apps");
     assert(initialSaveLayouts[0].settings.backgroundSource === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "native saves should include background source");
     assert(initialSaveLayouts[0].settings.backgroundEffect === BACKGROUND_EFFECT_DIMMED, "native saves should include background effect");
+    assert(initialSaveLayouts[0].settings.backgroundBaseColor === DEFAULT_BACKGROUND_BASE_COLOR, "native saves should include background base color");
+    assert(initialSaveLayouts[0].settings.backgroundBaseOpacity === DEFAULT_BACKGROUND_BASE_OPACITY, "native saves should include background base opacity");
     assert(initialSaveLayouts[0].settings.backgroundImageOpacity === 46, "native saves should include background image opacity");
     assert(initialSaveLayouts[0].settings.backgroundImagePath === null, "native saves should include an empty background image path");
     assert(calls.commitPageIndex.join(",") === "0", "initial native load should reclamp desktop page");
@@ -219,6 +232,7 @@ export async function runLaunchpadNativeTests() {
       const native = useLaunchpadNative(options);
 
       await native.loadNativeLaunchpadData();
+      assert(native.isNativeLayoutReady.value === false, "failed native layout loads should keep native layout readiness false");
       assert(loadFailures.length === 1, "failed native loads should surface a persistent notice");
       assert(typeof loadFailures[0].onRetry === "function", "failed native loads should expose retry action");
 
@@ -226,6 +240,7 @@ export async function runLaunchpadNativeTests() {
       assert(timers.length === 0, "native saves should not be scheduled while the layout is not ready");
 
       await loadFailures[0].onRetry();
+      assert(native.isNativeLayoutReady.value === true, "successful layout retry should mark the native layout ready");
       assert(loadAttempts === 2, "layout load retry should attempt to load again");
       assert(loadRecoveredCount === 1, "successful layout retry should surface a recovered notice");
       assert(options.pages.value[0][0].id === "loaded-app", "successful layout retry should apply the loaded layout");
@@ -254,6 +269,8 @@ export async function runLaunchpadNativeTests() {
         settings: {
           windowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
           windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
+          backgroundBaseColor: "#ABC",
+          backgroundBaseOpacity: 73,
           backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
           backgroundEffect: BACKGROUND_EFFECT_DIMMED,
           backgroundImageOpacity: 64,
@@ -280,6 +297,8 @@ export async function runLaunchpadNativeTests() {
     assert(options.windowEffectsSupport.value.supportsMica === true && options.windowEffectsSupport.value.supportsMicaAlt === true, "native load should apply window effect support");
     assert(options.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "native load should apply saved window effect material");
     assert(options.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "native load should apply saved window effect appearance");
+    assert(options.backgroundBaseColor.value === "#aabbcc", "native load should apply saved background base color");
+    assert(options.backgroundBaseOpacity.value === 73, "native load should apply saved background base opacity");
     assert(options.backgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "native load should apply saved background source");
     assert(options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should apply saved background effect");
     assert(options.backgroundImageOpacity.value === 64, "native load should apply saved background opacity");
@@ -287,6 +306,8 @@ export async function runLaunchpadNativeTests() {
     assert(options.backgroundImageUrl.value === "asset://C:/Images/wallpaper.webp", "native load should derive a background image asset url");
     assert(options.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "native load should sync background source draft");
     assert(options.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should sync background effect draft");
+    assert(options.draftBackgroundBaseColor.value === "#aabbcc", "native load should sync background base color draft");
+    assert(options.draftBackgroundBaseOpacity.value === 73, "native load should sync background base opacity draft");
     assert(options.draftBackgroundImageOpacity.value === 64, "native load should sync background opacity draft");
     assert(options.draftBackgroundImagePath.value === "C:/Images/wallpaper.webp", "native load should sync background image path draft");
     assert(options.draftBackgroundImageUrl.value === "asset://C:/Images/wallpaper.webp", "native load should sync background image url draft");
@@ -297,6 +318,120 @@ export async function runLaunchpadNativeTests() {
   }, {
     passWindowEffectsCommand: true,
     passWindowEffectsSupport: true,
+  });
+
+  await withMockTauri(async (command) => {
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{ id: "acrylic-app", type: "app", name: "Acrylic", launchTarget: { kind: "shortcut", path: "Acrylic.lnk" } }]],
+        settings: {
+          backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
+          backgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+          backgroundImagePath: "C:/Images/acrylic.webp",
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+
+    assert(options.backgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "native load should apply custom image source for webgl acrylic");
+    assert(options.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "native load should preserve webgl acrylic background effect");
+    assert(options.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "native load should sync webgl acrylic draft effect");
+  });
+
+  await withMockTauri(async (command) => {
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{ id: "blur-app", type: "app", name: "Blur", launchTarget: { kind: "shortcut", path: "Blur.lnk" } }]],
+        settings: {
+          backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
+          backgroundEffect: BACKGROUND_EFFECT_BLUR,
+          backgroundImagePath: "C:/Images/blur.webp",
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+
+    assert(options.backgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "native load should apply custom image source for blur");
+    assert(options.backgroundEffect.value === BACKGROUND_EFFECT_BLUR, "native load should preserve blur background effect");
+    assert(options.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR, "native load should sync blur draft effect");
+  });
+
+  await withMockTauri(async (command) => {
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[]],
+        settings: {
+          backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
+          backgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+          backgroundImagePath: null,
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+
+    assert(options.backgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "native load should fall back when webgl acrylic has no image path");
+    assert(options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should reset webgl acrylic without an image path");
+  });
+
+  await withMockTauri(async (command) => {
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[]],
+        settings: {
+          backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
+          backgroundEffect: BACKGROUND_EFFECT_BLUR,
+          backgroundImagePath: null,
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+
+    assert(options.backgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "native load should fall back when blur has no image path");
+    assert(options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should reset blur without an image path");
   });
 
   const wallpaperSaves = [];
@@ -415,6 +550,46 @@ export async function runLaunchpadNativeTests() {
 
     assert(options.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA, "unsupported saved mica alt material should fall back to mica when available");
     assert(options.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "mica alt fallback should preserve saved appearance");
+  }, {
+    passWindowEffectsCommand: true,
+    passWindowEffectsSupport: true,
+  });
+
+  await withMockTauri(async (command) => {
+    if (command === "get_main_window_effects_support") {
+      return {
+        platform: "windows",
+        build: 10240,
+        supportsAcrylic: false,
+        supportsMica: false,
+        supportsMicaAlt: false,
+      };
+    }
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[]],
+        settings: {
+          windowEffectMaterial: WINDOW_EFFECT_MATERIAL_NONE,
+          windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    if (command === "set_main_window_effects_enabled") return null;
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+
+    assert(options.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_NONE, "saved none material should remain selected without native material support");
+    assert(options.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_NONE, "native load should sync none material draft");
   }, {
     passWindowEffectsCommand: true,
     passWindowEffectsSupport: true,

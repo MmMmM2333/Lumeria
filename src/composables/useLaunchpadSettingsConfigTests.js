@@ -1,19 +1,28 @@
 import { createLaunchpadLayoutHelpers, makePageSize } from "../domain/launchpadLayout.js";
 import {
+  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_BLUR,
   BACKGROUND_EFFECT_DIMMED,
   BACKGROUND_EFFECT_NONE,
+  BACKGROUND_BASE_OPACITY_MAX,
   BACKGROUND_SOURCE_CUSTOM_IMAGE,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
   BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
+  DEFAULT_BACKGROUND_BASE_COLOR,
+  DEFAULT_BACKGROUND_BASE_OPACITY,
   FOLDER_ICON_SIZE_MODE_CUSTOM,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_APPEARANCE_LIGHT,
+  WINDOW_EFFECT_MATERIAL_NONE,
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
   WINDOW_EFFECT_MATERIAL_MICA,
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
+  backgroundEffectUsesPixi,
+  clampBackgroundBaseOpacity,
   clampBackgroundImageOpacity,
   clampLaunchpadIconSize,
+  normalizeBackgroundBaseColor,
   normalizeBackgroundImagePath,
   normalizeBackgroundEffect,
   normalizeWindowEffectAppearance,
@@ -55,6 +64,8 @@ function createSettingsConfig(overrides = {}) {
     draftFolderIconSizeMode: refValue(overrides.draftFolderIconSizeMode ?? FOLDER_ICON_SIZE_MODE_CUSTOM),
     draftFolderIconSize: refValue(overrides.draftFolderIconSize ?? 80),
     draftIsTextlessMode: refValue(overrides.draftIsTextlessMode ?? false),
+    draftBackgroundBaseColor: refValue(overrides.draftBackgroundBaseColor ?? DEFAULT_BACKGROUND_BASE_COLOR),
+    draftBackgroundBaseOpacity: refValue(overrides.draftBackgroundBaseOpacity ?? DEFAULT_BACKGROUND_BASE_OPACITY),
     draftBackgroundSource: refValue(overrides.draftBackgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
     draftBackgroundEffect: refValue(overrides.draftBackgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     draftBackgroundImageOpacity: refValue(overrides.draftBackgroundImageOpacity ?? 46),
@@ -63,6 +74,8 @@ function createSettingsConfig(overrides = {}) {
     draftWindowEffectMaterial: refValue(overrides.draftWindowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
     draftWindowEffectAppearance: refValue(overrides.draftWindowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_DARK),
     isTextlessMode: refValue(overrides.isTextlessMode ?? false),
+    backgroundBaseColor: refValue(overrides.backgroundBaseColor ?? DEFAULT_BACKGROUND_BASE_COLOR),
+    backgroundBaseOpacity: refValue(overrides.backgroundBaseOpacity ?? DEFAULT_BACKGROUND_BASE_OPACITY),
     backgroundSource: refValue(overrides.backgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
     backgroundEffect: refValue(overrides.backgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     backgroundImageOpacity: refValue(overrides.backgroundImageOpacity ?? 46),
@@ -125,6 +138,8 @@ function createSettingsConfig(overrides = {}) {
     draftBackgroundImageOpacity: state.draftBackgroundImageOpacity,
     draftBackgroundImagePath: state.draftBackgroundImagePath,
     draftBackgroundImageUrl: state.draftBackgroundImageUrl,
+    draftBackgroundBaseColor: state.draftBackgroundBaseColor,
+    draftBackgroundBaseOpacity: state.draftBackgroundBaseOpacity,
     draftBackgroundSource: state.draftBackgroundSource,
     draftBackgroundEffect: state.draftBackgroundEffect,
     draftCols: state.draftCols,
@@ -149,6 +164,8 @@ function createSettingsConfig(overrides = {}) {
     iconSize: state.iconSize,
     isDragActive: () => Boolean(overrides.isDragActive),
     isTextlessMode: state.isTextlessMode,
+    backgroundBaseColor: state.backgroundBaseColor,
+    backgroundBaseOpacity: state.backgroundBaseOpacity,
     backgroundImageOpacity: state.backgroundImageOpacity,
     backgroundImagePath: state.backgroundImagePath,
     backgroundImageUrl: state.backgroundImageUrl,
@@ -184,13 +201,24 @@ export function runLaunchpadSettingsConfigTests() {
   assert(normalizeBackgroundSource(BACKGROUND_SOURCE_CUSTOM_IMAGE) === BACKGROUND_SOURCE_CUSTOM_IMAGE, "custom image background source should be preserved");
   assert(normalizeBackgroundSource(BACKGROUND_SOURCE_WINDOWS_WALLPAPER) === BACKGROUND_SOURCE_WINDOWS_WALLPAPER, "windows wallpaper background source should be preserved");
   assert(normalizeBackgroundSource("unknown") === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "unknown background sources should fall back to system material");
+  assert(normalizeBackgroundEffect(BACKGROUND_EFFECT_BLUR) === BACKGROUND_EFFECT_BLUR, "blur background effect should be preserved");
+  assert(normalizeBackgroundEffect(BACKGROUND_EFFECT_ACRYLIC_WEBGL) === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "webgl acrylic background effect should be preserved");
   assert(normalizeBackgroundEffect(BACKGROUND_EFFECT_NONE) === BACKGROUND_EFFECT_NONE, "none background effect should be preserved");
   assert(normalizeBackgroundEffect("unknown") === BACKGROUND_EFFECT_DIMMED, "unknown background effects should fall back to dimmed");
+  assert(backgroundEffectUsesPixi(BACKGROUND_EFFECT_BLUR), "blur should use the pixi background renderer");
+  assert(backgroundEffectUsesPixi(BACKGROUND_EFFECT_ACRYLIC_WEBGL), "webgl acrylic should use the pixi background renderer");
+  assert(!backgroundEffectUsesPixi(BACKGROUND_EFFECT_DIMMED), "dimmed should not use the pixi background renderer");
   assert(normalizeBackgroundImagePath(" C:/Images/wallpaper.png ") === "C:/Images/wallpaper.png", "background image paths should be trimmed");
   assert(normalizeBackgroundImagePath("") === null, "empty background image paths should become null");
   assert(clampBackgroundImageOpacity(-12) === 0, "background image opacity should clamp to the minimum");
   assert(clampBackgroundImageOpacity(120) === 100, "background image opacity should clamp to the maximum");
   assert(clampBackgroundImageOpacity("bad") === 46, "invalid background image opacity should fall back to the default");
+  assert(normalizeBackgroundBaseColor("#ABC") === "#aabbcc", "short background base colors should expand to six hex digits");
+  assert(normalizeBackgroundBaseColor("bad") === DEFAULT_BACKGROUND_BASE_COLOR, "invalid background base colors should fall back to the default");
+  assert(clampBackgroundBaseOpacity(-12) === 0, "background base opacity should clamp to the minimum");
+  assert(clampBackgroundBaseOpacity(120) === 100, "background base opacity should clamp to the maximum");
+  assert(clampBackgroundBaseOpacity("bad") === DEFAULT_BACKGROUND_BASE_OPACITY, "invalid background base opacity should fall back to the default");
+  assert(normalizeWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_NONE) === WINDOW_EFFECT_MATERIAL_NONE, "none window effect material should be preserved");
   assert(normalizeWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_MICA) === WINDOW_EFFECT_MATERIAL_MICA, "mica window effect material should be preserved");
   assert(normalizeWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_MICA_ALT) === WINDOW_EFFECT_MATERIAL_MICA_ALT, "mica alt window effect material should be preserved");
   assert(normalizeWindowEffectMaterial("unknown") === WINDOW_EFFECT_MATERIAL_ACRYLIC, "unknown window effect materials should fall back to acrylic");
@@ -204,6 +232,10 @@ export function runLaunchpadSettingsConfigTests() {
     resolveWindowEffectMaterialForSupport(WINDOW_EFFECT_MATERIAL_MICA_ALT, { supportsAcrylic: true, supportsMica: true, supportsMicaAlt: false }) === WINDOW_EFFECT_MATERIAL_MICA,
     "mica alt should fall back to mica when the system supports mica"
   );
+  assert(
+    resolveWindowEffectMaterialForSupport(WINDOW_EFFECT_MATERIAL_NONE, { supportsAcrylic: false, supportsMica: false, supportsMicaAlt: false }) === WINDOW_EFFECT_MATERIAL_NONE,
+    "none should remain selected even when no native materials are supported"
+  );
 
   const sync = createSettingsConfig({
     draftRows: 8,
@@ -214,6 +246,8 @@ export function runLaunchpadSettingsConfigTests() {
     draftFolderIconSizeMode: FOLDER_ICON_SIZE_MODE_CUSTOM,
     draftFolderIconSize: 120,
     draftIsTextlessMode: false,
+    draftBackgroundBaseColor: "#445566",
+    draftBackgroundBaseOpacity: 12,
     draftBackgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
     draftBackgroundEffect: BACKGROUND_EFFECT_NONE,
     draftBackgroundImageOpacity: 12,
@@ -227,6 +261,8 @@ export function runLaunchpadSettingsConfigTests() {
     folderIconSizeMode: FOLDER_ICON_SIZE_MODE_GLOBAL,
     folderIconSize: 72,
     isTextlessMode: true,
+    backgroundBaseColor: "#ABC",
+    backgroundBaseOpacity: 74,
     backgroundSource: BACKGROUND_SOURCE_SYSTEM_MATERIAL,
     backgroundEffect: BACKGROUND_EFFECT_DIMMED,
     backgroundImageOpacity: 58,
@@ -242,6 +278,8 @@ export function runLaunchpadSettingsConfigTests() {
   assert(sync.state.draftFolderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_GLOBAL, "sync should reset folder icon mode from current settings");
   assert(sync.state.draftFolderIconSize.value === 72, "sync should reset folder icon size from current settings");
   assert(sync.state.draftIsTextlessMode.value === true, "sync should reset textless draft from current settings");
+  assert(sync.state.draftBackgroundBaseColor.value === "#aabbcc", "sync should reset background base color draft from current settings");
+  assert(sync.state.draftBackgroundBaseOpacity.value === 74, "sync should reset background base opacity draft from current settings");
   assert(sync.state.draftBackgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "sync should reset background source draft from current settings");
   assert(sync.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "sync should reset background effect draft from current settings");
   assert(sync.state.draftBackgroundImageOpacity.value === 58, "sync should reset background opacity draft from current settings");
@@ -281,15 +319,33 @@ export function runLaunchpadSettingsConfigTests() {
   });
   windowEffectMode.config.setDraftWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_MICA_ALT);
   assert(windowEffectMode.state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_ACRYLIC, "unavailable window effect materials should not be selected");
+  windowEffectMode.state.draftBackgroundBaseOpacity.value = 0;
+  windowEffectMode.config.setDraftWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_NONE);
+  assert(windowEffectMode.state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_NONE, "none window effect material should always be selectable");
+  assert(windowEffectMode.state.draftBackgroundBaseOpacity.value === BACKGROUND_BASE_OPACITY_MAX, "selecting none should keep the base layer visible");
   windowEffectMode.config.setDraftWindowEffectAppearance(WINDOW_EFFECT_APPEARANCE_LIGHT);
   assert(windowEffectMode.state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "window effect appearance should update from segmented controls");
   const backgroundMode = createSettingsConfig();
+  backgroundMode.config.setDraftBackgroundBaseColor("#789");
+  backgroundMode.config.setDraftBackgroundBaseOpacity(120);
+  assert(backgroundMode.state.draftBackgroundBaseColor.value === "#778899", "background base color should update from color input");
+  assert(backgroundMode.state.draftBackgroundBaseOpacity.value === 100, "background base opacity should clamp from slider input");
   backgroundMode.config.setDraftBackgroundSource(BACKGROUND_SOURCE_CUSTOM_IMAGE);
   backgroundMode.config.setDraftBackgroundEffect(BACKGROUND_EFFECT_NONE);
   backgroundMode.config.setDraftBackgroundImageOpacity(120);
   assert(backgroundMode.state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "background source should update from segmented controls");
   assert(backgroundMode.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_NONE, "background effect should update from segmented controls");
   assert(backgroundMode.state.draftBackgroundImageOpacity.value === 100, "background opacity should clamp from slider input");
+  backgroundMode.config.setDraftBackgroundEffect(BACKGROUND_EFFECT_ACRYLIC_WEBGL);
+  assert(backgroundMode.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "acrylic background effect should update from segmented controls");
+  backgroundMode.config.setDraftBackgroundSource(BACKGROUND_SOURCE_SYSTEM_MATERIAL);
+  assert(backgroundMode.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "system material should reset webgl acrylic effect");
+  backgroundMode.config.setDraftBackgroundSource(BACKGROUND_SOURCE_CUSTOM_IMAGE);
+  backgroundMode.config.setDraftBackgroundEffect(BACKGROUND_EFFECT_BLUR);
+  assert(backgroundMode.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR, "blur background effect should update from segmented controls");
+  backgroundMode.config.setDraftBackgroundSource(BACKGROUND_SOURCE_SYSTEM_MATERIAL);
+  assert(backgroundMode.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "system material should reset blur effect");
+  backgroundMode.config.setDraftBackgroundSource(BACKGROUND_SOURCE_CUSTOM_IMAGE);
   backgroundMode.config.changeDraftBackgroundImageOpacity(-120);
   assert(backgroundMode.state.draftBackgroundImageOpacity.value === 0, "background opacity step changes should clamp to the minimum");
   backgroundMode.state.draftBackgroundImagePath.value = "C:/Images/custom.png";
@@ -303,6 +359,8 @@ export function runLaunchpadSettingsConfigTests() {
     gridRows: 3,
     draftCols: 3,
     draftRows: 2,
+    draftBackgroundBaseColor: "#123",
+    draftBackgroundBaseOpacity: 39,
     draftBackgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
     draftBackgroundEffect: BACKGROUND_EFFECT_DIMMED,
     draftBackgroundImageOpacity: 67,
@@ -319,6 +377,8 @@ export function runLaunchpadSettingsConfigTests() {
   assert(apply.state.folderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_CUSTOM, "folder icon mode should apply from the draft value");
   assert(apply.state.folderIconSize.value === 80, "folder icon size should apply from the draft value");
   assert(apply.state.isTextlessMode.value === false, "textless mode should apply from the draft value");
+  assert(apply.state.backgroundBaseColor.value === "#112233", "background base color should apply from the draft value");
+  assert(apply.state.backgroundBaseOpacity.value === 39, "background base opacity should apply from the draft value");
   assert(apply.state.backgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "background source should apply from the draft value");
   assert(apply.state.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "background effect should apply from the draft value");
   assert(apply.state.backgroundImageOpacity.value === 67, "background opacity should apply from the draft value");
@@ -334,6 +394,42 @@ export function runLaunchpadSettingsConfigTests() {
   assert(apply.calls.schedulePageGridMetrics === 1, "applying settings should schedule page metrics");
   assert(apply.calls.applyNativeWindowEffects === 1, "applying settings should refresh native window effects");
   assert(apply.calls.closeSettingsPanel === 1, "applying settings from the panel should close it");
+
+  const acrylicApply = createSettingsConfig({
+    draftBackgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
+    draftBackgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    draftBackgroundImagePath: "C:/Images/acrylic.webp",
+    draftBackgroundImageUrl: "asset://acrylic",
+  });
+  acrylicApply.config.applySettingsConfig();
+  assert(acrylicApply.state.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "webgl acrylic effect should apply for image backgrounds");
+
+  const blurApply = createSettingsConfig({
+    draftBackgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
+    draftBackgroundEffect: BACKGROUND_EFFECT_BLUR,
+    draftBackgroundImagePath: "C:/Images/blur.webp",
+    draftBackgroundImageUrl: "asset://blur",
+  });
+  blurApply.config.applySettingsConfig();
+  assert(blurApply.state.backgroundEffect.value === BACKGROUND_EFFECT_BLUR, "blur effect should apply for image backgrounds");
+
+  const acrylicWithoutImage = createSettingsConfig({
+    draftBackgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
+    draftBackgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    draftBackgroundImagePath: null,
+  });
+  acrylicWithoutImage.config.applySettingsConfig();
+  assert(acrylicWithoutImage.state.backgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "image background without a path should fall back to system material");
+  assert(acrylicWithoutImage.state.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "image background without a path should reset webgl acrylic effect");
+
+  const blurWithoutImage = createSettingsConfig({
+    draftBackgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
+    draftBackgroundEffect: BACKGROUND_EFFECT_BLUR,
+    draftBackgroundImagePath: null,
+  });
+  blurWithoutImage.config.applySettingsConfig();
+  assert(blurWithoutImage.state.backgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "image background without a path should fall back to system material for blur");
+  assert(blurWithoutImage.state.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "image background without a path should reset blur effect");
 
   const textless = createSettingsConfig({
     draftIsTextlessMode: true,

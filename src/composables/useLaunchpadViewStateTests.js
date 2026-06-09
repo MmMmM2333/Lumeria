@@ -1,6 +1,9 @@
 import { ref } from "vue";
 import {
+  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_BLUR,
   BACKGROUND_EFFECT_DIMMED,
+  BACKGROUND_EFFECT_NONE,
   BACKGROUND_SOURCE_CUSTOM_IMAGE,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
 } from "./useLaunchpadSettingsConfig.js";
@@ -13,6 +16,8 @@ import { useLaunchpadViewState } from "./useLaunchpadViewState.js";
 
 function createViewState(overrides = {}) {
   const state = {
+    backgroundBaseColor: ref(overrides.backgroundBaseColor ?? "#10141f"),
+    backgroundBaseOpacity: ref(overrides.backgroundBaseOpacity ?? 28),
     backgroundSource: ref(overrides.backgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
     backgroundEffect: ref(overrides.backgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     backgroundImageOpacity: ref(overrides.backgroundImageOpacity ?? 46),
@@ -41,6 +46,8 @@ export function runLaunchpadViewStateTests() {
 
   const desktop = createViewState();
   assert(desktop.view.rootStyle.value["--configured-app-icon-size"] === "64px", "root style should expose configured icon size");
+  assert(desktop.view.rootStyle.value["--launchpad-background-base-color"] === "#10141f", "root style should expose the default base color");
+  assert(desktop.view.rootStyle.value["--launchpad-background-base-opacity"] === "0.28", "root style should expose the default base opacity");
   assert(desktop.view.rootStyle.value["--launchpad-background-image-opacity"] === "0", "root style should hide the background image in material mode");
   assert(desktop.view.desktopTrackMotionKey.value === "open-desktop-spring", "desktop motion key should describe open desktop spring state");
   assert(desktop.view.homeShellAnimate.value.opacity === 1, "home shell should be visible in the idle desktop state");
@@ -51,8 +58,32 @@ export function runLaunchpadViewStateTests() {
 
   const imageBackground = createViewState({ backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE, backgroundImageOpacity: 58 });
   assert(imageBackground.view.rootStyle.value["--launchpad-background-image-opacity"] === "0.58", "root style should expose image opacity in image background mode");
+  const tintedBackground = createViewState({ backgroundBaseColor: "#ABC", backgroundBaseOpacity: 74 });
+  assert(tintedBackground.view.rootStyle.value["--launchpad-background-base-color"] === "#aabbcc", "root style should normalize base color");
+  assert(tintedBackground.view.rootStyle.value["--launchpad-background-base-opacity"] === "0.74", "root style should expose configured base opacity");
   const customImageBackground = createViewState({ backgroundImageUrl: "asset://C:/Images/wallpaper.webp" });
   assert(customImageBackground.view.backgroundImageStyle.value.backgroundImage === "url(\"asset://C:/Images/wallpaper.webp\")", "background image style should expose custom asset urls");
+  const unmaskedImageBackground = createViewState({ backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE, backgroundEffect: BACKGROUND_EFFECT_NONE });
+  assert(unmaskedImageBackground.view.rootStyle.value["--launchpad-background-overlay-opacity"] === "0", "none background effect should hide the overlay");
+  const acrylicBackground = createViewState({
+    backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
+    backgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    backgroundImageOpacity: 71,
+    backgroundImageUrl: "asset://C:/Images/acrylic.webp",
+  });
+  assert(acrylicBackground.view.shouldRenderPixiBackgroundEffect.value === true, "webgl acrylic should render the pixi background for image sources");
+  assert(acrylicBackground.view.rootStyle.value["--launchpad-background-image-opacity"] === "0", "webgl acrylic should hide the css image background");
+  assert(acrylicBackground.view.rootStyle.value["--launchpad-background-overlay-opacity"] === "0", "webgl acrylic should hide the css overlay");
+  assert(acrylicBackground.view.backgroundImageStyle.value.backgroundImage === "url(\"asset://C:/Images/acrylic.webp\")", "webgl acrylic should keep the css image ready for handoff");
+  const blurBackground = createViewState({
+    backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
+    backgroundEffect: BACKGROUND_EFFECT_BLUR,
+    backgroundImageOpacity: 63,
+    backgroundImageUrl: "asset://C:/Images/blur.webp",
+  });
+  assert(blurBackground.view.shouldRenderPixiBackgroundEffect.value === true, "blur should render the pixi background for image sources");
+  assert(blurBackground.view.rootStyle.value["--launchpad-background-image-opacity"] === "0", "blur should hide the css image background");
+  assert(blurBackground.view.rootStyle.value["--launchpad-background-overlay-opacity"] === "0", "blur should hide the css overlay");
 
   const search = createViewState({ isSearchMode: true });
   assert(search.view.desktopTrackMotionKey.value === "open-search-spring", "desktop motion key should describe search mode");

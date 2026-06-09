@@ -17,6 +17,7 @@ import { runLaunchpadSettingsConfigTests } from "../composables/useLaunchpadSett
 import { runSettingsPanelFlowTests } from "../composables/useSettingsPanelFlowTests.js";
 import { runLaunchpadSurfaceInteractionsTests } from "../composables/useLaunchpadSurfaceInteractionsTests.js";
 import { runLaunchpadViewStateTests } from "../composables/useLaunchpadViewStateTests.js";
+import { runLaunchpadViewAdaptersTests } from "../composables/useLaunchpadViewAdaptersTests.js";
 import { runLaunchpadDataTests } from "./launchpadDataTests.js";
 import { runIconSourceTests } from "./iconSourceTests.js";
 import { runLaunchpadHelperTests } from "./launchpadLayoutTests.js";
@@ -48,6 +49,9 @@ import { runFolderOverlayLayerTests } from "../rendering/pixi/scene/FolderOverla
 import { runFolderOverlayTargetsTests } from "../rendering/pixi/scene/folderOverlayTargetsTests.js";
 import { runFolderPreviewSwapMotionTests } from "../rendering/pixi/scene/folderPreviewSwapMotionTests.js";
 import { runIconSceneHelpersTests } from "../rendering/pixi/scene/iconSceneHelpersTests.js";
+import { runAcrylicFiltersTests } from "../rendering/pixi/background/acrylicFiltersTests.js";
+import { runAcrylicBackgroundPlanTests } from "../rendering/pixi/background/acrylicBackgroundPlanTests.js";
+import { runBackgroundTextureLoaderTests } from "../rendering/pixi/background/backgroundTextureLoaderTests.js";
 
 const state = {
   searchQuery: { value: "" },
@@ -98,6 +102,7 @@ await runLaunchpadNativeTests();
 runLaunchpadPageCommandsTests();
 runLaunchpadSurfaceInteractionsTests();
 runLaunchpadViewStateTests();
+runLaunchpadViewAdaptersTests();
 runFolderLayoutStylesTests();
 runLaunchpadSettingsConfigTests();
 runSettingsPanelFlowTests();
@@ -110,6 +115,9 @@ runGridGeometryTests();
 runStageCoordinatesTests();
 runIconBoundsRegistryTests();
 runPixiHostMetricsTests();
+await runAcrylicFiltersTests();
+runAcrylicBackgroundPlanTests();
+await runBackgroundTextureLoaderTests();
 runIconControlDrawingTests();
 runIconFolderHoverStateTests();
 runIconInteractionGeometryTests();

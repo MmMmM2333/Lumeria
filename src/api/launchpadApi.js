@@ -97,6 +97,12 @@ export async function getDesktopWallpaperBackground() {
   return invoke("get_desktop_wallpaper_background");
 }
 
+export async function loadCachedBackgroundImageDataUrl(imagePath) {
+  const invoke = getTauriInvoke();
+  if (!invoke || !imagePath) return null;
+  return invoke("load_cached_background_image_data_url", { imagePath });
+}
+
 export async function pickScanRootDirectory() {
   const invoke = getTauriInvoke();
   if (!invoke) return null;

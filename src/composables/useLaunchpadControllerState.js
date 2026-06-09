@@ -14,6 +14,8 @@ import {
 import {
   BACKGROUND_EFFECT_DIMMED,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  DEFAULT_BACKGROUND_BASE_COLOR,
+  DEFAULT_BACKGROUND_BASE_OPACITY,
   DEFAULT_BACKGROUND_IMAGE_OPACITY,
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
@@ -38,11 +40,15 @@ export function useLaunchpadControllerState() {
   const draftFolderIconSize = ref(DEFAULT_ICON_SIZE);
   const backgroundSource = ref(BACKGROUND_SOURCE_SYSTEM_MATERIAL);
   const backgroundEffect = ref(BACKGROUND_EFFECT_DIMMED);
+  const backgroundBaseColor = ref(DEFAULT_BACKGROUND_BASE_COLOR);
+  const backgroundBaseOpacity = ref(DEFAULT_BACKGROUND_BASE_OPACITY);
   const backgroundImageOpacity = ref(DEFAULT_BACKGROUND_IMAGE_OPACITY);
   const backgroundImagePath = ref(null);
   const backgroundImageUrl = ref(null);
   const draftBackgroundSource = ref(BACKGROUND_SOURCE_SYSTEM_MATERIAL);
   const draftBackgroundEffect = ref(BACKGROUND_EFFECT_DIMMED);
+  const draftBackgroundBaseColor = ref(DEFAULT_BACKGROUND_BASE_COLOR);
+  const draftBackgroundBaseOpacity = ref(DEFAULT_BACKGROUND_BASE_OPACITY);
   const draftBackgroundImageOpacity = ref(DEFAULT_BACKGROUND_IMAGE_OPACITY);
   const draftBackgroundImagePath = ref(null);
   const draftBackgroundImageUrl = ref(null);
@@ -83,12 +89,16 @@ export function useLaunchpadControllerState() {
   const folderPageRefs = [];
 
   return {
+    backgroundBaseColor,
+    backgroundBaseOpacity,
     backgroundImageOpacity,
     backgroundImagePath,
     backgroundImageUrl,
     backgroundEffect,
     backgroundSource,
     desktopMainRef,
+    draftBackgroundBaseColor,
+    draftBackgroundBaseOpacity,
     draftBackgroundEffect,
     draftBackgroundImageOpacity,
     draftBackgroundImagePath,

@@ -120,6 +120,8 @@ export function runLaunchpadDataTests() {
     folderIconSize: 88,
     textless: true,
     hiddenAppIds: ["hidden"],
+    backgroundBaseColor: "#ABC",
+    backgroundBaseOpacity: 74,
     backgroundSource: "customImage",
     backgroundEffect: "dimmed",
     backgroundImageOpacity: 62,
@@ -134,10 +136,37 @@ export function runLaunchpadDataTests() {
   assert(Array.isArray(snapshot.settings.scanKeywordBlacklist), "layout snapshots should include scan keyword blacklist");
   assert(Array.isArray(snapshot.settings.scanAppBlacklist), "layout snapshots should include scan app blacklist");
   assert(snapshot.settings.showMissingLaunchTargetBadge === true, "layout snapshots should include missing target badge preference");
+  assert(snapshot.settings.backgroundBaseColor === "#aabbcc", "layout snapshots should include normalized background base color");
+  assert(snapshot.settings.backgroundBaseOpacity === 74, "layout snapshots should include background base opacity");
   assert(snapshot.settings.backgroundSource === "customImage" && snapshot.settings.backgroundEffect === "dimmed", "layout snapshots should include background source and effect");
   assert(snapshot.settings.backgroundImageOpacity === 62, "layout snapshots should include background image opacity");
   assert(snapshot.settings.backgroundImagePath === "C:/Images/custom.webp", "layout snapshots should include the trimmed custom background image path");
   assert(snapshot.settings.windowEffectMaterial === "mica" && snapshot.settings.windowEffectAppearance === "light", "layout snapshots should include window effect settings");
+  const acrylicSnapshot = dataHelpers.createLayoutSnapshot({
+    ...snapshot.settings,
+    pages: merged,
+    backgroundSource: "customImage",
+    backgroundEffect: "acrylicWebgl",
+    backgroundImagePath: "C:/Images/acrylic.webp",
+  });
+  assert(acrylicSnapshot.settings.backgroundEffect === "acrylicWebgl", "layout snapshots should preserve webgl acrylic background effect");
+  const blurSnapshot = dataHelpers.createLayoutSnapshot({
+    ...snapshot.settings,
+    pages: merged,
+    backgroundSource: "customImage",
+    backgroundEffect: "blur",
+    backgroundImagePath: "C:/Images/blur.webp",
+  });
+  assert(blurSnapshot.settings.backgroundEffect === "blur", "layout snapshots should preserve blur background effect");
+  const plainSnapshot = dataHelpers.createLayoutSnapshot({
+    ...snapshot.settings,
+    pages: merged,
+    windowEffectMaterial: "none",
+    backgroundSource: "systemMaterial",
+    backgroundImagePath: "C:/Images/ignored.webp",
+  });
+  assert(plainSnapshot.settings.windowEffectMaterial === "none", "layout snapshots should preserve disabled window material");
+  assert(plainSnapshot.settings.backgroundImagePath === null, "layout snapshots should clear image paths when no image layer is selected");
   assert(!("iconDataUrl" in snapshot.pages[0][0]), "layout snapshots should omit catalog icon data");
   assert(snapshot.pages[0][0].iconPath === "C:/Icons/a.png", "layout snapshots should preserve cached icon paths");
   assert(snapshot.pages[0][0].customIconPath === "C:/Icons/custom-a.png", "layout snapshots should preserve custom icon paths");

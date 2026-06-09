@@ -9,6 +9,8 @@ import { useLaunchpadControllerState } from "./useLaunchpadControllerState.js";
 import {
   BACKGROUND_EFFECT_DIMMED,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  DEFAULT_BACKGROUND_BASE_COLOR,
+  DEFAULT_BACKGROUND_BASE_OPACITY,
   DEFAULT_BACKGROUND_IMAGE_OPACITY,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
@@ -33,11 +35,15 @@ export function runLaunchpadControllerStateTests() {
   assert(state.draftIsTextlessMode.value === false, "draft textless mode should start disabled");
   assert(state.backgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "background source should default to system material");
   assert(state.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "background effect should default to dimmed");
+  assert(state.backgroundBaseColor.value === DEFAULT_BACKGROUND_BASE_COLOR, "background base color should use the default");
+  assert(state.backgroundBaseOpacity.value === DEFAULT_BACKGROUND_BASE_OPACITY, "background base opacity should use the default");
   assert(state.backgroundImageOpacity.value === DEFAULT_BACKGROUND_IMAGE_OPACITY, "background image opacity should use the default");
   assert(state.backgroundImagePath.value === null, "background image path should default to the built-in image");
   assert(state.backgroundImageUrl.value === null, "background image url should default to the built-in image");
   assert(state.draftBackgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "draft background source should default to system material");
   assert(state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "draft background effect should default to dimmed");
+  assert(state.draftBackgroundBaseColor.value === DEFAULT_BACKGROUND_BASE_COLOR, "draft background base color should use the default");
+  assert(state.draftBackgroundBaseOpacity.value === DEFAULT_BACKGROUND_BASE_OPACITY, "draft background base opacity should use the default");
   assert(state.draftBackgroundImageOpacity.value === DEFAULT_BACKGROUND_IMAGE_OPACITY, "draft background image opacity should use the default");
   assert(state.draftBackgroundImagePath.value === null, "draft background image path should default to the built-in image");
   assert(state.draftBackgroundImageUrl.value === null, "draft background image url should default to the built-in image");

@@ -4,6 +4,8 @@ import {
   BACKGROUND_EFFECT_NONE,
   BACKGROUND_SOURCE_CUSTOM_IMAGE,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  DEFAULT_BACKGROUND_BASE_COLOR,
+  DEFAULT_BACKGROUND_BASE_OPACITY,
   FOLDER_ICON_SIZE_MODE_CUSTOM,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
@@ -44,6 +46,8 @@ function createSettingsPanelFlowHarness(overrides = {}) {
     folderIconSizeMode: ref(overrides.folderIconSizeMode ?? FOLDER_ICON_SIZE_MODE_GLOBAL),
     folderIconSize: ref(overrides.folderIconSize ?? 72),
     isTextlessMode: ref(overrides.isTextlessMode ?? true),
+    backgroundBaseColor: ref(overrides.backgroundBaseColor ?? "#334455"),
+    backgroundBaseOpacity: ref(overrides.backgroundBaseOpacity ?? 74),
     backgroundSource: ref(overrides.backgroundSource ?? BACKGROUND_SOURCE_CUSTOM_IMAGE),
     backgroundEffect: ref(overrides.backgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     backgroundImageOpacity: ref(overrides.backgroundImageOpacity ?? 58),
@@ -59,6 +63,8 @@ function createSettingsPanelFlowHarness(overrides = {}) {
     draftFolderIconSizeMode: ref(overrides.draftFolderIconSizeMode ?? FOLDER_ICON_SIZE_MODE_CUSTOM),
     draftFolderIconSize: ref(overrides.draftFolderIconSize ?? 120),
     draftIsTextlessMode: ref(overrides.draftIsTextlessMode ?? false),
+    draftBackgroundBaseColor: ref(overrides.draftBackgroundBaseColor ?? DEFAULT_BACKGROUND_BASE_COLOR),
+    draftBackgroundBaseOpacity: ref(overrides.draftBackgroundBaseOpacity ?? DEFAULT_BACKGROUND_BASE_OPACITY),
     draftBackgroundSource: ref(overrides.draftBackgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
     draftBackgroundEffect: ref(overrides.draftBackgroundEffect ?? BACKGROUND_EFFECT_NONE),
     draftBackgroundImageOpacity: ref(overrides.draftBackgroundImageOpacity ?? 12),
@@ -101,6 +107,8 @@ export function runSettingsPanelFlowTests() {
     assert(state.draftFolderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_GLOBAL, "opening settings should reset folder icon mode draft");
     assert(state.draftFolderIconSize.value === 72, "opening settings should reset folder icon size draft");
     assert(state.draftIsTextlessMode.value === true, "opening settings should reset textless draft");
+    assert(state.draftBackgroundBaseColor.value === "#334455", "opening settings should reset background base color draft");
+    assert(state.draftBackgroundBaseOpacity.value === 74, "opening settings should reset background base opacity draft");
     assert(state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "opening settings should reset background source draft");
     assert(state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "opening settings should reset background effect draft");
     assert(state.draftBackgroundImageOpacity.value === 58, "opening settings should reset background opacity draft");
@@ -117,6 +125,8 @@ export function runSettingsPanelFlowTests() {
     state.draftFolderIconSizeMode.value = FOLDER_ICON_SIZE_MODE_CUSTOM;
     state.draftFolderIconSize.value = 40;
     state.draftIsTextlessMode.value = false;
+    state.draftBackgroundBaseColor.value = "#abcdef";
+    state.draftBackgroundBaseOpacity.value = 3;
     state.draftBackgroundSource.value = BACKGROUND_SOURCE_SYSTEM_MATERIAL;
     state.draftBackgroundEffect.value = BACKGROUND_EFFECT_NONE;
     state.draftBackgroundImageOpacity.value = 4;
@@ -133,6 +143,8 @@ export function runSettingsPanelFlowTests() {
     assert(state.draftFolderIconSizeMode.value === FOLDER_ICON_SIZE_MODE_GLOBAL, "closing settings should discard folder icon mode draft");
     assert(state.draftFolderIconSize.value === 72, "closing settings should discard folder icon size draft");
     assert(state.draftIsTextlessMode.value === true, "closing settings should discard textless draft");
+    assert(state.draftBackgroundBaseColor.value === "#334455", "closing settings should discard background base color draft");
+    assert(state.draftBackgroundBaseOpacity.value === 74, "closing settings should discard background base opacity draft");
     assert(state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "closing settings should discard background source draft");
     assert(state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "closing settings should discard background effect draft");
     assert(state.draftBackgroundImageOpacity.value === 58, "closing settings should discard background opacity draft");

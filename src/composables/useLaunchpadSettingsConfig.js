@@ -22,10 +22,18 @@ export const BACKGROUND_SOURCE_CUSTOM_IMAGE = "customImage";
 export const BACKGROUND_SOURCE_WINDOWS_WALLPAPER = "windowsWallpaper";
 export const BACKGROUND_EFFECT_NONE = "none";
 export const BACKGROUND_EFFECT_DIMMED = "dimmed";
+export const BACKGROUND_EFFECT_BLUR = "blur";
+export const BACKGROUND_EFFECT_ACRYLIC_WEBGL = "acrylicWebgl";
 export const BACKGROUND_IMAGE_OPACITY_MIN = 0;
 export const BACKGROUND_IMAGE_OPACITY_MAX = 100;
 export const BACKGROUND_IMAGE_OPACITY_STEP = 1;
 export const DEFAULT_BACKGROUND_IMAGE_OPACITY = 46;
+export const BACKGROUND_BASE_OPACITY_MIN = 0;
+export const BACKGROUND_BASE_OPACITY_MAX = 100;
+export const BACKGROUND_BASE_OPACITY_STEP = 1;
+export const DEFAULT_BACKGROUND_BASE_COLOR = "#10141f";
+export const DEFAULT_BACKGROUND_BASE_OPACITY = 28;
+export const WINDOW_EFFECT_MATERIAL_NONE = "none";
 export const WINDOW_EFFECT_MATERIAL_ACRYLIC = "acrylic";
 export const WINDOW_EFFECT_MATERIAL_MICA = "mica";
 export const WINDOW_EFFECT_MATERIAL_MICA_ALT = "micaAlt";
@@ -54,7 +62,14 @@ export function normalizeBackgroundSource(value) {
 }
 
 export function normalizeBackgroundEffect(value) {
+  if (value === BACKGROUND_EFFECT_BLUR) return BACKGROUND_EFFECT_BLUR;
+  if (value === BACKGROUND_EFFECT_ACRYLIC_WEBGL) return BACKGROUND_EFFECT_ACRYLIC_WEBGL;
   return value === BACKGROUND_EFFECT_NONE ? BACKGROUND_EFFECT_NONE : BACKGROUND_EFFECT_DIMMED;
+}
+
+export function backgroundEffectUsesPixi(effect) {
+  const normalizedEffect = normalizeBackgroundEffect(effect);
+  return normalizedEffect === BACKGROUND_EFFECT_BLUR || normalizedEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL;
 }
 
 export function backgroundSourceUsesImage(source) {
@@ -68,12 +83,28 @@ export function clampBackgroundImageOpacity(value) {
   return clamp(Math.round(opacity), BACKGROUND_IMAGE_OPACITY_MIN, BACKGROUND_IMAGE_OPACITY_MAX);
 }
 
+export function clampBackgroundBaseOpacity(value) {
+  const opacity = Number(value);
+  if (!Number.isFinite(opacity)) return DEFAULT_BACKGROUND_BASE_OPACITY;
+  return clamp(Math.round(opacity), BACKGROUND_BASE_OPACITY_MIN, BACKGROUND_BASE_OPACITY_MAX);
+}
+
+export function normalizeBackgroundBaseColor(value) {
+  const color = typeof value === "string" ? value.trim() : "";
+  if (/^#[0-9a-fA-F]{6}$/.test(color)) return color.toLowerCase();
+  if (/^#[0-9a-fA-F]{3}$/.test(color)) {
+    return `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`.toLowerCase();
+  }
+  return DEFAULT_BACKGROUND_BASE_COLOR;
+}
+
 export function normalizeBackgroundImagePath(value) {
   const path = typeof value === "string" ? value.trim() : "";
   return path || null;
 }
 
 export function normalizeWindowEffectMaterial(value) {
+  if (value === WINDOW_EFFECT_MATERIAL_NONE) return WINDOW_EFFECT_MATERIAL_NONE;
   if (value === WINDOW_EFFECT_MATERIAL_MICA) return WINDOW_EFFECT_MATERIAL_MICA;
   if (value === WINDOW_EFFECT_MATERIAL_MICA_ALT || value === "mica-alt") return WINDOW_EFFECT_MATERIAL_MICA_ALT;
   return WINDOW_EFFECT_MATERIAL_ACRYLIC;
@@ -96,6 +127,7 @@ export function normalizeWindowEffectsSupport(support) {
 
 export function isWindowEffectMaterialAvailable(material, support) {
   const normalizedMaterial = normalizeWindowEffectMaterial(material);
+  if (normalizedMaterial === WINDOW_EFFECT_MATERIAL_NONE) return true;
   const normalizedSupport = normalizeWindowEffectsSupport(support);
   if (normalizedMaterial === WINDOW_EFFECT_MATERIAL_MICA) return normalizedSupport.supportsMica;
   if (normalizedMaterial === WINDOW_EFFECT_MATERIAL_MICA_ALT) return normalizedSupport.supportsMicaAlt;
@@ -104,6 +136,7 @@ export function isWindowEffectMaterialAvailable(material, support) {
 
 export function resolveWindowEffectMaterialForSupport(material, support) {
   const normalizedMaterial = normalizeWindowEffectMaterial(material);
+  if (normalizedMaterial === WINDOW_EFFECT_MATERIAL_NONE) return WINDOW_EFFECT_MATERIAL_NONE;
   const normalizedSupport = normalizeWindowEffectsSupport(support);
   if (isWindowEffectMaterialAvailable(normalizedMaterial, normalizedSupport)) return normalizedMaterial;
   if (normalizedMaterial === WINDOW_EFFECT_MATERIAL_MICA_ALT && normalizedSupport.supportsMica) return WINDOW_EFFECT_MATERIAL_MICA;
@@ -122,6 +155,8 @@ export function syncLaunchpadSettingsDraftsFromState(options) {
   options.draftFolderIconSizeMode.value = options.folderIconSizeMode.value;
   options.draftFolderIconSize.value = options.folderIconSize.value;
   options.draftIsTextlessMode.value = options.isTextlessMode.value;
+  options.draftBackgroundBaseColor.value = normalizeBackgroundBaseColor(options.backgroundBaseColor.value);
+  options.draftBackgroundBaseOpacity.value = clampBackgroundBaseOpacity(options.backgroundBaseOpacity.value);
   options.draftBackgroundSource.value = options.backgroundSource.value;
   options.draftBackgroundEffect.value = options.backgroundEffect.value;
   options.draftBackgroundImageOpacity.value = options.backgroundImageOpacity.value;
@@ -181,6 +216,9 @@ export function useLaunchpadSettingsConfig(options) {
     if (!backgroundSourceUsesImage(nextSource)) {
       options.draftBackgroundImagePath.value = null;
       options.draftBackgroundImageUrl.value = null;
+      if (backgroundEffectUsesPixi(options.draftBackgroundEffect.value)) {
+        options.draftBackgroundEffect.value = BACKGROUND_EFFECT_DIMMED;
+      }
     }
   }
 
@@ -195,6 +233,20 @@ export function useLaunchpadSettingsConfig(options) {
   function changeDraftBackgroundImageOpacity(direction) {
     setDraftBackgroundImageOpacity(
       Number(options.draftBackgroundImageOpacity.value) + direction * BACKGROUND_IMAGE_OPACITY_STEP
+    );
+  }
+
+  function setDraftBackgroundBaseColor(color) {
+    options.draftBackgroundBaseColor.value = normalizeBackgroundBaseColor(color);
+  }
+
+  function setDraftBackgroundBaseOpacity(value) {
+    options.draftBackgroundBaseOpacity.value = clampBackgroundBaseOpacity(value);
+  }
+
+  function changeDraftBackgroundBaseOpacity(direction) {
+    setDraftBackgroundBaseOpacity(
+      Number(options.draftBackgroundBaseOpacity.value) + direction * BACKGROUND_BASE_OPACITY_STEP
     );
   }
 
@@ -248,6 +300,13 @@ export function useLaunchpadSettingsConfig(options) {
     const nextMaterial = normalizeWindowEffectMaterial(material);
     if (!canUseWindowEffectMaterial(nextMaterial)) return;
     options.draftWindowEffectMaterial.value = nextMaterial;
+    if (
+      nextMaterial === WINDOW_EFFECT_MATERIAL_NONE
+      && options.draftBackgroundBaseOpacity
+      && clampBackgroundBaseOpacity(options.draftBackgroundBaseOpacity.value) === 0
+    ) {
+      options.draftBackgroundBaseOpacity.value = BACKGROUND_BASE_OPACITY_MAX;
+    }
   }
 
   function setDraftWindowEffectAppearance(appearance) {
@@ -318,10 +377,16 @@ export function useLaunchpadSettingsConfig(options) {
     const nextBackgroundImagePath = nextBackgroundUsesImage
       ? normalizeBackgroundImagePath(options.draftBackgroundImagePath.value)
       : null;
+    const normalizedBackgroundEffect = normalizeBackgroundEffect(options.draftBackgroundEffect.value);
+    const nextBackgroundEffect = backgroundEffectUsesPixi(normalizedBackgroundEffect) && !nextBackgroundImagePath
+      ? BACKGROUND_EFFECT_DIMMED
+      : normalizedBackgroundEffect;
     options.backgroundSource.value = nextBackgroundImagePath
       ? nextBackgroundSource
       : BACKGROUND_SOURCE_SYSTEM_MATERIAL;
-    options.backgroundEffect.value = normalizeBackgroundEffect(options.draftBackgroundEffect.value);
+    options.backgroundEffect.value = nextBackgroundEffect;
+    options.backgroundBaseColor.value = normalizeBackgroundBaseColor(options.draftBackgroundBaseColor.value);
+    options.backgroundBaseOpacity.value = clampBackgroundBaseOpacity(options.draftBackgroundBaseOpacity.value);
     options.backgroundImageOpacity.value = clampBackgroundImageOpacity(options.draftBackgroundImageOpacity.value);
     options.backgroundImagePath.value = nextBackgroundImagePath;
     options.backgroundImageUrl.value = options.backgroundImagePath.value
@@ -341,6 +406,7 @@ export function useLaunchpadSettingsConfig(options) {
     applyGridConfig,
     applySettingsConfig,
     changeDraftBackgroundImageOpacity,
+    changeDraftBackgroundBaseOpacity,
     changeDraftCols,
     changeDraftFolderCols,
     changeDraftFolderIconSize,
@@ -352,6 +418,8 @@ export function useLaunchpadSettingsConfig(options) {
     clearDraftBackgroundImage,
     canUseWindowEffectMaterial,
     setDraftBackgroundImageOpacity,
+    setDraftBackgroundBaseColor,
+    setDraftBackgroundBaseOpacity,
     setDraftBackgroundEffect,
     setDraftBackgroundSource,
     setDraftFolderIconSizeMode,

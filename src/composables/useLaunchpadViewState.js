@@ -1,9 +1,12 @@
 import { computed } from "vue";
 import { DESKTOP_CLOSE_SCALE } from "./launchpadConstants.js";
 import {
-  BACKGROUND_EFFECT_NONE,
+  BACKGROUND_EFFECT_DIMMED,
+  backgroundEffectUsesPixi,
   backgroundSourceUsesImage,
+  clampBackgroundBaseOpacity,
   clampBackgroundImageOpacity,
+  normalizeBackgroundBaseColor,
 } from "./useLaunchpadSettingsConfig.js";
 import {
   appLaunchGhostTransition,
@@ -24,13 +27,21 @@ export function useLaunchpadViewState(options) {
   const isDesktopAnimatingClosed = computed(() => Boolean(!options.isDesktopOpen.value || options.isDesktopClosing.value || options.isAppLaunching.value));
   const shouldHideHomeShell = computed(() => Boolean((options.openFolderId.value && !options.isFolderClosing.value) || isDesktopAnimatingClosed.value));
   const isHomeInteractionDisabled = computed(() => Boolean(!options.isDesktopOpen.value || options.isDesktopClosing.value || options.isAppLaunching.value));
+  const shouldRenderPixiBackgroundEffect = computed(() => Boolean(
+    backgroundEffectUsesPixi(options.backgroundEffect.value)
+    && backgroundSourceUsesImage(options.backgroundSource.value)
+    && options.backgroundImageUrl?.value
+  ));
   const backgroundImageCssOpacity = computed(() => {
+    if (shouldRenderPixiBackgroundEffect.value) return 0;
     if (!backgroundSourceUsesImage(options.backgroundSource.value)) return 0;
     return clampBackgroundImageOpacity(options.backgroundImageOpacity.value) / 100;
   });
   const backgroundOverlayOpacity = computed(() => (
-    options.backgroundEffect.value === BACKGROUND_EFFECT_NONE ? 0 : 0.28
+    options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED ? 0.28 : 0
   ));
+  const backgroundBaseColor = computed(() => normalizeBackgroundBaseColor(options.backgroundBaseColor?.value));
+  const backgroundBaseOpacity = computed(() => clampBackgroundBaseOpacity(options.backgroundBaseOpacity?.value) / 100);
   const backgroundImageStyle = computed(() => {
     const imageUrl = options.backgroundImageUrl?.value;
     if (!imageUrl) return {};
@@ -40,6 +51,8 @@ export function useLaunchpadViewState(options) {
   });
   const rootStyle = computed(() => ({
     "--configured-app-icon-size": `${options.iconSize.value}px`,
+    "--launchpad-background-base-color": backgroundBaseColor.value,
+    "--launchpad-background-base-opacity": `${backgroundBaseOpacity.value}`,
     "--launchpad-background-image-opacity": `${backgroundImageCssOpacity.value}`,
     "--launchpad-background-overlay-opacity": `${backgroundOverlayOpacity.value}`,
   }));
@@ -64,5 +77,6 @@ export function useLaunchpadViewState(options) {
     isHomeInteractionDisabled,
     panelSpring,
     rootStyle,
+    shouldRenderPixiBackgroundEffect,
   };
 }
