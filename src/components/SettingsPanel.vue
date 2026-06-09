@@ -135,18 +135,37 @@
                     </button>
                   </div>
                 </div>
-                <div class="settings-window-effect-notes" aria-label="窗口材质说明">
-                  <div
-                    v-for="item in windowEffectMaterialNotes"
-                    :key="item.material"
-                    :class="cx('settings-window-effect-note', !item.available && 'settings-window-effect-note-disabled')"
+                <div class="settings-window-effect-previews" aria-label="窗口底材示意">
+                  <button
+                    v-for="item in windowEffectPreviewItems"
+                    :key="`${item.material}-${item.appearance}`"
+                    type="button"
+                    :class="cx(
+                      'settings-window-effect-preview',
+                      `settings-window-effect-preview-${item.materialClass}`,
+                      `settings-window-effect-preview-${item.appearance}`,
+                      item.active && 'settings-window-effect-preview-active',
+                      !item.available && 'settings-window-effect-preview-disabled'
+                    )"
+                    :disabled="!item.available"
+                    @click="selectWindowEffectPreview(item.material, item.appearance)"
                   >
-                    <span class="settings-window-effect-note-title">
-                      <span>{{ item.label }}</span>
-                      <span>{{ item.version }}</span>
+                    <span class="settings-window-effect-preview-scene" aria-hidden="true">
+                      <span class="settings-window-effect-preview-icons" />
+                      <span class="settings-window-effect-preview-pane">
+                        <span class="settings-window-effect-preview-titlebar" />
+                        <span class="settings-window-effect-preview-line settings-window-effect-preview-line-wide" />
+                        <span class="settings-window-effect-preview-line" />
+                      </span>
                     </span>
-                    <span>{{ item.description }}</span>
-                  </div>
+                    <span class="settings-window-effect-preview-copy">
+                      <span class="settings-window-effect-preview-title">
+                        <span>{{ item.label }}</span>
+                        <span>{{ item.appearanceLabel }}</span>
+                      </span>
+                      <span>{{ item.description }}</span>
+                    </span>
+                  </button>
                 </div>
               </div>
               <div class="settings-field settings-field-wide settings-background-field">
@@ -258,6 +277,15 @@
                     >
                       恢复默认
                     </button>
+                  </div>
+                  <div
+                    :class="cx('settings-background-preview', !hasDraftBackgroundImagePreview && 'settings-background-preview-empty')"
+                    :style="backgroundLayerPreviewStyle"
+                    aria-label="图片层预览"
+                  >
+                    <span class="settings-background-preview-base" aria-hidden="true" />
+                    <span v-if="hasDraftBackgroundImagePreview" class="settings-background-preview-image" aria-hidden="true" />
+                    <span v-else class="settings-background-preview-label">{{ backgroundLayerPreviewLabel }}</span>
                   </div>
                 </div>
               </div>
@@ -457,6 +485,19 @@
                       </button>
                     </div>
                   </div>
+                  <BackgroundEffectPreview
+                    :background-acrylic-params="draftBackgroundAcrylicPreviewParams"
+                    :background-base-color="state.draftBackgroundBaseColor.value"
+                    :background-base-opacity="state.draftBackgroundBaseOpacity.value"
+                    :background-blur-strength="state.draftBackgroundBlurStrength.value"
+                    :background-darken-color="state.draftBackgroundDarkenColor.value"
+                    :background-darken-strength="state.draftBackgroundDarkenStrength.value"
+                    :background-effect="state.draftBackgroundEffect.value"
+                    :background-image-opacity="state.draftBackgroundImageOpacity.value"
+                    :background-image-path="state.draftBackgroundImagePath.value"
+                    :background-image-url="hasDraftBackgroundImagePreview ? state.draftBackgroundImageUrl.value : null"
+                    :empty-label="backgroundEffectPreviewLabel"
+                  />
                 </div>
               </div>
               <div class="settings-field settings-field-wide settings-grid-layout-field">
@@ -750,7 +791,8 @@
 
 <script setup>
 import { Motion } from "motion-v";
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import BackgroundEffectPreview from "./BackgroundEffectPreview.vue";
 import { ChevronDownIcon, ChevronUpIcon } from "./Icons.js";
 import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "../composables/launchpadConstants.js";
 import {
@@ -777,6 +819,11 @@ import {
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
   BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
   backgroundSourceUsesImage,
+  clampBackgroundBaseOpacity,
+  clampBackgroundImageOpacity,
+  normalizeBackgroundAcrylicAppearance,
+  normalizeBackgroundAcrylicParams,
+  normalizeBackgroundBaseColor,
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_APPEARANCE_LIGHT,
   WINDOW_EFFECT_MATERIAL_NONE,
@@ -796,6 +843,8 @@ const props = defineProps({
 const activeSettingsTab = ref("general");
 const activeAcrylicParamsProfile = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
 const settingsPanelRef = ref(null);
+const systemAcrylicAppearance = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
+let systemAppearanceQuery = null;
 const ACRYLIC_PARAM_STEP = 0.01;
 const ACRYLIC_TINT_STRENGTH_MIN = 0;
 const ACRYLIC_TINT_STRENGTH_MAX = 0.6;
@@ -809,33 +858,48 @@ const windowEffectsSupport = computed(() => props.state.windowEffectsSupport.val
 const windowEffectMaterialNotes = computed(() => [
   {
     material: WINDOW_EFFECT_MATERIAL_NONE,
+    materialClass: "none",
     label: "无材质",
-    version: "全部系统",
     description: "关闭系统材质，只显示底色与图片层",
     available: true,
   },
   {
     material: WINDOW_EFFECT_MATERIAL_ACRYLIC,
+    materialClass: "acrylic",
     label: "透明磨砂",
-    version: "Windows 10 1809+ / 17763+",
     description: "半透明模糊，背景变化更明显",
     available: Boolean(windowEffectsSupport.value.supportsAcrylic),
   },
   {
     material: WINDOW_EFFECT_MATERIAL_MICA,
+    materialClass: "mica",
     label: "Mica",
-    version: "Windows 11 21H2+ / 22000+",
     description: "桌面采样，观感更稳定，资源占用更低",
     available: Boolean(windowEffectsSupport.value.supportsMica),
   },
   {
     material: WINDOW_EFFECT_MATERIAL_MICA_ALT,
+    materialClass: "mica-alt",
     label: "Mica Alt",
-    version: "Windows 11 22H2+ / 22621+",
     description: "Mica 变体，层次更强，适合分层窗口",
     available: Boolean(windowEffectsSupport.value.supportsMicaAlt),
   },
 ]);
+const windowEffectAppearances = [
+  { appearance: WINDOW_EFFECT_APPEARANCE_LIGHT, appearanceLabel: "浅色" },
+  { appearance: WINDOW_EFFECT_APPEARANCE_DARK, appearanceLabel: "深色" },
+];
+const activeWindowEffectAppearance = computed(() => (
+  windowEffectAppearances.find((item) => item.appearance === props.state.draftWindowEffectAppearance.value)
+  || windowEffectAppearances[1]
+));
+const windowEffectPreviewItems = computed(() => (
+  windowEffectMaterialNotes.value.map((material) => ({
+    ...material,
+    ...activeWindowEffectAppearance.value,
+    active: props.state.draftWindowEffectMaterial.value === material.material,
+  }))
+));
 const canEditWindowEffectAppearance = computed(() =>
   props.state.draftWindowEffectMaterial.value !== WINDOW_EFFECT_MATERIAL_NONE
   && props.state.canUseWindowEffectMaterial(props.state.draftWindowEffectMaterial.value)
@@ -868,6 +932,41 @@ const draftBackgroundImageName = computed(() => {
   if (isDraftWindowsWallpaper.value && /^background-[a-f0-9]{32}\./i.test(name)) return "当前桌面壁纸";
   return /^background-[a-f0-9]{32}\./i.test(name) ? "自定义图片" : name || "自定义图片";
 });
+const hasDraftBackgroundImagePreview = computed(() => Boolean(
+  doesDraftBackgroundUseImage.value && props.state.draftBackgroundImageUrl.value
+));
+const backgroundLayerPreviewLabel = computed(() => {
+  if (!doesDraftBackgroundUseImage.value) return "无图片";
+  return isDraftWindowsWallpaper.value ? "等待壁纸" : "选择图片";
+});
+const backgroundEffectPreviewLabel = computed(() => (
+  isDraftWindowsWallpaper.value ? "等待壁纸" : "选择图片后可用"
+));
+const backgroundPreviewImageValue = computed(() => (
+  hasDraftBackgroundImagePreview.value
+    ? backgroundImageUrlStyle(props.state.draftBackgroundImageUrl.value)
+    : "none"
+));
+const backgroundPreviewBaseVariables = computed(() => ({
+  "--settings-background-preview-base-color": normalizeBackgroundBaseColor(props.state.draftBackgroundBaseColor.value),
+  "--settings-background-preview-base-opacity": `${clampBackgroundBaseOpacity(props.state.draftBackgroundBaseOpacity.value) / 100}`,
+  "--settings-background-preview-image": backgroundPreviewImageValue.value,
+  "--settings-background-preview-image-opacity": `${hasDraftBackgroundImagePreview.value ? clampBackgroundImageOpacity(props.state.draftBackgroundImageOpacity.value) / 100 : 0}`,
+}));
+const effectiveDraftBackgroundAcrylicAppearance = computed(() => {
+  const appearance = normalizeBackgroundAcrylicAppearance(props.state.draftBackgroundAcrylicAppearance.value);
+  return appearance === BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM ? systemAcrylicAppearance.value : appearance;
+});
+const draftBackgroundAcrylicPreviewParams = computed(() => {
+  const appearance = effectiveDraftBackgroundAcrylicAppearance.value;
+  const params = appearance === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
+    ? props.state.draftBackgroundAcrylicLightParams.value
+    : props.state.draftBackgroundAcrylicDarkParams.value;
+  return normalizeBackgroundAcrylicParams(params, appearance);
+});
+const backgroundLayerPreviewStyle = computed(() => ({
+  ...backgroundPreviewBaseVariables.value,
+}));
 const activeAcrylicParams = computed(() => (
   activeAcrylicParamsProfile.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
     ? props.state.draftBackgroundAcrylicLightParams.value
@@ -886,6 +985,27 @@ const settingsTabs = [
   { id: "apps", label: "Apps" },
   { id: "about", label: "关于" },
 ];
+
+onMounted(() => {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+  systemAppearanceQuery = window.matchMedia("(prefers-color-scheme: light)");
+  updateSystemAcrylicAppearance();
+  if (typeof systemAppearanceQuery.addEventListener === "function") {
+    systemAppearanceQuery.addEventListener("change", updateSystemAcrylicAppearance);
+  } else {
+    systemAppearanceQuery.addListener?.(updateSystemAcrylicAppearance);
+  }
+});
+
+onBeforeUnmount(() => {
+  if (!systemAppearanceQuery) return;
+  if (typeof systemAppearanceQuery.removeEventListener === "function") {
+    systemAppearanceQuery.removeEventListener("change", updateSystemAcrylicAppearance);
+  } else {
+    systemAppearanceQuery.removeListener?.(updateSystemAcrylicAppearance);
+  }
+  systemAppearanceQuery = null;
+});
 
 watch(
   () => props.state.isSettingsPanelOpen.value,
@@ -908,6 +1028,29 @@ watch(
 
 function handleSettingsPanelKeydown(event) {
   handleModalKeydown(event, settingsPanelRef, props.state.closeSettingsPanel);
+}
+
+function resolveSystemAcrylicAppearance() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return BACKGROUND_ACRYLIC_APPEARANCE_DARK;
+  }
+  return window.matchMedia("(prefers-color-scheme: light)").matches
+    ? BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
+    : BACKGROUND_ACRYLIC_APPEARANCE_DARK;
+}
+
+function updateSystemAcrylicAppearance() {
+  systemAcrylicAppearance.value = resolveSystemAcrylicAppearance();
+}
+
+function backgroundImageUrlStyle(url) {
+  return `url(${JSON.stringify(url)})`;
+}
+
+function selectWindowEffectPreview(material, appearance) {
+  if (!props.state.canUseWindowEffectMaterial(material)) return;
+  props.state.setDraftWindowEffectMaterial(material);
+  props.state.setDraftWindowEffectAppearance(appearance);
 }
 
 function setDraftBackgroundAcrylicAppearance(appearance) {

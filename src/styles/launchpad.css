@@ -606,7 +606,7 @@ body {
   flex-wrap: wrap;
 }
 
-.settings-window-effect-notes {
+.settings-window-effect-previews {
   display: grid;
   grid-column: 1 / -1;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -614,20 +614,212 @@ body {
   width: 100%;
 }
 
-.settings-window-effect-note {
+.settings-window-effect-preview {
+  appearance: none;
   display: grid;
-  gap: 5px;
+  gap: 8px;
   min-width: 0;
-  padding: 9px 10px;
+  padding: 8px;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(0, 0, 0, 0.13);
   color: rgba(255, 255, 255, 0.62);
+  cursor: pointer;
   font-size: 11px;
   line-height: 1.35;
+  text-align: left;
+  transition: border-color 160ms ease, background 160ms ease, opacity 160ms ease;
 }
 
-.settings-window-effect-note-title {
+.settings-window-effect-preview:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.settings-window-effect-preview:disabled {
+  cursor: not-allowed;
+}
+
+.settings-window-effect-preview-active {
+  border-color: rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.settings-window-effect-preview-disabled {
+  opacity: 0.48;
+}
+
+.settings-window-effect-preview-scene {
+  position: relative;
+  display: block;
+  aspect-ratio: 1.48;
+  overflow: hidden;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background:
+    linear-gradient(140deg, rgba(45, 120, 222, 0.95), rgba(30, 185, 160, 0.9) 38%, rgba(238, 178, 62, 0.9) 68%, rgba(203, 75, 92, 0.92)),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.16) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+  background-size: auto, 18px 18px, 18px 18px;
+}
+
+.settings-window-effect-preview-scene::before,
+.settings-window-effect-preview-scene::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+}
+
+.settings-window-effect-preview-scene::before {
+  right: -18%;
+  bottom: -24%;
+  width: 64%;
+  height: 72%;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.settings-window-effect-preview-scene::after {
+  left: -12%;
+  top: -22%;
+  width: 52%;
+  height: 58%;
+  background: rgba(20, 28, 42, 0.18);
+}
+
+.settings-window-effect-preview-icons {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  z-index: 1;
+  width: 5px;
+  height: 5px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow:
+    0 13px 0 rgba(255, 255, 255, 0.58),
+    0 26px 0 rgba(255, 255, 255, 0.48),
+    14px 0 0 rgba(255, 255, 255, 0.5),
+    14px 13px 0 rgba(255, 255, 255, 0.44),
+    14px 26px 0 rgba(255, 255, 255, 0.36);
+}
+
+.settings-window-effect-preview-pane {
+  position: absolute;
+  right: 9px;
+  bottom: 9px;
+  z-index: 2;
+  display: grid;
+  gap: 6px;
+  width: 68%;
+  height: 58%;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+}
+
+.settings-window-effect-preview-titlebar,
+.settings-window-effect-preview-line {
+  display: block;
+  min-width: 0;
+  border-radius: 999px;
+}
+
+.settings-window-effect-preview-titlebar {
+  width: 48%;
+  height: 6px;
+}
+
+.settings-window-effect-preview-line {
+  width: 54%;
+  height: 4px;
+}
+
+.settings-window-effect-preview-line-wide {
+  width: 82%;
+}
+
+.settings-window-effect-preview-light .settings-window-effect-preview-pane {
+  color-scheme: light;
+}
+
+.settings-window-effect-preview-dark .settings-window-effect-preview-pane {
+  color-scheme: dark;
+}
+
+.settings-window-effect-preview-light .settings-window-effect-preview-titlebar,
+.settings-window-effect-preview-light .settings-window-effect-preview-line {
+  background: rgba(28, 32, 42, 0.72);
+}
+
+.settings-window-effect-preview-dark .settings-window-effect-preview-titlebar,
+.settings-window-effect-preview-dark .settings-window-effect-preview-line {
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.settings-window-effect-preview-none.settings-window-effect-preview-light .settings-window-effect-preview-pane {
+  background: #eef1f6;
+}
+
+.settings-window-effect-preview-none.settings-window-effect-preview-dark .settings-window-effect-preview-pane {
+  background: #20242d;
+}
+
+.settings-window-effect-preview-acrylic .settings-window-effect-preview-pane {
+  backdrop-filter: blur(9px) saturate(155%);
+  -webkit-backdrop-filter: blur(9px) saturate(155%);
+}
+
+.settings-window-effect-preview-acrylic.settings-window-effect-preview-light .settings-window-effect-preview-pane {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.42), transparent 30%),
+    repeating-linear-gradient(45deg, rgba(0, 0, 0, 0.035) 0 1px, transparent 1px 4px),
+    rgba(245, 247, 250, 0.58);
+}
+
+.settings-window-effect-preview-acrylic.settings-window-effect-preview-dark .settings-window-effect-preview-pane {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.12), transparent 32%),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 4px),
+    rgba(30, 32, 38, 0.62);
+}
+
+.settings-window-effect-preview-mica.settings-window-effect-preview-light .settings-window-effect-preview-pane {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.34), transparent 70%),
+    rgba(236, 240, 247, 0.9);
+}
+
+.settings-window-effect-preview-mica.settings-window-effect-preview-dark .settings-window-effect-preview-pane {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 72%),
+    rgba(37, 41, 50, 0.92);
+}
+
+.settings-window-effect-preview-mica-alt .settings-window-effect-preview-pane {
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.settings-window-effect-preview-mica-alt.settings-window-effect-preview-light .settings-window-effect-preview-pane {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.52), rgba(220, 226, 238, 0.9)),
+    rgba(232, 236, 244, 0.95);
+}
+
+.settings-window-effect-preview-mica-alt.settings-window-effect-preview-dark .settings-window-effect-preview-pane {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(25, 28, 36, 0.92)),
+    rgba(28, 31, 40, 0.96);
+}
+
+.settings-window-effect-preview-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-window-effect-preview-title {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -637,20 +829,16 @@ body {
   font-weight: 650;
 }
 
-.settings-window-effect-note-title span:first-child {
+.settings-window-effect-preview-title span:first-child {
   white-space: nowrap;
 }
 
-.settings-window-effect-note-title span:last-child {
+.settings-window-effect-preview-title span:last-child {
   color: rgba(255, 255, 255, 0.46);
   font-size: 10px;
   font-weight: 520;
   line-height: 1.2;
   text-align: right;
-}
-
-.settings-window-effect-note-disabled {
-  opacity: 0.48;
 }
 
 .settings-background-field {
@@ -778,6 +966,83 @@ body {
 .settings-background-image-button {
   height: 32px;
   padding: 0 12px;
+}
+
+.settings-background-preview {
+  position: relative;
+  isolation: isolate;
+  width: 320px;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.08) 25%, transparent 25% 75%, rgba(255, 255, 255, 0.08) 75%),
+    linear-gradient(45deg, rgba(255, 255, 255, 0.08) 25%, transparent 25% 75%, rgba(255, 255, 255, 0.08) 75%),
+    rgba(0, 0, 0, 0.2);
+  background-position: 0 0, 8px 8px, 0 0;
+  background-size: 16px 16px, 16px 16px, auto;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.settings-background-preview-base,
+.settings-background-preview-image,
+.settings-background-preview-darken,
+.settings-background-preview-pixi-host {
+  position: absolute;
+  inset: 0;
+}
+
+.settings-background-preview-base {
+  z-index: 1;
+  background: var(--settings-background-preview-base-color, #10141f);
+  opacity: var(--settings-background-preview-base-opacity, 0.28);
+}
+
+.settings-background-preview-image {
+  z-index: 2;
+  background-image: var(--settings-background-preview-image, none);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  opacity: var(--settings-background-preview-image-opacity, 1);
+  transform: scale(1.02);
+  transition: filter 140ms ease, opacity 140ms ease, transform 140ms ease;
+}
+
+.settings-background-preview-darken {
+  z-index: 3;
+  background: var(--settings-background-preview-darken-color, #1c1c1c);
+  opacity: var(--settings-background-preview-darken-opacity, 0);
+}
+
+.settings-background-preview-pixi-host {
+  z-index: 2;
+  display: block;
+  overflow: hidden;
+}
+
+.settings-background-preview-canvas {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform: translate(-50%, -50%);
+}
+
+.settings-background-preview-label {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 12px;
+  text-align: center;
 }
 
 .settings-options {
@@ -2114,7 +2379,7 @@ body {
   .settings-grid-layout-control { width: 100%; justify-content: flex-end; }
   .settings-window-effect-field { grid-template-columns: 1fr; }
   .settings-window-effect-controls { justify-content: flex-start; width: 100%; }
-  .settings-window-effect-notes { grid-template-columns: 1fr; }
+  .settings-window-effect-previews { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-background-field { grid-template-columns: 1fr; align-items: flex-start; }
   .settings-background-controls { justify-items: start; width: 100%; }
   .settings-background-mode-row,
@@ -2123,6 +2388,7 @@ body {
   .settings-acrylic-row,
   .settings-acrylic-params { justify-content: flex-start; width: 100%; }
   .settings-background-image-name { max-width: 100%; }
+  .settings-background-preview { width: 100%; }
   .settings-color-control { width: 100%; }
   .settings-opacity-control { width: 100%; min-width: 0; }
   .settings-opacity-control input[type="range"] { width: auto; flex: 1 1 auto; }

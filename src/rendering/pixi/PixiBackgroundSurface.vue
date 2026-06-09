@@ -277,9 +277,9 @@ function destroyPixi(options = {}) {
   sourceContainer = null;
   passSprite = null;
   displaySprite = null;
-  downFilter?.destroy?.(true);
-  upFilter?.destroy?.(true);
-  compositeFilter?.destroy?.(true);
+  downFilter?.destroy?.();
+  upFilter?.destroy?.();
+  compositeFilter?.destroy?.();
   destroyTexture(noiseTexture);
   downFilter = null;
   upFilter = null;
