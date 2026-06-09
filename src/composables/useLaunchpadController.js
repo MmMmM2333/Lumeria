@@ -1,3 +1,4 @@
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { cx } from "../domain/launchpadLayout.js";
 import { isNativeBridgeAvailable } from "../api/launchpadApi.js";
 import { useAltEditMode } from "./useAltEditMode.js";
@@ -22,7 +23,12 @@ import { useLaunchpadSearch } from "./useLaunchpadSearch.js";
 import { useLaunchpadSurfaceInteractions } from "./useLaunchpadSurfaceInteractions.js";
 import { useLaunchpadViewState } from "./useLaunchpadViewState.js";
 import {
+  BACKGROUND_ACRYLIC_APPEARANCE_DARK,
+  BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
+  BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
   FOLDER_ICON_SIZE_MODE_CUSTOM,
+  normalizeBackgroundAcrylicAppearance,
+  normalizeBackgroundAcrylicParams,
   useLaunchpadSettingsConfig,
 } from "./useLaunchpadSettingsConfig.js";
 import { usePageRenderRange } from "./usePageRenderRange.js";
@@ -68,10 +74,56 @@ export function shouldPlayFolderOpenIconGhosts(next, state) {
   return !isSameOpenFolder;
 }
 
+function getSystemAppearance() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return BACKGROUND_ACRYLIC_APPEARANCE_DARK;
+  }
+  return window.matchMedia("(prefers-color-scheme: light)").matches
+    ? BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
+    : BACKGROUND_ACRYLIC_APPEARANCE_DARK;
+}
+
+function useSystemAppearance() {
+  const systemAppearance = ref(getSystemAppearance());
+  let mediaQuery = null;
+  const update = () => {
+    systemAppearance.value = getSystemAppearance();
+  };
+
+  onMounted(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    mediaQuery = window.matchMedia("(prefers-color-scheme: light)");
+    update();
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", update);
+    } else {
+      mediaQuery.addListener?.(update);
+    }
+  });
+
+  onBeforeUnmount(() => {
+    if (!mediaQuery) return;
+    if (typeof mediaQuery.removeEventListener === "function") {
+      mediaQuery.removeEventListener("change", update);
+    } else {
+      mediaQuery.removeListener?.(update);
+    }
+    mediaQuery = null;
+  });
+
+  return systemAppearance;
+}
+
 export function useLaunchpadController() {
   const {
     backgroundBaseColor,
     backgroundBaseOpacity,
+    backgroundAcrylicAppearance,
+    backgroundAcrylicDarkParams,
+    backgroundAcrylicLightParams,
+    backgroundBlurStrength,
+    backgroundDarkenColor,
+    backgroundDarkenStrength,
     backgroundImageOpacity,
     backgroundImagePath,
     backgroundImageUrl,
@@ -79,6 +131,12 @@ export function useLaunchpadController() {
     backgroundSource,
     draftBackgroundBaseColor,
     draftBackgroundBaseOpacity,
+    draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicDarkParams,
+    draftBackgroundAcrylicLightParams,
+    draftBackgroundBlurStrength,
+    draftBackgroundDarkenColor,
+    draftBackgroundDarkenStrength,
     desktopMainRef,
     draftBackgroundEffect,
     draftBackgroundImageOpacity,
@@ -132,6 +190,18 @@ export function useLaunchpadController() {
     windowEffectMaterial,
     windowEffectsSupport,
   } = useLaunchpadControllerState();
+  const systemAppearance = useSystemAppearance();
+  const backgroundAcrylicEffectiveAppearance = computed(() => {
+    const appearance = normalizeBackgroundAcrylicAppearance(backgroundAcrylicAppearance.value);
+    return appearance === BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM ? systemAppearance.value : appearance;
+  });
+  const backgroundAcrylicParams = computed(() => {
+    const profile = backgroundAcrylicEffectiveAppearance.value;
+    return normalizeBackgroundAcrylicParams(
+      profile === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT ? backgroundAcrylicLightParams.value : backgroundAcrylicDarkParams.value,
+      profile
+    );
+  });
   const deferredHandlers = createDeferredHandlers({
     cancelLongPress: () => {},
     clearFolderPageTurn: () => {},
@@ -469,6 +539,8 @@ export function useLaunchpadController() {
     backgroundBaseColor,
     backgroundBaseOpacity,
     backgroundEffect,
+    backgroundDarkenColor,
+    backgroundDarkenStrength,
     backgroundImageOpacity,
     backgroundImageUrl,
     backgroundSource,
@@ -576,7 +648,13 @@ export function useLaunchpadController() {
   } = useSettingsPanelFlow({
     backgroundBaseColor,
     backgroundBaseOpacity,
+    backgroundAcrylicAppearance,
+    backgroundAcrylicDarkParams,
+    backgroundAcrylicLightParams,
     backgroundEffect,
+    backgroundBlurStrength,
+    backgroundDarkenColor,
+    backgroundDarkenStrength,
     backgroundImageOpacity,
     backgroundImagePath,
     backgroundImageUrl,
@@ -585,6 +663,12 @@ export function useLaunchpadController() {
     closeScanResultDialog: () => deferredHandlers.call("closeScanResultDialog"),
     draftBackgroundBaseColor,
     draftBackgroundBaseOpacity,
+    draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicDarkParams,
+    draftBackgroundAcrylicLightParams,
+    draftBackgroundBlurStrength,
+    draftBackgroundDarkenColor,
+    draftBackgroundDarkenStrength,
     draftBackgroundEffect,
     draftBackgroundImageOpacity,
     draftBackgroundImagePath,
@@ -627,11 +711,17 @@ export function useLaunchpadController() {
     chooseDraftBackgroundImage,
     clearDraftBackgroundImage,
     clampIconSize,
+    setDraftBackgroundBlurStrength,
+    setDraftBackgroundDarkenColor,
+    setDraftBackgroundDarkenStrength,
     setDraftBackgroundImageOpacity,
+    setDraftBackgroundAcrylicAppearance,
+    setDraftBackgroundAcrylicParam,
     setDraftBackgroundBaseColor,
     setDraftBackgroundBaseOpacity,
     setDraftBackgroundEffect,
     setDraftBackgroundSource,
+    resetDraftBackgroundAcrylicParams,
     setDraftFolderIconSizeMode,
     setDraftWindowEffectAppearance,
     setDraftWindowEffectMaterial,
@@ -640,7 +730,13 @@ export function useLaunchpadController() {
     applyNativeWindowEffects: () => deferredHandlers.call("setNativeWindowEffectsEnabled", true),
     backgroundBaseColor,
     backgroundBaseOpacity,
+    backgroundAcrylicAppearance,
+    backgroundAcrylicDarkParams,
+    backgroundAcrylicLightParams,
     backgroundEffect,
+    backgroundBlurStrength,
+    backgroundDarkenColor,
+    backgroundDarkenStrength,
     backgroundImageOpacity,
     backgroundImagePath,
     backgroundImageUrl,
@@ -654,6 +750,12 @@ export function useLaunchpadController() {
     compactPages,
     draftBackgroundBaseColor,
     draftBackgroundBaseOpacity,
+    draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicDarkParams,
+    draftBackgroundAcrylicLightParams,
+    draftBackgroundBlurStrength,
+    draftBackgroundDarkenColor,
+    draftBackgroundDarkenStrength,
     draftBackgroundEffect,
     draftBackgroundImageOpacity,
     draftBackgroundImagePath,
@@ -714,7 +816,13 @@ export function useLaunchpadController() {
   } = useLaunchpadNative({
     backgroundBaseColor,
     backgroundBaseOpacity,
+    backgroundAcrylicAppearance,
+    backgroundAcrylicDarkParams,
+    backgroundAcrylicLightParams,
     backgroundEffect,
+    backgroundBlurStrength,
+    backgroundDarkenColor,
+    backgroundDarkenStrength,
     backgroundImageOpacity,
     backgroundImagePath,
     backgroundImageUrl,
@@ -730,6 +838,12 @@ export function useLaunchpadController() {
     createLayoutSnapshot,
     draftBackgroundBaseColor,
     draftBackgroundBaseOpacity,
+    draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicDarkParams,
+    draftBackgroundAcrylicLightParams,
+    draftBackgroundBlurStrength,
+    draftBackgroundDarkenColor,
+    draftBackgroundDarkenStrength,
     draftBackgroundEffect,
     draftBackgroundImageOpacity,
     draftBackgroundImagePath,
@@ -1091,7 +1205,13 @@ export function useLaunchpadController() {
     backgroundBaseColor,
     backgroundBaseOpacity,
     activePages,
+    backgroundAcrylicAppearance,
+    backgroundAcrylicDarkParams,
+    backgroundAcrylicLightParams,
     backgroundEffect,
+    backgroundBlurStrength,
+    backgroundDarkenColor,
+    backgroundDarkenStrength,
     backgroundImageOpacity,
     backgroundImagePath,
     backgroundSource,
@@ -1196,6 +1316,12 @@ export function useLaunchpadController() {
     draftRows,
     draftBackgroundBaseColor,
     draftBackgroundBaseOpacity,
+    draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicDarkParams,
+    draftBackgroundAcrylicLightParams,
+    draftBackgroundBlurStrength,
+    draftBackgroundDarkenColor,
+    draftBackgroundDarkenStrength,
     draftBackgroundEffect,
     draftBackgroundImageOpacity,
     draftBackgroundImagePath,
@@ -1209,10 +1335,18 @@ export function useLaunchpadController() {
     draftFolderIconSizeMode,
     draftFolderIconSize,
     backgroundImageOpacity,
+    backgroundBlurStrength,
+    backgroundDarkenColor,
+    backgroundDarkenStrength,
     backgroundImagePath,
     backgroundImageUrl,
     backgroundBaseColor,
     backgroundBaseOpacity,
+    backgroundAcrylicAppearance,
+    backgroundAcrylicDarkParams,
+    backgroundAcrylicEffectiveAppearance,
+    backgroundAcrylicLightParams,
+    backgroundAcrylicParams,
     backgroundEffect,
     backgroundSource,
     draftWindowEffectAppearance,
@@ -1230,11 +1364,17 @@ export function useLaunchpadController() {
     changeDraftFolderCols,
     changeDraftIconSize,
     changeDraftFolderIconSize,
+    setDraftBackgroundBlurStrength,
+    setDraftBackgroundDarkenColor,
+    setDraftBackgroundDarkenStrength,
     setDraftBackgroundImageOpacity,
+    setDraftBackgroundAcrylicAppearance,
+    setDraftBackgroundAcrylicParam,
     setDraftBackgroundBaseColor,
     setDraftBackgroundBaseOpacity,
     setDraftBackgroundEffect,
     setDraftBackgroundSource,
+    resetDraftBackgroundAcrylicParams,
     setDraftFolderIconSizeMode,
     setDraftWindowEffectAppearance,
     setDraftWindowEffectMaterial,

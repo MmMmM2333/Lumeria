@@ -11,7 +11,9 @@
         v-if="hasMountedPixiBackgroundEffect"
         v-show="isPixiBackgroundVisible"
         :active="shouldRenderPixiBackgroundEffect"
+        :background-acrylic-params="backgroundAcrylicParams"
         :background-effect="backgroundEffect"
+        :background-blur-strength="backgroundBlurStrength"
         :background-image-opacity="backgroundImageOpacity"
         :background-image-path="backgroundImagePath"
         :background-image-url="backgroundImageUrl"
@@ -117,6 +119,7 @@
       @open-context-app="openApp"
       @edit-context-app="openEditManagedApp"
     />
+    <BackgroundDebugPanel v-if="isAcrylicDebugPanelEnabled" />
     <div
       v-if="isStartupMaskMounted"
       :class="cx('launchpad-startup-mask', !isStartupMaskVisible && 'launchpad-startup-mask-hidden')"
@@ -127,7 +130,7 @@
 
 <script setup>
 import { Motion } from "motion-v";
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from "vue";
 import LaunchpadDialogs from "./components/LaunchpadDialogs.vue";
 import LaunchpadHeader from "./components/LaunchpadHeader.vue";
 import LaunchpadOverlays from "./components/LaunchpadOverlays.vue";
@@ -150,7 +153,9 @@ const controller = useLaunchpadController();
 const {
   rootRef,
   rootStyle,
+  backgroundAcrylicParams,
   backgroundEffect,
+  backgroundBlurStrength,
   backgroundImageOpacity,
   backgroundImagePath,
   backgroundImageUrl,
@@ -221,6 +226,10 @@ const {
 } = controller;
 
 const appVersion = appPackage.version;
+const isAcrylicDebugPanelEnabled = import.meta.env.DEV;
+const BackgroundDebugPanel = import.meta.env.DEV
+  ? defineAsyncComponent(() => import("./components/BackgroundDebugPanel.vue"))
+  : null;
 const launchpadOverlaysRef = ref(null);
 const BACKGROUND_MEDIA_FADE_MS = 220;
 const PIXI_BACKGROUND_HANDOFF_DELAY_MS = 220;
@@ -489,7 +498,7 @@ watch(
 );
 
 watch(
-  () => [shouldRenderPixiBackgroundEffect.value, backgroundImagePath.value, backgroundImageUrl.value, backgroundEffect.value],
+  () => [shouldRenderPixiBackgroundEffect.value, backgroundImagePath.value, backgroundImageUrl.value, backgroundEffect.value, backgroundBlurStrength.value, backgroundAcrylicParams.value],
   () => {
     hasRenderedPixiBackground.value = false;
     resetStartupBackgroundComposite();

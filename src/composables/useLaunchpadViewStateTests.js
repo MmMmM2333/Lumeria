@@ -21,6 +21,8 @@ function createViewState(overrides = {}) {
     backgroundSource: ref(overrides.backgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
     backgroundEffect: ref(overrides.backgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     backgroundImageOpacity: ref(overrides.backgroundImageOpacity ?? 46),
+    backgroundDarkenColor: ref(overrides.backgroundDarkenColor ?? "#1c1c1c"),
+    backgroundDarkenStrength: ref(overrides.backgroundDarkenStrength ?? 28),
     backgroundImageUrl: ref(overrides.backgroundImageUrl ?? null),
     iconSize: ref(overrides.iconSize ?? 64),
     isAppLaunching: ref(Boolean(overrides.isAppLaunching)),
@@ -49,6 +51,8 @@ export function runLaunchpadViewStateTests() {
   assert(desktop.view.rootStyle.value["--launchpad-background-base-color"] === "#10141f", "root style should expose the default base color");
   assert(desktop.view.rootStyle.value["--launchpad-background-base-opacity"] === "0.28", "root style should expose the default base opacity");
   assert(desktop.view.rootStyle.value["--launchpad-background-image-opacity"] === "0", "root style should hide the background image in material mode");
+  assert(desktop.view.rootStyle.value["--launchpad-background-overlay-color"] === "#1c1c1c", "root style should expose the default dim overlay color");
+  assert(desktop.view.rootStyle.value["--launchpad-background-overlay-opacity"] === "0.28", "root style should expose the default dim overlay opacity");
   assert(desktop.view.desktopTrackMotionKey.value === "open-desktop-spring", "desktop motion key should describe open desktop spring state");
   assert(desktop.view.homeShellAnimate.value.opacity === 1, "home shell should be visible in the idle desktop state");
   assert(desktop.view.homeShellStyle.value.pointerEvents === "auto", "home shell should allow pointer events in the idle desktop state");
@@ -65,6 +69,9 @@ export function runLaunchpadViewStateTests() {
   assert(customImageBackground.view.backgroundImageStyle.value.backgroundImage === "url(\"asset://C:/Images/wallpaper.webp\")", "background image style should expose custom asset urls");
   const unmaskedImageBackground = createViewState({ backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE, backgroundEffect: BACKGROUND_EFFECT_NONE });
   assert(unmaskedImageBackground.view.rootStyle.value["--launchpad-background-overlay-opacity"] === "0", "none background effect should hide the overlay");
+  const dimmedImageBackground = createViewState({ backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE, backgroundDarkenColor: "#456", backgroundDarkenStrength: 64 });
+  assert(dimmedImageBackground.view.rootStyle.value["--launchpad-background-overlay-color"] === "#445566", "dimmed background effect should expose configured darken color");
+  assert(dimmedImageBackground.view.rootStyle.value["--launchpad-background-overlay-opacity"] === "0.64", "dimmed background effect should expose configured darken strength");
   const acrylicBackground = createViewState({
     backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
     backgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,

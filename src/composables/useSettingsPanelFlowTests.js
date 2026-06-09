@@ -1,11 +1,18 @@
 import { ref } from "vue";
 import {
+  BACKGROUND_ACRYLIC_APPEARANCE_DARK,
+  BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
+  BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
   BACKGROUND_EFFECT_DIMMED,
   BACKGROUND_EFFECT_NONE,
   BACKGROUND_SOURCE_CUSTOM_IMAGE,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
   DEFAULT_BACKGROUND_BASE_COLOR,
   DEFAULT_BACKGROUND_BASE_OPACITY,
+  DEFAULT_BACKGROUND_BLUR_STRENGTH,
+  DEFAULT_BACKGROUND_DARKEN_COLOR,
+  DEFAULT_BACKGROUND_DARKEN_STRENGTH,
+  createDefaultBackgroundAcrylicParams,
   FOLDER_ICON_SIZE_MODE_CUSTOM,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
@@ -51,6 +58,12 @@ function createSettingsPanelFlowHarness(overrides = {}) {
     backgroundSource: ref(overrides.backgroundSource ?? BACKGROUND_SOURCE_CUSTOM_IMAGE),
     backgroundEffect: ref(overrides.backgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     backgroundImageOpacity: ref(overrides.backgroundImageOpacity ?? 58),
+    backgroundBlurStrength: ref(overrides.backgroundBlurStrength ?? 76),
+    backgroundDarkenColor: ref(overrides.backgroundDarkenColor ?? "#223344"),
+    backgroundDarkenStrength: ref(overrides.backgroundDarkenStrength ?? 62),
+    backgroundAcrylicAppearance: ref(overrides.backgroundAcrylicAppearance ?? BACKGROUND_ACRYLIC_APPEARANCE_LIGHT),
+    backgroundAcrylicDarkParams: ref(overrides.backgroundAcrylicDarkParams ?? { ...createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_DARK), brightness: 0.7 }),
+    backgroundAcrylicLightParams: ref(overrides.backgroundAcrylicLightParams ?? { ...createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_LIGHT), brightness: 1.2 }),
     backgroundImagePath: ref(overrides.backgroundImagePath ?? "C:/Images/current.png"),
     backgroundImageUrl: ref(overrides.backgroundImageUrl ?? "asset://current"),
     windowEffectMaterial: ref(overrides.windowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_MICA_ALT),
@@ -68,6 +81,12 @@ function createSettingsPanelFlowHarness(overrides = {}) {
     draftBackgroundSource: ref(overrides.draftBackgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
     draftBackgroundEffect: ref(overrides.draftBackgroundEffect ?? BACKGROUND_EFFECT_NONE),
     draftBackgroundImageOpacity: ref(overrides.draftBackgroundImageOpacity ?? 12),
+    draftBackgroundBlurStrength: ref(overrides.draftBackgroundBlurStrength ?? DEFAULT_BACKGROUND_BLUR_STRENGTH),
+    draftBackgroundDarkenColor: ref(overrides.draftBackgroundDarkenColor ?? DEFAULT_BACKGROUND_DARKEN_COLOR),
+    draftBackgroundDarkenStrength: ref(overrides.draftBackgroundDarkenStrength ?? DEFAULT_BACKGROUND_DARKEN_STRENGTH),
+    draftBackgroundAcrylicAppearance: ref(overrides.draftBackgroundAcrylicAppearance ?? BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM),
+    draftBackgroundAcrylicDarkParams: ref(overrides.draftBackgroundAcrylicDarkParams ?? createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_DARK)),
+    draftBackgroundAcrylicLightParams: ref(overrides.draftBackgroundAcrylicLightParams ?? createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_LIGHT)),
     draftBackgroundImagePath: ref(overrides.draftBackgroundImagePath ?? null),
     draftBackgroundImageUrl: ref(overrides.draftBackgroundImageUrl ?? null),
     draftWindowEffectMaterial: ref(overrides.draftWindowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
@@ -112,6 +131,12 @@ export function runSettingsPanelFlowTests() {
     assert(state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "opening settings should reset background source draft");
     assert(state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "opening settings should reset background effect draft");
     assert(state.draftBackgroundImageOpacity.value === 58, "opening settings should reset background opacity draft");
+    assert(state.draftBackgroundBlurStrength.value === 76, "opening settings should reset background blur strength draft");
+    assert(state.draftBackgroundDarkenColor.value === "#223344", "opening settings should reset background darken color draft");
+    assert(state.draftBackgroundDarkenStrength.value === 62, "opening settings should reset background darken strength draft");
+    assert(state.draftBackgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT, "opening settings should reset acrylic appearance draft");
+    assert(state.draftBackgroundAcrylicDarkParams.value.brightness === 0.7, "opening settings should reset acrylic dark params draft");
+    assert(state.draftBackgroundAcrylicLightParams.value.brightness === 1.2, "opening settings should reset acrylic light params draft");
     assert(state.draftBackgroundImagePath.value === "C:/Images/current.png", "opening settings should reset background image path draft");
     assert(state.draftBackgroundImageUrl.value === "asset://current", "opening settings should reset background image url draft");
     assert(state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "opening settings should reset window effect material draft");
@@ -130,6 +155,12 @@ export function runSettingsPanelFlowTests() {
     state.draftBackgroundSource.value = BACKGROUND_SOURCE_SYSTEM_MATERIAL;
     state.draftBackgroundEffect.value = BACKGROUND_EFFECT_NONE;
     state.draftBackgroundImageOpacity.value = 4;
+    state.draftBackgroundBlurStrength.value = 5;
+    state.draftBackgroundDarkenColor.value = "#666666";
+    state.draftBackgroundDarkenStrength.value = 6;
+    state.draftBackgroundAcrylicAppearance.value = BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM;
+    state.draftBackgroundAcrylicDarkParams.value = { ...state.draftBackgroundAcrylicDarkParams.value, brightness: 1.1 };
+    state.draftBackgroundAcrylicLightParams.value = { ...state.draftBackgroundAcrylicLightParams.value, brightness: 0.9 };
     state.draftBackgroundImagePath.value = "C:/Images/draft.png";
     state.draftBackgroundImageUrl.value = "asset://draft";
     state.draftWindowEffectMaterial.value = WINDOW_EFFECT_MATERIAL_ACRYLIC;
@@ -148,6 +179,12 @@ export function runSettingsPanelFlowTests() {
     assert(state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "closing settings should discard background source draft");
     assert(state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "closing settings should discard background effect draft");
     assert(state.draftBackgroundImageOpacity.value === 58, "closing settings should discard background opacity draft");
+    assert(state.draftBackgroundBlurStrength.value === 76, "closing settings should discard background blur strength draft");
+    assert(state.draftBackgroundDarkenColor.value === "#223344", "closing settings should discard background darken color draft");
+    assert(state.draftBackgroundDarkenStrength.value === 62, "closing settings should discard background darken strength draft");
+    assert(state.draftBackgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT, "closing settings should discard acrylic appearance draft");
+    assert(state.draftBackgroundAcrylicDarkParams.value.brightness === 0.7, "closing settings should discard acrylic dark params draft");
+    assert(state.draftBackgroundAcrylicLightParams.value.brightness === 1.2, "closing settings should discard acrylic light params draft");
     assert(state.draftBackgroundImagePath.value === "C:/Images/current.png", "closing settings should discard background image path draft");
     assert(state.draftBackgroundImageUrl.value === "asset://current", "closing settings should discard background image url draft");
     assert(state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "closing settings should discard window effect material draft");

@@ -5,8 +5,10 @@ import {
   backgroundEffectUsesPixi,
   backgroundSourceUsesImage,
   clampBackgroundBaseOpacity,
+  clampBackgroundDarkenStrength,
   clampBackgroundImageOpacity,
   normalizeBackgroundBaseColor,
+  normalizeBackgroundDarkenColor,
 } from "./useLaunchpadSettingsConfig.js";
 import {
   appLaunchGhostTransition,
@@ -38,8 +40,11 @@ export function useLaunchpadViewState(options) {
     return clampBackgroundImageOpacity(options.backgroundImageOpacity.value) / 100;
   });
   const backgroundOverlayOpacity = computed(() => (
-    options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED ? 0.28 : 0
+    options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED
+      ? clampBackgroundDarkenStrength(options.backgroundDarkenStrength?.value) / 100
+      : 0
   ));
+  const backgroundOverlayColor = computed(() => normalizeBackgroundDarkenColor(options.backgroundDarkenColor?.value));
   const backgroundBaseColor = computed(() => normalizeBackgroundBaseColor(options.backgroundBaseColor?.value));
   const backgroundBaseOpacity = computed(() => clampBackgroundBaseOpacity(options.backgroundBaseOpacity?.value) / 100);
   const backgroundImageStyle = computed(() => {
@@ -54,6 +59,7 @@ export function useLaunchpadViewState(options) {
     "--launchpad-background-base-color": backgroundBaseColor.value,
     "--launchpad-background-base-opacity": `${backgroundBaseOpacity.value}`,
     "--launchpad-background-image-opacity": `${backgroundImageCssOpacity.value}`,
+    "--launchpad-background-overlay-color": backgroundOverlayColor.value,
     "--launchpad-background-overlay-opacity": `${backgroundOverlayOpacity.value}`,
   }));
   const homeShellInitial = { opacity: 0, scale: DESKTOP_CLOSE_SCALE, y: 0, filter: "blur(8px)" };

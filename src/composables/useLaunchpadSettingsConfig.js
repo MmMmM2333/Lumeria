@@ -14,6 +14,10 @@ import {
   pickBackgroundImage,
 } from "../api/launchpadApi.js";
 import { clamp, makePageSize } from "../domain/launchpadLayout.js";
+import {
+  ACRYLIC_COMPOSITE_PRESETS,
+  normalizeAcrylicCompositeParams,
+} from "../rendering/pixi/background/acrylicParams.js";
 
 export const FOLDER_ICON_SIZE_MODE_CUSTOM = "custom";
 export const FOLDER_ICON_SIZE_MODE_GLOBAL = "global";
@@ -24,10 +28,23 @@ export const BACKGROUND_EFFECT_NONE = "none";
 export const BACKGROUND_EFFECT_DIMMED = "dimmed";
 export const BACKGROUND_EFFECT_BLUR = "blur";
 export const BACKGROUND_EFFECT_ACRYLIC_WEBGL = "acrylicWebgl";
+export const BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM = "system";
+export const BACKGROUND_ACRYLIC_APPEARANCE_DARK = "dark";
+export const BACKGROUND_ACRYLIC_APPEARANCE_LIGHT = "light";
+export const DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE = BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM;
 export const BACKGROUND_IMAGE_OPACITY_MIN = 0;
 export const BACKGROUND_IMAGE_OPACITY_MAX = 100;
 export const BACKGROUND_IMAGE_OPACITY_STEP = 1;
 export const DEFAULT_BACKGROUND_IMAGE_OPACITY = 46;
+export const BACKGROUND_BLUR_STRENGTH_MIN = 1;
+export const BACKGROUND_BLUR_STRENGTH_MAX = 100;
+export const BACKGROUND_BLUR_STRENGTH_STEP = 1;
+export const DEFAULT_BACKGROUND_BLUR_STRENGTH = 50;
+export const BACKGROUND_DARKEN_STRENGTH_MIN = 0;
+export const BACKGROUND_DARKEN_STRENGTH_MAX = 100;
+export const BACKGROUND_DARKEN_STRENGTH_STEP = 1;
+export const DEFAULT_BACKGROUND_DARKEN_STRENGTH = 28;
+export const DEFAULT_BACKGROUND_DARKEN_COLOR = "#1c1c1c";
 export const BACKGROUND_BASE_OPACITY_MIN = 0;
 export const BACKGROUND_BASE_OPACITY_MAX = 100;
 export const BACKGROUND_BASE_OPACITY_STEP = 1;
@@ -77,10 +94,58 @@ export function backgroundSourceUsesImage(source) {
   return normalizedSource === BACKGROUND_SOURCE_CUSTOM_IMAGE || normalizedSource === BACKGROUND_SOURCE_WINDOWS_WALLPAPER;
 }
 
+export function normalizeBackgroundAcrylicAppearance(value) {
+  if (value === BACKGROUND_ACRYLIC_APPEARANCE_DARK) return BACKGROUND_ACRYLIC_APPEARANCE_DARK;
+  if (value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT) return BACKGROUND_ACRYLIC_APPEARANCE_LIGHT;
+  return BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM;
+}
+
+export function normalizeBackgroundAcrylicProfileKey(value) {
+  return value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
+    ? BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
+    : BACKGROUND_ACRYLIC_APPEARANCE_DARK;
+}
+
+export function normalizeBackgroundAcrylicParams(params, profile = BACKGROUND_ACRYLIC_APPEARANCE_DARK) {
+  const key = normalizeBackgroundAcrylicProfileKey(profile);
+  const fallback = ACRYLIC_COMPOSITE_PRESETS[key] || ACRYLIC_COMPOSITE_PRESETS.dark;
+  const normalized = normalizeAcrylicCompositeParams(params, fallback);
+  return {
+    ...normalized,
+    tintColor: [...normalized.tintColor],
+  };
+}
+
+export function createDefaultBackgroundAcrylicParams(profile = BACKGROUND_ACRYLIC_APPEARANCE_DARK) {
+  const key = normalizeBackgroundAcrylicProfileKey(profile);
+  return normalizeBackgroundAcrylicParams(ACRYLIC_COMPOSITE_PRESETS[key], key);
+}
+
 export function clampBackgroundImageOpacity(value) {
   const opacity = Number(value);
   if (!Number.isFinite(opacity)) return DEFAULT_BACKGROUND_IMAGE_OPACITY;
   return clamp(Math.round(opacity), BACKGROUND_IMAGE_OPACITY_MIN, BACKGROUND_IMAGE_OPACITY_MAX);
+}
+
+export function clampBackgroundBlurStrength(value) {
+  const strength = Number(value);
+  if (!Number.isFinite(strength)) return DEFAULT_BACKGROUND_BLUR_STRENGTH;
+  return clamp(Math.round(strength), BACKGROUND_BLUR_STRENGTH_MIN, BACKGROUND_BLUR_STRENGTH_MAX);
+}
+
+export function clampBackgroundDarkenStrength(value) {
+  const strength = Number(value);
+  if (!Number.isFinite(strength)) return DEFAULT_BACKGROUND_DARKEN_STRENGTH;
+  return clamp(Math.round(strength), BACKGROUND_DARKEN_STRENGTH_MIN, BACKGROUND_DARKEN_STRENGTH_MAX);
+}
+
+export function normalizeBackgroundDarkenColor(value) {
+  const color = typeof value === "string" ? value.trim() : "";
+  if (/^#[0-9a-fA-F]{6}$/.test(color)) return color.toLowerCase();
+  if (/^#[0-9a-fA-F]{3}$/.test(color)) {
+    return `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`.toLowerCase();
+  }
+  return DEFAULT_BACKGROUND_DARKEN_COLOR;
 }
 
 export function clampBackgroundBaseOpacity(value) {
@@ -160,6 +225,12 @@ export function syncLaunchpadSettingsDraftsFromState(options) {
   options.draftBackgroundSource.value = options.backgroundSource.value;
   options.draftBackgroundEffect.value = options.backgroundEffect.value;
   options.draftBackgroundImageOpacity.value = options.backgroundImageOpacity.value;
+  options.draftBackgroundBlurStrength.value = clampBackgroundBlurStrength(options.backgroundBlurStrength.value);
+  options.draftBackgroundDarkenStrength.value = clampBackgroundDarkenStrength(options.backgroundDarkenStrength.value);
+  options.draftBackgroundDarkenColor.value = normalizeBackgroundDarkenColor(options.backgroundDarkenColor.value);
+  options.draftBackgroundAcrylicAppearance.value = normalizeBackgroundAcrylicAppearance(options.backgroundAcrylicAppearance.value);
+  options.draftBackgroundAcrylicDarkParams.value = normalizeBackgroundAcrylicParams(options.backgroundAcrylicDarkParams.value, BACKGROUND_ACRYLIC_APPEARANCE_DARK);
+  options.draftBackgroundAcrylicLightParams.value = normalizeBackgroundAcrylicParams(options.backgroundAcrylicLightParams.value, BACKGROUND_ACRYLIC_APPEARANCE_LIGHT);
   options.draftBackgroundImagePath.value = normalizeBackgroundImagePath(options.backgroundImagePath.value);
   options.draftBackgroundImageUrl.value = options.draftBackgroundImagePath.value
     ? options.backgroundImageUrl.value || convertFilePathToAssetUrl(options.draftBackgroundImagePath.value)
@@ -228,6 +299,45 @@ export function useLaunchpadSettingsConfig(options) {
 
   function setDraftBackgroundImageOpacity(value) {
     options.draftBackgroundImageOpacity.value = clampBackgroundImageOpacity(value);
+  }
+
+  function setDraftBackgroundBlurStrength(value) {
+    options.draftBackgroundBlurStrength.value = clampBackgroundBlurStrength(value);
+  }
+
+  function setDraftBackgroundDarkenStrength(value) {
+    options.draftBackgroundDarkenStrength.value = clampBackgroundDarkenStrength(value);
+  }
+
+  function setDraftBackgroundDarkenColor(color) {
+    options.draftBackgroundDarkenColor.value = normalizeBackgroundDarkenColor(color);
+  }
+
+  function getDraftBackgroundAcrylicParamsRef(profile) {
+    return normalizeBackgroundAcrylicProfileKey(profile) === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
+      ? options.draftBackgroundAcrylicLightParams
+      : options.draftBackgroundAcrylicDarkParams;
+  }
+
+  function setDraftBackgroundAcrylicAppearance(appearance) {
+    options.draftBackgroundAcrylicAppearance.value = normalizeBackgroundAcrylicAppearance(appearance);
+  }
+
+  function setDraftBackgroundAcrylicParam(profile, key, value) {
+    const targetRef = getDraftBackgroundAcrylicParamsRef(profile);
+    const profileKey = normalizeBackgroundAcrylicProfileKey(profile);
+    const current = normalizeBackgroundAcrylicParams(targetRef.value, profileKey);
+    if (!Object.prototype.hasOwnProperty.call(current, key)) return;
+    targetRef.value = normalizeBackgroundAcrylicParams({
+      ...current,
+      [key]: key === "tintColor" ? value : Number(value),
+    }, profileKey);
+  }
+
+  function resetDraftBackgroundAcrylicParams(profile) {
+    const targetRef = getDraftBackgroundAcrylicParamsRef(profile);
+    const profileKey = normalizeBackgroundAcrylicProfileKey(profile);
+    targetRef.value = createDefaultBackgroundAcrylicParams(profileKey);
   }
 
   function changeDraftBackgroundImageOpacity(direction) {
@@ -388,6 +498,12 @@ export function useLaunchpadSettingsConfig(options) {
     options.backgroundBaseColor.value = normalizeBackgroundBaseColor(options.draftBackgroundBaseColor.value);
     options.backgroundBaseOpacity.value = clampBackgroundBaseOpacity(options.draftBackgroundBaseOpacity.value);
     options.backgroundImageOpacity.value = clampBackgroundImageOpacity(options.draftBackgroundImageOpacity.value);
+    options.backgroundBlurStrength.value = clampBackgroundBlurStrength(options.draftBackgroundBlurStrength.value);
+    options.backgroundDarkenStrength.value = clampBackgroundDarkenStrength(options.draftBackgroundDarkenStrength.value);
+    options.backgroundDarkenColor.value = normalizeBackgroundDarkenColor(options.draftBackgroundDarkenColor.value);
+    options.backgroundAcrylicAppearance.value = normalizeBackgroundAcrylicAppearance(options.draftBackgroundAcrylicAppearance.value);
+    options.backgroundAcrylicDarkParams.value = normalizeBackgroundAcrylicParams(options.draftBackgroundAcrylicDarkParams.value, BACKGROUND_ACRYLIC_APPEARANCE_DARK);
+    options.backgroundAcrylicLightParams.value = normalizeBackgroundAcrylicParams(options.draftBackgroundAcrylicLightParams.value, BACKGROUND_ACRYLIC_APPEARANCE_LIGHT);
     options.backgroundImagePath.value = nextBackgroundImagePath;
     options.backgroundImageUrl.value = options.backgroundImagePath.value
       ? options.draftBackgroundImageUrl.value || convertFilePathToAssetUrl(options.backgroundImagePath.value)
@@ -417,11 +533,17 @@ export function useLaunchpadSettingsConfig(options) {
     clampIconSize,
     clearDraftBackgroundImage,
     canUseWindowEffectMaterial,
+    setDraftBackgroundBlurStrength,
+    setDraftBackgroundDarkenColor,
+    setDraftBackgroundDarkenStrength,
     setDraftBackgroundImageOpacity,
     setDraftBackgroundBaseColor,
     setDraftBackgroundBaseOpacity,
     setDraftBackgroundEffect,
+    setDraftBackgroundAcrylicAppearance,
+    setDraftBackgroundAcrylicParam,
     setDraftBackgroundSource,
+    resetDraftBackgroundAcrylicParams,
     setDraftFolderIconSizeMode,
     setDraftWindowEffectAppearance,
     setDraftWindowEffectMaterial,

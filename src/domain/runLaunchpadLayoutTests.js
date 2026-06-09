@@ -50,6 +50,8 @@ import { runFolderOverlayTargetsTests } from "../rendering/pixi/scene/folderOver
 import { runFolderPreviewSwapMotionTests } from "../rendering/pixi/scene/folderPreviewSwapMotionTests.js";
 import { runIconSceneHelpersTests } from "../rendering/pixi/scene/iconSceneHelpersTests.js";
 import { runAcrylicFiltersTests } from "../rendering/pixi/background/acrylicFiltersTests.js";
+import { runAcrylicParamsTests } from "../rendering/pixi/background/acrylicParamsTests.js";
+import { runAcrylicNoiseTextureTests } from "../rendering/pixi/background/acrylicNoiseTextureTests.js";
 import { runAcrylicBackgroundPlanTests } from "../rendering/pixi/background/acrylicBackgroundPlanTests.js";
 import { runBackgroundTextureLoaderTests } from "../rendering/pixi/background/backgroundTextureLoaderTests.js";
 
@@ -116,6 +118,8 @@ runStageCoordinatesTests();
 runIconBoundsRegistryTests();
 runPixiHostMetricsTests();
 await runAcrylicFiltersTests();
+runAcrylicParamsTests();
+await runAcrylicNoiseTextureTests();
 runAcrylicBackgroundPlanTests();
 await runBackgroundTextureLoaderTests();
 runIconControlDrawingTests();

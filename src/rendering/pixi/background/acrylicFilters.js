@@ -1,4 +1,6 @@
 import { Filter, GlProgram, UniformGroup } from "pixi.js";
+import { DEFAULT_ACRYLIC_NOISE_TEXTURE_SIZE } from "./acrylicNoiseTexture.js";
+import { DEFAULT_ACRYLIC_COMPOSITE_PARAMS, normalizeAcrylicCompositeParams } from "./acrylicParams.js";
 
 const FILTER_VERTEX = `
 in vec2 aPosition;
@@ -66,11 +68,16 @@ uniform float uBrightness;
 uniform float uTintStrength;
 uniform float uNoise;
 uniform float uSeed;
+uniform vec2 uNoiseTextureSize;
 uniform vec3 uTintColor;
+uniform sampler2D uNoiseTexture;
 
-float acrylicNoise(vec2 point)
+vec3 acrylicSoftLight(vec3 base, float blend)
 {
-  return fract(sin(dot(point, vec2(12.9898, 78.233))) * 43758.5453);
+  vec3 safeBase = clamp(base, 0.0, 1.0);
+  vec3 low = safeBase - (1.0 - 2.0 * blend) * safeBase * (1.0 - safeBase);
+  vec3 high = safeBase + (2.0 * blend - 1.0) * (sqrt(safeBase) - safeBase);
+  return mix(low, high, step(0.5, blend));
 }
 
 void main(void)
@@ -86,7 +93,10 @@ void main(void)
   color.rgb = (color.rgb - 0.5) * uContrast + 0.5;
   color.rgb *= uBrightness;
   color.rgb = mix(color.rgb, uTintColor, uTintStrength);
-  color.rgb += (acrylicNoise(gl_FragCoord.xy + uSeed) - 0.5) * uNoise;
+  vec2 noiseOffset = vec2(uSeed * 17.0, uSeed * 31.0);
+  vec2 noiseUv = fract((gl_FragCoord.xy + noiseOffset) / uNoiseTextureSize);
+  float noiseSample = texture(uNoiseTexture, noiseUv).r;
+  color.rgb = mix(color.rgb, acrylicSoftLight(color.rgb, noiseSample), uNoise);
   color.rgb = clamp(color.rgb, 0.0, 1.0);
   color.a *= uAlpha;
   color.rgb *= color.a;
@@ -101,6 +111,12 @@ function createProgram(fragment, name) {
     fragment,
     name,
   });
+}
+
+function clampAlpha(value, fallback = 1) {
+  const alpha = Number(value);
+  if (!Number.isFinite(alpha)) return fallback;
+  return Math.min(1, Math.max(0, alpha));
 }
 
 export function createKawaseFilter(name, offset = 1) {
@@ -128,26 +144,58 @@ export function createKawaseFilter(name, offset = 1) {
   return filter;
 }
 
-export function createAcrylicCompositeFilter() {
+export function createAcrylicCompositeFilter(noiseTexture) {
+  const defaults = DEFAULT_ACRYLIC_COMPOSITE_PARAMS;
+  const noiseTextureSize = [
+    Math.max(1, noiseTexture?.width || DEFAULT_ACRYLIC_NOISE_TEXTURE_SIZE),
+    Math.max(1, noiseTexture?.height || DEFAULT_ACRYLIC_NOISE_TEXTURE_SIZE),
+  ];
   const uniforms = new UniformGroup({
     uAlpha: { value: 1, type: "f32" },
-    uSaturation: { value: 1.22, type: "f32" },
-    uContrast: { value: 0.92, type: "f32" },
-    uBrightness: { value: 0.78, type: "f32" },
-    uTintStrength: { value: 0.34, type: "f32" },
-    uNoise: { value: 0.035, type: "f32" },
-    uSeed: { value: 19.37, type: "f32" },
-    uTintColor: { value: [0.07, 0.085, 0.115], type: "vec3<f32>" },
+    uSaturation: { value: defaults.saturation, type: "f32" },
+    uContrast: { value: defaults.contrast, type: "f32" },
+    uBrightness: { value: defaults.brightness, type: "f32" },
+    uTintStrength: { value: defaults.tintStrength, type: "f32" },
+    uNoise: { value: defaults.noise, type: "f32" },
+    uSeed: { value: defaults.seed, type: "f32" },
+    uNoiseTextureSize: { value: noiseTextureSize, type: "vec2<f32>" },
+    uTintColor: { value: defaults.tintColor, type: "vec3<f32>" },
   });
   const filter = new Filter({
     glProgram: createProgram(ACRYLIC_COMPOSITE_FRAGMENT, "launchpad-acrylic-composite-filter"),
     resources: {
       acrylicUniforms: uniforms,
+      uNoiseSampler: noiseTexture.source.style,
+      uNoiseTexture: noiseTexture.source,
     },
   });
-  filter.setAlpha = (alpha) => {
-    uniforms.uniforms.uAlpha = Math.min(1, Math.max(0, Number(alpha) || 0));
+
+  filter.setParams = (params = {}) => {
+    const nextParams = params && typeof params === "object" ? params : {};
+    const fallback = {
+      brightness: uniforms.uniforms.uBrightness,
+      contrast: uniforms.uniforms.uContrast,
+      noise: uniforms.uniforms.uNoise,
+      saturation: uniforms.uniforms.uSaturation,
+      seed: uniforms.uniforms.uSeed,
+      tintColor: uniforms.uniforms.uTintColor,
+      tintStrength: uniforms.uniforms.uTintStrength,
+    };
+    const normalized = normalizeAcrylicCompositeParams(nextParams, fallback);
+    uniforms.uniforms.uSaturation = normalized.saturation;
+    uniforms.uniforms.uContrast = normalized.contrast;
+    uniforms.uniforms.uBrightness = normalized.brightness;
+    uniforms.uniforms.uTintStrength = normalized.tintStrength;
+    uniforms.uniforms.uNoise = normalized.noise;
+    uniforms.uniforms.uSeed = normalized.seed;
+    uniforms.uniforms.uTintColor = normalized.tintColor;
+    if (Object.prototype.hasOwnProperty.call(nextParams, "alpha")) {
+      uniforms.uniforms.uAlpha = clampAlpha(nextParams.alpha, uniforms.uniforms.uAlpha);
+    }
     uniforms.update();
+  };
+  filter.setAlpha = (alpha) => {
+    filter.setParams({ alpha });
   };
   return filter;
 }

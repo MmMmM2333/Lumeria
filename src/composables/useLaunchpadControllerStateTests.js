@@ -7,10 +7,14 @@ import {
 } from "./launchpadConstants.js";
 import { useLaunchpadControllerState } from "./useLaunchpadControllerState.js";
 import {
+  DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE,
   BACKGROUND_EFFECT_DIMMED,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
   DEFAULT_BACKGROUND_BASE_COLOR,
   DEFAULT_BACKGROUND_BASE_OPACITY,
+  DEFAULT_BACKGROUND_BLUR_STRENGTH,
+  DEFAULT_BACKGROUND_DARKEN_COLOR,
+  DEFAULT_BACKGROUND_DARKEN_STRENGTH,
   DEFAULT_BACKGROUND_IMAGE_OPACITY,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
@@ -38,6 +42,12 @@ export function runLaunchpadControllerStateTests() {
   assert(state.backgroundBaseColor.value === DEFAULT_BACKGROUND_BASE_COLOR, "background base color should use the default");
   assert(state.backgroundBaseOpacity.value === DEFAULT_BACKGROUND_BASE_OPACITY, "background base opacity should use the default");
   assert(state.backgroundImageOpacity.value === DEFAULT_BACKGROUND_IMAGE_OPACITY, "background image opacity should use the default");
+  assert(state.backgroundBlurStrength.value === DEFAULT_BACKGROUND_BLUR_STRENGTH, "background blur strength should use the default");
+  assert(state.backgroundDarkenColor.value === DEFAULT_BACKGROUND_DARKEN_COLOR, "background darken color should use the default");
+  assert(state.backgroundDarkenStrength.value === DEFAULT_BACKGROUND_DARKEN_STRENGTH, "background darken strength should use the default");
+  assert(state.backgroundAcrylicAppearance.value === DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE, "background acrylic appearance should use the default");
+  assert(state.backgroundAcrylicDarkParams.value.brightness === 0.8, "background acrylic dark params should use the default");
+  assert(state.backgroundAcrylicLightParams.value.brightness === 1, "background acrylic light params should use the default");
   assert(state.backgroundImagePath.value === null, "background image path should default to the built-in image");
   assert(state.backgroundImageUrl.value === null, "background image url should default to the built-in image");
   assert(state.draftBackgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "draft background source should default to system material");
@@ -45,6 +55,12 @@ export function runLaunchpadControllerStateTests() {
   assert(state.draftBackgroundBaseColor.value === DEFAULT_BACKGROUND_BASE_COLOR, "draft background base color should use the default");
   assert(state.draftBackgroundBaseOpacity.value === DEFAULT_BACKGROUND_BASE_OPACITY, "draft background base opacity should use the default");
   assert(state.draftBackgroundImageOpacity.value === DEFAULT_BACKGROUND_IMAGE_OPACITY, "draft background image opacity should use the default");
+  assert(state.draftBackgroundBlurStrength.value === DEFAULT_BACKGROUND_BLUR_STRENGTH, "draft background blur strength should use the default");
+  assert(state.draftBackgroundDarkenColor.value === DEFAULT_BACKGROUND_DARKEN_COLOR, "draft background darken color should use the default");
+  assert(state.draftBackgroundDarkenStrength.value === DEFAULT_BACKGROUND_DARKEN_STRENGTH, "draft background darken strength should use the default");
+  assert(state.draftBackgroundAcrylicAppearance.value === DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE, "draft background acrylic appearance should use the default");
+  assert(state.draftBackgroundAcrylicDarkParams.value.tintColor[0] === state.backgroundAcrylicDarkParams.value.tintColor[0], "draft background acrylic dark params should use the default");
+  assert(state.draftBackgroundAcrylicLightParams.value.tintColor[0] !== state.backgroundAcrylicDarkParams.value.tintColor[0], "draft background acrylic light params should use the light default");
   assert(state.draftBackgroundImagePath.value === null, "draft background image path should default to the built-in image");
   assert(state.draftBackgroundImageUrl.value === null, "draft background image url should default to the built-in image");
   assert(state.isChoosingBackgroundImage.value === false, "background image picker state should start idle");

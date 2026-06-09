@@ -125,6 +125,12 @@ export function runLaunchpadDataTests() {
     backgroundSource: "customImage",
     backgroundEffect: "dimmed",
     backgroundImageOpacity: 62,
+    backgroundBlurStrength: 72,
+    backgroundDarkenColor: "#123",
+    backgroundDarkenStrength: 61,
+    backgroundAcrylicAppearance: "light",
+    backgroundAcrylicDarkParams: { brightness: 0.7, tintColor: "#222222" },
+    backgroundAcrylicLightParams: { brightness: 1.2, tintColor: "#dddddd" },
     backgroundImagePath: " C:/Images/custom.webp ",
     windowEffectMaterial: "mica",
     windowEffectAppearance: "light",
@@ -140,6 +146,13 @@ export function runLaunchpadDataTests() {
   assert(snapshot.settings.backgroundBaseOpacity === 74, "layout snapshots should include background base opacity");
   assert(snapshot.settings.backgroundSource === "customImage" && snapshot.settings.backgroundEffect === "dimmed", "layout snapshots should include background source and effect");
   assert(snapshot.settings.backgroundImageOpacity === 62, "layout snapshots should include background image opacity");
+  assert(snapshot.settings.backgroundBlurStrength === 72, "layout snapshots should include background blur strength");
+  assert(snapshot.settings.backgroundDarkenColor === "#112233", "layout snapshots should include normalized background darken color");
+  assert(snapshot.settings.backgroundDarkenStrength === 61, "layout snapshots should include background darken strength");
+  assert(snapshot.settings.backgroundAcrylicAppearance === "light", "layout snapshots should include acrylic appearance");
+  assert(snapshot.settings.backgroundAcrylicDarkParams.brightness === 0.7, "layout snapshots should include acrylic dark params");
+  assert(snapshot.settings.backgroundAcrylicDarkParams.tintColor[0] === 0x22 / 255, "layout snapshots should normalize acrylic dark tint");
+  assert(snapshot.settings.backgroundAcrylicLightParams.brightness === 1.2, "layout snapshots should include acrylic light params");
   assert(snapshot.settings.backgroundImagePath === "C:/Images/custom.webp", "layout snapshots should include the trimmed custom background image path");
   assert(snapshot.settings.windowEffectMaterial === "mica" && snapshot.settings.windowEffectAppearance === "light", "layout snapshots should include window effect settings");
   const acrylicSnapshot = dataHelpers.createLayoutSnapshot({

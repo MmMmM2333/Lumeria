@@ -9,6 +9,7 @@ import {
   createDualKawaseLevels,
   resolveAcrylicBackgroundAlpha,
   resolveAcrylicRenderSize,
+  resolveBlurOffsetScale,
   resolveCoverLayout,
   shouldUsePixiBackgroundEffect,
 } from "./acrylicBackgroundPlan.js";
@@ -26,6 +27,13 @@ export function runAcrylicBackgroundPlanTests() {
 
   const levels = createDualKawaseLevels(960, 540);
   assert(levels.map((level) => `${level.width}x${level.height}`).join(",") === "480x270,240x135,120x68,60x34", "dual kawase levels should halve each pass");
+  assert(Math.abs(resolveBlurOffsetScale(0) - 0.1) < 0.0001, "zero blur strength should clamp to the lightest blur offset scale");
+  assert(Math.abs(resolveBlurOffsetScale(1) - 0.1) < 0.0001, "minimum blur strength should use the lightest blur offset scale");
+  assert(Math.abs(resolveBlurOffsetScale(25) - 0.5408) < 0.0001, "lower blur strength should increase the blur radius linearly");
+  assert(Math.abs(resolveBlurOffsetScale(50) - 1) < 0.0001, "default blur strength should preserve the original blur offset scale");
+  assert(Math.abs(resolveBlurOffsetScale(75) - 1.275) < 0.0001, "upper blur strength should increase the blur radius linearly");
+  assert(Math.abs(resolveBlurOffsetScale(100) - 1.55) < 0.0001, "maximum blur strength should use the strongest blur offset scale");
+  assert(Math.abs(resolveBlurOffsetScale("bad") - 1) < 0.0001, "invalid blur strength should fall back to the default blur offset scale");
 
   const wideCover = resolveCoverLayout(1600, 900, 500, 500);
   assert(Math.round(wideCover.width) === 889 && wideCover.height === 500, "wide images should cover square targets by height");

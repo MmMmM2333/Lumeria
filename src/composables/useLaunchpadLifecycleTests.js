@@ -21,8 +21,14 @@ function createLifecycleOptions() {
     calls,
     options: {
       activePages: ref([]),
+      backgroundAcrylicAppearance: ref("system"),
+      backgroundAcrylicDarkParams: ref({ brightness: 0.8 }),
+      backgroundAcrylicLightParams: ref({ brightness: 1 }),
       backgroundBaseColor: ref("#10141f"),
       backgroundBaseOpacity: ref(28),
+      backgroundBlurStrength: ref(50),
+      backgroundDarkenColor: ref("#1c1c1c"),
+      backgroundDarkenStrength: ref(28),
       backgroundImageOpacity: ref(46),
       backgroundImagePath: ref(null),
       backgroundSource: ref("systemMaterial"),
@@ -124,6 +130,12 @@ export async function runLaunchpadLifecycleTests() {
   assert(watchers.every((item) => item.config.flush === "post"), "lifecycle watchers should flush after render");
   assert(watchers[0].callback === options.schedulePageGridMetrics, "layout setting watcher should refresh page metrics");
   assert(watchers[2].source === options.folderViewportRef, "folder viewport watcher should observe the viewport ref");
+  assert(watchers[4].source.includes(options.backgroundBlurStrength), "layout save watcher should track background blur strength");
+  assert(watchers[4].source.includes(options.backgroundDarkenColor), "layout save watcher should track background darken color");
+  assert(watchers[4].source.includes(options.backgroundDarkenStrength), "layout save watcher should track background darken strength");
+  assert(watchers[4].source.includes(options.backgroundAcrylicAppearance), "layout save watcher should track acrylic appearance");
+  assert(watchers[4].source.includes(options.backgroundAcrylicDarkParams), "layout save watcher should track acrylic dark params");
+  assert(watchers[4].source.includes(options.backgroundAcrylicLightParams), "layout save watcher should track acrylic light params");
   assert(watchers[5].callback === options.scheduleLaunchTargetStatusCheck, "launch target watcher should refresh path status");
   assert(watchers[6].callback === options.syncManagedAppState, "managed app watcher should sync app state");
   assert(watchers[7].callback === options.syncWindowsWallpaperRefreshTimer, "wallpaper source watcher should sync the wallpaper refresh timer");

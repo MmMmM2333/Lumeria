@@ -1,10 +1,16 @@
 import { createLaunchpadLayoutHelpers, makePageSize } from "../domain/launchpadLayout.js";
 import {
+  BACKGROUND_ACRYLIC_APPEARANCE_DARK,
+  BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
+  BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
   BACKGROUND_EFFECT_ACRYLIC_WEBGL,
   BACKGROUND_EFFECT_BLUR,
   BACKGROUND_EFFECT_DIMMED,
   BACKGROUND_EFFECT_NONE,
   BACKGROUND_BASE_OPACITY_MAX,
+  DEFAULT_BACKGROUND_BLUR_STRENGTH,
+  DEFAULT_BACKGROUND_DARKEN_COLOR,
+  DEFAULT_BACKGROUND_DARKEN_STRENGTH,
   BACKGROUND_SOURCE_CUSTOM_IMAGE,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
   BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
@@ -20,15 +26,21 @@ import {
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
   backgroundEffectUsesPixi,
   clampBackgroundBaseOpacity,
+  clampBackgroundBlurStrength,
+  clampBackgroundDarkenStrength,
   clampBackgroundImageOpacity,
   clampLaunchpadIconSize,
   normalizeBackgroundBaseColor,
+  normalizeBackgroundDarkenColor,
+  normalizeBackgroundAcrylicAppearance,
+  normalizeBackgroundAcrylicParams,
   normalizeBackgroundImagePath,
   normalizeBackgroundEffect,
   normalizeWindowEffectAppearance,
   normalizeWindowEffectMaterial,
   normalizeFolderIconSizeMode,
   normalizeBackgroundSource,
+  createDefaultBackgroundAcrylicParams,
   resolveWindowEffectMaterialForSupport,
   syncLaunchpadSettingsDraftsFromState,
   useLaunchpadSettingsConfig,
@@ -69,6 +81,12 @@ function createSettingsConfig(overrides = {}) {
     draftBackgroundSource: refValue(overrides.draftBackgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
     draftBackgroundEffect: refValue(overrides.draftBackgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     draftBackgroundImageOpacity: refValue(overrides.draftBackgroundImageOpacity ?? 46),
+    draftBackgroundBlurStrength: refValue(overrides.draftBackgroundBlurStrength ?? DEFAULT_BACKGROUND_BLUR_STRENGTH),
+    draftBackgroundDarkenColor: refValue(overrides.draftBackgroundDarkenColor ?? DEFAULT_BACKGROUND_DARKEN_COLOR),
+    draftBackgroundDarkenStrength: refValue(overrides.draftBackgroundDarkenStrength ?? DEFAULT_BACKGROUND_DARKEN_STRENGTH),
+    draftBackgroundAcrylicAppearance: refValue(overrides.draftBackgroundAcrylicAppearance ?? BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM),
+    draftBackgroundAcrylicDarkParams: refValue(overrides.draftBackgroundAcrylicDarkParams ?? createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_DARK)),
+    draftBackgroundAcrylicLightParams: refValue(overrides.draftBackgroundAcrylicLightParams ?? createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_LIGHT)),
     draftBackgroundImagePath: refValue(overrides.draftBackgroundImagePath ?? null),
     draftBackgroundImageUrl: refValue(overrides.draftBackgroundImageUrl ?? null),
     draftWindowEffectMaterial: refValue(overrides.draftWindowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
@@ -79,6 +97,12 @@ function createSettingsConfig(overrides = {}) {
     backgroundSource: refValue(overrides.backgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
     backgroundEffect: refValue(overrides.backgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     backgroundImageOpacity: refValue(overrides.backgroundImageOpacity ?? 46),
+    backgroundBlurStrength: refValue(overrides.backgroundBlurStrength ?? DEFAULT_BACKGROUND_BLUR_STRENGTH),
+    backgroundDarkenColor: refValue(overrides.backgroundDarkenColor ?? DEFAULT_BACKGROUND_DARKEN_COLOR),
+    backgroundDarkenStrength: refValue(overrides.backgroundDarkenStrength ?? DEFAULT_BACKGROUND_DARKEN_STRENGTH),
+    backgroundAcrylicAppearance: refValue(overrides.backgroundAcrylicAppearance ?? BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM),
+    backgroundAcrylicDarkParams: refValue(overrides.backgroundAcrylicDarkParams ?? createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_DARK)),
+    backgroundAcrylicLightParams: refValue(overrides.backgroundAcrylicLightParams ?? createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_LIGHT)),
     backgroundImagePath: refValue(overrides.backgroundImagePath ?? null),
     backgroundImageUrl: refValue(overrides.backgroundImageUrl ?? null),
     windowEffectMaterial: refValue(overrides.windowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
@@ -136,6 +160,12 @@ function createSettingsConfig(overrides = {}) {
     commitSearchPageIndex: (value) => calls.commitSearchPageIndex.push(value),
     compactPages: helpers.compactPages,
     draftBackgroundImageOpacity: state.draftBackgroundImageOpacity,
+    draftBackgroundBlurStrength: state.draftBackgroundBlurStrength,
+    draftBackgroundDarkenColor: state.draftBackgroundDarkenColor,
+    draftBackgroundDarkenStrength: state.draftBackgroundDarkenStrength,
+    draftBackgroundAcrylicAppearance: state.draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicDarkParams: state.draftBackgroundAcrylicDarkParams,
+    draftBackgroundAcrylicLightParams: state.draftBackgroundAcrylicLightParams,
     draftBackgroundImagePath: state.draftBackgroundImagePath,
     draftBackgroundImageUrl: state.draftBackgroundImageUrl,
     draftBackgroundBaseColor: state.draftBackgroundBaseColor,
@@ -167,6 +197,12 @@ function createSettingsConfig(overrides = {}) {
     backgroundBaseColor: state.backgroundBaseColor,
     backgroundBaseOpacity: state.backgroundBaseOpacity,
     backgroundImageOpacity: state.backgroundImageOpacity,
+    backgroundBlurStrength: state.backgroundBlurStrength,
+    backgroundDarkenColor: state.backgroundDarkenColor,
+    backgroundDarkenStrength: state.backgroundDarkenStrength,
+    backgroundAcrylicAppearance: state.backgroundAcrylicAppearance,
+    backgroundAcrylicDarkParams: state.backgroundAcrylicDarkParams,
+    backgroundAcrylicLightParams: state.backgroundAcrylicLightParams,
     backgroundImagePath: state.backgroundImagePath,
     backgroundImageUrl: state.backgroundImageUrl,
     backgroundSource: state.backgroundSource,
@@ -213,6 +249,18 @@ export function runLaunchpadSettingsConfigTests() {
   assert(clampBackgroundImageOpacity(-12) === 0, "background image opacity should clamp to the minimum");
   assert(clampBackgroundImageOpacity(120) === 100, "background image opacity should clamp to the maximum");
   assert(clampBackgroundImageOpacity("bad") === 46, "invalid background image opacity should fall back to the default");
+  assert(clampBackgroundBlurStrength(-12) === 1, "background blur strength should clamp to the minimum");
+  assert(clampBackgroundBlurStrength(120) === 100, "background blur strength should clamp to the maximum");
+  assert(clampBackgroundBlurStrength("bad") === DEFAULT_BACKGROUND_BLUR_STRENGTH, "invalid background blur strength should fall back to the default");
+  assert(clampBackgroundDarkenStrength(-12) === 0, "background darken strength should clamp to the minimum");
+  assert(clampBackgroundDarkenStrength(120) === 100, "background darken strength should clamp to the maximum");
+  assert(clampBackgroundDarkenStrength("bad") === DEFAULT_BACKGROUND_DARKEN_STRENGTH, "invalid background darken strength should fall back to the default");
+  assert(normalizeBackgroundDarkenColor("#ABC") === "#aabbcc", "short background darken colors should expand to six hex digits");
+  assert(normalizeBackgroundDarkenColor("bad") === DEFAULT_BACKGROUND_DARKEN_COLOR, "invalid background darken colors should fall back to the default");
+  assert(normalizeBackgroundAcrylicAppearance(BACKGROUND_ACRYLIC_APPEARANCE_LIGHT) === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT, "light acrylic appearance should be preserved");
+  assert(normalizeBackgroundAcrylicAppearance("unknown") === BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM, "unknown acrylic appearances should fall back to system");
+  assert(normalizeBackgroundAcrylicParams({ brightness: 4, tintColor: "#123456" }, BACKGROUND_ACRYLIC_APPEARANCE_DARK).brightness === 1.4, "acrylic params should clamp brightness");
+  assert(normalizeBackgroundAcrylicParams({ tintColor: "#123456" }, BACKGROUND_ACRYLIC_APPEARANCE_DARK).tintColor[0] === 0x12 / 255, "acrylic params should accept hex tint colors");
   assert(normalizeBackgroundBaseColor("#ABC") === "#aabbcc", "short background base colors should expand to six hex digits");
   assert(normalizeBackgroundBaseColor("bad") === DEFAULT_BACKGROUND_BASE_COLOR, "invalid background base colors should fall back to the default");
   assert(clampBackgroundBaseOpacity(-12) === 0, "background base opacity should clamp to the minimum");
@@ -251,6 +299,12 @@ export function runLaunchpadSettingsConfigTests() {
     draftBackgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
     draftBackgroundEffect: BACKGROUND_EFFECT_NONE,
     draftBackgroundImageOpacity: 12,
+    draftBackgroundBlurStrength: 12,
+    draftBackgroundDarkenColor: "#121212",
+    draftBackgroundDarkenStrength: 12,
+    draftBackgroundAcrylicAppearance: BACKGROUND_ACRYLIC_APPEARANCE_DARK,
+    draftBackgroundAcrylicDarkParams: { brightness: 1.1, tintColor: "#111111" },
+    draftBackgroundAcrylicLightParams: { brightness: 0.9, tintColor: "#eeeeee" },
     draftBackgroundImagePath: "C:/Draft/old.png",
     draftBackgroundImageUrl: "asset://draft",
     gridRows: 4,
@@ -266,6 +320,12 @@ export function runLaunchpadSettingsConfigTests() {
     backgroundSource: BACKGROUND_SOURCE_SYSTEM_MATERIAL,
     backgroundEffect: BACKGROUND_EFFECT_DIMMED,
     backgroundImageOpacity: 58,
+    backgroundBlurStrength: 82,
+    backgroundDarkenColor: "#456",
+    backgroundDarkenStrength: 64,
+    backgroundAcrylicAppearance: BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
+    backgroundAcrylicDarkParams: { brightness: 0.7, tintColor: "#222222" },
+    backgroundAcrylicLightParams: { brightness: 1.2, tintColor: "#dddddd" },
     backgroundImagePath: "C:/Images/current.png",
     backgroundImageUrl: "asset://current",
     windowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
@@ -283,6 +343,12 @@ export function runLaunchpadSettingsConfigTests() {
   assert(sync.state.draftBackgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "sync should reset background source draft from current settings");
   assert(sync.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "sync should reset background effect draft from current settings");
   assert(sync.state.draftBackgroundImageOpacity.value === 58, "sync should reset background opacity draft from current settings");
+  assert(sync.state.draftBackgroundBlurStrength.value === 82, "sync should reset background blur strength draft from current settings");
+  assert(sync.state.draftBackgroundDarkenColor.value === "#445566", "sync should reset background darken color draft from current settings");
+  assert(sync.state.draftBackgroundDarkenStrength.value === 64, "sync should reset background darken strength draft from current settings");
+  assert(sync.state.draftBackgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT, "sync should reset acrylic appearance draft from current settings");
+  assert(sync.state.draftBackgroundAcrylicDarkParams.value.brightness === 0.7, "sync should reset acrylic dark params draft from current settings");
+  assert(sync.state.draftBackgroundAcrylicLightParams.value.brightness === 1.2, "sync should reset acrylic light params draft from current settings");
   assert(sync.state.draftBackgroundImagePath.value === "C:/Images/current.png", "sync should reset background image path draft from current settings");
   assert(sync.state.draftBackgroundImageUrl.value === "asset://current", "sync should reset background image url draft from current settings");
   assert(sync.state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "sync should reset window effect material draft from current settings");
@@ -333,9 +399,23 @@ export function runLaunchpadSettingsConfigTests() {
   backgroundMode.config.setDraftBackgroundSource(BACKGROUND_SOURCE_CUSTOM_IMAGE);
   backgroundMode.config.setDraftBackgroundEffect(BACKGROUND_EFFECT_NONE);
   backgroundMode.config.setDraftBackgroundImageOpacity(120);
+  backgroundMode.config.setDraftBackgroundBlurStrength(120);
+  backgroundMode.config.setDraftBackgroundDarkenColor("#789");
+  backgroundMode.config.setDraftBackgroundDarkenStrength(120);
+  backgroundMode.config.setDraftBackgroundAcrylicAppearance(BACKGROUND_ACRYLIC_APPEARANCE_LIGHT);
+  backgroundMode.config.setDraftBackgroundAcrylicParam(BACKGROUND_ACRYLIC_APPEARANCE_DARK, "brightness", 1.2);
+  backgroundMode.config.setDraftBackgroundAcrylicParam(BACKGROUND_ACRYLIC_APPEARANCE_DARK, "tintColor", "#123456");
   assert(backgroundMode.state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "background source should update from segmented controls");
   assert(backgroundMode.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_NONE, "background effect should update from segmented controls");
   assert(backgroundMode.state.draftBackgroundImageOpacity.value === 100, "background opacity should clamp from slider input");
+  assert(backgroundMode.state.draftBackgroundBlurStrength.value === 100, "background blur strength should clamp from slider input");
+  assert(backgroundMode.state.draftBackgroundDarkenColor.value === "#778899", "background darken color should update from color input");
+  assert(backgroundMode.state.draftBackgroundDarkenStrength.value === 100, "background darken strength should clamp from slider input");
+  assert(backgroundMode.state.draftBackgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT, "acrylic appearance should update from segmented controls");
+  assert(backgroundMode.state.draftBackgroundAcrylicDarkParams.value.brightness === 1.2, "acrylic numeric params should update from slider input");
+  assert(backgroundMode.state.draftBackgroundAcrylicDarkParams.value.tintColor[0] === 0x12 / 255, "acrylic color params should update from color input");
+  backgroundMode.config.resetDraftBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
+  assert(backgroundMode.state.draftBackgroundAcrylicDarkParams.value.brightness === 0.8, "acrylic params reset should restore the selected profile default");
   backgroundMode.config.setDraftBackgroundEffect(BACKGROUND_EFFECT_ACRYLIC_WEBGL);
   assert(backgroundMode.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "acrylic background effect should update from segmented controls");
   backgroundMode.config.setDraftBackgroundSource(BACKGROUND_SOURCE_SYSTEM_MATERIAL);
@@ -364,6 +444,12 @@ export function runLaunchpadSettingsConfigTests() {
     draftBackgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
     draftBackgroundEffect: BACKGROUND_EFFECT_DIMMED,
     draftBackgroundImageOpacity: 67,
+    draftBackgroundBlurStrength: 88,
+    draftBackgroundDarkenColor: "#456",
+    draftBackgroundDarkenStrength: 53,
+    draftBackgroundAcrylicAppearance: BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
+    draftBackgroundAcrylicDarkParams: { brightness: 0.7, tintColor: "#222222" },
+    draftBackgroundAcrylicLightParams: { brightness: 1.2, tintColor: "#dddddd" },
     draftBackgroundImagePath: "C:/Images/applied.webp",
     draftBackgroundImageUrl: "asset://applied",
     draftWindowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
@@ -382,6 +468,12 @@ export function runLaunchpadSettingsConfigTests() {
   assert(apply.state.backgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "background source should apply from the draft value");
   assert(apply.state.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "background effect should apply from the draft value");
   assert(apply.state.backgroundImageOpacity.value === 67, "background opacity should apply from the draft value");
+  assert(apply.state.backgroundBlurStrength.value === 88, "background blur strength should apply from the draft value");
+  assert(apply.state.backgroundDarkenColor.value === "#445566", "background darken color should apply from the draft value");
+  assert(apply.state.backgroundDarkenStrength.value === 53, "background darken strength should apply from the draft value");
+  assert(apply.state.backgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT, "acrylic appearance should apply from the draft value");
+  assert(apply.state.backgroundAcrylicDarkParams.value.brightness === 0.7, "acrylic dark params should apply from the draft value");
+  assert(apply.state.backgroundAcrylicLightParams.value.brightness === 1.2, "acrylic light params should apply from the draft value");
   assert(apply.state.backgroundImagePath.value === "C:/Images/applied.webp", "background image path should apply from the draft value");
   assert(apply.state.backgroundImageUrl.value === "asset://applied", "background image url should apply from the draft value");
   assert(apply.state.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "window effect material should apply from the draft value");

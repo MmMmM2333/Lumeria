@@ -13,14 +13,21 @@ import {
 } from "../domain/launchpadData.js";
 import {
   BACKGROUND_EFFECT_DIMMED,
+  BACKGROUND_ACRYLIC_APPEARANCE_DARK,
+  BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE,
   DEFAULT_BACKGROUND_BASE_COLOR,
   DEFAULT_BACKGROUND_BASE_OPACITY,
+  DEFAULT_BACKGROUND_BLUR_STRENGTH,
+  DEFAULT_BACKGROUND_DARKEN_COLOR,
+  DEFAULT_BACKGROUND_DARKEN_STRENGTH,
   DEFAULT_BACKGROUND_IMAGE_OPACITY,
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
+  createDefaultBackgroundAcrylicParams,
 } from "./useLaunchpadSettingsConfig.js";
 
 export function useLaunchpadControllerState() {
@@ -43,6 +50,12 @@ export function useLaunchpadControllerState() {
   const backgroundBaseColor = ref(DEFAULT_BACKGROUND_BASE_COLOR);
   const backgroundBaseOpacity = ref(DEFAULT_BACKGROUND_BASE_OPACITY);
   const backgroundImageOpacity = ref(DEFAULT_BACKGROUND_IMAGE_OPACITY);
+  const backgroundBlurStrength = ref(DEFAULT_BACKGROUND_BLUR_STRENGTH);
+  const backgroundDarkenStrength = ref(DEFAULT_BACKGROUND_DARKEN_STRENGTH);
+  const backgroundDarkenColor = ref(DEFAULT_BACKGROUND_DARKEN_COLOR);
+  const backgroundAcrylicAppearance = ref(DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE);
+  const backgroundAcrylicDarkParams = ref(createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_DARK));
+  const backgroundAcrylicLightParams = ref(createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_LIGHT));
   const backgroundImagePath = ref(null);
   const backgroundImageUrl = ref(null);
   const draftBackgroundSource = ref(BACKGROUND_SOURCE_SYSTEM_MATERIAL);
@@ -50,6 +63,12 @@ export function useLaunchpadControllerState() {
   const draftBackgroundBaseColor = ref(DEFAULT_BACKGROUND_BASE_COLOR);
   const draftBackgroundBaseOpacity = ref(DEFAULT_BACKGROUND_BASE_OPACITY);
   const draftBackgroundImageOpacity = ref(DEFAULT_BACKGROUND_IMAGE_OPACITY);
+  const draftBackgroundBlurStrength = ref(DEFAULT_BACKGROUND_BLUR_STRENGTH);
+  const draftBackgroundDarkenStrength = ref(DEFAULT_BACKGROUND_DARKEN_STRENGTH);
+  const draftBackgroundDarkenColor = ref(DEFAULT_BACKGROUND_DARKEN_COLOR);
+  const draftBackgroundAcrylicAppearance = ref(DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE);
+  const draftBackgroundAcrylicDarkParams = ref(createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_DARK));
+  const draftBackgroundAcrylicLightParams = ref(createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_LIGHT));
   const draftBackgroundImagePath = ref(null);
   const draftBackgroundImageUrl = ref(null);
   const isChoosingBackgroundImage = ref(false);
@@ -91,6 +110,12 @@ export function useLaunchpadControllerState() {
   return {
     backgroundBaseColor,
     backgroundBaseOpacity,
+    backgroundAcrylicAppearance,
+    backgroundAcrylicDarkParams,
+    backgroundAcrylicLightParams,
+    backgroundBlurStrength,
+    backgroundDarkenColor,
+    backgroundDarkenStrength,
     backgroundImageOpacity,
     backgroundImagePath,
     backgroundImageUrl,
@@ -99,6 +124,12 @@ export function useLaunchpadControllerState() {
     desktopMainRef,
     draftBackgroundBaseColor,
     draftBackgroundBaseOpacity,
+    draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicDarkParams,
+    draftBackgroundAcrylicLightParams,
+    draftBackgroundBlurStrength,
+    draftBackgroundDarkenColor,
+    draftBackgroundDarkenStrength,
     draftBackgroundEffect,
     draftBackgroundImageOpacity,
     draftBackgroundImagePath,

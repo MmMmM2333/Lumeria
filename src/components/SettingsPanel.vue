@@ -303,6 +303,160 @@
                       </button>
                     </div>
                   </div>
+                  <label v-if="doesDraftBackgroundUseImage && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR" class="settings-opacity-control">
+                    <span>模糊强度</span>
+                    <input
+                      :value="state.draftBackgroundBlurStrength.value"
+                      :min="BACKGROUND_BLUR_STRENGTH_MIN"
+                      :max="BACKGROUND_BLUR_STRENGTH_MAX"
+                      :step="BACKGROUND_BLUR_STRENGTH_STEP"
+                      type="range"
+                      aria-label="背景模糊强度"
+                      @input="state.setDraftBackgroundBlurStrength($event.target.value)"
+                    />
+                    <span class="settings-opacity-value">{{ state.draftBackgroundBlurStrength.value }}%</span>
+                  </label>
+                  <label v-if="doesDraftBackgroundUseImage && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED" class="settings-color-control">
+                    <span>暗化颜色</span>
+                    <span class="settings-color-swatch">
+                      <input
+                        :value="state.draftBackgroundDarkenColor.value"
+                        type="color"
+                        aria-label="背景暗化颜色"
+                        @input="state.setDraftBackgroundDarkenColor($event.target.value)"
+                      />
+                    </span>
+                    <span class="settings-color-value">{{ state.draftBackgroundDarkenColor.value }}</span>
+                  </label>
+                  <label v-if="doesDraftBackgroundUseImage && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED" class="settings-opacity-control">
+                    <span>暗化强度</span>
+                    <input
+                      :value="state.draftBackgroundDarkenStrength.value"
+                      :min="BACKGROUND_DARKEN_STRENGTH_MIN"
+                      :max="BACKGROUND_DARKEN_STRENGTH_MAX"
+                      :step="BACKGROUND_DARKEN_STRENGTH_STEP"
+                      type="range"
+                      aria-label="背景暗化强度"
+                      @input="state.setDraftBackgroundDarkenStrength($event.target.value)"
+                    />
+                    <span class="settings-opacity-value">{{ state.draftBackgroundDarkenStrength.value }}%</span>
+                  </label>
+                  <div v-if="doesDraftBackgroundUseImage && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL" class="settings-acrylic-controls">
+                    <div class="settings-acrylic-row">
+                      <span class="settings-acrylic-row-label">Acrylic 外观</span>
+                      <div class="settings-segmented-control" aria-label="Acrylic 外观">
+                        <button
+                          type="button"
+                          :class="cx('settings-segmented-button', state.draftBackgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM && 'settings-segmented-button-active')"
+                          @click="setDraftBackgroundAcrylicAppearance(BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM)"
+                        >
+                          跟随系统
+                        </button>
+                        <button
+                          type="button"
+                          :class="cx('settings-segmented-button', state.draftBackgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_DARK && 'settings-segmented-button-active')"
+                          @click="setDraftBackgroundAcrylicAppearance(BACKGROUND_ACRYLIC_APPEARANCE_DARK)"
+                        >
+                          深色
+                        </button>
+                        <button
+                          type="button"
+                          :class="cx('settings-segmented-button', state.draftBackgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT && 'settings-segmented-button-active')"
+                          @click="setDraftBackgroundAcrylicAppearance(BACKGROUND_ACRYLIC_APPEARANCE_LIGHT)"
+                        >
+                          浅色
+                        </button>
+                      </div>
+                    </div>
+                    <div class="settings-acrylic-row">
+                      <span class="settings-acrylic-row-label">参数</span>
+                      <div class="settings-segmented-control" aria-label="Acrylic 参数">
+                        <button
+                          type="button"
+                          :class="cx('settings-segmented-button', activeAcrylicParamsProfile === BACKGROUND_ACRYLIC_APPEARANCE_DARK && 'settings-segmented-button-active')"
+                          @click="activeAcrylicParamsProfile = BACKGROUND_ACRYLIC_APPEARANCE_DARK"
+                        >
+                          深色参数
+                        </button>
+                        <button
+                          type="button"
+                          :class="cx('settings-segmented-button', activeAcrylicParamsProfile === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT && 'settings-segmented-button-active')"
+                          @click="activeAcrylicParamsProfile = BACKGROUND_ACRYLIC_APPEARANCE_LIGHT"
+                        >
+                          浅色参数
+                        </button>
+                      </div>
+                    </div>
+                    <div class="settings-acrylic-params">
+                      <label class="settings-color-control">
+                        <span>染色</span>
+                        <span class="settings-color-swatch">
+                          <input
+                            :value="activeAcrylicTintColorHex"
+                            type="color"
+                            aria-label="Acrylic 染色"
+                            @input="setActiveDraftBackgroundAcrylicParam('tintColor', $event.target.value)"
+                          />
+                        </span>
+                        <span class="settings-color-value">{{ activeAcrylicTintColorHex }}</span>
+                      </label>
+                      <label class="settings-opacity-control">
+                        <span>染色强度</span>
+                        <input
+                          :value="activeAcrylicParams.tintStrength"
+                          :min="ACRYLIC_TINT_STRENGTH_MIN"
+                          :max="ACRYLIC_TINT_STRENGTH_MAX"
+                          :step="ACRYLIC_PARAM_STEP"
+                          type="range"
+                          aria-label="Acrylic 染色强度"
+                          @input="setActiveDraftBackgroundAcrylicParam('tintStrength', $event.target.value)"
+                        />
+                        <span class="settings-opacity-value">{{ formatAcrylicPercent(activeAcrylicParams.tintStrength) }}</span>
+                      </label>
+                      <label class="settings-opacity-control">
+                        <span>亮度</span>
+                        <input
+                          :value="activeAcrylicParams.brightness"
+                          :min="ACRYLIC_BRIGHTNESS_MIN"
+                          :max="ACRYLIC_BRIGHTNESS_MAX"
+                          :step="ACRYLIC_PARAM_STEP"
+                          type="range"
+                          aria-label="Acrylic 亮度"
+                          @input="setActiveDraftBackgroundAcrylicParam('brightness', $event.target.value)"
+                        />
+                        <span class="settings-opacity-value">{{ formatAcrylicPercent(activeAcrylicParams.brightness) }}</span>
+                      </label>
+                      <label class="settings-opacity-control">
+                        <span>对比度</span>
+                        <input
+                          :value="activeAcrylicParams.contrast"
+                          :min="ACRYLIC_CONTRAST_MIN"
+                          :max="ACRYLIC_CONTRAST_MAX"
+                          :step="ACRYLIC_PARAM_STEP"
+                          type="range"
+                          aria-label="Acrylic 对比度"
+                          @input="setActiveDraftBackgroundAcrylicParam('contrast', $event.target.value)"
+                        />
+                        <span class="settings-opacity-value">{{ formatAcrylicPercent(activeAcrylicParams.contrast) }}</span>
+                      </label>
+                      <label class="settings-opacity-control">
+                        <span>饱和度</span>
+                        <input
+                          :value="activeAcrylicParams.saturation"
+                          :min="ACRYLIC_SATURATION_MIN"
+                          :max="ACRYLIC_SATURATION_MAX"
+                          :step="ACRYLIC_PARAM_STEP"
+                          type="range"
+                          aria-label="Acrylic 饱和度"
+                          @input="setActiveDraftBackgroundAcrylicParam('saturation', $event.target.value)"
+                        />
+                        <span class="settings-opacity-value">{{ formatAcrylicPercent(activeAcrylicParams.saturation) }}</span>
+                      </label>
+                      <button class="settings-secondary-button" type="button" @click="resetActiveDraftBackgroundAcrylicParams">
+                        恢复默认
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
               <div class="settings-field settings-field-wide settings-grid-layout-field">
@@ -600,10 +754,19 @@ import { computed, nextTick, ref, watch } from "vue";
 import { ChevronDownIcon, ChevronUpIcon } from "./Icons.js";
 import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "../composables/launchpadConstants.js";
 import {
+  BACKGROUND_ACRYLIC_APPEARANCE_DARK,
+  BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
+  BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
   BACKGROUND_EFFECT_ACRYLIC_WEBGL,
   BACKGROUND_EFFECT_BLUR,
   BACKGROUND_EFFECT_DIMMED,
   BACKGROUND_EFFECT_NONE,
+  BACKGROUND_BLUR_STRENGTH_MAX,
+  BACKGROUND_BLUR_STRENGTH_MIN,
+  BACKGROUND_BLUR_STRENGTH_STEP,
+  BACKGROUND_DARKEN_STRENGTH_MAX,
+  BACKGROUND_DARKEN_STRENGTH_MIN,
+  BACKGROUND_DARKEN_STRENGTH_STEP,
   BACKGROUND_BASE_OPACITY_MAX,
   BACKGROUND_BASE_OPACITY_MIN,
   BACKGROUND_BASE_OPACITY_STEP,
@@ -624,13 +787,24 @@ import {
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
 import { getIconSource } from "../domain/iconSource.js";
 import { cx } from "../domain/launchpadLayout.js";
+import { rgbArrayToHex } from "../rendering/pixi/background/acrylicParams.js";
 
 const props = defineProps({
   state: { type: Object, required: true },
 });
 
 const activeSettingsTab = ref("general");
+const activeAcrylicParamsProfile = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
 const settingsPanelRef = ref(null);
+const ACRYLIC_PARAM_STEP = 0.01;
+const ACRYLIC_TINT_STRENGTH_MIN = 0;
+const ACRYLIC_TINT_STRENGTH_MAX = 0.6;
+const ACRYLIC_BRIGHTNESS_MIN = 0.5;
+const ACRYLIC_BRIGHTNESS_MAX = 1.2;
+const ACRYLIC_CONTRAST_MIN = 0.75;
+const ACRYLIC_CONTRAST_MAX = 1.25;
+const ACRYLIC_SATURATION_MIN = 0.8;
+const ACRYLIC_SATURATION_MAX = 1.8;
 const windowEffectsSupport = computed(() => props.state.windowEffectsSupport.value || {});
 const windowEffectMaterialNotes = computed(() => [
   {
@@ -694,6 +868,12 @@ const draftBackgroundImageName = computed(() => {
   if (isDraftWindowsWallpaper.value && /^background-[a-f0-9]{32}\./i.test(name)) return "当前桌面壁纸";
   return /^background-[a-f0-9]{32}\./i.test(name) ? "自定义图片" : name || "自定义图片";
 });
+const activeAcrylicParams = computed(() => (
+  activeAcrylicParamsProfile.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
+    ? props.state.draftBackgroundAcrylicLightParams.value
+    : props.state.draftBackgroundAcrylicDarkParams.value
+));
+const activeAcrylicTintColorHex = computed(() => rgbArrayToHex(activeAcrylicParams.value?.tintColor));
 const windowEffectsSupportHint = computed(() => {
   const availableLabels = windowEffectMaterialNotes.value
     .filter((item) => item.available)
@@ -716,8 +896,38 @@ watch(
   }
 );
 
+watch(
+  () => props.state.draftBackgroundAcrylicAppearance.value,
+  (appearance) => {
+    if (appearance === BACKGROUND_ACRYLIC_APPEARANCE_DARK || appearance === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT) {
+      activeAcrylicParamsProfile.value = appearance;
+    }
+  },
+  { immediate: true }
+);
+
 function handleSettingsPanelKeydown(event) {
   handleModalKeydown(event, settingsPanelRef, props.state.closeSettingsPanel);
+}
+
+function setDraftBackgroundAcrylicAppearance(appearance) {
+  props.state.setDraftBackgroundAcrylicAppearance(appearance);
+  if (appearance === BACKGROUND_ACRYLIC_APPEARANCE_DARK || appearance === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT) {
+    activeAcrylicParamsProfile.value = appearance;
+  }
+}
+
+function setActiveDraftBackgroundAcrylicParam(key, value) {
+  props.state.setDraftBackgroundAcrylicParam(activeAcrylicParamsProfile.value, key, value);
+}
+
+function resetActiveDraftBackgroundAcrylicParams() {
+  props.state.resetDraftBackgroundAcrylicParams(activeAcrylicParamsProfile.value);
+}
+
+function formatAcrylicPercent(value) {
+  const number = Number(value);
+  return `${Math.round((Number.isFinite(number) ? number : 0) * 100)}%`;
 }
 
 function formatScanTime(value) {

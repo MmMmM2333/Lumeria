@@ -1,6 +1,7 @@
 import {
   backgroundEffectUsesPixi,
   backgroundSourceUsesImage,
+  clampBackgroundBlurStrength,
   clampBackgroundImageOpacity,
 } from "../../../composables/useLaunchpadSettingsConfig.js";
 
@@ -8,6 +9,8 @@ export const ACRYLIC_RENDER_MAX_WIDTH = 960;
 export const ACRYLIC_RENDER_MAX_HEIGHT = 540;
 export const DUAL_KAWASE_PASS_COUNT = 4;
 export const DUAL_KAWASE_MIN_SIZE = 16;
+export const DUAL_KAWASE_BLUR_OFFSET_SCALE_MIN = 0.1;
+export const DUAL_KAWASE_BLUR_OFFSET_SCALE_MAX = 1.55;
 
 export function resolveAcrylicRenderSize(width, height, maxWidth = ACRYLIC_RENDER_MAX_WIDTH, maxHeight = ACRYLIC_RENDER_MAX_HEIGHT) {
   const sourceWidth = Math.max(1, Number(width) || 1);
@@ -33,6 +36,15 @@ export function createDualKawaseLevels(width, height, passCount = DUAL_KAWASE_PA
     if (currentWidth === DUAL_KAWASE_MIN_SIZE && currentHeight === DUAL_KAWASE_MIN_SIZE) break;
   }
   return levels;
+}
+
+export function resolveBlurOffsetScale(strength) {
+  const normalizedStrength = clampBackgroundBlurStrength(strength);
+  if (normalizedStrength <= 50) {
+    return DUAL_KAWASE_BLUR_OFFSET_SCALE_MIN
+      + ((normalizedStrength - 1) / 49) * (1 - DUAL_KAWASE_BLUR_OFFSET_SCALE_MIN);
+  }
+  return 1 + ((normalizedStrength - 50) / 50) * (DUAL_KAWASE_BLUR_OFFSET_SCALE_MAX - 1);
 }
 
 export function resolveCoverLayout(sourceWidth, sourceHeight, targetWidth, targetHeight) {

@@ -33,6 +33,8 @@ import {
   showLaunchErrorMessage,
 } from "../api/launchpadApi.js";
 import {
+  BACKGROUND_ACRYLIC_APPEARANCE_DARK,
+  BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
   BACKGROUND_EFFECT_DIMMED,
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
@@ -40,8 +42,13 @@ import {
   backgroundEffectUsesPixi,
   backgroundSourceUsesImage,
   clampBackgroundBaseOpacity,
+  clampBackgroundBlurStrength,
+  clampBackgroundDarkenStrength,
   clampBackgroundImageOpacity,
+  normalizeBackgroundAcrylicAppearance,
+  normalizeBackgroundAcrylicParams,
   normalizeBackgroundBaseColor,
+  normalizeBackgroundDarkenColor,
   normalizeBackgroundEffect,
   normalizeBackgroundImagePath,
   normalizeBackgroundSource,
@@ -110,6 +117,12 @@ export function useLaunchpadNative(options) {
     const nextBackgroundBaseColor = normalizeBackgroundBaseColor(settings.backgroundBaseColor);
     const nextBackgroundBaseOpacity = clampBackgroundBaseOpacity(settings.backgroundBaseOpacity);
     const nextBackgroundImageOpacity = clampBackgroundImageOpacity(settings.backgroundImageOpacity);
+    const nextBackgroundBlurStrength = clampBackgroundBlurStrength(settings.backgroundBlurStrength);
+    const nextBackgroundDarkenStrength = clampBackgroundDarkenStrength(settings.backgroundDarkenStrength);
+    const nextBackgroundDarkenColor = normalizeBackgroundDarkenColor(settings.backgroundDarkenColor);
+    const nextBackgroundAcrylicAppearance = normalizeBackgroundAcrylicAppearance(settings.backgroundAcrylicAppearance);
+    const nextBackgroundAcrylicDarkParams = normalizeBackgroundAcrylicParams(settings.backgroundAcrylicDarkParams, BACKGROUND_ACRYLIC_APPEARANCE_DARK);
+    const nextBackgroundAcrylicLightParams = normalizeBackgroundAcrylicParams(settings.backgroundAcrylicLightParams, BACKGROUND_ACRYLIC_APPEARANCE_LIGHT);
     const nextBackgroundImagePath = backgroundSourceUsesImage(nextBackgroundSource)
       ? normalizeBackgroundImagePath(settings.backgroundImagePath)
       : null;
@@ -143,6 +156,12 @@ export function useLaunchpadNative(options) {
     options.backgroundBaseColor.value = nextBackgroundBaseColor;
     options.backgroundBaseOpacity.value = nextBackgroundBaseOpacity;
     options.backgroundImageOpacity.value = nextBackgroundImageOpacity;
+    options.backgroundBlurStrength.value = nextBackgroundBlurStrength;
+    options.backgroundDarkenStrength.value = nextBackgroundDarkenStrength;
+    options.backgroundDarkenColor.value = nextBackgroundDarkenColor;
+    options.backgroundAcrylicAppearance.value = nextBackgroundAcrylicAppearance;
+    options.backgroundAcrylicDarkParams.value = nextBackgroundAcrylicDarkParams;
+    options.backgroundAcrylicLightParams.value = nextBackgroundAcrylicLightParams;
     options.backgroundImagePath.value = nextBackgroundImagePath;
     options.backgroundImageUrl.value = nextBackgroundImageUrl;
     options.draftBackgroundSource.value = options.backgroundSource.value;
@@ -150,6 +169,12 @@ export function useLaunchpadNative(options) {
     options.draftBackgroundBaseColor.value = nextBackgroundBaseColor;
     options.draftBackgroundBaseOpacity.value = nextBackgroundBaseOpacity;
     options.draftBackgroundImageOpacity.value = nextBackgroundImageOpacity;
+    options.draftBackgroundBlurStrength.value = nextBackgroundBlurStrength;
+    options.draftBackgroundDarkenStrength.value = nextBackgroundDarkenStrength;
+    options.draftBackgroundDarkenColor.value = nextBackgroundDarkenColor;
+    options.draftBackgroundAcrylicAppearance.value = nextBackgroundAcrylicAppearance;
+    options.draftBackgroundAcrylicDarkParams.value = nextBackgroundAcrylicDarkParams;
+    options.draftBackgroundAcrylicLightParams.value = nextBackgroundAcrylicLightParams;
     options.draftBackgroundImagePath.value = nextBackgroundImagePath;
     options.draftBackgroundImageUrl.value = nextBackgroundImageUrl;
     options.hiddenAppIds.value = Array.isArray(settings.hiddenAppIds)
@@ -199,6 +224,12 @@ export function useLaunchpadNative(options) {
       backgroundSource: options.backgroundSource.value,
       backgroundEffect: options.backgroundEffect.value,
       backgroundImageOpacity: options.backgroundImageOpacity.value,
+      backgroundBlurStrength: options.backgroundBlurStrength.value,
+      backgroundDarkenStrength: options.backgroundDarkenStrength.value,
+      backgroundDarkenColor: options.backgroundDarkenColor.value,
+      backgroundAcrylicAppearance: options.backgroundAcrylicAppearance.value,
+      backgroundAcrylicDarkParams: options.backgroundAcrylicDarkParams.value,
+      backgroundAcrylicLightParams: options.backgroundAcrylicLightParams.value,
       backgroundImagePath: options.backgroundImagePath.value,
       windowEffectMaterial: options.windowEffectMaterial.value,
       windowEffectAppearance: options.windowEffectAppearance.value,

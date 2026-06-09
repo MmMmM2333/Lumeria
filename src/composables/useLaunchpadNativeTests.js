@@ -2,6 +2,9 @@ import { ref, shallowRef } from "vue";
 import { setLaunchpadApiBridgeForTests } from "../api/launchpadApi.js";
 import { useLaunchpadNative } from "./useLaunchpadNative.js";
 import {
+  BACKGROUND_ACRYLIC_APPEARANCE_DARK,
+  BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
+  BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
   BACKGROUND_EFFECT_ACRYLIC_WEBGL,
   BACKGROUND_EFFECT_BLUR,
   BACKGROUND_EFFECT_DIMMED,
@@ -10,6 +13,10 @@ import {
   BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
   DEFAULT_BACKGROUND_BASE_COLOR,
   DEFAULT_BACKGROUND_BASE_OPACITY,
+  DEFAULT_BACKGROUND_BLUR_STRENGTH,
+  DEFAULT_BACKGROUND_DARKEN_COLOR,
+  DEFAULT_BACKGROUND_DARKEN_STRENGTH,
+  createDefaultBackgroundAcrylicParams,
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_APPEARANCE_LIGHT,
   WINDOW_EFFECT_MATERIAL_NONE,
@@ -45,6 +52,12 @@ function makeOptions(overrides = {}) {
     draftBackgroundBaseColor: ref(DEFAULT_BACKGROUND_BASE_COLOR),
     draftBackgroundBaseOpacity: ref(DEFAULT_BACKGROUND_BASE_OPACITY),
     draftBackgroundImageOpacity: ref(46),
+    draftBackgroundBlurStrength: ref(DEFAULT_BACKGROUND_BLUR_STRENGTH),
+    draftBackgroundDarkenColor: ref(DEFAULT_BACKGROUND_DARKEN_COLOR),
+    draftBackgroundDarkenStrength: ref(DEFAULT_BACKGROUND_DARKEN_STRENGTH),
+    draftBackgroundAcrylicAppearance: ref(BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM),
+    draftBackgroundAcrylicDarkParams: ref(createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_DARK)),
+    draftBackgroundAcrylicLightParams: ref(createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_LIGHT)),
     draftBackgroundImagePath: ref(null),
     draftBackgroundImageUrl: ref(null),
     draftBackgroundSource: ref(BACKGROUND_SOURCE_SYSTEM_MATERIAL),
@@ -73,6 +86,12 @@ function makeOptions(overrides = {}) {
     backgroundBaseColor: ref(DEFAULT_BACKGROUND_BASE_COLOR),
     backgroundBaseOpacity: ref(DEFAULT_BACKGROUND_BASE_OPACITY),
     backgroundImageOpacity: ref(46),
+    backgroundBlurStrength: ref(DEFAULT_BACKGROUND_BLUR_STRENGTH),
+    backgroundDarkenColor: ref(DEFAULT_BACKGROUND_DARKEN_COLOR),
+    backgroundDarkenStrength: ref(DEFAULT_BACKGROUND_DARKEN_STRENGTH),
+    backgroundAcrylicAppearance: ref(BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM),
+    backgroundAcrylicDarkParams: ref(createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_DARK)),
+    backgroundAcrylicLightParams: ref(createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_LIGHT)),
     backgroundImagePath: ref(null),
     backgroundImageUrl: ref(null),
     backgroundSource: ref(BACKGROUND_SOURCE_SYSTEM_MATERIAL),
@@ -197,6 +216,12 @@ export async function runLaunchpadNativeTests() {
     assert(initialSaveLayouts[0].settings.backgroundBaseColor === DEFAULT_BACKGROUND_BASE_COLOR, "native saves should include background base color");
     assert(initialSaveLayouts[0].settings.backgroundBaseOpacity === DEFAULT_BACKGROUND_BASE_OPACITY, "native saves should include background base opacity");
     assert(initialSaveLayouts[0].settings.backgroundImageOpacity === 46, "native saves should include background image opacity");
+    assert(initialSaveLayouts[0].settings.backgroundBlurStrength === DEFAULT_BACKGROUND_BLUR_STRENGTH, "native saves should include background blur strength");
+    assert(initialSaveLayouts[0].settings.backgroundDarkenColor === DEFAULT_BACKGROUND_DARKEN_COLOR, "native saves should include background darken color");
+    assert(initialSaveLayouts[0].settings.backgroundDarkenStrength === DEFAULT_BACKGROUND_DARKEN_STRENGTH, "native saves should include background darken strength");
+    assert(initialSaveLayouts[0].settings.backgroundAcrylicAppearance === BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM, "native saves should include acrylic appearance");
+    assert(initialSaveLayouts[0].settings.backgroundAcrylicDarkParams.brightness === 0.8, "native saves should include acrylic dark params");
+    assert(initialSaveLayouts[0].settings.backgroundAcrylicLightParams.brightness === 1, "native saves should include acrylic light params");
     assert(initialSaveLayouts[0].settings.backgroundImagePath === null, "native saves should include an empty background image path");
     assert(calls.commitPageIndex.join(",") === "0", "initial native load should reclamp desktop page");
     assert(calls.schedulePageGridMetrics === 1, "initial native load should refresh grid metrics");
@@ -274,6 +299,12 @@ export async function runLaunchpadNativeTests() {
           backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
           backgroundEffect: BACKGROUND_EFFECT_DIMMED,
           backgroundImageOpacity: 64,
+          backgroundBlurStrength: 82,
+          backgroundDarkenColor: "#456",
+          backgroundDarkenStrength: 63,
+          backgroundAcrylicAppearance: BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
+          backgroundAcrylicDarkParams: { brightness: 0.7, tintColor: "#222222" },
+          backgroundAcrylicLightParams: { brightness: 1.2, tintColor: "#dddddd" },
           backgroundImagePath: "C:/Images/wallpaper.webp",
         },
       };
@@ -302,6 +333,12 @@ export async function runLaunchpadNativeTests() {
     assert(options.backgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "native load should apply saved background source");
     assert(options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should apply saved background effect");
     assert(options.backgroundImageOpacity.value === 64, "native load should apply saved background opacity");
+    assert(options.backgroundBlurStrength.value === 82, "native load should apply saved background blur strength");
+    assert(options.backgroundDarkenColor.value === "#445566", "native load should apply saved background darken color");
+    assert(options.backgroundDarkenStrength.value === 63, "native load should apply saved background darken strength");
+    assert(options.backgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT, "native load should apply saved acrylic appearance");
+    assert(options.backgroundAcrylicDarkParams.value.brightness === 0.7, "native load should apply saved acrylic dark params");
+    assert(options.backgroundAcrylicLightParams.value.brightness === 1.2, "native load should apply saved acrylic light params");
     assert(options.backgroundImagePath.value === "C:/Images/wallpaper.webp", "native load should apply saved background image path");
     assert(options.backgroundImageUrl.value === "asset://C:/Images/wallpaper.webp", "native load should derive a background image asset url");
     assert(options.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "native load should sync background source draft");
@@ -309,6 +346,12 @@ export async function runLaunchpadNativeTests() {
     assert(options.draftBackgroundBaseColor.value === "#aabbcc", "native load should sync background base color draft");
     assert(options.draftBackgroundBaseOpacity.value === 73, "native load should sync background base opacity draft");
     assert(options.draftBackgroundImageOpacity.value === 64, "native load should sync background opacity draft");
+    assert(options.draftBackgroundBlurStrength.value === 82, "native load should sync background blur strength draft");
+    assert(options.draftBackgroundDarkenColor.value === "#445566", "native load should sync background darken color draft");
+    assert(options.draftBackgroundDarkenStrength.value === 63, "native load should sync background darken strength draft");
+    assert(options.draftBackgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT, "native load should sync acrylic appearance draft");
+    assert(options.draftBackgroundAcrylicDarkParams.value.brightness === 0.7, "native load should sync acrylic dark params draft");
+    assert(options.draftBackgroundAcrylicLightParams.value.brightness === 1.2, "native load should sync acrylic light params draft");
     assert(options.draftBackgroundImagePath.value === "C:/Images/wallpaper.webp", "native load should sync background image path draft");
     assert(options.draftBackgroundImageUrl.value === "asset://C:/Images/wallpaper.webp", "native load should sync background image url draft");
     assert(effectsCommands.length === 1, "native load should refresh window effects once");

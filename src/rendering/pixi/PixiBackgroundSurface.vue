@@ -11,11 +11,18 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { loadCachedBackgroundImageDataUrl } from "../../api/launchpadApi.js";
 import { createPixiApp } from "./createPixiApp.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
+import { isAcrylicDebugEnabled, useAcrylicDebugOverrideEnabled, useAcrylicDebugParams } from "./background/acrylicDebugParams.js";
 import { createAcrylicCompositeFilter, createKawaseFilter } from "./background/acrylicFilters.js";
 import { loadBackgroundTextureFromImage } from "./background/backgroundTextureLoader.js";
-import { BACKGROUND_EFFECT_ACRYLIC_WEBGL, BACKGROUND_EFFECT_BLUR } from "../../composables/useLaunchpadSettingsConfig.js";
+import { createAcrylicNoiseTexture } from "./background/acrylicNoiseTexture.js";
+import {
+  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_BLUR,
+  DEFAULT_BACKGROUND_BLUR_STRENGTH,
+} from "../../composables/useLaunchpadSettingsConfig.js";
 import {
   createDualKawaseLevels,
+  resolveBlurOffsetScale,
   resolveAcrylicBackgroundAlpha,
   resolveAcrylicRenderSize,
   resolveCoverLayout,
@@ -23,13 +30,17 @@ import {
 
 const props = defineProps({
   active: { type: Boolean, default: true },
+  backgroundAcrylicParams: { type: Object, default: () => ({}) },
   backgroundEffect: { type: String, default: BACKGROUND_EFFECT_BLUR },
+  backgroundBlurStrength: { type: Number, default: DEFAULT_BACKGROUND_BLUR_STRENGTH },
   backgroundImageOpacity: { type: Number, default: 46 },
   backgroundImagePath: { type: String, default: null },
   backgroundImageUrl: { type: String, required: true },
 });
 const emit = defineEmits(["ready"]);
 
+const acrylicDebugParams = useAcrylicDebugParams();
+const acrylicDebugOverrideEnabled = useAcrylicDebugOverrideEnabled();
 const hostRef = ref(null);
 const isFallbackVisible = ref(true);
 let app = null;
@@ -41,6 +52,7 @@ let displaySprite = null;
 let downFilter = null;
 let upFilter = null;
 let compositeFilter = null;
+let noiseTexture = null;
 let sourceRenderTexture = null;
 let finalBlurTexture = null;
 let finalRenderTexture = null;
@@ -148,24 +160,31 @@ function renderBackgroundEffect() {
 
   renderSourceToTexture(renderSize);
 
+  const blurOffsetScale = props.backgroundEffect === BACKGROUND_EFFECT_BLUR
+    ? resolveBlurOffsetScale(props.backgroundBlurStrength)
+    : 1;
   let currentTexture = sourceRenderTexture;
   for (let index = 0; index < downTextures.length; index += 1) {
-    downFilter.setOffset(1 + index * 0.35);
+    downFilter.setOffset((1 + index * 0.35) * blurOffsetScale);
     renderPass(currentTexture, downTextures[index], downFilter);
     currentTexture = downTextures[index];
   }
 
   for (let index = downTextures.length - 2; index >= 0; index -= 1) {
-    upFilter.setOffset(1.1 + index * 0.25);
+    upFilter.setOffset((1.1 + index * 0.25) * blurOffsetScale);
     renderPass(currentTexture, upTextures[index], upFilter);
     currentTexture = upTextures[index];
   }
 
-  upFilter.setOffset(1.25);
+  upFilter.setOffset(1.25 * blurOffsetScale);
   renderPass(currentTexture, finalBlurTexture, upFilter);
 
   if (props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) {
-    compositeFilter.setAlpha(resolveAcrylicBackgroundAlpha(props.backgroundImageOpacity));
+    compositeFilter.setParams({
+      ...props.backgroundAcrylicParams,
+      ...(isAcrylicDebugEnabled && acrylicDebugOverrideEnabled.value ? acrylicDebugParams : null),
+      alpha: resolveAcrylicBackgroundAlpha(props.backgroundImageOpacity),
+    });
     renderPass(finalBlurTexture, finalRenderTexture, compositeFilter);
     displaySprite.texture = finalRenderTexture;
     displaySprite.alpha = 1;
@@ -261,9 +280,11 @@ function destroyPixi(options = {}) {
   downFilter?.destroy?.(true);
   upFilter?.destroy?.(true);
   compositeFilter?.destroy?.(true);
+  destroyTexture(noiseTexture);
   downFilter = null;
   upFilter = null;
   compositeFilter = null;
+  noiseTexture = null;
   const currentApp = app;
   app = null;
   if (deep) currentApp?.destroy(true, { children: true });
@@ -300,7 +321,8 @@ onMounted(async () => {
   displaySprite = new Sprite(Texture.EMPTY);
   downFilter = createKawaseFilter("launchpad-acrylic-downsample-filter", 1);
   upFilter = createKawaseFilter("launchpad-acrylic-upsample-filter", 1.15);
-  compositeFilter = createAcrylicCompositeFilter();
+  noiseTexture = createAcrylicNoiseTexture();
+  compositeFilter = createAcrylicCompositeFilter(noiseTexture);
   app.stage.addChild(displaySprite);
   resizeObserver = new ResizeObserver(handleResize);
   resizeObserver.observe(hostRef.value);
@@ -332,6 +354,50 @@ watch(
     scheduleRender();
   }
 );
+
+watch(
+  () => props.backgroundBlurStrength,
+  () => {
+    if (props.backgroundEffect === BACKGROUND_EFFECT_BLUR) scheduleRender();
+  }
+);
+
+watch(
+  () => [
+    props.backgroundAcrylicParams?.brightness,
+    props.backgroundAcrylicParams?.contrast,
+    props.backgroundAcrylicParams?.noise,
+    props.backgroundAcrylicParams?.saturation,
+    props.backgroundAcrylicParams?.seed,
+    props.backgroundAcrylicParams?.tintStrength,
+    props.backgroundAcrylicParams?.tintColor?.[0],
+    props.backgroundAcrylicParams?.tintColor?.[1],
+    props.backgroundAcrylicParams?.tintColor?.[2],
+  ],
+  () => {
+    if (props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) scheduleRender();
+  }
+);
+
+if (isAcrylicDebugEnabled) {
+  watch(
+    () => [
+      acrylicDebugParams.brightness,
+      acrylicDebugParams.contrast,
+      acrylicDebugParams.noise,
+      acrylicDebugParams.saturation,
+      acrylicDebugParams.seed,
+      acrylicDebugParams.tintStrength,
+      acrylicDebugParams.tintColor[0],
+      acrylicDebugParams.tintColor[1],
+      acrylicDebugParams.tintColor[2],
+      acrylicDebugOverrideEnabled.value,
+    ],
+    () => {
+      if (props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) scheduleRender();
+    }
+  );
+}
 
 watch(
   () => props.active,
