@@ -20,8 +20,8 @@ use windows::{
             },
             DirectComposition::{
                 DCompositionCreateDevice, IDCompositionColorMatrixEffect, IDCompositionDevice,
-                IDCompositionDevice3, IDCompositionSurface, IDCompositionTarget,
-                IDCompositionVisual,
+                IDCompositionDevice3, IDCompositionGaussianBlurEffect, IDCompositionSurface,
+                IDCompositionTarget, IDCompositionVisual,
             },
             Dxgi::{
                 Common::{DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_FORMAT_B8G8R8A8_UNORM},
@@ -132,6 +132,7 @@ struct LiveDesktopRendererResources {
     _d3d_context: ID3D11DeviceContext,
     _capture_duplication: IDXGIOutputDuplication,
     _composition_device: IDCompositionDevice,
+    _blur_effect: IDCompositionGaussianBlurEffect,
     _color_matrix_effect: IDCompositionColorMatrixEffect,
     _target: IDCompositionTarget,
     _root_visual: IDCompositionVisual,
@@ -513,7 +514,11 @@ impl LiveDesktopRendererResources {
 
     unsafe fn apply_current_config_to_visual(&self) -> Result<(), String> {
         unsafe {
-            apply_live_desktop_config_to_color_matrix(&self._color_matrix_effect, &self.config)
+            apply_live_desktop_config_to_effects(
+                &self._blur_effect,
+                &self._color_matrix_effect,
+                &self.config,
+            )
         }?;
         unsafe { self._composition_device.Commit() }.map_err(|error| error.to_string())?;
         Ok(())
@@ -883,6 +888,15 @@ unsafe fn create_live_desktop_renderer_resources(
                 continue;
             }
         };
+        let blur_effect = match unsafe { composition_device3.CreateGaussianBlurEffect() } {
+            Ok(effect) => effect,
+            Err(error) => {
+                last_detail = format!(
+                    "CreateGaussianBlurEffect({adapter_index}) failed while creating renderer resources: {error}"
+                );
+                continue;
+            }
+        };
         let target = match unsafe { composition_device.CreateTargetForHwnd(window_handle, false) } {
             Ok(target) => target,
             Err(error) => {
@@ -948,12 +962,12 @@ unsafe fn create_live_desktop_renderer_resources(
                 ));
             }
         };
-        if let Err(error) =
-            unsafe { apply_live_desktop_config_to_color_matrix(&color_matrix_effect, &config) }
-        {
+        if let Err(error) = unsafe {
+            apply_live_desktop_config_to_effects(&blur_effect, &color_matrix_effect, &config)
+        } {
             return Err(LiveDesktopRendererProbe::root_visual_unavailable(
                 "directCompositionEffectUnavailable",
-                format!("DirectComposition color matrix setup failed: {error}"),
+                format!("DirectComposition effect setup failed: {error}"),
             ));
         }
         if let Err(error) = unsafe {
@@ -962,6 +976,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 &target,
                 &root_visual,
                 &surface,
+                &blur_effect,
                 &color_matrix_effect,
             )
         } {
@@ -976,7 +991,7 @@ unsafe fn create_live_desktop_renderer_resources(
         return Ok(LiveDesktopRendererStartup {
             renderer_probe: LiveDesktopRendererProbe::native_renderer_available_for_window(
                 format!(
-                    "Desktop Duplication frame pump initialized with frame {}x{} format {} and DirectComposition target/root surface on adapter {adapter_index}, output {}; native dimmed effect is available, blur/acrylic are not implemented",
+                    "Desktop Duplication frame pump initialized with frame {}x{} format {} and DirectComposition target/root surface on adapter {adapter_index}, output {}; native dimmed and blur effects are available, acrylic falls back to blur",
                     frame_probe.width,
                     frame_probe.height,
                     frame_probe.format,
@@ -990,6 +1005,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 _d3d_context: d3d.context,
                 _capture_duplication: capture.duplication,
                 _composition_device: composition_device,
+                _blur_effect: blur_effect,
                 _color_matrix_effect: color_matrix_effect,
                 _target: target,
                 _root_visual: root_visual,
@@ -1177,6 +1193,30 @@ unsafe fn copy_duplication_frame_to_composition_surface(
 }
 
 #[cfg(target_os = "windows")]
+unsafe fn apply_live_desktop_config_to_effects(
+    blur_effect: &IDCompositionGaussianBlurEffect,
+    color_matrix_effect: &IDCompositionColorMatrixEffect,
+    config: &LiveDesktopRuntimeConfig,
+) -> Result<(), String> {
+    unsafe {
+        blur_effect.SetStandardDeviation2(resolve_live_desktop_blur_standard_deviation(config))
+    }
+    .map_err(|error| error.to_string())?;
+    unsafe { apply_live_desktop_config_to_color_matrix(color_matrix_effect, config) }?;
+    Ok(())
+}
+
+fn resolve_live_desktop_blur_standard_deviation(config: &LiveDesktopRuntimeConfig) -> f32 {
+    if !matches!(
+        &config.effect,
+        LiveDesktopBackgroundEffect::Blur | LiveDesktopBackgroundEffect::AcrylicWebgl
+    ) {
+        return 0.0;
+    }
+    2.0 + (config.blur_strength.min(100) as f32 / 100.0) * 28.0
+}
+
+#[cfg(target_os = "windows")]
 unsafe fn apply_live_desktop_config_to_color_matrix(
     effect: &IDCompositionColorMatrixEffect,
     config: &LiveDesktopRuntimeConfig,
@@ -1242,9 +1282,12 @@ unsafe fn set_direct_composition_root(
     target: &IDCompositionTarget,
     visual: &IDCompositionVisual,
     surface: &IDCompositionSurface,
+    blur_effect: &IDCompositionGaussianBlurEffect,
     effect: &IDCompositionColorMatrixEffect,
 ) -> Result<(), String> {
     unsafe { visual.SetContent(surface) }.map_err(|error| error.to_string())?;
+    unsafe { blur_effect.SetInput(0, surface, 0) }.map_err(|error| error.to_string())?;
+    unsafe { effect.SetInput(0, blur_effect, 0) }.map_err(|error| error.to_string())?;
     unsafe { visual.SetEffect(effect) }.map_err(|error| error.to_string())?;
     unsafe { target.SetRoot(visual) }.map_err(|error| error.to_string())?;
     unsafe { device.Commit() }.map_err(|error| error.to_string())?;
@@ -1653,6 +1696,26 @@ mod tests {
 
         let fallback = parse_live_desktop_hex_color("invalid");
         assert!((fallback[0] - 28.0 / 255.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn live_desktop_blur_standard_deviation_only_applies_to_blur_effects() {
+        let mut config = LiveDesktopRuntimeConfig::default();
+        assert_eq!(resolve_live_desktop_blur_standard_deviation(&config), 0.0);
+
+        config.effect = LiveDesktopBackgroundEffect::Blur;
+        config.blur_strength = 50;
+        assert!((resolve_live_desktop_blur_standard_deviation(&config) - 16.0).abs() < 0.001);
+
+        config.blur_strength = 200;
+        assert!((resolve_live_desktop_blur_standard_deviation(&config) - 30.0).abs() < 0.001);
+
+        config.effect = LiveDesktopBackgroundEffect::AcrylicWebgl;
+        config.blur_strength = 100;
+        assert!((resolve_live_desktop_blur_standard_deviation(&config) - 30.0).abs() < 0.001);
+
+        config.effect = LiveDesktopBackgroundEffect::None;
+        assert_eq!(resolve_live_desktop_blur_standard_deviation(&config), 0.0);
     }
 
     #[test]
