@@ -959,6 +959,8 @@ const backgroundSourceHint = computed(() =>
       ? "跟随当前 Windows 桌面壁纸"
       : props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP
         ? "捕获动态桌面并在 Native GPU 管线中合成"
+        : !props.state.canUseLiveDesktopBackground() && props.state.liveDesktopBackgroundSupport?.value?.reason
+          ? `动态桌面不可用：${props.state.liveDesktopBackgroundSupport.value.reason}`
         : "不叠加背景层"
 );
 const backgroundEffectHint = computed(() =>

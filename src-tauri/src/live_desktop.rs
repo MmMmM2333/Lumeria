@@ -62,6 +62,7 @@ pub(crate) struct LiveDesktopBackgroundSupport {
     supports_live_desktop_background: bool,
     supports_live_desktop_background_effects: bool,
     reason: &'static str,
+    detail: String,
     capture_probe: LiveDesktopCaptureProbe,
     renderer_probe: LiveDesktopRendererProbe,
 }
@@ -96,6 +97,7 @@ struct LiveDesktopRendererProbe {
     supports_window_target: bool,
     supports_root_visual: bool,
     supports_native_renderer: bool,
+    supports_native_effects: bool,
     reason: &'static str,
     detail: String,
 }
@@ -132,7 +134,7 @@ struct LiveDesktopRendererResources {
     _d3d_context: ID3D11DeviceContext,
     _capture_duplication: IDXGIOutputDuplication,
     _composition_device: IDCompositionDevice,
-    _blur_effect: IDCompositionGaussianBlurEffect,
+    _blur_effect: Option<IDCompositionGaussianBlurEffect>,
     _color_matrix_effect: IDCompositionColorMatrixEffect,
     _target: IDCompositionTarget,
     _root_visual: IDCompositionVisual,
@@ -515,7 +517,7 @@ impl LiveDesktopRendererResources {
     unsafe fn apply_current_config_to_visual(&self) -> Result<(), String> {
         unsafe {
             apply_live_desktop_config_to_effects(
-                &self._blur_effect,
+                self._blur_effect.as_ref(),
                 &self._color_matrix_effect,
                 &self.config,
             )
@@ -542,12 +544,16 @@ impl LiveDesktopRendererResources {
 }
 
 impl LiveDesktopRendererProbe {
-    fn native_renderer_available_for_probe(detail: impl Into<String>) -> Self {
+    fn native_renderer_available_for_probe(
+        supports_native_effects: bool,
+        detail: impl Into<String>,
+    ) -> Self {
         Self {
             supports_direct_composition: true,
             supports_window_target: false,
             supports_root_visual: false,
             supports_native_renderer: true,
+            supports_native_effects,
             reason: "available",
             detail: detail.into(),
         }
@@ -560,6 +566,7 @@ impl LiveDesktopRendererProbe {
             supports_window_target: true,
             supports_root_visual: true,
             supports_native_renderer: false,
+            supports_native_effects: false,
             reason: "nativeRendererNotImplemented",
             detail: detail.into(),
         }
@@ -571,6 +578,7 @@ impl LiveDesktopRendererProbe {
             supports_window_target: true,
             supports_root_visual: true,
             supports_native_renderer: true,
+            supports_native_effects: true,
             reason: "available",
             detail: detail.into(),
         }
@@ -582,6 +590,7 @@ impl LiveDesktopRendererProbe {
             supports_window_target: false,
             supports_root_visual: false,
             supports_native_renderer: false,
+            supports_native_effects: false,
             reason,
             detail: detail.into(),
         }
@@ -593,6 +602,7 @@ impl LiveDesktopRendererProbe {
             supports_window_target: false,
             supports_root_visual: false,
             supports_native_renderer: false,
+            supports_native_effects: false,
             reason,
             detail: detail.into(),
         }
@@ -604,6 +614,7 @@ impl LiveDesktopRendererProbe {
             supports_window_target: true,
             supports_root_visual: false,
             supports_native_renderer: false,
+            supports_native_effects: false,
             reason,
             detail: detail.into(),
         }
@@ -616,6 +627,7 @@ impl LiveDesktopRendererProbe {
             supports_window_target: false,
             supports_root_visual: false,
             supports_native_renderer: false,
+            supports_native_effects: false,
             reason: "nativeRendererNotImplemented",
             detail: detail.into(),
         }
@@ -628,6 +640,7 @@ impl LiveDesktopRendererProbe {
             supports_window_target: true,
             supports_root_visual: true,
             supports_native_renderer: true,
+            supports_native_effects: true,
             reason: "available",
             detail: "Native renderer test session is available".to_string(),
         }
@@ -676,12 +689,19 @@ fn make_live_desktop_background_support(
     };
     let supports_live_desktop_background =
         capture_probe.supports_desktop_duplication && renderer_probe.supports_native_renderer;
+    let supports_live_desktop_background_effects =
+        supports_live_desktop_background && renderer_probe.supports_native_effects;
 
     LiveDesktopBackgroundSupport {
         platform,
         supports_live_desktop_background,
-        supports_live_desktop_background_effects: supports_live_desktop_background,
+        supports_live_desktop_background_effects,
         reason,
+        detail: if !capture_probe.supports_desktop_duplication {
+            capture_probe.detail.clone()
+        } else {
+            renderer_probe.detail.clone()
+        },
         capture_probe,
         renderer_probe,
     }
@@ -706,6 +726,12 @@ fn probe_live_desktop_renderer() -> LiveDesktopRendererProbe {
 #[cfg(target_os = "windows")]
 unsafe fn probe_windows_live_desktop_renderer(
 ) -> Result<LiveDesktopRendererProbe, LiveDesktopRendererProbe> {
+    let _com = unsafe { ComApartment::initialize() }.map_err(|error| {
+        LiveDesktopRendererProbe::unavailable(
+            "comInitializationFailed",
+            format!("CoInitializeEx failed before probing DirectComposition renderer: {error}"),
+        )
+    })?;
     let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.map_err(|error| {
         LiveDesktopRendererProbe::unavailable(
             "dxgiUnavailable",
@@ -787,18 +813,27 @@ unsafe fn probe_windows_live_desktop_renderer(
             );
             continue;
         }
-        if let Err(error) = unsafe { composition_device3.CreateGaussianBlurEffect() } {
-            last_detail = format!(
-                "CreateGaussianBlurEffect({adapter_index}) failed while probing renderer: {error}"
-            );
-            continue;
-        }
-
-        return Ok(LiveDesktopRendererProbe::native_renderer_available_for_probe(
-            format!(
-                "DirectComposition device and native effect probe succeeded on adapter {adapter_index}; HWND target and root visual are validated when the live desktop runtime starts"
+        let effects_detail = match unsafe { composition_device3.CreateGaussianBlurEffect() } {
+            Ok(_) => (
+                true,
+                format!(
+                    "DirectComposition device and native effect probe succeeded on adapter {adapter_index}; HWND target and root visual are validated when the live desktop runtime starts"
+                ),
             ),
-        ));
+            Err(error) => (
+                false,
+                format!(
+                    "DirectComposition base renderer probe succeeded on adapter {adapter_index}, but Gaussian blur effects are unavailable: {error}"
+                ),
+            ),
+        };
+
+        return Ok(
+            LiveDesktopRendererProbe::native_renderer_available_for_probe(
+                effects_detail.0,
+                effects_detail.1,
+            ),
+        );
     }
 
     if adapter_count == 0 {
@@ -923,15 +958,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 continue;
             }
         };
-        let blur_effect = match unsafe { composition_device3.CreateGaussianBlurEffect() } {
-            Ok(effect) => effect,
-            Err(error) => {
-                last_detail = format!(
-                    "CreateGaussianBlurEffect({adapter_index}) failed while creating renderer resources: {error}"
-                );
-                continue;
-            }
-        };
+        let blur_effect = unsafe { composition_device3.CreateGaussianBlurEffect() }.ok();
         let target = match unsafe { composition_device.CreateTargetForHwnd(window_handle, false) } {
             Ok(target) => target,
             Err(error) => {
@@ -998,7 +1025,11 @@ unsafe fn create_live_desktop_renderer_resources(
             }
         };
         if let Err(error) = unsafe {
-            apply_live_desktop_config_to_effects(&blur_effect, &color_matrix_effect, &config)
+            apply_live_desktop_config_to_effects(
+                blur_effect.as_ref(),
+                &color_matrix_effect,
+                &config,
+            )
         } {
             return Err(LiveDesktopRendererProbe::root_visual_unavailable(
                 "directCompositionEffectUnavailable",
@@ -1026,11 +1057,12 @@ unsafe fn create_live_desktop_renderer_resources(
         return Ok(LiveDesktopRendererStartup {
             renderer_probe: LiveDesktopRendererProbe::native_renderer_available_for_window(
                 format!(
-                    "Desktop Duplication frame pump initialized with frame {}x{} format {} and DirectComposition target/root surface on adapter {adapter_index}, output {}; native dimmed, blur, and acrylic color effects are available",
+                    "Desktop Duplication frame pump initialized with frame {}x{} format {} and DirectComposition target/root surface on adapter {adapter_index}, output {}; native effects available: {}",
                     frame_probe.width,
                     frame_probe.height,
                     frame_probe.format,
-                    capture.output_index
+                    capture.output_index,
+                    blur_effect.is_some()
                 ),
             ),
             resources: LiveDesktopRendererResources {
@@ -1229,14 +1261,16 @@ unsafe fn copy_duplication_frame_to_composition_surface(
 
 #[cfg(target_os = "windows")]
 unsafe fn apply_live_desktop_config_to_effects(
-    blur_effect: &IDCompositionGaussianBlurEffect,
+    blur_effect: Option<&IDCompositionGaussianBlurEffect>,
     color_matrix_effect: &IDCompositionColorMatrixEffect,
     config: &LiveDesktopRuntimeConfig,
 ) -> Result<(), String> {
-    unsafe {
-        blur_effect.SetStandardDeviation2(resolve_live_desktop_blur_standard_deviation(config))
+    if let Some(blur_effect) = blur_effect {
+        unsafe {
+            blur_effect.SetStandardDeviation2(resolve_live_desktop_blur_standard_deviation(config))
+        }
+        .map_err(|error| error.to_string())?;
     }
-    .map_err(|error| error.to_string())?;
     unsafe { apply_live_desktop_config_to_color_matrix(color_matrix_effect, config) }?;
     Ok(())
 }
@@ -1426,12 +1460,16 @@ unsafe fn set_direct_composition_root(
     target: &IDCompositionTarget,
     visual: &IDCompositionVisual,
     surface: &IDCompositionSurface,
-    blur_effect: &IDCompositionGaussianBlurEffect,
+    blur_effect: &Option<IDCompositionGaussianBlurEffect>,
     effect: &IDCompositionColorMatrixEffect,
 ) -> Result<(), String> {
     unsafe { visual.SetContent(surface) }.map_err(|error| error.to_string())?;
-    unsafe { blur_effect.SetInput(0, surface, 0) }.map_err(|error| error.to_string())?;
-    unsafe { effect.SetInput(0, blur_effect, 0) }.map_err(|error| error.to_string())?;
+    if let Some(blur_effect) = blur_effect {
+        unsafe { blur_effect.SetInput(0, surface, 0) }.map_err(|error| error.to_string())?;
+        unsafe { effect.SetInput(0, blur_effect, 0) }.map_err(|error| error.to_string())?;
+    } else {
+        unsafe { effect.SetInput(0, surface, 0) }.map_err(|error| error.to_string())?;
+    }
     unsafe { visual.SetEffect(effect) }.map_err(|error| error.to_string())?;
     unsafe { target.SetRoot(visual) }.map_err(|error| error.to_string())?;
     unsafe { device.Commit() }.map_err(|error| error.to_string())?;
@@ -1810,13 +1848,31 @@ mod tests {
         let support = make_live_desktop_background_support(
             "windows",
             capture_probe(true, true, "available"),
-            LiveDesktopRendererProbe::native_renderer_available_for_probe("renderer ready"),
+            LiveDesktopRendererProbe::native_renderer_available_for_probe(true, "renderer ready"),
         );
 
         assert!(support.supports_live_desktop_background);
         assert!(support.supports_live_desktop_background_effects);
         assert_eq!(support.reason, "available");
         assert!(support.renderer_probe.supports_native_renderer);
+        assert!(support.renderer_probe.supports_native_effects);
+    }
+
+    #[test]
+    fn renderer_without_effects_still_enables_live_desktop_source() {
+        let support = make_live_desktop_background_support(
+            "windows",
+            capture_probe(true, true, "available"),
+            LiveDesktopRendererProbe::native_renderer_available_for_probe(
+                false,
+                "renderer ready without blur",
+            ),
+        );
+
+        assert!(support.supports_live_desktop_background);
+        assert!(!support.supports_live_desktop_background_effects);
+        assert_eq!(support.reason, "available");
+        assert!(support.detail.contains("without blur"));
     }
 
     #[test]

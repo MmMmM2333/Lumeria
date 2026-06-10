@@ -82,6 +82,7 @@ export const DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT = Object.freeze({
   supportsLiveDesktopBackground: false,
   supportsLiveDesktopBackgroundEffects: false,
   reason: "nativeBridgeUnavailable",
+  detail: "",
 });
 
 export function clampLaunchpadIconSize(value) {
@@ -127,6 +128,7 @@ export function normalizeLiveDesktopBackgroundSupport(support) {
     reason: typeof support?.reason === "string"
       ? support.reason
       : DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT.reason,
+    detail: typeof support?.detail === "string" ? support.detail : "",
   };
 }
 

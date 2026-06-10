@@ -16,6 +16,7 @@ export function runLaunchpadViewAdaptersTests() {
     draftBackgroundDarkenColor: { value: "#1c1c1c" },
     draftBackgroundDarkenStrength: { value: 37 },
     draftBackgroundImageLayout: { value: "fill" },
+    liveDesktopBackgroundSupport: { value: { supportsLiveDesktopBackground: false, reason: "probeFailed" } },
     setDraftBackgroundBaseColor: () => {},
     setDraftBackgroundBaseOpacity: () => {},
     setDraftBackgroundBlurStrength: () => {},
@@ -44,6 +45,7 @@ export function runLaunchpadViewAdaptersTests() {
   assert(state.draftBackgroundDarkenColor === controller.draftBackgroundDarkenColor, "settings panel state should expose background darken color draft");
   assert(state.draftBackgroundDarkenStrength === controller.draftBackgroundDarkenStrength, "settings panel state should expose background darken strength draft");
   assert(state.draftBackgroundImageLayout === controller.draftBackgroundImageLayout, "settings panel state should expose background image layout draft");
+  assert(state.liveDesktopBackgroundSupport === controller.liveDesktopBackgroundSupport, "settings panel state should expose live desktop support");
   assert(state.changeDraftBackgroundBaseOpacity === controller.changeDraftBackgroundBaseOpacity, "settings panel state should expose background base opacity stepping");
   assert(state.setDraftBackgroundBaseColor === controller.setDraftBackgroundBaseColor, "settings panel state should expose background base color setter");
   assert(state.setDraftBackgroundBaseOpacity === controller.setDraftBackgroundBaseOpacity, "settings panel state should expose background base opacity setter");

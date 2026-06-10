@@ -64,6 +64,7 @@ export function createSettingsPanelState(controller, appVersion) {
     isBrowsingScanRoot: controller.isBrowsingScanRoot,
     isSettingsPanelOpen: controller.isSettingsPanelOpen,
     isTextlessMode: controller.isTextlessMode,
+    liveDesktopBackgroundSupport: controller.liveDesktopBackgroundSupport,
     managedApps: controller.managedApps,
     newScanKeyword: controller.newScanKeyword,
     openAddManagedAppPage: controller.openAddManagedAppPage,
