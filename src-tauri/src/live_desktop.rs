@@ -7,15 +7,16 @@ use std::{sync::mpsc, thread, time::Duration};
 use windows::{
     core::Interface,
     Win32::{
-        Foundation::{HMODULE, HWND},
+        Foundation::{HMODULE, HWND, POINT},
         Graphics::{
             Direct3D::{
                 D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL, D3D_FEATURE_LEVEL_10_0,
                 D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
             },
             Direct3D11::{
-                D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
-                D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC,
+                D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Resource,
+                ID3D11Texture2D, D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION,
+                D3D11_TEXTURE2D_DESC,
             },
             DirectComposition::{
                 DCompositionCreateDevice, IDCompositionDevice, IDCompositionSurface,
@@ -24,7 +25,7 @@ use windows::{
             Dxgi::{
                 Common::{DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_FORMAT_B8G8R8A8_UNORM},
                 CreateDXGIFactory1, IDXGIAdapter1, IDXGIDevice, IDXGIFactory1, IDXGIOutput1,
-                IDXGIOutputDuplication, IDXGIResource, DXGI_ADAPTER_FLAG3_SOFTWARE,
+                IDXGIOutputDuplication, IDXGIResource, IDXGISurface, DXGI_ADAPTER_FLAG3_SOFTWARE,
                 DXGI_ERROR_ACCESS_DENIED, DXGI_ERROR_NOT_FOUND, DXGI_ERROR_WAIT_TIMEOUT,
                 DXGI_OUTDUPL_FRAME_INFO,
             },
@@ -117,6 +118,7 @@ struct LiveDesktopRendererStartup {
 struct LiveDesktopRendererResources {
     _com: ComApartment,
     _d3d_device: ID3D11Device,
+    _d3d_context: ID3D11DeviceContext,
     _capture_duplication: IDXGIOutputDuplication,
     _composition_device: IDCompositionDevice,
     _target: IDCompositionTarget,
@@ -130,8 +132,15 @@ struct ComApartment;
 #[cfg(target_os = "windows")]
 struct LiveDesktopCaptureStartup {
     output_index: u32,
-    frame_probe: LiveDesktopFrameProbe,
+    output_width: u32,
+    output_height: u32,
     duplication: IDXGIOutputDuplication,
+}
+
+#[cfg(target_os = "windows")]
+struct LiveDesktopD3DDevice {
+    device: ID3D11Device,
+    context: ID3D11DeviceContext,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -644,8 +653,8 @@ unsafe fn create_live_desktop_renderer_resources(
             continue;
         }
 
-        let d3d_device = match unsafe { create_d3d11_device_for_adapter(&adapter) } {
-            Ok(device) => device,
+        let d3d = match unsafe { create_d3d11_device_with_context_for_adapter(&adapter) } {
+            Ok(d3d) => d3d,
             Err(error) => {
                 last_detail = format!(
                     "D3D11CreateDevice({adapter_index}) failed while creating renderer resources: {error}"
@@ -654,7 +663,7 @@ unsafe fn create_live_desktop_renderer_resources(
             }
         };
         let capture = match unsafe {
-            create_live_desktop_capture_for_adapter(&adapter, &d3d_device, adapter_index)
+            create_live_desktop_capture_for_adapter(&adapter, &d3d.device, adapter_index)
         } {
             Ok(capture) => capture,
             Err(detail) => {
@@ -662,7 +671,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 continue;
             }
         };
-        let dxgi_device = match d3d_device.cast::<IDXGIDevice>() {
+        let dxgi_device = match d3d.device.cast::<IDXGIDevice>() {
             Ok(device) => device,
             Err(error) => {
                 last_detail = format!(
@@ -706,8 +715,8 @@ unsafe fn create_live_desktop_renderer_resources(
         };
         let surface = match unsafe {
             composition_device.CreateSurface(
-                capture.frame_probe.width,
-                capture.frame_probe.height,
+                capture.output_width,
+                capture.output_height,
                 DXGI_FORMAT_B8G8R8A8_UNORM,
                 DXGI_ALPHA_MODE_PREMULTIPLIED,
             )
@@ -718,7 +727,24 @@ unsafe fn create_live_desktop_renderer_resources(
                     "directCompositionSurfaceUnavailable",
                     format!(
                         "CreateSurface({}x{}) failed while creating renderer resources: {error}",
-                        capture.frame_probe.width, capture.frame_probe.height
+                        capture.output_width, capture.output_height
+                    ),
+                ));
+            }
+        };
+        let frame_probe = match unsafe {
+            copy_duplication_frame_to_composition_surface(
+                &capture.duplication,
+                &surface,
+                &d3d.context,
+            )
+        } {
+            Ok(frame_probe) => frame_probe,
+            Err(error) => {
+                return Err(LiveDesktopRendererProbe::root_visual_unavailable(
+                    "directCompositionSurfaceDrawFailed",
+                    format!(
+                        "Initial desktop frame copy into DirectComposition surface failed: {error}"
                     ),
                 ));
             }
@@ -738,15 +764,16 @@ unsafe fn create_live_desktop_renderer_resources(
             renderer_probe: LiveDesktopRendererProbe::native_renderer_unimplemented_for_window(
                 format!(
                     "Desktop Duplication frame {}x{} format {} and DirectComposition target/root surface initialized on adapter {adapter_index}, output {}; effect graph and frame scheduling are not implemented",
-                    capture.frame_probe.width,
-                    capture.frame_probe.height,
-                    capture.frame_probe.format,
+                    frame_probe.width,
+                    frame_probe.height,
+                    frame_probe.format,
                     capture.output_index
                 ),
             ),
             resources: LiveDesktopRendererResources {
                 _com: com,
-                _d3d_device: d3d_device,
+                _d3d_device: d3d.device,
+                _d3d_context: d3d.context,
                 _capture_duplication: capture.duplication,
                 _composition_device: composition_device,
                 _target: target,
@@ -795,6 +822,26 @@ unsafe fn create_live_desktop_capture_for_adapter(
         };
         output_count += 1;
 
+        let output_desc = match unsafe { output.GetDesc() } {
+            Ok(desc) => desc,
+            Err(error) => {
+                last_detail = format!("GetDesc({adapter_index}, {output_index}) failed: {error}");
+                continue;
+            }
+        };
+        let output_width = (output_desc.DesktopCoordinates.right
+            - output_desc.DesktopCoordinates.left)
+            .max(0) as u32;
+        let output_height = (output_desc.DesktopCoordinates.bottom
+            - output_desc.DesktopCoordinates.top)
+            .max(0) as u32;
+        if output_width == 0 || output_height == 0 {
+            last_detail = format!(
+                "DXGI output {adapter_index}, {output_index} has an empty desktop rectangle"
+            );
+            continue;
+        }
+
         let output1 = match output.cast::<IDXGIOutput1>() {
             Ok(output1) => output1,
             Err(error) => {
@@ -819,18 +866,12 @@ unsafe fn create_live_desktop_capture_for_adapter(
             }
         };
 
-        let frame_probe = unsafe { acquire_duplication_frame_texture(&duplication) };
-        if frame_probe.supports_frame_texture {
-            return Ok(LiveDesktopCaptureStartup {
-                output_index,
-                frame_probe,
-                duplication,
-            });
-        }
-        last_detail = format!(
-            "Desktop Duplication frame probe failed on adapter {adapter_index}, output {output_index}: {}",
-            frame_probe.detail
-        );
+        return Ok(LiveDesktopCaptureStartup {
+            output_index,
+            output_width,
+            output_height,
+            duplication,
+        });
     }
 
     if output_count == 0 {
@@ -844,6 +885,78 @@ unsafe fn create_live_desktop_capture_for_adapter(
         ))
     } else {
         Err(last_detail)
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn copy_duplication_frame_to_composition_surface(
+    duplication: &IDXGIOutputDuplication,
+    surface: &IDCompositionSurface,
+    context: &ID3D11DeviceContext,
+) -> Result<LiveDesktopFrameProbe, String> {
+    let mut frame_info = DXGI_OUTDUPL_FRAME_INFO::default();
+    let mut resource: Option<IDXGIResource> = None;
+    unsafe { duplication.AcquireNextFrame(100, &mut frame_info, &mut resource) }.map_err(
+        |error| {
+            if error.code() == DXGI_ERROR_WAIT_TIMEOUT {
+                "Desktop Duplication did not produce an initial frame within 100 ms".to_string()
+            } else {
+                format!("AcquireNextFrame failed during initial frame copy: {error}")
+            }
+        },
+    )?;
+
+    let copy_result = (|| -> Result<LiveDesktopFrameProbe, String> {
+        let resource = resource
+            .ok_or_else(|| "AcquireNextFrame succeeded without a desktop resource".to_string())?;
+        let source_texture = resource.cast::<ID3D11Texture2D>().map_err(|error| {
+            format!("Desktop frame resource is not an ID3D11Texture2D: {error}")
+        })?;
+        let mut desc = D3D11_TEXTURE2D_DESC::default();
+        unsafe { source_texture.GetDesc(&mut desc) };
+
+        let mut update_offset = POINT::default();
+        let update_surface: IDXGISurface =
+            unsafe { surface.BeginDraw(None, &mut update_offset) }
+                .map_err(|error| format!("DirectComposition surface BeginDraw failed: {error}"))?;
+        let draw_result = (|| -> Result<(), String> {
+            let target_texture = update_surface.cast::<ID3D11Texture2D>().map_err(|error| {
+                format!("DirectComposition update surface is not an ID3D11Texture2D: {error}")
+            })?;
+            let source_resource = source_texture
+                .cast::<ID3D11Resource>()
+                .map_err(|error| format!("Source texture resource cast failed: {error}"))?;
+            let target_resource = target_texture
+                .cast::<ID3D11Resource>()
+                .map_err(|error| format!("Target texture resource cast failed: {error}"))?;
+            unsafe { context.CopyResource(&target_resource, &source_resource) };
+            Ok(())
+        })();
+        let end_draw_result = unsafe { surface.EndDraw() }
+            .map_err(|error| format!("DirectComposition surface EndDraw failed: {error}"));
+        draw_result?;
+        end_draw_result?;
+
+        Ok(LiveDesktopFrameProbe {
+            supports_frame_texture: true,
+            width: desc.Width,
+            height: desc.Height,
+            format: desc.Format.0,
+            reason: "available",
+            detail: format!(
+                "Copied initial GPU desktop frame texture {}x{} format {} into DirectComposition surface",
+                desc.Width, desc.Height, desc.Format.0
+            ),
+        })
+    })();
+
+    let release_result = unsafe { duplication.ReleaseFrame() }
+        .map_err(|error| format!("ReleaseFrame failed after initial frame copy: {error}"));
+
+    match (copy_result, release_result) {
+        (Ok(frame_probe), Ok(())) => Ok(frame_probe),
+        (Err(error), _) => Err(error),
+        (Ok(_), Err(error)) => Err(error),
     }
 }
 
@@ -862,6 +975,13 @@ unsafe fn set_direct_composition_root(
 
 #[cfg(target_os = "windows")]
 unsafe fn create_d3d11_device_for_adapter(adapter: &IDXGIAdapter1) -> Result<ID3D11Device, String> {
+    Ok(unsafe { create_d3d11_device_with_context_for_adapter(adapter) }?.device)
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn create_d3d11_device_with_context_for_adapter(
+    adapter: &IDXGIAdapter1,
+) -> Result<LiveDesktopD3DDevice, String> {
     let mut device: Option<ID3D11Device> = None;
     let mut context: Option<ID3D11DeviceContext> = None;
     unsafe {
@@ -879,7 +999,11 @@ unsafe fn create_d3d11_device_for_adapter(adapter: &IDXGIAdapter1) -> Result<ID3
     }
     .map_err(|error| error.to_string())?;
 
-    device.ok_or_else(|| "D3D11CreateDevice returned no device".to_string())
+    Ok(LiveDesktopD3DDevice {
+        device: device.ok_or_else(|| "D3D11CreateDevice returned no device".to_string())?,
+        context: context
+            .ok_or_else(|| "D3D11CreateDevice returned no immediate context".to_string())?,
+    })
 }
 
 #[cfg(target_os = "windows")]
