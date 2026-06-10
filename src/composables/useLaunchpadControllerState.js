@@ -22,6 +22,7 @@ import {
   DEFAULT_BACKGROUND_BLUR_STRENGTH,
   DEFAULT_BACKGROUND_DARKEN_COLOR,
   DEFAULT_BACKGROUND_DARKEN_STRENGTH,
+  DEFAULT_BACKGROUND_IMAGE_LAYOUT,
   DEFAULT_BACKGROUND_IMAGE_OPACITY,
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
@@ -50,6 +51,7 @@ export function useLaunchpadControllerState() {
   const backgroundBaseColor = ref(DEFAULT_BACKGROUND_BASE_COLOR);
   const backgroundBaseOpacity = ref(DEFAULT_BACKGROUND_BASE_OPACITY);
   const backgroundImageOpacity = ref(DEFAULT_BACKGROUND_IMAGE_OPACITY);
+  const backgroundImageLayout = ref(DEFAULT_BACKGROUND_IMAGE_LAYOUT);
   const backgroundBlurStrength = ref(DEFAULT_BACKGROUND_BLUR_STRENGTH);
   const backgroundDarkenStrength = ref(DEFAULT_BACKGROUND_DARKEN_STRENGTH);
   const backgroundDarkenColor = ref(DEFAULT_BACKGROUND_DARKEN_COLOR);
@@ -63,6 +65,7 @@ export function useLaunchpadControllerState() {
   const draftBackgroundBaseColor = ref(DEFAULT_BACKGROUND_BASE_COLOR);
   const draftBackgroundBaseOpacity = ref(DEFAULT_BACKGROUND_BASE_OPACITY);
   const draftBackgroundImageOpacity = ref(DEFAULT_BACKGROUND_IMAGE_OPACITY);
+  const draftBackgroundImageLayout = ref(DEFAULT_BACKGROUND_IMAGE_LAYOUT);
   const draftBackgroundBlurStrength = ref(DEFAULT_BACKGROUND_BLUR_STRENGTH);
   const draftBackgroundDarkenStrength = ref(DEFAULT_BACKGROUND_DARKEN_STRENGTH);
   const draftBackgroundDarkenColor = ref(DEFAULT_BACKGROUND_DARKEN_COLOR);
@@ -117,6 +120,7 @@ export function useLaunchpadControllerState() {
     backgroundDarkenColor,
     backgroundDarkenStrength,
     backgroundImageOpacity,
+    backgroundImageLayout,
     backgroundImagePath,
     backgroundImageUrl,
     backgroundEffect,
@@ -132,6 +136,7 @@ export function useLaunchpadControllerState() {
     draftBackgroundDarkenStrength,
     draftBackgroundEffect,
     draftBackgroundImageOpacity,
+    draftBackgroundImageLayout,
     draftBackgroundImagePath,
     draftBackgroundImageUrl,
     draftBackgroundSource,

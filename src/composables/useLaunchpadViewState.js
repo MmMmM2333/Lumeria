@@ -10,6 +10,7 @@ import {
   normalizeBackgroundBaseColor,
   normalizeBackgroundDarkenColor,
 } from "./useLaunchpadSettingsConfig.js";
+import { resolveCssBackgroundImagePlacement } from "../domain/backgroundImageLayout.js";
 import {
   appLaunchGhostTransition,
   homeShellTransition,
@@ -52,6 +53,7 @@ export function useLaunchpadViewState(options) {
     if (!imageUrl) return {};
     return {
       backgroundImage: `url(${JSON.stringify(imageUrl)})`,
+      ...resolveCssBackgroundImagePlacement(options.backgroundImageLayout?.value),
     };
   });
   const rootStyle = computed(() => ({

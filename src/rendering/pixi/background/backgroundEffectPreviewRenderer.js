@@ -1,5 +1,6 @@
-import { Application, Container, RenderTexture, Sprite, Texture } from "pixi.js";
+import { Application, Container, RenderTexture, Sprite, Texture, TilingSprite } from "pixi.js";
 import { loadCachedBackgroundImageDataUrl } from "../../../api/launchpadApi.js";
+import { resolveBackgroundImagePlacement } from "../../../domain/backgroundImageLayout.js";
 import {
   BACKGROUND_EFFECT_ACRYLIC_WEBGL,
   BACKGROUND_EFFECT_BLUR,
@@ -9,7 +10,6 @@ import {
   resolveAcrylicBackgroundAlpha,
   resolveAcrylicRenderSize,
   resolveBlurOffsetScale,
-  resolveCoverLayout,
 } from "./acrylicBackgroundPlan.js";
 import { createAcrylicCompositeFilter, createKawaseFilter } from "./acrylicFilters.js";
 import { createAcrylicNoiseTexture } from "./acrylicNoiseTexture.js";
@@ -64,12 +64,30 @@ function makeAcrylicKey(config) {
   });
 }
 
+function makePlacementKey(config) {
+  return JSON.stringify({
+    imagePrecomposed: Boolean(config.backgroundImagePrecomposed),
+    imageHeight: config.backgroundImagePixelSize?.height || null,
+    imageWidth: config.backgroundImagePixelSize?.width || null,
+    layout: config.backgroundImageLayout || null,
+    monitorPhysicalHeight: config.backgroundLayoutContext?.monitorPhysicalHeight || null,
+    monitorPhysicalWidth: config.backgroundLayoutContext?.monitorPhysicalWidth || null,
+    monitorPhysicalX: config.backgroundLayoutContext?.monitorPhysicalX || null,
+    monitorPhysicalY: config.backgroundLayoutContext?.monitorPhysicalY || null,
+    monitorScaleFactor: config.backgroundLayoutContext?.monitorScaleFactor || null,
+    windowPhysicalX: config.backgroundLayoutContext?.windowPhysicalX || null,
+    windowPhysicalY: config.backgroundLayoutContext?.windowPhysicalY || null,
+  });
+}
+
 export class BackgroundEffectPreviewRenderer {
-  constructor(host) {
+  constructor(host, options = {}) {
     this.host = host;
+    this.onRender = typeof options.onRender === "function" ? options.onRender : null;
     this.app = null;
     this.sourceTexture = null;
     this.sourceSprite = null;
+    this.sourceTilingSprite = null;
     this.sourceContainer = null;
     this.passSprite = null;
     this.displaySprite = null;
@@ -119,7 +137,10 @@ export class BackgroundEffectPreviewRenderer {
     this.app = app;
     this.sourceContainer = new Container();
     this.sourceSprite = new Sprite(Texture.EMPTY);
+    this.sourceTilingSprite = new TilingSprite({ height: 1, texture: Texture.EMPTY, width: 1 });
+    this.sourceTilingSprite.visible = false;
     this.sourceContainer.addChild(this.sourceSprite);
+    this.sourceContainer.addChild(this.sourceTilingSprite);
     this.passSprite = new Sprite(Texture.EMPTY);
     this.displaySprite = new Sprite(Texture.EMPTY);
     this.downFilter = createKawaseFilter("launchpad-preview-kawase-downsample-filter", 1);
@@ -134,6 +155,7 @@ export class BackgroundEffectPreviewRenderer {
     const previousRenderKey = this.getRenderSizeKey();
     const previousBlurKey = this.getBlurKey();
     const previousAcrylicKey = makeAcrylicKey(this.config);
+    const previousPlacementKey = makePlacementKey(this.config);
     this.config = { ...config };
     const nextTextureKey = `${this.config.backgroundImagePath || ""}|${this.config.backgroundImageUrl || ""}`;
     if (nextTextureKey !== this.textureKey) {
@@ -146,7 +168,8 @@ export class BackgroundEffectPreviewRenderer {
     }
     const nextRenderKey = this.getRenderSizeKey();
     const nextBlurKey = this.getBlurKey();
-    if (nextRenderKey !== previousRenderKey) {
+    const nextPlacementKey = makePlacementKey(this.config);
+    if (nextPlacementKey !== previousPlacementKey || nextRenderKey !== previousRenderKey) {
       this.sourceDirty = true;
       this.blurDirty = true;
       this.compositeDirty = true;
@@ -219,7 +242,7 @@ export class BackgroundEffectPreviewRenderer {
     const offsetScale = this.config.backgroundEffect === BACKGROUND_EFFECT_BLUR
       ? resolveBlurOffsetScale(this.config.backgroundBlurStrength)
       : 1;
-    return `${renderSize.width}x${renderSize.height}|${offsetScale}`;
+    return `${renderSize.width}x${renderSize.height}|${this.config.backgroundImageLayout || ""}|${offsetScale}`;
   }
 
   updateCanvasCoverStyle(renderSize) {
@@ -286,16 +309,50 @@ export class BackgroundEffectPreviewRenderer {
   }
 
   renderSourceToTexture(renderSize) {
-    if (!this.app || !this.sourceTexture || !this.sourceSprite || !this.sourceRenderTexture) return;
-    const layout = resolveCoverLayout(
-      this.sourceTexture.width,
-      this.sourceTexture.height,
-      renderSize.width,
-      renderSize.height
-    );
-    this.sourceSprite.texture = this.sourceTexture;
-    this.sourceSprite.position.set(layout.x, layout.y);
-    this.sourceSprite.setSize(layout.width, layout.height);
+    if (!this.app || !this.sourceTexture || !this.sourceSprite || !this.sourceTilingSprite || !this.sourceRenderTexture) return;
+    if (this.config.backgroundImagePrecomposed) {
+      this.sourceTilingSprite.visible = false;
+      this.sourceTilingSprite.texture = Texture.EMPTY;
+      this.sourceSprite.visible = true;
+      this.sourceSprite.texture = this.sourceTexture;
+      this.sourceSprite.position.set(0, 0);
+      this.sourceSprite.setSize(renderSize.width, renderSize.height);
+      this.app.renderer.render({ container: this.sourceContainer, target: this.sourceRenderTexture, clear: true });
+      return;
+    }
+
+    const configuredWidth = clampRenderSize(this.config.renderWidth, DEFAULT_RENDER_WIDTH);
+    const configuredHeight = clampRenderSize(this.config.renderHeight, DEFAULT_RENDER_HEIGHT);
+    const renderScaleX = Math.max(0.0001, renderSize.width / configuredWidth);
+    const renderScaleY = Math.max(0.0001, renderSize.height / configuredHeight);
+    const layout = resolveBackgroundImagePlacement({
+      imagePixelSize: this.config.backgroundImagePixelSize,
+      layout: this.config.backgroundImageLayout,
+      layoutContext: this.config.backgroundLayoutContext,
+      renderScaleX,
+      renderScaleY,
+      sourceHeight: this.sourceTexture.height,
+      sourceWidth: this.sourceTexture.width,
+      targetHeight: configuredHeight,
+      targetWidth: configuredWidth,
+    });
+    if (layout.tile) {
+      this.sourceSprite.visible = false;
+      this.sourceSprite.texture = Texture.EMPTY;
+      this.sourceTilingSprite.visible = true;
+      this.sourceTilingSprite.texture = this.sourceTexture;
+      this.sourceTilingSprite.position.set(layout.x, layout.y);
+      this.sourceTilingSprite.setSize(layout.width, layout.height);
+      this.sourceTilingSprite.tilePosition.set(layout.tileX || 0, layout.tileY || 0);
+      this.sourceTilingSprite.tileScale.set(layout.tileScaleX, layout.tileScaleY);
+    } else {
+      this.sourceTilingSprite.visible = false;
+      this.sourceTilingSprite.texture = Texture.EMPTY;
+      this.sourceSprite.visible = true;
+      this.sourceSprite.texture = this.sourceTexture;
+      this.sourceSprite.position.set(layout.x, layout.y);
+      this.sourceSprite.setSize(layout.width, layout.height);
+    }
     this.app.renderer.render({ container: this.sourceContainer, target: this.sourceRenderTexture, clear: true });
   }
 
@@ -368,6 +425,7 @@ export class BackgroundEffectPreviewRenderer {
     this.displaySprite.position.set(0, 0);
     this.displaySprite.setSize(renderSize.width, renderSize.height);
     this.app.renderer.render({ container: this.app.stage, clear: true });
+    this.onRender?.();
   }
 
   destroy() {
@@ -379,6 +437,7 @@ export class BackgroundEffectPreviewRenderer {
     }
     this.destroyRenderTextures();
     if (this.sourceSprite) this.sourceSprite.texture = Texture.EMPTY;
+    if (this.sourceTilingSprite) this.sourceTilingSprite.texture = Texture.EMPTY;
     destroyTexture(this.sourceTexture);
     this.sourceTexture = null;
     this.sourceContainer?.destroy?.({ children: true });
@@ -394,6 +453,7 @@ export class BackgroundEffectPreviewRenderer {
     this.app = null;
     this.sourceContainer = null;
     this.sourceSprite = null;
+    this.sourceTilingSprite = null;
     this.passSprite = null;
     this.displaySprite = null;
     this.downFilter = null;
@@ -401,5 +461,6 @@ export class BackgroundEffectPreviewRenderer {
     this.compositeFilter = null;
     this.noiseTexture = null;
     this.host = null;
+    this.onRender = null;
   }
 }

@@ -6,7 +6,7 @@
 </template>
 
 <script setup>
-import { Container, RenderTexture, Sprite, Texture } from "pixi.js";
+import { Container, RenderTexture, Sprite, Texture, TilingSprite } from "pixi.js";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { loadCachedBackgroundImageDataUrl } from "../../api/launchpadApi.js";
 import { createPixiApp } from "./createPixiApp.js";
@@ -15,6 +15,11 @@ import { isAcrylicDebugEnabled, useAcrylicDebugOverrideEnabled, useAcrylicDebugP
 import { createAcrylicCompositeFilter, createKawaseFilter } from "./background/acrylicFilters.js";
 import { loadBackgroundTextureFromImage } from "./background/backgroundTextureLoader.js";
 import { createAcrylicNoiseTexture } from "./background/acrylicNoiseTexture.js";
+import {
+  DEFAULT_BACKGROUND_IMAGE_LAYOUT,
+  resolveBackgroundImagePlacement,
+  resolveCssBackgroundImagePlacement,
+} from "../../domain/backgroundImageLayout.js";
 import {
   BACKGROUND_EFFECT_ACRYLIC_WEBGL,
   BACKGROUND_EFFECT_BLUR,
@@ -25,7 +30,6 @@ import {
   resolveBlurOffsetScale,
   resolveAcrylicBackgroundAlpha,
   resolveAcrylicRenderSize,
-  resolveCoverLayout,
 } from "./background/acrylicBackgroundPlan.js";
 
 const props = defineProps({
@@ -34,8 +38,12 @@ const props = defineProps({
   backgroundEffect: { type: String, default: BACKGROUND_EFFECT_BLUR },
   backgroundBlurStrength: { type: Number, default: DEFAULT_BACKGROUND_BLUR_STRENGTH },
   backgroundImageOpacity: { type: Number, default: 46 },
+  backgroundImageLayout: { type: String, default: DEFAULT_BACKGROUND_IMAGE_LAYOUT },
   backgroundImagePath: { type: String, default: null },
+  backgroundImagePixelSize: { type: Object, default: null },
   backgroundImageUrl: { type: String, required: true },
+  backgroundLayoutContext: { type: Object, default: null },
+  backgroundViewportSize: { type: Object, default: () => ({ height: 1, width: 1 }) },
 });
 const emit = defineEmits(["ready"]);
 
@@ -46,6 +54,7 @@ const isFallbackVisible = ref(true);
 let app = null;
 let sourceTexture = null;
 let sourceSprite = null;
+let sourceTilingSprite = null;
 let sourceContainer = null;
 let passSprite = null;
 let displaySprite = null;
@@ -66,6 +75,12 @@ let renderSizeKey = "";
 
 const fallbackImageStyle = computed(() => ({
   backgroundImage: `url(${JSON.stringify(props.backgroundImageUrl)})`,
+  ...resolveCssBackgroundImagePlacement(props.backgroundImageLayout, {
+    imagePixelSize: props.backgroundImagePixelSize,
+    layoutContext: props.backgroundLayoutContext,
+    targetHeight: props.backgroundViewportSize?.height,
+    targetWidth: props.backgroundViewportSize?.width,
+  }),
   opacity: resolveAcrylicBackgroundAlpha(props.backgroundImageOpacity),
 }));
 
@@ -137,17 +152,38 @@ function renderPass(inputTexture, outputTexture, filter) {
   passSprite.filters = null;
 }
 
-function renderSourceToTexture(renderSize) {
-  if (!app || !sourceTexture || !sourceSprite || !sourceContainer || !sourceRenderTexture) return;
-  const layout = resolveCoverLayout(
-    sourceTexture.width,
-    sourceTexture.height,
-    renderSize.width,
-    renderSize.height
-  );
-  sourceSprite.texture = sourceTexture;
-  sourceSprite.position.set(layout.x, layout.y);
-  sourceSprite.setSize(layout.width, layout.height);
+function renderSourceToTexture(renderSize, hostSize) {
+  if (!app || !sourceTexture || !sourceSprite || !sourceTilingSprite || !sourceContainer || !sourceRenderTexture) return;
+  const renderScaleX = Math.max(0.0001, renderSize.width / Math.max(1, hostSize.width));
+  const renderScaleY = Math.max(0.0001, renderSize.height / Math.max(1, hostSize.height));
+  const layout = resolveBackgroundImagePlacement({
+    imagePixelSize: props.backgroundImagePixelSize,
+    layout: props.backgroundImageLayout,
+    layoutContext: props.backgroundLayoutContext,
+    renderScaleX,
+    renderScaleY,
+    sourceHeight: sourceTexture.height,
+    sourceWidth: sourceTexture.width,
+    targetHeight: hostSize.height,
+    targetWidth: hostSize.width,
+  });
+  if (layout.tile && sourceTilingSprite) {
+    sourceSprite.visible = false;
+    sourceSprite.texture = Texture.EMPTY;
+    sourceTilingSprite.visible = true;
+    sourceTilingSprite.texture = sourceTexture;
+    sourceTilingSprite.position.set(layout.x, layout.y);
+    sourceTilingSprite.setSize(layout.width, layout.height);
+    sourceTilingSprite.tilePosition.set(layout.tileX || 0, layout.tileY || 0);
+    sourceTilingSprite.tileScale.set(layout.tileScaleX, layout.tileScaleY);
+  } else {
+    sourceTilingSprite.visible = false;
+    sourceTilingSprite.texture = Texture.EMPTY;
+    sourceSprite.visible = true;
+    sourceSprite.texture = sourceTexture;
+    sourceSprite.position.set(layout.x, layout.y);
+    sourceSprite.setSize(layout.width, layout.height);
+  }
   sourceContainer.position.set(0, 0);
   app.renderer.render({ container: sourceContainer, target: sourceRenderTexture, clear: true });
 }
@@ -158,7 +194,7 @@ function renderBackgroundEffect() {
   const renderSize = ensureRenderTextures(hostSize.width, hostSize.height);
   if (!downTextures.length || !finalBlurTexture || !finalRenderTexture) return;
 
-  renderSourceToTexture(renderSize);
+  renderSourceToTexture(renderSize, hostSize);
 
   const blurOffsetScale = props.backgroundEffect === BACKGROUND_EFFECT_BLUR
     ? resolveBlurOffsetScale(props.backgroundBlurStrength)
@@ -267,6 +303,7 @@ function destroyPixi(options = {}) {
   resizeObserver = null;
   destroyRenderTextures();
   if (sourceSprite) sourceSprite.texture = Texture.EMPTY;
+  if (sourceTilingSprite) sourceTilingSprite.texture = Texture.EMPTY;
   destroyTexture(sourceTexture);
   sourceTexture = null;
   sourceContainer?.destroy?.({ children: true });
@@ -274,6 +311,7 @@ function destroyPixi(options = {}) {
   app?.stage?.removeChild(displaySprite);
   displaySprite?.destroy?.();
   sourceSprite = null;
+  sourceTilingSprite = null;
   sourceContainer = null;
   passSprite = null;
   displaySprite = null;
@@ -316,7 +354,10 @@ onMounted(async () => {
   app = nextApp;
   sourceContainer = new Container();
   sourceSprite = new Sprite(Texture.EMPTY);
+  sourceTilingSprite = new TilingSprite({ height: 1, texture: Texture.EMPTY, width: 1 });
+  sourceTilingSprite.visible = false;
   sourceContainer.addChild(sourceSprite);
+  sourceContainer.addChild(sourceTilingSprite);
   passSprite = new Sprite(Texture.EMPTY);
   displaySprite = new Sprite(Texture.EMPTY);
   downFilter = createKawaseFilter("launchpad-acrylic-downsample-filter", 1);
@@ -350,6 +391,32 @@ watch(
 
 watch(
   () => props.backgroundImageOpacity,
+  () => {
+    scheduleRender();
+  }
+);
+
+watch(
+  () => props.backgroundImageLayout,
+  () => {
+    scheduleRender();
+  }
+);
+
+watch(
+  () => [
+    props.backgroundImagePixelSize?.width,
+    props.backgroundImagePixelSize?.height,
+    props.backgroundLayoutContext?.monitorPhysicalX,
+    props.backgroundLayoutContext?.monitorPhysicalY,
+    props.backgroundLayoutContext?.monitorPhysicalWidth,
+    props.backgroundLayoutContext?.monitorPhysicalHeight,
+    props.backgroundLayoutContext?.monitorScaleFactor,
+    props.backgroundLayoutContext?.windowPhysicalX,
+    props.backgroundLayoutContext?.windowPhysicalY,
+    props.backgroundViewportSize?.width,
+    props.backgroundViewportSize?.height,
+  ],
   () => {
     scheduleRender();
   }

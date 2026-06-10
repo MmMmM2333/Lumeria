@@ -18,6 +18,19 @@ import {
   ACRYLIC_COMPOSITE_PRESETS,
   normalizeAcrylicCompositeParams,
 } from "../rendering/pixi/background/acrylicParams.js";
+import {
+  normalizeBackgroundImageLayout,
+} from "../domain/backgroundImageLayout.js";
+export {
+  BACKGROUND_IMAGE_LAYOUT_CENTER,
+  BACKGROUND_IMAGE_LAYOUT_FILL,
+  BACKGROUND_IMAGE_LAYOUT_FIT,
+  BACKGROUND_IMAGE_LAYOUT_STRETCH,
+  BACKGROUND_IMAGE_LAYOUT_TILE,
+  DEFAULT_BACKGROUND_IMAGE_LAYOUT,
+  normalizeBackgroundImageLayout,
+  resolveCssBackgroundImageLayout,
+} from "../domain/backgroundImageLayout.js";
 
 export const FOLDER_ICON_SIZE_MODE_CUSTOM = "custom";
 export const FOLDER_ICON_SIZE_MODE_GLOBAL = "global";
@@ -225,6 +238,7 @@ export function syncLaunchpadSettingsDraftsFromState(options) {
   options.draftBackgroundSource.value = options.backgroundSource.value;
   options.draftBackgroundEffect.value = options.backgroundEffect.value;
   options.draftBackgroundImageOpacity.value = options.backgroundImageOpacity.value;
+  options.draftBackgroundImageLayout.value = normalizeBackgroundImageLayout(options.backgroundImageLayout.value);
   options.draftBackgroundBlurStrength.value = clampBackgroundBlurStrength(options.backgroundBlurStrength.value);
   options.draftBackgroundDarkenStrength.value = clampBackgroundDarkenStrength(options.backgroundDarkenStrength.value);
   options.draftBackgroundDarkenColor.value = normalizeBackgroundDarkenColor(options.backgroundDarkenColor.value);
@@ -299,6 +313,10 @@ export function useLaunchpadSettingsConfig(options) {
 
   function setDraftBackgroundImageOpacity(value) {
     options.draftBackgroundImageOpacity.value = clampBackgroundImageOpacity(value);
+  }
+
+  function setDraftBackgroundImageLayout(layout) {
+    options.draftBackgroundImageLayout.value = normalizeBackgroundImageLayout(layout);
   }
 
   function setDraftBackgroundBlurStrength(value) {
@@ -498,6 +516,7 @@ export function useLaunchpadSettingsConfig(options) {
     options.backgroundBaseColor.value = normalizeBackgroundBaseColor(options.draftBackgroundBaseColor.value);
     options.backgroundBaseOpacity.value = clampBackgroundBaseOpacity(options.draftBackgroundBaseOpacity.value);
     options.backgroundImageOpacity.value = clampBackgroundImageOpacity(options.draftBackgroundImageOpacity.value);
+    options.backgroundImageLayout.value = normalizeBackgroundImageLayout(options.draftBackgroundImageLayout.value);
     options.backgroundBlurStrength.value = clampBackgroundBlurStrength(options.draftBackgroundBlurStrength.value);
     options.backgroundDarkenStrength.value = clampBackgroundDarkenStrength(options.draftBackgroundDarkenStrength.value);
     options.backgroundDarkenColor.value = normalizeBackgroundDarkenColor(options.draftBackgroundDarkenColor.value);
@@ -540,6 +559,7 @@ export function useLaunchpadSettingsConfig(options) {
     setDraftBackgroundBaseColor,
     setDraftBackgroundBaseOpacity,
     setDraftBackgroundEffect,
+    setDraftBackgroundImageLayout,
     setDraftBackgroundAcrylicAppearance,
     setDraftBackgroundAcrylicParam,
     setDraftBackgroundSource,

@@ -8,6 +8,9 @@ import {
   BACKGROUND_EFFECT_DIMMED,
   BACKGROUND_EFFECT_NONE,
   BACKGROUND_BASE_OPACITY_MAX,
+  BACKGROUND_IMAGE_LAYOUT_CENTER,
+  BACKGROUND_IMAGE_LAYOUT_FILL,
+  BACKGROUND_IMAGE_LAYOUT_TILE,
   DEFAULT_BACKGROUND_BLUR_STRENGTH,
   DEFAULT_BACKGROUND_DARKEN_COLOR,
   DEFAULT_BACKGROUND_DARKEN_STRENGTH,
@@ -34,6 +37,7 @@ import {
   normalizeBackgroundDarkenColor,
   normalizeBackgroundAcrylicAppearance,
   normalizeBackgroundAcrylicParams,
+  normalizeBackgroundImageLayout,
   normalizeBackgroundImagePath,
   normalizeBackgroundEffect,
   normalizeWindowEffectAppearance,
@@ -81,6 +85,7 @@ function createSettingsConfig(overrides = {}) {
     draftBackgroundSource: refValue(overrides.draftBackgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
     draftBackgroundEffect: refValue(overrides.draftBackgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     draftBackgroundImageOpacity: refValue(overrides.draftBackgroundImageOpacity ?? 46),
+    draftBackgroundImageLayout: refValue(overrides.draftBackgroundImageLayout ?? BACKGROUND_IMAGE_LAYOUT_FILL),
     draftBackgroundBlurStrength: refValue(overrides.draftBackgroundBlurStrength ?? DEFAULT_BACKGROUND_BLUR_STRENGTH),
     draftBackgroundDarkenColor: refValue(overrides.draftBackgroundDarkenColor ?? DEFAULT_BACKGROUND_DARKEN_COLOR),
     draftBackgroundDarkenStrength: refValue(overrides.draftBackgroundDarkenStrength ?? DEFAULT_BACKGROUND_DARKEN_STRENGTH),
@@ -97,6 +102,7 @@ function createSettingsConfig(overrides = {}) {
     backgroundSource: refValue(overrides.backgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
     backgroundEffect: refValue(overrides.backgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     backgroundImageOpacity: refValue(overrides.backgroundImageOpacity ?? 46),
+    backgroundImageLayout: refValue(overrides.backgroundImageLayout ?? BACKGROUND_IMAGE_LAYOUT_FILL),
     backgroundBlurStrength: refValue(overrides.backgroundBlurStrength ?? DEFAULT_BACKGROUND_BLUR_STRENGTH),
     backgroundDarkenColor: refValue(overrides.backgroundDarkenColor ?? DEFAULT_BACKGROUND_DARKEN_COLOR),
     backgroundDarkenStrength: refValue(overrides.backgroundDarkenStrength ?? DEFAULT_BACKGROUND_DARKEN_STRENGTH),
@@ -160,6 +166,7 @@ function createSettingsConfig(overrides = {}) {
     commitSearchPageIndex: (value) => calls.commitSearchPageIndex.push(value),
     compactPages: helpers.compactPages,
     draftBackgroundImageOpacity: state.draftBackgroundImageOpacity,
+    draftBackgroundImageLayout: state.draftBackgroundImageLayout,
     draftBackgroundBlurStrength: state.draftBackgroundBlurStrength,
     draftBackgroundDarkenColor: state.draftBackgroundDarkenColor,
     draftBackgroundDarkenStrength: state.draftBackgroundDarkenStrength,
@@ -197,6 +204,7 @@ function createSettingsConfig(overrides = {}) {
     backgroundBaseColor: state.backgroundBaseColor,
     backgroundBaseOpacity: state.backgroundBaseOpacity,
     backgroundImageOpacity: state.backgroundImageOpacity,
+    backgroundImageLayout: state.backgroundImageLayout,
     backgroundBlurStrength: state.backgroundBlurStrength,
     backgroundDarkenColor: state.backgroundDarkenColor,
     backgroundDarkenStrength: state.backgroundDarkenStrength,
@@ -246,6 +254,8 @@ export function runLaunchpadSettingsConfigTests() {
   assert(!backgroundEffectUsesPixi(BACKGROUND_EFFECT_DIMMED), "dimmed should not use the pixi background renderer");
   assert(normalizeBackgroundImagePath(" C:/Images/wallpaper.png ") === "C:/Images/wallpaper.png", "background image paths should be trimmed");
   assert(normalizeBackgroundImagePath("") === null, "empty background image paths should become null");
+  assert(normalizeBackgroundImageLayout(BACKGROUND_IMAGE_LAYOUT_TILE) === BACKGROUND_IMAGE_LAYOUT_TILE, "tile background image layout should be preserved");
+  assert(normalizeBackgroundImageLayout("unknown") === BACKGROUND_IMAGE_LAYOUT_FILL, "unknown background image layouts should fall back to fill");
   assert(clampBackgroundImageOpacity(-12) === 0, "background image opacity should clamp to the minimum");
   assert(clampBackgroundImageOpacity(120) === 100, "background image opacity should clamp to the maximum");
   assert(clampBackgroundImageOpacity("bad") === 46, "invalid background image opacity should fall back to the default");
@@ -299,6 +309,7 @@ export function runLaunchpadSettingsConfigTests() {
     draftBackgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
     draftBackgroundEffect: BACKGROUND_EFFECT_NONE,
     draftBackgroundImageOpacity: 12,
+    draftBackgroundImageLayout: BACKGROUND_IMAGE_LAYOUT_CENTER,
     draftBackgroundBlurStrength: 12,
     draftBackgroundDarkenColor: "#121212",
     draftBackgroundDarkenStrength: 12,
@@ -320,6 +331,7 @@ export function runLaunchpadSettingsConfigTests() {
     backgroundSource: BACKGROUND_SOURCE_SYSTEM_MATERIAL,
     backgroundEffect: BACKGROUND_EFFECT_DIMMED,
     backgroundImageOpacity: 58,
+    backgroundImageLayout: BACKGROUND_IMAGE_LAYOUT_TILE,
     backgroundBlurStrength: 82,
     backgroundDarkenColor: "#456",
     backgroundDarkenStrength: 64,
@@ -343,6 +355,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(sync.state.draftBackgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "sync should reset background source draft from current settings");
   assert(sync.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "sync should reset background effect draft from current settings");
   assert(sync.state.draftBackgroundImageOpacity.value === 58, "sync should reset background opacity draft from current settings");
+  assert(sync.state.draftBackgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_TILE, "sync should reset background image layout draft from current settings");
   assert(sync.state.draftBackgroundBlurStrength.value === 82, "sync should reset background blur strength draft from current settings");
   assert(sync.state.draftBackgroundDarkenColor.value === "#445566", "sync should reset background darken color draft from current settings");
   assert(sync.state.draftBackgroundDarkenStrength.value === 64, "sync should reset background darken strength draft from current settings");
@@ -399,6 +412,7 @@ export function runLaunchpadSettingsConfigTests() {
   backgroundMode.config.setDraftBackgroundSource(BACKGROUND_SOURCE_CUSTOM_IMAGE);
   backgroundMode.config.setDraftBackgroundEffect(BACKGROUND_EFFECT_NONE);
   backgroundMode.config.setDraftBackgroundImageOpacity(120);
+  backgroundMode.config.setDraftBackgroundImageLayout(BACKGROUND_IMAGE_LAYOUT_CENTER);
   backgroundMode.config.setDraftBackgroundBlurStrength(120);
   backgroundMode.config.setDraftBackgroundDarkenColor("#789");
   backgroundMode.config.setDraftBackgroundDarkenStrength(120);
@@ -408,6 +422,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(backgroundMode.state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "background source should update from segmented controls");
   assert(backgroundMode.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_NONE, "background effect should update from segmented controls");
   assert(backgroundMode.state.draftBackgroundImageOpacity.value === 100, "background opacity should clamp from slider input");
+  assert(backgroundMode.state.draftBackgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_CENTER, "background image layout should update from segmented controls");
   assert(backgroundMode.state.draftBackgroundBlurStrength.value === 100, "background blur strength should clamp from slider input");
   assert(backgroundMode.state.draftBackgroundDarkenColor.value === "#778899", "background darken color should update from color input");
   assert(backgroundMode.state.draftBackgroundDarkenStrength.value === 100, "background darken strength should clamp from slider input");
@@ -444,6 +459,7 @@ export function runLaunchpadSettingsConfigTests() {
     draftBackgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
     draftBackgroundEffect: BACKGROUND_EFFECT_DIMMED,
     draftBackgroundImageOpacity: 67,
+    draftBackgroundImageLayout: BACKGROUND_IMAGE_LAYOUT_CENTER,
     draftBackgroundBlurStrength: 88,
     draftBackgroundDarkenColor: "#456",
     draftBackgroundDarkenStrength: 53,
@@ -468,6 +484,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(apply.state.backgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "background source should apply from the draft value");
   assert(apply.state.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "background effect should apply from the draft value");
   assert(apply.state.backgroundImageOpacity.value === 67, "background opacity should apply from the draft value");
+  assert(apply.state.backgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_CENTER, "background image layout should apply from the draft value");
   assert(apply.state.backgroundBlurStrength.value === 88, "background blur strength should apply from the draft value");
   assert(apply.state.backgroundDarkenColor.value === "#445566", "background darken color should apply from the draft value");
   assert(apply.state.backgroundDarkenStrength.value === 53, "background darken strength should apply from the draft value");

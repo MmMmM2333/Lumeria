@@ -15,6 +15,7 @@ export function runLaunchpadViewAdaptersTests() {
     draftBackgroundBlurStrength: { value: 68 },
     draftBackgroundDarkenColor: { value: "#1c1c1c" },
     draftBackgroundDarkenStrength: { value: 37 },
+    draftBackgroundImageLayout: { value: "fill" },
     setDraftBackgroundBaseColor: () => {},
     setDraftBackgroundBaseOpacity: () => {},
     setDraftBackgroundBlurStrength: () => {},
@@ -23,6 +24,7 @@ export function runLaunchpadViewAdaptersTests() {
     setDraftBackgroundAcrylicAppearance: () => {},
     setDraftBackgroundAcrylicParam: () => {},
     resetDraftBackgroundAcrylicParams: () => {},
+    setDraftBackgroundImageLayout: () => {},
   };
   const controller = new Proxy(expected, {
     get(target, property) {
@@ -41,6 +43,7 @@ export function runLaunchpadViewAdaptersTests() {
   assert(state.draftBackgroundBlurStrength === controller.draftBackgroundBlurStrength, "settings panel state should expose background blur strength draft");
   assert(state.draftBackgroundDarkenColor === controller.draftBackgroundDarkenColor, "settings panel state should expose background darken color draft");
   assert(state.draftBackgroundDarkenStrength === controller.draftBackgroundDarkenStrength, "settings panel state should expose background darken strength draft");
+  assert(state.draftBackgroundImageLayout === controller.draftBackgroundImageLayout, "settings panel state should expose background image layout draft");
   assert(state.changeDraftBackgroundBaseOpacity === controller.changeDraftBackgroundBaseOpacity, "settings panel state should expose background base opacity stepping");
   assert(state.setDraftBackgroundBaseColor === controller.setDraftBackgroundBaseColor, "settings panel state should expose background base color setter");
   assert(state.setDraftBackgroundBaseOpacity === controller.setDraftBackgroundBaseOpacity, "settings panel state should expose background base opacity setter");
@@ -50,4 +53,5 @@ export function runLaunchpadViewAdaptersTests() {
   assert(state.setDraftBackgroundAcrylicAppearance === controller.setDraftBackgroundAcrylicAppearance, "settings panel state should expose acrylic appearance setter");
   assert(state.setDraftBackgroundAcrylicParam === controller.setDraftBackgroundAcrylicParam, "settings panel state should expose acrylic param setter");
   assert(state.resetDraftBackgroundAcrylicParams === controller.resetDraftBackgroundAcrylicParams, "settings panel state should expose acrylic params reset");
+  assert(state.setDraftBackgroundImageLayout === controller.setDraftBackgroundImageLayout, "settings panel state should expose background image layout setter");
 }

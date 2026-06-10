@@ -15,8 +15,12 @@
         :background-effect="backgroundEffect"
         :background-blur-strength="backgroundBlurStrength"
         :background-image-opacity="backgroundImageOpacity"
+        :background-image-layout="backgroundImageLayout"
         :background-image-path="backgroundImagePath"
+        :background-image-pixel-size="backgroundImagePixelSize"
         :background-image-url="backgroundImageUrl"
+        :background-layout-context="backgroundLayoutContext"
+        :background-viewport-size="backgroundViewportSize"
         @ready="handlePixiBackgroundReady"
       />
       <div
@@ -95,7 +99,7 @@
       </footer>
     </Motion>
 
-    <SettingsPanel :state="settingsPanelState" />
+    <SettingsPanel :state="settingsPanelState" :background-layout-context="backgroundLayoutContext" />
     <LaunchpadDialogs :state="dialogState" />
     <PixiFolderOverlay
       :state="folderOverlayState"
@@ -130,7 +134,7 @@
 
 <script setup>
 import { Motion } from "motion-v";
-import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import LaunchpadDialogs from "./components/LaunchpadDialogs.vue";
 import LaunchpadHeader from "./components/LaunchpadHeader.vue";
 import LaunchpadOverlays from "./components/LaunchpadOverlays.vue";
@@ -139,7 +143,10 @@ import PixiBackgroundSurface from "./rendering/pixi/PixiBackgroundSurface.vue";
 import PixiDesktopSurface from "./rendering/pixi/PixiDesktopSurface.vue";
 import PixiDragPreviewOverlay from "./rendering/pixi/PixiDragPreviewOverlay.vue";
 import PixiFolderOverlay from "./rendering/pixi/PixiFolderOverlay.vue";
+import { getBackgroundLayoutContext } from "./api/launchpadApi.js";
+import { loadBackgroundImagePixelSize } from "./composables/useBackgroundImagePixelSize.js";
 import { useLaunchpadController } from "./composables/useLaunchpadController.js";
+import { resolveCssBackgroundImagePlacement } from "./domain/backgroundImageLayout.js";
 import {
   createDialogState,
   createFolderOverlayState,
@@ -157,6 +164,7 @@ const {
   backgroundEffect,
   backgroundBlurStrength,
   backgroundImageOpacity,
+  backgroundImageLayout,
   backgroundImagePath,
   backgroundImageUrl,
   shouldRenderPixiBackgroundEffect,
@@ -241,6 +249,9 @@ const hasRenderedPixiBackground = ref(false);
 const hasCompositedStartupBackground = ref(false);
 const isStartupMaskMounted = ref(true);
 const isStartupMaskVisible = ref(true);
+const backgroundLayoutContext = ref(null);
+const backgroundImagePixelSize = ref(null);
+const backgroundViewportSize = ref({ height: 1, width: 1 });
 const backgroundImageLayers = ref([
   { id: "background-image-a", url: null, visible: false },
   { id: "background-image-b", url: null, visible: false },
@@ -291,6 +302,12 @@ const backgroundImageLayerViews = computed(() => (
   backgroundImageLayers.value.map((layer) => ({
     id: layer.id,
     style: {
+      ...resolveCssBackgroundImagePlacement(backgroundImageLayout.value, {
+        imagePixelSize: backgroundImagePixelSize.value,
+        layoutContext: backgroundLayoutContext.value,
+        targetHeight: backgroundViewportSize.value.height,
+        targetWidth: backgroundViewportSize.value.width,
+      }),
       backgroundImage: layer.url ? backgroundImageUrlStyle(layer.url) : "none",
       opacity: `${targetBackgroundImageOpacity.value * (layer.visible ? 1 : 0)}`,
     },
@@ -386,6 +403,28 @@ function handlePixiBackgroundReady() {
   hasRenderedPixiBackground.value = true;
 }
 
+function readBackgroundViewportSize() {
+  const rect = rootRef.value?.getBoundingClientRect?.();
+  const width = Math.max(1, Math.round(rect?.width || window.innerWidth || 1));
+  const height = Math.max(1, Math.round(rect?.height || window.innerHeight || 1));
+  if (width === backgroundViewportSize.value.width && height === backgroundViewportSize.value.height) return;
+  backgroundViewportSize.value = { height, width };
+}
+
+async function refreshBackgroundLayoutContext() {
+  try {
+    backgroundLayoutContext.value = await getBackgroundLayoutContext();
+  } catch (error) {
+    backgroundLayoutContext.value = null;
+    console.warn("Failed to load background layout context", error);
+  }
+}
+
+function refreshBackgroundLayoutMetrics() {
+  readBackgroundViewportSize();
+  void refreshBackgroundLayoutContext();
+}
+
 function clearBackgroundImageShowFrame() {
   if (backgroundImageShowFrame == null) return;
   window.cancelAnimationFrame(backgroundImageShowFrame);
@@ -443,35 +482,17 @@ function revealBackgroundImageLayer(url, generation) {
 }
 
 function preloadBackgroundImage(url) {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    let settled = false;
-    const resolveLoadedImage = async () => {
-      if (settled) return;
-      settled = true;
-      try {
-        await image.decode?.();
-      } catch {
-        // The image is still usable after onload even when decode() is unavailable or rejects.
-      }
-      resolve();
-    };
-    image.decoding = "async";
-    image.onload = resolveLoadedImage;
-    image.onerror = () => reject(new Error(`Failed to load background image: ${url}`));
-    image.src = url;
-    if (image.complete && image.naturalWidth > 0) {
-      void resolveLoadedImage();
-    }
-  });
+  return loadBackgroundImagePixelSize(url);
 }
 
 async function loadVisibleBackgroundImage(url, generation) {
   try {
-    await preloadBackgroundImage(url);
+    const pixelSize = await preloadBackgroundImage(url);
+    if (generation === backgroundImageGeneration) backgroundImagePixelSize.value = pixelSize;
     revealBackgroundImageLayer(url, generation);
   } catch (error) {
     if (generation === backgroundImageGeneration) {
+      backgroundImagePixelSize.value = null;
       console.warn("Failed to prepare background image for fade-in", error);
     }
   }
@@ -498,7 +519,19 @@ watch(
 );
 
 watch(
-  () => [shouldRenderPixiBackgroundEffect.value, backgroundImagePath.value, backgroundImageUrl.value, backgroundEffect.value, backgroundBlurStrength.value, backgroundAcrylicParams.value],
+  () => [
+    shouldRenderPixiBackgroundEffect.value,
+    backgroundImagePath.value,
+    backgroundImageUrl.value,
+    backgroundImageLayout.value,
+    backgroundLayoutContext.value,
+    backgroundImagePixelSize.value,
+    backgroundViewportSize.value.width,
+    backgroundViewportSize.value.height,
+    backgroundEffect.value,
+    backgroundBlurStrength.value,
+    backgroundAcrylicParams.value,
+  ],
   () => {
     hasRenderedPixiBackground.value = false;
     resetStartupBackgroundComposite();
@@ -511,10 +544,20 @@ watch(
     const generation = ++backgroundImageGeneration;
     clearBackgroundImageShowFrame();
     if (!nextUrl) {
+      backgroundImagePixelSize.value = null;
       hideBackgroundImageLayers();
       return;
     }
+    refreshBackgroundLayoutMetrics();
     void loadVisibleBackgroundImage(nextUrl, generation);
+  },
+  { immediate: true }
+);
+
+watch(
+  isDesktopOpen,
+  (isOpen) => {
+    if (isOpen) refreshBackgroundLayoutMetrics();
   },
   { immediate: true }
 );
@@ -541,6 +584,17 @@ startupMaskMaxWaitTimer = window.setTimeout(releaseStartupMaskAfterTimeout, STAR
 onBeforeUnmount(clearPixiBackgroundHideTimer);
 onBeforeUnmount(clearStartupMaskTimers);
 onBeforeUnmount(clearBackgroundImageTimers);
+
+onMounted(() => {
+  refreshBackgroundLayoutMetrics();
+  window.addEventListener("resize", refreshBackgroundLayoutMetrics);
+  window.addEventListener("focus", refreshBackgroundLayoutMetrics);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("resize", refreshBackgroundLayoutMetrics);
+  window.removeEventListener("focus", refreshBackgroundLayoutMetrics);
+});
 
 const headerDomRefs = { headerRef, searchRef, searchInputRef };
 const desktopDomRefs = { desktopMainRef };

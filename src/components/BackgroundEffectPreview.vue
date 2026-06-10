@@ -1,46 +1,68 @@
 <template>
   <div
+    ref="rootRef"
     :class="[
       'settings-background-preview',
       'settings-background-effect-preview',
       `settings-background-effect-preview-${effectClass}`,
-      usesPixiEffect && 'settings-background-effect-preview-pixi',
+      shouldRenderPixiHost && 'settings-background-effect-preview-pixi',
+      shouldRenderPixiHost && !shouldShowPixiHost && 'settings-background-effect-preview-pixi-loading',
       !hasImage && 'settings-background-preview-empty',
     ]"
     :style="previewStyle"
     aria-label="图片效果预览"
   >
     <span class="settings-background-preview-base" aria-hidden="true" />
+    <BackgroundImagePreviewCanvas
+      v-if="hasImage && isCanvasPreviewVisible"
+      class="settings-background-effect-preview-fallback"
+      aria-label="图片效果预览 fallback"
+      :background-base-color="backgroundBaseColor"
+      :background-base-opacity="backgroundBaseOpacity"
+      :background-darken-color="backgroundDarkenColor"
+      :background-darken-strength="canvasDarkenStrength"
+      :background-image-layout="backgroundImageLayout"
+      :background-image-opacity="backgroundImageOpacity"
+      :background-image-pixel-size="backgroundImagePixelSize"
+      :background-image-url="backgroundImageUrl"
+      :background-layout-context="backgroundLayoutContext"
+      :empty-label="emptyLabel"
+    />
     <span
-      v-if="usesPixiEffect"
+      v-if="shouldRenderPixiHost"
       ref="pixiHostRef"
-      class="settings-background-preview-pixi-host"
+      :class="[
+        'settings-background-preview-pixi-host',
+        !shouldShowPixiHost && 'settings-background-preview-pixi-host-hidden',
+      ]"
       aria-hidden="true"
     />
-    <span v-else-if="hasImage" class="settings-background-preview-image" aria-hidden="true" />
-    <span class="settings-background-preview-darken" aria-hidden="true" />
     <span v-if="!hasImage" class="settings-background-preview-label">{{ emptyLabel }}</span>
   </div>
 </template>
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import BackgroundImagePreviewCanvas from "./BackgroundImagePreviewCanvas.vue";
 import {
   BACKGROUND_EFFECT_ACRYLIC_WEBGL,
   BACKGROUND_EFFECT_BLUR,
   BACKGROUND_EFFECT_DIMMED,
   clampBackgroundBaseOpacity,
-  clampBackgroundDarkenStrength,
-  clampBackgroundImageOpacity,
   normalizeBackgroundBaseColor,
-  normalizeBackgroundDarkenColor,
 } from "../composables/useLaunchpadSettingsConfig.js";
+import {
+  DEFAULT_BACKGROUND_IMAGE_LAYOUT,
+} from "../domain/backgroundImageLayout.js";
 import { BackgroundEffectPreviewRenderer } from "../rendering/pixi/background/backgroundEffectPreviewRenderer.js";
 
 const DEFAULT_RENDER_WIDTH = 960;
 const DEFAULT_RENDER_HEIGHT = 540;
+const DEFAULT_PREVIEW_WIDTH = 320;
+const DEFAULT_PREVIEW_HEIGHT = 180;
 
 const props = defineProps({
+  active: { type: Boolean, default: true },
   backgroundAcrylicParams: { type: Object, default: () => ({}) },
   backgroundBaseColor: { type: String, required: true },
   backgroundBaseOpacity: { type: Number, required: true },
@@ -48,21 +70,39 @@ const props = defineProps({
   backgroundDarkenColor: { type: String, required: true },
   backgroundDarkenStrength: { type: Number, required: true },
   backgroundEffect: { type: String, required: true },
+  backgroundImageLayout: { type: String, default: DEFAULT_BACKGROUND_IMAGE_LAYOUT },
   backgroundImageOpacity: { type: Number, required: true },
   backgroundImagePath: { type: String, default: null },
+  backgroundImagePixelSize: { type: Object, default: null },
   backgroundImageUrl: { type: String, default: null },
+  backgroundLayoutContext: { type: Object, default: null },
   emptyLabel: { type: String, default: "选择图片后可用" },
 });
 
 const pixiHostRef = ref(null);
+const rootRef = ref(null);
 const renderSize = ref({ height: DEFAULT_RENDER_HEIGHT, width: DEFAULT_RENDER_WIDTH });
+const previewSize = ref({ height: DEFAULT_PREVIEW_HEIGHT, width: DEFAULT_PREVIEW_WIDTH });
+const isPixiReady = ref(false);
 let previewRenderer = null;
 let rendererGeneration = 0;
+let previewResizeObserver = null;
+let pixiTextureKey = "";
+let pendingRendererConfigKey = "";
+let renderedRendererConfigKey = "";
 
 const hasImage = computed(() => Boolean(props.backgroundImageUrl));
 const usesPixiEffect = computed(() => Boolean(
   hasImage.value
   && (props.backgroundEffect === BACKGROUND_EFFECT_BLUR || props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL)
+));
+const shouldRenderPixiHost = computed(() => Boolean(
+  props.active && hasImage.value
+));
+const shouldShowPixiHost = computed(() => Boolean(usesPixiEffect.value && isPixiReady.value));
+const isCanvasPreviewVisible = computed(() => !shouldShowPixiHost.value);
+const canvasDarkenStrength = computed(() => (
+  props.backgroundEffect === BACKGROUND_EFFECT_DIMMED ? props.backgroundDarkenStrength : 0
 ));
 const effectClass = computed(() => {
   if (props.backgroundEffect === BACKGROUND_EFFECT_DIMMED) return "dimmed";
@@ -73,53 +113,124 @@ const effectClass = computed(() => {
 const previewStyle = computed(() => ({
   "--settings-background-preview-base-color": normalizeBackgroundBaseColor(props.backgroundBaseColor),
   "--settings-background-preview-base-opacity": `${clampBackgroundBaseOpacity(props.backgroundBaseOpacity) / 100}`,
-  "--settings-background-preview-image": hasImage.value ? `url(${JSON.stringify(props.backgroundImageUrl)})` : "none",
-  "--settings-background-preview-image-opacity": `${hasImage.value ? clampBackgroundImageOpacity(props.backgroundImageOpacity) / 100 : 0}`,
-  "--settings-background-preview-darken-color": normalizeBackgroundDarkenColor(props.backgroundDarkenColor),
-  "--settings-background-preview-darken-opacity": `${hasImage.value && props.backgroundEffect === BACKGROUND_EFFECT_DIMMED ? clampBackgroundDarkenStrength(props.backgroundDarkenStrength) / 100 : 0}`,
 }));
 
 function readRenderSize() {
+  if (typeof window === "undefined") return;
   const width = Math.round(window.innerWidth || DEFAULT_RENDER_WIDTH);
   const height = Math.round(window.innerHeight || DEFAULT_RENDER_HEIGHT);
-  if (width === renderSize.value.width && height === renderSize.value.height) return;
-  renderSize.value = { height, width };
+  if (width !== renderSize.value.width || height !== renderSize.value.height) {
+    renderSize.value = { height, width };
+  }
+  const element = rootRef.value;
+  const elementWidth = Number(element?.offsetWidth || element?.clientWidth || 0);
+  const elementHeight = Number(element?.offsetHeight || element?.clientHeight || 0);
+  const previewWidth = Math.max(1, Math.round(elementWidth || DEFAULT_PREVIEW_WIDTH));
+  const previewHeight = Math.max(1, Math.round(elementHeight || DEFAULT_PREVIEW_HEIGHT));
+  if (previewWidth !== previewSize.value.width || previewHeight !== previewSize.value.height) {
+    previewSize.value = { height: previewHeight, width: previewWidth };
+  }
+}
+
+function makePixiTextureKey() {
+  return `${props.backgroundImagePath || ""}|${props.backgroundImageUrl || ""}`;
+}
+
+function resolveRendererEffect() {
+  return usesPixiEffect.value ? props.backgroundEffect : BACKGROUND_EFFECT_BLUR;
 }
 
 function getRendererConfig() {
   return {
     backgroundAcrylicParams: props.backgroundAcrylicParams,
     backgroundBlurStrength: props.backgroundBlurStrength,
-    backgroundEffect: props.backgroundEffect,
+    backgroundEffect: resolveRendererEffect(),
+    backgroundImageLayout: props.backgroundImageLayout,
     backgroundImageOpacity: props.backgroundImageOpacity,
     backgroundImagePath: props.backgroundImagePath,
+    backgroundImagePixelSize: props.backgroundImagePixelSize,
+    backgroundImagePrecomposed: false,
     backgroundImageUrl: props.backgroundImageUrl,
+    backgroundLayoutContext: props.backgroundLayoutContext,
     renderHeight: renderSize.value.height,
     renderWidth: renderSize.value.width,
   };
+}
+
+function makeRendererConfigKey(config) {
+  return JSON.stringify({
+    acrylicBrightness: config.backgroundAcrylicParams?.brightness,
+    acrylicContrast: config.backgroundAcrylicParams?.contrast,
+    acrylicNoise: config.backgroundAcrylicParams?.noise,
+    acrylicSaturation: config.backgroundAcrylicParams?.saturation,
+    acrylicSeed: config.backgroundAcrylicParams?.seed,
+    acrylicTintStrength: config.backgroundAcrylicParams?.tintStrength,
+    acrylicTintColor: config.backgroundAcrylicParams?.tintColor,
+    blurStrength: config.backgroundBlurStrength,
+    effect: config.backgroundEffect,
+    imageHeight: config.backgroundImagePixelSize?.height,
+    imageLayout: config.backgroundImageLayout,
+    imageOpacity: config.backgroundImageOpacity,
+    imagePath: config.backgroundImagePath,
+    imageUrl: config.backgroundImageUrl,
+    imageWidth: config.backgroundImagePixelSize?.width,
+    monitorPhysicalHeight: config.backgroundLayoutContext?.monitorPhysicalHeight,
+    monitorPhysicalWidth: config.backgroundLayoutContext?.monitorPhysicalWidth,
+    monitorPhysicalX: config.backgroundLayoutContext?.monitorPhysicalX,
+    monitorPhysicalY: config.backgroundLayoutContext?.monitorPhysicalY,
+    monitorScaleFactor: config.backgroundLayoutContext?.monitorScaleFactor,
+    renderHeight: config.renderHeight,
+    renderWidth: config.renderWidth,
+    windowPhysicalX: config.backgroundLayoutContext?.windowPhysicalX,
+    windowPhysicalY: config.backgroundLayoutContext?.windowPhysicalY,
+  });
 }
 
 function destroyPreviewRenderer() {
   rendererGeneration += 1;
   previewRenderer?.destroy();
   previewRenderer = null;
+  isPixiReady.value = false;
+  pixiTextureKey = "";
+  pendingRendererConfigKey = "";
+  renderedRendererConfigKey = "";
 }
 
 async function ensurePreviewRenderer() {
-  if (!usesPixiEffect.value) {
+  if (!props.active || !hasImage.value) {
     destroyPreviewRenderer();
     return;
   }
+
+  const nextTextureKey = makePixiTextureKey();
+  if (!previewRenderer || nextTextureKey !== pixiTextureKey) {
+    isPixiReady.value = false;
+  }
+  pixiTextureKey = nextTextureKey;
+
   await nextTick();
   const host = pixiHostRef.value;
   if (!host) return;
+  const config = getRendererConfig();
+  const configKey = makeRendererConfigKey(config);
+  if (usesPixiEffect.value && renderedRendererConfigKey !== configKey) {
+    isPixiReady.value = false;
+  }
   if (previewRenderer) {
-    previewRenderer.setConfig(getRendererConfig());
+    pendingRendererConfigKey = configKey;
+    previewRenderer.setConfig(config);
     return;
   }
 
   const generation = ++rendererGeneration;
-  const renderer = new BackgroundEffectPreviewRenderer(host);
+  const renderer = new BackgroundEffectPreviewRenderer(host, {
+    onRender: () => {
+      if (generation === rendererGeneration && previewRenderer === renderer) {
+        renderedRendererConfigKey = pendingRendererConfigKey;
+        isPixiReady.value = true;
+      }
+    },
+  });
   previewRenderer = renderer;
   try {
     await renderer.init();
@@ -127,7 +238,8 @@ async function ensurePreviewRenderer() {
       renderer.destroy();
       return;
     }
-    renderer.setConfig(getRendererConfig());
+    pendingRendererConfigKey = configKey;
+    renderer.setConfig(config);
   } catch (error) {
     if (generation === rendererGeneration && previewRenderer === renderer) {
       destroyPreviewRenderer();
@@ -137,22 +249,54 @@ async function ensurePreviewRenderer() {
 }
 
 onMounted(() => {
-  readRenderSize();
-  window.addEventListener("resize", readRenderSize);
+  observePreviewSize();
+  if (typeof window !== "undefined") {
+    window.addEventListener("resize", readRenderSize);
+  }
   void ensurePreviewRenderer();
 });
 
 onBeforeUnmount(() => {
   destroyPreviewRenderer();
-  window.removeEventListener("resize", readRenderSize);
+  disconnectPreviewResizeObserver();
+  if (typeof window !== "undefined") {
+    window.removeEventListener("resize", readRenderSize);
+  }
 });
+
+function disconnectPreviewResizeObserver() {
+  previewResizeObserver?.disconnect?.();
+  previewResizeObserver = null;
+}
+
+function observePreviewSize() {
+  disconnectPreviewResizeObserver();
+  const element = rootRef.value;
+  if (!element || typeof ResizeObserver === "undefined") {
+    readRenderSize();
+    return;
+  }
+  previewResizeObserver = new ResizeObserver(readRenderSize);
+  previewResizeObserver.observe(element);
+  readRenderSize();
+}
 
 watch(
   () => [
     usesPixiEffect.value,
     props.backgroundImagePath,
+    props.backgroundImagePixelSize?.width,
+    props.backgroundImagePixelSize?.height,
     props.backgroundImageUrl,
+    props.backgroundLayoutContext?.monitorPhysicalX,
+    props.backgroundLayoutContext?.monitorPhysicalY,
+    props.backgroundLayoutContext?.monitorPhysicalWidth,
+    props.backgroundLayoutContext?.monitorPhysicalHeight,
+    props.backgroundLayoutContext?.monitorScaleFactor,
+    props.backgroundLayoutContext?.windowPhysicalX,
+    props.backgroundLayoutContext?.windowPhysicalY,
     props.backgroundEffect,
+    props.backgroundImageLayout,
     props.backgroundImageOpacity,
     props.backgroundBlurStrength,
     props.backgroundAcrylicParams?.brightness,
@@ -166,6 +310,8 @@ watch(
     props.backgroundAcrylicParams?.tintColor?.[2],
     renderSize.value.width,
     renderSize.value.height,
+    previewSize.value.width,
+    previewSize.value.height,
   ],
   ensurePreviewRenderer,
   { immediate: true }

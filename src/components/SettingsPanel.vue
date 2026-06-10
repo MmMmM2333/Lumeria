@@ -278,15 +278,31 @@
                       恢复默认
                     </button>
                   </div>
-                  <div
-                    :class="cx('settings-background-preview', !hasDraftBackgroundImagePreview && 'settings-background-preview-empty')"
-                    :style="backgroundLayerPreviewStyle"
-                    aria-label="图片层预览"
-                  >
-                    <span class="settings-background-preview-base" aria-hidden="true" />
-                    <span v-if="hasDraftBackgroundImagePreview" class="settings-background-preview-image" aria-hidden="true" />
-                    <span v-else class="settings-background-preview-label">{{ backgroundLayerPreviewLabel }}</span>
+                  <div v-if="doesDraftBackgroundUseImage" class="settings-background-image-layout-controls">
+                    <span class="settings-acrylic-row-label">显示方式</span>
+                    <div class="settings-segmented-control" aria-label="背景图片显示方式">
+                      <button
+                        v-for="item in backgroundImageLayoutOptions"
+                        :key="item.layout"
+                        type="button"
+                        :class="cx('settings-segmented-button', state.draftBackgroundImageLayout.value === item.layout && 'settings-segmented-button-active')"
+                        @click="state.setDraftBackgroundImageLayout(item.layout)"
+                      >
+                        {{ item.label }}
+                      </button>
+                    </div>
                   </div>
+                  <BackgroundImagePreviewCanvas
+                    aria-label="图片层预览"
+                    :background-base-color="state.draftBackgroundBaseColor.value"
+                    :background-base-opacity="state.draftBackgroundBaseOpacity.value"
+                    :background-image-layout="state.draftBackgroundImageLayout.value"
+                    :background-image-opacity="state.draftBackgroundImageOpacity.value"
+                    :background-image-pixel-size="draftBackgroundImagePixelSize"
+                    :background-image-url="hasDraftBackgroundImagePreview ? state.draftBackgroundImageUrl.value : null"
+                    :background-layout-context="backgroundLayoutContext"
+                    :empty-label="backgroundLayerPreviewLabel"
+                  />
                 </div>
               </div>
               <div class="settings-field settings-field-wide settings-background-field">
@@ -486,6 +502,7 @@
                     </div>
                   </div>
                   <BackgroundEffectPreview
+                    :active="state.isSettingsPanelOpen.value && activeSettingsTab === 'interface'"
                     :background-acrylic-params="draftBackgroundAcrylicPreviewParams"
                     :background-base-color="state.draftBackgroundBaseColor.value"
                     :background-base-opacity="state.draftBackgroundBaseOpacity.value"
@@ -493,9 +510,12 @@
                     :background-darken-color="state.draftBackgroundDarkenColor.value"
                     :background-darken-strength="state.draftBackgroundDarkenStrength.value"
                     :background-effect="state.draftBackgroundEffect.value"
+                    :background-image-layout="state.draftBackgroundImageLayout.value"
                     :background-image-opacity="state.draftBackgroundImageOpacity.value"
                     :background-image-path="state.draftBackgroundImagePath.value"
+                    :background-image-pixel-size="draftBackgroundImagePixelSize"
                     :background-image-url="hasDraftBackgroundImagePreview ? state.draftBackgroundImageUrl.value : null"
+                    :background-layout-context="backgroundLayoutContext"
                     :empty-label="backgroundEffectPreviewLabel"
                   />
                 </div>
@@ -793,7 +813,9 @@
 import { Motion } from "motion-v";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import BackgroundEffectPreview from "./BackgroundEffectPreview.vue";
+import BackgroundImagePreviewCanvas from "./BackgroundImagePreviewCanvas.vue";
 import { ChevronDownIcon, ChevronUpIcon } from "./Icons.js";
+import { useBackgroundImagePixelSize } from "../composables/useBackgroundImagePixelSize.js";
 import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "../composables/launchpadConstants.js";
 import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
@@ -812,6 +834,11 @@ import {
   BACKGROUND_BASE_OPACITY_MAX,
   BACKGROUND_BASE_OPACITY_MIN,
   BACKGROUND_BASE_OPACITY_STEP,
+  BACKGROUND_IMAGE_LAYOUT_CENTER,
+  BACKGROUND_IMAGE_LAYOUT_FILL,
+  BACKGROUND_IMAGE_LAYOUT_FIT,
+  BACKGROUND_IMAGE_LAYOUT_STRETCH,
+  BACKGROUND_IMAGE_LAYOUT_TILE,
   BACKGROUND_IMAGE_OPACITY_MAX,
   BACKGROUND_IMAGE_OPACITY_MIN,
   BACKGROUND_IMAGE_OPACITY_STEP,
@@ -819,11 +846,8 @@ import {
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
   BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
   backgroundSourceUsesImage,
-  clampBackgroundBaseOpacity,
-  clampBackgroundImageOpacity,
   normalizeBackgroundAcrylicAppearance,
   normalizeBackgroundAcrylicParams,
-  normalizeBackgroundBaseColor,
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_APPEARANCE_LIGHT,
   WINDOW_EFFECT_MATERIAL_NONE,
@@ -837,6 +861,7 @@ import { cx } from "../domain/launchpadLayout.js";
 import { rgbArrayToHex } from "../rendering/pixi/background/acrylicParams.js";
 
 const props = defineProps({
+  backgroundLayoutContext: { type: Object, default: null },
   state: { type: Object, required: true },
 });
 
@@ -889,6 +914,13 @@ const windowEffectAppearances = [
   { appearance: WINDOW_EFFECT_APPEARANCE_LIGHT, appearanceLabel: "浅色" },
   { appearance: WINDOW_EFFECT_APPEARANCE_DARK, appearanceLabel: "深色" },
 ];
+const backgroundImageLayoutOptions = [
+  { layout: BACKGROUND_IMAGE_LAYOUT_FILL, label: "填充" },
+  { layout: BACKGROUND_IMAGE_LAYOUT_FIT, label: "适应" },
+  { layout: BACKGROUND_IMAGE_LAYOUT_STRETCH, label: "拉伸" },
+  { layout: BACKGROUND_IMAGE_LAYOUT_TILE, label: "平铺" },
+  { layout: BACKGROUND_IMAGE_LAYOUT_CENTER, label: "居中" },
+];
 const activeWindowEffectAppearance = computed(() => (
   windowEffectAppearances.find((item) => item.appearance === props.state.draftWindowEffectAppearance.value)
   || windowEffectAppearances[1]
@@ -935,6 +967,9 @@ const draftBackgroundImageName = computed(() => {
 const hasDraftBackgroundImagePreview = computed(() => Boolean(
   doesDraftBackgroundUseImage.value && props.state.draftBackgroundImageUrl.value
 ));
+const draftBackgroundImagePixelSize = useBackgroundImagePixelSize(() => (
+  hasDraftBackgroundImagePreview.value ? props.state.draftBackgroundImageUrl.value : null
+));
 const backgroundLayerPreviewLabel = computed(() => {
   if (!doesDraftBackgroundUseImage.value) return "无图片";
   return isDraftWindowsWallpaper.value ? "等待壁纸" : "选择图片";
@@ -942,17 +977,6 @@ const backgroundLayerPreviewLabel = computed(() => {
 const backgroundEffectPreviewLabel = computed(() => (
   isDraftWindowsWallpaper.value ? "等待壁纸" : "选择图片后可用"
 ));
-const backgroundPreviewImageValue = computed(() => (
-  hasDraftBackgroundImagePreview.value
-    ? backgroundImageUrlStyle(props.state.draftBackgroundImageUrl.value)
-    : "none"
-));
-const backgroundPreviewBaseVariables = computed(() => ({
-  "--settings-background-preview-base-color": normalizeBackgroundBaseColor(props.state.draftBackgroundBaseColor.value),
-  "--settings-background-preview-base-opacity": `${clampBackgroundBaseOpacity(props.state.draftBackgroundBaseOpacity.value) / 100}`,
-  "--settings-background-preview-image": backgroundPreviewImageValue.value,
-  "--settings-background-preview-image-opacity": `${hasDraftBackgroundImagePreview.value ? clampBackgroundImageOpacity(props.state.draftBackgroundImageOpacity.value) / 100 : 0}`,
-}));
 const effectiveDraftBackgroundAcrylicAppearance = computed(() => {
   const appearance = normalizeBackgroundAcrylicAppearance(props.state.draftBackgroundAcrylicAppearance.value);
   return appearance === BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM ? systemAcrylicAppearance.value : appearance;
@@ -964,9 +988,6 @@ const draftBackgroundAcrylicPreviewParams = computed(() => {
     : props.state.draftBackgroundAcrylicDarkParams.value;
   return normalizeBackgroundAcrylicParams(params, appearance);
 });
-const backgroundLayerPreviewStyle = computed(() => ({
-  ...backgroundPreviewBaseVariables.value,
-}));
 const activeAcrylicParams = computed(() => (
   activeAcrylicParamsProfile.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
     ? props.state.draftBackgroundAcrylicLightParams.value
@@ -987,7 +1008,8 @@ const settingsTabs = [
 ];
 
 onMounted(() => {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+  if (typeof window === "undefined") return;
+  if (typeof window.matchMedia !== "function") return;
   systemAppearanceQuery = window.matchMedia("(prefers-color-scheme: light)");
   updateSystemAcrylicAppearance();
   if (typeof systemAppearanceQuery.addEventListener === "function") {
@@ -1041,10 +1063,6 @@ function resolveSystemAcrylicAppearance() {
 
 function updateSystemAcrylicAppearance() {
   systemAcrylicAppearance.value = resolveSystemAcrylicAppearance();
-}
-
-function backgroundImageUrlStyle(url) {
-  return `url(${JSON.stringify(url)})`;
 }
 
 function selectWindowEffectPreview(material, appearance) {

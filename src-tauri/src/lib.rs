@@ -87,6 +87,18 @@ struct CachedCustomIconResult {
     icon_data_url: String,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BackgroundLayoutContext {
+    monitor_physical_x: i32,
+    monitor_physical_y: i32,
+    monitor_physical_width: u32,
+    monitor_physical_height: u32,
+    monitor_scale_factor: f64,
+    window_physical_x: i32,
+    window_physical_y: i32,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LaunchTargetCheckRequest {
@@ -179,6 +191,33 @@ fn get_desktop_wallpaper_background(
     app: AppHandle,
 ) -> Result<Option<PickedBackgroundImage>, String> {
     get_native_desktop_wallpaper_background(&app)
+}
+
+#[tauri::command]
+fn get_background_layout_context(
+    app: AppHandle,
+) -> Result<Option<BackgroundLayoutContext>, String> {
+    let Some(window) = app.get_webview_window("main") else {
+        return Ok(None);
+    };
+    let Some(monitor) = window
+        .current_monitor()
+        .map_err(|error| error.to_string())?
+    else {
+        return Ok(None);
+    };
+    let monitor_position = monitor.position();
+    let monitor_size = monitor.size();
+    let window_position = window.outer_position().map_err(|error| error.to_string())?;
+    Ok(Some(BackgroundLayoutContext {
+        monitor_physical_x: monitor_position.x,
+        monitor_physical_y: monitor_position.y,
+        monitor_physical_width: monitor_size.width,
+        monitor_physical_height: monitor_size.height,
+        monitor_scale_factor: monitor.scale_factor(),
+        window_physical_x: window_position.x,
+        window_physical_y: window_position.y,
+    }))
 }
 
 #[tauri::command]
@@ -742,6 +781,7 @@ pub fn run() {
             pick_launch_file,
             pick_background_image,
             get_desktop_wallpaper_background,
+            get_background_layout_context,
             load_cached_background_image_data_url,
             pick_scan_root_directory,
             load_app_icon_choices,

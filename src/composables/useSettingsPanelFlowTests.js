@@ -5,6 +5,9 @@ import {
   BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
   BACKGROUND_EFFECT_DIMMED,
   BACKGROUND_EFFECT_NONE,
+  BACKGROUND_IMAGE_LAYOUT_CENTER,
+  BACKGROUND_IMAGE_LAYOUT_FILL,
+  BACKGROUND_IMAGE_LAYOUT_TILE,
   BACKGROUND_SOURCE_CUSTOM_IMAGE,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
   DEFAULT_BACKGROUND_BASE_COLOR,
@@ -58,6 +61,7 @@ function createSettingsPanelFlowHarness(overrides = {}) {
     backgroundSource: ref(overrides.backgroundSource ?? BACKGROUND_SOURCE_CUSTOM_IMAGE),
     backgroundEffect: ref(overrides.backgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     backgroundImageOpacity: ref(overrides.backgroundImageOpacity ?? 58),
+    backgroundImageLayout: ref(overrides.backgroundImageLayout ?? BACKGROUND_IMAGE_LAYOUT_TILE),
     backgroundBlurStrength: ref(overrides.backgroundBlurStrength ?? 76),
     backgroundDarkenColor: ref(overrides.backgroundDarkenColor ?? "#223344"),
     backgroundDarkenStrength: ref(overrides.backgroundDarkenStrength ?? 62),
@@ -81,6 +85,7 @@ function createSettingsPanelFlowHarness(overrides = {}) {
     draftBackgroundSource: ref(overrides.draftBackgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
     draftBackgroundEffect: ref(overrides.draftBackgroundEffect ?? BACKGROUND_EFFECT_NONE),
     draftBackgroundImageOpacity: ref(overrides.draftBackgroundImageOpacity ?? 12),
+    draftBackgroundImageLayout: ref(overrides.draftBackgroundImageLayout ?? BACKGROUND_IMAGE_LAYOUT_FILL),
     draftBackgroundBlurStrength: ref(overrides.draftBackgroundBlurStrength ?? DEFAULT_BACKGROUND_BLUR_STRENGTH),
     draftBackgroundDarkenColor: ref(overrides.draftBackgroundDarkenColor ?? DEFAULT_BACKGROUND_DARKEN_COLOR),
     draftBackgroundDarkenStrength: ref(overrides.draftBackgroundDarkenStrength ?? DEFAULT_BACKGROUND_DARKEN_STRENGTH),
@@ -131,6 +136,7 @@ export function runSettingsPanelFlowTests() {
     assert(state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "opening settings should reset background source draft");
     assert(state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "opening settings should reset background effect draft");
     assert(state.draftBackgroundImageOpacity.value === 58, "opening settings should reset background opacity draft");
+    assert(state.draftBackgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_TILE, "opening settings should reset background image layout draft");
     assert(state.draftBackgroundBlurStrength.value === 76, "opening settings should reset background blur strength draft");
     assert(state.draftBackgroundDarkenColor.value === "#223344", "opening settings should reset background darken color draft");
     assert(state.draftBackgroundDarkenStrength.value === 62, "opening settings should reset background darken strength draft");
@@ -155,6 +161,7 @@ export function runSettingsPanelFlowTests() {
     state.draftBackgroundSource.value = BACKGROUND_SOURCE_SYSTEM_MATERIAL;
     state.draftBackgroundEffect.value = BACKGROUND_EFFECT_NONE;
     state.draftBackgroundImageOpacity.value = 4;
+    state.draftBackgroundImageLayout.value = BACKGROUND_IMAGE_LAYOUT_CENTER;
     state.draftBackgroundBlurStrength.value = 5;
     state.draftBackgroundDarkenColor.value = "#666666";
     state.draftBackgroundDarkenStrength.value = 6;
@@ -179,6 +186,7 @@ export function runSettingsPanelFlowTests() {
     assert(state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "closing settings should discard background source draft");
     assert(state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "closing settings should discard background effect draft");
     assert(state.draftBackgroundImageOpacity.value === 58, "closing settings should discard background opacity draft");
+    assert(state.draftBackgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_TILE, "closing settings should discard background image layout draft");
     assert(state.draftBackgroundBlurStrength.value === 76, "closing settings should discard background blur strength draft");
     assert(state.draftBackgroundDarkenColor.value === "#223344", "closing settings should discard background darken color draft");
     assert(state.draftBackgroundDarkenStrength.value === 62, "closing settings should discard background darken strength draft");

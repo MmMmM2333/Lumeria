@@ -45,6 +45,7 @@ import {
   clampBackgroundBlurStrength,
   clampBackgroundDarkenStrength,
   clampBackgroundImageOpacity,
+  normalizeBackgroundImageLayout,
   normalizeBackgroundAcrylicAppearance,
   normalizeBackgroundAcrylicParams,
   normalizeBackgroundBaseColor,
@@ -117,6 +118,7 @@ export function useLaunchpadNative(options) {
     const nextBackgroundBaseColor = normalizeBackgroundBaseColor(settings.backgroundBaseColor);
     const nextBackgroundBaseOpacity = clampBackgroundBaseOpacity(settings.backgroundBaseOpacity);
     const nextBackgroundImageOpacity = clampBackgroundImageOpacity(settings.backgroundImageOpacity);
+    const nextBackgroundImageLayout = normalizeBackgroundImageLayout(settings.backgroundImageLayout);
     const nextBackgroundBlurStrength = clampBackgroundBlurStrength(settings.backgroundBlurStrength);
     const nextBackgroundDarkenStrength = clampBackgroundDarkenStrength(settings.backgroundDarkenStrength);
     const nextBackgroundDarkenColor = normalizeBackgroundDarkenColor(settings.backgroundDarkenColor);
@@ -156,6 +158,7 @@ export function useLaunchpadNative(options) {
     options.backgroundBaseColor.value = nextBackgroundBaseColor;
     options.backgroundBaseOpacity.value = nextBackgroundBaseOpacity;
     options.backgroundImageOpacity.value = nextBackgroundImageOpacity;
+    options.backgroundImageLayout.value = nextBackgroundImageLayout;
     options.backgroundBlurStrength.value = nextBackgroundBlurStrength;
     options.backgroundDarkenStrength.value = nextBackgroundDarkenStrength;
     options.backgroundDarkenColor.value = nextBackgroundDarkenColor;
@@ -169,6 +172,7 @@ export function useLaunchpadNative(options) {
     options.draftBackgroundBaseColor.value = nextBackgroundBaseColor;
     options.draftBackgroundBaseOpacity.value = nextBackgroundBaseOpacity;
     options.draftBackgroundImageOpacity.value = nextBackgroundImageOpacity;
+    options.draftBackgroundImageLayout.value = nextBackgroundImageLayout;
     options.draftBackgroundBlurStrength.value = nextBackgroundBlurStrength;
     options.draftBackgroundDarkenStrength.value = nextBackgroundDarkenStrength;
     options.draftBackgroundDarkenColor.value = nextBackgroundDarkenColor;
@@ -224,6 +228,7 @@ export function useLaunchpadNative(options) {
       backgroundSource: options.backgroundSource.value,
       backgroundEffect: options.backgroundEffect.value,
       backgroundImageOpacity: options.backgroundImageOpacity.value,
+      backgroundImageLayout: options.backgroundImageLayout.value,
       backgroundBlurStrength: options.backgroundBlurStrength.value,
       backgroundDarkenStrength: options.backgroundDarkenStrength.value,
       backgroundDarkenColor: options.backgroundDarkenColor.value,

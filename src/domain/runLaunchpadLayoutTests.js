@@ -18,6 +18,7 @@ import { runSettingsPanelFlowTests } from "../composables/useSettingsPanelFlowTe
 import { runLaunchpadSurfaceInteractionsTests } from "../composables/useLaunchpadSurfaceInteractionsTests.js";
 import { runLaunchpadViewStateTests } from "../composables/useLaunchpadViewStateTests.js";
 import { runLaunchpadViewAdaptersTests } from "../composables/useLaunchpadViewAdaptersTests.js";
+import { runBackgroundImageLayoutTests } from "./backgroundImageLayoutTests.js";
 import { runLaunchpadDataTests } from "./launchpadDataTests.js";
 import { runIconSourceTests } from "./iconSourceTests.js";
 import { runLaunchpadHelperTests } from "./launchpadLayoutTests.js";
@@ -89,6 +90,7 @@ runLaunchpadHelperTests({
   gridCols: state.gridCols,
 });
 runLaunchpadDataTests();
+runBackgroundImageLayoutTests();
 runIconSourceTests();
 await runLaunchpadDragTests();
 runLaunchpadControllerHelpersTests();

@@ -863,6 +863,14 @@ body {
   flex-wrap: wrap;
 }
 
+.settings-background-image-layout-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .settings-acrylic-controls {
   display: grid;
   justify-items: end;
@@ -1003,11 +1011,11 @@ body {
 .settings-background-preview-image {
   z-index: 2;
   background-image: var(--settings-background-preview-image, none);
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: cover;
+  background-position: var(--settings-background-preview-image-position, center);
+  background-repeat: var(--settings-background-preview-image-repeat, no-repeat);
+  background-size: var(--settings-background-preview-image-size, cover);
   opacity: var(--settings-background-preview-image-opacity, 1);
-  transform: scale(1.02);
+  transform: var(--settings-background-preview-image-transform, scale(1.02));
   transition: filter 140ms ease, opacity 140ms ease, transform 140ms ease;
 }
 
@@ -1023,6 +1031,15 @@ body {
   overflow: hidden;
 }
 
+.settings-background-effect-preview-pixi-loading .settings-background-preview-pixi-host {
+  opacity: 0;
+}
+
+.settings-background-preview-pixi-host-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .settings-background-preview-canvas {
   position: absolute;
   left: 50%;
@@ -1031,6 +1048,24 @@ body {
   width: 100%;
   height: 100%;
   transform: translate(-50%, -50%);
+}
+
+.settings-background-preview-canvas-layer {
+  z-index: 2;
+  pointer-events: none;
+}
+
+.settings-background-effect-preview-fallback {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  width: 100%;
+  max-width: none;
+  aspect-ratio: auto;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  box-shadow: none;
 }
 
 .settings-background-preview-label {
@@ -2383,7 +2418,8 @@ body {
   .settings-background-field { grid-template-columns: 1fr; align-items: flex-start; }
   .settings-background-controls { justify-items: start; width: 100%; }
   .settings-background-mode-row,
-  .settings-background-image-controls { justify-content: flex-start; width: 100%; }
+  .settings-background-image-controls,
+  .settings-background-image-layout-controls { justify-content: flex-start; width: 100%; }
   .settings-acrylic-controls { justify-items: start; width: 100%; }
   .settings-acrylic-row,
   .settings-acrylic-params { justify-content: flex-start; width: 100%; }

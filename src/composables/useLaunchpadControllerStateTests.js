@@ -15,6 +15,7 @@ import {
   DEFAULT_BACKGROUND_BLUR_STRENGTH,
   DEFAULT_BACKGROUND_DARKEN_COLOR,
   DEFAULT_BACKGROUND_DARKEN_STRENGTH,
+  DEFAULT_BACKGROUND_IMAGE_LAYOUT,
   DEFAULT_BACKGROUND_IMAGE_OPACITY,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
@@ -42,6 +43,7 @@ export function runLaunchpadControllerStateTests() {
   assert(state.backgroundBaseColor.value === DEFAULT_BACKGROUND_BASE_COLOR, "background base color should use the default");
   assert(state.backgroundBaseOpacity.value === DEFAULT_BACKGROUND_BASE_OPACITY, "background base opacity should use the default");
   assert(state.backgroundImageOpacity.value === DEFAULT_BACKGROUND_IMAGE_OPACITY, "background image opacity should use the default");
+  assert(state.backgroundImageLayout.value === DEFAULT_BACKGROUND_IMAGE_LAYOUT, "background image layout should use the default");
   assert(state.backgroundBlurStrength.value === DEFAULT_BACKGROUND_BLUR_STRENGTH, "background blur strength should use the default");
   assert(state.backgroundDarkenColor.value === DEFAULT_BACKGROUND_DARKEN_COLOR, "background darken color should use the default");
   assert(state.backgroundDarkenStrength.value === DEFAULT_BACKGROUND_DARKEN_STRENGTH, "background darken strength should use the default");
@@ -55,6 +57,7 @@ export function runLaunchpadControllerStateTests() {
   assert(state.draftBackgroundBaseColor.value === DEFAULT_BACKGROUND_BASE_COLOR, "draft background base color should use the default");
   assert(state.draftBackgroundBaseOpacity.value === DEFAULT_BACKGROUND_BASE_OPACITY, "draft background base opacity should use the default");
   assert(state.draftBackgroundImageOpacity.value === DEFAULT_BACKGROUND_IMAGE_OPACITY, "draft background image opacity should use the default");
+  assert(state.draftBackgroundImageLayout.value === DEFAULT_BACKGROUND_IMAGE_LAYOUT, "draft background image layout should use the default");
   assert(state.draftBackgroundBlurStrength.value === DEFAULT_BACKGROUND_BLUR_STRENGTH, "draft background blur strength should use the default");
   assert(state.draftBackgroundDarkenColor.value === DEFAULT_BACKGROUND_DARKEN_COLOR, "draft background darken color should use the default");
   assert(state.draftBackgroundDarkenStrength.value === DEFAULT_BACKGROUND_DARKEN_STRENGTH, "draft background darken strength should use the default");

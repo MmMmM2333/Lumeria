@@ -4,6 +4,8 @@ import {
   BACKGROUND_EFFECT_BLUR,
   BACKGROUND_EFFECT_DIMMED,
   BACKGROUND_EFFECT_NONE,
+  BACKGROUND_IMAGE_LAYOUT_FIT,
+  BACKGROUND_IMAGE_LAYOUT_TILE,
   BACKGROUND_SOURCE_CUSTOM_IMAGE,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
 } from "./useLaunchpadSettingsConfig.js";
@@ -20,6 +22,7 @@ function createViewState(overrides = {}) {
     backgroundBaseOpacity: ref(overrides.backgroundBaseOpacity ?? 28),
     backgroundSource: ref(overrides.backgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
     backgroundEffect: ref(overrides.backgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
+    backgroundImageLayout: ref(overrides.backgroundImageLayout ?? undefined),
     backgroundImageOpacity: ref(overrides.backgroundImageOpacity ?? 46),
     backgroundDarkenColor: ref(overrides.backgroundDarkenColor ?? "#1c1c1c"),
     backgroundDarkenStrength: ref(overrides.backgroundDarkenStrength ?? 28),
@@ -67,6 +70,10 @@ export function runLaunchpadViewStateTests() {
   assert(tintedBackground.view.rootStyle.value["--launchpad-background-base-opacity"] === "0.74", "root style should expose configured base opacity");
   const customImageBackground = createViewState({ backgroundImageUrl: "asset://C:/Images/wallpaper.webp" });
   assert(customImageBackground.view.backgroundImageStyle.value.backgroundImage === "url(\"asset://C:/Images/wallpaper.webp\")", "background image style should expose custom asset urls");
+  const fitImageBackground = createViewState({ backgroundImageLayout: BACKGROUND_IMAGE_LAYOUT_FIT, backgroundImageUrl: "asset://C:/Images/fit.webp" });
+  assert(fitImageBackground.view.backgroundImageStyle.value.backgroundSize === "contain", "fit background image layout should use contain sizing");
+  const tiledImageBackground = createViewState({ backgroundImageLayout: BACKGROUND_IMAGE_LAYOUT_TILE, backgroundImageUrl: "asset://C:/Images/tile.webp" });
+  assert(tiledImageBackground.view.backgroundImageStyle.value.backgroundRepeat === "repeat", "tile background image layout should repeat the image");
   const unmaskedImageBackground = createViewState({ backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE, backgroundEffect: BACKGROUND_EFFECT_NONE });
   assert(unmaskedImageBackground.view.rootStyle.value["--launchpad-background-overlay-opacity"] === "0", "none background effect should hide the overlay");
   const dimmedImageBackground = createViewState({ backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE, backgroundDarkenColor: "#456", backgroundDarkenStrength: 64 });
