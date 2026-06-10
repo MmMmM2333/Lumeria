@@ -1,6 +1,9 @@
 use serde::Serialize;
 
 #[cfg(target_os = "windows")]
+use std::{sync::mpsc, thread, time::Duration};
+
+#[cfg(target_os = "windows")]
 use windows::{
     core::Interface,
     Win32::{
@@ -25,6 +28,7 @@ use windows::{
                 DXGI_OUTDUPL_FRAME_INFO,
             },
         },
+        System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED},
     },
 };
 
@@ -96,7 +100,29 @@ pub(crate) struct LiveDesktopRuntime {
 #[derive(Debug)]
 struct LiveDesktopRendererSession {
     renderer_probe: LiveDesktopRendererProbe,
+    #[cfg(target_os = "windows")]
+    stop_sender: Option<mpsc::Sender<()>>,
+    #[cfg(target_os = "windows")]
+    worker: Option<thread::JoinHandle<()>>,
 }
+
+#[cfg(target_os = "windows")]
+struct LiveDesktopRendererStartup {
+    renderer_probe: LiveDesktopRendererProbe,
+    resources: LiveDesktopRendererResources,
+}
+
+#[cfg(target_os = "windows")]
+struct LiveDesktopRendererResources {
+    _com: ComApartment,
+    _d3d_device: ID3D11Device,
+    _composition_device: IDCompositionDevice,
+    _target: IDCompositionTarget,
+    _root_visual: IDCompositionVisual,
+}
+
+#[cfg(target_os = "windows")]
+struct ComApartment;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -126,10 +152,9 @@ impl LiveDesktopRuntime {
         &mut self,
         window_handle: LiveDesktopWindowHandle,
     ) -> LiveDesktopRuntimeStatus {
-        self.start_with_probes(
-            probe_live_desktop_capture(),
-            probe_live_desktop_renderer_for_window(window_handle),
-        )
+        self.start_with_renderer_session(probe_live_desktop_capture(), || {
+            LiveDesktopRendererSession::start_for_window(window_handle)
+        })
     }
 
     pub(crate) fn stop(&mut self) -> LiveDesktopRuntimeStatus {
@@ -141,14 +166,29 @@ impl LiveDesktopRuntime {
         self.status()
     }
 
+    #[cfg(test)]
     fn start_with_probes(
         &mut self,
         capture_probe: LiveDesktopCaptureProbe,
         renderer_probe: LiveDesktopRendererProbe,
     ) -> LiveDesktopRuntimeStatus {
+        self.start_with_renderer_session(capture_probe, || {
+            LiveDesktopRendererSession::create_for_probe(renderer_probe)
+        })
+    }
+
+    fn start_with_renderer_session<F>(
+        &mut self,
+        capture_probe: LiveDesktopCaptureProbe,
+        make_renderer_session: F,
+    ) -> LiveDesktopRuntimeStatus
+    where
+        F: FnOnce() -> Result<LiveDesktopRendererSession, LiveDesktopRendererProbe>,
+    {
         if self.status.phase == "running" || self.status.phase == "starting" {
             return self.status();
         }
+        self.renderer_session = None;
 
         let generation = self.status.generation + 1;
         self.status = LiveDesktopRuntimeStatus {
@@ -177,7 +217,7 @@ impl LiveDesktopRuntime {
             return self.status();
         }
 
-        let renderer_session = match LiveDesktopRendererSession::create(renderer_probe) {
+        let renderer_session = match make_renderer_session() {
             Ok(session) => session,
             Err(probe) => {
                 self.status =
@@ -185,10 +225,16 @@ impl LiveDesktopRuntime {
                 return self.status();
             }
         };
-        let running_detail = format!(
-            "Live desktop runtime is running: {}",
-            renderer_session.renderer_probe.detail
-        );
+        let renderer_probe = renderer_session.renderer_probe.clone();
+        if !renderer_probe.supports_native_renderer {
+            self.status = LiveDesktopRuntimeStatus::failed(
+                generation,
+                renderer_probe.reason,
+                renderer_probe.detail,
+            );
+            return self.status();
+        }
+        let running_detail = format!("Live desktop runtime is running: {}", renderer_probe.detail);
         self.renderer_session = Some(renderer_session);
         self.status = LiveDesktopRuntimeStatus {
             phase: "running",
@@ -202,11 +248,111 @@ impl LiveDesktopRuntime {
 }
 
 impl LiveDesktopRendererSession {
-    fn create(renderer_probe: LiveDesktopRendererProbe) -> Result<Self, LiveDesktopRendererProbe> {
-        if !renderer_probe.supports_direct_composition || !renderer_probe.supports_native_renderer {
+    #[cfg(target_os = "windows")]
+    fn start_for_window(
+        window_handle: LiveDesktopWindowHandle,
+    ) -> Result<Self, LiveDesktopRendererProbe> {
+        let (ready_sender, ready_receiver) = mpsc::channel();
+        let (stop_sender, stop_receiver) = mpsc::channel();
+        let window_handle_value = window_handle.0 as isize;
+        let worker = thread::spawn(move || {
+            let window_handle = HWND(window_handle_value as _);
+            match unsafe { create_live_desktop_renderer_resources(window_handle) } {
+                Ok(startup) => {
+                    let renderer_probe = startup.renderer_probe.clone();
+                    if ready_sender.send(Ok(renderer_probe)).is_ok() {
+                        let _resources = startup.resources;
+                        let _ = stop_receiver.recv();
+                    }
+                }
+                Err(probe) => {
+                    let _ = ready_sender.send(Err(probe));
+                }
+            }
+        });
+
+        let renderer_probe = match ready_receiver.recv_timeout(Duration::from_secs(2)) {
+            Ok(Ok(probe)) => probe,
+            Ok(Err(probe)) => {
+                let _ = worker.join();
+                return Err(probe);
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                let _ = stop_sender.send(());
+                return Err(LiveDesktopRendererProbe::unavailable(
+                    "nativeRendererInitializationTimedOut",
+                    "DirectComposition renderer worker did not initialize within 2 seconds",
+                ));
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                let _ = worker.join();
+                return Err(LiveDesktopRendererProbe::unavailable(
+                    "nativeRendererWorkerExited",
+                    "DirectComposition renderer worker exited before reporting initialization",
+                ));
+            }
+        };
+
+        Ok(Self {
+            renderer_probe,
+            stop_sender: Some(stop_sender),
+            worker: Some(worker),
+        })
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn start_for_window(
+        _window_handle: LiveDesktopWindowHandle,
+    ) -> Result<Self, LiveDesktopRendererProbe> {
+        Err(probe_live_desktop_renderer())
+    }
+
+    #[cfg(test)]
+    fn create_for_probe(
+        renderer_probe: LiveDesktopRendererProbe,
+    ) -> Result<Self, LiveDesktopRendererProbe> {
+        if !renderer_probe.supports_direct_composition
+            || !renderer_probe.supports_window_target
+            || !renderer_probe.supports_root_visual
+        {
             return Err(renderer_probe);
         }
-        Ok(Self { renderer_probe })
+        Ok(Self {
+            renderer_probe,
+            #[cfg(target_os = "windows")]
+            stop_sender: None,
+            #[cfg(target_os = "windows")]
+            worker: None,
+        })
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for LiveDesktopRendererSession {
+    fn drop(&mut self) {
+        if let Some(stop_sender) = self.stop_sender.take() {
+            let _ = stop_sender.send(());
+        }
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl ComApartment {
+    unsafe fn initialize() -> Result<Self, String> {
+        unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }
+            .ok()
+            .map_err(|error| error.to_string())?;
+        Ok(Self)
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for ComApartment {
+    fn drop(&mut self) {
+        unsafe { CoUninitialize() };
     }
 }
 
@@ -332,27 +478,10 @@ fn make_live_desktop_background_support(
 
 #[cfg(target_os = "windows")]
 fn probe_live_desktop_renderer() -> LiveDesktopRendererProbe {
-    match unsafe { probe_windows_live_desktop_renderer(None) } {
+    match unsafe { probe_windows_live_desktop_renderer() } {
         Ok(probe) => probe,
         Err(probe) => probe,
     }
-}
-
-#[cfg(target_os = "windows")]
-fn probe_live_desktop_renderer_for_window(
-    window_handle: LiveDesktopWindowHandle,
-) -> LiveDesktopRendererProbe {
-    match unsafe { probe_windows_live_desktop_renderer(Some(window_handle)) } {
-        Ok(probe) => probe,
-        Err(probe) => probe,
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn probe_live_desktop_renderer_for_window(
-    _window_handle: LiveDesktopWindowHandle,
-) -> LiveDesktopRendererProbe {
-    probe_live_desktop_renderer()
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -365,7 +494,6 @@ fn probe_live_desktop_renderer() -> LiveDesktopRendererProbe {
 
 #[cfg(target_os = "windows")]
 unsafe fn probe_windows_live_desktop_renderer(
-    window_handle: Option<HWND>,
 ) -> Result<LiveDesktopRendererProbe, LiveDesktopRendererProbe> {
     let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.map_err(|error| {
         LiveDesktopRendererProbe::unavailable(
@@ -422,7 +550,7 @@ unsafe fn probe_windows_live_desktop_renderer(
                 continue;
             }
         };
-        let composition_device: IDCompositionDevice = match unsafe {
+        let _composition_device: IDCompositionDevice = match unsafe {
             DCompositionCreateDevice(&dxgi_device)
         } {
             Ok(device) => device,
@@ -433,47 +561,6 @@ unsafe fn probe_windows_live_desktop_renderer(
                 continue;
             }
         };
-
-        if let Some(window_handle) = window_handle {
-            let _target = match unsafe {
-                composition_device.CreateTargetForHwnd(window_handle, false)
-            } {
-                Ok(target) => target,
-                Err(error) => {
-                    return Err(LiveDesktopRendererProbe::window_target_unavailable(
-                        "directCompositionTargetUnavailable",
-                        format!(
-                            "CreateTargetForHwnd({adapter_index}) failed while probing renderer: {error}"
-                        ),
-                    ));
-                }
-            };
-            let visual = match unsafe { composition_device.CreateVisual() } {
-                Ok(visual) => visual,
-                Err(error) => {
-                    return Err(LiveDesktopRendererProbe::root_visual_unavailable(
-                        "directCompositionVisualUnavailable",
-                        format!(
-                            "CreateVisual({adapter_index}) failed while probing renderer: {error}"
-                        ),
-                    ));
-                }
-            };
-            if let Err(error) = unsafe { set_direct_composition_root(&_target, &visual) } {
-                return Err(LiveDesktopRendererProbe::root_visual_unavailable(
-                    "directCompositionRootUnavailable",
-                    format!(
-                        "DirectComposition root visual commit failed while probing renderer: {error}"
-                    ),
-                ));
-            }
-
-            return Ok(LiveDesktopRendererProbe::native_renderer_unimplemented_for_window(
-                format!(
-                    "DirectComposition target and root visual probe succeeded on adapter {adapter_index}; desktop frame content, effect graph, and frame scheduling are not implemented"
-                ),
-            ));
-        }
 
         return Ok(LiveDesktopRendererProbe::native_renderer_unimplemented(
             format!(
@@ -500,11 +587,157 @@ unsafe fn probe_windows_live_desktop_renderer(
 }
 
 #[cfg(target_os = "windows")]
+unsafe fn create_live_desktop_renderer_resources(
+    window_handle: HWND,
+) -> Result<LiveDesktopRendererStartup, LiveDesktopRendererProbe> {
+    let com = unsafe { ComApartment::initialize() }.map_err(|error| {
+        LiveDesktopRendererProbe::unavailable(
+            "comInitializationFailed",
+            format!("CoInitializeEx failed before creating DirectComposition renderer: {error}"),
+        )
+    })?;
+    let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.map_err(|error| {
+        LiveDesktopRendererProbe::unavailable(
+            "dxgiUnavailable",
+            format!("CreateDXGIFactory1 failed while creating renderer resources: {error}"),
+        )
+    })?;
+
+    let mut adapter_count = 0;
+    let mut last_detail = String::new();
+
+    for adapter_index in 0.. {
+        let adapter = match unsafe { factory.EnumAdapters1(adapter_index) } {
+            Ok(adapter) => adapter,
+            Err(error) if error.code() == DXGI_ERROR_NOT_FOUND => break,
+            Err(error) => {
+                return Err(LiveDesktopRendererProbe::unavailable(
+                    "dxgiAdapterEnumerationFailed",
+                    format!(
+                        "EnumAdapters1({adapter_index}) failed while creating renderer resources: {error}"
+                    ),
+                ));
+            }
+        };
+        adapter_count += 1;
+
+        let desc = match unsafe { adapter.GetDesc1() } {
+            Ok(desc) => desc,
+            Err(error) => {
+                last_detail = format!(
+                    "GetDesc1({adapter_index}) failed while creating renderer resources: {error}"
+                );
+                continue;
+            }
+        };
+        if (desc.Flags & DXGI_ADAPTER_FLAG3_SOFTWARE.0 as u32) != 0 {
+            continue;
+        }
+
+        let d3d_device = match unsafe { create_d3d11_device_for_adapter(&adapter) } {
+            Ok(device) => device,
+            Err(error) => {
+                last_detail = format!(
+                    "D3D11CreateDevice({adapter_index}) failed while creating renderer resources: {error}"
+                );
+                continue;
+            }
+        };
+        let dxgi_device = match d3d_device.cast::<IDXGIDevice>() {
+            Ok(device) => device,
+            Err(error) => {
+                last_detail = format!(
+                    "IDXGIDevice cast({adapter_index}) failed while creating renderer resources: {error}"
+                );
+                continue;
+            }
+        };
+        let composition_device: IDCompositionDevice = match unsafe {
+            DCompositionCreateDevice(&dxgi_device)
+        } {
+            Ok(device) => device,
+            Err(error) => {
+                last_detail = format!(
+                    "DCompositionCreateDevice({adapter_index}) failed while creating renderer resources: {error}"
+                );
+                continue;
+            }
+        };
+        let target = match unsafe { composition_device.CreateTargetForHwnd(window_handle, false) } {
+            Ok(target) => target,
+            Err(error) => {
+                return Err(LiveDesktopRendererProbe::window_target_unavailable(
+                    "directCompositionTargetUnavailable",
+                    format!(
+                        "CreateTargetForHwnd({adapter_index}) failed while creating renderer resources: {error}"
+                    ),
+                ));
+            }
+        };
+        let root_visual = match unsafe { composition_device.CreateVisual() } {
+            Ok(visual) => visual,
+            Err(error) => {
+                return Err(LiveDesktopRendererProbe::root_visual_unavailable(
+                    "directCompositionVisualUnavailable",
+                    format!(
+                        "CreateVisual({adapter_index}) failed while creating renderer resources: {error}"
+                    ),
+                ));
+            }
+        };
+        if let Err(error) =
+            unsafe { set_direct_composition_root(&composition_device, &target, &root_visual) }
+        {
+            return Err(LiveDesktopRendererProbe::root_visual_unavailable(
+                "directCompositionRootUnavailable",
+                format!(
+                    "DirectComposition root visual commit failed while creating renderer resources: {error}"
+                ),
+            ));
+        }
+
+        return Ok(LiveDesktopRendererStartup {
+            renderer_probe: LiveDesktopRendererProbe::native_renderer_unimplemented_for_window(
+                format!(
+                    "DirectComposition target and root visual are held on adapter {adapter_index}; desktop frame content, effect graph, and frame scheduling are not implemented"
+                ),
+            ),
+            resources: LiveDesktopRendererResources {
+                _com: com,
+                _d3d_device: d3d_device,
+                _composition_device: composition_device,
+                _target: target,
+                _root_visual: root_visual,
+            },
+        });
+    }
+
+    if adapter_count == 0 {
+        return Err(LiveDesktopRendererProbe::unavailable(
+            "noDxgiAdapters",
+            "DXGI did not report any adapters while creating renderer resources",
+        ));
+    }
+
+    Err(LiveDesktopRendererProbe::unavailable(
+        "directCompositionUnavailable",
+        if last_detail.is_empty() {
+            "DirectComposition renderer resource creation failed without a detailed DXGI error"
+                .to_string()
+        } else {
+            last_detail
+        },
+    ))
+}
+
+#[cfg(target_os = "windows")]
 unsafe fn set_direct_composition_root(
+    device: &IDCompositionDevice,
     target: &IDCompositionTarget,
     visual: &IDCompositionVisual,
 ) -> Result<(), String> {
     unsafe { target.SetRoot(visual) }.map_err(|error| error.to_string())?;
+    unsafe { device.Commit() }.map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -915,10 +1148,33 @@ mod tests {
         assert!(!status.active);
         assert_eq!(status.generation, 1);
         assert_eq!(status.reason, "nativeRendererNotImplemented");
+        assert!(runtime.renderer_session.is_none());
 
         let stopped = runtime.stop();
         assert_eq!(stopped.phase, "stopped");
         assert_eq!(stopped.generation, 2);
+    }
+
+    #[test]
+    fn runtime_drops_renderer_session_when_native_pipeline_is_not_ready() {
+        let mut runtime = LiveDesktopRuntime::default();
+        let status =
+            runtime.start_with_renderer_session(capture_probe(true, true, "available"), || {
+                Ok(LiveDesktopRendererSession {
+                    renderer_probe:
+                        LiveDesktopRendererProbe::native_renderer_unimplemented_for_window(
+                            "target ready",
+                        ),
+                    #[cfg(target_os = "windows")]
+                    stop_sender: None,
+                    #[cfg(target_os = "windows")]
+                    worker: None,
+                })
+            });
+
+        assert_eq!(status.phase, "failed");
+        assert_eq!(status.reason, "nativeRendererNotImplemented");
+        assert!(runtime.renderer_session.is_none());
     }
 
     #[test]
