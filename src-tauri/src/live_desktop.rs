@@ -991,7 +991,7 @@ unsafe fn create_live_desktop_renderer_resources(
         return Ok(LiveDesktopRendererStartup {
             renderer_probe: LiveDesktopRendererProbe::native_renderer_available_for_window(
                 format!(
-                    "Desktop Duplication frame pump initialized with frame {}x{} format {} and DirectComposition target/root surface on adapter {adapter_index}, output {}; native dimmed and blur effects are available, acrylic falls back to blur",
+                    "Desktop Duplication frame pump initialized with frame {}x{} format {} and DirectComposition target/root surface on adapter {adapter_index}, output {}; native dimmed, blur, and acrylic color effects are available",
                     frame_probe.width,
                     frame_probe.height,
                     frame_probe.format,
@@ -1221,41 +1221,150 @@ unsafe fn apply_live_desktop_config_to_color_matrix(
     effect: &IDCompositionColorMatrixEffect,
     config: &LiveDesktopRuntimeConfig,
 ) -> Result<(), String> {
-    let amount = if matches!(&config.effect, LiveDesktopBackgroundEffect::Dimmed) {
-        config.darken_strength.min(100) as f32 / 100.0
-    } else {
-        0.0
-    };
-    let scale = 1.0 - amount;
-    let color = parse_live_desktop_hex_color(&config.darken_color);
-    let matrix = [
-        (0, 0, scale),
-        (0, 1, 0.0),
-        (0, 2, 0.0),
-        (0, 3, 0.0),
-        (1, 0, 0.0),
-        (1, 1, scale),
-        (1, 2, 0.0),
-        (1, 3, 0.0),
-        (2, 0, 0.0),
-        (2, 1, 0.0),
-        (2, 2, scale),
-        (2, 3, 0.0),
-        (3, 0, 0.0),
-        (3, 1, 0.0),
-        (3, 2, 0.0),
-        (3, 3, 1.0),
-        (4, 0, color[0] * amount),
-        (4, 1, color[1] * amount),
-        (4, 2, color[2] * amount),
-        (4, 3, 0.0),
-    ];
-    for (row, column, value) in matrix {
-        unsafe { effect.SetMatrixElement2(row, column, value) }
-            .map_err(|error| error.to_string())?;
+    let matrix = resolve_live_desktop_color_matrix(config);
+    for (row_index, row) in matrix.iter().enumerate() {
+        for (column_index, value) in row.iter().enumerate() {
+            unsafe { effect.SetMatrixElement2(row_index as i32, column_index as i32, *value) }
+                .map_err(|error| error.to_string())?;
+        }
     }
     unsafe { effect.SetClampOutput(true) }.map_err(|error| error.to_string())?;
     Ok(())
+}
+
+fn resolve_live_desktop_color_matrix(config: &LiveDesktopRuntimeConfig) -> [[f32; 4]; 5] {
+    match &config.effect {
+        LiveDesktopBackgroundEffect::Dimmed => resolve_live_desktop_dimmed_color_matrix(config),
+        LiveDesktopBackgroundEffect::AcrylicWebgl => {
+            resolve_live_desktop_acrylic_color_matrix(config)
+        }
+        LiveDesktopBackgroundEffect::None | LiveDesktopBackgroundEffect::Blur => {
+            live_desktop_identity_color_matrix()
+        }
+    }
+}
+
+fn live_desktop_identity_color_matrix() -> [[f32; 4]; 5] {
+    [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 0.0, 0.0],
+    ]
+}
+
+fn resolve_live_desktop_dimmed_color_matrix(config: &LiveDesktopRuntimeConfig) -> [[f32; 4]; 5] {
+    let amount = config.darken_strength.min(100) as f32 / 100.0;
+    let scale = 1.0 - amount;
+    let color = parse_live_desktop_hex_color(&config.darken_color);
+    [
+        [scale, 0.0, 0.0, 0.0],
+        [0.0, scale, 0.0, 0.0],
+        [0.0, 0.0, scale, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+        [color[0] * amount, color[1] * amount, color[2] * amount, 0.0],
+    ]
+}
+
+fn resolve_live_desktop_acrylic_color_matrix(config: &LiveDesktopRuntimeConfig) -> [[f32; 4]; 5] {
+    let fallback = LiveDesktopAcrylicParams::default();
+    let brightness = clamp_live_desktop_f32(
+        config.acrylic_params.brightness,
+        0.4,
+        1.4,
+        fallback.brightness,
+    );
+    let contrast =
+        clamp_live_desktop_f32(config.acrylic_params.contrast, 0.6, 1.4, fallback.contrast);
+    let saturation = clamp_live_desktop_f32(
+        config.acrylic_params.saturation,
+        0.4,
+        1.8,
+        fallback.saturation,
+    );
+    let tint_strength = clamp_live_desktop_f32(
+        config.acrylic_params.tint_strength,
+        0.0,
+        0.8,
+        fallback.tint_strength,
+    );
+    let tint_color = [
+        clamp_live_desktop_f32(
+            config.acrylic_params.tint_color[0],
+            0.0,
+            1.0,
+            fallback.tint_color[0],
+        ),
+        clamp_live_desktop_f32(
+            config.acrylic_params.tint_color[1],
+            0.0,
+            1.0,
+            fallback.tint_color[1],
+        ),
+        clamp_live_desktop_f32(
+            config.acrylic_params.tint_color[2],
+            0.0,
+            1.0,
+            fallback.tint_color[2],
+        ),
+    ];
+    let tint_scale = 1.0 - tint_strength;
+    let gain = contrast * brightness * tint_scale;
+    let saturation_inverse = 1.0 - saturation;
+    let luminance = [0.299, 0.587, 0.114];
+    let saturation_matrix = [
+        [
+            luminance[0] * saturation_inverse + saturation,
+            luminance[0] * saturation_inverse,
+            luminance[0] * saturation_inverse,
+        ],
+        [
+            luminance[1] * saturation_inverse,
+            luminance[1] * saturation_inverse + saturation,
+            luminance[1] * saturation_inverse,
+        ],
+        [
+            luminance[2] * saturation_inverse,
+            luminance[2] * saturation_inverse,
+            luminance[2] * saturation_inverse + saturation,
+        ],
+    ];
+    let contrast_offset = (0.5 - 0.5 * contrast) * brightness * tint_scale;
+    [
+        [
+            saturation_matrix[0][0] * gain,
+            saturation_matrix[0][1] * gain,
+            saturation_matrix[0][2] * gain,
+            0.0,
+        ],
+        [
+            saturation_matrix[1][0] * gain,
+            saturation_matrix[1][1] * gain,
+            saturation_matrix[1][2] * gain,
+            0.0,
+        ],
+        [
+            saturation_matrix[2][0] * gain,
+            saturation_matrix[2][1] * gain,
+            saturation_matrix[2][2] * gain,
+            0.0,
+        ],
+        [0.0, 0.0, 0.0, 1.0],
+        [
+            contrast_offset + tint_color[0] * tint_strength,
+            contrast_offset + tint_color[1] * tint_strength,
+            contrast_offset + tint_color[2] * tint_strength,
+            0.0,
+        ],
+    ]
+}
+
+fn clamp_live_desktop_f32(value: f32, min: f32, max: f32, fallback: f32) -> f32 {
+    if !value.is_finite() {
+        return fallback;
+    }
+    value.clamp(min, max)
 }
 
 fn parse_live_desktop_hex_color(value: &str) -> [f32; 3] {
@@ -1716,6 +1825,27 @@ mod tests {
 
         config.effect = LiveDesktopBackgroundEffect::None;
         assert_eq!(resolve_live_desktop_blur_standard_deviation(&config), 0.0);
+    }
+
+    #[test]
+    fn live_desktop_color_matrix_matches_effect_family() {
+        let mut config = LiveDesktopRuntimeConfig::default();
+        let dimmed = resolve_live_desktop_color_matrix(&config);
+        assert!((dimmed[0][0] - 0.72).abs() < 0.001);
+        assert!((dimmed[4][0] - 28.0 / 255.0 * 0.28).abs() < 0.001);
+
+        config.effect = LiveDesktopBackgroundEffect::Blur;
+        assert_eq!(
+            resolve_live_desktop_color_matrix(&config),
+            live_desktop_identity_color_matrix()
+        );
+
+        config.effect = LiveDesktopBackgroundEffect::AcrylicWebgl;
+        let acrylic = resolve_live_desktop_color_matrix(&config);
+        assert!((acrylic[0][0] - 0.734672).abs() < 0.001);
+        assert!((acrylic[1][0] + 0.159664).abs() < 0.001);
+        assert!((acrylic[4][0] - 0.095059).abs() < 0.001);
+        assert_eq!(acrylic[3][3], 1.0);
     }
 
     #[test]
