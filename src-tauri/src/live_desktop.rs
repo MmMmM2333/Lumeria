@@ -14,14 +14,24 @@ use windows::{
                 D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
                 D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC,
             },
+            DirectComposition::{DCompositionCreateDevice, IDCompositionDevice},
             Dxgi::{
-                CreateDXGIFactory1, IDXGIFactory1, IDXGIOutput1, IDXGIOutputDuplication,
-                IDXGIResource, DXGI_ADAPTER_FLAG3_SOFTWARE, DXGI_ERROR_ACCESS_DENIED,
-                DXGI_ERROR_NOT_FOUND, DXGI_ERROR_WAIT_TIMEOUT, DXGI_OUTDUPL_FRAME_INFO,
+                CreateDXGIFactory1, IDXGIAdapter1, IDXGIDevice, IDXGIFactory1, IDXGIOutput1,
+                IDXGIOutputDuplication, IDXGIResource, DXGI_ADAPTER_FLAG3_SOFTWARE,
+                DXGI_ERROR_ACCESS_DENIED, DXGI_ERROR_NOT_FOUND, DXGI_ERROR_WAIT_TIMEOUT,
+                DXGI_OUTDUPL_FRAME_INFO,
             },
         },
     },
 };
+
+#[cfg(target_os = "windows")]
+const LIVE_DESKTOP_D3D_FEATURE_LEVELS: [D3D_FEATURE_LEVEL; 4] = [
+    D3D_FEATURE_LEVEL_11_1,
+    D3D_FEATURE_LEVEL_11_0,
+    D3D_FEATURE_LEVEL_10_1,
+    D3D_FEATURE_LEVEL_10_0,
+];
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,6 +41,7 @@ pub(crate) struct LiveDesktopBackgroundSupport {
     supports_live_desktop_background_effects: bool,
     reason: &'static str,
     capture_probe: LiveDesktopCaptureProbe,
+    renderer_probe: LiveDesktopRendererProbe,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -56,9 +67,24 @@ struct LiveDesktopFrameProbe {
     detail: String,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LiveDesktopRendererProbe {
+    supports_direct_composition: bool,
+    supports_native_renderer: bool,
+    reason: &'static str,
+    detail: String,
+}
+
 #[derive(Debug)]
 pub(crate) struct LiveDesktopRuntime {
     status: LiveDesktopRuntimeStatus,
+    renderer_session: Option<LiveDesktopRendererSession>,
+}
+
+#[derive(Debug)]
+struct LiveDesktopRendererSession {
+    renderer_probe: LiveDesktopRendererProbe,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -75,6 +101,7 @@ impl Default for LiveDesktopRuntime {
     fn default() -> Self {
         Self {
             status: LiveDesktopRuntimeStatus::stopped(0),
+            renderer_session: None,
         }
     }
 }
@@ -85,21 +112,22 @@ impl LiveDesktopRuntime {
     }
 
     pub(crate) fn start(&mut self) -> LiveDesktopRuntimeStatus {
-        self.start_with_capture_probe(probe_live_desktop_capture(), false)
+        self.start_with_probes(probe_live_desktop_capture(), probe_live_desktop_renderer())
     }
 
     pub(crate) fn stop(&mut self) -> LiveDesktopRuntimeStatus {
         if self.status.phase == "stopped" {
             return self.status();
         }
+        self.renderer_session = None;
         self.status = LiveDesktopRuntimeStatus::stopped(self.status.generation + 1);
         self.status()
     }
 
-    fn start_with_capture_probe(
+    fn start_with_probes(
         &mut self,
         capture_probe: LiveDesktopCaptureProbe,
-        renderer_ready: bool,
+        renderer_probe: LiveDesktopRendererProbe,
     ) -> LiveDesktopRuntimeStatus {
         if self.status.phase == "running" || self.status.phase == "starting" {
             return self.status();
@@ -132,24 +160,66 @@ impl LiveDesktopRuntime {
             return self.status();
         }
 
-        if !renderer_ready {
-            self.status = LiveDesktopRuntimeStatus::failed(
-                generation,
-                "nativeRendererNotImplemented",
-                "Desktop capture is ready, but the native composition renderer is not implemented"
-                    .to_string(),
-            );
-            return self.status();
-        }
-
+        let renderer_session = match LiveDesktopRendererSession::create(renderer_probe) {
+            Ok(session) => session,
+            Err(probe) => {
+                self.status =
+                    LiveDesktopRuntimeStatus::failed(generation, probe.reason, probe.detail);
+                return self.status();
+            }
+        };
+        let running_detail = format!(
+            "Live desktop runtime is running: {}",
+            renderer_session.renderer_probe.detail
+        );
+        self.renderer_session = Some(renderer_session);
         self.status = LiveDesktopRuntimeStatus {
             phase: "running",
             active: true,
             generation,
             reason: "running",
-            detail: "Live desktop runtime is running".to_string(),
+            detail: running_detail,
         };
         self.status()
+    }
+}
+
+impl LiveDesktopRendererSession {
+    fn create(renderer_probe: LiveDesktopRendererProbe) -> Result<Self, LiveDesktopRendererProbe> {
+        if !renderer_probe.supports_direct_composition || !renderer_probe.supports_native_renderer {
+            return Err(renderer_probe);
+        }
+        Ok(Self { renderer_probe })
+    }
+}
+
+impl LiveDesktopRendererProbe {
+    fn native_renderer_unimplemented(detail: impl Into<String>) -> Self {
+        Self {
+            supports_direct_composition: true,
+            supports_native_renderer: false,
+            reason: "nativeRendererNotImplemented",
+            detail: detail.into(),
+        }
+    }
+
+    fn unavailable(reason: &'static str, detail: impl Into<String>) -> Self {
+        Self {
+            supports_direct_composition: false,
+            supports_native_renderer: false,
+            reason,
+            detail: detail.into(),
+        }
+    }
+
+    #[cfg(test)]
+    fn available() -> Self {
+        Self {
+            supports_direct_composition: true,
+            supports_native_renderer: true,
+            reason: "available",
+            detail: "Native renderer test session is available".to_string(),
+        }
     }
 }
 
@@ -177,17 +247,21 @@ impl LiveDesktopRuntimeStatus {
 
 pub(crate) fn live_desktop_background_support() -> LiveDesktopBackgroundSupport {
     let capture_probe = probe_live_desktop_capture();
-    make_live_desktop_background_support(current_platform(), capture_probe)
+    let renderer_probe = probe_live_desktop_renderer();
+    make_live_desktop_background_support(current_platform(), capture_probe, renderer_probe)
 }
 
 fn make_live_desktop_background_support(
     platform: &'static str,
     capture_probe: LiveDesktopCaptureProbe,
+    renderer_probe: LiveDesktopRendererProbe,
 ) -> LiveDesktopBackgroundSupport {
-    let reason = if capture_probe.supports_desktop_duplication {
-        "nativeRendererNotImplemented"
-    } else {
+    let reason = if !capture_probe.supports_desktop_duplication {
         capture_probe.reason
+    } else if !renderer_probe.supports_native_renderer {
+        renderer_probe.reason
+    } else {
+        "available"
     };
 
     LiveDesktopBackgroundSupport {
@@ -196,7 +270,140 @@ fn make_live_desktop_background_support(
         supports_live_desktop_background_effects: false,
         reason,
         capture_probe,
+        renderer_probe,
     }
+}
+
+#[cfg(target_os = "windows")]
+fn probe_live_desktop_renderer() -> LiveDesktopRendererProbe {
+    match unsafe { probe_windows_live_desktop_renderer() } {
+        Ok(probe) => probe,
+        Err(probe) => probe,
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn probe_live_desktop_renderer() -> LiveDesktopRendererProbe {
+    LiveDesktopRendererProbe::unavailable(
+        "unsupportedPlatform",
+        "Native live desktop rendering is only implemented on Windows",
+    )
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn probe_windows_live_desktop_renderer(
+) -> Result<LiveDesktopRendererProbe, LiveDesktopRendererProbe> {
+    let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.map_err(|error| {
+        LiveDesktopRendererProbe::unavailable(
+            "dxgiUnavailable",
+            format!("CreateDXGIFactory1 failed while probing renderer: {error}"),
+        )
+    })?;
+
+    let mut adapter_count = 0;
+    let mut last_detail = String::new();
+
+    for adapter_index in 0.. {
+        let adapter = match unsafe { factory.EnumAdapters1(adapter_index) } {
+            Ok(adapter) => adapter,
+            Err(error) if error.code() == DXGI_ERROR_NOT_FOUND => break,
+            Err(error) => {
+                return Err(LiveDesktopRendererProbe::unavailable(
+                    "dxgiAdapterEnumerationFailed",
+                    format!(
+                        "EnumAdapters1({adapter_index}) failed while probing renderer: {error}"
+                    ),
+                ));
+            }
+        };
+        adapter_count += 1;
+
+        let desc = match unsafe { adapter.GetDesc1() } {
+            Ok(desc) => desc,
+            Err(error) => {
+                last_detail =
+                    format!("GetDesc1({adapter_index}) failed while probing renderer: {error}");
+                continue;
+            }
+        };
+        if (desc.Flags & DXGI_ADAPTER_FLAG3_SOFTWARE.0 as u32) != 0 {
+            continue;
+        }
+
+        let device = match unsafe { create_d3d11_device_for_adapter(&adapter) } {
+            Ok(device) => device,
+            Err(error) => {
+                last_detail = format!(
+                    "D3D11CreateDevice({adapter_index}) failed while probing renderer: {error}"
+                );
+                continue;
+            }
+        };
+        let dxgi_device = match device.cast::<IDXGIDevice>() {
+            Ok(device) => device,
+            Err(error) => {
+                last_detail = format!(
+                    "IDXGIDevice cast({adapter_index}) failed while probing renderer: {error}"
+                );
+                continue;
+            }
+        };
+        let _composition_device: IDCompositionDevice = match unsafe {
+            DCompositionCreateDevice(&dxgi_device)
+        } {
+            Ok(device) => device,
+            Err(error) => {
+                last_detail = format!(
+                        "DCompositionCreateDevice({adapter_index}) failed while probing renderer: {error}"
+                    );
+                continue;
+            }
+        };
+
+        return Ok(LiveDesktopRendererProbe::native_renderer_unimplemented(
+            format!(
+                "DirectComposition device probe succeeded on adapter {adapter_index}; native target, visual, texture, and effect pipeline are not implemented"
+            ),
+        ));
+    }
+
+    if adapter_count == 0 {
+        return Err(LiveDesktopRendererProbe::unavailable(
+            "noDxgiAdapters",
+            "DXGI did not report any adapters while probing renderer",
+        ));
+    }
+
+    Err(LiveDesktopRendererProbe::unavailable(
+        "directCompositionUnavailable",
+        if last_detail.is_empty() {
+            "DirectComposition renderer probe failed without a detailed DXGI error".to_string()
+        } else {
+            last_detail
+        },
+    ))
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn create_d3d11_device_for_adapter(adapter: &IDXGIAdapter1) -> Result<ID3D11Device, String> {
+    let mut device: Option<ID3D11Device> = None;
+    let mut context: Option<ID3D11DeviceContext> = None;
+    unsafe {
+        D3D11CreateDevice(
+            adapter,
+            D3D_DRIVER_TYPE_UNKNOWN,
+            HMODULE::default(),
+            D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+            Some(&LIVE_DESKTOP_D3D_FEATURE_LEVELS),
+            D3D11_SDK_VERSION,
+            Some(&mut device),
+            None,
+            Some(&mut context),
+        )
+    }
+    .map_err(|error| error.to_string())?;
+
+    device.ok_or_else(|| "D3D11CreateDevice returned no device".to_string())
 }
 
 #[cfg(target_os = "windows")]
@@ -226,13 +433,6 @@ fn probe_live_desktop_capture() -> LiveDesktopCaptureProbe {
 #[cfg(target_os = "windows")]
 unsafe fn probe_windows_desktop_duplication(
 ) -> Result<LiveDesktopCaptureProbe, LiveDesktopCaptureProbe> {
-    const FEATURE_LEVELS: [D3D_FEATURE_LEVEL; 4] = [
-        D3D_FEATURE_LEVEL_11_1,
-        D3D_FEATURE_LEVEL_11_0,
-        D3D_FEATURE_LEVEL_10_1,
-        D3D_FEATURE_LEVEL_10_0,
-    ];
-
     let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.map_err(|error| {
         capture_probe_error(
             false,
@@ -276,28 +476,12 @@ unsafe fn probe_windows_desktop_duplication(
             continue;
         }
 
-        let mut device: Option<ID3D11Device> = None;
-        let mut context: Option<ID3D11DeviceContext> = None;
-        let create_device_result = unsafe {
-            D3D11CreateDevice(
-                &adapter,
-                D3D_DRIVER_TYPE_UNKNOWN,
-                HMODULE::default(),
-                D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-                Some(&FEATURE_LEVELS),
-                D3D11_SDK_VERSION,
-                Some(&mut device),
-                None,
-                Some(&mut context),
-            )
-        };
-        if let Err(error) = create_device_result {
-            last_detail = format!("D3D11CreateDevice({adapter_index}) failed: {error}");
-            continue;
-        }
-        let Some(device) = device else {
-            last_detail = format!("D3D11CreateDevice({adapter_index}) returned no device");
-            continue;
+        let device = match unsafe { create_d3d11_device_for_adapter(&adapter) } {
+            Ok(device) => device,
+            Err(error) => {
+                last_detail = format!("D3D11CreateDevice({adapter_index}) failed: {error}");
+                continue;
+            }
         };
 
         for output_index in 0.. {
@@ -540,8 +724,11 @@ mod tests {
 
     #[test]
     fn capture_probe_success_waits_for_native_renderer_before_enabling_source() {
-        let support =
-            make_live_desktop_background_support("windows", capture_probe(true, true, "available"));
+        let support = make_live_desktop_background_support(
+            "windows",
+            capture_probe(true, true, "available"),
+            LiveDesktopRendererProbe::native_renderer_unimplemented("renderer pending"),
+        );
 
         assert!(!support.supports_live_desktop_background);
         assert!(!support.supports_live_desktop_background_effects);
@@ -549,6 +736,8 @@ mod tests {
         assert!(support.capture_probe.supports_d3d11);
         assert!(support.capture_probe.supports_desktop_duplication);
         assert!(support.capture_probe.frame_probe.supports_frame_texture);
+        assert!(support.renderer_probe.supports_direct_composition);
+        assert!(!support.renderer_probe.supports_native_renderer);
     }
 
     #[test]
@@ -556,6 +745,7 @@ mod tests {
         let support = make_live_desktop_background_support(
             "windows",
             capture_probe(false, false, "dxgiUnavailable"),
+            LiveDesktopRendererProbe::native_renderer_unimplemented("renderer pending"),
         );
 
         assert!(!support.supports_live_desktop_background);
@@ -578,8 +768,10 @@ mod tests {
     #[test]
     fn runtime_start_surfaces_capture_failure() {
         let mut runtime = LiveDesktopRuntime::default();
-        let status =
-            runtime.start_with_capture_probe(capture_probe(false, false, "dxgiUnavailable"), false);
+        let status = runtime.start_with_probes(
+            capture_probe(false, false, "dxgiUnavailable"),
+            LiveDesktopRendererProbe::available(),
+        );
 
         assert_eq!(status.phase, "failed");
         assert!(!status.active);
@@ -590,8 +782,10 @@ mod tests {
     #[test]
     fn runtime_start_waits_for_native_renderer_after_capture_ready() {
         let mut runtime = LiveDesktopRuntime::default();
-        let status =
-            runtime.start_with_capture_probe(capture_probe(true, true, "available"), false);
+        let status = runtime.start_with_probes(
+            capture_probe(true, true, "available"),
+            LiveDesktopRendererProbe::native_renderer_unimplemented("renderer pending"),
+        );
 
         assert_eq!(status.phase, "failed");
         assert!(!status.active);
@@ -606,15 +800,20 @@ mod tests {
     #[test]
     fn runtime_can_transition_to_running_when_renderer_is_ready() {
         let mut runtime = LiveDesktopRuntime::default();
-        let status = runtime.start_with_capture_probe(capture_probe(true, true, "available"), true);
+        let status = runtime.start_with_probes(
+            capture_probe(true, true, "available"),
+            LiveDesktopRendererProbe::available(),
+        );
 
         assert_eq!(status.phase, "running");
         assert!(status.active);
         assert_eq!(status.generation, 1);
         assert_eq!(status.reason, "running");
 
-        let duplicate_start =
-            runtime.start_with_capture_probe(capture_probe(true, true, "available"), true);
+        let duplicate_start = runtime.start_with_probes(
+            capture_probe(true, true, "available"),
+            LiveDesktopRendererProbe::available(),
+        );
         assert_eq!(duplicate_start.generation, 1);
         assert_eq!(duplicate_start.phase, "running");
 
