@@ -54,6 +54,7 @@ import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { getPixiHostRect, getViewportFallbackSize } from "./pixiHostMetrics.js";
 
 const props = defineProps({
+  active: { type: Boolean, default: true },
   state: { type: Object, required: true },
 });
 
@@ -77,6 +78,14 @@ let folderPageDotsRevealFrame = null;
 const isFolderGhostTransitionActive = computed(() => Boolean(
   props.state.isFolderOpenIconAnimationActive?.value ||
   props.state.isFolderCloseIconAnimationActive?.value
+));
+const shouldRunPixi = computed(() => Boolean(
+  props.active && (
+    props.state.renderedFolder.value ||
+    props.state.isFolderClosing.value ||
+    props.state.isFolderAppLaunchClosing.value ||
+    isFolderGhostTransitionActive.value
+  )
 ));
 
 const isFolderPageDotsBlocked = computed(() => Boolean(
@@ -106,6 +115,7 @@ function getFolderTitleOpacity(frame, isClosing) {
 }
 
 function handleResize() {
+  if (!shouldRunPixi.value) return;
   app?.resize?.();
   renderPixi();
 }
@@ -152,7 +162,8 @@ function getHostRect() {
   return getPixiHostRect(hostRef.value, getViewportFallbackSize());
 }
 
-function renderPixi() {
+function renderPixi(options = {}) {
+  if (!options.force && !shouldRunPixi.value) return;
   if (!app || !layer || !hostRef.value) return;
   const rect = getHostRect();
   panelGeometry.value = layer.update({
@@ -191,7 +202,7 @@ function renderPixi() {
 }
 
 function renderInitialWarmFrame() {
-  if (didWarmInitialFrame || !app) return;
+  if (didWarmInitialFrame || !shouldRunPixi.value || !app) return;
   didWarmInitialFrame = true;
   if (typeof app.render === "function") {
     app.render();
@@ -232,6 +243,20 @@ function destroyPixi(options = {}) {
   hostRef.value?.replaceChildren?.();
   clearFolderIconBounds();
   if (deep) clearIconTextureCache();
+}
+
+function syncPixiActivity() {
+  if (!app) return;
+  if (!shouldRunPixi.value) {
+    renderPixi({ force: true });
+    app.render?.();
+    app.stop?.();
+    return;
+  }
+  app.start?.();
+  app.resize?.();
+  renderPixi();
+  renderInitialWarmFrame();
 }
 
 function cancelFolderPageDotsReveal() {
@@ -302,7 +327,7 @@ function restoreEmptyFolderName(event) {
 
 onMounted(async () => {
   destroyed = false;
-  const nextApp = await createPixiApp(hostRef.value, { className: "pixi-launchpad-canvas" });
+  const nextApp = await createPixiApp(hostRef.value, { autoStart: false, className: "pixi-launchpad-canvas" });
   if (destroyed) {
     nextApp.destroy(true);
     hostRef.value?.replaceChildren?.();
@@ -322,9 +347,13 @@ onMounted(async () => {
   resizeObserver.observe(hostRef.value);
   window.addEventListener("resize", handleResize);
   await nextTick();
-  renderPixi();
-  renderInitialWarmFrame();
+  syncPixiActivity();
 });
+
+watch(
+  shouldRunPixi,
+  syncPixiActivity
+);
 
 watchEffect(() => {
   void props.state.dragMeta.value;

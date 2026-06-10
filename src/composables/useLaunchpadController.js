@@ -1307,6 +1307,7 @@ export function useLaunchpadController() {
     isTextlessMode,
     launchTargetStatusById,
     isDesktopOpen,
+    isDesktopClosing,
     isHomeInteractionDisabled,
     isAppLaunching,
     isNativeLayoutReady,

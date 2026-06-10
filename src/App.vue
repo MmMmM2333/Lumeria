@@ -102,12 +102,14 @@
     <SettingsPanel :state="settingsPanelState" :background-layout-context="backgroundLayoutContext" />
     <LaunchpadDialogs :state="dialogState" />
     <PixiFolderOverlay
+      :active="shouldRunFolderPixi"
       :state="folderOverlayState"
       @pointerdown-icon="beginDrag"
       @open-app="openApp"
       @context-menu-icon="openIconContextMenu"
     />
     <PixiDragPreviewOverlay
+      :active="shouldRunDragPreviewPixi"
       :folder-page-size="folderPageSize"
       :icon-size="iconSize"
       :is-textless-mode="isTextlessMode"
@@ -174,6 +176,7 @@ const {
   iconSize,
   isTextlessMode,
   isDesktopOpen,
+  isDesktopClosing,
   isHomeInteractionDisabled,
   isAppLaunching,
   isNativeLayoutReady,
@@ -256,6 +259,24 @@ const backgroundImageLayers = ref([
   { id: "background-image-a", url: null, visible: false },
   { id: "background-image-b", url: null, visible: false },
 ]);
+const shouldRunPixiOverlays = computed(() => Boolean(
+  isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value
+));
+const shouldRunFolderPixi = computed(() => Boolean(
+  shouldRunPixiOverlays.value && (
+    openFolderId.value ||
+    renderedFolder.value ||
+    isFolderClosing.value ||
+    isFolderAppLaunchClosing.value
+  )
+));
+const shouldRunDragPreviewPixi = computed(() => Boolean(
+  shouldRunPixiOverlays.value && (
+    dragMeta.value ||
+    dragPreviewState.value?.item ||
+    dragReleaseState.value?.item
+  )
+));
 let pixiBackgroundHideTimer = null;
 let startupMaskRemoveTimer = null;
 let startupMaskMaxWaitTimer = null;

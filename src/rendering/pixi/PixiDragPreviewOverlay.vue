@@ -5,7 +5,7 @@
 </template>
 
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref, watchEffect } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect } from "vue";
 import { getFolderPreviewSlots } from "../../domain/launchpadLayout.js";
 import { createPixiApp } from "./createPixiApp.js";
 import { preloadIconTextures } from "./assets/iconTextureCache.js";
@@ -14,6 +14,7 @@ import { getPixiHostMetrics, getViewportFallbackSize } from "./pixiHostMetrics.j
 import { DragPreviewLayer } from "./scene/DragPreviewLayer.js";
 
 const props = defineProps({
+  active: { type: Boolean, default: true },
   folderPageSize: { type: Number, required: true },
   folderHoverState: { type: Object, default: null },
   iconSize: { type: Number, required: true },
@@ -25,6 +26,9 @@ const props = defineProps({
 });
 
 const hostRef = ref(null);
+const shouldRunPixi = computed(() => Boolean(
+  props.active && (props.previewState?.item || props.releaseState?.item)
+));
 let app = null;
 let layer = null;
 let resizeObserver = null;
@@ -37,7 +41,8 @@ function collectPreviewTextureItems(previewState) {
   return getFolderPreviewSlots(item, props.folderPageSize).filter(Boolean);
 }
 
-function renderPixi() {
+function renderPixi(options = {}) {
+  if (!options.force && !shouldRunPixi.value) return;
   if (!app || !layer || !hostRef.value) return;
   preloadIconTextures(collectPreviewTextureItems(props.previewState || props.releaseState));
   const { height, rect, width } = getPixiHostMetrics(hostRef.value, getViewportFallbackSize());
@@ -57,6 +62,7 @@ function renderPixi() {
 }
 
 function handleResize() {
+  if (!shouldRunPixi.value) return;
   app?.resize?.();
   renderPixi();
 }
@@ -80,9 +86,22 @@ function destroyPixi(options = {}) {
   hostRef.value?.replaceChildren?.();
 }
 
+function syncPixiActivity() {
+  if (!app) return;
+  if (!shouldRunPixi.value) {
+    renderPixi({ force: true });
+    app.render?.();
+    app.stop?.();
+    return;
+  }
+  app.start?.();
+  app.resize?.();
+  renderPixi();
+}
+
 onMounted(async () => {
   destroyed = false;
-  const nextApp = await createPixiApp(hostRef.value, { className: "pixi-launchpad-canvas" });
+  const nextApp = await createPixiApp(hostRef.value, { autoStart: false, className: "pixi-launchpad-canvas" });
   if (destroyed) {
     nextApp.destroy(true);
     hostRef.value?.replaceChildren?.();
@@ -95,8 +114,13 @@ onMounted(async () => {
   resizeObserver.observe(hostRef.value);
   window.addEventListener("resize", handleResize);
   await nextTick();
-  renderPixi();
+  syncPixiActivity();
 });
+
+watch(
+  shouldRunPixi,
+  syncPixiActivity
+);
 
 watchEffect(() => {
   void props.folderHoverState;
