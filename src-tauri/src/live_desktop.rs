@@ -43,6 +43,12 @@ const LIVE_DESKTOP_D3D_FEATURE_LEVELS: [D3D_FEATURE_LEVEL; 4] = [
 ];
 
 #[cfg(target_os = "windows")]
+const LIVE_DESKTOP_INITIAL_FRAME_WAIT_MS: u32 = 100;
+
+#[cfg(target_os = "windows")]
+const LIVE_DESKTOP_FRAME_PUMP_INTERVAL_MS: u64 = 33;
+
+#[cfg(target_os = "windows")]
 pub(crate) type LiveDesktopWindowHandle = HWND;
 
 #[cfg(not(target_os = "windows"))]
@@ -280,8 +286,8 @@ impl LiveDesktopRendererSession {
                 Ok(startup) => {
                     let renderer_probe = startup.renderer_probe.clone();
                     if ready_sender.send(Ok(renderer_probe)).is_ok() {
-                        let _resources = startup.resources;
-                        let _ = stop_receiver.recv();
+                        let mut resources = startup.resources;
+                        resources.run_frame_pump(stop_receiver);
                     }
                 }
                 Err(probe) => {
@@ -375,6 +381,38 @@ impl Drop for ComApartment {
     }
 }
 
+#[cfg(target_os = "windows")]
+impl LiveDesktopRendererResources {
+    fn run_frame_pump(&mut self, stop_receiver: mpsc::Receiver<()>) {
+        loop {
+            match stop_receiver
+                .recv_timeout(Duration::from_millis(LIVE_DESKTOP_FRAME_PUMP_INTERVAL_MS))
+            {
+                Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    let _ = unsafe { self.copy_next_frame_to_surface() };
+                }
+            }
+        }
+    }
+
+    unsafe fn copy_next_frame_to_surface(&self) -> Result<bool, String> {
+        let copied_frame = unsafe {
+            copy_duplication_frame_to_composition_surface(
+                &self._capture_duplication,
+                &self._surface,
+                &self._d3d_context,
+                0,
+            )
+        }?;
+        if copied_frame.is_none() {
+            return Ok(false);
+        }
+        unsafe { self._composition_device.Commit() }.map_err(|error| error.to_string())?;
+        Ok(true)
+    }
+}
+
 impl LiveDesktopRendererProbe {
     fn native_renderer_unimplemented(detail: impl Into<String>) -> Self {
         Self {
@@ -387,6 +425,7 @@ impl LiveDesktopRendererProbe {
         }
     }
 
+    #[cfg(test)]
     fn native_renderer_unimplemented_for_window(detail: impl Into<String>) -> Self {
         Self {
             supports_direct_composition: true,
@@ -394,6 +433,17 @@ impl LiveDesktopRendererProbe {
             supports_root_visual: true,
             supports_native_renderer: false,
             reason: "nativeRendererNotImplemented",
+            detail: detail.into(),
+        }
+    }
+
+    fn native_renderer_available_for_window(detail: impl Into<String>) -> Self {
+        Self {
+            supports_direct_composition: true,
+            supports_window_target: true,
+            supports_root_visual: true,
+            supports_native_renderer: true,
+            reason: "available",
             detail: detail.into(),
         }
     }
@@ -737,9 +787,16 @@ unsafe fn create_live_desktop_renderer_resources(
                 &capture.duplication,
                 &surface,
                 &d3d.context,
+                LIVE_DESKTOP_INITIAL_FRAME_WAIT_MS,
             )
         } {
-            Ok(frame_probe) => frame_probe,
+            Ok(Some(frame_probe)) => frame_probe,
+            Ok(None) => {
+                return Err(LiveDesktopRendererProbe::root_visual_unavailable(
+                    "directCompositionSurfaceDrawTimedOut",
+                    "Desktop Duplication did not produce an initial frame for DirectComposition surface startup",
+                ));
+            }
             Err(error) => {
                 return Err(LiveDesktopRendererProbe::root_visual_unavailable(
                     "directCompositionSurfaceDrawFailed",
@@ -761,9 +818,9 @@ unsafe fn create_live_desktop_renderer_resources(
         }
 
         return Ok(LiveDesktopRendererStartup {
-            renderer_probe: LiveDesktopRendererProbe::native_renderer_unimplemented_for_window(
+            renderer_probe: LiveDesktopRendererProbe::native_renderer_available_for_window(
                 format!(
-                    "Desktop Duplication frame {}x{} format {} and DirectComposition target/root surface initialized on adapter {adapter_index}, output {}; effect graph and frame scheduling are not implemented",
+                    "Desktop Duplication frame pump initialized with frame {}x{} format {} and DirectComposition target/root surface on adapter {adapter_index}, output {}; native effects are not implemented",
                     frame_probe.width,
                     frame_probe.height,
                     frame_probe.format,
@@ -893,18 +950,19 @@ unsafe fn copy_duplication_frame_to_composition_surface(
     duplication: &IDXGIOutputDuplication,
     surface: &IDCompositionSurface,
     context: &ID3D11DeviceContext,
-) -> Result<LiveDesktopFrameProbe, String> {
+    wait_ms: u32,
+) -> Result<Option<LiveDesktopFrameProbe>, String> {
     let mut frame_info = DXGI_OUTDUPL_FRAME_INFO::default();
     let mut resource: Option<IDXGIResource> = None;
-    unsafe { duplication.AcquireNextFrame(100, &mut frame_info, &mut resource) }.map_err(
-        |error| {
-            if error.code() == DXGI_ERROR_WAIT_TIMEOUT {
-                "Desktop Duplication did not produce an initial frame within 100 ms".to_string()
-            } else {
-                format!("AcquireNextFrame failed during initial frame copy: {error}")
-            }
-        },
-    )?;
+    match unsafe { duplication.AcquireNextFrame(wait_ms, &mut frame_info, &mut resource) } {
+        Ok(()) => {}
+        Err(error) if error.code() == DXGI_ERROR_WAIT_TIMEOUT => return Ok(None),
+        Err(error) => {
+            return Err(format!(
+                "AcquireNextFrame failed during desktop frame copy: {error}"
+            ));
+        }
+    }
 
     let copy_result = (|| -> Result<LiveDesktopFrameProbe, String> {
         let resource = resource
@@ -944,17 +1002,17 @@ unsafe fn copy_duplication_frame_to_composition_surface(
             format: desc.Format.0,
             reason: "available",
             detail: format!(
-                "Copied initial GPU desktop frame texture {}x{} format {} into DirectComposition surface",
+                "Copied GPU desktop frame texture {}x{} format {} into DirectComposition surface",
                 desc.Width, desc.Height, desc.Format.0
             ),
         })
     })();
 
     let release_result = unsafe { duplication.ReleaseFrame() }
-        .map_err(|error| format!("ReleaseFrame failed after initial frame copy: {error}"));
+        .map_err(|error| format!("ReleaseFrame failed after desktop frame copy: {error}"));
 
     match (copy_result, release_result) {
-        (Ok(frame_probe), Ok(())) => Ok(frame_probe),
+        (Ok(frame_probe), Ok(())) => Ok(Some(frame_probe)),
         (Err(error), _) => Err(error),
         (Ok(_), Err(error)) => Err(error),
     }
