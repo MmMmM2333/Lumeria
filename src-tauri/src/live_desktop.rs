@@ -542,13 +542,13 @@ impl LiveDesktopRendererResources {
 }
 
 impl LiveDesktopRendererProbe {
-    fn native_renderer_unimplemented(detail: impl Into<String>) -> Self {
+    fn native_renderer_available_for_probe(detail: impl Into<String>) -> Self {
         Self {
             supports_direct_composition: true,
             supports_window_target: false,
             supports_root_visual: false,
-            supports_native_renderer: false,
-            reason: "nativeRendererNotImplemented",
+            supports_native_renderer: true,
+            reason: "available",
             detail: detail.into(),
         }
     }
@@ -610,6 +610,18 @@ impl LiveDesktopRendererProbe {
     }
 
     #[cfg(test)]
+    fn native_renderer_unimplemented(detail: impl Into<String>) -> Self {
+        Self {
+            supports_direct_composition: true,
+            supports_window_target: false,
+            supports_root_visual: false,
+            supports_native_renderer: false,
+            reason: "nativeRendererNotImplemented",
+            detail: detail.into(),
+        }
+    }
+
+    #[cfg(test)]
     fn available() -> Self {
         Self {
             supports_direct_composition: true,
@@ -662,11 +674,13 @@ fn make_live_desktop_background_support(
     } else {
         "available"
     };
+    let supports_live_desktop_background =
+        capture_probe.supports_desktop_duplication && renderer_probe.supports_native_renderer;
 
     LiveDesktopBackgroundSupport {
         platform,
-        supports_live_desktop_background: false,
-        supports_live_desktop_background_effects: false,
+        supports_live_desktop_background,
+        supports_live_desktop_background_effects: supports_live_desktop_background,
         reason,
         capture_probe,
         renderer_probe,
@@ -747,7 +761,7 @@ unsafe fn probe_windows_live_desktop_renderer(
                 continue;
             }
         };
-        let _composition_device: IDCompositionDevice = match unsafe {
+        let composition_device: IDCompositionDevice = match unsafe {
             DCompositionCreateDevice(&dxgi_device)
         } {
             Ok(device) => device,
@@ -758,10 +772,31 @@ unsafe fn probe_windows_live_desktop_renderer(
                 continue;
             }
         };
+        let composition_device3 = match composition_device.cast::<IDCompositionDevice3>() {
+            Ok(device) => device,
+            Err(error) => {
+                last_detail = format!(
+                    "IDCompositionDevice3 cast({adapter_index}) failed while probing renderer: {error}"
+                );
+                continue;
+            }
+        };
+        if let Err(error) = unsafe { composition_device3.CreateColorMatrixEffect() } {
+            last_detail = format!(
+                "CreateColorMatrixEffect({adapter_index}) failed while probing renderer: {error}"
+            );
+            continue;
+        }
+        if let Err(error) = unsafe { composition_device3.CreateGaussianBlurEffect() } {
+            last_detail = format!(
+                "CreateGaussianBlurEffect({adapter_index}) failed while probing renderer: {error}"
+            );
+            continue;
+        }
 
-        return Ok(LiveDesktopRendererProbe::native_renderer_unimplemented(
+        return Ok(LiveDesktopRendererProbe::native_renderer_available_for_probe(
             format!(
-                "DirectComposition device probe succeeded on adapter {adapter_index}; native target, visual, texture, and effect pipeline are not implemented"
+                "DirectComposition device and native effect probe succeeded on adapter {adapter_index}; HWND target and root visual are validated when the live desktop runtime starts"
             ),
         ));
     }
@@ -1768,6 +1803,20 @@ mod tests {
         assert!(support.capture_probe.frame_probe.supports_frame_texture);
         assert!(support.renderer_probe.supports_direct_composition);
         assert!(!support.renderer_probe.supports_native_renderer);
+    }
+
+    #[test]
+    fn capture_and_renderer_success_enable_live_desktop_support() {
+        let support = make_live_desktop_background_support(
+            "windows",
+            capture_probe(true, true, "available"),
+            LiveDesktopRendererProbe::native_renderer_available_for_probe("renderer ready"),
+        );
+
+        assert!(support.supports_live_desktop_background);
+        assert!(support.supports_live_desktop_background_effects);
+        assert_eq!(support.reason, "available");
+        assert!(support.renderer_probe.supports_native_renderer);
     }
 
     #[test]
