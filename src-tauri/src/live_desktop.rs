@@ -56,6 +56,125 @@ struct LiveDesktopFrameProbe {
     detail: String,
 }
 
+#[derive(Debug)]
+pub(crate) struct LiveDesktopRuntime {
+    status: LiveDesktopRuntimeStatus,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LiveDesktopRuntimeStatus {
+    phase: &'static str,
+    active: bool,
+    generation: u64,
+    reason: &'static str,
+    detail: String,
+}
+
+impl Default for LiveDesktopRuntime {
+    fn default() -> Self {
+        Self {
+            status: LiveDesktopRuntimeStatus::stopped(0),
+        }
+    }
+}
+
+impl LiveDesktopRuntime {
+    pub(crate) fn status(&self) -> LiveDesktopRuntimeStatus {
+        self.status.clone()
+    }
+
+    pub(crate) fn start(&mut self) -> LiveDesktopRuntimeStatus {
+        self.start_with_capture_probe(probe_live_desktop_capture(), false)
+    }
+
+    pub(crate) fn stop(&mut self) -> LiveDesktopRuntimeStatus {
+        if self.status.phase == "stopped" {
+            return self.status();
+        }
+        self.status = LiveDesktopRuntimeStatus::stopped(self.status.generation + 1);
+        self.status()
+    }
+
+    fn start_with_capture_probe(
+        &mut self,
+        capture_probe: LiveDesktopCaptureProbe,
+        renderer_ready: bool,
+    ) -> LiveDesktopRuntimeStatus {
+        if self.status.phase == "running" || self.status.phase == "starting" {
+            return self.status();
+        }
+
+        let generation = self.status.generation + 1;
+        self.status = LiveDesktopRuntimeStatus {
+            phase: "starting",
+            active: false,
+            generation,
+            reason: "starting",
+            detail: "Live desktop runtime start requested".to_string(),
+        };
+
+        if !capture_probe.supports_desktop_duplication {
+            self.status = LiveDesktopRuntimeStatus::failed(
+                generation,
+                capture_probe.reason,
+                capture_probe.detail,
+            );
+            return self.status();
+        }
+
+        if !capture_probe.frame_probe.supports_frame_texture {
+            self.status = LiveDesktopRuntimeStatus::failed(
+                generation,
+                capture_probe.frame_probe.reason,
+                capture_probe.frame_probe.detail,
+            );
+            return self.status();
+        }
+
+        if !renderer_ready {
+            self.status = LiveDesktopRuntimeStatus::failed(
+                generation,
+                "nativeRendererNotImplemented",
+                "Desktop capture is ready, but the native composition renderer is not implemented"
+                    .to_string(),
+            );
+            return self.status();
+        }
+
+        self.status = LiveDesktopRuntimeStatus {
+            phase: "running",
+            active: true,
+            generation,
+            reason: "running",
+            detail: "Live desktop runtime is running".to_string(),
+        };
+        self.status()
+    }
+}
+
+impl LiveDesktopRuntimeStatus {
+    fn stopped(generation: u64) -> Self {
+        Self {
+            phase: "stopped",
+            active: false,
+            generation,
+            reason: "stopped",
+            detail: "Live desktop runtime is stopped".to_string(),
+        }
+    }
+
+    fn failed(generation: u64, reason: &'static str, detail: String) -> Self {
+        Self {
+            phase: "failed",
+            active: false,
+            generation,
+            reason,
+            detail,
+        }
+    }
+}
+
 pub(crate) fn live_desktop_background_support() -> LiveDesktopBackgroundSupport {
     let capture_probe = probe_live_desktop_capture();
     make_live_desktop_background_support(current_platform(), capture_probe)
@@ -443,5 +562,65 @@ mod tests {
         assert_eq!(support.reason, "dxgiUnavailable");
         assert!(!support.capture_probe.supports_d3d11);
         assert!(!support.capture_probe.supports_desktop_duplication);
+    }
+
+    #[test]
+    fn runtime_starts_stopped() {
+        let runtime = LiveDesktopRuntime::default();
+        let status = runtime.status();
+
+        assert_eq!(status.phase, "stopped");
+        assert!(!status.active);
+        assert_eq!(status.generation, 0);
+        assert_eq!(status.reason, "stopped");
+    }
+
+    #[test]
+    fn runtime_start_surfaces_capture_failure() {
+        let mut runtime = LiveDesktopRuntime::default();
+        let status =
+            runtime.start_with_capture_probe(capture_probe(false, false, "dxgiUnavailable"), false);
+
+        assert_eq!(status.phase, "failed");
+        assert!(!status.active);
+        assert_eq!(status.generation, 1);
+        assert_eq!(status.reason, "dxgiUnavailable");
+    }
+
+    #[test]
+    fn runtime_start_waits_for_native_renderer_after_capture_ready() {
+        let mut runtime = LiveDesktopRuntime::default();
+        let status =
+            runtime.start_with_capture_probe(capture_probe(true, true, "available"), false);
+
+        assert_eq!(status.phase, "failed");
+        assert!(!status.active);
+        assert_eq!(status.generation, 1);
+        assert_eq!(status.reason, "nativeRendererNotImplemented");
+
+        let stopped = runtime.stop();
+        assert_eq!(stopped.phase, "stopped");
+        assert_eq!(stopped.generation, 2);
+    }
+
+    #[test]
+    fn runtime_can_transition_to_running_when_renderer_is_ready() {
+        let mut runtime = LiveDesktopRuntime::default();
+        let status = runtime.start_with_capture_probe(capture_probe(true, true, "available"), true);
+
+        assert_eq!(status.phase, "running");
+        assert!(status.active);
+        assert_eq!(status.generation, 1);
+        assert_eq!(status.reason, "running");
+
+        let duplicate_start =
+            runtime.start_with_capture_probe(capture_probe(true, true, "available"), true);
+        assert_eq!(duplicate_start.generation, 1);
+        assert_eq!(duplicate_start.phase, "running");
+
+        let stopped = runtime.stop();
+        assert_eq!(stopped.phase, "stopped");
+        assert!(!stopped.active);
+        assert_eq!(stopped.generation, 2);
     }
 }

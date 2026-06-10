@@ -57,6 +57,7 @@ pub use icons::debug_extract_icon_png;
 #[derive(Default)]
 struct AppState {
     catalog: Mutex<HashMap<String, AppCatalogItem>>,
+    live_desktop_runtime: Mutex<live_desktop::LiveDesktopRuntime>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -401,6 +402,39 @@ fn get_main_window_effects_support() -> tray::MainWindowEffectsSupport {
 #[tauri::command]
 fn get_live_desktop_background_support() -> live_desktop::LiveDesktopBackgroundSupport {
     live_desktop::live_desktop_background_support()
+}
+
+#[tauri::command]
+fn get_live_desktop_runtime_status(
+    state: State<'_, AppState>,
+) -> Result<live_desktop::LiveDesktopRuntimeStatus, String> {
+    let runtime = state
+        .live_desktop_runtime
+        .lock()
+        .map_err(|_| "Failed to lock live desktop runtime".to_string())?;
+    Ok(runtime.status())
+}
+
+#[tauri::command]
+fn start_live_desktop_background(
+    state: State<'_, AppState>,
+) -> Result<live_desktop::LiveDesktopRuntimeStatus, String> {
+    let mut runtime = state
+        .live_desktop_runtime
+        .lock()
+        .map_err(|_| "Failed to lock live desktop runtime".to_string())?;
+    Ok(runtime.start())
+}
+
+#[tauri::command]
+fn stop_live_desktop_background(
+    state: State<'_, AppState>,
+) -> Result<live_desktop::LiveDesktopRuntimeStatus, String> {
+    let mut runtime = state
+        .live_desktop_runtime
+        .lock()
+        .map_err(|_| "Failed to lock live desktop runtime".to_string())?;
+    Ok(runtime.stop())
 }
 
 #[tauri::command]
@@ -801,6 +835,9 @@ pub fn run() {
             quit_app,
             get_main_window_effects_support,
             get_live_desktop_background_support,
+            get_live_desktop_runtime_status,
+            start_live_desktop_background,
+            stop_live_desktop_background,
             set_main_window_effects_enabled
         ])
         .run(tauri::generate_context!())
