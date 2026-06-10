@@ -19,8 +19,9 @@ use windows::{
                 D3D11_TEXTURE2D_DESC,
             },
             DirectComposition::{
-                DCompositionCreateDevice, IDCompositionDevice, IDCompositionSurface,
-                IDCompositionTarget, IDCompositionVisual,
+                DCompositionCreateDevice, IDCompositionColorMatrixEffect, IDCompositionDevice,
+                IDCompositionDevice3, IDCompositionSurface, IDCompositionTarget,
+                IDCompositionVisual,
             },
             Dxgi::{
                 Common::{DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_FORMAT_B8G8R8A8_UNORM},
@@ -131,6 +132,7 @@ struct LiveDesktopRendererResources {
     _d3d_context: ID3D11DeviceContext,
     _capture_duplication: IDXGIOutputDuplication,
     _composition_device: IDCompositionDevice,
+    _color_matrix_effect: IDCompositionColorMatrixEffect,
     _target: IDCompositionTarget,
     _root_visual: IDCompositionVisual,
     _surface: IDCompositionSurface,
@@ -499,9 +501,22 @@ impl LiveDesktopRendererResources {
     }
 
     fn apply_pending_config(&mut self, config_receiver: &mpsc::Receiver<LiveDesktopRuntimeConfig>) {
+        let mut did_update = false;
         for config in config_receiver.try_iter() {
             self.config = config;
+            did_update = true;
         }
+        if did_update {
+            let _ = unsafe { self.apply_current_config_to_visual() };
+        }
+    }
+
+    unsafe fn apply_current_config_to_visual(&self) -> Result<(), String> {
+        unsafe {
+            apply_live_desktop_config_to_color_matrix(&self._color_matrix_effect, &self.config)
+        }?;
+        unsafe { self._composition_device.Commit() }.map_err(|error| error.to_string())?;
+        Ok(())
     }
 
     unsafe fn copy_next_frame_to_surface(&self) -> Result<bool, String> {
@@ -850,6 +865,24 @@ unsafe fn create_live_desktop_renderer_resources(
                 continue;
             }
         };
+        let composition_device3 = match composition_device.cast::<IDCompositionDevice3>() {
+            Ok(device) => device,
+            Err(error) => {
+                last_detail = format!(
+                    "IDCompositionDevice3 cast({adapter_index}) failed while creating renderer resources: {error}"
+                );
+                continue;
+            }
+        };
+        let color_matrix_effect = match unsafe { composition_device3.CreateColorMatrixEffect() } {
+            Ok(effect) => effect,
+            Err(error) => {
+                last_detail = format!(
+                    "CreateColorMatrixEffect({adapter_index}) failed while creating renderer resources: {error}"
+                );
+                continue;
+            }
+        };
         let target = match unsafe { composition_device.CreateTargetForHwnd(window_handle, false) } {
             Ok(target) => target,
             Err(error) => {
@@ -915,8 +948,22 @@ unsafe fn create_live_desktop_renderer_resources(
                 ));
             }
         };
+        if let Err(error) =
+            unsafe { apply_live_desktop_config_to_color_matrix(&color_matrix_effect, &config) }
+        {
+            return Err(LiveDesktopRendererProbe::root_visual_unavailable(
+                "directCompositionEffectUnavailable",
+                format!("DirectComposition color matrix setup failed: {error}"),
+            ));
+        }
         if let Err(error) = unsafe {
-            set_direct_composition_root(&composition_device, &target, &root_visual, &surface)
+            set_direct_composition_root(
+                &composition_device,
+                &target,
+                &root_visual,
+                &surface,
+                &color_matrix_effect,
+            )
         } {
             return Err(LiveDesktopRendererProbe::root_visual_unavailable(
                 "directCompositionRootUnavailable",
@@ -929,7 +976,7 @@ unsafe fn create_live_desktop_renderer_resources(
         return Ok(LiveDesktopRendererStartup {
             renderer_probe: LiveDesktopRendererProbe::native_renderer_available_for_window(
                 format!(
-                    "Desktop Duplication frame pump initialized with frame {}x{} format {} and DirectComposition target/root surface on adapter {adapter_index}, output {}; native effects are not implemented",
+                    "Desktop Duplication frame pump initialized with frame {}x{} format {} and DirectComposition target/root surface on adapter {adapter_index}, output {}; native dimmed effect is available, blur/acrylic are not implemented",
                     frame_probe.width,
                     frame_probe.height,
                     frame_probe.format,
@@ -943,6 +990,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 _d3d_context: d3d.context,
                 _capture_duplication: capture.duplication,
                 _composition_device: composition_device,
+                _color_matrix_effect: color_matrix_effect,
                 _target: target,
                 _root_visual: root_visual,
                 _surface: surface,
@@ -1129,13 +1177,75 @@ unsafe fn copy_duplication_frame_to_composition_surface(
 }
 
 #[cfg(target_os = "windows")]
+unsafe fn apply_live_desktop_config_to_color_matrix(
+    effect: &IDCompositionColorMatrixEffect,
+    config: &LiveDesktopRuntimeConfig,
+) -> Result<(), String> {
+    let amount = if matches!(&config.effect, LiveDesktopBackgroundEffect::Dimmed) {
+        config.darken_strength.min(100) as f32 / 100.0
+    } else {
+        0.0
+    };
+    let scale = 1.0 - amount;
+    let color = parse_live_desktop_hex_color(&config.darken_color);
+    let matrix = [
+        (0, 0, scale),
+        (0, 1, 0.0),
+        (0, 2, 0.0),
+        (0, 3, 0.0),
+        (1, 0, 0.0),
+        (1, 1, scale),
+        (1, 2, 0.0),
+        (1, 3, 0.0),
+        (2, 0, 0.0),
+        (2, 1, 0.0),
+        (2, 2, scale),
+        (2, 3, 0.0),
+        (3, 0, 0.0),
+        (3, 1, 0.0),
+        (3, 2, 0.0),
+        (3, 3, 1.0),
+        (4, 0, color[0] * amount),
+        (4, 1, color[1] * amount),
+        (4, 2, color[2] * amount),
+        (4, 3, 0.0),
+    ];
+    for (row, column, value) in matrix {
+        unsafe { effect.SetMatrixElement2(row, column, value) }
+            .map_err(|error| error.to_string())?;
+    }
+    unsafe { effect.SetClampOutput(true) }.map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn parse_live_desktop_hex_color(value: &str) -> [f32; 3] {
+    let value = value.trim().strip_prefix('#').unwrap_or(value.trim());
+    if value.len() != 6 {
+        return [28.0 / 255.0, 28.0 / 255.0, 28.0 / 255.0];
+    }
+    let red = u8::from_str_radix(&value[0..2], 16);
+    let green = u8::from_str_radix(&value[2..4], 16);
+    let blue = u8::from_str_radix(&value[4..6], 16);
+    match (red, green, blue) {
+        (Ok(red), Ok(green), Ok(blue)) => [
+            red as f32 / 255.0,
+            green as f32 / 255.0,
+            blue as f32 / 255.0,
+        ],
+        _ => [28.0 / 255.0, 28.0 / 255.0, 28.0 / 255.0],
+    }
+}
+
+#[cfg(target_os = "windows")]
 unsafe fn set_direct_composition_root(
     device: &IDCompositionDevice,
     target: &IDCompositionTarget,
     visual: &IDCompositionVisual,
     surface: &IDCompositionSurface,
+    effect: &IDCompositionColorMatrixEffect,
 ) -> Result<(), String> {
     unsafe { visual.SetContent(surface) }.map_err(|error| error.to_string())?;
+    unsafe { visual.SetEffect(effect) }.map_err(|error| error.to_string())?;
     unsafe { target.SetRoot(visual) }.map_err(|error| error.to_string())?;
     unsafe { device.Commit() }.map_err(|error| error.to_string())?;
     Ok(())
@@ -1531,6 +1641,18 @@ mod tests {
         assert!(!status.active);
         assert_eq!(status.generation, 0);
         assert_eq!(status.reason, "stopped");
+    }
+
+    #[test]
+    fn live_desktop_hex_color_parser_reads_normalized_rgb() {
+        let color = parse_live_desktop_hex_color("#336699");
+
+        assert!((color[0] - 0.2).abs() < 0.001);
+        assert!((color[1] - 0.4).abs() < 0.001);
+        assert!((color[2] - 0.6).abs() < 0.001);
+
+        let fallback = parse_live_desktop_hex_color("invalid");
+        assert!((fallback[0] - 28.0 / 255.0).abs() < 0.001);
     }
 
     #[test]
