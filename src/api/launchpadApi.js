@@ -173,6 +173,12 @@ export async function getMainWindowEffectsSupport() {
   return invoke("get_main_window_effects_support");
 }
 
+export async function getLiveDesktopBackgroundSupport() {
+  const invoke = getTauriInvoke();
+  if (!invoke) return null;
+  return invoke("get_live_desktop_background_support");
+}
+
 export async function setMainWindowEffectsEnabled(enabled, openSequence = null, options = {}) {
   const invoke = getTauriInvoke();
   if (!invoke) return false;

@@ -205,7 +205,7 @@
               </div>
               <div class="settings-field settings-field-wide settings-background-field">
                 <span class="settings-field-copy">
-                  <span>图片层</span>
+                  <span>背景层</span>
                   <span class="settings-field-hint">{{ backgroundSourceHint }}</span>
                 </span>
                 <div class="settings-background-controls">
@@ -234,16 +234,24 @@
                       >
                         桌面壁纸
                       </button>
+                      <button
+                        type="button"
+                        :class="cx('settings-segmented-button', state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP && 'settings-segmented-button-active')"
+                        :disabled="!state.canUseLiveDesktopBackground()"
+                        @click="state.setDraftBackgroundSource(BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP)"
+                      >
+                        动态桌面
+                      </button>
                     </div>
-                    <label v-if="doesDraftBackgroundUseImage" class="settings-opacity-control">
-                      <span>图片透明度</span>
+                    <label v-if="doesDraftBackgroundUseLayer" class="settings-opacity-control">
+                      <span>背景透明度</span>
                       <input
                         :value="state.draftBackgroundImageOpacity.value"
                         :min="BACKGROUND_IMAGE_OPACITY_MIN"
                         :max="BACKGROUND_IMAGE_OPACITY_MAX"
                         :step="BACKGROUND_IMAGE_OPACITY_STEP"
                         type="range"
-                        aria-label="背景图片透明度"
+                        aria-label="背景层透明度"
                         @input="state.setDraftBackgroundImageOpacity($event.target.value)"
                       />
                       <span class="settings-opacity-value">{{ state.draftBackgroundImageOpacity.value }}%</span>
@@ -307,7 +315,7 @@
               </div>
               <div class="settings-field settings-field-wide settings-background-field">
                 <span class="settings-field-copy">
-                  <span>图片效果</span>
+                  <span>背景效果</span>
                   <span class="settings-field-hint">{{ backgroundEffectHint }}</span>
                 </span>
                 <div class="settings-background-controls">
@@ -316,7 +324,7 @@
                       <button
                         type="button"
                         :class="cx('settings-segmented-button', state.draftBackgroundEffect.value === BACKGROUND_EFFECT_NONE && 'settings-segmented-button-active')"
-                        :disabled="!doesDraftBackgroundUseImage"
+                        :disabled="!canUseDraftBackgroundEffect(BACKGROUND_EFFECT_NONE)"
                         @click="state.setDraftBackgroundEffect(BACKGROUND_EFFECT_NONE)"
                       >
                         原图
@@ -324,7 +332,7 @@
                       <button
                         type="button"
                         :class="cx('settings-segmented-button', state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED && 'settings-segmented-button-active')"
-                        :disabled="!doesDraftBackgroundUseImage"
+                        :disabled="!canUseDraftBackgroundEffect(BACKGROUND_EFFECT_DIMMED)"
                         @click="state.setDraftBackgroundEffect(BACKGROUND_EFFECT_DIMMED)"
                       >
                         暗化
@@ -332,7 +340,7 @@
                       <button
                         type="button"
                         :class="cx('settings-segmented-button', state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR && 'settings-segmented-button-active')"
-                        :disabled="!doesDraftBackgroundUseImage"
+                        :disabled="!canUseDraftBackgroundEffect(BACKGROUND_EFFECT_BLUR)"
                         @click="state.setDraftBackgroundEffect(BACKGROUND_EFFECT_BLUR)"
                       >
                         模糊
@@ -340,14 +348,14 @@
                       <button
                         type="button"
                         :class="cx('settings-segmented-button', state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL && 'settings-segmented-button-active')"
-                        :disabled="!doesDraftBackgroundUseImage"
+                        :disabled="!canUseDraftBackgroundEffect(BACKGROUND_EFFECT_ACRYLIC_WEBGL)"
                         @click="state.setDraftBackgroundEffect(BACKGROUND_EFFECT_ACRYLIC_WEBGL)"
                       >
                         Acrylic
                       </button>
                     </div>
                   </div>
-                  <label v-if="doesDraftBackgroundUseImage && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR" class="settings-opacity-control">
+                  <label v-if="doesDraftBackgroundUseLayer && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR" class="settings-opacity-control">
                     <span>模糊强度</span>
                     <input
                       :value="state.draftBackgroundBlurStrength.value"
@@ -360,7 +368,7 @@
                     />
                     <span class="settings-opacity-value">{{ state.draftBackgroundBlurStrength.value }}%</span>
                   </label>
-                  <label v-if="doesDraftBackgroundUseImage && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED" class="settings-color-control">
+                  <label v-if="doesDraftBackgroundUseLayer && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED" class="settings-color-control">
                     <span>暗化颜色</span>
                     <span class="settings-color-swatch">
                       <input
@@ -372,7 +380,7 @@
                     </span>
                     <span class="settings-color-value">{{ state.draftBackgroundDarkenColor.value }}</span>
                   </label>
-                  <label v-if="doesDraftBackgroundUseImage && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED" class="settings-opacity-control">
+                  <label v-if="doesDraftBackgroundUseLayer && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED" class="settings-opacity-control">
                     <span>暗化强度</span>
                     <input
                       :value="state.draftBackgroundDarkenStrength.value"
@@ -385,7 +393,7 @@
                     />
                     <span class="settings-opacity-value">{{ state.draftBackgroundDarkenStrength.value }}%</span>
                   </label>
-                  <div v-if="doesDraftBackgroundUseImage && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL" class="settings-acrylic-controls">
+                  <div v-if="doesDraftBackgroundUseLayer && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL" class="settings-acrylic-controls">
                     <div class="settings-acrylic-row">
                       <span class="settings-acrylic-row-label">Acrylic 外观</span>
                       <div class="settings-segmented-control" aria-label="Acrylic 外观">
@@ -844,7 +852,9 @@ import {
   BACKGROUND_IMAGE_OPACITY_STEP,
   BACKGROUND_SOURCE_CUSTOM_IMAGE,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
   BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
+  backgroundSourceUsesLiveDesktop,
   backgroundSourceUsesImage,
   normalizeBackgroundAcrylicAppearance,
   normalizeBackgroundAcrylicParams,
@@ -937,25 +947,32 @@ const canEditWindowEffectAppearance = computed(() =>
   && props.state.canUseWindowEffectMaterial(props.state.draftWindowEffectMaterial.value)
 );
 const doesDraftBackgroundUseImage = computed(() => backgroundSourceUsesImage(props.state.draftBackgroundSource.value));
+const doesDraftBackgroundUseLiveDesktop = computed(() => backgroundSourceUsesLiveDesktop(props.state.draftBackgroundSource.value));
+const doesDraftBackgroundUseLayer = computed(() => doesDraftBackgroundUseImage.value || doesDraftBackgroundUseLiveDesktop.value);
 const isDraftCustomImage = computed(() => props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE);
 const isDraftWindowsWallpaper = computed(() => props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER);
+const canUseDraftBackgroundEffect = (effect) => props.state.canUseDraftBackgroundEffect(effect);
 const backgroundSourceHint = computed(() =>
   props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE
     ? "自定义图片叠在底色上方"
     : props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER
       ? "跟随当前 Windows 桌面壁纸"
-      : "不叠加图片"
+      : props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP
+        ? "捕获动态桌面并在 Native GPU 管线中合成"
+        : "不叠加背景层"
 );
 const backgroundEffectHint = computed(() =>
-  doesDraftBackgroundUseImage.value
-    ? props.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+  doesDraftBackgroundUseLayer.value
+    ? doesDraftBackgroundUseLiveDesktop.value && !props.state.canUseLiveDesktopBackgroundEffect(props.state.draftBackgroundEffect.value)
+      ? "当前 Native 管线尚未启用该动态效果"
+      : props.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL
       ? "WebGL Acrylic 风格合成"
       : props.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR
-        ? "仅模糊图片层"
+        ? "模糊背景层"
       : props.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED
         ? "叠加暗化遮罩"
-        : "直接显示图片"
-    : "选择图片后可用"
+        : "直接显示背景层"
+    : "选择背景层后可用"
 );
 const draftBackgroundImageName = computed(() => {
   const path = String(props.state.draftBackgroundImagePath.value || "").trim();

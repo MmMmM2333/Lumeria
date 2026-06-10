@@ -20,6 +20,7 @@ import {
   confirmQuitAfterSave,
   convertFilePathToAssetUrl,
   getDesktopWallpaperBackground,
+  getLiveDesktopBackgroundSupport,
   getMainWindowEffectsSupport,
   hideMainWindow,
   isNativeBridgeAvailable,
@@ -38,8 +39,10 @@ import {
   BACKGROUND_EFFECT_DIMMED,
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
   BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
   backgroundEffectUsesPixi,
+  backgroundSourceUsesLiveDesktop,
   backgroundSourceUsesImage,
   clampBackgroundBaseOpacity,
   clampBackgroundBlurStrength,
@@ -53,6 +56,7 @@ import {
   normalizeBackgroundEffect,
   normalizeBackgroundImagePath,
   normalizeBackgroundSource,
+  normalizeLiveDesktopBackgroundSupport,
   normalizeWindowEffectAppearance,
   normalizeWindowEffectsSupport,
   resolveWindowEffectMaterialForSupport,
@@ -125,13 +129,21 @@ export function useLaunchpadNative(options) {
     const nextBackgroundAcrylicAppearance = normalizeBackgroundAcrylicAppearance(settings.backgroundAcrylicAppearance);
     const nextBackgroundAcrylicDarkParams = normalizeBackgroundAcrylicParams(settings.backgroundAcrylicDarkParams, BACKGROUND_ACRYLIC_APPEARANCE_DARK);
     const nextBackgroundAcrylicLightParams = normalizeBackgroundAcrylicParams(settings.backgroundAcrylicLightParams, BACKGROUND_ACRYLIC_APPEARANCE_LIGHT);
+    const nextBackgroundUsesLiveDesktop = backgroundSourceUsesLiveDesktop(nextBackgroundSource)
+      && normalizeLiveDesktopBackgroundSupport(options.liveDesktopBackgroundSupport.value).supportsLiveDesktopBackground;
     const nextBackgroundImagePath = backgroundSourceUsesImage(nextBackgroundSource)
       ? normalizeBackgroundImagePath(settings.backgroundImagePath)
       : null;
     const nextBackgroundImageUrl = nextBackgroundImagePath ? convertFilePathToAssetUrl(nextBackgroundImagePath) : null;
-    const nextEffectiveBackgroundEffect = backgroundEffectUsesPixi(nextBackgroundEffect) && !nextBackgroundImagePath
-      ? BACKGROUND_EFFECT_DIMMED
-      : nextBackgroundEffect;
+    let nextEffectiveBackgroundEffect = nextBackgroundEffect;
+    if (nextBackgroundUsesLiveDesktop) {
+      const support = normalizeLiveDesktopBackgroundSupport(options.liveDesktopBackgroundSupport.value);
+      if (backgroundEffectUsesPixi(nextBackgroundEffect) && !support.supportsLiveDesktopBackgroundEffects) {
+        nextEffectiveBackgroundEffect = BACKGROUND_EFFECT_DIMMED;
+      }
+    } else if (backgroundEffectUsesPixi(nextBackgroundEffect) && !nextBackgroundImagePath) {
+      nextEffectiveBackgroundEffect = BACKGROUND_EFFECT_DIMMED;
+    }
 
     options.gridRows.value = rows;
     options.gridCols.value = cols;
@@ -153,7 +165,11 @@ export function useLaunchpadNative(options) {
     options.windowEffectAppearance.value = nextWindowEffectAppearance;
     options.draftWindowEffectMaterial.value = nextWindowEffectMaterial;
     options.draftWindowEffectAppearance.value = nextWindowEffectAppearance;
-    options.backgroundSource.value = nextBackgroundImagePath ? nextBackgroundSource : BACKGROUND_SOURCE_SYSTEM_MATERIAL;
+    options.backgroundSource.value = nextBackgroundUsesLiveDesktop
+      ? BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP
+      : nextBackgroundImagePath
+        ? nextBackgroundSource
+        : BACKGROUND_SOURCE_SYSTEM_MATERIAL;
     options.backgroundEffect.value = nextEffectiveBackgroundEffect;
     options.backgroundBaseColor.value = nextBackgroundBaseColor;
     options.backgroundBaseOpacity.value = nextBackgroundBaseOpacity;
@@ -399,6 +415,7 @@ export function useLaunchpadNative(options) {
 
     try {
       await refreshNativeWindowEffectsSupport();
+      await refreshLiveDesktopBackgroundSupport();
       const savedLayout = await loadLayout();
       if (!savedLayout) {
         options.pages.value = [[]];
@@ -454,6 +471,21 @@ export function useLaunchpadNative(options) {
     } catch (error) {
       applyNativeWindowEffectsSupport(DEFAULT_WINDOW_EFFECTS_SUPPORT);
       console.error("Failed to load LaunchPad window effects support", error);
+    }
+  }
+
+  async function refreshLiveDesktopBackgroundSupport() {
+    if (!isNativeBridgeAvailable()) {
+      options.liveDesktopBackgroundSupport.value = normalizeLiveDesktopBackgroundSupport(null);
+      return;
+    }
+    try {
+      options.liveDesktopBackgroundSupport.value = normalizeLiveDesktopBackgroundSupport(
+        await getLiveDesktopBackgroundSupport()
+      );
+    } catch (error) {
+      options.liveDesktopBackgroundSupport.value = normalizeLiveDesktopBackgroundSupport(null);
+      console.error("Failed to load live desktop background support", error);
     }
   }
 
@@ -932,6 +964,7 @@ export function useLaunchpadNative(options) {
     launchNativeAppIfAvailable,
     markLaunchCriticalLayoutDirty,
     prepareNativeLaunch,
+    refreshLiveDesktopBackgroundSupport,
     registerNativeEventListeners,
     scheduleNativeLayoutSave,
     scheduleLaunchTargetStatusCheck,

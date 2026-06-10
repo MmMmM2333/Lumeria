@@ -171,6 +171,15 @@ export function runLaunchpadDataTests() {
     backgroundImagePath: "C:/Images/blur.webp",
   });
   assert(blurSnapshot.settings.backgroundEffect === "blur", "layout snapshots should preserve blur background effect");
+  const liveSnapshot = dataHelpers.createLayoutSnapshot({
+    ...snapshot.settings,
+    pages: merged,
+    backgroundSource: "windowsLiveDesktop",
+    backgroundEffect: "dimmed",
+    backgroundImagePath: "C:/Images/ignored.webp",
+  });
+  assert(liveSnapshot.settings.backgroundSource === "windowsLiveDesktop", "layout snapshots should preserve live desktop background source");
+  assert(liveSnapshot.settings.backgroundImagePath === null, "layout snapshots should clear image paths for live desktop backgrounds");
   const plainSnapshot = dataHelpers.createLayoutSnapshot({
     ...snapshot.settings,
     pages: merged,

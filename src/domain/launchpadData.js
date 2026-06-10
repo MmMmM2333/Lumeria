@@ -439,7 +439,7 @@ export function createLaunchpadDataHelpers(options) {
     const backgroundAcrylicLightParams = normalizeLayoutBackgroundAcrylicParams(state.backgroundAcrylicLightParams, "light");
     const backgroundImagePath = typeof state.backgroundImagePath === "string" ? state.backgroundImagePath.trim() : "";
     const backgroundBaseColor = normalizeLayoutBackgroundBaseColor(state.backgroundBaseColor);
-    const backgroundSource = state.backgroundSource === "customImage" || state.backgroundSource === "windowsWallpaper"
+    const backgroundSource = state.backgroundSource === "customImage" || state.backgroundSource === "windowsWallpaper" || state.backgroundSource === "windowsLiveDesktop"
       ? state.backgroundSource
       : "systemMaterial";
     const windowEffectMaterial = state.windowEffectMaterial === "none" || state.windowEffectMaterial === "mica" || state.windowEffectMaterial === "micaAlt"

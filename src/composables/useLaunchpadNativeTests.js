@@ -12,7 +12,9 @@ import {
   BACKGROUND_IMAGE_LAYOUT_FILL,
   BACKGROUND_SOURCE_CUSTOM_IMAGE,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
   BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
+  DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT,
   DEFAULT_BACKGROUND_BASE_COLOR,
   DEFAULT_BACKGROUND_BASE_OPACITY,
   DEFAULT_BACKGROUND_BLUR_STRENGTH,
@@ -109,6 +111,7 @@ function makeOptions(overrides = {}) {
       supportsMica: false,
       supportsMicaAlt: false,
     }),
+    liveDesktopBackgroundSupport: ref({ ...DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT }),
     launchTargetStatusById: ref({}),
     mergeNativeCatalogWithSavedLayout: (apps) => [apps],
     openDesktop: () => {},
@@ -146,6 +149,14 @@ function withMockTauri(invoke, run, bridgeOverrides = {}) {
       }
       if (command === "set_main_window_effects_enabled" && !bridgeOverrides.passWindowEffectsCommand) {
         return null;
+      }
+      if (command === "get_live_desktop_background_support" && !bridgeOverrides.passLiveDesktopBackgroundSupport) {
+        return {
+          platform: "windows",
+          supportsLiveDesktopBackground: false,
+          supportsLiveDesktopBackgroundEffects: false,
+          reason: "nativeRendererUnavailable",
+        };
       }
       return invoke(command, args);
     },
@@ -483,6 +494,113 @@ export async function runLaunchpadNativeTests() {
 
     assert(options.backgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "native load should fall back when blur has no image path");
     assert(options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should reset blur without an image path");
+  });
+
+  await withMockTauri(async (command) => {
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{ id: "live-app", type: "app", name: "Live", launchTarget: { kind: "shortcut", path: "Live.lnk" } }]],
+        settings: {
+          backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
+          backgroundEffect: BACKGROUND_EFFECT_DIMMED,
+          backgroundImagePath: "C:/Images/ignored.webp",
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+
+    assert(options.backgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "native load should fall back when live desktop backgrounds are unsupported");
+    assert(options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should reset unsupported live desktop backgrounds to dimmed");
+    assert(options.backgroundImagePath.value === null, "native load should not keep image paths for unsupported live desktop backgrounds");
+  });
+
+  await withMockTauri(async (command) => {
+    if (command === "get_live_desktop_background_support") {
+      return {
+        platform: "windows",
+        supportsLiveDesktopBackground: true,
+        supportsLiveDesktopBackgroundEffects: true,
+        reason: "available",
+      };
+    }
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{ id: "live-acrylic-app", type: "app", name: "Live Acrylic", launchTarget: { kind: "shortcut", path: "Live Acrylic.lnk" } }]],
+        settings: {
+          backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
+          backgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+          backgroundImagePath: "C:/Images/ignored.webp",
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+
+    assert(options.backgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP, "native load should keep supported live desktop backgrounds");
+    assert(options.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "native load should preserve live desktop acrylic when effects are supported");
+    assert(options.backgroundImagePath.value === null, "native load should not keep image paths for live desktop backgrounds");
+    assert(options.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP, "native load should sync live desktop background draft");
+    assert(options.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "native load should sync live desktop acrylic draft");
+  }, {
+    passLiveDesktopBackgroundSupport: true,
+  });
+
+  await withMockTauri(async (command) => {
+    if (command === "get_live_desktop_background_support") {
+      return {
+        platform: "windows",
+        supportsLiveDesktopBackground: true,
+        supportsLiveDesktopBackgroundEffects: false,
+        reason: "effectsUnavailable",
+      };
+    }
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{ id: "live-blur-app", type: "app", name: "Live Blur", launchTarget: { kind: "shortcut", path: "Live Blur.lnk" } }]],
+        settings: {
+          backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
+          backgroundEffect: BACKGROUND_EFFECT_BLUR,
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+
+    assert(options.backgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP, "native load should keep live desktop backgrounds when base support is available");
+    assert(options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should reset live desktop blur when effect support is unavailable");
+  }, {
+    passLiveDesktopBackgroundSupport: true,
   });
 
   const wallpaperSaves = [];

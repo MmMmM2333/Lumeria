@@ -99,6 +99,15 @@ struct BackgroundLayoutContext {
     window_physical_y: i32,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LiveDesktopBackgroundSupport {
+    platform: &'static str,
+    supports_live_desktop_background: bool,
+    supports_live_desktop_background_effects: bool,
+    reason: &'static str,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LaunchTargetCheckRequest {
@@ -395,6 +404,16 @@ fn show_launch_error_message(report: LaunchFailureReport) {
 #[tauri::command]
 fn get_main_window_effects_support() -> tray::MainWindowEffectsSupport {
     tray::main_window_effects_support()
+}
+
+#[tauri::command]
+fn get_live_desktop_background_support() -> LiveDesktopBackgroundSupport {
+    LiveDesktopBackgroundSupport {
+        platform: std::env::consts::OS,
+        supports_live_desktop_background: false,
+        supports_live_desktop_background_effects: false,
+        reason: "nativeRendererUnavailable",
+    }
 }
 
 #[tauri::command]
@@ -794,6 +813,7 @@ pub fn run() {
             show_launch_error_message,
             quit_app,
             get_main_window_effects_support,
+            get_live_desktop_background_support,
             set_main_window_effects_enabled
         ])
         .run(tauri::generate_context!())

@@ -24,6 +24,7 @@ import {
   DEFAULT_BACKGROUND_DARKEN_STRENGTH,
   DEFAULT_BACKGROUND_IMAGE_LAYOUT,
   DEFAULT_BACKGROUND_IMAGE_OPACITY,
+  DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT,
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
@@ -75,6 +76,7 @@ export function useLaunchpadControllerState() {
   const draftBackgroundImagePath = ref(null);
   const draftBackgroundImageUrl = ref(null);
   const isChoosingBackgroundImage = ref(false);
+  const liveDesktopBackgroundSupport = ref({ ...DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT });
   const windowEffectsSupport = ref({ ...DEFAULT_WINDOW_EFFECTS_SUPPORT });
   const windowEffectMaterial = ref(WINDOW_EFFECT_MATERIAL_ACRYLIC);
   const windowEffectAppearance = ref(WINDOW_EFFECT_APPEARANCE_DARK);
@@ -168,6 +170,7 @@ export function useLaunchpadControllerState() {
     isLayoutProjectionActive,
     isTextlessMode,
     launchTargetStatusById,
+    liveDesktopBackgroundSupport,
     keyboardFocusArea,
     pageDotsRef,
     pageIndex,
