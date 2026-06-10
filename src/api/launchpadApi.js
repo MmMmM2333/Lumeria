@@ -179,6 +179,24 @@ export async function getLiveDesktopBackgroundSupport() {
   return invoke("get_live_desktop_background_support");
 }
 
+export async function getLiveDesktopRuntimeStatus() {
+  const invoke = getTauriInvoke();
+  if (!invoke) return null;
+  return invoke("get_live_desktop_runtime_status");
+}
+
+export async function startLiveDesktopBackground() {
+  const invoke = getTauriInvoke();
+  if (!invoke) return null;
+  return invoke("start_live_desktop_background");
+}
+
+export async function stopLiveDesktopBackground() {
+  const invoke = getTauriInvoke();
+  if (!invoke) return null;
+  return invoke("stop_live_desktop_background");
+}
+
 export async function setMainWindowEffectsEnabled(enabled, openSequence = null, options = {}) {
   const invoke = getTauriInvoke();
   if (!invoke) return false;

@@ -112,6 +112,13 @@ function makeOptions(overrides = {}) {
       supportsMicaAlt: false,
     }),
     liveDesktopBackgroundSupport: ref({ ...DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT }),
+    liveDesktopRuntimeStatus: ref({
+      phase: "stopped",
+      active: false,
+      generation: 0,
+      reason: "nativeBridgeUnavailable",
+      detail: "",
+    }),
     launchTargetStatusById: ref({}),
     mergeNativeCatalogWithSavedLayout: (apps) => [apps],
     openDesktop: () => {},
@@ -601,6 +608,58 @@ export async function runLaunchpadNativeTests() {
     assert(options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should reset live desktop blur when effect support is unavailable");
   }, {
     passLiveDesktopBackgroundSupport: true,
+  });
+
+  const liveDesktopRuntimeCommands = [];
+  await withMockTauri(async (command) => {
+    liveDesktopRuntimeCommands.push(command);
+    if (command === "get_live_desktop_runtime_status") {
+      return {
+        phase: "stopped",
+        active: false,
+        generation: 0,
+        reason: "stopped",
+        detail: "stopped",
+      };
+    }
+    if (command === "start_live_desktop_background") {
+      return {
+        phase: "failed",
+        active: false,
+        generation: 1,
+        reason: "nativeRendererNotImplemented",
+        detail: "renderer unavailable",
+      };
+    }
+    if (command === "stop_live_desktop_background") {
+      return {
+        phase: "stopped",
+        active: false,
+        generation: 2,
+        reason: "stopped",
+        detail: "stopped",
+      };
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions();
+    const native = useLaunchpadNative(options);
+
+    assert(liveDesktopRuntimeCommands.length === 0, "live desktop runtime commands should not run until explicitly requested");
+
+    await native.refreshLiveDesktopRuntimeStatus();
+    assert(liveDesktopRuntimeCommands.join(",") === "get_live_desktop_runtime_status", "runtime status should be fetched only on explicit refresh");
+    assert(options.liveDesktopRuntimeStatus.value.phase === "stopped", "runtime status refresh should apply stopped status");
+
+    await native.startNativeLiveDesktopBackground();
+    assert(liveDesktopRuntimeCommands.join(",") === "get_live_desktop_runtime_status,start_live_desktop_background", "runtime start should call the native start command");
+    assert(options.liveDesktopRuntimeStatus.value.phase === "failed", "runtime start should apply returned failure state");
+    assert(options.liveDesktopRuntimeStatus.value.reason === "nativeRendererNotImplemented", "runtime start should preserve native failure reason");
+
+    await native.stopNativeLiveDesktopBackground();
+    assert(liveDesktopRuntimeCommands.join(",") === "get_live_desktop_runtime_status,start_live_desktop_background,stop_live_desktop_background", "runtime stop should call the native stop command");
+    assert(options.liveDesktopRuntimeStatus.value.phase === "stopped", "runtime stop should apply stopped status");
+    assert(options.liveDesktopRuntimeStatus.value.generation === 2, "runtime stop should normalize generation values");
   });
 
   const wallpaperSaves = [];

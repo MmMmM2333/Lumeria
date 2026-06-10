@@ -21,6 +21,7 @@ import {
   convertFilePathToAssetUrl,
   getDesktopWallpaperBackground,
   getLiveDesktopBackgroundSupport,
+  getLiveDesktopRuntimeStatus,
   getMainWindowEffectsSupport,
   hideMainWindow,
   isNativeBridgeAvailable,
@@ -32,6 +33,8 @@ import {
   scanApps,
   setMainWindowEffectsEnabled,
   showLaunchErrorMessage,
+  startLiveDesktopBackground,
+  stopLiveDesktopBackground,
 } from "../api/launchpadApi.js";
 import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
@@ -69,6 +72,24 @@ const CUSTOM_ICON_HYDRATION_ID_PREFIX = "__custom_icon__:";
 const MIN_ICON_HYDRATION_BATCH_SIZE = 20;
 const MAX_ICON_HYDRATION_BATCH_SIZE = 80;
 const WINDOWS_WALLPAPER_REFRESH_INTERVAL_MS = 5000;
+const DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS = Object.freeze({
+  phase: "stopped",
+  active: false,
+  generation: 0,
+  reason: "nativeBridgeUnavailable",
+  detail: "",
+});
+
+function normalizeLiveDesktopRuntimeStatus(status) {
+  const generation = Number(status?.generation);
+  return {
+    phase: String(status?.phase || DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS.phase),
+    active: Boolean(status?.active),
+    generation: Number.isFinite(generation) && generation >= 0 ? Math.floor(generation) : 0,
+    reason: String(status?.reason || DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS.reason),
+    detail: String(status?.detail || ""),
+  };
+}
 
 export function useLaunchpadNative(options) {
   let nativeLayoutReady = false;
@@ -487,6 +508,66 @@ export function useLaunchpadNative(options) {
       options.liveDesktopBackgroundSupport.value = normalizeLiveDesktopBackgroundSupport(null);
       console.error("Failed to load live desktop background support", error);
     }
+  }
+
+  async function refreshLiveDesktopRuntimeStatus() {
+    if (!isNativeBridgeAvailable()) {
+      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
+      return options.liveDesktopRuntimeStatus.value;
+    }
+    try {
+      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(
+        await getLiveDesktopRuntimeStatus()
+      );
+    } catch (error) {
+      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
+      console.error("Failed to load live desktop runtime status", error);
+    }
+    return options.liveDesktopRuntimeStatus.value;
+  }
+
+  async function startNativeLiveDesktopBackground() {
+    if (!isNativeBridgeAvailable()) {
+      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
+      return options.liveDesktopRuntimeStatus.value;
+    }
+    try {
+      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(
+        await startLiveDesktopBackground()
+      );
+    } catch (error) {
+      options.liveDesktopRuntimeStatus.value = {
+        ...normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value),
+        active: false,
+        phase: "failed",
+        reason: "startFailed",
+        detail: String(error?.message || error || ""),
+      };
+      console.error("Failed to start live desktop background", error);
+    }
+    return options.liveDesktopRuntimeStatus.value;
+  }
+
+  async function stopNativeLiveDesktopBackground() {
+    if (!isNativeBridgeAvailable()) {
+      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
+      return options.liveDesktopRuntimeStatus.value;
+    }
+    try {
+      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(
+        await stopLiveDesktopBackground()
+      );
+    } catch (error) {
+      options.liveDesktopRuntimeStatus.value = {
+        ...normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value),
+        active: false,
+        phase: "failed",
+        reason: "stopFailed",
+        detail: String(error?.message || error || ""),
+      };
+      console.error("Failed to stop live desktop background", error);
+    }
+    return options.liveDesktopRuntimeStatus.value;
   }
 
   function applyNativeWindowEffectsSupport(support) {
@@ -965,11 +1046,14 @@ export function useLaunchpadNative(options) {
     markLaunchCriticalLayoutDirty,
     prepareNativeLaunch,
     refreshLiveDesktopBackgroundSupport,
+    refreshLiveDesktopRuntimeStatus,
     registerNativeEventListeners,
     scheduleNativeLayoutSave,
     scheduleLaunchTargetStatusCheck,
     setNativeWindowEffectsEnabled,
     showNativeLaunchError,
+    startNativeLiveDesktopBackground,
+    stopNativeLiveDesktopBackground,
     syncWindowsWallpaperRefreshTimer,
     shouldUseNativeCatalog,
   };

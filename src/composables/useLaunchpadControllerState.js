@@ -77,6 +77,13 @@ export function useLaunchpadControllerState() {
   const draftBackgroundImageUrl = ref(null);
   const isChoosingBackgroundImage = ref(false);
   const liveDesktopBackgroundSupport = ref({ ...DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT });
+  const liveDesktopRuntimeStatus = ref({
+    phase: "stopped",
+    active: false,
+    generation: 0,
+    reason: "nativeBridgeUnavailable",
+    detail: "",
+  });
   const windowEffectsSupport = ref({ ...DEFAULT_WINDOW_EFFECTS_SUPPORT });
   const windowEffectMaterial = ref(WINDOW_EFFECT_MATERIAL_ACRYLIC);
   const windowEffectAppearance = ref(WINDOW_EFFECT_APPEARANCE_DARK);
@@ -171,6 +178,7 @@ export function useLaunchpadControllerState() {
     isTextlessMode,
     launchTargetStatusById,
     liveDesktopBackgroundSupport,
+    liveDesktopRuntimeStatus,
     keyboardFocusArea,
     pageDotsRef,
     pageIndex,
