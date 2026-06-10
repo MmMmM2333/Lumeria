@@ -18,10 +18,11 @@ use windows::{
                 D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC,
             },
             DirectComposition::{
-                DCompositionCreateDevice, IDCompositionDevice, IDCompositionTarget,
-                IDCompositionVisual,
+                DCompositionCreateDevice, IDCompositionDevice, IDCompositionSurface,
+                IDCompositionTarget, IDCompositionVisual,
             },
             Dxgi::{
+                Common::{DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_FORMAT_B8G8R8A8_UNORM},
                 CreateDXGIFactory1, IDXGIAdapter1, IDXGIDevice, IDXGIFactory1, IDXGIOutput1,
                 IDXGIOutputDuplication, IDXGIResource, DXGI_ADAPTER_FLAG3_SOFTWARE,
                 DXGI_ERROR_ACCESS_DENIED, DXGI_ERROR_NOT_FOUND, DXGI_ERROR_WAIT_TIMEOUT,
@@ -120,6 +121,7 @@ struct LiveDesktopRendererResources {
     _composition_device: IDCompositionDevice,
     _target: IDCompositionTarget,
     _root_visual: IDCompositionVisual,
+    _surface: IDCompositionSurface,
 }
 
 #[cfg(target_os = "windows")]
@@ -702,13 +704,32 @@ unsafe fn create_live_desktop_renderer_resources(
                 ));
             }
         };
-        if let Err(error) =
-            unsafe { set_direct_composition_root(&composition_device, &target, &root_visual) }
-        {
+        let surface = match unsafe {
+            composition_device.CreateSurface(
+                capture.frame_probe.width,
+                capture.frame_probe.height,
+                DXGI_FORMAT_B8G8R8A8_UNORM,
+                DXGI_ALPHA_MODE_PREMULTIPLIED,
+            )
+        } {
+            Ok(surface) => surface,
+            Err(error) => {
+                return Err(LiveDesktopRendererProbe::root_visual_unavailable(
+                    "directCompositionSurfaceUnavailable",
+                    format!(
+                        "CreateSurface({}x{}) failed while creating renderer resources: {error}",
+                        capture.frame_probe.width, capture.frame_probe.height
+                    ),
+                ));
+            }
+        };
+        if let Err(error) = unsafe {
+            set_direct_composition_root(&composition_device, &target, &root_visual, &surface)
+        } {
             return Err(LiveDesktopRendererProbe::root_visual_unavailable(
                 "directCompositionRootUnavailable",
                 format!(
-                    "DirectComposition root visual commit failed while creating renderer resources: {error}"
+                    "DirectComposition root visual and surface commit failed while creating renderer resources: {error}"
                 ),
             ));
         }
@@ -716,7 +737,7 @@ unsafe fn create_live_desktop_renderer_resources(
         return Ok(LiveDesktopRendererStartup {
             renderer_probe: LiveDesktopRendererProbe::native_renderer_unimplemented_for_window(
                 format!(
-                    "Desktop Duplication frame {}x{} format {} and DirectComposition target/root visual initialized on adapter {adapter_index}, output {}; effect graph and frame scheduling are not implemented",
+                    "Desktop Duplication frame {}x{} format {} and DirectComposition target/root surface initialized on adapter {adapter_index}, output {}; effect graph and frame scheduling are not implemented",
                     capture.frame_probe.width,
                     capture.frame_probe.height,
                     capture.frame_probe.format,
@@ -730,6 +751,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 _composition_device: composition_device,
                 _target: target,
                 _root_visual: root_visual,
+                _surface: surface,
             },
         });
     }
@@ -830,7 +852,9 @@ unsafe fn set_direct_composition_root(
     device: &IDCompositionDevice,
     target: &IDCompositionTarget,
     visual: &IDCompositionVisual,
+    surface: &IDCompositionSurface,
 ) -> Result<(), String> {
+    unsafe { visual.SetContent(surface) }.map_err(|error| error.to_string())?;
     unsafe { target.SetRoot(visual) }.map_err(|error| error.to_string())?;
     unsafe { device.Commit() }.map_err(|error| error.to_string())?;
     Ok(())
