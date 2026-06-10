@@ -3,6 +3,7 @@ mod file_dialog;
 mod icons;
 mod launcher;
 mod layout_store;
+mod live_desktop;
 mod models;
 mod path_utils;
 mod tray;
@@ -97,15 +98,6 @@ struct BackgroundLayoutContext {
     monitor_scale_factor: f64,
     window_physical_x: i32,
     window_physical_y: i32,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct LiveDesktopBackgroundSupport {
-    platform: &'static str,
-    supports_live_desktop_background: bool,
-    supports_live_desktop_background_effects: bool,
-    reason: &'static str,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -407,13 +399,8 @@ fn get_main_window_effects_support() -> tray::MainWindowEffectsSupport {
 }
 
 #[tauri::command]
-fn get_live_desktop_background_support() -> LiveDesktopBackgroundSupport {
-    LiveDesktopBackgroundSupport {
-        platform: std::env::consts::OS,
-        supports_live_desktop_background: false,
-        supports_live_desktop_background_effects: false,
-        reason: "nativeRendererUnavailable",
-    }
+fn get_live_desktop_background_support() -> live_desktop::LiveDesktopBackgroundSupport {
+    live_desktop::live_desktop_background_support()
 }
 
 #[tauri::command]
