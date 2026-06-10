@@ -116,6 +116,7 @@ struct LiveDesktopRendererStartup {
 struct LiveDesktopRendererResources {
     _com: ComApartment,
     _d3d_device: ID3D11Device,
+    _capture_duplication: IDXGIOutputDuplication,
     _composition_device: IDCompositionDevice,
     _target: IDCompositionTarget,
     _root_visual: IDCompositionVisual,
@@ -123,6 +124,13 @@ struct LiveDesktopRendererResources {
 
 #[cfg(target_os = "windows")]
 struct ComApartment;
+
+#[cfg(target_os = "windows")]
+struct LiveDesktopCaptureStartup {
+    output_index: u32,
+    frame_probe: LiveDesktopFrameProbe,
+    duplication: IDXGIOutputDuplication,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -643,6 +651,15 @@ unsafe fn create_live_desktop_renderer_resources(
                 continue;
             }
         };
+        let capture = match unsafe {
+            create_live_desktop_capture_for_adapter(&adapter, &d3d_device, adapter_index)
+        } {
+            Ok(capture) => capture,
+            Err(detail) => {
+                last_detail = detail;
+                continue;
+            }
+        };
         let dxgi_device = match d3d_device.cast::<IDXGIDevice>() {
             Ok(device) => device,
             Err(error) => {
@@ -699,12 +716,17 @@ unsafe fn create_live_desktop_renderer_resources(
         return Ok(LiveDesktopRendererStartup {
             renderer_probe: LiveDesktopRendererProbe::native_renderer_unimplemented_for_window(
                 format!(
-                    "DirectComposition target and root visual are held on adapter {adapter_index}; desktop frame content, effect graph, and frame scheduling are not implemented"
+                    "Desktop Duplication frame {}x{} format {} and DirectComposition target/root visual initialized on adapter {adapter_index}, output {}; effect graph and frame scheduling are not implemented",
+                    capture.frame_probe.width,
+                    capture.frame_probe.height,
+                    capture.frame_probe.format,
+                    capture.output_index
                 ),
             ),
             resources: LiveDesktopRendererResources {
                 _com: com,
                 _d3d_device: d3d_device,
+                _capture_duplication: capture.duplication,
                 _composition_device: composition_device,
                 _target: target,
                 _root_visual: root_visual,
@@ -728,6 +750,79 @@ unsafe fn create_live_desktop_renderer_resources(
             last_detail
         },
     ))
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn create_live_desktop_capture_for_adapter(
+    adapter: &IDXGIAdapter1,
+    d3d_device: &ID3D11Device,
+    adapter_index: u32,
+) -> Result<LiveDesktopCaptureStartup, String> {
+    let mut output_count = 0;
+    let mut last_detail = String::new();
+
+    for output_index in 0.. {
+        let output = match unsafe { adapter.EnumOutputs(output_index) } {
+            Ok(output) => output,
+            Err(error) if error.code() == DXGI_ERROR_NOT_FOUND => break,
+            Err(error) => {
+                last_detail =
+                    format!("EnumOutputs({adapter_index}, {output_index}) failed: {error}");
+                break;
+            }
+        };
+        output_count += 1;
+
+        let output1 = match output.cast::<IDXGIOutput1>() {
+            Ok(output1) => output1,
+            Err(error) => {
+                last_detail =
+                    format!("IDXGIOutput1 cast({adapter_index}, {output_index}) failed: {error}");
+                continue;
+            }
+        };
+
+        let duplication = match unsafe { output1.DuplicateOutput(d3d_device) } {
+            Ok(duplication) => duplication,
+            Err(error) if error.code() == DXGI_ERROR_ACCESS_DENIED => {
+                last_detail = format!(
+                    "DuplicateOutput({adapter_index}, {output_index}) denied access: {error}"
+                );
+                continue;
+            }
+            Err(error) => {
+                last_detail =
+                    format!("DuplicateOutput({adapter_index}, {output_index}) failed: {error}");
+                continue;
+            }
+        };
+
+        let frame_probe = unsafe { acquire_duplication_frame_texture(&duplication) };
+        if frame_probe.supports_frame_texture {
+            return Ok(LiveDesktopCaptureStartup {
+                output_index,
+                frame_probe,
+                duplication,
+            });
+        }
+        last_detail = format!(
+            "Desktop Duplication frame probe failed on adapter {adapter_index}, output {output_index}: {}",
+            frame_probe.detail
+        );
+    }
+
+    if output_count == 0 {
+        return Err(format!(
+            "DXGI did not report any outputs for hardware adapter {adapter_index}"
+        ));
+    }
+    if last_detail.is_empty() {
+        Err(format!(
+            "Desktop Duplication capture startup failed on adapter {adapter_index} without a detailed DXGI error"
+        ))
+    } else {
+        Err(last_detail)
+    }
 }
 
 #[cfg(target_os = "windows")]
