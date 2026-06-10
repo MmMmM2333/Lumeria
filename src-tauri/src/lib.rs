@@ -417,13 +417,32 @@ fn get_live_desktop_runtime_status(
 
 #[tauri::command]
 fn start_live_desktop_background(
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<live_desktop::LiveDesktopRuntimeStatus, String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Failed to find main window for live desktop background".to_string())?;
+    let window_handle = native_live_desktop_window_handle(&window)?;
     let mut runtime = state
         .live_desktop_runtime
         .lock()
         .map_err(|_| "Failed to lock live desktop runtime".to_string())?;
-    Ok(runtime.start())
+    Ok(runtime.start_for_window(window_handle))
+}
+
+#[cfg(target_os = "windows")]
+fn native_live_desktop_window_handle(
+    window: &tauri::WebviewWindow,
+) -> Result<live_desktop::LiveDesktopWindowHandle, String> {
+    window.hwnd().map_err(|error| error.to_string())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn native_live_desktop_window_handle(
+    _window: &tauri::WebviewWindow,
+) -> Result<live_desktop::LiveDesktopWindowHandle, String> {
+    Ok(())
 }
 
 #[tauri::command]

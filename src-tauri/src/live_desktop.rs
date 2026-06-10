@@ -4,7 +4,7 @@ use serde::Serialize;
 use windows::{
     core::Interface,
     Win32::{
-        Foundation::HMODULE,
+        Foundation::{HMODULE, HWND},
         Graphics::{
             Direct3D::{
                 D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL, D3D_FEATURE_LEVEL_10_0,
@@ -14,7 +14,10 @@ use windows::{
                 D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
                 D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC,
             },
-            DirectComposition::{DCompositionCreateDevice, IDCompositionDevice},
+            DirectComposition::{
+                DCompositionCreateDevice, IDCompositionDevice, IDCompositionTarget,
+                IDCompositionVisual,
+            },
             Dxgi::{
                 CreateDXGIFactory1, IDXGIAdapter1, IDXGIDevice, IDXGIFactory1, IDXGIOutput1,
                 IDXGIOutputDuplication, IDXGIResource, DXGI_ADAPTER_FLAG3_SOFTWARE,
@@ -32,6 +35,12 @@ const LIVE_DESKTOP_D3D_FEATURE_LEVELS: [D3D_FEATURE_LEVEL; 4] = [
     D3D_FEATURE_LEVEL_10_1,
     D3D_FEATURE_LEVEL_10_0,
 ];
+
+#[cfg(target_os = "windows")]
+pub(crate) type LiveDesktopWindowHandle = HWND;
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) type LiveDesktopWindowHandle = ();
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -71,6 +80,8 @@ struct LiveDesktopFrameProbe {
 #[serde(rename_all = "camelCase")]
 struct LiveDesktopRendererProbe {
     supports_direct_composition: bool,
+    supports_window_target: bool,
+    supports_root_visual: bool,
     supports_native_renderer: bool,
     reason: &'static str,
     detail: String,
@@ -111,8 +122,14 @@ impl LiveDesktopRuntime {
         self.status.clone()
     }
 
-    pub(crate) fn start(&mut self) -> LiveDesktopRuntimeStatus {
-        self.start_with_probes(probe_live_desktop_capture(), probe_live_desktop_renderer())
+    pub(crate) fn start_for_window(
+        &mut self,
+        window_handle: LiveDesktopWindowHandle,
+    ) -> LiveDesktopRuntimeStatus {
+        self.start_with_probes(
+            probe_live_desktop_capture(),
+            probe_live_desktop_renderer_for_window(window_handle),
+        )
     }
 
     pub(crate) fn stop(&mut self) -> LiveDesktopRuntimeStatus {
@@ -197,6 +214,19 @@ impl LiveDesktopRendererProbe {
     fn native_renderer_unimplemented(detail: impl Into<String>) -> Self {
         Self {
             supports_direct_composition: true,
+            supports_window_target: false,
+            supports_root_visual: false,
+            supports_native_renderer: false,
+            reason: "nativeRendererNotImplemented",
+            detail: detail.into(),
+        }
+    }
+
+    fn native_renderer_unimplemented_for_window(detail: impl Into<String>) -> Self {
+        Self {
+            supports_direct_composition: true,
+            supports_window_target: true,
+            supports_root_visual: true,
             supports_native_renderer: false,
             reason: "nativeRendererNotImplemented",
             detail: detail.into(),
@@ -206,6 +236,30 @@ impl LiveDesktopRendererProbe {
     fn unavailable(reason: &'static str, detail: impl Into<String>) -> Self {
         Self {
             supports_direct_composition: false,
+            supports_window_target: false,
+            supports_root_visual: false,
+            supports_native_renderer: false,
+            reason,
+            detail: detail.into(),
+        }
+    }
+
+    fn window_target_unavailable(reason: &'static str, detail: impl Into<String>) -> Self {
+        Self {
+            supports_direct_composition: true,
+            supports_window_target: false,
+            supports_root_visual: false,
+            supports_native_renderer: false,
+            reason,
+            detail: detail.into(),
+        }
+    }
+
+    fn root_visual_unavailable(reason: &'static str, detail: impl Into<String>) -> Self {
+        Self {
+            supports_direct_composition: true,
+            supports_window_target: true,
+            supports_root_visual: false,
             supports_native_renderer: false,
             reason,
             detail: detail.into(),
@@ -216,6 +270,8 @@ impl LiveDesktopRendererProbe {
     fn available() -> Self {
         Self {
             supports_direct_composition: true,
+            supports_window_target: true,
+            supports_root_visual: true,
             supports_native_renderer: true,
             reason: "available",
             detail: "Native renderer test session is available".to_string(),
@@ -276,10 +332,27 @@ fn make_live_desktop_background_support(
 
 #[cfg(target_os = "windows")]
 fn probe_live_desktop_renderer() -> LiveDesktopRendererProbe {
-    match unsafe { probe_windows_live_desktop_renderer() } {
+    match unsafe { probe_windows_live_desktop_renderer(None) } {
         Ok(probe) => probe,
         Err(probe) => probe,
     }
+}
+
+#[cfg(target_os = "windows")]
+fn probe_live_desktop_renderer_for_window(
+    window_handle: LiveDesktopWindowHandle,
+) -> LiveDesktopRendererProbe {
+    match unsafe { probe_windows_live_desktop_renderer(Some(window_handle)) } {
+        Ok(probe) => probe,
+        Err(probe) => probe,
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn probe_live_desktop_renderer_for_window(
+    _window_handle: LiveDesktopWindowHandle,
+) -> LiveDesktopRendererProbe {
+    probe_live_desktop_renderer()
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -292,6 +365,7 @@ fn probe_live_desktop_renderer() -> LiveDesktopRendererProbe {
 
 #[cfg(target_os = "windows")]
 unsafe fn probe_windows_live_desktop_renderer(
+    window_handle: Option<HWND>,
 ) -> Result<LiveDesktopRendererProbe, LiveDesktopRendererProbe> {
     let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.map_err(|error| {
         LiveDesktopRendererProbe::unavailable(
@@ -348,7 +422,7 @@ unsafe fn probe_windows_live_desktop_renderer(
                 continue;
             }
         };
-        let _composition_device: IDCompositionDevice = match unsafe {
+        let composition_device: IDCompositionDevice = match unsafe {
             DCompositionCreateDevice(&dxgi_device)
         } {
             Ok(device) => device,
@@ -359,6 +433,47 @@ unsafe fn probe_windows_live_desktop_renderer(
                 continue;
             }
         };
+
+        if let Some(window_handle) = window_handle {
+            let _target = match unsafe {
+                composition_device.CreateTargetForHwnd(window_handle, false)
+            } {
+                Ok(target) => target,
+                Err(error) => {
+                    return Err(LiveDesktopRendererProbe::window_target_unavailable(
+                        "directCompositionTargetUnavailable",
+                        format!(
+                            "CreateTargetForHwnd({adapter_index}) failed while probing renderer: {error}"
+                        ),
+                    ));
+                }
+            };
+            let visual = match unsafe { composition_device.CreateVisual() } {
+                Ok(visual) => visual,
+                Err(error) => {
+                    return Err(LiveDesktopRendererProbe::root_visual_unavailable(
+                        "directCompositionVisualUnavailable",
+                        format!(
+                            "CreateVisual({adapter_index}) failed while probing renderer: {error}"
+                        ),
+                    ));
+                }
+            };
+            if let Err(error) = unsafe { set_direct_composition_root(&_target, &visual) } {
+                return Err(LiveDesktopRendererProbe::root_visual_unavailable(
+                    "directCompositionRootUnavailable",
+                    format!(
+                        "DirectComposition root visual commit failed while probing renderer: {error}"
+                    ),
+                ));
+            }
+
+            return Ok(LiveDesktopRendererProbe::native_renderer_unimplemented_for_window(
+                format!(
+                    "DirectComposition target and root visual probe succeeded on adapter {adapter_index}; desktop frame content, effect graph, and frame scheduling are not implemented"
+                ),
+            ));
+        }
 
         return Ok(LiveDesktopRendererProbe::native_renderer_unimplemented(
             format!(
@@ -382,6 +497,15 @@ unsafe fn probe_windows_live_desktop_renderer(
             last_detail
         },
     ))
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn set_direct_composition_root(
+    target: &IDCompositionTarget,
+    visual: &IDCompositionVisual,
+) -> Result<(), String> {
+    unsafe { target.SetRoot(visual) }.map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]
