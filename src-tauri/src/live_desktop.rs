@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[cfg(target_os = "windows")]
 use std::{sync::mpsc, thread, time::Duration};
@@ -103,6 +103,7 @@ struct LiveDesktopRendererProbe {
 pub(crate) struct LiveDesktopRuntime {
     status: LiveDesktopRuntimeStatus,
     renderer_session: Option<LiveDesktopRendererSession>,
+    config: LiveDesktopRuntimeConfig,
 }
 
 #[derive(Debug)]
@@ -110,6 +111,8 @@ struct LiveDesktopRendererSession {
     renderer_probe: LiveDesktopRendererProbe,
     #[cfg(target_os = "windows")]
     stop_sender: Option<mpsc::Sender<()>>,
+    #[cfg(target_os = "windows")]
+    config_sender: Option<mpsc::Sender<LiveDesktopRuntimeConfig>>,
     #[cfg(target_os = "windows")]
     worker: Option<thread::JoinHandle<()>>,
 }
@@ -122,6 +125,7 @@ struct LiveDesktopRendererStartup {
 
 #[cfg(target_os = "windows")]
 struct LiveDesktopRendererResources {
+    config: LiveDesktopRuntimeConfig,
     _com: ComApartment,
     _d3d_device: ID3D11Device,
     _d3d_context: ID3D11DeviceContext,
@@ -159,11 +163,79 @@ pub(crate) struct LiveDesktopRuntimeStatus {
     detail: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LiveDesktopRuntimeConfig {
+    effect: LiveDesktopBackgroundEffect,
+    blur_strength: u32,
+    darken_strength: u32,
+    darken_color: String,
+    acrylic_appearance: LiveDesktopAcrylicAppearance,
+    acrylic_params: LiveDesktopAcrylicParams,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum LiveDesktopBackgroundEffect {
+    None,
+    Dimmed,
+    Blur,
+    AcrylicWebgl,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum LiveDesktopAcrylicAppearance {
+    System,
+    Dark,
+    Light,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LiveDesktopAcrylicParams {
+    brightness: f32,
+    contrast: f32,
+    noise: f32,
+    saturation: f32,
+    seed: f32,
+    tint_color: [f32; 3],
+    tint_strength: f32,
+}
+
+impl Default for LiveDesktopRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            effect: LiveDesktopBackgroundEffect::Dimmed,
+            blur_strength: 50,
+            darken_strength: 28,
+            darken_color: "#1c1c1c".to_string(),
+            acrylic_appearance: LiveDesktopAcrylicAppearance::System,
+            acrylic_params: LiveDesktopAcrylicParams::default(),
+        }
+    }
+}
+
+impl Default for LiveDesktopAcrylicParams {
+    fn default() -> Self {
+        Self {
+            brightness: 0.8,
+            contrast: 0.85,
+            noise: 0.005,
+            saturation: 1.5,
+            seed: 0.0,
+            tint_color: [0.23529412, 0.23529412, 0.23529412],
+            tint_strength: 0.2,
+        }
+    }
+}
+
 impl Default for LiveDesktopRuntime {
     fn default() -> Self {
         Self {
             status: LiveDesktopRuntimeStatus::stopped(0),
             renderer_session: None,
+            config: LiveDesktopRuntimeConfig::default(),
         }
     }
 }
@@ -177,9 +249,21 @@ impl LiveDesktopRuntime {
         &mut self,
         window_handle: LiveDesktopWindowHandle,
     ) -> LiveDesktopRuntimeStatus {
+        let config = self.config.clone();
         self.start_with_renderer_session(probe_live_desktop_capture(), || {
-            LiveDesktopRendererSession::start_for_window(window_handle)
+            LiveDesktopRendererSession::start_for_window(window_handle, config)
         })
+    }
+
+    pub(crate) fn configure(
+        &mut self,
+        config: LiveDesktopRuntimeConfig,
+    ) -> LiveDesktopRuntimeStatus {
+        self.config = config.clone();
+        if let Some(session) = self.renderer_session.as_ref() {
+            session.configure(config);
+        }
+        self.status()
     }
 
     pub(crate) fn stop(&mut self) -> LiveDesktopRuntimeStatus {
@@ -276,18 +360,20 @@ impl LiveDesktopRendererSession {
     #[cfg(target_os = "windows")]
     fn start_for_window(
         window_handle: LiveDesktopWindowHandle,
+        config: LiveDesktopRuntimeConfig,
     ) -> Result<Self, LiveDesktopRendererProbe> {
         let (ready_sender, ready_receiver) = mpsc::channel();
         let (stop_sender, stop_receiver) = mpsc::channel();
+        let (config_sender, config_receiver) = mpsc::channel();
         let window_handle_value = window_handle.0 as isize;
         let worker = thread::spawn(move || {
             let window_handle = HWND(window_handle_value as _);
-            match unsafe { create_live_desktop_renderer_resources(window_handle) } {
+            match unsafe { create_live_desktop_renderer_resources(window_handle, config) } {
                 Ok(startup) => {
                     let renderer_probe = startup.renderer_probe.clone();
                     if ready_sender.send(Ok(renderer_probe)).is_ok() {
                         let mut resources = startup.resources;
-                        resources.run_frame_pump(stop_receiver);
+                        resources.run_frame_pump(stop_receiver, config_receiver);
                     }
                 }
                 Err(probe) => {
@@ -321,6 +407,7 @@ impl LiveDesktopRendererSession {
         Ok(Self {
             renderer_probe,
             stop_sender: Some(stop_sender),
+            config_sender: Some(config_sender),
             worker: Some(worker),
         })
     }
@@ -328,8 +415,16 @@ impl LiveDesktopRendererSession {
     #[cfg(not(target_os = "windows"))]
     fn start_for_window(
         _window_handle: LiveDesktopWindowHandle,
+        _config: LiveDesktopRuntimeConfig,
     ) -> Result<Self, LiveDesktopRendererProbe> {
         Err(probe_live_desktop_renderer())
+    }
+
+    fn configure(&self, config: LiveDesktopRuntimeConfig) {
+        #[cfg(target_os = "windows")]
+        if let Some(config_sender) = self.config_sender.as_ref() {
+            let _ = config_sender.send(config);
+        }
     }
 
     #[cfg(test)]
@@ -346,6 +441,8 @@ impl LiveDesktopRendererSession {
             renderer_probe,
             #[cfg(target_os = "windows")]
             stop_sender: None,
+            #[cfg(target_os = "windows")]
+            config_sender: None,
             #[cfg(target_os = "windows")]
             worker: None,
         })
@@ -383,8 +480,13 @@ impl Drop for ComApartment {
 
 #[cfg(target_os = "windows")]
 impl LiveDesktopRendererResources {
-    fn run_frame_pump(&mut self, stop_receiver: mpsc::Receiver<()>) {
+    fn run_frame_pump(
+        &mut self,
+        stop_receiver: mpsc::Receiver<()>,
+        config_receiver: mpsc::Receiver<LiveDesktopRuntimeConfig>,
+    ) {
         loop {
+            self.apply_pending_config(&config_receiver);
             match stop_receiver
                 .recv_timeout(Duration::from_millis(LIVE_DESKTOP_FRAME_PUMP_INTERVAL_MS))
             {
@@ -393,6 +495,12 @@ impl LiveDesktopRendererResources {
                     let _ = unsafe { self.copy_next_frame_to_surface() };
                 }
             }
+        }
+    }
+
+    fn apply_pending_config(&mut self, config_receiver: &mpsc::Receiver<LiveDesktopRuntimeConfig>) {
+        for config in config_receiver.try_iter() {
+            self.config = config;
         }
     }
 
@@ -658,6 +766,7 @@ unsafe fn probe_windows_live_desktop_renderer(
 #[cfg(target_os = "windows")]
 unsafe fn create_live_desktop_renderer_resources(
     window_handle: HWND,
+    config: LiveDesktopRuntimeConfig,
 ) -> Result<LiveDesktopRendererStartup, LiveDesktopRendererProbe> {
     let com = unsafe { ComApartment::initialize() }.map_err(|error| {
         LiveDesktopRendererProbe::unavailable(
@@ -828,6 +937,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 ),
             ),
             resources: LiveDesktopRendererResources {
+                config,
                 _com: com,
                 _d3d_device: d3d.device,
                 _d3d_context: d3d.context,
@@ -1468,6 +1578,8 @@ mod tests {
                         ),
                     #[cfg(target_os = "windows")]
                     stop_sender: None,
+                    #[cfg(target_os = "windows")]
+                    config_sender: None,
                     #[cfg(target_os = "windows")]
                     worker: None,
                 })

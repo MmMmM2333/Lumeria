@@ -611,9 +611,20 @@ export async function runLaunchpadNativeTests() {
   });
 
   const liveDesktopRuntimeCommands = [];
-  await withMockTauri(async (command) => {
+  const liveDesktopRuntimeConfigs = [];
+  await withMockTauri(async (command, args) => {
     liveDesktopRuntimeCommands.push(command);
     if (command === "get_live_desktop_runtime_status") {
+      return {
+        phase: "stopped",
+        active: false,
+        generation: 0,
+        reason: "stopped",
+        detail: "stopped",
+      };
+    }
+    if (command === "configure_live_desktop_background") {
+      liveDesktopRuntimeConfigs.push(args.config);
       return {
         phase: "stopped",
         active: false,
@@ -643,6 +654,16 @@ export async function runLaunchpadNativeTests() {
     throw new Error(`Unexpected invoke: ${command}`);
   }, async () => {
     const { options } = makeOptions();
+    options.backgroundEffect.value = BACKGROUND_EFFECT_ACRYLIC_WEBGL;
+    options.backgroundBlurStrength.value = 72;
+    options.backgroundDarkenColor.value = "#334455";
+    options.backgroundDarkenStrength.value = 41;
+    options.backgroundAcrylicAppearance.value = BACKGROUND_ACRYLIC_APPEARANCE_LIGHT;
+    options.backgroundAcrylicLightParams.value = {
+      ...options.backgroundAcrylicLightParams.value,
+      brightness: 1.2,
+      tintColor: [0.1, 0.2, 0.3],
+    };
     const native = useLaunchpadNative(options);
 
     assert(liveDesktopRuntimeCommands.length === 0, "live desktop runtime commands should not run until explicitly requested");
@@ -652,12 +673,20 @@ export async function runLaunchpadNativeTests() {
     assert(options.liveDesktopRuntimeStatus.value.phase === "stopped", "runtime status refresh should apply stopped status");
 
     await native.startNativeLiveDesktopBackground();
-    assert(liveDesktopRuntimeCommands.join(",") === "get_live_desktop_runtime_status,start_live_desktop_background", "runtime start should call the native start command");
+    assert(liveDesktopRuntimeCommands.join(",") === "get_live_desktop_runtime_status,configure_live_desktop_background,start_live_desktop_background", "runtime start should configure native effects before the native start command");
+    assert(liveDesktopRuntimeConfigs.length === 1, "runtime start should send one live desktop config");
+    assert(liveDesktopRuntimeConfigs[0].effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "runtime config should include the selected effect");
+    assert(liveDesktopRuntimeConfigs[0].blurStrength === 72, "runtime config should include blur strength");
+    assert(liveDesktopRuntimeConfigs[0].darkenColor === "#334455", "runtime config should include darken color");
+    assert(liveDesktopRuntimeConfigs[0].darkenStrength === 41, "runtime config should include darken strength");
+    assert(liveDesktopRuntimeConfigs[0].acrylicAppearance === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT, "runtime config should include acrylic appearance");
+    assert(liveDesktopRuntimeConfigs[0].acrylicParams.brightness === 1.2, "runtime config should include acrylic params");
+    assert(liveDesktopRuntimeConfigs[0].acrylicParams.tintColor[1] === 0.2, "runtime config should include acrylic tint color");
     assert(options.liveDesktopRuntimeStatus.value.phase === "failed", "runtime start should apply returned failure state");
     assert(options.liveDesktopRuntimeStatus.value.reason === "nativeRendererNotImplemented", "runtime start should preserve native failure reason");
 
     await native.stopNativeLiveDesktopBackground();
-    assert(liveDesktopRuntimeCommands.join(",") === "get_live_desktop_runtime_status,start_live_desktop_background,stop_live_desktop_background", "runtime stop should call the native stop command");
+    assert(liveDesktopRuntimeCommands.join(",") === "get_live_desktop_runtime_status,configure_live_desktop_background,start_live_desktop_background,stop_live_desktop_background", "runtime stop should call the native stop command");
     assert(options.liveDesktopRuntimeStatus.value.phase === "stopped", "runtime stop should apply stopped status");
     assert(options.liveDesktopRuntimeStatus.value.generation === 2, "runtime stop should normalize generation values");
   });

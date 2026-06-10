@@ -17,6 +17,7 @@ import {
 } from "../domain/launchpadData.js";
 import {
   checkLaunchTargets,
+  configureLiveDesktopBackground,
   confirmQuitAfterSave,
   convertFilePathToAssetUrl,
   getDesktopWallpaperBackground,
@@ -39,6 +40,7 @@ import {
 import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
+  BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
   BACKGROUND_EFFECT_DIMMED,
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
@@ -88,6 +90,33 @@ function normalizeLiveDesktopRuntimeStatus(status) {
     generation: Number.isFinite(generation) && generation >= 0 ? Math.floor(generation) : 0,
     reason: String(status?.reason || DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS.reason),
     detail: String(status?.detail || ""),
+  };
+}
+
+function resolveLiveDesktopAcrylicProfile(options) {
+  const appearance = normalizeBackgroundAcrylicAppearance(options.backgroundAcrylicAppearance.value);
+  if (appearance !== BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM) return appearance;
+  return normalizeWindowEffectAppearance(options.windowEffectAppearance.value) === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
+    ? BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
+    : BACKGROUND_ACRYLIC_APPEARANCE_DARK;
+}
+
+function makeLiveDesktopRuntimeConfig(options) {
+  const acrylicAppearance = normalizeBackgroundAcrylicAppearance(options.backgroundAcrylicAppearance.value);
+  const acrylicProfile = resolveLiveDesktopAcrylicProfile(options);
+  const acrylicParams = normalizeBackgroundAcrylicParams(
+    acrylicProfile === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
+      ? options.backgroundAcrylicLightParams.value
+      : options.backgroundAcrylicDarkParams.value,
+    acrylicProfile
+  );
+  return {
+    effect: normalizeBackgroundEffect(options.backgroundEffect.value),
+    blurStrength: clampBackgroundBlurStrength(options.backgroundBlurStrength.value),
+    darkenStrength: clampBackgroundDarkenStrength(options.backgroundDarkenStrength.value),
+    darkenColor: normalizeBackgroundDarkenColor(options.backgroundDarkenColor.value),
+    acrylicAppearance,
+    acrylicParams,
   };
 }
 
@@ -526,12 +555,35 @@ export function useLaunchpadNative(options) {
     return options.liveDesktopRuntimeStatus.value;
   }
 
+  async function configureNativeLiveDesktopBackground() {
+    if (!isNativeBridgeAvailable()) {
+      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
+      return options.liveDesktopRuntimeStatus.value;
+    }
+    try {
+      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(
+        await configureLiveDesktopBackground(makeLiveDesktopRuntimeConfig(options))
+      );
+    } catch (error) {
+      options.liveDesktopRuntimeStatus.value = {
+        ...normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value),
+        active: false,
+        phase: "failed",
+        reason: "configureFailed",
+        detail: String(error?.message || error || ""),
+      };
+      console.error("Failed to configure live desktop background", error);
+    }
+    return options.liveDesktopRuntimeStatus.value;
+  }
+
   async function startNativeLiveDesktopBackground() {
     if (!isNativeBridgeAvailable()) {
       options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
       return options.liveDesktopRuntimeStatus.value;
     }
     try {
+      await configureLiveDesktopBackground(makeLiveDesktopRuntimeConfig(options));
       options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(
         await startLiveDesktopBackground()
       );
@@ -1036,6 +1088,7 @@ export function useLaunchpadNative(options) {
   return {
     clearNativeEventListeners,
     clearNativeSaveTimer,
+    configureNativeLiveDesktopBackground,
     flushNativeLayoutSave,
     hideNativeWindow,
     hideNativeWindowAfterCloseAnimation,

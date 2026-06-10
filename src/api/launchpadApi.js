@@ -185,6 +185,12 @@ export async function getLiveDesktopRuntimeStatus() {
   return invoke("get_live_desktop_runtime_status");
 }
 
+export async function configureLiveDesktopBackground(config) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return null;
+  return invoke("configure_live_desktop_background", { config });
+}
+
 export async function startLiveDesktopBackground() {
   const invoke = getTauriInvoke();
   if (!invoke) return null;
