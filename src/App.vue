@@ -125,7 +125,7 @@
       @open-context-app="openApp"
       @edit-context-app="openEditManagedApp"
     />
-    <BackgroundDebugPanel v-if="isAcrylicDebugPanelEnabled" />
+    <BackgroundDebugPanel v-if="isAcrylicDebugPanelEnabled" :state="settingsPanelState" />
     <div
       v-if="isStartupMaskMounted"
       :class="cx('launchpad-startup-mask', !isStartupMaskVisible && 'launchpad-startup-mask-hidden')"
