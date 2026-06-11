@@ -461,6 +461,24 @@ export async function runLaunchpadNativeTests() {
     }
     if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
+    if (command === "configure_live_desktop_background") {
+      return {
+        phase: "stopped",
+        active: false,
+        generation: 0,
+        reason: "stopped",
+        detail: "configured",
+      };
+    }
+    if (command === "start_live_desktop_background") {
+      return {
+        phase: "running",
+        active: true,
+        generation: 1,
+        reason: "running",
+        detail: "running",
+      };
+    }
     throw new Error(`Unexpected invoke: ${command}`);
   }, async () => {
     const { options } = makeOptions({
@@ -554,6 +572,24 @@ export async function runLaunchpadNativeTests() {
     }
     if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
+    if (command === "configure_live_desktop_background") {
+      return {
+        phase: "stopped",
+        active: false,
+        generation: 0,
+        reason: "stopped",
+        detail: "configured",
+      };
+    }
+    if (command === "start_live_desktop_background") {
+      return {
+        phase: "running",
+        active: true,
+        generation: 1,
+        reason: "running",
+        detail: "running",
+      };
+    }
     throw new Error(`Unexpected invoke: ${command}`);
   }, async () => {
     const { options } = makeOptions({
@@ -562,13 +598,14 @@ export async function runLaunchpadNativeTests() {
     const native = useLaunchpadNative(options);
 
     await native.loadNativeLaunchpadData();
-    await flushMicrotasks(3);
+    await native.syncLiveDesktopBackgroundRuntime();
 
     assert(options.backgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP, "native load should keep supported live desktop backgrounds");
     assert(options.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "native load should preserve live desktop acrylic when effects are supported");
     assert(options.backgroundImagePath.value === null, "native load should not keep image paths for live desktop backgrounds");
     assert(options.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP, "native load should sync live desktop background draft");
     assert(options.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "native load should sync live desktop acrylic draft");
+    assert(options.liveDesktopRuntimeStatus.value.phase === "running", "native load should start the live desktop runtime for saved live desktop backgrounds");
   }, {
     passLiveDesktopBackgroundSupport: true,
   });
@@ -594,6 +631,24 @@ export async function runLaunchpadNativeTests() {
     }
     if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
+    if (command === "configure_live_desktop_background") {
+      return {
+        phase: "stopped",
+        active: false,
+        generation: 0,
+        reason: "stopped",
+        detail: "configured",
+      };
+    }
+    if (command === "start_live_desktop_background") {
+      return {
+        phase: "running",
+        active: true,
+        generation: 1,
+        reason: "running",
+        detail: "running",
+      };
+    }
     throw new Error(`Unexpected invoke: ${command}`);
   }, async () => {
     const { options } = makeOptions({
@@ -602,10 +657,11 @@ export async function runLaunchpadNativeTests() {
     const native = useLaunchpadNative(options);
 
     await native.loadNativeLaunchpadData();
-    await flushMicrotasks(3);
+    await native.syncLiveDesktopBackgroundRuntime();
 
     assert(options.backgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP, "native load should keep live desktop backgrounds when base support is available");
-    assert(options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should reset live desktop blur when effect support is unavailable");
+    assert(options.backgroundEffect.value === BACKGROUND_EFFECT_BLUR, "native load should preserve live desktop blur when native effects are unavailable");
+    assert(options.liveDesktopRuntimeStatus.value.phase === "running", "native load should start live desktop runtime without native effect support");
   }, {
     passLiveDesktopBackgroundSupport: true,
   });
@@ -689,6 +745,71 @@ export async function runLaunchpadNativeTests() {
     assert(liveDesktopRuntimeCommands.join(",") === "get_live_desktop_runtime_status,configure_live_desktop_background,start_live_desktop_background,stop_live_desktop_background", "runtime stop should call the native stop command");
     assert(options.liveDesktopRuntimeStatus.value.phase === "stopped", "runtime stop should apply stopped status");
     assert(options.liveDesktopRuntimeStatus.value.generation === 2, "runtime stop should normalize generation values");
+  });
+
+  const liveDesktopSyncCommands = [];
+  const liveDesktopSyncConfigs = [];
+  let liveDesktopSyncOptions = null;
+  await withMockTauri(async (command, args) => {
+    liveDesktopSyncCommands.push(command);
+    if (command === "configure_live_desktop_background") {
+      liveDesktopSyncConfigs.push(args.config);
+      return {
+        phase: liveDesktopSyncOptions.liveDesktopRuntimeStatus.value.phase,
+        active: liveDesktopSyncOptions.liveDesktopRuntimeStatus.value.active,
+        generation: liveDesktopSyncOptions.liveDesktopRuntimeStatus.value.generation,
+        reason: "configured",
+        detail: "configured",
+      };
+    }
+    if (command === "start_live_desktop_background") {
+      return {
+        phase: "running",
+        active: true,
+        generation: 1,
+        reason: "running",
+        detail: "running",
+      };
+    }
+    if (command === "stop_live_desktop_background") {
+      return {
+        phase: "stopped",
+        active: false,
+        generation: 2,
+        reason: "stopped",
+        detail: "stopped",
+      };
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options: optionsForLiveDesktopSync } = makeOptions();
+    liveDesktopSyncOptions = optionsForLiveDesktopSync;
+    optionsForLiveDesktopSync.backgroundSource.value = BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP;
+    optionsForLiveDesktopSync.backgroundEffect.value = BACKGROUND_EFFECT_BLUR;
+    optionsForLiveDesktopSync.liveDesktopBackgroundSupport.value = {
+      platform: "windows",
+      supportsLiveDesktopBackground: true,
+      supportsLiveDesktopBackgroundEffects: false,
+      reason: "available",
+    };
+    const native = useLaunchpadNative(optionsForLiveDesktopSync);
+
+    await native.syncLiveDesktopBackgroundRuntime();
+    assert(liveDesktopSyncCommands.join(",") === "configure_live_desktop_background,start_live_desktop_background", "runtime sync should configure and start live desktop from a stopped state");
+    assert(liveDesktopSyncConfigs[0].effect === BACKGROUND_EFFECT_BLUR, "runtime sync should send the selected live desktop effect");
+    assert(optionsForLiveDesktopSync.liveDesktopRuntimeStatus.value.phase === "running", "runtime sync should apply the started status");
+
+    liveDesktopSyncCommands.length = 0;
+    optionsForLiveDesktopSync.backgroundEffect.value = BACKGROUND_EFFECT_ACRYLIC_WEBGL;
+    await native.syncLiveDesktopBackgroundRuntime();
+    assert(liveDesktopSyncCommands.join(",") === "configure_live_desktop_background", "runtime sync should reconfigure an already running live desktop runtime");
+    assert(liveDesktopSyncConfigs.at(-1).effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "runtime sync should send updated effects to a running runtime");
+
+    liveDesktopSyncCommands.length = 0;
+    optionsForLiveDesktopSync.isDesktopOpen.value = false;
+    await native.syncLiveDesktopBackgroundRuntime();
+    assert(liveDesktopSyncCommands.join(",") === "stop_live_desktop_background", "runtime sync should stop when the launchpad is hidden");
+    assert(optionsForLiveDesktopSync.liveDesktopRuntimeStatus.value.phase === "stopped", "runtime sync should apply stopped status");
   });
 
   const wallpaperSaves = [];

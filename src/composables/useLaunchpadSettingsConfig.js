@@ -459,9 +459,7 @@ export function useLaunchpadSettingsConfig(options) {
 
   function canUseLiveDesktopBackgroundEffect(effect) {
     if (!canUseLiveDesktopBackground()) return false;
-    const normalizedEffect = normalizeBackgroundEffect(effect);
-    if (!backgroundEffectUsesPixi(normalizedEffect)) return true;
-    return normalizeLiveDesktopBackgroundSupport(options.liveDesktopBackgroundSupport?.value).supportsLiveDesktopBackgroundEffects;
+    return Boolean(normalizeBackgroundEffect(effect));
   }
 
   function canUseDraftBackgroundEffect(effect) {
@@ -556,11 +554,7 @@ export function useLaunchpadSettingsConfig(options) {
       : null;
     const normalizedBackgroundEffect = normalizeBackgroundEffect(options.draftBackgroundEffect.value);
     let nextBackgroundEffect = normalizedBackgroundEffect;
-    if (nextBackgroundUsesLiveDesktop) {
-      nextBackgroundEffect = canUseLiveDesktopBackgroundEffect(normalizedBackgroundEffect)
-        ? normalizedBackgroundEffect
-        : BACKGROUND_EFFECT_DIMMED;
-    } else if (backgroundEffectUsesPixi(normalizedBackgroundEffect) && !nextBackgroundImagePath) {
+    if (!nextBackgroundUsesLiveDesktop && backgroundEffectUsesPixi(normalizedBackgroundEffect) && !nextBackgroundImagePath) {
       nextBackgroundEffect = BACKGROUND_EFFECT_DIMMED;
     }
     const shouldUseSelectedBackgroundSource = nextBackgroundUsesLiveDesktop || Boolean(nextBackgroundImagePath);
@@ -589,6 +583,7 @@ export function useLaunchpadSettingsConfig(options) {
     options.windowEffectAppearance.value = normalizeWindowEffectAppearance(options.draftWindowEffectAppearance.value);
     syncLaunchpadSettingsDraftsFromState(options);
     options.applyNativeWindowEffects?.();
+    options.syncLiveDesktopBackgroundRuntime?.();
     options.closeSettingsPanel();
   }
 

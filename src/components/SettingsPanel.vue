@@ -880,7 +880,9 @@ const activeAcrylicParamsProfile = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
 const settingsPanelRef = ref(null);
 const systemAcrylicAppearance = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
 let systemAppearanceQuery = null;
+let liveDesktopStatusTimer = null;
 const ACRYLIC_PARAM_STEP = 0.01;
+const LIVE_DESKTOP_STATUS_REFRESH_INTERVAL_MS = 1000;
 const ACRYLIC_TINT_STRENGTH_MIN = 0;
 const ACRYLIC_TINT_STRENGTH_MAX = 0.6;
 const ACRYLIC_BRIGHTNESS_MIN = 0.5;
@@ -952,21 +954,30 @@ const doesDraftBackgroundUseLayer = computed(() => doesDraftBackgroundUseImage.v
 const isDraftCustomImage = computed(() => props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE);
 const isDraftWindowsWallpaper = computed(() => props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER);
 const canUseDraftBackgroundEffect = (effect) => props.state.canUseDraftBackgroundEffect(effect);
+const liveDesktopUnavailableDetail = computed(() => {
+  const support = props.state.liveDesktopBackgroundSupport?.value;
+  return String(support?.detail || support?.reason || "").trim();
+});
+const liveDesktopRuntimeDetail = computed(() => {
+  const status = props.state.liveDesktopRuntimeStatus?.value;
+  if (!status || status.phase === "stopped") return "";
+  return String(status.detail || status.reason || "").trim();
+});
 const backgroundSourceHint = computed(() =>
   props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE
     ? "自定义图片叠在底色上方"
     : props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER
       ? "跟随当前 Windows 桌面壁纸"
       : props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP
-        ? "捕获动态桌面并在 Native GPU 管线中合成"
-        : !props.state.canUseLiveDesktopBackground() && props.state.liveDesktopBackgroundSupport?.value?.reason
-          ? `动态桌面不可用：${props.state.liveDesktopBackgroundSupport.value.reason}`
+        ? liveDesktopRuntimeDetail.value || "捕获动态桌面并在 Native GPU 管线中合成"
+        : !props.state.canUseLiveDesktopBackground() && liveDesktopUnavailableDetail.value
+          ? `动态桌面不可用：${liveDesktopUnavailableDetail.value}`
         : "不叠加背景层"
 );
 const backgroundEffectHint = computed(() =>
   doesDraftBackgroundUseLayer.value
     ? doesDraftBackgroundUseLiveDesktop.value && !props.state.canUseLiveDesktopBackgroundEffect(props.state.draftBackgroundEffect.value)
-      ? "当前 Native 管线尚未启用该动态效果"
+      ? "当前效果由前端透明层合成"
       : props.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL
       ? "WebGL Acrylic 风格合成"
       : props.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR
@@ -1039,6 +1050,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  clearLiveDesktopStatusTimer();
   if (!systemAppearanceQuery) return;
   if (typeof systemAppearanceQuery.removeEventListener === "function") {
     systemAppearanceQuery.removeEventListener("change", updateSystemAcrylicAppearance);
@@ -1047,6 +1059,15 @@ onBeforeUnmount(() => {
   }
   systemAppearanceQuery = null;
 });
+
+watch(
+  [
+    () => props.state.isSettingsPanelOpen.value,
+    () => props.state.draftBackgroundSource.value,
+  ],
+  syncLiveDesktopStatusTimer,
+  { immediate: true }
+);
 
 watch(
   () => props.state.isSettingsPanelOpen.value,
@@ -1082,6 +1103,27 @@ function resolveSystemAcrylicAppearance() {
 
 function updateSystemAcrylicAppearance() {
   systemAcrylicAppearance.value = resolveSystemAcrylicAppearance();
+}
+
+function clearLiveDesktopStatusTimer() {
+  if (liveDesktopStatusTimer) window.clearInterval(liveDesktopStatusTimer);
+  liveDesktopStatusTimer = null;
+}
+
+function refreshLiveDesktopRuntimeStatus() {
+  props.state.refreshLiveDesktopRuntimeStatus?.();
+}
+
+function syncLiveDesktopStatusTimer() {
+  clearLiveDesktopStatusTimer();
+  if (typeof window === "undefined") return;
+  if (!props.state.isSettingsPanelOpen.value || !doesDraftBackgroundUseLiveDesktop.value) return;
+  if (typeof props.state.refreshLiveDesktopRuntimeStatus !== "function") return;
+  refreshLiveDesktopRuntimeStatus();
+  liveDesktopStatusTimer = window.setInterval(
+    refreshLiveDesktopRuntimeStatus,
+    LIVE_DESKTOP_STATUS_REFRESH_INTERVAL_MS
+  );
 }
 
 function selectWindowEffectPreview(material, appearance) {

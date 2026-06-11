@@ -142,6 +142,7 @@ function createSettingsConfig(overrides = {}) {
     commitPages: [],
     commitSearchPageIndex: [],
     schedulePageGridMetrics: 0,
+    syncLiveDesktopBackgroundRuntime: 0,
   };
   const pageSize = {
     get value() {
@@ -160,6 +161,9 @@ function createSettingsConfig(overrides = {}) {
   const config = useLaunchpadSettingsConfig({
     applyNativeWindowEffects: () => {
       calls.applyNativeWindowEffects += 1;
+    },
+    syncLiveDesktopBackgroundRuntime: () => {
+      calls.syncLiveDesktopBackgroundRuntime += 1;
     },
     clonePages: helpers.clonePages,
     closeSettingsPanel: () => {
@@ -470,11 +474,11 @@ export function runLaunchpadSettingsConfigTests() {
   assert(liveDesktopWithoutEffects.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP, "supported live desktop backgrounds should be selectable");
   assert(liveDesktopWithoutEffects.config.canUseDraftBackgroundEffect(BACKGROUND_EFFECT_DIMMED), "dimmed should be available for supported live desktop backgrounds");
   assert(liveDesktopWithoutEffects.config.canUseDraftBackgroundEffect(BACKGROUND_EFFECT_NONE), "none should be available for supported live desktop backgrounds");
-  assert(!liveDesktopWithoutEffects.config.canUseDraftBackgroundEffect(BACKGROUND_EFFECT_BLUR), "blur should require live desktop background effect support");
+  assert(liveDesktopWithoutEffects.config.canUseDraftBackgroundEffect(BACKGROUND_EFFECT_BLUR), "blur should be available through the live desktop fallback path");
   liveDesktopWithoutEffects.config.setDraftBackgroundEffect(BACKGROUND_EFFECT_NONE);
   assert(liveDesktopWithoutEffects.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_NONE, "non-pixi live desktop effects should be selectable without shader support");
   liveDesktopWithoutEffects.config.setDraftBackgroundEffect(BACKGROUND_EFFECT_ACRYLIC_WEBGL);
-  assert(liveDesktopWithoutEffects.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "webgl acrylic should fall back without live desktop effect support");
+  assert(liveDesktopWithoutEffects.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "webgl acrylic should be selectable without native live desktop effect support");
 
   const liveDesktopWithEffects = createSettingsConfig({
     liveDesktopBackgroundSupport: {
@@ -552,6 +556,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(apply.calls.commitFolderPageIndex.join(",") === "1", "applying settings should reclamp the folder page index");
   assert(apply.calls.schedulePageGridMetrics === 1, "applying settings should schedule page metrics");
   assert(apply.calls.applyNativeWindowEffects === 1, "applying settings should refresh native window effects");
+  assert(apply.calls.syncLiveDesktopBackgroundRuntime === 1, "applying settings should sync the live desktop runtime");
   assert(apply.calls.closeSettingsPanel === 1, "applying settings from the panel should close it");
 
   const acrylicApply = createSettingsConfig({
@@ -603,7 +608,7 @@ export function runLaunchpadSettingsConfigTests() {
   });
   liveDesktopApplyWithoutEffects.config.applySettingsConfig();
   assert(liveDesktopApplyWithoutEffects.state.backgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP, "supported live desktop backgrounds should apply without an image path");
-  assert(liveDesktopApplyWithoutEffects.state.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "live desktop blur should fall back when native effects are unsupported");
+  assert(liveDesktopApplyWithoutEffects.state.backgroundEffect.value === BACKGROUND_EFFECT_BLUR, "live desktop blur should apply when native effects are unsupported");
   assert(liveDesktopApplyWithoutEffects.state.backgroundImagePath.value === null, "live desktop backgrounds should not keep image paths");
 
   const liveDesktopApplyWithEffects = createSettingsConfig({

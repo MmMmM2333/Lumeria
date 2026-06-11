@@ -80,7 +80,51 @@ const DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS = Object.freeze({
   generation: 0,
   reason: "nativeBridgeUnavailable",
   detail: "",
+  diagnostics: {
+    framesCopied: 0,
+    frameTimeouts: 0,
+    copyErrors: 0,
+    commitErrors: 0,
+    configUpdates: 0,
+    configErrors: 0,
+    lastFrameWidth: 0,
+    lastFrameHeight: 0,
+    lastFrameFormat: 0,
+    testPatternFrames: 0,
+    lastError: "",
+  },
 });
+
+function normalizeLiveDesktopRuntimeDiagnostics(diagnostics) {
+  const normalizeCount = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? Math.floor(number) : 0;
+  };
+  return {
+    framesCopied: normalizeCount(diagnostics?.framesCopied),
+    frameTimeouts: normalizeCount(diagnostics?.frameTimeouts),
+    copyErrors: normalizeCount(diagnostics?.copyErrors),
+    commitErrors: normalizeCount(diagnostics?.commitErrors),
+    configUpdates: normalizeCount(diagnostics?.configUpdates),
+    configErrors: normalizeCount(diagnostics?.configErrors),
+    lastFrameWidth: normalizeCount(diagnostics?.lastFrameWidth),
+    lastFrameHeight: normalizeCount(diagnostics?.lastFrameHeight),
+    lastFrameFormat: normalizeCount(diagnostics?.lastFrameFormat),
+    testPatternFrames: normalizeCount(diagnostics?.testPatternFrames),
+    lastError: String(diagnostics?.lastError || ""),
+  };
+}
+
+function resolveLiveDesktopDiagnosticMode() {
+  if (typeof window === "undefined") return "capture";
+  try {
+    return window.localStorage?.getItem("launchpadLiveDesktopDiagnosticMode") === "testPattern"
+      ? "testPattern"
+      : "capture";
+  } catch {
+    return "capture";
+  }
+}
 
 function normalizeLiveDesktopRuntimeStatus(status) {
   const generation = Number(status?.generation);
@@ -90,6 +134,7 @@ function normalizeLiveDesktopRuntimeStatus(status) {
     generation: Number.isFinite(generation) && generation >= 0 ? Math.floor(generation) : 0,
     reason: String(status?.reason || DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS.reason),
     detail: String(status?.detail || ""),
+    diagnostics: normalizeLiveDesktopRuntimeDiagnostics(status?.diagnostics),
   };
 }
 
@@ -112,6 +157,7 @@ function makeLiveDesktopRuntimeConfig(options) {
   );
   return {
     effect: normalizeBackgroundEffect(options.backgroundEffect.value),
+    diagnosticMode: resolveLiveDesktopDiagnosticMode(),
     blurStrength: clampBackgroundBlurStrength(options.backgroundBlurStrength.value),
     darkenStrength: clampBackgroundDarkenStrength(options.backgroundDarkenStrength.value),
     darkenColor: normalizeBackgroundDarkenColor(options.backgroundDarkenColor.value),
@@ -127,6 +173,8 @@ export function useLaunchpadNative(options) {
   let nativeSaveTimer = null;
   let nativeWindowHideTimer = null;
   let nativeWallpaperRefreshTimer = null;
+  let liveDesktopRuntimeSync = Promise.resolve();
+  let liveDesktopRuntimeSyncGeneration = 0;
   let nativeWindowOpenSequence = null;
   let nativeEventListenerGeneration = 0;
   let nativeSavePromise = null;
@@ -186,12 +234,7 @@ export function useLaunchpadNative(options) {
       : null;
     const nextBackgroundImageUrl = nextBackgroundImagePath ? convertFilePathToAssetUrl(nextBackgroundImagePath) : null;
     let nextEffectiveBackgroundEffect = nextBackgroundEffect;
-    if (nextBackgroundUsesLiveDesktop) {
-      const support = normalizeLiveDesktopBackgroundSupport(options.liveDesktopBackgroundSupport.value);
-      if (backgroundEffectUsesPixi(nextBackgroundEffect) && !support.supportsLiveDesktopBackgroundEffects) {
-        nextEffectiveBackgroundEffect = BACKGROUND_EFFECT_DIMMED;
-      }
-    } else if (backgroundEffectUsesPixi(nextBackgroundEffect) && !nextBackgroundImagePath) {
+    if (!nextBackgroundUsesLiveDesktop && backgroundEffectUsesPixi(nextBackgroundEffect) && !nextBackgroundImagePath) {
       nextEffectiveBackgroundEffect = BACKGROUND_EFFECT_DIMMED;
     }
 
@@ -396,6 +439,7 @@ export function useLaunchpadNative(options) {
     scheduleLaunchTargetStatusCheck();
     setNativeWindowEffectsEnabled(true);
     syncWindowsWallpaperRefreshTimer();
+    syncLiveDesktopBackgroundRuntime();
   }
 
   function scheduleNativeLayoutSave() {
@@ -457,6 +501,39 @@ export function useLaunchpadNative(options) {
       if (changed) scheduleNativeLayoutSave();
       syncWindowsWallpaperRefreshTimer();
     }, WINDOWS_WALLPAPER_REFRESH_INTERVAL_MS);
+  }
+
+  function shouldRunLiveDesktopBackground() {
+    return Boolean(
+      isNativeBridgeAvailable()
+      && options.isDesktopOpen.value
+      && backgroundSourceUsesLiveDesktop(options.backgroundSource.value)
+      && normalizeLiveDesktopBackgroundSupport(options.liveDesktopBackgroundSupport.value).supportsLiveDesktopBackground
+    );
+  }
+
+  function syncLiveDesktopBackgroundRuntime() {
+    const generation = ++liveDesktopRuntimeSyncGeneration;
+    liveDesktopRuntimeSync = liveDesktopRuntimeSync
+      .catch(() => {})
+      .then(async () => {
+        if (generation !== liveDesktopRuntimeSyncGeneration) return options.liveDesktopRuntimeStatus.value;
+        if (!isNativeBridgeAvailable()) {
+          options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
+          return options.liveDesktopRuntimeStatus.value;
+        }
+        if (!shouldRunLiveDesktopBackground()) {
+          const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
+          if (current.phase === "stopped") return current;
+          return stopNativeLiveDesktopBackground();
+        }
+        const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
+        if (current.active || current.phase === "running") {
+          return configureNativeLiveDesktopBackground();
+        }
+        return startNativeLiveDesktopBackground();
+      });
+    return liveDesktopRuntimeSync;
   }
 
   async function loadNativeLaunchpadData() {
@@ -1022,6 +1099,7 @@ export function useLaunchpadNative(options) {
     refreshWindowsWallpaperBackground().then((changed) => {
       if (changed) scheduleNativeLayoutSave();
     }).finally(syncWindowsWallpaperRefreshTimer);
+    syncLiveDesktopBackgroundRuntime();
     clearNativeWindowHideTimer();
     if (options.isDesktopOpen.value) {
       options.focusDesktopSurface?.();
@@ -1107,6 +1185,7 @@ export function useLaunchpadNative(options) {
     showNativeLaunchError,
     startNativeLiveDesktopBackground,
     stopNativeLiveDesktopBackground,
+    syncLiveDesktopBackgroundRuntime,
     syncWindowsWallpaperRefreshTimer,
     shouldUseNativeCatalog,
   };

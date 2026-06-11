@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use std::sync::{Arc, Mutex};
+
 #[cfg(target_os = "windows")]
 use std::{sync::mpsc, thread, time::Duration};
 
@@ -14,22 +16,24 @@ use windows::{
                 D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
             },
             Direct3D11::{
-                D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Resource,
-                ID3D11Texture2D, D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION,
-                D3D11_TEXTURE2D_DESC,
+                D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11RenderTargetView,
+                ID3D11Resource, ID3D11Texture2D, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC,
             },
             DirectComposition::{
-                DCompositionCreateDevice, IDCompositionColorMatrixEffect, IDCompositionDevice,
-                IDCompositionDevice3, IDCompositionGaussianBlurEffect, IDCompositionSurface,
-                IDCompositionTarget, IDCompositionVisual,
+                DCompositionCreateDevice, DCompositionCreateDevice2,
+                IDCompositionColorMatrixEffect, IDCompositionDevice, IDCompositionDevice3,
+                IDCompositionGaussianBlurEffect, IDCompositionSurface, IDCompositionTarget,
+                IDCompositionVisual,
             },
             Dxgi::{
-                Common::{DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_FORMAT_B8G8R8A8_UNORM},
+                Common::{DXGI_ALPHA_MODE_IGNORE, DXGI_FORMAT_B8G8R8A8_UNORM},
                 CreateDXGIFactory1, IDXGIAdapter1, IDXGIDevice, IDXGIFactory1, IDXGIOutput1,
                 IDXGIOutputDuplication, IDXGIResource, IDXGISurface, DXGI_ADAPTER_FLAG3_SOFTWARE,
                 DXGI_ERROR_ACCESS_DENIED, DXGI_ERROR_NOT_FOUND, DXGI_ERROR_WAIT_TIMEOUT,
                 DXGI_OUTDUPL_FRAME_INFO,
             },
+            Gdi::{MonitorFromWindow, HMONITOR, MONITOR_DEFAULTTONEAREST},
         },
         System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED},
     },
@@ -112,6 +116,7 @@ pub(crate) struct LiveDesktopRuntime {
 #[derive(Debug)]
 struct LiveDesktopRendererSession {
     renderer_probe: LiveDesktopRendererProbe,
+    diagnostics: Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
     #[cfg(target_os = "windows")]
     stop_sender: Option<mpsc::Sender<()>>,
     #[cfg(target_os = "windows")]
@@ -129,13 +134,14 @@ struct LiveDesktopRendererStartup {
 #[cfg(target_os = "windows")]
 struct LiveDesktopRendererResources {
     config: LiveDesktopRuntimeConfig,
+    diagnostics: Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
     _com: ComApartment,
     _d3d_device: ID3D11Device,
     _d3d_context: ID3D11DeviceContext,
     _capture_duplication: IDXGIOutputDuplication,
     _composition_device: IDCompositionDevice,
     _blur_effect: Option<IDCompositionGaussianBlurEffect>,
-    _color_matrix_effect: IDCompositionColorMatrixEffect,
+    _color_matrix_effect: Option<IDCompositionColorMatrixEffect>,
     _target: IDCompositionTarget,
     _root_visual: IDCompositionVisual,
     _surface: IDCompositionSurface,
@@ -149,6 +155,7 @@ struct LiveDesktopCaptureStartup {
     output_index: u32,
     output_width: u32,
     output_height: u32,
+    output_name: String,
     duplication: IDXGIOutputDuplication,
 }
 
@@ -156,6 +163,13 @@ struct LiveDesktopCaptureStartup {
 struct LiveDesktopD3DDevice {
     device: ID3D11Device,
     context: ID3D11DeviceContext,
+}
+
+#[cfg(target_os = "windows")]
+struct LiveDesktopNativeEffects {
+    color_matrix_effect: Option<IDCompositionColorMatrixEffect>,
+    blur_effect: Option<IDCompositionGaussianBlurEffect>,
+    detail: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -166,12 +180,31 @@ pub(crate) struct LiveDesktopRuntimeStatus {
     generation: u64,
     reason: &'static str,
     detail: String,
+    diagnostics: LiveDesktopRuntimeDiagnostics,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LiveDesktopRuntimeDiagnostics {
+    frames_copied: u64,
+    frame_timeouts: u64,
+    copy_errors: u64,
+    commit_errors: u64,
+    config_updates: u64,
+    config_errors: u64,
+    last_frame_width: u32,
+    last_frame_height: u32,
+    last_frame_format: i32,
+    test_pattern_frames: u64,
+    last_error: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LiveDesktopRuntimeConfig {
     effect: LiveDesktopBackgroundEffect,
+    #[serde(default)]
+    diagnostic_mode: LiveDesktopDiagnosticMode,
     blur_strength: u32,
     darken_strength: u32,
     darken_color: String,
@@ -186,6 +219,14 @@ enum LiveDesktopBackgroundEffect {
     Dimmed,
     Blur,
     AcrylicWebgl,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum LiveDesktopDiagnosticMode {
+    #[default]
+    Capture,
+    TestPattern,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -212,6 +253,7 @@ impl Default for LiveDesktopRuntimeConfig {
     fn default() -> Self {
         Self {
             effect: LiveDesktopBackgroundEffect::Dimmed,
+            diagnostic_mode: LiveDesktopDiagnosticMode::Capture,
             blur_strength: 50,
             darken_strength: 28,
             darken_color: "#1c1c1c".to_string(),
@@ -247,7 +289,13 @@ impl Default for LiveDesktopRuntime {
 
 impl LiveDesktopRuntime {
     pub(crate) fn status(&self) -> LiveDesktopRuntimeStatus {
-        self.status.clone()
+        let mut status = self.status.clone();
+        if let Some(session) = self.renderer_session.as_ref() {
+            let diagnostics = session.diagnostics();
+            status.detail = append_live_desktop_runtime_diagnostics(&status.detail, &diagnostics);
+            status.diagnostics = diagnostics;
+        }
+        status
     }
 
     pub(crate) fn start_for_window(
@@ -311,6 +359,7 @@ impl LiveDesktopRuntime {
             generation,
             reason: "starting",
             detail: "Live desktop runtime start requested".to_string(),
+            diagnostics: LiveDesktopRuntimeDiagnostics::default(),
         };
 
         if !capture_probe.supports_desktop_duplication {
@@ -318,15 +367,6 @@ impl LiveDesktopRuntime {
                 generation,
                 capture_probe.reason,
                 capture_probe.detail,
-            );
-            return self.status();
-        }
-
-        if !capture_probe.frame_probe.supports_frame_texture {
-            self.status = LiveDesktopRuntimeStatus::failed(
-                generation,
-                capture_probe.frame_probe.reason,
-                capture_probe.frame_probe.detail,
             );
             return self.status();
         }
@@ -356,6 +396,7 @@ impl LiveDesktopRuntime {
             generation,
             reason: "running",
             detail: running_detail,
+            diagnostics: LiveDesktopRuntimeDiagnostics::default(),
         };
         self.status()
     }
@@ -370,10 +411,14 @@ impl LiveDesktopRendererSession {
         let (ready_sender, ready_receiver) = mpsc::channel();
         let (stop_sender, stop_receiver) = mpsc::channel();
         let (config_sender, config_receiver) = mpsc::channel();
+        let diagnostics = Arc::new(Mutex::new(LiveDesktopRuntimeDiagnostics::default()));
+        let worker_diagnostics = Arc::clone(&diagnostics);
         let window_handle_value = window_handle.0 as isize;
         let worker = thread::spawn(move || {
             let window_handle = HWND(window_handle_value as _);
-            match unsafe { create_live_desktop_renderer_resources(window_handle, config) } {
+            match unsafe {
+                create_live_desktop_renderer_resources(window_handle, config, worker_diagnostics)
+            } {
                 Ok(startup) => {
                     let renderer_probe = startup.renderer_probe.clone();
                     if ready_sender.send(Ok(renderer_probe)).is_ok() {
@@ -411,6 +456,7 @@ impl LiveDesktopRendererSession {
 
         Ok(Self {
             renderer_probe,
+            diagnostics,
             stop_sender: Some(stop_sender),
             config_sender: Some(config_sender),
             worker: Some(worker),
@@ -432,6 +478,13 @@ impl LiveDesktopRendererSession {
         }
     }
 
+    fn diagnostics(&self) -> LiveDesktopRuntimeDiagnostics {
+        self.diagnostics
+            .lock()
+            .map(|diagnostics| diagnostics.clone())
+            .unwrap_or_default()
+    }
+
     #[cfg(test)]
     fn create_for_probe(
         renderer_probe: LiveDesktopRendererProbe,
@@ -444,6 +497,7 @@ impl LiveDesktopRendererSession {
         }
         Ok(Self {
             renderer_probe,
+            diagnostics: Arc::new(Mutex::new(LiveDesktopRuntimeDiagnostics::default())),
             #[cfg(target_os = "windows")]
             stop_sender: None,
             #[cfg(target_os = "windows")]
@@ -510,7 +564,10 @@ impl LiveDesktopRendererResources {
             did_update = true;
         }
         if did_update {
-            let _ = unsafe { self.apply_current_config_to_visual() };
+            match unsafe { self.apply_current_config_to_visual() } {
+                Ok(()) => record_live_desktop_config_update(&self.diagnostics),
+                Err(error) => record_live_desktop_config_error(&self.diagnostics, &error),
+            }
         }
     }
 
@@ -518,7 +575,7 @@ impl LiveDesktopRendererResources {
         unsafe {
             apply_live_desktop_config_to_effects(
                 self._blur_effect.as_ref(),
-                &self._color_matrix_effect,
+                self._color_matrix_effect.as_ref(),
                 &self.config,
             )
         }?;
@@ -527,18 +584,58 @@ impl LiveDesktopRendererResources {
     }
 
     unsafe fn copy_next_frame_to_surface(&self) -> Result<bool, String> {
-        let copied_frame = unsafe {
+        if self.config.diagnostic_mode == LiveDesktopDiagnosticMode::TestPattern {
+            let pattern_frame = match unsafe {
+                draw_live_desktop_test_pattern_to_composition_surface(
+                    &self._surface,
+                    &self._d3d_device,
+                    &self._d3d_context,
+                    self.diagnostics
+                        .lock()
+                        .map(|diagnostics| diagnostics.test_pattern_frames)
+                        .unwrap_or_default(),
+                )
+            } {
+                Ok(frame_probe) => frame_probe,
+                Err(error) => {
+                    record_live_desktop_copy_error(&self.diagnostics, &error);
+                    return Err(error);
+                }
+            };
+            if let Err(error) = unsafe { self._composition_device.Commit() } {
+                let detail = error.to_string();
+                record_live_desktop_commit_error(&self.diagnostics, &detail);
+                return Err(detail);
+            }
+            record_live_desktop_test_pattern_frame(&self.diagnostics, &pattern_frame);
+            return Ok(true);
+        }
+
+        let copied_frame = match unsafe {
             copy_duplication_frame_to_composition_surface(
                 &self._capture_duplication,
                 &self._surface,
                 &self._d3d_context,
                 0,
             )
-        }?;
+        } {
+            Ok(copied_frame) => copied_frame,
+            Err(error) => {
+                record_live_desktop_copy_error(&self.diagnostics, &error);
+                return Err(error);
+            }
+        };
         if copied_frame.is_none() {
+            record_live_desktop_frame_timeout(&self.diagnostics);
             return Ok(false);
         }
-        unsafe { self._composition_device.Commit() }.map_err(|error| error.to_string())?;
+        let frame_probe = copied_frame.expect("checked copied frame");
+        if let Err(error) = unsafe { self._composition_device.Commit() } {
+            let detail = error.to_string();
+            record_live_desktop_commit_error(&self.diagnostics, &detail);
+            return Err(detail);
+        }
+        record_live_desktop_frame_copied(&self.diagnostics, &frame_probe);
         Ok(true)
     }
 }
@@ -572,13 +669,16 @@ impl LiveDesktopRendererProbe {
         }
     }
 
-    fn native_renderer_available_for_window(detail: impl Into<String>) -> Self {
+    fn native_renderer_available_for_window(
+        supports_native_effects: bool,
+        detail: impl Into<String>,
+    ) -> Self {
         Self {
             supports_direct_composition: true,
             supports_window_target: true,
             supports_root_visual: true,
             supports_native_renderer: true,
-            supports_native_effects: true,
+            supports_native_effects,
             reason: "available",
             detail: detail.into(),
         }
@@ -655,6 +755,7 @@ impl LiveDesktopRuntimeStatus {
             generation,
             reason: "stopped",
             detail: "Live desktop runtime is stopped".to_string(),
+            diagnostics: LiveDesktopRuntimeDiagnostics::default(),
         }
     }
 
@@ -665,8 +766,129 @@ impl LiveDesktopRuntimeStatus {
             generation,
             reason,
             detail,
+            diagnostics: LiveDesktopRuntimeDiagnostics::default(),
         }
     }
+}
+
+impl LiveDesktopRuntimeDiagnostics {
+    fn summary(&self) -> String {
+        let mut parts = vec![
+            format!("framesCopied={}", self.frames_copied),
+            format!("timeouts={}", self.frame_timeouts),
+            format!("copyErrors={}", self.copy_errors),
+            format!("commitErrors={}", self.commit_errors),
+            format!("configUpdates={}", self.config_updates),
+            format!("configErrors={}", self.config_errors),
+            format!("testPatternFrames={}", self.test_pattern_frames),
+        ];
+        if self.last_frame_width > 0 && self.last_frame_height > 0 {
+            parts.push(format!(
+                "lastFrame={}x{} format {}",
+                self.last_frame_width, self.last_frame_height, self.last_frame_format
+            ));
+        }
+        if !self.last_error.is_empty() {
+            parts.push(format!("lastError={}", self.last_error));
+        }
+        parts.join(", ")
+    }
+}
+
+fn append_live_desktop_runtime_diagnostics(
+    detail: &str,
+    diagnostics: &LiveDesktopRuntimeDiagnostics,
+) -> String {
+    format!(
+        "{}; frame pump diagnostics: {}",
+        detail,
+        diagnostics.summary()
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn update_live_desktop_diagnostics(
+    diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
+    update: impl FnOnce(&mut LiveDesktopRuntimeDiagnostics),
+) {
+    if let Ok(mut diagnostics) = diagnostics.lock() {
+        update(&mut diagnostics);
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn record_live_desktop_frame_copied(
+    diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
+    frame_probe: &LiveDesktopFrameProbe,
+) {
+    update_live_desktop_diagnostics(diagnostics, |diagnostics| {
+        diagnostics.frames_copied += 1;
+        diagnostics.last_frame_width = frame_probe.width;
+        diagnostics.last_frame_height = frame_probe.height;
+        diagnostics.last_frame_format = frame_probe.format;
+        diagnostics.last_error.clear();
+    });
+}
+
+#[cfg(target_os = "windows")]
+fn record_live_desktop_test_pattern_frame(
+    diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
+    frame_probe: &LiveDesktopFrameProbe,
+) {
+    update_live_desktop_diagnostics(diagnostics, |diagnostics| {
+        diagnostics.test_pattern_frames += 1;
+        diagnostics.last_frame_width = frame_probe.width;
+        diagnostics.last_frame_height = frame_probe.height;
+        diagnostics.last_frame_format = frame_probe.format;
+        diagnostics.last_error.clear();
+    });
+}
+
+#[cfg(target_os = "windows")]
+fn record_live_desktop_frame_timeout(diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>) {
+    update_live_desktop_diagnostics(diagnostics, |diagnostics| {
+        diagnostics.frame_timeouts += 1;
+    });
+}
+
+#[cfg(target_os = "windows")]
+fn record_live_desktop_copy_error(
+    diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
+    detail: &str,
+) {
+    update_live_desktop_diagnostics(diagnostics, |diagnostics| {
+        diagnostics.copy_errors += 1;
+        diagnostics.last_error = detail.to_string();
+    });
+}
+
+#[cfg(target_os = "windows")]
+fn record_live_desktop_commit_error(
+    diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
+    detail: &str,
+) {
+    update_live_desktop_diagnostics(diagnostics, |diagnostics| {
+        diagnostics.commit_errors += 1;
+        diagnostics.last_error = detail.to_string();
+    });
+}
+
+#[cfg(target_os = "windows")]
+fn record_live_desktop_config_update(diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>) {
+    update_live_desktop_diagnostics(diagnostics, |diagnostics| {
+        diagnostics.config_updates += 1;
+    });
+}
+
+#[cfg(target_os = "windows")]
+fn record_live_desktop_config_error(
+    diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
+    detail: &str,
+) {
+    update_live_desktop_diagnostics(diagnostics, |diagnostics| {
+        diagnostics.config_errors += 1;
+        diagnostics.last_error = detail.to_string();
+    });
 }
 
 pub(crate) fn live_desktop_background_support() -> LiveDesktopBackgroundSupport {
@@ -709,9 +931,31 @@ fn make_live_desktop_background_support(
 
 #[cfg(target_os = "windows")]
 fn probe_live_desktop_renderer() -> LiveDesktopRendererProbe {
-    match unsafe { probe_windows_live_desktop_renderer() } {
-        Ok(probe) => probe,
-        Err(probe) => probe,
+    let (probe_sender, probe_receiver) = mpsc::channel();
+    let worker = thread::spawn(move || {
+        let probe = match unsafe { probe_windows_live_desktop_renderer() } {
+            Ok(probe) => probe,
+            Err(probe) => probe,
+        };
+        let _ = probe_sender.send(probe);
+    });
+
+    match probe_receiver.recv_timeout(Duration::from_secs(2)) {
+        Ok(probe) => {
+            let _ = worker.join();
+            probe
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => LiveDesktopRendererProbe::unavailable(
+            "nativeRendererProbeTimedOut",
+            "DirectComposition renderer probe did not complete within 2 seconds",
+        ),
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            let _ = worker.join();
+            LiveDesktopRendererProbe::unavailable(
+                "nativeRendererProbeWorkerExited",
+                "DirectComposition renderer probe worker exited before reporting a result",
+            )
+        }
     }
 }
 
@@ -793,45 +1037,27 @@ unsafe fn probe_windows_live_desktop_renderer(
             Ok(device) => device,
             Err(error) => {
                 last_detail = format!(
-                        "DCompositionCreateDevice({adapter_index}) failed while probing renderer: {error}"
-                    );
-                continue;
-            }
-        };
-        let composition_device3 = match composition_device.cast::<IDCompositionDevice3>() {
-            Ok(device) => device,
-            Err(error) => {
-                last_detail = format!(
-                    "IDCompositionDevice3 cast({adapter_index}) failed while probing renderer: {error}"
+                    "DCompositionCreateDevice({adapter_index}) failed while probing renderer: {error}"
                 );
                 continue;
             }
         };
-        if let Err(error) = unsafe { composition_device3.CreateColorMatrixEffect() } {
-            last_detail = format!(
-                "CreateColorMatrixEffect({adapter_index}) failed while probing renderer: {error}"
-            );
-            continue;
-        }
-        let effects_detail = match unsafe { composition_device3.CreateGaussianBlurEffect() } {
-            Ok(_) => (
-                true,
-                format!(
-                    "DirectComposition device and native effect probe succeeded on adapter {adapter_index}; HWND target and root visual are validated when the live desktop runtime starts"
-                ),
-            ),
-            Err(error) => (
-                false,
-                format!(
-                    "DirectComposition base renderer probe succeeded on adapter {adapter_index}, but Gaussian blur effects are unavailable: {error}"
-                ),
-            ),
-        };
+        drop(composition_device);
+
+        let adapter_name = live_desktop_adapter_name(&desc.Description);
+        let native_effects =
+            unsafe { create_live_desktop_native_effects(&dxgi_device, adapter_index, "probe") };
+        let supports_native_effects =
+            native_effects.color_matrix_effect.is_some() && native_effects.blur_effect.is_some();
+        let detail = format!(
+            "DirectComposition base renderer probe succeeded on adapter {adapter_index} ({adapter_name}); {}; HWND target and root visual are validated when the live desktop runtime starts",
+            native_effects.detail
+        );
 
         return Ok(
             LiveDesktopRendererProbe::native_renderer_available_for_probe(
-                effects_detail.0,
-                effects_detail.1,
+                supports_native_effects,
+                detail,
             ),
         );
     }
@@ -857,6 +1083,7 @@ unsafe fn probe_windows_live_desktop_renderer(
 unsafe fn create_live_desktop_renderer_resources(
     window_handle: HWND,
     config: LiveDesktopRuntimeConfig,
+    diagnostics: Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
 ) -> Result<LiveDesktopRendererStartup, LiveDesktopRendererProbe> {
     let com = unsafe { ComApartment::initialize() }.map_err(|error| {
         LiveDesktopRendererProbe::unavailable(
@@ -873,6 +1100,7 @@ unsafe fn create_live_desktop_renderer_resources(
 
     let mut adapter_count = 0;
     let mut last_detail = String::new();
+    let target_monitor = unsafe { MonitorFromWindow(window_handle, MONITOR_DEFAULTTONEAREST) };
 
     for adapter_index in 0.. {
         let adapter = match unsafe { factory.EnumAdapters1(adapter_index) } {
@@ -899,20 +1127,30 @@ unsafe fn create_live_desktop_renderer_resources(
             }
         };
         if (desc.Flags & DXGI_ADAPTER_FLAG3_SOFTWARE.0 as u32) != 0 {
+            last_detail = format!(
+                "Skipped software adapter {adapter_index} ({}) while creating renderer resources",
+                live_desktop_adapter_name(&desc.Description)
+            );
             continue;
         }
+        let adapter_name = live_desktop_adapter_name(&desc.Description);
 
         let d3d = match unsafe { create_d3d11_device_with_context_for_adapter(&adapter) } {
             Ok(d3d) => d3d,
             Err(error) => {
                 last_detail = format!(
-                    "D3D11CreateDevice({adapter_index}) failed while creating renderer resources: {error}"
+                    "D3D11CreateDevice({adapter_index}, {adapter_name}) failed while creating renderer resources: {error}"
                 );
                 continue;
             }
         };
         let capture = match unsafe {
-            create_live_desktop_capture_for_adapter(&adapter, &d3d.device, adapter_index)
+            create_live_desktop_capture_for_adapter(
+                &adapter,
+                &d3d.device,
+                adapter_index,
+                target_monitor,
+            )
         } {
             Ok(capture) => capture,
             Err(detail) => {
@@ -924,7 +1162,7 @@ unsafe fn create_live_desktop_renderer_resources(
             Ok(device) => device,
             Err(error) => {
                 last_detail = format!(
-                    "IDXGIDevice cast({adapter_index}) failed while creating renderer resources: {error}"
+                    "IDXGIDevice cast({adapter_index}, {adapter_name}) failed while creating renderer resources: {error}"
                 );
                 continue;
             }
@@ -935,37 +1173,24 @@ unsafe fn create_live_desktop_renderer_resources(
             Ok(device) => device,
             Err(error) => {
                 last_detail = format!(
-                    "DCompositionCreateDevice({adapter_index}) failed while creating renderer resources: {error}"
+                    "DCompositionCreateDevice({adapter_index}, {adapter_name}) failed while creating renderer resources: {error}"
                 );
                 continue;
             }
         };
-        let composition_device3 = match composition_device.cast::<IDCompositionDevice3>() {
-            Ok(device) => device,
-            Err(error) => {
-                last_detail = format!(
-                    "IDCompositionDevice3 cast({adapter_index}) failed while creating renderer resources: {error}"
-                );
-                continue;
-            }
-        };
-        let color_matrix_effect = match unsafe { composition_device3.CreateColorMatrixEffect() } {
-            Ok(effect) => effect,
-            Err(error) => {
-                last_detail = format!(
-                    "CreateColorMatrixEffect({adapter_index}) failed while creating renderer resources: {error}"
-                );
-                continue;
-            }
-        };
-        let blur_effect = unsafe { composition_device3.CreateGaussianBlurEffect() }.ok();
+        let native_effects =
+            unsafe { create_live_desktop_native_effects(&dxgi_device, adapter_index, "runtime") };
+        let supports_native_effects =
+            native_effects.color_matrix_effect.is_some() && native_effects.blur_effect.is_some();
+        let color_matrix_effect = native_effects.color_matrix_effect;
+        let blur_effect = native_effects.blur_effect;
         let target = match unsafe { composition_device.CreateTargetForHwnd(window_handle, false) } {
             Ok(target) => target,
             Err(error) => {
                 return Err(LiveDesktopRendererProbe::window_target_unavailable(
                     "directCompositionTargetUnavailable",
                     format!(
-                        "CreateTargetForHwnd({adapter_index}) failed while creating renderer resources: {error}"
+                        "CreateTargetForHwnd({adapter_index}, {adapter_name}) failed while creating renderer resources: {error}"
                     ),
                 ));
             }
@@ -976,7 +1201,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 return Err(LiveDesktopRendererProbe::root_visual_unavailable(
                     "directCompositionVisualUnavailable",
                     format!(
-                        "CreateVisual({adapter_index}) failed while creating renderer resources: {error}"
+                        "CreateVisual({adapter_index}, {adapter_name}) failed while creating renderer resources: {error}"
                     ),
                 ));
             }
@@ -986,7 +1211,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 capture.output_width,
                 capture.output_height,
                 DXGI_FORMAT_B8G8R8A8_UNORM,
-                DXGI_ALPHA_MODE_PREMULTIPLIED,
+                DXGI_ALPHA_MODE_IGNORE,
             )
         } {
             Ok(surface) => surface,
@@ -1000,7 +1225,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 ));
             }
         };
-        let frame_probe = match unsafe {
+        let initial_frame_detail = match unsafe {
             copy_duplication_frame_to_composition_surface(
                 &capture.duplication,
                 &surface,
@@ -1008,26 +1233,26 @@ unsafe fn create_live_desktop_renderer_resources(
                 LIVE_DESKTOP_INITIAL_FRAME_WAIT_MS,
             )
         } {
-            Ok(Some(frame_probe)) => frame_probe,
+            Ok(Some(frame_probe)) => {
+                record_live_desktop_frame_copied(&diagnostics, &frame_probe);
+                format!(
+                    "initial frame {}x{} format {} copied",
+                    frame_probe.width, frame_probe.height, frame_probe.format
+                )
+            }
             Ok(None) => {
-                return Err(LiveDesktopRendererProbe::root_visual_unavailable(
-                    "directCompositionSurfaceDrawTimedOut",
-                    "Desktop Duplication did not produce an initial frame for DirectComposition surface startup",
-                ));
+                record_live_desktop_frame_timeout(&diagnostics);
+                "initial frame pending after startup wait".to_string()
             }
             Err(error) => {
-                return Err(LiveDesktopRendererProbe::root_visual_unavailable(
-                    "directCompositionSurfaceDrawFailed",
-                    format!(
-                        "Initial desktop frame copy into DirectComposition surface failed: {error}"
-                    ),
-                ));
+                record_live_desktop_copy_error(&diagnostics, &error);
+                format!("initial frame copy failed: {error}")
             }
         };
         if let Err(error) = unsafe {
             apply_live_desktop_config_to_effects(
                 blur_effect.as_ref(),
-                &color_matrix_effect,
+                color_matrix_effect.as_ref(),
                 &config,
             )
         } {
@@ -1056,17 +1281,19 @@ unsafe fn create_live_desktop_renderer_resources(
 
         return Ok(LiveDesktopRendererStartup {
             renderer_probe: LiveDesktopRendererProbe::native_renderer_available_for_window(
+                supports_native_effects,
                 format!(
-                    "Desktop Duplication frame pump initialized with frame {}x{} format {} and DirectComposition target/root surface on adapter {adapter_index}, output {}; native effects available: {}",
-                    frame_probe.width,
-                    frame_probe.height,
-                    frame_probe.format,
+                    "Desktop Duplication frame pump initialized with {initial_frame_detail} and DirectComposition target/root surface on adapter {adapter_index} ({adapter_name}), output {} ({}), monitor matched: {}; native effects available: {}; {}",
                     capture.output_index,
-                    blur_effect.is_some()
+                    capture.output_name,
+                    !target_monitor.is_invalid(),
+                    supports_native_effects,
+                    native_effects.detail
                 ),
             ),
             resources: LiveDesktopRendererResources {
                 config,
+                diagnostics,
                 _com: com,
                 _d3d_device: d3d.device,
                 _d3d_context: d3d.context,
@@ -1104,6 +1331,7 @@ unsafe fn create_live_desktop_capture_for_adapter(
     adapter: &IDXGIAdapter1,
     d3d_device: &ID3D11Device,
     adapter_index: u32,
+    target_monitor: HMONITOR,
 ) -> Result<LiveDesktopCaptureStartup, String> {
     let mut output_count = 0;
     let mut last_detail = String::new();
@@ -1127,6 +1355,15 @@ unsafe fn create_live_desktop_capture_for_adapter(
                 continue;
             }
         };
+        if !target_monitor.is_invalid() && output_desc.Monitor != target_monitor {
+            last_detail = format!(
+                "Skipped DXGI output {adapter_index}, {output_index} ({}) because it does not match the launchpad window monitor",
+                live_desktop_output_name(&output_desc.DeviceName)
+            );
+            continue;
+        }
+
+        let output_name = live_desktop_output_name(&output_desc.DeviceName);
         let output_width = (output_desc.DesktopCoordinates.right
             - output_desc.DesktopCoordinates.left)
             .max(0) as u32;
@@ -1168,6 +1405,7 @@ unsafe fn create_live_desktop_capture_for_adapter(
             output_index,
             output_width,
             output_height,
+            output_name,
             duplication,
         });
     }
@@ -1260,9 +1498,62 @@ unsafe fn copy_duplication_frame_to_composition_surface(
 }
 
 #[cfg(target_os = "windows")]
+unsafe fn draw_live_desktop_test_pattern_to_composition_surface(
+    surface: &IDCompositionSurface,
+    device: &ID3D11Device,
+    context: &ID3D11DeviceContext,
+    frame_index: u64,
+) -> Result<LiveDesktopFrameProbe, String> {
+    let mut update_offset = POINT::default();
+    let update_surface: IDXGISurface = unsafe { surface.BeginDraw(None, &mut update_offset) }
+        .map_err(|error| format!("DirectComposition test pattern BeginDraw failed: {error}"))?;
+    let draw_result = (|| -> Result<LiveDesktopFrameProbe, String> {
+        let target_texture = update_surface.cast::<ID3D11Texture2D>().map_err(|error| {
+            format!("DirectComposition test pattern surface is not an ID3D11Texture2D: {error}")
+        })?;
+        let mut desc = D3D11_TEXTURE2D_DESC::default();
+        unsafe { target_texture.GetDesc(&mut desc) };
+        let target_resource = target_texture.cast::<ID3D11Resource>().map_err(|error| {
+            format!("Test pattern target texture resource cast failed: {error}")
+        })?;
+        let mut render_target_view: Option<ID3D11RenderTargetView> = None;
+        unsafe {
+            device.CreateRenderTargetView(&target_resource, None, Some(&mut render_target_view))
+        }
+        .map_err(|error| format!("CreateRenderTargetView for test pattern failed: {error}"))?;
+        let render_target_view = render_target_view
+            .ok_or_else(|| "CreateRenderTargetView returned no test pattern view".to_string())?;
+        let colors = [
+            [1.0, 0.0, 0.35, 1.0],
+            [0.0, 0.85, 0.35, 1.0],
+            [0.1, 0.35, 1.0, 1.0],
+        ];
+        let color = colors[((frame_index / 30) as usize) % colors.len()];
+        unsafe { context.ClearRenderTargetView(&render_target_view, &color) };
+
+        Ok(LiveDesktopFrameProbe {
+            supports_frame_texture: true,
+            width: desc.Width,
+            height: desc.Height,
+            format: desc.Format.0,
+            reason: "testPattern",
+            detail: format!(
+                "Drew DirectComposition test pattern {}x{} format {}",
+                desc.Width, desc.Height, desc.Format.0
+            ),
+        })
+    })();
+    let end_draw_result = unsafe { surface.EndDraw() }
+        .map_err(|error| format!("DirectComposition test pattern EndDraw failed: {error}"));
+    let frame_probe = draw_result?;
+    end_draw_result?;
+    Ok(frame_probe)
+}
+
+#[cfg(target_os = "windows")]
 unsafe fn apply_live_desktop_config_to_effects(
     blur_effect: Option<&IDCompositionGaussianBlurEffect>,
-    color_matrix_effect: &IDCompositionColorMatrixEffect,
+    color_matrix_effect: Option<&IDCompositionColorMatrixEffect>,
     config: &LiveDesktopRuntimeConfig,
 ) -> Result<(), String> {
     if let Some(blur_effect) = blur_effect {
@@ -1271,7 +1562,9 @@ unsafe fn apply_live_desktop_config_to_effects(
         }
         .map_err(|error| error.to_string())?;
     }
-    unsafe { apply_live_desktop_config_to_color_matrix(color_matrix_effect, config) }?;
+    if let Some(color_matrix_effect) = color_matrix_effect {
+        unsafe { apply_live_desktop_config_to_color_matrix(color_matrix_effect, config) }?;
+    }
     Ok(())
 }
 
@@ -1455,22 +1748,108 @@ fn parse_live_desktop_hex_color(value: &str) -> [f32; 3] {
 }
 
 #[cfg(target_os = "windows")]
+fn live_desktop_wide_string(value: &[u16]) -> String {
+    let end = value
+        .iter()
+        .position(|unit| *unit == 0)
+        .unwrap_or(value.len());
+    String::from_utf16_lossy(&value[..end]).trim().to_string()
+}
+
+#[cfg(target_os = "windows")]
+fn live_desktop_adapter_name(description: &[u16; 128]) -> String {
+    let name = live_desktop_wide_string(description);
+    if name.is_empty() {
+        "Unknown adapter".to_string()
+    } else {
+        name
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn live_desktop_output_name(device_name: &[u16; 32]) -> String {
+    let name = live_desktop_wide_string(device_name);
+    if name.is_empty() {
+        "Unknown output".to_string()
+    } else {
+        name
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn create_live_desktop_native_effects(
+    dxgi_device: &IDXGIDevice,
+    adapter_index: u32,
+    phase: &str,
+) -> LiveDesktopNativeEffects {
+    let device3 = match unsafe { DCompositionCreateDevice2::<_, IDCompositionDevice3>(dxgi_device) }
+    {
+        Ok(device) => device,
+        Err(error) => {
+            return LiveDesktopNativeEffects {
+                color_matrix_effect: None,
+                blur_effect: None,
+                detail: format!(
+                    "Native DirectComposition effects unavailable during {phase} on adapter {adapter_index}: DCompositionCreateDevice2<IDCompositionDevice3> failed: {error}"
+                ),
+            };
+        }
+    };
+
+    let color_matrix_effect = match unsafe { device3.CreateColorMatrixEffect() } {
+        Ok(effect) => Some(effect),
+        Err(error) => {
+            return LiveDesktopNativeEffects {
+                color_matrix_effect: None,
+                blur_effect: None,
+                detail: format!(
+                    "Native DirectComposition effects unavailable during {phase} on adapter {adapter_index}: CreateColorMatrixEffect failed: {error}"
+                ),
+            };
+        }
+    };
+
+    let blur_effect = match unsafe { device3.CreateGaussianBlurEffect() } {
+        Ok(effect) => Some(effect),
+        Err(error) => {
+            return LiveDesktopNativeEffects {
+                color_matrix_effect: None,
+                blur_effect: None,
+                detail: format!(
+                    "Native DirectComposition effects unavailable during {phase} on adapter {adapter_index}: CreateGaussianBlurEffect failed: {error}"
+                ),
+            };
+        }
+    };
+
+    LiveDesktopNativeEffects {
+        color_matrix_effect,
+        blur_effect,
+        detail: format!(
+            "Native DirectComposition effects available during {phase} on adapter {adapter_index}"
+        ),
+    }
+}
+
+#[cfg(target_os = "windows")]
 unsafe fn set_direct_composition_root(
     device: &IDCompositionDevice,
     target: &IDCompositionTarget,
     visual: &IDCompositionVisual,
     surface: &IDCompositionSurface,
     blur_effect: &Option<IDCompositionGaussianBlurEffect>,
-    effect: &IDCompositionColorMatrixEffect,
+    effect: &Option<IDCompositionColorMatrixEffect>,
 ) -> Result<(), String> {
     unsafe { visual.SetContent(surface) }.map_err(|error| error.to_string())?;
-    if let Some(blur_effect) = blur_effect {
-        unsafe { blur_effect.SetInput(0, surface, 0) }.map_err(|error| error.to_string())?;
-        unsafe { effect.SetInput(0, blur_effect, 0) }.map_err(|error| error.to_string())?;
-    } else {
-        unsafe { effect.SetInput(0, surface, 0) }.map_err(|error| error.to_string())?;
+    if let Some(effect) = effect {
+        if let Some(blur_effect) = blur_effect {
+            unsafe { blur_effect.SetInput(0, surface, 0) }.map_err(|error| error.to_string())?;
+            unsafe { effect.SetInput(0, blur_effect, 0) }.map_err(|error| error.to_string())?;
+        } else {
+            unsafe { effect.SetInput(0, surface, 0) }.map_err(|error| error.to_string())?;
+        }
+        unsafe { visual.SetEffect(effect) }.map_err(|error| error.to_string())?;
     }
-    unsafe { visual.SetEffect(effect) }.map_err(|error| error.to_string())?;
     unsafe { target.SetRoot(visual) }.map_err(|error| error.to_string())?;
     unsafe { device.Commit() }.map_err(|error| error.to_string())?;
     Ok(())
@@ -1968,6 +2347,22 @@ mod tests {
     }
 
     #[test]
+    fn runtime_start_allows_capture_probe_without_immediate_frame() {
+        let mut runtime = LiveDesktopRuntime::default();
+        let mut capture = capture_probe(true, true, "available");
+        capture.frame_probe = empty_frame_probe(
+            "noFrameWithinTimeout",
+            "Desktop Duplication did not produce a frame within 16 ms",
+        );
+        let status = runtime.start_with_probes(capture, LiveDesktopRendererProbe::available());
+
+        assert_eq!(status.phase, "running");
+        assert!(status.active);
+        assert_eq!(status.reason, "running");
+        assert!(status.detail.contains("frame pump diagnostics"));
+    }
+
+    #[test]
     fn runtime_start_waits_for_native_renderer_after_capture_ready() {
         let mut runtime = LiveDesktopRuntime::default();
         let status = runtime.start_with_probes(
@@ -1996,6 +2391,7 @@ mod tests {
                         LiveDesktopRendererProbe::native_renderer_unimplemented_for_window(
                             "target ready",
                         ),
+                    diagnostics: Arc::new(Mutex::new(LiveDesktopRuntimeDiagnostics::default())),
                     #[cfg(target_os = "windows")]
                     stop_sender: None,
                     #[cfg(target_os = "windows")]

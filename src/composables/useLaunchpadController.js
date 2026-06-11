@@ -232,6 +232,7 @@ export function useLaunchpadController() {
     setFolderMotionGeometry: () => {},
     setNativeWindowEffectsEnabled: () => {},
     showNativeLaunchError: () => {},
+    syncLiveDesktopBackgroundRuntime: () => {},
   });
   const {
     appendAppsToPages,
@@ -542,7 +543,9 @@ export function useLaunchpadController() {
   } = useLaunchpadViewState({
     backgroundBaseColor,
     backgroundBaseOpacity,
+    backgroundAcrylicParams,
     backgroundEffect,
+    backgroundBlurStrength,
     backgroundDarkenColor,
     backgroundDarkenStrength,
     backgroundImageOpacity,
@@ -557,6 +560,7 @@ export function useLaunchpadController() {
     isFolderLayerActive,
     isHomeRevealSettling,
     isSearchMode,
+    liveDesktopBackgroundSupport,
     openFolderId,
   });
   const {
@@ -739,6 +743,7 @@ export function useLaunchpadController() {
     useDraftDesktopWallpaper,
   } = useLaunchpadSettingsConfig({
     applyNativeWindowEffects: () => deferredHandlers.call("setNativeWindowEffectsEnabled", true),
+    syncLiveDesktopBackgroundRuntime: () => deferredHandlers.call("syncLiveDesktopBackgroundRuntime"),
     backgroundBaseColor,
     backgroundBaseOpacity,
     backgroundAcrylicAppearance,
@@ -828,6 +833,7 @@ export function useLaunchpadController() {
     showNativeLaunchError,
     startNativeLiveDesktopBackground,
     stopNativeLiveDesktopBackground,
+    syncLiveDesktopBackgroundRuntime,
     syncWindowsWallpaperRefreshTimer,
     shouldUseNativeCatalog,
   } = useLaunchpadNative({
@@ -919,6 +925,7 @@ export function useLaunchpadController() {
   deferredHandlers.set("prepareNativeLaunch", prepareNativeLaunch);
   deferredHandlers.set("setNativeWindowEffectsEnabled", setNativeWindowEffectsEnabled);
   deferredHandlers.set("showNativeLaunchError", showNativeLaunchError);
+  deferredHandlers.set("syncLiveDesktopBackgroundRuntime", syncLiveDesktopBackgroundRuntime);
   dragControls = useLaunchpadDrag({
     canCreateDesktopPageAfterDrag,
     canCreateFolderPageAfterDrag,
@@ -1298,6 +1305,7 @@ export function useLaunchpadController() {
     schedulePageGridMetrics,
     searchRef,
     showMissingLaunchTargetBadge,
+    syncLiveDesktopBackgroundRuntime,
     syncWindowsWallpaperRefreshTimer,
     syncManagedAppState,
     updateFolderViewportHeight,
@@ -1411,6 +1419,7 @@ export function useLaunchpadController() {
     canUseLiveDesktopBackgroundEffect,
     canUseDraftBackgroundEffect,
     refreshLiveDesktopRuntimeStatus,
+    syncLiveDesktopBackgroundRuntime,
     startNativeLiveDesktopBackground,
     stopNativeLiveDesktopBackground,
     useDraftDesktopWallpaper,

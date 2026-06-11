@@ -16,6 +16,7 @@ export function registerLaunchpadLifecycleWatchers(options, watchFn = watch) {
     backgroundImageOpacity,
     backgroundImagePath,
     backgroundSource,
+    syncLiveDesktopBackgroundRuntime,
     effectiveFolderIconSize,
     filteredManagedApps,
     folderCols,
@@ -56,6 +57,7 @@ export function registerLaunchpadLifecycleWatchers(options, watchFn = watch) {
   watchFn([pages, showMissingLaunchTargetBadge], scheduleLaunchTargetStatusCheck, { flush: "post" });
   watchFn(filteredManagedApps, syncManagedAppState, { flush: "post" });
   watchFn([backgroundSource, isDesktopOpen], syncWindowsWallpaperRefreshTimer, { flush: "post" });
+  watchFn([backgroundSource, isDesktopOpen, backgroundEffect, backgroundBlurStrength, backgroundDarkenColor, backgroundDarkenStrength, backgroundAcrylicAppearance, backgroundAcrylicDarkParams, backgroundAcrylicLightParams], syncLiveDesktopBackgroundRuntime, { flush: "post" });
 }
 
 export function createLaunchpadLayoutResizeObserver(options, ResizeObserverCtor = globalThis.ResizeObserver) {
