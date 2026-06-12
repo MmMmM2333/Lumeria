@@ -19,6 +19,7 @@ export function runLaunchpadViewAdaptersTests() {
     liveDesktopBackgroundSupport: { value: { supportsLiveDesktopBackground: false, reason: "probeFailed" } },
     liveDesktopRuntimeStatus: { value: { phase: "running", detail: "adapter 0" } },
     refreshLiveDesktopRuntimeStatus: () => {},
+    restartLiveDesktopBackgroundRuntime: () => {},
     syncLiveDesktopBackgroundRuntime: () => {},
     setDraftBackgroundBaseColor: () => {},
     setDraftBackgroundBaseOpacity: () => {},
@@ -51,6 +52,7 @@ export function runLaunchpadViewAdaptersTests() {
   assert(state.liveDesktopBackgroundSupport === controller.liveDesktopBackgroundSupport, "settings panel state should expose live desktop support");
   assert(state.liveDesktopRuntimeStatus === controller.liveDesktopRuntimeStatus, "settings panel state should expose live desktop runtime status");
   assert(state.refreshLiveDesktopRuntimeStatus === controller.refreshLiveDesktopRuntimeStatus, "settings panel state should expose live desktop runtime refresh");
+  assert(state.restartLiveDesktopBackgroundRuntime === controller.restartLiveDesktopBackgroundRuntime, "settings panel state should expose live desktop runtime restart");
   assert(state.syncLiveDesktopBackgroundRuntime === controller.syncLiveDesktopBackgroundRuntime, "settings panel state should expose live desktop runtime sync");
   assert(state.changeDraftBackgroundBaseOpacity === controller.changeDraftBackgroundBaseOpacity, "settings panel state should expose background base opacity stepping");
   assert(state.setDraftBackgroundBaseColor === controller.setDraftBackgroundBaseColor, "settings panel state should expose background base color setter");

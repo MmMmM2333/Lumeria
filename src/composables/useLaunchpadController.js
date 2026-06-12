@@ -232,6 +232,7 @@ export function useLaunchpadController() {
     setFolderMotionGeometry: () => {},
     setNativeWindowEffectsEnabled: () => {},
     showNativeLaunchError: () => {},
+    restartLiveDesktopBackgroundRuntime: () => {},
     syncLiveDesktopBackgroundRuntime: () => {},
   });
   const {
@@ -827,6 +828,7 @@ export function useLaunchpadController() {
     prepareNativeLaunch,
     refreshLiveDesktopRuntimeStatus,
     registerNativeEventListeners,
+    restartLiveDesktopBackgroundRuntime,
     scheduleNativeLayoutSave,
     scheduleLaunchTargetStatusCheck,
     setNativeWindowEffectsEnabled,
@@ -925,6 +927,7 @@ export function useLaunchpadController() {
   deferredHandlers.set("prepareNativeLaunch", prepareNativeLaunch);
   deferredHandlers.set("setNativeWindowEffectsEnabled", setNativeWindowEffectsEnabled);
   deferredHandlers.set("showNativeLaunchError", showNativeLaunchError);
+  deferredHandlers.set("restartLiveDesktopBackgroundRuntime", restartLiveDesktopBackgroundRuntime);
   deferredHandlers.set("syncLiveDesktopBackgroundRuntime", syncLiveDesktopBackgroundRuntime);
   dragControls = useLaunchpadDrag({
     canCreateDesktopPageAfterDrag,
@@ -1419,6 +1422,7 @@ export function useLaunchpadController() {
     canUseLiveDesktopBackgroundEffect,
     canUseDraftBackgroundEffect,
     refreshLiveDesktopRuntimeStatus,
+    restartLiveDesktopBackgroundRuntime,
     syncLiveDesktopBackgroundRuntime,
     startNativeLiveDesktopBackground,
     stopNativeLiveDesktopBackground,

@@ -100,11 +100,35 @@
         <div class="background-debug-mode-group" role="group" aria-label="Live desktop diagnostic mode">
           <button
             type="button"
-            :class="['background-debug-mode-button', liveDesktopMode === 'capture' && 'background-debug-mode-button-active']"
+            :class="['background-debug-mode-button', liveDesktopMode === 'workerWCapture' && 'background-debug-mode-button-active']"
             :disabled="isLiveDesktopActionBusy"
-            @click="setLiveDesktopDiagnosticMode('capture')"
+            @click="setLiveDesktopDiagnosticMode('workerWCapture')"
           >
-            Capture
+            WorkerW
+          </button>
+          <button
+            type="button"
+            :class="['background-debug-mode-button', liveDesktopMode === 'dwmSharedSurfaceCapture' && 'background-debug-mode-button-active']"
+            :disabled="isLiveDesktopActionBusy"
+            @click="setLiveDesktopDiagnosticMode('dwmSharedSurfaceCapture')"
+          >
+            DWM Surface
+          </button>
+          <button
+            type="button"
+            :class="['background-debug-mode-button', liveDesktopMode === 'wallpaperEnginePopupCapture' && 'background-debug-mode-button-active']"
+            :disabled="isLiveDesktopActionBusy"
+            @click="setLiveDesktopDiagnosticMode('wallpaperEnginePopupCapture')"
+          >
+            WE Popup
+          </button>
+          <button
+            type="button"
+            :class="['background-debug-mode-button', liveDesktopMode === 'monitorCapture' && 'background-debug-mode-button-active']"
+            :disabled="isLiveDesktopActionBusy"
+            @click="setLiveDesktopDiagnosticMode('monitorCapture')"
+          >
+            Monitor
           </button>
           <button
             type="button"
@@ -126,6 +150,33 @@
             <dd>{{ row.value }}</dd>
           </div>
         </dl>
+
+        <dl class="background-debug-diagnostics">
+          <div
+            v-for="row in liveDesktopWindowRows"
+            :key="row.label"
+            :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
+          >
+            <dt>{{ row.label }}</dt>
+            <dd>{{ row.value }}</dd>
+          </div>
+        </dl>
+
+        <div class="background-debug-window-list">
+          <article
+            v-for="windowInfo in liveDesktopCandidateWindows"
+            :key="windowInfo.hwnd"
+            class="background-debug-window-card"
+          >
+            <strong>{{ formatWindowTitle(windowInfo) }}</strong>
+            <span>{{ formatWindowMeta(windowInfo) }}</span>
+            <span>{{ formatWindowRect(windowInfo.rect) }}</span>
+          </article>
+          <article v-if="liveDesktopCandidateWindows.length === 0" class="background-debug-window-card">
+            <strong>No live desktop candidates</strong>
+            <span>{{ liveDesktopWindowDiagnostics.detail || liveDesktopWindowDiagnostics.reason }}</span>
+          </article>
+        </div>
 
         <div v-if="liveDesktopLastError" class="background-debug-error" :title="liveDesktopLastError">
           {{ liveDesktopLastError }}
@@ -173,7 +224,10 @@ const props = defineProps({
 });
 
 const LIVE_DESKTOP_DIAGNOSTIC_MODE_STORAGE_KEY = "launchpadLiveDesktopDiagnosticMode";
-const LIVE_DESKTOP_MODE_CAPTURE = "capture";
+const LIVE_DESKTOP_MODE_WORKERW_CAPTURE = "workerWCapture";
+const LIVE_DESKTOP_MODE_DWM_SHARED_SURFACE_CAPTURE = "dwmSharedSurfaceCapture";
+const LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE = "wallpaperEnginePopupCapture";
+const LIVE_DESKTOP_MODE_MONITOR_CAPTURE = "monitorCapture";
 const LIVE_DESKTOP_MODE_TEST_PATTERN = "testPattern";
 const DEFAULT_LIVE_DESKTOP_STATUS = Object.freeze({
   phase: "unknown",
@@ -186,13 +240,44 @@ const DEFAULT_LIVE_DESKTOP_STATUS = Object.freeze({
     frameTimeouts: 0,
     copyErrors: 0,
     commitErrors: 0,
+    frameArrivedEvents: 0,
+    frameArrivedDroppedSignals: 0,
+    frameCopySamples: 0,
+    frameCopyMicrosTotal: 0,
+    lastFrameCopyMicros: 0,
+    maxFrameCopyMicros: 0,
+    frameCommitSamples: 0,
+    frameCommitMicrosTotal: 0,
+    lastFrameCommitMicros: 0,
+    maxFrameCommitMicros: 0,
     configUpdates: 0,
     configErrors: 0,
     lastFrameWidth: 0,
     lastFrameHeight: 0,
     lastFrameFormat: 0,
     testPatternFrames: 0,
+    dwmSurfaceUpdates: 0,
+    dwmSurfaceUpdateErrors: 0,
+    lastDwmSurfaceUpdateRectWidth: 0,
+    lastDwmSurfaceUpdateRectHeight: 0,
+    pixelProbeSamples: 0,
+    pixelProbeErrors: 0,
+    lastPixelProbeWidth: 0,
+    lastPixelProbeHeight: 0,
+    lastPixelProbeMinRgb: 0,
+    lastPixelProbeMaxRgb: 0,
+    lastPixelProbeAvgRgb: 0,
     lastError: "",
+  },
+  windowDiagnostics: {
+    platform: "unknown",
+    available: false,
+    reason: "",
+    detail: "",
+    windowCount: 0,
+    candidateCount: 0,
+    windows: [],
+    candidates: [],
   },
 });
 
@@ -204,6 +289,14 @@ const hasCopiedAcrylic = ref(false);
 const hasCopiedDiagnostics = ref(false);
 const liveDesktopMode = ref(readLiveDesktopDiagnosticMode());
 const isLiveDesktopActionBusy = ref(false);
+const liveDesktopRates = ref({
+  framesPerSecond: 0,
+  arrivedPerSecond: 0,
+  droppedPerSecond: 0,
+  timeoutsPerSecond: 0,
+  copyErrorsPerSecond: 0,
+});
+let liveDesktopRateSample = null;
 let acrylicCopyStateTimer = null;
 let diagnosticsCopyStateTimer = null;
 let liveDesktopRuntimePollTimer = null;
@@ -237,13 +330,47 @@ const liveDesktopDiagnosticsRows = computed(() => {
     { label: "timeouts", value: formatCount(diagnostics.frameTimeouts) },
     { label: "copyErrors", value: formatCount(diagnostics.copyErrors) },
     { label: "commitErrors", value: formatCount(diagnostics.commitErrors) },
+    { label: "rates", value: formatLiveDesktopRates(liveDesktopRates.value), wide: true },
+    { label: "frameArrived", value: formatFrameArrived(diagnostics), wide: true },
+    {
+      label: "copyTiming",
+      value: formatFrameTiming(
+        diagnostics.frameCopySamples,
+        diagnostics.frameCopyMicrosTotal,
+        diagnostics.lastFrameCopyMicros,
+        diagnostics.maxFrameCopyMicros,
+      ),
+      wide: true,
+    },
+    {
+      label: "commitTiming",
+      value: formatFrameTiming(
+        diagnostics.frameCommitSamples,
+        diagnostics.frameCommitMicrosTotal,
+        diagnostics.lastFrameCommitMicros,
+        diagnostics.maxFrameCommitMicros,
+      ),
+      wide: true,
+    },
     { label: "configUpdates", value: formatCount(diagnostics.configUpdates) },
     { label: "configErrors", value: formatCount(diagnostics.configErrors) },
     { label: "testPatternFrames", value: formatCount(diagnostics.testPatternFrames) },
+    { label: "dwmUpdate", value: formatDwmUpdate(diagnostics), wide: true },
+    { label: "pixelProbe", value: formatPixelProbe(diagnostics), wide: true },
     { label: "lastFrame", value: formatLastFrame(diagnostics), wide: true },
   ];
 });
 const liveDesktopLastError = computed(() => liveDesktopStatus.value.diagnostics.lastError);
+const liveDesktopWindowDiagnostics = computed(() => liveDesktopStatus.value.windowDiagnostics);
+const liveDesktopCandidateWindows = computed(() => liveDesktopWindowDiagnostics.value.candidates.slice(0, 5));
+const liveDesktopWindowRows = computed(() => {
+  const diagnostics = liveDesktopWindowDiagnostics.value;
+  return [
+    { label: "workerw", value: diagnostics.available ? "available" : diagnostics.reason || "-", wide: true },
+    { label: "windows", value: formatCount(diagnostics.windowCount) },
+    { label: "candidates", value: formatCount(diagnostics.candidateCount) },
+  ];
+});
 
 function normalizeCount(value) {
   const number = Number(value);
@@ -263,14 +390,85 @@ function normalizeLiveDesktopStatus(status) {
       frameTimeouts: normalizeCount(diagnostics.frameTimeouts),
       copyErrors: normalizeCount(diagnostics.copyErrors),
       commitErrors: normalizeCount(diagnostics.commitErrors),
+      frameArrivedEvents: normalizeCount(diagnostics.frameArrivedEvents),
+      frameArrivedDroppedSignals: normalizeCount(diagnostics.frameArrivedDroppedSignals),
+      frameCopySamples: normalizeCount(diagnostics.frameCopySamples),
+      frameCopyMicrosTotal: normalizeCount(diagnostics.frameCopyMicrosTotal),
+      lastFrameCopyMicros: normalizeCount(diagnostics.lastFrameCopyMicros),
+      maxFrameCopyMicros: normalizeCount(diagnostics.maxFrameCopyMicros),
+      frameCommitSamples: normalizeCount(diagnostics.frameCommitSamples),
+      frameCommitMicrosTotal: normalizeCount(diagnostics.frameCommitMicrosTotal),
+      lastFrameCommitMicros: normalizeCount(diagnostics.lastFrameCommitMicros),
+      maxFrameCommitMicros: normalizeCount(diagnostics.maxFrameCommitMicros),
       configUpdates: normalizeCount(diagnostics.configUpdates),
       configErrors: normalizeCount(diagnostics.configErrors),
       lastFrameWidth: normalizeCount(diagnostics.lastFrameWidth),
       lastFrameHeight: normalizeCount(diagnostics.lastFrameHeight),
       lastFrameFormat: normalizeCount(diagnostics.lastFrameFormat),
       testPatternFrames: normalizeCount(diagnostics.testPatternFrames),
+      dwmSurfaceUpdates: normalizeCount(diagnostics.dwmSurfaceUpdates),
+      dwmSurfaceUpdateErrors: normalizeCount(diagnostics.dwmSurfaceUpdateErrors),
+      lastDwmSurfaceUpdateRectWidth: normalizeCount(diagnostics.lastDwmSurfaceUpdateRectWidth),
+      lastDwmSurfaceUpdateRectHeight: normalizeCount(diagnostics.lastDwmSurfaceUpdateRectHeight),
+      pixelProbeSamples: normalizeCount(diagnostics.pixelProbeSamples),
+      pixelProbeErrors: normalizeCount(diagnostics.pixelProbeErrors),
+      lastPixelProbeWidth: normalizeCount(diagnostics.lastPixelProbeWidth),
+      lastPixelProbeHeight: normalizeCount(diagnostics.lastPixelProbeHeight),
+      lastPixelProbeMinRgb: normalizeCount(diagnostics.lastPixelProbeMinRgb),
+      lastPixelProbeMaxRgb: normalizeCount(diagnostics.lastPixelProbeMaxRgb),
+      lastPixelProbeAvgRgb: normalizeCount(diagnostics.lastPixelProbeAvgRgb),
       lastError: String(diagnostics.lastError || ""),
     },
+    windowDiagnostics: normalizeLiveDesktopWindowDiagnostics(status?.windowDiagnostics),
+  };
+}
+
+function normalizeLiveDesktopWindowDiagnostics(diagnostics) {
+  const windows = Array.isArray(diagnostics?.windows)
+    ? diagnostics.windows.map(normalizeLiveDesktopWindowInfo)
+    : [];
+  const candidates = Array.isArray(diagnostics?.candidates)
+    ? diagnostics.candidates.map(normalizeLiveDesktopWindowInfo)
+    : [];
+  return {
+    platform: String(diagnostics?.platform || DEFAULT_LIVE_DESKTOP_STATUS.windowDiagnostics.platform),
+    available: Boolean(diagnostics?.available),
+    reason: String(diagnostics?.reason || DEFAULT_LIVE_DESKTOP_STATUS.windowDiagnostics.reason),
+    detail: String(diagnostics?.detail || ""),
+    windowCount: normalizeCount(diagnostics?.windowCount ?? windows.length),
+    candidateCount: normalizeCount(diagnostics?.candidateCount ?? candidates.length),
+    windows,
+    candidates,
+  };
+}
+
+function normalizeLiveDesktopWindowInfo(windowInfo) {
+  return {
+    hwnd: String(windowInfo?.hwnd || ""),
+    parentHwnd: String(windowInfo?.parentHwnd || ""),
+    rootHwnd: String(windowInfo?.rootHwnd || ""),
+    pid: normalizeCount(windowInfo?.pid),
+    className: String(windowInfo?.className || ""),
+    title: String(windowInfo?.title || ""),
+    processName: String(windowInfo?.processName || ""),
+    role: String(windowInfo?.role || "window"),
+    candidateReason: String(windowInfo?.candidateReason || ""),
+    visible: Boolean(windowInfo?.visible),
+    style: String(windowInfo?.style || ""),
+    exStyle: String(windowInfo?.exStyle || ""),
+    cloaked: normalizeCount(windowInfo?.cloaked),
+    rect: normalizeLiveDesktopWindowRect(windowInfo?.rect),
+  };
+}
+
+function normalizeLiveDesktopWindowRect(rect) {
+  return {
+    left: normalizeSignedInteger(rect?.left),
+    top: normalizeSignedInteger(rect?.top),
+    right: normalizeSignedInteger(rect?.right),
+    bottom: normalizeSignedInteger(rect?.bottom),
+    width: normalizeCount(rect?.width),
+    height: normalizeCount(rect?.height),
   };
 }
 
@@ -287,6 +485,126 @@ function formatLastFrame(diagnostics) {
   return `${diagnostics.lastFrameWidth}x${diagnostics.lastFrameHeight} fmt ${diagnostics.lastFrameFormat}`;
 }
 
+function formatDwmUpdate(diagnostics) {
+  if (!diagnostics.dwmSurfaceUpdates && !diagnostics.dwmSurfaceUpdateErrors) return "-";
+  const rect = diagnostics.lastDwmSurfaceUpdateRectWidth || diagnostics.lastDwmSurfaceUpdateRectHeight
+    ? ` rect ${diagnostics.lastDwmSurfaceUpdateRectWidth}x${diagnostics.lastDwmSurfaceUpdateRectHeight}`
+    : "";
+  return `${diagnostics.dwmSurfaceUpdates} ok / ${diagnostics.dwmSurfaceUpdateErrors} err${rect}`;
+}
+
+function formatPixelProbe(diagnostics) {
+  if (!diagnostics.pixelProbeSamples && !diagnostics.pixelProbeErrors) return "-";
+  const size = diagnostics.lastPixelProbeWidth && diagnostics.lastPixelProbeHeight
+    ? `${diagnostics.lastPixelProbeWidth}x${diagnostics.lastPixelProbeHeight} `
+    : "";
+  return `${diagnostics.pixelProbeSamples} ok / ${diagnostics.pixelProbeErrors} err ${size}min ${diagnostics.lastPixelProbeMinRgb} max ${diagnostics.lastPixelProbeMaxRgb} avg ${diagnostics.lastPixelProbeAvgRgb}`;
+}
+
+function formatFrameArrived(diagnostics) {
+  if (!diagnostics.frameArrivedEvents && !diagnostics.frameArrivedDroppedSignals) return "-";
+  return `${diagnostics.frameArrivedEvents} events / ${diagnostics.frameArrivedDroppedSignals} dropped`;
+}
+
+function formatFrameTiming(samples, totalMicros, lastMicros, maxMicros) {
+  if (!samples) return "-";
+  const averageMicros = totalMicros / samples;
+  return [
+    `avg ${formatMicrosAsMillis(averageMicros)}ms`,
+    `last ${formatMicrosAsMillis(lastMicros)}ms`,
+    `max ${formatMicrosAsMillis(maxMicros)}ms`,
+  ].join(" / ");
+}
+
+function formatMicrosAsMillis(micros) {
+  return (Number(micros) / 1000).toFixed(2);
+}
+
+function formatLiveDesktopRates(rates) {
+  return [
+    `frames ${rates.framesPerSecond.toFixed(1)}/s`,
+    `arrived ${rates.arrivedPerSecond.toFixed(1)}/s`,
+    `dropped ${rates.droppedPerSecond.toFixed(1)}/s`,
+    `timeouts ${rates.timeoutsPerSecond.toFixed(1)}/s`,
+    `copyErr ${rates.copyErrorsPerSecond.toFixed(1)}/s`,
+  ].join(" · ");
+}
+
+function updateLiveDesktopRates() {
+  const diagnostics = liveDesktopStatus.value.diagnostics;
+  const now = Date.now();
+  if (!liveDesktopRateSample || now <= liveDesktopRateSample.measuredAt) {
+    liveDesktopRateSample = {
+      measuredAt: now,
+      framesCopied: diagnostics.framesCopied,
+      frameArrivedEvents: diagnostics.frameArrivedEvents,
+      frameArrivedDroppedSignals: diagnostics.frameArrivedDroppedSignals,
+      frameTimeouts: diagnostics.frameTimeouts,
+      copyErrors: diagnostics.copyErrors,
+    };
+    liveDesktopRates.value = {
+      framesPerSecond: 0,
+      arrivedPerSecond: 0,
+      droppedPerSecond: 0,
+      timeoutsPerSecond: 0,
+      copyErrorsPerSecond: 0,
+    };
+    return;
+  }
+  const elapsedSeconds = Math.max(0.001, (now - liveDesktopRateSample.measuredAt) / 1000);
+  liveDesktopRates.value = {
+    framesPerSecond: Math.max(
+      0,
+      (diagnostics.framesCopied - liveDesktopRateSample.framesCopied) / elapsedSeconds,
+    ),
+    arrivedPerSecond: Math.max(
+      0,
+      (diagnostics.frameArrivedEvents - liveDesktopRateSample.frameArrivedEvents) / elapsedSeconds,
+    ),
+    droppedPerSecond: Math.max(
+      0,
+      (diagnostics.frameArrivedDroppedSignals - liveDesktopRateSample.frameArrivedDroppedSignals) / elapsedSeconds,
+    ),
+    timeoutsPerSecond: Math.max(
+      0,
+      (diagnostics.frameTimeouts - liveDesktopRateSample.frameTimeouts) / elapsedSeconds,
+    ),
+    copyErrorsPerSecond: Math.max(
+      0,
+      (diagnostics.copyErrors - liveDesktopRateSample.copyErrors) / elapsedSeconds,
+    ),
+  };
+  liveDesktopRateSample = {
+    measuredAt: now,
+    framesCopied: diagnostics.framesCopied,
+    frameArrivedEvents: diagnostics.frameArrivedEvents,
+    frameArrivedDroppedSignals: diagnostics.frameArrivedDroppedSignals,
+    frameTimeouts: diagnostics.frameTimeouts,
+    copyErrors: diagnostics.copyErrors,
+  };
+}
+
+function normalizeSignedInteger(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.trunc(number) : 0;
+}
+
+function formatWindowTitle(windowInfo) {
+  return `${windowInfo.role || "window"} ${windowInfo.hwnd || "-"}`;
+}
+
+function formatWindowMeta(windowInfo) {
+  const process = windowInfo.processName || `pid ${windowInfo.pid}`;
+  const className = windowInfo.className || "unknown class";
+  const reason = windowInfo.candidateReason || "diagnostic";
+  const title = windowInfo.title ? ` · ${windowInfo.title}` : "";
+  return `${reason} · ${className} · ${process} · parent ${windowInfo.parentHwnd || "-"} · root ${windowInfo.rootHwnd || "-"} · style ${windowInfo.style || "-"} · ex ${windowInfo.exStyle || "-"} · cloaked ${windowInfo.cloaked}${title}`;
+}
+
+function formatWindowRect(rect) {
+  return `${rect.left},${rect.top} ${rect.width}x${rect.height}`;
+}
+
 function updateNumber(key, event) {
   updateAcrylicDebugParams({ [key]: Number(event.target.value) });
 }
@@ -298,13 +616,16 @@ function updateTintColor(event) {
 }
 
 function readLiveDesktopDiagnosticMode() {
-  if (typeof window === "undefined") return LIVE_DESKTOP_MODE_CAPTURE;
+  if (typeof window === "undefined") return LIVE_DESKTOP_MODE_WORKERW_CAPTURE;
   try {
-    return window.localStorage?.getItem(LIVE_DESKTOP_DIAGNOSTIC_MODE_STORAGE_KEY) === LIVE_DESKTOP_MODE_TEST_PATTERN
-      ? LIVE_DESKTOP_MODE_TEST_PATTERN
-      : LIVE_DESKTOP_MODE_CAPTURE;
+    const mode = window.localStorage?.getItem(LIVE_DESKTOP_DIAGNOSTIC_MODE_STORAGE_KEY);
+    if (mode === LIVE_DESKTOP_MODE_TEST_PATTERN) return LIVE_DESKTOP_MODE_TEST_PATTERN;
+    if (mode === LIVE_DESKTOP_MODE_MONITOR_CAPTURE) return LIVE_DESKTOP_MODE_MONITOR_CAPTURE;
+    if (mode === LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE) return LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE;
+    if (mode === LIVE_DESKTOP_MODE_DWM_SHARED_SURFACE_CAPTURE) return LIVE_DESKTOP_MODE_DWM_SHARED_SURFACE_CAPTURE;
+    return LIVE_DESKTOP_MODE_WORKERW_CAPTURE;
   } catch {
-    return LIVE_DESKTOP_MODE_CAPTURE;
+    return LIVE_DESKTOP_MODE_WORKERW_CAPTURE;
   }
 }
 
@@ -315,6 +636,18 @@ function persistLiveDesktopDiagnosticMode(mode) {
       window.localStorage?.setItem(LIVE_DESKTOP_DIAGNOSTIC_MODE_STORAGE_KEY, LIVE_DESKTOP_MODE_TEST_PATTERN);
       return;
     }
+    if (mode === LIVE_DESKTOP_MODE_MONITOR_CAPTURE) {
+      window.localStorage?.setItem(LIVE_DESKTOP_DIAGNOSTIC_MODE_STORAGE_KEY, LIVE_DESKTOP_MODE_MONITOR_CAPTURE);
+      return;
+    }
+    if (mode === LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE) {
+      window.localStorage?.setItem(LIVE_DESKTOP_DIAGNOSTIC_MODE_STORAGE_KEY, LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE);
+      return;
+    }
+    if (mode === LIVE_DESKTOP_MODE_DWM_SHARED_SURFACE_CAPTURE) {
+      window.localStorage?.setItem(LIVE_DESKTOP_DIAGNOSTIC_MODE_STORAGE_KEY, LIVE_DESKTOP_MODE_DWM_SHARED_SURFACE_CAPTURE);
+      return;
+    }
     window.localStorage?.removeItem(LIVE_DESKTOP_DIAGNOSTIC_MODE_STORAGE_KEY);
   } catch (error) {
     console.warn("Failed to persist live desktop diagnostic mode", error);
@@ -322,27 +655,41 @@ function persistLiveDesktopDiagnosticMode(mode) {
 }
 
 async function setLiveDesktopDiagnosticMode(mode) {
-  const normalizedMode = mode === LIVE_DESKTOP_MODE_TEST_PATTERN
-    ? LIVE_DESKTOP_MODE_TEST_PATTERN
-    : LIVE_DESKTOP_MODE_CAPTURE;
+  const normalizedMode = [
+    LIVE_DESKTOP_MODE_TEST_PATTERN,
+    LIVE_DESKTOP_MODE_MONITOR_CAPTURE,
+    LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE,
+    LIVE_DESKTOP_MODE_DWM_SHARED_SURFACE_CAPTURE,
+  ].includes(mode)
+    ? mode
+    : LIVE_DESKTOP_MODE_WORKERW_CAPTURE;
   liveDesktopMode.value = normalizedMode;
+  liveDesktopRateSample = null;
   persistLiveDesktopDiagnosticMode(normalizedMode);
-  await reconfigureLiveDesktopRuntime();
+  await reconfigureLiveDesktopRuntime({
+    restart: normalizedMode === LIVE_DESKTOP_MODE_WORKERW_CAPTURE
+      || normalizedMode === LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE
+      || normalizedMode === LIVE_DESKTOP_MODE_DWM_SHARED_SURFACE_CAPTURE
+      || normalizedMode === LIVE_DESKTOP_MODE_MONITOR_CAPTURE,
+  });
 }
 
 async function refreshLiveDesktopRuntimeStatus() {
   try {
     await props.state?.refreshLiveDesktopRuntimeStatus?.();
+    updateLiveDesktopRates();
   } catch (error) {
     console.warn("Failed to refresh live desktop runtime status", error);
   }
 }
 
-async function reconfigureLiveDesktopRuntime() {
+async function reconfigureLiveDesktopRuntime(options = {}) {
   if (isLiveDesktopActionBusy.value) return;
   isLiveDesktopActionBusy.value = true;
   try {
-    if (typeof props.state?.syncLiveDesktopBackgroundRuntime === "function") {
+    if (options.restart && typeof props.state?.restartLiveDesktopBackgroundRuntime === "function") {
+      await props.state.restartLiveDesktopBackgroundRuntime();
+    } else if (typeof props.state?.syncLiveDesktopBackgroundRuntime === "function") {
       await props.state.syncLiveDesktopBackgroundRuntime();
     }
     await refreshLiveDesktopRuntimeStatus();
@@ -418,6 +765,7 @@ function restartLiveDesktopRuntimePoller() {
     return;
   }
   liveDesktopMode.value = readLiveDesktopDiagnosticMode();
+  liveDesktopRateSample = null;
   refreshLiveDesktopRuntimeStatus();
   liveDesktopRuntimePollTimer = window.setInterval(refreshLiveDesktopRuntimeStatus, 1000);
 }
@@ -512,12 +860,19 @@ onBeforeUnmount(() => {
 .background-debug-tabs,
 .background-debug-mode-group {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
   padding: 3px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.06);
+}
+
+.background-debug-tabs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.background-debug-mode-group {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .background-debug-tab,
@@ -687,6 +1042,43 @@ onBeforeUnmount(() => {
   border-color: rgba(255, 120, 120, 0.26);
   color: rgba(255, 180, 180, 0.9);
   background: rgba(255, 70, 70, 0.08);
+}
+
+.background-debug-window-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.background-debug-window-card {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.background-debug-window-card strong,
+.background-debug-window-card span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.background-debug-window-card strong {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.background-debug-window-card span {
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 10.5px;
+  line-height: 1.2;
 }
 
 .background-debug-live-actions {

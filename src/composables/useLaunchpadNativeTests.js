@@ -728,9 +728,13 @@ export async function runLaunchpadNativeTests() {
     assert(liveDesktopRuntimeCommands.join(",") === "get_live_desktop_runtime_status", "runtime status should be fetched only on explicit refresh");
     assert(options.liveDesktopRuntimeStatus.value.phase === "stopped", "runtime status refresh should apply stopped status");
 
+    globalThis.window.localStorage = {
+      getItem: (key) => key === "launchpadLiveDesktopDiagnosticMode" ? "dwmSharedSurfaceCapture" : null,
+    };
     await native.startNativeLiveDesktopBackground();
     assert(liveDesktopRuntimeCommands.join(",") === "get_live_desktop_runtime_status,configure_live_desktop_background,start_live_desktop_background", "runtime start should configure native effects before the native start command");
     assert(liveDesktopRuntimeConfigs.length === 1, "runtime start should send one live desktop config");
+    assert(liveDesktopRuntimeConfigs[0].diagnosticMode === "dwmSharedSurfaceCapture", "runtime config should include the selected DWM shared surface diagnostic mode");
     assert(liveDesktopRuntimeConfigs[0].effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "runtime config should include the selected effect");
     assert(liveDesktopRuntimeConfigs[0].blurStrength === 72, "runtime config should include blur strength");
     assert(liveDesktopRuntimeConfigs[0].darkenColor === "#334455", "runtime config should include darken color");
@@ -745,10 +749,19 @@ export async function runLaunchpadNativeTests() {
     assert(liveDesktopRuntimeCommands.join(",") === "get_live_desktop_runtime_status,configure_live_desktop_background,start_live_desktop_background,stop_live_desktop_background", "runtime stop should call the native stop command");
     assert(options.liveDesktopRuntimeStatus.value.phase === "stopped", "runtime stop should apply stopped status");
     assert(options.liveDesktopRuntimeStatus.value.generation === 2, "runtime stop should normalize generation values");
+
+    globalThis.window.localStorage = {
+      getItem: (key) => key === "launchpadLiveDesktopDiagnosticMode" ? "wallpaperEnginePopupCapture" : null,
+    };
+    liveDesktopRuntimeCommands.length = 0;
+    await native.configureNativeLiveDesktopBackground();
+    assert(liveDesktopRuntimeCommands.join(",") === "configure_live_desktop_background", "runtime configure should send only the native config command");
+    assert(liveDesktopRuntimeConfigs.at(-1).diagnosticMode === "wallpaperEnginePopupCapture", "runtime config should include the selected Wallpaper Engine popup diagnostic mode");
   });
 
   const liveDesktopSyncCommands = [];
   const liveDesktopSyncConfigs = [];
+  const liveDesktopSyncVisibility = [];
   let liveDesktopSyncOptions = null;
   await withMockTauri(async (command, args) => {
     liveDesktopSyncCommands.push(command);
@@ -771,6 +784,16 @@ export async function runLaunchpadNativeTests() {
         detail: "running",
       };
     }
+    if (command === "set_live_desktop_background_visible") {
+      liveDesktopSyncVisibility.push(args.visible);
+      return {
+        phase: liveDesktopSyncOptions.liveDesktopRuntimeStatus.value.phase,
+        active: liveDesktopSyncOptions.liveDesktopRuntimeStatus.value.active,
+        generation: liveDesktopSyncOptions.liveDesktopRuntimeStatus.value.generation,
+        reason: "visibilityUpdated",
+        detail: "visibility updated",
+      };
+    }
     if (command === "stop_live_desktop_background") {
       return {
         phase: "stopped",
@@ -781,7 +804,7 @@ export async function runLaunchpadNativeTests() {
       };
     }
     throw new Error(`Unexpected invoke: ${command}`);
-  }, async () => {
+  }, async (timers) => {
     const { options: optionsForLiveDesktopSync } = makeOptions();
     liveDesktopSyncOptions = optionsForLiveDesktopSync;
     optionsForLiveDesktopSync.backgroundSource.value = BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP;
@@ -806,10 +829,110 @@ export async function runLaunchpadNativeTests() {
     assert(liveDesktopSyncConfigs.at(-1).effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "runtime sync should send updated effects to a running runtime");
 
     liveDesktopSyncCommands.length = 0;
+    await native.restartLiveDesktopBackgroundRuntime();
+    assert(liveDesktopSyncCommands.join(",") === "stop_live_desktop_background,configure_live_desktop_background,start_live_desktop_background", "runtime restart should recreate an already running live desktop runtime");
+    assert(optionsForLiveDesktopSync.liveDesktopRuntimeStatus.value.phase === "running", "runtime restart should apply the restarted status");
+
+    liveDesktopSyncCommands.length = 0;
     optionsForLiveDesktopSync.isDesktopOpen.value = false;
     await native.syncLiveDesktopBackgroundRuntime();
-    assert(liveDesktopSyncCommands.join(",") === "stop_live_desktop_background", "runtime sync should stop when the launchpad is hidden");
-    assert(optionsForLiveDesktopSync.liveDesktopRuntimeStatus.value.phase === "stopped", "runtime sync should apply stopped status");
+    assert(liveDesktopSyncCommands.join(",") === "set_live_desktop_background_visible", "runtime sync should hide live desktop while keeping it warm");
+    assert(liveDesktopSyncVisibility.at(-1) === false, "hidden live desktop runtime should set the native visual invisible");
+    assert(timers.length === 1, "hidden live desktop runtime should schedule an idle stop");
+    assert(optionsForLiveDesktopSync.liveDesktopRuntimeStatus.value.phase === "running", "hidden live desktop runtime should remain running during the keep-alive window");
+
+    liveDesktopSyncCommands.length = 0;
+    optionsForLiveDesktopSync.isDesktopOpen.value = true;
+    await native.syncLiveDesktopBackgroundRuntime();
+    assert(timers.length === 0, "reopening the launchpad should cancel the pending live desktop idle stop");
+    assert(liveDesktopSyncCommands.join(",") === "set_live_desktop_background_visible,configure_live_desktop_background", "reopened live desktop runtime should be shown and reused without a cold start");
+    assert(liveDesktopSyncVisibility.at(-1) === true, "reopened live desktop runtime should set the native visual visible");
+
+    liveDesktopSyncCommands.length = 0;
+    optionsForLiveDesktopSync.isDesktopOpen.value = false;
+    await native.syncLiveDesktopBackgroundRuntime();
+    assert(timers.length === 1, "hiding the launchpad again should schedule another idle stop");
+    await timers.shift()();
+    await flushMicrotasks(2);
+    assert(liveDesktopSyncCommands.join(",") === "set_live_desktop_background_visible,stop_live_desktop_background", "live desktop runtime should stop after the idle keep-alive window expires");
+    assert(optionsForLiveDesktopSync.liveDesktopRuntimeStatus.value.phase === "stopped", "expired live desktop idle stop should apply stopped status");
+
+    liveDesktopSyncCommands.length = 0;
+    optionsForLiveDesktopSync.liveDesktopRuntimeStatus.value = {
+      phase: "running",
+      active: true,
+      generation: 3,
+      reason: "running",
+      detail: "running",
+    };
+    optionsForLiveDesktopSync.backgroundSource.value = BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP;
+    optionsForLiveDesktopSync.isDesktopOpen.value = false;
+    await native.syncLiveDesktopBackgroundRuntime();
+    assert(timers.length === 1, "hidden live desktop runtime should schedule an idle stop before source changes");
+    optionsForLiveDesktopSync.backgroundSource.value = BACKGROUND_SOURCE_SYSTEM_MATERIAL;
+    await native.syncLiveDesktopBackgroundRuntime();
+    assert(timers.length === 0, "leaving the live desktop background source should cancel a pending idle stop");
+    assert(liveDesktopSyncCommands.join(",") === "set_live_desktop_background_visible,stop_live_desktop_background", "leaving the live desktop background source should stop immediately");
+  });
+
+  const closeAnimationCommands = [];
+  await withMockTauri(async (command, args) => {
+    closeAnimationCommands.push(command);
+    if (command === "set_live_desktop_background_visible") {
+      assert(args.visible === false, "close animation should hide the native live desktop visual immediately");
+      return {
+        phase: "running",
+        active: true,
+        generation: 1,
+        reason: "visibilityUpdated",
+        detail: "visibility updated",
+      };
+    }
+    if (command === "stop_live_desktop_background") {
+      return {
+        phase: "stopped",
+        active: false,
+        generation: 2,
+        reason: "stopped",
+        detail: "stopped",
+      };
+    }
+    if (command === "hide_main_window") return null;
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async (timers) => {
+    const { options } = makeOptions();
+    options.isDesktopOpen.value = false;
+    options.backgroundSource.value = BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP;
+    options.liveDesktopBackgroundSupport.value = {
+      platform: "windows",
+      supportsLiveDesktopBackground: true,
+      supportsLiveDesktopBackgroundEffects: false,
+      reason: "available",
+    };
+    options.liveDesktopRuntimeStatus.value = {
+      phase: "running",
+      active: true,
+      generation: 1,
+      reason: "running",
+      detail: "running",
+    };
+    const native = useLaunchpadNative(options);
+
+    native.hideNativeWindowAfterCloseAnimation();
+    assert(timers.length === 1, "close animation should schedule one native hide timer");
+    await flushMicrotasks(5);
+    assert(closeAnimationCommands.join(",") === "set_live_desktop_background_visible", "close animation should hide the live desktop visual before hiding the native window");
+    assert(timers.length === 2, "close animation should also schedule the live desktop idle stop");
+    await timers.shift()();
+
+    assert(closeAnimationCommands.join(",") === "set_live_desktop_background_visible,hide_main_window", "close animation should hide the native window before the live desktop idle stop expires");
+    assert(timers.length === 1, "close animation should leave one pending live desktop idle stop timer");
+    assert(options.liveDesktopRuntimeStatus.value.phase === "running", "close animation should keep live desktop running during the keep-alive window");
+    await timers.shift()();
+    await flushMicrotasks(2);
+
+    assert(closeAnimationCommands.join(",") === "set_live_desktop_background_visible,hide_main_window,stop_live_desktop_background", "live desktop should stop after the close keep-alive window expires");
+    assert(options.liveDesktopRuntimeStatus.value.phase === "stopped", "idle stop should apply stopped live desktop status after hiding");
   });
 
   const wallpaperSaves = [];

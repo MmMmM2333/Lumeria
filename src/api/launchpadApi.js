@@ -203,6 +203,12 @@ export async function stopLiveDesktopBackground() {
   return invoke("stop_live_desktop_background");
 }
 
+export async function setLiveDesktopBackgroundVisible(visible) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return null;
+  return invoke("set_live_desktop_background_visible", { visible: Boolean(visible) });
+}
+
 export async function setMainWindowEffectsEnabled(enabled, openSequence = null, options = {}) {
   const invoke = getTauriInvoke();
   if (!invoke) return false;

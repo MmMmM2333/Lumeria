@@ -32,6 +32,7 @@ import {
   loadLayout,
   saveLayout,
   scanApps,
+  setLiveDesktopBackgroundVisible,
   setMainWindowEffectsEnabled,
   showLaunchErrorMessage,
   startLiveDesktopBackground,
@@ -74,6 +75,7 @@ const CUSTOM_ICON_HYDRATION_ID_PREFIX = "__custom_icon__:";
 const MIN_ICON_HYDRATION_BATCH_SIZE = 20;
 const MAX_ICON_HYDRATION_BATCH_SIZE = 80;
 const WINDOWS_WALLPAPER_REFRESH_INTERVAL_MS = 5000;
+const LIVE_DESKTOP_IDLE_STOP_DELAY_MS = 10_000;
 const DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS = Object.freeze({
   phase: "stopped",
   active: false,
@@ -85,13 +87,44 @@ const DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS = Object.freeze({
     frameTimeouts: 0,
     copyErrors: 0,
     commitErrors: 0,
+    frameArrivedEvents: 0,
+    frameArrivedDroppedSignals: 0,
+    frameCopySamples: 0,
+    frameCopyMicrosTotal: 0,
+    lastFrameCopyMicros: 0,
+    maxFrameCopyMicros: 0,
+    frameCommitSamples: 0,
+    frameCommitMicrosTotal: 0,
+    lastFrameCommitMicros: 0,
+    maxFrameCommitMicros: 0,
     configUpdates: 0,
     configErrors: 0,
     lastFrameWidth: 0,
     lastFrameHeight: 0,
     lastFrameFormat: 0,
     testPatternFrames: 0,
+    dwmSurfaceUpdates: 0,
+    dwmSurfaceUpdateErrors: 0,
+    lastDwmSurfaceUpdateRectWidth: 0,
+    lastDwmSurfaceUpdateRectHeight: 0,
+    pixelProbeSamples: 0,
+    pixelProbeErrors: 0,
+    lastPixelProbeWidth: 0,
+    lastPixelProbeHeight: 0,
+    lastPixelProbeMinRgb: 0,
+    lastPixelProbeMaxRgb: 0,
+    lastPixelProbeAvgRgb: 0,
     lastError: "",
+  },
+  windowDiagnostics: {
+    platform: "unknown",
+    available: false,
+    reason: "nativeBridgeUnavailable",
+    detail: "",
+    windowCount: 0,
+    candidateCount: 0,
+    windows: [],
+    candidates: [],
   },
 });
 
@@ -105,24 +138,105 @@ function normalizeLiveDesktopRuntimeDiagnostics(diagnostics) {
     frameTimeouts: normalizeCount(diagnostics?.frameTimeouts),
     copyErrors: normalizeCount(diagnostics?.copyErrors),
     commitErrors: normalizeCount(diagnostics?.commitErrors),
+    frameArrivedEvents: normalizeCount(diagnostics?.frameArrivedEvents),
+    frameArrivedDroppedSignals: normalizeCount(diagnostics?.frameArrivedDroppedSignals),
+    frameCopySamples: normalizeCount(diagnostics?.frameCopySamples),
+    frameCopyMicrosTotal: normalizeCount(diagnostics?.frameCopyMicrosTotal),
+    lastFrameCopyMicros: normalizeCount(diagnostics?.lastFrameCopyMicros),
+    maxFrameCopyMicros: normalizeCount(diagnostics?.maxFrameCopyMicros),
+    frameCommitSamples: normalizeCount(diagnostics?.frameCommitSamples),
+    frameCommitMicrosTotal: normalizeCount(diagnostics?.frameCommitMicrosTotal),
+    lastFrameCommitMicros: normalizeCount(diagnostics?.lastFrameCommitMicros),
+    maxFrameCommitMicros: normalizeCount(diagnostics?.maxFrameCommitMicros),
     configUpdates: normalizeCount(diagnostics?.configUpdates),
     configErrors: normalizeCount(diagnostics?.configErrors),
     lastFrameWidth: normalizeCount(diagnostics?.lastFrameWidth),
     lastFrameHeight: normalizeCount(diagnostics?.lastFrameHeight),
     lastFrameFormat: normalizeCount(diagnostics?.lastFrameFormat),
     testPatternFrames: normalizeCount(diagnostics?.testPatternFrames),
+    dwmSurfaceUpdates: normalizeCount(diagnostics?.dwmSurfaceUpdates),
+    dwmSurfaceUpdateErrors: normalizeCount(diagnostics?.dwmSurfaceUpdateErrors),
+    lastDwmSurfaceUpdateRectWidth: normalizeCount(diagnostics?.lastDwmSurfaceUpdateRectWidth),
+    lastDwmSurfaceUpdateRectHeight: normalizeCount(diagnostics?.lastDwmSurfaceUpdateRectHeight),
+    pixelProbeSamples: normalizeCount(diagnostics?.pixelProbeSamples),
+    pixelProbeErrors: normalizeCount(diagnostics?.pixelProbeErrors),
+    lastPixelProbeWidth: normalizeCount(diagnostics?.lastPixelProbeWidth),
+    lastPixelProbeHeight: normalizeCount(diagnostics?.lastPixelProbeHeight),
+    lastPixelProbeMinRgb: normalizeCount(diagnostics?.lastPixelProbeMinRgb),
+    lastPixelProbeMaxRgb: normalizeCount(diagnostics?.lastPixelProbeMaxRgb),
+    lastPixelProbeAvgRgb: normalizeCount(diagnostics?.lastPixelProbeAvgRgb),
     lastError: String(diagnostics?.lastError || ""),
   };
 }
 
+function normalizeLiveDesktopWindowRect(rect) {
+  const normalizeInteger = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.trunc(number) : 0;
+  };
+  return {
+    left: normalizeInteger(rect?.left),
+    top: normalizeInteger(rect?.top),
+    right: normalizeInteger(rect?.right),
+    bottom: normalizeInteger(rect?.bottom),
+    width: Math.max(0, normalizeInteger(rect?.width)),
+    height: Math.max(0, normalizeInteger(rect?.height)),
+  };
+}
+
+function normalizeLiveDesktopWindowInfo(windowInfo) {
+  return {
+    hwnd: String(windowInfo?.hwnd || ""),
+    parentHwnd: String(windowInfo?.parentHwnd || ""),
+    rootHwnd: String(windowInfo?.rootHwnd || ""),
+    pid: Math.max(0, Math.trunc(Number(windowInfo?.pid) || 0)),
+    className: String(windowInfo?.className || ""),
+    title: String(windowInfo?.title || ""),
+    processName: String(windowInfo?.processName || ""),
+    role: String(windowInfo?.role || "window"),
+    candidateReason: String(windowInfo?.candidateReason || ""),
+    visible: Boolean(windowInfo?.visible),
+    style: String(windowInfo?.style || ""),
+    exStyle: String(windowInfo?.exStyle || ""),
+    cloaked: Math.max(0, Math.trunc(Number(windowInfo?.cloaked) || 0)),
+    rect: normalizeLiveDesktopWindowRect(windowInfo?.rect),
+  };
+}
+
+function normalizeLiveDesktopWindowDiagnostics(diagnostics) {
+  const normalizeCount = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? Math.floor(number) : 0;
+  };
+  const windows = Array.isArray(diagnostics?.windows)
+    ? diagnostics.windows.map(normalizeLiveDesktopWindowInfo)
+    : [];
+  const candidates = Array.isArray(diagnostics?.candidates)
+    ? diagnostics.candidates.map(normalizeLiveDesktopWindowInfo)
+    : [];
+  return {
+    platform: String(diagnostics?.platform || DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS.windowDiagnostics.platform),
+    available: Boolean(diagnostics?.available),
+    reason: String(diagnostics?.reason || DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS.windowDiagnostics.reason),
+    detail: String(diagnostics?.detail || ""),
+    windowCount: normalizeCount(diagnostics?.windowCount ?? windows.length),
+    candidateCount: normalizeCount(diagnostics?.candidateCount ?? candidates.length),
+    windows,
+    candidates,
+  };
+}
+
 function resolveLiveDesktopDiagnosticMode() {
-  if (typeof window === "undefined") return "capture";
+  if (typeof window === "undefined") return "workerWCapture";
   try {
-    return window.localStorage?.getItem("launchpadLiveDesktopDiagnosticMode") === "testPattern"
-      ? "testPattern"
-      : "capture";
+    const mode = window.localStorage?.getItem("launchpadLiveDesktopDiagnosticMode");
+    if (mode === "testPattern") return "testPattern";
+    if (mode === "monitorCapture") return "monitorCapture";
+    if (mode === "wallpaperEnginePopupCapture") return "wallpaperEnginePopupCapture";
+    if (mode === "dwmSharedSurfaceCapture") return "dwmSharedSurfaceCapture";
+    return "workerWCapture";
   } catch {
-    return "capture";
+    return "workerWCapture";
   }
 }
 
@@ -135,6 +249,7 @@ function normalizeLiveDesktopRuntimeStatus(status) {
     reason: String(status?.reason || DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS.reason),
     detail: String(status?.detail || ""),
     diagnostics: normalizeLiveDesktopRuntimeDiagnostics(status?.diagnostics),
+    windowDiagnostics: normalizeLiveDesktopWindowDiagnostics(status?.windowDiagnostics),
   };
 }
 
@@ -173,6 +288,8 @@ export function useLaunchpadNative(options) {
   let nativeSaveTimer = null;
   let nativeWindowHideTimer = null;
   let nativeWallpaperRefreshTimer = null;
+  let liveDesktopIdleStopTimer = null;
+  let liveDesktopBackgroundVisible = null;
   let liveDesktopRuntimeSync = Promise.resolve();
   let liveDesktopRuntimeSyncGeneration = 0;
   let nativeWindowOpenSequence = null;
@@ -314,6 +431,11 @@ export function useLaunchpadNative(options) {
   function clearNativeWallpaperRefreshTimer() {
     if (nativeWallpaperRefreshTimer) window.clearTimeout(nativeWallpaperRefreshTimer);
     nativeWallpaperRefreshTimer = null;
+  }
+
+  function clearLiveDesktopIdleStopTimer() {
+    if (liveDesktopIdleStopTimer) window.clearTimeout(liveDesktopIdleStopTimer);
+    liveDesktopIdleStopTimer = null;
   }
 
   function createCurrentLayoutSnapshot() {
@@ -503,13 +625,42 @@ export function useLaunchpadNative(options) {
     }, WINDOWS_WALLPAPER_REFRESH_INTERVAL_MS);
   }
 
-  function shouldRunLiveDesktopBackground() {
+  function canUseActiveLiveDesktopBackground() {
     return Boolean(
       isNativeBridgeAvailable()
-      && options.isDesktopOpen.value
       && backgroundSourceUsesLiveDesktop(options.backgroundSource.value)
       && normalizeLiveDesktopBackgroundSupport(options.liveDesktopBackgroundSupport.value).supportsLiveDesktopBackground
     );
+  }
+
+  function shouldRunLiveDesktopBackground() {
+    return Boolean(options.isDesktopOpen.value && canUseActiveLiveDesktopBackground());
+  }
+
+  function shouldKeepLiveDesktopBackgroundWarm(status) {
+    return Boolean(
+      !options.isDesktopOpen.value
+      && canUseActiveLiveDesktopBackground()
+      && (status.active || status.phase === "running")
+    );
+  }
+
+  function scheduleLiveDesktopIdleStop() {
+    clearLiveDesktopIdleStopTimer();
+    const generation = liveDesktopRuntimeSyncGeneration;
+    liveDesktopIdleStopTimer = window.setTimeout(() => {
+      liveDesktopIdleStopTimer = null;
+      liveDesktopRuntimeSync = liveDesktopRuntimeSync
+        .catch(() => {})
+        .then(async () => {
+          if (generation !== liveDesktopRuntimeSyncGeneration) return options.liveDesktopRuntimeStatus.value;
+          if (shouldRunLiveDesktopBackground()) return options.liveDesktopRuntimeStatus.value;
+          const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
+          if (current.phase === "stopped") return current;
+          return stopNativeLiveDesktopBackground();
+        });
+      return liveDesktopRuntimeSync;
+    }, LIVE_DESKTOP_IDLE_STOP_DELAY_MS);
   }
 
   function syncLiveDesktopBackgroundRuntime() {
@@ -520,17 +671,51 @@ export function useLaunchpadNative(options) {
         if (generation !== liveDesktopRuntimeSyncGeneration) return options.liveDesktopRuntimeStatus.value;
         if (!isNativeBridgeAvailable()) {
           options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
+          liveDesktopBackgroundVisible = null;
           return options.liveDesktopRuntimeStatus.value;
         }
         if (!shouldRunLiveDesktopBackground()) {
           const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
+          if (shouldKeepLiveDesktopBackgroundWarm(current)) {
+            await setNativeLiveDesktopBackgroundVisible(false);
+            if (generation !== liveDesktopRuntimeSyncGeneration) return options.liveDesktopRuntimeStatus.value;
+            scheduleLiveDesktopIdleStop();
+            return options.liveDesktopRuntimeStatus.value;
+          }
+          clearLiveDesktopIdleStopTimer();
           if (current.phase === "stopped") return current;
           return stopNativeLiveDesktopBackground();
         }
+        clearLiveDesktopIdleStopTimer();
         const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
         if (current.active || current.phase === "running") {
+          await setNativeLiveDesktopBackgroundVisible(true);
+          if (generation !== liveDesktopRuntimeSyncGeneration) return options.liveDesktopRuntimeStatus.value;
           return configureNativeLiveDesktopBackground();
         }
+        return startNativeLiveDesktopBackground();
+      });
+    return liveDesktopRuntimeSync;
+  }
+
+  function restartLiveDesktopBackgroundRuntime() {
+    const generation = ++liveDesktopRuntimeSyncGeneration;
+    liveDesktopRuntimeSync = liveDesktopRuntimeSync
+      .catch(() => {})
+      .then(async () => {
+        if (generation !== liveDesktopRuntimeSyncGeneration) return options.liveDesktopRuntimeStatus.value;
+        if (!isNativeBridgeAvailable()) {
+          options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
+          liveDesktopBackgroundVisible = null;
+          return options.liveDesktopRuntimeStatus.value;
+        }
+        clearLiveDesktopIdleStopTimer();
+        if (!shouldRunLiveDesktopBackground()) return stopNativeLiveDesktopBackground();
+        const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
+        if (current.active || current.phase === "running") {
+          await stopNativeLiveDesktopBackground();
+        }
+        if (generation !== liveDesktopRuntimeSyncGeneration) return options.liveDesktopRuntimeStatus.value;
         return startNativeLiveDesktopBackground();
       });
     return liveDesktopRuntimeSync;
@@ -619,6 +804,7 @@ export function useLaunchpadNative(options) {
   async function refreshLiveDesktopRuntimeStatus() {
     if (!isNativeBridgeAvailable()) {
       options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
+      liveDesktopBackgroundVisible = null;
       return options.liveDesktopRuntimeStatus.value;
     }
     try {
@@ -632,9 +818,28 @@ export function useLaunchpadNative(options) {
     return options.liveDesktopRuntimeStatus.value;
   }
 
+  async function setNativeLiveDesktopBackgroundVisible(visible) {
+    if (liveDesktopBackgroundVisible === visible) return options.liveDesktopRuntimeStatus.value;
+    if (!isNativeBridgeAvailable()) {
+      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
+      liveDesktopBackgroundVisible = null;
+      return options.liveDesktopRuntimeStatus.value;
+    }
+    try {
+      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(
+        await setLiveDesktopBackgroundVisible(visible)
+      );
+      liveDesktopBackgroundVisible = visible;
+    } catch (error) {
+      console.error("Failed to update live desktop background visibility", error);
+    }
+    return options.liveDesktopRuntimeStatus.value;
+  }
+
   async function configureNativeLiveDesktopBackground() {
     if (!isNativeBridgeAvailable()) {
       options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
+      liveDesktopBackgroundVisible = null;
       return options.liveDesktopRuntimeStatus.value;
     }
     try {
@@ -655,8 +860,10 @@ export function useLaunchpadNative(options) {
   }
 
   async function startNativeLiveDesktopBackground() {
+    clearLiveDesktopIdleStopTimer();
     if (!isNativeBridgeAvailable()) {
       options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
+      liveDesktopBackgroundVisible = null;
       return options.liveDesktopRuntimeStatus.value;
     }
     try {
@@ -664,6 +871,10 @@ export function useLaunchpadNative(options) {
       options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(
         await startLiveDesktopBackground()
       );
+      liveDesktopBackgroundVisible = options.liveDesktopRuntimeStatus.value.phase === "running"
+        || options.liveDesktopRuntimeStatus.value.active
+        ? true
+        : null;
     } catch (error) {
       options.liveDesktopRuntimeStatus.value = {
         ...normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value),
@@ -678,14 +889,17 @@ export function useLaunchpadNative(options) {
   }
 
   async function stopNativeLiveDesktopBackground() {
+    clearLiveDesktopIdleStopTimer();
     if (!isNativeBridgeAvailable()) {
       options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
+      liveDesktopBackgroundVisible = null;
       return options.liveDesktopRuntimeStatus.value;
     }
     try {
       options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(
         await stopLiveDesktopBackground()
       );
+      liveDesktopBackgroundVisible = null;
     } catch (error) {
       options.liveDesktopRuntimeStatus.value = {
         ...normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value),
@@ -1073,6 +1287,7 @@ export function useLaunchpadNative(options) {
     nativeEventListenerGeneration += 1;
     clearNativeWindowHideTimer();
     clearNativeWallpaperRefreshTimer();
+    clearLiveDesktopIdleStopTimer();
     unlistenOpenDesktopEvent?.();
     unlistenOpenDesktopEvent = null;
     unlistenToggleDesktopEvent?.();
@@ -1111,9 +1326,10 @@ export function useLaunchpadNative(options) {
   function hideNativeWindowAfterCloseAnimation() {
     clearNativeWallpaperRefreshTimer();
     clearNativeWindowHideTimer();
+    syncLiveDesktopBackgroundRuntime();
     nativeWindowHideTimer = window.setTimeout(async () => {
       nativeWindowHideTimer = null;
-      hideNativeWindow();
+      await hideNativeWindow();
     }, DESKTOP_CLOSE_DURATION);
   }
 
@@ -1185,6 +1401,7 @@ export function useLaunchpadNative(options) {
     showNativeLaunchError,
     startNativeLiveDesktopBackground,
     stopNativeLiveDesktopBackground,
+    restartLiveDesktopBackgroundRuntime,
     syncLiveDesktopBackgroundRuntime,
     syncWindowsWallpaperRefreshTimer,
     shouldUseNativeCatalog,

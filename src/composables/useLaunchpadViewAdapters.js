@@ -77,6 +77,7 @@ export function createSettingsPanelState(controller, appVersion) {
     removeScanRoot: controller.removeScanRoot,
     rescanManagedApps: controller.rescanManagedApps,
     refreshLiveDesktopRuntimeStatus: controller.refreshLiveDesktopRuntimeStatus,
+    restartLiveDesktopBackgroundRuntime: controller.restartLiveDesktopBackgroundRuntime,
     scanAppBlacklist: controller.scanAppBlacklist,
     scanKeywordBlacklist: controller.scanKeywordBlacklist,
     scanRoots: controller.scanRoots,

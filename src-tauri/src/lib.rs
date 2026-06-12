@@ -469,6 +469,18 @@ fn stop_live_desktop_background(
 }
 
 #[tauri::command]
+fn set_live_desktop_background_visible(
+    state: State<'_, AppState>,
+    visible: bool,
+) -> Result<live_desktop::LiveDesktopRuntimeStatus, String> {
+    let mut runtime = state
+        .live_desktop_runtime
+        .lock()
+        .map_err(|_| "Failed to lock live desktop runtime".to_string())?;
+    Ok(runtime.set_visible(visible))
+}
+
+#[tauri::command]
 fn set_main_window_effects_enabled(
     app: AppHandle,
     enabled: bool,
@@ -870,6 +882,7 @@ pub fn run() {
             configure_live_desktop_background,
             start_live_desktop_background,
             stop_live_desktop_background,
+            set_live_desktop_background_visible,
             set_main_window_effects_enabled
         ])
         .run(tauri::generate_context!())
