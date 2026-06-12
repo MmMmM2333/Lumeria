@@ -24,6 +24,7 @@ use windows::{
     Win32::{
         Foundation::{CloseHandle, HANDLE, HMODULE, HWND, LPARAM, LUID, POINT, RECT, WPARAM},
         Graphics::{
+            Direct2D::Common::D2D1_BORDER_MODE_HARD,
             Direct3D::{
                 D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL, D3D_FEATURE_LEVEL_10_0,
                 D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
@@ -35,14 +36,17 @@ use windows::{
                 D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
             },
             DirectComposition::{
-                DCompositionCreateDevice, DCompositionCreateDevice2,
-                IDCompositionColorMatrixEffect, IDCompositionDevice, IDCompositionDevice3,
-                IDCompositionGaussianBlurEffect, IDCompositionScaleTransform, IDCompositionSurface,
-                IDCompositionTarget, IDCompositionVisual,
+                DCompositionCreateDevice, DCompositionCreateDevice3,
+                IDCompositionColorMatrixEffect, IDCompositionDesktopDevice, IDCompositionDevice,
+                IDCompositionDevice3, IDCompositionGaussianBlurEffect, IDCompositionScaleTransform,
+                IDCompositionSurface, IDCompositionTarget, IDCompositionVisual,
             },
             Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED},
             Dxgi::{
-                Common::{DXGI_ALPHA_MODE_IGNORE, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC},
+                Common::{
+                    DXGI_ALPHA_MODE, DXGI_ALPHA_MODE_IGNORE, DXGI_FORMAT,
+                    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC,
+                },
                 CreateDXGIFactory1, IDXGIAdapter1, IDXGIDevice, IDXGIFactory1, IDXGIOutput1,
                 IDXGIOutputDuplication, IDXGIResource, IDXGISurface, DXGI_ADAPTER_FLAG3_SOFTWARE,
                 DXGI_ERROR_ACCESS_DENIED, DXGI_ERROR_NOT_FOUND, DXGI_ERROR_WAIT_TIMEOUT,
@@ -197,7 +201,7 @@ struct LiveDesktopRendererResources {
     _capture_duplication: IDXGIOutputDuplication,
     _window_capture: Option<LiveDesktopWindowCapture>,
     _dwm_shared_surface_capture: Option<LiveDesktopDwmSharedSurfaceCapture>,
-    _composition_device: IDCompositionDevice,
+    _composition_device: LiveDesktopCompositionDevice,
     _blur_effect: Option<IDCompositionGaussianBlurEffect>,
     _color_matrix_effect: Option<IDCompositionColorMatrixEffect>,
     _target: IDCompositionTarget,
@@ -216,6 +220,7 @@ struct LiveDesktopWindowCapture {
     popup_restore_state: Option<LiveDesktopPopupWindowRestoreState>,
     popup_close_command: Option<LiveDesktopWallpaperEnginePopupCloseCommand>,
     mouse_relay: Option<Mutex<LiveDesktopMouseRelay>>,
+    frame_crop: Option<LiveDesktopFrameCrop>,
     _item: GraphicsCaptureItem,
     frame_pool: Direct3D11CaptureFramePool,
     _session: GraphicsCaptureSession,
@@ -228,9 +233,19 @@ struct LiveDesktopWindowCapture {
 struct LiveDesktopMouseRelay {
     target_hwnds: Vec<HWND>,
     output_rect: LiveDesktopWindowRect,
+    source_left: u32,
+    source_top: u32,
     source_width: u32,
     source_height: u32,
     last_position: Option<LiveDesktopMouseRelayPosition>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LiveDesktopFrameCrop {
+    left: u32,
+    top: u32,
+    width: u32,
+    height: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -436,6 +451,70 @@ struct LiveDesktopNativeEffects {
     color_matrix_effect: Option<IDCompositionColorMatrixEffect>,
     blur_effect: Option<IDCompositionGaussianBlurEffect>,
     detail: String,
+}
+
+#[cfg(target_os = "windows")]
+enum LiveDesktopCompositionDevice {
+    Desktop(IDCompositionDesktopDevice),
+    Legacy(IDCompositionDevice),
+}
+
+#[cfg(target_os = "windows")]
+impl LiveDesktopCompositionDevice {
+    unsafe fn commit(&self) -> Result<(), String> {
+        match self {
+            Self::Desktop(device) => unsafe { device.Commit() },
+            Self::Legacy(device) => unsafe { device.Commit() },
+        }
+        .map_err(|error| error.to_string())
+    }
+
+    unsafe fn create_target_for_hwnd(
+        &self,
+        hwnd: HWND,
+        topmost: bool,
+    ) -> Result<IDCompositionTarget, String> {
+        match self {
+            Self::Desktop(device) => unsafe { device.CreateTargetForHwnd(hwnd, topmost) },
+            Self::Legacy(device) => unsafe { device.CreateTargetForHwnd(hwnd, topmost) },
+        }
+        .map_err(|error| error.to_string())
+    }
+
+    unsafe fn create_visual(&self) -> Result<IDCompositionVisual, String> {
+        match self {
+            Self::Desktop(device) => unsafe { device.CreateVisual() }
+                .and_then(|visual| visual.cast::<IDCompositionVisual>()),
+            Self::Legacy(device) => unsafe { device.CreateVisual() },
+        }
+        .map_err(|error| error.to_string())
+    }
+
+    unsafe fn create_surface(
+        &self,
+        width: u32,
+        height: u32,
+        format: DXGI_FORMAT,
+        alpha_mode: DXGI_ALPHA_MODE,
+    ) -> Result<IDCompositionSurface, String> {
+        match self {
+            Self::Desktop(device) => unsafe {
+                device.CreateSurface(width, height, format, alpha_mode)
+            },
+            Self::Legacy(device) => unsafe {
+                device.CreateSurface(width, height, format, alpha_mode)
+            },
+        }
+        .map_err(|error| error.to_string())
+    }
+
+    unsafe fn create_scale_transform(&self) -> Result<IDCompositionScaleTransform, String> {
+        match self {
+            Self::Desktop(device) => unsafe { device.CreateScaleTransform() },
+            Self::Legacy(device) => unsafe { device.CreateScaleTransform() },
+        }
+        .map_err(|error| error.to_string())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -1065,7 +1144,7 @@ impl LiveDesktopRendererResources {
                 &self.config,
             )
         }?;
-        unsafe { self._composition_device.Commit() }.map_err(|error| error.to_string())?;
+        unsafe { self._composition_device.commit() }?;
         Ok(())
     }
 
@@ -1076,7 +1155,7 @@ impl LiveDesktopRendererResources {
             unsafe { self._target.SetRoot(None::<&IDCompositionVisual>) }
         }
         .map_err(|error| error.to_string())?;
-        unsafe { self._composition_device.Commit() }.map_err(|error| error.to_string())?;
+        unsafe { self._composition_device.commit() }?;
         Ok(())
     }
 
@@ -1102,8 +1181,7 @@ impl LiveDesktopRendererResources {
             };
             record_live_desktop_frame_copy_duration(&self.diagnostics, copy_started.elapsed());
             let commit_started = Instant::now();
-            if let Err(error) = unsafe { self._composition_device.Commit() } {
-                let detail = error.to_string();
+            if let Err(detail) = unsafe { self._composition_device.commit() } {
                 record_live_desktop_commit_error(&self.diagnostics, &detail);
                 return Err(detail);
             }
@@ -1145,8 +1223,7 @@ impl LiveDesktopRendererResources {
             };
             record_live_desktop_frame_copy_duration(&self.diagnostics, copy_started.elapsed());
             let commit_started = Instant::now();
-            if let Err(error) = unsafe { self._composition_device.Commit() } {
-                let detail = error.to_string();
+            if let Err(detail) = unsafe { self._composition_device.commit() } {
                 record_live_desktop_commit_error(&self.diagnostics, &detail);
                 return Err(detail);
             }
@@ -1189,8 +1266,7 @@ impl LiveDesktopRendererResources {
             record_live_desktop_frame_copy_duration(&self.diagnostics, copy_started.elapsed());
             let frame_probe = copied_frame.expect("checked copied WGC frame");
             let commit_started = Instant::now();
-            if let Err(error) = unsafe { self._composition_device.Commit() } {
-                let detail = error.to_string();
+            if let Err(detail) = unsafe { self._composition_device.commit() } {
                 record_live_desktop_commit_error(&self.diagnostics, &detail);
                 return Err(detail);
             }
@@ -1221,8 +1297,7 @@ impl LiveDesktopRendererResources {
         record_live_desktop_frame_copy_duration(&self.diagnostics, copy_started.elapsed());
         let frame_probe = copied_frame.expect("checked copied frame");
         let commit_started = Instant::now();
-        if let Err(error) = unsafe { self._composition_device.Commit() } {
-            let detail = error.to_string();
+        if let Err(detail) = unsafe { self._composition_device.commit() } {
             record_live_desktop_commit_error(&self.diagnostics, &detail);
             return Err(detail);
         }
@@ -2827,26 +2902,30 @@ unsafe fn prepare_wallpaper_engine_popup_for_capture(
         }
     }
 
+    let managed_width = display_rect.width.max(1);
+    let managed_height = display_rect.height.max(1);
     let set_position_result = unsafe {
         SetWindowPos(
             hwnd,
             Some(HWND_BOTTOM),
             display_rect.left,
             display_rect.top,
-            popup.rect.width,
-            popup.rect.height,
+            managed_width,
+            managed_height,
             SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOSENDCHANGING,
         )
     };
     let position_detail = match set_position_result {
         Ok(()) => format!(
-            "alignedToDisplay={}x{}@{},{} popupSize={}x{} zOrder=bottom",
+            "alignedToDisplay={}x{}@{},{} popupSize={}x{} managedSize={}x{} zOrder=bottom",
             display_rect.width,
             display_rect.height,
             display_rect.left,
             display_rect.top,
             popup.rect.width,
-            popup.rect.height
+            popup.rect.height,
+            managed_width,
+            managed_height
         ),
         Err(error) => format!("alignToDisplayFailed={error}"),
     };
@@ -2912,6 +2991,10 @@ unsafe fn relay_wallpaper_engine_popup_mouse(window_capture: &LiveDesktopWindowC
         mouse_relay.source_height,
     ) else {
         return;
+    };
+    let position = LiveDesktopMouseRelayPosition {
+        x: position.x + mouse_relay.source_left as i32,
+        y: position.y + mouse_relay.source_top as i32,
     };
     if mouse_relay.last_position == Some(position) {
         return;
@@ -3061,6 +3144,56 @@ fn resolve_live_desktop_visual_placement(
         offset_x,
         offset_y,
     }
+}
+
+fn resolve_live_desktop_frame_crop(
+    source_width: u32,
+    source_height: u32,
+    target_width: u32,
+    target_height: u32,
+) -> Option<LiveDesktopFrameCrop> {
+    if source_width == 0 || source_height == 0 || target_width == 0 || target_height == 0 {
+        return None;
+    }
+    let width = target_width.min(source_width);
+    let height = target_height.min(source_height);
+    if width == source_width && height == source_height {
+        return None;
+    }
+    Some(LiveDesktopFrameCrop {
+        left: (source_width - width) / 2,
+        top: (source_height - height) / 2,
+        width,
+        height,
+    })
+}
+
+fn resolve_live_desktop_wgc_copy_crop(
+    preferred_crop: Option<LiveDesktopFrameCrop>,
+    source_width: u32,
+    source_height: u32,
+    target_width: u32,
+    target_height: u32,
+) -> LiveDesktopFrameCrop {
+    if let Some(crop) = preferred_crop {
+        if crop.width > 0
+            && crop.height > 0
+            && crop.left.saturating_add(crop.width) <= source_width
+            && crop.top.saturating_add(crop.height) <= source_height
+            && crop.width <= target_width
+            && crop.height <= target_height
+        {
+            return crop;
+        }
+    }
+
+    resolve_live_desktop_frame_crop(source_width, source_height, target_width, target_height)
+        .unwrap_or(LiveDesktopFrameCrop {
+            left: 0,
+            top: 0,
+            width: source_width.min(target_width),
+            height: source_height.min(target_height),
+        })
 }
 
 #[cfg(target_os = "windows")]
@@ -3405,22 +3538,17 @@ unsafe fn probe_windows_live_desktop_renderer(
                 continue;
             }
         };
-        let composition_device: IDCompositionDevice = match unsafe {
-            DCompositionCreateDevice(&dxgi_device)
+        let adapter_name = live_desktop_adapter_name(&desc.Description);
+        let (composition_device, native_effects) = match unsafe {
+            create_live_desktop_composition_device(&dxgi_device, adapter_index, "probe")
         } {
-            Ok(device) => device,
+            Ok(result) => result,
             Err(error) => {
-                last_detail = format!(
-                    "DCompositionCreateDevice({adapter_index}) failed while probing renderer: {error}"
-                );
+                last_detail = error;
                 continue;
             }
         };
         drop(composition_device);
-
-        let adapter_name = live_desktop_adapter_name(&desc.Description);
-        let native_effects =
-            unsafe { create_live_desktop_native_effects(&dxgi_device, adapter_index, "probe") };
         let supports_native_effects =
             native_effects.color_matrix_effect.is_some() && native_effects.blur_effect.is_some();
         let detail = format!(
@@ -3561,19 +3689,17 @@ unsafe fn create_live_desktop_renderer_resources(
                 "Creating DirectComposition device on adapter {adapter_index} ({adapter_name})"
             ),
         );
-        let composition_device: IDCompositionDevice = match unsafe {
-            DCompositionCreateDevice(&dxgi_device)
+        let (composition_device, native_effects) = match unsafe {
+            create_live_desktop_composition_device(&dxgi_device, adapter_index, "runtime")
         } {
-            Ok(device) => device,
+            Ok(result) => result,
             Err(error) => {
                 last_detail = format!(
-                    "DCompositionCreateDevice({adapter_index}, {adapter_name}) failed while creating renderer resources: {error}"
+                    "DirectComposition device creation failed on adapter {adapter_index} ({adapter_name}) while creating renderer resources: {error}"
                 );
                 continue;
             }
         };
-        let native_effects =
-            unsafe { create_live_desktop_native_effects(&dxgi_device, adapter_index, "runtime") };
         let supports_native_effects =
             native_effects.color_matrix_effect.is_some() && native_effects.blur_effect.is_some();
         let color_matrix_effect = native_effects.color_matrix_effect;
@@ -3629,7 +3755,9 @@ unsafe fn create_live_desktop_renderer_resources(
             progress_sender,
             format!("Creating DirectComposition target for launchpad window on adapter {adapter_index} ({adapter_name})"),
         );
-        let target = match unsafe { composition_device.CreateTargetForHwnd(window_handle, false) } {
+        let target = match unsafe {
+            composition_device.create_target_for_hwnd(window_handle, false)
+        } {
             Ok(target) => target,
             Err(error) => {
                 return Err(LiveDesktopRendererProbe::window_target_unavailable(
@@ -3644,7 +3772,7 @@ unsafe fn create_live_desktop_renderer_resources(
             progress_sender,
             format!("Creating DirectComposition root visual on adapter {adapter_index} ({adapter_name})"),
         );
-        let root_visual = match unsafe { composition_device.CreateVisual() } {
+        let root_visual = match unsafe { composition_device.create_visual() } {
             Ok(visual) => visual,
             Err(error) => {
                 return Err(LiveDesktopRendererProbe::root_visual_unavailable(
@@ -3683,7 +3811,7 @@ unsafe fn create_live_desktop_renderer_resources(
             ),
         );
         let surface = match unsafe {
-            composition_device.CreateSurface(
+            composition_device.create_surface(
                 source_width,
                 source_height,
                 DXGI_FORMAT_B8G8R8A8_UNORM,
@@ -4271,12 +4399,38 @@ unsafe fn create_live_desktop_window_capture(
             .map(|target| target.hwnd.as_str())
             .collect::<Vec<_>>()
             .join(",");
+        let frame_crop = if manages_launchpad_popup {
+            resolve_live_desktop_frame_crop(
+                size.Width as u32,
+                size.Height as u32,
+                capture.output_width,
+                capture.output_height,
+            )
+        } else {
+            None
+        };
+        let render_width = frame_crop
+            .map(|crop| crop.width)
+            .unwrap_or(size.Width as u32);
+        let render_height = frame_crop
+            .map(|crop| crop.height)
+            .unwrap_or(size.Height as u32);
+        let relay_source_left = frame_crop.map(|crop| crop.left).unwrap_or(0);
+        let relay_source_top = frame_crop.map(|crop| crop.top).unwrap_or(0);
+        let relay_source_width = frame_crop
+            .map(|crop| crop.width)
+            .unwrap_or(size.Width as u32);
+        let relay_source_height = frame_crop
+            .map(|crop| crop.height)
+            .unwrap_or(size.Height as u32);
         let mouse_relay = if !mouse_relay_target_hwnds.is_empty() {
             Some(Mutex::new(LiveDesktopMouseRelay {
                 target_hwnds: mouse_relay_target_hwnds,
                 output_rect: capture.output_rect.clone(),
-                source_width: size.Width as u32,
-                source_height: size.Height as u32,
+                source_left: relay_source_left,
+                source_top: relay_source_top,
+                source_width: relay_source_width,
+                source_height: relay_source_height,
                 last_position: None,
             }))
         } else {
@@ -4284,28 +4438,38 @@ unsafe fn create_live_desktop_window_capture(
         };
         let mouse_relay_detail = if mouse_relay.is_some() {
             format!(
-                "mouseRelay=enabled targets={} outputRect={}x{}@{},{} source={}x{}",
+                "mouseRelay=enabled targets={} outputRect={}x{}@{},{} source={}x{}@{},{}",
                 mouse_relay_target_labels,
                 capture.output_rect.width,
                 capture.output_rect.height,
                 capture.output_rect.left,
                 capture.output_rect.top,
-                size.Width,
-                size.Height
+                relay_source_width,
+                relay_source_height,
+                relay_source_left,
+                relay_source_top
             )
         } else if *diagnostic_mode == LiveDesktopDiagnosticMode::WallpaperEnginePopupCapture {
             "mouseRelay=skipped(unmanagedPopup)".to_string()
         } else {
             String::new()
         };
+        let frame_crop_detail = frame_crop
+            .map(|crop| {
+                format!(
+                    "frameCrop={}x{}@{},{} render={}x{}",
+                    crop.width, crop.height, crop.left, crop.top, render_width, render_height
+                )
+            })
+            .unwrap_or_else(|| "frameCrop=none".to_string());
 
         return Ok(LiveDesktopWindowCapture {
             hwnd,
-            width: size.Width as u32,
-            height: size.Height as u32,
+            width: render_width,
+            height: render_height,
             source_label: capture_label,
             detail: format!(
-                "{} initialized for {} role={} class={} process={} reason={} parent={} root={} style={} exStyle={} cloaked={} size={}x{} {} {} {} {} after {}/{} target attempts{}",
+                "{} initialized for {} role={} class={} process={} reason={} parent={} root={} style={} exStyle={} cloaked={} size={}x{} {} {} {} {} {} after {}/{} target attempts{}",
                 capture_label,
                 target.hwnd,
                 target.role,
@@ -4326,6 +4490,7 @@ unsafe fn create_live_desktop_window_capture(
                     &popup_preparation.detail
                 ),
                 mouse_relay_detail,
+                frame_crop_detail,
                 target_index + 1,
                 target_count,
                 previous_attempts
@@ -4333,6 +4498,7 @@ unsafe fn create_live_desktop_window_capture(
             popup_restore_state,
             popup_close_command,
             mouse_relay,
+            frame_crop,
             _item: item,
             frame_pool,
             _session: session,
@@ -5159,16 +5325,40 @@ unsafe fn copy_window_capture_frame_to_composition_surface(
         let update_surface: IDXGISurface =
             unsafe { surface.BeginDraw(None, &mut update_offset) }
                 .map_err(|error| format!("DirectComposition WGC BeginDraw failed: {error}"))?;
-        let draw_result = (|| -> Result<(), String> {
+        let draw_result = (|| -> Result<LiveDesktopFrameCrop, String> {
             let target_texture = update_surface.cast::<ID3D11Texture2D>().map_err(|error| {
                 format!("DirectComposition WGC update surface is not an ID3D11Texture2D: {error}")
             })?;
             let mut target_desc = D3D11_TEXTURE2D_DESC::default();
             unsafe { target_texture.GetDesc(&mut target_desc) };
-            if source_desc.Width > target_desc.Width || source_desc.Height > target_desc.Height {
+            let copy_crop = resolve_live_desktop_wgc_copy_crop(
+                window_capture.frame_crop,
+                source_desc.Width,
+                source_desc.Height,
+                target_desc.Width,
+                target_desc.Height,
+            );
+            if copy_crop.width == 0 || copy_crop.height == 0 {
                 return Err(format!(
-                    "WGC source size {}x{} is larger than DirectComposition surface {}x{}",
+                    "WGC source size {}x{} cannot be copied into DirectComposition surface {}x{}",
                     source_desc.Width, source_desc.Height, target_desc.Width, target_desc.Height
+                ));
+            }
+            if copy_crop.left.saturating_add(copy_crop.width) > source_desc.Width
+                || copy_crop.top.saturating_add(copy_crop.height) > source_desc.Height
+                || copy_crop.width > target_desc.Width
+                || copy_crop.height > target_desc.Height
+            {
+                return Err(format!(
+                    "WGC crop {}x{}@{},{} is outside source {}x{} or target {}x{}",
+                    copy_crop.width,
+                    copy_crop.height,
+                    copy_crop.left,
+                    copy_crop.top,
+                    source_desc.Width,
+                    source_desc.Height,
+                    target_desc.Width,
+                    target_desc.Height
                 ));
             }
             let source_resource = source_texture
@@ -5177,15 +5367,21 @@ unsafe fn copy_window_capture_frame_to_composition_surface(
             let target_resource = target_texture
                 .cast::<ID3D11Resource>()
                 .map_err(|error| format!("WGC target texture resource cast failed: {error}"))?;
-            if source_desc.Width == target_desc.Width && source_desc.Height == target_desc.Height {
+            if copy_crop.left == 0
+                && copy_crop.top == 0
+                && copy_crop.width == source_desc.Width
+                && copy_crop.height == source_desc.Height
+                && source_desc.Width == target_desc.Width
+                && source_desc.Height == target_desc.Height
+            {
                 unsafe { context.CopyResource(&target_resource, &source_resource) };
             } else {
                 let source_box = D3D11_BOX {
-                    left: 0,
-                    top: 0,
+                    left: copy_crop.left,
+                    top: copy_crop.top,
                     front: 0,
-                    right: source_desc.Width,
-                    bottom: source_desc.Height,
+                    right: copy_crop.left + copy_crop.width,
+                    bottom: copy_crop.top + copy_crop.height,
                     back: 1,
                 };
                 unsafe {
@@ -5201,24 +5397,28 @@ unsafe fn copy_window_capture_frame_to_composition_surface(
                     )
                 };
             }
-            Ok(())
+            Ok(copy_crop)
         })();
         let end_draw_result = unsafe { surface.EndDraw() }
             .map_err(|error| format!("DirectComposition WGC EndDraw failed: {error}"));
-        draw_result?;
+        let copy_crop = draw_result?;
         end_draw_result?;
 
         Ok(LiveDesktopFrameProbe {
             supports_frame_texture: true,
-            width: source_desc.Width,
-            height: source_desc.Height,
+            width: copy_crop.width,
+            height: copy_crop.height,
             format: source_desc.Format.0,
             reason: "available",
             detail: format!(
-                "Copied GPU WGC frame from {} into DirectComposition surface: {}x{} format {}",
+                "Copied GPU WGC frame from {} into DirectComposition surface: source {}x{} crop {}x{}@{},{} format {}",
                 format_live_desktop_window_handle(window_capture.hwnd),
                 source_desc.Width,
                 source_desc.Height,
+                copy_crop.width,
+                copy_crop.height,
+                copy_crop.left,
+                copy_crop.top,
                 source_desc.Format.0
             ),
         })
@@ -5367,6 +5567,8 @@ unsafe fn apply_live_desktop_config_to_effects(
     config: &LiveDesktopRuntimeConfig,
 ) -> Result<(), String> {
     if let Some(blur_effect) = blur_effect {
+        unsafe { blur_effect.SetBorderMode(D2D1_BORDER_MODE_HARD) }
+            .map_err(|error| error.to_string())?;
         unsafe {
             blur_effect.SetStandardDeviation2(resolve_live_desktop_blur_standard_deviation(config))
         }
@@ -5587,20 +5789,56 @@ fn live_desktop_output_name(device_name: &[u16; 32]) -> String {
 }
 
 #[cfg(target_os = "windows")]
-unsafe fn create_live_desktop_native_effects(
+unsafe fn create_live_desktop_composition_device(
     dxgi_device: &IDXGIDevice,
     adapter_index: u32,
     phase: &str,
+) -> Result<(LiveDesktopCompositionDevice, LiveDesktopNativeEffects), String> {
+    match unsafe { DCompositionCreateDevice3::<_, IDCompositionDesktopDevice>(dxgi_device) } {
+        Ok(device) => {
+            let native_effects =
+                unsafe { create_live_desktop_native_effects(&device, adapter_index, phase) };
+            Ok((
+                LiveDesktopCompositionDevice::Desktop(device),
+                native_effects,
+            ))
+        }
+        Err(device3_error) => {
+            let legacy_device =
+                unsafe { DCompositionCreateDevice::<_, IDCompositionDevice>(dxgi_device) }
+                    .map_err(|legacy_error| {
+                        format!(
+                            "DCompositionCreateDevice3<IDCompositionDesktopDevice> failed during {phase} on adapter {adapter_index}: {device3_error}; legacy DCompositionCreateDevice<IDCompositionDevice> fallback failed: {legacy_error}"
+                        )
+                    })?;
+            Ok((
+                LiveDesktopCompositionDevice::Legacy(legacy_device),
+                LiveDesktopNativeEffects {
+                    color_matrix_effect: None,
+                    blur_effect: None,
+                    detail: format!(
+                        "Native DirectComposition effects unavailable during {phase} on adapter {adapter_index}: DCompositionCreateDevice3<IDCompositionDesktopDevice> failed: {device3_error}; using legacy DCompositionCreateDevice fallback"
+                    ),
+                },
+            ))
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn create_live_desktop_native_effects(
+    device: &IDCompositionDesktopDevice,
+    adapter_index: u32,
+    phase: &str,
 ) -> LiveDesktopNativeEffects {
-    let device3 = match unsafe { DCompositionCreateDevice2::<_, IDCompositionDevice3>(dxgi_device) }
-    {
+    let device3 = match device.cast::<IDCompositionDevice3>() {
         Ok(device) => device,
         Err(error) => {
             return LiveDesktopNativeEffects {
                 color_matrix_effect: None,
                 blur_effect: None,
                 detail: format!(
-                    "Native DirectComposition effects unavailable during {phase} on adapter {adapter_index}: DCompositionCreateDevice2<IDCompositionDevice3> failed: {error}"
+                    "Native DirectComposition effects unavailable during {phase} on adapter {adapter_index}: IDCompositionDesktopDevice cast to IDCompositionDevice3 failed: {error}"
                 ),
             };
         }
@@ -5643,7 +5881,7 @@ unsafe fn create_live_desktop_native_effects(
 
 #[cfg(target_os = "windows")]
 unsafe fn set_direct_composition_root(
-    device: &IDCompositionDevice,
+    device: &LiveDesktopCompositionDevice,
     target: &IDCompositionTarget,
     visual: &IDCompositionVisual,
     surface: &IDCompositionSurface,
@@ -5651,7 +5889,7 @@ unsafe fn set_direct_composition_root(
     effect: &Option<IDCompositionColorMatrixEffect>,
     placement: &LiveDesktopVisualPlacement,
 ) -> Result<IDCompositionScaleTransform, String> {
-    let scale_transform = unsafe { device.CreateScaleTransform() }.map_err(|error| {
+    let scale_transform = unsafe { device.create_scale_transform() }.map_err(|error| {
         format!("CreateScaleTransform failed while placing live desktop visual: {error}")
     })?;
     unsafe { scale_transform.SetCenterX2(0.0) }.map_err(|error| error.to_string())?;
@@ -5672,7 +5910,7 @@ unsafe fn set_direct_composition_root(
         unsafe { visual.SetEffect(effect) }.map_err(|error| error.to_string())?;
     }
     unsafe { target.SetRoot(visual) }.map_err(|error| error.to_string())?;
-    unsafe { device.Commit() }.map_err(|error| error.to_string())?;
+    unsafe { device.commit() }?;
     Ok(scale_transform)
 }
 
@@ -6542,6 +6780,46 @@ mod tests {
         assert!((taller_display.scale - 1.25).abs() < f32::EPSILON);
         assert_eq!(taller_display.offset_y, 0.0);
         assert!(taller_display.offset_x < 0.0);
+    }
+
+    #[test]
+    fn live_desktop_frame_crop_trims_popup_overscan_to_display() {
+        assert_eq!(
+            resolve_live_desktop_frame_crop(2902, 1856, 2880, 1800),
+            Some(LiveDesktopFrameCrop {
+                left: 11,
+                top: 28,
+                width: 2880,
+                height: 1800,
+            })
+        );
+        assert_eq!(
+            resolve_live_desktop_frame_crop(2880, 1800, 2880, 1800),
+            None
+        );
+    }
+
+    #[test]
+    fn live_desktop_wgc_copy_crop_uses_preferred_crop_or_safe_fallback() {
+        let preferred = LiveDesktopFrameCrop {
+            left: 11,
+            top: 28,
+            width: 2880,
+            height: 1800,
+        };
+        assert_eq!(
+            resolve_live_desktop_wgc_copy_crop(Some(preferred), 2902, 1856, 2880, 1800),
+            preferred
+        );
+        assert_eq!(
+            resolve_live_desktop_wgc_copy_crop(Some(preferred), 1920, 1080, 1920, 1080),
+            LiveDesktopFrameCrop {
+                left: 0,
+                top: 0,
+                width: 1920,
+                height: 1080,
+            }
+        );
     }
 
     #[test]
