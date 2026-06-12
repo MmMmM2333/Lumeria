@@ -164,6 +164,17 @@
 
         <label class="background-debug-toggle">
           <input
+            name="liveDesktopCssFallbackEffects"
+            type="checkbox"
+            :checked="liveDesktopCssFallbackEffects"
+            :disabled="isLiveDesktopActionBusy"
+            @change="setLiveDesktopCssFallbackEffects($event.target.checked)"
+          >
+          <span>CSS fallback 效果</span>
+        </label>
+
+        <label class="background-debug-toggle">
+          <input
             name="liveDesktopOwnedPopupHost"
             type="checkbox"
             :checked="liveDesktopHostMode === LIVE_DESKTOP_HOST_MODE_OWNED_POPUP"
@@ -293,6 +304,8 @@ const LIVE_DESKTOP_DIAGNOSTIC_MODE_STORAGE_KEY = "launchpadLiveDesktopDiagnostic
 const LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY = "launchpadLiveDesktopDisableMouseRelay";
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY = "launchpadLiveDesktopCompositorKeeper";
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT = "launchpad-live-desktop-compositor-keeper-change";
+const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY = "launchpadLiveDesktopCssFallbackEffects";
+const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT = "launchpad-live-desktop-css-fallback-effects-change";
 const LIVE_DESKTOP_HOST_MODE_STORAGE_KEY = "launchpadLiveDesktopHostMode";
 const LIVE_DESKTOP_HOST_MODE_WEBVIEW_TARGET = "webviewTarget";
 const LIVE_DESKTOP_HOST_MODE_OWNED_POPUP = "ownedPopupHost";
@@ -369,6 +382,7 @@ const hasCopiedDiagnostics = ref(false);
 const liveDesktopMode = ref(readLiveDesktopDiagnosticMode());
 const liveDesktopDisableMouseRelay = ref(readLiveDesktopDisableMouseRelay());
 const liveDesktopCompositorKeeper = ref(readLiveDesktopCompositorKeeper());
+const liveDesktopCssFallbackEffects = ref(readLiveDesktopCssFallbackEffects());
 const liveDesktopHostMode = ref(readLiveDesktopHostMode());
 const liveDesktopSkipBlankFrames = ref(readLiveDesktopSkipBlankFrames());
 const liveDesktopForceDwmFlush = ref(readLiveDesktopForceDwmFlush());
@@ -736,6 +750,15 @@ function readLiveDesktopCompositorKeeper() {
   }
 }
 
+function readLiveDesktopCssFallbackEffects() {
+  try {
+    return window.localStorage?.getItem(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY) === "true";
+  } catch (error) {
+    console.warn("Failed to read live desktop CSS fallback setting", error);
+    return false;
+  }
+}
+
 function readLiveDesktopHostMode() {
   try {
     const mode = window.localStorage?.getItem(LIVE_DESKTOP_HOST_MODE_STORAGE_KEY);
@@ -790,6 +813,18 @@ function persistLiveDesktopCompositorKeeper(enabled) {
   }
 }
 
+function persistLiveDesktopCssFallbackEffects(enabled) {
+  try {
+    if (enabled) {
+      window.localStorage?.setItem(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY, "true");
+    } else {
+      window.localStorage?.removeItem(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY);
+    }
+  } catch (error) {
+    console.warn("Failed to persist live desktop CSS fallback setting", error);
+  }
+}
+
 function persistLiveDesktopHostMode(mode) {
   try {
     if (mode === LIVE_DESKTOP_HOST_MODE_OWNED_POPUP || mode === LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW) {
@@ -832,6 +867,12 @@ function notifyLiveDesktopCompositorKeeperChanged(enabled) {
   }));
 }
 
+function notifyLiveDesktopCssFallbackEffectsChanged(enabled) {
+  window.dispatchEvent(new CustomEvent(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT, {
+    detail: { enabled },
+  }));
+}
+
 function persistLiveDesktopDiagnosticMode(mode) {
   if (typeof window === "undefined") return;
   try {
@@ -870,6 +911,13 @@ function setLiveDesktopCompositorKeeper(enabled) {
   liveDesktopCompositorKeeper.value = Boolean(enabled);
   persistLiveDesktopCompositorKeeper(liveDesktopCompositorKeeper.value);
   notifyLiveDesktopCompositorKeeperChanged(liveDesktopCompositorKeeper.value);
+}
+
+async function setLiveDesktopCssFallbackEffects(enabled) {
+  liveDesktopCssFallbackEffects.value = Boolean(enabled);
+  persistLiveDesktopCssFallbackEffects(liveDesktopCssFallbackEffects.value);
+  notifyLiveDesktopCssFallbackEffectsChanged(liveDesktopCssFallbackEffects.value);
+  await reconfigureLiveDesktopRuntime();
 }
 
 async function setLiveDesktopHostMode(mode) {
@@ -980,6 +1028,7 @@ async function copyDiagnostics() {
           diagnosticMode: liveDesktopMode.value,
           disableMouseRelay: liveDesktopDisableMouseRelay.value,
           hostMode: liveDesktopHostMode.value,
+          cssFallbackEffects: liveDesktopCssFallbackEffects.value,
           skipBlankFrames: liveDesktopSkipBlankFrames.value,
           forceDwmFlush: liveDesktopForceDwmFlush.value,
           support: props.state?.liveDesktopBackgroundSupport?.value || null,
@@ -1013,6 +1062,7 @@ function restartLiveDesktopRuntimePoller() {
     return;
   }
   liveDesktopMode.value = readLiveDesktopDiagnosticMode();
+  liveDesktopCssFallbackEffects.value = readLiveDesktopCssFallbackEffects();
   liveDesktopHostMode.value = readLiveDesktopHostMode();
   liveDesktopSkipBlankFrames.value = readLiveDesktopSkipBlankFrames();
   liveDesktopForceDwmFlush.value = readLiveDesktopForceDwmFlush();

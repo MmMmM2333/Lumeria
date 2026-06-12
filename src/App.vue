@@ -1,7 +1,7 @@
 <template>
   <div
     ref="rootRef"
-    :class="cx('launchpad-root', isTextlessMode && 'launchpad-root-textless', isStartupMaskMounted && 'launchpad-root-startup-masked', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching')"
+    :class="cx('launchpad-root', isTextlessMode && 'launchpad-root-textless', isStartupMaskMounted && 'launchpad-root-startup-masked', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching', shouldUseLiveDesktopCssFallbackEffects && 'launchpad-root-live-desktop-css-fallback-effects')"
     :style="launchpadRootStyle"
     @wheel="handleLaunchpadWheel"
     @pointerdown="handleLaunchpadSurfacePointerDown"
@@ -177,6 +177,7 @@ const {
   backgroundImagePath,
   backgroundImageUrl,
   backgroundSource,
+  liveDesktopCssFallbackEffectsEnabled,
   liveDesktopRuntimeStatus,
   shouldRenderPixiBackgroundEffect,
   cx,
@@ -253,6 +254,8 @@ const BackgroundDebugPanel = import.meta.env.DEV
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY = "launchpadLiveDesktopCompositorKeeper";
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT = "launchpad-live-desktop-compositor-keeper-change";
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_INTERVAL_MS = 250;
+const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY = "launchpadLiveDesktopCssFallbackEffects";
+const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT = "launchpad-live-desktop-css-fallback-effects-change";
 const launchpadOverlaysRef = ref(null);
 const BACKGROUND_MEDIA_FADE_MS = 220;
 const PIXI_BACKGROUND_HANDOFF_DELAY_MS = 220;
@@ -269,6 +272,7 @@ const backgroundImagePixelSize = ref(null);
 const backgroundViewportSize = ref({ height: 1, width: 1 });
 const isLiveDesktopCompositorKeeperEnabled = ref(readLiveDesktopCompositorKeeperSetting());
 const liveDesktopCompositorTick = ref(0);
+liveDesktopCssFallbackEffectsEnabled.value = readLiveDesktopCssFallbackEffectsSetting();
 const backgroundImageLayers = ref([
   { id: "background-image-a", url: null, visible: false },
   { id: "background-image-b", url: null, visible: false },
@@ -299,6 +303,9 @@ const shouldRenderLiveDesktopCompositorKeeper = computed(() => Boolean(
     && isDesktopOpen.value
     && !isAppLaunching.value
 ));
+const shouldUseLiveDesktopCssFallbackEffects = computed(() => Boolean(
+  import.meta.env.DEV && liveDesktopCssFallbackEffectsEnabled.value
+));
 let pixiBackgroundHideTimer = null;
 let startupMaskRemoveTimer = null;
 let startupMaskMaxWaitTimer = null;
@@ -327,6 +334,15 @@ function readLiveDesktopCompositorKeeperSetting() {
   }
 }
 
+function readLiveDesktopCssFallbackEffectsSetting() {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage?.getItem(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
 function handleLiveDesktopCompositorKeeperChanged(event) {
   const enabled = event?.detail?.enabled;
   isLiveDesktopCompositorKeeperEnabled.value = typeof enabled === "boolean"
@@ -334,9 +350,21 @@ function handleLiveDesktopCompositorKeeperChanged(event) {
     : readLiveDesktopCompositorKeeperSetting();
 }
 
+function handleLiveDesktopCssFallbackEffectsChanged(event) {
+  const enabled = event?.detail?.enabled;
+  liveDesktopCssFallbackEffectsEnabled.value = typeof enabled === "boolean"
+    ? enabled
+    : readLiveDesktopCssFallbackEffectsSetting();
+}
+
 function handleLiveDesktopCompositorKeeperStorage(event) {
   if (event?.key !== LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY) return;
   isLiveDesktopCompositorKeeperEnabled.value = event.newValue === "true";
+}
+
+function handleLiveDesktopCssFallbackEffectsStorage(event) {
+  if (event?.key !== LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY) return;
+  liveDesktopCssFallbackEffectsEnabled.value = event.newValue === "true";
 }
 
 function clearLiveDesktopCompositorKeeperTimer() {
@@ -682,14 +710,18 @@ onMounted(() => {
   window.addEventListener("resize", refreshBackgroundLayoutMetrics);
   window.addEventListener("focus", refreshBackgroundLayoutMetrics);
   window.addEventListener(LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT, handleLiveDesktopCompositorKeeperChanged);
+  window.addEventListener(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT, handleLiveDesktopCssFallbackEffectsChanged);
   window.addEventListener("storage", handleLiveDesktopCompositorKeeperStorage);
+  window.addEventListener("storage", handleLiveDesktopCssFallbackEffectsStorage);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("resize", refreshBackgroundLayoutMetrics);
   window.removeEventListener("focus", refreshBackgroundLayoutMetrics);
   window.removeEventListener(LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT, handleLiveDesktopCompositorKeeperChanged);
+  window.removeEventListener(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT, handleLiveDesktopCssFallbackEffectsChanged);
   window.removeEventListener("storage", handleLiveDesktopCompositorKeeperStorage);
+  window.removeEventListener("storage", handleLiveDesktopCssFallbackEffectsStorage);
 });
 
 const headerDomRefs = { headerRef, searchRef, searchInputRef };

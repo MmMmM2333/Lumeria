@@ -24,6 +24,7 @@ import {
   DEFAULT_BACKGROUND_DARKEN_STRENGTH,
   DEFAULT_BACKGROUND_IMAGE_LAYOUT,
   DEFAULT_BACKGROUND_IMAGE_OPACITY,
+  DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY,
   DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT,
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
@@ -52,6 +53,7 @@ export function useLaunchpadControllerState() {
   const backgroundBaseColor = ref(DEFAULT_BACKGROUND_BASE_COLOR);
   const backgroundBaseOpacity = ref(DEFAULT_BACKGROUND_BASE_OPACITY);
   const backgroundImageOpacity = ref(DEFAULT_BACKGROUND_IMAGE_OPACITY);
+  const backgroundLiveDesktopOpacity = ref(DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY);
   const backgroundImageLayout = ref(DEFAULT_BACKGROUND_IMAGE_LAYOUT);
   const backgroundBlurStrength = ref(DEFAULT_BACKGROUND_BLUR_STRENGTH);
   const backgroundDarkenStrength = ref(DEFAULT_BACKGROUND_DARKEN_STRENGTH);
@@ -66,6 +68,7 @@ export function useLaunchpadControllerState() {
   const draftBackgroundBaseColor = ref(DEFAULT_BACKGROUND_BASE_COLOR);
   const draftBackgroundBaseOpacity = ref(DEFAULT_BACKGROUND_BASE_OPACITY);
   const draftBackgroundImageOpacity = ref(DEFAULT_BACKGROUND_IMAGE_OPACITY);
+  const draftBackgroundLiveDesktopOpacity = ref(DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY);
   const draftBackgroundImageLayout = ref(DEFAULT_BACKGROUND_IMAGE_LAYOUT);
   const draftBackgroundBlurStrength = ref(DEFAULT_BACKGROUND_BLUR_STRENGTH);
   const draftBackgroundDarkenStrength = ref(DEFAULT_BACKGROUND_DARKEN_STRENGTH);
@@ -77,6 +80,7 @@ export function useLaunchpadControllerState() {
   const draftBackgroundImageUrl = ref(null);
   const isChoosingBackgroundImage = ref(false);
   const liveDesktopBackgroundSupport = ref({ ...DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT });
+  const liveDesktopCssFallbackEffectsEnabled = ref(false);
   const liveDesktopRuntimeStatus = ref({
     phase: "stopped",
     active: false,
@@ -129,6 +133,7 @@ export function useLaunchpadControllerState() {
     backgroundDarkenColor,
     backgroundDarkenStrength,
     backgroundImageOpacity,
+    backgroundLiveDesktopOpacity,
     backgroundImageLayout,
     backgroundImagePath,
     backgroundImageUrl,
@@ -145,6 +150,7 @@ export function useLaunchpadControllerState() {
     draftBackgroundDarkenStrength,
     draftBackgroundEffect,
     draftBackgroundImageOpacity,
+    draftBackgroundLiveDesktopOpacity,
     draftBackgroundImageLayout,
     draftBackgroundImagePath,
     draftBackgroundImageUrl,
@@ -178,6 +184,7 @@ export function useLaunchpadControllerState() {
     isTextlessMode,
     launchTargetStatusById,
     liveDesktopBackgroundSupport,
+    liveDesktopCssFallbackEffectsEnabled,
     liveDesktopRuntimeStatus,
     keyboardFocusArea,
     pageDotsRef,

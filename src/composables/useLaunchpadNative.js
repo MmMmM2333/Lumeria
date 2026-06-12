@@ -54,6 +54,7 @@ import {
   clampBackgroundBlurStrength,
   clampBackgroundDarkenStrength,
   clampBackgroundImageOpacity,
+  clampBackgroundLiveDesktopOpacity,
   normalizeBackgroundImageLayout,
   normalizeBackgroundAcrylicAppearance,
   normalizeBackgroundAcrylicParams,
@@ -335,6 +336,7 @@ function makeLiveDesktopRuntimeConfig(options) {
     hostMode: resolveLiveDesktopHostMode(),
     skipBlankFrames: resolveLiveDesktopSkipBlankFrames(),
     forceDwmFlush: resolveLiveDesktopForceDwmFlush(),
+    opacity: clampBackgroundLiveDesktopOpacity(options.backgroundLiveDesktopOpacity.value),
   };
 }
 
@@ -394,6 +396,7 @@ export function useLaunchpadNative(options) {
     const nextBackgroundBaseColor = normalizeBackgroundBaseColor(settings.backgroundBaseColor);
     const nextBackgroundBaseOpacity = clampBackgroundBaseOpacity(settings.backgroundBaseOpacity);
     const nextBackgroundImageOpacity = clampBackgroundImageOpacity(settings.backgroundImageOpacity);
+    const nextBackgroundLiveDesktopOpacity = clampBackgroundLiveDesktopOpacity(settings.backgroundLiveDesktopOpacity);
     const nextBackgroundImageLayout = normalizeBackgroundImageLayout(settings.backgroundImageLayout);
     const nextBackgroundBlurStrength = clampBackgroundBlurStrength(settings.backgroundBlurStrength);
     const nextBackgroundDarkenStrength = clampBackgroundDarkenStrength(settings.backgroundDarkenStrength);
@@ -441,6 +444,7 @@ export function useLaunchpadNative(options) {
     options.backgroundBaseColor.value = nextBackgroundBaseColor;
     options.backgroundBaseOpacity.value = nextBackgroundBaseOpacity;
     options.backgroundImageOpacity.value = nextBackgroundImageOpacity;
+    options.backgroundLiveDesktopOpacity.value = nextBackgroundLiveDesktopOpacity;
     options.backgroundImageLayout.value = nextBackgroundImageLayout;
     options.backgroundBlurStrength.value = nextBackgroundBlurStrength;
     options.backgroundDarkenStrength.value = nextBackgroundDarkenStrength;
@@ -455,6 +459,7 @@ export function useLaunchpadNative(options) {
     options.draftBackgroundBaseColor.value = nextBackgroundBaseColor;
     options.draftBackgroundBaseOpacity.value = nextBackgroundBaseOpacity;
     options.draftBackgroundImageOpacity.value = nextBackgroundImageOpacity;
+    options.draftBackgroundLiveDesktopOpacity.value = nextBackgroundLiveDesktopOpacity;
     options.draftBackgroundImageLayout.value = nextBackgroundImageLayout;
     options.draftBackgroundBlurStrength.value = nextBackgroundBlurStrength;
     options.draftBackgroundDarkenStrength.value = nextBackgroundDarkenStrength;
@@ -516,6 +521,7 @@ export function useLaunchpadNative(options) {
       backgroundSource: options.backgroundSource.value,
       backgroundEffect: options.backgroundEffect.value,
       backgroundImageOpacity: options.backgroundImageOpacity.value,
+      backgroundLiveDesktopOpacity: options.backgroundLiveDesktopOpacity.value,
       backgroundImageLayout: options.backgroundImageLayout.value,
       backgroundBlurStrength: options.backgroundBlurStrength.value,
       backgroundDarkenStrength: options.backgroundDarkenStrength.value,

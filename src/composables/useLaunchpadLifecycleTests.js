@@ -30,6 +30,7 @@ function createLifecycleOptions() {
       backgroundDarkenColor: ref("#1c1c1c"),
       backgroundDarkenStrength: ref(28),
       backgroundImageOpacity: ref(46),
+      backgroundLiveDesktopOpacity: ref(100),
       backgroundImagePath: ref(null),
       backgroundSource: ref("systemMaterial"),
       backgroundEffect: ref("dimmed"),
@@ -132,6 +133,7 @@ export async function runLaunchpadLifecycleTests() {
   assert(watchers[0].callback === options.schedulePageGridMetrics, "layout setting watcher should refresh page metrics");
   assert(watchers[2].source === options.folderViewportRef, "folder viewport watcher should observe the viewport ref");
   assert(watchers[4].source.includes(options.backgroundBlurStrength), "layout save watcher should track background blur strength");
+  assert(watchers[4].source.includes(options.backgroundLiveDesktopOpacity), "layout save watcher should track live desktop opacity");
   assert(watchers[4].source.includes(options.backgroundDarkenColor), "layout save watcher should track background darken color");
   assert(watchers[4].source.includes(options.backgroundDarkenStrength), "layout save watcher should track background darken strength");
   assert(watchers[4].source.includes(options.backgroundAcrylicAppearance), "layout save watcher should track acrylic appearance");
@@ -144,6 +146,7 @@ export async function runLaunchpadLifecycleTests() {
   assert(watchers[8].source.includes(options.backgroundSource), "live desktop watcher should track background source");
   assert(watchers[8].source.includes(options.isDesktopOpen), "live desktop watcher should track desktop visibility");
   assert(watchers[8].source.includes(options.backgroundEffect), "live desktop watcher should track background effect");
+  assert(watchers[8].source.includes(options.backgroundLiveDesktopOpacity), "live desktop watcher should track live desktop opacity");
   assert(watchers[8].source.includes(options.backgroundBlurStrength), "live desktop watcher should track blur strength");
   assert(watchers[8].source.includes(options.backgroundDarkenColor), "live desktop watcher should track darken color");
   assert(watchers[8].source.includes(options.backgroundDarkenStrength), "live desktop watcher should track darken strength");

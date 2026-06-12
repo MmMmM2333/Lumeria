@@ -20,6 +20,7 @@ import {
   DEFAULT_BACKGROUND_BLUR_STRENGTH,
   DEFAULT_BACKGROUND_DARKEN_COLOR,
   DEFAULT_BACKGROUND_DARKEN_STRENGTH,
+  DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY,
   createDefaultBackgroundAcrylicParams,
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_APPEARANCE_LIGHT,
@@ -56,6 +57,7 @@ function makeOptions(overrides = {}) {
     draftBackgroundBaseColor: ref(DEFAULT_BACKGROUND_BASE_COLOR),
     draftBackgroundBaseOpacity: ref(DEFAULT_BACKGROUND_BASE_OPACITY),
     draftBackgroundImageOpacity: ref(46),
+    draftBackgroundLiveDesktopOpacity: ref(DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY),
     draftBackgroundImageLayout: ref(BACKGROUND_IMAGE_LAYOUT_FILL),
     draftBackgroundBlurStrength: ref(DEFAULT_BACKGROUND_BLUR_STRENGTH),
     draftBackgroundDarkenColor: ref(DEFAULT_BACKGROUND_DARKEN_COLOR),
@@ -91,6 +93,7 @@ function makeOptions(overrides = {}) {
     backgroundBaseColor: ref(DEFAULT_BACKGROUND_BASE_COLOR),
     backgroundBaseOpacity: ref(DEFAULT_BACKGROUND_BASE_OPACITY),
     backgroundImageOpacity: ref(46),
+    backgroundLiveDesktopOpacity: ref(DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY),
     backgroundImageLayout: ref(BACKGROUND_IMAGE_LAYOUT_FILL),
     backgroundBlurStrength: ref(DEFAULT_BACKGROUND_BLUR_STRENGTH),
     backgroundDarkenColor: ref(DEFAULT_BACKGROUND_DARKEN_COLOR),
@@ -238,6 +241,7 @@ export async function runLaunchpadNativeTests() {
     assert(initialSaveLayouts[0].settings.backgroundBaseColor === DEFAULT_BACKGROUND_BASE_COLOR, "native saves should include background base color");
     assert(initialSaveLayouts[0].settings.backgroundBaseOpacity === DEFAULT_BACKGROUND_BASE_OPACITY, "native saves should include background base opacity");
     assert(initialSaveLayouts[0].settings.backgroundImageOpacity === 46, "native saves should include background image opacity");
+    assert(initialSaveLayouts[0].settings.backgroundLiveDesktopOpacity === DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY, "native saves should include live desktop opacity");
     assert(initialSaveLayouts[0].settings.backgroundImageLayout === BACKGROUND_IMAGE_LAYOUT_FILL, "native saves should include background image layout");
     assert(initialSaveLayouts[0].settings.backgroundBlurStrength === DEFAULT_BACKGROUND_BLUR_STRENGTH, "native saves should include background blur strength");
     assert(initialSaveLayouts[0].settings.backgroundDarkenColor === DEFAULT_BACKGROUND_DARKEN_COLOR, "native saves should include background darken color");
@@ -322,6 +326,7 @@ export async function runLaunchpadNativeTests() {
           backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
           backgroundEffect: BACKGROUND_EFFECT_DIMMED,
           backgroundImageOpacity: 64,
+          backgroundLiveDesktopOpacity: 73,
           backgroundImageLayout: BACKGROUND_IMAGE_LAYOUT_CENTER,
           backgroundBlurStrength: 82,
           backgroundDarkenColor: "#456",
@@ -357,6 +362,7 @@ export async function runLaunchpadNativeTests() {
     assert(options.backgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "native load should apply saved background source");
     assert(options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should apply saved background effect");
     assert(options.backgroundImageOpacity.value === 64, "native load should apply saved background opacity");
+    assert(options.backgroundLiveDesktopOpacity.value === 73, "native load should apply saved live desktop opacity");
     assert(options.backgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_CENTER, "native load should apply saved background image layout");
     assert(options.backgroundBlurStrength.value === 82, "native load should apply saved background blur strength");
     assert(options.backgroundDarkenColor.value === "#445566", "native load should apply saved background darken color");
@@ -371,6 +377,7 @@ export async function runLaunchpadNativeTests() {
     assert(options.draftBackgroundBaseColor.value === "#aabbcc", "native load should sync background base color draft");
     assert(options.draftBackgroundBaseOpacity.value === 73, "native load should sync background base opacity draft");
     assert(options.draftBackgroundImageOpacity.value === 64, "native load should sync background opacity draft");
+    assert(options.draftBackgroundLiveDesktopOpacity.value === 73, "native load should sync live desktop opacity draft");
     assert(options.draftBackgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_CENTER, "native load should sync background image layout draft");
     assert(options.draftBackgroundBlurStrength.value === 82, "native load should sync background blur strength draft");
     assert(options.draftBackgroundDarkenColor.value === "#445566", "native load should sync background darken color draft");
@@ -711,6 +718,7 @@ export async function runLaunchpadNativeTests() {
   }, async () => {
     const { options } = makeOptions();
     options.backgroundEffect.value = BACKGROUND_EFFECT_ACRYLIC_WEBGL;
+    options.backgroundLiveDesktopOpacity.value = 37;
     options.backgroundBlurStrength.value = 72;
     options.backgroundDarkenColor.value = "#334455";
     options.backgroundDarkenStrength.value = 41;
@@ -739,6 +747,7 @@ export async function runLaunchpadNativeTests() {
     assert(liveDesktopRuntimeConfigs[0].hostMode === "webviewTarget", "runtime config should use the WebView target host by default");
     assert(liveDesktopRuntimeConfigs[0].skipBlankFrames === false, "runtime config should keep blank frame skipping disabled by default");
     assert(liveDesktopRuntimeConfigs[0].forceDwmFlush === false, "runtime config should keep DWM flush disabled by default");
+    assert(liveDesktopRuntimeConfigs[0].opacity === 37, "runtime config should include live desktop opacity");
     assert(liveDesktopRuntimeConfigs[0].effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "runtime config should include the selected effect");
     assert(liveDesktopRuntimeConfigs[0].blurStrength === 72, "runtime config should include blur strength");
     assert(liveDesktopRuntimeConfigs[0].darkenColor === "#334455", "runtime config should include darken color");

@@ -42,6 +42,7 @@ export function useLaunchpadViewState(options) {
   const shouldUseLiveDesktopBackground = computed(() => backgroundSourceUsesLiveDesktop(options.backgroundSource.value));
   const shouldUseCssLiveDesktopEffect = computed(() => Boolean(
     shouldUseLiveDesktopBackground.value
+    && options.liveDesktopCssFallbackEffectsEnabled?.value
     && backgroundEffectUsesPixi(options.backgroundEffect.value)
     && !normalizeLiveDesktopBackgroundSupport(options.liveDesktopBackgroundSupport?.value).supportsLiveDesktopBackgroundEffects
   ));

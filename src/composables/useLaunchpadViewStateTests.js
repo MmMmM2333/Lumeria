@@ -48,6 +48,7 @@ function createViewState(overrides = {}) {
       supportsLiveDesktopBackground: false,
       supportsLiveDesktopBackgroundEffects: false,
     }),
+    liveDesktopCssFallbackEffectsEnabled: ref(Boolean(overrides.liveDesktopCssFallbackEffectsEnabled)),
     openFolderId: ref(overrides.openFolderId ?? null),
   };
 
@@ -125,8 +126,20 @@ export function runLaunchpadViewStateTests() {
   });
   assert(liveDesktopBlur.view.shouldRenderPixiBackgroundEffect.value === false, "live desktop blur should not use the image pixi background");
   assert(liveDesktopBlur.view.rootStyle.value["--launchpad-background-base-opacity"] === "0", "live desktop backgrounds should keep the css base layer transparent");
-  assert(liveDesktopBlur.view.rootStyle.value["--launchpad-live-desktop-backdrop-filter"] === "blur(16.0px)", "live desktop blur should use the css fallback when native effects are unavailable");
-  assert(liveDesktopBlur.view.rootStyle.value["--launchpad-live-desktop-backdrop-opacity"] === "0.001", "live desktop blur should activate the transparent backdrop layer");
+  assert(liveDesktopBlur.view.rootStyle.value["--launchpad-live-desktop-backdrop-filter"] === "none", "live desktop css fallback should stay disabled by default");
+  assert(liveDesktopBlur.view.rootStyle.value["--launchpad-live-desktop-backdrop-opacity"] === "0", "live desktop css fallback should keep the backdrop layer transparent by default");
+  const liveDesktopFallbackBlur = createViewState({
+    backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
+    backgroundEffect: BACKGROUND_EFFECT_BLUR,
+    backgroundBlurStrength: 50,
+    liveDesktopCssFallbackEffectsEnabled: true,
+    liveDesktopBackgroundSupport: {
+      supportsLiveDesktopBackground: true,
+      supportsLiveDesktopBackgroundEffects: false,
+    },
+  });
+  assert(liveDesktopFallbackBlur.view.rootStyle.value["--launchpad-live-desktop-backdrop-filter"] === "blur(16.0px)", "live desktop blur should use the css fallback when it is explicitly enabled");
+  assert(liveDesktopFallbackBlur.view.rootStyle.value["--launchpad-live-desktop-backdrop-opacity"] === "0.001", "live desktop blur should activate the transparent backdrop layer when fallback is enabled");
   const liveDesktopNativeBlur = createViewState({
     backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
     backgroundEffect: BACKGROUND_EFFECT_BLUR,
@@ -139,6 +152,7 @@ export function runLaunchpadViewStateTests() {
   const liveDesktopAcrylic = createViewState({
     backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
     backgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    liveDesktopCssFallbackEffectsEnabled: true,
     liveDesktopBackgroundSupport: {
       supportsLiveDesktopBackground: true,
       supportsLiveDesktopBackgroundEffects: false,

@@ -431,6 +431,7 @@ export function createLaunchpadDataHelpers(options) {
   function createLayoutSnapshot(state) {
     const backgroundBaseOpacity = Number(state.backgroundBaseOpacity);
     const backgroundImageOpacity = Number(state.backgroundImageOpacity);
+    const backgroundLiveDesktopOpacity = Number(state.backgroundLiveDesktopOpacity);
     const backgroundBlurStrength = normalizeLayoutBackgroundBlurStrength(state.backgroundBlurStrength);
     const backgroundDarkenStrength = normalizeLayoutBackgroundDarkenStrength(state.backgroundDarkenStrength);
     const backgroundDarkenColor = normalizeLayoutBackgroundDarkenColor(state.backgroundDarkenColor);
@@ -469,6 +470,7 @@ export function createLaunchpadDataHelpers(options) {
           ? state.backgroundEffect
           : "dimmed",
         backgroundImageOpacity: Number.isFinite(backgroundImageOpacity) ? clamp(Math.round(backgroundImageOpacity), 0, 100) : 46,
+        backgroundLiveDesktopOpacity: Number.isFinite(backgroundLiveDesktopOpacity) ? clamp(Math.round(backgroundLiveDesktopOpacity), 0, 100) : 100,
         backgroundBlurStrength,
         backgroundDarkenStrength,
         backgroundDarkenColor,

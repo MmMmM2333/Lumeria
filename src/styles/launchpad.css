@@ -62,11 +62,14 @@ body {
   pointer-events: none;
   opacity: 1;
   overflow: hidden;
+  transition: opacity 360ms ease;
+  will-change: opacity;
+}
+
+.launchpad-root-live-desktop-css-fallback-effects .launchpad-bg {
   background: rgba(255, 255, 255, var(--launchpad-live-desktop-backdrop-opacity, 0));
   backdrop-filter: var(--launchpad-live-desktop-backdrop-filter, none);
   -webkit-backdrop-filter: var(--launchpad-live-desktop-backdrop-filter, none);
-  transition: opacity 360ms ease;
-  will-change: opacity;
 }
 
 .launchpad-live-desktop-compositor-keeper {

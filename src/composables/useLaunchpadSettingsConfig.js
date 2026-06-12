@@ -50,6 +50,10 @@ export const BACKGROUND_IMAGE_OPACITY_MIN = 0;
 export const BACKGROUND_IMAGE_OPACITY_MAX = 100;
 export const BACKGROUND_IMAGE_OPACITY_STEP = 1;
 export const DEFAULT_BACKGROUND_IMAGE_OPACITY = 46;
+export const BACKGROUND_LIVE_DESKTOP_OPACITY_MIN = 0;
+export const BACKGROUND_LIVE_DESKTOP_OPACITY_MAX = 100;
+export const BACKGROUND_LIVE_DESKTOP_OPACITY_STEP = 1;
+export const DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY = 100;
 export const BACKGROUND_BLUR_STRENGTH_MIN = 1;
 export const BACKGROUND_BLUR_STRENGTH_MAX = 100;
 export const BACKGROUND_BLUR_STRENGTH_STEP = 1;
@@ -165,6 +169,12 @@ export function clampBackgroundImageOpacity(value) {
   return clamp(Math.round(opacity), BACKGROUND_IMAGE_OPACITY_MIN, BACKGROUND_IMAGE_OPACITY_MAX);
 }
 
+export function clampBackgroundLiveDesktopOpacity(value) {
+  const opacity = Number(value);
+  if (!Number.isFinite(opacity)) return DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY;
+  return clamp(Math.round(opacity), BACKGROUND_LIVE_DESKTOP_OPACITY_MIN, BACKGROUND_LIVE_DESKTOP_OPACITY_MAX);
+}
+
 export function clampBackgroundBlurStrength(value) {
   const strength = Number(value);
   if (!Number.isFinite(strength)) return DEFAULT_BACKGROUND_BLUR_STRENGTH;
@@ -263,6 +273,7 @@ export function syncLaunchpadSettingsDraftsFromState(options) {
   options.draftBackgroundSource.value = options.backgroundSource.value;
   options.draftBackgroundEffect.value = options.backgroundEffect.value;
   options.draftBackgroundImageOpacity.value = options.backgroundImageOpacity.value;
+  options.draftBackgroundLiveDesktopOpacity.value = clampBackgroundLiveDesktopOpacity(options.backgroundLiveDesktopOpacity.value);
   options.draftBackgroundImageLayout.value = normalizeBackgroundImageLayout(options.backgroundImageLayout.value);
   options.draftBackgroundBlurStrength.value = clampBackgroundBlurStrength(options.backgroundBlurStrength.value);
   options.draftBackgroundDarkenStrength.value = clampBackgroundDarkenStrength(options.backgroundDarkenStrength.value);
@@ -344,6 +355,10 @@ export function useLaunchpadSettingsConfig(options) {
     options.draftBackgroundImageOpacity.value = clampBackgroundImageOpacity(value);
   }
 
+  function setDraftBackgroundLiveDesktopOpacity(value) {
+    options.draftBackgroundLiveDesktopOpacity.value = clampBackgroundLiveDesktopOpacity(value);
+  }
+
   function setDraftBackgroundImageLayout(layout) {
     options.draftBackgroundImageLayout.value = normalizeBackgroundImageLayout(layout);
   }
@@ -390,6 +405,12 @@ export function useLaunchpadSettingsConfig(options) {
   function changeDraftBackgroundImageOpacity(direction) {
     setDraftBackgroundImageOpacity(
       Number(options.draftBackgroundImageOpacity.value) + direction * BACKGROUND_IMAGE_OPACITY_STEP
+    );
+  }
+
+  function changeDraftBackgroundLiveDesktopOpacity(direction) {
+    setDraftBackgroundLiveDesktopOpacity(
+      Number(options.draftBackgroundLiveDesktopOpacity.value) + direction * BACKGROUND_LIVE_DESKTOP_OPACITY_STEP
     );
   }
 
@@ -565,6 +586,7 @@ export function useLaunchpadSettingsConfig(options) {
     options.backgroundBaseColor.value = normalizeBackgroundBaseColor(options.draftBackgroundBaseColor.value);
     options.backgroundBaseOpacity.value = clampBackgroundBaseOpacity(options.draftBackgroundBaseOpacity.value);
     options.backgroundImageOpacity.value = clampBackgroundImageOpacity(options.draftBackgroundImageOpacity.value);
+    options.backgroundLiveDesktopOpacity.value = clampBackgroundLiveDesktopOpacity(options.draftBackgroundLiveDesktopOpacity.value);
     options.backgroundImageLayout.value = normalizeBackgroundImageLayout(options.draftBackgroundImageLayout.value);
     options.backgroundBlurStrength.value = clampBackgroundBlurStrength(options.draftBackgroundBlurStrength.value);
     options.backgroundDarkenStrength.value = clampBackgroundDarkenStrength(options.draftBackgroundDarkenStrength.value);
@@ -591,6 +613,7 @@ export function useLaunchpadSettingsConfig(options) {
     applyGridConfig,
     applySettingsConfig,
     changeDraftBackgroundImageOpacity,
+    changeDraftBackgroundLiveDesktopOpacity,
     changeDraftBackgroundBaseOpacity,
     changeDraftCols,
     changeDraftFolderCols,
@@ -609,6 +632,7 @@ export function useLaunchpadSettingsConfig(options) {
     setDraftBackgroundDarkenColor,
     setDraftBackgroundDarkenStrength,
     setDraftBackgroundImageOpacity,
+    setDraftBackgroundLiveDesktopOpacity,
     setDraftBackgroundBaseColor,
     setDraftBackgroundBaseOpacity,
     setDraftBackgroundEffect,

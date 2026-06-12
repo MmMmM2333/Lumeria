@@ -243,7 +243,7 @@
                         动态桌面
                       </button>
                     </div>
-                    <label v-if="doesDraftBackgroundUseLayer" class="settings-opacity-control">
+                    <label v-if="doesDraftBackgroundUseImage" class="settings-opacity-control">
                       <span>背景透明度</span>
                       <input
                         :value="state.draftBackgroundImageOpacity.value"
@@ -255,6 +255,19 @@
                         @input="state.setDraftBackgroundImageOpacity($event.target.value)"
                       />
                       <span class="settings-opacity-value">{{ state.draftBackgroundImageOpacity.value }}%</span>
+                    </label>
+                    <label v-if="doesDraftBackgroundUseLiveDesktop" class="settings-opacity-control">
+                      <span>动态桌面不透明度</span>
+                      <input
+                        :value="state.draftBackgroundLiveDesktopOpacity.value"
+                        :min="BACKGROUND_LIVE_DESKTOP_OPACITY_MIN"
+                        :max="BACKGROUND_LIVE_DESKTOP_OPACITY_MAX"
+                        :step="BACKGROUND_LIVE_DESKTOP_OPACITY_STEP"
+                        type="range"
+                        aria-label="动态桌面不透明度"
+                        @input="state.setDraftBackgroundLiveDesktopOpacity($event.target.value)"
+                      />
+                      <span class="settings-opacity-value">{{ state.draftBackgroundLiveDesktopOpacity.value }}%</span>
                     </label>
                   </div>
                   <div v-if="doesDraftBackgroundUseImage" class="settings-background-image-controls">
@@ -850,6 +863,9 @@ import {
   BACKGROUND_IMAGE_OPACITY_MAX,
   BACKGROUND_IMAGE_OPACITY_MIN,
   BACKGROUND_IMAGE_OPACITY_STEP,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_MAX,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_MIN,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_STEP,
   BACKGROUND_SOURCE_CUSTOM_IMAGE,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
   BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,

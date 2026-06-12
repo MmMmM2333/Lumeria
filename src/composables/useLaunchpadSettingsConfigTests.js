@@ -34,6 +34,7 @@ import {
   clampBackgroundBlurStrength,
   clampBackgroundDarkenStrength,
   clampBackgroundImageOpacity,
+  clampBackgroundLiveDesktopOpacity,
   clampLaunchpadIconSize,
   normalizeBackgroundBaseColor,
   normalizeBackgroundDarkenColor,
@@ -88,6 +89,7 @@ function createSettingsConfig(overrides = {}) {
     draftBackgroundSource: refValue(overrides.draftBackgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
     draftBackgroundEffect: refValue(overrides.draftBackgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     draftBackgroundImageOpacity: refValue(overrides.draftBackgroundImageOpacity ?? 46),
+    draftBackgroundLiveDesktopOpacity: refValue(overrides.draftBackgroundLiveDesktopOpacity ?? 100),
     draftBackgroundImageLayout: refValue(overrides.draftBackgroundImageLayout ?? BACKGROUND_IMAGE_LAYOUT_FILL),
     draftBackgroundBlurStrength: refValue(overrides.draftBackgroundBlurStrength ?? DEFAULT_BACKGROUND_BLUR_STRENGTH),
     draftBackgroundDarkenColor: refValue(overrides.draftBackgroundDarkenColor ?? DEFAULT_BACKGROUND_DARKEN_COLOR),
@@ -105,6 +107,7 @@ function createSettingsConfig(overrides = {}) {
     backgroundSource: refValue(overrides.backgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
     backgroundEffect: refValue(overrides.backgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     backgroundImageOpacity: refValue(overrides.backgroundImageOpacity ?? 46),
+    backgroundLiveDesktopOpacity: refValue(overrides.backgroundLiveDesktopOpacity ?? 100),
     backgroundImageLayout: refValue(overrides.backgroundImageLayout ?? BACKGROUND_IMAGE_LAYOUT_FILL),
     backgroundBlurStrength: refValue(overrides.backgroundBlurStrength ?? DEFAULT_BACKGROUND_BLUR_STRENGTH),
     backgroundDarkenColor: refValue(overrides.backgroundDarkenColor ?? DEFAULT_BACKGROUND_DARKEN_COLOR),
@@ -178,6 +181,7 @@ function createSettingsConfig(overrides = {}) {
     commitSearchPageIndex: (value) => calls.commitSearchPageIndex.push(value),
     compactPages: helpers.compactPages,
     draftBackgroundImageOpacity: state.draftBackgroundImageOpacity,
+    draftBackgroundLiveDesktopOpacity: state.draftBackgroundLiveDesktopOpacity,
     draftBackgroundImageLayout: state.draftBackgroundImageLayout,
     draftBackgroundBlurStrength: state.draftBackgroundBlurStrength,
     draftBackgroundDarkenColor: state.draftBackgroundDarkenColor,
@@ -216,6 +220,7 @@ function createSettingsConfig(overrides = {}) {
     backgroundBaseColor: state.backgroundBaseColor,
     backgroundBaseOpacity: state.backgroundBaseOpacity,
     backgroundImageOpacity: state.backgroundImageOpacity,
+    backgroundLiveDesktopOpacity: state.backgroundLiveDesktopOpacity,
     backgroundImageLayout: state.backgroundImageLayout,
     backgroundBlurStrength: state.backgroundBlurStrength,
     backgroundDarkenColor: state.backgroundDarkenColor,
@@ -275,6 +280,9 @@ export function runLaunchpadSettingsConfigTests() {
   assert(clampBackgroundImageOpacity(-12) === 0, "background image opacity should clamp to the minimum");
   assert(clampBackgroundImageOpacity(120) === 100, "background image opacity should clamp to the maximum");
   assert(clampBackgroundImageOpacity("bad") === 46, "invalid background image opacity should fall back to the default");
+  assert(clampBackgroundLiveDesktopOpacity(-12) === 0, "live desktop opacity should clamp to the minimum");
+  assert(clampBackgroundLiveDesktopOpacity(120) === 100, "live desktop opacity should clamp to the maximum");
+  assert(clampBackgroundLiveDesktopOpacity("bad") === 100, "invalid live desktop opacity should fall back to fully opaque");
   assert(clampBackgroundBlurStrength(-12) === 1, "background blur strength should clamp to the minimum");
   assert(clampBackgroundBlurStrength(120) === 100, "background blur strength should clamp to the maximum");
   assert(clampBackgroundBlurStrength("bad") === DEFAULT_BACKGROUND_BLUR_STRENGTH, "invalid background blur strength should fall back to the default");
@@ -347,6 +355,7 @@ export function runLaunchpadSettingsConfigTests() {
     backgroundSource: BACKGROUND_SOURCE_SYSTEM_MATERIAL,
     backgroundEffect: BACKGROUND_EFFECT_DIMMED,
     backgroundImageOpacity: 58,
+    backgroundLiveDesktopOpacity: 82,
     backgroundImageLayout: BACKGROUND_IMAGE_LAYOUT_TILE,
     backgroundBlurStrength: 82,
     backgroundDarkenColor: "#456",
@@ -371,6 +380,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(sync.state.draftBackgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "sync should reset background source draft from current settings");
   assert(sync.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "sync should reset background effect draft from current settings");
   assert(sync.state.draftBackgroundImageOpacity.value === 58, "sync should reset background opacity draft from current settings");
+  assert(sync.state.draftBackgroundLiveDesktopOpacity.value === 82, "sync should reset live desktop opacity draft from current settings");
   assert(sync.state.draftBackgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_TILE, "sync should reset background image layout draft from current settings");
   assert(sync.state.draftBackgroundBlurStrength.value === 82, "sync should reset background blur strength draft from current settings");
   assert(sync.state.draftBackgroundDarkenColor.value === "#445566", "sync should reset background darken color draft from current settings");
@@ -428,6 +438,7 @@ export function runLaunchpadSettingsConfigTests() {
   backgroundMode.config.setDraftBackgroundSource(BACKGROUND_SOURCE_CUSTOM_IMAGE);
   backgroundMode.config.setDraftBackgroundEffect(BACKGROUND_EFFECT_NONE);
   backgroundMode.config.setDraftBackgroundImageOpacity(120);
+  backgroundMode.config.setDraftBackgroundLiveDesktopOpacity(-12);
   backgroundMode.config.setDraftBackgroundImageLayout(BACKGROUND_IMAGE_LAYOUT_CENTER);
   backgroundMode.config.setDraftBackgroundBlurStrength(120);
   backgroundMode.config.setDraftBackgroundDarkenColor("#789");
@@ -438,6 +449,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(backgroundMode.state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "background source should update from segmented controls");
   assert(backgroundMode.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_NONE, "background effect should update from segmented controls");
   assert(backgroundMode.state.draftBackgroundImageOpacity.value === 100, "background opacity should clamp from slider input");
+  assert(backgroundMode.state.draftBackgroundLiveDesktopOpacity.value === 0, "live desktop opacity should clamp from slider input");
   assert(backgroundMode.state.draftBackgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_CENTER, "background image layout should update from segmented controls");
   assert(backgroundMode.state.draftBackgroundBlurStrength.value === 100, "background blur strength should clamp from slider input");
   assert(backgroundMode.state.draftBackgroundDarkenColor.value === "#778899", "background darken color should update from color input");
@@ -497,6 +509,8 @@ export function runLaunchpadSettingsConfigTests() {
   backgroundMode.config.setDraftBackgroundSource(BACKGROUND_SOURCE_CUSTOM_IMAGE);
   backgroundMode.config.changeDraftBackgroundImageOpacity(-120);
   assert(backgroundMode.state.draftBackgroundImageOpacity.value === 0, "background opacity step changes should clamp to the minimum");
+  backgroundMode.config.changeDraftBackgroundLiveDesktopOpacity(160);
+  assert(backgroundMode.state.draftBackgroundLiveDesktopOpacity.value === 100, "live desktop opacity step changes should clamp to the maximum");
   backgroundMode.state.draftBackgroundImagePath.value = "C:/Images/custom.png";
   backgroundMode.state.draftBackgroundImageUrl.value = "asset://custom";
   backgroundMode.config.clearDraftBackgroundImage();
@@ -513,6 +527,7 @@ export function runLaunchpadSettingsConfigTests() {
     draftBackgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
     draftBackgroundEffect: BACKGROUND_EFFECT_DIMMED,
     draftBackgroundImageOpacity: 67,
+    draftBackgroundLiveDesktopOpacity: 76,
     draftBackgroundImageLayout: BACKGROUND_IMAGE_LAYOUT_CENTER,
     draftBackgroundBlurStrength: 88,
     draftBackgroundDarkenColor: "#456",
@@ -538,6 +553,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(apply.state.backgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "background source should apply from the draft value");
   assert(apply.state.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "background effect should apply from the draft value");
   assert(apply.state.backgroundImageOpacity.value === 67, "background opacity should apply from the draft value");
+  assert(apply.state.backgroundLiveDesktopOpacity.value === 76, "live desktop opacity should apply from the draft value");
   assert(apply.state.backgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_CENTER, "background image layout should apply from the draft value");
   assert(apply.state.backgroundBlurStrength.value === 88, "background blur strength should apply from the draft value");
   assert(apply.state.backgroundDarkenColor.value === "#445566", "background darken color should apply from the draft value");

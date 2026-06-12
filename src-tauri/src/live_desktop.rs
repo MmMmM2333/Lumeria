@@ -42,7 +42,7 @@ use windows::{
                 DCompositionCreateDevice, DCompositionCreateDevice3,
                 IDCompositionColorMatrixEffect, IDCompositionDesktopDevice, IDCompositionDevice,
                 IDCompositionDevice3, IDCompositionGaussianBlurEffect, IDCompositionScaleTransform,
-                IDCompositionTarget, IDCompositionVisual,
+                IDCompositionTarget, IDCompositionVisual, IDCompositionVisual3,
             },
             Dwm::{DwmFlush, DwmGetWindowAttribute, DWMWA_CLOAKED},
             Dxgi::{
@@ -214,6 +214,7 @@ struct LiveDesktopRendererResources {
     _target: IDCompositionTarget,
     host_window: LiveDesktopCompositionHost,
     _root_visual: IDCompositionVisual,
+    _root_visual3: Option<IDCompositionVisual3>,
     _scale_transform: IDCompositionScaleTransform,
     _swap_chain: LiveDesktopCompositionSwapChain,
 }
@@ -1225,6 +1226,8 @@ pub(crate) struct LiveDesktopRuntimeConfig {
     blur_strength: u32,
     darken_strength: u32,
     darken_color: String,
+    #[serde(default = "default_live_desktop_opacity")]
+    opacity: u32,
     acrylic_appearance: LiveDesktopAcrylicAppearance,
     acrylic_params: LiveDesktopAcrylicParams,
     #[serde(default = "default_live_desktop_disable_mouse_relay")]
@@ -1269,6 +1272,10 @@ enum LiveDesktopHostMode {
 
 fn default_live_desktop_disable_mouse_relay() -> bool {
     true
+}
+
+fn default_live_desktop_opacity() -> u32 {
+    100
 }
 
 impl LiveDesktopDiagnosticMode {
@@ -1326,6 +1333,7 @@ impl Default for LiveDesktopRuntimeConfig {
             blur_strength: 50,
             darken_strength: 28,
             darken_color: "#1c1c1c".to_string(),
+            opacity: default_live_desktop_opacity(),
             acrylic_appearance: LiveDesktopAcrylicAppearance::System,
             acrylic_params: LiveDesktopAcrylicParams::default(),
             disable_mouse_relay: default_live_desktop_disable_mouse_relay(),
@@ -1788,11 +1796,13 @@ impl LiveDesktopRendererResources {
     }
 
     unsafe fn apply_current_config_to_visual(&self) -> Result<(), String> {
+        unsafe { apply_live_desktop_visual_opacity(self._root_visual3.as_ref(), &self.config) }?;
         unsafe {
             apply_live_desktop_config_to_effects(
                 self._blur_effect.as_ref(),
                 self._color_matrix_effect.as_ref(),
                 &self.config,
+                self._root_visual3.is_none(),
             )
         }?;
         unsafe { self.commit_composition() }?;
@@ -4562,6 +4572,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 ));
             }
         };
+        let root_visual3 = root_visual.cast::<IDCompositionVisual3>().ok();
         let source_width = window_capture
             .as_ref()
             .map(|capture| capture.width)
@@ -4662,6 +4673,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 blur_effect.as_ref(),
                 color_matrix_effect.as_ref(),
                 &config,
+                root_visual3.is_none(),
             )
         } {
             return Err(LiveDesktopRendererProbe::root_visual_unavailable(
@@ -4687,6 +4699,8 @@ unsafe fn create_live_desktop_renderer_resources(
                 &swap_chain.swap_chain,
                 &blur_effect,
                 &color_matrix_effect,
+                root_visual3.as_ref(),
+                &config,
                 &placement,
             )
         } {
@@ -4748,6 +4762,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 _target: target,
                 host_window,
                 _root_visual: root_visual,
+                _root_visual3: root_visual3,
                 _scale_transform: scale_transform,
                 _swap_chain: swap_chain,
             },
@@ -6643,6 +6658,7 @@ unsafe fn apply_live_desktop_config_to_effects(
     blur_effect: Option<&IDCompositionGaussianBlurEffect>,
     color_matrix_effect: Option<&IDCompositionColorMatrixEffect>,
     config: &LiveDesktopRuntimeConfig,
+    apply_opacity_in_color_matrix: bool,
 ) -> Result<(), String> {
     if let Some(blur_effect) = blur_effect {
         unsafe { blur_effect.SetBorderMode(D2D1_BORDER_MODE_HARD) }
@@ -6653,7 +6669,13 @@ unsafe fn apply_live_desktop_config_to_effects(
         .map_err(|error| error.to_string())?;
     }
     if let Some(color_matrix_effect) = color_matrix_effect {
-        unsafe { apply_live_desktop_config_to_color_matrix(color_matrix_effect, config) }?;
+        unsafe {
+            apply_live_desktop_config_to_color_matrix(
+                color_matrix_effect,
+                config,
+                apply_opacity_in_color_matrix,
+            )
+        }?;
     }
     Ok(())
 }
@@ -6668,12 +6690,32 @@ fn resolve_live_desktop_blur_standard_deviation(config: &LiveDesktopRuntimeConfi
     2.0 + (config.blur_strength.min(100) as f32 / 100.0) * 28.0
 }
 
+fn resolve_live_desktop_opacity(config: &LiveDesktopRuntimeConfig) -> f32 {
+    config.opacity.min(100) as f32 / 100.0
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn apply_live_desktop_visual_opacity(
+    visual3: Option<&IDCompositionVisual3>,
+    config: &LiveDesktopRuntimeConfig,
+) -> Result<(), String> {
+    if let Some(visual3) = visual3 {
+        unsafe { visual3.SetOpacity2(resolve_live_desktop_opacity(config)) }
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 #[cfg(target_os = "windows")]
 unsafe fn apply_live_desktop_config_to_color_matrix(
     effect: &IDCompositionColorMatrixEffect,
     config: &LiveDesktopRuntimeConfig,
+    apply_opacity_in_color_matrix: bool,
 ) -> Result<(), String> {
-    let matrix = resolve_live_desktop_color_matrix(config);
+    let mut matrix = resolve_live_desktop_color_matrix(config);
+    if apply_opacity_in_color_matrix {
+        matrix[3][3] *= resolve_live_desktop_opacity(config);
+    }
     for (row_index, row) in matrix.iter().enumerate() {
         for (column_index, value) in row.iter().enumerate() {
             unsafe { effect.SetMatrixElement2(row_index as i32, column_index as i32, *value) }
@@ -6994,6 +7036,8 @@ unsafe fn set_direct_composition_root(
     swap_chain: &IDXGISwapChain1,
     blur_effect: &Option<IDCompositionGaussianBlurEffect>,
     effect: &Option<IDCompositionColorMatrixEffect>,
+    visual3: Option<&IDCompositionVisual3>,
+    config: &LiveDesktopRuntimeConfig,
     placement: &LiveDesktopVisualPlacement,
 ) -> Result<IDCompositionScaleTransform, String> {
     let scale_transform = unsafe { device.create_scale_transform() }.map_err(|error| {
@@ -7003,6 +7047,8 @@ unsafe fn set_direct_composition_root(
     unsafe { visual.SetContent(swap_chain) }.map_err(|error| {
         format!("DirectComposition visual.SetContent(swapChain) failed: {error}")
     })?;
+    unsafe { apply_live_desktop_visual_opacity(visual3, config) }
+        .map_err(|error| format!("DirectComposition visual.SetOpacity failed: {error}"))?;
     if let Some(effect) = effect {
         if let Some(blur_effect) = blur_effect {
             unsafe { effect.SetInput(0, blur_effect, 0) }.map_err(|error| {
@@ -7476,6 +7522,23 @@ mod tests {
 
         let config: LiveDesktopRuntimeConfig = serde_json::from_value(value).unwrap();
         assert!(!config.disable_mouse_relay);
+    }
+
+    #[test]
+    fn live_desktop_runtime_config_defaults_and_clamps_opacity() {
+        let mut value = serde_json::to_value(LiveDesktopRuntimeConfig::default()).unwrap();
+        value.as_object_mut().unwrap().remove("opacity");
+
+        let config: LiveDesktopRuntimeConfig = serde_json::from_value(value).unwrap();
+        assert_eq!(config.opacity, 100);
+        assert_eq!(resolve_live_desktop_opacity(&config), 1.0);
+
+        let mut config = LiveDesktopRuntimeConfig::default();
+        config.opacity = 42;
+        assert!((resolve_live_desktop_opacity(&config) - 0.42).abs() < 0.001);
+
+        config.opacity = 250;
+        assert_eq!(resolve_live_desktop_opacity(&config), 1.0);
     }
 
     #[test]
