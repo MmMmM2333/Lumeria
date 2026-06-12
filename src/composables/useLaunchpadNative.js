@@ -76,6 +76,12 @@ const MIN_ICON_HYDRATION_BATCH_SIZE = 20;
 const MAX_ICON_HYDRATION_BATCH_SIZE = 80;
 const WINDOWS_WALLPAPER_REFRESH_INTERVAL_MS = 5000;
 const LIVE_DESKTOP_IDLE_STOP_DELAY_MS = 10_000;
+const LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY = "launchpadLiveDesktopDisableMouseRelay";
+const LIVE_DESKTOP_HOST_MODE_STORAGE_KEY = "launchpadLiveDesktopHostMode";
+const LIVE_DESKTOP_HOST_MODE_OWNED_POPUP = "ownedPopupHost";
+const LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW = "childWindowHost";
+const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "launchpadLiveDesktopSkipBlankFrames";
+const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "launchpadLiveDesktopForceDwmFlush";
 const DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS = Object.freeze({
   phase: "stopped",
   active: false,
@@ -109,11 +115,15 @@ const DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS = Object.freeze({
     lastDwmSurfaceUpdateRectHeight: 0,
     pixelProbeSamples: 0,
     pixelProbeErrors: 0,
+    blankFrameSkips: 0,
     lastPixelProbeWidth: 0,
     lastPixelProbeHeight: 0,
     lastPixelProbeMinRgb: 0,
     lastPixelProbeMaxRgb: 0,
     lastPixelProbeAvgRgb: 0,
+    lastPixelProbeMinAlpha: 0,
+    lastPixelProbeMaxAlpha: 0,
+    lastPixelProbeAvgAlpha: 0,
     lastError: "",
   },
   windowDiagnostics: {
@@ -160,11 +170,15 @@ function normalizeLiveDesktopRuntimeDiagnostics(diagnostics) {
     lastDwmSurfaceUpdateRectHeight: normalizeCount(diagnostics?.lastDwmSurfaceUpdateRectHeight),
     pixelProbeSamples: normalizeCount(diagnostics?.pixelProbeSamples),
     pixelProbeErrors: normalizeCount(diagnostics?.pixelProbeErrors),
+    blankFrameSkips: normalizeCount(diagnostics?.blankFrameSkips),
     lastPixelProbeWidth: normalizeCount(diagnostics?.lastPixelProbeWidth),
     lastPixelProbeHeight: normalizeCount(diagnostics?.lastPixelProbeHeight),
     lastPixelProbeMinRgb: normalizeCount(diagnostics?.lastPixelProbeMinRgb),
     lastPixelProbeMaxRgb: normalizeCount(diagnostics?.lastPixelProbeMaxRgb),
     lastPixelProbeAvgRgb: normalizeCount(diagnostics?.lastPixelProbeAvgRgb),
+    lastPixelProbeMinAlpha: normalizeCount(diagnostics?.lastPixelProbeMinAlpha),
+    lastPixelProbeMaxAlpha: normalizeCount(diagnostics?.lastPixelProbeMaxAlpha),
+    lastPixelProbeAvgAlpha: normalizeCount(diagnostics?.lastPixelProbeAvgAlpha),
     lastError: String(diagnostics?.lastError || ""),
   };
 }
@@ -240,6 +254,45 @@ function resolveLiveDesktopDiagnosticMode() {
   }
 }
 
+function resolveLiveDesktopDisableMouseRelay() {
+  if (typeof window === "undefined") return true;
+  try {
+    return window.localStorage?.getItem(LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
+function resolveLiveDesktopHostMode() {
+  if (typeof window === "undefined") return "webviewTarget";
+  try {
+    const mode = window.localStorage?.getItem(LIVE_DESKTOP_HOST_MODE_STORAGE_KEY);
+    if (mode === LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW) return LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW;
+    if (mode === LIVE_DESKTOP_HOST_MODE_OWNED_POPUP) return LIVE_DESKTOP_HOST_MODE_OWNED_POPUP;
+    return "webviewTarget";
+  } catch {
+    return "webviewTarget";
+  }
+}
+
+function resolveLiveDesktopSkipBlankFrames() {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage?.getItem(LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function resolveLiveDesktopForceDwmFlush() {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage?.getItem(LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
 function normalizeLiveDesktopRuntimeStatus(status) {
   const generation = Number(status?.generation);
   return {
@@ -278,6 +331,10 @@ function makeLiveDesktopRuntimeConfig(options) {
     darkenColor: normalizeBackgroundDarkenColor(options.backgroundDarkenColor.value),
     acrylicAppearance,
     acrylicParams,
+    disableMouseRelay: resolveLiveDesktopDisableMouseRelay(),
+    hostMode: resolveLiveDesktopHostMode(),
+    skipBlankFrames: resolveLiveDesktopSkipBlankFrames(),
+    forceDwmFlush: resolveLiveDesktopForceDwmFlush(),
   };
 }
 

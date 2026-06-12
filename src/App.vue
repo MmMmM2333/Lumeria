@@ -30,6 +30,12 @@
         :style="layer.style"
       />
     </div>
+    <div
+      v-if="shouldRenderLiveDesktopCompositorKeeper"
+      class="launchpad-live-desktop-compositor-keeper"
+      :style="{ '--launchpad-live-desktop-compositor-tick': liveDesktopCompositorTick }"
+      aria-hidden="true"
+    />
 
     <Motion
       ref="shellRef"
@@ -148,6 +154,7 @@ import PixiFolderOverlay from "./rendering/pixi/PixiFolderOverlay.vue";
 import { getBackgroundLayoutContext } from "./api/launchpadApi.js";
 import { loadBackgroundImagePixelSize } from "./composables/useBackgroundImagePixelSize.js";
 import { useLaunchpadController } from "./composables/useLaunchpadController.js";
+import { backgroundSourceUsesLiveDesktop } from "./composables/useLaunchpadSettingsConfig.js";
 import { resolveCssBackgroundImagePlacement } from "./domain/backgroundImageLayout.js";
 import {
   createDialogState,
@@ -169,6 +176,8 @@ const {
   backgroundImageLayout,
   backgroundImagePath,
   backgroundImageUrl,
+  backgroundSource,
+  liveDesktopRuntimeStatus,
   shouldRenderPixiBackgroundEffect,
   cx,
   gridRows,
@@ -241,6 +250,9 @@ const isAcrylicDebugPanelEnabled = import.meta.env.DEV;
 const BackgroundDebugPanel = import.meta.env.DEV
   ? defineAsyncComponent(() => import("./components/BackgroundDebugPanel.vue"))
   : null;
+const LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY = "launchpadLiveDesktopCompositorKeeper";
+const LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT = "launchpad-live-desktop-compositor-keeper-change";
+const LIVE_DESKTOP_COMPOSITOR_KEEPER_INTERVAL_MS = 250;
 const launchpadOverlaysRef = ref(null);
 const BACKGROUND_MEDIA_FADE_MS = 220;
 const PIXI_BACKGROUND_HANDOFF_DELAY_MS = 220;
@@ -255,6 +267,8 @@ const isStartupMaskVisible = ref(true);
 const backgroundLayoutContext = ref(null);
 const backgroundImagePixelSize = ref(null);
 const backgroundViewportSize = ref({ height: 1, width: 1 });
+const isLiveDesktopCompositorKeeperEnabled = ref(readLiveDesktopCompositorKeeperSetting());
+const liveDesktopCompositorTick = ref(0);
 const backgroundImageLayers = ref([
   { id: "background-image-a", url: null, visible: false },
   { id: "background-image-b", url: null, visible: false },
@@ -277,6 +291,14 @@ const shouldRunDragPreviewPixi = computed(() => Boolean(
     dragReleaseState.value?.item
   )
 ));
+const shouldRenderLiveDesktopCompositorKeeper = computed(() => Boolean(
+  import.meta.env.DEV
+    && isLiveDesktopCompositorKeeperEnabled.value
+    && backgroundSourceUsesLiveDesktop(backgroundSource.value)
+    && liveDesktopRuntimeStatus.value?.active
+    && isDesktopOpen.value
+    && !isAppLaunching.value
+));
 let pixiBackgroundHideTimer = null;
 let startupMaskRemoveTimer = null;
 let startupMaskMaxWaitTimer = null;
@@ -284,6 +306,7 @@ let startupBackgroundFrame = null;
 let backgroundImageGeneration = 0;
 let backgroundImageShowFrame = null;
 let backgroundImageClearTimer = null;
+let liveDesktopCompositorKeeperTimer = null;
 let activeBackgroundImageLayerIndex = 0;
 
 function parseCssOpacity(value) {
@@ -293,6 +316,40 @@ function parseCssOpacity(value) {
 
 function backgroundImageUrlStyle(url) {
   return `url(${JSON.stringify(url)})`;
+}
+
+function readLiveDesktopCompositorKeeperSetting() {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage?.getItem(LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function handleLiveDesktopCompositorKeeperChanged(event) {
+  const enabled = event?.detail?.enabled;
+  isLiveDesktopCompositorKeeperEnabled.value = typeof enabled === "boolean"
+    ? enabled
+    : readLiveDesktopCompositorKeeperSetting();
+}
+
+function handleLiveDesktopCompositorKeeperStorage(event) {
+  if (event?.key !== LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY) return;
+  isLiveDesktopCompositorKeeperEnabled.value = event.newValue === "true";
+}
+
+function clearLiveDesktopCompositorKeeperTimer() {
+  if (liveDesktopCompositorKeeperTimer == null) return;
+  window.clearInterval(liveDesktopCompositorKeeperTimer);
+  liveDesktopCompositorKeeperTimer = null;
+}
+
+function startLiveDesktopCompositorKeeperTimer() {
+  if (liveDesktopCompositorKeeperTimer != null) return;
+  liveDesktopCompositorKeeperTimer = window.setInterval(() => {
+    liveDesktopCompositorTick.value = liveDesktopCompositorTick.value === 0 ? 1 : 0;
+  }, LIVE_DESKTOP_COMPOSITOR_KEEPER_INTERVAL_MS);
 }
 
 const targetBackgroundImageOpacity = computed(() => (
@@ -584,6 +641,19 @@ watch(
 );
 
 watch(
+  shouldRenderLiveDesktopCompositorKeeper,
+  (shouldRender) => {
+    if (shouldRender) {
+      startLiveDesktopCompositorKeeperTimer();
+    } else {
+      clearLiveDesktopCompositorKeeperTimer();
+      liveDesktopCompositorTick.value = 0;
+    }
+  },
+  { immediate: true }
+);
+
+watch(
   isStartupBackgroundTargetReady,
   (ready) => {
     if (ready) markStartupBackgroundComposited();
@@ -605,16 +675,21 @@ startupMaskMaxWaitTimer = window.setTimeout(releaseStartupMaskAfterTimeout, STAR
 onBeforeUnmount(clearPixiBackgroundHideTimer);
 onBeforeUnmount(clearStartupMaskTimers);
 onBeforeUnmount(clearBackgroundImageTimers);
+onBeforeUnmount(clearLiveDesktopCompositorKeeperTimer);
 
 onMounted(() => {
   refreshBackgroundLayoutMetrics();
   window.addEventListener("resize", refreshBackgroundLayoutMetrics);
   window.addEventListener("focus", refreshBackgroundLayoutMetrics);
+  window.addEventListener(LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT, handleLiveDesktopCompositorKeeperChanged);
+  window.addEventListener("storage", handleLiveDesktopCompositorKeeperStorage);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("resize", refreshBackgroundLayoutMetrics);
   window.removeEventListener("focus", refreshBackgroundLayoutMetrics);
+  window.removeEventListener(LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT, handleLiveDesktopCompositorKeeperChanged);
+  window.removeEventListener("storage", handleLiveDesktopCompositorKeeperStorage);
 });
 
 const headerDomRefs = { headerRef, searchRef, searchInputRef };

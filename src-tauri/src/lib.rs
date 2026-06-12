@@ -47,6 +47,9 @@ use tray::{
     set_main_window_fullscreen, setup_tray, trigger_main_window_shortcut, CLOSE_DESKTOP_EVENT,
 };
 
+#[cfg(target_os = "windows")]
+use windows::Win32::Foundation::HWND;
+
 const QUIT_REQUESTED_EVENT: &str = "launchpad-quit-requested";
 const QUIT_FALLBACK_DELAY_MS: u64 = 15_000;
 static QUIT_ACKNOWLEDGED: AtomicBool = AtomicBool::new(false);
@@ -436,11 +439,23 @@ fn start_live_desktop_background(
         .get_webview_window("main")
         .ok_or_else(|| "Failed to find main window for live desktop background".to_string())?;
     let window_handle = native_live_desktop_window_handle(&window)?;
+    let requires_prepared_host = {
+        let runtime = state
+            .live_desktop_runtime
+            .lock()
+            .map_err(|_| "Failed to lock live desktop runtime".to_string())?;
+        runtime.requires_main_thread_host_preparation()
+    };
+    let prepared_host = if requires_prepared_host {
+        prepare_live_desktop_host_for_window(&window, window_handle)?
+    } else {
+        live_desktop::LiveDesktopPreparedHost::default()
+    };
     let mut runtime = state
         .live_desktop_runtime
         .lock()
         .map_err(|_| "Failed to lock live desktop runtime".to_string())?;
-    Ok(runtime.start_for_window(window_handle))
+    Ok(runtime.start_for_window(window_handle, prepared_host))
 }
 
 #[cfg(target_os = "windows")]
@@ -455,6 +470,40 @@ fn native_live_desktop_window_handle(
     _window: &tauri::WebviewWindow,
 ) -> Result<live_desktop::LiveDesktopWindowHandle, String> {
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn prepare_live_desktop_host_for_window(
+    window: &tauri::WebviewWindow,
+    window_handle: live_desktop::LiveDesktopWindowHandle,
+) -> Result<live_desktop::LiveDesktopPreparedHost, String> {
+    if live_desktop::live_desktop_window_owned_by_current_thread(window_handle) {
+        return live_desktop::prepare_live_desktop_child_host_for_window(window_handle);
+    }
+
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let window_handle_value = window_handle.0 as isize;
+    window
+        .run_on_main_thread(move || {
+            let result = live_desktop::prepare_live_desktop_child_host_for_window(HWND(
+                window_handle_value as _,
+            ));
+            let _ = sender.send(result);
+        })
+        .map_err(|error| error.to_string())?;
+    receiver
+        .recv_timeout(Duration::from_millis(3_000))
+        .map_err(|error| {
+            format!("Timed out preparing live desktop child host on window thread: {error}")
+        })?
+}
+
+#[cfg(not(target_os = "windows"))]
+fn prepare_live_desktop_host_for_window(
+    _window: &tauri::WebviewWindow,
+    window_handle: live_desktop::LiveDesktopWindowHandle,
+) -> Result<live_desktop::LiveDesktopPreparedHost, String> {
+    live_desktop::prepare_live_desktop_child_host_for_window(window_handle)
 }
 
 #[tauri::command]

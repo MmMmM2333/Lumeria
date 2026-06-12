@@ -140,6 +140,72 @@
           </button>
         </div>
 
+        <label class="background-debug-toggle">
+          <input
+            name="liveDesktopDisableMouseRelay"
+            type="checkbox"
+            :checked="liveDesktopDisableMouseRelay"
+            :disabled="isLiveDesktopActionBusy"
+            @change="setLiveDesktopDisableMouseRelay($event.target.checked)"
+          >
+          <span>禁用鼠标转发</span>
+        </label>
+
+        <label class="background-debug-toggle">
+          <input
+            name="liveDesktopCompositorKeeper"
+            type="checkbox"
+            :checked="liveDesktopCompositorKeeper"
+            :disabled="isLiveDesktopActionBusy"
+            @change="setLiveDesktopCompositorKeeper($event.target.checked)"
+          >
+          <span>合成稳定器</span>
+        </label>
+
+        <label class="background-debug-toggle">
+          <input
+            name="liveDesktopOwnedPopupHost"
+            type="checkbox"
+            :checked="liveDesktopHostMode === LIVE_DESKTOP_HOST_MODE_OWNED_POPUP"
+            :disabled="isLiveDesktopActionBusy"
+            @change="setLiveDesktopHostMode($event.target.checked ? LIVE_DESKTOP_HOST_MODE_OWNED_POPUP : LIVE_DESKTOP_HOST_MODE_WEBVIEW_TARGET)"
+          >
+          <span>独立背景 HWND</span>
+        </label>
+
+        <label class="background-debug-toggle">
+          <input
+            name="liveDesktopChildWindowHost"
+            type="checkbox"
+            :checked="liveDesktopHostMode === LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW"
+            :disabled="isLiveDesktopActionBusy"
+            @change="setLiveDesktopHostMode($event.target.checked ? LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW : LIVE_DESKTOP_HOST_MODE_WEBVIEW_TARGET)"
+          >
+          <span>Child 背景 HWND</span>
+        </label>
+
+        <label class="background-debug-toggle">
+          <input
+            name="liveDesktopSkipBlankFrames"
+            type="checkbox"
+            :checked="liveDesktopSkipBlankFrames"
+            :disabled="isLiveDesktopActionBusy"
+            @change="setLiveDesktopSkipBlankFrames($event.target.checked)"
+          >
+          <span>跳过疑似空白帧</span>
+        </label>
+
+        <label class="background-debug-toggle">
+          <input
+            name="liveDesktopForceDwmFlush"
+            type="checkbox"
+            :checked="liveDesktopForceDwmFlush"
+            :disabled="isLiveDesktopActionBusy"
+            @change="setLiveDesktopForceDwmFlush($event.target.checked)"
+          >
+          <span>强制 DWM Flush</span>
+        </label>
+
         <dl class="background-debug-diagnostics">
           <div
             v-for="row in liveDesktopDiagnosticsRows"
@@ -224,6 +290,15 @@ const props = defineProps({
 });
 
 const LIVE_DESKTOP_DIAGNOSTIC_MODE_STORAGE_KEY = "launchpadLiveDesktopDiagnosticMode";
+const LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY = "launchpadLiveDesktopDisableMouseRelay";
+const LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY = "launchpadLiveDesktopCompositorKeeper";
+const LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT = "launchpad-live-desktop-compositor-keeper-change";
+const LIVE_DESKTOP_HOST_MODE_STORAGE_KEY = "launchpadLiveDesktopHostMode";
+const LIVE_DESKTOP_HOST_MODE_WEBVIEW_TARGET = "webviewTarget";
+const LIVE_DESKTOP_HOST_MODE_OWNED_POPUP = "ownedPopupHost";
+const LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW = "childWindowHost";
+const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "launchpadLiveDesktopSkipBlankFrames";
+const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "launchpadLiveDesktopForceDwmFlush";
 const LIVE_DESKTOP_MODE_WORKERW_CAPTURE = "workerWCapture";
 const LIVE_DESKTOP_MODE_DWM_SHARED_SURFACE_CAPTURE = "dwmSharedSurfaceCapture";
 const LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE = "wallpaperEnginePopupCapture";
@@ -262,11 +337,15 @@ const DEFAULT_LIVE_DESKTOP_STATUS = Object.freeze({
     lastDwmSurfaceUpdateRectHeight: 0,
     pixelProbeSamples: 0,
     pixelProbeErrors: 0,
+    blankFrameSkips: 0,
     lastPixelProbeWidth: 0,
     lastPixelProbeHeight: 0,
     lastPixelProbeMinRgb: 0,
     lastPixelProbeMaxRgb: 0,
     lastPixelProbeAvgRgb: 0,
+    lastPixelProbeMinAlpha: 0,
+    lastPixelProbeMaxAlpha: 0,
+    lastPixelProbeAvgAlpha: 0,
     lastError: "",
   },
   windowDiagnostics: {
@@ -288,6 +367,11 @@ const activePanel = ref("acrylic");
 const hasCopiedAcrylic = ref(false);
 const hasCopiedDiagnostics = ref(false);
 const liveDesktopMode = ref(readLiveDesktopDiagnosticMode());
+const liveDesktopDisableMouseRelay = ref(readLiveDesktopDisableMouseRelay());
+const liveDesktopCompositorKeeper = ref(readLiveDesktopCompositorKeeper());
+const liveDesktopHostMode = ref(readLiveDesktopHostMode());
+const liveDesktopSkipBlankFrames = ref(readLiveDesktopSkipBlankFrames());
+const liveDesktopForceDwmFlush = ref(readLiveDesktopForceDwmFlush());
 const isLiveDesktopActionBusy = ref(false);
 const liveDesktopRates = ref({
   framesPerSecond: 0,
@@ -355,6 +439,7 @@ const liveDesktopDiagnosticsRows = computed(() => {
     { label: "configUpdates", value: formatCount(diagnostics.configUpdates) },
     { label: "configErrors", value: formatCount(diagnostics.configErrors) },
     { label: "testPatternFrames", value: formatCount(diagnostics.testPatternFrames) },
+    { label: "blankFrameSkips", value: formatCount(diagnostics.blankFrameSkips) },
     { label: "dwmUpdate", value: formatDwmUpdate(diagnostics), wide: true },
     { label: "pixelProbe", value: formatPixelProbe(diagnostics), wide: true },
     { label: "lastFrame", value: formatLastFrame(diagnostics), wide: true },
@@ -412,11 +497,15 @@ function normalizeLiveDesktopStatus(status) {
       lastDwmSurfaceUpdateRectHeight: normalizeCount(diagnostics.lastDwmSurfaceUpdateRectHeight),
       pixelProbeSamples: normalizeCount(diagnostics.pixelProbeSamples),
       pixelProbeErrors: normalizeCount(diagnostics.pixelProbeErrors),
+      blankFrameSkips: normalizeCount(diagnostics.blankFrameSkips),
       lastPixelProbeWidth: normalizeCount(diagnostics.lastPixelProbeWidth),
       lastPixelProbeHeight: normalizeCount(diagnostics.lastPixelProbeHeight),
       lastPixelProbeMinRgb: normalizeCount(diagnostics.lastPixelProbeMinRgb),
       lastPixelProbeMaxRgb: normalizeCount(diagnostics.lastPixelProbeMaxRgb),
       lastPixelProbeAvgRgb: normalizeCount(diagnostics.lastPixelProbeAvgRgb),
+      lastPixelProbeMinAlpha: normalizeCount(diagnostics.lastPixelProbeMinAlpha),
+      lastPixelProbeMaxAlpha: normalizeCount(diagnostics.lastPixelProbeMaxAlpha),
+      lastPixelProbeAvgAlpha: normalizeCount(diagnostics.lastPixelProbeAvgAlpha),
       lastError: String(diagnostics.lastError || ""),
     },
     windowDiagnostics: normalizeLiveDesktopWindowDiagnostics(status?.windowDiagnostics),
@@ -498,7 +587,7 @@ function formatPixelProbe(diagnostics) {
   const size = diagnostics.lastPixelProbeWidth && diagnostics.lastPixelProbeHeight
     ? `${diagnostics.lastPixelProbeWidth}x${diagnostics.lastPixelProbeHeight} `
     : "";
-  return `${diagnostics.pixelProbeSamples} ok / ${diagnostics.pixelProbeErrors} err ${size}min ${diagnostics.lastPixelProbeMinRgb} max ${diagnostics.lastPixelProbeMaxRgb} avg ${diagnostics.lastPixelProbeAvgRgb}`;
+  return `${diagnostics.pixelProbeSamples} ok / ${diagnostics.pixelProbeErrors} err ${size}rgb ${diagnostics.lastPixelProbeMinRgb}/${diagnostics.lastPixelProbeMaxRgb}/${diagnostics.lastPixelProbeAvgRgb} alpha ${diagnostics.lastPixelProbeMinAlpha}/${diagnostics.lastPixelProbeMaxAlpha}/${diagnostics.lastPixelProbeAvgAlpha}`;
 }
 
 function formatFrameArrived(diagnostics) {
@@ -629,6 +718,120 @@ function readLiveDesktopDiagnosticMode() {
   }
 }
 
+function readLiveDesktopDisableMouseRelay() {
+  try {
+    return window.localStorage?.getItem(LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY) !== "false";
+  } catch (error) {
+    console.warn("Failed to read live desktop mouse relay setting", error);
+    return true;
+  }
+}
+
+function readLiveDesktopCompositorKeeper() {
+  try {
+    return window.localStorage?.getItem(LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY) === "true";
+  } catch (error) {
+    console.warn("Failed to read live desktop compositor keeper setting", error);
+    return false;
+  }
+}
+
+function readLiveDesktopHostMode() {
+  try {
+    const mode = window.localStorage?.getItem(LIVE_DESKTOP_HOST_MODE_STORAGE_KEY);
+    if (mode === LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW) return LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW;
+    if (mode === LIVE_DESKTOP_HOST_MODE_OWNED_POPUP) return LIVE_DESKTOP_HOST_MODE_OWNED_POPUP;
+    return LIVE_DESKTOP_HOST_MODE_WEBVIEW_TARGET;
+  } catch (error) {
+    console.warn("Failed to read live desktop host mode setting", error);
+    return LIVE_DESKTOP_HOST_MODE_WEBVIEW_TARGET;
+  }
+}
+
+function readLiveDesktopSkipBlankFrames() {
+  try {
+    return window.localStorage?.getItem(LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY) === "true";
+  } catch (error) {
+    console.warn("Failed to read live desktop skip blank frames setting", error);
+    return false;
+  }
+}
+
+function readLiveDesktopForceDwmFlush() {
+  try {
+    return window.localStorage?.getItem(LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY) === "true";
+  } catch (error) {
+    console.warn("Failed to read live desktop DWM flush setting", error);
+    return false;
+  }
+}
+
+function persistLiveDesktopDisableMouseRelay(disabled) {
+  try {
+    if (disabled) {
+      window.localStorage?.removeItem(LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY);
+    } else {
+      window.localStorage?.setItem(LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY, "false");
+    }
+  } catch (error) {
+    console.warn("Failed to persist live desktop mouse relay setting", error);
+  }
+}
+
+function persistLiveDesktopCompositorKeeper(enabled) {
+  try {
+    if (enabled) {
+      window.localStorage?.setItem(LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY, "true");
+    } else {
+      window.localStorage?.removeItem(LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY);
+    }
+  } catch (error) {
+    console.warn("Failed to persist live desktop compositor keeper setting", error);
+  }
+}
+
+function persistLiveDesktopHostMode(mode) {
+  try {
+    if (mode === LIVE_DESKTOP_HOST_MODE_OWNED_POPUP || mode === LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW) {
+      window.localStorage?.setItem(LIVE_DESKTOP_HOST_MODE_STORAGE_KEY, mode);
+    } else {
+      window.localStorage?.removeItem(LIVE_DESKTOP_HOST_MODE_STORAGE_KEY);
+    }
+  } catch (error) {
+    console.warn("Failed to persist live desktop host mode setting", error);
+  }
+}
+
+function persistLiveDesktopSkipBlankFrames(enabled) {
+  try {
+    if (enabled) {
+      window.localStorage?.setItem(LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY, "true");
+    } else {
+      window.localStorage?.removeItem(LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY);
+    }
+  } catch (error) {
+    console.warn("Failed to persist live desktop skip blank frames setting", error);
+  }
+}
+
+function persistLiveDesktopForceDwmFlush(enabled) {
+  try {
+    if (enabled) {
+      window.localStorage?.setItem(LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY, "true");
+    } else {
+      window.localStorage?.removeItem(LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY);
+    }
+  } catch (error) {
+    console.warn("Failed to persist live desktop DWM flush setting", error);
+  }
+}
+
+function notifyLiveDesktopCompositorKeeperChanged(enabled) {
+  window.dispatchEvent(new CustomEvent(LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT, {
+    detail: { enabled },
+  }));
+}
+
 function persistLiveDesktopDiagnosticMode(mode) {
   if (typeof window === "undefined") return;
   try {
@@ -652,6 +855,47 @@ function persistLiveDesktopDiagnosticMode(mode) {
   } catch (error) {
     console.warn("Failed to persist live desktop diagnostic mode", error);
   }
+}
+
+async function setLiveDesktopDisableMouseRelay(disabled) {
+  liveDesktopDisableMouseRelay.value = Boolean(disabled);
+  liveDesktopRateSample = null;
+  persistLiveDesktopDisableMouseRelay(liveDesktopDisableMouseRelay.value);
+  await reconfigureLiveDesktopRuntime({
+    restart: liveDesktopMode.value === LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE,
+  });
+}
+
+function setLiveDesktopCompositorKeeper(enabled) {
+  liveDesktopCompositorKeeper.value = Boolean(enabled);
+  persistLiveDesktopCompositorKeeper(liveDesktopCompositorKeeper.value);
+  notifyLiveDesktopCompositorKeeperChanged(liveDesktopCompositorKeeper.value);
+}
+
+async function setLiveDesktopHostMode(mode) {
+  liveDesktopHostMode.value = [
+    LIVE_DESKTOP_HOST_MODE_OWNED_POPUP,
+    LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW,
+  ].includes(mode)
+    ? mode
+    : LIVE_DESKTOP_HOST_MODE_WEBVIEW_TARGET;
+  liveDesktopRateSample = null;
+  persistLiveDesktopHostMode(liveDesktopHostMode.value);
+  await reconfigureLiveDesktopRuntime({ restart: true });
+}
+
+async function setLiveDesktopSkipBlankFrames(enabled) {
+  liveDesktopSkipBlankFrames.value = Boolean(enabled);
+  liveDesktopRateSample = null;
+  persistLiveDesktopSkipBlankFrames(liveDesktopSkipBlankFrames.value);
+  await reconfigureLiveDesktopRuntime();
+}
+
+async function setLiveDesktopForceDwmFlush(enabled) {
+  liveDesktopForceDwmFlush.value = Boolean(enabled);
+  liveDesktopRateSample = null;
+  persistLiveDesktopForceDwmFlush(liveDesktopForceDwmFlush.value);
+  await reconfigureLiveDesktopRuntime();
 }
 
 async function setLiveDesktopDiagnosticMode(mode) {
@@ -734,6 +978,10 @@ async function copyDiagnostics() {
       JSON.stringify(
         {
           diagnosticMode: liveDesktopMode.value,
+          disableMouseRelay: liveDesktopDisableMouseRelay.value,
+          hostMode: liveDesktopHostMode.value,
+          skipBlankFrames: liveDesktopSkipBlankFrames.value,
+          forceDwmFlush: liveDesktopForceDwmFlush.value,
           support: props.state?.liveDesktopBackgroundSupport?.value || null,
           runtimeStatus: liveDesktopStatus.value,
         },
@@ -765,6 +1013,9 @@ function restartLiveDesktopRuntimePoller() {
     return;
   }
   liveDesktopMode.value = readLiveDesktopDiagnosticMode();
+  liveDesktopHostMode.value = readLiveDesktopHostMode();
+  liveDesktopSkipBlankFrames.value = readLiveDesktopSkipBlankFrames();
+  liveDesktopForceDwmFlush.value = readLiveDesktopForceDwmFlush();
   liveDesktopRateSample = null;
   refreshLiveDesktopRuntimeStatus();
   liveDesktopRuntimePollTimer = window.setInterval(refreshLiveDesktopRuntimeStatus, 1000);

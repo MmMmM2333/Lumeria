@@ -735,6 +735,10 @@ export async function runLaunchpadNativeTests() {
     assert(liveDesktopRuntimeCommands.join(",") === "get_live_desktop_runtime_status,configure_live_desktop_background,start_live_desktop_background", "runtime start should configure native effects before the native start command");
     assert(liveDesktopRuntimeConfigs.length === 1, "runtime start should send one live desktop config");
     assert(liveDesktopRuntimeConfigs[0].diagnosticMode === "dwmSharedSurfaceCapture", "runtime config should include the selected DWM shared surface diagnostic mode");
+    assert(liveDesktopRuntimeConfigs[0].disableMouseRelay === true, "runtime config should disable mouse relay by default");
+    assert(liveDesktopRuntimeConfigs[0].hostMode === "webviewTarget", "runtime config should use the WebView target host by default");
+    assert(liveDesktopRuntimeConfigs[0].skipBlankFrames === false, "runtime config should keep blank frame skipping disabled by default");
+    assert(liveDesktopRuntimeConfigs[0].forceDwmFlush === false, "runtime config should keep DWM flush disabled by default");
     assert(liveDesktopRuntimeConfigs[0].effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "runtime config should include the selected effect");
     assert(liveDesktopRuntimeConfigs[0].blurStrength === 72, "runtime config should include blur strength");
     assert(liveDesktopRuntimeConfigs[0].darkenColor === "#334455", "runtime config should include darken color");
@@ -751,12 +755,34 @@ export async function runLaunchpadNativeTests() {
     assert(options.liveDesktopRuntimeStatus.value.generation === 2, "runtime stop should normalize generation values");
 
     globalThis.window.localStorage = {
-      getItem: (key) => key === "launchpadLiveDesktopDiagnosticMode" ? "wallpaperEnginePopupCapture" : null,
+      getItem: (key) => {
+        if (key === "launchpadLiveDesktopDiagnosticMode") return "wallpaperEnginePopupCapture";
+        if (key === "launchpadLiveDesktopDisableMouseRelay") return "true";
+        if (key === "launchpadLiveDesktopHostMode") return "ownedPopupHost";
+        if (key === "launchpadLiveDesktopSkipBlankFrames") return "true";
+        if (key === "launchpadLiveDesktopForceDwmFlush") return "true";
+        return null;
+      },
     };
     liveDesktopRuntimeCommands.length = 0;
     await native.configureNativeLiveDesktopBackground();
     assert(liveDesktopRuntimeCommands.join(",") === "configure_live_desktop_background", "runtime configure should send only the native config command");
     assert(liveDesktopRuntimeConfigs.at(-1).diagnosticMode === "wallpaperEnginePopupCapture", "runtime config should include the selected Wallpaper Engine popup diagnostic mode");
+    assert(liveDesktopRuntimeConfigs.at(-1).disableMouseRelay === true, "runtime config should include the disabled mouse relay diagnostic setting");
+    assert(liveDesktopRuntimeConfigs.at(-1).hostMode === "ownedPopupHost", "runtime config should include the native background host diagnostic setting");
+    assert(liveDesktopRuntimeConfigs.at(-1).skipBlankFrames === true, "runtime config should include the blank frame skip diagnostic setting");
+    assert(liveDesktopRuntimeConfigs.at(-1).forceDwmFlush === true, "runtime config should include the DWM flush diagnostic setting");
+
+    globalThis.window.localStorage = {
+      getItem: (key) => {
+        if (key === "launchpadLiveDesktopDisableMouseRelay") return "false";
+        if (key === "launchpadLiveDesktopHostMode") return "childWindowHost";
+        return null;
+      },
+    };
+    await native.configureNativeLiveDesktopBackground();
+    assert(liveDesktopRuntimeConfigs.at(-1).disableMouseRelay === false, "runtime config should allow mouse relay to be enabled explicitly");
+    assert(liveDesktopRuntimeConfigs.at(-1).hostMode === "childWindowHost", "runtime config should include the child HWND host diagnostic setting");
   });
 
   const liveDesktopSyncCommands = [];

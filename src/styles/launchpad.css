@@ -69,6 +69,20 @@ body {
   will-change: opacity;
 }
 
+.launchpad-live-desktop-compositor-keeper {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  contain: paint;
+  background: rgba(255, 255, 255, 0.001);
+  backdrop-filter: blur(0.01px);
+  -webkit-backdrop-filter: blur(0.01px);
+  transform-origin: left top;
+  transform: translateZ(0) scale(calc(1 + var(--launchpad-live-desktop-compositor-tick, 0) * 0.000001));
+  will-change: transform, backdrop-filter;
+}
+
 .launchpad-bg::before,
 .launchpad-bg::after {
   content: "";
