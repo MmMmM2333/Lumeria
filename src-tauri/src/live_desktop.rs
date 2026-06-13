@@ -2797,7 +2797,7 @@ impl LiveDesktopRuntime {
         #[cfg(not(target_os = "windows"))]
         let _ = cleanup_timeout;
         self.reap_abandoned_renderer_workers();
-        if self.status.phase == "stopped" {
+        if self.status.is_stopped() {
             return self.status();
         }
         let generation = self.status.generation + 1;
@@ -2831,21 +2831,13 @@ impl LiveDesktopRuntime {
         F: FnOnce() -> Result<LiveDesktopRendererSession, LiveDesktopRendererStartupFailure>,
     {
         self.reap_abandoned_renderer_workers();
-        if self.status.phase == "running" || self.status.phase == "starting" {
+        if self.status.is_starting_or_running() {
             return self.status();
         }
         self.renderer_session = None;
 
         let generation = self.status.generation + 1;
-        self.status = LiveDesktopRuntimeStatus {
-            phase: "starting",
-            active: false,
-            generation,
-            reason: "starting",
-            detail: "Live desktop runtime start requested".to_string(),
-            diagnostics: LiveDesktopRuntimeDiagnostics::default(),
-            window_diagnostics: live_desktop_window_diagnostics(),
-        };
+        self.status = LiveDesktopRuntimeStatus::starting(generation);
 
         if !prerequisite_probe.supports_d3d11 {
             self.status = LiveDesktopRuntimeStatus::failed(
@@ -2882,17 +2874,8 @@ impl LiveDesktopRuntime {
             );
             return self.status();
         }
-        let running_detail = format!("Live desktop runtime is running: {}", renderer_probe.detail);
         self.renderer_session = Some(renderer_session);
-        self.status = LiveDesktopRuntimeStatus {
-            phase: "running",
-            active: true,
-            generation,
-            reason: "running",
-            detail: running_detail,
-            diagnostics: LiveDesktopRuntimeDiagnostics::default(),
-            window_diagnostics: live_desktop_window_diagnostics(),
-        };
+        self.status = LiveDesktopRuntimeStatus::running(generation, renderer_probe.detail);
         self.status()
     }
 
@@ -3595,6 +3578,30 @@ fn report_live_desktop_renderer_startup_progress(
 }
 
 impl LiveDesktopRuntimeStatus {
+    fn starting(generation: u64) -> Self {
+        Self {
+            phase: "starting",
+            active: false,
+            generation,
+            reason: "starting",
+            detail: "Live desktop runtime start requested".to_string(),
+            diagnostics: LiveDesktopRuntimeDiagnostics::default(),
+            window_diagnostics: live_desktop_window_diagnostics(),
+        }
+    }
+
+    fn running(generation: u64, renderer_detail: String) -> Self {
+        Self {
+            phase: "running",
+            active: true,
+            generation,
+            reason: "running",
+            detail: format!("Live desktop runtime is running: {renderer_detail}"),
+            diagnostics: LiveDesktopRuntimeDiagnostics::default(),
+            window_diagnostics: live_desktop_window_diagnostics(),
+        }
+    }
+
     fn stopped(generation: u64) -> Self {
         Self {
             phase: "stopped",
@@ -3621,6 +3628,14 @@ impl LiveDesktopRuntimeStatus {
             diagnostics: LiveDesktopRuntimeDiagnostics::default(),
             window_diagnostics: live_desktop_window_diagnostics(),
         }
+    }
+
+    fn is_stopped(&self) -> bool {
+        self.phase == "stopped"
+    }
+
+    fn is_starting_or_running(&self) -> bool {
+        matches!(self.phase, "starting" | "running")
     }
 }
 
