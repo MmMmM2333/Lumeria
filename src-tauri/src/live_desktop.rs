@@ -2793,12 +2793,31 @@ impl LiveDesktopRuntime {
     }
 
     pub(crate) fn stop(&mut self) -> LiveDesktopRuntimeStatus {
+        #[cfg(target_os = "windows")]
+        let cleanup_timeout = Duration::from_millis(LIVE_DESKTOP_RENDERER_STOP_JOIN_TIMEOUT_MS);
+        #[cfg(not(target_os = "windows"))]
+        let cleanup_timeout = std::time::Duration::ZERO;
+        self.stop_with_timeout(cleanup_timeout)
+    }
+
+    fn stop_with_timeout(
+        &mut self,
+        cleanup_timeout: std::time::Duration,
+    ) -> LiveDesktopRuntimeStatus {
+        #[cfg(not(target_os = "windows"))]
+        let _ = cleanup_timeout;
         self.reap_abandoned_renderer_workers();
         if self.status.phase == "stopped" {
             return self.status();
         }
-        self.renderer_session = None;
-        self.status = LiveDesktopRuntimeStatus::stopped(self.status.generation + 1);
+        let generation = self.status.generation + 1;
+        if let Some(mut session) = self.renderer_session.take() {
+            #[cfg(target_os = "windows")]
+            if let Some(worker) = session.stop_and_maybe_abandon(cleanup_timeout) {
+                self.register_abandoned_renderer_worker(generation, worker);
+            }
+        }
+        self.status = LiveDesktopRuntimeStatus::stopped(generation);
         self.status()
     }
 
@@ -2913,8 +2932,10 @@ impl LiveDesktopRuntime {
         mut worker: LiveDesktopAbandonedRendererWorker,
     ) {
         worker.generation = generation;
-        self.last_abandoned_renderer_reason =
-            format!("generation {}: {}", generation, worker.detail);
+        self.last_abandoned_renderer_reason = format!(
+            "generation {}: {}: {}",
+            generation, worker.reason, worker.detail
+        );
         self.abandoned_renderer_workers.push(worker);
     }
 
@@ -3071,6 +3092,43 @@ impl LiveDesktopRendererSession {
         }
     }
 
+    #[cfg(target_os = "windows")]
+    fn stop_and_maybe_abandon(
+        &mut self,
+        cleanup_timeout: Duration,
+    ) -> Option<LiveDesktopAbandonedRendererWorker> {
+        if let Some(stop_sender) = self.stop_sender.take() {
+            let _ = stop_sender.send(());
+        }
+        let exited = self
+            .exit_receiver
+            .take()
+            .map(|exit_receiver| {
+                matches!(
+                    exit_receiver.recv_timeout(cleanup_timeout),
+                    Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected)
+                )
+            })
+            .unwrap_or(true);
+
+        let worker = self.worker.take()?;
+        if exited || worker.is_finished() {
+            let _ = worker.join();
+            return None;
+        }
+
+        let detail = format!(
+            "DirectComposition renderer worker did not stop within {} ms",
+            cleanup_timeout.as_millis()
+        );
+        Some(LiveDesktopAbandonedRendererWorker {
+            worker: Some(worker),
+            reason: "nativeRendererStopTimedOut",
+            detail,
+            generation: 0,
+        })
+    }
+
     fn diagnostics(&self) -> LiveDesktopRuntimeDiagnostics {
         self.diagnostics
             .lock()
@@ -3147,19 +3205,9 @@ fn cancel_live_desktop_renderer_startup_after_timeout(
 #[cfg(target_os = "windows")]
 impl Drop for LiveDesktopRendererSession {
     fn drop(&mut self) {
-        if let Some(stop_sender) = self.stop_sender.take() {
-            let _ = stop_sender.send(());
-        }
-        if let Some(exit_receiver) = self.exit_receiver.take() {
-            let _ = exit_receiver.recv_timeout(Duration::from_millis(
-                LIVE_DESKTOP_RENDERER_STOP_JOIN_TIMEOUT_MS,
-            ));
-        }
-        if let Some(worker) = self.worker.take() {
-            if worker.is_finished() {
-                let _ = worker.join();
-            }
-        }
+        let _ = self.stop_and_maybe_abandon(Duration::from_millis(
+            LIVE_DESKTOP_RENDERER_STOP_JOIN_TIMEOUT_MS,
+        ));
     }
 }
 
@@ -9088,6 +9136,56 @@ mod tests {
         assert_eq!(status.diagnostics.abandoned_renderer_workers, 1);
         assert_eq!(status.diagnostics.reaped_abandoned_renderer_workers, 0);
         assert!(status.detail.contains("abandonedRendererWorkers=1"));
+
+        let _ = release_sender.send(());
+        let mut reaped_status = runtime.status();
+        for _ in 0..20 {
+            if reaped_status.diagnostics.reaped_abandoned_renderer_workers == 1 {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+            reaped_status = runtime.status();
+        }
+
+        assert_eq!(reaped_status.diagnostics.abandoned_renderer_workers, 0);
+        assert_eq!(
+            reaped_status.diagnostics.reaped_abandoned_renderer_workers,
+            1
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn runtime_stop_tracks_abandoned_renderer_worker_when_stop_times_out() {
+        let (stop_sender, _stop_receiver) = mpsc::channel();
+        let (exit_sender, exit_receiver) = mpsc::channel();
+        let (release_sender, release_receiver) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            let _exit_sender = exit_sender;
+            let _ = release_receiver.recv();
+        });
+        let mut runtime = LiveDesktopRuntime::default();
+        let status =
+            runtime.start_with_renderer_session(capture_probe(true, true, "available"), || {
+                Ok(LiveDesktopRendererSession {
+                    renderer_probe: LiveDesktopRendererProbe::available(),
+                    diagnostics: Arc::new(Mutex::new(LiveDesktopRuntimeDiagnostics::default())),
+                    stop_sender: Some(stop_sender),
+                    command_sender: None,
+                    exit_receiver: Some(exit_receiver),
+                    worker: Some(worker),
+                })
+            });
+        assert_eq!(status.phase, "running");
+
+        let stopped = runtime.stop_with_timeout(Duration::from_millis(10));
+        assert_eq!(stopped.phase, "stopped");
+        assert_eq!(stopped.diagnostics.abandoned_renderer_workers, 1);
+        assert_eq!(stopped.diagnostics.reaped_abandoned_renderer_workers, 0);
+        assert!(stopped
+            .diagnostics
+            .last_abandoned_renderer_reason
+            .contains("nativeRendererStopTimedOut"));
 
         let _ = release_sender.send(());
         let mut reaped_status = runtime.status();
