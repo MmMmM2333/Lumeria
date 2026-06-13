@@ -2395,43 +2395,59 @@ impl LiveDesktopRuntime {
         self.status = LiveDesktopRuntimeStatus::starting(generation);
 
         if !prerequisite_probe.supports_d3d11 {
-            self.status = LiveDesktopRuntimeStatus::failed(
+            return self.fail_startup(
                 generation,
                 prerequisite_probe.reason,
                 prerequisite_probe.detail,
             );
-            return self.status();
         }
 
         let renderer_session = match make_renderer_session() {
             Ok(session) => session,
-            Err(failure) => {
-                let LiveDesktopRendererStartupFailure {
-                    probe,
-                    #[cfg(target_os = "windows")]
-                    abandoned_worker,
-                } = failure;
-                #[cfg(target_os = "windows")]
-                if let Some(worker) = abandoned_worker {
-                    self.register_abandoned_renderer_worker(generation, worker);
-                }
-                self.status =
-                    LiveDesktopRuntimeStatus::failed(generation, probe.reason, probe.detail);
-                return self.status();
-            }
+            Err(failure) => return self.fail_renderer_startup(generation, failure),
         };
         let renderer_probe = renderer_session.renderer_probe.clone();
         if !renderer_probe.supports_native_renderer {
-            self.status = LiveDesktopRuntimeStatus::failed(
-                generation,
-                renderer_probe.reason,
-                renderer_probe.detail,
-            );
-            return self.status();
+            return self.fail_startup_with_probe(generation, renderer_probe);
         }
         self.renderer_session = Some(renderer_session);
         self.status = LiveDesktopRuntimeStatus::running(generation, renderer_probe.detail);
         self.status()
+    }
+
+    fn fail_startup(
+        &mut self,
+        generation: u64,
+        reason: &'static str,
+        detail: String,
+    ) -> LiveDesktopRuntimeStatus {
+        self.status = LiveDesktopRuntimeStatus::failed(generation, reason, detail);
+        self.status()
+    }
+
+    fn fail_startup_with_probe(
+        &mut self,
+        generation: u64,
+        probe: LiveDesktopRendererProbe,
+    ) -> LiveDesktopRuntimeStatus {
+        self.fail_startup(generation, probe.reason, probe.detail)
+    }
+
+    fn fail_renderer_startup(
+        &mut self,
+        generation: u64,
+        failure: LiveDesktopRendererStartupFailure,
+    ) -> LiveDesktopRuntimeStatus {
+        let LiveDesktopRendererStartupFailure {
+            probe,
+            #[cfg(target_os = "windows")]
+            abandoned_worker,
+        } = failure;
+        #[cfg(target_os = "windows")]
+        if let Some(worker) = abandoned_worker {
+            self.register_abandoned_renderer_worker(generation, worker);
+        }
+        self.fail_startup_with_probe(generation, probe)
     }
 
     fn apply_abandoned_renderer_diagnostics(
