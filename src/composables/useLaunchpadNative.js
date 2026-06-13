@@ -704,6 +704,24 @@ export function useLaunchpadNative(options) {
     );
   }
 
+  function liveDesktopRuntimeSyncIsCurrent(generation) {
+    return generation === liveDesktopRuntimeSyncGeneration;
+  }
+
+  function resetLiveDesktopRuntimeForUnavailableBridge() {
+    options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
+    liveDesktopBackgroundVisible = null;
+    return options.liveDesktopRuntimeStatus.value;
+  }
+
+  function enqueueLiveDesktopRuntimeSync(task) {
+    const generation = ++liveDesktopRuntimeSyncGeneration;
+    liveDesktopRuntimeSync = liveDesktopRuntimeSync
+      .catch(() => {})
+      .then(() => task(generation));
+    return liveDesktopRuntimeSync;
+  }
+
   function scheduleLiveDesktopIdleStop() {
     clearLiveDesktopIdleStopTimer();
     const generation = liveDesktopRuntimeSyncGeneration;
@@ -712,7 +730,7 @@ export function useLaunchpadNative(options) {
       liveDesktopRuntimeSync = liveDesktopRuntimeSync
         .catch(() => {})
         .then(async () => {
-          if (generation !== liveDesktopRuntimeSyncGeneration) return options.liveDesktopRuntimeStatus.value;
+          if (!liveDesktopRuntimeSyncIsCurrent(generation)) return options.liveDesktopRuntimeStatus.value;
           if (shouldRunLiveDesktopBackground()) return options.liveDesktopRuntimeStatus.value;
           const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
           if (liveDesktopRuntimeStatusIsStopped(current)) return current;
@@ -723,61 +741,49 @@ export function useLaunchpadNative(options) {
   }
 
   function syncLiveDesktopBackgroundRuntime() {
-    const generation = ++liveDesktopRuntimeSyncGeneration;
-    liveDesktopRuntimeSync = liveDesktopRuntimeSync
-      .catch(() => {})
-      .then(async () => {
-        if (generation !== liveDesktopRuntimeSyncGeneration) return options.liveDesktopRuntimeStatus.value;
-        if (!isNativeBridgeAvailable()) {
-          options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
-          liveDesktopBackgroundVisible = null;
+    return enqueueLiveDesktopRuntimeSync(async (generation) => {
+      if (!liveDesktopRuntimeSyncIsCurrent(generation)) return options.liveDesktopRuntimeStatus.value;
+      if (!isNativeBridgeAvailable()) {
+        return resetLiveDesktopRuntimeForUnavailableBridge();
+      }
+      if (!shouldRunLiveDesktopBackground()) {
+        const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
+        if (shouldKeepLiveDesktopBackgroundWarm(current)) {
+          await setNativeLiveDesktopBackgroundVisible(false);
+          if (!liveDesktopRuntimeSyncIsCurrent(generation)) return options.liveDesktopRuntimeStatus.value;
+          scheduleLiveDesktopIdleStop();
           return options.liveDesktopRuntimeStatus.value;
         }
-        if (!shouldRunLiveDesktopBackground()) {
-          const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
-          if (shouldKeepLiveDesktopBackgroundWarm(current)) {
-            await setNativeLiveDesktopBackgroundVisible(false);
-            if (generation !== liveDesktopRuntimeSyncGeneration) return options.liveDesktopRuntimeStatus.value;
-            scheduleLiveDesktopIdleStop();
-            return options.liveDesktopRuntimeStatus.value;
-          }
-          clearLiveDesktopIdleStopTimer();
-          if (liveDesktopRuntimeStatusIsStopped(current)) return current;
-          return stopNativeLiveDesktopBackground();
-        }
         clearLiveDesktopIdleStopTimer();
-        const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
-        if (liveDesktopRuntimeStatusIsRunning(current)) {
-          await setNativeLiveDesktopBackgroundVisible(true);
-          if (generation !== liveDesktopRuntimeSyncGeneration) return options.liveDesktopRuntimeStatus.value;
-          return configureNativeLiveDesktopBackground();
-        }
-        return startNativeLiveDesktopBackground();
-      });
-    return liveDesktopRuntimeSync;
+        if (liveDesktopRuntimeStatusIsStopped(current)) return current;
+        return stopNativeLiveDesktopBackground();
+      }
+      clearLiveDesktopIdleStopTimer();
+      const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
+      if (liveDesktopRuntimeStatusIsRunning(current)) {
+        await setNativeLiveDesktopBackgroundVisible(true);
+        if (!liveDesktopRuntimeSyncIsCurrent(generation)) return options.liveDesktopRuntimeStatus.value;
+        return configureNativeLiveDesktopBackground();
+      }
+      return startNativeLiveDesktopBackground();
+    });
   }
 
   function restartLiveDesktopBackgroundRuntime() {
-    const generation = ++liveDesktopRuntimeSyncGeneration;
-    liveDesktopRuntimeSync = liveDesktopRuntimeSync
-      .catch(() => {})
-      .then(async () => {
-        if (generation !== liveDesktopRuntimeSyncGeneration) return options.liveDesktopRuntimeStatus.value;
-        if (!isNativeBridgeAvailable()) {
-          options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
-          liveDesktopBackgroundVisible = null;
-          return options.liveDesktopRuntimeStatus.value;
-        }
-        clearLiveDesktopIdleStopTimer();
-        if (!shouldRunLiveDesktopBackground()) return stopNativeLiveDesktopBackground();
-        const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
-        if (liveDesktopRuntimeStatusIsRunning(current)) {
-          await stopNativeLiveDesktopBackground();
-        }
-        if (generation !== liveDesktopRuntimeSyncGeneration) return options.liveDesktopRuntimeStatus.value;
-        return startNativeLiveDesktopBackground();
-      });
-    return liveDesktopRuntimeSync;
+    return enqueueLiveDesktopRuntimeSync(async (generation) => {
+      if (!liveDesktopRuntimeSyncIsCurrent(generation)) return options.liveDesktopRuntimeStatus.value;
+      if (!isNativeBridgeAvailable()) {
+        return resetLiveDesktopRuntimeForUnavailableBridge();
+      }
+      clearLiveDesktopIdleStopTimer();
+      if (!shouldRunLiveDesktopBackground()) return stopNativeLiveDesktopBackground();
+      const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
+      if (liveDesktopRuntimeStatusIsRunning(current)) {
+        await stopNativeLiveDesktopBackground();
+      }
+      if (!liveDesktopRuntimeSyncIsCurrent(generation)) return options.liveDesktopRuntimeStatus.value;
+      return startNativeLiveDesktopBackground();
+    });
   }
 
   async function loadNativeLaunchpadData() {
@@ -862,9 +868,7 @@ export function useLaunchpadNative(options) {
 
   async function refreshLiveDesktopRuntimeStatus() {
     if (!isNativeBridgeAvailable()) {
-      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
-      liveDesktopBackgroundVisible = null;
-      return options.liveDesktopRuntimeStatus.value;
+      return resetLiveDesktopRuntimeForUnavailableBridge();
     }
     try {
       options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(
@@ -880,9 +884,7 @@ export function useLaunchpadNative(options) {
   async function setNativeLiveDesktopBackgroundVisible(visible) {
     if (liveDesktopBackgroundVisible === visible) return options.liveDesktopRuntimeStatus.value;
     if (!isNativeBridgeAvailable()) {
-      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
-      liveDesktopBackgroundVisible = null;
-      return options.liveDesktopRuntimeStatus.value;
+      return resetLiveDesktopRuntimeForUnavailableBridge();
     }
     try {
       options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(
@@ -897,9 +899,7 @@ export function useLaunchpadNative(options) {
 
   async function configureNativeLiveDesktopBackground() {
     if (!isNativeBridgeAvailable()) {
-      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
-      liveDesktopBackgroundVisible = null;
-      return options.liveDesktopRuntimeStatus.value;
+      return resetLiveDesktopRuntimeForUnavailableBridge();
     }
     try {
       options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(
@@ -921,9 +921,7 @@ export function useLaunchpadNative(options) {
   async function startNativeLiveDesktopBackground() {
     clearLiveDesktopIdleStopTimer();
     if (!isNativeBridgeAvailable()) {
-      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
-      liveDesktopBackgroundVisible = null;
-      return options.liveDesktopRuntimeStatus.value;
+      return resetLiveDesktopRuntimeForUnavailableBridge();
     }
     try {
       await configureLiveDesktopBackground(makeLiveDesktopRuntimeConfig(options));
@@ -951,9 +949,7 @@ export function useLaunchpadNative(options) {
   async function stopNativeLiveDesktopBackground() {
     clearLiveDesktopIdleStopTimer();
     if (!isNativeBridgeAvailable()) {
-      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
-      liveDesktopBackgroundVisible = null;
-      return options.liveDesktopRuntimeStatus.value;
+      return resetLiveDesktopRuntimeForUnavailableBridge();
     }
     try {
       options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(

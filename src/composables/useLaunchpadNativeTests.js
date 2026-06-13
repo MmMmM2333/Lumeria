@@ -871,6 +871,18 @@ export async function runLaunchpadNativeTests() {
     assert(optionsForLiveDesktopSync.liveDesktopRuntimeStatus.value.phase === "running", "runtime restart should apply the restarted status");
 
     liveDesktopSyncCommands.length = 0;
+    optionsForLiveDesktopSync.liveDesktopRuntimeStatus.value = {
+      phase: "stopped",
+      active: false,
+      generation: 2,
+      reason: "stopped",
+      detail: "stopped",
+    };
+    await native.restartLiveDesktopBackgroundRuntime();
+    assert(liveDesktopSyncCommands.join(",") === "configure_live_desktop_background,start_live_desktop_background", "runtime restart should cold-start a stopped live desktop runtime without stopping first");
+    assert(optionsForLiveDesktopSync.liveDesktopRuntimeStatus.value.phase === "running", "runtime restart should apply running status after cold-starting");
+
+    liveDesktopSyncCommands.length = 0;
     optionsForLiveDesktopSync.isDesktopOpen.value = false;
     await native.syncLiveDesktopBackgroundRuntime();
     assert(liveDesktopSyncCommands.join(",") === "set_live_desktop_background_visible", "runtime sync should hide live desktop while keeping it warm");
