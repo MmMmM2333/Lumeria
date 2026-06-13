@@ -13,7 +13,7 @@ import { createPixiApp } from "./createPixiApp.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { isAcrylicDebugEnabled, useAcrylicDebugOverrideEnabled, useAcrylicDebugParams } from "./background/acrylicDebugParams.js";
 import { isKawaseDebugEnabled, useKawaseDebugOverrideEnabled, useKawaseDebugParams } from "./background/kawaseDebugParams.js";
-import { createAcrylicCompositeFilter, createKawaseFilter } from "./background/acrylicFilters.js";
+import { createAcrylicCompositeFilter, createGaussianFilter, createKawaseFilter } from "./background/acrylicFilters.js";
 import { loadBackgroundTextureFromImage } from "./background/backgroundTextureLoader.js";
 import { createAcrylicNoiseTexture } from "./background/acrylicNoiseTexture.js";
 import {
@@ -27,6 +27,7 @@ import {
   DEFAULT_BACKGROUND_BLUR_STRENGTH,
 } from "../../composables/useLaunchpadSettingsConfig.js";
 import {
+  BLUR_KERNEL_GAUSSIAN,
   createBackgroundEffectPlan,
   createDualKawaseLevels,
   resolveAcrylicBackgroundAlpha,
@@ -63,6 +64,8 @@ let passSprite = null;
 let displaySprite = null;
 let downFilter = null;
 let upFilter = null;
+let gaussianHorizontalFilter = null;
+let gaussianVerticalFilter = null;
 let compositeFilter = null;
 let noiseTexture = null;
 let sourceRenderTexture = null;
@@ -157,6 +160,42 @@ function renderPass(inputTexture, outputTexture, filter) {
   passSprite.filters = null;
 }
 
+function resolveGaussianAxis(radiusPx, renderAxis, hostAxis) {
+  const sigma = Math.max(0.001, (Number(radiusPx) || 0) * Math.max(1, renderAxis) / Math.max(1, hostAxis));
+  return {
+    radius: Math.min(32, Math.ceil(sigma * 3)),
+    sigma,
+  };
+}
+
+function renderGaussianBlur(effectPlan, renderSize, hostSize) {
+  const horizontal = resolveGaussianAxis(effectPlan.blur.gaussianRadiusPx, renderSize.width, hostSize.width);
+  const vertical = resolveGaussianAxis(effectPlan.blur.gaussianRadiusPx, renderSize.height, hostSize.height);
+  gaussianHorizontalFilter.setParams(horizontal);
+  renderPass(sourceRenderTexture, finalRenderTexture, gaussianHorizontalFilter);
+  gaussianVerticalFilter.setParams(vertical);
+  renderPass(finalRenderTexture, finalBlurTexture, gaussianVerticalFilter);
+}
+
+function renderDualKawaseBlur(effectPlan) {
+  const blurOffsetScale = effectPlan.blur.offsetScale;
+  let currentTexture = sourceRenderTexture;
+  for (let index = 0; index < downTextures.length; index += 1) {
+    downFilter.setOffset(effectPlan.blur.downOffsets[index] ?? (1 + index * 0.35) * blurOffsetScale);
+    renderPass(currentTexture, downTextures[index], downFilter);
+    currentTexture = downTextures[index];
+  }
+
+  for (let index = downTextures.length - 2; index >= 0; index -= 1) {
+    upFilter.setOffset(effectPlan.blur.upOffsets[index] ?? (1.1 + index * 0.25) * blurOffsetScale);
+    renderPass(currentTexture, upTextures[index], upFilter);
+    currentTexture = upTextures[index];
+  }
+
+  upFilter.setOffset(effectPlan.blur.finalUpOffset);
+  renderPass(currentTexture, finalBlurTexture, upFilter);
+}
+
 function renderSourceToTexture(renderSize, hostSize) {
   if (!app || !sourceTexture || !sourceSprite || !sourceTilingSprite || !sourceContainer || !sourceRenderTexture) return;
   const renderScaleX = Math.max(0.0001, renderSize.width / Math.max(1, hostSize.width));
@@ -215,22 +254,11 @@ function renderBackgroundEffect() {
   if (!downTextures.length || !finalBlurTexture || !finalRenderTexture) return;
 
   renderSourceToTexture(renderSize, hostSize);
-  const blurOffsetScale = effectPlan.blur.offsetScale;
-  let currentTexture = sourceRenderTexture;
-  for (let index = 0; index < downTextures.length; index += 1) {
-    downFilter.setOffset(effectPlan.blur.downOffsets[index] ?? (1 + index * 0.35) * blurOffsetScale);
-    renderPass(currentTexture, downTextures[index], downFilter);
-    currentTexture = downTextures[index];
+  if (effectPlan.blur.kernel === BLUR_KERNEL_GAUSSIAN) {
+    renderGaussianBlur(effectPlan, renderSize, hostSize);
+  } else {
+    renderDualKawaseBlur(effectPlan);
   }
-
-  for (let index = downTextures.length - 2; index >= 0; index -= 1) {
-    upFilter.setOffset(effectPlan.blur.upOffsets[index] ?? (1.1 + index * 0.25) * blurOffsetScale);
-    renderPass(currentTexture, upTextures[index], upFilter);
-    currentTexture = upTextures[index];
-  }
-
-  upFilter.setOffset(effectPlan.blur.finalUpOffset);
-  renderPass(currentTexture, finalBlurTexture, upFilter);
 
   if (props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) {
     compositeFilter.setParams(effectPlan.acrylic);
@@ -330,10 +358,14 @@ function destroyPixi(options = {}) {
   displaySprite = null;
   downFilter?.destroy?.();
   upFilter?.destroy?.();
+  gaussianHorizontalFilter?.destroy?.();
+  gaussianVerticalFilter?.destroy?.();
   compositeFilter?.destroy?.();
   destroyTexture(noiseTexture);
   downFilter = null;
   upFilter = null;
+  gaussianHorizontalFilter = null;
+  gaussianVerticalFilter = null;
   compositeFilter = null;
   noiseTexture = null;
   const currentApp = app;
@@ -375,6 +407,8 @@ onMounted(async () => {
   displaySprite = new Sprite(Texture.EMPTY);
   downFilter = createKawaseFilter("launchpad-acrylic-downsample-filter", 1);
   upFilter = createKawaseFilter("launchpad-acrylic-upsample-filter", 1.15);
+  gaussianHorizontalFilter = createGaussianFilter("launchpad-acrylic-gaussian-horizontal-filter", [1, 0]);
+  gaussianVerticalFilter = createGaussianFilter("launchpad-acrylic-gaussian-vertical-filter", [0, 1]);
   noiseTexture = createAcrylicNoiseTexture();
   compositeFilter = createAcrylicCompositeFilter(noiseTexture);
   app.stage.addChild(displaySprite);
@@ -484,6 +518,8 @@ if (isKawaseDebugEnabled) {
     () => [
       kawaseDebugParams.offsetScale,
       kawaseDebugParams.passCount,
+      kawaseDebugParams.gaussianRadiusPx,
+      kawaseDebugParams.kernel,
       kawaseDebugOverrideEnabled.value,
     ],
     () => {

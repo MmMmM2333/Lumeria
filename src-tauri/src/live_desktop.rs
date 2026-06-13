@@ -570,6 +570,7 @@ struct LiveDesktopShaderPipeline {
     vertex_shader: ID3D11VertexShader,
     copy_pixel_shader: ID3D11PixelShader,
     kawase_pixel_shader: ID3D11PixelShader,
+    gaussian_pixel_shader: ID3D11PixelShader,
     acrylic_pixel_shader: ID3D11PixelShader,
     input_layout: ID3D11InputLayout,
     vertex_buffer: ID3D11Buffer,
@@ -856,6 +857,27 @@ float4 kawase_ps(PsInput input) : SV_TARGET {
     return color * 0.25;
 }
 
+float4 gaussian_ps(PsInput input) : SV_TARGET {
+    float2 texel_size = effect_values0.xy;
+    float2 direction = effect_values0.zw;
+    float sigma = max(effect_values1.x, 0.001);
+    int radius = min(32, max(0, (int)(effect_values1.y + 0.5)));
+    float4 color = float4(0.0, 0.0, 0.0, 0.0);
+    float total_weight = 0.0;
+
+    [loop]
+    for (int index = -32; index <= 32; index++) {
+        if (abs(index) <= radius) {
+            float sample_index = (float)index;
+            float weight = exp(-(sample_index * sample_index) / (2.0 * sigma * sigma));
+            color += source_texture.Sample(linear_sampler, input.uv + texel_size * direction * sample_index) * weight;
+            total_weight += weight;
+        }
+    }
+
+    return color / max(total_weight, 0.0001);
+}
+
 float3 acrylic_soft_light(float3 base, float blend) {
     float3 safe_base = saturate(base);
     float3 low = safe_base - (1.0 - 2.0 * blend) * safe_base * (1.0 - safe_base);
@@ -930,6 +952,14 @@ impl LiveDesktopShaderPipeline {
                 "kawase pixel shader",
             )
         }?;
+        let gaussian_pixel_shader_blob = unsafe {
+            compile_live_desktop_shader(
+                LIVE_DESKTOP_COPY_SHADER_HLSL,
+                s!("gaussian_ps"),
+                s!("ps_4_0"),
+                "gaussian pixel shader",
+            )
+        }?;
         let acrylic_pixel_shader_blob = unsafe {
             compile_live_desktop_shader(
                 LIVE_DESKTOP_COPY_SHADER_HLSL,
@@ -943,6 +973,8 @@ impl LiveDesktopShaderPipeline {
             unsafe { live_desktop_d3d_blob_bytes(&copy_pixel_shader_blob) };
         let kawase_pixel_shader_bytes =
             unsafe { live_desktop_d3d_blob_bytes(&kawase_pixel_shader_blob) };
+        let gaussian_pixel_shader_bytes =
+            unsafe { live_desktop_d3d_blob_bytes(&gaussian_pixel_shader_blob) };
         let acrylic_pixel_shader_bytes =
             unsafe { live_desktop_d3d_blob_bytes(&acrylic_pixel_shader_blob) };
 
@@ -962,6 +994,9 @@ impl LiveDesktopShaderPipeline {
             unsafe { create_live_desktop_pixel_shader(device, copy_pixel_shader_bytes, "copy") }?;
         let kawase_pixel_shader = unsafe {
             create_live_desktop_pixel_shader(device, kawase_pixel_shader_bytes, "kawase")
+        }?;
+        let gaussian_pixel_shader = unsafe {
+            create_live_desktop_pixel_shader(device, gaussian_pixel_shader_bytes, "gaussian")
         }?;
         let acrylic_pixel_shader = unsafe {
             create_live_desktop_pixel_shader(device, acrylic_pixel_shader_bytes, "acrylic")
@@ -1120,6 +1155,7 @@ impl LiveDesktopShaderPipeline {
             vertex_shader,
             copy_pixel_shader,
             kawase_pixel_shader,
+            gaussian_pixel_shader,
             acrylic_pixel_shader,
             input_layout,
             vertex_buffer,
@@ -1267,72 +1303,107 @@ impl LiveDesktopShaderPipeline {
         let mut current_width = self.effect_source.width;
         let mut current_height = self.effect_source.height;
 
-        let active_pass_count = (effect_plan.blur.pass_count.max(1) as usize)
-            .min(self.down_textures.len())
-            .max(1);
+        if effect_plan.blur.kernel == LiveDesktopBlurKernel::Gaussian {
+            let horizontal_sigma = resolve_live_desktop_gaussian_sigma(
+                effect_plan.blur.gaussian_radius_px,
+                self.effect_source.width,
+                self.width,
+            );
+            let vertical_sigma = resolve_live_desktop_gaussian_sigma(
+                effect_plan.blur.gaussian_radius_px,
+                self.effect_source.height,
+                self.height,
+            );
+            unsafe {
+                self.draw_gaussian_pass(
+                    context,
+                    &self.effect_source.srv,
+                    self.effect_source.width,
+                    self.effect_source.height,
+                    &self.final_render_texture,
+                    horizontal_sigma,
+                    [1.0, 0.0],
+                    label,
+                )?;
+                self.draw_gaussian_pass(
+                    context,
+                    &self.final_render_texture.srv,
+                    self.final_render_texture.width,
+                    self.final_render_texture.height,
+                    &self.final_blur_texture,
+                    vertical_sigma,
+                    [0.0, 1.0],
+                    label,
+                )?;
+            }
+        } else {
+            let active_pass_count = (effect_plan.blur.pass_count.max(1) as usize)
+                .min(self.down_textures.len())
+                .max(1);
 
-        for (index, target) in self
-            .down_textures
-            .iter()
-            .take(active_pass_count)
-            .enumerate()
-        {
-            let offset = effect_plan
-                .blur
-                .down_offsets
-                .get(index)
-                .copied()
-                .unwrap_or((1.0 + index as f32 * 0.35) * effect_plan.blur.offset_scale);
+            for (index, target) in self
+                .down_textures
+                .iter()
+                .take(active_pass_count)
+                .enumerate()
+            {
+                let offset = effect_plan
+                    .blur
+                    .down_offsets
+                    .get(index)
+                    .copied()
+                    .unwrap_or((1.0 + index as f32 * 0.35) * effect_plan.blur.offset_scale);
+                unsafe {
+                    self.draw_kawase_pass(
+                        context,
+                        &current_srv,
+                        current_width,
+                        current_height,
+                        target,
+                        offset,
+                        label,
+                    )?;
+                }
+                current_srv = target.srv.clone();
+                current_width = target.width;
+                current_height = target.height;
+            }
+
+            for index in (0..active_pass_count.saturating_sub(1)).rev() {
+                let target = &self.up_textures[index];
+                let offset = effect_plan
+                    .blur
+                    .up_offsets
+                    .get(index)
+                    .copied()
+                    .unwrap_or((1.1 + index as f32 * 0.25) * effect_plan.blur.offset_scale);
+                unsafe {
+                    self.draw_kawase_pass(
+                        context,
+                        &current_srv,
+                        current_width,
+                        current_height,
+                        target,
+                        offset,
+                        label,
+                    )?;
+                }
+                current_srv = target.srv.clone();
+                current_width = target.width;
+                current_height = target.height;
+            }
+
             unsafe {
                 self.draw_kawase_pass(
                     context,
                     &current_srv,
                     current_width,
                     current_height,
-                    target,
-                    offset,
+                    &self.final_blur_texture,
+                    effect_plan.blur.final_up_offset,
                     label,
                 )?;
             }
-            current_srv = target.srv.clone();
-            current_width = target.width;
-            current_height = target.height;
-        }
-
-        for index in (0..active_pass_count.saturating_sub(1)).rev() {
-            let target = &self.up_textures[index];
-            let offset = effect_plan
-                .blur
-                .up_offsets
-                .get(index)
-                .copied()
-                .unwrap_or((1.1 + index as f32 * 0.25) * effect_plan.blur.offset_scale);
-            unsafe {
-                self.draw_kawase_pass(
-                    context,
-                    &current_srv,
-                    current_width,
-                    current_height,
-                    target,
-                    offset,
-                    label,
-                )?;
-            }
-            current_srv = target.srv.clone();
-            current_width = target.width;
-            current_height = target.height;
-        }
-
-        unsafe {
-            self.draw_kawase_pass(
-                context,
-                &current_srv,
-                current_width,
-                current_height,
-                &self.final_blur_texture,
-                effect_plan.blur.final_up_offset,
-                label,
-            )?;
         }
 
         let final_srv = if effect_plan.acrylic.enabled
@@ -1520,6 +1591,58 @@ impl LiveDesktopShaderPipeline {
         }
         if target.width == 0 || target.height == 0 {
             return Err(format!("{label} kawase target has invalid size"));
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn draw_gaussian_pass(
+        &self,
+        context: &ID3D11DeviceContext,
+        source_srv: &ID3D11ShaderResourceView,
+        source_width: u32,
+        source_height: u32,
+        target: &LiveDesktopShaderTexture,
+        sigma: f32,
+        direction: [f32; 2],
+        label: &str,
+    ) -> Result<(), String> {
+        let sigma = if sigma.is_finite() {
+            sigma.max(0.001)
+        } else {
+            0.001
+        };
+        let radius = (sigma * 3.0).ceil().clamp(0.0, 32.0);
+        let constants = LiveDesktopKawaseConstants {
+            values0: [
+                1.0 / source_width.max(1) as f32,
+                1.0 / source_height.max(1) as f32,
+                direction[0],
+                direction[1],
+            ],
+            values1: [sigma, radius, 0.0, 0.0],
+            values2: [0.0; 4],
+            values3: [0.0; 4],
+        };
+        unsafe {
+            update_live_desktop_constant_buffer(
+                context,
+                &self.kawase_constants,
+                &constants,
+                "gaussian constants",
+            )?;
+            self.draw_shader_resource_to_render_target(
+                context,
+                &[Some(source_srv.clone())],
+                &self.gaussian_pixel_shader,
+                Some(&self.kawase_constants),
+                &target.rtv,
+                target.width,
+                target.height,
+            );
+        }
+        if target.width == 0 || target.height == 0 {
+            return Err(format!("{label} gaussian target has invalid size"));
         }
         Ok(())
     }
@@ -1805,6 +1928,15 @@ fn resolve_live_desktop_effect_render_size(
         ((width as f32 * scale).round() as u32).max(1),
         ((height as f32 * scale).round() as u32).max(1),
     )
+}
+
+fn resolve_live_desktop_gaussian_sigma(radius_px: f32, render_axis: u32, target_axis: u32) -> f32 {
+    let radius_px = if radius_px.is_finite() {
+        radius_px.max(0.0)
+    } else {
+        0.0
+    };
+    (radius_px * render_axis.max(1) as f32 / target_axis.max(1) as f32).max(0.001)
 }
 
 fn create_live_desktop_dual_kawase_levels(
@@ -2512,6 +2644,10 @@ struct LiveDesktopEffectPlan {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LiveDesktopBlurEffectPlan {
+    #[serde(default)]
+    kernel: LiveDesktopBlurKernel,
+    #[serde(default)]
+    gaussian_radius_px: f32,
     strength: u32,
     render_max_width: u32,
     render_max_height: u32,
@@ -2521,6 +2657,14 @@ struct LiveDesktopBlurEffectPlan {
     down_offsets: Vec<f32>,
     up_offsets: Vec<f32>,
     final_up_offset: f32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum LiveDesktopBlurKernel {
+    #[default]
+    DualKawase,
+    Gaussian,
 }
 
 #[allow(dead_code)]
@@ -9088,6 +9232,8 @@ mod tests {
             effect: LiveDesktopBackgroundEffect::Blur,
             opacity: 1.0,
             blur: LiveDesktopBlurEffectPlan {
+                kernel: LiveDesktopBlurKernel::DualKawase,
+                gaussian_radius_px: 4.0,
                 strength: 72,
                 render_max_width: 960,
                 render_max_height: 540,
@@ -9241,6 +9387,8 @@ mod tests {
                 "effect": "acrylicWebgl",
                 "opacity": 0.37,
                 "blur": {
+                    "kernel": "gaussian",
+                    "gaussianRadiusPx": 20,
                     "strength": 72,
                     "renderMaxWidth": 960,
                     "renderMaxHeight": 540,
@@ -9273,6 +9421,8 @@ mod tests {
             LiveDesktopBackgroundEffect::AcrylicWebgl
         );
         assert!((effect_plan.opacity - 0.37).abs() < 0.001);
+        assert_eq!(effect_plan.blur.kernel, LiveDesktopBlurKernel::Gaussian);
+        assert!((effect_plan.blur.gaussian_radius_px - 20.0).abs() < 0.001);
         assert_eq!(effect_plan.blur.strength, 72);
         assert_eq!(effect_plan.blur.render_max_width, 960);
         assert!((effect_plan.blur.offset_scale - 1.275).abs() < 0.001);
@@ -9343,6 +9493,13 @@ mod tests {
                 s!("kawase_ps"),
                 s!("ps_4_0"),
                 "test kawase pixel shader",
+            )
+            .unwrap();
+            compile_live_desktop_shader(
+                LIVE_DESKTOP_COPY_SHADER_HLSL,
+                s!("gaussian_ps"),
+                s!("ps_4_0"),
+                "test gaussian pixel shader",
             )
             .unwrap();
             compile_live_desktop_shader(

@@ -74,7 +74,7 @@
         </label>
 
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Dual Kawase</div>
+          <div class="background-debug-subtitle">Blur Kernel</div>
           <label class="background-debug-toggle">
             <input
               name="kawaseDebugOverride"
@@ -85,8 +85,25 @@
             <span>覆盖半径/pass</span>
           </label>
 
+          <div class="background-debug-mode-group background-debug-kernel-group" role="group" aria-label="Blur kernel">
+            <button
+              type="button"
+              :class="['background-debug-mode-button', kawaseParams.kernel === BLUR_KERNEL_DUAL_KAWASE && 'background-debug-mode-button-active']"
+              @click="setBlurKernel(BLUR_KERNEL_DUAL_KAWASE)"
+            >
+              Dual
+            </button>
+            <button
+              type="button"
+              :class="['background-debug-mode-button', kawaseParams.kernel === BLUR_KERNEL_GAUSSIAN && 'background-debug-mode-button-active']"
+              @click="setBlurKernel(BLUR_KERNEL_GAUSSIAN)"
+            >
+              Gaussian
+            </button>
+          </div>
+
           <label
-            v-for="slider in kawaseSliders"
+            v-for="slider in activeBlurKernelSliders"
             :key="slider.key"
             class="background-debug-control"
           >
@@ -327,6 +344,8 @@ import {
 import {
   KAWASE_DEBUG_OFFSET_SCALE_MAX,
   KAWASE_DEBUG_OFFSET_SCALE_MIN,
+  KAWASE_DEBUG_GAUSSIAN_RADIUS_PX_MAX,
+  KAWASE_DEBUG_GAUSSIAN_RADIUS_PX_MIN,
   KAWASE_DEBUG_PASS_COUNT_MAX,
   KAWASE_DEBUG_PASS_COUNT_MIN,
   resetKawaseDebugParams,
@@ -335,6 +354,10 @@ import {
   useKawaseDebugOverrideEnabled,
   useKawaseDebugParams,
 } from "../rendering/pixi/background/kawaseDebugParams.js";
+import {
+  BLUR_KERNEL_DUAL_KAWASE,
+  BLUR_KERNEL_GAUSSIAN,
+} from "../domain/backgroundEffectPlan.js";
 
 const props = defineProps({
   state: {
@@ -471,8 +494,21 @@ const kawaseSliders = [
     digits: 2,
   },
 ];
+const gaussianSliders = [
+  {
+    key: "gaussianRadiusPx",
+    label: "gaussianRadius",
+    min: KAWASE_DEBUG_GAUSSIAN_RADIUS_PX_MIN,
+    max: KAWASE_DEBUG_GAUSSIAN_RADIUS_PX_MAX,
+    step: 0.25,
+    digits: 2,
+  },
+];
 
 const tintHex = computed(() => rgbArrayToHex(params.tintColor));
+const activeBlurKernelSliders = computed(() => (
+  kawaseParams.kernel === BLUR_KERNEL_GAUSSIAN ? gaussianSliders : kawaseSliders
+));
 const acrylicCopyButtonLabel = computed(() => (hasCopiedAcrylic.value ? "已复制" : "复制 JSON"));
 const diagnosticsCopyButtonLabel = computed(() => (hasCopiedDiagnostics.value ? "已复制" : "复制诊断"));
 const liveDesktopStatus = computed(() => normalizeLiveDesktopStatus(props.state?.liveDesktopRuntimeStatus?.value));
@@ -803,6 +839,11 @@ function syncLiveDesktopDebugEffects(options = {}) {
 
 function setKawaseOverrideEnabled(enabled) {
   setKawaseDebugOverrideEnabled(enabled);
+  syncLiveDesktopDebugEffects({ delay: 0 });
+}
+
+function setBlurKernel(kernel) {
+  updateKawaseDebugParams({ kernel });
   syncLiveDesktopDebugEffects({ delay: 0 });
 }
 
@@ -1296,6 +1337,10 @@ onBeforeUnmount(() => {
 
 .background-debug-mode-group {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.background-debug-kernel-group {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .background-debug-tab,

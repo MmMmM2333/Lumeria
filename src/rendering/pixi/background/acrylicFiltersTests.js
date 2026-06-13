@@ -14,11 +14,15 @@ export async function runAcrylicFiltersTests() {
   };
   const {
     ACRYLIC_COMPOSITE_FRAGMENT,
+    GAUSSIAN_FRAGMENT,
     KAWASE_FRAGMENT,
   } = await importAcrylicFilters();
 
   assert(KAWASE_FRAGMENT.includes("uniform vec4 uInputClamp;"), "kawase filter should receive Pixi's input clamp");
   assert(KAWASE_FRAGMENT.includes("clamp(uv, uInputClamp.xy, uInputClamp.zw)"), "kawase samples should clamp to the valid input frame");
+  assert(GAUSSIAN_FRAGMENT.includes("uniform vec4 uInputClamp;"), "gaussian filter should receive Pixi's input clamp");
+  assert(GAUSSIAN_FRAGMENT.includes("MAX_GAUSSIAN_RADIUS"), "gaussian filter should cap the sample radius");
+  assert(GAUSSIAN_FRAGMENT.includes("exp(-(sampleIndex * sampleIndex)"), "gaussian filter should weight samples with a gaussian curve");
   assert(ACRYLIC_COMPOSITE_FRAGMENT.includes("uniform vec4 uInputClamp;"), "acrylic composite should receive Pixi's input clamp");
   assert(ACRYLIC_COMPOSITE_FRAGMENT.includes("clamp(vTextureCoord, uInputClamp.xy, uInputClamp.zw)"), "acrylic composite should clamp to the valid input frame");
   assert(ACRYLIC_COMPOSITE_FRAGMENT.includes("uniform sampler2D uNoiseTexture;"), "acrylic composite should sample a cached noise texture");

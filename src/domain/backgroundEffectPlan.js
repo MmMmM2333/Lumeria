@@ -11,6 +11,8 @@ import { normalizeAcrylicCompositeParams } from "../rendering/pixi/background/ac
 
 export const ACRYLIC_RENDER_MAX_WIDTH = 960;
 export const ACRYLIC_RENDER_MAX_HEIGHT = 540;
+export const BLUR_KERNEL_DUAL_KAWASE = "dualKawase";
+export const BLUR_KERNEL_GAUSSIAN = "gaussian";
 export const DUAL_KAWASE_PASS_COUNT = 4;
 export const DUAL_KAWASE_PASS_COUNT_MIN = 1;
 export const DUAL_KAWASE_MIN_SIZE = 16;
@@ -18,6 +20,9 @@ export const DUAL_KAWASE_OFFSET_SCALE_MIN = 0.02;
 export const DUAL_KAWASE_OFFSET_SCALE_MAX = 2;
 export const DUAL_KAWASE_BLUR_OFFSET_SCALE_MIN = 0.1;
 export const DUAL_KAWASE_BLUR_OFFSET_SCALE_MAX = 1.55;
+export const GAUSSIAN_BLUR_RADIUS_PX_DEFAULT = 4;
+export const GAUSSIAN_BLUR_RADIUS_PX_MIN = 0;
+export const GAUSSIAN_BLUR_RADIUS_PX_MAX = 32;
 
 export function resolveAcrylicRenderSize(width, height, maxWidth = ACRYLIC_RENDER_MAX_WIDTH, maxHeight = ACRYLIC_RENDER_MAX_HEIGHT) {
   const sourceWidth = Math.max(1, Number(width) || 1);
@@ -62,6 +67,16 @@ export function clampDualKawaseOffsetScale(value, fallback = 1) {
   return clampNumber(value, DUAL_KAWASE_OFFSET_SCALE_MIN, DUAL_KAWASE_OFFSET_SCALE_MAX, fallback);
 }
 
+export function normalizeBlurKernel(value, fallback = BLUR_KERNEL_DUAL_KAWASE) {
+  if (value === BLUR_KERNEL_GAUSSIAN) return BLUR_KERNEL_GAUSSIAN;
+  if (value === BLUR_KERNEL_DUAL_KAWASE) return BLUR_KERNEL_DUAL_KAWASE;
+  return fallback === BLUR_KERNEL_GAUSSIAN ? BLUR_KERNEL_GAUSSIAN : BLUR_KERNEL_DUAL_KAWASE;
+}
+
+export function clampGaussianBlurRadiusPx(value, fallback = GAUSSIAN_BLUR_RADIUS_PX_DEFAULT) {
+  return clampNumber(value, GAUSSIAN_BLUR_RADIUS_PX_MIN, GAUSSIAN_BLUR_RADIUS_PX_MAX, fallback);
+}
+
 export function normalizeDualKawaseParams(params = {}, fallback = {}) {
   const source = params && typeof params === "object" ? params : {};
   return {
@@ -73,6 +88,19 @@ export function normalizeDualKawaseParams(params = {}, fallback = {}) {
       source.passCount,
       clampDualKawasePassCount(fallback.passCount, DUAL_KAWASE_PASS_COUNT)
     ),
+  };
+}
+
+export function normalizeBlurEffectParams(params = {}, fallback = {}) {
+  const source = params && typeof params === "object" ? params : {};
+  const dualKawase = normalizeDualKawaseParams(source, fallback);
+  return {
+    ...dualKawase,
+    gaussianRadiusPx: clampGaussianBlurRadiusPx(
+      source.gaussianRadiusPx,
+      clampGaussianBlurRadiusPx(fallback.gaussianRadiusPx, GAUSSIAN_BLUR_RADIUS_PX_DEFAULT)
+    ),
+    kernel: normalizeBlurKernel(source.kernel, normalizeBlurKernel(fallback.kernel)),
   };
 }
 
@@ -112,9 +140,11 @@ export function createBackgroundEffectPlan(config = {}) {
   const defaultBlurOffsetScale = effect === BACKGROUND_EFFECT_BLUR
     ? resolveBlurOffsetScale(blurStrength)
     : 1;
-  const dualKawase = normalizeDualKawaseParams(
+  const blurParams = normalizeBlurEffectParams(
     config.dualKawaseParams ?? config.dualKawase,
     {
+      gaussianRadiusPx: GAUSSIAN_BLUR_RADIUS_PX_DEFAULT,
+      kernel: BLUR_KERNEL_DUAL_KAWASE,
       offsetScale: defaultBlurOffsetScale,
       passCount: DUAL_KAWASE_PASS_COUNT,
     }
@@ -128,12 +158,14 @@ export function createBackgroundEffectPlan(config = {}) {
       strength: blurStrength,
       renderMaxWidth: ACRYLIC_RENDER_MAX_WIDTH,
       renderMaxHeight: ACRYLIC_RENDER_MAX_HEIGHT,
-      passCount: dualKawase.passCount,
+      kernel: blurParams.kernel,
+      gaussianRadiusPx: blurParams.gaussianRadiusPx,
+      passCount: blurParams.passCount,
       minSize: DUAL_KAWASE_MIN_SIZE,
-      offsetScale: dualKawase.offsetScale,
-      downOffsets: [1, 1.35, 1.7, 2.05].map((offset) => offset * dualKawase.offsetScale),
-      upOffsets: [1.1, 1.35, 1.6].map((offset) => offset * dualKawase.offsetScale),
-      finalUpOffset: 1.25 * dualKawase.offsetScale,
+      offsetScale: blurParams.offsetScale,
+      downOffsets: [1, 1.35, 1.7, 2.05].map((offset) => offset * blurParams.offsetScale),
+      upOffsets: [1.1, 1.35, 1.6].map((offset) => offset * blurParams.offsetScale),
+      finalUpOffset: 1.25 * blurParams.offsetScale,
     },
     acrylic: {
       ...acrylic,
