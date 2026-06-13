@@ -305,6 +305,14 @@ function normalizeLiveDesktopRuntimeStatus(status) {
   };
 }
 
+function liveDesktopRuntimeStatusIsRunning(status) {
+  return Boolean(status?.active || status?.phase === "running");
+}
+
+function liveDesktopRuntimeStatusIsStopped(status) {
+  return status?.phase === "stopped";
+}
+
 function resolveLiveDesktopAcrylicProfile(options) {
   const appearance = normalizeBackgroundAcrylicAppearance(options.backgroundAcrylicAppearance.value);
   if (appearance !== BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM) return appearance;
@@ -709,7 +717,7 @@ export function useLaunchpadNative(options) {
     return Boolean(
       !options.isDesktopOpen.value
       && canUseActiveLiveDesktopBackground()
-      && (status.active || status.phase === "running")
+      && liveDesktopRuntimeStatusIsRunning(status)
     );
   }
 
@@ -724,7 +732,7 @@ export function useLaunchpadNative(options) {
           if (generation !== liveDesktopRuntimeSyncGeneration) return options.liveDesktopRuntimeStatus.value;
           if (shouldRunLiveDesktopBackground()) return options.liveDesktopRuntimeStatus.value;
           const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
-          if (current.phase === "stopped") return current;
+          if (liveDesktopRuntimeStatusIsStopped(current)) return current;
           return stopNativeLiveDesktopBackground();
         });
       return liveDesktopRuntimeSync;
@@ -751,12 +759,12 @@ export function useLaunchpadNative(options) {
             return options.liveDesktopRuntimeStatus.value;
           }
           clearLiveDesktopIdleStopTimer();
-          if (current.phase === "stopped") return current;
+          if (liveDesktopRuntimeStatusIsStopped(current)) return current;
           return stopNativeLiveDesktopBackground();
         }
         clearLiveDesktopIdleStopTimer();
         const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
-        if (current.active || current.phase === "running") {
+        if (liveDesktopRuntimeStatusIsRunning(current)) {
           await setNativeLiveDesktopBackgroundVisible(true);
           if (generation !== liveDesktopRuntimeSyncGeneration) return options.liveDesktopRuntimeStatus.value;
           return configureNativeLiveDesktopBackground();
@@ -780,7 +788,7 @@ export function useLaunchpadNative(options) {
         clearLiveDesktopIdleStopTimer();
         if (!shouldRunLiveDesktopBackground()) return stopNativeLiveDesktopBackground();
         const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
-        if (current.active || current.phase === "running") {
+        if (liveDesktopRuntimeStatusIsRunning(current)) {
           await stopNativeLiveDesktopBackground();
         }
         if (generation !== liveDesktopRuntimeSyncGeneration) return options.liveDesktopRuntimeStatus.value;
@@ -939,8 +947,9 @@ export function useLaunchpadNative(options) {
       options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(
         await startLiveDesktopBackground()
       );
-      liveDesktopBackgroundVisible = options.liveDesktopRuntimeStatus.value.phase === "running"
-        || options.liveDesktopRuntimeStatus.value.active
+      liveDesktopBackgroundVisible = liveDesktopRuntimeStatusIsRunning(
+        options.liveDesktopRuntimeStatus.value
+      )
         ? true
         : null;
     } catch (error) {
