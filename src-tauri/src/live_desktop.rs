@@ -1305,6 +1305,8 @@ pub(crate) struct LiveDesktopRuntimeConfig {
     darken_color: String,
     #[serde(default = "default_live_desktop_opacity")]
     opacity: u32,
+    #[serde(default)]
+    effect_plan: Option<LiveDesktopEffectPlan>,
     acrylic_appearance: LiveDesktopAcrylicAppearance,
     acrylic_params: LiveDesktopAcrylicParams,
     #[serde(default = "default_live_desktop_disable_mouse_relay")]
@@ -1324,6 +1326,46 @@ enum LiveDesktopBackgroundEffect {
     Dimmed,
     Blur,
     AcrylicWebgl,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LiveDesktopEffectPlan {
+    effect: LiveDesktopBackgroundEffect,
+    opacity: f32,
+    blur: LiveDesktopBlurEffectPlan,
+    acrylic: LiveDesktopAcrylicEffectPlan,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LiveDesktopBlurEffectPlan {
+    strength: u32,
+    render_max_width: u32,
+    render_max_height: u32,
+    pass_count: u32,
+    min_size: u32,
+    offset_scale: f32,
+    down_offsets: Vec<f32>,
+    up_offsets: Vec<f32>,
+    final_up_offset: f32,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LiveDesktopAcrylicEffectPlan {
+    brightness: f32,
+    contrast: f32,
+    noise: f32,
+    saturation: f32,
+    seed: f32,
+    tint_color: [f32; 3],
+    tint_strength: f32,
+    alpha: f32,
+    enabled: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1411,6 +1453,7 @@ impl Default for LiveDesktopRuntimeConfig {
             darken_strength: 28,
             darken_color: "#1c1c1c".to_string(),
             opacity: default_live_desktop_opacity(),
+            effect_plan: None,
             acrylic_appearance: LiveDesktopAcrylicAppearance::System,
             acrylic_params: LiveDesktopAcrylicParams::default(),
             disable_mouse_relay: default_live_desktop_disable_mouse_relay(),
@@ -7825,6 +7868,68 @@ mod tests {
 
         config.opacity = 250;
         assert_eq!(resolve_live_desktop_opacity(&config), 1.0);
+    }
+
+    #[test]
+    fn live_desktop_runtime_config_accepts_missing_effect_plan() {
+        let mut value = serde_json::to_value(LiveDesktopRuntimeConfig::default()).unwrap();
+        value.as_object_mut().unwrap().remove("effectPlan");
+
+        let config: LiveDesktopRuntimeConfig = serde_json::from_value(value).unwrap();
+
+        assert!(config.effect_plan.is_none());
+    }
+
+    #[test]
+    fn live_desktop_runtime_config_reads_effect_plan() {
+        let mut value = serde_json::to_value(LiveDesktopRuntimeConfig::default()).unwrap();
+        value.as_object_mut().unwrap().insert(
+            "effectPlan".to_string(),
+            serde_json::json!({
+                "effect": "acrylicWebgl",
+                "opacity": 0.37,
+                "blur": {
+                    "strength": 72,
+                    "renderMaxWidth": 960,
+                    "renderMaxHeight": 540,
+                    "passCount": 4,
+                    "minSize": 16,
+                    "offsetScale": 1.275,
+                    "downOffsets": [1.275, 1.72125, 2.1675, 2.61375],
+                    "upOffsets": [1.4025, 1.72125, 2.04],
+                    "finalUpOffset": 1.59375
+                },
+                "acrylic": {
+                    "brightness": 1.2,
+                    "contrast": 0.86,
+                    "noise": 0.008,
+                    "saturation": 1.45,
+                    "seed": 0.42,
+                    "tintColor": [0.1, 0.2, 0.3],
+                    "tintStrength": 0.24,
+                    "alpha": 0.37,
+                    "enabled": true
+                }
+            }),
+        );
+
+        let config: LiveDesktopRuntimeConfig = serde_json::from_value(value).unwrap();
+        let effect_plan = config.effect_plan.as_ref().unwrap();
+
+        assert_eq!(
+            effect_plan.effect,
+            LiveDesktopBackgroundEffect::AcrylicWebgl
+        );
+        assert!((effect_plan.opacity - 0.37).abs() < 0.001);
+        assert_eq!(effect_plan.blur.strength, 72);
+        assert_eq!(effect_plan.blur.render_max_width, 960);
+        assert!((effect_plan.blur.offset_scale - 1.275).abs() < 0.001);
+        assert_eq!(effect_plan.blur.down_offsets.len(), 4);
+        assert!((effect_plan.blur.final_up_offset - 1.59375).abs() < 0.001);
+        assert!(effect_plan.acrylic.enabled);
+        assert!((effect_plan.acrylic.brightness - 1.2).abs() < 0.001);
+        assert!((effect_plan.acrylic.alpha - 0.37).abs() < 0.001);
+        assert_eq!(effect_plan.acrylic.tint_color, [0.1, 0.2, 0.3]);
     }
 
     #[test]
