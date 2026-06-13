@@ -312,72 +312,40 @@ import {
   BLUR_KERNEL_DUAL_KAWASE,
   BLUR_KERNEL_GAUSSIAN,
 } from "../domain/backgroundEffectPlan.js";
+import {
+  formatCount,
+  formatFrameArrived,
+  formatFrameTiming,
+  formatLastFrame,
+  formatLiveDesktopRates,
+  formatPixelProbe,
+  formatWindowMeta,
+  formatWindowRect,
+  formatWindowTitle,
+  normalizeLiveDesktopStatus,
+} from "./backgroundDebug/liveDesktopDiagnostics.js";
+import {
+  LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN,
+  notifyLiveDesktopCompositorKeeperChanged,
+  notifyLiveDesktopCssFallbackEffectsChanged,
+  persistLiveDesktopCompositorKeeper,
+  persistLiveDesktopCssFallbackEffects,
+  persistLiveDesktopDebugFrameSourceOverride,
+  persistLiveDesktopDisableMouseRelay,
+  persistLiveDesktopForceDwmFlush,
+  persistLiveDesktopSkipBlankFrames,
+  readLiveDesktopCompositorKeeper,
+  readLiveDesktopCssFallbackEffects,
+  readLiveDesktopDebugFrameSourceOverride,
+  readLiveDesktopDisableMouseRelay,
+  readLiveDesktopForceDwmFlush,
+  readLiveDesktopSkipBlankFrames,
+} from "./backgroundDebug/liveDesktopDebugSettings.js";
 
 const props = defineProps({
   state: {
     type: Object,
     default: null,
-  },
-});
-
-const LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY = "launchpadLiveDesktopDebugFrameSourceOverride";
-const LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY = "launchpadLiveDesktopDisableMouseRelay";
-const LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY = "launchpadLiveDesktopCompositorKeeper";
-const LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT = "launchpad-live-desktop-compositor-keeper-change";
-const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY = "launchpadLiveDesktopCssFallbackEffects";
-const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT = "launchpad-live-desktop-css-fallback-effects-change";
-const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "launchpadLiveDesktopSkipBlankFrames";
-const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "launchpadLiveDesktopForceDwmFlush";
-const LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN = "testPattern";
-const DEFAULT_LIVE_DESKTOP_STATUS = Object.freeze({
-  phase: "unknown",
-  active: false,
-  generation: 0,
-  reason: "",
-  detail: "",
-  diagnostics: {
-    framesCopied: 0,
-    frameTimeouts: 0,
-    copyErrors: 0,
-    commitErrors: 0,
-    frameArrivedEvents: 0,
-    frameArrivedDroppedSignals: 0,
-    frameCopySamples: 0,
-    frameCopyMicrosTotal: 0,
-    lastFrameCopyMicros: 0,
-    maxFrameCopyMicros: 0,
-    frameCommitSamples: 0,
-    frameCommitMicrosTotal: 0,
-    lastFrameCommitMicros: 0,
-    maxFrameCommitMicros: 0,
-    configUpdates: 0,
-    configErrors: 0,
-    lastFrameWidth: 0,
-    lastFrameHeight: 0,
-    lastFrameFormat: 0,
-    testPatternFrames: 0,
-    pixelProbeSamples: 0,
-    pixelProbeErrors: 0,
-    blankFrameSkips: 0,
-    lastPixelProbeWidth: 0,
-    lastPixelProbeHeight: 0,
-    lastPixelProbeMinRgb: 0,
-    lastPixelProbeMaxRgb: 0,
-    lastPixelProbeAvgRgb: 0,
-    lastPixelProbeMinAlpha: 0,
-    lastPixelProbeMaxAlpha: 0,
-    lastPixelProbeAvgAlpha: 0,
-    lastError: "",
-  },
-  windowDiagnostics: {
-    platform: "unknown",
-    available: false,
-    reason: "",
-    detail: "",
-    windowCount: 0,
-    candidateCount: 0,
-    windows: [],
-    candidates: [],
   },
 });
 
@@ -519,157 +487,8 @@ const liveDesktopWindowRows = computed(() => {
   ];
 });
 
-function normalizeCount(value) {
-  const number = Number(value);
-  return Number.isFinite(number) && number >= 0 ? Math.floor(number) : 0;
-}
-
-function normalizeLiveDesktopStatus(status) {
-  const diagnostics = status?.diagnostics || {};
-  return {
-    phase: String(status?.phase || DEFAULT_LIVE_DESKTOP_STATUS.phase),
-    active: Boolean(status?.active),
-    generation: normalizeCount(status?.generation),
-    reason: String(status?.reason || ""),
-    detail: String(status?.detail || ""),
-    diagnostics: {
-      framesCopied: normalizeCount(diagnostics.framesCopied),
-      frameTimeouts: normalizeCount(diagnostics.frameTimeouts),
-      copyErrors: normalizeCount(diagnostics.copyErrors),
-      commitErrors: normalizeCount(diagnostics.commitErrors),
-      frameArrivedEvents: normalizeCount(diagnostics.frameArrivedEvents),
-      frameArrivedDroppedSignals: normalizeCount(diagnostics.frameArrivedDroppedSignals),
-      frameCopySamples: normalizeCount(diagnostics.frameCopySamples),
-      frameCopyMicrosTotal: normalizeCount(diagnostics.frameCopyMicrosTotal),
-      lastFrameCopyMicros: normalizeCount(diagnostics.lastFrameCopyMicros),
-      maxFrameCopyMicros: normalizeCount(diagnostics.maxFrameCopyMicros),
-      frameCommitSamples: normalizeCount(diagnostics.frameCommitSamples),
-      frameCommitMicrosTotal: normalizeCount(diagnostics.frameCommitMicrosTotal),
-      lastFrameCommitMicros: normalizeCount(diagnostics.lastFrameCommitMicros),
-      maxFrameCommitMicros: normalizeCount(diagnostics.maxFrameCommitMicros),
-      configUpdates: normalizeCount(diagnostics.configUpdates),
-      configErrors: normalizeCount(diagnostics.configErrors),
-      lastFrameWidth: normalizeCount(diagnostics.lastFrameWidth),
-      lastFrameHeight: normalizeCount(diagnostics.lastFrameHeight),
-      lastFrameFormat: normalizeCount(diagnostics.lastFrameFormat),
-      testPatternFrames: normalizeCount(diagnostics.testPatternFrames),
-      pixelProbeSamples: normalizeCount(diagnostics.pixelProbeSamples),
-      pixelProbeErrors: normalizeCount(diagnostics.pixelProbeErrors),
-      blankFrameSkips: normalizeCount(diagnostics.blankFrameSkips),
-      abandonedRendererWorkers: normalizeCount(diagnostics.abandonedRendererWorkers),
-      reapedAbandonedRendererWorkers: normalizeCount(diagnostics.reapedAbandonedRendererWorkers),
-      lastPixelProbeWidth: normalizeCount(diagnostics.lastPixelProbeWidth),
-      lastPixelProbeHeight: normalizeCount(diagnostics.lastPixelProbeHeight),
-      lastPixelProbeMinRgb: normalizeCount(diagnostics.lastPixelProbeMinRgb),
-      lastPixelProbeMaxRgb: normalizeCount(diagnostics.lastPixelProbeMaxRgb),
-      lastPixelProbeAvgRgb: normalizeCount(diagnostics.lastPixelProbeAvgRgb),
-      lastPixelProbeMinAlpha: normalizeCount(diagnostics.lastPixelProbeMinAlpha),
-      lastPixelProbeMaxAlpha: normalizeCount(diagnostics.lastPixelProbeMaxAlpha),
-      lastPixelProbeAvgAlpha: normalizeCount(diagnostics.lastPixelProbeAvgAlpha),
-      lastAbandonedRendererReason: String(diagnostics.lastAbandonedRendererReason || ""),
-      lastError: String(diagnostics.lastError || ""),
-    },
-    windowDiagnostics: normalizeLiveDesktopWindowDiagnostics(status?.windowDiagnostics),
-  };
-}
-
-function normalizeLiveDesktopWindowDiagnostics(diagnostics) {
-  const windows = Array.isArray(diagnostics?.windows)
-    ? diagnostics.windows.map(normalizeLiveDesktopWindowInfo)
-    : [];
-  const candidates = Array.isArray(diagnostics?.candidates)
-    ? diagnostics.candidates.map(normalizeLiveDesktopWindowInfo)
-    : [];
-  return {
-    platform: String(diagnostics?.platform || DEFAULT_LIVE_DESKTOP_STATUS.windowDiagnostics.platform),
-    available: Boolean(diagnostics?.available),
-    reason: String(diagnostics?.reason || DEFAULT_LIVE_DESKTOP_STATUS.windowDiagnostics.reason),
-    detail: String(diagnostics?.detail || ""),
-    windowCount: normalizeCount(diagnostics?.windowCount ?? windows.length),
-    candidateCount: normalizeCount(diagnostics?.candidateCount ?? candidates.length),
-    windows,
-    candidates,
-  };
-}
-
-function normalizeLiveDesktopWindowInfo(windowInfo) {
-  return {
-    hwnd: String(windowInfo?.hwnd || ""),
-    parentHwnd: String(windowInfo?.parentHwnd || ""),
-    rootHwnd: String(windowInfo?.rootHwnd || ""),
-    pid: normalizeCount(windowInfo?.pid),
-    className: String(windowInfo?.className || ""),
-    title: String(windowInfo?.title || ""),
-    processName: String(windowInfo?.processName || ""),
-    role: String(windowInfo?.role || "window"),
-    candidateReason: String(windowInfo?.candidateReason || ""),
-    visible: Boolean(windowInfo?.visible),
-    style: String(windowInfo?.style || ""),
-    exStyle: String(windowInfo?.exStyle || ""),
-    cloaked: normalizeCount(windowInfo?.cloaked),
-    rect: normalizeLiveDesktopWindowRect(windowInfo?.rect),
-  };
-}
-
-function normalizeLiveDesktopWindowRect(rect) {
-  return {
-    left: normalizeSignedInteger(rect?.left),
-    top: normalizeSignedInteger(rect?.top),
-    right: normalizeSignedInteger(rect?.right),
-    bottom: normalizeSignedInteger(rect?.bottom),
-    width: normalizeCount(rect?.width),
-    height: normalizeCount(rect?.height),
-  };
-}
-
 function formatValue(value, digits) {
   return Number(value).toFixed(digits);
-}
-
-function formatCount(value) {
-  return String(normalizeCount(value));
-}
-
-function formatLastFrame(diagnostics) {
-  if (!diagnostics.lastFrameWidth || !diagnostics.lastFrameHeight) return "-";
-  return `${diagnostics.lastFrameWidth}x${diagnostics.lastFrameHeight} fmt ${diagnostics.lastFrameFormat}`;
-}
-
-function formatPixelProbe(diagnostics) {
-  if (!diagnostics.pixelProbeSamples && !diagnostics.pixelProbeErrors) return "-";
-  const size = diagnostics.lastPixelProbeWidth && diagnostics.lastPixelProbeHeight
-    ? `${diagnostics.lastPixelProbeWidth}x${diagnostics.lastPixelProbeHeight} `
-    : "";
-  return `${diagnostics.pixelProbeSamples} ok / ${diagnostics.pixelProbeErrors} err ${size}rgb ${diagnostics.lastPixelProbeMinRgb}/${diagnostics.lastPixelProbeMaxRgb}/${diagnostics.lastPixelProbeAvgRgb} alpha ${diagnostics.lastPixelProbeMinAlpha}/${diagnostics.lastPixelProbeMaxAlpha}/${diagnostics.lastPixelProbeAvgAlpha}`;
-}
-
-function formatFrameArrived(diagnostics) {
-  if (!diagnostics.frameArrivedEvents && !diagnostics.frameArrivedDroppedSignals) return "-";
-  return `${diagnostics.frameArrivedEvents} events / ${diagnostics.frameArrivedDroppedSignals} dropped`;
-}
-
-function formatFrameTiming(samples, totalMicros, lastMicros, maxMicros) {
-  if (!samples) return "-";
-  const averageMicros = totalMicros / samples;
-  return [
-    `avg ${formatMicrosAsMillis(averageMicros)}ms`,
-    `last ${formatMicrosAsMillis(lastMicros)}ms`,
-    `max ${formatMicrosAsMillis(maxMicros)}ms`,
-  ].join(" / ");
-}
-
-function formatMicrosAsMillis(micros) {
-  return (Number(micros) / 1000).toFixed(2);
-}
-
-function formatLiveDesktopRates(rates) {
-  return [
-    `frames ${rates.framesPerSecond.toFixed(1)}/s`,
-    `arrived ${rates.arrivedPerSecond.toFixed(1)}/s`,
-    `dropped ${rates.droppedPerSecond.toFixed(1)}/s`,
-    `timeouts ${rates.timeoutsPerSecond.toFixed(1)}/s`,
-    `copyErr ${rates.copyErrorsPerSecond.toFixed(1)}/s`,
-  ].join(" · ");
 }
 
 function updateLiveDesktopRates() {
@@ -726,27 +545,6 @@ function updateLiveDesktopRates() {
   };
 }
 
-function normalizeSignedInteger(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? Math.trunc(number) : 0;
-}
-
-function formatWindowTitle(windowInfo) {
-  return `${windowInfo.role || "window"} ${windowInfo.hwnd || "-"}`;
-}
-
-function formatWindowMeta(windowInfo) {
-  const process = windowInfo.processName || `pid ${windowInfo.pid}`;
-  const className = windowInfo.className || "unknown class";
-  const reason = windowInfo.candidateReason || "diagnostic";
-  const title = windowInfo.title ? ` · ${windowInfo.title}` : "";
-  return `${reason} · ${className} · ${process} · parent ${windowInfo.parentHwnd || "-"} · root ${windowInfo.rootHwnd || "-"} · style ${windowInfo.style || "-"} · ex ${windowInfo.exStyle || "-"} · cloaked ${windowInfo.cloaked}${title}`;
-}
-
-function formatWindowRect(rect) {
-  return `${rect.left},${rect.top} ${rect.width}x${rect.height}`;
-}
-
 function updateNumber(key, event) {
   updateAcrylicDebugParams({ [key]: Number(event.target.value) });
 }
@@ -790,151 +588,6 @@ function updateTintColor(event) {
   updateAcrylicDebugParams({
     tintColor: hexToRgbArray(event.target.value, params.tintColor),
   });
-}
-
-function readLiveDesktopDebugFrameSourceOverride() {
-  if (typeof window === "undefined") return null;
-  try {
-    const frameSourceOverride = window.localStorage?.getItem(LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY);
-    return frameSourceOverride === LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN
-      ? LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function readLiveDesktopDisableMouseRelay() {
-  try {
-    return window.localStorage?.getItem(LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY) !== "false";
-  } catch (error) {
-    console.warn("Failed to read live desktop mouse relay setting", error);
-    return true;
-  }
-}
-
-function readLiveDesktopCompositorKeeper() {
-  try {
-    return window.localStorage?.getItem(LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY) === "true";
-  } catch (error) {
-    console.warn("Failed to read live desktop compositor keeper setting", error);
-    return false;
-  }
-}
-
-function readLiveDesktopCssFallbackEffects() {
-  try {
-    return window.localStorage?.getItem(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY) === "true";
-  } catch (error) {
-    console.warn("Failed to read live desktop CSS fallback setting", error);
-    return false;
-  }
-}
-
-function readLiveDesktopSkipBlankFrames() {
-  try {
-    return window.localStorage?.getItem(LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY) === "true";
-  } catch (error) {
-    console.warn("Failed to read live desktop skip blank frames setting", error);
-    return false;
-  }
-}
-
-function readLiveDesktopForceDwmFlush() {
-  try {
-    return window.localStorage?.getItem(LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY) === "true";
-  } catch (error) {
-    console.warn("Failed to read live desktop DWM flush setting", error);
-    return false;
-  }
-}
-
-function persistLiveDesktopDisableMouseRelay(disabled) {
-  try {
-    if (disabled) {
-      window.localStorage?.removeItem(LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY);
-    } else {
-      window.localStorage?.setItem(LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY, "false");
-    }
-  } catch (error) {
-    console.warn("Failed to persist live desktop mouse relay setting", error);
-  }
-}
-
-function persistLiveDesktopCompositorKeeper(enabled) {
-  try {
-    if (enabled) {
-      window.localStorage?.setItem(LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY, "true");
-    } else {
-      window.localStorage?.removeItem(LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY);
-    }
-  } catch (error) {
-    console.warn("Failed to persist live desktop compositor keeper setting", error);
-  }
-}
-
-function persistLiveDesktopCssFallbackEffects(enabled) {
-  try {
-    if (enabled) {
-      window.localStorage?.setItem(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY, "true");
-    } else {
-      window.localStorage?.removeItem(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY);
-    }
-  } catch (error) {
-    console.warn("Failed to persist live desktop CSS fallback setting", error);
-  }
-}
-
-function persistLiveDesktopSkipBlankFrames(enabled) {
-  try {
-    if (enabled) {
-      window.localStorage?.setItem(LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY, "true");
-    } else {
-      window.localStorage?.removeItem(LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY);
-    }
-  } catch (error) {
-    console.warn("Failed to persist live desktop skip blank frames setting", error);
-  }
-}
-
-function persistLiveDesktopForceDwmFlush(enabled) {
-  try {
-    if (enabled) {
-      window.localStorage?.setItem(LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY, "true");
-    } else {
-      window.localStorage?.removeItem(LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY);
-    }
-  } catch (error) {
-    console.warn("Failed to persist live desktop DWM flush setting", error);
-  }
-}
-
-function notifyLiveDesktopCompositorKeeperChanged(enabled) {
-  window.dispatchEvent(new CustomEvent(LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT, {
-    detail: { enabled },
-  }));
-}
-
-function notifyLiveDesktopCssFallbackEffectsChanged(enabled) {
-  window.dispatchEvent(new CustomEvent(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT, {
-    detail: { enabled },
-  }));
-}
-
-function persistLiveDesktopDebugFrameSourceOverride(frameSourceOverride) {
-  if (typeof window === "undefined") return;
-  try {
-    if (frameSourceOverride === LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN) {
-      window.localStorage?.setItem(
-        LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY,
-        LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN
-      );
-      return;
-    }
-    window.localStorage?.removeItem(LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY);
-  } catch (error) {
-    console.warn("Failed to persist live desktop debug frame source override", error);
-  }
 }
 
 async function setLiveDesktopDisableMouseRelay(disabled) {

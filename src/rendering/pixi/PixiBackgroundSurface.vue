@@ -6,16 +6,15 @@
 </template>
 
 <script setup>
-import { Container, RenderTexture, Sprite, Texture, TilingSprite } from "pixi.js";
+import { Container, Sprite, Texture, TilingSprite } from "pixi.js";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { loadCachedBackgroundImageDataUrl } from "../../api/launchpadApi.js";
 import { createPixiApp } from "./createPixiApp.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { isAcrylicDebugEnabled, useAcrylicDebugOverrideEnabled, useAcrylicDebugParams } from "./background/acrylicDebugParams.js";
 import { isKawaseDebugEnabled, useKawaseDebugOverrideEnabled, useKawaseDebugParams } from "./background/kawaseDebugParams.js";
-import { createAcrylicCompositeFilter, createGaussianFilter, createKawaseFilter } from "./background/acrylicFilters.js";
 import { loadBackgroundTextureFromImage } from "./background/backgroundTextureLoader.js";
-import { createAcrylicNoiseTexture } from "./background/acrylicNoiseTexture.js";
+import { BackgroundEffectPipeline, destroyTexture } from "./background/backgroundEffectPipeline.js";
 import {
   DEFAULT_BACKGROUND_IMAGE_LAYOUT,
   resolveBackgroundImagePlacement,
@@ -27,11 +26,8 @@ import {
   DEFAULT_BACKGROUND_BLUR_STRENGTH,
 } from "../../composables/useLaunchpadSettingsConfig.js";
 import {
-  BLUR_KERNEL_GAUSSIAN,
   createBackgroundEffectPlan,
-  createDualKawaseLevels,
   resolveAcrylicBackgroundAlpha,
-  resolveAcrylicRenderSize,
 } from "./background/acrylicBackgroundPlan.js";
 
 const props = defineProps({
@@ -60,24 +56,12 @@ let sourceTexture = null;
 let sourceSprite = null;
 let sourceTilingSprite = null;
 let sourceContainer = null;
-let passSprite = null;
 let displaySprite = null;
-let downFilter = null;
-let upFilter = null;
-let gaussianHorizontalFilter = null;
-let gaussianVerticalFilter = null;
-let compositeFilter = null;
-let noiseTexture = null;
-let sourceRenderTexture = null;
-let finalBlurTexture = null;
-let finalRenderTexture = null;
-let downTextures = [];
-let upTextures = [];
+let effectPipeline = null;
 let resizeObserver = null;
 let destroyed = false;
 let pendingAnimationFrame = null;
 let textureLoadGeneration = 0;
-let renderSizeKey = "";
 
 const fallbackImageStyle = computed(() => ({
   backgroundImage: `url(${JSON.stringify(props.backgroundImageUrl)})`,
@@ -90,57 +74,6 @@ const fallbackImageStyle = computed(() => ({
   opacity: resolveAcrylicBackgroundAlpha(props.backgroundImageOpacity),
 }));
 
-function destroyTexture(texture, destroySource = true) {
-  if (!texture || texture.destroyed) return;
-  texture.destroy(destroySource);
-}
-
-function destroyRenderTextures() {
-  if (passSprite) passSprite.texture = Texture.EMPTY;
-  if (displaySprite) displaySprite.texture = Texture.EMPTY;
-  destroyTexture(sourceRenderTexture);
-  destroyTexture(finalBlurTexture);
-  destroyTexture(finalRenderTexture);
-  for (const texture of downTextures) destroyTexture(texture);
-  for (const texture of upTextures) destroyTexture(texture);
-  sourceRenderTexture = null;
-  finalBlurTexture = null;
-  finalRenderTexture = null;
-  downTextures = [];
-  upTextures = [];
-  renderSizeKey = "";
-}
-
-function createRenderTexture(width, height) {
-  return RenderTexture.create({
-    width: Math.max(1, Math.round(width)),
-    height: Math.max(1, Math.round(height)),
-    resolution: 1,
-  });
-}
-
-function ensureRenderTextures(width, height, passCount, minSize) {
-  const renderSize = resolveAcrylicRenderSize(width, height);
-  const levels = createDualKawaseLevels(renderSize.width, renderSize.height, passCount, minSize);
-  const nextKey = [
-    renderSize.width,
-    renderSize.height,
-    passCount,
-    minSize,
-    ...levels.map((level) => `${level.width}x${level.height}`),
-  ].join("|");
-  if (nextKey === renderSizeKey) return renderSize;
-
-  destroyRenderTextures();
-  renderSizeKey = nextKey;
-  sourceRenderTexture = createRenderTexture(renderSize.width, renderSize.height);
-  finalBlurTexture = createRenderTexture(renderSize.width, renderSize.height);
-  finalRenderTexture = createRenderTexture(renderSize.width, renderSize.height);
-  downTextures = levels.map((level) => createRenderTexture(level.width, level.height));
-  upTextures = levels.map((level) => createRenderTexture(level.width, level.height));
-  return renderSize;
-}
-
 function getHostSize() {
   const rect = hostRef.value?.getBoundingClientRect?.();
   return {
@@ -149,55 +82,15 @@ function getHostSize() {
   };
 }
 
-function renderPass(inputTexture, outputTexture, filter) {
-  if (!app || !passSprite || !inputTexture || !outputTexture) return;
-  passSprite.texture = inputTexture;
-  passSprite.position.set(0, 0);
-  passSprite.setSize(outputTexture.width, outputTexture.height);
-  passSprite.filters = filter ? [filter] : null;
-  filter?.setInputSize?.(inputTexture.width, inputTexture.height);
-  app.renderer.render({ container: passSprite, target: outputTexture, clear: true });
-  passSprite.filters = null;
-}
-
-function resolveGaussianAxis(radiusPx, renderAxis, hostAxis) {
-  const sigma = Math.max(0.001, (Number(radiusPx) || 0) * Math.max(1, renderAxis) / Math.max(1, hostAxis));
-  return {
-    radius: Math.min(32, Math.ceil(sigma * 3)),
-    sigma,
-  };
-}
-
-function renderGaussianBlur(effectPlan, renderSize, hostSize) {
-  const horizontal = resolveGaussianAxis(effectPlan.blur.gaussianRadiusPx, renderSize.width, hostSize.width);
-  const vertical = resolveGaussianAxis(effectPlan.blur.gaussianRadiusPx, renderSize.height, hostSize.height);
-  gaussianHorizontalFilter.setParams(horizontal);
-  renderPass(sourceRenderTexture, finalRenderTexture, gaussianHorizontalFilter);
-  gaussianVerticalFilter.setParams(vertical);
-  renderPass(finalRenderTexture, finalBlurTexture, gaussianVerticalFilter);
-}
-
-function renderDualKawaseBlur(effectPlan) {
-  const blurOffsetScale = effectPlan.blur.offsetScale;
-  let currentTexture = sourceRenderTexture;
-  for (let index = 0; index < downTextures.length; index += 1) {
-    downFilter.setOffset(effectPlan.blur.downOffsets[index] ?? (1 + index * 0.35) * blurOffsetScale);
-    renderPass(currentTexture, downTextures[index], downFilter);
-    currentTexture = downTextures[index];
-  }
-
-  for (let index = downTextures.length - 2; index >= 0; index -= 1) {
-    upFilter.setOffset(effectPlan.blur.upOffsets[index] ?? (1.1 + index * 0.25) * blurOffsetScale);
-    renderPass(currentTexture, upTextures[index], upFilter);
-    currentTexture = upTextures[index];
-  }
-
-  upFilter.setOffset(effectPlan.blur.finalUpOffset);
-  renderPass(currentTexture, finalBlurTexture, upFilter);
-}
-
 function renderSourceToTexture(renderSize, hostSize) {
-  if (!app || !sourceTexture || !sourceSprite || !sourceTilingSprite || !sourceContainer || !sourceRenderTexture) return;
+  if (
+    !app
+    || !sourceTexture
+    || !sourceSprite
+    || !sourceTilingSprite
+    || !sourceContainer
+    || !effectPipeline?.sourceRenderTexture
+  ) return;
   const renderScaleX = Math.max(0.0001, renderSize.width / Math.max(1, hostSize.width));
   const renderScaleY = Math.max(0.0001, renderSize.height / Math.max(1, hostSize.height));
   const layout = resolveBackgroundImagePlacement({
@@ -229,11 +122,11 @@ function renderSourceToTexture(renderSize, hostSize) {
     sourceSprite.setSize(layout.width, layout.height);
   }
   sourceContainer.position.set(0, 0);
-  app.renderer.render({ container: sourceContainer, target: sourceRenderTexture, clear: true });
+  app.renderer.render({ container: sourceContainer, target: effectPipeline.sourceRenderTexture, clear: true });
 }
 
 function renderBackgroundEffect() {
-  if (!props.active || !app || !sourceTexture || !hostRef.value) return;
+  if (!props.active || !app || !effectPipeline || !sourceTexture || !hostRef.value) return;
   const hostSize = getHostSize();
   const effectPlan = createBackgroundEffectPlan({
     acrylicParams: {
@@ -245,28 +138,22 @@ function renderBackgroundEffect() {
     effect: props.backgroundEffect,
     opacity: props.backgroundImageOpacity,
   });
-  const renderSize = ensureRenderTextures(
+  const { renderSize } = effectPipeline.ensureRenderTexturesForTarget(
     hostSize.width,
     hostSize.height,
-    effectPlan.blur.passCount,
-    effectPlan.blur.minSize
+    effectPlan
   );
-  if (!downTextures.length || !finalBlurTexture || !finalRenderTexture) return;
+  if (!effectPipeline.hasRenderTextures) return;
 
   renderSourceToTexture(renderSize, hostSize);
-  if (effectPlan.blur.kernel === BLUR_KERNEL_GAUSSIAN) {
-    renderGaussianBlur(effectPlan, renderSize, hostSize);
-  } else {
-    renderDualKawaseBlur(effectPlan);
-  }
+  effectPipeline.renderBlur(effectPlan, hostSize);
 
   if (props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) {
-    compositeFilter.setParams(effectPlan.acrylic);
-    renderPass(finalBlurTexture, finalRenderTexture, compositeFilter);
-    displaySprite.texture = finalRenderTexture;
+    effectPipeline.renderAcrylicComposite(effectPlan.acrylic);
+    displaySprite.texture = effectPipeline.finalRenderTexture;
     displaySprite.alpha = 1;
   } else {
-    displaySprite.texture = finalBlurTexture;
+    displaySprite.texture = effectPipeline.finalBlurTexture;
     displaySprite.alpha = effectPlan.opacity;
   }
 
@@ -342,32 +229,19 @@ function destroyPixi(options = {}) {
   window.removeEventListener("resize", handleResize);
   resizeObserver?.disconnect();
   resizeObserver = null;
-  destroyRenderTextures();
+  effectPipeline?.destroy();
+  effectPipeline = null;
   if (sourceSprite) sourceSprite.texture = Texture.EMPTY;
   if (sourceTilingSprite) sourceTilingSprite.texture = Texture.EMPTY;
   destroyTexture(sourceTexture);
   sourceTexture = null;
   sourceContainer?.destroy?.({ children: true });
-  passSprite?.destroy?.();
   app?.stage?.removeChild(displaySprite);
   displaySprite?.destroy?.();
   sourceSprite = null;
   sourceTilingSprite = null;
   sourceContainer = null;
-  passSprite = null;
   displaySprite = null;
-  downFilter?.destroy?.();
-  upFilter?.destroy?.();
-  gaussianHorizontalFilter?.destroy?.();
-  gaussianVerticalFilter?.destroy?.();
-  compositeFilter?.destroy?.();
-  destroyTexture(noiseTexture);
-  downFilter = null;
-  upFilter = null;
-  gaussianHorizontalFilter = null;
-  gaussianVerticalFilter = null;
-  compositeFilter = null;
-  noiseTexture = null;
   const currentApp = app;
   app = null;
   if (deep) currentApp?.destroy(true, { children: true });
@@ -403,14 +277,11 @@ onMounted(async () => {
   sourceTilingSprite.visible = false;
   sourceContainer.addChild(sourceSprite);
   sourceContainer.addChild(sourceTilingSprite);
-  passSprite = new Sprite(Texture.EMPTY);
   displaySprite = new Sprite(Texture.EMPTY);
-  downFilter = createKawaseFilter("launchpad-acrylic-downsample-filter", 1);
-  upFilter = createKawaseFilter("launchpad-acrylic-upsample-filter", 1.15);
-  gaussianHorizontalFilter = createGaussianFilter("launchpad-acrylic-gaussian-horizontal-filter", [1, 0]);
-  gaussianVerticalFilter = createGaussianFilter("launchpad-acrylic-gaussian-vertical-filter", [0, 1]);
-  noiseTexture = createAcrylicNoiseTexture();
-  compositeFilter = createAcrylicCompositeFilter(noiseTexture);
+  effectPipeline = new BackgroundEffectPipeline(app, {
+    displaySprite,
+    filterPrefix: "launchpad-acrylic",
+  });
   app.stage.addChild(displaySprite);
   resizeObserver = new ResizeObserver(handleResize);
   resizeObserver.observe(hostRef.value);
