@@ -79,6 +79,7 @@ const MIN_ICON_HYDRATION_BATCH_SIZE = 20;
 const MAX_ICON_HYDRATION_BATCH_SIZE = 80;
 const WINDOWS_WALLPAPER_REFRESH_INTERVAL_MS = 5000;
 const LIVE_DESKTOP_IDLE_STOP_DELAY_MS = 10_000;
+const LIVE_DESKTOP_FRAME_SOURCE_STORAGE_KEY = "launchpadLiveDesktopFrameSource";
 const LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY = "launchpadLiveDesktopDisableMouseRelay";
 const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "launchpadLiveDesktopSkipBlankFrames";
 const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "launchpadLiveDesktopForceDwmFlush";
@@ -238,12 +239,12 @@ function normalizeLiveDesktopWindowDiagnostics(diagnostics) {
   };
 }
 
-function resolveLiveDesktopDiagnosticMode() {
+function resolveLiveDesktopFrameSource() {
   if (typeof window === "undefined") return "wallpaperEnginePopupCapture";
   try {
-    const mode = window.localStorage?.getItem("launchpadLiveDesktopDiagnosticMode");
-    if (mode === "testPattern") return "testPattern";
-    if (mode === "wallpaperEnginePopupCapture") return "wallpaperEnginePopupCapture";
+    const frameSource = window.localStorage?.getItem(LIVE_DESKTOP_FRAME_SOURCE_STORAGE_KEY);
+    if (frameSource === "testPattern") return "testPattern";
+    if (frameSource === "wallpaperEnginePopupCapture") return "wallpaperEnginePopupCapture";
     return "wallpaperEnginePopupCapture";
   } catch {
     return "wallpaperEnginePopupCapture";
@@ -317,7 +318,7 @@ function makeLiveDesktopRuntimeConfig(options) {
   );
   return {
     effect: normalizeBackgroundEffect(options.backgroundEffect.value),
-    diagnosticMode: resolveLiveDesktopDiagnosticMode(),
+    frameSource: resolveLiveDesktopFrameSource(),
     blurStrength: clampBackgroundBlurStrength(options.backgroundBlurStrength.value),
     darkenStrength: clampBackgroundDarkenStrength(options.backgroundDarkenStrength.value),
     darkenColor: normalizeBackgroundDarkenColor(options.backgroundDarkenColor.value),
