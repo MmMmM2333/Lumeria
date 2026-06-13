@@ -472,7 +472,7 @@ struct LiveDesktopVisualPlacement {
 struct ComApartment;
 
 #[cfg(target_os = "windows")]
-struct LiveDesktopCaptureStartup {
+struct LiveDesktopOutputContext {
     output_index: u32,
     output_width: u32,
     output_height: u32,
@@ -4191,17 +4191,17 @@ fn wallpaper_engine_popup_target_matches_window_name(
 
 #[cfg(target_os = "windows")]
 fn create_wallpaper_engine_popup_plan(
-    capture: &LiveDesktopCaptureStartup,
+    output_context: &LiveDesktopOutputContext,
 ) -> LiveDesktopWallpaperEnginePopupPlan {
     LiveDesktopWallpaperEnginePopupPlan {
         window_name: format!(
             "LaunchPad::LiveDesktop::display{}::{}x{}",
-            capture.output_index, capture.output_width, capture.output_height
+            output_context.output_index, output_context.output_width, output_context.output_height
         ),
-        monitor_index: capture.output_index,
-        width: capture.output_width.max(1),
-        height: capture.output_height.max(1),
-        x: -(capture.output_width.max(1) as i32) - 128,
+        monitor_index: output_context.output_index,
+        width: output_context.output_width.max(1),
+        height: output_context.output_height.max(1),
+        x: -(output_context.output_width.max(1) as i32) - 128,
         y: 0,
     }
 }
@@ -5819,7 +5819,7 @@ unsafe fn create_live_desktop_renderer_resources(
         };
         check_live_desktop_renderer_startup_cancelled(
             startup_cancel,
-            format!("creating desktop capture on adapter {adapter_index}"),
+            format!("resolving output context on adapter {adapter_index}"),
         )?;
         report_live_desktop_renderer_startup_progress(
             progress_sender,
@@ -5827,10 +5827,10 @@ unsafe fn create_live_desktop_renderer_resources(
                 "Resolving live desktop output context on adapter {adapter_index} ({adapter_name})"
             ),
         );
-        let capture = match unsafe {
-            create_live_desktop_capture_for_adapter(&adapter, adapter_index, target_monitor)
+        let output_context = match unsafe {
+            resolve_live_desktop_output_context_for_adapter(&adapter, adapter_index, target_monitor)
         } {
-            Ok(capture) => capture,
+            Ok(output_context) => output_context,
             Err(detail) => {
                 last_detail = detail;
                 continue;
@@ -5879,7 +5879,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 create_live_desktop_window_capture(
                     &d3d.device,
                     config.disable_mouse_relay,
-                    &capture,
+                    &output_context,
                     Arc::clone(&diagnostics),
                     progress_sender,
                 )
@@ -5975,11 +5975,11 @@ unsafe fn create_live_desktop_renderer_resources(
         let source_width = window_capture
             .as_ref()
             .map(|capture| capture.width)
-            .unwrap_or(capture.output_width);
+            .unwrap_or(output_context.output_width);
         let source_height = window_capture
             .as_ref()
             .map(|capture| capture.height)
-            .unwrap_or(capture.output_height);
+            .unwrap_or(output_context.output_height);
         check_live_desktop_renderer_startup_cancelled(
             startup_cancel,
             "creating DirectComposition swap chain",
@@ -6148,9 +6148,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 supports_native_effects,
                 format!(
                     "{} frame pump initialized with {initial_frame_detail} and DirectComposition target/root swap chain source {}x{} -> target {}x{} scale {:.3} offset {:.1},{:.1} on adapter {adapter_index} ({adapter_name}), output {} ({}), monitor matched: {}; native effects available: {}; {}; {}; {}; {}; {}",
-                    live_desktop_frame_source_label(
-                        window_capture.as_ref()
-                    ),
+                    live_desktop_frame_source_label(window_capture.as_ref()),
                     source_width,
                     source_height,
                     display_width,
@@ -6158,10 +6156,10 @@ unsafe fn create_live_desktop_renderer_resources(
                     placement.scale,
                     placement.offset_x,
                     placement.offset_y,
-                    capture.output_index,
-                    capture.output_name,
+                    output_context.output_index,
+                    output_context.output_name,
                     !target_monitor.is_invalid(),
-                supports_native_effects,
+                    supports_native_effects,
                     host_window.detail(),
                     live_desktop_frame_source_detail(
                         window_capture.as_ref(),
@@ -6215,11 +6213,11 @@ unsafe fn create_live_desktop_renderer_resources(
 }
 
 #[cfg(target_os = "windows")]
-unsafe fn create_live_desktop_capture_for_adapter(
+unsafe fn resolve_live_desktop_output_context_for_adapter(
     adapter: &IDXGIAdapter1,
     adapter_index: u32,
     target_monitor: HMONITOR,
-) -> Result<LiveDesktopCaptureStartup, String> {
+) -> Result<LiveDesktopOutputContext, String> {
     let mut output_count = 0;
     let mut last_detail = String::new();
 
@@ -6272,7 +6270,7 @@ unsafe fn create_live_desktop_capture_for_adapter(
             continue;
         }
 
-        return Ok(LiveDesktopCaptureStartup {
+        return Ok(LiveDesktopOutputContext {
             output_index,
             output_width,
             output_height,
@@ -6326,7 +6324,7 @@ fn register_live_desktop_wgc_frame_arrived(
 unsafe fn create_live_desktop_window_capture(
     d3d_device: &ID3D11Device,
     disable_mouse_relay: bool,
-    capture: &LiveDesktopCaptureStartup,
+    output_context: &LiveDesktopOutputContext,
     diagnostics: Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
     progress_sender: &mpsc::Sender<LiveDesktopRendererStartupMessage>,
 ) -> Result<LiveDesktopWindowCapture, String> {
@@ -6336,7 +6334,7 @@ unsafe fn create_live_desktop_window_capture(
         progress_sender,
         format!("Probing {capture_label} windows"),
     );
-    let popup_plan = create_wallpaper_engine_popup_plan(capture);
+    let popup_plan = create_wallpaper_engine_popup_plan(output_context);
     report_live_desktop_renderer_startup_progress(
         progress_sender,
         format!(
@@ -6397,7 +6395,7 @@ unsafe fn create_live_desktop_window_capture(
             prepare_wallpaper_engine_popup_for_capture(
                 first_target,
                 &window_diagnostics,
-                &capture.output_rect,
+                &output_context.output_rect,
             )
         }
     } else {
@@ -6587,8 +6585,8 @@ unsafe fn create_live_desktop_window_capture(
             resolve_live_desktop_frame_crop(
                 size.Width as u32,
                 size.Height as u32,
-                capture.output_width,
-                capture.output_height,
+                output_context.output_width,
+                output_context.output_height,
             )
         } else {
             None
@@ -6610,7 +6608,7 @@ unsafe fn create_live_desktop_window_capture(
         let mouse_relay = if !mouse_relay_target_hwnds.is_empty() {
             Some(Mutex::new(LiveDesktopMouseRelay {
                 target_hwnds: mouse_relay_target_hwnds,
-                output_rect: capture.output_rect.clone(),
+                output_rect: output_context.output_rect.clone(),
                 source_left: relay_source_left,
                 source_top: relay_source_top,
                 source_width: relay_source_width,
@@ -6624,10 +6622,10 @@ unsafe fn create_live_desktop_window_capture(
             format!(
                 "mouseRelay=enabled targets={} outputRect={}x{}@{},{} source={}x{}@{},{}",
                 mouse_relay_target_labels,
-                capture.output_rect.width,
-                capture.output_rect.height,
-                capture.output_rect.left,
-                capture.output_rect.top,
+                output_context.output_rect.width,
+                output_context.output_rect.height,
+                output_context.output_rect.left,
+                output_context.output_rect.top,
                 relay_source_width,
                 relay_source_height,
                 relay_source_left,
@@ -8096,7 +8094,7 @@ mod tests {
     }
 
     #[test]
-    fn capture_and_renderer_success_enable_live_desktop_support() {
+    fn prerequisite_and_renderer_success_enable_live_desktop_support() {
         let support = make_live_desktop_background_support(
             "windows",
             prerequisite_probe(true, "available"),
@@ -8823,7 +8821,7 @@ mod tests {
     }
 
     #[test]
-    fn runtime_start_waits_for_native_renderer_after_capture_ready() {
+    fn runtime_start_waits_for_native_renderer_after_prerequisites_ready() {
         let mut runtime = LiveDesktopRuntime::default();
         let status = runtime.start_with_probes(
             prerequisite_probe(true, "available"),
