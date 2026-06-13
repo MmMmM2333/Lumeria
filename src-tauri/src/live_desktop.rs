@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 
 #[cfg(target_os = "windows")]
 use std::{
@@ -109,6 +112,9 @@ const LIVE_DESKTOP_RENDERER_INIT_TIMEOUT_MS: u64 = 10_000;
 const LIVE_DESKTOP_RENDERER_STOP_JOIN_TIMEOUT_MS: u64 = 1_000;
 
 #[cfg(target_os = "windows")]
+const LIVE_DESKTOP_RENDERER_STARTUP_CANCEL_JOIN_TIMEOUT_MS: u64 = 1_000;
+
+#[cfg(target_os = "windows")]
 pub(crate) type LiveDesktopWindowHandle = HWND;
 
 #[cfg(not(target_os = "windows"))]
@@ -166,6 +172,10 @@ pub(crate) struct LiveDesktopRuntime {
     status: LiveDesktopRuntimeStatus,
     renderer_session: Option<LiveDesktopRendererSession>,
     config: LiveDesktopRuntimeConfig,
+    #[cfg(target_os = "windows")]
+    abandoned_renderer_workers: Vec<LiveDesktopAbandonedRendererWorker>,
+    reaped_abandoned_renderer_workers: u64,
+    last_abandoned_renderer_reason: String,
 }
 
 #[derive(Debug)]
@@ -180,6 +190,70 @@ struct LiveDesktopRendererSession {
     exit_receiver: Option<mpsc::Receiver<()>>,
     #[cfg(target_os = "windows")]
     worker: Option<thread::JoinHandle<()>>,
+}
+
+#[cfg(target_os = "windows")]
+struct LiveDesktopAbandonedRendererWorker {
+    worker: Option<thread::JoinHandle<()>>,
+    reason: &'static str,
+    detail: String,
+    generation: u64,
+}
+
+#[cfg(target_os = "windows")]
+impl std::fmt::Debug for LiveDesktopAbandonedRendererWorker {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("LiveDesktopAbandonedRendererWorker")
+            .field("reason", &self.reason)
+            .field("detail", &self.detail)
+            .field("generation", &self.generation)
+            .field(
+                "is_finished",
+                &self.worker.as_ref().map(|worker| worker.is_finished()),
+            )
+            .finish()
+    }
+}
+
+#[derive(Debug)]
+struct LiveDesktopRendererStartupFailure {
+    probe: LiveDesktopRendererProbe,
+    #[cfg(target_os = "windows")]
+    abandoned_worker: Option<LiveDesktopAbandonedRendererWorker>,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Clone, Debug)]
+struct LiveDesktopStartupCancellationToken {
+    cancelled: Arc<AtomicBool>,
+}
+
+impl From<LiveDesktopRendererProbe> for LiveDesktopRendererStartupFailure {
+    fn from(probe: LiveDesktopRendererProbe) -> Self {
+        Self {
+            probe,
+            #[cfg(target_os = "windows")]
+            abandoned_worker: None,
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl LiveDesktopStartupCancellationToken {
+    fn new() -> Self {
+        Self {
+            cancelled: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -1163,6 +1237,8 @@ pub(crate) struct LiveDesktopRuntimeDiagnostics {
     pixel_probe_samples: u64,
     pixel_probe_errors: u64,
     blank_frame_skips: u64,
+    abandoned_renderer_workers: u64,
+    reaped_abandoned_renderer_workers: u64,
     last_pixel_probe_width: u32,
     last_pixel_probe_height: u32,
     last_pixel_probe_min_rgb: u32,
@@ -1171,6 +1247,7 @@ pub(crate) struct LiveDesktopRuntimeDiagnostics {
     last_pixel_probe_min_alpha: u32,
     last_pixel_probe_max_alpha: u32,
     last_pixel_probe_avg_alpha: u32,
+    last_abandoned_renderer_reason: String,
     last_error: String,
 }
 
@@ -1364,18 +1441,27 @@ impl Default for LiveDesktopRuntime {
             status: LiveDesktopRuntimeStatus::stopped(0),
             renderer_session: None,
             config: LiveDesktopRuntimeConfig::default(),
+            #[cfg(target_os = "windows")]
+            abandoned_renderer_workers: Vec::new(),
+            reaped_abandoned_renderer_workers: 0,
+            last_abandoned_renderer_reason: String::new(),
         }
     }
 }
 
 impl LiveDesktopRuntime {
-    pub(crate) fn status(&self) -> LiveDesktopRuntimeStatus {
+    pub(crate) fn status(&mut self) -> LiveDesktopRuntimeStatus {
+        self.reap_abandoned_renderer_workers();
         let mut status = self.status.clone();
+        let mut diagnostics = status.diagnostics.clone();
         if let Some(session) = self.renderer_session.as_ref() {
-            let diagnostics = session.diagnostics();
-            status.detail = append_live_desktop_runtime_diagnostics(&status.detail, &diagnostics);
-            status.diagnostics = diagnostics;
+            diagnostics = session.diagnostics();
         }
+        self.apply_abandoned_renderer_diagnostics(&mut diagnostics);
+        if self.renderer_session.is_some() || diagnostics.has_abandoned_renderer_activity() {
+            status.detail = append_live_desktop_runtime_diagnostics(&status.detail, &diagnostics);
+        }
+        status.diagnostics = diagnostics;
         status.window_diagnostics = live_desktop_window_diagnostics();
         status
     }
@@ -1406,6 +1492,7 @@ impl LiveDesktopRuntime {
         &mut self,
         config: LiveDesktopRuntimeConfig,
     ) -> LiveDesktopRuntimeStatus {
+        self.reap_abandoned_renderer_workers();
         self.config = config.clone();
         if let Some(session) = self.renderer_session.as_ref() {
             session.configure(config);
@@ -1414,6 +1501,7 @@ impl LiveDesktopRuntime {
     }
 
     pub(crate) fn set_visible(&mut self, visible: bool) -> LiveDesktopRuntimeStatus {
+        self.reap_abandoned_renderer_workers();
         if let Some(session) = self.renderer_session.as_ref() {
             session.set_visible(visible);
         }
@@ -1421,6 +1509,7 @@ impl LiveDesktopRuntime {
     }
 
     pub(crate) fn stop(&mut self) -> LiveDesktopRuntimeStatus {
+        self.reap_abandoned_renderer_workers();
         if self.status.phase == "stopped" {
             return self.status();
         }
@@ -1436,7 +1525,7 @@ impl LiveDesktopRuntime {
         renderer_probe: LiveDesktopRendererProbe,
     ) -> LiveDesktopRuntimeStatus {
         self.start_with_renderer_session(capture_probe, || {
-            LiveDesktopRendererSession::create_for_probe(renderer_probe)
+            LiveDesktopRendererSession::create_for_probe(renderer_probe).map_err(Into::into)
         })
     }
 
@@ -1446,8 +1535,9 @@ impl LiveDesktopRuntime {
         make_renderer_session: F,
     ) -> LiveDesktopRuntimeStatus
     where
-        F: FnOnce() -> Result<LiveDesktopRendererSession, LiveDesktopRendererProbe>,
+        F: FnOnce() -> Result<LiveDesktopRendererSession, LiveDesktopRendererStartupFailure>,
     {
+        self.reap_abandoned_renderer_workers();
         if self.status.phase == "running" || self.status.phase == "starting" {
             return self.status();
         }
@@ -1475,7 +1565,16 @@ impl LiveDesktopRuntime {
 
         let renderer_session = match make_renderer_session() {
             Ok(session) => session,
-            Err(probe) => {
+            Err(failure) => {
+                let LiveDesktopRendererStartupFailure {
+                    probe,
+                    #[cfg(target_os = "windows")]
+                    abandoned_worker,
+                } = failure;
+                #[cfg(target_os = "windows")]
+                if let Some(worker) = abandoned_worker {
+                    self.register_abandoned_renderer_worker(generation, worker);
+                }
                 self.status =
                     LiveDesktopRuntimeStatus::failed(generation, probe.reason, probe.detail);
                 return self.status();
@@ -1503,6 +1602,58 @@ impl LiveDesktopRuntime {
         };
         self.status()
     }
+
+    fn apply_abandoned_renderer_diagnostics(
+        &self,
+        diagnostics: &mut LiveDesktopRuntimeDiagnostics,
+    ) {
+        diagnostics.abandoned_renderer_workers = self.abandoned_renderer_worker_count();
+        diagnostics.reaped_abandoned_renderer_workers = self.reaped_abandoned_renderer_workers;
+        diagnostics.last_abandoned_renderer_reason = self.last_abandoned_renderer_reason.clone();
+    }
+
+    #[cfg(target_os = "windows")]
+    fn abandoned_renderer_worker_count(&self) -> u64 {
+        self.abandoned_renderer_workers.len() as u64
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn abandoned_renderer_worker_count(&self) -> u64 {
+        0
+    }
+
+    #[cfg(target_os = "windows")]
+    fn register_abandoned_renderer_worker(
+        &mut self,
+        generation: u64,
+        mut worker: LiveDesktopAbandonedRendererWorker,
+    ) {
+        worker.generation = generation;
+        self.last_abandoned_renderer_reason =
+            format!("generation {}: {}", generation, worker.detail);
+        self.abandoned_renderer_workers.push(worker);
+    }
+
+    #[cfg(target_os = "windows")]
+    fn reap_abandoned_renderer_workers(&mut self) {
+        let mut remaining = Vec::new();
+        for mut abandoned in self.abandoned_renderer_workers.drain(..) {
+            let Some(worker) = abandoned.worker.take() else {
+                continue;
+            };
+            if worker.is_finished() {
+                let _ = worker.join();
+                self.reaped_abandoned_renderer_workers += 1;
+            } else {
+                abandoned.worker = Some(worker);
+                remaining.push(abandoned);
+            }
+        }
+        self.abandoned_renderer_workers = remaining;
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn reap_abandoned_renderer_workers(&mut self) {}
 }
 
 impl LiveDesktopRendererSession {
@@ -1511,11 +1662,13 @@ impl LiveDesktopRendererSession {
         window_handle: LiveDesktopWindowHandle,
         config: LiveDesktopRuntimeConfig,
         prepared_host: LiveDesktopPreparedHost,
-    ) -> Result<Self, LiveDesktopRendererProbe> {
+    ) -> Result<Self, LiveDesktopRendererStartupFailure> {
         let (ready_sender, ready_receiver) = mpsc::channel();
         let (stop_sender, stop_receiver) = mpsc::channel();
         let (command_sender, command_receiver) = mpsc::channel();
         let (exit_sender, exit_receiver) = mpsc::channel();
+        let startup_cancel = LiveDesktopStartupCancellationToken::new();
+        let worker_cancel = startup_cancel.clone();
         let diagnostics = Arc::new(Mutex::new(LiveDesktopRuntimeDiagnostics::default()));
         let worker_diagnostics = Arc::clone(&diagnostics);
         let window_handle_value = window_handle.0 as isize;
@@ -1528,6 +1681,7 @@ impl LiveDesktopRendererSession {
                     config,
                     prepared_host,
                     worker_diagnostics,
+                    &worker_cancel,
                     &ready_sender,
                 )
             } {
@@ -1555,31 +1709,33 @@ impl LiveDesktopRendererSession {
             loop {
                 let remaining = deadline.saturating_duration_since(Instant::now());
                 if remaining.is_zero() {
-                    let _ = stop_sender.send(());
-                    return Err(LiveDesktopRendererProbe::unavailable(
-                        "nativeRendererInitializationTimedOut",
-                        format!(
-                            "DirectComposition renderer worker did not initialize within {} ms; last progress: {}",
-                            LIVE_DESKTOP_RENDERER_INIT_TIMEOUT_MS, last_progress
-                        ),
+                    return Err(cancel_live_desktop_renderer_startup_after_timeout(
+                        &stop_sender,
+                        exit_receiver,
+                        worker,
+                        &startup_cancel,
+                        &last_progress,
+                        Duration::from_millis(LIVE_DESKTOP_RENDERER_STARTUP_CANCEL_JOIN_TIMEOUT_MS),
                     ));
                 }
                 match ready_receiver.recv_timeout(remaining) {
                     Ok(LiveDesktopRendererStartupMessage::Ready(probe)) => break probe,
                     Ok(LiveDesktopRendererStartupMessage::Failed(probe)) => {
                         let _ = worker.join();
-                        return Err(probe);
+                        return Err(probe.into());
                     }
                     Ok(LiveDesktopRendererStartupMessage::Progress(progress)) => {
                         last_progress = progress;
                     }
                     Err(mpsc::RecvTimeoutError::Timeout) => {
-                        let _ = stop_sender.send(());
-                        return Err(LiveDesktopRendererProbe::unavailable(
-                            "nativeRendererInitializationTimedOut",
-                            format!(
-                                "DirectComposition renderer worker did not initialize within {} ms; last progress: {}",
-                                LIVE_DESKTOP_RENDERER_INIT_TIMEOUT_MS, last_progress
+                        return Err(cancel_live_desktop_renderer_startup_after_timeout(
+                            &stop_sender,
+                            exit_receiver,
+                            worker,
+                            &startup_cancel,
+                            &last_progress,
+                            Duration::from_millis(
+                                LIVE_DESKTOP_RENDERER_STARTUP_CANCEL_JOIN_TIMEOUT_MS,
                             ),
                         ));
                     }
@@ -1591,7 +1747,8 @@ impl LiveDesktopRendererSession {
                                 "DirectComposition renderer worker exited before reporting initialization; last progress: {}",
                                 last_progress
                             ),
-                        ));
+                        )
+                        .into());
                     }
                 }
             }
@@ -1612,8 +1769,8 @@ impl LiveDesktopRendererSession {
         _window_handle: LiveDesktopWindowHandle,
         _config: LiveDesktopRuntimeConfig,
         _prepared_host: LiveDesktopPreparedHost,
-    ) -> Result<Self, LiveDesktopRendererProbe> {
-        Err(probe_live_desktop_renderer())
+    ) -> Result<Self, LiveDesktopRendererStartupFailure> {
+        Err(probe_live_desktop_renderer().into())
     }
 
     fn configure(&self, config: LiveDesktopRuntimeConfig) {
@@ -1659,6 +1816,47 @@ impl LiveDesktopRendererSession {
             #[cfg(target_os = "windows")]
             worker: None,
         })
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn cancel_live_desktop_renderer_startup_after_timeout(
+    stop_sender: &mpsc::Sender<()>,
+    exit_receiver: mpsc::Receiver<()>,
+    worker: thread::JoinHandle<()>,
+    startup_cancel: &LiveDesktopStartupCancellationToken,
+    last_progress: &str,
+    cleanup_timeout: Duration,
+) -> LiveDesktopRendererStartupFailure {
+    startup_cancel.cancel();
+    let _ = stop_sender.send(());
+    let mut detail = format!(
+        "DirectComposition renderer worker did not initialize within {} ms; last progress: {}",
+        LIVE_DESKTOP_RENDERER_INIT_TIMEOUT_MS, last_progress
+    );
+
+    match exit_receiver.recv_timeout(cleanup_timeout) {
+        Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+            let _ = worker.join();
+            detail.push_str("; cleanup=joined");
+            LiveDesktopRendererProbe::unavailable("nativeRendererInitializationTimedOut", detail)
+                .into()
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            detail.push_str("; cleanup=abandonedWorker");
+            LiveDesktopRendererStartupFailure {
+                probe: LiveDesktopRendererProbe::unavailable(
+                    "nativeRendererInitializationTimedOut",
+                    detail.clone(),
+                ),
+                abandoned_worker: Some(LiveDesktopAbandonedRendererWorker {
+                    worker: Some(worker),
+                    reason: "nativeRendererInitializationTimedOut",
+                    detail,
+                    generation: 0,
+                }),
+            }
+        }
     }
 }
 
@@ -2188,6 +2386,14 @@ impl LiveDesktopRuntimeDiagnostics {
             format!("pixelProbeSamples={}", self.pixel_probe_samples),
             format!("pixelProbeErrors={}", self.pixel_probe_errors),
             format!("blankFrameSkips={}", self.blank_frame_skips),
+            format!(
+                "abandonedRendererWorkers={}",
+                self.abandoned_renderer_workers
+            ),
+            format!(
+                "reapedAbandonedRendererWorkers={}",
+                self.reaped_abandoned_renderer_workers
+            ),
         ];
         if self.frame_copy_samples > 0 {
             parts.push(format!(
@@ -2235,7 +2441,19 @@ impl LiveDesktopRuntimeDiagnostics {
         if !self.last_error.is_empty() {
             parts.push(format!("lastError={}", self.last_error));
         }
+        if !self.last_abandoned_renderer_reason.is_empty() {
+            parts.push(format!(
+                "lastAbandonedRenderer={}",
+                self.last_abandoned_renderer_reason
+            ));
+        }
         parts.join(", ")
+    }
+
+    fn has_abandoned_renderer_activity(&self) -> bool {
+        self.abandoned_renderer_workers > 0
+            || self.reaped_abandoned_renderer_workers > 0
+            || !self.last_abandoned_renderer_reason.is_empty()
     }
 }
 
@@ -4340,13 +4558,32 @@ unsafe fn probe_windows_live_desktop_renderer(
 }
 
 #[cfg(target_os = "windows")]
+fn check_live_desktop_renderer_startup_cancelled(
+    startup_cancel: &LiveDesktopStartupCancellationToken,
+    stage: impl Into<String>,
+) -> Result<(), LiveDesktopRendererProbe> {
+    if !startup_cancel.is_cancelled() {
+        return Ok(());
+    }
+    Err(LiveDesktopRendererProbe::unavailable(
+        "nativeRendererStartupCancelled",
+        format!(
+            "DirectComposition renderer startup was cancelled while {}",
+            stage.into()
+        ),
+    ))
+}
+
+#[cfg(target_os = "windows")]
 unsafe fn create_live_desktop_renderer_resources(
     window_handle: HWND,
     config: LiveDesktopRuntimeConfig,
     mut prepared_host: LiveDesktopPreparedHost,
     diagnostics: Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
+    startup_cancel: &LiveDesktopStartupCancellationToken,
     progress_sender: &mpsc::Sender<LiveDesktopRendererStartupMessage>,
 ) -> Result<LiveDesktopRendererStartup, LiveDesktopRendererProbe> {
+    check_live_desktop_renderer_startup_cancelled(startup_cancel, "initializing COM apartment")?;
     report_live_desktop_renderer_startup_progress(progress_sender, "Initializing COM apartment");
     let com = unsafe { ComApartment::initialize() }.map_err(|error| {
         LiveDesktopRendererProbe::unavailable(
@@ -4354,6 +4591,7 @@ unsafe fn create_live_desktop_renderer_resources(
             format!("CoInitializeEx failed before creating DirectComposition renderer: {error}"),
         )
     })?;
+    check_live_desktop_renderer_startup_cancelled(startup_cancel, "creating DXGI factory")?;
     report_live_desktop_renderer_startup_progress(
         progress_sender,
         "Creating DXGI factory for renderer",
@@ -4370,6 +4608,10 @@ unsafe fn create_live_desktop_renderer_resources(
     let target_monitor = unsafe { MonitorFromWindow(window_handle, MONITOR_DEFAULTTONEAREST) };
 
     for adapter_index in 0.. {
+        check_live_desktop_renderer_startup_cancelled(
+            startup_cancel,
+            format!("enumerating adapter {adapter_index}"),
+        )?;
         let adapter = match unsafe { factory.EnumAdapters1(adapter_index) } {
             Ok(adapter) => adapter,
             Err(error) if error.code() == DXGI_ERROR_NOT_FOUND => break,
@@ -4401,6 +4643,10 @@ unsafe fn create_live_desktop_renderer_resources(
             continue;
         }
         let adapter_name = live_desktop_adapter_name(&desc.Description);
+        check_live_desktop_renderer_startup_cancelled(
+            startup_cancel,
+            format!("creating D3D11 device on adapter {adapter_index}"),
+        )?;
         report_live_desktop_renderer_startup_progress(
             progress_sender,
             format!("Creating D3D11 device on adapter {adapter_index} ({adapter_name})"),
@@ -4415,6 +4661,10 @@ unsafe fn create_live_desktop_renderer_resources(
                 continue;
             }
         };
+        check_live_desktop_renderer_startup_cancelled(
+            startup_cancel,
+            format!("creating desktop capture on adapter {adapter_index}"),
+        )?;
         report_live_desktop_renderer_startup_progress(
             progress_sender,
             format!("Creating Desktop Duplication reference capture on adapter {adapter_index} ({adapter_name})"),
@@ -4442,6 +4692,10 @@ unsafe fn create_live_desktop_renderer_resources(
                 continue;
             }
         };
+        check_live_desktop_renderer_startup_cancelled(
+            startup_cancel,
+            format!("creating DirectComposition device on adapter {adapter_index}"),
+        )?;
         report_live_desktop_renderer_startup_progress(
             progress_sender,
             format!(
@@ -4463,6 +4717,10 @@ unsafe fn create_live_desktop_renderer_resources(
             native_effects.color_matrix_effect.is_some() && native_effects.blur_effect.is_some();
         let color_matrix_effect = native_effects.color_matrix_effect;
         let blur_effect = native_effects.blur_effect;
+        check_live_desktop_renderer_startup_cancelled(
+            startup_cancel,
+            "initializing live desktop frame source",
+        )?;
         let window_capture = if config.diagnostic_mode.uses_window_capture() {
             match unsafe {
                 create_live_desktop_window_capture(
@@ -4511,6 +4769,10 @@ unsafe fn create_live_desktop_renderer_resources(
         } else {
             None
         };
+        check_live_desktop_renderer_startup_cancelled(
+            startup_cancel,
+            "preparing live desktop host window",
+        )?;
         report_live_desktop_renderer_startup_progress(
             progress_sender,
             format!(
@@ -4536,6 +4798,10 @@ unsafe fn create_live_desktop_renderer_resources(
         };
         let target_hwnd = host_window.target_hwnd();
         let (display_width, display_height) = host_window.target_size();
+        check_live_desktop_renderer_startup_cancelled(
+            startup_cancel,
+            "creating DirectComposition target",
+        )?;
         report_live_desktop_renderer_startup_progress(
             progress_sender,
             format!(
@@ -4557,6 +4823,10 @@ unsafe fn create_live_desktop_renderer_resources(
                 ));
             }
         };
+        check_live_desktop_renderer_startup_cancelled(
+            startup_cancel,
+            "creating DirectComposition root visual",
+        )?;
         report_live_desktop_renderer_startup_progress(
             progress_sender,
             format!("Creating DirectComposition root visual on adapter {adapter_index} ({adapter_name})"),
@@ -4591,6 +4861,10 @@ unsafe fn create_live_desktop_renderer_resources(
                     .map(|capture| capture.height)
             })
             .unwrap_or(capture.output_height);
+        check_live_desktop_renderer_startup_cancelled(
+            startup_cancel,
+            "creating DirectComposition swap chain",
+        )?;
         report_live_desktop_renderer_startup_progress(
             progress_sender,
             format!(
@@ -4616,6 +4890,10 @@ unsafe fn create_live_desktop_renderer_resources(
                 ));
             }
         };
+        check_live_desktop_renderer_startup_cancelled(
+            startup_cancel,
+            "copying initial live desktop frame",
+        )?;
         report_live_desktop_renderer_startup_progress(
             progress_sender,
             "Copying initial live desktop frame into DirectComposition swap chain",
@@ -4664,6 +4942,10 @@ unsafe fn create_live_desktop_renderer_resources(
                 )
             })?;
         }
+        check_live_desktop_renderer_startup_cancelled(
+            startup_cancel,
+            "applying DirectComposition effect configuration",
+        )?;
         report_live_desktop_renderer_startup_progress(
             progress_sender,
             "Applying DirectComposition effect configuration",
@@ -4687,6 +4969,10 @@ unsafe fn create_live_desktop_renderer_resources(
             display_width,
             display_height,
         );
+        check_live_desktop_renderer_startup_cancelled(
+            startup_cancel,
+            "committing DirectComposition root visual",
+        )?;
         report_live_desktop_renderer_startup_progress(
             progress_sender,
             "Committing DirectComposition root visual",
@@ -7497,7 +7783,7 @@ mod tests {
 
     #[test]
     fn runtime_starts_stopped() {
-        let runtime = LiveDesktopRuntime::default();
+        let mut runtime = LiveDesktopRuntime::default();
         let status = runtime.status();
 
         assert_eq!(status.phase, "stopped");
@@ -8145,6 +8431,81 @@ mod tests {
         assert_eq!(status.phase, "failed");
         assert_eq!(status.reason, "nativeRendererNotImplemented");
         assert!(runtime.renderer_session.is_none());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn renderer_startup_timeout_joins_worker_that_exits_during_cleanup() {
+        let (stop_sender, stop_receiver) = mpsc::channel();
+        let (exit_sender, exit_receiver) = mpsc::channel();
+        let startup_cancel = LiveDesktopStartupCancellationToken::new();
+        let worker = thread::spawn(move || {
+            let _ = stop_receiver.recv();
+            let _ = exit_sender.send(());
+        });
+
+        let failure = cancel_live_desktop_renderer_startup_after_timeout(
+            &stop_sender,
+            exit_receiver,
+            worker,
+            &startup_cancel,
+            "test progress",
+            Duration::from_millis(200),
+        );
+
+        assert_eq!(failure.probe.reason, "nativeRendererInitializationTimedOut");
+        assert!(failure.probe.detail.contains("cleanup=joined"));
+        assert!(startup_cancel.is_cancelled());
+        assert!(failure.abandoned_worker.is_none());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn runtime_tracks_and_reaps_abandoned_renderer_worker() {
+        let (stop_sender, _stop_receiver) = mpsc::channel();
+        let (exit_sender, exit_receiver) = mpsc::channel();
+        let (release_sender, release_receiver) = mpsc::channel();
+        let startup_cancel = LiveDesktopStartupCancellationToken::new();
+        let worker = thread::spawn(move || {
+            let _exit_sender = exit_sender;
+            let _ = release_receiver.recv();
+        });
+
+        let mut failure = cancel_live_desktop_renderer_startup_after_timeout(
+            &stop_sender,
+            exit_receiver,
+            worker,
+            &startup_cancel,
+            "waiting in test",
+            Duration::from_millis(10),
+        );
+        let abandoned = failure
+            .abandoned_worker
+            .take()
+            .expect("timeout should abandon a worker that does not exit");
+        let mut runtime = LiveDesktopRuntime::default();
+        runtime.register_abandoned_renderer_worker(7, abandoned);
+
+        let status = runtime.status();
+        assert_eq!(status.diagnostics.abandoned_renderer_workers, 1);
+        assert_eq!(status.diagnostics.reaped_abandoned_renderer_workers, 0);
+        assert!(status.detail.contains("abandonedRendererWorkers=1"));
+
+        let _ = release_sender.send(());
+        let mut reaped_status = runtime.status();
+        for _ in 0..20 {
+            if reaped_status.diagnostics.reaped_abandoned_renderer_workers == 1 {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+            reaped_status = runtime.status();
+        }
+
+        assert_eq!(reaped_status.diagnostics.abandoned_renderer_workers, 0);
+        assert_eq!(
+            reaped_status.diagnostics.reaped_abandoned_renderer_workers,
+            1
+        );
     }
 
     #[test]

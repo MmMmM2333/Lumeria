@@ -454,9 +454,17 @@ const liveDesktopDiagnosticsRows = computed(() => {
     { label: "configErrors", value: formatCount(diagnostics.configErrors) },
     { label: "testPatternFrames", value: formatCount(diagnostics.testPatternFrames) },
     { label: "blankFrameSkips", value: formatCount(diagnostics.blankFrameSkips) },
+    {
+      label: "abandonedWorkers",
+      value: `${formatCount(diagnostics.abandonedRendererWorkers)} active / ${formatCount(diagnostics.reapedAbandonedRendererWorkers)} reaped`,
+      wide: true,
+    },
     { label: "dwmUpdate", value: formatDwmUpdate(diagnostics), wide: true },
     { label: "pixelProbe", value: formatPixelProbe(diagnostics), wide: true },
     { label: "lastFrame", value: formatLastFrame(diagnostics), wide: true },
+    ...(diagnostics.lastAbandonedRendererReason
+      ? [{ label: "lastAbandoned", value: diagnostics.lastAbandonedRendererReason, wide: true }]
+      : []),
   ];
 });
 const liveDesktopLastError = computed(() => liveDesktopStatus.value.diagnostics.lastError);
@@ -512,6 +520,8 @@ function normalizeLiveDesktopStatus(status) {
       pixelProbeSamples: normalizeCount(diagnostics.pixelProbeSamples),
       pixelProbeErrors: normalizeCount(diagnostics.pixelProbeErrors),
       blankFrameSkips: normalizeCount(diagnostics.blankFrameSkips),
+      abandonedRendererWorkers: normalizeCount(diagnostics.abandonedRendererWorkers),
+      reapedAbandonedRendererWorkers: normalizeCount(diagnostics.reapedAbandonedRendererWorkers),
       lastPixelProbeWidth: normalizeCount(diagnostics.lastPixelProbeWidth),
       lastPixelProbeHeight: normalizeCount(diagnostics.lastPixelProbeHeight),
       lastPixelProbeMinRgb: normalizeCount(diagnostics.lastPixelProbeMinRgb),
@@ -520,6 +530,7 @@ function normalizeLiveDesktopStatus(status) {
       lastPixelProbeMinAlpha: normalizeCount(diagnostics.lastPixelProbeMinAlpha),
       lastPixelProbeMaxAlpha: normalizeCount(diagnostics.lastPixelProbeMaxAlpha),
       lastPixelProbeAvgAlpha: normalizeCount(diagnostics.lastPixelProbeAvgAlpha),
+      lastAbandonedRendererReason: String(diagnostics.lastAbandonedRendererReason || ""),
       lastError: String(diagnostics.lastError || ""),
     },
     windowDiagnostics: normalizeLiveDesktopWindowDiagnostics(status?.windowDiagnostics),

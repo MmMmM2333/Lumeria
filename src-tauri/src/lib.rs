@@ -411,7 +411,7 @@ fn get_live_desktop_background_support() -> live_desktop::LiveDesktopBackgroundS
 fn get_live_desktop_runtime_status(
     state: State<'_, AppState>,
 ) -> Result<live_desktop::LiveDesktopRuntimeStatus, String> {
-    let runtime = state
+    let mut runtime = state
         .live_desktop_runtime
         .lock()
         .map_err(|_| "Failed to lock live desktop runtime".to_string())?;
