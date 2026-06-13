@@ -146,23 +146,7 @@
 
         <pre class="background-debug-detail" :title="liveDesktopStatus.detail">{{ liveDesktopStatus.detail || "no detail" }}</pre>
 
-        <div class="background-debug-mode-group" role="group" aria-label="Live desktop diagnostic mode">
-          <button
-            type="button"
-            :class="['background-debug-mode-button', liveDesktopMode === 'workerWCapture' && 'background-debug-mode-button-active']"
-            :disabled="isLiveDesktopActionBusy"
-            @click="setLiveDesktopDiagnosticMode('workerWCapture')"
-          >
-            WorkerW
-          </button>
-          <button
-            type="button"
-            :class="['background-debug-mode-button', liveDesktopMode === 'dwmSharedSurfaceCapture' && 'background-debug-mode-button-active']"
-            :disabled="isLiveDesktopActionBusy"
-            @click="setLiveDesktopDiagnosticMode('dwmSharedSurfaceCapture')"
-          >
-            DWM Surface
-          </button>
+        <div class="background-debug-mode-group background-debug-live-source-group" role="group" aria-label="Live desktop diagnostic mode">
           <button
             type="button"
             :class="['background-debug-mode-button', liveDesktopMode === 'wallpaperEnginePopupCapture' && 'background-debug-mode-button-active']"
@@ -170,14 +154,6 @@
             @click="setLiveDesktopDiagnosticMode('wallpaperEnginePopupCapture')"
           >
             WE Popup
-          </button>
-          <button
-            type="button"
-            :class="['background-debug-mode-button', liveDesktopMode === 'monitorCapture' && 'background-debug-mode-button-active']"
-            :disabled="isLiveDesktopActionBusy"
-            @click="setLiveDesktopDiagnosticMode('monitorCapture')"
-          >
-            Monitor
           </button>
           <button
             type="button"
@@ -378,10 +354,7 @@ const LIVE_DESKTOP_HOST_MODE_OWNED_POPUP = "ownedPopupHost";
 const LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW = "childWindowHost";
 const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "launchpadLiveDesktopSkipBlankFrames";
 const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "launchpadLiveDesktopForceDwmFlush";
-const LIVE_DESKTOP_MODE_WORKERW_CAPTURE = "workerWCapture";
-const LIVE_DESKTOP_MODE_DWM_SHARED_SURFACE_CAPTURE = "dwmSharedSurfaceCapture";
 const LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE = "wallpaperEnginePopupCapture";
-const LIVE_DESKTOP_MODE_MONITOR_CAPTURE = "monitorCapture";
 const LIVE_DESKTOP_MODE_TEST_PATTERN = "testPattern";
 const DEFAULT_LIVE_DESKTOP_STATUS = Object.freeze({
   phase: "unknown",
@@ -865,16 +838,19 @@ function updateTintColor(event) {
 }
 
 function readLiveDesktopDiagnosticMode() {
-  if (typeof window === "undefined") return LIVE_DESKTOP_MODE_WORKERW_CAPTURE;
+  if (typeof window === "undefined") return LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE;
   try {
     const mode = window.localStorage?.getItem(LIVE_DESKTOP_DIAGNOSTIC_MODE_STORAGE_KEY);
     if (mode === LIVE_DESKTOP_MODE_TEST_PATTERN) return LIVE_DESKTOP_MODE_TEST_PATTERN;
-    if (mode === LIVE_DESKTOP_MODE_MONITOR_CAPTURE) return LIVE_DESKTOP_MODE_MONITOR_CAPTURE;
-    if (mode === LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE) return LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE;
-    if (mode === LIVE_DESKTOP_MODE_DWM_SHARED_SURFACE_CAPTURE) return LIVE_DESKTOP_MODE_DWM_SHARED_SURFACE_CAPTURE;
-    return LIVE_DESKTOP_MODE_WORKERW_CAPTURE;
+    if (mode && mode !== LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE) {
+      window.localStorage?.setItem?.(
+        LIVE_DESKTOP_DIAGNOSTIC_MODE_STORAGE_KEY,
+        LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE
+      );
+    }
+    return LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE;
   } catch {
-    return LIVE_DESKTOP_MODE_WORKERW_CAPTURE;
+    return LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE;
   }
 }
 
@@ -1026,19 +1002,10 @@ function persistLiveDesktopDiagnosticMode(mode) {
       window.localStorage?.setItem(LIVE_DESKTOP_DIAGNOSTIC_MODE_STORAGE_KEY, LIVE_DESKTOP_MODE_TEST_PATTERN);
       return;
     }
-    if (mode === LIVE_DESKTOP_MODE_MONITOR_CAPTURE) {
-      window.localStorage?.setItem(LIVE_DESKTOP_DIAGNOSTIC_MODE_STORAGE_KEY, LIVE_DESKTOP_MODE_MONITOR_CAPTURE);
-      return;
-    }
-    if (mode === LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE) {
-      window.localStorage?.setItem(LIVE_DESKTOP_DIAGNOSTIC_MODE_STORAGE_KEY, LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE);
-      return;
-    }
-    if (mode === LIVE_DESKTOP_MODE_DWM_SHARED_SURFACE_CAPTURE) {
-      window.localStorage?.setItem(LIVE_DESKTOP_DIAGNOSTIC_MODE_STORAGE_KEY, LIVE_DESKTOP_MODE_DWM_SHARED_SURFACE_CAPTURE);
-      return;
-    }
-    window.localStorage?.removeItem(LIVE_DESKTOP_DIAGNOSTIC_MODE_STORAGE_KEY);
+    window.localStorage?.setItem(
+      LIVE_DESKTOP_DIAGNOSTIC_MODE_STORAGE_KEY,
+      LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE
+    );
   } catch (error) {
     console.warn("Failed to persist live desktop diagnostic mode", error);
   }
@@ -1095,21 +1062,14 @@ async function setLiveDesktopForceDwmFlush(enabled) {
 async function setLiveDesktopDiagnosticMode(mode) {
   const normalizedMode = [
     LIVE_DESKTOP_MODE_TEST_PATTERN,
-    LIVE_DESKTOP_MODE_MONITOR_CAPTURE,
     LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE,
-    LIVE_DESKTOP_MODE_DWM_SHARED_SURFACE_CAPTURE,
   ].includes(mode)
     ? mode
-    : LIVE_DESKTOP_MODE_WORKERW_CAPTURE;
+    : LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE;
   liveDesktopMode.value = normalizedMode;
   liveDesktopRateSample = null;
   persistLiveDesktopDiagnosticMode(normalizedMode);
-  await reconfigureLiveDesktopRuntime({
-    restart: normalizedMode === LIVE_DESKTOP_MODE_WORKERW_CAPTURE
-      || normalizedMode === LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE
-      || normalizedMode === LIVE_DESKTOP_MODE_DWM_SHARED_SURFACE_CAPTURE
-      || normalizedMode === LIVE_DESKTOP_MODE_MONITOR_CAPTURE,
-  });
+  await reconfigureLiveDesktopRuntime({ restart: true });
 }
 
 async function refreshLiveDesktopRuntimeStatus() {
@@ -1340,6 +1300,10 @@ onBeforeUnmount(() => {
 }
 
 .background-debug-kernel-group {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.background-debug-live-source-group {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 

@@ -250,16 +250,17 @@ function normalizeLiveDesktopWindowDiagnostics(diagnostics) {
 }
 
 function resolveLiveDesktopDiagnosticMode() {
-  if (typeof window === "undefined") return "workerWCapture";
+  if (typeof window === "undefined") return "wallpaperEnginePopupCapture";
   try {
     const mode = window.localStorage?.getItem("launchpadLiveDesktopDiagnosticMode");
     if (mode === "testPattern") return "testPattern";
-    if (mode === "monitorCapture") return "monitorCapture";
     if (mode === "wallpaperEnginePopupCapture") return "wallpaperEnginePopupCapture";
-    if (mode === "dwmSharedSurfaceCapture") return "dwmSharedSurfaceCapture";
-    return "workerWCapture";
+    if (mode) {
+      window.localStorage?.setItem?.("launchpadLiveDesktopDiagnosticMode", "wallpaperEnginePopupCapture");
+    }
+    return "wallpaperEnginePopupCapture";
   } catch {
-    return "workerWCapture";
+    return "wallpaperEnginePopupCapture";
   }
 }
 

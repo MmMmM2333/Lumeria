@@ -742,7 +742,7 @@ export async function runLaunchpadNativeTests() {
     await native.startNativeLiveDesktopBackground();
     assert(liveDesktopRuntimeCommands.join(",") === "get_live_desktop_runtime_status,configure_live_desktop_background,start_live_desktop_background", "runtime start should configure native effects before the native start command");
     assert(liveDesktopRuntimeConfigs.length === 1, "runtime start should send one live desktop config");
-    assert(liveDesktopRuntimeConfigs[0].diagnosticMode === "dwmSharedSurfaceCapture", "runtime config should include the selected DWM shared surface diagnostic mode");
+    assert(liveDesktopRuntimeConfigs[0].diagnosticMode === "wallpaperEnginePopupCapture", "runtime config should migrate legacy diagnostic modes to the Wallpaper Engine popup source");
     assert(liveDesktopRuntimeConfigs[0].disableMouseRelay === true, "runtime config should disable mouse relay by default");
     assert(liveDesktopRuntimeConfigs[0].hostMode === "webviewTarget", "runtime config should use the WebView target host by default");
     assert(liveDesktopRuntimeConfigs[0].skipBlankFrames === false, "runtime config should keep blank frame skipping disabled by default");

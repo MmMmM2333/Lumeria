@@ -292,7 +292,7 @@ struct LiveDesktopRendererResources {
     _com: ComApartment,
     _d3d_device: ID3D11Device,
     _d3d_context: ID3D11DeviceContext,
-    _capture_duplication: IDXGIOutputDuplication,
+    _capture_duplication: Option<IDXGIOutputDuplication>,
     _window_capture: Option<LiveDesktopWindowCapture>,
     _dwm_shared_surface_capture: Option<LiveDesktopDwmSharedSurfaceCapture>,
     _composition_device: LiveDesktopCompositionDevice,
@@ -546,7 +546,7 @@ struct LiveDesktopCaptureStartup {
     output_height: u32,
     output_rect: LiveDesktopWindowRect,
     output_name: String,
-    duplication: IDXGIOutputDuplication,
+    duplication: Option<IDXGIOutputDuplication>,
 }
 
 #[cfg(target_os = "windows")]
@@ -2685,9 +2685,9 @@ struct LiveDesktopAcrylicEffectPlan {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum LiveDesktopDiagnosticMode {
-    #[default]
     #[serde(alias = "capture")]
     WorkerWCapture,
+    #[default]
     WallpaperEnginePopupCapture,
     DwmSharedSurfaceCapture,
     MonitorCapture,
@@ -2721,6 +2721,10 @@ impl LiveDesktopDiagnosticMode {
 
     fn uses_dwm_shared_surface_capture(&self) -> bool {
         matches!(self, Self::DwmSharedSurfaceCapture)
+    }
+
+    fn uses_desktop_duplication_frame_source(&self) -> bool {
+        matches!(self, Self::MonitorCapture)
     }
 
     fn window_capture_label(&self) -> &'static str {
@@ -2762,7 +2766,7 @@ impl Default for LiveDesktopRuntimeConfig {
     fn default() -> Self {
         Self {
             effect: LiveDesktopBackgroundEffect::Dimmed,
-            diagnostic_mode: LiveDesktopDiagnosticMode::WorkerWCapture,
+            diagnostic_mode: LiveDesktopDiagnosticMode::WallpaperEnginePopupCapture,
             blur_strength: 50,
             darken_strength: 28,
             darken_color: "#1c1c1c".to_string(),
@@ -3553,10 +3557,20 @@ impl LiveDesktopRendererResources {
             return Ok(true);
         }
 
+        let duplication = match self._capture_duplication.as_ref() {
+            Some(duplication) => duplication,
+            None => {
+                let error =
+                    "Desktop Duplication frame source is unavailable; no duplication was initialized"
+                        .to_string();
+                record_live_desktop_copy_error(&self.diagnostics, &error);
+                return Err(error);
+            }
+        };
         let copy_started = Instant::now();
         let copied_frame = match unsafe {
             copy_duplication_frame_to_composition_surface(
-                &self._capture_duplication,
+                duplication,
                 &self._swap_chain,
                 &self._d3d_context,
                 0,
@@ -6078,9 +6092,16 @@ unsafe fn create_live_desktop_renderer_resources(
             startup_cancel,
             format!("creating desktop capture on adapter {adapter_index}"),
         )?;
+        let needs_desktop_duplication = config
+            .diagnostic_mode
+            .uses_desktop_duplication_frame_source();
         report_live_desktop_renderer_startup_progress(
             progress_sender,
-            format!("Creating Desktop Duplication reference capture on adapter {adapter_index} ({adapter_name})"),
+            if needs_desktop_duplication {
+                format!("Creating Desktop Duplication frame source on adapter {adapter_index} ({adapter_name})")
+            } else {
+                format!("Resolving live desktop output context on adapter {adapter_index} ({adapter_name})")
+            },
         );
         let capture = match unsafe {
             create_live_desktop_capture_for_adapter(
@@ -6088,6 +6109,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 &d3d.device,
                 adapter_index,
                 target_monitor,
+                needs_desktop_duplication,
             )
         } {
             Ok(capture) => capture,
@@ -6334,7 +6356,7 @@ unsafe fn create_live_desktop_renderer_resources(
             copy_initial_live_desktop_frame_to_composition_surface(
                 window_capture.as_ref(),
                 dwm_shared_surface_capture.as_ref(),
-                &capture.duplication,
+                capture.duplication.as_ref(),
                 &swap_chain,
                 &d3d.device,
                 &d3d.context,
@@ -6437,11 +6459,23 @@ unsafe fn create_live_desktop_renderer_resources(
             }
         };
 
+        let desktop_duplication_detail = if capture.duplication.is_some() {
+            "desktopDuplication=created".to_string()
+        } else if config.diagnostic_mode.uses_window_capture() {
+            "desktopDuplication=notCreated(wgcFrameSource)".to_string()
+        } else if config.diagnostic_mode.uses_dwm_shared_surface_capture() {
+            "desktopDuplication=notCreated(dwmSharedSurfaceFrameSource)".to_string()
+        } else if config.diagnostic_mode == LiveDesktopDiagnosticMode::TestPattern {
+            "desktopDuplication=notCreated(testPatternFrameSource)".to_string()
+        } else {
+            "desktopDuplication=notCreated(unusedFrameSource)".to_string()
+        };
+
         return Ok(LiveDesktopRendererStartup {
             renderer_probe: LiveDesktopRendererProbe::native_renderer_available_for_window(
                 supports_native_effects,
                 format!(
-                    "{} frame pump initialized with {initial_frame_detail} and DirectComposition target/root swap chain source {}x{} -> target {}x{} scale {:.3} offset {:.1},{:.1} on adapter {adapter_index} ({adapter_name}), output {} ({}), monitor matched: {}; native effects available: {}; {}; {}; {}; {}",
+                    "{} frame pump initialized with {initial_frame_detail} and DirectComposition target/root swap chain source {}x{} -> target {}x{} scale {:.3} offset {:.1},{:.1} on adapter {adapter_index} ({adapter_name}), output {} ({}), monitor matched: {}; native effects available: {}; {}; {}; {}; {}; {}",
                     live_desktop_frame_source_label(
                         window_capture.as_ref(),
                         dwm_shared_surface_capture.as_ref()
@@ -6464,6 +6498,7 @@ unsafe fn create_live_desktop_renderer_resources(
                         last_detail.as_str()
                     ),
                     native_effects.detail,
+                    desktop_duplication_detail,
                     shader_pipeline_detail
                 ),
             ),
@@ -6517,6 +6552,7 @@ unsafe fn create_live_desktop_capture_for_adapter(
     d3d_device: &ID3D11Device,
     adapter_index: u32,
     target_monitor: HMONITOR,
+    create_duplication: bool,
 ) -> Result<LiveDesktopCaptureStartup, String> {
     let mut output_count = 0;
     let mut last_detail = String::new();
@@ -6570,6 +6606,17 @@ unsafe fn create_live_desktop_capture_for_adapter(
             continue;
         }
 
+        if !create_duplication {
+            return Ok(LiveDesktopCaptureStartup {
+                output_index,
+                output_width,
+                output_height,
+                output_rect,
+                output_name,
+                duplication: None,
+            });
+        }
+
         let output1 = match output.cast::<IDXGIOutput1>() {
             Ok(output1) => output1,
             Err(error) => {
@@ -6600,7 +6647,7 @@ unsafe fn create_live_desktop_capture_for_adapter(
             output_height,
             output_rect,
             output_name,
-            duplication,
+            duplication: Some(duplication),
         });
     }
 
@@ -7547,7 +7594,7 @@ fn parse_live_desktop_window_handle(value: &str) -> Option<HWND> {
 unsafe fn copy_initial_live_desktop_frame_to_composition_surface(
     window_capture: Option<&LiveDesktopWindowCapture>,
     dwm_shared_surface_capture: Option<&LiveDesktopDwmSharedSurfaceCapture>,
-    duplication: &IDXGIOutputDuplication,
+    duplication: Option<&IDXGIOutputDuplication>,
     swap_chain: &LiveDesktopCompositionSwapChain,
     device: &ID3D11Device,
     context: &ID3D11DeviceContext,
@@ -7597,16 +7644,20 @@ unsafe fn copy_initial_live_desktop_frame_to_composition_surface(
         }
     }
 
-    unsafe {
-        copy_duplication_frame_to_composition_surface(
-            duplication,
-            swap_chain,
-            context,
-            LIVE_DESKTOP_INITIAL_FRAME_WAIT_MS,
-            config,
-            None,
-        )
+    if let Some(duplication) = duplication {
+        return unsafe {
+            copy_duplication_frame_to_composition_surface(
+                duplication,
+                swap_chain,
+                context,
+                LIVE_DESKTOP_INITIAL_FRAME_WAIT_MS,
+                config,
+                None,
+            )
+        };
     }
+
+    Ok(None)
 }
 
 #[cfg(target_os = "windows")]
@@ -9403,6 +9454,31 @@ mod tests {
         assert!(!status.active);
         assert_eq!(status.generation, 0);
         assert_eq!(status.reason, "stopped");
+    }
+
+    #[test]
+    fn live_desktop_diagnostic_defaults_to_wallpaper_engine_popup() {
+        let config = LiveDesktopRuntimeConfig::default();
+
+        assert_eq!(
+            config.diagnostic_mode,
+            LiveDesktopDiagnosticMode::WallpaperEnginePopupCapture
+        );
+        assert!(config.diagnostic_mode.uses_window_capture());
+        assert!(!config
+            .diagnostic_mode
+            .uses_desktop_duplication_frame_source());
+    }
+
+    #[test]
+    fn only_monitor_capture_uses_desktop_duplication_frame_source() {
+        assert!(LiveDesktopDiagnosticMode::MonitorCapture.uses_desktop_duplication_frame_source());
+        assert!(!LiveDesktopDiagnosticMode::WallpaperEnginePopupCapture
+            .uses_desktop_duplication_frame_source());
+        assert!(!LiveDesktopDiagnosticMode::WorkerWCapture.uses_desktop_duplication_frame_source());
+        assert!(!LiveDesktopDiagnosticMode::DwmSharedSurfaceCapture
+            .uses_desktop_duplication_frame_source());
+        assert!(!LiveDesktopDiagnosticMode::TestPattern.uses_desktop_duplication_frame_source());
     }
 
     #[test]
