@@ -226,8 +226,17 @@ export class BackgroundEffectPreviewRenderer {
 
   getBlurKey() {
     const renderSize = this.getRenderSize();
-    const offsetScale = createBackgroundEffectPlan(this.config).blur.offsetScale;
-    return `${renderSize.width}x${renderSize.height}|${this.config.backgroundImageLayout || ""}|${offsetScale}`;
+    const blur = createBackgroundEffectPlan(this.config).blur;
+    return JSON.stringify({
+      downOffsets: blur.downOffsets,
+      finalUpOffset: blur.finalUpOffset,
+      height: renderSize.height,
+      imageLayout: this.config.backgroundImageLayout || "",
+      offsetScale: blur.offsetScale,
+      passCount: blur.passCount,
+      upOffsets: blur.upOffsets,
+      width: renderSize.width,
+    });
   }
 
   updateCanvasCoverStyle(renderSize) {
@@ -246,14 +255,21 @@ export class BackgroundEffectPreviewRenderer {
     }
   }
 
-  ensureRenderTextures(renderSize) {
-    const levels = createDualKawaseLevels(renderSize.width, renderSize.height);
+  ensureRenderTextures(renderSize, effectPlan) {
+    const levels = createDualKawaseLevels(
+      renderSize.width,
+      renderSize.height,
+      effectPlan.blur.passCount,
+      effectPlan.blur.minSize
+    );
     const nextKey = [
       renderSize.width,
       renderSize.height,
+      effectPlan.blur.passCount,
+      effectPlan.blur.minSize,
       ...levels.map((level) => `${level.width}x${level.height}`),
     ].join("|");
-    if (nextKey === this.renderSizeKey) return;
+    if (nextKey === this.renderSizeKey) return false;
 
     this.destroyRenderTextures();
     this.renderSizeKey = nextKey;
@@ -262,6 +278,7 @@ export class BackgroundEffectPreviewRenderer {
     this.finalRenderTexture = createRenderTexture(renderSize.width, renderSize.height);
     this.downTextures = levels.map((level) => createRenderTexture(level.width, level.height));
     this.upTextures = levels.map((level) => createRenderTexture(level.width, level.height));
+    return true;
   }
 
   destroyRenderTextures() {
@@ -354,7 +371,12 @@ export class BackgroundEffectPreviewRenderer {
     const renderSize = this.getRenderSize();
     this.app.renderer.resize(renderSize.width, renderSize.height);
     this.updateCanvasCoverStyle(renderSize);
-    this.ensureRenderTextures(renderSize);
+    const effectPlan = createBackgroundEffectPlan(this.config);
+    if (this.ensureRenderTextures(renderSize, effectPlan)) {
+      this.sourceDirty = true;
+      this.blurDirty = true;
+      this.compositeDirty = true;
+    }
     if (!this.downTextures.length || !this.finalBlurTexture || !this.finalRenderTexture) return;
 
     if (this.sourceDirty) {
@@ -364,7 +386,6 @@ export class BackgroundEffectPreviewRenderer {
       this.compositeDirty = true;
     }
 
-    const effectPlan = createBackgroundEffectPlan(this.config);
     const blurOffsetScale = effectPlan.blur.offsetScale;
     const blurKey = this.getBlurKey();
     if (this.blurDirty || blurKey !== this.lastBlurKey) {

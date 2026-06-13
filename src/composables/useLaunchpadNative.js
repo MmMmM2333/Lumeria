@@ -8,6 +8,7 @@ import {
 } from "./launchpadConstants.js";
 import { clamp } from "../domain/launchpadLayout.js";
 import { createBackgroundEffectPlan } from "../domain/backgroundEffectPlan.js";
+import { getKawaseDebugEffectPlanParams } from "../rendering/pixi/background/kawaseDebugParams.js";
 import {
   DEFAULT_SCAN_KEYWORD_BLACKLIST,
   isAppBlockedByScanBlacklist,
@@ -342,6 +343,7 @@ function makeLiveDesktopRuntimeConfig(options) {
     effectPlan: createBackgroundEffectPlan({
       acrylicParams,
       blurStrength: options.backgroundBlurStrength.value,
+      dualKawaseParams: getKawaseDebugEffectPlanParams(),
       effect: options.backgroundEffect.value,
       opacity: options.backgroundLiveDesktopOpacity.value,
     }),

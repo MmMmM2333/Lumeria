@@ -73,8 +73,40 @@
           <input type="color" :value="tintHex" @input="updateTintColor">
         </label>
 
+        <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">Dual Kawase</div>
+          <label class="background-debug-toggle">
+            <input
+              name="kawaseDebugOverride"
+              type="checkbox"
+              :checked="isKawaseOverrideEnabled"
+              @change="setKawaseOverrideEnabled($event.target.checked)"
+            >
+            <span>覆盖半径/pass</span>
+          </label>
+
+          <label
+            v-for="slider in kawaseSliders"
+            :key="slider.key"
+            class="background-debug-control"
+          >
+            <span>
+              {{ slider.label }}
+              <output>{{ formatValue(kawaseParams[slider.key], slider.digits) }}</output>
+            </span>
+            <input
+              type="range"
+              :min="slider.min"
+              :max="slider.max"
+              :step="slider.step"
+              :value="kawaseParams[slider.key]"
+              @input="updateKawaseNumber(slider.key, $event)"
+            >
+          </label>
+        </div>
+
         <div class="background-debug-actions">
-          <button type="button" class="background-debug-button" @click="resetAcrylicDebugParams">
+          <button type="button" class="background-debug-button" @click="resetBackgroundDebugParams">
             重置
           </button>
           <button type="button" class="background-debug-button" @click="copyParams">
@@ -292,6 +324,17 @@ import {
   updateAcrylicDebugParams,
   useAcrylicDebugParams,
 } from "../rendering/pixi/background/acrylicDebugParams.js";
+import {
+  KAWASE_DEBUG_OFFSET_SCALE_MAX,
+  KAWASE_DEBUG_OFFSET_SCALE_MIN,
+  KAWASE_DEBUG_PASS_COUNT_MAX,
+  KAWASE_DEBUG_PASS_COUNT_MIN,
+  resetKawaseDebugParams,
+  setKawaseDebugOverrideEnabled,
+  updateKawaseDebugParams,
+  useKawaseDebugOverrideEnabled,
+  useKawaseDebugParams,
+} from "../rendering/pixi/background/kawaseDebugParams.js";
 
 const props = defineProps({
   state: {
@@ -375,6 +418,8 @@ const DEFAULT_LIVE_DESKTOP_STATUS = Object.freeze({
 
 const params = useAcrylicDebugParams();
 const isOverrideEnabled = useAcrylicDebugOverrideEnabled();
+const kawaseParams = useKawaseDebugParams();
+const isKawaseOverrideEnabled = useKawaseDebugOverrideEnabled();
 const isCollapsed = ref(false);
 const activePanel = ref("acrylic");
 const hasCopiedAcrylic = ref(false);
@@ -398,6 +443,7 @@ let liveDesktopRateSample = null;
 let acrylicCopyStateTimer = null;
 let diagnosticsCopyStateTimer = null;
 let liveDesktopRuntimePollTimer = null;
+let kawaseLiveDesktopSyncTimer = null;
 
 const sliders = [
   { key: "saturation", label: "saturation", min: 0.8, max: 1.8, step: 0.01, digits: 2 },
@@ -406,6 +452,24 @@ const sliders = [
   { key: "tintStrength", label: "tintStrength", min: 0, max: 0.6, step: 0.01, digits: 2 },
   { key: "noise", label: "noise", min: 0, max: 0.06, step: 0.001, digits: 3 },
   { key: "seed", label: "seed", min: 0, max: 100, step: 0.01, digits: 2 },
+];
+const kawaseSliders = [
+  {
+    key: "passCount",
+    label: "passCount",
+    min: KAWASE_DEBUG_PASS_COUNT_MIN,
+    max: KAWASE_DEBUG_PASS_COUNT_MAX,
+    step: 1,
+    digits: 0,
+  },
+  {
+    key: "offsetScale",
+    label: "radiusScale",
+    min: KAWASE_DEBUG_OFFSET_SCALE_MIN,
+    max: KAWASE_DEBUG_OFFSET_SCALE_MAX,
+    step: 0.01,
+    digits: 2,
+  },
 ];
 
 const tintHex = computed(() => rgbArrayToHex(params.tintColor));
@@ -721,6 +785,36 @@ function formatWindowRect(rect) {
 
 function updateNumber(key, event) {
   updateAcrylicDebugParams({ [key]: Number(event.target.value) });
+}
+
+function syncLiveDesktopDebugEffects(options = {}) {
+  const delay = Number.isFinite(Number(options.delay)) ? Number(options.delay) : 80;
+  if (kawaseLiveDesktopSyncTimer != null) window.clearTimeout(kawaseLiveDesktopSyncTimer);
+  if (delay <= 0) {
+    kawaseLiveDesktopSyncTimer = null;
+    props.state?.syncLiveDesktopBackgroundRuntime?.();
+    return;
+  }
+  kawaseLiveDesktopSyncTimer = window.setTimeout(() => {
+    kawaseLiveDesktopSyncTimer = null;
+    props.state?.syncLiveDesktopBackgroundRuntime?.();
+  }, delay);
+}
+
+function setKawaseOverrideEnabled(enabled) {
+  setKawaseDebugOverrideEnabled(enabled);
+  syncLiveDesktopDebugEffects({ delay: 0 });
+}
+
+function updateKawaseNumber(key, event) {
+  updateKawaseDebugParams({ [key]: Number(event.target.value) });
+  syncLiveDesktopDebugEffects();
+}
+
+function resetBackgroundDebugParams() {
+  resetAcrylicDebugParams();
+  resetKawaseDebugParams();
+  syncLiveDesktopDebugEffects({ delay: 0 });
 }
 
 function updateTintColor(event) {
@@ -1089,6 +1183,7 @@ onMounted(restartLiveDesktopRuntimePoller);
 onBeforeUnmount(() => {
   if (acrylicCopyStateTimer != null) window.clearTimeout(acrylicCopyStateTimer);
   if (diagnosticsCopyStateTimer != null) window.clearTimeout(diagnosticsCopyStateTimer);
+  if (kawaseLiveDesktopSyncTimer != null) window.clearTimeout(kawaseLiveDesktopSyncTimer);
   clearLiveDesktopRuntimePoller();
 });
 </script>
@@ -1160,6 +1255,22 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 10px;
   min-width: 0;
+}
+
+.background-debug-subsection {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 9px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.background-debug-subtitle {
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.2;
 }
 
 .background-debug-body {

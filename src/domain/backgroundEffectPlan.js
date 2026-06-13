@@ -12,7 +12,10 @@ import { normalizeAcrylicCompositeParams } from "../rendering/pixi/background/ac
 export const ACRYLIC_RENDER_MAX_WIDTH = 960;
 export const ACRYLIC_RENDER_MAX_HEIGHT = 540;
 export const DUAL_KAWASE_PASS_COUNT = 4;
+export const DUAL_KAWASE_PASS_COUNT_MIN = 1;
 export const DUAL_KAWASE_MIN_SIZE = 16;
+export const DUAL_KAWASE_OFFSET_SCALE_MIN = 0.02;
+export const DUAL_KAWASE_OFFSET_SCALE_MAX = 2;
 export const DUAL_KAWASE_BLUR_OFFSET_SCALE_MIN = 0.1;
 export const DUAL_KAWASE_BLUR_OFFSET_SCALE_MAX = 1.55;
 
@@ -28,18 +31,49 @@ export function resolveAcrylicRenderSize(width, height, maxWidth = ACRYLIC_RENDE
   };
 }
 
-export function createDualKawaseLevels(width, height, passCount = DUAL_KAWASE_PASS_COUNT) {
+export function createDualKawaseLevels(width, height, passCount = DUAL_KAWASE_PASS_COUNT, minSize = DUAL_KAWASE_MIN_SIZE) {
   const levels = [];
   let currentWidth = Math.max(1, Math.round(Number(width) || 1));
   let currentHeight = Math.max(1, Math.round(Number(height) || 1));
-  const count = Math.max(1, Math.floor(Number(passCount) || DUAL_KAWASE_PASS_COUNT));
+  const count = clampDualKawasePassCount(passCount);
+  const minimumSize = Math.max(1, Math.floor(Number(minSize) || DUAL_KAWASE_MIN_SIZE));
   for (let index = 0; index < count; index += 1) {
-    currentWidth = Math.max(DUAL_KAWASE_MIN_SIZE, Math.round(currentWidth / 2));
-    currentHeight = Math.max(DUAL_KAWASE_MIN_SIZE, Math.round(currentHeight / 2));
+    currentWidth = Math.max(minimumSize, Math.round(currentWidth / 2));
+    currentHeight = Math.max(minimumSize, Math.round(currentHeight / 2));
     levels.push({ width: currentWidth, height: currentHeight });
-    if (currentWidth === DUAL_KAWASE_MIN_SIZE && currentHeight === DUAL_KAWASE_MIN_SIZE) break;
+    if (currentWidth === minimumSize && currentHeight === minimumSize) break;
   }
   return levels;
+}
+
+function clampNumber(value, min, max, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, number));
+}
+
+export function clampDualKawasePassCount(value, fallback = DUAL_KAWASE_PASS_COUNT) {
+  const count = Number(value);
+  if (!Number.isFinite(count)) return clampDualKawasePassCount(fallback, DUAL_KAWASE_PASS_COUNT);
+  return Math.min(DUAL_KAWASE_PASS_COUNT, Math.max(DUAL_KAWASE_PASS_COUNT_MIN, Math.floor(count)));
+}
+
+export function clampDualKawaseOffsetScale(value, fallback = 1) {
+  return clampNumber(value, DUAL_KAWASE_OFFSET_SCALE_MIN, DUAL_KAWASE_OFFSET_SCALE_MAX, fallback);
+}
+
+export function normalizeDualKawaseParams(params = {}, fallback = {}) {
+  const source = params && typeof params === "object" ? params : {};
+  return {
+    offsetScale: clampDualKawaseOffsetScale(
+      source.offsetScale,
+      clampDualKawaseOffsetScale(fallback.offsetScale, 1)
+    ),
+    passCount: clampDualKawasePassCount(
+      source.passCount,
+      clampDualKawasePassCount(fallback.passCount, DUAL_KAWASE_PASS_COUNT)
+    ),
+  };
 }
 
 export function resolveBlurOffsetScale(strength) {
@@ -75,9 +109,16 @@ export function createBackgroundEffectPlan(config = {}) {
   const effect = normalizeBackgroundEffect(config.effect ?? config.backgroundEffect);
   const opacity = resolveAcrylicBackgroundAlpha(config.opacity ?? config.backgroundImageOpacity);
   const blurStrength = clampBackgroundBlurStrength(config.blurStrength ?? config.backgroundBlurStrength);
-  const blurOffsetScale = effect === BACKGROUND_EFFECT_BLUR
+  const defaultBlurOffsetScale = effect === BACKGROUND_EFFECT_BLUR
     ? resolveBlurOffsetScale(blurStrength)
     : 1;
+  const dualKawase = normalizeDualKawaseParams(
+    config.dualKawaseParams ?? config.dualKawase,
+    {
+      offsetScale: defaultBlurOffsetScale,
+      passCount: DUAL_KAWASE_PASS_COUNT,
+    }
+  );
   const acrylic = normalizeAcrylicCompositeParams(config.acrylicParams ?? config.backgroundAcrylicParams);
 
   return {
@@ -87,12 +128,12 @@ export function createBackgroundEffectPlan(config = {}) {
       strength: blurStrength,
       renderMaxWidth: ACRYLIC_RENDER_MAX_WIDTH,
       renderMaxHeight: ACRYLIC_RENDER_MAX_HEIGHT,
-      passCount: DUAL_KAWASE_PASS_COUNT,
+      passCount: dualKawase.passCount,
       minSize: DUAL_KAWASE_MIN_SIZE,
-      offsetScale: blurOffsetScale,
-      downOffsets: [1, 1.35, 1.7, 2.05].map((offset) => offset * blurOffsetScale),
-      upOffsets: [1.1, 1.35, 1.6].map((offset) => offset * blurOffsetScale),
-      finalUpOffset: 1.25 * blurOffsetScale,
+      offsetScale: dualKawase.offsetScale,
+      downOffsets: [1, 1.35, 1.7, 2.05].map((offset) => offset * dualKawase.offsetScale),
+      upOffsets: [1.1, 1.35, 1.6].map((offset) => offset * dualKawase.offsetScale),
+      finalUpOffset: 1.25 * dualKawase.offsetScale,
     },
     acrylic: {
       ...acrylic,

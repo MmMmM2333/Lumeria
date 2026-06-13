@@ -1091,11 +1091,7 @@ impl LiveDesktopShaderPipeline {
         let levels = create_live_desktop_dual_kawase_levels(
             effect_width,
             effect_height,
-            config
-                .effect_plan
-                .as_ref()
-                .map(|plan| plan.blur.pass_count)
-                .unwrap_or(4),
+            4,
             config
                 .effect_plan
                 .as_ref()
@@ -1271,7 +1267,16 @@ impl LiveDesktopShaderPipeline {
         let mut current_width = self.effect_source.width;
         let mut current_height = self.effect_source.height;
 
-        for (index, target) in self.down_textures.iter().enumerate() {
+        let active_pass_count = (effect_plan.blur.pass_count.max(1) as usize)
+            .min(self.down_textures.len())
+            .max(1);
+
+        for (index, target) in self
+            .down_textures
+            .iter()
+            .take(active_pass_count)
+            .enumerate()
+        {
             let offset = effect_plan
                 .blur
                 .down_offsets
@@ -1294,7 +1299,7 @@ impl LiveDesktopShaderPipeline {
             current_height = target.height;
         }
 
-        for index in (0..self.down_textures.len().saturating_sub(1)).rev() {
+        for index in (0..active_pass_count.saturating_sub(1)).rev() {
             let target = &self.up_textures[index];
             let offset = effect_plan
                 .blur

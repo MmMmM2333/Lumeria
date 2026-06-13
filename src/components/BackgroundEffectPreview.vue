@@ -55,6 +55,7 @@ import {
   DEFAULT_BACKGROUND_IMAGE_LAYOUT,
 } from "../domain/backgroundImageLayout.js";
 import { BackgroundEffectPreviewRenderer } from "../rendering/pixi/background/backgroundEffectPreviewRenderer.js";
+import { isKawaseDebugEnabled, useKawaseDebugOverrideEnabled, useKawaseDebugParams } from "../rendering/pixi/background/kawaseDebugParams.js";
 
 const DEFAULT_RENDER_WIDTH = 960;
 const DEFAULT_RENDER_HEIGHT = 540;
@@ -84,6 +85,8 @@ const rootRef = ref(null);
 const renderSize = ref({ height: DEFAULT_RENDER_HEIGHT, width: DEFAULT_RENDER_WIDTH });
 const previewSize = ref({ height: DEFAULT_PREVIEW_HEIGHT, width: DEFAULT_PREVIEW_WIDTH });
 const isPixiReady = ref(false);
+const kawaseDebugParams = useKawaseDebugParams();
+const kawaseDebugOverrideEnabled = useKawaseDebugOverrideEnabled();
 let previewRenderer = null;
 let rendererGeneration = 0;
 let previewResizeObserver = null;
@@ -152,6 +155,7 @@ function getRendererConfig() {
     backgroundImagePrecomposed: false,
     backgroundImageUrl: props.backgroundImageUrl,
     backgroundLayoutContext: props.backgroundLayoutContext,
+    dualKawaseParams: isKawaseDebugEnabled && kawaseDebugOverrideEnabled.value ? kawaseDebugParams : null,
     renderHeight: renderSize.value.height,
     renderWidth: renderSize.value.width,
   };
@@ -167,6 +171,8 @@ function makeRendererConfigKey(config) {
     acrylicTintStrength: config.backgroundAcrylicParams?.tintStrength,
     acrylicTintColor: config.backgroundAcrylicParams?.tintColor,
     blurStrength: config.backgroundBlurStrength,
+    kawaseOffsetScale: config.dualKawaseParams?.offsetScale,
+    kawasePassCount: config.dualKawaseParams?.passCount,
     effect: config.backgroundEffect,
     imageHeight: config.backgroundImagePixelSize?.height,
     imageLayout: config.backgroundImageLayout,
@@ -308,6 +314,9 @@ watch(
     props.backgroundAcrylicParams?.tintColor?.[0],
     props.backgroundAcrylicParams?.tintColor?.[1],
     props.backgroundAcrylicParams?.tintColor?.[2],
+    kawaseDebugParams.offsetScale,
+    kawaseDebugParams.passCount,
+    kawaseDebugOverrideEnabled.value,
     renderSize.value.width,
     renderSize.value.height,
     previewSize.value.width,

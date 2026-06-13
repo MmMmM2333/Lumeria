@@ -12,6 +12,7 @@ import { loadCachedBackgroundImageDataUrl } from "../../api/launchpadApi.js";
 import { createPixiApp } from "./createPixiApp.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { isAcrylicDebugEnabled, useAcrylicDebugOverrideEnabled, useAcrylicDebugParams } from "./background/acrylicDebugParams.js";
+import { isKawaseDebugEnabled, useKawaseDebugOverrideEnabled, useKawaseDebugParams } from "./background/kawaseDebugParams.js";
 import { createAcrylicCompositeFilter, createKawaseFilter } from "./background/acrylicFilters.js";
 import { loadBackgroundTextureFromImage } from "./background/backgroundTextureLoader.js";
 import { createAcrylicNoiseTexture } from "./background/acrylicNoiseTexture.js";
@@ -49,6 +50,8 @@ const emit = defineEmits(["ready"]);
 
 const acrylicDebugParams = useAcrylicDebugParams();
 const acrylicDebugOverrideEnabled = useAcrylicDebugOverrideEnabled();
+const kawaseDebugParams = useKawaseDebugParams();
+const kawaseDebugOverrideEnabled = useKawaseDebugOverrideEnabled();
 const hostRef = ref(null);
 const isFallbackVisible = ref(true);
 let app = null;
@@ -113,12 +116,14 @@ function createRenderTexture(width, height) {
   });
 }
 
-function ensureRenderTextures(width, height) {
+function ensureRenderTextures(width, height, passCount, minSize) {
   const renderSize = resolveAcrylicRenderSize(width, height);
-  const levels = createDualKawaseLevels(renderSize.width, renderSize.height);
+  const levels = createDualKawaseLevels(renderSize.width, renderSize.height, passCount, minSize);
   const nextKey = [
     renderSize.width,
     renderSize.height,
+    passCount,
+    minSize,
     ...levels.map((level) => `${level.width}x${level.height}`),
   ].join("|");
   if (nextKey === renderSizeKey) return renderSize;
@@ -191,20 +196,25 @@ function renderSourceToTexture(renderSize, hostSize) {
 function renderBackgroundEffect() {
   if (!props.active || !app || !sourceTexture || !hostRef.value) return;
   const hostSize = getHostSize();
-  const renderSize = ensureRenderTextures(hostSize.width, hostSize.height);
-  if (!downTextures.length || !finalBlurTexture || !finalRenderTexture) return;
-
-  renderSourceToTexture(renderSize, hostSize);
-
   const effectPlan = createBackgroundEffectPlan({
     acrylicParams: {
       ...props.backgroundAcrylicParams,
       ...(isAcrylicDebugEnabled && acrylicDebugOverrideEnabled.value ? acrylicDebugParams : null),
     },
     blurStrength: props.backgroundBlurStrength,
+    dualKawaseParams: isKawaseDebugEnabled && kawaseDebugOverrideEnabled.value ? kawaseDebugParams : null,
     effect: props.backgroundEffect,
     opacity: props.backgroundImageOpacity,
   });
+  const renderSize = ensureRenderTextures(
+    hostSize.width,
+    hostSize.height,
+    effectPlan.blur.passCount,
+    effectPlan.blur.minSize
+  );
+  if (!downTextures.length || !finalBlurTexture || !finalRenderTexture) return;
+
+  renderSourceToTexture(renderSize, hostSize);
   const blurOffsetScale = effectPlan.blur.offsetScale;
   let currentTexture = sourceRenderTexture;
   for (let index = 0; index < downTextures.length; index += 1) {
@@ -465,6 +475,19 @@ if (isAcrylicDebugEnabled) {
     ],
     () => {
       if (props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) scheduleRender();
+    }
+  );
+}
+
+if (isKawaseDebugEnabled) {
+  watch(
+    () => [
+      kawaseDebugParams.offsetScale,
+      kawaseDebugParams.passCount,
+      kawaseDebugOverrideEnabled.value,
+    ],
+    () => {
+      if (props.backgroundEffect === BACKGROUND_EFFECT_BLUR || props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) scheduleRender();
     }
   );
 }
