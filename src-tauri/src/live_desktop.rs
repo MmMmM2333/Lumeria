@@ -32,14 +32,23 @@ use windows::{
         Graphics::{
             Direct2D::Common::D2D1_BORDER_MODE_HARD,
             Direct3D::{
-                D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL, D3D_FEATURE_LEVEL_10_0,
-                D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
+                Fxc::{D3DCompile, D3DCOMPILE_ENABLE_STRICTNESS, D3DCOMPILE_OPTIMIZATION_LEVEL1},
+                ID3DBlob, ID3DInclude, D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL,
+                D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0,
+                D3D_FEATURE_LEVEL_11_1, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
             },
             Direct3D11::{
-                D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Resource,
-                ID3D11Texture2D, D3D11_BOX, D3D11_CPU_ACCESS_READ,
-                D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
-                D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
+                D3D11CreateDevice, ID3D11Buffer, ID3D11ClassLinkage, ID3D11DepthStencilView,
+                ID3D11Device, ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader,
+                ID3D11Resource, ID3D11SamplerState, ID3D11ShaderResourceView, ID3D11Texture2D,
+                ID3D11VertexShader, D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE,
+                D3D11_BIND_VERTEX_BUFFER, D3D11_BOX, D3D11_BUFFER_DESC, D3D11_COMPARISON_NEVER,
+                D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                D3D11_FILTER_MIN_MAG_MIP_POINT, D3D11_FLOAT32_MAX, D3D11_INPUT_ELEMENT_DESC,
+                D3D11_INPUT_PER_VERTEX_DATA, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
+                D3D11_SAMPLER_DESC, D3D11_SDK_VERSION, D3D11_SUBRESOURCE_DATA,
+                D3D11_TEXTURE2D_DESC, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_USAGE_DEFAULT,
+                D3D11_USAGE_STAGING, D3D11_VIEWPORT,
             },
             DirectComposition::{
                 DCompositionCreateDevice, DCompositionCreateDevice3,
@@ -49,7 +58,10 @@ use windows::{
             },
             Dwm::{DwmFlush, DwmGetWindowAttribute, DWMWA_CLOAKED},
             Dxgi::{
-                Common::{DXGI_ALPHA_MODE_IGNORE, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC},
+                Common::{
+                    DXGI_ALPHA_MODE_IGNORE, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R32G32_FLOAT,
+                    DXGI_SAMPLE_DESC,
+                },
                 CreateDXGIFactory1, IDXGIAdapter1, IDXGIDevice, IDXGIFactory1, IDXGIFactory2,
                 IDXGIOutput, IDXGIOutput1, IDXGIOutputDuplication, IDXGIResource, IDXGISwapChain1,
                 DXGI_ADAPTER_FLAG3_SOFTWARE, DXGI_ERROR_ACCESS_DENIED, DXGI_ERROR_NOT_FOUND,
@@ -259,7 +271,7 @@ impl LiveDesktopStartupCancellationToken {
 #[cfg(target_os = "windows")]
 #[derive(Debug)]
 enum LiveDesktopRendererCommand {
-    Configure(LiveDesktopRuntimeConfig),
+    Configure(Box<LiveDesktopRuntimeConfig>),
     SetVisible(bool),
 }
 
@@ -291,6 +303,7 @@ struct LiveDesktopRendererResources {
     _root_visual3: Option<IDCompositionVisual3>,
     _scale_transform: IDCompositionScaleTransform,
     _swap_chain: LiveDesktopCompositionSwapChain,
+    _shader_pipeline: Option<LiveDesktopShaderPipeline>,
 }
 
 #[cfg(target_os = "windows")]
@@ -549,6 +562,28 @@ struct LiveDesktopCompositionSwapChain {
 }
 
 #[cfg(target_os = "windows")]
+struct LiveDesktopShaderPipeline {
+    device: ID3D11Device,
+    input_resource: ID3D11Resource,
+    input_srv: ID3D11ShaderResourceView,
+    vertex_shader: ID3D11VertexShader,
+    pixel_shader: ID3D11PixelShader,
+    input_layout: ID3D11InputLayout,
+    vertex_buffer: ID3D11Buffer,
+    sampler: ID3D11SamplerState,
+    width: u32,
+    height: u32,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct LiveDesktopShaderVertex {
+    position: [f32; 2],
+    uv: [f32; 2],
+}
+
+#[cfg(target_os = "windows")]
 struct LiveDesktopNativeEffects {
     color_matrix_effect: Option<IDCompositionColorMatrixEffect>,
     blur_effect: Option<IDCompositionGaussianBlurEffect>,
@@ -728,6 +763,400 @@ impl LiveDesktopCompositionSwapChain {
             )
         })
     }
+}
+
+#[cfg(target_os = "windows")]
+const LIVE_DESKTOP_COPY_SHADER_HLSL: &str = r#"
+struct VsInput {
+    float2 position : POSITION;
+    float2 uv : TEXCOORD0;
+};
+
+struct PsInput {
+    float4 position : SV_POSITION;
+    float2 uv : TEXCOORD0;
+};
+
+PsInput main_vs(VsInput input) {
+    PsInput output;
+    output.position = float4(input.position, 0.0, 1.0);
+    output.uv = input.uv;
+    return output;
+}
+
+Texture2D source_texture : register(t0);
+SamplerState source_sampler : register(s0);
+
+float4 main_ps(PsInput input) : SV_TARGET {
+    return source_texture.Sample(source_sampler, input.uv);
+}
+"#;
+
+#[cfg(target_os = "windows")]
+impl LiveDesktopShaderPipeline {
+    unsafe fn create(device: &ID3D11Device, width: u32, height: u32) -> Result<Self, String> {
+        let width = width.max(1);
+        let height = height.max(1);
+        let vertex_shader_blob = unsafe {
+            compile_live_desktop_shader(
+                LIVE_DESKTOP_COPY_SHADER_HLSL,
+                s!("main_vs"),
+                s!("vs_4_0"),
+                "copy vertex shader",
+            )
+        }?;
+        let pixel_shader_blob = unsafe {
+            compile_live_desktop_shader(
+                LIVE_DESKTOP_COPY_SHADER_HLSL,
+                s!("main_ps"),
+                s!("ps_4_0"),
+                "copy pixel shader",
+            )
+        }?;
+        let vertex_shader_bytes = unsafe { live_desktop_d3d_blob_bytes(&vertex_shader_blob) };
+        let pixel_shader_bytes = unsafe { live_desktop_d3d_blob_bytes(&pixel_shader_blob) };
+
+        let mut vertex_shader = None;
+        unsafe {
+            device.CreateVertexShader(
+                vertex_shader_bytes,
+                None::<&ID3D11ClassLinkage>,
+                Some(&mut vertex_shader),
+            )
+        }
+        .map_err(|error| format!("CreateVertexShader(copy) failed: {error}"))?;
+        let vertex_shader = vertex_shader
+            .ok_or_else(|| "CreateVertexShader(copy) returned no shader".to_string())?;
+
+        let mut pixel_shader = None;
+        unsafe {
+            device.CreatePixelShader(
+                pixel_shader_bytes,
+                None::<&ID3D11ClassLinkage>,
+                Some(&mut pixel_shader),
+            )
+        }
+        .map_err(|error| format!("CreatePixelShader(copy) failed: {error}"))?;
+        let pixel_shader =
+            pixel_shader.ok_or_else(|| "CreatePixelShader(copy) returned no shader".to_string())?;
+
+        let input_elements = [
+            D3D11_INPUT_ELEMENT_DESC {
+                SemanticName: s!("POSITION"),
+                SemanticIndex: 0,
+                Format: DXGI_FORMAT_R32G32_FLOAT,
+                InputSlot: 0,
+                AlignedByteOffset: 0,
+                InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
+                InstanceDataStepRate: 0,
+            },
+            D3D11_INPUT_ELEMENT_DESC {
+                SemanticName: s!("TEXCOORD"),
+                SemanticIndex: 0,
+                Format: DXGI_FORMAT_R32G32_FLOAT,
+                InputSlot: 0,
+                AlignedByteOffset: 8,
+                InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
+                InstanceDataStepRate: 0,
+            },
+        ];
+        let mut input_layout = None;
+        unsafe {
+            device.CreateInputLayout(
+                &input_elements,
+                vertex_shader_bytes,
+                Some(&mut input_layout),
+            )
+        }
+        .map_err(|error| format!("CreateInputLayout(copy) failed: {error}"))?;
+        let input_layout =
+            input_layout.ok_or_else(|| "CreateInputLayout(copy) returned no layout".to_string())?;
+
+        let vertices = [
+            LiveDesktopShaderVertex {
+                position: [-1.0, -1.0],
+                uv: [0.0, 1.0],
+            },
+            LiveDesktopShaderVertex {
+                position: [-1.0, 3.0],
+                uv: [0.0, -1.0],
+            },
+            LiveDesktopShaderVertex {
+                position: [3.0, -1.0],
+                uv: [2.0, 1.0],
+            },
+        ];
+        let vertex_buffer_desc = D3D11_BUFFER_DESC {
+            ByteWidth: std::mem::size_of_val(&vertices) as u32,
+            Usage: D3D11_USAGE_DEFAULT,
+            BindFlags: D3D11_BIND_VERTEX_BUFFER.0 as u32,
+            CPUAccessFlags: 0,
+            MiscFlags: 0,
+            StructureByteStride: 0,
+        };
+        let vertex_buffer_data = D3D11_SUBRESOURCE_DATA {
+            pSysMem: vertices.as_ptr() as *const std::ffi::c_void,
+            SysMemPitch: 0,
+            SysMemSlicePitch: 0,
+        };
+        let mut vertex_buffer = None;
+        unsafe {
+            device.CreateBuffer(
+                &vertex_buffer_desc,
+                Some(&vertex_buffer_data),
+                Some(&mut vertex_buffer),
+            )
+        }
+        .map_err(|error| format!("CreateBuffer(copy vertex buffer) failed: {error}"))?;
+        let vertex_buffer = vertex_buffer
+            .ok_or_else(|| "CreateBuffer(copy vertex buffer) returned no buffer".to_string())?;
+
+        let sampler_desc = D3D11_SAMPLER_DESC {
+            Filter: D3D11_FILTER_MIN_MAG_MIP_POINT,
+            AddressU: D3D11_TEXTURE_ADDRESS_CLAMP,
+            AddressV: D3D11_TEXTURE_ADDRESS_CLAMP,
+            AddressW: D3D11_TEXTURE_ADDRESS_CLAMP,
+            MipLODBias: 0.0,
+            MaxAnisotropy: 1,
+            ComparisonFunc: D3D11_COMPARISON_NEVER,
+            BorderColor: [0.0, 0.0, 0.0, 0.0],
+            MinLOD: 0.0,
+            MaxLOD: D3D11_FLOAT32_MAX,
+        };
+        let mut sampler = None;
+        unsafe { device.CreateSamplerState(&sampler_desc, Some(&mut sampler)) }
+            .map_err(|error| format!("CreateSamplerState(copy) failed: {error}"))?;
+        let sampler =
+            sampler.ok_or_else(|| "CreateSamplerState(copy) returned no sampler".to_string())?;
+
+        let input_desc = D3D11_TEXTURE2D_DESC {
+            Width: width,
+            Height: height,
+            MipLevels: 1,
+            ArraySize: 1,
+            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
+            Usage: D3D11_USAGE_DEFAULT,
+            BindFlags: (D3D11_BIND_SHADER_RESOURCE.0 | D3D11_BIND_RENDER_TARGET.0) as u32,
+            CPUAccessFlags: 0,
+            MiscFlags: 0,
+        };
+        let mut input_texture = None;
+        unsafe { device.CreateTexture2D(&input_desc, None, Some(&mut input_texture)) }.map_err(
+            |error| format!("CreateTexture2D(shader input {width}x{height}) failed: {error}"),
+        )?;
+        let input_texture = input_texture
+            .ok_or_else(|| "CreateTexture2D(shader input) returned no texture".to_string())?;
+        let input_resource = input_texture
+            .cast::<ID3D11Resource>()
+            .map_err(|error| format!("Shader input texture resource cast failed: {error}"))?;
+        let mut input_srv = None;
+        unsafe { device.CreateShaderResourceView(&input_resource, None, Some(&mut input_srv)) }
+            .map_err(|error| format!("CreateShaderResourceView(shader input) failed: {error}"))?;
+        let input_srv = input_srv
+            .ok_or_else(|| "CreateShaderResourceView(shader input) returned no view".to_string())?;
+
+        Ok(Self {
+            device: device.clone(),
+            input_resource,
+            input_srv,
+            vertex_shader,
+            pixel_shader,
+            input_layout,
+            vertex_buffer,
+            sampler,
+            width,
+            height,
+        })
+    }
+
+    unsafe fn copy_source_region_to_input(
+        &self,
+        context: &ID3D11DeviceContext,
+        source_resource: &ID3D11Resource,
+        source_width: u32,
+        source_height: u32,
+        copy_crop: LiveDesktopFrameCrop,
+        label: &str,
+    ) -> Result<(), String> {
+        if copy_crop.width == 0 || copy_crop.height == 0 {
+            return Err(format!("{label} shader copy crop has invalid size"));
+        }
+        if copy_crop.left.saturating_add(copy_crop.width) > source_width
+            || copy_crop.top.saturating_add(copy_crop.height) > source_height
+            || copy_crop.width > self.width
+            || copy_crop.height > self.height
+        {
+            return Err(format!(
+                "{label} shader copy crop {}x{}@{},{} is outside source {}x{} or input {}x{}",
+                copy_crop.width,
+                copy_crop.height,
+                copy_crop.left,
+                copy_crop.top,
+                source_width,
+                source_height,
+                self.width,
+                self.height
+            ));
+        }
+
+        if copy_crop.left == 0
+            && copy_crop.top == 0
+            && copy_crop.width == source_width
+            && copy_crop.height == source_height
+            && source_width == self.width
+            && source_height == self.height
+        {
+            unsafe { context.CopyResource(&self.input_resource, source_resource) };
+            return Ok(());
+        }
+
+        let source_box = D3D11_BOX {
+            left: copy_crop.left,
+            top: copy_crop.top,
+            front: 0,
+            right: copy_crop.left + copy_crop.width,
+            bottom: copy_crop.top + copy_crop.height,
+            back: 1,
+        };
+        unsafe {
+            context.CopySubresourceRegion(
+                &self.input_resource,
+                0,
+                0,
+                0,
+                0,
+                source_resource,
+                0,
+                Some(&source_box),
+            )
+        };
+        Ok(())
+    }
+
+    unsafe fn draw_to_texture(
+        &self,
+        context: &ID3D11DeviceContext,
+        target_texture: &ID3D11Texture2D,
+        label: &str,
+    ) -> Result<(), String> {
+        let mut target_desc = D3D11_TEXTURE2D_DESC::default();
+        unsafe { target_texture.GetDesc(&mut target_desc) };
+        if target_desc.Width != self.width || target_desc.Height != self.height {
+            return Err(format!(
+                "{label} shader target {}x{} does not match input {}x{}",
+                target_desc.Width, target_desc.Height, self.width, self.height
+            ));
+        }
+        let target_resource = target_texture
+            .cast::<ID3D11Resource>()
+            .map_err(|error| format!("{label} shader target resource cast failed: {error}"))?;
+        let mut render_target_view = None;
+        unsafe {
+            self.device.CreateRenderTargetView(
+                &target_resource,
+                None,
+                Some(&mut render_target_view),
+            )
+        }
+        .map_err(|error| {
+            format!("{label} CreateRenderTargetView(shader target) failed: {error}")
+        })?;
+        let render_target_view = render_target_view
+            .ok_or_else(|| format!("{label} CreateRenderTargetView returned no view"))?;
+
+        let render_targets = [Some(render_target_view)];
+        let viewport = D3D11_VIEWPORT {
+            TopLeftX: 0.0,
+            TopLeftY: 0.0,
+            Width: self.width as f32,
+            Height: self.height as f32,
+            MinDepth: 0.0,
+            MaxDepth: 1.0,
+        };
+        let vertex_buffers = [Some(self.vertex_buffer.clone())];
+        let stride = std::mem::size_of::<LiveDesktopShaderVertex>() as u32;
+        let offset = 0u32;
+        let shader_resources = [Some(self.input_srv.clone())];
+        let samplers = [Some(self.sampler.clone())];
+        unsafe {
+            context.OMSetRenderTargets(Some(&render_targets), None::<&ID3D11DepthStencilView>);
+            context.RSSetViewports(Some(&[viewport]));
+            context.IASetInputLayout(&self.input_layout);
+            context.IASetVertexBuffers(
+                0,
+                1,
+                Some(vertex_buffers.as_ptr()),
+                Some(&stride as *const u32),
+                Some(&offset as *const u32),
+            );
+            context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            context.VSSetShader(&self.vertex_shader, None);
+            context.PSSetShader(&self.pixel_shader, None);
+            context.PSSetShaderResources(0, Some(&shader_resources));
+            context.PSSetSamplers(0, Some(&samplers));
+            context.Draw(3, 0);
+            context.PSSetShaderResources(0, Some(&[None]));
+            context.OMSetRenderTargets(None, None::<&ID3D11DepthStencilView>);
+        }
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn compile_live_desktop_shader(
+    source: &str,
+    entry_point: PCSTR,
+    target: PCSTR,
+    label: &str,
+) -> Result<ID3DBlob, String> {
+    let mut code = None;
+    let mut errors = None;
+    let result = unsafe {
+        D3DCompile(
+            source.as_ptr() as *const std::ffi::c_void,
+            source.len(),
+            s!("live_desktop_shader"),
+            None,
+            None::<&ID3DInclude>,
+            entry_point,
+            target,
+            D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL1,
+            0,
+            &mut code,
+            Some(&mut errors),
+        )
+    };
+    match result {
+        Ok(()) => code.ok_or_else(|| format!("D3DCompile({label}) returned no blob")),
+        Err(error) => {
+            let message = errors
+                .as_ref()
+                .map(|blob| unsafe { live_desktop_d3d_blob_string(blob) })
+                .filter(|message| !message.is_empty())
+                .unwrap_or_else(|| "no compiler diagnostics".to_string());
+            Err(format!("D3DCompile({label}) failed: {error}; {message}"))
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn live_desktop_d3d_blob_bytes(blob: &ID3DBlob) -> &[u8] {
+    unsafe {
+        std::slice::from_raw_parts(blob.GetBufferPointer() as *const u8, blob.GetBufferSize())
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn live_desktop_d3d_blob_string(blob: &ID3DBlob) -> String {
+    let bytes = unsafe { live_desktop_d3d_blob_bytes(blob) };
+    String::from_utf8_lossy(bytes)
+        .trim_matches(char::from(0))
+        .trim()
+        .to_string()
 }
 
 #[cfg(target_os = "windows")]
@@ -1819,7 +2248,7 @@ impl LiveDesktopRendererSession {
     fn configure(&self, config: LiveDesktopRuntimeConfig) {
         #[cfg(target_os = "windows")]
         if let Some(command_sender) = self.command_sender.as_ref() {
-            let _ = command_sender.send(LiveDesktopRendererCommand::Configure(config));
+            let _ = command_sender.send(LiveDesktopRendererCommand::Configure(Box::new(config)));
         }
     }
 
@@ -2014,7 +2443,7 @@ impl LiveDesktopRendererResources {
         for command in command_receiver.try_iter() {
             match command {
                 LiveDesktopRendererCommand::Configure(config) => {
-                    self.config = config;
+                    self.config = *config;
                     self.test_pattern.invalidate();
                     did_update = true;
                 }
@@ -2154,6 +2583,7 @@ impl LiveDesktopRendererResources {
                     &self._d3d_device,
                     &self._d3d_context,
                     &self.diagnostics,
+                    self._shader_pipeline.as_ref(),
                 )
             } {
                 Ok(frame_probe) => frame_probe,
@@ -2196,6 +2626,7 @@ impl LiveDesktopRendererResources {
                     &self._d3d_context,
                     &self.config,
                     &self.diagnostics,
+                    self._shader_pipeline.as_ref(),
                 )
             } {
                 Ok(copied_frame) => copied_frame,
@@ -2231,6 +2662,7 @@ impl LiveDesktopRendererResources {
                 &self._swap_chain,
                 &self._d3d_context,
                 0,
+                self._shader_pipeline.as_ref(),
             )
         } {
             Ok(copied_frame) => copied_frame,
@@ -4933,6 +5365,23 @@ unsafe fn create_live_desktop_renderer_resources(
                 ));
             }
         };
+        let (shader_pipeline, shader_pipeline_detail) =
+            match unsafe { LiveDesktopShaderPipeline::create(&d3d.device, source_width, source_height) } {
+                Ok(pipeline) => (
+                    Some(pipeline),
+                    format!(
+                        "D3D11 shader copy pipeline available for {}x{}",
+                        source_width, source_height
+                    ),
+                ),
+                Err(error) => (
+                    None,
+                    format!(
+                        "D3D11 shader copy pipeline unavailable for {}x{}: {}; using direct texture copy",
+                        source_width, source_height, error
+                    ),
+                ),
+            };
         check_live_desktop_renderer_startup_cancelled(
             startup_cancel,
             "copying initial live desktop frame",
@@ -5048,7 +5497,7 @@ unsafe fn create_live_desktop_renderer_resources(
             renderer_probe: LiveDesktopRendererProbe::native_renderer_available_for_window(
                 supports_native_effects,
                 format!(
-                    "{} frame pump initialized with {initial_frame_detail} and DirectComposition target/root swap chain source {}x{} -> target {}x{} scale {:.3} offset {:.1},{:.1} on adapter {adapter_index} ({adapter_name}), output {} ({}), monitor matched: {}; native effects available: {}; {}; {}; {}",
+                    "{} frame pump initialized with {initial_frame_detail} and DirectComposition target/root swap chain source {}x{} -> target {}x{} scale {:.3} offset {:.1},{:.1} on adapter {adapter_index} ({adapter_name}), output {} ({}), monitor matched: {}; native effects available: {}; {}; {}; {}; {}",
                     live_desktop_frame_source_label(
                         window_capture.as_ref(),
                         dwm_shared_surface_capture.as_ref()
@@ -5070,7 +5519,8 @@ unsafe fn create_live_desktop_renderer_resources(
                         dwm_shared_surface_capture.as_ref(),
                         last_detail.as_str()
                     ),
-                    native_effects.detail
+                    native_effects.detail,
+                    shader_pipeline_detail
                 ),
             ),
             resources: LiveDesktopRendererResources {
@@ -5094,6 +5544,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 _root_visual3: root_visual3,
                 _scale_transform: scale_transform,
                 _swap_chain: swap_chain,
+                _shader_pipeline: shader_pipeline,
             },
         });
     }
@@ -6168,6 +6619,7 @@ unsafe fn copy_initial_live_desktop_frame_to_composition_surface(
                     device,
                     context,
                     diagnostics,
+                    None,
                 )
             }
             .map(Some);
@@ -6188,6 +6640,7 @@ unsafe fn copy_initial_live_desktop_frame_to_composition_surface(
                         context,
                         config,
                         diagnostics,
+                        None,
                     )
                 } {
                     Ok(Some(frame)) => return Ok(Some(frame)),
@@ -6205,6 +6658,7 @@ unsafe fn copy_initial_live_desktop_frame_to_composition_surface(
             swap_chain,
             context,
             LIVE_DESKTOP_INITIAL_FRAME_WAIT_MS,
+            None,
         )
     }
 }
@@ -6425,6 +6879,7 @@ unsafe fn copy_dwm_shared_surface_frame_to_composition_surface(
     device: &ID3D11Device,
     context: &ID3D11DeviceContext,
     diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
+    shader_pipeline: Option<&LiveDesktopShaderPipeline>,
 ) -> Result<LiveDesktopFrameProbe, String> {
     let mut source_desc = D3D11_TEXTURE2D_DESC::default();
     unsafe { dwm_capture.source_texture.GetDesc(&mut source_desc) };
@@ -6458,7 +6913,35 @@ unsafe fn copy_dwm_shared_surface_frame_to_composition_surface(
     let target_resource = target_texture
         .cast::<ID3D11Resource>()
         .map_err(|error| format!("DWM target texture resource cast failed: {error}"))?;
-    unsafe { context.CopyResource(&target_resource, &source_resource) };
+    let shader_copy_error = if let Some(shader_pipeline) = shader_pipeline {
+        let copy_crop = LiveDesktopFrameCrop {
+            left: 0,
+            top: 0,
+            width: source_desc.Width,
+            height: source_desc.Height,
+        };
+        let copy_result = (|| -> Result<(), String> {
+            unsafe {
+                shader_pipeline.copy_source_region_to_input(
+                    context,
+                    &source_resource,
+                    source_desc.Width,
+                    source_desc.Height,
+                    copy_crop,
+                    "DWM",
+                )?;
+                shader_pipeline.draw_to_texture(context, &target_texture, "DWM")?;
+            }
+            Ok(())
+        })();
+        copy_result.err()
+    } else {
+        None
+    };
+    let used_shader_pipeline = shader_pipeline.is_some() && shader_copy_error.is_none();
+    if !used_shader_pipeline {
+        unsafe { context.CopyResource(&target_resource, &source_resource) };
+    }
 
     Ok(LiveDesktopFrameProbe {
         supports_frame_texture: true,
@@ -6467,13 +6950,18 @@ unsafe fn copy_dwm_shared_surface_frame_to_composition_surface(
         format: source_desc.Format.0,
         reason: "available",
         detail: format!(
-            "Copied GPU DWM shared surface from {} into composition swap chain: {}x{} format {} captureFormat {} updateId {}",
+            "Copied GPU DWM shared surface from {} into composition swap chain: {}x{} format {} captureFormat {} updateId {} shaderCopy {}{}",
             format_live_desktop_window_handle(dwm_capture.hwnd),
             source_desc.Width,
             source_desc.Height,
             source_desc.Format.0,
             dwm_capture.format,
-            dwm_capture.update_id
+            dwm_capture.update_id,
+            used_shader_pipeline,
+            shader_copy_error
+                .as_ref()
+                .map(|error| format!(" shaderCopyFallback={error}"))
+                .unwrap_or_default()
         ),
     })
 }
@@ -6486,6 +6974,7 @@ unsafe fn copy_window_capture_frame_to_composition_surface(
     context: &ID3D11DeviceContext,
     config: &LiveDesktopRuntimeConfig,
     diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
+    shader_pipeline: Option<&LiveDesktopShaderPipeline>,
 ) -> Result<Option<LiveDesktopFrameProbe>, String> {
     let mut frame = match window_capture.frame_pool.TryGetNextFrame() {
         Ok(frame) => frame,
@@ -6570,35 +7059,57 @@ unsafe fn copy_window_capture_frame_to_composition_surface(
         let target_resource = target_texture
             .cast::<ID3D11Resource>()
             .map_err(|error| format!("WGC target texture resource cast failed: {error}"))?;
-        if copy_crop.left == 0
-            && copy_crop.top == 0
-            && copy_crop.width == source_desc.Width
-            && copy_crop.height == source_desc.Height
-            && source_desc.Width == target_desc.Width
-            && source_desc.Height == target_desc.Height
-        {
-            unsafe { context.CopyResource(&target_resource, &source_resource) };
+        let shader_copy_error = if let Some(shader_pipeline) = shader_pipeline {
+            let copy_result = (|| -> Result<(), String> {
+                unsafe {
+                    shader_pipeline.copy_source_region_to_input(
+                        context,
+                        &source_resource,
+                        source_desc.Width,
+                        source_desc.Height,
+                        copy_crop,
+                        "WGC",
+                    )?;
+                    shader_pipeline.draw_to_texture(context, &target_texture, "WGC")?;
+                }
+                Ok(())
+            })();
+            copy_result.err()
         } else {
-            let source_box = D3D11_BOX {
-                left: copy_crop.left,
-                top: copy_crop.top,
-                front: 0,
-                right: copy_crop.left + copy_crop.width,
-                bottom: copy_crop.top + copy_crop.height,
-                back: 1,
-            };
-            unsafe {
-                context.CopySubresourceRegion(
-                    &target_resource,
-                    0,
-                    0,
-                    0,
-                    0,
-                    &source_resource,
-                    0,
-                    Some(&source_box),
-                )
-            };
+            None
+        };
+        let used_shader_pipeline = shader_pipeline.is_some() && shader_copy_error.is_none();
+        if !used_shader_pipeline {
+            if copy_crop.left == 0
+                && copy_crop.top == 0
+                && copy_crop.width == source_desc.Width
+                && copy_crop.height == source_desc.Height
+                && source_desc.Width == target_desc.Width
+                && source_desc.Height == target_desc.Height
+            {
+                unsafe { context.CopyResource(&target_resource, &source_resource) };
+            } else {
+                let source_box = D3D11_BOX {
+                    left: copy_crop.left,
+                    top: copy_crop.top,
+                    front: 0,
+                    right: copy_crop.left + copy_crop.width,
+                    bottom: copy_crop.top + copy_crop.height,
+                    back: 1,
+                };
+                unsafe {
+                    context.CopySubresourceRegion(
+                        &target_resource,
+                        0,
+                        0,
+                        0,
+                        0,
+                        &source_resource,
+                        0,
+                        Some(&source_box),
+                    )
+                };
+            }
         }
 
         Ok(Some(LiveDesktopFrameProbe {
@@ -6608,7 +7119,7 @@ unsafe fn copy_window_capture_frame_to_composition_surface(
             format: source_desc.Format.0,
             reason: "available",
             detail: format!(
-                "Copied GPU WGC frame from {} into composition swap chain: source {}x{} crop {}x{}@{},{} format {}",
+                "Copied GPU WGC frame from {} into composition swap chain: source {}x{} crop {}x{}@{},{} format {} shaderCopy {}{}",
                 format_live_desktop_window_handle(window_capture.hwnd),
                 source_desc.Width,
                 source_desc.Height,
@@ -6616,7 +7127,12 @@ unsafe fn copy_window_capture_frame_to_composition_surface(
                 copy_crop.height,
                 copy_crop.left,
                 copy_crop.top,
-                source_desc.Format.0
+                source_desc.Format.0,
+                used_shader_pipeline,
+                shader_copy_error
+                    .as_ref()
+                    .map(|error| format!(" shaderCopyFallback={error}"))
+                    .unwrap_or_default()
             ),
         }))
     })();
@@ -6637,6 +7153,7 @@ unsafe fn copy_duplication_frame_to_composition_surface(
     swap_chain: &LiveDesktopCompositionSwapChain,
     context: &ID3D11DeviceContext,
     wait_ms: u32,
+    shader_pipeline: Option<&LiveDesktopShaderPipeline>,
 ) -> Result<Option<LiveDesktopFrameProbe>, String> {
     let mut frame_info = DXGI_OUTDUPL_FRAME_INFO::default();
     let mut resource: Option<IDXGIResource> = None;
@@ -6666,7 +7183,39 @@ unsafe fn copy_duplication_frame_to_composition_surface(
         let target_resource = target_texture
             .cast::<ID3D11Resource>()
             .map_err(|error| format!("Target texture resource cast failed: {error}"))?;
-        unsafe { context.CopyResource(&target_resource, &source_resource) };
+        let shader_copy_error = if let Some(shader_pipeline) = shader_pipeline {
+            let copy_crop = LiveDesktopFrameCrop {
+                left: 0,
+                top: 0,
+                width: desc.Width,
+                height: desc.Height,
+            };
+            let copy_result = (|| -> Result<(), String> {
+                unsafe {
+                    shader_pipeline.copy_source_region_to_input(
+                        context,
+                        &source_resource,
+                        desc.Width,
+                        desc.Height,
+                        copy_crop,
+                        "Desktop duplication",
+                    )?;
+                    shader_pipeline.draw_to_texture(
+                        context,
+                        &target_texture,
+                        "Desktop duplication",
+                    )?;
+                }
+                Ok(())
+            })();
+            copy_result.err()
+        } else {
+            None
+        };
+        let used_shader_pipeline = shader_pipeline.is_some() && shader_copy_error.is_none();
+        if !used_shader_pipeline {
+            unsafe { context.CopyResource(&target_resource, &source_resource) };
+        }
 
         Ok(LiveDesktopFrameProbe {
             supports_frame_texture: true,
@@ -6675,8 +7224,15 @@ unsafe fn copy_duplication_frame_to_composition_surface(
             format: desc.Format.0,
             reason: "available",
             detail: format!(
-                "Copied GPU desktop frame texture {}x{} format {} into composition swap chain",
-                desc.Width, desc.Height, desc.Format.0
+                "Copied GPU desktop frame texture {}x{} format {} into composition swap chain shaderCopy {}{}",
+                desc.Width,
+                desc.Height,
+                desc.Format.0,
+                used_shader_pipeline,
+                shader_copy_error
+                    .as_ref()
+                    .map(|error| format!(" shaderCopyFallback={error}"))
+                    .unwrap_or_default()
             ),
         })
     })();
