@@ -227,6 +227,13 @@ struct LiveDesktopRendererStartupFailure {
 }
 
 #[cfg(target_os = "windows")]
+struct LiveDesktopRendererStartupReady {
+    renderer_probe: LiveDesktopRendererProbe,
+    exit_receiver: mpsc::Receiver<()>,
+    worker: thread::JoinHandle<()>,
+}
+
+#[cfg(target_os = "windows")]
 #[derive(Clone, Debug)]
 struct LiveDesktopStartupCancellationToken {
     cancelled: Arc<AtomicBool>,
@@ -2549,57 +2556,19 @@ impl LiveDesktopRendererSession {
             let _ = exit_sender.send(());
         });
 
-        let renderer_probe = {
-            let deadline =
-                Instant::now() + Duration::from_millis(LIVE_DESKTOP_RENDERER_INIT_TIMEOUT_MS);
-            let mut last_progress = "Renderer worker has not reported progress yet".to_string();
-            loop {
-                let remaining = deadline.saturating_duration_since(Instant::now());
-                if remaining.is_zero() {
-                    return Err(cancel_live_desktop_renderer_startup_after_timeout(
-                        &stop_sender,
-                        exit_receiver,
-                        worker,
-                        &startup_cancel,
-                        &last_progress,
-                        Duration::from_millis(LIVE_DESKTOP_RENDERER_STARTUP_CANCEL_JOIN_TIMEOUT_MS),
-                    ));
-                }
-                match ready_receiver.recv_timeout(remaining) {
-                    Ok(LiveDesktopRendererStartupMessage::Ready(probe)) => break probe,
-                    Ok(LiveDesktopRendererStartupMessage::Failed(probe)) => {
-                        let _ = worker.join();
-                        return Err(probe.into());
-                    }
-                    Ok(LiveDesktopRendererStartupMessage::Progress(progress)) => {
-                        last_progress = progress;
-                    }
-                    Err(mpsc::RecvTimeoutError::Timeout) => {
-                        return Err(cancel_live_desktop_renderer_startup_after_timeout(
-                            &stop_sender,
-                            exit_receiver,
-                            worker,
-                            &startup_cancel,
-                            &last_progress,
-                            Duration::from_millis(
-                                LIVE_DESKTOP_RENDERER_STARTUP_CANCEL_JOIN_TIMEOUT_MS,
-                            ),
-                        ));
-                    }
-                    Err(mpsc::RecvTimeoutError::Disconnected) => {
-                        let _ = worker.join();
-                        return Err(LiveDesktopRendererProbe::unavailable(
-                            "nativeRendererWorkerExited",
-                            format!(
-                                "DirectComposition renderer worker exited before reporting initialization; last progress: {}",
-                                last_progress
-                            ),
-                        )
-                        .into());
-                    }
-                }
-            }
-        };
+        let LiveDesktopRendererStartupReady {
+            renderer_probe,
+            exit_receiver,
+            worker,
+        } = wait_for_live_desktop_renderer_startup(
+            ready_receiver,
+            &stop_sender,
+            exit_receiver,
+            worker,
+            &startup_cancel,
+            Duration::from_millis(LIVE_DESKTOP_RENDERER_INIT_TIMEOUT_MS),
+            Duration::from_millis(LIVE_DESKTOP_RENDERER_STARTUP_CANCEL_JOIN_TIMEOUT_MS),
+        )?;
 
         Ok(Self {
             renderer_probe,
@@ -2699,6 +2668,70 @@ impl LiveDesktopRendererSession {
             #[cfg(target_os = "windows")]
             worker: None,
         })
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn wait_for_live_desktop_renderer_startup(
+    ready_receiver: mpsc::Receiver<LiveDesktopRendererStartupMessage>,
+    stop_sender: &mpsc::Sender<()>,
+    exit_receiver: mpsc::Receiver<()>,
+    worker: thread::JoinHandle<()>,
+    startup_cancel: &LiveDesktopStartupCancellationToken,
+    startup_timeout: Duration,
+    cleanup_timeout: Duration,
+) -> Result<LiveDesktopRendererStartupReady, LiveDesktopRendererStartupFailure> {
+    let deadline = Instant::now() + startup_timeout;
+    let mut last_progress = "Renderer worker has not reported progress yet".to_string();
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(cancel_live_desktop_renderer_startup_after_timeout(
+                stop_sender,
+                exit_receiver,
+                worker,
+                startup_cancel,
+                &last_progress,
+                cleanup_timeout,
+            ));
+        }
+        match ready_receiver.recv_timeout(remaining) {
+            Ok(LiveDesktopRendererStartupMessage::Ready(renderer_probe)) => {
+                return Ok(LiveDesktopRendererStartupReady {
+                    renderer_probe,
+                    exit_receiver,
+                    worker,
+                });
+            }
+            Ok(LiveDesktopRendererStartupMessage::Failed(probe)) => {
+                let _ = worker.join();
+                return Err(probe.into());
+            }
+            Ok(LiveDesktopRendererStartupMessage::Progress(progress)) => {
+                last_progress = progress;
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                return Err(cancel_live_desktop_renderer_startup_after_timeout(
+                    stop_sender,
+                    exit_receiver,
+                    worker,
+                    startup_cancel,
+                    &last_progress,
+                    cleanup_timeout,
+                ));
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                let _ = worker.join();
+                return Err(LiveDesktopRendererProbe::unavailable(
+                    "nativeRendererWorkerExited",
+                    format!(
+                        "DirectComposition renderer worker exited before reporting initialization; last progress: {}",
+                        last_progress
+                    ),
+                )
+                .into());
+            }
+        }
     }
 }
 
@@ -8488,6 +8521,38 @@ mod tests {
         assert_eq!(failure.probe.reason, "nativeRendererInitializationTimedOut");
         assert!(failure.probe.detail.contains("cleanup=joined"));
         assert!(startup_cancel.is_cancelled());
+        assert!(failure.abandoned_worker.is_none());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn renderer_startup_wait_reports_worker_exit_before_ready() {
+        let (ready_sender, ready_receiver) = mpsc::channel::<LiveDesktopRendererStartupMessage>();
+        drop(ready_sender);
+        let (stop_sender, _stop_receiver) = mpsc::channel();
+        let (_exit_sender, exit_receiver) = mpsc::channel();
+        let startup_cancel = LiveDesktopStartupCancellationToken::new();
+        let worker = thread::spawn(|| {});
+
+        let failure = match wait_for_live_desktop_renderer_startup(
+            ready_receiver,
+            &stop_sender,
+            exit_receiver,
+            worker,
+            &startup_cancel,
+            Duration::from_millis(200),
+            Duration::from_millis(10),
+        ) {
+            Ok(_) => panic!("startup wait should fail when the ready sender is disconnected"),
+            Err(failure) => failure,
+        };
+
+        assert_eq!(failure.probe.reason, "nativeRendererWorkerExited");
+        assert!(failure
+            .probe
+            .detail
+            .contains("Renderer worker has not reported progress yet"));
+        assert!(!startup_cancel.is_cancelled());
         assert!(failure.abandoned_worker.is_none());
     }
 
