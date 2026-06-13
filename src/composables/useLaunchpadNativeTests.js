@@ -737,12 +737,12 @@ export async function runLaunchpadNativeTests() {
     assert(options.liveDesktopRuntimeStatus.value.phase === "stopped", "runtime status refresh should apply stopped status");
 
     globalThis.window.localStorage = {
-      getItem: (key) => key === "launchpadLiveDesktopDiagnosticMode" ? "dwmSharedSurfaceCapture" : null,
+      getItem: (key) => key === "launchpadLiveDesktopDiagnosticMode" ? "unknownDiagnosticMode" : null,
     };
     await native.startNativeLiveDesktopBackground();
     assert(liveDesktopRuntimeCommands.join(",") === "get_live_desktop_runtime_status,configure_live_desktop_background,start_live_desktop_background", "runtime start should configure native effects before the native start command");
     assert(liveDesktopRuntimeConfigs.length === 1, "runtime start should send one live desktop config");
-    assert(liveDesktopRuntimeConfigs[0].diagnosticMode === "wallpaperEnginePopupCapture", "runtime config should migrate legacy diagnostic modes to the Wallpaper Engine popup source");
+    assert(liveDesktopRuntimeConfigs[0].diagnosticMode === "wallpaperEnginePopupCapture", "runtime config should fall back to the Wallpaper Engine popup source for unknown diagnostic modes");
     assert(liveDesktopRuntimeConfigs[0].disableMouseRelay === true, "runtime config should disable mouse relay by default");
     assert(liveDesktopRuntimeConfigs[0].hostMode === "webviewTarget", "runtime config should use the WebView target host by default");
     assert(liveDesktopRuntimeConfigs[0].skipBlankFrames === false, "runtime config should keep blank frame skipping disabled by default");

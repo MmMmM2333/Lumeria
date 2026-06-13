@@ -61,10 +61,8 @@ use windows::{
                     DXGI_SAMPLE_DESC,
                 },
                 CreateDXGIFactory1, IDXGIAdapter1, IDXGIDevice, IDXGIFactory1, IDXGIFactory2,
-                IDXGIOutput, IDXGIOutput1, IDXGIOutputDuplication, IDXGIResource, IDXGISwapChain1,
-                DXGI_ADAPTER_FLAG3_SOFTWARE, DXGI_ERROR_ACCESS_DENIED, DXGI_ERROR_NOT_FOUND,
-                DXGI_ERROR_WAIT_TIMEOUT, DXGI_OUTDUPL_FRAME_INFO, DXGI_PRESENT,
-                DXGI_PRESENT_PARAMETERS, DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1,
+                IDXGIOutput, IDXGISwapChain1, DXGI_ADAPTER_FLAG3_SOFTWARE, DXGI_ERROR_NOT_FOUND,
+                DXGI_PRESENT, DXGI_PRESENT_PARAMETERS, DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1,
                 DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL, DXGI_USAGE_RENDER_TARGET_OUTPUT,
             },
             Gdi::{ClientToScreen, MonitorFromWindow, HMONITOR, MONITOR_DEFAULTTONEAREST},
@@ -138,16 +136,14 @@ pub(crate) struct LiveDesktopBackgroundSupport {
     supports_live_desktop_background_effects: bool,
     reason: &'static str,
     detail: String,
-    capture_probe: LiveDesktopCaptureProbe,
+    prerequisite_probe: LiveDesktopPrerequisiteProbe,
     renderer_probe: LiveDesktopRendererProbe,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct LiveDesktopCaptureProbe {
+struct LiveDesktopPrerequisiteProbe {
     supports_d3d11: bool,
-    supports_desktop_duplication: bool,
-    frame_probe: LiveDesktopFrameProbe,
     adapter_count: u32,
     output_count: u32,
     reason: &'static str,
@@ -2617,12 +2613,6 @@ struct LiveDesktopAcrylicEffectPlan {
 #[serde(rename_all = "camelCase")]
 enum LiveDesktopDiagnosticMode {
     #[default]
-    #[serde(
-        alias = "capture",
-        alias = "workerWCapture",
-        alias = "dwmSharedSurfaceCapture",
-        alias = "monitorCapture"
-    )]
     WallpaperEnginePopupCapture,
     TestPattern,
 }
@@ -2767,7 +2757,7 @@ impl LiveDesktopRuntime {
         prepared_host: LiveDesktopPreparedHost,
     ) -> LiveDesktopRuntimeStatus {
         let config = self.config.clone();
-        self.start_with_renderer_session(probe_live_desktop_capture(), || {
+        self.start_with_renderer_session(probe_live_desktop_prerequisites(), || {
             LiveDesktopRendererSession::start_for_window(window_handle, config, prepared_host)
         })
     }
@@ -2824,17 +2814,17 @@ impl LiveDesktopRuntime {
     #[cfg(test)]
     fn start_with_probes(
         &mut self,
-        capture_probe: LiveDesktopCaptureProbe,
+        prerequisite_probe: LiveDesktopPrerequisiteProbe,
         renderer_probe: LiveDesktopRendererProbe,
     ) -> LiveDesktopRuntimeStatus {
-        self.start_with_renderer_session(capture_probe, || {
+        self.start_with_renderer_session(prerequisite_probe, || {
             LiveDesktopRendererSession::create_for_probe(renderer_probe).map_err(Into::into)
         })
     }
 
     fn start_with_renderer_session<F>(
         &mut self,
-        capture_probe: LiveDesktopCaptureProbe,
+        prerequisite_probe: LiveDesktopPrerequisiteProbe,
         make_renderer_session: F,
     ) -> LiveDesktopRuntimeStatus
     where
@@ -2857,11 +2847,11 @@ impl LiveDesktopRuntime {
             window_diagnostics: live_desktop_window_diagnostics(),
         };
 
-        if !capture_probe.supports_d3d11 {
+        if !prerequisite_probe.supports_d3d11 {
             self.status = LiveDesktopRuntimeStatus::failed(
                 generation,
-                capture_probe.reason,
-                capture_probe.detail,
+                prerequisite_probe.reason,
+                prerequisite_probe.detail,
             );
             return self.status();
         }
@@ -5493,28 +5483,19 @@ fn record_live_desktop_config_error(
 }
 
 pub(crate) fn live_desktop_background_support() -> LiveDesktopBackgroundSupport {
-    let capture_probe = probe_live_desktop_capture();
+    let prerequisite_probe = probe_live_desktop_prerequisites();
     let renderer_probe = probe_live_desktop_renderer();
-    make_live_desktop_background_support(current_platform(), capture_probe, renderer_probe)
+    make_live_desktop_background_support(current_platform(), prerequisite_probe, renderer_probe)
 }
 
-fn active_live_desktop_capture_probe(renderer_detail: &str) -> LiveDesktopCaptureProbe {
-    LiveDesktopCaptureProbe {
+fn active_live_desktop_prerequisite_probe(renderer_detail: &str) -> LiveDesktopPrerequisiteProbe {
+    LiveDesktopPrerequisiteProbe {
         supports_d3d11: true,
-        supports_desktop_duplication: true,
-        frame_probe: LiveDesktopFrameProbe {
-            supports_frame_texture: true,
-            width: 0,
-            height: 0,
-            format: 0,
-            reason: "activeRuntime",
-            detail: "Live desktop runtime is already running; skipped Desktop Duplication probe to avoid competing with active capture".to_string(),
-        },
         adapter_count: 0,
         output_count: 0,
         reason: "activeRuntime",
         detail: format!(
-            "Live desktop runtime is already running; skipped Desktop Duplication probe to avoid competing with active capture; renderer: {renderer_detail}"
+            "Live desktop runtime is already running; skipped D3D prerequisite probe; renderer: {renderer_detail}"
         ),
     }
 }
@@ -5523,12 +5504,15 @@ fn active_live_desktop_background_support(
     renderer_probe: LiveDesktopRendererProbe,
 ) -> LiveDesktopBackgroundSupport {
     let detail = format!(
-        "Live desktop runtime is already running; skipped Desktop Duplication probe to avoid competing with active capture; renderer: {}",
+        "Live desktop runtime is already running; skipped D3D prerequisite probe; renderer: {}",
         renderer_probe.detail
     );
-    let capture_probe = active_live_desktop_capture_probe(&renderer_probe.detail);
-    let mut support =
-        make_live_desktop_background_support(current_platform(), capture_probe, renderer_probe);
+    let prerequisite_probe = active_live_desktop_prerequisite_probe(&renderer_probe.detail);
+    let mut support = make_live_desktop_background_support(
+        current_platform(),
+        prerequisite_probe,
+        renderer_probe,
+    );
     support.reason = "available";
     support.supports_live_desktop_background = true;
     support.supports_live_desktop_background_effects =
@@ -5539,29 +5523,22 @@ fn active_live_desktop_background_support(
 
 fn make_live_desktop_background_support(
     platform: &'static str,
-    capture_probe: LiveDesktopCaptureProbe,
+    prerequisite_probe: LiveDesktopPrerequisiteProbe,
     renderer_probe: LiveDesktopRendererProbe,
 ) -> LiveDesktopBackgroundSupport {
-    let reason = if !capture_probe.supports_d3d11 {
-        capture_probe.reason
+    let reason = if !prerequisite_probe.supports_d3d11 {
+        prerequisite_probe.reason
     } else if !renderer_probe.supports_native_renderer {
         renderer_probe.reason
     } else {
         "available"
     };
     let supports_live_desktop_background =
-        capture_probe.supports_d3d11 && renderer_probe.supports_native_renderer;
+        prerequisite_probe.supports_d3d11 && renderer_probe.supports_native_renderer;
     let supports_live_desktop_background_effects =
         supports_live_desktop_background && renderer_probe.supports_native_effects;
-    let detail = if !capture_probe.supports_d3d11 {
-        capture_probe.detail.clone()
-    } else if !renderer_probe.supports_native_renderer {
-        renderer_probe.detail.clone()
-    } else if !capture_probe.supports_desktop_duplication {
-        format!(
-            "{}; desktopDuplicationProbe={}",
-            renderer_probe.detail, capture_probe.detail
-        )
+    let detail = if !prerequisite_probe.supports_d3d11 {
+        prerequisite_probe.detail.clone()
     } else {
         renderer_probe.detail.clone()
     };
@@ -5572,7 +5549,7 @@ fn make_live_desktop_background_support(
         supports_live_desktop_background_effects,
         reason,
         detail,
-        capture_probe,
+        prerequisite_probe,
         renderer_probe,
     }
 }
@@ -6158,12 +6135,12 @@ unsafe fn create_live_desktop_renderer_resources(
             }
         };
 
-        let desktop_duplication_detail = if config.diagnostic_mode.uses_window_capture() {
-            "desktopDuplication=notCreated(wgcFrameSource)".to_string()
+        let frame_source_detail = if config.diagnostic_mode.uses_window_capture() {
+            "frameSource=wgc".to_string()
         } else if config.diagnostic_mode == LiveDesktopDiagnosticMode::TestPattern {
-            "desktopDuplication=notCreated(testPatternFrameSource)".to_string()
+            "frameSource=testPattern".to_string()
         } else {
-            "desktopDuplication=notCreated(unusedFrameSource)".to_string()
+            "frameSource=unknown".to_string()
         };
 
         return Ok(LiveDesktopRendererStartup {
@@ -6191,7 +6168,7 @@ unsafe fn create_live_desktop_renderer_resources(
                         last_detail.as_str()
                     ),
                     native_effects.detail,
-                    desktop_duplication_detail,
+                    frame_source_detail,
                     shader_pipeline_detail
                 ),
             ),
@@ -7879,22 +7856,17 @@ unsafe fn create_d3d11_device_with_context_for_adapter(
 }
 
 #[cfg(target_os = "windows")]
-fn probe_live_desktop_capture() -> LiveDesktopCaptureProbe {
-    match unsafe { probe_windows_desktop_duplication() } {
+fn probe_live_desktop_prerequisites() -> LiveDesktopPrerequisiteProbe {
+    match unsafe { probe_windows_live_desktop_prerequisites() } {
         Ok(probe) => probe,
         Err(probe) => probe,
     }
 }
 
 #[cfg(not(target_os = "windows"))]
-fn probe_live_desktop_capture() -> LiveDesktopCaptureProbe {
-    LiveDesktopCaptureProbe {
+fn probe_live_desktop_prerequisites() -> LiveDesktopPrerequisiteProbe {
+    LiveDesktopPrerequisiteProbe {
         supports_d3d11: false,
-        supports_desktop_duplication: false,
-        frame_probe: empty_frame_probe(
-            "unsupportedPlatform",
-            "Frame acquisition is only implemented on Windows",
-        ),
         adapter_count: 0,
         output_count: 0,
         reason: "unsupportedPlatform",
@@ -7903,11 +7875,10 @@ fn probe_live_desktop_capture() -> LiveDesktopCaptureProbe {
 }
 
 #[cfg(target_os = "windows")]
-unsafe fn probe_windows_desktop_duplication(
-) -> Result<LiveDesktopCaptureProbe, LiveDesktopCaptureProbe> {
+unsafe fn probe_windows_live_desktop_prerequisites(
+) -> Result<LiveDesktopPrerequisiteProbe, LiveDesktopPrerequisiteProbe> {
     let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.map_err(|error| {
-        capture_probe_error(
-            false,
+        prerequisite_probe_error(
             false,
             0,
             0,
@@ -7925,8 +7896,7 @@ unsafe fn probe_windows_desktop_duplication(
             Ok(adapter) => adapter,
             Err(error) if error.code() == DXGI_ERROR_NOT_FOUND => break,
             Err(error) => {
-                return Err(capture_probe_error(
-                    false,
+                return Err(prerequisite_probe_error(
                     false,
                     adapter_count,
                     output_count,
@@ -7948,7 +7918,7 @@ unsafe fn probe_windows_desktop_duplication(
             continue;
         }
 
-        let device = match unsafe { create_d3d11_device_for_adapter(&adapter) } {
+        let _device = match unsafe { create_d3d11_device_for_adapter(&adapter) } {
             Ok(device) => device,
             Err(error) => {
                 last_detail = format!("D3D11CreateDevice({adapter_index}) failed: {error}");
@@ -7968,49 +7938,42 @@ unsafe fn probe_windows_desktop_duplication(
             };
             output_count += 1;
 
-            let output1 = match output.cast::<IDXGIOutput1>() {
-                Ok(output1) => output1,
+            let output_desc = match unsafe { output.GetDesc() } {
+                Ok(desc) => desc,
                 Err(error) => {
-                    last_detail = format!(
-                        "IDXGIOutput1 cast({adapter_index}, {output_index}) failed: {error}"
-                    );
+                    last_detail =
+                        format!("GetDesc({adapter_index}, {output_index}) failed: {error}");
                     continue;
                 }
             };
-
-            match unsafe { output1.DuplicateOutput(&device) } {
-                Ok(duplication) => {
-                    let frame_probe = unsafe { acquire_duplication_frame_texture(&duplication) };
-                    return Ok(LiveDesktopCaptureProbe {
-                        supports_d3d11: true,
-                        supports_desktop_duplication: true,
-                        frame_probe,
-                        adapter_count,
-                        output_count,
-                        reason: "available",
-                        detail: format!(
-                            "Desktop Duplication probe succeeded on adapter {adapter_index}, output {output_index}"
-                        ),
-                    });
-                }
-                Err(error) if error.code() == DXGI_ERROR_ACCESS_DENIED => {
-                    last_detail = format!(
-                        "DuplicateOutput({adapter_index}, {output_index}) denied access: {error}"
-                    );
-                    continue;
-                }
-                Err(error) => {
-                    last_detail =
-                        format!("DuplicateOutput({adapter_index}, {output_index}) failed: {error}");
-                    continue;
-                }
+            let output_width = (output_desc.DesktopCoordinates.right
+                - output_desc.DesktopCoordinates.left)
+                .max(0) as u32;
+            let output_height = (output_desc.DesktopCoordinates.bottom
+                - output_desc.DesktopCoordinates.top)
+                .max(0) as u32;
+            if output_width == 0 || output_height == 0 {
+                last_detail = format!(
+                    "DXGI output {adapter_index}, {output_index} has an empty desktop rectangle"
+                );
+                continue;
             }
+
+            return Ok(LiveDesktopPrerequisiteProbe {
+                supports_d3d11: true,
+                adapter_count,
+                output_count,
+                reason: "available",
+                detail: format!(
+                    "D3D11 prerequisite probe succeeded on adapter {adapter_index}, output {output_index} ({}x{})",
+                    output_width, output_height
+                ),
+            });
         }
     }
 
     if adapter_count == 0 {
-        return Err(capture_probe_error(
-            false,
+        return Err(prerequisite_probe_error(
             false,
             adapter_count,
             output_count,
@@ -8019,9 +7982,8 @@ unsafe fn probe_windows_desktop_duplication(
         ));
     }
     if output_count == 0 {
-        return Err(capture_probe_error(
+        return Err(prerequisite_probe_error(
             true,
-            false,
             adapter_count,
             output_count,
             "noDxgiOutputs",
@@ -8029,14 +7991,13 @@ unsafe fn probe_windows_desktop_duplication(
         ));
     }
 
-    Err(capture_probe_error(
+    Err(prerequisite_probe_error(
         true,
-        false,
         adapter_count,
         output_count,
-        "desktopDuplicationUnavailable",
+        "d3dOutputUnavailable",
         if last_detail.is_empty() {
-            "Desktop Duplication probe failed without a detailed DXGI error".to_string()
+            "D3D11 prerequisite probe failed without a detailed DXGI error".to_string()
         } else {
             last_detail
         },
@@ -8044,109 +8005,20 @@ unsafe fn probe_windows_desktop_duplication(
 }
 
 #[cfg(target_os = "windows")]
-fn capture_probe_error(
+fn prerequisite_probe_error(
     supports_d3d11: bool,
-    supports_desktop_duplication: bool,
     adapter_count: u32,
     output_count: u32,
     reason: &'static str,
     detail: String,
-) -> LiveDesktopCaptureProbe {
-    LiveDesktopCaptureProbe {
+) -> LiveDesktopPrerequisiteProbe {
+    LiveDesktopPrerequisiteProbe {
         supports_d3d11,
-        supports_desktop_duplication,
-        frame_probe: empty_frame_probe(reason, "Desktop frame texture was not acquired"),
         adapter_count,
         output_count,
         reason,
         detail,
     }
-}
-
-#[cfg(target_os = "windows")]
-fn empty_frame_probe(reason: &'static str, detail: &str) -> LiveDesktopFrameProbe {
-    LiveDesktopFrameProbe {
-        supports_frame_texture: false,
-        width: 0,
-        height: 0,
-        format: 0,
-        reason,
-        detail: detail.to_string(),
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn empty_frame_probe(reason: &'static str, detail: &str) -> LiveDesktopFrameProbe {
-    LiveDesktopFrameProbe {
-        supports_frame_texture: false,
-        width: 0,
-        height: 0,
-        format: 0,
-        reason,
-        detail: detail.to_string(),
-    }
-}
-
-#[cfg(target_os = "windows")]
-unsafe fn acquire_duplication_frame_texture(
-    duplication: &IDXGIOutputDuplication,
-) -> LiveDesktopFrameProbe {
-    let mut frame_info = DXGI_OUTDUPL_FRAME_INFO::default();
-    let mut resource: Option<IDXGIResource> = None;
-    let acquire_result =
-        unsafe { duplication.AcquireNextFrame(16, &mut frame_info, &mut resource) };
-    match acquire_result {
-        Ok(()) => {}
-        Err(error) if error.code() == DXGI_ERROR_WAIT_TIMEOUT => {
-            return empty_frame_probe(
-                "noFrameWithinTimeout",
-                "Desktop Duplication did not produce a frame within 16 ms",
-            );
-        }
-        Err(error) => {
-            return empty_frame_probe(
-                "frameAcquireFailed",
-                &format!("AcquireNextFrame failed: {error}"),
-            );
-        }
-    }
-
-    let frame_probe = match resource {
-        Some(resource) => match resource.cast::<ID3D11Texture2D>() {
-            Ok(texture) => {
-                let mut desc = D3D11_TEXTURE2D_DESC::default();
-                unsafe { texture.GetDesc(&mut desc) };
-                LiveDesktopFrameProbe {
-                    supports_frame_texture: true,
-                    width: desc.Width,
-                    height: desc.Height,
-                    format: desc.Format.0,
-                    reason: "available",
-                    detail: format!(
-                        "Acquired GPU desktop frame texture {}x{} format {}",
-                        desc.Width, desc.Height, desc.Format.0
-                    ),
-                }
-            }
-            Err(error) => empty_frame_probe(
-                "frameTextureUnavailable",
-                &format!("Desktop frame resource is not an ID3D11Texture2D: {error}"),
-            ),
-        },
-        None => empty_frame_probe(
-            "frameResourceMissing",
-            "AcquireNextFrame succeeded without a desktop resource",
-        ),
-    };
-
-    if let Err(error) = unsafe { duplication.ReleaseFrame() } {
-        return empty_frame_probe(
-            "frameReleaseFailed",
-            &format!("ReleaseFrame failed after acquisition: {error}"),
-        );
-    }
-
-    frame_probe
 }
 
 #[cfg(target_os = "windows")]
@@ -8163,32 +8035,14 @@ fn current_platform() -> &'static str {
 mod tests {
     use super::*;
 
-    fn capture_probe(
+    fn prerequisite_probe(
         supports_d3d11: bool,
-        supports_desktop_duplication: bool,
         reason: &'static str,
-    ) -> LiveDesktopCaptureProbe {
-        LiveDesktopCaptureProbe {
+    ) -> LiveDesktopPrerequisiteProbe {
+        LiveDesktopPrerequisiteProbe {
             supports_d3d11,
-            supports_desktop_duplication,
-            frame_probe: LiveDesktopFrameProbe {
-                supports_frame_texture: supports_desktop_duplication,
-                width: if supports_desktop_duplication {
-                    1920
-                } else {
-                    0
-                },
-                height: if supports_desktop_duplication {
-                    1080
-                } else {
-                    0
-                },
-                format: if supports_desktop_duplication { 87 } else { 0 },
-                reason,
-                detail: reason.to_string(),
-            },
             adapter_count: if supports_d3d11 { 1 } else { 0 },
-            output_count: if supports_desktop_duplication { 1 } else { 0 },
+            output_count: if supports_d3d11 { 1 } else { 0 },
             reason,
             detail: reason.to_string(),
         }
@@ -8226,19 +8080,17 @@ mod tests {
     }
 
     #[test]
-    fn capture_probe_success_waits_for_native_renderer_before_enabling_source() {
+    fn prerequisite_probe_success_waits_for_native_renderer_before_enabling_source() {
         let support = make_live_desktop_background_support(
             "windows",
-            capture_probe(true, true, "available"),
+            prerequisite_probe(true, "available"),
             LiveDesktopRendererProbe::native_renderer_unimplemented("renderer pending"),
         );
 
         assert!(!support.supports_live_desktop_background);
         assert!(!support.supports_live_desktop_background_effects);
         assert_eq!(support.reason, "nativeRendererNotImplemented");
-        assert!(support.capture_probe.supports_d3d11);
-        assert!(support.capture_probe.supports_desktop_duplication);
-        assert!(support.capture_probe.frame_probe.supports_frame_texture);
+        assert!(support.prerequisite_probe.supports_d3d11);
         assert!(support.renderer_probe.supports_direct_composition);
         assert!(!support.renderer_probe.supports_native_renderer);
     }
@@ -8247,7 +8099,7 @@ mod tests {
     fn capture_and_renderer_success_enable_live_desktop_support() {
         let support = make_live_desktop_background_support(
             "windows",
-            capture_probe(true, true, "available"),
+            prerequisite_probe(true, "available"),
             LiveDesktopRendererProbe::native_renderer_available_for_probe(true, "renderer ready"),
         );
 
@@ -8259,10 +8111,10 @@ mod tests {
     }
 
     #[test]
-    fn active_runtime_support_skips_desktop_duplication_probe() {
+    fn active_runtime_support_skips_d3d_prerequisite_probe() {
         let mut runtime = LiveDesktopRuntime::default();
         let status = runtime.start_with_probes(
-            capture_probe(true, true, "available"),
+            prerequisite_probe(true, "available"),
             LiveDesktopRendererProbe::native_renderer_available_for_window(
                 true,
                 "active renderer ready",
@@ -8278,9 +8130,8 @@ mod tests {
         assert!(support.supports_live_desktop_background);
         assert!(support.supports_live_desktop_background_effects);
         assert_eq!(support.reason, "available");
-        assert_eq!(support.capture_probe.reason, "activeRuntime");
-        assert!(support.capture_probe.supports_desktop_duplication);
-        assert!(support.detail.contains("skipped Desktop Duplication probe"));
+        assert_eq!(support.prerequisite_probe.reason, "activeRuntime");
+        assert!(support.detail.contains("skipped D3D prerequisite probe"));
         assert!(support.detail.contains("active renderer ready"));
     }
 
@@ -8288,7 +8139,7 @@ mod tests {
     fn renderer_without_effects_still_enables_live_desktop_source() {
         let support = make_live_desktop_background_support(
             "windows",
-            capture_probe(true, true, "available"),
+            prerequisite_probe(true, "available"),
             LiveDesktopRendererProbe::native_renderer_available_for_probe(
                 false,
                 "renderer ready without blur",
@@ -8302,34 +8153,16 @@ mod tests {
     }
 
     #[test]
-    fn desktop_duplication_failure_does_not_disable_live_desktop_support_after_d3d_probe() {
+    fn prerequisite_probe_failure_surfaces_probe_reason() {
         let support = make_live_desktop_background_support(
             "windows",
-            capture_probe(true, false, "desktopDuplicationUnavailable"),
-            LiveDesktopRendererProbe::native_renderer_available_for_probe(true, "renderer ready"),
-        );
-
-        assert!(support.supports_live_desktop_background);
-        assert!(support.supports_live_desktop_background_effects);
-        assert_eq!(support.reason, "available");
-        assert!(support.capture_probe.supports_d3d11);
-        assert!(!support.capture_probe.supports_desktop_duplication);
-        assert!(support.detail.contains("renderer ready"));
-        assert!(support.detail.contains("desktopDuplicationProbe"));
-    }
-
-    #[test]
-    fn capture_probe_failure_surfaces_probe_reason() {
-        let support = make_live_desktop_background_support(
-            "windows",
-            capture_probe(false, false, "dxgiUnavailable"),
+            prerequisite_probe(false, "dxgiUnavailable"),
             LiveDesktopRendererProbe::native_renderer_unimplemented("renderer pending"),
         );
 
         assert!(!support.supports_live_desktop_background);
         assert_eq!(support.reason, "dxgiUnavailable");
-        assert!(!support.capture_probe.supports_d3d11);
-        assert!(!support.capture_probe.supports_desktop_duplication);
+        assert!(!support.prerequisite_probe.supports_d3d11);
     }
 
     #[test]
@@ -8352,20 +8185,6 @@ mod tests {
             LiveDesktopDiagnosticMode::WallpaperEnginePopupCapture
         );
         assert!(config.diagnostic_mode.uses_window_capture());
-    }
-
-    #[test]
-    fn live_desktop_diagnostic_mode_migrates_legacy_sources_to_wallpaper_engine_popup() {
-        for value in [
-            "capture",
-            "workerWCapture",
-            "dwmSharedSurfaceCapture",
-            "monitorCapture",
-        ] {
-            let mode: LiveDesktopDiagnosticMode =
-                serde_json::from_value(serde_json::json!(value)).unwrap();
-            assert_eq!(mode, LiveDesktopDiagnosticMode::WallpaperEnginePopupCapture);
-        }
     }
 
     #[test]
@@ -8990,10 +8809,10 @@ mod tests {
     }
 
     #[test]
-    fn runtime_start_surfaces_capture_failure() {
+    fn runtime_start_surfaces_prerequisite_failure() {
         let mut runtime = LiveDesktopRuntime::default();
         let status = runtime.start_with_probes(
-            capture_probe(false, false, "dxgiUnavailable"),
+            prerequisite_probe(false, "dxgiUnavailable"),
             LiveDesktopRendererProbe::available(),
         );
 
@@ -9004,40 +8823,10 @@ mod tests {
     }
 
     #[test]
-    fn runtime_start_does_not_require_desktop_duplication_after_d3d_probe() {
-        let mut runtime = LiveDesktopRuntime::default();
-        let status = runtime.start_with_probes(
-            capture_probe(true, false, "desktopDuplicationUnavailable"),
-            LiveDesktopRendererProbe::available(),
-        );
-
-        assert_eq!(status.phase, "running");
-        assert!(status.active);
-        assert_eq!(status.generation, 1);
-        assert_eq!(status.reason, "running");
-    }
-
-    #[test]
-    fn runtime_start_allows_capture_probe_without_immediate_frame() {
-        let mut runtime = LiveDesktopRuntime::default();
-        let mut capture = capture_probe(true, true, "available");
-        capture.frame_probe = empty_frame_probe(
-            "noFrameWithinTimeout",
-            "Desktop Duplication did not produce a frame within 16 ms",
-        );
-        let status = runtime.start_with_probes(capture, LiveDesktopRendererProbe::available());
-
-        assert_eq!(status.phase, "running");
-        assert!(status.active);
-        assert_eq!(status.reason, "running");
-        assert!(status.detail.contains("frame pump diagnostics"));
-    }
-
-    #[test]
     fn runtime_start_waits_for_native_renderer_after_capture_ready() {
         let mut runtime = LiveDesktopRuntime::default();
         let status = runtime.start_with_probes(
-            capture_probe(true, true, "available"),
+            prerequisite_probe(true, "available"),
             LiveDesktopRendererProbe::native_renderer_unimplemented("renderer pending"),
         );
 
@@ -9056,7 +8845,7 @@ mod tests {
     fn runtime_drops_renderer_session_when_native_pipeline_is_not_ready() {
         let mut runtime = LiveDesktopRuntime::default();
         let status =
-            runtime.start_with_renderer_session(capture_probe(true, true, "available"), || {
+            runtime.start_with_renderer_session(prerequisite_probe(true, "available"), || {
                 Ok(LiveDesktopRendererSession {
                     renderer_probe:
                         LiveDesktopRendererProbe::native_renderer_unimplemented_for_window(
@@ -9166,7 +8955,7 @@ mod tests {
         });
         let mut runtime = LiveDesktopRuntime::default();
         let status =
-            runtime.start_with_renderer_session(capture_probe(true, true, "available"), || {
+            runtime.start_with_renderer_session(prerequisite_probe(true, "available"), || {
                 Ok(LiveDesktopRendererSession {
                     renderer_probe: LiveDesktopRendererProbe::available(),
                     diagnostics: Arc::new(Mutex::new(LiveDesktopRuntimeDiagnostics::default())),
@@ -9208,7 +8997,7 @@ mod tests {
     fn runtime_can_transition_to_running_when_renderer_is_ready() {
         let mut runtime = LiveDesktopRuntime::default();
         let status = runtime.start_with_probes(
-            capture_probe(true, true, "available"),
+            prerequisite_probe(true, "available"),
             LiveDesktopRendererProbe::available(),
         );
 
@@ -9218,7 +9007,7 @@ mod tests {
         assert_eq!(status.reason, "running");
 
         let duplicate_start = runtime.start_with_probes(
-            capture_probe(true, true, "available"),
+            prerequisite_probe(true, "available"),
             LiveDesktopRendererProbe::available(),
         );
         assert_eq!(duplicate_start.generation, 1);

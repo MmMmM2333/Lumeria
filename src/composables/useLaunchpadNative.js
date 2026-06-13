@@ -247,9 +247,6 @@ function resolveLiveDesktopDiagnosticMode() {
     const mode = window.localStorage?.getItem("launchpadLiveDesktopDiagnosticMode");
     if (mode === "testPattern") return "testPattern";
     if (mode === "wallpaperEnginePopupCapture") return "wallpaperEnginePopupCapture";
-    if (mode) {
-      window.localStorage?.setItem?.("launchpadLiveDesktopDiagnosticMode", "wallpaperEnginePopupCapture");
-    }
     return "wallpaperEnginePopupCapture";
   } catch {
     return "wallpaperEnginePopupCapture";

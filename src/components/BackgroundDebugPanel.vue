@@ -825,12 +825,6 @@ function readLiveDesktopDiagnosticMode() {
   try {
     const mode = window.localStorage?.getItem(LIVE_DESKTOP_DIAGNOSTIC_MODE_STORAGE_KEY);
     if (mode === LIVE_DESKTOP_MODE_TEST_PATTERN) return LIVE_DESKTOP_MODE_TEST_PATTERN;
-    if (mode && mode !== LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE) {
-      window.localStorage?.setItem?.(
-        LIVE_DESKTOP_DIAGNOSTIC_MODE_STORAGE_KEY,
-        LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE
-      );
-    }
     return LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE;
   } catch {
     return LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE;
