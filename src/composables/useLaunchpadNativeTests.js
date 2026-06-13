@@ -742,7 +742,8 @@ export async function runLaunchpadNativeTests() {
     await native.startNativeLiveDesktopBackground();
     assert(liveDesktopRuntimeCommands.join(",") === "get_live_desktop_runtime_status,configure_live_desktop_background,start_live_desktop_background", "runtime start should configure native effects before the native start command");
     assert(liveDesktopRuntimeConfigs.length === 1, "runtime start should send one live desktop config");
-    assert(liveDesktopRuntimeConfigs[0].frameSource === "wallpaperEnginePopupCapture", "runtime config should fall back to the Wallpaper Engine popup source for unknown frame sources");
+    assert(!("frameSource" in liveDesktopRuntimeConfigs[0]), "runtime config should not include a regular frame source field");
+    assert(liveDesktopRuntimeConfigs[0].debugFrameSourceOverride === null, "runtime config should ignore old frame source storage and keep debug frame source override empty by default");
     assert(!("diagnosticMode" in liveDesktopRuntimeConfigs[0]), "runtime config should not include the old diagnostic mode field");
     assert(liveDesktopRuntimeConfigs[0].disableMouseRelay === true, "runtime config should disable mouse relay by default");
     assert(liveDesktopRuntimeConfigs[0].skipBlankFrames === false, "runtime config should keep blank frame skipping disabled by default");
@@ -769,7 +770,7 @@ export async function runLaunchpadNativeTests() {
 
     globalThis.window.localStorage = {
       getItem: (key) => {
-        if (key === "launchpadLiveDesktopFrameSource") return "wallpaperEnginePopupCapture";
+        if (key === "launchpadLiveDesktopDebugFrameSourceOverride") return "testPattern";
         if (key === "launchpadLiveDesktopDisableMouseRelay") return "true";
         if (key === "launchpadLiveDesktopSkipBlankFrames") return "true";
         if (key === "launchpadLiveDesktopForceDwmFlush") return "true";
@@ -779,7 +780,8 @@ export async function runLaunchpadNativeTests() {
     liveDesktopRuntimeCommands.length = 0;
     await native.configureNativeLiveDesktopBackground();
     assert(liveDesktopRuntimeCommands.join(",") === "configure_live_desktop_background", "runtime configure should send only the native config command");
-    assert(liveDesktopRuntimeConfigs.at(-1).frameSource === "wallpaperEnginePopupCapture", "runtime config should include the selected Wallpaper Engine popup frame source");
+    assert(!("frameSource" in liveDesktopRuntimeConfigs.at(-1)), "runtime config should not include the regular frame source field");
+    assert(liveDesktopRuntimeConfigs.at(-1).debugFrameSourceOverride === "testPattern", "runtime config should include the debug test pattern override");
     assert(liveDesktopRuntimeConfigs.at(-1).disableMouseRelay === true, "runtime config should include the disabled mouse relay diagnostic setting");
     assert(liveDesktopRuntimeConfigs.at(-1).skipBlankFrames === true, "runtime config should include the blank frame skip diagnostic setting");
     assert(liveDesktopRuntimeConfigs.at(-1).forceDwmFlush === true, "runtime config should include the DWM flush diagnostic setting");

@@ -146,20 +146,20 @@
 
         <pre class="background-debug-detail" :title="liveDesktopStatus.detail">{{ liveDesktopStatus.detail || "no detail" }}</pre>
 
-        <div class="background-debug-mode-group background-debug-live-source-group" role="group" aria-label="Live desktop frame source">
+        <div class="background-debug-mode-group background-debug-live-source-group" role="group" aria-label="Live desktop debug frame source override">
           <button
             type="button"
-            :class="['background-debug-mode-button', liveDesktopFrameSource === 'wallpaperEnginePopupCapture' && 'background-debug-mode-button-active']"
+            :class="['background-debug-mode-button', !liveDesktopDebugFrameSourceOverride && 'background-debug-mode-button-active']"
             :disabled="isLiveDesktopActionBusy"
-            @click="setLiveDesktopFrameSource('wallpaperEnginePopupCapture')"
+            @click="setLiveDesktopDebugFrameSourceOverride(null)"
           >
             WE Popup
           </button>
           <button
             type="button"
-            :class="['background-debug-mode-button', liveDesktopFrameSource === 'testPattern' && 'background-debug-mode-button-active']"
+            :class="['background-debug-mode-button', liveDesktopDebugFrameSourceOverride === 'testPattern' && 'background-debug-mode-button-active']"
             :disabled="isLiveDesktopActionBusy"
-            @click="setLiveDesktopFrameSource('testPattern')"
+            @click="setLiveDesktopDebugFrameSourceOverride('testPattern')"
           >
             Test Pattern
           </button>
@@ -320,7 +320,7 @@ const props = defineProps({
   },
 });
 
-const LIVE_DESKTOP_FRAME_SOURCE_STORAGE_KEY = "launchpadLiveDesktopFrameSource";
+const LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY = "launchpadLiveDesktopDebugFrameSourceOverride";
 const LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY = "launchpadLiveDesktopDisableMouseRelay";
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY = "launchpadLiveDesktopCompositorKeeper";
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT = "launchpad-live-desktop-compositor-keeper-change";
@@ -328,7 +328,6 @@ const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY = "launchpadLiveDesktopCssFa
 const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT = "launchpad-live-desktop-css-fallback-effects-change";
 const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "launchpadLiveDesktopSkipBlankFrames";
 const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "launchpadLiveDesktopForceDwmFlush";
-const LIVE_DESKTOP_FRAME_SOURCE_WALLPAPER_ENGINE_POPUP_CAPTURE = "wallpaperEnginePopupCapture";
 const LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN = "testPattern";
 const DEFAULT_LIVE_DESKTOP_STATUS = Object.freeze({
   phase: "unknown",
@@ -390,7 +389,7 @@ const isCollapsed = ref(false);
 const activePanel = ref("acrylic");
 const hasCopiedAcrylic = ref(false);
 const hasCopiedDiagnostics = ref(false);
-const liveDesktopFrameSource = ref(readLiveDesktopFrameSource());
+const liveDesktopDebugFrameSourceOverride = ref(readLiveDesktopDebugFrameSourceOverride());
 const liveDesktopDisableMouseRelay = ref(readLiveDesktopDisableMouseRelay());
 const liveDesktopCompositorKeeper = ref(readLiveDesktopCompositorKeeper());
 const liveDesktopCssFallbackEffects = ref(readLiveDesktopCssFallbackEffects());
@@ -793,14 +792,15 @@ function updateTintColor(event) {
   });
 }
 
-function readLiveDesktopFrameSource() {
-  if (typeof window === "undefined") return LIVE_DESKTOP_FRAME_SOURCE_WALLPAPER_ENGINE_POPUP_CAPTURE;
+function readLiveDesktopDebugFrameSourceOverride() {
+  if (typeof window === "undefined") return null;
   try {
-    const frameSource = window.localStorage?.getItem(LIVE_DESKTOP_FRAME_SOURCE_STORAGE_KEY);
-    if (frameSource === LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN) return LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN;
-    return LIVE_DESKTOP_FRAME_SOURCE_WALLPAPER_ENGINE_POPUP_CAPTURE;
+    const frameSourceOverride = window.localStorage?.getItem(LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY);
+    return frameSourceOverride === LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN
+      ? LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN
+      : null;
   } catch {
-    return LIVE_DESKTOP_FRAME_SOURCE_WALLPAPER_ENGINE_POPUP_CAPTURE;
+    return null;
   }
 }
 
@@ -921,19 +921,19 @@ function notifyLiveDesktopCssFallbackEffectsChanged(enabled) {
   }));
 }
 
-function persistLiveDesktopFrameSource(frameSource) {
+function persistLiveDesktopDebugFrameSourceOverride(frameSourceOverride) {
   if (typeof window === "undefined") return;
   try {
-    if (frameSource === LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN) {
-      window.localStorage?.setItem(LIVE_DESKTOP_FRAME_SOURCE_STORAGE_KEY, LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN);
+    if (frameSourceOverride === LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN) {
+      window.localStorage?.setItem(
+        LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY,
+        LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN
+      );
       return;
     }
-    window.localStorage?.setItem(
-      LIVE_DESKTOP_FRAME_SOURCE_STORAGE_KEY,
-      LIVE_DESKTOP_FRAME_SOURCE_WALLPAPER_ENGINE_POPUP_CAPTURE
-    );
+    window.localStorage?.removeItem(LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY);
   } catch (error) {
-    console.warn("Failed to persist live desktop frame source", error);
+    console.warn("Failed to persist live desktop debug frame source override", error);
   }
 }
 
@@ -942,7 +942,7 @@ async function setLiveDesktopDisableMouseRelay(disabled) {
   liveDesktopRateSample = null;
   persistLiveDesktopDisableMouseRelay(liveDesktopDisableMouseRelay.value);
   await reconfigureLiveDesktopRuntime({
-    restart: liveDesktopFrameSource.value === LIVE_DESKTOP_FRAME_SOURCE_WALLPAPER_ENGINE_POPUP_CAPTURE,
+    restart: liveDesktopDebugFrameSourceOverride.value !== LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN,
   });
 }
 
@@ -973,16 +973,13 @@ async function setLiveDesktopForceDwmFlush(enabled) {
   await reconfigureLiveDesktopRuntime();
 }
 
-async function setLiveDesktopFrameSource(frameSource) {
-  const normalizedFrameSource = [
-    LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN,
-    LIVE_DESKTOP_FRAME_SOURCE_WALLPAPER_ENGINE_POPUP_CAPTURE,
-  ].includes(frameSource)
-    ? frameSource
-    : LIVE_DESKTOP_FRAME_SOURCE_WALLPAPER_ENGINE_POPUP_CAPTURE;
-  liveDesktopFrameSource.value = normalizedFrameSource;
+async function setLiveDesktopDebugFrameSourceOverride(frameSourceOverride) {
+  const normalizedFrameSourceOverride = frameSourceOverride === LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN
+    ? LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN
+    : null;
+  liveDesktopDebugFrameSourceOverride.value = normalizedFrameSourceOverride;
   liveDesktopRateSample = null;
-  persistLiveDesktopFrameSource(normalizedFrameSource);
+  persistLiveDesktopDebugFrameSourceOverride(normalizedFrameSourceOverride);
   await reconfigureLiveDesktopRuntime({ restart: true });
 }
 
@@ -1045,7 +1042,7 @@ async function copyDiagnostics() {
     await copyToClipboard(
       JSON.stringify(
         {
-          frameSource: liveDesktopFrameSource.value,
+          debugFrameSourceOverride: liveDesktopDebugFrameSourceOverride.value,
           disableMouseRelay: liveDesktopDisableMouseRelay.value,
           cssFallbackEffects: liveDesktopCssFallbackEffects.value,
           skipBlankFrames: liveDesktopSkipBlankFrames.value,
@@ -1080,7 +1077,7 @@ function restartLiveDesktopRuntimePoller() {
   ) {
     return;
   }
-  liveDesktopFrameSource.value = readLiveDesktopFrameSource();
+  liveDesktopDebugFrameSourceOverride.value = readLiveDesktopDebugFrameSourceOverride();
   liveDesktopCssFallbackEffects.value = readLiveDesktopCssFallbackEffects();
   liveDesktopSkipBlankFrames.value = readLiveDesktopSkipBlankFrames();
   liveDesktopForceDwmFlush.value = readLiveDesktopForceDwmFlush();

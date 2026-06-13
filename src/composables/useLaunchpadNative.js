@@ -79,7 +79,7 @@ const MIN_ICON_HYDRATION_BATCH_SIZE = 20;
 const MAX_ICON_HYDRATION_BATCH_SIZE = 80;
 const WINDOWS_WALLPAPER_REFRESH_INTERVAL_MS = 5000;
 const LIVE_DESKTOP_IDLE_STOP_DELAY_MS = 10_000;
-const LIVE_DESKTOP_FRAME_SOURCE_STORAGE_KEY = "launchpadLiveDesktopFrameSource";
+const LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY = "launchpadLiveDesktopDebugFrameSourceOverride";
 const LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY = "launchpadLiveDesktopDisableMouseRelay";
 const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "launchpadLiveDesktopSkipBlankFrames";
 const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "launchpadLiveDesktopForceDwmFlush";
@@ -239,15 +239,13 @@ function normalizeLiveDesktopWindowDiagnostics(diagnostics) {
   };
 }
 
-function resolveLiveDesktopFrameSource() {
-  if (typeof window === "undefined") return "wallpaperEnginePopupCapture";
+function resolveLiveDesktopDebugFrameSourceOverride() {
+  if (typeof window === "undefined") return null;
   try {
-    const frameSource = window.localStorage?.getItem(LIVE_DESKTOP_FRAME_SOURCE_STORAGE_KEY);
-    if (frameSource === "testPattern") return "testPattern";
-    if (frameSource === "wallpaperEnginePopupCapture") return "wallpaperEnginePopupCapture";
-    return "wallpaperEnginePopupCapture";
+    const frameSourceOverride = window.localStorage?.getItem(LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY);
+    return frameSourceOverride === "testPattern" ? "testPattern" : null;
   } catch {
-    return "wallpaperEnginePopupCapture";
+    return null;
   }
 }
 
@@ -318,7 +316,7 @@ function makeLiveDesktopRuntimeConfig(options) {
   );
   return {
     effect: normalizeBackgroundEffect(options.backgroundEffect.value),
-    frameSource: resolveLiveDesktopFrameSource(),
+    debugFrameSourceOverride: resolveLiveDesktopDebugFrameSourceOverride(),
     blurStrength: clampBackgroundBlurStrength(options.backgroundBlurStrength.value),
     darkenStrength: clampBackgroundDarkenStrength(options.backgroundDarkenStrength.value),
     darkenColor: normalizeBackgroundDarkenColor(options.backgroundDarkenColor.value),

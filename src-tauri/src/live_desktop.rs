@@ -2078,7 +2078,7 @@ pub(crate) struct LiveDesktopWindowRect {
 pub(crate) struct LiveDesktopRuntimeConfig {
     effect: LiveDesktopBackgroundEffect,
     #[serde(default)]
-    frame_source: LiveDesktopFrameSource,
+    debug_frame_source_override: Option<LiveDesktopDebugFrameSourceOverride>,
     blur_strength: u32,
     darken_strength: u32,
     darken_color: String,
@@ -2157,11 +2157,16 @@ struct LiveDesktopAcrylicEffectPlan {
     enabled: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum LiveDesktopFrameSource {
     #[default]
     WallpaperEnginePopupCapture,
+    TestPattern,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum LiveDesktopDebugFrameSourceOverride {
     TestPattern,
 }
 
@@ -2184,6 +2189,17 @@ impl LiveDesktopFrameSource {
 
     fn window_capture_unavailable_reason(&self) -> &'static str {
         "wallpaperEnginePopupCaptureUnavailable"
+    }
+}
+
+impl LiveDesktopRuntimeConfig {
+    fn frame_source(&self) -> LiveDesktopFrameSource {
+        match self.debug_frame_source_override {
+            Some(LiveDesktopDebugFrameSourceOverride::TestPattern) => {
+                LiveDesktopFrameSource::TestPattern
+            }
+            None => LiveDesktopFrameSource::WallpaperEnginePopupCapture,
+        }
     }
 }
 
@@ -2211,7 +2227,7 @@ impl Default for LiveDesktopRuntimeConfig {
     fn default() -> Self {
         Self {
             effect: LiveDesktopBackgroundEffect::Dimmed,
-            frame_source: LiveDesktopFrameSource::WallpaperEnginePopupCapture,
+            debug_frame_source_override: None,
             blur_strength: 50,
             darken_strength: 28,
             darken_color: "#1c1c1c".to_string(),
@@ -2733,7 +2749,7 @@ impl LiveDesktopRendererResources {
     ) {
         loop {
             self.apply_pending_commands(&command_receiver);
-            if self.config.frame_source.uses_window_capture() {
+            if self.config.frame_source().uses_window_capture() {
                 if self.wait_for_window_capture_frame_or_stop(&stop_receiver) {
                     break;
                 }
@@ -2895,7 +2911,7 @@ impl LiveDesktopRendererResources {
             Ok(false) => {}
             Err(error) => record_live_desktop_config_error(&self.diagnostics, &error),
         }
-        if self.config.frame_source == LiveDesktopFrameSource::TestPattern {
+        if self.config.frame_source() == LiveDesktopFrameSource::TestPattern {
             let copy_started = Instant::now();
             let pattern_frame = match unsafe {
                 draw_live_desktop_test_pattern_to_composition_surface(
@@ -2921,13 +2937,13 @@ impl LiveDesktopRendererResources {
             return Ok(true);
         }
 
-        if self.config.frame_source.uses_window_capture() {
+        if self.config.frame_source().uses_window_capture() {
             let window_capture = match self._window_capture.as_ref() {
                 Some(window_capture) => window_capture,
                 None => {
                     let error = format!(
                         "{} is unavailable; no WGC session was initialized",
-                        self.config.frame_source.window_capture_label()
+                        self.config.frame_source().window_capture_label()
                     );
                     record_live_desktop_copy_error(&self.diagnostics, &error);
                     return Err(error);
@@ -5411,7 +5427,8 @@ unsafe fn create_live_desktop_renderer_resources(
             startup_cancel,
             "initializing live desktop frame source",
         )?;
-        let window_capture = if config.frame_source.uses_window_capture() {
+        let frame_source = config.frame_source();
+        let window_capture = if frame_source.uses_window_capture() {
             match unsafe {
                 create_live_desktop_window_capture(
                     &d3d.device,
@@ -5424,10 +5441,10 @@ unsafe fn create_live_desktop_renderer_resources(
                 Ok(capture) => Some(capture),
                 Err(error) => {
                     return Err(LiveDesktopRendererProbe::root_visual_unavailable(
-                        config.frame_source.window_capture_unavailable_reason(),
+                        frame_source.window_capture_unavailable_reason(),
                         format!(
                             "{} unavailable on adapter {adapter_index} ({adapter_name}): {error}",
-                            config.frame_source.window_capture_label()
+                            frame_source.window_capture_label()
                         ),
                     ));
                 }
@@ -5668,9 +5685,9 @@ unsafe fn create_live_desktop_renderer_resources(
             }
         };
 
-        let frame_source_detail = if config.frame_source.uses_window_capture() {
+        let frame_source_detail = if frame_source.uses_window_capture() {
             "frameSource=wgc".to_string()
-        } else if config.frame_source == LiveDesktopFrameSource::TestPattern {
+        } else if frame_source == LiveDesktopFrameSource::TestPattern {
             "frameSource=testPattern".to_string()
         } else {
             "frameSource=unknown".to_string()
@@ -7710,11 +7727,29 @@ mod tests {
     fn live_desktop_frame_source_defaults_to_wallpaper_engine_popup() {
         let config = LiveDesktopRuntimeConfig::default();
 
+        assert_eq!(config.debug_frame_source_override, None);
         assert_eq!(
-            config.frame_source,
+            config.frame_source(),
             LiveDesktopFrameSource::WallpaperEnginePopupCapture
         );
-        assert!(config.frame_source.uses_window_capture());
+        assert!(config.frame_source().uses_window_capture());
+    }
+
+    #[test]
+    fn live_desktop_debug_frame_source_override_enables_test_pattern() {
+        let mut value = serde_json::to_value(LiveDesktopRuntimeConfig::default()).unwrap();
+        value.as_object_mut().unwrap().insert(
+            "debugFrameSourceOverride".to_string(),
+            serde_json::Value::String("testPattern".to_string()),
+        );
+
+        let config: LiveDesktopRuntimeConfig = serde_json::from_value(value).unwrap();
+        assert_eq!(
+            config.debug_frame_source_override,
+            Some(LiveDesktopDebugFrameSourceOverride::TestPattern)
+        );
+        assert_eq!(config.frame_source(), LiveDesktopFrameSource::TestPattern);
+        assert!(!config.frame_source().uses_window_capture());
     }
 
     #[test]
