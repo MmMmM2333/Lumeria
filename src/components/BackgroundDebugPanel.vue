@@ -200,28 +200,6 @@
 
         <label class="background-debug-toggle">
           <input
-            name="liveDesktopOwnedPopupHost"
-            type="checkbox"
-            :checked="liveDesktopHostMode === LIVE_DESKTOP_HOST_MODE_OWNED_POPUP"
-            :disabled="isLiveDesktopActionBusy"
-            @change="setLiveDesktopHostMode($event.target.checked ? LIVE_DESKTOP_HOST_MODE_OWNED_POPUP : LIVE_DESKTOP_HOST_MODE_WEBVIEW_TARGET)"
-          >
-          <span>独立背景 HWND</span>
-        </label>
-
-        <label class="background-debug-toggle">
-          <input
-            name="liveDesktopChildWindowHost"
-            type="checkbox"
-            :checked="liveDesktopHostMode === LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW"
-            :disabled="isLiveDesktopActionBusy"
-            @change="setLiveDesktopHostMode($event.target.checked ? LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW : LIVE_DESKTOP_HOST_MODE_WEBVIEW_TARGET)"
-          >
-          <span>Child 背景 HWND</span>
-        </label>
-
-        <label class="background-debug-toggle">
-          <input
             name="liveDesktopSkipBlankFrames"
             type="checkbox"
             :checked="liveDesktopSkipBlankFrames"
@@ -348,10 +326,6 @@ const LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY = "launchpadLiveDesktopComposit
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT = "launchpad-live-desktop-compositor-keeper-change";
 const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY = "launchpadLiveDesktopCssFallbackEffects";
 const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT = "launchpad-live-desktop-css-fallback-effects-change";
-const LIVE_DESKTOP_HOST_MODE_STORAGE_KEY = "launchpadLiveDesktopHostMode";
-const LIVE_DESKTOP_HOST_MODE_WEBVIEW_TARGET = "webviewTarget";
-const LIVE_DESKTOP_HOST_MODE_OWNED_POPUP = "ownedPopupHost";
-const LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW = "childWindowHost";
 const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "launchpadLiveDesktopSkipBlankFrames";
 const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "launchpadLiveDesktopForceDwmFlush";
 const LIVE_DESKTOP_MODE_WALLPAPER_ENGINE_POPUP_CAPTURE = "wallpaperEnginePopupCapture";
@@ -420,7 +394,6 @@ const liveDesktopMode = ref(readLiveDesktopDiagnosticMode());
 const liveDesktopDisableMouseRelay = ref(readLiveDesktopDisableMouseRelay());
 const liveDesktopCompositorKeeper = ref(readLiveDesktopCompositorKeeper());
 const liveDesktopCssFallbackEffects = ref(readLiveDesktopCssFallbackEffects());
-const liveDesktopHostMode = ref(readLiveDesktopHostMode());
 const liveDesktopSkipBlankFrames = ref(readLiveDesktopSkipBlankFrames());
 const liveDesktopForceDwmFlush = ref(readLiveDesktopForceDwmFlush());
 const isLiveDesktopActionBusy = ref(false);
@@ -858,18 +831,6 @@ function readLiveDesktopCssFallbackEffects() {
   }
 }
 
-function readLiveDesktopHostMode() {
-  try {
-    const mode = window.localStorage?.getItem(LIVE_DESKTOP_HOST_MODE_STORAGE_KEY);
-    if (mode === LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW) return LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW;
-    if (mode === LIVE_DESKTOP_HOST_MODE_OWNED_POPUP) return LIVE_DESKTOP_HOST_MODE_OWNED_POPUP;
-    return LIVE_DESKTOP_HOST_MODE_WEBVIEW_TARGET;
-  } catch (error) {
-    console.warn("Failed to read live desktop host mode setting", error);
-    return LIVE_DESKTOP_HOST_MODE_WEBVIEW_TARGET;
-  }
-}
-
 function readLiveDesktopSkipBlankFrames() {
   try {
     return window.localStorage?.getItem(LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY) === "true";
@@ -921,18 +882,6 @@ function persistLiveDesktopCssFallbackEffects(enabled) {
     }
   } catch (error) {
     console.warn("Failed to persist live desktop CSS fallback setting", error);
-  }
-}
-
-function persistLiveDesktopHostMode(mode) {
-  try {
-    if (mode === LIVE_DESKTOP_HOST_MODE_OWNED_POPUP || mode === LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW) {
-      window.localStorage?.setItem(LIVE_DESKTOP_HOST_MODE_STORAGE_KEY, mode);
-    } else {
-      window.localStorage?.removeItem(LIVE_DESKTOP_HOST_MODE_STORAGE_KEY);
-    }
-  } catch (error) {
-    console.warn("Failed to persist live desktop host mode setting", error);
   }
 }
 
@@ -1008,18 +957,6 @@ async function setLiveDesktopCssFallbackEffects(enabled) {
   persistLiveDesktopCssFallbackEffects(liveDesktopCssFallbackEffects.value);
   notifyLiveDesktopCssFallbackEffectsChanged(liveDesktopCssFallbackEffects.value);
   await reconfigureLiveDesktopRuntime();
-}
-
-async function setLiveDesktopHostMode(mode) {
-  liveDesktopHostMode.value = [
-    LIVE_DESKTOP_HOST_MODE_OWNED_POPUP,
-    LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW,
-  ].includes(mode)
-    ? mode
-    : LIVE_DESKTOP_HOST_MODE_WEBVIEW_TARGET;
-  liveDesktopRateSample = null;
-  persistLiveDesktopHostMode(liveDesktopHostMode.value);
-  await reconfigureLiveDesktopRuntime({ restart: true });
 }
 
 async function setLiveDesktopSkipBlankFrames(enabled) {
@@ -1110,7 +1047,6 @@ async function copyDiagnostics() {
         {
           diagnosticMode: liveDesktopMode.value,
           disableMouseRelay: liveDesktopDisableMouseRelay.value,
-          hostMode: liveDesktopHostMode.value,
           cssFallbackEffects: liveDesktopCssFallbackEffects.value,
           skipBlankFrames: liveDesktopSkipBlankFrames.value,
           forceDwmFlush: liveDesktopForceDwmFlush.value,
@@ -1146,7 +1082,6 @@ function restartLiveDesktopRuntimePoller() {
   }
   liveDesktopMode.value = readLiveDesktopDiagnosticMode();
   liveDesktopCssFallbackEffects.value = readLiveDesktopCssFallbackEffects();
-  liveDesktopHostMode.value = readLiveDesktopHostMode();
   liveDesktopSkipBlankFrames.value = readLiveDesktopSkipBlankFrames();
   liveDesktopForceDwmFlush.value = readLiveDesktopForceDwmFlush();
   liveDesktopRateSample = null;

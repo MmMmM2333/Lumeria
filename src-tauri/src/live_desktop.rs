@@ -18,14 +18,14 @@ use std::{
 
 #[cfg(target_os = "windows")]
 use windows::{
-    core::{factory, s, w, IInspectable, Interface, BOOL, PCSTR, PWSTR},
+    core::{factory, s, IInspectable, Interface, BOOL, PCSTR, PWSTR},
     Foundation::TypedEventHandler,
     Graphics::{
         Capture::{Direct3D11CaptureFramePool, GraphicsCaptureItem, GraphicsCaptureSession},
         DirectX::{Direct3D11::IDirect3DDevice, DirectXPixelFormat},
     },
     Win32::{
-        Foundation::{CloseHandle, HINSTANCE, HMODULE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
+        Foundation::{CloseHandle, HMODULE, HWND, LPARAM, POINT, RECT, WPARAM},
         Graphics::{
             Direct2D::Common::D2D1_BORDER_MODE_HARD,
             Direct3D::{
@@ -65,13 +65,12 @@ use windows::{
                 DXGI_PRESENT, DXGI_PRESENT_PARAMETERS, DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1,
                 DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL, DXGI_USAGE_RENDER_TARGET_OUTPUT,
             },
-            Gdi::{ClientToScreen, MonitorFromWindow, HMONITOR, MONITOR_DEFAULTTONEAREST},
+            Gdi::{MonitorFromWindow, HMONITOR, MONITOR_DEFAULTTONEAREST},
         },
         System::{
             Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED},
-            LibraryLoader::GetModuleHandleW,
             Threading::{
-                GetCurrentThreadId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+                OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
                 PROCESS_QUERY_LIMITED_INFORMATION,
             },
             WinRT::{
@@ -80,15 +79,13 @@ use windows::{
             },
         },
         UI::WindowsAndMessaging::{
-            CreateWindowExW, DefWindowProcW, DestroyWindow, EnumChildWindows, EnumWindows,
-            GetAncestor, GetClassNameW, GetClientRect, GetCursorPos, GetParent, GetWindowLongPtrW,
-            GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible, PostMessageW,
-            RegisterClassW, SetWindowLongPtrW, SetWindowPos, CS_HREDRAW, CS_VREDRAW, GA_ROOT,
-            GWL_EXSTYLE, GWL_STYLE, HWND_BOTTOM, SWP_FRAMECHANGED, SWP_HIDEWINDOW, SWP_NOACTIVATE,
-            SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSENDCHANGING, SWP_NOSIZE, SWP_NOZORDER,
-            SWP_SHOWWINDOW, WM_CLOSE, WM_MOUSEMOVE, WNDCLASSW, WS_CAPTION, WS_CHILD,
-            WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_MAXIMIZEBOX,
-            WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME, WS_VISIBLE,
+            EnumChildWindows, EnumWindows, GetAncestor, GetClassNameW, GetClientRect, GetCursorPos,
+            GetParent, GetWindowLongPtrW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId,
+            IsWindowVisible, PostMessageW, SetWindowLongPtrW, SetWindowPos, GA_ROOT, GWL_EXSTYLE,
+            GWL_STYLE, HWND_BOTTOM, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOOWNERZORDER,
+            SWP_NOSENDCHANGING, SWP_NOZORDER, WM_MOUSEMOVE, WS_CAPTION, WS_EX_APPWINDOW,
+            WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_SYSMENU,
+            WS_THICKFRAME,
         },
     },
 };
@@ -577,70 +574,11 @@ enum LiveDesktopCompositionDevice {
 
 #[cfg(target_os = "windows")]
 struct LiveDesktopCompositionHost {
-    mode: LiveDesktopHostMode,
     owner_hwnd: HWND,
     target_hwnd: HWND,
-    owned_hwnd: Option<HWND>,
-    cleanup: LiveDesktopHostCleanup,
     target_rect: LiveDesktopWindowRect,
     detail: String,
-    visible: bool,
-    positioned: bool,
 }
-
-#[cfg(target_os = "windows")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LiveDesktopHostCleanup {
-    None,
-    DestroyOnDrop,
-    PostCloseOnDrop,
-}
-
-#[cfg(target_os = "windows")]
-struct LiveDesktopPreparedChildHost {
-    hwnd: isize,
-    width: u32,
-    height: u32,
-}
-
-#[cfg(target_os = "windows")]
-#[derive(Default)]
-pub(crate) struct LiveDesktopPreparedHost {
-    child: Option<LiveDesktopPreparedChildHost>,
-}
-
-#[cfg(target_os = "windows")]
-impl LiveDesktopPreparedHost {
-    fn child(hwnd: HWND, width: u32, height: u32) -> Self {
-        Self {
-            child: Some(LiveDesktopPreparedChildHost {
-                hwnd: hwnd.0 as isize,
-                width,
-                height,
-            }),
-        }
-    }
-
-    fn take_child(&mut self) -> Option<(HWND, u32, u32)> {
-        let child = self.child.take()?;
-        Some((HWND(child.hwnd as _), child.width, child.height))
-    }
-}
-
-#[cfg(target_os = "windows")]
-impl Drop for LiveDesktopPreparedHost {
-    fn drop(&mut self) {
-        if let Some(child) = self.child.take() {
-            let _ = unsafe {
-                PostMessageW(Some(HWND(child.hwnd as _)), WM_CLOSE, WPARAM(0), LPARAM(0))
-            };
-        }
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-#[derive(Default)]
-pub(crate) struct LiveDesktopPreparedHost;
 
 #[cfg(target_os = "windows")]
 impl LiveDesktopCompositionDevice {
@@ -1964,116 +1902,33 @@ unsafe fn live_desktop_d3d_blob_string(blob: &ID3DBlob) -> String {
 }
 
 #[cfg(target_os = "windows")]
-impl LiveDesktopHostMode {
-    fn label(&self) -> &'static str {
-        match self {
-            Self::WebviewTarget => "webviewTarget",
-            Self::OwnedPopupHost => "ownedPopupHost",
-            Self::ChildWindowHost => "childWindowHost",
-        }
-    }
-}
-
-#[cfg(target_os = "windows")]
 impl LiveDesktopCompositionHost {
-    unsafe fn create(
-        owner_hwnd: HWND,
-        mode: LiveDesktopHostMode,
-        prepared_host: &mut LiveDesktopPreparedHost,
-    ) -> Result<Self, String> {
-        match mode {
-            LiveDesktopHostMode::WebviewTarget => {
-                let Some((width, height)) =
-                    (unsafe { read_live_desktop_window_client_size(owner_hwnd) })
-                else {
-                    return Err(format!(
-                        "Could not read launchpad WebView client size for {}",
-                        format_live_desktop_window_handle(owner_hwnd)
-                    ));
-                };
-                Ok(Self {
-                    mode,
-                    owner_hwnd,
-                    target_hwnd: owner_hwnd,
-                    owned_hwnd: None,
-                    cleanup: LiveDesktopHostCleanup::None,
-                    target_rect: LiveDesktopWindowRect {
-                        left: 0,
-                        top: 0,
-                        right: width as i32,
-                        bottom: height as i32,
-                        width: width as i32,
-                        height: height as i32,
-                    },
-                    detail: format!(
-                        "host=webviewTarget target={} targetSize={}x{}",
-                        format_live_desktop_window_handle(owner_hwnd),
-                        width,
-                        height
-                    ),
-                    visible: true,
-                    positioned: true,
-                })
-            }
-            LiveDesktopHostMode::OwnedPopupHost => {
-                let rect = unsafe { live_desktop_owner_client_screen_rect(owner_hwnd) }?;
-                unsafe { register_live_desktop_background_host_class() };
-                let hwnd = unsafe { create_live_desktop_background_host_window(&rect) }?;
-                let mut host = Self {
-                    mode,
-                    owner_hwnd,
-                    target_hwnd: hwnd,
-                    owned_hwnd: Some(hwnd),
-                    cleanup: LiveDesktopHostCleanup::DestroyOnDrop,
-                    target_rect: rect.clone(),
-                    detail: format!(
-                        "host=ownedPopupHost(detachedPopupBelowOwner) owner={} target={} targetSize={}x{}@{},{}",
-                        format_live_desktop_window_handle(owner_hwnd),
-                        format_live_desktop_window_handle(hwnd),
-                        rect.width,
-                        rect.height,
-                        rect.left,
-                        rect.top
-                    ),
-                    visible: true,
-                    positioned: false,
-                };
-                unsafe { host.sync_to_owner_rect() }?;
-                Ok(host)
-            }
-            LiveDesktopHostMode::ChildWindowHost => {
-                let Some((hwnd, width, height)) = prepared_host.take_child() else {
-                    return Err(format!(
-                        "Child background host was not prepared on the launchpad window thread for {}",
-                        format_live_desktop_window_handle(owner_hwnd)
-                    ));
-                };
-                Ok(Self {
-                    mode,
-                    owner_hwnd,
-                    target_hwnd: hwnd,
-                    owned_hwnd: Some(hwnd),
-                    cleanup: LiveDesktopHostCleanup::PostCloseOnDrop,
-                    target_rect: LiveDesktopWindowRect {
-                        left: 0,
-                        top: 0,
-                        right: width as i32,
-                        bottom: height as i32,
-                        width: width as i32,
-                        height: height as i32,
-                    },
-                    detail: format!(
-                        "host=childWindowHost parent={} target={} targetSize={}x{}@0,0 zOrder=bottom",
-                        format_live_desktop_window_handle(owner_hwnd),
-                        format_live_desktop_window_handle(hwnd),
-                        width,
-                        height
-                    ),
-                    visible: true,
-                    positioned: true,
-                })
-            }
-        }
+    unsafe fn create(owner_hwnd: HWND) -> Result<Self, String> {
+        let Some((width, height)) = (unsafe { read_live_desktop_window_client_size(owner_hwnd) })
+        else {
+            return Err(format!(
+                "Could not read launchpad WebView client size for {}",
+                format_live_desktop_window_handle(owner_hwnd)
+            ));
+        };
+        Ok(Self {
+            owner_hwnd,
+            target_hwnd: owner_hwnd,
+            target_rect: LiveDesktopWindowRect {
+                left: 0,
+                top: 0,
+                right: width as i32,
+                bottom: height as i32,
+                width: width as i32,
+                height: height as i32,
+            },
+            detail: format!(
+                "host=webviewTarget target={} targetSize={}x{}",
+                format_live_desktop_window_handle(owner_hwnd),
+                width,
+                height
+            ),
+        })
     }
 
     fn target_hwnd(&self) -> HWND {
@@ -2092,340 +1947,35 @@ impl LiveDesktopCompositionHost {
     }
 
     unsafe fn sync_to_owner_rect(&mut self) -> Result<bool, String> {
-        let Some(hwnd) = self.owned_hwnd else {
-            let Some((width, height)) =
-                (unsafe { read_live_desktop_window_client_size(self.owner_hwnd) })
-            else {
-                return Ok(false);
-            };
-            let rect = LiveDesktopWindowRect {
-                left: 0,
-                top: 0,
-                right: width as i32,
-                bottom: height as i32,
-                width: width as i32,
-                height: height as i32,
-            };
-            if self.target_rect == rect {
-                return Ok(false);
-            }
-            self.target_rect = rect;
-            self.detail = format!(
-                "host=webviewTarget target={} targetSize={}x{}",
-                format_live_desktop_window_handle(self.owner_hwnd),
-                width,
-                height
-            );
-            return Ok(true);
+        let Some((width, height)) =
+            (unsafe { read_live_desktop_window_client_size(self.owner_hwnd) })
+        else {
+            return Ok(false);
         };
-        let rect = match self.mode {
-            LiveDesktopHostMode::OwnedPopupHost => {
-                unsafe { live_desktop_owner_client_screen_rect(self.owner_hwnd) }?
-            }
-            LiveDesktopHostMode::ChildWindowHost => {
-                let Some((width, height)) =
-                    (unsafe { read_live_desktop_window_client_size(self.owner_hwnd) })
-                else {
-                    return Ok(false);
-                };
-                LiveDesktopWindowRect {
-                    left: 0,
-                    top: 0,
-                    right: width as i32,
-                    bottom: height as i32,
-                    width: width as i32,
-                    height: height as i32,
-                }
-            }
-            LiveDesktopHostMode::WebviewTarget => return Ok(false),
+        let rect = LiveDesktopWindowRect {
+            left: 0,
+            top: 0,
+            right: width as i32,
+            bottom: height as i32,
+            width: width as i32,
+            height: height as i32,
         };
-        if self.positioned && self.target_rect == rect {
+        if self.target_rect == rect {
             return Ok(false);
         }
-        let z_order = match self.mode {
-            LiveDesktopHostMode::ChildWindowHost => Some(HWND_BOTTOM),
-            _ => Some(self.owner_hwnd),
-        };
-        unsafe {
-            SetWindowPos(
-                hwnd,
-                z_order,
-                rect.left,
-                rect.top,
-                rect.width.max(1),
-                rect.height.max(1),
-                SWP_NOACTIVATE
-                    | SWP_NOOWNERZORDER
-                    | SWP_NOSENDCHANGING
-                    | (if self.visible {
-                        SWP_SHOWWINDOW
-                    } else {
-                        SWP_HIDEWINDOW
-                    }),
-            )
-        }
-        .map_err(|error| {
-            format!(
-                "Live desktop background host SetWindowPos failed for {}: {error}",
-                format_live_desktop_window_handle(hwnd)
-            )
-        })?;
         self.target_rect = rect;
-        self.positioned = true;
-        self.detail = match self.mode {
-            LiveDesktopHostMode::ChildWindowHost => format!(
-                "host=childWindowHost parent={} target={} targetSize={}x{}@{},{} zOrder=bottom",
-                format_live_desktop_window_handle(self.owner_hwnd),
-                format_live_desktop_window_handle(hwnd),
-                self.target_rect.width,
-                self.target_rect.height,
-                self.target_rect.left,
-                self.target_rect.top
-            ),
-            _ => format!(
-                "host=ownedPopupHost(detachedPopupBelowOwner) owner={} target={} targetSize={}x{}@{},{}",
-                format_live_desktop_window_handle(self.owner_hwnd),
-                format_live_desktop_window_handle(hwnd),
-                self.target_rect.width,
-                self.target_rect.height,
-                self.target_rect.left,
-                self.target_rect.top
-            ),
-        };
+        self.detail = format!(
+            "host=webviewTarget target={} targetSize={}x{}",
+            format_live_desktop_window_handle(self.owner_hwnd),
+            width,
+            height
+        );
         Ok(true)
     }
 
-    unsafe fn set_visible(&mut self, visible: bool) -> Result<(), String> {
-        self.visible = visible;
-        let Some(hwnd) = self.owned_hwnd else {
-            return Ok(());
-        };
-        if visible {
-            unsafe { self.sync_to_owner_rect() }?;
-            return Ok(());
-        }
-        unsafe {
-            SetWindowPos(
-                hwnd,
-                None,
-                0,
-                0,
-                0,
-                0,
-                SWP_HIDEWINDOW
-                    | SWP_NOACTIVATE
-                    | SWP_NOMOVE
-                    | SWP_NOSIZE
-                    | SWP_NOOWNERZORDER
-                    | SWP_NOZORDER,
-            )
-        }
-        .map_err(|error| {
-            format!(
-                "Live desktop background host hide failed for {}: {error}",
-                format_live_desktop_window_handle(hwnd)
-            )
-        })?;
-        self.positioned = false;
+    unsafe fn set_visible(&mut self, _visible: bool) -> Result<(), String> {
         Ok(())
     }
-}
-
-#[cfg(target_os = "windows")]
-impl Drop for LiveDesktopCompositionHost {
-    fn drop(&mut self) {
-        if let Some(hwnd) = self.owned_hwnd.take() {
-            match self.cleanup {
-                LiveDesktopHostCleanup::None => {}
-                LiveDesktopHostCleanup::DestroyOnDrop => {
-                    let _ = unsafe { DestroyWindow(hwnd) };
-                }
-                LiveDesktopHostCleanup::PostCloseOnDrop => {
-                    let _ = unsafe { PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0)) };
-                }
-            }
-        }
-    }
-}
-
-#[cfg(target_os = "windows")]
-unsafe extern "system" fn live_desktop_background_host_wnd_proc(
-    hwnd: HWND,
-    message: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> LRESULT {
-    unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
-}
-
-#[cfg(target_os = "windows")]
-unsafe fn register_live_desktop_background_host_class() {
-    let Ok(module) = (unsafe { GetModuleHandleW(None) }) else {
-        return;
-    };
-    let window_class = WNDCLASSW {
-        style: CS_HREDRAW | CS_VREDRAW,
-        lpfnWndProc: Some(live_desktop_background_host_wnd_proc),
-        hInstance: HINSTANCE(module.0),
-        lpszClassName: w!("LaunchPadLiveDesktopBackgroundHost"),
-        ..Default::default()
-    };
-    let _ = unsafe { RegisterClassW(&window_class) };
-}
-
-#[cfg(target_os = "windows")]
-unsafe fn create_live_desktop_background_host_window(
-    rect: &LiveDesktopWindowRect,
-) -> Result<HWND, String> {
-    let module = unsafe { GetModuleHandleW(None) }.map_err(|error| {
-        format!("GetModuleHandleW failed before creating live desktop background host: {error}")
-    })?;
-    let hwnd = unsafe {
-        CreateWindowExW(
-            WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT,
-            w!("LaunchPadLiveDesktopBackgroundHost"),
-            w!("LaunchPad Live Desktop Background Host"),
-            WS_POPUP | WS_VISIBLE,
-            rect.left,
-            rect.top,
-            rect.width.max(1),
-            rect.height.max(1),
-            None,
-            None,
-            Some(HINSTANCE(module.0)),
-            None,
-        )
-    }
-    .map_err(|error| {
-        format!("CreateWindowExW failed while creating live desktop background host: {error}")
-    })?;
-    Ok(hwnd)
-}
-
-#[cfg(target_os = "windows")]
-unsafe fn create_live_desktop_child_background_host_window(
-    parent_hwnd: HWND,
-    width: u32,
-    height: u32,
-) -> Result<HWND, String> {
-    let module = unsafe { GetModuleHandleW(None) }.map_err(|error| {
-        format!(
-            "GetModuleHandleW failed before creating live desktop child background host: {error}"
-        )
-    })?;
-    let hwnd = unsafe {
-        CreateWindowExW(
-            Default::default(),
-            w!("LaunchPadLiveDesktopBackgroundHost"),
-            w!("LaunchPad Live Desktop Child Background Host"),
-            WS_CHILD | WS_VISIBLE,
-            0,
-            0,
-            width.max(1) as i32,
-            height.max(1) as i32,
-            Some(parent_hwnd),
-            None,
-            Some(HINSTANCE(module.0)),
-            None,
-        )
-    }
-    .map_err(|error| {
-        format!(
-            "CreateWindowExW failed while creating live desktop child background host for {}: {error}",
-            format_live_desktop_window_handle(parent_hwnd)
-        )
-    })?;
-    unsafe {
-        SetWindowPos(
-            hwnd,
-            Some(HWND_BOTTOM),
-            0,
-            0,
-            width.max(1) as i32,
-            height.max(1) as i32,
-            SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOSENDCHANGING | SWP_SHOWWINDOW,
-        )
-    }
-    .map_err(|error| {
-        format!(
-            "Initial child background host SetWindowPos failed for {}: {error}",
-            format_live_desktop_window_handle(hwnd)
-        )
-    })?;
-    Ok(hwnd)
-}
-
-#[cfg(target_os = "windows")]
-pub(crate) fn live_desktop_window_owned_by_current_thread(
-    window_handle: LiveDesktopWindowHandle,
-) -> bool {
-    let window_thread_id = unsafe { GetWindowThreadProcessId(window_handle, None) };
-    window_thread_id != 0 && window_thread_id == unsafe { GetCurrentThreadId() }
-}
-
-#[cfg(not(target_os = "windows"))]
-pub(crate) fn live_desktop_window_owned_by_current_thread(
-    _window_handle: LiveDesktopWindowHandle,
-) -> bool {
-    true
-}
-
-#[cfg(target_os = "windows")]
-pub(crate) fn prepare_live_desktop_child_host_for_window(
-    window_handle: LiveDesktopWindowHandle,
-) -> Result<LiveDesktopPreparedHost, String> {
-    let Some((width, height)) = (unsafe { read_live_desktop_window_client_size(window_handle) })
-    else {
-        return Err(format!(
-            "Could not read launchpad WebView client size for child background host {}",
-            format_live_desktop_window_handle(window_handle)
-        ));
-    };
-    unsafe { register_live_desktop_background_host_class() };
-    let hwnd =
-        unsafe { create_live_desktop_child_background_host_window(window_handle, width, height) }?;
-    Ok(LiveDesktopPreparedHost::child(hwnd, width, height))
-}
-
-#[cfg(not(target_os = "windows"))]
-pub(crate) fn prepare_live_desktop_child_host_for_window(
-    _window_handle: LiveDesktopWindowHandle,
-) -> Result<LiveDesktopPreparedHost, String> {
-    Ok(LiveDesktopPreparedHost::default())
-}
-
-#[cfg(target_os = "windows")]
-unsafe fn live_desktop_owner_client_screen_rect(
-    owner_hwnd: HWND,
-) -> Result<LiveDesktopWindowRect, String> {
-    let mut rect = RECT::default();
-    unsafe { GetClientRect(owner_hwnd, &mut rect) }.map_err(|error| {
-        format!(
-            "GetClientRect failed for launchpad owner {}: {error}",
-            format_live_desktop_window_handle(owner_hwnd)
-        )
-    })?;
-    let mut origin = POINT {
-        x: rect.left,
-        y: rect.top,
-    };
-    if !unsafe { ClientToScreen(owner_hwnd, &mut origin) }.as_bool() {
-        return Err(format!(
-            "ClientToScreen failed for launchpad owner {}: {}",
-            format_live_desktop_window_handle(owner_hwnd),
-            windows::core::Error::from_win32()
-        ));
-    }
-    let width = (rect.right - rect.left).max(1);
-    let height = (rect.bottom - rect.top).max(1);
-    Ok(LiveDesktopWindowRect {
-        left: origin.x,
-        top: origin.y,
-        right: origin.x + width,
-        bottom: origin.y + height,
-        width,
-        height,
-    })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -2541,8 +2091,6 @@ pub(crate) struct LiveDesktopRuntimeConfig {
     #[serde(default = "default_live_desktop_disable_mouse_relay")]
     disable_mouse_relay: bool,
     #[serde(default)]
-    host_mode: LiveDesktopHostMode,
-    #[serde(default)]
     skip_blank_frames: bool,
     #[serde(default)]
     force_dwm_flush: bool,
@@ -2617,15 +2165,6 @@ enum LiveDesktopDiagnosticMode {
     TestPattern,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-enum LiveDesktopHostMode {
-    #[default]
-    WebviewTarget,
-    OwnedPopupHost,
-    ChildWindowHost,
-}
-
 fn default_live_desktop_disable_mouse_relay() -> bool {
     true
 }
@@ -2681,7 +2220,6 @@ impl Default for LiveDesktopRuntimeConfig {
             acrylic_appearance: LiveDesktopAcrylicAppearance::System,
             acrylic_params: LiveDesktopAcrylicParams::default(),
             disable_mouse_relay: default_live_desktop_disable_mouse_relay(),
-            host_mode: LiveDesktopHostMode::WebviewTarget,
             skip_blank_frames: false,
             force_dwm_flush: false,
         }
@@ -2740,25 +2278,13 @@ impl LiveDesktopRuntime {
         status
     }
 
-    pub(crate) fn requires_main_thread_host_preparation(&self) -> bool {
-        #[cfg(target_os = "windows")]
-        {
-            self.config.host_mode == LiveDesktopHostMode::ChildWindowHost
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            false
-        }
-    }
-
     pub(crate) fn start_for_window(
         &mut self,
         window_handle: LiveDesktopWindowHandle,
-        prepared_host: LiveDesktopPreparedHost,
     ) -> LiveDesktopRuntimeStatus {
         let config = self.config.clone();
         self.start_with_renderer_session(probe_live_desktop_prerequisites(), || {
-            LiveDesktopRendererSession::start_for_window(window_handle, config, prepared_host)
+            LiveDesktopRendererSession::start_for_window(window_handle, config)
         })
     }
 
@@ -2939,7 +2465,6 @@ impl LiveDesktopRendererSession {
     fn start_for_window(
         window_handle: LiveDesktopWindowHandle,
         config: LiveDesktopRuntimeConfig,
-        prepared_host: LiveDesktopPreparedHost,
     ) -> Result<Self, LiveDesktopRendererStartupFailure> {
         let (ready_sender, ready_receiver) = mpsc::channel();
         let (stop_sender, stop_receiver) = mpsc::channel();
@@ -2957,7 +2482,6 @@ impl LiveDesktopRendererSession {
                 create_live_desktop_renderer_resources(
                     window_handle,
                     config,
-                    prepared_host,
                     worker_diagnostics,
                     &worker_cancel,
                     &ready_sender,
@@ -3046,7 +2570,6 @@ impl LiveDesktopRendererSession {
     fn start_for_window(
         _window_handle: LiveDesktopWindowHandle,
         _config: LiveDesktopRuntimeConfig,
-        _prepared_host: LiveDesktopPreparedHost,
     ) -> Result<Self, LiveDesktopRendererStartupFailure> {
         Err(probe_live_desktop_renderer().into())
     }
@@ -5749,7 +5272,6 @@ fn check_live_desktop_renderer_startup_cancelled(
 unsafe fn create_live_desktop_renderer_resources(
     window_handle: HWND,
     config: LiveDesktopRuntimeConfig,
-    mut prepared_host: LiveDesktopPreparedHost,
     diagnostics: Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
     startup_cancel: &LiveDesktopStartupCancellationToken,
     progress_sender: &mpsc::Sender<LiveDesktopRendererStartupMessage>,
@@ -5920,19 +5442,15 @@ unsafe fn create_live_desktop_renderer_resources(
         report_live_desktop_renderer_startup_progress(
             progress_sender,
             format!(
-                "Preparing live desktop host {} on adapter {adapter_index} ({adapter_name})",
-                config.host_mode.label()
+                "Preparing live desktop WebView target host on adapter {adapter_index} ({adapter_name})"
             ),
         );
-        let host_window_result = unsafe {
-            LiveDesktopCompositionHost::create(window_handle, config.host_mode, &mut prepared_host)
-        };
+        let host_window_result = unsafe { LiveDesktopCompositionHost::create(window_handle) };
         let host_window = match host_window_result {
             Ok(host_window) => host_window,
             Err(error) => {
                 let detail = format!(
-                    "Live desktop host {} failed while creating renderer resources: {error}",
-                    config.host_mode.label()
+                    "Live desktop WebView target host failed while creating renderer resources: {error}"
                 );
                 return Err(LiveDesktopRendererProbe::window_target_unavailable(
                     "liveDesktopHostUnavailable",
@@ -5950,7 +5468,7 @@ unsafe fn create_live_desktop_renderer_resources(
             progress_sender,
             format!(
                 "Creating DirectComposition target for {} host on adapter {adapter_index} ({adapter_name})",
-                config.host_mode.label()
+                "webviewTarget"
             ),
         );
         let target_result =
@@ -5962,7 +5480,7 @@ unsafe fn create_live_desktop_renderer_resources(
                     "directCompositionTargetUnavailable",
                     format!(
                         "CreateTargetForHwnd({adapter_index}, {adapter_name}, {}) failed while creating renderer resources: {error}",
-                        config.host_mode.label()
+                        "webviewTarget"
                     ),
                 ));
             }

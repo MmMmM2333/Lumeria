@@ -80,9 +80,6 @@ const MAX_ICON_HYDRATION_BATCH_SIZE = 80;
 const WINDOWS_WALLPAPER_REFRESH_INTERVAL_MS = 5000;
 const LIVE_DESKTOP_IDLE_STOP_DELAY_MS = 10_000;
 const LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY = "launchpadLiveDesktopDisableMouseRelay";
-const LIVE_DESKTOP_HOST_MODE_STORAGE_KEY = "launchpadLiveDesktopHostMode";
-const LIVE_DESKTOP_HOST_MODE_OWNED_POPUP = "ownedPopupHost";
-const LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW = "childWindowHost";
 const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "launchpadLiveDesktopSkipBlankFrames";
 const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "launchpadLiveDesktopForceDwmFlush";
 const DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS = Object.freeze({
@@ -262,18 +259,6 @@ function resolveLiveDesktopDisableMouseRelay() {
   }
 }
 
-function resolveLiveDesktopHostMode() {
-  if (typeof window === "undefined") return "webviewTarget";
-  try {
-    const mode = window.localStorage?.getItem(LIVE_DESKTOP_HOST_MODE_STORAGE_KEY);
-    if (mode === LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW) return LIVE_DESKTOP_HOST_MODE_CHILD_WINDOW;
-    if (mode === LIVE_DESKTOP_HOST_MODE_OWNED_POPUP) return LIVE_DESKTOP_HOST_MODE_OWNED_POPUP;
-    return "webviewTarget";
-  } catch {
-    return "webviewTarget";
-  }
-}
-
 function resolveLiveDesktopSkipBlankFrames() {
   if (typeof window === "undefined") return false;
   try {
@@ -346,7 +331,6 @@ function makeLiveDesktopRuntimeConfig(options) {
       opacity: options.backgroundLiveDesktopOpacity.value,
     }),
     disableMouseRelay: resolveLiveDesktopDisableMouseRelay(),
-    hostMode: resolveLiveDesktopHostMode(),
     skipBlankFrames: resolveLiveDesktopSkipBlankFrames(),
     forceDwmFlush: resolveLiveDesktopForceDwmFlush(),
     opacity: clampBackgroundLiveDesktopOpacity(options.backgroundLiveDesktopOpacity.value),
