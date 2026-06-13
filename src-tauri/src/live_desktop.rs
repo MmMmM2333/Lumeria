@@ -204,6 +204,18 @@ struct LiveDesktopAbandonedRendererWorker {
 }
 
 #[cfg(target_os = "windows")]
+impl LiveDesktopAbandonedRendererWorker {
+    fn new(worker: thread::JoinHandle<()>, reason: &'static str, detail: String) -> Self {
+        Self {
+            worker: Some(worker),
+            reason,
+            detail,
+            generation: 0,
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
 impl std::fmt::Debug for LiveDesktopAbandonedRendererWorker {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -231,6 +243,22 @@ struct LiveDesktopRendererStartupReady {
     renderer_probe: LiveDesktopRendererProbe,
     exit_receiver: mpsc::Receiver<()>,
     worker: thread::JoinHandle<()>,
+}
+
+#[cfg(target_os = "windows")]
+enum LiveDesktopRendererStartupTimeoutCleanup {
+    Joined,
+    Abandoned(thread::JoinHandle<()>),
+}
+
+#[cfg(target_os = "windows")]
+impl LiveDesktopRendererStartupTimeoutCleanup {
+    fn detail_label(&self) -> &'static str {
+        match self {
+            Self::Joined => "joined",
+            Self::Abandoned(_) => "abandonedWorker",
+        }
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -2631,12 +2659,11 @@ impl LiveDesktopRendererSession {
             "DirectComposition renderer worker did not stop within {} ms",
             cleanup_timeout.as_millis()
         );
-        Some(LiveDesktopAbandonedRendererWorker {
-            worker: Some(worker),
-            reason: "nativeRendererStopTimedOut",
+        Some(LiveDesktopAbandonedRendererWorker::new(
+            worker,
+            "nativeRendererStopTimedOut",
             detail,
-            generation: 0,
-        })
+        ))
     }
 
     fn diagnostics(&self) -> LiveDesktopRuntimeDiagnostics {
@@ -2750,28 +2777,43 @@ fn cancel_live_desktop_renderer_startup_after_timeout(
         "DirectComposition renderer worker did not initialize within {} ms; last progress: {}",
         LIVE_DESKTOP_RENDERER_INIT_TIMEOUT_MS, last_progress
     );
+    let cleanup =
+        cleanup_live_desktop_renderer_startup_after_cancel(exit_receiver, worker, cleanup_timeout);
+    detail.push_str("; cleanup=");
+    detail.push_str(cleanup.detail_label());
+    let probe = LiveDesktopRendererProbe::unavailable(
+        "nativeRendererInitializationTimedOut",
+        detail.clone(),
+    );
 
+    match cleanup {
+        LiveDesktopRendererStartupTimeoutCleanup::Joined => probe.into(),
+        LiveDesktopRendererStartupTimeoutCleanup::Abandoned(worker) => {
+            LiveDesktopRendererStartupFailure {
+                probe,
+                abandoned_worker: Some(LiveDesktopAbandonedRendererWorker::new(
+                    worker,
+                    "nativeRendererInitializationTimedOut",
+                    detail,
+                )),
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn cleanup_live_desktop_renderer_startup_after_cancel(
+    exit_receiver: mpsc::Receiver<()>,
+    worker: thread::JoinHandle<()>,
+    cleanup_timeout: Duration,
+) -> LiveDesktopRendererStartupTimeoutCleanup {
     match exit_receiver.recv_timeout(cleanup_timeout) {
         Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => {
             let _ = worker.join();
-            detail.push_str("; cleanup=joined");
-            LiveDesktopRendererProbe::unavailable("nativeRendererInitializationTimedOut", detail)
-                .into()
+            LiveDesktopRendererStartupTimeoutCleanup::Joined
         }
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            detail.push_str("; cleanup=abandonedWorker");
-            LiveDesktopRendererStartupFailure {
-                probe: LiveDesktopRendererProbe::unavailable(
-                    "nativeRendererInitializationTimedOut",
-                    detail.clone(),
-                ),
-                abandoned_worker: Some(LiveDesktopAbandonedRendererWorker {
-                    worker: Some(worker),
-                    reason: "nativeRendererInitializationTimedOut",
-                    detail,
-                    generation: 0,
-                }),
-            }
+            LiveDesktopRendererStartupTimeoutCleanup::Abandoned(worker)
         }
     }
 }
@@ -8522,6 +8564,43 @@ mod tests {
         assert!(failure.probe.detail.contains("cleanup=joined"));
         assert!(startup_cancel.is_cancelled());
         assert!(failure.abandoned_worker.is_none());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn renderer_startup_timeout_abandons_worker_that_does_not_exit_during_cleanup() {
+        let (stop_sender, _stop_receiver) = mpsc::channel();
+        let (exit_sender, exit_receiver) = mpsc::channel();
+        let (release_sender, release_receiver) = mpsc::channel();
+        let startup_cancel = LiveDesktopStartupCancellationToken::new();
+        let worker = thread::spawn(move || {
+            let _exit_sender = exit_sender;
+            let _ = release_receiver.recv();
+        });
+
+        let mut failure = cancel_live_desktop_renderer_startup_after_timeout(
+            &stop_sender,
+            exit_receiver,
+            worker,
+            &startup_cancel,
+            "test progress",
+            Duration::from_millis(10),
+        );
+
+        assert_eq!(failure.probe.reason, "nativeRendererInitializationTimedOut");
+        assert!(failure.probe.detail.contains("cleanup=abandonedWorker"));
+        assert!(startup_cancel.is_cancelled());
+        let mut abandoned = failure
+            .abandoned_worker
+            .take()
+            .expect("timeout should abandon a worker that ignores cancellation");
+        assert_eq!(abandoned.reason, "nativeRendererInitializationTimedOut");
+        assert!(abandoned.detail.contains("cleanup=abandonedWorker"));
+
+        let _ = release_sender.send(());
+        if let Some(worker) = abandoned.worker.take() {
+            let _ = worker.join();
+        }
     }
 
     #[cfg(target_os = "windows")]
