@@ -2838,7 +2838,7 @@ impl LiveDesktopRuntime {
             window_diagnostics: live_desktop_window_diagnostics(),
         };
 
-        if !capture_probe.supports_desktop_duplication {
+        if !capture_probe.supports_d3d11 {
             self.status = LiveDesktopRuntimeStatus::failed(
                 generation,
                 capture_probe.reason,
@@ -5494,7 +5494,7 @@ fn make_live_desktop_background_support(
     capture_probe: LiveDesktopCaptureProbe,
     renderer_probe: LiveDesktopRendererProbe,
 ) -> LiveDesktopBackgroundSupport {
-    let reason = if !capture_probe.supports_desktop_duplication {
+    let reason = if !capture_probe.supports_d3d11 {
         capture_probe.reason
     } else if !renderer_probe.supports_native_renderer {
         renderer_probe.reason
@@ -5502,20 +5502,28 @@ fn make_live_desktop_background_support(
         "available"
     };
     let supports_live_desktop_background =
-        capture_probe.supports_desktop_duplication && renderer_probe.supports_native_renderer;
+        capture_probe.supports_d3d11 && renderer_probe.supports_native_renderer;
     let supports_live_desktop_background_effects =
         supports_live_desktop_background && renderer_probe.supports_native_effects;
+    let detail = if !capture_probe.supports_d3d11 {
+        capture_probe.detail.clone()
+    } else if !renderer_probe.supports_native_renderer {
+        renderer_probe.detail.clone()
+    } else if !capture_probe.supports_desktop_duplication {
+        format!(
+            "{}; desktopDuplicationProbe={}",
+            renderer_probe.detail, capture_probe.detail
+        )
+    } else {
+        renderer_probe.detail.clone()
+    };
 
     LiveDesktopBackgroundSupport {
         platform,
         supports_live_desktop_background,
         supports_live_desktop_background_effects,
         reason,
-        detail: if !capture_probe.supports_desktop_duplication {
-            capture_probe.detail.clone()
-        } else {
-            renderer_probe.detail.clone()
-        },
+        detail,
         capture_probe,
         renderer_probe,
     }
@@ -8246,6 +8254,23 @@ mod tests {
     }
 
     #[test]
+    fn desktop_duplication_failure_does_not_disable_live_desktop_support_after_d3d_probe() {
+        let support = make_live_desktop_background_support(
+            "windows",
+            capture_probe(true, false, "desktopDuplicationUnavailable"),
+            LiveDesktopRendererProbe::native_renderer_available_for_probe(true, "renderer ready"),
+        );
+
+        assert!(support.supports_live_desktop_background);
+        assert!(support.supports_live_desktop_background_effects);
+        assert_eq!(support.reason, "available");
+        assert!(support.capture_probe.supports_d3d11);
+        assert!(!support.capture_probe.supports_desktop_duplication);
+        assert!(support.detail.contains("renderer ready"));
+        assert!(support.detail.contains("desktopDuplicationProbe"));
+    }
+
+    #[test]
     fn capture_probe_failure_surfaces_probe_reason() {
         let support = make_live_desktop_background_support(
             "windows",
@@ -8928,6 +8953,20 @@ mod tests {
         assert!(!status.active);
         assert_eq!(status.generation, 1);
         assert_eq!(status.reason, "dxgiUnavailable");
+    }
+
+    #[test]
+    fn runtime_start_does_not_require_desktop_duplication_after_d3d_probe() {
+        let mut runtime = LiveDesktopRuntime::default();
+        let status = runtime.start_with_probes(
+            capture_probe(true, false, "desktopDuplicationUnavailable"),
+            LiveDesktopRendererProbe::available(),
+        );
+
+        assert_eq!(status.phase, "running");
+        assert!(status.active);
+        assert_eq!(status.generation, 1);
+        assert_eq!(status.reason, "running");
     }
 
     #[test]
