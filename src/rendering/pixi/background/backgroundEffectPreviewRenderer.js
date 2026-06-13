@@ -3,17 +3,14 @@ import { loadCachedBackgroundImageDataUrl } from "../../../api/launchpadApi.js";
 import { resolveBackgroundImagePlacement } from "../../../domain/backgroundImageLayout.js";
 import {
   BACKGROUND_EFFECT_ACRYLIC_WEBGL,
-  BACKGROUND_EFFECT_BLUR,
 } from "../../../composables/useLaunchpadSettingsConfig.js";
 import {
+  createBackgroundEffectPlan,
   createDualKawaseLevels,
-  resolveAcrylicBackgroundAlpha,
   resolveAcrylicRenderSize,
-  resolveBlurOffsetScale,
 } from "./acrylicBackgroundPlan.js";
 import { createAcrylicCompositeFilter, createKawaseFilter } from "./acrylicFilters.js";
 import { createAcrylicNoiseTexture } from "./acrylicNoiseTexture.js";
-import { normalizeAcrylicCompositeParams } from "./acrylicParams.js";
 import { loadBackgroundTextureFromImage } from "./backgroundTextureLoader.js";
 
 const DEFAULT_PREVIEW_WIDTH = 320;
@@ -51,17 +48,7 @@ async function resolveTextureSource(config) {
 }
 
 function makeAcrylicKey(config) {
-  const params = normalizeAcrylicCompositeParams(config.backgroundAcrylicParams);
-  return JSON.stringify({
-    alpha: resolveAcrylicBackgroundAlpha(config.backgroundImageOpacity),
-    brightness: params.brightness,
-    contrast: params.contrast,
-    noise: params.noise,
-    saturation: params.saturation,
-    seed: params.seed,
-    tintColor: params.tintColor,
-    tintStrength: params.tintStrength,
-  });
+  return JSON.stringify(createBackgroundEffectPlan(config).acrylic);
 }
 
 function makePlacementKey(config) {
@@ -239,9 +226,7 @@ export class BackgroundEffectPreviewRenderer {
 
   getBlurKey() {
     const renderSize = this.getRenderSize();
-    const offsetScale = this.config.backgroundEffect === BACKGROUND_EFFECT_BLUR
-      ? resolveBlurOffsetScale(this.config.backgroundBlurStrength)
-      : 1;
+    const offsetScale = createBackgroundEffectPlan(this.config).blur.offsetScale;
     return `${renderSize.width}x${renderSize.height}|${this.config.backgroundImageLayout || ""}|${offsetScale}`;
   }
 
@@ -379,25 +364,24 @@ export class BackgroundEffectPreviewRenderer {
       this.compositeDirty = true;
     }
 
-    const blurOffsetScale = this.config.backgroundEffect === BACKGROUND_EFFECT_BLUR
-      ? resolveBlurOffsetScale(this.config.backgroundBlurStrength)
-      : 1;
+    const effectPlan = createBackgroundEffectPlan(this.config);
+    const blurOffsetScale = effectPlan.blur.offsetScale;
     const blurKey = this.getBlurKey();
     if (this.blurDirty || blurKey !== this.lastBlurKey) {
       let currentTexture = this.sourceRenderTexture;
       for (let index = 0; index < this.downTextures.length; index += 1) {
-        this.downFilter.setOffset((1 + index * 0.35) * blurOffsetScale);
+        this.downFilter.setOffset(effectPlan.blur.downOffsets[index] ?? (1 + index * 0.35) * blurOffsetScale);
         this.renderPass(currentTexture, this.downTextures[index], this.downFilter);
         currentTexture = this.downTextures[index];
       }
 
       for (let index = this.downTextures.length - 2; index >= 0; index -= 1) {
-        this.upFilter.setOffset((1.1 + index * 0.25) * blurOffsetScale);
+        this.upFilter.setOffset(effectPlan.blur.upOffsets[index] ?? (1.1 + index * 0.25) * blurOffsetScale);
         this.renderPass(currentTexture, this.upTextures[index], this.upFilter);
         currentTexture = this.upTextures[index];
       }
 
-      this.upFilter.setOffset(1.25 * blurOffsetScale);
+      this.upFilter.setOffset(effectPlan.blur.finalUpOffset);
       this.renderPass(currentTexture, this.finalBlurTexture, this.upFilter);
       this.lastBlurKey = blurKey;
       this.blurDirty = false;
@@ -407,10 +391,7 @@ export class BackgroundEffectPreviewRenderer {
     if (this.config.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) {
       const acrylicKey = makeAcrylicKey(this.config);
       if (this.compositeDirty || acrylicKey !== this.lastAcrylicKey) {
-        this.compositeFilter.setParams({
-          ...this.config.backgroundAcrylicParams,
-          alpha: resolveAcrylicBackgroundAlpha(this.config.backgroundImageOpacity),
-        });
+        this.compositeFilter.setParams(effectPlan.acrylic);
         this.renderPass(this.finalBlurTexture, this.finalRenderTexture, this.compositeFilter);
         this.lastAcrylicKey = acrylicKey;
         this.compositeDirty = false;
@@ -419,7 +400,7 @@ export class BackgroundEffectPreviewRenderer {
       this.displaySprite.alpha = 1;
     } else {
       this.displaySprite.texture = this.finalBlurTexture;
-      this.displaySprite.alpha = resolveAcrylicBackgroundAlpha(this.config.backgroundImageOpacity);
+      this.displaySprite.alpha = effectPlan.opacity;
     }
 
     this.displaySprite.position.set(0, 0);

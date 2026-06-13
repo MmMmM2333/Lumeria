@@ -26,8 +26,8 @@ import {
   DEFAULT_BACKGROUND_BLUR_STRENGTH,
 } from "../../composables/useLaunchpadSettingsConfig.js";
 import {
+  createBackgroundEffectPlan,
   createDualKawaseLevels,
-  resolveBlurOffsetScale,
   resolveAcrylicBackgroundAlpha,
   resolveAcrylicRenderSize,
 } from "./background/acrylicBackgroundPlan.js";
@@ -196,37 +196,40 @@ function renderBackgroundEffect() {
 
   renderSourceToTexture(renderSize, hostSize);
 
-  const blurOffsetScale = props.backgroundEffect === BACKGROUND_EFFECT_BLUR
-    ? resolveBlurOffsetScale(props.backgroundBlurStrength)
-    : 1;
+  const effectPlan = createBackgroundEffectPlan({
+    acrylicParams: {
+      ...props.backgroundAcrylicParams,
+      ...(isAcrylicDebugEnabled && acrylicDebugOverrideEnabled.value ? acrylicDebugParams : null),
+    },
+    blurStrength: props.backgroundBlurStrength,
+    effect: props.backgroundEffect,
+    opacity: props.backgroundImageOpacity,
+  });
+  const blurOffsetScale = effectPlan.blur.offsetScale;
   let currentTexture = sourceRenderTexture;
   for (let index = 0; index < downTextures.length; index += 1) {
-    downFilter.setOffset((1 + index * 0.35) * blurOffsetScale);
+    downFilter.setOffset(effectPlan.blur.downOffsets[index] ?? (1 + index * 0.35) * blurOffsetScale);
     renderPass(currentTexture, downTextures[index], downFilter);
     currentTexture = downTextures[index];
   }
 
   for (let index = downTextures.length - 2; index >= 0; index -= 1) {
-    upFilter.setOffset((1.1 + index * 0.25) * blurOffsetScale);
+    upFilter.setOffset(effectPlan.blur.upOffsets[index] ?? (1.1 + index * 0.25) * blurOffsetScale);
     renderPass(currentTexture, upTextures[index], upFilter);
     currentTexture = upTextures[index];
   }
 
-  upFilter.setOffset(1.25 * blurOffsetScale);
+  upFilter.setOffset(effectPlan.blur.finalUpOffset);
   renderPass(currentTexture, finalBlurTexture, upFilter);
 
   if (props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) {
-    compositeFilter.setParams({
-      ...props.backgroundAcrylicParams,
-      ...(isAcrylicDebugEnabled && acrylicDebugOverrideEnabled.value ? acrylicDebugParams : null),
-      alpha: resolveAcrylicBackgroundAlpha(props.backgroundImageOpacity),
-    });
+    compositeFilter.setParams(effectPlan.acrylic);
     renderPass(finalBlurTexture, finalRenderTexture, compositeFilter);
     displaySprite.texture = finalRenderTexture;
     displaySprite.alpha = 1;
   } else {
     displaySprite.texture = finalBlurTexture;
-    displaySprite.alpha = resolveAcrylicBackgroundAlpha(props.backgroundImageOpacity);
+    displaySprite.alpha = effectPlan.opacity;
   }
 
   displaySprite.position.set(0, 0);

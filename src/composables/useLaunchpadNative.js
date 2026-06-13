@@ -7,6 +7,7 @@ import {
   DEFAULT_ROWS,
 } from "./launchpadConstants.js";
 import { clamp } from "../domain/launchpadLayout.js";
+import { createBackgroundEffectPlan } from "../domain/backgroundEffectPlan.js";
 import {
   DEFAULT_SCAN_KEYWORD_BLACKLIST,
   isAppBlockedByScanBlacklist,
@@ -117,6 +118,8 @@ const DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS = Object.freeze({
     pixelProbeSamples: 0,
     pixelProbeErrors: 0,
     blankFrameSkips: 0,
+    abandonedRendererWorkers: 0,
+    reapedAbandonedRendererWorkers: 0,
     lastPixelProbeWidth: 0,
     lastPixelProbeHeight: 0,
     lastPixelProbeMinRgb: 0,
@@ -125,6 +128,7 @@ const DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS = Object.freeze({
     lastPixelProbeMinAlpha: 0,
     lastPixelProbeMaxAlpha: 0,
     lastPixelProbeAvgAlpha: 0,
+    lastAbandonedRendererReason: "",
     lastError: "",
   },
   windowDiagnostics: {
@@ -172,6 +176,8 @@ function normalizeLiveDesktopRuntimeDiagnostics(diagnostics) {
     pixelProbeSamples: normalizeCount(diagnostics?.pixelProbeSamples),
     pixelProbeErrors: normalizeCount(diagnostics?.pixelProbeErrors),
     blankFrameSkips: normalizeCount(diagnostics?.blankFrameSkips),
+    abandonedRendererWorkers: normalizeCount(diagnostics?.abandonedRendererWorkers),
+    reapedAbandonedRendererWorkers: normalizeCount(diagnostics?.reapedAbandonedRendererWorkers),
     lastPixelProbeWidth: normalizeCount(diagnostics?.lastPixelProbeWidth),
     lastPixelProbeHeight: normalizeCount(diagnostics?.lastPixelProbeHeight),
     lastPixelProbeMinRgb: normalizeCount(diagnostics?.lastPixelProbeMinRgb),
@@ -180,6 +186,7 @@ function normalizeLiveDesktopRuntimeDiagnostics(diagnostics) {
     lastPixelProbeMinAlpha: normalizeCount(diagnostics?.lastPixelProbeMinAlpha),
     lastPixelProbeMaxAlpha: normalizeCount(diagnostics?.lastPixelProbeMaxAlpha),
     lastPixelProbeAvgAlpha: normalizeCount(diagnostics?.lastPixelProbeAvgAlpha),
+    lastAbandonedRendererReason: String(diagnostics?.lastAbandonedRendererReason || ""),
     lastError: String(diagnostics?.lastError || ""),
   };
 }
@@ -332,6 +339,12 @@ function makeLiveDesktopRuntimeConfig(options) {
     darkenColor: normalizeBackgroundDarkenColor(options.backgroundDarkenColor.value),
     acrylicAppearance,
     acrylicParams,
+    effectPlan: createBackgroundEffectPlan({
+      acrylicParams,
+      blurStrength: options.backgroundBlurStrength.value,
+      effect: options.backgroundEffect.value,
+      opacity: options.backgroundLiveDesktopOpacity.value,
+    }),
     disableMouseRelay: resolveLiveDesktopDisableMouseRelay(),
     hostMode: resolveLiveDesktopHostMode(),
     skipBlankFrames: resolveLiveDesktopSkipBlankFrames(),

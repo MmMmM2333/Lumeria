@@ -6,6 +6,7 @@ import {
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
 } from "../../../composables/useLaunchpadSettingsConfig.js";
 import {
+  createBackgroundEffectPlan,
   createDualKawaseLevels,
   resolveAcrylicBackgroundAlpha,
   resolveAcrylicRenderSize,
@@ -41,6 +42,30 @@ export function runAcrylicBackgroundPlanTests() {
 
   assert(resolveAcrylicBackgroundAlpha(72) === 0.72, "background alpha should derive from configured opacity");
   assert(resolveAcrylicBackgroundAlpha(120) === 1, "background alpha should clamp to one");
+
+  const blurPlan = createBackgroundEffectPlan({
+    effect: BACKGROUND_EFFECT_BLUR,
+    blurStrength: 75,
+    opacity: 72,
+  });
+  assert(blurPlan.effect === BACKGROUND_EFFECT_BLUR, "effect plan should preserve the normalized effect");
+  assert(blurPlan.opacity === 0.72, "effect plan should expose normalized opacity");
+  assert(Math.abs(blurPlan.blur.offsetScale - 1.275) < 0.0001, "effect plan should expose dual kawase blur offset scale");
+  assert(blurPlan.blur.downOffsets.length === 4, "effect plan should include down pass offsets");
+  assert(!blurPlan.acrylic.enabled, "blur effect plans should not enable acrylic composite");
+
+  const acrylicPlan = createBackgroundEffectPlan({
+    effect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    opacity: 37,
+    acrylicParams: {
+      brightness: 1.2,
+      tintColor: "#336699",
+      tintStrength: 0.4,
+    },
+  });
+  assert(acrylicPlan.acrylic.enabled, "acrylic effect plans should enable acrylic composite");
+  assert(acrylicPlan.acrylic.alpha === 0.37, "acrylic effect plan should carry alpha for composite");
+  assert(Math.abs(acrylicPlan.acrylic.tintColor[1] - 0.4) < 0.0001, "acrylic effect plan should normalize tint color");
 
   assert(shouldUsePixiBackgroundEffect({
     effect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
