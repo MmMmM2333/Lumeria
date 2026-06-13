@@ -403,8 +403,17 @@ fn get_main_window_effects_support() -> tray::MainWindowEffectsSupport {
 }
 
 #[tauri::command]
-fn get_live_desktop_background_support() -> live_desktop::LiveDesktopBackgroundSupport {
-    live_desktop::live_desktop_background_support()
+fn get_live_desktop_background_support(
+    state: State<'_, AppState>,
+) -> Result<live_desktop::LiveDesktopBackgroundSupport, String> {
+    let active_support = {
+        let mut runtime = state
+            .live_desktop_runtime
+            .lock()
+            .map_err(|_| "Failed to lock live desktop runtime".to_string())?;
+        runtime.active_background_support()
+    };
+    Ok(active_support.unwrap_or_else(live_desktop::live_desktop_background_support))
 }
 
 #[tauri::command]

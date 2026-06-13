@@ -2807,6 +2807,13 @@ impl Default for LiveDesktopRuntime {
 }
 
 impl LiveDesktopRuntime {
+    pub(crate) fn active_background_support(&mut self) -> Option<LiveDesktopBackgroundSupport> {
+        self.reap_abandoned_renderer_workers();
+        self.renderer_session
+            .as_ref()
+            .map(|session| active_live_desktop_background_support(session.renderer_probe.clone()))
+    }
+
     pub(crate) fn status(&mut self) -> LiveDesktopRuntimeStatus {
         self.reap_abandoned_renderer_workers();
         let mut status = self.status.clone();
@@ -5731,6 +5738,45 @@ pub(crate) fn live_desktop_background_support() -> LiveDesktopBackgroundSupport 
     let capture_probe = probe_live_desktop_capture();
     let renderer_probe = probe_live_desktop_renderer();
     make_live_desktop_background_support(current_platform(), capture_probe, renderer_probe)
+}
+
+fn active_live_desktop_capture_probe(renderer_detail: &str) -> LiveDesktopCaptureProbe {
+    LiveDesktopCaptureProbe {
+        supports_d3d11: true,
+        supports_desktop_duplication: true,
+        frame_probe: LiveDesktopFrameProbe {
+            supports_frame_texture: true,
+            width: 0,
+            height: 0,
+            format: 0,
+            reason: "activeRuntime",
+            detail: "Live desktop runtime is already running; skipped Desktop Duplication probe to avoid competing with active capture".to_string(),
+        },
+        adapter_count: 0,
+        output_count: 0,
+        reason: "activeRuntime",
+        detail: format!(
+            "Live desktop runtime is already running; skipped Desktop Duplication probe to avoid competing with active capture; renderer: {renderer_detail}"
+        ),
+    }
+}
+
+fn active_live_desktop_background_support(
+    renderer_probe: LiveDesktopRendererProbe,
+) -> LiveDesktopBackgroundSupport {
+    let detail = format!(
+        "Live desktop runtime is already running; skipped Desktop Duplication probe to avoid competing with active capture; renderer: {}",
+        renderer_probe.detail
+    );
+    let capture_probe = active_live_desktop_capture_probe(&renderer_probe.detail);
+    let mut support =
+        make_live_desktop_background_support(current_platform(), capture_probe, renderer_probe);
+    support.reason = "available";
+    support.supports_live_desktop_background = true;
+    support.supports_live_desktop_background_effects =
+        support.renderer_probe.supports_native_effects;
+    support.detail = detail;
+    support
 }
 
 fn make_live_desktop_background_support(
@@ -9289,6 +9335,32 @@ mod tests {
         assert_eq!(support.reason, "available");
         assert!(support.renderer_probe.supports_native_renderer);
         assert!(support.renderer_probe.supports_native_effects);
+    }
+
+    #[test]
+    fn active_runtime_support_skips_desktop_duplication_probe() {
+        let mut runtime = LiveDesktopRuntime::default();
+        let status = runtime.start_with_probes(
+            capture_probe(true, true, "available"),
+            LiveDesktopRendererProbe::native_renderer_available_for_window(
+                true,
+                "active renderer ready",
+            ),
+        );
+
+        assert_eq!(status.phase, "running");
+
+        let support = runtime
+            .active_background_support()
+            .expect("running runtime should report active support");
+
+        assert!(support.supports_live_desktop_background);
+        assert!(support.supports_live_desktop_background_effects);
+        assert_eq!(support.reason, "available");
+        assert_eq!(support.capture_probe.reason, "activeRuntime");
+        assert!(support.capture_probe.supports_desktop_duplication);
+        assert!(support.detail.contains("skipped Desktop Duplication probe"));
+        assert!(support.detail.contains("active renderer ready"));
     }
 
     #[test]
