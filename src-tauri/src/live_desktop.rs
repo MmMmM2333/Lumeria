@@ -2193,7 +2193,7 @@ impl LiveDesktopFrameSource {
 }
 
 impl LiveDesktopRuntimeConfig {
-    fn frame_source(&self) -> LiveDesktopFrameSource {
+    fn effective_frame_source(&self) -> LiveDesktopFrameSource {
         match self.debug_frame_source_override {
             Some(LiveDesktopDebugFrameSourceOverride::TestPattern) => {
                 LiveDesktopFrameSource::TestPattern
@@ -2749,7 +2749,7 @@ impl LiveDesktopRendererResources {
     ) {
         loop {
             self.apply_pending_commands(&command_receiver);
-            if self.config.frame_source().uses_window_capture() {
+            if self.config.effective_frame_source().uses_window_capture() {
                 if self.wait_for_window_capture_frame_or_stop(&stop_receiver) {
                     break;
                 }
@@ -2911,7 +2911,7 @@ impl LiveDesktopRendererResources {
             Ok(false) => {}
             Err(error) => record_live_desktop_config_error(&self.diagnostics, &error),
         }
-        if self.config.frame_source() == LiveDesktopFrameSource::TestPattern {
+        if self.config.effective_frame_source() == LiveDesktopFrameSource::TestPattern {
             let copy_started = Instant::now();
             let pattern_frame = match unsafe {
                 draw_live_desktop_test_pattern_to_composition_surface(
@@ -2937,13 +2937,13 @@ impl LiveDesktopRendererResources {
             return Ok(true);
         }
 
-        if self.config.frame_source().uses_window_capture() {
+        if self.config.effective_frame_source().uses_window_capture() {
             let window_capture = match self._window_capture.as_ref() {
                 Some(window_capture) => window_capture,
                 None => {
                     let error = format!(
                         "{} is unavailable; no WGC session was initialized",
-                        self.config.frame_source().window_capture_label()
+                        self.config.effective_frame_source().window_capture_label()
                     );
                     record_live_desktop_copy_error(&self.diagnostics, &error);
                     return Err(error);
@@ -4736,7 +4736,7 @@ fn collect_wallpaper_engine_mouse_relay_targets(
 }
 
 #[cfg(target_os = "windows")]
-fn live_desktop_frame_source_label(
+fn live_desktop_effective_frame_source_label(
     window_capture: Option<&LiveDesktopWindowCapture>,
 ) -> &'static str {
     if let Some(capture) = window_capture {
@@ -4747,7 +4747,7 @@ fn live_desktop_frame_source_label(
 }
 
 #[cfg(target_os = "windows")]
-fn live_desktop_frame_source_detail<'a>(
+fn live_desktop_effective_frame_source_detail<'a>(
     window_capture: Option<&'a LiveDesktopWindowCapture>,
     fallback: &'a str,
 ) -> &'a str {
@@ -5427,8 +5427,8 @@ unsafe fn create_live_desktop_renderer_resources(
             startup_cancel,
             "initializing live desktop frame source",
         )?;
-        let frame_source = config.frame_source();
-        let window_capture = if frame_source.uses_window_capture() {
+        let effective_frame_source = config.effective_frame_source();
+        let window_capture = if effective_frame_source.uses_window_capture() {
             match unsafe {
                 create_live_desktop_window_capture(
                     &d3d.device,
@@ -5441,10 +5441,10 @@ unsafe fn create_live_desktop_renderer_resources(
                 Ok(capture) => Some(capture),
                 Err(error) => {
                     return Err(LiveDesktopRendererProbe::root_visual_unavailable(
-                        frame_source.window_capture_unavailable_reason(),
+                        effective_frame_source.window_capture_unavailable_reason(),
                         format!(
                             "{} unavailable on adapter {adapter_index} ({adapter_name}): {error}",
-                            frame_source.window_capture_label()
+                            effective_frame_source.window_capture_label()
                         ),
                     ));
                 }
@@ -5685,12 +5685,12 @@ unsafe fn create_live_desktop_renderer_resources(
             }
         };
 
-        let frame_source_detail = if frame_source.uses_window_capture() {
-            "frameSource=wgc".to_string()
-        } else if frame_source == LiveDesktopFrameSource::TestPattern {
-            "frameSource=testPattern".to_string()
+        let effective_frame_source_detail = if effective_frame_source.uses_window_capture() {
+            "effectiveFrameSource=wgc".to_string()
+        } else if effective_frame_source == LiveDesktopFrameSource::TestPattern {
+            "effectiveFrameSource=testPattern".to_string()
         } else {
-            "frameSource=unknown".to_string()
+            "effectiveFrameSource=unknown".to_string()
         };
 
         return Ok(LiveDesktopRendererStartup {
@@ -5698,7 +5698,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 supports_native_effects,
                 format!(
                     "{} frame pump initialized with {initial_frame_detail} and DirectComposition target/root swap chain source {}x{} -> target {}x{} scale {:.3} offset {:.1},{:.1} on adapter {adapter_index} ({adapter_name}), output {} ({}), monitor matched: {}; native effects available: {}; {}; {}; {}; {}; {}",
-                    live_desktop_frame_source_label(window_capture.as_ref()),
+                    live_desktop_effective_frame_source_label(window_capture.as_ref()),
                     source_width,
                     source_height,
                     display_width,
@@ -5711,12 +5711,12 @@ unsafe fn create_live_desktop_renderer_resources(
                     !target_monitor.is_invalid(),
                     supports_native_effects,
                     host_window.detail(),
-                    live_desktop_frame_source_detail(
+                    live_desktop_effective_frame_source_detail(
                         window_capture.as_ref(),
                         last_detail.as_str()
                     ),
                     native_effects.detail,
-                    frame_source_detail,
+                    effective_frame_source_detail,
                     shader_pipeline_detail
                 ),
             ),
@@ -7724,15 +7724,15 @@ mod tests {
     }
 
     #[test]
-    fn live_desktop_frame_source_defaults_to_wallpaper_engine_popup() {
+    fn live_desktop_effective_frame_source_defaults_to_wallpaper_engine_popup() {
         let config = LiveDesktopRuntimeConfig::default();
 
         assert_eq!(config.debug_frame_source_override, None);
         assert_eq!(
-            config.frame_source(),
+            config.effective_frame_source(),
             LiveDesktopFrameSource::WallpaperEnginePopupCapture
         );
-        assert!(config.frame_source().uses_window_capture());
+        assert!(config.effective_frame_source().uses_window_capture());
     }
 
     #[test]
@@ -7748,8 +7748,11 @@ mod tests {
             config.debug_frame_source_override,
             Some(LiveDesktopDebugFrameSourceOverride::TestPattern)
         );
-        assert_eq!(config.frame_source(), LiveDesktopFrameSource::TestPattern);
-        assert!(!config.frame_source().uses_window_capture());
+        assert_eq!(
+            config.effective_frame_source(),
+            LiveDesktopFrameSource::TestPattern
+        );
+        assert!(!config.effective_frame_source().uses_window_capture());
     }
 
     #[test]
