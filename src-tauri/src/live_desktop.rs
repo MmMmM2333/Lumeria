@@ -2336,21 +2336,34 @@ impl LiveDesktopRuntime {
         &mut self,
         cleanup_timeout: std::time::Duration,
     ) -> LiveDesktopRuntimeStatus {
-        #[cfg(not(target_os = "windows"))]
-        let _ = cleanup_timeout;
         self.reap_abandoned_renderer_workers();
         if self.status.is_stopped() {
             return self.status();
         }
-        let generation = self.status.generation + 1;
-        if let Some(mut session) = self.renderer_session.take() {
-            #[cfg(target_os = "windows")]
-            if let Some(worker) = session.stop_and_maybe_abandon(cleanup_timeout) {
-                self.register_abandoned_renderer_worker(generation, worker);
-            }
-        }
+        let generation = self.next_generation();
+        self.stop_renderer_session_for_generation(generation, cleanup_timeout);
         self.status = LiveDesktopRuntimeStatus::stopped(generation);
         self.status()
+    }
+
+    fn next_generation(&self) -> u64 {
+        self.status.generation + 1
+    }
+
+    fn stop_renderer_session_for_generation(
+        &mut self,
+        generation: u64,
+        cleanup_timeout: std::time::Duration,
+    ) {
+        #[cfg(not(target_os = "windows"))]
+        let _ = cleanup_timeout;
+        let Some(mut session) = self.renderer_session.take() else {
+            return;
+        };
+        #[cfg(target_os = "windows")]
+        if let Some(worker) = session.stop_and_maybe_abandon(cleanup_timeout) {
+            self.register_abandoned_renderer_worker(generation, worker);
+        }
     }
 
     #[cfg(test)]
@@ -2378,7 +2391,7 @@ impl LiveDesktopRuntime {
         }
         self.renderer_session = None;
 
-        let generation = self.status.generation + 1;
+        let generation = self.next_generation();
         self.status = LiveDesktopRuntimeStatus::starting(generation);
 
         if !prerequisite_probe.supports_d3d11 {
@@ -8554,6 +8567,63 @@ mod tests {
             reaped_status = runtime.status();
         }
 
+        assert_eq!(reaped_status.diagnostics.abandoned_renderer_workers, 0);
+        assert_eq!(
+            reaped_status.diagnostics.reaped_abandoned_renderer_workers,
+            1
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn runtime_reaps_abandoned_worker_without_changing_current_generation() {
+        let (stop_sender, _stop_receiver) = mpsc::channel();
+        let (exit_sender, exit_receiver) = mpsc::channel();
+        let (release_sender, release_receiver) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            let _exit_sender = exit_sender;
+            let _ = release_receiver.recv();
+        });
+        let mut runtime = LiveDesktopRuntime::default();
+        let status =
+            runtime.start_with_renderer_session(prerequisite_probe(true, "available"), || {
+                Ok(LiveDesktopRendererSession {
+                    renderer_probe: LiveDesktopRendererProbe::available(),
+                    diagnostics: Arc::new(Mutex::new(LiveDesktopRuntimeDiagnostics::default())),
+                    stop_sender: Some(stop_sender),
+                    command_sender: None,
+                    exit_receiver: Some(exit_receiver),
+                    worker: Some(worker),
+                })
+            });
+        assert_eq!(status.phase, "running");
+        assert_eq!(status.generation, 1);
+
+        let stopped = runtime.stop_with_timeout(Duration::from_millis(10));
+        assert_eq!(stopped.phase, "stopped");
+        assert_eq!(stopped.generation, 2);
+        assert_eq!(stopped.diagnostics.abandoned_renderer_workers, 1);
+
+        let restarted = runtime.start_with_probes(
+            prerequisite_probe(true, "available"),
+            LiveDesktopRendererProbe::available(),
+        );
+        assert_eq!(restarted.phase, "running");
+        assert_eq!(restarted.generation, 3);
+        assert_eq!(restarted.diagnostics.abandoned_renderer_workers, 1);
+
+        let _ = release_sender.send(());
+        let mut reaped_status = runtime.status();
+        for _ in 0..20 {
+            if reaped_status.diagnostics.reaped_abandoned_renderer_workers == 1 {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+            reaped_status = runtime.status();
+        }
+
+        assert_eq!(reaped_status.phase, "running");
+        assert_eq!(reaped_status.generation, 3);
         assert_eq!(reaped_status.diagnostics.abandoned_renderer_workers, 0);
         assert_eq!(
             reaped_status.diagnostics.reaped_abandoned_renderer_workers,
