@@ -383,10 +383,6 @@ const DEFAULT_LIVE_DESKTOP_STATUS = Object.freeze({
     lastFrameHeight: 0,
     lastFrameFormat: 0,
     testPatternFrames: 0,
-    dwmSurfaceUpdates: 0,
-    dwmSurfaceUpdateErrors: 0,
-    lastDwmSurfaceUpdateRectWidth: 0,
-    lastDwmSurfaceUpdateRectHeight: 0,
     pixelProbeSamples: 0,
     pixelProbeErrors: 0,
     blankFrameSkips: 0,
@@ -532,7 +528,6 @@ const liveDesktopDiagnosticsRows = computed(() => {
       value: `${formatCount(diagnostics.abandonedRendererWorkers)} active / ${formatCount(diagnostics.reapedAbandonedRendererWorkers)} reaped`,
       wide: true,
     },
-    { label: "dwmUpdate", value: formatDwmUpdate(diagnostics), wide: true },
     { label: "pixelProbe", value: formatPixelProbe(diagnostics), wide: true },
     { label: "lastFrame", value: formatLastFrame(diagnostics), wide: true },
     ...(diagnostics.lastAbandonedRendererReason
@@ -546,7 +541,7 @@ const liveDesktopCandidateWindows = computed(() => liveDesktopWindowDiagnostics.
 const liveDesktopWindowRows = computed(() => {
   const diagnostics = liveDesktopWindowDiagnostics.value;
   return [
-    { label: "workerw", value: diagnostics.available ? "available" : diagnostics.reason || "-", wide: true },
+    { label: "windowDiag", value: diagnostics.available ? "available" : diagnostics.reason || "-", wide: true },
     { label: "windows", value: formatCount(diagnostics.windowCount) },
     { label: "candidates", value: formatCount(diagnostics.candidateCount) },
   ];
@@ -586,10 +581,6 @@ function normalizeLiveDesktopStatus(status) {
       lastFrameHeight: normalizeCount(diagnostics.lastFrameHeight),
       lastFrameFormat: normalizeCount(diagnostics.lastFrameFormat),
       testPatternFrames: normalizeCount(diagnostics.testPatternFrames),
-      dwmSurfaceUpdates: normalizeCount(diagnostics.dwmSurfaceUpdates),
-      dwmSurfaceUpdateErrors: normalizeCount(diagnostics.dwmSurfaceUpdateErrors),
-      lastDwmSurfaceUpdateRectWidth: normalizeCount(diagnostics.lastDwmSurfaceUpdateRectWidth),
-      lastDwmSurfaceUpdateRectHeight: normalizeCount(diagnostics.lastDwmSurfaceUpdateRectHeight),
       pixelProbeSamples: normalizeCount(diagnostics.pixelProbeSamples),
       pixelProbeErrors: normalizeCount(diagnostics.pixelProbeErrors),
       blankFrameSkips: normalizeCount(diagnostics.blankFrameSkips),
@@ -670,14 +661,6 @@ function formatCount(value) {
 function formatLastFrame(diagnostics) {
   if (!diagnostics.lastFrameWidth || !diagnostics.lastFrameHeight) return "-";
   return `${diagnostics.lastFrameWidth}x${diagnostics.lastFrameHeight} fmt ${diagnostics.lastFrameFormat}`;
-}
-
-function formatDwmUpdate(diagnostics) {
-  if (!diagnostics.dwmSurfaceUpdates && !diagnostics.dwmSurfaceUpdateErrors) return "-";
-  const rect = diagnostics.lastDwmSurfaceUpdateRectWidth || diagnostics.lastDwmSurfaceUpdateRectHeight
-    ? ` rect ${diagnostics.lastDwmSurfaceUpdateRectWidth}x${diagnostics.lastDwmSurfaceUpdateRectHeight}`
-    : "";
-  return `${diagnostics.dwmSurfaceUpdates} ok / ${diagnostics.dwmSurfaceUpdateErrors} err${rect}`;
 }
 
 function formatPixelProbe(diagnostics) {

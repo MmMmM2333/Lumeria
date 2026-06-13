@@ -18,17 +18,14 @@ use std::{
 
 #[cfg(target_os = "windows")]
 use windows::{
-    core::{factory, s, w, IInspectable, Interface, BOOL, HRESULT, PCSTR, PWSTR},
+    core::{factory, s, w, IInspectable, Interface, BOOL, PCSTR, PWSTR},
     Foundation::TypedEventHandler,
     Graphics::{
         Capture::{Direct3D11CaptureFramePool, GraphicsCaptureItem, GraphicsCaptureSession},
         DirectX::{Direct3D11::IDirect3DDevice, DirectXPixelFormat},
     },
     Win32::{
-        Foundation::{
-            CloseHandle, HANDLE, HINSTANCE, HMODULE, HWND, LPARAM, LRESULT, LUID, POINT, RECT,
-            WPARAM,
-        },
+        Foundation::{CloseHandle, HINSTANCE, HMODULE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::{
             Direct2D::Common::D2D1_BORDER_MODE_HARD,
             Direct3D::{
@@ -74,7 +71,7 @@ use windows::{
         },
         System::{
             Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED},
-            LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryA},
+            LibraryLoader::GetModuleHandleW,
             Threading::{
                 GetCurrentThreadId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
                 PROCESS_QUERY_LIMITED_INFORMATION,
@@ -292,9 +289,7 @@ struct LiveDesktopRendererResources {
     _com: ComApartment,
     _d3d_device: ID3D11Device,
     _d3d_context: ID3D11DeviceContext,
-    _capture_duplication: Option<IDXGIOutputDuplication>,
     _window_capture: Option<LiveDesktopWindowCapture>,
-    _dwm_shared_surface_capture: Option<LiveDesktopDwmSharedSurfaceCapture>,
     _composition_device: LiveDesktopCompositionDevice,
     _blur_effect: Option<IDCompositionGaussianBlurEffect>,
     _color_matrix_effect: Option<IDCompositionColorMatrixEffect>,
@@ -446,20 +441,7 @@ struct LiveDesktopWallpaperEngineConfigRead {
 }
 
 #[cfg(target_os = "windows")]
-struct LiveDesktopDwmSharedSurfaceCapture {
-    hwnd: HWND,
-    width: u32,
-    height: u32,
-    format: i32,
-    update_id: u64,
-    target_monitor: HMONITOR,
-    detail: String,
-    source_texture: ID3D11Texture2D,
-    _api: LiveDesktopDwmApi,
-}
-
-#[cfg(target_os = "windows")]
-struct LiveDesktopDwmPixelProbe {
+struct LiveDesktopPixelProbe {
     width: u32,
     height: u32,
     min_rgb: u32,
@@ -469,52 +451,6 @@ struct LiveDesktopDwmPixelProbe {
     max_alpha: u32,
     avg_alpha: u32,
 }
-
-#[cfg(target_os = "windows")]
-struct LiveDesktopDwmSharedSurfaceCandidate {
-    source_texture: ID3D11Texture2D,
-    width: u32,
-    height: u32,
-    format: i32,
-    update_id: u64,
-    detail: String,
-}
-
-#[cfg(target_os = "windows")]
-#[derive(Clone, Copy)]
-struct LiveDesktopDwmApi {
-    dx_get_window_shared_surface: Option<DwmDxGetWindowSharedSurfaceFn>,
-    dx_get_window_shared_surface_name: &'static str,
-    dx_update_window_shared_surface: Option<DwmDxUpdateWindowSharedSurfaceFn>,
-    dx_update_window_shared_surface_name: &'static str,
-    get_dx_shared_surface: Option<DwmGetDxSharedSurfaceFn>,
-    get_dx_shared_surface_name: &'static str,
-}
-
-#[cfg(target_os = "windows")]
-type DwmDxGetWindowSharedSurfaceFn = unsafe extern "system" fn(
-    HWND,
-    LUID,
-    HMONITOR,
-    u32,
-    *mut i32,
-    *mut HANDLE,
-    *mut u64,
-) -> HRESULT;
-
-#[cfg(target_os = "windows")]
-type DwmDxUpdateWindowSharedSurfaceFn =
-    unsafe extern "system" fn(HWND, u64, i32, HMONITOR, *mut RECT) -> HRESULT;
-
-#[cfg(target_os = "windows")]
-type DwmGetDxSharedSurfaceFn = unsafe extern "system" fn(
-    HWND,
-    *mut HANDLE,
-    *mut LUID,
-    *mut u32,
-    *mut u32,
-    *mut u64,
-) -> HRESULT;
 
 #[cfg(target_os = "windows")]
 struct LiveDesktopWindowHandleCollector {
@@ -546,7 +482,6 @@ struct LiveDesktopCaptureStartup {
     output_height: u32,
     output_rect: LiveDesktopWindowRect,
     output_name: String,
-    duplication: Option<IDXGIOutputDuplication>,
 }
 
 #[cfg(target_os = "windows")]
@@ -2532,10 +2467,6 @@ pub(crate) struct LiveDesktopRuntimeDiagnostics {
     last_frame_height: u32,
     last_frame_format: i32,
     test_pattern_frames: u64,
-    dwm_surface_updates: u64,
-    dwm_surface_update_errors: u64,
-    last_dwm_surface_update_rect_width: u32,
-    last_dwm_surface_update_rect_height: u32,
     pixel_probe_samples: u64,
     pixel_probe_errors: u64,
     blank_frame_skips: u64,
@@ -2685,12 +2616,14 @@ struct LiveDesktopAcrylicEffectPlan {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum LiveDesktopDiagnosticMode {
-    #[serde(alias = "capture")]
-    WorkerWCapture,
     #[default]
+    #[serde(
+        alias = "capture",
+        alias = "workerWCapture",
+        alias = "dwmSharedSurfaceCapture",
+        alias = "monitorCapture"
+    )]
     WallpaperEnginePopupCapture,
-    DwmSharedSurfaceCapture,
-    MonitorCapture,
     TestPattern,
 }
 
@@ -2713,32 +2646,15 @@ fn default_live_desktop_opacity() -> u32 {
 
 impl LiveDesktopDiagnosticMode {
     fn uses_window_capture(&self) -> bool {
-        matches!(
-            self,
-            Self::WorkerWCapture | Self::WallpaperEnginePopupCapture
-        )
-    }
-
-    fn uses_dwm_shared_surface_capture(&self) -> bool {
-        matches!(self, Self::DwmSharedSurfaceCapture)
-    }
-
-    fn uses_desktop_duplication_frame_source(&self) -> bool {
-        matches!(self, Self::MonitorCapture)
+        matches!(self, Self::WallpaperEnginePopupCapture)
     }
 
     fn window_capture_label(&self) -> &'static str {
-        match self {
-            Self::WallpaperEnginePopupCapture => "Wallpaper Engine popup WGC",
-            _ => "WorkerW WGC",
-        }
+        "Wallpaper Engine popup WGC"
     }
 
     fn window_capture_unavailable_reason(&self) -> &'static str {
-        match self {
-            Self::WallpaperEnginePopupCapture => "wallpaperEnginePopupCaptureUnavailable",
-            _ => "workerWCaptureUnavailable",
-        }
+        "wallpaperEnginePopupCaptureUnavailable"
     }
 }
 
@@ -3461,50 +3377,6 @@ impl LiveDesktopRendererResources {
             return Ok(true);
         }
 
-        if self
-            .config
-            .diagnostic_mode
-            .uses_dwm_shared_surface_capture()
-        {
-            let dwm_capture = match self._dwm_shared_surface_capture.as_ref() {
-                Some(dwm_capture) => dwm_capture,
-                None => {
-                    let error =
-                        "DWM shared surface capture is unavailable; no DWM surface was initialized"
-                            .to_string();
-                    record_live_desktop_copy_error(&self.diagnostics, &error);
-                    return Err(error);
-                }
-            };
-            let copy_started = Instant::now();
-            let frame_probe = match unsafe {
-                copy_dwm_shared_surface_frame_to_composition_surface(
-                    dwm_capture,
-                    &self._swap_chain,
-                    &self._d3d_device,
-                    &self._d3d_context,
-                    &self.config,
-                    &self.diagnostics,
-                    self._shader_pipeline.as_ref(),
-                )
-            } {
-                Ok(frame_probe) => frame_probe,
-                Err(error) => {
-                    record_live_desktop_copy_error(&self.diagnostics, &error);
-                    return Err(error);
-                }
-            };
-            record_live_desktop_frame_copy_duration(&self.diagnostics, copy_started.elapsed());
-            let commit_started = Instant::now();
-            if let Err(detail) = unsafe { self.present_and_commit_composition() } {
-                record_live_desktop_commit_error(&self.diagnostics, &detail);
-                return Err(detail);
-            }
-            record_live_desktop_frame_commit_duration(&self.diagnostics, commit_started.elapsed());
-            record_live_desktop_frame_copied(&self.diagnostics, &frame_probe);
-            return Ok(true);
-        }
-
         if self.config.diagnostic_mode.uses_window_capture() {
             let window_capture = match self._window_capture.as_ref() {
                 Some(window_capture) => window_capture,
@@ -3557,47 +3429,7 @@ impl LiveDesktopRendererResources {
             return Ok(true);
         }
 
-        let duplication = match self._capture_duplication.as_ref() {
-            Some(duplication) => duplication,
-            None => {
-                let error =
-                    "Desktop Duplication frame source is unavailable; no duplication was initialized"
-                        .to_string();
-                record_live_desktop_copy_error(&self.diagnostics, &error);
-                return Err(error);
-            }
-        };
-        let copy_started = Instant::now();
-        let copied_frame = match unsafe {
-            copy_duplication_frame_to_composition_surface(
-                duplication,
-                &self._swap_chain,
-                &self._d3d_context,
-                0,
-                &self.config,
-                self._shader_pipeline.as_ref(),
-            )
-        } {
-            Ok(copied_frame) => copied_frame,
-            Err(error) => {
-                record_live_desktop_copy_error(&self.diagnostics, &error);
-                return Err(error);
-            }
-        };
-        if copied_frame.is_none() {
-            record_live_desktop_frame_timeout(&self.diagnostics);
-            return Ok(false);
-        }
-        record_live_desktop_frame_copy_duration(&self.diagnostics, copy_started.elapsed());
-        let frame_probe = copied_frame.expect("checked copied frame");
-        let commit_started = Instant::now();
-        if let Err(detail) = unsafe { self.present_and_commit_composition() } {
-            record_live_desktop_commit_error(&self.diagnostics, &detail);
-            return Err(detail);
-        }
-        record_live_desktop_frame_commit_duration(&self.diagnostics, commit_started.elapsed());
-        record_live_desktop_frame_copied(&self.diagnostics, &frame_probe);
-        Ok(true)
+        Ok(false)
     }
 }
 
@@ -3769,8 +3601,6 @@ impl LiveDesktopRuntimeDiagnostics {
             format!("configUpdates={}", self.config_updates),
             format!("configErrors={}", self.config_errors),
             format!("testPatternFrames={}", self.test_pattern_frames),
-            format!("dwmSurfaceUpdates={}", self.dwm_surface_updates),
-            format!("dwmSurfaceUpdateErrors={}", self.dwm_surface_update_errors),
             format!("pixelProbeSamples={}", self.pixel_probe_samples),
             format!("pixelProbeErrors={}", self.pixel_probe_errors),
             format!("blankFrameSkips={}", self.blank_frame_skips),
@@ -3797,14 +3627,6 @@ impl LiveDesktopRuntimeDiagnostics {
                 self.frame_commit_micros_total / self.frame_commit_samples,
                 self.last_frame_commit_micros,
                 self.max_frame_commit_micros
-            ));
-        }
-        if self.last_dwm_surface_update_rect_width > 0
-            || self.last_dwm_surface_update_rect_height > 0
-        {
-            parts.push(format!(
-                "lastDwmUpdateRect={}x{}",
-                self.last_dwm_surface_update_rect_width, self.last_dwm_surface_update_rect_height
             ));
         }
         if self.pixel_probe_samples > 0 {
@@ -3882,7 +3704,7 @@ fn live_desktop_window_diagnostics() -> LiveDesktopWindowDiagnostics {
         LiveDesktopWindowDiagnostics::unavailable(
             current_platform(),
             "unsupportedPlatform",
-            "WorkerW window diagnostics are only available on Windows".to_string(),
+            "Live desktop window diagnostics are only available on Windows".to_string(),
         )
     }
 }
@@ -4268,34 +4090,6 @@ fn live_desktop_candidate_reason_order(reason: &str) -> u8 {
         "workerwLayer" => 2,
         _ => 3,
     }
-}
-
-fn collect_live_desktop_wgc_targets(
-    diagnostics: &LiveDesktopWindowDiagnostics,
-) -> Vec<LiveDesktopWindowInfo> {
-    let mut targets = Vec::new();
-    let mut seen = std::collections::HashSet::<String>::new();
-    for info in diagnostics.candidates.iter() {
-        push_live_desktop_wgc_target(&mut targets, &mut seen, info);
-    }
-    for info in diagnostics.candidates.iter() {
-        if info.parent_hwnd.is_empty() {
-            continue;
-        }
-        if let Some(parent) = diagnostics
-            .windows
-            .iter()
-            .find(|candidate| candidate.hwnd == info.parent_hwnd)
-        {
-            push_live_desktop_wgc_target(&mut targets, &mut seen, parent);
-        }
-    }
-    for info in diagnostics.windows.iter() {
-        if info.role == "workerw" || info.role == "progman" {
-            push_live_desktop_wgc_target(&mut targets, &mut seen, info);
-        }
-    }
-    targets
 }
 
 fn collect_wallpaper_engine_popup_wgc_targets(
@@ -5055,35 +4849,6 @@ fn format_wallpaper_engine_popup_runtime_detail(
         .join(" ")
 }
 
-#[cfg(target_os = "windows")]
-fn collect_live_desktop_dwm_shared_surface_targets(
-    diagnostics: &LiveDesktopWindowDiagnostics,
-) -> Vec<LiveDesktopWindowInfo> {
-    let mut targets = Vec::new();
-    let mut seen = std::collections::HashSet::<String>::new();
-    for info in diagnostics.candidates.iter() {
-        push_live_desktop_wgc_target(&mut targets, &mut seen, info);
-    }
-    for info in diagnostics.candidates.iter() {
-        if info.parent_hwnd.is_empty() {
-            continue;
-        }
-        if let Some(parent) = diagnostics
-            .windows
-            .iter()
-            .find(|candidate| candidate.hwnd == info.parent_hwnd)
-        {
-            push_live_desktop_wgc_target(&mut targets, &mut seen, parent);
-        }
-    }
-    for info in diagnostics.windows.iter() {
-        if info.role == "workerw" || info.role == "progman" {
-            push_live_desktop_wgc_target(&mut targets, &mut seen, info);
-        }
-    }
-    targets
-}
-
 fn push_live_desktop_wgc_target(
     targets: &mut Vec<LiveDesktopWindowInfo>,
     seen: &mut std::collections::HashSet<String>,
@@ -5115,50 +4880,11 @@ fn format_live_desktop_wgc_attempt(info: &LiveDesktopWindowInfo, result: String)
     )
 }
 
-#[cfg(target_os = "windows")]
-fn format_live_desktop_dwm_attempt(info: &LiveDesktopWindowInfo, result: String) -> String {
-    format!(
-        "{} role={} class={} process={} reason={} parent={} root={} visible={} style={} exStyle={} noRedirectionBitmap={} cloaked={} rect={}x{} result={}",
-        info.hwnd,
-        info.role,
-        info.class_name,
-        info.process_name,
-        info.candidate_reason,
-        info.parent_hwnd,
-        info.root_hwnd,
-        info.visible,
-        info.style,
-        info.ex_style,
-        live_desktop_window_has_no_redirection_bitmap(info),
-        info.cloaked,
-        info.rect.width,
-        info.rect.height,
-        result
-    )
-}
-
 fn is_acceptable_live_desktop_wgc_target(info: &LiveDesktopWindowInfo) -> bool {
     !matches!(
         info.role.as_str(),
         "progman" | "shellDefView" | "desktopListView"
     )
-}
-
-#[cfg(target_os = "windows")]
-fn is_acceptable_live_desktop_dwm_shared_surface_target(info: &LiveDesktopWindowInfo) -> bool {
-    !matches!(
-        info.role.as_str(),
-        "progman" | "shellDefView" | "desktopListView"
-    )
-}
-
-fn live_desktop_window_has_no_redirection_bitmap(info: &LiveDesktopWindowInfo) -> bool {
-    const WS_EX_NOREDIRECTIONBITMAP: usize = 0x0020_0000;
-    info.ex_style
-        .strip_prefix("0x")
-        .and_then(|value| usize::from_str_radix(value, 16).ok())
-        .map(|value| (value & WS_EX_NOREDIRECTIONBITMAP) != 0)
-        .unwrap_or(false)
 }
 
 #[cfg(target_os = "windows")]
@@ -5420,26 +5146,21 @@ fn collect_wallpaper_engine_mouse_relay_targets(
 #[cfg(target_os = "windows")]
 fn live_desktop_frame_source_label(
     window_capture: Option<&LiveDesktopWindowCapture>,
-    dwm_shared_surface_capture: Option<&LiveDesktopDwmSharedSurfaceCapture>,
 ) -> &'static str {
     if let Some(capture) = window_capture {
         capture.source_label
-    } else if dwm_shared_surface_capture.is_some() {
-        "DWM shared surface"
     } else {
-        "Desktop Duplication"
+        "Test Pattern"
     }
 }
 
 #[cfg(target_os = "windows")]
 fn live_desktop_frame_source_detail<'a>(
     window_capture: Option<&'a LiveDesktopWindowCapture>,
-    dwm_shared_surface_capture: Option<&'a LiveDesktopDwmSharedSurfaceCapture>,
     fallback: &'a str,
 ) -> &'a str {
     window_capture
         .map(|capture| capture.detail.as_str())
-        .or_else(|| dwm_shared_surface_capture.map(|capture| capture.detail.as_str()))
         .unwrap_or(fallback)
 }
 
@@ -5616,32 +5337,7 @@ fn record_live_desktop_frame_timeout(diagnostics: &Arc<Mutex<LiveDesktopRuntimeD
 }
 
 #[cfg(target_os = "windows")]
-fn record_live_desktop_dwm_surface_update(
-    diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
-    update_rect: &RECT,
-) {
-    update_live_desktop_diagnostics(diagnostics, |diagnostics| {
-        diagnostics.dwm_surface_updates += 1;
-        diagnostics.last_dwm_surface_update_rect_width =
-            (update_rect.right - update_rect.left).max(0) as u32;
-        diagnostics.last_dwm_surface_update_rect_height =
-            (update_rect.bottom - update_rect.top).max(0) as u32;
-    });
-}
-
-#[cfg(target_os = "windows")]
-fn record_live_desktop_dwm_surface_update_error(
-    diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
-    detail: &str,
-) {
-    update_live_desktop_diagnostics(diagnostics, |diagnostics| {
-        diagnostics.dwm_surface_update_errors += 1;
-        diagnostics.last_error = detail.to_string();
-    });
-}
-
-#[cfg(target_os = "windows")]
-fn should_probe_live_desktop_dwm_pixels(
+fn should_probe_live_desktop_pixels(
     diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
 ) -> bool {
     diagnostics
@@ -5663,7 +5359,7 @@ fn live_desktop_blank_frame_skip_count(
 #[cfg(target_os = "windows")]
 fn record_live_desktop_pixel_probe(
     diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
-    probe: &LiveDesktopDwmPixelProbe,
+    probe: &LiveDesktopPixelProbe,
 ) {
     update_live_desktop_diagnostics(diagnostics, |diagnostics| {
         diagnostics.pixel_probe_samples += 1;
@@ -5692,7 +5388,7 @@ fn record_live_desktop_pixel_probe_error(
 #[cfg(target_os = "windows")]
 fn record_live_desktop_blank_frame_skipped(
     diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
-    probe: &LiveDesktopDwmPixelProbe,
+    probe: &LiveDesktopPixelProbe,
 ) {
     update_live_desktop_diagnostics(diagnostics, |diagnostics| {
         diagnostics.blank_frame_skips += 1;
@@ -6092,25 +5788,14 @@ unsafe fn create_live_desktop_renderer_resources(
             startup_cancel,
             format!("creating desktop capture on adapter {adapter_index}"),
         )?;
-        let needs_desktop_duplication = config
-            .diagnostic_mode
-            .uses_desktop_duplication_frame_source();
         report_live_desktop_renderer_startup_progress(
             progress_sender,
-            if needs_desktop_duplication {
-                format!("Creating Desktop Duplication frame source on adapter {adapter_index} ({adapter_name})")
-            } else {
-                format!("Resolving live desktop output context on adapter {adapter_index} ({adapter_name})")
-            },
+            format!(
+                "Resolving live desktop output context on adapter {adapter_index} ({adapter_name})"
+            ),
         );
         let capture = match unsafe {
-            create_live_desktop_capture_for_adapter(
-                &adapter,
-                &d3d.device,
-                adapter_index,
-                target_monitor,
-                needs_desktop_duplication,
-            )
+            create_live_desktop_capture_for_adapter(&adapter, adapter_index, target_monitor)
         } {
             Ok(capture) => capture,
             Err(detail) => {
@@ -6160,7 +5845,6 @@ unsafe fn create_live_desktop_renderer_resources(
             match unsafe {
                 create_live_desktop_window_capture(
                     &d3d.device,
-                    &config.diagnostic_mode,
                     config.disable_mouse_relay,
                     &capture,
                     Arc::clone(&diagnostics),
@@ -6174,29 +5858,6 @@ unsafe fn create_live_desktop_renderer_resources(
                         format!(
                             "{} unavailable on adapter {adapter_index} ({adapter_name}): {error}",
                             config.diagnostic_mode.window_capture_label()
-                        ),
-                    ));
-                }
-            }
-        } else {
-            None
-        };
-        let dwm_shared_surface_capture = if config.diagnostic_mode.uses_dwm_shared_surface_capture()
-        {
-            match unsafe {
-                create_live_desktop_dwm_shared_surface_capture(
-                    &d3d.device,
-                    desc.AdapterLuid,
-                    target_monitor,
-                    progress_sender,
-                )
-            } {
-                Ok(capture) => Some(capture),
-                Err(error) => {
-                    return Err(LiveDesktopRendererProbe::root_visual_unavailable(
-                        "dwmSharedSurfaceUnavailable",
-                        format!(
-                            "DWM shared surface capture unavailable on adapter {adapter_index} ({adapter_name}): {error}"
                         ),
                     ));
                 }
@@ -6281,20 +5942,10 @@ unsafe fn create_live_desktop_renderer_resources(
         let source_width = window_capture
             .as_ref()
             .map(|capture| capture.width)
-            .or_else(|| {
-                dwm_shared_surface_capture
-                    .as_ref()
-                    .map(|capture| capture.width)
-            })
             .unwrap_or(capture.output_width);
         let source_height = window_capture
             .as_ref()
             .map(|capture| capture.height)
-            .or_else(|| {
-                dwm_shared_surface_capture
-                    .as_ref()
-                    .map(|capture| capture.height)
-            })
             .unwrap_or(capture.output_height);
         check_live_desktop_renderer_startup_cancelled(
             startup_cancel,
@@ -6355,8 +6006,6 @@ unsafe fn create_live_desktop_renderer_resources(
         let initial_frame = unsafe {
             copy_initial_live_desktop_frame_to_composition_surface(
                 window_capture.as_ref(),
-                dwm_shared_surface_capture.as_ref(),
-                capture.duplication.as_ref(),
                 &swap_chain,
                 &d3d.device,
                 &d3d.context,
@@ -6379,12 +6028,6 @@ unsafe fn create_live_desktop_renderer_resources(
             }
             Err(error) => {
                 record_live_desktop_copy_error(&diagnostics, &error);
-                if config.diagnostic_mode.uses_dwm_shared_surface_capture() {
-                    return Err(LiveDesktopRendererProbe::root_visual_unavailable(
-                        "dwmSharedSurfaceInitialFrameUnavailable",
-                        format!("DWM shared surface initial frame copy failed: {error}"),
-                    ));
-                }
                 format!("initial frame copy failed: {error}")
             }
         };
@@ -6459,12 +6102,8 @@ unsafe fn create_live_desktop_renderer_resources(
             }
         };
 
-        let desktop_duplication_detail = if capture.duplication.is_some() {
-            "desktopDuplication=created".to_string()
-        } else if config.diagnostic_mode.uses_window_capture() {
+        let desktop_duplication_detail = if config.diagnostic_mode.uses_window_capture() {
             "desktopDuplication=notCreated(wgcFrameSource)".to_string()
-        } else if config.diagnostic_mode.uses_dwm_shared_surface_capture() {
-            "desktopDuplication=notCreated(dwmSharedSurfaceFrameSource)".to_string()
         } else if config.diagnostic_mode == LiveDesktopDiagnosticMode::TestPattern {
             "desktopDuplication=notCreated(testPatternFrameSource)".to_string()
         } else {
@@ -6477,8 +6116,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 format!(
                     "{} frame pump initialized with {initial_frame_detail} and DirectComposition target/root swap chain source {}x{} -> target {}x{} scale {:.3} offset {:.1},{:.1} on adapter {adapter_index} ({adapter_name}), output {} ({}), monitor matched: {}; native effects available: {}; {}; {}; {}; {}; {}",
                     live_desktop_frame_source_label(
-                        window_capture.as_ref(),
-                        dwm_shared_surface_capture.as_ref()
+                        window_capture.as_ref()
                     ),
                     source_width,
                     source_height,
@@ -6494,7 +6132,6 @@ unsafe fn create_live_desktop_renderer_resources(
                     host_window.detail(),
                     live_desktop_frame_source_detail(
                         window_capture.as_ref(),
-                        dwm_shared_surface_capture.as_ref(),
                         last_detail.as_str()
                     ),
                     native_effects.detail,
@@ -6511,9 +6148,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 _com: com,
                 _d3d_device: d3d.device,
                 _d3d_context: d3d.context,
-                _capture_duplication: capture.duplication,
                 _window_capture: window_capture,
-                _dwm_shared_surface_capture: dwm_shared_surface_capture,
                 _composition_device: composition_device,
                 _blur_effect: blur_effect,
                 _color_matrix_effect: color_matrix_effect,
@@ -6549,10 +6184,8 @@ unsafe fn create_live_desktop_renderer_resources(
 #[cfg(target_os = "windows")]
 unsafe fn create_live_desktop_capture_for_adapter(
     adapter: &IDXGIAdapter1,
-    d3d_device: &ID3D11Device,
     adapter_index: u32,
     target_monitor: HMONITOR,
-    create_duplication: bool,
 ) -> Result<LiveDesktopCaptureStartup, String> {
     let mut output_count = 0;
     let mut last_detail = String::new();
@@ -6606,48 +6239,12 @@ unsafe fn create_live_desktop_capture_for_adapter(
             continue;
         }
 
-        if !create_duplication {
-            return Ok(LiveDesktopCaptureStartup {
-                output_index,
-                output_width,
-                output_height,
-                output_rect,
-                output_name,
-                duplication: None,
-            });
-        }
-
-        let output1 = match output.cast::<IDXGIOutput1>() {
-            Ok(output1) => output1,
-            Err(error) => {
-                last_detail =
-                    format!("IDXGIOutput1 cast({adapter_index}, {output_index}) failed: {error}");
-                continue;
-            }
-        };
-
-        let duplication = match unsafe { output1.DuplicateOutput(d3d_device) } {
-            Ok(duplication) => duplication,
-            Err(error) if error.code() == DXGI_ERROR_ACCESS_DENIED => {
-                last_detail = format!(
-                    "DuplicateOutput({adapter_index}, {output_index}) denied access: {error}"
-                );
-                continue;
-            }
-            Err(error) => {
-                last_detail =
-                    format!("DuplicateOutput({adapter_index}, {output_index}) failed: {error}");
-                continue;
-            }
-        };
-
         return Ok(LiveDesktopCaptureStartup {
             output_index,
             output_width,
             output_height,
             output_rect,
             output_name,
-            duplication: Some(duplication),
         });
     }
 
@@ -6658,7 +6255,7 @@ unsafe fn create_live_desktop_capture_for_adapter(
     }
     if last_detail.is_empty() {
         Err(format!(
-            "Desktop Duplication capture startup failed on adapter {adapter_index} without a detailed DXGI error"
+            "Live desktop output context startup failed on adapter {adapter_index} without a detailed DXGI error"
         ))
     } else {
         Err(last_detail)
@@ -6695,52 +6292,32 @@ fn register_live_desktop_wgc_frame_arrived(
 #[cfg(target_os = "windows")]
 unsafe fn create_live_desktop_window_capture(
     d3d_device: &ID3D11Device,
-    diagnostic_mode: &LiveDesktopDiagnosticMode,
     disable_mouse_relay: bool,
     capture: &LiveDesktopCaptureStartup,
     diagnostics: Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
     progress_sender: &mpsc::Sender<LiveDesktopRendererStartupMessage>,
 ) -> Result<LiveDesktopWindowCapture, String> {
-    let capture_label = diagnostic_mode.window_capture_label();
+    let capture_label =
+        LiveDesktopDiagnosticMode::WallpaperEnginePopupCapture.window_capture_label();
     report_live_desktop_renderer_startup_progress(
         progress_sender,
         format!("Probing {capture_label} windows"),
     );
-    let popup_plan = if *diagnostic_mode == LiveDesktopDiagnosticMode::WallpaperEnginePopupCapture {
-        Some(create_wallpaper_engine_popup_plan(capture))
-    } else {
-        None
-    };
-    let mut popup_ensure = if let Some(plan) = popup_plan.as_ref() {
-        report_live_desktop_renderer_startup_progress(
-            progress_sender,
-            format!(
-                "Ensuring Wallpaper Engine popup window {} at {}x{}",
-                plan.window_name, plan.width, plan.height
-            ),
-        );
-        ensure_wallpaper_engine_named_popup(plan, progress_sender)
-    } else {
-        LiveDesktopWallpaperEnginePopupEnsureResult {
-            detail: String::new(),
-            close_command: None,
-        }
-    };
+    let popup_plan = create_wallpaper_engine_popup_plan(capture);
+    report_live_desktop_renderer_startup_progress(
+        progress_sender,
+        format!(
+            "Ensuring Wallpaper Engine popup window {} at {}x{}",
+            popup_plan.window_name, popup_plan.width, popup_plan.height
+        ),
+    );
+    let mut popup_ensure = ensure_wallpaper_engine_named_popup(&popup_plan, progress_sender);
     let window_diagnostics = unsafe { probe_windows_live_desktop_windows() };
-    let targets = if *diagnostic_mode == LiveDesktopDiagnosticMode::WallpaperEnginePopupCapture {
-        collect_wallpaper_engine_popup_wgc_targets(
-            &window_diagnostics,
-            popup_plan.as_ref().map(|plan| plan.window_name.as_str()),
-        )
-    } else {
-        collect_live_desktop_wgc_targets(&window_diagnostics)
-    };
+    let targets = collect_wallpaper_engine_popup_wgc_targets(
+        &window_diagnostics,
+        Some(&popup_plan.window_name),
+    );
     if targets.is_empty() {
-        let action = if *diagnostic_mode == LiveDesktopDiagnosticMode::WallpaperEnginePopupCapture {
-            "; open a Wallpaper Engine pop-out window when using popup capture"
-        } else {
-            ""
-        };
         let close_detail = cleanup_wallpaper_engine_popup_after_failed_capture(&mut popup_ensure);
         let ensure_detail = if popup_ensure.detail.trim().is_empty() {
             String::new()
@@ -6748,7 +6325,7 @@ unsafe fn create_live_desktop_window_capture(
             format!("; {}", popup_ensure.detail)
         };
         return Err(format!(
-            "{capture_label} diagnostics found no WGC capture targets: {}{action}{}{}",
+            "{capture_label} diagnostics found no WGC capture targets: {}; open a Wallpaper Engine pop-out window when using popup capture{}{}",
             window_diagnostics.detail, ensure_detail, close_detail
         ));
     }
@@ -6777,15 +6354,11 @@ unsafe fn create_live_desktop_window_capture(
     let interop: IGraphicsCaptureItemInterop =
         factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>()
             .map_err(|error| format!("GraphicsCaptureItem interop factory failed: {error}"))?;
-    let manages_launchpad_popup = if let Some(plan) = popup_plan.as_ref() {
-        wallpaper_engine_popup_target_matches_window_name(
-            first_target,
-            &window_diagnostics,
-            &plan.window_name,
-        )
-    } else {
-        false
-    };
+    let manages_launchpad_popup = wallpaper_engine_popup_target_matches_window_name(
+        first_target,
+        &window_diagnostics,
+        &popup_plan.window_name,
+    );
     let mut popup_preparation = if manages_launchpad_popup {
         unsafe {
             prepare_wallpaper_engine_popup_for_capture(
@@ -7027,14 +6600,12 @@ unsafe fn create_live_desktop_window_capture(
                 relay_source_left,
                 relay_source_top
             )
-        } else if *diagnostic_mode == LiveDesktopDiagnosticMode::WallpaperEnginePopupCapture {
+        } else {
             if disable_mouse_relay {
                 "mouseRelay=disabled(config)".to_string()
             } else {
                 "mouseRelay=skipped(unmanagedPopup)".to_string()
             }
-        } else {
-            String::new()
         };
         let frame_crop_detail = frame_crop
             .map(|crop| {
@@ -7108,478 +6679,6 @@ unsafe fn create_live_desktop_window_capture(
 }
 
 #[cfg(target_os = "windows")]
-unsafe fn create_live_desktop_dwm_shared_surface_capture(
-    d3d_device: &ID3D11Device,
-    adapter_luid: LUID,
-    target_monitor: HMONITOR,
-    progress_sender: &mpsc::Sender<LiveDesktopRendererStartupMessage>,
-) -> Result<LiveDesktopDwmSharedSurfaceCapture, String> {
-    report_live_desktop_renderer_startup_progress(
-        progress_sender,
-        "Loading DWM private shared surface APIs",
-    );
-    let api = unsafe { load_live_desktop_dwm_api() }?;
-    let api_detail = api.detail();
-
-    report_live_desktop_renderer_startup_progress(
-        progress_sender,
-        format!("Probing WorkerW windows through DWM shared surfaces; {api_detail}"),
-    );
-    let window_diagnostics = unsafe { probe_windows_live_desktop_windows() };
-    let targets = collect_live_desktop_dwm_shared_surface_targets(&window_diagnostics);
-    if targets.is_empty() {
-        return Err(format!(
-            "WorkerW diagnostics found no DWM shared surface targets: {}; {api_detail}",
-            window_diagnostics.detail
-        ));
-    }
-
-    let target_count = targets.len();
-    let mut attempt_details = Vec::new();
-    for (target_index, target) in targets.iter().enumerate() {
-        let hwnd = match parse_live_desktop_window_handle(&target.hwnd) {
-            Some(hwnd) => hwnd,
-            None => {
-                attempt_details.push(format_live_desktop_dwm_attempt(
-                    target,
-                    "invalid HWND".to_string(),
-                ));
-                continue;
-            }
-        };
-        report_live_desktop_renderer_startup_progress(
-            progress_sender,
-            format!(
-                "Trying DWM shared surface target {}/{} {} role={} class={} process={} reason={} noRedirectionBitmap={}",
-                target_index + 1,
-                target_count,
-                target.hwnd,
-                target.role,
-                target.class_name,
-                target.process_name,
-                target.candidate_reason,
-                live_desktop_window_has_no_redirection_bitmap(target)
-            ),
-        );
-
-        let candidate = match unsafe {
-            try_create_live_desktop_dwm_shared_surface_candidate(
-                &api,
-                d3d_device,
-                adapter_luid,
-                target_monitor,
-                hwnd,
-            )
-        } {
-            Ok(candidate) => candidate,
-            Err(error) => {
-                attempt_details.push(format_live_desktop_dwm_attempt(target, error));
-                continue;
-            }
-        };
-        if !is_acceptable_live_desktop_dwm_shared_surface_target(target) {
-            attempt_details.push(format_live_desktop_dwm_attempt(
-                target,
-                format!(
-                    "DWM shared surface opened {}x{} format {} but target was rejected because it captures the desktop shell/icons; {}",
-                    candidate.width, candidate.height, candidate.format, candidate.detail
-                ),
-            ));
-            continue;
-        }
-
-        let previous_attempts = if attempt_details.is_empty() {
-            String::new()
-        } else {
-            format!(
-                "; previous DWM target attempts: {}",
-                attempt_details.join(" | ")
-            )
-        };
-
-        return Ok(LiveDesktopDwmSharedSurfaceCapture {
-            hwnd,
-            width: candidate.width,
-            height: candidate.height,
-            format: candidate.format,
-            update_id: candidate.update_id,
-            target_monitor,
-            detail: format!(
-                "DWM shared surface capture initialized for {} role={} class={} process={} reason={} parent={} root={} style={} exStyle={} noRedirectionBitmap={} cloaked={} size={}x{} format {} updateId {} after {}/{} target attempts; {}; {}{}",
-                target.hwnd,
-                target.role,
-                target.class_name,
-                target.process_name,
-                target.candidate_reason,
-                target.parent_hwnd,
-                target.root_hwnd,
-                target.style,
-                target.ex_style,
-                live_desktop_window_has_no_redirection_bitmap(target),
-                target.cloaked,
-                candidate.width,
-                candidate.height,
-                candidate.format,
-                candidate.update_id,
-                target_index + 1,
-                target_count,
-                api_detail,
-                candidate.detail,
-                previous_attempts
-            ),
-            source_texture: candidate.source_texture,
-            _api: api,
-        });
-    }
-
-    Err(format!(
-        "DWM shared surface capture failed for all {target_count} WorkerW targets; {api_detail}: {}",
-        attempt_details.join(" | ")
-    ))
-}
-
-#[cfg(target_os = "windows")]
-unsafe fn try_create_live_desktop_dwm_shared_surface_candidate(
-    api: &LiveDesktopDwmApi,
-    d3d_device: &ID3D11Device,
-    adapter_luid: LUID,
-    target_monitor: HMONITOR,
-    hwnd: HWND,
-) -> Result<LiveDesktopDwmSharedSurfaceCandidate, String> {
-    let mut attempt_details = Vec::new();
-
-    if let Some(dx_get_window_shared_surface) = api.dx_get_window_shared_surface {
-        match unsafe {
-            try_live_desktop_dwm_dx_get_window_shared_surface(
-                api.dx_get_window_shared_surface_name,
-                dx_get_window_shared_surface,
-                d3d_device,
-                adapter_luid,
-                target_monitor,
-                hwnd,
-            )
-        } {
-            Ok(candidate) => return Ok(candidate),
-            Err(error) => attempt_details.push(format!(
-                "{}: {error}",
-                api.dx_get_window_shared_surface_name
-            )),
-        }
-    } else {
-        attempt_details.push("window shared surface export missing".to_string());
-    }
-
-    if let Some(get_dx_shared_surface) = api.get_dx_shared_surface {
-        match unsafe {
-            try_live_desktop_dwm_get_dx_shared_surface(
-                api.get_dx_shared_surface_name,
-                get_dx_shared_surface,
-                d3d_device,
-                adapter_luid,
-                hwnd,
-            )
-        } {
-            Ok(candidate) => return Ok(candidate),
-            Err(error) => {
-                attempt_details.push(format!("{}: {error}", api.get_dx_shared_surface_name))
-            }
-        }
-    } else {
-        attempt_details.push("legacy get shared surface export missing".to_string());
-    }
-
-    Err(attempt_details.join("; "))
-}
-
-#[cfg(target_os = "windows")]
-unsafe fn try_live_desktop_dwm_dx_get_window_shared_surface(
-    api_name: &str,
-    dx_get_window_shared_surface: DwmDxGetWindowSharedSurfaceFn,
-    d3d_device: &ID3D11Device,
-    adapter_luid: LUID,
-    target_monitor: HMONITOR,
-    hwnd: HWND,
-) -> Result<LiveDesktopDwmSharedSurfaceCandidate, String> {
-    let mut format = 0i32;
-    let mut shared_handle = HANDLE::default();
-    let mut update_id = 0u64;
-    let result = unsafe {
-        dx_get_window_shared_surface(
-            hwnd,
-            adapter_luid,
-            target_monitor,
-            0,
-            &mut format,
-            &mut shared_handle,
-            &mut update_id,
-        )
-    };
-    if result.is_err() {
-        return Err(format_live_desktop_hresult(result));
-    }
-    unsafe {
-        open_live_desktop_dwm_shared_surface_texture(
-            d3d_device,
-            shared_handle,
-            adapter_luid,
-            None,
-            format,
-            update_id,
-            format!(
-                "{api_name} adapterLuid={} monitor={} reportedFormat={format}",
-                format_live_desktop_luid(&adapter_luid),
-                format_live_desktop_monitor_handle(target_monitor)
-            ),
-        )
-    }
-}
-
-#[cfg(target_os = "windows")]
-unsafe fn try_live_desktop_dwm_get_dx_shared_surface(
-    api_name: &str,
-    get_dx_shared_surface: DwmGetDxSharedSurfaceFn,
-    d3d_device: &ID3D11Device,
-    adapter_luid: LUID,
-    hwnd: HWND,
-) -> Result<LiveDesktopDwmSharedSurfaceCandidate, String> {
-    let mut shared_handle = HANDLE::default();
-    let mut returned_adapter_luid = LUID::default();
-    let mut format = 0u32;
-    let mut present_flags = 0u32;
-    let mut update_id = 0u64;
-    let result = unsafe {
-        get_dx_shared_surface(
-            hwnd,
-            &mut shared_handle,
-            &mut returned_adapter_luid,
-            &mut format,
-            &mut present_flags,
-            &mut update_id,
-        )
-    };
-    if result.is_err() {
-        return Err(format_live_desktop_hresult(result));
-    }
-    unsafe {
-        open_live_desktop_dwm_shared_surface_texture(
-            d3d_device,
-            shared_handle,
-            adapter_luid,
-            Some(returned_adapter_luid),
-            format as i32,
-            update_id,
-            format!(
-                "{api_name} expectedAdapterLuid={} returnedAdapterLuid={} reportedFormat={} presentFlags=0x{:X}",
-                format_live_desktop_luid(&adapter_luid),
-                format_live_desktop_luid(&returned_adapter_luid),
-                format,
-                present_flags
-            ),
-        )
-    }
-}
-
-#[cfg(target_os = "windows")]
-unsafe fn open_live_desktop_dwm_shared_surface_texture(
-    d3d_device: &ID3D11Device,
-    shared_handle: HANDLE,
-    expected_adapter_luid: LUID,
-    returned_adapter_luid: Option<LUID>,
-    reported_format: i32,
-    update_id: u64,
-    detail: String,
-) -> Result<LiveDesktopDwmSharedSurfaceCandidate, String> {
-    if live_desktop_handle_is_invalid(shared_handle) {
-        return Err(format!("{detail}; returned an invalid shared handle"));
-    }
-    if let Some(returned_adapter_luid) = returned_adapter_luid {
-        if !live_desktop_luid_equal(&expected_adapter_luid, &returned_adapter_luid) {
-            unsafe {
-                let _ = CloseHandle(shared_handle);
-            }
-            return Err(format!(
-                "{detail}; adapter LUID mismatch prevents OpenSharedResource on the current D3D device"
-            ));
-        }
-    }
-
-    let mut source_texture: Option<ID3D11Texture2D> = None;
-    let texture_result =
-        unsafe { d3d_device.OpenSharedResource(shared_handle, &mut source_texture) };
-    unsafe {
-        let _ = CloseHandle(shared_handle);
-    }
-    texture_result
-        .map_err(|error| format!("{detail}; ID3D11Device::OpenSharedResource failed: {error}"))?;
-    let source_texture = source_texture
-        .ok_or_else(|| format!("{detail}; ID3D11Device::OpenSharedResource returned no texture"))?;
-    let mut desc = D3D11_TEXTURE2D_DESC::default();
-    unsafe { source_texture.GetDesc(&mut desc) };
-    if desc.Width == 0 || desc.Height == 0 {
-        return Err(format!(
-            "{detail}; OpenSharedResource returned an invalid {}x{} texture",
-            desc.Width, desc.Height
-        ));
-    }
-    if desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM {
-        return Err(format!(
-            "{detail}; unsupported shared texture format {} for composition swap chain format {}",
-            desc.Format.0, DXGI_FORMAT_B8G8R8A8_UNORM.0
-        ));
-    }
-
-    Ok(LiveDesktopDwmSharedSurfaceCandidate {
-        source_texture,
-        width: desc.Width,
-        height: desc.Height,
-        format: desc.Format.0,
-        update_id,
-        detail: format!(
-            "{detail}; opened shared texture {}x{} format {} reportedFormat {}",
-            desc.Width, desc.Height, desc.Format.0, reported_format
-        ),
-    })
-}
-
-#[cfg(target_os = "windows")]
-unsafe fn load_live_desktop_dwm_api() -> Result<LiveDesktopDwmApi, String> {
-    let module = unsafe { LoadLibraryA(s!("dwmapi.dll")) }
-        .map_err(|error| format!("LoadLibraryA(dwmapi.dll) failed: {error}"))?;
-    let (dx_get_window_shared_surface, dx_get_window_shared_surface_name) = unsafe {
-        load_live_desktop_dwm_proc_alias::<DwmDxGetWindowSharedSurfaceFn>(
-            module,
-            &[
-                (
-                    "DwmpDxGetWindowSharedSurface",
-                    s!("DwmpDxGetWindowSharedSurface"),
-                ),
-                (
-                    "DwmDxGetWindowSharedSurface",
-                    s!("DwmDxGetWindowSharedSurface"),
-                ),
-            ],
-        )
-    };
-    let (dx_update_window_shared_surface, dx_update_window_shared_surface_name) = unsafe {
-        load_live_desktop_dwm_proc_alias::<DwmDxUpdateWindowSharedSurfaceFn>(
-            module,
-            &[
-                (
-                    "DwmpDxUpdateWindowSharedSurface",
-                    s!("DwmpDxUpdateWindowSharedSurface"),
-                ),
-                (
-                    "DwmDxUpdateWindowSharedSurface",
-                    s!("DwmDxUpdateWindowSharedSurface"),
-                ),
-            ],
-        )
-    };
-    let (get_dx_shared_surface, get_dx_shared_surface_name) = unsafe {
-        load_live_desktop_dwm_proc_alias::<DwmGetDxSharedSurfaceFn>(
-            module,
-            &[("DwmGetDxSharedSurface", s!("DwmGetDxSharedSurface"))],
-        )
-    };
-    let api = LiveDesktopDwmApi {
-        dx_get_window_shared_surface,
-        dx_get_window_shared_surface_name,
-        dx_update_window_shared_surface,
-        dx_update_window_shared_surface_name,
-        get_dx_shared_surface,
-        get_dx_shared_surface_name,
-    };
-    if api.dx_get_window_shared_surface.is_none() && api.get_dx_shared_surface.is_none() {
-        return Err(format!(
-            "DWM shared surface exports unavailable; {}",
-            api.detail()
-        ));
-    }
-    if api.dx_update_window_shared_surface.is_none() {
-        return Err(format!(
-            "DWM update shared surface export unavailable; {}",
-            api.detail()
-        ));
-    }
-    Ok(api)
-}
-
-#[cfg(target_os = "windows")]
-unsafe fn load_live_desktop_dwm_proc_alias<T: Copy>(
-    module: HMODULE,
-    aliases: &[(&'static str, PCSTR)],
-) -> (Option<T>, &'static str) {
-    for (label, name) in aliases.iter() {
-        if let Some(proc) = unsafe { load_live_desktop_dwm_proc(module, *name) } {
-            return (Some(proc), *label);
-        }
-    }
-    (None, "missing")
-}
-
-#[cfg(target_os = "windows")]
-unsafe fn load_live_desktop_dwm_proc<T: Copy>(module: HMODULE, name: PCSTR) -> Option<T> {
-    let proc = unsafe { GetProcAddress(module, name) }?;
-    Some(unsafe { std::mem::transmute_copy(&proc) })
-}
-
-#[cfg(target_os = "windows")]
-impl LiveDesktopDwmApi {
-    fn detail(&self) -> String {
-        format!(
-            "DWM exports: windowSharedSurface={}, updateWindowSharedSurface={}, legacyGetDxSharedSurface={}",
-            if self.dx_get_window_shared_surface.is_some() {
-                self.dx_get_window_shared_surface_name
-            } else {
-                "missing"
-            },
-            if self.dx_update_window_shared_surface.is_some() {
-                self.dx_update_window_shared_surface_name
-            } else {
-                "missing"
-            },
-            if self.get_dx_shared_surface.is_some() {
-                self.get_dx_shared_surface_name
-            } else {
-                "missing"
-            }
-        )
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn live_desktop_handle_is_invalid(handle: HANDLE) -> bool {
-    handle.0.is_null() || handle.0 as isize == -1
-}
-
-#[cfg(target_os = "windows")]
-fn live_desktop_luid_equal(left: &LUID, right: &LUID) -> bool {
-    left.LowPart == right.LowPart && left.HighPart == right.HighPart
-}
-
-#[cfg(target_os = "windows")]
-fn format_live_desktop_luid(luid: &LUID) -> String {
-    format!("{:08X}:{:08X}", luid.HighPart as u32, luid.LowPart)
-}
-
-#[cfg(target_os = "windows")]
-fn format_live_desktop_monitor_handle(monitor: HMONITOR) -> String {
-    if monitor.0.is_null() {
-        return String::new();
-    }
-    format!("0x{:X}", monitor.0 as usize)
-}
-
-#[cfg(target_os = "windows")]
-fn format_live_desktop_hresult(result: HRESULT) -> String {
-    let code = result.0 as u32;
-    match result.ok() {
-        Ok(()) => format!("S_OK (0x{code:08X})"),
-        Err(error) => format!("{error} (0x{code:08X})"),
-    }
-}
-
-#[cfg(target_os = "windows")]
 fn parse_live_desktop_window_handle(value: &str) -> Option<HWND> {
     let handle = value
         .strip_prefix("0x")
@@ -7593,127 +6692,36 @@ fn parse_live_desktop_window_handle(value: &str) -> Option<HWND> {
 #[cfg(target_os = "windows")]
 unsafe fn copy_initial_live_desktop_frame_to_composition_surface(
     window_capture: Option<&LiveDesktopWindowCapture>,
-    dwm_shared_surface_capture: Option<&LiveDesktopDwmSharedSurfaceCapture>,
-    duplication: Option<&IDXGIOutputDuplication>,
     swap_chain: &LiveDesktopCompositionSwapChain,
     device: &ID3D11Device,
     context: &ID3D11DeviceContext,
     config: &LiveDesktopRuntimeConfig,
     diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
 ) -> Result<Option<LiveDesktopFrameProbe>, String> {
-    if config.diagnostic_mode.uses_dwm_shared_surface_capture() {
-        if let Some(dwm_shared_surface_capture) = dwm_shared_surface_capture {
-            return unsafe {
-                copy_dwm_shared_surface_frame_to_composition_surface(
-                    dwm_shared_surface_capture,
-                    swap_chain,
-                    device,
-                    context,
-                    config,
-                    diagnostics,
-                    None,
-                )
-            }
-            .map(Some);
-        }
-    }
-
-    if config.diagnostic_mode.uses_window_capture() {
-        if let Some(window_capture) = window_capture {
-            let deadline = std::time::Instant::now()
-                + Duration::from_millis(LIVE_DESKTOP_INITIAL_FRAME_WAIT_MS as u64);
-            while std::time::Instant::now() < deadline {
-                unsafe { relay_wallpaper_engine_popup_mouse(window_capture) };
-                match unsafe {
-                    copy_window_capture_frame_to_composition_surface(
-                        window_capture,
-                        swap_chain,
-                        device,
-                        context,
-                        config,
-                        diagnostics,
-                        None,
-                    )
-                } {
-                    Ok(Some(frame)) => return Ok(Some(frame)),
-                    Ok(None) => thread::sleep(Duration::from_millis(8)),
-                    Err(error) => return Err(error),
-                }
-            }
-            return Ok(None);
-        }
-    }
-
-    if let Some(duplication) = duplication {
-        return unsafe {
-            copy_duplication_frame_to_composition_surface(
-                duplication,
+    let Some(window_capture) = window_capture else {
+        return Ok(None);
+    };
+    let deadline = std::time::Instant::now()
+        + Duration::from_millis(LIVE_DESKTOP_INITIAL_FRAME_WAIT_MS as u64);
+    while std::time::Instant::now() < deadline {
+        unsafe { relay_wallpaper_engine_popup_mouse(window_capture) };
+        match unsafe {
+            copy_window_capture_frame_to_composition_surface(
+                window_capture,
                 swap_chain,
+                device,
                 context,
-                LIVE_DESKTOP_INITIAL_FRAME_WAIT_MS,
                 config,
+                diagnostics,
                 None,
             )
-        };
+        } {
+            Ok(Some(frame)) => return Ok(Some(frame)),
+            Ok(None) => thread::sleep(Duration::from_millis(8)),
+            Err(error) => return Err(error),
+        }
     }
-
     Ok(None)
-}
-
-#[cfg(target_os = "windows")]
-unsafe fn update_live_desktop_dwm_shared_surface(
-    dwm_capture: &LiveDesktopDwmSharedSurfaceCapture,
-) -> Result<RECT, String> {
-    let update = dwm_capture
-        ._api
-        .dx_update_window_shared_surface
-        .ok_or_else(|| "DWM update shared surface export is missing".to_string())?;
-    let mut update_rect = RECT {
-        left: 0,
-        top: 0,
-        right: dwm_capture.width as i32,
-        bottom: dwm_capture.height as i32,
-    };
-    let result = unsafe {
-        update(
-            dwm_capture.hwnd,
-            dwm_capture.update_id,
-            dwm_capture.format,
-            dwm_capture.target_monitor,
-            &mut update_rect,
-        )
-    };
-    if result.is_err() {
-        return Err(format!(
-            "{} failed for {} updateId {} format {} monitor {} rect {}x{}: {}",
-            dwm_capture._api.dx_update_window_shared_surface_name,
-            format_live_desktop_window_handle(dwm_capture.hwnd),
-            dwm_capture.update_id,
-            dwm_capture.format,
-            format_live_desktop_monitor_handle(dwm_capture.target_monitor),
-            dwm_capture.width,
-            dwm_capture.height,
-            format_live_desktop_hresult(result)
-        ));
-    }
-    Ok(update_rect)
-}
-
-#[cfg(target_os = "windows")]
-unsafe fn probe_live_desktop_dwm_surface_pixels(
-    dwm_capture: &LiveDesktopDwmSharedSurfaceCapture,
-    device: &ID3D11Device,
-    context: &ID3D11DeviceContext,
-) -> Result<LiveDesktopDwmPixelProbe, String> {
-    unsafe {
-        probe_live_desktop_texture_pixels(
-            &dwm_capture.source_texture,
-            device,
-            context,
-            None,
-            "DWM pixel probe",
-        )
-    }
 }
 
 #[cfg(target_os = "windows")]
@@ -7723,7 +6731,7 @@ unsafe fn probe_live_desktop_texture_pixels(
     context: &ID3D11DeviceContext,
     preferred_crop: Option<LiveDesktopFrameCrop>,
     label: &str,
-) -> Result<LiveDesktopDwmPixelProbe, String> {
+) -> Result<LiveDesktopPixelProbe, String> {
     let mut source_desc = D3D11_TEXTURE2D_DESC::default();
     unsafe { source_texture.GetDesc(&mut source_desc) };
     if source_desc.Width == 0 || source_desc.Height == 0 {
@@ -7803,7 +6811,7 @@ unsafe fn probe_live_desktop_texture_pixels(
     let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
     unsafe { context.Map(&staging_resource, 0, D3D11_MAP_READ, 0, Some(&mut mapped)) }
         .map_err(|error| format!("{label} Map failed: {error}"))?;
-    let probe_result = (|| -> Result<LiveDesktopDwmPixelProbe, String> {
+    let probe_result = (|| -> Result<LiveDesktopPixelProbe, String> {
         if mapped.pData.is_null() {
             return Err(format!("{label} Map returned null data"));
         }
@@ -7845,7 +6853,7 @@ unsafe fn probe_live_desktop_texture_pixels(
         if sample_count == 0 {
             return Err(format!("{label} sampled no pixels"));
         }
-        Ok(LiveDesktopDwmPixelProbe {
+        Ok(LiveDesktopPixelProbe {
             width: probe_width,
             height: probe_height,
             min_rgb,
@@ -7865,104 +6873,8 @@ unsafe fn probe_live_desktop_texture_pixels(
 }
 
 #[cfg(target_os = "windows")]
-fn is_live_desktop_suspected_blank_frame(probe: &LiveDesktopDwmPixelProbe) -> bool {
+fn is_live_desktop_suspected_blank_frame(probe: &LiveDesktopPixelProbe) -> bool {
     probe.max_alpha <= 8 || (probe.max_rgb <= 4 && probe.avg_rgb <= 2)
-}
-
-#[cfg(target_os = "windows")]
-unsafe fn copy_dwm_shared_surface_frame_to_composition_surface(
-    dwm_capture: &LiveDesktopDwmSharedSurfaceCapture,
-    swap_chain: &LiveDesktopCompositionSwapChain,
-    device: &ID3D11Device,
-    context: &ID3D11DeviceContext,
-    config: &LiveDesktopRuntimeConfig,
-    diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
-    shader_pipeline: Option<&LiveDesktopShaderPipeline>,
-) -> Result<LiveDesktopFrameProbe, String> {
-    let mut source_desc = D3D11_TEXTURE2D_DESC::default();
-    unsafe { dwm_capture.source_texture.GetDesc(&mut source_desc) };
-    let update_rect =
-        unsafe { update_live_desktop_dwm_shared_surface(dwm_capture) }.map_err(|error| {
-            record_live_desktop_dwm_surface_update_error(diagnostics, &error);
-            error
-        })?;
-    record_live_desktop_dwm_surface_update(diagnostics, &update_rect);
-
-    if should_probe_live_desktop_dwm_pixels(diagnostics) {
-        match unsafe { probe_live_desktop_dwm_surface_pixels(dwm_capture, device, context) } {
-            Ok(probe) => record_live_desktop_pixel_probe(diagnostics, &probe),
-            Err(error) => record_live_desktop_pixel_probe_error(diagnostics, &error),
-        }
-    }
-
-    let target_texture = unsafe { swap_chain.back_buffer("DWM") }?;
-    let mut target_desc = D3D11_TEXTURE2D_DESC::default();
-    unsafe { target_texture.GetDesc(&mut target_desc) };
-    if source_desc.Width != target_desc.Width || source_desc.Height != target_desc.Height {
-        return Err(format!(
-            "DWM source size {}x{} does not match composition swap chain {}x{}",
-            source_desc.Width, source_desc.Height, target_desc.Width, target_desc.Height
-        ));
-    }
-    let source_resource = dwm_capture
-        .source_texture
-        .cast::<ID3D11Resource>()
-        .map_err(|error| format!("DWM source texture resource cast failed: {error}"))?;
-    let target_resource = target_texture
-        .cast::<ID3D11Resource>()
-        .map_err(|error| format!("DWM target texture resource cast failed: {error}"))?;
-    let shader_copy_error = if let Some(shader_pipeline) = shader_pipeline {
-        let copy_crop = LiveDesktopFrameCrop {
-            left: 0,
-            top: 0,
-            width: source_desc.Width,
-            height: source_desc.Height,
-        };
-        let copy_result = (|| -> Result<(), String> {
-            unsafe {
-                shader_pipeline.render_source_region_to_texture(
-                    context,
-                    &source_resource,
-                    source_desc.Width,
-                    source_desc.Height,
-                    copy_crop,
-                    &target_texture,
-                    config,
-                    "DWM",
-                )?;
-            }
-            Ok(())
-        })();
-        copy_result.err()
-    } else {
-        None
-    };
-    let used_shader_pipeline = shader_pipeline.is_some() && shader_copy_error.is_none();
-    if !used_shader_pipeline {
-        unsafe { context.CopyResource(&target_resource, &source_resource) };
-    }
-
-    Ok(LiveDesktopFrameProbe {
-        supports_frame_texture: true,
-        width: source_desc.Width,
-        height: source_desc.Height,
-        format: source_desc.Format.0,
-        reason: "available",
-        detail: format!(
-            "Copied GPU DWM shared surface from {} into composition swap chain: {}x{} format {} captureFormat {} updateId {} shaderCopy {}{}",
-            format_live_desktop_window_handle(dwm_capture.hwnd),
-            source_desc.Width,
-            source_desc.Height,
-            source_desc.Format.0,
-            dwm_capture.format,
-            dwm_capture.update_id,
-            used_shader_pipeline,
-            shader_copy_error
-                .as_ref()
-                .map(|error| format!(" shaderCopyFallback={error}"))
-                .unwrap_or_default()
-        ),
-    })
 }
 
 #[cfg(target_os = "windows")]
@@ -7995,7 +6907,7 @@ unsafe fn copy_window_capture_frame_to_composition_surface(
         let mut source_desc = D3D11_TEXTURE2D_DESC::default();
         unsafe { source_texture.GetDesc(&mut source_desc) };
         let should_probe_frame =
-            config.skip_blank_frames || should_probe_live_desktop_dwm_pixels(diagnostics);
+            config.skip_blank_frames || should_probe_live_desktop_pixels(diagnostics);
         if should_probe_frame {
             match unsafe {
                 probe_live_desktop_texture_pixels(
@@ -8142,104 +7054,6 @@ unsafe fn copy_window_capture_frame_to_composition_surface(
 
     match (copy_result, close_result) {
         (Ok(frame_probe), Ok(())) => Ok(frame_probe),
-        (Err(error), _) => Err(error),
-        (Ok(_), Err(error)) => Err(error),
-    }
-}
-
-#[cfg(target_os = "windows")]
-unsafe fn copy_duplication_frame_to_composition_surface(
-    duplication: &IDXGIOutputDuplication,
-    swap_chain: &LiveDesktopCompositionSwapChain,
-    context: &ID3D11DeviceContext,
-    wait_ms: u32,
-    config: &LiveDesktopRuntimeConfig,
-    shader_pipeline: Option<&LiveDesktopShaderPipeline>,
-) -> Result<Option<LiveDesktopFrameProbe>, String> {
-    let mut frame_info = DXGI_OUTDUPL_FRAME_INFO::default();
-    let mut resource: Option<IDXGIResource> = None;
-    match unsafe { duplication.AcquireNextFrame(wait_ms, &mut frame_info, &mut resource) } {
-        Ok(()) => {}
-        Err(error) if error.code() == DXGI_ERROR_WAIT_TIMEOUT => return Ok(None),
-        Err(error) => {
-            return Err(format!(
-                "AcquireNextFrame failed during desktop frame copy: {error}"
-            ));
-        }
-    }
-
-    let copy_result = (|| -> Result<LiveDesktopFrameProbe, String> {
-        let resource = resource
-            .ok_or_else(|| "AcquireNextFrame succeeded without a desktop resource".to_string())?;
-        let source_texture = resource.cast::<ID3D11Texture2D>().map_err(|error| {
-            format!("Desktop frame resource is not an ID3D11Texture2D: {error}")
-        })?;
-        let mut desc = D3D11_TEXTURE2D_DESC::default();
-        unsafe { source_texture.GetDesc(&mut desc) };
-
-        let target_texture = unsafe { swap_chain.back_buffer("Desktop duplication") }?;
-        let source_resource = source_texture
-            .cast::<ID3D11Resource>()
-            .map_err(|error| format!("Source texture resource cast failed: {error}"))?;
-        let target_resource = target_texture
-            .cast::<ID3D11Resource>()
-            .map_err(|error| format!("Target texture resource cast failed: {error}"))?;
-        let shader_copy_error = if let Some(shader_pipeline) = shader_pipeline {
-            let copy_crop = LiveDesktopFrameCrop {
-                left: 0,
-                top: 0,
-                width: desc.Width,
-                height: desc.Height,
-            };
-            let copy_result = (|| -> Result<(), String> {
-                unsafe {
-                    shader_pipeline.render_source_region_to_texture(
-                        context,
-                        &source_resource,
-                        desc.Width,
-                        desc.Height,
-                        copy_crop,
-                        &target_texture,
-                        config,
-                        "Desktop duplication",
-                    )?;
-                }
-                Ok(())
-            })();
-            copy_result.err()
-        } else {
-            None
-        };
-        let used_shader_pipeline = shader_pipeline.is_some() && shader_copy_error.is_none();
-        if !used_shader_pipeline {
-            unsafe { context.CopyResource(&target_resource, &source_resource) };
-        }
-
-        Ok(LiveDesktopFrameProbe {
-            supports_frame_texture: true,
-            width: desc.Width,
-            height: desc.Height,
-            format: desc.Format.0,
-            reason: "available",
-            detail: format!(
-                "Copied GPU desktop frame texture {}x{} format {} into composition swap chain shaderCopy {}{}",
-                desc.Width,
-                desc.Height,
-                desc.Format.0,
-                used_shader_pipeline,
-                shader_copy_error
-                    .as_ref()
-                    .map(|error| format!(" shaderCopyFallback={error}"))
-                    .unwrap_or_default()
-            ),
-        })
-    })();
-
-    let release_result = unsafe { duplication.ReleaseFrame() }
-        .map_err(|error| format!("ReleaseFrame failed after desktop frame copy: {error}"));
-
-    match (copy_result, release_result) {
-        (Ok(frame_probe), Ok(())) => Ok(Some(frame_probe)),
         (Err(error), _) => Err(error),
         (Ok(_), Err(error)) => Err(error),
     }
@@ -9465,20 +8279,20 @@ mod tests {
             LiveDesktopDiagnosticMode::WallpaperEnginePopupCapture
         );
         assert!(config.diagnostic_mode.uses_window_capture());
-        assert!(!config
-            .diagnostic_mode
-            .uses_desktop_duplication_frame_source());
     }
 
     #[test]
-    fn only_monitor_capture_uses_desktop_duplication_frame_source() {
-        assert!(LiveDesktopDiagnosticMode::MonitorCapture.uses_desktop_duplication_frame_source());
-        assert!(!LiveDesktopDiagnosticMode::WallpaperEnginePopupCapture
-            .uses_desktop_duplication_frame_source());
-        assert!(!LiveDesktopDiagnosticMode::WorkerWCapture.uses_desktop_duplication_frame_source());
-        assert!(!LiveDesktopDiagnosticMode::DwmSharedSurfaceCapture
-            .uses_desktop_duplication_frame_source());
-        assert!(!LiveDesktopDiagnosticMode::TestPattern.uses_desktop_duplication_frame_source());
+    fn live_desktop_diagnostic_mode_migrates_legacy_sources_to_wallpaper_engine_popup() {
+        for value in [
+            "capture",
+            "workerWCapture",
+            "dwmSharedSurfaceCapture",
+            "monitorCapture",
+        ] {
+            let mode: LiveDesktopDiagnosticMode =
+                serde_json::from_value(serde_json::json!(value)).unwrap();
+            assert_eq!(mode, LiveDesktopDiagnosticMode::WallpaperEnginePopupCapture);
+        }
     }
 
     #[test]
@@ -9776,39 +8590,6 @@ mod tests {
     }
 
     #[test]
-    fn workerw_wgc_targets_try_child_then_parent_then_roots() {
-        fn info(hwnd: &str, parent_hwnd: &str, role: &str, reason: &str) -> LiveDesktopWindowInfo {
-            LiveDesktopWindowInfo {
-                hwnd: hwnd.to_string(),
-                parent_hwnd: parent_hwnd.to_string(),
-                root_hwnd: parent_hwnd.to_string(),
-                role: role.to_string(),
-                candidate_reason: reason.to_string(),
-                visible: true,
-                ..LiveDesktopWindowInfo::default()
-            }
-        }
-
-        let wallpaper = info("0x300", "0x200", "desktopChild", "wallpaperProcessOrTitle");
-        let workerw = info("0x200", "", "workerw", "workerwLayer");
-        let progman = info("0x100", "", "progman", "");
-        let diagnostics = LiveDesktopWindowDiagnostics {
-            platform: "windows",
-            available: true,
-            reason: "available",
-            detail: String::new(),
-            window_count: 3,
-            candidate_count: 2,
-            windows: vec![progman, workerw.clone(), wallpaper.clone()],
-            candidates: vec![wallpaper, workerw],
-        };
-
-        let targets = collect_live_desktop_wgc_targets(&diagnostics);
-        let hwnds: Vec<&str> = targets.iter().map(|info| info.hwnd.as_str()).collect();
-        assert_eq!(hwnds, vec!["0x300", "0x200", "0x100"]);
-    }
-
-    #[test]
     fn wallpaper_engine_popup_wgc_targets_prefer_popup_content_window() {
         fn info(
             hwnd: &str,
@@ -10016,7 +8797,7 @@ mod tests {
     }
 
     #[test]
-    fn workerw_wgc_targets_reject_desktop_shell_roles() {
+    fn wgc_targets_reject_desktop_shell_roles() {
         let mut desktop_child = LiveDesktopWindowInfo {
             role: "desktopChild".to_string(),
             ..LiveDesktopWindowInfo::default()
@@ -10034,61 +8815,6 @@ mod tests {
 
         desktop_child.role = "desktopListView".to_string();
         assert!(!is_acceptable_live_desktop_wgc_target(&desktop_child));
-    }
-
-    #[test]
-    fn dwm_shared_surface_targets_try_wallpaper_parent_then_roots() {
-        fn info(hwnd: &str, parent_hwnd: &str, role: &str, reason: &str) -> LiveDesktopWindowInfo {
-            LiveDesktopWindowInfo {
-                hwnd: hwnd.to_string(),
-                parent_hwnd: parent_hwnd.to_string(),
-                root_hwnd: parent_hwnd.to_string(),
-                role: role.to_string(),
-                candidate_reason: reason.to_string(),
-                visible: true,
-                ..LiveDesktopWindowInfo::default()
-            }
-        }
-
-        let wallpaper = info("0x300", "0x200", "desktopChild", "wallpaperProcessOrTitle");
-        let workerw = info("0x200", "", "workerw", "workerwLayer");
-        let progman = info("0x100", "", "progman", "");
-        let diagnostics = LiveDesktopWindowDiagnostics {
-            platform: "windows",
-            available: true,
-            reason: "available",
-            detail: String::new(),
-            window_count: 3,
-            candidate_count: 2,
-            windows: vec![progman, workerw.clone(), wallpaper.clone()],
-            candidates: vec![wallpaper, workerw],
-        };
-
-        let targets = collect_live_desktop_dwm_shared_surface_targets(&diagnostics);
-        let hwnds: Vec<&str> = targets.iter().map(|info| info.hwnd.as_str()).collect();
-        assert_eq!(hwnds, vec!["0x300", "0x200", "0x100"]);
-    }
-
-    #[test]
-    fn dwm_shared_surface_rejects_shell_targets_and_marks_no_redirection() {
-        let wallpaper = LiveDesktopWindowInfo {
-            role: "desktopChild".to_string(),
-            ex_style: "0x8280000".to_string(),
-            ..LiveDesktopWindowInfo::default()
-        };
-        assert!(is_acceptable_live_desktop_dwm_shared_surface_target(
-            &wallpaper
-        ));
-        assert!(live_desktop_window_has_no_redirection_bitmap(&wallpaper));
-
-        let progman = LiveDesktopWindowInfo {
-            role: "progman".to_string(),
-            ..LiveDesktopWindowInfo::default()
-        };
-        assert!(!is_acceptable_live_desktop_dwm_shared_surface_target(
-            &progman
-        ));
-        assert!(!live_desktop_window_has_no_redirection_bitmap(&progman));
     }
 
     #[test]
