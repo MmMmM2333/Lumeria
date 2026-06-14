@@ -83,6 +83,7 @@ const LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY = "launchpadLiveDeskt
 const LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY = "launchpadLiveDesktopDisableMouseRelay";
 const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "launchpadLiveDesktopSkipBlankFrames";
 const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "launchpadLiveDesktopForceDwmFlush";
+const IS_LIVE_DESKTOP_DEBUG_RUNTIME_CONFIG_ENABLED = Boolean(import.meta.env?.DEV);
 const DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS = Object.freeze({
   phase: "stopped",
   active: false,
@@ -244,7 +245,7 @@ function normalizeLiveDesktopWindowDiagnostics(diagnostics) {
 }
 
 function resolveLiveDesktopDebugFrameSourceOverride() {
-  if (typeof window === "undefined") return null;
+  if (!IS_LIVE_DESKTOP_DEBUG_RUNTIME_CONFIG_ENABLED || typeof window === "undefined") return null;
   try {
     const frameSourceOverride = window.localStorage?.getItem(LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY);
     return frameSourceOverride === "testPattern" ? "testPattern" : null;
@@ -254,7 +255,7 @@ function resolveLiveDesktopDebugFrameSourceOverride() {
 }
 
 function resolveLiveDesktopDisableMouseRelay() {
-  if (typeof window === "undefined") return true;
+  if (!IS_LIVE_DESKTOP_DEBUG_RUNTIME_CONFIG_ENABLED || typeof window === "undefined") return true;
   try {
     return window.localStorage?.getItem(LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY) !== "false";
   } catch {
@@ -263,7 +264,7 @@ function resolveLiveDesktopDisableMouseRelay() {
 }
 
 function resolveLiveDesktopSkipBlankFrames() {
-  if (typeof window === "undefined") return false;
+  if (!IS_LIVE_DESKTOP_DEBUG_RUNTIME_CONFIG_ENABLED || typeof window === "undefined") return false;
   try {
     return window.localStorage?.getItem(LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY) === "true";
   } catch {
@@ -272,7 +273,7 @@ function resolveLiveDesktopSkipBlankFrames() {
 }
 
 function resolveLiveDesktopForceDwmFlush() {
-  if (typeof window === "undefined") return false;
+  if (!IS_LIVE_DESKTOP_DEBUG_RUNTIME_CONFIG_ENABLED || typeof window === "undefined") return false;
   try {
     return window.localStorage?.getItem(LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY) === "true";
   } catch {

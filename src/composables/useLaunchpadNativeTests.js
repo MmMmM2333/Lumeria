@@ -781,10 +781,10 @@ export async function runLaunchpadNativeTests() {
     await native.configureNativeLiveDesktopBackground();
     assert(liveDesktopRuntimeCommands.join(",") === "configure_live_desktop_background", "runtime configure should send only the native config command");
     assert(!("frameSource" in liveDesktopRuntimeConfigs.at(-1)), "runtime config should not include the regular frame source field");
-    assert(liveDesktopRuntimeConfigs.at(-1).debugFrameSourceOverride === "testPattern", "runtime config should include the debug test pattern override");
-    assert(liveDesktopRuntimeConfigs.at(-1).disableMouseRelay === true, "runtime config should include the disabled mouse relay diagnostic setting");
-    assert(liveDesktopRuntimeConfigs.at(-1).skipBlankFrames === true, "runtime config should include the blank frame skip diagnostic setting");
-    assert(liveDesktopRuntimeConfigs.at(-1).forceDwmFlush === true, "runtime config should include the DWM flush diagnostic setting");
+    assert(liveDesktopRuntimeConfigs.at(-1).debugFrameSourceOverride === null, "runtime config should ignore debug test pattern storage outside DEV");
+    assert(liveDesktopRuntimeConfigs.at(-1).disableMouseRelay === true, "runtime config should keep mouse relay disabled outside DEV");
+    assert(liveDesktopRuntimeConfigs.at(-1).skipBlankFrames === false, "runtime config should ignore blank frame skip storage outside DEV");
+    assert(liveDesktopRuntimeConfigs.at(-1).forceDwmFlush === false, "runtime config should ignore DWM flush storage outside DEV");
 
     globalThis.window.localStorage = {
       getItem: (key) => {
@@ -793,7 +793,7 @@ export async function runLaunchpadNativeTests() {
       },
     };
     await native.configureNativeLiveDesktopBackground();
-    assert(liveDesktopRuntimeConfigs.at(-1).disableMouseRelay === false, "runtime config should allow mouse relay to be enabled explicitly");
+    assert(liveDesktopRuntimeConfigs.at(-1).disableMouseRelay === true, "runtime config should ignore mouse relay storage outside DEV");
   });
 
   const liveDesktopSyncCommands = [];
