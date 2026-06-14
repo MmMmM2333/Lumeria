@@ -1,4 +1,5 @@
 import { createLaunchpadLayoutHelpers, makePageSize } from "../domain/launchpadLayout.js";
+import { setLiveDesktopExperimentEnabledForTests } from "../domain/experimentalFeatures.js";
 import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
@@ -16,9 +17,11 @@ import {
   DEFAULT_BACKGROUND_DARKEN_STRENGTH,
   BACKGROUND_SOURCE_CUSTOM_IMAGE,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
   BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
   DEFAULT_BACKGROUND_BASE_COLOR,
   DEFAULT_BACKGROUND_BASE_OPACITY,
+  DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT,
   FOLDER_ICON_SIZE_MODE_CUSTOM,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
@@ -32,6 +35,7 @@ import {
   clampBackgroundBlurStrength,
   clampBackgroundDarkenStrength,
   clampBackgroundImageOpacity,
+  clampBackgroundLiveDesktopOpacity,
   clampLaunchpadIconSize,
   normalizeBackgroundBaseColor,
   normalizeBackgroundDarkenColor,
@@ -40,6 +44,7 @@ import {
   normalizeBackgroundImageLayout,
   normalizeBackgroundImagePath,
   normalizeBackgroundEffect,
+  normalizeLiveDesktopBackgroundSupport,
   normalizeWindowEffectAppearance,
   normalizeWindowEffectMaterial,
   normalizeFolderIconSizeMode,
@@ -85,6 +90,7 @@ function createSettingsConfig(overrides = {}) {
     draftBackgroundSource: refValue(overrides.draftBackgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
     draftBackgroundEffect: refValue(overrides.draftBackgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     draftBackgroundImageOpacity: refValue(overrides.draftBackgroundImageOpacity ?? 46),
+    draftBackgroundLiveDesktopOpacity: refValue(overrides.draftBackgroundLiveDesktopOpacity ?? 100),
     draftBackgroundImageLayout: refValue(overrides.draftBackgroundImageLayout ?? BACKGROUND_IMAGE_LAYOUT_FILL),
     draftBackgroundBlurStrength: refValue(overrides.draftBackgroundBlurStrength ?? DEFAULT_BACKGROUND_BLUR_STRENGTH),
     draftBackgroundDarkenColor: refValue(overrides.draftBackgroundDarkenColor ?? DEFAULT_BACKGROUND_DARKEN_COLOR),
@@ -102,6 +108,7 @@ function createSettingsConfig(overrides = {}) {
     backgroundSource: refValue(overrides.backgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
     backgroundEffect: refValue(overrides.backgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     backgroundImageOpacity: refValue(overrides.backgroundImageOpacity ?? 46),
+    backgroundLiveDesktopOpacity: refValue(overrides.backgroundLiveDesktopOpacity ?? 100),
     backgroundImageLayout: refValue(overrides.backgroundImageLayout ?? BACKGROUND_IMAGE_LAYOUT_FILL),
     backgroundBlurStrength: refValue(overrides.backgroundBlurStrength ?? DEFAULT_BACKGROUND_BLUR_STRENGTH),
     backgroundDarkenColor: refValue(overrides.backgroundDarkenColor ?? DEFAULT_BACKGROUND_DARKEN_COLOR),
@@ -120,6 +127,11 @@ function createSettingsConfig(overrides = {}) {
       supportsMica: true,
       supportsMicaAlt: true,
     }),
+    liveDesktopBackgroundSupport: refValue(overrides.liveDesktopBackgroundSupport ?? {
+      ...DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT,
+      platform: "windows",
+      reason: "nativeRendererUnavailable",
+    }),
     pages: refValue(overrides.pages ?? [makeItems(6)]),
     pageIndex: refValue(overrides.pageIndex ?? 2),
     searchPageIndex: refValue(overrides.searchPageIndex ?? 1),
@@ -134,6 +146,7 @@ function createSettingsConfig(overrides = {}) {
     commitPages: [],
     commitSearchPageIndex: [],
     schedulePageGridMetrics: 0,
+    syncLiveDesktopBackgroundRuntime: 0,
   };
   const pageSize = {
     get value() {
@@ -153,6 +166,9 @@ function createSettingsConfig(overrides = {}) {
     applyNativeWindowEffects: () => {
       calls.applyNativeWindowEffects += 1;
     },
+    syncLiveDesktopBackgroundRuntime: () => {
+      calls.syncLiveDesktopBackgroundRuntime += 1;
+    },
     clonePages: helpers.clonePages,
     closeSettingsPanel: () => {
       calls.closeSettingsPanel += 1;
@@ -166,6 +182,7 @@ function createSettingsConfig(overrides = {}) {
     commitSearchPageIndex: (value) => calls.commitSearchPageIndex.push(value),
     compactPages: helpers.compactPages,
     draftBackgroundImageOpacity: state.draftBackgroundImageOpacity,
+    draftBackgroundLiveDesktopOpacity: state.draftBackgroundLiveDesktopOpacity,
     draftBackgroundImageLayout: state.draftBackgroundImageLayout,
     draftBackgroundBlurStrength: state.draftBackgroundBlurStrength,
     draftBackgroundDarkenColor: state.draftBackgroundDarkenColor,
@@ -204,6 +221,7 @@ function createSettingsConfig(overrides = {}) {
     backgroundBaseColor: state.backgroundBaseColor,
     backgroundBaseOpacity: state.backgroundBaseOpacity,
     backgroundImageOpacity: state.backgroundImageOpacity,
+    backgroundLiveDesktopOpacity: state.backgroundLiveDesktopOpacity,
     backgroundImageLayout: state.backgroundImageLayout,
     backgroundBlurStrength: state.backgroundBlurStrength,
     backgroundDarkenColor: state.backgroundDarkenColor,
@@ -227,6 +245,7 @@ function createSettingsConfig(overrides = {}) {
     windowEffectAppearance: state.windowEffectAppearance,
     windowEffectMaterial: state.windowEffectMaterial,
     windowEffectsSupport: state.windowEffectsSupport,
+    liveDesktopBackgroundSupport: state.liveDesktopBackgroundSupport,
   });
 
   return { calls, config, state };
@@ -236,6 +255,7 @@ export function runLaunchpadSettingsConfigTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Launchpad settings config test failed] ${message}`);
   };
+  setLiveDesktopExperimentEnabledForTests(true);
 
   assert(clampLaunchpadIconSize(8) === 32, "icon size clamp should enforce the minimum");
   assert(clampLaunchpadIconSize(160) === 128, "icon size clamp should enforce the maximum");
@@ -244,6 +264,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(normalizeFolderIconSizeMode("unknown") === FOLDER_ICON_SIZE_MODE_GLOBAL, "unknown folder icon modes should fall back to global");
   assert(normalizeBackgroundSource(BACKGROUND_SOURCE_CUSTOM_IMAGE) === BACKGROUND_SOURCE_CUSTOM_IMAGE, "custom image background source should be preserved");
   assert(normalizeBackgroundSource(BACKGROUND_SOURCE_WINDOWS_WALLPAPER) === BACKGROUND_SOURCE_WINDOWS_WALLPAPER, "windows wallpaper background source should be preserved");
+  assert(normalizeBackgroundSource(BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP) === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP, "windows live desktop background source should be preserved");
   assert(normalizeBackgroundSource("unknown") === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "unknown background sources should fall back to system material");
   assert(normalizeBackgroundEffect(BACKGROUND_EFFECT_BLUR) === BACKGROUND_EFFECT_BLUR, "blur background effect should be preserved");
   assert(normalizeBackgroundEffect(BACKGROUND_EFFECT_ACRYLIC_WEBGL) === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "webgl acrylic background effect should be preserved");
@@ -252,6 +273,8 @@ export function runLaunchpadSettingsConfigTests() {
   assert(backgroundEffectUsesPixi(BACKGROUND_EFFECT_BLUR), "blur should use the pixi background renderer");
   assert(backgroundEffectUsesPixi(BACKGROUND_EFFECT_ACRYLIC_WEBGL), "webgl acrylic should use the pixi background renderer");
   assert(!backgroundEffectUsesPixi(BACKGROUND_EFFECT_DIMMED), "dimmed should not use the pixi background renderer");
+  assert(!normalizeLiveDesktopBackgroundSupport(null).supportsLiveDesktopBackground, "missing live desktop support should normalize to unsupported");
+  assert(normalizeLiveDesktopBackgroundSupport({ platform: "windows", supportsLiveDesktopBackground: true }).supportsLiveDesktopBackground, "live desktop support should normalize native support flags");
   assert(normalizeBackgroundImagePath(" C:/Images/wallpaper.png ") === "C:/Images/wallpaper.png", "background image paths should be trimmed");
   assert(normalizeBackgroundImagePath("") === null, "empty background image paths should become null");
   assert(normalizeBackgroundImageLayout(BACKGROUND_IMAGE_LAYOUT_TILE) === BACKGROUND_IMAGE_LAYOUT_TILE, "tile background image layout should be preserved");
@@ -259,6 +282,9 @@ export function runLaunchpadSettingsConfigTests() {
   assert(clampBackgroundImageOpacity(-12) === 0, "background image opacity should clamp to the minimum");
   assert(clampBackgroundImageOpacity(120) === 100, "background image opacity should clamp to the maximum");
   assert(clampBackgroundImageOpacity("bad") === 46, "invalid background image opacity should fall back to the default");
+  assert(clampBackgroundLiveDesktopOpacity(-12) === 0, "live desktop opacity should clamp to the minimum");
+  assert(clampBackgroundLiveDesktopOpacity(120) === 100, "live desktop opacity should clamp to the maximum");
+  assert(clampBackgroundLiveDesktopOpacity("bad") === 100, "invalid live desktop opacity should fall back to fully opaque");
   assert(clampBackgroundBlurStrength(-12) === 1, "background blur strength should clamp to the minimum");
   assert(clampBackgroundBlurStrength(120) === 100, "background blur strength should clamp to the maximum");
   assert(clampBackgroundBlurStrength("bad") === DEFAULT_BACKGROUND_BLUR_STRENGTH, "invalid background blur strength should fall back to the default");
@@ -331,6 +357,7 @@ export function runLaunchpadSettingsConfigTests() {
     backgroundSource: BACKGROUND_SOURCE_SYSTEM_MATERIAL,
     backgroundEffect: BACKGROUND_EFFECT_DIMMED,
     backgroundImageOpacity: 58,
+    backgroundLiveDesktopOpacity: 82,
     backgroundImageLayout: BACKGROUND_IMAGE_LAYOUT_TILE,
     backgroundBlurStrength: 82,
     backgroundDarkenColor: "#456",
@@ -355,6 +382,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(sync.state.draftBackgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "sync should reset background source draft from current settings");
   assert(sync.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "sync should reset background effect draft from current settings");
   assert(sync.state.draftBackgroundImageOpacity.value === 58, "sync should reset background opacity draft from current settings");
+  assert(sync.state.draftBackgroundLiveDesktopOpacity.value === 82, "sync should reset live desktop opacity draft from current settings");
   assert(sync.state.draftBackgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_TILE, "sync should reset background image layout draft from current settings");
   assert(sync.state.draftBackgroundBlurStrength.value === 82, "sync should reset background blur strength draft from current settings");
   assert(sync.state.draftBackgroundDarkenColor.value === "#445566", "sync should reset background darken color draft from current settings");
@@ -412,6 +440,7 @@ export function runLaunchpadSettingsConfigTests() {
   backgroundMode.config.setDraftBackgroundSource(BACKGROUND_SOURCE_CUSTOM_IMAGE);
   backgroundMode.config.setDraftBackgroundEffect(BACKGROUND_EFFECT_NONE);
   backgroundMode.config.setDraftBackgroundImageOpacity(120);
+  backgroundMode.config.setDraftBackgroundLiveDesktopOpacity(-12);
   backgroundMode.config.setDraftBackgroundImageLayout(BACKGROUND_IMAGE_LAYOUT_CENTER);
   backgroundMode.config.setDraftBackgroundBlurStrength(120);
   backgroundMode.config.setDraftBackgroundDarkenColor("#789");
@@ -422,6 +451,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(backgroundMode.state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "background source should update from segmented controls");
   assert(backgroundMode.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_NONE, "background effect should update from segmented controls");
   assert(backgroundMode.state.draftBackgroundImageOpacity.value === 100, "background opacity should clamp from slider input");
+  assert(backgroundMode.state.draftBackgroundLiveDesktopOpacity.value === 0, "live desktop opacity should clamp from slider input");
   assert(backgroundMode.state.draftBackgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_CENTER, "background image layout should update from segmented controls");
   assert(backgroundMode.state.draftBackgroundBlurStrength.value === 100, "background blur strength should clamp from slider input");
   assert(backgroundMode.state.draftBackgroundDarkenColor.value === "#778899", "background darken color should update from color input");
@@ -440,9 +470,67 @@ export function runLaunchpadSettingsConfigTests() {
   assert(backgroundMode.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR, "blur background effect should update from segmented controls");
   backgroundMode.config.setDraftBackgroundSource(BACKGROUND_SOURCE_SYSTEM_MATERIAL);
   assert(backgroundMode.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "system material should reset blur effect");
+
+  const unsupportedLiveDesktop = createSettingsConfig();
+  unsupportedLiveDesktop.config.setDraftBackgroundSource(BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP);
+  assert(unsupportedLiveDesktop.state.draftBackgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "unsupported live desktop backgrounds should not be selected");
+  assert(!unsupportedLiveDesktop.config.canUseLiveDesktopBackground(), "live desktop background availability should follow native support");
+
+  setLiveDesktopExperimentEnabledForTests(false);
+  const disabledLiveDesktop = createSettingsConfig({
+    draftBackgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
+    draftBackgroundEffect: BACKGROUND_EFFECT_BLUR,
+    liveDesktopBackgroundSupport: {
+      platform: "windows",
+      supportsLiveDesktopBackground: true,
+      supportsLiveDesktopBackgroundEffects: true,
+      reason: "available",
+    },
+  });
+  assert(!disabledLiveDesktop.config.canUseLiveDesktopBackground(), "disabled live desktop experiment should hide native support");
+  disabledLiveDesktop.config.setDraftBackgroundSource(BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP);
+  disabledLiveDesktop.config.applySettingsConfig();
+  assert(disabledLiveDesktop.state.backgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "disabled live desktop experiment should not apply saved live desktop drafts");
+  assert(disabledLiveDesktop.state.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "disabled live desktop experiment should reset pixi-only live desktop effects");
+  setLiveDesktopExperimentEnabledForTests(true);
+
+  const liveDesktopWithoutEffects = createSettingsConfig({
+    liveDesktopBackgroundSupport: {
+      platform: "windows",
+      supportsLiveDesktopBackground: true,
+      supportsLiveDesktopBackgroundEffects: false,
+      reason: "effectsUnavailable",
+    },
+  });
+  liveDesktopWithoutEffects.config.setDraftBackgroundSource(BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP);
+  assert(liveDesktopWithoutEffects.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP, "supported live desktop backgrounds should be selectable");
+  assert(liveDesktopWithoutEffects.config.canUseDraftBackgroundEffect(BACKGROUND_EFFECT_DIMMED), "dimmed should be available for supported live desktop backgrounds");
+  assert(liveDesktopWithoutEffects.config.canUseDraftBackgroundEffect(BACKGROUND_EFFECT_NONE), "none should be available for supported live desktop backgrounds");
+  assert(liveDesktopWithoutEffects.config.canUseDraftBackgroundEffect(BACKGROUND_EFFECT_BLUR), "blur should be available through the live desktop fallback path");
+  liveDesktopWithoutEffects.config.setDraftBackgroundEffect(BACKGROUND_EFFECT_NONE);
+  assert(liveDesktopWithoutEffects.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_NONE, "non-pixi live desktop effects should be selectable without shader support");
+  liveDesktopWithoutEffects.config.setDraftBackgroundEffect(BACKGROUND_EFFECT_ACRYLIC_WEBGL);
+  assert(liveDesktopWithoutEffects.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "webgl acrylic should be selectable without native live desktop effect support");
+
+  const liveDesktopWithEffects = createSettingsConfig({
+    liveDesktopBackgroundSupport: {
+      platform: "windows",
+      supportsLiveDesktopBackground: true,
+      supportsLiveDesktopBackgroundEffects: true,
+      reason: "available",
+    },
+  });
+  liveDesktopWithEffects.config.setDraftBackgroundSource(BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP);
+  liveDesktopWithEffects.config.setDraftBackgroundEffect(BACKGROUND_EFFECT_BLUR);
+  assert(liveDesktopWithEffects.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR, "blur should be selectable when live desktop effects are supported");
+  liveDesktopWithEffects.config.setDraftBackgroundEffect(BACKGROUND_EFFECT_ACRYLIC_WEBGL);
+  assert(liveDesktopWithEffects.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "webgl acrylic should be selectable when live desktop effects are supported");
+
   backgroundMode.config.setDraftBackgroundSource(BACKGROUND_SOURCE_CUSTOM_IMAGE);
   backgroundMode.config.changeDraftBackgroundImageOpacity(-120);
   assert(backgroundMode.state.draftBackgroundImageOpacity.value === 0, "background opacity step changes should clamp to the minimum");
+  backgroundMode.config.changeDraftBackgroundLiveDesktopOpacity(160);
+  assert(backgroundMode.state.draftBackgroundLiveDesktopOpacity.value === 100, "live desktop opacity step changes should clamp to the maximum");
   backgroundMode.state.draftBackgroundImagePath.value = "C:/Images/custom.png";
   backgroundMode.state.draftBackgroundImageUrl.value = "asset://custom";
   backgroundMode.config.clearDraftBackgroundImage();
@@ -459,6 +547,7 @@ export function runLaunchpadSettingsConfigTests() {
     draftBackgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
     draftBackgroundEffect: BACKGROUND_EFFECT_DIMMED,
     draftBackgroundImageOpacity: 67,
+    draftBackgroundLiveDesktopOpacity: 76,
     draftBackgroundImageLayout: BACKGROUND_IMAGE_LAYOUT_CENTER,
     draftBackgroundBlurStrength: 88,
     draftBackgroundDarkenColor: "#456",
@@ -484,6 +573,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(apply.state.backgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "background source should apply from the draft value");
   assert(apply.state.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "background effect should apply from the draft value");
   assert(apply.state.backgroundImageOpacity.value === 67, "background opacity should apply from the draft value");
+  assert(apply.state.backgroundLiveDesktopOpacity.value === 76, "live desktop opacity should apply from the draft value");
   assert(apply.state.backgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_CENTER, "background image layout should apply from the draft value");
   assert(apply.state.backgroundBlurStrength.value === 88, "background blur strength should apply from the draft value");
   assert(apply.state.backgroundDarkenColor.value === "#445566", "background darken color should apply from the draft value");
@@ -502,6 +592,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(apply.calls.commitFolderPageIndex.join(",") === "1", "applying settings should reclamp the folder page index");
   assert(apply.calls.schedulePageGridMetrics === 1, "applying settings should schedule page metrics");
   assert(apply.calls.applyNativeWindowEffects === 1, "applying settings should refresh native window effects");
+  assert(apply.calls.syncLiveDesktopBackgroundRuntime === 1, "applying settings should sync the live desktop runtime");
   assert(apply.calls.closeSettingsPanel === 1, "applying settings from the panel should close it");
 
   const acrylicApply = createSettingsConfig({
@@ -540,6 +631,36 @@ export function runLaunchpadSettingsConfigTests() {
   assert(blurWithoutImage.state.backgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "image background without a path should fall back to system material for blur");
   assert(blurWithoutImage.state.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "image background without a path should reset blur effect");
 
+  const liveDesktopApplyWithoutEffects = createSettingsConfig({
+    draftBackgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
+    draftBackgroundEffect: BACKGROUND_EFFECT_BLUR,
+    draftBackgroundImagePath: "C:/Images/ignored.webp",
+    liveDesktopBackgroundSupport: {
+      platform: "windows",
+      supportsLiveDesktopBackground: true,
+      supportsLiveDesktopBackgroundEffects: false,
+      reason: "effectsUnavailable",
+    },
+  });
+  liveDesktopApplyWithoutEffects.config.applySettingsConfig();
+  assert(liveDesktopApplyWithoutEffects.state.backgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP, "supported live desktop backgrounds should apply without an image path");
+  assert(liveDesktopApplyWithoutEffects.state.backgroundEffect.value === BACKGROUND_EFFECT_BLUR, "live desktop blur should apply when native effects are unsupported");
+  assert(liveDesktopApplyWithoutEffects.state.backgroundImagePath.value === null, "live desktop backgrounds should not keep image paths");
+
+  const liveDesktopApplyWithEffects = createSettingsConfig({
+    draftBackgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
+    draftBackgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    liveDesktopBackgroundSupport: {
+      platform: "windows",
+      supportsLiveDesktopBackground: true,
+      supportsLiveDesktopBackgroundEffects: true,
+      reason: "available",
+    },
+  });
+  liveDesktopApplyWithEffects.config.applySettingsConfig();
+  assert(liveDesktopApplyWithEffects.state.backgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP, "live desktop backgrounds should apply when supported");
+  assert(liveDesktopApplyWithEffects.state.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "live desktop acrylic should apply when native effects are supported");
+
   const textless = createSettingsConfig({
     draftIsTextlessMode: true,
     isTextlessMode: false,
@@ -552,4 +673,5 @@ export function runLaunchpadSettingsConfigTests() {
   dragActive.config.applyGridConfig();
   assert(dragActive.calls.commitPages.length === 0, "drag-active settings apply should not repack pages");
   assert(dragActive.calls.schedulePageGridMetrics === 1, "drag-active settings apply should still request metrics refresh");
+  setLiveDesktopExperimentEnabledForTests(null);
 }

@@ -31,6 +31,8 @@ body {
   --launchpad-background-image-opacity: 0;
   --launchpad-background-overlay-color: #1c1c1c;
   --launchpad-background-overlay-opacity: 0.28;
+  --launchpad-live-desktop-backdrop-filter: none;
+  --launchpad-live-desktop-backdrop-opacity: 0;
   height: 100vh;
   min-height: 100vh;
   max-height: 100vh;
@@ -60,11 +62,28 @@ body {
   pointer-events: none;
   opacity: 1;
   overflow: hidden;
-  background: transparent;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
   transition: opacity 360ms ease;
   will-change: opacity;
+}
+
+.launchpad-root-live-desktop-css-fallback-effects .launchpad-bg {
+  background: rgba(255, 255, 255, var(--launchpad-live-desktop-backdrop-opacity, 0));
+  backdrop-filter: var(--launchpad-live-desktop-backdrop-filter, none);
+  -webkit-backdrop-filter: var(--launchpad-live-desktop-backdrop-filter, none);
+}
+
+.launchpad-live-desktop-compositor-keeper {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  contain: paint;
+  background: rgba(255, 255, 255, 0.001);
+  backdrop-filter: blur(0.01px);
+  -webkit-backdrop-filter: blur(0.01px);
+  transform-origin: left top;
+  transform: translateZ(0) scale(calc(1 + var(--launchpad-live-desktop-compositor-tick, 0) * 0.000001));
+  will-change: transform, backdrop-filter;
 }
 
 .launchpad-bg::before,

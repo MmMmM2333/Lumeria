@@ -125,6 +125,7 @@ export function runLaunchpadDataTests() {
     backgroundSource: "customImage",
     backgroundEffect: "dimmed",
     backgroundImageOpacity: 62,
+    backgroundLiveDesktopOpacity: 77,
     backgroundBlurStrength: 72,
     backgroundDarkenColor: "#123",
     backgroundDarkenStrength: 61,
@@ -146,6 +147,7 @@ export function runLaunchpadDataTests() {
   assert(snapshot.settings.backgroundBaseOpacity === 74, "layout snapshots should include background base opacity");
   assert(snapshot.settings.backgroundSource === "customImage" && snapshot.settings.backgroundEffect === "dimmed", "layout snapshots should include background source and effect");
   assert(snapshot.settings.backgroundImageOpacity === 62, "layout snapshots should include background image opacity");
+  assert(snapshot.settings.backgroundLiveDesktopOpacity === 77, "layout snapshots should include live desktop opacity");
   assert(snapshot.settings.backgroundBlurStrength === 72, "layout snapshots should include background blur strength");
   assert(snapshot.settings.backgroundDarkenColor === "#112233", "layout snapshots should include normalized background darken color");
   assert(snapshot.settings.backgroundDarkenStrength === 61, "layout snapshots should include background darken strength");
@@ -171,6 +173,15 @@ export function runLaunchpadDataTests() {
     backgroundImagePath: "C:/Images/blur.webp",
   });
   assert(blurSnapshot.settings.backgroundEffect === "blur", "layout snapshots should preserve blur background effect");
+  const liveSnapshot = dataHelpers.createLayoutSnapshot({
+    ...snapshot.settings,
+    pages: merged,
+    backgroundSource: "windowsLiveDesktop",
+    backgroundEffect: "dimmed",
+    backgroundImagePath: "C:/Images/ignored.webp",
+  });
+  assert(liveSnapshot.settings.backgroundSource === "windowsLiveDesktop", "layout snapshots should preserve live desktop background source");
+  assert(liveSnapshot.settings.backgroundImagePath === null, "layout snapshots should clear image paths for live desktop backgrounds");
   const plainSnapshot = dataHelpers.createLayoutSnapshot({
     ...snapshot.settings,
     pages: merged,

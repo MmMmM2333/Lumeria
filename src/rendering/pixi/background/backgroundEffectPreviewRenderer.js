@@ -1,20 +1,15 @@
-import { Application, Container, RenderTexture, Sprite, Texture, TilingSprite } from "pixi.js";
+import { Application, Container, Sprite, Texture, TilingSprite } from "pixi.js";
 import { loadCachedBackgroundImageDataUrl } from "../../../api/launchpadApi.js";
 import { resolveBackgroundImagePlacement } from "../../../domain/backgroundImageLayout.js";
 import {
   BACKGROUND_EFFECT_ACRYLIC_WEBGL,
-  BACKGROUND_EFFECT_BLUR,
 } from "../../../composables/useLaunchpadSettingsConfig.js";
 import {
-  createDualKawaseLevels,
-  resolveAcrylicBackgroundAlpha,
+  createBackgroundEffectPlan,
   resolveAcrylicRenderSize,
-  resolveBlurOffsetScale,
 } from "./acrylicBackgroundPlan.js";
-import { createAcrylicCompositeFilter, createKawaseFilter } from "./acrylicFilters.js";
-import { createAcrylicNoiseTexture } from "./acrylicNoiseTexture.js";
-import { normalizeAcrylicCompositeParams } from "./acrylicParams.js";
 import { loadBackgroundTextureFromImage } from "./backgroundTextureLoader.js";
+import { BackgroundEffectPipeline, destroyTexture } from "./backgroundEffectPipeline.js";
 
 const DEFAULT_PREVIEW_WIDTH = 320;
 const DEFAULT_PREVIEW_HEIGHT = 180;
@@ -25,19 +20,6 @@ function clampRenderSize(value, fallback) {
   const size = Number(value);
   if (!Number.isFinite(size)) return fallback;
   return Math.max(16, Math.round(size));
-}
-
-function destroyTexture(texture, destroySource = true) {
-  if (!texture || texture.destroyed) return;
-  texture.destroy(destroySource);
-}
-
-function createRenderTexture(width, height) {
-  return RenderTexture.create({
-    height: Math.max(1, Math.round(height)),
-    resolution: 1,
-    width: Math.max(1, Math.round(width)),
-  });
 }
 
 async function resolveTextureSource(config) {
@@ -51,17 +33,7 @@ async function resolveTextureSource(config) {
 }
 
 function makeAcrylicKey(config) {
-  const params = normalizeAcrylicCompositeParams(config.backgroundAcrylicParams);
-  return JSON.stringify({
-    alpha: resolveAcrylicBackgroundAlpha(config.backgroundImageOpacity),
-    brightness: params.brightness,
-    contrast: params.contrast,
-    noise: params.noise,
-    saturation: params.saturation,
-    seed: params.seed,
-    tintColor: params.tintColor,
-    tintStrength: params.tintStrength,
-  });
+  return JSON.stringify(createBackgroundEffectPlan(config).acrylic);
 }
 
 function makePlacementKey(config) {
@@ -89,19 +61,9 @@ export class BackgroundEffectPreviewRenderer {
     this.sourceSprite = null;
     this.sourceTilingSprite = null;
     this.sourceContainer = null;
-    this.passSprite = null;
     this.displaySprite = null;
-    this.downFilter = null;
-    this.upFilter = null;
-    this.compositeFilter = null;
-    this.noiseTexture = null;
-    this.sourceRenderTexture = null;
-    this.finalBlurTexture = null;
-    this.finalRenderTexture = null;
-    this.downTextures = [];
-    this.upTextures = [];
+    this.effectPipeline = null;
     this.config = {};
-    this.renderSizeKey = "";
     this.lastBlurKey = "";
     this.lastAcrylicKey = "";
     this.textureKey = "";
@@ -141,12 +103,16 @@ export class BackgroundEffectPreviewRenderer {
     this.sourceTilingSprite.visible = false;
     this.sourceContainer.addChild(this.sourceSprite);
     this.sourceContainer.addChild(this.sourceTilingSprite);
-    this.passSprite = new Sprite(Texture.EMPTY);
     this.displaySprite = new Sprite(Texture.EMPTY);
-    this.downFilter = createKawaseFilter("launchpad-preview-kawase-downsample-filter", 1);
-    this.upFilter = createKawaseFilter("launchpad-preview-kawase-upsample-filter", 1.15);
-    this.noiseTexture = createAcrylicNoiseTexture();
-    this.compositeFilter = createAcrylicCompositeFilter(this.noiseTexture);
+    this.effectPipeline = new BackgroundEffectPipeline(this.app, {
+      displaySprite: this.displaySprite,
+      filterNames: {
+        down: "launchpad-preview-kawase-downsample-filter",
+        gaussianHorizontal: "launchpad-preview-gaussian-horizontal-filter",
+        gaussianVertical: "launchpad-preview-gaussian-vertical-filter",
+        up: "launchpad-preview-kawase-upsample-filter",
+      },
+    });
     this.app.stage.addChild(this.displaySprite);
   }
 
@@ -227,9 +193,15 @@ export class BackgroundEffectPreviewRenderer {
   }
 
   getRenderSize() {
-    const renderWidth = clampRenderSize(this.config.renderWidth, DEFAULT_RENDER_WIDTH);
-    const renderHeight = clampRenderSize(this.config.renderHeight, DEFAULT_RENDER_HEIGHT);
+    const { height: renderHeight, width: renderWidth } = this.getConfiguredRenderSize();
     return resolveAcrylicRenderSize(renderWidth, renderHeight);
+  }
+
+  getConfiguredRenderSize() {
+    return {
+      height: clampRenderSize(this.config.renderHeight, DEFAULT_RENDER_HEIGHT),
+      width: clampRenderSize(this.config.renderWidth, DEFAULT_RENDER_WIDTH),
+    };
   }
 
   getRenderSizeKey() {
@@ -239,10 +211,19 @@ export class BackgroundEffectPreviewRenderer {
 
   getBlurKey() {
     const renderSize = this.getRenderSize();
-    const offsetScale = this.config.backgroundEffect === BACKGROUND_EFFECT_BLUR
-      ? resolveBlurOffsetScale(this.config.backgroundBlurStrength)
-      : 1;
-    return `${renderSize.width}x${renderSize.height}|${this.config.backgroundImageLayout || ""}|${offsetScale}`;
+    const blur = createBackgroundEffectPlan(this.config).blur;
+    return JSON.stringify({
+      downOffsets: blur.downOffsets,
+      finalUpOffset: blur.finalUpOffset,
+      gaussianRadiusPx: blur.gaussianRadiusPx,
+      height: renderSize.height,
+      imageLayout: this.config.backgroundImageLayout || "",
+      kernel: blur.kernel,
+      offsetScale: blur.offsetScale,
+      passCount: blur.passCount,
+      upOffsets: blur.upOffsets,
+      width: renderSize.width,
+    });
   }
 
   updateCanvasCoverStyle(renderSize) {
@@ -261,55 +242,14 @@ export class BackgroundEffectPreviewRenderer {
     }
   }
 
-  ensureRenderTextures(renderSize) {
-    const levels = createDualKawaseLevels(renderSize.width, renderSize.height);
-    const nextKey = [
-      renderSize.width,
-      renderSize.height,
-      ...levels.map((level) => `${level.width}x${level.height}`),
-    ].join("|");
-    if (nextKey === this.renderSizeKey) return;
-
-    this.destroyRenderTextures();
-    this.renderSizeKey = nextKey;
-    this.sourceRenderTexture = createRenderTexture(renderSize.width, renderSize.height);
-    this.finalBlurTexture = createRenderTexture(renderSize.width, renderSize.height);
-    this.finalRenderTexture = createRenderTexture(renderSize.width, renderSize.height);
-    this.downTextures = levels.map((level) => createRenderTexture(level.width, level.height));
-    this.upTextures = levels.map((level) => createRenderTexture(level.width, level.height));
-  }
-
-  destroyRenderTextures() {
-    if (this.passSprite) this.passSprite.texture = Texture.EMPTY;
-    if (this.displaySprite) this.displaySprite.texture = Texture.EMPTY;
-    destroyTexture(this.sourceRenderTexture);
-    destroyTexture(this.finalBlurTexture);
-    destroyTexture(this.finalRenderTexture);
-    for (const texture of this.downTextures) destroyTexture(texture);
-    for (const texture of this.upTextures) destroyTexture(texture);
-    this.sourceRenderTexture = null;
-    this.finalBlurTexture = null;
-    this.finalRenderTexture = null;
-    this.downTextures = [];
-    this.upTextures = [];
-    this.renderSizeKey = "";
-    this.lastBlurKey = "";
-    this.lastAcrylicKey = "";
-  }
-
-  renderPass(inputTexture, outputTexture, filter) {
-    if (!this.app || !this.passSprite || !inputTexture || !outputTexture) return;
-    this.passSprite.texture = inputTexture;
-    this.passSprite.position.set(0, 0);
-    this.passSprite.setSize(outputTexture.width, outputTexture.height);
-    this.passSprite.filters = filter ? [filter] : null;
-    filter?.setInputSize?.(inputTexture.width, inputTexture.height);
-    this.app.renderer.render({ container: this.passSprite, target: outputTexture, clear: true });
-    this.passSprite.filters = null;
-  }
-
   renderSourceToTexture(renderSize) {
-    if (!this.app || !this.sourceTexture || !this.sourceSprite || !this.sourceTilingSprite || !this.sourceRenderTexture) return;
+    if (
+      !this.app
+      || !this.sourceTexture
+      || !this.sourceSprite
+      || !this.sourceTilingSprite
+      || !this.effectPipeline?.sourceRenderTexture
+    ) return;
     if (this.config.backgroundImagePrecomposed) {
       this.sourceTilingSprite.visible = false;
       this.sourceTilingSprite.texture = Texture.EMPTY;
@@ -317,12 +257,11 @@ export class BackgroundEffectPreviewRenderer {
       this.sourceSprite.texture = this.sourceTexture;
       this.sourceSprite.position.set(0, 0);
       this.sourceSprite.setSize(renderSize.width, renderSize.height);
-      this.app.renderer.render({ container: this.sourceContainer, target: this.sourceRenderTexture, clear: true });
+      this.app.renderer.render({ container: this.sourceContainer, target: this.effectPipeline.sourceRenderTexture, clear: true });
       return;
     }
 
-    const configuredWidth = clampRenderSize(this.config.renderWidth, DEFAULT_RENDER_WIDTH);
-    const configuredHeight = clampRenderSize(this.config.renderHeight, DEFAULT_RENDER_HEIGHT);
+    const { height: configuredHeight, width: configuredWidth } = this.getConfiguredRenderSize();
     const renderScaleX = Math.max(0.0001, renderSize.width / configuredWidth);
     const renderScaleY = Math.max(0.0001, renderSize.height / configuredHeight);
     const layout = resolveBackgroundImagePlacement({
@@ -353,7 +292,7 @@ export class BackgroundEffectPreviewRenderer {
       this.sourceSprite.position.set(layout.x, layout.y);
       this.sourceSprite.setSize(layout.width, layout.height);
     }
-    this.app.renderer.render({ container: this.sourceContainer, target: this.sourceRenderTexture, clear: true });
+    this.app.renderer.render({ container: this.sourceContainer, target: this.effectPipeline.sourceRenderTexture, clear: true });
   }
 
   scheduleRender() {
@@ -365,12 +304,19 @@ export class BackgroundEffectPreviewRenderer {
   }
 
   render() {
-    if (!this.app || !this.sourceTexture || !this.displaySprite) return;
+    if (!this.app || !this.effectPipeline || !this.sourceTexture || !this.displaySprite) return;
     const renderSize = this.getRenderSize();
     this.app.renderer.resize(renderSize.width, renderSize.height);
     this.updateCanvasCoverStyle(renderSize);
-    this.ensureRenderTextures(renderSize);
-    if (!this.downTextures.length || !this.finalBlurTexture || !this.finalRenderTexture) return;
+    const effectPlan = createBackgroundEffectPlan(this.config);
+    if (this.effectPipeline.ensureRenderTextures(renderSize, effectPlan)) {
+      this.sourceDirty = true;
+      this.blurDirty = true;
+      this.compositeDirty = true;
+      this.lastBlurKey = "";
+      this.lastAcrylicKey = "";
+    }
+    if (!this.effectPipeline.hasRenderTextures) return;
 
     if (this.sourceDirty) {
       this.renderSourceToTexture(renderSize);
@@ -379,26 +325,9 @@ export class BackgroundEffectPreviewRenderer {
       this.compositeDirty = true;
     }
 
-    const blurOffsetScale = this.config.backgroundEffect === BACKGROUND_EFFECT_BLUR
-      ? resolveBlurOffsetScale(this.config.backgroundBlurStrength)
-      : 1;
     const blurKey = this.getBlurKey();
     if (this.blurDirty || blurKey !== this.lastBlurKey) {
-      let currentTexture = this.sourceRenderTexture;
-      for (let index = 0; index < this.downTextures.length; index += 1) {
-        this.downFilter.setOffset((1 + index * 0.35) * blurOffsetScale);
-        this.renderPass(currentTexture, this.downTextures[index], this.downFilter);
-        currentTexture = this.downTextures[index];
-      }
-
-      for (let index = this.downTextures.length - 2; index >= 0; index -= 1) {
-        this.upFilter.setOffset((1.1 + index * 0.25) * blurOffsetScale);
-        this.renderPass(currentTexture, this.upTextures[index], this.upFilter);
-        currentTexture = this.upTextures[index];
-      }
-
-      this.upFilter.setOffset(1.25 * blurOffsetScale);
-      this.renderPass(currentTexture, this.finalBlurTexture, this.upFilter);
+      this.effectPipeline.renderBlur(effectPlan, this.getConfiguredRenderSize());
       this.lastBlurKey = blurKey;
       this.blurDirty = false;
       this.compositeDirty = true;
@@ -407,19 +336,15 @@ export class BackgroundEffectPreviewRenderer {
     if (this.config.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) {
       const acrylicKey = makeAcrylicKey(this.config);
       if (this.compositeDirty || acrylicKey !== this.lastAcrylicKey) {
-        this.compositeFilter.setParams({
-          ...this.config.backgroundAcrylicParams,
-          alpha: resolveAcrylicBackgroundAlpha(this.config.backgroundImageOpacity),
-        });
-        this.renderPass(this.finalBlurTexture, this.finalRenderTexture, this.compositeFilter);
+        this.effectPipeline.renderAcrylicComposite(effectPlan.acrylic);
         this.lastAcrylicKey = acrylicKey;
         this.compositeDirty = false;
       }
-      this.displaySprite.texture = this.finalRenderTexture;
+      this.displaySprite.texture = this.effectPipeline.finalRenderTexture;
       this.displaySprite.alpha = 1;
     } else {
-      this.displaySprite.texture = this.finalBlurTexture;
-      this.displaySprite.alpha = resolveAcrylicBackgroundAlpha(this.config.backgroundImageOpacity);
+      this.displaySprite.texture = this.effectPipeline.finalBlurTexture;
+      this.displaySprite.alpha = effectPlan.opacity;
     }
 
     this.displaySprite.position.set(0, 0);
@@ -435,31 +360,22 @@ export class BackgroundEffectPreviewRenderer {
       window.cancelAnimationFrame(this.pendingFrame);
       this.pendingFrame = null;
     }
-    this.destroyRenderTextures();
+    this.effectPipeline?.destroy();
+    this.effectPipeline = null;
     if (this.sourceSprite) this.sourceSprite.texture = Texture.EMPTY;
     if (this.sourceTilingSprite) this.sourceTilingSprite.texture = Texture.EMPTY;
     destroyTexture(this.sourceTexture);
     this.sourceTexture = null;
     this.sourceContainer?.destroy?.({ children: true });
-    this.passSprite?.destroy?.();
     this.app?.stage?.removeChild(this.displaySprite);
     this.displaySprite?.destroy?.();
-    this.downFilter?.destroy?.();
-    this.upFilter?.destroy?.();
-    this.compositeFilter?.destroy?.();
-    destroyTexture(this.noiseTexture);
     this.host?.replaceChildren?.();
     this.app?.destroy?.(false, { children: true });
     this.app = null;
     this.sourceContainer = null;
     this.sourceSprite = null;
     this.sourceTilingSprite = null;
-    this.passSprite = null;
     this.displaySprite = null;
-    this.downFilter = null;
-    this.upFilter = null;
-    this.compositeFilter = null;
-    this.noiseTexture = null;
     this.host = null;
     this.onRender = null;
   }

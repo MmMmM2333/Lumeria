@@ -7,6 +7,8 @@ import {
   DEFAULT_ROWS,
 } from "./launchpadConstants.js";
 import { clamp } from "../domain/launchpadLayout.js";
+import { createBackgroundEffectPlan } from "../domain/backgroundEffectPlan.js";
+import { getKawaseDebugEffectPlanParams } from "../rendering/pixi/background/kawaseDebugParams.js";
 import {
   DEFAULT_SCAN_KEYWORD_BLACKLIST,
   isAppBlockedByScanBlacklist,
@@ -17,9 +19,12 @@ import {
 } from "../domain/launchpadData.js";
 import {
   checkLaunchTargets,
+  configureLiveDesktopBackground,
   confirmQuitAfterSave,
   convertFilePathToAssetUrl,
   getDesktopWallpaperBackground,
+  getLiveDesktopBackgroundSupport,
+  getLiveDesktopRuntimeStatus,
   getMainWindowEffectsSupport,
   hideMainWindow,
   isNativeBridgeAvailable,
@@ -29,22 +34,29 @@ import {
   loadLayout,
   saveLayout,
   scanApps,
+  setLiveDesktopBackgroundVisible,
   setMainWindowEffectsEnabled,
   showLaunchErrorMessage,
+  startLiveDesktopBackground,
+  stopLiveDesktopBackground,
 } from "../api/launchpadApi.js";
 import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
+  BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
   BACKGROUND_EFFECT_DIMMED,
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
   BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
   backgroundEffectUsesPixi,
+  backgroundSourceUsesLiveDesktop,
   backgroundSourceUsesImage,
   clampBackgroundBaseOpacity,
   clampBackgroundBlurStrength,
   clampBackgroundDarkenStrength,
   clampBackgroundImageOpacity,
+  clampBackgroundLiveDesktopOpacity,
   normalizeBackgroundImageLayout,
   normalizeBackgroundAcrylicAppearance,
   normalizeBackgroundAcrylicParams,
@@ -53,10 +65,12 @@ import {
   normalizeBackgroundEffect,
   normalizeBackgroundImagePath,
   normalizeBackgroundSource,
+  normalizeLiveDesktopBackgroundSupport,
   normalizeWindowEffectAppearance,
   normalizeWindowEffectsSupport,
   resolveWindowEffectMaterialForSupport,
 } from "./useLaunchpadSettingsConfig.js";
+import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 
 const USE_MOCK_DATA_IN_NATIVE = false;
 const FOLDER_ICON_SIZE_MODE_CUSTOM = "custom";
@@ -65,6 +79,273 @@ const CUSTOM_ICON_HYDRATION_ID_PREFIX = "__custom_icon__:";
 const MIN_ICON_HYDRATION_BATCH_SIZE = 20;
 const MAX_ICON_HYDRATION_BATCH_SIZE = 80;
 const WINDOWS_WALLPAPER_REFRESH_INTERVAL_MS = 5000;
+const LIVE_DESKTOP_IDLE_STOP_DELAY_MS = 10_000;
+const LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY = "launchpadLiveDesktopDebugFrameSourceOverride";
+const LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY = "launchpadLiveDesktopDisableMouseRelay";
+const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "launchpadLiveDesktopSkipBlankFrames";
+const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "launchpadLiveDesktopForceDwmFlush";
+const LIVE_DESKTOP_EXPERIMENT_DISABLED_REASON = "experimentDisabled";
+const LIVE_DESKTOP_EXPERIMENT_DISABLED_DETAIL = "Live desktop experiment flag is disabled.";
+const DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS = Object.freeze({
+  phase: "stopped",
+  active: false,
+  generation: 0,
+  reason: "nativeBridgeUnavailable",
+  detail: "",
+  diagnostics: {
+    framesCopied: 0,
+    frameTimeouts: 0,
+    copyErrors: 0,
+    commitErrors: 0,
+    frameArrivedEvents: 0,
+    frameArrivedDroppedSignals: 0,
+    frameCopySamples: 0,
+    frameCopyMicrosTotal: 0,
+    lastFrameCopyMicros: 0,
+    maxFrameCopyMicros: 0,
+    frameCommitSamples: 0,
+    frameCommitMicrosTotal: 0,
+    lastFrameCommitMicros: 0,
+    maxFrameCommitMicros: 0,
+    configUpdates: 0,
+    configErrors: 0,
+    lastFrameWidth: 0,
+    lastFrameHeight: 0,
+    lastFrameFormat: 0,
+    testPatternFrames: 0,
+    pixelProbeSamples: 0,
+    pixelProbeErrors: 0,
+    blankFrameSkips: 0,
+    shaderCopyFallbacks: 0,
+    abandonedRendererWorkers: 0,
+    reapedAbandonedRendererWorkers: 0,
+    lastPixelProbeWidth: 0,
+    lastPixelProbeHeight: 0,
+    lastPixelProbeMinRgb: 0,
+    lastPixelProbeMaxRgb: 0,
+    lastPixelProbeAvgRgb: 0,
+    lastPixelProbeMinAlpha: 0,
+    lastPixelProbeMaxAlpha: 0,
+    lastPixelProbeAvgAlpha: 0,
+    lastShaderCopyError: "",
+    lastAbandonedRendererReason: "",
+    lastError: "",
+  },
+  windowDiagnostics: {
+    platform: "unknown",
+    available: false,
+    reason: "nativeBridgeUnavailable",
+    detail: "",
+    windowCount: 0,
+    candidateCount: 0,
+    windows: [],
+    candidates: [],
+  },
+});
+
+function normalizeLiveDesktopRuntimeDiagnostics(diagnostics) {
+  const normalizeCount = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? Math.floor(number) : 0;
+  };
+  return {
+    framesCopied: normalizeCount(diagnostics?.framesCopied),
+    frameTimeouts: normalizeCount(diagnostics?.frameTimeouts),
+    copyErrors: normalizeCount(diagnostics?.copyErrors),
+    commitErrors: normalizeCount(diagnostics?.commitErrors),
+    frameArrivedEvents: normalizeCount(diagnostics?.frameArrivedEvents),
+    frameArrivedDroppedSignals: normalizeCount(diagnostics?.frameArrivedDroppedSignals),
+    frameCopySamples: normalizeCount(diagnostics?.frameCopySamples),
+    frameCopyMicrosTotal: normalizeCount(diagnostics?.frameCopyMicrosTotal),
+    lastFrameCopyMicros: normalizeCount(diagnostics?.lastFrameCopyMicros),
+    maxFrameCopyMicros: normalizeCount(diagnostics?.maxFrameCopyMicros),
+    frameCommitSamples: normalizeCount(diagnostics?.frameCommitSamples),
+    frameCommitMicrosTotal: normalizeCount(diagnostics?.frameCommitMicrosTotal),
+    lastFrameCommitMicros: normalizeCount(diagnostics?.lastFrameCommitMicros),
+    maxFrameCommitMicros: normalizeCount(diagnostics?.maxFrameCommitMicros),
+    configUpdates: normalizeCount(diagnostics?.configUpdates),
+    configErrors: normalizeCount(diagnostics?.configErrors),
+    lastFrameWidth: normalizeCount(diagnostics?.lastFrameWidth),
+    lastFrameHeight: normalizeCount(diagnostics?.lastFrameHeight),
+    lastFrameFormat: normalizeCount(diagnostics?.lastFrameFormat),
+    testPatternFrames: normalizeCount(diagnostics?.testPatternFrames),
+    pixelProbeSamples: normalizeCount(diagnostics?.pixelProbeSamples),
+    pixelProbeErrors: normalizeCount(diagnostics?.pixelProbeErrors),
+    blankFrameSkips: normalizeCount(diagnostics?.blankFrameSkips),
+    shaderCopyFallbacks: normalizeCount(diagnostics?.shaderCopyFallbacks),
+    abandonedRendererWorkers: normalizeCount(diagnostics?.abandonedRendererWorkers),
+    reapedAbandonedRendererWorkers: normalizeCount(diagnostics?.reapedAbandonedRendererWorkers),
+    lastPixelProbeWidth: normalizeCount(diagnostics?.lastPixelProbeWidth),
+    lastPixelProbeHeight: normalizeCount(diagnostics?.lastPixelProbeHeight),
+    lastPixelProbeMinRgb: normalizeCount(diagnostics?.lastPixelProbeMinRgb),
+    lastPixelProbeMaxRgb: normalizeCount(diagnostics?.lastPixelProbeMaxRgb),
+    lastPixelProbeAvgRgb: normalizeCount(diagnostics?.lastPixelProbeAvgRgb),
+    lastPixelProbeMinAlpha: normalizeCount(diagnostics?.lastPixelProbeMinAlpha),
+    lastPixelProbeMaxAlpha: normalizeCount(diagnostics?.lastPixelProbeMaxAlpha),
+    lastPixelProbeAvgAlpha: normalizeCount(diagnostics?.lastPixelProbeAvgAlpha),
+    lastShaderCopyError: String(diagnostics?.lastShaderCopyError || ""),
+    lastAbandonedRendererReason: String(diagnostics?.lastAbandonedRendererReason || ""),
+    lastError: String(diagnostics?.lastError || ""),
+  };
+}
+
+function normalizeLiveDesktopWindowRect(rect) {
+  const normalizeInteger = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.trunc(number) : 0;
+  };
+  return {
+    left: normalizeInteger(rect?.left),
+    top: normalizeInteger(rect?.top),
+    right: normalizeInteger(rect?.right),
+    bottom: normalizeInteger(rect?.bottom),
+    width: Math.max(0, normalizeInteger(rect?.width)),
+    height: Math.max(0, normalizeInteger(rect?.height)),
+  };
+}
+
+function normalizeLiveDesktopWindowInfo(windowInfo) {
+  return {
+    hwnd: String(windowInfo?.hwnd || ""),
+    parentHwnd: String(windowInfo?.parentHwnd || ""),
+    rootHwnd: String(windowInfo?.rootHwnd || ""),
+    pid: Math.max(0, Math.trunc(Number(windowInfo?.pid) || 0)),
+    className: String(windowInfo?.className || ""),
+    title: String(windowInfo?.title || ""),
+    processName: String(windowInfo?.processName || ""),
+    role: String(windowInfo?.role || "window"),
+    candidateReason: String(windowInfo?.candidateReason || ""),
+    visible: Boolean(windowInfo?.visible),
+    style: String(windowInfo?.style || ""),
+    exStyle: String(windowInfo?.exStyle || ""),
+    cloaked: Math.max(0, Math.trunc(Number(windowInfo?.cloaked) || 0)),
+    rect: normalizeLiveDesktopWindowRect(windowInfo?.rect),
+  };
+}
+
+function normalizeLiveDesktopWindowDiagnostics(diagnostics) {
+  const normalizeCount = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? Math.floor(number) : 0;
+  };
+  const windows = Array.isArray(diagnostics?.windows)
+    ? diagnostics.windows.map(normalizeLiveDesktopWindowInfo)
+    : [];
+  const candidates = Array.isArray(diagnostics?.candidates)
+    ? diagnostics.candidates.map(normalizeLiveDesktopWindowInfo)
+    : [];
+  return {
+    platform: String(diagnostics?.platform || DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS.windowDiagnostics.platform),
+    available: Boolean(diagnostics?.available),
+    reason: String(diagnostics?.reason || DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS.windowDiagnostics.reason),
+    detail: String(diagnostics?.detail || ""),
+    windowCount: normalizeCount(diagnostics?.windowCount ?? windows.length),
+    candidateCount: normalizeCount(diagnostics?.candidateCount ?? candidates.length),
+    windows,
+    candidates,
+  };
+}
+
+function isLiveDesktopDebugRuntimeConfigEnabled() {
+  return Boolean(import.meta.env?.DEV && isLiveDesktopExperimentEnabled());
+}
+
+function resolveLiveDesktopDebugFrameSourceOverride() {
+  if (!isLiveDesktopDebugRuntimeConfigEnabled() || typeof window === "undefined") return null;
+  try {
+    const frameSourceOverride = window.localStorage?.getItem(LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY);
+    return frameSourceOverride === "testPattern" ? "testPattern" : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveLiveDesktopDisableMouseRelay() {
+  if (!isLiveDesktopDebugRuntimeConfigEnabled() || typeof window === "undefined") return true;
+  try {
+    return window.localStorage?.getItem(LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
+function resolveLiveDesktopSkipBlankFrames() {
+  if (!isLiveDesktopDebugRuntimeConfigEnabled() || typeof window === "undefined") return false;
+  try {
+    return window.localStorage?.getItem(LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function resolveLiveDesktopForceDwmFlush() {
+  if (!isLiveDesktopDebugRuntimeConfigEnabled() || typeof window === "undefined") return false;
+  try {
+    return window.localStorage?.getItem(LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function normalizeLiveDesktopRuntimeStatus(status) {
+  const generation = Number(status?.generation);
+  return {
+    phase: String(status?.phase || DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS.phase),
+    active: Boolean(status?.active),
+    generation: Number.isFinite(generation) && generation >= 0 ? Math.floor(generation) : 0,
+    reason: String(status?.reason || DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS.reason),
+    detail: String(status?.detail || ""),
+    diagnostics: normalizeLiveDesktopRuntimeDiagnostics(status?.diagnostics),
+    windowDiagnostics: normalizeLiveDesktopWindowDiagnostics(status?.windowDiagnostics),
+  };
+}
+
+function liveDesktopRuntimeStatusIsRunning(status) {
+  return Boolean(status?.active || status?.phase === "running");
+}
+
+function liveDesktopRuntimeStatusIsStopped(status) {
+  return status?.phase === "stopped";
+}
+
+function resolveLiveDesktopAcrylicProfile(options) {
+  const appearance = normalizeBackgroundAcrylicAppearance(options.backgroundAcrylicAppearance.value);
+  if (appearance !== BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM) return appearance;
+  return normalizeWindowEffectAppearance(options.windowEffectAppearance.value) === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
+    ? BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
+    : BACKGROUND_ACRYLIC_APPEARANCE_DARK;
+}
+
+function makeLiveDesktopRuntimeConfig(options) {
+  const acrylicAppearance = normalizeBackgroundAcrylicAppearance(options.backgroundAcrylicAppearance.value);
+  const acrylicProfile = resolveLiveDesktopAcrylicProfile(options);
+  const acrylicParams = normalizeBackgroundAcrylicParams(
+    acrylicProfile === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
+      ? options.backgroundAcrylicLightParams.value
+      : options.backgroundAcrylicDarkParams.value,
+    acrylicProfile
+  );
+  return {
+    effect: normalizeBackgroundEffect(options.backgroundEffect.value),
+    debugFrameSourceOverride: resolveLiveDesktopDebugFrameSourceOverride(),
+    blurStrength: clampBackgroundBlurStrength(options.backgroundBlurStrength.value),
+    darkenStrength: clampBackgroundDarkenStrength(options.backgroundDarkenStrength.value),
+    darkenColor: normalizeBackgroundDarkenColor(options.backgroundDarkenColor.value),
+    acrylicAppearance,
+    acrylicParams,
+    effectPlan: createBackgroundEffectPlan({
+      acrylicParams,
+      blurStrength: options.backgroundBlurStrength.value,
+      dualKawaseParams: getKawaseDebugEffectPlanParams(),
+      effect: options.backgroundEffect.value,
+      opacity: options.backgroundLiveDesktopOpacity.value,
+    }),
+    disableMouseRelay: resolveLiveDesktopDisableMouseRelay(),
+    skipBlankFrames: resolveLiveDesktopSkipBlankFrames(),
+    forceDwmFlush: resolveLiveDesktopForceDwmFlush(),
+    opacity: clampBackgroundLiveDesktopOpacity(options.backgroundLiveDesktopOpacity.value),
+  };
+}
 
 export function useLaunchpadNative(options) {
   let nativeLayoutReady = false;
@@ -73,6 +354,10 @@ export function useLaunchpadNative(options) {
   let nativeSaveTimer = null;
   let nativeWindowHideTimer = null;
   let nativeWallpaperRefreshTimer = null;
+  let liveDesktopIdleStopTimer = null;
+  let liveDesktopBackgroundVisible = null;
+  let liveDesktopRuntimeSync = Promise.resolve();
+  let liveDesktopRuntimeSyncGeneration = 0;
   let nativeWindowOpenSequence = null;
   let nativeEventListenerGeneration = 0;
   let nativeSavePromise = null;
@@ -118,6 +403,7 @@ export function useLaunchpadNative(options) {
     const nextBackgroundBaseColor = normalizeBackgroundBaseColor(settings.backgroundBaseColor);
     const nextBackgroundBaseOpacity = clampBackgroundBaseOpacity(settings.backgroundBaseOpacity);
     const nextBackgroundImageOpacity = clampBackgroundImageOpacity(settings.backgroundImageOpacity);
+    const nextBackgroundLiveDesktopOpacity = clampBackgroundLiveDesktopOpacity(settings.backgroundLiveDesktopOpacity);
     const nextBackgroundImageLayout = normalizeBackgroundImageLayout(settings.backgroundImageLayout);
     const nextBackgroundBlurStrength = clampBackgroundBlurStrength(settings.backgroundBlurStrength);
     const nextBackgroundDarkenStrength = clampBackgroundDarkenStrength(settings.backgroundDarkenStrength);
@@ -125,13 +411,17 @@ export function useLaunchpadNative(options) {
     const nextBackgroundAcrylicAppearance = normalizeBackgroundAcrylicAppearance(settings.backgroundAcrylicAppearance);
     const nextBackgroundAcrylicDarkParams = normalizeBackgroundAcrylicParams(settings.backgroundAcrylicDarkParams, BACKGROUND_ACRYLIC_APPEARANCE_DARK);
     const nextBackgroundAcrylicLightParams = normalizeBackgroundAcrylicParams(settings.backgroundAcrylicLightParams, BACKGROUND_ACRYLIC_APPEARANCE_LIGHT);
+    const nextBackgroundUsesLiveDesktop = isLiveDesktopExperimentEnabled()
+      && backgroundSourceUsesLiveDesktop(nextBackgroundSource)
+      && normalizeLiveDesktopBackgroundSupport(options.liveDesktopBackgroundSupport.value).supportsLiveDesktopBackground;
     const nextBackgroundImagePath = backgroundSourceUsesImage(nextBackgroundSource)
       ? normalizeBackgroundImagePath(settings.backgroundImagePath)
       : null;
     const nextBackgroundImageUrl = nextBackgroundImagePath ? convertFilePathToAssetUrl(nextBackgroundImagePath) : null;
-    const nextEffectiveBackgroundEffect = backgroundEffectUsesPixi(nextBackgroundEffect) && !nextBackgroundImagePath
-      ? BACKGROUND_EFFECT_DIMMED
-      : nextBackgroundEffect;
+    let nextEffectiveBackgroundEffect = nextBackgroundEffect;
+    if (!nextBackgroundUsesLiveDesktop && backgroundEffectUsesPixi(nextBackgroundEffect) && !nextBackgroundImagePath) {
+      nextEffectiveBackgroundEffect = BACKGROUND_EFFECT_DIMMED;
+    }
 
     options.gridRows.value = rows;
     options.gridCols.value = cols;
@@ -153,11 +443,16 @@ export function useLaunchpadNative(options) {
     options.windowEffectAppearance.value = nextWindowEffectAppearance;
     options.draftWindowEffectMaterial.value = nextWindowEffectMaterial;
     options.draftWindowEffectAppearance.value = nextWindowEffectAppearance;
-    options.backgroundSource.value = nextBackgroundImagePath ? nextBackgroundSource : BACKGROUND_SOURCE_SYSTEM_MATERIAL;
+    options.backgroundSource.value = nextBackgroundUsesLiveDesktop
+      ? BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP
+      : nextBackgroundImagePath
+        ? nextBackgroundSource
+        : BACKGROUND_SOURCE_SYSTEM_MATERIAL;
     options.backgroundEffect.value = nextEffectiveBackgroundEffect;
     options.backgroundBaseColor.value = nextBackgroundBaseColor;
     options.backgroundBaseOpacity.value = nextBackgroundBaseOpacity;
     options.backgroundImageOpacity.value = nextBackgroundImageOpacity;
+    options.backgroundLiveDesktopOpacity.value = nextBackgroundLiveDesktopOpacity;
     options.backgroundImageLayout.value = nextBackgroundImageLayout;
     options.backgroundBlurStrength.value = nextBackgroundBlurStrength;
     options.backgroundDarkenStrength.value = nextBackgroundDarkenStrength;
@@ -172,6 +467,7 @@ export function useLaunchpadNative(options) {
     options.draftBackgroundBaseColor.value = nextBackgroundBaseColor;
     options.draftBackgroundBaseOpacity.value = nextBackgroundBaseOpacity;
     options.draftBackgroundImageOpacity.value = nextBackgroundImageOpacity;
+    options.draftBackgroundLiveDesktopOpacity.value = nextBackgroundLiveDesktopOpacity;
     options.draftBackgroundImageLayout.value = nextBackgroundImageLayout;
     options.draftBackgroundBlurStrength.value = nextBackgroundBlurStrength;
     options.draftBackgroundDarkenStrength.value = nextBackgroundDarkenStrength;
@@ -207,6 +503,11 @@ export function useLaunchpadNative(options) {
     nativeWallpaperRefreshTimer = null;
   }
 
+  function clearLiveDesktopIdleStopTimer() {
+    if (liveDesktopIdleStopTimer) window.clearTimeout(liveDesktopIdleStopTimer);
+    liveDesktopIdleStopTimer = null;
+  }
+
   function createCurrentLayoutSnapshot() {
     return options.createLayoutSnapshot({
       pages: options.pages.value,
@@ -228,6 +529,7 @@ export function useLaunchpadNative(options) {
       backgroundSource: options.backgroundSource.value,
       backgroundEffect: options.backgroundEffect.value,
       backgroundImageOpacity: options.backgroundImageOpacity.value,
+      backgroundLiveDesktopOpacity: options.backgroundLiveDesktopOpacity.value,
       backgroundImageLayout: options.backgroundImageLayout.value,
       backgroundBlurStrength: options.backgroundBlurStrength.value,
       backgroundDarkenStrength: options.backgroundDarkenStrength.value,
@@ -330,6 +632,7 @@ export function useLaunchpadNative(options) {
     scheduleLaunchTargetStatusCheck();
     setNativeWindowEffectsEnabled(true);
     syncWindowsWallpaperRefreshTimer();
+    syncLiveDesktopBackgroundRuntime();
   }
 
   function scheduleNativeLayoutSave() {
@@ -393,12 +696,133 @@ export function useLaunchpadNative(options) {
     }, WINDOWS_WALLPAPER_REFRESH_INTERVAL_MS);
   }
 
+  function canUseActiveLiveDesktopBackground() {
+    return Boolean(
+      isNativeBridgeAvailable()
+      && isLiveDesktopExperimentEnabled()
+      && backgroundSourceUsesLiveDesktop(options.backgroundSource.value)
+      && normalizeLiveDesktopBackgroundSupport(options.liveDesktopBackgroundSupport.value).supportsLiveDesktopBackground
+    );
+  }
+
+  function shouldRunLiveDesktopBackground() {
+    return Boolean(options.isDesktopOpen.value && canUseActiveLiveDesktopBackground());
+  }
+
+  function shouldKeepLiveDesktopBackgroundWarm(status) {
+    return Boolean(
+      !options.isDesktopOpen.value
+      && canUseActiveLiveDesktopBackground()
+      && liveDesktopRuntimeStatusIsRunning(status)
+    );
+  }
+
+  function liveDesktopRuntimeSyncIsCurrent(generation) {
+    return generation === liveDesktopRuntimeSyncGeneration;
+  }
+
+  function resetLiveDesktopRuntimeForUnavailableBridge() {
+    options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
+    liveDesktopBackgroundVisible = null;
+    return options.liveDesktopRuntimeStatus.value;
+  }
+
+  function resetLiveDesktopRuntimeForDisabledExperiment() {
+    options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus({
+      reason: LIVE_DESKTOP_EXPERIMENT_DISABLED_REASON,
+      detail: LIVE_DESKTOP_EXPERIMENT_DISABLED_DETAIL,
+    });
+    liveDesktopBackgroundVisible = null;
+    return options.liveDesktopRuntimeStatus.value;
+  }
+
+  function enqueueLiveDesktopRuntimeSync(task) {
+    const generation = ++liveDesktopRuntimeSyncGeneration;
+    liveDesktopRuntimeSync = liveDesktopRuntimeSync
+      .catch(() => {})
+      .then(() => task(generation));
+    return liveDesktopRuntimeSync;
+  }
+
+  function scheduleLiveDesktopIdleStop() {
+    clearLiveDesktopIdleStopTimer();
+    const generation = liveDesktopRuntimeSyncGeneration;
+    liveDesktopIdleStopTimer = window.setTimeout(() => {
+      liveDesktopIdleStopTimer = null;
+      liveDesktopRuntimeSync = liveDesktopRuntimeSync
+        .catch(() => {})
+        .then(async () => {
+          if (!liveDesktopRuntimeSyncIsCurrent(generation)) return options.liveDesktopRuntimeStatus.value;
+          if (shouldRunLiveDesktopBackground()) return options.liveDesktopRuntimeStatus.value;
+          const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
+          if (liveDesktopRuntimeStatusIsStopped(current)) return current;
+          return stopNativeLiveDesktopBackground();
+        });
+      return liveDesktopRuntimeSync;
+    }, LIVE_DESKTOP_IDLE_STOP_DELAY_MS);
+  }
+
+  function syncLiveDesktopBackgroundRuntime() {
+    return enqueueLiveDesktopRuntimeSync(async (generation) => {
+      if (!liveDesktopRuntimeSyncIsCurrent(generation)) return options.liveDesktopRuntimeStatus.value;
+      if (!isLiveDesktopExperimentEnabled()) {
+        clearLiveDesktopIdleStopTimer();
+        return resetLiveDesktopRuntimeForDisabledExperiment();
+      }
+      if (!isNativeBridgeAvailable()) {
+        return resetLiveDesktopRuntimeForUnavailableBridge();
+      }
+      if (!shouldRunLiveDesktopBackground()) {
+        const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
+        if (shouldKeepLiveDesktopBackgroundWarm(current)) {
+          await setNativeLiveDesktopBackgroundVisible(false);
+          if (!liveDesktopRuntimeSyncIsCurrent(generation)) return options.liveDesktopRuntimeStatus.value;
+          scheduleLiveDesktopIdleStop();
+          return options.liveDesktopRuntimeStatus.value;
+        }
+        clearLiveDesktopIdleStopTimer();
+        if (liveDesktopRuntimeStatusIsStopped(current)) return current;
+        return stopNativeLiveDesktopBackground();
+      }
+      clearLiveDesktopIdleStopTimer();
+      const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
+      if (liveDesktopRuntimeStatusIsRunning(current)) {
+        await setNativeLiveDesktopBackgroundVisible(true);
+        if (!liveDesktopRuntimeSyncIsCurrent(generation)) return options.liveDesktopRuntimeStatus.value;
+        return configureNativeLiveDesktopBackground();
+      }
+      return startNativeLiveDesktopBackground();
+    });
+  }
+
+  function restartLiveDesktopBackgroundRuntime() {
+    return enqueueLiveDesktopRuntimeSync(async (generation) => {
+      if (!liveDesktopRuntimeSyncIsCurrent(generation)) return options.liveDesktopRuntimeStatus.value;
+      if (!isLiveDesktopExperimentEnabled()) {
+        clearLiveDesktopIdleStopTimer();
+        return resetLiveDesktopRuntimeForDisabledExperiment();
+      }
+      if (!isNativeBridgeAvailable()) {
+        return resetLiveDesktopRuntimeForUnavailableBridge();
+      }
+      clearLiveDesktopIdleStopTimer();
+      if (!shouldRunLiveDesktopBackground()) return stopNativeLiveDesktopBackground();
+      const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
+      if (liveDesktopRuntimeStatusIsRunning(current)) {
+        await stopNativeLiveDesktopBackground();
+      }
+      if (!liveDesktopRuntimeSyncIsCurrent(generation)) return options.liveDesktopRuntimeStatus.value;
+      return startNativeLiveDesktopBackground();
+    });
+  }
+
   async function loadNativeLaunchpadData() {
     if (!shouldUseNativeCatalog()) return;
     isNativeLayoutReady.value = false;
 
     try {
       await refreshNativeWindowEffectsSupport();
+      await refreshLiveDesktopBackgroundSupport();
       const savedLayout = await loadLayout();
       if (!savedLayout) {
         options.pages.value = [[]];
@@ -455,6 +879,146 @@ export function useLaunchpadNative(options) {
       applyNativeWindowEffectsSupport(DEFAULT_WINDOW_EFFECTS_SUPPORT);
       console.error("Failed to load LaunchPad window effects support", error);
     }
+  }
+
+  async function refreshLiveDesktopBackgroundSupport() {
+    if (!isLiveDesktopExperimentEnabled()) {
+      options.liveDesktopBackgroundSupport.value = normalizeLiveDesktopBackgroundSupport({
+        reason: LIVE_DESKTOP_EXPERIMENT_DISABLED_REASON,
+        detail: LIVE_DESKTOP_EXPERIMENT_DISABLED_DETAIL,
+      });
+      return;
+    }
+    if (!isNativeBridgeAvailable()) {
+      options.liveDesktopBackgroundSupport.value = normalizeLiveDesktopBackgroundSupport(null);
+      return;
+    }
+    try {
+      options.liveDesktopBackgroundSupport.value = normalizeLiveDesktopBackgroundSupport(
+        await getLiveDesktopBackgroundSupport()
+      );
+    } catch (error) {
+      options.liveDesktopBackgroundSupport.value = normalizeLiveDesktopBackgroundSupport(null);
+      console.error("Failed to load live desktop background support", error);
+    }
+  }
+
+  async function refreshLiveDesktopRuntimeStatus() {
+    if (!isLiveDesktopExperimentEnabled()) {
+      return resetLiveDesktopRuntimeForDisabledExperiment();
+    }
+    if (!isNativeBridgeAvailable()) {
+      return resetLiveDesktopRuntimeForUnavailableBridge();
+    }
+    try {
+      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(
+        await getLiveDesktopRuntimeStatus()
+      );
+    } catch (error) {
+      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
+      console.error("Failed to load live desktop runtime status", error);
+    }
+    return options.liveDesktopRuntimeStatus.value;
+  }
+
+  async function setNativeLiveDesktopBackgroundVisible(visible) {
+    if (!isLiveDesktopExperimentEnabled()) {
+      return resetLiveDesktopRuntimeForDisabledExperiment();
+    }
+    if (liveDesktopBackgroundVisible === visible) return options.liveDesktopRuntimeStatus.value;
+    if (!isNativeBridgeAvailable()) {
+      return resetLiveDesktopRuntimeForUnavailableBridge();
+    }
+    try {
+      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(
+        await setLiveDesktopBackgroundVisible(visible)
+      );
+      liveDesktopBackgroundVisible = visible;
+    } catch (error) {
+      console.error("Failed to update live desktop background visibility", error);
+    }
+    return options.liveDesktopRuntimeStatus.value;
+  }
+
+  async function configureNativeLiveDesktopBackground() {
+    if (!isLiveDesktopExperimentEnabled()) {
+      return resetLiveDesktopRuntimeForDisabledExperiment();
+    }
+    if (!isNativeBridgeAvailable()) {
+      return resetLiveDesktopRuntimeForUnavailableBridge();
+    }
+    try {
+      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(
+        await configureLiveDesktopBackground(makeLiveDesktopRuntimeConfig(options))
+      );
+    } catch (error) {
+      options.liveDesktopRuntimeStatus.value = {
+        ...normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value),
+        active: false,
+        phase: "failed",
+        reason: "configureFailed",
+        detail: String(error?.message || error || ""),
+      };
+      console.error("Failed to configure live desktop background", error);
+    }
+    return options.liveDesktopRuntimeStatus.value;
+  }
+
+  async function startNativeLiveDesktopBackground() {
+    clearLiveDesktopIdleStopTimer();
+    if (!isLiveDesktopExperimentEnabled()) {
+      return resetLiveDesktopRuntimeForDisabledExperiment();
+    }
+    if (!isNativeBridgeAvailable()) {
+      return resetLiveDesktopRuntimeForUnavailableBridge();
+    }
+    try {
+      await configureLiveDesktopBackground(makeLiveDesktopRuntimeConfig(options));
+      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(
+        await startLiveDesktopBackground()
+      );
+      liveDesktopBackgroundVisible = liveDesktopRuntimeStatusIsRunning(
+        options.liveDesktopRuntimeStatus.value
+      )
+        ? true
+        : null;
+    } catch (error) {
+      options.liveDesktopRuntimeStatus.value = {
+        ...normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value),
+        active: false,
+        phase: "failed",
+        reason: "startFailed",
+        detail: String(error?.message || error || ""),
+      };
+      console.error("Failed to start live desktop background", error);
+    }
+    return options.liveDesktopRuntimeStatus.value;
+  }
+
+  async function stopNativeLiveDesktopBackground() {
+    clearLiveDesktopIdleStopTimer();
+    if (!isLiveDesktopExperimentEnabled()) {
+      return resetLiveDesktopRuntimeForDisabledExperiment();
+    }
+    if (!isNativeBridgeAvailable()) {
+      return resetLiveDesktopRuntimeForUnavailableBridge();
+    }
+    try {
+      options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(
+        await stopLiveDesktopBackground()
+      );
+      liveDesktopBackgroundVisible = null;
+    } catch (error) {
+      options.liveDesktopRuntimeStatus.value = {
+        ...normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value),
+        active: false,
+        phase: "failed",
+        reason: "stopFailed",
+        detail: String(error?.message || error || ""),
+      };
+      console.error("Failed to stop live desktop background", error);
+    }
+    return options.liveDesktopRuntimeStatus.value;
   }
 
   function applyNativeWindowEffectsSupport(support) {
@@ -831,6 +1395,7 @@ export function useLaunchpadNative(options) {
     nativeEventListenerGeneration += 1;
     clearNativeWindowHideTimer();
     clearNativeWallpaperRefreshTimer();
+    clearLiveDesktopIdleStopTimer();
     unlistenOpenDesktopEvent?.();
     unlistenOpenDesktopEvent = null;
     unlistenToggleDesktopEvent?.();
@@ -857,6 +1422,7 @@ export function useLaunchpadNative(options) {
     refreshWindowsWallpaperBackground().then((changed) => {
       if (changed) scheduleNativeLayoutSave();
     }).finally(syncWindowsWallpaperRefreshTimer);
+    syncLiveDesktopBackgroundRuntime();
     clearNativeWindowHideTimer();
     if (options.isDesktopOpen.value) {
       options.focusDesktopSurface?.();
@@ -868,9 +1434,10 @@ export function useLaunchpadNative(options) {
   function hideNativeWindowAfterCloseAnimation() {
     clearNativeWallpaperRefreshTimer();
     clearNativeWindowHideTimer();
+    syncLiveDesktopBackgroundRuntime();
     nativeWindowHideTimer = window.setTimeout(async () => {
       nativeWindowHideTimer = null;
-      hideNativeWindow();
+      await hideNativeWindow();
     }, DESKTOP_CLOSE_DURATION);
   }
 
@@ -923,6 +1490,7 @@ export function useLaunchpadNative(options) {
   return {
     clearNativeEventListeners,
     clearNativeSaveTimer,
+    configureNativeLiveDesktopBackground,
     flushNativeLayoutSave,
     hideNativeWindow,
     hideNativeWindowAfterCloseAnimation,
@@ -932,11 +1500,17 @@ export function useLaunchpadNative(options) {
     launchNativeAppIfAvailable,
     markLaunchCriticalLayoutDirty,
     prepareNativeLaunch,
+    refreshLiveDesktopBackgroundSupport,
+    refreshLiveDesktopRuntimeStatus,
     registerNativeEventListeners,
     scheduleNativeLayoutSave,
     scheduleLaunchTargetStatusCheck,
     setNativeWindowEffectsEnabled,
     showNativeLaunchError,
+    startNativeLiveDesktopBackground,
+    stopNativeLiveDesktopBackground,
+    restartLiveDesktopBackgroundRuntime,
+    syncLiveDesktopBackgroundRuntime,
     syncWindowsWallpaperRefreshTimer,
     shouldUseNativeCatalog,
   };

@@ -6,6 +6,9 @@ import {
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
 } from "../../../composables/useLaunchpadSettingsConfig.js";
 import {
+  BLUR_KERNEL_DUAL_KAWASE,
+  BLUR_KERNEL_GAUSSIAN,
+  createBackgroundEffectPlan,
   createDualKawaseLevels,
   resolveAcrylicBackgroundAlpha,
   resolveAcrylicRenderSize,
@@ -27,6 +30,8 @@ export function runAcrylicBackgroundPlanTests() {
 
   const levels = createDualKawaseLevels(960, 540);
   assert(levels.map((level) => `${level.width}x${level.height}`).join(",") === "480x270,240x135,120x68,60x34", "dual kawase levels should halve each pass");
+  const twoPassLevels = createDualKawaseLevels(960, 540, 2);
+  assert(twoPassLevels.map((level) => `${level.width}x${level.height}`).join(",") === "480x270,240x135", "dual kawase levels should honor the configured pass count");
   assert(Math.abs(resolveBlurOffsetScale(0) - 0.1) < 0.0001, "zero blur strength should clamp to the lightest blur offset scale");
   assert(Math.abs(resolveBlurOffsetScale(1) - 0.1) < 0.0001, "minimum blur strength should use the lightest blur offset scale");
   assert(Math.abs(resolveBlurOffsetScale(25) - 0.5408) < 0.0001, "lower blur strength should increase the blur radius linearly");
@@ -41,6 +46,66 @@ export function runAcrylicBackgroundPlanTests() {
 
   assert(resolveAcrylicBackgroundAlpha(72) === 0.72, "background alpha should derive from configured opacity");
   assert(resolveAcrylicBackgroundAlpha(120) === 1, "background alpha should clamp to one");
+
+  const blurPlan = createBackgroundEffectPlan({
+    effect: BACKGROUND_EFFECT_BLUR,
+    blurStrength: 75,
+    opacity: 72,
+  });
+  assert(blurPlan.effect === BACKGROUND_EFFECT_BLUR, "effect plan should preserve the normalized effect");
+  assert(blurPlan.opacity === 0.72, "effect plan should expose normalized opacity");
+  assert(Math.abs(blurPlan.blur.offsetScale - 1.275) < 0.0001, "effect plan should expose dual kawase blur offset scale");
+  assert(blurPlan.blur.downOffsets.length === 4, "effect plan should include down pass offsets");
+  assert(!blurPlan.acrylic.enabled, "blur effect plans should not enable acrylic composite");
+
+  const acrylicPlan = createBackgroundEffectPlan({
+    effect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    opacity: 37,
+    acrylicParams: {
+      brightness: 1.2,
+      tintColor: "#336699",
+      tintStrength: 0.4,
+    },
+  });
+  assert(acrylicPlan.acrylic.enabled, "acrylic effect plans should enable acrylic composite");
+  assert(acrylicPlan.acrylic.alpha === 0.37, "acrylic effect plan should carry alpha for composite");
+  assert(Math.abs(acrylicPlan.acrylic.tintColor[1] - 0.4) < 0.0001, "acrylic effect plan should normalize tint color");
+
+  const kawaseOverridePlan = createBackgroundEffectPlan({
+    effect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    dualKawaseParams: {
+      offsetScale: 0.53,
+      passCount: 3,
+    },
+  });
+  assert(kawaseOverridePlan.blur.passCount === 3, "effect plan should accept a debug dual kawase pass count");
+  assert(kawaseOverridePlan.blur.kernel === BLUR_KERNEL_DUAL_KAWASE, "effect plan should default to the dual kawase blur kernel");
+  assert(Math.abs(kawaseOverridePlan.blur.offsetScale - 0.53) < 0.0001, "effect plan should accept a debug dual kawase radius scale");
+  assert(Math.abs(kawaseOverridePlan.blur.downOffsets[1] - 0.7155) < 0.0001, "effect plan should scale down pass offsets from the debug radius scale");
+
+  const gaussianPlan = createBackgroundEffectPlan({
+    effect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    dualKawaseParams: {
+      gaussianRadiusPx: 20,
+      kernel: BLUR_KERNEL_GAUSSIAN,
+    },
+  });
+  assert(gaussianPlan.blur.kernel === BLUR_KERNEL_GAUSSIAN, "effect plan should accept the gaussian blur kernel");
+  assert(gaussianPlan.blur.gaussianRadiusPx === 20, "effect plan should accept a gaussian radius in target pixels");
+
+  const clampedKawasePlan = createBackgroundEffectPlan({
+    effect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    dualKawaseParams: {
+      gaussianRadiusPx: 200,
+      kernel: "bad",
+      offsetScale: 20,
+      passCount: 12,
+    },
+  });
+  assert(clampedKawasePlan.blur.kernel === BLUR_KERNEL_DUAL_KAWASE, "effect plan should clamp unknown blur kernels");
+  assert(clampedKawasePlan.blur.gaussianRadiusPx === 32, "effect plan should clamp gaussian radius");
+  assert(clampedKawasePlan.blur.passCount === 4, "effect plan should clamp debug dual kawase pass count");
+  assert(clampedKawasePlan.blur.offsetScale === 2, "effect plan should clamp debug dual kawase radius scale");
 
   assert(shouldUsePixiBackgroundEffect({
     effect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,

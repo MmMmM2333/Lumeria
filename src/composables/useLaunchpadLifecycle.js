@@ -14,8 +14,10 @@ export function registerLaunchpadLifecycleWatchers(options, watchFn = watch) {
     backgroundDarkenStrength,
     backgroundEffect,
     backgroundImageOpacity,
+    backgroundLiveDesktopOpacity,
     backgroundImagePath,
     backgroundSource,
+    syncLiveDesktopBackgroundRuntime,
     effectiveFolderIconSize,
     filteredManagedApps,
     folderCols,
@@ -52,10 +54,11 @@ export function registerLaunchpadLifecycleWatchers(options, watchFn = watch) {
   watchFn([renderedFolder, folderRows, folderCols, effectiveFolderIconSize, isTextlessMode, visibleFolderRowCount], scheduleFolderViewportMetrics, { flush: "post" });
   watchFn(folderViewportRef, observeFolderViewport, { flush: "post" });
   watchFn(activePages, schedulePageGridMetrics, { flush: "post" });
-  watchFn([pages, gridRows, gridCols, folderRows, folderCols, iconSize, folderIconSizeMode, folderIconSize, isTextlessMode, hiddenAppIds, scanRoots, scanKeywordBlacklist, scanAppBlacklist, showMissingLaunchTargetBadge, backgroundBaseColor, backgroundBaseOpacity, backgroundSource, backgroundEffect, backgroundImageOpacity, backgroundBlurStrength, backgroundDarkenColor, backgroundDarkenStrength, backgroundAcrylicAppearance, backgroundAcrylicDarkParams, backgroundAcrylicLightParams, backgroundImagePath, windowEffectMaterial, windowEffectAppearance], scheduleNativeLayoutSave, { flush: "post" });
+  watchFn([pages, gridRows, gridCols, folderRows, folderCols, iconSize, folderIconSizeMode, folderIconSize, isTextlessMode, hiddenAppIds, scanRoots, scanKeywordBlacklist, scanAppBlacklist, showMissingLaunchTargetBadge, backgroundBaseColor, backgroundBaseOpacity, backgroundSource, backgroundEffect, backgroundImageOpacity, backgroundLiveDesktopOpacity, backgroundBlurStrength, backgroundDarkenColor, backgroundDarkenStrength, backgroundAcrylicAppearance, backgroundAcrylicDarkParams, backgroundAcrylicLightParams, backgroundImagePath, windowEffectMaterial, windowEffectAppearance], scheduleNativeLayoutSave, { flush: "post" });
   watchFn([pages, showMissingLaunchTargetBadge], scheduleLaunchTargetStatusCheck, { flush: "post" });
   watchFn(filteredManagedApps, syncManagedAppState, { flush: "post" });
   watchFn([backgroundSource, isDesktopOpen], syncWindowsWallpaperRefreshTimer, { flush: "post" });
+  watchFn([backgroundSource, isDesktopOpen, backgroundEffect, backgroundLiveDesktopOpacity, backgroundBlurStrength, backgroundDarkenColor, backgroundDarkenStrength, backgroundAcrylicAppearance, backgroundAcrylicDarkParams, backgroundAcrylicLightParams], syncLiveDesktopBackgroundRuntime, { flush: "post" });
 }
 
 export function createLaunchpadLayoutResizeObserver(options, ResizeObserverCtor = globalThis.ResizeObserver) {

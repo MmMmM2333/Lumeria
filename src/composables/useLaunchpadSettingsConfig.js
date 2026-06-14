@@ -21,6 +21,7 @@ import {
 import {
   normalizeBackgroundImageLayout,
 } from "../domain/backgroundImageLayout.js";
+import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 export {
   BACKGROUND_IMAGE_LAYOUT_CENTER,
   BACKGROUND_IMAGE_LAYOUT_FILL,
@@ -37,6 +38,7 @@ export const FOLDER_ICON_SIZE_MODE_GLOBAL = "global";
 export const BACKGROUND_SOURCE_SYSTEM_MATERIAL = "systemMaterial";
 export const BACKGROUND_SOURCE_CUSTOM_IMAGE = "customImage";
 export const BACKGROUND_SOURCE_WINDOWS_WALLPAPER = "windowsWallpaper";
+export const BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP = "windowsLiveDesktop";
 export const BACKGROUND_EFFECT_NONE = "none";
 export const BACKGROUND_EFFECT_DIMMED = "dimmed";
 export const BACKGROUND_EFFECT_BLUR = "blur";
@@ -49,6 +51,10 @@ export const BACKGROUND_IMAGE_OPACITY_MIN = 0;
 export const BACKGROUND_IMAGE_OPACITY_MAX = 100;
 export const BACKGROUND_IMAGE_OPACITY_STEP = 1;
 export const DEFAULT_BACKGROUND_IMAGE_OPACITY = 46;
+export const BACKGROUND_LIVE_DESKTOP_OPACITY_MIN = 0;
+export const BACKGROUND_LIVE_DESKTOP_OPACITY_MAX = 100;
+export const BACKGROUND_LIVE_DESKTOP_OPACITY_STEP = 1;
+export const DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY = 100;
 export const BACKGROUND_BLUR_STRENGTH_MIN = 1;
 export const BACKGROUND_BLUR_STRENGTH_MAX = 100;
 export const BACKGROUND_BLUR_STRENGTH_STEP = 1;
@@ -76,6 +82,13 @@ export const DEFAULT_WINDOW_EFFECTS_SUPPORT = Object.freeze({
   supportsMica: false,
   supportsMicaAlt: false,
 });
+export const DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT = Object.freeze({
+  platform: "unknown",
+  supportsLiveDesktopBackground: false,
+  supportsLiveDesktopBackgroundEffects: false,
+  reason: "nativeBridgeUnavailable",
+  detail: "",
+});
 
 export function clampLaunchpadIconSize(value) {
   return clamp(Number(value) || DEFAULT_ICON_SIZE, ICON_SIZE_MIN, ICON_SIZE_MAX);
@@ -88,6 +101,7 @@ export function normalizeFolderIconSizeMode(value) {
 export function normalizeBackgroundSource(value) {
   if (value === BACKGROUND_SOURCE_CUSTOM_IMAGE) return BACKGROUND_SOURCE_CUSTOM_IMAGE;
   if (value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER) return BACKGROUND_SOURCE_WINDOWS_WALLPAPER;
+  if (value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP) return BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP;
   return BACKGROUND_SOURCE_SYSTEM_MATERIAL;
 }
 
@@ -105,6 +119,22 @@ export function backgroundEffectUsesPixi(effect) {
 export function backgroundSourceUsesImage(source) {
   const normalizedSource = normalizeBackgroundSource(source);
   return normalizedSource === BACKGROUND_SOURCE_CUSTOM_IMAGE || normalizedSource === BACKGROUND_SOURCE_WINDOWS_WALLPAPER;
+}
+
+export function backgroundSourceUsesLiveDesktop(source) {
+  return normalizeBackgroundSource(source) === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP;
+}
+
+export function normalizeLiveDesktopBackgroundSupport(support) {
+  return {
+    platform: String(support?.platform || DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT.platform),
+    supportsLiveDesktopBackground: Boolean(support?.supportsLiveDesktopBackground),
+    supportsLiveDesktopBackgroundEffects: Boolean(support?.supportsLiveDesktopBackgroundEffects),
+    reason: typeof support?.reason === "string"
+      ? support.reason
+      : DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT.reason,
+    detail: typeof support?.detail === "string" ? support.detail : "",
+  };
 }
 
 export function normalizeBackgroundAcrylicAppearance(value) {
@@ -138,6 +168,12 @@ export function clampBackgroundImageOpacity(value) {
   const opacity = Number(value);
   if (!Number.isFinite(opacity)) return DEFAULT_BACKGROUND_IMAGE_OPACITY;
   return clamp(Math.round(opacity), BACKGROUND_IMAGE_OPACITY_MIN, BACKGROUND_IMAGE_OPACITY_MAX);
+}
+
+export function clampBackgroundLiveDesktopOpacity(value) {
+  const opacity = Number(value);
+  if (!Number.isFinite(opacity)) return DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY;
+  return clamp(Math.round(opacity), BACKGROUND_LIVE_DESKTOP_OPACITY_MIN, BACKGROUND_LIVE_DESKTOP_OPACITY_MAX);
 }
 
 export function clampBackgroundBlurStrength(value) {
@@ -238,6 +274,7 @@ export function syncLaunchpadSettingsDraftsFromState(options) {
   options.draftBackgroundSource.value = options.backgroundSource.value;
   options.draftBackgroundEffect.value = options.backgroundEffect.value;
   options.draftBackgroundImageOpacity.value = options.backgroundImageOpacity.value;
+  options.draftBackgroundLiveDesktopOpacity.value = clampBackgroundLiveDesktopOpacity(options.backgroundLiveDesktopOpacity.value);
   options.draftBackgroundImageLayout.value = normalizeBackgroundImageLayout(options.backgroundImageLayout.value);
   options.draftBackgroundBlurStrength.value = clampBackgroundBlurStrength(options.backgroundBlurStrength.value);
   options.draftBackgroundDarkenStrength.value = clampBackgroundDarkenStrength(options.backgroundDarkenStrength.value);
@@ -297,22 +334,30 @@ export function useLaunchpadSettingsConfig(options) {
 
   function setDraftBackgroundSource(source) {
     const nextSource = normalizeBackgroundSource(source);
+    if (backgroundSourceUsesLiveDesktop(nextSource) && !canUseLiveDesktopBackground()) return;
     options.draftBackgroundSource.value = nextSource;
     if (!backgroundSourceUsesImage(nextSource)) {
       options.draftBackgroundImagePath.value = null;
       options.draftBackgroundImageUrl.value = null;
-      if (backgroundEffectUsesPixi(options.draftBackgroundEffect.value)) {
+      if (!backgroundSourceUsesLiveDesktop(nextSource) || !canUseLiveDesktopBackgroundEffect(options.draftBackgroundEffect.value)) {
         options.draftBackgroundEffect.value = BACKGROUND_EFFECT_DIMMED;
       }
     }
   }
 
   function setDraftBackgroundEffect(effect) {
-    options.draftBackgroundEffect.value = normalizeBackgroundEffect(effect);
+    const nextEffect = normalizeBackgroundEffect(effect);
+    options.draftBackgroundEffect.value = canUseDraftBackgroundEffect(nextEffect)
+      ? nextEffect
+      : BACKGROUND_EFFECT_DIMMED;
   }
 
   function setDraftBackgroundImageOpacity(value) {
     options.draftBackgroundImageOpacity.value = clampBackgroundImageOpacity(value);
+  }
+
+  function setDraftBackgroundLiveDesktopOpacity(value) {
+    options.draftBackgroundLiveDesktopOpacity.value = clampBackgroundLiveDesktopOpacity(value);
   }
 
   function setDraftBackgroundImageLayout(layout) {
@@ -361,6 +406,12 @@ export function useLaunchpadSettingsConfig(options) {
   function changeDraftBackgroundImageOpacity(direction) {
     setDraftBackgroundImageOpacity(
       Number(options.draftBackgroundImageOpacity.value) + direction * BACKGROUND_IMAGE_OPACITY_STEP
+    );
+  }
+
+  function changeDraftBackgroundLiveDesktopOpacity(direction) {
+    setDraftBackgroundLiveDesktopOpacity(
+      Number(options.draftBackgroundLiveDesktopOpacity.value) + direction * BACKGROUND_LIVE_DESKTOP_OPACITY_STEP
     );
   }
 
@@ -422,6 +473,26 @@ export function useLaunchpadSettingsConfig(options) {
 
   function canUseWindowEffectMaterial(material) {
     return isWindowEffectMaterialAvailable(material, options.windowEffectsSupport.value);
+  }
+
+  function canUseLiveDesktopBackground() {
+    return Boolean(
+      isLiveDesktopExperimentEnabled()
+      && normalizeLiveDesktopBackgroundSupport(options.liveDesktopBackgroundSupport?.value).supportsLiveDesktopBackground
+    );
+  }
+
+  function canUseLiveDesktopBackgroundEffect(effect) {
+    if (!canUseLiveDesktopBackground()) return false;
+    return Boolean(normalizeBackgroundEffect(effect));
+  }
+
+  function canUseDraftBackgroundEffect(effect) {
+    if (backgroundSourceUsesImage(options.draftBackgroundSource.value)) return true;
+    if (backgroundSourceUsesLiveDesktop(options.draftBackgroundSource.value)) {
+      return canUseLiveDesktopBackgroundEffect(effect);
+    }
+    return false;
   }
 
   function setDraftWindowEffectMaterial(material) {
@@ -502,20 +573,24 @@ export function useLaunchpadSettingsConfig(options) {
     if (!options.isDragActive()) options.isTextlessMode.value = Boolean(options.draftIsTextlessMode.value);
     const nextBackgroundSource = normalizeBackgroundSource(options.draftBackgroundSource.value);
     const nextBackgroundUsesImage = backgroundSourceUsesImage(nextBackgroundSource);
+    const nextBackgroundUsesLiveDesktop = backgroundSourceUsesLiveDesktop(nextBackgroundSource) && canUseLiveDesktopBackground();
     const nextBackgroundImagePath = nextBackgroundUsesImage
       ? normalizeBackgroundImagePath(options.draftBackgroundImagePath.value)
       : null;
     const normalizedBackgroundEffect = normalizeBackgroundEffect(options.draftBackgroundEffect.value);
-    const nextBackgroundEffect = backgroundEffectUsesPixi(normalizedBackgroundEffect) && !nextBackgroundImagePath
-      ? BACKGROUND_EFFECT_DIMMED
-      : normalizedBackgroundEffect;
-    options.backgroundSource.value = nextBackgroundImagePath
+    let nextBackgroundEffect = normalizedBackgroundEffect;
+    if (!nextBackgroundUsesLiveDesktop && backgroundEffectUsesPixi(normalizedBackgroundEffect) && !nextBackgroundImagePath) {
+      nextBackgroundEffect = BACKGROUND_EFFECT_DIMMED;
+    }
+    const shouldUseSelectedBackgroundSource = nextBackgroundUsesLiveDesktop || Boolean(nextBackgroundImagePath);
+    options.backgroundSource.value = shouldUseSelectedBackgroundSource
       ? nextBackgroundSource
       : BACKGROUND_SOURCE_SYSTEM_MATERIAL;
     options.backgroundEffect.value = nextBackgroundEffect;
     options.backgroundBaseColor.value = normalizeBackgroundBaseColor(options.draftBackgroundBaseColor.value);
     options.backgroundBaseOpacity.value = clampBackgroundBaseOpacity(options.draftBackgroundBaseOpacity.value);
     options.backgroundImageOpacity.value = clampBackgroundImageOpacity(options.draftBackgroundImageOpacity.value);
+    options.backgroundLiveDesktopOpacity.value = clampBackgroundLiveDesktopOpacity(options.draftBackgroundLiveDesktopOpacity.value);
     options.backgroundImageLayout.value = normalizeBackgroundImageLayout(options.draftBackgroundImageLayout.value);
     options.backgroundBlurStrength.value = clampBackgroundBlurStrength(options.draftBackgroundBlurStrength.value);
     options.backgroundDarkenStrength.value = clampBackgroundDarkenStrength(options.draftBackgroundDarkenStrength.value);
@@ -534,6 +609,7 @@ export function useLaunchpadSettingsConfig(options) {
     options.windowEffectAppearance.value = normalizeWindowEffectAppearance(options.draftWindowEffectAppearance.value);
     syncLaunchpadSettingsDraftsFromState(options);
     options.applyNativeWindowEffects?.();
+    options.syncLiveDesktopBackgroundRuntime?.();
     options.closeSettingsPanel();
   }
 
@@ -541,6 +617,7 @@ export function useLaunchpadSettingsConfig(options) {
     applyGridConfig,
     applySettingsConfig,
     changeDraftBackgroundImageOpacity,
+    changeDraftBackgroundLiveDesktopOpacity,
     changeDraftBackgroundBaseOpacity,
     changeDraftCols,
     changeDraftFolderCols,
@@ -552,10 +629,14 @@ export function useLaunchpadSettingsConfig(options) {
     clampIconSize,
     clearDraftBackgroundImage,
     canUseWindowEffectMaterial,
+    canUseLiveDesktopBackground,
+    canUseLiveDesktopBackgroundEffect,
+    canUseDraftBackgroundEffect,
     setDraftBackgroundBlurStrength,
     setDraftBackgroundDarkenColor,
     setDraftBackgroundDarkenStrength,
     setDraftBackgroundImageOpacity,
+    setDraftBackgroundLiveDesktopOpacity,
     setDraftBackgroundBaseColor,
     setDraftBackgroundBaseOpacity,
     setDraftBackgroundEffect,

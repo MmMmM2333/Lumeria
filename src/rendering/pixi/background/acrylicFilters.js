@@ -55,6 +55,45 @@ void main(void)
 }
 `;
 
+export const GAUSSIAN_FRAGMENT = `
+in vec2 vTextureCoord;
+out vec4 finalColor;
+
+uniform sampler2D uTexture;
+uniform vec4 uInputClamp;
+uniform vec2 uTexelSize;
+uniform vec2 uDirection;
+uniform float uSigma;
+uniform float uRadius;
+
+const int MAX_GAUSSIAN_RADIUS = 32;
+
+vec4 sampleInput(vec2 uv)
+{
+  return texture(uTexture, clamp(uv, uInputClamp.xy, uInputClamp.zw));
+}
+
+void main(void)
+{
+  float sigma = max(uSigma, 0.001);
+  float radius = clamp(floor(uRadius + 0.5), 0.0, float(MAX_GAUSSIAN_RADIUS));
+  vec2 stepOffset = uTexelSize * uDirection;
+  vec4 color = vec4(0.0);
+  float totalWeight = 0.0;
+
+  for (int index = -MAX_GAUSSIAN_RADIUS; index <= MAX_GAUSSIAN_RADIUS; index += 1) {
+    float sampleIndex = float(index);
+    if (abs(sampleIndex) <= radius) {
+      float weight = exp(-(sampleIndex * sampleIndex) / (2.0 * sigma * sigma));
+      color += sampleInput(vTextureCoord + stepOffset * sampleIndex) * weight;
+      totalWeight += weight;
+    }
+  }
+
+  finalColor = color / max(totalWeight, 0.0001);
+}
+`;
+
 export const ACRYLIC_COMPOSITE_FRAGMENT = `
 in vec2 vTextureCoord;
 out vec4 finalColor;
@@ -139,6 +178,36 @@ export function createKawaseFilter(name, offset = 1) {
   };
   filter.setOffset = (nextOffset) => {
     uniforms.uniforms.uOffset = Number(nextOffset) || offset;
+    uniforms.update();
+  };
+  return filter;
+}
+
+export function createGaussianFilter(name, direction = [1, 0]) {
+  const uniforms = new UniformGroup({
+    uTexelSize: { value: [1, 1], type: "vec2<f32>" },
+    uDirection: { value: direction, type: "vec2<f32>" },
+    uSigma: { value: 1, type: "f32" },
+    uRadius: { value: 3, type: "f32" },
+  });
+  const filter = new Filter({
+    glProgram: createProgram(GAUSSIAN_FRAGMENT, name),
+    resources: {
+      gaussianUniforms: uniforms,
+    },
+  });
+  filter.setInputSize = (width, height) => {
+    uniforms.uniforms.uTexelSize = [
+      1 / Math.max(1, width),
+      1 / Math.max(1, height),
+    ];
+    uniforms.update();
+  };
+  filter.setParams = ({ radius, sigma }) => {
+    const nextSigma = Number(sigma);
+    const nextRadius = Number(radius);
+    uniforms.uniforms.uSigma = Number.isFinite(nextSigma) ? Math.max(0.001, nextSigma) : 1;
+    uniforms.uniforms.uRadius = Number.isFinite(nextRadius) ? Math.max(0, nextRadius) : 3;
     uniforms.update();
   };
   return filter;

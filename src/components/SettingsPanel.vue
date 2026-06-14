@@ -205,7 +205,7 @@
               </div>
               <div class="settings-field settings-field-wide settings-background-field">
                 <span class="settings-field-copy">
-                  <span>图片层</span>
+                  <span>背景层</span>
                   <span class="settings-field-hint">{{ backgroundSourceHint }}</span>
                 </span>
                 <div class="settings-background-controls">
@@ -234,19 +234,41 @@
                       >
                         桌面壁纸
                       </button>
+                      <button
+                        v-if="canShowLiveDesktopControls"
+                        type="button"
+                        :class="cx('settings-segmented-button', state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP && 'settings-segmented-button-active')"
+                        :disabled="!state.canUseLiveDesktopBackground()"
+                        @click="state.setDraftBackgroundSource(BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP)"
+                      >
+                        动态桌面
+                      </button>
                     </div>
                     <label v-if="doesDraftBackgroundUseImage" class="settings-opacity-control">
-                      <span>图片透明度</span>
+                      <span>背景透明度</span>
                       <input
                         :value="state.draftBackgroundImageOpacity.value"
                         :min="BACKGROUND_IMAGE_OPACITY_MIN"
                         :max="BACKGROUND_IMAGE_OPACITY_MAX"
                         :step="BACKGROUND_IMAGE_OPACITY_STEP"
                         type="range"
-                        aria-label="背景图片透明度"
+                        aria-label="背景层透明度"
                         @input="state.setDraftBackgroundImageOpacity($event.target.value)"
                       />
                       <span class="settings-opacity-value">{{ state.draftBackgroundImageOpacity.value }}%</span>
+                    </label>
+                    <label v-if="doesDraftBackgroundUseLiveDesktop" class="settings-opacity-control">
+                      <span>动态桌面不透明度</span>
+                      <input
+                        :value="state.draftBackgroundLiveDesktopOpacity.value"
+                        :min="BACKGROUND_LIVE_DESKTOP_OPACITY_MIN"
+                        :max="BACKGROUND_LIVE_DESKTOP_OPACITY_MAX"
+                        :step="BACKGROUND_LIVE_DESKTOP_OPACITY_STEP"
+                        type="range"
+                        aria-label="动态桌面不透明度"
+                        @input="state.setDraftBackgroundLiveDesktopOpacity($event.target.value)"
+                      />
+                      <span class="settings-opacity-value">{{ state.draftBackgroundLiveDesktopOpacity.value }}%</span>
                     </label>
                   </div>
                   <div v-if="doesDraftBackgroundUseImage" class="settings-background-image-controls">
@@ -307,7 +329,7 @@
               </div>
               <div class="settings-field settings-field-wide settings-background-field">
                 <span class="settings-field-copy">
-                  <span>图片效果</span>
+                  <span>背景效果</span>
                   <span class="settings-field-hint">{{ backgroundEffectHint }}</span>
                 </span>
                 <div class="settings-background-controls">
@@ -316,7 +338,7 @@
                       <button
                         type="button"
                         :class="cx('settings-segmented-button', state.draftBackgroundEffect.value === BACKGROUND_EFFECT_NONE && 'settings-segmented-button-active')"
-                        :disabled="!doesDraftBackgroundUseImage"
+                        :disabled="!canUseDraftBackgroundEffect(BACKGROUND_EFFECT_NONE)"
                         @click="state.setDraftBackgroundEffect(BACKGROUND_EFFECT_NONE)"
                       >
                         原图
@@ -324,7 +346,7 @@
                       <button
                         type="button"
                         :class="cx('settings-segmented-button', state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED && 'settings-segmented-button-active')"
-                        :disabled="!doesDraftBackgroundUseImage"
+                        :disabled="!canUseDraftBackgroundEffect(BACKGROUND_EFFECT_DIMMED)"
                         @click="state.setDraftBackgroundEffect(BACKGROUND_EFFECT_DIMMED)"
                       >
                         暗化
@@ -332,7 +354,7 @@
                       <button
                         type="button"
                         :class="cx('settings-segmented-button', state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR && 'settings-segmented-button-active')"
-                        :disabled="!doesDraftBackgroundUseImage"
+                        :disabled="!canUseDraftBackgroundEffect(BACKGROUND_EFFECT_BLUR)"
                         @click="state.setDraftBackgroundEffect(BACKGROUND_EFFECT_BLUR)"
                       >
                         模糊
@@ -340,14 +362,14 @@
                       <button
                         type="button"
                         :class="cx('settings-segmented-button', state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL && 'settings-segmented-button-active')"
-                        :disabled="!doesDraftBackgroundUseImage"
+                        :disabled="!canUseDraftBackgroundEffect(BACKGROUND_EFFECT_ACRYLIC_WEBGL)"
                         @click="state.setDraftBackgroundEffect(BACKGROUND_EFFECT_ACRYLIC_WEBGL)"
                       >
                         Acrylic
                       </button>
                     </div>
                   </div>
-                  <label v-if="doesDraftBackgroundUseImage && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR" class="settings-opacity-control">
+                  <label v-if="doesDraftBackgroundUseLayer && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR" class="settings-opacity-control">
                     <span>模糊强度</span>
                     <input
                       :value="state.draftBackgroundBlurStrength.value"
@@ -360,7 +382,7 @@
                     />
                     <span class="settings-opacity-value">{{ state.draftBackgroundBlurStrength.value }}%</span>
                   </label>
-                  <label v-if="doesDraftBackgroundUseImage && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED" class="settings-color-control">
+                  <label v-if="doesDraftBackgroundUseLayer && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED" class="settings-color-control">
                     <span>暗化颜色</span>
                     <span class="settings-color-swatch">
                       <input
@@ -372,7 +394,7 @@
                     </span>
                     <span class="settings-color-value">{{ state.draftBackgroundDarkenColor.value }}</span>
                   </label>
-                  <label v-if="doesDraftBackgroundUseImage && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED" class="settings-opacity-control">
+                  <label v-if="doesDraftBackgroundUseLayer && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED" class="settings-opacity-control">
                     <span>暗化强度</span>
                     <input
                       :value="state.draftBackgroundDarkenStrength.value"
@@ -385,7 +407,7 @@
                     />
                     <span class="settings-opacity-value">{{ state.draftBackgroundDarkenStrength.value }}%</span>
                   </label>
-                  <div v-if="doesDraftBackgroundUseImage && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL" class="settings-acrylic-controls">
+                  <div v-if="doesDraftBackgroundUseLayer && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL" class="settings-acrylic-controls">
                     <div class="settings-acrylic-row">
                       <span class="settings-acrylic-row-label">Acrylic 外观</span>
                       <div class="settings-segmented-control" aria-label="Acrylic 外观">
@@ -842,9 +864,14 @@ import {
   BACKGROUND_IMAGE_OPACITY_MAX,
   BACKGROUND_IMAGE_OPACITY_MIN,
   BACKGROUND_IMAGE_OPACITY_STEP,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_MAX,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_MIN,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_STEP,
   BACKGROUND_SOURCE_CUSTOM_IMAGE,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
   BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
+  backgroundSourceUsesLiveDesktop,
   backgroundSourceUsesImage,
   normalizeBackgroundAcrylicAppearance,
   normalizeBackgroundAcrylicParams,
@@ -856,6 +883,7 @@ import {
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
 } from "../composables/useLaunchpadSettingsConfig.js";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
+import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 import { getIconSource } from "../domain/iconSource.js";
 import { cx } from "../domain/launchpadLayout.js";
 import { rgbArrayToHex } from "../rendering/pixi/background/acrylicParams.js";
@@ -870,7 +898,9 @@ const activeAcrylicParamsProfile = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
 const settingsPanelRef = ref(null);
 const systemAcrylicAppearance = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
 let systemAppearanceQuery = null;
+let liveDesktopStatusTimer = null;
 const ACRYLIC_PARAM_STEP = 0.01;
+const LIVE_DESKTOP_STATUS_REFRESH_INTERVAL_MS = 1000;
 const ACRYLIC_TINT_STRENGTH_MIN = 0;
 const ACRYLIC_TINT_STRENGTH_MAX = 0.6;
 const ACRYLIC_BRIGHTNESS_MIN = 0.5;
@@ -937,25 +967,47 @@ const canEditWindowEffectAppearance = computed(() =>
   && props.state.canUseWindowEffectMaterial(props.state.draftWindowEffectMaterial.value)
 );
 const doesDraftBackgroundUseImage = computed(() => backgroundSourceUsesImage(props.state.draftBackgroundSource.value));
+const canShowLiveDesktopControls = computed(() => isLiveDesktopExperimentEnabled());
+const doesDraftBackgroundUseLiveDesktop = computed(() => Boolean(
+  canShowLiveDesktopControls.value
+  && backgroundSourceUsesLiveDesktop(props.state.draftBackgroundSource.value)
+));
+const doesDraftBackgroundUseLayer = computed(() => doesDraftBackgroundUseImage.value || doesDraftBackgroundUseLiveDesktop.value);
 const isDraftCustomImage = computed(() => props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE);
 const isDraftWindowsWallpaper = computed(() => props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER);
+const canUseDraftBackgroundEffect = (effect) => props.state.canUseDraftBackgroundEffect(effect);
+const liveDesktopUnavailableDetail = computed(() => {
+  const support = props.state.liveDesktopBackgroundSupport?.value;
+  return String(support?.detail || support?.reason || "").trim();
+});
+const liveDesktopRuntimeDetail = computed(() => {
+  const status = props.state.liveDesktopRuntimeStatus?.value;
+  if (!status || status.phase === "stopped") return "";
+  return String(status.detail || status.reason || "").trim();
+});
 const backgroundSourceHint = computed(() =>
   props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE
     ? "自定义图片叠在底色上方"
     : props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER
       ? "跟随当前 Windows 桌面壁纸"
-      : "不叠加图片"
+      : props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP && canShowLiveDesktopControls.value
+        ? liveDesktopRuntimeDetail.value || "捕获动态桌面并在 Native GPU 管线中合成"
+        : canShowLiveDesktopControls.value && !props.state.canUseLiveDesktopBackground() && liveDesktopUnavailableDetail.value
+          ? `动态桌面不可用：${liveDesktopUnavailableDetail.value}`
+        : "不叠加背景层"
 );
 const backgroundEffectHint = computed(() =>
-  doesDraftBackgroundUseImage.value
-    ? props.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+  doesDraftBackgroundUseLayer.value
+    ? doesDraftBackgroundUseLiveDesktop.value && !props.state.canUseLiveDesktopBackgroundEffect(props.state.draftBackgroundEffect.value)
+      ? "当前效果由前端透明层合成"
+      : props.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL
       ? "WebGL Acrylic 风格合成"
       : props.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR
-        ? "仅模糊图片层"
+        ? "模糊背景层"
       : props.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED
         ? "叠加暗化遮罩"
-        : "直接显示图片"
-    : "选择图片后可用"
+        : "直接显示背景层"
+    : "选择背景层后可用"
 );
 const draftBackgroundImageName = computed(() => {
   const path = String(props.state.draftBackgroundImagePath.value || "").trim();
@@ -1020,6 +1072,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  clearLiveDesktopStatusTimer();
   if (!systemAppearanceQuery) return;
   if (typeof systemAppearanceQuery.removeEventListener === "function") {
     systemAppearanceQuery.removeEventListener("change", updateSystemAcrylicAppearance);
@@ -1028,6 +1081,15 @@ onBeforeUnmount(() => {
   }
   systemAppearanceQuery = null;
 });
+
+watch(
+  [
+    () => props.state.isSettingsPanelOpen.value,
+    () => props.state.draftBackgroundSource.value,
+  ],
+  syncLiveDesktopStatusTimer,
+  { immediate: true }
+);
 
 watch(
   () => props.state.isSettingsPanelOpen.value,
@@ -1063,6 +1125,29 @@ function resolveSystemAcrylicAppearance() {
 
 function updateSystemAcrylicAppearance() {
   systemAcrylicAppearance.value = resolveSystemAcrylicAppearance();
+}
+
+function clearLiveDesktopStatusTimer() {
+  if (liveDesktopStatusTimer) window.clearInterval(liveDesktopStatusTimer);
+  liveDesktopStatusTimer = null;
+}
+
+function refreshLiveDesktopRuntimeStatus() {
+  if (!canShowLiveDesktopControls.value) return;
+  props.state.refreshLiveDesktopRuntimeStatus?.();
+}
+
+function syncLiveDesktopStatusTimer() {
+  clearLiveDesktopStatusTimer();
+  if (typeof window === "undefined") return;
+  if (!canShowLiveDesktopControls.value) return;
+  if (!props.state.isSettingsPanelOpen.value || !doesDraftBackgroundUseLiveDesktop.value) return;
+  if (typeof props.state.refreshLiveDesktopRuntimeStatus !== "function") return;
+  refreshLiveDesktopRuntimeStatus();
+  liveDesktopStatusTimer = window.setInterval(
+    refreshLiveDesktopRuntimeStatus,
+    LIVE_DESKTOP_STATUS_REFRESH_INTERVAL_MS
+  );
 }
 
 function selectWindowEffectPreview(material, appearance) {

@@ -30,6 +30,7 @@ function createLifecycleOptions() {
       backgroundDarkenColor: ref("#1c1c1c"),
       backgroundDarkenStrength: ref(28),
       backgroundImageOpacity: ref(46),
+      backgroundLiveDesktopOpacity: ref(100),
       backgroundImagePath: ref(null),
       backgroundSource: ref("systemMaterial"),
       backgroundEffect: ref("dimmed"),
@@ -88,6 +89,7 @@ function createLifecycleOptions() {
       scheduleNativeLayoutSave: makeCall("scheduleNativeLayoutSave"),
       schedulePageGridMetrics: makeCall("schedulePageGridMetrics"),
       showMissingLaunchTargetBadge: ref(true),
+      syncLiveDesktopBackgroundRuntime: makeCall("syncLiveDesktopBackgroundRuntime"),
       syncWindowsWallpaperRefreshTimer: makeCall("syncWindowsWallpaperRefreshTimer"),
       syncManagedAppState: makeCall("syncManagedAppState"),
       updateFolderViewportHeight: makeCall("updateFolderViewportHeight"),
@@ -126,11 +128,12 @@ export async function runLaunchpadLifecycleTests() {
   registerLaunchpadLifecycleWatchers(options, (source, callback, config) => {
     watchers.push({ source, callback, config });
   });
-  assert(watchers.length === 8, "lifecycle should register all controller watchers");
+  assert(watchers.length === 9, "lifecycle should register all controller watchers");
   assert(watchers.every((item) => item.config.flush === "post"), "lifecycle watchers should flush after render");
   assert(watchers[0].callback === options.schedulePageGridMetrics, "layout setting watcher should refresh page metrics");
   assert(watchers[2].source === options.folderViewportRef, "folder viewport watcher should observe the viewport ref");
   assert(watchers[4].source.includes(options.backgroundBlurStrength), "layout save watcher should track background blur strength");
+  assert(watchers[4].source.includes(options.backgroundLiveDesktopOpacity), "layout save watcher should track live desktop opacity");
   assert(watchers[4].source.includes(options.backgroundDarkenColor), "layout save watcher should track background darken color");
   assert(watchers[4].source.includes(options.backgroundDarkenStrength), "layout save watcher should track background darken strength");
   assert(watchers[4].source.includes(options.backgroundAcrylicAppearance), "layout save watcher should track acrylic appearance");
@@ -139,6 +142,17 @@ export async function runLaunchpadLifecycleTests() {
   assert(watchers[5].callback === options.scheduleLaunchTargetStatusCheck, "launch target watcher should refresh path status");
   assert(watchers[6].callback === options.syncManagedAppState, "managed app watcher should sync app state");
   assert(watchers[7].callback === options.syncWindowsWallpaperRefreshTimer, "wallpaper source watcher should sync the wallpaper refresh timer");
+  assert(watchers[8].callback === options.syncLiveDesktopBackgroundRuntime, "live desktop watcher should sync the native runtime");
+  assert(watchers[8].source.includes(options.backgroundSource), "live desktop watcher should track background source");
+  assert(watchers[8].source.includes(options.isDesktopOpen), "live desktop watcher should track desktop visibility");
+  assert(watchers[8].source.includes(options.backgroundEffect), "live desktop watcher should track background effect");
+  assert(watchers[8].source.includes(options.backgroundLiveDesktopOpacity), "live desktop watcher should track live desktop opacity");
+  assert(watchers[8].source.includes(options.backgroundBlurStrength), "live desktop watcher should track blur strength");
+  assert(watchers[8].source.includes(options.backgroundDarkenColor), "live desktop watcher should track darken color");
+  assert(watchers[8].source.includes(options.backgroundDarkenStrength), "live desktop watcher should track darken strength");
+  assert(watchers[8].source.includes(options.backgroundAcrylicAppearance), "live desktop watcher should track acrylic appearance");
+  assert(watchers[8].source.includes(options.backgroundAcrylicDarkParams), "live desktop watcher should track acrylic dark params");
+  assert(watchers[8].source.includes(options.backgroundAcrylicLightParams), "live desktop watcher should track acrylic light params");
 
   const observed = [];
   const ObserverCtor = class {
