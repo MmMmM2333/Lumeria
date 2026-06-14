@@ -44,6 +44,7 @@ import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
   BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
+  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
   BACKGROUND_EFFECT_DIMMED,
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
@@ -53,6 +54,7 @@ import {
   backgroundSourceUsesLiveDesktop,
   backgroundSourceUsesImage,
   clampBackgroundBaseOpacity,
+  clampBackgroundAcrylicBlurStrength,
   clampBackgroundBlurStrength,
   clampBackgroundDarkenStrength,
   clampBackgroundImageOpacity,
@@ -325,19 +327,23 @@ function makeLiveDesktopRuntimeConfig(options) {
       : options.backgroundAcrylicDarkParams.value,
     acrylicProfile
   );
+  const effect = normalizeBackgroundEffect(options.backgroundEffect.value);
+  const blurStrength = effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+    ? clampBackgroundAcrylicBlurStrength(options.backgroundAcrylicBlurStrength.value)
+    : clampBackgroundBlurStrength(options.backgroundBlurStrength.value);
   return {
-    effect: normalizeBackgroundEffect(options.backgroundEffect.value),
+    effect,
     debugFrameSourceOverride: resolveLiveDesktopDebugFrameSourceOverride(),
-    blurStrength: clampBackgroundBlurStrength(options.backgroundBlurStrength.value),
+    blurStrength,
     darkenStrength: clampBackgroundDarkenStrength(options.backgroundDarkenStrength.value),
     darkenColor: normalizeBackgroundDarkenColor(options.backgroundDarkenColor.value),
     acrylicAppearance,
     acrylicParams,
     effectPlan: createBackgroundEffectPlan({
       acrylicParams,
-      blurStrength: options.backgroundBlurStrength.value,
+      blurStrength,
       dualKawaseParams: getKawaseDebugEffectPlanParams(),
-      effect: options.backgroundEffect.value,
+      effect,
       opacity: options.backgroundLiveDesktopOpacity.value,
     }),
     disableMouseRelay: resolveLiveDesktopDisableMouseRelay(),
@@ -406,6 +412,7 @@ export function useLaunchpadNative(options) {
     const nextBackgroundLiveDesktopOpacity = clampBackgroundLiveDesktopOpacity(settings.backgroundLiveDesktopOpacity);
     const nextBackgroundImageLayout = normalizeBackgroundImageLayout(settings.backgroundImageLayout);
     const nextBackgroundBlurStrength = clampBackgroundBlurStrength(settings.backgroundBlurStrength);
+    const nextBackgroundAcrylicBlurStrength = clampBackgroundAcrylicBlurStrength(settings.backgroundAcrylicBlurStrength);
     const nextBackgroundDarkenStrength = clampBackgroundDarkenStrength(settings.backgroundDarkenStrength);
     const nextBackgroundDarkenColor = normalizeBackgroundDarkenColor(settings.backgroundDarkenColor);
     const nextBackgroundAcrylicAppearance = normalizeBackgroundAcrylicAppearance(settings.backgroundAcrylicAppearance);
@@ -455,6 +462,7 @@ export function useLaunchpadNative(options) {
     options.backgroundLiveDesktopOpacity.value = nextBackgroundLiveDesktopOpacity;
     options.backgroundImageLayout.value = nextBackgroundImageLayout;
     options.backgroundBlurStrength.value = nextBackgroundBlurStrength;
+    options.backgroundAcrylicBlurStrength.value = nextBackgroundAcrylicBlurStrength;
     options.backgroundDarkenStrength.value = nextBackgroundDarkenStrength;
     options.backgroundDarkenColor.value = nextBackgroundDarkenColor;
     options.backgroundAcrylicAppearance.value = nextBackgroundAcrylicAppearance;
@@ -470,6 +478,7 @@ export function useLaunchpadNative(options) {
     options.draftBackgroundLiveDesktopOpacity.value = nextBackgroundLiveDesktopOpacity;
     options.draftBackgroundImageLayout.value = nextBackgroundImageLayout;
     options.draftBackgroundBlurStrength.value = nextBackgroundBlurStrength;
+    options.draftBackgroundAcrylicBlurStrength.value = nextBackgroundAcrylicBlurStrength;
     options.draftBackgroundDarkenStrength.value = nextBackgroundDarkenStrength;
     options.draftBackgroundDarkenColor.value = nextBackgroundDarkenColor;
     options.draftBackgroundAcrylicAppearance.value = nextBackgroundAcrylicAppearance;
@@ -532,6 +541,7 @@ export function useLaunchpadNative(options) {
       backgroundLiveDesktopOpacity: options.backgroundLiveDesktopOpacity.value,
       backgroundImageLayout: options.backgroundImageLayout.value,
       backgroundBlurStrength: options.backgroundBlurStrength.value,
+      backgroundAcrylicBlurStrength: options.backgroundAcrylicBlurStrength.value,
       backgroundDarkenStrength: options.backgroundDarkenStrength.value,
       backgroundDarkenColor: options.backgroundDarkenColor.value,
       backgroundAcrylicAppearance: options.backgroundAcrylicAppearance.value,

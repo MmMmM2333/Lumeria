@@ -7,6 +7,7 @@ import {
   backgroundSourceUsesImage,
   backgroundSourceUsesLiveDesktop,
   clampBackgroundBaseOpacity,
+  clampBackgroundAcrylicBlurStrength,
   clampBackgroundBlurStrength,
   clampBackgroundDarkenStrength,
   clampBackgroundImageOpacity,
@@ -50,8 +51,13 @@ export function useLaunchpadViewState(options) {
     && backgroundEffectUsesPixi(options.backgroundEffect.value)
     && !normalizeLiveDesktopBackgroundSupport(options.liveDesktopBackgroundSupport?.value).supportsLiveDesktopBackgroundEffects
   ));
+  const liveDesktopBlurStrength = computed(() => (
+    options.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL && options.backgroundAcrylicBlurStrength
+      ? clampBackgroundAcrylicBlurStrength(options.backgroundAcrylicBlurStrength.value)
+      : clampBackgroundBlurStrength(options.backgroundBlurStrength?.value)
+  ));
   const liveDesktopBlurRadius = computed(() => (
-    2 + (clampBackgroundBlurStrength(options.backgroundBlurStrength?.value) / 100) * 28
+    2 + (liveDesktopBlurStrength.value / 100) * 28
   ));
   const liveDesktopBackdropFilter = computed(() => {
     if (!shouldUseCssLiveDesktopEffect.value) return "none";

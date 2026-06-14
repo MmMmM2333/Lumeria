@@ -408,6 +408,19 @@
                     <span class="settings-opacity-value">{{ state.draftBackgroundDarkenStrength.value }}%</span>
                   </label>
                   <div v-if="doesDraftBackgroundUseLayer && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL" class="settings-acrylic-controls">
+                    <label class="settings-opacity-control">
+                      <span>模糊强度</span>
+                      <input
+                        :value="state.draftBackgroundAcrylicBlurStrength.value"
+                        :min="BACKGROUND_BLUR_STRENGTH_MIN"
+                        :max="BACKGROUND_BLUR_STRENGTH_MAX"
+                        :step="BACKGROUND_BLUR_STRENGTH_STEP"
+                        type="range"
+                        aria-label="Acrylic 模糊强度"
+                        @input="state.setDraftBackgroundAcrylicBlurStrength($event.target.value)"
+                      />
+                      <span class="settings-opacity-value">{{ state.draftBackgroundAcrylicBlurStrength.value }}%</span>
+                    </label>
                     <div class="settings-acrylic-row">
                       <span class="settings-acrylic-row-label">Acrylic 外观</span>
                       <div class="settings-segmented-control" aria-label="Acrylic 外观">
@@ -528,7 +541,7 @@
                     :background-acrylic-params="draftBackgroundAcrylicPreviewParams"
                     :background-base-color="state.draftBackgroundBaseColor.value"
                     :background-base-opacity="state.draftBackgroundBaseOpacity.value"
-                    :background-blur-strength="state.draftBackgroundBlurStrength.value"
+                    :background-blur-strength="draftBackgroundEffectBlurStrength"
                     :background-darken-color="state.draftBackgroundDarkenColor.value"
                     :background-darken-strength="state.draftBackgroundDarkenStrength.value"
                     :background-effect="state.draftBackgroundEffect.value"
@@ -1040,6 +1053,11 @@ const draftBackgroundAcrylicPreviewParams = computed(() => {
     : props.state.draftBackgroundAcrylicDarkParams.value;
   return normalizeBackgroundAcrylicParams(params, appearance);
 });
+const draftBackgroundEffectBlurStrength = computed(() => (
+  props.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+    ? props.state.draftBackgroundAcrylicBlurStrength.value
+    : props.state.draftBackgroundBlurStrength.value
+));
 const activeAcrylicParams = computed(() => (
   activeAcrylicParamsProfile.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
     ? props.state.draftBackgroundAcrylicLightParams.value

@@ -23,6 +23,7 @@ export const DUAL_KAWASE_OFFSET_SCALE_MIN = 0.02;
 export const DUAL_KAWASE_OFFSET_SCALE_MAX = 2;
 export const DUAL_KAWASE_BLUR_OFFSET_SCALE_MIN = 0.1;
 export const DUAL_KAWASE_BLUR_OFFSET_SCALE_MAX = 1.55;
+export const AUTO_DUAL_KAWASE_OFFSET_SCALE_DEFAULT = 0.2;
 export const GAUSSIAN_BLUR_RADIUS_PX_DEFAULT = 4;
 export const GAUSSIAN_BLUR_RADIUS_PX_MIN = 0;
 export const GAUSSIAN_BLUR_RADIUS_PX_MAX = 32;
@@ -215,9 +216,6 @@ export function createBackgroundEffectPlan(config = {}) {
   const effect = normalizeBackgroundEffect(config.effect ?? config.backgroundEffect);
   const opacity = resolveAcrylicBackgroundAlpha(config.opacity ?? config.backgroundImageOpacity);
   const blurStrength = clampBackgroundBlurStrength(config.blurStrength ?? config.backgroundBlurStrength);
-  const defaultBlurOffsetScale = effect === BACKGROUND_EFFECT_BLUR
-    ? resolveBlurOffsetScale(blurStrength)
-    : 1;
   const blurParams = normalizeBlurEffectParams(
     config.dualKawaseParams ?? config.dualKawase,
     {
@@ -226,8 +224,8 @@ export function createBackgroundEffectPlan(config = {}) {
       acrylicGaussianCutoff: ACRYLIC_GAUSSIAN_CUTOFF_DEFAULT,
       gaussianRadiusScale: GAUSSIAN_BLUR_RADIUS_SCALE_DEFAULT,
       gaussianMaxRadiusPx: GAUSSIAN_BLUR_RADIUS_AUTO_MAX_DEFAULT,
-      kernel: BLUR_KERNEL_DUAL_KAWASE,
-      offsetScale: defaultBlurOffsetScale,
+      kernel: BLUR_KERNEL_AUTO,
+      offsetScale: AUTO_DUAL_KAWASE_OFFSET_SCALE_DEFAULT,
       passCount: DUAL_KAWASE_PASS_COUNT,
       testStrength: null,
     }

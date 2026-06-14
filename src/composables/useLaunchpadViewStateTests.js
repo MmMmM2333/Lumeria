@@ -25,6 +25,7 @@ function createViewState(overrides = {}) {
     backgroundSource: ref(overrides.backgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
     backgroundEffect: ref(overrides.backgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     backgroundBlurStrength: ref(overrides.backgroundBlurStrength ?? 50),
+    backgroundAcrylicBlurStrength: ref(overrides.backgroundAcrylicBlurStrength ?? 50),
     backgroundAcrylicParams: ref(overrides.backgroundAcrylicParams ?? {
       brightness: 0.9,
       contrast: 1.1,
@@ -154,6 +155,8 @@ export function runLaunchpadViewStateTests() {
   const liveDesktopAcrylic = createViewState({
     backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
     backgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    backgroundBlurStrength: 10,
+    backgroundAcrylicBlurStrength: 80,
     liveDesktopCssFallbackEffectsEnabled: true,
     liveDesktopBackgroundSupport: {
       supportsLiveDesktopBackground: true,
@@ -162,6 +165,7 @@ export function runLaunchpadViewStateTests() {
   });
   assert(liveDesktopAcrylic.view.rootStyle.value["--launchpad-background-overlay-color"] === "rgb(51 102 153)", "live desktop acrylic fallback should expose acrylic tint color");
   assert(liveDesktopAcrylic.view.rootStyle.value["--launchpad-background-overlay-opacity"] === "0.26", "live desktop acrylic fallback should expose acrylic tint opacity");
+  assert(liveDesktopAcrylic.view.rootStyle.value["--launchpad-live-desktop-backdrop-filter"].includes("blur(24.4px)"), "live desktop acrylic fallback should use acrylic blur strength");
   assert(liveDesktopAcrylic.view.rootStyle.value["--launchpad-live-desktop-backdrop-filter"].includes("saturate(1.30)"), "live desktop acrylic fallback should include acrylic color adjustments");
 
   setLiveDesktopExperimentEnabledForTests(false);

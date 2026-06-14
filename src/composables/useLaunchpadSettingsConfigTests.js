@@ -12,6 +12,7 @@ import {
   BACKGROUND_IMAGE_LAYOUT_CENTER,
   BACKGROUND_IMAGE_LAYOUT_FILL,
   BACKGROUND_IMAGE_LAYOUT_TILE,
+  DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH,
   DEFAULT_BACKGROUND_BLUR_STRENGTH,
   DEFAULT_BACKGROUND_DARKEN_COLOR,
   DEFAULT_BACKGROUND_DARKEN_STRENGTH,
@@ -32,6 +33,7 @@ import {
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
   backgroundEffectUsesPixi,
   clampBackgroundBaseOpacity,
+  clampBackgroundAcrylicBlurStrength,
   clampBackgroundBlurStrength,
   clampBackgroundDarkenStrength,
   clampBackgroundImageOpacity,
@@ -93,6 +95,7 @@ function createSettingsConfig(overrides = {}) {
     draftBackgroundLiveDesktopOpacity: refValue(overrides.draftBackgroundLiveDesktopOpacity ?? 100),
     draftBackgroundImageLayout: refValue(overrides.draftBackgroundImageLayout ?? BACKGROUND_IMAGE_LAYOUT_FILL),
     draftBackgroundBlurStrength: refValue(overrides.draftBackgroundBlurStrength ?? DEFAULT_BACKGROUND_BLUR_STRENGTH),
+    draftBackgroundAcrylicBlurStrength: refValue(overrides.draftBackgroundAcrylicBlurStrength ?? DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH),
     draftBackgroundDarkenColor: refValue(overrides.draftBackgroundDarkenColor ?? DEFAULT_BACKGROUND_DARKEN_COLOR),
     draftBackgroundDarkenStrength: refValue(overrides.draftBackgroundDarkenStrength ?? DEFAULT_BACKGROUND_DARKEN_STRENGTH),
     draftBackgroundAcrylicAppearance: refValue(overrides.draftBackgroundAcrylicAppearance ?? BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM),
@@ -111,6 +114,7 @@ function createSettingsConfig(overrides = {}) {
     backgroundLiveDesktopOpacity: refValue(overrides.backgroundLiveDesktopOpacity ?? 100),
     backgroundImageLayout: refValue(overrides.backgroundImageLayout ?? BACKGROUND_IMAGE_LAYOUT_FILL),
     backgroundBlurStrength: refValue(overrides.backgroundBlurStrength ?? DEFAULT_BACKGROUND_BLUR_STRENGTH),
+    backgroundAcrylicBlurStrength: refValue(overrides.backgroundAcrylicBlurStrength ?? DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH),
     backgroundDarkenColor: refValue(overrides.backgroundDarkenColor ?? DEFAULT_BACKGROUND_DARKEN_COLOR),
     backgroundDarkenStrength: refValue(overrides.backgroundDarkenStrength ?? DEFAULT_BACKGROUND_DARKEN_STRENGTH),
     backgroundAcrylicAppearance: refValue(overrides.backgroundAcrylicAppearance ?? BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM),
@@ -185,6 +189,7 @@ function createSettingsConfig(overrides = {}) {
     draftBackgroundLiveDesktopOpacity: state.draftBackgroundLiveDesktopOpacity,
     draftBackgroundImageLayout: state.draftBackgroundImageLayout,
     draftBackgroundBlurStrength: state.draftBackgroundBlurStrength,
+    draftBackgroundAcrylicBlurStrength: state.draftBackgroundAcrylicBlurStrength,
     draftBackgroundDarkenColor: state.draftBackgroundDarkenColor,
     draftBackgroundDarkenStrength: state.draftBackgroundDarkenStrength,
     draftBackgroundAcrylicAppearance: state.draftBackgroundAcrylicAppearance,
@@ -224,6 +229,7 @@ function createSettingsConfig(overrides = {}) {
     backgroundLiveDesktopOpacity: state.backgroundLiveDesktopOpacity,
     backgroundImageLayout: state.backgroundImageLayout,
     backgroundBlurStrength: state.backgroundBlurStrength,
+    backgroundAcrylicBlurStrength: state.backgroundAcrylicBlurStrength,
     backgroundDarkenColor: state.backgroundDarkenColor,
     backgroundDarkenStrength: state.backgroundDarkenStrength,
     backgroundAcrylicAppearance: state.backgroundAcrylicAppearance,
@@ -288,6 +294,9 @@ export function runLaunchpadSettingsConfigTests() {
   assert(clampBackgroundBlurStrength(-12) === 1, "background blur strength should clamp to the minimum");
   assert(clampBackgroundBlurStrength(120) === 100, "background blur strength should clamp to the maximum");
   assert(clampBackgroundBlurStrength("bad") === DEFAULT_BACKGROUND_BLUR_STRENGTH, "invalid background blur strength should fall back to the default");
+  assert(clampBackgroundAcrylicBlurStrength(-12) === 1, "background acrylic blur strength should clamp to the minimum");
+  assert(clampBackgroundAcrylicBlurStrength(120) === 100, "background acrylic blur strength should clamp to the maximum");
+  assert(clampBackgroundAcrylicBlurStrength("bad") === DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH, "invalid background acrylic blur strength should fall back to the default");
   assert(clampBackgroundDarkenStrength(-12) === 0, "background darken strength should clamp to the minimum");
   assert(clampBackgroundDarkenStrength(120) === 100, "background darken strength should clamp to the maximum");
   assert(clampBackgroundDarkenStrength("bad") === DEFAULT_BACKGROUND_DARKEN_STRENGTH, "invalid background darken strength should fall back to the default");
@@ -337,6 +346,7 @@ export function runLaunchpadSettingsConfigTests() {
     draftBackgroundImageOpacity: 12,
     draftBackgroundImageLayout: BACKGROUND_IMAGE_LAYOUT_CENTER,
     draftBackgroundBlurStrength: 12,
+    draftBackgroundAcrylicBlurStrength: 13,
     draftBackgroundDarkenColor: "#121212",
     draftBackgroundDarkenStrength: 12,
     draftBackgroundAcrylicAppearance: BACKGROUND_ACRYLIC_APPEARANCE_DARK,
@@ -360,6 +370,7 @@ export function runLaunchpadSettingsConfigTests() {
     backgroundLiveDesktopOpacity: 82,
     backgroundImageLayout: BACKGROUND_IMAGE_LAYOUT_TILE,
     backgroundBlurStrength: 82,
+    backgroundAcrylicBlurStrength: 83,
     backgroundDarkenColor: "#456",
     backgroundDarkenStrength: 64,
     backgroundAcrylicAppearance: BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
@@ -385,6 +396,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(sync.state.draftBackgroundLiveDesktopOpacity.value === 82, "sync should reset live desktop opacity draft from current settings");
   assert(sync.state.draftBackgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_TILE, "sync should reset background image layout draft from current settings");
   assert(sync.state.draftBackgroundBlurStrength.value === 82, "sync should reset background blur strength draft from current settings");
+  assert(sync.state.draftBackgroundAcrylicBlurStrength.value === 83, "sync should reset acrylic blur strength draft from current settings");
   assert(sync.state.draftBackgroundDarkenColor.value === "#445566", "sync should reset background darken color draft from current settings");
   assert(sync.state.draftBackgroundDarkenStrength.value === 64, "sync should reset background darken strength draft from current settings");
   assert(sync.state.draftBackgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT, "sync should reset acrylic appearance draft from current settings");
@@ -443,6 +455,7 @@ export function runLaunchpadSettingsConfigTests() {
   backgroundMode.config.setDraftBackgroundLiveDesktopOpacity(-12);
   backgroundMode.config.setDraftBackgroundImageLayout(BACKGROUND_IMAGE_LAYOUT_CENTER);
   backgroundMode.config.setDraftBackgroundBlurStrength(120);
+  backgroundMode.config.setDraftBackgroundAcrylicBlurStrength(120);
   backgroundMode.config.setDraftBackgroundDarkenColor("#789");
   backgroundMode.config.setDraftBackgroundDarkenStrength(120);
   backgroundMode.config.setDraftBackgroundAcrylicAppearance(BACKGROUND_ACRYLIC_APPEARANCE_LIGHT);
@@ -454,6 +467,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(backgroundMode.state.draftBackgroundLiveDesktopOpacity.value === 0, "live desktop opacity should clamp from slider input");
   assert(backgroundMode.state.draftBackgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_CENTER, "background image layout should update from segmented controls");
   assert(backgroundMode.state.draftBackgroundBlurStrength.value === 100, "background blur strength should clamp from slider input");
+  assert(backgroundMode.state.draftBackgroundAcrylicBlurStrength.value === 100, "acrylic blur strength should clamp from slider input");
   assert(backgroundMode.state.draftBackgroundDarkenColor.value === "#778899", "background darken color should update from color input");
   assert(backgroundMode.state.draftBackgroundDarkenStrength.value === 100, "background darken strength should clamp from slider input");
   assert(backgroundMode.state.draftBackgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT, "acrylic appearance should update from segmented controls");
@@ -550,6 +564,7 @@ export function runLaunchpadSettingsConfigTests() {
     draftBackgroundLiveDesktopOpacity: 76,
     draftBackgroundImageLayout: BACKGROUND_IMAGE_LAYOUT_CENTER,
     draftBackgroundBlurStrength: 88,
+    draftBackgroundAcrylicBlurStrength: 91,
     draftBackgroundDarkenColor: "#456",
     draftBackgroundDarkenStrength: 53,
     draftBackgroundAcrylicAppearance: BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
@@ -576,6 +591,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(apply.state.backgroundLiveDesktopOpacity.value === 76, "live desktop opacity should apply from the draft value");
   assert(apply.state.backgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_CENTER, "background image layout should apply from the draft value");
   assert(apply.state.backgroundBlurStrength.value === 88, "background blur strength should apply from the draft value");
+  assert(apply.state.backgroundAcrylicBlurStrength.value === 91, "acrylic blur strength should apply from the draft value");
   assert(apply.state.backgroundDarkenColor.value === "#445566", "background darken color should apply from the draft value");
   assert(apply.state.backgroundDarkenStrength.value === 53, "background darken strength should apply from the draft value");
   assert(apply.state.backgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT, "acrylic appearance should apply from the draft value");

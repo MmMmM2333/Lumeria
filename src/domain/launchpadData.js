@@ -433,6 +433,7 @@ export function createLaunchpadDataHelpers(options) {
     const backgroundImageOpacity = Number(state.backgroundImageOpacity);
     const backgroundLiveDesktopOpacity = Number(state.backgroundLiveDesktopOpacity);
     const backgroundBlurStrength = normalizeLayoutBackgroundBlurStrength(state.backgroundBlurStrength);
+    const backgroundAcrylicBlurStrength = normalizeLayoutBackgroundBlurStrength(state.backgroundAcrylicBlurStrength);
     const backgroundDarkenStrength = normalizeLayoutBackgroundDarkenStrength(state.backgroundDarkenStrength);
     const backgroundDarkenColor = normalizeLayoutBackgroundDarkenColor(state.backgroundDarkenColor);
     const backgroundAcrylicAppearance = normalizeLayoutBackgroundAcrylicAppearance(state.backgroundAcrylicAppearance);
@@ -472,6 +473,7 @@ export function createLaunchpadDataHelpers(options) {
         backgroundImageOpacity: Number.isFinite(backgroundImageOpacity) ? clamp(Math.round(backgroundImageOpacity), 0, 100) : 46,
         backgroundLiveDesktopOpacity: Number.isFinite(backgroundLiveDesktopOpacity) ? clamp(Math.round(backgroundLiveDesktopOpacity), 0, 100) : 100,
         backgroundBlurStrength,
+        backgroundAcrylicBlurStrength,
         backgroundDarkenStrength,
         backgroundDarkenColor,
         backgroundAcrylicAppearance,

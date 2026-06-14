@@ -13,7 +13,7 @@
         :active="shouldRenderPixiBackgroundEffect"
         :background-acrylic-params="backgroundAcrylicParams"
         :background-effect="backgroundEffect"
-        :background-blur-strength="backgroundBlurStrength"
+        :background-blur-strength="backgroundEffectBlurStrength"
         :background-image-opacity="backgroundImageOpacity"
         :background-image-layout="backgroundImageLayout"
         :background-image-path="backgroundImagePath"
@@ -172,7 +172,7 @@ const {
   rootStyle,
   backgroundAcrylicParams,
   backgroundEffect,
-  backgroundBlurStrength,
+  backgroundEffectBlurStrength,
   backgroundImageOpacity,
   backgroundImageLayout,
   backgroundImagePath,
@@ -650,7 +650,7 @@ watch(
     backgroundViewportSize.value.width,
     backgroundViewportSize.value.height,
     backgroundEffect.value,
-    backgroundBlurStrength.value,
+    backgroundEffectBlurStrength.value,
     backgroundAcrylicParams.value,
   ],
   () => {

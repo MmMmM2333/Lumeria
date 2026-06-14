@@ -8,6 +8,7 @@ import {
 import { useLaunchpadControllerState } from "./useLaunchpadControllerState.js";
 import {
   DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE,
+  DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH,
   BACKGROUND_EFFECT_DIMMED,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
   DEFAULT_BACKGROUND_BASE_COLOR,
@@ -45,6 +46,7 @@ export function runLaunchpadControllerStateTests() {
   assert(state.backgroundImageOpacity.value === DEFAULT_BACKGROUND_IMAGE_OPACITY, "background image opacity should use the default");
   assert(state.backgroundImageLayout.value === DEFAULT_BACKGROUND_IMAGE_LAYOUT, "background image layout should use the default");
   assert(state.backgroundBlurStrength.value === DEFAULT_BACKGROUND_BLUR_STRENGTH, "background blur strength should use the default");
+  assert(state.backgroundAcrylicBlurStrength.value === DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH, "background acrylic blur strength should use the default");
   assert(state.backgroundDarkenColor.value === DEFAULT_BACKGROUND_DARKEN_COLOR, "background darken color should use the default");
   assert(state.backgroundDarkenStrength.value === DEFAULT_BACKGROUND_DARKEN_STRENGTH, "background darken strength should use the default");
   assert(state.backgroundAcrylicAppearance.value === DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE, "background acrylic appearance should use the default");
@@ -59,6 +61,7 @@ export function runLaunchpadControllerStateTests() {
   assert(state.draftBackgroundImageOpacity.value === DEFAULT_BACKGROUND_IMAGE_OPACITY, "draft background image opacity should use the default");
   assert(state.draftBackgroundImageLayout.value === DEFAULT_BACKGROUND_IMAGE_LAYOUT, "draft background image layout should use the default");
   assert(state.draftBackgroundBlurStrength.value === DEFAULT_BACKGROUND_BLUR_STRENGTH, "draft background blur strength should use the default");
+  assert(state.draftBackgroundAcrylicBlurStrength.value === DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH, "draft background acrylic blur strength should use the default");
   assert(state.draftBackgroundDarkenColor.value === DEFAULT_BACKGROUND_DARKEN_COLOR, "draft background darken color should use the default");
   assert(state.draftBackgroundDarkenStrength.value === DEFAULT_BACKGROUND_DARKEN_STRENGTH, "draft background darken strength should use the default");
   assert(state.draftBackgroundAcrylicAppearance.value === DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE, "draft background acrylic appearance should use the default");

@@ -17,6 +17,7 @@ import {
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
   DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE,
+  DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH,
   DEFAULT_BACKGROUND_BASE_COLOR,
   DEFAULT_BACKGROUND_BASE_OPACITY,
   DEFAULT_BACKGROUND_BLUR_STRENGTH,
@@ -56,6 +57,7 @@ export function useLaunchpadControllerState() {
   const backgroundLiveDesktopOpacity = ref(DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY);
   const backgroundImageLayout = ref(DEFAULT_BACKGROUND_IMAGE_LAYOUT);
   const backgroundBlurStrength = ref(DEFAULT_BACKGROUND_BLUR_STRENGTH);
+  const backgroundAcrylicBlurStrength = ref(DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH);
   const backgroundDarkenStrength = ref(DEFAULT_BACKGROUND_DARKEN_STRENGTH);
   const backgroundDarkenColor = ref(DEFAULT_BACKGROUND_DARKEN_COLOR);
   const backgroundAcrylicAppearance = ref(DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE);
@@ -71,6 +73,7 @@ export function useLaunchpadControllerState() {
   const draftBackgroundLiveDesktopOpacity = ref(DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY);
   const draftBackgroundImageLayout = ref(DEFAULT_BACKGROUND_IMAGE_LAYOUT);
   const draftBackgroundBlurStrength = ref(DEFAULT_BACKGROUND_BLUR_STRENGTH);
+  const draftBackgroundAcrylicBlurStrength = ref(DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH);
   const draftBackgroundDarkenStrength = ref(DEFAULT_BACKGROUND_DARKEN_STRENGTH);
   const draftBackgroundDarkenColor = ref(DEFAULT_BACKGROUND_DARKEN_COLOR);
   const draftBackgroundAcrylicAppearance = ref(DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE);
@@ -127,6 +130,7 @@ export function useLaunchpadControllerState() {
     backgroundBaseColor,
     backgroundBaseOpacity,
     backgroundAcrylicAppearance,
+    backgroundAcrylicBlurStrength,
     backgroundAcrylicDarkParams,
     backgroundAcrylicLightParams,
     backgroundBlurStrength,
@@ -143,6 +147,7 @@ export function useLaunchpadControllerState() {
     draftBackgroundBaseColor,
     draftBackgroundBaseOpacity,
     draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicBlurStrength,
     draftBackgroundAcrylicDarkParams,
     draftBackgroundAcrylicLightParams,
     draftBackgroundBlurStrength,

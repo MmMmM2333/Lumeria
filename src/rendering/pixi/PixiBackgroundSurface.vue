@@ -343,7 +343,7 @@ watch(
 watch(
   () => props.backgroundBlurStrength,
   () => {
-    if (props.backgroundEffect === BACKGROUND_EFFECT_BLUR) scheduleRender();
+    if (props.backgroundEffect === BACKGROUND_EFFECT_BLUR || props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) scheduleRender();
   }
 );
 

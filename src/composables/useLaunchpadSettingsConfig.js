@@ -59,6 +59,7 @@ export const BACKGROUND_BLUR_STRENGTH_MIN = 1;
 export const BACKGROUND_BLUR_STRENGTH_MAX = 100;
 export const BACKGROUND_BLUR_STRENGTH_STEP = 1;
 export const DEFAULT_BACKGROUND_BLUR_STRENGTH = 50;
+export const DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH = DEFAULT_BACKGROUND_BLUR_STRENGTH;
 export const BACKGROUND_DARKEN_STRENGTH_MIN = 0;
 export const BACKGROUND_DARKEN_STRENGTH_MAX = 100;
 export const BACKGROUND_DARKEN_STRENGTH_STEP = 1;
@@ -182,6 +183,12 @@ export function clampBackgroundBlurStrength(value) {
   return clamp(Math.round(strength), BACKGROUND_BLUR_STRENGTH_MIN, BACKGROUND_BLUR_STRENGTH_MAX);
 }
 
+export function clampBackgroundAcrylicBlurStrength(value) {
+  const strength = Number(value);
+  if (!Number.isFinite(strength)) return DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH;
+  return clamp(Math.round(strength), BACKGROUND_BLUR_STRENGTH_MIN, BACKGROUND_BLUR_STRENGTH_MAX);
+}
+
 export function clampBackgroundDarkenStrength(value) {
   const strength = Number(value);
   if (!Number.isFinite(strength)) return DEFAULT_BACKGROUND_DARKEN_STRENGTH;
@@ -277,6 +284,7 @@ export function syncLaunchpadSettingsDraftsFromState(options) {
   options.draftBackgroundLiveDesktopOpacity.value = clampBackgroundLiveDesktopOpacity(options.backgroundLiveDesktopOpacity.value);
   options.draftBackgroundImageLayout.value = normalizeBackgroundImageLayout(options.backgroundImageLayout.value);
   options.draftBackgroundBlurStrength.value = clampBackgroundBlurStrength(options.backgroundBlurStrength.value);
+  options.draftBackgroundAcrylicBlurStrength.value = clampBackgroundAcrylicBlurStrength(options.backgroundAcrylicBlurStrength.value);
   options.draftBackgroundDarkenStrength.value = clampBackgroundDarkenStrength(options.backgroundDarkenStrength.value);
   options.draftBackgroundDarkenColor.value = normalizeBackgroundDarkenColor(options.backgroundDarkenColor.value);
   options.draftBackgroundAcrylicAppearance.value = normalizeBackgroundAcrylicAppearance(options.backgroundAcrylicAppearance.value);
@@ -366,6 +374,10 @@ export function useLaunchpadSettingsConfig(options) {
 
   function setDraftBackgroundBlurStrength(value) {
     options.draftBackgroundBlurStrength.value = clampBackgroundBlurStrength(value);
+  }
+
+  function setDraftBackgroundAcrylicBlurStrength(value) {
+    options.draftBackgroundAcrylicBlurStrength.value = clampBackgroundAcrylicBlurStrength(value);
   }
 
   function setDraftBackgroundDarkenStrength(value) {
@@ -593,6 +605,7 @@ export function useLaunchpadSettingsConfig(options) {
     options.backgroundLiveDesktopOpacity.value = clampBackgroundLiveDesktopOpacity(options.draftBackgroundLiveDesktopOpacity.value);
     options.backgroundImageLayout.value = normalizeBackgroundImageLayout(options.draftBackgroundImageLayout.value);
     options.backgroundBlurStrength.value = clampBackgroundBlurStrength(options.draftBackgroundBlurStrength.value);
+    options.backgroundAcrylicBlurStrength.value = clampBackgroundAcrylicBlurStrength(options.draftBackgroundAcrylicBlurStrength.value);
     options.backgroundDarkenStrength.value = clampBackgroundDarkenStrength(options.draftBackgroundDarkenStrength.value);
     options.backgroundDarkenColor.value = normalizeBackgroundDarkenColor(options.draftBackgroundDarkenColor.value);
     options.backgroundAcrylicAppearance.value = normalizeBackgroundAcrylicAppearance(options.draftBackgroundAcrylicAppearance.value);
@@ -633,6 +646,7 @@ export function useLaunchpadSettingsConfig(options) {
     canUseLiveDesktopBackgroundEffect,
     canUseDraftBackgroundEffect,
     setDraftBackgroundBlurStrength,
+    setDraftBackgroundAcrylicBlurStrength,
     setDraftBackgroundDarkenColor,
     setDraftBackgroundDarkenStrength,
     setDraftBackgroundImageOpacity,

@@ -496,7 +496,11 @@ const activeBlurKernelSliders = computed(() => (
 ));
 const blurKernelStatus = computed(() => {
   const effect = normalizeBackgroundEffect(props.state?.draftBackgroundEffect?.value);
-  const actualStrength = clampBackgroundBlurStrength(props.state?.draftBackgroundBlurStrength?.value);
+  const actualStrength = clampBackgroundBlurStrength(
+    effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+      ? props.state?.draftBackgroundAcrylicBlurStrength?.value
+      : props.state?.draftBackgroundBlurStrength?.value
+  );
   const testStrength = clampBackgroundBlurStrength(kawaseParams.testStrength);
   if (kawaseParams.kernel === BLUR_KERNEL_AUTO) {
     const resolvedKernel = resolveAutoBlurKernel(effect, testStrength, kawaseParams);

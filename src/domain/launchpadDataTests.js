@@ -127,6 +127,7 @@ export function runLaunchpadDataTests() {
     backgroundImageOpacity: 62,
     backgroundLiveDesktopOpacity: 77,
     backgroundBlurStrength: 72,
+    backgroundAcrylicBlurStrength: 73,
     backgroundDarkenColor: "#123",
     backgroundDarkenStrength: 61,
     backgroundAcrylicAppearance: "light",
@@ -149,6 +150,7 @@ export function runLaunchpadDataTests() {
   assert(snapshot.settings.backgroundImageOpacity === 62, "layout snapshots should include background image opacity");
   assert(snapshot.settings.backgroundLiveDesktopOpacity === 77, "layout snapshots should include live desktop opacity");
   assert(snapshot.settings.backgroundBlurStrength === 72, "layout snapshots should include background blur strength");
+  assert(snapshot.settings.backgroundAcrylicBlurStrength === 73, "layout snapshots should include acrylic blur strength");
   assert(snapshot.settings.backgroundDarkenColor === "#112233", "layout snapshots should include normalized background darken color");
   assert(snapshot.settings.backgroundDarkenStrength === 61, "layout snapshots should include background darken strength");
   assert(snapshot.settings.backgroundAcrylicAppearance === "light", "layout snapshots should include acrylic appearance");

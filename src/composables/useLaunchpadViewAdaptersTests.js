@@ -8,6 +8,7 @@ export function runLaunchpadViewAdaptersTests() {
   const expected = {
     changeDraftBackgroundBaseOpacity: () => {},
     draftBackgroundAcrylicAppearance: { value: "system" },
+    draftBackgroundAcrylicBlurStrength: { value: 74 },
     draftBackgroundAcrylicDarkParams: { value: { brightness: 0.8 } },
     draftBackgroundAcrylicLightParams: { value: { brightness: 1 } },
     draftBackgroundBaseColor: { value: "#112233" },
@@ -24,6 +25,7 @@ export function runLaunchpadViewAdaptersTests() {
     setDraftBackgroundBaseColor: () => {},
     setDraftBackgroundBaseOpacity: () => {},
     setDraftBackgroundBlurStrength: () => {},
+    setDraftBackgroundAcrylicBlurStrength: () => {},
     setDraftBackgroundDarkenColor: () => {},
     setDraftBackgroundDarkenStrength: () => {},
     setDraftBackgroundAcrylicAppearance: () => {},
@@ -43,6 +45,7 @@ export function runLaunchpadViewAdaptersTests() {
   assert(state.draftBackgroundBaseColor === controller.draftBackgroundBaseColor, "settings panel state should expose background base color draft");
   assert(state.draftBackgroundBaseOpacity === controller.draftBackgroundBaseOpacity, "settings panel state should expose background base opacity draft");
   assert(state.draftBackgroundAcrylicAppearance === controller.draftBackgroundAcrylicAppearance, "settings panel state should expose acrylic appearance draft");
+  assert(state.draftBackgroundAcrylicBlurStrength === controller.draftBackgroundAcrylicBlurStrength, "settings panel state should expose acrylic blur strength draft");
   assert(state.draftBackgroundAcrylicDarkParams === controller.draftBackgroundAcrylicDarkParams, "settings panel state should expose acrylic dark params draft");
   assert(state.draftBackgroundAcrylicLightParams === controller.draftBackgroundAcrylicLightParams, "settings panel state should expose acrylic light params draft");
   assert(state.draftBackgroundBlurStrength === controller.draftBackgroundBlurStrength, "settings panel state should expose background blur strength draft");
@@ -58,6 +61,7 @@ export function runLaunchpadViewAdaptersTests() {
   assert(state.setDraftBackgroundBaseColor === controller.setDraftBackgroundBaseColor, "settings panel state should expose background base color setter");
   assert(state.setDraftBackgroundBaseOpacity === controller.setDraftBackgroundBaseOpacity, "settings panel state should expose background base opacity setter");
   assert(state.setDraftBackgroundBlurStrength === controller.setDraftBackgroundBlurStrength, "settings panel state should expose background blur strength setter");
+  assert(state.setDraftBackgroundAcrylicBlurStrength === controller.setDraftBackgroundAcrylicBlurStrength, "settings panel state should expose acrylic blur strength setter");
   assert(state.setDraftBackgroundDarkenColor === controller.setDraftBackgroundDarkenColor, "settings panel state should expose background darken color setter");
   assert(state.setDraftBackgroundDarkenStrength === controller.setDraftBackgroundDarkenStrength, "settings panel state should expose background darken strength setter");
   assert(state.setDraftBackgroundAcrylicAppearance === controller.setDraftBackgroundAcrylicAppearance, "settings panel state should expose acrylic appearance setter");
