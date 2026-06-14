@@ -80,6 +80,28 @@ export function runGridGeometryTests() {
   assert(searchMetrics.cols === 3, "search grid should shrink to the visible result count");
   assert(Math.abs(searchMetrics.gridLeft - (1920 - searchMetrics.gridWidth) / 2) < 0.001, "search grid should stay centered");
 
+  const topPaddingOverrideMetrics = getDesktopGridMetrics({
+    cols: 6,
+    height: 720,
+    paddingTop: 12,
+    rows: 4,
+    visibleCount: 24,
+    width: 1280,
+  });
+  assert(topPaddingOverrideMetrics.paddingTop === 12, "desktop grid should accept an explicit top padding override");
+  assert(topPaddingOverrideMetrics.gridTop === 12, "desktop grid top should follow the top padding override");
+
+  const clampedTopPaddingMetrics = getDesktopGridMetrics({
+    cols: 6,
+    height: 40,
+    paddingTop: 999,
+    rows: 4,
+    visibleCount: 24,
+    width: 1280,
+  });
+  assert(clampedTopPaddingMetrics.paddingTop === 15, "desktop grid should clamp overridden top padding to the usable height");
+  assert(clampedTopPaddingMetrics.gridHeight === 1, "desktop grid should keep a positive height after clamping top padding");
+
   const folderRowsToCheck = [1, 2, 5];
   for (const size of desktopSizes) {
     const geometry = getFolderPanelGeometry({

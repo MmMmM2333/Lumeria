@@ -18,13 +18,24 @@
     </header>
 
     <div v-if="!isCollapsed" class="background-debug-body">
-      <div v-if="canDebugLiveDesktop" class="background-debug-tabs" role="tablist" aria-label="Background debug sections">
+      <div
+        :class="['background-debug-tabs', canDebugLiveDesktop && 'background-debug-tabs-three']"
+        role="tablist"
+        aria-label="Background debug sections"
+      >
         <button
           type="button"
           :class="['background-debug-tab', activePanel === 'acrylic' && 'background-debug-tab-active']"
           @click="activePanel = 'acrylic'"
         >
           Acrylic
+        </button>
+        <button
+          type="button"
+          :class="['background-debug-tab', activePanel === 'layout' && 'background-debug-tab-active']"
+          @click="activePanel = 'layout'"
+        >
+          Layout
         </button>
         <button
           v-if="canDebugLiveDesktop"
@@ -143,7 +154,59 @@
         </div>
       </div>
 
-      <div v-else-if="canDebugLiveDesktop" class="background-debug-section">
+      <div v-else-if="activePanel === 'layout'" class="background-debug-section">
+        <label class="background-debug-toggle">
+          <input
+            name="desktopLayoutDebugOverride"
+            type="checkbox"
+            :checked="layoutParams.enabled"
+            @change="setLayoutDebugEnabled($event.target.checked)"
+          >
+          <span>覆盖布局</span>
+        </label>
+
+        <label
+          v-for="slider in layoutSliders"
+          :key="slider.key"
+          class="background-debug-control"
+        >
+          <span>
+            {{ slider.label }}
+            <output>{{ formatValue(layoutParams[slider.key], slider.digits) }}px</output>
+          </span>
+          <input
+            type="range"
+            :min="slider.min"
+            :max="slider.max"
+            :step="slider.step"
+            :value="layoutParams[slider.key]"
+            @input="updateLayoutNumber(slider.key, $event)"
+          >
+        </label>
+
+        <dl class="background-debug-status-grid">
+          <div
+            v-for="row in layoutDebugRows"
+            :key="row.label"
+            :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
+          >
+            <dt>{{ row.label }}</dt>
+            <dd>{{ row.value }}</dd>
+          </div>
+        </dl>
+
+        <div class="background-debug-detail">
+          CSS controls host/main sizing; gridTop controls the Pixi first-row offset.
+        </div>
+
+        <div class="background-debug-actions">
+          <button type="button" class="background-debug-button" @click="resetLayoutDebugParams">
+            重置
+          </button>
+        </div>
+      </div>
+
+      <div v-else-if="activePanel === 'liveDesktop' && canDebugLiveDesktop" class="background-debug-section">
         <dl class="background-debug-status-grid">
           <div
             v-for="row in liveDesktopStatusRows"
@@ -369,10 +432,26 @@ import {
   readLiveDesktopForceDwmFlush,
   readLiveDesktopSkipBlankFrames,
 } from "./backgroundDebug/liveDesktopDebugSettings.js";
+import {
+  DEFAULT_DESKTOP_LAYOUT_DEBUG_PARAMS,
+  DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS,
+} from "./backgroundDebug/desktopLayoutDebugSettings.js";
 
 const props = defineProps({
+  desktopLayoutDebugParams: {
+    type: Object,
+    default: () => ({ ...DEFAULT_DESKTOP_LAYOUT_DEBUG_PARAMS }),
+  },
+  resetDesktopLayoutDebugParams: {
+    type: Function,
+    default: null,
+  },
   state: {
     type: Object,
+    default: null,
+  },
+  updateDesktopLayoutDebugParams: {
+    type: Function,
     default: null,
   },
 });
@@ -381,6 +460,7 @@ const params = useAcrylicDebugParams();
 const isOverrideEnabled = useAcrylicDebugOverrideEnabled();
 const kawaseParams = useKawaseDebugParams();
 const isKawaseOverrideEnabled = useKawaseDebugOverrideEnabled();
+const layoutParams = computed(() => props.desktopLayoutDebugParams || DEFAULT_DESKTOP_LAYOUT_DEBUG_PARAMS);
 const isCollapsed = ref(false);
 const activePanel = ref("acrylic");
 const canDebugLiveDesktop = computed(() => isLiveDesktopExperimentEnabled());
@@ -413,6 +493,12 @@ const sliders = [
   { key: "tintStrength", label: "tintStrength", min: 0, max: 0.6, step: 0.01, digits: 2 },
   { key: "noise", label: "noise", min: 0, max: 0.06, step: 0.001, digits: 3 },
   { key: "seed", label: "seed", min: 0, max: 100, step: 0.01, digits: 2 },
+];
+const layoutSliders = [
+  { key: "hostMaxHeightPx", label: "hostMaxHeight", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostMaxHeightPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostMaxHeightPx.max, step: 10, digits: 0 },
+  { key: "hostHeightOffsetPx", label: "hostHeightOffset", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostHeightOffsetPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostHeightOffsetPx.max, step: 4, digits: 0 },
+  { key: "mainPaddingYPx", label: "mainPaddingY", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.mainPaddingYPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.mainPaddingYPx.max, step: 1, digits: 0 },
+  { key: "gridPaddingTopPx", label: "gridPaddingTop", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.gridPaddingTopPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.gridPaddingTopPx.max, step: 1, digits: 0 },
 ];
 const kawaseSliders = [
   {
@@ -521,6 +607,16 @@ const blurKernelStatus = computed(() => {
 });
 const acrylicCopyButtonLabel = computed(() => (hasCopiedAcrylic.value ? "已复制" : "复制 JSON"));
 const diagnosticsCopyButtonLabel = computed(() => (hasCopiedDiagnostics.value ? "已复制" : "复制诊断"));
+const layoutDebugRows = computed(() => {
+  const params = layoutParams.value;
+  return [
+    { label: "enabled", value: params.enabled ? "true" : "false" },
+    { label: "hostMax", value: `${Number(params.hostMaxHeightPx).toFixed(0)}px` },
+    { label: "heightOffset", value: `${Number(params.hostHeightOffsetPx).toFixed(0)}px` },
+    { label: "mainPaddingY", value: `${Number(params.mainPaddingYPx).toFixed(0)}px` },
+    { label: "gridTop", value: `${Number(params.gridPaddingTopPx).toFixed(0)}px`, wide: true },
+  ];
+});
 const liveDesktopStatus = computed(() => normalizeLiveDesktopStatus(props.state?.liveDesktopRuntimeStatus?.value));
 const liveDesktopStatusRows = computed(() => {
   const status = liveDesktopStatus.value;
@@ -688,6 +784,18 @@ function setBlurKernel(kernel) {
 function updateKawaseNumber(key, event) {
   updateKawaseDebugParams({ [key]: Number(event.target.value) });
   syncLiveDesktopDebugEffects();
+}
+
+function setLayoutDebugEnabled(enabled) {
+  props.updateDesktopLayoutDebugParams?.({ enabled });
+}
+
+function updateLayoutNumber(key, event) {
+  props.updateDesktopLayoutDebugParams?.({ [key]: Number(event.target.value) });
+}
+
+function resetLayoutDebugParams() {
+  props.resetDesktopLayoutDebugParams?.();
 }
 
 function resetBackgroundDebugParams() {
@@ -981,6 +1089,10 @@ onBeforeUnmount(() => {
 
 .background-debug-tabs {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.background-debug-tabs-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .background-debug-mode-group {

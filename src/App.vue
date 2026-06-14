@@ -81,6 +81,7 @@
         :is-textless-mode="isTextlessMode"
         :launch-target-status-by-id="launchTargetStatusById"
         :page-grid-measure-style="pageGridMeasureStyle"
+        :desktop-grid-debug-options="desktopGridDebugOptions"
         :set-page-ref="setPageRef"
         :show-missing-launch-target-badge="showMissingLaunchTargetBadge"
         @desktop-focus="keyboardFocusArea = 'desktop'"
@@ -131,7 +132,13 @@
       @open-context-app="openApp"
       @edit-context-app="openEditManagedApp"
     />
-    <BackgroundDebugPanel v-if="isAcrylicDebugPanelEnabled" :state="settingsPanelState" />
+    <BackgroundDebugPanel
+      v-if="isAcrylicDebugPanelEnabled"
+      :state="settingsPanelState"
+      :desktop-layout-debug-params="desktopLayoutDebugParams"
+      :reset-desktop-layout-debug-params="resetDesktopLayoutDebugParams"
+      :update-desktop-layout-debug-params="updateDesktopLayoutDebugParams"
+    />
     <div
       v-if="isStartupMaskMounted"
       :class="cx('launchpad-startup-mask', !isStartupMaskVisible && 'launchpad-startup-mask-hidden')"
@@ -157,6 +164,13 @@ import { useLaunchpadController } from "./composables/useLaunchpadController.js"
 import { backgroundSourceUsesLiveDesktop } from "./composables/useLaunchpadSettingsConfig.js";
 import { resolveCssBackgroundImagePlacement } from "./domain/backgroundImageLayout.js";
 import { isLiveDesktopExperimentEnabled } from "./domain/experimentalFeatures.js";
+import {
+  resetDesktopLayoutDebugParams,
+  resolveDesktopGridDebugOptions,
+  resolveDesktopLayoutDebugStyle,
+  updateDesktopLayoutDebugParams,
+  useDesktopLayoutDebugParams,
+} from "./components/backgroundDebug/desktopLayoutDebugSettings.js";
 import {
   createDialogState,
   createFolderOverlayState,
@@ -230,6 +244,7 @@ const {
   getDesktopPageRenderMode,
   setPageRef,
   pageGridMeasureStyle,
+  schedulePageGridMetrics,
   getVisibleDesktopPage,
   folderPageSize,
   isIconSelected,
@@ -252,6 +267,13 @@ const isAcrylicDebugPanelEnabled = import.meta.env.DEV;
 const BackgroundDebugPanel = import.meta.env.DEV
   ? defineAsyncComponent(() => import("./components/BackgroundDebugPanel.vue"))
   : null;
+const desktopLayoutDebugParams = useDesktopLayoutDebugParams();
+const desktopLayoutDebugStyle = computed(() => (
+  import.meta.env.DEV ? resolveDesktopLayoutDebugStyle(desktopLayoutDebugParams) : {}
+));
+const desktopGridDebugOptions = computed(() => (
+  import.meta.env.DEV ? resolveDesktopGridDebugOptions(desktopLayoutDebugParams) : null
+));
 const isLiveDesktopExperimentActive = computed(() => isLiveDesktopExperimentEnabled());
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY = "launchpadLiveDesktopCompositorKeeper";
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT = "launchpad-live-desktop-compositor-keeper-change";
@@ -412,12 +434,26 @@ const shouldGateBackgroundOverlay = computed(() => Boolean(
 ));
 
 const launchpadRootStyle = computed(() => {
-  const nextStyle = { ...rootStyle.value };
+  const nextStyle = { ...rootStyle.value, ...desktopLayoutDebugStyle.value };
   if (shouldGateBackgroundOverlay.value) {
     nextStyle["--launchpad-background-overlay-opacity"] = `${targetBackgroundOverlayOpacity.value * (hasVisibleBackgroundImageLayer.value ? 1 : 0)}`;
   }
   return nextStyle;
 });
+
+if (import.meta.env.DEV) {
+  watch(
+    () => [
+      desktopLayoutDebugParams.enabled,
+      desktopLayoutDebugParams.gridPaddingTopPx,
+      desktopLayoutDebugParams.hostHeightOffsetPx,
+      desktopLayoutDebugParams.hostMaxHeightPx,
+      desktopLayoutDebugParams.mainPaddingYPx,
+    ],
+    () => schedulePageGridMetrics(),
+    { flush: "post" }
+  );
+}
 
 const backgroundImageLayerViews = computed(() => (
   backgroundImageLayers.value.map((layer) => ({

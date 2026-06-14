@@ -2187,15 +2187,15 @@ body {
 }
 
 .pixi-desktop-main {
-  padding: 16px 0;
+  padding: var(--debug-desktop-main-padding-y, 16px) 0;
 }
 
 .pixi-desktop-host {
   position: relative;
   width: 100vw;
-  height: calc(100vh - 176px);
+  height: calc(100vh - 176px + var(--debug-desktop-host-height-offset, 0px));
   min-height: 420px;
-  max-height: 720px;
+  max-height: var(--debug-desktop-host-max-height, 720px);
   margin-left: calc(50% - 50vw);
   margin-right: calc(50% - 50vw);
   overflow: hidden;

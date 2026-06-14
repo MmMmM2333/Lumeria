@@ -103,6 +103,7 @@ export class DesktopLayer extends Container {
         cols: state.gridCols,
         height: state.height,
         isSearchMode: state.isSearchMode,
+        paddingTop: state.desktopGridDebugOptions?.paddingTop,
         rows: state.gridRows,
         visibleCount: visibleItems.length,
         width: state.width,

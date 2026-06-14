@@ -25,6 +25,7 @@ const FOLDER_TEXTURE_PREWARM_LIMIT = 80;
 const props = defineProps({
   activePageIndex: { type: Number, required: true },
   activePages: { type: Array, required: true },
+  desktopGridDebugOptions: { type: Object, default: null },
   desktopProjectionEpoch: { type: Number, default: 0 },
   desktopTrackMotionKey: { type: String, required: true },
   domRefs: { type: Object, required: true },
@@ -80,6 +81,7 @@ function renderPixi() {
   layer.update({
     activePageIndex: props.activePageIndex,
     activePages: props.activePages,
+    desktopGridDebugOptions: props.desktopGridDebugOptions,
     desktopTrackMotionKey: props.desktopTrackMotionKey,
     dragFolderHoverState: props.dragFolderHoverState,
     dragFolderTargetId: props.dragFolderTargetId,
@@ -200,6 +202,7 @@ onMounted(async () => {
 watchEffect(() => {
   void props.activePageIndex;
   void props.activePages;
+  void props.desktopGridDebugOptions;
   void props.desktopProjectionEpoch;
   void props.desktopTrackMotionKey;
   void props.dragFolderHoverState;
