@@ -232,10 +232,10 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
         })?;
     if let Some(value) = object.get("windowEffectMaterial") {
         match value.as_str() {
-            Some("acrylic" | "mica" | "micaAlt" | "mica-alt") => {}
+            Some("none" | "acrylic" | "mica" | "micaAlt" | "mica-alt") => {}
             _ => {
                 return Err(
-                    "layout settings.windowEffectMaterial must be acrylic, mica, or micaAlt"
+                    "layout settings.windowEffectMaterial must be none, acrylic, mica, or micaAlt"
                         .to_string(),
                 );
             }
@@ -738,7 +738,7 @@ mod tests {
                     }
                 ],
                 "showMissingLaunchTargetBadge": true,
-                "windowEffectMaterial": "mica",
+                "windowEffectMaterial": "none",
                 "windowEffectAppearance": "light"
             }
         })

@@ -5,16 +5,18 @@ export async function createPixiApp(host, options = {}) {
   host?.replaceChildren?.();
   const app = new Application();
   await app.init({
-    antialias: true,
+    antialias: options.antialias ?? true,
+    autoStart: options.autoStart ?? true,
     autoDensity: true,
     backgroundAlpha: 0,
+    preference: options.preference,
     powerPreference: "high-performance",
     resolution: Math.min(globalThis.devicePixelRatio || 1, 2),
     resizeTo: options.resizeTo || host,
   });
   app.canvas.className = options.className || "pixi-launchpad-canvas";
   host.appendChild(app.canvas);
-  app.start?.();
+  if (options.autoStart !== false) app.start?.();
   return app;
 }
 

@@ -12,12 +12,25 @@ import {
   DEFAULT_SCAN_ROOTS,
 } from "../domain/launchpadData.js";
 import {
-  BACKGROUND_RENDER_MODE_MATERIAL,
+  BACKGROUND_EFFECT_DIMMED,
+  BACKGROUND_ACRYLIC_APPEARANCE_DARK,
+  BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
+  BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE,
+  DEFAULT_BACKGROUND_BASE_COLOR,
+  DEFAULT_BACKGROUND_BASE_OPACITY,
+  DEFAULT_BACKGROUND_BLUR_STRENGTH,
+  DEFAULT_BACKGROUND_DARKEN_COLOR,
+  DEFAULT_BACKGROUND_DARKEN_STRENGTH,
+  DEFAULT_BACKGROUND_IMAGE_LAYOUT,
   DEFAULT_BACKGROUND_IMAGE_OPACITY,
+  DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY,
+  DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT,
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
+  createDefaultBackgroundAcrylicParams,
 } from "./useLaunchpadSettingsConfig.js";
 
 export function useLaunchpadControllerState() {
@@ -35,15 +48,46 @@ export function useLaunchpadControllerState() {
   const draftIconSize = ref(DEFAULT_ICON_SIZE);
   const draftFolderIconSizeMode = ref(FOLDER_ICON_SIZE_MODE_GLOBAL);
   const draftFolderIconSize = ref(DEFAULT_ICON_SIZE);
-  const backgroundRenderMode = ref(BACKGROUND_RENDER_MODE_MATERIAL);
+  const backgroundSource = ref(BACKGROUND_SOURCE_SYSTEM_MATERIAL);
+  const backgroundEffect = ref(BACKGROUND_EFFECT_DIMMED);
+  const backgroundBaseColor = ref(DEFAULT_BACKGROUND_BASE_COLOR);
+  const backgroundBaseOpacity = ref(DEFAULT_BACKGROUND_BASE_OPACITY);
   const backgroundImageOpacity = ref(DEFAULT_BACKGROUND_IMAGE_OPACITY);
+  const backgroundLiveDesktopOpacity = ref(DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY);
+  const backgroundImageLayout = ref(DEFAULT_BACKGROUND_IMAGE_LAYOUT);
+  const backgroundBlurStrength = ref(DEFAULT_BACKGROUND_BLUR_STRENGTH);
+  const backgroundDarkenStrength = ref(DEFAULT_BACKGROUND_DARKEN_STRENGTH);
+  const backgroundDarkenColor = ref(DEFAULT_BACKGROUND_DARKEN_COLOR);
+  const backgroundAcrylicAppearance = ref(DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE);
+  const backgroundAcrylicDarkParams = ref(createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_DARK));
+  const backgroundAcrylicLightParams = ref(createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_LIGHT));
   const backgroundImagePath = ref(null);
   const backgroundImageUrl = ref(null);
-  const draftBackgroundRenderMode = ref(BACKGROUND_RENDER_MODE_MATERIAL);
+  const draftBackgroundSource = ref(BACKGROUND_SOURCE_SYSTEM_MATERIAL);
+  const draftBackgroundEffect = ref(BACKGROUND_EFFECT_DIMMED);
+  const draftBackgroundBaseColor = ref(DEFAULT_BACKGROUND_BASE_COLOR);
+  const draftBackgroundBaseOpacity = ref(DEFAULT_BACKGROUND_BASE_OPACITY);
   const draftBackgroundImageOpacity = ref(DEFAULT_BACKGROUND_IMAGE_OPACITY);
+  const draftBackgroundLiveDesktopOpacity = ref(DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY);
+  const draftBackgroundImageLayout = ref(DEFAULT_BACKGROUND_IMAGE_LAYOUT);
+  const draftBackgroundBlurStrength = ref(DEFAULT_BACKGROUND_BLUR_STRENGTH);
+  const draftBackgroundDarkenStrength = ref(DEFAULT_BACKGROUND_DARKEN_STRENGTH);
+  const draftBackgroundDarkenColor = ref(DEFAULT_BACKGROUND_DARKEN_COLOR);
+  const draftBackgroundAcrylicAppearance = ref(DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE);
+  const draftBackgroundAcrylicDarkParams = ref(createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_DARK));
+  const draftBackgroundAcrylicLightParams = ref(createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_LIGHT));
   const draftBackgroundImagePath = ref(null);
   const draftBackgroundImageUrl = ref(null);
   const isChoosingBackgroundImage = ref(false);
+  const liveDesktopBackgroundSupport = ref({ ...DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT });
+  const liveDesktopCssFallbackEffectsEnabled = ref(false);
+  const liveDesktopRuntimeStatus = ref({
+    phase: "stopped",
+    active: false,
+    generation: 0,
+    reason: "nativeBridgeUnavailable",
+    detail: "",
+  });
   const windowEffectsSupport = ref({ ...DEFAULT_WINDOW_EFFECTS_SUPPORT });
   const windowEffectMaterial = ref(WINDOW_EFFECT_MATERIAL_ACRYLIC);
   const windowEffectAppearance = ref(WINDOW_EFFECT_APPEARANCE_DARK);
@@ -80,15 +124,37 @@ export function useLaunchpadControllerState() {
   const folderPageRefs = [];
 
   return {
+    backgroundBaseColor,
+    backgroundBaseOpacity,
+    backgroundAcrylicAppearance,
+    backgroundAcrylicDarkParams,
+    backgroundAcrylicLightParams,
+    backgroundBlurStrength,
+    backgroundDarkenColor,
+    backgroundDarkenStrength,
     backgroundImageOpacity,
+    backgroundLiveDesktopOpacity,
+    backgroundImageLayout,
     backgroundImagePath,
     backgroundImageUrl,
-    backgroundRenderMode,
+    backgroundEffect,
+    backgroundSource,
     desktopMainRef,
+    draftBackgroundBaseColor,
+    draftBackgroundBaseOpacity,
+    draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicDarkParams,
+    draftBackgroundAcrylicLightParams,
+    draftBackgroundBlurStrength,
+    draftBackgroundDarkenColor,
+    draftBackgroundDarkenStrength,
+    draftBackgroundEffect,
     draftBackgroundImageOpacity,
+    draftBackgroundLiveDesktopOpacity,
+    draftBackgroundImageLayout,
     draftBackgroundImagePath,
     draftBackgroundImageUrl,
-    draftBackgroundRenderMode,
+    draftBackgroundSource,
     draftCols,
     draftFolderCols,
     draftFolderIconSize,
@@ -117,6 +183,9 @@ export function useLaunchpadControllerState() {
     isLayoutProjectionActive,
     isTextlessMode,
     launchTargetStatusById,
+    liveDesktopBackgroundSupport,
+    liveDesktopCssFallbackEffectsEnabled,
+    liveDesktopRuntimeStatus,
     keyboardFocusArea,
     pageDotsRef,
     pageIndex,

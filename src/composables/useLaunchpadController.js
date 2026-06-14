@@ -1,3 +1,4 @@
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { cx } from "../domain/launchpadLayout.js";
 import { isNativeBridgeAvailable } from "../api/launchpadApi.js";
 import { useAltEditMode } from "./useAltEditMode.js";
@@ -22,7 +23,12 @@ import { useLaunchpadSearch } from "./useLaunchpadSearch.js";
 import { useLaunchpadSurfaceInteractions } from "./useLaunchpadSurfaceInteractions.js";
 import { useLaunchpadViewState } from "./useLaunchpadViewState.js";
 import {
+  BACKGROUND_ACRYLIC_APPEARANCE_DARK,
+  BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
+  BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
   FOLDER_ICON_SIZE_MODE_CUSTOM,
+  normalizeBackgroundAcrylicAppearance,
+  normalizeBackgroundAcrylicParams,
   useLaunchpadSettingsConfig,
 } from "./useLaunchpadSettingsConfig.js";
 import { usePageRenderRange } from "./usePageRenderRange.js";
@@ -68,17 +74,79 @@ export function shouldPlayFolderOpenIconGhosts(next, state) {
   return !isSameOpenFolder;
 }
 
+function getSystemAppearance() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return BACKGROUND_ACRYLIC_APPEARANCE_DARK;
+  }
+  return window.matchMedia("(prefers-color-scheme: light)").matches
+    ? BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
+    : BACKGROUND_ACRYLIC_APPEARANCE_DARK;
+}
+
+function useSystemAppearance() {
+  const systemAppearance = ref(getSystemAppearance());
+  let mediaQuery = null;
+  const update = () => {
+    systemAppearance.value = getSystemAppearance();
+  };
+
+  onMounted(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    mediaQuery = window.matchMedia("(prefers-color-scheme: light)");
+    update();
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", update);
+    } else {
+      mediaQuery.addListener?.(update);
+    }
+  });
+
+  onBeforeUnmount(() => {
+    if (!mediaQuery) return;
+    if (typeof mediaQuery.removeEventListener === "function") {
+      mediaQuery.removeEventListener("change", update);
+    } else {
+      mediaQuery.removeListener?.(update);
+    }
+    mediaQuery = null;
+  });
+
+  return systemAppearance;
+}
+
 export function useLaunchpadController() {
   const {
+    backgroundBaseColor,
+    backgroundBaseOpacity,
+    backgroundAcrylicAppearance,
+    backgroundAcrylicDarkParams,
+    backgroundAcrylicLightParams,
+    backgroundBlurStrength,
+    backgroundDarkenColor,
+    backgroundDarkenStrength,
     backgroundImageOpacity,
+    backgroundLiveDesktopOpacity,
+    backgroundImageLayout,
     backgroundImagePath,
     backgroundImageUrl,
-    backgroundRenderMode,
+    backgroundEffect,
+    backgroundSource,
+    draftBackgroundBaseColor,
+    draftBackgroundBaseOpacity,
+    draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicDarkParams,
+    draftBackgroundAcrylicLightParams,
+    draftBackgroundBlurStrength,
+    draftBackgroundDarkenColor,
+    draftBackgroundDarkenStrength,
     desktopMainRef,
+    draftBackgroundEffect,
     draftBackgroundImageOpacity,
+    draftBackgroundLiveDesktopOpacity,
+    draftBackgroundImageLayout,
     draftBackgroundImagePath,
     draftBackgroundImageUrl,
-    draftBackgroundRenderMode,
+    draftBackgroundSource,
     draftCols,
     draftFolderCols,
     draftFolderIconSize,
@@ -107,6 +175,9 @@ export function useLaunchpadController() {
     isLayoutProjectionActive,
     isTextlessMode,
     launchTargetStatusById,
+    liveDesktopBackgroundSupport,
+    liveDesktopCssFallbackEffectsEnabled,
+    liveDesktopRuntimeStatus,
     keyboardFocusArea,
     pageDotsRef,
     pageIndex,
@@ -126,6 +197,18 @@ export function useLaunchpadController() {
     windowEffectMaterial,
     windowEffectsSupport,
   } = useLaunchpadControllerState();
+  const systemAppearance = useSystemAppearance();
+  const backgroundAcrylicEffectiveAppearance = computed(() => {
+    const appearance = normalizeBackgroundAcrylicAppearance(backgroundAcrylicAppearance.value);
+    return appearance === BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM ? systemAppearance.value : appearance;
+  });
+  const backgroundAcrylicParams = computed(() => {
+    const profile = backgroundAcrylicEffectiveAppearance.value;
+    return normalizeBackgroundAcrylicParams(
+      profile === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT ? backgroundAcrylicLightParams.value : backgroundAcrylicDarkParams.value,
+      profile
+    );
+  });
   const deferredHandlers = createDeferredHandlers({
     cancelLongPress: () => {},
     clearFolderPageTurn: () => {},
@@ -152,6 +235,8 @@ export function useLaunchpadController() {
     setFolderMotionGeometry: () => {},
     setNativeWindowEffectsEnabled: () => {},
     showNativeLaunchError: () => {},
+    restartLiveDesktopBackgroundRuntime: () => {},
+    syncLiveDesktopBackgroundRuntime: () => {},
   });
   const {
     appendAppsToPages,
@@ -458,10 +543,20 @@ export function useLaunchpadController() {
     isHomeInteractionDisabled,
     panelSpring,
     rootStyle,
+    shouldRenderPixiBackgroundEffect,
   } = useLaunchpadViewState({
+    backgroundBaseColor,
+    backgroundBaseOpacity,
+    backgroundAcrylicParams,
+    backgroundEffect,
+    backgroundBlurStrength,
+    backgroundDarkenColor,
+    backgroundDarkenStrength,
     backgroundImageOpacity,
+    backgroundLiveDesktopOpacity,
+    backgroundImageLayout,
     backgroundImageUrl,
-    backgroundRenderMode,
+    backgroundSource,
     iconSize,
     isAppLaunching,
     isDesktopClosing,
@@ -470,6 +565,8 @@ export function useLaunchpadController() {
     isFolderLayerActive,
     isHomeRevealSettling,
     isSearchMode,
+    liveDesktopBackgroundSupport,
+    liveDesktopCssFallbackEffectsEnabled,
     openFolderId,
   });
   const {
@@ -564,16 +661,38 @@ export function useLaunchpadController() {
     settingsPanelInitial,
     shouldRenderSettingsPanel,
   } = useSettingsPanelFlow({
+    backgroundBaseColor,
+    backgroundBaseOpacity,
+    backgroundAcrylicAppearance,
+    backgroundAcrylicDarkParams,
+    backgroundAcrylicLightParams,
+    backgroundEffect,
+    backgroundBlurStrength,
+    backgroundDarkenColor,
+    backgroundDarkenStrength,
     backgroundImageOpacity,
+    backgroundLiveDesktopOpacity,
+    backgroundImageLayout,
     backgroundImagePath,
     backgroundImageUrl,
-    backgroundRenderMode,
+    backgroundSource,
     closeAddManagedAppPage: () => deferredHandlers.call("closeAddManagedAppPage"),
     closeScanResultDialog: () => deferredHandlers.call("closeScanResultDialog"),
+    draftBackgroundBaseColor,
+    draftBackgroundBaseOpacity,
+    draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicDarkParams,
+    draftBackgroundAcrylicLightParams,
+    draftBackgroundBlurStrength,
+    draftBackgroundDarkenColor,
+    draftBackgroundDarkenStrength,
+    draftBackgroundEffect,
     draftBackgroundImageOpacity,
+    draftBackgroundLiveDesktopOpacity,
+    draftBackgroundImageLayout,
     draftBackgroundImagePath,
     draftBackgroundImageUrl,
-    draftBackgroundRenderMode,
+    draftBackgroundSource,
     draftCols,
     draftFolderIconSize,
     draftFolderIconSizeMode,
@@ -599,8 +718,13 @@ export function useLaunchpadController() {
   const {
     applyGridConfig,
     applySettingsConfig,
+    canUseDraftBackgroundEffect,
+    canUseLiveDesktopBackground,
+    canUseLiveDesktopBackgroundEffect,
     canUseWindowEffectMaterial,
+    changeDraftBackgroundBaseOpacity,
     changeDraftBackgroundImageOpacity,
+    changeDraftBackgroundLiveDesktopOpacity,
     changeDraftCols,
     changeDraftFolderCols,
     changeDraftFolderIconSize,
@@ -610,17 +734,41 @@ export function useLaunchpadController() {
     chooseDraftBackgroundImage,
     clearDraftBackgroundImage,
     clampIconSize,
+    setDraftBackgroundBlurStrength,
+    setDraftBackgroundDarkenColor,
+    setDraftBackgroundDarkenStrength,
+    setDraftBackgroundImageLayout,
     setDraftBackgroundImageOpacity,
-    setDraftBackgroundRenderMode,
+    setDraftBackgroundLiveDesktopOpacity,
+    setDraftBackgroundAcrylicAppearance,
+    setDraftBackgroundAcrylicParam,
+    setDraftBackgroundBaseColor,
+    setDraftBackgroundBaseOpacity,
+    setDraftBackgroundEffect,
+    setDraftBackgroundSource,
+    resetDraftBackgroundAcrylicParams,
     setDraftFolderIconSizeMode,
     setDraftWindowEffectAppearance,
     setDraftWindowEffectMaterial,
+    useDraftDesktopWallpaper,
   } = useLaunchpadSettingsConfig({
     applyNativeWindowEffects: () => deferredHandlers.call("setNativeWindowEffectsEnabled", true),
+    syncLiveDesktopBackgroundRuntime: () => deferredHandlers.call("syncLiveDesktopBackgroundRuntime"),
+    backgroundBaseColor,
+    backgroundBaseOpacity,
+    backgroundAcrylicAppearance,
+    backgroundAcrylicDarkParams,
+    backgroundAcrylicLightParams,
+    backgroundEffect,
+    backgroundBlurStrength,
+    backgroundDarkenColor,
+    backgroundDarkenStrength,
     backgroundImageOpacity,
+    backgroundLiveDesktopOpacity,
+    backgroundImageLayout,
     backgroundImagePath,
     backgroundImageUrl,
-    backgroundRenderMode,
+    backgroundSource,
     clonePages,
     closeSettingsPanel,
     commitFolderPageIndex,
@@ -628,10 +776,21 @@ export function useLaunchpadController() {
     commitPages,
     commitSearchPageIndex,
     compactPages,
+    draftBackgroundBaseColor,
+    draftBackgroundBaseOpacity,
+    draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicDarkParams,
+    draftBackgroundAcrylicLightParams,
+    draftBackgroundBlurStrength,
+    draftBackgroundDarkenColor,
+    draftBackgroundDarkenStrength,
+    draftBackgroundEffect,
     draftBackgroundImageOpacity,
+    draftBackgroundLiveDesktopOpacity,
+    draftBackgroundImageLayout,
     draftBackgroundImagePath,
     draftBackgroundImageUrl,
-    draftBackgroundRenderMode,
+    draftBackgroundSource,
     draftCols,
     draftFolderCols,
     draftFolderIconSize,
@@ -655,6 +814,7 @@ export function useLaunchpadController() {
     isChoosingBackgroundImage,
     isDragActive: () => isDragActive(),
     isTextlessMode,
+    liveDesktopBackgroundSupport,
     pageIndex,
     pageSize,
     pages,
@@ -672,21 +832,39 @@ export function useLaunchpadController() {
     getLaunchTargetStatus,
     hideNativeWindow,
     hideNativeWindowAfterCloseAnimation,
+    isNativeLayoutReady,
     loadNativeLaunchpadData,
     launchNativeAppIfAvailable,
     markLaunchCriticalLayoutDirty,
     prepareNativeLaunch,
+    refreshLiveDesktopRuntimeStatus,
     registerNativeEventListeners,
+    restartLiveDesktopBackgroundRuntime,
     scheduleNativeLayoutSave,
     scheduleLaunchTargetStatusCheck,
     setNativeWindowEffectsEnabled,
     showNativeLaunchError,
+    startNativeLiveDesktopBackground,
+    stopNativeLiveDesktopBackground,
+    syncLiveDesktopBackgroundRuntime,
+    syncWindowsWallpaperRefreshTimer,
     shouldUseNativeCatalog,
   } = useLaunchpadNative({
+    backgroundBaseColor,
+    backgroundBaseOpacity,
+    backgroundAcrylicAppearance,
+    backgroundAcrylicDarkParams,
+    backgroundAcrylicLightParams,
+    backgroundEffect,
+    backgroundBlurStrength,
+    backgroundDarkenColor,
+    backgroundDarkenStrength,
     backgroundImageOpacity,
+    backgroundLiveDesktopOpacity,
+    backgroundImageLayout,
     backgroundImagePath,
     backgroundImageUrl,
-    backgroundRenderMode,
+    backgroundSource,
     clampIconSize,
     cloneItem,
     clonePages,
@@ -696,10 +874,21 @@ export function useLaunchpadController() {
     commitPageIndex,
     commitSearchPageIndex,
     createLayoutSnapshot,
+    draftBackgroundBaseColor,
+    draftBackgroundBaseOpacity,
+    draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicDarkParams,
+    draftBackgroundAcrylicLightParams,
+    draftBackgroundBlurStrength,
+    draftBackgroundDarkenColor,
+    draftBackgroundDarkenStrength,
+    draftBackgroundEffect,
     draftBackgroundImageOpacity,
+    draftBackgroundLiveDesktopOpacity,
+    draftBackgroundImageLayout,
     draftBackgroundImagePath,
     draftBackgroundImageUrl,
-    draftBackgroundRenderMode,
+    draftBackgroundSource,
     draftCols,
     draftFolderCols,
     draftFolderIconSize,
@@ -728,6 +917,8 @@ export function useLaunchpadController() {
     isDesktopOpen,
     isTextlessMode,
     launchTargetStatusById,
+    liveDesktopBackgroundSupport,
+    liveDesktopRuntimeStatus,
     mergeNativeCatalogWithSavedLayout,
     openDesktop,
     openSettingsPanel,
@@ -749,6 +940,8 @@ export function useLaunchpadController() {
   deferredHandlers.set("prepareNativeLaunch", prepareNativeLaunch);
   deferredHandlers.set("setNativeWindowEffectsEnabled", setNativeWindowEffectsEnabled);
   deferredHandlers.set("showNativeLaunchError", showNativeLaunchError);
+  deferredHandlers.set("restartLiveDesktopBackgroundRuntime", restartLiveDesktopBackgroundRuntime);
+  deferredHandlers.set("syncLiveDesktopBackgroundRuntime", syncLiveDesktopBackgroundRuntime);
   dragControls = useLaunchpadDrag({
     canCreateDesktopPageAfterDrag,
     canCreateFolderPageAfterDrag,
@@ -1053,10 +1246,20 @@ export function useLaunchpadController() {
   });
 
   useLaunchpadLifecycle({
+    backgroundBaseColor,
+    backgroundBaseOpacity,
     activePages,
+    backgroundAcrylicAppearance,
+    backgroundAcrylicDarkParams,
+    backgroundAcrylicLightParams,
+    backgroundEffect,
+    backgroundBlurStrength,
+    backgroundDarkenColor,
+    backgroundDarkenStrength,
     backgroundImageOpacity,
+    backgroundImageLayout,
     backgroundImagePath,
-    backgroundRenderMode,
+    backgroundSource,
     cancelLongPress,
     cancelPreviewRaf,
     clearAltEditTimer,
@@ -1099,6 +1302,7 @@ export function useLaunchpadController() {
     hiddenAppIds,
     iconSize,
     isSearchMode,
+    isDesktopOpen,
     isTextlessMode,
     launchTargetStatusById,
     loadNativeLaunchpadData,
@@ -1117,6 +1321,8 @@ export function useLaunchpadController() {
     schedulePageGridMetrics,
     searchRef,
     showMissingLaunchTargetBadge,
+    syncLiveDesktopBackgroundRuntime,
+    syncWindowsWallpaperRefreshTimer,
     syncManagedAppState,
     updateFolderViewportHeight,
     updatePageGridMetrics,
@@ -1136,8 +1342,10 @@ export function useLaunchpadController() {
     isTextlessMode,
     launchTargetStatusById,
     isDesktopOpen,
+    isDesktopClosing,
     isHomeInteractionDisabled,
     isAppLaunching,
+    isNativeLayoutReady,
     isEditMode,
     isSettingsPanelOpen,
     shouldRenderSettingsPanel,
@@ -1145,6 +1353,7 @@ export function useLaunchpadController() {
     settingsPanelInitial,
     settingsPanelAnimate,
     handleLaunchpadWheel,
+    shouldRenderPixiBackgroundEffect,
     shellRef,
     homeShellInitial,
     homeShellAnimate,
@@ -1152,10 +1361,21 @@ export function useLaunchpadController() {
     homeShellStyle,
     headerRef,
     draftRows,
+    draftBackgroundBaseColor,
+    draftBackgroundBaseOpacity,
+    draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicDarkParams,
+    draftBackgroundAcrylicLightParams,
+    draftBackgroundBlurStrength,
+    draftBackgroundDarkenColor,
+    draftBackgroundDarkenStrength,
+    draftBackgroundEffect,
     draftBackgroundImageOpacity,
+    draftBackgroundLiveDesktopOpacity,
+    draftBackgroundImageLayout,
     draftBackgroundImagePath,
     draftBackgroundImageUrl,
-    draftBackgroundRenderMode,
+    draftBackgroundSource,
     draftCols,
     draftFolderRows,
     draftFolderCols,
@@ -1164,16 +1384,34 @@ export function useLaunchpadController() {
     draftFolderIconSizeMode,
     draftFolderIconSize,
     backgroundImageOpacity,
+    backgroundLiveDesktopOpacity,
+    backgroundImageLayout,
+    backgroundBlurStrength,
+    backgroundDarkenColor,
+    backgroundDarkenStrength,
     backgroundImagePath,
     backgroundImageUrl,
-    backgroundRenderMode,
+    backgroundBaseColor,
+    backgroundBaseOpacity,
+    backgroundAcrylicAppearance,
+    backgroundAcrylicDarkParams,
+    backgroundAcrylicEffectiveAppearance,
+    backgroundAcrylicLightParams,
+    backgroundAcrylicParams,
+    backgroundEffect,
+    backgroundSource,
     draftWindowEffectAppearance,
     draftWindowEffectMaterial,
+    liveDesktopBackgroundSupport,
+    liveDesktopCssFallbackEffectsEnabled,
+    liveDesktopRuntimeStatus,
     windowEffectAppearance,
     windowEffectMaterial,
     windowEffectsSupport,
     changeDraftRows,
+    changeDraftBackgroundBaseOpacity,
     changeDraftBackgroundImageOpacity,
+    changeDraftBackgroundLiveDesktopOpacity,
     chooseDraftBackgroundImage,
     clearDraftBackgroundImage,
     changeDraftCols,
@@ -1181,12 +1419,32 @@ export function useLaunchpadController() {
     changeDraftFolderCols,
     changeDraftIconSize,
     changeDraftFolderIconSize,
+    setDraftBackgroundBlurStrength,
+    setDraftBackgroundDarkenColor,
+    setDraftBackgroundDarkenStrength,
+    setDraftBackgroundImageLayout,
     setDraftBackgroundImageOpacity,
-    setDraftBackgroundRenderMode,
+    setDraftBackgroundLiveDesktopOpacity,
+    setDraftBackgroundAcrylicAppearance,
+    setDraftBackgroundAcrylicParam,
+    setDraftBackgroundBaseColor,
+    setDraftBackgroundBaseOpacity,
+    setDraftBackgroundEffect,
+    setDraftBackgroundSource,
+    resetDraftBackgroundAcrylicParams,
     setDraftFolderIconSizeMode,
     setDraftWindowEffectAppearance,
     setDraftWindowEffectMaterial,
     canUseWindowEffectMaterial,
+    canUseLiveDesktopBackground,
+    canUseLiveDesktopBackgroundEffect,
+    canUseDraftBackgroundEffect,
+    refreshLiveDesktopRuntimeStatus,
+    restartLiveDesktopBackgroundRuntime,
+    syncLiveDesktopBackgroundRuntime,
+    startNativeLiveDesktopBackground,
+    stopNativeLiveDesktopBackground,
+    useDraftDesktopWallpaper,
     managedApps,
     filteredManagedApps,
     appManagerSelectedIds,

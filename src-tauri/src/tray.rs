@@ -30,6 +30,7 @@ static MAIN_WINDOW_EFFECT_SETTINGS: Mutex<MainWindowEffectSettings> =
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MainWindowEffectMaterial {
+    None,
     Acrylic,
     Mica,
     MicaAlt,
@@ -38,6 +39,7 @@ enum MainWindowEffectMaterial {
 impl MainWindowEffectMaterial {
     fn from_str(value: &str) -> Option<Self> {
         match value {
+            "none" => Some(Self::None),
             "acrylic" => Some(Self::Acrylic),
             "mica" => Some(Self::Mica),
             "micaAlt" | "mica-alt" => Some(Self::MicaAlt),
@@ -85,18 +87,21 @@ impl MainWindowEffectSettings {
         }
     }
 
-    fn effect(self) -> Effect {
+    fn effect(self) -> Option<Effect> {
         match (self.material, self.appearance) {
-            (MainWindowEffectMaterial::Acrylic, _) => Effect::Acrylic,
-            (MainWindowEffectMaterial::Mica, MainWindowEffectAppearance::Dark) => Effect::MicaDark,
+            (MainWindowEffectMaterial::None, _) => None,
+            (MainWindowEffectMaterial::Acrylic, _) => Some(Effect::Acrylic),
+            (MainWindowEffectMaterial::Mica, MainWindowEffectAppearance::Dark) => {
+                Some(Effect::MicaDark)
+            }
             (MainWindowEffectMaterial::Mica, MainWindowEffectAppearance::Light) => {
-                Effect::MicaLight
+                Some(Effect::MicaLight)
             }
             (MainWindowEffectMaterial::MicaAlt, MainWindowEffectAppearance::Dark) => {
-                Effect::TabbedDark
+                Some(Effect::TabbedDark)
             }
             (MainWindowEffectMaterial::MicaAlt, MainWindowEffectAppearance::Light) => {
-                Effect::TabbedLight
+                Some(Effect::TabbedLight)
             }
         }
     }
@@ -237,6 +242,12 @@ fn set_window_effects_enabled_with_config(
     if enabled {
         let support = main_window_effects_support();
         let settings = coerce_effect_settings_for_support(settings, &support);
+        if settings.material == MainWindowEffectMaterial::None {
+            window
+                .set_effects(None)
+                .map_err(|error| error.to_string())?;
+            return Ok(());
+        }
         if !is_effect_settings_supported(settings, &support) {
             window
                 .set_effects(None)
@@ -251,13 +262,16 @@ fn set_window_effects_enabled_with_config(
         }
 
         set_window_backdrop_dark_mode(window, settings.is_dark())?;
+        let effect = settings
+            .effect()
+            .ok_or_else(|| "Window effect material does not map to a native effect".to_string())?;
         let effects = if settings.material == MainWindowEffectMaterial::Acrylic {
             EffectsBuilder::new()
-                .effect(settings.effect())
+                .effect(effect)
                 .color(settings.acrylic_color())
                 .build()
         } else {
-            EffectsBuilder::new().effect(settings.effect()).build()
+            EffectsBuilder::new().effect(effect).build()
         };
         window
             .set_effects(effects)
@@ -341,6 +355,7 @@ fn is_material_supported(
     support: &MainWindowEffectsSupport,
 ) -> bool {
     match material {
+        MainWindowEffectMaterial::None => true,
         MainWindowEffectMaterial::Acrylic => support.supports_acrylic,
         MainWindowEffectMaterial::Mica => support.supports_mica,
         MainWindowEffectMaterial::MicaAlt => support.supports_mica_alt,
@@ -565,6 +580,18 @@ mod tests {
         );
 
         assert_eq!(coerced.material, MainWindowEffectMaterial::Acrylic);
+        assert_eq!(coerced.appearance, MainWindowEffectAppearance::Light);
+    }
+
+    #[test]
+    fn requested_none_material_stays_none_without_native_support() {
+        let requested = MainWindowEffectSettings {
+            material: MainWindowEffectMaterial::None,
+            appearance: MainWindowEffectAppearance::Light,
+        };
+        let coerced = coerce_effect_settings_for_support(requested, &support(None));
+
+        assert_eq!(coerced.material, MainWindowEffectMaterial::None);
         assert_eq!(coerced.appearance, MainWindowEffectAppearance::Light);
     }
 }

@@ -147,6 +147,106 @@ export function normalizeScanAppBlacklist(apps) {
     .filter(Boolean);
 }
 
+function normalizeLayoutBackgroundBaseColor(value) {
+  const color = typeof value === "string" ? value.trim() : "";
+  if (/^#[0-9a-fA-F]{6}$/.test(color)) return color.toLowerCase();
+  if (/^#[0-9a-fA-F]{3}$/.test(color)) {
+    return `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`.toLowerCase();
+  }
+  return "#10141f";
+}
+
+function normalizeLayoutBackgroundDarkenColor(value) {
+  const color = typeof value === "string" ? value.trim() : "";
+  if (/^#[0-9a-fA-F]{6}$/.test(color)) return color.toLowerCase();
+  if (/^#[0-9a-fA-F]{3}$/.test(color)) {
+    return `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`.toLowerCase();
+  }
+  return "#1c1c1c";
+}
+
+function normalizeLayoutBackgroundBlurStrength(value) {
+  const strength = Number(value);
+  return Number.isFinite(strength) ? clamp(Math.round(strength), 1, 100) : 50;
+}
+
+function normalizeLayoutBackgroundDarkenStrength(value) {
+  const strength = Number(value);
+  return Number.isFinite(strength) ? clamp(Math.round(strength), 0, 100) : 28;
+}
+
+const DEFAULT_LAYOUT_ACRYLIC_DARK_PARAMS = {
+  brightness: 0.8,
+  contrast: 0.85,
+  noise: 0.005,
+  saturation: 1.5,
+  seed: 0,
+  tintColor: [0.23529411764705882, 0.23529411764705882, 0.23529411764705882],
+  tintStrength: 0.2,
+};
+
+const DEFAULT_LAYOUT_ACRYLIC_LIGHT_PARAMS = {
+  brightness: 1,
+  contrast: 0.85,
+  noise: 0.005,
+  saturation: 1.5,
+  seed: 0,
+  tintColor: [0.4588235294117647, 0.4588235294117647, 0.4588235294117647],
+  tintStrength: 0.2,
+};
+
+function normalizeLayoutBackgroundAcrylicAppearance(value) {
+  if (value === "dark" || value === "light") return value;
+  return "system";
+}
+
+function normalizeLayoutBackgroundAcrylicProfileKey(value) {
+  return value === "light" ? "light" : "dark";
+}
+
+function clampLayoutNumber(value, min, max, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, number));
+}
+
+function hexToRgbArray(value, fallback) {
+  const match = String(value || "").trim().match(/^#?([0-9a-f]{6})$/i);
+  if (!match) return [...fallback];
+  const number = Number.parseInt(match[1], 16);
+  return [
+    ((number >> 16) & 255) / 255,
+    ((number >> 8) & 255) / 255,
+    (number & 255) / 255,
+  ];
+}
+
+function normalizeLayoutAcrylicTintColor(value, fallback) {
+  if (typeof value === "string") return hexToRgbArray(value, fallback);
+  if (!Array.isArray(value) || value.length < 3) return [...fallback];
+  return [
+    clampLayoutNumber(value[0], 0, 1, fallback[0]),
+    clampLayoutNumber(value[1], 0, 1, fallback[1]),
+    clampLayoutNumber(value[2], 0, 1, fallback[2]),
+  ];
+}
+
+function normalizeLayoutBackgroundAcrylicParams(params, profile) {
+  const fallback = normalizeLayoutBackgroundAcrylicProfileKey(profile) === "light"
+    ? DEFAULT_LAYOUT_ACRYLIC_LIGHT_PARAMS
+    : DEFAULT_LAYOUT_ACRYLIC_DARK_PARAMS;
+  const source = params && typeof params === "object" ? params : {};
+  return {
+    brightness: clampLayoutNumber(source.brightness, 0.4, 1.4, fallback.brightness),
+    contrast: clampLayoutNumber(source.contrast, 0.6, 1.4, fallback.contrast),
+    noise: clampLayoutNumber(source.noise, 0, 0.08, fallback.noise),
+    saturation: clampLayoutNumber(source.saturation, 0.4, 1.8, fallback.saturation),
+    seed: clampLayoutNumber(source.seed, 0, 1000, fallback.seed),
+    tintColor: normalizeLayoutAcrylicTintColor(source.tintColor, fallback.tintColor),
+    tintStrength: clampLayoutNumber(source.tintStrength, 0, 0.8, fallback.tintStrength),
+  };
+}
+
 export function makeScanAppBlacklistEntry(app) {
   const sourceKey = typeof app?.sourceKey === "string" ? app.sourceKey : null;
   const path = app?.source?.absolutePath || app?.launchTarget?.path || null;
@@ -329,8 +429,23 @@ export function createLaunchpadDataHelpers(options) {
   }
 
   function createLayoutSnapshot(state) {
+    const backgroundBaseOpacity = Number(state.backgroundBaseOpacity);
     const backgroundImageOpacity = Number(state.backgroundImageOpacity);
+    const backgroundLiveDesktopOpacity = Number(state.backgroundLiveDesktopOpacity);
+    const backgroundBlurStrength = normalizeLayoutBackgroundBlurStrength(state.backgroundBlurStrength);
+    const backgroundDarkenStrength = normalizeLayoutBackgroundDarkenStrength(state.backgroundDarkenStrength);
+    const backgroundDarkenColor = normalizeLayoutBackgroundDarkenColor(state.backgroundDarkenColor);
+    const backgroundAcrylicAppearance = normalizeLayoutBackgroundAcrylicAppearance(state.backgroundAcrylicAppearance);
+    const backgroundAcrylicDarkParams = normalizeLayoutBackgroundAcrylicParams(state.backgroundAcrylicDarkParams, "dark");
+    const backgroundAcrylicLightParams = normalizeLayoutBackgroundAcrylicParams(state.backgroundAcrylicLightParams, "light");
     const backgroundImagePath = typeof state.backgroundImagePath === "string" ? state.backgroundImagePath.trim() : "";
+    const backgroundBaseColor = normalizeLayoutBackgroundBaseColor(state.backgroundBaseColor);
+    const backgroundSource = state.backgroundSource === "customImage" || state.backgroundSource === "windowsWallpaper" || state.backgroundSource === "windowsLiveDesktop"
+      ? state.backgroundSource
+      : "systemMaterial";
+    const windowEffectMaterial = state.windowEffectMaterial === "none" || state.windowEffectMaterial === "mica" || state.windowEffectMaterial === "micaAlt"
+      ? state.windowEffectMaterial
+      : "acrylic";
     return {
       version: 1,
       pages: makeLayoutPages(state.pages),
@@ -348,10 +463,24 @@ export function createLaunchpadDataHelpers(options) {
         scanKeywordBlacklist: normalizeScanKeywordBlacklist(state.scanKeywordBlacklist),
         scanAppBlacklist: normalizeScanAppBlacklist(state.scanAppBlacklist),
         showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge !== false,
-        backgroundRenderMode: state.backgroundRenderMode === "image" ? "image" : "material",
+        backgroundBaseColor,
+        backgroundBaseOpacity: Number.isFinite(backgroundBaseOpacity) ? clamp(Math.round(backgroundBaseOpacity), 0, 100) : 28,
+        backgroundSource,
+        backgroundEffect: state.backgroundEffect === "none" || state.backgroundEffect === "blur" || state.backgroundEffect === "acrylicWebgl"
+          ? state.backgroundEffect
+          : "dimmed",
         backgroundImageOpacity: Number.isFinite(backgroundImageOpacity) ? clamp(Math.round(backgroundImageOpacity), 0, 100) : 46,
-        backgroundImagePath: backgroundImagePath || null,
-        windowEffectMaterial: state.windowEffectMaterial === "mica" || state.windowEffectMaterial === "micaAlt" ? state.windowEffectMaterial : "acrylic",
+        backgroundLiveDesktopOpacity: Number.isFinite(backgroundLiveDesktopOpacity) ? clamp(Math.round(backgroundLiveDesktopOpacity), 0, 100) : 100,
+        backgroundBlurStrength,
+        backgroundDarkenStrength,
+        backgroundDarkenColor,
+        backgroundAcrylicAppearance,
+        backgroundAcrylicDarkParams,
+        backgroundAcrylicLightParams,
+        backgroundImagePath: backgroundSource === "customImage" || backgroundSource === "windowsWallpaper"
+          ? backgroundImagePath || null
+          : null,
+        windowEffectMaterial,
         windowEffectAppearance: state.windowEffectAppearance === "light" ? "light" : "dark",
       },
     };

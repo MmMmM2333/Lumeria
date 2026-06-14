@@ -1,11 +1,31 @@
 import { ref, shallowRef } from "vue";
 import { setLaunchpadApiBridgeForTests } from "../api/launchpadApi.js";
+import { setLiveDesktopExperimentEnabledForTests } from "../domain/experimentalFeatures.js";
 import { useLaunchpadNative } from "./useLaunchpadNative.js";
 import {
-  BACKGROUND_RENDER_MODE_IMAGE,
-  BACKGROUND_RENDER_MODE_MATERIAL,
+  BACKGROUND_ACRYLIC_APPEARANCE_DARK,
+  BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
+  BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
+  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_BLUR,
+  BACKGROUND_EFFECT_DIMMED,
+  BACKGROUND_IMAGE_LAYOUT_CENTER,
+  BACKGROUND_IMAGE_LAYOUT_FILL,
+  BACKGROUND_SOURCE_CUSTOM_IMAGE,
+  BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
+  BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
+  DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT,
+  DEFAULT_BACKGROUND_BASE_COLOR,
+  DEFAULT_BACKGROUND_BASE_OPACITY,
+  DEFAULT_BACKGROUND_BLUR_STRENGTH,
+  DEFAULT_BACKGROUND_DARKEN_COLOR,
+  DEFAULT_BACKGROUND_DARKEN_STRENGTH,
+  DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY,
+  createDefaultBackgroundAcrylicParams,
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_APPEARANCE_LIGHT,
+  WINDOW_EFFECT_MATERIAL_NONE,
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
   WINDOW_EFFECT_MATERIAL_MICA,
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
@@ -35,10 +55,21 @@ function makeOptions(overrides = {}) {
     draftFolderIconSize: ref(64),
     draftFolderIconSizeMode: ref("global"),
     draftFolderRows: ref(3),
+    draftBackgroundBaseColor: ref(DEFAULT_BACKGROUND_BASE_COLOR),
+    draftBackgroundBaseOpacity: ref(DEFAULT_BACKGROUND_BASE_OPACITY),
     draftBackgroundImageOpacity: ref(46),
+    draftBackgroundLiveDesktopOpacity: ref(DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY),
+    draftBackgroundImageLayout: ref(BACKGROUND_IMAGE_LAYOUT_FILL),
+    draftBackgroundBlurStrength: ref(DEFAULT_BACKGROUND_BLUR_STRENGTH),
+    draftBackgroundDarkenColor: ref(DEFAULT_BACKGROUND_DARKEN_COLOR),
+    draftBackgroundDarkenStrength: ref(DEFAULT_BACKGROUND_DARKEN_STRENGTH),
+    draftBackgroundAcrylicAppearance: ref(BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM),
+    draftBackgroundAcrylicDarkParams: ref(createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_DARK)),
+    draftBackgroundAcrylicLightParams: ref(createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_LIGHT)),
     draftBackgroundImagePath: ref(null),
     draftBackgroundImageUrl: ref(null),
-    draftBackgroundRenderMode: ref(BACKGROUND_RENDER_MODE_MATERIAL),
+    draftBackgroundSource: ref(BACKGROUND_SOURCE_SYSTEM_MATERIAL),
+    draftBackgroundEffect: ref(BACKGROUND_EFFECT_DIMMED),
     draftIconSize: ref(64),
     draftIsTextlessMode: ref(false),
     draftRows: ref(4),
@@ -60,10 +91,21 @@ function makeOptions(overrides = {}) {
     iconSize: ref(64),
     isDesktopOpen: ref(true),
     isTextlessMode: ref(false),
+    backgroundBaseColor: ref(DEFAULT_BACKGROUND_BASE_COLOR),
+    backgroundBaseOpacity: ref(DEFAULT_BACKGROUND_BASE_OPACITY),
     backgroundImageOpacity: ref(46),
+    backgroundLiveDesktopOpacity: ref(DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY),
+    backgroundImageLayout: ref(BACKGROUND_IMAGE_LAYOUT_FILL),
+    backgroundBlurStrength: ref(DEFAULT_BACKGROUND_BLUR_STRENGTH),
+    backgroundDarkenColor: ref(DEFAULT_BACKGROUND_DARKEN_COLOR),
+    backgroundDarkenStrength: ref(DEFAULT_BACKGROUND_DARKEN_STRENGTH),
+    backgroundAcrylicAppearance: ref(BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM),
+    backgroundAcrylicDarkParams: ref(createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_DARK)),
+    backgroundAcrylicLightParams: ref(createDefaultBackgroundAcrylicParams(BACKGROUND_ACRYLIC_APPEARANCE_LIGHT)),
     backgroundImagePath: ref(null),
     backgroundImageUrl: ref(null),
-    backgroundRenderMode: ref(BACKGROUND_RENDER_MODE_MATERIAL),
+    backgroundSource: ref(BACKGROUND_SOURCE_SYSTEM_MATERIAL),
+    backgroundEffect: ref(BACKGROUND_EFFECT_DIMMED),
     windowEffectAppearance: ref(WINDOW_EFFECT_APPEARANCE_DARK),
     windowEffectMaterial: ref(WINDOW_EFFECT_MATERIAL_ACRYLIC),
     windowEffectsSupport: ref({
@@ -72,6 +114,14 @@ function makeOptions(overrides = {}) {
       supportsAcrylic: false,
       supportsMica: false,
       supportsMicaAlt: false,
+    }),
+    liveDesktopBackgroundSupport: ref({ ...DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT }),
+    liveDesktopRuntimeStatus: ref({
+      phase: "stopped",
+      active: false,
+      generation: 0,
+      reason: "nativeBridgeUnavailable",
+      detail: "",
     }),
     launchTargetStatusById: ref({}),
     mergeNativeCatalogWithSavedLayout: (apps) => [apps],
@@ -111,6 +161,14 @@ function withMockTauri(invoke, run, bridgeOverrides = {}) {
       if (command === "set_main_window_effects_enabled" && !bridgeOverrides.passWindowEffectsCommand) {
         return null;
       }
+      if (command === "get_live_desktop_background_support" && !bridgeOverrides.passLiveDesktopBackgroundSupport) {
+        return {
+          platform: "windows",
+          supportsLiveDesktopBackground: false,
+          supportsLiveDesktopBackgroundEffects: false,
+          reason: "nativeRendererUnavailable",
+        };
+      }
       return invoke(command, args);
     },
     listen: bridgeOverrides.listen || (async () => () => {}),
@@ -145,6 +203,7 @@ export async function runLaunchpadNativeTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Launchpad native test failed] ${message}`);
   };
+  setLiveDesktopExperimentEnabledForTests(true);
 
   const initialSaveLayouts = [];
   await withMockTauri(async (command, args) => {
@@ -169,16 +228,29 @@ export async function runLaunchpadNativeTests() {
       scanAppBlacklist: ref([{ path: "C:/Apps/Blocked.lnk" }]),
     });
     const native = useLaunchpadNative(options);
+    assert(native.isNativeLayoutReady.value === false, "native layout should not be ready before the initial native load");
 
     await native.loadNativeLaunchpadData();
     await Promise.all(timers.splice(0).map((timer) => timer()));
 
+    assert(native.isNativeLayoutReady.value === true, "native layout should be ready after the initial native load");
     assert(options.pages.value[0].map((app) => app.id).join(",") === "win-app-good", "missing native layout should replace mock pages with scanned apps");
     assert(Boolean(options.scanRoots.value[0].lastScannedAt), "initial native scan should mark roots as scanned");
     assert(initialSaveLayouts.length === 1, "initial native scan should be persisted after load completes");
     assert(initialSaveLayouts[0].pages[0][0].id === "win-app-good", "initial native save should include scanned apps");
-    assert(initialSaveLayouts[0].settings.backgroundRenderMode === BACKGROUND_RENDER_MODE_MATERIAL, "native saves should include background render mode");
+    assert(initialSaveLayouts[0].settings.backgroundSource === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "native saves should include background source");
+    assert(initialSaveLayouts[0].settings.backgroundEffect === BACKGROUND_EFFECT_DIMMED, "native saves should include background effect");
+    assert(initialSaveLayouts[0].settings.backgroundBaseColor === DEFAULT_BACKGROUND_BASE_COLOR, "native saves should include background base color");
+    assert(initialSaveLayouts[0].settings.backgroundBaseOpacity === DEFAULT_BACKGROUND_BASE_OPACITY, "native saves should include background base opacity");
     assert(initialSaveLayouts[0].settings.backgroundImageOpacity === 46, "native saves should include background image opacity");
+    assert(initialSaveLayouts[0].settings.backgroundLiveDesktopOpacity === DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY, "native saves should include live desktop opacity");
+    assert(initialSaveLayouts[0].settings.backgroundImageLayout === BACKGROUND_IMAGE_LAYOUT_FILL, "native saves should include background image layout");
+    assert(initialSaveLayouts[0].settings.backgroundBlurStrength === DEFAULT_BACKGROUND_BLUR_STRENGTH, "native saves should include background blur strength");
+    assert(initialSaveLayouts[0].settings.backgroundDarkenColor === DEFAULT_BACKGROUND_DARKEN_COLOR, "native saves should include background darken color");
+    assert(initialSaveLayouts[0].settings.backgroundDarkenStrength === DEFAULT_BACKGROUND_DARKEN_STRENGTH, "native saves should include background darken strength");
+    assert(initialSaveLayouts[0].settings.backgroundAcrylicAppearance === BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM, "native saves should include acrylic appearance");
+    assert(initialSaveLayouts[0].settings.backgroundAcrylicDarkParams.brightness === 0.8, "native saves should include acrylic dark params");
+    assert(initialSaveLayouts[0].settings.backgroundAcrylicLightParams.brightness === 1, "native saves should include acrylic light params");
     assert(initialSaveLayouts[0].settings.backgroundImagePath === null, "native saves should include an empty background image path");
     assert(calls.commitPageIndex.join(",") === "0", "initial native load should reclamp desktop page");
     assert(calls.schedulePageGridMetrics === 1, "initial native load should refresh grid metrics");
@@ -214,6 +286,7 @@ export async function runLaunchpadNativeTests() {
       const native = useLaunchpadNative(options);
 
       await native.loadNativeLaunchpadData();
+      assert(native.isNativeLayoutReady.value === false, "failed native layout loads should keep native layout readiness false");
       assert(loadFailures.length === 1, "failed native loads should surface a persistent notice");
       assert(typeof loadFailures[0].onRetry === "function", "failed native loads should expose retry action");
 
@@ -221,6 +294,7 @@ export async function runLaunchpadNativeTests() {
       assert(timers.length === 0, "native saves should not be scheduled while the layout is not ready");
 
       await loadFailures[0].onRetry();
+      assert(native.isNativeLayoutReady.value === true, "successful layout retry should mark the native layout ready");
       assert(loadAttempts === 2, "layout load retry should attempt to load again");
       assert(loadRecoveredCount === 1, "successful layout retry should surface a recovered notice");
       assert(options.pages.value[0][0].id === "loaded-app", "successful layout retry should apply the loaded layout");
@@ -249,8 +323,19 @@ export async function runLaunchpadNativeTests() {
         settings: {
           windowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
           windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
-          backgroundRenderMode: BACKGROUND_RENDER_MODE_IMAGE,
+          backgroundBaseColor: "#ABC",
+          backgroundBaseOpacity: 73,
+          backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
+          backgroundEffect: BACKGROUND_EFFECT_DIMMED,
           backgroundImageOpacity: 64,
+          backgroundLiveDesktopOpacity: 73,
+          backgroundImageLayout: BACKGROUND_IMAGE_LAYOUT_CENTER,
+          backgroundBlurStrength: 82,
+          backgroundDarkenColor: "#456",
+          backgroundDarkenStrength: 63,
+          backgroundAcrylicAppearance: BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
+          backgroundAcrylicDarkParams: { brightness: 0.7, tintColor: "#222222" },
+          backgroundAcrylicLightParams: { brightness: 1.2, tintColor: "#dddddd" },
           backgroundImagePath: "C:/Images/wallpaper.webp",
         },
       };
@@ -274,12 +359,34 @@ export async function runLaunchpadNativeTests() {
     assert(options.windowEffectsSupport.value.supportsMica === true && options.windowEffectsSupport.value.supportsMicaAlt === true, "native load should apply window effect support");
     assert(options.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "native load should apply saved window effect material");
     assert(options.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "native load should apply saved window effect appearance");
-    assert(options.backgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE, "native load should apply saved background render mode");
+    assert(options.backgroundBaseColor.value === "#aabbcc", "native load should apply saved background base color");
+    assert(options.backgroundBaseOpacity.value === 73, "native load should apply saved background base opacity");
+    assert(options.backgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "native load should apply saved background source");
+    assert(options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should apply saved background effect");
     assert(options.backgroundImageOpacity.value === 64, "native load should apply saved background opacity");
+    assert(options.backgroundLiveDesktopOpacity.value === 73, "native load should apply saved live desktop opacity");
+    assert(options.backgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_CENTER, "native load should apply saved background image layout");
+    assert(options.backgroundBlurStrength.value === 82, "native load should apply saved background blur strength");
+    assert(options.backgroundDarkenColor.value === "#445566", "native load should apply saved background darken color");
+    assert(options.backgroundDarkenStrength.value === 63, "native load should apply saved background darken strength");
+    assert(options.backgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT, "native load should apply saved acrylic appearance");
+    assert(options.backgroundAcrylicDarkParams.value.brightness === 0.7, "native load should apply saved acrylic dark params");
+    assert(options.backgroundAcrylicLightParams.value.brightness === 1.2, "native load should apply saved acrylic light params");
     assert(options.backgroundImagePath.value === "C:/Images/wallpaper.webp", "native load should apply saved background image path");
     assert(options.backgroundImageUrl.value === "asset://C:/Images/wallpaper.webp", "native load should derive a background image asset url");
-    assert(options.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE, "native load should sync background render draft");
+    assert(options.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "native load should sync background source draft");
+    assert(options.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should sync background effect draft");
+    assert(options.draftBackgroundBaseColor.value === "#aabbcc", "native load should sync background base color draft");
+    assert(options.draftBackgroundBaseOpacity.value === 73, "native load should sync background base opacity draft");
     assert(options.draftBackgroundImageOpacity.value === 64, "native load should sync background opacity draft");
+    assert(options.draftBackgroundLiveDesktopOpacity.value === 73, "native load should sync live desktop opacity draft");
+    assert(options.draftBackgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_CENTER, "native load should sync background image layout draft");
+    assert(options.draftBackgroundBlurStrength.value === 82, "native load should sync background blur strength draft");
+    assert(options.draftBackgroundDarkenColor.value === "#445566", "native load should sync background darken color draft");
+    assert(options.draftBackgroundDarkenStrength.value === 63, "native load should sync background darken strength draft");
+    assert(options.draftBackgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT, "native load should sync acrylic appearance draft");
+    assert(options.draftBackgroundAcrylicDarkParams.value.brightness === 0.7, "native load should sync acrylic dark params draft");
+    assert(options.draftBackgroundAcrylicLightParams.value.brightness === 1.2, "native load should sync acrylic light params draft");
     assert(options.draftBackgroundImagePath.value === "C:/Images/wallpaper.webp", "native load should sync background image path draft");
     assert(options.draftBackgroundImageUrl.value === "asset://C:/Images/wallpaper.webp", "native load should sync background image url draft");
     assert(effectsCommands.length === 1, "native load should refresh window effects once");
@@ -289,6 +396,689 @@ export async function runLaunchpadNativeTests() {
   }, {
     passWindowEffectsCommand: true,
     passWindowEffectsSupport: true,
+  });
+
+  await withMockTauri(async (command) => {
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{ id: "acrylic-app", type: "app", name: "Acrylic", launchTarget: { kind: "shortcut", path: "Acrylic.lnk" } }]],
+        settings: {
+          backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
+          backgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+          backgroundImagePath: "C:/Images/acrylic.webp",
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+
+    assert(options.backgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "native load should apply custom image source for webgl acrylic");
+    assert(options.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "native load should preserve webgl acrylic background effect");
+    assert(options.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "native load should sync webgl acrylic draft effect");
+  });
+
+  await withMockTauri(async (command) => {
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{ id: "blur-app", type: "app", name: "Blur", launchTarget: { kind: "shortcut", path: "Blur.lnk" } }]],
+        settings: {
+          backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
+          backgroundEffect: BACKGROUND_EFFECT_BLUR,
+          backgroundImagePath: "C:/Images/blur.webp",
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+
+    assert(options.backgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "native load should apply custom image source for blur");
+    assert(options.backgroundEffect.value === BACKGROUND_EFFECT_BLUR, "native load should preserve blur background effect");
+    assert(options.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR, "native load should sync blur draft effect");
+  });
+
+  await withMockTauri(async (command) => {
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[]],
+        settings: {
+          backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
+          backgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+          backgroundImagePath: null,
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    if (command === "configure_live_desktop_background") {
+      return {
+        phase: "stopped",
+        active: false,
+        generation: 0,
+        reason: "stopped",
+        detail: "configured",
+      };
+    }
+    if (command === "start_live_desktop_background") {
+      return {
+        phase: "running",
+        active: true,
+        generation: 1,
+        reason: "running",
+        detail: "running",
+      };
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+
+    assert(options.backgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "native load should fall back when webgl acrylic has no image path");
+    assert(options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should reset webgl acrylic without an image path");
+  });
+
+  await withMockTauri(async (command) => {
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[]],
+        settings: {
+          backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
+          backgroundEffect: BACKGROUND_EFFECT_BLUR,
+          backgroundImagePath: null,
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+
+    assert(options.backgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "native load should fall back when blur has no image path");
+    assert(options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should reset blur without an image path");
+  });
+
+  await withMockTauri(async (command) => {
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{ id: "live-app", type: "app", name: "Live", launchTarget: { kind: "shortcut", path: "Live.lnk" } }]],
+        settings: {
+          backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
+          backgroundEffect: BACKGROUND_EFFECT_DIMMED,
+          backgroundImagePath: "C:/Images/ignored.webp",
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+
+    assert(options.backgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "native load should fall back when live desktop backgrounds are unsupported");
+    assert(options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should reset unsupported live desktop backgrounds to dimmed");
+    assert(options.backgroundImagePath.value === null, "native load should not keep image paths for unsupported live desktop backgrounds");
+  });
+
+  setLiveDesktopExperimentEnabledForTests(false);
+  const disabledLiveDesktopCommands = [];
+  await withMockTauri(async (command) => {
+    disabledLiveDesktopCommands.push(command);
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{ id: "disabled-live-app", type: "app", name: "Disabled Live", launchTarget: { kind: "shortcut", path: "Disabled Live.lnk" } }]],
+        settings: {
+          backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
+          backgroundEffect: BACKGROUND_EFFECT_BLUR,
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    options.liveDesktopRuntimeStatus.value = {
+      phase: "running",
+      active: true,
+      generation: 1,
+      reason: "running",
+      detail: "running",
+    };
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+    await native.syncLiveDesktopBackgroundRuntime();
+    await native.refreshLiveDesktopRuntimeStatus();
+    await native.configureNativeLiveDesktopBackground();
+    await native.startNativeLiveDesktopBackground();
+    await native.stopNativeLiveDesktopBackground();
+    await native.restartLiveDesktopBackgroundRuntime();
+
+    assert(options.backgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "disabled live desktop experiment should fall back from saved live desktop layouts");
+    assert(options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "disabled live desktop experiment should reset saved live desktop effects");
+    assert(options.liveDesktopBackgroundSupport.value.reason === "experimentDisabled", "disabled live desktop experiment should expose disabled support state");
+    assert(options.liveDesktopRuntimeStatus.value.reason === "experimentDisabled", "disabled live desktop experiment should expose disabled runtime state");
+  }, {
+    passLiveDesktopBackgroundSupport: true,
+  });
+  assert(
+    disabledLiveDesktopCommands.filter((command) => command.includes("live_desktop")).length === 0,
+    "disabled live desktop experiment should not call native live desktop commands"
+  );
+  setLiveDesktopExperimentEnabledForTests(true);
+
+  await withMockTauri(async (command) => {
+    if (command === "get_live_desktop_background_support") {
+      return {
+        platform: "windows",
+        supportsLiveDesktopBackground: true,
+        supportsLiveDesktopBackgroundEffects: true,
+        reason: "available",
+      };
+    }
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{ id: "live-acrylic-app", type: "app", name: "Live Acrylic", launchTarget: { kind: "shortcut", path: "Live Acrylic.lnk" } }]],
+        settings: {
+          backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
+          backgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+          backgroundImagePath: "C:/Images/ignored.webp",
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    if (command === "configure_live_desktop_background") {
+      return {
+        phase: "stopped",
+        active: false,
+        generation: 0,
+        reason: "stopped",
+        detail: "configured",
+      };
+    }
+    if (command === "start_live_desktop_background") {
+      return {
+        phase: "running",
+        active: true,
+        generation: 1,
+        reason: "running",
+        detail: "running",
+      };
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await native.syncLiveDesktopBackgroundRuntime();
+
+    assert(options.backgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP, "native load should keep supported live desktop backgrounds");
+    assert(options.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "native load should preserve live desktop acrylic when effects are supported");
+    assert(options.backgroundImagePath.value === null, "native load should not keep image paths for live desktop backgrounds");
+    assert(options.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP, "native load should sync live desktop background draft");
+    assert(options.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "native load should sync live desktop acrylic draft");
+    assert(options.liveDesktopRuntimeStatus.value.phase === "running", "native load should start the live desktop runtime for saved live desktop backgrounds");
+  }, {
+    passLiveDesktopBackgroundSupport: true,
+  });
+
+  await withMockTauri(async (command) => {
+    if (command === "get_live_desktop_background_support") {
+      return {
+        platform: "windows",
+        supportsLiveDesktopBackground: true,
+        supportsLiveDesktopBackgroundEffects: false,
+        reason: "effectsUnavailable",
+      };
+    }
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{ id: "live-blur-app", type: "app", name: "Live Blur", launchTarget: { kind: "shortcut", path: "Live Blur.lnk" } }]],
+        settings: {
+          backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
+          backgroundEffect: BACKGROUND_EFFECT_BLUR,
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    if (command === "configure_live_desktop_background") {
+      return {
+        phase: "stopped",
+        active: false,
+        generation: 0,
+        reason: "stopped",
+        detail: "configured",
+      };
+    }
+    if (command === "start_live_desktop_background") {
+      return {
+        phase: "running",
+        active: true,
+        generation: 1,
+        reason: "running",
+        detail: "running",
+      };
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await native.syncLiveDesktopBackgroundRuntime();
+
+    assert(options.backgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP, "native load should keep live desktop backgrounds when base support is available");
+    assert(options.backgroundEffect.value === BACKGROUND_EFFECT_BLUR, "native load should preserve live desktop blur when native effects are unavailable");
+    assert(options.liveDesktopRuntimeStatus.value.phase === "running", "native load should start live desktop runtime without native effect support");
+  }, {
+    passLiveDesktopBackgroundSupport: true,
+  });
+
+  const liveDesktopRuntimeCommands = [];
+  const liveDesktopRuntimeConfigs = [];
+  await withMockTauri(async (command, args) => {
+    liveDesktopRuntimeCommands.push(command);
+    if (command === "get_live_desktop_runtime_status") {
+      return {
+        phase: "stopped",
+        active: false,
+        generation: 0,
+        reason: "stopped",
+        detail: "stopped",
+      };
+    }
+    if (command === "configure_live_desktop_background") {
+      liveDesktopRuntimeConfigs.push(args.config);
+      return {
+        phase: "stopped",
+        active: false,
+        generation: 0,
+        reason: "stopped",
+        detail: "stopped",
+      };
+    }
+    if (command === "start_live_desktop_background") {
+      return {
+        phase: "failed",
+        active: false,
+        generation: 1,
+        reason: "nativeRendererNotImplemented",
+        detail: "renderer unavailable",
+      };
+    }
+    if (command === "stop_live_desktop_background") {
+      return {
+        phase: "stopped",
+        active: false,
+        generation: 2,
+        reason: "stopped",
+        detail: "stopped",
+      };
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions();
+    options.backgroundEffect.value = BACKGROUND_EFFECT_ACRYLIC_WEBGL;
+    options.backgroundLiveDesktopOpacity.value = 37;
+    options.backgroundBlurStrength.value = 72;
+    options.backgroundDarkenColor.value = "#334455";
+    options.backgroundDarkenStrength.value = 41;
+    options.backgroundAcrylicAppearance.value = BACKGROUND_ACRYLIC_APPEARANCE_LIGHT;
+    options.backgroundAcrylicLightParams.value = {
+      ...options.backgroundAcrylicLightParams.value,
+      brightness: 1.2,
+      tintColor: [0.1, 0.2, 0.3],
+    };
+    const native = useLaunchpadNative(options);
+
+    assert(liveDesktopRuntimeCommands.length === 0, "live desktop runtime commands should not run until explicitly requested");
+
+    await native.refreshLiveDesktopRuntimeStatus();
+    assert(liveDesktopRuntimeCommands.join(",") === "get_live_desktop_runtime_status", "runtime status should be fetched only on explicit refresh");
+    assert(options.liveDesktopRuntimeStatus.value.phase === "stopped", "runtime status refresh should apply stopped status");
+
+    globalThis.window.localStorage = {
+      getItem: (key) => key === "launchpadLiveDesktopFrameSource" ? "unknownFrameSource" : null,
+    };
+    await native.startNativeLiveDesktopBackground();
+    assert(liveDesktopRuntimeCommands.join(",") === "get_live_desktop_runtime_status,configure_live_desktop_background,start_live_desktop_background", "runtime start should configure native effects before the native start command");
+    assert(liveDesktopRuntimeConfigs.length === 1, "runtime start should send one live desktop config");
+    assert(!("frameSource" in liveDesktopRuntimeConfigs[0]), "runtime config should not include a regular frame source field");
+    assert(liveDesktopRuntimeConfigs[0].debugFrameSourceOverride === null, "runtime config should ignore old frame source storage and keep debug frame source override empty by default");
+    assert(!("diagnosticMode" in liveDesktopRuntimeConfigs[0]), "runtime config should not include the old diagnostic mode field");
+    assert(liveDesktopRuntimeConfigs[0].disableMouseRelay === true, "runtime config should disable mouse relay by default");
+    assert(liveDesktopRuntimeConfigs[0].skipBlankFrames === false, "runtime config should keep blank frame skipping disabled by default");
+    assert(liveDesktopRuntimeConfigs[0].forceDwmFlush === false, "runtime config should keep DWM flush disabled by default");
+    assert(liveDesktopRuntimeConfigs[0].opacity === 37, "runtime config should include live desktop opacity");
+    assert(liveDesktopRuntimeConfigs[0].effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "runtime config should include the selected effect");
+    assert(liveDesktopRuntimeConfigs[0].blurStrength === 72, "runtime config should include blur strength");
+    assert(liveDesktopRuntimeConfigs[0].darkenColor === "#334455", "runtime config should include darken color");
+    assert(liveDesktopRuntimeConfigs[0].darkenStrength === 41, "runtime config should include darken strength");
+    assert(liveDesktopRuntimeConfigs[0].acrylicAppearance === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT, "runtime config should include acrylic appearance");
+    assert(liveDesktopRuntimeConfigs[0].acrylicParams.brightness === 1.2, "runtime config should include acrylic params");
+    assert(liveDesktopRuntimeConfigs[0].acrylicParams.tintColor[1] === 0.2, "runtime config should include acrylic tint color");
+    assert(liveDesktopRuntimeConfigs[0].effectPlan.effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "runtime config should include the shared effect plan");
+    assert(liveDesktopRuntimeConfigs[0].effectPlan.opacity === 0.37, "runtime effect plan should use live desktop opacity");
+    assert(liveDesktopRuntimeConfigs[0].effectPlan.acrylic.brightness === 1.2, "runtime effect plan should include normalized acrylic params");
+    assert(liveDesktopRuntimeConfigs[0].effectPlan.acrylic.alpha === 0.37, "runtime effect plan should carry acrylic composite alpha");
+    assert(options.liveDesktopRuntimeStatus.value.phase === "failed", "runtime start should apply returned failure state");
+    assert(options.liveDesktopRuntimeStatus.value.reason === "nativeRendererNotImplemented", "runtime start should preserve native failure reason");
+
+    await native.stopNativeLiveDesktopBackground();
+    assert(liveDesktopRuntimeCommands.join(",") === "get_live_desktop_runtime_status,configure_live_desktop_background,start_live_desktop_background,stop_live_desktop_background", "runtime stop should call the native stop command");
+    assert(options.liveDesktopRuntimeStatus.value.phase === "stopped", "runtime stop should apply stopped status");
+    assert(options.liveDesktopRuntimeStatus.value.generation === 2, "runtime stop should normalize generation values");
+
+    globalThis.window.localStorage = {
+      getItem: (key) => {
+        if (key === "launchpadLiveDesktopDebugFrameSourceOverride") return "testPattern";
+        if (key === "launchpadLiveDesktopDisableMouseRelay") return "true";
+        if (key === "launchpadLiveDesktopSkipBlankFrames") return "true";
+        if (key === "launchpadLiveDesktopForceDwmFlush") return "true";
+        return null;
+      },
+    };
+    liveDesktopRuntimeCommands.length = 0;
+    await native.configureNativeLiveDesktopBackground();
+    assert(liveDesktopRuntimeCommands.join(",") === "configure_live_desktop_background", "runtime configure should send only the native config command");
+    assert(!("frameSource" in liveDesktopRuntimeConfigs.at(-1)), "runtime config should not include the regular frame source field");
+    assert(liveDesktopRuntimeConfigs.at(-1).debugFrameSourceOverride === null, "runtime config should ignore debug test pattern storage outside DEV");
+    assert(liveDesktopRuntimeConfigs.at(-1).disableMouseRelay === true, "runtime config should keep mouse relay disabled outside DEV");
+    assert(liveDesktopRuntimeConfigs.at(-1).skipBlankFrames === false, "runtime config should ignore blank frame skip storage outside DEV");
+    assert(liveDesktopRuntimeConfigs.at(-1).forceDwmFlush === false, "runtime config should ignore DWM flush storage outside DEV");
+
+    globalThis.window.localStorage = {
+      getItem: (key) => {
+        if (key === "launchpadLiveDesktopDisableMouseRelay") return "false";
+        return null;
+      },
+    };
+    await native.configureNativeLiveDesktopBackground();
+    assert(liveDesktopRuntimeConfigs.at(-1).disableMouseRelay === true, "runtime config should ignore mouse relay storage outside DEV");
+  });
+
+  const liveDesktopSyncCommands = [];
+  const liveDesktopSyncConfigs = [];
+  const liveDesktopSyncVisibility = [];
+  let liveDesktopSyncOptions = null;
+  await withMockTauri(async (command, args) => {
+    liveDesktopSyncCommands.push(command);
+    if (command === "configure_live_desktop_background") {
+      liveDesktopSyncConfigs.push(args.config);
+      return {
+        phase: liveDesktopSyncOptions.liveDesktopRuntimeStatus.value.phase,
+        active: liveDesktopSyncOptions.liveDesktopRuntimeStatus.value.active,
+        generation: liveDesktopSyncOptions.liveDesktopRuntimeStatus.value.generation,
+        reason: "configured",
+        detail: "configured",
+      };
+    }
+    if (command === "start_live_desktop_background") {
+      return {
+        phase: "running",
+        active: true,
+        generation: 1,
+        reason: "running",
+        detail: "running",
+      };
+    }
+    if (command === "set_live_desktop_background_visible") {
+      liveDesktopSyncVisibility.push(args.visible);
+      return {
+        phase: liveDesktopSyncOptions.liveDesktopRuntimeStatus.value.phase,
+        active: liveDesktopSyncOptions.liveDesktopRuntimeStatus.value.active,
+        generation: liveDesktopSyncOptions.liveDesktopRuntimeStatus.value.generation,
+        reason: "visibilityUpdated",
+        detail: "visibility updated",
+      };
+    }
+    if (command === "stop_live_desktop_background") {
+      return {
+        phase: "stopped",
+        active: false,
+        generation: 2,
+        reason: "stopped",
+        detail: "stopped",
+      };
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async (timers) => {
+    const { options: optionsForLiveDesktopSync } = makeOptions();
+    liveDesktopSyncOptions = optionsForLiveDesktopSync;
+    optionsForLiveDesktopSync.backgroundSource.value = BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP;
+    optionsForLiveDesktopSync.backgroundEffect.value = BACKGROUND_EFFECT_BLUR;
+    optionsForLiveDesktopSync.liveDesktopBackgroundSupport.value = {
+      platform: "windows",
+      supportsLiveDesktopBackground: true,
+      supportsLiveDesktopBackgroundEffects: false,
+      reason: "available",
+    };
+    const native = useLaunchpadNative(optionsForLiveDesktopSync);
+
+    await native.syncLiveDesktopBackgroundRuntime();
+    assert(liveDesktopSyncCommands.join(",") === "configure_live_desktop_background,start_live_desktop_background", "runtime sync should configure and start live desktop from a stopped state");
+    assert(liveDesktopSyncConfigs[0].effect === BACKGROUND_EFFECT_BLUR, "runtime sync should send the selected live desktop effect");
+    assert(optionsForLiveDesktopSync.liveDesktopRuntimeStatus.value.phase === "running", "runtime sync should apply the started status");
+
+    liveDesktopSyncCommands.length = 0;
+    optionsForLiveDesktopSync.backgroundEffect.value = BACKGROUND_EFFECT_ACRYLIC_WEBGL;
+    await native.syncLiveDesktopBackgroundRuntime();
+    assert(liveDesktopSyncCommands.join(",") === "configure_live_desktop_background", "runtime sync should reconfigure an already running live desktop runtime");
+    assert(liveDesktopSyncConfigs.at(-1).effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "runtime sync should send updated effects to a running runtime");
+
+    liveDesktopSyncCommands.length = 0;
+    await native.restartLiveDesktopBackgroundRuntime();
+    assert(liveDesktopSyncCommands.join(",") === "stop_live_desktop_background,configure_live_desktop_background,start_live_desktop_background", "runtime restart should recreate an already running live desktop runtime");
+    assert(optionsForLiveDesktopSync.liveDesktopRuntimeStatus.value.phase === "running", "runtime restart should apply the restarted status");
+
+    liveDesktopSyncCommands.length = 0;
+    optionsForLiveDesktopSync.liveDesktopRuntimeStatus.value = {
+      phase: "stopped",
+      active: false,
+      generation: 2,
+      reason: "stopped",
+      detail: "stopped",
+    };
+    await native.restartLiveDesktopBackgroundRuntime();
+    assert(liveDesktopSyncCommands.join(",") === "configure_live_desktop_background,start_live_desktop_background", "runtime restart should cold-start a stopped live desktop runtime without stopping first");
+    assert(optionsForLiveDesktopSync.liveDesktopRuntimeStatus.value.phase === "running", "runtime restart should apply running status after cold-starting");
+
+    liveDesktopSyncCommands.length = 0;
+    optionsForLiveDesktopSync.isDesktopOpen.value = false;
+    await native.syncLiveDesktopBackgroundRuntime();
+    assert(liveDesktopSyncCommands.join(",") === "set_live_desktop_background_visible", "runtime sync should hide live desktop while keeping it warm");
+    assert(liveDesktopSyncVisibility.at(-1) === false, "hidden live desktop runtime should set the native visual invisible");
+    assert(timers.length === 1, "hidden live desktop runtime should schedule an idle stop");
+    assert(optionsForLiveDesktopSync.liveDesktopRuntimeStatus.value.phase === "running", "hidden live desktop runtime should remain running during the keep-alive window");
+
+    liveDesktopSyncCommands.length = 0;
+    optionsForLiveDesktopSync.isDesktopOpen.value = true;
+    await native.syncLiveDesktopBackgroundRuntime();
+    assert(timers.length === 0, "reopening the launchpad should cancel the pending live desktop idle stop");
+    assert(liveDesktopSyncCommands.join(",") === "set_live_desktop_background_visible,configure_live_desktop_background", "reopened live desktop runtime should be shown and reused without a cold start");
+    assert(liveDesktopSyncVisibility.at(-1) === true, "reopened live desktop runtime should set the native visual visible");
+
+    liveDesktopSyncCommands.length = 0;
+    optionsForLiveDesktopSync.isDesktopOpen.value = false;
+    await native.syncLiveDesktopBackgroundRuntime();
+    assert(timers.length === 1, "hiding the launchpad again should schedule another idle stop");
+    await timers.shift()();
+    await flushMicrotasks(2);
+    assert(liveDesktopSyncCommands.join(",") === "set_live_desktop_background_visible,stop_live_desktop_background", "live desktop runtime should stop after the idle keep-alive window expires");
+    assert(optionsForLiveDesktopSync.liveDesktopRuntimeStatus.value.phase === "stopped", "expired live desktop idle stop should apply stopped status");
+
+    liveDesktopSyncCommands.length = 0;
+    optionsForLiveDesktopSync.liveDesktopRuntimeStatus.value = {
+      phase: "running",
+      active: true,
+      generation: 3,
+      reason: "running",
+      detail: "running",
+    };
+    optionsForLiveDesktopSync.backgroundSource.value = BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP;
+    optionsForLiveDesktopSync.isDesktopOpen.value = false;
+    await native.syncLiveDesktopBackgroundRuntime();
+    assert(timers.length === 1, "hidden live desktop runtime should schedule an idle stop before source changes");
+    optionsForLiveDesktopSync.backgroundSource.value = BACKGROUND_SOURCE_SYSTEM_MATERIAL;
+    await native.syncLiveDesktopBackgroundRuntime();
+    assert(timers.length === 0, "leaving the live desktop background source should cancel a pending idle stop");
+    assert(liveDesktopSyncCommands.join(",") === "set_live_desktop_background_visible,stop_live_desktop_background", "leaving the live desktop background source should stop immediately");
+  });
+
+  const closeAnimationCommands = [];
+  await withMockTauri(async (command, args) => {
+    closeAnimationCommands.push(command);
+    if (command === "set_live_desktop_background_visible") {
+      assert(args.visible === false, "close animation should hide the native live desktop visual immediately");
+      return {
+        phase: "running",
+        active: true,
+        generation: 1,
+        reason: "visibilityUpdated",
+        detail: "visibility updated",
+      };
+    }
+    if (command === "stop_live_desktop_background") {
+      return {
+        phase: "stopped",
+        active: false,
+        generation: 2,
+        reason: "stopped",
+        detail: "stopped",
+      };
+    }
+    if (command === "hide_main_window") return null;
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async (timers) => {
+    const { options } = makeOptions();
+    options.isDesktopOpen.value = false;
+    options.backgroundSource.value = BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP;
+    options.liveDesktopBackgroundSupport.value = {
+      platform: "windows",
+      supportsLiveDesktopBackground: true,
+      supportsLiveDesktopBackgroundEffects: false,
+      reason: "available",
+    };
+    options.liveDesktopRuntimeStatus.value = {
+      phase: "running",
+      active: true,
+      generation: 1,
+      reason: "running",
+      detail: "running",
+    };
+    const native = useLaunchpadNative(options);
+
+    native.hideNativeWindowAfterCloseAnimation();
+    assert(timers.length === 1, "close animation should schedule one native hide timer");
+    await flushMicrotasks(5);
+    assert(closeAnimationCommands.join(",") === "set_live_desktop_background_visible", "close animation should hide the live desktop visual before hiding the native window");
+    assert(timers.length === 2, "close animation should also schedule the live desktop idle stop");
+    await timers.shift()();
+
+    assert(closeAnimationCommands.join(",") === "set_live_desktop_background_visible,hide_main_window", "close animation should hide the native window before the live desktop idle stop expires");
+    assert(timers.length === 1, "close animation should leave one pending live desktop idle stop timer");
+    assert(options.liveDesktopRuntimeStatus.value.phase === "running", "close animation should keep live desktop running during the keep-alive window");
+    await timers.shift()();
+    await flushMicrotasks(2);
+
+    assert(closeAnimationCommands.join(",") === "set_live_desktop_background_visible,hide_main_window,stop_live_desktop_background", "live desktop should stop after the close keep-alive window expires");
+    assert(options.liveDesktopRuntimeStatus.value.phase === "stopped", "idle stop should apply stopped live desktop status after hiding");
+  });
+
+  setLiveDesktopExperimentEnabledForTests(null);
+
+  const wallpaperSaves = [];
+  await withMockTauri(async (command, args) => {
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{ id: "wallpaper-app", type: "app", name: "Wallpaper", launchTarget: { kind: "shortcut", path: "Wallpaper.lnk" } }]],
+        settings: {
+          backgroundSource: BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
+          backgroundEffect: BACKGROUND_EFFECT_DIMMED,
+          backgroundImageOpacity: 72,
+          backgroundImagePath: "C:/Cached/old-wallpaper.jpg",
+        },
+      };
+    }
+    if (command === "get_desktop_wallpaper_background") {
+      return { name: "Windows wallpaper", imagePath: "C:/Cached/current-wallpaper.jpg" };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    if (command === "save_layout") {
+      wallpaperSaves.push(args.layout);
+      return null;
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async (timers) => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+    await Promise.all(timers.splice(0).map((timer) => timer()));
+
+    assert(options.backgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER, "native load should keep windows wallpaper as the background source");
+    assert(options.backgroundImagePath.value === "C:/Cached/current-wallpaper.jpg", "native load should refresh the cached desktop wallpaper path");
+    assert(options.backgroundImageUrl.value === "asset://C:/Cached/current-wallpaper.jpg", "native load should derive the refreshed wallpaper asset url");
+    assert(wallpaperSaves.length === 1, "refreshed desktop wallpaper backgrounds should be persisted after native load");
+    assert(wallpaperSaves[0].settings.backgroundImagePath === "C:/Cached/current-wallpaper.jpg", "persisted layouts should include the refreshed wallpaper path");
   });
 
   await withMockTauri(async (command) => {
@@ -366,6 +1156,46 @@ export async function runLaunchpadNativeTests() {
 
     assert(options.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA, "unsupported saved mica alt material should fall back to mica when available");
     assert(options.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "mica alt fallback should preserve saved appearance");
+  }, {
+    passWindowEffectsCommand: true,
+    passWindowEffectsSupport: true,
+  });
+
+  await withMockTauri(async (command) => {
+    if (command === "get_main_window_effects_support") {
+      return {
+        platform: "windows",
+        build: 10240,
+        supportsAcrylic: false,
+        supportsMica: false,
+        supportsMicaAlt: false,
+      };
+    }
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[]],
+        settings: {
+          windowEffectMaterial: WINDOW_EFFECT_MATERIAL_NONE,
+          windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    if (command === "set_main_window_effects_enabled") return null;
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+
+    assert(options.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_NONE, "saved none material should remain selected without native material support");
+    assert(options.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_NONE, "native load should sync none material draft");
   }, {
     passWindowEffectsCommand: true,
     passWindowEffectsSupport: true,

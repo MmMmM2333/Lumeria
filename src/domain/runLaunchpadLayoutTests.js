@@ -17,6 +17,9 @@ import { runLaunchpadSettingsConfigTests } from "../composables/useLaunchpadSett
 import { runSettingsPanelFlowTests } from "../composables/useSettingsPanelFlowTests.js";
 import { runLaunchpadSurfaceInteractionsTests } from "../composables/useLaunchpadSurfaceInteractionsTests.js";
 import { runLaunchpadViewStateTests } from "../composables/useLaunchpadViewStateTests.js";
+import { runLaunchpadViewAdaptersTests } from "../composables/useLaunchpadViewAdaptersTests.js";
+import { runLiveDesktopDiagnosticsTests } from "../components/backgroundDebug/liveDesktopDiagnosticsTests.js";
+import { runBackgroundImageLayoutTests } from "./backgroundImageLayoutTests.js";
 import { runLaunchpadDataTests } from "./launchpadDataTests.js";
 import { runIconSourceTests } from "./iconSourceTests.js";
 import { runLaunchpadHelperTests } from "./launchpadLayoutTests.js";
@@ -48,6 +51,12 @@ import { runFolderOverlayLayerTests } from "../rendering/pixi/scene/FolderOverla
 import { runFolderOverlayTargetsTests } from "../rendering/pixi/scene/folderOverlayTargetsTests.js";
 import { runFolderPreviewSwapMotionTests } from "../rendering/pixi/scene/folderPreviewSwapMotionTests.js";
 import { runIconSceneHelpersTests } from "../rendering/pixi/scene/iconSceneHelpersTests.js";
+import { runAcrylicFiltersTests } from "../rendering/pixi/background/acrylicFiltersTests.js";
+import { runAcrylicParamsTests } from "../rendering/pixi/background/acrylicParamsTests.js";
+import { runAcrylicNoiseTextureTests } from "../rendering/pixi/background/acrylicNoiseTextureTests.js";
+import { runAcrylicBackgroundPlanTests } from "../rendering/pixi/background/acrylicBackgroundPlanTests.js";
+import { runBackgroundEffectPipelineTests } from "../rendering/pixi/background/backgroundEffectPipelineTests.js";
+import { runBackgroundTextureLoaderTests } from "../rendering/pixi/background/backgroundTextureLoaderTests.js";
 
 const state = {
   searchQuery: { value: "" },
@@ -83,6 +92,7 @@ runLaunchpadHelperTests({
   gridCols: state.gridCols,
 });
 runLaunchpadDataTests();
+runBackgroundImageLayoutTests();
 runIconSourceTests();
 await runLaunchpadDragTests();
 runLaunchpadControllerHelpersTests();
@@ -98,6 +108,8 @@ await runLaunchpadNativeTests();
 runLaunchpadPageCommandsTests();
 runLaunchpadSurfaceInteractionsTests();
 runLaunchpadViewStateTests();
+runLaunchpadViewAdaptersTests();
+runLiveDesktopDiagnosticsTests();
 runFolderLayoutStylesTests();
 runLaunchpadSettingsConfigTests();
 runSettingsPanelFlowTests();
@@ -110,6 +122,12 @@ runGridGeometryTests();
 runStageCoordinatesTests();
 runIconBoundsRegistryTests();
 runPixiHostMetricsTests();
+await runAcrylicFiltersTests();
+runAcrylicParamsTests();
+await runAcrylicNoiseTextureTests();
+runAcrylicBackgroundPlanTests();
+await runBackgroundEffectPipelineTests();
+await runBackgroundTextureLoaderTests();
 runIconControlDrawingTests();
 runIconFolderHoverStateTests();
 runIconInteractionGeometryTests();

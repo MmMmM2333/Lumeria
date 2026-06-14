@@ -79,18 +79,25 @@
             <div class="settings-grid">
               <div class="settings-field settings-field-wide settings-window-effect-field">
                 <span class="settings-field-copy">
-                  <span>窗口材质</span>
+                  <span>窗口底材</span>
                   <span class="settings-field-hint">{{ windowEffectsSupportHint }}</span>
                 </span>
                 <div class="settings-window-effect-controls">
-                  <div class="settings-segmented-control" aria-label="窗口材质">
+                  <div class="settings-segmented-control" aria-label="窗口底材">
+                    <button
+                      type="button"
+                      :class="cx('settings-segmented-button', state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_NONE && 'settings-segmented-button-active')"
+                      @click="state.setDraftWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_NONE)"
+                    >
+                      无材质
+                    </button>
                     <button
                       type="button"
                       :class="cx('settings-segmented-button', state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_ACRYLIC && 'settings-segmented-button-active')"
                       :disabled="!state.canUseWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_ACRYLIC)"
                       @click="state.setDraftWindowEffectMaterial(WINDOW_EFFECT_MATERIAL_ACRYLIC)"
                     >
-                      Acrylic
+                      透明磨砂
                     </button>
                     <button
                       type="button"
@@ -109,11 +116,11 @@
                       Mica Alt
                     </button>
                   </div>
-                  <div class="settings-segmented-control" aria-label="窗口材质明暗">
+                  <div class="settings-segmented-control" aria-label="窗口底材明暗">
                     <button
                       type="button"
                       :class="cx('settings-segmented-button', state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT && 'settings-segmented-button-active')"
-                      :disabled="!hasWindowEffectMaterialChoice"
+                      :disabled="!canEditWindowEffectAppearance"
                       @click="state.setDraftWindowEffectAppearance(WINDOW_EFFECT_APPEARANCE_LIGHT)"
                     >
                       浅色
@@ -121,73 +128,168 @@
                     <button
                       type="button"
                       :class="cx('settings-segmented-button', state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_DARK && 'settings-segmented-button-active')"
-                      :disabled="!hasWindowEffectMaterialChoice"
+                      :disabled="!canEditWindowEffectAppearance"
                       @click="state.setDraftWindowEffectAppearance(WINDOW_EFFECT_APPEARANCE_DARK)"
                     >
                       深色
                     </button>
                   </div>
                 </div>
-                <div class="settings-window-effect-notes" aria-label="窗口材质说明">
-                  <div
-                    v-for="item in windowEffectMaterialNotes"
-                    :key="item.material"
-                    :class="cx('settings-window-effect-note', !item.available && 'settings-window-effect-note-disabled')"
+                <div class="settings-window-effect-previews" aria-label="窗口底材示意">
+                  <button
+                    v-for="item in windowEffectPreviewItems"
+                    :key="`${item.material}-${item.appearance}`"
+                    type="button"
+                    :class="cx(
+                      'settings-window-effect-preview',
+                      `settings-window-effect-preview-${item.materialClass}`,
+                      `settings-window-effect-preview-${item.appearance}`,
+                      item.active && 'settings-window-effect-preview-active',
+                      !item.available && 'settings-window-effect-preview-disabled'
+                    )"
+                    :disabled="!item.available"
+                    @click="selectWindowEffectPreview(item.material, item.appearance)"
                   >
-                    <span class="settings-window-effect-note-title">
-                      <span>{{ item.label }}</span>
-                      <span>{{ item.version }}</span>
+                    <span class="settings-window-effect-preview-scene" aria-hidden="true">
+                      <span class="settings-window-effect-preview-icons" />
+                      <span class="settings-window-effect-preview-pane">
+                        <span class="settings-window-effect-preview-titlebar" />
+                        <span class="settings-window-effect-preview-line settings-window-effect-preview-line-wide" />
+                        <span class="settings-window-effect-preview-line" />
+                      </span>
                     </span>
-                    <span>{{ item.description }}</span>
+                    <span class="settings-window-effect-preview-copy">
+                      <span class="settings-window-effect-preview-title">
+                        <span>{{ item.label }}</span>
+                        <span>{{ item.appearanceLabel }}</span>
+                      </span>
+                      <span>{{ item.description }}</span>
+                    </span>
+                  </button>
+                </div>
+              </div>
+              <div class="settings-field settings-field-wide settings-background-field">
+                <span class="settings-field-copy">
+                  <span>背景底色</span>
+                  <span class="settings-field-hint">位于图片层下方</span>
+                </span>
+                <div class="settings-background-controls">
+                  <div class="settings-background-mode-row">
+                    <label class="settings-color-control">
+                      <span>颜色</span>
+                      <span class="settings-color-swatch">
+                        <input
+                          :value="state.draftBackgroundBaseColor.value"
+                          type="color"
+                          aria-label="背景底色"
+                          @input="state.setDraftBackgroundBaseColor($event.target.value)"
+                        />
+                      </span>
+                      <span class="settings-color-value">{{ state.draftBackgroundBaseColor.value }}</span>
+                    </label>
+                    <label class="settings-opacity-control">
+                      <span>不透明度</span>
+                      <input
+                        :value="state.draftBackgroundBaseOpacity.value"
+                        :min="BACKGROUND_BASE_OPACITY_MIN"
+                        :max="BACKGROUND_BASE_OPACITY_MAX"
+                        :step="BACKGROUND_BASE_OPACITY_STEP"
+                        type="range"
+                        aria-label="背景底色不透明度"
+                        @input="state.setDraftBackgroundBaseOpacity($event.target.value)"
+                      />
+                      <span class="settings-opacity-value">{{ state.draftBackgroundBaseOpacity.value }}%</span>
+                    </label>
                   </div>
                 </div>
               </div>
               <div class="settings-field settings-field-wide settings-background-field">
                 <span class="settings-field-copy">
-                  <span>背景渲染</span>
-                  <span class="settings-field-hint">{{ backgroundRenderHint }}</span>
+                  <span>背景层</span>
+                  <span class="settings-field-hint">{{ backgroundSourceHint }}</span>
                 </span>
                 <div class="settings-background-controls">
                   <div class="settings-background-mode-row">
-                    <div class="settings-segmented-control" aria-label="背景渲染">
+                    <div class="settings-segmented-control" aria-label="图片来源">
                       <button
                         type="button"
-                        :class="cx('settings-segmented-button', state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_MATERIAL && 'settings-segmented-button-active')"
-                        @click="state.setDraftBackgroundRenderMode(BACKGROUND_RENDER_MODE_MATERIAL)"
+                        :class="cx('settings-segmented-button', state.draftBackgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL && 'settings-segmented-button-active')"
+                        @click="state.setDraftBackgroundSource(BACKGROUND_SOURCE_SYSTEM_MATERIAL)"
                       >
-                        系统材质
+                        无图片
                       </button>
                       <button
                         type="button"
-                        :class="cx('settings-segmented-button', state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE && 'settings-segmented-button-active')"
-                        @click="state.setDraftBackgroundRenderMode(BACKGROUND_RENDER_MODE_IMAGE)"
+                        :class="cx('settings-segmented-button', state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE && 'settings-segmented-button-active')"
+                        :disabled="state.isChoosingBackgroundImage.value"
+                        @click="state.draftBackgroundImagePath.value ? state.setDraftBackgroundSource(BACKGROUND_SOURCE_CUSTOM_IMAGE) : state.chooseDraftBackgroundImage()"
                       >
-                        图片
+                        自定义图片
+                      </button>
+                      <button
+                        type="button"
+                        :class="cx('settings-segmented-button', state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER && 'settings-segmented-button-active')"
+                        :disabled="state.isChoosingBackgroundImage.value"
+                        @click="state.useDraftDesktopWallpaper"
+                      >
+                        桌面壁纸
+                      </button>
+                      <button
+                        v-if="canShowLiveDesktopControls"
+                        type="button"
+                        :class="cx('settings-segmented-button', state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP && 'settings-segmented-button-active')"
+                        :disabled="!state.canUseLiveDesktopBackground()"
+                        @click="state.setDraftBackgroundSource(BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP)"
+                      >
+                        动态桌面
                       </button>
                     </div>
-                    <label v-if="state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE" class="settings-opacity-control">
-                      <span>透明度</span>
+                    <label v-if="doesDraftBackgroundUseImage" class="settings-opacity-control">
+                      <span>背景透明度</span>
                       <input
                         :value="state.draftBackgroundImageOpacity.value"
                         :min="BACKGROUND_IMAGE_OPACITY_MIN"
                         :max="BACKGROUND_IMAGE_OPACITY_MAX"
                         :step="BACKGROUND_IMAGE_OPACITY_STEP"
                         type="range"
-                        aria-label="背景图片透明度"
+                        aria-label="背景层透明度"
                         @input="state.setDraftBackgroundImageOpacity($event.target.value)"
                       />
                       <span class="settings-opacity-value">{{ state.draftBackgroundImageOpacity.value }}%</span>
                     </label>
+                    <label v-if="doesDraftBackgroundUseLiveDesktop" class="settings-opacity-control">
+                      <span>动态桌面不透明度</span>
+                      <input
+                        :value="state.draftBackgroundLiveDesktopOpacity.value"
+                        :min="BACKGROUND_LIVE_DESKTOP_OPACITY_MIN"
+                        :max="BACKGROUND_LIVE_DESKTOP_OPACITY_MAX"
+                        :step="BACKGROUND_LIVE_DESKTOP_OPACITY_STEP"
+                        type="range"
+                        aria-label="动态桌面不透明度"
+                        @input="state.setDraftBackgroundLiveDesktopOpacity($event.target.value)"
+                      />
+                      <span class="settings-opacity-value">{{ state.draftBackgroundLiveDesktopOpacity.value }}%</span>
+                    </label>
                   </div>
-                  <div v-if="state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE" class="settings-background-image-controls">
+                  <div v-if="doesDraftBackgroundUseImage" class="settings-background-image-controls">
                     <span class="settings-background-image-name">{{ draftBackgroundImageName }}</span>
                     <button
+                      v-if="isDraftCustomImage"
                       class="settings-secondary-button settings-background-image-button"
                       type="button"
                       :disabled="state.isChoosingBackgroundImage.value"
                       @click="state.chooseDraftBackgroundImage"
                     >
                       {{ state.isChoosingBackgroundImage.value ? "选择中" : "选择图片" }}
+                    </button>
+                    <button
+                      v-if="isDraftWindowsWallpaper"
+                      class="settings-secondary-button settings-background-image-button"
+                      type="button"
+                      :disabled="state.isChoosingBackgroundImage.value"
+                      @click="state.useDraftDesktopWallpaper"
+                    >
+                      {{ state.isChoosingBackgroundImage.value ? "同步中" : "刷新壁纸" }}
                     </button>
                     <button
                       class="settings-secondary-button settings-background-image-button"
@@ -198,6 +300,246 @@
                       恢复默认
                     </button>
                   </div>
+                  <div v-if="doesDraftBackgroundUseImage" class="settings-background-image-layout-controls">
+                    <span class="settings-acrylic-row-label">显示方式</span>
+                    <div class="settings-segmented-control" aria-label="背景图片显示方式">
+                      <button
+                        v-for="item in backgroundImageLayoutOptions"
+                        :key="item.layout"
+                        type="button"
+                        :class="cx('settings-segmented-button', state.draftBackgroundImageLayout.value === item.layout && 'settings-segmented-button-active')"
+                        @click="state.setDraftBackgroundImageLayout(item.layout)"
+                      >
+                        {{ item.label }}
+                      </button>
+                    </div>
+                  </div>
+                  <BackgroundImagePreviewCanvas
+                    aria-label="图片层预览"
+                    :background-base-color="state.draftBackgroundBaseColor.value"
+                    :background-base-opacity="state.draftBackgroundBaseOpacity.value"
+                    :background-image-layout="state.draftBackgroundImageLayout.value"
+                    :background-image-opacity="state.draftBackgroundImageOpacity.value"
+                    :background-image-pixel-size="draftBackgroundImagePixelSize"
+                    :background-image-url="hasDraftBackgroundImagePreview ? state.draftBackgroundImageUrl.value : null"
+                    :background-layout-context="backgroundLayoutContext"
+                    :empty-label="backgroundLayerPreviewLabel"
+                  />
+                </div>
+              </div>
+              <div class="settings-field settings-field-wide settings-background-field">
+                <span class="settings-field-copy">
+                  <span>背景效果</span>
+                  <span class="settings-field-hint">{{ backgroundEffectHint }}</span>
+                </span>
+                <div class="settings-background-controls">
+                  <div class="settings-background-mode-row">
+                    <div class="settings-segmented-control" aria-label="图片效果">
+                      <button
+                        type="button"
+                        :class="cx('settings-segmented-button', state.draftBackgroundEffect.value === BACKGROUND_EFFECT_NONE && 'settings-segmented-button-active')"
+                        :disabled="!canUseDraftBackgroundEffect(BACKGROUND_EFFECT_NONE)"
+                        @click="state.setDraftBackgroundEffect(BACKGROUND_EFFECT_NONE)"
+                      >
+                        原图
+                      </button>
+                      <button
+                        type="button"
+                        :class="cx('settings-segmented-button', state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED && 'settings-segmented-button-active')"
+                        :disabled="!canUseDraftBackgroundEffect(BACKGROUND_EFFECT_DIMMED)"
+                        @click="state.setDraftBackgroundEffect(BACKGROUND_EFFECT_DIMMED)"
+                      >
+                        暗化
+                      </button>
+                      <button
+                        type="button"
+                        :class="cx('settings-segmented-button', state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR && 'settings-segmented-button-active')"
+                        :disabled="!canUseDraftBackgroundEffect(BACKGROUND_EFFECT_BLUR)"
+                        @click="state.setDraftBackgroundEffect(BACKGROUND_EFFECT_BLUR)"
+                      >
+                        模糊
+                      </button>
+                      <button
+                        type="button"
+                        :class="cx('settings-segmented-button', state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL && 'settings-segmented-button-active')"
+                        :disabled="!canUseDraftBackgroundEffect(BACKGROUND_EFFECT_ACRYLIC_WEBGL)"
+                        @click="state.setDraftBackgroundEffect(BACKGROUND_EFFECT_ACRYLIC_WEBGL)"
+                      >
+                        Acrylic
+                      </button>
+                    </div>
+                  </div>
+                  <label v-if="doesDraftBackgroundUseLayer && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR" class="settings-opacity-control">
+                    <span>模糊强度</span>
+                    <input
+                      :value="state.draftBackgroundBlurStrength.value"
+                      :min="BACKGROUND_BLUR_STRENGTH_MIN"
+                      :max="BACKGROUND_BLUR_STRENGTH_MAX"
+                      :step="BACKGROUND_BLUR_STRENGTH_STEP"
+                      type="range"
+                      aria-label="背景模糊强度"
+                      @input="state.setDraftBackgroundBlurStrength($event.target.value)"
+                    />
+                    <span class="settings-opacity-value">{{ state.draftBackgroundBlurStrength.value }}%</span>
+                  </label>
+                  <label v-if="doesDraftBackgroundUseLayer && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED" class="settings-color-control">
+                    <span>暗化颜色</span>
+                    <span class="settings-color-swatch">
+                      <input
+                        :value="state.draftBackgroundDarkenColor.value"
+                        type="color"
+                        aria-label="背景暗化颜色"
+                        @input="state.setDraftBackgroundDarkenColor($event.target.value)"
+                      />
+                    </span>
+                    <span class="settings-color-value">{{ state.draftBackgroundDarkenColor.value }}</span>
+                  </label>
+                  <label v-if="doesDraftBackgroundUseLayer && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED" class="settings-opacity-control">
+                    <span>暗化强度</span>
+                    <input
+                      :value="state.draftBackgroundDarkenStrength.value"
+                      :min="BACKGROUND_DARKEN_STRENGTH_MIN"
+                      :max="BACKGROUND_DARKEN_STRENGTH_MAX"
+                      :step="BACKGROUND_DARKEN_STRENGTH_STEP"
+                      type="range"
+                      aria-label="背景暗化强度"
+                      @input="state.setDraftBackgroundDarkenStrength($event.target.value)"
+                    />
+                    <span class="settings-opacity-value">{{ state.draftBackgroundDarkenStrength.value }}%</span>
+                  </label>
+                  <div v-if="doesDraftBackgroundUseLayer && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL" class="settings-acrylic-controls">
+                    <div class="settings-acrylic-row">
+                      <span class="settings-acrylic-row-label">Acrylic 外观</span>
+                      <div class="settings-segmented-control" aria-label="Acrylic 外观">
+                        <button
+                          type="button"
+                          :class="cx('settings-segmented-button', state.draftBackgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM && 'settings-segmented-button-active')"
+                          @click="setDraftBackgroundAcrylicAppearance(BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM)"
+                        >
+                          跟随系统
+                        </button>
+                        <button
+                          type="button"
+                          :class="cx('settings-segmented-button', state.draftBackgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_DARK && 'settings-segmented-button-active')"
+                          @click="setDraftBackgroundAcrylicAppearance(BACKGROUND_ACRYLIC_APPEARANCE_DARK)"
+                        >
+                          深色
+                        </button>
+                        <button
+                          type="button"
+                          :class="cx('settings-segmented-button', state.draftBackgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT && 'settings-segmented-button-active')"
+                          @click="setDraftBackgroundAcrylicAppearance(BACKGROUND_ACRYLIC_APPEARANCE_LIGHT)"
+                        >
+                          浅色
+                        </button>
+                      </div>
+                    </div>
+                    <div class="settings-acrylic-row">
+                      <span class="settings-acrylic-row-label">参数</span>
+                      <div class="settings-segmented-control" aria-label="Acrylic 参数">
+                        <button
+                          type="button"
+                          :class="cx('settings-segmented-button', activeAcrylicParamsProfile === BACKGROUND_ACRYLIC_APPEARANCE_DARK && 'settings-segmented-button-active')"
+                          @click="activeAcrylicParamsProfile = BACKGROUND_ACRYLIC_APPEARANCE_DARK"
+                        >
+                          深色参数
+                        </button>
+                        <button
+                          type="button"
+                          :class="cx('settings-segmented-button', activeAcrylicParamsProfile === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT && 'settings-segmented-button-active')"
+                          @click="activeAcrylicParamsProfile = BACKGROUND_ACRYLIC_APPEARANCE_LIGHT"
+                        >
+                          浅色参数
+                        </button>
+                      </div>
+                    </div>
+                    <div class="settings-acrylic-params">
+                      <label class="settings-color-control">
+                        <span>染色</span>
+                        <span class="settings-color-swatch">
+                          <input
+                            :value="activeAcrylicTintColorHex"
+                            type="color"
+                            aria-label="Acrylic 染色"
+                            @input="setActiveDraftBackgroundAcrylicParam('tintColor', $event.target.value)"
+                          />
+                        </span>
+                        <span class="settings-color-value">{{ activeAcrylicTintColorHex }}</span>
+                      </label>
+                      <label class="settings-opacity-control">
+                        <span>染色强度</span>
+                        <input
+                          :value="activeAcrylicParams.tintStrength"
+                          :min="ACRYLIC_TINT_STRENGTH_MIN"
+                          :max="ACRYLIC_TINT_STRENGTH_MAX"
+                          :step="ACRYLIC_PARAM_STEP"
+                          type="range"
+                          aria-label="Acrylic 染色强度"
+                          @input="setActiveDraftBackgroundAcrylicParam('tintStrength', $event.target.value)"
+                        />
+                        <span class="settings-opacity-value">{{ formatAcrylicPercent(activeAcrylicParams.tintStrength) }}</span>
+                      </label>
+                      <label class="settings-opacity-control">
+                        <span>亮度</span>
+                        <input
+                          :value="activeAcrylicParams.brightness"
+                          :min="ACRYLIC_BRIGHTNESS_MIN"
+                          :max="ACRYLIC_BRIGHTNESS_MAX"
+                          :step="ACRYLIC_PARAM_STEP"
+                          type="range"
+                          aria-label="Acrylic 亮度"
+                          @input="setActiveDraftBackgroundAcrylicParam('brightness', $event.target.value)"
+                        />
+                        <span class="settings-opacity-value">{{ formatAcrylicPercent(activeAcrylicParams.brightness) }}</span>
+                      </label>
+                      <label class="settings-opacity-control">
+                        <span>对比度</span>
+                        <input
+                          :value="activeAcrylicParams.contrast"
+                          :min="ACRYLIC_CONTRAST_MIN"
+                          :max="ACRYLIC_CONTRAST_MAX"
+                          :step="ACRYLIC_PARAM_STEP"
+                          type="range"
+                          aria-label="Acrylic 对比度"
+                          @input="setActiveDraftBackgroundAcrylicParam('contrast', $event.target.value)"
+                        />
+                        <span class="settings-opacity-value">{{ formatAcrylicPercent(activeAcrylicParams.contrast) }}</span>
+                      </label>
+                      <label class="settings-opacity-control">
+                        <span>饱和度</span>
+                        <input
+                          :value="activeAcrylicParams.saturation"
+                          :min="ACRYLIC_SATURATION_MIN"
+                          :max="ACRYLIC_SATURATION_MAX"
+                          :step="ACRYLIC_PARAM_STEP"
+                          type="range"
+                          aria-label="Acrylic 饱和度"
+                          @input="setActiveDraftBackgroundAcrylicParam('saturation', $event.target.value)"
+                        />
+                        <span class="settings-opacity-value">{{ formatAcrylicPercent(activeAcrylicParams.saturation) }}</span>
+                      </label>
+                      <button class="settings-secondary-button" type="button" @click="resetActiveDraftBackgroundAcrylicParams">
+                        恢复默认
+                      </button>
+                    </div>
+                  </div>
+                  <BackgroundEffectPreview
+                    :active="state.isSettingsPanelOpen.value && activeSettingsTab === 'interface'"
+                    :background-acrylic-params="draftBackgroundAcrylicPreviewParams"
+                    :background-base-color="state.draftBackgroundBaseColor.value"
+                    :background-base-opacity="state.draftBackgroundBaseOpacity.value"
+                    :background-blur-strength="state.draftBackgroundBlurStrength.value"
+                    :background-darken-color="state.draftBackgroundDarkenColor.value"
+                    :background-darken-strength="state.draftBackgroundDarkenStrength.value"
+                    :background-effect="state.draftBackgroundEffect.value"
+                    :background-image-layout="state.draftBackgroundImageLayout.value"
+                    :background-image-opacity="state.draftBackgroundImageOpacity.value"
+                    :background-image-path="state.draftBackgroundImagePath.value"
+                    :background-image-pixel-size="draftBackgroundImagePixelSize"
+                    :background-image-url="hasDraftBackgroundImagePreview ? state.draftBackgroundImageUrl.value : null"
+                    :background-layout-context="backgroundLayoutContext"
+                    :empty-label="backgroundEffectPreviewLabel"
+                  />
                 </div>
               </div>
               <div class="settings-field settings-field-wide settings-grid-layout-field">
@@ -491,69 +833,219 @@
 
 <script setup>
 import { Motion } from "motion-v";
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import BackgroundEffectPreview from "./BackgroundEffectPreview.vue";
+import BackgroundImagePreviewCanvas from "./BackgroundImagePreviewCanvas.vue";
 import { ChevronDownIcon, ChevronUpIcon } from "./Icons.js";
+import { useBackgroundImagePixelSize } from "../composables/useBackgroundImagePixelSize.js";
 import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "../composables/launchpadConstants.js";
 import {
+  BACKGROUND_ACRYLIC_APPEARANCE_DARK,
+  BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
+  BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
+  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_BLUR,
+  BACKGROUND_EFFECT_DIMMED,
+  BACKGROUND_EFFECT_NONE,
+  BACKGROUND_BLUR_STRENGTH_MAX,
+  BACKGROUND_BLUR_STRENGTH_MIN,
+  BACKGROUND_BLUR_STRENGTH_STEP,
+  BACKGROUND_DARKEN_STRENGTH_MAX,
+  BACKGROUND_DARKEN_STRENGTH_MIN,
+  BACKGROUND_DARKEN_STRENGTH_STEP,
+  BACKGROUND_BASE_OPACITY_MAX,
+  BACKGROUND_BASE_OPACITY_MIN,
+  BACKGROUND_BASE_OPACITY_STEP,
+  BACKGROUND_IMAGE_LAYOUT_CENTER,
+  BACKGROUND_IMAGE_LAYOUT_FILL,
+  BACKGROUND_IMAGE_LAYOUT_FIT,
+  BACKGROUND_IMAGE_LAYOUT_STRETCH,
+  BACKGROUND_IMAGE_LAYOUT_TILE,
   BACKGROUND_IMAGE_OPACITY_MAX,
   BACKGROUND_IMAGE_OPACITY_MIN,
   BACKGROUND_IMAGE_OPACITY_STEP,
-  BACKGROUND_RENDER_MODE_IMAGE,
-  BACKGROUND_RENDER_MODE_MATERIAL,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_MAX,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_MIN,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_STEP,
+  BACKGROUND_SOURCE_CUSTOM_IMAGE,
+  BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
+  BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
+  backgroundSourceUsesLiveDesktop,
+  backgroundSourceUsesImage,
+  normalizeBackgroundAcrylicAppearance,
+  normalizeBackgroundAcrylicParams,
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_APPEARANCE_LIGHT,
+  WINDOW_EFFECT_MATERIAL_NONE,
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
   WINDOW_EFFECT_MATERIAL_MICA,
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
 } from "../composables/useLaunchpadSettingsConfig.js";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
+import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 import { getIconSource } from "../domain/iconSource.js";
 import { cx } from "../domain/launchpadLayout.js";
+import { rgbArrayToHex } from "../rendering/pixi/background/acrylicParams.js";
 
 const props = defineProps({
+  backgroundLayoutContext: { type: Object, default: null },
   state: { type: Object, required: true },
 });
 
 const activeSettingsTab = ref("general");
+const activeAcrylicParamsProfile = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
 const settingsPanelRef = ref(null);
+const systemAcrylicAppearance = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
+let systemAppearanceQuery = null;
+let liveDesktopStatusTimer = null;
+const ACRYLIC_PARAM_STEP = 0.01;
+const LIVE_DESKTOP_STATUS_REFRESH_INTERVAL_MS = 1000;
+const ACRYLIC_TINT_STRENGTH_MIN = 0;
+const ACRYLIC_TINT_STRENGTH_MAX = 0.6;
+const ACRYLIC_BRIGHTNESS_MIN = 0.5;
+const ACRYLIC_BRIGHTNESS_MAX = 1.2;
+const ACRYLIC_CONTRAST_MIN = 0.75;
+const ACRYLIC_CONTRAST_MAX = 1.25;
+const ACRYLIC_SATURATION_MIN = 0.8;
+const ACRYLIC_SATURATION_MAX = 1.8;
 const windowEffectsSupport = computed(() => props.state.windowEffectsSupport.value || {});
 const windowEffectMaterialNotes = computed(() => [
   {
+    material: WINDOW_EFFECT_MATERIAL_NONE,
+    materialClass: "none",
+    label: "无材质",
+    description: "关闭系统材质，只显示底色与图片层",
+    available: true,
+  },
+  {
     material: WINDOW_EFFECT_MATERIAL_ACRYLIC,
-    label: "Acrylic",
-    version: "Windows 10 1809+ / 17763+",
+    materialClass: "acrylic",
+    label: "透明磨砂",
     description: "半透明模糊，背景变化更明显",
     available: Boolean(windowEffectsSupport.value.supportsAcrylic),
   },
   {
     material: WINDOW_EFFECT_MATERIAL_MICA,
+    materialClass: "mica",
     label: "Mica",
-    version: "Windows 11 21H2+ / 22000+",
     description: "桌面采样，观感更稳定，资源占用更低",
     available: Boolean(windowEffectsSupport.value.supportsMica),
   },
   {
     material: WINDOW_EFFECT_MATERIAL_MICA_ALT,
+    materialClass: "mica-alt",
     label: "Mica Alt",
-    version: "Windows 11 22H2+ / 22621+",
     description: "Mica 变体，层次更强，适合分层窗口",
     available: Boolean(windowEffectsSupport.value.supportsMicaAlt),
   },
 ]);
-const hasWindowEffectMaterialChoice = computed(() =>
-  windowEffectMaterialNotes.value.some((item) => item.available)
+const windowEffectAppearances = [
+  { appearance: WINDOW_EFFECT_APPEARANCE_LIGHT, appearanceLabel: "浅色" },
+  { appearance: WINDOW_EFFECT_APPEARANCE_DARK, appearanceLabel: "深色" },
+];
+const backgroundImageLayoutOptions = [
+  { layout: BACKGROUND_IMAGE_LAYOUT_FILL, label: "填充" },
+  { layout: BACKGROUND_IMAGE_LAYOUT_FIT, label: "适应" },
+  { layout: BACKGROUND_IMAGE_LAYOUT_STRETCH, label: "拉伸" },
+  { layout: BACKGROUND_IMAGE_LAYOUT_TILE, label: "平铺" },
+  { layout: BACKGROUND_IMAGE_LAYOUT_CENTER, label: "居中" },
+];
+const activeWindowEffectAppearance = computed(() => (
+  windowEffectAppearances.find((item) => item.appearance === props.state.draftWindowEffectAppearance.value)
+  || windowEffectAppearances[1]
+));
+const windowEffectPreviewItems = computed(() => (
+  windowEffectMaterialNotes.value.map((material) => ({
+    ...material,
+    ...activeWindowEffectAppearance.value,
+    active: props.state.draftWindowEffectMaterial.value === material.material,
+  }))
+));
+const canEditWindowEffectAppearance = computed(() =>
+  props.state.draftWindowEffectMaterial.value !== WINDOW_EFFECT_MATERIAL_NONE
+  && props.state.canUseWindowEffectMaterial(props.state.draftWindowEffectMaterial.value)
 );
-const backgroundRenderHint = computed(() =>
-  props.state.draftBackgroundRenderMode.value === BACKGROUND_RENDER_MODE_IMAGE
-    ? "图片叠加在窗口材质上方"
-    : "仅显示 Acrylic / Mica 材质"
+const doesDraftBackgroundUseImage = computed(() => backgroundSourceUsesImage(props.state.draftBackgroundSource.value));
+const canShowLiveDesktopControls = computed(() => isLiveDesktopExperimentEnabled());
+const doesDraftBackgroundUseLiveDesktop = computed(() => Boolean(
+  canShowLiveDesktopControls.value
+  && backgroundSourceUsesLiveDesktop(props.state.draftBackgroundSource.value)
+));
+const doesDraftBackgroundUseLayer = computed(() => doesDraftBackgroundUseImage.value || doesDraftBackgroundUseLiveDesktop.value);
+const isDraftCustomImage = computed(() => props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE);
+const isDraftWindowsWallpaper = computed(() => props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER);
+const canUseDraftBackgroundEffect = (effect) => props.state.canUseDraftBackgroundEffect(effect);
+const liveDesktopUnavailableDetail = computed(() => {
+  const support = props.state.liveDesktopBackgroundSupport?.value;
+  return String(support?.detail || support?.reason || "").trim();
+});
+const liveDesktopRuntimeDetail = computed(() => {
+  const status = props.state.liveDesktopRuntimeStatus?.value;
+  if (!status || status.phase === "stopped") return "";
+  return String(status.detail || status.reason || "").trim();
+});
+const backgroundSourceHint = computed(() =>
+  props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE
+    ? "自定义图片叠在底色上方"
+    : props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER
+      ? "跟随当前 Windows 桌面壁纸"
+      : props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP && canShowLiveDesktopControls.value
+        ? liveDesktopRuntimeDetail.value || "捕获动态桌面并在 Native GPU 管线中合成"
+        : canShowLiveDesktopControls.value && !props.state.canUseLiveDesktopBackground() && liveDesktopUnavailableDetail.value
+          ? `动态桌面不可用：${liveDesktopUnavailableDetail.value}`
+        : "不叠加背景层"
+);
+const backgroundEffectHint = computed(() =>
+  doesDraftBackgroundUseLayer.value
+    ? doesDraftBackgroundUseLiveDesktop.value && !props.state.canUseLiveDesktopBackgroundEffect(props.state.draftBackgroundEffect.value)
+      ? "当前效果由前端透明层合成"
+      : props.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+      ? "WebGL Acrylic 风格合成"
+      : props.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR
+        ? "模糊背景层"
+      : props.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED
+        ? "叠加暗化遮罩"
+        : "直接显示背景层"
+    : "选择背景层后可用"
 );
 const draftBackgroundImageName = computed(() => {
   const path = String(props.state.draftBackgroundImagePath.value || "").trim();
-  if (!path) return "使用内置图片";
+  if (!path) return isDraftWindowsWallpaper.value ? "等待同步桌面壁纸" : "使用内置图片";
   const name = path.split(/[\\/]/).filter(Boolean).pop() || "";
+  if (isDraftWindowsWallpaper.value && /^background-[a-f0-9]{32}\./i.test(name)) return "当前桌面壁纸";
   return /^background-[a-f0-9]{32}\./i.test(name) ? "自定义图片" : name || "自定义图片";
 });
+const hasDraftBackgroundImagePreview = computed(() => Boolean(
+  doesDraftBackgroundUseImage.value && props.state.draftBackgroundImageUrl.value
+));
+const draftBackgroundImagePixelSize = useBackgroundImagePixelSize(() => (
+  hasDraftBackgroundImagePreview.value ? props.state.draftBackgroundImageUrl.value : null
+));
+const backgroundLayerPreviewLabel = computed(() => {
+  if (!doesDraftBackgroundUseImage.value) return "无图片";
+  return isDraftWindowsWallpaper.value ? "等待壁纸" : "选择图片";
+});
+const backgroundEffectPreviewLabel = computed(() => (
+  isDraftWindowsWallpaper.value ? "等待壁纸" : "选择图片后可用"
+));
+const effectiveDraftBackgroundAcrylicAppearance = computed(() => {
+  const appearance = normalizeBackgroundAcrylicAppearance(props.state.draftBackgroundAcrylicAppearance.value);
+  return appearance === BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM ? systemAcrylicAppearance.value : appearance;
+});
+const draftBackgroundAcrylicPreviewParams = computed(() => {
+  const appearance = effectiveDraftBackgroundAcrylicAppearance.value;
+  const params = appearance === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
+    ? props.state.draftBackgroundAcrylicLightParams.value
+    : props.state.draftBackgroundAcrylicDarkParams.value;
+  return normalizeBackgroundAcrylicParams(params, appearance);
+});
+const activeAcrylicParams = computed(() => (
+  activeAcrylicParamsProfile.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
+    ? props.state.draftBackgroundAcrylicLightParams.value
+    : props.state.draftBackgroundAcrylicDarkParams.value
+));
+const activeAcrylicTintColorHex = computed(() => rgbArrayToHex(activeAcrylicParams.value?.tintColor));
 const windowEffectsSupportHint = computed(() => {
   const availableLabels = windowEffectMaterialNotes.value
     .filter((item) => item.available)
@@ -567,6 +1059,38 @@ const settingsTabs = [
   { id: "about", label: "关于" },
 ];
 
+onMounted(() => {
+  if (typeof window === "undefined") return;
+  if (typeof window.matchMedia !== "function") return;
+  systemAppearanceQuery = window.matchMedia("(prefers-color-scheme: light)");
+  updateSystemAcrylicAppearance();
+  if (typeof systemAppearanceQuery.addEventListener === "function") {
+    systemAppearanceQuery.addEventListener("change", updateSystemAcrylicAppearance);
+  } else {
+    systemAppearanceQuery.addListener?.(updateSystemAcrylicAppearance);
+  }
+});
+
+onBeforeUnmount(() => {
+  clearLiveDesktopStatusTimer();
+  if (!systemAppearanceQuery) return;
+  if (typeof systemAppearanceQuery.removeEventListener === "function") {
+    systemAppearanceQuery.removeEventListener("change", updateSystemAcrylicAppearance);
+  } else {
+    systemAppearanceQuery.removeListener?.(updateSystemAcrylicAppearance);
+  }
+  systemAppearanceQuery = null;
+});
+
+watch(
+  [
+    () => props.state.isSettingsPanelOpen.value,
+    () => props.state.draftBackgroundSource.value,
+  ],
+  syncLiveDesktopStatusTimer,
+  { immediate: true }
+);
+
 watch(
   () => props.state.isSettingsPanelOpen.value,
   async (isOpen) => {
@@ -576,8 +1100,80 @@ watch(
   }
 );
 
+watch(
+  () => props.state.draftBackgroundAcrylicAppearance.value,
+  (appearance) => {
+    if (appearance === BACKGROUND_ACRYLIC_APPEARANCE_DARK || appearance === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT) {
+      activeAcrylicParamsProfile.value = appearance;
+    }
+  },
+  { immediate: true }
+);
+
 function handleSettingsPanelKeydown(event) {
   handleModalKeydown(event, settingsPanelRef, props.state.closeSettingsPanel);
+}
+
+function resolveSystemAcrylicAppearance() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return BACKGROUND_ACRYLIC_APPEARANCE_DARK;
+  }
+  return window.matchMedia("(prefers-color-scheme: light)").matches
+    ? BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
+    : BACKGROUND_ACRYLIC_APPEARANCE_DARK;
+}
+
+function updateSystemAcrylicAppearance() {
+  systemAcrylicAppearance.value = resolveSystemAcrylicAppearance();
+}
+
+function clearLiveDesktopStatusTimer() {
+  if (liveDesktopStatusTimer) window.clearInterval(liveDesktopStatusTimer);
+  liveDesktopStatusTimer = null;
+}
+
+function refreshLiveDesktopRuntimeStatus() {
+  if (!canShowLiveDesktopControls.value) return;
+  props.state.refreshLiveDesktopRuntimeStatus?.();
+}
+
+function syncLiveDesktopStatusTimer() {
+  clearLiveDesktopStatusTimer();
+  if (typeof window === "undefined") return;
+  if (!canShowLiveDesktopControls.value) return;
+  if (!props.state.isSettingsPanelOpen.value || !doesDraftBackgroundUseLiveDesktop.value) return;
+  if (typeof props.state.refreshLiveDesktopRuntimeStatus !== "function") return;
+  refreshLiveDesktopRuntimeStatus();
+  liveDesktopStatusTimer = window.setInterval(
+    refreshLiveDesktopRuntimeStatus,
+    LIVE_DESKTOP_STATUS_REFRESH_INTERVAL_MS
+  );
+}
+
+function selectWindowEffectPreview(material, appearance) {
+  if (!props.state.canUseWindowEffectMaterial(material)) return;
+  props.state.setDraftWindowEffectMaterial(material);
+  props.state.setDraftWindowEffectAppearance(appearance);
+}
+
+function setDraftBackgroundAcrylicAppearance(appearance) {
+  props.state.setDraftBackgroundAcrylicAppearance(appearance);
+  if (appearance === BACKGROUND_ACRYLIC_APPEARANCE_DARK || appearance === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT) {
+    activeAcrylicParamsProfile.value = appearance;
+  }
+}
+
+function setActiveDraftBackgroundAcrylicParam(key, value) {
+  props.state.setDraftBackgroundAcrylicParam(activeAcrylicParamsProfile.value, key, value);
+}
+
+function resetActiveDraftBackgroundAcrylicParams() {
+  props.state.resetDraftBackgroundAcrylicParams(activeAcrylicParamsProfile.value);
+}
+
+function formatAcrylicPercent(value) {
+  const number = Number(value);
+  return `${Math.round((Number.isFinite(number) ? number : 0) * 100)}%`;
 }
 
 function formatScanTime(value) {

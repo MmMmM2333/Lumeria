@@ -3,6 +3,7 @@ mod file_dialog;
 mod icons;
 mod launcher;
 mod layout_store;
+mod live_desktop;
 mod models;
 mod path_utils;
 mod tray;
@@ -22,6 +23,8 @@ use catalog::{
     ScanFilters, ScanRoot,
 };
 use file_dialog::{
+    cached_background_image_data_url as load_native_cached_background_image_data_url,
+    get_desktop_wallpaper_background as get_native_desktop_wallpaper_background,
     pick_background_image as pick_native_background_image,
     pick_launch_file as pick_native_launch_file,
     pick_scan_root_directory as pick_native_scan_root_directory, PickedBackgroundImage,
@@ -54,6 +57,7 @@ pub use icons::debug_extract_icon_png;
 #[derive(Default)]
 struct AppState {
     catalog: Mutex<HashMap<String, AppCatalogItem>>,
+    live_desktop_runtime: Mutex<live_desktop::LiveDesktopRuntime>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -83,6 +87,18 @@ struct CachedAppIconResult {
 struct CachedCustomIconResult {
     icon_path: String,
     icon_data_url: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BackgroundLayoutContext {
+    monitor_physical_x: i32,
+    monitor_physical_y: i32,
+    monitor_physical_width: u32,
+    monitor_physical_height: u32,
+    monitor_scale_factor: f64,
+    window_physical_x: i32,
+    window_physical_y: i32,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -170,6 +186,48 @@ fn pick_launch_file(app: AppHandle) -> Result<Option<PickedLaunchFile>, String> 
 #[tauri::command]
 fn pick_background_image(app: AppHandle) -> Result<Option<PickedBackgroundImage>, String> {
     pick_native_background_image(&app)
+}
+
+#[tauri::command]
+fn get_desktop_wallpaper_background(
+    app: AppHandle,
+) -> Result<Option<PickedBackgroundImage>, String> {
+    get_native_desktop_wallpaper_background(&app)
+}
+
+#[tauri::command]
+fn get_background_layout_context(
+    app: AppHandle,
+) -> Result<Option<BackgroundLayoutContext>, String> {
+    let Some(window) = app.get_webview_window("main") else {
+        return Ok(None);
+    };
+    let Some(monitor) = window
+        .current_monitor()
+        .map_err(|error| error.to_string())?
+    else {
+        return Ok(None);
+    };
+    let monitor_position = monitor.position();
+    let monitor_size = monitor.size();
+    let window_position = window.outer_position().map_err(|error| error.to_string())?;
+    Ok(Some(BackgroundLayoutContext {
+        monitor_physical_x: monitor_position.x,
+        monitor_physical_y: monitor_position.y,
+        monitor_physical_width: monitor_size.width,
+        monitor_physical_height: monitor_size.height,
+        monitor_scale_factor: monitor.scale_factor(),
+        window_physical_x: window_position.x,
+        window_physical_y: window_position.y,
+    }))
+}
+
+#[tauri::command]
+fn load_cached_background_image_data_url(
+    app: AppHandle,
+    image_path: String,
+) -> Result<Option<String>, String> {
+    load_native_cached_background_image_data_url(&app, &image_path)
 }
 
 #[tauri::command]
@@ -339,6 +397,96 @@ fn show_launch_error_message(report: LaunchFailureReport) {
 #[tauri::command]
 fn get_main_window_effects_support() -> tray::MainWindowEffectsSupport {
     tray::main_window_effects_support()
+}
+
+#[tauri::command]
+fn get_live_desktop_background_support(
+    state: State<'_, AppState>,
+) -> Result<live_desktop::LiveDesktopBackgroundSupport, String> {
+    let active_support = {
+        let mut runtime = state
+            .live_desktop_runtime
+            .lock()
+            .map_err(|_| "Failed to lock live desktop runtime".to_string())?;
+        runtime.active_background_support()
+    };
+    Ok(active_support.unwrap_or_else(live_desktop::live_desktop_background_support))
+}
+
+#[tauri::command]
+fn get_live_desktop_runtime_status(
+    state: State<'_, AppState>,
+) -> Result<live_desktop::LiveDesktopRuntimeStatus, String> {
+    let mut runtime = state
+        .live_desktop_runtime
+        .lock()
+        .map_err(|_| "Failed to lock live desktop runtime".to_string())?;
+    Ok(runtime.status())
+}
+
+#[tauri::command]
+fn configure_live_desktop_background(
+    state: State<'_, AppState>,
+    config: live_desktop::LiveDesktopRuntimeConfig,
+) -> Result<live_desktop::LiveDesktopRuntimeStatus, String> {
+    let mut runtime = state
+        .live_desktop_runtime
+        .lock()
+        .map_err(|_| "Failed to lock live desktop runtime".to_string())?;
+    Ok(runtime.configure(config))
+}
+
+#[tauri::command]
+fn start_live_desktop_background(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<live_desktop::LiveDesktopRuntimeStatus, String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Failed to find main window for live desktop background".to_string())?;
+    let window_handle = native_live_desktop_window_handle(&window)?;
+    let mut runtime = state
+        .live_desktop_runtime
+        .lock()
+        .map_err(|_| "Failed to lock live desktop runtime".to_string())?;
+    Ok(runtime.start_for_window(window_handle))
+}
+
+#[cfg(target_os = "windows")]
+fn native_live_desktop_window_handle(
+    window: &tauri::WebviewWindow,
+) -> Result<live_desktop::LiveDesktopWindowHandle, String> {
+    window.hwnd().map_err(|error| error.to_string())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn native_live_desktop_window_handle(
+    _window: &tauri::WebviewWindow,
+) -> Result<live_desktop::LiveDesktopWindowHandle, String> {
+    Ok(())
+}
+
+#[tauri::command]
+fn stop_live_desktop_background(
+    state: State<'_, AppState>,
+) -> Result<live_desktop::LiveDesktopRuntimeStatus, String> {
+    let mut runtime = state
+        .live_desktop_runtime
+        .lock()
+        .map_err(|_| "Failed to lock live desktop runtime".to_string())?;
+    Ok(runtime.stop())
+}
+
+#[tauri::command]
+fn set_live_desktop_background_visible(
+    state: State<'_, AppState>,
+    visible: bool,
+) -> Result<live_desktop::LiveDesktopRuntimeStatus, String> {
+    let mut runtime = state
+        .live_desktop_runtime
+        .lock()
+        .map_err(|_| "Failed to lock live desktop runtime".to_string())?;
+    Ok(runtime.set_visible(visible))
 }
 
 #[tauri::command]
@@ -724,6 +872,9 @@ pub fn run() {
             save_layout,
             pick_launch_file,
             pick_background_image,
+            get_desktop_wallpaper_background,
+            get_background_layout_context,
+            load_cached_background_image_data_url,
             pick_scan_root_directory,
             load_app_icon_choices,
             cache_custom_icon,
@@ -735,6 +886,12 @@ pub fn run() {
             show_launch_error_message,
             quit_app,
             get_main_window_effects_support,
+            get_live_desktop_background_support,
+            get_live_desktop_runtime_status,
+            configure_live_desktop_background,
+            start_live_desktop_background,
+            stop_live_desktop_background,
+            set_live_desktop_background_visible,
             set_main_window_effects_enabled
         ])
         .run(tauri::generate_context!())
