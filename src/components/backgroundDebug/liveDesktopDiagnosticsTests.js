@@ -20,6 +20,7 @@ export function runLiveDesktopDiagnosticsTests() {
       lastFrameHeight: 1440,
       lastFrameFormat: 87,
       pixelProbeSamples: 2,
+      shaderCopyFallbacks: 1,
       lastPixelProbeWidth: 16,
       lastPixelProbeHeight: 16,
       lastPixelProbeMinRgb: 10,
@@ -28,6 +29,7 @@ export function runLiveDesktopDiagnosticsTests() {
       lastPixelProbeMinAlpha: 255,
       lastPixelProbeMaxAlpha: 255,
       lastPixelProbeAvgAlpha: 255,
+      lastShaderCopyError: "shader failed",
     },
     windowDiagnostics: {
       candidates: [{
@@ -44,6 +46,8 @@ export function runLiveDesktopDiagnosticsTests() {
   assert(status.active, "status should preserve active flag");
   assert(status.diagnostics.framesCopied === 10, "diagnostics counts should floor valid numbers");
   assert(status.diagnostics.frameTimeouts === 0, "diagnostics counts should clamp negative values to zero");
+  assert(status.diagnostics.shaderCopyFallbacks === 1, "diagnostics should include shader fallback counts");
+  assert(status.diagnostics.lastShaderCopyError === "shader failed", "diagnostics should include the latest shader fallback error");
   assert(formatLastFrame(status.diagnostics) === "2560x1440 fmt 87", "last frame formatter should include size and format");
   assert(formatPixelProbe(status.diagnostics).includes("16x16 rgb 10/220/115"), "pixel probe formatter should include sample size and rgb range");
   assert(status.windowDiagnostics.candidates.length === 1, "window diagnostics should normalize candidates");

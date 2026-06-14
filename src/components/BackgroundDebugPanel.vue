@@ -437,6 +437,7 @@ const liveDesktopDiagnosticsRows = computed(() => {
     { label: "timeouts", value: formatCount(diagnostics.frameTimeouts) },
     { label: "copyErrors", value: formatCount(diagnostics.copyErrors) },
     { label: "commitErrors", value: formatCount(diagnostics.commitErrors) },
+    { label: "shaderFallbacks", value: formatCount(diagnostics.shaderCopyFallbacks) },
     { label: "rates", value: formatLiveDesktopRates(liveDesktopRates.value), wide: true },
     { label: "frameArrived", value: formatFrameArrived(diagnostics), wide: true },
     {
@@ -472,6 +473,9 @@ const liveDesktopDiagnosticsRows = computed(() => {
     { label: "lastFrame", value: formatLastFrame(diagnostics), wide: true },
     ...(diagnostics.lastAbandonedRendererReason
       ? [{ label: "lastAbandoned", value: diagnostics.lastAbandonedRendererReason, wide: true }]
+      : []),
+    ...(diagnostics.lastShaderCopyError
+      ? [{ label: "lastShaderFallback", value: diagnostics.lastShaderCopyError, wide: true }]
       : []),
   ];
 });

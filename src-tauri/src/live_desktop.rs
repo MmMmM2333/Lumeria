@@ -2052,6 +2052,7 @@ pub(crate) struct LiveDesktopRuntimeDiagnostics {
     pixel_probe_samples: u64,
     pixel_probe_errors: u64,
     blank_frame_skips: u64,
+    shader_copy_fallbacks: u64,
     abandoned_renderer_workers: u64,
     reaped_abandoned_renderer_workers: u64,
     last_pixel_probe_width: u32,
@@ -2062,6 +2063,7 @@ pub(crate) struct LiveDesktopRuntimeDiagnostics {
     last_pixel_probe_min_alpha: u32,
     last_pixel_probe_max_alpha: u32,
     last_pixel_probe_avg_alpha: u32,
+    last_shader_copy_error: String,
     last_abandoned_renderer_reason: String,
     last_error: String,
 }
@@ -3301,6 +3303,7 @@ impl LiveDesktopRuntimeDiagnostics {
             format!("pixelProbeSamples={}", self.pixel_probe_samples),
             format!("pixelProbeErrors={}", self.pixel_probe_errors),
             format!("blankFrameSkips={}", self.blank_frame_skips),
+            format!("shaderCopyFallbacks={}", self.shader_copy_fallbacks),
             format!(
                 "abandonedRendererWorkers={}",
                 self.abandoned_renderer_workers
@@ -3343,6 +3346,12 @@ impl LiveDesktopRuntimeDiagnostics {
             parts.push(format!(
                 "lastFrame={}x{} format {}",
                 self.last_frame_width, self.last_frame_height, self.last_frame_format
+            ));
+        }
+        if !self.last_shader_copy_error.is_empty() {
+            parts.push(format!(
+                "lastShaderCopyError={}",
+                self.last_shader_copy_error
             ));
         }
         if !self.last_error.is_empty() {
@@ -4688,6 +4697,17 @@ fn record_live_desktop_blank_frame_skipped(
 }
 
 #[cfg(target_os = "windows")]
+fn record_live_desktop_shader_copy_fallback(
+    diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
+    detail: &str,
+) {
+    update_live_desktop_diagnostics(diagnostics, |diagnostics| {
+        diagnostics.shader_copy_fallbacks += 1;
+        diagnostics.last_shader_copy_error = detail.to_string();
+    });
+}
+
+#[cfg(target_os = "windows")]
 fn record_live_desktop_copy_error(
     diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
     detail: &str,
@@ -5285,6 +5305,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 &d3d.context,
                 &config,
                 &diagnostics,
+                shader_pipeline.as_ref(),
             )
         };
         let initial_frame_copied = matches!(initial_frame, Ok(Some(_)));
@@ -5968,6 +5989,7 @@ unsafe fn copy_initial_live_desktop_frame_to_composition_surface(
     context: &ID3D11DeviceContext,
     config: &LiveDesktopRuntimeConfig,
     diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
+    shader_pipeline: Option<&LiveDesktopShaderPipeline>,
 ) -> Result<Option<LiveDesktopFrameProbe>, String> {
     let Some(window_capture) = window_capture else {
         return Ok(None);
@@ -5984,7 +6006,7 @@ unsafe fn copy_initial_live_desktop_frame_to_composition_surface(
                 context,
                 config,
                 diagnostics,
-                None,
+                shader_pipeline,
             )
         } {
             Ok(Some(frame)) => return Ok(Some(frame)),
@@ -6262,6 +6284,9 @@ unsafe fn copy_window_capture_frame_to_composition_surface(
             None
         };
         let used_shader_pipeline = shader_pipeline.is_some() && shader_copy_error.is_none();
+        if let Some(error) = shader_copy_error.as_ref() {
+            record_live_desktop_shader_copy_fallback(diagnostics, error);
+        }
         if !used_shader_pipeline {
             if copy_crop.left == 0
                 && copy_crop.top == 0
@@ -7315,6 +7340,19 @@ mod tests {
                 enabled: false,
             },
         }
+    }
+
+    #[test]
+    fn runtime_diagnostics_summary_includes_shader_copy_fallbacks() {
+        let diagnostics = LiveDesktopRuntimeDiagnostics {
+            shader_copy_fallbacks: 2,
+            last_shader_copy_error: "shader failed".to_string(),
+            ..LiveDesktopRuntimeDiagnostics::default()
+        };
+        let summary = diagnostics.summary();
+
+        assert!(summary.contains("shaderCopyFallbacks=2"));
+        assert!(summary.contains("lastShaderCopyError=shader failed"));
     }
 
     #[test]
