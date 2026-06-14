@@ -21,6 +21,7 @@ import {
 import {
   normalizeBackgroundImageLayout,
 } from "../domain/backgroundImageLayout.js";
+import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 export {
   BACKGROUND_IMAGE_LAYOUT_CENTER,
   BACKGROUND_IMAGE_LAYOUT_FILL,
@@ -475,7 +476,10 @@ export function useLaunchpadSettingsConfig(options) {
   }
 
   function canUseLiveDesktopBackground() {
-    return normalizeLiveDesktopBackgroundSupport(options.liveDesktopBackgroundSupport?.value).supportsLiveDesktopBackground;
+    return Boolean(
+      isLiveDesktopExperimentEnabled()
+      && normalizeLiveDesktopBackgroundSupport(options.liveDesktopBackgroundSupport?.value).supportsLiveDesktopBackground
+    );
   }
 
   function canUseLiveDesktopBackgroundEffect(effect) {

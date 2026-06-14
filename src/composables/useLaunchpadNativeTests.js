@@ -1,5 +1,6 @@
 import { ref, shallowRef } from "vue";
 import { setLaunchpadApiBridgeForTests } from "../api/launchpadApi.js";
+import { setLiveDesktopExperimentEnabledForTests } from "../domain/experimentalFeatures.js";
 import { useLaunchpadNative } from "./useLaunchpadNative.js";
 import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
@@ -202,6 +203,7 @@ export async function runLaunchpadNativeTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Launchpad native test failed] ${message}`);
   };
+  setLiveDesktopExperimentEnabledForTests(true);
 
   const initialSaveLayouts = [];
   await withMockTauri(async (command, args) => {
@@ -556,6 +558,58 @@ export async function runLaunchpadNativeTests() {
     assert(options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should reset unsupported live desktop backgrounds to dimmed");
     assert(options.backgroundImagePath.value === null, "native load should not keep image paths for unsupported live desktop backgrounds");
   });
+
+  setLiveDesktopExperimentEnabledForTests(false);
+  const disabledLiveDesktopCommands = [];
+  await withMockTauri(async (command) => {
+    disabledLiveDesktopCommands.push(command);
+    if (command === "load_layout") {
+      return {
+        version: 1,
+        pages: [[{ id: "disabled-live-app", type: "app", name: "Disabled Live", launchTarget: { kind: "shortcut", path: "Disabled Live.lnk" } }]],
+        settings: {
+          backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
+          backgroundEffect: BACKGROUND_EFFECT_BLUR,
+        },
+      };
+    }
+    if (command === "load_cached_app_icons") return [];
+    if (command === "check_launch_targets") return [];
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions({
+      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
+    });
+    options.liveDesktopRuntimeStatus.value = {
+      phase: "running",
+      active: true,
+      generation: 1,
+      reason: "running",
+      detail: "running",
+    };
+    const native = useLaunchpadNative(options);
+
+    await native.loadNativeLaunchpadData();
+    await flushMicrotasks(3);
+    await native.syncLiveDesktopBackgroundRuntime();
+    await native.refreshLiveDesktopRuntimeStatus();
+    await native.configureNativeLiveDesktopBackground();
+    await native.startNativeLiveDesktopBackground();
+    await native.stopNativeLiveDesktopBackground();
+    await native.restartLiveDesktopBackgroundRuntime();
+
+    assert(options.backgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "disabled live desktop experiment should fall back from saved live desktop layouts");
+    assert(options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "disabled live desktop experiment should reset saved live desktop effects");
+    assert(options.liveDesktopBackgroundSupport.value.reason === "experimentDisabled", "disabled live desktop experiment should expose disabled support state");
+    assert(options.liveDesktopRuntimeStatus.value.reason === "experimentDisabled", "disabled live desktop experiment should expose disabled runtime state");
+  }, {
+    passLiveDesktopBackgroundSupport: true,
+  });
+  assert(
+    disabledLiveDesktopCommands.filter((command) => command.includes("live_desktop")).length === 0,
+    "disabled live desktop experiment should not call native live desktop commands"
+  );
+  setLiveDesktopExperimentEnabledForTests(true);
 
   await withMockTauri(async (command) => {
     if (command === "get_live_desktop_background_support") {
@@ -983,6 +1037,8 @@ export async function runLaunchpadNativeTests() {
     assert(closeAnimationCommands.join(",") === "set_live_desktop_background_visible,hide_main_window,stop_live_desktop_background", "live desktop should stop after the close keep-alive window expires");
     assert(options.liveDesktopRuntimeStatus.value.phase === "stopped", "idle stop should apply stopped live desktop status after hiding");
   });
+
+  setLiveDesktopExperimentEnabledForTests(null);
 
   const wallpaperSaves = [];
   await withMockTauri(async (command, args) => {

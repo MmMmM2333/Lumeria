@@ -1,4 +1,5 @@
 import { ref } from "vue";
+import { setLiveDesktopExperimentEnabledForTests } from "../domain/experimentalFeatures.js";
 import {
   BACKGROUND_EFFECT_ACRYLIC_WEBGL,
   BACKGROUND_EFFECT_BLUR,
@@ -62,6 +63,7 @@ export function runLaunchpadViewStateTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Launchpad view state test failed] ${message}`);
   };
+  setLiveDesktopExperimentEnabledForTests(true);
 
   const desktop = createViewState();
   assert(desktop.view.rootStyle.value["--configured-app-icon-size"] === "64px", "root style should expose configured icon size");
@@ -162,6 +164,22 @@ export function runLaunchpadViewStateTests() {
   assert(liveDesktopAcrylic.view.rootStyle.value["--launchpad-background-overlay-opacity"] === "0.26", "live desktop acrylic fallback should expose acrylic tint opacity");
   assert(liveDesktopAcrylic.view.rootStyle.value["--launchpad-live-desktop-backdrop-filter"].includes("saturate(1.30)"), "live desktop acrylic fallback should include acrylic color adjustments");
 
+  setLiveDesktopExperimentEnabledForTests(false);
+  const disabledLiveDesktop = createViewState({
+    backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
+    backgroundEffect: BACKGROUND_EFFECT_BLUR,
+    backgroundBaseOpacity: 74,
+    liveDesktopCssFallbackEffectsEnabled: true,
+    liveDesktopBackgroundSupport: {
+      supportsLiveDesktopBackground: true,
+      supportsLiveDesktopBackgroundEffects: false,
+    },
+  });
+  assert(disabledLiveDesktop.view.rootStyle.value["--launchpad-background-base-opacity"] === "0.74", "disabled live desktop experiment should keep the normal css base layer");
+  assert(disabledLiveDesktop.view.rootStyle.value["--launchpad-live-desktop-backdrop-filter"] === "none", "disabled live desktop experiment should disable css fallback filters");
+  assert(disabledLiveDesktop.view.rootStyle.value["--launchpad-live-desktop-backdrop-opacity"] === "0", "disabled live desktop experiment should keep the fallback layer transparent");
+  setLiveDesktopExperimentEnabledForTests(true);
+
   const search = createViewState({ isSearchMode: true });
   assert(search.view.desktopTrackMotionKey.value === "open-search-spring", "desktop motion key should describe search mode");
 
@@ -181,4 +199,5 @@ export function runLaunchpadViewStateTests() {
 
   const settling = createViewState({ isHomeRevealSettling: true, isFolderLayerActive: true, openFolderId: "folder-1" });
   assert(settling.view.desktopTrackMotionKey.value === "open-desktop-snap", "home reveal settling should snap the desktop track");
+  setLiveDesktopExperimentEnabledForTests(null);
 }

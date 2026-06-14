@@ -1,4 +1,5 @@
 import { createLaunchpadLayoutHelpers, makePageSize } from "../domain/launchpadLayout.js";
+import { setLiveDesktopExperimentEnabledForTests } from "../domain/experimentalFeatures.js";
 import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
@@ -254,6 +255,7 @@ export function runLaunchpadSettingsConfigTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Launchpad settings config test failed] ${message}`);
   };
+  setLiveDesktopExperimentEnabledForTests(true);
 
   assert(clampLaunchpadIconSize(8) === 32, "icon size clamp should enforce the minimum");
   assert(clampLaunchpadIconSize(160) === 128, "icon size clamp should enforce the maximum");
@@ -474,6 +476,24 @@ export function runLaunchpadSettingsConfigTests() {
   assert(unsupportedLiveDesktop.state.draftBackgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "unsupported live desktop backgrounds should not be selected");
   assert(!unsupportedLiveDesktop.config.canUseLiveDesktopBackground(), "live desktop background availability should follow native support");
 
+  setLiveDesktopExperimentEnabledForTests(false);
+  const disabledLiveDesktop = createSettingsConfig({
+    draftBackgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
+    draftBackgroundEffect: BACKGROUND_EFFECT_BLUR,
+    liveDesktopBackgroundSupport: {
+      platform: "windows",
+      supportsLiveDesktopBackground: true,
+      supportsLiveDesktopBackgroundEffects: true,
+      reason: "available",
+    },
+  });
+  assert(!disabledLiveDesktop.config.canUseLiveDesktopBackground(), "disabled live desktop experiment should hide native support");
+  disabledLiveDesktop.config.setDraftBackgroundSource(BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP);
+  disabledLiveDesktop.config.applySettingsConfig();
+  assert(disabledLiveDesktop.state.backgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "disabled live desktop experiment should not apply saved live desktop drafts");
+  assert(disabledLiveDesktop.state.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "disabled live desktop experiment should reset pixi-only live desktop effects");
+  setLiveDesktopExperimentEnabledForTests(true);
+
   const liveDesktopWithoutEffects = createSettingsConfig({
     liveDesktopBackgroundSupport: {
       platform: "windows",
@@ -653,4 +673,5 @@ export function runLaunchpadSettingsConfigTests() {
   dragActive.config.applyGridConfig();
   assert(dragActive.calls.commitPages.length === 0, "drag-active settings apply should not repack pages");
   assert(dragActive.calls.schedulePageGridMetrics === 1, "drag-active settings apply should still request metrics refresh");
+  setLiveDesktopExperimentEnabledForTests(null);
 }

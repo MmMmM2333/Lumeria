@@ -235,6 +235,7 @@
                         桌面壁纸
                       </button>
                       <button
+                        v-if="canShowLiveDesktopControls"
                         type="button"
                         :class="cx('settings-segmented-button', state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP && 'settings-segmented-button-active')"
                         :disabled="!state.canUseLiveDesktopBackground()"
@@ -882,6 +883,7 @@ import {
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
 } from "../composables/useLaunchpadSettingsConfig.js";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
+import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 import { getIconSource } from "../domain/iconSource.js";
 import { cx } from "../domain/launchpadLayout.js";
 import { rgbArrayToHex } from "../rendering/pixi/background/acrylicParams.js";
@@ -965,7 +967,11 @@ const canEditWindowEffectAppearance = computed(() =>
   && props.state.canUseWindowEffectMaterial(props.state.draftWindowEffectMaterial.value)
 );
 const doesDraftBackgroundUseImage = computed(() => backgroundSourceUsesImage(props.state.draftBackgroundSource.value));
-const doesDraftBackgroundUseLiveDesktop = computed(() => backgroundSourceUsesLiveDesktop(props.state.draftBackgroundSource.value));
+const canShowLiveDesktopControls = computed(() => isLiveDesktopExperimentEnabled());
+const doesDraftBackgroundUseLiveDesktop = computed(() => Boolean(
+  canShowLiveDesktopControls.value
+  && backgroundSourceUsesLiveDesktop(props.state.draftBackgroundSource.value)
+));
 const doesDraftBackgroundUseLayer = computed(() => doesDraftBackgroundUseImage.value || doesDraftBackgroundUseLiveDesktop.value);
 const isDraftCustomImage = computed(() => props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE);
 const isDraftWindowsWallpaper = computed(() => props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER);
@@ -984,9 +990,9 @@ const backgroundSourceHint = computed(() =>
     ? "自定义图片叠在底色上方"
     : props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER
       ? "跟随当前 Windows 桌面壁纸"
-      : props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP
+      : props.state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP && canShowLiveDesktopControls.value
         ? liveDesktopRuntimeDetail.value || "捕获动态桌面并在 Native GPU 管线中合成"
-        : !props.state.canUseLiveDesktopBackground() && liveDesktopUnavailableDetail.value
+        : canShowLiveDesktopControls.value && !props.state.canUseLiveDesktopBackground() && liveDesktopUnavailableDetail.value
           ? `动态桌面不可用：${liveDesktopUnavailableDetail.value}`
         : "不叠加背景层"
 );
@@ -1127,12 +1133,14 @@ function clearLiveDesktopStatusTimer() {
 }
 
 function refreshLiveDesktopRuntimeStatus() {
+  if (!canShowLiveDesktopControls.value) return;
   props.state.refreshLiveDesktopRuntimeStatus?.();
 }
 
 function syncLiveDesktopStatusTimer() {
   clearLiveDesktopStatusTimer();
   if (typeof window === "undefined") return;
+  if (!canShowLiveDesktopControls.value) return;
   if (!props.state.isSettingsPanelOpen.value || !doesDraftBackgroundUseLiveDesktop.value) return;
   if (typeof props.state.refreshLiveDesktopRuntimeStatus !== "function") return;
   refreshLiveDesktopRuntimeStatus();

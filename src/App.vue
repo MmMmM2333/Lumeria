@@ -156,6 +156,7 @@ import { loadBackgroundImagePixelSize } from "./composables/useBackgroundImagePi
 import { useLaunchpadController } from "./composables/useLaunchpadController.js";
 import { backgroundSourceUsesLiveDesktop } from "./composables/useLaunchpadSettingsConfig.js";
 import { resolveCssBackgroundImagePlacement } from "./domain/backgroundImageLayout.js";
+import { isLiveDesktopExperimentEnabled } from "./domain/experimentalFeatures.js";
 import {
   createDialogState,
   createFolderOverlayState,
@@ -251,6 +252,7 @@ const isAcrylicDebugPanelEnabled = import.meta.env.DEV;
 const BackgroundDebugPanel = import.meta.env.DEV
   ? defineAsyncComponent(() => import("./components/BackgroundDebugPanel.vue"))
   : null;
+const isLiveDesktopExperimentActive = computed(() => isLiveDesktopExperimentEnabled());
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY = "launchpadLiveDesktopCompositorKeeper";
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT = "launchpad-live-desktop-compositor-keeper-change";
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_INTERVAL_MS = 250;
@@ -270,9 +272,13 @@ const isStartupMaskVisible = ref(true);
 const backgroundLayoutContext = ref(null);
 const backgroundImagePixelSize = ref(null);
 const backgroundViewportSize = ref({ height: 1, width: 1 });
-const isLiveDesktopCompositorKeeperEnabled = ref(readLiveDesktopCompositorKeeperSetting());
+const isLiveDesktopCompositorKeeperEnabled = ref(isLiveDesktopExperimentEnabled()
+  ? readLiveDesktopCompositorKeeperSetting()
+  : false);
 const liveDesktopCompositorTick = ref(0);
-liveDesktopCssFallbackEffectsEnabled.value = readLiveDesktopCssFallbackEffectsSetting();
+liveDesktopCssFallbackEffectsEnabled.value = isLiveDesktopExperimentEnabled()
+  ? readLiveDesktopCssFallbackEffectsSetting()
+  : false;
 const backgroundImageLayers = ref([
   { id: "background-image-a", url: null, visible: false },
   { id: "background-image-b", url: null, visible: false },
@@ -297,6 +303,7 @@ const shouldRunDragPreviewPixi = computed(() => Boolean(
 ));
 const shouldRenderLiveDesktopCompositorKeeper = computed(() => Boolean(
   import.meta.env.DEV
+    && isLiveDesktopExperimentActive.value
     && isLiveDesktopCompositorKeeperEnabled.value
     && backgroundSourceUsesLiveDesktop(backgroundSource.value)
     && liveDesktopRuntimeStatus.value?.active
@@ -304,7 +311,9 @@ const shouldRenderLiveDesktopCompositorKeeper = computed(() => Boolean(
     && !isAppLaunching.value
 ));
 const shouldUseLiveDesktopCssFallbackEffects = computed(() => Boolean(
-  import.meta.env.DEV && liveDesktopCssFallbackEffectsEnabled.value
+  import.meta.env.DEV
+    && isLiveDesktopExperimentActive.value
+    && liveDesktopCssFallbackEffectsEnabled.value
 ));
 let pixiBackgroundHideTimer = null;
 let startupMaskRemoveTimer = null;
@@ -326,6 +335,7 @@ function backgroundImageUrlStyle(url) {
 }
 
 function readLiveDesktopCompositorKeeperSetting() {
+  if (!isLiveDesktopExperimentEnabled()) return false;
   if (typeof window === "undefined") return false;
   try {
     return window.localStorage?.getItem(LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY) === "true";
@@ -335,6 +345,7 @@ function readLiveDesktopCompositorKeeperSetting() {
 }
 
 function readLiveDesktopCssFallbackEffectsSetting() {
+  if (!isLiveDesktopExperimentEnabled()) return false;
   if (typeof window === "undefined") return false;
   try {
     return window.localStorage?.getItem(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY) === "true";
@@ -344,6 +355,7 @@ function readLiveDesktopCssFallbackEffectsSetting() {
 }
 
 function handleLiveDesktopCompositorKeeperChanged(event) {
+  if (!isLiveDesktopExperimentEnabled()) return;
   const enabled = event?.detail?.enabled;
   isLiveDesktopCompositorKeeperEnabled.value = typeof enabled === "boolean"
     ? enabled
@@ -351,6 +363,7 @@ function handleLiveDesktopCompositorKeeperChanged(event) {
 }
 
 function handleLiveDesktopCssFallbackEffectsChanged(event) {
+  if (!isLiveDesktopExperimentEnabled()) return;
   const enabled = event?.detail?.enabled;
   liveDesktopCssFallbackEffectsEnabled.value = typeof enabled === "boolean"
     ? enabled
@@ -358,11 +371,13 @@ function handleLiveDesktopCssFallbackEffectsChanged(event) {
 }
 
 function handleLiveDesktopCompositorKeeperStorage(event) {
+  if (!isLiveDesktopExperimentEnabled()) return;
   if (event?.key !== LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY) return;
   isLiveDesktopCompositorKeeperEnabled.value = event.newValue === "true";
 }
 
 function handleLiveDesktopCssFallbackEffectsStorage(event) {
+  if (!isLiveDesktopExperimentEnabled()) return;
   if (event?.key !== LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY) return;
   liveDesktopCssFallbackEffectsEnabled.value = event.newValue === "true";
 }

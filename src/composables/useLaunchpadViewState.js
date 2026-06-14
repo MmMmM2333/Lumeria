@@ -20,6 +20,7 @@ import {
   homeShellTransition,
   panelSpring,
 } from "./launchpadMotion.js";
+import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 
 export function useLaunchpadViewState(options) {
   const isDesktopFullyClosed = computed(() => Boolean(!options.isDesktopOpen.value && !options.isDesktopClosing.value));
@@ -39,7 +40,10 @@ export function useLaunchpadViewState(options) {
     && backgroundSourceUsesImage(options.backgroundSource.value)
     && options.backgroundImageUrl?.value
   ));
-  const shouldUseLiveDesktopBackground = computed(() => backgroundSourceUsesLiveDesktop(options.backgroundSource.value));
+  const shouldUseLiveDesktopBackground = computed(() => Boolean(
+    isLiveDesktopExperimentEnabled()
+    && backgroundSourceUsesLiveDesktop(options.backgroundSource.value)
+  ));
   const shouldUseCssLiveDesktopEffect = computed(() => Boolean(
     shouldUseLiveDesktopBackground.value
     && options.liveDesktopCssFallbackEffectsEnabled?.value

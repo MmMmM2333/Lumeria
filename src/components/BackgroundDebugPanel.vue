@@ -18,7 +18,7 @@
     </header>
 
     <div v-if="!isCollapsed" class="background-debug-body">
-      <div class="background-debug-tabs" role="tablist" aria-label="Background debug sections">
+      <div v-if="canDebugLiveDesktop" class="background-debug-tabs" role="tablist" aria-label="Background debug sections">
         <button
           type="button"
           :class="['background-debug-tab', activePanel === 'acrylic' && 'background-debug-tab-active']"
@@ -27,6 +27,7 @@
           Acrylic
         </button>
         <button
+          v-if="canDebugLiveDesktop"
           type="button"
           :class="['background-debug-tab', activePanel === 'liveDesktop' && 'background-debug-tab-active']"
           @click="activePanel = 'liveDesktop'"
@@ -132,7 +133,7 @@
         </div>
       </div>
 
-      <div v-else class="background-debug-section">
+      <div v-else-if="canDebugLiveDesktop" class="background-debug-section">
         <dl class="background-debug-status-grid">
           <div
             v-for="row in liveDesktopStatusRows"
@@ -312,6 +313,7 @@ import {
   BLUR_KERNEL_DUAL_KAWASE,
   BLUR_KERNEL_GAUSSIAN,
 } from "../domain/backgroundEffectPlan.js";
+import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 import {
   formatCount,
   formatFrameArrived,
@@ -355,14 +357,15 @@ const kawaseParams = useKawaseDebugParams();
 const isKawaseOverrideEnabled = useKawaseDebugOverrideEnabled();
 const isCollapsed = ref(false);
 const activePanel = ref("acrylic");
+const canDebugLiveDesktop = computed(() => isLiveDesktopExperimentEnabled());
 const hasCopiedAcrylic = ref(false);
 const hasCopiedDiagnostics = ref(false);
-const liveDesktopDebugFrameSourceOverride = ref(readLiveDesktopDebugFrameSourceOverride());
-const liveDesktopDisableMouseRelay = ref(readLiveDesktopDisableMouseRelay());
-const liveDesktopCompositorKeeper = ref(readLiveDesktopCompositorKeeper());
-const liveDesktopCssFallbackEffects = ref(readLiveDesktopCssFallbackEffects());
-const liveDesktopSkipBlankFrames = ref(readLiveDesktopSkipBlankFrames());
-const liveDesktopForceDwmFlush = ref(readLiveDesktopForceDwmFlush());
+const liveDesktopDebugFrameSourceOverride = ref(canDebugLiveDesktop.value ? readLiveDesktopDebugFrameSourceOverride() : null);
+const liveDesktopDisableMouseRelay = ref(canDebugLiveDesktop.value ? readLiveDesktopDisableMouseRelay() : true);
+const liveDesktopCompositorKeeper = ref(canDebugLiveDesktop.value ? readLiveDesktopCompositorKeeper() : false);
+const liveDesktopCssFallbackEffects = ref(canDebugLiveDesktop.value ? readLiveDesktopCssFallbackEffects() : false);
+const liveDesktopSkipBlankFrames = ref(canDebugLiveDesktop.value ? readLiveDesktopSkipBlankFrames() : false);
+const liveDesktopForceDwmFlush = ref(canDebugLiveDesktop.value ? readLiveDesktopForceDwmFlush() : false);
 const isLiveDesktopActionBusy = ref(false);
 const liveDesktopRates = ref({
   framesPerSecond: 0,
@@ -554,6 +557,7 @@ function updateNumber(key, event) {
 }
 
 function syncLiveDesktopDebugEffects(options = {}) {
+  if (!canDebugLiveDesktop.value) return;
   const delay = Number.isFinite(Number(options.delay)) ? Number(options.delay) : 80;
   if (kawaseLiveDesktopSyncTimer != null) window.clearTimeout(kawaseLiveDesktopSyncTimer);
   if (delay <= 0) {
@@ -595,6 +599,7 @@ function updateTintColor(event) {
 }
 
 async function setLiveDesktopDisableMouseRelay(disabled) {
+  if (!canDebugLiveDesktop.value) return;
   liveDesktopDisableMouseRelay.value = Boolean(disabled);
   liveDesktopRateSample = null;
   persistLiveDesktopDisableMouseRelay(liveDesktopDisableMouseRelay.value);
@@ -604,12 +609,14 @@ async function setLiveDesktopDisableMouseRelay(disabled) {
 }
 
 function setLiveDesktopCompositorKeeper(enabled) {
+  if (!canDebugLiveDesktop.value) return;
   liveDesktopCompositorKeeper.value = Boolean(enabled);
   persistLiveDesktopCompositorKeeper(liveDesktopCompositorKeeper.value);
   notifyLiveDesktopCompositorKeeperChanged(liveDesktopCompositorKeeper.value);
 }
 
 async function setLiveDesktopCssFallbackEffects(enabled) {
+  if (!canDebugLiveDesktop.value) return;
   liveDesktopCssFallbackEffects.value = Boolean(enabled);
   persistLiveDesktopCssFallbackEffects(liveDesktopCssFallbackEffects.value);
   notifyLiveDesktopCssFallbackEffectsChanged(liveDesktopCssFallbackEffects.value);
@@ -617,6 +624,7 @@ async function setLiveDesktopCssFallbackEffects(enabled) {
 }
 
 async function setLiveDesktopSkipBlankFrames(enabled) {
+  if (!canDebugLiveDesktop.value) return;
   liveDesktopSkipBlankFrames.value = Boolean(enabled);
   liveDesktopRateSample = null;
   persistLiveDesktopSkipBlankFrames(liveDesktopSkipBlankFrames.value);
@@ -624,6 +632,7 @@ async function setLiveDesktopSkipBlankFrames(enabled) {
 }
 
 async function setLiveDesktopForceDwmFlush(enabled) {
+  if (!canDebugLiveDesktop.value) return;
   liveDesktopForceDwmFlush.value = Boolean(enabled);
   liveDesktopRateSample = null;
   persistLiveDesktopForceDwmFlush(liveDesktopForceDwmFlush.value);
@@ -631,6 +640,7 @@ async function setLiveDesktopForceDwmFlush(enabled) {
 }
 
 async function setLiveDesktopDebugFrameSourceOverride(frameSourceOverride) {
+  if (!canDebugLiveDesktop.value) return;
   const normalizedFrameSourceOverride = frameSourceOverride === LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN
     ? LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN
     : null;
@@ -641,6 +651,7 @@ async function setLiveDesktopDebugFrameSourceOverride(frameSourceOverride) {
 }
 
 async function refreshLiveDesktopRuntimeStatus() {
+  if (!canDebugLiveDesktop.value) return;
   try {
     await props.state?.refreshLiveDesktopRuntimeStatus?.();
     updateLiveDesktopRates();
@@ -650,6 +661,7 @@ async function refreshLiveDesktopRuntimeStatus() {
 }
 
 async function reconfigureLiveDesktopRuntime(options = {}) {
+  if (!canDebugLiveDesktop.value) return;
   if (isLiveDesktopActionBusy.value) return;
   isLiveDesktopActionBusy.value = true;
   try {
@@ -695,6 +707,7 @@ async function copyParams() {
 }
 
 async function copyDiagnostics() {
+  if (!canDebugLiveDesktop.value) return;
   try {
     await copyToClipboard(
       JSON.stringify(
@@ -728,6 +741,7 @@ function restartLiveDesktopRuntimePoller() {
   clearLiveDesktopRuntimePoller();
   if (
     typeof window === "undefined"
+    || !canDebugLiveDesktop.value
     || isCollapsed.value
     || activePanel.value !== "liveDesktop"
     || typeof props.state?.refreshLiveDesktopRuntimeStatus !== "function"
@@ -743,7 +757,11 @@ function restartLiveDesktopRuntimePoller() {
   liveDesktopRuntimePollTimer = window.setInterval(refreshLiveDesktopRuntimeStatus, 1000);
 }
 
-watch([isCollapsed, activePanel], restartLiveDesktopRuntimePoller, { flush: "post" });
+watch(canDebugLiveDesktop, (enabled) => {
+  if (!enabled && activePanel.value === "liveDesktop") activePanel.value = "acrylic";
+}, { immediate: true });
+
+watch([isCollapsed, activePanel, canDebugLiveDesktop], restartLiveDesktopRuntimePoller, { flush: "post" });
 
 onMounted(restartLiveDesktopRuntimePoller);
 
@@ -904,7 +922,7 @@ onBeforeUnmount(() => {
 .background-debug-toggle {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 10px;
   min-width: 0;
   color: rgba(255, 255, 255, 0.72);
@@ -913,7 +931,12 @@ onBeforeUnmount(() => {
 }
 
 .background-debug-toggle input {
+  flex: none;
   accent-color: rgba(255, 255, 255, 0.92);
+}
+
+.background-debug-toggle span {
+  min-width: 0;
 }
 
 .background-debug-control span {

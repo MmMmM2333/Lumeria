@@ -70,6 +70,7 @@ import {
   normalizeWindowEffectsSupport,
   resolveWindowEffectMaterialForSupport,
 } from "./useLaunchpadSettingsConfig.js";
+import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 
 const USE_MOCK_DATA_IN_NATIVE = false;
 const FOLDER_ICON_SIZE_MODE_CUSTOM = "custom";
@@ -83,7 +84,8 @@ const LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY = "launchpadLiveDeskt
 const LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY = "launchpadLiveDesktopDisableMouseRelay";
 const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "launchpadLiveDesktopSkipBlankFrames";
 const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "launchpadLiveDesktopForceDwmFlush";
-const IS_LIVE_DESKTOP_DEBUG_RUNTIME_CONFIG_ENABLED = Boolean(import.meta.env?.DEV);
+const LIVE_DESKTOP_EXPERIMENT_DISABLED_REASON = "experimentDisabled";
+const LIVE_DESKTOP_EXPERIMENT_DISABLED_DETAIL = "Live desktop experiment flag is disabled.";
 const DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS = Object.freeze({
   phase: "stopped",
   active: false,
@@ -244,8 +246,12 @@ function normalizeLiveDesktopWindowDiagnostics(diagnostics) {
   };
 }
 
+function isLiveDesktopDebugRuntimeConfigEnabled() {
+  return Boolean(import.meta.env?.DEV && isLiveDesktopExperimentEnabled());
+}
+
 function resolveLiveDesktopDebugFrameSourceOverride() {
-  if (!IS_LIVE_DESKTOP_DEBUG_RUNTIME_CONFIG_ENABLED || typeof window === "undefined") return null;
+  if (!isLiveDesktopDebugRuntimeConfigEnabled() || typeof window === "undefined") return null;
   try {
     const frameSourceOverride = window.localStorage?.getItem(LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY);
     return frameSourceOverride === "testPattern" ? "testPattern" : null;
@@ -255,7 +261,7 @@ function resolveLiveDesktopDebugFrameSourceOverride() {
 }
 
 function resolveLiveDesktopDisableMouseRelay() {
-  if (!IS_LIVE_DESKTOP_DEBUG_RUNTIME_CONFIG_ENABLED || typeof window === "undefined") return true;
+  if (!isLiveDesktopDebugRuntimeConfigEnabled() || typeof window === "undefined") return true;
   try {
     return window.localStorage?.getItem(LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY) !== "false";
   } catch {
@@ -264,7 +270,7 @@ function resolveLiveDesktopDisableMouseRelay() {
 }
 
 function resolveLiveDesktopSkipBlankFrames() {
-  if (!IS_LIVE_DESKTOP_DEBUG_RUNTIME_CONFIG_ENABLED || typeof window === "undefined") return false;
+  if (!isLiveDesktopDebugRuntimeConfigEnabled() || typeof window === "undefined") return false;
   try {
     return window.localStorage?.getItem(LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY) === "true";
   } catch {
@@ -273,7 +279,7 @@ function resolveLiveDesktopSkipBlankFrames() {
 }
 
 function resolveLiveDesktopForceDwmFlush() {
-  if (!IS_LIVE_DESKTOP_DEBUG_RUNTIME_CONFIG_ENABLED || typeof window === "undefined") return false;
+  if (!isLiveDesktopDebugRuntimeConfigEnabled() || typeof window === "undefined") return false;
   try {
     return window.localStorage?.getItem(LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY) === "true";
   } catch {
@@ -405,7 +411,8 @@ export function useLaunchpadNative(options) {
     const nextBackgroundAcrylicAppearance = normalizeBackgroundAcrylicAppearance(settings.backgroundAcrylicAppearance);
     const nextBackgroundAcrylicDarkParams = normalizeBackgroundAcrylicParams(settings.backgroundAcrylicDarkParams, BACKGROUND_ACRYLIC_APPEARANCE_DARK);
     const nextBackgroundAcrylicLightParams = normalizeBackgroundAcrylicParams(settings.backgroundAcrylicLightParams, BACKGROUND_ACRYLIC_APPEARANCE_LIGHT);
-    const nextBackgroundUsesLiveDesktop = backgroundSourceUsesLiveDesktop(nextBackgroundSource)
+    const nextBackgroundUsesLiveDesktop = isLiveDesktopExperimentEnabled()
+      && backgroundSourceUsesLiveDesktop(nextBackgroundSource)
       && normalizeLiveDesktopBackgroundSupport(options.liveDesktopBackgroundSupport.value).supportsLiveDesktopBackground;
     const nextBackgroundImagePath = backgroundSourceUsesImage(nextBackgroundSource)
       ? normalizeBackgroundImagePath(settings.backgroundImagePath)
@@ -692,6 +699,7 @@ export function useLaunchpadNative(options) {
   function canUseActiveLiveDesktopBackground() {
     return Boolean(
       isNativeBridgeAvailable()
+      && isLiveDesktopExperimentEnabled()
       && backgroundSourceUsesLiveDesktop(options.backgroundSource.value)
       && normalizeLiveDesktopBackgroundSupport(options.liveDesktopBackgroundSupport.value).supportsLiveDesktopBackground
     );
@@ -715,6 +723,15 @@ export function useLaunchpadNative(options) {
 
   function resetLiveDesktopRuntimeForUnavailableBridge() {
     options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus(null);
+    liveDesktopBackgroundVisible = null;
+    return options.liveDesktopRuntimeStatus.value;
+  }
+
+  function resetLiveDesktopRuntimeForDisabledExperiment() {
+    options.liveDesktopRuntimeStatus.value = normalizeLiveDesktopRuntimeStatus({
+      reason: LIVE_DESKTOP_EXPERIMENT_DISABLED_REASON,
+      detail: LIVE_DESKTOP_EXPERIMENT_DISABLED_DETAIL,
+    });
     liveDesktopBackgroundVisible = null;
     return options.liveDesktopRuntimeStatus.value;
   }
@@ -748,6 +765,10 @@ export function useLaunchpadNative(options) {
   function syncLiveDesktopBackgroundRuntime() {
     return enqueueLiveDesktopRuntimeSync(async (generation) => {
       if (!liveDesktopRuntimeSyncIsCurrent(generation)) return options.liveDesktopRuntimeStatus.value;
+      if (!isLiveDesktopExperimentEnabled()) {
+        clearLiveDesktopIdleStopTimer();
+        return resetLiveDesktopRuntimeForDisabledExperiment();
+      }
       if (!isNativeBridgeAvailable()) {
         return resetLiveDesktopRuntimeForUnavailableBridge();
       }
@@ -777,6 +798,10 @@ export function useLaunchpadNative(options) {
   function restartLiveDesktopBackgroundRuntime() {
     return enqueueLiveDesktopRuntimeSync(async (generation) => {
       if (!liveDesktopRuntimeSyncIsCurrent(generation)) return options.liveDesktopRuntimeStatus.value;
+      if (!isLiveDesktopExperimentEnabled()) {
+        clearLiveDesktopIdleStopTimer();
+        return resetLiveDesktopRuntimeForDisabledExperiment();
+      }
       if (!isNativeBridgeAvailable()) {
         return resetLiveDesktopRuntimeForUnavailableBridge();
       }
@@ -857,6 +882,13 @@ export function useLaunchpadNative(options) {
   }
 
   async function refreshLiveDesktopBackgroundSupport() {
+    if (!isLiveDesktopExperimentEnabled()) {
+      options.liveDesktopBackgroundSupport.value = normalizeLiveDesktopBackgroundSupport({
+        reason: LIVE_DESKTOP_EXPERIMENT_DISABLED_REASON,
+        detail: LIVE_DESKTOP_EXPERIMENT_DISABLED_DETAIL,
+      });
+      return;
+    }
     if (!isNativeBridgeAvailable()) {
       options.liveDesktopBackgroundSupport.value = normalizeLiveDesktopBackgroundSupport(null);
       return;
@@ -872,6 +904,9 @@ export function useLaunchpadNative(options) {
   }
 
   async function refreshLiveDesktopRuntimeStatus() {
+    if (!isLiveDesktopExperimentEnabled()) {
+      return resetLiveDesktopRuntimeForDisabledExperiment();
+    }
     if (!isNativeBridgeAvailable()) {
       return resetLiveDesktopRuntimeForUnavailableBridge();
     }
@@ -887,6 +922,9 @@ export function useLaunchpadNative(options) {
   }
 
   async function setNativeLiveDesktopBackgroundVisible(visible) {
+    if (!isLiveDesktopExperimentEnabled()) {
+      return resetLiveDesktopRuntimeForDisabledExperiment();
+    }
     if (liveDesktopBackgroundVisible === visible) return options.liveDesktopRuntimeStatus.value;
     if (!isNativeBridgeAvailable()) {
       return resetLiveDesktopRuntimeForUnavailableBridge();
@@ -903,6 +941,9 @@ export function useLaunchpadNative(options) {
   }
 
   async function configureNativeLiveDesktopBackground() {
+    if (!isLiveDesktopExperimentEnabled()) {
+      return resetLiveDesktopRuntimeForDisabledExperiment();
+    }
     if (!isNativeBridgeAvailable()) {
       return resetLiveDesktopRuntimeForUnavailableBridge();
     }
@@ -925,6 +966,9 @@ export function useLaunchpadNative(options) {
 
   async function startNativeLiveDesktopBackground() {
     clearLiveDesktopIdleStopTimer();
+    if (!isLiveDesktopExperimentEnabled()) {
+      return resetLiveDesktopRuntimeForDisabledExperiment();
+    }
     if (!isNativeBridgeAvailable()) {
       return resetLiveDesktopRuntimeForUnavailableBridge();
     }
@@ -953,6 +997,9 @@ export function useLaunchpadNative(options) {
 
   async function stopNativeLiveDesktopBackground() {
     clearLiveDesktopIdleStopTimer();
+    if (!isLiveDesktopExperimentEnabled()) {
+      return resetLiveDesktopRuntimeForDisabledExperiment();
+    }
     if (!isNativeBridgeAvailable()) {
       return resetLiveDesktopRuntimeForUnavailableBridge();
     }
