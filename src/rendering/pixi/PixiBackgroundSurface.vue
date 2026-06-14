@@ -389,8 +389,13 @@ if (isKawaseDebugEnabled) {
     () => [
       kawaseDebugParams.offsetScale,
       kawaseDebugParams.passCount,
+      kawaseDebugParams.gaussianCutoff,
+      kawaseDebugParams.acrylicGaussianCutoff,
+      kawaseDebugParams.gaussianMaxRadiusPx,
       kawaseDebugParams.gaussianRadiusPx,
+      kawaseDebugParams.gaussianRadiusScale,
       kawaseDebugParams.kernel,
+      kawaseDebugParams.testStrength,
       kawaseDebugOverrideEnabled.value,
     ],
     () => {

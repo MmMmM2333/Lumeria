@@ -1,4 +1,6 @@
 import {
+  BACKGROUND_BLUR_STRENGTH_MAX,
+  BACKGROUND_BLUR_STRENGTH_MIN,
   BACKGROUND_EFFECT_ACRYLIC_WEBGL,
   BACKGROUND_EFFECT_BLUR,
   backgroundEffectUsesPixi,
@@ -13,6 +15,7 @@ export const ACRYLIC_RENDER_MAX_WIDTH = 960;
 export const ACRYLIC_RENDER_MAX_HEIGHT = 540;
 export const BLUR_KERNEL_DUAL_KAWASE = "dualKawase";
 export const BLUR_KERNEL_GAUSSIAN = "gaussian";
+export const BLUR_KERNEL_AUTO = "auto";
 export const DUAL_KAWASE_PASS_COUNT = 4;
 export const DUAL_KAWASE_PASS_COUNT_MIN = 1;
 export const DUAL_KAWASE_MIN_SIZE = 16;
@@ -23,6 +26,12 @@ export const DUAL_KAWASE_BLUR_OFFSET_SCALE_MAX = 1.55;
 export const GAUSSIAN_BLUR_RADIUS_PX_DEFAULT = 4;
 export const GAUSSIAN_BLUR_RADIUS_PX_MIN = 0;
 export const GAUSSIAN_BLUR_RADIUS_PX_MAX = 32;
+export const BLUR_GAUSSIAN_CUTOFF_DEFAULT = 50;
+export const ACRYLIC_GAUSSIAN_CUTOFF_DEFAULT = 50;
+export const GAUSSIAN_BLUR_RADIUS_SCALE_DEFAULT = 0.42;
+export const GAUSSIAN_BLUR_RADIUS_SCALE_MIN = 0.05;
+export const GAUSSIAN_BLUR_RADIUS_SCALE_MAX = 1;
+export const GAUSSIAN_BLUR_RADIUS_AUTO_MAX_DEFAULT = 32;
 
 export function resolveAcrylicRenderSize(width, height, maxWidth = ACRYLIC_RENDER_MAX_WIDTH, maxHeight = ACRYLIC_RENDER_MAX_HEIGHT) {
   const sourceWidth = Math.max(1, Number(width) || 1);
@@ -68,13 +77,65 @@ export function clampDualKawaseOffsetScale(value, fallback = 1) {
 }
 
 export function normalizeBlurKernel(value, fallback = BLUR_KERNEL_DUAL_KAWASE) {
+  if (value === BLUR_KERNEL_AUTO) return BLUR_KERNEL_AUTO;
   if (value === BLUR_KERNEL_GAUSSIAN) return BLUR_KERNEL_GAUSSIAN;
   if (value === BLUR_KERNEL_DUAL_KAWASE) return BLUR_KERNEL_DUAL_KAWASE;
+  if (fallback === BLUR_KERNEL_AUTO) return BLUR_KERNEL_AUTO;
   return fallback === BLUR_KERNEL_GAUSSIAN ? BLUR_KERNEL_GAUSSIAN : BLUR_KERNEL_DUAL_KAWASE;
 }
 
 export function clampGaussianBlurRadiusPx(value, fallback = GAUSSIAN_BLUR_RADIUS_PX_DEFAULT) {
   return clampNumber(value, GAUSSIAN_BLUR_RADIUS_PX_MIN, GAUSSIAN_BLUR_RADIUS_PX_MAX, fallback);
+}
+
+export function clampGaussianBlurCutoff(value, fallback = BLUR_GAUSSIAN_CUTOFF_DEFAULT) {
+  return clampNumber(value, BACKGROUND_BLUR_STRENGTH_MIN, BACKGROUND_BLUR_STRENGTH_MAX, fallback);
+}
+
+export function clampGaussianBlurRadiusScale(value, fallback = GAUSSIAN_BLUR_RADIUS_SCALE_DEFAULT) {
+  return clampNumber(value, GAUSSIAN_BLUR_RADIUS_SCALE_MIN, GAUSSIAN_BLUR_RADIUS_SCALE_MAX, fallback);
+}
+
+function normalizeOptionalBlurStrength(value, fallback = null) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return fallback == null ? null : clampBackgroundBlurStrength(fallback);
+  }
+  return clampBackgroundBlurStrength(number);
+}
+
+export function resolveAutoBlurKernel(effect, strength, blur) {
+  const normalizedEffect = normalizeBackgroundEffect(effect);
+  const normalizedStrength = clampBackgroundBlurStrength(strength);
+  const cutoff = normalizedEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+    ? clampGaussianBlurCutoff(blur?.acrylicGaussianCutoff, ACRYLIC_GAUSSIAN_CUTOFF_DEFAULT)
+    : clampGaussianBlurCutoff(blur?.gaussianCutoff, BLUR_GAUSSIAN_CUTOFF_DEFAULT);
+  return normalizedStrength <= cutoff ? BLUR_KERNEL_GAUSSIAN : BLUR_KERNEL_DUAL_KAWASE;
+}
+
+export function resolveAutoGaussianRadiusPx(strength, blur) {
+  const radiusScale = clampGaussianBlurRadiusScale(blur?.gaussianRadiusScale);
+  const maxRadius = clampGaussianBlurRadiusPx(
+    blur?.gaussianMaxRadiusPx,
+    GAUSSIAN_BLUR_RADIUS_AUTO_MAX_DEFAULT
+  );
+  return Math.min(
+    maxRadius,
+    clampGaussianBlurRadiusPx(clampBackgroundBlurStrength(strength) * radiusScale)
+  );
+}
+
+export function resolveAutoDualKawaseOffsetScale(effect, strength, blur) {
+  const normalizedEffect = normalizeBackgroundEffect(effect);
+  const normalizedStrength = clampBackgroundBlurStrength(strength);
+  const cutoff = normalizedEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+    ? clampGaussianBlurCutoff(blur?.acrylicGaussianCutoff, ACRYLIC_GAUSSIAN_CUTOFF_DEFAULT)
+    : clampGaussianBlurCutoff(blur?.gaussianCutoff, BLUR_GAUSSIAN_CUTOFF_DEFAULT);
+  const baseScale = clampDualKawaseOffsetScale(blur?.offsetScale, DUAL_KAWASE_BLUR_OFFSET_SCALE_MIN);
+  const maxScale = Math.max(baseScale, DUAL_KAWASE_BLUR_OFFSET_SCALE_MAX);
+  if (cutoff >= BACKGROUND_BLUR_STRENGTH_MAX || normalizedStrength <= cutoff) return baseScale;
+  const progress = (normalizedStrength - cutoff) / (BACKGROUND_BLUR_STRENGTH_MAX - cutoff);
+  return clampDualKawaseOffsetScale(baseScale + progress * (maxScale - baseScale));
 }
 
 export function normalizeDualKawaseParams(params = {}, fallback = {}) {
@@ -100,6 +161,23 @@ export function normalizeBlurEffectParams(params = {}, fallback = {}) {
       source.gaussianRadiusPx,
       clampGaussianBlurRadiusPx(fallback.gaussianRadiusPx, GAUSSIAN_BLUR_RADIUS_PX_DEFAULT)
     ),
+    gaussianCutoff: clampGaussianBlurCutoff(
+      source.gaussianCutoff,
+      clampGaussianBlurCutoff(fallback.gaussianCutoff, BLUR_GAUSSIAN_CUTOFF_DEFAULT)
+    ),
+    acrylicGaussianCutoff: clampGaussianBlurCutoff(
+      source.acrylicGaussianCutoff,
+      clampGaussianBlurCutoff(fallback.acrylicGaussianCutoff, ACRYLIC_GAUSSIAN_CUTOFF_DEFAULT)
+    ),
+    gaussianRadiusScale: clampGaussianBlurRadiusScale(
+      source.gaussianRadiusScale,
+      clampGaussianBlurRadiusScale(fallback.gaussianRadiusScale, GAUSSIAN_BLUR_RADIUS_SCALE_DEFAULT)
+    ),
+    gaussianMaxRadiusPx: clampGaussianBlurRadiusPx(
+      source.gaussianMaxRadiusPx,
+      clampGaussianBlurRadiusPx(fallback.gaussianMaxRadiusPx, GAUSSIAN_BLUR_RADIUS_AUTO_MAX_DEFAULT)
+    ),
+    testStrength: normalizeOptionalBlurStrength(source.testStrength, fallback.testStrength),
     kernel: normalizeBlurKernel(source.kernel, normalizeBlurKernel(fallback.kernel)),
   };
 }
@@ -144,11 +222,26 @@ export function createBackgroundEffectPlan(config = {}) {
     config.dualKawaseParams ?? config.dualKawase,
     {
       gaussianRadiusPx: GAUSSIAN_BLUR_RADIUS_PX_DEFAULT,
+      gaussianCutoff: BLUR_GAUSSIAN_CUTOFF_DEFAULT,
+      acrylicGaussianCutoff: ACRYLIC_GAUSSIAN_CUTOFF_DEFAULT,
+      gaussianRadiusScale: GAUSSIAN_BLUR_RADIUS_SCALE_DEFAULT,
+      gaussianMaxRadiusPx: GAUSSIAN_BLUR_RADIUS_AUTO_MAX_DEFAULT,
       kernel: BLUR_KERNEL_DUAL_KAWASE,
       offsetScale: defaultBlurOffsetScale,
       passCount: DUAL_KAWASE_PASS_COUNT,
+      testStrength: null,
     }
   );
+  const autoStrength = blurParams.testStrength == null ? blurStrength : blurParams.testStrength;
+  const effectiveKernel = blurParams.kernel === BLUR_KERNEL_AUTO
+    ? resolveAutoBlurKernel(effect, autoStrength, blurParams)
+    : blurParams.kernel;
+  const gaussianRadiusPx = blurParams.kernel === BLUR_KERNEL_AUTO
+    ? resolveAutoGaussianRadiusPx(autoStrength, blurParams)
+    : blurParams.gaussianRadiusPx;
+  const offsetScale = blurParams.kernel === BLUR_KERNEL_AUTO && effectiveKernel === BLUR_KERNEL_DUAL_KAWASE
+    ? resolveAutoDualKawaseOffsetScale(effect, autoStrength, blurParams)
+    : blurParams.offsetScale;
   const acrylic = normalizeAcrylicCompositeParams(config.acrylicParams ?? config.backgroundAcrylicParams);
 
   return {
@@ -158,14 +251,21 @@ export function createBackgroundEffectPlan(config = {}) {
       strength: blurStrength,
       renderMaxWidth: ACRYLIC_RENDER_MAX_WIDTH,
       renderMaxHeight: ACRYLIC_RENDER_MAX_HEIGHT,
-      kernel: blurParams.kernel,
-      gaussianRadiusPx: blurParams.gaussianRadiusPx,
+      kernel: effectiveKernel,
+      requestedKernel: blurParams.kernel,
+      gaussianRadiusPx,
+      gaussianCutoff: blurParams.gaussianCutoff,
+      acrylicGaussianCutoff: blurParams.acrylicGaussianCutoff,
+      gaussianRadiusScale: blurParams.gaussianRadiusScale,
+      gaussianMaxRadiusPx: blurParams.gaussianMaxRadiusPx,
+      testStrength: blurParams.testStrength,
+      autoStrength,
       passCount: blurParams.passCount,
       minSize: DUAL_KAWASE_MIN_SIZE,
-      offsetScale: blurParams.offsetScale,
-      downOffsets: [1, 1.35, 1.7, 2.05].map((offset) => offset * blurParams.offsetScale),
-      upOffsets: [1.1, 1.35, 1.6].map((offset) => offset * blurParams.offsetScale),
-      finalUpOffset: 1.25 * blurParams.offsetScale,
+      offsetScale,
+      downOffsets: [1, 1.35, 1.7, 2.05].map((offset) => offset * offsetScale),
+      upOffsets: [1.1, 1.35, 1.6].map((offset) => offset * offsetScale),
+      finalUpOffset: 1.25 * offsetScale,
     },
     acrylic: {
       ...acrylic,

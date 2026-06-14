@@ -89,6 +89,13 @@
           <div class="background-debug-mode-group background-debug-kernel-group" role="group" aria-label="Blur kernel">
             <button
               type="button"
+              :class="['background-debug-mode-button', kawaseParams.kernel === BLUR_KERNEL_AUTO && 'background-debug-mode-button-active']"
+              @click="setBlurKernel(BLUR_KERNEL_AUTO)"
+            >
+              Auto
+            </button>
+            <button
+              type="button"
               :class="['background-debug-mode-button', kawaseParams.kernel === BLUR_KERNEL_DUAL_KAWASE && 'background-debug-mode-button-active']"
               @click="setBlurKernel(BLUR_KERNEL_DUAL_KAWASE)"
             >
@@ -121,6 +128,9 @@
               @input="updateKawaseNumber(slider.key, $event)"
             >
           </label>
+          <div class="background-debug-detail" :title="blurKernelStatus">
+            {{ blurKernelStatus }}
+          </div>
         </div>
 
         <div class="background-debug-actions">
@@ -297,12 +307,18 @@ import {
   useAcrylicDebugParams,
 } from "../rendering/pixi/background/acrylicDebugParams.js";
 import {
+  KAWASE_DEBUG_GAUSSIAN_CUTOFF_MAX,
+  KAWASE_DEBUG_GAUSSIAN_CUTOFF_MIN,
   KAWASE_DEBUG_OFFSET_SCALE_MAX,
   KAWASE_DEBUG_OFFSET_SCALE_MIN,
   KAWASE_DEBUG_GAUSSIAN_RADIUS_PX_MAX,
   KAWASE_DEBUG_GAUSSIAN_RADIUS_PX_MIN,
+  KAWASE_DEBUG_GAUSSIAN_RADIUS_SCALE_MAX,
+  KAWASE_DEBUG_GAUSSIAN_RADIUS_SCALE_MIN,
   KAWASE_DEBUG_PASS_COUNT_MAX,
   KAWASE_DEBUG_PASS_COUNT_MIN,
+  KAWASE_DEBUG_TEST_STRENGTH_MAX,
+  KAWASE_DEBUG_TEST_STRENGTH_MIN,
   resetKawaseDebugParams,
   setKawaseDebugOverrideEnabled,
   updateKawaseDebugParams,
@@ -310,9 +326,19 @@ import {
   useKawaseDebugParams,
 } from "../rendering/pixi/background/kawaseDebugParams.js";
 import {
+  BLUR_KERNEL_AUTO,
   BLUR_KERNEL_DUAL_KAWASE,
   BLUR_KERNEL_GAUSSIAN,
+  resolveAutoBlurKernel,
+  resolveAutoDualKawaseOffsetScale,
+  resolveAutoGaussianRadiusPx,
 } from "../domain/backgroundEffectPlan.js";
+import {
+  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_BLUR,
+  clampBackgroundBlurStrength,
+  normalizeBackgroundEffect,
+} from "../composables/useLaunchpadSettingsConfig.js";
 import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 import {
   formatCount,
@@ -416,11 +442,79 @@ const gaussianSliders = [
     digits: 2,
   },
 ];
+const autoBlurKernelSliders = [
+  {
+    key: "testStrength",
+    label: "testStrength",
+    min: KAWASE_DEBUG_TEST_STRENGTH_MIN,
+    max: KAWASE_DEBUG_TEST_STRENGTH_MAX,
+    step: 1,
+    digits: 0,
+  },
+  {
+    key: "gaussianCutoff",
+    label: "blurCutoff<=",
+    min: KAWASE_DEBUG_GAUSSIAN_CUTOFF_MIN,
+    max: KAWASE_DEBUG_GAUSSIAN_CUTOFF_MAX,
+    step: 1,
+    digits: 0,
+  },
+  {
+    key: "acrylicGaussianCutoff",
+    label: "acrylicCutoff<=",
+    min: KAWASE_DEBUG_GAUSSIAN_CUTOFF_MIN,
+    max: KAWASE_DEBUG_GAUSSIAN_CUTOFF_MAX,
+    step: 1,
+    digits: 0,
+  },
+  {
+    key: "gaussianRadiusScale",
+    label: "gaussianScale",
+    min: KAWASE_DEBUG_GAUSSIAN_RADIUS_SCALE_MIN,
+    max: KAWASE_DEBUG_GAUSSIAN_RADIUS_SCALE_MAX,
+    step: 0.01,
+    digits: 2,
+  },
+  {
+    key: "gaussianMaxRadiusPx",
+    label: "gaussianMax",
+    min: KAWASE_DEBUG_GAUSSIAN_RADIUS_PX_MIN,
+    max: KAWASE_DEBUG_GAUSSIAN_RADIUS_PX_MAX,
+    step: 0.25,
+    digits: 2,
+  },
+  ...kawaseSliders,
+];
 
 const tintHex = computed(() => rgbArrayToHex(params.tintColor));
 const activeBlurKernelSliders = computed(() => (
-  kawaseParams.kernel === BLUR_KERNEL_GAUSSIAN ? gaussianSliders : kawaseSliders
+  kawaseParams.kernel === BLUR_KERNEL_AUTO
+    ? autoBlurKernelSliders
+    : kawaseParams.kernel === BLUR_KERNEL_GAUSSIAN
+      ? gaussianSliders
+      : kawaseSliders
 ));
+const blurKernelStatus = computed(() => {
+  const effect = normalizeBackgroundEffect(props.state?.draftBackgroundEffect?.value);
+  const actualStrength = clampBackgroundBlurStrength(props.state?.draftBackgroundBlurStrength?.value);
+  const testStrength = clampBackgroundBlurStrength(kawaseParams.testStrength);
+  if (kawaseParams.kernel === BLUR_KERNEL_AUTO) {
+    const resolvedKernel = resolveAutoBlurKernel(effect, testStrength, kawaseParams);
+    const radius = resolveAutoGaussianRadiusPx(testStrength, kawaseParams);
+    const cutoff = effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+      ? kawaseParams.acrylicGaussianCutoff
+      : kawaseParams.gaussianCutoff;
+    const offsetScale = resolveAutoDualKawaseOffsetScale(effect, testStrength, kawaseParams);
+    const branchDetail = resolvedKernel === BLUR_KERNEL_GAUSSIAN
+      ? ` radius=${radius.toFixed(2)}px`
+      : ` pass=${Number(kawaseParams.passCount).toFixed(0)} radiusScale=${offsetScale.toFixed(2)} base=${Number(kawaseParams.offsetScale).toFixed(2)}`;
+    return `auto ${formatEffectLabel(effect)} actual=${actualStrength} test=${testStrength} cutoff<=${Number(cutoff).toFixed(0)} -> ${resolvedKernel}${branchDetail}`;
+  }
+  if (kawaseParams.kernel === BLUR_KERNEL_GAUSSIAN) {
+    return `manual gaussian radius=${Number(kawaseParams.gaussianRadiusPx).toFixed(2)}px`;
+  }
+  return `manual dual pass=${Number(kawaseParams.passCount).toFixed(0)} radiusScale=${Number(kawaseParams.offsetScale).toFixed(2)}`;
+});
 const acrylicCopyButtonLabel = computed(() => (hasCopiedAcrylic.value ? "已复制" : "复制 JSON"));
 const diagnosticsCopyButtonLabel = computed(() => (hasCopiedDiagnostics.value ? "已复制" : "复制诊断"));
 const liveDesktopStatus = computed(() => normalizeLiveDesktopStatus(props.state?.liveDesktopRuntimeStatus?.value));
@@ -496,6 +590,12 @@ const liveDesktopWindowRows = computed(() => {
 
 function formatValue(value, digits) {
   return Number(value).toFixed(digits);
+}
+
+function formatEffectLabel(effect) {
+  if (effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) return "acrylic";
+  if (effect === BACKGROUND_EFFECT_BLUR) return "blur";
+  return effect;
 }
 
 function updateLiveDesktopRates() {
@@ -884,7 +984,7 @@ onBeforeUnmount(() => {
 }
 
 .background-debug-kernel-group {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .background-debug-live-source-group {

@@ -6,6 +6,7 @@ import {
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
 } from "../../../composables/useLaunchpadSettingsConfig.js";
 import {
+  BLUR_KERNEL_AUTO,
   BLUR_KERNEL_DUAL_KAWASE,
   BLUR_KERNEL_GAUSSIAN,
   createBackgroundEffectPlan,
@@ -92,6 +93,79 @@ export function runAcrylicBackgroundPlanTests() {
   });
   assert(gaussianPlan.blur.kernel === BLUR_KERNEL_GAUSSIAN, "effect plan should accept the gaussian blur kernel");
   assert(gaussianPlan.blur.gaussianRadiusPx === 20, "effect plan should accept a gaussian radius in target pixels");
+
+  const autoLowBlurPlan = createBackgroundEffectPlan({
+    effect: BACKGROUND_EFFECT_BLUR,
+    blurStrength: 30,
+    dualKawaseParams: {
+      gaussianCutoff: 30,
+      gaussianMaxRadiusPx: 10,
+      gaussianRadiusScale: 0.5,
+      kernel: BLUR_KERNEL_AUTO,
+    },
+  });
+  assert(autoLowBlurPlan.blur.requestedKernel === BLUR_KERNEL_AUTO, "auto blur plans should preserve the requested debug kernel");
+  assert(autoLowBlurPlan.blur.kernel === BLUR_KERNEL_GAUSSIAN, "auto blur plans should use gaussian at or below the blur cutoff");
+  assert(autoLowBlurPlan.blur.gaussianRadiusPx === 10, "auto gaussian radius should respect the configured max radius");
+
+  const autoHighBlurPlan = createBackgroundEffectPlan({
+    effect: BACKGROUND_EFFECT_BLUR,
+    blurStrength: 31,
+    dualKawaseParams: {
+      gaussianCutoff: 30,
+      kernel: BLUR_KERNEL_AUTO,
+    },
+  });
+  assert(autoHighBlurPlan.blur.kernel === BLUR_KERNEL_DUAL_KAWASE, "auto blur plans should use dual kawase above the blur cutoff");
+
+  const autoDualMidBlurPlan = createBackgroundEffectPlan({
+    effect: BACKGROUND_EFFECT_BLUR,
+    blurStrength: 75,
+    dualKawaseParams: {
+      gaussianCutoff: 50,
+      kernel: BLUR_KERNEL_AUTO,
+      offsetScale: 0.2,
+    },
+  });
+  assert(autoDualMidBlurPlan.blur.kernel === BLUR_KERNEL_DUAL_KAWASE, "auto blur plans should use dual kawase above the configured cutoff");
+  assert(Math.abs(autoDualMidBlurPlan.blur.offsetScale - 0.875) < 0.0001, "auto dual kawase radius scale should grow from the base scale after the cutoff");
+
+  const autoDualMaxBlurPlan = createBackgroundEffectPlan({
+    effect: BACKGROUND_EFFECT_BLUR,
+    blurStrength: 100,
+    dualKawaseParams: {
+      gaussianCutoff: 50,
+      kernel: BLUR_KERNEL_AUTO,
+      offsetScale: 0.2,
+    },
+  });
+  assert(Math.abs(autoDualMaxBlurPlan.blur.offsetScale - 1.55) < 0.0001, "auto dual kawase radius scale should reach the blur max at full strength");
+
+  const autoTestStrengthPlan = createBackgroundEffectPlan({
+    effect: BACKGROUND_EFFECT_BLUR,
+    blurStrength: 90,
+    dualKawaseParams: {
+      gaussianCutoff: 30,
+      gaussianRadiusScale: 0.5,
+      kernel: BLUR_KERNEL_AUTO,
+      testStrength: 20,
+    },
+  });
+  assert(autoTestStrengthPlan.blur.strength === 90, "debug test strength should not replace the configured blur strength");
+  assert(autoTestStrengthPlan.blur.autoStrength === 20, "auto blur plans should expose the debug test strength");
+  assert(autoTestStrengthPlan.blur.kernel === BLUR_KERNEL_GAUSSIAN, "auto blur plans should use the debug test strength for cutoff checks");
+  assert(autoTestStrengthPlan.blur.gaussianRadiusPx === 10, "auto blur plans should use the debug test strength for gaussian radius");
+
+  const autoAcrylicPlan = createBackgroundEffectPlan({
+    effect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    blurStrength: 21,
+    dualKawaseParams: {
+      acrylicGaussianCutoff: 20,
+      gaussianCutoff: 30,
+      kernel: BLUR_KERNEL_AUTO,
+    },
+  });
+  assert(autoAcrylicPlan.blur.kernel === BLUR_KERNEL_DUAL_KAWASE, "auto acrylic plans should use the acrylic cutoff");
 
   const clampedKawasePlan = createBackgroundEffectPlan({
     effect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
