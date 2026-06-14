@@ -3,8 +3,11 @@ import { reloadOnPixiHotUpdate } from "../devHmr.js";
 const launchIconBounds = new Map();
 const launchIconTargetBounds = new Map();
 const topLevelBounds = new Map();
+const topLevelTargetBounds = new Map();
 const topLevelFolderThumbBounds = new Map();
+const topLevelFolderThumbTargetBounds = new Map();
 const folderPreviewChildBounds = new Map();
+const folderPreviewChildTargetBounds = new Map();
 
 function makeLaunchKey(source) {
   if (!source?.id || !source.area) return null;
@@ -68,13 +71,29 @@ export function registerTopLevelFolderThumbBounds(id, rect, meta = {}) {
   topLevelFolderThumbBounds.set(id, { ...safeRect, meta });
 }
 
+export function registerTopLevelIconTargetBounds(id, rect, meta = {}) {
+  const safeRect = cloneRect(rect);
+  if (!id || !safeRect) return;
+  topLevelTargetBounds.set(id, { ...safeRect, meta });
+}
+
+export function registerTopLevelFolderThumbTargetBounds(id, rect, meta = {}) {
+  const safeRect = cloneRect(rect);
+  if (!id || !safeRect) return;
+  topLevelFolderThumbTargetBounds.set(id, { ...safeRect, meta });
+}
+
 export function unregisterLaunchIconBounds(source) {
   const key = makeLaunchKey(source);
   if (key) launchIconBounds.delete(key);
   if (key) launchIconTargetBounds.delete(key);
-  if ((source?.area === "desktop" || source?.area === "search") && source.id) topLevelFolderThumbBounds.delete(source.id);
+  if ((source?.area === "desktop" || source?.area === "search") && source.id) {
+    topLevelFolderThumbBounds.delete(source.id);
+    topLevelFolderThumbTargetBounds.delete(source.id);
+  }
   if (source?.area === "desktop" && source.id) {
     topLevelBounds.delete(source.id);
+    topLevelTargetBounds.delete(source.id);
   }
 }
 
@@ -85,7 +104,9 @@ export function clearLaunchIconBounds(scope, folderId = null) {
     if (shouldClearLaunchBounds(key, value, criteria)) launchIconBounds.delete(key);
     if (value?.meta?.area === "desktop" && (shouldClearAll || criteria.area === "desktop")) {
       topLevelBounds.delete(value.meta.id);
+      topLevelTargetBounds.delete(value.meta.id);
       topLevelFolderThumbBounds.delete(value.meta.id);
+      topLevelFolderThumbTargetBounds.delete(value.meta.id);
     }
   }
   for (const [key, value] of launchIconTargetBounds) {
@@ -94,8 +115,12 @@ export function clearLaunchIconBounds(scope, folderId = null) {
   for (const [id, value] of topLevelFolderThumbBounds) {
     if (shouldClearAll || value?.meta?.area === criteria.area) topLevelFolderThumbBounds.delete(id);
   }
+  for (const [id, value] of topLevelFolderThumbTargetBounds) {
+    if (shouldClearAll || value?.meta?.area === criteria.area) topLevelFolderThumbTargetBounds.delete(id);
+  }
   if (shouldClearAll || criteria.area === "desktop") {
     topLevelBounds.clear();
+    topLevelTargetBounds.clear();
   }
 }
 
@@ -125,8 +150,16 @@ export function getTopLevelIconBounds(id) {
   return cloneRect(topLevelBounds.get(id));
 }
 
+export function getTopLevelIconTargetBounds(id) {
+  return cloneRect(topLevelTargetBounds.get(id));
+}
+
 export function getTopLevelFolderThumbBounds(id) {
   return cloneRect(topLevelFolderThumbBounds.get(id));
+}
+
+export function getTopLevelFolderThumbTargetBounds(id) {
+  return cloneRect(topLevelFolderThumbTargetBounds.get(id));
 }
 
 export function getTopLevelTargetAtPoint(x, y, excludeId = null) {
@@ -145,9 +178,18 @@ export function registerFolderPreviewChildBounds(folderId, childId, slotIndex, r
   folderPreviewChildBounds.set(`${folderId}:${childId}:${slotIndex}`, safeRect);
 }
 
+export function registerFolderPreviewChildTargetBounds(folderId, childId, slotIndex, rect) {
+  const safeRect = cloneRect(rect);
+  if (!folderId || !childId || !safeRect) return;
+  folderPreviewChildTargetBounds.set(`${folderId}:${childId}:${slotIndex}`, safeRect);
+}
+
 export function clearFolderPreviewChildBounds(folderId) {
   for (const key of folderPreviewChildBounds.keys()) {
     if (!folderId || key.startsWith(`${folderId}:`)) folderPreviewChildBounds.delete(key);
+  }
+  for (const key of folderPreviewChildTargetBounds.keys()) {
+    if (!folderId || key.startsWith(`${folderId}:`)) folderPreviewChildTargetBounds.delete(key);
   }
 }
 
@@ -165,12 +207,19 @@ export function getFolderPreviewChildBounds(folderId, childId, slotIndex) {
   return cloneRect(folderPreviewChildBounds.get(`${folderId}:${childId}:${slotIndex}`));
 }
 
+export function getFolderPreviewChildTargetBounds(folderId, childId, slotIndex) {
+  return cloneRect(folderPreviewChildTargetBounds.get(`${folderId}:${childId}:${slotIndex}`));
+}
+
 export function clearIconBoundsRegistry() {
   launchIconBounds.clear();
   launchIconTargetBounds.clear();
   topLevelBounds.clear();
+  topLevelTargetBounds.clear();
   topLevelFolderThumbBounds.clear();
+  topLevelFolderThumbTargetBounds.clear();
   folderPreviewChildBounds.clear();
+  folderPreviewChildTargetBounds.clear();
 }
 
 reloadOnPixiHotUpdate(import.meta.hot);

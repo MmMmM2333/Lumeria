@@ -114,6 +114,22 @@ export function runFolderOverlayTargetsTests() {
   assert(closingTarget.isThumbnailChild, "closing target should identify thumbnail children");
   assert(closingTarget.targetRect.left === childRect.left, "closing target should use stable preview bounds first");
 
+  const projectedThumbnailTarget = makeClosingGhostTarget({
+    cellHeight: 80,
+    cellWidth: 100,
+    closeThumbRect: folderThumbRect,
+    cols: 5,
+    folderId: "folder-1",
+    iconBounds: { height: 56, left: 150, top: 160, width: 56 },
+    iconSize: 56,
+    index: 5,
+    item: { id: "app-c" },
+    previewSlotById,
+    stableFolderCloseTarget: stableTarget,
+  });
+  assert(projectedThumbnailTarget.isThumbnailChild, "thumbnail children without exact stable bounds should stay thumbnail targets");
+  assertRectInside(projectedThumbnailTarget.targetRect, folderThumbRect, "projected thumbnail close target");
+
   const fallbackClosingTarget = makeClosingGhostTarget({
     cellHeight: 80,
     cellWidth: 100,

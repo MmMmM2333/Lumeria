@@ -36,8 +36,11 @@ import { makeStageLocalRect, makeStageVirtualElement } from "../geometry/stageCo
 import {
   clearLaunchIconBounds,
   getFolderPreviewChildBounds,
+  getFolderPreviewChildTargetBounds,
   getTopLevelFolderThumbBounds,
+  getTopLevelFolderThumbTargetBounds,
   getTopLevelIconBounds,
+  getTopLevelIconTargetBounds,
   registerLaunchIconBounds,
   registerLaunchIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
@@ -228,22 +231,28 @@ export class FolderOverlayLayer extends Container {
     } else {
       springTo(this.pageTrack, "x", targetTrackX, pageTrackSpring);
     }
-    const folderRect = getTopLevelIconBounds(state.renderedFolder.id);
-    const folderThumbRect = getTopLevelFolderThumbBounds(state.renderedFolder.id) || folderRect;
+    const folderId = state.renderedFolder.id;
+    const folderRect = getTopLevelIconBounds(folderId);
+    const folderThumbRect = getTopLevelFolderThumbBounds(folderId) || folderRect;
+    const targetFolderRect = getTopLevelIconTargetBounds(folderId);
+    const targetFolderThumbRect = getTopLevelFolderThumbTargetBounds(folderId);
     const previewSlots = getFolderPreviewSlots(state.renderedFolder, state.folderPageSize);
-    if (!isClosing && state.renderedFolder?.id && folderRect && (!this.stableFolderCloseTarget ||
-      this.stableFolderCloseTarget.folderId !== state.renderedFolder.id)) {
+    if (folderId && (targetFolderRect || folderRect) && (!this.stableFolderCloseTarget ||
+      this.stableFolderCloseTarget.folderId !== folderId ||
+      (isClosing && !wasClosing))) {
+      const hasTargetFolderRect = Boolean(targetFolderRect);
       this.stableFolderCloseTarget = makeStableFolderCloseTarget({
-        folderId: state.renderedFolder.id,
-        folderRect,
-        folderThumbRect,
+        folderId,
+        folderRect: targetFolderRect || folderRect,
+        folderThumbRect: targetFolderThumbRect || targetFolderRect || folderThumbRect,
         getPreviewChildRect: (item, previewSlotIndex) =>
-          getFolderPreviewChildBounds(state.renderedFolder.id, item.id, previewSlotIndex),
+          getFolderPreviewChildTargetBounds(folderId, item.id, previewSlotIndex) ||
+          (hasTargetFolderRect ? null : getFolderPreviewChildBounds(folderId, item.id, previewSlotIndex)),
         previewSlots,
       });
     }
     const { closeThumbRect } = getStableFolderCloseRects({
-      folderId: state.renderedFolder.id,
+      folderId,
       folderRect,
       folderThumbRect,
       isClosing,
@@ -261,7 +270,7 @@ export class FolderOverlayLayer extends Container {
       dragMeta: state.dragMeta,
       dragReleaseGhostId: state.dragReleaseGhostId,
       folderCloseIconGhosts: state.folderCloseIconGhosts,
-      folderId: state.renderedFolder.id,
+      folderId,
       folderOpenIconGhosts: state.folderOpenIconGhosts,
       folderPageIndex: state.folderPageIndex,
       folderPages: state.folderPages,
@@ -328,7 +337,7 @@ export class FolderOverlayLayer extends Container {
           ...entry.openingGhostInput,
           folderRect,
           getPreviewChildRect: (targetItem, slotIndex) =>
-            getFolderPreviewChildBounds(state.renderedFolder.id, targetItem.id, slotIndex),
+            getFolderPreviewChildBounds(folderId, targetItem.id, slotIndex),
         }));
       }
       if (entry.closingGhostInput) {
@@ -343,7 +352,7 @@ export class FolderOverlayLayer extends Container {
 
     const closingPreviewSwapTargets = renderPlan.closingPreviewSwapTargets;
     if (isNewFolder && !isClosing) this.startOpeningGhosts(state, openingGhostTargets, folderRect, geometry.panel);
-    if (state.isFolderClosing && this.closingGhostFolderId !== state.renderedFolder.id) {
+    if (state.isFolderClosing && this.closingGhostFolderId !== folderId) {
       this.startClosingGhosts(state, closingGhostTargets, closeThumbRect, geometry.panel, {
         previewSwapTargets: closingPreviewSwapTargets,
       });
@@ -446,12 +455,10 @@ export class FolderOverlayLayer extends Container {
       !this.closingFrameComplete) return;
     this.clearClosingGhostRevealTimer();
     this.pageTrack.visible = false;
+    this.clearCompletedClosingPreviewGhosts();
+    clearClosingPreviewSwapLayer(this);
+    this.clearFrameGhost();
     this.flushCompletedClosingControllerGhosts(state);
-    const defer = globalThis.requestAnimationFrame || ((callback) => globalThis.setTimeout?.(callback, 0));
-    defer(() => {
-      this.clearCompletedClosingPreviewGhosts();
-      clearClosingPreviewSwapLayer(this);
-    });
   }
 
   clearOpeningGhosts() {

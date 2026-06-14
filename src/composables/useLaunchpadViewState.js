@@ -122,7 +122,7 @@ export function useLaunchpadViewState(options) {
   const homeShellInitial = { opacity: 0, scale: DESKTOP_CLOSE_SCALE, y: 0, filter: "blur(8px)" };
   const homeShellAnimate = computed(() => {
     if (isDesktopAnimatingClosed.value) return { opacity: 0, scale: DESKTOP_CLOSE_SCALE, y: 0, filter: "blur(8px)" };
-    if (options.openFolderId.value && !options.isFolderClosing.value) return { opacity: 0, scale: 0.92, y: 44, filter: "blur(6px)" };
+    if (options.openFolderId.value && !options.isFolderClosing.value) return { opacity: 0, scale: 0.92, y: 44, filter: "blur(0px)" };
     return { opacity: 1, scale: 1, y: 0, filter: "blur(0px)" };
   });
   const homeShellStyle = computed(() => ({

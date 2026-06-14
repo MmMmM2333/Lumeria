@@ -76,7 +76,7 @@ function handleResize() {
 
 function renderPixi() {
   if (!app || !layer || !hostRef.value) return;
-  const { height, rect, width } = getPixiHostMetrics(hostRef.value);
+  const { height, layoutRect, rect, width } = getPixiHostMetrics(hostRef.value);
   layer.update({
     activePageIndex: props.activePageIndex,
     activePages: props.activePages,
@@ -103,6 +103,7 @@ function renderPixi() {
     setPageRef: props.setPageRef,
     shouldSnapTrack: props.desktopTrackMotionKey.includes("snap"),
     showMissingLaunchTargetBadge: props.showMissingLaunchTargetBadge,
+    stableStageRect: layoutRect,
     stageRect: rect,
     width: Math.max(1, width),
   });

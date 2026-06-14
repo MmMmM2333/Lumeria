@@ -199,6 +199,7 @@ export function runLaunchpadViewStateTests() {
   const openFolder = createViewState({ openFolderId: "folder-1", isFolderLayerActive: true });
   assert(openFolder.view.desktopTrackMotionKey.value === "open-desktop-snap", "open folder should snap the desktop track");
   assert(openFolder.view.homeShellAnimate.value.y === 44, "open folder should move home shell down");
+  assert(openFolder.view.homeShellAnimate.value.filter === "blur(0px)", "open folder should avoid shell blur compositor flicker");
   assert(openFolder.view.homeShellStyle.value.pointerEvents === "none", "open folder should disable home shell pointer events");
 
   const settling = createViewState({ isHomeRevealSettling: true, isFolderLayerActive: true, openFolderId: "folder-1" });
