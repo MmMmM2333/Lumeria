@@ -6,7 +6,7 @@ export const DEFAULT_DESKTOP_LAYOUT_DEBUG_PARAMS = Object.freeze({
   enabled: false,
   gridPaddingTopPx: 34,
   hostHeightOffsetPx: 0,
-  hostMaxHeightPx: 720,
+  hostMaxHeightPx: 960,
   mainPaddingYPx: 16,
 });
 

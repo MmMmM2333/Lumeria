@@ -21,6 +21,7 @@ import {
   isActiveDraggedLaunchItem,
   isReleaseGhostLaunchItem,
 } from "./dragVisibility.js";
+import { getDesktopIconSizing } from "./desktopIconSizing.js";
 import { makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { IconNode } from "../nodes/IconNode.js";
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
@@ -29,19 +30,6 @@ function sourceArea(source) {
   if (source.type === "folder") return "folder";
   if (source.type === "search") return "search";
   return "desktop";
-}
-
-function getDesktopIconSizing(state, slot) {
-  const configuredSize = Math.max(1, Number(state.iconSize) || 64);
-  const labelReserve = state.isTextlessMode ? 14 : 24;
-  const maxByHeight = Math.max(36, slot.height - labelReserve);
-  const iconSize = Math.max(36, Math.min(configuredSize, maxByHeight));
-  const compact = iconSize < configuredSize || state.width <= 960 || slot.height < configuredSize + 42;
-  return {
-    compact,
-    iconSize,
-    singleLineLabel: false,
-  };
 }
 
 function makeTargetFolderPreviewChildBounds(stageRect, stageWidth, stageHeight, centerX, centerY, iconSize, visualOffsetY, slotIndex) {

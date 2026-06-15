@@ -12,6 +12,7 @@ export function runDesktopLayoutDebugSettingsTests() {
 
   const defaults = normalizeDesktopLayoutDebugParams();
   assert(defaults.enabled === DEFAULT_DESKTOP_LAYOUT_DEBUG_PARAMS.enabled, "defaults should keep the override disabled");
+  assert(defaults.hostMaxHeightPx === 960, "default host max height should use the taller desktop grid cap");
   assert(resolveDesktopLayoutDebugStyle(defaults)["--debug-desktop-host-max-height"] === undefined, "disabled params should not emit CSS variables");
   assert(resolveDesktopGridDebugOptions(defaults) === null, "disabled params should not emit Pixi grid options");
 
