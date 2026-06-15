@@ -96,6 +96,7 @@ function createLifecycleOptions() {
       updateFolderViewportHeight: makeCall("updateFolderViewportHeight"),
       updatePageGridMetrics: makeCall("updatePageGridMetrics"),
       visibleFolderRowCount: ref(7),
+      windowMode: ref("fullscreen"),
       windowEffectAppearance: ref("dark"),
       windowEffectMaterial: ref("acrylic"),
       ...refs,
@@ -141,6 +142,7 @@ export async function runLaunchpadLifecycleTests() {
   assert(watchers[4].source.includes(options.backgroundAcrylicAppearance), "layout save watcher should track acrylic appearance");
   assert(watchers[4].source.includes(options.backgroundAcrylicDarkParams), "layout save watcher should track acrylic dark params");
   assert(watchers[4].source.includes(options.backgroundAcrylicLightParams), "layout save watcher should track acrylic light params");
+  assert(watchers[4].source.includes(options.windowMode), "layout save watcher should track window mode");
   assert(watchers[5].callback === options.scheduleLaunchTargetStatusCheck, "launch target watcher should refresh path status");
   assert(watchers[6].callback === options.syncManagedAppState, "managed app watcher should sync app state");
   assert(watchers[7].callback === options.syncWindowsWallpaperRefreshTimer, "wallpaper source watcher should sync the wallpaper refresh timer");

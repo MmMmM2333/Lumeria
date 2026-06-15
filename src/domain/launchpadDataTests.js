@@ -136,6 +136,7 @@ export function runLaunchpadDataTests() {
     backgroundImagePath: " C:/Images/custom.webp ",
     windowEffectMaterial: "mica",
     windowEffectAppearance: "light",
+    windowMode: "windowed",
   });
   assert(snapshot.version === 1, "layout snapshots should use version 1");
   assert(snapshot.settings.textless === true && snapshot.settings.hiddenAppIds[0] === "hidden", "layout snapshots should include settings");
@@ -159,6 +160,7 @@ export function runLaunchpadDataTests() {
   assert(snapshot.settings.backgroundAcrylicLightParams.brightness === 1.2, "layout snapshots should include acrylic light params");
   assert(snapshot.settings.backgroundImagePath === "C:/Images/custom.webp", "layout snapshots should include the trimmed custom background image path");
   assert(snapshot.settings.windowEffectMaterial === "mica" && snapshot.settings.windowEffectAppearance === "light", "layout snapshots should include window effect settings");
+  assert(snapshot.settings.windowMode === "windowed", "layout snapshots should include window mode settings");
   const acrylicSnapshot = dataHelpers.createLayoutSnapshot({
     ...snapshot.settings,
     pages: merged,
@@ -188,10 +190,12 @@ export function runLaunchpadDataTests() {
     ...snapshot.settings,
     pages: merged,
     windowEffectMaterial: "none",
+    windowMode: "floating",
     backgroundSource: "systemMaterial",
     backgroundImagePath: "C:/Images/ignored.webp",
   });
   assert(plainSnapshot.settings.windowEffectMaterial === "none", "layout snapshots should preserve disabled window material");
+  assert(plainSnapshot.settings.windowMode === "fullscreen", "layout snapshots should fall back to fullscreen for missing window mode");
   assert(plainSnapshot.settings.backgroundImagePath === null, "layout snapshots should clear image paths when no image layer is selected");
   assert(!("iconDataUrl" in snapshot.pages[0][0]), "layout snapshots should omit catalog icon data");
   assert(snapshot.pages[0][0].iconPath === "C:/Icons/a.png", "layout snapshots should preserve cached icon paths");

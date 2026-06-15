@@ -27,6 +27,7 @@ import {
   DEFAULT_BACKGROUND_IMAGE_OPACITY,
   DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY,
   DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT,
+  DEFAULT_WINDOW_MODE,
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
@@ -96,6 +97,8 @@ export function useLaunchpadControllerState() {
   const windowEffectAppearance = ref(WINDOW_EFFECT_APPEARANCE_DARK);
   const draftWindowEffectMaterial = ref(WINDOW_EFFECT_MATERIAL_ACRYLIC);
   const draftWindowEffectAppearance = ref(WINDOW_EFFECT_APPEARANCE_DARK);
+  const windowMode = ref(DEFAULT_WINDOW_MODE);
+  const draftWindowMode = ref(DEFAULT_WINDOW_MODE);
   const pageSize = computed(() => makePageSize(gridRows.value, gridCols.value));
   const folderPageSize = computed(() => makePageSize(folderRows.value, folderCols.value));
 
@@ -168,6 +171,7 @@ export function useLaunchpadControllerState() {
     draftIconSize,
     draftIsTextlessMode,
     draftRows,
+    draftWindowMode,
     draftWindowEffectAppearance,
     draftWindowEffectMaterial,
     folderCols,
@@ -209,5 +213,6 @@ export function useLaunchpadControllerState() {
     windowEffectAppearance,
     windowEffectMaterial,
     windowEffectsSupport,
+    windowMode,
   };
 }

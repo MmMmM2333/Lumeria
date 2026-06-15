@@ -44,6 +44,7 @@ function createLaunchFlow(overrides = {}) {
     openLaunchErrorDialog: [],
     schedulePageGridMetrics: 0,
     setNativeWindowEffectsEnabled: [],
+    setNativeWindowShadowEnabled: [],
     showNativeLaunchError: [],
     startFolderAppLaunchClose: 0,
     startHomeRevealSettleWindow: 0,
@@ -100,6 +101,7 @@ function createLaunchFlow(overrides = {}) {
     },
     searchInputRef,
     setNativeWindowEffectsEnabled: (enabled) => calls.setNativeWindowEffectsEnabled.push(enabled),
+    setNativeWindowShadowEnabled: (enabled) => calls.setNativeWindowShadowEnabled.push(enabled),
     showNativeLaunchError: (error) => calls.showNativeLaunchError.push(error),
     shouldValidateLaunchTarget: () => Boolean(overrides.shouldValidateLaunchTarget),
     startFolderAppLaunchClose: () => {
@@ -144,6 +146,7 @@ export async function runLaunchpadLaunchFlowTests() {
     assert(close.calls.clearSelectedIcon === 1, "closing the desktop should clear selected icon");
     assert(close.calls.searchInputBlur === 1, "closing the desktop should blur search input");
     assert(close.calls.setNativeWindowEffectsEnabled.join(",") === "false", "closing the desktop should disable native window effects");
+    assert(close.calls.setNativeWindowShadowEnabled.join(",") === "false", "closing the desktop should disable native window shadow");
     timers.runDelay(DESKTOP_CLOSE_DURATION);
     assert(!close.flow.isDesktopClosing.value, "desktop close timer should end the closing state");
     assert(close.calls.clearSearch.length === 1, "desktop close should clear search after the close animation");
@@ -172,6 +175,7 @@ export async function runLaunchpadLaunchFlowTests() {
     assert(launch.flow.launchGhost.value.app !== launchApp, "launch ghost should clone the app");
     assert(launch.flow.launchGhostStyle.value.left === "12px", "launch ghost style should expose rect geometry");
     assert(launch.calls.startFolderAppLaunchClose === 1, "folder app launches should start folder launch close");
+    assert(launch.calls.setNativeWindowShadowEnabled.join(",") === "false", "app launch close animation should disable native window shadow");
     timers.runDelay(0);
     assert(launch.calls.launchNativeAppIfAvailable.join(",") === "launch-app", "app launch should call native launch on a zero delay timer");
     timers.runDelay(APP_LAUNCH_DURATION);

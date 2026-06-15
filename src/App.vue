@@ -1,7 +1,7 @@
 <template>
   <div
     ref="rootRef"
-    :class="cx('launchpad-root', isTextlessMode && 'launchpad-root-textless', isStartupMaskMounted && 'launchpad-root-startup-masked', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching', shouldUseLiveDesktopCssFallbackEffects && 'launchpad-root-live-desktop-css-fallback-effects')"
+    :class="cx('launchpad-root', windowMode === 'windowed' && 'launchpad-root-windowed', isTextlessMode && 'launchpad-root-textless', isStartupMaskMounted && 'launchpad-root-startup-masked', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching', shouldUseLiveDesktopCssFallbackEffects && 'launchpad-root-live-desktop-css-fallback-effects')"
     :style="launchpadRootStyle"
     @wheel="handleLaunchpadWheel"
     @pointerdown="handleLaunchpadSurfacePointerDown"
@@ -132,6 +132,7 @@
       @open-context-app="openApp"
       @edit-context-app="openEditManagedApp"
     />
+    <WindowChromeOverlay :active="isWindowChromeOverlayActive" />
     <BackgroundDebugPanel
       v-if="isAcrylicDebugPanelEnabled"
       :state="settingsPanelState"
@@ -154,6 +155,7 @@ import LaunchpadDialogs from "./components/LaunchpadDialogs.vue";
 import LaunchpadHeader from "./components/LaunchpadHeader.vue";
 import LaunchpadOverlays from "./components/LaunchpadOverlays.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
+import WindowChromeOverlay from "./components/WindowChromeOverlay.vue";
 import PixiBackgroundSurface from "./rendering/pixi/PixiBackgroundSurface.vue";
 import PixiDesktopSurface from "./rendering/pixi/PixiDesktopSurface.vue";
 import PixiDragPreviewOverlay from "./rendering/pixi/PixiDragPreviewOverlay.vue";
@@ -261,6 +263,7 @@ const {
   isFolderClosing,
   isFolderAppLaunchClosing,
   isFolderCloseIconAnimationActive,
+  windowMode,
 } = controller;
 
 const appVersion = appPackage.version;
@@ -337,6 +340,12 @@ const shouldUseLiveDesktopCssFallbackEffects = computed(() => Boolean(
   import.meta.env.DEV
     && isLiveDesktopExperimentActive.value
     && liveDesktopCssFallbackEffectsEnabled.value
+));
+const isWindowChromeOverlayActive = computed(() => Boolean(
+  windowMode.value === "windowed"
+    && isDesktopOpen.value
+    && !isDesktopClosing.value
+    && !isAppLaunching.value
 ));
 let pixiBackgroundHideTimer = null;
 let startupMaskRemoveTimer = null;

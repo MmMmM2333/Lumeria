@@ -16,6 +16,8 @@ Implemented commands:
 - `hide_main_window`: hides the main LaunchPad window after close animations.
 - `get_main_window_effects_support`: reports Windows build support for Acrylic, Mica, and Mica Alt.
 - `set_main_window_effects_enabled`: toggles and updates Acrylic/Mica/Mica Alt window effects during open/close transitions.
+- `set_main_window_mode`: switches the frameless main window between fullscreen and resizable windowed mode.
+- `set_main_window_shadow_enabled`: toggles the native window shadow so close animations do not show a stray window outline.
 
 Known MVP limits:
 

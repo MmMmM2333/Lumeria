@@ -447,6 +447,7 @@ export function createLaunchpadDataHelpers(options) {
     const windowEffectMaterial = state.windowEffectMaterial === "none" || state.windowEffectMaterial === "mica" || state.windowEffectMaterial === "micaAlt"
       ? state.windowEffectMaterial
       : "acrylic";
+    const windowMode = state.windowMode === "windowed" ? "windowed" : "fullscreen";
     return {
       version: 1,
       pages: makeLayoutPages(state.pages),
@@ -484,6 +485,7 @@ export function createLaunchpadDataHelpers(options) {
           : null,
         windowEffectMaterial,
         windowEffectAppearance: state.windowEffectAppearance === "light" ? "light" : "dark",
+        windowMode,
       },
     };
   }

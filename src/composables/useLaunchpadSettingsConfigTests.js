@@ -23,6 +23,7 @@ import {
   DEFAULT_BACKGROUND_BASE_COLOR,
   DEFAULT_BACKGROUND_BASE_OPACITY,
   DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT,
+  DEFAULT_WINDOW_MODE,
   FOLDER_ICON_SIZE_MODE_CUSTOM,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
@@ -31,6 +32,7 @@ import {
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
   WINDOW_EFFECT_MATERIAL_MICA,
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
+  WINDOW_MODE_WINDOWED,
   backgroundEffectUsesPixi,
   clampBackgroundBaseOpacity,
   clampBackgroundAcrylicBlurStrength,
@@ -49,6 +51,7 @@ import {
   normalizeLiveDesktopBackgroundSupport,
   normalizeWindowEffectAppearance,
   normalizeWindowEffectMaterial,
+  normalizeWindowMode,
   normalizeFolderIconSizeMode,
   normalizeBackgroundSource,
   createDefaultBackgroundAcrylicParams,
@@ -105,6 +108,7 @@ function createSettingsConfig(overrides = {}) {
     draftBackgroundImageUrl: refValue(overrides.draftBackgroundImageUrl ?? null),
     draftWindowEffectMaterial: refValue(overrides.draftWindowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
     draftWindowEffectAppearance: refValue(overrides.draftWindowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_DARK),
+    draftWindowMode: refValue(overrides.draftWindowMode ?? DEFAULT_WINDOW_MODE),
     isTextlessMode: refValue(overrides.isTextlessMode ?? false),
     backgroundBaseColor: refValue(overrides.backgroundBaseColor ?? DEFAULT_BACKGROUND_BASE_COLOR),
     backgroundBaseOpacity: refValue(overrides.backgroundBaseOpacity ?? DEFAULT_BACKGROUND_BASE_OPACITY),
@@ -124,6 +128,7 @@ function createSettingsConfig(overrides = {}) {
     backgroundImageUrl: refValue(overrides.backgroundImageUrl ?? null),
     windowEffectMaterial: refValue(overrides.windowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
     windowEffectAppearance: refValue(overrides.windowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_DARK),
+    windowMode: refValue(overrides.windowMode ?? DEFAULT_WINDOW_MODE),
     windowEffectsSupport: refValue(overrides.windowEffectsSupport ?? {
       platform: "windows",
       build: 22621,
@@ -143,6 +148,7 @@ function createSettingsConfig(overrides = {}) {
     isChoosingBackgroundImage: refValue(false),
   };
   const calls = {
+    applyNativeWindowMode: 0,
     applyNativeWindowEffects: 0,
     closeSettingsPanel: 0,
     commitFolderPageIndex: [],
@@ -169,6 +175,9 @@ function createSettingsConfig(overrides = {}) {
   const config = useLaunchpadSettingsConfig({
     applyNativeWindowEffects: () => {
       calls.applyNativeWindowEffects += 1;
+    },
+    applyNativeWindowMode: () => {
+      calls.applyNativeWindowMode += 1;
     },
     syncLiveDesktopBackgroundRuntime: () => {
       calls.syncLiveDesktopBackgroundRuntime += 1;
@@ -211,6 +220,7 @@ function createSettingsConfig(overrides = {}) {
     draftRows: state.draftRows,
     draftWindowEffectAppearance: state.draftWindowEffectAppearance,
     draftWindowEffectMaterial: state.draftWindowEffectMaterial,
+    draftWindowMode: state.draftWindowMode,
     ensurePage: helpers.ensurePage,
     folderCols: state.folderCols,
     folderIconSize: state.folderIconSize,
@@ -250,6 +260,7 @@ function createSettingsConfig(overrides = {}) {
     searchPageIndex: state.searchPageIndex,
     windowEffectAppearance: state.windowEffectAppearance,
     windowEffectMaterial: state.windowEffectMaterial,
+    windowMode: state.windowMode,
     windowEffectsSupport: state.windowEffectsSupport,
     liveDesktopBackgroundSupport: state.liveDesktopBackgroundSupport,
   });
@@ -317,6 +328,8 @@ export function runLaunchpadSettingsConfigTests() {
   assert(normalizeWindowEffectMaterial("unknown") === WINDOW_EFFECT_MATERIAL_ACRYLIC, "unknown window effect materials should fall back to acrylic");
   assert(normalizeWindowEffectAppearance(WINDOW_EFFECT_APPEARANCE_LIGHT) === WINDOW_EFFECT_APPEARANCE_LIGHT, "light window effect appearance should be preserved");
   assert(normalizeWindowEffectAppearance("unknown") === WINDOW_EFFECT_APPEARANCE_DARK, "unknown window effect appearances should fall back to dark");
+  assert(normalizeWindowMode(WINDOW_MODE_WINDOWED) === WINDOW_MODE_WINDOWED, "windowed mode should be preserved");
+  assert(normalizeWindowMode("unknown") === DEFAULT_WINDOW_MODE, "unknown window modes should fall back to fullscreen");
   assert(
     resolveWindowEffectMaterialForSupport(WINDOW_EFFECT_MATERIAL_MICA, { supportsAcrylic: true, supportsMica: false, supportsMicaAlt: false }) === WINDOW_EFFECT_MATERIAL_ACRYLIC,
     "mica should fall back to acrylic when the system does not support mica"
@@ -380,6 +393,7 @@ export function runLaunchpadSettingsConfigTests() {
     backgroundImageUrl: "asset://current",
     windowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
     windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
+    windowMode: WINDOW_MODE_WINDOWED,
   });
   syncLaunchpadSettingsDraftsFromState(sync.state);
   assert(sync.state.draftRows.value === 4 && sync.state.draftCols.value === 5, "sync should reset desktop draft dimensions from current settings");
@@ -406,6 +420,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(sync.state.draftBackgroundImageUrl.value === "asset://current", "sync should reset background image url draft from current settings");
   assert(sync.state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "sync should reset window effect material draft from current settings");
   assert(sync.state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "sync should reset window effect appearance draft from current settings");
+  assert(sync.state.draftWindowMode.value === WINDOW_MODE_WINDOWED, "sync should reset window mode draft from current settings");
 
   const draft = createSettingsConfig({
     draftCols: 10,
@@ -574,6 +589,7 @@ export function runLaunchpadSettingsConfigTests() {
     draftBackgroundImageUrl: "asset://applied",
     draftWindowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
     draftWindowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
+    draftWindowMode: WINDOW_MODE_WINDOWED,
     pages: [makeItems(7)],
   });
   apply.config.applySettingsConfig();
@@ -601,12 +617,14 @@ export function runLaunchpadSettingsConfigTests() {
   assert(apply.state.backgroundImageUrl.value === "asset://applied", "background image url should apply from the draft value");
   assert(apply.state.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "window effect material should apply from the draft value");
   assert(apply.state.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "window effect appearance should apply from the draft value");
+  assert(apply.state.windowMode.value === WINDOW_MODE_WINDOWED, "window mode should apply from the draft value");
   assert(apply.calls.commitPages.length === 1, "applying settings should commit repacked pages");
   assert(apply.calls.commitPages[0].length === 2, "shrinking page capacity should overflow items to another page");
   assert(apply.calls.commitPageIndex.join(",") === "2", "applying settings should reclamp the desktop page index");
   assert(apply.calls.commitSearchPageIndex.join(",") === "1", "applying settings should reclamp the search page index");
   assert(apply.calls.commitFolderPageIndex.join(",") === "1", "applying settings should reclamp the folder page index");
   assert(apply.calls.schedulePageGridMetrics === 1, "applying settings should schedule page metrics");
+  assert(apply.calls.applyNativeWindowMode === 1, "applying settings should refresh native window mode");
   assert(apply.calls.applyNativeWindowEffects === 1, "applying settings should refresh native window effects");
   assert(apply.calls.syncLiveDesktopBackgroundRuntime === 1, "applying settings should sync the live desktop runtime");
   assert(apply.calls.closeSettingsPanel === 1, "applying settings from the panel should close it");

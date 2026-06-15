@@ -20,6 +20,7 @@ pub(crate) const CLOSE_DESKTOP_EVENT: &str = "launchpad-close-desktop";
 const MAIN_WINDOW_ACRYLIC_DARK_COLOR: Color = Color(0x10, 0x14, 0x1f, 0xcc);
 const MAIN_WINDOW_ACRYLIC_LIGHT_COLOR: Color = Color(0xf3, 0xf6, 0xfb, 0xcc);
 const MAIN_WINDOW_EFFECT_REAPPLY_DELAYS_MS: [u64; 2] = [80, 180];
+const MAIN_WINDOW_DEFERRED_SHOW_DELAY_MS: u64 = 48;
 const WINDOWS_ACRYLIC_MIN_BUILD: u32 = 17763;
 const WINDOWS_MICA_MIN_BUILD: u32 = 22000;
 const WINDOWS_MICA_ALT_MIN_BUILD: u32 = 22621;
@@ -27,6 +28,7 @@ static MAIN_WINDOW_EFFECT_DISABLE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static MAIN_WINDOW_OPEN_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static MAIN_WINDOW_EFFECT_SETTINGS: Mutex<MainWindowEffectSettings> =
     Mutex::new(MainWindowEffectSettings::DEFAULT);
+static MAIN_WINDOW_MODE: Mutex<MainWindowMode> = Mutex::new(MainWindowMode::DEFAULT);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MainWindowEffectMaterial {
@@ -118,6 +120,31 @@ impl MainWindowEffectSettings {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MainWindowMode {
+    Fullscreen,
+    Windowed,
+}
+
+impl MainWindowMode {
+    const DEFAULT: Self = Self::Fullscreen;
+
+    fn from_str(value: &str) -> Option<Self> {
+        match value.trim() {
+            "fullscreen" => Some(Self::Fullscreen),
+            "windowed" => Some(Self::Windowed),
+            _ => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Fullscreen => "fullscreen",
+            Self::Windowed => "windowed",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MainWindowEffectsSupport {
@@ -128,13 +155,21 @@ pub(crate) struct MainWindowEffectsSupport {
     supports_mica_alt: bool,
 }
 
-pub(crate) fn show_main_window(app: &AppHandle) -> u64 {
-    let open_sequence = MAIN_WINDOW_OPEN_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1;
+fn next_main_window_open_sequence() -> u64 {
+    MAIN_WINDOW_OPEN_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1
+}
+
+fn show_main_window_for_sequence(app: &AppHandle, open_sequence: u64) {
+    if MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed) != open_sequence {
+        return;
+    }
+
     let _ = disable_main_window_transitions(app);
     if let Some(window) = app.get_webview_window("main") {
-        if !window.is_fullscreen().unwrap_or(false) {
-            let _ = window.set_fullscreen(true);
+        if let Ok(mode) = current_main_window_mode() {
+            let _ = apply_main_window_mode_to_window(&window, mode);
         }
+        let _ = set_window_shadow_enabled(&window, true);
         if !window.is_visible().unwrap_or(false) {
             let _ = window.show();
         }
@@ -147,14 +182,104 @@ pub(crate) fn show_main_window(app: &AppHandle) -> u64 {
         let _ = set_window_effects_enabled(&window, true);
         schedule_window_effect_reapply(window, open_sequence, disable_sequence);
     }
-    open_sequence
 }
 
-pub(crate) fn set_main_window_fullscreen(app: &AppHandle) -> Result<(), String> {
+fn schedule_main_window_show(app: &AppHandle, open_sequence: u64, delay_ms: u64) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        if delay_ms > 0 {
+            std::thread::sleep(Duration::from_millis(delay_ms));
+        }
+        show_main_window_for_sequence(&app, open_sequence);
+    });
+}
+
+fn main_window_deferred_show_delay(app: &AppHandle) -> u64 {
+    app.get_webview_window("main")
+        .filter(|window| {
+            !window.is_visible().unwrap_or(false) || window.is_minimized().unwrap_or(false)
+        })
+        .map(|_| MAIN_WINDOW_DEFERRED_SHOW_DELAY_MS)
+        .unwrap_or(0)
+}
+
+pub(crate) fn apply_main_window_mode(app: &AppHandle) -> Result<(), String> {
+    let mode = current_main_window_mode()?;
     if let Some(window) = app.get_webview_window("main") {
-        window
-            .set_fullscreen(true)
-            .map_err(|error| error.to_string())?;
+        apply_main_window_mode_to_window(&window, mode)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn set_main_window_mode(app: &AppHandle, mode: &str) -> Result<String, String> {
+    let mode = update_main_window_mode(mode)?;
+    if let Some(window) = app.get_webview_window("main") {
+        apply_main_window_mode_to_window(&window, mode)?;
+    }
+    Ok(mode.as_str().to_string())
+}
+
+pub(crate) fn set_main_window_shadow_enabled(app: &AppHandle, enabled: bool) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        set_window_shadow_enabled(&window, enabled)?;
+    }
+    Ok(())
+}
+
+fn set_window_shadow_enabled(window: &WebviewWindow, enabled: bool) -> Result<(), String> {
+    window
+        .set_shadow(enabled)
+        .map_err(|error| error.to_string())
+}
+
+fn current_main_window_mode() -> Result<MainWindowMode, String> {
+    MAIN_WINDOW_MODE
+        .lock()
+        .map(|mode| *mode)
+        .map_err(|_| "Failed to lock main window mode".to_string())
+}
+
+fn update_main_window_mode(mode: &str) -> Result<MainWindowMode, String> {
+    let next = MainWindowMode::from_str(mode)
+        .ok_or_else(|| format!("Unsupported main window mode: {mode}"))?;
+    let mut current = MAIN_WINDOW_MODE
+        .lock()
+        .map_err(|_| "Failed to lock main window mode".to_string())?;
+    *current = next;
+    Ok(next)
+}
+
+fn apply_main_window_mode_to_window(
+    window: &WebviewWindow,
+    mode: MainWindowMode,
+) -> Result<(), String> {
+    match mode {
+        MainWindowMode::Fullscreen => {
+            window
+                .set_decorations(false)
+                .map_err(|error| error.to_string())?;
+            window
+                .set_resizable(false)
+                .map_err(|error| error.to_string())?;
+            if !window.is_fullscreen().unwrap_or(false) {
+                window
+                    .set_fullscreen(true)
+                    .map_err(|error| error.to_string())?;
+            }
+        }
+        MainWindowMode::Windowed => {
+            window
+                .set_decorations(false)
+                .map_err(|error| error.to_string())?;
+            window
+                .set_resizable(true)
+                .map_err(|error| error.to_string())?;
+            if window.is_fullscreen().unwrap_or(false) {
+                window
+                    .set_fullscreen(false)
+                    .map_err(|error| error.to_string())?;
+            }
+        }
     }
     Ok(())
 }
@@ -450,8 +575,9 @@ fn schedule_window_effect_reapply(
 }
 
 pub(crate) fn open_main_window(app: &AppHandle) {
-    let open_sequence = show_main_window(app);
+    let open_sequence = next_main_window_open_sequence();
     let _ = app.emit(OPEN_DESKTOP_EVENT, open_sequence);
+    schedule_main_window_show(app, open_sequence, main_window_deferred_show_delay(app));
 }
 
 pub(crate) fn hide_main_window(app: &AppHandle) {
@@ -471,15 +597,15 @@ pub(crate) fn trigger_main_window_shortcut(app: &AppHandle) {
         })
         .unwrap_or(false);
 
-    let open_sequence = show_main_window(app);
-    let _ = app.emit(
-        if should_hide {
-            TOGGLE_DESKTOP_EVENT
-        } else {
-            OPEN_DESKTOP_EVENT
-        },
-        open_sequence,
-    );
+    if should_hide {
+        let open_sequence = MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed);
+        let _ = app.emit(TOGGLE_DESKTOP_EVENT, open_sequence);
+        return;
+    }
+
+    let open_sequence = next_main_window_open_sequence();
+    let _ = app.emit(OPEN_DESKTOP_EVENT, open_sequence);
+    schedule_main_window_show(app, open_sequence, main_window_deferred_show_delay(app));
 }
 
 pub(crate) fn open_settings(app: &AppHandle) {
@@ -521,6 +647,28 @@ mod tests {
             supports_mica,
             supports_mica_alt,
         }
+    }
+
+    #[test]
+    fn main_window_mode_accepts_known_modes() {
+        assert_eq!(
+            MainWindowMode::from_str("fullscreen"),
+            Some(MainWindowMode::Fullscreen)
+        );
+        assert_eq!(
+            MainWindowMode::from_str("windowed"),
+            Some(MainWindowMode::Windowed)
+        );
+        assert_eq!(
+            MainWindowMode::from_str(" windowed "),
+            Some(MainWindowMode::Windowed)
+        );
+    }
+
+    #[test]
+    fn main_window_mode_rejects_unknown_modes() {
+        assert_eq!(MainWindowMode::from_str("maximized"), None);
+        assert_eq!(MainWindowMode::from_str(""), None);
     }
 
     #[test]

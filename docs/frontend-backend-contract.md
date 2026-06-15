@@ -18,6 +18,10 @@ commands.
 - `launch_app(request: LaunchAppRequest) -> void`
 - `hide_main_window() -> void`
 - `set_main_window_effects_enabled(enabled: boolean, openSequence?: number | null) -> void`
+- `set_main_window_mode(mode: "fullscreen" | "windowed") -> "fullscreen" | "windowed"`; the native window remains frameless in both modes.
+- `set_main_window_shadow_enabled(enabled: boolean) -> void`; close animations disable the native window shadow and the next open restores it.
+
+Windowed mode uses a frontend-rendered title bar for dragging and window controls. It requires Tauri `core:window:allow-start-dragging`, `core:window:allow-minimize`, and `core:window:allow-toggle-maximize` permissions.
 
 ## Data Shapes
 
@@ -106,6 +110,7 @@ type LaunchpadLayout = {
     scanKeywordBlacklist: string[];
     scanAppBlacklist: ScanAppBlacklistItem[];
     showMissingLaunchTargetBadge: boolean;
+    windowMode: "fullscreen" | "windowed";
   };
 };
 

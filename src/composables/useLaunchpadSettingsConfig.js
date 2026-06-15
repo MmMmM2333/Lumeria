@@ -76,6 +76,9 @@ export const WINDOW_EFFECT_MATERIAL_MICA = "mica";
 export const WINDOW_EFFECT_MATERIAL_MICA_ALT = "micaAlt";
 export const WINDOW_EFFECT_APPEARANCE_DARK = "dark";
 export const WINDOW_EFFECT_APPEARANCE_LIGHT = "light";
+export const WINDOW_MODE_FULLSCREEN = "fullscreen";
+export const WINDOW_MODE_WINDOWED = "windowed";
+export const DEFAULT_WINDOW_MODE = WINDOW_MODE_FULLSCREEN;
 export const DEFAULT_WINDOW_EFFECTS_SUPPORT = Object.freeze({
   platform: "unknown",
   build: null,
@@ -235,6 +238,10 @@ export function normalizeWindowEffectAppearance(value) {
   return value === WINDOW_EFFECT_APPEARANCE_LIGHT ? WINDOW_EFFECT_APPEARANCE_LIGHT : WINDOW_EFFECT_APPEARANCE_DARK;
 }
 
+export function normalizeWindowMode(value) {
+  return value === WINDOW_MODE_WINDOWED ? WINDOW_MODE_WINDOWED : WINDOW_MODE_FULLSCREEN;
+}
+
 export function normalizeWindowEffectsSupport(support) {
   const build = Number(support?.build);
   return {
@@ -296,6 +303,7 @@ export function syncLaunchpadSettingsDraftsFromState(options) {
     : null;
   options.draftWindowEffectMaterial.value = options.windowEffectMaterial.value;
   options.draftWindowEffectAppearance.value = options.windowEffectAppearance.value;
+  options.draftWindowMode.value = normalizeWindowMode(options.windowMode.value);
 }
 
 export function useLaunchpadSettingsConfig(options) {
@@ -524,6 +532,10 @@ export function useLaunchpadSettingsConfig(options) {
     options.draftWindowEffectAppearance.value = normalizeWindowEffectAppearance(appearance);
   }
 
+  function setDraftWindowMode(mode) {
+    options.draftWindowMode.value = normalizeWindowMode(mode);
+  }
+
   function repackPagesForGrid(nextRows, nextCols, nextFolderRows, nextFolderCols) {
     if (options.isDragActive()) return;
     const rows = clamp(Number(nextRows) || DEFAULT_ROWS, 2, 8);
@@ -620,7 +632,9 @@ export function useLaunchpadSettingsConfig(options) {
       options.windowEffectsSupport.value
     );
     options.windowEffectAppearance.value = normalizeWindowEffectAppearance(options.draftWindowEffectAppearance.value);
+    options.windowMode.value = normalizeWindowMode(options.draftWindowMode.value);
     syncLaunchpadSettingsDraftsFromState(options);
+    options.applyNativeWindowMode?.();
     options.applyNativeWindowEffects?.();
     options.syncLiveDesktopBackgroundRuntime?.();
     options.closeSettingsPanel();
@@ -662,6 +676,7 @@ export function useLaunchpadSettingsConfig(options) {
     setDraftFolderIconSizeMode,
     setDraftWindowEffectAppearance,
     setDraftWindowEffectMaterial,
+    setDraftWindowMode,
     useDraftDesktopWallpaper,
   };
 }

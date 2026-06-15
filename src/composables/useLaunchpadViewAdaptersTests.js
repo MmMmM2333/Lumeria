@@ -17,6 +17,7 @@ export function runLaunchpadViewAdaptersTests() {
     draftBackgroundDarkenColor: { value: "#1c1c1c" },
     draftBackgroundDarkenStrength: { value: 37 },
     draftBackgroundImageLayout: { value: "fill" },
+    draftWindowMode: { value: "windowed" },
     liveDesktopBackgroundSupport: { value: { supportsLiveDesktopBackground: false, reason: "probeFailed" } },
     liveDesktopRuntimeStatus: { value: { phase: "running", detail: "adapter 0" } },
     refreshLiveDesktopRuntimeStatus: () => {},
@@ -32,6 +33,7 @@ export function runLaunchpadViewAdaptersTests() {
     setDraftBackgroundAcrylicParam: () => {},
     resetDraftBackgroundAcrylicParams: () => {},
     setDraftBackgroundImageLayout: () => {},
+    setDraftWindowMode: () => {},
   };
   const controller = new Proxy(expected, {
     get(target, property) {
@@ -52,6 +54,7 @@ export function runLaunchpadViewAdaptersTests() {
   assert(state.draftBackgroundDarkenColor === controller.draftBackgroundDarkenColor, "settings panel state should expose background darken color draft");
   assert(state.draftBackgroundDarkenStrength === controller.draftBackgroundDarkenStrength, "settings panel state should expose background darken strength draft");
   assert(state.draftBackgroundImageLayout === controller.draftBackgroundImageLayout, "settings panel state should expose background image layout draft");
+  assert(state.draftWindowMode === controller.draftWindowMode, "settings panel state should expose window mode draft");
   assert(state.liveDesktopBackgroundSupport === controller.liveDesktopBackgroundSupport, "settings panel state should expose live desktop support");
   assert(state.liveDesktopRuntimeStatus === controller.liveDesktopRuntimeStatus, "settings panel state should expose live desktop runtime status");
   assert(state.refreshLiveDesktopRuntimeStatus === controller.refreshLiveDesktopRuntimeStatus, "settings panel state should expose live desktop runtime refresh");
@@ -68,4 +71,5 @@ export function runLaunchpadViewAdaptersTests() {
   assert(state.setDraftBackgroundAcrylicParam === controller.setDraftBackgroundAcrylicParam, "settings panel state should expose acrylic param setter");
   assert(state.resetDraftBackgroundAcrylicParams === controller.resetDraftBackgroundAcrylicParams, "settings panel state should expose acrylic params reset");
   assert(state.setDraftBackgroundImageLayout === controller.setDraftBackgroundImageLayout, "settings panel state should expose background image layout setter");
+  assert(state.setDraftWindowMode === controller.setDraftWindowMode, "settings panel state should expose window mode setter");
 }

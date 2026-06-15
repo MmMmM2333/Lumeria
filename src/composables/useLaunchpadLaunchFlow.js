@@ -134,6 +134,7 @@ export function useLaunchpadLaunchFlow(options) {
     if (options.isDragActive()) return;
     options.cancelLongPress();
     options.setNativeWindowEffectsEnabled(false);
+    options.setNativeWindowShadowEnabled?.(false);
     const shouldClearSearchAfterClose = Boolean(closeOptions?.clearSearch && options.isSearchMode());
     options.clearSelectedIcon();
     options.keyboardFocusArea.value = "desktop";

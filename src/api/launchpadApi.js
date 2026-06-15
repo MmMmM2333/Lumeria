@@ -221,6 +221,20 @@ export async function setMainWindowEffectsEnabled(enabled, openSequence = null, 
   return true;
 }
 
+export async function setMainWindowMode(mode) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return false;
+  await invoke("set_main_window_mode", { mode });
+  return true;
+}
+
+export async function setMainWindowShadowEnabled(enabled) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return false;
+  await invoke("set_main_window_shadow_enabled", { enabled: Boolean(enabled) });
+  return true;
+}
+
 export async function quitApp() {
   const invoke = getTauriInvoke();
   if (!invoke) return false;

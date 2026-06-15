@@ -77,6 +77,28 @@
               <h3>显示偏好</h3>
             </div>
             <div class="settings-grid">
+              <div class="settings-field settings-field-wide">
+                <span class="settings-field-copy">
+                  <span>窗口模式</span>
+                  <span class="settings-field-hint">选择打开 LaunchPad 时的窗口形态</span>
+                </span>
+                <div class="settings-segmented-control" aria-label="窗口模式">
+                  <button
+                    type="button"
+                    :class="cx('settings-segmented-button', state.draftWindowMode.value === WINDOW_MODE_FULLSCREEN && 'settings-segmented-button-active')"
+                    @click="state.setDraftWindowMode(WINDOW_MODE_FULLSCREEN)"
+                  >
+                    全屏
+                  </button>
+                  <button
+                    type="button"
+                    :class="cx('settings-segmented-button', state.draftWindowMode.value === WINDOW_MODE_WINDOWED && 'settings-segmented-button-active')"
+                    @click="state.setDraftWindowMode(WINDOW_MODE_WINDOWED)"
+                  >
+                    窗口化
+                  </button>
+                </div>
+              </div>
               <div class="settings-field settings-field-wide settings-window-effect-field">
                 <span class="settings-field-copy">
                   <span>窗口底材</span>
@@ -894,6 +916,8 @@ import {
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
   WINDOW_EFFECT_MATERIAL_MICA,
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
+  WINDOW_MODE_FULLSCREEN,
+  WINDOW_MODE_WINDOWED,
 } from "../composables/useLaunchpadSettingsConfig.js";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
 import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";

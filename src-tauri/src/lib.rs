@@ -43,8 +43,8 @@ use tauri::{
 };
 use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 use tray::{
-    disable_main_window_transitions, open_main_window, open_settings, refresh_main_window_effects,
-    set_main_window_fullscreen, setup_tray, trigger_main_window_shortcut, CLOSE_DESKTOP_EVENT,
+    apply_main_window_mode, disable_main_window_transitions, open_main_window, open_settings,
+    refresh_main_window_effects, setup_tray, trigger_main_window_shortcut, CLOSE_DESKTOP_EVENT,
 };
 
 const QUIT_REQUESTED_EVENT: &str = "launchpad-quit-requested";
@@ -506,6 +506,16 @@ fn set_main_window_effects_enabled(
     )
 }
 
+#[tauri::command]
+fn set_main_window_mode(app: AppHandle, mode: String) -> Result<String, String> {
+    tray::set_main_window_mode(&app, &mode)
+}
+
+#[tauri::command]
+fn set_main_window_shadow_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    tray::set_main_window_shadow_enabled(&app, enabled)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum LaunchFailureKind {
     AccessDenied,
@@ -780,8 +790,8 @@ fn check_launch_target_status(target: &models::LaunchTarget) -> String {
 
 fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     setup_tray(app)?;
-    if let Err(error) = set_main_window_fullscreen(app.handle()) {
-        eprintln!("Failed to fullscreen LaunchPad window: {error}");
+    if let Err(error) = apply_main_window_mode(app.handle()) {
+        eprintln!("Failed to apply LaunchPad window mode: {error}");
     }
     if let Err(error) = disable_main_window_transitions(app.handle()) {
         eprintln!("Failed to disable LaunchPad window transitions: {error}");
@@ -892,7 +902,9 @@ pub fn run() {
             start_live_desktop_background,
             stop_live_desktop_background,
             set_live_desktop_background_visible,
-            set_main_window_effects_enabled
+            set_main_window_effects_enabled,
+            set_main_window_mode,
+            set_main_window_shadow_enabled
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri app");

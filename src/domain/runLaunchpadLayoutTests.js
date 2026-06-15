@@ -1,4 +1,5 @@
 import { createLaunchpadLayoutHelpers, makePageSize } from "./launchpadLayout.js";
+import { runWindowChromeApiTests } from "../api/windowChromeApiTests.js";
 import { runFolderLayoutStylesTests } from "../composables/useFolderLayoutStylesTests.js";
 import { runLaunchpadDragTests } from "../composables/useLaunchpadDragTests.js";
 import { runLaunchpadControllerHelpersTests } from "../composables/useLaunchpadControllerHelpersTests.js";
@@ -93,6 +94,7 @@ runLaunchpadHelperTests({
   gridRows: state.gridRows,
   gridCols: state.gridCols,
 });
+await runWindowChromeApiTests();
 runLaunchpadDataTests();
 runBackgroundImageLayoutTests();
 runIconSourceTests();

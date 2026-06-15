@@ -23,6 +23,7 @@ import {
   DEFAULT_BACKGROUND_DARKEN_COLOR,
   DEFAULT_BACKGROUND_DARKEN_STRENGTH,
   DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY,
+  DEFAULT_WINDOW_MODE,
   createDefaultBackgroundAcrylicParams,
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_APPEARANCE_LIGHT,
@@ -30,6 +31,7 @@ import {
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
   WINDOW_EFFECT_MATERIAL_MICA,
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
+  WINDOW_MODE_WINDOWED,
 } from "./useLaunchpadSettingsConfig.js";
 
 function makeOptions(overrides = {}) {
@@ -77,6 +79,7 @@ function makeOptions(overrides = {}) {
     draftRows: ref(4),
     draftWindowEffectAppearance: ref(WINDOW_EFFECT_APPEARANCE_DARK),
     draftWindowEffectMaterial: ref(WINDOW_EFFECT_MATERIAL_ACRYLIC),
+    draftWindowMode: ref(DEFAULT_WINDOW_MODE),
     folderCols: ref(4),
     folderIconSize: ref(64),
     folderIconSizeMode: ref("global"),
@@ -111,6 +114,7 @@ function makeOptions(overrides = {}) {
     backgroundEffect: ref(BACKGROUND_EFFECT_DIMMED),
     windowEffectAppearance: ref(WINDOW_EFFECT_APPEARANCE_DARK),
     windowEffectMaterial: ref(WINDOW_EFFECT_MATERIAL_ACRYLIC),
+    windowMode: ref(DEFAULT_WINDOW_MODE),
     windowEffectsSupport: ref({
       platform: "unknown",
       build: null,
@@ -162,6 +166,12 @@ function withMockTauri(invoke, run, bridgeOverrides = {}) {
         return defaultEffectsSupport;
       }
       if (command === "set_main_window_effects_enabled" && !bridgeOverrides.passWindowEffectsCommand) {
+        return null;
+      }
+      if (command === "set_main_window_mode" && !bridgeOverrides.passWindowModeCommand) {
+        return null;
+      }
+      if (command === "set_main_window_shadow_enabled" && !bridgeOverrides.passWindowShadowCommand) {
         return null;
       }
       if (command === "get_live_desktop_background_support" && !bridgeOverrides.passLiveDesktopBackgroundSupport) {
@@ -248,6 +258,7 @@ export async function runLaunchpadNativeTests() {
     assert(initialSaveLayouts[0].settings.backgroundImageOpacity === 46, "native saves should include background image opacity");
     assert(initialSaveLayouts[0].settings.backgroundLiveDesktopOpacity === DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY, "native saves should include live desktop opacity");
     assert(initialSaveLayouts[0].settings.backgroundImageLayout === BACKGROUND_IMAGE_LAYOUT_FILL, "native saves should include background image layout");
+    assert(initialSaveLayouts[0].settings.windowMode === DEFAULT_WINDOW_MODE, "native saves should include window mode");
     assert(initialSaveLayouts[0].settings.backgroundBlurStrength === DEFAULT_BACKGROUND_BLUR_STRENGTH, "native saves should include background blur strength");
     assert(initialSaveLayouts[0].settings.backgroundAcrylicBlurStrength === DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH, "native saves should include acrylic blur strength");
     assert(initialSaveLayouts[0].settings.backgroundDarkenColor === DEFAULT_BACKGROUND_DARKEN_COLOR, "native saves should include background darken color");
@@ -310,6 +321,7 @@ export async function runLaunchpadNativeTests() {
   });
 
   const effectsCommands = [];
+  const windowModeCommands = [];
   await withMockTauri(async (command, args) => {
     if (command === "get_main_window_effects_support") {
       return {
@@ -327,6 +339,7 @@ export async function runLaunchpadNativeTests() {
         settings: {
           windowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
           windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
+          windowMode: WINDOW_MODE_WINDOWED,
           backgroundBaseColor: "#ABC",
           backgroundBaseOpacity: 73,
           backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
@@ -351,6 +364,10 @@ export async function runLaunchpadNativeTests() {
       effectsCommands.push(args);
       return null;
     }
+    if (command === "set_main_window_mode") {
+      windowModeCommands.push(args);
+      return null;
+    }
     throw new Error(`Unexpected invoke: ${command}`);
   }, async () => {
     const { options } = makeOptions({
@@ -364,6 +381,8 @@ export async function runLaunchpadNativeTests() {
     assert(options.windowEffectsSupport.value.supportsMica === true && options.windowEffectsSupport.value.supportsMicaAlt === true, "native load should apply window effect support");
     assert(options.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "native load should apply saved window effect material");
     assert(options.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "native load should apply saved window effect appearance");
+    assert(options.windowMode.value === WINDOW_MODE_WINDOWED, "native load should apply saved window mode");
+    assert(options.draftWindowMode.value === WINDOW_MODE_WINDOWED, "native load should sync window mode draft");
     assert(options.backgroundBaseColor.value === "#aabbcc", "native load should apply saved background base color");
     assert(options.backgroundBaseOpacity.value === 73, "native load should apply saved background base opacity");
     assert(options.backgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "native load should apply saved background source");
@@ -400,9 +419,12 @@ export async function runLaunchpadNativeTests() {
     assert(effectsCommands[0].enabled === true, "window effect refresh should enable effects");
     assert(effectsCommands[0].material === WINDOW_EFFECT_MATERIAL_MICA_ALT, "window effect refresh should pass the selected material");
     assert(effectsCommands[0].appearance === WINDOW_EFFECT_APPEARANCE_LIGHT, "window effect refresh should pass the selected appearance");
+    assert(windowModeCommands.length === 1, "native load should refresh window mode once");
+    assert(windowModeCommands[0].mode === WINDOW_MODE_WINDOWED, "window mode refresh should pass the selected mode");
   }, {
     passWindowEffectsCommand: true,
     passWindowEffectsSupport: true,
+    passWindowModeCommand: true,
   });
 
   await withMockTauri(async (command) => {
@@ -1000,6 +1022,10 @@ export async function runLaunchpadNativeTests() {
         detail: "visibility updated",
       };
     }
+    if (command === "set_main_window_shadow_enabled") {
+      assert(args.enabled === false, "close animation should disable the native window shadow immediately");
+      return null;
+    }
     if (command === "stop_live_desktop_background") {
       return {
         phase: "stopped",
@@ -1033,18 +1059,45 @@ export async function runLaunchpadNativeTests() {
     native.hideNativeWindowAfterCloseAnimation();
     assert(timers.length === 1, "close animation should schedule one native hide timer");
     await flushMicrotasks(5);
-    assert(closeAnimationCommands.join(",") === "set_live_desktop_background_visible", "close animation should hide the live desktop visual before hiding the native window");
+    assert(closeAnimationCommands.join(",") === "set_main_window_shadow_enabled,set_live_desktop_background_visible", "close animation should remove the native shadow before hiding the live desktop visual");
     assert(timers.length === 2, "close animation should also schedule the live desktop idle stop");
     await timers.shift()();
 
-    assert(closeAnimationCommands.join(",") === "set_live_desktop_background_visible,hide_main_window", "close animation should hide the native window before the live desktop idle stop expires");
+    assert(closeAnimationCommands.join(",") === "set_main_window_shadow_enabled,set_live_desktop_background_visible,hide_main_window", "close animation should hide the native window before the live desktop idle stop expires");
     assert(timers.length === 1, "close animation should leave one pending live desktop idle stop timer");
     assert(options.liveDesktopRuntimeStatus.value.phase === "running", "close animation should keep live desktop running during the keep-alive window");
     await timers.shift()();
     await flushMicrotasks(2);
 
-    assert(closeAnimationCommands.join(",") === "set_live_desktop_background_visible,hide_main_window,stop_live_desktop_background", "live desktop should stop after the close keep-alive window expires");
+    assert(closeAnimationCommands.join(",") === "set_main_window_shadow_enabled,set_live_desktop_background_visible,hide_main_window,stop_live_desktop_background", "live desktop should stop after the close keep-alive window expires");
     assert(options.liveDesktopRuntimeStatus.value.phase === "stopped", "idle stop should apply stopped live desktop status after hiding");
+  }, {
+    passWindowShadowCommand: true,
+  });
+
+  const openShadowCommands = [];
+  const openEventHandlers = new Map();
+  await withMockTauri(async (command, args) => {
+    if (command === "set_main_window_shadow_enabled") {
+      openShadowCommands.push(args.enabled);
+      return null;
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions();
+    const native = useLaunchpadNative(options);
+
+    await native.registerNativeEventListeners();
+    await openEventHandlers.get("launchpad-open-desktop")({ payload: 2 });
+    await flushMicrotasks(3);
+
+    assert(openShadowCommands.join(",") === "true", "native open events should restore the native window shadow");
+  }, {
+    listen: async (eventName, handler) => {
+      openEventHandlers.set(eventName, handler);
+      return () => openEventHandlers.delete(eventName);
+    },
+    passWindowShadowCommand: true,
   });
 
   setLiveDesktopExperimentEnabledForTests(null);

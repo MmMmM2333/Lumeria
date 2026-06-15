@@ -16,6 +16,7 @@ import {
   DEFAULT_BACKGROUND_BLUR_STRENGTH,
   DEFAULT_BACKGROUND_DARKEN_COLOR,
   DEFAULT_BACKGROUND_DARKEN_STRENGTH,
+  DEFAULT_WINDOW_MODE,
   createDefaultBackgroundAcrylicParams,
   FOLDER_ICON_SIZE_MODE_CUSTOM,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
@@ -23,6 +24,7 @@ import {
   WINDOW_EFFECT_APPEARANCE_LIGHT,
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
+  WINDOW_MODE_WINDOWED,
 } from "./useLaunchpadSettingsConfig.js";
 import { useSettingsPanelFlow } from "./useSettingsPanelFlow.js";
 
@@ -75,6 +77,7 @@ function createSettingsPanelFlowHarness(overrides = {}) {
     backgroundImageUrl: ref(overrides.backgroundImageUrl ?? "asset://current"),
     windowEffectMaterial: ref(overrides.windowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_MICA_ALT),
     windowEffectAppearance: ref(overrides.windowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_LIGHT),
+    windowMode: ref(overrides.windowMode ?? WINDOW_MODE_WINDOWED),
     draftRows: ref(overrides.draftRows ?? 8),
     draftCols: ref(overrides.draftCols ?? 10),
     draftFolderRows: ref(overrides.draftFolderRows ?? 6),
@@ -101,6 +104,7 @@ function createSettingsPanelFlowHarness(overrides = {}) {
     draftBackgroundImageUrl: ref(overrides.draftBackgroundImageUrl ?? null),
     draftWindowEffectMaterial: ref(overrides.draftWindowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
     draftWindowEffectAppearance: ref(overrides.draftWindowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_DARK),
+    draftWindowMode: ref(overrides.draftWindowMode ?? DEFAULT_WINDOW_MODE),
   };
   const calls = {
     closeAddManagedAppPage: 0,
@@ -154,6 +158,7 @@ export function runSettingsPanelFlowTests() {
     assert(state.draftBackgroundImageUrl.value === "asset://current", "opening settings should reset background image url draft");
     assert(state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "opening settings should reset window effect material draft");
     assert(state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "opening settings should reset window effect appearance draft");
+    assert(state.draftWindowMode.value === WINDOW_MODE_WINDOWED, "opening settings should reset window mode draft");
 
     state.draftRows.value = 2;
     state.draftCols.value = 3;
@@ -181,6 +186,7 @@ export function runSettingsPanelFlowTests() {
     state.draftBackgroundImageUrl.value = "asset://draft";
     state.draftWindowEffectMaterial.value = WINDOW_EFFECT_MATERIAL_ACRYLIC;
     state.draftWindowEffectAppearance.value = WINDOW_EFFECT_APPEARANCE_DARK;
+    state.draftWindowMode.value = DEFAULT_WINDOW_MODE;
 
     flow.closeSettingsPanel();
     assert(flow.isSettingsPanelOpen.value === false, "closing settings should hide the panel");
@@ -208,6 +214,7 @@ export function runSettingsPanelFlowTests() {
     assert(state.draftBackgroundImageUrl.value === "asset://current", "closing settings should discard background image url draft");
     assert(state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "closing settings should discard window effect material draft");
     assert(state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "closing settings should discard window effect appearance draft");
+    assert(state.draftWindowMode.value === WINDOW_MODE_WINDOWED, "closing settings should discard window mode draft");
     assert(calls.closeAddManagedAppPage === 1, "closing settings should close add managed app flow");
     assert(calls.closeScanResultDialog === 1, "closing settings should close scan result dialog");
   });
