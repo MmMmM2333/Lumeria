@@ -31,6 +31,10 @@ import {
   makeOpeningGhostMotion,
 } from "./folderIconGhostMotion.js";
 import { makeFolderGhostIconNodeState } from "./folderGhostIconState.js";
+import {
+  cancelClosingHandoffCleanup as cancelClosingHandoffCleanupState,
+  finishClosingHandoff,
+} from "./folderClosingHandoff.js";
 import { makeClosingPreviewSwapPlan } from "./folderPreviewSwapMotion.js";
 import { makeStageLocalRect, makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import {
@@ -136,6 +140,8 @@ export class FolderOverlayLayer extends Container {
     this.closingPreviewSwapKeys = new Set();
     this.completedClosingControllerGhostKeys = [];
     this.completedClosingPreviewGhosts = [];
+    this.closingHandoffCleanupFrame = null;
+    this.closingHandoffCleanupToken = 0;
     this.onIconAction = options.onIconAction || (() => { });
     this.onClosingFolderPointerDown = options.onClosingFolderPointerDown || (() => { });
     this.onOutsidePointerDown = options.onOutsidePointerDown || (() => { });
@@ -448,17 +454,22 @@ export class FolderOverlayLayer extends Container {
     }
   }
 
+  cancelClosingHandoffCleanup() {
+    cancelClosingHandoffCleanupState(this);
+  }
+
+  runClosingHandoffCleanup() {
+    this.clearCompletedClosingPreviewGhosts();
+    clearClosingPreviewSwapLayer(this);
+    this.clearFrameGhost();
+  }
+
   finishClosingGhostTransition(state) {
     if (this.openingGhostKeys?.size ||
       this.closingGhostKeys?.size ||
       this.closingPreviewSwapKeys?.size ||
       !this.closingFrameComplete) return;
-    this.clearClosingGhostRevealTimer();
-    this.pageTrack.visible = false;
-    this.clearCompletedClosingPreviewGhosts();
-    clearClosingPreviewSwapLayer(this);
-    this.clearFrameGhost();
-    this.flushCompletedClosingControllerGhosts(state);
+    finishClosingHandoff(this, state, () => this.runClosingHandoffCleanup());
   }
 
   clearOpeningGhosts() {
@@ -476,6 +487,7 @@ export class FolderOverlayLayer extends Container {
   }
 
   clearClosingGhosts() {
+    this.cancelClosingHandoffCleanup();
     this.clearClosingGhostRevealTimer();
     this.closingGhostKeys?.clear();
     this.closingPreviewSwapKeys?.clear();

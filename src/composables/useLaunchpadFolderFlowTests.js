@@ -23,11 +23,30 @@ const secondFolder = {
 
 function createTimerWindow() {
   let nextId = 1;
+  let nextFrameId = 1;
   const timers = new Map();
+  const frames = new Map();
 
   return {
+    cancelAnimationFrame(id) {
+      frames.delete(id);
+    },
     clearTimeout(id) {
       timers.delete(id);
+    },
+    requestAnimationFrame(callback) {
+      const id = nextFrameId;
+      nextFrameId += 1;
+      frames.set(id, callback);
+      return id;
+    },
+    runAnimationFrames() {
+      const matchingFrames = Array.from(frames.entries());
+      for (const [id, callback] of matchingFrames) {
+        if (!frames.has(id)) continue;
+        frames.delete(id);
+        callback();
+      }
     },
     runDelay(delay) {
       const matchingTimers = Array.from(timers.entries()).filter(([, timer]) => timer.delay === delay);
@@ -178,6 +197,25 @@ export function runLaunchpadFolderFlowTests() {
     closeWithGhosts.flow.finishFolderClose();
     assert(!closeWithGhosts.flow.isFolderClosing.value, "ghost handoff completion should clear folder closing state");
     assert(closeWithGhosts.flow.renderedFolder.value === null, "ghost handoff completion should clear rendered folder");
+
+    const closeAfterFrame = createFolderFlow();
+    closeAfterFrame.flow.commitOpenFolder("folder-1");
+    closeAfterFrame.flow.commitOpenFolder(null, { waitForCloseGhosts: true });
+    closeAfterFrame.flow.finishFolderCloseAfterHandoffFrame();
+    assert(closeAfterFrame.flow.isFolderClosing.value, "ghost handoff frame should keep the folder closing for one frame");
+    assert(closeAfterFrame.flow.renderedFolder.value?.id === "folder-1", "ghost handoff frame should keep the rendered folder for overlay cleanup");
+    timers.runAnimationFrames();
+    assert(!closeAfterFrame.flow.isFolderClosing.value, "ghost handoff frame completion should clear folder closing state");
+    assert(closeAfterFrame.flow.renderedFolder.value === null, "ghost handoff frame completion should clear rendered folder");
+
+    const canceledCloseAfterFrame = createFolderFlow();
+    canceledCloseAfterFrame.flow.commitOpenFolder("folder-1");
+    canceledCloseAfterFrame.flow.commitOpenFolder(null, { waitForCloseGhosts: true });
+    canceledCloseAfterFrame.flow.finishFolderCloseAfterHandoffFrame();
+    canceledCloseAfterFrame.flow.commitOpenFolder("folder-1");
+    timers.runAnimationFrames();
+    assert(canceledCloseAfterFrame.flow.openFolderId.value === "folder-1", "reopening should cancel a pending ghost handoff finish");
+    assert(canceledCloseAfterFrame.flow.renderedFolder.value?.id === "folder-1", "canceled ghost handoff should keep the reopened folder rendered");
 
     const closeWithGhostFallback = createFolderFlow();
     closeWithGhostFallback.flow.commitOpenFolder("folder-1");

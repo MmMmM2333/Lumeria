@@ -18,6 +18,7 @@ export function useLaunchpadFolderFlow(options) {
   let folderCloseTimer = null;
   let homeRevealSettleTimer = null;
   let folderAppLaunchTimer = null;
+  let folderCloseHandoffFrame = null;
 
   const renderedFolder = computed(() => {
     if (!renderedFolderId.value) return folderClosingSnapshot.value;
@@ -47,6 +48,11 @@ export function useLaunchpadFolderFlow(options) {
     folderAppLaunchTimer = null;
   }
 
+  function clearFolderCloseHandoffFrame() {
+    if (folderCloseHandoffFrame != null) window.cancelAnimationFrame?.(folderCloseHandoffFrame);
+    folderCloseHandoffFrame = null;
+  }
+
   function finishHomeRevealSettleWindow() {
     clearHomeRevealSettleTimer();
     if (!isHomeRevealSettling.value) return;
@@ -62,6 +68,7 @@ export function useLaunchpadFolderFlow(options) {
   }
 
   function finishFolderClose() {
+    clearFolderCloseHandoffFrame();
     renderedFolderId.value = null;
     folderClosingSnapshot.value = null;
     isFolderClosing.value = false;
@@ -71,8 +78,21 @@ export function useLaunchpadFolderFlow(options) {
     clearFolderCloseTimer();
   }
 
+  function finishFolderCloseAfterHandoffFrame() {
+    clearFolderCloseHandoffFrame();
+    if (typeof window.requestAnimationFrame !== "function") {
+      finishFolderClose();
+      return;
+    }
+    folderCloseHandoffFrame = window.requestAnimationFrame(() => {
+      folderCloseHandoffFrame = null;
+      finishFolderClose();
+    });
+  }
+
   function startFolderAppLaunchClose() {
     if (!renderedFolder.value || isFolderAppLaunchClosing.value) return;
+    clearFolderCloseHandoffFrame();
     const closingId = renderedFolderId.value || openFolderId.value || renderedFolder.value.id;
     const current = closingId ? options.findFolder(options.pages.value, closingId)?.item : null;
     folderClosingSnapshot.value = current ? options.cloneItem(current) : options.cloneItem(renderedFolder.value);
@@ -94,6 +114,7 @@ export function useLaunchpadFolderFlow(options) {
   }
 
   function commitOpenFolder(next, commitOptions) {
+    clearFolderCloseHandoffFrame();
     if (next) {
       const isSameFolder = openFolderId.value === next && renderedFolderId.value === next;
       const originGeometry = commitOptions?.originGeometry;
@@ -137,11 +158,13 @@ export function useLaunchpadFolderFlow(options) {
   return {
     clearFolderAppLaunchTimer,
     clearFolderCloseTimer,
+    clearFolderCloseHandoffFrame,
     clearHomeRevealSettleTimer,
     commitFolderSession,
     commitOpenFolder,
     desktopProjectionEpoch,
     finishFolderClose,
+    finishFolderCloseAfterHandoffFrame,
     finishHomeRevealSettleWindow,
     folderClosingSnapshot,
     folderPages,

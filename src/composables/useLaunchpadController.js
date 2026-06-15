@@ -337,11 +337,12 @@ export function useLaunchpadController() {
   const {
     clearFolderAppLaunchTimer,
     clearFolderCloseTimer,
+    clearFolderCloseHandoffFrame,
     clearHomeRevealSettleTimer,
     commitFolderSession,
     commitOpenFolder: commitOpenFolderNow,
     desktopProjectionEpoch,
-    finishFolderClose,
+    finishFolderCloseAfterHandoffFrame,
     finishHomeRevealSettleWindow,
     folderPages,
     folderSession,
@@ -404,7 +405,7 @@ export function useLaunchpadController() {
 
   function completeFolderCloseIconGhost(key) {
     const isComplete = completeFolderCloseIconGhostNow(key);
-    if (isComplete) finishFolderClose();
+    if (isComplete) finishFolderCloseAfterHandoffFrame();
     return isComplete;
   }
 
@@ -1285,6 +1286,7 @@ export function useLaunchpadController() {
     clearDesktopCloseTimer,
     clearFolderAppLaunchTimer,
     clearFolderCloseTimer,
+    clearFolderCloseHandoffFrame,
     clearFolderPageTurn,
     clearDragRelease,
     clearFolderCloseIconGhosts,

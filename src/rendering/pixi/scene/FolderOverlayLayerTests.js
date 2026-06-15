@@ -3,6 +3,41 @@ import {
   getFolderPageMaskRect,
   resolveOpeningInterruptionFrame,
 } from "./folderOverlayGeometry.js";
+import {
+  cancelClosingHandoffCleanup,
+  finishClosingHandoff,
+} from "./folderClosingHandoff.js";
+
+function makeClosingHandoffHarness(calls) {
+  return {
+    closingFrameComplete: true,
+    closingGhostKeys: new Set(),
+    closingHandoffCleanupFrame: null,
+    closingHandoffCleanupToken: 0,
+    closingPreviewSwapKeys: new Set(["swap"]),
+    closingPreviewSwapLayer: {
+      destroyed: false,
+      removeChildren() {
+        calls.push("clear-swap");
+        return [];
+      },
+    },
+    openingGhostKeys: new Set(),
+    pageTrack: { visible: true },
+    clearClosingGhostRevealTimer() {
+      calls.push("clear-timer");
+    },
+    clearCompletedClosingPreviewGhosts() {
+      calls.push("clear-preview");
+    },
+    clearFrameGhost() {
+      calls.push("clear-frame");
+    },
+    flushCompletedClosingControllerGhosts() {
+      calls.push("flush-controller");
+    },
+  };
+}
 
 export function runFolderOverlayLayerTests() {
   const assert = (condition, message) => {
@@ -53,4 +88,64 @@ export function runFolderOverlayLayerTests() {
   assert(tallTiming.progress === 0.68, "tall folder preview swap should start earlier");
   assert(tallTiming.iconDuration === 0.26, "tall folder preview icons should run slightly longer");
   assert(tallTiming.swapDuration === 0.22, "tall folder preview wrap should run slightly longer");
+
+  {
+    const scheduler = {
+      frames: [],
+      cancelAnimationFrame() {
+        this.frames = [];
+      },
+      requestAnimationFrame(callback) {
+        this.frames.push(callback);
+        return this.frames.length;
+      },
+    };
+
+    const clearOverlay = (layer) => {
+      layer.clearCompletedClosingPreviewGhosts();
+      layer.closingPreviewSwapKeys.clear();
+      layer.closingPreviewSwapLayer.removeChildren();
+      layer.clearFrameGhost();
+    };
+
+    const calls = [];
+    const layer = makeClosingHandoffHarness(calls);
+    finishClosingHandoff(layer, {}, () => clearOverlay(layer), scheduler);
+    assert(layer.pageTrack.visible === false, "closing handoff should keep the page track hidden");
+    assert(calls.join(",") === "clear-timer,flush-controller", "closing handoff should release controller ghosts before clearing overlay visuals");
+    assert(scheduler.frames.length === 1, "closing handoff should defer overlay cleanup by one frame");
+    scheduler.frames.shift()();
+    assert(
+      calls.join(",") === "clear-timer,flush-controller,clear-preview,clear-swap,clear-frame",
+      "closing handoff should clear overlay visuals on the deferred frame"
+    );
+
+    const orderingCalls = [];
+    const orderingLayer = makeClosingHandoffHarness(orderingCalls);
+    orderingLayer.flushCompletedClosingControllerGhosts = () => {
+      orderingCalls.push("flush-controller");
+      scheduler.requestAnimationFrame(() => orderingCalls.push("finish-flow"));
+    };
+    scheduler.frames = [];
+    finishClosingHandoff(orderingLayer, {}, () => clearOverlay(orderingLayer), scheduler);
+    scheduler.frames.shift()();
+    scheduler.frames.shift()();
+    assert(
+      orderingCalls.join(",") === "clear-timer,flush-controller,clear-preview,clear-swap,clear-frame,finish-flow",
+      "folder background cleanup should run before the controller clears the rendered folder"
+    );
+
+    const cancelCalls = [];
+    const cancelLayer = makeClosingHandoffHarness(cancelCalls);
+    scheduler.frames = [];
+    finishClosingHandoff(cancelLayer, {}, () => clearOverlay(cancelLayer), scheduler);
+    const canceledFrame = scheduler.frames[0];
+    cancelClosingHandoffCleanup(cancelLayer, (id) => scheduler.cancelAnimationFrame(id));
+    canceledFrame();
+    assert(
+      cancelCalls.join(",") === "clear-timer,flush-controller",
+      "canceling a closing handoff should prevent stale deferred cleanup"
+    );
+  }
+
 }
