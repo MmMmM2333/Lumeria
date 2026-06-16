@@ -12,13 +12,13 @@
       </div>
       <div class="window-chrome-controls" @pointerdown.stop>
         <button class="window-chrome-control" type="button" aria-label="最小化窗口" title="最小化" @click.stop="handleMinimizeClick">
-          <span aria-hidden="true">−</span>
+          <SubtractIcon class="window-chrome-control-icon" />
         </button>
         <button class="window-chrome-control" type="button" aria-label="最大化或还原窗口" title="最大化/还原" @click.stop="handleMaximizeClick">
-          <span aria-hidden="true">□</span>
+          <MaximizeIcon class="window-chrome-control-icon" />
         </button>
         <button class="window-chrome-control window-chrome-control-close" type="button" aria-label="隐藏窗口" title="隐藏" @click.stop="handleCloseClick">
-          <span aria-hidden="true">×</span>
+          <DismissIcon class="window-chrome-control-icon" />
         </button>
       </div>
     </div>
@@ -32,6 +32,9 @@
 </template>
 
 <script setup>
+import DismissIcon from "~icons/fluent/dismiss-16-regular";
+import MaximizeIcon from "~icons/fluent/maximize-16-regular";
+import SubtractIcon from "~icons/fluent/subtract-16-regular";
 import {
   hideWindow,
   minimizeWindow,

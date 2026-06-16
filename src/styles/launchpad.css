@@ -261,15 +261,24 @@ body {
 }
 
 .window-chrome-control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 42px;
   height: 100%;
   border: 0;
+  padding: 0;
   color: rgba(255, 255, 255, 0.82);
   background: transparent;
   cursor: default;
   font: inherit;
-  font-size: 15px;
-  line-height: 1;
+  line-height: 0;
+}
+
+.window-chrome-control-icon {
+  display: block;
+  width: 12px;
+  height: 12px;
 }
 
 .window-chrome-control:hover {
