@@ -99,6 +99,16 @@ const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "launchpadLiveDesktopSkipBlan
 const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "launchpadLiveDesktopForceDwmFlush";
 const LIVE_DESKTOP_EXPERIMENT_DISABLED_REASON = "experimentDisabled";
 const LIVE_DESKTOP_EXPERIMENT_DISABLED_DETAIL = "Live desktop experiment flag is disabled.";
+const NATIVE_WINDOW_CLOSING_BLOCKED_EVENTS = [
+  "pointerdown",
+  "pointerup",
+  "pointermove",
+  "click",
+  "dblclick",
+  "contextmenu",
+  "wheel",
+  "keydown",
+];
 const DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS = Object.freeze({
   phase: "stopped",
   active: false,
@@ -380,6 +390,8 @@ export function useLaunchpadNative(options) {
   let liveDesktopRuntimeSync = Promise.resolve();
   let liveDesktopRuntimeSyncGeneration = 0;
   let nativeWindowOpenSequence = null;
+  let nativeWindowHideSequence = 0;
+  let isNativeWindowClosingInteractionBlocked = false;
   let nativeEventListenerGeneration = 0;
   let nativeSavePromise = null;
   let launchCriticalDirtyRevision = 0;
@@ -525,8 +537,29 @@ export function useLaunchpadNative(options) {
   }
 
   function clearNativeWindowHideTimer() {
+    nativeWindowHideSequence += 1;
+    setNativeWindowClosingInteractionBlocked(false);
     if (nativeWindowHideTimer) window.clearTimeout(nativeWindowHideTimer);
     nativeWindowHideTimer = null;
+  }
+
+  function suppressNativeWindowClosingInteraction(event) {
+    if (!isNativeWindowClosingInteractionBlocked) return;
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    event?.stopImmediatePropagation?.();
+  }
+
+  function setNativeWindowClosingInteractionBlocked(blocked) {
+    const nextBlocked = Boolean(blocked);
+    if (isNativeWindowClosingInteractionBlocked === nextBlocked) return;
+    isNativeWindowClosingInteractionBlocked = nextBlocked;
+    if (typeof window === "undefined" || typeof window.addEventListener !== "function") return;
+    const action = nextBlocked ? "addEventListener" : "removeEventListener";
+    for (const eventName of NATIVE_WINDOW_CLOSING_BLOCKED_EVENTS) {
+      const options = eventName === "wheel" ? { capture: true, passive: false } : true;
+      window[action](eventName, suppressNativeWindowClosingInteraction, options);
+    }
   }
 
   function clearNativeWallpaperRefreshTimer() {
@@ -1551,21 +1584,41 @@ export function useLaunchpadNative(options) {
   function hideNativeWindowAfterCloseAnimation() {
     clearNativeWallpaperRefreshTimer();
     clearNativeWindowHideTimer();
+    const hideSequence = ++nativeWindowHideSequence;
+    setNativeWindowClosingInteractionBlocked(true);
     setNativeWindowShadowEnabled(false);
     syncLiveDesktopBackgroundRuntime();
     nativeWindowHideTimer = window.setTimeout(async () => {
+      if (hideSequence !== nativeWindowHideSequence) return;
       nativeWindowHideTimer = null;
-      await hideNativeWindow();
+      await hideNativeWindow(hideSequence);
     }, DESKTOP_CLOSE_DURATION);
   }
 
-  async function hideNativeWindow() {
-    if (!isNativeBridgeAvailable()) return;
-    clearNativeWindowHideTimer();
+  async function hideNativeWindow(expectedHideSequence = null) {
+    if (!isNativeBridgeAvailable()) {
+      setNativeWindowClosingInteractionBlocked(false);
+      return;
+    }
+    if (expectedHideSequence !== null) {
+      if (expectedHideSequence !== nativeWindowHideSequence) {
+        setNativeWindowClosingInteractionBlocked(false);
+        return;
+      }
+      nativeWindowHideTimer = null;
+    } else {
+      clearNativeWindowHideTimer();
+    }
     try {
+      if (expectedHideSequence !== null && expectedHideSequence !== nativeWindowHideSequence) {
+        setNativeWindowClosingInteractionBlocked(false);
+        return;
+      }
       await hideMainWindow();
+      setNativeWindowClosingInteractionBlocked(false);
     } catch (error) {
       console.error("Failed to hide LaunchPad window", error);
+      setNativeWindowClosingInteractionBlocked(false);
     }
   }
 

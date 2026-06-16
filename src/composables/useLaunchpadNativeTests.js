@@ -156,6 +156,7 @@ function makeOptions(overrides = {}) {
 function withMockTauri(invoke, run, bridgeOverrides = {}) {
   const originalWindow = globalThis.window;
   const timers = [];
+  const eventListeners = new Map();
   const defaultEffectsSupport = {
     platform: "windows",
     build: 22621,
@@ -207,6 +208,13 @@ function withMockTauri(invoke, run, bridgeOverrides = {}) {
       const index = timers.indexOf(timer);
       if (index >= 0) timers.splice(index, 1);
     },
+    addEventListener: (eventName, handler) => {
+      if (!eventListeners.has(eventName)) eventListeners.set(eventName, new Set());
+      eventListeners.get(eventName).add(handler);
+    },
+    removeEventListener: (eventName, handler) => {
+      eventListeners.get(eventName)?.delete(handler);
+    },
     setTimeout: (callback) => {
       timers.push(callback);
       return callback;
@@ -214,7 +222,7 @@ function withMockTauri(invoke, run, bridgeOverrides = {}) {
   };
 
   return Promise.resolve()
-    .then(() => run(timers))
+    .then(() => run(timers, eventListeners))
     .finally(() => {
       setLaunchpadApiBridgeForTests(null);
       if (originalWindow === undefined) delete globalThis.window;
@@ -1093,6 +1101,51 @@ export async function runLaunchpadNativeTests() {
     assert(options.liveDesktopRuntimeStatus.value.phase === "stopped", "idle stop should apply stopped live desktop status after hiding");
   }, {
     passWindowShadowCommand: true,
+  });
+
+  const cancelledHideCommands = [];
+  const cancelledHideEventHandlers = new Map();
+  await withMockTauri(async (command) => {
+    if (command === "hide_main_window") {
+      cancelledHideCommands.push(command);
+      return null;
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async (timers, eventListeners) => {
+    const { options } = makeOptions();
+    const native = useLaunchpadNative(options);
+
+    await native.registerNativeEventListeners();
+    native.hideNativeWindowAfterCloseAnimation();
+    assert(timers.length === 1, "close animation should schedule a native hide timer");
+    const staleHideTimer = timers[0];
+    assert((eventListeners.get("wheel")?.size || 0) === 1, "close animation should block wheel events while the native window is closing");
+
+    const wheelEvent = {
+      defaultPrevented: false,
+      propagationStopped: false,
+      immediatePropagationStopped: false,
+      preventDefault() { this.defaultPrevented = true; },
+      stopPropagation() { this.propagationStopped = true; },
+      stopImmediatePropagation() { this.immediatePropagationStopped = true; },
+    };
+    for (const handler of eventListeners.get("wheel")) handler(wheelEvent);
+    assert(wheelEvent.defaultPrevented, "closing interaction blocker should prevent wheel defaults");
+    assert(wheelEvent.propagationStopped, "closing interaction blocker should stop wheel propagation");
+
+    await cancelledHideEventHandlers.get("launchpad-open-desktop")({ payload: 3 });
+    await flushMicrotasks(8);
+    assert(timers.length === 0, "native open events should cancel pending native hide timers");
+    assert((eventListeners.get("wheel")?.size || 0) === 0, "native open events should unblock wheel events");
+
+    await staleHideTimer();
+    await flushMicrotasks(3);
+    assert(cancelledHideCommands.length === 0, "cancelled native hide timers should not hide the reopened window");
+  }, {
+    listen: async (eventName, handler) => {
+      cancelledHideEventHandlers.set(eventName, handler);
+      return () => cancelledHideEventHandlers.delete(eventName);
+    },
   });
 
   const startupShowCommands = [];

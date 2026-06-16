@@ -23,6 +23,7 @@ const MAIN_WINDOW_EFFECT_REAPPLY_DELAYS_MS: [u64; 2] = [80, 180];
 const MAIN_WINDOW_DEFERRED_SHOW_DELAY_MS: u64 = 0;
 const MAIN_WINDOW_CLOAKED_REVEAL_FALLBACK_DELAY_MS: u64 = 160;
 const MAIN_WINDOW_NON_CLIENT_SUBCLASS_ID: usize = 1;
+const EXPERIMENT_WINDOWED_THICKFRAME_NCCALCSIZE: bool = true;
 const WM_NCUAHDRAWCAPTION: u32 = 0x00AE;
 const WM_NCUAHDRAWFRAME: u32 = 0x00AF;
 const WINDOWS_ACRYLIC_MIN_BUILD: u32 = 17763;
@@ -168,11 +169,8 @@ fn show_main_window_for_sequence(app: &AppHandle, open_sequence: u64) {
         return;
     }
 
-    let _ = disable_main_window_transitions(app);
     if let Some(window) = app.get_webview_window("main") {
         let mode = current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT);
-        let _ = apply_main_window_mode_to_window(&window, mode);
-        let _ = apply_main_window_native_surface_policy(&window, mode);
         let should_cloak =
             !window.is_visible().unwrap_or(false) || window.is_minimized().unwrap_or(false);
         if should_cloak {
@@ -183,7 +181,15 @@ fn show_main_window_for_sequence(app: &AppHandle, open_sequence: u64) {
             // exposing that first unstable frame. This follows the workaround
             // described at https://stackoverflow.com/a/74019785.
             let _ = set_window_cloaked(&window, true);
-        } else {
+        }
+        if should_disable_main_window_transitions_before_show(mode) {
+            let _ = disable_main_window_transitions(app);
+        }
+        if should_apply_main_window_surface_policy_before_show(mode) {
+            let _ = apply_main_window_mode_to_window(&window, mode);
+            let _ = apply_main_window_native_surface_policy(&window, mode);
+        }
+        if !should_cloak {
             let _ = set_window_cloaked(&window, false);
         }
         if !window.is_visible().unwrap_or(false) {
@@ -211,6 +217,22 @@ fn show_main_window_for_sequence(app: &AppHandle, open_sequence: u64) {
             let _ = bump_main_window_z_order_for_open(&window);
         }
     }
+}
+
+fn should_disable_main_window_transitions_before_show(mode: MainWindowMode) -> bool {
+    mode == MainWindowMode::Fullscreen || !EXPERIMENT_WINDOWED_THICKFRAME_NCCALCSIZE
+}
+
+fn should_disable_main_window_transitions_before_hide(mode: MainWindowMode) -> bool {
+    mode == MainWindowMode::Windowed && EXPERIMENT_WINDOWED_THICKFRAME_NCCALCSIZE
+}
+
+fn should_enable_windowed_transitions_after_reveal(mode: MainWindowMode) -> bool {
+    mode == MainWindowMode::Windowed && EXPERIMENT_WINDOWED_THICKFRAME_NCCALCSIZE
+}
+
+fn should_apply_main_window_surface_policy_before_show(mode: MainWindowMode) -> bool {
+    mode == MainWindowMode::Fullscreen || !EXPERIMENT_WINDOWED_THICKFRAME_NCCALCSIZE
 }
 
 fn schedule_main_window_show(app: &AppHandle, open_sequence: u64, delay_ms: u64) {
@@ -244,6 +266,10 @@ pub(crate) fn reveal_main_window(
     }
     if let Some(window) = app.get_webview_window("main") {
         set_window_cloaked(&window, false)?;
+        let mode = current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT);
+        if should_enable_windowed_transitions_after_reveal(mode) {
+            set_window_transitions_enabled(&window, true)?;
+        }
     }
     Ok(())
 }
@@ -390,14 +416,38 @@ unsafe extern "system" fn main_window_non_client_subclass_proc(
 ) -> windows::Win32::Foundation::LRESULT {
     use windows::Win32::{
         Foundation::LRESULT,
+        Graphics::Gdi::{
+            GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+        },
         UI::{
             Shell::{DefSubclassProc, RemoveWindowSubclass},
-            WindowsAndMessaging::{WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCPAINT},
+            WindowsAndMessaging::{
+                IsZoomed, NCCALCSIZE_PARAMS, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCPAINT,
+            },
         },
     };
 
     match message {
-        WM_NCCALCSIZE | WM_NCPAINT | WM_NCUAHDRAWCAPTION | WM_NCUAHDRAWFRAME => LRESULT(0),
+        WM_NCCALCSIZE => {
+            let is_windowed_mode =
+                current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT)
+                    == MainWindowMode::Windowed;
+            if is_windowed_mode && wparam.0 != 0 && lparam.0 != 0 && IsZoomed(hwnd).as_bool() {
+                let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+                if !monitor.is_invalid() {
+                    let mut info = MONITORINFO {
+                        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+                        ..Default::default()
+                    };
+                    if GetMonitorInfoW(monitor, &mut info).as_bool() {
+                        let params = &mut *(lparam.0 as *mut NCCALCSIZE_PARAMS);
+                        params.rgrc[0] = info.rcWork;
+                    }
+                }
+            }
+            LRESULT(0)
+        }
+        WM_NCPAINT | WM_NCUAHDRAWCAPTION | WM_NCUAHDRAWFRAME => LRESULT(0),
         WM_NCACTIVATE => LRESULT(1),
         WM_NCDESTROY => {
             let _ = RemoveWindowSubclass(
@@ -429,6 +479,31 @@ fn strip_main_window_non_client_style(window: &WebviewWindow) -> Result<(), Stri
             WS_MAXIMIZEBOX.0,
         ]))
         | main_window_style_mask([WS_POPUP.0]);
+    if next_style != current_style {
+        unsafe {
+            SetWindowLongPtrW(hwnd, GWL_STYLE, next_style);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn restore_main_window_resizable_frame_style(window: &WebviewWindow) -> Result<(), String> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, GWL_STYLE, WS_CAPTION, WS_MAXIMIZEBOX,
+        WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+    };
+
+    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    let current_style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) };
+    let next_style = (current_style & !main_window_style_mask([WS_POPUP.0]))
+        | main_window_style_mask([
+            WS_CAPTION.0,
+            WS_THICKFRAME.0,
+            WS_SYSMENU.0,
+            WS_MINIMIZEBOX.0,
+            WS_MAXIMIZEBOX.0,
+        ]);
     if next_style != current_style {
         unsafe {
             SetWindowLongPtrW(hwnd, GWL_STYLE, next_style);
@@ -525,6 +600,7 @@ fn apply_main_window_mode_to_window(
 ) -> Result<(), String> {
     match mode {
         MainWindowMode::Fullscreen => {
+            prepare_main_window_fullscreen_surface(window)?;
             window
                 .set_decorations(false)
                 .map_err(|error| error.to_string())?;
@@ -551,6 +627,20 @@ fn apply_main_window_mode_to_window(
             }
         }
     }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn prepare_main_window_fullscreen_surface(window: &WebviewWindow) -> Result<(), String> {
+    set_window_transitions_enabled(window, false)?;
+    set_window_non_client_rendering(window, false)?;
+    set_main_window_non_client_subclass(window, true)?;
+    strip_main_window_non_client_style(window)?;
+    refresh_main_window_frame(window)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn prepare_main_window_fullscreen_surface(_window: &WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
@@ -602,13 +692,20 @@ fn apply_main_window_win32_surface_policy(
     // style stripping and non-client message suppression.
     match mode {
         MainWindowMode::Fullscreen => {
+            set_window_transitions_enabled(window, false)?;
             set_window_non_client_rendering(window, false)?;
             set_main_window_non_client_subclass(window, true)?;
             strip_main_window_non_client_style(window)?;
             refresh_main_window_frame(window)
         }
         MainWindowMode::Windowed => {
-            set_main_window_non_client_subclass(window, false)?;
+            if EXPERIMENT_WINDOWED_THICKFRAME_NCCALCSIZE {
+                restore_main_window_resizable_frame_style(window)?;
+                set_main_window_non_client_subclass(window, true)?;
+                set_window_transitions_enabled(window, true)?;
+            } else {
+                set_main_window_non_client_subclass(window, false)?;
+            }
             set_window_non_client_rendering(window, true)?;
             set_main_window_topmost(window, false)?;
             refresh_main_window_frame(window)
@@ -633,9 +730,14 @@ pub(crate) fn disable_main_window_transitions(app: &AppHandle) -> Result<(), Str
 
 #[cfg(target_os = "windows")]
 fn disable_window_transitions(window: &WebviewWindow) -> Result<(), String> {
+    set_window_transitions_enabled(window, false)
+}
+
+#[cfg(target_os = "windows")]
+fn set_window_transitions_enabled(window: &WebviewWindow, enabled: bool) -> Result<(), String> {
     use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED};
 
-    let disabled = 1i32;
+    let disabled = if enabled { 0i32 } else { 1i32 };
     unsafe {
         DwmSetWindowAttribute(
             window.hwnd().map_err(|error| error.to_string())?,
@@ -645,6 +747,11 @@ fn disable_window_transitions(window: &WebviewWindow) -> Result<(), String> {
         )
         .map_err(|error| error.to_string())?;
     }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn set_window_transitions_enabled(_window: &WebviewWindow, _enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
@@ -984,6 +1091,10 @@ pub(crate) fn open_main_window(app: &AppHandle) {
 
 pub(crate) fn hide_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        let mode = current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT);
+        if should_disable_main_window_transitions_before_hide(mode) {
+            let _ = set_window_transitions_enabled(&window, false);
+        }
         let _ = set_window_cloaked(&window, false);
         let _ = set_main_window_topmost(&window, false);
         let _ = window.hide();
