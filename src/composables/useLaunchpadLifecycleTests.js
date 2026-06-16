@@ -89,6 +89,7 @@ function createLifecycleOptions() {
       scheduleLaunchTargetStatusCheck: makeCall("scheduleLaunchTargetStatusCheck"),
       scheduleNativeLayoutSave: makeCall("scheduleNativeLayoutSave"),
       schedulePageGridMetrics: makeCall("schedulePageGridMetrics"),
+      showNativeWindowAfterStartup: makeCall("showNativeWindowAfterStartup"),
       showMissingLaunchTargetBadge: ref(true),
       syncLiveDesktopBackgroundRuntime: makeCall("syncLiveDesktopBackgroundRuntime"),
       syncWindowsWallpaperRefreshTimer: makeCall("syncWindowsWallpaperRefreshTimer"),
@@ -176,8 +177,10 @@ export async function runLaunchpadLifecycleTests() {
   assert(observed.join(",") === "root,header,desktop,dots", "layout ResizeObserver should observe existing layout refs");
   assert(createLaunchpadLayoutResizeObserver(options, undefined) === null, "missing ResizeObserver should be ignored");
 
+  let mountedCalls;
   withMockWindow((events) => {
     const { calls, options: mountedOptions } = createLifecycleOptions();
+    mountedCalls = calls;
     const mountedObserver = runLaunchpadMountedEffects(mountedOptions, ObserverCtor);
     assert(mountedObserver, "mounted effects should return the layout resize observer");
     assert(events.join(",") === "add:keydown:,add:keyup:,add:blur:,add:resize:,add:resize:", "mounted effects should add global listeners in order");
@@ -188,6 +191,10 @@ export async function runLaunchpadLifecycleTests() {
   });
 
   await Promise.resolve();
+  assert(
+    mountedCalls.join(",") === "schedulePageGridMetrics,scheduleFolderViewportMetrics,registerNativeEventListeners,showNativeWindowAfterStartup,loadNativeLaunchpadData",
+    "mounted effects should show the hidden native window before loading native data"
+  );
 
   let resolveNativeRegistration;
   const { calls: unmountedLoadCalls, options: unmountedLoadOptions } = createLifecycleOptions();

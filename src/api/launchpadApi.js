@@ -167,6 +167,20 @@ export async function hideMainWindow() {
   return true;
 }
 
+export async function showMainWindow() {
+  const invoke = getTauriInvoke();
+  if (!invoke) return false;
+  await invoke("show_main_window");
+  return true;
+}
+
+export async function revealMainWindow(openSequence = null) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return false;
+  await invoke("reveal_main_window", { openSequence });
+  return true;
+}
+
 export async function getMainWindowEffectsSupport() {
   const invoke = getTauriInvoke();
   if (!invoke) return null;

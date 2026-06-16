@@ -1,4 +1,4 @@
-import { ref } from "vue";
+import { nextTick, ref } from "vue";
 import {
   DESKTOP_CLOSE_DURATION,
   DEFAULT_COLS,
@@ -32,12 +32,14 @@ import {
   listenNativeEvent,
   loadCachedAppIcons,
   loadLayout,
+  revealMainWindow,
   saveLayout,
   scanApps,
   setLiveDesktopBackgroundVisible,
   setMainWindowEffectsEnabled,
   setMainWindowMode,
   setMainWindowShadowEnabled,
+  showMainWindow,
   showLaunchErrorMessage,
   startLiveDesktopBackground,
   stopLiveDesktopBackground,
@@ -362,9 +364,11 @@ export function useLaunchpadNative(options) {
   let nativeWindowModeUpdate = Promise.resolve();
   let nativeWindowEffectsUpdate = Promise.resolve();
   let nativeWindowShadowUpdate = Promise.resolve();
+  let nativeWindowRevealUpdate = Promise.resolve();
   let nativeSaveTimer = null;
   let nativeWindowHideTimer = null;
   let nativeWallpaperRefreshTimer = null;
+  let hasRequestedStartupNativeWindowShow = false;
   let liveDesktopIdleStopTimer = null;
   let liveDesktopBackgroundVisible = null;
   let liveDesktopRuntimeSync = Promise.resolve();
@@ -1375,6 +1379,40 @@ export function useLaunchpadNative(options) {
       });
   }
 
+  function waitForNativeWindowRevealFrame() {
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      return new Promise((resolve) => {
+        window.requestAnimationFrame(() => resolve());
+      });
+    }
+    return Promise.resolve();
+  }
+
+  function revealNativeWindowAfterPaint(openSequence = nativeWindowOpenSequence) {
+    const revealSequence = Number(openSequence);
+    if (!isNativeBridgeAvailable() || !Number.isFinite(revealSequence) || revealSequence <= 0) return;
+    nativeWindowRevealUpdate = nativeWindowRevealUpdate
+      .catch(() => {})
+      .then(async () => {
+        await nextTick();
+        await waitForNativeWindowRevealFrame();
+        await waitForNativeWindowRevealFrame();
+        if (nativeWindowOpenSequence !== revealSequence) return;
+        await revealMainWindow(revealSequence);
+      })
+      .catch((error) => {
+        console.error("Failed to reveal LaunchPad window", error);
+      });
+  }
+
+  function showNativeWindowAfterStartup() {
+    if (!isNativeBridgeAvailable() || hasRequestedStartupNativeWindowShow) return;
+    hasRequestedStartupNativeWindowShow = true;
+    showMainWindow().catch((error) => {
+      console.error("Failed to show LaunchPad window after startup", error);
+    });
+  }
+
   function registerNativeEventListeners() {
     if (!isNativeBridgeAvailable()) return Promise.resolve();
     clearNativeEventListeners();
@@ -1468,9 +1506,11 @@ export function useLaunchpadNative(options) {
     clearNativeWindowHideTimer();
     if (options.isDesktopOpen.value) {
       options.focusDesktopSurface?.();
+      revealNativeWindowAfterPaint();
       return;
     }
     options.openDesktop();
+    revealNativeWindowAfterPaint();
   }
 
   function hideNativeWindowAfterCloseAnimation() {
@@ -1551,6 +1591,7 @@ export function useLaunchpadNative(options) {
     setNativeWindowMode,
     setNativeWindowEffectsEnabled,
     setNativeWindowShadowEnabled,
+    showNativeWindowAfterStartup,
     showNativeLaunchError,
     startNativeLiveDesktopBackground,
     stopNativeLiveDesktopBackground,

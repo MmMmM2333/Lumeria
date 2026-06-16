@@ -44,7 +44,8 @@ use tauri::{
 use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 use tray::{
     apply_main_window_mode, disable_main_window_transitions, open_main_window, open_settings,
-    refresh_main_window_effects, setup_tray, trigger_main_window_shortcut, CLOSE_DESKTOP_EVENT,
+    refresh_main_window_effects, reveal_main_window as reveal_tray_main_window, setup_tray,
+    trigger_main_window_shortcut, CLOSE_DESKTOP_EVENT,
 };
 
 const QUIT_REQUESTED_EVENT: &str = "launchpad-quit-requested";
@@ -373,6 +374,16 @@ fn launch_app_inner(
 #[tauri::command]
 fn hide_main_window(app: AppHandle) {
     tray::hide_main_window(&app);
+}
+
+#[tauri::command]
+fn show_main_window(app: AppHandle) {
+    open_main_window(&app);
+}
+
+#[tauri::command]
+fn reveal_main_window(app: AppHandle, open_sequence: Option<u64>) -> Result<(), String> {
+    reveal_tray_main_window(&app, open_sequence)
 }
 
 #[tauri::command]
@@ -892,6 +903,8 @@ pub fn run() {
             check_launch_targets,
             launch_app,
             hide_main_window,
+            show_main_window,
+            reveal_main_window,
             confirm_quit_after_save,
             show_launch_error_message,
             quit_app,

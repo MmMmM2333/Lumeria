@@ -92,6 +92,7 @@ export function runLaunchpadMountedEffects(options, ResizeObserverCtor = globalT
     registerNativeEventListeners,
     scheduleFolderViewportMetrics,
     schedulePageGridMetrics,
+    showNativeWindowAfterStartup,
     updateFolderViewportHeight,
     updatePageGridMetrics,
   } = options;
@@ -106,6 +107,7 @@ export function runLaunchpadMountedEffects(options, ResizeObserverCtor = globalT
   if (lifecycle) lifecycle.active = true;
   registerNativeEventListeners().finally(() => {
     if (lifecycle && !lifecycle.active) return;
+    showNativeWindowAfterStartup?.();
     loadNativeLaunchpadData();
   });
 

@@ -20,7 +20,8 @@ pub(crate) const CLOSE_DESKTOP_EVENT: &str = "launchpad-close-desktop";
 const MAIN_WINDOW_ACRYLIC_DARK_COLOR: Color = Color(0x10, 0x14, 0x1f, 0xcc);
 const MAIN_WINDOW_ACRYLIC_LIGHT_COLOR: Color = Color(0xf3, 0xf6, 0xfb, 0xcc);
 const MAIN_WINDOW_EFFECT_REAPPLY_DELAYS_MS: [u64; 2] = [80, 180];
-const MAIN_WINDOW_DEFERRED_SHOW_DELAY_MS: u64 = 48;
+const MAIN_WINDOW_DEFERRED_SHOW_DELAY_MS: u64 = 0;
+const MAIN_WINDOW_CLOAKED_REVEAL_FALLBACK_DELAY_MS: u64 = 160;
 const WINDOWS_ACRYLIC_MIN_BUILD: u32 = 17763;
 const WINDOWS_MICA_MIN_BUILD: u32 = 22000;
 const WINDOWS_MICA_ALT_MIN_BUILD: u32 = 22621;
@@ -169,12 +170,29 @@ fn show_main_window_for_sequence(app: &AppHandle, open_sequence: u64) {
         if let Ok(mode) = current_main_window_mode() {
             let _ = apply_main_window_mode_to_window(&window, mode);
         }
+        let should_cloak =
+            !window.is_visible().unwrap_or(false) || window.is_minimized().unwrap_or(false);
+        if should_cloak {
+            // Hidden transparent WebView2 windows can flash a white/native
+            // backing surface for one frame when they are shown. DWM cloaking
+            // keeps the window internally composited but off-screen until the
+            // renderer reports that the opening frame has painted, which avoids
+            // exposing that first unstable frame. This follows the workaround
+            // described at https://stackoverflow.com/a/74019785.
+            let _ = set_window_cloaked(&window, true);
+        } else {
+            let _ = set_window_cloaked(&window, false);
+        }
         let _ = set_window_shadow_enabled(&window, true);
         if !window.is_visible().unwrap_or(false) {
             let _ = window.show();
         }
         if window.is_minimized().unwrap_or(false) {
             let _ = window.unminimize();
+        }
+        if should_cloak {
+            update_window_now(&window);
+            schedule_main_window_cloak_fallback(app, open_sequence);
         }
         let _ = window.set_focus();
         let _ = activate_window(&window);
@@ -192,6 +210,31 @@ fn schedule_main_window_show(app: &AppHandle, open_sequence: u64, delay_ms: u64)
         }
         show_main_window_for_sequence(&app, open_sequence);
     });
+}
+
+fn schedule_main_window_cloak_fallback(app: &AppHandle, open_sequence: u64) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(
+            MAIN_WINDOW_CLOAKED_REVEAL_FALLBACK_DELAY_MS,
+        ));
+        let _ = reveal_main_window(&app, Some(open_sequence));
+    });
+}
+
+pub(crate) fn reveal_main_window(
+    app: &AppHandle,
+    open_sequence: Option<u64>,
+) -> Result<(), String> {
+    if open_sequence
+        .is_some_and(|sequence| sequence != MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed))
+    {
+        return Ok(());
+    }
+    if let Some(window) = app.get_webview_window("main") {
+        set_window_cloaked(&window, false)?;
+    }
+    Ok(())
 }
 
 fn main_window_deferred_show_delay(app: &AppHandle) -> u64 {
@@ -231,6 +274,42 @@ fn set_window_shadow_enabled(window: &WebviewWindow, enabled: bool) -> Result<()
         .set_shadow(enabled)
         .map_err(|error| error.to_string())
 }
+
+#[cfg(target_os = "windows")]
+fn set_window_cloaked(window: &WebviewWindow, cloaked: bool) -> Result<(), String> {
+    use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CLOAK};
+
+    let cloak = if cloaked { 1i32 } else { 0i32 };
+    unsafe {
+        DwmSetWindowAttribute(
+            window.hwnd().map_err(|error| error.to_string())?,
+            DWMWA_CLOAK,
+            &cloak as *const _ as _,
+            std::mem::size_of_val(&cloak) as u32,
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn set_window_cloaked(_window: &WebviewWindow, _cloaked: bool) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn update_window_now(window: &WebviewWindow) {
+    use windows::Win32::Graphics::Gdi::UpdateWindow;
+
+    if let Ok(hwnd) = window.hwnd() {
+        unsafe {
+            let _ = UpdateWindow(hwnd);
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn update_window_now(_window: &WebviewWindow) {}
 
 fn current_main_window_mode() -> Result<MainWindowMode, String> {
     MAIN_WINDOW_MODE
@@ -582,6 +661,7 @@ pub(crate) fn open_main_window(app: &AppHandle) {
 
 pub(crate) fn hide_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        let _ = set_window_cloaked(&window, false);
         let _ = window.hide();
     }
 }

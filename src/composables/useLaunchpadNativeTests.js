@@ -174,6 +174,12 @@ function withMockTauri(invoke, run, bridgeOverrides = {}) {
       if (command === "set_main_window_shadow_enabled" && !bridgeOverrides.passWindowShadowCommand) {
         return null;
       }
+      if (command === "reveal_main_window" && !bridgeOverrides.passRevealMainWindowCommand) {
+        return null;
+      }
+      if (command === "show_main_window" && !bridgeOverrides.passShowMainWindowCommand) {
+        return null;
+      }
       if (command === "get_live_desktop_background_support" && !bridgeOverrides.passLiveDesktopBackgroundSupport) {
         return {
           platform: "windows",
@@ -1075,11 +1081,36 @@ export async function runLaunchpadNativeTests() {
     passWindowShadowCommand: true,
   });
 
+  const startupShowCommands = [];
+  await withMockTauri(async (command) => {
+    if (command === "show_main_window") {
+      startupShowCommands.push(command);
+      return null;
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions();
+    const native = useLaunchpadNative(options);
+
+    native.showNativeWindowAfterStartup();
+    native.showNativeWindowAfterStartup();
+    await flushMicrotasks(3);
+
+    assert(startupShowCommands.join(",") === "show_main_window", "startup should request the initially hidden native window once");
+  }, {
+    passShowMainWindowCommand: true,
+  });
+
   const openShadowCommands = [];
+  const openRevealSequences = [];
   const openEventHandlers = new Map();
   await withMockTauri(async (command, args) => {
     if (command === "set_main_window_shadow_enabled") {
       openShadowCommands.push(args.enabled);
+      return null;
+    }
+    if (command === "reveal_main_window") {
+      openRevealSequences.push(args.openSequence);
       return null;
     }
     throw new Error(`Unexpected invoke: ${command}`);
@@ -1089,15 +1120,17 @@ export async function runLaunchpadNativeTests() {
 
     await native.registerNativeEventListeners();
     await openEventHandlers.get("launchpad-open-desktop")({ payload: 2 });
-    await flushMicrotasks(3);
+    await flushMicrotasks(8);
 
     assert(openShadowCommands.join(",") === "true", "native open events should restore the native window shadow");
+    assert(openRevealSequences.join(",") === "2", "native open events should reveal the cloaked native window after paint");
   }, {
     listen: async (eventName, handler) => {
       openEventHandlers.set(eventName, handler);
       return () => openEventHandlers.delete(eventName);
     },
     passWindowShadowCommand: true,
+    passRevealMainWindowCommand: true,
   });
 
   setLiveDesktopExperimentEnabledForTests(null);
