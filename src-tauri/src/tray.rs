@@ -422,7 +422,8 @@ unsafe extern "system" fn main_window_non_client_subclass_proc(
         UI::{
             Shell::{DefSubclassProc, RemoveWindowSubclass},
             WindowsAndMessaging::{
-                IsZoomed, NCCALCSIZE_PARAMS, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCPAINT,
+                IsZoomed, NCCALCSIZE_PARAMS, SC_KEYMENU, WM_NCACTIVATE, WM_NCCALCSIZE,
+                WM_NCDESTROY, WM_NCPAINT, WM_SYSCOMMAND,
             },
         },
     };
@@ -449,6 +450,18 @@ unsafe extern "system" fn main_window_non_client_subclass_proc(
         }
         WM_NCPAINT | WM_NCUAHDRAWCAPTION | WM_NCUAHDRAWFRAME => LRESULT(0),
         WM_NCACTIVATE => LRESULT(1),
+        WM_SYSCOMMAND => {
+            let command = (wparam.0 & 0xfff0) as u32;
+            if command == SC_KEYMENU {
+                // Alt+Space is our global launchpad shortcut, but Windows also
+                // treats it as the system-menu key for WS_SYSMENU windows. If
+                // the default handler opens that menu, the WebView enters a
+                // modal menu loop and the close-animation timer cannot fire
+                // until focus leaves the window.
+                return LRESULT(0);
+            }
+            DefSubclassProc(hwnd, message, wparam, lparam)
+        }
         WM_NCDESTROY => {
             let _ = RemoveWindowSubclass(
                 hwnd,
