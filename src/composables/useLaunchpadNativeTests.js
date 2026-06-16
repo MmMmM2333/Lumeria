@@ -1,5 +1,6 @@
 import { ref, shallowRef } from "vue";
 import { setLaunchpadApiBridgeForTests } from "../api/launchpadApi.js";
+import { DEFAULT_MAIN_WINDOW_SHORTCUT } from "../domain/mainWindowShortcut.js";
 import { setLiveDesktopExperimentEnabledForTests } from "../domain/experimentalFeatures.js";
 import { useLaunchpadNative } from "./useLaunchpadNative.js";
 import {
@@ -80,6 +81,7 @@ function makeOptions(overrides = {}) {
     draftWindowEffectAppearance: ref(WINDOW_EFFECT_APPEARANCE_DARK),
     draftWindowEffectMaterial: ref(WINDOW_EFFECT_MATERIAL_ACRYLIC),
     draftWindowMode: ref(DEFAULT_WINDOW_MODE),
+    draftMainWindowShortcut: ref(DEFAULT_MAIN_WINDOW_SHORTCUT),
     folderCols: ref(4),
     folderIconSize: ref(64),
     folderIconSizeMode: ref("global"),
@@ -115,6 +117,8 @@ function makeOptions(overrides = {}) {
     windowEffectAppearance: ref(WINDOW_EFFECT_APPEARANCE_DARK),
     windowEffectMaterial: ref(WINDOW_EFFECT_MATERIAL_ACRYLIC),
     windowMode: ref(DEFAULT_WINDOW_MODE),
+    mainWindowShortcut: ref(DEFAULT_MAIN_WINDOW_SHORTCUT),
+    mainWindowShortcutError: ref(""),
     windowEffectsSupport: ref({
       platform: "unknown",
       build: null,
@@ -169,6 +173,12 @@ function withMockTauri(invoke, run, bridgeOverrides = {}) {
         return null;
       }
       if (command === "set_main_window_mode" && !bridgeOverrides.passWindowModeCommand) {
+        return null;
+      }
+      if (command === "set_main_window_shortcut" && !bridgeOverrides.passMainWindowShortcutCommand) {
+        return args.shortcut;
+      }
+      if (command === "set_main_window_shortcut_capture_active" && !bridgeOverrides.passMainWindowShortcutCaptureCommand) {
         return null;
       }
       if (command === "set_main_window_shadow_enabled" && !bridgeOverrides.passWindowShadowCommand) {
@@ -273,6 +283,7 @@ export async function runLaunchpadNativeTests() {
     assert(initialSaveLayouts[0].settings.backgroundAcrylicDarkParams.brightness === 0.8, "native saves should include acrylic dark params");
     assert(initialSaveLayouts[0].settings.backgroundAcrylicLightParams.brightness === 1, "native saves should include acrylic light params");
     assert(initialSaveLayouts[0].settings.backgroundImagePath === null, "native saves should include an empty background image path");
+    assert(initialSaveLayouts[0].settings.mainWindowShortcut === DEFAULT_MAIN_WINDOW_SHORTCUT, "native saves should include the main window shortcut");
     assert(calls.commitPageIndex.join(",") === "0", "initial native load should reclamp desktop page");
     assert(calls.schedulePageGridMetrics === 1, "initial native load should refresh grid metrics");
   });
@@ -346,6 +357,7 @@ export async function runLaunchpadNativeTests() {
           windowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
           windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
           windowMode: WINDOW_MODE_WINDOWED,
+          mainWindowShortcut: "control+alt+KeyL",
           backgroundBaseColor: "#ABC",
           backgroundBaseOpacity: 73,
           backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
@@ -389,6 +401,8 @@ export async function runLaunchpadNativeTests() {
     assert(options.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "native load should apply saved window effect appearance");
     assert(options.windowMode.value === WINDOW_MODE_WINDOWED, "native load should apply saved window mode");
     assert(options.draftWindowMode.value === WINDOW_MODE_WINDOWED, "native load should sync window mode draft");
+    assert(options.mainWindowShortcut.value === "control+alt+KeyL", "native load should apply saved main window shortcut");
+    assert(options.draftMainWindowShortcut.value === "control+alt+KeyL", "native load should sync main window shortcut draft");
     assert(options.backgroundBaseColor.value === "#aabbcc", "native load should apply saved background base color");
     assert(options.backgroundBaseOpacity.value === 73, "native load should apply saved background base opacity");
     assert(options.backgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "native load should apply saved background source");

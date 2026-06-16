@@ -251,6 +251,19 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
             }
         }
     }
+    let main_window_shortcut = object
+        .get("mainWindowShortcut")
+        .ok_or_else(|| "layout settings.mainWindowShortcut is required".to_string())?;
+    if !main_window_shortcut.is_null() {
+        let shortcut = main_window_shortcut.as_str().ok_or_else(|| {
+            "layout settings.mainWindowShortcut must be a non-empty string or null".to_string()
+        })?;
+        if shortcut.trim().is_empty() {
+            return Err(
+                "layout settings.mainWindowShortcut must be a non-empty string or null".to_string(),
+            );
+        }
+    }
 
     Ok(())
 }
@@ -739,7 +752,8 @@ mod tests {
                 ],
                 "showMissingLaunchTargetBadge": true,
                 "windowEffectMaterial": "none",
-                "windowEffectAppearance": "light"
+                "windowEffectAppearance": "light",
+                "mainWindowShortcut": "control+alt+KeyL"
             }
         })
     }
@@ -850,6 +864,50 @@ mod tests {
         let error = save_layout_to_path(&path, &invalid).expect_err("scanRoots should fail");
 
         assert!(error.contains("scanRoots"));
+        assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_rejects_missing_main_window_shortcut() {
+        let dir = test_dir("missing-main-window-shortcut");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        invalid["settings"]
+            .as_object_mut()
+            .expect("settings object")
+            .remove("mainWindowShortcut");
+
+        let error = save_layout_to_path(&path, &invalid).expect_err("missing shortcut should fail");
+
+        assert!(error.contains("mainWindowShortcut"));
+        assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_allows_null_main_window_shortcut() {
+        let dir = test_dir("null-main-window-shortcut");
+        let path = dir.join("layout.json");
+        let mut valid = valid_layout();
+        valid["settings"]["mainWindowShortcut"] = json!(null);
+
+        save_layout_to_path(&path, &valid).expect("null mainWindowShortcut should save");
+
+        assert!(path.exists(), "valid layout should be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_rejects_empty_main_window_shortcut() {
+        let dir = test_dir("empty-main-window-shortcut");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        invalid["settings"]["mainWindowShortcut"] = json!("  ");
+
+        let error = save_layout_to_path(&path, &invalid).expect_err("empty shortcut should fail");
+
+        assert!(error.contains("mainWindowShortcut"));
         assert!(!path.exists(), "invalid layout should not be written");
         fs::remove_dir_all(dir).expect("remove test directory");
     }

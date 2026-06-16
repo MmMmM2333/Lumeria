@@ -21,6 +21,10 @@ import {
 import {
   normalizeBackgroundImageLayout,
 } from "../domain/backgroundImageLayout.js";
+import {
+  DEFAULT_MAIN_WINDOW_SHORTCUT,
+  normalizeMainWindowShortcut,
+} from "../domain/mainWindowShortcut.js";
 import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 export {
   BACKGROUND_IMAGE_LAYOUT_CENTER,
@@ -304,6 +308,9 @@ export function syncLaunchpadSettingsDraftsFromState(options) {
   options.draftWindowEffectMaterial.value = options.windowEffectMaterial.value;
   options.draftWindowEffectAppearance.value = options.windowEffectAppearance.value;
   options.draftWindowMode.value = normalizeWindowMode(options.windowMode.value);
+  if (options.draftMainWindowShortcut && options.mainWindowShortcut) {
+    options.draftMainWindowShortcut.value = normalizeMainWindowShortcut(options.mainWindowShortcut.value);
+  }
 }
 
 export function useLaunchpadSettingsConfig(options) {
@@ -536,6 +543,12 @@ export function useLaunchpadSettingsConfig(options) {
     options.draftWindowMode.value = normalizeWindowMode(mode);
   }
 
+  function setDraftMainWindowShortcut(shortcut) {
+    if (!options.draftMainWindowShortcut) return;
+    options.draftMainWindowShortcut.value = normalizeMainWindowShortcut(shortcut);
+    if (options.mainWindowShortcutError) options.mainWindowShortcutError.value = "";
+  }
+
   function repackPagesForGrid(nextRows, nextCols, nextFolderRows, nextFolderCols) {
     if (options.isDragActive()) return;
     const rows = clamp(Number(nextRows) || DEFAULT_ROWS, 2, 8);
@@ -592,7 +605,7 @@ export function useLaunchpadSettingsConfig(options) {
     options.schedulePageGridMetrics();
   }
 
-  function applySettingsConfig() {
+  function commitSettingsConfig(nextMainWindowShortcut) {
     applyGridConfig();
     if (!options.isDragActive()) options.isTextlessMode.value = Boolean(options.draftIsTextlessMode.value);
     const nextBackgroundSource = normalizeBackgroundSource(options.draftBackgroundSource.value);
@@ -633,11 +646,44 @@ export function useLaunchpadSettingsConfig(options) {
     );
     options.windowEffectAppearance.value = normalizeWindowEffectAppearance(options.draftWindowEffectAppearance.value);
     options.windowMode.value = normalizeWindowMode(options.draftWindowMode.value);
+    if (options.mainWindowShortcut && options.draftMainWindowShortcut) {
+      options.mainWindowShortcut.value = nextMainWindowShortcut;
+      options.draftMainWindowShortcut.value = nextMainWindowShortcut;
+    }
     syncLaunchpadSettingsDraftsFromState(options);
     options.applyNativeWindowMode?.();
     options.applyNativeWindowEffects?.();
     options.syncLiveDesktopBackgroundRuntime?.();
     options.closeSettingsPanel();
+    return true;
+  }
+
+  function applySettingsConfig() {
+    const currentShortcut = normalizeMainWindowShortcut(
+      options.mainWindowShortcut ? options.mainWindowShortcut.value : DEFAULT_MAIN_WINDOW_SHORTCUT
+    );
+    const nextShortcut = normalizeMainWindowShortcut(
+      options.draftMainWindowShortcut ? options.draftMainWindowShortcut.value : currentShortcut
+    );
+    if (options.mainWindowShortcutError) options.mainWindowShortcutError.value = "";
+    if (nextShortcut !== currentShortcut && typeof options.applyNativeMainWindowShortcut === "function") {
+      if (options.isApplyingSettingsConfig) options.isApplyingSettingsConfig.value = true;
+      return Promise.resolve(options.applyNativeMainWindowShortcut(nextShortcut))
+        .then((applied) => {
+          if (!applied) return false;
+          return commitSettingsConfig(nextShortcut);
+        })
+        .catch((error) => {
+          if (options.mainWindowShortcutError) {
+            options.mainWindowShortcutError.value = error?.message || "快捷键已被占用或不可用";
+          }
+          return false;
+        })
+        .finally(() => {
+          if (options.isApplyingSettingsConfig) options.isApplyingSettingsConfig.value = false;
+        });
+    }
+    return commitSettingsConfig(nextShortcut);
   }
 
   return {
@@ -676,6 +722,7 @@ export function useLaunchpadSettingsConfig(options) {
     setDraftFolderIconSizeMode,
     setDraftWindowEffectAppearance,
     setDraftWindowEffectMaterial,
+    setDraftMainWindowShortcut,
     setDraftWindowMode,
     useDraftDesktopWallpaper,
   };

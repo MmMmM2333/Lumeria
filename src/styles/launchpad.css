@@ -1304,22 +1304,65 @@ body {
 .settings-hotkey-control {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
   flex: 0 0 auto;
 }
 
-.settings-hotkey-control kbd {
+.settings-hotkey-input {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  min-width: 72px;
+  min-width: 112px;
+  height: 32px;
+}
+
+.settings-hotkey-input kbd {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
   height: 32px;
   justify-content: center;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 10px;
+  padding: 0 30px 0 12px;
   color: rgba(255, 255, 255, 0.58);
   background: rgba(0, 0, 0, 0.18);
   font: inherit;
   font-size: 12px;
+}
+
+.settings-hotkey-input-empty kbd {
+  padding-right: 12px;
+}
+
+.settings-hotkey-clear-button {
+  position: absolute;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.16);
+  cursor: pointer;
+  line-height: 0;
+}
+
+.settings-hotkey-clear-icon {
+  display: block;
+  width: 12px;
+  height: 12px;
+}
+
+.settings-hotkey-clear-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .settings-toggle input {

@@ -1,5 +1,6 @@
 import { createLaunchpadLayoutHelpers, makePageSize } from "../domain/launchpadLayout.js";
 import { setLiveDesktopExperimentEnabledForTests } from "../domain/experimentalFeatures.js";
+import { DEFAULT_MAIN_WINDOW_SHORTCUT } from "../domain/mainWindowShortcut.js";
 import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
@@ -109,6 +110,7 @@ function createSettingsConfig(overrides = {}) {
     draftWindowEffectMaterial: refValue(overrides.draftWindowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
     draftWindowEffectAppearance: refValue(overrides.draftWindowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_DARK),
     draftWindowMode: refValue(overrides.draftWindowMode ?? DEFAULT_WINDOW_MODE),
+    draftMainWindowShortcut: refValue(Object.prototype.hasOwnProperty.call(overrides, "draftMainWindowShortcut") ? overrides.draftMainWindowShortcut : DEFAULT_MAIN_WINDOW_SHORTCUT),
     isTextlessMode: refValue(overrides.isTextlessMode ?? false),
     backgroundBaseColor: refValue(overrides.backgroundBaseColor ?? DEFAULT_BACKGROUND_BASE_COLOR),
     backgroundBaseOpacity: refValue(overrides.backgroundBaseOpacity ?? DEFAULT_BACKGROUND_BASE_OPACITY),
@@ -129,6 +131,9 @@ function createSettingsConfig(overrides = {}) {
     windowEffectMaterial: refValue(overrides.windowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
     windowEffectAppearance: refValue(overrides.windowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_DARK),
     windowMode: refValue(overrides.windowMode ?? DEFAULT_WINDOW_MODE),
+    mainWindowShortcut: refValue(Object.prototype.hasOwnProperty.call(overrides, "mainWindowShortcut") ? overrides.mainWindowShortcut : DEFAULT_MAIN_WINDOW_SHORTCUT),
+    mainWindowShortcutError: refValue(""),
+    isApplyingSettingsConfig: refValue(false),
     windowEffectsSupport: refValue(overrides.windowEffectsSupport ?? {
       platform: "windows",
       build: 22621,
@@ -151,6 +156,7 @@ function createSettingsConfig(overrides = {}) {
     applyNativeWindowMode: 0,
     applyNativeWindowEffects: 0,
     closeSettingsPanel: 0,
+    applyNativeMainWindowShortcut: [],
     commitFolderPageIndex: [],
     commitPageIndex: [],
     commitPages: [],
@@ -175,6 +181,12 @@ function createSettingsConfig(overrides = {}) {
   const config = useLaunchpadSettingsConfig({
     applyNativeWindowEffects: () => {
       calls.applyNativeWindowEffects += 1;
+    },
+    applyNativeMainWindowShortcut: (shortcut) => {
+      calls.applyNativeMainWindowShortcut.push(shortcut);
+      return overrides.applyNativeMainWindowShortcut
+        ? overrides.applyNativeMainWindowShortcut(shortcut)
+        : true;
     },
     applyNativeWindowMode: () => {
       calls.applyNativeWindowMode += 1;
@@ -221,6 +233,7 @@ function createSettingsConfig(overrides = {}) {
     draftWindowEffectAppearance: state.draftWindowEffectAppearance,
     draftWindowEffectMaterial: state.draftWindowEffectMaterial,
     draftWindowMode: state.draftWindowMode,
+    draftMainWindowShortcut: state.draftMainWindowShortcut,
     ensurePage: helpers.ensurePage,
     folderCols: state.folderCols,
     folderIconSize: state.folderIconSize,
@@ -250,6 +263,7 @@ function createSettingsConfig(overrides = {}) {
     backgroundSource: state.backgroundSource,
     backgroundEffect: state.backgroundEffect,
     isChoosingBackgroundImage: state.isChoosingBackgroundImage,
+    isApplyingSettingsConfig: state.isApplyingSettingsConfig,
     pageIndex: state.pageIndex,
     pageSize,
     pages: state.pages,
@@ -263,12 +277,14 @@ function createSettingsConfig(overrides = {}) {
     windowMode: state.windowMode,
     windowEffectsSupport: state.windowEffectsSupport,
     liveDesktopBackgroundSupport: state.liveDesktopBackgroundSupport,
+    mainWindowShortcut: state.mainWindowShortcut,
+    mainWindowShortcutError: state.mainWindowShortcutError,
   });
 
   return { calls, config, state };
 }
 
-export function runLaunchpadSettingsConfigTests() {
+export async function runLaunchpadSettingsConfigTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Launchpad settings config test failed] ${message}`);
   };
@@ -394,6 +410,7 @@ export function runLaunchpadSettingsConfigTests() {
     windowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
     windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
     windowMode: WINDOW_MODE_WINDOWED,
+    mainWindowShortcut: "control+alt+KeyL",
   });
   syncLaunchpadSettingsDraftsFromState(sync.state);
   assert(sync.state.draftRows.value === 4 && sync.state.draftCols.value === 5, "sync should reset desktop draft dimensions from current settings");
@@ -421,6 +438,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(sync.state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "sync should reset window effect material draft from current settings");
   assert(sync.state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "sync should reset window effect appearance draft from current settings");
   assert(sync.state.draftWindowMode.value === WINDOW_MODE_WINDOWED, "sync should reset window mode draft from current settings");
+  assert(sync.state.draftMainWindowShortcut.value === "control+alt+KeyL", "sync should reset main window shortcut draft from current settings");
 
   const draft = createSettingsConfig({
     draftCols: 10,
@@ -618,6 +636,8 @@ export function runLaunchpadSettingsConfigTests() {
   assert(apply.state.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "window effect material should apply from the draft value");
   assert(apply.state.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "window effect appearance should apply from the draft value");
   assert(apply.state.windowMode.value === WINDOW_MODE_WINDOWED, "window mode should apply from the draft value");
+  assert(apply.state.mainWindowShortcut.value === DEFAULT_MAIN_WINDOW_SHORTCUT, "unchanged shortcuts should remain at the current value");
+  assert(apply.calls.applyNativeMainWindowShortcut.length === 0, "unchanged shortcuts should not call native shortcut registration");
   assert(apply.calls.commitPages.length === 1, "applying settings should commit repacked pages");
   assert(apply.calls.commitPages[0].length === 2, "shrinking page capacity should overflow items to another page");
   assert(apply.calls.commitPageIndex.join(",") === "2", "applying settings should reclamp the desktop page index");
@@ -628,6 +648,37 @@ export function runLaunchpadSettingsConfigTests() {
   assert(apply.calls.applyNativeWindowEffects === 1, "applying settings should refresh native window effects");
   assert(apply.calls.syncLiveDesktopBackgroundRuntime === 1, "applying settings should sync the live desktop runtime");
   assert(apply.calls.closeSettingsPanel === 1, "applying settings from the panel should close it");
+
+  const shortcutApply = createSettingsConfig({
+    mainWindowShortcut: DEFAULT_MAIN_WINDOW_SHORTCUT,
+    draftMainWindowShortcut: "control+alt+KeyL",
+  });
+  const shortcutResult = shortcutApply.config.applySettingsConfig();
+  assert(shortcutResult && typeof shortcutResult.then === "function", "changed shortcuts should use the async native apply path");
+  await shortcutResult;
+  assert(shortcutApply.calls.applyNativeMainWindowShortcut.join(",") === "control+alt+KeyL", "changed shortcuts should register through native before commit");
+  assert(shortcutApply.state.mainWindowShortcut.value === "control+alt+KeyL", "successful shortcut registration should commit the new shortcut");
+  assert(shortcutApply.calls.closeSettingsPanel === 1, "successful shortcut registration should close the settings panel");
+
+  const shortcutFailure = createSettingsConfig({
+    mainWindowShortcut: DEFAULT_MAIN_WINDOW_SHORTCUT,
+    draftMainWindowShortcut: "control+alt+KeyL",
+    applyNativeMainWindowShortcut: () => false,
+  });
+  await shortcutFailure.config.applySettingsConfig();
+  assert(shortcutFailure.state.mainWindowShortcut.value === DEFAULT_MAIN_WINDOW_SHORTCUT, "failed shortcut registration should keep the current shortcut");
+  assert(shortcutFailure.state.draftMainWindowShortcut.value === "control+alt+KeyL", "failed shortcut registration should keep the draft for editing");
+  assert(shortcutFailure.calls.closeSettingsPanel === 0, "failed shortcut registration should keep the settings panel open");
+
+  const shortcutDisable = createSettingsConfig({
+    mainWindowShortcut: DEFAULT_MAIN_WINDOW_SHORTCUT,
+    draftMainWindowShortcut: null,
+  });
+  await shortcutDisable.config.applySettingsConfig();
+  assert(shortcutDisable.calls.applyNativeMainWindowShortcut.length === 1, "disabled shortcuts should call native registration");
+  assert(shortcutDisable.calls.applyNativeMainWindowShortcut[0] === null, "disabled shortcuts should pass null to native registration");
+  assert(shortcutDisable.state.mainWindowShortcut.value === null, "successful shortcut disable should commit null");
+  assert(shortcutDisable.state.draftMainWindowShortcut.value === null, "successful shortcut disable should keep the draft disabled");
 
   const acrylicApply = createSettingsConfig({
     draftBackgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,

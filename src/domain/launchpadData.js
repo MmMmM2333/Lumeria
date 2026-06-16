@@ -1,4 +1,8 @@
 import { chunkIntoPages, clamp } from "./launchpadLayout.js";
+import {
+  DEFAULT_MAIN_WINDOW_SHORTCUT,
+  normalizeMainWindowShortcut,
+} from "./mainWindowShortcut.js";
 
 export const DEFAULT_SCAN_ROOTS = [
   {
@@ -448,6 +452,11 @@ export function createLaunchpadDataHelpers(options) {
       ? state.windowEffectMaterial
       : "acrylic";
     const windowMode = state.windowMode === "windowed" ? "windowed" : "fullscreen";
+    const mainWindowShortcut = normalizeMainWindowShortcut(
+      Object.prototype.hasOwnProperty.call(state, "mainWindowShortcut")
+        ? state.mainWindowShortcut
+        : DEFAULT_MAIN_WINDOW_SHORTCUT
+    );
     return {
       version: 1,
       pages: makeLayoutPages(state.pages),
@@ -486,6 +495,7 @@ export function createLaunchpadDataHelpers(options) {
         windowEffectMaterial,
         windowEffectAppearance: state.windowEffectAppearance === "light" ? "light" : "dark",
         windowMode,
+        mainWindowShortcut,
       },
     };
   }

@@ -931,8 +931,8 @@ fn is_main_window_foreground(window: &WebviewWindow) -> bool {
         return window.is_focused().unwrap_or(false);
     };
     // Tauri focus state can lag after native fullscreen/topmost transitions.
-    // Use the real Win32 foreground window so Alt+Space closes only when
-    // LaunchPad, not another app, is actually active.
+    // Use the real Win32 foreground window so shortcut-triggered close handling
+    // only runs when LaunchPad, not another app, is actually active.
     let foreground = unsafe { GetForegroundWindow() };
     if foreground.0.is_null() {
         return false;

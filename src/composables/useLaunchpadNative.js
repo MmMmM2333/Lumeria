@@ -18,6 +18,10 @@ import {
   normalizeScanRoots,
 } from "../domain/launchpadData.js";
 import {
+  DEFAULT_MAIN_WINDOW_SHORTCUT,
+  normalizeMainWindowShortcut,
+} from "../domain/mainWindowShortcut.js";
+import {
   checkLaunchTargets,
   configureLiveDesktopBackground,
   confirmQuitAfterSave,
@@ -35,6 +39,8 @@ import {
   revealMainWindow,
   saveLayout,
   scanApps,
+  setMainWindowShortcut,
+  setMainWindowShortcutCaptureActive,
   setLiveDesktopBackgroundVisible,
   setMainWindowEffectsEnabled,
   setMainWindowMode,
@@ -414,6 +420,7 @@ export function useLaunchpadNative(options) {
     );
     const nextWindowEffectAppearance = normalizeWindowEffectAppearance(settings.windowEffectAppearance);
     const nextWindowMode = normalizeWindowMode(settings.windowMode);
+    const nextMainWindowShortcut = normalizeMainWindowShortcut(settings.mainWindowShortcut);
     const nextBackgroundSource = normalizeBackgroundSource(settings.backgroundSource);
     const nextBackgroundEffect = normalizeBackgroundEffect(settings.backgroundEffect);
     const nextBackgroundBaseColor = normalizeBackgroundBaseColor(settings.backgroundBaseColor);
@@ -462,6 +469,9 @@ export function useLaunchpadNative(options) {
     options.draftWindowEffectAppearance.value = nextWindowEffectAppearance;
     options.windowMode.value = nextWindowMode;
     options.draftWindowMode.value = nextWindowMode;
+    options.mainWindowShortcut.value = nextMainWindowShortcut;
+    options.draftMainWindowShortcut.value = nextMainWindowShortcut;
+    if (options.mainWindowShortcutError) options.mainWindowShortcutError.value = "";
     options.backgroundSource.value = nextBackgroundUsesLiveDesktop
       ? BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP
       : nextBackgroundImagePath
@@ -563,6 +573,7 @@ export function useLaunchpadNative(options) {
       windowEffectMaterial: options.windowEffectMaterial.value,
       windowEffectAppearance: options.windowEffectAppearance.value,
       windowMode: options.windowMode.value,
+      mainWindowShortcut: options.mainWindowShortcut.value,
     });
   }
 
@@ -866,6 +877,7 @@ export function useLaunchpadNative(options) {
       }
 
       applyLayoutSettings(savedLayout?.settings);
+      await setNativeMainWindowShortcut(options.mainWindowShortcut.value);
       const refreshedWallpaperBackground = await refreshWindowsWallpaperBackground();
       options.pages.value = options.mergeNativeCatalogWithSavedLayout(
         [],
@@ -1369,6 +1381,29 @@ export function useLaunchpadNative(options) {
       });
   }
 
+  async function setNativeMainWindowShortcut(shortcut) {
+    const nextShortcut = normalizeMainWindowShortcut(shortcut);
+    if (!isNativeBridgeAvailable()) return true;
+    try {
+      const registered = await setMainWindowShortcut(nextShortcut);
+      const normalized = normalizeMainWindowShortcut(registered === undefined ? nextShortcut : registered);
+      options.draftMainWindowShortcut.value = normalized;
+      if (options.mainWindowShortcutError) options.mainWindowShortcutError.value = "";
+      return true;
+    } catch (error) {
+      if (options.mainWindowShortcutError) options.mainWindowShortcutError.value = "快捷键已被占用或不可用";
+      console.error("Failed to update LaunchPad shortcut", error);
+      return false;
+    }
+  }
+
+  function setNativeMainWindowShortcutCaptureActive(active) {
+    if (!isNativeBridgeAvailable()) return;
+    setMainWindowShortcutCaptureActive(Boolean(active)).catch((error) => {
+      console.error("Failed to update LaunchPad shortcut capture state", error);
+    });
+  }
+
   function setNativeWindowShadowEnabled(enabled) {
     if (!isNativeBridgeAvailable()) return;
     nativeWindowShadowUpdate = nativeWindowShadowUpdate
@@ -1588,6 +1623,8 @@ export function useLaunchpadNative(options) {
     registerNativeEventListeners,
     scheduleNativeLayoutSave,
     scheduleLaunchTargetStatusCheck,
+    setNativeMainWindowShortcut,
+    setNativeMainWindowShortcutCaptureActive,
     setNativeWindowMode,
     setNativeWindowEffectsEnabled,
     setNativeWindowShadowEnabled,

@@ -7,6 +7,7 @@ import {
   DEFAULT_ROWS,
 } from "./launchpadConstants.js";
 import { makePageSize } from "../domain/launchpadLayout.js";
+import { DEFAULT_MAIN_WINDOW_SHORTCUT } from "../domain/mainWindowShortcut.js";
 import {
   DEFAULT_SCAN_KEYWORD_BLACKLIST,
   DEFAULT_SCAN_ROOTS,
@@ -99,6 +100,10 @@ export function useLaunchpadControllerState() {
   const draftWindowEffectAppearance = ref(WINDOW_EFFECT_APPEARANCE_DARK);
   const windowMode = ref(DEFAULT_WINDOW_MODE);
   const draftWindowMode = ref(DEFAULT_WINDOW_MODE);
+  const mainWindowShortcut = ref(DEFAULT_MAIN_WINDOW_SHORTCUT);
+  const draftMainWindowShortcut = ref(DEFAULT_MAIN_WINDOW_SHORTCUT);
+  const mainWindowShortcutError = ref("");
+  const isApplyingSettingsConfig = ref(false);
   const pageSize = computed(() => makePageSize(gridRows.value, gridCols.value));
   const folderPageSize = computed(() => makePageSize(folderRows.value, folderCols.value));
 
@@ -189,12 +194,16 @@ export function useLaunchpadControllerState() {
     hiddenAppIds,
     iconSize,
     isChoosingBackgroundImage,
+    isApplyingSettingsConfig,
     isLayoutProjectionActive,
     isTextlessMode,
     launchTargetStatusById,
     liveDesktopBackgroundSupport,
     liveDesktopCssFallbackEffectsEnabled,
     liveDesktopRuntimeStatus,
+    mainWindowShortcut,
+    mainWindowShortcutError,
+    draftMainWindowShortcut,
     keyboardFocusArea,
     pageDotsRef,
     pageIndex,

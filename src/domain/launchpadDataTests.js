@@ -137,6 +137,7 @@ export function runLaunchpadDataTests() {
     windowEffectMaterial: "mica",
     windowEffectAppearance: "light",
     windowMode: "windowed",
+    mainWindowShortcut: "control+alt+KeyL",
   });
   assert(snapshot.version === 1, "layout snapshots should use version 1");
   assert(snapshot.settings.textless === true && snapshot.settings.hiddenAppIds[0] === "hidden", "layout snapshots should include settings");
@@ -161,6 +162,13 @@ export function runLaunchpadDataTests() {
   assert(snapshot.settings.backgroundImagePath === "C:/Images/custom.webp", "layout snapshots should include the trimmed custom background image path");
   assert(snapshot.settings.windowEffectMaterial === "mica" && snapshot.settings.windowEffectAppearance === "light", "layout snapshots should include window effect settings");
   assert(snapshot.settings.windowMode === "windowed", "layout snapshots should include window mode settings");
+  assert(snapshot.settings.mainWindowShortcut === "control+alt+KeyL", "layout snapshots should include the main window shortcut");
+  const disabledShortcutSnapshot = dataHelpers.createLayoutSnapshot({
+    ...snapshot.settings,
+    pages: merged,
+    mainWindowShortcut: null,
+  });
+  assert(disabledShortcutSnapshot.settings.mainWindowShortcut === null, "layout snapshots should preserve disabled main window shortcuts");
   const acrylicSnapshot = dataHelpers.createLayoutSnapshot({
     ...snapshot.settings,
     pages: merged,

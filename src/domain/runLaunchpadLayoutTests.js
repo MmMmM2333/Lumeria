@@ -23,6 +23,7 @@ import { runDesktopLayoutDebugSettingsTests } from "../components/backgroundDebu
 import { runLiveDesktopDiagnosticsTests } from "../components/backgroundDebug/liveDesktopDiagnosticsTests.js";
 import { runBackgroundImageLayoutTests } from "./backgroundImageLayoutTests.js";
 import { runLaunchpadDataTests } from "./launchpadDataTests.js";
+import { runMainWindowShortcutTests } from "./mainWindowShortcutTests.js";
 import { runIconSourceTests } from "./iconSourceTests.js";
 import { runLaunchpadHelperTests } from "./launchpadLayoutTests.js";
 import { runPageRenderRangeTests } from "../composables/usePageRenderRangeTests.js";
@@ -96,6 +97,7 @@ runLaunchpadHelperTests({
 });
 await runWindowChromeApiTests();
 runLaunchpadDataTests();
+runMainWindowShortcutTests();
 runBackgroundImageLayoutTests();
 runIconSourceTests();
 await runLaunchpadDragTests();
@@ -116,7 +118,7 @@ runLaunchpadViewAdaptersTests();
 runDesktopLayoutDebugSettingsTests();
 runLiveDesktopDiagnosticsTests();
 runFolderLayoutStylesTests();
-runLaunchpadSettingsConfigTests();
+await runLaunchpadSettingsConfigTests();
 runSettingsPanelFlowTests();
 await runLaunchpadSearchTests();
 await runPageRenderRangeTests();

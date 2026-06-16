@@ -242,6 +242,19 @@ export async function setMainWindowMode(mode) {
   return true;
 }
 
+export async function setMainWindowShortcut(shortcut) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return null;
+  return invoke("set_main_window_shortcut", { shortcut });
+}
+
+export async function setMainWindowShortcutCaptureActive(active) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return false;
+  await invoke("set_main_window_shortcut_capture_active", { active: Boolean(active) });
+  return true;
+}
+
 export async function setMainWindowShadowEnabled(enabled) {
   const invoke = getTauriInvoke();
   if (!invoke) return false;

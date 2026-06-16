@@ -57,14 +57,29 @@
                 </span>
                 <input name="autoStart" type="checkbox" aria-label="开机自启" disabled />
               </label>
-              <div class="settings-option settings-option-disabled">
+              <div class="settings-option">
                 <span class="settings-option-copy">
                   <span>快捷键</span>
-                  <span class="settings-field-hint">快速显示或隐藏 LaunchPad</span>
+                  <span class="settings-field-hint">{{ mainWindowShortcutHint }}</span>
                 </span>
                 <div class="settings-hotkey-control">
-                  <kbd>Alt + Space</kbd>
-                  <button class="settings-secondary-button" type="button" disabled>录制</button>
+                  <div :class="cx('settings-hotkey-input', state.draftMainWindowShortcut.value === null && 'settings-hotkey-input-empty')">
+                    <kbd>{{ mainWindowShortcutLabel }}</kbd>
+                    <button
+                      v-if="state.draftMainWindowShortcut.value !== null"
+                      class="settings-hotkey-clear-button"
+                      type="button"
+                      aria-label="关闭快捷键"
+                      :disabled="state.isApplyingSettingsConfig.value"
+                      @click="clearMainWindowShortcut"
+                    >
+                      <DismissIcon class="settings-hotkey-clear-icon" />
+                    </button>
+                  </div>
+                  <button class="settings-secondary-button" type="button" :disabled="state.isApplyingSettingsConfig.value" @click="startMainWindowShortcutRecording">
+                    {{ isRecordingMainWindowShortcut ? "录制中" : "录制" }}
+                  </button>
+                  <button class="settings-secondary-button" type="button" :disabled="state.isApplyingSettingsConfig.value" @click="resetMainWindowShortcut">重置</button>
                 </div>
               </div>
             </div>
@@ -858,9 +873,9 @@
         </div>
       </div>
 
-      <footer v-if="activeSettingsTab === 'interface'" class="settings-actions">
+      <footer v-if="activeSettingsTab === 'general' || activeSettingsTab === 'interface'" class="settings-actions">
         <button class="settings-secondary-button" type="button" @click="state.closeSettingsPanel">取消</button>
-        <button class="settings-primary-button" type="button" :disabled="!!state.dragMeta.value" @click="state.applySettingsConfig">应用</button>
+        <button class="settings-primary-button" type="button" :disabled="!!state.dragMeta.value || state.isApplyingSettingsConfig.value" @click="state.applySettingsConfig">应用</button>
       </footer>
     </Motion>
   </Motion>
@@ -869,11 +884,13 @@
 <script setup>
 import { Motion } from "motion-v";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import DismissIcon from "~icons/fluent/dismiss-16-regular";
 import BackgroundEffectPreview from "./BackgroundEffectPreview.vue";
 import BackgroundImagePreviewCanvas from "./BackgroundImagePreviewCanvas.vue";
 import { ChevronDownIcon, ChevronUpIcon } from "./Icons.js";
 import { useBackgroundImagePixelSize } from "../composables/useBackgroundImagePixelSize.js";
 import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "../composables/launchpadConstants.js";
+import { listenNativeEvent } from "../api/launchpadApi.js";
 import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
@@ -923,6 +940,11 @@ import { focusModalElement, handleModalKeydown } from "../composables/useModalFo
 import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 import { getIconSource } from "../domain/iconSource.js";
 import { cx } from "../domain/launchpadLayout.js";
+import {
+  DEFAULT_MAIN_WINDOW_SHORTCUT,
+  formatMainWindowShortcut,
+  mainWindowShortcutFromKeyboardEvent,
+} from "../domain/mainWindowShortcut.js";
 import { rgbArrayToHex } from "../rendering/pixi/background/acrylicParams.js";
 
 const props = defineProps({
@@ -934,8 +956,11 @@ const activeSettingsTab = ref("general");
 const activeAcrylicParamsProfile = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
 const settingsPanelRef = ref(null);
 const systemAcrylicAppearance = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
+const isRecordingMainWindowShortcut = ref(false);
 let systemAppearanceQuery = null;
 let liveDesktopStatusTimer = null;
+let unlistenMainWindowShortcutCaptured = null;
+let mainWindowShortcutRecordingSession = 0;
 const ACRYLIC_PARAM_STEP = 0.01;
 const LIVE_DESKTOP_STATUS_REFRESH_INTERVAL_MS = 1000;
 const ACRYLIC_TINT_STRENGTH_MIN = 0;
@@ -981,6 +1006,15 @@ const windowEffectAppearances = [
   { appearance: WINDOW_EFFECT_APPEARANCE_LIGHT, appearanceLabel: "浅色" },
   { appearance: WINDOW_EFFECT_APPEARANCE_DARK, appearanceLabel: "深色" },
 ];
+const mainWindowShortcutLabel = computed(() => (
+  isRecordingMainWindowShortcut.value
+    ? "按下组合键"
+    : formatMainWindowShortcut(props.state.draftMainWindowShortcut.value)
+));
+const mainWindowShortcutHint = computed(() => {
+  if (props.state.mainWindowShortcutError.value) return props.state.mainWindowShortcutError.value;
+  return isRecordingMainWindowShortcut.value ? "按 Esc 取消录制" : "快速显示或隐藏 LaunchPad";
+});
 const backgroundImageLayoutOptions = [
   { layout: BACKGROUND_IMAGE_LAYOUT_FILL, label: "填充" },
   { layout: BACKGROUND_IMAGE_LAYOUT_FIT, label: "适应" },
@@ -1115,6 +1149,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearLiveDesktopStatusTimer();
+  stopMainWindowShortcutRecording();
   if (!systemAppearanceQuery) return;
   if (typeof systemAppearanceQuery.removeEventListener === "function") {
     systemAppearanceQuery.removeEventListener("change", updateSystemAcrylicAppearance);
@@ -1136,7 +1171,10 @@ watch(
 watch(
   () => props.state.isSettingsPanelOpen.value,
   async (isOpen) => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      stopMainWindowShortcutRecording();
+      return;
+    }
     await nextTick();
     focusModalElement(settingsPanelRef);
   }
@@ -1151,6 +1189,71 @@ watch(
   },
   { immediate: true }
 );
+
+async function startMainWindowShortcutRecording() {
+  if (typeof window === "undefined") return;
+  if (isRecordingMainWindowShortcut.value) return;
+  props.state.mainWindowShortcutError.value = "";
+  isRecordingMainWindowShortcut.value = true;
+  mainWindowShortcutRecordingSession += 1;
+  const session = mainWindowShortcutRecordingSession;
+  window.addEventListener("keydown", handleMainWindowShortcutRecordingKeydown, true);
+  const unlisten = await listenNativeEvent("launchpad-main-window-shortcut-captured", (event) => {
+    if (session !== mainWindowShortcutRecordingSession) return;
+    const shortcut = String(event?.payload || "").trim();
+    if (!shortcut) return;
+    props.state.setDraftMainWindowShortcut(shortcut);
+    props.state.mainWindowShortcutError.value = "";
+    stopMainWindowShortcutRecording();
+  });
+  if (session !== mainWindowShortcutRecordingSession) {
+    unlisten?.();
+    return;
+  }
+  unlistenMainWindowShortcutCaptured = unlisten;
+  props.state.setMainWindowShortcutCaptureActive?.(true);
+}
+
+function stopMainWindowShortcutRecording() {
+  if (isRecordingMainWindowShortcut.value) {
+    props.state.setMainWindowShortcutCaptureActive?.(false);
+  }
+  mainWindowShortcutRecordingSession += 1;
+  unlistenMainWindowShortcutCaptured?.();
+  unlistenMainWindowShortcutCaptured = null;
+  if (typeof window !== "undefined") {
+    window.removeEventListener("keydown", handleMainWindowShortcutRecordingKeydown, true);
+  }
+  isRecordingMainWindowShortcut.value = false;
+}
+
+function handleMainWindowShortcutRecordingKeydown(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const result = mainWindowShortcutFromKeyboardEvent(event);
+  if (result.status === "cancel") {
+    stopMainWindowShortcutRecording();
+    props.state.mainWindowShortcutError.value = "";
+    return;
+  }
+  if (result.status === "invalid") {
+    props.state.mainWindowShortcutError.value = result.message;
+    return;
+  }
+  props.state.setDraftMainWindowShortcut(result.shortcut);
+  props.state.mainWindowShortcutError.value = "";
+  stopMainWindowShortcutRecording();
+}
+
+function resetMainWindowShortcut() {
+  stopMainWindowShortcutRecording();
+  props.state.setDraftMainWindowShortcut(DEFAULT_MAIN_WINDOW_SHORTCUT);
+}
+
+function clearMainWindowShortcut() {
+  stopMainWindowShortcutRecording();
+  props.state.setDraftMainWindowShortcut(null);
+}
 
 function handleSettingsPanelKeydown(event) {
   handleModalKeydown(event, settingsPanelRef, props.state.closeSettingsPanel);

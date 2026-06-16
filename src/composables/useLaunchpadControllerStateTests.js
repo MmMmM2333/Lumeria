@@ -5,6 +5,7 @@ import {
   DEFAULT_ICON_SIZE,
   DEFAULT_ROWS,
 } from "./launchpadConstants.js";
+import { DEFAULT_MAIN_WINDOW_SHORTCUT } from "../domain/mainWindowShortcut.js";
 import { useLaunchpadControllerState } from "./useLaunchpadControllerState.js";
 import {
   DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE,
@@ -77,6 +78,10 @@ export function runLaunchpadControllerStateTests() {
   assert(state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_DARK, "draft window effect appearance should default to dark");
   assert(state.windowMode.value === DEFAULT_WINDOW_MODE, "window mode should default to fullscreen");
   assert(state.draftWindowMode.value === DEFAULT_WINDOW_MODE, "draft window mode should default to fullscreen");
+  assert(state.mainWindowShortcut.value === DEFAULT_MAIN_WINDOW_SHORTCUT, "main window shortcut should use the default");
+  assert(state.draftMainWindowShortcut.value === DEFAULT_MAIN_WINDOW_SHORTCUT, "draft main window shortcut should use the default");
+  assert(state.mainWindowShortcutError.value === "", "main window shortcut errors should start empty");
+  assert(state.isApplyingSettingsConfig.value === false, "settings apply state should start idle");
   assert(state.windowEffectsSupport.value.supportsAcrylic === false, "window effect support should start unavailable before native detection");
   assert(state.pageSize.value === DEFAULT_ROWS * DEFAULT_COLS, "page size should derive from desktop grid dimensions");
   assert(state.folderPageSize.value === DEFAULT_FOLDER_ROWS * DEFAULT_FOLDER_COLS, "folder page size should derive from folder grid dimensions");
