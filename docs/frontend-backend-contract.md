@@ -25,7 +25,7 @@ commands.
 - `set_main_window_shortcut_capture_active(active: boolean) -> void`; suppresses the registered main-window shortcut action while the renderer is recording a replacement shortcut.
 - `set_main_window_shadow_enabled(enabled: boolean) -> void`; close animations disable the native window shadow and the next open restores it.
 
-Windowed mode uses a frontend-rendered title bar for dragging and window controls. It requires Tauri `core:window:allow-start-dragging`, `core:window:allow-minimize`, and `core:window:allow-toggle-maximize` permissions.
+Windowed mode uses a frontend-rendered title bar for dragging, resizing, and window controls. It requires Tauri `core:window:allow-start-dragging`, `core:window:allow-start-resize-dragging`, `core:window:allow-minimize`, and `core:window:allow-toggle-maximize` permissions.
 
 ## Data Shapes
 
