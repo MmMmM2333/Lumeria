@@ -885,6 +885,7 @@ pub fn run() {
                 let _ = window.emit(CLOSE_DESKTOP_EVENT, ());
             }
             WindowEvent::Focused(true) => refresh_main_window_effects(window.app_handle()),
+            WindowEvent::Focused(false) => tray::release_main_window_topmost(window.app_handle()),
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![

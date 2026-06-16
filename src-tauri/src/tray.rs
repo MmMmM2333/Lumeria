@@ -22,6 +22,9 @@ const MAIN_WINDOW_ACRYLIC_LIGHT_COLOR: Color = Color(0xf3, 0xf6, 0xfb, 0xcc);
 const MAIN_WINDOW_EFFECT_REAPPLY_DELAYS_MS: [u64; 2] = [80, 180];
 const MAIN_WINDOW_DEFERRED_SHOW_DELAY_MS: u64 = 0;
 const MAIN_WINDOW_CLOAKED_REVEAL_FALLBACK_DELAY_MS: u64 = 160;
+const MAIN_WINDOW_NON_CLIENT_SUBCLASS_ID: usize = 1;
+const WM_NCUAHDRAWCAPTION: u32 = 0x00AE;
+const WM_NCUAHDRAWFRAME: u32 = 0x00AF;
 const WINDOWS_ACRYLIC_MIN_BUILD: u32 = 17763;
 const WINDOWS_MICA_MIN_BUILD: u32 = 22000;
 const WINDOWS_MICA_ALT_MIN_BUILD: u32 = 22621;
@@ -167,9 +170,9 @@ fn show_main_window_for_sequence(app: &AppHandle, open_sequence: u64) {
 
     let _ = disable_main_window_transitions(app);
     if let Some(window) = app.get_webview_window("main") {
-        if let Ok(mode) = current_main_window_mode() {
-            let _ = apply_main_window_mode_to_window(&window, mode);
-        }
+        let mode = current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT);
+        let _ = apply_main_window_mode_to_window(&window, mode);
+        let _ = apply_main_window_native_surface_policy(&window, mode);
         let should_cloak =
             !window.is_visible().unwrap_or(false) || window.is_minimized().unwrap_or(false);
         if should_cloak {
@@ -183,7 +186,6 @@ fn show_main_window_for_sequence(app: &AppHandle, open_sequence: u64) {
         } else {
             let _ = set_window_cloaked(&window, false);
         }
-        let _ = set_window_shadow_enabled(&window, true);
         if !window.is_visible().unwrap_or(false) {
             let _ = window.show();
         }
@@ -196,9 +198,18 @@ fn show_main_window_for_sequence(app: &AppHandle, open_sequence: u64) {
         }
         let _ = window.set_focus();
         let _ = activate_window(&window);
+        let _ = confirm_main_window_mode_after_show(&window, mode);
+        if mode == MainWindowMode::Fullscreen {
+            let _ = window.set_focus();
+            let _ = activate_window(&window);
+        }
         let disable_sequence = MAIN_WINDOW_EFFECT_DISABLE_SEQUENCE.load(Ordering::Relaxed);
-        let _ = set_window_effects_enabled(&window, true);
-        schedule_window_effect_reapply(window, open_sequence, disable_sequence);
+        if should_use_native_window_effects(mode) {
+            let _ = set_window_effects_enabled(&window, true);
+            schedule_window_effect_reapply(window, open_sequence, disable_sequence);
+        } else if mode == MainWindowMode::Fullscreen {
+            let _ = bump_main_window_z_order_for_open(&window);
+        }
     }
 }
 
@@ -258,13 +269,16 @@ pub(crate) fn set_main_window_mode(app: &AppHandle, mode: &str) -> Result<String
     let mode = update_main_window_mode(mode)?;
     if let Some(window) = app.get_webview_window("main") {
         apply_main_window_mode_to_window(&window, mode)?;
+        apply_main_window_native_surface_policy(&window, mode)?;
     }
     Ok(mode.as_str().to_string())
 }
 
 pub(crate) fn set_main_window_shadow_enabled(app: &AppHandle, enabled: bool) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
-        set_window_shadow_enabled(&window, enabled)?;
+        let mode = current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT);
+        set_window_shadow_enabled(&window, enabled && should_use_native_window_effects(mode))?;
+        apply_main_window_win32_surface_policy(&window, mode)?;
     }
     Ok(())
 }
@@ -310,6 +324,183 @@ fn update_window_now(window: &WebviewWindow) {
 
 #[cfg(not(target_os = "windows"))]
 fn update_window_now(_window: &WebviewWindow) {}
+
+#[cfg(target_os = "windows")]
+fn set_window_non_client_rendering(window: &WebviewWindow, enabled: bool) -> Result<(), String> {
+    use windows::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMNCRP_DISABLED, DWMNCRP_USEWINDOWSTYLE, DWMWA_NCRENDERING_POLICY,
+    };
+
+    let policy = if enabled {
+        DWMNCRP_USEWINDOWSTYLE
+    } else {
+        DWMNCRP_DISABLED
+    };
+    unsafe {
+        DwmSetWindowAttribute(
+            window.hwnd().map_err(|error| error.to_string())?,
+            DWMWA_NCRENDERING_POLICY,
+            &policy as *const _ as _,
+            std::mem::size_of_val(&policy) as u32,
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn set_main_window_non_client_subclass(
+    window: &WebviewWindow,
+    enabled: bool,
+) -> Result<(), String> {
+    use windows::Win32::UI::Shell::{RemoveWindowSubclass, SetWindowSubclass};
+
+    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    unsafe {
+        if enabled {
+            if !SetWindowSubclass(
+                hwnd,
+                Some(main_window_non_client_subclass_proc),
+                MAIN_WINDOW_NON_CLIENT_SUBCLASS_ID,
+                0,
+            )
+            .as_bool()
+            {
+                return Err("Failed to install main window non-client subclass".to_string());
+            }
+        } else {
+            let _ = RemoveWindowSubclass(
+                hwnd,
+                Some(main_window_non_client_subclass_proc),
+                MAIN_WINDOW_NON_CLIENT_SUBCLASS_ID,
+            );
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn main_window_non_client_subclass_proc(
+    hwnd: windows::Win32::Foundation::HWND,
+    message: u32,
+    wparam: windows::Win32::Foundation::WPARAM,
+    lparam: windows::Win32::Foundation::LPARAM,
+    subclass_id: usize,
+    _ref_data: usize,
+) -> windows::Win32::Foundation::LRESULT {
+    use windows::Win32::{
+        Foundation::LRESULT,
+        UI::{
+            Shell::{DefSubclassProc, RemoveWindowSubclass},
+            WindowsAndMessaging::{WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCPAINT},
+        },
+    };
+
+    match message {
+        WM_NCCALCSIZE | WM_NCPAINT | WM_NCUAHDRAWCAPTION | WM_NCUAHDRAWFRAME => LRESULT(0),
+        WM_NCACTIVATE => LRESULT(1),
+        WM_NCDESTROY => {
+            let _ = RemoveWindowSubclass(
+                hwnd,
+                Some(main_window_non_client_subclass_proc),
+                subclass_id,
+            );
+            DefSubclassProc(hwnd, message, wparam, lparam)
+        }
+        _ => DefSubclassProc(hwnd, message, wparam, lparam),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn strip_main_window_non_client_style(window: &WebviewWindow) -> Result<(), String> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, GWL_STYLE, WS_CAPTION, WS_MAXIMIZEBOX,
+        WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+    };
+
+    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    let current_style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) };
+    let next_style = (current_style
+        & !main_window_style_mask([
+            WS_CAPTION.0,
+            WS_THICKFRAME.0,
+            WS_SYSMENU.0,
+            WS_MINIMIZEBOX.0,
+            WS_MAXIMIZEBOX.0,
+        ]))
+        | main_window_style_mask([WS_POPUP.0]);
+    if next_style != current_style {
+        unsafe {
+            SetWindowLongPtrW(hwnd, GWL_STYLE, next_style);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn refresh_main_window_frame(window: &WebviewWindow) -> Result<(), String> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
+        SWP_NOSENDCHANGING, SWP_NOSIZE, SWP_NOZORDER,
+    };
+
+    unsafe {
+        SetWindowPos(
+            window.hwnd().map_err(|error| error.to_string())?,
+            None,
+            0,
+            0,
+            0,
+            0,
+            SWP_FRAMECHANGED
+                | SWP_NOACTIVATE
+                | SWP_NOMOVE
+                | SWP_NOSIZE
+                | SWP_NOOWNERZORDER
+                | SWP_NOSENDCHANGING
+                | SWP_NOZORDER,
+        )
+    }
+    .map_err(|error| error.to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn set_main_window_topmost(window: &WebviewWindow, topmost: bool) -> Result<(), String> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
+        SWP_NOSENDCHANGING, SWP_NOSIZE,
+    };
+
+    let hwnd_insert_after = if topmost {
+        Some(HWND_TOPMOST)
+    } else {
+        Some(HWND_NOTOPMOST)
+    };
+    unsafe {
+        SetWindowPos(
+            window.hwnd().map_err(|error| error.to_string())?,
+            hwnd_insert_after,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOSENDCHANGING,
+        )
+    }
+    .map_err(|error| error.to_string())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn set_main_window_topmost(_window: &WebviewWindow, _topmost: bool) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn main_window_style_mask<const N: usize>(parts: [u32; N]) -> isize {
+    parts
+        .into_iter()
+        .fold(0usize, |mask, part| mask | part as usize) as isize
+}
 
 fn current_main_window_mode() -> Result<MainWindowMode, String> {
     MAIN_WINDOW_MODE
@@ -360,6 +551,76 @@ fn apply_main_window_mode_to_window(
             }
         }
     }
+    Ok(())
+}
+
+fn confirm_main_window_mode_after_show(
+    window: &WebviewWindow,
+    mode: MainWindowMode,
+) -> Result<(), String> {
+    match mode {
+        MainWindowMode::Fullscreen => {
+            window
+                .set_fullscreen(true)
+                .map_err(|error| error.to_string())?;
+            apply_main_window_win32_surface_policy(window, mode)
+        }
+        MainWindowMode::Windowed => Ok(()),
+    }
+}
+
+fn should_use_native_window_effects(mode: MainWindowMode) -> bool {
+    // Fullscreen is a transparent borderless surface; DWM material
+    // or shadow can expose frame artifacts.
+    mode == MainWindowMode::Windowed
+}
+
+fn apply_main_window_native_surface_policy(
+    window: &WebviewWindow,
+    mode: MainWindowMode,
+) -> Result<(), String> {
+    let enabled = should_use_native_window_effects(mode);
+    set_window_shadow_enabled(window, enabled)?;
+    if enabled {
+        set_window_effects_enabled(window, true)?;
+    } else {
+        set_window_effects_enabled(window, false)?;
+    }
+    apply_main_window_win32_surface_policy(window, mode)?;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn apply_main_window_win32_surface_policy(
+    window: &WebviewWindow,
+    mode: MainWindowMode,
+) -> Result<(), String> {
+    // `decorations: false` removes the regular frame, but Tao still owns
+    // the Windows fullscreen state machine. Focus changes can make Windows
+    // recalculate and paint non-client chrome for a frame, which is visible
+    // on our transparent overlay. Fullscreen therefore needs explicit Win32
+    // style stripping and non-client message suppression.
+    match mode {
+        MainWindowMode::Fullscreen => {
+            set_window_non_client_rendering(window, false)?;
+            set_main_window_non_client_subclass(window, true)?;
+            strip_main_window_non_client_style(window)?;
+            refresh_main_window_frame(window)
+        }
+        MainWindowMode::Windowed => {
+            set_main_window_non_client_subclass(window, false)?;
+            set_window_non_client_rendering(window, true)?;
+            set_main_window_topmost(window, false)?;
+            refresh_main_window_frame(window)
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn apply_main_window_win32_surface_policy(
+    _window: &WebviewWindow,
+    _mode: MainWindowMode,
+) -> Result<(), String> {
     Ok(())
 }
 
@@ -427,7 +688,14 @@ pub(crate) fn set_main_window_effects_enabled(
 
     let (settings, settings_changed) = update_main_window_effect_settings(material, appearance)?;
     if let Some(window) = app.get_webview_window("main") {
-        set_window_effects_enabled_with_config(&window, enabled, settings, settings_changed)?;
+        let mode = current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT);
+        set_window_effects_enabled_with_config(
+            &window,
+            enabled && should_use_native_window_effects(mode),
+            settings,
+            settings_changed,
+        )?;
+        apply_main_window_win32_surface_policy(&window, mode)?;
     }
     Ok(())
 }
@@ -624,11 +892,61 @@ pub(crate) fn refresh_main_window_effects(app: &AppHandle) {
         if !window.is_visible().unwrap_or(false) {
             return;
         }
+        let mode = current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT);
+        if !should_use_native_window_effects(mode) {
+            let _ = set_window_effects_enabled(&window, false);
+            let _ = apply_main_window_win32_surface_policy(&window, mode);
+            if mode == MainWindowMode::Fullscreen {
+                let _ = set_main_window_topmost(&window, true);
+            }
+            return;
+        }
         let open_sequence = MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed);
         let disable_sequence = MAIN_WINDOW_EFFECT_DISABLE_SEQUENCE.load(Ordering::Relaxed);
         let _ = set_window_effects_enabled(&window, true);
         schedule_window_effect_reapply(window, open_sequence, disable_sequence);
     }
+}
+
+pub(crate) fn release_main_window_topmost(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = set_main_window_topmost(&window, false);
+    }
+}
+
+fn bump_main_window_z_order_for_open(window: &WebviewWindow) -> Result<(), String> {
+    // Windows can place the taskbar above a borderless transparent fullscreen
+    // window when focus is restored from another app. Keep topmost only while
+    // LaunchPad is foreground; Focused(false) and hide/windowed paths release it.
+    set_main_window_topmost(window, true)
+}
+
+#[cfg(target_os = "windows")]
+fn is_main_window_foreground(window: &WebviewWindow) -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetAncestor, GetForegroundWindow, IsChild, GA_ROOT,
+    };
+
+    let Ok(hwnd) = window.hwnd() else {
+        return window.is_focused().unwrap_or(false);
+    };
+    // Tauri focus state can lag after native fullscreen/topmost transitions.
+    // Use the real Win32 foreground window so Alt+Space closes only when
+    // LaunchPad, not another app, is actually active.
+    let foreground = unsafe { GetForegroundWindow() };
+    if foreground.0.is_null() {
+        return false;
+    }
+    if foreground == hwnd {
+        return true;
+    }
+    let foreground_root = unsafe { GetAncestor(foreground, GA_ROOT) };
+    foreground_root == hwnd || unsafe { IsChild(hwnd, foreground).as_bool() }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn is_main_window_foreground(window: &WebviewWindow) -> bool {
+    window.is_focused().unwrap_or(false)
 }
 
 fn schedule_window_effect_reapply(
@@ -647,7 +965,12 @@ fn schedule_window_effect_reapply(
                 return;
             }
             if window.is_visible().unwrap_or(false) {
-                let _ = set_window_effects_enabled(&window, true);
+                let mode = current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT);
+                if should_use_native_window_effects(mode) {
+                    let _ = set_window_effects_enabled(&window, true);
+                } else {
+                    let _ = set_window_effects_enabled(&window, false);
+                }
             }
         });
     }
@@ -662,6 +985,7 @@ pub(crate) fn open_main_window(app: &AppHandle) {
 pub(crate) fn hide_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = set_window_cloaked(&window, false);
+        let _ = set_main_window_topmost(&window, false);
         let _ = window.hide();
     }
 }
@@ -672,12 +996,15 @@ pub(crate) fn trigger_main_window_shortcut(app: &AppHandle) {
         .map(|window| {
             let is_visible = window.is_visible().unwrap_or(false);
             let is_minimized = window.is_minimized().unwrap_or(false);
-            let is_focused = window.is_focused().unwrap_or(false);
-            is_visible && !is_minimized && is_focused
+            is_visible && !is_minimized && is_main_window_foreground(&window)
         })
         .unwrap_or(false);
 
     if should_hide {
+        if let Some(window) = app.get_webview_window("main") {
+            let mode = current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT);
+            let _ = apply_main_window_native_surface_policy(&window, mode);
+        }
         let open_sequence = MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed);
         let _ = app.emit(TOGGLE_DESKTOP_EVENT, open_sequence);
         return;
