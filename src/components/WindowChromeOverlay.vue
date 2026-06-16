@@ -6,6 +6,7 @@
         aria-label="拖动窗口"
         @pointerdown.stop
         @mousedown.left.stop="handleDragMouseDown"
+        @dblclick.left.stop="handleDragAreaDoubleClick"
       >
         <span class="window-chrome-title-icon" aria-hidden="true">L</span>
         <span class="window-chrome-title-text">LaunchPad</span>
@@ -14,8 +15,8 @@
         <button class="window-chrome-control" type="button" aria-label="最小化窗口" title="最小化" @click.stop="handleMinimizeClick">
           <SubtractIcon class="window-chrome-control-icon" />
         </button>
-        <button class="window-chrome-control" type="button" aria-label="最大化或还原窗口" title="最大化/还原" @click.stop="handleMaximizeClick">
-          <MaximizeIcon class="window-chrome-control-icon" />
+        <button class="window-chrome-control" type="button" :aria-label="maximizeButtonLabel" :title="maximizeButtonLabel" @click.stop="handleMaximizeClick">
+          <component :is="isWindowMaximizedState ? RestoreIcon : MaximizeIcon" class="window-chrome-control-icon" />
         </button>
         <button class="window-chrome-control window-chrome-control-close" type="button" aria-label="隐藏窗口" title="隐藏" @click.stop="handleCloseClick">
           <DismissIcon class="window-chrome-control-icon" />
@@ -32,18 +33,21 @@
 </template>
 
 <script setup>
-import DismissIcon from "~icons/fluent/dismiss-16-regular";
-import MaximizeIcon from "~icons/fluent/maximize-16-regular";
-import SubtractIcon from "~icons/fluent/subtract-16-regular";
+import DismissIcon from "~icons/fluent/dismiss-24-regular";
+import MaximizeIcon from "~icons/fluent/maximize-24-regular";
+import RestoreIcon from "~icons/fluent/square-multiple-24-regular";
+import SubtractIcon from "~icons/fluent/subtract-24-regular";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   hideWindow,
+  isWindowMaximized,
   minimizeWindow,
   startWindowDrag,
   startWindowResize,
   toggleWindowMaximize,
 } from "../api/windowChromeApi.js";
 
-defineProps({
+const props = defineProps({
   active: {
     type: Boolean,
     default: false,
@@ -61,6 +65,11 @@ const resizeHandles = Object.freeze([
   { className: "south-east", direction: "SouthEast" },
 ]);
 
+const isWindowMaximizedState = ref(false);
+const maximizeButtonLabel = computed(() => (isWindowMaximizedState.value ? "向下还原窗口" : "最大化窗口"));
+let windowMaximizedRefreshFrame = null;
+let windowMaximizedRefreshRequest = 0;
+
 function isPrimaryPointer(event) {
   return event.button === 0;
 }
@@ -71,6 +80,7 @@ function handleWindowChromeError(action, error) {
 
 function handleDragMouseDown(event) {
   event.preventDefault();
+  if (event.detail > 1) return;
   startWindowDrag().catch((error) => handleWindowChromeError("drag", error));
 }
 
@@ -78,8 +88,18 @@ function handleMinimizeClick() {
   minimizeWindow().catch((error) => handleWindowChromeError("minimize", error));
 }
 
+async function toggleMaximizeAndRefresh() {
+  const didToggle = await toggleWindowMaximize();
+  if (didToggle) await refreshWindowMaximized();
+}
+
 function handleMaximizeClick() {
-  toggleWindowMaximize().catch((error) => handleWindowChromeError("maximize", error));
+  toggleMaximizeAndRefresh().catch((error) => handleWindowChromeError("maximize", error));
+}
+
+function handleDragAreaDoubleClick(event) {
+  event.preventDefault();
+  toggleMaximizeAndRefresh().catch((error) => handleWindowChromeError("maximize", error));
 }
 
 function handleCloseClick() {
@@ -91,4 +111,49 @@ function handleResizePointerDown(event, direction) {
   event.preventDefault();
   startWindowResize(direction).catch((error) => handleWindowChromeError("resize", error));
 }
+
+async function refreshWindowMaximized() {
+  const request = ++windowMaximizedRefreshRequest;
+  const nextIsMaximized = await isWindowMaximized();
+  if (request === windowMaximizedRefreshRequest) {
+    isWindowMaximizedState.value = nextIsMaximized;
+  }
+}
+
+function scheduleWindowMaximizedRefresh() {
+  if (!props.active) return;
+  if (typeof window === "undefined") {
+    refreshWindowMaximized().catch((error) => handleWindowChromeError("read maximize state", error));
+    return;
+  }
+  if (windowMaximizedRefreshFrame !== null) return;
+  windowMaximizedRefreshFrame = window.requestAnimationFrame(() => {
+    windowMaximizedRefreshFrame = null;
+    refreshWindowMaximized().catch((error) => handleWindowChromeError("read maximize state", error));
+  });
+}
+
+onMounted(() => {
+  if (typeof window !== "undefined") {
+    window.addEventListener("resize", scheduleWindowMaximizedRefresh);
+  }
+  scheduleWindowMaximizedRefresh();
+});
+
+onBeforeUnmount(() => {
+  if (typeof window !== "undefined") {
+    window.removeEventListener("resize", scheduleWindowMaximizedRefresh);
+    if (windowMaximizedRefreshFrame !== null) {
+      window.cancelAnimationFrame(windowMaximizedRefreshFrame);
+    }
+  }
+  windowMaximizedRefreshFrame = null;
+});
+
+watch(
+  () => props.active,
+  (isActive) => {
+    if (isActive) scheduleWindowMaximizedRefresh();
+  }
+);
 </script>

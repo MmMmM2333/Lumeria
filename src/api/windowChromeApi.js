@@ -63,6 +63,12 @@ export async function toggleWindowMaximize() {
   return true;
 }
 
+export async function isWindowMaximized() {
+  const bridge = getWindowChromeBridge();
+  if (typeof bridge?.isMaximized !== "function") return false;
+  return Boolean(await bridge.isMaximized());
+}
+
 export async function hideWindow() {
   return hideMainWindow();
 }
