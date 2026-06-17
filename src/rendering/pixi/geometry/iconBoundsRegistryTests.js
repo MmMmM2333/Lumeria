@@ -11,6 +11,7 @@ import {
   getTopLevelFolderThumbTargetBounds,
   getTopLevelIconBounds,
   getTopLevelIconTargetBounds,
+  makeIconBoundsKey,
   registerFolderPreviewChildBounds,
   registerFolderPreviewChildTargetBounds,
   registerLaunchIconBounds,
@@ -28,6 +29,12 @@ export function runIconBoundsRegistryTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Pixi icon bounds registry test failed] ${message}`);
   };
+
+  assert(makeIconBoundsKey("launch", { area: "desktop", id: "desktop-app", pageIndex: 2 }) === "desktop::2:desktop-app", "launch key should include area, page, and id");
+  assert(makeIconBoundsKey("launch", { area: "folder", folderId: "folder-1", id: "folder-app", pageIndex: 1 }) === "folder:folder-1:1:folder-app", "folder launch key should include folder id");
+  assert(makeIconBoundsKey("top-level", "desktop-folder") === "desktop-folder", "top-level key should normalize id");
+  assert(makeIconBoundsKey("folder-preview-child", { folderId: "folder-1", childId: "child-1", slotIndex: 3 }) === "folder-1:child-1:3", "preview child key should include folder, child, and slot");
+  assert(makeIconBoundsKey("unknown", { id: "x" }) === null, "unknown bounds key type should be rejected");
 
   clearIconBoundsRegistry();
   registerLaunchIconBounds(

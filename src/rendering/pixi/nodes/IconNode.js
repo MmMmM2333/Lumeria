@@ -1,6 +1,7 @@
 import { Container, Graphics, Rectangle, Sprite, Text } from "pixi.js";
 import { gsap } from "gsap";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import { killAllMotion } from "../animation/motionCleanup.js";
 import { getCachedIconTexture } from "../assets/iconTextureCache.js";
 import {
   getCenteredLocalRect,
@@ -821,15 +822,7 @@ export class IconNode extends Container {
 
   destroy(options) {
     this.stopJiggle();
-    gsap.killTweensOf(this.visualWrap);
-    gsap.killTweensOf(this.visualWrap.scale);
-    gsap.killTweensOf(this.folderHoverFrame);
-    gsap.killTweensOf(this.folderChildrenWrap);
-    gsap.killTweensOf(this.folderFlashOverlay);
-    gsap.killTweensOf(this.appFolderCreateFrame);
-    gsap.killTweensOf(this.folderCreateFlashOverlay);
-    gsap.killTweensOf(this.iconSprite);
-    gsap.killTweensOf(this.emojiText);
+    killAllMotion(this);
     super.destroy(options);
   }
 }

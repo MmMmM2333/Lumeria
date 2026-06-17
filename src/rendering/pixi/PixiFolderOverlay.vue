@@ -52,6 +52,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect } from "vue";
+import { useFolderPrewarm } from "../../composables/useFolderPrewarm.js";
 import { createPixiApp } from "./createPixiApp.js";
 import { FolderOverlayLayer } from "./scene/FolderOverlayLayer.js";
 import { findFolderGhostKey } from "./scene/folderOverlayTargets.js";
@@ -76,19 +77,12 @@ const titleFrame = ref(null);
 const closingTitleStartOpacity = ref(1);
 const folderPageDotsVisible = ref(false);
 const FOLDER_PAGE_DOTS_REVEAL_PROGRESS = 0.995;
-const FOLDER_PREWARM_DELAY = 80;
-const FOLDER_PREWARM_FOLDER_LIMIT = 4;
-const FOLDER_PREWARM_TEXTURE_TIMEOUT = 80;
 let app = null;
 let layer = null;
 let resizeObserver = null;
 let destroyed = false;
 let didWarmInitialFrame = false;
 let folderPageDotsRevealFrame = null;
-let folderPrewarmTimer = null;
-let folderPrewarmRequestId = 0;
-let folderPrewarmKey = null;
-const prewarmedFolderKeys = new Set();
 
 const isFolderGhostTransitionActive = computed(() => Boolean(
   props.state.isFolderOpenIconAnimationActive?.value ||
@@ -104,6 +98,20 @@ const shouldRunPixi = computed(() => Boolean(
     isFolderGhostTransitionActive.value
   )
 ));
+
+const folderPrewarm = useFolderPrewarm({
+  canPrewarm: () => Boolean(app && layer && hostRef.value && !destroyed),
+  delayMs: 80,
+  folderLimit: 4,
+  getActivePageIndex: () => props.state.activePageIndex?.value || 0,
+  getActivePages: () => props.state.activePages?.value,
+  getFolderPageSize: () => props.state.folderPageSize.value,
+  getVisibleDesktopPage: (page) => props.state.getVisibleDesktopPage?.(page) || [],
+  preloadIconTextures: preloadIconTexturesAsync,
+  renderPrewarm: renderFolderPrewarm,
+  shouldRunPixi: () => shouldRunPixi.value,
+  textureTimeoutMs: 80,
+});
 
 const isFolderPageDotsBlocked = computed(() => Boolean(
   props.state.isFolderClosing.value ||
@@ -268,7 +276,7 @@ function destroyPixi(options = {}) {
   resizeObserver?.disconnect();
   resizeObserver = null;
   cancelFolderPageDotsReveal();
-  cancelFolderPrewarm();
+  folderPrewarm.cancelFolderPrewarm();
   const currentApp = app;
   const currentLayer = layer;
   app = null;
@@ -287,14 +295,6 @@ function destroyPixi(options = {}) {
   if (deep) clearIconTextureCache();
 }
 
-function cancelFolderPrewarm() {
-  folderPrewarmRequestId += 1;
-  folderPrewarmKey = null;
-  if (folderPrewarmTimer == null) return;
-  window.clearTimeout(folderPrewarmTimer);
-  folderPrewarmTimer = null;
-}
-
 function syncPixiActivity() {
   if (!app) return;
   if (!shouldRunPixi.value) {
@@ -309,43 +309,8 @@ function syncPixiActivity() {
   renderInitialWarmFrame();
 }
 
-function getFirstFolderPageItems(folder) {
-  if (Array.isArray(folder?.childPages)) return folder.childPages[0] || [];
-  return Array.isArray(folder?.children) ? folder.children : [];
-}
-
-function getFolderPrewarmKey(folder) {
-  const firstPageItems = getFirstFolderPageItems(folder).slice(0, props.state.folderPageSize.value);
-  return `${folder?.id || "folder"}:${firstPageItems.map((item) => item?.id || "").join(",")}`;
-}
-
-function getPrewarmFolderCandidate() {
-  if (shouldRunPixi.value || !props.state.activePages?.value || prewarmedFolderKeys.size >= FOLDER_PREWARM_FOLDER_LIMIT) return null;
-  const page = props.state.activePages.value[props.state.activePageIndex?.value || 0] || [];
-  const visibleItems = props.state.getVisibleDesktopPage?.(page) || [];
-  return visibleItems.find((item) => {
-    if (item?.type !== "folder") return false;
-    const firstPageItems = getFirstFolderPageItems(item).slice(0, props.state.folderPageSize.value);
-    const key = getFolderPrewarmKey(item);
-    return firstPageItems.length && !prewarmedFolderKeys.has(key);
-  }) || null;
-}
-
-function finishFolderPrewarmRequest(requestId) {
-  if (requestId === folderPrewarmRequestId) folderPrewarmKey = null;
-}
-
-async function runFolderPrewarm(folder, requestId) {
-  if (!folder || !app || !layer || !hostRef.value || destroyed || shouldRunPixi.value) {
-    finishFolderPrewarmRequest(requestId);
-    return;
-  }
-  const firstPageItems = getFirstFolderPageItems(folder).slice(0, props.state.folderPageSize.value);
-  await preloadIconTexturesAsync(firstPageItems, { timeoutMs: FOLDER_PREWARM_TEXTURE_TIMEOUT });
-  if (requestId !== folderPrewarmRequestId || destroyed || shouldRunPixi.value || !app || !layer || !hostRef.value) {
-    finishFolderPrewarmRequest(requestId);
-    return;
-  }
+function renderFolderPrewarm({ firstPageItems, folder }) {
+  if (!app || !layer || !hostRef.value || destroyed || shouldRunPixi.value) return false;
   const rect = getHostRect();
   layer.update(createLayerState(rect, {
     folderPageIndex: 0,
@@ -361,10 +326,7 @@ async function runFolderPrewarm(folder, requestId) {
     setFolderPageRef: null,
   }));
   app.render?.();
-  if (requestId !== folderPrewarmRequestId || destroyed || shouldRunPixi.value || !app || !layer || !hostRef.value) {
-    finishFolderPrewarmRequest(requestId);
-    return;
-  }
+  if (!app || !layer || !hostRef.value || destroyed || shouldRunPixi.value) return false;
   layer.update(createLayerState(rect, {
     folderPageIndex: 0,
     folderPages: [],
@@ -375,26 +337,7 @@ async function runFolderPrewarm(folder, requestId) {
   }));
   app.render?.();
   app.stop?.();
-  prewarmedFolderKeys.add(`${folder.id || "folder"}:${firstPageItems.map((item) => item?.id || "").join(",")}`);
-  finishFolderPrewarmRequest(requestId);
-  scheduleFolderPrewarm();
-}
-
-function scheduleFolderPrewarm(folderOverride = null, options = {}) {
-  if (!app || destroyed || shouldRunPixi.value) return;
-  const folder = folderOverride || getPrewarmFolderCandidate();
-  if (!folder) return;
-  const firstPageItems = getFirstFolderPageItems(folder).slice(0, props.state.folderPageSize.value);
-  const nextKey = getFolderPrewarmKey(folder);
-  if (prewarmedFolderKeys.has(nextKey)) return;
-  if (folderPrewarmKey === nextKey) return;
-  cancelFolderPrewarm();
-  folderPrewarmKey = nextKey;
-  const requestId = folderPrewarmRequestId;
-  folderPrewarmTimer = window.setTimeout(() => {
-    folderPrewarmTimer = null;
-    void runFolderPrewarm(folder, requestId);
-  }, options.delayMs ?? FOLDER_PREWARM_DELAY);
+  return true;
 }
 
 function cancelFolderPageDotsReveal() {
@@ -486,7 +429,7 @@ onMounted(async () => {
   window.addEventListener("resize", handleResize);
   await nextTick();
   syncPixiActivity();
-  scheduleFolderPrewarm();
+  folderPrewarm.scheduleFolderPrewarm();
 });
 
 watch(
@@ -497,9 +440,9 @@ watch(
 watch(
   () => props.state.activePageIndex?.value,
   () => {
-    cancelFolderPrewarm();
-    prewarmedFolderKeys.clear();
-    scheduleFolderPrewarm();
+    folderPrewarm.cancelFolderPrewarm();
+    folderPrewarm.clearPrewarmedFolderKeys();
+    folderPrewarm.scheduleFolderPrewarm();
   }
 );
 
@@ -507,7 +450,7 @@ watch(
   () => props.state.folderOpenWarmupRequest?.value,
   (request) => {
     if (!request?.folder) return;
-    scheduleFolderPrewarm(request.folder, { delayMs: 0 });
+    folderPrewarm.scheduleFolderPrewarm(request.folder, { delayMs: 0 });
   }
 );
 
@@ -535,7 +478,7 @@ watchEffect(() => {
   void props.state.renderedFolder.value;
   void props.state.showMissingLaunchTargetBadge.value;
   renderPixi();
-  scheduleFolderPrewarm();
+  folderPrewarm.scheduleFolderPrewarm();
 });
 
 onBeforeUnmount(destroyPixi);
