@@ -83,6 +83,7 @@ function findFolder(sourcePages, folderId) {
 
 function createFolderFlow(overrides = {}) {
   const calls = {
+    clearFolderOpenIconGhosts: 0,
     clearFolderPageTurn: 0,
     resetFolderViewportMetrics: 0,
     setFolderMotionGeometry: [],
@@ -96,6 +97,9 @@ function createFolderFlow(overrides = {}) {
   const flow = useLaunchpadFolderFlow({
     clearFolderPageTurn: () => {
       calls.clearFolderPageTurn += 1;
+    },
+    clearFolderOpenIconGhosts: () => {
+      calls.clearFolderOpenIconGhosts += 1;
     },
     cloneItem,
     findFolder,
@@ -256,6 +260,7 @@ export function runLaunchpadFolderFlowTests() {
     assert(!zoomFadeClose.flow.isFolderClosing.value, "zoom-fade close should not use the normal folder closing state");
     assert(!zoomFadeClose.flow.isHomeRevealSettling.value, "zoom-fade close should not settle the home reveal by default");
     assert(zoomFadeClose.calls.clearFolderPageTurn === 1, "zoom-fade close should clear folder page turn timers");
+    assert(zoomFadeClose.calls.clearFolderOpenIconGhosts === 1, "zoom-fade close should clear interrupted folder open ghosts");
     zoomFadeClose.flow.finishFolderZoomFadeClose();
     assert(zoomFadeClose.flow.openFolderId.value === null, "zoom-fade finish should clear the open folder id");
     assert(zoomFadeClose.flow.renderedFolder.value === null, "zoom-fade finish should clear the rendered folder");

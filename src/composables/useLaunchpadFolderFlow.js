@@ -223,6 +223,7 @@ export function useLaunchpadFolderFlow(options) {
     clearFolderZoomFadeCloseTimer();
     isFolderZoomFadeClosing.value = true;
     folderZoomFadeCloseReason.value = closeOptions.reason || null;
+    options.clearFolderOpenIconGhosts?.();
     if (closeOptions.revealHome) startHomeRevealSettleWindow();
     else finishHomeRevealSettleWindow();
     options.clearFolderPageTurn();

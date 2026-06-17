@@ -374,6 +374,7 @@ export function useLaunchpadController() {
     startHomeRevealSettleWindow,
   } = useLaunchpadFolderFlow({
     clearFolderPageTurn: () => deferredHandlers.call("clearFolderPageTurn"),
+    clearFolderOpenIconGhosts,
     cloneItem,
     findFolder,
     folderPageIndex,
