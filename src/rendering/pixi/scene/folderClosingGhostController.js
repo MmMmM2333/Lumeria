@@ -86,7 +86,7 @@ export class FolderClosingGhostController {
     const interruption = this.captureOpeningInterruption(state, targets, panelRect);
     const closeFrameFromRect = interruption?.frameRect || panelRect;
     const closeTargets = interruption?.targets || targets;
-    layer.clearOpeningGhosts();
+    layer.openingGhosts.clear();
     this.begin(state.renderedFolder?.id);
     const usableTargets = (closeTargets || []).filter((target) => target.sourceRect && target.targetRect);
     if (!usableTargets.length) return;

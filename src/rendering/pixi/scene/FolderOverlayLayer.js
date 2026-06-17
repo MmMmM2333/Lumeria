@@ -139,8 +139,8 @@ export class FolderOverlayLayer extends Container {
       stopTargetSprings(this.pageTrack);
       stopTargetSprings(this.panel);
       stopTargetSprings(this.panel.scale);
-      this.clearOpeningGhosts();
-      this.clearClosingGhosts();
+      this.openingGhosts.clear();
+      this.closingGhosts.clear();
       this.stableFolderCloseTarget = null;
       if (state.folderPanelRef) state.folderPanelRef.value = null;
       if (state.folderViewportRef) state.folderViewportRef.value = null;
@@ -152,8 +152,8 @@ export class FolderOverlayLayer extends Container {
     this.hitArea = new Rectangle(0, 0, state.width, state.height);
     const sizeKey = `${state.width}x${state.height}`;
     if (this.sizeKey && this.sizeKey !== sizeKey) {
-      this.clearOpeningGhosts();
-      this.clearClosingGhosts();
+      this.openingGhosts.clear();
+      this.closingGhosts.clear();
     }
     this.sizeKey = sizeKey;
 
@@ -337,15 +337,15 @@ export class FolderOverlayLayer extends Container {
     }
 
     const closingPreviewSwapTargets = renderPlan.closingPreviewSwapTargets;
-    if (isNewFolder && !isClosing) this.startOpeningGhosts(state, openingGhostTargets, folderRect, geometry.panel);
+    if (isNewFolder && !isClosing) this.openingGhosts.start(state, openingGhostTargets, folderRect, geometry.panel);
     if (state.isFolderClosing && this.closingGhostFolderId !== folderId) {
-      this.startClosingGhosts(state, closingGhostTargets, closeThumbRect, geometry.panel, {
+      this.closingGhosts.start(state, closingGhostTargets, closeThumbRect, geometry.panel, {
         previewSwapTargets: closingPreviewSwapTargets,
       });
     }
     if (!state.isFolderClosing && this.closingGhostFolderId) {
       this.closingGhostFolderId = null;
-      this.clearClosingGhosts();
+      this.closingGhosts.clear();
     }
 
     for (const [key, node] of this.iconNodes) {
@@ -369,64 +369,11 @@ export class FolderOverlayLayer extends Container {
     return Boolean(this.openingGhostKeys?.size || this.closingGhosts.hasActive());
   }
 
-  clearOpeningGhostRevealTimer() {
-    this.openingGhosts.clearRevealTimer();
-  }
-
-  clearClosingGhostRevealTimer() {
-    this.closingGhosts.clearRevealTimer();
-  }
-
-  scheduleOpeningGhostRevealFallback(targets) {
-    this.openingGhosts.scheduleRevealFallback(targets);
-  }
-
-  scheduleClosingGhostRevealFallback(targets) {
-    this.closingGhosts.scheduleRevealFallback(targets);
-  }
-
   revealIconNodes() {
     for (const node of this.iconNodes.values()) {
       node.visible = true;
       node.alpha = 1;
     }
-  }
-
-  finishIconGhostTransition() {
-    if (this.hasActiveIconGhosts()) return;
-    this.clearOpeningGhostRevealTimer();
-    this.clearClosingGhostRevealTimer();
-    this.revealIconNodes();
-    this.pageTrack.visible = true;
-    this.rebuildPageTrackMask();
-  }
-
-  flushCompletedClosingControllerGhosts(state) {
-    this.closingGhosts.flushCompletedControllerGhosts(state);
-  }
-
-  clearCompletedClosingPreviewGhosts() {
-    this.closingGhosts.clearCompletedPreviewGhosts();
-  }
-
-  cancelClosingHandoffCleanup() {
-    this.closingGhosts.cancelHandoffCleanup();
-  }
-
-  runClosingHandoffCleanup() {
-    this.closingGhosts.runHandoffCleanup();
-  }
-
-  finishClosingGhostTransition(state) {
-    this.closingGhosts.finishTransition(state);
-  }
-
-  clearOpeningGhosts() {
-    this.openingGhosts.clear();
-  }
-
-  clearClosingGhosts() {
-    this.closingGhosts.clear();
   }
 
   clearFrameGhost(options = {}) {
@@ -536,30 +483,6 @@ export class FolderOverlayLayer extends Container {
     this.pageMask = nextMask;
     this.pageTrack.mask = this.pageMask;
     previousMask?.destroy?.();
-  }
-
-  finishOpeningGhostTransition() {
-    this.openingGhosts.finishTransition();
-  }
-
-  completeOpeningGhost(state, target, ghost) {
-    this.openingGhosts.complete(state, target, ghost);
-  }
-
-  startOpeningGhosts(state, targets, folderRect, panelRect) {
-    this.openingGhosts.start(state, targets, folderRect, panelRect);
-  }
-
-  completeClosingGhost(state, target, ghost) {
-    this.closingGhosts.completeGhost(state, target, ghost);
-  }
-
-  completeClosingFrameGhost(state) {
-    this.closingGhosts.completeFrameGhost(state);
-  }
-
-  startClosingGhosts(state, targets, folderRect, panelRect, options = {}) {
-    this.closingGhosts.start(state, targets, folderRect, panelRect, options);
   }
 
   animatePanel(state, targetX, targetY, panelRect) {
@@ -693,8 +616,8 @@ export class FolderOverlayLayer extends Container {
   }
 
   destroy(options) {
-    this.clearOpeningGhosts();
-    this.clearClosingGhosts();
+    this.openingGhosts.clear();
+    this.closingGhosts.clear();
     killAllMotion(this.panel);
     killAllMotion(this.pageTrack);
     if (this.frameGhostState) gsap.killTweensOf(this.frameGhostState);
