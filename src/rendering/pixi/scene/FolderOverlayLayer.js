@@ -37,9 +37,8 @@ import {
   registerLaunchIconBounds,
   registerLaunchIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
-import { getClosingPreviewTiming, getFolderPageMaskRect, resolveOpeningInterruptionFrame } from "./folderOverlayGeometry.js";
+import { getClosingPreviewTiming, getFolderPageMaskRect } from "./folderOverlayGeometry.js";
 import { makeFolderOverlayRenderPlan } from "./folderOverlayRenderPlan.js";
-import { cloneFrameSnapshot, makeOpeningInterruptionFrame } from "./folderOpeningInterruptionFrame.js";
 import {
   getStableFolderCloseRects,
   makeClosingGhostTarget,
@@ -578,35 +577,6 @@ export class FolderOverlayLayer extends Container {
 
   completeClosingFrameGhost(state) {
     this.closingGhosts.completeFrameGhost(state);
-  }
-
-  captureOpeningInterruption(state, targets, panelRect) {
-    if (!this.openingGhostKeys?.size) return null;
-    const targetByItemId = new Map((targets || []).map((target) => [target.item?.id, target]));
-    const interruptedTargets = [];
-
-    for (const ghost of this.openingGhostLayer.children || []) {
-      const baseTarget = targetByItemId.get(ghost.item?.id);
-      if (!baseTarget || ghost.destroyed) continue;
-      const sourceRect = ghost.getIconBounds(state.stageRect);
-      if (!sourceRect) continue;
-      interruptedTargets.push({
-        ...baseTarget,
-        interrupted: true,
-        sourceAlpha: ghost.alpha,
-        sourceLabelAlpha: ghost.labelText?.alpha,
-        sourceRect,
-        sourceScale: Math.max(0.14, sourceRect.width / Math.max(1, baseTarget.iconSize)),
-      });
-    }
-
-    const frameRect = cloneFrameSnapshot(this.frameGhostState);
-    const contentFrameRect = makeOpeningInterruptionFrame(interruptedTargets, state.stageRect, frameRect);
-
-    return {
-      frameRect: resolveOpeningInterruptionFrame(frameRect, panelRect, contentFrameRect),
-      targets: interruptedTargets.length ? interruptedTargets : targets,
-    };
   }
 
   createClosingPreviewSwapIcon(item, size) {

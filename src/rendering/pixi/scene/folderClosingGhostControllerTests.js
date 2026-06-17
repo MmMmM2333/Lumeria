@@ -93,6 +93,7 @@ function makeLayer() {
       },
     },
     iconNodes: new Map([["app-1", iconNode]]),
+    openingGhostLayer: { children: [] },
     openingGhostKeys: null,
     pageTrack: { visible: false },
     clearFrameGhost() {
@@ -196,6 +197,43 @@ export function runFolderClosingGhostControllerTests() {
     assert(completedPreviewGhost.destroyed, "handoff cleanup should destroy completed preview ghosts");
     assert(clearPreviewSwapCount === 1, "handoff cleanup should clear preview swap visuals");
     assert(layer.calls.includes("clear-frame"), "handoff cleanup should clear the frame ghost");
+  }
+
+  {
+    const layer = makeLayer();
+    const controller = new FolderClosingGhostController(layer);
+    const target = makeTarget();
+    layer.openingGhostKeys = new Set(["app-1"]);
+    layer.frameGhostState = {
+      fillAlpha: 0.26,
+      fillColor: 0x111111,
+      height: 180,
+      left: 20,
+      radius: 42,
+      strokeAlpha: 0.2,
+      strokeColor: 0xffffff,
+      strokeWidth: 1,
+      top: 30,
+      width: 240,
+    };
+    layer.openingGhostLayer.children = [{
+      alpha: 0.7,
+      destroyed: false,
+      item: { id: "app-1" },
+      labelText: { alpha: 0.4 },
+      getIconBounds: () => ({ height: 32, left: 44, top: 55, width: 32 }),
+    }];
+
+    const interruption = controller.captureOpeningInterruption(makeState(), [target], { height: 300, left: 0, top: 0, width: 400 });
+    assert(interruption.targets.length === 1, "capture should keep one interrupted target");
+    assert(interruption.targets[0].interrupted, "capture should mark the target interrupted");
+    assert(interruption.targets[0].sourceAlpha === 0.7, "capture should preserve ghost alpha");
+    assert(interruption.targets[0].sourceLabelAlpha === 0.4, "capture should preserve label alpha");
+    assert(interruption.targets[0].sourceScale === 0.5, "capture should derive source scale from the captured rect");
+    assert(interruption.frameRect?.width > 0, "capture should resolve a frame rect");
+
+    layer.openingGhostKeys = new Set();
+    assert(controller.captureOpeningInterruption(makeState(), [target], null) === null, "capture should be inactive without opening ghosts");
   }
 
   {

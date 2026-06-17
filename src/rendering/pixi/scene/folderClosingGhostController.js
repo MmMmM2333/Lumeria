@@ -4,13 +4,20 @@ import { killAllMotion } from "../animation/motionCleanup.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { makeStageLocalRect } from "../geometry/stageCoordinates.js";
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
-import { getClosingPreviewTiming } from "./folderOverlayGeometry.js";
+import {
+  getClosingPreviewTiming,
+  resolveOpeningInterruptionFrame,
+} from "./folderOverlayGeometry.js";
 import {
   getMaxFolderGhostGridDelay,
   makeClosingGhostMotion,
   makeCompletedClosingPreviewMotion,
 } from "./folderIconGhostMotion.js";
 import { makeFolderGhostIconNodeState } from "./folderGhostIconState.js";
+import {
+  cloneFrameSnapshot,
+  makeOpeningInterruptionFrame,
+} from "./folderOpeningInterruptionFrame.js";
 import {
   cancelClosingHandoffCleanup,
   scheduleClosingHandoffCleanup,
@@ -76,7 +83,7 @@ export class FolderClosingGhostController {
     const {
       previewSwapTargets = [],
     } = options;
-    const interruption = layer.captureOpeningInterruption(state, targets, panelRect);
+    const interruption = this.captureOpeningInterruption(state, targets, panelRect);
     const closeFrameFromRect = interruption?.frameRect || panelRect;
     const closeTargets = interruption?.targets || targets;
     layer.clearOpeningGhosts();
@@ -177,6 +184,36 @@ export class FolderClosingGhostController {
         y: motion.scale,
       });
     }
+  }
+
+  captureOpeningInterruption(state, targets, panelRect) {
+    const layer = this.layer;
+    if (!layer.openingGhostKeys?.size) return null;
+    const targetByItemId = new Map((targets || []).map((target) => [target.item?.id, target]));
+    const interruptedTargets = [];
+
+    for (const ghost of layer.openingGhostLayer.children || []) {
+      const baseTarget = targetByItemId.get(ghost.item?.id);
+      if (!baseTarget || ghost.destroyed) continue;
+      const sourceRect = ghost.getIconBounds(state.stageRect);
+      if (!sourceRect) continue;
+      interruptedTargets.push({
+        ...baseTarget,
+        interrupted: true,
+        sourceAlpha: ghost.alpha,
+        sourceLabelAlpha: ghost.labelText?.alpha,
+        sourceRect,
+        sourceScale: Math.max(0.14, sourceRect.width / Math.max(1, baseTarget.iconSize)),
+      });
+    }
+
+    const frameRect = cloneFrameSnapshot(layer.frameGhostState);
+    const contentFrameRect = makeOpeningInterruptionFrame(interruptedTargets, state.stageRect, frameRect);
+
+    return {
+      frameRect: resolveOpeningInterruptionFrame(frameRect, panelRect, contentFrameRect),
+      targets: interruptedTargets.length ? interruptedTargets : targets,
+    };
   }
 
   flushCompletedControllerGhosts(state) {
