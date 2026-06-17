@@ -79,6 +79,32 @@ const FOLDER_THUMB_SCROLL_DURATION = 0.46;
 const APP_FOLDER_CREATE_DIM_ALPHA = 0.48;
 const APP_FOLDER_CREATE_DIM_DURATION = 0.12;
 const APP_FOLDER_CREATE_FRAME_DURATION = 0.16;
+const FOLDER_FLASH_STEPS = [
+  { alpha: 0.42, duration: 0.135 },
+  { alpha: 0.02, duration: 0.135 },
+  { alpha: 0.36, duration: 0.135 },
+  { alpha: 0, duration: 0.135 },
+];
+
+function playFlashOverlay(overlay, options = {}) {
+  gsap.killTweensOf(overlay);
+  options.prepare?.();
+  overlay.visible = true;
+  overlay.alpha = 0;
+  const timeline = gsap.timeline({ defaults: { ease: "sine.inOut" } });
+  for (let index = 0; index < FOLDER_FLASH_STEPS.length; index += 1) {
+    const step = FOLDER_FLASH_STEPS[index];
+    timeline.to(overlay, {
+      ...step,
+      onComplete: index === FOLDER_FLASH_STEPS.length - 1
+        ? () => {
+          overlay.visible = false;
+        }
+        : undefined,
+    });
+  }
+  return timeline;
+}
 
 export class IconNode extends Container {
   constructor(options = {}) {
@@ -591,20 +617,7 @@ export class IconNode extends Container {
   }
 
   playFolderFlash() {
-    gsap.killTweensOf(this.folderFlashOverlay);
-    this.folderFlashOverlay.visible = true;
-    this.folderFlashOverlay.alpha = 0;
-    gsap.timeline({ defaults: { ease: "sine.inOut" } })
-      .to(this.folderFlashOverlay, { alpha: 0.42, duration: 0.135 })
-      .to(this.folderFlashOverlay, { alpha: 0.02, duration: 0.135 })
-      .to(this.folderFlashOverlay, { alpha: 0.36, duration: 0.135 })
-      .to(this.folderFlashOverlay, {
-        alpha: 0,
-        duration: 0.135,
-        onComplete: () => {
-          this.folderFlashOverlay.visible = false;
-        },
-      });
+    playFlashOverlay(this.folderFlashOverlay);
   }
 
   clearFolderHoverAnimation() {
@@ -712,21 +725,9 @@ export class IconNode extends Container {
   }
 
   playAppFolderCreateFlash() {
-    gsap.killTweensOf(this.folderCreateFlashOverlay);
-    this.drawAppFolderCreateFlashOverlay();
-    this.folderCreateFlashOverlay.visible = true;
-    this.folderCreateFlashOverlay.alpha = 0;
-    gsap.timeline({ defaults: { ease: "sine.inOut" } })
-      .to(this.folderCreateFlashOverlay, { alpha: 0.42, duration: 0.135 })
-      .to(this.folderCreateFlashOverlay, { alpha: 0.02, duration: 0.135 })
-      .to(this.folderCreateFlashOverlay, { alpha: 0.36, duration: 0.135 })
-      .to(this.folderCreateFlashOverlay, {
-        alpha: 0,
-        duration: 0.135,
-        onComplete: () => {
-          this.folderCreateFlashOverlay.visible = false;
-        },
-      });
+    playFlashOverlay(this.folderCreateFlashOverlay, {
+      prepare: () => this.drawAppFolderCreateFlashOverlay(),
+    });
   }
 
   clearAppFolderCreateHoverAnimation(options = {}) {
