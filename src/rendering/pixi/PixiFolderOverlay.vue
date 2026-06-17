@@ -54,8 +54,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect } from "vue";
 import { useFolderPrewarm } from "../../composables/useFolderPrewarm.js";
 import { createPixiApp } from "./createPixiApp.js";
+import { createFolderLayerState } from "./folderLayerState.js";
 import { FolderOverlayLayer } from "./scene/FolderOverlayLayer.js";
-import { findFolderGhostKey } from "./scene/folderOverlayTargets.js";
 import { clearIconTextureCache, preloadIconTexturesAsync } from "./assets/iconTextureCache.js";
 import { clearFolderIconBounds } from "./geometry/iconBoundsRegistry.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
@@ -197,41 +197,43 @@ function getHostRect() {
 }
 
 function createLayerState(rect, overrides = {}) {
-  return {
-    dragMeta: props.state.dragMeta.value,
-    folderGridStyle: props.state.folderGridStyle.value,
-    folderPageIndex: props.state.folderPageIndex.value,
-    folderPageSize: props.state.folderPageSize.value,
-    folderPages: props.state.folderPages.value,
-    folderOpeningOriginBounds: props.state.folderOpeningOriginBounds?.value,
-    folderPanelRef: props.state.folderPanelRef,
-    folderPanelStyle: props.state.folderPanelStyle.value,
-    folderViewportRef: props.state.folderViewportRef,
-    completeFolderCloseIconGhost: props.state.completeFolderCloseIconGhost,
-    completeFolderOpenIconGhost: props.state.completeFolderOpenIconGhost,
-    folderCloseIconGhosts: props.state.folderCloseIconGhosts?.value,
-    folderOpenIconGhosts: props.state.folderOpenIconGhosts?.value,
-    dragReleaseGhostId: props.state.dragReleaseState?.value?.item?.id || null,
-    getFolderCloseIconGhostKey: (itemId, slotIndex) => findFolderGhostKey(props.state.folderCloseIconGhosts?.value, itemId, slotIndex),
-    getFolderOpenIconGhostKey: (itemId, slotIndex) => findFolderGhostKey(props.state.folderOpenIconGhosts?.value, itemId, slotIndex),
-    getVisibleFolderPage: props.state.getVisibleFolderPage,
-    getFolderPageRenderMode: props.state.getFolderPageRenderMode,
-    height: Math.max(1, rect.height),
-    iconSize: Number.parseFloat(props.state.folderPanelStyle.value?.["--folder-icon-size"]) || 64,
-    isEditMode: props.state.isEditMode.value,
-    isFolderAppLaunchClosing: props.state.isFolderAppLaunchClosing.value,
-    isFolderClosing: props.state.isFolderClosing.value,
-    isIconOpening: props.state.isIconOpening,
-    isIconSelected: props.state.isIconSelected,
-    isTextlessMode: props.state.isTextlessMode.value,
-    launchTargetStatusById: props.state.launchTargetStatusById.value,
-    renderedFolder: props.state.renderedFolder.value,
-    setFolderPageRef: props.state.setFolderPageRef,
-    showMissingLaunchTargetBadge: props.state.showMissingLaunchTargetBadge.value,
-    stageRect: rect,
-    width: Math.max(1, rect.width),
-    ...overrides,
-  };
+  return createFolderLayerState({
+    callbacks: {
+      completeFolderCloseIconGhost: props.state.completeFolderCloseIconGhost,
+      completeFolderOpenIconGhost: props.state.completeFolderOpenIconGhost,
+      getFolderPageRenderMode: props.state.getFolderPageRenderMode,
+      getVisibleFolderPage: props.state.getVisibleFolderPage,
+      isIconOpening: props.state.isIconOpening,
+      isIconSelected: props.state.isIconSelected,
+      setFolderPageRef: props.state.setFolderPageRef,
+    },
+    drag: {
+      meta: props.state.dragMeta.value,
+      releaseState: props.state.dragReleaseState?.value,
+    },
+    folder: {
+      closeIconGhosts: props.state.folderCloseIconGhosts?.value,
+      gridStyle: props.state.folderGridStyle.value,
+      isAppLaunchClosing: props.state.isFolderAppLaunchClosing.value,
+      isClosing: props.state.isFolderClosing.value,
+      openingOriginBounds: props.state.folderOpeningOriginBounds?.value,
+      openIconGhosts: props.state.folderOpenIconGhosts?.value,
+      pageIndex: props.state.folderPageIndex.value,
+      pageSize: props.state.folderPageSize.value,
+      pages: props.state.folderPages.value,
+      panelRef: props.state.folderPanelRef,
+      panelStyle: props.state.folderPanelStyle.value,
+      renderedFolder: props.state.renderedFolder.value,
+      viewportRef: props.state.folderViewportRef,
+    },
+    stage: { rect },
+    ui: {
+      isEditMode: props.state.isEditMode.value,
+      isTextlessMode: props.state.isTextlessMode.value,
+      launchTargetStatusById: props.state.launchTargetStatusById.value,
+      showMissingLaunchTargetBadge: props.state.showMissingLaunchTargetBadge.value,
+    },
+  }, overrides);
 }
 
 function renderPixi(options = {}) {

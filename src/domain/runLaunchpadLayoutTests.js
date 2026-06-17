@@ -36,6 +36,7 @@ import { runGridGeometryTests } from "../rendering/pixi/geometry/gridGeometryTes
 import { runStageCoordinatesTests } from "../rendering/pixi/geometry/stageCoordinatesTests.js";
 import { runIconBoundsRegistryTests } from "../rendering/pixi/geometry/iconBoundsRegistryTests.js";
 import { runIconTextureCacheTests } from "../rendering/pixi/assets/iconTextureCacheTests.js";
+import { runFolderLayerStateTests } from "../rendering/pixi/folderLayerStateTests.js";
 import { runPixiHostMetricsTests } from "../rendering/pixi/pixiHostMetricsTests.js";
 import { runIconControlDrawingTests } from "../rendering/pixi/nodes/iconControlDrawingTests.js";
 import { runIconFolderHoverStateTests } from "../rendering/pixi/nodes/iconFolderHoverStateTests.js";
@@ -132,6 +133,7 @@ runDisplayObjectBoundsTests();
 runGridGeometryTests();
 runStageCoordinatesTests();
 runIconBoundsRegistryTests();
+runFolderLayerStateTests();
 runPixiHostMetricsTests();
 await runAcrylicFiltersTests();
 runAcrylicParamsTests();
