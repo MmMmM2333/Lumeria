@@ -34,8 +34,8 @@ export class FolderClosingGhostController {
   constructor(layer, options = {}) {
     this.layer = layer;
     this.scheduler = options.scheduler || globalThis;
-    this.clearPreviewSwapLayer = options.clearPreviewSwapLayer || (() => {});
     this.ghostFactory = options.ghostFactory;
+    this.previewSwap = options.previewSwap || { clear: () => {}, start: () => {} };
     layer.closingGhostRevealTimer = null;
     layer.closingFrameComplete = false;
     layer.closingPreviewSwapKeys = new Set();
@@ -100,7 +100,7 @@ export class FolderClosingGhostController {
       if (closingPreviewSwapStarted || isInterruptedClose || !previewSwapTargets?.length) return;
       if ((frame?.progress ?? 0) < previewTiming.progress) return;
       closingPreviewSwapStarted = true;
-      layer.startClosingPreviewSwapGhosts(state, previewSwapTargets, previewTiming);
+      this.previewSwap.start(state, previewSwapTargets, previewTiming, (finishState) => this.finishTransition(finishState));
     };
     layer.enableClosingFrameMask();
     layer.startFrameGhost(closeFrameFromRect, closeFrameToRect, {
@@ -239,7 +239,7 @@ export class FolderClosingGhostController {
 
   runHandoffCleanup() {
     this.clearCompletedPreviewGhosts();
-    this.clearPreviewSwapLayer(this.layer);
+    this.previewSwap.clear();
     this.layer.clearFrameGhost();
   }
 
@@ -302,7 +302,7 @@ export class FolderClosingGhostController {
       killAllMotion(ghost);
       ghost.destroy?.({ children: true });
     }
-    this.clearPreviewSwapLayer(layer);
+    this.previewSwap.clear();
   }
 }
 

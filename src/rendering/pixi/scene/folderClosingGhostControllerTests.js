@@ -137,6 +137,17 @@ function makeState(completed = []) {
   };
 }
 
+function makePreviewSwap(calls = []) {
+  return {
+    clear() {
+      calls.push("clear-preview-swap");
+    },
+    start() {
+      calls.push("start-preview-swap");
+    },
+  };
+}
+
 export function runFolderClosingGhostControllerTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Folder closing ghost controller test failed] ${message}`);
@@ -145,11 +156,9 @@ export function runFolderClosingGhostControllerTests() {
   {
     const timerHost = makeTimerHost();
     const layer = makeLayer();
-    let clearPreviewSwapCount = 0;
+    const previewSwapCalls = [];
     const controller = new FolderClosingGhostController(layer, {
-      clearPreviewSwapLayer: () => {
-        clearPreviewSwapCount += 1;
-      },
+      previewSwap: makePreviewSwap(previewSwapCalls),
       scheduler: timerHost,
     });
     const ghost = makeGhost();
@@ -167,18 +176,16 @@ export function runFolderClosingGhostControllerTests() {
     assert(ghost.destroyed, "fallback should destroy closing ghosts");
     assert(layer.iconNode.visible === true && layer.iconNode.alpha === 1, "fallback should reveal hidden icon nodes");
     assert(layer.pageTrack.visible === true, "fallback should restore the page track");
-    assert(clearPreviewSwapCount === 1, "fallback should clear preview swap visuals");
+    assert(previewSwapCalls.includes("clear-preview-swap"), "fallback should clear preview swap visuals");
   }
 
   {
     const timerHost = makeTimerHost();
     const layer = makeLayer();
     const completed = [];
-    let clearPreviewSwapCount = 0;
+    const previewSwapCalls = [];
     const controller = new FolderClosingGhostController(layer, {
-      clearPreviewSwapLayer: () => {
-        clearPreviewSwapCount += 1;
-      },
+      previewSwap: makePreviewSwap(previewSwapCalls),
       scheduler: timerHost,
     });
     const completedPreviewGhost = makeGhost("preview");
@@ -195,7 +202,7 @@ export function runFolderClosingGhostControllerTests() {
 
     timerHost.runAllFrames();
     assert(completedPreviewGhost.destroyed, "handoff cleanup should destroy completed preview ghosts");
-    assert(clearPreviewSwapCount === 1, "handoff cleanup should clear preview swap visuals");
+    assert(previewSwapCalls.includes("clear-preview-swap"), "handoff cleanup should clear preview swap visuals");
     assert(layer.calls.includes("clear-frame"), "handoff cleanup should clear the frame ghost");
   }
 

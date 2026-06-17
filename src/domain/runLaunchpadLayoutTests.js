@@ -54,6 +54,7 @@ import { runFolderIconGhostMotionTests } from "../rendering/pixi/scene/folderIco
 import { runFolderOverlayIconPlanTests } from "../rendering/pixi/scene/folderOverlayIconPlanTests.js";
 import { runFolderOverlayRenderPlanTests } from "../rendering/pixi/scene/folderOverlayRenderPlanTests.js";
 import { runFolderClosingGhostControllerTests } from "../rendering/pixi/scene/folderClosingGhostControllerTests.js";
+import { runFolderClosingPreviewSwapControllerTests } from "../rendering/pixi/scene/folderClosingPreviewSwapControllerTests.js";
 import { runFolderOpeningGhostControllerTests } from "../rendering/pixi/scene/folderOpeningGhostControllerTests.js";
 import { runFolderOpeningInterruptionFrameTests } from "../rendering/pixi/scene/folderOpeningInterruptionFrameTests.js";
 import { runFolderOverlayLayerTests } from "../rendering/pixi/scene/FolderOverlayLayerTests.js";
@@ -159,6 +160,7 @@ runFolderIconGhostMotionTests();
 runFolderOverlayIconPlanTests();
 runFolderOverlayRenderPlanTests();
 runFolderClosingGhostControllerTests();
+runFolderClosingPreviewSwapControllerTests();
 runFolderOpeningGhostControllerTests();
 runFolderOpeningInterruptionFrameTests();
 runFolderOverlayLayerTests();
