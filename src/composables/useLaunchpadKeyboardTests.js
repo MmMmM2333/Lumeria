@@ -49,7 +49,7 @@ function createKeyboard(overrides = {}) {
     isDesktopOpen: ref(true),
     isDragActive: () => false,
     isFolderAppLaunchClosing: ref(false),
-    isFolderClosing: ref(false),
+    isFolderClosing: ref(Boolean(overrides.isFolderClosing)),
     isFolderZoomFadeClosing: ref(false),
     isHomeRevealSettling: ref(false),
     isModalOpen: () => Boolean(overrides.hasModal),
@@ -148,4 +148,18 @@ export function runLaunchpadKeyboardTests() {
   assert(folderAltSpace.calls.commitOpenFolder.length === 0, "Alt+Space should not use the normal folder close path");
   assert(folderAltSpace.calls.closeDesktop.length === 1, "Alt+Space should close the desktop while the folder zoom-fades");
   assert(folderAltSpace.calls.hideNativeWindowAfterCloseAnimation === 1, "Alt+Space should schedule the native window hide");
+
+  const closingFolderAltSpace = createKeyboard({
+    isFolderClosing: true,
+    renderedFolder: { id: "folder-1", type: "folder", name: "Folder" },
+  });
+  const closingAltSpaceEvent = makeKeyEvent(" ");
+  closingAltSpaceEvent.altKey = true;
+  closingAltSpaceEvent.code = "Space";
+  closingFolderAltSpace.keyboard.handleGlobalKeydown(closingAltSpaceEvent);
+  assert(closingAltSpaceEvent.preventDefaultCalled === 1, "Alt+Space should prevent default while a folder close is in flight");
+  assert(closingFolderAltSpace.calls.startFolderZoomFadeClose.length === 1, "Alt+Space should interrupt a folder close with zoom-fade");
+  assert(closingFolderAltSpace.calls.startFolderZoomFadeClose[0].reason === "desktop", "interrupted folder close should mark zoom-fade as desktop close");
+  assert(closingFolderAltSpace.calls.closeDesktop.length === 1, "interrupted folder close should still close the desktop");
+  assert(closingFolderAltSpace.calls.hideNativeWindowAfterCloseAnimation === 1, "interrupted folder close should schedule native window hide");
 }

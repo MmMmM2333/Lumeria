@@ -83,6 +83,7 @@ function findFolder(sourcePages, folderId) {
 
 function createFolderFlow(overrides = {}) {
   const calls = {
+    clearFolderCloseIconGhosts: 0,
     clearFolderOpenIconGhosts: 0,
     clearFolderPageTurn: 0,
     resetFolderViewportMetrics: 0,
@@ -97,6 +98,9 @@ function createFolderFlow(overrides = {}) {
   const flow = useLaunchpadFolderFlow({
     clearFolderPageTurn: () => {
       calls.clearFolderPageTurn += 1;
+    },
+    clearFolderCloseIconGhosts: () => {
+      calls.clearFolderCloseIconGhosts += 1;
     },
     clearFolderOpenIconGhosts: () => {
       calls.clearFolderOpenIconGhosts += 1;
@@ -203,6 +207,26 @@ export function runLaunchpadFolderFlowTests() {
     assert(!closeWithGhosts.flow.isFolderClosing.value, "ghost handoff completion should clear folder closing state");
     assert(closeWithGhosts.flow.renderedFolder.value === null, "ghost handoff completion should clear rendered folder");
 
+    const interruptedClose = createFolderFlow();
+    interruptedClose.flow.commitOpenFolder("folder-1");
+    interruptedClose.folderPageIndex.value = 2;
+    interruptedClose.folderPageRefs.push({ id: "extra-folder-page" });
+    interruptedClose.flow.commitOpenFolder(null, { waitForCloseGhosts: true });
+    assert(interruptedClose.flow.startFolderZoomFadeClose({ reason: "desktop" }), "zoom-fade close should interrupt a normal folder close");
+    assert(!interruptedClose.flow.isFolderClosing.value, "interrupted normal close should leave folder closing state");
+    assert(interruptedClose.flow.isFolderZoomFadeClosing.value, "interrupted normal close should enter zoom-fade closing state");
+    assert(interruptedClose.flow.isFolderZoomFadeClosingFromFolderClose.value, "interrupted normal close should keep the folder visually closing");
+    assert(interruptedClose.flow.folderZoomFadeCloseReason.value === "desktop", "interrupted normal close should store the zoom-fade reason");
+    assert(interruptedClose.flow.renderedFolder.value?.id === "folder-1", "interrupted normal close should keep the rendered folder for zoom-fade");
+    assert(interruptedClose.calls.clearFolderCloseIconGhosts === 1, "interrupted normal close should clear close ghosts");
+    assert(interruptedClose.calls.clearFolderOpenIconGhosts === 1, "interrupted normal close should clear open ghosts");
+    assert(interruptedClose.calls.clearFolderPageTurn === 2, "interrupted normal close should clear folder page turn timers again");
+    timers.runDelay(FOLDER_CLOSE_GHOST_FALLBACK_DURATION);
+    assert(interruptedClose.flow.isFolderZoomFadeClosing.value, "interrupted normal close should cancel the normal close fallback timer");
+    assert(interruptedClose.flow.renderedFolder.value?.id === "folder-1", "normal close fallback should not clear the zoom-fading folder");
+    interruptedClose.flow.finishFolderZoomFadeClose();
+    assert(!interruptedClose.flow.isFolderZoomFadeClosingFromFolderClose.value, "zoom-fade finish should clear the visual closing flag");
+
     const closeAfterFrame = createFolderFlow();
     closeAfterFrame.flow.commitOpenFolder("folder-1");
     closeAfterFrame.flow.commitOpenFolder(null, { waitForCloseGhosts: true });
@@ -258,9 +282,11 @@ export function runLaunchpadFolderFlowTests() {
     assert(zoomFadeClose.flow.isFolderZoomFadeClosing.value, "zoom-fade close should expose its own closing state");
     assert(zoomFadeClose.flow.folderZoomFadeCloseReason.value === null, "zoom-fade close should allow a missing reason");
     assert(!zoomFadeClose.flow.isFolderClosing.value, "zoom-fade close should not use the normal folder closing state");
+    assert(!zoomFadeClose.flow.isFolderZoomFadeClosingFromFolderClose.value, "open-folder zoom-fade close should not use the visual folder-close flag");
     assert(!zoomFadeClose.flow.isHomeRevealSettling.value, "zoom-fade close should not settle the home reveal by default");
     assert(zoomFadeClose.calls.clearFolderPageTurn === 1, "zoom-fade close should clear folder page turn timers");
     assert(zoomFadeClose.calls.clearFolderOpenIconGhosts === 1, "zoom-fade close should clear interrupted folder open ghosts");
+    assert(zoomFadeClose.calls.clearFolderCloseIconGhosts === 1, "zoom-fade close should clear interrupted folder close ghosts");
     zoomFadeClose.flow.finishFolderZoomFadeClose();
     assert(zoomFadeClose.flow.openFolderId.value === null, "zoom-fade finish should clear the open folder id");
     assert(zoomFadeClose.flow.renderedFolder.value === null, "zoom-fade finish should clear the rendered folder");

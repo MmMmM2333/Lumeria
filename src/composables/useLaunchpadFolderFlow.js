@@ -15,6 +15,7 @@ export function useLaunchpadFolderFlow(options) {
   const folderSession = shallowRef(null);
   const isFolderAppLaunchClosing = ref(false);
   const isFolderZoomFadeClosing = ref(false);
+  const isFolderZoomFadeClosingFromFolderClose = ref(false);
   const folderZoomFadeCloseReason = ref(null);
   const folderOpeningOriginBounds = shallowRef(null);
   const folderOpenWarmupRequest = shallowRef(null);
@@ -87,6 +88,7 @@ export function useLaunchpadFolderFlow(options) {
     folderClosingSnapshot.value = null;
     isFolderClosing.value = false;
     isFolderZoomFadeClosing.value = false;
+    isFolderZoomFadeClosingFromFolderClose.value = false;
     folderZoomFadeCloseReason.value = null;
     folderOpeningOriginBounds.value = null;
     options.folderPageIndex.value = 0;
@@ -117,6 +119,7 @@ export function useLaunchpadFolderFlow(options) {
     openFolderId.value = null;
     isFolderClosing.value = false;
     isFolderZoomFadeClosing.value = false;
+    isFolderZoomFadeClosingFromFolderClose.value = false;
     folderZoomFadeCloseReason.value = null;
     folderOpeningOriginBounds.value = null;
     isFolderAppLaunchClosing.value = true;
@@ -146,6 +149,7 @@ export function useLaunchpadFolderFlow(options) {
       isFolderClosing.value = false;
       isFolderAppLaunchClosing.value = false;
       isFolderZoomFadeClosing.value = false;
+      isFolderZoomFadeClosingFromFolderClose.value = false;
       folderZoomFadeCloseReason.value = null;
       folderOpeningOriginBounds.value = commitOptions?.originBounds || null;
       folderClosingSnapshot.value = null;
@@ -168,6 +172,7 @@ export function useLaunchpadFolderFlow(options) {
     openFolderId.value = null;
     isFolderClosing.value = true;
     isFolderZoomFadeClosing.value = false;
+    isFolderZoomFadeClosingFromFolderClose.value = false;
     folderZoomFadeCloseReason.value = null;
     folderOpeningOriginBounds.value = null;
     startHomeRevealSettleWindow();
@@ -207,6 +212,7 @@ export function useLaunchpadFolderFlow(options) {
     folderClosingSnapshot.value = null;
     openFolderId.value = null;
     isFolderZoomFadeClosing.value = false;
+    isFolderZoomFadeClosingFromFolderClose.value = false;
     folderZoomFadeCloseReason.value = null;
     folderOpeningOriginBounds.value = null;
     options.folderPageIndex.value = 0;
@@ -216,14 +222,17 @@ export function useLaunchpadFolderFlow(options) {
   }
 
   function startFolderZoomFadeClose(closeOptions = {}) {
-    if (!renderedFolder.value || isFolderClosing.value || isFolderAppLaunchClosing.value || isFolderZoomFadeClosing.value) return false;
+    if (!renderedFolder.value || isFolderAppLaunchClosing.value || isFolderZoomFadeClosing.value) return false;
     clearFolderCloseHandoffFrame();
     clearFolderCloseTimer();
     clearFolderAppLaunchTimer();
     clearFolderZoomFadeCloseTimer();
+    isFolderZoomFadeClosingFromFolderClose.value = isFolderClosing.value;
+    isFolderClosing.value = false;
     isFolderZoomFadeClosing.value = true;
     folderZoomFadeCloseReason.value = closeOptions.reason || null;
     options.clearFolderOpenIconGhosts?.();
+    options.clearFolderCloseIconGhosts?.();
     if (closeOptions.revealHome) startHomeRevealSettleWindow();
     else finishHomeRevealSettleWindow();
     options.clearFolderPageTurn();
@@ -254,6 +263,7 @@ export function useLaunchpadFolderFlow(options) {
     isFolderClosing,
     isFolderLayerActive,
     isFolderZoomFadeClosing,
+    isFolderZoomFadeClosingFromFolderClose,
     isHomeRevealSettling,
     openFolderId,
     renderedFolder,

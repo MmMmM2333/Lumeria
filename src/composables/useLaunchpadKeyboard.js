@@ -47,7 +47,7 @@ export function useLaunchpadKeyboard(options) {
   }
 
   function handleAltSpaceKey(event) {
-    if (!hasFolderInteractionLayer() || options.isFolderClosing.value || options.isFolderAppLaunchClosing.value || options.isFolderZoomFadeClosing?.value) return false;
+    if (!hasFolderInteractionLayer() || options.isFolderAppLaunchClosing.value || options.isFolderZoomFadeClosing?.value) return false;
     event.preventDefault();
     options.cancelAltEditMode?.();
     options.clearSelectedIcon?.();

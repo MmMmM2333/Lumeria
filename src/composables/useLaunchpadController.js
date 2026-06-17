@@ -365,6 +365,7 @@ export function useLaunchpadController() {
     isFolderClosing,
     isFolderLayerActive,
     isFolderZoomFadeClosing,
+    isFolderZoomFadeClosingFromFolderClose,
     isHomeRevealSettling,
     openFolderId,
     renderedFolder,
@@ -374,6 +375,7 @@ export function useLaunchpadController() {
     startHomeRevealSettleWindow,
   } = useLaunchpadFolderFlow({
     clearFolderPageTurn: () => deferredHandlers.call("clearFolderPageTurn"),
+    clearFolderCloseIconGhosts,
     clearFolderOpenIconGhosts,
     cloneItem,
     findFolder,
@@ -1683,6 +1685,7 @@ export function useLaunchpadController() {
     isFolderClosing,
     isFolderAppLaunchClosing,
     isFolderZoomFadeClosing,
+    isFolderZoomFadeClosingFromFolderClose,
     finishFolderZoomFadeClose,
     startFolderZoomFadeClose,
     handleFolderOverlayPointerDown,

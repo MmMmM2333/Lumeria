@@ -219,6 +219,7 @@ export function createFolderOverlayState(controller) {
     isFolderCloseIconAnimationActive: controller.isFolderCloseIconAnimationActive,
     isFolderClosing: controller.isFolderClosing,
     isFolderZoomFadeClosing: controller.isFolderZoomFadeClosing,
+    isFolderZoomFadeClosingFromFolderClose: controller.isFolderZoomFadeClosingFromFolderClose,
     isFolderOpenFrameGhostPending: controller.isFolderOpenFrameGhostPending,
     isFolderOpenIconAnimationActive: controller.isFolderOpenIconAnimationActive,
     isFolderClosingIconGhosted: controller.isFolderClosingIconGhosted,

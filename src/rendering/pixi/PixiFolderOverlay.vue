@@ -4,7 +4,7 @@
     class="pixi-folder-overlay"
     :class="[
       !state.renderedFolder.value && 'pixi-folder-overlay-empty',
-      (state.isFolderClosing.value || state.isFolderAppLaunchClosing.value) && 'pixi-folder-overlay-closing',
+      (isFolderVisuallyClosing || state.isFolderAppLaunchClosing.value) && 'pixi-folder-overlay-closing',
     ]"
     @pointerdown.stop.prevent
     @contextmenu.stop.prevent
@@ -89,6 +89,10 @@ const isFolderGhostTransitionActive = computed(() => Boolean(
   props.state.isFolderCloseIconAnimationActive?.value
 ));
 const isFolderZoomFadeClosing = computed(() => Boolean(props.state.isFolderZoomFadeClosing?.value));
+const isFolderVisuallyClosing = computed(() => Boolean(
+  props.state.isFolderClosing.value ||
+  props.state.isFolderZoomFadeClosingFromFolderClose?.value
+));
 const shouldRunPixi = computed(() => Boolean(
   props.active && (
     props.state.renderedFolder.value ||
@@ -215,7 +219,7 @@ function createLayerState(rect, overrides = {}) {
       closeIconGhosts: props.state.folderCloseIconGhosts?.value,
       gridStyle: props.state.folderGridStyle.value,
       isAppLaunchClosing: props.state.isFolderAppLaunchClosing.value,
-      isClosing: props.state.isFolderClosing.value,
+      isClosing: isFolderVisuallyClosing.value,
       openingOriginBounds: props.state.folderOpeningOriginBounds?.value,
       openIconGhosts: props.state.folderOpenIconGhosts?.value,
       pageIndex: props.state.folderPageIndex.value,
@@ -361,7 +365,7 @@ function scheduleFolderPageDotsReveal() {
 }
 
 watch(
-  () => Boolean(props.state.isFolderClosing.value || props.state.isFolderAppLaunchClosing.value),
+  () => Boolean(isFolderVisuallyClosing.value || props.state.isFolderAppLaunchClosing.value),
   (isClosing, wasClosing) => {
     if (isClosing && !wasClosing) {
       closingTitleStartOpacity.value = getFolderTitleOpenOpacity(titleFrame.value || panelGeometry.value?.panel);
@@ -474,6 +478,7 @@ watchEffect(() => {
   void props.state.isFolderCloseIconAnimationActive?.value;
   void props.state.isFolderClosing.value;
   void props.state.isFolderZoomFadeClosing?.value;
+  void props.state.isFolderZoomFadeClosingFromFolderClose?.value;
   void props.state.isFolderOpenIconAnimationActive?.value;
   void props.state.isTextlessMode.value;
   void props.state.launchTargetStatusById.value;
