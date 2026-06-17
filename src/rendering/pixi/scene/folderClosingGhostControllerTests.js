@@ -1,0 +1,257 @@
+import { FolderClosingGhostController } from "./folderClosingGhostController.js";
+
+function makeTimerHost() {
+  let nextId = 1;
+  let nextFrameId = 1;
+  const timers = new Map();
+  const frames = new Map();
+  return {
+    cancelAnimationFrame(id) {
+      frames.delete(id);
+    },
+    clearTimeout(id) {
+      timers.delete(id);
+    },
+    requestAnimationFrame(callback) {
+      const id = nextFrameId;
+      nextFrameId += 1;
+      frames.set(id, callback);
+      return id;
+    },
+    runAllFrames() {
+      const pending = Array.from(frames.entries());
+      for (const [id, callback] of pending) {
+        if (!frames.has(id)) continue;
+        frames.delete(id);
+        callback();
+      }
+    },
+    runAllTimers() {
+      const pending = Array.from(timers.entries());
+      for (const [id, callback] of pending) {
+        if (!timers.has(id)) continue;
+        timers.delete(id);
+        callback();
+      }
+    },
+    setTimeout(callback) {
+      const id = nextId;
+      nextId += 1;
+      timers.set(id, callback);
+      return id;
+    },
+    get frameCount() {
+      return frames.size;
+    },
+    get timerCount() {
+      return timers.size;
+    },
+  };
+}
+
+function makeGhost(id = "ghost") {
+  return {
+    alpha: 0,
+    children: [],
+    closingComplete: false,
+    destroyed: false,
+    id,
+    position: {
+      set(x, y) {
+        this.x = x;
+        this.y = y;
+      },
+      x: 0,
+      y: 0,
+    },
+    scale: {
+      set(x, y = x) {
+        this.x = x;
+        this.y = y;
+      },
+      x: 1,
+      y: 1,
+    },
+    destroy() {
+      this.destroyed = true;
+    },
+  };
+}
+
+function makeLayer() {
+  const calls = [];
+  const closingGhosts = [];
+  const iconNode = { alpha: 0.4, item: { id: "app-1" }, visible: false };
+  return {
+    calls,
+    closingGhostLayer: {
+      addChild(ghost) {
+        closingGhosts.push(ghost);
+      },
+      removeChildren() {
+        return closingGhosts.splice(0);
+      },
+    },
+    iconNodes: new Map([["app-1", iconNode]]),
+    openingGhostKeys: null,
+    pageTrack: { visible: false },
+    clearFrameGhost() {
+      calls.push("clear-frame");
+    },
+    rebuildPageTrackMask() {
+      calls.push("rebuild-mask");
+    },
+    revealIconNodes() {
+      calls.push("reveal-icons");
+      for (const node of this.iconNodes.values()) {
+        node.visible = true;
+        node.alpha = 1;
+      }
+    },
+    get closingGhosts() {
+      return closingGhosts;
+    },
+    get iconNode() {
+      return iconNode;
+    },
+  };
+}
+
+function makeTarget(id = "app-1") {
+  return {
+    iconSize: 64,
+    index: 0,
+    item: { id },
+    sourceRect: { height: 32, left: 10, top: 20, width: 32 },
+    targetRect: { height: 12, left: 100, top: 120, width: 12 },
+  };
+}
+
+function makeState(completed = []) {
+  return {
+    getFolderCloseIconGhostKey: () => "fallback-close-key",
+    isTextlessMode: false,
+    stageRect: { left: 0, top: 0 },
+    completeFolderCloseIconGhost: (key) => completed.push(key),
+  };
+}
+
+export function runFolderClosingGhostControllerTests() {
+  const assert = (condition, message) => {
+    if (!condition) throw new Error(`[Folder closing ghost controller test failed] ${message}`);
+  };
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    let clearPreviewSwapCount = 0;
+    const controller = new FolderClosingGhostController(layer, {
+      clearPreviewSwapLayer: () => {
+        clearPreviewSwapCount += 1;
+      },
+      scheduler: timerHost,
+    });
+    const ghost = makeGhost();
+    layer.closingGhostLayer.addChild(ghost);
+    layer.closingGhostKeys = new Set(["app-1"]);
+    layer.closingPreviewSwapKeys = new Set(["swap"]);
+    controller.scheduleRevealFallback([makeTarget()]);
+
+    assert(timerHost.timerCount === 1, "fallback should schedule one timer");
+    timerHost.runAllTimers();
+
+    assert(layer.closingGhostKeys.size === 0, "fallback should clear active closing keys");
+    assert(layer.closingPreviewSwapKeys.size === 0, "fallback should clear preview swap keys");
+    assert(layer.closingGhosts.length === 0, "fallback should remove closing ghost visuals");
+    assert(ghost.destroyed, "fallback should destroy closing ghosts");
+    assert(layer.iconNode.visible === true && layer.iconNode.alpha === 1, "fallback should reveal hidden icon nodes");
+    assert(layer.pageTrack.visible === true, "fallback should restore the page track");
+    assert(clearPreviewSwapCount === 1, "fallback should clear preview swap visuals");
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const completed = [];
+    let clearPreviewSwapCount = 0;
+    const controller = new FolderClosingGhostController(layer, {
+      clearPreviewSwapLayer: () => {
+        clearPreviewSwapCount += 1;
+      },
+      scheduler: timerHost,
+    });
+    const completedPreviewGhost = makeGhost("preview");
+    layer.closingFrameComplete = true;
+    layer.completedClosingControllerGhostKeys = ["close-key"];
+    layer.completedClosingPreviewGhosts = [completedPreviewGhost];
+
+    controller.finishTransition({
+      completeFolderCloseIconGhost: (key) => completed.push(key),
+    });
+    assert(timerHost.frameCount === 1, "finish should defer handoff cleanup by one frame");
+    assert(completed.join(",") === "close-key", "finish should flush completed controller ghost keys");
+    assert(layer.pageTrack.visible === false, "finish should keep page track hidden until handoff cleanup");
+
+    timerHost.runAllFrames();
+    assert(completedPreviewGhost.destroyed, "handoff cleanup should destroy completed preview ghosts");
+    assert(clearPreviewSwapCount === 1, "handoff cleanup should clear preview swap visuals");
+    assert(layer.calls.includes("clear-frame"), "handoff cleanup should clear the frame ghost");
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const completed = [];
+    const controller = new FolderClosingGhostController(layer, { scheduler: timerHost });
+    const ghost = makeGhost();
+    const target = { ...makeTarget(), controllerGhostKey: "close-key" };
+    layer.closingGhostKeys = new Set(["app-1"]);
+    layer.closingFrameComplete = true;
+
+    controller.completeGhost(makeState(completed), target, ghost);
+    assert(ghost.destroyed, "regular complete should destroy the closing ghost");
+    assert(ghost.closingComplete, "regular complete should mark the ghost complete");
+    assert(layer.closingGhostKeys.size === 0, "regular complete should remove the active key");
+    assert(completed.join(",") === "close-key", "regular complete should flush the controller ghost key");
+    assert(timerHost.frameCount === 1, "regular complete should schedule handoff cleanup when the frame is done");
+
+    controller.completeGhost(makeState(completed), target, ghost);
+    assert(completed.join(",") === "close-key", "duplicate complete should not flush the key twice");
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const completed = [];
+    const controller = new FolderClosingGhostController(layer, { scheduler: timerHost });
+    const ghost = makeGhost();
+    const target = {
+      ...makeTarget(),
+      isThumbnailChild: true,
+      targetRect: { height: 16, left: 90, top: 110, width: 16 },
+    };
+    layer.closingGhostKeys = new Set(["app-1"]);
+    layer.closingFrameComplete = true;
+
+    controller.completeGhost(makeState(completed), target, ghost);
+    assert(!ghost.destroyed, "thumbnail complete should preserve the ghost until handoff cleanup");
+    assert(layer.completedClosingPreviewGhosts[0] === ghost, "thumbnail complete should retain the ghost for preview cleanup");
+    assert(ghost.alpha === 1, "thumbnail complete should make the retained ghost visible");
+    assert(completed.join(",") === "fallback-close-key", "thumbnail complete should flush the fallback controller ghost key");
+
+    timerHost.runAllFrames();
+    assert(ghost.destroyed, "handoff cleanup should destroy retained thumbnail ghosts");
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const controller = new FolderClosingGhostController(layer, { scheduler: timerHost });
+    layer.closingGhostKeys = new Set(["stale"]);
+    controller.begin("folder-1");
+
+    assert(layer.closingGhostFolderId === "folder-1", "begin should store the closing folder id");
+    assert(layer.closingGhostKeys.size === 0, "begin should reset active closing keys");
+    assert(layer.closingFrameComplete === false, "begin should reset frame completion");
+  }
+}

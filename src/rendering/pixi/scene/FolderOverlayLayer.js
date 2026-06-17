@@ -3,7 +3,6 @@ import { gsap } from "gsap";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
 import {
-  folderCloseDuration,
   folderCloseEase,
   folderOpenDuration,
   folderOpenEase,
@@ -23,19 +22,10 @@ import {
   getFrameRadius,
   startFrameGhost as startFrameGhostState,
 } from "./folderFrameGhost.js";
-import {
-  getMaxFolderGhostGridDelay,
-  makeClosingGhostMotion,
-  makeCompletedClosingPreviewMotion,
-} from "./folderIconGhostMotion.js";
-import { makeFolderGhostIconNodeState } from "./folderGhostIconState.js";
+import { FolderClosingGhostController } from "./folderClosingGhostController.js";
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
-import {
-  cancelClosingHandoffCleanup as cancelClosingHandoffCleanupState,
-  finishClosingHandoff,
-} from "./folderClosingHandoff.js";
 import { makeClosingPreviewSwapPlan } from "./folderPreviewSwapMotion.js";
-import { makeStageLocalRect, makeStageVirtualElement } from "../geometry/stageCoordinates.js";
+import { makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import {
   clearLaunchIconBounds,
   getFolderPreviewChildBounds,
@@ -60,14 +50,7 @@ import { makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelp
 import { IconNode } from "../nodes/IconNode.js";
 import { getCachedIconTexture } from "../assets/iconTextureCache.js";
 import { getFolderPreviewSlots } from "../../../domain/launchpadLayout.js";
-import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
 
-const GHOST_REVEAL_FALLBACK_PADDING_MS = 140;
-const CLOSING_FRAME_TAIL_DURATION = 0.04;
-const CLOSING_GHOST_MAX_DELAY = 0.06;
-const CLOSING_EXTRA_GHOST_ALPHA_DURATION = 0.12;
-const CLOSING_EXTRA_GHOST_ALPHA_HOLD = 0.16;
-const CLOSING_PREVIEW_FALLBACK_DURATION = 0.22;
 function isPointInRect(x, y, rect) {
   return Boolean(rect) &&
     x >= rect.left &&
@@ -135,12 +118,11 @@ export class FolderOverlayLayer extends Container {
     this.openingGhosts = new FolderOpeningGhostController(this, {
       ghostFactory: () => new IconNode(),
     });
+    this.closingGhosts = new FolderClosingGhostController(this, {
+      clearPreviewSwapLayer: () => clearClosingPreviewSwapLayer(this),
+      ghostFactory: () => new IconNode(),
+    });
     this.openingGhostRevealTimer = null;
-    this.closingGhostRevealTimer = null;
-    this.closingFrameComplete = false;
-    this.closingPreviewSwapKeys = new Set();
-    this.completedClosingControllerGhostKeys = [];
-    this.completedClosingPreviewGhosts = [];
     this.closingHandoffCleanupFrame = null;
     this.closingHandoffCleanupToken = 0;
     this.onIconAction = options.onIconAction || (() => { });
@@ -406,7 +388,7 @@ export class FolderOverlayLayer extends Container {
   }
 
   hasActiveIconGhosts() {
-    return Boolean(this.openingGhostKeys?.size || this.closingGhostKeys?.size || this.closingPreviewSwapKeys?.size);
+    return Boolean(this.openingGhostKeys?.size || this.closingGhosts.hasActive());
   }
 
   clearOpeningGhostRevealTimer() {
@@ -414,9 +396,7 @@ export class FolderOverlayLayer extends Container {
   }
 
   clearClosingGhostRevealTimer() {
-    if (!this.closingGhostRevealTimer) return;
-    globalThis.clearTimeout?.(this.closingGhostRevealTimer);
-    this.closingGhostRevealTimer = null;
+    this.closingGhosts.clearRevealTimer();
   }
 
   scheduleOpeningGhostRevealFallback(targets) {
@@ -424,15 +404,7 @@ export class FolderOverlayLayer extends Container {
   }
 
   scheduleClosingGhostRevealFallback(targets) {
-    this.clearClosingGhostRevealTimer();
-    const maxDelay = getMaxFolderGhostGridDelay(targets, CLOSING_GHOST_MAX_DELAY);
-    const timeoutMs = Math.round(
-      (maxDelay + folderCloseDuration + CLOSING_PREVIEW_FALLBACK_DURATION) * 1000 + GHOST_REVEAL_FALLBACK_PADDING_MS
-    );
-    this.closingGhostRevealTimer = globalThis.setTimeout?.(() => {
-      this.closingGhostRevealTimer = null;
-      if (this.closingGhostKeys?.size || this.closingPreviewSwapKeys?.size) this.clearClosingGhosts();
-    }, timeoutMs) || null;
+    this.closingGhosts.scheduleRevealFallback(targets);
   }
 
   revealIconNodes() {
@@ -452,36 +424,23 @@ export class FolderOverlayLayer extends Container {
   }
 
   flushCompletedClosingControllerGhosts(state) {
-    const keys = this.completedClosingControllerGhostKeys || [];
-    this.completedClosingControllerGhostKeys = [];
-    for (const key of keys) state.completeFolderCloseIconGhost?.(key);
+    this.closingGhosts.flushCompletedControllerGhosts(state);
   }
 
   clearCompletedClosingPreviewGhosts() {
-    const ghosts = this.completedClosingPreviewGhosts || [];
-    this.completedClosingPreviewGhosts = [];
-    for (const ghost of ghosts) {
-      killAllMotion(ghost);
-      if (!ghost.destroyed) ghost.destroy({ children: true });
-    }
+    this.closingGhosts.clearCompletedPreviewGhosts();
   }
 
   cancelClosingHandoffCleanup() {
-    cancelClosingHandoffCleanupState(this);
+    this.closingGhosts.cancelHandoffCleanup();
   }
 
   runClosingHandoffCleanup() {
-    this.clearCompletedClosingPreviewGhosts();
-    clearClosingPreviewSwapLayer(this);
-    this.clearFrameGhost();
+    this.closingGhosts.runHandoffCleanup();
   }
 
   finishClosingGhostTransition(state) {
-    if (this.openingGhostKeys?.size ||
-      this.closingGhostKeys?.size ||
-      this.closingPreviewSwapKeys?.size ||
-      !this.closingFrameComplete) return;
-    finishClosingHandoff(this, state, () => this.runClosingHandoffCleanup());
+    this.closingGhosts.finishTransition(state);
   }
 
   clearOpeningGhosts() {
@@ -489,23 +448,7 @@ export class FolderOverlayLayer extends Container {
   }
 
   clearClosingGhosts() {
-    this.cancelClosingHandoffCleanup();
-    this.clearClosingGhostRevealTimer();
-    this.closingGhostKeys?.clear();
-    this.closingPreviewSwapKeys?.clear();
-    this.closingFrameComplete = false;
-    this.completedClosingControllerGhostKeys = [];
-    this.completedClosingPreviewGhosts = [];
-    this.clearFrameGhost();
-    this.pageTrack.visible = true;
-    this.revealIconNodes();
-    this.rebuildPageTrackMask();
-    const ghosts = this.closingGhostLayer.removeChildren();
-    for (const ghost of ghosts) {
-      killAllMotion(ghost);
-      ghost.destroy?.({ children: true });
-    }
-    clearClosingPreviewSwapLayer(this);
+    this.closingGhosts.clear();
   }
 
   clearFrameGhost(options = {}) {
@@ -630,31 +573,11 @@ export class FolderOverlayLayer extends Container {
   }
 
   completeClosingGhost(state, target, ghost) {
-    if (!ghost || ghost.closingComplete) return;
-    ghost.closingComplete = true;
-    this.closingGhostKeys?.delete(target.item.id);
-    const controllerGhostKey = target.controllerGhostKey || state.getFolderCloseIconGhostKey?.(target.item.id, target.index);
-    if (controllerGhostKey) this.completedClosingControllerGhostKeys.push(controllerGhostKey);
-    killAllMotion(ghost);
-    if (target.isThumbnailChild && !ghost.destroyed) {
-      const motion = makeCompletedClosingPreviewMotion(target, {
-        isTextlessMode: state.isTextlessMode,
-        stageRect: state.stageRect,
-      });
-      ghost.position.set(motion.x, motion.y);
-      ghost.scale.set(motion.scale);
-      ghost.alpha = 1;
-      this.completedClosingPreviewGhosts.push(ghost);
-      this.finishClosingGhostTransition(state);
-      return;
-    }
-    this.finishClosingGhostTransition(state);
-    if (!ghost.destroyed) ghost.destroy({ children: true });
+    this.closingGhosts.completeGhost(state, target, ghost);
   }
 
   completeClosingFrameGhost(state) {
-    this.closingFrameComplete = true;
-    this.finishClosingGhostTransition(state);
+    this.closingGhosts.completeFrameGhost(state);
   }
 
   captureOpeningInterruption(state, targets, panelRect) {
@@ -795,115 +718,7 @@ export class FolderOverlayLayer extends Container {
   }
 
   startClosingGhosts(state, targets, folderRect, panelRect, options = {}) {
-    const {
-      previewSwapTargets = [],
-    } = options;
-    const interruption = this.captureOpeningInterruption(state, targets, panelRect);
-    const closeFrameFromRect = interruption?.frameRect || panelRect;
-    const closeTargets = interruption?.targets || targets;
-    this.clearOpeningGhosts();
-    this.clearClosingGhosts();
-    this.closingGhostFolderId = state.renderedFolder?.id || null;
-    this.closingGhostKeys = new Set();
-    this.closingFrameComplete = false;
-    this.completedClosingControllerGhostKeys = [];
-    this.completedClosingPreviewGhosts = [];
-    const usableTargets = (closeTargets || []).filter((target) => target.sourceRect && target.targetRect);
-    if (!usableTargets.length) return;
-    const isInterruptedClose = Boolean(interruption);
-    const frameDuration = folderCloseDuration + CLOSING_FRAME_TAIL_DURATION;
-    const closeFrameToRect = makeStageLocalRect(folderRect, state.stageRect);
-    const previewTiming = getClosingPreviewTiming(closeFrameFromRect, closeFrameToRect);
-    const thumb = getFolderThumbMetrics(folderRect.width);
-    let closingPreviewSwapStarted = false;
-    const startClosingPreviewSwapWhenReady = (frame) => {
-      if (closingPreviewSwapStarted || isInterruptedClose || !previewSwapTargets?.length) return;
-      if ((frame?.progress ?? 0) < previewTiming.progress) return;
-      closingPreviewSwapStarted = true;
-      this.startClosingPreviewSwapGhosts(state, previewSwapTargets, previewTiming);
-    };
-    this.enableClosingFrameMask();
-    this.startFrameGhost(closeFrameFromRect, closeFrameToRect, {
-      duration: frameDuration,
-      ease: folderCloseEase,
-      fadeStart: 0.86,
-      frameGhostToAlpha: 1,
-      fromFillAlpha: interruption?.frameRect?.fillAlpha ?? 0.26,
-      fromFillColor: interruption?.frameRect?.fillColor ?? thumb.fillColor,
-      fromRadius: interruption?.frameRect?.radius ?? 48,
-      fromStrokeAlpha: interruption?.frameRect?.strokeAlpha ?? 0.24,
-      fromStrokeColor: interruption?.frameRect?.strokeColor ?? thumb.strokeColor,
-      fromStrokeWidth: interruption?.frameRect?.strokeWidth ?? thumb.strokeWidth,
-      panelMaterialFinalAlpha: 0,
-      panelMaterialFromAlpha: 0,
-      panelMaterialToAlpha: 0,
-      onComplete: () => {
-        startClosingPreviewSwapWhenReady({ progress: 1 });
-        this.completeClosingFrameGhost(state);
-      },
-      onUpdate: startClosingPreviewSwapWhenReady,
-      preserveOnComplete: true,
-      toFillAlpha: thumb.fillAlpha,
-      toFillColor: thumb.fillColor,
-      toRadius: thumb.radius,
-      toStrokeAlpha: thumb.strokeAlpha,
-      toStrokeColor: thumb.strokeColor,
-      toStrokeWidth: thumb.strokeWidth,
-      updateClosingMask: true,
-    });
-
-    this.pageTrack.visible = false;
-    this.scheduleClosingGhostRevealFallback(usableTargets);
-    for (const target of usableTargets) {
-      const ghost = new IconNode();
-      ghost.eventMode = "none";
-      ghost.stageRect = state.stageRect;
-      ghost.isThumbnailChild = Boolean(target.isThumbnailChild);
-      ghost.setState(makeFolderGhostIconNodeState({ sourceType: "folder-close-ghost", state, target }));
-      const motion = makeClosingGhostMotion(target, {
-        alphaHold: CLOSING_EXTRA_GHOST_ALPHA_HOLD,
-        closeDuration: folderCloseDuration,
-        isTextlessMode: state.isTextlessMode,
-        stageRect: state.stageRect,
-      });
-      ghost.position.set(motion.fromX, motion.fromY);
-      ghost.scale.set(motion.sourceScale);
-      ghost.alpha = motion.sourceAlpha;
-      if (ghost.labelText?.visible) {
-        if (target.sourceLabelAlpha != null) ghost.labelText.alpha = target.sourceLabelAlpha;
-        gsap.to(ghost.labelText, { alpha: 0, delay: motion.delay, duration: 0.1, ease: "power2.in" });
-        gsap.to(ghost.labelText.scale, { x: 0.94, y: 0.94, delay: motion.delay, duration: 0.1, ease: "power2.in" });
-      }
-      this.closingGhostLayer.addChild(ghost);
-      this.closingGhostKeys.add(target.item.id);
-      for (const node of this.iconNodes.values()) {
-        if (node.item?.id === target.item.id) node.visible = false;
-      }
-
-      gsap.to(ghost, {
-        delay: motion.delay,
-        duration: folderCloseDuration,
-        ease: folderCloseEase,
-        x: motion.toX,
-        y: motion.toY,
-        onComplete: () => this.completeClosingGhost(state, target, ghost),
-      });
-      if (!target.isThumbnailChild) {
-        gsap.to(ghost, {
-          alpha: 0,
-          delay: motion.alphaDelay,
-          duration: CLOSING_EXTRA_GHOST_ALPHA_DURATION,
-          ease: "power2.in",
-        });
-      }
-      gsap.to(ghost.scale, {
-        delay: motion.delay,
-        duration: folderCloseDuration,
-        ease: folderCloseEase,
-        x: motion.scale,
-        y: motion.scale,
-      });
-    }
+    this.closingGhosts.start(state, targets, folderRect, panelRect, options);
   }
 
   animatePanel(state, targetX, targetY, panelRect) {
