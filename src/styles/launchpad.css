@@ -348,7 +348,8 @@ body {
   position: relative;
   z-index: 10;
   width: 100%;
-  min-height: calc(100vh - var(--launchpad-root-padding-top) - var(--launchpad-root-padding-bottom));
+  height: calc(100vh - var(--launchpad-root-padding-top) - var(--launchpad-root-padding-bottom));
+  min-height: 0;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -2393,6 +2394,7 @@ body {
   align-items: center;
   justify-content: center;
   padding: 16px 0;
+  overflow: hidden;
   outline: none;
 }
 
@@ -2412,9 +2414,9 @@ body {
 .pixi-desktop-host {
   position: relative;
   width: 100vw;
-  height: calc(100vh - 176px + var(--debug-desktop-host-height-offset, 0px));
-  min-height: 420px;
-  max-height: var(--debug-desktop-host-max-height, 960px);
+  height: calc(100% + var(--debug-desktop-host-height-offset, 0px));
+  min-height: 0;
+  max-height: var(--debug-desktop-host-max-height, none);
   margin-left: calc(50% - 50vw);
   margin-right: calc(50% - 50vw);
   overflow: hidden;
