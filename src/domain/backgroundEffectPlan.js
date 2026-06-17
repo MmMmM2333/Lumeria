@@ -8,7 +8,7 @@ import {
   clampBackgroundBlurStrength,
   clampBackgroundImageOpacity,
   normalizeBackgroundEffect,
-} from "../composables/useLaunchpadSettingsConfig.js";
+} from "./backgroundSettings.js";
 import { normalizeAcrylicCompositeParams } from "../rendering/pixi/background/acrylicParams.js";
 
 export const ACRYLIC_RENDER_MAX_WIDTH = 960;

@@ -24,7 +24,7 @@ import {
   BACKGROUND_EFFECT_ACRYLIC_WEBGL,
   BACKGROUND_EFFECT_BLUR,
   DEFAULT_BACKGROUND_BLUR_STRENGTH,
-} from "../../composables/useLaunchpadSettingsConfig.js";
+} from "../../domain/backgroundSettings.js";
 import {
   createBackgroundEffectPlan,
   resolveAcrylicBackgroundAlpha,

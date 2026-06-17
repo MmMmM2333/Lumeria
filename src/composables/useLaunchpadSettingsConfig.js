@@ -26,6 +26,96 @@ import {
   normalizeMainWindowShortcut,
 } from "../domain/mainWindowShortcut.js";
 import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
+import {
+  BACKGROUND_ACRYLIC_APPEARANCE_DARK,
+  BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
+  BACKGROUND_BASE_OPACITY_MAX,
+  BACKGROUND_BASE_OPACITY_MIN,
+  BACKGROUND_BASE_OPACITY_STEP,
+  BACKGROUND_BLUR_STRENGTH_MAX,
+  BACKGROUND_BLUR_STRENGTH_MIN,
+  BACKGROUND_DARKEN_STRENGTH_MAX,
+  BACKGROUND_DARKEN_STRENGTH_MIN,
+  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_BLUR,
+  BACKGROUND_EFFECT_DIMMED,
+  BACKGROUND_EFFECT_NONE,
+  BACKGROUND_IMAGE_OPACITY_MAX,
+  BACKGROUND_IMAGE_OPACITY_MIN,
+  BACKGROUND_IMAGE_OPACITY_STEP,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_MAX,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_MIN,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_STEP,
+  BACKGROUND_SOURCE_CUSTOM_IMAGE,
+  BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
+  BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
+  backgroundEffectUsesPixi,
+  backgroundSourceUsesImage,
+  backgroundSourceUsesLiveDesktop,
+  clampBackgroundAcrylicBlurStrength,
+  clampBackgroundBaseOpacity,
+  clampBackgroundBlurStrength,
+  clampBackgroundDarkenStrength,
+  clampBackgroundImageOpacity,
+  clampBackgroundLiveDesktopOpacity,
+  normalizeBackgroundAcrylicAppearance,
+  normalizeBackgroundBaseColor,
+  normalizeBackgroundDarkenColor,
+  normalizeBackgroundEffect,
+  normalizeBackgroundSource,
+} from "../domain/backgroundSettings.js";
+export {
+  BACKGROUND_ACRYLIC_APPEARANCE_DARK,
+  BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
+  BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
+  BACKGROUND_BASE_OPACITY_MAX,
+  BACKGROUND_BASE_OPACITY_MIN,
+  BACKGROUND_BASE_OPACITY_STEP,
+  BACKGROUND_BLUR_STRENGTH_MAX,
+  BACKGROUND_BLUR_STRENGTH_MIN,
+  BACKGROUND_BLUR_STRENGTH_STEP,
+  BACKGROUND_DARKEN_STRENGTH_MAX,
+  BACKGROUND_DARKEN_STRENGTH_MIN,
+  BACKGROUND_DARKEN_STRENGTH_STEP,
+  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_BLUR,
+  BACKGROUND_EFFECT_DIMMED,
+  BACKGROUND_EFFECT_NONE,
+  BACKGROUND_IMAGE_OPACITY_MAX,
+  BACKGROUND_IMAGE_OPACITY_MIN,
+  BACKGROUND_IMAGE_OPACITY_STEP,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_MAX,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_MIN,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_STEP,
+  BACKGROUND_SOURCE_CUSTOM_IMAGE,
+  BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
+  BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
+  DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE,
+  DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH,
+  DEFAULT_BACKGROUND_BASE_COLOR,
+  DEFAULT_BACKGROUND_BASE_OPACITY,
+  DEFAULT_BACKGROUND_BLUR_STRENGTH,
+  DEFAULT_BACKGROUND_DARKEN_COLOR,
+  DEFAULT_BACKGROUND_DARKEN_STRENGTH,
+  DEFAULT_BACKGROUND_IMAGE_OPACITY,
+  DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY,
+  backgroundEffectUsesPixi,
+  backgroundSourceUsesImage,
+  backgroundSourceUsesLiveDesktop,
+  clampBackgroundAcrylicBlurStrength,
+  clampBackgroundBaseOpacity,
+  clampBackgroundBlurStrength,
+  clampBackgroundDarkenStrength,
+  clampBackgroundImageOpacity,
+  clampBackgroundLiveDesktopOpacity,
+  normalizeBackgroundAcrylicAppearance,
+  normalizeBackgroundBaseColor,
+  normalizeBackgroundDarkenColor,
+  normalizeBackgroundEffect,
+  normalizeBackgroundSource,
+} from "../domain/backgroundSettings.js";
 export {
   BACKGROUND_IMAGE_LAYOUT_CENTER,
   BACKGROUND_IMAGE_LAYOUT_FILL,
@@ -39,41 +129,6 @@ export {
 
 export const FOLDER_ICON_SIZE_MODE_CUSTOM = "custom";
 export const FOLDER_ICON_SIZE_MODE_GLOBAL = "global";
-export const BACKGROUND_SOURCE_SYSTEM_MATERIAL = "systemMaterial";
-export const BACKGROUND_SOURCE_CUSTOM_IMAGE = "customImage";
-export const BACKGROUND_SOURCE_WINDOWS_WALLPAPER = "windowsWallpaper";
-export const BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP = "windowsLiveDesktop";
-export const BACKGROUND_EFFECT_NONE = "none";
-export const BACKGROUND_EFFECT_DIMMED = "dimmed";
-export const BACKGROUND_EFFECT_BLUR = "blur";
-export const BACKGROUND_EFFECT_ACRYLIC_WEBGL = "acrylicWebgl";
-export const BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM = "system";
-export const BACKGROUND_ACRYLIC_APPEARANCE_DARK = "dark";
-export const BACKGROUND_ACRYLIC_APPEARANCE_LIGHT = "light";
-export const DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE = BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM;
-export const BACKGROUND_IMAGE_OPACITY_MIN = 0;
-export const BACKGROUND_IMAGE_OPACITY_MAX = 100;
-export const BACKGROUND_IMAGE_OPACITY_STEP = 1;
-export const DEFAULT_BACKGROUND_IMAGE_OPACITY = 46;
-export const BACKGROUND_LIVE_DESKTOP_OPACITY_MIN = 0;
-export const BACKGROUND_LIVE_DESKTOP_OPACITY_MAX = 100;
-export const BACKGROUND_LIVE_DESKTOP_OPACITY_STEP = 1;
-export const DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY = 100;
-export const BACKGROUND_BLUR_STRENGTH_MIN = 1;
-export const BACKGROUND_BLUR_STRENGTH_MAX = 100;
-export const BACKGROUND_BLUR_STRENGTH_STEP = 1;
-export const DEFAULT_BACKGROUND_BLUR_STRENGTH = 50;
-export const DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH = DEFAULT_BACKGROUND_BLUR_STRENGTH;
-export const BACKGROUND_DARKEN_STRENGTH_MIN = 0;
-export const BACKGROUND_DARKEN_STRENGTH_MAX = 100;
-export const BACKGROUND_DARKEN_STRENGTH_STEP = 1;
-export const DEFAULT_BACKGROUND_DARKEN_STRENGTH = 28;
-export const DEFAULT_BACKGROUND_DARKEN_COLOR = "#1c1c1c";
-export const BACKGROUND_BASE_OPACITY_MIN = 0;
-export const BACKGROUND_BASE_OPACITY_MAX = 100;
-export const BACKGROUND_BASE_OPACITY_STEP = 1;
-export const DEFAULT_BACKGROUND_BASE_COLOR = "#10141f";
-export const DEFAULT_BACKGROUND_BASE_OPACITY = 28;
 export const WINDOW_EFFECT_MATERIAL_NONE = "none";
 export const WINDOW_EFFECT_MATERIAL_ACRYLIC = "acrylic";
 export const WINDOW_EFFECT_MATERIAL_MICA = "mica";
@@ -106,33 +161,6 @@ export function normalizeFolderIconSizeMode(value) {
   return value === FOLDER_ICON_SIZE_MODE_CUSTOM ? FOLDER_ICON_SIZE_MODE_CUSTOM : FOLDER_ICON_SIZE_MODE_GLOBAL;
 }
 
-export function normalizeBackgroundSource(value) {
-  if (value === BACKGROUND_SOURCE_CUSTOM_IMAGE) return BACKGROUND_SOURCE_CUSTOM_IMAGE;
-  if (value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER) return BACKGROUND_SOURCE_WINDOWS_WALLPAPER;
-  if (value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP) return BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP;
-  return BACKGROUND_SOURCE_SYSTEM_MATERIAL;
-}
-
-export function normalizeBackgroundEffect(value) {
-  if (value === BACKGROUND_EFFECT_BLUR) return BACKGROUND_EFFECT_BLUR;
-  if (value === BACKGROUND_EFFECT_ACRYLIC_WEBGL) return BACKGROUND_EFFECT_ACRYLIC_WEBGL;
-  return value === BACKGROUND_EFFECT_NONE ? BACKGROUND_EFFECT_NONE : BACKGROUND_EFFECT_DIMMED;
-}
-
-export function backgroundEffectUsesPixi(effect) {
-  const normalizedEffect = normalizeBackgroundEffect(effect);
-  return normalizedEffect === BACKGROUND_EFFECT_BLUR || normalizedEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL;
-}
-
-export function backgroundSourceUsesImage(source) {
-  const normalizedSource = normalizeBackgroundSource(source);
-  return normalizedSource === BACKGROUND_SOURCE_CUSTOM_IMAGE || normalizedSource === BACKGROUND_SOURCE_WINDOWS_WALLPAPER;
-}
-
-export function backgroundSourceUsesLiveDesktop(source) {
-  return normalizeBackgroundSource(source) === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP;
-}
-
 export function normalizeLiveDesktopBackgroundSupport(support) {
   return {
     platform: String(support?.platform || DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT.platform),
@@ -143,12 +171,6 @@ export function normalizeLiveDesktopBackgroundSupport(support) {
       : DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT.reason,
     detail: typeof support?.detail === "string" ? support.detail : "",
   };
-}
-
-export function normalizeBackgroundAcrylicAppearance(value) {
-  if (value === BACKGROUND_ACRYLIC_APPEARANCE_DARK) return BACKGROUND_ACRYLIC_APPEARANCE_DARK;
-  if (value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT) return BACKGROUND_ACRYLIC_APPEARANCE_LIGHT;
-  return BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM;
 }
 
 export function normalizeBackgroundAcrylicProfileKey(value) {
@@ -170,60 +192,6 @@ export function normalizeBackgroundAcrylicParams(params, profile = BACKGROUND_AC
 export function createDefaultBackgroundAcrylicParams(profile = BACKGROUND_ACRYLIC_APPEARANCE_DARK) {
   const key = normalizeBackgroundAcrylicProfileKey(profile);
   return normalizeBackgroundAcrylicParams(ACRYLIC_COMPOSITE_PRESETS[key], key);
-}
-
-export function clampBackgroundImageOpacity(value) {
-  const opacity = Number(value);
-  if (!Number.isFinite(opacity)) return DEFAULT_BACKGROUND_IMAGE_OPACITY;
-  return clamp(Math.round(opacity), BACKGROUND_IMAGE_OPACITY_MIN, BACKGROUND_IMAGE_OPACITY_MAX);
-}
-
-export function clampBackgroundLiveDesktopOpacity(value) {
-  const opacity = Number(value);
-  if (!Number.isFinite(opacity)) return DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY;
-  return clamp(Math.round(opacity), BACKGROUND_LIVE_DESKTOP_OPACITY_MIN, BACKGROUND_LIVE_DESKTOP_OPACITY_MAX);
-}
-
-export function clampBackgroundBlurStrength(value) {
-  const strength = Number(value);
-  if (!Number.isFinite(strength)) return DEFAULT_BACKGROUND_BLUR_STRENGTH;
-  return clamp(Math.round(strength), BACKGROUND_BLUR_STRENGTH_MIN, BACKGROUND_BLUR_STRENGTH_MAX);
-}
-
-export function clampBackgroundAcrylicBlurStrength(value) {
-  const strength = Number(value);
-  if (!Number.isFinite(strength)) return DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH;
-  return clamp(Math.round(strength), BACKGROUND_BLUR_STRENGTH_MIN, BACKGROUND_BLUR_STRENGTH_MAX);
-}
-
-export function clampBackgroundDarkenStrength(value) {
-  const strength = Number(value);
-  if (!Number.isFinite(strength)) return DEFAULT_BACKGROUND_DARKEN_STRENGTH;
-  return clamp(Math.round(strength), BACKGROUND_DARKEN_STRENGTH_MIN, BACKGROUND_DARKEN_STRENGTH_MAX);
-}
-
-export function normalizeBackgroundDarkenColor(value) {
-  const color = typeof value === "string" ? value.trim() : "";
-  if (/^#[0-9a-fA-F]{6}$/.test(color)) return color.toLowerCase();
-  if (/^#[0-9a-fA-F]{3}$/.test(color)) {
-    return `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`.toLowerCase();
-  }
-  return DEFAULT_BACKGROUND_DARKEN_COLOR;
-}
-
-export function clampBackgroundBaseOpacity(value) {
-  const opacity = Number(value);
-  if (!Number.isFinite(opacity)) return DEFAULT_BACKGROUND_BASE_OPACITY;
-  return clamp(Math.round(opacity), BACKGROUND_BASE_OPACITY_MIN, BACKGROUND_BASE_OPACITY_MAX);
-}
-
-export function normalizeBackgroundBaseColor(value) {
-  const color = typeof value === "string" ? value.trim() : "";
-  if (/^#[0-9a-fA-F]{6}$/.test(color)) return color.toLowerCase();
-  if (/^#[0-9a-fA-F]{3}$/.test(color)) {
-    return `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`.toLowerCase();
-  }
-  return DEFAULT_BACKGROUND_BASE_COLOR;
 }
 
 export function normalizeBackgroundImagePath(value) {

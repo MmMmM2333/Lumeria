@@ -4,7 +4,7 @@ import {
   BACKGROUND_EFFECT_DIMMED,
   BACKGROUND_SOURCE_CUSTOM_IMAGE,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
-} from "../../../composables/useLaunchpadSettingsConfig.js";
+} from "../../../domain/backgroundSettings.js";
 import {
   BLUR_KERNEL_AUTO,
   BLUR_KERNEL_DUAL_KAWASE,

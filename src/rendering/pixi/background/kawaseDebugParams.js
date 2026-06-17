@@ -3,7 +3,7 @@ import {
   BACKGROUND_BLUR_STRENGTH_MAX,
   BACKGROUND_BLUR_STRENGTH_MIN,
   DEFAULT_BACKGROUND_BLUR_STRENGTH,
-} from "../../../composables/useLaunchpadSettingsConfig.js";
+} from "../../../domain/backgroundSettings.js";
 import {
   ACRYLIC_GAUSSIAN_CUTOFF_DEFAULT,
   AUTO_DUAL_KAWASE_OFFSET_SCALE_DEFAULT,
