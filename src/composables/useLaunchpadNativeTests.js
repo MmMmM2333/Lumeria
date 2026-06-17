@@ -38,10 +38,12 @@ import {
 function makeOptions(overrides = {}) {
   const { pages: initialPages, ...optionOverrides } = overrides;
   const calls = {
+    closeDesktop: 0,
     commitFolderPageIndex: [],
     commitPageIndex: [],
     commitSearchPageIndex: [],
     schedulePageGridMetrics: 0,
+    startFolderZoomFadeClose: [],
   };
   const pages = shallowRef(initialPages ?? [[]]);
   const options = {
@@ -49,7 +51,9 @@ function makeOptions(overrides = {}) {
     cloneItem: (item) => (item ? { ...item } : item),
     clonePages: (sourcePages) => sourcePages.map((page) => page.filter(Boolean).map((item) => ({ ...item }))),
     collectAppsFromPages: (sourcePages) => sourcePages.flatMap((page) => page.filter((item) => item?.type === "app")),
-    closeDesktop: () => {},
+    closeDesktop: () => {
+      calls.closeDesktop += 1;
+    },
     commitFolderPageIndex: (value) => calls.commitFolderPageIndex.push(value),
     commitPageIndex: (value) => calls.commitPageIndex.push(value),
     commitSearchPageIndex: (value) => calls.commitSearchPageIndex.push(value),
@@ -140,6 +144,7 @@ function makeOptions(overrides = {}) {
     openSettingsPanel: () => {},
     pageIndex: ref(0),
     pages,
+    renderedFolder: ref(null),
     scanAppBlacklist: ref([]),
     scanKeywordBlacklist: ref([]),
     scanRoots: ref([{ id: "root", type: "customDirectory", label: "Root", path: "C:/Apps", enabled: true }]),
@@ -148,6 +153,10 @@ function makeOptions(overrides = {}) {
     },
     searchPageIndex: ref(0),
     showMissingLaunchTargetBadge: ref(true),
+    startFolderZoomFadeClose: (options) => {
+      calls.startFolderZoomFadeClose.push(options);
+      return Boolean(overrides.startFolderZoomFadeCloseResult ?? false);
+    },
     ...optionOverrides,
   };
   return { calls, options };
@@ -1198,6 +1207,31 @@ export async function runLaunchpadNativeTests() {
     },
     passWindowShadowCommand: true,
     passRevealMainWindowCommand: true,
+  });
+
+  const folderToggleEventHandlers = new Map();
+  await withMockTauri(async (command) => {
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async (timers) => {
+    const { calls, options } = makeOptions({
+      renderedFolder: ref({ id: "folder-1", type: "folder", name: "Folder" }),
+      startFolderZoomFadeCloseResult: true,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.registerNativeEventListeners();
+    await folderToggleEventHandlers.get("launchpad-toggle-desktop")({ payload: 4 });
+    await flushMicrotasks(3);
+
+    assert(calls.startFolderZoomFadeClose.length === 1, "native toggle shortcut should close an open folder with zoom-fade first");
+    assert(calls.startFolderZoomFadeClose[0].reason === "desktop", "native toggle shortcut should mark zoom-fade as desktop close");
+    assert(calls.closeDesktop === 1, "native toggle shortcut should close the desktop while the folder zoom-fades");
+    assert(timers.length === 1, "native toggle shortcut should schedule a native hide after the desktop close animation");
+  }, {
+    listen: async (eventName, handler) => {
+      folderToggleEventHandlers.set(eventName, handler);
+      return () => folderToggleEventHandlers.delete(eventName);
+    },
   });
 
   setLiveDesktopExperimentEnabledForTests(null);

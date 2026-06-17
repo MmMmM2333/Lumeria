@@ -262,7 +262,7 @@ const {
   renderedFolder,
   isFolderClosing,
   isFolderAppLaunchClosing,
-  isFolderCloseIconAnimationActive,
+  isFolderZoomFadeClosing,
   windowMode,
 } = controller;
 
@@ -798,8 +798,7 @@ const dragReleaseGhostId = computed(() => dragReleaseState.value?.item?.id || nu
 const folderSourceGhostedId = computed(() => {
   const folderId = renderedFolder.value?.id || openFolderId.value;
   if (!folderId) return null;
-  if (openFolderId.value || isFolderAppLaunchClosing.value) return folderId;
-  if (isFolderClosing.value && isFolderCloseIconAnimationActive.value) return folderId;
+  if (openFolderId.value || isFolderAppLaunchClosing.value || isFolderZoomFadeClosing.value || isFolderClosing.value) return folderId;
   return isFolderOpeningPreviewFrameGhosted(folderId) ? folderId : null;
 });
 

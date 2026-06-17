@@ -36,6 +36,7 @@ const FOLDER_HOVER_RESTORE_BEFORE_OPEN_MS = 90;
 const FOLDER_HOVER_OPEN_DELAY_MS = FOLDER_HOVER_SETTLE_MS + FOLDER_HOVER_FLASH_TOTAL_MS + FOLDER_HOVER_OPEN_BUFFER_MS;
 const FOLDER_HOVER_OPENING_DELAY_MS = Math.max(0, FOLDER_HOVER_OPEN_DELAY_MS - FOLDER_HOVER_RESTORE_BEFORE_OPEN_MS);
 const FOLDER_HOVER_ESCAPE_MARGIN = 64;
+const FIRST_FOLDER_OPEN_PREPARE_DELAY_MS = 48;
 const SETTLED_DRAG_START_FRAMES = 3;
 
 export function isPrimaryPointerStartEvent(event) {
@@ -118,6 +119,22 @@ export function useLaunchpadDrag(options) {
       left: rect.left,
       top: rect.top,
       width: rect.width,
+    };
+  }
+
+  function cloneFolderOriginBounds(origin) {
+    if (!origin?.folderId || !origin.iconRect) return null;
+    return {
+      folderId: origin.folderId,
+      iconRect: cloneRect(origin.iconRect),
+      previewChildRects: (origin.previewChildRects || [])
+        .map((entry) => ({
+          childId: entry?.childId,
+          rect: cloneRect(entry?.rect),
+          slotIndex: entry?.slotIndex,
+        }))
+        .filter((entry) => entry.childId && entry.rect),
+      thumbRect: cloneRect(origin.thumbRect) || cloneRect(origin.iconRect),
     };
   }
 
@@ -1195,7 +1212,21 @@ export function useLaunchpadDrag(options) {
     if (lp.awaitingDragStart) return;
     if (options.isLaunchpadInteractionBlocked()) return;
     if (lp.item.type === "app") options.openApp(lp.item, lp.source);
-    else if (lp.item.type === "folder" && lp.source.type === "page") options.commitOpenFolder(lp.item.id);
+    else if (lp.item.type === "folder" && lp.source.type === "page") {
+      commitFolderOpenFromLongPress(lp);
+    }
+  }
+
+  function commitFolderOpenFromLongPress(lp) {
+    const commit = () => {
+      if (options.isLaunchpadInteractionBlocked()) return;
+      options.commitOpenFolder(lp.item.id, { originBounds: lp.folderOriginBounds });
+    };
+    if (!options.consumeFirstFolderOpenPrepare?.()) {
+      commit();
+      return;
+    }
+    window.setTimeout(commit, FIRST_FOLDER_OPEN_PREPARE_DELAY_MS);
   }
 
   function startLongPressDrag(lp) {
@@ -1296,9 +1327,15 @@ export function useLaunchpadDrag(options) {
 
     const rect = event.currentTarget.getBoundingClientRect?.() || null;
     const cellSize = getSourceCellSize(source) || { height: rect.height, width: rect.width };
+    const folderOriginBounds = cloneFolderOriginBounds(event.folderOriginBounds);
+    if (item?.type === "folder" && source?.type === "page") {
+      options.requestFolderOpenWarmup?.(item, folderOriginBounds);
+    }
+
     longPressState = {
       cellSize,
       item: options.cloneItem(item),
+      folderOriginBounds,
       rect: cloneRect(rect),
       refreshBoundsOnStart: shouldRefreshLongPressBoundsOnStart(),
       source,

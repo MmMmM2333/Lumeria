@@ -3,6 +3,7 @@ import {
   FOLDER_APP_LAUNCH_DURATION,
   FOLDER_CLOSE_DURATION,
   FOLDER_CLOSE_GHOST_FALLBACK_DURATION,
+  FOLDER_ZOOM_FADE_CLOSE_DURATION,
   HOME_REVEAL_SETTLE_DURATION,
 } from "./launchpadConstants.js";
 
@@ -13,12 +14,19 @@ export function useLaunchpadFolderFlow(options) {
   const folderClosingSnapshot = shallowRef(null);
   const folderSession = shallowRef(null);
   const isFolderAppLaunchClosing = ref(false);
+  const isFolderZoomFadeClosing = ref(false);
+  const folderZoomFadeCloseReason = ref(null);
+  const folderOpeningOriginBounds = shallowRef(null);
+  const folderOpenWarmupRequest = shallowRef(null);
   const isHomeRevealSettling = ref(false);
   const desktopProjectionEpoch = ref(0);
   let folderCloseTimer = null;
   let homeRevealSettleTimer = null;
   let folderAppLaunchTimer = null;
   let folderCloseHandoffFrame = null;
+  let folderZoomFadeCloseTimer = null;
+  let folderOpenWarmupRequestId = 0;
+  let hasPreparedFirstFolderOpen = false;
 
   const renderedFolder = computed(() => {
     if (!renderedFolderId.value) return folderClosingSnapshot.value;
@@ -31,7 +39,7 @@ export function useLaunchpadFolderFlow(options) {
     return options.getVisibleFolderPages(renderedFolder.value, options.folderPageSize.value, minPageCount);
   });
 
-  const isFolderLayerActive = computed(() => Boolean(openFolderId.value || renderedFolderId.value || isFolderClosing.value || isFolderAppLaunchClosing.value));
+  const isFolderLayerActive = computed(() => Boolean(openFolderId.value || renderedFolderId.value || isFolderClosing.value || isFolderAppLaunchClosing.value || isFolderZoomFadeClosing.value));
 
   function clearFolderCloseTimer() {
     if (folderCloseTimer) window.clearTimeout(folderCloseTimer);
@@ -46,6 +54,11 @@ export function useLaunchpadFolderFlow(options) {
   function clearFolderAppLaunchTimer() {
     if (folderAppLaunchTimer) window.clearTimeout(folderAppLaunchTimer);
     folderAppLaunchTimer = null;
+  }
+
+  function clearFolderZoomFadeCloseTimer() {
+    if (folderZoomFadeCloseTimer) window.clearTimeout(folderZoomFadeCloseTimer);
+    folderZoomFadeCloseTimer = null;
   }
 
   function clearFolderCloseHandoffFrame() {
@@ -69,9 +82,13 @@ export function useLaunchpadFolderFlow(options) {
 
   function finishFolderClose() {
     clearFolderCloseHandoffFrame();
+    clearFolderZoomFadeCloseTimer();
     renderedFolderId.value = null;
     folderClosingSnapshot.value = null;
     isFolderClosing.value = false;
+    isFolderZoomFadeClosing.value = false;
+    folderZoomFadeCloseReason.value = null;
+    folderOpeningOriginBounds.value = null;
     options.folderPageIndex.value = 0;
     options.folderPageRefs.length = 0;
     options.resetFolderViewportMetrics?.();
@@ -93,11 +110,15 @@ export function useLaunchpadFolderFlow(options) {
   function startFolderAppLaunchClose() {
     if (!renderedFolder.value || isFolderAppLaunchClosing.value) return;
     clearFolderCloseHandoffFrame();
+    clearFolderZoomFadeCloseTimer();
     const closingId = renderedFolderId.value || openFolderId.value || renderedFolder.value.id;
     const current = closingId ? options.findFolder(options.pages.value, closingId)?.item : null;
     folderClosingSnapshot.value = current ? options.cloneItem(current) : options.cloneItem(renderedFolder.value);
     openFolderId.value = null;
     isFolderClosing.value = false;
+    isFolderZoomFadeClosing.value = false;
+    folderZoomFadeCloseReason.value = null;
+    folderOpeningOriginBounds.value = null;
     isFolderAppLaunchClosing.value = true;
     options.clearFolderPageTurn();
     clearFolderCloseTimer();
@@ -115,6 +136,7 @@ export function useLaunchpadFolderFlow(options) {
 
   function commitOpenFolder(next, commitOptions) {
     clearFolderCloseHandoffFrame();
+    clearFolderZoomFadeCloseTimer();
     if (next) {
       const isSameFolder = openFolderId.value === next && renderedFolderId.value === next;
       const originGeometry = commitOptions?.originGeometry;
@@ -123,6 +145,9 @@ export function useLaunchpadFolderFlow(options) {
       finishHomeRevealSettleWindow();
       isFolderClosing.value = false;
       isFolderAppLaunchClosing.value = false;
+      isFolderZoomFadeClosing.value = false;
+      folderZoomFadeCloseReason.value = null;
+      folderOpeningOriginBounds.value = commitOptions?.originBounds || null;
       folderClosingSnapshot.value = null;
       if (!isSameFolder) options.resetFolderViewportMetrics?.();
       options.setFolderMotionGeometry(originGeometry ? { ...originGeometry, id: next } : options.getFolderIconMotionGeometry(next));
@@ -142,6 +167,9 @@ export function useLaunchpadFolderFlow(options) {
     }
     openFolderId.value = null;
     isFolderClosing.value = true;
+    isFolderZoomFadeClosing.value = false;
+    folderZoomFadeCloseReason.value = null;
+    folderOpeningOriginBounds.value = null;
     startHomeRevealSettleWindow();
     options.clearFolderPageTurn();
     clearFolderCloseTimer();
@@ -155,28 +183,84 @@ export function useLaunchpadFolderFlow(options) {
     folderSession.value = next;
   }
 
+  function requestFolderOpenWarmup(folder, originBounds = null) {
+    if (hasPreparedFirstFolderOpen || !folder?.id) return false;
+    folderOpenWarmupRequest.value = {
+      folder: options.cloneItem(folder),
+      id: ++folderOpenWarmupRequestId,
+      originBounds,
+    };
+    return true;
+  }
+
+  function consumeFirstFolderOpenPrepare() {
+    if (hasPreparedFirstFolderOpen) return false;
+    hasPreparedFirstFolderOpen = true;
+    return true;
+  }
+
+  function finishFolderZoomFadeClose() {
+    if (!isFolderZoomFadeClosing.value) return false;
+    clearFolderCloseHandoffFrame();
+    clearFolderZoomFadeCloseTimer();
+    renderedFolderId.value = null;
+    folderClosingSnapshot.value = null;
+    openFolderId.value = null;
+    isFolderZoomFadeClosing.value = false;
+    folderZoomFadeCloseReason.value = null;
+    folderOpeningOriginBounds.value = null;
+    options.folderPageIndex.value = 0;
+    options.folderPageRefs.length = 0;
+    options.resetFolderViewportMetrics?.();
+    return true;
+  }
+
+  function startFolderZoomFadeClose(closeOptions = {}) {
+    if (!renderedFolder.value || isFolderClosing.value || isFolderAppLaunchClosing.value || isFolderZoomFadeClosing.value) return false;
+    clearFolderCloseHandoffFrame();
+    clearFolderCloseTimer();
+    clearFolderAppLaunchTimer();
+    clearFolderZoomFadeCloseTimer();
+    isFolderZoomFadeClosing.value = true;
+    folderZoomFadeCloseReason.value = closeOptions.reason || null;
+    if (closeOptions.revealHome) startHomeRevealSettleWindow();
+    else finishHomeRevealSettleWindow();
+    options.clearFolderPageTurn();
+    folderZoomFadeCloseTimer = window.setTimeout(finishFolderZoomFadeClose, FOLDER_ZOOM_FADE_CLOSE_DURATION + 80);
+    return true;
+  }
+
   return {
     clearFolderAppLaunchTimer,
     clearFolderCloseTimer,
     clearFolderCloseHandoffFrame,
+    clearFolderZoomFadeCloseTimer,
     clearHomeRevealSettleTimer,
     commitFolderSession,
     commitOpenFolder,
     desktopProjectionEpoch,
     finishFolderClose,
     finishFolderCloseAfterHandoffFrame,
+    finishFolderZoomFadeClose,
     finishHomeRevealSettleWindow,
     folderClosingSnapshot,
+    folderOpenWarmupRequest,
+    folderOpeningOriginBounds,
     folderPages,
     folderSession,
+    folderZoomFadeCloseReason,
     isFolderAppLaunchClosing,
     isFolderClosing,
     isFolderLayerActive,
+    isFolderZoomFadeClosing,
     isHomeRevealSettling,
     openFolderId,
     renderedFolder,
     renderedFolderId,
+    consumeFirstFolderOpenPrepare,
+    requestFolderOpenWarmup,
     startFolderAppLaunchClose,
+    startFolderZoomFadeClose,
     startHomeRevealSettleWindow,
   };
 }

@@ -1625,6 +1625,11 @@ export function useLaunchpadNative(options) {
   function toggleDesktopFromNativeShortcut(event) {
     rememberNativeWindowOpenSequence(event);
     if (options.isDesktopOpen.value) {
+      if (options.renderedFolder?.value && options.startFolderZoomFadeClose?.({ reason: "desktop" })) {
+        options.closeDesktop({ clearSearch: false });
+        hideNativeWindowAfterCloseAnimation();
+        return;
+      }
       options.closeDesktop({ clearSearch: false });
       hideNativeWindowAfterCloseAnimation();
     } else {

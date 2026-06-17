@@ -34,7 +34,27 @@ export function useLaunchpadKeyboard(options) {
   }
 
   function hasFolderInteractionLayer() {
-    return Boolean(options.renderedFolder.value && (options.openFolderId.value || options.isFolderClosing.value || options.isFolderAppLaunchClosing.value));
+    return Boolean(options.renderedFolder.value && (
+      options.openFolderId.value ||
+      options.isFolderClosing.value ||
+      options.isFolderAppLaunchClosing.value ||
+      options.isFolderZoomFadeClosing?.value
+    ));
+  }
+
+  function isAltSpaceShortcut(event) {
+    return Boolean(event.altKey && !event.ctrlKey && !event.metaKey && (event.key === " " || event.code === "Space"));
+  }
+
+  function handleAltSpaceKey(event) {
+    if (!hasFolderInteractionLayer() || options.isFolderClosing.value || options.isFolderAppLaunchClosing.value || options.isFolderZoomFadeClosing?.value) return false;
+    event.preventDefault();
+    options.cancelAltEditMode?.();
+    options.clearSelectedIcon?.();
+    if (!options.startFolderZoomFadeClose?.({ reason: "desktop" })) return true;
+    options.closeDesktop?.({ clearSearch: false });
+    options.hideNativeWindowAfterCloseAnimation?.();
+    return true;
   }
 
   function getNextDesktopPageIndex(step) {
@@ -199,6 +219,8 @@ export function useLaunchpadKeyboard(options) {
     }
 
     if (options.isModalOpen?.()) return;
+
+    if (isAltSpaceShortcut(event) && handleAltSpaceKey(event)) return;
 
     options.handleAltKeyDown(event);
     if (options.isAltKeyEvent(event)) return;

@@ -191,6 +191,8 @@ export function createDialogState(controller) {
 
 export function createFolderOverlayState(controller) {
   return {
+    activePageIndex: controller.activePageIndex,
+    activePages: controller.activePages,
     beginDrag: controller.beginDrag,
     completeFolderCloseIconGhost: controller.completeFolderCloseIconGhost,
     completeFolderOpenIconGhost: controller.completeFolderOpenIconGhost,
@@ -200,6 +202,8 @@ export function createFolderOverlayState(controller) {
     dragReleaseState: controller.dragReleaseState,
     folderCloseIconGhosts: controller.folderCloseIconGhosts,
     folderGridStyle: controller.folderGridStyle,
+    folderOpenWarmupRequest: controller.folderOpenWarmupRequest,
+    folderOpeningOriginBounds: controller.folderOpeningOriginBounds,
     folderOpenIconGhosts: controller.folderOpenIconGhosts,
     folderPageIndex: controller.folderPageIndex,
     folderPageSize: controller.folderPageSize,
@@ -214,6 +218,7 @@ export function createFolderOverlayState(controller) {
     isFolderAppLaunchClosing: controller.isFolderAppLaunchClosing,
     isFolderCloseIconAnimationActive: controller.isFolderCloseIconAnimationActive,
     isFolderClosing: controller.isFolderClosing,
+    isFolderZoomFadeClosing: controller.isFolderZoomFadeClosing,
     isFolderOpenFrameGhostPending: controller.isFolderOpenFrameGhostPending,
     isFolderOpenIconAnimationActive: controller.isFolderOpenIconAnimationActive,
     isFolderClosingIconGhosted: controller.isFolderClosingIconGhosted,
@@ -226,6 +231,7 @@ export function createFolderOverlayState(controller) {
     renameFolder: controller.renameFolder,
     removeAppById: controller.removeAppById,
     renderedFolder: controller.renderedFolder,
+    finishFolderZoomFadeClose: controller.finishFolderZoomFadeClose,
     resetAppCustomIcon: controller.resetAppCustomIcon,
     setFolderPageRef: controller.setFolderPageRef,
     showMissingLaunchTargetBadge: controller.showMissingLaunchTargetBadge,

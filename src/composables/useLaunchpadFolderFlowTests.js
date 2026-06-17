@@ -3,6 +3,7 @@ import {
   FOLDER_APP_LAUNCH_DURATION,
   FOLDER_CLOSE_DURATION,
   FOLDER_CLOSE_GHOST_FALLBACK_DURATION,
+  FOLDER_ZOOM_FADE_CLOSE_DURATION,
   HOME_REVEAL_SETTLE_DURATION,
 } from "./launchpadConstants.js";
 import { useLaunchpadFolderFlow } from "./useLaunchpadFolderFlow.js";
@@ -243,6 +244,35 @@ export function runLaunchpadFolderFlowTests() {
     dragActive.flow.commitOpenFolder("folder-1");
     dragActive.folderPageIndex.value = 2;
     assert(dragActive.flow.folderPages.value.length === 3, "drag-active folder pages should include the current drag target page");
+
+    const zoomFadeClose = createFolderFlow();
+    zoomFadeClose.flow.commitOpenFolder("folder-1");
+    zoomFadeClose.folderPageIndex.value = 1;
+    zoomFadeClose.folderPageRefs.push({ id: "extra-folder-page" });
+    assert(zoomFadeClose.flow.startFolderZoomFadeClose(), "zoom-fade close should start for an open folder");
+    assert(zoomFadeClose.flow.openFolderId.value === "folder-1", "zoom-fade close should keep the folder open during the visual animation");
+    assert(zoomFadeClose.flow.isFolderZoomFadeClosing.value, "zoom-fade close should expose its own closing state");
+    assert(zoomFadeClose.flow.folderZoomFadeCloseReason.value === null, "zoom-fade close should allow a missing reason");
+    assert(!zoomFadeClose.flow.isFolderClosing.value, "zoom-fade close should not use the normal folder closing state");
+    assert(!zoomFadeClose.flow.isHomeRevealSettling.value, "zoom-fade close should not settle the home reveal by default");
+    assert(zoomFadeClose.calls.clearFolderPageTurn === 1, "zoom-fade close should clear folder page turn timers");
+    zoomFadeClose.flow.finishFolderZoomFadeClose();
+    assert(zoomFadeClose.flow.openFolderId.value === null, "zoom-fade finish should clear the open folder id");
+    assert(zoomFadeClose.flow.renderedFolder.value === null, "zoom-fade finish should clear the rendered folder");
+    assert(zoomFadeClose.folderPageIndex.value === 0, "zoom-fade finish should reset folder page index");
+    assert(zoomFadeClose.folderPageRefs.length === 0, "zoom-fade finish should clear folder page refs");
+
+    const zoomFadeRevealHome = createFolderFlow();
+    zoomFadeRevealHome.flow.commitOpenFolder("folder-1");
+    zoomFadeRevealHome.flow.startFolderZoomFadeClose({ reason: "desktop", revealHome: true });
+    assert(zoomFadeRevealHome.flow.folderZoomFadeCloseReason.value === "desktop", "zoom-fade close should store its reason");
+    assert(zoomFadeRevealHome.flow.isHomeRevealSettling.value, "zoom-fade close should optionally settle the home reveal");
+
+    const zoomFadeFallback = createFolderFlow();
+    zoomFadeFallback.flow.commitOpenFolder("folder-1");
+    zoomFadeFallback.flow.startFolderZoomFadeClose();
+    timers.runDelay(FOLDER_ZOOM_FADE_CLOSE_DURATION + 80);
+    assert(!zoomFadeFallback.flow.isFolderZoomFadeClosing.value, "zoom-fade fallback timer should finish the close");
   } finally {
     if (originalWindow === undefined) {
       delete globalThis.window;

@@ -71,6 +71,12 @@ function requestTextureLoad(source) {
   pendingTextureLoads.set(source, pending);
 }
 
+function waitForTextureLoad(source) {
+  if (!source || textureCache.has(source) || failedTextureSources.has(source)) return Promise.resolve();
+  requestTextureLoad(source);
+  return pendingTextureLoads.get(source) || Promise.resolve();
+}
+
 export function getCachedIconTexture(item, onLoad, listenerKey = onLoad) {
   const source = getPixiIconTextureSource(item);
   if (!source) return null;
@@ -88,6 +94,24 @@ export function preloadIconTextures(items) {
     seen.add(source);
     requestTextureLoad(source);
   }
+}
+
+export function preloadIconTexturesAsync(items, options = {}) {
+  const seen = new Set();
+  const loads = [];
+  for (const item of items || []) {
+    const source = getPixiIconTextureSource(item);
+    if (!source || seen.has(source)) continue;
+    seen.add(source);
+    loads.push(waitForTextureLoad(source));
+  }
+  const timeoutMs = Math.max(0, Number(options.timeoutMs) || 0);
+  const loaded = Promise.allSettled(loads);
+  if (!timeoutMs) return loaded;
+  return Promise.race([
+    loaded,
+    new Promise((resolve) => globalThis.setTimeout?.(resolve, timeoutMs)),
+  ]);
 }
 
 export function clearIconTextureCache() {

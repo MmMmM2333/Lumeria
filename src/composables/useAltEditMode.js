@@ -40,7 +40,14 @@ export function useAltEditMode(options) {
     isEditMode.value = false;
   }
 
+  function cancelAltEditMode() {
+    isAltPressed = false;
+    clearAltEditTimer();
+    isEditMode.value = false;
+  }
+
   return {
+    cancelAltEditMode,
     clearAltEditTimer,
     handleAltKeyDown,
     handleAltKeyUp,

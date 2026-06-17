@@ -9,37 +9,44 @@
     @pointerdown.stop.prevent
     @contextmenu.stop.prevent
   >
-    <div ref="hostRef" class="pixi-folder-host" />
-    <input
-      v-if="state.renderedFolder.value"
-      class="folder-name-input pixi-folder-name-input"
-      name="pixiFolderName"
-      :value="state.renderedFolder.value.name"
-      :disabled="state.isFolderClosing.value || state.isFolderAppLaunchClosing.value || isFolderGhostTransitionActive"
-      :style="folderNameInputStyle"
-      maxlength="32"
-      aria-label="文件夹名称"
-      @input="handleFolderNameInput"
-      @blur="restoreEmptyFolderName"
-      @keydown.enter.prevent.stop="$event.target.blur()"
-      @pointerdown.stop
-    />
-    <footer
-      v-if="state.renderedFolder.value && state.folderPages.value.length > 1"
-      class="folder-page-dots pixi-folder-page-dots"
-      :style="folderPageDotsStyle"
-      @pointerdown.stop
+    <div
+      ref="motionRef"
+      :class="['pixi-folder-motion', isFolderZoomFadeClosing && 'pixi-folder-motion-zoom-fade-closing']"
+      :style="overlayStyle"
+      @animationend="handleOverlayAnimationEnd"
     >
-      <button
-        v-for="index in state.folderPages.value.length"
-        :key="index"
-        type="button"
-        :class="['page-dot', index - 1 === state.folderPageIndex.value && 'page-dot-active']"
-        :aria-label="`切换到文件夹第 ${index} 页`"
+      <div ref="hostRef" class="pixi-folder-host" />
+      <input
+        v-if="state.renderedFolder.value"
+        class="folder-name-input pixi-folder-name-input"
+        name="pixiFolderName"
+        :value="state.renderedFolder.value.name"
+        :disabled="state.isFolderClosing.value || state.isFolderAppLaunchClosing.value || isFolderZoomFadeClosing || isFolderGhostTransitionActive"
+        :style="folderNameInputStyle"
+        maxlength="32"
+        aria-label="文件夹名称"
+        @input="handleFolderNameInput"
+        @blur="restoreEmptyFolderName"
+        @keydown.enter.prevent.stop="$event.target.blur()"
         @pointerdown.stop
-        @click="state.commitFolderPageIndex(index - 1)"
       />
-    </footer>
+      <footer
+        v-if="state.renderedFolder.value && state.folderPages.value.length > 1"
+        class="folder-page-dots pixi-folder-page-dots"
+        :style="folderPageDotsStyle"
+        @pointerdown.stop
+      >
+        <button
+          v-for="index in state.folderPages.value.length"
+          :key="index"
+          type="button"
+          :class="['page-dot', index - 1 === state.folderPageIndex.value && 'page-dot-active']"
+          :aria-label="`切换到文件夹第 ${index} 页`"
+          @pointerdown.stop
+          @click="state.commitFolderPageIndex(index - 1)"
+        />
+      </footer>
+    </div>
   </div>
 </template>
 
@@ -48,7 +55,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect
 import { createPixiApp } from "./createPixiApp.js";
 import { FolderOverlayLayer } from "./scene/FolderOverlayLayer.js";
 import { findFolderGhostKey } from "./scene/folderOverlayTargets.js";
-import { clearIconTextureCache } from "./assets/iconTextureCache.js";
+import { clearIconTextureCache, preloadIconTexturesAsync } from "./assets/iconTextureCache.js";
 import { clearFolderIconBounds } from "./geometry/iconBoundsRegistry.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { getPixiHostRect, getViewportFallbackSize } from "./pixiHostMetrics.js";
@@ -61,6 +68,7 @@ const props = defineProps({
 const emit = defineEmits(["context-menu-icon", "open-app", "pointerdown-icon"]);
 
 const overlayRef = ref(null);
+const motionRef = ref(null);
 const hostRef = ref(null);
 const folderNameBeforeEdit = ref("");
 const panelGeometry = ref(null);
@@ -68,22 +76,31 @@ const titleFrame = ref(null);
 const closingTitleStartOpacity = ref(1);
 const folderPageDotsVisible = ref(false);
 const FOLDER_PAGE_DOTS_REVEAL_PROGRESS = 0.995;
+const FOLDER_PREWARM_DELAY = 80;
+const FOLDER_PREWARM_FOLDER_LIMIT = 4;
+const FOLDER_PREWARM_TEXTURE_TIMEOUT = 80;
 let app = null;
 let layer = null;
 let resizeObserver = null;
 let destroyed = false;
 let didWarmInitialFrame = false;
 let folderPageDotsRevealFrame = null;
+let folderPrewarmTimer = null;
+let folderPrewarmRequestId = 0;
+let folderPrewarmKey = null;
+const prewarmedFolderKeys = new Set();
 
 const isFolderGhostTransitionActive = computed(() => Boolean(
   props.state.isFolderOpenIconAnimationActive?.value ||
   props.state.isFolderCloseIconAnimationActive?.value
 ));
+const isFolderZoomFadeClosing = computed(() => Boolean(props.state.isFolderZoomFadeClosing?.value));
 const shouldRunPixi = computed(() => Boolean(
   props.active && (
     props.state.renderedFolder.value ||
     props.state.isFolderClosing.value ||
     props.state.isFolderAppLaunchClosing.value ||
+    isFolderZoomFadeClosing.value ||
     isFolderGhostTransitionActive.value
   )
 ));
@@ -91,6 +108,7 @@ const shouldRunPixi = computed(() => Boolean(
 const isFolderPageDotsBlocked = computed(() => Boolean(
   props.state.isFolderClosing.value ||
   props.state.isFolderAppLaunchClosing.value ||
+  isFolderZoomFadeClosing.value ||
   props.state.isFolderOpenFrameGhostPending?.value ||
   isFolderGhostTransitionActive.value
 ));
@@ -122,7 +140,7 @@ function handleResize() {
 
 const folderNameInputStyle = computed(() => {
   const frame = titleFrame.value || panelGeometry.value?.panel;
-  const isClosing = props.state.isFolderClosing.value || props.state.isFolderAppLaunchClosing.value;
+  const isClosing = props.state.isFolderClosing.value || props.state.isFolderAppLaunchClosing.value || isFolderZoomFadeClosing.value;
   if (!frame) return { opacity: 0, pointerEvents: "none" };
   const width = 360;
   const opacity = getFolderTitleOpacity(frame, isClosing);
@@ -135,6 +153,14 @@ const folderNameInputStyle = computed(() => {
     top: `${frame.top - 44}px`,
     transform: "translate3d(0, 0, 0)",
     width: `${width}px`,
+  };
+});
+
+const overlayStyle = computed(() => {
+  const panel = panelGeometry.value?.panel;
+  if (!panel) return null;
+  return {
+    "--pixi-folder-zoom-origin": `${panel.left + panel.width / 2}px ${panel.top + panel.height / 2}px`,
   };
 });
 
@@ -162,16 +188,14 @@ function getHostRect() {
   return getPixiHostRect(hostRef.value, getViewportFallbackSize());
 }
 
-function renderPixi(options = {}) {
-  if (!options.force && !shouldRunPixi.value) return;
-  if (!app || !layer || !hostRef.value) return;
-  const rect = getHostRect();
-  panelGeometry.value = layer.update({
+function createLayerState(rect, overrides = {}) {
+  return {
     dragMeta: props.state.dragMeta.value,
     folderGridStyle: props.state.folderGridStyle.value,
     folderPageIndex: props.state.folderPageIndex.value,
     folderPageSize: props.state.folderPageSize.value,
     folderPages: props.state.folderPages.value,
+    folderOpeningOriginBounds: props.state.folderOpeningOriginBounds?.value,
     folderPanelRef: props.state.folderPanelRef,
     folderPanelStyle: props.state.folderPanelStyle.value,
     folderViewportRef: props.state.folderViewportRef,
@@ -198,7 +222,15 @@ function renderPixi(options = {}) {
     showMissingLaunchTargetBadge: props.state.showMissingLaunchTargetBadge.value,
     stageRect: rect,
     width: Math.max(1, rect.width),
-  });
+    ...overrides,
+  };
+}
+
+function renderPixi(options = {}) {
+  if (!options.force && !shouldRunPixi.value) return;
+  if (!app || !layer || !hostRef.value) return;
+  const rect = getHostRect();
+  panelGeometry.value = layer.update(createLayerState(rect));
 }
 
 function renderInitialWarmFrame() {
@@ -220,6 +252,15 @@ function handleIconAction(action, event, item, source) {
   if (action === "reset-icon") props.state.resetAppCustomIcon(item.id);
 }
 
+function handleOverlayAnimationEnd(event) {
+  if (event.target !== motionRef.value || event.animationName !== "pixi-folder-zoom-fade-close") return;
+  if (typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(() => props.state.finishFolderZoomFadeClose?.());
+    return;
+  }
+  props.state.finishFolderZoomFadeClose?.();
+}
+
 function destroyPixi(options = {}) {
   const deep = options.deep !== false;
   destroyed = true;
@@ -227,6 +268,7 @@ function destroyPixi(options = {}) {
   resizeObserver?.disconnect();
   resizeObserver = null;
   cancelFolderPageDotsReveal();
+  cancelFolderPrewarm();
   const currentApp = app;
   const currentLayer = layer;
   app = null;
@@ -245,6 +287,14 @@ function destroyPixi(options = {}) {
   if (deep) clearIconTextureCache();
 }
 
+function cancelFolderPrewarm() {
+  folderPrewarmRequestId += 1;
+  folderPrewarmKey = null;
+  if (folderPrewarmTimer == null) return;
+  window.clearTimeout(folderPrewarmTimer);
+  folderPrewarmTimer = null;
+}
+
 function syncPixiActivity() {
   if (!app) return;
   if (!shouldRunPixi.value) {
@@ -257,6 +307,94 @@ function syncPixiActivity() {
   app.resize?.();
   renderPixi();
   renderInitialWarmFrame();
+}
+
+function getFirstFolderPageItems(folder) {
+  if (Array.isArray(folder?.childPages)) return folder.childPages[0] || [];
+  return Array.isArray(folder?.children) ? folder.children : [];
+}
+
+function getFolderPrewarmKey(folder) {
+  const firstPageItems = getFirstFolderPageItems(folder).slice(0, props.state.folderPageSize.value);
+  return `${folder?.id || "folder"}:${firstPageItems.map((item) => item?.id || "").join(",")}`;
+}
+
+function getPrewarmFolderCandidate() {
+  if (shouldRunPixi.value || !props.state.activePages?.value || prewarmedFolderKeys.size >= FOLDER_PREWARM_FOLDER_LIMIT) return null;
+  const page = props.state.activePages.value[props.state.activePageIndex?.value || 0] || [];
+  const visibleItems = props.state.getVisibleDesktopPage?.(page) || [];
+  return visibleItems.find((item) => {
+    if (item?.type !== "folder") return false;
+    const firstPageItems = getFirstFolderPageItems(item).slice(0, props.state.folderPageSize.value);
+    const key = getFolderPrewarmKey(item);
+    return firstPageItems.length && !prewarmedFolderKeys.has(key);
+  }) || null;
+}
+
+function finishFolderPrewarmRequest(requestId) {
+  if (requestId === folderPrewarmRequestId) folderPrewarmKey = null;
+}
+
+async function runFolderPrewarm(folder, requestId) {
+  if (!folder || !app || !layer || !hostRef.value || destroyed || shouldRunPixi.value) {
+    finishFolderPrewarmRequest(requestId);
+    return;
+  }
+  const firstPageItems = getFirstFolderPageItems(folder).slice(0, props.state.folderPageSize.value);
+  await preloadIconTexturesAsync(firstPageItems, { timeoutMs: FOLDER_PREWARM_TEXTURE_TIMEOUT });
+  if (requestId !== folderPrewarmRequestId || destroyed || shouldRunPixi.value || !app || !layer || !hostRef.value) {
+    finishFolderPrewarmRequest(requestId);
+    return;
+  }
+  const rect = getHostRect();
+  layer.update(createLayerState(rect, {
+    folderPageIndex: 0,
+    folderPages: [firstPageItems],
+    folderPanelRef: null,
+    folderViewportRef: null,
+    folderOpenIconGhosts: [],
+    folderCloseIconGhosts: [],
+    isFolderAppLaunchClosing: false,
+    isFolderClosing: false,
+    prewarm: true,
+    renderedFolder: folder,
+    setFolderPageRef: null,
+  }));
+  app.render?.();
+  if (requestId !== folderPrewarmRequestId || destroyed || shouldRunPixi.value || !app || !layer || !hostRef.value) {
+    finishFolderPrewarmRequest(requestId);
+    return;
+  }
+  layer.update(createLayerState(rect, {
+    folderPageIndex: 0,
+    folderPages: [],
+    folderPanelRef: null,
+    folderViewportRef: null,
+    renderedFolder: null,
+    setFolderPageRef: null,
+  }));
+  app.render?.();
+  app.stop?.();
+  prewarmedFolderKeys.add(`${folder.id || "folder"}:${firstPageItems.map((item) => item?.id || "").join(",")}`);
+  finishFolderPrewarmRequest(requestId);
+  scheduleFolderPrewarm();
+}
+
+function scheduleFolderPrewarm(folderOverride = null, options = {}) {
+  if (!app || destroyed || shouldRunPixi.value) return;
+  const folder = folderOverride || getPrewarmFolderCandidate();
+  if (!folder) return;
+  const firstPageItems = getFirstFolderPageItems(folder).slice(0, props.state.folderPageSize.value);
+  const nextKey = getFolderPrewarmKey(folder);
+  if (prewarmedFolderKeys.has(nextKey)) return;
+  if (folderPrewarmKey === nextKey) return;
+  cancelFolderPrewarm();
+  folderPrewarmKey = nextKey;
+  const requestId = folderPrewarmRequestId;
+  folderPrewarmTimer = window.setTimeout(() => {
+    folderPrewarmTimer = null;
+    void runFolderPrewarm(folder, requestId);
+  }, options.delayMs ?? FOLDER_PREWARM_DELAY);
 }
 
 function cancelFolderPageDotsReveal() {
@@ -348,6 +486,7 @@ onMounted(async () => {
   window.addEventListener("resize", handleResize);
   await nextTick();
   syncPixiActivity();
+  scheduleFolderPrewarm();
 });
 
 watch(
@@ -355,10 +494,31 @@ watch(
   syncPixiActivity
 );
 
+watch(
+  () => props.state.activePageIndex?.value,
+  () => {
+    cancelFolderPrewarm();
+    prewarmedFolderKeys.clear();
+    scheduleFolderPrewarm();
+  }
+);
+
+watch(
+  () => props.state.folderOpenWarmupRequest?.value,
+  (request) => {
+    if (!request?.folder) return;
+    scheduleFolderPrewarm(request.folder, { delayMs: 0 });
+  }
+);
+
 watchEffect(() => {
+  void props.state.activePageIndex?.value;
+  void props.state.activePages?.value;
   void props.state.dragMeta.value;
   void props.state.dragReleaseState?.value;
   void props.state.folderGridStyle.value;
+  void props.state.folderOpenWarmupRequest?.value;
+  void props.state.folderOpeningOriginBounds?.value;
   void props.state.folderCloseIconGhosts?.value;
   void props.state.folderOpenIconGhosts?.value;
   void props.state.folderPageIndex.value;
@@ -368,12 +528,14 @@ watchEffect(() => {
   void props.state.isFolderAppLaunchClosing.value;
   void props.state.isFolderCloseIconAnimationActive?.value;
   void props.state.isFolderClosing.value;
+  void props.state.isFolderZoomFadeClosing?.value;
   void props.state.isFolderOpenIconAnimationActive?.value;
   void props.state.isTextlessMode.value;
   void props.state.launchTargetStatusById.value;
   void props.state.renderedFolder.value;
   void props.state.showMissingLaunchTargetBadge.value;
   renderPixi();
+  scheduleFolderPrewarm();
 });
 
 onBeforeUnmount(destroyPixi);

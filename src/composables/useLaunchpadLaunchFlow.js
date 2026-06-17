@@ -29,7 +29,13 @@ export function useLaunchpadLaunchFlow(options) {
   });
 
   function isLaunchpadInteractionBlocked() {
-    return Boolean(!isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value || options.isFolderAppLaunchClosing.value);
+    return Boolean(
+      !isDesktopOpen.value ||
+      isDesktopClosing.value ||
+      isAppLaunching.value ||
+      options.isFolderAppLaunchClosing.value ||
+      options.isFolderZoomFadeClosing?.value
+    );
   }
 
   function clearDesktopCloseTimer() {
@@ -154,7 +160,14 @@ export function useLaunchpadLaunchFlow(options) {
     clearAppLaunchTimer();
     clearLaunchGhost();
     options.clearOpeningIcon();
-    options.startHomeRevealSettleWindow();
+    const didClearFolderZoomFadeClose = Boolean(options.folderZoomFadeCloseReason?.value);
+    if (options.folderZoomFadeCloseReason?.value) {
+      options.finishFolderZoomFadeClose?.();
+      options.clearFolderOpenIconGhosts?.();
+      options.clearFolderCloseIconGhosts?.();
+      options.finishHomeRevealSettleWindow?.();
+    }
+    if (!didClearFolderZoomFadeClose) options.startHomeRevealSettleWindow();
     isDesktopClosing.value = false;
     isAppLaunching.value = false;
     isDesktopOpen.value = true;
@@ -177,7 +190,7 @@ export function useLaunchpadLaunchFlow(options) {
     options.openingIcon.value = launchSource;
     isAppLaunching.value = true;
 
-    if (options.hasFolderLayer()) options.startFolderAppLaunchClose();
+    if (options.hasFolderLayer()) options.startFolderZoomFadeClose?.({ reason: "app-launch" });
     closeDesktop({ clearSearch: false });
     window.setTimeout(() => {
       Promise.resolve(options.launchNativeAppIfAvailable(app))
