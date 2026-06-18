@@ -9,6 +9,7 @@ import {
 import {
   getSingleStageFolderProbeOptions,
   getSingleStageFolderProbeOptionsKey,
+  getSingleStageFolderProbeRenderKey,
   installSingleStageFolderProbeGlobalFlag,
   makeSingleStageFolderProbePlan,
   setSingleStageFolderProbeOptions,
@@ -44,6 +45,17 @@ export function runSingleStageFolderProbeTests() {
   assert(options.dragPreview, "folder layer should enable the single-stage drag preview");
   assert(options.rootStage, "probe options should preserve the root-stage canvas flag");
   assert(getSingleStageFolderProbeOptionsKey(options) === "111111", "probe option key should reflect enabled flags");
+  assert(getSingleStageFolderProbeRenderKey(options) === "111", "render key should reflect only structural stage ownership flags");
+  const renderKeyWithoutDiagnostics = getSingleStageFolderProbeRenderKey(
+    getSingleStageFolderProbeOptions({ enabled: true, folderLayer: true, log: false, probe: false })
+  );
+  const renderKeyWithDiagnostics = getSingleStageFolderProbeRenderKey(
+    getSingleStageFolderProbeOptions({ enabled: true, folderLayer: true, log: true, probe: true })
+  );
+  assert(
+    renderKeyWithoutDiagnostics === renderKeyWithDiagnostics,
+    "diagnostic flags should not change the render key"
+  );
   const rootStageOnlyOptions = getSingleStageFolderProbeOptions({ enabled: true, rootStage: true });
   assert(rootStageOnlyOptions.rootStage && !rootStageOnlyOptions.dragPreview, "root-stage diagnostics should not imply drag preview ownership");
   const dragPreviewOnlyOptions = getSingleStageFolderProbeOptions({ dragPreview: true, enabled: true, probe: false });

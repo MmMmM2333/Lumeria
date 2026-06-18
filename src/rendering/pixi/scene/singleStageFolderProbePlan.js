@@ -62,6 +62,14 @@ export function getSingleStageFolderProbeOptionsKey(options = getSingleStageFold
   ].join("");
 }
 
+export function getSingleStageFolderProbeRenderKey(options = getSingleStageFolderProbeOptions()) {
+  return [
+    options.dragPreview ? "1" : "0",
+    options.folderLayer ? "1" : "0",
+    options.rootStage ? "1" : "0",
+  ].join("");
+}
+
 export function setSingleStageFolderProbeOptions(value) {
   installSingleStageFolderProbeGlobalFlag();
   globalThis[SINGLE_STAGE_FOLDER_PROBE_GLOBAL_FLAG] = value;

@@ -180,6 +180,7 @@ import PixiFolderOverlay from "./rendering/pixi/PixiFolderOverlay.vue";
 import {
   getSingleStageFolderProbeOptions,
   getSingleStageFolderProbeOptionsKey,
+  getSingleStageFolderProbeRenderKey,
   installSingleStageFolderProbeGlobalFlag,
   SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT,
 } from "./rendering/pixi/scene/singleStageFolderProbePlan.js";
@@ -355,7 +356,7 @@ const shouldRunFolderPixi = computed(() => Boolean(
 const shouldUseSingleStageRootStage = computed(() => singleStageFolderProbeOptions.value.rootStage === true);
 const shouldUseSingleStageFolderLayer = computed(() => singleStageFolderProbeOptions.value.folderLayer === true);
 const shouldUseSingleStageDragPreview = computed(() => singleStageFolderProbeOptions.value.dragPreview === true);
-const singleStageFolderProbeRenderKey = computed(() => getSingleStageFolderProbeOptionsKey(singleStageFolderProbeOptions.value));
+const singleStageFolderProbeRenderKey = computed(() => getSingleStageFolderProbeRenderKey(singleStageFolderProbeOptions.value));
 const desktopVisualAlpha = computed(() => Math.max(0, Math.min(1, Number(homeShellAnimate.value?.opacity ?? 1))));
 const shouldRunDragPreviewPixi = computed(() => Boolean(
   shouldRunPixiOverlays.value && (
