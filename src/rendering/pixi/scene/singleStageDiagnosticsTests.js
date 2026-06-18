@@ -47,12 +47,16 @@ export function runSingleStageDiagnosticsTests() {
   const thumbRect = { height: 72, left: 212, top: 232, width: 72 };
   const defaultOptions = getSingleStageOptions(undefined);
   assert(defaultOptions.enabled && defaultOptions.rootStage && defaultOptions.dragPreview, "single-stage should default to root-stage drag preview ownership");
-  assert(defaultOptions.folderLayer && !defaultOptions.probe, "single-stage should default to folder layer ownership without diagnostics");
+  assert(defaultOptions.folderLayer && !defaultOptions.diagnostics && !defaultOptions.probe, "single-stage should default to folder layer ownership without diagnostics");
   const disabledOptions = getSingleStageOptions(false);
   assert(!disabledOptions.enabled && !disabledOptions.rootStage && !disabledOptions.dragPreview, "explicit false should disable single-stage ownership");
   const diagnosticsOptions = getSingleStageOptions(true);
-  assert(diagnosticsOptions.probe && diagnosticsOptions.rootStage && diagnosticsOptions.dragPreview, "explicit true should enable diagnostics on the default single-stage base");
+  assert(diagnosticsOptions.diagnostics && diagnosticsOptions.probe && diagnosticsOptions.rootStage && diagnosticsOptions.dragPreview, "explicit true should enable diagnostics on the default single-stage base");
   assert(diagnosticsOptions.folderLayer, "explicit true should keep the default folder layer ownership");
+  const formalDiagnosticsOptions = getSingleStageOptions({ diagnostics: true, folderLayer: true });
+  assert(formalDiagnosticsOptions.diagnostics && formalDiagnosticsOptions.probe, "formal diagnostics option should mirror the legacy probe flag");
+  const formalDiagnosticsDisabledOptions = getSingleStageOptions({ diagnostics: false, folderLayer: true });
+  assert(formalDiagnosticsDisabledOptions.folderLayer && !formalDiagnosticsDisabledOptions.diagnostics && !formalDiagnosticsDisabledOptions.probe, "formal diagnostics false should keep stage ownership without enabling diagnostics");
 
   const options = getSingleStageOptions({ enabled: true, folderLayer: true, log: true });
 

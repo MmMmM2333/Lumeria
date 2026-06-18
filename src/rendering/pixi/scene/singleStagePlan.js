@@ -10,6 +10,7 @@ const SINGLE_STAGE_SETTER_GLOBAL = "__LP_SET_SINGLE_STAGE__";
 const SINGLE_STAGE_FOLDER_PROBE_GLOBAL_FLAG = "__LP_SINGLE_STAGE_FOLDER__";
 const SINGLE_STAGE_FOLDER_PROBE_SETTER_GLOBAL = "__LP_SET_SINGLE_STAGE_FOLDER__";
 const DEFAULT_SINGLE_STAGE_OPTIONS = Object.freeze({
+  diagnostics: false,
   dragPreview: true,
   enabled: true,
   folderLayer: true,
@@ -18,6 +19,7 @@ const DEFAULT_SINGLE_STAGE_OPTIONS = Object.freeze({
   rootStage: true,
 });
 const DISABLED_SINGLE_STAGE_OPTIONS = Object.freeze({
+  diagnostics: false,
   dragPreview: false,
   enabled: false,
   folderLayer: false,
@@ -29,6 +31,10 @@ let singleStageGlobalValue;
 
 function cloneOptions(options) {
   return { ...options };
+}
+
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object, key);
 }
 
 function dispatchEvent(name) {
@@ -83,18 +89,22 @@ export function installSingleStageFolderProbeGlobalFlag() {
 
 export function getSingleStageOptions(value = readSingleStageGlobalValue()) {
   if (value === undefined) return cloneOptions(DEFAULT_SINGLE_STAGE_OPTIONS);
-  if (value === true) return { ...DEFAULT_SINGLE_STAGE_OPTIONS, probe: true };
+  if (value === true) return { ...DEFAULT_SINGLE_STAGE_OPTIONS, diagnostics: true, probe: true };
   if (!value || typeof value !== "object") return cloneOptions(DISABLED_SINGLE_STAGE_OPTIONS);
   const hasStageOwnership = value.rootStage === true || value.dragPreview === true || value.folderLayer === true;
-  const enabled = value.enabled === true || value.probe === true || hasStageOwnership;
+  const hasDiagnosticsOption = hasOwn(value, "diagnostics");
+  const diagnosticsValue = hasDiagnosticsOption ? value.diagnostics : value.probe;
+  const enabled = value.enabled === true || diagnosticsValue === true || hasStageOwnership;
   const folderLayer = enabled && value.folderLayer === true;
   const dragPreview = enabled && (value.dragPreview === true || folderLayer);
+  const diagnostics = enabled && diagnosticsValue !== false;
   return {
+    diagnostics,
     dragPreview,
     enabled,
     folderLayer,
     log: enabled && value.log === true,
-    probe: enabled && value.probe !== false,
+    probe: diagnostics,
     rootStage: enabled && (value.rootStage === true || folderLayer || dragPreview),
   };
 }
@@ -109,7 +119,7 @@ export function getSingleStageOptionsKey(options = getSingleStageOptions()) {
     options.enabled ? "1" : "0",
     options.folderLayer ? "1" : "0",
     options.log ? "1" : "0",
-    options.probe ? "1" : "0",
+    (options.diagnostics ?? options.probe) ? "1" : "0",
     options.rootStage ? "1" : "0",
   ].join("");
 }
@@ -143,7 +153,7 @@ export function setSingleStageFolderProbeOptions(value) {
 }
 
 export function isSingleStageDiagnosticsEnabled(value = readSingleStageGlobalValue()) {
-  return getSingleStageOptions(value).probe;
+  return getSingleStageOptions(value).diagnostics;
 }
 
 export function isSingleStageFolderProbeEnabled(value = readSingleStageGlobalValue()) {
@@ -152,8 +162,8 @@ export function isSingleStageFolderProbeEnabled(value = readSingleStageGlobalVal
 
 export function makeSingleStageDiagnosticsPlan(state, options = {}) {
   const enabled = options.enabled == null
-    ? isSingleStageFolderProbeEnabled()
-    : isSingleStageFolderProbeEnabled(options.enabled);
+    ? isSingleStageDiagnosticsEnabled()
+    : isSingleStageDiagnosticsEnabled(options.enabled);
   if (!enabled || !state?.renderedFolder) return null;
   const geometry = getFolderPanelGeometry({
     height: state.height,

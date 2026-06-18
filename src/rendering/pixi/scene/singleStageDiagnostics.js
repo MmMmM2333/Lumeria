@@ -126,7 +126,7 @@ export class SingleStageDiagnosticsLayer extends Container {
   }
 
   publishDebugSnapshot(plan, options) {
-    if (!options.enabled) return;
+    if (!options.diagnostics && !options.probe) return;
     const snapshot = makeDebugSnapshot(plan);
     globalThis.__LP_LAST_SINGLE_STAGE_DIAGNOSTICS__ = snapshot;
     globalThis.__LP_LAST_SINGLE_STAGE_FOLDER_PROBE__ = snapshot;
