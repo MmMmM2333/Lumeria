@@ -264,7 +264,7 @@ export class DesktopLayer extends Container {
     this.stageRect = state.stageRect;
     this.widthValue = state.width;
     this.heightValue = state.height;
-    this.applyDesktopCanvasTransform(state);
+    this.applyDesktopVisualTransform(state);
     this.applyDesktopVisualAlpha(state);
     const pages = state.activePages || [];
     const activePageIndex = state.activePageIndex || 0;
@@ -450,8 +450,8 @@ export class DesktopLayer extends Container {
     }
   }
 
-  applyDesktopCanvasTransform(state) {
-    const transform = state.desktopCanvasTransform || {};
+  applyDesktopVisualTransform(state) {
+    const transform = state.desktopVisualTransform || {};
     const scale = Math.max(0.01, readNumber(transform.scale, 1));
     const offsetY = readNumber(transform.y, 0);
     const centerX = Math.max(1, readNumber(state.width, 1)) / 2;

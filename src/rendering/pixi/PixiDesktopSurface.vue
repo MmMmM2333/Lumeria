@@ -87,8 +87,8 @@ const HANDOFF_RELEASE_FALLBACK_MS = 900;
 const props = defineProps({
   activePageIndex: { type: Number, required: true },
   activePages: { type: Array, required: true },
-  desktopCanvasTransform: { type: Object, default: () => ({ scale: 1, y: 0 }) },
   desktopVisualAlpha: { type: Number, default: 1 },
+  desktopVisualTransform: { type: Object, default: () => ({ scale: 1, y: 0 }) },
   desktopGridDebugOptions: { type: Object, default: null },
   desktopProjectionEpoch: { type: Number, default: 0 },
   desktopTrackMotionKey: { type: String, required: true },
@@ -648,7 +648,7 @@ function renderPixi() {
   layer.update({
     activePageIndex: props.activePageIndex,
     activePages: props.activePages,
-    desktopCanvasTransform: props.desktopCanvasTransform,
+    desktopVisualTransform: props.desktopVisualTransform,
     desktopVisualAlpha: props.desktopVisualAlpha,
     desktopFrame: renderGeometry.desktopFrame,
     desktopGridDebugOptions: props.desktopGridDebugOptions,
@@ -887,7 +887,7 @@ watch(
 watchEffect(() => {
   void props.activePageIndex;
   void props.activePages;
-  void props.desktopCanvasTransform;
+  void props.desktopVisualTransform;
   void props.desktopVisualAlpha;
   void props.desktopGridDebugOptions;
   void props.desktopProjectionEpoch;

@@ -61,7 +61,7 @@
         :key="singleStageRenderKey"
         :active-page-index="activePageIndex"
         :active-pages="activePages"
-        :desktop-canvas-transform="desktopCanvasTransform"
+        :desktop-visual-transform="desktopVisualTransform"
         :desktop-visual-alpha="desktopVisualAlpha"
         :desktop-projection-epoch="desktopProjectionEpoch"
         :desktop-track-motion-key="desktopTrackMotionKey"
@@ -238,7 +238,7 @@ const {
   settingsPanelAnimate,
   handleLaunchpadWheel,
   shellRef,
-  desktopCanvasTransform,
+  desktopVisualTransform,
   desktopVisualAlpha,
   homeShellInitial,
   homeShellAnimate,

@@ -573,7 +573,7 @@ export function useLaunchpadController() {
   const {
     appLaunchGhostTransition,
     backgroundImageStyle,
-    desktopCanvasTransform,
+    desktopVisualTransform,
     desktopTrackMotionKey,
     desktopVisualAlpha,
     homeShellAnimate,
@@ -1426,7 +1426,7 @@ export function useLaunchpadController() {
     rootRef,
     rootStyle,
     backgroundImageStyle,
-    desktopCanvasTransform,
+    desktopVisualTransform,
     desktopVisualAlpha,
     cx,
     gridRows,
