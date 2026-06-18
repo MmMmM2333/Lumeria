@@ -119,12 +119,8 @@ const props = defineProps({
   pageGridMeasureStyle: { type: Object, required: true },
   setPageRef: { type: Function, required: true },
   showMissingLaunchTargetBadge: { type: Boolean, default: true },
-  singleStageFolderLayerEnabled: { type: Boolean, default: null },
   singleStageOptions: { type: Object, default: null },
   singleStageRenderKey: { type: String, default: "" },
-  singleStageFolderProbeOptions: { type: Object, default: null },
-  singleStageFolderProbeRenderKey: { type: String, default: "" },
-  singleStageRootStageEnabled: { type: Boolean, default: null },
 });
 
 const emit = defineEmits([
@@ -139,19 +135,7 @@ const emit = defineEmits([
 ]);
 
 function getResolvedSingleStageOptions() {
-  if (props.singleStageRootStageEnabled != null || props.singleStageFolderLayerEnabled != null) {
-    const fallback = getSingleStageOptions();
-    const folderLayer = props.singleStageFolderLayerEnabled ?? fallback.folderLayer;
-    const dragPreview = fallback.dragPreview || Boolean(folderLayer);
-    return {
-      ...fallback,
-      enabled: fallback.enabled || Boolean(props.singleStageRootStageEnabled || folderLayer || dragPreview),
-      dragPreview,
-      folderLayer,
-      rootStage: props.singleStageRootStageEnabled ?? (fallback.rootStage || dragPreview),
-    };
-  }
-  const options = props.singleStageOptions || props.singleStageFolderProbeOptions;
+  const options = props.singleStageOptions;
   if (options && typeof options === "object") {
     if ("rootStage" in options || "folderLayer" in options || "enabled" in options || "dragPreview" in options) {
       return getSingleStageOptions(options);
@@ -895,7 +879,7 @@ watch(
 );
 
 watch(
-  () => props.singleStageRenderKey || props.singleStageFolderProbeRenderKey,
+  () => props.singleStageRenderKey,
   () => renderPixi(),
   { flush: "post" }
 );
@@ -927,12 +911,8 @@ watchEffect(() => {
   void props.launchTargetStatusById;
   void props.pageGridMeasureStyle;
   void props.folderPageSize;
-  void props.singleStageFolderLayerEnabled;
   void props.singleStageOptions;
   void props.singleStageRenderKey;
-  void props.singleStageFolderProbeRenderKey;
-  void props.singleStageFolderProbeOptions;
-  void props.singleStageRootStageEnabled;
   renderPixi();
   if (shouldRunHandoffRenderLoop()) scheduleHandoffRenderLoop();
   else cancelHandoffRenderLoop();
