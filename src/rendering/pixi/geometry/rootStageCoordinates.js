@@ -29,6 +29,74 @@ export function makeDesktopFrameFromStageRects(rootStageRect, desktopStageRect) 
   };
 }
 
+export function makeRootStageHostStyle(rect) {
+  const root = makeRootStageRect(rect);
+  return {
+    "--pixi-root-stage-height": `${root.height}px`,
+    "--pixi-root-stage-left": `${root.left}px`,
+    "--pixi-root-stage-top": `${root.top}px`,
+    "--pixi-root-stage-width": `${root.width}px`,
+  };
+}
+
+export function resolveSingleStageCandidateRect(metrics, candidates = {}) {
+  return makeRootStageRect(
+    candidates.rootRect ||
+      candidates.shellRect ||
+      metrics?.layoutRect ||
+      metrics?.rect,
+    metrics?.rect || metrics?.layoutRect
+  );
+}
+
+export function makeRootStageDesktopContentRect(metrics, stageRect, mainRect, padding = {}) {
+  if (!mainRect) return metrics?.layoutRect || makeRootStageRect(stageRect);
+  const paddingTop = safeNumber(padding.top);
+  const paddingBottom = safeNumber(padding.bottom);
+  return {
+    height: Math.max(1, safeNumber(mainRect.height, 1) - paddingTop - paddingBottom),
+    left: safeNumber(stageRect?.left),
+    top: safeNumber(mainRect.top) + paddingTop,
+    width: Math.max(1, safeNumber(stageRect?.width, mainRect.width || 1)),
+  };
+}
+
+export function makeDesktopRenderGeometry(metrics, options = {}) {
+  if (!options.rootStage) {
+    return {
+      desktopFrame: {
+        height: Math.max(1, safeNumber(metrics?.height, 1)),
+        left: 0,
+        top: 0,
+        width: Math.max(1, safeNumber(metrics?.width, 1)),
+      },
+      desktopStageRect: metrics?.layoutRect || null,
+      height: Math.max(1, safeNumber(metrics?.height, 1)),
+      stableStageRect: metrics?.layoutRect,
+      stageRect: metrics?.rect,
+      width: Math.max(1, safeNumber(metrics?.width, 1)),
+    };
+  }
+  const stageRect = resolveSingleStageCandidateRect(metrics, options);
+  const desktopStageRect = makeRootStageDesktopContentRect(
+    metrics,
+    stageRect,
+    options.mainRect,
+    {
+      bottom: options.mainPaddingBottom,
+      top: options.mainPaddingTop,
+    }
+  );
+  return {
+    desktopFrame: makeDesktopFrameFromStageRects(stageRect, desktopStageRect),
+    desktopStageRect,
+    height: Math.max(1, stageRect.height),
+    stableStageRect: stageRect,
+    stageRect,
+    width: Math.max(1, stageRect.width),
+  };
+}
+
 export function mapDesktopLocalRectToRootStageLocal(rect, desktopFrame) {
   if (!rect) return null;
   const frame = desktopFrame || {};

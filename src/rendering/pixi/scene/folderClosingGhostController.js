@@ -318,6 +318,19 @@ export class FolderClosingGhostController {
     scheduleClosingHandoffCleanup(this.layer, () => this.runHandoffCleanup(), this.scheduler);
   }
 
+  clearHandoffOverlayVisuals() {
+    this.previewSwap.clear();
+    this.clearCompletedPreviewGhosts();
+    this.layer.clearFrameGhost();
+  }
+
+  deferRunHandoffVisualCleanup() {
+    scheduleClosingHandoffCleanup(this.layer, () => {
+      this.clearHandoffOverlayVisuals();
+      this.deferRunHandoffCleanup();
+    }, this.scheduler);
+  }
+
   runHandoffCleanup() {
     const layer = this.layer;
     this.clearFolderHandoffGhost();
@@ -332,14 +345,12 @@ export class FolderClosingGhostController {
       layer.closingGhostKeys?.size ||
       layer.closingPreviewSwapKeys?.size ||
       !layer.closingFrameComplete) return;
+    if (layer.closingHandoffActive) return;
     this.clearRevealTimer();
     layer.panel.visible = false;
     layer.pageTrack.visible = false;
-    this.previewSwap.clear();
-    this.clearCompletedPreviewGhosts();
-    layer.clearFrameGhost();
     setLayerClosingHandoffActive(layer, true);
-    scheduleClosingHandoffCleanup(layer, () => this.deferRunHandoffCleanup(), this.scheduler);
+    this.deferRunHandoffVisualCleanup();
     this.flushCompletedControllerGhosts(state);
   }
 

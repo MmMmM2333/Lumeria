@@ -48,6 +48,14 @@ function readNumber(value, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function clamp01(value) {
+  return Math.max(0, Math.min(1, readNumber(value, 0)));
+}
+
+export function resolveDesktopVisualAlpha(state = {}) {
+  return clamp01(state.desktopVisualAlpha ?? 1);
+}
+
 function getFolderHandoffDebugOptions() {
   const value = globalThis.__LP_DEBUG_FOLDER_HANDOFF__;
   if (!value) return null;
@@ -226,6 +234,7 @@ export class DesktopLayer extends Container {
     });
     this.singleStageFolderProbeLayer = new SingleStageFolderProbeLayer();
     this.folderHandoffNode = null;
+    this.hasDesktopVisualAlpha = false;
     this.hasDesktopVisualTransform = false;
     this.lastFolderHandoffDebugSnapshot = null;
     this.iconNodes = new Map();
@@ -248,8 +257,7 @@ export class DesktopLayer extends Container {
     this.widthValue = state.width;
     this.heightValue = state.height;
     this.applyDesktopCanvasTransform(state);
-    const isSingleStageFolderVisible = Boolean(state.singleStageFolderLayerEnabled && state.singleStageFolderState?.renderedFolder);
-    this.visualRoot.visible = !isSingleStageFolderVisible;
+    this.applyDesktopVisualAlpha(state);
     const pages = state.activePages || [];
     const activePageIndex = state.activePageIndex || 0;
     const desktopFrame = getDesktopFrame(state);
@@ -448,6 +456,18 @@ export class DesktopLayer extends Container {
     springTo(this.visualRoot, "y", targetY, desktopVisualSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
     springTo(this.visualRoot.scale, "x", scale, desktopVisualSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
     springTo(this.visualRoot.scale, "y", scale, desktopVisualSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
+  }
+
+  applyDesktopVisualAlpha(state) {
+    const alpha = resolveDesktopVisualAlpha(state);
+    this.visualRoot.visible = true;
+    this.visualRoot.interactiveChildren = alpha > 0.001;
+    if (!this.hasDesktopVisualAlpha) {
+      this.visualRoot.alpha = alpha;
+      this.hasDesktopVisualAlpha = true;
+      return;
+    }
+    springTo(this.visualRoot, "alpha", alpha, desktopVisualSpring);
   }
 
   updateSingleStageFolderLayer(state) {

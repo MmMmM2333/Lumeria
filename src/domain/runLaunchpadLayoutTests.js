@@ -60,6 +60,7 @@ import { runFolderClosingPreviewSwapControllerTests } from "../rendering/pixi/sc
 import { runFolderOpeningGhostControllerTests } from "../rendering/pixi/scene/folderOpeningGhostControllerTests.js";
 import { runFolderOpeningInterruptionFrameTests } from "../rendering/pixi/scene/folderOpeningInterruptionFrameTests.js";
 import { runFolderOverlayLayerTests } from "../rendering/pixi/scene/FolderOverlayLayerTests.js";
+import { runSingleStageFolderDomControlsTests } from "../rendering/pixi/scene/singleStageFolderDomControlsTests.js";
 import { runFolderOverlayTargetResolverTests } from "../rendering/pixi/scene/folderOverlayTargetResolverTests.js";
 import { runFolderOverlayTargetsTests } from "../rendering/pixi/scene/folderOverlayTargetsTests.js";
 import { runFolderPreviewSwapMotionTests } from "../rendering/pixi/scene/folderPreviewSwapMotionTests.js";
@@ -170,6 +171,7 @@ runFolderClosingPreviewSwapControllerTests();
 runFolderOpeningGhostControllerTests();
 runFolderOpeningInterruptionFrameTests();
 runFolderOverlayLayerTests();
+runSingleStageFolderDomControlsTests();
 runFolderOverlayTargetResolverTests();
 runFolderOverlayTargetsTests();
 runFolderPreviewSwapMotionTests();

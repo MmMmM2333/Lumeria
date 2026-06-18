@@ -63,8 +63,17 @@ import { clearIconTextureCache, preloadIconTextures } from "./assets/iconTexture
 import { clearDesktopIconBounds } from "./geometry/iconBoundsRegistry.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { getPixiHostMetrics } from "./pixiHostMetrics.js";
-import { makeDesktopFrameFromStageRects } from "./geometry/rootStageCoordinates.js";
+import {
+  makeDesktopRenderGeometry as makeRootStageDesktopRenderGeometry,
+  makeRootStageHostStyle as makeRootStageHostStyleFromRect,
+} from "./geometry/rootStageCoordinates.js";
 import { getSingleStageFolderProbeOptions } from "./scene/singleStageFolderProbePlan.js";
+import {
+  getSingleStageFolderTitleOpenOpacity,
+  isSingleStageFolderPageDotsReady as getSingleStageFolderPageDotsReady,
+  makeSingleStageFolderNameInputStyle,
+  makeSingleStageFolderPageDotsStyle,
+} from "./scene/singleStageFolderDomControls.js";
 
 const FOLDER_TEXTURE_PREWARM_LIMIT = 80;
 const HANDOFF_RECT_SETTLE_EPSILON = 0.16;
@@ -75,6 +84,7 @@ const props = defineProps({
   activePageIndex: { type: Number, required: true },
   activePages: { type: Array, required: true },
   desktopCanvasTransform: { type: Object, default: () => ({ scale: 1, y: 0 }) },
+  desktopVisualAlpha: { type: Number, default: 1 },
   desktopGridDebugOptions: { type: Object, default: null },
   desktopProjectionEpoch: { type: Number, default: 0 },
   desktopTrackMotionKey: { type: String, required: true },
@@ -165,8 +175,6 @@ let lastHandoffDecision = null;
 let lastHandoffReleaseCommitAt = 0;
 let lastReleasedFolderClosingHandoffId = null;
 
-const FOLDER_PAGE_DOTS_REVEAL_PROGRESS = 0.995;
-
 const isSingleStageFolderGhostTransitionActive = computed(() => Boolean(
   props.folderOverlayState?.isFolderOpenIconAnimationActive?.value ||
   props.folderOverlayState?.isFolderCloseIconAnimationActive?.value
@@ -200,60 +208,31 @@ const isSingleStageFolderPageDotsBlocked = computed(() => Boolean(
 ));
 
 const isSingleStageFolderPageDotsReady = computed(() => (
-  clamp01(singleStageFolderTitleFrame.value?.progress ?? 0) >= FOLDER_PAGE_DOTS_REVEAL_PROGRESS
+  getSingleStageFolderPageDotsReady(singleStageFolderTitleFrame.value)
 ));
 
 const singleStageFolderNameInputStyle = computed(() => {
   const frame = singleStageFolderTitleFrame.value || singleStageFolderPanelGeometry.value?.panel;
-  if (!shouldRenderSingleStageFolderDomControls.value || !frame) return { opacity: 0, pointerEvents: "none" };
-  const width = 360;
-  const opacity = getSingleStageFolderTitleOpacity(frame, isSingleStageFolderClosing.value);
-  const isInteractive = opacity >= 0.99 && !isSingleStageFolderInputDisabled.value;
-  return {
-    left: `${frame.left + frame.width / 2 - width / 2}px`,
-    filter: opacity < 0.98 ? "blur(2px)" : "blur(0px)",
-    opacity,
-    pointerEvents: isInteractive ? "auto" : "none",
-    top: `${frame.top - 44}px`,
-    transform: "translate3d(0, 0, 0)",
-    width: `${width}px`,
-  };
+  return makeSingleStageFolderNameInputStyle({
+    closingStartOpacity: singleStageFolderClosingTitleStartOpacity.value,
+    controlsVisible: shouldRenderSingleStageFolderDomControls.value,
+    frame,
+    isClosing: isSingleStageFolderClosing.value,
+    isInputDisabled: isSingleStageFolderInputDisabled.value,
+  });
 });
 
 const singleStageFolderPageDotsStyle = computed(() => {
   const panel = singleStageFolderPanelGeometry.value?.panel;
   const grid = singleStageFolderPanelGeometry.value?.grid;
   const isHidden = isSingleStageFolderPageDotsBlocked.value || !singleStageFolderPageDotsVisible.value;
-  if (!shouldRenderSingleStageFolderDomControls.value || !panel) return { opacity: 0, pointerEvents: "none" };
-  const height = 20;
-  const bottomPaddingTop = grid ? grid.top + grid.height : panel.top + panel.height - 54;
-  const bottomPaddingHeight = Math.max(0, panel.top + panel.height - bottomPaddingTop);
-  return {
-    bottom: "auto",
-    height: `${height}px`,
-    left: `${panel.left}px`,
-    opacity: isHidden ? 0 : 1,
-    pointerEvents: isHidden ? "none" : "auto",
-    right: "auto",
-    top: `${bottomPaddingTop + bottomPaddingHeight / 2 - height / 2}px`,
-    width: `${panel.width}px`,
-  };
+  return makeSingleStageFolderPageDotsStyle({
+    controlsVisible: shouldRenderSingleStageFolderDomControls.value,
+    grid,
+    hidden: isHidden,
+    panel,
+  });
 });
-
-function clamp01(value) {
-  return Math.max(0, Math.min(1, Number(value) || 0));
-}
-
-function getSingleStageFolderTitleOpenOpacity(frame) {
-  const progress = clamp01(frame?.progress ?? 1);
-  return clamp01((progress - 0.18) / 0.28);
-}
-
-function getSingleStageFolderTitleOpacity(frame, isClosing) {
-  if (!isClosing) return getSingleStageFolderTitleOpenOpacity(frame);
-  const progress = clamp01(frame?.progress ?? 0);
-  return singleStageFolderClosingTitleStartOpacity.value * clamp01(1 - progress / 0.28);
-}
 
 function cancelSingleStageFolderPageDotsReveal() {
   if (singleStageFolderPageDotsRevealFrame == null) return;
@@ -456,27 +435,6 @@ function getElementRect(nodeRef) {
   };
 }
 
-function getSingleStageCandidateRect(metrics) {
-  return getElementRect(props.domRefs?.rootRef) ||
-    getElementRect(props.domRefs?.shellRef) ||
-    metrics.layoutRect ||
-    metrics.rect;
-}
-
-function getDesktopContentRect(metrics, stageRect = metrics.rect) {
-  const mainRect = getElementRect(mainRef);
-  if (!mainRect || typeof globalThis.getComputedStyle !== "function") return metrics.layoutRect;
-  const styles = globalThis.getComputedStyle(getDomRefElement(mainRef));
-  const paddingTop = readCssPx(styles.paddingTop);
-  const paddingBottom = readCssPx(styles.paddingBottom);
-  return {
-    height: Math.max(1, mainRect.height - paddingTop - paddingBottom),
-    left: stageRect.left,
-    top: mainRect.top + paddingTop,
-    width: stageRect.width,
-  };
-}
-
 function makeRootStageHostStyle() {
   const rootRect = getElementRect(props.domRefs?.rootRef) || {
     height: globalThis.innerHeight || 1,
@@ -484,11 +442,15 @@ function makeRootStageHostStyle() {
     top: 0,
     width: globalThis.innerWidth || 1,
   };
+  return makeRootStageHostStyleFromRect(rootRect);
+}
+
+function readMainPadding() {
+  if (typeof globalThis.getComputedStyle !== "function") return { bottom: 0, top: 0 };
+  const styles = globalThis.getComputedStyle(getDomRefElement(mainRef));
   return {
-    "--pixi-root-stage-height": `${Math.max(1, rootRect.height)}px`,
-    "--pixi-root-stage-left": `${rootRect.left}px`,
-    "--pixi-root-stage-top": `${rootRect.top}px`,
-    "--pixi-root-stage-width": `${Math.max(1, rootRect.width)}px`,
+    bottom: readCssPx(styles?.paddingBottom),
+    top: readCssPx(styles?.paddingTop),
   };
 }
 
@@ -577,13 +539,10 @@ function resolveFolderClosingHandoffId(metrics) {
   return null;
 }
 
-function createSingleStageFolderState(metrics, options = {}) {
+function createSingleStageFolderState(metrics, options = {}, renderGeometry = makeDesktopRenderGeometry(metrics, options)) {
   const source = props.folderOverlayState;
   if (!source) return null;
   const isFolderLayer = options.folderLayer === true;
-  const stageRect = getSingleStageCandidateRect(metrics);
-  const desktopStageRect = options.rootStage ? getDesktopContentRect(metrics, stageRect) : metrics.layoutRect;
-  const desktopFrame = makeDesktopFrameFromStageRects(stageRect, desktopStageRect);
   return createFolderLayerState({
     callbacks: {
       completeFolderCloseIconGhost: isFolderLayer ? source.completeFolderCloseIconGhost : () => {},
@@ -613,7 +572,7 @@ function createSingleStageFolderState(metrics, options = {}) {
       renderedFolder: source.renderedFolder?.value,
       viewportRef: isFolderLayer ? source.folderViewportRef : null,
     },
-    stage: { rect: stageRect },
+    stage: { rect: renderGeometry.stageRect },
     ui: {
       isEditMode: source.isEditMode?.value,
       isTextlessMode: source.isTextlessMode?.value,
@@ -622,32 +581,23 @@ function createSingleStageFolderState(metrics, options = {}) {
     },
   }, {
     canvasStageRect: metrics.rect,
-    desktopFrame,
-    desktopStageRect,
+    desktopFrame: renderGeometry.desktopFrame,
+    desktopStageRect: renderGeometry.desktopStageRect,
     singleStageProbe: true,
   });
 }
 
 function makeDesktopRenderGeometry(metrics, options) {
   rootStageHostStyle.value = options.rootStage ? makeRootStageHostStyle() : null;
-  if (!options.rootStage) {
-    return {
-      desktopFrame: { height: Math.max(1, metrics.height), left: 0, top: 0, width: Math.max(1, metrics.width) },
-      height: Math.max(1, metrics.height),
-      stableStageRect: metrics.layoutRect,
-      stageRect: metrics.rect,
-      width: Math.max(1, metrics.width),
-    };
-  }
-  const stageRect = getSingleStageCandidateRect(metrics);
-  const desktopStageRect = getDesktopContentRect(metrics, stageRect);
-  return {
-    desktopFrame: makeDesktopFrameFromStageRects(stageRect, desktopStageRect),
-    height: Math.max(1, stageRect.height),
-    stableStageRect: stageRect,
-    stageRect,
-    width: Math.max(1, stageRect.width),
-  };
+  const mainPadding = options.rootStage ? readMainPadding() : { bottom: 0, top: 0 };
+  return makeRootStageDesktopRenderGeometry(metrics, {
+    mainPaddingBottom: mainPadding.bottom,
+    mainPaddingTop: mainPadding.top,
+    mainRect: options.rootStage ? getElementRect(mainRef) : null,
+    rootRect: options.rootStage ? getElementRect(props.domRefs?.rootRef) : null,
+    rootStage: options.rootStage,
+    shellRect: options.rootStage ? getElementRect(props.domRefs?.shellRef) : null,
+  });
 }
 
 function logFolderHandoffTimeline(metrics, folderClosingHandoffId) {
@@ -695,6 +645,7 @@ function renderPixi() {
     activePageIndex: props.activePageIndex,
     activePages: props.activePages,
     desktopCanvasTransform: props.desktopCanvasTransform,
+    desktopVisualAlpha: props.desktopVisualAlpha,
     desktopFrame: renderGeometry.desktopFrame,
     desktopGridDebugOptions: props.desktopGridDebugOptions,
     desktopTrackMotionKey: props.desktopTrackMotionKey,
@@ -706,7 +657,7 @@ function renderPixi() {
     folderClosingHandoffId,
     singleStageFolderProbeEnabled: singleStageFolderProbeOptions,
     singleStageFolderLayerEnabled: singleStageFolderProbeOptions.folderLayer,
-    singleStageFolderState: singleStageFolderProbeOptions.enabled ? createSingleStageFolderState(metrics, singleStageFolderProbeOptions) : null,
+    singleStageFolderState: singleStageFolderProbeOptions.enabled ? createSingleStageFolderState(metrics, singleStageFolderProbeOptions, renderGeometry) : null,
     folderPageSize: props.folderPageSize,
     getDesktopPageRenderMode: props.getDesktopPageRenderMode,
     getVisibleDesktopPage: props.getVisibleDesktopPage,
@@ -920,6 +871,7 @@ watchEffect(() => {
   void props.activePageIndex;
   void props.activePages;
   void props.desktopCanvasTransform;
+  void props.desktopVisualAlpha;
   void props.desktopGridDebugOptions;
   void props.desktopProjectionEpoch;
   void props.desktopTrackMotionKey;

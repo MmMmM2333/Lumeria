@@ -62,6 +62,7 @@
         :active-page-index="activePageIndex"
         :active-pages="activePages"
         :desktop-canvas-transform="desktopCanvasTransform"
+        :desktop-visual-alpha="desktopVisualAlpha"
         :desktop-projection-epoch="desktopProjectionEpoch"
         :desktop-track-motion-key="desktopTrackMotionKey"
         :dom-refs="desktopDomRefs"
@@ -351,6 +352,7 @@ const shouldRunFolderPixi = computed(() => Boolean(
 const shouldUseSingleStageRootStage = computed(() => singleStageFolderProbeOptions.value.rootStage === true);
 const shouldUseSingleStageFolderLayer = computed(() => singleStageFolderProbeOptions.value.folderLayer === true);
 const singleStageFolderProbeRenderKey = computed(() => getSingleStageFolderProbeOptionsKey(singleStageFolderProbeOptions.value));
+const desktopVisualAlpha = computed(() => Math.max(0, Math.min(1, Number(homeShellAnimate.value?.opacity ?? 1))));
 const shouldRunDragPreviewPixi = computed(() => Boolean(
   shouldRunPixiOverlays.value && (
     dragMeta.value ||

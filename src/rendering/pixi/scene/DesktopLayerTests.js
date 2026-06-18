@@ -43,7 +43,9 @@ function makeNode(id) {
 function makeLayer(DesktopLayer, pageTrack) {
   const layer = Object.create(DesktopLayer.prototype);
   layer.folderHandoffNode = null;
+  layer.hasDesktopVisualAlpha = false;
   layer.pageTrack = pageTrack;
+  layer.visualRoot = { alpha: 1, interactiveChildren: true, visible: false };
   return layer;
 }
 
@@ -54,10 +56,24 @@ export async function runDesktopLayerTests() {
       value: { userAgent: "node.js" },
     });
   }
-  const { DesktopLayer } = await import("./DesktopLayer.js");
+  const { DesktopLayer, resolveDesktopVisualAlpha } = await import("./DesktopLayer.js");
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[DesktopLayer test failed] ${message}`);
   };
+
+  {
+    assert(resolveDesktopVisualAlpha({ desktopVisualAlpha: -1 }) === 0, "desktop alpha should clamp low values");
+    assert(resolveDesktopVisualAlpha({ desktopVisualAlpha: 2 }) === 1, "desktop alpha should clamp high values");
+    assert(resolveDesktopVisualAlpha({}) === 1, "desktop alpha should default to visible");
+
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.applyDesktopVisualAlpha({ desktopVisualAlpha: 0 });
+
+    assert(layer.visualRoot.visible === true, "hidden desktop should stay renderable so alpha can animate");
+    assert(layer.visualRoot.alpha === 0, "hidden desktop should apply the requested alpha");
+    assert(layer.visualRoot.interactiveChildren === false, "hidden desktop should not receive icon interaction");
+  }
 
   {
     const before = makeNode("before");

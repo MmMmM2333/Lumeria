@@ -217,12 +217,16 @@ export function runFolderClosingGhostControllerTests() {
     assert(layer.activityChanges.join(",") === "true", "finish should mark Pixi internal handoff active");
     assert(layer.panel.visible === false, "finish should hide the stale folder panel during handoff");
     assert(layer.pageTrack.visible === false, "finish should keep page track hidden until handoff cleanup");
-    assert(completedPreviewGhost.destroyed, "finish should replace completed preview ghosts before revealing the real icon");
-    assert(previewSwapCalls.includes("clear-preview-swap"), "finish should clear preview swap visuals before revealing the real icon");
-    assert(layer.calls.includes("clear-frame"), "finish should clear the frame ghost before revealing the real icon");
+    assert(!completedPreviewGhost.destroyed, "finish should keep overlay preview ghosts until the next handoff frame");
+    assert(!previewSwapCalls.includes("clear-preview-swap"), "finish should keep preview swap visuals until the next handoff frame");
+    assert(!layer.calls.includes("clear-frame"), "finish should keep the frame ghost until the next handoff frame");
 
     timerHost.runAllFrames();
     assert(layer.activityChanges.join(",") === "true", "first handoff frame should wait for desktop bounds refresh");
+    assert(completedPreviewGhost.destroyed, "first handoff frame should clear overlay preview ghosts before paint");
+    assert(previewSwapCalls.includes("clear-preview-swap"), "first handoff frame should clear preview swap visuals");
+    assert(layer.calls.includes("clear-frame"), "first handoff frame should clear the frame ghost");
+    assert(layer.visible === true && layer.currentFolderId === "folder-1", "first handoff frame should keep internal handoff ownership active");
     timerHost.runAllFrames();
     assert(layer.activityChanges.join(",") === "true,false", "handoff cleanup should clear Pixi internal handoff activity");
     assert(layer.visible === false && layer.currentFolderId === null, "handoff cleanup should hide the stale overlay state");
@@ -280,9 +284,11 @@ export function runFolderClosingGhostControllerTests() {
       },
     });
 
-    assert(order.join(",") === "cleanup,flush", "Pixi visuals should be replaced before the folder flow starts revealing the real icon");
+    assert(order.join(",") === "flush", "folder flow should be released after scheduling Pixi overlay cleanup");
     timerHost.runAllFrames();
-    assert(order.join(",") === "cleanup,flush,finish-close", "folder flow should reveal the real icon after Pixi visuals are replaced");
+    assert(order.join(",") === "flush,cleanup,finish-close", "Pixi overlay cleanup should run in the same frame as folder flow reveal");
+    timerHost.runAllFrames();
+    assert(order.join(",") === "flush,cleanup,finish-close", "final handoff cleanup should not redraw overlay visuals");
   }
 
   {
@@ -358,11 +364,13 @@ export function runFolderClosingGhostControllerTests() {
     layer.closingFrameComplete = true;
 
     controller.completeGhost(makeState(completed), target, ghost);
-    assert(ghost.destroyed, "thumbnail complete should replace the retained ghost during finish");
-    assert(layer.completedClosingPreviewGhosts.length === 0, "finish should clear retained preview ghosts");
+    assert(!ghost.destroyed, "thumbnail complete should retain the preview ghost through the handoff frame");
+    assert(layer.completedClosingPreviewGhosts.length === 1, "finish should keep retained preview ghosts until handoff cleanup");
     assert(completed.join(",") === "fallback-close-key", "thumbnail complete should flush the fallback controller ghost key");
 
     timerHost.runAllFrames();
+    assert(ghost.destroyed, "first handoff frame should clear the retained preview ghost before paint");
+    assert(layer.completedClosingPreviewGhosts.length === 0, "first handoff frame should remove retained preview ghost references");
     timerHost.runAllFrames();
     assert(layer.closingHandoffActive === false, "handoff cleanup should end internal activity");
   }
