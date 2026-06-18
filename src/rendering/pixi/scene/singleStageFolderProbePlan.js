@@ -38,7 +38,8 @@ export function installSingleStageFolderProbeGlobalFlag() {
 export function getSingleStageFolderProbeOptions(value = globalThis.__LP_SINGLE_STAGE_FOLDER__) {
   if (value === true) return { dragPreview: false, enabled: true, folderLayer: false, log: false, probe: true, rootStage: false };
   if (!value || typeof value !== "object") return { dragPreview: false, enabled: false, folderLayer: false, log: false, probe: false, rootStage: false };
-  const enabled = value.enabled === true || value.probe === true;
+  const hasStageOwnership = value.rootStage === true || value.dragPreview === true || value.folderLayer === true;
+  const enabled = value.enabled === true || value.probe === true || hasStageOwnership;
   const folderLayer = enabled && value.folderLayer === true;
   const dragPreview = enabled && (value.dragPreview === true || folderLayer);
   return {

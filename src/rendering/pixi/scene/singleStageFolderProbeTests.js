@@ -56,10 +56,12 @@ export function runSingleStageFolderProbeTests() {
     renderKeyWithoutDiagnostics === renderKeyWithDiagnostics,
     "diagnostic flags should not change the render key"
   );
-  const rootStageOnlyOptions = getSingleStageFolderProbeOptions({ enabled: true, rootStage: true });
-  assert(rootStageOnlyOptions.rootStage && !rootStageOnlyOptions.dragPreview, "root-stage diagnostics should not imply drag preview ownership");
-  const dragPreviewOnlyOptions = getSingleStageFolderProbeOptions({ dragPreview: true, enabled: true, probe: false });
+  const rootStageOnlyOptions = getSingleStageFolderProbeOptions({ probe: false, rootStage: true });
+  assert(rootStageOnlyOptions.enabled && rootStageOnlyOptions.rootStage && !rootStageOnlyOptions.dragPreview, "root-stage ownership should enable the root-stage host without drag preview ownership");
+  const dragPreviewOnlyOptions = getSingleStageFolderProbeOptions({ dragPreview: true, probe: false });
   assert(dragPreviewOnlyOptions.rootStage && dragPreviewOnlyOptions.dragPreview, "drag preview should request the root-stage host");
+  const folderLayerOnlyOptions = getSingleStageFolderProbeOptions({ folderLayer: true, probe: false });
+  assert(folderLayerOnlyOptions.enabled && folderLayerOnlyOptions.folderLayer && folderLayerOnlyOptions.dragPreview && folderLayerOnlyOptions.rootStage, "folder layer ownership should enable the dependent single-stage layers");
 
   const flagName = "__LP_SINGLE_STAGE_FOLDER__";
   const setterName = "__LP_SET_SINGLE_STAGE_FOLDER__";
@@ -70,10 +72,10 @@ export function runSingleStageFolderProbeTests() {
   try {
     installSingleStageFolderProbeGlobalFlag();
     globalThis.addEventListener?.(SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT, handleFlagChange);
-    globalThis[flagName] = { enabled: true, folderLayer: true, probe: false };
+    globalThis[flagName] = { folderLayer: true, probe: false };
     assert(getSingleStageFolderProbeOptions().rootStage, "direct global flag assignment should update root-stage options");
-    assert(getSingleStageFolderProbeOptions({ enabled: true, dragPreview: true, probe: false }).rootStage, "drag preview should request a root-stage canvas");
-    const normalized = setSingleStageFolderProbeOptions({ enabled: true, folderLayer: true, probe: false });
+    assert(getSingleStageFolderProbeOptions({ dragPreview: true, probe: false }).rootStage, "drag preview should request a root-stage canvas");
+    const normalized = setSingleStageFolderProbeOptions({ folderLayer: true, probe: false });
     assert(normalized.rootStage && normalized.dragPreview && !normalized.probe, "global flag setter should return normalized options");
     if (typeof globalThis.addEventListener === "function") {
       assert(changeCount >= 2, "global flag changes should dispatch change events");
