@@ -94,7 +94,7 @@
         :set-page-ref="setPageRef"
         :show-missing-launch-target-badge="showMissingLaunchTargetBadge"
         :single-stage-folder-layer-enabled="shouldUseSingleStageFolderLayer"
-        :single-stage-folder-probe-options-key="singleStageFolderProbeRenderKey"
+        :single-stage-folder-probe-render-key="singleStageFolderProbeRenderKey"
         :single-stage-folder-probe-options="singleStageFolderProbeOptions"
         :single-stage-root-stage-enabled="shouldUseSingleStageRootStage"
         @desktop-focus="keyboardFocusArea = 'desktop'"

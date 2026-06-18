@@ -121,7 +121,7 @@ const props = defineProps({
   showMissingLaunchTargetBadge: { type: Boolean, default: true },
   singleStageFolderLayerEnabled: { type: Boolean, default: null },
   singleStageFolderProbeOptions: { type: Object, default: null },
-  singleStageFolderProbeOptionsKey: { type: String, default: "" },
+  singleStageFolderProbeRenderKey: { type: String, default: "" },
   singleStageRootStageEnabled: { type: Boolean, default: null },
 });
 
@@ -893,7 +893,7 @@ watch(
 );
 
 watch(
-  () => props.singleStageFolderProbeOptionsKey,
+  () => props.singleStageFolderProbeRenderKey,
   () => renderPixi(),
   { flush: "post" }
 );
@@ -926,7 +926,7 @@ watchEffect(() => {
   void props.pageGridMeasureStyle;
   void props.folderPageSize;
   void props.singleStageFolderLayerEnabled;
-  void props.singleStageFolderProbeOptionsKey;
+  void props.singleStageFolderProbeRenderKey;
   void props.singleStageFolderProbeOptions;
   void props.singleStageRootStageEnabled;
   renderPixi();
