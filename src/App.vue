@@ -120,7 +120,7 @@
 
     <SettingsPanel :state="settingsPanelState" :background-layout-context="backgroundLayoutContext" />
     <LaunchpadDialogs :state="dialogState" />
-    <PixiFolderOverlay
+    <FallbackPixiFolderOverlay
       v-if="!shouldUseSingleStageFolderLayer"
       :active="shouldRunFallbackFolderPixi"
       :state="folderOverlayState"
@@ -129,7 +129,7 @@
       @open-app="openApp"
       @context-menu-icon="openIconContextMenu"
     />
-    <PixiDragPreviewOverlay
+    <FallbackPixiDragPreviewOverlay
       v-if="!shouldUseSingleStageDragPreview"
       :active="shouldRunFallbackDragPreviewPixi"
       :folder-page-size="folderPageSize"
@@ -173,8 +173,8 @@ import SettingsPanel from "./components/SettingsPanel.vue";
 import WindowChromeOverlay from "./components/WindowChromeOverlay.vue";
 import PixiBackgroundSurface from "./rendering/pixi/PixiBackgroundSurface.vue";
 import PixiDesktopSurface from "./rendering/pixi/PixiDesktopSurface.vue";
-import PixiDragPreviewOverlay from "./rendering/pixi/PixiDragPreviewOverlay.vue";
-import PixiFolderOverlay from "./rendering/pixi/PixiFolderOverlay.vue";
+import FallbackPixiDragPreviewOverlay from "./rendering/pixi/PixiDragPreviewOverlay.vue";
+import FallbackPixiFolderOverlay from "./rendering/pixi/PixiFolderOverlay.vue";
 import {
   getSingleStageOptions,
   getSingleStageOptionsKey,
