@@ -9,7 +9,10 @@ import {
 import {
   getSingleStageFolderProbeOptions,
   getSingleStageFolderProbeOptionsKey,
+  installSingleStageFolderProbeGlobalFlag,
   makeSingleStageFolderProbePlan,
+  setSingleStageFolderProbeOptions,
+  SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT,
 } from "./singleStageFolderProbePlan.js";
 
 export function runSingleStageFolderProbeTests() {
@@ -40,6 +43,31 @@ export function runSingleStageFolderProbeTests() {
   assert(options.folderLayer, "probe options should preserve the single-stage folder layer flag");
   assert(options.rootStage, "probe options should preserve the root-stage canvas flag");
   assert(getSingleStageFolderProbeOptionsKey(options) === "11111", "probe option key should reflect enabled flags");
+
+  const flagName = "__LP_SINGLE_STAGE_FOLDER__";
+  const setterName = "__LP_SET_SINGLE_STAGE_FOLDER__";
+  const previousFlagDescriptor = Object.getOwnPropertyDescriptor(globalThis, flagName);
+  const previousSetterDescriptor = Object.getOwnPropertyDescriptor(globalThis, setterName);
+  let changeCount = 0;
+  const handleFlagChange = () => { changeCount += 1; };
+  try {
+    installSingleStageFolderProbeGlobalFlag();
+    globalThis.addEventListener?.(SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT, handleFlagChange);
+    globalThis[flagName] = { enabled: true, folderLayer: true, probe: false };
+    assert(getSingleStageFolderProbeOptions().rootStage, "direct global flag assignment should update root-stage options");
+    const normalized = setSingleStageFolderProbeOptions({ enabled: true, folderLayer: true, probe: false });
+    assert(normalized.rootStage && !normalized.probe, "global flag setter should return normalized options");
+    if (typeof globalThis.addEventListener === "function") {
+      assert(changeCount >= 2, "global flag changes should dispatch change events");
+    }
+  } finally {
+    globalThis.removeEventListener?.(SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT, handleFlagChange);
+    if (previousFlagDescriptor) Object.defineProperty(globalThis, flagName, previousFlagDescriptor);
+    else delete globalThis[flagName];
+    if (previousSetterDescriptor) Object.defineProperty(globalThis, setterName, previousSetterDescriptor);
+    else delete globalThis[setterName];
+  }
+
   clearIconBoundsRegistry();
   registerLaunchIconBounds({ area: "desktop", id: folder.id, pageIndex: 0 }, iconRect, { area: "desktop", id: folder.id });
   registerTopLevelFolderThumbBounds(folder.id, thumbRect, { area: "desktop", id: folder.id });
