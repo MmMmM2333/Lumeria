@@ -54,6 +54,37 @@ function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
 }
 
+function registerFolderIconNodeBounds(options) {
+  const {
+    folderId,
+    iconSize,
+    index,
+    isInteractivePage,
+    isPrewarm,
+    item,
+    node,
+    pageIndex,
+    stageHeight,
+    stageRect,
+    stageWidth,
+    targetCenter,
+  } = options;
+  const iconBounds = node.getIconBounds(stageRect);
+  if (!isInteractivePage || isPrewarm) return iconBounds;
+  const meta = { area: "folder", folderId, id: item.id, index, item, pageIndex };
+  registerLaunchIconBounds(
+    { area: "folder", folderId, id: item.id, pageIndex },
+    iconBounds,
+    meta
+  );
+  registerLaunchIconTargetBounds(
+    { area: "folder", folderId, id: item.id, pageIndex },
+    makeTargetIconBounds(stageRect, stageWidth, stageHeight, targetCenter.x, targetCenter.y, iconSize),
+    meta
+  );
+  return iconBounds;
+}
+
 export class FolderOverlayLayer extends Container {
   constructor(options = {}) {
     super();
@@ -282,19 +313,20 @@ export class FolderOverlayLayer extends Container {
       node.stageRect = state.stageRect;
       node.setState(nodeState);
 
-      const iconBounds = node.getIconBounds(state.stageRect);
-      if (isInteractivePage && !isPrewarm) {
-        registerLaunchIconBounds(
-          { area: "folder", folderId: state.renderedFolder.id, id: item.id, pageIndex },
-          iconBounds,
-          { area: "folder", folderId: state.renderedFolder.id, id: item.id, index, item, pageIndex }
-        );
-        registerLaunchIconTargetBounds(
-          { area: "folder", folderId: state.renderedFolder.id, id: item.id, pageIndex },
-          makeTargetIconBounds(state.stageRect, state.width, state.height, targetCenter.x, targetCenter.y, iconSize),
-          { area: "folder", folderId: state.renderedFolder.id, id: item.id, index, item, pageIndex }
-        );
-      }
+      const iconBounds = registerFolderIconNodeBounds({
+        folderId: state.renderedFolder.id,
+        iconSize,
+        index,
+        isInteractivePage,
+        isPrewarm,
+        item,
+        node,
+        pageIndex,
+        stageHeight: state.height,
+        stageRect: state.stageRect,
+        stageWidth: state.width,
+        targetCenter,
+      });
       if (entry.openingGhostInput) {
         openingGhostTargets.push(makeOpeningGhostTarget({
           ...entry.openingGhostInput,
