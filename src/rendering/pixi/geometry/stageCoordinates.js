@@ -57,6 +57,14 @@ export function makeStageLocalPoint(point, stageRect) {
   };
 }
 
+export function getStageVisualOffset(stageRect, stableStageRect = stageRect) {
+  const stable = stableStageRect || stageRect;
+  return {
+    x: safeNumber(stageRect?.left) - safeNumber(stable?.left),
+    y: safeNumber(stageRect?.top) - safeNumber(stable?.top),
+  };
+}
+
 export function snapValueToDevicePixels(value, devicePixelRatio = globalThis.devicePixelRatio || 1) {
   const scale = getEffectiveDevicePixelRatio(devicePixelRatio);
   return Math.round(safeNumber(value) * scale) / scale;

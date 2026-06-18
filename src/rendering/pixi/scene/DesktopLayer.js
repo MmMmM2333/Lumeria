@@ -3,7 +3,7 @@ import { gsap } from "gsap";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getDesktopGridMetrics, getGridSlotRect, makeRect } from "../geometry/gridGeometry.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
-import { getStageScale, makeStageLocalRect, makeStageVirtualElement, snapRectToDevicePixels } from "../geometry/stageCoordinates.js";
+import { getStageScale, getStageVisualOffset, makeStageLocalRect, makeStageVirtualElement, snapRectToDevicePixels } from "../geometry/stageCoordinates.js";
 import {
   clearFolderPreviewChildBounds,
   clearLaunchIconBounds,
@@ -411,6 +411,8 @@ export class DesktopLayer extends Container {
       });
     }
 
+    const stableStageRect = state.stableStageRect || state.stageRect;
+    const stageVisualOffset = getStageVisualOffset(state.stageRect, stableStageRect);
     this.boundsRegistration = {
       deviceResolution: state.deviceResolution,
       entries: boundsEntries,
@@ -418,10 +420,10 @@ export class DesktopLayer extends Container {
       height: state.height,
       isTextlessMode: state.isTextlessMode,
       desktopFrame,
-      stableStageRect: state.stableStageRect || state.stageRect,
+      stableStageRect,
       stageRect: state.stageRect,
-      stageVisualOffsetX: state.stageRect.left - (state.stableStageRect || state.stageRect).left,
-      stageVisualOffsetY: state.stageRect.top - (state.stableStageRect || state.stageRect).top,
+      stageVisualOffsetX: stageVisualOffset.x,
+      stageVisualOffsetY: stageVisualOffset.y,
       width: state.width,
     };
     const refreshBounds = () => this.refreshInteractiveBounds();
