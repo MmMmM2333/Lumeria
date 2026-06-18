@@ -190,6 +190,18 @@ function makeFolderPinnedLayoutTarget(state, targetX, stableScreenTarget, iconSi
   };
 }
 
+function getDesktopFrame(state) {
+  const frame = state.desktopFrame || {};
+  const width = Math.max(1, readNumber(frame.width, state.width));
+  const height = Math.max(1, readNumber(frame.height, state.height));
+  return {
+    height,
+    left: readNumber(frame.left, 0),
+    top: readNumber(frame.top, 0),
+    width,
+  };
+}
+
 export class DesktopLayer extends Container {
   constructor(options = {}) {
     super();
@@ -222,7 +234,9 @@ export class DesktopLayer extends Container {
     this.applyDesktopCanvasTransform(state);
     const pages = state.activePages || [];
     const activePageIndex = state.activePageIndex || 0;
-    const targetX = -activePageIndex * state.width;
+    const desktopFrame = getDesktopFrame(state);
+    const pageWidth = desktopFrame.width;
+    const targetX = -activePageIndex * pageWidth;
     const shouldSnap = state.shouldSnapTrack;
 
     clearLaunchIconBounds(state.isSearchMode ? "search" : "desktop");
@@ -240,15 +254,20 @@ export class DesktopLayer extends Container {
       const isInteractivePage = renderMode === "interactive";
       const metrics = getDesktopGridMetrics({
         cols: state.gridCols,
-        height: state.height,
+        height: desktopFrame.height,
         isSearchMode: state.isSearchMode,
         paddingTop: state.desktopGridDebugOptions?.paddingTop,
         rows: state.gridRows,
         visibleCount: visibleItems.length,
-        width: state.width,
+        width: desktopFrame.width,
       });
       if (typeof state.setPageRef === "function") {
-        const gridRect = makeRect(metrics.gridLeft, metrics.gridTop, metrics.gridWidth, metrics.gridHeight);
+        const gridRect = makeRect(
+          desktopFrame.left + metrics.gridLeft,
+          desktopFrame.top + metrics.gridTop,
+          metrics.gridWidth,
+          metrics.gridHeight
+        );
         state.setPageRef(makeStageVirtualElement(state.stageRect, state.width, state.height, gridRect), pageIndex);
       }
       if (renderMode === "empty") return;
@@ -256,8 +275,8 @@ export class DesktopLayer extends Container {
       visibleItems.forEach((item, index) => {
         const slot = getGridSlotRect(metrics, index);
         const sizing = getDesktopIconSizing(state, slot);
-        const x = pageIndex * state.width + slot.left + slot.width / 2;
-        const y = slot.top + slot.height / 2;
+        const x = pageIndex * pageWidth + desktopFrame.left + slot.left + slot.width / 2;
+        const y = desktopFrame.top + slot.top + slot.height / 2;
         const visualOffsetY = getIconVisualOffsetY(state.isTextlessMode);
         const stableLayoutTarget = item?.type === "folder"
           ? makeSnappedFolderLayoutTarget(state, targetX, x, y, sizing.iconSize, visualOffsetY)
@@ -350,7 +369,7 @@ export class DesktopLayer extends Container {
     });
 
     this.emptyText.visible = Boolean(state.isSearchMode && pages[activePageIndex]?.length === 0);
-    this.emptyText.position.set(state.width / 2, state.height / 2);
+    this.emptyText.position.set(desktopFrame.left + desktopFrame.width / 2, desktopFrame.top + desktopFrame.height / 2);
     for (const [key, node] of this.iconNodes) {
       if (seen.has(key)) continue;
       this.iconNodes.delete(key);
@@ -369,6 +388,7 @@ export class DesktopLayer extends Container {
       folderClosingHandoffId: state.folderClosingHandoffId,
       height: state.height,
       isTextlessMode: state.isTextlessMode,
+      desktopFrame,
       stableStageRect: state.stableStageRect || state.stageRect,
       stageRect: state.stageRect,
       stageVisualOffsetX: state.stageRect.left - (state.stableStageRect || state.stageRect).left,

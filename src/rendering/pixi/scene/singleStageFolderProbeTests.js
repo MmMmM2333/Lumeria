@@ -23,6 +23,7 @@ export function runSingleStageFolderProbeTests() {
     height: 800,
     isFolderClosing: true,
     renderedFolder: folder,
+    desktopFrame: { height: 640, left: 0, top: 93, width: 1200 },
     desktopStageRect: { height: 640, left: 0, top: 93, width: 1200 },
     stageRect: { height: 800, left: 10, top: 20, width: 1200 },
     width: 1200,
@@ -52,6 +53,7 @@ export function runSingleStageFolderProbeTests() {
   assert(plan?.folderId === folder.id, "enabled probe should create a plan for the rendered folder");
   assert(plan.stableFolderCloseTarget?.source === "stable-final-close", "closing probe should capture a stable final close target");
   assert(plan.previewRects.length === 9, "probe should only draw the folder thumbnail preview slots");
+  assert(plan.desktopFrame.top === 93, "probe plan should keep the desktop frame inside root stage");
   assert(plan.desktopStageRect.top === 93, "probe plan should keep the current desktop stage rect for diagnostics");
   assert(plan.closeThumbRect.left === thumbRect.left, "probe should use the registered stable thumb target");
   assert(plan.closeThumbLocalRect.left === thumbRect.left - state.stageRect.left, "probe should map thumb target into stage-local coordinates");

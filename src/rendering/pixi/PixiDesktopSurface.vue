@@ -20,6 +20,7 @@ import { clearIconTextureCache, preloadIconTextures } from "./assets/iconTexture
 import { clearDesktopIconBounds } from "./geometry/iconBoundsRegistry.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { getPixiHostMetrics } from "./pixiHostMetrics.js";
+import { makeDesktopFrameFromStageRects } from "./geometry/rootStageCoordinates.js";
 import { getSingleStageFolderProbeOptions } from "./scene/singleStageFolderProbePlan.js";
 
 const FOLDER_TEXTURE_PREWARM_LIMIT = 80;
@@ -316,6 +317,7 @@ function createSingleStageFolderState(metrics) {
   const source = props.folderOverlayState;
   if (!source) return null;
   const stageRect = getSingleStageCandidateRect(metrics);
+  const desktopFrame = makeDesktopFrameFromStageRects(stageRect, metrics.layoutRect);
   return createFolderLayerState({
     callbacks: {
       completeFolderCloseIconGhost: () => {},
@@ -354,6 +356,7 @@ function createSingleStageFolderState(metrics) {
     },
   }, {
     canvasStageRect: metrics.rect,
+    desktopFrame,
     desktopStageRect: metrics.layoutRect,
     singleStageProbe: true,
   });
@@ -397,10 +400,12 @@ function renderPixi() {
   const { height, layoutRect, rect, width } = metrics;
   const folderClosingHandoffId = resolveFolderClosingHandoffId(metrics);
   const singleStageFolderProbeOptions = getSingleStageFolderProbeOptions();
+  const desktopFrame = { height: Math.max(1, height), left: 0, top: 0, width: Math.max(1, width) };
   layer.update({
     activePageIndex: props.activePageIndex,
     activePages: props.activePages,
     desktopCanvasTransform: props.desktopCanvasTransform,
+    desktopFrame,
     desktopGridDebugOptions: props.desktopGridDebugOptions,
     desktopTrackMotionKey: props.desktopTrackMotionKey,
     dragFolderHoverState: props.dragFolderHoverState,

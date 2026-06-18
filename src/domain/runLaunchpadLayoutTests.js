@@ -33,6 +33,7 @@ import { runMotionCleanupTests } from "../rendering/pixi/animation/motionCleanup
 import { runSpringMotionTests } from "../rendering/pixi/animation/springMotionTests.js";
 import { runDisplayObjectBoundsTests } from "../rendering/pixi/geometry/displayObjectBoundsTests.js";
 import { runGridGeometryTests } from "../rendering/pixi/geometry/gridGeometryTests.js";
+import { runRootStageCoordinatesTests } from "../rendering/pixi/geometry/rootStageCoordinatesTests.js";
 import { runStageCoordinatesTests } from "../rendering/pixi/geometry/stageCoordinatesTests.js";
 import { runIconBoundsRegistryTests } from "../rendering/pixi/geometry/iconBoundsRegistryTests.js";
 import { runIconTextureCacheTests } from "../rendering/pixi/assets/iconTextureCacheTests.js";
@@ -137,6 +138,7 @@ runMotionCleanupTests();
 runSpringMotionTests();
 runDisplayObjectBoundsTests();
 runGridGeometryTests();
+runRootStageCoordinatesTests();
 runStageCoordinatesTests();
 runIconBoundsRegistryTests();
 runFolderLayerStateTests();

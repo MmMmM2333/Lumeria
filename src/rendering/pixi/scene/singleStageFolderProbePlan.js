@@ -61,6 +61,7 @@ export function makeSingleStageFolderProbePlan(state, options = {}) {
     closeIconLocalRect: makeStageLocalRect(closeRects.closeIconRect, state.stageRect),
     closeThumbRect: closeRects.closeThumbRect,
     closeThumbLocalRect: makeStageLocalRect(closeRects.closeThumbRect, state.stageRect),
+    desktopFrame: state.desktopFrame || null,
     desktopStageRect: state.desktopStageRect || null,
     folderId,
     folderRect: overlayTargets.folderRect,

@@ -27,6 +27,7 @@ function makeDebugSnapshot(plan) {
     closeIconRect: roundRect(plan.closeIconRect),
     closeThumbLocalRect: roundRect(plan.closeThumbLocalRect),
     closeThumbRect: roundRect(plan.closeThumbRect),
+    desktopFrame: roundRect(plan.desktopFrame),
     folderId: plan.folderId,
     folderLocalRect: roundRect(plan.folderLocalRect),
     folderRect: roundRect(plan.folderRect),
