@@ -4,6 +4,7 @@ import { getStableFolderCloseRects, makeFolderThumbPreviewRect } from "./folderO
 import { resolveFolderOverlayTargets } from "./folderOverlayTargetResolver.js";
 
 export const SINGLE_STAGE_CHANGED_EVENT = "launchpad-single-stage-change";
+export const SINGLE_STAGE_DIAGNOSTICS_CHANGED_EVENT = "launchpad-single-stage-diagnostics-change";
 export const SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT = "launchpad-single-stage-folder-probe-change";
 const SINGLE_STAGE_GLOBAL_FLAG = "__LP_SINGLE_STAGE__";
 const SINGLE_STAGE_SETTER_GLOBAL = "__LP_SET_SINGLE_STAGE__";
@@ -46,6 +47,7 @@ function dispatchEvent(name) {
 
 function dispatchSingleStageChanged() {
   dispatchEvent(SINGLE_STAGE_CHANGED_EVENT);
+  dispatchEvent(SINGLE_STAGE_DIAGNOSTICS_CHANGED_EVENT);
   dispatchEvent(SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT);
 }
 
@@ -62,7 +64,7 @@ function installSingleStageGlobalAccessor(name) {
   if (singleStageGlobalValue === undefined && globalThis[name] !== undefined) {
     singleStageGlobalValue = globalThis[name];
   }
-  const getter = function getLaunchpadSingleStageFolderProbeFlag() {
+  const getter = function getLaunchpadSingleStageFlag() {
     return singleStageGlobalValue;
   };
   getter.__launchpadSingleStage = true;

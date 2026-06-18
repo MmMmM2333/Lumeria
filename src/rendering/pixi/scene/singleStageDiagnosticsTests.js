@@ -20,6 +20,7 @@ import {
   setSingleStageOptions,
   setSingleStageFolderProbeOptions,
   SINGLE_STAGE_CHANGED_EVENT,
+  SINGLE_STAGE_DIAGNOSTICS_CHANGED_EVENT,
   SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT,
 } from "./singleStagePlan.js";
 
@@ -95,14 +96,16 @@ export function runSingleStageDiagnosticsTests() {
   const previousLegacyFlagDescriptor = Object.getOwnPropertyDescriptor(globalThis, legacyFlagName);
   const previousLegacySetterDescriptor = Object.getOwnPropertyDescriptor(globalThis, legacySetterName);
   let changeCount = 0;
+  let diagnosticsChangeCount = 0;
   let legacyChangeCount = 0;
   const handleFlagChange = () => { changeCount += 1; };
+  const handleDiagnosticsFlagChange = () => { diagnosticsChangeCount += 1; };
   const handleLegacyFlagChange = () => { legacyChangeCount += 1; };
   try {
     installSingleStageGlobalFlag();
     installSingleStageFolderProbeGlobalFlag();
     globalThis.addEventListener?.(SINGLE_STAGE_CHANGED_EVENT, handleFlagChange);
-    globalThis.addEventListener?.(SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT, handleFlagChange);
+    globalThis.addEventListener?.(SINGLE_STAGE_DIAGNOSTICS_CHANGED_EVENT, handleDiagnosticsFlagChange);
     globalThis.addEventListener?.(SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT, handleLegacyFlagChange);
     globalThis[flagName] = { rootStage: true, probe: false };
     assert(getSingleStageOptions().rootStage, "direct global flag assignment should update root-stage options");
@@ -118,10 +121,11 @@ export function runSingleStageDiagnosticsTests() {
     assert(typeof globalThis[legacySetterName] === "function", "legacy global setter should be installed");
     if (typeof globalThis.addEventListener === "function") {
       assert(changeCount >= 4, "global flag changes should dispatch formal change events");
+      assert(diagnosticsChangeCount >= 4, "global flag changes should dispatch formal diagnostics change events");
       assert(legacyChangeCount >= 4, "global flag changes should dispatch legacy change events");
     }
   } finally {
-    globalThis.removeEventListener?.(SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT, handleFlagChange);
+    globalThis.removeEventListener?.(SINGLE_STAGE_DIAGNOSTICS_CHANGED_EVENT, handleDiagnosticsFlagChange);
     globalThis.removeEventListener?.(SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT, handleLegacyFlagChange);
     globalThis.removeEventListener?.(SINGLE_STAGE_CHANGED_EVENT, handleFlagChange);
     if (previousFlagDescriptor) Object.defineProperty(globalThis, flagName, previousFlagDescriptor);
