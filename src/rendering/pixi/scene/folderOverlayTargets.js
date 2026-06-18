@@ -1,4 +1,5 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import { getFolderThumbChildLocalRect } from "../nodes/folderThumbMetrics.js";
 import { makeIconRect } from "./iconSceneHelpers.js";
 
 export function cloneRect(rect) {
@@ -52,6 +53,17 @@ export function makeProjectedPreviewRect(folderRect, slotIndex, columnCount = 3,
     top: centerY - size / 2,
     width: size,
     height: size,
+  };
+}
+
+export function makeFolderThumbPreviewRect(folderRect, slotIndex) {
+  if (!folderRect) return null;
+  const childRect = getFolderThumbChildLocalRect(folderRect.width, slotIndex);
+  return {
+    height: childRect.height,
+    left: folderRect.left + folderRect.width / 2 + childRect.left,
+    top: folderRect.top + folderRect.height / 2 + childRect.top,
+    width: childRect.width,
   };
 }
 
@@ -152,7 +164,7 @@ export function makeClosingGhostTarget(options = {}) {
     previewSlotIndex,
     sourceRect: iconBounds,
     targetRect: isThumbnailChild
-      ? stablePreviewChildRect || makeProjectedPreviewRect(closeThumbRect, previewSlotIndex, 3, 3)
+      ? stablePreviewChildRect || makeFolderThumbPreviewRect(closeThumbRect, previewSlotIndex)
       : makeFolderCenterCollapseRect(closeThumbRect),
   };
 }
@@ -165,7 +177,7 @@ export function makeClosingPreviewSwapTargets(options = {}) {
     const stablePreviewChildRect = stableFolderCloseTarget?.folderId === folderId
       ? stableFolderCloseTarget.previewChildRects?.get(makePreviewChildKey(item.id, previewSlotIndex))
       : null;
-    const targetRect = stablePreviewChildRect || makeProjectedPreviewRect(folderRect, previewSlotIndex, 3, 3);
+    const targetRect = stablePreviewChildRect || makeFolderThumbPreviewRect(folderRect, previewSlotIndex);
     return targetRect ? { item, previewSlotIndex, targetRect } : null;
   }).filter(Boolean);
 }

@@ -16,6 +16,7 @@ import {
   homeShellTransition,
   panelSpring,
 } from "./launchpadMotion.js";
+import { DESKTOP_CLOSE_SCALE } from "./launchpadConstants.js";
 import { useLaunchpadViewState } from "./useLaunchpadViewState.js";
 
 function createViewState(overrides = {}) {
@@ -76,6 +77,7 @@ export function runLaunchpadViewStateTests() {
   assert(desktop.view.rootStyle.value["--launchpad-live-desktop-backdrop-filter"] === "none", "root style should disable live desktop fallback filters by default");
   assert(desktop.view.rootStyle.value["--launchpad-live-desktop-backdrop-opacity"] === "0", "root style should keep the live desktop fallback layer transparent by default");
   assert(desktop.view.desktopTrackMotionKey.value === "open-desktop-spring", "desktop motion key should describe open desktop spring state");
+  assert(desktop.view.desktopCanvasTransform.value.scale === 1 && desktop.view.desktopCanvasTransform.value.y === 0, "idle desktop canvas should not be transformed");
   assert(desktop.view.homeShellAnimate.value.opacity === 1, "home shell should be visible in the idle desktop state");
   assert(desktop.view.homeShellStyle.value.pointerEvents === "auto", "home shell should allow pointer events in the idle desktop state");
   assert(desktop.view.appLaunchGhostTransition === appLaunchGhostTransition, "view state should expose the app launch ghost transition");
@@ -193,12 +195,14 @@ export function runLaunchpadViewStateTests() {
 
   const closed = createViewState({ isDesktopOpen: false, isSearchMode: true });
   assert(closed.view.desktopTrackMotionKey.value === "closed-search-snap", "closed search should use snap motion key");
+  assert(closed.view.desktopCanvasTransform.value.scale === DESKTOP_CLOSE_SCALE, "closed desktop canvas should carry the close scale");
   assert(closed.view.homeShellAnimate.value.opacity === 0, "closed desktop should hide home shell");
   assert(closed.view.homeShellStyle.value.pointerEvents === "none", "closed desktop should disable home shell pointer events");
 
   const openFolder = createViewState({ openFolderId: "folder-1", isFolderLayerActive: true });
   assert(openFolder.view.desktopTrackMotionKey.value === "open-desktop-snap", "open folder should snap the desktop track");
-  assert(openFolder.view.homeShellAnimate.value.y === 44, "open folder should move home shell down");
+  assert(openFolder.view.homeShellAnimate.value.y === 0 && openFolder.view.homeShellAnimate.value.scale === 1, "open folder should keep the DOM shell untransformed");
+  assert(openFolder.view.desktopCanvasTransform.value.y === 44 && openFolder.view.desktopCanvasTransform.value.scale === 0.92, "open folder should move the desktop canvas inside Pixi");
   assert(openFolder.view.homeShellAnimate.value.filter === "blur(0px)", "open folder should avoid shell blur compositor flicker");
   assert(openFolder.view.homeShellStyle.value.pointerEvents === "none", "open folder should disable home shell pointer events");
 

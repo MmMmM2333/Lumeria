@@ -66,7 +66,7 @@ const props = defineProps({
   state: { type: Object, required: true },
 });
 
-const emit = defineEmits(["context-menu-icon", "open-app", "pointerdown-icon"]);
+const emit = defineEmits(["context-menu-icon", "internal-activity", "open-app", "pointerdown-icon"]);
 
 const overlayRef = ref(null);
 const motionRef = ref(null);
@@ -76,6 +76,7 @@ const panelGeometry = ref(null);
 const titleFrame = ref(null);
 const closingTitleStartOpacity = ref(1);
 const folderPageDotsVisible = ref(false);
+const pixiInternalActivity = ref(false);
 const FOLDER_PAGE_DOTS_REVEAL_PROGRESS = 0.995;
 let app = null;
 let layer = null;
@@ -94,12 +95,15 @@ const isFolderVisuallyClosing = computed(() => Boolean(
   props.state.isFolderZoomFadeClosingFromFolderClose?.value
 ));
 const shouldRunPixi = computed(() => Boolean(
-  props.active && (
-    props.state.renderedFolder.value ||
-    props.state.isFolderClosing.value ||
-    props.state.isFolderAppLaunchClosing.value ||
-    isFolderZoomFadeClosing.value ||
-    isFolderGhostTransitionActive.value
+  pixiInternalActivity.value ||
+  (
+    props.active && (
+      props.state.renderedFolder.value ||
+      props.state.isFolderClosing.value ||
+      props.state.isFolderAppLaunchClosing.value ||
+      isFolderZoomFadeClosing.value ||
+      isFolderGhostTransitionActive.value
+    )
   )
 ));
 
@@ -290,6 +294,7 @@ function destroyPixi(options = {}) {
   didWarmInitialFrame = false;
   panelGeometry.value = null;
   titleFrame.value = null;
+  pixiInternalActivity.value = false;
   if (currentLayer) {
     currentApp?.stage?.removeChild(currentLayer);
     if (deep) currentLayer.destroy({ children: true });
@@ -423,6 +428,10 @@ onMounted(async () => {
   app = nextApp;
   layer = new FolderOverlayLayer({
     onIconAction: handleIconAction,
+    onInternalActivityChange: (active, folderId = null) => {
+      pixiInternalActivity.value = Boolean(active);
+      emit("internal-activity", Boolean(active), folderId);
+    },
     onClosingFolderPointerDown: (folderId) => props.state.commitOpenFolder(folderId),
     onOutsidePointerDown: () => props.state.handleFolderOverlayPointerDown(),
     onTitleFrameChange: (frame) => {

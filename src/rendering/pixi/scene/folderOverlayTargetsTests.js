@@ -3,12 +3,14 @@ import {
   getStableFolderCloseRects,
   makeClosingGhostTarget,
   makeClosingPreviewSwapTargets,
+  makeFolderThumbPreviewRect,
   makeOpeningGhostTarget,
   makePreviewChildKey,
   makePreviewSlotById,
   makeProjectedPreviewRect,
   makeStableFolderCloseTarget,
 } from "./folderOverlayTargets.js";
+import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
 
 export function runFolderOverlayTargetsTests() {
   const assert = (condition, message) => {
@@ -53,6 +55,18 @@ export function runFolderOverlayTargetsTests() {
       assertRectInside(previewRect, previewSize.rect, `${previewSize.label} slot ${slotIndex}`);
       assert(previewRect.width === previewRect.height, `${previewSize.label} slot ${slotIndex} should stay square`);
     }
+  }
+  for (const slotIndex of [0, 4, 8]) {
+    const thumb = getFolderThumbMetrics(folderThumbRect.width);
+    const col = slotIndex % 3;
+    const row = Math.floor(slotIndex / 3);
+    const centerX = folderThumbRect.left + folderThumbRect.width / 2 + thumb.start + col * (thumb.childSize + thumb.gap);
+    const centerY = folderThumbRect.top + folderThumbRect.height / 2 + thumb.start + row * (thumb.childSize + thumb.gap);
+    const previewRect = makeFolderThumbPreviewRect(folderThumbRect, slotIndex);
+    assert(nearlyEqual(previewRect.left, centerX - thumb.childSize / 2), `folder thumb slot ${slotIndex} should use the real thumb x`);
+    assert(nearlyEqual(previewRect.top, centerY - thumb.childSize / 2), `folder thumb slot ${slotIndex} should use the real thumb y`);
+    assert(nearlyEqual(previewRect.width, thumb.childSize), `folder thumb slot ${slotIndex} should use the real thumb width`);
+    assert(nearlyEqual(previewRect.height, thumb.childSize), `folder thumb slot ${slotIndex} should use the real thumb height`);
   }
 
   const stableTarget = makeStableFolderCloseTarget({
@@ -129,6 +143,10 @@ export function runFolderOverlayTargetsTests() {
   });
   assert(projectedThumbnailTarget.isThumbnailChild, "thumbnail children without exact stable bounds should stay thumbnail targets");
   assertRectInside(projectedThumbnailTarget.targetRect, folderThumbRect, "projected thumbnail close target");
+  assert(
+    nearlyEqual(projectedThumbnailTarget.targetRect.width, getFolderThumbMetrics(folderThumbRect.width).childSize),
+    "thumbnail close fallback should use the real folder thumb child size"
+  );
 
   const fallbackClosingTarget = makeClosingGhostTarget({
     cellHeight: 80,

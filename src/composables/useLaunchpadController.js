@@ -573,6 +573,7 @@ export function useLaunchpadController() {
   const {
     appLaunchGhostTransition,
     backgroundImageStyle,
+    desktopCanvasTransform,
     desktopTrackMotionKey,
     homeShellAnimate,
     homeShellInitial,
@@ -1424,6 +1425,7 @@ export function useLaunchpadController() {
     rootRef,
     rootStyle,
     backgroundImageStyle,
+    desktopCanvasTransform,
     cx,
     gridRows,
     gridCols,
@@ -1686,6 +1688,7 @@ export function useLaunchpadController() {
     isFolderAppLaunchClosing,
     isFolderZoomFadeClosing,
     isFolderZoomFadeClosingFromFolderClose,
+    isHomeRevealSettling,
     finishFolderZoomFadeClose,
     startFolderZoomFadeClose,
     handleFolderOverlayPointerDown,

@@ -119,10 +119,15 @@ export function useLaunchpadViewState(options) {
     "--launchpad-live-desktop-backdrop-filter": liveDesktopBackdropFilter.value,
     "--launchpad-live-desktop-backdrop-opacity": shouldUseCssLiveDesktopEffect.value ? "0.001" : "0",
   }));
-  const homeShellInitial = { opacity: 0, scale: DESKTOP_CLOSE_SCALE, y: 0, filter: "blur(8px)" };
+  const desktopCanvasTransform = computed(() => {
+    if (isDesktopAnimatingClosed.value) return { scale: DESKTOP_CLOSE_SCALE, y: 0 };
+    if (options.openFolderId.value && !options.isFolderClosing.value) return { scale: 0.92, y: 44 };
+    return { scale: 1, y: 0 };
+  });
+  const homeShellInitial = { opacity: 0, scale: 1, y: 0, filter: "blur(8px)" };
   const homeShellAnimate = computed(() => {
-    if (isDesktopAnimatingClosed.value) return { opacity: 0, scale: DESKTOP_CLOSE_SCALE, y: 0, filter: "blur(8px)" };
-    if (options.openFolderId.value && !options.isFolderClosing.value) return { opacity: 0, scale: 0.92, y: 44, filter: "blur(0px)" };
+    if (isDesktopAnimatingClosed.value) return { opacity: 0, scale: 1, y: 0, filter: "blur(8px)" };
+    if (options.openFolderId.value && !options.isFolderClosing.value) return { opacity: 0, scale: 1, y: 0, filter: "blur(0px)" };
     return { opacity: 1, scale: 1, y: 0, filter: "blur(0px)" };
   });
   const homeShellStyle = computed(() => ({
@@ -132,6 +137,7 @@ export function useLaunchpadViewState(options) {
   return {
     appLaunchGhostTransition,
     backgroundImageStyle,
+    desktopCanvasTransform,
     desktopTrackMotionKey,
     homeShellAnimate,
     homeShellInitial,

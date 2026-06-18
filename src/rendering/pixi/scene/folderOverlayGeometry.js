@@ -28,6 +28,23 @@ export function resolveOpeningInterruptionFrame(frameRect, panelRect, contentFra
   return frameRect || panelRect || contentFrameRect;
 }
 
+export function makePanelVisualRect(panel, panelRect, options = {}) {
+  if (!panelRect || !panel) return null;
+  const scaleX = Number(panel.scale?.x) || 1;
+  const scaleY = Number(panel.scale?.y) || 1;
+  const pivotX = Number(panel.pivot?.x) || panelRect.width / 2;
+  const pivotY = Number(panel.pivot?.y) || panelRect.height / 2;
+  const radius = Number(options.radius ?? 48);
+  return {
+    height: panelRect.height * Math.abs(scaleY),
+    left: panel.x - pivotX * scaleX,
+    progress: options.progress ?? 1,
+    radius: radius * Math.min(Math.abs(scaleX), Math.abs(scaleY)),
+    top: panel.y - pivotY * scaleY,
+    width: panelRect.width * Math.abs(scaleX),
+  };
+}
+
 export function getClosingPreviewTiming(frameRect, targetRect) {
   const frameHeight = Math.max(1, Number(frameRect?.height) || 1);
   const targetHeight = Math.max(1, Number(targetRect?.height) || 1);

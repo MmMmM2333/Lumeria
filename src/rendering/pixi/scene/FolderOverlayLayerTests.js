@@ -1,6 +1,7 @@
 import {
   getClosingPreviewTiming,
   getFolderPageMaskRect,
+  makePanelVisualRect,
   resolveOpeningInterruptionFrame,
 } from "./folderOverlayGeometry.js";
 import {
@@ -54,6 +55,23 @@ export function runFolderOverlayLayerTests() {
   assert(mask.width === 884, "folder page mask should match the grid width, not the full panel width");
   assert(mask.top === 64, "folder page mask should preserve the grid top edge");
   assert(mask.height === 476, "folder page mask should keep the existing vertical panel coverage");
+
+  const visualRect = makePanelVisualRect(
+    {
+      pivot: { x: 500, y: 280 },
+      scale: { x: 0.5, y: 0.25 },
+      x: 620,
+      y: 360,
+    },
+    { height: 560, width: 1000 },
+    { progress: 0.6, radius: 48 }
+  );
+  assert(visualRect.left === 370, "panel visual rect should use the current scaled panel left");
+  assert(visualRect.top === 290, "panel visual rect should use the current scaled panel top");
+  assert(visualRect.width === 500, "panel visual rect should use the current scaled panel width");
+  assert(visualRect.height === 140, "panel visual rect should use the current scaled panel height");
+  assert(visualRect.radius === 12, "panel visual rect should scale the corner radius");
+  assert(visualRect.progress === 0.6, "panel visual rect should preserve progress");
 
   const visibleOpeningFrame = { height: 520, left: 96, top: 84, width: 920 };
   const fullPanelRect = { height: 560, left: 72, top: 64, width: 1000 };
@@ -113,7 +131,7 @@ export function runFolderOverlayLayerTests() {
     finishClosingHandoff(layer, {}, () => clearOverlay(layer), scheduler);
     assert(layer.pageTrack.visible === false, "closing handoff should keep the page track hidden");
     assert(calls.join(",") === "clear-timer,flush-controller", "closing handoff should release controller ghosts before clearing overlay visuals");
-    assert(scheduler.frames.length === 1, "closing handoff should defer overlay cleanup by one frame");
+    assert(scheduler.frames.length === 1, "closing handoff should schedule deferred overlay cleanup");
     scheduler.frames.shift()();
     assert(
       calls.join(",") === "clear-timer,flush-controller,clear-preview,clear-swap,clear-frame",
@@ -132,7 +150,7 @@ export function runFolderOverlayLayerTests() {
     scheduler.frames.shift()();
     assert(
       orderingCalls.join(",") === "clear-timer,flush-controller,clear-preview,clear-swap,clear-frame,finish-flow",
-      "folder background cleanup should run before the controller clears the rendered folder"
+      "Pixi overlay cleanup should run before the folder flow reveals the real icon"
     );
 
     const cancelCalls = [];

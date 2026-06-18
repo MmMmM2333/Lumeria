@@ -19,7 +19,7 @@ import {
   drawFolderPreviewMask as drawFolderPreviewMaskGraphic,
   drawFolderThumbFrame as drawFolderThumbFrameGraphic,
 } from "./folderThumbDrawing.js";
-import { getFolderThumbMetrics } from "./folderThumbMetrics.js";
+import { getFolderThumbChildLocalRect, getFolderThumbMetrics } from "./folderThumbMetrics.js";
 import { getFolderPreviewMotionPlan } from "./folderThumbPreviewMotion.js";
 import {
   getActiveAppFolderCreateHoverState as getActiveAppFolderCreateHoverStateForIcon,
@@ -224,6 +224,7 @@ export class IconNode extends Container {
     this.updateHitArea(state);
     this.updateJiggle(state);
     if (this.isFolder && wasGhosted && !state.ghosted && !state.dragging && !state.opening) {
+      this.resetFolderPreviewAfterGhost();
       if (shouldRestoreLabelAfterGhost) this.restoreLabelAfterGhost();
       else this.revealLabelAfterGhost();
     }
@@ -241,16 +242,11 @@ export class IconNode extends Container {
   getFolderPreviewChildBounds(stageRect, slotIndex) {
     if (!this.isFolder) return null;
     const thumb = getFolderThumbMetrics(this.iconSize);
-    const col = slotIndex % 3;
-    const row = Math.floor(slotIndex / 3);
-    const centerX = thumb.start + col * (thumb.childSize + thumb.gap);
-    const centerY = thumb.start + row * (thumb.childSize + thumb.gap);
-    return this.getLocalVisualBounds(this.visualWrap, stageRect, {
-      left: centerX - thumb.childSize / 2,
-      top: centerY - thumb.childSize / 2,
-      width: thumb.childSize,
-      height: thumb.childSize,
-    });
+    const childNode = this.folderChildNodes?.[slotIndex];
+    if (childNode && !childNode.destroyed) {
+      return this.getVisualBounds(childNode, stageRect, thumb.childSize);
+    }
+    return this.getLocalVisualBounds(this.visualWrap, stageRect, getFolderThumbChildLocalRect(thumb, slotIndex));
   }
 
   getVisualBounds(node, stageRect, size) {
@@ -510,9 +506,8 @@ export class IconNode extends Container {
       const node = this.folderChildNodes[index];
       const childSprite = node.children[0];
       const childEmoji = node.children[1];
-      const col = index % 3;
-      const row = Math.floor(index / 3);
-      node.position.set(thumb.start + col * (thumb.childSize + thumb.gap), thumb.start + row * (thumb.childSize + thumb.gap));
+      const childRect = getFolderThumbChildLocalRect(thumb, index);
+      node.position.set(childRect.left + childRect.width / 2, childRect.top + childRect.height / 2);
       node.visible = Boolean(child);
       if (!child) continue;
       const childId = child.id;
@@ -646,6 +641,20 @@ export class IconNode extends Container {
     gsap.killTweensOf(this.folderFlashOverlay);
     this.folderFlashOverlay.alpha = 0;
     this.folderFlashOverlay.visible = false;
+  }
+
+  resetFolderPreviewAfterGhost() {
+    this.folderHoverActive = false;
+    this.folderHoverKey = null;
+    this.folderHoverPhase = null;
+    this.folderPreviewPlanKey = null;
+    this.folderHoverFrame.padding = 0;
+    gsap.killTweensOf(this.folderHoverFrame);
+    gsap.killTweensOf(this.visualWrap.scale);
+    gsap.killTweensOf(this.folderChildrenWrap);
+    this.visualWrap.scale.set(1);
+    this.folderChildrenWrap.y = 0;
+    this.redrawFolderHoverFrame();
   }
 
   getActiveAppFolderCreateHoverState(state) {

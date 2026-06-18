@@ -1,30 +1,39 @@
-import { Container, Text } from "pixi.js";
+import { Container, Graphics, Text } from "pixi.js";
 import { gsap } from "gsap";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getDesktopGridMetrics, getGridSlotRect, makeRect } from "../geometry/gridGeometry.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
-import { makeStageVirtualElement } from "../geometry/stageCoordinates.js";
+import { getStageScale, makeStageLocalRect, makeStageVirtualElement, snapRectToDevicePixels } from "../geometry/stageCoordinates.js";
 import {
   clearFolderPreviewChildBounds,
   clearLaunchIconBounds,
+  getFolderPreviewChildBounds,
+  getFolderPreviewChildLiveTargetBounds,
+  getFolderPreviewChildTargetBounds,
+  getTopLevelFolderThumbBounds,
+  getTopLevelFolderThumbLiveTargetBounds,
+  getTopLevelFolderThumbTargetBounds,
+  registerFolderPreviewChildLiveTargetBounds,
   registerFolderPreviewChildBounds,
   registerFolderPreviewChildTargetBounds,
   registerLaunchIconBounds,
   registerLaunchIconTargetBounds,
+  registerTopLevelFolderThumbLiveTargetBounds,
   registerTopLevelFolderThumbBounds,
   registerTopLevelFolderThumbTargetBounds,
+  registerTopLevelIconLiveTargetBounds,
   registerTopLevelIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
 import { layoutDuration, layoutEase, quickDuration, quickEase } from "../animation/eases.js";
-import { pageTrackSpring, springTo, stopTargetSprings } from "../animation/springMotion.js";
+import { desktopVisualSpring, pageTrackSpring, springTo, stopTargetSprings } from "../animation/springMotion.js";
 import {
   isActiveDraggedLaunchItem,
   isReleaseGhostLaunchItem,
 } from "./dragVisibility.js";
 import { getDesktopIconSizing } from "./desktopIconSizing.js";
 import { makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
+import { makeFolderThumbPreviewRect } from "./folderOverlayTargets.js";
 import { IconNode } from "../nodes/IconNode.js";
-import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
 
 function sourceArea(source) {
   if (source.type === "folder") return "folder";
@@ -32,27 +41,163 @@ function sourceArea(source) {
   return "desktop";
 }
 
-function makeTargetFolderPreviewChildBounds(stageRect, stageWidth, stageHeight, centerX, centerY, iconSize, visualOffsetY, slotIndex) {
-  const thumb = getFolderThumbMetrics(iconSize);
-  const col = slotIndex % 3;
-  const row = Math.floor(slotIndex / 3);
-  const childCenterX = centerX + thumb.start + col * (thumb.childSize + thumb.gap);
-  const childCenterY = centerY + thumb.start + row * (thumb.childSize + thumb.gap);
-  return makeTargetIconBounds(
-    stageRect,
-    stageWidth,
-    stageHeight,
-    childCenterX,
-    childCenterY,
-    thumb.childSize,
+function readNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function getFolderHandoffDebugOptions() {
+  const value = globalThis.__LP_DEBUG_FOLDER_HANDOFF__;
+  if (!value) return null;
+  if (value === true) return { lineWidth: 3, log: true, overlay: true };
+  if (typeof value === "object") {
+    return {
+      lineWidth: Math.max(1, Number(value.lineWidth) || 3),
+      log: value.log !== false,
+      overlay: value.overlay !== false,
+      timeline: value.timeline === true,
+    };
+  }
+  return null;
+}
+
+function roundRect(rect) {
+  if (!rect) return null;
+  const round = (value) => Math.round((Number(value) || 0) * 100) / 100;
+  return {
+    height: round(rect.height),
+    left: round(rect.left),
+    top: round(rect.top),
+    width: round(rect.width),
+  };
+}
+
+function roundDebugObject(object) {
+  if (!object || typeof object !== "object") return null;
+  const result = {};
+  for (const [key, value] of Object.entries(object)) {
+    result[key] = typeof value === "number" ? Math.round(value * 1000) / 1000 : value;
+  }
+  return result;
+}
+
+function rectDelta(rect, target) {
+  if (!rect || !target) return null;
+  const round = (value) => Math.round((Number(value) || 0) * 1000) / 1000;
+  return {
+    height: round(rect.height - target.height),
+    left: round(rect.left - target.left),
+    top: round(rect.top - target.top),
+    width: round(rect.width - target.width),
+  };
+}
+
+function maxAbsRectDelta(rows) {
+  const result = { height: 0, left: 0, top: 0, width: 0 };
+  for (const row of rows || []) {
+    const delta = row?.delta;
+    if (!delta) continue;
+    result.height = Math.max(result.height, Math.abs(delta.height || 0));
+    result.left = Math.max(result.left, Math.abs(delta.left || 0));
+    result.top = Math.max(result.top, Math.abs(delta.top || 0));
+    result.width = Math.max(result.width, Math.abs(delta.width || 0));
+  }
+  return result;
+}
+
+function worstRectDelta(rows) {
+  let worst = null;
+  let worstValue = -1;
+  for (const row of rows || []) {
+    const delta = row?.delta;
+    if (!delta) continue;
+    const value = Math.max(
+      Math.abs(delta.height || 0),
+      Math.abs(delta.left || 0),
+      Math.abs(delta.top || 0),
+      Math.abs(delta.width || 0)
+    );
+    if (value <= worstValue) continue;
+    worstValue = value;
+    worst = {
+      height: delta.height,
+      left: delta.left,
+      slot: row.slot,
+      top: delta.top,
+      width: delta.width,
+    };
+  }
+  return worst;
+}
+
+function drawDebugRect(graphics, rect, stageRect, color, alpha = 0.95, width = 3) {
+  const local = makeStageLocalRect(rect, stageRect);
+  if (!local || local.width <= 0 || local.height <= 0) return;
+  graphics
+    .rect(local.left, local.top, local.width, local.height)
+    .stroke({ alpha, color, width });
+}
+
+function makeLayoutTargetFromScreenRect(state, stageRect, targetX, rect, visualOffsetY) {
+  if (!rect) return null;
+  const { scaleX, scaleY } = getStageScale(stageRect, state.width, state.height);
+  const stageLeft = Number(stageRect?.left) || 0;
+  const stageTop = Number(stageRect?.top) || 0;
+  const visualCenterX = (rect.left - stageLeft + rect.width / 2) / scaleX;
+  const visualCenterY = (rect.top - stageTop + rect.height / 2) / scaleY;
+  return {
+    x: visualCenterX - targetX,
+    y: visualCenterY - visualOffsetY,
+  };
+}
+
+function makeSnappedFolderLayoutTarget(state, targetX, x, y, iconSize, visualOffsetY) {
+  const targetStageRect = state.stableStageRect || state.stageRect;
+  const targetBounds = snapRectToDevicePixels(makeTargetIconBounds(
+    targetStageRect,
+    state.width,
+    state.height,
+    targetX + x,
+    y,
+    iconSize,
     visualOffsetY
-  );
+  ), state.deviceResolution);
+  return makeLayoutTargetFromScreenRect(state, targetStageRect, targetX, targetBounds, visualOffsetY) || { x, y };
+}
+
+function makeFolderStableScreenTarget(state, targetX, layoutTarget, iconSize, visualOffsetY) {
+  const stableStageRect = state.stableStageRect || state.stageRect;
+  return snapRectToDevicePixels(makeTargetIconBounds(
+    stableStageRect,
+    state.width,
+    state.height,
+    targetX + layoutTarget.x,
+    layoutTarget.y,
+    iconSize,
+    visualOffsetY
+  ), state.deviceResolution);
+}
+
+function makeFolderPinnedLayoutTarget(state, targetX, stableScreenTarget, iconSize, visualOffsetY) {
+  const target = makeLayoutTargetFromScreenRect(state, state.stageRect, targetX, stableScreenTarget, visualOffsetY);
+  if (!target) return null;
+  const { scaleX, scaleY } = getStageScale(state.stageRect, state.width, state.height);
+  return {
+    ...target,
+    scaleX: stableScreenTarget.width / Math.max(1, iconSize * scaleX),
+    scaleY: stableScreenTarget.height / Math.max(1, iconSize * scaleY),
+  };
 }
 
 export class DesktopLayer extends Container {
   constructor(options = {}) {
     super();
+    this.visualRoot = new Container();
     this.pageTrack = new Container();
+    this.handoffDebugLayer = new Graphics();
+    this.folderHandoffNode = null;
+    this.hasDesktopVisualTransform = false;
+    this.lastFolderHandoffDebugSnapshot = null;
     this.iconNodes = new Map();
     this.boundsRegistration = null;
     this.emptyText = new Text({
@@ -60,8 +205,10 @@ export class DesktopLayer extends Container {
       style: { fill: 0xffffff, fontSize: 15, alpha: 0.74, fontFamily: "Inter, Segoe UI, sans-serif" },
     });
     this.emptyText.anchor.set(0.5);
-    this.addChild(this.pageTrack);
-    this.addChild(this.emptyText);
+    this.visualRoot.addChild(this.pageTrack);
+    this.visualRoot.addChild(this.emptyText);
+    this.addChild(this.visualRoot);
+    this.addChild(this.handoffDebugLayer);
     this.onIconAction = options.onIconAction || (() => {});
   }
 
@@ -69,6 +216,7 @@ export class DesktopLayer extends Container {
     this.stageRect = state.stageRect;
     this.widthValue = state.width;
     this.heightValue = state.height;
+    this.applyDesktopCanvasTransform(state);
     const pages = state.activePages || [];
     const activePageIndex = state.activePageIndex || 0;
     const targetX = -activePageIndex * state.width;
@@ -107,6 +255,18 @@ export class DesktopLayer extends Container {
         const sizing = getDesktopIconSizing(state, slot);
         const x = pageIndex * state.width + slot.left + slot.width / 2;
         const y = slot.top + slot.height / 2;
+        const visualOffsetY = getIconVisualOffsetY(state.isTextlessMode);
+        const stableLayoutTarget = item?.type === "folder"
+          ? makeSnappedFolderLayoutTarget(state, targetX, x, y, sizing.iconSize, visualOffsetY)
+          : { x, y };
+        const stableScreenTarget = item?.type === "folder"
+          ? makeFolderStableScreenTarget(state, targetX, stableLayoutTarget, sizing.iconSize, visualOffsetY)
+          : null;
+        const isFolderClosingHandoff = item?.type === "folder" && state.folderClosingHandoffId === item.id;
+        const handoffLayoutTarget = isFolderClosingHandoff
+          ? makeFolderPinnedLayoutTarget(state, targetX, stableScreenTarget, sizing.iconSize, visualOffsetY) || stableLayoutTarget
+          : null;
+        const layoutTarget = handoffLayoutTarget || stableLayoutTarget;
         const source = { type: state.isSearchMode ? "search" : "page", pageIndex, index };
         const key = `${source.type}:${pageIndex}:${item.id}`;
         const isActiveDraggedItem = isActiveDraggedLaunchItem(item, state);
@@ -118,17 +278,19 @@ export class DesktopLayer extends Container {
             onAction: (action, originalEvent, actionItem, actionSource, iconNode) =>
               this.handleIconAction(action, originalEvent, actionItem, actionSource, iconNode),
           });
-          node.alpha = 0;
-          node.position.set(x, y + 8);
+          node.alpha = isFolderClosingHandoff ? 1 : 0;
+          node.position.set(layoutTarget.x, isFolderClosingHandoff ? layoutTarget.y : layoutTarget.y + 8);
           this.iconNodes.set(key, node);
           this.pageTrack.addChild(node);
-          gsap.to(node, { alpha: 1, y, duration: quickDuration, ease: quickEase });
-        } else {
-          gsap.to(node, { duration: layoutDuration, ease: layoutEase, overwrite: "auto", x, y });
+          if (!isFolderClosingHandoff) {
+            gsap.to(node, { alpha: 1, y: layoutTarget.y, duration: quickDuration, ease: quickEase });
+          }
+        } else if (!isFolderClosingHandoff) {
+          gsap.to(node, { duration: layoutDuration, ease: layoutEase, overwrite: "auto", x: layoutTarget.x, y: layoutTarget.y });
         }
 
         node.stageRect = state.stageRect;
-        const isFolderSourceGhosted = item.type === "folder" && (
+        const isFolderSourceGhosted = item.type === "folder" && !isFolderClosingHandoff && (
           state.folderSourceGhostedId === item.id ||
           state.isFolderOpeningPreviewFrameGhosted?.(item.id)
         );
@@ -136,36 +298,50 @@ export class DesktopLayer extends Container {
           cellHeight: slot.height,
           cellWidth: slot.width,
           compact: sizing.compact,
-          dragging: !state.isSearchMode && isActiveDraggedItem,
-          draggable: isInteractivePage && !state.isSearchMode,
-          dropTarget: isInteractivePage && !state.isSearchMode && state.dragFolderTargetId === item.id,
-          editing: isInteractivePage && state.isEditMode,
-          folderHoverState: isInteractivePage && !state.isSearchMode && state.dragFolderHoverState?.targetId === item.id
+          dragging: !isFolderClosingHandoff && !state.isSearchMode && isActiveDraggedItem,
+          draggable: isInteractivePage && !state.isSearchMode && !isFolderClosingHandoff,
+          dropTarget: isInteractivePage && !state.isSearchMode && !isFolderClosingHandoff && state.dragFolderTargetId === item.id,
+          editing: isInteractivePage && !isFolderClosingHandoff && state.isEditMode,
+          folderHoverState: isInteractivePage && !state.isSearchMode && !isFolderClosingHandoff && state.dragFolderHoverState?.targetId === item.id
             ? state.dragFolderHoverState
             : null,
           folderPreviewPageSize: state.folderPageSize,
-          ghosted: isReleaseGhostItem ||
-            (isInteractivePage && isFolderSourceGhosted),
+          ghosted: !isFolderClosingHandoff && (
+            isReleaseGhostItem || (isInteractivePage && isFolderSourceGhosted)
+          ),
           hasCustomIcon: Boolean(item.customIconPath || item.customIconDataUrl),
           iconSize: sizing.iconSize,
-          interactive: isInteractivePage,
+          interactive: isInteractivePage && !isFolderClosingHandoff,
           item,
           jiggleSeed: pageIndex * 100 + index,
-          launchTargetStatus: isInteractivePage && state.showMissingLaunchTargetBadge ? state.launchTargetStatusById?.[item.id] : null,
-          opening: isInteractivePage && state.isIconOpening?.(state.isSearchMode ? "search" : "desktop", item.id, pageIndex),
+          launchTargetStatus: isInteractivePage && !isFolderClosingHandoff && state.showMissingLaunchTargetBadge ? state.launchTargetStatusById?.[item.id] : null,
+          opening: !isFolderClosingHandoff && isInteractivePage && state.isIconOpening?.(state.isSearchMode ? "search" : "desktop", item.id, pageIndex),
+          preserveNodeScale: isFolderClosingHandoff,
           removable: item.type === "app",
-          selected: isInteractivePage && state.isIconSelected?.(state.isSearchMode ? "search" : "desktop", item.id, pageIndex),
+          selected: !isFolderClosingHandoff && isInteractivePage && state.isIconSelected?.(state.isSearchMode ? "search" : "desktop", item.id, pageIndex),
           source,
           singleLineLabel: sizing.singleLineLabel,
           stageHeight: state.height,
           stageWidth: state.width,
-          suppressLabelRevealAfterGhost: isReleaseGhostItem || isFolderSourceGhosted,
+          suppressLabelRevealAfterGhost: isReleaseGhostItem || isFolderSourceGhosted || isFolderClosingHandoff,
           textless: state.isTextlessMode,
         });
+        if (isFolderClosingHandoff) this.ensureFolderHandoffNode(item.id, node, layoutTarget);
 
         if (isInteractivePage) {
           const area = sourceArea(source);
-          boundsEntries.push({ area, index, item, node, pageIndex, sizing, targetX, x, y });
+          boundsEntries.push({
+            area,
+            handoffLayoutTarget,
+            index,
+            item,
+            node,
+            pageIndex,
+            sizing,
+            targetX,
+            x: stableLayoutTarget.x,
+            y: stableLayoutTarget.y,
+          });
         }
       });
     });
@@ -185,11 +361,15 @@ export class DesktopLayer extends Container {
     }
 
     this.boundsRegistration = {
+      deviceResolution: state.deviceResolution,
       entries: boundsEntries,
+      folderClosingHandoffId: state.folderClosingHandoffId,
       height: state.height,
       isTextlessMode: state.isTextlessMode,
       stableStageRect: state.stableStageRect || state.stageRect,
       stageRect: state.stageRect,
+      stageVisualOffsetX: state.stageRect.left - (state.stableStageRect || state.stageRect).left,
+      stageVisualOffsetY: state.stageRect.top - (state.stableStageRect || state.stageRect).top,
       width: state.width,
     };
     const refreshBounds = () => this.refreshInteractiveBounds();
@@ -199,18 +379,241 @@ export class DesktopLayer extends Container {
       onUpdate: refreshBounds,
     });
     refreshBounds();
+    if (!state.folderClosingHandoffId && this.folderHandoffNode) {
+      this.finishFolderHandoffNodeAfterFrame();
+    }
+  }
+
+  applyDesktopCanvasTransform(state) {
+    const transform = state.desktopCanvasTransform || {};
+    const scale = Math.max(0.01, readNumber(transform.scale, 1));
+    const offsetY = readNumber(transform.y, 0);
+    const centerX = Math.max(1, readNumber(state.width, 1)) / 2;
+    const centerY = Math.max(1, readNumber(state.height, 1)) / 2;
+    const targetY = centerY + offsetY;
+    this.visualRoot.pivot.set(centerX, centerY);
+    if (!this.hasDesktopVisualTransform) {
+      this.visualRoot.position.set(centerX, targetY);
+      this.visualRoot.scale.set(scale);
+      this.hasDesktopVisualTransform = true;
+      return;
+    }
+    const refreshBounds = () => this.refreshInteractiveBounds();
+    springTo(this.visualRoot, "x", centerX, desktopVisualSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
+    springTo(this.visualRoot, "y", targetY, desktopVisualSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
+    springTo(this.visualRoot.scale, "x", scale, desktopVisualSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
+    springTo(this.visualRoot.scale, "y", scale, desktopVisualSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
+  }
+
+  ensureFolderHandoffNode(folderId, node, layoutTarget) {
+    if (!folderId || !node || node.destroyed) return;
+    if (this.folderHandoffNode?.folderId && this.folderHandoffNode.folderId !== folderId) {
+      this.clearFolderHandoffNode();
+    }
+    if (!this.folderHandoffNode) {
+      this.folderHandoffNode = {
+        cleanupFrame: null,
+        folderId,
+        node,
+        originalIndex: this.getPageTrackChildIndex(node),
+      };
+    } else if (this.folderHandoffNode.node !== node) {
+      this.restoreFolderHandoffNode(this.folderHandoffNode);
+      this.folderHandoffNode.node = node;
+      this.folderHandoffNode.originalIndex = this.getPageTrackChildIndex(node);
+    }
+    if (this.folderHandoffNode.cleanupFrame != null) {
+      globalThis.cancelAnimationFrame?.(this.folderHandoffNode.cleanupFrame);
+      this.folderHandoffNode.cleanupFrame = null;
+    }
+    this.syncFolderHandoffNode(node, layoutTarget);
+  }
+
+  syncFolderHandoffNode(node = this.folderHandoffNode?.node, layoutTarget = null) {
+    const entry = this.folderHandoffNode;
+    if (!entry || !node || node.destroyed) return;
+    const target = layoutTarget || entry.layoutTarget;
+    if (!target) return;
+    entry.node = node;
+    entry.layoutTarget = target;
+    gsap.killTweensOf(node);
+    gsap.killTweensOf(node.scale);
+    gsap.killTweensOf(node.labelText);
+    node.position.set(target.x, target.y);
+    node.scale.set(target.scaleX || 1, target.scaleY || target.scaleX || 1);
+    node.alpha = 1;
+    node.visible = true;
+    node.eventMode = "none";
+    node.cursor = "default";
+    node.resetFolderPreviewAfterGhost?.();
+    if (node.labelText) {
+      node.labelText.alpha = 1;
+      node.labelText.visible = false;
+    }
+    if (node.parent === this.pageTrack && this.pageTrack.children.length > 1) {
+      this.pageTrack.setChildIndex(node, this.pageTrack.children.length - 1);
+    }
+  }
+
+  finishFolderHandoffNodeAfterFrame() {
+    const entry = this.folderHandoffNode;
+    if (!entry || entry.cleanupFrame != null) return;
+    const finish = () => {
+      if (this.folderHandoffNode !== entry) return;
+      entry.cleanupFrame = null;
+      this.clearFolderHandoffNode();
+    };
+    if (typeof globalThis.requestAnimationFrame === "function") {
+      entry.cleanupFrame = globalThis.requestAnimationFrame(finish);
+    } else {
+      finish();
+    }
+  }
+
+  clearFolderHandoffNode() {
+    const entry = this.folderHandoffNode;
+    if (entry) {
+      this.lastFolderHandoffDebugSnapshot = this.makeFolderHandoffDebugSnapshot(entry, {
+        active: false,
+        clearing: true,
+      }) || this.lastFolderHandoffDebugSnapshot;
+    }
+    this.folderHandoffNode = null;
+    if (!entry) return;
+    if (entry.cleanupFrame != null) globalThis.cancelAnimationFrame?.(entry.cleanupFrame);
+    this.restoreFolderHandoffNode(entry);
+  }
+
+  restoreFolderHandoffNode(entry) {
+    const node = entry?.node;
+    if (!node || node.destroyed || node.parent !== this.pageTrack) return;
+    const childCount = this.pageTrack.children.length;
+    if (!childCount) return;
+    const targetIndex = Math.max(0, Math.min(entry.originalIndex ?? childCount - 1, childCount - 1));
+    if (this.getPageTrackChildIndex(node) !== targetIndex) this.pageTrack.setChildIndex(node, targetIndex);
+  }
+
+  getPageTrackChildIndex(node) {
+    return this.pageTrack.children.indexOf(node);
+  }
+
+  makeFolderHandoffDebugSnapshot(entry, options = {}) {
+    const node = entry?.node;
+    if (!entry || !node || node.destroyed) return null;
+    const registration = this.boundsRegistration || {};
+    const stageRect = registration.stageRect || this.stageRect;
+    const stableStageRect = registration.stableStageRect || stageRect;
+    const folderId = entry.folderId || node.item?.id || null;
+    const thumbRect = node.getFolderThumbBounds?.(stageRect) || null;
+    const iconRect = node.getIconBounds?.(stageRect) || null;
+    const liveTargetRect = folderId ? getTopLevelFolderThumbLiveTargetBounds(folderId) : null;
+    const stableTargetRect = folderId ? getTopLevelFolderThumbTargetBounds(folderId) : null;
+    const registeredThumbRect = folderId ? getTopLevelFolderThumbBounds(folderId) : null;
+    const targetRect = liveTargetRect || registeredThumbRect || stableTargetRect;
+    const childRows = [];
+    for (let slotIndex = 0; slotIndex < 9; slotIndex += 1) {
+      const child = node.item ? node.item.childPages?.[0]?.[slotIndex] || node.item.children?.[slotIndex] : null;
+      if (!child?.id) continue;
+      const actualRect = node.getFolderPreviewChildBounds(stageRect, slotIndex);
+      const targetChildRect = targetRect ? makeFolderThumbPreviewRect(targetRect, slotIndex) : null;
+      childRows.push({
+        actual: roundRect(actualRect),
+        delta: rectDelta(actualRect, targetChildRect),
+        slot: slotIndex,
+        target: roundRect(targetChildRect),
+      });
+    }
+    return {
+      active: options.active !== false,
+      childMaxDelta: maxAbsRectDelta(childRows),
+      childRows,
+      childWorstDelta: worstRectDelta(childRows),
+      childIndex: this.getPageTrackChildIndex(node),
+      clearing: options.clearing === true,
+      folderId,
+      iconRect: roundRect(iconRect),
+      layoutTarget: roundDebugObject(entry.layoutTarget),
+      liveTargetRect: roundRect(liveTargetRect),
+      node: {
+        alpha: Math.round((node.alpha ?? 0) * 1000) / 1000,
+        eventMode: node.eventMode,
+        labelAlpha: node.labelText ? Math.round((node.labelText.alpha ?? 0) * 1000) / 1000 : null,
+        labelVisible: node.labelText ? node.labelText.visible : null,
+        parentIsPageTrack: node.parent === this.pageTrack,
+        scaleX: Math.round((node.scale?.x ?? 1) * 1000) / 1000,
+        scaleY: Math.round((node.scale?.y ?? 1) * 1000) / 1000,
+        visible: node.visible,
+        x: Math.round((node.x || 0) * 1000) / 1000,
+        y: Math.round((node.y || 0) * 1000) / 1000,
+      },
+      originalIndex: entry.originalIndex ?? null,
+      pageTrackX: Math.round((this.pageTrack?.x || 0) * 1000) / 1000,
+      registeredThumbRect: roundRect(registeredThumbRect),
+      source: options.source || "handoff-node",
+      stableStageRect: roundRect(stableStageRect),
+      stableTargetRect: roundRect(stableTargetRect),
+      stageRect: roundRect(stageRect),
+      stageScaleX: registration.stageRect?.width && registration.width ? Math.round((registration.stageRect.width / registration.width) * 1000000) / 1000000 : null,
+      stageScaleY: registration.stageRect?.height && registration.height ? Math.round((registration.stageRect.height / registration.height) * 1000000) / 1000000 : null,
+      stageVisualOffsetX: Math.round((registration.stageVisualOffsetX || 0) * 1000) / 1000,
+      stageVisualOffsetY: Math.round((registration.stageVisualOffsetY || 0) * 1000) / 1000,
+      targetDelta: rectDelta(thumbRect, targetRect),
+      targetRect: roundRect(targetRect),
+      thumbRect: roundRect(thumbRect),
+    };
+  }
+
+  findIconNodeByItemId(itemId) {
+    if (!itemId) return null;
+    for (const node of this.iconNodes.values()) {
+      if (node?.item?.id === itemId && !node.destroyed) return node;
+    }
+    return null;
+  }
+
+  getFolderHandoffDebugSnapshot(folderId = null) {
+    const activeSnapshot = this.makeFolderHandoffDebugSnapshot(this.folderHandoffNode);
+    if (activeSnapshot) {
+      this.lastFolderHandoffDebugSnapshot = activeSnapshot;
+      return activeSnapshot;
+    }
+    const node = this.findIconNodeByItemId(folderId);
+    const actualSnapshot = this.makeFolderHandoffDebugSnapshot({
+      folderId,
+      layoutTarget: null,
+      node,
+      originalIndex: node ? this.getPageTrackChildIndex(node) : null,
+    }, {
+      active: false,
+      source: "actual-node",
+    });
+    if (actualSnapshot) return actualSnapshot;
+    if (!this.lastFolderHandoffDebugSnapshot) return null;
+    return {
+      ...this.lastFolderHandoffDebugSnapshot,
+      active: false,
+      stale: true,
+    };
   }
 
   refreshInteractiveBounds() {
     const registration = this.boundsRegistration;
     if (!registration) return;
     for (const entry of registration.entries) {
-      const { area, index, item, node, pageIndex, sizing, targetX, x, y } = entry;
+      const { area, handoffLayoutTarget, index, item, node, pageIndex, sizing, targetX, x, y } = entry;
       if (!item?.id || !node || node.destroyed) continue;
-      const iconBounds = node.getIconBounds(registration.stageRect);
       const meta = { area, id: item.id, index, item, pageIndex };
       const visualOffsetY = getIconVisualOffsetY(registration.isTextlessMode);
-      const stableTargetBounds = makeTargetIconBounds(
+      const rawLiveTargetBounds = makeTargetIconBounds(
+        registration.stageRect,
+        registration.width,
+        registration.height,
+        targetX + x,
+        y,
+        sizing.iconSize,
+        visualOffsetY
+      );
+      const rawStableTargetBounds = makeTargetIconBounds(
         registration.stableStageRect,
         registration.width,
         registration.height,
@@ -219,6 +622,20 @@ export class DesktopLayer extends Container {
         sizing.iconSize,
         visualOffsetY
       );
+      let liveTargetBounds = item.type === "folder" ? snapRectToDevicePixels(rawLiveTargetBounds, registration.deviceResolution) : rawLiveTargetBounds;
+      const stableTargetBounds = item.type === "folder" ? snapRectToDevicePixels(rawStableTargetBounds, registration.deviceResolution) : rawStableTargetBounds;
+      let folderThumbBounds = null;
+      if (item.type === "folder") {
+        const rawFolderThumbBounds = node.getFolderThumbBounds(registration.stageRect);
+        folderThumbBounds = snapRectToDevicePixels(rawFolderThumbBounds, registration.deviceResolution);
+        if (registration.folderClosingHandoffId === item.id && this.folderHandoffNode?.folderId === item.id) {
+          this.syncFolderHandoffNode(node, handoffLayoutTarget || { x, y });
+          liveTargetBounds = stableTargetBounds;
+        }
+      }
+      const iconBounds = item.type === "folder"
+        ? snapRectToDevicePixels(node.getIconBounds(registration.stageRect), registration.deviceResolution)
+        : node.getIconBounds(registration.stageRect);
       registerLaunchIconBounds(
         { area, folderId: null, id: item.id, pageIndex },
         iconBounds,
@@ -226,31 +643,104 @@ export class DesktopLayer extends Container {
       );
       registerLaunchIconTargetBounds(
         { area, folderId: null, id: item.id, pageIndex },
-        makeTargetIconBounds(
-          registration.stageRect,
-          registration.width,
-          registration.height,
-          targetX + x,
-          y,
-          sizing.iconSize,
-          visualOffsetY
-        ),
+        liveTargetBounds,
         meta
       );
-      if (area === "desktop") registerTopLevelIconTargetBounds(item.id, stableTargetBounds, meta);
-      if (item.type === "folder") {
-        const folderThumbBounds = node.getFolderThumbBounds(registration.stageRect);
-        registerTopLevelFolderThumbBounds(item.id, folderThumbBounds, meta);
-        if (area === "desktop") registerTopLevelFolderThumbTargetBounds(item.id, stableTargetBounds, meta);
-        this.registerFolderChildren(item, node, registration.stageRect, {
-          centerX: targetX + x,
-          centerY: y,
-          height: registration.height,
-          iconSize: sizing.iconSize,
-          stableStageRect: registration.stableStageRect,
-          visualOffsetY,
-          width: registration.width,
+      if (area === "desktop") {
+        registerTopLevelIconLiveTargetBounds(item.id, liveTargetBounds, {
+          ...meta,
+          stageVisualOffsetX: registration.stageVisualOffsetX,
+          stageVisualOffsetY: registration.stageVisualOffsetY,
         });
+        registerTopLevelIconTargetBounds(item.id, stableTargetBounds, meta);
+      }
+      if (item.type === "folder") {
+        registerTopLevelFolderThumbBounds(item.id, folderThumbBounds, meta);
+        if (area === "desktop") {
+          registerTopLevelFolderThumbLiveTargetBounds(item.id, liveTargetBounds, {
+            ...meta,
+            stageVisualOffsetX: registration.stageVisualOffsetX,
+            stageVisualOffsetY: registration.stageVisualOffsetY,
+          });
+          registerTopLevelFolderThumbTargetBounds(item.id, stableTargetBounds, meta);
+        }
+        this.registerFolderChildren(item, node, registration.stageRect, {
+          liveThumbRect: liveTargetBounds,
+          stableThumbRect: stableTargetBounds,
+        });
+        if (area === "desktop") this.debugFolderHandoffDesktopActual(item, node, registration);
+      }
+    }
+  }
+
+  debugFolderHandoffDesktopActual(folder, node, registration) {
+    const options = getFolderHandoffDebugOptions();
+    const debugState = globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__;
+    if (!options?.log || debugState?.desktopLogged || debugState?.folderId !== folder?.id) return;
+    const rows = [];
+    const actualThumbRect = node.getFolderThumbBounds(registration.stageRect);
+    const targetThumbRect = getTopLevelFolderThumbLiveTargetBounds(folder.id) ||
+      getTopLevelFolderThumbBounds(folder.id) ||
+      getTopLevelFolderThumbTargetBounds(folder.id);
+    rows.push({
+      actual: roundRect(actualThumbRect),
+      delta: rectDelta(actualThumbRect, targetThumbRect),
+      kind: "thumb",
+      slot: "",
+      target: roundRect(targetThumbRect),
+    });
+    for (let slotIndex = 0; slotIndex < 9; slotIndex += 1) {
+      const child = node.item ? node.item.childPages?.[0]?.[slotIndex] || node.item.children?.[slotIndex] : null;
+      if (!child?.id) continue;
+      const actualRect = node.getFolderPreviewChildBounds(registration.stageRect, slotIndex);
+      const targetRect = getFolderPreviewChildLiveTargetBounds(folder.id, child.id, slotIndex) ||
+        getFolderPreviewChildBounds(folder.id, child.id, slotIndex) ||
+        getFolderPreviewChildTargetBounds(folder.id, child.id, slotIndex);
+      rows.push({
+        actual: roundRect(actualRect),
+        delta: rectDelta(actualRect, targetRect),
+        kind: "child",
+        slot: slotIndex,
+        target: roundRect(targetRect),
+      });
+    }
+    debugState.desktopLogged = true;
+    debugState.desktopRows = rows;
+    console.log("[folder-handoff-debug] desktop-actual", {
+      folderId: folder.id,
+      pageTrackX: Math.round((this.pageTrack?.x || 0) * 1000) / 1000,
+      stageScaleX: registration.stageRect?.width && registration.width ? registration.stageRect.width / registration.width : null,
+      stageScaleY: registration.stageRect?.height && registration.height ? registration.stageRect.height / registration.height : null,
+      stageVisualOffsetX: Math.round((registration.stageVisualOffsetX || 0) * 1000) / 1000,
+      stageVisualOffsetY: Math.round((registration.stageVisualOffsetY || 0) * 1000) / 1000,
+    });
+    console.table(rows.map((row) => ({
+      actualHeight: row.actual?.height ?? null,
+      actualLeft: row.actual?.left ?? null,
+      actualTop: row.actual?.top ?? null,
+      actualWidth: row.actual?.width ?? null,
+      deltaHeight: row.delta?.height ?? null,
+      deltaLeft: row.delta?.left ?? null,
+      deltaTop: row.delta?.top ?? null,
+      deltaWidth: row.delta?.width ?? null,
+      kind: row.kind,
+      slot: row.slot,
+      targetHeight: row.target?.height ?? null,
+      targetLeft: row.target?.left ?? null,
+      targetTop: row.target?.top ?? null,
+      targetWidth: row.target?.width ?? null,
+    })));
+    if (options.overlay) {
+      const previousClear = globalThis.__LP_CLEAR_FOLDER_HANDOFF_DEBUG__;
+      globalThis.__LP_CLEAR_FOLDER_HANDOFF_DEBUG__ = () => {
+        previousClear?.();
+        this.handoffDebugLayer.clear();
+      };
+      this.handoffDebugLayer.clear();
+      drawDebugRect(this.handoffDebugLayer, actualThumbRect, registration.stageRect, 0xbf5af2, 0.98, options.lineWidth);
+      for (const row of rows) {
+        if (row.kind !== "child") continue;
+        drawDebugRect(this.handoffDebugLayer, row.actual, registration.stageRect, 0xffffff, 0.9, options.lineWidth);
       }
     }
   }
@@ -261,17 +751,12 @@ export class DesktopLayer extends Container {
       if (!child?.id) continue;
       const childRect = node.getFolderPreviewChildBounds(stageRect, index);
       if (childRect) registerFolderPreviewChildBounds(folder.id, child.id, index, childRect);
-      if (target?.stableStageRect) {
-        const targetChildRect = makeTargetFolderPreviewChildBounds(
-          target.stableStageRect,
-          target.width,
-          target.height,
-          target.centerX,
-          target.centerY,
-          target.iconSize,
-          target.visualOffsetY,
-          index
-        );
+      if (target?.liveThumbRect) {
+        const liveTargetChildRect = makeFolderThumbPreviewRect(target.liveThumbRect, index);
+        registerFolderPreviewChildLiveTargetBounds(folder.id, child.id, index, liveTargetChildRect);
+      }
+      if (target?.stableThumbRect) {
+        const targetChildRect = makeFolderThumbPreviewRect(target.stableThumbRect, index);
         registerFolderPreviewChildTargetBounds(folder.id, child.id, index, targetChildRect);
       }
     }
@@ -284,6 +769,9 @@ export class DesktopLayer extends Container {
 
   destroy(options) {
     this.boundsRegistration = null;
+    this.clearFolderHandoffNode();
+    stopTargetSprings(this.visualRoot);
+    stopTargetSprings(this.visualRoot?.scale);
     stopTargetSprings(this.pageTrack);
     super.destroy(options);
   }

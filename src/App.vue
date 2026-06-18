@@ -59,6 +59,7 @@
       <PixiDesktopSurface
         :active-page-index="activePageIndex"
         :active-pages="activePages"
+        :desktop-canvas-transform="desktopCanvasTransform"
         :desktop-projection-epoch="desktopProjectionEpoch"
         :desktop-track-motion-key="desktopTrackMotionKey"
         :dom-refs="desktopDomRefs"
@@ -67,6 +68,7 @@
         :drag-meta="dragMeta"
         :drag-release-ghost-id="dragReleaseGhostId"
         :folder-page-size="folderPageSize"
+        :folder-closing-handoff-id="folderClosingHandoffId"
         :get-desktop-page-render-mode="getDesktopPageRenderMode"
         :get-visible-desktop-page="getVisibleDesktopPage"
         :grid-cols="gridCols"
@@ -77,6 +79,7 @@
         :is-folder-opening-preview-frame-ghosted="isFolderOpeningPreviewFrameGhosted"
         :is-icon-opening="isIconOpening"
         :is-icon-selected="isIconSelected"
+        :is-home-reveal-settling="isHomeRevealSettling"
         :is-search-mode="isSearchMode"
         :is-textless-mode="isTextlessMode"
         :launch-target-status-by-id="launchTargetStatusById"
@@ -111,6 +114,7 @@
     <PixiFolderOverlay
       :active="shouldRunFolderPixi"
       :state="folderOverlayState"
+      @internal-activity="handleFolderPixiInternalActivity"
       @pointerdown-icon="beginDrag"
       @open-app="openApp"
       @context-menu-icon="openIconContextMenu"
@@ -215,6 +219,7 @@ const {
   settingsPanelAnimate,
   handleLaunchpadWheel,
   shellRef,
+  desktopCanvasTransform,
   homeShellInitial,
   homeShellAnimate,
   homeShellTransition,
@@ -263,6 +268,7 @@ const {
   isFolderClosing,
   isFolderAppLaunchClosing,
   isFolderZoomFadeClosing,
+  isHomeRevealSettling,
   windowMode,
 } = controller;
 
@@ -309,11 +315,15 @@ const backgroundImageLayers = ref([
   { id: "background-image-a", url: null, visible: false },
   { id: "background-image-b", url: null, visible: false },
 ]);
+const folderPixiInternalActivity = ref(false);
+const folderPixiInternalActivityFolderId = ref(null);
+const folderClosingHandoffRetainId = ref(null);
 const shouldRunPixiOverlays = computed(() => Boolean(
   isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value
 ));
 const shouldRunFolderPixi = computed(() => Boolean(
   shouldRunPixiOverlays.value && (
+    folderPixiInternalActivity.value ||
     openFolderId.value ||
     renderedFolder.value ||
     isFolderClosing.value ||
@@ -794,13 +804,33 @@ const folderOverlayState = createFolderOverlayState(controller);
 const overlayState = createOverlayState(controller);
 
 const dragReleaseGhostId = computed(() => dragReleaseState.value?.item?.id || null);
+const folderClosingHandoffId = computed(() => {
+  if (folderPixiInternalActivity.value) return folderPixiInternalActivityFolderId.value;
+  if (isHomeRevealSettling.value) return folderClosingHandoffRetainId.value;
+  return null;
+});
 
 const folderSourceGhostedId = computed(() => {
-  const folderId = renderedFolder.value?.id || openFolderId.value;
+  const folderId = renderedFolder.value?.id || openFolderId.value || folderPixiInternalActivityFolderId.value;
   if (!folderId) return null;
+  if (folderPixiInternalActivity.value && folderPixiInternalActivityFolderId.value === folderId) return folderId;
   if (openFolderId.value || isFolderAppLaunchClosing.value || isFolderZoomFadeClosing.value || isFolderClosing.value) return folderId;
   return isFolderOpeningPreviewFrameGhosted(folderId) ? folderId : null;
 });
+
+function handleFolderPixiInternalActivity(active, folderId = null) {
+  const nextFolderId = folderId || folderPixiInternalActivityFolderId.value || folderClosingHandoffRetainId.value;
+  folderPixiInternalActivity.value = Boolean(active);
+  folderPixiInternalActivityFolderId.value = active ? nextFolderId : null;
+  if (active && nextFolderId) folderClosingHandoffRetainId.value = nextFolderId;
+}
+
+watch(
+  [folderPixiInternalActivity, isHomeRevealSettling],
+  ([hasPixiActivity, isSettling]) => {
+    if (!hasPixiActivity && !isSettling) folderClosingHandoffRetainId.value = null;
+  }
+);
 
 function openIconContextMenu(event, app, source) {
   launchpadOverlaysRef.value?.openIconContextMenu(event, app, source);
