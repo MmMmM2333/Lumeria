@@ -27,7 +27,6 @@ import { FolderOpeningGhostController } from "./folderOpeningGhostController.js"
 import { makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import {
   clearLaunchIconBounds,
-  getTopLevelIconBounds,
   registerLaunchIconBounds,
   registerLaunchIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
@@ -165,6 +164,17 @@ export class FolderOverlayLayer extends Container {
     this.isClosing = isClosing;
     this.isUserFolderClosing = Boolean(state.isFolderClosing);
     this.panelGeometry = geometry.panel;
+    const folderId = state.renderedFolder.id;
+    const overlayTargets = resolveFolderOverlayTargets({
+      folder: state.renderedFolder,
+      folderOpeningOriginBounds: state.folderOpeningOriginBounds,
+      folderPageSize: state.folderPageSize,
+      isClosing,
+      previousStableFolderCloseTarget: this.stableFolderCloseTarget,
+      wasClosing,
+    });
+    this.stableFolderCloseTarget = overlayTargets.stableFolderCloseTarget;
+    const { folderRect, folderThumbRect, getOpeningPreviewChildRect, previewSlots } = overlayTargets;
     this.drawPanel(geometry.panel);
     this.panel.pivot.set(geometry.panel.width / 2, geometry.panel.height / 2);
     const targetX = geometry.panel.left + geometry.panel.width / 2;
@@ -176,7 +186,7 @@ export class FolderOverlayLayer extends Container {
       this.panel.alpha = 1;
       this.panelTitleOpening = false;
     } else {
-      this.animatePanel(state, targetX, targetY, geometry.panel);
+      this.animatePanel(state, targetX, targetY, geometry.panel, folderRect);
     }
 
     this.folderTitle.text = state.renderedFolder.name || "新文件夹";
@@ -203,17 +213,6 @@ export class FolderOverlayLayer extends Container {
     } else {
       springTo(this.pageTrack, "x", targetTrackX, pageTrackSpring);
     }
-    const folderId = state.renderedFolder.id;
-    const overlayTargets = resolveFolderOverlayTargets({
-      folder: state.renderedFolder,
-      folderOpeningOriginBounds: state.folderOpeningOriginBounds,
-      folderPageSize: state.folderPageSize,
-      isClosing,
-      previousStableFolderCloseTarget: this.stableFolderCloseTarget,
-      wasClosing,
-    });
-    this.stableFolderCloseTarget = overlayTargets.stableFolderCloseTarget;
-    const { folderRect, folderThumbRect, getOpeningPreviewChildRect, previewSlots } = overlayTargets;
     const { closeIconRect, closeThumbRect } = getStableFolderCloseRects({
       folderId,
       folderRect,
@@ -468,14 +467,8 @@ export class FolderOverlayLayer extends Container {
     previousMask?.destroy?.();
   }
 
-  animatePanel(state, targetX, targetY, panelRect) {
+  animatePanel(state, targetX, targetY, panelRect, sourceRect = null) {
     const isClosing = Boolean(state.isFolderClosing || state.isFolderAppLaunchClosing);
-    const sourceRect = state.folderOpeningOriginBounds?.folderId === state.renderedFolder?.id
-      ? state.folderOpeningOriginBounds.iconRect
-      : getTopLevelIconBounds(state.renderedFolder?.id, {
-        owner: "FolderOverlayLayer.animatePanel.sourceRect",
-        warnIfMissing: true,
-      });
     if (this.currentFolderId !== state.renderedFolder?.id) {
       this.currentFolderId = state.renderedFolder?.id;
       if (sourceRect) {
