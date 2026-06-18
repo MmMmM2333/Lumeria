@@ -15,6 +15,7 @@ import {
   getSingleStageFolderProbeRenderKey,
   installSingleStageGlobalFlag,
   installSingleStageFolderProbeGlobalFlag,
+  makeSingleStageDiagnosticsPlan,
   makeSingleStageFolderProbePlan,
   setSingleStageOptions,
   setSingleStageFolderProbeOptions,
@@ -143,10 +144,11 @@ export function runSingleStageFolderProbeTests() {
     });
   }
 
-  assert(makeSingleStageFolderProbePlan(state, { enabled: false }) === null, "disabled probe should not create a plan");
+  assert(makeSingleStageDiagnosticsPlan(state, { enabled: false }) === null, "disabled diagnostics should not create a plan");
 
-  const plan = makeSingleStageFolderProbePlan(state, { enabled: true });
-  assert(plan?.folderId === folder.id, "enabled probe should create a plan for the rendered folder");
+  const plan = makeSingleStageDiagnosticsPlan(state, { enabled: true });
+  assert(plan?.folderId === folder.id, "enabled diagnostics should create a plan for the rendered folder");
+  assert(makeSingleStageFolderProbePlan(state, { enabled: true })?.folderId === folder.id, "legacy probe plan helper should remain available");
   assert(plan.stableFolderCloseTarget?.source === "stable-final-close", "closing probe should capture a stable final close target");
   assert(plan.previewRects.length === 9, "probe should only draw the folder thumbnail preview slots");
   assert(plan.desktopFrame.top === 93, "probe plan should keep the desktop frame inside root stage");

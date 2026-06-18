@@ -1,12 +1,13 @@
 import { Container, Graphics, Text } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { getSingleStageOptions, makeSingleStageFolderProbePlan } from "./singleStageFolderProbePlan.js";
+import { getSingleStageOptions, makeSingleStageDiagnosticsPlan } from "./singleStageFolderProbePlan.js";
 
 export {
   getSingleStageOptions,
   getSingleStageFolderProbeOptions,
   isSingleStageDiagnosticsEnabled,
   isSingleStageFolderProbeEnabled,
+  makeSingleStageDiagnosticsPlan,
   makeSingleStageFolderProbePlan,
 } from "./singleStageFolderProbePlan.js";
 
@@ -53,7 +54,7 @@ function makeDebugSnapshot(plan) {
   };
 }
 
-export class SingleStageFolderProbeLayer extends Container {
+export class SingleStageDiagnosticsLayer extends Container {
   constructor() {
     super();
     this.panelGraphics = new Graphics();
@@ -77,9 +78,9 @@ export class SingleStageFolderProbeLayer extends Container {
   }
 
   update(state, options = {}) {
-    const probeOptions = getSingleStageOptions(options.enabled);
-    const plan = makeSingleStageFolderProbePlan(state, {
-      enabled: probeOptions,
+    const diagnosticsOptions = getSingleStageOptions(options.enabled);
+    const plan = makeSingleStageDiagnosticsPlan(state, {
+      enabled: diagnosticsOptions,
       previousStableFolderCloseTarget: this.stableFolderCloseTarget,
       wasClosing: this.wasClosing,
     });
@@ -88,7 +89,7 @@ export class SingleStageFolderProbeLayer extends Container {
     this.visible = Boolean(plan);
     this.panelGraphics.clear();
     this.targetGraphics.clear();
-    this.publishDebugSnapshot(plan, probeOptions);
+    this.publishDebugSnapshot(plan, diagnosticsOptions);
     if (!plan) {
       this.label.visible = false;
       return null;
@@ -119,7 +120,7 @@ export class SingleStageFolderProbeLayer extends Container {
     }
 
     this.label.visible = true;
-    this.label.text = `single-stage probe: ${plan.folderId}`;
+    this.label.text = `single-stage diagnostics: ${plan.folderId}`;
     this.label.position.set(panel.left, Math.max(0, panel.top - 22));
     return plan;
   }
@@ -127,6 +128,7 @@ export class SingleStageFolderProbeLayer extends Container {
   publishDebugSnapshot(plan, options) {
     if (!options.enabled) return;
     const snapshot = makeDebugSnapshot(plan);
+    globalThis.__LP_LAST_SINGLE_STAGE_DIAGNOSTICS__ = snapshot;
     globalThis.__LP_LAST_SINGLE_STAGE_FOLDER_PROBE__ = snapshot;
     if (!options.log) return;
     const debugKey = JSON.stringify({
@@ -138,8 +140,10 @@ export class SingleStageFolderProbeLayer extends Container {
     });
     if (debugKey === this.lastDebugKey) return;
     this.lastDebugKey = debugKey;
-    console.log("[single-stage-folder-probe]", snapshot);
+    console.log("[single-stage-diagnostics]", snapshot);
   }
 }
+
+export class SingleStageFolderProbeLayer extends SingleStageDiagnosticsLayer {}
 
 reloadOnPixiHotUpdate(import.meta.hot);

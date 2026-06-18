@@ -586,7 +586,7 @@ function createSingleStageFolderState(metrics, options = {}, renderGeometry = ma
     canvasStageRect: metrics.rect,
     desktopFrame: renderGeometry.desktopFrame,
     desktopStageRect: renderGeometry.desktopStageRect,
-    singleStageProbe: true,
+    singleStageDiagnostics: true,
   });
 }
 
@@ -662,7 +662,7 @@ function renderPixi() {
     deviceResolution: app.renderer?.resolution || 1,
     folderClosingHandoffId,
     singleStageDragPreviewEnabled: singleStageOptions.dragPreview,
-    singleStageFolderProbeEnabled: singleStageOptions,
+    singleStageDiagnosticsEnabled: singleStageOptions,
     singleStageFolderLayerEnabled: singleStageOptions.folderLayer,
     singleStageFolderState: singleStageOptions.enabled ? createSingleStageFolderState(metrics, singleStageOptions, renderGeometry) : null,
     folderPageSize: props.folderPageSize,

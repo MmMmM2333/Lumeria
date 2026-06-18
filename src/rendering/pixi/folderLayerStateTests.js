@@ -44,7 +44,7 @@ export function runFolderLayerStateTests() {
       launchTargetStatusById: { "app-a": "ok" },
       showMissingLaunchTargetBadge: true,
     },
-  }, { prewarm: true });
+  }, { prewarm: true, singleStageDiagnostics: true });
 
   assert(state.width === 1 && state.height === 1, "stage dimensions should have a minimum size");
   assert(state.stageRect.left === 4 && state.stageRect.top === 5, "stage rect should be preserved");
@@ -54,5 +54,6 @@ export function runFolderLayerStateTests() {
   assert(state.getFolderCloseIconGhostKey("app-b", 1) === "close-b", "close ghost lookup should use current close ghosts");
   assert(state.completeFolderOpenIconGhost === callbacks.completeFolderOpenIconGhost, "callbacks should be forwarded");
   assert(state.isFolderAppLaunchClosing, "folder app-launch closing state should be forwarded");
+  assert(state.singleStageDiagnostics, "single-stage diagnostics flag should be preserved");
   assert(state.prewarm, "overrides should be applied last");
 }

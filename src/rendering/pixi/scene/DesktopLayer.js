@@ -34,7 +34,7 @@ import { getDesktopIconSizing } from "./desktopIconSizing.js";
 import { makeContainerTargetIconBounds, makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { makeFolderThumbPreviewRect } from "./folderOverlayTargets.js";
 import { FolderOverlayLayer } from "./FolderOverlayLayer.js";
-import { SingleStageFolderProbeLayer } from "./singleStageFolderProbe.js";
+import { SingleStageDiagnosticsLayer } from "./singleStageFolderProbe.js";
 import { DragPreviewLayer } from "./DragPreviewLayer.js";
 import { IconNode } from "../nodes/IconNode.js";
 
@@ -238,7 +238,7 @@ export class DesktopLayer extends Container {
       showFolderTitle: false,
       onTitleFrameChange: (frame) => this.onFolderTitleFrameChange(frame),
     });
-    this.singleStageFolderProbeLayer = new SingleStageFolderProbeLayer();
+    this.singleStageDiagnosticsLayer = new SingleStageDiagnosticsLayer();
     this.singleStageDragPreviewLayer = new DragPreviewLayer();
     this.folderHandoffNode = null;
     this.hasDesktopVisualAlpha = false;
@@ -256,7 +256,7 @@ export class DesktopLayer extends Container {
     this.addChild(this.visualRoot);
     this.addChild(this.singleStageFolderLayer);
     this.addChild(this.singleStageDragPreviewLayer);
-    this.addChild(this.singleStageFolderProbeLayer);
+    this.addChild(this.singleStageDiagnosticsLayer);
     this.addChild(this.handoffDebugLayer);
   }
 
@@ -442,8 +442,8 @@ export class DesktopLayer extends Container {
     refreshBounds();
     this.updateSingleStageFolderLayer(state);
     this.updateSingleStageDragPreviewLayer(state);
-    this.singleStageFolderProbeLayer.update(state.singleStageFolderState, {
-      enabled: state.singleStageFolderProbeEnabled,
+    this.singleStageDiagnosticsLayer.update(state.singleStageFolderState, {
+      enabled: state.singleStageDiagnosticsEnabled,
     });
     if (!state.folderClosingHandoffId && this.folderHandoffNode) {
       this.finishFolderHandoffNodeAfterFrame();

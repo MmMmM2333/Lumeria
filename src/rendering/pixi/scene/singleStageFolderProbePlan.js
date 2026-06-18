@@ -150,7 +150,7 @@ export function isSingleStageFolderProbeEnabled(value = readSingleStageGlobalVal
   return isSingleStageDiagnosticsEnabled(value);
 }
 
-export function makeSingleStageFolderProbePlan(state, options = {}) {
+export function makeSingleStageDiagnosticsPlan(state, options = {}) {
   const enabled = options.enabled == null
     ? isSingleStageFolderProbeEnabled()
     : isSingleStageFolderProbeEnabled(options.enabled);
@@ -204,4 +204,8 @@ export function makeSingleStageFolderProbePlan(state, options = {}) {
     stableFolderCloseTarget: overlayTargets.stableFolderCloseTarget,
     stageRect: state.stageRect,
   };
+}
+
+export function makeSingleStageFolderProbePlan(state, options = {}) {
+  return makeSingleStageDiagnosticsPlan(state, options);
 }
