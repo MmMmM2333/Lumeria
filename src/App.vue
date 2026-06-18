@@ -122,7 +122,7 @@
     <LaunchpadDialogs :state="dialogState" />
     <PixiFolderOverlay
       v-if="!shouldUseSingleStageFolderLayer"
-      :active="shouldRunFolderPixi"
+      :active="shouldRunFallbackFolderPixi"
       :state="folderOverlayState"
       @internal-activity="handleFolderPixiInternalActivity"
       @pointerdown-icon="beginDrag"
@@ -131,7 +131,7 @@
     />
     <PixiDragPreviewOverlay
       v-if="!shouldUseSingleStageDragPreview"
-      :active="shouldRunDragPreviewPixi"
+      :active="shouldRunFallbackDragPreviewPixi"
       :folder-page-size="folderPageSize"
       :icon-size="iconSize"
       :is-textless-mode="isTextlessMode"
@@ -342,7 +342,7 @@ const singleStageOptions = ref(getSingleStageOptions());
 const shouldRunPixiOverlays = computed(() => Boolean(
   isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value
 ));
-const shouldRunFolderPixi = computed(() => Boolean(
+const shouldRunFallbackFolderPixi = computed(() => Boolean(
   shouldRunPixiOverlays.value && (
     folderPixiInternalActivity.value ||
     openFolderId.value ||
@@ -356,7 +356,7 @@ const shouldUseSingleStageFolderLayer = computed(() => singleStageOptions.value.
 const shouldUseSingleStageDragPreview = computed(() => singleStageOptions.value.dragPreview === true);
 const singleStageRenderKey = computed(() => getSingleStageRenderKey(singleStageOptions.value));
 const desktopVisualAlpha = computed(() => Math.max(0, Math.min(1, Number(homeShellAnimate.value?.opacity ?? 1))));
-const shouldRunDragPreviewPixi = computed(() => Boolean(
+const shouldRunFallbackDragPreviewPixi = computed(() => Boolean(
   shouldRunPixiOverlays.value && (
     dragMeta.value ||
     dragPreviewState.value?.item ||
