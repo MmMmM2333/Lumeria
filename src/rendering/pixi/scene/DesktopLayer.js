@@ -24,7 +24,7 @@ import {
   registerTopLevelIconLiveTargetBounds,
   registerTopLevelIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
-import { layoutDuration, layoutEase, quickDuration, quickEase } from "../animation/eases.js";
+import { quickDuration, quickEase } from "../animation/eases.js";
 import { desktopVisualSpring, pageTrackSpring, springTo, stopTargetSprings } from "../animation/springMotion.js";
 import {
   isActiveDraggedLaunchItem,
@@ -212,6 +212,11 @@ function getDesktopFrame(state) {
   };
 }
 
+function springIconLayoutPosition(node, layoutTarget, refreshBounds) {
+  springTo(node, "x", layoutTarget.x, pageTrackSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
+  springTo(node, "y", layoutTarget.y, pageTrackSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
+}
+
 export class DesktopLayer extends Container {
   constructor(options = {}) {
     super();
@@ -267,6 +272,7 @@ export class DesktopLayer extends Container {
     const pageWidth = desktopFrame.width;
     const targetX = -activePageIndex * pageWidth;
     const shouldSnap = state.shouldSnapTrack;
+    const refreshBounds = () => this.refreshInteractiveBounds();
 
     clearLaunchIconBounds(state.isSearchMode ? "search" : "desktop");
     for (const page of pages) {
@@ -334,10 +340,11 @@ export class DesktopLayer extends Container {
           this.iconNodes.set(key, node);
           this.pageTrack.addChild(node);
           if (!isFolderClosingHandoff) {
-            gsap.to(node, { alpha: 1, y: layoutTarget.y, duration: quickDuration, ease: quickEase });
+            gsap.to(node, { alpha: 1, duration: quickDuration, ease: quickEase });
+            springIconLayoutPosition(node, layoutTarget, refreshBounds);
           }
         } else if (!isFolderClosingHandoff) {
-          gsap.to(node, { duration: layoutDuration, ease: layoutEase, overwrite: "auto", x: layoutTarget.x, y: layoutTarget.y });
+          springIconLayoutPosition(node, layoutTarget, refreshBounds);
         }
 
         node.stageRect = state.stageRect;
@@ -403,6 +410,7 @@ export class DesktopLayer extends Container {
       if (seen.has(key)) continue;
       this.iconNodes.delete(key);
       gsap.killTweensOf(node);
+      stopTargetSprings(node);
       gsap.to(node, {
         alpha: 0,
         duration: quickDuration,
@@ -426,7 +434,6 @@ export class DesktopLayer extends Container {
       stageVisualOffsetY: stageVisualOffset.y,
       width: state.width,
     };
-    const refreshBounds = () => this.refreshInteractiveBounds();
     springTo(this.pageTrack, "x", targetX, pageTrackSpring, {
       snap: shouldSnap,
       onComplete: refreshBounds,
