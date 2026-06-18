@@ -203,7 +203,7 @@ export function runLaunchpadViewStateTests() {
 
   const openFolder = createViewState({ openFolderId: "folder-1", isFolderLayerActive: true });
   assert(openFolder.view.desktopTrackMotionKey.value === "open-desktop-snap", "open folder should snap the desktop track");
-  assert(openFolder.view.homeChromeAnimate.value.y === 0 && openFolder.view.homeChromeAnimate.value.scale === 1, "open folder should keep the DOM chrome untransformed");
+  assert(!("y" in openFolder.view.homeChromeAnimate.value) && !("scale" in openFolder.view.homeChromeAnimate.value), "open folder chrome should not declare DOM transforms");
   assert(openFolder.view.desktopVisualTransform.value.y === 44 && openFolder.view.desktopVisualTransform.value.scale === 0.92, "open folder should move the desktop visual root inside Pixi");
   assert(openFolder.view.desktopVisualAlpha.value === 0, "open folder should hide the desktop canvas through view state");
   assert(openFolder.view.homeChromeAnimate.value.filter === "blur(0px)", "open folder should avoid chrome blur compositor flicker");

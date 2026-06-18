@@ -125,11 +125,11 @@ export function useLaunchpadViewState(options) {
     return { scale: 1, y: 0 };
   });
   const desktopVisualAlpha = computed(() => (shouldHideHomeShell.value ? 0 : 1));
-  const homeChromeInitial = { opacity: 0, scale: 1, y: 0, filter: "blur(8px)" };
+  const homeChromeInitial = { opacity: 0, filter: "blur(8px)" };
   const homeChromeAnimate = computed(() => {
-    if (isDesktopAnimatingClosed.value) return { opacity: 0, scale: 1, y: 0, filter: "blur(8px)" };
-    if (options.openFolderId.value && !options.isFolderClosing.value) return { opacity: 0, scale: 1, y: 0, filter: "blur(0px)" };
-    return { opacity: 1, scale: 1, y: 0, filter: "blur(0px)" };
+    if (isDesktopAnimatingClosed.value) return { opacity: 0, filter: "blur(8px)" };
+    if (options.openFolderId.value && !options.isFolderClosing.value) return { opacity: 0, filter: "blur(0px)" };
+    return { opacity: 1, filter: "blur(0px)" };
   });
   const homeChromeStyle = computed(() => ({
     pointerEvents: shouldHideHomeShell.value || isHomeInteractionDisabled.value ? "none" : "auto",
