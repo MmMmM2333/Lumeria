@@ -2454,6 +2454,10 @@ body {
   z-index: 11;
 }
 
+.pixi-desktop-host-root-stage-drag-active {
+  z-index: 80;
+}
+
 .pixi-single-stage-folder-controls {
   position: fixed;
   right: auto;

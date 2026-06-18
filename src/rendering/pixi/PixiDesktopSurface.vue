@@ -10,7 +10,10 @@
     <Teleport v-if="rootStageCanvasEnabled" to="body">
       <div
         ref="hostRef"
-        class="pixi-desktop-host pixi-desktop-host-root-stage"
+        :class="[
+          'pixi-desktop-host pixi-desktop-host-root-stage',
+          isSingleStageDragPreviewActive && 'pixi-desktop-host-root-stage-drag-active',
+        ]"
         :style="rootStageHostStyle"
       />
       <div
@@ -160,6 +163,7 @@ const hostRef = ref(null);
 const mainRef = ref(null);
 const rootStageCanvasEnabled = ref(getResolvedSingleStageFolderProbeOptions().rootStage);
 const rootStageHostStyle = ref(rootStageCanvasEnabled.value ? makeRootStageHostStyle() : null);
+const singleStageDragPreviewEnabled = ref(getResolvedSingleStageFolderProbeOptions().dragPreview);
 const singleStageFolderLayerEnabled = ref(getResolvedSingleStageFolderProbeOptions().folderLayer);
 const singleStageFolderPanelGeometry = ref(null);
 const singleStageFolderTitleFrame = ref(null);
@@ -216,6 +220,12 @@ const isSingleStageFolderPageDotsBlocked = computed(() => Boolean(
 
 const isSingleStageFolderPageDotsReady = computed(() => (
   getSingleStageFolderPageDotsReady(singleStageFolderTitleFrame.value)
+));
+
+const isSingleStageDragPreviewActive = computed(() => Boolean(
+  rootStageCanvasEnabled.value &&
+  singleStageDragPreviewEnabled.value &&
+  (props.dragPreviewState?.item || props.dragReleaseState?.item)
 ));
 
 const singleStageFolderNameInputStyle = computed(() => {
@@ -645,6 +655,7 @@ function renderPixi() {
   const metrics = getPixiHostMetrics(hostRef.value);
   const folderClosingHandoffId = resolveFolderClosingHandoffId(metrics);
   const singleStageFolderProbeOptions = getResolvedSingleStageFolderProbeOptions();
+  singleStageDragPreviewEnabled.value = singleStageFolderProbeOptions.dragPreview;
   singleStageFolderLayerEnabled.value = singleStageFolderProbeOptions.folderLayer;
   if (syncRootStageCanvasFlag(singleStageFolderProbeOptions)) return;
   const renderGeometry = makeDesktopRenderGeometry(metrics, singleStageFolderProbeOptions);
