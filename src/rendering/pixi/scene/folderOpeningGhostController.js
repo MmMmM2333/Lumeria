@@ -7,6 +7,25 @@ import { reloadOnPixiHotUpdate } from "../devHmr.js";
 
 const GHOST_REVEAL_FALLBACK_PADDING_MS = 140;
 
+function animateOpeningGhost(ghost, motion, onComplete) {
+  gsap.to(ghost, {
+    alpha: 1,
+    duration: folderOpenGhostDuration,
+    ease: folderOpenGhostEase,
+    x: motion.toX,
+    y: motion.toY,
+    delay: motion.delay,
+    onComplete,
+  });
+  gsap.to(ghost.scale, {
+    duration: folderOpenGhostDuration,
+    ease: folderOpenGhostEase,
+    x: 1,
+    y: 1,
+    delay: motion.delay,
+  });
+}
+
 export class FolderOpeningGhostController {
   constructor(layer, options = {}) {
     this.layer = layer;
@@ -134,22 +153,7 @@ export class FolderOpeningGhostController {
         if (node.item?.id === target.item.id) node.visible = false;
       }
 
-      gsap.to(ghost, {
-        alpha: 1,
-        duration: folderOpenGhostDuration,
-        ease: folderOpenGhostEase,
-        x: motion.toX,
-        y: motion.toY,
-        delay: motion.delay,
-        onComplete: () => this.complete(state, target, ghost),
-      });
-      gsap.to(ghost.scale, {
-        duration: folderOpenGhostDuration,
-        ease: folderOpenGhostEase,
-        x: 1,
-        y: 1,
-        delay: motion.delay,
-      });
+      animateOpeningGhost(ghost, motion, () => this.complete(state, target, ghost));
     }
   }
 }

@@ -78,6 +78,32 @@ function setLayerClosingHandoffActive(layer, active) {
   layer.closingHandoffActive = Boolean(active);
 }
 
+function animateClosingGhost(ghost, motion, target, onComplete) {
+  gsap.to(ghost, {
+    delay: motion.delay,
+    duration: folderCloseDuration,
+    ease: folderCloseEase,
+    x: motion.toX,
+    y: motion.toY,
+    onComplete,
+  });
+  if (!target.isThumbnailChild) {
+    gsap.to(ghost, {
+      alpha: 0,
+      delay: motion.alphaDelay,
+      duration: CLOSING_EXTRA_GHOST_ALPHA_DURATION,
+      ease: "power2.in",
+    });
+  }
+  gsap.to(ghost.scale, {
+    delay: motion.delay,
+    duration: folderCloseDuration,
+    ease: folderCloseEase,
+    x: motion.scale,
+    y: motion.scale,
+  });
+}
+
 export class FolderClosingGhostController {
   constructor(layer, options = {}) {
     this.layer = layer;
@@ -220,29 +246,7 @@ export class FolderClosingGhostController {
         if (node.item?.id === target.item.id) node.visible = false;
       }
 
-      gsap.to(ghost, {
-        delay: motion.delay,
-        duration: folderCloseDuration,
-        ease: folderCloseEase,
-        x: motion.toX,
-        y: motion.toY,
-        onComplete: () => this.completeGhost(state, target, ghost),
-      });
-      if (!target.isThumbnailChild) {
-        gsap.to(ghost, {
-          alpha: 0,
-          delay: motion.alphaDelay,
-          duration: CLOSING_EXTRA_GHOST_ALPHA_DURATION,
-          ease: "power2.in",
-        });
-      }
-      gsap.to(ghost.scale, {
-        delay: motion.delay,
-        duration: folderCloseDuration,
-        ease: folderCloseEase,
-        x: motion.scale,
-        y: motion.scale,
-      });
+      animateClosingGhost(ghost, motion, target, () => this.completeGhost(state, target, ghost));
     }
   }
 
