@@ -357,6 +357,16 @@ body {
   transform-origin: center center;
 }
 
+.launchpad-root-single-stage-folder-layer .launchpad-shell {
+  z-index: 13;
+  pointer-events: none !important;
+}
+
+.launchpad-root-single-stage-folder-layer .launchpad-header,
+.launchpad-root-single-stage-folder-layer .page-dots {
+  pointer-events: auto !important;
+}
+
 .launchpad-header {
   display: grid;
   grid-template-columns: 1fr minmax(240px, 348px) 1fr;
@@ -2451,7 +2461,7 @@ body {
   height: var(--pixi-root-stage-height, 100vh);
   overflow: visible;
   pointer-events: none;
-  z-index: 12;
+  z-index: 14;
 }
 
 .pixi-launchpad-canvas {
