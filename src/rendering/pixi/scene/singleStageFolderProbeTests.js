@@ -6,7 +6,11 @@ import {
   registerTopLevelFolderThumbTargetBounds,
   registerTopLevelIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
-import { getSingleStageFolderProbeOptions, makeSingleStageFolderProbePlan } from "./singleStageFolderProbePlan.js";
+import {
+  getSingleStageFolderProbeOptions,
+  getSingleStageFolderProbeOptionsKey,
+  makeSingleStageFolderProbePlan,
+} from "./singleStageFolderProbePlan.js";
 
 export function runSingleStageFolderProbeTests() {
   const assert = (condition, message) => {
@@ -35,6 +39,7 @@ export function runSingleStageFolderProbeTests() {
   assert(options.enabled && options.log, "probe options should preserve explicit logging");
   assert(options.folderLayer, "probe options should preserve the single-stage folder layer flag");
   assert(options.rootStage, "probe options should preserve the root-stage canvas flag");
+  assert(getSingleStageFolderProbeOptionsKey(options) === "11111", "probe option key should reflect enabled flags");
   clearIconBoundsRegistry();
   registerLaunchIconBounds({ area: "desktop", id: folder.id, pageIndex: 0 }, iconRect, { area: "desktop", id: folder.id });
   registerTopLevelFolderThumbBounds(folder.id, thumbRect, { area: "desktop", id: folder.id });

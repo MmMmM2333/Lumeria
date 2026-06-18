@@ -357,11 +357,14 @@ body {
   transform-origin: center center;
 }
 
+.launchpad-root-pixi-root-stage .launchpad-shell,
 .launchpad-root-single-stage-folder-layer .launchpad-shell {
   z-index: 13;
   pointer-events: none !important;
 }
 
+.launchpad-root-pixi-root-stage .launchpad-header,
+.launchpad-root-pixi-root-stage .page-dots,
 .launchpad-root-single-stage-folder-layer .launchpad-header,
 .launchpad-root-single-stage-folder-layer .page-dots {
   pointer-events: auto !important;

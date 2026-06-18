@@ -1,7 +1,7 @@
 <template>
   <div
     ref="rootRef"
-    :class="cx('launchpad-root', windowMode === 'windowed' && 'launchpad-root-windowed', isTextlessMode && 'launchpad-root-textless', isStartupMaskMounted && 'launchpad-root-startup-masked', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching', shouldUseLiveDesktopCssFallbackEffects && 'launchpad-root-live-desktop-css-fallback-effects', shouldUseSingleStageFolderLayer && 'launchpad-root-single-stage-folder-layer')"
+    :class="cx('launchpad-root', windowMode === 'windowed' && 'launchpad-root-windowed', isTextlessMode && 'launchpad-root-textless', isStartupMaskMounted && 'launchpad-root-startup-masked', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching', shouldUseLiveDesktopCssFallbackEffects && 'launchpad-root-live-desktop-css-fallback-effects', shouldUseSingleStageRootStage && 'launchpad-root-pixi-root-stage', shouldUseSingleStageFolderLayer && 'launchpad-root-single-stage-folder-layer')"
     :style="launchpadRootStyle"
     @wheel="handleLaunchpadWheel"
     @pointerdown="handleLaunchpadSurfacePointerDown"
@@ -38,6 +38,7 @@
     />
 
     <Motion
+      :key="`launchpad-shell-${singleStageFolderProbeRenderKey}`"
       ref="shellRef"
       class="launchpad-shell"
       :initial="homeShellInitial"
@@ -57,6 +58,7 @@
       />
 
       <PixiDesktopSurface
+        :key="singleStageFolderProbeRenderKey"
         :active-page-index="activePageIndex"
         :active-pages="activePages"
         :desktop-canvas-transform="desktopCanvasTransform"
@@ -88,6 +90,10 @@
         :desktop-grid-debug-options="desktopGridDebugOptions"
         :set-page-ref="setPageRef"
         :show-missing-launch-target-badge="showMissingLaunchTargetBadge"
+        :single-stage-folder-layer-enabled="shouldUseSingleStageFolderLayer"
+        :single-stage-folder-probe-options-key="singleStageFolderProbeRenderKey"
+        :single-stage-folder-probe-options="singleStageFolderProbeOptions"
+        :single-stage-root-stage-enabled="shouldUseSingleStageRootStage"
         @desktop-focus="keyboardFocusArea = 'desktop'"
         @internal-activity="handleFolderPixiInternalActivity"
         @pointerdown-icon="beginDrag"
@@ -167,7 +173,12 @@ import PixiBackgroundSurface from "./rendering/pixi/PixiBackgroundSurface.vue";
 import PixiDesktopSurface from "./rendering/pixi/PixiDesktopSurface.vue";
 import PixiDragPreviewOverlay from "./rendering/pixi/PixiDragPreviewOverlay.vue";
 import PixiFolderOverlay from "./rendering/pixi/PixiFolderOverlay.vue";
-import { getSingleStageFolderProbeOptions } from "./rendering/pixi/scene/singleStageFolderProbePlan.js";
+import {
+  getSingleStageFolderProbeOptions,
+  getSingleStageFolderProbeOptionsKey,
+  installSingleStageFolderProbeGlobalFlag,
+  SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT,
+} from "./rendering/pixi/scene/singleStageFolderProbePlan.js";
 import { getBackgroundLayoutContext } from "./api/launchpadApi.js";
 import { loadBackgroundImagePixelSize } from "./composables/useBackgroundImagePixelSize.js";
 import { useLaunchpadController } from "./composables/useLaunchpadController.js";
@@ -191,6 +202,7 @@ import appPackage from "../package.json";
 import "./styles/launchpad.css";
 
 const controller = useLaunchpadController();
+installSingleStageFolderProbeGlobalFlag();
 const {
   rootRef,
   rootStyle,
@@ -294,6 +306,7 @@ const LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT = "launchpad-live-desktop-com
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_INTERVAL_MS = 250;
 const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY = "launchpadLiveDesktopCssFallbackEffects";
 const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT = "launchpad-live-desktop-css-fallback-effects-change";
+const SINGLE_STAGE_FOLDER_PROBE_REFRESH_MS = 250;
 const launchpadOverlaysRef = ref(null);
 const BACKGROUND_MEDIA_FADE_MS = 220;
 const PIXI_BACKGROUND_HANDOFF_DELAY_MS = 220;
@@ -322,6 +335,7 @@ const backgroundImageLayers = ref([
 const folderPixiInternalActivity = ref(false);
 const folderPixiInternalActivityFolderId = ref(null);
 const folderClosingHandoffRetainId = ref(null);
+const singleStageFolderProbeOptions = ref(getSingleStageFolderProbeOptions());
 const shouldRunPixiOverlays = computed(() => Boolean(
   isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value
 ));
@@ -334,7 +348,9 @@ const shouldRunFolderPixi = computed(() => Boolean(
     isFolderAppLaunchClosing.value
   )
 ));
-const shouldUseSingleStageFolderLayer = computed(() => getSingleStageFolderProbeOptions().folderLayer === true);
+const shouldUseSingleStageRootStage = computed(() => singleStageFolderProbeOptions.value.rootStage === true);
+const shouldUseSingleStageFolderLayer = computed(() => singleStageFolderProbeOptions.value.folderLayer === true);
+const singleStageFolderProbeRenderKey = computed(() => getSingleStageFolderProbeOptionsKey(singleStageFolderProbeOptions.value));
 const shouldRunDragPreviewPixi = computed(() => Boolean(
   shouldRunPixiOverlays.value && (
     dragMeta.value ||
@@ -370,7 +386,9 @@ let backgroundImageGeneration = 0;
 let backgroundImageShowFrame = null;
 let backgroundImageClearTimer = null;
 let liveDesktopCompositorKeeperTimer = null;
+let singleStageFolderProbeRefreshTimer = null;
 let activeBackgroundImageLayerIndex = 0;
+let lastSingleStageFolderProbeOptionsKey = getSingleStageFolderProbeOptionsKey(singleStageFolderProbeOptions.value);
 
 function parseCssOpacity(value) {
   const number = Number.parseFloat(value);
@@ -686,6 +704,28 @@ function clearBackgroundImageTimers() {
   clearBackgroundImageClearTimer();
 }
 
+function refreshSingleStageFolderProbeOptions() {
+  const nextOptions = getSingleStageFolderProbeOptions();
+  const nextKey = getSingleStageFolderProbeOptionsKey(nextOptions);
+  if (nextKey === lastSingleStageFolderProbeOptionsKey) return;
+  lastSingleStageFolderProbeOptionsKey = nextKey;
+  singleStageFolderProbeOptions.value = nextOptions;
+}
+
+function startSingleStageFolderProbeRefreshTimer() {
+  if (!import.meta.env.DEV || singleStageFolderProbeRefreshTimer != null) return;
+  singleStageFolderProbeRefreshTimer = window.setInterval(
+    refreshSingleStageFolderProbeOptions,
+    SINGLE_STAGE_FOLDER_PROBE_REFRESH_MS
+  );
+}
+
+function clearSingleStageFolderProbeRefreshTimer() {
+  if (singleStageFolderProbeRefreshTimer == null) return;
+  window.clearInterval(singleStageFolderProbeRefreshTimer);
+  singleStageFolderProbeRefreshTimer = null;
+}
+
 watch(
   shouldRenderPixiBackgroundEffect,
   (shouldRender) => {
@@ -780,13 +820,17 @@ onBeforeUnmount(clearPixiBackgroundHideTimer);
 onBeforeUnmount(clearStartupMaskTimers);
 onBeforeUnmount(clearBackgroundImageTimers);
 onBeforeUnmount(clearLiveDesktopCompositorKeeperTimer);
+onBeforeUnmount(clearSingleStageFolderProbeRefreshTimer);
 
 onMounted(() => {
   refreshBackgroundLayoutMetrics();
+  refreshSingleStageFolderProbeOptions();
+  startSingleStageFolderProbeRefreshTimer();
   window.addEventListener("resize", refreshBackgroundLayoutMetrics);
   window.addEventListener("focus", refreshBackgroundLayoutMetrics);
   window.addEventListener(LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT, handleLiveDesktopCompositorKeeperChanged);
   window.addEventListener(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT, handleLiveDesktopCssFallbackEffectsChanged);
+  window.addEventListener(SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT, refreshSingleStageFolderProbeOptions);
   window.addEventListener("storage", handleLiveDesktopCompositorKeeperStorage);
   window.addEventListener("storage", handleLiveDesktopCssFallbackEffectsStorage);
 });
@@ -796,6 +840,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("focus", refreshBackgroundLayoutMetrics);
   window.removeEventListener(LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT, handleLiveDesktopCompositorKeeperChanged);
   window.removeEventListener(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT, handleLiveDesktopCssFallbackEffectsChanged);
+  window.removeEventListener(SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT, refreshSingleStageFolderProbeOptions);
   window.removeEventListener("storage", handleLiveDesktopCompositorKeeperStorage);
   window.removeEventListener("storage", handleLiveDesktopCssFallbackEffectsStorage);
 });

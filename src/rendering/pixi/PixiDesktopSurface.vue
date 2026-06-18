@@ -103,6 +103,10 @@ const props = defineProps({
   pageGridMeasureStyle: { type: Object, required: true },
   setPageRef: { type: Function, required: true },
   showMissingLaunchTargetBadge: { type: Boolean, default: true },
+  singleStageFolderLayerEnabled: { type: Boolean, default: null },
+  singleStageFolderProbeOptions: { type: Object, default: null },
+  singleStageFolderProbeOptionsKey: { type: String, default: "" },
+  singleStageRootStageEnabled: { type: Boolean, default: null },
 });
 
 const emit = defineEmits([
@@ -116,11 +120,30 @@ const emit = defineEmits([
   "reset-app-icon",
 ]);
 
+function getResolvedSingleStageFolderProbeOptions() {
+  if (props.singleStageRootStageEnabled != null || props.singleStageFolderLayerEnabled != null) {
+    const fallback = getSingleStageFolderProbeOptions();
+    const folderLayer = props.singleStageFolderLayerEnabled ?? fallback.folderLayer;
+    return {
+      ...fallback,
+      enabled: fallback.enabled || Boolean(props.singleStageRootStageEnabled || folderLayer),
+      folderLayer,
+      rootStage: props.singleStageRootStageEnabled ?? fallback.rootStage,
+    };
+  }
+  const options = props.singleStageFolderProbeOptions;
+  if (options && typeof options === "object") {
+    if ("rootStage" in options || "folderLayer" in options || "enabled" in options) return options;
+    if ("value" in options && options.value) return options.value;
+  }
+  return getSingleStageFolderProbeOptions();
+}
+
 const hostRef = ref(null);
 const mainRef = ref(null);
-const rootStageCanvasEnabled = ref(getSingleStageFolderProbeOptions().rootStage);
+const rootStageCanvasEnabled = ref(getResolvedSingleStageFolderProbeOptions().rootStage);
 const rootStageHostStyle = ref(rootStageCanvasEnabled.value ? makeRootStageHostStyle() : null);
-const singleStageFolderLayerEnabled = ref(getSingleStageFolderProbeOptions().folderLayer);
+const singleStageFolderLayerEnabled = ref(getResolvedSingleStageFolderProbeOptions().folderLayer);
 const singleStageFolderPanelGeometry = ref(null);
 const singleStageFolderTitleFrame = ref(null);
 const singleStageFolderNameBeforeEdit = ref("");
@@ -274,8 +297,14 @@ function restoreSingleStageEmptyFolderName(event) {
   state.renameFolder(folder.id, fallback);
 }
 
+function syncPixiResizeTarget() {
+  if (!app || !hostRef.value) return;
+  if ("resizeTo" in app && app.resizeTo !== hostRef.value) app.resizeTo = hostRef.value;
+  app.resize?.();
+}
+
 function handleResize() {
-  app?.resize?.();
+  syncPixiResizeTarget();
   renderPixi();
 }
 
@@ -473,7 +502,7 @@ function syncRootStageCanvasFlag(options) {
     if (app?.canvas && hostRef.value && app.canvas.parentElement !== hostRef.value) {
       hostRef.value.replaceChildren(app.canvas);
     }
-    app?.resize?.();
+    syncPixiResizeTarget();
     renderPixi();
   });
   return true;
@@ -655,9 +684,10 @@ function logFolderHandoffTimeline(metrics, folderClosingHandoffId) {
 
 function renderPixi() {
   if (!app || !layer || !hostRef.value) return;
+  syncPixiResizeTarget();
   const metrics = getPixiHostMetrics(hostRef.value);
   const folderClosingHandoffId = resolveFolderClosingHandoffId(metrics);
-  const singleStageFolderProbeOptions = getSingleStageFolderProbeOptions();
+  const singleStageFolderProbeOptions = getResolvedSingleStageFolderProbeOptions();
   singleStageFolderLayerEnabled.value = singleStageFolderProbeOptions.folderLayer;
   if (syncRootStageCanvasFlag(singleStageFolderProbeOptions)) return;
   const renderGeometry = makeDesktopRenderGeometry(metrics, singleStageFolderProbeOptions);
@@ -880,6 +910,12 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => props.singleStageFolderProbeOptionsKey,
+  () => renderPixi(),
+  { flush: "post" }
+);
+
 watchEffect(() => {
   void props.activePageIndex;
   void props.activePages;
@@ -904,6 +940,10 @@ watchEffect(() => {
   void props.launchTargetStatusById;
   void props.pageGridMeasureStyle;
   void props.folderPageSize;
+  void props.singleStageFolderLayerEnabled;
+  void props.singleStageFolderProbeOptionsKey;
+  void props.singleStageFolderProbeOptions;
+  void props.singleStageRootStageEnabled;
   renderPixi();
   if (shouldRunHandoffRenderLoop()) scheduleHandoffRenderLoop();
   else cancelHandoffRenderLoop();
