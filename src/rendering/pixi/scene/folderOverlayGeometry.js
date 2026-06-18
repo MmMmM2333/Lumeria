@@ -9,6 +9,10 @@ const CLOSING_PREVIEW_TALL_SWAP_DURATION = 0.22;
 export const FOLDER_PAGE_DOTS_HIT_HEIGHT = 28;
 export const FOLDER_PAGE_DOTS_SIZE = 10;
 export const FOLDER_PAGE_DOTS_GAP = 12;
+export const FOLDER_PAGE_DOT_ACTIVE_ALPHA = 0.96;
+export const FOLDER_PAGE_DOT_ACTIVE_SCALE = 1.02;
+export const FOLDER_PAGE_DOT_HOVER_ALPHA = 0.5;
+export const FOLDER_PAGE_DOT_IDLE_ALPHA = 0.28;
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
@@ -38,6 +42,18 @@ export function getFolderPageDotsFrame(geometry) {
     left: panel.left,
     top: bottomPaddingTop + bottomPaddingHeight / 2 - FOLDER_PAGE_DOTS_HIT_HEIGHT / 2,
     width: panel.width,
+  };
+}
+
+export function getFolderPageDotVisualState(options = {}) {
+  const active = options.active === true;
+  return {
+    alpha: active
+      ? FOLDER_PAGE_DOT_ACTIVE_ALPHA
+      : options.hovered === true
+        ? FOLDER_PAGE_DOT_HOVER_ALPHA
+        : FOLDER_PAGE_DOT_IDLE_ALPHA,
+    scale: active ? FOLDER_PAGE_DOT_ACTIVE_SCALE : 1,
   };
 }
 

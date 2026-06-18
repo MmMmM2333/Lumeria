@@ -1,6 +1,7 @@
 import {
   getClosingPreviewTiming,
   getFolderPageDotsFrame,
+  getFolderPageDotVisualState,
   getFolderPageMaskRect,
   makePanelVisualRect,
   resolveOpeningInterruptionFrame,
@@ -69,6 +70,10 @@ export function runFolderOverlayLayerTests() {
     panel: { height: 360, left: 180, top: 200, width: 800 },
   });
   assert(fallbackDotsFrame.top === 519, "Pixi page dots should have a panel-only fallback position");
+  assert(getFolderPageDotVisualState().alpha === 0.28, "idle Pixi page dots should match the DOM idle alpha");
+  assert(getFolderPageDotVisualState({ hovered: true }).alpha === 0.5, "hovered Pixi page dots should match the DOM hover alpha");
+  const activeDot = getFolderPageDotVisualState({ active: true, hovered: true });
+  assert(activeDot.alpha === 0.96 && activeDot.scale === 1.02, "active Pixi page dots should keep the active visual while hovered");
 
   const visualRect = makePanelVisualRect(
     {

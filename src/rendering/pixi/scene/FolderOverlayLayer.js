@@ -33,6 +33,7 @@ import {
   FOLDER_PAGE_DOTS_HIT_HEIGHT,
   FOLDER_PAGE_DOTS_SIZE,
   getFolderPageDotsFrame,
+  getFolderPageDotVisualState,
   getFolderPageMaskRect,
   makePanelVisualRect,
 } from "./folderOverlayGeometry.js";
@@ -516,6 +517,37 @@ export class FolderOverlayLayer extends Container {
       .fill({ color: 0xffffff, alpha: 1 });
   }
 
+  drawPageDot(dot) {
+    dot.clear()
+      .circle(0, 0, FOLDER_PAGE_DOTS_SIZE / 2)
+      .fill({ color: 0xffffff, alpha: 1 });
+  }
+
+  setPageDotHover(dot, active, hovered, options = {}) {
+    const visual = getFolderPageDotVisualState({ active, hovered });
+    this.drawPageDot(dot);
+    gsap.killTweensOf(dot, "alpha");
+    gsap.killTweensOf(dot.scale);
+    if (options.immediate) {
+      dot.alpha = visual.alpha;
+      dot.scale.set(visual.scale);
+      return;
+    }
+    gsap.to(dot, {
+      alpha: visual.alpha,
+      duration: 0.16,
+      ease: "power2.out",
+      overwrite: "auto",
+    });
+    gsap.to(dot.scale, {
+      x: visual.scale,
+      y: visual.scale,
+      duration: 0.16,
+      ease: "power2.out",
+      overwrite: "auto",
+    });
+  }
+
   updatePageDots(state, geometry) {
     const pageCount = Array.isArray(state.folderPages) ? state.folderPages.length : 0;
     if (!state.folderPageDotsVisible || pageCount <= 1) {
@@ -538,12 +570,13 @@ export class FolderOverlayLayer extends Container {
     for (let index = 0; index < pageCount; index += 1) {
       const dot = new Graphics();
       const isActive = index === state.folderPageIndex;
-      dot.circle(0, 0, FOLDER_PAGE_DOTS_SIZE / 2)
-        .fill({ color: 0xffffff, alpha: isActive ? 0.96 : 0.28 });
+      this.setPageDotHover(dot, isActive, false, { immediate: true });
       dot.position.set(startX + index * (FOLDER_PAGE_DOTS_SIZE + FOLDER_PAGE_DOTS_GAP), centerY);
       dot.eventMode = "static";
       dot.cursor = "pointer";
       dot.hitArea = new Rectangle(-8, -8, FOLDER_PAGE_DOTS_SIZE + 16, FOLDER_PAGE_DOTS_SIZE + 16);
+      dot.on("pointerover", () => this.setPageDotHover(dot, isActive, true));
+      dot.on("pointerout", () => this.setPageDotHover(dot, isActive, false));
       dot.on("pointerdown", (event) => {
         event.stopPropagation?.();
         state.folderPageIndexCommit?.(index);
