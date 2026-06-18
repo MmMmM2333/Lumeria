@@ -219,6 +219,30 @@ function getRectMaxDelta(rect, layoutRect) {
   );
 }
 
+function getDomRefElement(nodeRef) {
+  const node = nodeRef && typeof nodeRef === "object" && "value" in nodeRef ? nodeRef.value : nodeRef;
+  return node?.$el || node || null;
+}
+
+function getElementRect(nodeRef) {
+  const element = getDomRefElement(nodeRef);
+  const rect = element?.getBoundingClientRect?.();
+  if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+  return {
+    height: rect.height,
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+  };
+}
+
+function getSingleStageCandidateRect(metrics) {
+  return getElementRect(props.domRefs?.rootRef) ||
+    getElementRect(props.domRefs?.shellRef) ||
+    metrics.layoutRect ||
+    metrics.rect;
+}
+
 function resolveFolderClosingHandoffId(metrics) {
   const now = nowMs();
   const rectMaxDelta = getRectMaxDelta(metrics.rect, metrics.layoutRect);
@@ -291,7 +315,7 @@ function resolveFolderClosingHandoffId(metrics) {
 function createSingleStageFolderState(metrics) {
   const source = props.folderOverlayState;
   if (!source) return null;
-  const stageRect = metrics.layoutRect || metrics.rect;
+  const stageRect = getSingleStageCandidateRect(metrics);
   return createFolderLayerState({
     callbacks: {
       completeFolderCloseIconGhost: () => {},
@@ -329,6 +353,8 @@ function createSingleStageFolderState(metrics) {
       showMissingLaunchTargetBadge: source.showMissingLaunchTargetBadge?.value,
     },
   }, {
+    canvasStageRect: metrics.rect,
+    desktopStageRect: metrics.layoutRect,
     singleStageProbe: true,
   });
 }

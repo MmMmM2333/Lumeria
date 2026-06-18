@@ -797,7 +797,7 @@ onBeforeUnmount(() => {
 });
 
 const headerDomRefs = { headerRef, searchRef, searchInputRef };
-const desktopDomRefs = { desktopMainRef };
+const desktopDomRefs = { desktopMainRef, rootRef, shellRef };
 
 const settingsPanelState = createSettingsPanelState(controller, appVersion);
 const dialogState = createDialogState(controller);

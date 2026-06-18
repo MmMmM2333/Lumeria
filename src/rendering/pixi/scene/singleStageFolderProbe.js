@@ -22,6 +22,7 @@ function roundRect(rect) {
 function makeDebugSnapshot(plan) {
   if (!plan) return null;
   return {
+    canvasStageRect: roundRect(plan.canvasStageRect),
     closeIconLocalRect: roundRect(plan.closeIconLocalRect),
     closeIconRect: roundRect(plan.closeIconRect),
     closeThumbLocalRect: roundRect(plan.closeThumbLocalRect),
@@ -29,6 +30,7 @@ function makeDebugSnapshot(plan) {
     folderId: plan.folderId,
     folderLocalRect: roundRect(plan.folderLocalRect),
     folderRect: roundRect(plan.folderRect),
+    desktopStageRect: roundRect(plan.desktopStageRect),
     panelRect: roundRect(plan.panelRect),
     previewRects: plan.previewRects.map((preview) => ({
       itemId: preview.itemId,
@@ -125,6 +127,7 @@ export class SingleStageFolderProbeLayer extends Container {
       folderId: snapshot?.folderId,
       panel: snapshot?.panelRect,
       stage: snapshot?.stageRect,
+      desktopStage: snapshot?.desktopStageRect,
     });
     if (debugKey === this.lastDebugKey) return;
     this.lastDebugKey = debugKey;

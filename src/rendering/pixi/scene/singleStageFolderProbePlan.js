@@ -56,10 +56,12 @@ export function makeSingleStageFolderProbePlan(state, options = {}) {
     };
   }).filter(Boolean);
   return {
+    canvasStageRect: state.canvasStageRect || null,
     closeIconRect: closeRects.closeIconRect,
     closeIconLocalRect: makeStageLocalRect(closeRects.closeIconRect, state.stageRect),
     closeThumbRect: closeRects.closeThumbRect,
     closeThumbLocalRect: makeStageLocalRect(closeRects.closeThumbRect, state.stageRect),
+    desktopStageRect: state.desktopStageRect || null,
     folderId,
     folderRect: overlayTargets.folderRect,
     folderLocalRect: makeStageLocalRect(overlayTargets.folderRect, state.stageRect),
