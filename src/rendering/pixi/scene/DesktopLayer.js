@@ -31,7 +31,7 @@ import {
   isReleaseGhostLaunchItem,
 } from "./dragVisibility.js";
 import { getDesktopIconSizing } from "./desktopIconSizing.js";
-import { makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
+import { makeContainerTargetIconBounds, makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { makeFolderThumbPreviewRect } from "./folderOverlayTargets.js";
 import { IconNode } from "../nodes/IconNode.js";
 
@@ -604,7 +604,8 @@ export class DesktopLayer extends Container {
       if (!item?.id || !node || node.destroyed) continue;
       const meta = { area, id: item.id, index, item, pageIndex };
       const visualOffsetY = getIconVisualOffsetY(registration.isTextlessMode);
-      const rawLiveTargetBounds = makeTargetIconBounds(
+      const rawLiveTargetBounds = makeContainerTargetIconBounds(
+        this.visualRoot,
         registration.stageRect,
         registration.width,
         registration.height,
