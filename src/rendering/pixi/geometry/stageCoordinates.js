@@ -49,6 +49,14 @@ export function makeStageLocalRect(rect, stageRect) {
   };
 }
 
+export function makeStageLocalPoint(point, stageRect) {
+  if (!point) return null;
+  return {
+    x: safeNumber(point.x) - safeNumber(stageRect?.left),
+    y: safeNumber(point.y) - safeNumber(stageRect?.top),
+  };
+}
+
 export function snapValueToDevicePixels(value, devicePixelRatio = globalThis.devicePixelRatio || 1) {
   const scale = getEffectiveDevicePixelRatio(devicePixelRatio);
   return Math.round(safeNumber(value) * scale) / scale;
