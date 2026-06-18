@@ -6,7 +6,7 @@ import {
   registerTopLevelFolderThumbTargetBounds,
   registerTopLevelIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
-import { makeSingleStageFolderProbePlan } from "./singleStageFolderProbePlan.js";
+import { getSingleStageFolderProbeOptions, makeSingleStageFolderProbePlan } from "./singleStageFolderProbePlan.js";
 
 export function runSingleStageFolderProbeTests() {
   const assert = (condition, message) => {
@@ -28,7 +28,9 @@ export function runSingleStageFolderProbeTests() {
   };
   const iconRect = { height: 96, left: 200, top: 220, width: 96 };
   const thumbRect = { height: 72, left: 212, top: 232, width: 72 };
+  const options = getSingleStageFolderProbeOptions({ enabled: true, log: true });
 
+  assert(options.enabled && options.log, "probe options should preserve explicit logging");
   clearIconBoundsRegistry();
   registerLaunchIconBounds({ area: "desktop", id: folder.id, pageIndex: 0 }, iconRect, { area: "desktop", id: folder.id });
   registerTopLevelFolderThumbBounds(folder.id, thumbRect, { area: "desktop", id: folder.id });

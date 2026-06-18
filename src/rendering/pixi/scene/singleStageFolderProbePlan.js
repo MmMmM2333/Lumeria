@@ -3,13 +3,25 @@ import { makeStageLocalRect } from "../geometry/stageCoordinates.js";
 import { getStableFolderCloseRects, makeFolderThumbPreviewRect } from "./folderOverlayTargets.js";
 import { resolveFolderOverlayTargets } from "./folderOverlayTargetResolver.js";
 
+export function getSingleStageFolderProbeOptions(value = globalThis.__LP_SINGLE_STAGE_FOLDER__) {
+  if (value === true) return { enabled: true, log: false, probe: true };
+  if (!value || typeof value !== "object") return { enabled: false, log: false, probe: false };
+  const enabled = value.enabled === true || value.probe === true;
+  return {
+    enabled,
+    log: enabled && value.log === true,
+    probe: enabled,
+  };
+}
+
 export function isSingleStageFolderProbeEnabled(value = globalThis.__LP_SINGLE_STAGE_FOLDER__) {
-  if (value === true) return true;
-  return Boolean(value && typeof value === "object" && (value.enabled === true || value.probe === true));
+  return getSingleStageFolderProbeOptions(value).enabled;
 }
 
 export function makeSingleStageFolderProbePlan(state, options = {}) {
-  const enabled = options.enabled ?? isSingleStageFolderProbeEnabled();
+  const enabled = options.enabled == null
+    ? isSingleStageFolderProbeEnabled()
+    : isSingleStageFolderProbeEnabled(options.enabled);
   if (!enabled || !state?.renderedFolder) return null;
   const geometry = getFolderPanelGeometry({
     height: state.height,

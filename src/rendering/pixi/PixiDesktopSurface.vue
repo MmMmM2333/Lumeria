@@ -20,7 +20,7 @@ import { clearIconTextureCache, preloadIconTextures } from "./assets/iconTexture
 import { clearDesktopIconBounds } from "./geometry/iconBoundsRegistry.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { getPixiHostMetrics } from "./pixiHostMetrics.js";
-import { isSingleStageFolderProbeEnabled } from "./scene/singleStageFolderProbePlan.js";
+import { getSingleStageFolderProbeOptions } from "./scene/singleStageFolderProbePlan.js";
 
 const FOLDER_TEXTURE_PREWARM_LIMIT = 80;
 const HANDOFF_RECT_SETTLE_EPSILON = 0.16;
@@ -370,7 +370,7 @@ function renderPixi() {
   const metrics = getPixiHostMetrics(hostRef.value);
   const { height, layoutRect, rect, width } = metrics;
   const folderClosingHandoffId = resolveFolderClosingHandoffId(metrics);
-  const singleStageFolderProbeEnabled = isSingleStageFolderProbeEnabled();
+  const singleStageFolderProbeOptions = getSingleStageFolderProbeOptions();
   layer.update({
     activePageIndex: props.activePageIndex,
     activePages: props.activePages,
@@ -383,8 +383,8 @@ function renderPixi() {
     dragReleaseGhostId: props.dragReleaseGhostId,
     deviceResolution: app.renderer?.resolution || 1,
     folderClosingHandoffId,
-    singleStageFolderProbeEnabled,
-    singleStageFolderState: singleStageFolderProbeEnabled ? createSingleStageFolderState(metrics) : null,
+    singleStageFolderProbeEnabled: singleStageFolderProbeOptions,
+    singleStageFolderState: singleStageFolderProbeOptions.enabled ? createSingleStageFolderState(metrics) : null,
     folderPageSize: props.folderPageSize,
     getDesktopPageRenderMode: props.getDesktopPageRenderMode,
     getVisibleDesktopPage: props.getVisibleDesktopPage,

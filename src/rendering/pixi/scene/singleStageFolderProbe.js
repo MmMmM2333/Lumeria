@@ -1,8 +1,48 @@
 import { Container, Graphics, Text } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { makeSingleStageFolderProbePlan } from "./singleStageFolderProbePlan.js";
+import { getSingleStageFolderProbeOptions, makeSingleStageFolderProbePlan } from "./singleStageFolderProbePlan.js";
 
-export { isSingleStageFolderProbeEnabled, makeSingleStageFolderProbePlan } from "./singleStageFolderProbePlan.js";
+export { getSingleStageFolderProbeOptions, isSingleStageFolderProbeEnabled, makeSingleStageFolderProbePlan } from "./singleStageFolderProbePlan.js";
+
+function roundNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.round(number * 1000) / 1000 : null;
+}
+
+function roundRect(rect) {
+  if (!rect) return null;
+  return {
+    height: roundNumber(rect.height),
+    left: roundNumber(rect.left),
+    top: roundNumber(rect.top),
+    width: roundNumber(rect.width),
+  };
+}
+
+function makeDebugSnapshot(plan) {
+  if (!plan) return null;
+  return {
+    closeIconLocalRect: roundRect(plan.closeIconLocalRect),
+    closeIconRect: roundRect(plan.closeIconRect),
+    closeThumbLocalRect: roundRect(plan.closeThumbLocalRect),
+    closeThumbRect: roundRect(plan.closeThumbRect),
+    folderId: plan.folderId,
+    folderLocalRect: roundRect(plan.folderLocalRect),
+    folderRect: roundRect(plan.folderRect),
+    panelRect: roundRect(plan.panelRect),
+    previewRects: plan.previewRects.map((preview) => ({
+      itemId: preview.itemId,
+      localRect: roundRect(preview.localRect),
+      rect: roundRect(preview.rect),
+      slotIndex: preview.slotIndex,
+    })),
+    stableTarget: {
+      previewChildCount: plan.stableFolderCloseTarget?.previewChildRects?.size || 0,
+      source: plan.stableFolderCloseTarget?.source || null,
+    },
+    stageRect: roundRect(plan.stageRect),
+  };
+}
 
 export class SingleStageFolderProbeLayer extends Container {
   constructor() {
@@ -24,11 +64,13 @@ export class SingleStageFolderProbeLayer extends Container {
     this.addChild(this.label);
     this.visible = false;
     this.stableFolderCloseTarget = null;
+    this.lastDebugKey = "";
   }
 
   update(state, options = {}) {
+    const probeOptions = getSingleStageFolderProbeOptions(options.enabled);
     const plan = makeSingleStageFolderProbePlan(state, {
-      enabled: options.enabled,
+      enabled: probeOptions,
       previousStableFolderCloseTarget: this.stableFolderCloseTarget,
       wasClosing: this.wasClosing,
     });
@@ -37,6 +79,7 @@ export class SingleStageFolderProbeLayer extends Container {
     this.visible = Boolean(plan);
     this.panelGraphics.clear();
     this.targetGraphics.clear();
+    this.publishDebugSnapshot(plan, probeOptions);
     if (!plan) {
       this.label.visible = false;
       return null;
@@ -70,6 +113,22 @@ export class SingleStageFolderProbeLayer extends Container {
     this.label.text = `single-stage probe: ${plan.folderId}`;
     this.label.position.set(panel.left, Math.max(0, panel.top - 22));
     return plan;
+  }
+
+  publishDebugSnapshot(plan, options) {
+    if (!options.enabled) return;
+    const snapshot = makeDebugSnapshot(plan);
+    globalThis.__LP_LAST_SINGLE_STAGE_FOLDER_PROBE__ = snapshot;
+    if (!options.log) return;
+    const debugKey = JSON.stringify({
+      closeThumb: snapshot?.closeThumbRect,
+      folderId: snapshot?.folderId,
+      panel: snapshot?.panelRect,
+      stage: snapshot?.stageRect,
+    });
+    if (debugKey === this.lastDebugKey) return;
+    this.lastDebugKey = debugKey;
+    console.log("[single-stage-folder-probe]", snapshot);
   }
 }
 
