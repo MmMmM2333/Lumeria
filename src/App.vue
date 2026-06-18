@@ -67,6 +67,7 @@
         :drag-folder-target-id="dragFolderTargetId"
         :drag-meta="dragMeta"
         :drag-release-ghost-id="dragReleaseGhostId"
+        :folder-overlay-state="folderOverlayState"
         :folder-page-size="folderPageSize"
         :folder-closing-handoff-id="folderClosingHandoffId"
         :get-desktop-page-render-mode="getDesktopPageRenderMode"

@@ -33,6 +33,7 @@ import {
 import { getDesktopIconSizing } from "./desktopIconSizing.js";
 import { makeContainerTargetIconBounds, makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { makeFolderThumbPreviewRect } from "./folderOverlayTargets.js";
+import { SingleStageFolderProbeLayer } from "./singleStageFolderProbe.js";
 import { IconNode } from "../nodes/IconNode.js";
 
 function sourceArea(source) {
@@ -195,6 +196,7 @@ export class DesktopLayer extends Container {
     this.visualRoot = new Container();
     this.pageTrack = new Container();
     this.handoffDebugLayer = new Graphics();
+    this.singleStageFolderProbeLayer = new SingleStageFolderProbeLayer();
     this.folderHandoffNode = null;
     this.hasDesktopVisualTransform = false;
     this.lastFolderHandoffDebugSnapshot = null;
@@ -208,6 +210,7 @@ export class DesktopLayer extends Container {
     this.visualRoot.addChild(this.pageTrack);
     this.visualRoot.addChild(this.emptyText);
     this.addChild(this.visualRoot);
+    this.addChild(this.singleStageFolderProbeLayer);
     this.addChild(this.handoffDebugLayer);
     this.onIconAction = options.onIconAction || (() => {});
   }
@@ -379,6 +382,9 @@ export class DesktopLayer extends Container {
       onUpdate: refreshBounds,
     });
     refreshBounds();
+    this.singleStageFolderProbeLayer.update(state.singleStageFolderState, {
+      enabled: state.singleStageFolderProbeEnabled,
+    });
     if (!state.folderClosingHandoffId && this.folderHandoffNode) {
       this.finishFolderHandoffNodeAfterFrame();
     }

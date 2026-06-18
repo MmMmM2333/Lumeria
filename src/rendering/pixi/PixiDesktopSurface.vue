@@ -15,10 +15,12 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watchEffect } from "vue";
 import { createPixiApp } from "./createPixiApp.js";
 import { DesktopLayer } from "./scene/DesktopLayer.js";
+import { createFolderLayerState } from "./folderLayerState.js";
 import { clearIconTextureCache, preloadIconTextures } from "./assets/iconTextureCache.js";
 import { clearDesktopIconBounds } from "./geometry/iconBoundsRegistry.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { getPixiHostMetrics } from "./pixiHostMetrics.js";
+import { isSingleStageFolderProbeEnabled } from "./scene/singleStageFolderProbePlan.js";
 
 const FOLDER_TEXTURE_PREWARM_LIMIT = 80;
 const HANDOFF_RECT_SETTLE_EPSILON = 0.16;
@@ -38,6 +40,7 @@ const props = defineProps({
   dragMeta: { type: Object, default: null },
   dragReleaseGhostId: { type: String, default: null },
   folderClosingHandoffId: { type: String, default: null },
+  folderOverlayState: { type: Object, default: null },
   folderPageSize: { type: Number, required: true },
   getDesktopPageRenderMode: { type: Function, required: true },
   getVisibleDesktopPage: { type: Function, required: true },
@@ -285,6 +288,51 @@ function resolveFolderClosingHandoffId(metrics) {
   return null;
 }
 
+function createSingleStageFolderState(metrics) {
+  const source = props.folderOverlayState;
+  if (!source) return null;
+  const stageRect = metrics.layoutRect || metrics.rect;
+  return createFolderLayerState({
+    callbacks: {
+      completeFolderCloseIconGhost: () => {},
+      completeFolderOpenIconGhost: () => {},
+      getFolderPageRenderMode: source.getFolderPageRenderMode,
+      getVisibleFolderPage: source.getVisibleFolderPage,
+      isIconOpening: source.isIconOpening,
+      isIconSelected: source.isIconSelected,
+      setFolderPageRef: () => {},
+    },
+    drag: {
+      meta: source.dragMeta?.value,
+      releaseState: source.dragReleaseState?.value,
+    },
+    folder: {
+      closeIconGhosts: source.folderCloseIconGhosts?.value,
+      gridStyle: source.folderGridStyle?.value,
+      isAppLaunchClosing: source.isFolderAppLaunchClosing?.value,
+      isClosing: Boolean(source.isFolderClosing?.value || source.isFolderZoomFadeClosingFromFolderClose?.value),
+      openingOriginBounds: source.folderOpeningOriginBounds?.value,
+      openIconGhosts: source.folderOpenIconGhosts?.value,
+      pageIndex: source.folderPageIndex?.value,
+      pageSize: source.folderPageSize?.value || props.folderPageSize,
+      pages: source.folderPages?.value,
+      panelRef: null,
+      panelStyle: source.folderPanelStyle?.value,
+      renderedFolder: source.renderedFolder?.value,
+      viewportRef: null,
+    },
+    stage: { rect: stageRect },
+    ui: {
+      isEditMode: source.isEditMode?.value,
+      isTextlessMode: source.isTextlessMode?.value,
+      launchTargetStatusById: source.launchTargetStatusById?.value,
+      showMissingLaunchTargetBadge: source.showMissingLaunchTargetBadge?.value,
+    },
+  }, {
+    singleStageProbe: true,
+  });
+}
+
 function logFolderHandoffTimeline(metrics, folderClosingHandoffId) {
   const options = getFolderHandoffDebugOptions();
   if (!options?.log || !options.timeline) return;
@@ -322,6 +370,7 @@ function renderPixi() {
   const metrics = getPixiHostMetrics(hostRef.value);
   const { height, layoutRect, rect, width } = metrics;
   const folderClosingHandoffId = resolveFolderClosingHandoffId(metrics);
+  const singleStageFolderProbeEnabled = isSingleStageFolderProbeEnabled();
   layer.update({
     activePageIndex: props.activePageIndex,
     activePages: props.activePages,
@@ -334,6 +383,8 @@ function renderPixi() {
     dragReleaseGhostId: props.dragReleaseGhostId,
     deviceResolution: app.renderer?.resolution || 1,
     folderClosingHandoffId,
+    singleStageFolderProbeEnabled,
+    singleStageFolderState: singleStageFolderProbeEnabled ? createSingleStageFolderState(metrics) : null,
     folderPageSize: props.folderPageSize,
     getDesktopPageRenderMode: props.getDesktopPageRenderMode,
     getVisibleDesktopPage: props.getVisibleDesktopPage,
@@ -491,6 +542,7 @@ watchEffect(() => {
   void props.dragMeta;
   void props.dragReleaseGhostId;
   void props.folderClosingHandoffId;
+  void props.folderOverlayState;
   void props.gridCols;
   void props.gridRows;
   void props.iconSize;
