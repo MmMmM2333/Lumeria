@@ -877,13 +877,13 @@
 </template>
 
 <script setup>
-import { gsap } from "gsap";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import DismissIcon from "~icons/fluent/dismiss-16-regular";
 import BackgroundEffectPreview from "./BackgroundEffectPreview.vue";
 import BackgroundImagePreviewCanvas from "./BackgroundImagePreviewCanvas.vue";
 import { ChevronDownIcon, ChevronUpIcon } from "./Icons.js";
 import { useBackgroundImagePixelSize } from "../composables/useBackgroundImagePixelSize.js";
+import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "../composables/launchpadConstants.js";
 import { listenNativeEvent } from "../api/launchpadApi.js";
 import {
@@ -951,6 +951,14 @@ const activeSettingsTab = ref("general");
 const activeAcrylicParamsProfile = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
 const settingsOverlayRef = ref(null);
 const settingsPanelRef = ref(null);
+const settingsOverlayMotion = useGsapDomMotion(settingsOverlayRef, {
+  initial: { opacity: 0 },
+  motion: resolveSettingsOverlayMotion,
+});
+const settingsPanelMotion = useGsapDomMotion(settingsPanelRef, {
+  initial: () => props.state.settingsPanelInitial.value,
+  motion: resolveSettingsPanelMotion,
+});
 const systemAcrylicAppearance = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
 const isRecordingMainWindowShortcut = ref(false);
 let systemAppearanceQuery = null;
@@ -1150,8 +1158,6 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  killSettingsPanelMotion(settingsOverlayRef.value);
-  killSettingsPanelMotion(settingsPanelRef.value);
   clearLiveDesktopStatusTimer();
   stopMainWindowShortcutRecording();
   if (!systemAppearanceQuery) return;
@@ -1194,13 +1200,10 @@ watch(
   { immediate: true }
 );
 
-watchSettingsMotionRef(settingsOverlayRef, { opacity: 0 }, resolveSettingsOverlayMotion);
-watchSettingsMotionRef(settingsPanelRef, props.state.settingsPanelInitial.value, resolveSettingsPanelMotion);
-
 watch(
   () => props.state.settingsOverlayAnimate.value,
   () => {
-    animateSettingsMotion(settingsOverlayRef.value, resolveSettingsOverlayMotion());
+    settingsOverlayMotion.animate();
   },
   { flush: "post" }
 );
@@ -1208,7 +1211,7 @@ watch(
 watch(
   () => props.state.settingsPanelAnimate.value,
   () => {
-    animateSettingsMotion(settingsPanelRef.value, resolveSettingsPanelMotion());
+    settingsPanelMotion.animate();
   },
   { flush: "post" }
 );
@@ -1280,34 +1283,6 @@ function clearMainWindowShortcut() {
 
 function handleSettingsPanelKeydown(event) {
   handleModalKeydown(event, settingsPanelRef, props.state.closeSettingsPanel);
-}
-
-function watchSettingsMotionRef(target, initial, resolveMotion) {
-  watch(
-    target,
-    (node, previousNode) => {
-      if (previousNode && previousNode !== node) killSettingsPanelMotion(previousNode);
-      if (!node) return;
-      gsap.set(node, initial);
-      animateSettingsMotion(node, resolveMotion());
-    },
-    { flush: "post" }
-  );
-}
-
-function animateSettingsMotion(node, motion) {
-  if (!node) return;
-  gsap.killTweensOf(node);
-  const { ease = "power2.out", ...target } = motion;
-  gsap.to(node, {
-    ...target,
-    ease,
-    overwrite: "auto",
-  });
-}
-
-function killSettingsPanelMotion(node) {
-  if (node) gsap.killTweensOf(node);
 }
 
 function resolveSettingsOverlayMotion() {

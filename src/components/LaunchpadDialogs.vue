@@ -251,9 +251,9 @@
 </template>
 
 <script setup>
-import { gsap } from "gsap";
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { AlertTriangleIcon } from "./Icons.js";
+import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
 import { getDefaultIconSource, getIconSource } from "../domain/iconSource.js";
 
@@ -267,6 +267,14 @@ const editAppDialogRef = ref(null);
 const iconChooserDialogRef = ref(null);
 const warningDialogOverlayRef = ref(null);
 const warningDialogRef = ref(null);
+const warningDialogOverlayMotion = useGsapDomMotion(warningDialogOverlayRef, {
+  initial: { opacity: 0 },
+  motion: resolveWarningDialogOverlayMotion,
+});
+const warningDialogMotion = useGsapDomMotion(warningDialogRef, {
+  initial: { opacity: 0, scale: 0.96 },
+  motion: resolveWarningDialogPanelMotion,
+});
 
 const activeDialog = computed(() => {
   if (props.state.warningDialog.value) return { id: "warning", ref: warningDialogRef };
@@ -293,52 +301,17 @@ watch(
   }
 );
 
-watchWarningDialogMotionRef(warningDialogOverlayRef, { opacity: 0 }, resolveWarningDialogOverlayMotion);
-watchWarningDialogMotionRef(warningDialogRef, { opacity: 0, scale: 0.96 }, resolveWarningDialogPanelMotion);
-
 watch(
   () => props.state.isWarningDialogOpen.value,
   () => {
-    animateWarningDialogMotion(warningDialogOverlayRef.value, resolveWarningDialogOverlayMotion());
-    animateWarningDialogMotion(warningDialogRef.value, resolveWarningDialogPanelMotion());
+    warningDialogOverlayMotion.animate();
+    warningDialogMotion.animate();
   },
   { flush: "post" }
 );
 
-onBeforeUnmount(() => {
-  killWarningDialogMotion(warningDialogOverlayRef.value);
-  killWarningDialogMotion(warningDialogRef.value);
-});
-
 function handleDialogKeydown(event, dialogRef, onEscape) {
   handleModalKeydown(event, dialogRef, onEscape);
-}
-
-function watchWarningDialogMotionRef(target, initial, resolveMotion) {
-  watch(
-    target,
-    (node, previousNode) => {
-      if (previousNode && previousNode !== node) killWarningDialogMotion(previousNode);
-      if (!node) return;
-      gsap.set(node, initial);
-      animateWarningDialogMotion(node, resolveMotion());
-    },
-    { flush: "post" }
-  );
-}
-
-function animateWarningDialogMotion(node, motion) {
-  if (!node) return;
-  gsap.killTweensOf(node);
-  gsap.to(node, {
-    ...motion,
-    ease: "power2.out",
-    overwrite: "auto",
-  });
-}
-
-function killWarningDialogMotion(node) {
-  if (node) gsap.killTweensOf(node);
 }
 
 function resolveWarningDialogOverlayMotion() {

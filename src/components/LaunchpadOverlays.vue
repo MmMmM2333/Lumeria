@@ -22,8 +22,8 @@
 </template>
 
 <script setup>
-import { gsap } from "gsap";
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, ref } from "vue";
+import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { getIconSource } from "../domain/iconSource.js";
 
 const props = defineProps({
@@ -32,6 +32,15 @@ const props = defineProps({
 
 const emit = defineEmits(["open-context-app", "edit-context-app"]);
 const launchGhostRef = ref(null);
+useGsapDomMotion(launchGhostRef, {
+  initial: { opacity: 1, scale: 1 },
+  motion: () => ({
+    opacity: 0,
+    scale: 1.92,
+    duration: resolveLaunchGhostDuration(),
+    ease: "power2.out",
+  }),
+});
 const iconContextMenu = ref(null);
 const iconContextMenuStyle = computed(() => {
   if (!iconContextMenu.value) return {};
@@ -39,27 +48,6 @@ const iconContextMenuStyle = computed(() => {
     left: `${iconContextMenu.value.x}px`,
     top: `${iconContextMenu.value.y}px`,
   };
-});
-
-watch(
-  launchGhostRef,
-  (node, previousNode) => {
-    if (previousNode && previousNode !== node) gsap.killTweensOf(previousNode);
-    if (!node) return;
-    gsap.set(node, { opacity: 1, scale: 1 });
-    gsap.to(node, {
-      opacity: 0,
-      scale: 1.92,
-      duration: resolveLaunchGhostDuration(),
-      ease: "power2.out",
-      overwrite: "auto",
-    });
-  },
-  { flush: "post" }
-);
-
-onBeforeUnmount(() => {
-  if (launchGhostRef.value) gsap.killTweensOf(launchGhostRef.value);
 });
 
 function openIconContextMenu(event, app, source) {

@@ -41,8 +41,8 @@
 </template>
 
 <script setup>
-import { gsap } from "gsap";
-import { onBeforeUnmount, ref, watch } from "vue";
+import { ref, watch } from "vue";
+import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { cx } from "../domain/launchpadLayout.js";
 import LaunchpadHeader from "./LaunchpadHeader.vue";
 
@@ -63,6 +63,14 @@ const props = defineProps({
 
 const headerMotionRef = ref(null);
 const dotsMotionRef = ref(null);
+const headerMotion = useGsapDomMotion(headerMotionRef, {
+  initial: () => normalizeChromeMotion(props.chromeInitial),
+  motion: resolveChromeMotion,
+});
+const dotsMotion = useGsapDomMotion(dotsMotionRef, {
+  initial: () => normalizeChromeMotion(props.chromeInitial),
+  motion: resolveChromeMotion,
+});
 
 defineEmits([
   "clear-search",
@@ -76,50 +84,22 @@ defineEmits([
 watch(
   () => props.chromeAnimate,
   () => {
-    animateChromeMotion(headerMotionRef.value);
-    animateChromeMotion(dotsMotionRef.value);
+    headerMotion.animate();
+    dotsMotion.animate();
   },
   { flush: "post" }
 );
-
-watchChromeMotionRef(headerMotionRef);
-watchChromeMotionRef(dotsMotionRef);
-
-onBeforeUnmount(() => {
-  killChromeMotion(headerMotionRef.value);
-  killChromeMotion(dotsMotionRef.value);
-});
 
 function bindRef(target, node) {
   if (target && typeof target === "object" && "value" in target) target.value = node;
 }
 
-function watchChromeMotionRef(target) {
-  watch(
-    target,
-    (node, previousNode) => {
-      if (previousNode && previousNode !== node) killChromeMotion(previousNode);
-      if (!node) return;
-      gsap.set(node, normalizeChromeMotion(props.chromeInitial));
-      animateChromeMotion(node);
-    },
-    { flush: "post" }
-  );
-}
-
-function animateChromeMotion(node) {
-  if (!node) return;
-  gsap.killTweensOf(node);
-  gsap.to(node, {
+function resolveChromeMotion() {
+  return {
     ...normalizeChromeMotion(props.chromeAnimate),
     duration: resolveChromeMotionDuration(props.chromeTransition),
     ease: "power2.out",
-    overwrite: "auto",
-  });
-}
-
-function killChromeMotion(node) {
-  if (node) gsap.killTweensOf(node);
+  };
 }
 
 function normalizeChromeMotion(target) {
