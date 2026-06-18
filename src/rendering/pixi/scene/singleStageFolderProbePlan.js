@@ -12,7 +12,7 @@ const SINGLE_STAGE_FOLDER_PROBE_SETTER_GLOBAL = "__LP_SET_SINGLE_STAGE_FOLDER__"
 const DEFAULT_SINGLE_STAGE_OPTIONS = Object.freeze({
   dragPreview: true,
   enabled: true,
-  folderLayer: false,
+  folderLayer: true,
   log: false,
   probe: false,
   rootStage: true,

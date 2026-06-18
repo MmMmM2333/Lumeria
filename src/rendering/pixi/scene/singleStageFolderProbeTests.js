@@ -46,12 +46,12 @@ export function runSingleStageFolderProbeTests() {
   const thumbRect = { height: 72, left: 212, top: 232, width: 72 };
   const defaultOptions = getSingleStageOptions(undefined);
   assert(defaultOptions.enabled && defaultOptions.rootStage && defaultOptions.dragPreview, "single-stage should default to root-stage drag preview ownership");
-  assert(!defaultOptions.folderLayer && !defaultOptions.probe, "single-stage should not default to folder layer or diagnostics");
+  assert(defaultOptions.folderLayer && !defaultOptions.probe, "single-stage should default to folder layer ownership without diagnostics");
   const disabledOptions = getSingleStageOptions(false);
   assert(!disabledOptions.enabled && !disabledOptions.rootStage && !disabledOptions.dragPreview, "explicit false should disable single-stage ownership");
   const diagnosticsOptions = getSingleStageOptions(true);
   assert(diagnosticsOptions.probe && diagnosticsOptions.rootStage && diagnosticsOptions.dragPreview, "explicit true should enable diagnostics on the default single-stage base");
-  assert(!diagnosticsOptions.folderLayer, "explicit true should not enable the folder layer by itself");
+  assert(diagnosticsOptions.folderLayer, "explicit true should keep the default folder layer ownership");
 
   const options = getSingleStageOptions({ enabled: true, folderLayer: true, log: true });
 
