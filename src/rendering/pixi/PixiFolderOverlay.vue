@@ -11,9 +11,8 @@
   >
     <div
       ref="motionRef"
-      :class="['pixi-folder-motion', isFolderZoomFadeClosing && 'pixi-folder-motion-zoom-fade-closing']"
+      class="pixi-folder-motion"
       :style="overlayStyle"
-      @animationend="handleOverlayAnimationEnd"
     >
       <div ref="hostRef" class="pixi-folder-host" />
       <input
@@ -51,7 +50,9 @@
 </template>
 
 <script setup>
+import { gsap } from "gsap";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect } from "vue";
+import { FOLDER_ZOOM_FADE_CLOSE_DURATION } from "../../composables/launchpadConstants.js";
 import { useFolderPrewarm } from "../../composables/useFolderPrewarm.js";
 import { createPixiApp } from "./createPixiApp.js";
 import { createFolderLayerState } from "./folderLayerState.js";
@@ -84,6 +85,7 @@ let resizeObserver = null;
 let destroyed = false;
 let didWarmInitialFrame = false;
 let folderPageDotsRevealFrame = null;
+let folderZoomFadeCompleteFrame = null;
 
 const isFolderGhostTransitionActive = computed(() => Boolean(
   props.state.isFolderOpenIconAnimationActive?.value ||
@@ -270,13 +272,45 @@ function handleIconAction(action, event, item, source) {
   if (action === "reset-icon") props.state.resetAppCustomIcon(item.id);
 }
 
-function handleOverlayAnimationEnd(event) {
-  if (event.target !== motionRef.value || event.animationName !== "pixi-folder-zoom-fade-close") return;
+function completeFolderZoomFadeClose() {
   if (typeof window.requestAnimationFrame === "function") {
-    window.requestAnimationFrame(() => props.state.finishFolderZoomFadeClose?.());
+    folderZoomFadeCompleteFrame = window.requestAnimationFrame(() => {
+      folderZoomFadeCompleteFrame = null;
+      props.state.finishFolderZoomFadeClose?.();
+    });
     return;
   }
   props.state.finishFolderZoomFadeClose?.();
+}
+
+function cancelFolderZoomFadeClose() {
+  if (folderZoomFadeCompleteFrame != null) {
+    window.cancelAnimationFrame?.(folderZoomFadeCompleteFrame);
+    folderZoomFadeCompleteFrame = null;
+  }
+  if (!motionRef.value) return;
+  gsap.killTweensOf(motionRef.value);
+  gsap.set(motionRef.value, { clearProps: "opacity,transform" });
+}
+
+function startFolderZoomFadeClose() {
+  const node = motionRef.value;
+  if (!node) return;
+  cancelFolderZoomFadeClose();
+  gsap.set(node, { opacity: 1, scale: 1, transformOrigin: "var(--pixi-folder-zoom-origin, 50% 50%)" });
+  gsap.to(node, {
+    opacity: 0,
+    scale: 1.1,
+    duration: getFolderZoomFadeCloseDuration(),
+    ease: "power3.out",
+    overwrite: "auto",
+    onComplete: completeFolderZoomFadeClose,
+  });
+}
+
+function getFolderZoomFadeCloseDuration() {
+  if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return 0.001;
+  return FOLDER_ZOOM_FADE_CLOSE_DURATION / 1000;
 }
 
 function destroyPixi(options = {}) {
@@ -285,6 +319,7 @@ function destroyPixi(options = {}) {
   window.removeEventListener("resize", handleResize);
   resizeObserver?.disconnect();
   resizeObserver = null;
+  cancelFolderZoomFadeClose();
   cancelFolderPageDotsReveal();
   folderPrewarm.cancelFolderPrewarm();
   const currentApp = app;
@@ -450,6 +485,18 @@ onMounted(async () => {
 watch(
   shouldRunPixi,
   syncPixiActivity
+);
+
+watch(
+  isFolderZoomFadeClosing,
+  (isClosing) => {
+    if (isClosing) {
+      startFolderZoomFadeClose();
+      return;
+    }
+    cancelFolderZoomFadeClose();
+  },
+  { flush: "post" }
 );
 
 watch(
