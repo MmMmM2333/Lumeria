@@ -24,7 +24,7 @@ import {
 import { FolderClosingGhostController } from "./folderClosingGhostController.js";
 import { FolderClosingPreviewSwapController } from "./folderClosingPreviewSwapController.js";
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
-import { makeStageVirtualElement } from "../geometry/stageCoordinates.js";
+import { makeStageLocalPoint, makeStageLocalRect, makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import {
   clearLaunchIconBounds,
   registerLaunchIconBounds,
@@ -478,8 +478,9 @@ export class FolderOverlayLayer extends Container {
     if (this.currentFolderId !== state.renderedFolder?.id) {
       this.currentFolderId = state.renderedFolder?.id;
       if (sourceRect) {
-        this.panel.position.set(sourceRect.left - state.stageRect.left + sourceRect.width / 2, sourceRect.top - state.stageRect.top + sourceRect.height / 2);
-        this.panel.scale.set(Math.max(0.08, sourceRect.width / panelRect.width), Math.max(0.08, sourceRect.height / panelRect.height));
+        const sourceLocalRect = makeStageLocalRect(sourceRect, state.stageRect);
+        this.panel.position.set(sourceLocalRect.left + sourceLocalRect.width / 2, sourceLocalRect.top + sourceLocalRect.height / 2);
+        this.panel.scale.set(Math.max(0.08, sourceLocalRect.width / panelRect.width), Math.max(0.08, sourceLocalRect.height / panelRect.height));
       } else {
         this.panel.position.set(targetX, targetY + 36);
         this.panel.scale.set(0.12, 0.16);
@@ -505,20 +506,21 @@ export class FolderOverlayLayer extends Container {
       this.panelTitleOpening = false;
       stopTargetSprings(this.panel);
       stopTargetSprings(this.panel.scale);
+      const sourceLocalRect = makeStageLocalRect(sourceRect, state.stageRect);
       gsap.to(this.panel, {
         alpha: state.isFolderAppLaunchClosing ? 0 : 0.8,
         duration: folderPanelCloseDuration,
         ease: folderCloseEase,
         overwrite: "auto",
-        x: sourceRect.left - state.stageRect.left + sourceRect.width / 2,
-        y: sourceRect.top - state.stageRect.top + sourceRect.height / 2,
+        x: sourceLocalRect.left + sourceLocalRect.width / 2,
+        y: sourceLocalRect.top + sourceLocalRect.height / 2,
       });
       gsap.to(this.panel.scale, {
         duration: folderPanelCloseDuration,
         ease: folderCloseEase,
         overwrite: "auto",
-        x: Math.max(0.08, sourceRect.width / panelRect.width),
-        y: Math.max(0.08, sourceRect.height / panelRect.height),
+        x: Math.max(0.08, sourceLocalRect.width / panelRect.width),
+        y: Math.max(0.08, sourceLocalRect.height / panelRect.height),
       });
       return;
     }
@@ -583,8 +585,8 @@ export class FolderOverlayLayer extends Container {
       return;
     }
 
-    const x = clientX - this.stageRect.left;
-    const y = clientY - this.stageRect.top;
+    const localPoint = makeStageLocalPoint({ x: clientX, y: clientY }, this.stageRect) || { x: 0, y: 0 };
+    const { x, y } = localPoint;
     const panel = this.panelGeometry;
     if (!panel) return;
     if (x < panel.left || x > panel.left + panel.width || y < panel.top || y > panel.top + panel.height) {
