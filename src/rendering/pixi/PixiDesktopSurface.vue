@@ -71,7 +71,7 @@ import {
   makeDesktopRenderGeometry as makeRootStageDesktopRenderGeometry,
   makeRootStageHostStyle as makeRootStageHostStyleFromRect,
 } from "./geometry/rootStageCoordinates.js";
-import { getSingleStageOptions } from "./scene/singleStageFolderProbePlan.js";
+import { getSingleStageOptions } from "./scene/singleStagePlan.js";
 import {
   getSingleStageFolderTitleOpenOpacity,
   isSingleStageFolderPageDotsReady as getSingleStageFolderPageDotsReady,

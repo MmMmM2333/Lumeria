@@ -181,7 +181,7 @@ import {
   getSingleStageRenderKey,
   installSingleStageGlobalFlag,
   SINGLE_STAGE_CHANGED_EVENT,
-} from "./rendering/pixi/scene/singleStageFolderProbePlan.js";
+} from "./rendering/pixi/scene/singleStagePlan.js";
 import { getBackgroundLayoutContext } from "./api/launchpadApi.js";
 import { loadBackgroundImagePixelSize } from "./composables/useBackgroundImagePixelSize.js";
 import { useLaunchpadController } from "./composables/useLaunchpadController.js";
@@ -309,7 +309,7 @@ const LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT = "launchpad-live-desktop-com
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_INTERVAL_MS = 250;
 const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY = "launchpadLiveDesktopCssFallbackEffects";
 const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT = "launchpad-live-desktop-css-fallback-effects-change";
-const SINGLE_STAGE_FOLDER_PROBE_REFRESH_MS = 250;
+const SINGLE_STAGE_REFRESH_MS = 250;
 const launchpadOverlaysRef = ref(null);
 const BACKGROUND_MEDIA_FADE_MS = 220;
 const PIXI_BACKGROUND_HANDOFF_DELAY_MS = 220;
@@ -721,7 +721,7 @@ function startSingleStageRefreshTimer() {
   if (!import.meta.env.DEV || singleStageRefreshTimer != null) return;
   singleStageRefreshTimer = window.setInterval(
     refreshSingleStageOptions,
-    SINGLE_STAGE_FOLDER_PROBE_REFRESH_MS
+    SINGLE_STAGE_REFRESH_MS
   );
 }
 

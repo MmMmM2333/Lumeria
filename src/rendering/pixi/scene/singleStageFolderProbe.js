@@ -1,6 +1,6 @@
 import { Container, Graphics, Text } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { getSingleStageOptions, makeSingleStageDiagnosticsPlan } from "./singleStageFolderProbePlan.js";
+import { getSingleStageOptions, makeSingleStageDiagnosticsPlan } from "./singleStagePlan.js";
 
 export {
   getSingleStageOptions,
@@ -9,7 +9,7 @@ export {
   isSingleStageFolderProbeEnabled,
   makeSingleStageDiagnosticsPlan,
   makeSingleStageFolderProbePlan,
-} from "./singleStageFolderProbePlan.js";
+} from "./singleStagePlan.js";
 
 function roundNumber(value) {
   const number = Number(value);
