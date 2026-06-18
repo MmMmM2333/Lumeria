@@ -132,7 +132,8 @@
       @context-menu-icon="openIconContextMenu"
     />
     <PixiDragPreviewOverlay
-      :active="shouldRunDragPreviewPixi && !shouldUseSingleStageDragPreview"
+      v-if="!shouldUseSingleStageDragPreview"
+      :active="shouldRunDragPreviewPixi"
       :folder-page-size="folderPageSize"
       :icon-size="iconSize"
       :is-textless-mode="isTextlessMode"
