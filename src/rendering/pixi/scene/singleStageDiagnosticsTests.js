@@ -21,11 +21,11 @@ import {
   setSingleStageFolderProbeOptions,
   SINGLE_STAGE_CHANGED_EVENT,
   SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT,
-} from "./singleStageFolderProbePlan.js";
+} from "./singleStagePlan.js";
 
-export function runSingleStageFolderProbeTests() {
+export function runSingleStageDiagnosticsTests() {
   const assert = (condition, message) => {
-    if (!condition) throw new Error(`[Pixi single-stage folder probe test failed] ${message}`);
+    if (!condition) throw new Error(`[Pixi single-stage diagnostics test failed] ${message}`);
   };
 
   const folder = {
@@ -56,15 +56,15 @@ export function runSingleStageFolderProbeTests() {
 
   const options = getSingleStageOptions({ enabled: true, folderLayer: true, log: true });
 
-  assert(options.enabled && options.log, "probe options should preserve explicit logging");
-  assert(options.folderLayer, "probe options should preserve the single-stage folder layer flag");
+  assert(options.enabled && options.log, "single-stage options should preserve explicit logging");
+  assert(options.folderLayer, "single-stage options should preserve the folder layer flag");
   assert(options.dragPreview, "folder layer should enable the single-stage drag preview");
-  assert(options.rootStage, "probe options should preserve the root-stage canvas flag");
+  assert(options.rootStage, "single-stage options should preserve the root-stage canvas flag");
   assert(getSingleStageFolderProbeOptions({ enabled: true, folderLayer: true, log: true }).rootStage, "legacy probe option helper should preserve root-stage behavior");
   assert(getSingleStageOptionsKey(options) === "111111", "single-stage option key should reflect enabled flags");
-  assert(getSingleStageFolderProbeOptionsKey(options) === "111111", "probe option key should reflect enabled flags");
+  assert(getSingleStageFolderProbeOptionsKey(options) === "111111", "legacy probe option key should reflect enabled flags");
   assert(getSingleStageRenderKey(options) === "111", "single-stage render key should reflect only structural stage ownership flags");
-  assert(getSingleStageFolderProbeRenderKey(options) === "111", "render key should reflect only structural stage ownership flags");
+  assert(getSingleStageFolderProbeRenderKey(options) === "111", "legacy probe render key should reflect only structural stage ownership flags");
   const renderKeyWithoutDiagnostics = getSingleStageFolderProbeRenderKey(
     getSingleStageFolderProbeOptions({ enabled: true, folderLayer: true, log: false, probe: false })
   );
@@ -149,13 +149,13 @@ export function runSingleStageFolderProbeTests() {
   const plan = makeSingleStageDiagnosticsPlan(state, { enabled: true });
   assert(plan?.folderId === folder.id, "enabled diagnostics should create a plan for the rendered folder");
   assert(makeSingleStageFolderProbePlan(state, { enabled: true })?.folderId === folder.id, "legacy probe plan helper should remain available");
-  assert(plan.stableFolderCloseTarget?.source === "stable-final-close", "closing probe should capture a stable final close target");
-  assert(plan.previewRects.length === 9, "probe should only draw the folder thumbnail preview slots");
-  assert(plan.desktopFrame.top === 93, "probe plan should keep the desktop frame inside root stage");
-  assert(plan.desktopStageRect.top === 93, "probe plan should keep the current desktop stage rect for diagnostics");
-  assert(plan.closeThumbRect.left === thumbRect.left, "probe should use the registered stable thumb target");
-  assert(plan.closeThumbLocalRect.left === thumbRect.left - state.stageRect.left, "probe should map thumb target into stage-local coordinates");
-  assert(plan.closeIconLocalRect.top === iconRect.top - state.stageRect.top, "probe should map icon target into stage-local coordinates");
+  assert(plan.stableFolderCloseTarget?.source === "stable-final-close", "closing diagnostics should capture a stable final close target");
+  assert(plan.previewRects.length === 9, "diagnostics should only draw the folder thumbnail preview slots");
+  assert(plan.desktopFrame.top === 93, "diagnostics plan should keep the desktop frame inside root stage");
+  assert(plan.desktopStageRect.top === 93, "diagnostics plan should keep the current desktop stage rect");
+  assert(plan.closeThumbRect.left === thumbRect.left, "diagnostics should use the registered stable thumb target");
+  assert(plan.closeThumbLocalRect.left === thumbRect.left - state.stageRect.left, "diagnostics should map thumb target into stage-local coordinates");
+  assert(plan.closeIconLocalRect.top === iconRect.top - state.stageRect.top, "diagnostics should map icon target into stage-local coordinates");
 
   clearIconBoundsRegistry();
 }

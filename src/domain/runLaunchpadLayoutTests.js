@@ -66,7 +66,7 @@ import { runFolderOverlayTargetResolverTests } from "../rendering/pixi/scene/fol
 import { runFolderOverlayTargetsTests } from "../rendering/pixi/scene/folderOverlayTargetsTests.js";
 import { runFolderPreviewSwapMotionTests } from "../rendering/pixi/scene/folderPreviewSwapMotionTests.js";
 import { runIconSceneHelpersTests } from "../rendering/pixi/scene/iconSceneHelpersTests.js";
-import { runSingleStageFolderProbeTests } from "../rendering/pixi/scene/singleStageFolderProbeTests.js";
+import { runSingleStageDiagnosticsTests } from "../rendering/pixi/scene/singleStageDiagnosticsTests.js";
 import { runAcrylicFiltersTests } from "../rendering/pixi/background/acrylicFiltersTests.js";
 import { runAcrylicParamsTests } from "../rendering/pixi/background/acrylicParamsTests.js";
 import { runAcrylicNoiseTextureTests } from "../rendering/pixi/background/acrylicNoiseTextureTests.js";
@@ -178,7 +178,7 @@ runFolderOverlayTargetResolverTests();
 runFolderOverlayTargetsTests();
 runFolderPreviewSwapMotionTests();
 runIconSceneHelpersTests();
-runSingleStageFolderProbeTests();
+runSingleStageDiagnosticsTests();
 await runIconTextureCacheTests();
 
 console.info("Launchpad layout helper tests passed");
