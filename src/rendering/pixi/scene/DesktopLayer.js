@@ -34,7 +34,7 @@ import { getDesktopIconSizing } from "./desktopIconSizing.js";
 import { makeContainerTargetIconBounds, makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { makeFolderThumbPreviewRect } from "./folderOverlayTargets.js";
 import { FolderOverlayLayer } from "./FolderOverlayLayer.js";
-import { SingleStageDiagnosticsLayer } from "./singleStageFolderProbe.js";
+import { SingleStageDiagnosticsLayer } from "./singleStageDiagnostics.js";
 import { DragPreviewLayer } from "./DragPreviewLayer.js";
 import { IconNode } from "../nodes/IconNode.js";
 
