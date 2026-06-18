@@ -124,6 +124,7 @@ export function useLaunchpadViewState(options) {
     if (options.openFolderId.value && !options.isFolderClosing.value) return { scale: 0.92, y: 44 };
     return { scale: 1, y: 0 };
   });
+  const desktopVisualAlpha = computed(() => (shouldHideHomeShell.value ? 0 : 1));
   const homeShellInitial = { opacity: 0, scale: 1, y: 0, filter: "blur(8px)" };
   const homeShellAnimate = computed(() => {
     if (isDesktopAnimatingClosed.value) return { opacity: 0, scale: 1, y: 0, filter: "blur(8px)" };
@@ -139,6 +140,7 @@ export function useLaunchpadViewState(options) {
     backgroundImageStyle,
     desktopCanvasTransform,
     desktopTrackMotionKey,
+    desktopVisualAlpha,
     homeShellAnimate,
     homeShellInitial,
     homeShellStyle,

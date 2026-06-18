@@ -239,6 +239,7 @@ const {
   handleLaunchpadWheel,
   shellRef,
   desktopCanvasTransform,
+  desktopVisualAlpha,
   homeShellInitial,
   homeShellAnimate,
   homeShellTransition,
@@ -355,7 +356,6 @@ const shouldUseSingleStageRootStage = computed(() => singleStageOptions.value.ro
 const shouldUseSingleStageFolderLayer = computed(() => singleStageOptions.value.folderLayer === true);
 const shouldUseSingleStageDragPreview = computed(() => singleStageOptions.value.dragPreview === true);
 const singleStageRenderKey = computed(() => getSingleStageRenderKey(singleStageOptions.value));
-const desktopVisualAlpha = computed(() => Math.max(0, Math.min(1, Number(homeShellAnimate.value?.opacity ?? 1))));
 const shouldRunFallbackDragPreviewPixi = computed(() => Boolean(
   shouldRunPixiOverlays.value && (
     dragMeta.value ||
