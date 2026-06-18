@@ -27,12 +27,7 @@ import { FolderOpeningGhostController } from "./folderOpeningGhostController.js"
 import { makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import {
   clearLaunchIconBounds,
-  getFolderPreviewChildBounds,
-  getFolderPreviewChildTargetBounds,
-  getTopLevelFolderThumbBounds,
-  getTopLevelFolderThumbTargetBounds,
   getTopLevelIconBounds,
-  getTopLevelIconTargetBounds,
   registerLaunchIconBounds,
   registerLaunchIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
@@ -42,12 +37,11 @@ import {
   getStableFolderCloseRects,
   makeClosingGhostTarget,
   makeOpeningGhostTarget,
-  makeStableFolderCloseTarget,
 } from "./folderOverlayTargets.js";
+import { resolveFolderOverlayTargets } from "./folderOverlayTargetResolver.js";
 import { makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { IconNode } from "../nodes/IconNode.js";
 import { getCachedIconTexture } from "../assets/iconTextureCache.js";
-import { getFolderPreviewSlots } from "../../../domain/launchpadLayout.js";
 
 function isPointInRect(x, y, rect) {
   return Boolean(rect) &&
@@ -59,12 +53,6 @@ function isPointInRect(x, y, rect) {
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
-}
-
-function getCapturedPreviewChildRect(originBounds, childId, slotIndex) {
-  if (!originBounds?.previewChildRects?.length || !childId) return null;
-  const exact = originBounds.previewChildRects.find((entry) => entry?.childId === childId && entry.slotIndex === slotIndex);
-  return exact?.rect || originBounds.previewChildRects.find((entry) => entry?.childId === childId)?.rect || null;
 }
 
 export class FolderOverlayLayer extends Container {
@@ -216,42 +204,16 @@ export class FolderOverlayLayer extends Container {
       springTo(this.pageTrack, "x", targetTrackX, pageTrackSpring);
     }
     const folderId = state.renderedFolder.id;
-    const capturedOriginBounds = state.folderOpeningOriginBounds?.folderId === folderId
-      ? state.folderOpeningOriginBounds
-      : null;
-    const liveFolderRect = getTopLevelIconBounds(folderId, {
-      owner: "FolderOverlayLayer.open.folderRect",
-      warnIfMissing: true,
+    const overlayTargets = resolveFolderOverlayTargets({
+      folder: state.renderedFolder,
+      folderOpeningOriginBounds: state.folderOpeningOriginBounds,
+      folderPageSize: state.folderPageSize,
+      isClosing,
+      previousStableFolderCloseTarget: this.stableFolderCloseTarget,
+      wasClosing,
     });
-    const liveFolderThumbRect = getTopLevelFolderThumbBounds(folderId) || liveFolderRect;
-    const folderRect = capturedOriginBounds?.iconRect || liveFolderRect;
-    const folderThumbRect = capturedOriginBounds?.thumbRect || liveFolderThumbRect || folderRect;
-    const targetFolderRect = getTopLevelIconTargetBounds(folderId);
-    const targetFolderThumbRect = getTopLevelFolderThumbTargetBounds(folderId);
-    const previewSlots = getFolderPreviewSlots(state.renderedFolder, state.folderPageSize);
-    if (folderId && (targetFolderRect || liveFolderRect || folderRect) && (!this.stableFolderCloseTarget ||
-      this.stableFolderCloseTarget.folderId !== folderId ||
-      (isClosing && !wasClosing))) {
-      const captureFinalCloseTarget = Boolean(isClosing && !wasClosing);
-      const hasTargetFolderRect = Boolean(targetFolderRect);
-      this.stableFolderCloseTarget = makeStableFolderCloseTarget({
-        folderId,
-        folderRect: captureFinalCloseTarget
-          ? targetFolderRect || liveFolderRect || folderRect
-          : targetFolderRect || folderRect,
-        folderThumbRect: captureFinalCloseTarget
-          ? targetFolderThumbRect || targetFolderRect || liveFolderThumbRect || folderThumbRect || liveFolderRect || folderRect
-          : targetFolderThumbRect || targetFolderRect || folderThumbRect,
-        getPreviewChildRect: (item, previewSlotIndex) =>
-          getFolderPreviewChildTargetBounds(folderId, item.id, previewSlotIndex) ||
-          (hasTargetFolderRect ? null : (
-            getCapturedPreviewChildRect(capturedOriginBounds, item.id, previewSlotIndex) ||
-            getFolderPreviewChildBounds(folderId, item.id, previewSlotIndex)
-          )),
-        previewSlots,
-      });
-      this.stableFolderCloseTarget.source = captureFinalCloseTarget ? "stable-final-close" : "stable-target";
-    }
+    this.stableFolderCloseTarget = overlayTargets.stableFolderCloseTarget;
+    const { folderRect, folderThumbRect, getOpeningPreviewChildRect, previewSlots } = overlayTargets;
     const { closeIconRect, closeThumbRect } = getStableFolderCloseRects({
       folderId,
       folderRect,
@@ -337,9 +299,7 @@ export class FolderOverlayLayer extends Container {
         openingGhostTargets.push(makeOpeningGhostTarget({
           ...entry.openingGhostInput,
           folderRect,
-          getPreviewChildRect: (targetItem, slotIndex) =>
-            getCapturedPreviewChildRect(capturedOriginBounds, targetItem.id, slotIndex) ||
-            getFolderPreviewChildBounds(folderId, targetItem.id, slotIndex),
+          getPreviewChildRect: getOpeningPreviewChildRect,
         }));
       }
       if (entry.closingGhostInput) {
