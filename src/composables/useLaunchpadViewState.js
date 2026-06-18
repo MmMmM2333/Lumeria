@@ -18,7 +18,7 @@ import {
 import { resolveCssBackgroundImagePlacement } from "../domain/backgroundImageLayout.js";
 import {
   appLaunchGhostTransition,
-  homeShellTransition,
+  homeChromeTransition,
   panelSpring,
 } from "./launchpadMotion.js";
 import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
@@ -125,13 +125,13 @@ export function useLaunchpadViewState(options) {
     return { scale: 1, y: 0 };
   });
   const desktopVisualAlpha = computed(() => (shouldHideHomeShell.value ? 0 : 1));
-  const homeShellInitial = { opacity: 0, scale: 1, y: 0, filter: "blur(8px)" };
-  const homeShellAnimate = computed(() => {
+  const homeChromeInitial = { opacity: 0, scale: 1, y: 0, filter: "blur(8px)" };
+  const homeChromeAnimate = computed(() => {
     if (isDesktopAnimatingClosed.value) return { opacity: 0, scale: 1, y: 0, filter: "blur(8px)" };
     if (options.openFolderId.value && !options.isFolderClosing.value) return { opacity: 0, scale: 1, y: 0, filter: "blur(0px)" };
     return { opacity: 1, scale: 1, y: 0, filter: "blur(0px)" };
   });
-  const homeShellStyle = computed(() => ({
+  const homeChromeStyle = computed(() => ({
     pointerEvents: shouldHideHomeShell.value || isHomeInteractionDisabled.value ? "none" : "auto",
   }));
 
@@ -141,10 +141,10 @@ export function useLaunchpadViewState(options) {
     desktopTrackMotionKey,
     desktopVisualTransform,
     desktopVisualAlpha,
-    homeShellAnimate,
-    homeShellInitial,
-    homeShellStyle,
-    homeShellTransition,
+    homeChromeAnimate,
+    homeChromeInitial,
+    homeChromeStyle,
+    homeChromeTransition,
     isHomeInteractionDisabled,
     panelSpring,
     rootStyle,

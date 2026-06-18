@@ -13,7 +13,7 @@ import {
 } from "./useLaunchpadSettingsConfig.js";
 import {
   appLaunchGhostTransition,
-  homeShellTransition,
+  homeChromeTransition,
   panelSpring,
 } from "./launchpadMotion.js";
 import { DESKTOP_CLOSE_SCALE } from "./launchpadConstants.js";
@@ -79,10 +79,10 @@ export function runLaunchpadViewStateTests() {
   assert(desktop.view.desktopTrackMotionKey.value === "open-desktop-spring", "desktop motion key should describe open desktop spring state");
   assert(desktop.view.desktopVisualTransform.value.scale === 1 && desktop.view.desktopVisualTransform.value.y === 0, "idle desktop visual root should not be transformed");
   assert(desktop.view.desktopVisualAlpha.value === 1, "idle desktop canvas should be visible");
-  assert(desktop.view.homeShellAnimate.value.opacity === 1, "home shell should be visible in the idle desktop state");
-  assert(desktop.view.homeShellStyle.value.pointerEvents === "auto", "home shell should allow pointer events in the idle desktop state");
+  assert(desktop.view.homeChromeAnimate.value.opacity === 1, "home chrome should be visible in the idle desktop state");
+  assert(desktop.view.homeChromeStyle.value.pointerEvents === "auto", "home chrome should allow pointer events in the idle desktop state");
   assert(desktop.view.appLaunchGhostTransition === appLaunchGhostTransition, "view state should expose the app launch ghost transition");
-  assert(desktop.view.homeShellTransition === homeShellTransition, "view state should expose the home shell transition");
+  assert(desktop.view.homeChromeTransition === homeChromeTransition, "view state should expose the home chrome transition");
   assert(desktop.view.panelSpring === panelSpring, "view state should expose the settings panel spring");
 
   const imageBackground = createViewState({ backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE, backgroundImageOpacity: 58 });
@@ -192,22 +192,22 @@ export function runLaunchpadViewStateTests() {
 
   const closingDesktop = createViewState({ isDesktopOpen: false, isDesktopClosing: true, isSearchMode: true });
   assert(closingDesktop.view.desktopTrackMotionKey.value === "open-search-spring", "closing desktop should avoid remounting the page track");
-  assert(closingDesktop.view.homeShellAnimate.value.opacity === 0, "closing desktop should still hide home shell");
+  assert(closingDesktop.view.homeChromeAnimate.value.opacity === 0, "closing desktop should still hide home chrome");
 
   const closed = createViewState({ isDesktopOpen: false, isSearchMode: true });
   assert(closed.view.desktopTrackMotionKey.value === "closed-search-snap", "closed search should use snap motion key");
   assert(closed.view.desktopVisualTransform.value.scale === DESKTOP_CLOSE_SCALE, "closed desktop visual root should carry the close scale");
   assert(closed.view.desktopVisualAlpha.value === 0, "closed desktop canvas should be hidden");
-  assert(closed.view.homeShellAnimate.value.opacity === 0, "closed desktop should hide home shell");
-  assert(closed.view.homeShellStyle.value.pointerEvents === "none", "closed desktop should disable home shell pointer events");
+  assert(closed.view.homeChromeAnimate.value.opacity === 0, "closed desktop should hide home chrome");
+  assert(closed.view.homeChromeStyle.value.pointerEvents === "none", "closed desktop should disable home chrome pointer events");
 
   const openFolder = createViewState({ openFolderId: "folder-1", isFolderLayerActive: true });
   assert(openFolder.view.desktopTrackMotionKey.value === "open-desktop-snap", "open folder should snap the desktop track");
-  assert(openFolder.view.homeShellAnimate.value.y === 0 && openFolder.view.homeShellAnimate.value.scale === 1, "open folder should keep the DOM shell untransformed");
+  assert(openFolder.view.homeChromeAnimate.value.y === 0 && openFolder.view.homeChromeAnimate.value.scale === 1, "open folder should keep the DOM chrome untransformed");
   assert(openFolder.view.desktopVisualTransform.value.y === 44 && openFolder.view.desktopVisualTransform.value.scale === 0.92, "open folder should move the desktop visual root inside Pixi");
   assert(openFolder.view.desktopVisualAlpha.value === 0, "open folder should hide the desktop canvas through view state");
-  assert(openFolder.view.homeShellAnimate.value.filter === "blur(0px)", "open folder should avoid shell blur compositor flicker");
-  assert(openFolder.view.homeShellStyle.value.pointerEvents === "none", "open folder should disable home shell pointer events");
+  assert(openFolder.view.homeChromeAnimate.value.filter === "blur(0px)", "open folder should avoid chrome blur compositor flicker");
+  assert(openFolder.view.homeChromeStyle.value.pointerEvents === "none", "open folder should disable home chrome pointer events");
 
   const settling = createViewState({ isHomeRevealSettling: true, isFolderLayerActive: true, openFolderId: "folder-1" });
   assert(settling.view.desktopTrackMotionKey.value === "open-desktop-snap", "home reveal settling should snap the desktop track");

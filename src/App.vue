@@ -41,10 +41,10 @@
       <Motion
         :key="`launchpad-chrome-${singleStageRenderKey}`"
         class="launchpad-chrome-motion launchpad-chrome-motion-header"
-        :initial="homeShellInitial"
-        :animate="homeShellAnimate"
-        :transition="homeShellTransition"
-        :style="homeShellStyle"
+        :initial="homeChromeInitial"
+        :animate="homeChromeAnimate"
+        :transition="homeChromeTransition"
+        :style="homeChromeStyle"
       >
         <LaunchpadHeader
           :dom-refs="headerDomRefs"
@@ -107,10 +107,10 @@
       <Motion
         :key="`launchpad-chrome-dots-${singleStageRenderKey}`"
         class="launchpad-chrome-motion launchpad-chrome-motion-dots"
-        :initial="homeShellInitial"
-        :animate="homeShellAnimate"
-        :transition="homeShellTransition"
-        :style="homeShellStyle"
+        :initial="homeChromeInitial"
+        :animate="homeChromeAnimate"
+        :transition="homeChromeTransition"
+        :style="homeChromeStyle"
       >
         <footer ref="pageDotsRef" class="page-dots">
           <button
@@ -248,10 +248,10 @@ const {
   shellRef,
   desktopVisualTransform,
   desktopVisualAlpha,
-  homeShellInitial,
-  homeShellAnimate,
-  homeShellTransition,
-  homeShellStyle,
+  homeChromeInitial,
+  homeChromeAnimate,
+  homeChromeTransition,
+  homeChromeStyle,
   headerRef,
   openEditManagedApp,
   openExistingAppIconChooser,
