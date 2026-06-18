@@ -4,7 +4,6 @@ import {
   getSingleStageFolderTitleOpacity,
   isSingleStageFolderPageDotsReady,
   makeSingleStageFolderNameInputStyle,
-  makeSingleStageFolderPageDotsStyle,
 } from "./singleStageFolderDomControls.js";
 
 export function runSingleStageFolderDomControlsTests() {
@@ -44,17 +43,4 @@ export function runSingleStageFolderDomControlsTests() {
   assert(!isSingleStageFolderPageDotsReady({ progress: FOLDER_PAGE_DOTS_REVEAL_PROGRESS - 0.001 }), "page dots should wait for the reveal threshold");
   assert(isSingleStageFolderPageDotsReady({ progress: FOLDER_PAGE_DOTS_REVEAL_PROGRESS }), "page dots should reveal at the threshold");
 
-  const panel = { height: 360, left: 180, top: 200, width: 800 };
-  const grid = { height: 240, left: 220, top: 270, width: 720 };
-  const dots = makeSingleStageFolderPageDotsStyle({ controlsVisible: true, grid, hidden: false, panel });
-  assert(dots.left === "180px" && dots.width === "800px", "page dots should span the panel width");
-  assert(dots.top === "525px", "page dots should sit in the lower panel padding below the grid");
-  assert(dots.height === "20px", "page dots should keep a stable height");
-  assert(dots.opacity === 1 && dots.pointerEvents === "auto", "visible page dots should receive pointer events");
-
-  const hiddenDots = makeSingleStageFolderPageDotsStyle({ controlsVisible: true, grid, hidden: true, panel });
-  assert(hiddenDots.opacity === 0 && hiddenDots.pointerEvents === "none", "hidden page dots should not receive pointer events");
-
-  const fallbackDots = makeSingleStageFolderPageDotsStyle({ controlsVisible: true, hidden: false, panel });
-  assert(fallbackDots.top === "523px", "page dots should have a panel-only fallback position");
 }

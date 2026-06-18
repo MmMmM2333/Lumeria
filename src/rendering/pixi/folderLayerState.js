@@ -24,6 +24,8 @@ export function createFolderLayerState(groups, overrides = {}) {
     folderOpeningOriginBounds: folder.openingOriginBounds,
     folderOpenIconGhosts,
     folderPageIndex: folder.pageIndex,
+    folderPageIndexCommit: folder.pageIndexCommit,
+    folderPageDotsVisible: folder.pageDotsVisible === true,
     folderPageSize: folder.pageSize,
     folderPages: folder.pages,
     folderPanelRef: folder.panelRef,

@@ -6,6 +6,9 @@ const CLOSING_PREVIEW_COMPACT_PROGRESS = 0.76;
 const CLOSING_PREVIEW_TALL_PROGRESS = 0.68;
 const CLOSING_PREVIEW_COMPACT_SWAP_DURATION = 0.18;
 const CLOSING_PREVIEW_TALL_SWAP_DURATION = 0.22;
+export const FOLDER_PAGE_DOTS_HIT_HEIGHT = 28;
+export const FOLDER_PAGE_DOTS_SIZE = 10;
+export const FOLDER_PAGE_DOTS_GAP = 12;
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
@@ -21,6 +24,20 @@ export function getFolderPageMaskRect(geometry, localGridLeft, localGridTop) {
     top: localGridTop,
     width: geometry.grid.width,
     height: Math.max(geometry.grid.height, geometry.panel.height - localGridTop - 20),
+  };
+}
+
+export function getFolderPageDotsFrame(geometry) {
+  const panel = geometry?.panel;
+  if (!panel) return null;
+  const grid = geometry?.grid;
+  const bottomPaddingTop = grid ? grid.top + grid.height : panel.top + panel.height - 54;
+  const bottomPaddingHeight = Math.max(0, panel.top + panel.height - bottomPaddingTop);
+  return {
+    height: FOLDER_PAGE_DOTS_HIT_HEIGHT,
+    left: panel.left,
+    top: bottomPaddingTop + bottomPaddingHeight / 2 - FOLDER_PAGE_DOTS_HIT_HEIGHT / 2,
+    width: panel.width,
   };
 }
 

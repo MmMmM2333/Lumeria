@@ -1,5 +1,6 @@
 import {
   getClosingPreviewTiming,
+  getFolderPageDotsFrame,
   getFolderPageMaskRect,
   makePanelVisualRect,
   resolveOpeningInterruptionFrame,
@@ -55,6 +56,19 @@ export function runFolderOverlayLayerTests() {
   assert(mask.width === 884, "folder page mask should match the grid width, not the full panel width");
   assert(mask.top === 64, "folder page mask should preserve the grid top edge");
   assert(mask.height === 476, "folder page mask should keep the existing vertical panel coverage");
+
+  const dotsFrame = getFolderPageDotsFrame({
+    grid: { height: 240, left: 220, top: 270, width: 720 },
+    panel: { height: 360, left: 180, top: 200, width: 800 },
+  });
+  assert(dotsFrame.left === 180 && dotsFrame.width === 800, "Pixi page dots should span the panel width");
+  assert(dotsFrame.top === 521, "Pixi page dots should sit in the lower panel padding below the grid");
+  assert(dotsFrame.height === 28, "Pixi page dots should keep a stable hit height");
+
+  const fallbackDotsFrame = getFolderPageDotsFrame({
+    panel: { height: 360, left: 180, top: 200, width: 800 },
+  });
+  assert(fallbackDotsFrame.top === 519, "Pixi page dots should have a panel-only fallback position");
 
   const visualRect = makePanelVisualRect(
     {

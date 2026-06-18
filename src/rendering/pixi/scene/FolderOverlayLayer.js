@@ -28,7 +28,14 @@ import {
   registerLaunchIconBounds,
   registerLaunchIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
-import { getFolderPageMaskRect, makePanelVisualRect } from "./folderOverlayGeometry.js";
+import {
+  FOLDER_PAGE_DOTS_GAP,
+  FOLDER_PAGE_DOTS_HIT_HEIGHT,
+  FOLDER_PAGE_DOTS_SIZE,
+  getFolderPageDotsFrame,
+  getFolderPageMaskRect,
+  makePanelVisualRect,
+} from "./folderOverlayGeometry.js";
 import { makeFolderOverlayRenderPlan } from "./folderOverlayRenderPlan.js";
 import {
   getStableFolderCloseRects,
@@ -107,6 +114,7 @@ export class FolderOverlayLayer extends Container {
     this.pageMask = new Graphics();
     this.pageMaskRect = null;
     this.pageTrack = new Container();
+    this.pageDotsLayer = new Container();
     this.openingGhostLayer = new Container();
     this.closingGhostLayer = new Container();
     this.closingPreviewSwapLayer = new Container();
@@ -149,6 +157,7 @@ export class FolderOverlayLayer extends Container {
     this.panel.addChild(this.pageMask);
     this.panel.addChild(this.pageTrack);
     this.panel.addChild(this.folderTitle);
+    this.addChild(this.pageDotsLayer);
     this.addChild(this.openingGhostLayer);
     this.addChild(this.closingGhostLayer);
     this.addChild(this.closingPreviewSwapLayer);
@@ -174,6 +183,7 @@ export class FolderOverlayLayer extends Container {
       this.isUserFolderClosing = false;
       this.sizeKey = null;
       stopTargetSprings(this.pageTrack);
+      this.clearPageDots();
       stopTargetSprings(this.panel);
       stopTargetSprings(this.panel.scale);
       this.openingGhosts.clear();
@@ -219,6 +229,7 @@ export class FolderOverlayLayer extends Container {
     this.stableFolderCloseTarget = overlayTargets.stableFolderCloseTarget;
     const { folderRect, folderThumbRect, getOpeningPreviewChildRect, previewSlots } = overlayTargets;
     this.drawPanel(geometry.panel);
+    this.updatePageDots(state, geometry);
     this.panel.pivot.set(geometry.panel.width / 2, geometry.panel.height / 2);
     const targetX = geometry.panel.left + geometry.panel.width / 2;
     const targetY = geometry.panel.top + geometry.panel.height / 2;
@@ -396,6 +407,13 @@ export class FolderOverlayLayer extends Container {
     return geometry;
   }
 
+  clearPageDots() {
+    this.pageDotsLayer.removeChildren().forEach((child) => child.destroy?.());
+    this.pageDotsLayer.visible = false;
+    this.pageDotsLayer.eventMode = "none";
+    this.pageDotsLayer.hitArea = null;
+  }
+
   hasActiveIconGhosts() {
     return Boolean(this.openingGhostKeys?.size || this.closingGhosts.hasActive());
   }
@@ -496,6 +514,42 @@ export class FolderOverlayLayer extends Container {
     mask.clear()
       .rect(rect.left, rect.top, rect.width, rect.height)
       .fill({ color: 0xffffff, alpha: 1 });
+  }
+
+  updatePageDots(state, geometry) {
+    const pageCount = Array.isArray(state.folderPages) ? state.folderPages.length : 0;
+    if (!state.folderPageDotsVisible || pageCount <= 1) {
+      this.clearPageDots();
+      return;
+    }
+    const frame = getFolderPageDotsFrame(geometry);
+    if (!frame) {
+      this.clearPageDots();
+      return;
+    }
+    this.pageDotsLayer.removeChildren().forEach((child) => child.destroy?.());
+    this.pageDotsLayer.visible = true;
+    this.pageDotsLayer.eventMode = "static";
+    this.pageDotsLayer.cursor = "default";
+    this.pageDotsLayer.hitArea = new Rectangle(frame.left, frame.top, frame.width, frame.height);
+    const totalWidth = pageCount * FOLDER_PAGE_DOTS_SIZE + (pageCount - 1) * FOLDER_PAGE_DOTS_GAP;
+    const startX = frame.left + frame.width / 2 - totalWidth / 2 + FOLDER_PAGE_DOTS_SIZE / 2;
+    const centerY = frame.top + FOLDER_PAGE_DOTS_HIT_HEIGHT / 2;
+    for (let index = 0; index < pageCount; index += 1) {
+      const dot = new Graphics();
+      const isActive = index === state.folderPageIndex;
+      dot.circle(0, 0, FOLDER_PAGE_DOTS_SIZE / 2)
+        .fill({ color: 0xffffff, alpha: isActive ? 0.96 : 0.28 });
+      dot.position.set(startX + index * (FOLDER_PAGE_DOTS_SIZE + FOLDER_PAGE_DOTS_GAP), centerY);
+      dot.eventMode = "static";
+      dot.cursor = "pointer";
+      dot.hitArea = new Rectangle(-8, -8, FOLDER_PAGE_DOTS_SIZE + 16, FOLDER_PAGE_DOTS_SIZE + 16);
+      dot.on("pointerdown", (event) => {
+        event.stopPropagation?.();
+        state.folderPageIndexCommit?.(index);
+      });
+      this.pageDotsLayer.addChild(dot);
+    }
   }
 
   rebuildPageTrackMask() {
@@ -658,6 +712,7 @@ export class FolderOverlayLayer extends Container {
     this.closingGhosts.clear();
     killAllMotion(this.panel);
     killAllMotion(this.pageTrack);
+    this.clearPageDots();
     if (this.frameGhostState) gsap.killTweensOf(this.frameGhostState);
     stopTargetSprings(this.pageTrack);
     stopTargetSprings(this.panel);
