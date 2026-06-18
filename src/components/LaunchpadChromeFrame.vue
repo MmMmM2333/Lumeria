@@ -1,11 +1,9 @@
 <template>
   <div :ref="(node) => bindRef(frameRefs.shellRef, node)" class="launchpad-shell">
-    <Motion
+    <div
       :key="`launchpad-chrome-${renderKey}`"
+      ref="headerMotionRef"
       class="launchpad-chrome-motion launchpad-chrome-motion-header"
-      :initial="chromeInitial"
-      :animate="chromeAnimate"
-      :transition="chromeTransition"
       :style="chromeStyle"
     >
       <LaunchpadHeader
@@ -19,14 +17,12 @@
         @clear-search="$emit('clear-search')"
         @open-settings="$emit('open-settings', $event)"
       />
-    </Motion>
+    </div>
     <slot />
-    <Motion
+    <div
       :key="`launchpad-chrome-dots-${renderKey}`"
+      ref="dotsMotionRef"
       class="launchpad-chrome-motion launchpad-chrome-motion-dots"
-      :initial="chromeInitial"
-      :animate="chromeAnimate"
-      :transition="chromeTransition"
       :style="chromeStyle"
     >
       <footer :ref="(node) => bindRef(frameRefs.pageDotsRef, node)" class="page-dots">
@@ -40,16 +36,17 @@
           @click="$emit('page-index', index - 1)"
         />
       </footer>
-    </Motion>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { Motion } from "motion-v";
+import { gsap } from "gsap";
+import { onBeforeUnmount, ref, watch } from "vue";
 import { cx } from "../domain/launchpadLayout.js";
 import LaunchpadHeader from "./LaunchpadHeader.vue";
 
-defineProps({
+const props = defineProps({
   activePageIndex: { type: Number, required: true },
   activePages: { type: Array, required: true },
   chromeAnimate: { type: Object, required: true },
@@ -64,6 +61,9 @@ defineProps({
   searchQuery: { type: String, default: "" },
 });
 
+const headerMotionRef = ref(null);
+const dotsMotionRef = ref(null);
+
 defineEmits([
   "clear-search",
   "open-settings",
@@ -73,7 +73,64 @@ defineEmits([
   "search-input",
 ]);
 
+watch(
+  () => props.chromeAnimate,
+  () => {
+    animateChromeMotion(headerMotionRef.value);
+    animateChromeMotion(dotsMotionRef.value);
+  },
+  { flush: "post" }
+);
+
+watchChromeMotionRef(headerMotionRef);
+watchChromeMotionRef(dotsMotionRef);
+
+onBeforeUnmount(() => {
+  killChromeMotion(headerMotionRef.value);
+  killChromeMotion(dotsMotionRef.value);
+});
+
 function bindRef(target, node) {
   if (target && typeof target === "object" && "value" in target) target.value = node;
+}
+
+function watchChromeMotionRef(target) {
+  watch(
+    target,
+    (node, previousNode) => {
+      if (previousNode && previousNode !== node) killChromeMotion(previousNode);
+      if (!node) return;
+      gsap.set(node, normalizeChromeMotion(props.chromeInitial));
+      animateChromeMotion(node);
+    },
+    { flush: "post" }
+  );
+}
+
+function animateChromeMotion(node) {
+  if (!node) return;
+  gsap.killTweensOf(node);
+  gsap.to(node, {
+    ...normalizeChromeMotion(props.chromeAnimate),
+    duration: resolveChromeMotionDuration(props.chromeTransition),
+    ease: "power2.out",
+    overwrite: "auto",
+  });
+}
+
+function killChromeMotion(node) {
+  if (node) gsap.killTweensOf(node);
+}
+
+function normalizeChromeMotion(target) {
+  const motion = {};
+  if (Object.prototype.hasOwnProperty.call(target, "opacity")) motion.opacity = target.opacity;
+  if (Object.prototype.hasOwnProperty.call(target, "filter")) motion.filter = target.filter;
+  return motion;
+}
+
+function resolveChromeMotionDuration(transition) {
+  const duration = Number(transition?.duration);
+  return Number.isFinite(duration) && duration >= 0 ? duration : 0.24;
 }
 </script>
