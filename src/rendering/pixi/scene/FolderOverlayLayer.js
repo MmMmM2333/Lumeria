@@ -7,8 +7,6 @@ import {
   folderOpenDuration,
   folderOpenEase,
   folderPanelCloseDuration,
-  layoutDuration,
-  layoutEase,
 } from "../animation/eases.js";
 import { pageTrackSpring, panelSpring, springTo, stopTargetSprings } from "../animation/springMotion.js";
 import { getFolderGridMetrics, getFolderPanelGeometry, parseRepeatCount, readPx } from "../geometry/gridGeometry.js";
@@ -83,6 +81,11 @@ function registerFolderIconNodeBounds(options) {
     meta
   );
   return iconBounds;
+}
+
+function springFolderIconLayoutPosition(node, target, refreshBounds) {
+  springTo(node, "x", target.x, pageTrackSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
+  springTo(node, "y", target.y, pageTrackSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
 }
 
 export class FolderOverlayLayer extends Container {
@@ -296,6 +299,7 @@ export class FolderOverlayLayer extends Container {
       const { index, isInteractivePage, item, key, nodeState, pageIndex, targetCenter, x, y } = entry;
       seen.add(key);
       let node = this.iconNodes.get(key);
+      const isNewNode = !node;
       if (!node) {
         node = new IconNode({
           onAction: (action, originalEvent, actionItem, actionSource, iconNode) =>
@@ -305,15 +309,12 @@ export class FolderOverlayLayer extends Container {
         node.position.set(x, y + 10);
         this.iconNodes.set(key, node);
         this.pageTrack.addChild(node);
-        gsap.to(node, { alpha: 1, y, delay: Math.min(0.18, index * 0.012), duration: 0.24, ease: folderOpenEase });
-      } else {
-        gsap.to(node, { duration: layoutDuration, ease: layoutEase, overwrite: "auto", x, y });
       }
 
       node.stageRect = state.stageRect;
       node.setState(nodeState);
 
-      const iconBounds = registerFolderIconNodeBounds({
+      const refreshNodeBounds = () => registerFolderIconNodeBounds({
         folderId: state.renderedFolder.id,
         iconSize,
         index,
@@ -327,6 +328,11 @@ export class FolderOverlayLayer extends Container {
         stageWidth: state.width,
         targetCenter,
       });
+      const iconBounds = refreshNodeBounds();
+      if (isNewNode) {
+        gsap.to(node, { alpha: 1, delay: Math.min(0.18, index * 0.012), duration: 0.24, ease: folderOpenEase });
+      }
+      springFolderIconLayoutPosition(node, { x, y }, refreshNodeBounds);
       if (entry.openingGhostInput) {
         openingGhostTargets.push(makeOpeningGhostTarget({
           ...entry.openingGhostInput,
@@ -368,6 +374,7 @@ export class FolderOverlayLayer extends Container {
       if (seen.has(key)) continue;
       this.iconNodes.delete(key);
       gsap.killTweensOf(node);
+      stopTargetSprings(node);
       gsap.to(node, { alpha: 0, duration: 0.14, onComplete: () => node.destroy({ children: true }) });
     }
     this.pageTrack.visible = !state.isFolderClosing &&
