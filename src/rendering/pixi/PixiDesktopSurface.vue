@@ -1,13 +1,17 @@
 <template>
   <main
     ref="mainRef"
-    class="desktop-main pixi-desktop-main"
+    :class="['desktop-main pixi-desktop-main', rootStageCanvasEnabled && 'pixi-desktop-main-root-stage']"
     tabindex="-1"
     :style="pageGridMeasureStyle"
     @focus="$emit('desktop-focus')"
     @contextmenu.stop.prevent
   >
-    <div ref="hostRef" class="pixi-desktop-host" />
+    <div
+      ref="hostRef"
+      :class="['pixi-desktop-host', rootStageCanvasEnabled && 'pixi-desktop-host-root-stage']"
+      :style="rootStageHostStyle"
+    />
   </main>
 </template>
 
@@ -74,6 +78,8 @@ const emit = defineEmits([
 
 const hostRef = ref(null);
 const mainRef = ref(null);
+const rootStageCanvasEnabled = ref(false);
+const rootStageHostStyle = ref(null);
 let app = null;
 let layer = null;
 let resizeObserver = null;
@@ -133,6 +139,11 @@ function roundDebugRect(rect) {
     top: roundDebugNumber(rect.top),
     width: roundDebugNumber(rect.width),
   };
+}
+
+function readCssPx(value) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function getDebugRectDelta(rect, layoutRect) {
@@ -244,6 +255,49 @@ function getSingleStageCandidateRect(metrics) {
     metrics.rect;
 }
 
+function getDesktopContentRect(metrics, stageRect = metrics.rect) {
+  const mainRect = getElementRect(mainRef);
+  if (!mainRect || typeof globalThis.getComputedStyle !== "function") return metrics.layoutRect;
+  const styles = globalThis.getComputedStyle(getDomRefElement(mainRef));
+  const paddingTop = readCssPx(styles.paddingTop);
+  const paddingBottom = readCssPx(styles.paddingBottom);
+  return {
+    height: Math.max(1, mainRect.height - paddingTop - paddingBottom),
+    left: stageRect.left,
+    top: mainRect.top + paddingTop,
+    width: stageRect.width,
+  };
+}
+
+function makeRootStageHostStyle() {
+  const rootRect = getElementRect(props.domRefs?.rootRef) || {
+    height: globalThis.innerHeight || 1,
+    left: 0,
+    top: 0,
+    width: globalThis.innerWidth || 1,
+  };
+  const shellRect = getElementRect(props.domRefs?.shellRef) || { left: 0, top: 0 };
+  return {
+    "--pixi-root-stage-height": `${Math.max(1, rootRect.height)}px`,
+    "--pixi-root-stage-left": `${rootRect.left - shellRect.left}px`,
+    "--pixi-root-stage-top": `${rootRect.top - shellRect.top}px`,
+    "--pixi-root-stage-width": `${Math.max(1, rootRect.width)}px`,
+  };
+}
+
+function syncRootStageCanvasFlag(options) {
+  const nextEnabled = Boolean(options?.rootStage);
+  if (rootStageCanvasEnabled.value === nextEnabled) return false;
+  rootStageCanvasEnabled.value = nextEnabled;
+  rootStageHostStyle.value = nextEnabled ? makeRootStageHostStyle() : null;
+  nextTick(() => {
+    if (destroyed) return;
+    app?.resize?.();
+    renderPixi();
+  });
+  return true;
+}
+
 function resolveFolderClosingHandoffId(metrics) {
   const now = nowMs();
   const rectMaxDelta = getRectMaxDelta(metrics.rect, metrics.layoutRect);
@@ -313,11 +367,12 @@ function resolveFolderClosingHandoffId(metrics) {
   return null;
 }
 
-function createSingleStageFolderState(metrics) {
+function createSingleStageFolderState(metrics, options = {}) {
   const source = props.folderOverlayState;
   if (!source) return null;
   const stageRect = getSingleStageCandidateRect(metrics);
-  const desktopFrame = makeDesktopFrameFromStageRects(stageRect, metrics.layoutRect);
+  const desktopStageRect = options.rootStage ? getDesktopContentRect(metrics, stageRect) : metrics.layoutRect;
+  const desktopFrame = makeDesktopFrameFromStageRects(stageRect, desktopStageRect);
   return createFolderLayerState({
     callbacks: {
       completeFolderCloseIconGhost: () => {},
@@ -357,9 +412,31 @@ function createSingleStageFolderState(metrics) {
   }, {
     canvasStageRect: metrics.rect,
     desktopFrame,
-    desktopStageRect: metrics.layoutRect,
+    desktopStageRect,
     singleStageProbe: true,
   });
+}
+
+function makeDesktopRenderGeometry(metrics, options) {
+  rootStageHostStyle.value = options.rootStage ? makeRootStageHostStyle() : null;
+  if (!options.rootStage) {
+    return {
+      desktopFrame: { height: Math.max(1, metrics.height), left: 0, top: 0, width: Math.max(1, metrics.width) },
+      height: Math.max(1, metrics.height),
+      stableStageRect: metrics.layoutRect,
+      stageRect: metrics.rect,
+      width: Math.max(1, metrics.width),
+    };
+  }
+  const stageRect = getSingleStageCandidateRect(metrics);
+  const desktopStageRect = getDesktopContentRect(metrics, stageRect);
+  return {
+    desktopFrame: makeDesktopFrameFromStageRects(stageRect, desktopStageRect),
+    height: Math.max(1, stageRect.height),
+    stableStageRect: stageRect,
+    stageRect,
+    width: Math.max(1, stageRect.width),
+  };
 }
 
 function logFolderHandoffTimeline(metrics, folderClosingHandoffId) {
@@ -397,15 +474,15 @@ function logFolderHandoffTimeline(metrics, folderClosingHandoffId) {
 function renderPixi() {
   if (!app || !layer || !hostRef.value) return;
   const metrics = getPixiHostMetrics(hostRef.value);
-  const { height, layoutRect, rect, width } = metrics;
   const folderClosingHandoffId = resolveFolderClosingHandoffId(metrics);
   const singleStageFolderProbeOptions = getSingleStageFolderProbeOptions();
-  const desktopFrame = { height: Math.max(1, height), left: 0, top: 0, width: Math.max(1, width) };
+  if (syncRootStageCanvasFlag(singleStageFolderProbeOptions)) return;
+  const renderGeometry = makeDesktopRenderGeometry(metrics, singleStageFolderProbeOptions);
   layer.update({
     activePageIndex: props.activePageIndex,
     activePages: props.activePages,
     desktopCanvasTransform: props.desktopCanvasTransform,
-    desktopFrame,
+    desktopFrame: renderGeometry.desktopFrame,
     desktopGridDebugOptions: props.desktopGridDebugOptions,
     desktopTrackMotionKey: props.desktopTrackMotionKey,
     dragFolderHoverState: props.dragFolderHoverState,
@@ -415,13 +492,13 @@ function renderPixi() {
     deviceResolution: app.renderer?.resolution || 1,
     folderClosingHandoffId,
     singleStageFolderProbeEnabled: singleStageFolderProbeOptions,
-    singleStageFolderState: singleStageFolderProbeOptions.enabled ? createSingleStageFolderState(metrics) : null,
+    singleStageFolderState: singleStageFolderProbeOptions.enabled ? createSingleStageFolderState(metrics, singleStageFolderProbeOptions) : null,
     folderPageSize: props.folderPageSize,
     getDesktopPageRenderMode: props.getDesktopPageRenderMode,
     getVisibleDesktopPage: props.getVisibleDesktopPage,
     gridCols: props.gridCols,
     gridRows: props.gridRows,
-    height: Math.max(1, height),
+    height: renderGeometry.height,
     iconSize: props.iconSize,
     isEditMode: props.isEditMode,
     folderSourceGhostedId: props.folderSourceGhostedId,
@@ -435,9 +512,9 @@ function renderPixi() {
     setPageRef: props.setPageRef,
     shouldSnapTrack: props.desktopTrackMotionKey.includes("snap"),
     showMissingLaunchTargetBadge: props.showMissingLaunchTargetBadge,
-    stableStageRect: layoutRect,
-    stageRect: rect,
-    width: Math.max(1, width),
+    stableStageRect: renderGeometry.stableStageRect,
+    stageRect: renderGeometry.stageRect,
+    width: renderGeometry.width,
   });
   logFolderHandoffTimeline(metrics, folderClosingHandoffId);
 }

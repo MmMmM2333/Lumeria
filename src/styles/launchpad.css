@@ -2411,6 +2411,10 @@ body {
   padding: var(--debug-desktop-main-padding-y, 16px) 0;
 }
 
+.pixi-desktop-main-root-stage {
+  overflow: visible;
+}
+
 .pixi-desktop-host {
   position: relative;
   width: 100vw;
@@ -2420,6 +2424,19 @@ body {
   margin-left: calc(50% - 50vw);
   margin-right: calc(50% - 50vw);
   overflow: hidden;
+}
+
+.pixi-desktop-host-root-stage {
+  position: fixed;
+  right: auto;
+  bottom: auto;
+  left: var(--pixi-root-stage-left, 0);
+  top: var(--pixi-root-stage-top, 0);
+  width: var(--pixi-root-stage-width, 100vw);
+  height: var(--pixi-root-stage-height, 100vh);
+  max-height: none;
+  margin: 0;
+  z-index: 0;
 }
 
 .pixi-launchpad-canvas {

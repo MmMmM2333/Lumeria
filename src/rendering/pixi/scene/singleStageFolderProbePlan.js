@@ -11,6 +11,7 @@ export function getSingleStageFolderProbeOptions(value = globalThis.__LP_SINGLE_
     enabled,
     log: enabled && value.log === true,
     probe: enabled,
+    rootStage: enabled && value.rootStage === true,
   };
 }
 
