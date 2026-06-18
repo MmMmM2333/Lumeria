@@ -1,24 +1,19 @@
 <template>
-  <Motion
+  <div
     v-if="state.shouldRenderSettingsPanel.value"
     key="settings-overlay"
+    ref="settingsOverlayRef"
     :class="cx('settings-overlay', !state.isSettingsPanelOpen.value && 'settings-overlay-closing')"
-    :initial="{ opacity: 0 }"
-    :animate="state.settingsOverlayAnimate.value"
-    :transition="{ duration: 0.16 }"
     @wheel.stop
     @pointerdown.self="state.closeSettingsPanel"
   >
-    <Motion
+    <section
       ref="settingsPanelRef"
       class="settings-panel"
       role="dialog"
       aria-modal="true"
       aria-label="设置"
       tabindex="-1"
-      :initial="state.settingsPanelInitial.value"
-      :animate="state.settingsPanelAnimate.value"
-      :transition="state.panelSpring"
       @keydown="handleSettingsPanelKeydown"
     >
       <header class="settings-panel-header">
@@ -877,12 +872,12 @@
         <button class="settings-secondary-button" type="button" @click="state.closeSettingsPanel">取消</button>
         <button class="settings-primary-button" type="button" :disabled="!!state.dragMeta.value || state.isApplyingSettingsConfig.value" @click="state.applySettingsConfig">应用</button>
       </footer>
-    </Motion>
-  </Motion>
+    </section>
+  </div>
 </template>
 
 <script setup>
-import { Motion } from "motion-v";
+import { gsap } from "gsap";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import DismissIcon from "~icons/fluent/dismiss-16-regular";
 import BackgroundEffectPreview from "./BackgroundEffectPreview.vue";
@@ -954,6 +949,7 @@ const props = defineProps({
 
 const activeSettingsTab = ref("general");
 const activeAcrylicParamsProfile = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
+const settingsOverlayRef = ref(null);
 const settingsPanelRef = ref(null);
 const systemAcrylicAppearance = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
 const isRecordingMainWindowShortcut = ref(false);
@@ -1148,6 +1144,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  killSettingsPanelMotion(settingsOverlayRef.value);
+  killSettingsPanelMotion(settingsPanelRef.value);
   clearLiveDesktopStatusTimer();
   stopMainWindowShortcutRecording();
   if (!systemAppearanceQuery) return;
@@ -1188,6 +1186,37 @@ watch(
     }
   },
   { immediate: true }
+);
+
+watchSettingsMotionRef(settingsOverlayRef, { opacity: 0 }, () => ({
+  ...props.state.settingsOverlayAnimate.value,
+  duration: 0.16,
+}));
+watchSettingsMotionRef(settingsPanelRef, props.state.settingsPanelInitial.value, () => ({
+  ...props.state.settingsPanelAnimate.value,
+  duration: 0.26,
+}));
+
+watch(
+  () => props.state.settingsOverlayAnimate.value,
+  () => {
+    animateSettingsMotion(settingsOverlayRef.value, {
+      ...props.state.settingsOverlayAnimate.value,
+      duration: 0.16,
+    });
+  },
+  { flush: "post" }
+);
+
+watch(
+  () => props.state.settingsPanelAnimate.value,
+  () => {
+    animateSettingsMotion(settingsPanelRef.value, {
+      ...props.state.settingsPanelAnimate.value,
+      duration: 0.26,
+    });
+  },
+  { flush: "post" }
 );
 
 async function startMainWindowShortcutRecording() {
@@ -1257,6 +1286,33 @@ function clearMainWindowShortcut() {
 
 function handleSettingsPanelKeydown(event) {
   handleModalKeydown(event, settingsPanelRef, props.state.closeSettingsPanel);
+}
+
+function watchSettingsMotionRef(target, initial, resolveMotion) {
+  watch(
+    target,
+    (node, previousNode) => {
+      if (previousNode && previousNode !== node) killSettingsPanelMotion(previousNode);
+      if (!node) return;
+      gsap.set(node, initial);
+      animateSettingsMotion(node, resolveMotion());
+    },
+    { flush: "post" }
+  );
+}
+
+function animateSettingsMotion(node, motion) {
+  if (!node) return;
+  gsap.killTweensOf(node);
+  gsap.to(node, {
+    ...motion,
+    ease: "power2.out",
+    overwrite: "auto",
+  });
+}
+
+function killSettingsPanelMotion(node) {
+  if (node) gsap.killTweensOf(node);
 }
 
 function resolveSystemAcrylicAppearance() {
