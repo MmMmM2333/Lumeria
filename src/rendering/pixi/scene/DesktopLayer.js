@@ -35,6 +35,7 @@ import { makeContainerTargetIconBounds, makeSyntheticPointerEvent, makeTargetIco
 import { makeFolderThumbPreviewRect } from "./folderOverlayTargets.js";
 import { FolderOverlayLayer } from "./FolderOverlayLayer.js";
 import { SingleStageFolderProbeLayer } from "./singleStageFolderProbe.js";
+import { DragPreviewLayer } from "./DragPreviewLayer.js";
 import { IconNode } from "../nodes/IconNode.js";
 
 function sourceArea(source) {
@@ -233,6 +234,7 @@ export class DesktopLayer extends Container {
       onTitleFrameChange: (frame) => this.onFolderTitleFrameChange(frame),
     });
     this.singleStageFolderProbeLayer = new SingleStageFolderProbeLayer();
+    this.singleStageDragPreviewLayer = new DragPreviewLayer();
     this.folderHandoffNode = null;
     this.hasDesktopVisualAlpha = false;
     this.hasDesktopVisualTransform = false;
@@ -248,6 +250,7 @@ export class DesktopLayer extends Container {
     this.visualRoot.addChild(this.emptyText);
     this.addChild(this.visualRoot);
     this.addChild(this.singleStageFolderLayer);
+    this.addChild(this.singleStageDragPreviewLayer);
     this.addChild(this.singleStageFolderProbeLayer);
     this.addChild(this.handoffDebugLayer);
   }
@@ -429,6 +432,7 @@ export class DesktopLayer extends Container {
     });
     refreshBounds();
     this.updateSingleStageFolderLayer(state);
+    this.updateSingleStageDragPreviewLayer(state);
     this.singleStageFolderProbeLayer.update(state.singleStageFolderState, {
       enabled: state.singleStageFolderProbeEnabled,
     });
@@ -483,6 +487,24 @@ export class DesktopLayer extends Container {
       stageRect: state.stageRect,
       width: state.width,
     }));
+  }
+
+  updateSingleStageDragPreviewLayer(state) {
+    const previewState = state.singleStageDragPreviewEnabled ? state.dragPreviewState : null;
+    const releaseState = state.singleStageDragPreviewEnabled ? state.dragReleaseState : null;
+    this.singleStageDragPreviewLayer.update({
+      folderHoverState: state.dragFolderHoverState,
+      folderPageSize: state.folderPageSize,
+      height: state.height,
+      iconSize: state.iconSize,
+      isTextlessMode: state.isTextlessMode,
+      launchTargetStatusById: state.launchTargetStatusById,
+      previewState,
+      releaseState,
+      showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge,
+      stageRect: state.stageRect,
+      width: state.width,
+    });
   }
 
   ensureFolderHandoffNode(folderId, node, layoutTarget) {

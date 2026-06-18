@@ -36,21 +36,24 @@ export function installSingleStageFolderProbeGlobalFlag() {
 }
 
 export function getSingleStageFolderProbeOptions(value = globalThis.__LP_SINGLE_STAGE_FOLDER__) {
-  if (value === true) return { enabled: true, folderLayer: false, log: false, probe: true, rootStage: false };
-  if (!value || typeof value !== "object") return { enabled: false, folderLayer: false, log: false, probe: false, rootStage: false };
+  if (value === true) return { dragPreview: false, enabled: true, folderLayer: false, log: false, probe: true, rootStage: false };
+  if (!value || typeof value !== "object") return { dragPreview: false, enabled: false, folderLayer: false, log: false, probe: false, rootStage: false };
   const enabled = value.enabled === true || value.probe === true;
   const folderLayer = enabled && value.folderLayer === true;
+  const dragPreview = enabled && (value.dragPreview === true || folderLayer);
   return {
+    dragPreview,
     enabled,
     folderLayer,
     log: enabled && value.log === true,
     probe: enabled && value.probe !== false,
-    rootStage: enabled && (value.rootStage === true || folderLayer),
+    rootStage: enabled && (value.rootStage === true || folderLayer || dragPreview),
   };
 }
 
 export function getSingleStageFolderProbeOptionsKey(options = getSingleStageFolderProbeOptions()) {
   return [
+    options.dragPreview ? "1" : "0",
     options.enabled ? "1" : "0",
     options.folderLayer ? "1" : "0",
     options.log ? "1" : "0",

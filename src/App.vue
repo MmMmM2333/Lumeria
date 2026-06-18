@@ -69,7 +69,9 @@
         :drag-folder-hover-state="dragFolderHoverState"
         :drag-folder-target-id="dragFolderTargetId"
         :drag-meta="dragMeta"
+        :drag-preview-state="dragPreviewState"
         :drag-release-ghost-id="dragReleaseGhostId"
+        :drag-release-state="dragReleaseState"
         :folder-overlay-state="folderOverlayState"
         :folder-page-size="folderPageSize"
         :folder-closing-handoff-id="folderClosingHandoffId"
@@ -130,7 +132,7 @@
       @context-menu-icon="openIconContextMenu"
     />
     <PixiDragPreviewOverlay
-      :active="shouldRunDragPreviewPixi"
+      :active="shouldRunDragPreviewPixi && !shouldUseSingleStageDragPreview"
       :folder-page-size="folderPageSize"
       :icon-size="iconSize"
       :is-textless-mode="isTextlessMode"
@@ -351,6 +353,7 @@ const shouldRunFolderPixi = computed(() => Boolean(
 ));
 const shouldUseSingleStageRootStage = computed(() => singleStageFolderProbeOptions.value.rootStage === true);
 const shouldUseSingleStageFolderLayer = computed(() => singleStageFolderProbeOptions.value.folderLayer === true);
+const shouldUseSingleStageDragPreview = computed(() => singleStageFolderProbeOptions.value.dragPreview === true);
 const singleStageFolderProbeRenderKey = computed(() => getSingleStageFolderProbeOptionsKey(singleStageFolderProbeOptions.value));
 const desktopVisualAlpha = computed(() => Math.max(0, Math.min(1, Number(homeShellAnimate.value?.opacity ?? 1))));
 const shouldRunDragPreviewPixi = computed(() => Boolean(

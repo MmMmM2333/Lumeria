@@ -117,6 +117,54 @@ export async function runDesktopLayerTests() {
   }
 
   {
+    const calls = [];
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.singleStageDragPreviewLayer = {
+      update(state) {
+        calls.push(state);
+      },
+    };
+    const previewState = { item: { id: "app-a", type: "app" } };
+    const releaseState = { item: { id: "app-a", type: "app" } };
+
+    layer.updateSingleStageDragPreviewLayer({
+      dragFolderHoverState: { phase: "hover", targetType: "folder" },
+      dragPreviewState: previewState,
+      dragReleaseState: releaseState,
+      folderPageSize: 9,
+      height: 600,
+      iconSize: 64,
+      isTextlessMode: false,
+      launchTargetStatusById: {},
+      showMissingLaunchTargetBadge: true,
+      singleStageDragPreviewEnabled: true,
+      stageRect: { height: 600, left: 10, top: 20, width: 800 },
+      width: 800,
+    });
+
+    assert(calls[0].previewState === previewState, "root-stage drag preview should receive the active preview state");
+    assert(calls[0].releaseState === releaseState, "root-stage drag preview should receive the active release state");
+
+    layer.updateSingleStageDragPreviewLayer({
+      dragPreviewState: previewState,
+      dragReleaseState: releaseState,
+      folderPageSize: 9,
+      height: 600,
+      iconSize: 64,
+      isTextlessMode: false,
+      launchTargetStatusById: {},
+      showMissingLaunchTargetBadge: true,
+      singleStageDragPreviewEnabled: false,
+      stageRect: { height: 600, left: 10, top: 20, width: 800 },
+      width: 800,
+    });
+
+    assert(calls[1].previewState === null, "disabled root-stage drag preview should clear the preview state");
+    assert(calls[1].releaseState === null, "disabled root-stage drag preview should clear the release state");
+  }
+
+  {
     const before = makeNode("before");
     const folder = makeNode("folder");
     const pageTrack = makePageTrack([before, folder]);

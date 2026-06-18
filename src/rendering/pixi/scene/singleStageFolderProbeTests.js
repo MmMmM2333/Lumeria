@@ -41,8 +41,13 @@ export function runSingleStageFolderProbeTests() {
 
   assert(options.enabled && options.log, "probe options should preserve explicit logging");
   assert(options.folderLayer, "probe options should preserve the single-stage folder layer flag");
+  assert(options.dragPreview, "folder layer should enable the single-stage drag preview");
   assert(options.rootStage, "probe options should preserve the root-stage canvas flag");
-  assert(getSingleStageFolderProbeOptionsKey(options) === "11111", "probe option key should reflect enabled flags");
+  assert(getSingleStageFolderProbeOptionsKey(options) === "111111", "probe option key should reflect enabled flags");
+  const rootStageOnlyOptions = getSingleStageFolderProbeOptions({ enabled: true, rootStage: true });
+  assert(rootStageOnlyOptions.rootStage && !rootStageOnlyOptions.dragPreview, "root-stage diagnostics should not imply drag preview ownership");
+  const dragPreviewOnlyOptions = getSingleStageFolderProbeOptions({ dragPreview: true, enabled: true, probe: false });
+  assert(dragPreviewOnlyOptions.rootStage && dragPreviewOnlyOptions.dragPreview, "drag preview should request the root-stage host");
 
   const flagName = "__LP_SINGLE_STAGE_FOLDER__";
   const setterName = "__LP_SET_SINGLE_STAGE_FOLDER__";
@@ -55,8 +60,9 @@ export function runSingleStageFolderProbeTests() {
     globalThis.addEventListener?.(SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT, handleFlagChange);
     globalThis[flagName] = { enabled: true, folderLayer: true, probe: false };
     assert(getSingleStageFolderProbeOptions().rootStage, "direct global flag assignment should update root-stage options");
+    assert(getSingleStageFolderProbeOptions({ enabled: true, dragPreview: true, probe: false }).rootStage, "drag preview should request a root-stage canvas");
     const normalized = setSingleStageFolderProbeOptions({ enabled: true, folderLayer: true, probe: false });
-    assert(normalized.rootStage && !normalized.probe, "global flag setter should return normalized options");
+    assert(normalized.rootStage && normalized.dragPreview && !normalized.probe, "global flag setter should return normalized options");
     if (typeof globalThis.addEventListener === "function") {
       assert(changeCount >= 2, "global flag changes should dispatch change events");
     }

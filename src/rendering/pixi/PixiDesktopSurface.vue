@@ -56,6 +56,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect } from "vue";
+import { getFolderPreviewSlots } from "../../domain/launchpadLayout.js";
 import { createPixiApp } from "./createPixiApp.js";
 import { DesktopLayer } from "./scene/DesktopLayer.js";
 import { createFolderLayerState } from "./folderLayerState.js";
@@ -92,7 +93,9 @@ const props = defineProps({
   dragFolderHoverState: { type: Object, default: null },
   dragFolderTargetId: { type: String, default: null },
   dragMeta: { type: Object, default: null },
+  dragPreviewState: { type: Object, default: null },
   dragReleaseGhostId: { type: String, default: null },
+  dragReleaseState: { type: Object, default: null },
   folderClosingHandoffId: { type: String, default: null },
   folderOverlayState: { type: Object, default: null },
   folderPageSize: { type: Number, required: true },
@@ -134,17 +137,21 @@ function getResolvedSingleStageFolderProbeOptions() {
   if (props.singleStageRootStageEnabled != null || props.singleStageFolderLayerEnabled != null) {
     const fallback = getSingleStageFolderProbeOptions();
     const folderLayer = props.singleStageFolderLayerEnabled ?? fallback.folderLayer;
+    const dragPreview = fallback.dragPreview || Boolean(folderLayer);
     return {
       ...fallback,
-      enabled: fallback.enabled || Boolean(props.singleStageRootStageEnabled || folderLayer),
+      enabled: fallback.enabled || Boolean(props.singleStageRootStageEnabled || folderLayer || dragPreview),
+      dragPreview,
       folderLayer,
-      rootStage: props.singleStageRootStageEnabled ?? fallback.rootStage,
+      rootStage: props.singleStageRootStageEnabled ?? (fallback.rootStage || dragPreview),
     };
   }
   const options = props.singleStageFolderProbeOptions;
   if (options && typeof options === "object") {
-    if ("rootStage" in options || "folderLayer" in options || "enabled" in options) return options;
-    if ("value" in options && options.value) return options.value;
+    if ("rootStage" in options || "folderLayer" in options || "enabled" in options || "dragPreview" in options) {
+      return getSingleStageFolderProbeOptions(options);
+    }
+    if ("value" in options && options.value) return getSingleStageFolderProbeOptions(options.value);
   }
   return getSingleStageFolderProbeOptions();
 }
@@ -652,9 +659,12 @@ function renderPixi() {
     dragFolderHoverState: props.dragFolderHoverState,
     dragFolderTargetId: props.dragFolderTargetId,
     dragMeta: props.dragMeta,
+    dragPreviewState: props.dragPreviewState,
     dragReleaseGhostId: props.dragReleaseGhostId,
+    dragReleaseState: props.dragReleaseState,
     deviceResolution: app.renderer?.resolution || 1,
     folderClosingHandoffId,
+    singleStageDragPreviewEnabled: singleStageFolderProbeOptions.dragPreview,
     singleStageFolderProbeEnabled: singleStageFolderProbeOptions,
     singleStageFolderLayerEnabled: singleStageFolderProbeOptions.folderLayer,
     singleStageFolderState: singleStageFolderProbeOptions.enabled ? createSingleStageFolderState(metrics, singleStageFolderProbeOptions, renderGeometry) : null,
@@ -681,6 +691,9 @@ function renderPixi() {
     stageRect: renderGeometry.stageRect,
     width: renderGeometry.width,
   });
+  if (singleStageFolderProbeOptions.dragPreview) {
+    preloadIconTextures(collectDragPreviewTextureItems(props.dragPreviewState || props.dragReleaseState));
+  }
   logFolderHandoffTimeline(metrics, folderClosingHandoffId);
 }
 
@@ -731,6 +744,13 @@ function collectFolderTexturePrewarmItems() {
     }
   }
   return items;
+}
+
+function collectDragPreviewTextureItems(previewState) {
+  const item = previewState?.item;
+  if (!item) return [];
+  if (item.type !== "folder") return [item];
+  return getFolderPreviewSlots(item, props.folderPageSize).filter(Boolean);
 }
 
 function scheduleFolderTexturePrewarm() {
@@ -878,7 +898,9 @@ watchEffect(() => {
   void props.dragFolderHoverState;
   void props.dragFolderTargetId;
   void props.dragMeta;
+  void props.dragPreviewState;
   void props.dragReleaseGhostId;
+  void props.dragReleaseState;
   void props.folderClosingHandoffId;
   void props.folderOverlayState;
   void props.gridCols;
