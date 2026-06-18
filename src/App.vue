@@ -37,26 +37,25 @@
       aria-hidden="true"
     />
 
-    <div ref="shellRef" class="launchpad-shell">
-      <Motion
-        :key="`launchpad-chrome-${singleStageRenderKey}`"
-        class="launchpad-chrome-motion launchpad-chrome-motion-header"
-        :initial="homeChromeInitial"
-        :animate="homeChromeAnimate"
-        :transition="homeChromeTransition"
-        :style="homeChromeStyle"
-      >
-        <LaunchpadHeader
-          :dom-refs="headerDomRefs"
-          :drag-disabled="!!dragMeta"
-          :is-search-mode="isSearchMode"
-          :search-query="searchQuery"
-          @search-input="handleSearchInput"
-          @search-focus="keyboardFocusArea = 'search'"
-          @clear-search="clearSearch"
-          @open-settings="openSettingsPanel"
-        />
-      </Motion>
+    <LaunchpadChromeFrame
+      :active-page-index="activePageIndex"
+      :active-pages="activePages"
+      :chrome-animate="homeChromeAnimate"
+      :chrome-initial="homeChromeInitial"
+      :chrome-style="homeChromeStyle"
+      :chrome-transition="homeChromeTransition"
+      :dom-refs="headerDomRefs"
+      :drag-disabled="!!dragMeta"
+      :frame-refs="chromeFrameRefs"
+      :is-search-mode="isSearchMode"
+      :render-key="singleStageRenderKey"
+      :search-query="searchQuery"
+      @search-input="handleSearchInput"
+      @search-focus="keyboardFocusArea = 'search'"
+      @clear-search="clearSearch"
+      @open-settings="openSettingsPanel"
+      @page-index="commitActivePageIndex"
+    >
       <PixiDesktopSurface
         :key="singleStageRenderKey"
         :active-page-index="activePageIndex"
@@ -104,27 +103,7 @@
         @choose-app-icon="openExistingAppIconChooser"
         @reset-app-icon="resetAppCustomIcon"
       />
-      <Motion
-        :key="`launchpad-chrome-dots-${singleStageRenderKey}`"
-        class="launchpad-chrome-motion launchpad-chrome-motion-dots"
-        :initial="homeChromeInitial"
-        :animate="homeChromeAnimate"
-        :transition="homeChromeTransition"
-        :style="homeChromeStyle"
-      >
-        <footer ref="pageDotsRef" class="page-dots">
-          <button
-            v-for="index in activePages.length"
-            :key="`${isSearchMode ? 'search-dot' : 'page-dot'}-${index}`"
-            type="button"
-            :class="cx('page-dot', index - 1 === activePageIndex && 'page-dot-active')"
-            :aria-label="`切换到第 ${index} 页`"
-            @pointerdown.stop
-            @click="commitActivePageIndex(index - 1)"
-          />
-        </footer>
-      </Motion>
-    </div>
+    </LaunchpadChromeFrame>
 
     <SettingsPanel :state="settingsPanelState" :background-layout-context="backgroundLayoutContext" />
     <LaunchpadDialogs :state="dialogState" />
@@ -172,10 +151,9 @@
 </template>
 
 <script setup>
-import { Motion } from "motion-v";
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import LaunchpadDialogs from "./components/LaunchpadDialogs.vue";
-import LaunchpadHeader from "./components/LaunchpadHeader.vue";
+import LaunchpadChromeFrame from "./components/LaunchpadChromeFrame.vue";
 import LaunchpadOverlays from "./components/LaunchpadOverlays.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import WindowChromeOverlay from "./components/WindowChromeOverlay.vue";
@@ -860,6 +838,7 @@ onBeforeUnmount(() => {
 
 const headerDomRefs = { headerRef, searchRef, searchInputRef };
 const desktopDomRefs = { desktopMainRef, rootRef, shellRef };
+const chromeFrameRefs = { pageDotsRef, shellRef };
 
 const settingsPanelState = createSettingsPanelState(controller, appVersion);
 const dialogState = createDialogState(controller);
