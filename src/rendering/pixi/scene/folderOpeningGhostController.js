@@ -35,6 +35,13 @@ export class FolderOpeningGhostController {
   clear() {
     const layer = this.layer;
     this.clearRevealTimer();
+    if (layer.openingGhostControllerKeys?.size && layer.openingGhostState?.completeFolderOpenIconGhost) {
+      for (const key of layer.openingGhostControllerKeys.values()) {
+        if (key) layer.openingGhostState.completeFolderOpenIconGhost(key);
+      }
+    }
+    layer.openingGhostControllerKeys = null;
+    layer.openingGhostState = null;
     layer.openingGhostKeys?.clear();
     layer.clearFrameGhost();
     layer.pageTrack.visible = true;
@@ -51,6 +58,8 @@ export class FolderOpeningGhostController {
     const layer = this.layer;
     if (layer.openingGhostKeys?.size) return;
     this.clearRevealTimer();
+    layer.openingGhostControllerKeys = null;
+    layer.openingGhostState = null;
     layer.revealIconNodes();
     layer.pageTrack.visible = true;
     layer.rebuildPageTrackMask();
@@ -64,6 +73,7 @@ export class FolderOpeningGhostController {
   complete(state, target, ghost) {
     const layer = this.layer;
     layer.openingGhostKeys?.delete(target.item.id);
+    layer.openingGhostControllerKeys?.delete(target.item.id);
     const controllerGhostKey = target.controllerGhostKey || state.getFolderOpenIconGhostKey?.(target.item.id, target.index);
     if (controllerGhostKey) state.completeFolderOpenIconGhost?.(controllerGhostKey);
     ghost.alpha = 1;
@@ -76,8 +86,20 @@ export class FolderOpeningGhostController {
     this.clear();
     layer.openingGhostKeys = new Set();
     const usableTargets = (targets || []).filter((target) => target.sourceRect && target.targetRect);
+    const usableControllerGhostKeys = new Set();
+    for (const target of usableTargets) {
+      const key = target.controllerGhostKey || state.getFolderOpenIconGhostKey?.(target.item.id, target.index);
+      if (key) usableControllerGhostKeys.add(key);
+    }
+    for (const ghost of state.folderOpenIconGhosts || []) {
+      if (ghost?.key && !usableControllerGhostKeys.has(ghost.key)) {
+        state.completeFolderOpenIconGhost?.(ghost.key);
+      }
+    }
 
     if (!usableTargets.length) return;
+    layer.openingGhostState = state;
+    layer.openingGhostControllerKeys = new Map();
     layer.panelMaterial.visible = true;
     layer.panelMaterial.alpha = 1;
     layer.frameGhost.visible = false;
@@ -86,6 +108,8 @@ export class FolderOpeningGhostController {
     layer.pageTrack.visible = false;
     this.scheduleRevealFallback(usableTargets);
     for (const target of usableTargets) {
+      const controllerGhostKey = target.controllerGhostKey || state.getFolderOpenIconGhostKey?.(target.item.id, target.index);
+      if (controllerGhostKey) layer.openingGhostControllerKeys.set(target.item.id, controllerGhostKey);
       const ghost = this.ghostFactory();
       ghost.eventMode = "none";
       ghost.stageRect = state.stageRect;

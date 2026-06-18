@@ -103,6 +103,7 @@ function makeLayer() {
 
 function makeState(completed) {
   return {
+    folderOpenIconGhosts: [],
     folderPageIndex: 0,
     folderPageSize: 9,
     height: 800,
@@ -162,18 +163,56 @@ export function runFolderOpeningGhostControllerTests() {
   }
 
   {
+    const completed = [];
     const timerHost = makeTimerHost();
     const layer = makeLayer();
     const controller = new FolderOpeningGhostController(layer, {
       ghostFactory: makeGhost,
       scheduler: timerHost,
     });
-    controller.start(makeState([]), [makeTarget()]);
+    controller.start(makeState(completed), [makeTarget()]);
     timerHost.runAll();
 
     assert(layer.openingGhostKeys.size === 0, "fallback should clear active keys");
+    assert(completed.join(",") === "controller-open-key", "fallback should complete pending controller keys");
     assert(layer.iconNode.visible === true, "fallback should reveal hidden icon nodes");
     assert(layer.ghosts.length === 0, "fallback should destroy opening ghost visuals");
     assert(layer.pageTrack.visible === true, "fallback should restore the page track");
+  }
+
+  {
+    const completed = [];
+    const layer = makeLayer();
+    const controller = new FolderOpeningGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: makeTimerHost(),
+    });
+    controller.start({
+      ...makeState(completed),
+      folderOpenIconGhosts: [{ key: "open-a" }, { key: "open-b" }],
+    }, [{ ...makeTarget(), sourceRect: null }]);
+
+    assert(completed.join(",") === "open-a,open-b", "missing opening targets should complete published ghost keys");
+    assert(layer.ghosts.length === 0, "missing opening targets should not create ghost visuals");
+    assert(layer.pageTrack.visible === true, "missing opening targets should keep the page track visible");
+  }
+
+  {
+    const completed = [];
+    const layer = makeLayer();
+    const controller = new FolderOpeningGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: makeTimerHost(),
+    });
+    const target = { ...makeTarget(), controllerGhostKey: "open-a" };
+    controller.start({
+      ...makeState(completed),
+      folderOpenIconGhosts: [{ key: "open-a" }, { key: "open-b" }],
+    }, [target, { ...makeTarget("app-2"), controllerGhostKey: "open-b", targetRect: null }]);
+
+    assert(completed.join(",") === "open-b", "missing opening target keys should complete immediately");
+    assert(layer.ghosts.length === 1, "usable opening targets should still render ghost visuals");
+    controller.complete(makeState(completed), target, layer.ghosts[0]);
+    assert(completed.join(",") === "open-b,open-a", "usable opening target should complete after its animation");
   }
 }

@@ -211,6 +211,7 @@ export class DesktopLayer extends Container {
     this.handoffDebugLayer = new Graphics();
     this.onIconAction = options.onIconAction || (() => {});
     this.onClosingFolderPointerDown = options.onClosingFolderPointerDown || (() => {});
+    this.onFolderGeometryChange = options.onFolderGeometryChange || (() => {});
     this.onFolderInternalActivityChange = options.onFolderInternalActivityChange || (() => {});
     this.onFolderOutsidePointerDown = options.onFolderOutsidePointerDown || (() => {});
     this.onFolderTitleFrameChange = options.onFolderTitleFrameChange || (() => {});
@@ -220,7 +221,7 @@ export class DesktopLayer extends Container {
         this.handleIconAction(action, originalEvent, item, source, iconNode),
       onInternalActivityChange: (active, folderId = null) => this.onFolderInternalActivityChange(active, folderId),
       onOutsidePointerDown: (event) => this.onFolderOutsidePointerDown(event),
-      showFolderTitle: true,
+      showFolderTitle: false,
       onTitleFrameChange: (frame) => this.onFolderTitleFrameChange(frame),
     });
     this.singleStageFolderProbeLayer = new SingleStageFolderProbeLayer();
@@ -451,17 +452,17 @@ export class DesktopLayer extends Container {
 
   updateSingleStageFolderLayer(state) {
     if (state.singleStageFolderLayerEnabled && state.singleStageFolderState) {
-      this.singleStageFolderLayer.update(state.singleStageFolderState);
+      this.onFolderGeometryChange(this.singleStageFolderLayer.update(state.singleStageFolderState));
       return;
     }
-    this.singleStageFolderLayer.update({
+    this.onFolderGeometryChange(this.singleStageFolderLayer.update({
       folderPanelRef: null,
       folderViewportRef: null,
       height: state.height,
       renderedFolder: null,
       stageRect: state.stageRect,
       width: state.width,
-    });
+    }));
   }
 
   ensureFolderHandoffNode(folderId, node, layoutTarget) {

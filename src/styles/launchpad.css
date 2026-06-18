@@ -2441,6 +2441,19 @@ body {
   z-index: 11;
 }
 
+.pixi-single-stage-folder-controls {
+  position: fixed;
+  right: auto;
+  bottom: auto;
+  left: var(--pixi-root-stage-left, 0);
+  top: var(--pixi-root-stage-top, 0);
+  width: var(--pixi-root-stage-width, 100vw);
+  height: var(--pixi-root-stage-height, 100vh);
+  overflow: visible;
+  pointer-events: none;
+  z-index: 12;
+}
+
 .pixi-launchpad-canvas {
   display: block;
   width: 100%;

@@ -314,6 +314,11 @@ export class FolderOverlayLayer extends Container {
 
     const closingPreviewSwapTargets = renderPlan.closingPreviewSwapTargets;
     if (isNewFolder && !isClosing) this.openingGhosts.start(state, openingGhostTargets, folderRect, geometry.panel);
+    if (!isNewFolder && !isClosing && state.folderOpenIconGhosts?.length && !this.openingGhostKeys?.size) {
+      for (const ghost of state.folderOpenIconGhosts) {
+        if (ghost?.key) state.completeFolderOpenIconGhost?.(ghost.key);
+      }
+    }
     if (state.isFolderClosing && this.closingGhostFolderId !== folderId) {
       const closeFrameRect = this.getPanelVisualRect(geometry.panel) || geometry.panel;
       this.closingGhosts.start(state, closingGhostTargets, closeThumbRect, closeFrameRect, {

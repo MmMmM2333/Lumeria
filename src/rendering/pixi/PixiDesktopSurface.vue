@@ -13,13 +13,49 @@
         class="pixi-desktop-host pixi-desktop-host-root-stage"
         :style="rootStageHostStyle"
       />
+      <div
+        v-if="shouldRenderSingleStageFolderDomControls"
+        class="pixi-single-stage-folder-controls"
+        :style="rootStageHostStyle"
+        @contextmenu.stop.prevent
+      >
+        <input
+          class="folder-name-input pixi-folder-name-input"
+          name="pixiSingleStageFolderName"
+          :value="folderOverlayState.renderedFolder.value.name"
+          :disabled="isSingleStageFolderInputDisabled"
+          :style="singleStageFolderNameInputStyle"
+          maxlength="32"
+          aria-label="文件夹名称"
+          @input="handleSingleStageFolderNameInput"
+          @blur="restoreSingleStageEmptyFolderName"
+          @keydown.enter.prevent.stop="$event.target.blur()"
+          @pointerdown.stop
+        />
+        <footer
+          v-if="folderOverlayState.folderPages.value.length > 1"
+          class="folder-page-dots pixi-folder-page-dots"
+          :style="singleStageFolderPageDotsStyle"
+          @pointerdown.stop
+        >
+          <button
+            v-for="index in folderOverlayState.folderPages.value.length"
+            :key="index"
+            type="button"
+            :class="['page-dot', index - 1 === folderOverlayState.folderPageIndex.value && 'page-dot-active']"
+            :aria-label="`切换到文件夹第 ${index} 页`"
+            @pointerdown.stop
+            @click="folderOverlayState.commitFolderPageIndex(index - 1)"
+          />
+        </footer>
+      </div>
     </Teleport>
     <div v-else ref="hostRef" class="pixi-desktop-host" />
   </main>
 </template>
 
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref, watchEffect } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect } from "vue";
 import { createPixiApp } from "./createPixiApp.js";
 import { DesktopLayer } from "./scene/DesktopLayer.js";
 import { createFolderLayerState } from "./folderLayerState.js";
@@ -84,11 +120,18 @@ const hostRef = ref(null);
 const mainRef = ref(null);
 const rootStageCanvasEnabled = ref(getSingleStageFolderProbeOptions().rootStage);
 const rootStageHostStyle = ref(rootStageCanvasEnabled.value ? makeRootStageHostStyle() : null);
+const singleStageFolderLayerEnabled = ref(getSingleStageFolderProbeOptions().folderLayer);
+const singleStageFolderPanelGeometry = ref(null);
+const singleStageFolderTitleFrame = ref(null);
+const singleStageFolderNameBeforeEdit = ref("");
+const singleStageFolderClosingTitleStartOpacity = ref(1);
+const singleStageFolderPageDotsVisible = ref(false);
 let app = null;
 let layer = null;
 let resizeObserver = null;
 let destroyed = false;
 let folderTexturePrewarmTimer = null;
+let singleStageFolderPageDotsRevealFrame = null;
 let handoffRenderFrame = null;
 let retainedFolderClosingHandoffId = null;
 let handoffReleaseStartedAt = 0;
@@ -98,6 +141,138 @@ let handoffDebugSequence = 0;
 let lastHandoffDecision = null;
 let lastHandoffReleaseCommitAt = 0;
 let lastReleasedFolderClosingHandoffId = null;
+
+const FOLDER_PAGE_DOTS_REVEAL_PROGRESS = 0.995;
+
+const isSingleStageFolderGhostTransitionActive = computed(() => Boolean(
+  props.folderOverlayState?.isFolderOpenIconAnimationActive?.value ||
+  props.folderOverlayState?.isFolderCloseIconAnimationActive?.value
+));
+
+const isSingleStageFolderZoomFadeClosing = computed(() => Boolean(
+  props.folderOverlayState?.isFolderZoomFadeClosing?.value
+));
+
+const isSingleStageFolderClosing = computed(() => Boolean(
+  props.folderOverlayState?.isFolderClosing?.value ||
+  props.folderOverlayState?.isFolderAppLaunchClosing?.value ||
+  isSingleStageFolderZoomFadeClosing.value
+));
+
+const shouldRenderSingleStageFolderDomControls = computed(() => Boolean(
+  rootStageCanvasEnabled.value &&
+  singleStageFolderLayerEnabled.value &&
+  props.folderOverlayState?.renderedFolder?.value
+));
+
+const isSingleStageFolderInputDisabled = computed(() => Boolean(
+  isSingleStageFolderClosing.value ||
+  isSingleStageFolderGhostTransitionActive.value
+));
+
+const isSingleStageFolderPageDotsBlocked = computed(() => Boolean(
+  isSingleStageFolderClosing.value ||
+  props.folderOverlayState?.isFolderOpenFrameGhostPending?.value ||
+  isSingleStageFolderGhostTransitionActive.value
+));
+
+const isSingleStageFolderPageDotsReady = computed(() => (
+  clamp01(singleStageFolderTitleFrame.value?.progress ?? 0) >= FOLDER_PAGE_DOTS_REVEAL_PROGRESS
+));
+
+const singleStageFolderNameInputStyle = computed(() => {
+  const frame = singleStageFolderTitleFrame.value || singleStageFolderPanelGeometry.value?.panel;
+  if (!shouldRenderSingleStageFolderDomControls.value || !frame) return { opacity: 0, pointerEvents: "none" };
+  const width = 360;
+  const opacity = getSingleStageFolderTitleOpacity(frame, isSingleStageFolderClosing.value);
+  const isInteractive = opacity >= 0.99 && !isSingleStageFolderInputDisabled.value;
+  return {
+    left: `${frame.left + frame.width / 2 - width / 2}px`,
+    filter: opacity < 0.98 ? "blur(2px)" : "blur(0px)",
+    opacity,
+    pointerEvents: isInteractive ? "auto" : "none",
+    top: `${frame.top - 44}px`,
+    transform: "translate3d(0, 0, 0)",
+    width: `${width}px`,
+  };
+});
+
+const singleStageFolderPageDotsStyle = computed(() => {
+  const panel = singleStageFolderPanelGeometry.value?.panel;
+  const grid = singleStageFolderPanelGeometry.value?.grid;
+  const isHidden = isSingleStageFolderPageDotsBlocked.value || !singleStageFolderPageDotsVisible.value;
+  if (!shouldRenderSingleStageFolderDomControls.value || !panel) return { opacity: 0, pointerEvents: "none" };
+  const height = 20;
+  const bottomPaddingTop = grid ? grid.top + grid.height : panel.top + panel.height - 54;
+  const bottomPaddingHeight = Math.max(0, panel.top + panel.height - bottomPaddingTop);
+  return {
+    bottom: "auto",
+    height: `${height}px`,
+    left: `${panel.left}px`,
+    opacity: isHidden ? 0 : 1,
+    pointerEvents: isHidden ? "none" : "auto",
+    right: "auto",
+    top: `${bottomPaddingTop + bottomPaddingHeight / 2 - height / 2}px`,
+    width: `${panel.width}px`,
+  };
+});
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+function getSingleStageFolderTitleOpenOpacity(frame) {
+  const progress = clamp01(frame?.progress ?? 1);
+  return clamp01((progress - 0.18) / 0.28);
+}
+
+function getSingleStageFolderTitleOpacity(frame, isClosing) {
+  if (!isClosing) return getSingleStageFolderTitleOpenOpacity(frame);
+  const progress = clamp01(frame?.progress ?? 0);
+  return singleStageFolderClosingTitleStartOpacity.value * clamp01(1 - progress / 0.28);
+}
+
+function cancelSingleStageFolderPageDotsReveal() {
+  if (singleStageFolderPageDotsRevealFrame == null) return;
+  globalThis.cancelAnimationFrame?.(singleStageFolderPageDotsRevealFrame);
+  singleStageFolderPageDotsRevealFrame = null;
+}
+
+function scheduleSingleStageFolderPageDotsReveal() {
+  cancelSingleStageFolderPageDotsReveal();
+  singleStageFolderPageDotsRevealFrame = globalThis.requestAnimationFrame?.(() => {
+    singleStageFolderPageDotsRevealFrame = null;
+    const state = props.folderOverlayState;
+    if (!state?.renderedFolder?.value ||
+      state.folderPages?.value?.length <= 1 ||
+      isSingleStageFolderPageDotsBlocked.value ||
+      !isSingleStageFolderPageDotsReady.value) return;
+    singleStageFolderPageDotsVisible.value = true;
+  }) ?? null;
+}
+
+function handleSingleStageFolderNameInput(event) {
+  const state = props.folderOverlayState;
+  const folder = state?.renderedFolder?.value;
+  if (!folder) return;
+  const nextName = String(event?.target?.value || "").slice(0, 32);
+  if (!nextName) return;
+  state.renameFolder(folder.id, nextName);
+}
+
+function restoreSingleStageEmptyFolderName(event) {
+  const state = props.folderOverlayState;
+  const folder = state?.renderedFolder?.value;
+  if (!folder) return;
+  const input = event?.target;
+  if (input?.value) {
+    singleStageFolderNameBeforeEdit.value = input.value;
+    return;
+  }
+  const fallback = singleStageFolderNameBeforeEdit.value || folder.name || "新文件夹";
+  if (input) input.value = fallback;
+  state.renameFolder(folder.id, fallback);
+}
 
 function handleResize() {
   app?.resize?.();
@@ -483,6 +658,7 @@ function renderPixi() {
   const metrics = getPixiHostMetrics(hostRef.value);
   const folderClosingHandoffId = resolveFolderClosingHandoffId(metrics);
   const singleStageFolderProbeOptions = getSingleStageFolderProbeOptions();
+  singleStageFolderLayerEnabled.value = singleStageFolderProbeOptions.folderLayer;
   if (syncRootStageCanvasFlag(singleStageFolderProbeOptions)) return;
   const renderGeometry = makeDesktopRenderGeometry(metrics, singleStageFolderProbeOptions);
   layer.update({
@@ -599,6 +775,14 @@ function handleFolderInternalActivity(active, folderId = null) {
   emit("internal-activity", Boolean(active), folderId);
 }
 
+function handleSingleStageFolderGeometryChange(geometry) {
+  singleStageFolderPanelGeometry.value = geometry || null;
+}
+
+function handleSingleStageFolderTitleFrameChange(frame) {
+  singleStageFolderTitleFrame.value = frame || null;
+}
+
 function destroyPixi(options = {}) {
   const deep = options.deep !== false;
   destroyed = true;
@@ -614,9 +798,13 @@ function destroyPixi(options = {}) {
   handoffReleaseStartedAt = 0;
   handoffSettledFrameCount = 0;
   handoffDebugPostReleaseFrames = 0;
+  singleStageFolderPanelGeometry.value = null;
+  singleStageFolderTitleFrame.value = null;
+  singleStageFolderPageDotsVisible.value = false;
   lastHandoffDecision = null;
   lastHandoffReleaseCommitAt = 0;
   lastReleasedFolderClosingHandoffId = null;
+  cancelSingleStageFolderPageDotsReveal();
   clearFolderTexturePrewarmTimer();
   if (currentLayer) {
     currentApp?.stage?.removeChild(currentLayer);
@@ -641,8 +829,10 @@ onMounted(async () => {
   app = nextApp;
   layer = new DesktopLayer({
     onClosingFolderPointerDown: (folderId) => props.folderOverlayState?.commitOpenFolder?.(folderId),
+    onFolderGeometryChange: handleSingleStageFolderGeometryChange,
     onFolderInternalActivityChange: handleFolderInternalActivity,
     onFolderOutsidePointerDown: () => props.folderOverlayState?.handleFolderOverlayPointerDown?.(),
+    onFolderTitleFrameChange: handleSingleStageFolderTitleFrameChange,
     onIconAction: handleIconAction,
   });
   app.stage.addChild(layer);
@@ -654,6 +844,41 @@ onMounted(async () => {
   scheduleHandoffRenderLoop();
   scheduleFolderTexturePrewarm();
 });
+
+watch(
+  () => isSingleStageFolderClosing.value,
+  (isClosing, wasClosing) => {
+    if (isClosing && !wasClosing) {
+      singleStageFolderClosingTitleStartOpacity.value = getSingleStageFolderTitleOpenOpacity(
+        singleStageFolderTitleFrame.value || singleStageFolderPanelGeometry.value?.panel
+      );
+      return;
+    }
+    if (!isClosing) singleStageFolderClosingTitleStartOpacity.value = 1;
+  }
+);
+
+watch(
+  () => ({
+    blocked: isSingleStageFolderPageDotsBlocked.value,
+    folderId: props.folderOverlayState?.renderedFolder?.value?.id || null,
+    pageCount: props.folderOverlayState?.folderPages?.value?.length || 0,
+    ready: isSingleStageFolderPageDotsReady.value,
+  }),
+  (state, previous) => {
+    const canShow = Boolean(
+      shouldRenderSingleStageFolderDomControls.value &&
+      state.folderId &&
+      state.pageCount > 1 &&
+      !state.blocked &&
+      state.ready
+    );
+    cancelSingleStageFolderPageDotsReveal();
+    if (!canShow || state.folderId !== previous?.folderId) singleStageFolderPageDotsVisible.value = false;
+    if (canShow) scheduleSingleStageFolderPageDotsReveal();
+  },
+  { immediate: true }
+);
 
 watchEffect(() => {
   void props.activePageIndex;
