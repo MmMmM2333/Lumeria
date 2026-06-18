@@ -78,6 +78,7 @@ export class FolderOverlayLayer extends Container {
     this.onClosingFolderPointerDown = options.onClosingFolderPointerDown || (() => { });
     this.onOutsidePointerDown = options.onOutsidePointerDown || (() => { });
     this.onTitleFrameChange = options.onTitleFrameChange || (() => { });
+    this.showFolderTitle = options.showFolderTitle === true;
     this.openingGhosts = new FolderOpeningGhostController(this, {
       ghostFactory: () => new IconNode(),
     });
@@ -190,7 +191,7 @@ export class FolderOverlayLayer extends Container {
     }
 
     this.folderTitle.text = state.renderedFolder.name || "新文件夹";
-    this.folderTitle.visible = false;
+    this.folderTitle.visible = this.showFolderTitle;
     this.folderTitle.anchor.set(0.5);
     this.folderTitle.position.set(geometry.panel.width / 2, -34);
 

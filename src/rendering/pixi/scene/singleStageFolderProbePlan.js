@@ -4,19 +4,21 @@ import { getStableFolderCloseRects, makeFolderThumbPreviewRect } from "./folderO
 import { resolveFolderOverlayTargets } from "./folderOverlayTargetResolver.js";
 
 export function getSingleStageFolderProbeOptions(value = globalThis.__LP_SINGLE_STAGE_FOLDER__) {
-  if (value === true) return { enabled: true, log: false, probe: true };
-  if (!value || typeof value !== "object") return { enabled: false, log: false, probe: false };
+  if (value === true) return { enabled: true, folderLayer: false, log: false, probe: true, rootStage: false };
+  if (!value || typeof value !== "object") return { enabled: false, folderLayer: false, log: false, probe: false, rootStage: false };
   const enabled = value.enabled === true || value.probe === true;
+  const folderLayer = enabled && value.folderLayer === true;
   return {
     enabled,
+    folderLayer,
     log: enabled && value.log === true,
-    probe: enabled,
-    rootStage: enabled && value.rootStage === true,
+    probe: enabled && value.probe !== false,
+    rootStage: enabled && (value.rootStage === true || folderLayer),
   };
 }
 
 export function isSingleStageFolderProbeEnabled(value = globalThis.__LP_SINGLE_STAGE_FOLDER__) {
-  return getSingleStageFolderProbeOptions(value).enabled;
+  return getSingleStageFolderProbeOptions(value).probe;
 }
 
 export function makeSingleStageFolderProbePlan(state, options = {}) {

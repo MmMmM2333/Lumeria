@@ -7,11 +7,14 @@
     @focus="$emit('desktop-focus')"
     @contextmenu.stop.prevent
   >
-    <div
-      ref="hostRef"
-      :class="['pixi-desktop-host', rootStageCanvasEnabled && 'pixi-desktop-host-root-stage']"
-      :style="rootStageHostStyle"
-    />
+    <Teleport v-if="rootStageCanvasEnabled" to="body">
+      <div
+        ref="hostRef"
+        class="pixi-desktop-host pixi-desktop-host-root-stage"
+        :style="rootStageHostStyle"
+      />
+    </Teleport>
+    <div v-else ref="hostRef" class="pixi-desktop-host" />
   </main>
 </template>
 
@@ -70,6 +73,7 @@ const emit = defineEmits([
   "choose-app-icon",
   "context-menu-icon",
   "desktop-focus",
+  "internal-activity",
   "open-app",
   "pointerdown-icon",
   "remove-app",
@@ -78,8 +82,8 @@ const emit = defineEmits([
 
 const hostRef = ref(null);
 const mainRef = ref(null);
-const rootStageCanvasEnabled = ref(false);
-const rootStageHostStyle = ref(null);
+const rootStageCanvasEnabled = ref(getSingleStageFolderProbeOptions().rootStage);
+const rootStageHostStyle = ref(rootStageCanvasEnabled.value ? makeRootStageHostStyle() : null);
 let app = null;
 let layer = null;
 let resizeObserver = null;
@@ -276,22 +280,24 @@ function makeRootStageHostStyle() {
     top: 0,
     width: globalThis.innerWidth || 1,
   };
-  const shellRect = getElementRect(props.domRefs?.shellRef) || { left: 0, top: 0 };
   return {
     "--pixi-root-stage-height": `${Math.max(1, rootRect.height)}px`,
-    "--pixi-root-stage-left": `${rootRect.left - shellRect.left}px`,
-    "--pixi-root-stage-top": `${rootRect.top - shellRect.top}px`,
+    "--pixi-root-stage-left": `${rootRect.left}px`,
+    "--pixi-root-stage-top": `${rootRect.top}px`,
     "--pixi-root-stage-width": `${Math.max(1, rootRect.width)}px`,
   };
 }
 
 function syncRootStageCanvasFlag(options) {
   const nextEnabled = Boolean(options?.rootStage);
+  rootStageHostStyle.value = nextEnabled ? makeRootStageHostStyle() : null;
   if (rootStageCanvasEnabled.value === nextEnabled) return false;
   rootStageCanvasEnabled.value = nextEnabled;
-  rootStageHostStyle.value = nextEnabled ? makeRootStageHostStyle() : null;
   nextTick(() => {
     if (destroyed) return;
+    if (app?.canvas && hostRef.value && app.canvas.parentElement !== hostRef.value) {
+      hostRef.value.replaceChildren(app.canvas);
+    }
     app?.resize?.();
     renderPixi();
   });
@@ -370,18 +376,19 @@ function resolveFolderClosingHandoffId(metrics) {
 function createSingleStageFolderState(metrics, options = {}) {
   const source = props.folderOverlayState;
   if (!source) return null;
+  const isFolderLayer = options.folderLayer === true;
   const stageRect = getSingleStageCandidateRect(metrics);
   const desktopStageRect = options.rootStage ? getDesktopContentRect(metrics, stageRect) : metrics.layoutRect;
   const desktopFrame = makeDesktopFrameFromStageRects(stageRect, desktopStageRect);
   return createFolderLayerState({
     callbacks: {
-      completeFolderCloseIconGhost: () => {},
-      completeFolderOpenIconGhost: () => {},
+      completeFolderCloseIconGhost: isFolderLayer ? source.completeFolderCloseIconGhost : () => {},
+      completeFolderOpenIconGhost: isFolderLayer ? source.completeFolderOpenIconGhost : () => {},
       getFolderPageRenderMode: source.getFolderPageRenderMode,
       getVisibleFolderPage: source.getVisibleFolderPage,
       isIconOpening: source.isIconOpening,
       isIconSelected: source.isIconSelected,
-      setFolderPageRef: () => {},
+      setFolderPageRef: isFolderLayer ? source.setFolderPageRef : () => {},
     },
     drag: {
       meta: source.dragMeta?.value,
@@ -397,10 +404,10 @@ function createSingleStageFolderState(metrics, options = {}) {
       pageIndex: source.folderPageIndex?.value,
       pageSize: source.folderPageSize?.value || props.folderPageSize,
       pages: source.folderPages?.value,
-      panelRef: null,
+      panelRef: isFolderLayer ? source.folderPanelRef : null,
       panelStyle: source.folderPanelStyle?.value,
       renderedFolder: source.renderedFolder?.value,
-      viewportRef: null,
+      viewportRef: isFolderLayer ? source.folderViewportRef : null,
     },
     stage: { rect: stageRect },
     ui: {
@@ -492,6 +499,7 @@ function renderPixi() {
     deviceResolution: app.renderer?.resolution || 1,
     folderClosingHandoffId,
     singleStageFolderProbeEnabled: singleStageFolderProbeOptions,
+    singleStageFolderLayerEnabled: singleStageFolderProbeOptions.folderLayer,
     singleStageFolderState: singleStageFolderProbeOptions.enabled ? createSingleStageFolderState(metrics, singleStageFolderProbeOptions) : null,
     folderPageSize: props.folderPageSize,
     getDesktopPageRenderMode: props.getDesktopPageRenderMode,
@@ -587,6 +595,10 @@ function handleIconAction(action, event, item, source) {
   if (action === "reset-icon") emit("reset-app-icon", item.id);
 }
 
+function handleFolderInternalActivity(active, folderId = null) {
+  emit("internal-activity", Boolean(active), folderId);
+}
+
 function destroyPixi(options = {}) {
   const deep = options.deep !== false;
   destroyed = true;
@@ -627,7 +639,12 @@ onMounted(async () => {
     return;
   }
   app = nextApp;
-  layer = new DesktopLayer({ onIconAction: handleIconAction });
+  layer = new DesktopLayer({
+    onClosingFolderPointerDown: (folderId) => props.folderOverlayState?.commitOpenFolder?.(folderId),
+    onFolderInternalActivityChange: handleFolderInternalActivity,
+    onFolderOutsidePointerDown: () => props.folderOverlayState?.handleFolderOverlayPointerDown?.(),
+    onIconAction: handleIconAction,
+  });
   app.stage.addChild(layer);
   resizeObserver = new ResizeObserver(handleResize);
   resizeObserver.observe(hostRef.value);

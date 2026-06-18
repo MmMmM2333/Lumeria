@@ -2413,6 +2413,7 @@ body {
 
 .pixi-desktop-main-root-stage {
   overflow: visible;
+  pointer-events: none;
 }
 
 .pixi-desktop-host {
@@ -2436,7 +2437,8 @@ body {
   height: var(--pixi-root-stage-height, 100vh);
   max-height: none;
   margin: 0;
-  z-index: 0;
+  pointer-events: auto;
+  z-index: 11;
 }
 
 .pixi-launchpad-canvas {

@@ -33,6 +33,7 @@ import {
 import { getDesktopIconSizing } from "./desktopIconSizing.js";
 import { makeContainerTargetIconBounds, makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { makeFolderThumbPreviewRect } from "./folderOverlayTargets.js";
+import { FolderOverlayLayer } from "./FolderOverlayLayer.js";
 import { SingleStageFolderProbeLayer } from "./singleStageFolderProbe.js";
 import { IconNode } from "../nodes/IconNode.js";
 
@@ -208,6 +209,20 @@ export class DesktopLayer extends Container {
     this.visualRoot = new Container();
     this.pageTrack = new Container();
     this.handoffDebugLayer = new Graphics();
+    this.onIconAction = options.onIconAction || (() => {});
+    this.onClosingFolderPointerDown = options.onClosingFolderPointerDown || (() => {});
+    this.onFolderInternalActivityChange = options.onFolderInternalActivityChange || (() => {});
+    this.onFolderOutsidePointerDown = options.onFolderOutsidePointerDown || (() => {});
+    this.onFolderTitleFrameChange = options.onFolderTitleFrameChange || (() => {});
+    this.singleStageFolderLayer = new FolderOverlayLayer({
+      onClosingFolderPointerDown: (folderId, event) => this.onClosingFolderPointerDown(folderId, event),
+      onIconAction: (action, originalEvent, item, source, iconNode) =>
+        this.handleIconAction(action, originalEvent, item, source, iconNode),
+      onInternalActivityChange: (active, folderId = null) => this.onFolderInternalActivityChange(active, folderId),
+      onOutsidePointerDown: (event) => this.onFolderOutsidePointerDown(event),
+      showFolderTitle: true,
+      onTitleFrameChange: (frame) => this.onFolderTitleFrameChange(frame),
+    });
     this.singleStageFolderProbeLayer = new SingleStageFolderProbeLayer();
     this.folderHandoffNode = null;
     this.hasDesktopVisualTransform = false;
@@ -222,9 +237,9 @@ export class DesktopLayer extends Container {
     this.visualRoot.addChild(this.pageTrack);
     this.visualRoot.addChild(this.emptyText);
     this.addChild(this.visualRoot);
+    this.addChild(this.singleStageFolderLayer);
     this.addChild(this.singleStageFolderProbeLayer);
     this.addChild(this.handoffDebugLayer);
-    this.onIconAction = options.onIconAction || (() => {});
   }
 
   update(state) {
@@ -232,6 +247,8 @@ export class DesktopLayer extends Container {
     this.widthValue = state.width;
     this.heightValue = state.height;
     this.applyDesktopCanvasTransform(state);
+    const isSingleStageFolderVisible = Boolean(state.singleStageFolderLayerEnabled && state.singleStageFolderState?.renderedFolder);
+    this.visualRoot.visible = !isSingleStageFolderVisible;
     const pages = state.activePages || [];
     const activePageIndex = state.activePageIndex || 0;
     const desktopFrame = getDesktopFrame(state);
@@ -402,6 +419,7 @@ export class DesktopLayer extends Container {
       onUpdate: refreshBounds,
     });
     refreshBounds();
+    this.updateSingleStageFolderLayer(state);
     this.singleStageFolderProbeLayer.update(state.singleStageFolderState, {
       enabled: state.singleStageFolderProbeEnabled,
     });
@@ -429,6 +447,21 @@ export class DesktopLayer extends Container {
     springTo(this.visualRoot, "y", targetY, desktopVisualSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
     springTo(this.visualRoot.scale, "x", scale, desktopVisualSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
     springTo(this.visualRoot.scale, "y", scale, desktopVisualSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
+  }
+
+  updateSingleStageFolderLayer(state) {
+    if (state.singleStageFolderLayerEnabled && state.singleStageFolderState) {
+      this.singleStageFolderLayer.update(state.singleStageFolderState);
+      return;
+    }
+    this.singleStageFolderLayer.update({
+      folderPanelRef: null,
+      folderViewportRef: null,
+      height: state.height,
+      renderedFolder: null,
+      stageRect: state.stageRect,
+      width: state.width,
+    });
   }
 
   ensureFolderHandoffNode(folderId, node, layoutTarget) {

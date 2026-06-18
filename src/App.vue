@@ -89,6 +89,7 @@
         :set-page-ref="setPageRef"
         :show-missing-launch-target-badge="showMissingLaunchTargetBadge"
         @desktop-focus="keyboardFocusArea = 'desktop'"
+        @internal-activity="handleFolderPixiInternalActivity"
         @pointerdown-icon="beginDrag"
         @open-app="openApp"
         @context-menu-icon="openIconContextMenu"
@@ -113,6 +114,7 @@
     <SettingsPanel :state="settingsPanelState" :background-layout-context="backgroundLayoutContext" />
     <LaunchpadDialogs :state="dialogState" />
     <PixiFolderOverlay
+      v-if="!shouldUseSingleStageFolderLayer"
       :active="shouldRunFolderPixi"
       :state="folderOverlayState"
       @internal-activity="handleFolderPixiInternalActivity"
@@ -165,6 +167,7 @@ import PixiBackgroundSurface from "./rendering/pixi/PixiBackgroundSurface.vue";
 import PixiDesktopSurface from "./rendering/pixi/PixiDesktopSurface.vue";
 import PixiDragPreviewOverlay from "./rendering/pixi/PixiDragPreviewOverlay.vue";
 import PixiFolderOverlay from "./rendering/pixi/PixiFolderOverlay.vue";
+import { getSingleStageFolderProbeOptions } from "./rendering/pixi/scene/singleStageFolderProbePlan.js";
 import { getBackgroundLayoutContext } from "./api/launchpadApi.js";
 import { loadBackgroundImagePixelSize } from "./composables/useBackgroundImagePixelSize.js";
 import { useLaunchpadController } from "./composables/useLaunchpadController.js";
@@ -331,6 +334,7 @@ const shouldRunFolderPixi = computed(() => Boolean(
     isFolderAppLaunchClosing.value
   )
 ));
+const shouldUseSingleStageFolderLayer = computed(() => getSingleStageFolderProbeOptions().folderLayer === true);
 const shouldRunDragPreviewPixi = computed(() => Boolean(
   shouldRunPixiOverlays.value && (
     dragMeta.value ||
