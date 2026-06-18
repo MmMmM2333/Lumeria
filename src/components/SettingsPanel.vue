@@ -958,6 +958,12 @@ let liveDesktopStatusTimer = null;
 let unlistenMainWindowShortcutCaptured = null;
 let mainWindowShortcutRecordingSession = 0;
 const ACRYLIC_PARAM_STEP = 0.01;
+const SETTINGS_OVERLAY_DURATION = 0.16;
+const SETTINGS_OVERLAY_EASE = "power2.out";
+const SETTINGS_PANEL_OPEN_DURATION = 0.34;
+const SETTINGS_PANEL_OPEN_EASE = "power3.out";
+const SETTINGS_PANEL_CLOSE_DURATION = 0.22;
+const SETTINGS_PANEL_CLOSE_EASE = "power2.inOut";
 const LIVE_DESKTOP_STATUS_REFRESH_INTERVAL_MS = 1000;
 const ACRYLIC_TINT_STRENGTH_MIN = 0;
 const ACRYLIC_TINT_STRENGTH_MAX = 0.6;
@@ -1188,22 +1194,13 @@ watch(
   { immediate: true }
 );
 
-watchSettingsMotionRef(settingsOverlayRef, { opacity: 0 }, () => ({
-  ...props.state.settingsOverlayAnimate.value,
-  duration: 0.16,
-}));
-watchSettingsMotionRef(settingsPanelRef, props.state.settingsPanelInitial.value, () => ({
-  ...props.state.settingsPanelAnimate.value,
-  duration: 0.26,
-}));
+watchSettingsMotionRef(settingsOverlayRef, { opacity: 0 }, resolveSettingsOverlayMotion);
+watchSettingsMotionRef(settingsPanelRef, props.state.settingsPanelInitial.value, resolveSettingsPanelMotion);
 
 watch(
   () => props.state.settingsOverlayAnimate.value,
   () => {
-    animateSettingsMotion(settingsOverlayRef.value, {
-      ...props.state.settingsOverlayAnimate.value,
-      duration: 0.16,
-    });
+    animateSettingsMotion(settingsOverlayRef.value, resolveSettingsOverlayMotion());
   },
   { flush: "post" }
 );
@@ -1211,10 +1208,7 @@ watch(
 watch(
   () => props.state.settingsPanelAnimate.value,
   () => {
-    animateSettingsMotion(settingsPanelRef.value, {
-      ...props.state.settingsPanelAnimate.value,
-      duration: 0.26,
-    });
+    animateSettingsMotion(settingsPanelRef.value, resolveSettingsPanelMotion());
   },
   { flush: "post" }
 );
@@ -1304,15 +1298,34 @@ function watchSettingsMotionRef(target, initial, resolveMotion) {
 function animateSettingsMotion(node, motion) {
   if (!node) return;
   gsap.killTweensOf(node);
+  const { ease = "power2.out", ...target } = motion;
   gsap.to(node, {
-    ...motion,
-    ease: "power2.out",
+    ...target,
+    ease,
     overwrite: "auto",
   });
 }
 
 function killSettingsPanelMotion(node) {
   if (node) gsap.killTweensOf(node);
+}
+
+function resolveSettingsOverlayMotion() {
+  return {
+    ...props.state.settingsOverlayAnimate.value,
+    duration: SETTINGS_OVERLAY_DURATION,
+    ease: SETTINGS_OVERLAY_EASE,
+  };
+}
+
+function resolveSettingsPanelMotion() {
+  const target = props.state.settingsPanelAnimate.value;
+  const isClosing = Number(target.opacity) === 0;
+  return {
+    ...target,
+    duration: isClosing ? SETTINGS_PANEL_CLOSE_DURATION : SETTINGS_PANEL_OPEN_DURATION,
+    ease: isClosing ? SETTINGS_PANEL_CLOSE_EASE : SETTINGS_PANEL_OPEN_EASE,
+  };
 }
 
 function resolveSystemAcrylicAppearance() {
