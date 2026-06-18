@@ -1,8 +1,14 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 
+export const MAX_RENDER_RESOLUTION = 2;
+
 function safeNumber(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+export function getEffectiveDevicePixelRatio(devicePixelRatio = globalThis.devicePixelRatio || 1) {
+  return Math.min(MAX_RENDER_RESOLUTION, Math.max(1, safeNumber(devicePixelRatio, 1)));
 }
 
 export function getStageScale(stageRect, stageWidth, stageHeight) {
@@ -40,6 +46,24 @@ export function makeStageLocalRect(rect, stageRect) {
     left: safeNumber(rect.left) - safeNumber(stageRect?.left),
     top: safeNumber(rect.top) - safeNumber(stageRect?.top),
     width: rect.width,
+  };
+}
+
+export function snapValueToDevicePixels(value, devicePixelRatio = globalThis.devicePixelRatio || 1) {
+  const scale = getEffectiveDevicePixelRatio(devicePixelRatio);
+  return Math.round(safeNumber(value) * scale) / scale;
+}
+
+export function snapRectToDevicePixels(rect, devicePixelRatio = globalThis.devicePixelRatio || 1) {
+  if (!rect) return null;
+  const left = snapValueToDevicePixels(rect.left, devicePixelRatio);
+  const top = snapValueToDevicePixels(rect.top, devicePixelRatio);
+  return {
+    ...rect,
+    left,
+    top,
+    right: left + rect.width,
+    bottom: top + rect.height,
   };
 }
 

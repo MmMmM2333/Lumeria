@@ -1,4 +1,10 @@
-import { makeStageLocalRect, makeStageVirtualElement, mapLocalRectToStageRect } from "./stageCoordinates.js";
+import {
+  getEffectiveDevicePixelRatio,
+  makeStageLocalRect,
+  makeStageVirtualElement,
+  mapLocalRectToStageRect,
+  snapRectToDevicePixels,
+} from "./stageCoordinates.js";
 
 export function runStageCoordinatesTests() {
   const assert = (condition, message) => {
@@ -34,6 +40,13 @@ export function runStageCoordinatesTests() {
   assert(local.left === 30 && local.top === 60, "stage local rect should subtract the stage origin");
   assert(local.width === 48 && local.height === 56, "stage local rect should preserve dimensions");
   assert(makeStageLocalRect(null, { left: 0, top: 0 }) === null, "stage local rect should stay nullable");
+
+  const snappedRect = snapRectToDevicePixels({ left: 10.26, top: 20.74, width: 40, height: 50 }, 2);
+  assert(snappedRect.left === 10.5 && snappedRect.top === 20.5, "rect snapping should align positions to the device pixel grid");
+  assert(snappedRect.width === 40 && snappedRect.height === 50, "rect snapping should preserve size");
+  assert(getEffectiveDevicePixelRatio(3) === 2, "effective DPR should match the renderer resolution cap");
+  const cappedSnap = snapRectToDevicePixels({ left: 10.26, top: 20.74, width: 40, height: 50 }, 3);
+  assert(cappedSnap.left === 10.5 && cappedSnap.top === 20.5, "rect snapping should use the capped renderer resolution");
 
   const stageScales = [
     { label: "1080p css stage", rect: { left: 0, top: 0, width: 1920, height: 1080 }, stageWidth: 1920, stageHeight: 1080 },
