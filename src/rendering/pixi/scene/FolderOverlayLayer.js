@@ -88,6 +88,14 @@ function springFolderIconLayoutPosition(node, target, refreshBounds) {
   springTo(node, "y", target.y, pageTrackSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
 }
 
+function springPanelGeometry(panel, target, options = {}) {
+  const springOptions = options.onFrame ? { onComplete: options.onFrame, onUpdate: options.onFrame } : {};
+  springTo(panel, "x", target.x, panelSpring, springOptions);
+  springTo(panel, "y", target.y, panelSpring, springOptions);
+  springTo(panel.scale, "x", target.scaleX, panelSpring, springOptions);
+  springTo(panel.scale, "y", target.scaleY, panelSpring, springOptions);
+}
+
 export class FolderOverlayLayer extends Container {
   constructor(options = {}) {
     super();
@@ -545,21 +553,20 @@ export class FolderOverlayLayer extends Container {
       this.panelTitleOpening = false;
       stopTargetSprings(this.panel);
       stopTargetSprings(this.panel.scale);
+      gsap.killTweensOf(this.panel, "x,y");
+      gsap.killTweensOf(this.panel.scale, "x,y");
       const sourceLocalRect = makeStageLocalRect(sourceRect, state.stageRect);
       gsap.to(this.panel, {
         alpha: state.isFolderAppLaunchClosing ? 0 : 0.8,
         duration: folderPanelCloseDuration,
         ease: folderCloseEase,
         overwrite: "auto",
+      });
+      springPanelGeometry(this.panel, {
+        scaleX: Math.max(0.08, sourceLocalRect.width / panelRect.width),
+        scaleY: Math.max(0.08, sourceLocalRect.height / panelRect.height),
         x: sourceLocalRect.left + sourceLocalRect.width / 2,
         y: sourceLocalRect.top + sourceLocalRect.height / 2,
-      });
-      gsap.to(this.panel.scale, {
-        duration: folderPanelCloseDuration,
-        ease: folderCloseEase,
-        overwrite: "auto",
-        x: Math.max(0.08, sourceLocalRect.width / panelRect.width),
-        y: Math.max(0.08, sourceLocalRect.height / panelRect.height),
       });
       return;
     }
@@ -575,17 +582,25 @@ export class FolderOverlayLayer extends Container {
       this.panelTitleOpening = false;
       stopTargetSprings(this.panel);
       stopTargetSprings(this.panel.scale);
-      gsap.to(this.panel, { duration: folderOpenDuration, ease: folderOpenEase, overwrite: "auto", x: targetX, y: targetY });
-      gsap.to(this.panel.scale, { duration: folderOpenDuration, ease: folderOpenEase, overwrite: "auto", x: 1.08, y: 1.08 });
+      gsap.killTweensOf(this.panel, "x,y");
+      gsap.killTweensOf(this.panel.scale, "x,y");
+      springPanelGeometry(this.panel, {
+        scaleX: 1.08,
+        scaleY: 1.08,
+        x: targetX,
+        y: targetY,
+      });
       return;
     }
 
     gsap.killTweensOf(this.panel, "x,y");
     gsap.killTweensOf(this.panel.scale, "x,y");
-    springTo(this.panel, "x", targetX, panelSpring, { onComplete: notifyPanelTitleFrame, onUpdate: notifyPanelTitleFrame });
-    springTo(this.panel, "y", targetY, panelSpring, { onComplete: notifyPanelTitleFrame, onUpdate: notifyPanelTitleFrame });
-    springTo(this.panel.scale, "x", 1, panelSpring, { onComplete: notifyPanelTitleFrame, onUpdate: notifyPanelTitleFrame });
-    springTo(this.panel.scale, "y", 1, panelSpring, { onComplete: notifyPanelTitleFrame, onUpdate: notifyPanelTitleFrame });
+    springPanelGeometry(this.panel, {
+      scaleX: 1,
+      scaleY: 1,
+      x: targetX,
+      y: targetY,
+    }, { onFrame: notifyPanelTitleFrame });
     notifyPanelTitleFrame();
   }
 
