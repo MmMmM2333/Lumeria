@@ -71,7 +71,7 @@ import {
   makeDesktopRenderGeometry as makeRootStageDesktopRenderGeometry,
   makeRootStageHostStyle as makeRootStageHostStyleFromRect,
 } from "./geometry/rootStageCoordinates.js";
-import { getSingleStageFolderProbeOptions } from "./scene/singleStageFolderProbePlan.js";
+import { getSingleStageOptions } from "./scene/singleStageFolderProbePlan.js";
 import {
   getSingleStageFolderTitleOpenOpacity,
   isSingleStageFolderPageDotsReady as getSingleStageFolderPageDotsReady,
@@ -120,6 +120,8 @@ const props = defineProps({
   setPageRef: { type: Function, required: true },
   showMissingLaunchTargetBadge: { type: Boolean, default: true },
   singleStageFolderLayerEnabled: { type: Boolean, default: null },
+  singleStageOptions: { type: Object, default: null },
+  singleStageRenderKey: { type: String, default: "" },
   singleStageFolderProbeOptions: { type: Object, default: null },
   singleStageFolderProbeRenderKey: { type: String, default: "" },
   singleStageRootStageEnabled: { type: Boolean, default: null },
@@ -136,9 +138,9 @@ const emit = defineEmits([
   "reset-app-icon",
 ]);
 
-function getResolvedSingleStageFolderProbeOptions() {
+function getResolvedSingleStageOptions() {
   if (props.singleStageRootStageEnabled != null || props.singleStageFolderLayerEnabled != null) {
-    const fallback = getSingleStageFolderProbeOptions();
+    const fallback = getSingleStageOptions();
     const folderLayer = props.singleStageFolderLayerEnabled ?? fallback.folderLayer;
     const dragPreview = fallback.dragPreview || Boolean(folderLayer);
     return {
@@ -149,22 +151,22 @@ function getResolvedSingleStageFolderProbeOptions() {
       rootStage: props.singleStageRootStageEnabled ?? (fallback.rootStage || dragPreview),
     };
   }
-  const options = props.singleStageFolderProbeOptions;
+  const options = props.singleStageOptions || props.singleStageFolderProbeOptions;
   if (options && typeof options === "object") {
     if ("rootStage" in options || "folderLayer" in options || "enabled" in options || "dragPreview" in options) {
-      return getSingleStageFolderProbeOptions(options);
+      return getSingleStageOptions(options);
     }
-    if ("value" in options && options.value) return getSingleStageFolderProbeOptions(options.value);
+    if ("value" in options && options.value) return getSingleStageOptions(options.value);
   }
-  return getSingleStageFolderProbeOptions();
+  return getSingleStageOptions();
 }
 
 const hostRef = ref(null);
 const mainRef = ref(null);
-const rootStageCanvasEnabled = ref(getResolvedSingleStageFolderProbeOptions().rootStage);
+const rootStageCanvasEnabled = ref(getResolvedSingleStageOptions().rootStage);
 const rootStageHostStyle = ref(rootStageCanvasEnabled.value ? makeRootStageHostStyle() : null);
-const singleStageDragPreviewEnabled = ref(getResolvedSingleStageFolderProbeOptions().dragPreview);
-const singleStageFolderLayerEnabled = ref(getResolvedSingleStageFolderProbeOptions().folderLayer);
+const singleStageDragPreviewEnabled = ref(getResolvedSingleStageOptions().dragPreview);
+const singleStageFolderLayerEnabled = ref(getResolvedSingleStageOptions().folderLayer);
 const singleStageFolderPanelGeometry = ref(null);
 const singleStageFolderTitleFrame = ref(null);
 const singleStageFolderNameBeforeEdit = ref("");
@@ -654,11 +656,11 @@ function renderPixi() {
   syncPixiResizeTarget();
   const metrics = getPixiHostMetrics(hostRef.value);
   const folderClosingHandoffId = resolveFolderClosingHandoffId(metrics);
-  const singleStageFolderProbeOptions = getResolvedSingleStageFolderProbeOptions();
-  singleStageDragPreviewEnabled.value = singleStageFolderProbeOptions.dragPreview;
-  singleStageFolderLayerEnabled.value = singleStageFolderProbeOptions.folderLayer;
-  if (syncRootStageCanvasFlag(singleStageFolderProbeOptions)) return;
-  const renderGeometry = makeDesktopRenderGeometry(metrics, singleStageFolderProbeOptions);
+  const singleStageOptions = getResolvedSingleStageOptions();
+  singleStageDragPreviewEnabled.value = singleStageOptions.dragPreview;
+  singleStageFolderLayerEnabled.value = singleStageOptions.folderLayer;
+  if (syncRootStageCanvasFlag(singleStageOptions)) return;
+  const renderGeometry = makeDesktopRenderGeometry(metrics, singleStageOptions);
   layer.update({
     activePageIndex: props.activePageIndex,
     activePages: props.activePages,
@@ -675,10 +677,10 @@ function renderPixi() {
     dragReleaseState: props.dragReleaseState,
     deviceResolution: app.renderer?.resolution || 1,
     folderClosingHandoffId,
-    singleStageDragPreviewEnabled: singleStageFolderProbeOptions.dragPreview,
-    singleStageFolderProbeEnabled: singleStageFolderProbeOptions,
-    singleStageFolderLayerEnabled: singleStageFolderProbeOptions.folderLayer,
-    singleStageFolderState: singleStageFolderProbeOptions.enabled ? createSingleStageFolderState(metrics, singleStageFolderProbeOptions, renderGeometry) : null,
+    singleStageDragPreviewEnabled: singleStageOptions.dragPreview,
+    singleStageFolderProbeEnabled: singleStageOptions,
+    singleStageFolderLayerEnabled: singleStageOptions.folderLayer,
+    singleStageFolderState: singleStageOptions.enabled ? createSingleStageFolderState(metrics, singleStageOptions, renderGeometry) : null,
     folderPageSize: props.folderPageSize,
     getDesktopPageRenderMode: props.getDesktopPageRenderMode,
     getVisibleDesktopPage: props.getVisibleDesktopPage,
@@ -702,7 +704,7 @@ function renderPixi() {
     stageRect: renderGeometry.stageRect,
     width: renderGeometry.width,
   });
-  if (singleStageFolderProbeOptions.dragPreview) {
+  if (singleStageOptions.dragPreview) {
     preloadIconTextures(collectDragPreviewTextureItems(props.dragPreviewState || props.dragReleaseState));
   }
   logFolderHandoffTimeline(metrics, folderClosingHandoffId);
@@ -893,7 +895,7 @@ watch(
 );
 
 watch(
-  () => props.singleStageFolderProbeRenderKey,
+  () => props.singleStageRenderKey || props.singleStageFolderProbeRenderKey,
   () => renderPixi(),
   { flush: "post" }
 );
@@ -926,6 +928,8 @@ watchEffect(() => {
   void props.pageGridMeasureStyle;
   void props.folderPageSize;
   void props.singleStageFolderLayerEnabled;
+  void props.singleStageOptions;
+  void props.singleStageRenderKey;
   void props.singleStageFolderProbeRenderKey;
   void props.singleStageFolderProbeOptions;
   void props.singleStageRootStageEnabled;

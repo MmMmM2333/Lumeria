@@ -7,12 +7,18 @@ import {
   registerTopLevelIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
 import {
+  getSingleStageOptions,
+  getSingleStageOptionsKey,
+  getSingleStageRenderKey,
   getSingleStageFolderProbeOptions,
   getSingleStageFolderProbeOptionsKey,
   getSingleStageFolderProbeRenderKey,
+  installSingleStageGlobalFlag,
   installSingleStageFolderProbeGlobalFlag,
   makeSingleStageFolderProbePlan,
+  setSingleStageOptions,
   setSingleStageFolderProbeOptions,
+  SINGLE_STAGE_CHANGED_EVENT,
   SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT,
 } from "./singleStageFolderProbePlan.js";
 
@@ -38,13 +44,16 @@ export function runSingleStageFolderProbeTests() {
   };
   const iconRect = { height: 96, left: 200, top: 220, width: 96 };
   const thumbRect = { height: 72, left: 212, top: 232, width: 72 };
-  const options = getSingleStageFolderProbeOptions({ enabled: true, folderLayer: true, log: true });
+  const options = getSingleStageOptions({ enabled: true, folderLayer: true, log: true });
 
   assert(options.enabled && options.log, "probe options should preserve explicit logging");
   assert(options.folderLayer, "probe options should preserve the single-stage folder layer flag");
   assert(options.dragPreview, "folder layer should enable the single-stage drag preview");
   assert(options.rootStage, "probe options should preserve the root-stage canvas flag");
+  assert(getSingleStageFolderProbeOptions({ enabled: true, folderLayer: true, log: true }).rootStage, "legacy probe option helper should preserve root-stage behavior");
+  assert(getSingleStageOptionsKey(options) === "111111", "single-stage option key should reflect enabled flags");
   assert(getSingleStageFolderProbeOptionsKey(options) === "111111", "probe option key should reflect enabled flags");
+  assert(getSingleStageRenderKey(options) === "111", "single-stage render key should reflect only structural stage ownership flags");
   assert(getSingleStageFolderProbeRenderKey(options) === "111", "render key should reflect only structural stage ownership flags");
   const renderKeyWithoutDiagnostics = getSingleStageFolderProbeRenderKey(
     getSingleStageFolderProbeOptions({ enabled: true, folderLayer: true, log: false, probe: false })
@@ -63,29 +72,52 @@ export function runSingleStageFolderProbeTests() {
   const folderLayerOnlyOptions = getSingleStageFolderProbeOptions({ folderLayer: true, probe: false });
   assert(folderLayerOnlyOptions.enabled && folderLayerOnlyOptions.folderLayer && folderLayerOnlyOptions.dragPreview && folderLayerOnlyOptions.rootStage, "folder layer ownership should enable the dependent single-stage layers");
 
-  const flagName = "__LP_SINGLE_STAGE_FOLDER__";
-  const setterName = "__LP_SET_SINGLE_STAGE_FOLDER__";
+  const flagName = "__LP_SINGLE_STAGE__";
+  const setterName = "__LP_SET_SINGLE_STAGE__";
+  const legacyFlagName = "__LP_SINGLE_STAGE_FOLDER__";
+  const legacySetterName = "__LP_SET_SINGLE_STAGE_FOLDER__";
   const previousFlagDescriptor = Object.getOwnPropertyDescriptor(globalThis, flagName);
   const previousSetterDescriptor = Object.getOwnPropertyDescriptor(globalThis, setterName);
+  const previousLegacyFlagDescriptor = Object.getOwnPropertyDescriptor(globalThis, legacyFlagName);
+  const previousLegacySetterDescriptor = Object.getOwnPropertyDescriptor(globalThis, legacySetterName);
   let changeCount = 0;
+  let legacyChangeCount = 0;
   const handleFlagChange = () => { changeCount += 1; };
+  const handleLegacyFlagChange = () => { legacyChangeCount += 1; };
   try {
+    installSingleStageGlobalFlag();
     installSingleStageFolderProbeGlobalFlag();
+    globalThis.addEventListener?.(SINGLE_STAGE_CHANGED_EVENT, handleFlagChange);
     globalThis.addEventListener?.(SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT, handleFlagChange);
-    globalThis[flagName] = { folderLayer: true, probe: false };
-    assert(getSingleStageFolderProbeOptions().rootStage, "direct global flag assignment should update root-stage options");
+    globalThis.addEventListener?.(SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT, handleLegacyFlagChange);
+    globalThis[flagName] = { rootStage: true, probe: false };
+    assert(getSingleStageOptions().rootStage, "direct global flag assignment should update root-stage options");
+    assert(globalThis[legacyFlagName]?.rootStage, "legacy global flag should mirror the formal global flag");
+    globalThis[legacyFlagName] = { dragPreview: true, probe: false };
+    assert(getSingleStageOptions().dragPreview && globalThis[flagName]?.dragPreview, "legacy global flag assignment should update formal options");
     assert(getSingleStageFolderProbeOptions({ dragPreview: true, probe: false }).rootStage, "drag preview should request a root-stage canvas");
-    const normalized = setSingleStageFolderProbeOptions({ folderLayer: true, probe: false });
+    const normalized = setSingleStageOptions({ folderLayer: true, probe: false });
+    const legacyNormalized = setSingleStageFolderProbeOptions({ folderLayer: true, probe: false });
     assert(normalized.rootStage && normalized.dragPreview && !normalized.probe, "global flag setter should return normalized options");
+    assert(legacyNormalized.rootStage && legacyNormalized.dragPreview && !legacyNormalized.probe, "legacy global flag setter should return normalized options");
+    assert(typeof globalThis[setterName] === "function", "formal global setter should be installed");
+    assert(typeof globalThis[legacySetterName] === "function", "legacy global setter should be installed");
     if (typeof globalThis.addEventListener === "function") {
-      assert(changeCount >= 2, "global flag changes should dispatch change events");
+      assert(changeCount >= 4, "global flag changes should dispatch formal change events");
+      assert(legacyChangeCount >= 4, "global flag changes should dispatch legacy change events");
     }
   } finally {
     globalThis.removeEventListener?.(SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT, handleFlagChange);
+    globalThis.removeEventListener?.(SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT, handleLegacyFlagChange);
+    globalThis.removeEventListener?.(SINGLE_STAGE_CHANGED_EVENT, handleFlagChange);
     if (previousFlagDescriptor) Object.defineProperty(globalThis, flagName, previousFlagDescriptor);
     else delete globalThis[flagName];
     if (previousSetterDescriptor) Object.defineProperty(globalThis, setterName, previousSetterDescriptor);
     else delete globalThis[setterName];
+    if (previousLegacyFlagDescriptor) Object.defineProperty(globalThis, legacyFlagName, previousLegacyFlagDescriptor);
+    else delete globalThis[legacyFlagName];
+    if (previousLegacySetterDescriptor) Object.defineProperty(globalThis, legacySetterName, previousLegacySetterDescriptor);
+    else delete globalThis[legacySetterName];
   }
 
   clearIconBoundsRegistry();

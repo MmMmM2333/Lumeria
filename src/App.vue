@@ -38,7 +38,7 @@
     />
 
     <Motion
-      :key="`launchpad-shell-${singleStageFolderProbeRenderKey}`"
+      :key="`launchpad-shell-${singleStageRenderKey}`"
       ref="shellRef"
       class="launchpad-shell"
       :initial="homeShellInitial"
@@ -58,7 +58,7 @@
       />
 
       <PixiDesktopSurface
-        :key="singleStageFolderProbeRenderKey"
+        :key="singleStageRenderKey"
         :active-page-index="activePageIndex"
         :active-pages="activePages"
         :desktop-canvas-transform="desktopCanvasTransform"
@@ -94,8 +94,8 @@
         :set-page-ref="setPageRef"
         :show-missing-launch-target-badge="showMissingLaunchTargetBadge"
         :single-stage-folder-layer-enabled="shouldUseSingleStageFolderLayer"
-        :single-stage-folder-probe-render-key="singleStageFolderProbeRenderKey"
-        :single-stage-folder-probe-options="singleStageFolderProbeOptions"
+        :single-stage-options="singleStageOptions"
+        :single-stage-render-key="singleStageRenderKey"
         :single-stage-root-stage-enabled="shouldUseSingleStageRootStage"
         @desktop-focus="keyboardFocusArea = 'desktop'"
         @internal-activity="handleFolderPixiInternalActivity"
@@ -178,11 +178,11 @@ import PixiDesktopSurface from "./rendering/pixi/PixiDesktopSurface.vue";
 import PixiDragPreviewOverlay from "./rendering/pixi/PixiDragPreviewOverlay.vue";
 import PixiFolderOverlay from "./rendering/pixi/PixiFolderOverlay.vue";
 import {
-  getSingleStageFolderProbeOptions,
-  getSingleStageFolderProbeOptionsKey,
-  getSingleStageFolderProbeRenderKey,
-  installSingleStageFolderProbeGlobalFlag,
-  SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT,
+  getSingleStageOptions,
+  getSingleStageOptionsKey,
+  getSingleStageRenderKey,
+  installSingleStageGlobalFlag,
+  SINGLE_STAGE_CHANGED_EVENT,
 } from "./rendering/pixi/scene/singleStageFolderProbePlan.js";
 import { getBackgroundLayoutContext } from "./api/launchpadApi.js";
 import { loadBackgroundImagePixelSize } from "./composables/useBackgroundImagePixelSize.js";
@@ -207,7 +207,7 @@ import appPackage from "../package.json";
 import "./styles/launchpad.css";
 
 const controller = useLaunchpadController();
-installSingleStageFolderProbeGlobalFlag();
+installSingleStageGlobalFlag();
 const {
   rootRef,
   rootStyle,
@@ -340,7 +340,7 @@ const backgroundImageLayers = ref([
 const folderPixiInternalActivity = ref(false);
 const folderPixiInternalActivityFolderId = ref(null);
 const folderClosingHandoffRetainId = ref(null);
-const singleStageFolderProbeOptions = ref(getSingleStageFolderProbeOptions());
+const singleStageOptions = ref(getSingleStageOptions());
 const shouldRunPixiOverlays = computed(() => Boolean(
   isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value
 ));
@@ -353,10 +353,10 @@ const shouldRunFolderPixi = computed(() => Boolean(
     isFolderAppLaunchClosing.value
   )
 ));
-const shouldUseSingleStageRootStage = computed(() => singleStageFolderProbeOptions.value.rootStage === true);
-const shouldUseSingleStageFolderLayer = computed(() => singleStageFolderProbeOptions.value.folderLayer === true);
-const shouldUseSingleStageDragPreview = computed(() => singleStageFolderProbeOptions.value.dragPreview === true);
-const singleStageFolderProbeRenderKey = computed(() => getSingleStageFolderProbeRenderKey(singleStageFolderProbeOptions.value));
+const shouldUseSingleStageRootStage = computed(() => singleStageOptions.value.rootStage === true);
+const shouldUseSingleStageFolderLayer = computed(() => singleStageOptions.value.folderLayer === true);
+const shouldUseSingleStageDragPreview = computed(() => singleStageOptions.value.dragPreview === true);
+const singleStageRenderKey = computed(() => getSingleStageRenderKey(singleStageOptions.value));
 const desktopVisualAlpha = computed(() => Math.max(0, Math.min(1, Number(homeShellAnimate.value?.opacity ?? 1))));
 const shouldRunDragPreviewPixi = computed(() => Boolean(
   shouldRunPixiOverlays.value && (
@@ -393,9 +393,9 @@ let backgroundImageGeneration = 0;
 let backgroundImageShowFrame = null;
 let backgroundImageClearTimer = null;
 let liveDesktopCompositorKeeperTimer = null;
-let singleStageFolderProbeRefreshTimer = null;
+let singleStageRefreshTimer = null;
 let activeBackgroundImageLayerIndex = 0;
-let lastSingleStageFolderProbeOptionsKey = getSingleStageFolderProbeOptionsKey(singleStageFolderProbeOptions.value);
+let lastSingleStageOptionsKey = getSingleStageOptionsKey(singleStageOptions.value);
 
 function parseCssOpacity(value) {
   const number = Number.parseFloat(value);
@@ -711,26 +711,26 @@ function clearBackgroundImageTimers() {
   clearBackgroundImageClearTimer();
 }
 
-function refreshSingleStageFolderProbeOptions() {
-  const nextOptions = getSingleStageFolderProbeOptions();
-  const nextKey = getSingleStageFolderProbeOptionsKey(nextOptions);
-  if (nextKey === lastSingleStageFolderProbeOptionsKey) return;
-  lastSingleStageFolderProbeOptionsKey = nextKey;
-  singleStageFolderProbeOptions.value = nextOptions;
+function refreshSingleStageOptions() {
+  const nextOptions = getSingleStageOptions();
+  const nextKey = getSingleStageOptionsKey(nextOptions);
+  if (nextKey === lastSingleStageOptionsKey) return;
+  lastSingleStageOptionsKey = nextKey;
+  singleStageOptions.value = nextOptions;
 }
 
-function startSingleStageFolderProbeRefreshTimer() {
-  if (!import.meta.env.DEV || singleStageFolderProbeRefreshTimer != null) return;
-  singleStageFolderProbeRefreshTimer = window.setInterval(
-    refreshSingleStageFolderProbeOptions,
+function startSingleStageRefreshTimer() {
+  if (!import.meta.env.DEV || singleStageRefreshTimer != null) return;
+  singleStageRefreshTimer = window.setInterval(
+    refreshSingleStageOptions,
     SINGLE_STAGE_FOLDER_PROBE_REFRESH_MS
   );
 }
 
-function clearSingleStageFolderProbeRefreshTimer() {
-  if (singleStageFolderProbeRefreshTimer == null) return;
-  window.clearInterval(singleStageFolderProbeRefreshTimer);
-  singleStageFolderProbeRefreshTimer = null;
+function clearSingleStageRefreshTimer() {
+  if (singleStageRefreshTimer == null) return;
+  window.clearInterval(singleStageRefreshTimer);
+  singleStageRefreshTimer = null;
 }
 
 watch(
@@ -827,17 +827,17 @@ onBeforeUnmount(clearPixiBackgroundHideTimer);
 onBeforeUnmount(clearStartupMaskTimers);
 onBeforeUnmount(clearBackgroundImageTimers);
 onBeforeUnmount(clearLiveDesktopCompositorKeeperTimer);
-onBeforeUnmount(clearSingleStageFolderProbeRefreshTimer);
+onBeforeUnmount(clearSingleStageRefreshTimer);
 
 onMounted(() => {
   refreshBackgroundLayoutMetrics();
-  refreshSingleStageFolderProbeOptions();
-  startSingleStageFolderProbeRefreshTimer();
+  refreshSingleStageOptions();
+  startSingleStageRefreshTimer();
   window.addEventListener("resize", refreshBackgroundLayoutMetrics);
   window.addEventListener("focus", refreshBackgroundLayoutMetrics);
   window.addEventListener(LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT, handleLiveDesktopCompositorKeeperChanged);
   window.addEventListener(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT, handleLiveDesktopCssFallbackEffectsChanged);
-  window.addEventListener(SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT, refreshSingleStageFolderProbeOptions);
+  window.addEventListener(SINGLE_STAGE_CHANGED_EVENT, refreshSingleStageOptions);
   window.addEventListener("storage", handleLiveDesktopCompositorKeeperStorage);
   window.addEventListener("storage", handleLiveDesktopCssFallbackEffectsStorage);
 });
@@ -847,7 +847,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("focus", refreshBackgroundLayoutMetrics);
   window.removeEventListener(LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT, handleLiveDesktopCompositorKeeperChanged);
   window.removeEventListener(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT, handleLiveDesktopCssFallbackEffectsChanged);
-  window.removeEventListener(SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT, refreshSingleStageFolderProbeOptions);
+  window.removeEventListener(SINGLE_STAGE_CHANGED_EVENT, refreshSingleStageOptions);
   window.removeEventListener("storage", handleLiveDesktopCompositorKeeperStorage);
   window.removeEventListener("storage", handleLiveDesktopCssFallbackEffectsStorage);
 });

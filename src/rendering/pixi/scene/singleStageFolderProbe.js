@@ -1,8 +1,14 @@
 import { Container, Graphics, Text } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { getSingleStageFolderProbeOptions, makeSingleStageFolderProbePlan } from "./singleStageFolderProbePlan.js";
+import { getSingleStageOptions, makeSingleStageFolderProbePlan } from "./singleStageFolderProbePlan.js";
 
-export { getSingleStageFolderProbeOptions, isSingleStageFolderProbeEnabled, makeSingleStageFolderProbePlan } from "./singleStageFolderProbePlan.js";
+export {
+  getSingleStageOptions,
+  getSingleStageFolderProbeOptions,
+  isSingleStageDiagnosticsEnabled,
+  isSingleStageFolderProbeEnabled,
+  makeSingleStageFolderProbePlan,
+} from "./singleStageFolderProbePlan.js";
 
 function roundNumber(value) {
   const number = Number(value);
@@ -71,7 +77,7 @@ export class SingleStageFolderProbeLayer extends Container {
   }
 
   update(state, options = {}) {
-    const probeOptions = getSingleStageFolderProbeOptions(options.enabled);
+    const probeOptions = getSingleStageOptions(options.enabled);
     const plan = makeSingleStageFolderProbePlan(state, {
       enabled: probeOptions,
       previousStableFolderCloseTarget: this.stableFolderCloseTarget,
