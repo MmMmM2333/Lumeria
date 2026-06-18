@@ -37,26 +37,26 @@
       aria-hidden="true"
     />
 
-    <Motion
-      :key="`launchpad-shell-${singleStageRenderKey}`"
-      ref="shellRef"
-      class="launchpad-shell"
-      :initial="homeShellInitial"
-      :animate="homeShellAnimate"
-      :transition="homeShellTransition"
-      :style="homeShellStyle"
-    >
-      <LaunchpadHeader
-        :dom-refs="headerDomRefs"
-        :drag-disabled="!!dragMeta"
-        :is-search-mode="isSearchMode"
-        :search-query="searchQuery"
-        @search-input="handleSearchInput"
-        @search-focus="keyboardFocusArea = 'search'"
-        @clear-search="clearSearch"
-        @open-settings="openSettingsPanel"
-      />
-
+    <div ref="shellRef" class="launchpad-shell">
+      <Motion
+        :key="`launchpad-chrome-${singleStageRenderKey}`"
+        class="launchpad-chrome-motion launchpad-chrome-motion-header"
+        :initial="homeShellInitial"
+        :animate="homeShellAnimate"
+        :transition="homeShellTransition"
+        :style="homeShellStyle"
+      >
+        <LaunchpadHeader
+          :dom-refs="headerDomRefs"
+          :drag-disabled="!!dragMeta"
+          :is-search-mode="isSearchMode"
+          :search-query="searchQuery"
+          @search-input="handleSearchInput"
+          @search-focus="keyboardFocusArea = 'search'"
+          @clear-search="clearSearch"
+          @open-settings="openSettingsPanel"
+        />
+      </Motion>
       <PixiDesktopSurface
         :key="singleStageRenderKey"
         :active-page-index="activePageIndex"
@@ -104,19 +104,27 @@
         @choose-app-icon="openExistingAppIconChooser"
         @reset-app-icon="resetAppCustomIcon"
       />
-
-      <footer ref="pageDotsRef" class="page-dots">
-        <button
-          v-for="index in activePages.length"
-          :key="`${isSearchMode ? 'search-dot' : 'page-dot'}-${index}`"
-          type="button"
-          :class="cx('page-dot', index - 1 === activePageIndex && 'page-dot-active')"
-          :aria-label="`切换到第 ${index} 页`"
-          @pointerdown.stop
-          @click="commitActivePageIndex(index - 1)"
-        />
-      </footer>
-    </Motion>
+      <Motion
+        :key="`launchpad-chrome-dots-${singleStageRenderKey}`"
+        class="launchpad-chrome-motion launchpad-chrome-motion-dots"
+        :initial="homeShellInitial"
+        :animate="homeShellAnimate"
+        :transition="homeShellTransition"
+        :style="homeShellStyle"
+      >
+        <footer ref="pageDotsRef" class="page-dots">
+          <button
+            v-for="index in activePages.length"
+            :key="`${isSearchMode ? 'search-dot' : 'page-dot'}-${index}`"
+            type="button"
+            :class="cx('page-dot', index - 1 === activePageIndex && 'page-dot-active')"
+            :aria-label="`切换到第 ${index} 页`"
+            @pointerdown.stop
+            @click="commitActivePageIndex(index - 1)"
+          />
+        </footer>
+      </Motion>
+    </div>
 
     <SettingsPanel :state="settingsPanelState" :background-layout-context="backgroundLayoutContext" />
     <LaunchpadDialogs :state="dialogState" />

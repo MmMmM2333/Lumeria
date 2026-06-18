@@ -357,6 +357,13 @@ body {
   transform-origin: center center;
 }
 
+.launchpad-chrome-motion {
+  position: relative;
+  z-index: 12;
+  will-change: transform, opacity, filter;
+  transform-origin: center center;
+}
+
 .launchpad-root-pixi-root-stage .launchpad-shell,
 .launchpad-root-single-stage-folder-layer .launchpad-shell {
   z-index: 13;
