@@ -9,7 +9,27 @@ const SINGLE_STAGE_GLOBAL_FLAG = "__LP_SINGLE_STAGE__";
 const SINGLE_STAGE_SETTER_GLOBAL = "__LP_SET_SINGLE_STAGE__";
 const SINGLE_STAGE_FOLDER_PROBE_GLOBAL_FLAG = "__LP_SINGLE_STAGE_FOLDER__";
 const SINGLE_STAGE_FOLDER_PROBE_SETTER_GLOBAL = "__LP_SET_SINGLE_STAGE_FOLDER__";
+const DEFAULT_SINGLE_STAGE_OPTIONS = Object.freeze({
+  dragPreview: true,
+  enabled: true,
+  folderLayer: false,
+  log: false,
+  probe: false,
+  rootStage: true,
+});
+const DISABLED_SINGLE_STAGE_OPTIONS = Object.freeze({
+  dragPreview: false,
+  enabled: false,
+  folderLayer: false,
+  log: false,
+  probe: false,
+  rootStage: false,
+});
 let singleStageGlobalValue;
+
+function cloneOptions(options) {
+  return { ...options };
+}
 
 function dispatchEvent(name) {
   if (typeof globalThis.dispatchEvent !== "function") return;
@@ -62,8 +82,9 @@ export function installSingleStageFolderProbeGlobalFlag() {
 }
 
 export function getSingleStageOptions(value = readSingleStageGlobalValue()) {
-  if (value === true) return { dragPreview: false, enabled: true, folderLayer: false, log: false, probe: true, rootStage: false };
-  if (!value || typeof value !== "object") return { dragPreview: false, enabled: false, folderLayer: false, log: false, probe: false, rootStage: false };
+  if (value === undefined) return cloneOptions(DEFAULT_SINGLE_STAGE_OPTIONS);
+  if (value === true) return { ...DEFAULT_SINGLE_STAGE_OPTIONS, probe: true };
+  if (!value || typeof value !== "object") return cloneOptions(DISABLED_SINGLE_STAGE_OPTIONS);
   const hasStageOwnership = value.rootStage === true || value.dragPreview === true || value.folderLayer === true;
   const enabled = value.enabled === true || value.probe === true || hasStageOwnership;
   const folderLayer = enabled && value.folderLayer === true;
