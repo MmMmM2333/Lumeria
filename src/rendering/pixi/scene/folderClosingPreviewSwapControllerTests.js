@@ -134,6 +134,7 @@ export function runFolderClosingPreviewSwapControllerTests() {
 
     assert(layer.closingPreviewSwapKeys.size === 1, "start should track an active preview swap");
     assert(layer.closingPreviewSwapLayer.children.length === 1, "start should add the swap root to the layer");
+    controller.clear();
   }
 
   {

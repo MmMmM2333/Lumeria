@@ -1,6 +1,8 @@
 import { gsap } from "gsap";
 import { folderPreviewSettleEase } from "../animation/eases.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
+import { springGroupTo } from "../animation/springGroup.js";
+import { panelSpring } from "../animation/springMotion.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { makeClosingPreviewSwapPlan } from "./folderPreviewSwapMotion.js";
 
@@ -19,6 +21,14 @@ export class FolderClosingPreviewSwapController {
     layer.closingPreviewSwapKeys = layer.closingPreviewSwapKeys || new Set();
   }
 
+  cancelMotionControls() {
+    const layer = this.layer;
+    const controls = layer.closingPreviewSwapMotionControls;
+    layer.closingPreviewSwapMotionControls = null;
+    if (!controls?.size) return;
+    for (const control of controls) control.cancel();
+  }
+
   ensureLayer() {
     const layer = this.layer;
     if (!layer.closingPreviewSwapKeys) layer.closingPreviewSwapKeys = new Set();
@@ -34,6 +44,7 @@ export class FolderClosingPreviewSwapController {
 
   clear() {
     const layer = this.layer;
+    this.cancelMotionControls();
     layer.closingPreviewSwapKeys?.clear();
     const swapLayer = layer.closingPreviewSwapLayer;
     if (!swapLayer || swapLayer.destroyed) return;
@@ -80,6 +91,7 @@ export class FolderClosingPreviewSwapController {
   complete(state, key, root, iconsWrap, finishTransition) {
     const layer = this.layer;
     if (!layer.closingPreviewSwapKeys?.has(key)) return;
+    this.cancelMotionControls();
     layer.closingPreviewSwapKeys.delete(key);
     gsap.killTweensOf(root);
     gsap.killTweensOf(iconsWrap);
@@ -114,8 +126,13 @@ export class FolderClosingPreviewSwapController {
     root.addChild(iconsWrap);
     this.ensureLayer().addChild(root);
     layer.closingPreviewSwapKeys.add(key);
+    layer.closingPreviewSwapMotionControls = new Set();
 
     const iconMotions = [];
+    const springEntries = [
+      { target: iconsWrap.scale, prop: "x", to: 1, config: panelSpring },
+      { target: iconsWrap.scale, prop: "y", to: 1, config: panelSpring },
+    ];
     for (const motion of plan.iconMotions) {
       const ghost = this.createIcon(motion.item, motion.size);
       ghost.position.set(motion.fromX, motion.fromY);
@@ -123,35 +140,31 @@ export class FolderClosingPreviewSwapController {
       ghost.alpha = 0.78;
       iconsWrap.addChild(ghost);
       iconMotions.push({ ...motion, ghost });
+      springEntries.push(
+        { target: ghost, prop: "x", to: motion.toX, config: panelSpring, options: { delay: motion.delay } },
+        { target: ghost, prop: "y", to: motion.toY, config: panelSpring, options: { delay: motion.delay } },
+        { target: ghost.scale, prop: "x", to: 1, config: panelSpring, options: { delay: motion.delay } },
+        { target: ghost.scale, prop: "y", to: 1, config: panelSpring, options: { delay: motion.delay } }
+      );
     }
 
-    const timeline = gsap.timeline({
-      onComplete: () => this.complete(state, key, root, iconsWrap, finishTransition),
-    });
-    timeline
-      .to(root, { alpha: 1, duration: 0.08, ease: "power1.out" }, 0)
-      .to(iconsWrap.scale, {
-        x: 1,
-        y: 1,
-        duration: timing.swapDuration,
-        ease: folderPreviewSettleEase,
-      }, 0);
+    gsap.to(root, { alpha: 1, duration: 0.08, ease: "power1.out" });
     for (const motion of iconMotions) {
-      timeline
-        .to(motion.ghost, {
-          alpha: 1,
-          duration: timing.iconDuration,
-          ease: folderPreviewSettleEase,
-          x: motion.toX,
-          y: motion.toY,
-        }, motion.delay)
-        .to(motion.ghost.scale, {
-          duration: timing.iconDuration,
-          ease: folderPreviewSettleEase,
-          x: 1,
-          y: 1,
-        }, motion.delay);
+      gsap.to(motion.ghost, {
+        alpha: 1,
+        delay: motion.delay,
+        duration: timing.iconDuration,
+        ease: folderPreviewSettleEase,
+      });
     }
+
+    const motionControl = springGroupTo(springEntries, {
+      onComplete: () => {
+        layer.closingPreviewSwapMotionControls?.delete(motionControl);
+        this.complete(state, key, root, iconsWrap, finishTransition);
+      },
+    });
+    layer.closingPreviewSwapMotionControls.add(motionControl);
   }
 }
 

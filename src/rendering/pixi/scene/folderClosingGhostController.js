@@ -1,6 +1,8 @@
 import { gsap } from "gsap";
 import { folderCloseDuration, folderCloseEase } from "../animation/eases.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
+import { springGroupTo } from "../animation/springGroup.js";
+import { panelSpring } from "../animation/springMotion.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { makeStageLocalRect } from "../geometry/stageCoordinates.js";
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
@@ -28,6 +30,7 @@ const CLOSING_GHOST_MAX_DELAY = 0.06;
 const CLOSING_FRAME_TAIL_DURATION = 0.04;
 const CLOSING_EXTRA_GHOST_ALPHA_DURATION = 0.12;
 const CLOSING_EXTRA_GHOST_ALPHA_HOLD = 0.16;
+const CLOSING_GHOST_GEOMETRY_FALLBACK_SECONDS = 0.75;
 const CLOSING_PREVIEW_FALLBACK_DURATION = 0.22;
 
 function getFolderHandoffDebugOptions() {
@@ -78,15 +81,7 @@ function setLayerClosingHandoffActive(layer, active) {
   layer.closingHandoffActive = Boolean(active);
 }
 
-function animateClosingGhost(ghost, motion, target, onComplete) {
-  gsap.to(ghost, {
-    delay: motion.delay,
-    duration: folderCloseDuration,
-    ease: folderCloseEase,
-    x: motion.toX,
-    y: motion.toY,
-    onComplete,
-  });
+function animateClosingGhost(ghost, motion, target, onComplete, options = {}) {
   if (!target.isThumbnailChild) {
     gsap.to(ghost, {
       alpha: 0,
@@ -95,12 +90,14 @@ function animateClosingGhost(ghost, motion, target, onComplete) {
       ease: "power2.in",
     });
   }
-  gsap.to(ghost.scale, {
-    delay: motion.delay,
-    duration: folderCloseDuration,
-    ease: folderCloseEase,
-    x: motion.scale,
-    y: motion.scale,
+  return springGroupTo([
+    { target: ghost, prop: "x", to: motion.toX, config: panelSpring, options: { delay: motion.delay } },
+    { target: ghost, prop: "y", to: motion.toY, config: panelSpring, options: { delay: motion.delay } },
+    { target: ghost.scale, prop: "x", to: motion.scale, config: panelSpring, options: { delay: motion.delay } },
+    { target: ghost.scale, prop: "y", to: motion.scale, config: panelSpring, options: { delay: motion.delay } },
+  ], {
+    scheduler: options.scheduler,
+    onComplete,
   });
 }
 
@@ -132,8 +129,9 @@ export class FolderClosingGhostController {
     const layer = this.layer;
     this.clearRevealTimer();
     const maxDelay = getMaxFolderGhostGridDelay(targets, CLOSING_GHOST_MAX_DELAY);
+    const fallbackSeconds = Math.max(folderCloseDuration, CLOSING_GHOST_GEOMETRY_FALLBACK_SECONDS);
     const timeoutMs = Math.round(
-      (maxDelay + folderCloseDuration + CLOSING_PREVIEW_FALLBACK_DURATION) * 1000 + GHOST_REVEAL_FALLBACK_PADDING_MS
+      (maxDelay + fallbackSeconds + CLOSING_PREVIEW_FALLBACK_DURATION) * 1000 + GHOST_REVEAL_FALLBACK_PADDING_MS
     );
     layer.closingGhostRevealTimer = this.scheduler.setTimeout?.(() => {
       layer.closingGhostRevealTimer = null;
@@ -151,6 +149,7 @@ export class FolderClosingGhostController {
     this.clear();
     layer.closingGhostFolderId = folderId || null;
     layer.closingGhostKeys = new Set();
+    layer.closingGhostMotionControls = new Set();
     layer.closingFrameComplete = false;
     layer.completedClosingControllerGhostKeys = [];
     layer.completedClosingPreviewGhosts = [];
@@ -246,7 +245,11 @@ export class FolderClosingGhostController {
         if (node.item?.id === target.item.id) node.visible = false;
       }
 
-      animateClosingGhost(ghost, motion, target, () => this.completeGhost(state, target, ghost));
+      const motionControl = animateClosingGhost(ghost, motion, target, () => {
+        layer.closingGhostMotionControls?.delete(motionControl);
+        this.completeGhost(state, target, ghost);
+      }, { scheduler: this.scheduler });
+      layer.closingGhostMotionControls.add(motionControl);
     }
   }
 
@@ -316,6 +319,14 @@ export class FolderClosingGhostController {
 
   cancelHandoffCleanup() {
     cancelClosingHandoffCleanup(this.layer, this.scheduler.cancelAnimationFrame);
+  }
+
+  cancelMotionControls() {
+    const layer = this.layer;
+    const controls = layer.closingGhostMotionControls;
+    layer.closingGhostMotionControls = null;
+    if (!controls?.size) return;
+    for (const control of controls) control.cancel();
   }
 
   deferRunHandoffCleanup() {
@@ -435,6 +446,7 @@ export class FolderClosingGhostController {
     const layer = this.layer;
     this.cancelHandoffCleanup();
     this.clearRevealTimer();
+    this.cancelMotionControls();
     layer.closingGhostKeys?.clear();
     layer.closingPreviewSwapKeys?.clear();
     layer.closingFrameComplete = false;

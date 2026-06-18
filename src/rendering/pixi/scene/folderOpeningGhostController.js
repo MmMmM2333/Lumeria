@@ -1,28 +1,30 @@
 import { gsap } from "gsap";
 import { folderOpenGhostDuration, folderOpenGhostEase } from "../animation/eases.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
+import { springGroupTo } from "../animation/springGroup.js";
+import { panelSpring } from "../animation/springMotion.js";
 import { getMaxFolderGhostGridDelay, makeOpeningGhostMotion } from "./folderIconGhostMotion.js";
 import { makeFolderGhostIconNodeState } from "./folderGhostIconState.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 
 const GHOST_REVEAL_FALLBACK_PADDING_MS = 140;
+const GHOST_GEOMETRY_FALLBACK_SECONDS = 0.75;
 
-function animateOpeningGhost(ghost, motion, onComplete) {
+function animateOpeningGhost(ghost, motion, onComplete, options = {}) {
   gsap.to(ghost, {
     alpha: 1,
     duration: folderOpenGhostDuration,
     ease: folderOpenGhostEase,
-    x: motion.toX,
-    y: motion.toY,
     delay: motion.delay,
-    onComplete,
   });
-  gsap.to(ghost.scale, {
-    duration: folderOpenGhostDuration,
-    ease: folderOpenGhostEase,
-    x: 1,
-    y: 1,
-    delay: motion.delay,
+  return springGroupTo([
+    { target: ghost, prop: "x", to: motion.toX, config: panelSpring, options: { delay: motion.delay } },
+    { target: ghost, prop: "y", to: motion.toY, config: panelSpring, options: { delay: motion.delay } },
+    { target: ghost.scale, prop: "x", to: 1, config: panelSpring, options: { delay: motion.delay } },
+    { target: ghost.scale, prop: "y", to: 1, config: panelSpring, options: { delay: motion.delay } },
+  ], {
+    scheduler: options.scheduler,
+    onComplete,
   });
 }
 
@@ -44,16 +46,26 @@ export class FolderOpeningGhostController {
     const layer = this.layer;
     this.clearRevealTimer();
     const maxDelay = getMaxFolderGhostGridDelay(targets, 0.18);
-    const timeoutMs = Math.round((maxDelay + folderOpenGhostDuration) * 1000 + GHOST_REVEAL_FALLBACK_PADDING_MS);
+    const fallbackSeconds = Math.max(folderOpenGhostDuration, GHOST_GEOMETRY_FALLBACK_SECONDS);
+    const timeoutMs = Math.round((maxDelay + fallbackSeconds) * 1000 + GHOST_REVEAL_FALLBACK_PADDING_MS);
     layer.openingGhostRevealTimer = this.scheduler.setTimeout?.(() => {
       layer.openingGhostRevealTimer = null;
       if (layer.openingGhostKeys?.size) this.clear();
     }, timeoutMs) || null;
   }
 
+  cancelMotionControls() {
+    const layer = this.layer;
+    const controls = layer.openingGhostMotionControls;
+    layer.openingGhostMotionControls = null;
+    if (!controls?.size) return;
+    for (const control of controls) control.cancel();
+  }
+
   clear() {
     const layer = this.layer;
     this.clearRevealTimer();
+    this.cancelMotionControls();
     if (layer.openingGhostControllerKeys?.size && layer.openingGhostState?.completeFolderOpenIconGhost) {
       for (const key of layer.openingGhostControllerKeys.values()) {
         if (key) layer.openingGhostState.completeFolderOpenIconGhost(key);
@@ -77,6 +89,7 @@ export class FolderOpeningGhostController {
     const layer = this.layer;
     if (layer.openingGhostKeys?.size) return;
     this.clearRevealTimer();
+    this.cancelMotionControls();
     layer.openingGhostControllerKeys = null;
     layer.openingGhostState = null;
     layer.revealIconNodes();
@@ -119,6 +132,7 @@ export class FolderOpeningGhostController {
     if (!usableTargets.length) return;
     layer.openingGhostState = state;
     layer.openingGhostControllerKeys = new Map();
+    layer.openingGhostMotionControls = new Set();
     layer.panelMaterial.visible = true;
     layer.panelMaterial.alpha = 1;
     layer.frameGhost.visible = false;
@@ -153,7 +167,11 @@ export class FolderOpeningGhostController {
         if (node.item?.id === target.item.id) node.visible = false;
       }
 
-      animateOpeningGhost(ghost, motion, () => this.complete(state, target, ghost));
+      const motionControl = animateOpeningGhost(ghost, motion, () => {
+        layer.openingGhostMotionControls?.delete(motionControl);
+        this.complete(state, target, ghost);
+      }, { scheduler: this.scheduler });
+      layer.openingGhostMotionControls.add(motionControl);
     }
   }
 }

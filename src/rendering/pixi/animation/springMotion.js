@@ -57,6 +57,12 @@ function removeSpring(state) {
   releaseTickerIfIdle();
 }
 
+function cancelSpring(state) {
+  const onCancel = state.onCancel;
+  removeSpring(state);
+  onCancel?.();
+}
+
 function settleSpring(state) {
   state.target[state.prop] = state.to;
   const onComplete = state.onComplete;
@@ -83,7 +89,7 @@ function tickSprings() {
 
   for (const state of Array.from(activeSprings)) {
     if (state.target?.destroyed) {
-      removeSpring(state);
+      cancelSpring(state);
       continue;
     }
 
@@ -129,6 +135,7 @@ export function springTo(target, prop, to, config, options = {}) {
     state.value = readNumber(target[prop], state.value);
     state.to = numericTarget;
     state.config = springConfig;
+    state.onCancel = options.onCancel;
     state.onUpdate = options.onUpdate;
     state.onComplete = options.onComplete;
     return state;
@@ -136,6 +143,7 @@ export function springTo(target, prop, to, config, options = {}) {
 
   state = {
     config: springConfig,
+    onCancel: options.onCancel,
     onComplete: options.onComplete,
     onUpdate: options.onUpdate,
     prop,
@@ -153,17 +161,17 @@ export function springTo(target, prop, to, config, options = {}) {
 
 export function stopSpring(target, prop) {
   const state = springRegistry.get(target)?.get(prop);
-  if (state) removeSpring(state);
+  if (state) cancelSpring(state);
 }
 
 export function stopTargetSprings(target) {
   const targetMap = springRegistry.get(target);
   if (!targetMap) return;
-  for (const state of Array.from(targetMap.values())) removeSpring(state);
+  for (const state of Array.from(targetMap.values())) cancelSpring(state);
 }
 
 function stopAllSprings() {
-  for (const state of Array.from(activeSprings)) removeSpring(state);
+  for (const state of Array.from(activeSprings)) cancelSpring(state);
 }
 
 if (import.meta.hot) {
