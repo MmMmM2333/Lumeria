@@ -71,16 +71,16 @@ export function runFolderOverlayTargetsTests() {
 
   const stableTarget = makeStableFolderCloseTarget({
     folderId: "folder-1",
-    folderRect,
-    folderThumbRect,
-    getPreviewChildRect: (item, slotIndex) => item.id === "app-b" && slotIndex === 1 ? childRect : null,
+    getProjectedClientPreviewChildRect: (item, slotIndex) => item.id === "app-b" && slotIndex === 1 ? childRect : null,
     previewSlots,
+    projectedClientIconRect: folderRect,
+    projectedClientThumbRect: folderThumbRect,
   });
   assert(stableTarget.folderId === "folder-1", "stable close target should keep the folder id");
-  assert(stableTarget.iconRect !== folderRect && stableTarget.iconRect.left === folderRect.left, "stable icon rect should be cloned");
+  assert(stableTarget.projectedClientIconRect !== folderRect && stableTarget.projectedClientIconRect.left === folderRect.left, "stable projected icon rect should be cloned");
   assert(
-    stableTarget.previewChildRects.get(makePreviewChildKey("app-b", 1)).left === childRect.left,
-    "stable close target should cache available preview child bounds"
+    stableTarget.projectedClientPreviewChildRects.get(makePreviewChildKey("app-b", 1)).left === childRect.left,
+    "stable close target should cache available projected preview child bounds"
   );
 
   const closeRects = getStableFolderCloseRects({

@@ -177,7 +177,7 @@ export function makeSingleStageDiagnosticsPlan(state, options = {}) {
   const previewRects = (overlayTargets.previewSlots || []).slice(0, 9).map((item, slotIndex) => {
     if (!item?.id || !closeRects.closeThumbRect) return null;
     const previewKey = makePreviewChildKey(item.id, slotIndex);
-    const rect = stableTarget?.previewChildRects?.get(previewKey) ||
+    const rect = stableTarget?.projectedClientPreviewChildRects?.get(previewKey) ||
       makeFolderThumbPreviewRect(closeRects.closeThumbRect, slotIndex);
     return {
       itemId: item.id,

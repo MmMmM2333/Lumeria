@@ -86,13 +86,13 @@ export function resolveFolderOverlayTargets(options = {}) {
   const stageLayoutPreviewChildRects = new Map();
   const stableFolderCloseTarget = makeStableFolderCloseTarget({
     folderId,
-    folderRect: captureFinalCloseTarget
+    projectedClientIconRect: captureFinalCloseTarget
       ? stableFolderClientRect || liveFolderClientRect || folderClientRect
       : stableFolderClientRect || folderClientRect,
-    folderThumbRect: captureFinalCloseTarget
+    projectedClientThumbRect: captureFinalCloseTarget
       ? stableFolderThumbClientRect || stableFolderClientRect || liveFolderThumbClientRect || folderThumbClientRect || liveFolderClientRect || folderClientRect
       : stableFolderThumbClientRect || stableFolderClientRect || folderThumbClientRect,
-    getPreviewChildRect: (item, previewSlotIndex) => {
+    getProjectedClientPreviewChildRect: (item, previewSlotIndex) => {
       const stablePreviewRecord = getStableStageLayoutFolderPreviewChildTargetRecord(folderId, item.id, previewSlotIndex);
       const stablePreviewClientRect = projectStableRecordToClient(stablePreviewRecord);
       if (stablePreviewClientRect) {

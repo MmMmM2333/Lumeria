@@ -67,12 +67,12 @@ export function runFolderOverlayTargetResolverTests() {
   assert(resolved.folderThumbClientRect.left === capturedThumbRect.left, "opening thumb rect should prefer captured origin thumb bounds");
   assert(resolved.previewSlots[0].id === "app-a", "resolver should expose folder preview slots");
   assert(resolved.stableFolderCloseTarget.source === "stable-target", "stable target capture should describe its source");
-  assert(resolved.stableFolderCloseTarget.iconRect.left === targetIconClientRect.left, "stable close target should project target icon rect to client coordinates");
+  assert(resolved.stableFolderCloseTarget.projectedClientIconRect.left === targetIconClientRect.left, "stable close target should project target icon rect to client coordinates");
   assert(resolved.stableFolderCloseTarget.stageLayoutIconRect.left === targetIconStageRect.left, "stable close target should retain the stage layout icon rect");
-  assert(resolved.stableFolderCloseTarget.thumbRect.left === targetThumbClientRect.left, "stable close target should project target thumb rect to client coordinates");
+  assert(resolved.stableFolderCloseTarget.projectedClientThumbRect.left === targetThumbClientRect.left, "stable close target should project target thumb rect to client coordinates");
   assert(resolved.stableFolderCloseTarget.stageLayoutThumbRect.left === targetThumbStageRect.left, "stable close target should retain the stage layout thumb rect");
   assert(
-    resolved.stableFolderCloseTarget.previewChildRects.get("app-a:0").left === targetChildClientRect.left,
+    resolved.stableFolderCloseTarget.projectedClientPreviewChildRects.get("app-a:0").left === targetChildClientRect.left,
     "stable close target should project registered preview child bounds to client coordinates"
   );
   assert(
@@ -84,7 +84,7 @@ export function runFolderOverlayTargetResolverTests() {
     "opening preview lookup should prefer captured child bounds by child id fallback"
   );
 
-  const reusedStableTarget = { folderId: folder.id, iconRect: { left: 1, top: 2, width: 3, height: 4 }, source: "previous" };
+  const reusedStableTarget = { folderId: folder.id, projectedClientIconRect: { left: 1, top: 2, width: 3, height: 4 }, source: "previous" };
   const reused = resolveFolderOverlayTargets({
     folder,
     folderPageSize: 9,

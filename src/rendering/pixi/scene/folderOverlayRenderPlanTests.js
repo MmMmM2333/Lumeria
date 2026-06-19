@@ -77,7 +77,7 @@ export function runFolderOverlayRenderPlanTests() {
     previewSlots: [appA],
     stableFolderCloseTarget: {
       folderId: folder.id,
-      previewChildRects: new Map([["app-a:0", { height: 12, left: 30, top: 40, width: 12 }]]),
+      projectedClientPreviewChildRects: new Map([["app-a:0", { height: 12, left: 30, top: 40, width: 12 }]]),
     },
   });
 

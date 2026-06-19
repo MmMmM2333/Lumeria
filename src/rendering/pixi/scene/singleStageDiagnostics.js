@@ -44,7 +44,7 @@ function makeDebugSnapshot(plan) {
       slotIndex: preview.slotIndex,
     })),
     stableTarget: {
-      previewChildCount: plan.stableFolderCloseTarget?.previewChildRects?.size || 0,
+      previewChildCount: plan.stableFolderCloseTarget?.projectedClientPreviewChildRects?.size || 0,
       source: plan.stableFolderCloseTarget?.source || null,
     },
     stageRect: roundRect(plan.stageRect),

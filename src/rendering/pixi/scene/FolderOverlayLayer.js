@@ -730,8 +730,8 @@ export class FolderOverlayLayer extends Container {
       const closeTarget = this.stableFolderCloseTarget;
       if (this.isUserFolderClosing &&
         closeTarget?.folderId &&
-        (isPointInRect(clientX, clientY, closeTarget.thumbRect) ||
-          isPointInRect(clientX, clientY, closeTarget.iconRect))) {
+        (isPointInRect(clientX, clientY, closeTarget.projectedClientThumbRect) ||
+          isPointInRect(clientX, clientY, closeTarget.projectedClientIconRect))) {
         this.onClosingFolderPointerDown(closeTarget.folderId, native);
       }
       return;
