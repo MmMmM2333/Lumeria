@@ -46,11 +46,11 @@ export function runDesktopBoundsTargetsTests() {
       y: 30,
     });
 
-    assert(targets.folderThumbBounds === null, "app targets should not include folder thumb bounds");
+    assert(targets.renderedClientThumbBounds === null, "app targets should not include folder thumb bounds");
     assert(targets.coordinateSpace === "client-visual", "desktop bounds targets should identify client visual coordinates");
-    assert(targets.liveTargetBounds.left === 15.26, "app live target should preserve unsnapped container bounds");
-    assert(targets.stableTargetBounds.left === 15, "app stable target should preserve unsnapped stage bounds");
-    assert(targets.iconBounds.left === 5.26, "app icon bounds should not be snapped");
+    assert(targets.liveClientTargetBounds.left === 15.26, "app live target should preserve unsnapped container bounds");
+    assert(targets.stableClientTargetBounds.left === 15, "app stable target should preserve unsnapped stage bounds");
+    assert(targets.renderedClientIconBounds.left === 5.26, "app icon bounds should not be snapped");
     assert(targets.syncHandoffLayoutTarget === null, "app targets should not request handoff sync");
   }
 
@@ -69,11 +69,11 @@ export function runDesktopBoundsTargetsTests() {
       y: 30,
     });
 
-    assert(targets.liveTargetBounds.left === 15.5, "folder live target should snap to the device grid");
-    assert(targets.liveTargetBounds.top === 25.5, "folder live target y should snap to the device grid");
-    assert(targets.stableTargetBounds.left === 15, "folder stable target should stay aligned to the stable grid");
-    assert(targets.folderThumbBounds.left === 10.5, "folder thumb bounds should snap to the device grid");
-    assert(targets.iconBounds.left === 5.5, "folder icon bounds should snap to the device grid");
+    assert(targets.liveClientTargetBounds.left === 15.5, "folder live target should snap to the device grid");
+    assert(targets.liveClientTargetBounds.top === 25.5, "folder live target y should snap to the device grid");
+    assert(targets.stableClientTargetBounds.left === 15, "folder stable target should stay aligned to the stable grid");
+    assert(targets.renderedClientThumbBounds.left === 10.5, "folder thumb bounds should snap to the device grid");
+    assert(targets.renderedClientIconBounds.left === 5.5, "folder icon bounds should snap to the device grid");
   }
 
   {
@@ -94,8 +94,8 @@ export function runDesktopBoundsTargetsTests() {
       y: 30,
     });
 
-    assert(targets.liveTargetBounds.left === targets.stableTargetBounds.left, "handoff folder should use stable bounds as live target");
-    assert(targets.liveTargetBounds.top === targets.stableTargetBounds.top, "handoff folder should pin live y to stable target");
+    assert(targets.liveClientTargetBounds.left === targets.stableClientTargetBounds.left, "handoff folder should use stable bounds as live target");
+    assert(targets.liveClientTargetBounds.top === targets.stableClientTargetBounds.top, "handoff folder should pin live y to stable target");
     assert(targets.syncHandoffLayoutTarget === handoffLayoutTarget, "handoff folder should request node sync to the handoff layout target");
   }
 
@@ -133,10 +133,10 @@ export function runDesktopBoundsTargetsTests() {
       },
     });
 
-    assert(targets.bounds.left === 30, "folder preview child bounds should use the rendered node rect");
+    assert(targets.renderedClientBounds.left === 30, "folder preview child bounds should use the rendered node rect");
     assert(targets.coordinateSpace === "client-visual", "folder preview targets should identify client visual coordinates");
-    assert(nearlyEqual(targets.liveTargetBounds.left, 41), "folder preview live target should be projected from the live thumb rect");
-    assert(nearlyEqual(targets.stableTargetBounds.left, 43.75), "folder preview stable target should be projected from the stable thumb rect");
+    assert(nearlyEqual(targets.liveClientTargetBounds.left, 41), "folder preview live target should be projected from the live thumb rect");
+    assert(nearlyEqual(targets.stableClientTargetBounds.left, 43.75), "folder preview stable target should be projected from the stable thumb rect");
   }
 
   {
@@ -146,8 +146,8 @@ export function runDesktopBoundsTargetsTests() {
       stageRect: { height: 100, left: 0, top: 0, width: 100 },
     });
 
-    assert(targets.bounds === null, "missing node bounds should stay nullable");
-    assert(targets.liveTargetBounds === null, "missing live thumb target should stay nullable");
-    assert(targets.stableTargetBounds === null, "missing stable thumb target should stay nullable");
+    assert(targets.renderedClientBounds === null, "missing node bounds should stay nullable");
+    assert(targets.liveClientTargetBounds === null, "missing live thumb target should stay nullable");
+    assert(targets.stableClientTargetBounds === null, "missing stable thumb target should stay nullable");
   }
 }

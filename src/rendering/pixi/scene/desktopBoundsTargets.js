@@ -1,4 +1,4 @@
-import { snapRectToDevicePixels } from "../geometry/stageCoordinates.js";
+import { snapRectToDevicePixels, STAGE_COORDINATE_SPACES } from "../geometry/stageCoordinates.js";
 import { makeContainerTargetIconBounds, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { makeFolderThumbPreviewRect } from "./folderOverlayTargets.js";
 
@@ -35,30 +35,30 @@ export function resolveDesktopBoundsTargets(options = {}) {
     sizing.iconSize,
     visualOffsetY
   );
-  const stableTargetBounds = isFolder
+  const stableClientTargetBounds = isFolder
     ? snapRectToDevicePixels(rawStableTargetBounds, registration.deviceResolution)
     : rawStableTargetBounds;
-  let liveTargetBounds = isFolder
+  let liveClientTargetBounds = isFolder
     ? snapRectToDevicePixels(rawLiveTargetBounds, registration.deviceResolution)
     : rawLiveTargetBounds;
-  let folderThumbBounds = null;
+  let renderedClientThumbBounds = null;
   if (isFolder) {
-    folderThumbBounds = snapRectToDevicePixels(
+    renderedClientThumbBounds = snapRectToDevicePixels(
       node.getFolderThumbBounds(registration.stageRect),
       registration.deviceResolution
     );
-    if (isFolderClosingHandoff) liveTargetBounds = stableTargetBounds;
+    if (isFolderClosingHandoff) liveClientTargetBounds = stableClientTargetBounds;
   }
-  const iconBounds = isFolder
+  const renderedClientIconBounds = isFolder
     ? snapRectToDevicePixels(node.getIconBounds(registration.stageRect), registration.deviceResolution)
     : node.getIconBounds(registration.stageRect);
 
   return {
-    coordinateSpace: "client-visual",
-    folderThumbBounds,
-    iconBounds,
-    liveTargetBounds,
-    stableTargetBounds,
+    coordinateSpace: STAGE_COORDINATE_SPACES.CLIENT_VISUAL,
+    liveClientTargetBounds,
+    renderedClientIconBounds,
+    renderedClientThumbBounds,
+    stableClientTargetBounds,
     syncHandoffLayoutTarget: isFolderClosingHandoff ? handoffLayoutTarget || { x, y } : null,
   };
 }
@@ -72,9 +72,9 @@ export function resolveFolderPreviewChildBoundsTargets(options = {}) {
   } = options;
 
   return {
-    bounds: node?.getFolderPreviewChildBounds?.(stageRect, slotIndex) || null,
-    coordinateSpace: "client-visual",
-    liveTargetBounds: target?.liveThumbRect ? makeFolderThumbPreviewRect(target.liveThumbRect, slotIndex) : null,
-    stableTargetBounds: target?.stableThumbRect ? makeFolderThumbPreviewRect(target.stableThumbRect, slotIndex) : null,
+    coordinateSpace: STAGE_COORDINATE_SPACES.CLIENT_VISUAL,
+    liveClientTargetBounds: target?.liveThumbRect ? makeFolderThumbPreviewRect(target.liveThumbRect, slotIndex) : null,
+    renderedClientBounds: node?.getFolderPreviewChildBounds?.(stageRect, slotIndex) || null,
+    stableClientTargetBounds: target?.stableThumbRect ? makeFolderThumbPreviewRect(target.stableThumbRect, slotIndex) : null,
   };
 }

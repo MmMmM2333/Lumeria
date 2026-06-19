@@ -1,10 +1,10 @@
 import {
   clearIconBoundsRegistry,
-  registerFolderPreviewChildTargetBounds,
-  registerLaunchIconBounds,
-  registerTopLevelFolderThumbBounds,
-  registerTopLevelFolderThumbTargetBounds,
-  registerTopLevelIconTargetBounds,
+  registerRenderedClientLaunchIconBounds,
+  registerRenderedClientTopLevelFolderThumbBounds,
+  registerStableClientFolderPreviewChildTargetBounds,
+  registerStableClientTopLevelFolderThumbTargetBounds,
+  registerStableClientTopLevelIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
 import {
   getSingleStageOptions,
@@ -153,12 +153,12 @@ export function runSingleStageDiagnosticsTests() {
   }
 
   clearIconBoundsRegistry();
-  registerLaunchIconBounds({ area: "desktop", id: folder.id, pageIndex: 0 }, iconRect, { area: "desktop", id: folder.id });
-  registerTopLevelFolderThumbBounds(folder.id, thumbRect, { area: "desktop", id: folder.id });
-  registerTopLevelIconTargetBounds(folder.id, iconRect, { area: "desktop", id: folder.id });
-  registerTopLevelFolderThumbTargetBounds(folder.id, thumbRect, { area: "desktop", id: folder.id });
+  registerRenderedClientLaunchIconBounds({ area: "desktop", id: folder.id, pageIndex: 0 }, iconRect, { area: "desktop", id: folder.id });
+  registerRenderedClientTopLevelFolderThumbBounds(folder.id, thumbRect, { area: "desktop", id: folder.id });
+  registerStableClientTopLevelIconTargetBounds(folder.id, iconRect, { area: "desktop", id: folder.id });
+  registerStableClientTopLevelFolderThumbTargetBounds(folder.id, thumbRect, { area: "desktop", id: folder.id });
   for (let index = 0; index < 9; index += 1) {
-    registerFolderPreviewChildTargetBounds(folder.id, `app-${index}`, index, {
+    registerStableClientFolderPreviewChildTargetBounds(folder.id, `app-${index}`, index, {
       height: 16,
       left: thumbRect.left + index,
       top: thumbRect.top + index,

@@ -19,10 +19,10 @@ import {
 } from "../domain/launchpadLayout.js";
 import { getDomRefElement } from "./usePageGridMetrics.js";
 import {
-  getLaunchIconBounds,
-  getLaunchIconTargetBounds,
-  getTopLevelIconBounds,
-  getTopLevelTargetAtPoint as getPixiTopLevelTargetAtPoint,
+  getLiveClientLaunchIconTargetBounds,
+  getRenderedClientLaunchIconBounds,
+  getRenderedClientTopLevelIconBounds,
+  getRenderedClientTopLevelTargetAtPoint as getPixiTopLevelTargetAtPoint,
 } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 
 const LAYOUT_PROJECTION_RELEASE_DELAY = 260;
@@ -140,7 +140,7 @@ export function useLaunchpadDrag(options) {
 
   function resolveLongPressSourceRect(lp) {
     if (!lp?.refreshBoundsOnStart) return lp?.rect || null;
-    return getLaunchIconBounds({
+    return getRenderedClientLaunchIconBounds({
       area: getLaunchBoundsArea(lp.source),
       folderId: lp.source?.folderId,
       id: lp.item?.id,
@@ -439,7 +439,7 @@ export function useLaunchpadDrag(options) {
   function getCommittedTopLevelTargetBounds(itemId) {
     const target = options.findTopLevel(options.pages.value, itemId);
     if (!target) return null;
-    return getLaunchIconTargetBounds(
+    return getLiveClientLaunchIconTargetBounds(
       { area: "desktop", folderId: null, id: itemId, pageIndex: target.pageIndex },
       { area: "desktop", id: itemId, index: target.index, pageIndex: target.pageIndex }
     );
@@ -448,7 +448,7 @@ export function useLaunchpadDrag(options) {
   function getCommittedFolderTargetBounds(folderId, itemId) {
     const target = options.findInFolder(options.pages.value, folderId, itemId);
     if (!target) return null;
-    return getLaunchIconTargetBounds(
+    return getLiveClientLaunchIconTargetBounds(
       { area: "folder", folderId, id: itemId, pageIndex: target.pageIndex },
       { area: "folder", folderId, id: itemId, index: target.index, pageIndex: target.pageIndex }
     );
@@ -648,10 +648,10 @@ export function useLaunchpadDrag(options) {
   function getStableTopLevelTargetBounds(found) {
     if (!found?.item?.id) return null;
     const source = { area: "desktop", folderId: null, id: found.item.id, pageIndex: found.pageIndex };
-    return getLaunchIconTargetBounds(
+    return getLiveClientLaunchIconTargetBounds(
       source,
       { area: "desktop", id: found.item.id, index: found.index, pageIndex: found.pageIndex }
-    ) || getLaunchIconTargetBounds(
+    ) || getLiveClientLaunchIconTargetBounds(
       source,
       { area: "desktop", id: found.item.id, pageIndex: found.pageIndex }
     );
@@ -666,10 +666,10 @@ export function useLaunchpadDrag(options) {
   function getTopLevelTargetById(targetId) {
     if (!targetId || targetId === dragRuntime?.item.id) return null;
     const found = options.findTopLevel(options.pages.value, targetId);
-    return normalizeTopLevelTarget(found, getTopLevelIconBounds(targetId));
+    return normalizeTopLevelTarget(found, getRenderedClientTopLevelIconBounds(targetId));
   }
 
-  function getTopLevelTargetAtPoint(clientX, clientY) {
+  function getRenderedClientTopLevelTargetAtPoint(clientX, clientY) {
     const pixiTarget = getPixiTopLevelTargetAtPoint(clientX, clientY, dragRuntime?.item.id);
     if (pixiTarget?.id) {
       const found = options.findTopLevel(options.pages.value, pixiTarget.id);
@@ -681,7 +681,7 @@ export function useLaunchpadDrag(options) {
 
   function getTopLevelTargetForDrag(activeDrag, center) {
     if (!activeDrag || !center) return null;
-    const pointTarget = getTopLevelTargetAtPoint(center.x, center.y);
+    const pointTarget = getRenderedClientTopLevelTargetAtPoint(center.x, center.y);
     if (pointTarget) return pointTarget;
 
     const dragRect = getDragVisualRect(activeDrag);

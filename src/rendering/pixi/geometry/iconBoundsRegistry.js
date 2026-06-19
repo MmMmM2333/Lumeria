@@ -88,7 +88,7 @@ function shouldClearLaunchBounds(key, value, criteria) {
   return value?.meta?.folderId === folderId || key.startsWith(`folder:${folderId}:`);
 }
 
-export function registerLaunchIconBounds(source, rect, meta = {}) {
+export function registerRenderedClientLaunchIconBounds(source, rect, meta = {}) {
   const key = makeIconBoundsKey("launch", source);
   const safeRect = cloneRect(rect);
   if (!key || !safeRect) return;
@@ -96,42 +96,42 @@ export function registerLaunchIconBounds(source, rect, meta = {}) {
   if (source.area === "desktop") topLevelBounds.set(makeIconBoundsKey("top-level", source.id), { ...safeRect, meta });
 }
 
-export function registerLaunchIconTargetBounds(source, rect, meta = {}) {
+export function registerLiveClientLaunchIconTargetBounds(source, rect, meta = {}) {
   const key = makeIconBoundsKey("launch", source);
   const safeRect = cloneRect(rect);
   if (!key || !safeRect) return;
   launchIconTargetBounds.set(key, { ...safeRect, meta });
 }
 
-export function registerTopLevelFolderThumbBounds(id, rect, meta = {}) {
+export function registerRenderedClientTopLevelFolderThumbBounds(id, rect, meta = {}) {
   const key = makeIconBoundsKey("top-level", id);
   const safeRect = cloneRect(rect);
   if (!key || !safeRect) return;
   topLevelFolderThumbBounds.set(key, { ...safeRect, meta });
 }
 
-export function registerTopLevelIconTargetBounds(id, rect, meta = {}) {
+export function registerStableClientTopLevelIconTargetBounds(id, rect, meta = {}) {
   const key = makeIconBoundsKey("top-level", id);
   const safeRect = cloneRect(rect);
   if (!key || !safeRect) return;
   topLevelTargetBounds.set(key, { ...safeRect, meta });
 }
 
-export function registerTopLevelIconLiveTargetBounds(id, rect, meta = {}) {
+export function registerLiveClientTopLevelIconTargetBounds(id, rect, meta = {}) {
   const key = makeIconBoundsKey("top-level", id);
   const safeRect = cloneRect(rect);
   if (!key || !safeRect) return;
   topLevelLiveTargetBounds.set(key, { ...safeRect, meta });
 }
 
-export function registerTopLevelFolderThumbTargetBounds(id, rect, meta = {}) {
+export function registerStableClientTopLevelFolderThumbTargetBounds(id, rect, meta = {}) {
   const key = makeIconBoundsKey("top-level", id);
   const safeRect = cloneRect(rect);
   if (!key || !safeRect) return;
   topLevelFolderThumbTargetBounds.set(key, { ...safeRect, meta });
 }
 
-export function registerTopLevelFolderThumbLiveTargetBounds(id, rect, meta = {}) {
+export function registerLiveClientTopLevelFolderThumbTargetBounds(id, rect, meta = {}) {
   const key = makeIconBoundsKey("top-level", id);
   const safeRect = cloneRect(rect);
   if (!key || !safeRect) return;
@@ -189,7 +189,7 @@ export function clearLaunchIconBounds(scope, folderId = null) {
   }
 }
 
-export function getLaunchIconBounds(source) {
+export function getRenderedClientLaunchIconBounds(source) {
   const key = makeIconBoundsKey("launch", source);
   return key ? cloneRect(launchIconBounds.get(key)) : null;
 }
@@ -203,7 +203,7 @@ function matchesExpectedMeta(meta, expected) {
   return true;
 }
 
-export function getLaunchIconTargetBounds(source, expected = null) {
+export function getLiveClientLaunchIconTargetBounds(source, expected = null) {
   const key = makeIconBoundsKey("launch", source);
   if (!key) return null;
   const value = launchIconTargetBounds.get(key);
@@ -211,49 +211,49 @@ export function getLaunchIconTargetBounds(source, expected = null) {
   return cloneRect(value);
 }
 
-export function getTopLevelIconBounds(id, options = {}) {
+export function getRenderedClientTopLevelIconBounds(id, options = {}) {
   const key = makeIconBoundsKey("top-level", id);
   const value = key ? topLevelBounds.get(key) : null;
   if (!value) warnMissingBounds("top-level-icon", key, options);
   return cloneRect(value);
 }
 
-export function getTopLevelIconTargetBounds(id, options = {}) {
+export function getStableClientTopLevelIconTargetBounds(id, options = {}) {
   const key = makeIconBoundsKey("top-level", id);
   const value = key ? topLevelTargetBounds.get(key) : null;
   if (!value) warnMissingBounds("top-level-icon-target", key, options);
   return cloneRect(value);
 }
 
-export function getTopLevelIconLiveTargetBounds(id, options = {}) {
+export function getLiveClientTopLevelIconTargetBounds(id, options = {}) {
   const key = makeIconBoundsKey("top-level", id);
   const value = key ? topLevelLiveTargetBounds.get(key) : null;
   if (!value) warnMissingBounds("top-level-icon-live-target", key, options);
   return cloneRect(value);
 }
 
-export function getTopLevelFolderThumbBounds(id, options = {}) {
+export function getRenderedClientTopLevelFolderThumbBounds(id, options = {}) {
   const key = makeIconBoundsKey("top-level", id);
   const value = key ? topLevelFolderThumbBounds.get(key) : null;
   if (!value) warnMissingBounds("top-level-folder-thumb", key, options);
   return cloneRect(value);
 }
 
-export function getTopLevelFolderThumbLiveTargetBounds(id, options = {}) {
+export function getLiveClientTopLevelFolderThumbTargetBounds(id, options = {}) {
   const key = makeIconBoundsKey("top-level", id);
   const value = key ? topLevelFolderThumbLiveTargetBounds.get(key) : null;
   if (!value) warnMissingBounds("top-level-folder-thumb-live-target", key, options);
   return cloneRect(value);
 }
 
-export function getTopLevelFolderThumbTargetBounds(id, options = {}) {
+export function getStableClientTopLevelFolderThumbTargetBounds(id, options = {}) {
   const key = makeIconBoundsKey("top-level", id);
   const value = key ? topLevelFolderThumbTargetBounds.get(key) : null;
   if (!value) warnMissingBounds("top-level-folder-thumb-target", key, options);
   return cloneRect(value);
 }
 
-export function getTopLevelTargetAtPoint(x, y, excludeId = null) {
+export function getRenderedClientTopLevelTargetAtPoint(x, y, excludeId = null) {
   for (const [id, rect] of topLevelBounds) {
     if (id === excludeId) continue;
     if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
@@ -263,21 +263,21 @@ export function getTopLevelTargetAtPoint(x, y, excludeId = null) {
   return null;
 }
 
-export function registerFolderPreviewChildBounds(folderId, childId, slotIndex, rect) {
+export function registerRenderedClientFolderPreviewChildBounds(folderId, childId, slotIndex, rect) {
   const key = makeIconBoundsKey("folder-preview-child", { childId, folderId, slotIndex });
   const safeRect = cloneRect(rect);
   if (!key || !safeRect) return;
   folderPreviewChildBounds.set(key, safeRect);
 }
 
-export function registerFolderPreviewChildTargetBounds(folderId, childId, slotIndex, rect) {
+export function registerStableClientFolderPreviewChildTargetBounds(folderId, childId, slotIndex, rect) {
   const key = makeIconBoundsKey("folder-preview-child", { childId, folderId, slotIndex });
   const safeRect = cloneRect(rect);
   if (!key || !safeRect) return;
   folderPreviewChildTargetBounds.set(key, safeRect);
 }
 
-export function registerFolderPreviewChildLiveTargetBounds(folderId, childId, slotIndex, rect) {
+export function registerLiveClientFolderPreviewChildTargetBounds(folderId, childId, slotIndex, rect) {
   const key = makeIconBoundsKey("folder-preview-child", { childId, folderId, slotIndex });
   const safeRect = cloneRect(rect);
   if (!key || !safeRect) return;
@@ -306,17 +306,17 @@ export function clearFolderIconBounds(folderId = null) {
   clearFolderPreviewChildBounds(folderId);
 }
 
-export function getFolderPreviewChildBounds(folderId, childId, slotIndex) {
+export function getRenderedClientFolderPreviewChildBounds(folderId, childId, slotIndex) {
   const key = makeIconBoundsKey("folder-preview-child", { childId, folderId, slotIndex });
   return key ? cloneRect(folderPreviewChildBounds.get(key)) : null;
 }
 
-export function getFolderPreviewChildLiveTargetBounds(folderId, childId, slotIndex) {
+export function getLiveClientFolderPreviewChildTargetBounds(folderId, childId, slotIndex) {
   const key = makeIconBoundsKey("folder-preview-child", { childId, folderId, slotIndex });
   return key ? cloneRect(folderPreviewChildLiveTargetBounds.get(key)) : null;
 }
 
-export function getFolderPreviewChildTargetBounds(folderId, childId, slotIndex) {
+export function getStableClientFolderPreviewChildTargetBounds(folderId, childId, slotIndex) {
   const key = makeIconBoundsKey("folder-preview-child", { childId, folderId, slotIndex });
   return key ? cloneRect(folderPreviewChildTargetBounds.get(key)) : null;
 }

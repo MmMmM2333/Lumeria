@@ -1,6 +1,12 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 
 export const MAX_RENDER_RESOLUTION = 2;
+export const STAGE_COORDINATE_SPACES = Object.freeze({
+  CLIENT_LAYOUT: "client-layout",
+  CLIENT_VISUAL: "client-visual",
+  STAGE_LAYOUT: "stage-layout",
+  STAGE_VISUAL: "stage-visual",
+});
 
 function safeNumber(value, fallback = 0) {
   const number = Number(value);
@@ -58,6 +64,7 @@ export function clientPointToStageVisualPoint(point, stageRect) {
 }
 
 export function getStageVisualOffset(stageRect, stableStageRect = stageRect) {
+  // Non-zero only when a non-unified stage has separate visual and stable client origins.
   const stable = stableStageRect || stageRect;
   return {
     x: safeNumber(stageRect?.left) - safeNumber(stable?.left),

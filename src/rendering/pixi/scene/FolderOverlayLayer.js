@@ -25,8 +25,8 @@ import { FolderOpeningGhostController } from "./folderOpeningGhostController.js"
 import { clientPointToStageVisualPoint, clientRectToStageVisualRect, makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import {
   clearLaunchIconBounds,
-  registerLaunchIconBounds,
-  registerLaunchIconTargetBounds,
+  registerLiveClientLaunchIconTargetBounds,
+  registerRenderedClientLaunchIconBounds,
 } from "../geometry/iconBoundsRegistry.js";
 import {
   FOLDER_PAGE_DOTS_GAP,
@@ -78,12 +78,12 @@ function registerFolderIconNodeBounds(options) {
   const iconBounds = node.getIconBounds(stageRect);
   if (!isInteractivePage || isPrewarm) return iconBounds;
   const meta = { area: "folder", folderId, id: item.id, index, item, pageIndex };
-  registerLaunchIconBounds(
+  registerRenderedClientLaunchIconBounds(
     { area: "folder", folderId, id: item.id, pageIndex },
     iconBounds,
     meta
   );
-  registerLaunchIconTargetBounds(
+  registerLiveClientLaunchIconTargetBounds(
     { area: "folder", folderId, id: item.id, pageIndex },
     makeTargetIconBounds(stageRect, stageWidth, stageHeight, targetCenter.x, targetCenter.y, iconSize),
     meta
@@ -228,7 +228,7 @@ export class FolderOverlayLayer extends Container {
       wasClosing,
     });
     this.stableFolderCloseTarget = overlayTargets.stableFolderCloseTarget;
-    const { folderRect, folderThumbRect, getOpeningPreviewChildRect, previewSlots } = overlayTargets;
+    const { folderClientRect, folderThumbClientRect, getOpeningPreviewChildClientRect, previewSlots } = overlayTargets;
     this.drawPanel(geometry.panel);
     this.updatePageDots(state, geometry);
     this.panel.pivot.set(geometry.panel.width / 2, geometry.panel.height / 2);
@@ -241,7 +241,7 @@ export class FolderOverlayLayer extends Container {
       this.panel.alpha = 1;
       this.panelTitleOpening = false;
     } else {
-      this.animatePanel(state, targetX, targetY, geometry.panel, folderRect);
+      this.animatePanel(state, targetX, targetY, geometry.panel, folderClientRect);
     }
 
     this.folderTitle.text = state.renderedFolder.name || "新文件夹";
@@ -270,8 +270,8 @@ export class FolderOverlayLayer extends Container {
     }
     const { closeIconRect, closeThumbRect } = getStableFolderCloseRects({
       folderId,
-      folderRect,
-      folderThumbRect,
+      folderRect: folderClientRect,
+      folderThumbRect: folderThumbClientRect,
       isClosing,
       stableFolderCloseTarget: this.stableFolderCloseTarget,
     });
@@ -356,8 +356,8 @@ export class FolderOverlayLayer extends Container {
       if (entry.openingGhostInput) {
         openingGhostTargets.push(makeOpeningGhostTarget({
           ...entry.openingGhostInput,
-          folderRect,
-          getPreviewChildRect: getOpeningPreviewChildRect,
+          folderRect: folderClientRect,
+          getPreviewChildRect: getOpeningPreviewChildClientRect,
         }));
       }
       if (entry.closingGhostInput) {
@@ -371,7 +371,7 @@ export class FolderOverlayLayer extends Container {
     }
 
     const closingPreviewSwapTargets = renderPlan.closingPreviewSwapTargets;
-    if (isNewFolder && !isClosing) this.openingGhosts.start(state, openingGhostTargets, folderRect, geometry.panel);
+    if (isNewFolder && !isClosing) this.openingGhosts.start(state, openingGhostTargets, folderClientRect, geometry.panel);
     if (!isNewFolder && !isClosing && state.folderOpenIconGhosts?.length && !this.openingGhostKeys?.size) {
       for (const ghost of state.folderOpenIconGhosts) {
         if (ghost?.key) state.completeFolderOpenIconGhost?.(ghost.key);

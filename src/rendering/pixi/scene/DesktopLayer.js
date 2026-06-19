@@ -7,22 +7,22 @@ import { clientRectToStageVisualRect, getStageScale, makeStageVirtualElement, sn
 import {
   clearFolderPreviewChildBounds,
   clearLaunchIconBounds,
-  getFolderPreviewChildBounds,
-  getFolderPreviewChildLiveTargetBounds,
-  getFolderPreviewChildTargetBounds,
-  getTopLevelFolderThumbBounds,
-  getTopLevelFolderThumbLiveTargetBounds,
-  getTopLevelFolderThumbTargetBounds,
-  registerFolderPreviewChildLiveTargetBounds,
-  registerFolderPreviewChildBounds,
-  registerFolderPreviewChildTargetBounds,
-  registerLaunchIconBounds,
-  registerLaunchIconTargetBounds,
-  registerTopLevelFolderThumbLiveTargetBounds,
-  registerTopLevelFolderThumbBounds,
-  registerTopLevelFolderThumbTargetBounds,
-  registerTopLevelIconLiveTargetBounds,
-  registerTopLevelIconTargetBounds,
+  getLiveClientFolderPreviewChildTargetBounds,
+  getLiveClientTopLevelFolderThumbTargetBounds,
+  getRenderedClientFolderPreviewChildBounds,
+  getRenderedClientTopLevelFolderThumbBounds,
+  getStableClientFolderPreviewChildTargetBounds,
+  getStableClientTopLevelFolderThumbTargetBounds,
+  registerLiveClientFolderPreviewChildTargetBounds,
+  registerLiveClientLaunchIconTargetBounds,
+  registerLiveClientTopLevelFolderThumbTargetBounds,
+  registerLiveClientTopLevelIconTargetBounds,
+  registerRenderedClientFolderPreviewChildBounds,
+  registerRenderedClientLaunchIconBounds,
+  registerRenderedClientTopLevelFolderThumbBounds,
+  registerStableClientFolderPreviewChildTargetBounds,
+  registerStableClientTopLevelFolderThumbTargetBounds,
+  registerStableClientTopLevelIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
 import { quickDuration, quickEase } from "../animation/eases.js";
 import { desktopVisualSpring, pageTrackSpring, springTo, stopTargetSprings } from "../animation/springMotion.js";
@@ -604,9 +604,9 @@ export class DesktopLayer extends Container {
     const folderId = entry.folderId || node.item?.id || null;
     const thumbRect = node.getFolderThumbBounds?.(stageRect) || null;
     const iconRect = node.getIconBounds?.(stageRect) || null;
-    const liveTargetRect = folderId ? getTopLevelFolderThumbLiveTargetBounds(folderId) : null;
-    const stableTargetRect = folderId ? getTopLevelFolderThumbTargetBounds(folderId) : null;
-    const registeredThumbRect = folderId ? getTopLevelFolderThumbBounds(folderId) : null;
+    const liveTargetRect = folderId ? getLiveClientTopLevelFolderThumbTargetBounds(folderId) : null;
+    const stableTargetRect = folderId ? getStableClientTopLevelFolderThumbTargetBounds(folderId) : null;
+    const registeredThumbRect = folderId ? getRenderedClientTopLevelFolderThumbBounds(folderId) : null;
     const targetRect = liveTargetRect || registeredThumbRect || stableTargetRect;
     const childRows = [];
     for (let slotIndex = 0; slotIndex < 9; slotIndex += 1) {
@@ -716,37 +716,37 @@ export class DesktopLayer extends Container {
         y,
       });
       if (boundsTargets.syncHandoffLayoutTarget) this.syncFolderHandoffNode(node, boundsTargets.syncHandoffLayoutTarget);
-      registerLaunchIconBounds(
+      registerRenderedClientLaunchIconBounds(
         { area, folderId: null, id: item.id, pageIndex },
-        boundsTargets.iconBounds,
+        boundsTargets.renderedClientIconBounds,
         meta
       );
-      registerLaunchIconTargetBounds(
+      registerLiveClientLaunchIconTargetBounds(
         { area, folderId: null, id: item.id, pageIndex },
-        boundsTargets.liveTargetBounds,
+        boundsTargets.liveClientTargetBounds,
         meta
       );
       if (area === "desktop") {
-        registerTopLevelIconLiveTargetBounds(item.id, boundsTargets.liveTargetBounds, {
+        registerLiveClientTopLevelIconTargetBounds(item.id, boundsTargets.liveClientTargetBounds, {
           ...meta,
           stageVisualOffsetX: registration.stageVisualOffsetX,
           stageVisualOffsetY: registration.stageVisualOffsetY,
         });
-        registerTopLevelIconTargetBounds(item.id, boundsTargets.stableTargetBounds, meta);
+        registerStableClientTopLevelIconTargetBounds(item.id, boundsTargets.stableClientTargetBounds, meta);
       }
       if (item.type === "folder") {
-        registerTopLevelFolderThumbBounds(item.id, boundsTargets.folderThumbBounds, meta);
+        registerRenderedClientTopLevelFolderThumbBounds(item.id, boundsTargets.renderedClientThumbBounds, meta);
         if (area === "desktop") {
-          registerTopLevelFolderThumbLiveTargetBounds(item.id, boundsTargets.liveTargetBounds, {
+          registerLiveClientTopLevelFolderThumbTargetBounds(item.id, boundsTargets.liveClientTargetBounds, {
             ...meta,
             stageVisualOffsetX: registration.stageVisualOffsetX,
             stageVisualOffsetY: registration.stageVisualOffsetY,
           });
-          registerTopLevelFolderThumbTargetBounds(item.id, boundsTargets.stableTargetBounds, meta);
+          registerStableClientTopLevelFolderThumbTargetBounds(item.id, boundsTargets.stableClientTargetBounds, meta);
         }
         this.registerFolderChildren(item, node, registration.stageRect, {
-          liveThumbRect: boundsTargets.liveTargetBounds,
-          stableThumbRect: boundsTargets.stableTargetBounds,
+          liveThumbRect: boundsTargets.liveClientTargetBounds,
+          stableThumbRect: boundsTargets.stableClientTargetBounds,
         });
         if (area === "desktop") this.debugFolderHandoffDesktopActual(item, node, registration);
       }
@@ -759,9 +759,9 @@ export class DesktopLayer extends Container {
     if (!options?.log || debugState?.desktopLogged || debugState?.folderId !== folder?.id) return;
     const rows = [];
     const actualThumbRect = node.getFolderThumbBounds(registration.stageRect);
-    const targetThumbRect = getTopLevelFolderThumbLiveTargetBounds(folder.id) ||
-      getTopLevelFolderThumbBounds(folder.id) ||
-      getTopLevelFolderThumbTargetBounds(folder.id);
+    const targetThumbRect = getLiveClientTopLevelFolderThumbTargetBounds(folder.id) ||
+      getRenderedClientTopLevelFolderThumbBounds(folder.id) ||
+      getStableClientTopLevelFolderThumbTargetBounds(folder.id);
     rows.push({
       actual: roundRect(actualThumbRect),
       delta: rectDelta(actualThumbRect, targetThumbRect),
@@ -773,9 +773,9 @@ export class DesktopLayer extends Container {
       const child = node.item ? node.item.childPages?.[0]?.[slotIndex] || node.item.children?.[slotIndex] : null;
       if (!child?.id) continue;
       const actualRect = node.getFolderPreviewChildBounds(registration.stageRect, slotIndex);
-      const targetRect = getFolderPreviewChildLiveTargetBounds(folder.id, child.id, slotIndex) ||
-        getFolderPreviewChildBounds(folder.id, child.id, slotIndex) ||
-        getFolderPreviewChildTargetBounds(folder.id, child.id, slotIndex);
+      const targetRect = getLiveClientFolderPreviewChildTargetBounds(folder.id, child.id, slotIndex) ||
+        getRenderedClientFolderPreviewChildBounds(folder.id, child.id, slotIndex) ||
+        getStableClientFolderPreviewChildTargetBounds(folder.id, child.id, slotIndex);
       rows.push({
         actual: roundRect(actualRect),
         delta: rectDelta(actualRect, targetRect),
@@ -830,9 +830,9 @@ export class DesktopLayer extends Container {
       const child = node.item ? node.item.childPages?.[0]?.[index] || node.item.children?.[index] : null;
       if (!child?.id) continue;
       const childTargets = resolveFolderPreviewChildBoundsTargets({ node, slotIndex: index, stageRect, target });
-      if (childTargets.bounds) registerFolderPreviewChildBounds(folder.id, child.id, index, childTargets.bounds);
-      if (childTargets.liveTargetBounds) registerFolderPreviewChildLiveTargetBounds(folder.id, child.id, index, childTargets.liveTargetBounds);
-      if (childTargets.stableTargetBounds) registerFolderPreviewChildTargetBounds(folder.id, child.id, index, childTargets.stableTargetBounds);
+      if (childTargets.renderedClientBounds) registerRenderedClientFolderPreviewChildBounds(folder.id, child.id, index, childTargets.renderedClientBounds);
+      if (childTargets.liveClientTargetBounds) registerLiveClientFolderPreviewChildTargetBounds(folder.id, child.id, index, childTargets.liveClientTargetBounds);
+      if (childTargets.stableClientTargetBounds) registerStableClientFolderPreviewChildTargetBounds(folder.id, child.id, index, childTargets.stableClientTargetBounds);
     }
   }
 

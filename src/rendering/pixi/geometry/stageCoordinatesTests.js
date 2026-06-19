@@ -5,6 +5,7 @@ import {
   getStageVisualOffset,
   makeStageVirtualElement,
   snapRectToDevicePixels,
+  STAGE_COORDINATE_SPACES,
   stageLayoutRectToClientRect,
 } from "./stageCoordinates.js";
 
@@ -12,6 +13,8 @@ export function runStageCoordinatesTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Stage coordinates test failed] ${message}`);
   };
+
+  assert(STAGE_COORDINATE_SPACES.CLIENT_VISUAL === "client-visual", "coordinate space labels should be stable");
 
   const mapped = stageLayoutRectToClientRect(
     { left: 10, top: 20, width: 200, height: 300 },

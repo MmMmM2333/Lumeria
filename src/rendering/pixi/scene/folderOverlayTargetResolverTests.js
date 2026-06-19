@@ -1,11 +1,11 @@
 import {
   clearIconBoundsRegistry,
-  registerFolderPreviewChildBounds,
-  registerFolderPreviewChildTargetBounds,
-  registerLaunchIconBounds,
-  registerTopLevelFolderThumbBounds,
-  registerTopLevelFolderThumbTargetBounds,
-  registerTopLevelIconTargetBounds,
+  registerRenderedClientFolderPreviewChildBounds,
+  registerRenderedClientLaunchIconBounds,
+  registerRenderedClientTopLevelFolderThumbBounds,
+  registerStableClientFolderPreviewChildTargetBounds,
+  registerStableClientTopLevelFolderThumbTargetBounds,
+  registerStableClientTopLevelIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
 import { resolveFolderOverlayTargets } from "./folderOverlayTargetResolver.js";
 
@@ -29,12 +29,12 @@ export function runFolderOverlayTargetResolverTests() {
   const liveChildRect = { height: 13, left: 116, top: 136, width: 13 };
 
   clearIconBoundsRegistry();
-  registerLaunchIconBounds({ area: "desktop", id: folder.id, pageIndex: 0 }, liveIconRect, { area: "desktop", id: folder.id });
-  registerTopLevelFolderThumbBounds(folder.id, liveThumbRect, { area: "desktop", id: folder.id });
-  registerTopLevelIconTargetBounds(folder.id, targetIconRect, { area: "desktop", id: folder.id });
-  registerTopLevelFolderThumbTargetBounds(folder.id, targetThumbRect, { area: "desktop", id: folder.id });
-  registerFolderPreviewChildBounds(folder.id, "app-b", 1, liveChildRect);
-  registerFolderPreviewChildTargetBounds(folder.id, "app-a", 0, targetChildRect);
+  registerRenderedClientLaunchIconBounds({ area: "desktop", id: folder.id, pageIndex: 0 }, liveIconRect, { area: "desktop", id: folder.id });
+  registerRenderedClientTopLevelFolderThumbBounds(folder.id, liveThumbRect, { area: "desktop", id: folder.id });
+  registerStableClientTopLevelIconTargetBounds(folder.id, targetIconRect, { area: "desktop", id: folder.id });
+  registerStableClientTopLevelFolderThumbTargetBounds(folder.id, targetThumbRect, { area: "desktop", id: folder.id });
+  registerRenderedClientFolderPreviewChildBounds(folder.id, "app-b", 1, liveChildRect);
+  registerStableClientFolderPreviewChildTargetBounds(folder.id, "app-a", 0, targetChildRect);
 
   const resolved = resolveFolderOverlayTargets({
     folder,
@@ -50,8 +50,9 @@ export function runFolderOverlayTargetResolverTests() {
     wasClosing: false,
   });
 
-  assert(resolved.folderRect.left === capturedIconRect.left, "opening folder rect should prefer captured origin bounds");
-  assert(resolved.folderThumbRect.left === capturedThumbRect.left, "opening thumb rect should prefer captured origin thumb bounds");
+  assert(resolved.coordinateSpace === "client-visual", "resolver should declare client visual coordinate output");
+  assert(resolved.folderClientRect.left === capturedIconRect.left, "opening folder rect should prefer captured origin bounds");
+  assert(resolved.folderThumbClientRect.left === capturedThumbRect.left, "opening thumb rect should prefer captured origin thumb bounds");
   assert(resolved.previewSlots[0].id === "app-a", "resolver should expose folder preview slots");
   assert(resolved.stableFolderCloseTarget.source === "stable-target", "stable target capture should describe its source");
   assert(resolved.stableFolderCloseTarget.iconRect.left === targetIconRect.left, "stable close target should prefer target icon rect");
@@ -61,7 +62,7 @@ export function runFolderOverlayTargetResolverTests() {
     "stable close target should prefer registered target preview child bounds"
   );
   assert(
-    resolved.getOpeningPreviewChildRect({ id: "app-b" }, 1).left === capturedChildRect.left,
+    resolved.getOpeningPreviewChildClientRect({ id: "app-b" }, 1).left === capturedChildRect.left,
     "opening preview lookup should prefer captured child bounds by child id fallback"
   );
 

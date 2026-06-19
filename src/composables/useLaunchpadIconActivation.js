@@ -1,8 +1,8 @@
 import { clamp } from "../domain/launchpadLayout.js";
-import { getLaunchIconBounds } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
+import { getRenderedClientLaunchIconBounds } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 
 export function getLaunchIconRect(launchSource) {
-  const pixiRect = getLaunchIconBounds(launchSource);
+  const pixiRect = getRenderedClientLaunchIconBounds(launchSource);
   if (pixiRect) return pixiRect;
   return null;
 }

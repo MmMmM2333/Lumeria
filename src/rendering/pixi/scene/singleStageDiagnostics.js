@@ -34,7 +34,7 @@ function makeDebugSnapshot(plan) {
     desktopFrame: roundRect(plan.desktopFrame),
     folderId: plan.folderId,
     folderLocalRect: roundRect(plan.folderLocalRect),
-    folderRect: roundRect(plan.folderRect),
+    folderClientRect: roundRect(plan.folderClientRect),
     desktopStageRect: roundRect(plan.desktopStageRect),
     panelRect: roundRect(plan.panelRect),
     previewRects: plan.previewRects.map((preview) => ({

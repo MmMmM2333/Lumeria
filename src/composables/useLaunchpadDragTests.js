@@ -6,8 +6,8 @@ import {
 } from "./useLaunchpadDrag.js";
 import {
   clearIconBoundsRegistry,
-  registerLaunchIconBounds,
-  registerLaunchIconTargetBounds,
+  registerLiveClientLaunchIconTargetBounds,
+  registerRenderedClientLaunchIconBounds,
 } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 import { nextTick, ref, shallowRef } from "vue";
 
@@ -278,7 +278,7 @@ export async function runLaunchpadDragTests() {
       finishHomeRevealSettleWindow: () => {
         finishSettleCalls += 1;
         isHomeRevealSettling.value = false;
-        registerLaunchIconBounds(
+        registerRenderedClientLaunchIconBounds(
           { area: "desktop", id: "app-a", pageIndex: 0 },
           { left: 20, top: 22, width: 64, height: 64 },
           { area: "desktop", id: "app-a", index: 0, pageIndex: 0 }
@@ -312,7 +312,7 @@ export async function runLaunchpadDragTests() {
 
     drag.beginDrag(makePointerDownEvent(43, target), app, { type: "page", pageIndex: 0, index: 0 });
     isHomeRevealSettling.value = false;
-    registerLaunchIconBounds(
+    registerRenderedClientLaunchIconBounds(
       { area: "desktop", id: "app-a", pageIndex: 0 },
       { left: 20, top: 22, width: 64, height: 64 },
       { area: "desktop", id: "app-a", index: 0, pageIndex: 0 }
@@ -368,7 +368,7 @@ export async function runLaunchpadDragTests() {
     clearIconBoundsRegistry();
     const { app, drag, pages } = createDragHarness({
       onCommitPages: () => {
-        registerLaunchIconTargetBounds(
+        registerLiveClientLaunchIconTargetBounds(
           { area: "desktop", id: "app-a", pageIndex: 0 },
           { left: 123, top: 45, width: 64, height: 64 },
           { area: "desktop", id: "app-a", index: 1, pageIndex: 0 }
@@ -510,7 +510,7 @@ export async function runLaunchpadDragTests() {
   await withMockPointerEnvironment(async ({ listeners, timers }) => {
     const folder = { id: "folder-1", type: "folder", name: "Folder", childPages: [[]], children: [] };
     clearIconBoundsRegistry();
-    registerLaunchIconBounds(
+    registerRenderedClientLaunchIconBounds(
       { area: "desktop", id: "folder-1", pageIndex: 0 },
       { left: 100, top: 100, width: 80, height: 80 },
       { area: "desktop", id: "folder-1", item: folder, pageIndex: 0 }
@@ -569,7 +569,7 @@ export async function runLaunchpadDragTests() {
   await withMockPointerEnvironment(async ({ listeners, timers }) => {
     const folder = { id: "folder-2", type: "folder", name: "Folder", childPages: [[]], children: [] };
     clearIconBoundsRegistry();
-    registerLaunchIconBounds(
+    registerRenderedClientLaunchIconBounds(
       { area: "desktop", id: "folder-2", pageIndex: 0 },
       { left: 100, top: 100, width: 80, height: 80 },
       { area: "desktop", id: "folder-2", item: folder, pageIndex: 0 }
@@ -612,12 +612,12 @@ export async function runLaunchpadDragTests() {
   await withMockPointerEnvironment(async ({ listeners, timers }) => {
     const folder = { id: "folder-3", type: "folder", name: "Folder", childPages: [[]], children: [] };
     clearIconBoundsRegistry();
-    registerLaunchIconBounds(
+    registerRenderedClientLaunchIconBounds(
       { area: "desktop", id: "folder-3", pageIndex: 0 },
       { left: 100, top: 100, width: 80, height: 80 },
       { area: "desktop", id: "folder-3", item: folder, pageIndex: 0 }
     );
-    registerLaunchIconTargetBounds(
+    registerLiveClientLaunchIconTargetBounds(
       { area: "desktop", id: "folder-3", pageIndex: 0 },
       { left: 100, top: 100, width: 80, height: 80 },
       { area: "desktop", id: "folder-3", index: 1, item: folder, pageIndex: 0 }
@@ -644,12 +644,12 @@ export async function runLaunchpadDragTests() {
     assert(drag.dragFolderHoverState.value?.targetId === "folder-3", "folder hover state should lock the target before layout motion");
 
     clearIconBoundsRegistry();
-    registerLaunchIconBounds(
+    registerRenderedClientLaunchIconBounds(
       { area: "desktop", id: "folder-3", pageIndex: 0 },
       { left: 400, top: 100, width: 80, height: 80 },
       { area: "desktop", id: "folder-3", item: folder, pageIndex: 0 }
     );
-    registerLaunchIconTargetBounds(
+    registerLiveClientLaunchIconTargetBounds(
       { area: "desktop", id: "folder-3", pageIndex: 0 },
       { left: 220, top: 100, width: 80, height: 80 },
       { area: "desktop", id: "folder-3", index: 1, item: folder, pageIndex: 0 }

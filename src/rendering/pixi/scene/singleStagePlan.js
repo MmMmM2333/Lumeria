@@ -193,8 +193,8 @@ export function makeSingleStageDiagnosticsPlan(state, options = {}) {
   });
   const closeRects = getStableFolderCloseRects({
     folderId,
-    folderRect: overlayTargets.folderRect,
-    folderThumbRect: overlayTargets.folderThumbRect,
+    folderClientRect: overlayTargets.folderClientRect,
+    folderThumbClientRect: overlayTargets.folderThumbClientRect,
     isClosing,
     stableFolderCloseTarget: overlayTargets.stableFolderCloseTarget,
   });
@@ -217,8 +217,8 @@ export function makeSingleStageDiagnosticsPlan(state, options = {}) {
     desktopFrame: state.desktopFrame || null,
     desktopStageRect: state.desktopStageRect || null,
     folderId,
-    folderRect: overlayTargets.folderRect,
-    folderLocalRect: clientRectToStageVisualRect(overlayTargets.folderRect, state.stageRect),
+    folderClientRect: overlayTargets.folderClientRect,
+    folderLocalRect: clientRectToStageVisualRect(overlayTargets.folderClientRect, state.stageRect),
     geometry,
     panelRect: geometry.panel,
     previewRects,

@@ -1,6 +1,6 @@
 import { ref } from "vue";
 import { clamp } from "../domain/launchpadLayout.js";
-import { getTopLevelIconBounds } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
+import { getRenderedClientTopLevelIconBounds } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 
 const DEFAULT_FOLDER_MOTION_GEOMETRY = { id: null, x: 0, y: 36, scaleX: 0.1, scaleY: 0.16, borderRadius: 26 };
 
@@ -34,7 +34,7 @@ export function useFolderMotionGeometry(options) {
   }
 
   function getTopLevelIconMotionGeometry(sourceItemId, motionId) {
-    const pixiRect = getTopLevelIconBounds(sourceItemId);
+    const pixiRect = getRenderedClientTopLevelIconBounds(sourceItemId);
     if (pixiRect) return makeFolderMotionGeometryFromRect(motionId || sourceItemId, pixiRect);
     return null;
   }

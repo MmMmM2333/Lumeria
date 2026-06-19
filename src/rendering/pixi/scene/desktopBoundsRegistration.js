@@ -1,4 +1,4 @@
-import { getStageVisualOffset } from "../geometry/stageCoordinates.js";
+import { getStageVisualOffset, STAGE_COORDINATE_SPACES } from "../geometry/stageCoordinates.js";
 
 export function makeDesktopBoundsRegistration(state = {}, entries = [], desktopFrame = {}) {
   const stableStageRect = state.stableStageRect || state.stageRect;
@@ -6,11 +6,11 @@ export function makeDesktopBoundsRegistration(state = {}, entries = [], desktopF
 
   return {
     coordinateSpace: {
-      bounds: "client-visual",
-      desktopFrame: "stage-layout",
-      layoutTargets: "stage-layout",
-      stageRect: "client-visual",
-      stableStageRect: "client-layout",
+      bounds: STAGE_COORDINATE_SPACES.CLIENT_VISUAL,
+      desktopFrame: STAGE_COORDINATE_SPACES.STAGE_LAYOUT,
+      layoutTargets: STAGE_COORDINATE_SPACES.STAGE_LAYOUT,
+      stageRect: STAGE_COORDINATE_SPACES.CLIENT_VISUAL,
+      stableStageRect: STAGE_COORDINATE_SPACES.CLIENT_LAYOUT,
     },
     deviceResolution: state.deviceResolution,
     entries,

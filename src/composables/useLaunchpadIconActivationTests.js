@@ -5,7 +5,7 @@ import {
 } from "./useLaunchpadIconActivation.js";
 import {
   clearIconBoundsRegistry,
-  registerLaunchIconBounds,
+  registerRenderedClientLaunchIconBounds,
 } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 
 const desktopApp = { id: "desktop-app", type: "app", name: "Desktop App" };
@@ -101,7 +101,7 @@ export function runLaunchpadIconActivationTests() {
 
   clearIconBoundsRegistry();
   assert(getLaunchIconRect({ area: "desktop", id: "desktop-app", pageIndex: 0 }) === null, "rect lookup should return null without pixi bounds");
-  registerLaunchIconBounds({ area: "desktop", id: "desktop-app", pageIndex: 0 }, { left: 12, top: 24, width: 36, height: 48 });
+  registerRenderedClientLaunchIconBounds({ area: "desktop", id: "desktop-app", pageIndex: 0 }, { left: 12, top: 24, width: 36, height: 48 });
   const rect = getLaunchIconRect({ area: "desktop", id: "desktop-app", pageIndex: 0 });
   assert(rect.left === 12 && rect.width === 36, "rect lookup should return plain geometry");
   clearIconBoundsRegistry();
