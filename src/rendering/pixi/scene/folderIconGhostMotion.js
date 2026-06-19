@@ -32,10 +32,7 @@ function resolveTargetStageVisualRect(target, options = {}) {
     stageRect,
     stageWidth,
   } = options;
-  if (target?.targetStageLayoutRect) {
-    return stageLayoutRectToStageVisualRect(stageRect, stageWidth, stageHeight, target.targetStageLayoutRect);
-  }
-  return clientRectToStageVisualRect(target?.targetRect, stageRect);
+  return stageLayoutRectToStageVisualRect(stageRect, stageWidth, stageHeight, target?.targetStageLayoutRect);
 }
 
 function resolveOpeningTargetStageVisualRect(target, options = {}) {
@@ -44,10 +41,7 @@ function resolveOpeningTargetStageVisualRect(target, options = {}) {
     stageRect,
     stageWidth,
   } = options;
-  if (target?.targetStageLayoutRect) {
-    return stageLayoutRectToStageVisualRect(stageRect, stageWidth, stageHeight, target.targetStageLayoutRect);
-  }
-  return cloneRect(target?.targetRect);
+  return stageLayoutRectToStageVisualRect(stageRect, stageWidth, stageHeight, target?.targetStageLayoutRect);
 }
 
 export function makeOpeningGhostMotion(target, options = {}) {

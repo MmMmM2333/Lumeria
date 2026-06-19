@@ -8,7 +8,7 @@ import {
   getStableStageLayoutTopLevelFolderThumbTargetRecord,
   getStableStageLayoutTopLevelIconTargetRecord,
 } from "../geometry/iconBoundsRegistry.js";
-import { cloneRect, makePreviewChildKey, makeStableFolderCloseTarget } from "./folderOverlayTargets.js";
+import { makeStableFolderCloseTarget } from "./folderOverlayTargets.js";
 
 export function getCapturedPreviewChildRect(originBounds, childId, slotIndex) {
   if (!originBounds?.previewChildRects?.length || !childId) return null;
@@ -57,10 +57,8 @@ export function resolveFolderOverlayTargets(options = {}) {
   const folderThumbClientRect = capturedOriginBounds?.thumbRect || liveFolderThumbClientRect || folderClientRect;
   const stableFolderStageLayoutRecord = getStableStageLayoutTopLevelIconTargetRecord(folderId);
   const stableFolderThumbStageLayoutRecord = getStableStageLayoutTopLevelFolderThumbTargetRecord(folderId);
-  const stableFolderClientRect = projectStableRecordToClient(stableFolderStageLayoutRecord);
-  const stableFolderThumbClientRect = projectStableRecordToClient(stableFolderThumbStageLayoutRecord);
   const shouldRefreshStableCloseTarget = Boolean(
-    (stableFolderClientRect || liveFolderClientRect || folderClientRect) &&
+    stableFolderStageLayoutRecord &&
     (!previousStableFolderCloseTarget ||
       previousStableFolderCloseTarget.folderId !== folderId ||
       (isClosing && !wasClosing))
@@ -81,39 +79,26 @@ export function resolveFolderOverlayTargets(options = {}) {
     };
   }
 
-  const captureFinalCloseTarget = Boolean(isClosing && !wasClosing);
-  const hasStableFolderClientRect = Boolean(stableFolderClientRect);
-  const stageLayoutPreviewChildRects = new Map();
+  const stableProjection = stableFolderStageLayoutRecord?.meta
+    ? {
+      stageHeight: stableFolderStageLayoutRecord.meta.stageHeight,
+      stageRect: stableFolderStageLayoutRecord.meta.stageRect,
+      stageWidth: stableFolderStageLayoutRecord.meta.stageWidth,
+    }
+    : null;
   const stableFolderCloseTarget = makeStableFolderCloseTarget({
     folderId,
-    projectedClientIconRect: captureFinalCloseTarget
-      ? stableFolderClientRect || liveFolderClientRect || folderClientRect
-      : stableFolderClientRect || folderClientRect,
-    projectedClientThumbRect: captureFinalCloseTarget
-      ? stableFolderThumbClientRect || stableFolderClientRect || liveFolderThumbClientRect || folderThumbClientRect || liveFolderClientRect || folderClientRect
-      : stableFolderThumbClientRect || stableFolderClientRect || folderThumbClientRect,
-    getProjectedClientPreviewChildRect: (item, previewSlotIndex) => {
+    getStageLayoutPreviewChildRect: (item, previewSlotIndex) => {
       const stablePreviewRecord = getStableStageLayoutFolderPreviewChildTargetRecord(folderId, item.id, previewSlotIndex);
       const stablePreviewClientRect = projectStableRecordToClient(stablePreviewRecord);
-      if (stablePreviewClientRect) {
-        stageLayoutPreviewChildRects.set(makePreviewChildKey(item.id, previewSlotIndex), cloneRect(stablePreviewRecord));
-        return stablePreviewClientRect;
-      }
-      return hasStableFolderClientRect ? null : (
-        getCapturedPreviewChildRect(capturedOriginBounds, item.id, previewSlotIndex) ||
-        getRenderedClientFolderPreviewChildBounds(folderId, item.id, previewSlotIndex)
-      );
+      return stablePreviewClientRect ? stablePreviewRecord : null;
     },
+    iconRect: stableFolderStageLayoutRecord,
     previewSlots,
+    projection: stableProjection,
+    source: isClosing && !wasClosing ? "stable-final-close" : "stable-target",
+    thumbRect: stableFolderThumbStageLayoutRecord || stableFolderStageLayoutRecord,
   });
-  if (stableFolderCloseTarget) {
-    stableFolderCloseTarget.coordinateSpace = STAGE_COORDINATE_SPACES.CLIENT_VISUAL;
-    stableFolderCloseTarget.source = captureFinalCloseTarget ? "stable-final-close" : "stable-target";
-    stableFolderCloseTarget.stageLayoutCoordinateSpace = STAGE_COORDINATE_SPACES.STAGE_LAYOUT;
-    stableFolderCloseTarget.stageLayoutIconRect = cloneRect(stableFolderStageLayoutRecord);
-    stableFolderCloseTarget.stageLayoutPreviewChildRects = stageLayoutPreviewChildRects;
-    stableFolderCloseTarget.stageLayoutThumbRect = cloneRect(stableFolderThumbStageLayoutRecord);
-  }
 
   return {
     capturedOriginBounds,

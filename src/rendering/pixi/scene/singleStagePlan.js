@@ -1,6 +1,11 @@
 import { getFolderPanelGeometry } from "../geometry/gridGeometry.js";
 import { clientRectToStageVisualRect } from "../geometry/stageCoordinates.js";
-import { getStableFolderCloseRects, makeFolderThumbPreviewRect, makePreviewChildKey } from "./folderOverlayTargets.js";
+import {
+  getStableFolderCloseRects,
+  makeFolderThumbPreviewRect,
+  makePreviewChildKey,
+  projectFolderCloseTargetToClient,
+} from "./folderOverlayTargets.js";
 import { resolveFolderOverlayTargets } from "./folderOverlayTargetResolver.js";
 
 export const SINGLE_STAGE_CHANGED_EVENT = "launchpad-single-stage-change";
@@ -174,17 +179,18 @@ export function makeSingleStageDiagnosticsPlan(state, options = {}) {
     stableFolderCloseTarget: overlayTargets.stableFolderCloseTarget,
   });
   const stableTarget = overlayTargets.stableFolderCloseTarget;
+  const projectedStableTarget = projectFolderCloseTargetToClient(stableTarget);
   const previewRects = (overlayTargets.previewSlots || []).slice(0, 9).map((item, slotIndex) => {
     if (!item?.id || !closeRects.closeThumbRect) return null;
     const previewKey = makePreviewChildKey(item.id, slotIndex);
-    const rect = stableTarget?.projectedClientPreviewChildRects?.get(previewKey) ||
+    const rect = projectedStableTarget?.previewChildRects?.get(previewKey) ||
       makeFolderThumbPreviewRect(closeRects.closeThumbRect, slotIndex);
     return {
       itemId: item.id,
       clientRect: rect,
       rect,
       localRect: clientRectToStageVisualRect(rect, state.stageRect),
-      stageLayoutRect: stableTarget?.stageLayoutPreviewChildRects?.get(previewKey) || null,
+      stageLayoutRect: stableTarget?.previewChildRects?.get(previewKey) || null,
       slotIndex,
     };
   }).filter(Boolean);
@@ -206,10 +212,10 @@ export function makeSingleStageDiagnosticsPlan(state, options = {}) {
     previewRects,
     stableCloseClientRect,
     stableCloseLocalRect: clientRectToStageVisualRect(stableCloseClientRect, state.stageRect),
-    stableCloseStageLayoutRect: stableTarget?.stageLayoutIconRect || null,
+    stableCloseStageLayoutRect: stableTarget?.iconRect || null,
     stableCloseThumbClientRect,
     stableCloseThumbLocalRect: clientRectToStageVisualRect(stableCloseThumbClientRect, state.stageRect),
-    stableCloseThumbStageLayoutRect: stableTarget?.stageLayoutThumbRect || null,
+    stableCloseThumbStageLayoutRect: stableTarget?.thumbRect || null,
     stableFolderCloseTarget: overlayTargets.stableFolderCloseTarget,
     stageRect: state.stageRect,
   };

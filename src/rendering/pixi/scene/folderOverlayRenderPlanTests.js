@@ -76,8 +76,12 @@ export function runFolderOverlayRenderPlanTests() {
     localMetrics,
     previewSlots: [appA],
     stableFolderCloseTarget: {
+      coordinateSpace: "stage-layout",
       folderId: folder.id,
-      projectedClientPreviewChildRects: new Map([["app-a:0", { height: 12, left: 30, top: 40, width: 12 }]]),
+      iconRect: { height: 72, left: 10, top: 20, width: 72 },
+      previewChildRects: new Map([["app-a:0", { height: 12, left: 30, top: 40, width: 12 }]]),
+      projection: { stageHeight: 100, stageRect: { height: 100, left: 0, top: 0, width: 100 }, stageWidth: 100 },
+      thumbRect: { height: 72, left: 10, top: 20, width: 72 },
     },
   });
 
@@ -85,5 +89,5 @@ export function runFolderOverlayRenderPlanTests() {
   assert(!closingPlan.entries[0].closingGhostInput, "closing ghost input should only target the active folder page");
   assert(closingPlan.entries[1].closingGhostInput?.item.id === "app-c", "active closing page entry should expose closing input");
   assert(closingPlan.closingPreviewSwapTargets.length === 1, "closing second page should expose preview swap targets");
-  assert(closingPlan.closingPreviewSwapTargets[0].targetRect.left === 30, "preview swap should reuse stable target rects");
+  assert(closingPlan.closingPreviewSwapTargets[0].targetStageLayoutRect.left === 30, "preview swap should reuse stable stage layout target rects");
 }

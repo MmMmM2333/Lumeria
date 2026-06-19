@@ -129,7 +129,7 @@ export function runFolderClosingPreviewSwapControllerTests() {
     controller.start(state, [{
       item: { id: "app-1", name: "App" },
       previewSlotIndex: 0,
-      targetRect: { height: 24, left: 40, top: 50, width: 24 },
+      targetStageLayoutRect: { height: 24, left: 40, top: 50, width: 24 },
     }], { iconDuration: 0.01, progress: 1, swapDuration: 0.01 }, () => {});
 
     assert(layer.closingPreviewSwapKeys.size === 1, "start should track an active preview swap");

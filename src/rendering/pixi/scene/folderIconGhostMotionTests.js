@@ -26,11 +26,13 @@ export function runFolderIconGhostMotionTests() {
     index: 7,
     isThumbnailChild: false,
     sourceRect: { height: 28, left: 30, top: 50, width: 28 },
-    targetRect: { height: 56, left: 100, top: 200, width: 56 },
+    targetStageLayoutRect: { height: 56, left: 100, top: 200, width: 56 },
   }, {
     isTextlessMode: false,
     openDuration: 0.5,
+    stageHeight: 800,
     stageRect,
+    stageWidth: 1200,
   });
   assert(opening.alpha === 0, "non-thumbnail opening ghosts should fade in from transparent");
   assert(opening.fromX === 34 && opening.fromY === 51, "opening motion should map source bounds into local stage coordinates");
@@ -43,7 +45,6 @@ export function runFolderIconGhostMotionTests() {
     index: 0,
     isThumbnailChild: false,
     sourceRect: { height: 28, left: 30, top: 50, width: 28 },
-    targetRect: { height: 56, left: 999, top: 999, width: 56 },
     targetStageLayoutRect: { height: 20, left: 20, top: 10, width: 10 },
   }, {
     isTextlessMode: false,
@@ -60,7 +61,7 @@ export function runFolderIconGhostMotionTests() {
     sourceAlpha: 0.6,
     sourceRect: { height: 56, left: 30, top: 50, width: 56 },
     sourceScale: 0.8,
-    targetRect: { height: 14, left: 15, top: 25, width: 14 },
+    targetStageLayoutRect: { height: 14, left: 15, top: 25, width: 14 },
   };
   const closing = makeClosingGhostMotion(closingTarget, {
     alphaHold: 0.25,
@@ -68,9 +69,9 @@ export function runFolderIconGhostMotionTests() {
     isTextlessMode: false,
     stageRect,
   });
-  assert(closing.sourceAlpha === 0.6 && closing.sourceScale === 0.8, "closing motion should preserve interrupted source values");
+  assert(closing.sourceAlpha === 0.6 && closing.sourceScale === 0.8, "closing motion should preserve released source values");
   assert(nearlyEqual(closing.fromX, 48) && nearlyEqual(closing.fromY, 69.2), "closing motion should start from the visible source center");
-  assert(nearlyEqual(closing.toX, 12) && nearlyEqual(closing.toY, 15.5), "closing motion should target the thumbnail child center");
+  assert(nearlyEqual(closing.toX, 22) && nearlyEqual(closing.toY, 35.5), "closing motion should target the stage layout thumbnail child center");
   assert(nearlyEqual(closing.alphaDelay, 0.1), "closing alpha delay should follow the close duration and hold ratio");
 
   const completed = makeCompletedClosingPreviewMotion(closingTarget, { isTextlessMode: false, stageRect });
@@ -79,7 +80,6 @@ export function runFolderIconGhostMotionTests() {
 
   const layoutClosingTarget = {
     ...closingTarget,
-    targetRect: { height: 14, left: 999, top: 999, width: 14 },
     targetStageLayoutRect: { height: 10, left: 20, top: 10, width: 10 },
   };
   const layoutClosing = makeClosingGhostMotion(layoutClosingTarget, {

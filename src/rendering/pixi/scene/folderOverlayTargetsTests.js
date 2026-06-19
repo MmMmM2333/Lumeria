@@ -11,6 +11,7 @@ import {
   makePreviewSlotById,
   makeProjectedPreviewRect,
   makeStableFolderCloseTarget,
+  projectFolderCloseTargetToClient,
 } from "./folderOverlayTargets.js";
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
 
@@ -80,17 +81,21 @@ export function runFolderOverlayTargetsTests() {
 
   const stableTarget = makeStableFolderCloseTarget({
     folderId: "folder-1",
-    getProjectedClientPreviewChildRect: (item, slotIndex) => item.id === "app-b" && slotIndex === 1 ? childRect : null,
+    getStageLayoutPreviewChildRect: (item, slotIndex) => item.id === "app-b" && slotIndex === 1 ? childRect : null,
+    iconRect: folderRect,
     previewSlots,
-    projectedClientIconRect: folderRect,
-    projectedClientThumbRect: folderThumbRect,
+    projection: { stageHeight: 100, stageRect: { height: 100, left: 0, top: 0, width: 100 }, stageWidth: 100 },
+    thumbRect: folderThumbRect,
   });
   assert(stableTarget.folderId === "folder-1", "stable close target should keep the folder id");
-  assert(stableTarget.projectedClientIconRect !== folderRect && stableTarget.projectedClientIconRect.left === folderRect.left, "stable projected icon rect should be cloned");
+  assert(stableTarget.coordinateSpace === "stage-layout", "stable close target should declare stage layout coordinates");
+  assert(stableTarget.iconRect !== folderRect && stableTarget.iconRect.left === folderRect.left, "stable icon rect should be cloned");
   assert(
-    stableTarget.projectedClientPreviewChildRects.get(makePreviewChildKey("app-b", 1)).left === childRect.left,
-    "stable close target should cache available projected preview child bounds"
+    stableTarget.previewChildRects.get(makePreviewChildKey("app-b", 1)).left === childRect.left,
+    "stable close target should cache available stage layout preview child bounds"
   );
+  const projectedStableTarget = projectFolderCloseTargetToClient(stableTarget);
+  assert(projectedStableTarget.iconRect.left === folderRect.left, "stable close target should project icon rect at client boundaries");
 
   const closeRects = getStableFolderCloseRects({
     folderId: "folder-1",
@@ -136,11 +141,10 @@ export function runFolderOverlayTargetsTests() {
   });
   assert(openingTarget.isThumbnailChild && openingTarget.previewSlotIndex === 1, "opening target should identify thumbnail children");
   assert(openingTarget.sourceRect === childRect, "opening target should use registered preview bounds first");
-  assert(openingTarget.targetRect.left === 172 && openingTarget.targetRect.top === 272, "opening target should build a centered icon target");
-  assert(openingTarget.targetStageLayoutRect.left === openingTarget.targetRect.left, "opening target should expose a stage layout target rect");
+  assert(openingTarget.targetStageLayoutRect.left === 172 && openingTarget.targetStageLayoutRect.top === 272, "opening target should build a centered stage layout icon target");
 
-  stableTarget.stageLayoutPreviewChildRects = new Map([[makePreviewChildKey("app-b", 1), { height: 7, left: 11, top: 13, width: 7 }]]);
-  stableTarget.stageLayoutThumbRect = { height: 36, left: 5, top: 8, width: 36 };
+  stableTarget.previewChildRects = new Map([[makePreviewChildKey("app-b", 1), { height: 7, left: 11, top: 13, width: 7 }]]);
+  stableTarget.thumbRect = { height: 36, left: 5, top: 8, width: 36 };
   const closingTarget = makeClosingGhostTarget({
     cellHeight: 80,
     cellWidth: 100,
@@ -156,7 +160,6 @@ export function runFolderOverlayTargetsTests() {
     stableFolderCloseTarget: stableTarget,
   });
   assert(closingTarget.isThumbnailChild, "closing target should identify thumbnail children");
-  assert(closingTarget.targetRect.left === childRect.left, "closing target should use stable preview bounds first");
   assert(closingTarget.targetStageLayoutRect.left === 11, "closing target should retain the stable stage layout preview target");
 
   const projectedThumbnailTarget = makeClosingGhostTarget({
@@ -173,12 +176,8 @@ export function runFolderOverlayTargetsTests() {
     stableFolderCloseTarget: stableTarget,
   });
   assert(projectedThumbnailTarget.isThumbnailChild, "thumbnail children without exact stable bounds should stay thumbnail targets");
-  assertRectInside(projectedThumbnailTarget.targetRect, folderThumbRect, "projected thumbnail close target");
   assert(projectedThumbnailTarget.targetStageLayoutRect, "thumbnail close fallback should expose a stage layout thumb target when available");
-  assert(
-    nearlyEqual(projectedThumbnailTarget.targetRect.width, getFolderThumbMetrics(folderThumbRect.width).childSize),
-    "thumbnail close fallback should use the real folder thumb child size"
-  );
+  assertRectInside(projectedThumbnailTarget.targetStageLayoutRect, stableTarget.thumbRect, "projected thumbnail close stage target");
 
   const fallbackClosingTarget = makeClosingGhostTarget({
     cellHeight: 80,
@@ -196,8 +195,8 @@ export function runFolderOverlayTargetsTests() {
   assert(!fallbackClosingTarget.isThumbnailChild, "non-preview children should collapse to the folder center");
   assert(fallbackClosingTarget.targetStageLayoutRect, "non-preview closing target should expose a stage layout center collapse when available");
   assert(
-    nearlyEqual(fallbackClosingTarget.targetRect.left + fallbackClosingTarget.targetRect.width / 2, 50),
-    "non-preview closing targets should collapse to the thumbnail center"
+    nearlyEqual(fallbackClosingTarget.targetStageLayoutRect.left + fallbackClosingTarget.targetStageLayoutRect.width / 2, 23),
+    "non-preview closing targets should collapse to the stage layout thumbnail center"
   );
 
   const swapTargets = makeClosingPreviewSwapTargets({
@@ -207,6 +206,5 @@ export function runFolderOverlayTargetsTests() {
     stableFolderCloseTarget: stableTarget,
   });
   assert(swapTargets.length === 3, "preview swap should emit one target per visible preview slot");
-  assert(swapTargets[1].targetRect.left === childRect.left, "preview swap should reuse stable preview child bounds");
   assert(swapTargets[1].targetStageLayoutRect.left === 11, "preview swap should retain stable stage layout preview child bounds");
 }

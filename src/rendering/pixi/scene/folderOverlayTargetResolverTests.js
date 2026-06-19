@@ -7,6 +7,7 @@ import {
   registerStableStageLayoutTopLevelFolderThumbTargetBounds,
   registerStableStageLayoutTopLevelIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
+import { projectFolderCloseTargetToClient } from "./folderOverlayTargets.js";
 import { resolveFolderOverlayTargets } from "./folderOverlayTargetResolver.js";
 
 function projectedStageMeta(meta = {}) {
@@ -67,16 +68,18 @@ export function runFolderOverlayTargetResolverTests() {
   assert(resolved.folderThumbClientRect.left === capturedThumbRect.left, "opening thumb rect should prefer captured origin thumb bounds");
   assert(resolved.previewSlots[0].id === "app-a", "resolver should expose folder preview slots");
   assert(resolved.stableFolderCloseTarget.source === "stable-target", "stable target capture should describe its source");
-  assert(resolved.stableFolderCloseTarget.projectedClientIconRect.left === targetIconClientRect.left, "stable close target should project target icon rect to client coordinates");
-  assert(resolved.stableFolderCloseTarget.stageLayoutIconRect.left === targetIconStageRect.left, "stable close target should retain the stage layout icon rect");
-  assert(resolved.stableFolderCloseTarget.projectedClientThumbRect.left === targetThumbClientRect.left, "stable close target should project target thumb rect to client coordinates");
-  assert(resolved.stableFolderCloseTarget.stageLayoutThumbRect.left === targetThumbStageRect.left, "stable close target should retain the stage layout thumb rect");
+  assert(resolved.stableFolderCloseTarget.coordinateSpace === "stage-layout", "stable close target should store stage layout coordinates");
+  const projectedStableTarget = projectFolderCloseTargetToClient(resolved.stableFolderCloseTarget);
+  assert(projectedStableTarget.iconRect.left === targetIconClientRect.left, "stable close target should project target icon rect to client coordinates at the boundary");
+  assert(resolved.stableFolderCloseTarget.iconRect.left === targetIconStageRect.left, "stable close target should retain the stage layout icon rect");
+  assert(projectedStableTarget.thumbRect.left === targetThumbClientRect.left, "stable close target should project target thumb rect to client coordinates at the boundary");
+  assert(resolved.stableFolderCloseTarget.thumbRect.left === targetThumbStageRect.left, "stable close target should retain the stage layout thumb rect");
   assert(
-    resolved.stableFolderCloseTarget.projectedClientPreviewChildRects.get("app-a:0").left === targetChildClientRect.left,
-    "stable close target should project registered preview child bounds to client coordinates"
+    projectedStableTarget.previewChildRects.get("app-a:0").left === targetChildClientRect.left,
+    "stable close target should project registered preview child bounds to client coordinates at the boundary"
   );
   assert(
-    resolved.stableFolderCloseTarget.stageLayoutPreviewChildRects.get("app-a:0").left === targetChildStageRect.left,
+    resolved.stableFolderCloseTarget.previewChildRects.get("app-a:0").left === targetChildStageRect.left,
     "stable close target should retain registered stage layout preview child bounds"
   );
   assert(
@@ -84,7 +87,7 @@ export function runFolderOverlayTargetResolverTests() {
     "opening preview lookup should prefer captured child bounds by child id fallback"
   );
 
-  const reusedStableTarget = { folderId: folder.id, projectedClientIconRect: { left: 1, top: 2, width: 3, height: 4 }, source: "previous" };
+  const reusedStableTarget = { coordinateSpace: "stage-layout", folderId: folder.id, iconRect: { left: 1, top: 2, width: 3, height: 4 }, source: "previous" };
   const reused = resolveFolderOverlayTargets({
     folder,
     folderPageSize: 9,
