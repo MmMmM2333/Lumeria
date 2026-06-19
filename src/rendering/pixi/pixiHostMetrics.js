@@ -1,12 +1,5 @@
 import { reloadOnPixiHotUpdate } from "./devHmr.js";
 
-export function getViewportFallbackSize() {
-  return {
-    height: globalThis.innerHeight || 1,
-    width: globalThis.innerWidth || 1,
-  };
-}
-
 export function getPixiHostRect(host, fallback = {}) {
   return host?.getBoundingClientRect?.() || {
     height: fallback.height || 1,

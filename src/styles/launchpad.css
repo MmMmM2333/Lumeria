@@ -2485,22 +2485,6 @@ body {
   outline: none;
 }
 
-.pixi-drag-preview-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.pixi-drag-preview-host {
-  position: absolute;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
-  pointer-events: none;
-}
-
 .desktop-main:focus,
 .desktop-main:focus-visible {
   outline: none !important;
@@ -2576,29 +2560,6 @@ body {
 .icon-context-menu button:focus-visible {
   color: white;
   background: rgba(255, 255, 255, 0.12);
-}
-
-.pixi-folder-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-}
-
-.pixi-folder-motion {
-  position: absolute;
-  inset: 0;
-  transform-origin: var(--pixi-folder-zoom-origin, 50% 50%);
-}
-
-.pixi-folder-overlay-empty {
-  pointer-events: none;
-}
-
-.pixi-folder-host {
-  position: absolute;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
 }
 
 .pixi-folder-name-input {
