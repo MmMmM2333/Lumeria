@@ -316,4 +316,34 @@ export async function runDesktopLayerTests() {
       else delete globalThis.cancelAnimationFrame;
     }
   }
+
+  {
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    const originalQueueMicrotask = globalThis.queueMicrotask;
+    const queued = [];
+    let refreshCount = 0;
+    globalThis.queueMicrotask = (callback) => queued.push(callback);
+    layer.refreshInteractiveBounds = () => {
+      refreshCount += 1;
+    };
+
+    try {
+      layer.markInteractiveBoundsDirty();
+      layer.markInteractiveBoundsDirty();
+      layer.markInteractiveBoundsDirty();
+
+      assert(refreshCount === 0, "dirty bounds should not refresh synchronously");
+      assert(queued.length === 1, "dirty bounds should schedule one coalesced flush");
+      queued.shift()();
+      assert(refreshCount === 1, "coalesced bounds flush should refresh once");
+      layer.flushInteractiveBounds();
+      assert(refreshCount === 1, "clean bounds flush should not refresh again");
+      layer.flushInteractiveBounds({ force: true });
+      assert(refreshCount === 2, "forced bounds flush should refresh even when clean");
+    } finally {
+      if (originalQueueMicrotask) globalThis.queueMicrotask = originalQueueMicrotask;
+      else delete globalThis.queueMicrotask;
+    }
+  }
 }

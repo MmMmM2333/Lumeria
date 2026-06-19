@@ -222,9 +222,9 @@ function getDesktopFrame(state) {
   };
 }
 
-function springIconLayoutPosition(node, layoutTarget, refreshBounds) {
-  springTo(node, "x", layoutTarget.x, pageTrackSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
-  springTo(node, "y", layoutTarget.y, pageTrackSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
+function springIconLayoutPosition(node, layoutTarget, markBoundsDirty) {
+  springTo(node, "x", layoutTarget.x, pageTrackSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
+  springTo(node, "y", layoutTarget.y, pageTrackSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
 }
 
 export class DesktopLayer extends Container {
@@ -258,6 +258,8 @@ export class DesktopLayer extends Container {
     this.lastFolderHandoffDebugSnapshot = null;
     this.iconNodes = new Map();
     this.boundsRegistration = null;
+    this.boundsFlushQueued = false;
+    this.boundsDirty = false;
     this.emptyText = new Text({
       text: "没有找到匹配的应用",
       style: { fill: 0xffffff, fontSize: 15, alpha: 0.74, fontFamily: "Inter, Segoe UI, sans-serif" },
@@ -284,7 +286,7 @@ export class DesktopLayer extends Container {
     const pageWidth = desktopFrame.width;
     const targetX = -activePageIndex * pageWidth;
     const shouldSnap = state.shouldSnapTrack;
-    const refreshBounds = () => this.refreshInteractiveBounds();
+    const markBoundsDirty = () => this.markInteractiveBoundsDirty();
 
     clearLaunchIconBounds(state.isSearchMode ? "search" : "desktop");
     for (const page of pages) {
@@ -355,10 +357,10 @@ export class DesktopLayer extends Container {
           this.pageTrack.addChild(node);
           if (!isFolderClosingHandoff) {
             gsap.to(node, { alpha: 1, duration: quickDuration, ease: quickEase });
-            springIconLayoutPosition(node, layoutTarget, refreshBounds);
+            springIconLayoutPosition(node, layoutTarget, markBoundsDirty);
           }
         } else if (!isFolderClosingHandoff) {
-          springIconLayoutPosition(node, layoutTarget, refreshBounds);
+          springIconLayoutPosition(node, layoutTarget, markBoundsDirty);
         }
 
         node.stageRect = state.stageRect;
@@ -439,10 +441,10 @@ export class DesktopLayer extends Container {
     this.boundsRegistration = makeDesktopBoundsRegistration(state, boundsEntries, desktopFrame);
     springTo(this.pageTrack, "x", targetX, pageTrackSpring, {
       snap: shouldSnap,
-      onComplete: refreshBounds,
-      onUpdate: refreshBounds,
+      onComplete: markBoundsDirty,
+      onUpdate: markBoundsDirty,
     });
-    refreshBounds();
+    this.flushInteractiveBounds({ force: true });
     this.updateSingleStageFolderLayer(state);
     this.updateSingleStageDragPreviewLayer(state);
     this.singleStageDiagnosticsLayer.update(state.singleStageFolderState, {
@@ -467,11 +469,11 @@ export class DesktopLayer extends Container {
       this.hasDesktopVisualTransform = true;
       return;
     }
-    const refreshBounds = () => this.refreshInteractiveBounds();
-    springTo(this.visualRoot, "x", centerX, desktopVisualSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
-    springTo(this.visualRoot, "y", targetY, desktopVisualSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
-    springTo(this.visualRoot.scale, "x", scale, desktopVisualSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
-    springTo(this.visualRoot.scale, "y", scale, desktopVisualSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
+    const markBoundsDirty = () => this.markInteractiveBoundsDirty();
+    springTo(this.visualRoot, "x", centerX, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
+    springTo(this.visualRoot, "y", targetY, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
+    springTo(this.visualRoot.scale, "x", scale, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
+    springTo(this.visualRoot.scale, "y", scale, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
   }
 
   applyDesktopVisualAlpha(state) {
@@ -767,6 +769,27 @@ export class DesktopLayer extends Container {
       active: false,
       stale: true,
     };
+  }
+
+  markInteractiveBoundsDirty() {
+    this.boundsDirty = true;
+    if (this.boundsFlushQueued) return;
+    this.boundsFlushQueued = true;
+    const flush = () => {
+      this.boundsFlushQueued = false;
+      this.flushInteractiveBounds();
+    };
+    if (typeof globalThis.queueMicrotask === "function") {
+      globalThis.queueMicrotask(flush);
+      return;
+    }
+    Promise.resolve().then(flush);
+  }
+
+  flushInteractiveBounds(options = {}) {
+    if (!options.force && !this.boundsDirty) return;
+    this.boundsDirty = false;
+    this.refreshInteractiveBounds();
   }
 
   refreshInteractiveBounds() {

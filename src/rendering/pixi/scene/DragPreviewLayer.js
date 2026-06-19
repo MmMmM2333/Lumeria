@@ -10,7 +10,6 @@ import {
 } from "./dragPreviewMotion.js";
 
 const DRAG_PREVIEW_ROTATION = 0;
-const DRAG_RELEASE_DURATION = 0.18;
 
 function stopPreviewScaleMotion(node) {
   gsap.killTweensOf(node.scale);
@@ -144,20 +143,9 @@ export class DragPreviewLayer extends Container {
     this.previewNode.position.set(motion.start.x, motion.start.y);
     this.previewNode.scale.set(DRAG_PREVIEW_SCALE);
     if (!motion.hasTargetRect) return;
-    gsap.to(this.previewNode, {
-      duration: release.duration || DRAG_RELEASE_DURATION,
-      ease: "power3.out",
-      overwrite: "auto",
-      x: motion.target.x,
-      y: motion.target.y,
-    });
-    gsap.to(this.previewNode.scale, {
-      duration: release.duration || DRAG_RELEASE_DURATION,
-      ease: "power3.out",
-      overwrite: "auto",
-      x: motion.targetScale,
-      y: motion.targetScale,
-    });
+    springTo(this.previewNode, "x", motion.target.x, panelSpring, { velocity: motion.velocity.x });
+    springTo(this.previewNode, "y", motion.target.y, panelSpring, { velocity: motion.velocity.y });
+    springPreviewScale(this.previewNode, motion.targetScale);
   }
 
   destroy(options) {

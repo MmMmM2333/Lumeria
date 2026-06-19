@@ -52,9 +52,11 @@ export function runStageCoordinatesTests() {
     { left: 0, top: 0, width: 50, height: 80 },
     100,
     160,
-    { left: 20, top: 40, width: 20, height: 30 }
+    { left: 20, top: 40, width: 20, height: 30 },
+    { folderId: "folder-1" }
   );
   const rect = element.getBoundingClientRect();
+  assert(element.__launchpadVirtualElementMeta.folderId === "folder-1", "virtual element should expose metadata for stale measurement guards");
   assert(element.offsetWidth === 20 && element.offsetHeight === 30, "virtual element should expose layout size");
   assert(rect.left === 10 && rect.top === 20, "virtual element rect should expose visual position");
   assert(rect.width === 10 && rect.height === 15, "virtual element rect should expose visual size");

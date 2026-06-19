@@ -2,6 +2,7 @@ import {
   useLaunchpadDrag,
   isPrimaryPointerMoveEvent,
   isPrimaryPointerStartEvent,
+  samplePointerVelocity,
   shouldFinishDragForPointerEvent,
 } from "./useLaunchpadDrag.js";
 import {
@@ -243,6 +244,12 @@ export async function runLaunchpadDragTests() {
   assert(!shouldFinishDragForPointerEvent(activeDrag, { type: "pointerup", pointerId: 8, button: 2 }), "matching right pointerup should not finish drag");
   assert(!shouldFinishDragForPointerEvent(activeDrag, { type: "pointerup", pointerId: 9, button: 0 }), "different pointer should not finish drag");
   assert(shouldFinishDragForPointerEvent(activeDrag, { type: "pointercancel", pointerId: 8, button: 2 }), "matching pointercancel should always finish drag");
+  const sampledVelocity = samplePointerVelocity(
+    { pointer: { x: 10, y: 20 }, time: 100, velocity: { x: 0, y: 0 } },
+    { clientX: 30, clientY: 10, timeStamp: 120 },
+    { smoothing: 0.5 }
+  );
+  assert(sampledVelocity.velocity.x === 500 && sampledVelocity.velocity.y === -250, "pointer velocity should smooth px/s deltas");
 
   await withMockPointerEnvironment(async ({ listeners, timers }) => {
     const { app, drag, isLayoutProjectionActive } = createDragHarness();
@@ -357,12 +364,22 @@ export async function runLaunchpadDragTests() {
     drag.beginDrag(makePointerDownEvent(91, target), app, { type: "page", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
+    listeners.get("pointermove")({
+      type: "pointermove",
+      pointerId: 91,
+      buttons: 1,
+      clientX: 90,
+      clientY: 80,
+      timeStamp: 20,
+      preventDefault: () => {},
+    });
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 91, button: 0, clientX: 690, clientY: 490 });
+    listeners.get("pointerup")({ type: "pointerup", pointerId: 91, button: 0, clientX: 690, clientY: 490, timeStamp: 40 });
     await nextTick();
 
     const rect = drag.dragReleaseState.value?.targetRect;
     assert(Math.round(rect?.left) === 18 && Math.round(rect?.top) === 4, "desktop release should animate to the committed compact visual slot, not the empty pointer slot");
+    assert(drag.dragReleaseState.value?.velocity.x > 0 && drag.dragReleaseState.value?.velocity.y > 0, "desktop release should carry the sampled pointer velocity");
   });
 
   await withMockPointerEnvironment(async ({ listeners, timers }) => {

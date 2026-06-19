@@ -147,6 +147,9 @@ let resizeObserver = null;
 let destroyed = false;
 let folderTexturePrewarmTimer = null;
 let handoffRenderFrame = null;
+let renderFrame = null;
+let desktopDomGeometryCache = null;
+let pixiResizeSignature = "";
 const folderClosingHandoffRetainer = createFolderClosingHandoffRetainer();
 let handoffDebugSequence = 0;
 
@@ -235,15 +238,26 @@ function restoreSingleStageEmptyFolderName(event) {
   state.renameFolder(folder.id, fallback);
 }
 
-function syncPixiResizeTarget() {
+function syncPixiResizeTarget(metrics = null) {
   if (!app || !hostRef.value) return;
-  if ("resizeTo" in app && app.resizeTo !== hostRef.value) app.resizeTo = hostRef.value;
-  app.resize?.();
+  let shouldResize = false;
+  if ("resizeTo" in app && app.resizeTo !== hostRef.value) {
+    app.resizeTo = hostRef.value;
+    shouldResize = true;
+  }
+  const width = Math.max(1, Number(metrics?.width) || hostRef.value.offsetWidth || hostRef.value.clientWidth || 1);
+  const height = Math.max(1, Number(metrics?.height) || hostRef.value.offsetHeight || hostRef.value.clientHeight || 1);
+  const signature = `${width}:${height}`;
+  if (pixiResizeSignature !== signature) {
+    pixiResizeSignature = signature;
+    shouldResize = true;
+  }
+  if (shouldResize) app.resize?.();
 }
 
 function handleResize() {
-  syncPixiResizeTarget();
-  renderPixi();
+  refreshDesktopDomGeometry();
+  scheduleRenderPixi();
 }
 
 function nowMs() {
@@ -383,14 +397,14 @@ function getElementRect(nodeRef) {
   };
 }
 
-function makeRootStageHostStyle() {
-  const rootRect = getElementRect(props.domRefs?.rootRef) || {
+function makeRootStageHostStyle(rootRect = null) {
+  const resolvedRootRect = rootRect || getElementRect(props.domRefs?.rootRef) || {
     height: globalThis.innerHeight || 1,
     left: 0,
     top: 0,
     width: globalThis.innerWidth || 1,
   };
-  return makeRootStageHostStyleFromRect(rootRect);
+  return makeRootStageHostStyleFromRect(resolvedRootRect);
 }
 
 function readMainPadding() {
@@ -460,16 +474,49 @@ function createSingleStageFolderState(metrics, options = {}, renderGeometry = ma
   });
 }
 
-function makeDesktopRenderGeometry(metrics, options) {
-  rootStageHostStyle.value = makeRootStageHostStyle();
+function makeDesktopRenderGeometryFromDom(metrics) {
+  const rootRect = getElementRect(props.domRefs?.rootRef) || {
+    height: globalThis.innerHeight || 1,
+    left: 0,
+    top: 0,
+    width: globalThis.innerWidth || 1,
+  };
   const mainPadding = readMainPadding();
-  return makeRootStageDesktopRenderGeometry(metrics, {
+  const renderGeometry = makeRootStageDesktopRenderGeometry(metrics, {
     mainPaddingBottom: mainPadding.bottom,
     mainPaddingTop: mainPadding.top,
     mainRect: getElementRect(mainRef),
-    rootRect: getElementRect(props.domRefs?.rootRef),
+    rootRect,
     shellRect: getElementRect(props.domRefs?.shellRef),
   });
+  return {
+    metrics,
+    renderGeometry,
+    rootStageHostStyle: makeRootStageHostStyle(rootRect),
+  };
+}
+
+function invalidateDesktopDomGeometry() {
+  desktopDomGeometryCache = null;
+}
+
+function refreshDesktopDomGeometry() {
+  if (!hostRef.value) return null;
+  const metrics = getPixiHostMetrics(hostRef.value);
+  desktopDomGeometryCache = makeDesktopRenderGeometryFromDom(metrics);
+  rootStageHostStyle.value = desktopDomGeometryCache.rootStageHostStyle;
+  syncPixiResizeTarget(metrics);
+  return desktopDomGeometryCache;
+}
+
+function getDesktopDomGeometry() {
+  return desktopDomGeometryCache || refreshDesktopDomGeometry();
+}
+
+function makeDesktopRenderGeometry(metrics, options) {
+  if (desktopDomGeometryCache?.metrics === metrics) return desktopDomGeometryCache.renderGeometry;
+  const cached = getDesktopDomGeometry();
+  return cached?.renderGeometry || makeDesktopRenderGeometryFromDom(metrics).renderGeometry;
 }
 
 function logFolderHandoffTimeline(metrics, folderClosingHandoffId) {
@@ -506,14 +553,14 @@ function logFolderHandoffTimeline(metrics, folderClosingHandoffId) {
 
 function renderPixi() {
   if (!app || !layer || !hostRef.value) return;
-  syncPixiResizeTarget();
-  const metrics = getPixiHostMetrics(hostRef.value);
+  const domGeometry = getDesktopDomGeometry();
+  if (!domGeometry) return;
+  const { metrics, renderGeometry } = domGeometry;
   const folderClosingHandoffId = resolveFolderClosingHandoffId(metrics);
   const singleStageOptions = getResolvedSingleStageOptions();
   const singleStageRuntimePlan = getResolvedSingleStageRuntimePlan(singleStageOptions);
   singleStageDragPreviewEnabled.value = singleStageRuntimePlan.useDragPreview;
   singleStageFolderLayerEnabled.value = singleStageRuntimePlan.useFolderLayer;
-  const renderGeometry = makeDesktopRenderGeometry(metrics);
   layer.update({
     activePageIndex: props.activePageIndex,
     activePages: props.activePages,
@@ -562,6 +609,30 @@ function renderPixi() {
   logFolderHandoffTimeline(metrics, folderClosingHandoffId);
 }
 
+function cancelScheduledRenderPixi() {
+  if (renderFrame == null) return;
+  window.cancelAnimationFrame(renderFrame);
+  renderFrame = null;
+}
+
+function scheduleRenderPixi(options = {}) {
+  if (options.invalidateGeometry) invalidateDesktopDomGeometry();
+  if (renderFrame != null || destroyed || !app || !layer || !hostRef.value) return;
+  const run = () => {
+    renderFrame = null;
+    if (destroyed) return;
+    renderPixi();
+    if (options.renderNow) app?.render?.();
+    if (shouldRunHandoffRenderLoop()) scheduleHandoffRenderLoop();
+    else cancelHandoffRenderLoop();
+  };
+  if (typeof window.requestAnimationFrame === "function") {
+    renderFrame = window.requestAnimationFrame(run);
+  } else {
+    run();
+  }
+}
+
 function shouldRunHandoffRenderLoop() {
   return Boolean(folderClosingHandoffRetainer.shouldRun({
     propFolderClosingHandoffId: props.folderClosingHandoffId,
@@ -580,8 +651,7 @@ function scheduleHandoffRenderLoop() {
   handoffRenderFrame = window.requestAnimationFrame(() => {
     handoffRenderFrame = null;
     if (!shouldRunHandoffRenderLoop()) return;
-    renderPixi();
-    app?.render?.();
+    scheduleRenderPixi({ renderNow: true });
     scheduleHandoffRenderLoop();
   });
 }
@@ -661,7 +731,10 @@ function destroyPixi(options = {}) {
   const currentLayer = layer;
   app = null;
   layer = null;
+  cancelScheduledRenderPixi();
   cancelHandoffRenderLoop();
+  invalidateDesktopDomGeometry();
+  pixiResizeSignature = "";
   folderClosingHandoffRetainer.reset();
   singleStageFolderPanelGeometry.value = null;
   singleStageFolderTitleFrame.value = null;
@@ -700,6 +773,7 @@ onMounted(async () => {
   resizeObserver.observe(hostRef.value);
   window.addEventListener("resize", handleResize);
   await nextTick();
+  refreshDesktopDomGeometry();
   renderPixi();
   scheduleHandoffRenderLoop();
   scheduleFolderTexturePrewarm();
@@ -720,7 +794,19 @@ watch(
 
 watch(
   () => props.singleStageRenderKey,
-  () => renderPixi(),
+  () => scheduleRenderPixi(),
+  { flush: "post" }
+);
+
+watch(
+  () => props.desktopProjectionEpoch,
+  () => scheduleRenderPixi({ invalidateGeometry: true }),
+  { flush: "post" }
+);
+
+watch(
+  () => props.pageGridMeasureStyle,
+  () => scheduleRenderPixi({ invalidateGeometry: true }),
   { flush: "post" }
 );
 
@@ -753,7 +839,7 @@ watchEffect(() => {
   void props.folderPageSize;
   void props.singleStageOptions;
   void props.singleStageRenderKey;
-  renderPixi();
+  scheduleRenderPixi();
   if (shouldRunHandoffRenderLoop()) scheduleHandoffRenderLoop();
   else cancelHandoffRenderLoop();
   scheduleFolderTexturePrewarm();

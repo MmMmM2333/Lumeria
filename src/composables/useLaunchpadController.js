@@ -316,6 +316,7 @@ export function useLaunchpadController() {
     updateFolderViewportHeight,
   } = useFolderViewportMetrics({
     folderViewportRef,
+    getRenderedFolder: () => renderedFolder.value,
   });
 
   const {

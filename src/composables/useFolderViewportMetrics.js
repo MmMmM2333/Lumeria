@@ -5,6 +5,20 @@ function roundPx(value) {
   return Math.round(value * 100) / 100;
 }
 
+function getExpectedFolderId(options) {
+  const folder = options.getRenderedFolder?.() || options.renderedFolder?.value;
+  return folder?.id || null;
+}
+
+function getVirtualElementFolderId(element) {
+  return element?.__launchpadVirtualElementMeta?.folderId || null;
+}
+
+function isStaleFolderViewportElement(element, options) {
+  if (!element || !("__launchpadVirtualElementMeta" in element)) return false;
+  return getVirtualElementFolderId(element) !== getExpectedFolderId(options);
+}
+
 export function useFolderViewportMetrics(options) {
   const folderViewportHeight = ref(0);
   let folderViewportResizeObserver = null;
@@ -12,6 +26,7 @@ export function useFolderViewportMetrics(options) {
 
   function updateFolderViewportHeight() {
     const element = getElementFromRef(options.folderViewportRef);
+    if (isStaleFolderViewportElement(element, options)) return;
     // Ancestor panel animations use transforms; layout height avoids reading the scaled rect.
     const layoutHeight = element ? element.offsetHeight || element.clientHeight || element.getBoundingClientRect().height : 0;
     const nextHeight = roundPx(layoutHeight);

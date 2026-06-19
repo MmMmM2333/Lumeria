@@ -94,11 +94,12 @@ export function snapRectToDevicePixels(rect, devicePixelRatio = globalThis.devic
   };
 }
 
-export function makeStageVirtualElement(stageRect, stageWidth, stageHeight, localRect) {
+export function makeStageVirtualElement(stageRect, stageWidth, stageHeight, localRect, meta = {}) {
   const visualRect = stageLayoutRectToClientRect(stageRect, stageWidth, stageHeight, localRect);
   const layoutWidth = Math.max(0, safeNumber(localRect?.width, visualRect.width));
   const layoutHeight = Math.max(0, safeNumber(localRect?.height, visualRect.height));
   return {
+    __launchpadVirtualElementMeta: { ...meta },
     clientHeight: layoutHeight,
     clientWidth: layoutWidth,
     offsetHeight: layoutHeight,

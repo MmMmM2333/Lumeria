@@ -41,15 +41,19 @@ export function runDragPreviewMotionTests() {
     ...preview,
     key: "release-1",
     targetVersion: 3,
+    velocity: { x: 120, y: -60 },
   }, {
     iconSize: 56,
     isTextlessMode: false,
+    height: 600,
     stageRect: { left: 100, top: 200 },
+    width: 1200,
   });
   assert(!pendingRelease.hasTargetRect, "release motion should allow pending target rects");
   assert(pendingRelease.key === "release-1:3:pending", "pending release key should include target state");
   assert(pendingRelease.target.x === pendingRelease.start.x && pendingRelease.target.y === pendingRelease.start.y, "pending release should stay at the pointer placement");
   assert(pendingRelease.targetScale === 1, "pending release should keep neutral target scale");
+  assert(pendingRelease.velocity.x === 120 && pendingRelease.velocity.y === -60, "release motion should preserve velocity when stage scale is neutral");
 
   const targetedRelease = getDragReleaseMotion({
     ...preview,
@@ -73,12 +77,16 @@ export function runDragPreviewMotionTests() {
     targetStageLayoutRect: { height: 40, left: 40, top: 50, width: 40 },
     targetVersion: 5,
     textless: false,
+    velocity: { x: 200, y: 100 },
   }, {
+    height: 1000,
     iconSize: 56,
     isTextlessMode: true,
-    stageRect: { left: 100, top: 200 },
+    stageRect: { left: 100, top: 200, width: 500, height: 500 },
+    width: 1000,
   });
   assert(stageTargetedRelease.hasStageLayoutTargetRect, "release motion should detect stage layout target rects");
   assert(stageTargetedRelease.target.x === 60 && stageTargetedRelease.target.y === 84, "release motion should prefer stage layout target rects over client rect projection");
   assert(Math.round(stageTargetedRelease.targetScale * 1000) === 625, "stage layout release target should scale from stage layout width");
+  assert(stageTargetedRelease.velocity.x === 400 && stageTargetedRelease.velocity.y === 200, "release motion should convert client velocity into stage velocity");
 }

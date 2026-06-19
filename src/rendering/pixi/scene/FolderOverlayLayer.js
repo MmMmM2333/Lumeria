@@ -718,8 +718,9 @@ export class FolderOverlayLayer extends Container {
   }
 
   bindFakeRefs(state, geometry) {
-    const panelElement = makeStageVirtualElement(state.stageRect, state.width, state.height, geometry.panel);
-    const gridElement = makeStageVirtualElement(state.stageRect, state.width, state.height, geometry.grid);
+    const meta = { folderId: state.renderedFolder?.id || null };
+    const panelElement = makeStageVirtualElement(state.stageRect, state.width, state.height, geometry.panel, meta);
+    const gridElement = makeStageVirtualElement(state.stageRect, state.width, state.height, geometry.grid, meta);
     if (state.folderPanelRef) state.folderPanelRef.value = panelElement;
     if (state.folderViewportRef) state.folderViewportRef.value = gridElement;
     if (typeof state.setFolderPageRef === "function") {

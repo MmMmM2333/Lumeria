@@ -1,6 +1,6 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
-import { clientPointToStageVisualPoint, clientRectToStageVisualRect } from "../geometry/stageCoordinates.js";
+import { clientPointToStageVisualPoint, clientRectToStageVisualRect, getStageScale } from "../geometry/stageCoordinates.js";
 
 export const DRAG_PREVIEW_SCALE = 1.12;
 export const DRAG_PREVIEW_FOLDER_HOVER_SCALE = 0.92;
@@ -89,6 +89,12 @@ export function getDragReleaseMotion(release, state = {}) {
       y: targetLocalRect.top + targetLocalRect.height / 2 - visualOffsetY,
     }
     : start;
+  const stageScale = getStageScale(stageRect, state.width, state.height);
+  const clientVelocity = release?.velocity || {};
+  const velocity = {
+    x: (Number(clientVelocity.x) || 0) / Math.max(0.0001, stageScale.scaleX || 1),
+    y: (Number(clientVelocity.y) || 0) / Math.max(0.0001, stageScale.scaleY || 1),
+  };
   return {
     cellHeight: cellSize.height,
     cellWidth: cellSize.width,
@@ -101,6 +107,7 @@ export function getDragReleaseMotion(release, state = {}) {
     target,
     targetScale,
     textless,
+    velocity,
   };
 }
 
