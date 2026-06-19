@@ -40,6 +40,18 @@ export function runFolderPreviewSwapMotionTests() {
   assert(nearlyEqual(second.delay, 0.018), "second motion should keep row and column stagger");
   assert(nearlyEqual(second.fromScale, 1.092), "second motion should keep slot-based start scale");
 
+  const layoutPlan = makeClosingPreviewSwapPlan([{
+    item: { id: "app-c" },
+    previewSlotIndex: 0,
+    targetRect: { height: 24, left: 999, top: 999, width: 20 },
+    targetStageLayoutRect: { height: 10, left: 20, top: 10, width: 10 },
+  }], {
+    stageHeight: 50,
+    stageRect: { left: 10, top: 20, width: 200, height: 100 },
+    stageWidth: 100,
+  });
+  assert(layoutPlan.iconMotions[0].toX === 50, "swap plan should prefer stage layout target rects");
+
   assert(makeClosingPreviewSwapPlan([], { stageRect: { left: 0, top: 0 } }) === null, "empty targets should not create a swap plan");
   assert(makeClosingPreviewSwapPlan([{ targetRect: { left: 1, top: 1, width: 0, height: 10 } }], { stageRect: { left: 0, top: 0 } }) === null, "invalid targets should not create a swap plan");
 }

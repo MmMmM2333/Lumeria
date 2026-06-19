@@ -150,7 +150,9 @@ export class FolderOpeningGhostController {
       const motion = makeOpeningGhostMotion(target, {
         isTextlessMode: state.isTextlessMode,
         openDuration: folderOpenGhostDuration,
+        stageHeight: state.height,
         stageRect: state.stageRect,
+        stageWidth: state.width,
       });
       ghost.position.set(motion.fromX, motion.fromY);
       ghost.scale.set(motion.scale);

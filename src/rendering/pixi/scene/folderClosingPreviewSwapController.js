@@ -106,7 +106,11 @@ export class FolderClosingPreviewSwapController {
     this.clear();
     if (!targets?.length || state.folderPageIndex <= 0) return;
 
-    const plan = makeClosingPreviewSwapPlan(targets, { stageRect: state.stageRect });
+    const plan = makeClosingPreviewSwapPlan(targets, {
+      stageHeight: state.height,
+      stageRect: state.stageRect,
+      stageWidth: state.width,
+    });
     if (!plan) return;
 
     const layer = this.layer;

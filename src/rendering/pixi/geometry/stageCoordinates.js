@@ -44,6 +44,11 @@ export function stageLayoutRectToClientRect(stageRect, stageWidth, stageHeight, 
   };
 }
 
+export function stageLayoutRectToStageVisualRect(stageRect, stageWidth, stageHeight, rect) {
+  const clientRect = stageLayoutRectToClientRect(stageRect, stageWidth, stageHeight, rect);
+  return clientRectToStageVisualRect(clientRect, stageRect);
+}
+
 export function stageLayoutRecordToClientRect(record) {
   if (!record) return null;
   const stageRect = record.meta?.stageRect;

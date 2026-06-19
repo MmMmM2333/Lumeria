@@ -139,6 +139,7 @@ export function makeOpeningGhostTarget(options = {}) {
   const sourceRect = isThumbnailChild
     ? getPreviewChildRect?.(item, previewSlotIndex) || makeProjectedPreviewRect(folderRect, previewSlotIndex, 3, 3)
     : getPreviewChildRect?.(item, index) || makeProjectedPreviewRect(folderRect, index, cols, rows);
+  const targetStageLayoutRect = makeIconRect(targetCenterX, targetCenterY, iconSize);
   return {
     cellHeight,
     cellWidth,
@@ -150,7 +151,8 @@ export function makeOpeningGhostTarget(options = {}) {
     item,
     previewSlotIndex,
     sourceRect,
-    targetRect: makeIconRect(targetCenterX, targetCenterY, iconSize),
+    targetRect: targetStageLayoutRect,
+    targetStageLayoutRect,
   };
 }
 
@@ -174,6 +176,18 @@ export function makeClosingGhostTarget(options = {}) {
   const stablePreviewChildRect = isThumbnailChild && stableFolderCloseTarget?.folderId === folderId
     ? stableFolderCloseTarget.projectedClientPreviewChildRects?.get(makePreviewChildKey(item.id, previewSlotIndex))
     : null;
+  const stablePreviewChildStageLayoutRect = isThumbnailChild && stableFolderCloseTarget?.folderId === folderId
+    ? stableFolderCloseTarget.stageLayoutPreviewChildRects?.get(makePreviewChildKey(item.id, previewSlotIndex))
+    : null;
+  const stableThumbStageLayoutRect = stableFolderCloseTarget?.folderId === folderId
+    ? stableFolderCloseTarget.stageLayoutThumbRect
+    : null;
+  const targetRect = isThumbnailChild
+    ? stablePreviewChildRect || makeFolderThumbPreviewRect(closeThumbRect, previewSlotIndex)
+    : makeFolderCenterCollapseRect(closeThumbRect);
+  const targetStageLayoutRect = isThumbnailChild
+    ? stablePreviewChildStageLayoutRect || makeFolderThumbPreviewRect(stableThumbStageLayoutRect, previewSlotIndex)
+    : makeFolderCenterCollapseRect(stableThumbStageLayoutRect);
   return {
     cellHeight,
     cellWidth,
@@ -185,9 +199,8 @@ export function makeClosingGhostTarget(options = {}) {
     item,
     previewSlotIndex,
     sourceRect: iconBounds,
-    targetRect: isThumbnailChild
-      ? stablePreviewChildRect || makeFolderThumbPreviewRect(closeThumbRect, previewSlotIndex)
-      : makeFolderCenterCollapseRect(closeThumbRect),
+    targetRect,
+    targetStageLayoutRect,
   };
 }
 
@@ -199,8 +212,16 @@ export function makeClosingPreviewSwapTargets(options = {}) {
     const stablePreviewChildRect = stableFolderCloseTarget?.folderId === folderId
       ? stableFolderCloseTarget.projectedClientPreviewChildRects?.get(makePreviewChildKey(item.id, previewSlotIndex))
       : null;
+    const stablePreviewChildStageLayoutRect = stableFolderCloseTarget?.folderId === folderId
+      ? stableFolderCloseTarget.stageLayoutPreviewChildRects?.get(makePreviewChildKey(item.id, previewSlotIndex))
+      : null;
+    const stableThumbStageLayoutRect = stableFolderCloseTarget?.folderId === folderId
+      ? stableFolderCloseTarget.stageLayoutThumbRect
+      : null;
     const targetRect = stablePreviewChildRect || makeFolderThumbPreviewRect(folderRect, previewSlotIndex);
-    return targetRect ? { item, previewSlotIndex, targetRect } : null;
+    const targetStageLayoutRect = stablePreviewChildStageLayoutRect ||
+      makeFolderThumbPreviewRect(stableThumbStageLayoutRect, previewSlotIndex);
+    return targetRect ? { item, previewSlotIndex, targetRect, targetStageLayoutRect } : null;
   }).filter(Boolean);
 }
 

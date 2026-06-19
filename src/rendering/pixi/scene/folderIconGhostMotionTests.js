@@ -37,6 +37,24 @@ export function runFolderIconGhostMotionTests() {
   assert(opening.toX === 128 && opening.toY === 242, "opening motion should target the folder grid icon center");
   assert(nearlyEqual(opening.labelDelay, opening.delay + 0.29), "opening label delay should follow the open duration");
 
+  const layoutOpening = makeOpeningGhostMotion({
+    columnCount: 5,
+    iconSize: 56,
+    index: 0,
+    isThumbnailChild: false,
+    sourceRect: { height: 28, left: 30, top: 50, width: 28 },
+    targetRect: { height: 56, left: 999, top: 999, width: 56 },
+    targetStageLayoutRect: { height: 20, left: 20, top: 10, width: 10 },
+  }, {
+    isTextlessMode: false,
+    openDuration: 0.5,
+    stageHeight: 50,
+    stageRect: { left: 10, top: 20, width: 200, height: 100 },
+    stageWidth: 100,
+  });
+  assert(layoutOpening.targetRect.left === 40 && layoutOpening.targetRect.width === 20, "opening motion should prefer stage layout target rects");
+  assert(layoutOpening.toX === 50, "opening motion should target the projected stage layout center");
+
   const closingTarget = {
     iconSize: 56,
     sourceAlpha: 0.6,
@@ -58,4 +76,25 @@ export function runFolderIconGhostMotionTests() {
   const completed = makeCompletedClosingPreviewMotion(closingTarget, { isTextlessMode: false, stageRect });
   assert(nearlyEqual(completed.scale, 0.25), "completed preview motion should scale to the thumbnail child size");
   assert(nearlyEqual(completed.x, closing.toX) && nearlyEqual(completed.y, closing.toY), "completed preview motion should match the closing target");
+
+  const layoutClosingTarget = {
+    ...closingTarget,
+    targetRect: { height: 14, left: 999, top: 999, width: 14 },
+    targetStageLayoutRect: { height: 10, left: 20, top: 10, width: 10 },
+  };
+  const layoutClosing = makeClosingGhostMotion(layoutClosingTarget, {
+    isTextlessMode: false,
+    stageHeight: 50,
+    stageRect: { left: 10, top: 20, width: 200, height: 100 },
+    stageWidth: 100,
+  });
+  assert(layoutClosing.targetRect.left === 40 && layoutClosing.targetRect.width === 20, "closing motion should prefer stage layout target rects");
+  assert(layoutClosing.toX === 50, "closing motion should target the projected stage layout center");
+  const layoutCompleted = makeCompletedClosingPreviewMotion(layoutClosingTarget, {
+    isTextlessMode: false,
+    stageHeight: 50,
+    stageRect: { left: 10, top: 20, width: 200, height: 100 },
+    stageWidth: 100,
+  });
+  assert(layoutCompleted.targetRect.left === 40 && layoutCompleted.x === layoutClosing.toX, "completed preview motion should use the same stage layout target");
 }

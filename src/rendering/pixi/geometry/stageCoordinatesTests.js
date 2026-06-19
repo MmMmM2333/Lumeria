@@ -6,6 +6,7 @@ import {
   snapRectToDevicePixels,
   STAGE_COORDINATE_SPACES,
   stageLayoutRectToClientRect,
+  stageLayoutRectToStageVisualRect,
   stageLayoutRecordToClientRect,
 } from "./stageCoordinates.js";
 
@@ -26,6 +27,14 @@ export function runStageCoordinatesTests() {
   assert(mapped.top === 80, "local y should be scaled into the transformed stage");
   assert(mapped.width === 20, "local width should be scaled into the transformed stage");
   assert(mapped.height === 40, "local height should be scaled into the transformed stage");
+  const mappedVisual = stageLayoutRectToStageVisualRect(
+    { left: 10, top: 20, width: 200, height: 300 },
+    100,
+    150,
+    { left: 25, top: 30, width: 10, height: 20 }
+  );
+  assert(mappedVisual.left === 50 && mappedVisual.top === 60, "layout rect should map into visual stage coordinates without exposing client origin");
+  assert(mappedVisual.width === 20 && mappedVisual.height === 40, "layout rect should preserve visual scaled size");
   const mappedRecord = stageLayoutRecordToClientRect({
     left: 25,
     top: 30,

@@ -229,7 +229,9 @@ export class FolderClosingGhostController {
         alphaHold: CLOSING_EXTRA_GHOST_ALPHA_HOLD,
         closeDuration: folderCloseDuration,
         isTextlessMode: state.isTextlessMode,
+        stageHeight: state.height,
         stageRect: state.stageRect,
+        stageWidth: state.width,
       });
       ghost.position.set(motion.fromX, motion.fromY);
       ghost.scale.set(motion.sourceScale);
@@ -423,7 +425,9 @@ export class FolderClosingGhostController {
     if (target.isThumbnailChild && !ghost.destroyed) {
       const motion = makeCompletedClosingPreviewMotion(target, {
         isTextlessMode: state.isTextlessMode,
+        stageHeight: state.height,
         stageRect: state.stageRect,
+        stageWidth: state.width,
       });
       ghost.position.set(motion.x, motion.y);
       ghost.scale.set(motion.scale);
