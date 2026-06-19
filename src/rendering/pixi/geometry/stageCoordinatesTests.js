@@ -1,11 +1,11 @@
 import {
+  clientPointToStageVisualPoint,
+  clientRectToStageVisualRect,
   getEffectiveDevicePixelRatio,
   getStageVisualOffset,
-  makeStageLocalPoint,
-  makeStageLocalRect,
   makeStageVirtualElement,
-  mapLocalRectToStageRect,
   snapRectToDevicePixels,
+  stageLayoutRectToClientRect,
 } from "./stageCoordinates.js";
 
 export function runStageCoordinatesTests() {
@@ -13,7 +13,7 @@ export function runStageCoordinatesTests() {
     if (!condition) throw new Error(`[Stage coordinates test failed] ${message}`);
   };
 
-  const mapped = mapLocalRectToStageRect(
+  const mapped = stageLayoutRectToClientRect(
     { left: 10, top: 20, width: 200, height: 300 },
     100,
     150,
@@ -23,7 +23,6 @@ export function runStageCoordinatesTests() {
   assert(mapped.top === 80, "local y should be scaled into the transformed stage");
   assert(mapped.width === 20, "local width should be scaled into the transformed stage");
   assert(mapped.height === 40, "local height should be scaled into the transformed stage");
-
   const element = makeStageVirtualElement(
     { left: 0, top: 0, width: 50, height: 80 },
     100,
@@ -35,16 +34,21 @@ export function runStageCoordinatesTests() {
   assert(rect.left === 10 && rect.top === 20, "virtual element rect should expose visual position");
   assert(rect.width === 10 && rect.height === 15, "virtual element rect should expose visual size");
 
-  const local = makeStageLocalRect(
+  const local = clientRectToStageVisualRect(
     { left: 130, top: 260, width: 48, height: 56 },
     { left: 100, top: 200, width: 800, height: 600 }
   );
-  assert(local.left === 30 && local.top === 60, "stage local rect should subtract the stage origin");
-  assert(local.width === 48 && local.height === 56, "stage local rect should preserve dimensions");
-  assert(makeStageLocalRect(null, { left: 0, top: 0 }) === null, "stage local rect should stay nullable");
-  const localPoint = makeStageLocalPoint({ x: 130, y: 260 }, { left: 100, top: 200 });
-  assert(localPoint.x === 30 && localPoint.y === 60, "stage local point should subtract the stage origin");
-  assert(makeStageLocalPoint(null, { left: 0, top: 0 }) === null, "stage local point should stay nullable");
+  assert(local.left === 30 && local.top === 60, "client rect should subtract the stage origin into visual stage coordinates");
+  assert(local.width === 48 && local.height === 56, "client rect conversion should preserve visual dimensions");
+  assert(clientRectToStageVisualRect(null, { left: 0, top: 0 }) === null, "client rect conversion should stay nullable");
+  const scaledStageLocal = clientRectToStageVisualRect(
+    { left: 30, top: 50, width: 20, height: 40 },
+    { left: 10, top: 20, width: 200, height: 300 }
+  );
+  assert(scaledStageLocal.left === 20 && scaledStageLocal.width === 20, "client rect conversion should not reverse stage scale");
+  const localPoint = clientPointToStageVisualPoint({ x: 130, y: 260 }, { left: 100, top: 200 });
+  assert(localPoint.x === 30 && localPoint.y === 60, "client point should subtract the stage origin into visual stage coordinates");
+  assert(clientPointToStageVisualPoint(null, { left: 0, top: 0 }) === null, "client point conversion should stay nullable");
   const visualOffset = getStageVisualOffset({ left: 96, top: 216 }, { left: 100, top: 200 });
   assert(visualOffset.x === -4 && visualOffset.y === 16, "stage visual offset should compare visual and stable origins");
   const defaultVisualOffset = getStageVisualOffset({ left: 8, top: 12 });
@@ -64,7 +68,7 @@ export function runStageCoordinatesTests() {
   ];
   for (const config of stageScales) {
     const localRect = { left: config.stageWidth * 0.25, top: config.stageHeight * 0.2, width: config.stageWidth * 0.1, height: config.stageHeight * 0.12 };
-    const scaled = mapLocalRectToStageRect(config.rect, config.stageWidth, config.stageHeight, localRect);
+    const scaled = stageLayoutRectToClientRect(config.rect, config.stageWidth, config.stageHeight, localRect);
     const scaleX = config.rect.width / config.stageWidth;
     const scaleY = config.rect.height / config.stageHeight;
     assert(scaled.left === config.rect.left + localRect.left * scaleX, `${config.label} should scale local x into css pixels`);

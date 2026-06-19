@@ -5,6 +5,13 @@ export function makeDesktopBoundsRegistration(state = {}, entries = [], desktopF
   const stageVisualOffset = getStageVisualOffset(state.stageRect, stableStageRect);
 
   return {
+    coordinateSpace: {
+      bounds: "client-visual",
+      desktopFrame: "stage-layout",
+      layoutTargets: "stage-layout",
+      stageRect: "client-visual",
+      stableStageRect: "client-layout",
+    },
     deviceResolution: state.deviceResolution,
     entries,
     folderClosingHandoffId: state.folderClosingHandoffId,

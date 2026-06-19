@@ -1,6 +1,6 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getIconLabelTopFromVisualRect } from "../geometry/iconMetrics.js";
-import { makeStageLocalRect } from "../geometry/stageCoordinates.js";
+import { clientRectToStageVisualRect } from "../geometry/stageCoordinates.js";
 import { getFrameRadius } from "./folderFrameGhostMath.js";
 
 const OPENING_INTERRUPTION_FRAME_PADDING = 48;
@@ -54,7 +54,7 @@ export function makeOpeningInterruptionFrame(targets, stageRect, styleFrame, opt
   const padding = options.padding ?? OPENING_INTERRUPTION_FRAME_PADDING;
   let bounds = null;
   for (const target of targets || []) {
-    const iconRect = makeStageLocalRect(target.sourceRect, stageRect);
+    const iconRect = clientRectToStageVisualRect(target.sourceRect, stageRect);
     if (!iconRect) continue;
     bounds = expandBounds(bounds, iconRect);
     if (target.sourceLabelAlpha == null || target.sourceLabelAlpha <= 0) continue;

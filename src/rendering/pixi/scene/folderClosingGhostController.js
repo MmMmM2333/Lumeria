@@ -4,7 +4,7 @@ import { killAllMotion } from "../animation/motionCleanup.js";
 import { springGroupTo } from "../animation/springGroup.js";
 import { panelSpring } from "../animation/springMotion.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { makeStageLocalRect } from "../geometry/stageCoordinates.js";
+import { clientRectToStageVisualRect } from "../geometry/stageCoordinates.js";
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
 import {
   getClosingPreviewTiming,
@@ -175,7 +175,7 @@ export class FolderClosingGhostController {
     if (!usableTargets.length) return;
     const isInterruptedClose = Boolean(interruption);
     const frameDuration = folderCloseDuration + CLOSING_FRAME_TAIL_DURATION;
-    const closeFrameToRect = makeStageLocalRect(folderRect, state.stageRect);
+    const closeFrameToRect = clientRectToStageVisualRect(folderRect, state.stageRect);
     layer.closingFolderHandoffRect = handoffRect || folderRect;
     layer.closingFolderHandoffTarget = handoffTarget || null;
     const previewTiming = getClosingPreviewTiming(closeFrameFromRect, closeFrameToRect);

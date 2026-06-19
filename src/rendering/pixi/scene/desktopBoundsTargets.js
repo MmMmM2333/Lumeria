@@ -54,6 +54,7 @@ export function resolveDesktopBoundsTargets(options = {}) {
     : node.getIconBounds(registration.stageRect);
 
   return {
+    coordinateSpace: "client-visual",
     folderThumbBounds,
     iconBounds,
     liveTargetBounds,
@@ -72,6 +73,7 @@ export function resolveFolderPreviewChildBoundsTargets(options = {}) {
 
   return {
     bounds: node?.getFolderPreviewChildBounds?.(stageRect, slotIndex) || null,
+    coordinateSpace: "client-visual",
     liveTargetBounds: target?.liveThumbRect ? makeFolderThumbPreviewRect(target.liveThumbRect, slotIndex) : null,
     stableTargetBounds: target?.stableThumbRect ? makeFolderThumbPreviewRect(target.stableThumbRect, slotIndex) : null,
   };

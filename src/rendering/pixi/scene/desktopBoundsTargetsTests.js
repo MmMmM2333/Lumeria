@@ -47,6 +47,7 @@ export function runDesktopBoundsTargetsTests() {
     });
 
     assert(targets.folderThumbBounds === null, "app targets should not include folder thumb bounds");
+    assert(targets.coordinateSpace === "client-visual", "desktop bounds targets should identify client visual coordinates");
     assert(targets.liveTargetBounds.left === 15.26, "app live target should preserve unsnapped container bounds");
     assert(targets.stableTargetBounds.left === 15, "app stable target should preserve unsnapped stage bounds");
     assert(targets.iconBounds.left === 5.26, "app icon bounds should not be snapped");
@@ -133,6 +134,7 @@ export function runDesktopBoundsTargetsTests() {
     });
 
     assert(targets.bounds.left === 30, "folder preview child bounds should use the rendered node rect");
+    assert(targets.coordinateSpace === "client-visual", "folder preview targets should identify client visual coordinates");
     assert(nearlyEqual(targets.liveTargetBounds.left, 41), "folder preview live target should be projected from the live thumb rect");
     assert(nearlyEqual(targets.stableTargetBounds.left, 43.75), "folder preview stable target should be projected from the stable thumb rect");
   }

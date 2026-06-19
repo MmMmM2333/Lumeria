@@ -1,4 +1,4 @@
-import { mapLocalRectToStageRect } from "../geometry/stageCoordinates.js";
+import { stageLayoutRectToClientRect } from "../geometry/stageCoordinates.js";
 import { mapDisplayObjectLocalRectToStageRect } from "../geometry/displayObjectBounds.js";
 
 export function makeIconRect(centerX, centerY, size) {
@@ -11,7 +11,7 @@ export function makeIconRect(centerX, centerY, size) {
 }
 
 export function makeTargetIconBounds(stageRect, stageWidth, stageHeight, centerX, centerY, size, visualOffsetY = 0) {
-  return mapLocalRectToStageRect(
+  return stageLayoutRectToClientRect(
     stageRect,
     stageWidth,
     stageHeight,
@@ -27,7 +27,7 @@ export function makeContainerTargetIconBounds(container, stageRect, stageWidth, 
     stageHeight,
     stageRect,
     stageWidth,
-  }) || mapLocalRectToStageRect(stageRect, stageWidth, stageHeight, rect);
+  }) || stageLayoutRectToClientRect(stageRect, stageWidth, stageHeight, rect);
 }
 
 export function makeSyntheticPointerEvent(original, node) {

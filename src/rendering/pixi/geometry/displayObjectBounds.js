@@ -1,5 +1,5 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { mapLocalRectToStageRect } from "./stageCoordinates.js";
+import { stageLayoutRectToClientRect } from "./stageCoordinates.js";
 
 function safeNumber(value, fallback = 0) {
   const number = Number(value);
@@ -58,12 +58,12 @@ export function mapDisplayObjectLocalRectToStageRect(options = {}) {
   const source = normalizeRect(rect);
   const matrix = node?.getGlobalTransform?.();
   const transformed = getTransformedLocalRectBounds(matrix, source);
-  if (transformed) return mapLocalRectToStageRect(stageRect, stageWidth, stageHeight, transformed);
+  if (transformed) return stageLayoutRectToClientRect(stageRect, stageWidth, stageHeight, transformed);
   if (!allowGlobalFallback) return null;
 
   const global = node?.getGlobalPosition?.();
   if (!global) return null;
-  return mapLocalRectToStageRect(stageRect, stageWidth, stageHeight, {
+  return stageLayoutRectToClientRect(stageRect, stageWidth, stageHeight, {
     height: source.height,
     left: safeNumber(global.x) + source.left,
     top: safeNumber(global.y) + source.top,

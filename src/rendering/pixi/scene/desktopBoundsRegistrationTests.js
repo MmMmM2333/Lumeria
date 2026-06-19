@@ -21,6 +21,8 @@ export function runDesktopBoundsRegistrationTests() {
 
     assert(registration.entries === entries, "registration should preserve bounds entries by reference");
     assert(registration.desktopFrame === desktopFrame, "registration should preserve desktop frame by reference");
+    assert(registration.coordinateSpace.bounds === "client-visual", "registration bounds should be explicit client visual rects");
+    assert(registration.coordinateSpace.layoutTargets === "stage-layout", "registration layout targets should be explicit stage layout coordinates");
     assert(registration.stableStageRect === stageRect, "root-stage registration should keep a single stable stage rect");
     assert(registration.stageVisualOffsetX === 0 && registration.stageVisualOffsetY === 0, "root-stage registration should have zero visual offset");
     assert(registration.folderClosingHandoffId === "folder-1", "registration should carry the handoff id");

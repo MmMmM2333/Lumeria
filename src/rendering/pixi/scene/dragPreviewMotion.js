@@ -1,6 +1,6 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
-import { makeStageLocalPoint, makeStageLocalRect } from "../geometry/stageCoordinates.js";
+import { clientPointToStageVisualPoint, clientRectToStageVisualRect } from "../geometry/stageCoordinates.js";
 
 export const DRAG_PREVIEW_SCALE = 1.12;
 export const DRAG_PREVIEW_FOLDER_HOVER_SCALE = 0.92;
@@ -19,7 +19,7 @@ function getPreviewCellSize(preview, iconSize) {
 function getPointerPlacement(preview, stageRect, iconSize, textless) {
   const offset = preview?.offset || { x: iconSize / 2, y: iconSize / 2 };
   const pointer = preview?.pointer || { x: 0, y: 0 };
-  const localPointer = makeStageLocalPoint(pointer, stageRect) || { x: 0, y: 0 };
+  const localPointer = clientPointToStageVisualPoint(pointer, stageRect) || { x: 0, y: 0 };
   const visualLeft = localPointer.x - offset.x;
   const visualTop = localPointer.y - offset.y;
   return {
@@ -77,7 +77,7 @@ export function getDragReleaseMotion(release, state = {}) {
   const hasTargetRect = Boolean(targetRect?.width && targetRect?.height);
   const visualOffsetY = getIconVisualOffsetY(textless);
   const targetScale = hasTargetRect ? Math.max(0.1, targetRect.width / iconSize) : 1;
-  const targetLocalRect = makeStageLocalRect(targetRect, stageRect);
+  const targetLocalRect = clientRectToStageVisualRect(targetRect, stageRect);
   const target = hasTargetRect
     ? {
       x: targetLocalRect.left + targetLocalRect.width / 2,

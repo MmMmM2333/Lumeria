@@ -22,7 +22,7 @@ export function getStageScale(stageRect, stageWidth, stageHeight) {
   };
 }
 
-export function mapLocalRectToStageRect(stageRect, stageWidth, stageHeight, rect) {
+export function stageLayoutRectToClientRect(stageRect, stageWidth, stageHeight, rect) {
   const source = rect || {};
   const { scaleX, scaleY } = getStageScale(stageRect, stageWidth, stageHeight);
   const left = safeNumber(stageRect?.left) + safeNumber(source.left) * scaleX;
@@ -39,7 +39,7 @@ export function mapLocalRectToStageRect(stageRect, stageWidth, stageHeight, rect
   };
 }
 
-export function makeStageLocalRect(rect, stageRect) {
+export function clientRectToStageVisualRect(rect, stageRect) {
   if (!rect) return null;
   return {
     height: rect.height,
@@ -49,7 +49,7 @@ export function makeStageLocalRect(rect, stageRect) {
   };
 }
 
-export function makeStageLocalPoint(point, stageRect) {
+export function clientPointToStageVisualPoint(point, stageRect) {
   if (!point) return null;
   return {
     x: safeNumber(point.x) - safeNumber(stageRect?.left),
@@ -84,7 +84,7 @@ export function snapRectToDevicePixels(rect, devicePixelRatio = globalThis.devic
 }
 
 export function makeStageVirtualElement(stageRect, stageWidth, stageHeight, localRect) {
-  const visualRect = mapLocalRectToStageRect(stageRect, stageWidth, stageHeight, localRect);
+  const visualRect = stageLayoutRectToClientRect(stageRect, stageWidth, stageHeight, localRect);
   const layoutWidth = Math.max(0, safeNumber(localRect?.width, visualRect.width));
   const layoutHeight = Math.max(0, safeNumber(localRect?.height, visualRect.height));
   return {

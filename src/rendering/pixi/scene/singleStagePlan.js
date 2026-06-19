@@ -1,5 +1,5 @@
 import { getFolderPanelGeometry } from "../geometry/gridGeometry.js";
-import { makeStageLocalRect } from "../geometry/stageCoordinates.js";
+import { clientRectToStageVisualRect } from "../geometry/stageCoordinates.js";
 import { getStableFolderCloseRects, makeFolderThumbPreviewRect } from "./folderOverlayTargets.js";
 import { resolveFolderOverlayTargets } from "./folderOverlayTargetResolver.js";
 
@@ -204,21 +204,21 @@ export function makeSingleStageDiagnosticsPlan(state, options = {}) {
     return {
       itemId: item.id,
       rect,
-      localRect: makeStageLocalRect(rect, state.stageRect),
+      localRect: clientRectToStageVisualRect(rect, state.stageRect),
       slotIndex,
     };
   }).filter(Boolean);
   return {
     canvasStageRect: state.canvasStageRect || null,
     closeIconRect: closeRects.closeIconRect,
-    closeIconLocalRect: makeStageLocalRect(closeRects.closeIconRect, state.stageRect),
+    closeIconLocalRect: clientRectToStageVisualRect(closeRects.closeIconRect, state.stageRect),
     closeThumbRect: closeRects.closeThumbRect,
-    closeThumbLocalRect: makeStageLocalRect(closeRects.closeThumbRect, state.stageRect),
+    closeThumbLocalRect: clientRectToStageVisualRect(closeRects.closeThumbRect, state.stageRect),
     desktopFrame: state.desktopFrame || null,
     desktopStageRect: state.desktopStageRect || null,
     folderId,
     folderRect: overlayTargets.folderRect,
-    folderLocalRect: makeStageLocalRect(overlayTargets.folderRect, state.stageRect),
+    folderLocalRect: clientRectToStageVisualRect(overlayTargets.folderRect, state.stageRect),
     geometry,
     panelRect: geometry.panel,
     previewRects,

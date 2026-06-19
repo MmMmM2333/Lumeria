@@ -3,7 +3,7 @@ import { gsap } from "gsap";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getDesktopGridMetrics, getGridSlotRect, makeRect } from "../geometry/gridGeometry.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
-import { getStageScale, makeStageLocalRect, makeStageVirtualElement, snapRectToDevicePixels } from "../geometry/stageCoordinates.js";
+import { clientRectToStageVisualRect, getStageScale, makeStageVirtualElement, snapRectToDevicePixels } from "../geometry/stageCoordinates.js";
 import {
   clearFolderPreviewChildBounds,
   clearLaunchIconBounds,
@@ -143,7 +143,7 @@ function worstRectDelta(rows) {
 }
 
 function drawDebugRect(graphics, rect, stageRect, color, alpha = 0.95, width = 3) {
-  const local = makeStageLocalRect(rect, stageRect);
+  const local = clientRectToStageVisualRect(rect, stageRect);
   if (!local || local.width <= 0 || local.height <= 0) return;
   graphics
     .rect(local.left, local.top, local.width, local.height)

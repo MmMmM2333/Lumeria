@@ -22,7 +22,7 @@ import {
 import { FolderClosingGhostController } from "./folderClosingGhostController.js";
 import { FolderClosingPreviewSwapController } from "./folderClosingPreviewSwapController.js";
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
-import { makeStageLocalPoint, makeStageLocalRect, makeStageVirtualElement } from "../geometry/stageCoordinates.js";
+import { clientPointToStageVisualPoint, clientRectToStageVisualRect, makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import {
   clearLaunchIconBounds,
   registerLaunchIconBounds,
@@ -612,7 +612,7 @@ export class FolderOverlayLayer extends Container {
     if (this.currentFolderId !== state.renderedFolder?.id) {
       this.currentFolderId = state.renderedFolder?.id;
       if (sourceRect) {
-        const sourceLocalRect = makeStageLocalRect(sourceRect, state.stageRect);
+        const sourceLocalRect = clientRectToStageVisualRect(sourceRect, state.stageRect);
         this.panel.position.set(sourceLocalRect.left + sourceLocalRect.width / 2, sourceLocalRect.top + sourceLocalRect.height / 2);
         this.panel.scale.set(Math.max(0.08, sourceLocalRect.width / panelRect.width), Math.max(0.08, sourceLocalRect.height / panelRect.height));
       } else {
@@ -642,7 +642,7 @@ export class FolderOverlayLayer extends Container {
       stopTargetSprings(this.panel.scale);
       gsap.killTweensOf(this.panel, "x,y");
       gsap.killTweensOf(this.panel.scale, "x,y");
-      const sourceLocalRect = makeStageLocalRect(sourceRect, state.stageRect);
+      const sourceLocalRect = clientRectToStageVisualRect(sourceRect, state.stageRect);
       gsap.to(this.panel, {
         alpha: state.isFolderAppLaunchClosing ? 0 : 0.8,
         duration: folderPanelCloseDuration,
@@ -726,7 +726,7 @@ export class FolderOverlayLayer extends Container {
       return;
     }
 
-    const localPoint = makeStageLocalPoint({ x: clientX, y: clientY }, this.stageRect) || { x: 0, y: 0 };
+    const localPoint = clientPointToStageVisualPoint({ x: clientX, y: clientY }, this.stageRect) || { x: 0, y: 0 };
     const { x, y } = localPoint;
     const panel = this.panelGeometry;
     if (!panel) return;
