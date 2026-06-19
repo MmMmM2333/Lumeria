@@ -22,7 +22,9 @@ function createSurfaceInteractions(overrides = {}) {
     isFolderAppLaunchClosing: ref(Boolean(overrides.isFolderAppLaunchClosing)),
     isFolderClosing: ref(Boolean(overrides.isFolderClosing)),
     isDragActive: () => isDragActive.value,
+    openFolderId: ref(overrides.openFolderId ?? null),
     pageRefs,
+    renderedFolder: ref(overrides.renderedFolder ?? null),
   });
 
   return {
@@ -92,6 +94,17 @@ export function runLaunchpadSurfaceInteractionsTests() {
   const dragging = createSurfaceInteractions({ isDragActive: true });
   dragging.interactions.handleDesktopSurfacePointerDown(makePointerEvent());
   assert(dragging.calls.closeDesktop.length === 0, "drag-active desktop pointer down should be ignored");
+
+  const openFolder = createSurfaceInteractions({ openFolderId: "folder-1" });
+  openFolder.interactions.handleDesktopSurfacePointerDown(makePointerEvent());
+  assert(openFolder.calls.commitOpenFolder.length === 1 && openFolder.calls.commitOpenFolder[0] === null, "desktop pointer down with an open folder should close the folder");
+  assert(openFolder.calls.closeDesktop.length === 0, "desktop pointer down with an open folder should not close the desktop");
+  assert(openFolder.calls.hideNativeWindowAfterCloseAnimation === 0, "open-folder desktop pointer down should not hide the native window");
+
+  const renderedFolder = createSurfaceInteractions({ renderedFolder: { id: "folder-1" } });
+  renderedFolder.interactions.handleDesktopSurfacePointerDown(makePointerEvent());
+  assert(renderedFolder.calls.commitOpenFolder.length === 1, "desktop pointer down with a rendered folder should close the folder");
+  assert(renderedFolder.calls.closeDesktop.length === 0, "rendered folder pointer down should not close the desktop");
 
   let capturedSelector = "";
   const ignoredTarget = createSurfaceInteractions();

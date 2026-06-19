@@ -30,6 +30,10 @@ export function useLaunchpadSurfaceInteractions(options) {
     if (options.isFolderClosing?.value || options.isFolderAppLaunchClosing?.value) return;
 
     if (event.target?.closest?.(DESKTOP_SURFACE_IGNORED_SELECTOR)) return;
+    if (options.openFolderId?.value || options.renderedFolder?.value) {
+      options.commitOpenFolder(null);
+      return;
+    }
 
     options.closeDesktop({ clearSearch: true });
     options.hideNativeWindowAfterCloseAnimation();

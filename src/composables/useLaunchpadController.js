@@ -1328,7 +1328,9 @@ export function useLaunchpadController() {
     isDragActive,
     isFolderAppLaunchClosing,
     isFolderClosing,
+    openFolderId,
     pageRefs,
+    renderedFolder,
   });
 
   useLaunchpadLifecycle({

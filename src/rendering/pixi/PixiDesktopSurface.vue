@@ -15,6 +15,7 @@
           isSingleStageDragPreviewActive && 'pixi-desktop-host-root-stage-drag-active',
         ]"
         :style="rootStageHostStyle"
+        @wheel="$emit('wheel', $event)"
       />
       <div
         v-if="shouldRenderSingleStageFolderDomControls"
@@ -112,6 +113,7 @@ const emit = defineEmits([
   "pointerdown-icon",
   "remove-app",
   "reset-app-icon",
+  "wheel",
 ]);
 
 function getResolvedSingleStageOptions() {

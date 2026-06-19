@@ -102,6 +102,7 @@
         @remove-app="removeAppById"
         @choose-app-icon="openExistingAppIconChooser"
         @reset-app-icon="resetAppCustomIcon"
+        @wheel="handleLaunchpadWheel"
       />
     </LaunchpadChromeFrame>
 
