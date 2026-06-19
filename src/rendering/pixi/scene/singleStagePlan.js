@@ -179,6 +179,39 @@ export function makeSingleStageRuntimePlan(options = getSingleStageOptions(), st
   };
 }
 
+export function makeSingleStageRuntimeProbe(runtimePlan = makeSingleStageRuntimePlan(), state = {}) {
+  const canvasCount = Number(state.canvasCount);
+  const hasOneCanvas = Number.isFinite(canvasCount) && canvasCount === 1;
+  const hasRootStageHost = state.rootStageHost === true;
+  const hasRootStageMain = state.rootStageMain === true;
+  const fallbackFolderMounted = state.fallbackFolderMounted === true;
+  const fallbackDragPreviewMounted = state.fallbackDragPreviewMounted === true;
+  const stableStageIsUnified = state.stableStageIsUnified === true;
+  const expectedSingleStage = Boolean(runtimePlan.useRootStage && runtimePlan.useFolderLayer && runtimePlan.useDragPreview);
+  const failures = [];
+
+  if (expectedSingleStage) {
+    if (!hasOneCanvas) failures.push("canvas-count");
+    if (!hasRootStageHost) failures.push("root-stage-host");
+    if (!hasRootStageMain) failures.push("root-stage-main");
+    if (fallbackFolderMounted) failures.push("fallback-folder-mounted");
+    if (fallbackDragPreviewMounted) failures.push("fallback-drag-preview-mounted");
+    if (!stableStageIsUnified) failures.push("stable-stage-unified");
+  }
+
+  return {
+    canvasCount: Number.isFinite(canvasCount) ? canvasCount : null,
+    expectedSingleStage,
+    failures,
+    fallbackDragPreviewMounted,
+    fallbackFolderMounted,
+    isSingleStageStable: expectedSingleStage && failures.length === 0,
+    rootStageHost: hasRootStageHost,
+    rootStageMain: hasRootStageMain,
+    stableStageIsUnified,
+  };
+}
+
 export function setSingleStageOptions(value) {
   installSingleStageGlobalFlag();
   globalThis[SINGLE_STAGE_GLOBAL_FLAG] = value;

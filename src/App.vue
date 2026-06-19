@@ -163,6 +163,7 @@ import {
   getSingleStageOptions,
   getSingleStageOptionsKey,
   installSingleStageGlobalFlag,
+  makeSingleStageRuntimeProbe,
   makeSingleStageRuntimePlan,
   SINGLE_STAGE_CHANGED_EVENT,
 } from "./rendering/pixi/scene/singleStagePlan.js";
@@ -352,6 +353,25 @@ const shouldUseFallbackFolderPixi = computed(() => singleStageRuntimePlan.value.
 const shouldUseFallbackDragPreviewPixi = computed(() => singleStageRuntimePlan.value.useFallbackDragPreview);
 const shouldRunFallbackFolderPixi = computed(() => singleStageRuntimePlan.value.runFallbackFolderLayer);
 const shouldRunFallbackDragPreviewPixi = computed(() => singleStageRuntimePlan.value.runFallbackDragPreview);
+function publishSingleStageRuntimeProbe() {
+  if (typeof document === "undefined") return;
+  const runtimePlan = singleStageRuntimePlan.value;
+  const probe = makeSingleStageRuntimeProbe(runtimePlan, {
+    canvasCount: document.querySelectorAll("canvas").length,
+    fallbackDragPreviewMounted: Boolean(document.querySelector(".pixi-drag-preview-overlay")),
+    fallbackFolderMounted: Boolean(document.querySelector(".pixi-folder-overlay")),
+    rootStageHost: Boolean(document.querySelector(".pixi-desktop-host-root-stage")),
+    rootStageMain: Boolean(document.querySelector(".pixi-desktop-main-root-stage")),
+    stableStageIsUnified: runtimePlan.useRootStage === true,
+  });
+  globalThis.__LP_SINGLE_STAGE_RUNTIME__ = probe;
+  if (probe.expectedSingleStage && !probe.isSingleStageStable && singleStageRuntimeProbeFrame == null && typeof window !== "undefined") {
+    singleStageRuntimeProbeFrame = window.requestAnimationFrame(() => {
+      singleStageRuntimeProbeFrame = null;
+      publishSingleStageRuntimeProbe();
+    });
+  }
+}
 const shouldRenderLiveDesktopCompositorKeeper = computed(() => Boolean(
   import.meta.env.DEV
     && isLiveDesktopExperimentActive.value
@@ -376,6 +396,7 @@ let pixiBackgroundHideTimer = null;
 let startupMaskRemoveTimer = null;
 let startupMaskMaxWaitTimer = null;
 let startupBackgroundFrame = null;
+let singleStageRuntimeProbeFrame = null;
 let backgroundImageGeneration = 0;
 let backgroundImageShowFrame = null;
 let backgroundImageClearTimer = null;
@@ -552,6 +573,12 @@ function clearStartupMaskTimers() {
   }
 }
 
+function clearSingleStageRuntimeProbeFrame() {
+  if (singleStageRuntimeProbeFrame == null) return;
+  window.cancelAnimationFrame(singleStageRuntimeProbeFrame);
+  singleStageRuntimeProbeFrame = null;
+}
+
 function releaseStartupMask() {
   if (!isStartupMaskMounted.value || !isStartupMaskVisible.value) return;
   isStartupMaskVisible.value = false;
@@ -721,6 +748,18 @@ function clearSingleStageRefreshTimer() {
 }
 
 watch(
+  [
+    singleStageRuntimePlan,
+    shouldUseSingleStageRootStage,
+    shouldUseSingleStageFolderLayer,
+    shouldUseFallbackFolderPixi,
+    shouldUseFallbackDragPreviewPixi,
+  ],
+  publishSingleStageRuntimeProbe,
+  { flush: "post", immediate: true }
+);
+
+watch(
   shouldRenderPixiBackgroundEffect,
   (shouldRender) => {
     if (shouldRender) {
@@ -815,10 +854,12 @@ onBeforeUnmount(clearStartupMaskTimers);
 onBeforeUnmount(clearBackgroundImageTimers);
 onBeforeUnmount(clearLiveDesktopCompositorKeeperTimer);
 onBeforeUnmount(clearSingleStageRefreshTimer);
+onBeforeUnmount(clearSingleStageRuntimeProbeFrame);
 
 onMounted(() => {
   refreshBackgroundLayoutMetrics();
   refreshSingleStageOptions();
+  publishSingleStageRuntimeProbe();
   startSingleStageRefreshTimer();
   window.addEventListener("resize", refreshBackgroundLayoutMetrics);
   window.addEventListener("focus", refreshBackgroundLayoutMetrics);
