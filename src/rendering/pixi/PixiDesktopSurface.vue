@@ -56,7 +56,7 @@ import {
   makeRootStageHostStyle as makeRootStageHostStyleFromRect,
 } from "./geometry/rootStageCoordinates.js";
 import { createFolderClosingHandoffRetainer } from "./scene/folderClosingHandoffRetainer.js";
-import { getSingleStageOptions } from "./scene/singleStagePlan.js";
+import { getSingleStageOptions, makeSingleStageRuntimePlan } from "./scene/singleStagePlan.js";
 import {
   getSingleStageFolderTitleOpenOpacity,
   isSingleStageFolderPageDotsReady as getSingleStageFolderPageDotsReady,
@@ -126,12 +126,17 @@ function getResolvedSingleStageOptions() {
   return getSingleStageOptions();
 }
 
+function getResolvedSingleStageRuntimePlan(options = getResolvedSingleStageOptions()) {
+  return makeSingleStageRuntimePlan(options);
+}
+
+const initialSingleStageRuntimePlan = getResolvedSingleStageRuntimePlan();
 const hostRef = ref(null);
 const mainRef = ref(null);
-const rootStageCanvasEnabled = ref(getResolvedSingleStageOptions().rootStage);
+const rootStageCanvasEnabled = ref(initialSingleStageRuntimePlan.useRootStage);
 const rootStageHostStyle = ref(rootStageCanvasEnabled.value ? makeRootStageHostStyle() : null);
-const singleStageDragPreviewEnabled = ref(getResolvedSingleStageOptions().dragPreview);
-const singleStageFolderLayerEnabled = ref(getResolvedSingleStageOptions().folderLayer);
+const singleStageDragPreviewEnabled = ref(initialSingleStageRuntimePlan.useDragPreview);
+const singleStageFolderLayerEnabled = ref(initialSingleStageRuntimePlan.useFolderLayer);
 const singleStageFolderPanelGeometry = ref(null);
 const singleStageFolderTitleFrame = ref(null);
 const singleStageFolderNameBeforeEdit = ref("");
@@ -525,10 +530,11 @@ function renderPixi() {
   const metrics = getPixiHostMetrics(hostRef.value);
   const folderClosingHandoffId = resolveFolderClosingHandoffId(metrics);
   const singleStageOptions = getResolvedSingleStageOptions();
-  singleStageDragPreviewEnabled.value = singleStageOptions.dragPreview;
-  singleStageFolderLayerEnabled.value = singleStageOptions.folderLayer;
-  if (syncRootStageCanvasFlag(singleStageOptions)) return;
-  const renderGeometry = makeDesktopRenderGeometry(metrics, singleStageOptions);
+  const singleStageRuntimePlan = getResolvedSingleStageRuntimePlan(singleStageOptions);
+  singleStageDragPreviewEnabled.value = singleStageRuntimePlan.useDragPreview;
+  singleStageFolderLayerEnabled.value = singleStageRuntimePlan.useFolderLayer;
+  if (syncRootStageCanvasFlag({ rootStage: singleStageRuntimePlan.useRootStage })) return;
+  const renderGeometry = makeDesktopRenderGeometry(metrics, { rootStage: singleStageRuntimePlan.useRootStage });
   layer.update({
     activePageIndex: props.activePageIndex,
     activePages: props.activePages,
@@ -545,9 +551,9 @@ function renderPixi() {
     dragReleaseState: props.dragReleaseState,
     deviceResolution: app.renderer?.resolution || 1,
     folderClosingHandoffId,
-    singleStageDragPreviewEnabled: singleStageOptions.dragPreview,
+    singleStageDragPreviewEnabled: singleStageRuntimePlan.useDragPreview,
     singleStageDiagnosticsEnabled: singleStageOptions,
-    singleStageFolderLayerEnabled: singleStageOptions.folderLayer,
+    singleStageFolderLayerEnabled: singleStageRuntimePlan.useFolderLayer,
     singleStageFolderState: singleStageOptions.enabled ? createSingleStageFolderState(metrics, singleStageOptions, renderGeometry) : null,
     folderPageSize: props.folderPageSize,
     getDesktopPageRenderMode: props.getDesktopPageRenderMode,
@@ -572,7 +578,7 @@ function renderPixi() {
     stageRect: renderGeometry.stageRect,
     width: renderGeometry.width,
   });
-  if (singleStageOptions.dragPreview) {
+  if (singleStageRuntimePlan.useDragPreview) {
     preloadIconTextures(collectDragPreviewTextureItems(props.dragPreviewState || props.dragReleaseState));
   }
   logFolderHandoffTimeline(metrics, folderClosingHandoffId);
