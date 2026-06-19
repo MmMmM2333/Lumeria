@@ -79,6 +79,7 @@ export function runLaunchpadViewStateTests() {
   assert(desktop.view.desktopTrackMotionKey.value === "open-desktop-spring", "desktop motion key should describe open desktop spring state");
   assert(desktop.view.desktopVisualTransform.value.scale === 1 && desktop.view.desktopVisualTransform.value.y === 0, "idle desktop visual root should not be transformed");
   assert(desktop.view.desktopVisualAlpha.value === 1, "idle desktop canvas should be visible");
+  assert(desktop.view.launchpadVisualAlpha.value === 1, "idle launchpad visual layers should be visible");
   assert(desktop.view.homeChromeAnimate.value.opacity === 1, "home chrome should be visible in the idle desktop state");
   assert(desktop.view.homeChromeStyle.value.pointerEvents === "auto", "home chrome should allow pointer events in the idle desktop state");
   assert(desktop.view.appLaunchGhostTransition === appLaunchGhostTransition, "view state should expose the app launch ghost transition");
@@ -198,6 +199,7 @@ export function runLaunchpadViewStateTests() {
   assert(closed.view.desktopTrackMotionKey.value === "closed-search-snap", "closed search should use snap motion key");
   assert(closed.view.desktopVisualTransform.value.scale === DESKTOP_CLOSE_SCALE, "closed desktop visual root should carry the close scale");
   assert(closed.view.desktopVisualAlpha.value === 0, "closed desktop canvas should be hidden");
+  assert(closed.view.launchpadVisualAlpha.value === 0, "closed launchpad should hide folder overlay layers");
   assert(closed.view.homeChromeAnimate.value.opacity === 0, "closed desktop should hide home chrome");
   assert(closed.view.homeChromeStyle.value.pointerEvents === "none", "closed desktop should disable home chrome pointer events");
 
@@ -206,6 +208,7 @@ export function runLaunchpadViewStateTests() {
   assert(!("y" in openFolder.view.homeChromeAnimate.value) && !("scale" in openFolder.view.homeChromeAnimate.value), "open folder chrome should not declare DOM transforms");
   assert(openFolder.view.desktopVisualTransform.value.y === 44 && openFolder.view.desktopVisualTransform.value.scale === 0.92, "open folder should move the desktop visual root inside Pixi");
   assert(openFolder.view.desktopVisualAlpha.value === 0, "open folder should hide the desktop canvas through view state");
+  assert(openFolder.view.launchpadVisualAlpha.value === 1, "open folder should keep folder overlay layers visible");
   assert(openFolder.view.homeChromeAnimate.value.filter === "blur(0px)", "open folder should avoid chrome blur compositor flicker");
   assert(openFolder.view.homeChromeStyle.value.pointerEvents === "none", "open folder should disable home chrome pointer events");
 

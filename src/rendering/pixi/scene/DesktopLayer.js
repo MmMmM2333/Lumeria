@@ -60,6 +60,10 @@ export function resolveDesktopVisualAlpha(state = {}) {
   return clamp01(state.desktopVisualAlpha ?? 1);
 }
 
+export function resolveLaunchpadVisualAlpha(state = {}) {
+  return clamp01(state.launchpadVisualAlpha ?? 1);
+}
+
 export function shouldFinishFolderHandoff(state = {}, folderLayer = null) {
   return !state.folderClosingHandoffId && !folderLayer?.closingHandoffActive;
 }
@@ -255,6 +259,7 @@ export class DesktopLayer extends Container {
     this.folderHandoffNode = null;
     this.hasDesktopVisualAlpha = false;
     this.hasDesktopVisualTransform = false;
+    this.hasFolderOverlayAlpha = false;
     this.lastFolderHandoffDebugSnapshot = null;
     this.iconNodes = new Map();
     this.boundsRegistration = null;
@@ -280,6 +285,7 @@ export class DesktopLayer extends Container {
     this.heightValue = state.height;
     this.applyDesktopVisualTransform(state);
     this.applyDesktopVisualAlpha(state);
+    this.applyFolderOverlayAlpha(state);
     const pages = state.activePages || [];
     const activePageIndex = state.activePageIndex || 0;
     const desktopFrame = getDesktopFrame(state);
@@ -486,6 +492,18 @@ export class DesktopLayer extends Container {
       return;
     }
     springTo(this.visualRoot, "alpha", alpha, desktopVisualSpring);
+  }
+
+  applyFolderOverlayAlpha(state) {
+    const alpha = resolveLaunchpadVisualAlpha(state);
+    this.singleStageFolderLayer.visible = true;
+    this.singleStageFolderLayer.interactiveChildren = alpha > 0.001;
+    if (!this.hasFolderOverlayAlpha) {
+      this.singleStageFolderLayer.alpha = alpha;
+      this.hasFolderOverlayAlpha = true;
+      return;
+    }
+    springTo(this.singleStageFolderLayer, "alpha", alpha, desktopVisualSpring);
   }
 
   updateSingleStageFolderLayer(state) {

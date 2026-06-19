@@ -125,6 +125,7 @@ export function useLaunchpadViewState(options) {
     return { scale: 1, y: 0 };
   });
   const desktopVisualAlpha = computed(() => (shouldHideHomeShell.value ? 0 : 1));
+  const launchpadVisualAlpha = computed(() => (isDesktopAnimatingClosed.value ? 0 : 1));
   const homeChromeInitial = { opacity: 0, filter: "blur(8px)" };
   const homeChromeAnimate = computed(() => {
     if (isDesktopAnimatingClosed.value) return { opacity: 0, filter: "blur(8px)" };
@@ -141,6 +142,7 @@ export function useLaunchpadViewState(options) {
     desktopTrackMotionKey,
     desktopVisualTransform,
     desktopVisualAlpha,
+    launchpadVisualAlpha,
     homeChromeAnimate,
     homeChromeInitial,
     homeChromeStyle,

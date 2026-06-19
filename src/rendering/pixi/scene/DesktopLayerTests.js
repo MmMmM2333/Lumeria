@@ -55,8 +55,10 @@ function makeLayer(DesktopLayer, pageTrack) {
   const layer = Object.create(DesktopLayer.prototype);
   layer.folderHandoffNode = null;
   layer.hasDesktopVisualAlpha = false;
+  layer.hasFolderOverlayAlpha = false;
   layer.iconNodes = new Map();
   layer.pageTrack = pageTrack;
+  layer.singleStageFolderLayer = { alpha: 1, interactiveChildren: true, visible: false };
   layer.visualRoot = { alpha: 1, interactiveChildren: true, visible: false };
   return layer;
 }
@@ -71,6 +73,7 @@ export async function runDesktopLayerTests() {
   const {
     DesktopLayer,
     resolveDesktopVisualAlpha,
+    resolveLaunchpadVisualAlpha,
     shouldFinishFolderHandoff,
   } = await import("./DesktopLayer.js");
   const {
@@ -85,6 +88,9 @@ export async function runDesktopLayerTests() {
     assert(resolveDesktopVisualAlpha({ desktopVisualAlpha: -1 }) === 0, "desktop alpha should clamp low values");
     assert(resolveDesktopVisualAlpha({ desktopVisualAlpha: 2 }) === 1, "desktop alpha should clamp high values");
     assert(resolveDesktopVisualAlpha({}) === 1, "desktop alpha should default to visible");
+    assert(resolveLaunchpadVisualAlpha({ launchpadVisualAlpha: -1 }) === 0, "launchpad alpha should clamp low values");
+    assert(resolveLaunchpadVisualAlpha({ launchpadVisualAlpha: 2 }) === 1, "launchpad alpha should clamp high values");
+    assert(resolveLaunchpadVisualAlpha({}) === 1, "launchpad alpha should default to visible");
     assert(!shouldFinishFolderHandoff({}, { closingHandoffActive: true }), "local Pixi handoff activity should keep the desktop handoff alive before the Vue bridge updates");
     assert(shouldFinishFolderHandoff({}, { closingHandoffActive: false }), "idle state with no prop handoff should finish the desktop handoff");
     assert(!shouldFinishFolderHandoff({ folderClosingHandoffId: "folder-1" }, { closingHandoffActive: false }), "active prop handoff should keep the desktop handoff alive");
@@ -96,6 +102,12 @@ export async function runDesktopLayerTests() {
     assert(layer.visualRoot.visible === true, "hidden desktop should stay renderable so alpha can animate");
     assert(layer.visualRoot.alpha === 0, "hidden desktop should apply the requested alpha");
     assert(layer.visualRoot.interactiveChildren === false, "hidden desktop should not receive icon interaction");
+    assert(layer.singleStageFolderLayer.alpha === 1, "desktop alpha should not hide the folder overlay layer");
+
+    layer.applyFolderOverlayAlpha({ launchpadVisualAlpha: 0 });
+    assert(layer.singleStageFolderLayer.visible === true, "hidden launchpad folder overlay should stay renderable so alpha can animate");
+    assert(layer.singleStageFolderLayer.alpha === 0, "hidden launchpad should apply alpha to the folder overlay");
+    assert(layer.singleStageFolderLayer.interactiveChildren === false, "hidden folder overlay should not receive interaction");
   }
 
   {

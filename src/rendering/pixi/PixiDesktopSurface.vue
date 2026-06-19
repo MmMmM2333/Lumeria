@@ -70,6 +70,7 @@ const props = defineProps({
   activePages: { type: Array, required: true },
   desktopVisualAlpha: { type: Number, default: 1 },
   desktopVisualTransform: { type: Object, default: () => ({ scale: 1, y: 0 }) },
+  launchpadVisualAlpha: { type: Number, default: 1 },
   desktopGridDebugOptions: { type: Object, default: null },
   desktopProjectionEpoch: { type: Number, default: 0 },
   desktopTrackMotionKey: { type: String, required: true },
@@ -566,6 +567,7 @@ function renderPixi() {
     activePages: props.activePages,
     desktopVisualTransform: props.desktopVisualTransform,
     desktopVisualAlpha: props.desktopVisualAlpha,
+    launchpadVisualAlpha: props.launchpadVisualAlpha,
     desktopFrame: renderGeometry.desktopFrame,
     desktopGridDebugOptions: props.desktopGridDebugOptions,
     desktopTrackMotionKey: props.desktopTrackMotionKey,
@@ -815,6 +817,7 @@ watchEffect(() => {
   void props.activePages;
   void props.desktopVisualTransform;
   void props.desktopVisualAlpha;
+  void props.launchpadVisualAlpha;
   void props.desktopGridDebugOptions;
   void props.desktopProjectionEpoch;
   void props.desktopTrackMotionKey;
