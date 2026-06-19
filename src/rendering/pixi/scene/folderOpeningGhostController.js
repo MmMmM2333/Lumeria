@@ -59,8 +59,48 @@ export class FolderOpeningGhostController {
     const layer = this.layer;
     const controls = layer.openingGhostMotionControls;
     layer.openingGhostMotionControls = null;
+    layer.openingGhostMotionControlsByItemId = null;
     if (!controls?.size) return;
     for (const control of controls) control.cancel();
+  }
+
+  releaseGhost(itemId) {
+    const layer = this.layer;
+    if (!itemId || !layer.openingGhostKeys?.has(itemId)) return null;
+    let releasedGhost = null;
+    for (const ghost of layer.openingGhostLayer.children || []) {
+      if (ghost?.item?.id === itemId && !ghost.destroyed) {
+        releasedGhost = ghost;
+        break;
+      }
+    }
+    if (!releasedGhost) return null;
+    const control = layer.openingGhostMotionControlsByItemId?.get(itemId);
+    control?.release?.();
+    if (control) layer.openingGhostMotionControls?.delete(control);
+    layer.openingGhostMotionControlsByItemId?.delete(itemId);
+    gsap.killTweensOf(releasedGhost);
+    if (releasedGhost.labelText) {
+      gsap.killTweensOf(releasedGhost.labelText);
+      gsap.killTweensOf(releasedGhost.labelText.scale);
+    }
+    layer.openingGhostKeys.delete(itemId);
+    layer.openingGhostControllerKeys?.delete(itemId);
+    const children = layer.openingGhostLayer.children;
+    if (Array.isArray(children)) {
+      const index = children.indexOf(releasedGhost);
+      if (index >= 0) children.splice(index, 1);
+    } else {
+      layer.openingGhostLayer.removeChild?.(releasedGhost);
+    }
+    if (!layer.openingGhostKeys.size) {
+      this.clearRevealTimer();
+      layer.openingGhostControllerKeys = null;
+      layer.openingGhostState = null;
+      layer.openingGhostMotionControls = null;
+      layer.openingGhostMotionControlsByItemId = null;
+    }
+    return releasedGhost;
   }
 
   clear() {
@@ -74,6 +114,7 @@ export class FolderOpeningGhostController {
     }
     layer.openingGhostControllerKeys = null;
     layer.openingGhostState = null;
+    layer.openingGhostMotionControlsByItemId = null;
     layer.openingGhostKeys?.clear();
     layer.clearFrameGhost();
     layer.pageTrack.visible = true;
@@ -93,6 +134,7 @@ export class FolderOpeningGhostController {
     this.cancelMotionControls();
     layer.openingGhostControllerKeys = null;
     layer.openingGhostState = null;
+    layer.openingGhostMotionControlsByItemId = null;
     layer.revealIconNodes();
     layer.pageTrack.visible = true;
     layer.rebuildPageTrackMask();
@@ -134,6 +176,7 @@ export class FolderOpeningGhostController {
     layer.openingGhostState = state;
     layer.openingGhostControllerKeys = new Map();
     layer.openingGhostMotionControls = new Set();
+    layer.openingGhostMotionControlsByItemId = new Map();
     layer.panelMaterial.visible = true;
     layer.panelMaterial.alpha = 1;
     layer.frameGhost.visible = false;
@@ -172,9 +215,11 @@ export class FolderOpeningGhostController {
 
       const motionControl = animateOpeningGhost(ghost, motion, () => {
         layer.openingGhostMotionControls?.delete(motionControl);
+        layer.openingGhostMotionControlsByItemId?.delete(target.item.id);
         this.complete(state, target, ghost);
       }, { scheduler: this.scheduler });
       layer.openingGhostMotionControls.add(motionControl);
+      layer.openingGhostMotionControlsByItemId.set(target.item.id, motionControl);
     }
   }
 }

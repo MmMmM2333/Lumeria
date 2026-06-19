@@ -18,6 +18,7 @@ export function springGroupTo(entries, options = {}) {
   const tokens = [];
   let canceled = false;
   let completed = false;
+  let released = false;
   let remaining = 0;
 
   const controls = {
@@ -31,6 +32,10 @@ export function springGroupTo(entries, options = {}) {
     get pendingCount() {
       return tokens.filter((token) => token.timer).length;
     },
+    release,
+    get released() {
+      return released;
+    },
   };
 
   function clearTokenTimer(token) {
@@ -40,7 +45,7 @@ export function springGroupTo(entries, options = {}) {
   }
 
   function completeToken(token) {
-    if (canceled || completed || token.done) return;
+    if (canceled || completed || released || token.done) return;
     token.done = true;
     token.active = false;
     remaining -= 1;
@@ -51,7 +56,7 @@ export function springGroupTo(entries, options = {}) {
   }
 
   function cancel() {
-    if (canceled || completed) return;
+    if (canceled || completed || released) return;
     canceled = true;
     activeGroups.delete(controls);
     for (const token of tokens) {
@@ -61,15 +66,25 @@ export function springGroupTo(entries, options = {}) {
     }
   }
 
+  function release() {
+    if (canceled || completed || released) return;
+    released = true;
+    activeGroups.delete(controls);
+    for (const token of tokens) {
+      clearTokenTimer(token);
+      token.active = false;
+    }
+  }
+
   function cancelFromSpring(token, onCancel) {
     token.active = false;
     onCancel?.();
-    if (!canceled && !completed) cancel();
+    if (!canceled && !completed && !released) cancel();
   }
 
   function startToken(token) {
     token.timer = null;
-    if (canceled || completed) return;
+    if (canceled || completed || released) return;
     if (isDestroyed(token.target)) {
       cancel();
       return;

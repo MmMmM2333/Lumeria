@@ -70,6 +70,7 @@ function makeLayer() {
     iconNodes: new Map([["app-1", iconNode]]),
     openingGhostKeys: null,
     openingGhostLayer: {
+      children: ghosts,
       addChild(ghost) {
         ghosts.push(ghost);
       },
@@ -126,7 +127,7 @@ function makeTarget(id = "app-1") {
     index: 0,
     item: { id, type: "app" },
     sourceRect: { height: 32, left: 10, top: 20, width: 32 },
-    targetRect: { height: 64, left: 100, top: 120, width: 64 },
+    targetStageLayoutRect: { height: 64, left: 100, top: 120, width: 64 },
   };
 }
 
@@ -205,10 +206,12 @@ export function runFolderOpeningGhostControllerTests() {
       scheduler: makeTimerHost(),
     });
     const target = { ...makeTarget(), controllerGhostKey: "open-a" };
+    const missingTarget = { ...makeTarget("app-2"), controllerGhostKey: "open-b" };
+    delete missingTarget.targetStageLayoutRect;
     controller.start({
       ...makeState(completed),
       folderOpenIconGhosts: [{ key: "open-a" }, { key: "open-b" }],
-    }, [target, { ...makeTarget("app-2"), controllerGhostKey: "open-b", targetRect: null }]);
+    }, [target, missingTarget]);
 
     assert(completed.join(",") === "open-b", "missing opening target keys should complete immediately");
     assert(layer.ghosts.length === 1, "usable opening targets should still render ghost visuals");
@@ -225,11 +228,51 @@ export function runFolderOpeningGhostControllerTests() {
     });
     controller.start(makeState(completed), [{
       ...makeTarget(),
-      targetRect: null,
       targetStageLayoutRect: { height: 64, left: 100, top: 120, width: 64 },
     }]);
 
     assert(layer.ghosts.length === 1, "stage layout opening targets should not require a client target rect");
+    controller.clear();
+  }
+
+  {
+    const completed = [];
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const controller = new FolderOpeningGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+    controller.start(makeState(completed), [makeTarget()]);
+    const released = controller.releaseGhost("app-1");
+
+    assert(released, "release should return the matching opening ghost");
+    assert(!released.destroyed, "release should not destroy the ghost handed to closing");
+    assert(layer.ghosts.length === 0, "release should remove the ghost from the opening layer");
+    assert(!layer.openingGhostKeys?.has("app-1"), "release should clear the active opening key");
+    assert(completed.join(",") === "", "release should not complete the opening controller key");
+    assert(timerHost.size === 0, "release should clear the fallback timer when no opening ghosts remain");
+  }
+
+  {
+    const completed = [];
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const controller = new FolderOpeningGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+    const firstTarget = makeTarget("app-1");
+    const secondTarget = makeTarget("app-2");
+    layer.iconNodes.set("app-2", { alpha: 1, item: { id: "app-2" }, visible: true });
+    controller.start(makeState(completed), [firstTarget, secondTarget]);
+    const released = controller.releaseGhost("app-1");
+
+    assert(released?.item?.id === "app-1", "release should return the requested ghost");
+    assert(layer.ghosts.length === 1 && layer.ghosts[0].item.id === "app-2", "release should keep unrelated opening ghosts active");
+    assert(layer.openingGhostKeys.has("app-2"), "release should preserve unrelated active opening keys");
+    assert(timerHost.size === 1, "release should keep the fallback timer while another opening ghost remains");
+    assert(completed.join(",") === "", "release should not complete unrelated opening keys");
     controller.clear();
   }
 }

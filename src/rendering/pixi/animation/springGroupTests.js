@@ -1,5 +1,5 @@
 import { springGroupTo } from "./springGroup.js";
-import { stopSpring } from "./springMotion.js";
+import { pageTrackSpring, springTo, stopSpring, stopTargetSprings } from "./springMotion.js";
 
 function makeTimerHost() {
   let nextId = 1;
@@ -101,5 +101,34 @@ export function runSpringGroupTests() {
     assert(target.x === 0, "destroyed targets should not start spring motion");
     assert(completed === 0, "destroyed targets should not complete the group");
     assert(group.canceled === true, "destroyed targets should cancel the group");
+  }
+
+  {
+    const scheduler = makeTimerHost();
+    const target = { x: 0, y: 0 };
+    let completed = 0;
+    const group = springGroupTo([
+      { target, prop: "x", to: 10 },
+      { target, prop: "y", to: 20, options: { delay: 0.1 } },
+    ], {
+      scheduler,
+      onComplete: () => {
+        completed += 1;
+      },
+    });
+
+    const activeSpring = springTo(target, "x", 30, pageTrackSpring);
+    const velocityBeforeReleaseRetarget = activeSpring.velocity;
+    group.release();
+    scheduler.runAll();
+    const retargeted = springTo(target, "x", 40, pageTrackSpring);
+
+    assert(group.released === true, "release should expose released state");
+    assert(group.canceled === false, "release should not mark the group canceled");
+    assert(completed === 0, "release should not complete the group");
+    assert(target.y === 0, "release should clear delayed entries without starting them");
+    assert(retargeted === activeSpring, "release should leave active springs available for retargeting");
+    assert(retargeted.velocity === velocityBeforeReleaseRetarget, "release retarget should preserve active spring velocity");
+    stopTargetSprings(target);
   }
 }

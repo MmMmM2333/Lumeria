@@ -762,7 +762,6 @@ export class FolderOverlayLayer extends Container {
     killAllMotion(this.panel);
     killAllMotion(this.pageTrack);
     this.clearPageDots();
-    if (this.frameGhostState) gsap.killTweensOf(this.frameGhostState);
     stopTargetSprings(this.pageTrack);
     stopTargetSprings(this.panel);
     stopTargetSprings(this.panel.scale);

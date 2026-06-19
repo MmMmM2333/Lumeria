@@ -4,7 +4,6 @@ import {
   getFolderPageDotVisualState,
   getFolderPageMaskRect,
   makePanelVisualRect,
-  resolveOpeningInterruptionFrame,
 } from "./folderOverlayGeometry.js";
 import {
   cancelClosingHandoffCleanup,
@@ -91,23 +90,6 @@ export function runFolderOverlayLayerTests() {
   assert(visualRect.height === 140, "panel visual rect should use the current scaled panel height");
   assert(visualRect.radius === 12, "panel visual rect should scale the corner radius");
   assert(visualRect.progress === 0.6, "panel visual rect should preserve progress");
-
-  const visibleOpeningFrame = { height: 520, left: 96, top: 84, width: 920 };
-  const fullPanelRect = { height: 560, left: 72, top: 64, width: 1000 };
-  const oneRowContentRect = { height: 180, left: 310, top: 160, width: 420 };
-
-  assert(
-    resolveOpeningInterruptionFrame(visibleOpeningFrame, fullPanelRect, oneRowContentRect) === visibleOpeningFrame,
-    "interrupted close should start from the visible opening frame"
-  );
-  assert(
-    resolveOpeningInterruptionFrame(null, fullPanelRect, oneRowContentRect) === fullPanelRect,
-    "interrupted close should fall back to the full panel before current-page content bounds"
-  );
-  assert(
-    resolveOpeningInterruptionFrame(null, null, oneRowContentRect) === oneRowContentRect,
-    "interrupted close should use content bounds only as a last fallback"
-  );
 
   const nearlyEqual = (a, b) => Math.abs(a - b) < 0.0001;
   const compactTiming = getClosingPreviewTiming({ height: 490 }, { height: 70 });

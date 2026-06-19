@@ -76,6 +76,9 @@ function makeGhost(id = "ghost") {
     destroy() {
       this.destroyed = true;
     },
+    getIconBounds() {
+      return { height: 32, left: this.position.x - 16, top: this.position.y - 16, width: 32 };
+    },
     setState(state) {
       this.state = state;
     },
@@ -152,7 +155,7 @@ function makeTarget(id = "app-1") {
     index: 0,
     item: { id },
     sourceRect: { height: 32, left: 10, top: 20, width: 32 },
-    targetRect: { height: 12, left: 100, top: 120, width: 12 },
+    targetStageLayoutRect: { height: 12, left: 100, top: 120, width: 12 },
   };
 }
 
@@ -289,7 +292,6 @@ export function runFolderClosingGhostControllerTests() {
     });
     controller.start(makeState(), [{
       ...makeTarget(),
-      targetRect: null,
       targetStageLayoutRect: { height: 12, left: 100, top: 120, width: 12 },
     }], { height: 72, left: 10, top: 20, width: 72 }, { height: 300, left: 0, top: 0, width: 400 });
 
@@ -340,24 +342,34 @@ export function runFolderClosingGhostControllerTests() {
       top: 30,
       width: 240,
     };
-    layer.openingGhostLayer.children = [{
-      alpha: 0.7,
-      destroyed: false,
-      item: { id: "app-1" },
-      labelText: { alpha: 0.4 },
-      getIconBounds: () => ({ height: 32, left: 44, top: 55, width: 32 }),
-    }];
+    const reusedGhost = makeGhost("reused");
+    reusedGhost.alpha = 0.7;
+    reusedGhost.item = { id: "app-1" };
+    reusedGhost.labelText.alpha = 0.4;
+    reusedGhost.position.set(60, 71);
+    layer.openingGhostLayer.children = [reusedGhost];
 
-    const interruption = controller.captureOpeningInterruption(makeState(), [target], { height: 300, left: 0, top: 0, width: 400 });
-    assert(interruption.targets.length === 1, "capture should keep one interrupted target");
-    assert(interruption.targets[0].interrupted, "capture should mark the target interrupted");
-    assert(interruption.targets[0].sourceAlpha === 0.7, "capture should preserve ghost alpha");
-    assert(interruption.targets[0].sourceLabelAlpha === 0.4, "capture should preserve label alpha");
-    assert(interruption.targets[0].sourceScale === 0.5, "capture should derive source scale from the captured rect");
-    assert(interruption.frameRect?.width > 0, "capture should resolve a frame rect");
+    let factoryCalls = 0;
+    let releasedItemId = null;
+    layer.openingGhosts.releaseGhost = (itemId) => {
+      releasedItemId = itemId;
+      layer.openingGhostKeys.delete(itemId);
+      return reusedGhost;
+    };
+    controller.ghostFactory = () => {
+      factoryCalls += 1;
+      return makeGhost("unexpected");
+    };
 
-    layer.openingGhostKeys = new Set();
-    assert(controller.captureOpeningInterruption(makeState(), [target], null) === null, "capture should be inactive without opening ghosts");
+    controller.start(makeState(), [target], { height: 72, left: 10, top: 20, width: 72 }, { height: 300, left: 0, top: 0, width: 400 });
+
+    assert(releasedItemId === "app-1", "closing should release the matching opening ghost");
+    assert(factoryCalls === 0, "closing should reuse a released opening ghost instead of creating a new ghost");
+    assert(layer.closingGhosts[0] === reusedGhost, "closing should move the released ghost into the closing layer");
+    assert(reusedGhost.alpha === 0.7, "closing should preserve the released ghost alpha as the motion source");
+    assert(reusedGhost.labelText.alpha === 0.4, "closing should preserve the released label alpha before fade out");
+    assert(layer.frameGhostState.left === 20 && layer.frameGhostState.width === 240, "closing frame should start from the current frame presentation");
+    controller.clear();
   }
 
   {
@@ -390,7 +402,7 @@ export function runFolderClosingGhostControllerTests() {
     const target = {
       ...makeTarget(),
       isThumbnailChild: true,
-      targetRect: { height: 16, left: 90, top: 110, width: 16 },
+      targetStageLayoutRect: { height: 16, left: 90, top: 110, width: 16 },
     };
     layer.closingGhostKeys = new Set(["app-1"]);
     layer.closingFrameComplete = true;

@@ -2,6 +2,8 @@ import { Graphics } from "pixi.js";
 import { gsap } from "gsap";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { folderOpenGhostDuration, folderOpenGhostEase } from "../animation/eases.js";
+import { springGroupTo } from "../animation/springGroup.js";
+import { panelSpring } from "../animation/springMotion.js";
 import { getFrameRadius, lerpColor } from "./folderFrameGhostMath.js";
 
 export { getFrameRadius, lerpColor } from "./folderFrameGhostMath.js";
@@ -45,11 +47,25 @@ export function drawFrameGhost(layer, rect, options = {}) {
   if (options.notifyTitleFrame !== false) layer.notifyTitleFrame(drawRect);
 }
 
-export function clearFrameGhost(layer, options = {}) {
-  if (layer.frameGhostState) {
-    gsap.killTweensOf(layer.frameGhostState);
-    layer.frameGhostState = null;
+function cancelFrameGhostMotion(layer) {
+  const control = layer.frameGhostMotionControl;
+  layer.frameGhostMotionControl = null;
+  control?.cancel?.();
+}
+
+function releaseFrameGhostMotion(layer) {
+  const control = layer.frameGhostMotionControl;
+  layer.frameGhostMotionControl = null;
+  if (typeof control?.release === "function") {
+    control.release();
+    return;
   }
+  control?.cancel?.();
+}
+
+export function clearFrameGhost(layer, options = {}) {
+  cancelFrameGhostMotion(layer);
+  layer.frameGhostState = null;
   gsap.killTweensOf(layer.frameGhost);
   gsap.killTweensOf(layer.panelMaterial);
   layer.frameGhost.clear();
@@ -62,7 +78,7 @@ export function clearFrameGhost(layer, options = {}) {
 
 export function startFrameGhost(layer, fromRect, toRect, options = {}) {
   if (!fromRect || !toRect) return;
-  if (layer.frameGhostState) gsap.killTweensOf(layer.frameGhostState);
+  releaseFrameGhostMotion(layer);
   gsap.killTweensOf(layer.frameGhost);
   gsap.killTweensOf(layer.panelMaterial);
   const duration = options.duration ?? folderOpenGhostDuration;
@@ -77,12 +93,11 @@ export function startFrameGhost(layer, fromRect, toRect, options = {}) {
   layer.panelMaterial.alpha = options.panelMaterialFromAlpha ?? 0;
   layer.frameGhost.visible = true;
   layer.frameGhost.alpha = options.frameGhostFromAlpha ?? 1;
-  const frame = {
+  const frame = layer.frameGhostState || {
     fillAlpha: options.fromFillAlpha ?? 0.22,
     fillColor: fromFillColor,
     height: fromRect.height,
     left: fromRect.left,
-    progress: 0,
     radius: options.fromRadius ?? getFrameRadius(fromRect),
     strokeAlpha: options.fromStrokeAlpha ?? 0.26,
     strokeColor: fromStrokeColor,
@@ -90,6 +105,15 @@ export function startFrameGhost(layer, fromRect, toRect, options = {}) {
     top: fromRect.top,
     width: fromRect.width,
   };
+  const currentFillColor = frame.fillColor ?? fromFillColor;
+  const currentStrokeColor = frame.strokeColor ?? fromStrokeColor;
+  frame.fillAlpha = frame.fillAlpha ?? options.fromFillAlpha ?? 0.22;
+  frame.fillColor = currentFillColor;
+  frame.progress = 0;
+  frame.radius = frame.radius ?? options.fromRadius ?? getFrameRadius(fromRect);
+  frame.strokeAlpha = frame.strokeAlpha ?? options.fromStrokeAlpha ?? 0.26;
+  frame.strokeColor = currentStrokeColor;
+  frame.strokeWidth = frame.strokeWidth ?? options.fromStrokeWidth ?? 1;
   layer.frameGhostState = frame;
   drawFrameGhost(layer, frame, options);
   gsap.to(layer.panelMaterial, {
@@ -106,25 +130,28 @@ export function startFrameGhost(layer, fromRect, toRect, options = {}) {
     ease,
     overwrite: "auto",
   });
-  gsap.to(frame, {
-    duration,
-    ease,
-    fillAlpha: options.toFillAlpha ?? 0.26,
-    height: toRect.height,
-    left: toRect.left,
-    progress: 1,
-    radius: options.toRadius ?? getFrameRadius(toRect, 48),
-    strokeAlpha: options.toStrokeAlpha ?? 0.24,
-    strokeWidth: options.toStrokeWidth ?? frame.strokeWidth,
-    top: toRect.top,
-    width: toRect.width,
-    onUpdate: () => {
-      frame.fillColor = lerpColor(fromFillColor, toFillColor, frame.progress);
-      frame.strokeColor = lerpColor(fromStrokeColor, toStrokeColor, frame.progress);
-      drawFrameGhost(layer, frame, options);
-      options.onUpdate?.(frame);
-    },
+  const updateFrame = () => {
+    frame.fillColor = lerpColor(currentFillColor, toFillColor, frame.progress);
+    frame.strokeColor = lerpColor(currentStrokeColor, toStrokeColor, frame.progress);
+    drawFrameGhost(layer, frame, options);
+    options.onUpdate?.(frame);
+  };
+  let control = null;
+  const springOptions = { snap: options.snap === true, onUpdate: updateFrame };
+  control = springGroupTo([
+    { target: frame, prop: "fillAlpha", to: options.toFillAlpha ?? 0.26, config: options.springConfig || panelSpring, options: springOptions },
+    { target: frame, prop: "height", to: toRect.height, config: options.springConfig || panelSpring, options: springOptions },
+    { target: frame, prop: "left", to: toRect.left, config: options.springConfig || panelSpring, options: springOptions },
+    { target: frame, prop: "progress", to: 1, config: options.springConfig || panelSpring, options: springOptions },
+    { target: frame, prop: "radius", to: options.toRadius ?? getFrameRadius(toRect, 48), config: options.springConfig || panelSpring, options: springOptions },
+    { target: frame, prop: "strokeAlpha", to: options.toStrokeAlpha ?? 0.24, config: options.springConfig || panelSpring, options: springOptions },
+    { target: frame, prop: "strokeWidth", to: options.toStrokeWidth ?? frame.strokeWidth, config: options.springConfig || panelSpring, options: springOptions },
+    { target: frame, prop: "top", to: toRect.top, config: options.springConfig || panelSpring, options: springOptions },
+    { target: frame, prop: "width", to: toRect.width, config: options.springConfig || panelSpring, options: springOptions },
+  ], {
+    scheduler: options.scheduler,
     onComplete: () => {
+      if (layer.frameGhostMotionControl === control) layer.frameGhostMotionControl = null;
       frame.fillColor = toFillColor;
       frame.strokeColor = toStrokeColor;
       if (options.preserveOnComplete) {
@@ -137,6 +164,7 @@ export function startFrameGhost(layer, fromRect, toRect, options = {}) {
       options.onComplete?.();
     },
   });
+  layer.frameGhostMotionControl = control.completed ? null : control;
 }
 
 reloadOnPixiHotUpdate(import.meta.hot);

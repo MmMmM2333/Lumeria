@@ -57,10 +57,6 @@ export function getFolderPageDotVisualState(options = {}) {
   };
 }
 
-export function resolveOpeningInterruptionFrame(frameRect, panelRect, contentFrameRect) {
-  return frameRect || panelRect || contentFrameRect;
-}
-
 export function makePanelVisualRect(panel, panelRect, options = {}) {
   if (!panelRect || !panel) return null;
   const scaleX = Number(panel.scale?.x) || 1;
