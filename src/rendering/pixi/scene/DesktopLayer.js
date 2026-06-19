@@ -21,8 +21,9 @@ import {
   registerRenderedClientLaunchIconBounds,
   registerRenderedClientTopLevelFolderThumbBounds,
   registerStableClientFolderPreviewChildTargetBounds,
-  registerStableClientTopLevelFolderThumbTargetBounds,
-  registerStableClientTopLevelIconTargetBounds,
+  registerStableStageLayoutFolderPreviewChildTargetBounds,
+  registerStableStageLayoutTopLevelFolderThumbTargetBounds,
+  registerStableStageLayoutTopLevelIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
 import { quickDuration, quickEase } from "../animation/eases.js";
 import { desktopVisualSpring, pageTrackSpring, springTo, stopTargetSprings } from "../animation/springMotion.js";
@@ -732,7 +733,12 @@ export class DesktopLayer extends Container {
           stageVisualOffsetX: registration.stageVisualOffsetX,
           stageVisualOffsetY: registration.stageVisualOffsetY,
         });
-        registerStableClientTopLevelIconTargetBounds(item.id, boundsTargets.stableClientTargetBounds, meta);
+        registerStableStageLayoutTopLevelIconTargetBounds(item.id, boundsTargets.stableStageLayoutTargetBounds, {
+          ...meta,
+          stageHeight: registration.height,
+          stageRect: registration.stageRect,
+          stageWidth: registration.width,
+        });
       }
       if (item.type === "folder") {
         registerRenderedClientTopLevelFolderThumbBounds(item.id, boundsTargets.renderedClientThumbBounds, meta);
@@ -742,11 +748,19 @@ export class DesktopLayer extends Container {
             stageVisualOffsetX: registration.stageVisualOffsetX,
             stageVisualOffsetY: registration.stageVisualOffsetY,
           });
-          registerStableClientTopLevelFolderThumbTargetBounds(item.id, boundsTargets.stableClientTargetBounds, meta);
+          registerStableStageLayoutTopLevelFolderThumbTargetBounds(item.id, boundsTargets.stableStageLayoutTargetBounds, {
+            ...meta,
+            stageHeight: registration.height,
+            stageRect: registration.stageRect,
+            stageWidth: registration.width,
+          });
         }
         this.registerFolderChildren(item, node, registration.stageRect, {
           liveThumbRect: boundsTargets.liveClientTargetBounds,
+          stableStageLayoutThumbRect: boundsTargets.stableStageLayoutTargetBounds,
           stableThumbRect: boundsTargets.stableClientTargetBounds,
+          stageHeight: registration.height,
+          stageWidth: registration.width,
         });
         if (area === "desktop") this.debugFolderHandoffDesktopActual(item, node, registration);
       }
@@ -832,7 +846,15 @@ export class DesktopLayer extends Container {
       const childTargets = resolveFolderPreviewChildBoundsTargets({ node, slotIndex: index, stageRect, target });
       if (childTargets.renderedClientBounds) registerRenderedClientFolderPreviewChildBounds(folder.id, child.id, index, childTargets.renderedClientBounds);
       if (childTargets.liveClientTargetBounds) registerLiveClientFolderPreviewChildTargetBounds(folder.id, child.id, index, childTargets.liveClientTargetBounds);
-      if (childTargets.stableClientTargetBounds) registerStableClientFolderPreviewChildTargetBounds(folder.id, child.id, index, childTargets.stableClientTargetBounds);
+      if (childTargets.stableStageLayoutTargetBounds) {
+        registerStableStageLayoutFolderPreviewChildTargetBounds(folder.id, child.id, index, childTargets.stableStageLayoutTargetBounds, {
+          stageHeight: target.stageHeight,
+          stageRect,
+          stageWidth: target.stageWidth,
+        });
+      } else if (childTargets.stableClientTargetBounds) {
+        registerStableClientFolderPreviewChildTargetBounds(folder.id, child.id, index, childTargets.stableClientTargetBounds);
+      }
     }
   }
 

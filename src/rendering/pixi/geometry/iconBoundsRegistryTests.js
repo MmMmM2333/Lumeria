@@ -14,6 +14,9 @@ import {
   getStableClientFolderPreviewChildTargetBounds,
   getStableClientTopLevelFolderThumbTargetBounds,
   getStableClientTopLevelIconTargetBounds,
+  getStableStageLayoutFolderPreviewChildTargetBounds,
+  getStableStageLayoutTopLevelFolderThumbTargetBounds,
+  getStableStageLayoutTopLevelIconTargetBounds,
   makeIconBoundsKey,
   registerLiveClientFolderPreviewChildTargetBounds,
   registerLiveClientLaunchIconTargetBounds,
@@ -25,6 +28,9 @@ import {
   registerStableClientFolderPreviewChildTargetBounds,
   registerStableClientTopLevelFolderThumbTargetBounds,
   registerStableClientTopLevelIconTargetBounds,
+  registerStableStageLayoutFolderPreviewChildTargetBounds,
+  registerStableStageLayoutTopLevelFolderThumbTargetBounds,
+  registerStableStageLayoutTopLevelIconTargetBounds,
 } from "./iconBoundsRegistry.js";
 
 function rect(left) {
@@ -76,6 +82,25 @@ export function runIconBoundsRegistryTests() {
   assert(!getRenderedClientLaunchIconBounds({ area: "folder", folderId: "folder-2", id: "folder-app-2", pageIndex: 0 }), "folder area clear should remove remaining folder bounds");
   assert(!getLiveClientLaunchIconTargetBounds({ area: "folder", folderId: "folder-2", id: "folder-app-2", pageIndex: 0 }), "folder area clear should remove remaining folder target bounds");
   assert(getRenderedClientLaunchIconBounds({ area: "desktop", id: "desktop-app", pageIndex: 0 }), "folder area clear should still keep desktop bounds");
+
+  clearIconBoundsRegistry();
+  const stageMeta = {
+    area: "desktop",
+    id: "desktop-folder",
+    pageIndex: 0,
+    stageHeight: 100,
+    stageRect: { height: 200, left: 100, top: 50, width: 200 },
+    stageWidth: 100,
+  };
+  registerStableStageLayoutTopLevelIconTargetBounds("desktop-folder", rect(10), stageMeta);
+  registerStableStageLayoutTopLevelFolderThumbTargetBounds("desktop-folder", rect(12), stageMeta);
+  registerStableStageLayoutFolderPreviewChildTargetBounds("desktop-folder", "desktop-app", 0, rect(14), stageMeta);
+  assert(getStableStageLayoutTopLevelIconTargetBounds("desktop-folder").left === 10, "stage layout top-level icon target should preserve layout coordinates");
+  assert(getStableClientTopLevelIconTargetBounds("desktop-folder").left === 120, "stage layout top-level icon target should project to client coordinates");
+  assert(getStableStageLayoutTopLevelFolderThumbTargetBounds("desktop-folder").left === 12, "stage layout folder thumb target should preserve layout coordinates");
+  assert(getStableClientTopLevelFolderThumbTargetBounds("desktop-folder").left === 124, "stage layout folder thumb target should project to client coordinates");
+  assert(getStableStageLayoutFolderPreviewChildTargetBounds("desktop-folder", "desktop-app", 0).left === 14, "stage layout preview child target should preserve layout coordinates");
+  assert(getStableClientFolderPreviewChildTargetBounds("desktop-folder", "desktop-app", 0).left === 128, "stage layout preview child target should project to client coordinates");
 
   clearIconBoundsRegistry();
   registerRenderedClientLaunchIconBounds(

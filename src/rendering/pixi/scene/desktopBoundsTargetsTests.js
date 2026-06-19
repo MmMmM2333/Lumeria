@@ -50,6 +50,7 @@ export function runDesktopBoundsTargetsTests() {
     assert(targets.coordinateSpace === "client-visual", "desktop bounds targets should identify client visual coordinates");
     assert(targets.liveClientTargetBounds.left === 15.26, "app live target should preserve unsnapped container bounds");
     assert(targets.stableClientTargetBounds.left === 15, "app stable target should preserve unsnapped stage bounds");
+    assert(targets.stableStageLayoutTargetBounds.left === 15, "app stable target should expose the stage layout rect");
     assert(targets.renderedClientIconBounds.left === 5.26, "app icon bounds should not be snapped");
     assert(targets.syncHandoffLayoutTarget === null, "app targets should not request handoff sync");
   }
@@ -72,6 +73,7 @@ export function runDesktopBoundsTargetsTests() {
     assert(targets.liveClientTargetBounds.left === 15.5, "folder live target should snap to the device grid");
     assert(targets.liveClientTargetBounds.top === 25.5, "folder live target y should snap to the device grid");
     assert(targets.stableClientTargetBounds.left === 15, "folder stable target should stay aligned to the stable grid");
+    assert(targets.stableStageLayoutTargetBounds.left === 15, "folder stable target should expose the stage layout rect");
     assert(targets.renderedClientThumbBounds.left === 10.5, "folder thumb bounds should snap to the device grid");
     assert(targets.renderedClientIconBounds.left === 5.5, "folder icon bounds should snap to the device grid");
   }
@@ -129,6 +131,7 @@ export function runDesktopBoundsTargetsTests() {
       stageRect: { height: 100, left: 10, top: 20, width: 100 },
       target: {
         liveThumbRect: { height: 72, left: 14, top: 24, width: 72 },
+        stableStageLayoutThumbRect: { height: 90, left: 10, top: 20, width: 90 },
         stableThumbRect: { height: 90, left: 10, top: 20, width: 90 },
       },
     });
@@ -136,6 +139,7 @@ export function runDesktopBoundsTargetsTests() {
     assert(targets.renderedClientBounds.left === 30, "folder preview child bounds should use the rendered node rect");
     assert(targets.coordinateSpace === "client-visual", "folder preview targets should identify client visual coordinates");
     assert(nearlyEqual(targets.liveClientTargetBounds.left, 41), "folder preview live target should be projected from the live thumb rect");
+    assert(nearlyEqual(targets.stableStageLayoutTargetBounds.left, 43.75), "folder preview stable target should expose the stage layout projection");
     assert(nearlyEqual(targets.stableClientTargetBounds.left, 43.75), "folder preview stable target should be projected from the stable thumb rect");
   }
 

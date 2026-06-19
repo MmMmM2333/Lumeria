@@ -1,5 +1,5 @@
 import { snapRectToDevicePixels, STAGE_COORDINATE_SPACES } from "../geometry/stageCoordinates.js";
-import { makeContainerTargetIconBounds, makeTargetIconBounds } from "./iconSceneHelpers.js";
+import { makeContainerTargetIconBounds, makeIconRect, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { makeFolderThumbPreviewRect } from "./folderOverlayTargets.js";
 
 export function resolveDesktopBoundsTargets(options = {}) {
@@ -35,6 +35,7 @@ export function resolveDesktopBoundsTargets(options = {}) {
     sizing.iconSize,
     visualOffsetY
   );
+  const stableStageLayoutTargetBounds = makeIconRect(targetX + x, y + visualOffsetY, sizing.iconSize);
   const stableClientTargetBounds = isFolder
     ? snapRectToDevicePixels(rawStableTargetBounds, registration.deviceResolution)
     : rawStableTargetBounds;
@@ -58,6 +59,7 @@ export function resolveDesktopBoundsTargets(options = {}) {
     liveClientTargetBounds,
     renderedClientIconBounds,
     renderedClientThumbBounds,
+    stableStageLayoutTargetBounds,
     stableClientTargetBounds,
     syncHandoffLayoutTarget: isFolderClosingHandoff ? handoffLayoutTarget || { x, y } : null,
   };
@@ -70,11 +72,15 @@ export function resolveFolderPreviewChildBoundsTargets(options = {}) {
     stageRect,
     target = null,
   } = options;
+  const stableStageLayoutTargetBounds = target?.stableStageLayoutThumbRect
+    ? makeFolderThumbPreviewRect(target.stableStageLayoutThumbRect, slotIndex)
+    : null;
 
   return {
     coordinateSpace: STAGE_COORDINATE_SPACES.CLIENT_VISUAL,
     liveClientTargetBounds: target?.liveThumbRect ? makeFolderThumbPreviewRect(target.liveThumbRect, slotIndex) : null,
     renderedClientBounds: node?.getFolderPreviewChildBounds?.(stageRect, slotIndex) || null,
+    stableStageLayoutTargetBounds,
     stableClientTargetBounds: target?.stableThumbRect ? makeFolderThumbPreviewRect(target.stableThumbRect, slotIndex) : null,
   };
 }
