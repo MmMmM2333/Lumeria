@@ -5,15 +5,12 @@ const launchIconBounds = new Map();
 const launchIconTargetBounds = new Map();
 const topLevelBounds = new Map();
 const topLevelLiveTargetBounds = new Map();
-const topLevelTargetBounds = new Map();
 const topLevelStageLayoutTargetBounds = new Map();
 const topLevelFolderThumbBounds = new Map();
 const topLevelFolderThumbLiveTargetBounds = new Map();
-const topLevelFolderThumbTargetBounds = new Map();
 const topLevelFolderThumbStageLayoutTargetBounds = new Map();
 const folderPreviewChildBounds = new Map();
 const folderPreviewChildLiveTargetBounds = new Map();
-const folderPreviewChildTargetBounds = new Map();
 const folderPreviewChildStageLayoutTargetBounds = new Map();
 const missingBoundsWarnings = new Set();
 
@@ -134,7 +131,6 @@ export function registerStableStageLayoutTopLevelIconTargetBounds(id, rect, meta
   const record = makeStageLayoutRecord(rect, meta);
   if (!key || !record) return;
   topLevelStageLayoutTargetBounds.set(key, record);
-  topLevelTargetBounds.set(key, { ...projectStageLayoutRecordToClient(record), meta });
 }
 
 export function registerLiveClientTopLevelIconTargetBounds(id, rect, meta = {}) {
@@ -149,7 +145,6 @@ export function registerStableStageLayoutTopLevelFolderThumbTargetBounds(id, rec
   const record = makeStageLayoutRecord(rect, meta);
   if (!key || !record) return;
   topLevelFolderThumbStageLayoutTargetBounds.set(key, record);
-  topLevelFolderThumbTargetBounds.set(key, { ...projectStageLayoutRecordToClient(record), meta });
 }
 
 export function registerLiveClientTopLevelFolderThumbTargetBounds(id, rect, meta = {}) {
@@ -167,13 +162,11 @@ export function unregisterLaunchIconBounds(source) {
   if ((source?.area === "desktop" || source?.area === "search") && source.id) {
     topLevelFolderThumbBounds.delete(topLevelKey);
     topLevelFolderThumbLiveTargetBounds.delete(topLevelKey);
-    topLevelFolderThumbTargetBounds.delete(topLevelKey);
     topLevelFolderThumbStageLayoutTargetBounds.delete(topLevelKey);
   }
   if (source?.area === "desktop" && source.id) {
     topLevelBounds.delete(topLevelKey);
     topLevelLiveTargetBounds.delete(topLevelKey);
-    topLevelTargetBounds.delete(topLevelKey);
     topLevelStageLayoutTargetBounds.delete(topLevelKey);
   }
 }
@@ -187,11 +180,9 @@ export function clearLaunchIconBounds(scope, folderId = null) {
       const topLevelKey = makeIconBoundsKey("top-level", value.meta.id);
       topLevelBounds.delete(topLevelKey);
       topLevelLiveTargetBounds.delete(topLevelKey);
-      topLevelTargetBounds.delete(topLevelKey);
       topLevelStageLayoutTargetBounds.delete(topLevelKey);
       topLevelFolderThumbBounds.delete(topLevelKey);
       topLevelFolderThumbLiveTargetBounds.delete(topLevelKey);
-      topLevelFolderThumbTargetBounds.delete(topLevelKey);
       topLevelFolderThumbStageLayoutTargetBounds.delete(topLevelKey);
     }
   }
@@ -204,16 +195,12 @@ export function clearLaunchIconBounds(scope, folderId = null) {
   for (const [id, value] of topLevelFolderThumbLiveTargetBounds) {
     if (shouldClearAll || value?.meta?.area === criteria.area) topLevelFolderThumbLiveTargetBounds.delete(id);
   }
-  for (const [id, value] of topLevelFolderThumbTargetBounds) {
-    if (shouldClearAll || value?.meta?.area === criteria.area) topLevelFolderThumbTargetBounds.delete(id);
-  }
   for (const [id, value] of topLevelFolderThumbStageLayoutTargetBounds) {
     if (shouldClearAll || value?.meta?.area === criteria.area) topLevelFolderThumbStageLayoutTargetBounds.delete(id);
   }
   if (shouldClearAll || criteria.area === "desktop") {
     topLevelBounds.clear();
     topLevelLiveTargetBounds.clear();
-    topLevelTargetBounds.clear();
     topLevelStageLayoutTargetBounds.clear();
   }
 }
@@ -250,7 +237,7 @@ export function getRenderedClientTopLevelIconBounds(id, options = {}) {
 export function getStableClientTopLevelIconTargetBounds(id, options = {}) {
   const key = makeIconBoundsKey("top-level", id);
   const stageRecord = key ? topLevelStageLayoutTargetBounds.get(key) : null;
-  const value = stageRecord ? projectStageLayoutRecordToClient(stageRecord) : (key ? topLevelTargetBounds.get(key) : null);
+  const value = projectStageLayoutRecordToClient(stageRecord);
   if (!value) warnMissingBounds("top-level-icon-target", key, options);
   return cloneRect(value);
 }
@@ -286,7 +273,7 @@ export function getLiveClientTopLevelFolderThumbTargetBounds(id, options = {}) {
 export function getStableClientTopLevelFolderThumbTargetBounds(id, options = {}) {
   const key = makeIconBoundsKey("top-level", id);
   const stageRecord = key ? topLevelFolderThumbStageLayoutTargetBounds.get(key) : null;
-  const value = stageRecord ? projectStageLayoutRecordToClient(stageRecord) : (key ? topLevelFolderThumbTargetBounds.get(key) : null);
+  const value = projectStageLayoutRecordToClient(stageRecord);
   if (!value) warnMissingBounds("top-level-folder-thumb-target", key, options);
   return cloneRect(value);
 }
@@ -320,7 +307,6 @@ export function registerStableStageLayoutFolderPreviewChildTargetBounds(folderId
   const record = makeStageLayoutRecord(rect, meta);
   if (!key || !record) return;
   folderPreviewChildStageLayoutTargetBounds.set(key, record);
-  folderPreviewChildTargetBounds.set(key, projectStageLayoutRecordToClient(record));
 }
 
 export function registerLiveClientFolderPreviewChildTargetBounds(folderId, childId, slotIndex, rect) {
@@ -336,9 +322,6 @@ export function clearFolderPreviewChildBounds(folderId) {
   }
   for (const key of folderPreviewChildLiveTargetBounds.keys()) {
     if (!folderId || key.startsWith(`${folderId}:`)) folderPreviewChildLiveTargetBounds.delete(key);
-  }
-  for (const key of folderPreviewChildTargetBounds.keys()) {
-    if (!folderId || key.startsWith(`${folderId}:`)) folderPreviewChildTargetBounds.delete(key);
   }
   for (const key of folderPreviewChildStageLayoutTargetBounds.keys()) {
     if (!folderId || key.startsWith(`${folderId}:`)) folderPreviewChildStageLayoutTargetBounds.delete(key);
@@ -368,7 +351,7 @@ export function getLiveClientFolderPreviewChildTargetBounds(folderId, childId, s
 export function getStableClientFolderPreviewChildTargetBounds(folderId, childId, slotIndex) {
   const key = makeIconBoundsKey("folder-preview-child", { childId, folderId, slotIndex });
   const stageRecord = key ? folderPreviewChildStageLayoutTargetBounds.get(key) : null;
-  return stageRecord ? projectStageLayoutRecordToClient(stageRecord) : (key ? cloneRect(folderPreviewChildTargetBounds.get(key)) : null);
+  return cloneRect(projectStageLayoutRecordToClient(stageRecord));
 }
 
 export function getStableStageLayoutFolderPreviewChildTargetBounds(folderId, childId, slotIndex) {
@@ -381,15 +364,12 @@ export function clearIconBoundsRegistry() {
   launchIconTargetBounds.clear();
   topLevelBounds.clear();
   topLevelLiveTargetBounds.clear();
-  topLevelTargetBounds.clear();
   topLevelStageLayoutTargetBounds.clear();
   topLevelFolderThumbBounds.clear();
   topLevelFolderThumbLiveTargetBounds.clear();
-  topLevelFolderThumbTargetBounds.clear();
   topLevelFolderThumbStageLayoutTargetBounds.clear();
   folderPreviewChildBounds.clear();
   folderPreviewChildLiveTargetBounds.clear();
-  folderPreviewChildTargetBounds.clear();
   folderPreviewChildStageLayoutTargetBounds.clear();
   missingBoundsWarnings.clear();
 }
