@@ -115,6 +115,12 @@ export function makeSingleStageRuntimeProbe(runtimePlan = makeSingleStageRuntime
   const fallbackFolderMounted = state.fallbackFolderMounted === true;
   const fallbackDragPreviewMounted = state.fallbackDragPreviewMounted === true;
   const stableStageIsUnified = state.stableStageIsUnified === true;
+  const stageVisualOffsetX = Number(state.stageVisualOffsetX);
+  const stageVisualOffsetY = Number(state.stageVisualOffsetY);
+  const hasStageVisualOffset = Number.isFinite(stageVisualOffsetX) || Number.isFinite(stageVisualOffsetY);
+  const stageVisualOffsetZero = !hasStageVisualOffset ||
+    ((Number.isFinite(stageVisualOffsetX) ? stageVisualOffsetX : 0) === 0 &&
+      (Number.isFinite(stageVisualOffsetY) ? stageVisualOffsetY : 0) === 0);
   const expectedSingleStage = Boolean(runtimePlan.useRootStage && runtimePlan.useFolderLayer && runtimePlan.useDragPreview);
   const failures = [];
 
@@ -125,6 +131,7 @@ export function makeSingleStageRuntimeProbe(runtimePlan = makeSingleStageRuntime
     if (fallbackFolderMounted) failures.push("fallback-folder-mounted");
     if (fallbackDragPreviewMounted) failures.push("fallback-drag-preview-mounted");
     if (!stableStageIsUnified) failures.push("stable-stage-unified");
+    if (!stageVisualOffsetZero) failures.push("stage-visual-offset");
   }
 
   return {
@@ -137,6 +144,9 @@ export function makeSingleStageRuntimeProbe(runtimePlan = makeSingleStageRuntime
     rootStageHost: hasRootStageHost,
     rootStageMain: hasRootStageMain,
     stableStageIsUnified,
+    stageVisualOffsetX: Number.isFinite(stageVisualOffsetX) ? stageVisualOffsetX : 0,
+    stageVisualOffsetY: Number.isFinite(stageVisualOffsetY) ? stageVisualOffsetY : 0,
+    stageVisualOffsetZero,
   };
 }
 

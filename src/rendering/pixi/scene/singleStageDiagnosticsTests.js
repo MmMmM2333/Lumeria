@@ -53,15 +53,20 @@ export function runSingleStageDiagnosticsTests() {
     fallbackFolderMounted: false,
     rootStageHost: true,
     rootStageMain: true,
+    stageVisualOffsetX: 0,
+    stageVisualOffsetY: 0,
     stableStageIsUnified: true,
   };
   const stableRuntimeProbe = makeSingleStageRuntimeProbe(defaultRuntimePlan, stableRuntimeProbeState);
   assert(stableRuntimeProbe.isSingleStageStable, "default single-stage runtime probe should pass when root stage and fallback state are clean");
+  assert(stableRuntimeProbe.stageVisualOffsetZero, "default single-stage runtime probe should require zero stage visual offset");
   const runtimeFailureCases = [
     { failure: "canvas-count", state: { canvasCount: 2 } },
     { failure: "root-stage-host", state: { rootStageHost: false } },
     { failure: "root-stage-main", state: { rootStageMain: false } },
     { failure: "stable-stage-unified", state: { stableStageIsUnified: false } },
+    { failure: "stage-visual-offset", state: { stageVisualOffsetX: 1 } },
+    { failure: "stage-visual-offset", state: { stageVisualOffsetY: -1 } },
   ];
   for (const { failure, state: override } of runtimeFailureCases) {
     const probe = makeSingleStageRuntimeProbe(defaultRuntimePlan, { ...stableRuntimeProbeState, ...override });
