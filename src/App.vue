@@ -331,12 +331,8 @@ function publishSingleStageRuntimeProbe() {
   const runtimePlan = singleStageRuntimePlan.value;
   const probe = makeSingleStageRuntimeProbe(runtimePlan, {
     canvasCount: document.querySelectorAll("canvas").length,
-    fallbackDragPreviewMounted: Boolean(document.querySelector(".pixi-drag-preview-overlay")),
-    fallbackFolderMounted: Boolean(document.querySelector(".pixi-folder-overlay")),
     rootStageHost: Boolean(document.querySelector(".pixi-desktop-host-root-stage")),
     rootStageMain: Boolean(document.querySelector(".pixi-desktop-main-root-stage")),
-    stageVisualOffsetX: 0,
-    stageVisualOffsetY: 0,
     stableStageIsUnified: runtimePlan.useRootStage === true,
   });
   globalThis.__LP_SINGLE_STAGE_RUNTIME__ = probe;

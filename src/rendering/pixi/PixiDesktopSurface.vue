@@ -314,7 +314,6 @@ function flattenFolderHandoffSnapshot(snapshot) {
     desktopRegisteredThumbRect: snapshot.registeredThumbRect,
     desktopSource: snapshot.source,
     desktopStableTargetRect: snapshot.stableTargetRect,
-    desktopStageVisualOffsetY: snapshot.stageVisualOffsetY,
     desktopStale: snapshot.stale,
     desktopTargetDelta: snapshot.targetDelta,
     desktopTargetRect: snapshot.targetRect,

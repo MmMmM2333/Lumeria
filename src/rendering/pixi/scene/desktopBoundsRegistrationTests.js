@@ -24,20 +24,20 @@ export function runDesktopBoundsRegistrationTests() {
     assert(registration.coordinateSpace.bounds === "client-visual", "registration bounds should be explicit client visual rects");
     assert(registration.coordinateSpace.layoutTargets === "stage-layout", "registration layout targets should be explicit stage layout coordinates");
     assert(registration.stableStageRect === stageRect, "root-stage registration should keep a single stable stage rect");
-    assert(registration.stageVisualOffsetX === 0 && registration.stageVisualOffsetY === 0, "root-stage registration should have zero visual offset");
+    assert(!("stageVisualOffsetX" in registration) && !("stageVisualOffsetY" in registration), "root-stage registration should not expose legacy visual compensation");
     assert(registration.folderClosingHandoffId === "folder-1", "registration should carry the handoff id");
   }
 
   {
+    const stageRect = { height: 552, left: 96, top: 216, width: 736 };
     const registration = makeDesktopBoundsRegistration({
       height: 600,
       stableStageRect: { height: 600, left: 100, top: 200, width: 800 },
-      stageRect: { height: 552, left: 96, top: 216, width: 736 },
+      stageRect,
       width: 800,
     });
 
-    assert(registration.stageVisualOffsetX === -4, "DOM transformed registration should preserve visual x offset");
-    assert(registration.stageVisualOffsetY === 16, "DOM transformed registration should preserve visual y offset");
+    assert(registration.stableStageRect === stageRect, "legacy stable rect input should not create a separate offset space");
   }
 
   {
@@ -45,6 +45,6 @@ export function runDesktopBoundsRegistrationTests() {
     const registration = makeDesktopBoundsRegistration({ stageRect });
 
     assert(registration.stableStageRect === stageRect, "missing stable stage rect should fall back to stage rect");
-    assert(registration.stageVisualOffsetX === 0 && registration.stageVisualOffsetY === 0, "fallback stable rect should produce zero visual offset");
+    assert(!("stageVisualOffsetX" in registration) && !("stageVisualOffsetY" in registration), "fallback stable rect should not expose legacy visual compensation");
   }
 }

@@ -1,8 +1,7 @@
-import { getStageVisualOffset, STAGE_COORDINATE_SPACES } from "../geometry/stageCoordinates.js";
+import { STAGE_COORDINATE_SPACES } from "../geometry/stageCoordinates.js";
 
 export function makeDesktopBoundsRegistration(state = {}, entries = [], desktopFrame = {}) {
-  const stableStageRect = state.stableStageRect || state.stageRect;
-  const stageVisualOffset = getStageVisualOffset(state.stageRect, stableStageRect);
+  const stableStageRect = state.stageRect;
 
   return {
     coordinateSpace: {
@@ -20,8 +19,6 @@ export function makeDesktopBoundsRegistration(state = {}, entries = [], desktopF
     desktopFrame,
     stableStageRect,
     stageRect: state.stageRect,
-    stageVisualOffsetX: stageVisualOffset.x,
-    stageVisualOffsetY: stageVisualOffset.y,
     width: state.width,
   };
 }

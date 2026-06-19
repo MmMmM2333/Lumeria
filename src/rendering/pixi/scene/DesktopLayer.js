@@ -654,8 +654,6 @@ export class DesktopLayer extends Container {
       stageRect: roundRect(stageRect),
       stageScaleX: registration.stageRect?.width && registration.width ? Math.round((registration.stageRect.width / registration.width) * 1000000) / 1000000 : null,
       stageScaleY: registration.stageRect?.height && registration.height ? Math.round((registration.stageRect.height / registration.height) * 1000000) / 1000000 : null,
-      stageVisualOffsetX: Math.round((registration.stageVisualOffsetX || 0) * 1000) / 1000,
-      stageVisualOffsetY: Math.round((registration.stageVisualOffsetY || 0) * 1000) / 1000,
       targetDelta: rectDelta(thumbRect, targetRect),
       targetRect: roundRect(targetRect),
       thumbRect: roundRect(thumbRect),
@@ -730,8 +728,6 @@ export class DesktopLayer extends Container {
       if (area === "desktop") {
         registerLiveClientTopLevelIconTargetBounds(item.id, boundsTargets.liveClientTargetBounds, {
           ...meta,
-          stageVisualOffsetX: registration.stageVisualOffsetX,
-          stageVisualOffsetY: registration.stageVisualOffsetY,
         });
         registerStableStageLayoutTopLevelIconTargetBounds(item.id, boundsTargets.stableStageLayoutTargetBounds, {
           ...meta,
@@ -745,8 +741,6 @@ export class DesktopLayer extends Container {
         if (area === "desktop") {
           registerLiveClientTopLevelFolderThumbTargetBounds(item.id, boundsTargets.liveClientTargetBounds, {
             ...meta,
-            stageVisualOffsetX: registration.stageVisualOffsetX,
-            stageVisualOffsetY: registration.stageVisualOffsetY,
           });
           registerStableStageLayoutTopLevelFolderThumbTargetBounds(item.id, boundsTargets.stableStageLayoutTargetBounds, {
             ...meta,
@@ -805,8 +799,6 @@ export class DesktopLayer extends Container {
       pageTrackX: Math.round((this.pageTrack?.x || 0) * 1000) / 1000,
       stageScaleX: registration.stageRect?.width && registration.width ? registration.stageRect.width / registration.width : null,
       stageScaleY: registration.stageRect?.height && registration.height ? registration.stageRect.height / registration.height : null,
-      stageVisualOffsetX: Math.round((registration.stageVisualOffsetX || 0) * 1000) / 1000,
-      stageVisualOffsetY: Math.round((registration.stageVisualOffsetY || 0) * 1000) / 1000,
     });
     console.table(rows.map((row) => ({
       actualHeight: row.actual?.height ?? null,

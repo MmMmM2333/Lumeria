@@ -49,38 +49,25 @@ export function runSingleStageDiagnosticsTests() {
   assert(defaultRuntimePlan.renderKey === "single-stage", "runtime plan should expose a fixed single-stage render key");
   const stableRuntimeProbeState = {
     canvasCount: 1,
-    fallbackDragPreviewMounted: false,
-    fallbackFolderMounted: false,
     rootStageHost: true,
     rootStageMain: true,
-    stageVisualOffsetX: 0,
-    stageVisualOffsetY: 0,
     stableStageIsUnified: true,
   };
   const stableRuntimeProbe = makeSingleStageRuntimeProbe(defaultRuntimePlan, stableRuntimeProbeState);
   assert(stableRuntimeProbe.isSingleStageStable, "default single-stage runtime probe should pass when root stage and fallback state are clean");
-  assert(stableRuntimeProbe.stageVisualOffsetZero, "default single-stage runtime probe should require zero stage visual offset");
+  assert(stableRuntimeProbe.unifiedStageCoordinates, "default single-stage runtime probe should require unified stage coordinates");
+  assert(!("fallbackFolderMounted" in stableRuntimeProbe) && !("fallbackDragPreviewMounted" in stableRuntimeProbe), "runtime probe should not expose fallback overlay fields");
   const runtimeFailureCases = [
     { failure: "canvas-count", state: { canvasCount: 2 } },
     { failure: "root-stage-host", state: { rootStageHost: false } },
     { failure: "root-stage-main", state: { rootStageMain: false } },
     { failure: "stable-stage-unified", state: { stableStageIsUnified: false } },
-    { failure: "stage-visual-offset", state: { stageVisualOffsetX: 1 } },
-    { failure: "stage-visual-offset", state: { stageVisualOffsetY: -1 } },
   ];
   for (const { failure, state: override } of runtimeFailureCases) {
     const probe = makeSingleStageRuntimeProbe(defaultRuntimePlan, { ...stableRuntimeProbeState, ...override });
     assert(!probe.isSingleStageStable, `runtime probe should fail on ${failure}`);
     assert(probe.failures.includes(failure), `runtime probe should report ${failure}`);
   }
-  const mountedFallbackProbe = makeSingleStageRuntimeProbe(defaultRuntimePlan, {
-    ...stableRuntimeProbeState,
-    fallbackDragPreviewMounted: true,
-    fallbackFolderMounted: true,
-  });
-  assert(!mountedFallbackProbe.isSingleStageStable, "runtime probe should fail when fallback overlays are mounted");
-  assert(mountedFallbackProbe.failures.includes("fallback-folder-mounted"), "runtime probe should report mounted fallback folder");
-  assert(mountedFallbackProbe.failures.includes("fallback-drag-preview-mounted"), "runtime probe should report mounted fallback drag preview");
   const disabledOptions = getSingleStageOptions(false);
   assert(disabledOptions.enabled && disabledOptions.rootStage && disabledOptions.dragPreview, "explicit false should not disable single-stage ownership");
   assert(disabledOptions.folderLayer && !disabledOptions.diagnostics && !disabledOptions.probe, "explicit false should only disable diagnostics");

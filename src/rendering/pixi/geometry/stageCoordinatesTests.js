@@ -2,7 +2,6 @@ import {
   clientPointToStageVisualPoint,
   clientRectToStageVisualRect,
   getEffectiveDevicePixelRatio,
-  getStageVisualOffset,
   makeStageVirtualElement,
   snapRectToDevicePixels,
   STAGE_COORDINATE_SPACES,
@@ -52,11 +51,6 @@ export function runStageCoordinatesTests() {
   const localPoint = clientPointToStageVisualPoint({ x: 130, y: 260 }, { left: 100, top: 200 });
   assert(localPoint.x === 30 && localPoint.y === 60, "client point should subtract the stage origin into visual stage coordinates");
   assert(clientPointToStageVisualPoint(null, { left: 0, top: 0 }) === null, "client point conversion should stay nullable");
-  const visualOffset = getStageVisualOffset({ left: 96, top: 216 }, { left: 100, top: 200 });
-  assert(visualOffset.x === -4 && visualOffset.y === 16, "stage visual offset should compare visual and stable origins");
-  const defaultVisualOffset = getStageVisualOffset({ left: 8, top: 12 });
-  assert(defaultVisualOffset.x === 0 && defaultVisualOffset.y === 0, "stage visual offset should default to zero");
-
   const snappedRect = snapRectToDevicePixels({ left: 10.26, top: 20.74, width: 40, height: 50 }, 2);
   assert(snappedRect.left === 10.5 && snappedRect.top === 20.5, "rect snapping should align positions to the device pixel grid");
   assert(snappedRect.width === 40 && snappedRect.height === 50, "rect snapping should preserve size");
