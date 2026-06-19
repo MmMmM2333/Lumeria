@@ -60,6 +60,10 @@ export function resolveDesktopVisualAlpha(state = {}) {
   return clamp01(state.desktopVisualAlpha ?? 1);
 }
 
+export function shouldFinishFolderHandoff(state = {}, folderLayer = null) {
+  return !state.folderClosingHandoffId && !folderLayer?.closingHandoffActive;
+}
+
 function getFolderHandoffDebugOptions() {
   const value = globalThis.__LP_DEBUG_FOLDER_HANDOFF__;
   if (!value) return null;
@@ -237,6 +241,8 @@ export class DesktopLayer extends Container {
     this.onFolderTitleFrameChange = options.onFolderTitleFrameChange || (() => {});
     this.singleStageFolderLayer = new FolderOverlayLayer({
       onClosingFolderPointerDown: (folderId, event) => this.onClosingFolderPointerDown(folderId, event),
+      onClosingHandoffReady: (folderId) => this.startClosingFolderHandoffNow(folderId),
+      onClosingHandoffVisualRelease: (folderId) => this.releaseClosingFolderHandoffVisual(folderId),
       onIconAction: (action, originalEvent, item, source, iconNode) =>
         this.handleIconAction(action, originalEvent, item, source, iconNode),
       onInternalActivityChange: (active, folderId = null) => this.onFolderInternalActivityChange(active, folderId),
@@ -325,7 +331,9 @@ export class DesktopLayer extends Container {
         const stableScreenTarget = item?.type === "folder"
           ? makeFolderStableScreenTarget(state, targetX, stableLayoutTarget, sizing.iconSize, visualOffsetY)
           : null;
-        const isFolderClosingHandoff = item?.type === "folder" && state.folderClosingHandoffId === item.id;
+        const isActiveFolderClosingHandoff = item?.type === "folder" && state.folderClosingHandoffId === item.id;
+        const isExistingFolderHandoff = item?.type === "folder" && this.folderHandoffNode?.folderId === item.id;
+        const isFolderClosingHandoff = isActiveFolderClosingHandoff || isExistingFolderHandoff;
         const handoffLayoutTarget = isFolderClosingHandoff
           ? makeFolderPinnedLayoutTarget(state, targetX, stableScreenTarget, sizing.iconSize, visualOffsetY) || stableLayoutTarget
           : null;
@@ -358,6 +366,7 @@ export class DesktopLayer extends Container {
           state.folderSourceGhostedId === item.id ||
           state.isFolderOpeningPreviewFrameGhosted?.(item.id)
         );
+        const suppressLabelRevealAfterGhost = isReleaseGhostItem || isFolderClosingHandoff;
         node.setState({
           cellHeight: slot.height,
           cellWidth: slot.width,
@@ -387,10 +396,12 @@ export class DesktopLayer extends Container {
           singleLineLabel: sizing.singleLineLabel,
           stageHeight: state.height,
           stageWidth: state.width,
-          suppressLabelRevealAfterGhost: isReleaseGhostItem || isFolderSourceGhosted || isFolderClosingHandoff,
+          suppressLabelRevealAfterGhost,
           textless: state.isTextlessMode,
         });
-        if (isFolderClosingHandoff) this.ensureFolderHandoffNode(item.id, node, layoutTarget);
+        if (isActiveFolderClosingHandoff) this.ensureFolderHandoffNode(item.id, node, layoutTarget);
+        else if (isExistingFolderHandoff) this.syncFolderHandoffNode(node, layoutTarget);
+        if (isFolderClosingHandoff) this.revealFolderHandoffLabel();
 
         if (isInteractivePage) {
           const area = sourceArea(source);
@@ -437,7 +448,7 @@ export class DesktopLayer extends Container {
     this.singleStageDiagnosticsLayer.update(state.singleStageFolderState, {
       enabled: state.singleStageDiagnosticsEnabled,
     });
-    if (!state.folderClosingHandoffId && this.folderHandoffNode) {
+    if (this.folderHandoffNode && shouldFinishFolderHandoff(state, this.singleStageFolderLayer)) {
       this.finishFolderHandoffNodeAfterFrame();
     }
   }
@@ -508,6 +519,24 @@ export class DesktopLayer extends Container {
     });
   }
 
+  findFolderBoundsEntry(folderId) {
+    const entries = this.boundsRegistration?.entries || [];
+    return entries.find((entry) => entry?.item?.id === folderId && entry.item.type === "folder" && entry.area === "desktop") ||
+      entries.find((entry) => entry?.item?.id === folderId && entry.item.type === "folder") ||
+      null;
+  }
+
+  startClosingFolderHandoffNow(folderId) {
+    const entry = this.findFolderBoundsEntry(folderId);
+    const existing = this.folderHandoffNode?.folderId === folderId ? this.folderHandoffNode : null;
+    const node = entry?.node || existing?.node || this.findIconNodeByItemId(folderId);
+    const layoutTarget = entry?.handoffLayoutTarget || (entry ? { x: entry.x, y: entry.y } : existing?.layoutTarget);
+    if (!folderId || !node || node.destroyed || !layoutTarget) return false;
+    this.ensureFolderHandoffNode(folderId, node, layoutTarget);
+    this.revealFolderHandoffLabel();
+    return true;
+  }
+
   ensureFolderHandoffNode(folderId, node, layoutTarget) {
     if (!folderId || !node || node.destroyed) return;
     if (this.folderHandoffNode?.folderId && this.folderHandoffNode.folderId !== folderId) {
@@ -520,12 +549,16 @@ export class DesktopLayer extends Container {
         labelRevealStarted: false,
         node,
         originalIndex: this.getPageTrackChildIndex(node),
+        visualHidden: false,
+        visualReleased: false,
       };
     } else if (this.folderHandoffNode.node !== node) {
       this.restoreFolderHandoffNode(this.folderHandoffNode);
       this.folderHandoffNode.node = node;
       this.folderHandoffNode.originalIndex = this.getPageTrackChildIndex(node);
       this.folderHandoffNode.labelRevealStarted = false;
+      this.folderHandoffNode.visualHidden = false;
+      this.folderHandoffNode.visualReleased = false;
     }
     if (this.folderHandoffNode.cleanupFrame != null) {
       globalThis.cancelAnimationFrame?.(this.folderHandoffNode.cleanupFrame);
@@ -551,9 +584,14 @@ export class DesktopLayer extends Container {
     node.cursor = "pointer";
     if (node.state) {
       node.state.draggable = true;
+      node.state.ghosted = false;
       node.state.interactive = true;
     }
     node.resetFolderPreviewAfterGhost?.();
+    if (!entry.visualReleased) {
+      node.setFolderHandoffVisualHidden?.(true);
+      entry.visualHidden = true;
+    }
     if (node.labelText) {
       node.labelText.visible = true;
       if (!entry.labelRevealStarted) {
@@ -569,6 +607,7 @@ export class DesktopLayer extends Container {
   finishFolderHandoffNodeAfterFrame() {
     const entry = this.folderHandoffNode;
     if (!entry || entry.cleanupFrame != null) return;
+    this.revealFolderHandoffLabel(entry);
     const finish = () => {
       if (this.folderHandoffNode !== entry) return;
       entry.cleanupFrame = null;
@@ -579,6 +618,28 @@ export class DesktopLayer extends Container {
     } else {
       finish();
     }
+  }
+
+  releaseClosingFolderHandoffVisual(folderId = null) {
+    const entry = this.folderHandoffNode;
+    if (!entry || (folderId && entry.folderId !== folderId)) return;
+    this.restoreFolderHandoffVisual(entry);
+  }
+
+  restoreFolderHandoffVisual(entry) {
+    const node = entry?.node;
+    if (!node || node.destroyed) return;
+    node.setFolderHandoffVisualHidden?.(false);
+    entry.visualHidden = false;
+    entry.visualReleased = true;
+  }
+
+  revealFolderHandoffLabel(entry = this.folderHandoffNode) {
+    const node = entry?.node;
+    if (!entry || entry.labelRevealStarted || !node || node.destroyed || !node.labelText?.visible) return;
+    entry.labelRevealStarted = true;
+    if (typeof node.revealLabelAfterGhost === "function") node.revealLabelAfterGhost();
+    else node.labelText.alpha = 1;
   }
 
   clearFolderHandoffNode() {
@@ -597,16 +658,14 @@ export class DesktopLayer extends Container {
 
   restoreFolderHandoffNode(entry) {
     const node = entry?.node;
-    if (!node || node.destroyed || node.parent !== this.pageTrack) return;
+    if (!node || node.destroyed) return;
+    this.restoreFolderHandoffVisual(entry);
+    if (node.parent !== this.pageTrack) return;
     const childCount = this.pageTrack.children.length;
     if (!childCount) return;
     const targetIndex = Math.max(0, Math.min(entry.originalIndex ?? childCount - 1, childCount - 1));
     if (this.getPageTrackChildIndex(node) !== targetIndex) this.pageTrack.setChildIndex(node, targetIndex);
-    if (!entry.labelRevealStarted && node.labelText?.visible) {
-      entry.labelRevealStarted = true;
-      if (typeof node.revealLabelAfterGhost === "function") node.revealLabelAfterGhost();
-      else node.labelText.alpha = 1;
-    }
+    this.revealFolderHandoffLabel(entry);
   }
 
   getPageTrackChildIndex(node) {

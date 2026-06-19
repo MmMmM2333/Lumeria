@@ -75,6 +75,15 @@ export function shouldPlayFolderOpenIconGhosts(next, state) {
   return !isSameOpenFolder;
 }
 
+export function shouldIgnoreFolderCloseRequest(state) {
+  return Boolean(
+    state?.isFolderClosing?.value ||
+    state?.isFolderAppLaunchClosing?.value ||
+    state?.isFolderZoomFadeClosing?.value ||
+    (!state?.openFolderId?.value && !state?.renderedFolder?.value)
+  );
+}
+
 function getSystemAppearance() {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
     return BACKGROUND_ACRYLIC_APPEARANCE_DARK;
@@ -394,6 +403,13 @@ export function useLaunchpadController() {
 
   function commitOpenFolder(next, commitOptions) {
     if (!next) {
+      if (shouldIgnoreFolderCloseRequest({
+        isFolderAppLaunchClosing,
+        isFolderClosing,
+        isFolderZoomFadeClosing,
+        openFolderId,
+        renderedFolder,
+      })) return;
       const closingFolder = renderedFolder.value;
       const closingFolderPage = closingFolder ? getVisibleFolderPage(folderPages.value[folderPageIndex.value] || []) : [];
       const capturedCloseGhosts = captureFolderCloseIconGhosts(closingFolder, closingFolderPage);

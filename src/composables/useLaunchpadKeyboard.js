@@ -188,6 +188,7 @@ export function useLaunchpadKeyboard(options) {
     if (options.closeTopmostModal?.()) return;
 
     if (hasFolderInteractionLayer() && !options.isFolderAppLaunchClosing.value) {
+      if (options.isFolderClosing.value || options.isFolderZoomFadeClosing?.value) return;
       options.commitOpenFolder(null);
       options.clearSelectedIcon();
       return;

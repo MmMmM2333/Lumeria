@@ -23,8 +23,8 @@ export function runFolderClosingHandoffActivityTests() {
       hasPixiActivity: false,
       isHomeRevealSettling: true,
       retainedFolderId: "folder-retained",
-    }) === "folder-retained",
-    "home reveal settling should keep the retained handoff id"
+    }) === null,
+    "home reveal settling should leave retained handoff release to the Pixi retainer"
   );
   assert(
     resolveFolderClosingHandoffId({

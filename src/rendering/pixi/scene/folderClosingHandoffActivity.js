@@ -2,12 +2,9 @@ export function resolveFolderClosingHandoffId(options = {}) {
   const {
     activityFolderId = null,
     hasPixiActivity = false,
-    isHomeRevealSettling = false,
-    retainedFolderId = null,
   } = options;
 
   if (hasPixiActivity) return activityFolderId || null;
-  if (isHomeRevealSettling) return retainedFolderId || null;
   return null;
 }
 

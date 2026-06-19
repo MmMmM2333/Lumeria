@@ -134,6 +134,16 @@ export function runLaunchpadKeyboardTests() {
   assert(desktop.calls.closeDesktop.length === 1, "Escape with no modal should fall back to desktop close");
   assert(desktop.calls.hideNativeWindowAfterCloseAnimation === 1, "desktop Escape should still schedule native window hide");
 
+  const closingFolderEscape = createKeyboard({
+    isFolderClosing: true,
+    renderedFolder: { id: "folder-1", type: "folder", name: "Folder" },
+  });
+  const closingEscapeEvent = makeKeyEvent("Escape");
+  closingFolderEscape.keyboard.handleGlobalKeydown(closingEscapeEvent);
+  assert(closingEscapeEvent.preventDefaultCalled === 1, "closing-folder Escape should still prevent default");
+  assert(closingFolderEscape.calls.commitOpenFolder.length === 0, "closing-folder Escape should not restart folder close");
+  assert(closingFolderEscape.calls.clearSelectedIcon === 0, "closing-folder Escape should not clear selection again");
+
   const folderAltSpace = createKeyboard({
     openFolderId: "folder-1",
     renderedFolder: { id: "folder-1", type: "folder", name: "Folder" },

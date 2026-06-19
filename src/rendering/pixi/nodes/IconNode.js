@@ -814,6 +814,10 @@ export class IconNode extends Container {
     });
   }
 
+  setFolderHandoffVisualHidden(hidden) {
+    this.visualWrap.visible = !hidden;
+  }
+
   restoreLabelAfterGhost() {
     if (!this.labelText.visible) return;
     gsap.killTweensOf(this.labelText);

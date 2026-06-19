@@ -141,6 +141,8 @@ export class FolderOverlayLayer extends Container {
     });
     this.iconNodes = new Map();
     this.onIconAction = options.onIconAction || (() => { });
+    this.onClosingHandoffReady = options.onClosingHandoffReady || (() => { });
+    this.onClosingHandoffVisualRelease = options.onClosingHandoffVisualRelease || (() => { });
     this.onInternalActivityChange = options.onInternalActivityChange || (() => { });
     this.onClosingFolderPointerDown = options.onClosingFolderPointerDown || (() => { });
     this.onOutsidePointerDown = options.onOutsidePointerDown || (() => { });
@@ -438,7 +440,9 @@ export class FolderOverlayLayer extends Container {
     const next = Boolean(active);
     if (this.closingHandoffActive === next) return;
     this.closingHandoffActive = next;
-    this.onInternalActivityChange(next, next ? this.closingGhostFolderId || this.currentFolderId || null : null);
+    const folderId = next ? this.closingGhostFolderId || this.currentFolderId || null : null;
+    if (next) this.onClosingHandoffReady(folderId);
+    this.onInternalActivityChange(next, folderId);
   }
 
   revealIconNodes() {

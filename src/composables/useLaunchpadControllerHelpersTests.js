@@ -1,5 +1,9 @@
 import { ref, shallowRef } from "vue";
-import { createDeferredHandlers, shouldPlayFolderOpenIconGhosts } from "./useLaunchpadController.js";
+import {
+  createDeferredHandlers,
+  shouldIgnoreFolderCloseRequest,
+  shouldPlayFolderOpenIconGhosts,
+} from "./useLaunchpadController.js";
 import { useLaunchpadControllerHelpers } from "./useLaunchpadControllerHelpers.js";
 
 export function runLaunchpadControllerHelpersTests() {
@@ -85,4 +89,26 @@ export function runLaunchpadControllerHelpersTests() {
     openFolderId: ref("folder"),
     renderedFolder: ref({ id: "folder" }),
   }), "reopening a closing folder should play folder-open icon ghosts");
+
+  assert(shouldIgnoreFolderCloseRequest({
+    isFolderAppLaunchClosing: ref(false),
+    isFolderClosing: ref(true),
+    isFolderZoomFadeClosing: ref(false),
+    openFolderId: ref(null),
+    renderedFolder: ref({ id: "folder" }),
+  }), "closing an already-closing folder should be ignored");
+  assert(shouldIgnoreFolderCloseRequest({
+    isFolderAppLaunchClosing: ref(false),
+    isFolderClosing: ref(false),
+    isFolderZoomFadeClosing: ref(false),
+    openFolderId: ref(null),
+    renderedFolder: ref(null),
+  }), "closing with no active folder should be ignored");
+  assert(!shouldIgnoreFolderCloseRequest({
+    isFolderAppLaunchClosing: ref(false),
+    isFolderClosing: ref(false),
+    isFolderZoomFadeClosing: ref(false),
+    openFolderId: ref("folder"),
+    renderedFolder: ref({ id: "folder" }),
+  }), "closing an open folder should be accepted");
 }
