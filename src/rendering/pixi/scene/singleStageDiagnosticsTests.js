@@ -19,6 +19,8 @@ import {
   makeSingleStageFolderProbePlan,
   setSingleStageOptions,
   setSingleStageFolderProbeOptions,
+  shouldUseFallbackDragPreview,
+  shouldUseFallbackFolderLayer,
   SINGLE_STAGE_CHANGED_EVENT,
   SINGLE_STAGE_DIAGNOSTICS_CHANGED_EVENT,
   SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT,
@@ -49,8 +51,12 @@ export function runSingleStageDiagnosticsTests() {
   const defaultOptions = getSingleStageOptions(undefined);
   assert(defaultOptions.enabled && defaultOptions.rootStage && defaultOptions.dragPreview, "single-stage should default to root-stage drag preview ownership");
   assert(defaultOptions.folderLayer && !defaultOptions.diagnostics && !defaultOptions.probe, "single-stage should default to folder layer ownership without diagnostics");
+  assert(!shouldUseFallbackFolderLayer(defaultOptions), "single-stage defaults should not use the fallback folder overlay");
+  assert(!shouldUseFallbackDragPreview(defaultOptions), "single-stage defaults should not use the fallback drag preview overlay");
   const disabledOptions = getSingleStageOptions(false);
   assert(!disabledOptions.enabled && !disabledOptions.rootStage && !disabledOptions.dragPreview, "explicit false should disable single-stage ownership");
+  assert(shouldUseFallbackFolderLayer(disabledOptions), "disabled single-stage should use the fallback folder overlay");
+  assert(shouldUseFallbackDragPreview(disabledOptions), "disabled single-stage should use the fallback drag preview overlay");
   const diagnosticsOptions = getSingleStageOptions(true);
   assert(diagnosticsOptions.diagnostics && diagnosticsOptions.probe && diagnosticsOptions.rootStage && diagnosticsOptions.dragPreview, "explicit true should enable diagnostics on the default single-stage base");
   assert(diagnosticsOptions.folderLayer, "explicit true should keep the default folder layer ownership");
@@ -82,10 +88,16 @@ export function runSingleStageDiagnosticsTests() {
   );
   const rootStageOnlyOptions = getSingleStageFolderProbeOptions({ probe: false, rootStage: true });
   assert(rootStageOnlyOptions.enabled && rootStageOnlyOptions.rootStage && !rootStageOnlyOptions.dragPreview, "root-stage ownership should enable the root-stage host without drag preview ownership");
+  assert(shouldUseFallbackFolderLayer(rootStageOnlyOptions), "root-stage-only mode should keep using the fallback folder overlay");
+  assert(shouldUseFallbackDragPreview(rootStageOnlyOptions), "root-stage-only mode should keep using the fallback drag preview overlay");
   const dragPreviewOnlyOptions = getSingleStageFolderProbeOptions({ dragPreview: true, probe: false });
   assert(dragPreviewOnlyOptions.rootStage && dragPreviewOnlyOptions.dragPreview, "drag preview should request the root-stage host");
+  assert(shouldUseFallbackFolderLayer(dragPreviewOnlyOptions), "drag-preview-only mode should keep using the fallback folder overlay");
+  assert(!shouldUseFallbackDragPreview(dragPreviewOnlyOptions), "drag-preview ownership should disable the fallback drag preview overlay");
   const folderLayerOnlyOptions = getSingleStageFolderProbeOptions({ folderLayer: true, probe: false });
   assert(folderLayerOnlyOptions.enabled && folderLayerOnlyOptions.folderLayer && folderLayerOnlyOptions.dragPreview && folderLayerOnlyOptions.rootStage, "folder layer ownership should enable the dependent single-stage layers");
+  assert(!shouldUseFallbackFolderLayer(folderLayerOnlyOptions), "folder-layer ownership should disable the fallback folder overlay");
+  assert(!shouldUseFallbackDragPreview(folderLayerOnlyOptions), "folder-layer ownership should disable the dependent fallback drag preview overlay");
 
   const flagName = "__LP_SINGLE_STAGE__";
   const setterName = "__LP_SET_SINGLE_STAGE__";

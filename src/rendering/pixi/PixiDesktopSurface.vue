@@ -55,6 +55,7 @@ import {
   makeDesktopRenderGeometry as makeRootStageDesktopRenderGeometry,
   makeRootStageHostStyle as makeRootStageHostStyleFromRect,
 } from "./geometry/rootStageCoordinates.js";
+import { createFolderClosingHandoffRetainer } from "./scene/folderClosingHandoffRetainer.js";
 import { getSingleStageOptions } from "./scene/singleStagePlan.js";
 import {
   getSingleStageFolderTitleOpenOpacity,
@@ -63,9 +64,6 @@ import {
 } from "./scene/singleStageFolderDomControls.js";
 
 const FOLDER_TEXTURE_PREWARM_LIMIT = 80;
-const HANDOFF_RECT_SETTLE_EPSILON = 0.16;
-const HANDOFF_RECT_SETTLE_FRAMES = 3;
-const HANDOFF_RELEASE_FALLBACK_MS = 900;
 
 const props = defineProps({
   activePageIndex: { type: Number, required: true },
@@ -144,14 +142,8 @@ let resizeObserver = null;
 let destroyed = false;
 let folderTexturePrewarmTimer = null;
 let handoffRenderFrame = null;
-let retainedFolderClosingHandoffId = null;
-let handoffReleaseStartedAt = 0;
-let handoffSettledFrameCount = 0;
-let handoffDebugPostReleaseFrames = 0;
+const folderClosingHandoffRetainer = createFolderClosingHandoffRetainer();
 let handoffDebugSequence = 0;
-let lastHandoffDecision = null;
-let lastHandoffReleaseCommitAt = 0;
-let lastReleasedFolderClosingHandoffId = null;
 
 const isSingleStageFolderGhostTransitionActive = computed(() => Boolean(
   props.folderOverlayState?.isFolderOpenIconAnimationActive?.value ||
@@ -372,16 +364,6 @@ function makeFolderHandoffCompactLog(snapshot, decision, metrics, folderClosingH
   };
 }
 
-function getRectMaxDelta(rect, layoutRect) {
-  if (!rect || !layoutRect) return Number.POSITIVE_INFINITY;
-  return Math.max(
-    Math.abs((rect.left || 0) - (layoutRect.left || 0)),
-    Math.abs((rect.top || 0) - (layoutRect.top || 0)),
-    Math.abs((rect.width || 0) - (layoutRect.width || 0)),
-    Math.abs((rect.height || 0) - (layoutRect.height || 0))
-  );
-}
-
 function getDomRefElement(nodeRef) {
   const node = nodeRef && typeof nodeRef === "object" && "value" in nodeRef ? nodeRef.value : nodeRef;
   return node?.$el || node || null;
@@ -435,72 +417,11 @@ function syncRootStageCanvasFlag(options) {
 }
 
 function resolveFolderClosingHandoffId(metrics) {
-  const now = nowMs();
-  const rectMaxDelta = getRectMaxDelta(metrics.rect, metrics.layoutRect);
-  if (props.folderClosingHandoffId) {
-    retainedFolderClosingHandoffId = props.folderClosingHandoffId;
-    handoffReleaseStartedAt = 0;
-    handoffSettledFrameCount = 0;
-    handoffDebugPostReleaseFrames = 0;
-    lastHandoffDecision = {
-      folderId: props.folderClosingHandoffId,
-      phase: "prop-active",
-      rectMaxDelta,
-      releaseAge: 0,
-      reason: null,
-      settledFrames: handoffSettledFrameCount,
-    };
-    return props.folderClosingHandoffId;
-  }
-  if (!retainedFolderClosingHandoffId) {
-    lastHandoffDecision = handoffDebugPostReleaseFrames > 0
-      ? {
-          folderId: lastReleasedFolderClosingHandoffId,
-          phase: "post-release",
-          rectMaxDelta,
-          releaseAge: lastHandoffReleaseCommitAt ? now - lastHandoffReleaseCommitAt : 0,
-          reason: null,
-          settledFrames: handoffSettledFrameCount,
-        }
-      : { folderId: null, phase: "idle", rectMaxDelta, releaseAge: 0, reason: null, settledFrames: 0 };
-    return null;
-  }
-
-  if (!handoffReleaseStartedAt) handoffReleaseStartedAt = now;
-  const isSettled = getRectMaxDelta(metrics.rect, metrics.layoutRect) <= HANDOFF_RECT_SETTLE_EPSILON;
-  handoffSettledFrameCount = isSettled ? handoffSettledFrameCount + 1 : 0;
-  const didSettle = handoffSettledFrameCount >= HANDOFF_RECT_SETTLE_FRAMES;
-  const releaseAge = now - handoffReleaseStartedAt;
-  const didTimeout = releaseAge >= HANDOFF_RELEASE_FALLBACK_MS;
-  if (!didSettle && !didTimeout) {
-    lastHandoffDecision = {
-      folderId: retainedFolderClosingHandoffId,
-      phase: "release-wait",
-      rectMaxDelta,
-      releaseAge,
-      reason: null,
-      settledFrames: handoffSettledFrameCount,
-    };
-    return retainedFolderClosingHandoffId;
-  }
-
-  const releasedFolderId = retainedFolderClosingHandoffId;
-  const settledFramesAtDecision = handoffSettledFrameCount;
-  retainedFolderClosingHandoffId = null;
-  handoffReleaseStartedAt = 0;
-  handoffSettledFrameCount = 0;
-  lastReleasedFolderClosingHandoffId = releasedFolderId;
-  lastHandoffReleaseCommitAt = now;
-  if (hasFolderHandoffTimelineDebug()) handoffDebugPostReleaseFrames = 8;
-  lastHandoffDecision = {
-    folderId: releasedFolderId,
-    phase: "release-commit",
-    rectMaxDelta,
-    releaseAge,
-    reason: didSettle ? "settled" : "timeout",
-    settledFrames: settledFramesAtDecision,
-  };
-  return null;
+  const result = folderClosingHandoffRetainer.resolve(metrics, props.folderClosingHandoffId, {
+    now: nowMs(),
+    timelineDebug: hasFolderHandoffTimelineDebug(),
+  });
+  return result.folderClosingHandoffId;
 }
 
 function createSingleStageFolderState(metrics, options = {}, renderGeometry = makeDesktopRenderGeometry(metrics, options)) {
@@ -569,20 +490,20 @@ function makeDesktopRenderGeometry(metrics, options) {
 function logFolderHandoffTimeline(metrics, folderClosingHandoffId) {
   const options = getFolderHandoffDebugOptions();
   if (!options?.log || !options.timeline) return;
-  const decision = lastHandoffDecision;
-  if (!decision || (decision.phase === "idle" && handoffDebugPostReleaseFrames <= 0)) return;
+  const decision = folderClosingHandoffRetainer.decision;
+  if (!decision || (decision.phase === "idle" && folderClosingHandoffRetainer.postReleaseFrames <= 0)) return;
   const snapshot = layer?.getFolderHandoffDebugSnapshot?.(decision.folderId) || null;
   const seq = ++handoffDebugSequence;
   console.log("[folder-handoff-timeline]", {
     desktop: snapshot,
     ...flattenFolderHandoffSnapshot(snapshot),
     folderId: decision.folderId,
-    handoffSettledFrameCount,
+    handoffSettledFrameCount: folderClosingHandoffRetainer.settledFrameCount,
     isHomeRevealSettling: props.isHomeRevealSettling,
     layoutRect: roundDebugRect(metrics.layoutRect),
     now: roundDebugNumber(nowMs()),
     phase: decision.phase,
-    postReleaseFramesRemaining: handoffDebugPostReleaseFrames,
+    postReleaseFramesRemaining: folderClosingHandoffRetainer.postReleaseFrames,
     propsFolderClosingHandoffId: props.folderClosingHandoffId,
     reason: decision.reason,
     rect: roundDebugRect(metrics.rect),
@@ -590,12 +511,12 @@ function logFolderHandoffTimeline(metrics, folderClosingHandoffId) {
     rectMaxDelta: roundDebugNumber(decision.rectMaxDelta),
     releaseAge: roundDebugNumber(decision.releaseAge),
     resolvedFolderClosingHandoffId: folderClosingHandoffId,
-    retainedFolderClosingHandoffId,
+    retainedFolderClosingHandoffId: folderClosingHandoffRetainer.retainedFolderId,
     seq,
     settledFramesAtDecision: decision.settledFrames,
   });
   console.log("[folder-handoff-compact-v2]", makeFolderHandoffCompactLog(snapshot, decision, metrics, folderClosingHandoffId, seq));
-  if (!folderClosingHandoffId && handoffDebugPostReleaseFrames > 0) handoffDebugPostReleaseFrames -= 1;
+  folderClosingHandoffRetainer.consumePostReleaseFrame(folderClosingHandoffId);
 }
 
 function renderPixi() {
@@ -658,8 +579,10 @@ function renderPixi() {
 }
 
 function shouldRunHandoffRenderLoop() {
-  const shouldLogPostRelease = handoffDebugPostReleaseFrames > 0 && hasFolderHandoffTimelineDebug();
-  return Boolean((props.folderClosingHandoffId || retainedFolderClosingHandoffId || shouldLogPostRelease) && app && layer && hostRef.value && !destroyed);
+  return Boolean(folderClosingHandoffRetainer.shouldRun({
+    propFolderClosingHandoffId: props.folderClosingHandoffId,
+    timelineDebug: hasFolderHandoffTimelineDebug(),
+  }) && app && layer && hostRef.value && !destroyed);
 }
 
 function cancelHandoffRenderLoop() {
@@ -755,15 +678,9 @@ function destroyPixi(options = {}) {
   app = null;
   layer = null;
   cancelHandoffRenderLoop();
-  retainedFolderClosingHandoffId = null;
-  handoffReleaseStartedAt = 0;
-  handoffSettledFrameCount = 0;
-  handoffDebugPostReleaseFrames = 0;
+  folderClosingHandoffRetainer.reset();
   singleStageFolderPanelGeometry.value = null;
   singleStageFolderTitleFrame.value = null;
-  lastHandoffDecision = null;
-  lastHandoffReleaseCommitAt = 0;
-  lastReleasedFolderClosingHandoffId = null;
   clearFolderTexturePrewarmTimer();
   if (currentLayer) {
     currentApp?.stage?.removeChild(currentLayer);

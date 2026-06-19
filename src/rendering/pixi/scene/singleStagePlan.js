@@ -142,6 +142,14 @@ export function getSingleStageFolderProbeRenderKey(options = getSingleStageFolde
   return getSingleStageRenderKey(options);
 }
 
+export function shouldUseFallbackFolderLayer(options = getSingleStageOptions()) {
+  return options.folderLayer !== true;
+}
+
+export function shouldUseFallbackDragPreview(options = getSingleStageOptions()) {
+  return options.dragPreview !== true;
+}
+
 export function setSingleStageOptions(value) {
   installSingleStageGlobalFlag();
   globalThis[SINGLE_STAGE_GLOBAL_FLAG] = value;

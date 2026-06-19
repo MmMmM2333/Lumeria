@@ -108,7 +108,7 @@
     <SettingsPanel :state="settingsPanelState" :background-layout-context="backgroundLayoutContext" />
     <LaunchpadDialogs :state="dialogState" />
     <FallbackPixiFolderOverlay
-      v-if="!shouldUseSingleStageFolderLayer"
+      v-if="shouldUseFallbackFolderPixi"
       :active="shouldRunFallbackFolderPixi"
       :state="folderOverlayState"
       @internal-activity="handleFolderPixiInternalActivity"
@@ -117,7 +117,7 @@
       @context-menu-icon="openIconContextMenu"
     />
     <FallbackPixiDragPreviewOverlay
-      v-if="!shouldUseSingleStageDragPreview"
+      v-if="shouldUseFallbackDragPreviewPixi"
       :active="shouldRunFallbackDragPreviewPixi"
       :folder-page-size="folderPageSize"
       :icon-size="iconSize"
@@ -159,15 +159,20 @@ import SettingsPanel from "./components/SettingsPanel.vue";
 import WindowChromeOverlay from "./components/WindowChromeOverlay.vue";
 import PixiBackgroundSurface from "./rendering/pixi/PixiBackgroundSurface.vue";
 import PixiDesktopSurface from "./rendering/pixi/PixiDesktopSurface.vue";
-import FallbackPixiDragPreviewOverlay from "./rendering/pixi/PixiDragPreviewOverlay.vue";
-import FallbackPixiFolderOverlay from "./rendering/pixi/PixiFolderOverlay.vue";
 import {
   getSingleStageOptions,
   getSingleStageOptionsKey,
   getSingleStageRenderKey,
   installSingleStageGlobalFlag,
+  shouldUseFallbackDragPreview,
+  shouldUseFallbackFolderLayer,
   SINGLE_STAGE_CHANGED_EVENT,
 } from "./rendering/pixi/scene/singleStagePlan.js";
+import {
+  resolveFolderClosingHandoffId,
+  resolveFolderPixiActivityUpdate,
+  shouldClearFolderClosingHandoffRetainId,
+} from "./rendering/pixi/scene/folderClosingHandoffActivity.js";
 import { getBackgroundLayoutContext } from "./api/launchpadApi.js";
 import { loadBackgroundImagePixelSize } from "./composables/useBackgroundImagePixelSize.js";
 import { useLaunchpadController } from "./composables/useLaunchpadController.js";
@@ -283,6 +288,8 @@ const isAcrylicDebugPanelEnabled = import.meta.env.DEV;
 const BackgroundDebugPanel = import.meta.env.DEV
   ? defineAsyncComponent(() => import("./components/BackgroundDebugPanel.vue"))
   : null;
+const FallbackPixiDragPreviewOverlay = defineAsyncComponent(() => import("./rendering/pixi/PixiDragPreviewOverlay.vue"));
+const FallbackPixiFolderOverlay = defineAsyncComponent(() => import("./rendering/pixi/PixiFolderOverlay.vue"));
 const desktopLayoutDebugParams = useDesktopLayoutDebugParams();
 const desktopLayoutDebugStyle = computed(() => (
   import.meta.env.DEV ? resolveDesktopLayoutDebugStyle(desktopLayoutDebugParams) : {}
@@ -329,7 +336,14 @@ const singleStageOptions = ref(getSingleStageOptions());
 const shouldRunPixiOverlays = computed(() => Boolean(
   isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value
 ));
+const shouldUseSingleStageRootStage = computed(() => singleStageOptions.value.rootStage === true);
+const shouldUseSingleStageFolderLayer = computed(() => singleStageOptions.value.folderLayer === true);
+const shouldUseSingleStageDragPreview = computed(() => singleStageOptions.value.dragPreview === true);
+const shouldUseFallbackFolderPixi = computed(() => shouldUseFallbackFolderLayer(singleStageOptions.value));
+const shouldUseFallbackDragPreviewPixi = computed(() => shouldUseFallbackDragPreview(singleStageOptions.value));
+const singleStageRenderKey = computed(() => getSingleStageRenderKey(singleStageOptions.value));
 const shouldRunFallbackFolderPixi = computed(() => Boolean(
+  shouldUseFallbackFolderPixi.value &&
   shouldRunPixiOverlays.value && (
     folderPixiInternalActivity.value ||
     openFolderId.value ||
@@ -338,11 +352,8 @@ const shouldRunFallbackFolderPixi = computed(() => Boolean(
     isFolderAppLaunchClosing.value
   )
 ));
-const shouldUseSingleStageRootStage = computed(() => singleStageOptions.value.rootStage === true);
-const shouldUseSingleStageFolderLayer = computed(() => singleStageOptions.value.folderLayer === true);
-const shouldUseSingleStageDragPreview = computed(() => singleStageOptions.value.dragPreview === true);
-const singleStageRenderKey = computed(() => getSingleStageRenderKey(singleStageOptions.value));
 const shouldRunFallbackDragPreviewPixi = computed(() => Boolean(
+  shouldUseFallbackDragPreviewPixi.value &&
   shouldRunPixiOverlays.value && (
     dragMeta.value ||
     dragPreviewState.value?.item ||
@@ -846,11 +857,12 @@ const folderOverlayState = createFolderOverlayState(controller);
 const overlayState = createOverlayState(controller);
 
 const dragReleaseGhostId = computed(() => dragReleaseState.value?.item?.id || null);
-const folderClosingHandoffId = computed(() => {
-  if (folderPixiInternalActivity.value) return folderPixiInternalActivityFolderId.value;
-  if (isHomeRevealSettling.value) return folderClosingHandoffRetainId.value;
-  return null;
-});
+const folderClosingHandoffId = computed(() => resolveFolderClosingHandoffId({
+  activityFolderId: folderPixiInternalActivityFolderId.value,
+  hasPixiActivity: folderPixiInternalActivity.value,
+  isHomeRevealSettling: isHomeRevealSettling.value,
+  retainedFolderId: folderClosingHandoffRetainId.value,
+}));
 
 const folderSourceGhostedId = computed(() => {
   const folderId = renderedFolder.value?.id || openFolderId.value || folderPixiInternalActivityFolderId.value;
@@ -861,16 +873,26 @@ const folderSourceGhostedId = computed(() => {
 });
 
 function handleFolderPixiInternalActivity(active, folderId = null) {
-  const nextFolderId = folderId || folderPixiInternalActivityFolderId.value || folderClosingHandoffRetainId.value;
-  folderPixiInternalActivity.value = Boolean(active);
-  folderPixiInternalActivityFolderId.value = active ? nextFolderId : null;
-  if (active && nextFolderId) folderClosingHandoffRetainId.value = nextFolderId;
+  const next = resolveFolderPixiActivityUpdate({
+    active,
+    currentActivityFolderId: folderPixiInternalActivityFolderId.value,
+    folderId,
+    retainedFolderId: folderClosingHandoffRetainId.value,
+  });
+  folderPixiInternalActivity.value = next.hasPixiActivity;
+  folderPixiInternalActivityFolderId.value = next.activityFolderId;
+  folderClosingHandoffRetainId.value = next.retainedFolderId;
 }
 
 watch(
   [folderPixiInternalActivity, isHomeRevealSettling],
   ([hasPixiActivity, isSettling]) => {
-    if (!hasPixiActivity && !isSettling) folderClosingHandoffRetainId.value = null;
+    if (shouldClearFolderClosingHandoffRetainId({
+      hasPixiActivity,
+      isHomeRevealSettling: isSettling,
+    })) {
+      folderClosingHandoffRetainId.value = null;
+    }
   }
 );
 
