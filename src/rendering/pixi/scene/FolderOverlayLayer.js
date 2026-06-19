@@ -27,6 +27,7 @@ import {
   clearLaunchIconBounds,
   registerLiveClientLaunchIconTargetBounds,
   registerRenderedClientLaunchIconBounds,
+  registerStableStageLayoutLaunchIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
 import {
   FOLDER_PAGE_DOTS_GAP,
@@ -44,7 +45,7 @@ import {
   makeOpeningGhostTarget,
 } from "./folderOverlayTargets.js";
 import { resolveFolderOverlayTargets } from "./folderOverlayTargetResolver.js";
-import { makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
+import { makeIconRect, makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { IconNode } from "../nodes/IconNode.js";
 import { getCachedIconTexture } from "../assets/iconTextureCache.js";
 
@@ -87,6 +88,16 @@ function registerFolderIconNodeBounds(options) {
     { area: "folder", folderId, id: item.id, pageIndex },
     makeTargetIconBounds(stageRect, stageWidth, stageHeight, targetCenter.x, targetCenter.y, iconSize),
     meta
+  );
+  registerStableStageLayoutLaunchIconTargetBounds(
+    { area: "folder", folderId, id: item.id, pageIndex },
+    makeIconRect(targetCenter.x, targetCenter.y, iconSize),
+    {
+      ...meta,
+      stageHeight,
+      stageRect,
+      stageWidth,
+    }
   );
   return iconBounds;
 }

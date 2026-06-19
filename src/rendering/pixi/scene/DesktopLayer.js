@@ -20,6 +20,7 @@ import {
   registerRenderedClientFolderPreviewChildBounds,
   registerRenderedClientLaunchIconBounds,
   registerRenderedClientTopLevelFolderThumbBounds,
+  registerStableStageLayoutLaunchIconTargetBounds,
   registerStableStageLayoutFolderPreviewChildTargetBounds,
   registerStableStageLayoutTopLevelFolderThumbTargetBounds,
   registerStableStageLayoutTopLevelIconTargetBounds,
@@ -729,6 +730,16 @@ export class DesktopLayer extends Container {
         { area, folderId: null, id: item.id, pageIndex },
         boundsTargets.liveClientTargetBounds,
         meta
+      );
+      registerStableStageLayoutLaunchIconTargetBounds(
+        { area, folderId: null, id: item.id, pageIndex },
+        boundsTargets.stableStageLayoutTargetBounds,
+        {
+          ...meta,
+          stageHeight: registration.height,
+          stageRect: registration.stageRect,
+          stageWidth: registration.width,
+        }
       );
       if (area === "desktop") {
         registerLiveClientTopLevelIconTargetBounds(item.id, boundsTargets.liveClientTargetBounds, {

@@ -74,10 +74,15 @@ export function getDragReleaseMotion(release, state = {}) {
   const textless = Boolean(release?.textless ?? state.isTextlessMode);
   const start = getPointerPlacement(release, stageRect, iconSize, textless);
   const targetRect = release?.targetRect;
-  const hasTargetRect = Boolean(targetRect?.width && targetRect?.height);
+  const targetStageLayoutRect = release?.targetStageLayoutRect;
+  const hasStageLayoutTargetRect = Boolean(targetStageLayoutRect?.width && targetStageLayoutRect?.height);
+  const hasClientTargetRect = Boolean(targetRect?.width && targetRect?.height);
+  const hasTargetRect = hasStageLayoutTargetRect || hasClientTargetRect;
   const visualOffsetY = getIconVisualOffsetY(textless);
-  const targetScale = hasTargetRect ? Math.max(0.1, targetRect.width / iconSize) : 1;
-  const targetLocalRect = clientRectToStageVisualRect(targetRect, stageRect);
+  const targetLocalRect = hasStageLayoutTargetRect
+    ? targetStageLayoutRect
+    : clientRectToStageVisualRect(targetRect, stageRect);
+  const targetScale = hasTargetRect ? Math.max(0.1, targetLocalRect.width / iconSize) : 1;
   const target = hasTargetRect
     ? {
       x: targetLocalRect.left + targetLocalRect.width / 2,
@@ -87,6 +92,7 @@ export function getDragReleaseMotion(release, state = {}) {
   return {
     cellHeight: cellSize.height,
     cellWidth: cellSize.width,
+    hasStageLayoutTargetRect,
     hasTargetRect,
     iconSize,
     key: `${release?.key || makeDragPreviewKey(release)}:${release?.targetVersion ?? 0}:${hasTargetRect ? "target" : "pending"}`,

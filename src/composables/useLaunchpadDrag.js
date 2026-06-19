@@ -23,7 +23,9 @@ import {
   getRenderedClientLaunchIconBounds,
   getRenderedClientTopLevelIconBounds,
   getRenderedClientTopLevelTargetAtPoint as getPixiTopLevelTargetAtPoint,
+  getStableStageLayoutLaunchIconTargetRecord,
 } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
+import { stageLayoutRecordToClientRect } from "../rendering/pixi/geometry/stageCoordinates.js";
 
 const LAYOUT_PROJECTION_RELEASE_DELAY = 260;
 const DRAG_RELEASE_DURATION_MS = 180;
@@ -380,12 +382,41 @@ export function useLaunchpadDrag(options) {
 
   function cloneClientRect(rect) {
     if (!rect) return null;
+    const left = Number(rect.left) || 0;
+    const top = Number(rect.top) || 0;
+    const width = Number(rect.width) || 0;
+    const height = Number(rect.height) || 0;
     return {
-      height: Number(rect.height) || 0,
-      left: Number(rect.left) || 0,
-      top: Number(rect.top) || 0,
-      width: Number(rect.width) || 0,
+      bottom: Number(rect.bottom) || top + height,
+      height,
+      left,
+      right: Number(rect.right) || left + width,
+      top,
+      width,
     };
+  }
+
+  function makeReleaseTarget(clientRect, stageLayoutRect = null) {
+    const safeClientRect = cloneClientRect(clientRect);
+    const safeStageLayoutRect = cloneClientRect(stageLayoutRect);
+    if (!safeClientRect && !safeStageLayoutRect) return null;
+    return {
+      clientRect: safeClientRect,
+      stageLayoutRect: safeStageLayoutRect,
+    };
+  }
+
+  function normalizeReleaseTarget(target) {
+    if (target?.clientRect || target?.stageLayoutRect) {
+      return makeReleaseTarget(target.clientRect, target.stageLayoutRect) || { clientRect: null, stageLayoutRect: null };
+    }
+    return makeReleaseTarget(target) || { clientRect: null, stageLayoutRect: null };
+  }
+
+  function getStableStageLayoutReleaseTarget(source, expected = null) {
+    const record = getStableStageLayoutLaunchIconTargetRecord(source, expected);
+    const clientRect = stageLayoutRecordToClientRect(record);
+    return clientRect ? makeReleaseTarget(clientRect, record) : null;
   }
 
   function getDesktopTargetIconSize(cellWidth, cellHeight, fallbackSize) {
@@ -439,19 +470,19 @@ export function useLaunchpadDrag(options) {
   function getCommittedTopLevelTargetBounds(itemId) {
     const target = options.findTopLevel(options.pages.value, itemId);
     if (!target) return null;
-    return getLiveClientLaunchIconTargetBounds(
-      { area: "desktop", folderId: null, id: itemId, pageIndex: target.pageIndex },
-      { area: "desktop", id: itemId, index: target.index, pageIndex: target.pageIndex }
-    );
+    const source = { area: "desktop", folderId: null, id: itemId, pageIndex: target.pageIndex };
+    const expected = { area: "desktop", id: itemId, index: target.index, pageIndex: target.pageIndex };
+    return getStableStageLayoutReleaseTarget(source, expected) ||
+      makeReleaseTarget(getLiveClientLaunchIconTargetBounds(source, expected));
   }
 
   function getCommittedFolderTargetBounds(folderId, itemId) {
     const target = options.findInFolder(options.pages.value, folderId, itemId);
     if (!target) return null;
-    return getLiveClientLaunchIconTargetBounds(
-      { area: "folder", folderId, id: itemId, pageIndex: target.pageIndex },
-      { area: "folder", folderId, id: itemId, index: target.index, pageIndex: target.pageIndex }
-    );
+    const source = { area: "folder", folderId, id: itemId, pageIndex: target.pageIndex };
+    const expected = { area: "folder", folderId, id: itemId, index: target.index, pageIndex: target.pageIndex };
+    return getStableStageLayoutReleaseTarget(source, expected) ||
+      makeReleaseTarget(getLiveClientLaunchIconTargetBounds(source, expected));
   }
 
   function getPointerReleaseRect(activeDrag) {
@@ -489,6 +520,7 @@ export function useLaunchpadDrag(options) {
       size: { ...activeDrag.size },
       source: activeDrag.source,
       targetRect: null,
+      targetStageLayoutRect: null,
       targetVersion: 0,
       textless: getReleaseTextless(),
     };
@@ -498,7 +530,9 @@ export function useLaunchpadDrag(options) {
   function setDragReleaseTarget(releaseKey, targetRect, fallbackRect = null) {
     const current = dragReleaseState.value;
     if (!current || current.key !== releaseKey) return false;
-    const targetCandidate = cloneClientRect(targetRect);
+    const releaseTarget = normalizeReleaseTarget(targetRect);
+    const targetCandidate = releaseTarget.clientRect;
+    const stageLayoutCandidate = releaseTarget.stageLayoutRect;
     const fallbackCandidate = cloneClientRect(fallbackRect);
     const pointerCandidate = getPointerReleaseRect(current);
     const safeTargetRect = targetCandidate?.width && targetCandidate?.height
@@ -513,6 +547,7 @@ export function useLaunchpadDrag(options) {
     dragReleaseState.value = {
       ...current,
       targetRect: safeTargetRect,
+      targetStageLayoutRect: targetCandidate?.width && targetCandidate?.height ? stageLayoutCandidate : null,
       targetVersion: (Number(current.targetVersion) || 0) + 1,
     };
     scheduleDragReleaseClear();
@@ -648,19 +683,19 @@ export function useLaunchpadDrag(options) {
   function getStableTopLevelTargetBounds(found) {
     if (!found?.item?.id) return null;
     const source = { area: "desktop", folderId: null, id: found.item.id, pageIndex: found.pageIndex };
-    return getLiveClientLaunchIconTargetBounds(
-      source,
-      { area: "desktop", id: found.item.id, index: found.index, pageIndex: found.pageIndex }
-    ) || getLiveClientLaunchIconTargetBounds(
-      source,
-      { area: "desktop", id: found.item.id, pageIndex: found.pageIndex }
-    );
+    const exactExpected = { area: "desktop", id: found.item.id, index: found.index, pageIndex: found.pageIndex };
+    const pageExpected = { area: "desktop", id: found.item.id, pageIndex: found.pageIndex };
+    return getStableStageLayoutReleaseTarget(source, exactExpected) ||
+      getStableStageLayoutReleaseTarget(source, pageExpected) ||
+      makeReleaseTarget(getLiveClientLaunchIconTargetBounds(source, exactExpected)) ||
+      makeReleaseTarget(getLiveClientLaunchIconTargetBounds(source, pageExpected));
   }
 
   function normalizeTopLevelTarget(found, fallbackRect = null, node = null) {
     if (!found?.item) return null;
-    const rect = getStableTopLevelTargetBounds(found) || fallbackRect;
-    return rect ? { item: found.item, node, rect } : null;
+    const target = getStableTopLevelTargetBounds(found);
+    const rect = target?.clientRect || fallbackRect;
+    return rect ? { item: found.item, node, rect, stageLayoutRect: target?.stageLayoutRect || null } : null;
   }
 
   function getTopLevelTargetById(targetId) {
@@ -1411,7 +1446,10 @@ export function useLaunchpadDrag(options) {
     const session = options.folderSession.value;
     const folderId = options.openFolderId.value;
     if (!session && shouldDropOnTopLevelTarget && dropDraggedAppOnTopLevelTarget(topLevelDropTarget)) {
-      startDragRelease(topLevelDropTarget.rect);
+      startDragRelease({
+        clientRect: topLevelDropTarget.rect,
+        stageLayoutRect: topLevelDropTarget.stageLayoutRect,
+      });
       options.commitFolderSession(null);
       endDrag();
       return;

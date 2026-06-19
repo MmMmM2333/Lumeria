@@ -3,6 +3,7 @@ import { stageLayoutRecordToClientRect } from "./stageCoordinates.js";
 
 const launchIconBounds = new Map();
 const launchIconTargetBounds = new Map();
+const launchIconStageLayoutTargetBounds = new Map();
 const topLevelBounds = new Map();
 const topLevelLiveTargetBounds = new Map();
 const topLevelStageLayoutTargetBounds = new Map();
@@ -123,6 +124,13 @@ export function registerLiveClientLaunchIconTargetBounds(source, rect, meta = {}
   launchIconTargetBounds.set(key, { ...safeRect, meta });
 }
 
+export function registerStableStageLayoutLaunchIconTargetBounds(source, rect, meta = {}) {
+  const key = makeIconBoundsKey("launch", source);
+  const record = makeStageLayoutRecord(rect, meta);
+  if (!key || !record) return;
+  launchIconStageLayoutTargetBounds.set(key, record);
+}
+
 export function registerRenderedClientTopLevelFolderThumbBounds(id, rect, meta = {}) {
   const key = makeIconBoundsKey("top-level", id);
   const safeRect = cloneRect(rect);
@@ -162,6 +170,7 @@ export function unregisterLaunchIconBounds(source) {
   const key = makeIconBoundsKey("launch", source);
   if (key) launchIconBounds.delete(key);
   if (key) launchIconTargetBounds.delete(key);
+  if (key) launchIconStageLayoutTargetBounds.delete(key);
   const topLevelKey = makeIconBoundsKey("top-level", source?.id);
   if ((source?.area === "desktop" || source?.area === "search") && source.id) {
     topLevelFolderThumbBounds.delete(topLevelKey);
@@ -192,6 +201,9 @@ export function clearLaunchIconBounds(scope, folderId = null) {
   }
   for (const [key, value] of launchIconTargetBounds) {
     if (shouldClearLaunchBounds(key, value, criteria)) launchIconTargetBounds.delete(key);
+  }
+  for (const [key, value] of launchIconStageLayoutTargetBounds) {
+    if (shouldClearLaunchBounds(key, value, criteria)) launchIconStageLayoutTargetBounds.delete(key);
   }
   for (const [id, value] of topLevelFolderThumbBounds) {
     if (shouldClearAll || value?.meta?.area === criteria.area) topLevelFolderThumbBounds.delete(id);
@@ -229,6 +241,14 @@ export function getLiveClientLaunchIconTargetBounds(source, expected = null) {
   const value = launchIconTargetBounds.get(key);
   if (!value || !matchesExpectedMeta(value.meta, expected)) return null;
   return cloneRect(value);
+}
+
+export function getStableStageLayoutLaunchIconTargetRecord(source, expected = null) {
+  const key = makeIconBoundsKey("launch", source);
+  if (!key) return null;
+  const value = launchIconStageLayoutTargetBounds.get(key);
+  if (!value || !matchesExpectedMeta(value.meta, expected)) return null;
+  return cloneStageLayoutRecord(value);
 }
 
 export function getRenderedClientTopLevelIconBounds(id, options = {}) {
@@ -385,6 +405,7 @@ export function getStableStageLayoutFolderPreviewChildTargetRecord(folderId, chi
 export function clearIconBoundsRegistry() {
   launchIconBounds.clear();
   launchIconTargetBounds.clear();
+  launchIconStageLayoutTargetBounds.clear();
   topLevelBounds.clear();
   topLevelLiveTargetBounds.clear();
   topLevelStageLayoutTargetBounds.clear();

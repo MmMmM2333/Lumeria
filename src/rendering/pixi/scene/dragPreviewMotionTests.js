@@ -66,4 +66,19 @@ export function runDragPreviewMotionTests() {
   assert(targetedRelease.target.x === 216 && targetedRelease.target.y === 230, "targeted release should account for stage origin and visual offset");
   assert(targetedRelease.targetScale === 0.5, "targeted release should scale to the target rect width");
   assert(!targetedRelease.textless, "release textless override should win over current state");
+
+  const stageTargetedRelease = getDragReleaseMotion({
+    ...preview,
+    targetRect: { height: 32, left: 300, top: 400, width: 32 },
+    targetStageLayoutRect: { height: 40, left: 40, top: 50, width: 40 },
+    targetVersion: 5,
+    textless: false,
+  }, {
+    iconSize: 56,
+    isTextlessMode: true,
+    stageRect: { left: 100, top: 200 },
+  });
+  assert(stageTargetedRelease.hasStageLayoutTargetRect, "release motion should detect stage layout target rects");
+  assert(stageTargetedRelease.target.x === 60 && stageTargetedRelease.target.y === 84, "release motion should prefer stage layout target rects over client rect projection");
+  assert(Math.round(stageTargetedRelease.targetScale * 1000) === 625, "stage layout release target should scale from stage layout width");
 }

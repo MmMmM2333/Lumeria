@@ -14,6 +14,7 @@ import {
   getStableClientFolderPreviewChildTargetBounds,
   getStableClientTopLevelFolderThumbTargetBounds,
   getStableClientTopLevelIconTargetBounds,
+  getStableStageLayoutLaunchIconTargetRecord,
   getStableStageLayoutFolderPreviewChildTargetBounds,
   getStableStageLayoutFolderPreviewChildTargetRecord,
   getStableStageLayoutTopLevelFolderThumbTargetBounds,
@@ -28,6 +29,7 @@ import {
   registerRenderedClientFolderPreviewChildBounds,
   registerRenderedClientLaunchIconBounds,
   registerRenderedClientTopLevelFolderThumbBounds,
+  registerStableStageLayoutLaunchIconTargetBounds,
   registerStableStageLayoutFolderPreviewChildTargetBounds,
   registerStableStageLayoutTopLevelFolderThumbTargetBounds,
   registerStableStageLayoutTopLevelIconTargetBounds,
@@ -102,9 +104,28 @@ export function runIconBoundsRegistryTests() {
     stageWidth: 100,
   };
   registerStableStageLayoutTopLevelIconTargetBounds("desktop-folder", rect(10), stageMeta);
+  registerStableStageLayoutLaunchIconTargetBounds(
+    { area: "desktop", id: "desktop-folder", pageIndex: 0 },
+    rect(11),
+    stageMeta
+  );
   registerStableStageLayoutTopLevelFolderThumbTargetBounds("desktop-folder", rect(12), stageMeta);
   registerStableStageLayoutFolderPreviewChildTargetBounds("desktop-folder", "desktop-app", 0, rect(14), stageMeta);
   assert(getStableStageLayoutTopLevelIconTargetBounds("desktop-folder").left === 10, "stage layout top-level icon target should preserve layout coordinates");
+  assert(
+    getStableStageLayoutLaunchIconTargetRecord(
+      { area: "desktop", id: "desktop-folder", pageIndex: 0 },
+      { area: "desktop", id: "desktop-folder", pageIndex: 0 }
+    ).left === 11,
+    "stage layout launch icon target record should preserve layout coordinates"
+  );
+  assert(
+    getStableStageLayoutLaunchIconTargetRecord(
+      { area: "desktop", id: "desktop-folder", pageIndex: 0 },
+      { area: "desktop", id: "desktop-folder", pageIndex: 1 }
+    ) === null,
+    "stage layout launch icon target lookup should reject stale metadata"
+  );
   assert(getStableStageLayoutTopLevelIconTargetRecord("desktop-folder").meta.stageRect.left === 100, "stage layout top-level icon target record should preserve stage metadata");
   assert(getStableClientTopLevelIconTargetBounds("desktop-folder").left === 120, "stage layout top-level icon target should project to client coordinates");
   assert(getStableStageLayoutTopLevelFolderThumbTargetBounds("desktop-folder").left === 12, "stage layout folder thumb target should preserve layout coordinates");
