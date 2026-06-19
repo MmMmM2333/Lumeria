@@ -2,6 +2,7 @@ import {
   findFolderGhostKey,
   getStableFolderCloseRects,
   getStableFolderClosePresentationHitRects,
+  hasUsableFolderGhostTarget,
   makeClosingGhostTarget,
   makeClosingPreviewSwapTargets,
   makeFolderThumbPreviewRect,
@@ -40,6 +41,13 @@ export function runFolderOverlayTargetsTests() {
   assert(findFolderGhostKey(ghostKeys, "app-a", 2) === "app-a-slot-2", "ghost key lookup should prefer an exact slot match");
   assert(findFolderGhostKey(ghostKeys, "app-b", 1) === "app-b-fallback", "ghost key lookup should fall back to an item match");
   assert(findFolderGhostKey(ghostKeys, "app-z", 0) === null, "ghost key lookup should stay nullable for missing items");
+  assert(hasUsableFolderGhostTarget({
+    sourceRect: { height: 10, left: 0, top: 0, width: 10 },
+    targetStageLayoutRect: { height: 10, left: 20, top: 20, width: 10 },
+  }), "ghost targets should be usable with a stage layout target rect");
+  assert(!hasUsableFolderGhostTarget({
+    sourceRect: { height: 10, left: 0, top: 0, width: 10 },
+  }), "ghost targets should still require a target rect");
 
   const projected = makeProjectedPreviewRect(folderRect, 4, 3, 3);
   assert(nearlyEqual(projected.left + projected.width / 2, 55), "projected rect should place slot centers by grid column");

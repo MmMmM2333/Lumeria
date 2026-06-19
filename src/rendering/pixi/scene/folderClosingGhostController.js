@@ -20,6 +20,7 @@ import {
   cloneFrameSnapshot,
   makeOpeningInterruptionFrame,
 } from "./folderOpeningInterruptionFrame.js";
+import { hasUsableFolderGhostTarget } from "./folderOverlayTargets.js";
 import {
   cancelClosingHandoffCleanup,
   scheduleClosingHandoffCleanup,
@@ -171,7 +172,7 @@ export class FolderClosingGhostController {
     const closeTargets = interruption?.targets || targets;
     layer.openingGhosts.clear();
     this.begin(state.renderedFolder?.id);
-    const usableTargets = (closeTargets || []).filter((target) => target.sourceRect && target.targetRect);
+    const usableTargets = (closeTargets || []).filter(hasUsableFolderGhostTarget);
     if (!usableTargets.length) return;
     const isInterruptedClose = Boolean(interruption);
     const frameDuration = folderCloseDuration + CLOSING_FRAME_TAIL_DURATION;

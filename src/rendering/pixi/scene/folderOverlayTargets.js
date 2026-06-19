@@ -30,6 +30,10 @@ export function findFolderGhostKey(ghosts, itemId, slotIndex) {
   return matchingSlot?.key || items.find((ghost) => ghost.item?.id === itemId)?.key || null;
 }
 
+export function hasUsableFolderGhostTarget(target) {
+  return Boolean(target?.sourceRect && (target.targetStageLayoutRect || target.targetRect));
+}
+
 export function makeFolderCenterCollapseRect(folderRect) {
   if (!folderRect) return null;
   const size = Math.max(4, Math.min(folderRect.width, folderRect.height) * 0.18);

@@ -56,7 +56,7 @@ function makeGhost(id = "ghost") {
     closingComplete: false,
     destroyed: false,
     id,
-    labelText: { visible: true },
+    labelText: { alpha: 1, scale: { x: 1, y: 1 }, visible: true },
     position: {
       set(x, y) {
         this.x = x;
@@ -103,11 +103,19 @@ function makeLayer() {
     iconNodes: new Map([["app-1", iconNode]]),
     openingGhostLayer: { children: [] },
     openingGhostKeys: null,
+    openingGhosts: {
+      clear() {
+        calls.push("clear-opening");
+      },
+    },
     panel: { visible: true },
     pageTrack: { visible: false },
     visible: true,
     clearFrameGhost() {
       calls.push("clear-frame");
+    },
+    enableClosingFrameMask() {
+      calls.push("enable-mask");
     },
     rebuildPageTrackMask() {
       calls.push("rebuild-mask");
@@ -124,6 +132,10 @@ function makeLayer() {
       if (this.closingHandoffActive === next) return;
       this.closingHandoffActive = next;
       activityChanges.push(next);
+    },
+    startFrameGhost(fromRect, toRect) {
+      this.frameGhostState = { ...fromRect, progress: 0 };
+      this.frameGhostTarget = toRect;
     },
     get closingGhosts() {
       return closingGhosts;
@@ -147,8 +159,10 @@ function makeTarget(id = "app-1") {
 function makeState(completed = []) {
   return {
     getFolderCloseIconGhostKey: () => "fallback-close-key",
+    height: 800,
     isTextlessMode: false,
     stageRect: { left: 0, top: 0 },
+    width: 1200,
     completeFolderCloseIconGhost: (key) => completed.push(key),
   };
 }
@@ -264,6 +278,24 @@ export function runFolderClosingGhostControllerTests() {
     assert(!folderGhost.destroyed, "first handoff frame should leave unused overlay handoff ghosts untouched");
     timerHost.runAllFrames();
     assert(!folderGhost.destroyed, "handoff cleanup should not manage the desktop-owned handoff ghost");
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+    controller.start(makeState(), [{
+      ...makeTarget(),
+      targetRect: null,
+      targetStageLayoutRect: { height: 12, left: 100, top: 120, width: 12 },
+    }], { height: 72, left: 10, top: 20, width: 72 }, { height: 300, left: 0, top: 0, width: 400 });
+
+    assert(layer.closingGhosts.length === 1, "stage layout closing targets should not require a client target rect");
+    assert(layer.closingGhostKeys.has("app-1"), "stage layout closing targets should be tracked as active ghosts");
+    controller.clear();
   }
 
   {

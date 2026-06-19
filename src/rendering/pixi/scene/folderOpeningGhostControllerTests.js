@@ -215,4 +215,21 @@ export function runFolderOpeningGhostControllerTests() {
     controller.complete(makeState(completed), target, layer.ghosts[0]);
     assert(completed.join(",") === "open-b,open-a", "usable opening target should complete after its animation");
   }
+
+  {
+    const completed = [];
+    const layer = makeLayer();
+    const controller = new FolderOpeningGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: makeTimerHost(),
+    });
+    controller.start(makeState(completed), [{
+      ...makeTarget(),
+      targetRect: null,
+      targetStageLayoutRect: { height: 64, left: 100, top: 120, width: 64 },
+    }]);
+
+    assert(layer.ghosts.length === 1, "stage layout opening targets should not require a client target rect");
+    controller.clear();
+  }
 }

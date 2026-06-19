@@ -5,6 +5,7 @@ import { springGroupTo } from "../animation/springGroup.js";
 import { panelSpring } from "../animation/springMotion.js";
 import { getMaxFolderGhostGridDelay, makeOpeningGhostMotion } from "./folderIconGhostMotion.js";
 import { makeFolderGhostIconNodeState } from "./folderGhostIconState.js";
+import { hasUsableFolderGhostTarget } from "./folderOverlayTargets.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 
 const GHOST_REVEAL_FALLBACK_PADDING_MS = 140;
@@ -117,7 +118,7 @@ export class FolderOpeningGhostController {
     const layer = this.layer;
     this.clear();
     layer.openingGhostKeys = new Set();
-    const usableTargets = (targets || []).filter((target) => target.sourceRect && target.targetRect);
+    const usableTargets = (targets || []).filter(hasUsableFolderGhostTarget);
     const usableControllerGhostKeys = new Set();
     for (const target of usableTargets) {
       const key = target.controllerGhostKey || state.getFolderOpenIconGhostKey?.(target.item.id, target.index);
