@@ -107,27 +107,6 @@
 
     <SettingsPanel :state="settingsPanelState" :background-layout-context="backgroundLayoutContext" />
     <LaunchpadDialogs :state="dialogState" />
-    <FallbackPixiFolderOverlay
-      v-if="shouldUseFallbackFolderPixi"
-      :active="shouldRunFallbackFolderPixi"
-      :state="folderOverlayState"
-      @internal-activity="handleFolderPixiInternalActivity"
-      @pointerdown-icon="beginDrag"
-      @open-app="openApp"
-      @context-menu-icon="openIconContextMenu"
-    />
-    <FallbackPixiDragPreviewOverlay
-      v-if="shouldUseFallbackDragPreviewPixi"
-      :active="shouldRunFallbackDragPreviewPixi"
-      :folder-page-size="folderPageSize"
-      :icon-size="iconSize"
-      :is-textless-mode="isTextlessMode"
-      :launch-target-status-by-id="launchTargetStatusById"
-      :preview-state="dragPreviewState"
-      :release-state="dragReleaseState"
-      :folder-hover-state="dragFolderHoverState"
-      :show-missing-launch-target-badge="showMissingLaunchTargetBadge"
-    />
     <LaunchpadOverlays
       ref="launchpadOverlaysRef"
       :state="overlayState"
@@ -287,8 +266,6 @@ const isAcrylicDebugPanelEnabled = import.meta.env.DEV;
 const BackgroundDebugPanel = import.meta.env.DEV
   ? defineAsyncComponent(() => import("./components/BackgroundDebugPanel.vue"))
   : null;
-const FallbackPixiDragPreviewOverlay = defineAsyncComponent(() => import("./rendering/pixi/PixiDragPreviewOverlay.vue"));
-const FallbackPixiFolderOverlay = defineAsyncComponent(() => import("./rendering/pixi/PixiFolderOverlay.vue"));
 const desktopLayoutDebugParams = useDesktopLayoutDebugParams();
 const desktopLayoutDebugStyle = computed(() => (
   import.meta.env.DEV ? resolveDesktopLayoutDebugStyle(desktopLayoutDebugParams) : {}
@@ -349,10 +326,6 @@ const singleStageRuntimePlan = computed(() => makeSingleStageRuntimePlan(singleS
 const shouldUseSingleStageRootStage = computed(() => singleStageRuntimePlan.value.useRootStage);
 const shouldUseSingleStageFolderLayer = computed(() => singleStageRuntimePlan.value.useFolderLayer);
 const singleStageRenderKey = computed(() => singleStageRuntimePlan.value.renderKey);
-const shouldUseFallbackFolderPixi = computed(() => singleStageRuntimePlan.value.useFallbackFolderLayer);
-const shouldUseFallbackDragPreviewPixi = computed(() => singleStageRuntimePlan.value.useFallbackDragPreview);
-const shouldRunFallbackFolderPixi = computed(() => singleStageRuntimePlan.value.runFallbackFolderLayer);
-const shouldRunFallbackDragPreviewPixi = computed(() => singleStageRuntimePlan.value.runFallbackDragPreview);
 function publishSingleStageRuntimeProbe() {
   if (typeof document === "undefined") return;
   const runtimePlan = singleStageRuntimePlan.value;
@@ -752,8 +725,6 @@ watch(
     singleStageRuntimePlan,
     shouldUseSingleStageRootStage,
     shouldUseSingleStageFolderLayer,
-    shouldUseFallbackFolderPixi,
-    shouldUseFallbackDragPreviewPixi,
   ],
   publishSingleStageRuntimeProbe,
   { flush: "post", immediate: true }
