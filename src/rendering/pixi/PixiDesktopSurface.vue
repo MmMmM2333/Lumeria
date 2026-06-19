@@ -551,7 +551,6 @@ function renderPixi() {
     setPageRef: props.setPageRef,
     shouldSnapTrack: props.desktopTrackMotionKey.includes("snap"),
     showMissingLaunchTargetBadge: props.showMissingLaunchTargetBadge,
-    stableStageRect: renderGeometry.stableStageRect,
     stageRect: renderGeometry.stageRect,
     width: renderGeometry.width,
   });

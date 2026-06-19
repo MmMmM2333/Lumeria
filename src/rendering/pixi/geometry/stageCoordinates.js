@@ -2,7 +2,6 @@ import { reloadOnPixiHotUpdate } from "../devHmr.js";
 
 export const MAX_RENDER_RESOLUTION = 2;
 export const STAGE_COORDINATE_SPACES = Object.freeze({
-  CLIENT_LAYOUT: "client-layout",
   CLIENT_VISUAL: "client-visual",
   STAGE_LAYOUT: "stage-layout",
   STAGE_VISUAL: "stage-visual",

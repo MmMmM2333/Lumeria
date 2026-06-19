@@ -1,5 +1,4 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { stageLayoutRecordToClientRect } from "./stageCoordinates.js";
 
 const launchIconBounds = new Map();
 const launchIconTargetBounds = new Map();
@@ -81,10 +80,6 @@ function cloneStageLayoutRecord(record) {
     ...safeRect,
     meta: { ...(record.meta || {}) },
   };
-}
-
-function projectStageLayoutRecordToClient(record) {
-  return stageLayoutRecordToClientRect(record);
 }
 
 function normalizeClearScope(scope, folderId) {
@@ -258,21 +253,6 @@ export function getRenderedClientTopLevelIconBounds(id, options = {}) {
   return cloneRect(value);
 }
 
-export function getStableClientTopLevelIconTargetBounds(id, options = {}) {
-  const key = makeIconBoundsKey("top-level", id);
-  const stageRecord = key ? topLevelStageLayoutTargetBounds.get(key) : null;
-  const value = projectStageLayoutRecordToClient(stageRecord);
-  if (!value) warnMissingBounds("top-level-icon-target", key, options);
-  return cloneRect(value);
-}
-
-export function getStableStageLayoutTopLevelIconTargetBounds(id, options = {}) {
-  const key = makeIconBoundsKey("top-level", id);
-  const value = key ? topLevelStageLayoutTargetBounds.get(key) : null;
-  if (!value) warnMissingBounds("top-level-icon-stage-layout-target", key, options);
-  return cloneRect(value);
-}
-
 export function getStableStageLayoutTopLevelIconTargetRecord(id, options = {}) {
   const key = makeIconBoundsKey("top-level", id);
   const value = key ? topLevelStageLayoutTargetBounds.get(key) : null;
@@ -298,21 +278,6 @@ export function getLiveClientTopLevelFolderThumbTargetBounds(id, options = {}) {
   const key = makeIconBoundsKey("top-level", id);
   const value = key ? topLevelFolderThumbLiveTargetBounds.get(key) : null;
   if (!value) warnMissingBounds("top-level-folder-thumb-live-target", key, options);
-  return cloneRect(value);
-}
-
-export function getStableClientTopLevelFolderThumbTargetBounds(id, options = {}) {
-  const key = makeIconBoundsKey("top-level", id);
-  const stageRecord = key ? topLevelFolderThumbStageLayoutTargetBounds.get(key) : null;
-  const value = projectStageLayoutRecordToClient(stageRecord);
-  if (!value) warnMissingBounds("top-level-folder-thumb-target", key, options);
-  return cloneRect(value);
-}
-
-export function getStableStageLayoutTopLevelFolderThumbTargetBounds(id, options = {}) {
-  const key = makeIconBoundsKey("top-level", id);
-  const value = key ? topLevelFolderThumbStageLayoutTargetBounds.get(key) : null;
-  if (!value) warnMissingBounds("top-level-folder-thumb-stage-layout-target", key, options);
   return cloneRect(value);
 }
 
@@ -384,17 +349,6 @@ export function getRenderedClientFolderPreviewChildBounds(folderId, childId, slo
 export function getLiveClientFolderPreviewChildTargetBounds(folderId, childId, slotIndex) {
   const key = makeIconBoundsKey("folder-preview-child", { childId, folderId, slotIndex });
   return key ? cloneRect(folderPreviewChildLiveTargetBounds.get(key)) : null;
-}
-
-export function getStableClientFolderPreviewChildTargetBounds(folderId, childId, slotIndex) {
-  const key = makeIconBoundsKey("folder-preview-child", { childId, folderId, slotIndex });
-  const stageRecord = key ? folderPreviewChildStageLayoutTargetBounds.get(key) : null;
-  return cloneRect(projectStageLayoutRecordToClient(stageRecord));
-}
-
-export function getStableStageLayoutFolderPreviewChildTargetBounds(folderId, childId, slotIndex) {
-  const key = makeIconBoundsKey("folder-preview-child", { childId, folderId, slotIndex });
-  return key ? cloneRect(folderPreviewChildStageLayoutTargetBounds.get(key)) : null;
 }
 
 export function getStableStageLayoutFolderPreviewChildTargetRecord(folderId, childId, slotIndex) {

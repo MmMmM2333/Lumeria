@@ -76,7 +76,6 @@ export function makeDesktopRenderGeometry(metrics, options = {}) {
     desktopFrame: makeDesktopFrameFromStageRects(stageRect, desktopStageRect),
     desktopStageRect,
     height: Math.max(1, stageRect.height),
-    stableStageRect: stageRect,
     stageRect,
     width: Math.max(1, stageRect.width),
   };

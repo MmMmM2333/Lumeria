@@ -27,7 +27,7 @@ export function resolveDesktopBoundsTargets(options = {}) {
     visualOffsetY
   );
   const rawStableTargetBounds = makeTargetIconBounds(
-    registration.stableStageRect,
+    registration.stageRect,
     registration.width,
     registration.height,
     targetX + x,
@@ -36,7 +36,7 @@ export function resolveDesktopBoundsTargets(options = {}) {
     visualOffsetY
   );
   const stableStageLayoutTargetBounds = makeIconRect(targetX + x, y + visualOffsetY, sizing.iconSize);
-  const stableClientTargetBounds = isFolder
+  const stableProjectedClientTargetBounds = isFolder
     ? snapRectToDevicePixels(rawStableTargetBounds, registration.deviceResolution)
     : rawStableTargetBounds;
   let liveClientTargetBounds = isFolder
@@ -48,7 +48,7 @@ export function resolveDesktopBoundsTargets(options = {}) {
       node.getFolderThumbBounds(registration.stageRect),
       registration.deviceResolution
     );
-    if (isFolderClosingHandoff) liveClientTargetBounds = stableClientTargetBounds;
+    if (isFolderClosingHandoff) liveClientTargetBounds = stableProjectedClientTargetBounds;
   }
   const renderedClientIconBounds = isFolder
     ? snapRectToDevicePixels(node.getIconBounds(registration.stageRect), registration.deviceResolution)
@@ -60,7 +60,7 @@ export function resolveDesktopBoundsTargets(options = {}) {
     renderedClientIconBounds,
     renderedClientThumbBounds,
     stableStageLayoutTargetBounds,
-    stableClientTargetBounds,
+    stableProjectedClientTargetBounds,
     syncHandoffLayoutTarget: isFolderClosingHandoff ? handoffLayoutTarget || { x, y } : null,
   };
 }
@@ -81,6 +81,5 @@ export function resolveFolderPreviewChildBoundsTargets(options = {}) {
     liveClientTargetBounds: target?.liveThumbRect ? makeFolderThumbPreviewRect(target.liveThumbRect, slotIndex) : null,
     renderedClientBounds: node?.getFolderPreviewChildBounds?.(stageRect, slotIndex) || null,
     stableStageLayoutTargetBounds,
-    stableClientTargetBounds: target?.stableThumbRect ? makeFolderThumbPreviewRect(target.stableThumbRect, slotIndex) : null,
   };
 }

@@ -73,11 +73,11 @@ export function runRootStageCoordinatesTests() {
     rootRect,
   });
   assert(rootGeometry.stageRect.left === rootRect.left, "root-stage geometry should use the root rect as the stage");
-  assert(rootGeometry.stableStageRect === rootGeometry.stageRect, "root-stage geometry should use a single stable stage rect");
+  assert(!("stableStageRect" in rootGeometry), "root-stage geometry should not expose a stable stage rect alias");
   assert(rootGeometry.desktopStageRect.top === 114, "root-stage geometry should compute the desktop content rect");
   assert(rootGeometry.desktopFrame.top === 98, "root-stage desktop frame should be relative to the root stage");
 
   const rootOnlyGeometry = makeDesktopRenderGeometry(metrics, { rootStage: false, rootRect });
   assert(rootOnlyGeometry.stageRect.left === rootRect.left, "desktop geometry should stay root-stage-only even when legacy flags are false");
-  assert(rootOnlyGeometry.stableStageRect === rootOnlyGeometry.stageRect, "root-stage-only geometry should keep one stable stage rect");
+  assert(!("stableStageRect" in rootOnlyGeometry), "root-stage-only geometry should not expose a stable stage rect alias");
 }

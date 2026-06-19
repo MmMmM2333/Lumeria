@@ -169,7 +169,7 @@ function makeLayoutTargetFromScreenRect(state, stageRect, targetX, rect, visualO
 }
 
 function makeSnappedFolderLayoutTarget(state, targetX, x, y, iconSize, visualOffsetY) {
-  const targetStageRect = state.stableStageRect || state.stageRect;
+  const targetStageRect = state.stageRect;
   const targetBounds = snapRectToDevicePixels(makeTargetIconBounds(
     targetStageRect,
     state.width,
@@ -183,9 +183,8 @@ function makeSnappedFolderLayoutTarget(state, targetX, x, y, iconSize, visualOff
 }
 
 function makeFolderStableScreenTarget(state, targetX, layoutTarget, iconSize, visualOffsetY) {
-  const stableStageRect = state.stableStageRect || state.stageRect;
   return snapRectToDevicePixels(makeTargetIconBounds(
-    stableStageRect,
+    state.stageRect,
     state.width,
     state.height,
     targetX + layoutTarget.x,
@@ -605,7 +604,6 @@ export class DesktopLayer extends Container {
     if (!entry || !node || node.destroyed) return null;
     const registration = this.boundsRegistration || {};
     const stageRect = registration.stageRect || this.stageRect;
-    const stableStageRect = registration.stableStageRect || stageRect;
     const folderId = entry.folderId || node.item?.id || null;
     const thumbRect = node.getFolderThumbBounds?.(stageRect) || null;
     const iconRect = node.getIconBounds?.(stageRect) || null;
@@ -654,7 +652,6 @@ export class DesktopLayer extends Container {
       pageTrackX: Math.round((this.pageTrack?.x || 0) * 1000) / 1000,
       registeredThumbRect: roundRect(registeredThumbRect),
       source: options.source || "handoff-node",
-      stableStageRect: roundRect(stableStageRect),
       stableStageLayoutTargetRect: roundRect(stableStageLayoutTargetRecord),
       stableTargetRect: roundRect(stableTargetRect),
       stageRect: roundRect(stageRect),
@@ -768,7 +765,6 @@ export class DesktopLayer extends Container {
         this.registerFolderChildren(item, node, registration.stageRect, {
           liveThumbRect: boundsTargets.liveClientTargetBounds,
           stableStageLayoutThumbRect: boundsTargets.stableStageLayoutTargetBounds,
-          stableThumbRect: boundsTargets.stableClientTargetBounds,
           stageHeight: registration.height,
           stageWidth: registration.width,
         });

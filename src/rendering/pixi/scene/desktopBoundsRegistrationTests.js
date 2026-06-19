@@ -14,7 +14,6 @@ export function runDesktopBoundsRegistrationTests() {
       folderClosingHandoffId: "folder-1",
       height: 600,
       isTextlessMode: false,
-      stableStageRect: stageRect,
       stageRect,
       width: 800,
     }, entries, desktopFrame);
@@ -23,7 +22,8 @@ export function runDesktopBoundsRegistrationTests() {
     assert(registration.desktopFrame === desktopFrame, "registration should preserve desktop frame by reference");
     assert(registration.coordinateSpace.bounds === "client-visual", "registration bounds should be explicit client visual rects");
     assert(registration.coordinateSpace.layoutTargets === "stage-layout", "registration layout targets should be explicit stage layout coordinates");
-    assert(registration.stableStageRect === stageRect, "root-stage registration should keep a single stable stage rect");
+    assert(!("stableStageRect" in registration), "root-stage registration should not expose a stable stage rect alias");
+    assert(!("stableStageRect" in registration.coordinateSpace), "registration coordinate spaces should not expose a client-layout stable rect");
     assert(!("stageVisualOffsetX" in registration) && !("stageVisualOffsetY" in registration), "root-stage registration should not expose legacy visual compensation");
     assert(registration.folderClosingHandoffId === "folder-1", "registration should carry the handoff id");
   }
@@ -37,14 +37,16 @@ export function runDesktopBoundsRegistrationTests() {
       width: 800,
     });
 
-    assert(registration.stableStageRect === stageRect, "legacy stable rect input should not create a separate offset space");
+    assert(registration.stageRect === stageRect, "legacy stable rect input should leave stage rect as the only stage bounds");
+    assert(!("stableStageRect" in registration), "legacy stable rect input should not reintroduce a stable stage rect alias");
   }
 
   {
     const stageRect = { height: 600, left: 8, top: 12, width: 800 };
     const registration = makeDesktopBoundsRegistration({ stageRect });
 
-    assert(registration.stableStageRect === stageRect, "missing stable stage rect should fall back to stage rect");
-    assert(!("stageVisualOffsetX" in registration) && !("stageVisualOffsetY" in registration), "fallback stable rect should not expose legacy visual compensation");
+    assert(registration.stageRect === stageRect, "registration should keep stage rect as the only stage bounds");
+    assert(!("stableStageRect" in registration), "registration should not create a fallback stable stage rect alias");
+    assert(!("stageVisualOffsetX" in registration) && !("stageVisualOffsetY" in registration), "registration should not expose legacy visual compensation");
   }
 }
