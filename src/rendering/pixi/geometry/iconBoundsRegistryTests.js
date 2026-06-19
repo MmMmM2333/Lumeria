@@ -25,9 +25,6 @@ import {
   registerRenderedClientFolderPreviewChildBounds,
   registerRenderedClientLaunchIconBounds,
   registerRenderedClientTopLevelFolderThumbBounds,
-  registerStableClientFolderPreviewChildTargetBounds,
-  registerStableClientTopLevelFolderThumbTargetBounds,
-  registerStableClientTopLevelIconTargetBounds,
   registerStableStageLayoutFolderPreviewChildTargetBounds,
   registerStableStageLayoutTopLevelFolderThumbTargetBounds,
   registerStableStageLayoutTopLevelIconTargetBounds,
@@ -35,6 +32,15 @@ import {
 
 function rect(left) {
   return { left, top: 10, width: 20, height: 20 };
+}
+
+function identityStageMeta(meta = {}) {
+  return {
+    stageHeight: 100,
+    stageRect: { height: 100, left: 0, top: 0, width: 100 },
+    stageWidth: 100,
+    ...meta,
+  };
 }
 
 export function runIconBoundsRegistryTests() {
@@ -108,11 +114,11 @@ export function runIconBoundsRegistryTests() {
     rect(10),
     { area: "desktop", id: "desktop-folder", pageIndex: 0 }
   );
-  registerStableClientTopLevelIconTargetBounds("desktop-folder", rect(14), { area: "desktop", id: "desktop-folder", pageIndex: 0 });
+  registerStableStageLayoutTopLevelIconTargetBounds("desktop-folder", rect(14), identityStageMeta({ area: "desktop", id: "desktop-folder", pageIndex: 0 }));
   registerLiveClientTopLevelIconTargetBounds("desktop-folder", rect(15), { area: "desktop", id: "desktop-folder", pageIndex: 0 });
   registerRenderedClientTopLevelFolderThumbBounds("desktop-folder", rect(12), { area: "desktop", id: "desktop-folder", pageIndex: 0 });
   registerLiveClientTopLevelFolderThumbTargetBounds("desktop-folder", rect(13), { area: "desktop", id: "desktop-folder", pageIndex: 0 });
-  registerStableClientTopLevelFolderThumbTargetBounds("desktop-folder", rect(16), { area: "desktop", id: "desktop-folder", pageIndex: 0 });
+  registerStableStageLayoutTopLevelFolderThumbTargetBounds("desktop-folder", rect(16), identityStageMeta({ area: "desktop", id: "desktop-folder", pageIndex: 0 }));
   registerRenderedClientLaunchIconBounds(
     { area: "folder", folderId: "folder-1", id: "folder-app-1", pageIndex: 0 },
     rect(40),
@@ -120,7 +126,7 @@ export function runIconBoundsRegistryTests() {
   );
   registerRenderedClientFolderPreviewChildBounds("folder-1", "folder-app-1", 0, rect(44));
   registerLiveClientFolderPreviewChildTargetBounds("folder-1", "folder-app-1", 0, rect(46));
-  registerStableClientFolderPreviewChildTargetBounds("folder-1", "folder-app-1", 0, rect(48));
+  registerStableStageLayoutFolderPreviewChildTargetBounds("folder-1", "folder-app-1", 0, rect(48), identityStageMeta({ area: "folder", folderId: "folder-1", id: "folder-app-1", pageIndex: 0 }));
 
   clearFolderIconBounds();
   assert(getRenderedClientTopLevelIconBounds("desktop-folder"), "folder scoped icon clear should keep desktop top-level icon bounds");

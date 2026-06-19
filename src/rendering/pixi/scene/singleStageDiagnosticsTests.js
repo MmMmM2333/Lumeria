@@ -2,9 +2,9 @@ import {
   clearIconBoundsRegistry,
   registerRenderedClientLaunchIconBounds,
   registerRenderedClientTopLevelFolderThumbBounds,
-  registerStableClientFolderPreviewChildTargetBounds,
-  registerStableClientTopLevelFolderThumbTargetBounds,
-  registerStableClientTopLevelIconTargetBounds,
+  registerStableStageLayoutFolderPreviewChildTargetBounds,
+  registerStableStageLayoutTopLevelFolderThumbTargetBounds,
+  registerStableStageLayoutTopLevelIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
 import {
   getSingleStageOptions,
@@ -18,6 +18,15 @@ import {
   SINGLE_STAGE_CHANGED_EVENT,
   SINGLE_STAGE_DIAGNOSTICS_CHANGED_EVENT,
 } from "./singleStagePlan.js";
+
+function identityStageMeta(meta = {}) {
+  return {
+    stageHeight: 800,
+    stageRect: { height: 800, left: 0, top: 0, width: 1200 },
+    stageWidth: 1200,
+    ...meta,
+  };
+}
 
 export function runSingleStageDiagnosticsTests() {
   const assert = (condition, message) => {
@@ -148,15 +157,15 @@ export function runSingleStageDiagnosticsTests() {
   clearIconBoundsRegistry();
   registerRenderedClientLaunchIconBounds({ area: "desktop", id: folder.id, pageIndex: 0 }, iconRect, { area: "desktop", id: folder.id });
   registerRenderedClientTopLevelFolderThumbBounds(folder.id, thumbRect, { area: "desktop", id: folder.id });
-  registerStableClientTopLevelIconTargetBounds(folder.id, iconRect, { area: "desktop", id: folder.id });
-  registerStableClientTopLevelFolderThumbTargetBounds(folder.id, thumbRect, { area: "desktop", id: folder.id });
+  registerStableStageLayoutTopLevelIconTargetBounds(folder.id, iconRect, identityStageMeta({ area: "desktop", id: folder.id }));
+  registerStableStageLayoutTopLevelFolderThumbTargetBounds(folder.id, thumbRect, identityStageMeta({ area: "desktop", id: folder.id }));
   for (let index = 0; index < 9; index += 1) {
-    registerStableClientFolderPreviewChildTargetBounds(folder.id, `app-${index}`, index, {
+    registerStableStageLayoutFolderPreviewChildTargetBounds(folder.id, `app-${index}`, index, {
       height: 16,
       left: thumbRect.left + index,
       top: thumbRect.top + index,
       width: 16,
-    });
+    }, identityStageMeta({ area: "desktop", folderId: folder.id, id: `app-${index}` }));
   }
 
   assert(makeSingleStageDiagnosticsPlan(state, { enabled: false }) === null, "disabled diagnostics should not create a plan");

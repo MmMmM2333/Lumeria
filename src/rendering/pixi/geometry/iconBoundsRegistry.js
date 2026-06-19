@@ -129,13 +129,6 @@ export function registerRenderedClientTopLevelFolderThumbBounds(id, rect, meta =
   topLevelFolderThumbBounds.set(key, { ...safeRect, meta });
 }
 
-export function registerStableClientTopLevelIconTargetBounds(id, rect, meta = {}) {
-  const key = makeIconBoundsKey("top-level", id);
-  const safeRect = cloneRect(rect);
-  if (!key || !safeRect) return;
-  topLevelTargetBounds.set(key, { ...safeRect, meta });
-}
-
 export function registerStableStageLayoutTopLevelIconTargetBounds(id, rect, meta = {}) {
   const key = makeIconBoundsKey("top-level", id);
   const record = makeStageLayoutRecord(rect, meta);
@@ -149,13 +142,6 @@ export function registerLiveClientTopLevelIconTargetBounds(id, rect, meta = {}) 
   const safeRect = cloneRect(rect);
   if (!key || !safeRect) return;
   topLevelLiveTargetBounds.set(key, { ...safeRect, meta });
-}
-
-export function registerStableClientTopLevelFolderThumbTargetBounds(id, rect, meta = {}) {
-  const key = makeIconBoundsKey("top-level", id);
-  const safeRect = cloneRect(rect);
-  if (!key || !safeRect) return;
-  topLevelFolderThumbTargetBounds.set(key, { ...safeRect, meta });
 }
 
 export function registerStableStageLayoutTopLevelFolderThumbTargetBounds(id, rect, meta = {}) {
@@ -327,13 +313,6 @@ export function registerRenderedClientFolderPreviewChildBounds(folderId, childId
   const safeRect = cloneRect(rect);
   if (!key || !safeRect) return;
   folderPreviewChildBounds.set(key, safeRect);
-}
-
-export function registerStableClientFolderPreviewChildTargetBounds(folderId, childId, slotIndex, rect) {
-  const key = makeIconBoundsKey("folder-preview-child", { childId, folderId, slotIndex });
-  const safeRect = cloneRect(rect);
-  if (!key || !safeRect) return;
-  folderPreviewChildTargetBounds.set(key, safeRect);
 }
 
 export function registerStableStageLayoutFolderPreviewChildTargetBounds(folderId, childId, slotIndex, rect, meta = {}) {

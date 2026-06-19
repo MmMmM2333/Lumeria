@@ -20,7 +20,6 @@ import {
   registerRenderedClientFolderPreviewChildBounds,
   registerRenderedClientLaunchIconBounds,
   registerRenderedClientTopLevelFolderThumbBounds,
-  registerStableClientFolderPreviewChildTargetBounds,
   registerStableStageLayoutFolderPreviewChildTargetBounds,
   registerStableStageLayoutTopLevelFolderThumbTargetBounds,
   registerStableStageLayoutTopLevelIconTargetBounds,
@@ -844,8 +843,6 @@ export class DesktopLayer extends Container {
           stageRect,
           stageWidth: target.stageWidth,
         });
-      } else if (childTargets.stableClientTargetBounds) {
-        registerStableClientFolderPreviewChildTargetBounds(folder.id, child.id, index, childTargets.stableClientTargetBounds);
       }
     }
   }

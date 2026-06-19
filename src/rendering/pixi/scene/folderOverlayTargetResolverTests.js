@@ -3,11 +3,20 @@ import {
   registerRenderedClientFolderPreviewChildBounds,
   registerRenderedClientLaunchIconBounds,
   registerRenderedClientTopLevelFolderThumbBounds,
-  registerStableClientFolderPreviewChildTargetBounds,
-  registerStableClientTopLevelFolderThumbTargetBounds,
-  registerStableClientTopLevelIconTargetBounds,
+  registerStableStageLayoutFolderPreviewChildTargetBounds,
+  registerStableStageLayoutTopLevelFolderThumbTargetBounds,
+  registerStableStageLayoutTopLevelIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
 import { resolveFolderOverlayTargets } from "./folderOverlayTargetResolver.js";
+
+function identityStageMeta(meta = {}) {
+  return {
+    stageHeight: 400,
+    stageRect: { height: 400, left: 0, top: 0, width: 400 },
+    stageWidth: 400,
+    ...meta,
+  };
+}
 
 export function runFolderOverlayTargetResolverTests() {
   const assert = (condition, message) => {
@@ -31,10 +40,10 @@ export function runFolderOverlayTargetResolverTests() {
   clearIconBoundsRegistry();
   registerRenderedClientLaunchIconBounds({ area: "desktop", id: folder.id, pageIndex: 0 }, liveIconRect, { area: "desktop", id: folder.id });
   registerRenderedClientTopLevelFolderThumbBounds(folder.id, liveThumbRect, { area: "desktop", id: folder.id });
-  registerStableClientTopLevelIconTargetBounds(folder.id, targetIconRect, { area: "desktop", id: folder.id });
-  registerStableClientTopLevelFolderThumbTargetBounds(folder.id, targetThumbRect, { area: "desktop", id: folder.id });
+  registerStableStageLayoutTopLevelIconTargetBounds(folder.id, targetIconRect, identityStageMeta({ area: "desktop", id: folder.id }));
+  registerStableStageLayoutTopLevelFolderThumbTargetBounds(folder.id, targetThumbRect, identityStageMeta({ area: "desktop", id: folder.id }));
   registerRenderedClientFolderPreviewChildBounds(folder.id, "app-b", 1, liveChildRect);
-  registerStableClientFolderPreviewChildTargetBounds(folder.id, "app-a", 0, targetChildRect);
+  registerStableStageLayoutFolderPreviewChildTargetBounds(folder.id, "app-a", 0, targetChildRect, identityStageMeta({ area: "desktop", folderId: folder.id, id: "app-a" }));
 
   const resolved = resolveFolderOverlayTargets({
     folder,
