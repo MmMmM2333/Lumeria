@@ -4,11 +4,8 @@ import { getSingleStageOptions, makeSingleStageDiagnosticsPlan } from "./singleS
 
 export {
   getSingleStageOptions,
-  getSingleStageFolderProbeOptions,
   isSingleStageDiagnosticsEnabled,
-  isSingleStageFolderProbeEnabled,
   makeSingleStageDiagnosticsPlan,
-  makeSingleStageFolderProbePlan,
 } from "./singleStagePlan.js";
 
 function roundNumber(value) {
@@ -129,7 +126,6 @@ export class SingleStageDiagnosticsLayer extends Container {
     if (!options.diagnostics && !options.probe) return;
     const snapshot = makeDebugSnapshot(plan);
     globalThis.__LP_LAST_SINGLE_STAGE_DIAGNOSTICS__ = snapshot;
-    globalThis.__LP_LAST_SINGLE_STAGE_FOLDER_PROBE__ = snapshot;
     if (!options.log) return;
     const debugKey = JSON.stringify({
       closeThumb: snapshot?.closeThumbRect,
@@ -143,7 +139,5 @@ export class SingleStageDiagnosticsLayer extends Container {
     console.log("[single-stage-diagnostics]", snapshot);
   }
 }
-
-export class SingleStageFolderProbeLayer extends SingleStageDiagnosticsLayer {}
 
 reloadOnPixiHotUpdate(import.meta.hot);

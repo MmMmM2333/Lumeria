@@ -5,11 +5,8 @@ import { resolveFolderOverlayTargets } from "./folderOverlayTargetResolver.js";
 
 export const SINGLE_STAGE_CHANGED_EVENT = "launchpad-single-stage-change";
 export const SINGLE_STAGE_DIAGNOSTICS_CHANGED_EVENT = "launchpad-single-stage-diagnostics-change";
-export const SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT = "launchpad-single-stage-folder-probe-change";
 const SINGLE_STAGE_GLOBAL_FLAG = "__LP_SINGLE_STAGE__";
 const SINGLE_STAGE_SETTER_GLOBAL = "__LP_SET_SINGLE_STAGE__";
-const SINGLE_STAGE_FOLDER_PROBE_GLOBAL_FLAG = "__LP_SINGLE_STAGE_FOLDER__";
-const SINGLE_STAGE_FOLDER_PROBE_SETTER_GLOBAL = "__LP_SET_SINGLE_STAGE_FOLDER__";
 const DEFAULT_SINGLE_STAGE_OPTIONS = Object.freeze({
   diagnostics: false,
   dragPreview: true,
@@ -48,13 +45,11 @@ function dispatchEvent(name) {
 function dispatchSingleStageChanged() {
   dispatchEvent(SINGLE_STAGE_CHANGED_EVENT);
   dispatchEvent(SINGLE_STAGE_DIAGNOSTICS_CHANGED_EVENT);
-  dispatchEvent(SINGLE_STAGE_FOLDER_PROBE_CHANGED_EVENT);
 }
 
 function readSingleStageGlobalValue() {
   if (singleStageGlobalValue !== undefined) return singleStageGlobalValue;
-  if (globalThis[SINGLE_STAGE_GLOBAL_FLAG] !== undefined) return globalThis[SINGLE_STAGE_GLOBAL_FLAG];
-  return globalThis[SINGLE_STAGE_FOLDER_PROBE_GLOBAL_FLAG];
+  return globalThis[SINGLE_STAGE_GLOBAL_FLAG];
 }
 
 function installSingleStageGlobalAccessor(name) {
@@ -80,13 +75,7 @@ function installSingleStageGlobalAccessor(name) {
 
 export function installSingleStageGlobalFlag() {
   installSingleStageGlobalAccessor(SINGLE_STAGE_GLOBAL_FLAG);
-  installSingleStageGlobalAccessor(SINGLE_STAGE_FOLDER_PROBE_GLOBAL_FLAG);
   globalThis[SINGLE_STAGE_SETTER_GLOBAL] = setSingleStageOptions;
-  globalThis[SINGLE_STAGE_FOLDER_PROBE_SETTER_GLOBAL] = setSingleStageFolderProbeOptions;
-}
-
-export function installSingleStageFolderProbeGlobalFlag() {
-  installSingleStageGlobalFlag();
 }
 
 export function getSingleStageOptions(value = readSingleStageGlobalValue()) {
@@ -111,10 +100,6 @@ export function getSingleStageOptions(value = readSingleStageGlobalValue()) {
   };
 }
 
-export function getSingleStageFolderProbeOptions(value = readSingleStageGlobalValue()) {
-  return getSingleStageOptions(value);
-}
-
 export function getSingleStageOptionsKey(options = getSingleStageOptions()) {
   return [
     options.dragPreview ? "1" : "0",
@@ -126,20 +111,12 @@ export function getSingleStageOptionsKey(options = getSingleStageOptions()) {
   ].join("");
 }
 
-export function getSingleStageFolderProbeOptionsKey(options = getSingleStageFolderProbeOptions()) {
-  return getSingleStageOptionsKey(options);
-}
-
 export function getSingleStageRenderKey(options = getSingleStageOptions()) {
   return [
     options.dragPreview ? "1" : "0",
     options.folderLayer ? "1" : "0",
     options.rootStage ? "1" : "0",
   ].join("");
-}
-
-export function getSingleStageFolderProbeRenderKey(options = getSingleStageFolderProbeOptions()) {
-  return getSingleStageRenderKey(options);
 }
 
 export function makeSingleStageRuntimePlan(options = getSingleStageOptions()) {
@@ -190,18 +167,8 @@ export function setSingleStageOptions(value) {
   return getSingleStageOptions(value);
 }
 
-export function setSingleStageFolderProbeOptions(value) {
-  installSingleStageGlobalFlag();
-  globalThis[SINGLE_STAGE_FOLDER_PROBE_GLOBAL_FLAG] = value;
-  return getSingleStageOptions(value);
-}
-
 export function isSingleStageDiagnosticsEnabled(value = readSingleStageGlobalValue()) {
   return getSingleStageOptions(value).diagnostics;
-}
-
-export function isSingleStageFolderProbeEnabled(value = readSingleStageGlobalValue()) {
-  return isSingleStageDiagnosticsEnabled(value);
 }
 
 export function makeSingleStageDiagnosticsPlan(state, options = {}) {
@@ -258,8 +225,4 @@ export function makeSingleStageDiagnosticsPlan(state, options = {}) {
     stableFolderCloseTarget: overlayTargets.stableFolderCloseTarget,
     stageRect: state.stageRect,
   };
-}
-
-export function makeSingleStageFolderProbePlan(state, options = {}) {
-  return makeSingleStageDiagnosticsPlan(state, options);
 }
