@@ -62,21 +62,6 @@ export function makeRootStageDesktopContentRect(metrics, stageRect, mainRect, pa
 }
 
 export function makeDesktopRenderGeometry(metrics, options = {}) {
-  if (!options.rootStage) {
-    return {
-      desktopFrame: {
-        height: Math.max(1, safeNumber(metrics?.height, 1)),
-        left: 0,
-        top: 0,
-        width: Math.max(1, safeNumber(metrics?.width, 1)),
-      },
-      desktopStageRect: metrics?.layoutRect || null,
-      height: Math.max(1, safeNumber(metrics?.height, 1)),
-      stableStageRect: metrics?.layoutRect,
-      stageRect: metrics?.rect,
-      width: Math.max(1, safeNumber(metrics?.width, 1)),
-    };
-  }
   const stageRect = resolveSingleStageCandidateRect(metrics, options);
   const desktopStageRect = makeRootStageDesktopContentRect(
     metrics,

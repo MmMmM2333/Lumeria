@@ -16,15 +16,6 @@ const DEFAULT_SINGLE_STAGE_OPTIONS = Object.freeze({
   probe: false,
   rootStage: true,
 });
-const DISABLED_SINGLE_STAGE_OPTIONS = Object.freeze({
-  diagnostics: false,
-  dragPreview: false,
-  enabled: false,
-  folderLayer: false,
-  log: false,
-  probe: false,
-  rootStage: false,
-});
 let singleStageGlobalValue;
 
 function cloneOptions(options) {
@@ -81,50 +72,38 @@ export function installSingleStageGlobalFlag() {
 export function getSingleStageOptions(value = readSingleStageGlobalValue()) {
   if (value === undefined) return cloneOptions(DEFAULT_SINGLE_STAGE_OPTIONS);
   if (value === true) return { ...DEFAULT_SINGLE_STAGE_OPTIONS, diagnostics: true, probe: true };
-  if (!value || typeof value !== "object") return cloneOptions(DISABLED_SINGLE_STAGE_OPTIONS);
-  const hasStageOwnership = value.rootStage === true || value.dragPreview === true || value.folderLayer === true;
+  if (!value || typeof value !== "object") return cloneOptions(DEFAULT_SINGLE_STAGE_OPTIONS);
   const hasDiagnosticsOption = hasOwn(value, "diagnostics");
   const diagnosticsValue = hasDiagnosticsOption ? value.diagnostics : value.probe;
-  const enabled = value.enabled === true || diagnosticsValue === true || hasStageOwnership;
-  const folderLayer = enabled && value.folderLayer === true;
-  const dragPreview = enabled && (value.dragPreview === true || folderLayer);
-  const diagnostics = enabled && diagnosticsValue !== false;
+  const diagnostics = diagnosticsValue === true;
   return {
     diagnostics,
-    dragPreview,
-    enabled,
-    folderLayer,
-    log: enabled && value.log === true,
+    dragPreview: true,
+    enabled: true,
+    folderLayer: true,
+    log: value.log === true,
     probe: diagnostics,
-    rootStage: enabled && (value.rootStage === true || folderLayer || dragPreview),
+    rootStage: true,
   };
 }
 
 export function getSingleStageOptionsKey(options = getSingleStageOptions()) {
   return [
-    options.dragPreview ? "1" : "0",
-    options.enabled ? "1" : "0",
-    options.folderLayer ? "1" : "0",
     options.log ? "1" : "0",
     (options.diagnostics ?? options.probe) ? "1" : "0",
-    options.rootStage ? "1" : "0",
   ].join("");
 }
 
-export function getSingleStageRenderKey(options = getSingleStageOptions()) {
-  return [
-    options.dragPreview ? "1" : "0",
-    options.folderLayer ? "1" : "0",
-    options.rootStage ? "1" : "0",
-  ].join("");
+export function getSingleStageRenderKey() {
+  return "single-stage";
 }
 
-export function makeSingleStageRuntimePlan(options = getSingleStageOptions()) {
+export function makeSingleStageRuntimePlan() {
   return {
-    renderKey: getSingleStageRenderKey(options),
-    useDragPreview: options.dragPreview === true,
-    useFolderLayer: options.folderLayer === true,
-    useRootStage: options.rootStage === true,
+    renderKey: getSingleStageRenderKey(),
+    useDragPreview: true,
+    useFolderLayer: true,
+    useRootStage: true,
   };
 }
 

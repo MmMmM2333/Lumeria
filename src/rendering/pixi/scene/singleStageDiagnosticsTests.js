@@ -46,7 +46,7 @@ export function runSingleStageDiagnosticsTests() {
   assert(defaultOptions.folderLayer && !defaultOptions.diagnostics && !defaultOptions.probe, "single-stage should default to folder layer ownership without diagnostics");
   const defaultRuntimePlan = makeSingleStageRuntimePlan(defaultOptions);
   assert(defaultRuntimePlan.useRootStage && defaultRuntimePlan.useFolderLayer && defaultRuntimePlan.useDragPreview, "default runtime plan should use full single-stage ownership");
-  assert(defaultRuntimePlan.renderKey === "111", "default runtime plan should expose the structural render key");
+  assert(defaultRuntimePlan.renderKey === "single-stage", "runtime plan should expose a fixed single-stage render key");
   const stableRuntimeProbeState = {
     canvasCount: 1,
     fallbackDragPreviewMounted: false,
@@ -77,15 +77,16 @@ export function runSingleStageDiagnosticsTests() {
   assert(mountedFallbackProbe.failures.includes("fallback-folder-mounted"), "runtime probe should report mounted fallback folder");
   assert(mountedFallbackProbe.failures.includes("fallback-drag-preview-mounted"), "runtime probe should report mounted fallback drag preview");
   const disabledOptions = getSingleStageOptions(false);
-  assert(!disabledOptions.enabled && !disabledOptions.rootStage && !disabledOptions.dragPreview, "explicit false should disable single-stage ownership");
+  assert(disabledOptions.enabled && disabledOptions.rootStage && disabledOptions.dragPreview, "explicit false should not disable single-stage ownership");
+  assert(disabledOptions.folderLayer && !disabledOptions.diagnostics && !disabledOptions.probe, "explicit false should only disable diagnostics");
   const disabledRuntimePlan = makeSingleStageRuntimePlan(disabledOptions);
-  assert(!disabledRuntimePlan.useRootStage && !disabledRuntimePlan.useFolderLayer && !disabledRuntimePlan.useDragPreview, "disabled runtime plan should not claim single-stage ownership");
+  assert(disabledRuntimePlan.useRootStage && disabledRuntimePlan.useFolderLayer && disabledRuntimePlan.useDragPreview, "runtime plan should always claim single-stage ownership");
   assert(!makeSingleStageRuntimeProbe(disabledRuntimePlan, {
     canvasCount: 1,
     rootStageHost: false,
     rootStageMain: false,
     stableStageIsUnified: false,
-  }).isSingleStageStable, "disabled single-stage runtime probe should not report stable single-stage");
+  }).isSingleStageStable, "single-stage runtime probe should fail when required root-stage invariants are missing");
   const diagnosticsOptions = getSingleStageOptions(true);
   assert(diagnosticsOptions.diagnostics && diagnosticsOptions.probe && diagnosticsOptions.rootStage && diagnosticsOptions.dragPreview, "explicit true should enable diagnostics on the default single-stage base");
   assert(diagnosticsOptions.folderLayer, "explicit true should keep the default folder layer ownership");
@@ -100,8 +101,8 @@ export function runSingleStageDiagnosticsTests() {
   assert(options.folderLayer, "single-stage options should preserve the folder layer flag");
   assert(options.dragPreview, "folder layer should enable the single-stage drag preview");
   assert(options.rootStage, "single-stage options should preserve the root-stage canvas flag");
-  assert(getSingleStageOptionsKey(options) === "111111", "single-stage option key should reflect enabled flags");
-  assert(getSingleStageRenderKey(options) === "111", "single-stage render key should reflect only structural stage ownership flags");
+  assert(getSingleStageOptionsKey(options) === "10", "single-stage option key should only reflect mutable diagnostics flags");
+  assert(getSingleStageRenderKey(options) === "single-stage", "single-stage render key should be fixed");
   const renderKeyWithoutDiagnostics = getSingleStageRenderKey(
     getSingleStageOptions({ enabled: true, folderLayer: true, log: false, probe: false })
   );
@@ -113,7 +114,7 @@ export function runSingleStageDiagnosticsTests() {
     "diagnostic flags should not change the render key"
   );
   const rootStageOnlyOptions = getSingleStageOptions({ probe: false, rootStage: true });
-  assert(rootStageOnlyOptions.enabled && rootStageOnlyOptions.rootStage && !rootStageOnlyOptions.dragPreview, "root-stage ownership should enable the root-stage host without drag preview ownership");
+  assert(rootStageOnlyOptions.enabled && rootStageOnlyOptions.rootStage && rootStageOnlyOptions.dragPreview, "root-stage legacy flags should not disable drag preview ownership");
   const dragPreviewOnlyOptions = getSingleStageOptions({ dragPreview: true, probe: false });
   assert(dragPreviewOnlyOptions.rootStage && dragPreviewOnlyOptions.dragPreview, "drag preview should request the root-stage host");
   const folderLayerOnlyOptions = getSingleStageOptions({ folderLayer: true, probe: false });
@@ -131,12 +132,12 @@ export function runSingleStageDiagnosticsTests() {
     installSingleStageGlobalFlag();
     globalThis.addEventListener?.(SINGLE_STAGE_CHANGED_EVENT, handleFlagChange);
     globalThis.addEventListener?.(SINGLE_STAGE_DIAGNOSTICS_CHANGED_EVENT, handleDiagnosticsFlagChange);
-    globalThis[flagName] = { rootStage: true, probe: false };
+    globalThis[flagName] = { rootStage: false, probe: false };
     assert(getSingleStageOptions().rootStage, "direct global flag assignment should update root-stage options");
-    globalThis[flagName] = { dragPreview: true, probe: false };
-    assert(getSingleStageOptions().dragPreview && globalThis[flagName]?.dragPreview, "direct global flag assignment should update drag preview options");
-    assert(getSingleStageOptions({ dragPreview: true, probe: false }).rootStage, "drag preview should request a root-stage canvas");
-    const normalized = setSingleStageOptions({ folderLayer: true, probe: false });
+    globalThis[flagName] = { dragPreview: false, probe: false };
+    assert(getSingleStageOptions().dragPreview && globalThis[flagName]?.dragPreview === false, "direct global flag assignment should preserve input while normalized options keep drag preview ownership");
+    assert(getSingleStageOptions({ dragPreview: false, probe: false }).rootStage, "legacy drag preview false should keep a root-stage canvas");
+    const normalized = setSingleStageOptions({ folderLayer: false, probe: false });
     assert(normalized.rootStage && normalized.dragPreview && !normalized.probe, "global flag setter should return normalized options");
     assert(typeof globalThis[setterName] === "function", "formal global setter should be installed");
     if (typeof globalThis.addEventListener === "function") {

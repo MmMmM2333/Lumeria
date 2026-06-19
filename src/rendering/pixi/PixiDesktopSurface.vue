@@ -1,13 +1,13 @@
 <template>
   <main
     ref="mainRef"
-    :class="['desktop-main pixi-desktop-main', rootStageCanvasEnabled && 'pixi-desktop-main-root-stage']"
+    class="desktop-main pixi-desktop-main pixi-desktop-main-root-stage"
     tabindex="-1"
     :style="pageGridMeasureStyle"
     @focus="$emit('desktop-focus')"
     @contextmenu.stop.prevent
   >
-    <Teleport v-if="rootStageCanvasEnabled" to="body">
+    <Teleport to="body">
       <div
         ref="hostRef"
         :class="[
@@ -37,7 +37,6 @@
         />
       </div>
     </Teleport>
-    <div v-else ref="hostRef" class="pixi-desktop-host" />
   </main>
 </template>
 
@@ -133,8 +132,7 @@ function getResolvedSingleStageRuntimePlan(options = getResolvedSingleStageOptio
 const initialSingleStageRuntimePlan = getResolvedSingleStageRuntimePlan();
 const hostRef = ref(null);
 const mainRef = ref(null);
-const rootStageCanvasEnabled = ref(initialSingleStageRuntimePlan.useRootStage);
-const rootStageHostStyle = ref(rootStageCanvasEnabled.value ? makeRootStageHostStyle() : null);
+const rootStageHostStyle = ref(makeRootStageHostStyle());
 const singleStageDragPreviewEnabled = ref(initialSingleStageRuntimePlan.useDragPreview);
 const singleStageFolderLayerEnabled = ref(initialSingleStageRuntimePlan.useFolderLayer);
 const singleStageFolderPanelGeometry = ref(null);
@@ -166,7 +164,6 @@ const isSingleStageFolderClosing = computed(() => Boolean(
 ));
 
 const shouldRenderSingleStageFolderDomControls = computed(() => Boolean(
-  rootStageCanvasEnabled.value &&
   singleStageFolderLayerEnabled.value &&
   props.folderOverlayState?.renderedFolder?.value
 ));
@@ -187,7 +184,6 @@ const isSingleStageFolderPageDotsReady = computed(() => (
 ));
 
 const isSingleStageDragPreviewActive = computed(() => Boolean(
-  rootStageCanvasEnabled.value &&
   singleStageDragPreviewEnabled.value &&
   (props.dragPreviewState?.item || props.dragReleaseState?.item)
 ));
@@ -405,22 +401,6 @@ function readMainPadding() {
   };
 }
 
-function syncRootStageCanvasFlag(options) {
-  const nextEnabled = Boolean(options?.rootStage);
-  rootStageHostStyle.value = nextEnabled ? makeRootStageHostStyle() : null;
-  if (rootStageCanvasEnabled.value === nextEnabled) return false;
-  rootStageCanvasEnabled.value = nextEnabled;
-  nextTick(() => {
-    if (destroyed) return;
-    if (app?.canvas && hostRef.value && app.canvas.parentElement !== hostRef.value) {
-      hostRef.value.replaceChildren(app.canvas);
-    }
-    syncPixiResizeTarget();
-    renderPixi();
-  });
-  return true;
-}
-
 function resolveFolderClosingHandoffId(metrics) {
   const result = folderClosingHandoffRetainer.resolve(metrics, props.folderClosingHandoffId, {
     now: nowMs(),
@@ -480,15 +460,14 @@ function createSingleStageFolderState(metrics, options = {}, renderGeometry = ma
 }
 
 function makeDesktopRenderGeometry(metrics, options) {
-  rootStageHostStyle.value = options.rootStage ? makeRootStageHostStyle() : null;
-  const mainPadding = options.rootStage ? readMainPadding() : { bottom: 0, top: 0 };
+  rootStageHostStyle.value = makeRootStageHostStyle();
+  const mainPadding = readMainPadding();
   return makeRootStageDesktopRenderGeometry(metrics, {
     mainPaddingBottom: mainPadding.bottom,
     mainPaddingTop: mainPadding.top,
-    mainRect: options.rootStage ? getElementRect(mainRef) : null,
-    rootRect: options.rootStage ? getElementRect(props.domRefs?.rootRef) : null,
-    rootStage: options.rootStage,
-    shellRect: options.rootStage ? getElementRect(props.domRefs?.shellRef) : null,
+    mainRect: getElementRect(mainRef),
+    rootRect: getElementRect(props.domRefs?.rootRef),
+    shellRect: getElementRect(props.domRefs?.shellRef),
   });
 }
 
@@ -533,8 +512,7 @@ function renderPixi() {
   const singleStageRuntimePlan = getResolvedSingleStageRuntimePlan(singleStageOptions);
   singleStageDragPreviewEnabled.value = singleStageRuntimePlan.useDragPreview;
   singleStageFolderLayerEnabled.value = singleStageRuntimePlan.useFolderLayer;
-  if (syncRootStageCanvasFlag({ rootStage: singleStageRuntimePlan.useRootStage })) return;
-  const renderGeometry = makeDesktopRenderGeometry(metrics, { rootStage: singleStageRuntimePlan.useRootStage });
+  const renderGeometry = makeDesktopRenderGeometry(metrics);
   layer.update({
     activePageIndex: props.activePageIndex,
     activePages: props.activePages,

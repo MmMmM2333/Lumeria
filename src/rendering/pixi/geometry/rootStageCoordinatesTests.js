@@ -66,20 +66,18 @@ export function runRootStageCoordinatesTests() {
   assert(desktopContent.height === 606, "desktop content should subtract vertical padding");
   assert(desktopContent.width === rootRect.width, "desktop content should span the root stage width");
 
-  const defaultGeometry = makeDesktopRenderGeometry(metrics, { rootStage: false });
-  assert(defaultGeometry.stageRect === metrics.rect, "default geometry should preserve the host visual rect");
-  assert(defaultGeometry.stableStageRect === metrics.layoutRect, "default geometry should preserve the layout rect");
-  assert(defaultGeometry.desktopFrame.top === 0, "default geometry should use a zero desktop frame origin");
-
   const rootGeometry = makeDesktopRenderGeometry(metrics, {
     mainPaddingBottom: 20,
     mainPaddingTop: 14,
     mainRect: { height: 640, left: 40, top: 100, width: 1040 },
     rootRect,
-    rootStage: true,
   });
   assert(rootGeometry.stageRect.left === rootRect.left, "root-stage geometry should use the root rect as the stage");
   assert(rootGeometry.stableStageRect === rootGeometry.stageRect, "root-stage geometry should use a single stable stage rect");
   assert(rootGeometry.desktopStageRect.top === 114, "root-stage geometry should compute the desktop content rect");
   assert(rootGeometry.desktopFrame.top === 98, "root-stage desktop frame should be relative to the root stage");
+
+  const rootOnlyGeometry = makeDesktopRenderGeometry(metrics, { rootStage: false, rootRect });
+  assert(rootOnlyGeometry.stageRect.left === rootRect.left, "desktop geometry should stay root-stage-only even when legacy flags are false");
+  assert(rootOnlyGeometry.stableStageRect === rootOnlyGeometry.stageRect, "root-stage-only geometry should keep one stable stage rect");
 }
