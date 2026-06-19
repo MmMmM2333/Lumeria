@@ -17,6 +17,7 @@ import {
   installSingleStageFolderProbeGlobalFlag,
   makeSingleStageDiagnosticsPlan,
   makeSingleStageFolderProbePlan,
+  makeSingleStageRuntimePlan,
   setSingleStageOptions,
   setSingleStageFolderProbeOptions,
   shouldUseFallbackDragPreview,
@@ -53,10 +54,26 @@ export function runSingleStageDiagnosticsTests() {
   assert(defaultOptions.folderLayer && !defaultOptions.diagnostics && !defaultOptions.probe, "single-stage should default to folder layer ownership without diagnostics");
   assert(!shouldUseFallbackFolderLayer(defaultOptions), "single-stage defaults should not use the fallback folder overlay");
   assert(!shouldUseFallbackDragPreview(defaultOptions), "single-stage defaults should not use the fallback drag preview overlay");
+  const defaultRuntimePlan = makeSingleStageRuntimePlan(defaultOptions, {
+    dragMeta: { id: "drag" },
+    folderPixiInternalActivity: true,
+    shouldRunPixiOverlays: true,
+  });
+  assert(defaultRuntimePlan.useRootStage && defaultRuntimePlan.useFolderLayer, "default runtime plan should use single-stage ownership");
+  assert(!defaultRuntimePlan.useFallbackFolderLayer && !defaultRuntimePlan.runFallbackFolderLayer, "default runtime plan should not mount or run fallback folder layer");
+  assert(!defaultRuntimePlan.useFallbackDragPreview && !defaultRuntimePlan.runFallbackDragPreview, "default runtime plan should not mount or run fallback drag preview");
   const disabledOptions = getSingleStageOptions(false);
   assert(!disabledOptions.enabled && !disabledOptions.rootStage && !disabledOptions.dragPreview, "explicit false should disable single-stage ownership");
   assert(shouldUseFallbackFolderLayer(disabledOptions), "disabled single-stage should use the fallback folder overlay");
   assert(shouldUseFallbackDragPreview(disabledOptions), "disabled single-stage should use the fallback drag preview overlay");
+  const disabledRuntimePlan = makeSingleStageRuntimePlan(disabledOptions, {
+    dragPreviewItem: { id: "app-1" },
+    openFolderId: "folder-1",
+    shouldRunPixiOverlays: true,
+  });
+  assert(disabledRuntimePlan.useFallbackFolderLayer && disabledRuntimePlan.runFallbackFolderLayer, "disabled runtime plan should mount and run fallback folder work");
+  assert(disabledRuntimePlan.useFallbackDragPreview && disabledRuntimePlan.runFallbackDragPreview, "disabled runtime plan should mount and run fallback drag preview work");
+  assert(!makeSingleStageRuntimePlan(disabledOptions, { openFolderId: "folder-1", shouldRunPixiOverlays: false }).runFallbackFolderLayer, "fallback folder work should not run when Pixi overlays are inactive");
   const diagnosticsOptions = getSingleStageOptions(true);
   assert(diagnosticsOptions.diagnostics && diagnosticsOptions.probe && diagnosticsOptions.rootStage && diagnosticsOptions.dragPreview, "explicit true should enable diagnostics on the default single-stage base");
   assert(diagnosticsOptions.folderLayer, "explicit true should keep the default folder layer ownership");

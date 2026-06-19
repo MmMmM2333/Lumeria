@@ -162,10 +162,8 @@ import PixiDesktopSurface from "./rendering/pixi/PixiDesktopSurface.vue";
 import {
   getSingleStageOptions,
   getSingleStageOptionsKey,
-  getSingleStageRenderKey,
   installSingleStageGlobalFlag,
-  shouldUseFallbackDragPreview,
-  shouldUseFallbackFolderLayer,
+  makeSingleStageRuntimePlan,
   SINGLE_STAGE_CHANGED_EVENT,
 } from "./rendering/pixi/scene/singleStagePlan.js";
 import {
@@ -336,30 +334,24 @@ const singleStageOptions = ref(getSingleStageOptions());
 const shouldRunPixiOverlays = computed(() => Boolean(
   isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value
 ));
-const shouldUseSingleStageRootStage = computed(() => singleStageOptions.value.rootStage === true);
-const shouldUseSingleStageFolderLayer = computed(() => singleStageOptions.value.folderLayer === true);
-const shouldUseSingleStageDragPreview = computed(() => singleStageOptions.value.dragPreview === true);
-const shouldUseFallbackFolderPixi = computed(() => shouldUseFallbackFolderLayer(singleStageOptions.value));
-const shouldUseFallbackDragPreviewPixi = computed(() => shouldUseFallbackDragPreview(singleStageOptions.value));
-const singleStageRenderKey = computed(() => getSingleStageRenderKey(singleStageOptions.value));
-const shouldRunFallbackFolderPixi = computed(() => Boolean(
-  shouldUseFallbackFolderPixi.value &&
-  shouldRunPixiOverlays.value && (
-    folderPixiInternalActivity.value ||
-    openFolderId.value ||
-    renderedFolder.value ||
-    isFolderClosing.value ||
-    isFolderAppLaunchClosing.value
-  )
-));
-const shouldRunFallbackDragPreviewPixi = computed(() => Boolean(
-  shouldUseFallbackDragPreviewPixi.value &&
-  shouldRunPixiOverlays.value && (
-    dragMeta.value ||
-    dragPreviewState.value?.item ||
-    dragReleaseState.value?.item
-  )
-));
+const singleStageRuntimePlan = computed(() => makeSingleStageRuntimePlan(singleStageOptions.value, {
+  dragMeta: dragMeta.value,
+  dragPreviewItem: dragPreviewState.value?.item,
+  dragReleaseItem: dragReleaseState.value?.item,
+  folderPixiInternalActivity: folderPixiInternalActivity.value,
+  isFolderAppLaunchClosing: isFolderAppLaunchClosing.value,
+  isFolderClosing: isFolderClosing.value,
+  openFolderId: openFolderId.value,
+  renderedFolder: renderedFolder.value,
+  shouldRunPixiOverlays: shouldRunPixiOverlays.value,
+}));
+const shouldUseSingleStageRootStage = computed(() => singleStageRuntimePlan.value.useRootStage);
+const shouldUseSingleStageFolderLayer = computed(() => singleStageRuntimePlan.value.useFolderLayer);
+const singleStageRenderKey = computed(() => singleStageRuntimePlan.value.renderKey);
+const shouldUseFallbackFolderPixi = computed(() => singleStageRuntimePlan.value.useFallbackFolderLayer);
+const shouldUseFallbackDragPreviewPixi = computed(() => singleStageRuntimePlan.value.useFallbackDragPreview);
+const shouldRunFallbackFolderPixi = computed(() => singleStageRuntimePlan.value.runFallbackFolderLayer);
+const shouldRunFallbackDragPreviewPixi = computed(() => singleStageRuntimePlan.value.runFallbackDragPreview);
 const shouldRenderLiveDesktopCompositorKeeper = computed(() => Boolean(
   import.meta.env.DEV
     && isLiveDesktopExperimentActive.value

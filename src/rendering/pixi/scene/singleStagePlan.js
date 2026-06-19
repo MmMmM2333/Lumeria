@@ -150,6 +150,35 @@ export function shouldUseFallbackDragPreview(options = getSingleStageOptions()) 
   return options.dragPreview !== true;
 }
 
+export function makeSingleStageRuntimePlan(options = getSingleStageOptions(), state = {}) {
+  const useFallbackFolderLayer = shouldUseFallbackFolderLayer(options);
+  const useFallbackDragPreview = shouldUseFallbackDragPreview(options);
+  const shouldRunPixiOverlays = Boolean(state.shouldRunPixiOverlays);
+  const hasFallbackFolderWork = Boolean(
+    state.folderPixiInternalActivity ||
+    state.openFolderId ||
+    state.renderedFolder ||
+    state.isFolderClosing ||
+    state.isFolderAppLaunchClosing
+  );
+  const hasFallbackDragPreviewWork = Boolean(
+    state.dragMeta ||
+    state.dragPreviewItem ||
+    state.dragReleaseItem
+  );
+
+  return {
+    renderKey: getSingleStageRenderKey(options),
+    runFallbackDragPreview: useFallbackDragPreview && shouldRunPixiOverlays && hasFallbackDragPreviewWork,
+    runFallbackFolderLayer: useFallbackFolderLayer && shouldRunPixiOverlays && hasFallbackFolderWork,
+    useDragPreview: options.dragPreview === true,
+    useFallbackDragPreview,
+    useFallbackFolderLayer,
+    useFolderLayer: options.folderLayer === true,
+    useRootStage: options.rootStage === true,
+  };
+}
+
 export function setSingleStageOptions(value) {
   installSingleStageGlobalFlag();
   globalThis[SINGLE_STAGE_GLOBAL_FLAG] = value;
