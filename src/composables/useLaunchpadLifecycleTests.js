@@ -22,6 +22,7 @@ function createLifecycleOptions() {
     options: {
       activePages: ref([]),
       backgroundAcrylicAppearance: ref("system"),
+      backgroundAcrylicBlurStrength: ref(50),
       backgroundAcrylicDarkParams: ref({ brightness: 0.8 }),
       backgroundAcrylicLightParams: ref({ brightness: 1 }),
       backgroundBaseColor: ref("#10141f"),
@@ -88,6 +89,7 @@ function createLifecycleOptions() {
       scheduleLaunchTargetStatusCheck: makeCall("scheduleLaunchTargetStatusCheck"),
       scheduleNativeLayoutSave: makeCall("scheduleNativeLayoutSave"),
       schedulePageGridMetrics: makeCall("schedulePageGridMetrics"),
+      showNativeWindowAfterStartup: makeCall("showNativeWindowAfterStartup"),
       showMissingLaunchTargetBadge: ref(true),
       syncLiveDesktopBackgroundRuntime: makeCall("syncLiveDesktopBackgroundRuntime"),
       syncWindowsWallpaperRefreshTimer: makeCall("syncWindowsWallpaperRefreshTimer"),
@@ -95,6 +97,7 @@ function createLifecycleOptions() {
       updateFolderViewportHeight: makeCall("updateFolderViewportHeight"),
       updatePageGridMetrics: makeCall("updatePageGridMetrics"),
       visibleFolderRowCount: ref(7),
+      windowMode: ref("fullscreen"),
       windowEffectAppearance: ref("dark"),
       windowEffectMaterial: ref("acrylic"),
       ...refs,
@@ -133,12 +136,14 @@ export async function runLaunchpadLifecycleTests() {
   assert(watchers[0].callback === options.schedulePageGridMetrics, "layout setting watcher should refresh page metrics");
   assert(watchers[2].source === options.folderViewportRef, "folder viewport watcher should observe the viewport ref");
   assert(watchers[4].source.includes(options.backgroundBlurStrength), "layout save watcher should track background blur strength");
+  assert(watchers[4].source.includes(options.backgroundAcrylicBlurStrength), "layout save watcher should track acrylic blur strength");
   assert(watchers[4].source.includes(options.backgroundLiveDesktopOpacity), "layout save watcher should track live desktop opacity");
   assert(watchers[4].source.includes(options.backgroundDarkenColor), "layout save watcher should track background darken color");
   assert(watchers[4].source.includes(options.backgroundDarkenStrength), "layout save watcher should track background darken strength");
   assert(watchers[4].source.includes(options.backgroundAcrylicAppearance), "layout save watcher should track acrylic appearance");
   assert(watchers[4].source.includes(options.backgroundAcrylicDarkParams), "layout save watcher should track acrylic dark params");
   assert(watchers[4].source.includes(options.backgroundAcrylicLightParams), "layout save watcher should track acrylic light params");
+  assert(watchers[4].source.includes(options.windowMode), "layout save watcher should track window mode");
   assert(watchers[5].callback === options.scheduleLaunchTargetStatusCheck, "launch target watcher should refresh path status");
   assert(watchers[6].callback === options.syncManagedAppState, "managed app watcher should sync app state");
   assert(watchers[7].callback === options.syncWindowsWallpaperRefreshTimer, "wallpaper source watcher should sync the wallpaper refresh timer");
@@ -148,6 +153,7 @@ export async function runLaunchpadLifecycleTests() {
   assert(watchers[8].source.includes(options.backgroundEffect), "live desktop watcher should track background effect");
   assert(watchers[8].source.includes(options.backgroundLiveDesktopOpacity), "live desktop watcher should track live desktop opacity");
   assert(watchers[8].source.includes(options.backgroundBlurStrength), "live desktop watcher should track blur strength");
+  assert(watchers[8].source.includes(options.backgroundAcrylicBlurStrength), "live desktop watcher should track acrylic blur strength");
   assert(watchers[8].source.includes(options.backgroundDarkenColor), "live desktop watcher should track darken color");
   assert(watchers[8].source.includes(options.backgroundDarkenStrength), "live desktop watcher should track darken strength");
   assert(watchers[8].source.includes(options.backgroundAcrylicAppearance), "live desktop watcher should track acrylic appearance");
@@ -171,8 +177,10 @@ export async function runLaunchpadLifecycleTests() {
   assert(observed.join(",") === "root,header,desktop,dots", "layout ResizeObserver should observe existing layout refs");
   assert(createLaunchpadLayoutResizeObserver(options, undefined) === null, "missing ResizeObserver should be ignored");
 
+  let mountedCalls;
   withMockWindow((events) => {
     const { calls, options: mountedOptions } = createLifecycleOptions();
+    mountedCalls = calls;
     const mountedObserver = runLaunchpadMountedEffects(mountedOptions, ObserverCtor);
     assert(mountedObserver, "mounted effects should return the layout resize observer");
     assert(events.join(",") === "add:keydown:,add:keyup:,add:blur:,add:resize:,add:resize:", "mounted effects should add global listeners in order");
@@ -183,6 +191,10 @@ export async function runLaunchpadLifecycleTests() {
   });
 
   await Promise.resolve();
+  assert(
+    mountedCalls.join(",") === "schedulePageGridMetrics,scheduleFolderViewportMetrics,registerNativeEventListeners,showNativeWindowAfterStartup,loadNativeLaunchpadData",
+    "mounted effects should show the hidden native window before loading native data"
+  );
 
   let resolveNativeRegistration;
   const { calls: unmountedLoadCalls, options: unmountedLoadOptions } = createLifecycleOptions();

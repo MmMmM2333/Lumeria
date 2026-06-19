@@ -167,6 +167,20 @@ export async function hideMainWindow() {
   return true;
 }
 
+export async function showMainWindow() {
+  const invoke = getTauriInvoke();
+  if (!invoke) return false;
+  await invoke("show_main_window");
+  return true;
+}
+
+export async function revealMainWindow(openSequence = null) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return false;
+  await invoke("reveal_main_window", { openSequence });
+  return true;
+}
+
 export async function getMainWindowEffectsSupport() {
   const invoke = getTauriInvoke();
   if (!invoke) return null;
@@ -218,6 +232,33 @@ export async function setMainWindowEffectsEnabled(enabled, openSequence = null, 
     material: options?.material,
     appearance: options?.appearance,
   });
+  return true;
+}
+
+export async function setMainWindowMode(mode) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return false;
+  await invoke("set_main_window_mode", { mode });
+  return true;
+}
+
+export async function setMainWindowShortcut(shortcut) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return null;
+  return invoke("set_main_window_shortcut", { shortcut });
+}
+
+export async function setMainWindowShortcutCaptureActive(active) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return false;
+  await invoke("set_main_window_shortcut_capture_active", { active: Boolean(active) });
+  return true;
+}
+
+export async function setMainWindowShadowEnabled(enabled) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return false;
+  await invoke("set_main_window_shadow_enabled", { enabled: Boolean(enabled) });
   return true;
 }
 

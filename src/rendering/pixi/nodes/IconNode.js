@@ -1,6 +1,7 @@
 import { Container, Graphics, Rectangle, Sprite, Text } from "pixi.js";
 import { gsap } from "gsap";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import { killAllMotion } from "../animation/motionCleanup.js";
 import { getCachedIconTexture } from "../assets/iconTextureCache.js";
 import {
   getCenteredLocalRect,
@@ -18,7 +19,7 @@ import {
   drawFolderPreviewMask as drawFolderPreviewMaskGraphic,
   drawFolderThumbFrame as drawFolderThumbFrameGraphic,
 } from "./folderThumbDrawing.js";
-import { getFolderThumbMetrics } from "./folderThumbMetrics.js";
+import { getFolderThumbChildLocalRect, getFolderThumbMetrics } from "./folderThumbMetrics.js";
 import { getFolderPreviewMotionPlan } from "./folderThumbPreviewMotion.js";
 import {
   getActiveAppFolderCreateHoverState as getActiveAppFolderCreateHoverStateForIcon,
@@ -71,6 +72,30 @@ function setCentered(displayObject, x, y) {
   displayObject.position.set(x, y);
 }
 
+function boolSig(value) {
+  return value ? "1" : "0";
+}
+
+function numberSig(value, digits = 3) {
+  const number = Number(value) || 0;
+  return number.toFixed(digits);
+}
+
+function setTextStyleValue(textNode, prop, value) {
+  if (textNode.style?.[prop] === value) return;
+  textNode.style[prop] = value;
+}
+
+function setTextValue(textNode, value) {
+  const next = value == null ? "" : String(value);
+  if (textNode.text !== next) textNode.text = next;
+}
+
+function setPositionValue(point, x, y) {
+  if (point?.x === x && point?.y === y) return;
+  point?.set?.(x, y);
+}
+
 const PRESSED_VISUAL_ALPHA = 0.58;
 const FOLDER_HOVER_FRAME_DURATION = 0.18;
 const FOLDER_HOVER_RESET_DURATION = 0.16;
@@ -78,6 +103,32 @@ const FOLDER_THUMB_SCROLL_DURATION = 0.46;
 const APP_FOLDER_CREATE_DIM_ALPHA = 0.48;
 const APP_FOLDER_CREATE_DIM_DURATION = 0.12;
 const APP_FOLDER_CREATE_FRAME_DURATION = 0.16;
+const FOLDER_FLASH_STEPS = [
+  { alpha: 0.42, duration: 0.135 },
+  { alpha: 0.02, duration: 0.135 },
+  { alpha: 0.36, duration: 0.135 },
+  { alpha: 0, duration: 0.135 },
+];
+
+function playFlashOverlay(overlay, options = {}) {
+  gsap.killTweensOf(overlay);
+  options.prepare?.();
+  overlay.visible = true;
+  overlay.alpha = 0;
+  const timeline = gsap.timeline({ defaults: { ease: "sine.inOut" } });
+  for (let index = 0; index < FOLDER_FLASH_STEPS.length; index += 1) {
+    const step = FOLDER_FLASH_STEPS[index];
+    timeline.to(overlay, {
+      ...step,
+      onComplete: index === FOLDER_FLASH_STEPS.length - 1
+        ? () => {
+          overlay.visible = false;
+        }
+        : undefined,
+    });
+  }
+  return timeline;
+}
 
 export class IconNode extends Container {
   constructor(options = {}) {
@@ -135,6 +186,17 @@ export class IconNode extends Container {
     this.appFolderCreateKey = null;
     this.appFolderCreatePhase = null;
     this.appFolderCreateFrame = { alpha: 0, padding: 0 };
+    this.appFolderCreateBackdropSig = "";
+    this.appFolderCreateFlashSig = "";
+    this.editButtonSigs = new WeakMap();
+    this.folderFlashSig = "";
+    this.folderPreviewMaskSig = "";
+    this.folderThumbFrameSig = "";
+    this.hitAreaRect = new Rectangle();
+    this.hitAreaSig = "";
+    this.labelRenderSig = "";
+    this.missingBadgeSig = "";
+    this.selectionFrameSig = "";
 
     this.iconSprite.anchor.set(0.5);
     this.emojiText.anchor.set(0.5);
@@ -165,6 +227,7 @@ export class IconNode extends Container {
 
     this.eventMode = "static";
     this.cursor = "pointer";
+    this.hitArea = this.hitAreaRect;
     this.on("pointerdown", (event) => this.handlePointerDown(event));
     this.on("pointerup", (event) => this.handlePointerUp(event));
     this.on("pointerupoutside", () => this.cancelPressAndClickIntent());
@@ -197,6 +260,7 @@ export class IconNode extends Container {
     this.updateHitArea(state);
     this.updateJiggle(state);
     if (this.isFolder && wasGhosted && !state.ghosted && !state.dragging && !state.opening) {
+      this.resetFolderPreviewAfterGhost();
       if (shouldRestoreLabelAfterGhost) this.restoreLabelAfterGhost();
       else this.revealLabelAfterGhost();
     }
@@ -214,16 +278,11 @@ export class IconNode extends Container {
   getFolderPreviewChildBounds(stageRect, slotIndex) {
     if (!this.isFolder) return null;
     const thumb = getFolderThumbMetrics(this.iconSize);
-    const col = slotIndex % 3;
-    const row = Math.floor(slotIndex / 3);
-    const centerX = thumb.start + col * (thumb.childSize + thumb.gap);
-    const centerY = thumb.start + row * (thumb.childSize + thumb.gap);
-    return this.getLocalVisualBounds(this.visualWrap, stageRect, {
-      left: centerX - thumb.childSize / 2,
-      top: centerY - thumb.childSize / 2,
-      width: thumb.childSize,
-      height: thumb.childSize,
-    });
+    const childNode = this.folderChildNodes?.[slotIndex];
+    if (childNode && !childNode.destroyed) {
+      return this.getVisualBounds(childNode, stageRect, thumb.childSize);
+    }
+    return this.getLocalVisualBounds(this.visualWrap, stageRect, getFolderThumbChildLocalRect(thumb, slotIndex));
   }
 
   getVisualBounds(node, stageRect, size) {
@@ -349,12 +408,14 @@ export class IconNode extends Container {
       itemType: this.item?.type,
       visualOffsetY: this.getVisualOffsetY(),
     });
-    this.hitArea = new Rectangle(
-      rect.left,
-      rect.top,
-      rect.width,
-      rect.height
-    );
+    const sig = `${numberSig(rect.left)}:${numberSig(rect.top)}:${numberSig(rect.width)}:${numberSig(rect.height)}`;
+    if (this.hitAreaSig === sig) return;
+    this.hitAreaSig = sig;
+    this.hitAreaRect.x = rect.left;
+    this.hitAreaRect.y = rect.top;
+    this.hitAreaRect.width = rect.width;
+    this.hitAreaRect.height = rect.height;
+    this.hitArea = this.hitAreaRect;
   }
 
   getSelectionFrameRect() {
@@ -369,6 +430,19 @@ export class IconNode extends Container {
     const rect = this.getSelectionFrameRect();
     const isFolderDropHover = Boolean(this.isFolder && state.folderHoverState?.targetId === this.item?.id);
     const isAppFolderCreateHover = Boolean(!this.isFolder && state.folderHoverState?.targetId === this.item?.id && state.folderHoverState?.targetType === "app");
+    const sig = [
+      numberSig(rect.left),
+      numberSig(rect.top),
+      numberSig(rect.width),
+      numberSig(rect.height),
+      numberSig(this.iconSize),
+      boolSig(state.dropTarget),
+      boolSig(isAppFolderCreateHover),
+      boolSig(isFolderDropHover),
+      boolSig(state.selected),
+    ].join(":");
+    if (this.selectionFrameSig === sig) return;
+    this.selectionFrameSig = sig;
     drawSelectionFrame(this.selectionFrame, rect, this.iconSize, {
       dropTarget: state.dropTarget,
       isAppFolderCreateHover,
@@ -387,6 +461,9 @@ export class IconNode extends Container {
     this.folderHoverPhase = null;
     this.folderHoverFrame.padding = 0;
     this.folderPreviewPlanKey = null;
+    this.folderFlashSig = "";
+    this.folderPreviewMaskSig = "";
+    this.folderThumbFrameSig = "";
     this.visualWrap.scale.set(1);
     gsap.killTweensOf(this.folderHoverFrame);
     for (const node of this.folderChildNodes) node.visible = false;
@@ -417,9 +494,9 @@ export class IconNode extends Container {
       this.iconSprite.height = this.iconSize;
     } else {
       this.emojiText.visible = true;
-      this.emojiText.text = this.item?.emoji || "◼";
-      this.emojiText.style.fontSize = this.iconSize;
-      this.emojiText.style.lineHeight = this.iconSize;
+      setTextValue(this.emojiText, this.item?.emoji || "◼");
+      setTextStyleValue(this.emojiText, "fontSize", this.iconSize);
+      setTextStyleValue(this.emojiText, "lineHeight", this.iconSize);
     }
     this.renderMissingBadge(state);
     this.updateAppFolderCreateHoverAnimation(state);
@@ -483,9 +560,8 @@ export class IconNode extends Container {
       const node = this.folderChildNodes[index];
       const childSprite = node.children[0];
       const childEmoji = node.children[1];
-      const col = index % 3;
-      const row = Math.floor(index / 3);
-      node.position.set(thumb.start + col * (thumb.childSize + thumb.gap), thumb.start + row * (thumb.childSize + thumb.gap));
+      const childRect = getFolderThumbChildLocalRect(thumb, index);
+      node.position.set(childRect.left + childRect.width / 2, childRect.top + childRect.height / 2);
       node.visible = Boolean(child);
       if (!child) continue;
       const childId = child.id;
@@ -502,8 +578,8 @@ export class IconNode extends Container {
         childSprite.width = thumb.childSize;
         childSprite.height = thumb.childSize;
       } else {
-        childEmoji.text = child.emoji || "◼";
-        childEmoji.style.fontSize = thumb.childSize;
+        setTextValue(childEmoji, child.emoji || "◼");
+        setTextStyleValue(childEmoji, "fontSize", thumb.childSize);
       }
     }
     this.renderMissingBadge({ ...state, launchTargetStatus: null });
@@ -519,14 +595,23 @@ export class IconNode extends Container {
   }
 
   drawFolderThumbFrame(size, thumb) {
+    const sig = `${numberSig(size)}:${numberSig(thumb.radius)}:${numberSig(thumb.fillAlpha)}:${thumb.fillColor}:${numberSig(thumb.strokeAlpha)}:${thumb.strokeColor}:${numberSig(thumb.strokeWidth)}:${numberSig(this.getFolderHoverPadding())}`;
+    if (this.folderThumbFrameSig === sig) return;
+    this.folderThumbFrameSig = sig;
     drawFolderThumbFrameGraphic(this.folderThumb, size, thumb, this.getFolderHoverPadding());
   }
 
   drawFolderPreviewMask(thumb) {
+    const sig = `${numberSig(this.iconSize)}:${numberSig(thumb.start)}:${numberSig(thumb.childSize)}:${numberSig(thumb.gap)}`;
+    if (this.folderPreviewMaskSig === sig) return;
+    this.folderPreviewMaskSig = sig;
     drawFolderPreviewMaskGraphic(this.folderPreviewMask, this.iconSize, thumb);
   }
 
   drawFolderFlashOverlay(size, thumb) {
+    const sig = `${numberSig(size)}:${numberSig(thumb.radius)}:${numberSig(this.getFolderHoverPadding())}`;
+    if (this.folderFlashSig === sig) return;
+    this.folderFlashSig = sig;
     drawFolderFlashOverlayGraphic(this.folderFlashOverlay, size, thumb, this.getFolderHoverPadding());
   }
 
@@ -590,20 +675,7 @@ export class IconNode extends Container {
   }
 
   playFolderFlash() {
-    gsap.killTweensOf(this.folderFlashOverlay);
-    this.folderFlashOverlay.visible = true;
-    this.folderFlashOverlay.alpha = 0;
-    gsap.timeline({ defaults: { ease: "sine.inOut" } })
-      .to(this.folderFlashOverlay, { alpha: 0.42, duration: 0.135 })
-      .to(this.folderFlashOverlay, { alpha: 0.02, duration: 0.135 })
-      .to(this.folderFlashOverlay, { alpha: 0.36, duration: 0.135 })
-      .to(this.folderFlashOverlay, {
-        alpha: 0,
-        duration: 0.135,
-        onComplete: () => {
-          this.folderFlashOverlay.visible = false;
-        },
-      });
+    playFlashOverlay(this.folderFlashOverlay);
   }
 
   clearFolderHoverAnimation() {
@@ -634,6 +706,20 @@ export class IconNode extends Container {
     this.folderFlashOverlay.visible = false;
   }
 
+  resetFolderPreviewAfterGhost() {
+    this.folderHoverActive = false;
+    this.folderHoverKey = null;
+    this.folderHoverPhase = null;
+    this.folderPreviewPlanKey = null;
+    this.folderHoverFrame.padding = 0;
+    gsap.killTweensOf(this.folderHoverFrame);
+    gsap.killTweensOf(this.visualWrap.scale);
+    gsap.killTweensOf(this.folderChildrenWrap);
+    this.visualWrap.scale.set(1);
+    this.folderChildrenWrap.y = 0;
+    this.redrawFolderHoverFrame();
+  }
+
   getActiveAppFolderCreateHoverState(state) {
     return getActiveAppFolderCreateHoverStateForIcon({
       hoverState: state.folderHoverState,
@@ -648,10 +734,16 @@ export class IconNode extends Container {
   }
 
   drawAppFolderCreateBackdrop() {
+    const sig = `${numberSig(this.iconSize)}:${numberSig(this.appFolderCreateFrame.alpha)}:${numberSig(this.appFolderCreateFrame.padding)}`;
+    if (this.appFolderCreateBackdropSig === sig) return;
+    this.appFolderCreateBackdropSig = sig;
     drawAppFolderCreateBackdropGraphic(this.folderCreateBackdrop, this.iconSize, this.appFolderCreateFrame);
   }
 
   drawAppFolderCreateFlashOverlay() {
+    const sig = `${numberSig(this.iconSize)}:${numberSig(this.appFolderCreateFrame.padding)}:${boolSig(this.folderCreateFlashOverlay.visible)}`;
+    if (this.appFolderCreateFlashSig === sig) return;
+    this.appFolderCreateFlashSig = sig;
     drawAppFolderCreateFlashOverlayGraphic(this.folderCreateFlashOverlay, this.iconSize, this.appFolderCreateFrame);
   }
 
@@ -711,21 +803,9 @@ export class IconNode extends Container {
   }
 
   playAppFolderCreateFlash() {
-    gsap.killTweensOf(this.folderCreateFlashOverlay);
-    this.drawAppFolderCreateFlashOverlay();
-    this.folderCreateFlashOverlay.visible = true;
-    this.folderCreateFlashOverlay.alpha = 0;
-    gsap.timeline({ defaults: { ease: "sine.inOut" } })
-      .to(this.folderCreateFlashOverlay, { alpha: 0.42, duration: 0.135 })
-      .to(this.folderCreateFlashOverlay, { alpha: 0.02, duration: 0.135 })
-      .to(this.folderCreateFlashOverlay, { alpha: 0.36, duration: 0.135 })
-      .to(this.folderCreateFlashOverlay, {
-        alpha: 0,
-        duration: 0.135,
-        onComplete: () => {
-          this.folderCreateFlashOverlay.visible = false;
-        },
-      });
+    playFlashOverlay(this.folderCreateFlashOverlay, {
+      prepare: () => this.drawAppFolderCreateFlashOverlay(),
+    });
   }
 
   clearAppFolderCreateHoverAnimation(options = {}) {
@@ -747,6 +827,8 @@ export class IconNode extends Container {
     if (options.immediate) {
       this.appFolderCreateFrame.alpha = 0;
       this.appFolderCreateFrame.padding = 0;
+      this.appFolderCreateBackdropSig = "";
+      this.appFolderCreateFlashSig = "";
       this.folderCreateBackdrop.clear();
       this.folderCreateBackdrop.visible = false;
       this.folderCreateFlashOverlay.clear();
@@ -769,6 +851,9 @@ export class IconNode extends Container {
   }
 
   renderMissingBadge(state) {
+    const sig = `${numberSig(this.iconSize)}:${state.launchTargetStatus || ""}`;
+    if (this.missingBadgeSig === sig) return;
+    this.missingBadgeSig = sig;
     drawMissingBadge(this.missingBadge, this.missingBadgeBackground, this.missingBadgeText, this.iconSize, state.launchTargetStatus);
   }
 
@@ -781,15 +866,29 @@ export class IconNode extends Container {
       singleLineLabel: state.singleLineLabel,
       textless: this.textless,
     });
+    const sig = [
+      boolSig(labelState.visible),
+      labelState.text || "",
+      numberSig(labelState.fontSize),
+      numberSig(labelState.lineHeight),
+      boolSig(labelState.wordWrap),
+      numberSig(labelState.wordWrapWidth),
+      numberSig(labelState.anchorX),
+      numberSig(labelState.anchorY),
+      numberSig(labelState.x),
+      numberSig(labelState.y),
+    ].join(":");
+    if (this.labelRenderSig === sig) return;
+    this.labelRenderSig = sig;
     this.labelText.visible = labelState.visible;
     if (!this.labelText.visible) return;
-    this.labelText.style.fontSize = labelState.fontSize;
-    this.labelText.style.lineHeight = labelState.lineHeight;
-    this.labelText.style.wordWrap = labelState.wordWrap;
-    this.labelText.style.wordWrapWidth = labelState.wordWrapWidth;
-    this.labelText.text = labelState.text;
+    setTextStyleValue(this.labelText, "fontSize", labelState.fontSize);
+    setTextStyleValue(this.labelText, "lineHeight", labelState.lineHeight);
+    setTextStyleValue(this.labelText, "wordWrap", labelState.wordWrap);
+    setTextStyleValue(this.labelText, "wordWrapWidth", labelState.wordWrapWidth);
+    setTextValue(this.labelText, labelState.text);
     this.labelText.anchor.set(labelState.anchorX, labelState.anchorY);
-    this.labelText.position.set(labelState.x, labelState.y);
+    setPositionValue(this.labelText.position, labelState.x, labelState.y);
   }
 
   revealLabelAfterGhost() {
@@ -801,6 +900,10 @@ export class IconNode extends Container {
       duration: 0.18,
       ease: "power2.out",
     });
+  }
+
+  setFolderHandoffVisualHidden(hidden) {
+    this.visualWrap.visible = !hidden;
   }
 
   restoreLabelAfterGhost() {
@@ -816,20 +919,15 @@ export class IconNode extends Container {
   }
 
   drawEditButton(button, x, y, label, visible) {
+    const sig = `${numberSig(x)}:${numberSig(y)}:${label}:${boolSig(visible)}`;
+    if (this.editButtonSigs.get(button) === sig) return;
+    this.editButtonSigs.set(button, sig);
     drawEditButtonGraphic(button, x, y, label, visible);
   }
 
   destroy(options) {
     this.stopJiggle();
-    gsap.killTweensOf(this.visualWrap);
-    gsap.killTweensOf(this.visualWrap.scale);
-    gsap.killTweensOf(this.folderHoverFrame);
-    gsap.killTweensOf(this.folderChildrenWrap);
-    gsap.killTweensOf(this.folderFlashOverlay);
-    gsap.killTweensOf(this.appFolderCreateFrame);
-    gsap.killTweensOf(this.folderCreateFlashOverlay);
-    gsap.killTweensOf(this.iconSprite);
-    gsap.killTweensOf(this.emojiText);
+    killAllMotion(this);
     super.destroy(options);
   }
 }

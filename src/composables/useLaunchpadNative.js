@@ -1,4 +1,4 @@
-import { ref } from "vue";
+import { nextTick, ref } from "vue";
 import {
   DESKTOP_CLOSE_DURATION,
   DEFAULT_COLS,
@@ -18,6 +18,10 @@ import {
   normalizeScanRoots,
 } from "../domain/launchpadData.js";
 import {
+  DEFAULT_MAIN_WINDOW_SHORTCUT,
+  normalizeMainWindowShortcut,
+} from "../domain/mainWindowShortcut.js";
+import {
   checkLaunchTargets,
   configureLiveDesktopBackground,
   confirmQuitAfterSave,
@@ -32,10 +36,16 @@ import {
   listenNativeEvent,
   loadCachedAppIcons,
   loadLayout,
+  revealMainWindow,
   saveLayout,
   scanApps,
+  setMainWindowShortcut,
+  setMainWindowShortcutCaptureActive,
   setLiveDesktopBackgroundVisible,
   setMainWindowEffectsEnabled,
+  setMainWindowMode,
+  setMainWindowShadowEnabled,
+  showMainWindow,
   showLaunchErrorMessage,
   startLiveDesktopBackground,
   stopLiveDesktopBackground,
@@ -44,6 +54,7 @@ import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
   BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
+  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
   BACKGROUND_EFFECT_DIMMED,
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
@@ -53,6 +64,7 @@ import {
   backgroundSourceUsesLiveDesktop,
   backgroundSourceUsesImage,
   clampBackgroundBaseOpacity,
+  clampBackgroundAcrylicBlurStrength,
   clampBackgroundBlurStrength,
   clampBackgroundDarkenStrength,
   clampBackgroundImageOpacity,
@@ -66,6 +78,7 @@ import {
   normalizeBackgroundImagePath,
   normalizeBackgroundSource,
   normalizeLiveDesktopBackgroundSupport,
+  normalizeWindowMode,
   normalizeWindowEffectAppearance,
   normalizeWindowEffectsSupport,
   resolveWindowEffectMaterialForSupport,
@@ -86,6 +99,16 @@ const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "launchpadLiveDesktopSkipBlan
 const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "launchpadLiveDesktopForceDwmFlush";
 const LIVE_DESKTOP_EXPERIMENT_DISABLED_REASON = "experimentDisabled";
 const LIVE_DESKTOP_EXPERIMENT_DISABLED_DETAIL = "Live desktop experiment flag is disabled.";
+const NATIVE_WINDOW_CLOSING_BLOCKED_EVENTS = [
+  "pointerdown",
+  "pointerup",
+  "pointermove",
+  "click",
+  "dblclick",
+  "contextmenu",
+  "wheel",
+  "keydown",
+];
 const DEFAULT_LIVE_DESKTOP_RUNTIME_STATUS = Object.freeze({
   phase: "stopped",
   active: false,
@@ -325,19 +348,23 @@ function makeLiveDesktopRuntimeConfig(options) {
       : options.backgroundAcrylicDarkParams.value,
     acrylicProfile
   );
+  const effect = normalizeBackgroundEffect(options.backgroundEffect.value);
+  const blurStrength = effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+    ? clampBackgroundAcrylicBlurStrength(options.backgroundAcrylicBlurStrength.value)
+    : clampBackgroundBlurStrength(options.backgroundBlurStrength.value);
   return {
-    effect: normalizeBackgroundEffect(options.backgroundEffect.value),
+    effect,
     debugFrameSourceOverride: resolveLiveDesktopDebugFrameSourceOverride(),
-    blurStrength: clampBackgroundBlurStrength(options.backgroundBlurStrength.value),
+    blurStrength,
     darkenStrength: clampBackgroundDarkenStrength(options.backgroundDarkenStrength.value),
     darkenColor: normalizeBackgroundDarkenColor(options.backgroundDarkenColor.value),
     acrylicAppearance,
     acrylicParams,
     effectPlan: createBackgroundEffectPlan({
       acrylicParams,
-      blurStrength: options.backgroundBlurStrength.value,
+      blurStrength,
       dualKawaseParams: getKawaseDebugEffectPlanParams(),
-      effect: options.backgroundEffect.value,
+      effect,
       opacity: options.backgroundLiveDesktopOpacity.value,
     }),
     disableMouseRelay: resolveLiveDesktopDisableMouseRelay(),
@@ -350,15 +377,21 @@ function makeLiveDesktopRuntimeConfig(options) {
 export function useLaunchpadNative(options) {
   let nativeLayoutReady = false;
   const isNativeLayoutReady = ref(!shouldUseNativeCatalog());
+  let nativeWindowModeUpdate = Promise.resolve();
   let nativeWindowEffectsUpdate = Promise.resolve();
+  let nativeWindowShadowUpdate = Promise.resolve();
+  let nativeWindowRevealUpdate = Promise.resolve();
   let nativeSaveTimer = null;
   let nativeWindowHideTimer = null;
   let nativeWallpaperRefreshTimer = null;
+  let hasRequestedStartupNativeWindowShow = false;
   let liveDesktopIdleStopTimer = null;
   let liveDesktopBackgroundVisible = null;
   let liveDesktopRuntimeSync = Promise.resolve();
   let liveDesktopRuntimeSyncGeneration = 0;
   let nativeWindowOpenSequence = null;
+  let nativeWindowHideSequence = 0;
+  let isNativeWindowClosingInteractionBlocked = false;
   let nativeEventListenerGeneration = 0;
   let nativeSavePromise = null;
   let launchCriticalDirtyRevision = 0;
@@ -398,6 +431,8 @@ export function useLaunchpadNative(options) {
       options.windowEffectsSupport.value
     );
     const nextWindowEffectAppearance = normalizeWindowEffectAppearance(settings.windowEffectAppearance);
+    const nextWindowMode = normalizeWindowMode(settings.windowMode);
+    const nextMainWindowShortcut = normalizeMainWindowShortcut(settings.mainWindowShortcut);
     const nextBackgroundSource = normalizeBackgroundSource(settings.backgroundSource);
     const nextBackgroundEffect = normalizeBackgroundEffect(settings.backgroundEffect);
     const nextBackgroundBaseColor = normalizeBackgroundBaseColor(settings.backgroundBaseColor);
@@ -406,6 +441,7 @@ export function useLaunchpadNative(options) {
     const nextBackgroundLiveDesktopOpacity = clampBackgroundLiveDesktopOpacity(settings.backgroundLiveDesktopOpacity);
     const nextBackgroundImageLayout = normalizeBackgroundImageLayout(settings.backgroundImageLayout);
     const nextBackgroundBlurStrength = clampBackgroundBlurStrength(settings.backgroundBlurStrength);
+    const nextBackgroundAcrylicBlurStrength = clampBackgroundAcrylicBlurStrength(settings.backgroundAcrylicBlurStrength);
     const nextBackgroundDarkenStrength = clampBackgroundDarkenStrength(settings.backgroundDarkenStrength);
     const nextBackgroundDarkenColor = normalizeBackgroundDarkenColor(settings.backgroundDarkenColor);
     const nextBackgroundAcrylicAppearance = normalizeBackgroundAcrylicAppearance(settings.backgroundAcrylicAppearance);
@@ -443,6 +479,11 @@ export function useLaunchpadNative(options) {
     options.windowEffectAppearance.value = nextWindowEffectAppearance;
     options.draftWindowEffectMaterial.value = nextWindowEffectMaterial;
     options.draftWindowEffectAppearance.value = nextWindowEffectAppearance;
+    options.windowMode.value = nextWindowMode;
+    options.draftWindowMode.value = nextWindowMode;
+    options.mainWindowShortcut.value = nextMainWindowShortcut;
+    options.draftMainWindowShortcut.value = nextMainWindowShortcut;
+    if (options.mainWindowShortcutError) options.mainWindowShortcutError.value = "";
     options.backgroundSource.value = nextBackgroundUsesLiveDesktop
       ? BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP
       : nextBackgroundImagePath
@@ -455,6 +496,7 @@ export function useLaunchpadNative(options) {
     options.backgroundLiveDesktopOpacity.value = nextBackgroundLiveDesktopOpacity;
     options.backgroundImageLayout.value = nextBackgroundImageLayout;
     options.backgroundBlurStrength.value = nextBackgroundBlurStrength;
+    options.backgroundAcrylicBlurStrength.value = nextBackgroundAcrylicBlurStrength;
     options.backgroundDarkenStrength.value = nextBackgroundDarkenStrength;
     options.backgroundDarkenColor.value = nextBackgroundDarkenColor;
     options.backgroundAcrylicAppearance.value = nextBackgroundAcrylicAppearance;
@@ -470,6 +512,7 @@ export function useLaunchpadNative(options) {
     options.draftBackgroundLiveDesktopOpacity.value = nextBackgroundLiveDesktopOpacity;
     options.draftBackgroundImageLayout.value = nextBackgroundImageLayout;
     options.draftBackgroundBlurStrength.value = nextBackgroundBlurStrength;
+    options.draftBackgroundAcrylicBlurStrength.value = nextBackgroundAcrylicBlurStrength;
     options.draftBackgroundDarkenStrength.value = nextBackgroundDarkenStrength;
     options.draftBackgroundDarkenColor.value = nextBackgroundDarkenColor;
     options.draftBackgroundAcrylicAppearance.value = nextBackgroundAcrylicAppearance;
@@ -494,8 +537,29 @@ export function useLaunchpadNative(options) {
   }
 
   function clearNativeWindowHideTimer() {
+    nativeWindowHideSequence += 1;
+    setNativeWindowClosingInteractionBlocked(false);
     if (nativeWindowHideTimer) window.clearTimeout(nativeWindowHideTimer);
     nativeWindowHideTimer = null;
+  }
+
+  function suppressNativeWindowClosingInteraction(event) {
+    if (!isNativeWindowClosingInteractionBlocked) return;
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    event?.stopImmediatePropagation?.();
+  }
+
+  function setNativeWindowClosingInteractionBlocked(blocked) {
+    const nextBlocked = Boolean(blocked);
+    if (isNativeWindowClosingInteractionBlocked === nextBlocked) return;
+    isNativeWindowClosingInteractionBlocked = nextBlocked;
+    if (typeof window === "undefined" || typeof window.addEventListener !== "function") return;
+    const action = nextBlocked ? "addEventListener" : "removeEventListener";
+    for (const eventName of NATIVE_WINDOW_CLOSING_BLOCKED_EVENTS) {
+      const options = eventName === "wheel" ? { capture: true, passive: false } : true;
+      window[action](eventName, suppressNativeWindowClosingInteraction, options);
+    }
   }
 
   function clearNativeWallpaperRefreshTimer() {
@@ -532,6 +596,7 @@ export function useLaunchpadNative(options) {
       backgroundLiveDesktopOpacity: options.backgroundLiveDesktopOpacity.value,
       backgroundImageLayout: options.backgroundImageLayout.value,
       backgroundBlurStrength: options.backgroundBlurStrength.value,
+      backgroundAcrylicBlurStrength: options.backgroundAcrylicBlurStrength.value,
       backgroundDarkenStrength: options.backgroundDarkenStrength.value,
       backgroundDarkenColor: options.backgroundDarkenColor.value,
       backgroundAcrylicAppearance: options.backgroundAcrylicAppearance.value,
@@ -540,6 +605,8 @@ export function useLaunchpadNative(options) {
       backgroundImagePath: options.backgroundImagePath.value,
       windowEffectMaterial: options.windowEffectMaterial.value,
       windowEffectAppearance: options.windowEffectAppearance.value,
+      windowMode: options.windowMode.value,
+      mainWindowShortcut: options.mainWindowShortcut.value,
     });
   }
 
@@ -630,6 +697,7 @@ export function useLaunchpadNative(options) {
     hydrateCachedAppIcons();
     options.schedulePageGridMetrics();
     scheduleLaunchTargetStatusCheck();
+    setNativeWindowMode(options.windowMode.value);
     setNativeWindowEffectsEnabled(true);
     syncWindowsWallpaperRefreshTimer();
     syncLiveDesktopBackgroundRuntime();
@@ -842,6 +910,7 @@ export function useLaunchpadNative(options) {
       }
 
       applyLayoutSettings(savedLayout?.settings);
+      await setNativeMainWindowShortcut(options.mainWindowShortcut.value);
       const refreshedWallpaperBackground = await refreshWindowsWallpaperBackground();
       options.pages.value = options.mergeNativeCatalogWithSavedLayout(
         [],
@@ -1334,6 +1403,84 @@ export function useLaunchpadNative(options) {
       });
   }
 
+  function setNativeWindowMode(mode = options.windowMode.value) {
+    if (!isNativeBridgeAvailable()) return;
+    const nextMode = normalizeWindowMode(mode);
+    nativeWindowModeUpdate = nativeWindowModeUpdate
+      .catch(() => {})
+      .then(() => setMainWindowMode(nextMode))
+      .catch((error) => {
+        console.error("Failed to update LaunchPad window mode", error);
+      });
+  }
+
+  async function setNativeMainWindowShortcut(shortcut) {
+    const nextShortcut = normalizeMainWindowShortcut(shortcut);
+    if (!isNativeBridgeAvailable()) return true;
+    try {
+      const registered = await setMainWindowShortcut(nextShortcut);
+      const normalized = normalizeMainWindowShortcut(registered === undefined ? nextShortcut : registered);
+      options.draftMainWindowShortcut.value = normalized;
+      if (options.mainWindowShortcutError) options.mainWindowShortcutError.value = "";
+      return true;
+    } catch (error) {
+      if (options.mainWindowShortcutError) options.mainWindowShortcutError.value = "快捷键已被占用或不可用";
+      console.error("Failed to update LaunchPad shortcut", error);
+      return false;
+    }
+  }
+
+  function setNativeMainWindowShortcutCaptureActive(active) {
+    if (!isNativeBridgeAvailable()) return;
+    setMainWindowShortcutCaptureActive(Boolean(active)).catch((error) => {
+      console.error("Failed to update LaunchPad shortcut capture state", error);
+    });
+  }
+
+  function setNativeWindowShadowEnabled(enabled) {
+    if (!isNativeBridgeAvailable()) return;
+    nativeWindowShadowUpdate = nativeWindowShadowUpdate
+      .catch(() => {})
+      .then(() => setMainWindowShadowEnabled(Boolean(enabled)))
+      .catch((error) => {
+        console.error("Failed to update LaunchPad window shadow", error);
+      });
+  }
+
+  function waitForNativeWindowRevealFrame() {
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      return new Promise((resolve) => {
+        window.requestAnimationFrame(() => resolve());
+      });
+    }
+    return Promise.resolve();
+  }
+
+  function revealNativeWindowAfterPaint(openSequence = nativeWindowOpenSequence) {
+    const revealSequence = Number(openSequence);
+    if (!isNativeBridgeAvailable() || !Number.isFinite(revealSequence) || revealSequence <= 0) return;
+    nativeWindowRevealUpdate = nativeWindowRevealUpdate
+      .catch(() => {})
+      .then(async () => {
+        await nextTick();
+        await waitForNativeWindowRevealFrame();
+        await waitForNativeWindowRevealFrame();
+        if (nativeWindowOpenSequence !== revealSequence) return;
+        await revealMainWindow(revealSequence);
+      })
+      .catch((error) => {
+        console.error("Failed to reveal LaunchPad window", error);
+      });
+  }
+
+  function showNativeWindowAfterStartup() {
+    if (!isNativeBridgeAvailable() || hasRequestedStartupNativeWindowShow) return;
+    hasRequestedStartupNativeWindowShow = true;
+    showMainWindow().catch((error) => {
+      console.error("Failed to show LaunchPad window after startup", error);
+    });
+  }
+
   function registerNativeEventListeners() {
     if (!isNativeBridgeAvailable()) return Promise.resolve();
     clearNativeEventListeners();
@@ -1419,6 +1566,7 @@ export function useLaunchpadNative(options) {
 
   function openDesktopFromNativeShortcut(event) {
     rememberNativeWindowOpenSequence(event);
+    setNativeWindowShadowEnabled(true);
     refreshWindowsWallpaperBackground().then((changed) => {
       if (changed) scheduleNativeLayoutSave();
     }).finally(syncWindowsWallpaperRefreshTimer);
@@ -1426,34 +1574,62 @@ export function useLaunchpadNative(options) {
     clearNativeWindowHideTimer();
     if (options.isDesktopOpen.value) {
       options.focusDesktopSurface?.();
+      revealNativeWindowAfterPaint();
       return;
     }
     options.openDesktop();
+    revealNativeWindowAfterPaint();
   }
 
   function hideNativeWindowAfterCloseAnimation() {
     clearNativeWallpaperRefreshTimer();
     clearNativeWindowHideTimer();
+    const hideSequence = ++nativeWindowHideSequence;
+    setNativeWindowClosingInteractionBlocked(true);
+    setNativeWindowShadowEnabled(false);
     syncLiveDesktopBackgroundRuntime();
     nativeWindowHideTimer = window.setTimeout(async () => {
+      if (hideSequence !== nativeWindowHideSequence) return;
       nativeWindowHideTimer = null;
-      await hideNativeWindow();
+      await hideNativeWindow(hideSequence);
     }, DESKTOP_CLOSE_DURATION);
   }
 
-  async function hideNativeWindow() {
-    if (!isNativeBridgeAvailable()) return;
-    clearNativeWindowHideTimer();
+  async function hideNativeWindow(expectedHideSequence = null) {
+    if (!isNativeBridgeAvailable()) {
+      setNativeWindowClosingInteractionBlocked(false);
+      return;
+    }
+    if (expectedHideSequence !== null) {
+      if (expectedHideSequence !== nativeWindowHideSequence) {
+        setNativeWindowClosingInteractionBlocked(false);
+        return;
+      }
+      nativeWindowHideTimer = null;
+    } else {
+      clearNativeWindowHideTimer();
+    }
     try {
+      if (expectedHideSequence !== null && expectedHideSequence !== nativeWindowHideSequence) {
+        setNativeWindowClosingInteractionBlocked(false);
+        return;
+      }
       await hideMainWindow();
+      setNativeWindowClosingInteractionBlocked(false);
     } catch (error) {
       console.error("Failed to hide LaunchPad window", error);
+      setNativeWindowClosingInteractionBlocked(false);
     }
   }
 
   function toggleDesktopFromNativeShortcut(event) {
     rememberNativeWindowOpenSequence(event);
     if (options.isDesktopOpen.value) {
+      if (options.renderedFolder?.value && options.startFolderZoomFadeClose?.({ reason: "desktop" })) {
+        options.closeDesktop({ clearSearch: false });
+        hideNativeWindowAfterCloseAnimation();
+        return;
+      }
       options.closeDesktop({ clearSearch: false });
       hideNativeWindowAfterCloseAnimation();
     } else {
@@ -1505,7 +1681,12 @@ export function useLaunchpadNative(options) {
     registerNativeEventListeners,
     scheduleNativeLayoutSave,
     scheduleLaunchTargetStatusCheck,
+    setNativeMainWindowShortcut,
+    setNativeMainWindowShortcutCaptureActive,
+    setNativeWindowMode,
     setNativeWindowEffectsEnabled,
+    setNativeWindowShadowEnabled,
+    showNativeWindowAfterStartup,
     showNativeLaunchError,
     startNativeLiveDesktopBackground,
     stopNativeLiveDesktopBackground,

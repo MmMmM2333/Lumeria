@@ -1,5 +1,6 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
+import { clientPointToStageVisualPoint, clientRectToStageVisualRect, getStageScale } from "../geometry/stageCoordinates.js";
 
 export const DRAG_PREVIEW_SCALE = 1.12;
 export const DRAG_PREVIEW_FOLDER_HOVER_SCALE = 0.92;
@@ -18,8 +19,9 @@ function getPreviewCellSize(preview, iconSize) {
 function getPointerPlacement(preview, stageRect, iconSize, textless) {
   const offset = preview?.offset || { x: iconSize / 2, y: iconSize / 2 };
   const pointer = preview?.pointer || { x: 0, y: 0 };
-  const visualLeft = pointer.x - stageRect.left - offset.x;
-  const visualTop = pointer.y - stageRect.top - offset.y;
+  const localPointer = clientPointToStageVisualPoint(pointer, stageRect) || { x: 0, y: 0 };
+  const visualLeft = localPointer.x - offset.x;
+  const visualTop = localPointer.y - offset.y;
   return {
     x: visualLeft + iconSize / 2,
     y: visualTop + iconSize / 2 - getIconVisualOffsetY(textless),
@@ -72,18 +74,31 @@ export function getDragReleaseMotion(release, state = {}) {
   const textless = Boolean(release?.textless ?? state.isTextlessMode);
   const start = getPointerPlacement(release, stageRect, iconSize, textless);
   const targetRect = release?.targetRect;
-  const hasTargetRect = Boolean(targetRect?.width && targetRect?.height);
+  const targetStageLayoutRect = release?.targetStageLayoutRect;
+  const hasStageLayoutTargetRect = Boolean(targetStageLayoutRect?.width && targetStageLayoutRect?.height);
+  const hasClientTargetRect = Boolean(targetRect?.width && targetRect?.height);
+  const hasTargetRect = hasStageLayoutTargetRect || hasClientTargetRect;
   const visualOffsetY = getIconVisualOffsetY(textless);
-  const targetScale = hasTargetRect ? Math.max(0.1, targetRect.width / iconSize) : 1;
+  const targetLocalRect = hasStageLayoutTargetRect
+    ? targetStageLayoutRect
+    : clientRectToStageVisualRect(targetRect, stageRect);
+  const targetScale = hasTargetRect ? Math.max(0.1, targetLocalRect.width / iconSize) : 1;
   const target = hasTargetRect
     ? {
-      x: targetRect.left - stageRect.left + targetRect.width / 2,
-      y: targetRect.top - stageRect.top + targetRect.height / 2 - visualOffsetY,
+      x: targetLocalRect.left + targetLocalRect.width / 2,
+      y: targetLocalRect.top + targetLocalRect.height / 2 - visualOffsetY,
     }
     : start;
+  const stageScale = getStageScale(stageRect, state.width, state.height);
+  const clientVelocity = release?.velocity || {};
+  const velocity = {
+    x: (Number(clientVelocity.x) || 0) / Math.max(0.0001, stageScale.scaleX || 1),
+    y: (Number(clientVelocity.y) || 0) / Math.max(0.0001, stageScale.scaleY || 1),
+  };
   return {
     cellHeight: cellSize.height,
     cellWidth: cellSize.width,
+    hasStageLayoutTargetRect,
     hasTargetRect,
     iconSize,
     key: `${release?.key || makeDragPreviewKey(release)}:${release?.targetVersion ?? 0}:${hasTargetRect ? "target" : "pending"}`,
@@ -92,6 +107,7 @@ export function getDragReleaseMotion(release, state = {}) {
     target,
     targetScale,
     textless,
+    velocity,
   };
 }
 

@@ -6,7 +6,7 @@ import {
   drawFolderThumbFrame,
   getFolderPreviewMaskRect,
 } from "./folderThumbDrawing.js";
-import { getFolderThumbMetrics } from "./folderThumbMetrics.js";
+import { getFolderThumbChildLocalRect, getFolderThumbMetrics } from "./folderThumbMetrics.js";
 
 function makeGraphicsRecorder() {
   return {
@@ -42,6 +42,13 @@ export function runFolderThumbDrawingTests() {
 
   const iconSize = 56;
   const thumb = getFolderThumbMetrics(iconSize);
+  const firstChildRect = getFolderThumbChildLocalRect(thumb, 0);
+  const centerChildRect = getFolderThumbChildLocalRect(iconSize, 4);
+  const overflowChildRect = getFolderThumbChildLocalRect(thumb, 9);
+  assert(firstChildRect.width === thumb.childSize && firstChildRect.height === thumb.childSize, "folder thumb child rect should use child size");
+  assert(centerChildRect.left + centerChildRect.width / 2 === 0, "center folder thumb child should be centered on x");
+  assert(centerChildRect.top + centerChildRect.height / 2 === 0, "center folder thumb child should be centered on y");
+  assert(overflowChildRect.top > getFolderThumbChildLocalRect(thumb, 6).top, "folder thumb overflow rows should remain below the visible 3x3 grid");
   const maskRect = getFolderPreviewMaskRect(iconSize, thumb);
   assert(maskRect.width === maskRect.height, "folder preview mask should be square");
   assert(maskRect.width > thumb.childSize * 3, "folder preview mask should include padding around preview children");

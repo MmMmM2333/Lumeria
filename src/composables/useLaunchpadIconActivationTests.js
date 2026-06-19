@@ -5,7 +5,9 @@ import {
 } from "./useLaunchpadIconActivation.js";
 import {
   clearIconBoundsRegistry,
-  registerLaunchIconBounds,
+  registerLiveClientLaunchIconTargetBounds,
+  registerRenderedClientLaunchIconBounds,
+  registerStableStageLayoutLaunchIconTargetBounds,
 } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 
 const desktopApp = { id: "desktop-app", type: "app", name: "Desktop App" };
@@ -101,9 +103,40 @@ export function runLaunchpadIconActivationTests() {
 
   clearIconBoundsRegistry();
   assert(getLaunchIconRect({ area: "desktop", id: "desktop-app", pageIndex: 0 }) === null, "rect lookup should return null without pixi bounds");
-  registerLaunchIconBounds({ area: "desktop", id: "desktop-app", pageIndex: 0 }, { left: 12, top: 24, width: 36, height: 48 });
+  registerRenderedClientLaunchIconBounds({ area: "desktop", id: "desktop-app", pageIndex: 0 }, { left: 12, top: 24, width: 36, height: 48 });
   const rect = getLaunchIconRect({ area: "desktop", id: "desktop-app", pageIndex: 0 });
   assert(rect.left === 12 && rect.width === 36, "rect lookup should return plain geometry");
+  clearIconBoundsRegistry();
+
+  registerRenderedClientLaunchIconBounds(
+    { area: "folder", folderId: "folder-1", id: "folder-app", pageIndex: 0 },
+    { left: 12, top: 24, width: 36, height: 48 },
+    { area: "folder", folderId: "old-folder", id: "folder-app", pageIndex: 0 }
+  );
+  registerLiveClientLaunchIconTargetBounds(
+    { area: "folder", folderId: "folder-1", id: "folder-app", pageIndex: 0 },
+    { left: 40, top: 50, width: 60, height: 70 },
+    { area: "folder", folderId: "folder-1", id: "folder-app", pageIndex: 0 }
+  );
+  const liveFallbackRect = getLaunchIconRect({ area: "folder", folderId: "folder-1", id: "folder-app", pageIndex: 0 });
+  assert(liveFallbackRect.left === 40 && liveFallbackRect.height === 70, "folder launch rect should reject stale rendered metadata and fall back to live target bounds");
+  clearIconBoundsRegistry();
+
+  registerStableStageLayoutLaunchIconTargetBounds(
+    { area: "folder", folderId: "folder-1", id: "folder-app", pageIndex: 0 },
+    { left: 20, top: 30, width: 40, height: 50 },
+    {
+      area: "folder",
+      folderId: "folder-1",
+      id: "folder-app",
+      pageIndex: 0,
+      stageHeight: 100,
+      stageRect: { height: 200, left: 10, top: 20, width: 300 },
+      stageWidth: 150,
+    }
+  );
+  const stableFallbackRect = getLaunchIconRect({ area: "folder", folderId: "folder-1", id: "folder-app", pageIndex: 0 });
+  assert(stableFallbackRect.left === 50 && stableFallbackRect.top === 80, "folder launch rect should project stable stage layout fallback bounds");
   clearIconBoundsRegistry();
 
   const desktop = createIconActivation({ pageIndex: 1 });

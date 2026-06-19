@@ -3,7 +3,7 @@ import { loadCachedBackgroundImageDataUrl } from "../../../api/launchpadApi.js";
 import { resolveBackgroundImagePlacement } from "../../../domain/backgroundImageLayout.js";
 import {
   BACKGROUND_EFFECT_ACRYLIC_WEBGL,
-} from "../../../composables/useLaunchpadSettingsConfig.js";
+} from "../../../domain/backgroundSettings.js";
 import {
   createBackgroundEffectPlan,
   resolveAcrylicRenderSize,

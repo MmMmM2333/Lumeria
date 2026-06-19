@@ -1,24 +1,19 @@
 <template>
-  <Motion
+  <div
     v-if="state.shouldRenderSettingsPanel.value"
     key="settings-overlay"
+    ref="settingsOverlayRef"
     :class="cx('settings-overlay', !state.isSettingsPanelOpen.value && 'settings-overlay-closing')"
-    :initial="{ opacity: 0 }"
-    :animate="state.settingsOverlayAnimate.value"
-    :transition="{ duration: 0.16 }"
     @wheel.stop
     @pointerdown.self="state.closeSettingsPanel"
   >
-    <Motion
+    <section
       ref="settingsPanelRef"
       class="settings-panel"
       role="dialog"
       aria-modal="true"
       aria-label="设置"
       tabindex="-1"
-      :initial="state.settingsPanelInitial.value"
-      :animate="state.settingsPanelAnimate.value"
-      :transition="state.panelSpring"
       @keydown="handleSettingsPanelKeydown"
     >
       <header class="settings-panel-header">
@@ -57,14 +52,29 @@
                 </span>
                 <input name="autoStart" type="checkbox" aria-label="开机自启" disabled />
               </label>
-              <div class="settings-option settings-option-disabled">
+              <div class="settings-option">
                 <span class="settings-option-copy">
                   <span>快捷键</span>
-                  <span class="settings-field-hint">快速显示或隐藏 LaunchPad</span>
+                  <span class="settings-field-hint">{{ mainWindowShortcutHint }}</span>
                 </span>
                 <div class="settings-hotkey-control">
-                  <kbd>Alt + Space</kbd>
-                  <button class="settings-secondary-button" type="button" disabled>录制</button>
+                  <div :class="cx('settings-hotkey-input', state.draftMainWindowShortcut.value === null && 'settings-hotkey-input-empty')">
+                    <kbd>{{ mainWindowShortcutLabel }}</kbd>
+                    <button
+                      v-if="state.draftMainWindowShortcut.value !== null"
+                      class="settings-hotkey-clear-button"
+                      type="button"
+                      aria-label="关闭快捷键"
+                      :disabled="state.isApplyingSettingsConfig.value"
+                      @click="clearMainWindowShortcut"
+                    >
+                      <DismissIcon class="settings-hotkey-clear-icon" />
+                    </button>
+                  </div>
+                  <button class="settings-secondary-button" type="button" :disabled="state.isApplyingSettingsConfig.value" @click="startMainWindowShortcutRecording">
+                    {{ isRecordingMainWindowShortcut ? "录制中" : "录制" }}
+                  </button>
+                  <button class="settings-secondary-button" type="button" :disabled="state.isApplyingSettingsConfig.value" @click="resetMainWindowShortcut">重置</button>
                 </div>
               </div>
             </div>
@@ -77,6 +87,28 @@
               <h3>显示偏好</h3>
             </div>
             <div class="settings-grid">
+              <div class="settings-field settings-field-wide">
+                <span class="settings-field-copy">
+                  <span>窗口模式</span>
+                  <span class="settings-field-hint">选择打开 LaunchPad 时的窗口形态</span>
+                </span>
+                <div class="settings-segmented-control" aria-label="窗口模式">
+                  <button
+                    type="button"
+                    :class="cx('settings-segmented-button', state.draftWindowMode.value === WINDOW_MODE_FULLSCREEN && 'settings-segmented-button-active')"
+                    @click="state.setDraftWindowMode(WINDOW_MODE_FULLSCREEN)"
+                  >
+                    全屏
+                  </button>
+                  <button
+                    type="button"
+                    :class="cx('settings-segmented-button', state.draftWindowMode.value === WINDOW_MODE_WINDOWED && 'settings-segmented-button-active')"
+                    @click="state.setDraftWindowMode(WINDOW_MODE_WINDOWED)"
+                  >
+                    窗口化
+                  </button>
+                </div>
+              </div>
               <div class="settings-field settings-field-wide settings-window-effect-field">
                 <span class="settings-field-copy">
                   <span>窗口底材</span>
@@ -408,6 +440,19 @@
                     <span class="settings-opacity-value">{{ state.draftBackgroundDarkenStrength.value }}%</span>
                   </label>
                   <div v-if="doesDraftBackgroundUseLayer && state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL" class="settings-acrylic-controls">
+                    <label class="settings-opacity-control">
+                      <span>模糊强度</span>
+                      <input
+                        :value="state.draftBackgroundAcrylicBlurStrength.value"
+                        :min="BACKGROUND_BLUR_STRENGTH_MIN"
+                        :max="BACKGROUND_BLUR_STRENGTH_MAX"
+                        :step="BACKGROUND_BLUR_STRENGTH_STEP"
+                        type="range"
+                        aria-label="Acrylic 模糊强度"
+                        @input="state.setDraftBackgroundAcrylicBlurStrength($event.target.value)"
+                      />
+                      <span class="settings-opacity-value">{{ state.draftBackgroundAcrylicBlurStrength.value }}%</span>
+                    </label>
                     <div class="settings-acrylic-row">
                       <span class="settings-acrylic-row-label">Acrylic 外观</span>
                       <div class="settings-segmented-control" aria-label="Acrylic 外观">
@@ -528,7 +573,7 @@
                     :background-acrylic-params="draftBackgroundAcrylicPreviewParams"
                     :background-base-color="state.draftBackgroundBaseColor.value"
                     :background-base-opacity="state.draftBackgroundBaseOpacity.value"
-                    :background-blur-strength="state.draftBackgroundBlurStrength.value"
+                    :background-blur-strength="draftBackgroundEffectBlurStrength"
                     :background-darken-color="state.draftBackgroundDarkenColor.value"
                     :background-darken-strength="state.draftBackgroundDarkenStrength.value"
                     :background-effect="state.draftBackgroundEffect.value"
@@ -823,22 +868,24 @@
         </div>
       </div>
 
-      <footer v-if="activeSettingsTab === 'interface'" class="settings-actions">
+      <footer v-if="activeSettingsTab === 'general' || activeSettingsTab === 'interface'" class="settings-actions">
         <button class="settings-secondary-button" type="button" @click="state.closeSettingsPanel">取消</button>
-        <button class="settings-primary-button" type="button" :disabled="!!state.dragMeta.value" @click="state.applySettingsConfig">应用</button>
+        <button class="settings-primary-button" type="button" :disabled="!!state.dragMeta.value || state.isApplyingSettingsConfig.value" @click="state.applySettingsConfig">应用</button>
       </footer>
-    </Motion>
-  </Motion>
+    </section>
+  </div>
 </template>
 
 <script setup>
-import { Motion } from "motion-v";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import DismissIcon from "~icons/fluent/dismiss-16-regular";
 import BackgroundEffectPreview from "./BackgroundEffectPreview.vue";
 import BackgroundImagePreviewCanvas from "./BackgroundImagePreviewCanvas.vue";
 import { ChevronDownIcon, ChevronUpIcon } from "./Icons.js";
 import { useBackgroundImagePixelSize } from "../composables/useBackgroundImagePixelSize.js";
+import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "../composables/launchpadConstants.js";
+import { listenNativeEvent } from "../api/launchpadApi.js";
 import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
@@ -881,11 +928,18 @@ import {
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
   WINDOW_EFFECT_MATERIAL_MICA,
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
+  WINDOW_MODE_FULLSCREEN,
+  WINDOW_MODE_WINDOWED,
 } from "../composables/useLaunchpadSettingsConfig.js";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
 import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 import { getIconSource } from "../domain/iconSource.js";
 import { cx } from "../domain/launchpadLayout.js";
+import {
+  DEFAULT_MAIN_WINDOW_SHORTCUT,
+  formatMainWindowShortcut,
+  mainWindowShortcutFromKeyboardEvent,
+} from "../domain/mainWindowShortcut.js";
 import { rgbArrayToHex } from "../rendering/pixi/background/acrylicParams.js";
 
 const props = defineProps({
@@ -895,11 +949,29 @@ const props = defineProps({
 
 const activeSettingsTab = ref("general");
 const activeAcrylicParamsProfile = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
+const settingsOverlayRef = ref(null);
 const settingsPanelRef = ref(null);
+const settingsOverlayMotion = useGsapDomMotion(settingsOverlayRef, {
+  initial: { opacity: 0 },
+  motion: resolveSettingsOverlayMotion,
+});
+const settingsPanelMotion = useGsapDomMotion(settingsPanelRef, {
+  initial: () => props.state.settingsPanelInitial.value,
+  motion: resolveSettingsPanelMotion,
+});
 const systemAcrylicAppearance = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
+const isRecordingMainWindowShortcut = ref(false);
 let systemAppearanceQuery = null;
 let liveDesktopStatusTimer = null;
+let unlistenMainWindowShortcutCaptured = null;
+let mainWindowShortcutRecordingSession = 0;
 const ACRYLIC_PARAM_STEP = 0.01;
+const SETTINGS_OVERLAY_DURATION = 0.16;
+const SETTINGS_OVERLAY_EASE = "power2.out";
+const SETTINGS_PANEL_OPEN_DURATION = 0.34;
+const SETTINGS_PANEL_OPEN_EASE = "power3.out";
+const SETTINGS_PANEL_CLOSE_DURATION = 0.22;
+const SETTINGS_PANEL_CLOSE_EASE = "power2.inOut";
 const LIVE_DESKTOP_STATUS_REFRESH_INTERVAL_MS = 1000;
 const ACRYLIC_TINT_STRENGTH_MIN = 0;
 const ACRYLIC_TINT_STRENGTH_MAX = 0.6;
@@ -944,6 +1016,15 @@ const windowEffectAppearances = [
   { appearance: WINDOW_EFFECT_APPEARANCE_LIGHT, appearanceLabel: "浅色" },
   { appearance: WINDOW_EFFECT_APPEARANCE_DARK, appearanceLabel: "深色" },
 ];
+const mainWindowShortcutLabel = computed(() => (
+  isRecordingMainWindowShortcut.value
+    ? "按下组合键"
+    : formatMainWindowShortcut(props.state.draftMainWindowShortcut.value)
+));
+const mainWindowShortcutHint = computed(() => {
+  if (props.state.mainWindowShortcutError.value) return props.state.mainWindowShortcutError.value;
+  return isRecordingMainWindowShortcut.value ? "按 Esc 取消录制" : "快速显示或隐藏 LaunchPad";
+});
 const backgroundImageLayoutOptions = [
   { layout: BACKGROUND_IMAGE_LAYOUT_FILL, label: "填充" },
   { layout: BACKGROUND_IMAGE_LAYOUT_FIT, label: "适应" },
@@ -1040,6 +1121,11 @@ const draftBackgroundAcrylicPreviewParams = computed(() => {
     : props.state.draftBackgroundAcrylicDarkParams.value;
   return normalizeBackgroundAcrylicParams(params, appearance);
 });
+const draftBackgroundEffectBlurStrength = computed(() => (
+  props.state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+    ? props.state.draftBackgroundAcrylicBlurStrength.value
+    : props.state.draftBackgroundBlurStrength.value
+));
 const activeAcrylicParams = computed(() => (
   activeAcrylicParamsProfile.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
     ? props.state.draftBackgroundAcrylicLightParams.value
@@ -1073,6 +1159,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearLiveDesktopStatusTimer();
+  stopMainWindowShortcutRecording();
   if (!systemAppearanceQuery) return;
   if (typeof systemAppearanceQuery.removeEventListener === "function") {
     systemAppearanceQuery.removeEventListener("change", updateSystemAcrylicAppearance);
@@ -1094,7 +1181,10 @@ watch(
 watch(
   () => props.state.isSettingsPanelOpen.value,
   async (isOpen) => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      stopMainWindowShortcutRecording();
+      return;
+    }
     await nextTick();
     focusModalElement(settingsPanelRef);
   }
@@ -1110,8 +1200,107 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => props.state.settingsOverlayAnimate.value,
+  () => {
+    settingsOverlayMotion.animate();
+  },
+  { flush: "post" }
+);
+
+watch(
+  () => props.state.settingsPanelAnimate.value,
+  () => {
+    settingsPanelMotion.animate();
+  },
+  { flush: "post" }
+);
+
+async function startMainWindowShortcutRecording() {
+  if (typeof window === "undefined") return;
+  if (isRecordingMainWindowShortcut.value) return;
+  props.state.mainWindowShortcutError.value = "";
+  isRecordingMainWindowShortcut.value = true;
+  mainWindowShortcutRecordingSession += 1;
+  const session = mainWindowShortcutRecordingSession;
+  window.addEventListener("keydown", handleMainWindowShortcutRecordingKeydown, true);
+  const unlisten = await listenNativeEvent("launchpad-main-window-shortcut-captured", (event) => {
+    if (session !== mainWindowShortcutRecordingSession) return;
+    const shortcut = String(event?.payload || "").trim();
+    if (!shortcut) return;
+    props.state.setDraftMainWindowShortcut(shortcut);
+    props.state.mainWindowShortcutError.value = "";
+    stopMainWindowShortcutRecording();
+  });
+  if (session !== mainWindowShortcutRecordingSession) {
+    unlisten?.();
+    return;
+  }
+  unlistenMainWindowShortcutCaptured = unlisten;
+  props.state.setMainWindowShortcutCaptureActive?.(true);
+}
+
+function stopMainWindowShortcutRecording() {
+  if (isRecordingMainWindowShortcut.value) {
+    props.state.setMainWindowShortcutCaptureActive?.(false);
+  }
+  mainWindowShortcutRecordingSession += 1;
+  unlistenMainWindowShortcutCaptured?.();
+  unlistenMainWindowShortcutCaptured = null;
+  if (typeof window !== "undefined") {
+    window.removeEventListener("keydown", handleMainWindowShortcutRecordingKeydown, true);
+  }
+  isRecordingMainWindowShortcut.value = false;
+}
+
+function handleMainWindowShortcutRecordingKeydown(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const result = mainWindowShortcutFromKeyboardEvent(event);
+  if (result.status === "cancel") {
+    stopMainWindowShortcutRecording();
+    props.state.mainWindowShortcutError.value = "";
+    return;
+  }
+  if (result.status === "invalid") {
+    props.state.mainWindowShortcutError.value = result.message;
+    return;
+  }
+  props.state.setDraftMainWindowShortcut(result.shortcut);
+  props.state.mainWindowShortcutError.value = "";
+  stopMainWindowShortcutRecording();
+}
+
+function resetMainWindowShortcut() {
+  stopMainWindowShortcutRecording();
+  props.state.setDraftMainWindowShortcut(DEFAULT_MAIN_WINDOW_SHORTCUT);
+}
+
+function clearMainWindowShortcut() {
+  stopMainWindowShortcutRecording();
+  props.state.setDraftMainWindowShortcut(null);
+}
+
 function handleSettingsPanelKeydown(event) {
   handleModalKeydown(event, settingsPanelRef, props.state.closeSettingsPanel);
+}
+
+function resolveSettingsOverlayMotion() {
+  return {
+    ...props.state.settingsOverlayAnimate.value,
+    duration: SETTINGS_OVERLAY_DURATION,
+    ease: SETTINGS_OVERLAY_EASE,
+  };
+}
+
+function resolveSettingsPanelMotion() {
+  const target = props.state.settingsPanelAnimate.value;
+  const isClosing = Number(target.opacity) === 0;
+  return {
+    ...target,
+    duration: isClosing ? SETTINGS_PANEL_CLOSE_DURATION : SETTINGS_PANEL_OPEN_DURATION,
+    ease: isClosing ? SETTINGS_PANEL_CLOSE_EASE : SETTINGS_PANEL_OPEN_EASE,
+  };
 }
 
 function resolveSystemAcrylicAppearance() {

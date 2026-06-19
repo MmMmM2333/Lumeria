@@ -1,14 +1,19 @@
 import {
   findFolderGhostKey,
   getStableFolderCloseRects,
+  getStableFolderClosePresentationHitRects,
+  hasUsableFolderGhostTarget,
   makeClosingGhostTarget,
   makeClosingPreviewSwapTargets,
+  makeFolderThumbPreviewRect,
   makeOpeningGhostTarget,
   makePreviewChildKey,
   makePreviewSlotById,
   makeProjectedPreviewRect,
   makeStableFolderCloseTarget,
+  projectFolderCloseTargetToClient,
 } from "./folderOverlayTargets.js";
+import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
 
 export function runFolderOverlayTargetsTests() {
   const assert = (condition, message) => {
@@ -37,6 +42,13 @@ export function runFolderOverlayTargetsTests() {
   assert(findFolderGhostKey(ghostKeys, "app-a", 2) === "app-a-slot-2", "ghost key lookup should prefer an exact slot match");
   assert(findFolderGhostKey(ghostKeys, "app-b", 1) === "app-b-fallback", "ghost key lookup should fall back to an item match");
   assert(findFolderGhostKey(ghostKeys, "app-z", 0) === null, "ghost key lookup should stay nullable for missing items");
+  assert(hasUsableFolderGhostTarget({
+    sourceRect: { height: 10, left: 0, top: 0, width: 10 },
+    targetStageLayoutRect: { height: 10, left: 20, top: 20, width: 10 },
+  }), "ghost targets should be usable with a stage layout target rect");
+  assert(!hasUsableFolderGhostTarget({
+    sourceRect: { height: 10, left: 0, top: 0, width: 10 },
+  }), "ghost targets should still require a target rect");
 
   const projected = makeProjectedPreviewRect(folderRect, 4, 3, 3);
   assert(nearlyEqual(projected.left + projected.width / 2, 55), "projected rect should place slot centers by grid column");
@@ -54,20 +66,36 @@ export function runFolderOverlayTargetsTests() {
       assert(previewRect.width === previewRect.height, `${previewSize.label} slot ${slotIndex} should stay square`);
     }
   }
+  for (const slotIndex of [0, 4, 8]) {
+    const thumb = getFolderThumbMetrics(folderThumbRect.width);
+    const col = slotIndex % 3;
+    const row = Math.floor(slotIndex / 3);
+    const centerX = folderThumbRect.left + folderThumbRect.width / 2 + thumb.start + col * (thumb.childSize + thumb.gap);
+    const centerY = folderThumbRect.top + folderThumbRect.height / 2 + thumb.start + row * (thumb.childSize + thumb.gap);
+    const previewRect = makeFolderThumbPreviewRect(folderThumbRect, slotIndex);
+    assert(nearlyEqual(previewRect.left, centerX - thumb.childSize / 2), `folder thumb slot ${slotIndex} should use the real thumb x`);
+    assert(nearlyEqual(previewRect.top, centerY - thumb.childSize / 2), `folder thumb slot ${slotIndex} should use the real thumb y`);
+    assert(nearlyEqual(previewRect.width, thumb.childSize), `folder thumb slot ${slotIndex} should use the real thumb width`);
+    assert(nearlyEqual(previewRect.height, thumb.childSize), `folder thumb slot ${slotIndex} should use the real thumb height`);
+  }
 
   const stableTarget = makeStableFolderCloseTarget({
     folderId: "folder-1",
-    folderRect,
-    folderThumbRect,
-    getPreviewChildRect: (item, slotIndex) => item.id === "app-b" && slotIndex === 1 ? childRect : null,
+    getStageLayoutPreviewChildRect: (item, slotIndex) => item.id === "app-b" && slotIndex === 1 ? childRect : null,
+    iconRect: folderRect,
     previewSlots,
+    projection: { stageHeight: 100, stageRect: { height: 100, left: 0, top: 0, width: 100 }, stageWidth: 100 },
+    thumbRect: folderThumbRect,
   });
   assert(stableTarget.folderId === "folder-1", "stable close target should keep the folder id");
+  assert(stableTarget.coordinateSpace === "stage-layout", "stable close target should declare stage layout coordinates");
   assert(stableTarget.iconRect !== folderRect && stableTarget.iconRect.left === folderRect.left, "stable icon rect should be cloned");
   assert(
     stableTarget.previewChildRects.get(makePreviewChildKey("app-b", 1)).left === childRect.left,
-    "stable close target should cache available preview child bounds"
+    "stable close target should cache available stage layout preview child bounds"
   );
+  const projectedStableTarget = projectFolderCloseTargetToClient(stableTarget);
+  assert(projectedStableTarget.iconRect.left === folderRect.left, "stable close target should project icon rect at client boundaries");
 
   const closeRects = getStableFolderCloseRects({
     folderId: "folder-1",
@@ -77,6 +105,24 @@ export function runFolderOverlayTargetsTests() {
     stableFolderCloseTarget: stableTarget,
   });
   assert(closeRects.closeThumbRect.left === folderThumbRect.left, "closing should prefer the stable thumbnail bounds");
+
+  const frameHitRects = getStableFolderClosePresentationHitRects({
+    frameRect: { height: 120, left: 200, top: 220, width: 160 },
+    handoffRect: { height: 32, left: 80, top: 90, width: 32 },
+    stableFolderCloseTarget: stableTarget,
+  });
+  assert(frameHitRects.length === 1 && frameHitRects[0].left === 200, "closing hit testing should prefer the visible frame ghost rect");
+
+  const handoffHitRects = getStableFolderClosePresentationHitRects({
+    handoffRect: { height: 32, left: 80, top: 90, width: 32 },
+    stableFolderCloseTarget: stableTarget,
+  });
+  assert(handoffHitRects.length === 1 && handoffHitRects[0].left === 80, "closing hit testing should fall back to the current handoff rect");
+
+  const projectedHitRects = getStableFolderClosePresentationHitRects({
+    stableFolderCloseTarget: stableTarget,
+  });
+  assert(projectedHitRects.length === 2, "closing hit testing should use projected stable target rects only as the final fallback");
 
   const openingTarget = makeOpeningGhostTarget({
     cellHeight: 80,
@@ -95,8 +141,10 @@ export function runFolderOverlayTargetsTests() {
   });
   assert(openingTarget.isThumbnailChild && openingTarget.previewSlotIndex === 1, "opening target should identify thumbnail children");
   assert(openingTarget.sourceRect === childRect, "opening target should use registered preview bounds first");
-  assert(openingTarget.targetRect.left === 172 && openingTarget.targetRect.top === 272, "opening target should build a centered icon target");
+  assert(openingTarget.targetStageLayoutRect.left === 172 && openingTarget.targetStageLayoutRect.top === 272, "opening target should build a centered stage layout icon target");
 
+  stableTarget.previewChildRects = new Map([[makePreviewChildKey("app-b", 1), { height: 7, left: 11, top: 13, width: 7 }]]);
+  stableTarget.thumbRect = { height: 36, left: 5, top: 8, width: 36 };
   const closingTarget = makeClosingGhostTarget({
     cellHeight: 80,
     cellWidth: 100,
@@ -112,7 +160,24 @@ export function runFolderOverlayTargetsTests() {
     stableFolderCloseTarget: stableTarget,
   });
   assert(closingTarget.isThumbnailChild, "closing target should identify thumbnail children");
-  assert(closingTarget.targetRect.left === childRect.left, "closing target should use stable preview bounds first");
+  assert(closingTarget.targetStageLayoutRect.left === 11, "closing target should retain the stable stage layout preview target");
+
+  const projectedThumbnailTarget = makeClosingGhostTarget({
+    cellHeight: 80,
+    cellWidth: 100,
+    closeThumbRect: folderThumbRect,
+    cols: 5,
+    folderId: "folder-1",
+    iconBounds: { height: 56, left: 150, top: 160, width: 56 },
+    iconSize: 56,
+    index: 5,
+    item: { id: "app-c" },
+    previewSlotById,
+    stableFolderCloseTarget: stableTarget,
+  });
+  assert(projectedThumbnailTarget.isThumbnailChild, "thumbnail children without exact stable bounds should stay thumbnail targets");
+  assert(projectedThumbnailTarget.targetStageLayoutRect, "thumbnail close fallback should expose a stage layout thumb target when available");
+  assertRectInside(projectedThumbnailTarget.targetStageLayoutRect, stableTarget.thumbRect, "projected thumbnail close stage target");
 
   const fallbackClosingTarget = makeClosingGhostTarget({
     cellHeight: 80,
@@ -128,9 +193,10 @@ export function runFolderOverlayTargetsTests() {
     stableFolderCloseTarget: stableTarget,
   });
   assert(!fallbackClosingTarget.isThumbnailChild, "non-preview children should collapse to the folder center");
+  assert(fallbackClosingTarget.targetStageLayoutRect, "non-preview closing target should expose a stage layout center collapse when available");
   assert(
-    nearlyEqual(fallbackClosingTarget.targetRect.left + fallbackClosingTarget.targetRect.width / 2, 50),
-    "non-preview closing targets should collapse to the thumbnail center"
+    nearlyEqual(fallbackClosingTarget.targetStageLayoutRect.left + fallbackClosingTarget.targetStageLayoutRect.width / 2, 23),
+    "non-preview closing targets should collapse to the stage layout thumbnail center"
   );
 
   const swapTargets = makeClosingPreviewSwapTargets({
@@ -140,5 +206,5 @@ export function runFolderOverlayTargetsTests() {
     stableFolderCloseTarget: stableTarget,
   });
   assert(swapTargets.length === 3, "preview swap should emit one target per visible preview slot");
-  assert(swapTargets[1].targetRect.left === childRect.left, "preview swap should reuse stable preview child bounds");
+  assert(swapTargets[1].targetStageLayoutRect.left === 11, "preview swap should retain stable stage layout preview child bounds");
 }

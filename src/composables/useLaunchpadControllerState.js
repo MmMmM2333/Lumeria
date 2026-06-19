@@ -7,6 +7,7 @@ import {
   DEFAULT_ROWS,
 } from "./launchpadConstants.js";
 import { makePageSize } from "../domain/launchpadLayout.js";
+import { DEFAULT_MAIN_WINDOW_SHORTCUT } from "../domain/mainWindowShortcut.js";
 import {
   DEFAULT_SCAN_KEYWORD_BLACKLIST,
   DEFAULT_SCAN_ROOTS,
@@ -17,6 +18,7 @@ import {
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
   DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE,
+  DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH,
   DEFAULT_BACKGROUND_BASE_COLOR,
   DEFAULT_BACKGROUND_BASE_OPACITY,
   DEFAULT_BACKGROUND_BLUR_STRENGTH,
@@ -26,6 +28,7 @@ import {
   DEFAULT_BACKGROUND_IMAGE_OPACITY,
   DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY,
   DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT,
+  DEFAULT_WINDOW_MODE,
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
@@ -56,6 +59,7 @@ export function useLaunchpadControllerState() {
   const backgroundLiveDesktopOpacity = ref(DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY);
   const backgroundImageLayout = ref(DEFAULT_BACKGROUND_IMAGE_LAYOUT);
   const backgroundBlurStrength = ref(DEFAULT_BACKGROUND_BLUR_STRENGTH);
+  const backgroundAcrylicBlurStrength = ref(DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH);
   const backgroundDarkenStrength = ref(DEFAULT_BACKGROUND_DARKEN_STRENGTH);
   const backgroundDarkenColor = ref(DEFAULT_BACKGROUND_DARKEN_COLOR);
   const backgroundAcrylicAppearance = ref(DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE);
@@ -71,6 +75,7 @@ export function useLaunchpadControllerState() {
   const draftBackgroundLiveDesktopOpacity = ref(DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY);
   const draftBackgroundImageLayout = ref(DEFAULT_BACKGROUND_IMAGE_LAYOUT);
   const draftBackgroundBlurStrength = ref(DEFAULT_BACKGROUND_BLUR_STRENGTH);
+  const draftBackgroundAcrylicBlurStrength = ref(DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH);
   const draftBackgroundDarkenStrength = ref(DEFAULT_BACKGROUND_DARKEN_STRENGTH);
   const draftBackgroundDarkenColor = ref(DEFAULT_BACKGROUND_DARKEN_COLOR);
   const draftBackgroundAcrylicAppearance = ref(DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE);
@@ -93,6 +98,12 @@ export function useLaunchpadControllerState() {
   const windowEffectAppearance = ref(WINDOW_EFFECT_APPEARANCE_DARK);
   const draftWindowEffectMaterial = ref(WINDOW_EFFECT_MATERIAL_ACRYLIC);
   const draftWindowEffectAppearance = ref(WINDOW_EFFECT_APPEARANCE_DARK);
+  const windowMode = ref(DEFAULT_WINDOW_MODE);
+  const draftWindowMode = ref(DEFAULT_WINDOW_MODE);
+  const mainWindowShortcut = ref(DEFAULT_MAIN_WINDOW_SHORTCUT);
+  const draftMainWindowShortcut = ref(DEFAULT_MAIN_WINDOW_SHORTCUT);
+  const mainWindowShortcutError = ref("");
+  const isApplyingSettingsConfig = ref(false);
   const pageSize = computed(() => makePageSize(gridRows.value, gridCols.value));
   const folderPageSize = computed(() => makePageSize(folderRows.value, folderCols.value));
 
@@ -127,6 +138,7 @@ export function useLaunchpadControllerState() {
     backgroundBaseColor,
     backgroundBaseOpacity,
     backgroundAcrylicAppearance,
+    backgroundAcrylicBlurStrength,
     backgroundAcrylicDarkParams,
     backgroundAcrylicLightParams,
     backgroundBlurStrength,
@@ -143,6 +155,7 @@ export function useLaunchpadControllerState() {
     draftBackgroundBaseColor,
     draftBackgroundBaseOpacity,
     draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicBlurStrength,
     draftBackgroundAcrylicDarkParams,
     draftBackgroundAcrylicLightParams,
     draftBackgroundBlurStrength,
@@ -163,6 +176,7 @@ export function useLaunchpadControllerState() {
     draftIconSize,
     draftIsTextlessMode,
     draftRows,
+    draftWindowMode,
     draftWindowEffectAppearance,
     draftWindowEffectMaterial,
     folderCols,
@@ -180,12 +194,16 @@ export function useLaunchpadControllerState() {
     hiddenAppIds,
     iconSize,
     isChoosingBackgroundImage,
+    isApplyingSettingsConfig,
     isLayoutProjectionActive,
     isTextlessMode,
     launchTargetStatusById,
     liveDesktopBackgroundSupport,
     liveDesktopCssFallbackEffectsEnabled,
     liveDesktopRuntimeStatus,
+    mainWindowShortcut,
+    mainWindowShortcutError,
+    draftMainWindowShortcut,
     keyboardFocusArea,
     pageDotsRef,
     pageIndex,
@@ -204,5 +222,6 @@ export function useLaunchpadControllerState() {
     windowEffectAppearance,
     windowEffectMaterial,
     windowEffectsSupport,
+    windowMode,
   };
 }

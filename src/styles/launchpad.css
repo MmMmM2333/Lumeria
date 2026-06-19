@@ -33,14 +33,25 @@ body {
   --launchpad-background-overlay-opacity: 0.28;
   --launchpad-live-desktop-backdrop-filter: none;
   --launchpad-live-desktop-backdrop-opacity: 0;
+  --window-chrome-height: 0px;
+  --window-chrome-content-gap: 0px;
+  --launchpad-root-padding-x: 20px;
+  --launchpad-root-padding-top: 20px;
+  --launchpad-root-padding-bottom: 20px;
   height: 100vh;
   min-height: 100vh;
   max-height: 100vh;
   overflow: hidden;
   color: white;
-  padding: 20px;
+  padding: var(--launchpad-root-padding-top) var(--launchpad-root-padding-x) var(--launchpad-root-padding-bottom);
   background: transparent;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.launchpad-root-windowed {
+  --window-chrome-height: 44px;
+  --window-chrome-content-gap: 12px;
+  --launchpad-root-padding-top: calc(var(--window-chrome-height) + var(--window-chrome-content-gap));
 }
 
 .launchpad-root,
@@ -168,16 +179,202 @@ body {
   opacity: 0;
 }
 
+.window-chrome-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 160;
+  pointer-events: none;
+}
+
+.window-chrome-resize-handle {
+  position: absolute;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.window-chrome-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--window-chrome-height, 44px);
+  display: flex;
+  align-items: center;
+  padding-left: 14px;
+  padding-right: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-top: 0;
+  border-left: 0;
+  border-right: 0;
+  border-radius: 0;
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(20, 24, 32, 0.42);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
+  overflow: hidden;
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.window-chrome-drag-area {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 0;
+  cursor: grab;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.window-chrome-drag-area:active {
+  cursor: grabbing;
+}
+
+.window-chrome-title-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  color: white;
+  background: linear-gradient(135deg, #8b5cf6, #ef5da8);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.window-chrome-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.window-chrome-controls {
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+}
+
+.window-chrome-control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 100%;
+  border: 0;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.82);
+  background: transparent;
+  cursor: default;
+  font: inherit;
+  line-height: 0;
+}
+
+.window-chrome-control-icon {
+  display: block;
+  width: 12px;
+  height: 12px;
+}
+
+.window-chrome-control:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.window-chrome-control-close:hover {
+  background: rgba(232, 17, 35, 0.88);
+}
+
+.window-chrome-resize-north,
+.window-chrome-resize-south {
+  left: 14px;
+  right: 14px;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+.window-chrome-resize-north { top: 0; }
+.window-chrome-resize-south { bottom: 0; }
+
+.window-chrome-resize-west,
+.window-chrome-resize-east {
+  top: 14px;
+  bottom: 14px;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.window-chrome-resize-west { left: 0; }
+.window-chrome-resize-east { right: 0; }
+
+.window-chrome-resize-north-west,
+.window-chrome-resize-north-east,
+.window-chrome-resize-south-west,
+.window-chrome-resize-south-east {
+  width: 14px;
+  height: 14px;
+}
+
+.window-chrome-resize-north-west {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.window-chrome-resize-north-east {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+.window-chrome-resize-south-west {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.window-chrome-resize-south-east {
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+}
+
 .launchpad-shell {
   position: relative;
   z-index: 10;
   width: 100%;
-  min-height: calc(100vh - 40px);
+  height: calc(100vh - var(--launchpad-root-padding-top) - var(--launchpad-root-padding-bottom));
+  min-height: 0;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   will-change: transform, opacity, filter;
   transform-origin: center center;
+}
+
+.launchpad-chrome-motion {
+  position: relative;
+  z-index: 12;
+  will-change: transform, opacity, filter;
+  transform-origin: center center;
+}
+
+.launchpad-root-pixi-root-stage .launchpad-shell,
+.launchpad-root-single-stage-folder-layer .launchpad-shell {
+  z-index: 13;
+  pointer-events: none !important;
+}
+
+.launchpad-root-pixi-root-stage .launchpad-header,
+.launchpad-root-pixi-root-stage .page-dots,
+.launchpad-root-single-stage-folder-layer .launchpad-header,
+.launchpad-root-single-stage-folder-layer .page-dots {
+  pointer-events: auto !important;
 }
 
 .launchpad-header {
@@ -1137,22 +1334,65 @@ body {
 .settings-hotkey-control {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
   flex: 0 0 auto;
 }
 
-.settings-hotkey-control kbd {
+.settings-hotkey-input {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  min-width: 72px;
+  min-width: 112px;
+  height: 32px;
+}
+
+.settings-hotkey-input kbd {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
   height: 32px;
   justify-content: center;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 10px;
+  padding: 0 30px 0 12px;
   color: rgba(255, 255, 255, 0.58);
   background: rgba(0, 0, 0, 0.18);
   font: inherit;
   font-size: 12px;
+}
+
+.settings-hotkey-input-empty kbd {
+  padding-right: 12px;
+}
+
+.settings-hotkey-clear-button {
+  position: absolute;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.16);
+  cursor: pointer;
+  line-height: 0;
+}
+
+.settings-hotkey-clear-icon {
+  display: block;
+  width: 12px;
+  height: 12px;
+}
+
+.settings-hotkey-clear-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .settings-toggle input {
@@ -2174,6 +2414,7 @@ body {
   align-items: center;
   justify-content: center;
   padding: 16px 0;
+  overflow: hidden;
   outline: none;
 }
 
@@ -2187,18 +2428,54 @@ body {
 }
 
 .pixi-desktop-main {
-  padding: 16px 0;
+  padding: var(--debug-desktop-main-padding-y, 16px) 0;
+}
+
+.pixi-desktop-main-root-stage {
+  overflow: visible;
+  pointer-events: none;
 }
 
 .pixi-desktop-host {
   position: relative;
   width: 100vw;
-  height: calc(100vh - 176px);
-  min-height: 420px;
-  max-height: 720px;
+  height: calc(100% + var(--debug-desktop-host-height-offset, 0px));
+  min-height: 0;
+  max-height: var(--debug-desktop-host-max-height, none);
   margin-left: calc(50% - 50vw);
   margin-right: calc(50% - 50vw);
   overflow: hidden;
+}
+
+.pixi-desktop-host-root-stage {
+  position: fixed;
+  right: auto;
+  bottom: auto;
+  left: var(--pixi-root-stage-left, 0);
+  top: var(--pixi-root-stage-top, 0);
+  width: var(--pixi-root-stage-width, 100vw);
+  height: var(--pixi-root-stage-height, 100vh);
+  max-height: none;
+  margin: 0;
+  pointer-events: auto;
+  z-index: 11;
+}
+
+.pixi-desktop-host-root-stage-drag-active {
+  z-index: 80;
+}
+
+.pixi-single-stage-folder-controls {
+  position: fixed;
+  right: auto;
+  bottom: auto;
+  left: var(--pixi-root-stage-left, 0);
+  top: var(--pixi-root-stage-top, 0);
+  width: var(--pixi-root-stage-width, 100vw);
+  height: var(--pixi-root-stage-height, 100vh);
+  overflow: visible;
+  pointer-events: none;
+  z-index: 14;
 }
 
 .pixi-launchpad-canvas {
@@ -2206,22 +2483,6 @@ body {
   width: 100%;
   height: 100%;
   outline: none;
-}
-
-.pixi-drag-preview-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.pixi-drag-preview-host {
-  position: absolute;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
-  pointer-events: none;
 }
 
 .desktop-main:focus,
@@ -2299,23 +2560,6 @@ body {
 .icon-context-menu button:focus-visible {
   color: white;
   background: rgba(255, 255, 255, 0.12);
-}
-
-.pixi-folder-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-}
-
-.pixi-folder-overlay-empty {
-  pointer-events: none;
-}
-
-.pixi-folder-host {
-  position: absolute;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
 }
 
 .pixi-folder-name-input {
@@ -2419,7 +2663,14 @@ body {
 }
 
 @media (max-width: 760px) {
-  .launchpad-root { padding: 14px; }
+  .launchpad-root {
+    --launchpad-root-padding-x: 14px;
+    --launchpad-root-padding-top: 14px;
+    --launchpad-root-padding-bottom: 14px;
+  }
+  .launchpad-root-windowed {
+    --launchpad-root-padding-top: calc(var(--window-chrome-height) + var(--window-chrome-content-gap));
+  }
   .launchpad-header { grid-template-columns: minmax(0, 1fr) auto; }
   .launchpad-header::before { content: none; }
   .layout-recovery-notice {

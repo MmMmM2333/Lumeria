@@ -127,6 +127,7 @@ export function runLaunchpadDataTests() {
     backgroundImageOpacity: 62,
     backgroundLiveDesktopOpacity: 77,
     backgroundBlurStrength: 72,
+    backgroundAcrylicBlurStrength: 73,
     backgroundDarkenColor: "#123",
     backgroundDarkenStrength: 61,
     backgroundAcrylicAppearance: "light",
@@ -135,6 +136,8 @@ export function runLaunchpadDataTests() {
     backgroundImagePath: " C:/Images/custom.webp ",
     windowEffectMaterial: "mica",
     windowEffectAppearance: "light",
+    windowMode: "windowed",
+    mainWindowShortcut: "control+alt+KeyL",
   });
   assert(snapshot.version === 1, "layout snapshots should use version 1");
   assert(snapshot.settings.textless === true && snapshot.settings.hiddenAppIds[0] === "hidden", "layout snapshots should include settings");
@@ -149,6 +152,7 @@ export function runLaunchpadDataTests() {
   assert(snapshot.settings.backgroundImageOpacity === 62, "layout snapshots should include background image opacity");
   assert(snapshot.settings.backgroundLiveDesktopOpacity === 77, "layout snapshots should include live desktop opacity");
   assert(snapshot.settings.backgroundBlurStrength === 72, "layout snapshots should include background blur strength");
+  assert(snapshot.settings.backgroundAcrylicBlurStrength === 73, "layout snapshots should include acrylic blur strength");
   assert(snapshot.settings.backgroundDarkenColor === "#112233", "layout snapshots should include normalized background darken color");
   assert(snapshot.settings.backgroundDarkenStrength === 61, "layout snapshots should include background darken strength");
   assert(snapshot.settings.backgroundAcrylicAppearance === "light", "layout snapshots should include acrylic appearance");
@@ -157,6 +161,14 @@ export function runLaunchpadDataTests() {
   assert(snapshot.settings.backgroundAcrylicLightParams.brightness === 1.2, "layout snapshots should include acrylic light params");
   assert(snapshot.settings.backgroundImagePath === "C:/Images/custom.webp", "layout snapshots should include the trimmed custom background image path");
   assert(snapshot.settings.windowEffectMaterial === "mica" && snapshot.settings.windowEffectAppearance === "light", "layout snapshots should include window effect settings");
+  assert(snapshot.settings.windowMode === "windowed", "layout snapshots should include window mode settings");
+  assert(snapshot.settings.mainWindowShortcut === "control+alt+KeyL", "layout snapshots should include the main window shortcut");
+  const disabledShortcutSnapshot = dataHelpers.createLayoutSnapshot({
+    ...snapshot.settings,
+    pages: merged,
+    mainWindowShortcut: null,
+  });
+  assert(disabledShortcutSnapshot.settings.mainWindowShortcut === null, "layout snapshots should preserve disabled main window shortcuts");
   const acrylicSnapshot = dataHelpers.createLayoutSnapshot({
     ...snapshot.settings,
     pages: merged,
@@ -186,10 +198,12 @@ export function runLaunchpadDataTests() {
     ...snapshot.settings,
     pages: merged,
     windowEffectMaterial: "none",
+    windowMode: "floating",
     backgroundSource: "systemMaterial",
     backgroundImagePath: "C:/Images/ignored.webp",
   });
   assert(plainSnapshot.settings.windowEffectMaterial === "none", "layout snapshots should preserve disabled window material");
+  assert(plainSnapshot.settings.windowMode === "fullscreen", "layout snapshots should fall back to fullscreen for missing window mode");
   assert(plainSnapshot.settings.backgroundImagePath === null, "layout snapshots should clear image paths when no image layer is selected");
   assert(!("iconDataUrl" in snapshot.pages[0][0]), "layout snapshots should omit catalog icon data");
   assert(snapshot.pages[0][0].iconPath === "C:/Icons/a.png", "layout snapshots should preserve cached icon paths");

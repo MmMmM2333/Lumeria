@@ -5,6 +5,7 @@ export function registerLaunchpadLifecycleWatchers(options, watchFn = watch) {
   const {
     activePages,
     backgroundAcrylicAppearance,
+    backgroundAcrylicBlurStrength,
     backgroundAcrylicDarkParams,
     backgroundAcrylicLightParams,
     backgroundBaseColor,
@@ -46,6 +47,7 @@ export function registerLaunchpadLifecycleWatchers(options, watchFn = watch) {
     syncWindowsWallpaperRefreshTimer,
     syncManagedAppState,
     visibleFolderRowCount,
+    windowMode,
     windowEffectAppearance,
     windowEffectMaterial,
   } = options;
@@ -54,11 +56,11 @@ export function registerLaunchpadLifecycleWatchers(options, watchFn = watch) {
   watchFn([renderedFolder, folderRows, folderCols, effectiveFolderIconSize, isTextlessMode, visibleFolderRowCount], scheduleFolderViewportMetrics, { flush: "post" });
   watchFn(folderViewportRef, observeFolderViewport, { flush: "post" });
   watchFn(activePages, schedulePageGridMetrics, { flush: "post" });
-  watchFn([pages, gridRows, gridCols, folderRows, folderCols, iconSize, folderIconSizeMode, folderIconSize, isTextlessMode, hiddenAppIds, scanRoots, scanKeywordBlacklist, scanAppBlacklist, showMissingLaunchTargetBadge, backgroundBaseColor, backgroundBaseOpacity, backgroundSource, backgroundEffect, backgroundImageOpacity, backgroundLiveDesktopOpacity, backgroundBlurStrength, backgroundDarkenColor, backgroundDarkenStrength, backgroundAcrylicAppearance, backgroundAcrylicDarkParams, backgroundAcrylicLightParams, backgroundImagePath, windowEffectMaterial, windowEffectAppearance], scheduleNativeLayoutSave, { flush: "post" });
+  watchFn([pages, gridRows, gridCols, folderRows, folderCols, iconSize, folderIconSizeMode, folderIconSize, isTextlessMode, hiddenAppIds, scanRoots, scanKeywordBlacklist, scanAppBlacklist, showMissingLaunchTargetBadge, backgroundBaseColor, backgroundBaseOpacity, backgroundSource, backgroundEffect, backgroundImageOpacity, backgroundLiveDesktopOpacity, backgroundBlurStrength, backgroundAcrylicBlurStrength, backgroundDarkenColor, backgroundDarkenStrength, backgroundAcrylicAppearance, backgroundAcrylicDarkParams, backgroundAcrylicLightParams, backgroundImagePath, windowMode, windowEffectMaterial, windowEffectAppearance], scheduleNativeLayoutSave, { flush: "post" });
   watchFn([pages, showMissingLaunchTargetBadge], scheduleLaunchTargetStatusCheck, { flush: "post" });
   watchFn(filteredManagedApps, syncManagedAppState, { flush: "post" });
   watchFn([backgroundSource, isDesktopOpen], syncWindowsWallpaperRefreshTimer, { flush: "post" });
-  watchFn([backgroundSource, isDesktopOpen, backgroundEffect, backgroundLiveDesktopOpacity, backgroundBlurStrength, backgroundDarkenColor, backgroundDarkenStrength, backgroundAcrylicAppearance, backgroundAcrylicDarkParams, backgroundAcrylicLightParams], syncLiveDesktopBackgroundRuntime, { flush: "post" });
+  watchFn([backgroundSource, isDesktopOpen, backgroundEffect, backgroundLiveDesktopOpacity, backgroundBlurStrength, backgroundAcrylicBlurStrength, backgroundDarkenColor, backgroundDarkenStrength, backgroundAcrylicAppearance, backgroundAcrylicDarkParams, backgroundAcrylicLightParams], syncLiveDesktopBackgroundRuntime, { flush: "post" });
 }
 
 export function createLaunchpadLayoutResizeObserver(options, ResizeObserverCtor = globalThis.ResizeObserver) {
@@ -90,6 +92,7 @@ export function runLaunchpadMountedEffects(options, ResizeObserverCtor = globalT
     registerNativeEventListeners,
     scheduleFolderViewportMetrics,
     schedulePageGridMetrics,
+    showNativeWindowAfterStartup,
     updateFolderViewportHeight,
     updatePageGridMetrics,
   } = options;
@@ -104,6 +107,7 @@ export function runLaunchpadMountedEffects(options, ResizeObserverCtor = globalT
   if (lifecycle) lifecycle.active = true;
   registerNativeEventListeners().finally(() => {
     if (lifecycle && !lifecycle.active) return;
+    showNativeWindowAfterStartup?.();
     loadNativeLaunchpadData();
   });
 
@@ -120,6 +124,7 @@ export function runLaunchpadBeforeUnmountEffects(options, layoutResizeObserver =
     clearDragRelease,
     clearFolderAppLaunchTimer,
     clearFolderCloseTimer,
+    clearFolderCloseHandoffFrame,
     clearFolderPageTurn,
     clearFolderCloseIconGhosts,
     clearFolderOpenIconGhosts,
@@ -154,6 +159,7 @@ export function runLaunchpadBeforeUnmountEffects(options, layoutResizeObserver =
   clearFolderOpenIconGhosts?.();
   clearFolderCloseIconGhosts?.();
   clearFolderCloseTimer();
+  clearFolderCloseHandoffFrame?.();
   clearFolderAppLaunchTimer();
   clearLayoutProjectionRelease?.(true);
   clearSettingsPanelCloseTimer();

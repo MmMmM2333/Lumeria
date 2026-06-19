@@ -2,6 +2,7 @@ import { Container } from "pixi.js";
 import { gsap } from "gsap";
 import { IconNode } from "../nodes/IconNode.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import { panelSpring, springTo, stopTargetSprings } from "../animation/springMotion.js";
 import {
   DRAG_PREVIEW_SCALE,
   getDragPreviewLayout,
@@ -9,9 +10,16 @@ import {
 } from "./dragPreviewMotion.js";
 
 const DRAG_PREVIEW_ROTATION = 0;
-const DRAG_PREVIEW_LIFT_DURATION = 0.16;
-const DRAG_PREVIEW_FOLDER_SCALE_DURATION = 0.14;
-const DRAG_RELEASE_DURATION = 0.18;
+
+function stopPreviewScaleMotion(node) {
+  gsap.killTweensOf(node.scale);
+  stopTargetSprings(node.scale);
+}
+
+function springPreviewScale(node, scale) {
+  springTo(node.scale, "x", scale, panelSpring);
+  springTo(node.scale, "y", scale, panelSpring);
+}
 
 export class DragPreviewLayer extends Container {
   constructor() {
@@ -37,7 +45,8 @@ export class DragPreviewLayer extends Container {
       this.previewScaleKey = null;
       this.releaseKey = null;
       gsap.killTweensOf(this.previewNode);
-      gsap.killTweensOf(this.previewNode.scale);
+      stopTargetSprings(this.previewNode);
+      stopPreviewScaleMotion(this.previewNode);
       this.visible = false;
       this.previewNode.visible = false;
       return;
@@ -78,25 +87,11 @@ export class DragPreviewLayer extends Container {
     this.previewNode.position.set(layout.position.x, layout.position.y);
     this.previewNode.rotation = DRAG_PREVIEW_ROTATION;
     if (isNewPreview) {
-      gsap.killTweensOf(this.previewNode.scale);
+      stopPreviewScaleMotion(this.previewNode);
       this.previewNode.scale.set(1);
-      gsap.to(this.previewNode.scale, {
-        duration: DRAG_PREVIEW_LIFT_DURATION,
-        ease: "power3.out",
-        overwrite: "auto",
-        x: layout.targetScale,
-        y: layout.targetScale,
-      });
+      springPreviewScale(this.previewNode, layout.targetScale);
     } else if (this.previewScaleKey !== layout.scaleKey) {
-      gsap.to(this.previewNode.scale, {
-        duration: DRAG_PREVIEW_FOLDER_SCALE_DURATION,
-        ease: "power3.out",
-        overwrite: "auto",
-        x: layout.targetScale,
-        y: layout.targetScale,
-      });
-    } else if (!gsap.isTweening(this.previewNode.scale)) {
-      this.previewNode.scale.set(layout.targetScale);
+      springPreviewScale(this.previewNode, layout.targetScale);
     }
     this.previewScaleKey = layout.scaleKey;
     this.previewNode.eventMode = "none";
@@ -142,30 +137,21 @@ export class DragPreviewLayer extends Container {
     this.previewKey = null;
     this.previewScaleKey = null;
     gsap.killTweensOf(this.previewNode);
-    gsap.killTweensOf(this.previewNode.scale);
+    stopTargetSprings(this.previewNode);
+    stopPreviewScaleMotion(this.previewNode);
     this.previewNode.alpha = 1;
     this.previewNode.position.set(motion.start.x, motion.start.y);
     this.previewNode.scale.set(DRAG_PREVIEW_SCALE);
     if (!motion.hasTargetRect) return;
-    gsap.to(this.previewNode, {
-      duration: release.duration || DRAG_RELEASE_DURATION,
-      ease: "power3.out",
-      overwrite: "auto",
-      x: motion.target.x,
-      y: motion.target.y,
-    });
-    gsap.to(this.previewNode.scale, {
-      duration: release.duration || DRAG_RELEASE_DURATION,
-      ease: "power3.out",
-      overwrite: "auto",
-      x: motion.targetScale,
-      y: motion.targetScale,
-    });
+    springTo(this.previewNode, "x", motion.target.x, panelSpring, { velocity: motion.velocity.x });
+    springTo(this.previewNode, "y", motion.target.y, panelSpring, { velocity: motion.velocity.y });
+    springPreviewScale(this.previewNode, motion.targetScale);
   }
 
   destroy(options) {
     gsap.killTweensOf(this.previewNode);
-    gsap.killTweensOf(this.previewNode.scale);
+    stopTargetSprings(this.previewNode);
+    stopPreviewScaleMotion(this.previewNode);
     super.destroy(options);
   }
 }

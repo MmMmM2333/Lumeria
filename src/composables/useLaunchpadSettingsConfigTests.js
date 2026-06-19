@@ -1,5 +1,6 @@
 import { createLaunchpadLayoutHelpers, makePageSize } from "../domain/launchpadLayout.js";
 import { setLiveDesktopExperimentEnabledForTests } from "../domain/experimentalFeatures.js";
+import { DEFAULT_MAIN_WINDOW_SHORTCUT } from "../domain/mainWindowShortcut.js";
 import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
@@ -12,6 +13,7 @@ import {
   BACKGROUND_IMAGE_LAYOUT_CENTER,
   BACKGROUND_IMAGE_LAYOUT_FILL,
   BACKGROUND_IMAGE_LAYOUT_TILE,
+  DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH,
   DEFAULT_BACKGROUND_BLUR_STRENGTH,
   DEFAULT_BACKGROUND_DARKEN_COLOR,
   DEFAULT_BACKGROUND_DARKEN_STRENGTH,
@@ -22,6 +24,7 @@ import {
   DEFAULT_BACKGROUND_BASE_COLOR,
   DEFAULT_BACKGROUND_BASE_OPACITY,
   DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT,
+  DEFAULT_WINDOW_MODE,
   FOLDER_ICON_SIZE_MODE_CUSTOM,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   WINDOW_EFFECT_APPEARANCE_DARK,
@@ -30,8 +33,10 @@ import {
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
   WINDOW_EFFECT_MATERIAL_MICA,
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
+  WINDOW_MODE_WINDOWED,
   backgroundEffectUsesPixi,
   clampBackgroundBaseOpacity,
+  clampBackgroundAcrylicBlurStrength,
   clampBackgroundBlurStrength,
   clampBackgroundDarkenStrength,
   clampBackgroundImageOpacity,
@@ -47,6 +52,7 @@ import {
   normalizeLiveDesktopBackgroundSupport,
   normalizeWindowEffectAppearance,
   normalizeWindowEffectMaterial,
+  normalizeWindowMode,
   normalizeFolderIconSizeMode,
   normalizeBackgroundSource,
   createDefaultBackgroundAcrylicParams,
@@ -93,6 +99,7 @@ function createSettingsConfig(overrides = {}) {
     draftBackgroundLiveDesktopOpacity: refValue(overrides.draftBackgroundLiveDesktopOpacity ?? 100),
     draftBackgroundImageLayout: refValue(overrides.draftBackgroundImageLayout ?? BACKGROUND_IMAGE_LAYOUT_FILL),
     draftBackgroundBlurStrength: refValue(overrides.draftBackgroundBlurStrength ?? DEFAULT_BACKGROUND_BLUR_STRENGTH),
+    draftBackgroundAcrylicBlurStrength: refValue(overrides.draftBackgroundAcrylicBlurStrength ?? DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH),
     draftBackgroundDarkenColor: refValue(overrides.draftBackgroundDarkenColor ?? DEFAULT_BACKGROUND_DARKEN_COLOR),
     draftBackgroundDarkenStrength: refValue(overrides.draftBackgroundDarkenStrength ?? DEFAULT_BACKGROUND_DARKEN_STRENGTH),
     draftBackgroundAcrylicAppearance: refValue(overrides.draftBackgroundAcrylicAppearance ?? BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM),
@@ -102,6 +109,8 @@ function createSettingsConfig(overrides = {}) {
     draftBackgroundImageUrl: refValue(overrides.draftBackgroundImageUrl ?? null),
     draftWindowEffectMaterial: refValue(overrides.draftWindowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
     draftWindowEffectAppearance: refValue(overrides.draftWindowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_DARK),
+    draftWindowMode: refValue(overrides.draftWindowMode ?? DEFAULT_WINDOW_MODE),
+    draftMainWindowShortcut: refValue(Object.prototype.hasOwnProperty.call(overrides, "draftMainWindowShortcut") ? overrides.draftMainWindowShortcut : DEFAULT_MAIN_WINDOW_SHORTCUT),
     isTextlessMode: refValue(overrides.isTextlessMode ?? false),
     backgroundBaseColor: refValue(overrides.backgroundBaseColor ?? DEFAULT_BACKGROUND_BASE_COLOR),
     backgroundBaseOpacity: refValue(overrides.backgroundBaseOpacity ?? DEFAULT_BACKGROUND_BASE_OPACITY),
@@ -111,6 +120,7 @@ function createSettingsConfig(overrides = {}) {
     backgroundLiveDesktopOpacity: refValue(overrides.backgroundLiveDesktopOpacity ?? 100),
     backgroundImageLayout: refValue(overrides.backgroundImageLayout ?? BACKGROUND_IMAGE_LAYOUT_FILL),
     backgroundBlurStrength: refValue(overrides.backgroundBlurStrength ?? DEFAULT_BACKGROUND_BLUR_STRENGTH),
+    backgroundAcrylicBlurStrength: refValue(overrides.backgroundAcrylicBlurStrength ?? DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH),
     backgroundDarkenColor: refValue(overrides.backgroundDarkenColor ?? DEFAULT_BACKGROUND_DARKEN_COLOR),
     backgroundDarkenStrength: refValue(overrides.backgroundDarkenStrength ?? DEFAULT_BACKGROUND_DARKEN_STRENGTH),
     backgroundAcrylicAppearance: refValue(overrides.backgroundAcrylicAppearance ?? BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM),
@@ -120,6 +130,10 @@ function createSettingsConfig(overrides = {}) {
     backgroundImageUrl: refValue(overrides.backgroundImageUrl ?? null),
     windowEffectMaterial: refValue(overrides.windowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
     windowEffectAppearance: refValue(overrides.windowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_DARK),
+    windowMode: refValue(overrides.windowMode ?? DEFAULT_WINDOW_MODE),
+    mainWindowShortcut: refValue(Object.prototype.hasOwnProperty.call(overrides, "mainWindowShortcut") ? overrides.mainWindowShortcut : DEFAULT_MAIN_WINDOW_SHORTCUT),
+    mainWindowShortcutError: refValue(""),
+    isApplyingSettingsConfig: refValue(false),
     windowEffectsSupport: refValue(overrides.windowEffectsSupport ?? {
       platform: "windows",
       build: 22621,
@@ -139,8 +153,10 @@ function createSettingsConfig(overrides = {}) {
     isChoosingBackgroundImage: refValue(false),
   };
   const calls = {
+    applyNativeWindowMode: 0,
     applyNativeWindowEffects: 0,
     closeSettingsPanel: 0,
+    applyNativeMainWindowShortcut: [],
     commitFolderPageIndex: [],
     commitPageIndex: [],
     commitPages: [],
@@ -166,6 +182,15 @@ function createSettingsConfig(overrides = {}) {
     applyNativeWindowEffects: () => {
       calls.applyNativeWindowEffects += 1;
     },
+    applyNativeMainWindowShortcut: (shortcut) => {
+      calls.applyNativeMainWindowShortcut.push(shortcut);
+      return overrides.applyNativeMainWindowShortcut
+        ? overrides.applyNativeMainWindowShortcut(shortcut)
+        : true;
+    },
+    applyNativeWindowMode: () => {
+      calls.applyNativeWindowMode += 1;
+    },
     syncLiveDesktopBackgroundRuntime: () => {
       calls.syncLiveDesktopBackgroundRuntime += 1;
     },
@@ -185,6 +210,7 @@ function createSettingsConfig(overrides = {}) {
     draftBackgroundLiveDesktopOpacity: state.draftBackgroundLiveDesktopOpacity,
     draftBackgroundImageLayout: state.draftBackgroundImageLayout,
     draftBackgroundBlurStrength: state.draftBackgroundBlurStrength,
+    draftBackgroundAcrylicBlurStrength: state.draftBackgroundAcrylicBlurStrength,
     draftBackgroundDarkenColor: state.draftBackgroundDarkenColor,
     draftBackgroundDarkenStrength: state.draftBackgroundDarkenStrength,
     draftBackgroundAcrylicAppearance: state.draftBackgroundAcrylicAppearance,
@@ -206,6 +232,8 @@ function createSettingsConfig(overrides = {}) {
     draftRows: state.draftRows,
     draftWindowEffectAppearance: state.draftWindowEffectAppearance,
     draftWindowEffectMaterial: state.draftWindowEffectMaterial,
+    draftWindowMode: state.draftWindowMode,
+    draftMainWindowShortcut: state.draftMainWindowShortcut,
     ensurePage: helpers.ensurePage,
     folderCols: state.folderCols,
     folderIconSize: state.folderIconSize,
@@ -224,6 +252,7 @@ function createSettingsConfig(overrides = {}) {
     backgroundLiveDesktopOpacity: state.backgroundLiveDesktopOpacity,
     backgroundImageLayout: state.backgroundImageLayout,
     backgroundBlurStrength: state.backgroundBlurStrength,
+    backgroundAcrylicBlurStrength: state.backgroundAcrylicBlurStrength,
     backgroundDarkenColor: state.backgroundDarkenColor,
     backgroundDarkenStrength: state.backgroundDarkenStrength,
     backgroundAcrylicAppearance: state.backgroundAcrylicAppearance,
@@ -234,6 +263,7 @@ function createSettingsConfig(overrides = {}) {
     backgroundSource: state.backgroundSource,
     backgroundEffect: state.backgroundEffect,
     isChoosingBackgroundImage: state.isChoosingBackgroundImage,
+    isApplyingSettingsConfig: state.isApplyingSettingsConfig,
     pageIndex: state.pageIndex,
     pageSize,
     pages: state.pages,
@@ -244,14 +274,17 @@ function createSettingsConfig(overrides = {}) {
     searchPageIndex: state.searchPageIndex,
     windowEffectAppearance: state.windowEffectAppearance,
     windowEffectMaterial: state.windowEffectMaterial,
+    windowMode: state.windowMode,
     windowEffectsSupport: state.windowEffectsSupport,
     liveDesktopBackgroundSupport: state.liveDesktopBackgroundSupport,
+    mainWindowShortcut: state.mainWindowShortcut,
+    mainWindowShortcutError: state.mainWindowShortcutError,
   });
 
   return { calls, config, state };
 }
 
-export function runLaunchpadSettingsConfigTests() {
+export async function runLaunchpadSettingsConfigTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Launchpad settings config test failed] ${message}`);
   };
@@ -288,6 +321,9 @@ export function runLaunchpadSettingsConfigTests() {
   assert(clampBackgroundBlurStrength(-12) === 1, "background blur strength should clamp to the minimum");
   assert(clampBackgroundBlurStrength(120) === 100, "background blur strength should clamp to the maximum");
   assert(clampBackgroundBlurStrength("bad") === DEFAULT_BACKGROUND_BLUR_STRENGTH, "invalid background blur strength should fall back to the default");
+  assert(clampBackgroundAcrylicBlurStrength(-12) === 1, "background acrylic blur strength should clamp to the minimum");
+  assert(clampBackgroundAcrylicBlurStrength(120) === 100, "background acrylic blur strength should clamp to the maximum");
+  assert(clampBackgroundAcrylicBlurStrength("bad") === DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH, "invalid background acrylic blur strength should fall back to the default");
   assert(clampBackgroundDarkenStrength(-12) === 0, "background darken strength should clamp to the minimum");
   assert(clampBackgroundDarkenStrength(120) === 100, "background darken strength should clamp to the maximum");
   assert(clampBackgroundDarkenStrength("bad") === DEFAULT_BACKGROUND_DARKEN_STRENGTH, "invalid background darken strength should fall back to the default");
@@ -308,6 +344,8 @@ export function runLaunchpadSettingsConfigTests() {
   assert(normalizeWindowEffectMaterial("unknown") === WINDOW_EFFECT_MATERIAL_ACRYLIC, "unknown window effect materials should fall back to acrylic");
   assert(normalizeWindowEffectAppearance(WINDOW_EFFECT_APPEARANCE_LIGHT) === WINDOW_EFFECT_APPEARANCE_LIGHT, "light window effect appearance should be preserved");
   assert(normalizeWindowEffectAppearance("unknown") === WINDOW_EFFECT_APPEARANCE_DARK, "unknown window effect appearances should fall back to dark");
+  assert(normalizeWindowMode(WINDOW_MODE_WINDOWED) === WINDOW_MODE_WINDOWED, "windowed mode should be preserved");
+  assert(normalizeWindowMode("unknown") === DEFAULT_WINDOW_MODE, "unknown window modes should fall back to fullscreen");
   assert(
     resolveWindowEffectMaterialForSupport(WINDOW_EFFECT_MATERIAL_MICA, { supportsAcrylic: true, supportsMica: false, supportsMicaAlt: false }) === WINDOW_EFFECT_MATERIAL_ACRYLIC,
     "mica should fall back to acrylic when the system does not support mica"
@@ -337,6 +375,7 @@ export function runLaunchpadSettingsConfigTests() {
     draftBackgroundImageOpacity: 12,
     draftBackgroundImageLayout: BACKGROUND_IMAGE_LAYOUT_CENTER,
     draftBackgroundBlurStrength: 12,
+    draftBackgroundAcrylicBlurStrength: 13,
     draftBackgroundDarkenColor: "#121212",
     draftBackgroundDarkenStrength: 12,
     draftBackgroundAcrylicAppearance: BACKGROUND_ACRYLIC_APPEARANCE_DARK,
@@ -360,6 +399,7 @@ export function runLaunchpadSettingsConfigTests() {
     backgroundLiveDesktopOpacity: 82,
     backgroundImageLayout: BACKGROUND_IMAGE_LAYOUT_TILE,
     backgroundBlurStrength: 82,
+    backgroundAcrylicBlurStrength: 83,
     backgroundDarkenColor: "#456",
     backgroundDarkenStrength: 64,
     backgroundAcrylicAppearance: BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
@@ -369,6 +409,8 @@ export function runLaunchpadSettingsConfigTests() {
     backgroundImageUrl: "asset://current",
     windowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
     windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
+    windowMode: WINDOW_MODE_WINDOWED,
+    mainWindowShortcut: "control+alt+KeyL",
   });
   syncLaunchpadSettingsDraftsFromState(sync.state);
   assert(sync.state.draftRows.value === 4 && sync.state.draftCols.value === 5, "sync should reset desktop draft dimensions from current settings");
@@ -385,6 +427,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(sync.state.draftBackgroundLiveDesktopOpacity.value === 82, "sync should reset live desktop opacity draft from current settings");
   assert(sync.state.draftBackgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_TILE, "sync should reset background image layout draft from current settings");
   assert(sync.state.draftBackgroundBlurStrength.value === 82, "sync should reset background blur strength draft from current settings");
+  assert(sync.state.draftBackgroundAcrylicBlurStrength.value === 83, "sync should reset acrylic blur strength draft from current settings");
   assert(sync.state.draftBackgroundDarkenColor.value === "#445566", "sync should reset background darken color draft from current settings");
   assert(sync.state.draftBackgroundDarkenStrength.value === 64, "sync should reset background darken strength draft from current settings");
   assert(sync.state.draftBackgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT, "sync should reset acrylic appearance draft from current settings");
@@ -394,6 +437,8 @@ export function runLaunchpadSettingsConfigTests() {
   assert(sync.state.draftBackgroundImageUrl.value === "asset://current", "sync should reset background image url draft from current settings");
   assert(sync.state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "sync should reset window effect material draft from current settings");
   assert(sync.state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "sync should reset window effect appearance draft from current settings");
+  assert(sync.state.draftWindowMode.value === WINDOW_MODE_WINDOWED, "sync should reset window mode draft from current settings");
+  assert(sync.state.draftMainWindowShortcut.value === "control+alt+KeyL", "sync should reset main window shortcut draft from current settings");
 
   const draft = createSettingsConfig({
     draftCols: 10,
@@ -443,6 +488,7 @@ export function runLaunchpadSettingsConfigTests() {
   backgroundMode.config.setDraftBackgroundLiveDesktopOpacity(-12);
   backgroundMode.config.setDraftBackgroundImageLayout(BACKGROUND_IMAGE_LAYOUT_CENTER);
   backgroundMode.config.setDraftBackgroundBlurStrength(120);
+  backgroundMode.config.setDraftBackgroundAcrylicBlurStrength(120);
   backgroundMode.config.setDraftBackgroundDarkenColor("#789");
   backgroundMode.config.setDraftBackgroundDarkenStrength(120);
   backgroundMode.config.setDraftBackgroundAcrylicAppearance(BACKGROUND_ACRYLIC_APPEARANCE_LIGHT);
@@ -454,6 +500,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(backgroundMode.state.draftBackgroundLiveDesktopOpacity.value === 0, "live desktop opacity should clamp from slider input");
   assert(backgroundMode.state.draftBackgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_CENTER, "background image layout should update from segmented controls");
   assert(backgroundMode.state.draftBackgroundBlurStrength.value === 100, "background blur strength should clamp from slider input");
+  assert(backgroundMode.state.draftBackgroundAcrylicBlurStrength.value === 100, "acrylic blur strength should clamp from slider input");
   assert(backgroundMode.state.draftBackgroundDarkenColor.value === "#778899", "background darken color should update from color input");
   assert(backgroundMode.state.draftBackgroundDarkenStrength.value === 100, "background darken strength should clamp from slider input");
   assert(backgroundMode.state.draftBackgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT, "acrylic appearance should update from segmented controls");
@@ -550,6 +597,7 @@ export function runLaunchpadSettingsConfigTests() {
     draftBackgroundLiveDesktopOpacity: 76,
     draftBackgroundImageLayout: BACKGROUND_IMAGE_LAYOUT_CENTER,
     draftBackgroundBlurStrength: 88,
+    draftBackgroundAcrylicBlurStrength: 91,
     draftBackgroundDarkenColor: "#456",
     draftBackgroundDarkenStrength: 53,
     draftBackgroundAcrylicAppearance: BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
@@ -559,6 +607,7 @@ export function runLaunchpadSettingsConfigTests() {
     draftBackgroundImageUrl: "asset://applied",
     draftWindowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
     draftWindowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
+    draftWindowMode: WINDOW_MODE_WINDOWED,
     pages: [makeItems(7)],
   });
   apply.config.applySettingsConfig();
@@ -576,6 +625,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(apply.state.backgroundLiveDesktopOpacity.value === 76, "live desktop opacity should apply from the draft value");
   assert(apply.state.backgroundImageLayout.value === BACKGROUND_IMAGE_LAYOUT_CENTER, "background image layout should apply from the draft value");
   assert(apply.state.backgroundBlurStrength.value === 88, "background blur strength should apply from the draft value");
+  assert(apply.state.backgroundAcrylicBlurStrength.value === 91, "acrylic blur strength should apply from the draft value");
   assert(apply.state.backgroundDarkenColor.value === "#445566", "background darken color should apply from the draft value");
   assert(apply.state.backgroundDarkenStrength.value === 53, "background darken strength should apply from the draft value");
   assert(apply.state.backgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT, "acrylic appearance should apply from the draft value");
@@ -585,15 +635,50 @@ export function runLaunchpadSettingsConfigTests() {
   assert(apply.state.backgroundImageUrl.value === "asset://applied", "background image url should apply from the draft value");
   assert(apply.state.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "window effect material should apply from the draft value");
   assert(apply.state.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "window effect appearance should apply from the draft value");
+  assert(apply.state.windowMode.value === WINDOW_MODE_WINDOWED, "window mode should apply from the draft value");
+  assert(apply.state.mainWindowShortcut.value === DEFAULT_MAIN_WINDOW_SHORTCUT, "unchanged shortcuts should remain at the current value");
+  assert(apply.calls.applyNativeMainWindowShortcut.length === 0, "unchanged shortcuts should not call native shortcut registration");
   assert(apply.calls.commitPages.length === 1, "applying settings should commit repacked pages");
   assert(apply.calls.commitPages[0].length === 2, "shrinking page capacity should overflow items to another page");
   assert(apply.calls.commitPageIndex.join(",") === "2", "applying settings should reclamp the desktop page index");
   assert(apply.calls.commitSearchPageIndex.join(",") === "1", "applying settings should reclamp the search page index");
   assert(apply.calls.commitFolderPageIndex.join(",") === "1", "applying settings should reclamp the folder page index");
   assert(apply.calls.schedulePageGridMetrics === 1, "applying settings should schedule page metrics");
+  assert(apply.calls.applyNativeWindowMode === 1, "applying settings should refresh native window mode");
   assert(apply.calls.applyNativeWindowEffects === 1, "applying settings should refresh native window effects");
   assert(apply.calls.syncLiveDesktopBackgroundRuntime === 1, "applying settings should sync the live desktop runtime");
   assert(apply.calls.closeSettingsPanel === 1, "applying settings from the panel should close it");
+
+  const shortcutApply = createSettingsConfig({
+    mainWindowShortcut: DEFAULT_MAIN_WINDOW_SHORTCUT,
+    draftMainWindowShortcut: "control+alt+KeyL",
+  });
+  const shortcutResult = shortcutApply.config.applySettingsConfig();
+  assert(shortcutResult && typeof shortcutResult.then === "function", "changed shortcuts should use the async native apply path");
+  await shortcutResult;
+  assert(shortcutApply.calls.applyNativeMainWindowShortcut.join(",") === "control+alt+KeyL", "changed shortcuts should register through native before commit");
+  assert(shortcutApply.state.mainWindowShortcut.value === "control+alt+KeyL", "successful shortcut registration should commit the new shortcut");
+  assert(shortcutApply.calls.closeSettingsPanel === 1, "successful shortcut registration should close the settings panel");
+
+  const shortcutFailure = createSettingsConfig({
+    mainWindowShortcut: DEFAULT_MAIN_WINDOW_SHORTCUT,
+    draftMainWindowShortcut: "control+alt+KeyL",
+    applyNativeMainWindowShortcut: () => false,
+  });
+  await shortcutFailure.config.applySettingsConfig();
+  assert(shortcutFailure.state.mainWindowShortcut.value === DEFAULT_MAIN_WINDOW_SHORTCUT, "failed shortcut registration should keep the current shortcut");
+  assert(shortcutFailure.state.draftMainWindowShortcut.value === "control+alt+KeyL", "failed shortcut registration should keep the draft for editing");
+  assert(shortcutFailure.calls.closeSettingsPanel === 0, "failed shortcut registration should keep the settings panel open");
+
+  const shortcutDisable = createSettingsConfig({
+    mainWindowShortcut: DEFAULT_MAIN_WINDOW_SHORTCUT,
+    draftMainWindowShortcut: null,
+  });
+  await shortcutDisable.config.applySettingsConfig();
+  assert(shortcutDisable.calls.applyNativeMainWindowShortcut.length === 1, "disabled shortcuts should call native registration");
+  assert(shortcutDisable.calls.applyNativeMainWindowShortcut[0] === null, "disabled shortcuts should pass null to native registration");
+  assert(shortcutDisable.state.mainWindowShortcut.value === null, "successful shortcut disable should commit null");
+  assert(shortcutDisable.state.draftMainWindowShortcut.value === null, "successful shortcut disable should keep the draft disabled");
 
   const acrylicApply = createSettingsConfig({
     draftBackgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,

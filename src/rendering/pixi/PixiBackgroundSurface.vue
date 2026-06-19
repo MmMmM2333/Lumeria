@@ -24,7 +24,7 @@ import {
   BACKGROUND_EFFECT_ACRYLIC_WEBGL,
   BACKGROUND_EFFECT_BLUR,
   DEFAULT_BACKGROUND_BLUR_STRENGTH,
-} from "../../composables/useLaunchpadSettingsConfig.js";
+} from "../../domain/backgroundSettings.js";
 import {
   createBackgroundEffectPlan,
   resolveAcrylicBackgroundAlpha,
@@ -343,7 +343,7 @@ watch(
 watch(
   () => props.backgroundBlurStrength,
   () => {
-    if (props.backgroundEffect === BACKGROUND_EFFECT_BLUR) scheduleRender();
+    if (props.backgroundEffect === BACKGROUND_EFFECT_BLUR || props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) scheduleRender();
   }
 );
 
@@ -389,8 +389,13 @@ if (isKawaseDebugEnabled) {
     () => [
       kawaseDebugParams.offsetScale,
       kawaseDebugParams.passCount,
+      kawaseDebugParams.gaussianCutoff,
+      kawaseDebugParams.acrylicGaussianCutoff,
+      kawaseDebugParams.gaussianMaxRadiusPx,
       kawaseDebugParams.gaussianRadiusPx,
+      kawaseDebugParams.gaussianRadiusScale,
       kawaseDebugParams.kernel,
+      kawaseDebugParams.testStrength,
       kawaseDebugOverrideEnabled.value,
     ],
     () => {

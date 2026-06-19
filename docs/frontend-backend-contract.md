@@ -17,7 +17,15 @@ commands.
 - `check_launch_targets(targets: LaunchTargetCheckRequest[]) -> LaunchTargetCheckResult[]`
 - `launch_app(request: LaunchAppRequest) -> void`
 - `hide_main_window() -> void`
+- `show_main_window() -> void`; opens the hidden main window through the same cloaked show path used by tray and shortcut activation. The renderer calls this once after native event listeners are registered so cold startup does not expose an uncomposited white WebView frame.
+- `reveal_main_window(openSequence?: number | null) -> void`; uncloaks the native main window after the frontend has painted the opening frame. The optional sequence prevents stale reveal calls from affecting a newer open cycle.
 - `set_main_window_effects_enabled(enabled: boolean, openSequence?: number | null) -> void`
+- `set_main_window_mode(mode: "fullscreen" | "windowed") -> "fullscreen" | "windowed"`; the native window remains frameless in both modes.
+- `set_main_window_shortcut(shortcut: string | null) -> string | null`; registers the global shortcut used to show or hide LaunchPad, or unregisters it when `null`. Registration failure means the shortcut is occupied or invalid and the previous shortcut remains active.
+- `set_main_window_shortcut_capture_active(active: boolean) -> void`; suppresses the registered main-window shortcut action while the renderer is recording a replacement shortcut.
+- `set_main_window_shadow_enabled(enabled: boolean) -> void`; close animations disable the native window shadow and the next open restores it.
+
+Windowed mode uses a frontend-rendered title bar for dragging, resizing, and window controls. It requires Tauri `core:window:allow-start-dragging`, `core:window:allow-start-resize-dragging`, `core:window:allow-minimize`, and `core:window:allow-toggle-maximize` permissions.
 
 ## Data Shapes
 
@@ -106,6 +114,8 @@ type LaunchpadLayout = {
     scanKeywordBlacklist: string[];
     scanAppBlacklist: ScanAppBlacklistItem[];
     showMissingLaunchTargetBadge: boolean;
+    windowMode: "fullscreen" | "windowed";
+    mainWindowShortcut: string | null;
   };
 };
 

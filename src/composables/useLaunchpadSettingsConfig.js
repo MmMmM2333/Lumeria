@@ -21,7 +21,101 @@ import {
 import {
   normalizeBackgroundImageLayout,
 } from "../domain/backgroundImageLayout.js";
+import {
+  DEFAULT_MAIN_WINDOW_SHORTCUT,
+  normalizeMainWindowShortcut,
+} from "../domain/mainWindowShortcut.js";
 import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
+import {
+  BACKGROUND_ACRYLIC_APPEARANCE_DARK,
+  BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
+  BACKGROUND_BASE_OPACITY_MAX,
+  BACKGROUND_BASE_OPACITY_MIN,
+  BACKGROUND_BASE_OPACITY_STEP,
+  BACKGROUND_BLUR_STRENGTH_MAX,
+  BACKGROUND_BLUR_STRENGTH_MIN,
+  BACKGROUND_DARKEN_STRENGTH_MAX,
+  BACKGROUND_DARKEN_STRENGTH_MIN,
+  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_BLUR,
+  BACKGROUND_EFFECT_DIMMED,
+  BACKGROUND_EFFECT_NONE,
+  BACKGROUND_IMAGE_OPACITY_MAX,
+  BACKGROUND_IMAGE_OPACITY_MIN,
+  BACKGROUND_IMAGE_OPACITY_STEP,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_MAX,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_MIN,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_STEP,
+  BACKGROUND_SOURCE_CUSTOM_IMAGE,
+  BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
+  BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
+  backgroundEffectUsesPixi,
+  backgroundSourceUsesImage,
+  backgroundSourceUsesLiveDesktop,
+  clampBackgroundAcrylicBlurStrength,
+  clampBackgroundBaseOpacity,
+  clampBackgroundBlurStrength,
+  clampBackgroundDarkenStrength,
+  clampBackgroundImageOpacity,
+  clampBackgroundLiveDesktopOpacity,
+  normalizeBackgroundAcrylicAppearance,
+  normalizeBackgroundBaseColor,
+  normalizeBackgroundDarkenColor,
+  normalizeBackgroundEffect,
+  normalizeBackgroundSource,
+} from "../domain/backgroundSettings.js";
+export {
+  BACKGROUND_ACRYLIC_APPEARANCE_DARK,
+  BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
+  BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
+  BACKGROUND_BASE_OPACITY_MAX,
+  BACKGROUND_BASE_OPACITY_MIN,
+  BACKGROUND_BASE_OPACITY_STEP,
+  BACKGROUND_BLUR_STRENGTH_MAX,
+  BACKGROUND_BLUR_STRENGTH_MIN,
+  BACKGROUND_BLUR_STRENGTH_STEP,
+  BACKGROUND_DARKEN_STRENGTH_MAX,
+  BACKGROUND_DARKEN_STRENGTH_MIN,
+  BACKGROUND_DARKEN_STRENGTH_STEP,
+  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_BLUR,
+  BACKGROUND_EFFECT_DIMMED,
+  BACKGROUND_EFFECT_NONE,
+  BACKGROUND_IMAGE_OPACITY_MAX,
+  BACKGROUND_IMAGE_OPACITY_MIN,
+  BACKGROUND_IMAGE_OPACITY_STEP,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_MAX,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_MIN,
+  BACKGROUND_LIVE_DESKTOP_OPACITY_STEP,
+  BACKGROUND_SOURCE_CUSTOM_IMAGE,
+  BACKGROUND_SOURCE_SYSTEM_MATERIAL,
+  BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
+  BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
+  DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE,
+  DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH,
+  DEFAULT_BACKGROUND_BASE_COLOR,
+  DEFAULT_BACKGROUND_BASE_OPACITY,
+  DEFAULT_BACKGROUND_BLUR_STRENGTH,
+  DEFAULT_BACKGROUND_DARKEN_COLOR,
+  DEFAULT_BACKGROUND_DARKEN_STRENGTH,
+  DEFAULT_BACKGROUND_IMAGE_OPACITY,
+  DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY,
+  backgroundEffectUsesPixi,
+  backgroundSourceUsesImage,
+  backgroundSourceUsesLiveDesktop,
+  clampBackgroundAcrylicBlurStrength,
+  clampBackgroundBaseOpacity,
+  clampBackgroundBlurStrength,
+  clampBackgroundDarkenStrength,
+  clampBackgroundImageOpacity,
+  clampBackgroundLiveDesktopOpacity,
+  normalizeBackgroundAcrylicAppearance,
+  normalizeBackgroundBaseColor,
+  normalizeBackgroundDarkenColor,
+  normalizeBackgroundEffect,
+  normalizeBackgroundSource,
+} from "../domain/backgroundSettings.js";
 export {
   BACKGROUND_IMAGE_LAYOUT_CENTER,
   BACKGROUND_IMAGE_LAYOUT_FILL,
@@ -35,46 +129,15 @@ export {
 
 export const FOLDER_ICON_SIZE_MODE_CUSTOM = "custom";
 export const FOLDER_ICON_SIZE_MODE_GLOBAL = "global";
-export const BACKGROUND_SOURCE_SYSTEM_MATERIAL = "systemMaterial";
-export const BACKGROUND_SOURCE_CUSTOM_IMAGE = "customImage";
-export const BACKGROUND_SOURCE_WINDOWS_WALLPAPER = "windowsWallpaper";
-export const BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP = "windowsLiveDesktop";
-export const BACKGROUND_EFFECT_NONE = "none";
-export const BACKGROUND_EFFECT_DIMMED = "dimmed";
-export const BACKGROUND_EFFECT_BLUR = "blur";
-export const BACKGROUND_EFFECT_ACRYLIC_WEBGL = "acrylicWebgl";
-export const BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM = "system";
-export const BACKGROUND_ACRYLIC_APPEARANCE_DARK = "dark";
-export const BACKGROUND_ACRYLIC_APPEARANCE_LIGHT = "light";
-export const DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE = BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM;
-export const BACKGROUND_IMAGE_OPACITY_MIN = 0;
-export const BACKGROUND_IMAGE_OPACITY_MAX = 100;
-export const BACKGROUND_IMAGE_OPACITY_STEP = 1;
-export const DEFAULT_BACKGROUND_IMAGE_OPACITY = 46;
-export const BACKGROUND_LIVE_DESKTOP_OPACITY_MIN = 0;
-export const BACKGROUND_LIVE_DESKTOP_OPACITY_MAX = 100;
-export const BACKGROUND_LIVE_DESKTOP_OPACITY_STEP = 1;
-export const DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY = 100;
-export const BACKGROUND_BLUR_STRENGTH_MIN = 1;
-export const BACKGROUND_BLUR_STRENGTH_MAX = 100;
-export const BACKGROUND_BLUR_STRENGTH_STEP = 1;
-export const DEFAULT_BACKGROUND_BLUR_STRENGTH = 50;
-export const BACKGROUND_DARKEN_STRENGTH_MIN = 0;
-export const BACKGROUND_DARKEN_STRENGTH_MAX = 100;
-export const BACKGROUND_DARKEN_STRENGTH_STEP = 1;
-export const DEFAULT_BACKGROUND_DARKEN_STRENGTH = 28;
-export const DEFAULT_BACKGROUND_DARKEN_COLOR = "#1c1c1c";
-export const BACKGROUND_BASE_OPACITY_MIN = 0;
-export const BACKGROUND_BASE_OPACITY_MAX = 100;
-export const BACKGROUND_BASE_OPACITY_STEP = 1;
-export const DEFAULT_BACKGROUND_BASE_COLOR = "#10141f";
-export const DEFAULT_BACKGROUND_BASE_OPACITY = 28;
 export const WINDOW_EFFECT_MATERIAL_NONE = "none";
 export const WINDOW_EFFECT_MATERIAL_ACRYLIC = "acrylic";
 export const WINDOW_EFFECT_MATERIAL_MICA = "mica";
 export const WINDOW_EFFECT_MATERIAL_MICA_ALT = "micaAlt";
 export const WINDOW_EFFECT_APPEARANCE_DARK = "dark";
 export const WINDOW_EFFECT_APPEARANCE_LIGHT = "light";
+export const WINDOW_MODE_FULLSCREEN = "fullscreen";
+export const WINDOW_MODE_WINDOWED = "windowed";
+export const DEFAULT_WINDOW_MODE = WINDOW_MODE_FULLSCREEN;
 export const DEFAULT_WINDOW_EFFECTS_SUPPORT = Object.freeze({
   platform: "unknown",
   build: null,
@@ -98,33 +161,6 @@ export function normalizeFolderIconSizeMode(value) {
   return value === FOLDER_ICON_SIZE_MODE_CUSTOM ? FOLDER_ICON_SIZE_MODE_CUSTOM : FOLDER_ICON_SIZE_MODE_GLOBAL;
 }
 
-export function normalizeBackgroundSource(value) {
-  if (value === BACKGROUND_SOURCE_CUSTOM_IMAGE) return BACKGROUND_SOURCE_CUSTOM_IMAGE;
-  if (value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER) return BACKGROUND_SOURCE_WINDOWS_WALLPAPER;
-  if (value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP) return BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP;
-  return BACKGROUND_SOURCE_SYSTEM_MATERIAL;
-}
-
-export function normalizeBackgroundEffect(value) {
-  if (value === BACKGROUND_EFFECT_BLUR) return BACKGROUND_EFFECT_BLUR;
-  if (value === BACKGROUND_EFFECT_ACRYLIC_WEBGL) return BACKGROUND_EFFECT_ACRYLIC_WEBGL;
-  return value === BACKGROUND_EFFECT_NONE ? BACKGROUND_EFFECT_NONE : BACKGROUND_EFFECT_DIMMED;
-}
-
-export function backgroundEffectUsesPixi(effect) {
-  const normalizedEffect = normalizeBackgroundEffect(effect);
-  return normalizedEffect === BACKGROUND_EFFECT_BLUR || normalizedEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL;
-}
-
-export function backgroundSourceUsesImage(source) {
-  const normalizedSource = normalizeBackgroundSource(source);
-  return normalizedSource === BACKGROUND_SOURCE_CUSTOM_IMAGE || normalizedSource === BACKGROUND_SOURCE_WINDOWS_WALLPAPER;
-}
-
-export function backgroundSourceUsesLiveDesktop(source) {
-  return normalizeBackgroundSource(source) === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP;
-}
-
 export function normalizeLiveDesktopBackgroundSupport(support) {
   return {
     platform: String(support?.platform || DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT.platform),
@@ -135,12 +171,6 @@ export function normalizeLiveDesktopBackgroundSupport(support) {
       : DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT.reason,
     detail: typeof support?.detail === "string" ? support.detail : "",
   };
-}
-
-export function normalizeBackgroundAcrylicAppearance(value) {
-  if (value === BACKGROUND_ACRYLIC_APPEARANCE_DARK) return BACKGROUND_ACRYLIC_APPEARANCE_DARK;
-  if (value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT) return BACKGROUND_ACRYLIC_APPEARANCE_LIGHT;
-  return BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM;
 }
 
 export function normalizeBackgroundAcrylicProfileKey(value) {
@@ -164,54 +194,6 @@ export function createDefaultBackgroundAcrylicParams(profile = BACKGROUND_ACRYLI
   return normalizeBackgroundAcrylicParams(ACRYLIC_COMPOSITE_PRESETS[key], key);
 }
 
-export function clampBackgroundImageOpacity(value) {
-  const opacity = Number(value);
-  if (!Number.isFinite(opacity)) return DEFAULT_BACKGROUND_IMAGE_OPACITY;
-  return clamp(Math.round(opacity), BACKGROUND_IMAGE_OPACITY_MIN, BACKGROUND_IMAGE_OPACITY_MAX);
-}
-
-export function clampBackgroundLiveDesktopOpacity(value) {
-  const opacity = Number(value);
-  if (!Number.isFinite(opacity)) return DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY;
-  return clamp(Math.round(opacity), BACKGROUND_LIVE_DESKTOP_OPACITY_MIN, BACKGROUND_LIVE_DESKTOP_OPACITY_MAX);
-}
-
-export function clampBackgroundBlurStrength(value) {
-  const strength = Number(value);
-  if (!Number.isFinite(strength)) return DEFAULT_BACKGROUND_BLUR_STRENGTH;
-  return clamp(Math.round(strength), BACKGROUND_BLUR_STRENGTH_MIN, BACKGROUND_BLUR_STRENGTH_MAX);
-}
-
-export function clampBackgroundDarkenStrength(value) {
-  const strength = Number(value);
-  if (!Number.isFinite(strength)) return DEFAULT_BACKGROUND_DARKEN_STRENGTH;
-  return clamp(Math.round(strength), BACKGROUND_DARKEN_STRENGTH_MIN, BACKGROUND_DARKEN_STRENGTH_MAX);
-}
-
-export function normalizeBackgroundDarkenColor(value) {
-  const color = typeof value === "string" ? value.trim() : "";
-  if (/^#[0-9a-fA-F]{6}$/.test(color)) return color.toLowerCase();
-  if (/^#[0-9a-fA-F]{3}$/.test(color)) {
-    return `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`.toLowerCase();
-  }
-  return DEFAULT_BACKGROUND_DARKEN_COLOR;
-}
-
-export function clampBackgroundBaseOpacity(value) {
-  const opacity = Number(value);
-  if (!Number.isFinite(opacity)) return DEFAULT_BACKGROUND_BASE_OPACITY;
-  return clamp(Math.round(opacity), BACKGROUND_BASE_OPACITY_MIN, BACKGROUND_BASE_OPACITY_MAX);
-}
-
-export function normalizeBackgroundBaseColor(value) {
-  const color = typeof value === "string" ? value.trim() : "";
-  if (/^#[0-9a-fA-F]{6}$/.test(color)) return color.toLowerCase();
-  if (/^#[0-9a-fA-F]{3}$/.test(color)) {
-    return `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`.toLowerCase();
-  }
-  return DEFAULT_BACKGROUND_BASE_COLOR;
-}
-
 export function normalizeBackgroundImagePath(value) {
   const path = typeof value === "string" ? value.trim() : "";
   return path || null;
@@ -226,6 +208,10 @@ export function normalizeWindowEffectMaterial(value) {
 
 export function normalizeWindowEffectAppearance(value) {
   return value === WINDOW_EFFECT_APPEARANCE_LIGHT ? WINDOW_EFFECT_APPEARANCE_LIGHT : WINDOW_EFFECT_APPEARANCE_DARK;
+}
+
+export function normalizeWindowMode(value) {
+  return value === WINDOW_MODE_WINDOWED ? WINDOW_MODE_WINDOWED : WINDOW_MODE_FULLSCREEN;
 }
 
 export function normalizeWindowEffectsSupport(support) {
@@ -277,6 +263,7 @@ export function syncLaunchpadSettingsDraftsFromState(options) {
   options.draftBackgroundLiveDesktopOpacity.value = clampBackgroundLiveDesktopOpacity(options.backgroundLiveDesktopOpacity.value);
   options.draftBackgroundImageLayout.value = normalizeBackgroundImageLayout(options.backgroundImageLayout.value);
   options.draftBackgroundBlurStrength.value = clampBackgroundBlurStrength(options.backgroundBlurStrength.value);
+  options.draftBackgroundAcrylicBlurStrength.value = clampBackgroundAcrylicBlurStrength(options.backgroundAcrylicBlurStrength.value);
   options.draftBackgroundDarkenStrength.value = clampBackgroundDarkenStrength(options.backgroundDarkenStrength.value);
   options.draftBackgroundDarkenColor.value = normalizeBackgroundDarkenColor(options.backgroundDarkenColor.value);
   options.draftBackgroundAcrylicAppearance.value = normalizeBackgroundAcrylicAppearance(options.backgroundAcrylicAppearance.value);
@@ -288,6 +275,10 @@ export function syncLaunchpadSettingsDraftsFromState(options) {
     : null;
   options.draftWindowEffectMaterial.value = options.windowEffectMaterial.value;
   options.draftWindowEffectAppearance.value = options.windowEffectAppearance.value;
+  options.draftWindowMode.value = normalizeWindowMode(options.windowMode.value);
+  if (options.draftMainWindowShortcut && options.mainWindowShortcut) {
+    options.draftMainWindowShortcut.value = normalizeMainWindowShortcut(options.mainWindowShortcut.value);
+  }
 }
 
 export function useLaunchpadSettingsConfig(options) {
@@ -366,6 +357,10 @@ export function useLaunchpadSettingsConfig(options) {
 
   function setDraftBackgroundBlurStrength(value) {
     options.draftBackgroundBlurStrength.value = clampBackgroundBlurStrength(value);
+  }
+
+  function setDraftBackgroundAcrylicBlurStrength(value) {
+    options.draftBackgroundAcrylicBlurStrength.value = clampBackgroundAcrylicBlurStrength(value);
   }
 
   function setDraftBackgroundDarkenStrength(value) {
@@ -512,6 +507,16 @@ export function useLaunchpadSettingsConfig(options) {
     options.draftWindowEffectAppearance.value = normalizeWindowEffectAppearance(appearance);
   }
 
+  function setDraftWindowMode(mode) {
+    options.draftWindowMode.value = normalizeWindowMode(mode);
+  }
+
+  function setDraftMainWindowShortcut(shortcut) {
+    if (!options.draftMainWindowShortcut) return;
+    options.draftMainWindowShortcut.value = normalizeMainWindowShortcut(shortcut);
+    if (options.mainWindowShortcutError) options.mainWindowShortcutError.value = "";
+  }
+
   function repackPagesForGrid(nextRows, nextCols, nextFolderRows, nextFolderCols) {
     if (options.isDragActive()) return;
     const rows = clamp(Number(nextRows) || DEFAULT_ROWS, 2, 8);
@@ -568,7 +573,7 @@ export function useLaunchpadSettingsConfig(options) {
     options.schedulePageGridMetrics();
   }
 
-  function applySettingsConfig() {
+  function commitSettingsConfig(nextMainWindowShortcut) {
     applyGridConfig();
     if (!options.isDragActive()) options.isTextlessMode.value = Boolean(options.draftIsTextlessMode.value);
     const nextBackgroundSource = normalizeBackgroundSource(options.draftBackgroundSource.value);
@@ -593,6 +598,7 @@ export function useLaunchpadSettingsConfig(options) {
     options.backgroundLiveDesktopOpacity.value = clampBackgroundLiveDesktopOpacity(options.draftBackgroundLiveDesktopOpacity.value);
     options.backgroundImageLayout.value = normalizeBackgroundImageLayout(options.draftBackgroundImageLayout.value);
     options.backgroundBlurStrength.value = clampBackgroundBlurStrength(options.draftBackgroundBlurStrength.value);
+    options.backgroundAcrylicBlurStrength.value = clampBackgroundAcrylicBlurStrength(options.draftBackgroundAcrylicBlurStrength.value);
     options.backgroundDarkenStrength.value = clampBackgroundDarkenStrength(options.draftBackgroundDarkenStrength.value);
     options.backgroundDarkenColor.value = normalizeBackgroundDarkenColor(options.draftBackgroundDarkenColor.value);
     options.backgroundAcrylicAppearance.value = normalizeBackgroundAcrylicAppearance(options.draftBackgroundAcrylicAppearance.value);
@@ -607,10 +613,45 @@ export function useLaunchpadSettingsConfig(options) {
       options.windowEffectsSupport.value
     );
     options.windowEffectAppearance.value = normalizeWindowEffectAppearance(options.draftWindowEffectAppearance.value);
+    options.windowMode.value = normalizeWindowMode(options.draftWindowMode.value);
+    if (options.mainWindowShortcut && options.draftMainWindowShortcut) {
+      options.mainWindowShortcut.value = nextMainWindowShortcut;
+      options.draftMainWindowShortcut.value = nextMainWindowShortcut;
+    }
     syncLaunchpadSettingsDraftsFromState(options);
+    options.applyNativeWindowMode?.();
     options.applyNativeWindowEffects?.();
     options.syncLiveDesktopBackgroundRuntime?.();
     options.closeSettingsPanel();
+    return true;
+  }
+
+  function applySettingsConfig() {
+    const currentShortcut = normalizeMainWindowShortcut(
+      options.mainWindowShortcut ? options.mainWindowShortcut.value : DEFAULT_MAIN_WINDOW_SHORTCUT
+    );
+    const nextShortcut = normalizeMainWindowShortcut(
+      options.draftMainWindowShortcut ? options.draftMainWindowShortcut.value : currentShortcut
+    );
+    if (options.mainWindowShortcutError) options.mainWindowShortcutError.value = "";
+    if (nextShortcut !== currentShortcut && typeof options.applyNativeMainWindowShortcut === "function") {
+      if (options.isApplyingSettingsConfig) options.isApplyingSettingsConfig.value = true;
+      return Promise.resolve(options.applyNativeMainWindowShortcut(nextShortcut))
+        .then((applied) => {
+          if (!applied) return false;
+          return commitSettingsConfig(nextShortcut);
+        })
+        .catch((error) => {
+          if (options.mainWindowShortcutError) {
+            options.mainWindowShortcutError.value = error?.message || "快捷键已被占用或不可用";
+          }
+          return false;
+        })
+        .finally(() => {
+          if (options.isApplyingSettingsConfig) options.isApplyingSettingsConfig.value = false;
+        });
+    }
+    return commitSettingsConfig(nextShortcut);
   }
 
   return {
@@ -633,6 +674,7 @@ export function useLaunchpadSettingsConfig(options) {
     canUseLiveDesktopBackgroundEffect,
     canUseDraftBackgroundEffect,
     setDraftBackgroundBlurStrength,
+    setDraftBackgroundAcrylicBlurStrength,
     setDraftBackgroundDarkenColor,
     setDraftBackgroundDarkenStrength,
     setDraftBackgroundImageOpacity,
@@ -648,6 +690,8 @@ export function useLaunchpadSettingsConfig(options) {
     setDraftFolderIconSizeMode,
     setDraftWindowEffectAppearance,
     setDraftWindowEffectMaterial,
+    setDraftMainWindowShortcut,
+    setDraftWindowMode,
     useDraftDesktopWallpaper,
   };
 }

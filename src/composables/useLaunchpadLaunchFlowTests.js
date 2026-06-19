@@ -37,15 +37,21 @@ function createLaunchFlow(overrides = {}) {
   const calls = {
     cancelLongPress: 0,
     clearOpeningIcon: 0,
+    clearFolderCloseIconGhosts: 0,
+    clearFolderOpenIconGhosts: 0,
     clearSearch: [],
     clearSelectedIcon: 0,
+    finishFolderZoomFadeClose: 0,
+    finishHomeRevealSettleWindow: 0,
     hideNativeWindow: 0,
     launchNativeAppIfAvailable: [],
     openLaunchErrorDialog: [],
     schedulePageGridMetrics: 0,
     setNativeWindowEffectsEnabled: [],
+    setNativeWindowShadowEnabled: [],
     showNativeLaunchError: [],
     startFolderAppLaunchClose: 0,
+    startFolderZoomFadeClose: [],
     startHomeRevealSettleWindow: 0,
   };
   const desktopFocusCalls = [];
@@ -56,6 +62,7 @@ function createLaunchFlow(overrides = {}) {
   });
   const keyboardFocusArea = ref(overrides.keyboardFocusArea ?? "search");
   const openingIcon = shallowRef(overrides.openingIcon ?? null);
+  const folderZoomFadeCloseReason = ref(overrides.folderZoomFadeCloseReason ?? null);
   const searchInputRef = ref({
     blur() {
       calls.searchInputBlur = (calls.searchInputBlur || 0) + 1;
@@ -70,6 +77,12 @@ function createLaunchFlow(overrides = {}) {
       calls.clearOpeningIcon += 1;
       openingIcon.value = null;
     },
+    clearFolderCloseIconGhosts: () => {
+      calls.clearFolderCloseIconGhosts += 1;
+    },
+    clearFolderOpenIconGhosts: () => {
+      calls.clearFolderOpenIconGhosts += 1;
+    },
     clearSearch: (options) => calls.clearSearch.push(options),
     clearSelectedIcon: () => {
       calls.clearSelectedIcon += 1;
@@ -82,8 +95,17 @@ function createLaunchFlow(overrides = {}) {
     hideNativeWindow: () => {
       calls.hideNativeWindow += 1;
     },
+    finishFolderZoomFadeClose: () => {
+      calls.finishFolderZoomFadeClose += 1;
+      folderZoomFadeCloseReason.value = null;
+    },
+    finishHomeRevealSettleWindow: () => {
+      calls.finishHomeRevealSettleWindow += 1;
+    },
+    folderZoomFadeCloseReason,
     isDragActive: () => Boolean(overrides.isDragActive),
     isFolderAppLaunchClosing: ref(Boolean(overrides.isFolderAppLaunchClosing)),
+    isFolderZoomFadeClosing: ref(Boolean(overrides.isFolderZoomFadeClosing)),
     isSearchMode: () => Boolean(overrides.isSearchMode),
     keyboardFocusArea,
     launchNativeAppIfAvailable: (app) => {
@@ -100,10 +122,15 @@ function createLaunchFlow(overrides = {}) {
     },
     searchInputRef,
     setNativeWindowEffectsEnabled: (enabled) => calls.setNativeWindowEffectsEnabled.push(enabled),
+    setNativeWindowShadowEnabled: (enabled) => calls.setNativeWindowShadowEnabled.push(enabled),
     showNativeLaunchError: (error) => calls.showNativeLaunchError.push(error),
     shouldValidateLaunchTarget: () => Boolean(overrides.shouldValidateLaunchTarget),
     startFolderAppLaunchClose: () => {
       calls.startFolderAppLaunchClose += 1;
+    },
+    startFolderZoomFadeClose: (options) => {
+      calls.startFolderZoomFadeClose.push(options);
+      return true;
     },
     startHomeRevealSettleWindow: () => {
       calls.startHomeRevealSettleWindow += 1;
@@ -144,6 +171,7 @@ export async function runLaunchpadLaunchFlowTests() {
     assert(close.calls.clearSelectedIcon === 1, "closing the desktop should clear selected icon");
     assert(close.calls.searchInputBlur === 1, "closing the desktop should blur search input");
     assert(close.calls.setNativeWindowEffectsEnabled.join(",") === "false", "closing the desktop should disable native window effects");
+    assert(close.calls.setNativeWindowShadowEnabled.join(",") === "false", "closing the desktop should disable native window shadow");
     timers.runDelay(DESKTOP_CLOSE_DURATION);
     assert(!close.flow.isDesktopClosing.value, "desktop close timer should end the closing state");
     assert(close.calls.clearSearch.length === 1, "desktop close should clear search after the close animation");
@@ -163,6 +191,19 @@ export async function runLaunchpadLaunchFlowTests() {
     assert(open.desktopFocusCalls.length === 1, "opening the desktop should focus the desktop surface");
     assert(open.desktopFocusCalls[0].preventScroll === true, "desktop focus should prevent scroll");
 
+    const reopenAfterFolderZoomFade = createLaunchFlow({
+      folderZoomFadeCloseReason: "desktop",
+      openingIcon: { area: "folder", id: "old" },
+    });
+    reopenAfterFolderZoomFade.flow.closeDesktop();
+    reopenAfterFolderZoomFade.flow.openDesktop();
+    assert(reopenAfterFolderZoomFade.flow.isDesktopOpen.value, "reopening after folder zoom-fade should mark desktop open");
+    assert(reopenAfterFolderZoomFade.calls.finishFolderZoomFadeClose === 1, "reopening should finish folder zoom-fade state");
+    assert(reopenAfterFolderZoomFade.calls.clearFolderOpenIconGhosts === 1, "reopening should clear folder open ghosts");
+    assert(reopenAfterFolderZoomFade.calls.clearFolderCloseIconGhosts === 1, "reopening should clear folder close ghosts");
+    assert(reopenAfterFolderZoomFade.calls.finishHomeRevealSettleWindow === 1, "reopening should clear stale home reveal settle state");
+    assert(reopenAfterFolderZoomFade.calls.startHomeRevealSettleWindow === 0, "reopening after folder zoom-fade should not start home reveal settle");
+
     const source = { area: "desktop", id: "launch-app", pageIndex: 0 };
     const launch = createLaunchFlow({ hasFolderLayer: true, isSearchMode: true });
     launch.flow.openApp(launchApp, source);
@@ -171,7 +212,10 @@ export async function runLaunchpadLaunchFlowTests() {
     assert(launch.openingIcon.value === source, "opening an app should store the launch source");
     assert(launch.flow.launchGhost.value.app !== launchApp, "launch ghost should clone the app");
     assert(launch.flow.launchGhostStyle.value.left === "12px", "launch ghost style should expose rect geometry");
-    assert(launch.calls.startFolderAppLaunchClose === 1, "folder app launches should start folder launch close");
+    assert(launch.calls.startFolderZoomFadeClose.length === 1, "folder app launches should start folder zoom-fade close");
+    assert(launch.calls.startFolderZoomFadeClose[0].reason === "app-launch", "folder app launches should mark zoom-fade as app launch");
+    assert(launch.calls.startFolderAppLaunchClose === 0, "folder app launches should not use the folder shrink-close path");
+    assert(launch.calls.setNativeWindowShadowEnabled.join(",") === "false", "app launch close animation should disable native window shadow");
     timers.runDelay(0);
     assert(launch.calls.launchNativeAppIfAvailable.join(",") === "launch-app", "app launch should call native launch on a zero delay timer");
     timers.runDelay(APP_LAUNCH_DURATION);
@@ -224,6 +268,11 @@ export async function runLaunchpadLaunchFlowTests() {
     dragBlocked.flow.openApp(launchApp, source);
     assert(!dragBlocked.flow.isAppLaunching.value, "drag-active launches should be ignored");
     assert(dragBlocked.calls.launchNativeAppIfAvailable.length === 0, "drag-active launches should not call native launch");
+
+    const zoomFadeBlocked = createLaunchFlow({ isFolderZoomFadeClosing: true });
+    zoomFadeBlocked.flow.openApp(launchApp, source);
+    assert(!zoomFadeBlocked.flow.isAppLaunching.value, "folder zoom-fade launches should be ignored");
+    assert(zoomFadeBlocked.calls.launchNativeAppIfAvailable.length === 0, "folder zoom-fade launches should not call native launch");
 
     const missingTarget = createLaunchFlow({ shouldValidateLaunchTarget: true });
     missingTarget.flow.openApp(launchApp, source);

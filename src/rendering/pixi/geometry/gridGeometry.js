@@ -35,8 +35,12 @@ export function getDesktopGridMetrics(options) {
   const isCompact = width <= 760;
   const basePaddingX = isCompact ? 58 : 96;
   const paddingX = Math.min(basePaddingX, Math.max(20, width * 0.12));
-  const paddingTop = isCompact ? 28 : 34;
   const paddingBottom = isCompact ? 16 : 24;
+  const defaultPaddingTop = isCompact ? 28 : 34;
+  const configuredPaddingTop = Number(options.paddingTop);
+  const paddingTop = Number.isFinite(configuredPaddingTop)
+    ? clamp(configuredPaddingTop, 0, Math.max(0, height - paddingBottom - 1))
+    : defaultPaddingTop;
   const gapX = isCompact ? 8 : 12;
   const gapY = isCompact ? 12 : 16;
   const visibleCount = Math.max(0, Number(options.visibleCount) || 0);

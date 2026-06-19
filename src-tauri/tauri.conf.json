@@ -26,12 +26,14 @@
         "minWidth": 900,
         "minHeight": 620,
         "resizable": true,
+        "decorations": false,
         "transparent": true,
         "windowEffects": {
           "effects": ["acrylic"],
           "color": "#10141FCC"
         },
         "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI --ignore-gpu-blocklist --enable-gpu-rasterization --enable-zero-copy --enable-accelerated-2d-canvas",
+        "visible": false,
         "fullscreen": true
       }
     ]

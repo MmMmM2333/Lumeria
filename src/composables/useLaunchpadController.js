@@ -26,6 +26,7 @@ import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
   BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
+  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
   FOLDER_ICON_SIZE_MODE_CUSTOM,
   normalizeBackgroundAcrylicAppearance,
   normalizeBackgroundAcrylicParams,
@@ -74,6 +75,15 @@ export function shouldPlayFolderOpenIconGhosts(next, state) {
   return !isSameOpenFolder;
 }
 
+export function shouldIgnoreFolderCloseRequest(state) {
+  return Boolean(
+    state?.isFolderClosing?.value ||
+    state?.isFolderAppLaunchClosing?.value ||
+    state?.isFolderZoomFadeClosing?.value ||
+    (!state?.openFolderId?.value && !state?.renderedFolder?.value)
+  );
+}
+
 function getSystemAppearance() {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
     return BACKGROUND_ACRYLIC_APPEARANCE_DARK;
@@ -119,6 +129,7 @@ export function useLaunchpadController() {
     backgroundBaseColor,
     backgroundBaseOpacity,
     backgroundAcrylicAppearance,
+    backgroundAcrylicBlurStrength,
     backgroundAcrylicDarkParams,
     backgroundAcrylicLightParams,
     backgroundBlurStrength,
@@ -134,6 +145,7 @@ export function useLaunchpadController() {
     draftBackgroundBaseColor,
     draftBackgroundBaseOpacity,
     draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicBlurStrength,
     draftBackgroundAcrylicDarkParams,
     draftBackgroundAcrylicLightParams,
     draftBackgroundBlurStrength,
@@ -154,7 +166,9 @@ export function useLaunchpadController() {
     draftFolderRows,
     draftIconSize,
     draftIsTextlessMode,
+    draftMainWindowShortcut,
     draftRows,
+    draftWindowMode,
     draftWindowEffectAppearance,
     draftWindowEffectMaterial,
     folderCols,
@@ -172,12 +186,15 @@ export function useLaunchpadController() {
     hiddenAppIds,
     iconSize,
     isChoosingBackgroundImage,
+    isApplyingSettingsConfig,
     isLayoutProjectionActive,
     isTextlessMode,
     launchTargetStatusById,
     liveDesktopBackgroundSupport,
     liveDesktopCssFallbackEffectsEnabled,
     liveDesktopRuntimeStatus,
+    mainWindowShortcut,
+    mainWindowShortcutError,
     keyboardFocusArea,
     pageDotsRef,
     pageIndex,
@@ -193,6 +210,7 @@ export function useLaunchpadController() {
     searchRef,
     showMissingLaunchTargetBadge,
     shellRef,
+    windowMode,
     windowEffectAppearance,
     windowEffectMaterial,
     windowEffectsSupport,
@@ -209,6 +227,11 @@ export function useLaunchpadController() {
       profile
     );
   });
+  const backgroundEffectBlurStrength = computed(() => (
+    backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+      ? backgroundAcrylicBlurStrength.value
+      : backgroundBlurStrength.value
+  ));
   const deferredHandlers = createDeferredHandlers({
     cancelLongPress: () => {},
     clearFolderPageTurn: () => {},
@@ -232,8 +255,12 @@ export function useLaunchpadController() {
     openApp: () => {},
     openLaunchErrorDialog: () => {},
     prepareNativeLaunch: () => true,
+    setNativeMainWindowShortcut: () => true,
+    setNativeMainWindowShortcutCaptureActive: () => {},
     setFolderMotionGeometry: () => {},
+    setNativeWindowMode: () => {},
     setNativeWindowEffectsEnabled: () => {},
+    setNativeWindowShadowEnabled: () => {},
     showNativeLaunchError: () => {},
     restartLiveDesktopBackgroundRuntime: () => {},
     syncLiveDesktopBackgroundRuntime: () => {},
@@ -289,6 +316,7 @@ export function useLaunchpadController() {
     updateFolderViewportHeight,
   } = useFolderViewportMetrics({
     folderViewportRef,
+    getRenderedFolder: () => renderedFolder.value,
   });
 
   const {
@@ -329,24 +357,36 @@ export function useLaunchpadController() {
   const {
     clearFolderAppLaunchTimer,
     clearFolderCloseTimer,
+    clearFolderCloseHandoffFrame,
     clearHomeRevealSettleTimer,
     commitFolderSession,
     commitOpenFolder: commitOpenFolderNow,
     desktopProjectionEpoch,
-    finishFolderClose,
+    finishFolderCloseAfterHandoffFrame,
+    finishFolderZoomFadeClose,
     finishHomeRevealSettleWindow,
+    consumeFirstFolderOpenPrepare,
+    folderOpenWarmupRequest,
+    folderOpeningOriginBounds,
     folderPages,
     folderSession,
+    folderZoomFadeCloseReason,
     isFolderAppLaunchClosing,
     isFolderClosing,
     isFolderLayerActive,
+    isFolderZoomFadeClosing,
+    isFolderZoomFadeClosingFromFolderClose,
     isHomeRevealSettling,
     openFolderId,
     renderedFolder,
+    requestFolderOpenWarmup,
     startFolderAppLaunchClose,
+    startFolderZoomFadeClose,
     startHomeRevealSettleWindow,
   } = useLaunchpadFolderFlow({
     clearFolderPageTurn: () => deferredHandlers.call("clearFolderPageTurn"),
+    clearFolderCloseIconGhosts,
+    clearFolderOpenIconGhosts,
     cloneItem,
     findFolder,
     folderPageIndex,
@@ -364,6 +404,13 @@ export function useLaunchpadController() {
 
   function commitOpenFolder(next, commitOptions) {
     if (!next) {
+      if (shouldIgnoreFolderCloseRequest({
+        isFolderAppLaunchClosing,
+        isFolderClosing,
+        isFolderZoomFadeClosing,
+        openFolderId,
+        renderedFolder,
+      })) return;
       const closingFolder = renderedFolder.value;
       const closingFolderPage = closingFolder ? getVisibleFolderPage(folderPages.value[folderPageIndex.value] || []) : [];
       const capturedCloseGhosts = captureFolderCloseIconGhosts(closingFolder, closingFolderPage);
@@ -396,7 +443,7 @@ export function useLaunchpadController() {
 
   function completeFolderCloseIconGhost(key) {
     const isComplete = completeFolderCloseIconGhostNow(key);
-    if (isComplete) finishFolderClose();
+    if (isComplete) finishFolderCloseAfterHandoffFrame();
     return isComplete;
   }
 
@@ -504,6 +551,8 @@ export function useLaunchpadController() {
   } = useLaunchpadLaunchFlow({
     cancelLongPress: () => deferredHandlers.call("cancelLongPress"),
     clearOpeningIcon,
+    clearFolderCloseIconGhosts,
+    clearFolderOpenIconGhosts,
     clearSearch,
     clearSelectedIcon,
     cloneItem,
@@ -511,8 +560,12 @@ export function useLaunchpadController() {
     getLaunchIconRect,
     hasFolderLayer: () => Boolean(renderedFolder.value || openFolderId.value),
     hideNativeWindow: () => deferredHandlers.call("hideNativeWindow"),
+    finishFolderZoomFadeClose,
+    finishHomeRevealSettleWindow,
+    folderZoomFadeCloseReason,
     isDragActive: () => isDragActive(),
     isFolderAppLaunchClosing,
+    isFolderZoomFadeClosing,
     isSearchMode: () => isSearchMode.value,
     keyboardFocusArea,
     getLaunchTargetStatus: (app) => deferredHandlers.call("getLaunchTargetStatus", app),
@@ -525,9 +578,11 @@ export function useLaunchpadController() {
     schedulePageGridMetrics: () => schedulePageGridMetrics(),
     searchInputRef,
     setNativeWindowEffectsEnabled: (enabled) => deferredHandlers.call("setNativeWindowEffectsEnabled", enabled),
+    setNativeWindowShadowEnabled: (enabled) => deferredHandlers.call("setNativeWindowShadowEnabled", enabled),
     showNativeLaunchError: (error) => deferredHandlers.call("showNativeLaunchError", error),
     shouldValidateLaunchTarget: () => isNativeBridgeAvailable(),
     startFolderAppLaunchClose,
+    startFolderZoomFadeClose,
     startHomeRevealSettleWindow,
   });
   deferredHandlers.set("openApp", openApp);
@@ -535,11 +590,15 @@ export function useLaunchpadController() {
   const {
     appLaunchGhostTransition,
     backgroundImageStyle,
+    desktopVisualTransform,
     desktopTrackMotionKey,
-    homeShellAnimate,
-    homeShellInitial,
-    homeShellStyle,
-    homeShellTransition,
+    desktopVisualAlpha,
+    launchpadVisualTransform,
+    launchpadVisualAlpha,
+    homeChromeAnimate,
+    homeChromeInitial,
+    homeChromeStyle,
+    homeChromeTransition,
     isHomeInteractionDisabled,
     panelSpring,
     rootStyle,
@@ -548,8 +607,9 @@ export function useLaunchpadController() {
     backgroundBaseColor,
     backgroundBaseOpacity,
     backgroundAcrylicParams,
+    backgroundAcrylicBlurStrength,
     backgroundEffect,
-    backgroundBlurStrength,
+    backgroundBlurStrength: backgroundEffectBlurStrength,
     backgroundDarkenColor,
     backgroundDarkenStrength,
     backgroundImageOpacity,
@@ -664,6 +724,7 @@ export function useLaunchpadController() {
     backgroundBaseColor,
     backgroundBaseOpacity,
     backgroundAcrylicAppearance,
+    backgroundAcrylicBlurStrength,
     backgroundAcrylicDarkParams,
     backgroundAcrylicLightParams,
     backgroundEffect,
@@ -681,6 +742,7 @@ export function useLaunchpadController() {
     draftBackgroundBaseColor,
     draftBackgroundBaseOpacity,
     draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicBlurStrength,
     draftBackgroundAcrylicDarkParams,
     draftBackgroundAcrylicLightParams,
     draftBackgroundBlurStrength,
@@ -700,7 +762,9 @@ export function useLaunchpadController() {
     draftFolderRows,
     draftIconSize,
     draftIsTextlessMode,
+    draftMainWindowShortcut,
     draftRows,
+    draftWindowMode,
     draftWindowEffectAppearance,
     draftWindowEffectMaterial,
     folderCols,
@@ -710,8 +774,12 @@ export function useLaunchpadController() {
     gridCols,
     gridRows,
     iconSize,
+    isApplyingSettingsConfig,
     isDragActive: () => isDragActive(),
     isTextlessMode,
+    mainWindowShortcut,
+    mainWindowShortcutError,
+    windowMode,
     windowEffectAppearance,
     windowEffectMaterial,
   });
@@ -735,6 +803,7 @@ export function useLaunchpadController() {
     clearDraftBackgroundImage,
     clampIconSize,
     setDraftBackgroundBlurStrength,
+    setDraftBackgroundAcrylicBlurStrength,
     setDraftBackgroundDarkenColor,
     setDraftBackgroundDarkenStrength,
     setDraftBackgroundImageLayout,
@@ -748,15 +817,20 @@ export function useLaunchpadController() {
     setDraftBackgroundSource,
     resetDraftBackgroundAcrylicParams,
     setDraftFolderIconSizeMode,
+    setDraftMainWindowShortcut,
+    setDraftWindowMode,
     setDraftWindowEffectAppearance,
     setDraftWindowEffectMaterial,
     useDraftDesktopWallpaper,
   } = useLaunchpadSettingsConfig({
+    applyNativeMainWindowShortcut: (shortcut) => deferredHandlers.call("setNativeMainWindowShortcut", shortcut),
+    applyNativeWindowMode: () => deferredHandlers.call("setNativeWindowMode"),
     applyNativeWindowEffects: () => deferredHandlers.call("setNativeWindowEffectsEnabled", true),
     syncLiveDesktopBackgroundRuntime: () => deferredHandlers.call("syncLiveDesktopBackgroundRuntime"),
     backgroundBaseColor,
     backgroundBaseOpacity,
     backgroundAcrylicAppearance,
+    backgroundAcrylicBlurStrength,
     backgroundAcrylicDarkParams,
     backgroundAcrylicLightParams,
     backgroundEffect,
@@ -779,6 +853,7 @@ export function useLaunchpadController() {
     draftBackgroundBaseColor,
     draftBackgroundBaseOpacity,
     draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicBlurStrength,
     draftBackgroundAcrylicDarkParams,
     draftBackgroundAcrylicLightParams,
     draftBackgroundBlurStrength,
@@ -798,7 +873,9 @@ export function useLaunchpadController() {
     draftFolderRows,
     draftIconSize,
     draftIsTextlessMode,
+    draftMainWindowShortcut,
     draftRows,
+    draftWindowMode,
     draftWindowEffectAppearance,
     draftWindowEffectMaterial,
     ensurePage,
@@ -811,16 +888,20 @@ export function useLaunchpadController() {
     gridCols,
     gridRows,
     iconSize,
+    isApplyingSettingsConfig,
     isChoosingBackgroundImage,
     isDragActive: () => isDragActive(),
     isTextlessMode,
     liveDesktopBackgroundSupport,
+    mainWindowShortcut,
+    mainWindowShortcutError,
     pageIndex,
     pageSize,
     pages,
     repackFoldersForPageSize,
     schedulePageGridMetrics,
     searchPageIndex,
+    windowMode,
     windowEffectAppearance,
     windowEffectMaterial,
     windowEffectsSupport,
@@ -842,7 +923,12 @@ export function useLaunchpadController() {
     restartLiveDesktopBackgroundRuntime,
     scheduleNativeLayoutSave,
     scheduleLaunchTargetStatusCheck,
+    setNativeMainWindowShortcut,
+    setNativeMainWindowShortcutCaptureActive,
+    setNativeWindowMode,
     setNativeWindowEffectsEnabled,
+    setNativeWindowShadowEnabled,
+    showNativeWindowAfterStartup,
     showNativeLaunchError,
     startNativeLiveDesktopBackground,
     stopNativeLiveDesktopBackground,
@@ -853,6 +939,7 @@ export function useLaunchpadController() {
     backgroundBaseColor,
     backgroundBaseOpacity,
     backgroundAcrylicAppearance,
+    backgroundAcrylicBlurStrength,
     backgroundAcrylicDarkParams,
     backgroundAcrylicLightParams,
     backgroundEffect,
@@ -877,6 +964,7 @@ export function useLaunchpadController() {
     draftBackgroundBaseColor,
     draftBackgroundBaseOpacity,
     draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicBlurStrength,
     draftBackgroundAcrylicDarkParams,
     draftBackgroundAcrylicLightParams,
     draftBackgroundBlurStrength,
@@ -896,7 +984,9 @@ export function useLaunchpadController() {
     draftFolderRows,
     draftIconSize,
     draftIsTextlessMode,
+    draftMainWindowShortcut,
     draftRows,
+    draftWindowMode,
     draftWindowEffectAppearance,
     draftWindowEffectMaterial,
     folderCols,
@@ -916,6 +1006,8 @@ export function useLaunchpadController() {
     iconSize,
     isDesktopOpen,
     isTextlessMode,
+    mainWindowShortcut,
+    mainWindowShortcutError,
     launchTargetStatusById,
     liveDesktopBackgroundSupport,
     liveDesktopRuntimeStatus,
@@ -924,12 +1016,15 @@ export function useLaunchpadController() {
     openSettingsPanel,
     pageIndex,
     pages,
+    renderedFolder,
     schedulePageGridMetrics,
     scanAppBlacklist,
     scanKeywordBlacklist,
     scanRoots,
     searchPageIndex,
     showMissingLaunchTargetBadge,
+    startFolderZoomFadeClose,
+    windowMode,
     windowEffectAppearance,
     windowEffectMaterial,
     windowEffectsSupport,
@@ -938,7 +1033,11 @@ export function useLaunchpadController() {
   deferredHandlers.set("hideNativeWindow", hideNativeWindow);
   deferredHandlers.set("launchNativeAppIfAvailable", launchNativeAppIfAvailable);
   deferredHandlers.set("prepareNativeLaunch", prepareNativeLaunch);
+  deferredHandlers.set("setNativeMainWindowShortcut", setNativeMainWindowShortcut);
+  deferredHandlers.set("setNativeMainWindowShortcutCaptureActive", setNativeMainWindowShortcutCaptureActive);
+  deferredHandlers.set("setNativeWindowMode", setNativeWindowMode);
   deferredHandlers.set("setNativeWindowEffectsEnabled", setNativeWindowEffectsEnabled);
+  deferredHandlers.set("setNativeWindowShadowEnabled", setNativeWindowShadowEnabled);
   deferredHandlers.set("showNativeLaunchError", showNativeLaunchError);
   deferredHandlers.set("restartLiveDesktopBackgroundRuntime", restartLiveDesktopBackgroundRuntime);
   deferredHandlers.set("syncLiveDesktopBackgroundRuntime", syncLiveDesktopBackgroundRuntime);
@@ -950,6 +1049,7 @@ export function useLaunchpadController() {
     commitFolderPageIndex,
     commitFolderSession,
     commitOpenFolder,
+    consumeFirstFolderOpenPrepare,
     commitPageIndex,
     commitPages,
     compactPages,
@@ -989,6 +1089,7 @@ export function useLaunchpadController() {
     previewTopLevelItemWithoutOverflow,
     removeEverywhere,
     renderedFolder,
+    requestFolderOpenWarmup,
     replaceFolderWithItem,
     visibleFolderRowCount,
     withFolderPages,
@@ -1017,6 +1118,7 @@ export function useLaunchpadController() {
   deferredHandlers.set("isDragActive", isDragActive);
   deferredHandlers.set("getDragMeta", () => dragMeta.value);
   const {
+    cancelAltEditMode,
     clearAltEditTimer,
     handleAltKeyDown,
     handleAltKeyUp,
@@ -1185,6 +1287,7 @@ export function useLaunchpadController() {
     handleLaunchpadWheel,
   } = useLaunchpadKeyboard({
     closeTopmostModal: closeTopmostModalFromKeyboard,
+    cancelAltEditMode,
     clearSearch,
     clearSelectedIcon,
     closeDesktop,
@@ -1207,6 +1310,7 @@ export function useLaunchpadController() {
     isDragActive,
     isFolderAppLaunchClosing,
     isFolderClosing,
+    isFolderZoomFadeClosing,
     isHomeRevealSettling,
     isModalOpen: isModalOpenForKeyboard,
     isSearchMode,
@@ -1226,6 +1330,7 @@ export function useLaunchpadController() {
     selectFirstIconInCurrentScope,
     selectedIcon,
     selectionMatchesScope,
+    startFolderZoomFadeClose,
   });
   const {
     handleDesktopSurfacePointerDown,
@@ -1242,7 +1347,9 @@ export function useLaunchpadController() {
     isDragActive,
     isFolderAppLaunchClosing,
     isFolderClosing,
+    openFolderId,
     pageRefs,
+    renderedFolder,
   });
 
   useLaunchpadLifecycle({
@@ -1250,6 +1357,7 @@ export function useLaunchpadController() {
     backgroundBaseOpacity,
     activePages,
     backgroundAcrylicAppearance,
+    backgroundAcrylicBlurStrength,
     backgroundAcrylicDarkParams,
     backgroundAcrylicLightParams,
     backgroundEffect,
@@ -1257,6 +1365,7 @@ export function useLaunchpadController() {
     backgroundDarkenColor,
     backgroundDarkenStrength,
     backgroundImageOpacity,
+    backgroundLiveDesktopOpacity,
     backgroundImageLayout,
     backgroundImagePath,
     backgroundSource,
@@ -1267,6 +1376,7 @@ export function useLaunchpadController() {
     clearDesktopCloseTimer,
     clearFolderAppLaunchTimer,
     clearFolderCloseTimer,
+    clearFolderCloseHandoffFrame,
     clearFolderPageTurn,
     clearDragRelease,
     clearFolderCloseIconGhosts,
@@ -1320,6 +1430,7 @@ export function useLaunchpadController() {
     scheduleNativeLayoutSave,
     schedulePageGridMetrics,
     searchRef,
+    showNativeWindowAfterStartup,
     showMissingLaunchTargetBadge,
     syncLiveDesktopBackgroundRuntime,
     syncWindowsWallpaperRefreshTimer,
@@ -1327,6 +1438,7 @@ export function useLaunchpadController() {
     updateFolderViewportHeight,
     updatePageGridMetrics,
     visibleFolderRowCount,
+    windowMode,
     windowEffectAppearance,
     windowEffectMaterial,
   });
@@ -1335,6 +1447,10 @@ export function useLaunchpadController() {
     rootRef,
     rootStyle,
     backgroundImageStyle,
+    desktopVisualTransform,
+    desktopVisualAlpha,
+    launchpadVisualTransform,
+    launchpadVisualAlpha,
     cx,
     gridRows,
     gridCols,
@@ -1343,6 +1459,7 @@ export function useLaunchpadController() {
     launchTargetStatusById,
     isDesktopOpen,
     isDesktopClosing,
+    isApplyingSettingsConfig,
     isHomeInteractionDisabled,
     isAppLaunching,
     isNativeLayoutReady,
@@ -1355,15 +1472,16 @@ export function useLaunchpadController() {
     handleLaunchpadWheel,
     shouldRenderPixiBackgroundEffect,
     shellRef,
-    homeShellInitial,
-    homeShellAnimate,
-    homeShellTransition,
-    homeShellStyle,
+    homeChromeInitial,
+    homeChromeAnimate,
+    homeChromeTransition,
+    homeChromeStyle,
     headerRef,
     draftRows,
     draftBackgroundBaseColor,
     draftBackgroundBaseOpacity,
     draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicBlurStrength,
     draftBackgroundAcrylicDarkParams,
     draftBackgroundAcrylicLightParams,
     draftBackgroundBlurStrength,
@@ -1394,20 +1512,27 @@ export function useLaunchpadController() {
     backgroundBaseColor,
     backgroundBaseOpacity,
     backgroundAcrylicAppearance,
+    backgroundAcrylicBlurStrength,
     backgroundAcrylicDarkParams,
     backgroundAcrylicEffectiveAppearance,
     backgroundAcrylicLightParams,
     backgroundAcrylicParams,
+    backgroundEffectBlurStrength,
     backgroundEffect,
     backgroundSource,
     draftWindowEffectAppearance,
     draftWindowEffectMaterial,
+    draftWindowMode,
+    draftMainWindowShortcut,
+    mainWindowShortcut,
+    mainWindowShortcutError,
     liveDesktopBackgroundSupport,
     liveDesktopCssFallbackEffectsEnabled,
     liveDesktopRuntimeStatus,
     windowEffectAppearance,
     windowEffectMaterial,
     windowEffectsSupport,
+    windowMode,
     changeDraftRows,
     changeDraftBackgroundBaseOpacity,
     changeDraftBackgroundImageOpacity,
@@ -1420,6 +1545,7 @@ export function useLaunchpadController() {
     changeDraftIconSize,
     changeDraftFolderIconSize,
     setDraftBackgroundBlurStrength,
+    setDraftBackgroundAcrylicBlurStrength,
     setDraftBackgroundDarkenColor,
     setDraftBackgroundDarkenStrength,
     setDraftBackgroundImageLayout,
@@ -1433,6 +1559,9 @@ export function useLaunchpadController() {
     setDraftBackgroundSource,
     resetDraftBackgroundAcrylicParams,
     setDraftFolderIconSizeMode,
+    setDraftMainWindowShortcut,
+    setMainWindowShortcutCaptureActive: (active) => deferredHandlers.call("setNativeMainWindowShortcutCaptureActive", active),
+    setDraftWindowMode,
     setDraftWindowEffectAppearance,
     setDraftWindowEffectMaterial,
     canUseWindowEffectMaterial,
@@ -1567,6 +1696,7 @@ export function useLaunchpadController() {
     getDesktopPageRenderMode,
     setPageRef,
     pageGridMeasureStyle,
+    schedulePageGridMetrics,
     getVisibleDesktopPage,
     folderPageSize,
     isIconSelected,
@@ -1581,8 +1711,15 @@ export function useLaunchpadController() {
     renderedFolder,
     isFolderClosing,
     isFolderAppLaunchClosing,
+    isFolderZoomFadeClosing,
+    isFolderZoomFadeClosingFromFolderClose,
+    isHomeRevealSettling,
+    finishFolderZoomFadeClose,
+    startFolderZoomFadeClose,
     handleFolderOverlayPointerDown,
     folderPanelRef,
+    folderOpenWarmupRequest,
+    folderOpeningOriginBounds,
     folderViewportRef,
     panelSpring,
     folderPanelStyle,

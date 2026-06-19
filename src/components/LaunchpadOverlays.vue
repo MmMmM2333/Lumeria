@@ -1,18 +1,16 @@
 <template>
-  <Motion
+  <div
     v-if="state.launchGhost.value"
     key="app-launch-ghost"
+    ref="launchGhostRef"
     class="app-launch-ghost"
-    :initial="{ opacity: 1, scale: 1 }"
-    :animate="{ opacity: 0, scale: 1.92 }"
-    :transition="state.appLaunchGhostTransition"
     :style="state.launchGhostStyle.value"
   >
     <div class="app-launch-ghost-box">
       <img v-if="getIconSource(state.launchGhost.value.app)" class="app-launch-ghost-image" :src="getIconSource(state.launchGhost.value.app)" alt="" draggable="false" />
       <span v-else class="app-launch-ghost-emoji">{{ state.launchGhost.value.app.emoji }}</span>
     </div>
-  </Motion>
+  </div>
 
   <div v-if="iconContextMenu" class="icon-context-menu-layer" @contextmenu.prevent>
     <div class="icon-context-menu" :style="iconContextMenuStyle" role="menu" :aria-label="`${iconContextMenu.app.name} 菜单`" @pointerdown.stop>
@@ -24,8 +22,8 @@
 </template>
 
 <script setup>
-import { Motion } from "motion-v";
 import { computed, ref } from "vue";
+import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { getIconSource } from "../domain/iconSource.js";
 
 const props = defineProps({
@@ -33,6 +31,16 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["open-context-app", "edit-context-app"]);
+const launchGhostRef = ref(null);
+useGsapDomMotion(launchGhostRef, {
+  initial: { opacity: 1, scale: 1 },
+  motion: () => ({
+    opacity: 0,
+    scale: 1.92,
+    duration: resolveLaunchGhostDuration(),
+    ease: "power2.out",
+  }),
+});
 const iconContextMenu = ref(null);
 const iconContextMenuStyle = computed(() => {
   if (!iconContextMenu.value) return {};
@@ -76,6 +84,11 @@ function editContextMenuApp() {
   if (!menu) return;
   closeIconContextMenu();
   emit("edit-context-app", menu.app);
+}
+
+function resolveLaunchGhostDuration() {
+  const duration = Number(props.state.appLaunchGhostTransition?.duration);
+  return Number.isFinite(duration) && duration >= 0 ? duration : 0.42;
 }
 
 defineExpose({

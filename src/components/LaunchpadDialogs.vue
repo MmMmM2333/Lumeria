@@ -217,26 +217,21 @@
     </div>
   </div>
 
-  <Motion
+  <div
     v-if="state.warningDialog.value"
     key="warning-dialog-overlay"
+    ref="warningDialogOverlayRef"
     :class="['warning-dialog-overlay', !state.isWarningDialogOpen.value && 'warning-dialog-overlay-closing']"
-    :initial="{ opacity: 0 }"
-    :animate="{ opacity: state.isWarningDialogOpen.value ? 1 : 0 }"
-    :transition="{ duration: 0.14, ease: 'easeOut' }"
     @wheel.stop
     @pointerdown.self="state.closeWarningDialog"
   >
-    <Motion
+    <section
       ref="warningDialogRef"
       class="warning-dialog"
       role="alertdialog"
       aria-modal="true"
       :aria-label="state.warningDialog.value.title"
       tabindex="-1"
-      :initial="{ opacity: 0, scale: 0.96 }"
-      :animate="state.isWarningDialogOpen.value ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.96 }"
-      :transition="{ duration: 0.16, ease: 'easeOut' }"
       @keydown="handleDialogKeydown($event, warningDialogRef, state.closeWarningDialog)"
     >
       <div class="warning-dialog-icon">
@@ -251,14 +246,14 @@
         <button v-if="state.warningDialog.value.cancelText" class="settings-secondary-button" type="button" @click="state.closeWarningDialog">{{ state.warningDialog.value.cancelText }}</button>
         <button v-if="state.warningDialog.value.confirmText" class="settings-warning-button" type="button" @click="state.confirmWarningDialog">{{ state.warningDialog.value.confirmText }}</button>
       </footer>
-    </Motion>
-  </Motion>
+    </section>
+  </div>
 </template>
 
 <script setup>
-import { Motion } from "motion-v";
 import { computed, nextTick, ref, watch } from "vue";
 import { AlertTriangleIcon } from "./Icons.js";
+import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
 import { getDefaultIconSource, getIconSource } from "../domain/iconSource.js";
 
@@ -270,7 +265,16 @@ const scanResultDialogRef = ref(null);
 const addAppDialogRef = ref(null);
 const editAppDialogRef = ref(null);
 const iconChooserDialogRef = ref(null);
+const warningDialogOverlayRef = ref(null);
 const warningDialogRef = ref(null);
+const warningDialogOverlayMotion = useGsapDomMotion(warningDialogOverlayRef, {
+  initial: { opacity: 0 },
+  motion: resolveWarningDialogOverlayMotion,
+});
+const warningDialogMotion = useGsapDomMotion(warningDialogRef, {
+  initial: { opacity: 0, scale: 0.96 },
+  motion: resolveWarningDialogPanelMotion,
+});
 
 const activeDialog = computed(() => {
   if (props.state.warningDialog.value) return { id: "warning", ref: warningDialogRef };
@@ -297,7 +301,29 @@ watch(
   }
 );
 
+watch(
+  () => props.state.isWarningDialogOpen.value,
+  () => {
+    warningDialogOverlayMotion.animate();
+    warningDialogMotion.animate();
+  },
+  { flush: "post" }
+);
+
 function handleDialogKeydown(event, dialogRef, onEscape) {
   handleModalKeydown(event, dialogRef, onEscape);
+}
+
+function resolveWarningDialogOverlayMotion() {
+  return {
+    opacity: props.state.isWarningDialogOpen.value ? 1 : 0,
+    duration: 0.14,
+  };
+}
+
+function resolveWarningDialogPanelMotion() {
+  return props.state.isWarningDialogOpen.value
+    ? { opacity: 1, scale: 1, duration: 0.16 }
+    : { opacity: 0, scale: 0.96, duration: 0.16 };
 }
 </script>

@@ -1,4 +1,8 @@
 import { chunkIntoPages, clamp } from "./launchpadLayout.js";
+import {
+  DEFAULT_MAIN_WINDOW_SHORTCUT,
+  normalizeMainWindowShortcut,
+} from "./mainWindowShortcut.js";
 
 export const DEFAULT_SCAN_ROOTS = [
   {
@@ -433,6 +437,7 @@ export function createLaunchpadDataHelpers(options) {
     const backgroundImageOpacity = Number(state.backgroundImageOpacity);
     const backgroundLiveDesktopOpacity = Number(state.backgroundLiveDesktopOpacity);
     const backgroundBlurStrength = normalizeLayoutBackgroundBlurStrength(state.backgroundBlurStrength);
+    const backgroundAcrylicBlurStrength = normalizeLayoutBackgroundBlurStrength(state.backgroundAcrylicBlurStrength);
     const backgroundDarkenStrength = normalizeLayoutBackgroundDarkenStrength(state.backgroundDarkenStrength);
     const backgroundDarkenColor = normalizeLayoutBackgroundDarkenColor(state.backgroundDarkenColor);
     const backgroundAcrylicAppearance = normalizeLayoutBackgroundAcrylicAppearance(state.backgroundAcrylicAppearance);
@@ -446,6 +451,12 @@ export function createLaunchpadDataHelpers(options) {
     const windowEffectMaterial = state.windowEffectMaterial === "none" || state.windowEffectMaterial === "mica" || state.windowEffectMaterial === "micaAlt"
       ? state.windowEffectMaterial
       : "acrylic";
+    const windowMode = state.windowMode === "windowed" ? "windowed" : "fullscreen";
+    const mainWindowShortcut = normalizeMainWindowShortcut(
+      Object.prototype.hasOwnProperty.call(state, "mainWindowShortcut")
+        ? state.mainWindowShortcut
+        : DEFAULT_MAIN_WINDOW_SHORTCUT
+    );
     return {
       version: 1,
       pages: makeLayoutPages(state.pages),
@@ -472,6 +483,7 @@ export function createLaunchpadDataHelpers(options) {
         backgroundImageOpacity: Number.isFinite(backgroundImageOpacity) ? clamp(Math.round(backgroundImageOpacity), 0, 100) : 46,
         backgroundLiveDesktopOpacity: Number.isFinite(backgroundLiveDesktopOpacity) ? clamp(Math.round(backgroundLiveDesktopOpacity), 0, 100) : 100,
         backgroundBlurStrength,
+        backgroundAcrylicBlurStrength,
         backgroundDarkenStrength,
         backgroundDarkenColor,
         backgroundAcrylicAppearance,
@@ -482,6 +494,8 @@ export function createLaunchpadDataHelpers(options) {
           : null,
         windowEffectMaterial,
         windowEffectAppearance: state.windowEffectAppearance === "light" ? "light" : "dark",
+        windowMode,
+        mainWindowShortcut,
       },
     };
   }

@@ -1,4 +1,4 @@
-import { getPixiHostMetrics, getPixiHostRect } from "./pixiHostMetrics.js";
+import { getPixiHostLayoutRect, getPixiHostMetrics, getPixiHostRect } from "./pixiHostMetrics.js";
 
 export function runPixiHostMetricsTests() {
   const assert = (condition, message) => {
@@ -18,6 +18,7 @@ export function runPixiHostMetricsTests() {
   const offsetMetrics = getPixiHostMetrics(offsetHost);
   assert(offsetMetrics.width === 320 && offsetMetrics.height === 240, "host metrics should prefer offset dimensions");
   assert(offsetMetrics.rect.left === 10 && offsetMetrics.rect.top === 20, "host metrics should preserve the bounding rect");
+  assert(offsetMetrics.layoutRect.width === 320 && offsetMetrics.layoutRect.height === 240, "layout rect should use untransformed offset dimensions");
 
   const clientHost = {
     clientHeight: 180,
@@ -38,4 +39,23 @@ export function runPixiHostMetricsTests() {
   };
   const rectMetrics = getPixiHostMetrics(rectHost);
   assert(rectMetrics.width === 140 && rectMetrics.height === 90, "host metrics should fall back to rect dimensions");
+
+  const parentHost = {
+    offsetLeft: 20,
+    offsetTop: 40,
+    offsetParent: null,
+  };
+  const transformedHost = {
+    clientHeight: 120,
+    clientWidth: 160,
+    offsetHeight: 240,
+    offsetLeft: -20,
+    offsetParent: parentHost,
+    offsetTop: 90,
+    offsetWidth: 320,
+    getBoundingClientRect: () => ({ height: 120, left: 12, top: 16, width: 160 }),
+  };
+  const layoutRect = getPixiHostLayoutRect(transformedHost);
+  assert(layoutRect.left === 0 && layoutRect.top === 130, "layout rect should accumulate offset positions without transform");
+  assert(layoutRect.right === 320 && layoutRect.bottom === 370, "layout rect should expose viewport-style edges");
 }

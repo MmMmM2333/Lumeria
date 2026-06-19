@@ -13,9 +13,10 @@ import {
 } from "./useLaunchpadSettingsConfig.js";
 import {
   appLaunchGhostTransition,
-  homeShellTransition,
+  homeChromeTransition,
   panelSpring,
 } from "./launchpadMotion.js";
+import { DESKTOP_CLOSE_SCALE } from "./launchpadConstants.js";
 import { useLaunchpadViewState } from "./useLaunchpadViewState.js";
 
 function createViewState(overrides = {}) {
@@ -25,6 +26,7 @@ function createViewState(overrides = {}) {
     backgroundSource: ref(overrides.backgroundSource ?? BACKGROUND_SOURCE_SYSTEM_MATERIAL),
     backgroundEffect: ref(overrides.backgroundEffect ?? BACKGROUND_EFFECT_DIMMED),
     backgroundBlurStrength: ref(overrides.backgroundBlurStrength ?? 50),
+    backgroundAcrylicBlurStrength: ref(overrides.backgroundAcrylicBlurStrength ?? 50),
     backgroundAcrylicParams: ref(overrides.backgroundAcrylicParams ?? {
       brightness: 0.9,
       contrast: 1.1,
@@ -75,10 +77,14 @@ export function runLaunchpadViewStateTests() {
   assert(desktop.view.rootStyle.value["--launchpad-live-desktop-backdrop-filter"] === "none", "root style should disable live desktop fallback filters by default");
   assert(desktop.view.rootStyle.value["--launchpad-live-desktop-backdrop-opacity"] === "0", "root style should keep the live desktop fallback layer transparent by default");
   assert(desktop.view.desktopTrackMotionKey.value === "open-desktop-spring", "desktop motion key should describe open desktop spring state");
-  assert(desktop.view.homeShellAnimate.value.opacity === 1, "home shell should be visible in the idle desktop state");
-  assert(desktop.view.homeShellStyle.value.pointerEvents === "auto", "home shell should allow pointer events in the idle desktop state");
+  assert(desktop.view.desktopVisualTransform.value.scale === 1 && desktop.view.desktopVisualTransform.value.y === 0, "idle desktop visual root should not be transformed");
+  assert(desktop.view.desktopVisualAlpha.value === 1, "idle desktop canvas should be visible");
+  assert(desktop.view.launchpadVisualTransform.value.scale === 1, "idle launchpad visual layers should not be transformed");
+  assert(desktop.view.launchpadVisualAlpha.value === 1, "idle launchpad visual layers should be visible");
+  assert(desktop.view.homeChromeAnimate.value.opacity === 1, "home chrome should be visible in the idle desktop state");
+  assert(desktop.view.homeChromeStyle.value.pointerEvents === "auto", "home chrome should allow pointer events in the idle desktop state");
   assert(desktop.view.appLaunchGhostTransition === appLaunchGhostTransition, "view state should expose the app launch ghost transition");
-  assert(desktop.view.homeShellTransition === homeShellTransition, "view state should expose the home shell transition");
+  assert(desktop.view.homeChromeTransition === homeChromeTransition, "view state should expose the home chrome transition");
   assert(desktop.view.panelSpring === panelSpring, "view state should expose the settings panel spring");
 
   const imageBackground = createViewState({ backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE, backgroundImageOpacity: 58 });
@@ -154,6 +160,8 @@ export function runLaunchpadViewStateTests() {
   const liveDesktopAcrylic = createViewState({
     backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
     backgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    backgroundBlurStrength: 10,
+    backgroundAcrylicBlurStrength: 80,
     liveDesktopCssFallbackEffectsEnabled: true,
     liveDesktopBackgroundSupport: {
       supportsLiveDesktopBackground: true,
@@ -162,6 +170,7 @@ export function runLaunchpadViewStateTests() {
   });
   assert(liveDesktopAcrylic.view.rootStyle.value["--launchpad-background-overlay-color"] === "rgb(51 102 153)", "live desktop acrylic fallback should expose acrylic tint color");
   assert(liveDesktopAcrylic.view.rootStyle.value["--launchpad-background-overlay-opacity"] === "0.26", "live desktop acrylic fallback should expose acrylic tint opacity");
+  assert(liveDesktopAcrylic.view.rootStyle.value["--launchpad-live-desktop-backdrop-filter"].includes("blur(24.4px)"), "live desktop acrylic fallback should use acrylic blur strength");
   assert(liveDesktopAcrylic.view.rootStyle.value["--launchpad-live-desktop-backdrop-filter"].includes("saturate(1.30)"), "live desktop acrylic fallback should include acrylic color adjustments");
 
   setLiveDesktopExperimentEnabledForTests(false);
@@ -185,17 +194,26 @@ export function runLaunchpadViewStateTests() {
 
   const closingDesktop = createViewState({ isDesktopOpen: false, isDesktopClosing: true, isSearchMode: true });
   assert(closingDesktop.view.desktopTrackMotionKey.value === "open-search-spring", "closing desktop should avoid remounting the page track");
-  assert(closingDesktop.view.homeShellAnimate.value.opacity === 0, "closing desktop should still hide home shell");
+  assert(closingDesktop.view.homeChromeAnimate.value.opacity === 0, "closing desktop should still hide home chrome");
 
   const closed = createViewState({ isDesktopOpen: false, isSearchMode: true });
   assert(closed.view.desktopTrackMotionKey.value === "closed-search-snap", "closed search should use snap motion key");
-  assert(closed.view.homeShellAnimate.value.opacity === 0, "closed desktop should hide home shell");
-  assert(closed.view.homeShellStyle.value.pointerEvents === "none", "closed desktop should disable home shell pointer events");
+  assert(closed.view.desktopVisualTransform.value.scale === DESKTOP_CLOSE_SCALE, "closed desktop visual root should carry the close scale");
+  assert(closed.view.desktopVisualAlpha.value === 0, "closed desktop canvas should be hidden");
+  assert(closed.view.launchpadVisualTransform.value.scale === DESKTOP_CLOSE_SCALE, "closed launchpad should scale folder overlay layers");
+  assert(closed.view.launchpadVisualAlpha.value === 0, "closed launchpad should hide folder overlay layers");
+  assert(closed.view.homeChromeAnimate.value.opacity === 0, "closed desktop should hide home chrome");
+  assert(closed.view.homeChromeStyle.value.pointerEvents === "none", "closed desktop should disable home chrome pointer events");
 
   const openFolder = createViewState({ openFolderId: "folder-1", isFolderLayerActive: true });
   assert(openFolder.view.desktopTrackMotionKey.value === "open-desktop-snap", "open folder should snap the desktop track");
-  assert(openFolder.view.homeShellAnimate.value.y === 44, "open folder should move home shell down");
-  assert(openFolder.view.homeShellStyle.value.pointerEvents === "none", "open folder should disable home shell pointer events");
+  assert(!("y" in openFolder.view.homeChromeAnimate.value) && !("scale" in openFolder.view.homeChromeAnimate.value), "open folder chrome should not declare DOM transforms");
+  assert(openFolder.view.desktopVisualTransform.value.y === 44 && openFolder.view.desktopVisualTransform.value.scale === 0.92, "open folder should move the desktop visual root inside Pixi");
+  assert(openFolder.view.desktopVisualAlpha.value === 0, "open folder should hide the desktop canvas through view state");
+  assert(openFolder.view.launchpadVisualTransform.value.scale === 1 && openFolder.view.launchpadVisualTransform.value.y === 0, "open folder should not transform folder overlay layers");
+  assert(openFolder.view.launchpadVisualAlpha.value === 1, "open folder should keep folder overlay layers visible");
+  assert(openFolder.view.homeChromeAnimate.value.filter === "blur(0px)", "open folder should avoid chrome blur compositor flicker");
+  assert(openFolder.view.homeChromeStyle.value.pointerEvents === "none", "open folder should disable home chrome pointer events");
 
   const settling = createViewState({ isHomeRevealSettling: true, isFolderLayerActive: true, openFolderId: "folder-1" });
   assert(settling.view.desktopTrackMotionKey.value === "open-desktop-snap", "home reveal settling should snap the desktop track");

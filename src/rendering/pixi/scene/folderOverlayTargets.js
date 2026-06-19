@@ -1,4 +1,6 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import { stageLayoutRectToClientRect } from "../geometry/stageCoordinates.js";
+import { getFolderThumbChildLocalRect } from "../nodes/folderThumbMetrics.js";
 import { makeIconRect } from "./iconSceneHelpers.js";
 
 export function cloneRect(rect) {
@@ -29,6 +31,10 @@ export function findFolderGhostKey(ghosts, itemId, slotIndex) {
   return matchingSlot?.key || items.find((ghost) => ghost.item?.id === itemId)?.key || null;
 }
 
+export function hasUsableFolderGhostTarget(target) {
+  return Boolean(target?.sourceRect && target.targetStageLayoutRect);
+}
+
 export function makeFolderCenterCollapseRect(folderRect) {
   if (!folderRect) return null;
   const size = Math.max(4, Math.min(folderRect.width, folderRect.height) * 0.18);
@@ -55,33 +61,99 @@ export function makeProjectedPreviewRect(folderRect, slotIndex, columnCount = 3,
   };
 }
 
+export function makeFolderThumbPreviewRect(folderRect, slotIndex) {
+  if (!folderRect) return null;
+  const childRect = getFolderThumbChildLocalRect(folderRect.width, slotIndex);
+  return {
+    height: childRect.height,
+    left: folderRect.left + folderRect.width / 2 + childRect.left,
+    top: folderRect.top + folderRect.height / 2 + childRect.top,
+    width: childRect.width,
+  };
+}
+
 export function makeStableFolderCloseTarget(options = {}) {
-  const { folderId, folderRect, folderThumbRect, getPreviewChildRect, previewSlots } = options;
-  if (!folderId || !folderRect) return null;
+  const {
+    folderId,
+    getStageLayoutPreviewChildRect,
+    iconRect,
+    previewSlots,
+    projection,
+    source = null,
+    thumbRect,
+  } = options;
+  if (!folderId || !iconRect) return null;
   const previewChildRects = new Map();
   (previewSlots || []).forEach((item, previewSlotIndex) => {
     if (!item?.id) return;
-    const childRect = getPreviewChildRect?.(item, previewSlotIndex);
+    const childRect = getStageLayoutPreviewChildRect?.(item, previewSlotIndex);
     if (childRect) previewChildRects.set(makePreviewChildKey(item.id, previewSlotIndex), cloneRect(childRect));
   });
   return {
+    coordinateSpace: "stage-layout",
     folderId,
-    iconRect: cloneRect(folderRect),
+    iconRect: cloneRect(iconRect),
     previewChildRects,
-    thumbRect: cloneRect(folderThumbRect),
+    projection: projection ? { ...projection } : null,
+    source,
+    thumbRect: cloneRect(thumbRect),
+  };
+}
+
+export function projectFolderCloseTargetRectToClient(stableFolderCloseTarget, rect) {
+  if (!stableFolderCloseTarget || !rect) return null;
+  const { stageHeight, stageRect, stageWidth } = stableFolderCloseTarget.projection || {};
+  if (!stageRect || !stageWidth || !stageHeight) return null;
+  return stageLayoutRectToClientRect(stageRect, stageWidth, stageHeight, rect);
+}
+
+export function projectFolderCloseTargetToClient(stableFolderCloseTarget) {
+  if (!stableFolderCloseTarget) return null;
+  const iconRect = projectFolderCloseTargetRectToClient(stableFolderCloseTarget, stableFolderCloseTarget.iconRect);
+  if (!iconRect) return null;
+  const thumbRect = projectFolderCloseTargetRectToClient(stableFolderCloseTarget, stableFolderCloseTarget.thumbRect) || iconRect;
+  const previewChildRects = new Map();
+  for (const [key, rect] of stableFolderCloseTarget.previewChildRects || []) {
+    const childRect = projectFolderCloseTargetRectToClient(stableFolderCloseTarget, rect);
+    if (childRect) previewChildRects.set(key, childRect);
+  }
+  return {
+    folderId: stableFolderCloseTarget.folderId,
+    iconRect,
+    previewChildRects,
+    source: stableFolderCloseTarget.source || null,
+    thumbRect,
   };
 }
 
 export function getStableFolderCloseRects(options = {}) {
   const { folderId, folderRect, folderThumbRect, isClosing, stableFolderCloseTarget } = options;
   const useStableTarget = Boolean(isClosing && stableFolderCloseTarget?.folderId === folderId);
+  const projectedTarget = useStableTarget ? projectFolderCloseTargetToClient(stableFolderCloseTarget) : null;
   const closeIconRect = useStableTarget
-    ? stableFolderCloseTarget.iconRect || folderRect
+    ? projectedTarget?.iconRect || folderRect
     : folderRect;
   const closeThumbRect = useStableTarget
-    ? stableFolderCloseTarget.thumbRect || closeIconRect
+    ? projectedTarget?.thumbRect || closeIconRect
     : folderThumbRect;
   return { closeIconRect, closeThumbRect };
+}
+
+export function getStableFolderClosePresentationHitRects(options = {}) {
+  const {
+    frameRect = null,
+    handoffRect = null,
+    stableFolderCloseTarget = null,
+  } = options;
+  const presentationFrameRect = cloneRect(frameRect);
+  if (presentationFrameRect) return [presentationFrameRect];
+  const currentHandoffRect = cloneRect(handoffRect);
+  if (currentHandoffRect) return [currentHandoffRect];
+  const projectedTarget = projectFolderCloseTargetToClient(stableFolderCloseTarget);
+  return [
+    cloneRect(projectedTarget?.thumbRect),
+    cloneRect(projectedTarget?.iconRect),
+  ].filter(Boolean);
 }
 
 export function makeOpeningGhostTarget(options = {}) {
@@ -105,6 +177,7 @@ export function makeOpeningGhostTarget(options = {}) {
   const sourceRect = isThumbnailChild
     ? getPreviewChildRect?.(item, previewSlotIndex) || makeProjectedPreviewRect(folderRect, previewSlotIndex, 3, 3)
     : getPreviewChildRect?.(item, index) || makeProjectedPreviewRect(folderRect, index, cols, rows);
+  const targetStageLayoutRect = makeIconRect(targetCenterX, targetCenterY, iconSize);
   return {
     cellHeight,
     cellWidth,
@@ -116,7 +189,7 @@ export function makeOpeningGhostTarget(options = {}) {
     item,
     previewSlotIndex,
     sourceRect,
-    targetRect: makeIconRect(targetCenterX, targetCenterY, iconSize),
+    targetStageLayoutRect,
   };
 }
 
@@ -137,9 +210,15 @@ export function makeClosingGhostTarget(options = {}) {
   } = options;
   const previewSlotIndex = previewSlotById?.get(item?.id);
   const isThumbnailChild = previewSlotIndex != null;
-  const stablePreviewChildRect = isThumbnailChild && stableFolderCloseTarget?.folderId === folderId
+  const stablePreviewChildStageLayoutRect = isThumbnailChild && stableFolderCloseTarget?.folderId === folderId
     ? stableFolderCloseTarget.previewChildRects?.get(makePreviewChildKey(item.id, previewSlotIndex))
     : null;
+  const stableThumbStageLayoutRect = stableFolderCloseTarget?.folderId === folderId
+    ? stableFolderCloseTarget.thumbRect
+    : null;
+  const targetStageLayoutRect = isThumbnailChild
+    ? stablePreviewChildStageLayoutRect || makeFolderThumbPreviewRect(stableThumbStageLayoutRect, previewSlotIndex)
+    : makeFolderCenterCollapseRect(stableThumbStageLayoutRect);
   return {
     cellHeight,
     cellWidth,
@@ -151,9 +230,7 @@ export function makeClosingGhostTarget(options = {}) {
     item,
     previewSlotIndex,
     sourceRect: iconBounds,
-    targetRect: isThumbnailChild
-      ? stablePreviewChildRect || makeProjectedPreviewRect(closeThumbRect, previewSlotIndex, 3, 3)
-      : makeFolderCenterCollapseRect(closeThumbRect),
+    targetStageLayoutRect,
   };
 }
 
@@ -162,11 +239,15 @@ export function makeClosingPreviewSwapTargets(options = {}) {
   if (!folderId || !folderRect) return [];
   return (previewSlots || []).slice(0, 9).map((item, previewSlotIndex) => {
     if (!item?.id) return null;
-    const stablePreviewChildRect = stableFolderCloseTarget?.folderId === folderId
+    const stablePreviewChildStageLayoutRect = stableFolderCloseTarget?.folderId === folderId
       ? stableFolderCloseTarget.previewChildRects?.get(makePreviewChildKey(item.id, previewSlotIndex))
       : null;
-    const targetRect = stablePreviewChildRect || makeProjectedPreviewRect(folderRect, previewSlotIndex, 3, 3);
-    return targetRect ? { item, previewSlotIndex, targetRect } : null;
+    const stableThumbStageLayoutRect = stableFolderCloseTarget?.folderId === folderId
+      ? stableFolderCloseTarget.thumbRect
+      : null;
+    const targetStageLayoutRect = stablePreviewChildStageLayoutRect ||
+      makeFolderThumbPreviewRect(stableThumbStageLayoutRect, previewSlotIndex);
+    return targetStageLayoutRect ? { item, previewSlotIndex, targetStageLayoutRect } : null;
   }).filter(Boolean);
 }
 

@@ -7,6 +7,7 @@ import {
   backgroundSourceUsesImage,
   backgroundSourceUsesLiveDesktop,
   clampBackgroundBaseOpacity,
+  clampBackgroundAcrylicBlurStrength,
   clampBackgroundBlurStrength,
   clampBackgroundDarkenStrength,
   clampBackgroundImageOpacity,
@@ -17,7 +18,7 @@ import {
 import { resolveCssBackgroundImagePlacement } from "../domain/backgroundImageLayout.js";
 import {
   appLaunchGhostTransition,
-  homeShellTransition,
+  homeChromeTransition,
   panelSpring,
 } from "./launchpadMotion.js";
 import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
@@ -50,8 +51,13 @@ export function useLaunchpadViewState(options) {
     && backgroundEffectUsesPixi(options.backgroundEffect.value)
     && !normalizeLiveDesktopBackgroundSupport(options.liveDesktopBackgroundSupport?.value).supportsLiveDesktopBackgroundEffects
   ));
+  const liveDesktopBlurStrength = computed(() => (
+    options.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL && options.backgroundAcrylicBlurStrength
+      ? clampBackgroundAcrylicBlurStrength(options.backgroundAcrylicBlurStrength.value)
+      : clampBackgroundBlurStrength(options.backgroundBlurStrength?.value)
+  ));
   const liveDesktopBlurRadius = computed(() => (
-    2 + (clampBackgroundBlurStrength(options.backgroundBlurStrength?.value) / 100) * 28
+    2 + (liveDesktopBlurStrength.value / 100) * 28
   ));
   const liveDesktopBackdropFilter = computed(() => {
     if (!shouldUseCssLiveDesktopEffect.value) return "none";
@@ -113,13 +119,21 @@ export function useLaunchpadViewState(options) {
     "--launchpad-live-desktop-backdrop-filter": liveDesktopBackdropFilter.value,
     "--launchpad-live-desktop-backdrop-opacity": shouldUseCssLiveDesktopEffect.value ? "0.001" : "0",
   }));
-  const homeShellInitial = { opacity: 0, scale: DESKTOP_CLOSE_SCALE, y: 0, filter: "blur(8px)" };
-  const homeShellAnimate = computed(() => {
-    if (isDesktopAnimatingClosed.value) return { opacity: 0, scale: DESKTOP_CLOSE_SCALE, y: 0, filter: "blur(8px)" };
-    if (options.openFolderId.value && !options.isFolderClosing.value) return { opacity: 0, scale: 0.92, y: 44, filter: "blur(6px)" };
-    return { opacity: 1, scale: 1, y: 0, filter: "blur(0px)" };
+  const desktopVisualTransform = computed(() => {
+    if (isDesktopAnimatingClosed.value) return { scale: DESKTOP_CLOSE_SCALE, y: 0 };
+    if (options.openFolderId.value && !options.isFolderClosing.value) return { scale: 0.92, y: 44 };
+    return { scale: 1, y: 0 };
   });
-  const homeShellStyle = computed(() => ({
+  const desktopVisualAlpha = computed(() => (shouldHideHomeShell.value ? 0 : 1));
+  const launchpadVisualTransform = computed(() => (isDesktopAnimatingClosed.value ? { scale: DESKTOP_CLOSE_SCALE, y: 0 } : { scale: 1, y: 0 }));
+  const launchpadVisualAlpha = computed(() => (isDesktopAnimatingClosed.value ? 0 : 1));
+  const homeChromeInitial = { opacity: 0, filter: "blur(8px)" };
+  const homeChromeAnimate = computed(() => {
+    if (isDesktopAnimatingClosed.value) return { opacity: 0, filter: "blur(8px)" };
+    if (options.openFolderId.value && !options.isFolderClosing.value) return { opacity: 0, filter: "blur(0px)" };
+    return { opacity: 1, filter: "blur(0px)" };
+  });
+  const homeChromeStyle = computed(() => ({
     pointerEvents: shouldHideHomeShell.value || isHomeInteractionDisabled.value ? "none" : "auto",
   }));
 
@@ -127,10 +141,14 @@ export function useLaunchpadViewState(options) {
     appLaunchGhostTransition,
     backgroundImageStyle,
     desktopTrackMotionKey,
-    homeShellAnimate,
-    homeShellInitial,
-    homeShellStyle,
-    homeShellTransition,
+    desktopVisualTransform,
+    desktopVisualAlpha,
+    launchpadVisualTransform,
+    launchpadVisualAlpha,
+    homeChromeAnimate,
+    homeChromeInitial,
+    homeChromeStyle,
+    homeChromeTransition,
     isHomeInteractionDisabled,
     panelSpring,
     rootStyle,

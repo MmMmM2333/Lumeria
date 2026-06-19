@@ -41,14 +41,17 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconEvent},
     AppHandle, Emitter, Manager, State, WindowEvent,
 };
-use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tray::{
-    disable_main_window_transitions, open_main_window, open_settings, refresh_main_window_effects,
-    set_main_window_fullscreen, setup_tray, trigger_main_window_shortcut, CLOSE_DESKTOP_EVENT,
+    apply_main_window_mode, disable_main_window_transitions, open_main_window, open_settings,
+    refresh_main_window_effects, reveal_main_window as reveal_tray_main_window, setup_tray,
+    trigger_main_window_shortcut, CLOSE_DESKTOP_EVENT,
 };
 
 const QUIT_REQUESTED_EVENT: &str = "launchpad-quit-requested";
+const MAIN_WINDOW_SHORTCUT_CAPTURED_EVENT: &str = "launchpad-main-window-shortcut-captured";
 const QUIT_FALLBACK_DELAY_MS: u64 = 15_000;
+const DEFAULT_MAIN_WINDOW_SHORTCUT: &str = "alt+space";
 static QUIT_ACKNOWLEDGED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(all(target_os = "windows", debug_assertions))]
@@ -58,6 +61,8 @@ pub use icons::debug_extract_icon_png;
 struct AppState {
     catalog: Mutex<HashMap<String, AppCatalogItem>>,
     live_desktop_runtime: Mutex<live_desktop::LiveDesktopRuntime>,
+    main_window_shortcut: Mutex<Option<String>>,
+    main_window_shortcut_capture_active: AtomicBool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -376,6 +381,16 @@ fn hide_main_window(app: AppHandle) {
 }
 
 #[tauri::command]
+fn show_main_window(app: AppHandle) {
+    open_main_window(&app);
+}
+
+#[tauri::command]
+fn reveal_main_window(app: AppHandle, open_sequence: Option<u64>) -> Result<(), String> {
+    reveal_tray_main_window(&app, open_sequence)
+}
+
+#[tauri::command]
 fn quit_app(app: AppHandle) {
     app.exit(0);
 }
@@ -504,6 +519,35 @@ fn set_main_window_effects_enabled(
         material.as_deref(),
         appearance.as_deref(),
     )
+}
+
+#[tauri::command]
+fn set_main_window_mode(app: AppHandle, mode: String) -> Result<String, String> {
+    tray::set_main_window_mode(&app, &mode)
+}
+
+#[tauri::command]
+fn set_main_window_shortcut(
+    app: AppHandle,
+    shortcut: Option<String>,
+) -> Result<Option<String>, String> {
+    set_main_window_shortcut_internal(&app, shortcut.as_deref())
+}
+
+#[tauri::command]
+fn set_main_window_shortcut_capture_active(
+    state: State<'_, AppState>,
+    active: bool,
+) -> Result<(), String> {
+    state
+        .main_window_shortcut_capture_active
+        .store(active, Ordering::Relaxed);
+    Ok(())
+}
+
+#[tauri::command]
+fn set_main_window_shadow_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    tray::set_main_window_shadow_enabled(&app, enabled)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -780,8 +824,8 @@ fn check_launch_target_status(target: &models::LaunchTarget) -> String {
 
 fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     setup_tray(app)?;
-    if let Err(error) = set_main_window_fullscreen(app.handle()) {
-        eprintln!("Failed to fullscreen LaunchPad window: {error}");
+    if let Err(error) = apply_main_window_mode(app.handle()) {
+        eprintln!("Failed to apply LaunchPad window mode: {error}");
     }
     if let Err(error) = disable_main_window_transitions(app.handle()) {
         eprintln!("Failed to disable LaunchPad window transitions: {error}");
@@ -791,29 +835,138 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn setup_global_shortcuts(app: &mut tauri::App) {
-    let plugin = tauri_plugin_global_shortcut::Builder::new()
-        .with_shortcut("alt+space")
-        .map(|builder| {
-            builder.with_handler(|app, shortcut, event| {
-                if event.state == ShortcutState::Pressed
-                    && shortcut.matches(Modifiers::ALT, Code::Space)
-                {
-                    trigger_main_window_shortcut(app);
-                }
-            })
-        });
-
-    let plugin = match plugin {
-        Ok(plugin) => plugin.build(),
-        Err(error) => {
-            eprintln!("Failed to create LaunchPad shortcut: {error}");
-            return;
-        }
-    };
+    let plugin = tauri_plugin_global_shortcut::Builder::new().build();
 
     if let Err(error) = app.handle().plugin(plugin) {
-        eprintln!("Failed to register LaunchPad shortcut Alt+Space: {error}");
+        eprintln!("Failed to install LaunchPad shortcut plugin: {error}");
+        return;
     }
+
+    match load_initial_main_window_shortcut(app.handle()) {
+        Ok(Some(shortcut)) => {
+            if let Err(error) = set_main_window_shortcut_internal(app.handle(), Some(&shortcut)) {
+                eprintln!("Failed to register configured LaunchPad shortcut: {error}");
+            }
+        }
+        Ok(None) => {}
+        Err(error) => {
+            eprintln!("Failed to load configured LaunchPad shortcut: {error}");
+            if let Err(error) =
+                set_main_window_shortcut_internal(app.handle(), Some(DEFAULT_MAIN_WINDOW_SHORTCUT))
+            {
+                eprintln!("Failed to register default LaunchPad shortcut: {error}");
+            }
+        }
+    }
+}
+
+fn load_initial_main_window_shortcut(app: &AppHandle) -> Result<Option<String>, String> {
+    let result = load_saved_layout(app)?;
+    let Some(layout) = result.layout else {
+        return Ok(Some(DEFAULT_MAIN_WINDOW_SHORTCUT.to_string()));
+    };
+    let shortcut = layout
+        .get("settings")
+        .and_then(|settings| settings.get("mainWindowShortcut"));
+    if shortcut.is_some_and(|value| value.is_null()) {
+        return Ok(None);
+    }
+    Ok(Some(
+        shortcut
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(DEFAULT_MAIN_WINDOW_SHORTCUT)
+            .to_string(),
+    ))
+}
+
+fn normalize_main_window_shortcut(shortcut: &str) -> Result<String, String> {
+    let trimmed = shortcut.trim();
+    if trimmed.is_empty() {
+        return Err("Shortcut must not be empty".to_string());
+    }
+    trimmed
+        .parse::<Shortcut>()
+        .map_err(|error| format!("Shortcut is invalid: {error}"))?;
+    Ok(trimmed.to_string())
+}
+
+fn clear_main_window_shortcut_internal(app: &AppHandle) -> Result<Option<String>, String> {
+    let state = app.state::<AppState>();
+    let previous_shortcut = state
+        .main_window_shortcut
+        .lock()
+        .map_err(|_| "Failed to lock LaunchPad shortcut state".to_string())?
+        .clone();
+
+    if let Some(previous_shortcut) = previous_shortcut {
+        app.global_shortcut()
+            .unregister(previous_shortcut.as_str())
+            .map_err(|error| {
+                format!("Failed to unregister LaunchPad shortcut {previous_shortcut}: {error}")
+            })?;
+    }
+
+    let mut registered_shortcut = state
+        .main_window_shortcut
+        .lock()
+        .map_err(|_| "Failed to lock LaunchPad shortcut state".to_string())?;
+    *registered_shortcut = None;
+    Ok(None)
+}
+
+fn set_main_window_shortcut_internal(
+    app: &AppHandle,
+    shortcut: Option<&str>,
+) -> Result<Option<String>, String> {
+    let Some(shortcut) = shortcut else {
+        return clear_main_window_shortcut_internal(app);
+    };
+    let next_shortcut = normalize_main_window_shortcut(shortcut)?;
+    let state = app.state::<AppState>();
+    let previous_shortcut = state
+        .main_window_shortcut
+        .lock()
+        .map_err(|_| "Failed to lock LaunchPad shortcut state".to_string())?
+        .clone();
+
+    if previous_shortcut.as_deref() == Some(next_shortcut.as_str()) {
+        return Ok(Some(next_shortcut));
+    }
+
+    app.global_shortcut()
+        .on_shortcut(next_shortcut.as_str(), |app, shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                if app
+                    .state::<AppState>()
+                    .main_window_shortcut_capture_active
+                    .load(Ordering::Relaxed)
+                {
+                    let _ = app.emit(MAIN_WINDOW_SHORTCUT_CAPTURED_EVENT, shortcut.into_string());
+                    return;
+                }
+                trigger_main_window_shortcut(app);
+            }
+        })
+        .map_err(|error| {
+            format!("Failed to register LaunchPad shortcut {next_shortcut}: {error}")
+        })?;
+
+    if let Some(previous_shortcut) = previous_shortcut {
+        if previous_shortcut != next_shortcut {
+            if let Err(error) = app.global_shortcut().unregister(previous_shortcut.as_str()) {
+                eprintln!(
+                    "Failed to unregister previous LaunchPad shortcut {previous_shortcut}: {error}"
+                );
+            }
+        }
+    }
+
+    let mut registered_shortcut = state
+        .main_window_shortcut
+        .lock()
+        .map_err(|_| "Failed to lock LaunchPad shortcut state".to_string())?;
+    *registered_shortcut = Some(next_shortcut.clone());
+    Ok(Some(next_shortcut))
 }
 
 fn request_app_quit(app: &AppHandle) {
@@ -864,6 +1017,7 @@ pub fn run() {
                 let _ = window.emit(CLOSE_DESKTOP_EVENT, ());
             }
             WindowEvent::Focused(true) => refresh_main_window_effects(window.app_handle()),
+            WindowEvent::Focused(false) => tray::release_main_window_topmost(window.app_handle()),
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![
@@ -882,6 +1036,8 @@ pub fn run() {
             check_launch_targets,
             launch_app,
             hide_main_window,
+            show_main_window,
+            reveal_main_window,
             confirm_quit_after_save,
             show_launch_error_message,
             quit_app,
@@ -892,7 +1048,11 @@ pub fn run() {
             start_live_desktop_background,
             stop_live_desktop_background,
             set_live_desktop_background_visible,
-            set_main_window_effects_enabled
+            set_main_window_effects_enabled,
+            set_main_window_mode,
+            set_main_window_shortcut,
+            set_main_window_shortcut_capture_active,
+            set_main_window_shadow_enabled
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri app");

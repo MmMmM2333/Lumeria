@@ -1,8 +1,17 @@
 import {
   makeIconRect,
+  makeContainerTargetIconBounds,
   makeSyntheticPointerEvent,
   makeTargetIconBounds,
 } from "./iconSceneHelpers.js";
+
+function makeMatrix(transform) {
+  return {
+    apply(point) {
+      return transform(point);
+    },
+  };
+}
 
 export function runIconSceneHelpersTests() {
   const assert = (condition, message) => {
@@ -26,6 +35,22 @@ export function runIconSceneHelpersTests() {
   assert(targetBounds.left === 90, "target bounds should map local x into stage coordinates");
   assert(targetBounds.top === 92, "target bounds should apply visual offset before stage mapping");
   assert(targetBounds.width === 40 && targetBounds.height === 40, "target bounds should scale size into stage coordinates");
+
+  const containerTargetBounds = makeContainerTargetIconBounds(
+    {
+      getGlobalTransform: () => makeMatrix(({ x, y }) => ({ x: x * 0.5 + 100, y: y * 0.5 + 10 })),
+    },
+    { left: 0, top: 0, width: 200, height: 200 },
+    200,
+    200,
+    50,
+    40,
+    20,
+    4
+  );
+  assert(containerTargetBounds.left === 120, "container target bounds should include container x transform");
+  assert(containerTargetBounds.top === 27, "container target bounds should include container y transform and visual offset");
+  assert(containerTargetBounds.width === 10 && containerTargetBounds.height === 10, "container target bounds should include container scale");
 
   let prevented = false;
   let stopped = false;

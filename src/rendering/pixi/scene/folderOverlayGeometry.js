@@ -6,6 +6,13 @@ const CLOSING_PREVIEW_COMPACT_PROGRESS = 0.76;
 const CLOSING_PREVIEW_TALL_PROGRESS = 0.68;
 const CLOSING_PREVIEW_COMPACT_SWAP_DURATION = 0.18;
 const CLOSING_PREVIEW_TALL_SWAP_DURATION = 0.22;
+export const FOLDER_PAGE_DOTS_HIT_HEIGHT = 28;
+export const FOLDER_PAGE_DOTS_SIZE = 10;
+export const FOLDER_PAGE_DOTS_GAP = 12;
+export const FOLDER_PAGE_DOT_ACTIVE_ALPHA = 0.96;
+export const FOLDER_PAGE_DOT_ACTIVE_SCALE = 1.02;
+export const FOLDER_PAGE_DOT_HOVER_ALPHA = 0.5;
+export const FOLDER_PAGE_DOT_IDLE_ALPHA = 0.28;
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
@@ -24,8 +31,47 @@ export function getFolderPageMaskRect(geometry, localGridLeft, localGridTop) {
   };
 }
 
-export function resolveOpeningInterruptionFrame(frameRect, panelRect, contentFrameRect) {
-  return frameRect || panelRect || contentFrameRect;
+export function getFolderPageDotsFrame(geometry) {
+  const panel = geometry?.panel;
+  if (!panel) return null;
+  const grid = geometry?.grid;
+  const bottomPaddingTop = grid ? grid.top + grid.height : panel.top + panel.height - 54;
+  const bottomPaddingHeight = Math.max(0, panel.top + panel.height - bottomPaddingTop);
+  return {
+    height: FOLDER_PAGE_DOTS_HIT_HEIGHT,
+    left: panel.left,
+    top: bottomPaddingTop + bottomPaddingHeight / 2 - FOLDER_PAGE_DOTS_HIT_HEIGHT / 2,
+    width: panel.width,
+  };
+}
+
+export function getFolderPageDotVisualState(options = {}) {
+  const active = options.active === true;
+  return {
+    alpha: active
+      ? FOLDER_PAGE_DOT_ACTIVE_ALPHA
+      : options.hovered === true
+        ? FOLDER_PAGE_DOT_HOVER_ALPHA
+        : FOLDER_PAGE_DOT_IDLE_ALPHA,
+    scale: active ? FOLDER_PAGE_DOT_ACTIVE_SCALE : 1,
+  };
+}
+
+export function makePanelVisualRect(panel, panelRect, options = {}) {
+  if (!panelRect || !panel) return null;
+  const scaleX = Number(panel.scale?.x) || 1;
+  const scaleY = Number(panel.scale?.y) || 1;
+  const pivotX = Number(panel.pivot?.x) || panelRect.width / 2;
+  const pivotY = Number(panel.pivot?.y) || panelRect.height / 2;
+  const radius = Number(options.radius ?? 48);
+  return {
+    height: panelRect.height * Math.abs(scaleY),
+    left: panel.x - pivotX * scaleX,
+    progress: options.progress ?? 1,
+    radius: radius * Math.min(Math.abs(scaleX), Math.abs(scaleY)),
+    top: panel.y - pivotY * scaleY,
+    width: panelRect.width * Math.abs(scaleX),
+  };
 }
 
 export function getClosingPreviewTiming(frameRect, targetRect) {

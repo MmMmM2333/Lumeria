@@ -1,5 +1,5 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { makeStageLocalRect } from "../geometry/stageCoordinates.js";
+import { stageLayoutRectToStageVisualRect } from "../geometry/stageCoordinates.js";
 
 const CLOSING_PREVIEW_SWAP_START_SCALE = 1.02;
 const CLOSING_PREVIEW_ICON_ROW_STAGGER = 0.01;
@@ -51,11 +51,11 @@ function makeIconMotion(target, maskRect) {
 }
 
 export function makeClosingPreviewSwapPlan(targets, options = {}) {
-  const { maskPadding = 2, stageRect = null } = options;
+  const { maskPadding = 2, stageHeight, stageRect = null, stageWidth } = options;
   const localTargets = [];
   let bounds = null;
   for (const target of targets || []) {
-    const rect = makeStageLocalRect(target?.targetRect, stageRect);
+    const rect = stageLayoutRectToStageVisualRect(stageRect, stageWidth, stageHeight, target?.targetStageLayoutRect);
     if (!rect || rect.width <= 0 || rect.height <= 0) continue;
     localTargets.push({ ...target, rect });
     bounds = expandBounds(bounds, rect);

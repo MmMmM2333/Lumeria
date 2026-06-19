@@ -5,9 +5,11 @@ import {
   DEFAULT_ICON_SIZE,
   DEFAULT_ROWS,
 } from "./launchpadConstants.js";
+import { DEFAULT_MAIN_WINDOW_SHORTCUT } from "../domain/mainWindowShortcut.js";
 import { useLaunchpadControllerState } from "./useLaunchpadControllerState.js";
 import {
   DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE,
+  DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH,
   BACKGROUND_EFFECT_DIMMED,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
   DEFAULT_BACKGROUND_BASE_COLOR,
@@ -18,6 +20,7 @@ import {
   DEFAULT_BACKGROUND_IMAGE_LAYOUT,
   DEFAULT_BACKGROUND_IMAGE_OPACITY,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
+  DEFAULT_WINDOW_MODE,
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
 } from "./useLaunchpadSettingsConfig.js";
@@ -45,6 +48,7 @@ export function runLaunchpadControllerStateTests() {
   assert(state.backgroundImageOpacity.value === DEFAULT_BACKGROUND_IMAGE_OPACITY, "background image opacity should use the default");
   assert(state.backgroundImageLayout.value === DEFAULT_BACKGROUND_IMAGE_LAYOUT, "background image layout should use the default");
   assert(state.backgroundBlurStrength.value === DEFAULT_BACKGROUND_BLUR_STRENGTH, "background blur strength should use the default");
+  assert(state.backgroundAcrylicBlurStrength.value === DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH, "background acrylic blur strength should use the default");
   assert(state.backgroundDarkenColor.value === DEFAULT_BACKGROUND_DARKEN_COLOR, "background darken color should use the default");
   assert(state.backgroundDarkenStrength.value === DEFAULT_BACKGROUND_DARKEN_STRENGTH, "background darken strength should use the default");
   assert(state.backgroundAcrylicAppearance.value === DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE, "background acrylic appearance should use the default");
@@ -59,6 +63,7 @@ export function runLaunchpadControllerStateTests() {
   assert(state.draftBackgroundImageOpacity.value === DEFAULT_BACKGROUND_IMAGE_OPACITY, "draft background image opacity should use the default");
   assert(state.draftBackgroundImageLayout.value === DEFAULT_BACKGROUND_IMAGE_LAYOUT, "draft background image layout should use the default");
   assert(state.draftBackgroundBlurStrength.value === DEFAULT_BACKGROUND_BLUR_STRENGTH, "draft background blur strength should use the default");
+  assert(state.draftBackgroundAcrylicBlurStrength.value === DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH, "draft background acrylic blur strength should use the default");
   assert(state.draftBackgroundDarkenColor.value === DEFAULT_BACKGROUND_DARKEN_COLOR, "draft background darken color should use the default");
   assert(state.draftBackgroundDarkenStrength.value === DEFAULT_BACKGROUND_DARKEN_STRENGTH, "draft background darken strength should use the default");
   assert(state.draftBackgroundAcrylicAppearance.value === DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE, "draft background acrylic appearance should use the default");
@@ -71,6 +76,12 @@ export function runLaunchpadControllerStateTests() {
   assert(state.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_DARK, "window effect appearance should default to dark");
   assert(state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_ACRYLIC, "draft window effect material should default to acrylic");
   assert(state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_DARK, "draft window effect appearance should default to dark");
+  assert(state.windowMode.value === DEFAULT_WINDOW_MODE, "window mode should default to fullscreen");
+  assert(state.draftWindowMode.value === DEFAULT_WINDOW_MODE, "draft window mode should default to fullscreen");
+  assert(state.mainWindowShortcut.value === DEFAULT_MAIN_WINDOW_SHORTCUT, "main window shortcut should use the default");
+  assert(state.draftMainWindowShortcut.value === DEFAULT_MAIN_WINDOW_SHORTCUT, "draft main window shortcut should use the default");
+  assert(state.mainWindowShortcutError.value === "", "main window shortcut errors should start empty");
+  assert(state.isApplyingSettingsConfig.value === false, "settings apply state should start idle");
   assert(state.windowEffectsSupport.value.supportsAcrylic === false, "window effect support should start unavailable before native detection");
   assert(state.pageSize.value === DEFAULT_ROWS * DEFAULT_COLS, "page size should derive from desktop grid dimensions");
   assert(state.folderPageSize.value === DEFAULT_FOLDER_ROWS * DEFAULT_FOLDER_COLS, "folder page size should derive from folder grid dimensions");
