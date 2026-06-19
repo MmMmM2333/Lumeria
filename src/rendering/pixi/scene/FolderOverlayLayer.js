@@ -21,6 +21,11 @@ import {
 } from "./folderFrameGhost.js";
 import { FolderClosingGhostController } from "./folderClosingGhostController.js";
 import { FolderClosingPreviewSwapController } from "./folderClosingPreviewSwapController.js";
+import {
+  applyClosingHandoffOnlyOverlayState,
+  applyClosingPresentationOverlayState,
+  getClosingPresentationStageHitRects,
+} from "./folderClosingHandoff.js";
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
 import { clientPointToStageVisualPoint, clientRectToStageVisualRect, makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import {
@@ -40,7 +45,6 @@ import {
 } from "./folderOverlayGeometry.js";
 import { makeFolderOverlayRenderPlan } from "./folderOverlayRenderPlan.js";
 import {
-  getStableFolderClosePresentationHitRects,
   getStableFolderCloseRects,
   makeClosingGhostTarget,
   makeOpeningGhostTarget,
@@ -187,9 +191,7 @@ export class FolderOverlayLayer extends Container {
     this.visible = Boolean(state.renderedFolder) || keepClosingHandoff;
     if (!state.renderedFolder) {
       if (keepClosingHandoff) {
-        this.panel.visible = false;
-        this.pageTrack.visible = false;
-        return null;
+        return applyClosingHandoffOnlyOverlayState(this);
       }
       this.currentFolderId = null;
       this.isClosing = false;
@@ -243,6 +245,7 @@ export class FolderOverlayLayer extends Container {
     const { folderClientRect, folderThumbClientRect, getOpeningPreviewChildClientRect, previewSlots } = overlayTargets;
     this.drawPanel(geometry.panel);
     this.updatePageDots(state, geometry);
+    if (isClosing) applyClosingPresentationOverlayState(this);
     this.panel.pivot.set(geometry.panel.width / 2, geometry.panel.height / 2);
     const targetX = geometry.panel.left + geometry.panel.width / 2;
     const targetY = geometry.panel.top + geometry.panel.height / 2;
@@ -727,23 +730,19 @@ export class FolderOverlayLayer extends Container {
 
     const clientX = native.clientX ?? (this.stageRect?.left || 0) + (event?.global?.x || 0);
     const clientY = native.clientY ?? (this.stageRect?.top || 0) + (event?.global?.y || 0);
+    const localPoint = clientPointToStageVisualPoint({ x: clientX, y: clientY }, this.stageRect) || { x: 0, y: 0 };
+    const { x, y } = localPoint;
     if (this.isClosing) {
       const closeTarget = this.stableFolderCloseTarget;
-      const hitRects = getStableFolderClosePresentationHitRects({
-        frameRect: this.frameGhostState,
-        handoffRect: this.closingFolderHandoffRect,
-        stableFolderCloseTarget: closeTarget,
-      });
+      const hitRects = getClosingPresentationStageHitRects(this);
       if (this.isUserFolderClosing &&
         closeTarget?.folderId &&
-        hitRects.some((rect) => isPointInRect(clientX, clientY, rect))) {
+        hitRects.some((rect) => isPointInRect(x, y, rect))) {
         this.onClosingFolderPointerDown(closeTarget.folderId, native);
       }
       return;
     }
 
-    const localPoint = clientPointToStageVisualPoint({ x: clientX, y: clientY }, this.stageRect) || { x: 0, y: 0 };
-    const { x, y } = localPoint;
     const panel = this.panelGeometry;
     if (!panel) return;
     if (x < panel.left || x > panel.left + panel.width || y < panel.top || y > panel.top + panel.height) {

@@ -20,6 +20,7 @@ function makeNode(id) {
     eventMode: "static",
     id,
     labelText: { alpha: 0.5, visible: true },
+    labelRevealCount: 0,
     position: {
       set(x, y) {
         this.x = x;
@@ -35,6 +36,12 @@ function makeNode(id) {
       },
       x: 0.7,
       y: 0.7,
+    },
+    state: { draggable: false, interactive: false },
+    revealLabelAfterGhost() {
+      this.labelRevealCount += 1;
+      this.labelText.alpha = 0;
+      this.labelText.visible = true;
     },
     visible: false,
   };
@@ -57,6 +64,10 @@ export async function runDesktopLayerTests() {
     });
   }
   const { DesktopLayer, resolveDesktopVisualAlpha } = await import("./DesktopLayer.js");
+  const {
+    clearIconBoundsRegistry,
+    registerRenderedClientTopLevelFolderThumbBounds,
+  } = await import("../geometry/iconBoundsRegistry.js");
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[DesktopLayer test failed] ${message}`);
   };
@@ -90,13 +101,48 @@ export async function runDesktopLayerTests() {
     assert(folder.position.x === 12 && folder.position.y === 34, "handoff should snap node to the target");
     assert(folder.scale.x === 1 && folder.scale.y === 1, "handoff should reset node scale");
     assert(folder.visible === true && folder.alpha === 1, "handoff should make the real node visible");
-    assert(folder.eventMode === "none" && folder.cursor === "default", "handoff should disable interaction");
-    assert(folder.labelText.visible === false && folder.labelText.alpha === 1, "handoff should hide the label without fade state");
+    assert(folder.eventMode === "static" && folder.cursor === "pointer", "handoff should restore folder interaction once the real node owns the icon");
+    assert(folder.state.draggable === true && folder.state.interactive === true, "handoff should restore the node state used by pointer handling");
+    assert(folder.labelText.visible === true && folder.labelText.alpha === 0, "handoff should keep the folder label hidden until release");
+    assert(folder.labelRevealCount === 0, "handoff should not reveal the label before the icon is released");
+
+    layer.syncFolderHandoffNode(folder, { x: 12, y: 34 });
+    assert(folder.labelText.alpha === 0, "handoff position sync should keep the label hidden");
+    assert(folder.labelRevealCount === 0, "handoff position sync should not start the label reveal");
 
     layer.clearFolderHandoffNode();
 
     assert(layer.folderHandoffNode === null, "clear should remove handoff state");
     assert(pageTrack.children[1] === folder, "clear should restore original z order");
+    assert(folder.labelRevealCount === 1, "clear should start the folder label fade-in once");
+  }
+
+  {
+    clearIconBoundsRegistry();
+    const folder = makeNode("folder");
+    folder.item = {
+      children: [{ id: "child-1" }],
+      id: "folder-1",
+      type: "folder",
+    };
+    folder.getFolderThumbBounds = () => ({ height: 60, left: 10, top: 20, width: 60 });
+    folder.getIconBounds = () => ({ height: 80, left: 0, top: 10, width: 80 });
+    folder.getFolderPreviewChildBounds = () => ({ height: 12, left: 18, top: 28, width: 12 });
+    const pageTrack = makePageTrack([folder]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+
+    registerRenderedClientTopLevelFolderThumbBounds("folder-1", { height: 60, left: 10, top: 20, width: 60 }, {
+      area: "desktop",
+      id: "folder-1",
+    });
+
+    layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 });
+    layer.clearFolderHandoffNode();
+
+    assert(layer.folderHandoffNode === null, "debug snapshot should not prevent handoff cleanup");
+    assert(layer.lastFolderHandoffDebugSnapshot?.childRows?.length === 1, "debug snapshot should include preview child rows");
+    assert(layer.lastFolderHandoffDebugSnapshot.childRows[0].target, "debug snapshot should resolve preview child targets");
+    clearIconBoundsRegistry();
   }
 
   {

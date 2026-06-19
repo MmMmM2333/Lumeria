@@ -6,8 +6,11 @@ import {
   makePanelVisualRect,
 } from "./folderOverlayGeometry.js";
 import {
+  applyClosingHandoffOnlyOverlayState,
+  applyClosingPresentationOverlayState,
   cancelClosingHandoffCleanup,
   finishClosingHandoff,
+  getClosingPresentationStageHitRects,
 } from "./folderClosingHandoff.js";
 
 function makeClosingHandoffHarness(calls) {
@@ -90,6 +93,43 @@ export function runFolderOverlayLayerTests() {
   assert(visualRect.height === 140, "panel visual rect should use the current scaled panel height");
   assert(visualRect.radius === 12, "panel visual rect should scale the corner radius");
   assert(visualRect.progress === 0.6, "panel visual rect should preserve progress");
+
+  {
+    const layer = {
+      hitArea: { width: 100 },
+      pageTrack: { visible: true },
+      panel: { visible: true },
+    };
+
+    applyClosingHandoffOnlyOverlayState(layer);
+    assert(layer.hitArea === null, "handoff-only overlay should not keep a full-screen pointer hit area");
+    assert(layer.panel.visible === false && layer.pageTrack.visible === false, "handoff-only overlay should hide stale folder visuals");
+  }
+
+  {
+    const layer = {
+      frameGhostState: { height: 60, left: 20, top: 30, width: 60 },
+      hitArea: null,
+      pageDotsLayer: { eventMode: "static", hitArea: { width: 100 }, visible: true },
+      stageRect: { left: 100, top: 200, width: 800, height: 600 },
+    };
+
+    const hitArea = applyClosingPresentationOverlayState(layer);
+    assert(hitArea.contains(24, 34), "closing presentation overlay should keep the closing folder hit target active");
+    assert(!hitArea.contains(200, 200), "closing presentation overlay should not block unrelated desktop icon positions");
+    assert(layer.pageDotsLayer.visible === false && layer.pageDotsLayer.eventMode === "none" && layer.pageDotsLayer.hitArea === null, "closing presentation overlay should disable stale page dots");
+  }
+
+  {
+    const layer = {
+      closingFolderHandoffRect: { height: 60, left: 140, top: 260, width: 60 },
+      frameGhostState: null,
+      stageRect: { left: 100, top: 200, width: 800, height: 600 },
+    };
+    const rects = getClosingPresentationStageHitRects(layer);
+    assert(rects.length === 1, "handoff rect should project into a stage hit rect");
+    assert(rects[0].left === 40 && rects[0].top === 60, "handoff client rect should be converted to stage coordinates");
+  }
 
   const nearlyEqual = (a, b) => Math.abs(a - b) < 0.0001;
   const compactTiming = getClosingPreviewTiming({ height: 490 }, { height: 70 });

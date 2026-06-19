@@ -34,6 +34,7 @@ import {
 import { makeDesktopBoundsRegistration } from "./desktopBoundsRegistration.js";
 import { resolveDesktopBoundsTargets, resolveFolderPreviewChildBoundsTargets } from "./desktopBoundsTargets.js";
 import { getDesktopIconSizing } from "./desktopIconSizing.js";
+import { makeFolderThumbPreviewRect } from "./folderOverlayTargets.js";
 import { makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { FolderOverlayLayer } from "./FolderOverlayLayer.js";
 import { SingleStageDiagnosticsLayer } from "./singleStageDiagnostics.js";
@@ -516,6 +517,7 @@ export class DesktopLayer extends Container {
       this.folderHandoffNode = {
         cleanupFrame: null,
         folderId,
+        labelRevealStarted: false,
         node,
         originalIndex: this.getPageTrackChildIndex(node),
       };
@@ -523,6 +525,7 @@ export class DesktopLayer extends Container {
       this.restoreFolderHandoffNode(this.folderHandoffNode);
       this.folderHandoffNode.node = node;
       this.folderHandoffNode.originalIndex = this.getPageTrackChildIndex(node);
+      this.folderHandoffNode.labelRevealStarted = false;
     }
     if (this.folderHandoffNode.cleanupFrame != null) {
       globalThis.cancelAnimationFrame?.(this.folderHandoffNode.cleanupFrame);
@@ -540,17 +543,23 @@ export class DesktopLayer extends Container {
     entry.layoutTarget = target;
     gsap.killTweensOf(node);
     gsap.killTweensOf(node.scale);
-    gsap.killTweensOf(node.labelText);
     node.position.set(target.x, target.y);
     node.scale.set(target.scaleX || 1, target.scaleY || target.scaleX || 1);
     node.alpha = 1;
     node.visible = true;
-    node.eventMode = "none";
-    node.cursor = "default";
+    node.eventMode = "static";
+    node.cursor = "pointer";
+    if (node.state) {
+      node.state.draggable = true;
+      node.state.interactive = true;
+    }
     node.resetFolderPreviewAfterGhost?.();
     if (node.labelText) {
-      node.labelText.alpha = 1;
-      node.labelText.visible = false;
+      node.labelText.visible = true;
+      if (!entry.labelRevealStarted) {
+        gsap.killTweensOf(node.labelText);
+        node.labelText.alpha = 0;
+      }
     }
     if (node.parent === this.pageTrack && this.pageTrack.children.length > 1) {
       this.pageTrack.setChildIndex(node, this.pageTrack.children.length - 1);
@@ -593,6 +602,11 @@ export class DesktopLayer extends Container {
     if (!childCount) return;
     const targetIndex = Math.max(0, Math.min(entry.originalIndex ?? childCount - 1, childCount - 1));
     if (this.getPageTrackChildIndex(node) !== targetIndex) this.pageTrack.setChildIndex(node, targetIndex);
+    if (!entry.labelRevealStarted && node.labelText?.visible) {
+      entry.labelRevealStarted = true;
+      if (typeof node.revealLabelAfterGhost === "function") node.revealLabelAfterGhost();
+      else node.labelText.alpha = 1;
+    }
   }
 
   getPageTrackChildIndex(node) {
