@@ -40,6 +40,7 @@ import {
 } from "./folderOverlayGeometry.js";
 import { makeFolderOverlayRenderPlan } from "./folderOverlayRenderPlan.js";
 import {
+  getStableFolderClosePresentationHitRects,
   getStableFolderCloseRects,
   makeClosingGhostTarget,
   makeOpeningGhostTarget,
@@ -728,10 +729,14 @@ export class FolderOverlayLayer extends Container {
     const clientY = native.clientY ?? (this.stageRect?.top || 0) + (event?.global?.y || 0);
     if (this.isClosing) {
       const closeTarget = this.stableFolderCloseTarget;
+      const hitRects = getStableFolderClosePresentationHitRects({
+        frameRect: this.frameGhostState,
+        handoffRect: this.closingFolderHandoffRect,
+        stableFolderCloseTarget: closeTarget,
+      });
       if (this.isUserFolderClosing &&
         closeTarget?.folderId &&
-        (isPointInRect(clientX, clientY, closeTarget.projectedClientThumbRect) ||
-          isPointInRect(clientX, clientY, closeTarget.projectedClientIconRect))) {
+        hitRects.some((rect) => isPointInRect(clientX, clientY, rect))) {
         this.onClosingFolderPointerDown(closeTarget.folderId, native);
       }
       return;

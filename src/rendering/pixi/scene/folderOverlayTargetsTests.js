@@ -1,6 +1,7 @@
 import {
   findFolderGhostKey,
   getStableFolderCloseRects,
+  getStableFolderClosePresentationHitRects,
   makeClosingGhostTarget,
   makeClosingPreviewSwapTargets,
   makeFolderThumbPreviewRect,
@@ -91,6 +92,24 @@ export function runFolderOverlayTargetsTests() {
     stableFolderCloseTarget: stableTarget,
   });
   assert(closeRects.closeThumbRect.left === folderThumbRect.left, "closing should prefer the stable thumbnail bounds");
+
+  const frameHitRects = getStableFolderClosePresentationHitRects({
+    frameRect: { height: 120, left: 200, top: 220, width: 160 },
+    handoffRect: { height: 32, left: 80, top: 90, width: 32 },
+    stableFolderCloseTarget: stableTarget,
+  });
+  assert(frameHitRects.length === 1 && frameHitRects[0].left === 200, "closing hit testing should prefer the visible frame ghost rect");
+
+  const handoffHitRects = getStableFolderClosePresentationHitRects({
+    handoffRect: { height: 32, left: 80, top: 90, width: 32 },
+    stableFolderCloseTarget: stableTarget,
+  });
+  assert(handoffHitRects.length === 1 && handoffHitRects[0].left === 80, "closing hit testing should fall back to the current handoff rect");
+
+  const projectedHitRects = getStableFolderClosePresentationHitRects({
+    stableFolderCloseTarget: stableTarget,
+  });
+  assert(projectedHitRects.length === 2, "closing hit testing should use projected stable target rects only as the final fallback");
 
   const openingTarget = makeOpeningGhostTarget({
     cellHeight: 80,

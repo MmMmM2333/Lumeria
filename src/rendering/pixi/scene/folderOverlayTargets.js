@@ -102,6 +102,22 @@ export function getStableFolderCloseRects(options = {}) {
   return { closeIconRect, closeThumbRect };
 }
 
+export function getStableFolderClosePresentationHitRects(options = {}) {
+  const {
+    frameRect = null,
+    handoffRect = null,
+    stableFolderCloseTarget = null,
+  } = options;
+  const presentationFrameRect = cloneRect(frameRect);
+  if (presentationFrameRect) return [presentationFrameRect];
+  const currentHandoffRect = cloneRect(handoffRect);
+  if (currentHandoffRect) return [currentHandoffRect];
+  return [
+    cloneRect(stableFolderCloseTarget?.projectedClientThumbRect),
+    cloneRect(stableFolderCloseTarget?.projectedClientIconRect),
+  ].filter(Boolean);
+}
+
 export function makeOpeningGhostTarget(options = {}) {
   const {
     cellHeight,
