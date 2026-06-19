@@ -64,6 +64,14 @@ export function resolveLaunchpadVisualAlpha(state = {}) {
   return clamp01(state.launchpadVisualAlpha ?? 1);
 }
 
+export function resolveLaunchpadVisualTransform(state = {}) {
+  const transform = state.launchpadVisualTransform || {};
+  return {
+    scale: Math.max(0.01, readNumber(transform.scale, 1)),
+    y: readNumber(transform.y, 0),
+  };
+}
+
 export function shouldFinishFolderHandoff(state = {}, folderLayer = null) {
   return !state.folderClosingHandoffId && !folderLayer?.closingHandoffActive;
 }
@@ -260,6 +268,7 @@ export class DesktopLayer extends Container {
     this.hasDesktopVisualAlpha = false;
     this.hasDesktopVisualTransform = false;
     this.hasFolderOverlayAlpha = false;
+    this.hasFolderOverlayTransform = false;
     this.lastFolderHandoffDebugSnapshot = null;
     this.iconNodes = new Map();
     this.boundsRegistration = null;
@@ -285,6 +294,7 @@ export class DesktopLayer extends Container {
     this.heightValue = state.height;
     this.applyDesktopVisualTransform(state);
     this.applyDesktopVisualAlpha(state);
+    this.applyFolderOverlayTransform(state);
     this.applyFolderOverlayAlpha(state);
     const pages = state.activePages || [];
     const activePageIndex = state.activePageIndex || 0;
@@ -504,6 +514,24 @@ export class DesktopLayer extends Container {
       return;
     }
     springTo(this.singleStageFolderLayer, "alpha", alpha, desktopVisualSpring);
+  }
+
+  applyFolderOverlayTransform(state) {
+    const transform = resolveLaunchpadVisualTransform(state);
+    const centerX = Math.max(1, readNumber(state.width, 1)) / 2;
+    const centerY = Math.max(1, readNumber(state.height, 1)) / 2;
+    const targetY = centerY + transform.y;
+    this.singleStageFolderLayer.pivot.set(centerX, centerY);
+    if (!this.hasFolderOverlayTransform) {
+      this.singleStageFolderLayer.position.set(centerX, targetY);
+      this.singleStageFolderLayer.scale.set(transform.scale);
+      this.hasFolderOverlayTransform = true;
+      return;
+    }
+    springTo(this.singleStageFolderLayer, "x", centerX, desktopVisualSpring);
+    springTo(this.singleStageFolderLayer, "y", targetY, desktopVisualSpring);
+    springTo(this.singleStageFolderLayer.scale, "x", transform.scale, desktopVisualSpring);
+    springTo(this.singleStageFolderLayer.scale, "y", transform.scale, desktopVisualSpring);
   }
 
   updateSingleStageFolderLayer(state) {

@@ -52,14 +52,39 @@ function makeNode(id) {
 }
 
 function makeLayer(DesktopLayer, pageTrack) {
+  const makeTransformNode = () => ({
+    alpha: 1,
+    interactiveChildren: true,
+    pivot: {
+      set(x, y) {
+        this.x = x;
+        this.y = y;
+      },
+    },
+    position: {
+      set(x, y) {
+        this.x = x;
+        this.y = y;
+      },
+    },
+    scale: {
+      set(x, y = x) {
+        this.x = x;
+        this.y = y;
+      },
+    },
+    visible: false,
+  });
   const layer = Object.create(DesktopLayer.prototype);
   layer.folderHandoffNode = null;
   layer.hasDesktopVisualAlpha = false;
+  layer.hasDesktopVisualTransform = false;
   layer.hasFolderOverlayAlpha = false;
+  layer.hasFolderOverlayTransform = false;
   layer.iconNodes = new Map();
   layer.pageTrack = pageTrack;
-  layer.singleStageFolderLayer = { alpha: 1, interactiveChildren: true, visible: false };
-  layer.visualRoot = { alpha: 1, interactiveChildren: true, visible: false };
+  layer.singleStageFolderLayer = makeTransformNode();
+  layer.visualRoot = makeTransformNode();
   return layer;
 }
 
@@ -74,6 +99,7 @@ export async function runDesktopLayerTests() {
     DesktopLayer,
     resolveDesktopVisualAlpha,
     resolveLaunchpadVisualAlpha,
+    resolveLaunchpadVisualTransform,
     shouldFinishFolderHandoff,
   } = await import("./DesktopLayer.js");
   const {
@@ -91,6 +117,9 @@ export async function runDesktopLayerTests() {
     assert(resolveLaunchpadVisualAlpha({ launchpadVisualAlpha: -1 }) === 0, "launchpad alpha should clamp low values");
     assert(resolveLaunchpadVisualAlpha({ launchpadVisualAlpha: 2 }) === 1, "launchpad alpha should clamp high values");
     assert(resolveLaunchpadVisualAlpha({}) === 1, "launchpad alpha should default to visible");
+    assert(resolveLaunchpadVisualTransform({ launchpadVisualTransform: { scale: -1, y: 12 } }).scale === 0.01, "launchpad transform should clamp scale low");
+    assert(resolveLaunchpadVisualTransform({ launchpadVisualTransform: { scale: 1.08, y: 12 } }).y === 12, "launchpad transform should preserve y offset");
+    assert(resolveLaunchpadVisualTransform({}).scale === 1, "launchpad transform should default to identity scale");
     assert(!shouldFinishFolderHandoff({}, { closingHandoffActive: true }), "local Pixi handoff activity should keep the desktop handoff alive before the Vue bridge updates");
     assert(shouldFinishFolderHandoff({}, { closingHandoffActive: false }), "idle state with no prop handoff should finish the desktop handoff");
     assert(!shouldFinishFolderHandoff({ folderClosingHandoffId: "folder-1" }, { closingHandoffActive: false }), "active prop handoff should keep the desktop handoff alive");
@@ -104,10 +133,26 @@ export async function runDesktopLayerTests() {
     assert(layer.visualRoot.interactiveChildren === false, "hidden desktop should not receive icon interaction");
     assert(layer.singleStageFolderLayer.alpha === 1, "desktop alpha should not hide the folder overlay layer");
 
+    layer.applyFolderOverlayTransform({
+      height: 600,
+      launchpadVisualTransform: { scale: 1, y: 0 },
+      width: 800,
+    });
+    assert(layer.singleStageFolderLayer.scale.x === 1 && layer.singleStageFolderLayer.scale.y === 1, "open folder overlay should keep identity scale");
+    assert(layer.singleStageFolderLayer.position.x === 400 && layer.singleStageFolderLayer.position.y === 300, "folder overlay should pivot around the stage center");
+
     layer.applyFolderOverlayAlpha({ launchpadVisualAlpha: 0 });
     assert(layer.singleStageFolderLayer.visible === true, "hidden launchpad folder overlay should stay renderable so alpha can animate");
     assert(layer.singleStageFolderLayer.alpha === 0, "hidden launchpad should apply alpha to the folder overlay");
     assert(layer.singleStageFolderLayer.interactiveChildren === false, "hidden folder overlay should not receive interaction");
+
+    const closingLayer = makeLayer(DesktopLayer, pageTrack);
+    closingLayer.applyFolderOverlayTransform({
+      height: 600,
+      launchpadVisualTransform: { scale: 1.08, y: 0 },
+      width: 800,
+    });
+    assert(closingLayer.singleStageFolderLayer.scale.x === 1.08 && closingLayer.singleStageFolderLayer.scale.y === 1.08, "closing launchpad should scale the folder overlay layer");
   }
 
   {

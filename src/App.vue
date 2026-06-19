@@ -62,6 +62,7 @@
         :active-pages="activePages"
         :desktop-visual-transform="desktopVisualTransform"
         :desktop-visual-alpha="desktopVisualAlpha"
+        :launchpad-visual-transform="launchpadVisualTransform"
         :launchpad-visual-alpha="launchpadVisualAlpha"
         :desktop-projection-epoch="desktopProjectionEpoch"
         :desktop-track-motion-key="desktopTrackMotionKey"
@@ -211,6 +212,7 @@ const {
   shellRef,
   desktopVisualTransform,
   desktopVisualAlpha,
+  launchpadVisualTransform,
   launchpadVisualAlpha,
   homeChromeInitial,
   homeChromeAnimate,
