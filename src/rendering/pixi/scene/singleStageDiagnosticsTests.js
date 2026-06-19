@@ -179,6 +179,12 @@ export function runSingleStageDiagnosticsTests() {
   assert(plan.closeThumbRect.left === thumbRect.left, "diagnostics should use the registered stable thumb target");
   assert(plan.closeThumbLocalRect.left === thumbRect.left - state.stageRect.left, "diagnostics should map thumb target into stage-local coordinates");
   assert(plan.closeIconLocalRect.top === iconRect.top - state.stageRect.top, "diagnostics should map icon target into stage-local coordinates");
+  assert(plan.stableCloseStageLayoutRect.left === iconRect.left, "diagnostics should expose the stable close stage layout rect");
+  assert(plan.stableCloseClientRect.left === iconRect.left, "diagnostics should expose the stable close client rect");
+  assert(plan.stableCloseLocalRect.top === iconRect.top - state.stageRect.top, "diagnostics should expose the stable close local rect");
+  assert(plan.stableCloseThumbStageLayoutRect.left === thumbRect.left, "diagnostics should expose the stable thumb stage layout rect");
+  assert(plan.stableCloseThumbClientRect.left === thumbRect.left, "diagnostics should expose the stable thumb client rect");
+  assert(plan.previewRects[0].stageLayoutRect.left === thumbRect.left, "diagnostics should retain preview child stage layout rects");
 
   clearIconBoundsRegistry();
 }

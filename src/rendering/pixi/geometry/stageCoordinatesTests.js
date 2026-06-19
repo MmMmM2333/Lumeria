@@ -6,6 +6,7 @@ import {
   snapRectToDevicePixels,
   STAGE_COORDINATE_SPACES,
   stageLayoutRectToClientRect,
+  stageLayoutRecordToClientRect,
 } from "./stageCoordinates.js";
 
 export function runStageCoordinatesTests() {
@@ -25,6 +26,19 @@ export function runStageCoordinatesTests() {
   assert(mapped.top === 80, "local y should be scaled into the transformed stage");
   assert(mapped.width === 20, "local width should be scaled into the transformed stage");
   assert(mapped.height === 40, "local height should be scaled into the transformed stage");
+  const mappedRecord = stageLayoutRecordToClientRect({
+    left: 25,
+    top: 30,
+    width: 10,
+    height: 20,
+    meta: {
+      stageHeight: 150,
+      stageRect: { left: 10, top: 20, width: 200, height: 300 },
+      stageWidth: 100,
+    },
+  });
+  assert(mappedRecord.left === mapped.left && mappedRecord.top === mapped.top, "stage layout records should project with their stored stage metadata");
+  assert(stageLayoutRecordToClientRect({ left: 1, top: 2, width: 3, height: 4 }) === null, "stage layout records without stage metadata should not project implicitly");
   const element = makeStageVirtualElement(
     { left: 0, top: 0, width: 50, height: 80 },
     100,

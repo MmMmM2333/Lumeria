@@ -1,5 +1,5 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { stageLayoutRectToClientRect } from "./stageCoordinates.js";
+import { stageLayoutRecordToClientRect } from "./stageCoordinates.js";
 
 const launchIconBounds = new Map();
 const launchIconTargetBounds = new Map();
@@ -73,13 +73,17 @@ function makeStageLayoutRecord(rect, meta = {}) {
   return { ...safeRect, meta };
 }
 
+function cloneStageLayoutRecord(record) {
+  const safeRect = cloneRect(record);
+  if (!safeRect) return null;
+  return {
+    ...safeRect,
+    meta: { ...(record.meta || {}) },
+  };
+}
+
 function projectStageLayoutRecordToClient(record) {
-  if (!record) return null;
-  const stageRect = record.meta?.stageRect;
-  const stageWidth = record.meta?.stageWidth;
-  const stageHeight = record.meta?.stageHeight;
-  if (!stageRect || !stageWidth || !stageHeight) return cloneRect(record);
-  return stageLayoutRectToClientRect(stageRect, stageWidth, stageHeight, record);
+  return stageLayoutRecordToClientRect(record);
 }
 
 function normalizeClearScope(scope, folderId) {
@@ -249,6 +253,13 @@ export function getStableStageLayoutTopLevelIconTargetBounds(id, options = {}) {
   return cloneRect(value);
 }
 
+export function getStableStageLayoutTopLevelIconTargetRecord(id, options = {}) {
+  const key = makeIconBoundsKey("top-level", id);
+  const value = key ? topLevelStageLayoutTargetBounds.get(key) : null;
+  if (!value) warnMissingBounds("top-level-icon-stage-layout-target-record", key, options);
+  return cloneStageLayoutRecord(value);
+}
+
 export function getLiveClientTopLevelIconTargetBounds(id, options = {}) {
   const key = makeIconBoundsKey("top-level", id);
   const value = key ? topLevelLiveTargetBounds.get(key) : null;
@@ -283,6 +294,13 @@ export function getStableStageLayoutTopLevelFolderThumbTargetBounds(id, options 
   const value = key ? topLevelFolderThumbStageLayoutTargetBounds.get(key) : null;
   if (!value) warnMissingBounds("top-level-folder-thumb-stage-layout-target", key, options);
   return cloneRect(value);
+}
+
+export function getStableStageLayoutTopLevelFolderThumbTargetRecord(id, options = {}) {
+  const key = makeIconBoundsKey("top-level", id);
+  const value = key ? topLevelFolderThumbStageLayoutTargetBounds.get(key) : null;
+  if (!value) warnMissingBounds("top-level-folder-thumb-stage-layout-target-record", key, options);
+  return cloneStageLayoutRecord(value);
 }
 
 export function getRenderedClientTopLevelTargetAtPoint(x, y, excludeId = null) {
@@ -357,6 +375,11 @@ export function getStableClientFolderPreviewChildTargetBounds(folderId, childId,
 export function getStableStageLayoutFolderPreviewChildTargetBounds(folderId, childId, slotIndex) {
   const key = makeIconBoundsKey("folder-preview-child", { childId, folderId, slotIndex });
   return key ? cloneRect(folderPreviewChildStageLayoutTargetBounds.get(key)) : null;
+}
+
+export function getStableStageLayoutFolderPreviewChildTargetRecord(folderId, childId, slotIndex) {
+  const key = makeIconBoundsKey("folder-preview-child", { childId, folderId, slotIndex });
+  return key ? cloneStageLayoutRecord(folderPreviewChildStageLayoutTargetBounds.get(key)) : null;
 }
 
 export function clearIconBoundsRegistry() {

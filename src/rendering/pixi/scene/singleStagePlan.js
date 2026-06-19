@@ -1,6 +1,6 @@
 import { getFolderPanelGeometry } from "../geometry/gridGeometry.js";
 import { clientRectToStageVisualRect } from "../geometry/stageCoordinates.js";
-import { getStableFolderCloseRects, makeFolderThumbPreviewRect } from "./folderOverlayTargets.js";
+import { getStableFolderCloseRects, makeFolderThumbPreviewRect, makePreviewChildKey } from "./folderOverlayTargets.js";
 import { resolveFolderOverlayTargets } from "./folderOverlayTargetResolver.js";
 
 export const SINGLE_STAGE_CHANGED_EVENT = "launchpad-single-stage-change";
@@ -168,21 +168,28 @@ export function makeSingleStageDiagnosticsPlan(state, options = {}) {
   });
   const closeRects = getStableFolderCloseRects({
     folderId,
-    folderClientRect: overlayTargets.folderClientRect,
-    folderThumbClientRect: overlayTargets.folderThumbClientRect,
+    folderRect: overlayTargets.folderClientRect,
+    folderThumbRect: overlayTargets.folderThumbClientRect,
     isClosing,
     stableFolderCloseTarget: overlayTargets.stableFolderCloseTarget,
   });
+  const stableTarget = overlayTargets.stableFolderCloseTarget;
   const previewRects = (overlayTargets.previewSlots || []).slice(0, 9).map((item, slotIndex) => {
     if (!item?.id || !closeRects.closeThumbRect) return null;
-    const rect = makeFolderThumbPreviewRect(closeRects.closeThumbRect, slotIndex);
+    const previewKey = makePreviewChildKey(item.id, slotIndex);
+    const rect = stableTarget?.previewChildRects?.get(previewKey) ||
+      makeFolderThumbPreviewRect(closeRects.closeThumbRect, slotIndex);
     return {
       itemId: item.id,
+      clientRect: rect,
       rect,
       localRect: clientRectToStageVisualRect(rect, state.stageRect),
+      stageLayoutRect: stableTarget?.stageLayoutPreviewChildRects?.get(previewKey) || null,
       slotIndex,
     };
   }).filter(Boolean);
+  const stableCloseClientRect = closeRects.closeIconRect;
+  const stableCloseThumbClientRect = closeRects.closeThumbRect;
   return {
     canvasStageRect: state.canvasStageRect || null,
     closeIconRect: closeRects.closeIconRect,
@@ -197,6 +204,12 @@ export function makeSingleStageDiagnosticsPlan(state, options = {}) {
     geometry,
     panelRect: geometry.panel,
     previewRects,
+    stableCloseClientRect,
+    stableCloseLocalRect: clientRectToStageVisualRect(stableCloseClientRect, state.stageRect),
+    stableCloseStageLayoutRect: stableTarget?.stageLayoutIconRect || null,
+    stableCloseThumbClientRect,
+    stableCloseThumbLocalRect: clientRectToStageVisualRect(stableCloseThumbClientRect, state.stageRect),
+    stableCloseThumbStageLayoutRect: stableTarget?.stageLayoutThumbRect || null,
     stableFolderCloseTarget: overlayTargets.stableFolderCloseTarget,
     stageRect: state.stageRect,
   };

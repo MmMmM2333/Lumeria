@@ -3,7 +3,7 @@ import { gsap } from "gsap";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getDesktopGridMetrics, getGridSlotRect, makeRect } from "../geometry/gridGeometry.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
-import { clientRectToStageVisualRect, getStageScale, makeStageVirtualElement, snapRectToDevicePixels } from "../geometry/stageCoordinates.js";
+import { clientRectToStageVisualRect, getStageScale, makeStageVirtualElement, snapRectToDevicePixels, stageLayoutRecordToClientRect } from "../geometry/stageCoordinates.js";
 import {
   clearFolderPreviewChildBounds,
   clearLaunchIconBounds,
@@ -11,8 +11,8 @@ import {
   getLiveClientTopLevelFolderThumbTargetBounds,
   getRenderedClientFolderPreviewChildBounds,
   getRenderedClientTopLevelFolderThumbBounds,
-  getStableClientFolderPreviewChildTargetBounds,
-  getStableClientTopLevelFolderThumbTargetBounds,
+  getStableStageLayoutFolderPreviewChildTargetRecord,
+  getStableStageLayoutTopLevelFolderThumbTargetRecord,
   registerLiveClientFolderPreviewChildTargetBounds,
   registerLiveClientLaunchIconTargetBounds,
   registerLiveClientTopLevelFolderThumbTargetBounds,
@@ -82,6 +82,10 @@ function roundRect(rect) {
     top: round(rect.top),
     width: round(rect.width),
   };
+}
+
+function projectStageLayoutRecordToClient(record) {
+  return stageLayoutRecordToClientRect(record);
 }
 
 function roundDebugObject(object) {
@@ -605,7 +609,8 @@ export class DesktopLayer extends Container {
     const thumbRect = node.getFolderThumbBounds?.(stageRect) || null;
     const iconRect = node.getIconBounds?.(stageRect) || null;
     const liveTargetRect = folderId ? getLiveClientTopLevelFolderThumbTargetBounds(folderId) : null;
-    const stableTargetRect = folderId ? getStableClientTopLevelFolderThumbTargetBounds(folderId) : null;
+    const stableStageLayoutTargetRecord = folderId ? getStableStageLayoutTopLevelFolderThumbTargetRecord(folderId) : null;
+    const stableTargetRect = projectStageLayoutRecordToClient(stableStageLayoutTargetRecord);
     const registeredThumbRect = folderId ? getRenderedClientTopLevelFolderThumbBounds(folderId) : null;
     const targetRect = liveTargetRect || registeredThumbRect || stableTargetRect;
     const childRows = [];
@@ -649,6 +654,7 @@ export class DesktopLayer extends Container {
       registeredThumbRect: roundRect(registeredThumbRect),
       source: options.source || "handoff-node",
       stableStageRect: roundRect(stableStageRect),
+      stableStageLayoutTargetRect: roundRect(stableStageLayoutTargetRecord),
       stableTargetRect: roundRect(stableTargetRect),
       stageRect: roundRect(stageRect),
       stageScaleX: registration.stageRect?.width && registration.width ? Math.round((registration.stageRect.width / registration.width) * 1000000) / 1000000 : null,
@@ -766,9 +772,11 @@ export class DesktopLayer extends Container {
     if (!options?.log || debugState?.desktopLogged || debugState?.folderId !== folder?.id) return;
     const rows = [];
     const actualThumbRect = node.getFolderThumbBounds(registration.stageRect);
+    const stableStageLayoutTargetRecord = getStableStageLayoutTopLevelFolderThumbTargetRecord(folder.id);
+    const stableTargetRect = projectStageLayoutRecordToClient(stableStageLayoutTargetRecord);
     const targetThumbRect = getLiveClientTopLevelFolderThumbTargetBounds(folder.id) ||
       getRenderedClientTopLevelFolderThumbBounds(folder.id) ||
-      getStableClientTopLevelFolderThumbTargetBounds(folder.id);
+      stableTargetRect;
     rows.push({
       actual: roundRect(actualThumbRect),
       delta: rectDelta(actualThumbRect, targetThumbRect),
@@ -780,9 +788,12 @@ export class DesktopLayer extends Container {
       const child = node.item ? node.item.childPages?.[0]?.[slotIndex] || node.item.children?.[slotIndex] : null;
       if (!child?.id) continue;
       const actualRect = node.getFolderPreviewChildBounds(registration.stageRect, slotIndex);
+      const stableChildTargetRect = projectStageLayoutRecordToClient(
+        getStableStageLayoutFolderPreviewChildTargetRecord(folder.id, child.id, slotIndex)
+      );
       const targetRect = getLiveClientFolderPreviewChildTargetBounds(folder.id, child.id, slotIndex) ||
         getRenderedClientFolderPreviewChildBounds(folder.id, child.id, slotIndex) ||
-        getStableClientFolderPreviewChildTargetBounds(folder.id, child.id, slotIndex);
+        stableChildTargetRect;
       rows.push({
         actual: roundRect(actualRect),
         delta: rectDelta(actualRect, targetRect),

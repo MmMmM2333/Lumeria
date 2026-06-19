@@ -15,8 +15,11 @@ import {
   getStableClientTopLevelFolderThumbTargetBounds,
   getStableClientTopLevelIconTargetBounds,
   getStableStageLayoutFolderPreviewChildTargetBounds,
+  getStableStageLayoutFolderPreviewChildTargetRecord,
   getStableStageLayoutTopLevelFolderThumbTargetBounds,
+  getStableStageLayoutTopLevelFolderThumbTargetRecord,
   getStableStageLayoutTopLevelIconTargetBounds,
+  getStableStageLayoutTopLevelIconTargetRecord,
   makeIconBoundsKey,
   registerLiveClientFolderPreviewChildTargetBounds,
   registerLiveClientLaunchIconTargetBounds,
@@ -102,10 +105,13 @@ export function runIconBoundsRegistryTests() {
   registerStableStageLayoutTopLevelFolderThumbTargetBounds("desktop-folder", rect(12), stageMeta);
   registerStableStageLayoutFolderPreviewChildTargetBounds("desktop-folder", "desktop-app", 0, rect(14), stageMeta);
   assert(getStableStageLayoutTopLevelIconTargetBounds("desktop-folder").left === 10, "stage layout top-level icon target should preserve layout coordinates");
+  assert(getStableStageLayoutTopLevelIconTargetRecord("desktop-folder").meta.stageRect.left === 100, "stage layout top-level icon target record should preserve stage metadata");
   assert(getStableClientTopLevelIconTargetBounds("desktop-folder").left === 120, "stage layout top-level icon target should project to client coordinates");
   assert(getStableStageLayoutTopLevelFolderThumbTargetBounds("desktop-folder").left === 12, "stage layout folder thumb target should preserve layout coordinates");
+  assert(getStableStageLayoutTopLevelFolderThumbTargetRecord("desktop-folder").meta.stageRect.left === 100, "stage layout folder thumb target record should preserve stage metadata");
   assert(getStableClientTopLevelFolderThumbTargetBounds("desktop-folder").left === 124, "stage layout folder thumb target should project to client coordinates");
   assert(getStableStageLayoutFolderPreviewChildTargetBounds("desktop-folder", "desktop-app", 0).left === 14, "stage layout preview child target should preserve layout coordinates");
+  assert(getStableStageLayoutFolderPreviewChildTargetRecord("desktop-folder", "desktop-app", 0).meta.stageRect.left === 100, "stage layout preview child target record should preserve stage metadata");
   assert(getStableClientFolderPreviewChildTargetBounds("desktop-folder", "desktop-app", 0).left === 128, "stage layout preview child target should project to client coordinates");
 
   clearIconBoundsRegistry();

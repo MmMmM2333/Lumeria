@@ -1,19 +1,23 @@
 import { getFolderPreviewSlots } from "../../../domain/launchpadLayout.js";
-import { STAGE_COORDINATE_SPACES } from "../geometry/stageCoordinates.js";
+import { stageLayoutRecordToClientRect, STAGE_COORDINATE_SPACES } from "../geometry/stageCoordinates.js";
 import {
   getRenderedClientFolderPreviewChildBounds,
   getRenderedClientTopLevelFolderThumbBounds,
   getRenderedClientTopLevelIconBounds,
-  getStableClientFolderPreviewChildTargetBounds,
-  getStableClientTopLevelFolderThumbTargetBounds,
-  getStableClientTopLevelIconTargetBounds,
+  getStableStageLayoutFolderPreviewChildTargetRecord,
+  getStableStageLayoutTopLevelFolderThumbTargetRecord,
+  getStableStageLayoutTopLevelIconTargetRecord,
 } from "../geometry/iconBoundsRegistry.js";
-import { makeStableFolderCloseTarget } from "./folderOverlayTargets.js";
+import { cloneRect, makePreviewChildKey, makeStableFolderCloseTarget } from "./folderOverlayTargets.js";
 
 export function getCapturedPreviewChildRect(originBounds, childId, slotIndex) {
   if (!originBounds?.previewChildRects?.length || !childId) return null;
   const exact = originBounds.previewChildRects.find((entry) => entry?.childId === childId && entry.slotIndex === slotIndex);
   return exact?.rect || originBounds.previewChildRects.find((entry) => entry?.childId === childId)?.rect || null;
+}
+
+function projectStableRecordToClient(record) {
+  return stageLayoutRecordToClientRect(record);
 }
 
 export function resolveFolderOverlayTargets(options = {}) {
@@ -51,8 +55,10 @@ export function resolveFolderOverlayTargets(options = {}) {
   const liveFolderThumbClientRect = getRenderedClientTopLevelFolderThumbBounds(folderId) || liveFolderClientRect;
   const folderClientRect = capturedOriginBounds?.iconRect || liveFolderClientRect;
   const folderThumbClientRect = capturedOriginBounds?.thumbRect || liveFolderThumbClientRect || folderClientRect;
-  const stableFolderClientRect = getStableClientTopLevelIconTargetBounds(folderId);
-  const stableFolderThumbClientRect = getStableClientTopLevelFolderThumbTargetBounds(folderId);
+  const stableFolderStageLayoutRecord = getStableStageLayoutTopLevelIconTargetRecord(folderId);
+  const stableFolderThumbStageLayoutRecord = getStableStageLayoutTopLevelFolderThumbTargetRecord(folderId);
+  const stableFolderClientRect = projectStableRecordToClient(stableFolderStageLayoutRecord);
+  const stableFolderThumbClientRect = projectStableRecordToClient(stableFolderThumbStageLayoutRecord);
   const shouldRefreshStableCloseTarget = Boolean(
     (stableFolderClientRect || liveFolderClientRect || folderClientRect) &&
     (!previousStableFolderCloseTarget ||
@@ -77,6 +83,7 @@ export function resolveFolderOverlayTargets(options = {}) {
 
   const captureFinalCloseTarget = Boolean(isClosing && !wasClosing);
   const hasStableFolderClientRect = Boolean(stableFolderClientRect);
+  const stageLayoutPreviewChildRects = new Map();
   const stableFolderCloseTarget = makeStableFolderCloseTarget({
     folderId,
     folderRect: captureFinalCloseTarget
@@ -85,15 +92,28 @@ export function resolveFolderOverlayTargets(options = {}) {
     folderThumbRect: captureFinalCloseTarget
       ? stableFolderThumbClientRect || stableFolderClientRect || liveFolderThumbClientRect || folderThumbClientRect || liveFolderClientRect || folderClientRect
       : stableFolderThumbClientRect || stableFolderClientRect || folderThumbClientRect,
-    getPreviewChildRect: (item, previewSlotIndex) =>
-      getStableClientFolderPreviewChildTargetBounds(folderId, item.id, previewSlotIndex) ||
-      (hasStableFolderClientRect ? null : (
+    getPreviewChildRect: (item, previewSlotIndex) => {
+      const stablePreviewRecord = getStableStageLayoutFolderPreviewChildTargetRecord(folderId, item.id, previewSlotIndex);
+      const stablePreviewClientRect = projectStableRecordToClient(stablePreviewRecord);
+      if (stablePreviewClientRect) {
+        stageLayoutPreviewChildRects.set(makePreviewChildKey(item.id, previewSlotIndex), cloneRect(stablePreviewRecord));
+        return stablePreviewClientRect;
+      }
+      return hasStableFolderClientRect ? null : (
         getCapturedPreviewChildRect(capturedOriginBounds, item.id, previewSlotIndex) ||
         getRenderedClientFolderPreviewChildBounds(folderId, item.id, previewSlotIndex)
-      )),
+      );
+    },
     previewSlots,
   });
-  if (stableFolderCloseTarget) stableFolderCloseTarget.source = captureFinalCloseTarget ? "stable-final-close" : "stable-target";
+  if (stableFolderCloseTarget) {
+    stableFolderCloseTarget.coordinateSpace = STAGE_COORDINATE_SPACES.CLIENT_VISUAL;
+    stableFolderCloseTarget.source = captureFinalCloseTarget ? "stable-final-close" : "stable-target";
+    stableFolderCloseTarget.stageLayoutCoordinateSpace = STAGE_COORDINATE_SPACES.STAGE_LAYOUT;
+    stableFolderCloseTarget.stageLayoutIconRect = cloneRect(stableFolderStageLayoutRecord);
+    stableFolderCloseTarget.stageLayoutPreviewChildRects = stageLayoutPreviewChildRects;
+    stableFolderCloseTarget.stageLayoutThumbRect = cloneRect(stableFolderThumbStageLayoutRecord);
+  }
 
   return {
     capturedOriginBounds,
