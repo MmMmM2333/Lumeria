@@ -142,38 +142,10 @@ export function getSingleStageFolderProbeRenderKey(options = getSingleStageFolde
   return getSingleStageRenderKey(options);
 }
 
-export function shouldUseFallbackFolderLayer(options = getSingleStageOptions()) {
-  return options.folderLayer !== true;
-}
-
-export function shouldUseFallbackDragPreview(options = getSingleStageOptions()) {
-  return options.dragPreview !== true;
-}
-
-export function makeSingleStageRuntimePlan(options = getSingleStageOptions(), state = {}) {
-  const useFallbackFolderLayer = shouldUseFallbackFolderLayer(options);
-  const useFallbackDragPreview = shouldUseFallbackDragPreview(options);
-  const shouldRunPixiOverlays = Boolean(state.shouldRunPixiOverlays);
-  const hasFallbackFolderWork = Boolean(
-    state.folderPixiInternalActivity ||
-    state.openFolderId ||
-    state.renderedFolder ||
-    state.isFolderClosing ||
-    state.isFolderAppLaunchClosing
-  );
-  const hasFallbackDragPreviewWork = Boolean(
-    state.dragMeta ||
-    state.dragPreviewItem ||
-    state.dragReleaseItem
-  );
-
+export function makeSingleStageRuntimePlan(options = getSingleStageOptions()) {
   return {
     renderKey: getSingleStageRenderKey(options),
-    runFallbackDragPreview: useFallbackDragPreview && shouldRunPixiOverlays && hasFallbackDragPreviewWork,
-    runFallbackFolderLayer: useFallbackFolderLayer && shouldRunPixiOverlays && hasFallbackFolderWork,
     useDragPreview: options.dragPreview === true,
-    useFallbackDragPreview,
-    useFallbackFolderLayer,
     useFolderLayer: options.folderLayer === true,
     useRootStage: options.rootStage === true,
   };
