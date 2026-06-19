@@ -3,7 +3,7 @@ import { gsap } from "gsap";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getDesktopGridMetrics, getGridSlotRect, makeRect } from "../geometry/gridGeometry.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
-import { getStageScale, getStageVisualOffset, makeStageLocalRect, makeStageVirtualElement, snapRectToDevicePixels } from "../geometry/stageCoordinates.js";
+import { getStageScale, makeStageLocalRect, makeStageVirtualElement, snapRectToDevicePixels } from "../geometry/stageCoordinates.js";
 import {
   clearFolderPreviewChildBounds,
   clearLaunchIconBounds,
@@ -30,6 +30,7 @@ import {
   isActiveDraggedLaunchItem,
   isReleaseGhostLaunchItem,
 } from "./dragVisibility.js";
+import { makeDesktopBoundsRegistration } from "./desktopBoundsRegistration.js";
 import { resolveDesktopBoundsTargets, resolveFolderPreviewChildBoundsTargets } from "./desktopBoundsTargets.js";
 import { getDesktopIconSizing } from "./desktopIconSizing.js";
 import { makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
@@ -419,21 +420,7 @@ export class DesktopLayer extends Container {
       });
     }
 
-    const stableStageRect = state.stableStageRect || state.stageRect;
-    const stageVisualOffset = getStageVisualOffset(state.stageRect, stableStageRect);
-    this.boundsRegistration = {
-      deviceResolution: state.deviceResolution,
-      entries: boundsEntries,
-      folderClosingHandoffId: state.folderClosingHandoffId,
-      height: state.height,
-      isTextlessMode: state.isTextlessMode,
-      desktopFrame,
-      stableStageRect,
-      stageRect: state.stageRect,
-      stageVisualOffsetX: stageVisualOffset.x,
-      stageVisualOffsetY: stageVisualOffset.y,
-      width: state.width,
-    };
+    this.boundsRegistration = makeDesktopBoundsRegistration(state, boundsEntries, desktopFrame);
     springTo(this.pageTrack, "x", targetX, pageTrackSpring, {
       snap: shouldSnap,
       onComplete: refreshBounds,

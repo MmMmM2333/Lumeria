@@ -1,0 +1,48 @@
+import { makeDesktopBoundsRegistration } from "./desktopBoundsRegistration.js";
+
+export function runDesktopBoundsRegistrationTests() {
+  const assert = (condition, message) => {
+    if (!condition) throw new Error(`[Desktop bounds registration test failed] ${message}`);
+  };
+
+  {
+    const stageRect = { height: 600, left: 0, top: 0, width: 800 };
+    const entries = [{ id: "entry-1" }];
+    const desktopFrame = { height: 560, left: 0, top: 40, width: 800 };
+    const registration = makeDesktopBoundsRegistration({
+      deviceResolution: 2,
+      folderClosingHandoffId: "folder-1",
+      height: 600,
+      isTextlessMode: false,
+      stableStageRect: stageRect,
+      stageRect,
+      width: 800,
+    }, entries, desktopFrame);
+
+    assert(registration.entries === entries, "registration should preserve bounds entries by reference");
+    assert(registration.desktopFrame === desktopFrame, "registration should preserve desktop frame by reference");
+    assert(registration.stableStageRect === stageRect, "root-stage registration should keep a single stable stage rect");
+    assert(registration.stageVisualOffsetX === 0 && registration.stageVisualOffsetY === 0, "root-stage registration should have zero visual offset");
+    assert(registration.folderClosingHandoffId === "folder-1", "registration should carry the handoff id");
+  }
+
+  {
+    const registration = makeDesktopBoundsRegistration({
+      height: 600,
+      stableStageRect: { height: 600, left: 100, top: 200, width: 800 },
+      stageRect: { height: 552, left: 96, top: 216, width: 736 },
+      width: 800,
+    });
+
+    assert(registration.stageVisualOffsetX === -4, "DOM transformed registration should preserve visual x offset");
+    assert(registration.stageVisualOffsetY === 16, "DOM transformed registration should preserve visual y offset");
+  }
+
+  {
+    const stageRect = { height: 600, left: 8, top: 12, width: 800 };
+    const registration = makeDesktopBoundsRegistration({ stageRect });
+
+    assert(registration.stableStageRect === stageRect, "missing stable stage rect should fall back to stage rect");
+    assert(registration.stageVisualOffsetX === 0 && registration.stageVisualOffsetY === 0, "fallback stable rect should produce zero visual offset");
+  }
+}

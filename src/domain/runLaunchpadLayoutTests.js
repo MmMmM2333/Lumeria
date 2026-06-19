@@ -52,6 +52,7 @@ import { runDragPreviewMotionTests } from "../rendering/pixi/scene/dragPreviewMo
 import { runFolderFrameGhostTests } from "../rendering/pixi/scene/folderFrameGhostTests.js";
 import { runDesktopLayerTests } from "../rendering/pixi/scene/DesktopLayerTests.js";
 import { runDesktopIconSizingTests } from "../rendering/pixi/scene/desktopIconSizingTests.js";
+import { runDesktopBoundsRegistrationTests } from "../rendering/pixi/scene/desktopBoundsRegistrationTests.js";
 import { runDesktopBoundsTargetsTests } from "../rendering/pixi/scene/desktopBoundsTargetsTests.js";
 import { runFolderGhostIconStateTests } from "../rendering/pixi/scene/folderGhostIconStateTests.js";
 import { runFolderIconGhostMotionTests } from "../rendering/pixi/scene/folderIconGhostMotionTests.js";
@@ -166,6 +167,7 @@ runDragVisibilityTests();
 runDragPreviewMotionTests();
 await runDesktopLayerTests();
 runDesktopIconSizingTests();
+runDesktopBoundsRegistrationTests();
 runDesktopBoundsTargetsTests();
 runFolderFrameGhostTests();
 runFolderGhostIconStateTests();
