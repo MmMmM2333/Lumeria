@@ -12,6 +12,7 @@ const GHOST_REVEAL_FALLBACK_PADDING_MS = 140;
 const GHOST_GEOMETRY_FALLBACK_SECONDS = 0.75;
 
 function animateOpeningGhost(ghost, motion, onComplete, options = {}) {
+  const springOptions = { delay: motion.delay, onComplete: options.onFrame, onUpdate: options.onFrame };
   gsap.to(ghost, {
     alpha: 1,
     duration: folderOpenGhostDuration,
@@ -19,10 +20,10 @@ function animateOpeningGhost(ghost, motion, onComplete, options = {}) {
     delay: motion.delay,
   });
   return springGroupTo([
-    { target: ghost, prop: "x", to: motion.toX, config: panelSpring, options: { delay: motion.delay } },
-    { target: ghost, prop: "y", to: motion.toY, config: panelSpring, options: { delay: motion.delay } },
-    { target: ghost.scale, prop: "x", to: 1, config: panelSpring, options: { delay: motion.delay } },
-    { target: ghost.scale, prop: "y", to: 1, config: panelSpring, options: { delay: motion.delay } },
+    { target: ghost, prop: "x", to: motion.toX, config: panelSpring, options: springOptions },
+    { target: ghost, prop: "y", to: motion.toY, config: panelSpring, options: springOptions },
+    { target: ghost.scale, prop: "x", to: 1, config: panelSpring, options: springOptions },
+    { target: ghost.scale, prop: "y", to: 1, config: panelSpring, options: springOptions },
   ], {
     scheduler: options.scheduler,
     onComplete,
@@ -86,6 +87,7 @@ export class FolderOpeningGhostController {
     }
     layer.openingGhostKeys.delete(itemId);
     layer.openingGhostControllerKeys?.delete(itemId);
+    layer.openingGhostBoundsRefreshers?.delete(itemId);
     const children = layer.openingGhostLayer.children;
     if (Array.isArray(children)) {
       const index = children.indexOf(releasedGhost);
@@ -116,9 +118,11 @@ export class FolderOpeningGhostController {
     layer.openingGhostState = null;
     layer.openingGhostMotionControlsByItemId = null;
     layer.openingGhostKeys?.clear();
+    layer.openingGhostBoundsRefreshers?.clear();
     layer.clearFrameGhost();
     layer.pageTrack.visible = true;
     layer.revealIconNodes();
+    layer.refreshRegisteredIconBounds?.();
     layer.rebuildPageTrackMask();
     const ghosts = layer.openingGhostLayer.removeChildren();
     for (const ghost of ghosts) {
@@ -135,8 +139,10 @@ export class FolderOpeningGhostController {
     layer.openingGhostControllerKeys = null;
     layer.openingGhostState = null;
     layer.openingGhostMotionControlsByItemId = null;
+    layer.openingGhostBoundsRefreshers?.clear();
     layer.revealIconNodes();
     layer.pageTrack.visible = true;
+    layer.refreshRegisteredIconBounds?.();
     layer.rebuildPageTrackMask();
     const ghosts = layer.openingGhostLayer.removeChildren();
     for (const ghost of ghosts) {
@@ -153,6 +159,7 @@ export class FolderOpeningGhostController {
     if (controllerGhostKey) state.completeFolderOpenIconGhost?.(controllerGhostKey);
     ghost.alpha = 1;
     ghost.scale.set(1);
+    layer.openingGhostBoundsRefreshers?.delete(target.item.id);
     this.finishTransition();
   }
 
@@ -201,6 +208,8 @@ export class FolderOpeningGhostController {
       ghost.position.set(motion.fromX, motion.fromY);
       ghost.scale.set(motion.scale);
       ghost.alpha = motion.alpha;
+      const refreshGhostBounds = () => layer.registerOpeningGhostBounds?.(state, target, ghost);
+      layer.openingGhostBoundsRefreshers?.set(target.item.id, refreshGhostBounds);
       if (ghost.labelText?.visible) {
         ghost.labelText.alpha = 0;
         ghost.labelText.scale.set(0.94);
@@ -208,6 +217,7 @@ export class FolderOpeningGhostController {
         gsap.to(ghost.labelText.scale, { x: 1, y: 1, delay: motion.labelDelay, duration: 0.13, ease: "power2.out" });
       }
       layer.openingGhostLayer.addChild(ghost);
+      refreshGhostBounds();
       layer.openingGhostKeys.add(target.item.id);
       for (const node of layer.iconNodes.values()) {
         if (node.item?.id === target.item.id) node.visible = false;
@@ -217,7 +227,7 @@ export class FolderOpeningGhostController {
         layer.openingGhostMotionControls?.delete(motionControl);
         layer.openingGhostMotionControlsByItemId?.delete(target.item.id);
         this.complete(state, target, ghost);
-      }, { scheduler: this.scheduler });
+      }, { scheduler: this.scheduler, onFrame: refreshGhostBounds });
       layer.openingGhostMotionControls.add(motionControl);
       layer.openingGhostMotionControlsByItemId.set(target.item.id, motionControl);
     }

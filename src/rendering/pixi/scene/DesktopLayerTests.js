@@ -150,9 +150,29 @@ export async function runDesktopLayerTests() {
     closingLayer.applyFolderOverlayTransform({
       height: 600,
       launchpadVisualTransform: { scale: 1.08, y: 0 },
+      singleStageFolderLayerEnabled: true,
+      singleStageFolderState: { renderedFolder: { id: "folder-1" } },
       width: 800,
     });
     assert(closingLayer.singleStageFolderLayer.scale.x === 1.08 && closingLayer.singleStageFolderLayer.scale.y === 1.08, "closing launchpad should scale the folder overlay layer");
+
+    closingLayer.singleStageFolderLayer.scale.set(1.08);
+    closingLayer.applyFolderOverlayTransform({
+      height: 600,
+      launchpadVisualTransform: { scale: 1, y: 0 },
+      singleStageFolderLayerEnabled: true,
+      singleStageFolderState: null,
+      width: 800,
+    });
+    assert(closingLayer.singleStageFolderLayer.scale.x === 1 && closingLayer.singleStageFolderLayer.scale.y === 1, "inactive folder overlay should snap back to identity scale");
+    assert(closingLayer.hasSingleStageFolderOverlayContent({
+      singleStageFolderLayerEnabled: true,
+      singleStageFolderState: { renderedFolder: { id: "folder-1" } },
+    }), "folder overlay content should require an enabled layer and rendered folder");
+    assert(!closingLayer.hasSingleStageFolderOverlayContent({
+      singleStageFolderLayerEnabled: true,
+      singleStageFolderState: null,
+    }), "missing folder state should count as no overlay content");
   }
 
   {
@@ -384,6 +404,9 @@ export async function runDesktopLayerTests() {
     layer.refreshInteractiveBounds = () => {
       refreshCount += 1;
     };
+    layer.singleStageFolderLayer.refreshRegisteredIconBounds = () => {
+      refreshCount += 10;
+    };
 
     try {
       layer.markInteractiveBoundsDirty();
@@ -393,11 +416,58 @@ export async function runDesktopLayerTests() {
       assert(refreshCount === 0, "dirty bounds should not refresh synchronously");
       assert(queued.length === 1, "dirty bounds should schedule one coalesced flush");
       queued.shift()();
-      assert(refreshCount === 1, "coalesced bounds flush should refresh once");
+      assert(refreshCount === 11, "coalesced bounds flush should refresh desktop and folder overlay bounds once");
       layer.flushInteractiveBounds();
-      assert(refreshCount === 1, "clean bounds flush should not refresh again");
+      assert(refreshCount === 11, "clean bounds flush should not refresh again");
       layer.flushInteractiveBounds({ force: true });
-      assert(refreshCount === 2, "forced bounds flush should refresh even when clean");
+      assert(refreshCount === 22, "forced bounds flush should refresh desktop and folder overlay bounds even when clean");
+    } finally {
+      if (originalQueueMicrotask) globalThis.queueMicrotask = originalQueueMicrotask;
+      else delete globalThis.queueMicrotask;
+    }
+  }
+
+  {
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    const originalQueueMicrotask = globalThis.queueMicrotask;
+    const queued = [];
+    let refreshCount = 0;
+    globalThis.queueMicrotask = (callback) => queued.push(callback);
+    layer.refreshInteractiveBounds = () => {
+      refreshCount += 1;
+    };
+    layer.singleStageFolderLayer.refreshRegisteredIconBounds = () => {
+      refreshCount += 10;
+    };
+
+    try {
+      layer.applyFolderOverlayTransform({
+        height: 600,
+        launchpadVisualTransform: { scale: 1, y: 0 },
+        singleStageFolderLayerEnabled: true,
+        singleStageFolderState: { renderedFolder: { id: "folder-1" } },
+        width: 800,
+      });
+      layer.applyFolderOverlayTransform({
+        height: 600,
+        launchpadVisualTransform: { scale: 1.08, y: 0 },
+        singleStageFolderLayerEnabled: true,
+        singleStageFolderState: { renderedFolder: { id: "folder-1" } },
+        width: 800,
+      });
+
+      assert(queued.length === 0, "active folder overlay transform should wait for spring updates before flushing bounds");
+      layer.applyFolderOverlayTransform({
+        height: 600,
+        launchpadVisualTransform: { scale: 1, y: 0 },
+        singleStageFolderLayerEnabled: false,
+        singleStageFolderState: null,
+        width: 800,
+      });
+      assert(queued.length === 1, "inactive folder overlay transform snap should refresh stale bounds immediately");
+      queued.shift()();
+      assert(refreshCount === 11, "inactive folder overlay snap should flush desktop and folder overlay bounds");
     } finally {
       if (originalQueueMicrotask) globalThis.queueMicrotask = originalQueueMicrotask;
       else delete globalThis.queueMicrotask;

@@ -140,6 +140,8 @@ export class FolderOverlayLayer extends Container {
       style: { fill: 0xffffff, fontSize: 18, fontWeight: "620", fontFamily: "Inter, Segoe UI, sans-serif" },
     });
     this.iconNodes = new Map();
+    this.iconBoundsRefreshers = new Map();
+    this.openingGhostBoundsRefreshers = new Map();
     this.onIconAction = options.onIconAction || (() => { });
     this.onClosingHandoffReady = options.onClosingHandoffReady || (() => { });
     this.onClosingHandoffVisualRelease = options.onClosingHandoffVisualRelease || (() => { });
@@ -192,6 +194,7 @@ export class FolderOverlayLayer extends Container {
     const keepClosingHandoff = this.closingGhosts.hasPendingHandoff();
     this.visible = Boolean(state.renderedFolder) || keepClosingHandoff;
     if (!state.renderedFolder) {
+      this.clearRegisteredIconBounds();
       if (keepClosingHandoff) {
         return applyClosingHandoffOnlyOverlayState(this);
       }
@@ -283,7 +286,8 @@ export class FolderOverlayLayer extends Container {
       stopTargetSprings(this.pageTrack);
       this.pageTrack.x = targetTrackX;
     } else {
-      springTo(this.pageTrack, "x", targetTrackX, pageTrackSpring);
+      const refreshBounds = () => this.refreshRegisteredIconBounds();
+      springTo(this.pageTrack, "x", targetTrackX, pageTrackSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
     }
     const { closeIconRect, closeThumbRect } = getStableFolderCloseRects({
       folderId,
@@ -295,6 +299,7 @@ export class FolderOverlayLayer extends Container {
 
     if (!isPrewarm) this.bindFakeRefs(state, geometry);
     const seen = new Set();
+    const boundsRefreshers = new Map();
     const openingGhostTargets = [];
     const closingGhostTargets = [];
     const renderPlan = makeFolderOverlayRenderPlan({
@@ -366,6 +371,7 @@ export class FolderOverlayLayer extends Container {
         targetCenter,
       });
       const iconBounds = refreshNodeBounds();
+      if (isInteractivePage && !isPrewarm) boundsRefreshers.set(key, refreshNodeBounds);
       if (isNewNode) {
         gsap.to(node, { alpha: 1, delay: Math.min(0.18, index * 0.012), duration: 0.24, ease: folderOpenEase });
       }
@@ -373,8 +379,10 @@ export class FolderOverlayLayer extends Container {
       if (entry.openingGhostInput) {
         openingGhostTargets.push(makeOpeningGhostTarget({
           ...entry.openingGhostInput,
+          folderId,
           folderRect: folderClientRect,
           getPreviewChildRect: getOpeningPreviewChildClientRect,
+          pageIndex,
         }));
       }
       if (entry.closingGhostInput) {
@@ -388,6 +396,7 @@ export class FolderOverlayLayer extends Container {
     }
 
     const closingPreviewSwapTargets = renderPlan.closingPreviewSwapTargets;
+    this.iconBoundsRefreshers = boundsRefreshers;
     if (isNewFolder && !isClosing) this.openingGhosts.start(state, openingGhostTargets, folderClientRect, geometry.panel);
     if (!isNewFolder && !isClosing && state.folderOpenIconGhosts?.length && !this.openingGhostKeys?.size) {
       for (const ghost of state.folderOpenIconGhosts) {
@@ -422,7 +431,49 @@ export class FolderOverlayLayer extends Container {
       if (!isClosing) this.notifyPanelTitleFrame(geometry.panel);
       else this.notifyTitleFrame(geometry.panel);
     }
+    this.refreshRegisteredIconBounds();
     return geometry;
+  }
+
+  clearRegisteredIconBounds() {
+    this.iconBoundsRefreshers?.clear();
+    this.openingGhostBoundsRefreshers?.clear();
+  }
+
+  refreshRegisteredIconBounds() {
+    let count = 0;
+    for (const refreshBounds of this.iconBoundsRefreshers?.values() || []) {
+      refreshBounds?.();
+      count += 1;
+    }
+    for (const refreshBounds of this.openingGhostBoundsRefreshers?.values() || []) {
+      refreshBounds?.();
+      count += 1;
+    }
+    return count;
+  }
+
+  registerOpeningGhostBounds(state, target, ghost) {
+    const rect = target?.targetStageLayoutRect;
+    const item = target?.item;
+    if (!rect || !item?.id || !target?.folderId) return null;
+    return registerFolderIconNodeBounds({
+      folderId: target.folderId,
+      iconSize: target.iconSize,
+      index: target.index,
+      isInteractivePage: true,
+      isPrewarm: false,
+      item,
+      node: ghost,
+      pageIndex: target.pageIndex ?? state.folderPageIndex ?? 0,
+      stageHeight: state.height,
+      stageRect: state.stageRect,
+      stageWidth: state.width,
+      targetCenter: {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      },
+    });
   }
 
   clearPageDots() {
@@ -628,6 +679,7 @@ export class FolderOverlayLayer extends Container {
 
   animatePanel(state, targetX, targetY, panelRect, sourceRect = null) {
     const isClosing = Boolean(state.isFolderClosing || state.isFolderAppLaunchClosing);
+    const refreshBounds = () => this.refreshRegisteredIconBounds();
     if (this.currentFolderId !== state.renderedFolder?.id) {
       this.currentFolderId = state.renderedFolder?.id;
       if (sourceRect) {
@@ -673,11 +725,14 @@ export class FolderOverlayLayer extends Container {
         scaleY: Math.max(0.08, sourceLocalRect.height / panelRect.height),
         x: sourceLocalRect.left + sourceLocalRect.width / 2,
         y: sourceLocalRect.top + sourceLocalRect.height / 2,
-      });
+      }, { onFrame: refreshBounds });
       return;
     }
 
-    const notifyPanelTitleFrame = () => this.notifyPanelTitleFrame(panelRect);
+    const updateOpeningPanelFrame = () => {
+      this.notifyPanelTitleFrame(panelRect);
+      refreshBounds();
+    };
     gsap.to(this.panel, {
       alpha: isClosing ? 0 : 1,
       duration: folderOpenDuration,
@@ -695,7 +750,7 @@ export class FolderOverlayLayer extends Container {
         scaleY: 1.08,
         x: targetX,
         y: targetY,
-      });
+      }, { onFrame: refreshBounds });
       return;
     }
 
@@ -706,8 +761,8 @@ export class FolderOverlayLayer extends Container {
       scaleY: 1,
       x: targetX,
       y: targetY,
-    }, { onFrame: notifyPanelTitleFrame });
-    notifyPanelTitleFrame();
+    }, { onFrame: updateOpeningPanelFrame });
+    updateOpeningPanelFrame();
   }
 
   drawPanel(panel) {

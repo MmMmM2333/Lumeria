@@ -180,7 +180,7 @@ runFolderClosingHandoffActivityTests();
 runFolderClosingHandoffRetainerTests();
 runFolderClosingPreviewSwapControllerTests();
 runFolderOpeningGhostControllerTests();
-runFolderOverlayLayerTests();
+await runFolderOverlayLayerTests();
 runSingleStageFolderDomControlsTests();
 runFolderOverlayTargetResolverTests();
 runFolderOverlayTargetsTests();

@@ -1,10 +1,23 @@
 import { clamp } from "../domain/launchpadLayout.js";
-import { getRenderedClientLaunchIconBounds } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
+import {
+  getLiveClientLaunchIconTargetBounds,
+  getRenderedClientLaunchIconBounds,
+  getStableStageLayoutLaunchIconTargetRecord,
+} from "../rendering/pixi/geometry/iconBoundsRegistry.js";
+import { stageLayoutRecordToClientRect } from "../rendering/pixi/geometry/stageCoordinates.js";
 
 export function getLaunchIconRect(launchSource) {
-  const pixiRect = getRenderedClientLaunchIconBounds(launchSource);
-  if (pixiRect) return pixiRect;
-  return null;
+  const expected = launchSource?.area === "folder"
+    ? {
+      area: launchSource.area,
+      folderId: launchSource.folderId ?? null,
+      id: launchSource.id,
+      pageIndex: launchSource.pageIndex ?? 0,
+    }
+    : null;
+  return getRenderedClientLaunchIconBounds(launchSource, expected) ||
+    getLiveClientLaunchIconTargetBounds(launchSource, expected) ||
+    stageLayoutRecordToClientRect(getStableStageLayoutLaunchIconTargetRecord(launchSource, expected));
 }
 
 export function useLaunchpadIconActivation(options) {

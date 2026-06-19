@@ -12,6 +12,10 @@ import {
   finishClosingHandoff,
   getClosingPresentationStageHitRects,
 } from "./folderClosingHandoff.js";
+import {
+  clearIconBoundsRegistry,
+  getRenderedClientLaunchIconBounds,
+} from "../geometry/iconBoundsRegistry.js";
 
 function makeClosingHandoffHarness(calls) {
   return {
@@ -44,7 +48,14 @@ function makeClosingHandoffHarness(calls) {
   };
 }
 
-export function runFolderOverlayLayerTests() {
+export async function runFolderOverlayLayerTests() {
+  if (!("navigator" in globalThis)) {
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { userAgent: "node.js" },
+    });
+  }
+  const { FolderOverlayLayer } = await import("./FolderOverlayLayer.js");
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Pixi folder overlay layer test failed] ${message}`);
   };
@@ -147,6 +158,43 @@ export function runFolderOverlayLayerTests() {
   assert(tallTiming.progress === 0.68, "tall folder preview swap should start earlier");
   assert(tallTiming.iconDuration === 0.26, "tall folder preview icons should run slightly longer");
   assert(tallTiming.swapDuration === 0.22, "tall folder preview wrap should run slightly longer");
+
+  {
+    clearIconBoundsRegistry();
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    layer.iconBoundsRefreshers = new Map();
+    layer.openingGhostBoundsRefreshers = new Map();
+
+    const app = { id: "app-1", type: "app" };
+    const makeNode = (left) => ({
+      getIconBounds: () => ({ height: 20, left, top: 10, width: 20 }),
+    });
+    const state = {
+      folderPageIndex: 0,
+      height: 100,
+      stageRect: { height: 100, left: 0, top: 0, width: 100 },
+      width: 100,
+    };
+    const target = {
+      folderId: "folder-1",
+      iconSize: 20,
+      index: 0,
+      item: app,
+      pageIndex: 0,
+      targetStageLayoutRect: { height: 20, left: 30, top: 40, width: 20 },
+    };
+
+    layer.iconBoundsRefreshers.set("real", () => layer.registerOpeningGhostBounds(state, target, makeNode(12)));
+    layer.openingGhostBoundsRefreshers.set("app-1", () => layer.registerOpeningGhostBounds(state, target, makeNode(52)));
+    layer.refreshRegisteredIconBounds();
+
+    const rect = getRenderedClientLaunchIconBounds(
+      { area: "folder", folderId: "folder-1", id: "app-1", pageIndex: 0 },
+      { area: "folder", folderId: "folder-1", id: "app-1", pageIndex: 0 }
+    );
+    assert(rect.left === 52, "opening ghost bounds should refresh after hidden real icon bounds and win during folder open");
+    clearIconBoundsRegistry();
+  }
 
   {
     const scheduler = {

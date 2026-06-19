@@ -516,22 +516,28 @@ export class DesktopLayer extends Container {
     springTo(this.singleStageFolderLayer, "alpha", alpha, desktopVisualSpring);
   }
 
+  hasSingleStageFolderOverlayContent(state = {}) {
+    return Boolean(state.singleStageFolderLayerEnabled && state.singleStageFolderState?.renderedFolder);
+  }
+
   applyFolderOverlayTransform(state) {
     const transform = resolveLaunchpadVisualTransform(state);
     const centerX = Math.max(1, readNumber(state.width, 1)) / 2;
     const centerY = Math.max(1, readNumber(state.height, 1)) / 2;
     const targetY = centerY + transform.y;
     this.singleStageFolderLayer.pivot.set(centerX, centerY);
+    const shouldSnap = !this.hasSingleStageFolderOverlayContent(state);
     if (!this.hasFolderOverlayTransform) {
       this.singleStageFolderLayer.position.set(centerX, targetY);
       this.singleStageFolderLayer.scale.set(transform.scale);
       this.hasFolderOverlayTransform = true;
       return;
     }
-    springTo(this.singleStageFolderLayer, "x", centerX, desktopVisualSpring);
-    springTo(this.singleStageFolderLayer, "y", targetY, desktopVisualSpring);
-    springTo(this.singleStageFolderLayer.scale, "x", transform.scale, desktopVisualSpring);
-    springTo(this.singleStageFolderLayer.scale, "y", transform.scale, desktopVisualSpring);
+    const markBoundsDirty = () => this.markInteractiveBoundsDirty();
+    springTo(this.singleStageFolderLayer, "x", centerX, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty, snap: shouldSnap });
+    springTo(this.singleStageFolderLayer, "y", targetY, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty, snap: shouldSnap });
+    springTo(this.singleStageFolderLayer.scale, "x", transform.scale, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty, snap: shouldSnap });
+    springTo(this.singleStageFolderLayer.scale, "y", transform.scale, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty, snap: shouldSnap });
   }
 
   updateSingleStageFolderLayer(state) {
@@ -836,6 +842,7 @@ export class DesktopLayer extends Container {
     if (!options.force && !this.boundsDirty) return;
     this.boundsDirty = false;
     this.refreshInteractiveBounds();
+    this.singleStageFolderLayer?.refreshRegisteredIconBounds?.();
   }
 
   refreshInteractiveBounds() {
@@ -1017,6 +1024,8 @@ export class DesktopLayer extends Container {
     this.clearFolderHandoffNode();
     stopTargetSprings(this.visualRoot);
     stopTargetSprings(this.visualRoot?.scale);
+    stopTargetSprings(this.singleStageFolderLayer);
+    stopTargetSprings(this.singleStageFolderLayer?.scale);
     stopTargetSprings(this.pageTrack);
     super.destroy(options);
   }

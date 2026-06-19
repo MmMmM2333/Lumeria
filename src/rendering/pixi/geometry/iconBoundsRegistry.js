@@ -216,11 +216,6 @@ export function clearLaunchIconBounds(scope, folderId = null) {
   }
 }
 
-export function getRenderedClientLaunchIconBounds(source) {
-  const key = makeIconBoundsKey("launch", source);
-  return key ? cloneRect(launchIconBounds.get(key)) : null;
-}
-
 function matchesExpectedMeta(meta, expected) {
   if (!expected) return true;
   for (const key of ["area", "folderId", "id", "index", "pageIndex"]) {
@@ -228,6 +223,14 @@ function matchesExpectedMeta(meta, expected) {
     if (meta?.[key] !== expected[key]) return false;
   }
   return true;
+}
+
+export function getRenderedClientLaunchIconBounds(source, expected = null) {
+  const key = makeIconBoundsKey("launch", source);
+  if (!key) return null;
+  const value = launchIconBounds.get(key);
+  if (!value || !matchesExpectedMeta(value.meta, expected)) return null;
+  return cloneRect(value);
 }
 
 export function getLiveClientLaunchIconTargetBounds(source, expected = null) {
