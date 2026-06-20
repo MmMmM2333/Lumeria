@@ -1,4 +1,5 @@
 import { FolderClosingPreviewSwapController } from "./folderClosingPreviewSwapController.js";
+import { clearMotionPreferencesForTests, setReducedMotionForTests } from "../animation/motionPreferences.js";
 
 function makePoint() {
   return {
@@ -135,6 +136,35 @@ export function runFolderClosingPreviewSwapControllerTests() {
     assert(layer.closingPreviewSwapKeys.size === 1, "start should track an active preview swap");
     assert(layer.closingPreviewSwapLayer.children.length === 1, "start should add the swap root to the layer");
     controller.clear();
+  }
+
+  {
+    const { controller, layer } = createController();
+    const state = {
+      folderPageIndex: 1,
+      height: 600,
+      renderedFolder: { id: "folder-1" },
+      stageRect: { left: 0, top: 0 },
+      width: 800,
+    };
+    let finished = 0;
+
+    setReducedMotionForTests(true);
+    try {
+      controller.start(state, [{
+        item: { id: "app-1", name: "App" },
+        previewSlotIndex: 0,
+        targetStageLayoutRect: { height: 24, left: 40, top: 50, width: 24 },
+      }], { iconDuration: 0.01, progress: 1, swapDuration: 0.01 }, () => {
+        finished += 1;
+      });
+    } finally {
+      clearMotionPreferencesForTests();
+    }
+
+    assert(finished === 1, "synchronous reduced-motion preview swap should finish once");
+    assert(layer.closingPreviewSwapKeys.size === 0, "synchronous reduced-motion preview swap should clear its active key");
+    assert(!layer.closingPreviewSwapMotionControls?.size, "synchronous reduced-motion preview swap should not register a stale motion control");
   }
 
   {

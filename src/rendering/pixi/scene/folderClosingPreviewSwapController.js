@@ -177,13 +177,18 @@ export class FolderClosingPreviewSwapController {
         .start();
     }
 
-    const motionControl = parallel(springItems, {
+    let motionControl = null;
+    let didComplete = false;
+    motionControl = parallel(springItems, {
       onComplete: () => {
-        layer.closingPreviewSwapMotionControls?.delete(motionControl);
+        didComplete = true;
+        if (motionControl) layer.closingPreviewSwapMotionControls?.delete(motionControl);
         this.complete(state, key, root, iconsWrap, finishTransition);
       },
     });
-    layer.closingPreviewSwapMotionControls.add(motionControl);
+    if (!didComplete && motionControl) {
+      layer.closingPreviewSwapMotionControls.add(motionControl);
+    }
   }
 }
 
