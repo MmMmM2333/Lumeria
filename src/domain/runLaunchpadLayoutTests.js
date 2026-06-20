@@ -43,6 +43,7 @@ import { runStageCoordinatesTests } from "../rendering/pixi/geometry/stageCoordi
 import { runIconBoundsRegistryTests } from "../rendering/pixi/geometry/iconBoundsRegistryTests.js";
 import { runIconTextureCacheTests } from "../rendering/pixi/assets/iconTextureCacheTests.js";
 import { runFolderLayerStateTests } from "../rendering/pixi/folderLayerStateTests.js";
+import { runFolderOverlayStateDependenciesTests } from "../rendering/pixi/folderOverlayStateDependenciesTests.js";
 import { runPixiHostMetricsTests } from "../rendering/pixi/pixiHostMetricsTests.js";
 import { runIconControlDrawingTests } from "../rendering/pixi/nodes/iconControlDrawingTests.js";
 import { runIconFolderHoverStateTests } from "../rendering/pixi/nodes/iconFolderHoverStateTests.js";
@@ -159,6 +160,7 @@ runRootStageCoordinatesTests();
 runStageCoordinatesTests();
 runIconBoundsRegistryTests();
 runFolderLayerStateTests();
+runFolderOverlayStateDependenciesTests();
 runPixiHostMetricsTests();
 await runAcrylicFiltersTests();
 runAcrylicParamsTests();

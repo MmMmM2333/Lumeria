@@ -48,6 +48,7 @@ import { getFolderPreviewSlots } from "../../domain/launchpadLayout.js";
 import { createPixiApp } from "./createPixiApp.js";
 import { DesktopLayer } from "./scene/DesktopLayer.js";
 import { createFolderLayerState } from "./folderLayerState.js";
+import { readFolderOverlayStateRenderDependencies } from "./folderOverlayStateDependencies.js";
 import { clearIconTextureCache, preloadIconTextures } from "./assets/iconTextureCache.js";
 import { clearDesktopIconBounds } from "./geometry/iconBoundsRegistry.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
@@ -843,7 +844,7 @@ watchEffect(() => {
   void props.dragReleaseGhostId;
   void props.dragReleaseState;
   void props.folderClosingHandoffId;
-  void props.folderOverlayState;
+  readFolderOverlayStateRenderDependencies(props.folderOverlayState);
   void props.gridCols;
   void props.gridRows;
   void props.iconSize;
