@@ -1,21 +1,18 @@
-import { gsap } from "gsap";
-import { CustomEase } from "gsap/CustomEase";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-
-gsap.registerPlugin(CustomEase);
+import { motionPresets } from "./motionPresets.js";
 
 export const layoutEase = "power3.out";
-export const folderOpenEase = "power3.out";
-export const folderOpenGhostEase = CustomEase.create("pixiFolderOpenGhostEase", "0.22,1,0.36,1");
-export const folderCloseEase = CustomEase.create("pixiFolderCloseEase", "0.4,0,0.2,1");
-export const folderPreviewSettleEase = CustomEase.create("pixiFolderPreviewSettleEase", "0.2,0.9,0.24,1");
-export const quickEase = "power2.out";
+export const folderOpenEase = motionPresets.folderOpen.ease;
+export const folderOpenGhostEase = motionPresets.folderOpenGhost.ease;
+export const folderCloseEase = motionPresets.folderClose.ease;
+export const folderPreviewSettleEase = motionPresets.folderPreviewSettle.ease;
+export const quickEase = motionPresets.fade.ease;
 
 export const layoutDuration = 0.34;
-export const folderOpenDuration = 0.38;
-export const folderOpenGhostDuration = 0.36;
-export const folderCloseDuration = 0.34;
-export const folderPanelCloseDuration = 0.38;
-export const quickDuration = 0.16;
+export const folderOpenDuration = motionPresets.folderOpen.duration;
+export const folderOpenGhostDuration = motionPresets.folderOpenGhost.duration;
+export const folderCloseDuration = motionPresets.folderClose.duration;
+export const folderPanelCloseDuration = motionPresets.folderPanelClose.duration;
+export const quickDuration = motionPresets.fade.duration;
 
 reloadOnPixiHotUpdate(import.meta.hot);

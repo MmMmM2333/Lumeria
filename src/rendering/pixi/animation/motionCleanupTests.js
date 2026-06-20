@@ -1,5 +1,6 @@
-import { gsap } from "gsap";
 import { killAllMotion } from "./motionCleanup.js";
+import { motionRuntime } from "./motionRuntime.js";
+import { motionTo } from "./motionTween.js";
 import { pageTrackSpring, springTo } from "./springMotion.js";
 
 export function runMotionCleanupTests() {
@@ -7,16 +8,23 @@ export function runMotionCleanupTests() {
     if (!condition) throw new Error(`[Motion cleanup test failed] ${message}`);
   };
 
+  motionRuntime.reset();
   const child = { children: [], scale: { x: 1, y: 1 }, x: 0 };
   const node = { children: [child], scale: { x: 1, y: 1 }, x: 0 };
-  gsap.to(node, { duration: 1, x: 10 });
-  gsap.to(node.scale, { duration: 1, x: 2 });
-  gsap.to(child, { duration: 1, x: 10 });
+  const reasons = [];
+  const nodeTween = motionTo(node, { duration: 1, onCancel: (reason) => reasons.push(`node:${reason}`), x: 10 });
+  const scaleTween = motionTo(node.scale, { duration: 1, onCancel: (reason) => reasons.push(`scale:${reason}`), x: 2 });
+  const childTween = motionTo(child, { duration: 1, onCancel: (reason) => reasons.push(`child:${reason}`), x: 10 });
   springTo(node, "x", 20, pageTrackSpring);
 
   killAllMotion(node);
 
-  assert(gsap.getTweensOf(node).length === 0, "node tweens should be killed");
-  assert(gsap.getTweensOf(node.scale).length === 0, "node scale tweens should be killed");
-  assert(gsap.getTweensOf(child).length === 0, "child tweens should be killed recursively");
+  assert(nodeTween.completed, "node tween should be killed");
+  assert(scaleTween.completed, "node scale tween should be killed");
+  assert(childTween.completed, "child tween should be killed recursively");
+  const cleanupCount = motionRuntime.debugSnapshot().counters.canceledByReason.cleanup || 0;
+  assert(cleanupCount >= 2, `killAllMotion should mark active recursive cancellations as cleanup, got ${cleanupCount}`);
+  assert(reasons.includes("scale:cleanup"), "killAllMotion should pass cleanup to scale motion");
+  assert(reasons.includes("child:cleanup"), "killAllMotion should pass cleanup to child motion");
+  motionRuntime.reset();
 }

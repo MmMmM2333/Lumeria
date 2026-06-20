@@ -1,4 +1,5 @@
 import { springGroupTo } from "./springGroup.js";
+import { clearMotionPreferencesForTests, setReducedMotionForTests } from "./motionPreferences.js";
 import { pageTrackSpring, springTo, stopSpring, stopTargetSprings } from "./springMotion.js";
 
 function makeTimerHost() {
@@ -69,6 +70,85 @@ export function runSpringGroupTests() {
     assert(target.x === 12 && target.y === 24, "snap entries should apply all target values");
     assert(completed === 1, "group should complete exactly once after all entries finish");
     assert(group.completed === true, "group should expose completed state");
+  }
+
+  {
+    setReducedMotionForTests(true);
+    try {
+      const target = { x: 0, y: 0 };
+      let completed = 0;
+      const group = springGroupTo([
+        { target, prop: "x", to: 12 },
+        { target, prop: "y", to: 24 },
+      ], {
+        onComplete: () => {
+          completed += 1;
+        },
+      });
+
+      assert(target.x === 12 && target.y === 24, "reduced-motion group should snap all target values");
+      assert(completed === 1, "reduced-motion group should complete exactly once");
+    assert(group.completed === true, "reduced-motion group should expose completed state");
+    } finally {
+      clearMotionPreferencesForTests();
+    }
+  }
+
+  {
+    let arrived = 0;
+    let completed = 0;
+    const target = { x: 0 };
+    springGroupTo([
+      {
+        target,
+        prop: "x",
+        to: 10,
+        options: {
+          onArrive: () => {
+            arrived += 1;
+          },
+          snap: true,
+        },
+      },
+    ], {
+      onComplete: () => {
+        completed += 1;
+      },
+    });
+
+    assert(arrived === 1, "spring group should pass entry onArrive to snapped springs");
+    assert(completed === 1, "entry onArrive should not prevent group completion");
+    assert(target.x === 10, "spring group snapped arrival should still write the target value");
+  }
+
+  {
+    const first = { x: 0 };
+    const second = { y: 0 };
+    const calls = [];
+    const group = springGroupTo([
+      {
+        target: first,
+        prop: "x",
+        to: 10,
+        options: { onArrive: () => calls.push("first-arrive"), snap: true },
+      },
+      {
+        target: second,
+        prop: "y",
+        to: 20,
+        options: { onArrive: () => calls.push("second-arrive"), snap: true },
+      },
+    ], {
+      onArrive: () => calls.push("group-arrive"),
+      onComplete: () => calls.push("group-complete"),
+    });
+
+    assert(
+      calls.join(",") === "first-arrive,second-arrive,group-arrive,group-complete",
+      "group onArrive should fire after all entry arrivals and before group completion"
+    );
+    assert(group.arrived === true, "group should expose arrived state");
+    assert(group.completed === true, "group should still expose completed state after arrival");
   }
 
   {

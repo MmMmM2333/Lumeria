@@ -1,0 +1,455 @@
+import {
+  additiveTrack,
+  createMotionRuntime,
+  decay,
+  factorTrack,
+  playTrack,
+  progressDriver,
+  spring,
+  track,
+  tween,
+} from "./motionRuntime.js";
+
+function nearlyEqual(actual, expected, epsilon = 0.001) {
+  return Math.abs(actual - expected) <= epsilon;
+}
+
+function runUntil(runtime, condition, maxSteps = 600) {
+  for (let index = 0; index < maxSteps; index += 1) {
+    runtime.step(1 / 60);
+    if (condition()) return true;
+  }
+  return false;
+}
+
+export function runMotionRuntimeTests() {
+  const assert = (condition, message) => {
+    if (!condition) throw new Error(`[Motion runtime test failed] ${message}`);
+  };
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    const driver = spring({ damping: 28, mass: 0.9, stiffness: 190, restDelta: 0.01, restSpeed: 0.01 });
+    const first = runtime.animate(target, "x", 100, { driver, velocity: 12 });
+    runtime.step(1 / 60);
+    const velocityBeforeRetarget = first.velocity;
+    const retargeted = runtime.animate(target, "x", 200, { driver });
+
+    assert(retargeted.state === first.state, "spring retarget should reuse the active base lane");
+    assert(retargeted.velocity === velocityBeforeRetarget, "spring retarget should preserve velocity");
+    assert(retargeted.state.to === 200, "spring retarget should update the destination");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    const driver = spring({ damping: 28, mass: 0.9, stiffness: 190, restDelta: 0.01, restSpeed: 0.01 });
+    const calls = [];
+    const first = runtime.animate(target, "x", 100, {
+      driver,
+      onCancel: () => calls.push("cancel"),
+      onComplete: () => calls.push("complete"),
+      onUpdate: () => calls.push("update"),
+      velocity: 30,
+    });
+    runtime.step(1 / 60);
+    first.release();
+    runtime.step(1 / 60);
+    const velocityBeforeReleaseRetarget = first.velocity;
+    const retargeted = runtime.animate(target, "x", 200, {
+      driver,
+      onComplete: () => calls.push("retarget-complete"),
+    });
+
+    assert(first.released === true, "released owner control should remain released after retarget");
+    assert(retargeted.released === false, "retargeting a released animation should return a fresh owner control");
+    assert(retargeted.state === first.state, "released spring should remain available for retargeting");
+    assert(retargeted.velocity === velocityBeforeReleaseRetarget, "released spring retarget should preserve velocity");
+    assert(!calls.includes("cancel"), "release should not call the old cancel callback");
+    assert(!calls.includes("complete"), "release should detach the old complete callback");
+    assert(runUntil(runtime, () => calls.includes("retarget-complete")), "retargeted released spring should still complete");
+    assert(nearlyEqual(target.x, 200), "retargeted released spring should land on the new target");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    const calls = [];
+    const control = runtime.animate(target, "x", 10, {
+      delay: 1,
+      driver: tween({ duration: 1, ease: "linear" }),
+      onCancel: () => calls.push("cancel"),
+      onComplete: () => calls.push("complete"),
+    });
+
+    control.release();
+    runtime.step(2);
+
+    assert(control.released === true, "delayed release should expose released state");
+    assert(target.x === 0, "releasing before delay should not start the animation");
+    assert(calls.length === 0, "releasing before delay should not fire cancel or complete callbacks");
+    assert(runtime.debugSnapshot().animations.length === 0, "releasing before delay should remove the pending animation");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    const driver = spring({ damping: 28, mass: 0.9, stiffness: 190, restDelta: 0.01, restSpeed: 0.01 });
+    runtime.animate(target, "x", 100, { driver });
+    runtime.step(0.1);
+    const valueBeforeRetarget = target.x;
+    const calls = [];
+    const retargeted = runtime.animate(target, "x", 200, {
+      driver,
+      milestones: [{ progress: 0.5, callback: () => calls.push(target.x) }],
+    });
+
+    assert(nearlyEqual(retargeted.state.from, valueBeforeRetarget), "spring retarget should restart progress milestones from the in-flight value");
+    assert(runUntil(runtime, () => calls.length > 0), "retargeted spring milestone should fire");
+    assert(calls[0] > valueBeforeRetarget && calls[0] < 200, "retargeted spring milestone should use the new travel distance");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    const driver = spring({ damping: 28, mass: 0.9, stiffness: 190, restDelta: 0.01, restSpeed: 0.01 });
+    const canceled = [];
+    const first = runtime.animate(target, "x", 100, {
+      driver,
+      onCancel: (reason) => canceled.push(reason),
+    });
+    runtime.step(1 / 60);
+    const second = runtime.animate(target, "x", 200, { driver, interrupt: "replace" });
+
+    assert(second.state !== first.state, "explicit replace should create a new animation instead of auto-retargeting");
+    assert(canceled.join(",") === "replace", "explicit replace should cancel the previous lane with a replace reason");
+    assert(runtime.debug.canceledByReason.replace === 1, "replace cancellations should be counted by reason");
+    assert(runtime.debugSnapshot().animations[0].interrupt === "replace", "debug snapshot should expose explicit replace policy");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    const calls = [];
+    runtime.animate(target, "x", 20, {
+      driver: spring({ arriveDelta: 0.5, damping: 31, mass: 0.9, restDelta: 0.01, restSpeed: 0.01, stiffness: 340 }),
+      onArrive: () => calls.push("arrive"),
+      onComplete: () => calls.push("complete"),
+    });
+
+    assert(runUntil(runtime, () => calls.includes("arrive")), "spring should eventually fire onArrive");
+    assert(calls.join(",") === "arrive", "onArrive should fire before onComplete");
+    assert(runUntil(runtime, () => calls.includes("complete")), "spring should eventually complete");
+    assert(calls.join(",") === "arrive,complete", "spring should fire arrive and complete once");
+    assert(target.x === 20, "completed spring should land exactly on the target");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    const calls = [];
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      milestones: [
+        { progress: 0.5, callback: (value, event) => calls.push(`half:${Math.round(value)}:${event.prop}`) },
+        { progress: 0.75, callback: (value) => calls.push(`late:${Math.round(value)}`) },
+      ],
+    });
+
+    runtime.step(0.49);
+    assert(calls.length === 0, "milestone should wait until progress reaches the threshold");
+    runtime.step(0.01);
+    assert(calls.join(",") === "half:5:x", "milestone should fire once at the first crossed threshold");
+    runtime.step(0.25);
+    assert(calls.join(",") === "half:5:x,late:8", "milestones should fire in threshold order");
+    runtime.step(0.25);
+    assert(calls.join(",") === "half:5:x,late:8", "completed animation should not refire fired milestones");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    const calls = [];
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      milestones: [{ progress: 0.5, callback: () => calls.push("snap-half") }],
+      snap: true,
+    });
+
+    assert(target.x === 10, "snap should still apply the final value immediately");
+    assert(calls.join(",") === "snap-half", "snap should fire crossed milestones");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    const control = runtime.animate(target, "x", 100, {
+      driver: progressDriver({ completeAtEnd: false, ease: "linear", progress: 0 }),
+      from: 0,
+    });
+
+    control.setProgress(0.35);
+    assert(nearlyEqual(target.x, 35), "progress control should seek to the scrubbed value before settle");
+    control.settle({ velocity: 1.2 });
+    assert(control.state.driver.type === "spring", "settle should convert a progress driver into a spring driver");
+    assert(control.velocity === 120, "settle should convert progress velocity into value velocity");
+    assert(control.state.to === 100, "positive settle velocity should target the end value");
+    assert(runUntil(runtime, () => control.completed), "settled progress spring should complete");
+    assert(nearlyEqual(target.x, 100), "settled progress should land at the end value");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 100 };
+    const control = runtime.animate(target, "x", 0, {
+      driver: progressDriver({ completeAtEnd: false, ease: "linear", progress: 0 }),
+      from: 100,
+    });
+
+    control.setProgress(0.35);
+    control.settle({ velocity: -0.2 });
+
+    assert(control.state.to === 100, "negative settle velocity should target the start value");
+    assert(runUntil(runtime, () => control.completed), "reverse settled progress spring should complete");
+    assert(nearlyEqual(target.x, 100), "reverse settled progress should land at the start value");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    playTrack(track(target, "x", 0, 10, { driver: tween({ duration: 1, ease: "linear" }) }), { runtime });
+    playTrack(additiveTrack(target, "x", 5, 0, { driver: tween({ duration: 1, ease: "linear" }) }), { runtime });
+
+    runtime.step(0.5);
+    assert(nearlyEqual(target.x, 7.5), `base and additive lanes should compose additively, got ${target.x}`);
+    runtime.step(0.5);
+    assert(nearlyEqual(target.x, 10), "additive lane should clean up at its neutral endpoint");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    playTrack(track(target, "x", 0, 100, { driver: tween({ duration: 1, ease: "linear" }) }), { runtime });
+    runtime.step(0.4);
+    const valueBeforeBlend = target.x;
+    playTrack(track(target, "x", 0, 20, {
+      blendDuration: 0.2,
+      blendEase: "linear",
+      driver: tween({ duration: 1, ease: "linear" }),
+      interrupt: "blend",
+    }), { runtime });
+
+    assert(nearlyEqual(target.x, valueBeforeBlend), "playTrack blend should keep the current visual value on takeover");
+    runtime.step(0.1);
+    assert(nearlyEqual(target.x, 21), `playTrack blend should cross-blend explicit from tracks, got ${target.x}`);
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    playTrack(track(target, "x", 0, 10, { driver: tween({ duration: 1, ease: "linear" }) }), { runtime });
+    playTrack(additiveTrack(target, "x", 4, 0, { driver: tween({ duration: 1, ease: "linear" }), laneKey: "pulse-a" }), { runtime });
+    playTrack(additiveTrack(target, "x", -2, 0, { driver: tween({ duration: 1, ease: "linear" }), laneKey: "pulse-b" }), { runtime });
+
+    runtime.step(0.5);
+    assert(nearlyEqual(target.x, 6), `multiple additive lanes should sum on the same property, got ${target.x}`);
+    runtime.stop(target, "x", { lane: "additive", laneKey: "pulse-a" });
+    assert(nearlyEqual(target.x, 4), "stopping one additive lane should leave the other additive lane composed with the active base");
+    runtime.step(0.5);
+    assert(nearlyEqual(target.x, 10), "remaining additive lanes should still clean up to the base value");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      lane: "base",
+      laneKey: "layout",
+    });
+    runtime.step(0.25);
+    const layoutValue = target.x;
+    runtime.animate(target, "x", 100, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      lane: "base",
+      laneKey: "drag",
+    });
+    runtime.step(0.25);
+
+    assert(runtime.debugSnapshot().animations.length === 2, "named base lanes should coexist on one property");
+    assert(target.x > layoutValue, "latest named base lane should drive the composed base value");
+    runtime.stop(target, "x", { lane: "base", laneKey: "drag" });
+    assert(nearlyEqual(target.x, runtime.getChannel(target, "x").baseValue), "stopping active base lane should compose fallback base value");
+    assert(target.x < 10, "stopping drag base lane should fall back to in-flight layout lane value");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { scale: 1 };
+    playTrack(track(target, "scale", 1, 2, { driver: tween({ duration: 1, ease: "linear" }) }), { runtime });
+    playTrack(factorTrack(target, "scale", 0.5, 1, { driver: tween({ duration: 1, ease: "linear" }) }), { runtime });
+
+    runtime.step(0.5);
+    assert(nearlyEqual(target.scale, 1.125), `base and factor lanes should compose multiplicatively, got ${target.scale}`);
+    runtime.step(0.5);
+    assert(nearlyEqual(target.scale, 2), "factor lane should clean up at its neutral endpoint");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { alpha: 0 };
+    runtime.animate(target, "alpha", 1, {
+      driver: tween({ duration: 1, ease: "linear", repeat: 1, yoyo: true }),
+      from: 0,
+    });
+
+    runtime.step(1);
+    assert(nearlyEqual(target.alpha, 1), "yoyo tween should reach the forward endpoint after the first cycle");
+    runtime.step(1);
+    assert(nearlyEqual(target.alpha, 0), "completed finite yoyo tween should settle to its final yoyo value");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false });
+    const order = [];
+    const callback = () => order.push("flush");
+    runtime.afterFrame(callback);
+    runtime.afterFrame(callback);
+    runtime.step(0);
+
+    assert(order.join(",") === "flush", "afterFrame should coalesce duplicate callbacks per frame");
+    assert(runtime.debug.afterFrameFlushes === 1, "afterFrame debug counter should track flushes");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false });
+    const target = { destroyed: false, x: 0 };
+    let canceled = 0;
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1 }),
+      onCancel: () => {
+        canceled += 1;
+      },
+    });
+    target.destroyed = true;
+    runtime.step(1 / 60);
+
+    assert(canceled === 1, "destroyed targets should cancel active animation");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0, y: 0 };
+    runtime.animate(target, "x", 10, { driver: tween({ duration: 1, ease: "linear" }) });
+    runtime.animate(target, "y", 20, { driver: tween({ duration: 1, ease: "linear" }) });
+
+    runtime.step(0.25);
+    assert(runtime.debug.activeTargets === 1, "debug counters should track active target count");
+    assert(runtime.debug.activeChannels === 2, "debug counters should track active channel count");
+    assert(runtime.debug.writesLastFrame >= 2, "debug counters should track writes per frame");
+    assert(runtime.debug.writes >= runtime.debug.writesLastFrame, "debug counters should track cumulative writes");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const targetA = { x: 0, y: 0 };
+    const targetB = { alpha: 0, scale: 1 };
+    runtime.animate(targetA, "x", 10, {
+      driver: spring({ damping: 28, mass: 0.9, restDelta: 0.01, restSpeed: 0.01, stiffness: 190 }),
+      laneKey: "layout",
+    });
+    runtime.animate(targetA, "y", 20, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      laneKey: "fade",
+    });
+    runtime.animate(targetA, "x", 0, {
+      driver: decay({ restSpeed: 0.01 }),
+      lane: "additive",
+      laneKey: "impulse",
+      velocity: 100,
+    });
+    runtime.animate(targetB, "alpha", 1, {
+      driver: progressDriver({ completeAtEnd: false, progress: 0 }),
+      from: 0,
+      laneKey: "scrub",
+    });
+    runtime.animate(targetB, "scale", 1.2, {
+      driver: spring({ damping: 28, mass: 0.9, restDelta: 0.01, restSpeed: 0.01, stiffness: 190 }),
+      from: 1,
+      lane: "factor",
+      laneKey: "hover-factor",
+    });
+
+    const snapshot = runtime.debugSnapshot();
+    const targetAId = snapshot.animations.find((animation) => animation.laneKey === "layout").targetId;
+    const targetBId = snapshot.animations.find((animation) => animation.laneKey === "scrub").targetId;
+
+    assert(snapshot.summary.activeAnimationCount === 5, "debug summary should count active animations");
+    assert(snapshot.summary.activeTargetCount === 2, "debug summary should count active targets");
+    assert(snapshot.summary.activeChannelCount === 4, "debug summary should count active target/property channels");
+    assert(snapshot.summary.byDriver.spring === 2, "debug summary should count spring drivers");
+    assert(snapshot.summary.byDriver.tween === 1, "debug summary should count tween drivers");
+    assert(snapshot.summary.byDriver.decay === 1, "debug summary should count decay drivers");
+    assert(snapshot.summary.byDriver.progress === 1, "debug summary should count progress drivers");
+    assert(snapshot.summary.byLane.base === 3, "debug summary should count base lanes");
+    assert(snapshot.summary.byLane.additive === 1, "debug summary should count additive lanes");
+    assert(snapshot.summary.byLane.factor === 1, "debug summary should count factor lanes");
+    assert(snapshot.summary.byLaneKey.impulse === 1, "debug summary should count lane keys");
+    assert(snapshot.summary.byProp.x === 2, "debug summary should count same-property composed animations");
+    assert(snapshot.summary.byTargetId[targetAId] === 3, "debug summary should count animations per target");
+    assert(snapshot.summary.byTargetId[targetBId] === 2, "debug summary should count animations for each target id");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    const observed = [];
+    playTrack(track(target, "x", 0, 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      onUpdate: () => observed.push(target.x),
+    }), { runtime });
+    playTrack(additiveTrack(target, "x", 0, 4, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      onUpdate: () => observed.push(target.x),
+    }), { runtime });
+
+    runtime.step(0.5);
+    assert(nearlyEqual(target.x, 7), `coalesced writes should still compose lanes, got ${target.x}`);
+    assert(runtime.debug.writesLastFrame === 1, `same-property lane writes should coalesce, got ${runtime.debug.writesLastFrame}`);
+    assert(observed.every((value) => nearlyEqual(value, 7)), "onUpdate should observe the flushed composed value");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    const control = runtime.animate(target, "x", 10, { driver: tween({ duration: 1, ease: "linear" }) });
+    const snapshot = runtime.debugSnapshot();
+
+    assert(snapshot.animations.length === 1, "debug snapshot should list active animations");
+    assert(snapshot.animations[0].prop === "x", "debug snapshot should include property names");
+    assert(snapshot.animations[0].targetId > 0, "debug snapshot should assign stable target ids");
+
+    control.cancel("user-interrupt");
+    const afterCancel = runtime.debugSnapshot();
+    assert(afterCancel.counters.canceledByReason["user-interrupt"] === 1, "debug counters should track cancel reasons");
+    assert(afterCancel.animations.length === 0, "debug snapshot should omit canceled animations");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0, y: 0 };
+    runtime.animate(target, "x", 10, { driver: tween({ duration: 1, ease: "linear" }) });
+    runtime.animate(target, "y", 20, { driver: tween({ duration: 1, ease: "linear" }) });
+
+    runtime.stop(target, "x", { reason: "route-change" });
+    runtime.cancelTarget(target, { reason: "cleanup" });
+    const snapshot = runtime.debugSnapshot();
+
+    assert(snapshot.counters.canceledByReason["route-change"] === 1, "runtime.stop should count custom cancel reasons");
+    assert(snapshot.counters.canceledByReason.cleanup === 1, "runtime.cancelTarget should pass custom cancel reasons to stopped channels");
+    assert(snapshot.animations.length === 0, "custom-reason cancellations should remove all active animations");
+  }
+}

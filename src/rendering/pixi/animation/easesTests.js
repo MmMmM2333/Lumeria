@@ -11,9 +11,9 @@ export function runPixiEaseTests() {
     if (!condition) throw new Error(`[Pixi ease test failed] ${message}`);
   };
 
-  assert(typeof folderOpenGhostEase === "function", "folder open ghost ease should be a CustomEase function");
-  assert(typeof folderCloseEase === "function", "folder close ease should be a CustomEase function");
-  assert(typeof folderPreviewSettleEase === "function", "folder preview settle ease should be a CustomEase function");
+  assert(typeof folderOpenGhostEase === "function", "folder open ghost ease should be a cubic-bezier function");
+  assert(typeof folderCloseEase === "function", "folder close ease should be a cubic-bezier function");
+  assert(typeof folderPreviewSettleEase === "function", "folder preview settle ease should be a cubic-bezier function");
   assert(folderOpenGhostEase(0) === 0 && folderOpenGhostEase(1) === 1, "open ghost ease should start and end at rest");
   assert(folderCloseEase(0) === 0 && folderCloseEase(1) === 1, "close ease should start and end at rest");
   assert(folderPreviewSettleEase(0) === 0 && folderPreviewSettleEase(1) === 1, "preview settle ease should start and end at rest");

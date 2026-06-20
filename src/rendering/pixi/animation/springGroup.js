@@ -1,4 +1,4 @@
-import { pageTrackSpring, springTo, stopSpring } from "./springMotion.js";
+import { pageTrackSpring, springTo } from "./springMotion.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 
 const activeGroups = new Set();
@@ -18,6 +18,8 @@ export function springGroupTo(entries, options = {}) {
   const tokens = [];
   let canceled = false;
   let completed = false;
+  let arrived = false;
+  let arriveRemaining = 0;
   let released = false;
   let remaining = 0;
 
@@ -25,6 +27,9 @@ export function springGroupTo(entries, options = {}) {
     cancel,
     get canceled() {
       return canceled;
+    },
+    get arrived() {
+      return arrived;
     },
     get completed() {
       return completed;
@@ -55,14 +60,24 @@ export function springGroupTo(entries, options = {}) {
     options.onComplete?.();
   }
 
+  function arriveToken(token, value) {
+    if (canceled || completed || released || token.arrived) return;
+    token.arrived = true;
+    arriveRemaining -= 1;
+    if (arriveRemaining > 0) return;
+    arrived = true;
+    options.onArrive?.(value);
+  }
+
   function cancel() {
     if (canceled || completed || released) return;
     canceled = true;
     activeGroups.delete(controls);
     for (const token of tokens) {
       clearTokenTimer(token);
-      if (token.active) stopSpring(token.target, token.prop);
+      if (token.active) token.spring?.cancel?.();
       token.active = false;
+      token.spring = null;
     }
   }
 
@@ -73,11 +88,13 @@ export function springGroupTo(entries, options = {}) {
     for (const token of tokens) {
       clearTokenTimer(token);
       token.active = false;
+      token.spring = null;
     }
   }
 
   function cancelFromSpring(token, onCancel) {
     token.active = false;
+    token.spring = null;
     onCancel?.();
     if (!canceled && !completed && !released) cancel();
   }
@@ -94,9 +111,14 @@ export function springGroupTo(entries, options = {}) {
     token.active = true;
     const spring = springTo(token.target, token.prop, token.to, token.config, {
       ...entryOptions,
+      onArrive: (value) => {
+        entryOptions.onArrive?.(value);
+        arriveToken(token, value);
+      },
       onCancel: () => cancelFromSpring(token, entryOptions.onCancel),
       onComplete: () => {
         token.active = false;
+        token.spring = null;
         entryOptions.onComplete?.();
         completeToken(token);
       },
@@ -109,6 +131,7 @@ export function springGroupTo(entries, options = {}) {
       },
     });
 
+    token.spring = spring;
     if (!spring) {
       token.active = false;
       completeToken(token);
@@ -117,20 +140,22 @@ export function springGroupTo(entries, options = {}) {
 
   for (const entry of entries || []) {
     if (!entry?.target || !entry.prop) continue;
-    const token = {
+    tokens.push({
       active: false,
+      arrived: false,
       config: entry.config || options.config || pageTrackSpring,
       done: false,
       options: entry.options,
       prop: entry.prop,
+      spring: null,
       target: entry.target,
       timer: null,
       to: entry.to,
-    };
-    tokens.push(token);
+    });
   }
 
   remaining = tokens.length;
+  arriveRemaining = tokens.length;
   if (!remaining) {
     completed = true;
     options.onComplete?.();
