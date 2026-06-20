@@ -35,6 +35,7 @@ import {
 import { usePageRenderRange } from "./usePageRenderRange.js";
 import { usePageGridMetrics } from "./usePageGridMetrics.js";
 import { useSettingsPanelFlow } from "./useSettingsPanelFlow.js";
+import { getRenderedClientLaunchIconTargetAtPoint } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 
 export function createDeferredHandlers(defaults = {}) {
   const handlers = { ...defaults };
@@ -1333,23 +1334,37 @@ export function useLaunchpadController() {
     startFolderZoomFadeClose,
   });
   const {
+    folderPageTrackScrub,
     handleDesktopSurfacePointerDown,
+    handleFolderPanelPointerDown,
     handleFolderOverlayPointerDown,
+    pageTrackScrub,
     setFolderPageRef,
     setPageRef,
   } = useLaunchpadSurfaceInteractions({
     closeDesktop,
+    commitActivePageIndex,
     commitOpenFolder,
+    activePageIndex,
+    activePages,
+    getDesktopTargetAtPoint: getRenderedClientLaunchIconTargetAtPoint,
+    commitFolderPageIndex,
+    folderPageIndex,
+    folderPages,
     folderPageRefs,
+    folderPanelRef,
+    folderViewportRef,
     hideNativeWindowAfterCloseAnimation,
     isAppLaunching,
     isDesktopOpen,
+    isSearchMode,
     isDragActive,
     isFolderAppLaunchClosing,
     isFolderClosing,
     openFolderId,
     pageRefs,
     renderedFolder,
+    rootRef,
   });
 
   useLaunchpadLifecycle({
@@ -1688,6 +1703,7 @@ export function useLaunchpadController() {
     clearSearch,
     desktopMainRef,
     handleDesktopSurfacePointerDown,
+    handleFolderPanelPointerDown,
     activePageIndex,
     activePages,
     commitActivePageIndex,
@@ -1696,6 +1712,8 @@ export function useLaunchpadController() {
     getDesktopPageRenderMode,
     setPageRef,
     pageGridMeasureStyle,
+    pageTrackScrub,
+    folderPageTrackScrub,
     schedulePageGridMetrics,
     getVisibleDesktopPage,
     folderPageSize,

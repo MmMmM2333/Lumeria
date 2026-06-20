@@ -30,6 +30,7 @@ import { stageLayoutRecordToClientRect } from "../rendering/pixi/geometry/stageC
 const LAYOUT_PROJECTION_RELEASE_DELAY = 260;
 const DRAG_RELEASE_DURATION_MS = 180;
 const DRAG_RELEASE_GHOST_PADDING_MS = 60;
+const DRAG_RELEASE_FALLBACK_CLEAR_MS = 1200;
 const DRAG_RELEASE_TARGET_RESOLVE_FRAMES = 3;
 const FOLDER_HOVER_SETTLE_MS = 660;
 const FOLDER_HOVER_FLASH_TOTAL_MS = 540;
@@ -93,6 +94,10 @@ export function samplePointerVelocity(previous = {}, event = {}, options = {}) {
   };
   const previousVelocity = previous.velocity || makeZeroVelocity();
   return {
+    pointer: {
+      x: Number(event.clientX),
+      y: Number(event.clientY),
+    },
     time,
     velocity: {
       x: previousVelocity.x + (instant.x - previousVelocity.x) * smoothing,
@@ -402,7 +407,7 @@ export function useLaunchpadDrag(options) {
     dragReleaseTimer = window.setTimeout(() => {
       dragReleaseTimer = null;
       dragReleaseState.value = null;
-    }, DRAG_RELEASE_DURATION_MS + DRAG_RELEASE_GHOST_PADDING_MS);
+    }, DRAG_RELEASE_FALLBACK_CLEAR_MS + DRAG_RELEASE_GHOST_PADDING_MS);
   }
 
   function getReleaseTextless() {

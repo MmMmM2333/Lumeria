@@ -91,12 +91,14 @@
         :is-textless-mode="isTextlessMode"
         :launch-target-status-by-id="launchTargetStatusById"
         :page-grid-measure-style="pageGridMeasureStyle"
+        :page-track-scrub="resolveMaybeRef(controller.pageTrackScrub)"
         :desktop-grid-debug-options="desktopGridDebugOptions"
         :set-page-ref="setPageRef"
         :show-missing-launch-target-badge="showMissingLaunchTargetBadge"
         :single-stage-options="singleStageOptions"
         :single-stage-render-key="singleStageRenderKey"
         @desktop-focus="keyboardFocusArea = 'desktop'"
+        @drag-release-complete="clearDragRelease"
         @internal-activity="handleFolderPixiInternalActivity"
         @pointerdown-icon="beginDrag"
         @open-app="openApp"
@@ -104,6 +106,7 @@
         @remove-app="removeAppById"
         @choose-app-icon="openExistingAppIconChooser"
         @reset-app-icon="resetAppCustomIcon"
+        @surface-pointerdown="handleLaunchpadSurfacePointerDown"
         @wheel="handleLaunchpadWheel"
       />
     </LaunchpadChromeFrame>
@@ -227,6 +230,7 @@ const {
   dragMeta,
   dragPreviewState,
   dragReleaseState,
+  clearDragRelease,
   openSettingsPanel,
   searchRef,
   isSearchMode,
@@ -862,6 +866,10 @@ const settingsPanelState = createSettingsPanelState(controller, appVersion);
 const dialogState = createDialogState(controller);
 const folderOverlayState = createFolderOverlayState(controller);
 const overlayState = createOverlayState(controller);
+
+function resolveMaybeRef(value) {
+  return value && typeof value === "object" && "value" in value ? value.value : value;
+}
 
 const dragReleaseGhostId = computed(() => dragReleaseState.value?.item?.id || null);
 const folderClosingHandoffId = computed(() => resolveFolderClosingHandoffId({
