@@ -1,5 +1,4 @@
 import { Container, Graphics, Text } from "pixi.js";
-import { gsap } from "gsap";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getDesktopGridMetrics, getGridSlotRect, makeRect } from "../geometry/gridGeometry.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
@@ -25,8 +24,9 @@ import {
   registerStableStageLayoutTopLevelFolderThumbTargetBounds,
   registerStableStageLayoutTopLevelIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
-import { quickDuration, quickEase } from "../animation/eases.js";
-import { desktopVisualSpring, pageTrackSpring, springTo, stopTargetSprings } from "../animation/springMotion.js";
+import { motionRuntime } from "../animation/motionRuntime.js";
+import { desktopVisualSpring, pageTrackSpring, stopTargetSprings } from "../animation/springMotion.js";
+import { killMotionOf, transition } from "../animation/motionTween.js";
 import {
   isActiveDraggedLaunchItem,
   isReleaseGhostLaunchItem,
@@ -40,6 +40,11 @@ import { FolderOverlayLayer } from "./FolderOverlayLayer.js";
 import { SingleStageDiagnosticsLayer } from "./singleStageDiagnostics.js";
 import { DragPreviewLayer } from "./DragPreviewLayer.js";
 import { IconNode } from "../nodes/IconNode.js";
+import {
+  cancelPageTrackMotion,
+  createPageTrackMotionState,
+  updatePageTrackMotion,
+} from "./pageTrackMotion.js";
 
 function sourceArea(source) {
   if (source.type === "folder") return "folder";
@@ -235,8 +240,31 @@ function getDesktopFrame(state) {
 }
 
 function springIconLayoutPosition(node, layoutTarget, markBoundsDirty) {
-  springTo(node, "x", layoutTarget.x, pageTrackSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
-  springTo(node, "y", layoutTarget.y, pageTrackSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
+  transition(node)
+    .layout()
+    .spring(pageTrackSpring)
+    .interrupt("retarget")
+    .to({
+      onComplete: markBoundsDirty,
+      onUpdate: markBoundsDirty,
+      x: layoutTarget.x,
+      y: layoutTarget.y,
+    })
+    .start();
+}
+
+function transitionSpringTo(target, vars, config, options = {}) {
+  transition(target)
+    .layout()
+    .spring(config)
+    .interrupt("retarget")
+    .to({
+      ...vars,
+      onComplete: options.onComplete,
+      onUpdate: options.onUpdate,
+      snap: options.snap,
+    })
+    .start();
 }
 
 export class DesktopLayer extends Container {
@@ -250,7 +278,9 @@ export class DesktopLayer extends Container {
     this.onFolderGeometryChange = options.onFolderGeometryChange || (() => {});
     this.onFolderInternalActivityChange = options.onFolderInternalActivityChange || (() => {});
     this.onFolderOutsidePointerDown = options.onFolderOutsidePointerDown || (() => {});
+    this.onFolderPanelPointerDown = options.onFolderPanelPointerDown || (() => {});
     this.onFolderTitleFrameChange = options.onFolderTitleFrameChange || (() => {});
+    this.onDragReleaseComplete = options.onDragReleaseComplete || (() => {});
     this.singleStageFolderLayer = new FolderOverlayLayer({
       onClosingFolderPointerDown: (folderId, event) => this.onClosingFolderPointerDown(folderId, event),
       onClosingHandoffReady: (folderId) => this.startClosingFolderHandoffNow(folderId),
@@ -259,11 +289,14 @@ export class DesktopLayer extends Container {
         this.handleIconAction(action, originalEvent, item, source, iconNode),
       onInternalActivityChange: (active, folderId = null) => this.onFolderInternalActivityChange(active, folderId),
       onOutsidePointerDown: (event) => this.onFolderOutsidePointerDown(event),
+      onPanelPointerDown: (event) => this.onFolderPanelPointerDown(event),
       showFolderTitle: false,
       onTitleFrameChange: (frame) => this.onFolderTitleFrameChange(frame),
     });
     this.singleStageDiagnosticsLayer = new SingleStageDiagnosticsLayer();
-    this.singleStageDragPreviewLayer = new DragPreviewLayer();
+    this.singleStageDragPreviewLayer = new DragPreviewLayer({
+      onReleaseComplete: (release) => this.onDragReleaseComplete(release),
+    });
     this.folderHandoffNode = null;
     this.hasDesktopVisualAlpha = false;
     this.hasDesktopVisualTransform = false;
@@ -271,6 +304,7 @@ export class DesktopLayer extends Container {
     this.hasFolderOverlayTransform = false;
     this.lastFolderHandoffDebugSnapshot = null;
     this.iconNodes = new Map();
+    this.pageTrackMotion = createPageTrackMotionState();
     this.boundsRegistration = null;
     this.boundsFlushQueued = false;
     this.boundsDirty = false;
@@ -372,7 +406,12 @@ export class DesktopLayer extends Container {
           this.iconNodes.set(key, node);
           this.pageTrack.addChild(node);
           if (!isFolderClosingHandoff) {
-            gsap.to(node, { alpha: 1, duration: quickDuration, ease: quickEase });
+            transition(node)
+              .preset("fade")
+              .layout()
+              .interrupt("retarget")
+              .to({ alpha: 1 })
+              .start();
             springIconLayoutPosition(node, layoutTarget, markBoundsDirty);
           }
         } else if (!isFolderClosingHandoff) {
@@ -444,21 +483,24 @@ export class DesktopLayer extends Container {
     for (const [key, node] of this.iconNodes) {
       if (seen.has(key)) continue;
       this.iconNodes.delete(key);
-      gsap.killTweensOf(node);
+      killMotionOf(node);
       stopTargetSprings(node);
-      gsap.to(node, {
-        alpha: 0,
-        duration: quickDuration,
-        ease: quickEase,
-        onComplete: () => node.destroy({ children: true }),
-      });
+      transition(node)
+        .preset("fade")
+        .layout()
+        .interrupt("retarget")
+        .to({ alpha: 0, onComplete: () => node.destroy({ children: true }) })
+        .start();
     }
 
     this.boundsRegistration = makeDesktopBoundsRegistration(state, boundsEntries, desktopFrame);
-    springTo(this.pageTrack, "x", targetX, pageTrackSpring, {
+    updatePageTrackMotion(this.pageTrackMotion, this.pageTrack, {
+      onFrame: markBoundsDirty,
+      pageIndex: activePageIndex,
+      pageSpan: pageWidth,
+      scrub: state.pageTrackScrub,
       snap: shouldSnap,
-      onComplete: markBoundsDirty,
-      onUpdate: markBoundsDirty,
+      springConfig: pageTrackSpring,
     });
     this.flushInteractiveBounds({ force: true });
     this.updateSingleStageFolderLayer(state);
@@ -486,10 +528,8 @@ export class DesktopLayer extends Container {
       return;
     }
     const markBoundsDirty = () => this.markInteractiveBoundsDirty();
-    springTo(this.visualRoot, "x", centerX, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
-    springTo(this.visualRoot, "y", targetY, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
-    springTo(this.visualRoot.scale, "x", scale, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
-    springTo(this.visualRoot.scale, "y", scale, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
+    transitionSpringTo(this.visualRoot, { x: centerX, y: targetY }, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
+    transitionSpringTo(this.visualRoot.scale, { x: scale, y: scale }, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
   }
 
   applyDesktopVisualAlpha(state) {
@@ -501,7 +541,7 @@ export class DesktopLayer extends Container {
       this.hasDesktopVisualAlpha = true;
       return;
     }
-    springTo(this.visualRoot, "alpha", alpha, desktopVisualSpring);
+    transitionSpringTo(this.visualRoot, { alpha }, desktopVisualSpring);
   }
 
   applyFolderOverlayAlpha(state) {
@@ -513,7 +553,7 @@ export class DesktopLayer extends Container {
       this.hasFolderOverlayAlpha = true;
       return;
     }
-    springTo(this.singleStageFolderLayer, "alpha", alpha, desktopVisualSpring);
+    transitionSpringTo(this.singleStageFolderLayer, { alpha }, desktopVisualSpring);
   }
 
   hasSingleStageFolderOverlayContent(state = {}) {
@@ -534,10 +574,16 @@ export class DesktopLayer extends Container {
       return;
     }
     const markBoundsDirty = () => this.markInteractiveBoundsDirty();
-    springTo(this.singleStageFolderLayer, "x", centerX, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty, snap: shouldSnap });
-    springTo(this.singleStageFolderLayer, "y", targetY, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty, snap: shouldSnap });
-    springTo(this.singleStageFolderLayer.scale, "x", transform.scale, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty, snap: shouldSnap });
-    springTo(this.singleStageFolderLayer.scale, "y", transform.scale, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty, snap: shouldSnap });
+    transitionSpringTo(this.singleStageFolderLayer, { x: centerX, y: targetY }, desktopVisualSpring, {
+      onComplete: markBoundsDirty,
+      onUpdate: markBoundsDirty,
+      snap: shouldSnap,
+    });
+    transitionSpringTo(this.singleStageFolderLayer.scale, { x: transform.scale, y: transform.scale }, desktopVisualSpring, {
+      onComplete: markBoundsDirty,
+      onUpdate: markBoundsDirty,
+      snap: shouldSnap,
+    });
   }
 
   updateSingleStageFolderLayer(state) {
@@ -628,8 +674,8 @@ export class DesktopLayer extends Container {
     if (!target) return;
     entry.node = node;
     entry.layoutTarget = target;
-    gsap.killTweensOf(node);
-    gsap.killTweensOf(node.scale);
+    killMotionOf(node);
+    killMotionOf(node.scale);
     node.position.set(target.x, target.y);
     node.scale.set(target.scaleX || 1, target.scaleY || target.scaleX || 1);
     node.alpha = 1;
@@ -649,7 +695,7 @@ export class DesktopLayer extends Container {
     if (node.labelText) {
       node.labelText.visible = true;
       if (!entry.labelRevealStarted) {
-        gsap.killTweensOf(node.labelText);
+        killMotionOf(node.labelText);
         node.labelText.alpha = 0;
       }
     }
@@ -831,6 +877,10 @@ export class DesktopLayer extends Container {
       this.boundsFlushQueued = false;
       this.flushInteractiveBounds();
     };
+    if (typeof globalThis.requestAnimationFrame === "function") {
+      motionRuntime.afterFrame(flush);
+      return;
+    }
     if (typeof globalThis.queueMicrotask === "function") {
       globalThis.queueMicrotask(flush);
       return;
@@ -1022,11 +1072,12 @@ export class DesktopLayer extends Container {
   destroy(options) {
     this.boundsRegistration = null;
     this.clearFolderHandoffNode();
-    stopTargetSprings(this.visualRoot);
-    stopTargetSprings(this.visualRoot?.scale);
-    stopTargetSprings(this.singleStageFolderLayer);
-    stopTargetSprings(this.singleStageFolderLayer?.scale);
-    stopTargetSprings(this.pageTrack);
+    stopTargetSprings(this.visualRoot, { reason: "destroyed" });
+    stopTargetSprings(this.visualRoot?.scale, { reason: "destroyed" });
+    stopTargetSprings(this.singleStageFolderLayer, { reason: "destroyed" });
+    stopTargetSprings(this.singleStageFolderLayer?.scale, { reason: "destroyed" });
+    cancelPageTrackMotion(this.pageTrackMotion, "destroyed");
+    stopTargetSprings(this.pageTrack, { reason: "destroyed" });
     super.destroy(options);
   }
 }

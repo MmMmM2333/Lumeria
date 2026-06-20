@@ -16,6 +16,7 @@ import {
   clearIconBoundsRegistry,
   getRenderedClientLaunchIconBounds,
 } from "../geometry/iconBoundsRegistry.js";
+import { motionRuntime } from "../animation/motionRuntime.js";
 
 function makeClosingHandoffHarness(calls) {
   return {
@@ -142,7 +143,132 @@ export async function runFolderOverlayLayerTests() {
     assert(rects[0].left === 40 && rects[0].top === 60, "handoff client rect should be converted to stage coordinates");
   }
 
+  {
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    const calls = [];
+    layer.isClosing = false;
+    layer.onOutsidePointerDown = () => calls.push("outside");
+    layer.onPanelPointerDown = () => calls.push("panel");
+    layer.panelGeometry = { height: 220, left: 120, top: 140, width: 360 };
+    layer.stageRect = { height: 600, left: 0, top: 0, width: 800 };
+
+    const makeEvent = (clientX, clientY) => ({
+      nativeEvent: {
+        clientX,
+        clientY,
+        preventDefault() {
+          calls.push("prevent");
+        },
+        stopPropagation() {
+          calls.push("stop");
+        },
+      },
+    });
+
+    layer.handlePointerDown(makeEvent(180, 200));
+    layer.handlePointerDown(makeEvent(40, 200));
+    assert(calls.join(",") === "prevent,stop,panel,prevent,stop,outside", "folder pointer down should route panel hits separately from outside hits");
+  }
+
   const nearlyEqual = (a, b) => Math.abs(a - b) < 0.0001;
+
+  {
+    motionRuntime.reset();
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    layer.currentFolderId = null;
+    layer.markRegisteredBoundsDirty = () => {};
+    layer.notifyPanelTitleFrame = () => {};
+    layer.panel = {
+      alpha: 1,
+      x: 0,
+      y: 0,
+      scale: {
+        x: 1,
+        y: 1,
+        set(x, y = x) {
+          this.x = x;
+          this.y = y;
+        },
+      },
+    };
+    layer.panel.position = {
+      set(x, y) {
+        layer.panel.x = x;
+        layer.panel.y = y;
+      },
+    };
+    const panelRect = { height: 360, left: 180, top: 200, width: 800 };
+    const stageRect = { height: 600, left: 0, top: 0, width: 1000 };
+    const baseState = {
+      isFolderAppLaunchClosing: false,
+      renderedFolder: { id: "folder-1" },
+      stageRect,
+    };
+
+    layer.animatePanel({ ...baseState, isFolderClosing: false }, 580, 380, panelRect, null);
+    motionRuntime.step(0.02);
+    layer.animatePanel(
+      { ...baseState, isFolderClosing: true },
+      580,
+      380,
+      panelRect,
+      { height: 64, left: 200, top: 240, width: 64 }
+    );
+
+    const handoffSnapCount = motionRuntime.debugSnapshot().counters.canceledByReason["folder-panel-handoff-snap"] || 0;
+    assert(handoffSnapCount >= 1, "folder panel handoff snap should use a specific cancel reason");
+    assert(layer.panel.alpha === 0, "folder panel handoff snap should still hide the panel immediately");
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    const dot = {
+      alpha: 0,
+      clear() {
+        return this;
+      },
+      circle() {
+        return this;
+      },
+      fill() {
+        return this;
+      },
+      scale: {
+        x: 1,
+        y: 1,
+        set(value) {
+          this.x = value;
+          this.y = value;
+        },
+      },
+    };
+    const idleVisual = getFolderPageDotVisualState({ active: false, hovered: false });
+    const hoverVisual = getFolderPageDotVisualState({ active: false, hovered: true });
+
+    layer.setPageDotHover(dot, false, false, { immediate: true });
+    assert(dot.alpha === idleVisual.alpha && dot.scale.x === idleVisual.scale, "immediate page dot state should apply the visual target directly");
+    layer.setPageDotHover(dot, false, true);
+    motionRuntime.step(0.04);
+    assert(dot.alpha > idleVisual.alpha && dot.alpha < hoverVisual.alpha, "page dot hover-in should animate alpha toward the hover state");
+
+    const alphaBeforeHoverOut = dot.alpha;
+    layer.setPageDotHover(dot, false, false);
+    const blendSnapshot = motionRuntime.debugSnapshot();
+    const alphaBlend = blendSnapshot.animations.find((animation) => animation.prop === "alpha" && animation.laneKey === "overlay");
+
+    assert(nearlyEqual(dot.alpha, alphaBeforeHoverOut), "page dot hover-out blend should keep the current visual value on takeover");
+    assert((blendSnapshot.counters.canceledByReason.blend || 0) >= 1, "page dot hover interruption should be observable as a blend cancellation");
+    assert(alphaBlend?.blendDuration === 0.08, "page dot hover should use a short blend window");
+
+    motionRuntime.step(0.04);
+    assert(dot.alpha < alphaBeforeHoverOut && dot.alpha > idleVisual.alpha, "page dot hover-out should blend back toward idle without jumping");
+    for (let index = 0; index < 20; index += 1) motionRuntime.step(0.05);
+    assert(nearlyEqual(dot.alpha, idleVisual.alpha), "page dot hover-out should settle on the idle alpha");
+    motionRuntime.reset();
+  }
+
   const compactTiming = getClosingPreviewTiming({ height: 490 }, { height: 70 });
   assert(compactTiming.progress === 0.76, "compact folder preview swap should keep the default start progress");
   assert(compactTiming.iconDuration === 0.22, "compact folder preview icons should keep the default duration");
@@ -158,6 +284,33 @@ export async function runFolderOverlayLayerTests() {
   assert(tallTiming.progress === 0.68, "tall folder preview swap should start earlier");
   assert(tallTiming.iconDuration === 0.26, "tall folder preview icons should run slightly longer");
   assert(tallTiming.swapDuration === 0.22, "tall folder preview wrap should run slightly longer");
+
+  {
+    const originalRaf = globalThis.requestAnimationFrame;
+    globalThis.requestAnimationFrame = () => 1;
+    try {
+      const layer = Object.create(FolderOverlayLayer.prototype);
+      layer.iconBoundsRefreshers = new Map();
+      layer.openingGhostBoundsRefreshers = new Map();
+      layer.registeredBoundsDirty = false;
+      layer.registeredBoundsFlushQueued = false;
+      let refreshCount = 0;
+      layer.refreshRegisteredIconBounds = () => {
+        refreshCount += 1;
+        return refreshCount;
+      };
+
+      layer.markRegisteredBoundsDirty();
+      layer.markRegisteredBoundsDirty();
+      assert(refreshCount === 0, "registered bounds dirty should wait until the runtime frame-end flush");
+      motionRuntime.flushAfterFrameForTests();
+      assert(refreshCount === 1, "registered bounds dirty should coalesce repeated marks into one refresh");
+      assert(layer.registeredBoundsDirty === false && layer.registeredBoundsFlushQueued === false, "registered bounds flush should clear queued flags");
+    } finally {
+      globalThis.requestAnimationFrame = originalRaf;
+      motionRuntime.reset();
+    }
+  }
 
   {
     clearIconBoundsRegistry();

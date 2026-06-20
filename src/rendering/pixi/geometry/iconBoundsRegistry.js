@@ -301,6 +301,26 @@ export function getRenderedClientTopLevelTargetAtPoint(x, y, excludeId = null) {
   return null;
 }
 
+export function getRenderedClientLaunchIconTargetAtPoint(x, y, options = {}) {
+  const excludeId = options?.excludeId == null ? null : String(options.excludeId);
+  for (const [key, rect] of launchIconBounds) {
+    const meta = rect?.meta || {};
+    const id = meta.id == null ? key.split(":").pop() : String(meta.id);
+    if (excludeId && id === excludeId) continue;
+    if (options.area && meta.area !== options.area) continue;
+    if (options.folderId != null && meta.folderId !== options.folderId) continue;
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+      return {
+        id,
+        key,
+        meta: { ...meta },
+        rect: cloneRect(rect),
+      };
+    }
+  }
+  return null;
+}
+
 export function registerRenderedClientFolderPreviewChildBounds(folderId, childId, slotIndex, rect) {
   const key = makeIconBoundsKey("folder-preview-child", { childId, folderId, slotIndex });
   const safeRect = cloneRect(rect);

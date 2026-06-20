@@ -1,0 +1,125 @@
+import { motionRuntime } from "../animation/motionRuntime.js";
+
+export async function runIconNodeTests() {
+  if (!("navigator" in globalThis)) {
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { userAgent: "node.js" },
+    });
+  }
+  const { IconNode } = await import("./IconNode.js");
+  const assert = (condition, message) => {
+    if (!condition) throw new Error(`[IconNode test failed] ${message}`);
+  };
+  const nearlyEqual = (a, b) => Math.abs(a - b) < 0.0001;
+
+  const node = new IconNode();
+  try {
+    motionRuntime.reset();
+    node.setPressed(true, { pointerId: 1 });
+
+    let snapshot = motionRuntime.debugSnapshot();
+    const pressScaleImpulses = snapshot.animations.filter((animation) => animation.lane === "additive");
+    assert(pressScaleImpulses.length === 2, "press should create one additive impulse per scale axis");
+    assert(pressScaleImpulses.some((animation) => animation.prop === "x"), "press should create an additive scale x impulse");
+    assert(pressScaleImpulses.some((animation) => animation.prop === "y"), "press should create an additive scale y impulse");
+    assert(node.visualWrap.scale.x < 1 && node.visualWrap.scale.y < 1, "press additive impulse should shrink visual scale immediately");
+    assert(snapshot.animations.some((animation) => animation.prop === "alpha" && animation.laneKey === "base"), "press should keep the existing alpha feedback animation");
+
+    node.setPressed(true, { pointerId: 1 });
+    snapshot = motionRuntime.debugSnapshot();
+    const afterRepeatedPressCount = snapshot.animations.filter((animation) => animation.lane === "additive").length;
+    assert(afterRepeatedPressCount === 2, "repeated press without state change should not add another scale impulse");
+
+    node.setPressed(false);
+    snapshot = motionRuntime.debugSnapshot();
+    assert(snapshot.animations.filter((animation) => animation.lane === "additive").length === 4, "release should stack a separate additive scale impulse");
+
+    motionRuntime.reset();
+    node.updateJiggle({ editing: true, dragging: false, ghosted: false, jiggleSeed: 0 });
+    snapshot = motionRuntime.debugSnapshot();
+    const jiggleAnimations = snapshot.animations.filter((animation) => animation.lane === "additive" && ["rotation", "y"].includes(animation.prop));
+    assert(jiggleAnimations.length === 4, "jiggle start should compose a loop and a start impulse on rotation/y");
+    assert(snapshot.summary.byLaneKey.jiggle === 2, "jiggle loop should use the named jiggle additive lane");
+    assert(snapshot.summary.byProp.rotation === 2, "jiggle rotation should have loop and impulse additive tracks");
+    assert(snapshot.summary.byProp.y === 2, "jiggle y should have loop and impulse additive tracks");
+    assert(node.jiggleWrap.rotation < -0.032 && node.jiggleWrap.y < -1, "jiggle start impulse should stack over the loop value");
+
+    node.updateJiggle({ editing: true, dragging: false, ghosted: false, jiggleSeed: 0 });
+    snapshot = motionRuntime.debugSnapshot();
+    assert(snapshot.animations.filter((animation) => animation.lane === "additive" && ["rotation", "y"].includes(animation.prop)).length === 4, "unchanged jiggle state should not add another impulse");
+
+    node.stopJiggle();
+    snapshot = motionRuntime.debugSnapshot();
+    assert(snapshot.animations.filter((animation) => animation.lane === "additive" && ["rotation", "y"].includes(animation.prop)).length === 0, "stopping jiggle should clear loop and impulse additive tracks");
+    assert(node.jiggleWrap.rotation === 0 && node.jiggleWrap.y === 0, "stopping jiggle should restore neutral transform");
+
+    motionRuntime.reset();
+    node.item = { id: "folder-1", type: "folder" };
+    node.isFolder = true;
+    node.iconSize = 64;
+    node.folderHoverActive = false;
+    node.folderHoverKey = null;
+    node.folderHoverPhase = null;
+    node.folderHoverClearing = false;
+    node.folderHoverFrame.padding = 0;
+    node.folderPreviewPlanKey = null;
+    node.folderThumb.scale.set(1);
+    node.folderChildrenWrap.y = 0;
+    const folderHoverPlan = {
+      endY: -24,
+      items: [{ id: "app-a" }, { id: "app-b" }],
+      startY: 0,
+    };
+    node.updateFolderHoverAnimation({
+      folderHoverState: { key: "folder-hover", phase: "hover", targetId: "folder-1", targetType: "folder" },
+    }, folderHoverPlan);
+    motionRuntime.step(0.04);
+    assert(node.folderThumb.scale.x > 0 && node.folderThumb.scale.x < 1, "folder hover should animate the thumb scale in");
+    assert(node.folderChildrenWrap.y < 0 && node.folderChildrenWrap.y > folderHoverPlan.endY, "folder hover should animate preview scroll");
+
+    const thumbScaleBeforeClear = node.folderThumb.scale.x;
+    const previewYBeforeClear = node.folderChildrenWrap.y;
+    node.updateFolderHoverAnimation({ folderHoverState: null }, folderHoverPlan);
+    snapshot = motionRuntime.debugSnapshot();
+    assert(nearlyEqual(node.folderThumb.scale.x, thumbScaleBeforeClear), "folder hover clear blend should keep thumb scale on takeover");
+    assert(nearlyEqual(node.folderChildrenWrap.y, previewYBeforeClear), "folder hover clear blend should keep preview y on takeover");
+    assert((snapshot.counters.canceledByReason.blend || 0) >= 3, "folder hover clear should be observable as blend cancellations");
+    assert(snapshot.animations.some((animation) => animation.laneKey === "overlay" && animation.blendDuration === 0.08), "folder hover should use a short blend window");
+
+    motionRuntime.step(0.04);
+    assert(node.folderThumb.scale.x < thumbScaleBeforeClear, "folder hover clear should blend thumb scale down without jumping");
+    assert(node.folderChildrenWrap.y > previewYBeforeClear && node.folderChildrenWrap.y < 0, "folder hover clear should blend preview y back without jumping");
+    for (let index = 0; index < 20; index += 1) motionRuntime.step(0.05);
+    assert(nearlyEqual(node.folderChildrenWrap.y, 0), "folder hover clear should restore preview y");
+    assert(node.folderHoverFrame.padding === 0 && node.folderHoverClearing === false, "folder hover clear should reset frame state");
+
+    motionRuntime.reset();
+    node.item = { id: "app-1", type: "app" };
+    node.isFolder = false;
+    node.iconSize = 64;
+    node.updateAppFolderCreateHoverAnimation({
+      folderHoverState: { key: "create-hover", phase: "hover", targetId: "app-1", targetType: "app" },
+    });
+    motionRuntime.step(0.04);
+    assert(node.folderCreateBackdrop.alpha > 0 && node.folderCreateBackdrop.alpha < 1, "app-folder-create hover should animate the backdrop in");
+    assert(node.iconSprite.alpha < 1 && node.iconSprite.alpha > 0.48, "app-folder-create hover should animate icon dimming");
+
+    const backdropAlphaBeforeClear = node.folderCreateBackdrop.alpha;
+    const iconAlphaBeforeClear = node.iconSprite.alpha;
+    node.updateAppFolderCreateHoverAnimation({ folderHoverState: null });
+    snapshot = motionRuntime.debugSnapshot();
+    assert(nearlyEqual(node.folderCreateBackdrop.alpha, backdropAlphaBeforeClear), "app-folder-create clear blend should keep backdrop alpha on takeover");
+    assert(nearlyEqual(node.iconSprite.alpha, iconAlphaBeforeClear), "app-folder-create clear blend should keep icon alpha on takeover");
+    assert((snapshot.counters.canceledByReason.blend || 0) >= 3, "app-folder-create hover interruption should be observable as blend cancellations");
+    assert(snapshot.animations.some((animation) => animation.laneKey === "overlay" && animation.blendDuration === 0.08), "app-folder-create hover should use a short blend window");
+    motionRuntime.step(0.04);
+    assert(node.folderCreateBackdrop.alpha < backdropAlphaBeforeClear && node.folderCreateBackdrop.alpha > 0, "app-folder-create clear should blend backdrop alpha down without jumping");
+    assert(node.iconSprite.alpha > iconAlphaBeforeClear && node.iconSprite.alpha < 1, "app-folder-create clear should blend icon alpha back without jumping");
+    for (let index = 0; index < 20; index += 1) motionRuntime.step(0.05);
+    assert(nearlyEqual(node.iconSprite.alpha, 1) && nearlyEqual(node.emojiText.alpha, 1), "app-folder-create clear should restore icon alpha");
+  } finally {
+    node.destroy({ children: true });
+    motionRuntime.reset();
+  }
+}

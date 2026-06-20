@@ -1,7 +1,6 @@
-import { gsap } from "gsap";
 import { folderCloseDuration, folderCloseEase } from "../animation/eases.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
-import { springGroupTo } from "../animation/springGroup.js";
+import { parallel, transition } from "../animation/motionTween.js";
 import { panelSpring } from "../animation/springMotion.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { clientRectToStageVisualRect, stageLayoutRectToStageVisualRect } from "../geometry/stageCoordinates.js";
@@ -26,7 +25,6 @@ const CLOSING_EXTRA_GHOST_ALPHA_DURATION = 0.12;
 const CLOSING_EXTRA_GHOST_ALPHA_HOLD = 0.16;
 const CLOSING_GHOST_GEOMETRY_FALLBACK_SECONDS = 0.75;
 const CLOSING_PREVIEW_FALLBACK_DURATION = 0.22;
-const CLOSING_FRAME_VISUAL_EPSILON = 0.5;
 const CLOSING_GHOST_VISUAL_POSITION_EPSILON = 0.5;
 const CLOSING_GHOST_VISUAL_SCALE_EPSILON = 0.01;
 
@@ -82,47 +80,35 @@ function getClosingControllerGhostKey(state, target) {
   return target?.controllerGhostKey || state.getFolderCloseIconGhostKey?.(target?.item?.id, target?.index) || null;
 }
 
-function isFrameVisuallyArrived(frame, targetRect) {
-  if (!frame || !targetRect) return false;
-  return Math.abs((frame.left || 0) - (targetRect.left || 0)) <= CLOSING_FRAME_VISUAL_EPSILON &&
-    Math.abs((frame.top || 0) - (targetRect.top || 0)) <= CLOSING_FRAME_VISUAL_EPSILON &&
-    Math.abs((frame.width || 0) - (targetRect.width || 0)) <= CLOSING_FRAME_VISUAL_EPSILON &&
-    Math.abs((frame.height || 0) - (targetRect.height || 0)) <= CLOSING_FRAME_VISUAL_EPSILON;
-}
-
-function isGhostVisuallyArrived(ghost, motion) {
-  if (!ghost || !motion) return false;
-  return Math.abs((ghost.x || 0) - motion.toX) <= CLOSING_GHOST_VISUAL_POSITION_EPSILON &&
-    Math.abs((ghost.y || 0) - motion.toY) <= CLOSING_GHOST_VISUAL_POSITION_EPSILON &&
-    Math.abs((ghost.scale?.x || 0) - motion.scale) <= CLOSING_GHOST_VISUAL_SCALE_EPSILON &&
-    Math.abs((ghost.scale?.y || 0) - motion.scale) <= CLOSING_GHOST_VISUAL_SCALE_EPSILON;
-}
-
 function animateClosingGhost(ghost, motion, target, onComplete, options = {}) {
-  let visualArrived = false;
-  const markVisualArrived = () => {
-    if (visualArrived || !isGhostVisuallyArrived(ghost, motion)) return;
-    visualArrived = true;
-    options.onVisualArrive?.();
-  };
-  const motionOptions = { delay: motion.delay, onUpdate: markVisualArrived };
+  const positionSpring = { ...panelSpring, arriveDelta: CLOSING_GHOST_VISUAL_POSITION_EPSILON };
+  const scaleSpring = { ...panelSpring, arriveDelta: CLOSING_GHOST_VISUAL_SCALE_EPSILON };
+  const motionOptions = { delay: motion.delay };
   if (!target.isThumbnailChild) {
-    gsap.to(ghost, {
-      alpha: 0,
-      delay: motion.alphaDelay,
-      duration: CLOSING_EXTRA_GHOST_ALPHA_DURATION,
-      ease: "power2.in",
-    });
+    transition(ghost)
+      .duration(CLOSING_EXTRA_GHOST_ALPHA_DURATION)
+      .ease("power2.in")
+      .delay(motion.alphaDelay)
+      .overlay()
+      .interrupt("retarget")
+      .to({ alpha: 0 })
+      .start();
   }
-  return springGroupTo([
-    { target: ghost, prop: "x", to: motion.toX, config: panelSpring, options: motionOptions },
-    { target: ghost, prop: "y", to: motion.toY, config: panelSpring, options: motionOptions },
-    { target: ghost.scale, prop: "x", to: motion.scale, config: panelSpring, options: motionOptions },
-    { target: ghost.scale, prop: "y", to: motion.scale, config: panelSpring, options: motionOptions },
+  return parallel([
+    transition(ghost)
+      .spring(positionSpring)
+      .handoff()
+      .interrupt("retarget")
+      .to({ ...motionOptions, x: motion.toX, y: motion.toY }),
+    transition(ghost.scale)
+      .spring(scaleSpring)
+      .handoff()
+      .interrupt("retarget")
+      .to({ ...motionOptions, x: motion.scale, y: motion.scale }),
   ], {
     scheduler: options.scheduler,
+    onArrive: () => options.onVisualArrive?.(),
     onComplete: () => {
-      markVisualArrived();
       onComplete?.();
     },
   });
@@ -277,8 +263,8 @@ export class FolderClosingGhostController {
       this.previewSwap.start(state, previewSwapTargets, previewTiming, (finishState) => this.finishTransition(finishState));
     };
     layer.enableClosingFrameMask();
-    const markFrameVisualComplete = (frame) => {
-      if (layer.closingFrameVisualComplete || !isFrameVisuallyArrived(frame, closeFrameToRect)) return;
+    const markFrameVisualComplete = () => {
+      if (layer.closingFrameVisualComplete) return;
       layer.closingFrameVisualComplete = true;
       this.finishTransition(state);
     };
@@ -296,15 +282,15 @@ export class FolderClosingGhostController {
       panelMaterialFinalAlpha: 0,
       panelMaterialFromAlpha: 0,
       panelMaterialToAlpha: 0,
+      progressMilestones: [{
+        callback: () => startClosingPreviewSwapWhenReady({ progress: previewTiming.progress }),
+        progress: previewTiming.progress,
+      }],
       onComplete: () => {
         startClosingPreviewSwapWhenReady({ progress: 1 });
-        markFrameVisualComplete(closeFrameToRect);
         this.completeFrameGhost(state);
       },
-      onUpdate: (frame) => {
-        startClosingPreviewSwapWhenReady(frame);
-        markFrameVisualComplete(frame);
-      },
+      onArrive: markFrameVisualComplete,
       preserveOnComplete: true,
       toFillAlpha: thumb.fillAlpha,
       toFillColor: thumb.fillColor,
@@ -337,8 +323,22 @@ export class FolderClosingGhostController {
       ghost.alpha = motion.sourceAlpha;
       if (ghost.labelText?.visible) {
         if (target.sourceLabelAlpha != null) ghost.labelText.alpha = target.sourceLabelAlpha;
-        gsap.to(ghost.labelText, { alpha: 0, delay: motion.delay, duration: 0.1, ease: "power2.in" });
-        gsap.to(ghost.labelText.scale, { x: 0.94, y: 0.94, delay: motion.delay, duration: 0.1, ease: "power2.in" });
+        transition(ghost.labelText)
+          .duration(0.1)
+          .ease("power2.in")
+          .delay(motion.delay)
+          .overlay()
+          .interrupt("retarget")
+          .to({ alpha: 0 })
+          .start();
+        transition(ghost.labelText.scale)
+          .duration(0.1)
+          .ease("power2.in")
+          .delay(motion.delay)
+          .overlay()
+          .interrupt("retarget")
+          .to({ x: 0.94, y: 0.94 })
+          .start();
       }
       layer.closingGhostLayer.addChild(ghost);
       layer.closingGhostKeys.add(target.item.id);

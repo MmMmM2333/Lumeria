@@ -106,9 +106,38 @@ export async function runDesktopLayerTests() {
     clearIconBoundsRegistry,
     registerRenderedClientTopLevelFolderThumbBounds,
   } = await import("../geometry/iconBoundsRegistry.js");
+  const { motionRuntime } = await import("../animation/motionRuntime.js");
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[DesktopLayer test failed] ${message}`);
   };
+
+  {
+    const originalRaf = globalThis.requestAnimationFrame;
+    globalThis.requestAnimationFrame = () => 1;
+    try {
+      const pageTrack = makePageTrack([]);
+      const layer = makeLayer(DesktopLayer, pageTrack);
+      let refreshCount = 0;
+      let folderRefreshCount = 0;
+      layer.refreshInteractiveBounds = () => {
+        refreshCount += 1;
+      };
+      layer.singleStageFolderLayer.refreshRegisteredIconBounds = () => {
+        folderRefreshCount += 1;
+      };
+
+      layer.markInteractiveBoundsDirty();
+      layer.markInteractiveBoundsDirty();
+      assert(refreshCount === 0, "bounds dirty should wait until the runtime frame-end flush");
+      motionRuntime.flushAfterFrameForTests();
+      assert(refreshCount === 1, "bounds dirty should coalesce repeated marks into one refresh");
+      assert(folderRefreshCount === 1, "bounds dirty flush should refresh folder overlay bounds once");
+      assert(layer.boundsDirty === false && layer.boundsFlushQueued === false, "bounds dirty flush should clear queued flags");
+    } finally {
+      globalThis.requestAnimationFrame = originalRaf;
+      motionRuntime.reset();
+    }
+  }
 
   {
     assert(resolveDesktopVisualAlpha({ desktopVisualAlpha: -1 }) === 0, "desktop alpha should clamp low values");

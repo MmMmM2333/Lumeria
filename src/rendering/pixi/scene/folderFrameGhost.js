@@ -1,8 +1,7 @@
 import { Graphics } from "pixi.js";
-import { gsap } from "gsap";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { folderOpenGhostDuration, folderOpenGhostEase } from "../animation/eases.js";
-import { springGroupTo } from "../animation/springGroup.js";
+import { killMotionOf, parallel, transition } from "../animation/motionTween.js";
 import { panelSpring } from "../animation/springMotion.js";
 import { getFrameRadius, lerpColor } from "./folderFrameGhostMath.js";
 
@@ -63,11 +62,25 @@ function releaseFrameGhostMotion(layer) {
   control?.cancel?.();
 }
 
+function frameSpring(frame, prop, to, springConfig, options = {}) {
+  return transition(frame)
+    .layout()
+    .spring(springConfig)
+    .interrupt("retarget")
+    .to({
+      [prop]: to,
+      milestones: options.milestones,
+      onArrive: options.onArrive,
+      onUpdate: options.onUpdate,
+      snap: options.snap === true,
+    });
+}
+
 export function clearFrameGhost(layer, options = {}) {
   cancelFrameGhostMotion(layer);
   layer.frameGhostState = null;
-  gsap.killTweensOf(layer.frameGhost);
-  gsap.killTweensOf(layer.panelMaterial);
+  killMotionOf(layer.frameGhost);
+  killMotionOf(layer.panelMaterial);
   layer.frameGhost.clear();
   layer.frameGhost.visible = false;
   layer.frameGhost.alpha = 0;
@@ -79,8 +92,8 @@ export function clearFrameGhost(layer, options = {}) {
 export function startFrameGhost(layer, fromRect, toRect, options = {}) {
   if (!fromRect || !toRect) return;
   releaseFrameGhostMotion(layer);
-  gsap.killTweensOf(layer.frameGhost);
-  gsap.killTweensOf(layer.panelMaterial);
+  killMotionOf(layer.frameGhost);
+  killMotionOf(layer.panelMaterial);
   const duration = options.duration ?? folderOpenGhostDuration;
   const ease = options.ease ?? folderOpenGhostEase;
   const fadeStart = Math.max(0, Math.min(0.95, options.fadeStart ?? 0.72));
@@ -116,42 +129,51 @@ export function startFrameGhost(layer, fromRect, toRect, options = {}) {
   frame.strokeWidth = frame.strokeWidth ?? options.fromStrokeWidth ?? 1;
   layer.frameGhostState = frame;
   drawFrameGhost(layer, frame, options);
-  gsap.to(layer.panelMaterial, {
-    alpha: options.panelMaterialToAlpha ?? 1,
-    delay: duration * fadeStart,
-    duration: fadeDuration,
-    ease,
-    overwrite: "auto",
-  });
-  gsap.to(layer.frameGhost, {
-    alpha: options.frameGhostToAlpha ?? 0,
-    delay: duration * fadeStart,
-    duration: fadeDuration,
-    ease,
-    overwrite: "auto",
-  });
+  const panelFadeControl = transition(layer.panelMaterial)
+    .duration(fadeDuration)
+    .ease(ease)
+    .delay(duration * fadeStart)
+    .overlay()
+    .interrupt("retarget")
+    .to({ alpha: options.panelMaterialToAlpha ?? 1 })
+    .start();
+  const frameFadeControl = transition(layer.frameGhost)
+    .duration(fadeDuration)
+    .ease(ease)
+    .delay(duration * fadeStart)
+    .overlay()
+    .interrupt("retarget")
+    .to({ alpha: options.frameGhostToAlpha ?? 0 })
+    .start();
   const updateFrame = () => {
     frame.fillColor = lerpColor(currentFillColor, toFillColor, frame.progress);
     frame.strokeColor = lerpColor(currentStrokeColor, toStrokeColor, frame.progress);
     drawFrameGhost(layer, frame, options);
     options.onUpdate?.(frame);
   };
-  let control = null;
-  const springOptions = { snap: options.snap === true, onUpdate: updateFrame };
-  control = springGroupTo([
-    { target: frame, prop: "fillAlpha", to: options.toFillAlpha ?? 0.26, config: options.springConfig || panelSpring, options: springOptions },
-    { target: frame, prop: "height", to: toRect.height, config: options.springConfig || panelSpring, options: springOptions },
-    { target: frame, prop: "left", to: toRect.left, config: options.springConfig || panelSpring, options: springOptions },
-    { target: frame, prop: "progress", to: 1, config: options.springConfig || panelSpring, options: springOptions },
-    { target: frame, prop: "radius", to: options.toRadius ?? getFrameRadius(toRect, 48), config: options.springConfig || panelSpring, options: springOptions },
-    { target: frame, prop: "strokeAlpha", to: options.toStrokeAlpha ?? 0.24, config: options.springConfig || panelSpring, options: springOptions },
-    { target: frame, prop: "strokeWidth", to: options.toStrokeWidth ?? frame.strokeWidth, config: options.springConfig || panelSpring, options: springOptions },
-    { target: frame, prop: "top", to: toRect.top, config: options.springConfig || panelSpring, options: springOptions },
-    { target: frame, prop: "width", to: toRect.width, config: options.springConfig || panelSpring, options: springOptions },
+  let geometryArrived = false;
+  let geometryArriveRemaining = 4;
+  const arriveGeometryTrack = () => {
+    geometryArriveRemaining -= 1;
+    if (geometryArriveRemaining > 0 || geometryArrived) return;
+    geometryArrived = true;
+    options.onArrive?.(frame);
+  };
+  let frameMotionControl = null;
+  const springConfig = options.springConfig || panelSpring;
+  const frameMotionControlBase = parallel([
+    frameSpring(frame, "fillAlpha", options.toFillAlpha ?? 0.26, springConfig, { onUpdate: updateFrame, snap: options.snap }),
+    frameSpring(frame, "height", toRect.height, springConfig, { onArrive: arriveGeometryTrack, onUpdate: updateFrame, snap: options.snap }),
+    frameSpring(frame, "left", toRect.left, springConfig, { onArrive: arriveGeometryTrack, onUpdate: updateFrame, snap: options.snap }),
+    frameSpring(frame, "progress", 1, springConfig, { milestones: options.progressMilestones, onUpdate: updateFrame, snap: options.snap }),
+    frameSpring(frame, "radius", options.toRadius ?? getFrameRadius(toRect, 48), springConfig, { onUpdate: updateFrame, snap: options.snap }),
+    frameSpring(frame, "strokeAlpha", options.toStrokeAlpha ?? 0.24, springConfig, { onUpdate: updateFrame, snap: options.snap }),
+    frameSpring(frame, "strokeWidth", options.toStrokeWidth ?? frame.strokeWidth, springConfig, { onUpdate: updateFrame, snap: options.snap }),
+    frameSpring(frame, "top", toRect.top, springConfig, { onArrive: arriveGeometryTrack, onUpdate: updateFrame, snap: options.snap }),
+    frameSpring(frame, "width", toRect.width, springConfig, { onArrive: arriveGeometryTrack, onUpdate: updateFrame, snap: options.snap }),
   ], {
-    scheduler: options.scheduler,
     onComplete: () => {
-      if (layer.frameGhostMotionControl === control) layer.frameGhostMotionControl = null;
+      if (layer.frameGhostMotionControl === frameMotionControl) layer.frameGhostMotionControl = null;
       frame.fillColor = toFillColor;
       frame.strokeColor = toStrokeColor;
       if (options.preserveOnComplete) {
@@ -164,7 +186,24 @@ export function startFrameGhost(layer, fromRect, toRect, options = {}) {
       options.onComplete?.();
     },
   });
-  layer.frameGhostMotionControl = control.completed ? null : control;
+  if (!frameMotionControlBase.completed) {
+    frameMotionControl = {
+      cancel() {
+        panelFadeControl.cancel();
+        frameFadeControl.cancel();
+        frameMotionControlBase.cancel();
+      },
+      get completed() {
+        return frameMotionControlBase.completed;
+      },
+      release() {
+        panelFadeControl.cancel();
+        frameFadeControl.cancel();
+        frameMotionControlBase.cancel();
+      },
+    };
+    layer.frameGhostMotionControl = frameMotionControl;
+  }
 }
 
 reloadOnPixiHotUpdate(import.meta.hot);

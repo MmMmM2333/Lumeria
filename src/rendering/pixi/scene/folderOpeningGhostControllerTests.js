@@ -1,4 +1,5 @@
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
+import { motionRuntime } from "../animation/motionRuntime.js";
 
 function makeTimerHost() {
   let nextId = 1;
@@ -252,6 +253,9 @@ export function runFolderOpeningGhostControllerTests() {
     assert(!layer.openingGhostKeys?.has("app-1"), "release should clear the active opening key");
     assert(completed.join(",") === "", "release should not complete the opening controller key");
     assert(timerHost.size === 0, "release should clear the fallback timer when no opening ghosts remain");
+    assert(motionRuntime.getChannel(released, "x")?.base?.size === 1, "release should keep opening ghost x spring available for closing retarget");
+    assert(motionRuntime.getChannel(released, "y")?.base?.size === 1, "release should keep opening ghost y spring available for closing retarget");
+    motionRuntime.reset();
   }
 
   {

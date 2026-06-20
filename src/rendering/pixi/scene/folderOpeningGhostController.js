@@ -1,8 +1,6 @@
-import { gsap } from "gsap";
 import { folderOpenGhostDuration, folderOpenGhostEase } from "../animation/eases.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
-import { springGroupTo } from "../animation/springGroup.js";
-import { panelSpring } from "../animation/springMotion.js";
+import { killMotionOf, parallel, transition } from "../animation/motionTween.js";
 import { getMaxFolderGhostGridDelay, makeOpeningGhostMotion } from "./folderIconGhostMotion.js";
 import { makeFolderGhostIconNodeState } from "./folderGhostIconState.js";
 import { hasUsableFolderGhostTarget } from "./folderOverlayTargets.js";
@@ -12,22 +10,41 @@ const GHOST_REVEAL_FALLBACK_PADDING_MS = 140;
 const GHOST_GEOMETRY_FALLBACK_SECONDS = 0.75;
 
 function animateOpeningGhost(ghost, motion, onComplete, options = {}) {
-  const springOptions = { delay: motion.delay, onComplete: options.onFrame, onUpdate: options.onFrame };
-  gsap.to(ghost, {
-    alpha: 1,
-    duration: folderOpenGhostDuration,
-    ease: folderOpenGhostEase,
-    delay: motion.delay,
-  });
-  return springGroupTo([
-    { target: ghost, prop: "x", to: motion.toX, config: panelSpring, options: springOptions },
-    { target: ghost, prop: "y", to: motion.toY, config: panelSpring, options: springOptions },
-    { target: ghost.scale, prop: "x", to: 1, config: panelSpring, options: springOptions },
-    { target: ghost.scale, prop: "y", to: 1, config: panelSpring, options: springOptions },
+  const springOptions = { delay: motion.delay, onUpdate: options.onFrame };
+  const fadeControl = transition(ghost)
+    .preset("folderOpenGhost", { delay: motion.delay })
+    .overlay()
+    .interrupt("retarget")
+    .to({ alpha: 1 })
+    .start();
+  const geometryControl = parallel([
+    transition(ghost)
+      .preset("handoff")
+      .handoff()
+      .interrupt("retarget")
+      .to({ ...springOptions, x: motion.toX, y: motion.toY }),
+    transition(ghost.scale)
+      .preset("handoff")
+      .handoff()
+      .interrupt("retarget")
+      .to({ ...springOptions, x: 1, y: 1 }),
   ], {
     scheduler: options.scheduler,
     onComplete,
   });
+  return {
+    cancel() {
+      fadeControl.cancel();
+      geometryControl.cancel();
+    },
+    get completed() {
+      return geometryControl.completed;
+    },
+    release() {
+      fadeControl.cancel();
+      geometryControl.release();
+    },
+  };
 }
 
 export class FolderOpeningGhostController {
@@ -80,10 +97,10 @@ export class FolderOpeningGhostController {
     control?.release?.();
     if (control) layer.openingGhostMotionControls?.delete(control);
     layer.openingGhostMotionControlsByItemId?.delete(itemId);
-    gsap.killTweensOf(releasedGhost);
+    killMotionOf(releasedGhost, "alpha", { lane: "base", laneKey: "overlay" });
     if (releasedGhost.labelText) {
-      gsap.killTweensOf(releasedGhost.labelText);
-      gsap.killTweensOf(releasedGhost.labelText.scale);
+      killMotionOf(releasedGhost.labelText);
+      killMotionOf(releasedGhost.labelText.scale);
     }
     layer.openingGhostKeys.delete(itemId);
     layer.openingGhostControllerKeys?.delete(itemId);
@@ -213,8 +230,18 @@ export class FolderOpeningGhostController {
       if (ghost.labelText?.visible) {
         ghost.labelText.alpha = 0;
         ghost.labelText.scale.set(0.94);
-        gsap.to(ghost.labelText, { alpha: 1, delay: motion.labelDelay, duration: 0.13, ease: "power2.out" });
-        gsap.to(ghost.labelText.scale, { x: 1, y: 1, delay: motion.labelDelay, duration: 0.13, ease: "power2.out" });
+        transition(ghost.labelText)
+          .preset("fade", { delay: motion.labelDelay, duration: 0.13 })
+          .overlay()
+          .interrupt("retarget")
+          .to({ alpha: 1 })
+          .start();
+        transition(ghost.labelText.scale)
+          .preset("fade", { delay: motion.labelDelay, duration: 0.13 })
+          .overlay()
+          .interrupt("retarget")
+          .to({ x: 1, y: 1 })
+          .start();
       }
       layer.openingGhostLayer.addChild(ghost);
       refreshGhostBounds();

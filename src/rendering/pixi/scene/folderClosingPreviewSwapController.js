@@ -1,13 +1,23 @@
-import { gsap } from "gsap";
 import { folderPreviewSettleEase } from "../animation/eases.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
-import { springGroupTo } from "../animation/springGroup.js";
+import { killMotionOf, parallel, transition } from "../animation/motionTween.js";
 import { panelSpring } from "../animation/springMotion.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { makeClosingPreviewSwapPlan } from "./folderPreviewSwapMotion.js";
 
 function makeClosingPreviewSwapKey(folderId, pageIndex) {
   return `closing-preview-swap:${folderId || "folder"}:${pageIndex}`;
+}
+
+function previewSwapSpring(target, vars, options = {}) {
+  return transition(target)
+    .handoff()
+    .spring(panelSpring)
+    .interrupt("retarget")
+    .to({
+      ...vars,
+      delay: options.delay,
+    });
 }
 
 export class FolderClosingPreviewSwapController {
@@ -93,9 +103,9 @@ export class FolderClosingPreviewSwapController {
     if (!layer.closingPreviewSwapKeys?.has(key)) return;
     this.cancelMotionControls();
     layer.closingPreviewSwapKeys.delete(key);
-    gsap.killTweensOf(root);
-    gsap.killTweensOf(iconsWrap);
-    gsap.killTweensOf(iconsWrap.scale);
+    killMotionOf(root);
+    killMotionOf(iconsWrap);
+    killMotionOf(iconsWrap.scale);
     root.alpha = 1;
     iconsWrap.position.set(iconsWrap.pivot.x, iconsWrap.pivot.y);
     iconsWrap.scale.set(1);
@@ -133,9 +143,8 @@ export class FolderClosingPreviewSwapController {
     layer.closingPreviewSwapMotionControls = new Set();
 
     const iconMotions = [];
-    const springEntries = [
-      { target: iconsWrap.scale, prop: "x", to: 1, config: panelSpring },
-      { target: iconsWrap.scale, prop: "y", to: 1, config: panelSpring },
+    const springItems = [
+      previewSwapSpring(iconsWrap.scale, { x: 1, y: 1 }),
     ];
     for (const motion of plan.iconMotions) {
       const ghost = this.createIcon(motion.item, motion.size);
@@ -144,25 +153,31 @@ export class FolderClosingPreviewSwapController {
       ghost.alpha = 0.78;
       iconsWrap.addChild(ghost);
       iconMotions.push({ ...motion, ghost });
-      springEntries.push(
-        { target: ghost, prop: "x", to: motion.toX, config: panelSpring, options: { delay: motion.delay } },
-        { target: ghost, prop: "y", to: motion.toY, config: panelSpring, options: { delay: motion.delay } },
-        { target: ghost.scale, prop: "x", to: 1, config: panelSpring, options: { delay: motion.delay } },
-        { target: ghost.scale, prop: "y", to: 1, config: panelSpring, options: { delay: motion.delay } }
+      springItems.push(
+        previewSwapSpring(ghost, { x: motion.toX, y: motion.toY }, { delay: motion.delay }),
+        previewSwapSpring(ghost.scale, { x: 1, y: 1 }, { delay: motion.delay })
       );
     }
 
-    gsap.to(root, { alpha: 1, duration: 0.08, ease: "power1.out" });
+    transition(root)
+      .duration(0.08)
+      .ease("power1.out")
+      .overlay()
+      .interrupt("retarget")
+      .to({ alpha: 1 })
+      .start();
     for (const motion of iconMotions) {
-      gsap.to(motion.ghost, {
-        alpha: 1,
-        delay: motion.delay,
-        duration: timing.iconDuration,
-        ease: folderPreviewSettleEase,
-      });
+      transition(motion.ghost)
+        .duration(timing.iconDuration)
+        .ease(folderPreviewSettleEase)
+        .delay(motion.delay)
+        .overlay()
+        .interrupt("retarget")
+        .to({ alpha: 1 })
+        .start();
     }
 
-    const motionControl = springGroupTo(springEntries, {
+    const motionControl = parallel(springItems, {
       onComplete: () => {
         layer.closingPreviewSwapMotionControls?.delete(motionControl);
         this.complete(state, key, root, iconsWrap, finishTransition);

@@ -80,4 +80,43 @@ export async function runFolderFrameGhostTests() {
     assert(state.left === 50 && state.top === 60, "retargeted frame ghost should settle to the new target");
     assert(state.fillColor === 0x444444 && state.strokeColor === 0x555555, "retargeted frame ghost should update final colors");
   }
+
+  {
+    const { startFrameGhost } = await import("./folderFrameGhost.js");
+    let arriveCount = 0;
+    const makeGraphics = () => ({
+      alpha: 0,
+      visible: false,
+      clear() {
+        return this;
+      },
+      fill() {
+        return this;
+      },
+      roundRect() {
+        return this;
+      },
+      stroke() {
+        return this;
+      },
+    });
+    const layer = {
+      closingGhostLayer: {},
+      closingPreviewSwapLayer: {},
+      frameGhost: makeGraphics(),
+      panelMaterial: { alpha: 0, visible: false },
+      notifyTitleFrame() {},
+    };
+
+    startFrameGhost(layer, { height: 100, left: 10, top: 20, width: 200 }, { height: 120, left: 30, top: 40, width: 220 }, {
+      onArrive: () => {
+        arriveCount += 1;
+      },
+      preserveOnComplete: true,
+      snap: true,
+      springConfig: { snap: true },
+    });
+
+    assert(arriveCount === 1, "frame ghost onArrive should fire once after geometry tracks arrive");
+  }
 }

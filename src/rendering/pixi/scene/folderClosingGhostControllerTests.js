@@ -140,9 +140,10 @@ function makeLayer() {
       if (next) this.onClosingHandoffReady?.(this.closingGhostFolderId || this.currentFolderId || null);
       activityChanges.push(next);
     },
-    startFrameGhost(fromRect, toRect) {
+    startFrameGhost(fromRect, toRect, options = {}) {
       this.frameGhostState = { ...fromRect, progress: 0 };
       this.frameGhostTarget = toRect;
+      this.frameGhostOptions = options;
     },
     get closingGhosts() {
       return closingGhosts;
@@ -312,6 +313,56 @@ export function runFolderClosingGhostControllerTests() {
 
     assert(layer.closingGhosts.length === 1, "stage layout closing targets should not require a client target rect");
     assert(layer.closingGhostKeys.has("app-1"), "stage layout closing targets should be tracked as active ghosts");
+    controller.clear();
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const previewSwapCalls = [];
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      previewSwap: makePreviewSwap(previewSwapCalls),
+      scheduler: timerHost,
+    });
+
+    controller.start(makeState(), [makeTarget()], { height: 72, left: 10, top: 20, width: 72 }, { height: 360, left: 0, top: 0, width: 420 }, {
+      previewSwapTargets: [{ item: { id: "preview-1" } }],
+    });
+
+    assert(layer.frameGhostOptions.progressMilestones?.length === 1, "closing frame should declare a preview-swap progress milestone");
+    const startCount = () => previewSwapCalls.filter((call) => call === "start-preview-swap").length;
+    layer.frameGhostOptions.onUpdate?.({ progress: layer.frameGhostOptions.progressMilestones[0].progress - 0.01 });
+    assert(startCount() === 0, "frame onUpdate below the milestone should not start preview swap");
+    layer.frameGhostOptions.progressMilestones[0].callback();
+    assert(startCount() === 1, "preview swap should start from the frame progress milestone");
+    layer.frameGhostOptions.onUpdate?.({ progress: 1 });
+    layer.frameGhostOptions.onComplete?.();
+    assert(startCount() === 1, "preview swap milestone should be one-shot across update and complete fallbacks");
+    controller.clear();
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const completed = [];
+    const order = [];
+    layer.onClosingHandoffReady = (folderId) => order.push(`ready:${folderId}`);
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+
+    controller.start(makeState(completed), [makeTarget()], { height: 72, left: 10, top: 20, width: 72 }, { height: 360, left: 0, top: 0, width: 420 });
+
+    assert(layer.closingHandoffActive === false, "closing handoff should wait for frame visual arrival");
+    layer.frameGhostOptions.onArrive?.();
+    assert(layer.closingFrameVisualComplete === true, "frame onArrive should mark the closing frame visually complete");
+    assert(layer.closingHandoffActive === true, "frame visual arrival should start handoff before ghost physical completion");
+    assert(order.join(",") === "ready:folder-1", "frame visual arrival should publish the handoff ready signal");
+    assert(completed.join(",") === "fallback-close-key", "frame visual arrival should flush pending controller ghost keys");
+    assert(layer.closingGhostKeys.has("app-1"), "frame visual arrival should keep non-critical ghost visuals until settle cleanup");
+    assert(timerHost.frameCount === 0, "early frame handoff should not schedule visual cleanup before ghosts settle");
     controller.clear();
   }
 

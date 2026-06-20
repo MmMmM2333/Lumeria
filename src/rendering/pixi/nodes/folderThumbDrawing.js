@@ -13,6 +13,13 @@ function getFolderFrameRadius(thumb, padding) {
   return thumb.radius + padding * 0.72;
 }
 
+export function getPaddedFrameScale(iconSize, padding = 0, targetPadding = padding) {
+  const baseSize = Math.max(1, Number(iconSize) || 1);
+  const currentSize = baseSize + Math.max(0, Number(padding) || 0) * 2;
+  const targetSize = baseSize + Math.max(0, Number(targetPadding) || 0) * 2;
+  return Math.max(0.01, currentSize / Math.max(1, targetSize));
+}
+
 export function getFolderPreviewMaskRect(iconSize, thumb) {
   const maskPadding = Math.max(0.5, iconSize * 0.01);
   const left = thumb.start - thumb.childSize / 2 - maskPadding;

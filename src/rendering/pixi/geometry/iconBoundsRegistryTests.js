@@ -9,6 +9,7 @@ import {
   getLiveClientTopLevelIconTargetBounds,
   getRenderedClientFolderPreviewChildBounds,
   getRenderedClientLaunchIconBounds,
+  getRenderedClientLaunchIconTargetAtPoint,
   getRenderedClientTopLevelFolderThumbBounds,
   getRenderedClientTopLevelIconBounds,
   getStableStageLayoutLaunchIconTargetRecord,
@@ -87,6 +88,10 @@ export function runIconBoundsRegistryTests() {
   assert(!getLiveClientLaunchIconTargetBounds({ area: "folder", folderId: "folder-2", id: "folder-app-2", pageIndex: 0 }, { index: 2 }), "target bounds lookup should reject stale index metadata");
   assert(getRenderedClientLaunchIconBounds({ area: "desktop", id: "desktop-app", pageIndex: 0 }), "folder scoped clear should keep desktop launch bounds");
   assert(getRenderedClientTopLevelIconBounds("desktop-app"), "folder scoped clear should keep desktop top-level bounds");
+  assert(getRenderedClientLaunchIconTargetAtPoint(15, 15).id === "desktop-app", "launch icon at-point lookup should find desktop icons");
+  assert(getRenderedClientLaunchIconTargetAtPoint(75, 15).id === "folder-app-2", "launch icon at-point lookup should find folder icons");
+  assert(getRenderedClientLaunchIconTargetAtPoint(75, 15, { area: "desktop" }) === null, "launch icon at-point lookup should filter by area");
+  assert(getRenderedClientLaunchIconTargetAtPoint(75, 15, { excludeId: "folder-app-2" }) === null, "launch icon at-point lookup should respect excluded ids");
 
   clearLaunchIconBounds("folder");
   assert(!getRenderedClientLaunchIconBounds({ area: "folder", folderId: "folder-2", id: "folder-app-2", pageIndex: 0 }), "folder area clear should remove remaining folder bounds");

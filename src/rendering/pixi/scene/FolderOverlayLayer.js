@@ -1,14 +1,9 @@
 import { Container, Graphics, Rectangle, Sprite, Text } from "pixi.js";
-import { gsap } from "gsap";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
-import {
-  folderCloseEase,
-  folderOpenDuration,
-  folderOpenEase,
-  folderPanelCloseDuration,
-} from "../animation/eases.js";
-import { pageTrackSpring, panelSpring, springTo, stopTargetSprings } from "../animation/springMotion.js";
+import { motionRuntime } from "../animation/motionRuntime.js";
+import { killMotionOf, transition } from "../animation/motionTween.js";
+import { pageTrackSpring, panelSpring, stopTargetSprings } from "../animation/springMotion.js";
 import { getFolderGridMetrics, getFolderPanelGeometry, parseRepeatCount, readPx } from "../geometry/gridGeometry.js";
 import {
   clearFrameGhost as clearFrameGhostState,
@@ -53,6 +48,20 @@ import { resolveFolderOverlayTargets } from "./folderOverlayTargetResolver.js";
 import { makeIconRect, makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { IconNode } from "../nodes/IconNode.js";
 import { getCachedIconTexture } from "../assets/iconTextureCache.js";
+import {
+  cancelPageTrackMotion,
+  createPageTrackMotionState,
+  updatePageTrackMotion,
+} from "./pageTrackMotion.js";
+
+const PAGE_DOT_BLEND_DURATION = 0.08;
+const PAGE_DOT_BLEND_EASE = "power2.out";
+const FOLDER_ICON_EXIT_REASON = "folder-icon-exit";
+const FOLDER_OVERLAY_CLEAR_REASON = "folder-overlay-clear";
+const FOLDER_PAGE_TRACK_REPLACE_REASON = "folder-page-track-replace";
+const FOLDER_PANEL_CLOSE_REASON = "folder-panel-close";
+const FOLDER_PANEL_HANDOFF_SNAP_REASON = "folder-panel-handoff-snap";
+const FOLDER_PANEL_OPEN_REASON = "folder-panel-open";
 
 function isPointInRect(x, y, rect) {
   return Boolean(rect) &&
@@ -108,16 +117,37 @@ function registerFolderIconNodeBounds(options) {
 }
 
 function springFolderIconLayoutPosition(node, target, refreshBounds) {
-  springTo(node, "x", target.x, pageTrackSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
-  springTo(node, "y", target.y, pageTrackSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
+  transition(node)
+    .layout()
+    .spring(pageTrackSpring)
+    .interrupt("retarget")
+    .to({
+      onComplete: refreshBounds,
+      onUpdate: refreshBounds,
+      x: target.x,
+      y: target.y,
+    })
+    .start();
+}
+
+function transitionSpringTo(target, vars, config, options = {}) {
+  transition(target)
+    .layout()
+    .spring(config)
+    .interrupt("retarget")
+    .to({
+      ...vars,
+      onComplete: options.onComplete,
+      onUpdate: options.onUpdate,
+      snap: options.snap,
+    })
+    .start();
 }
 
 function springPanelGeometry(panel, target, options = {}) {
   const springOptions = options.onFrame ? { onComplete: options.onFrame, onUpdate: options.onFrame } : {};
-  springTo(panel, "x", target.x, panelSpring, springOptions);
-  springTo(panel, "y", target.y, panelSpring, springOptions);
-  springTo(panel.scale, "x", target.scaleX, panelSpring, springOptions);
-  springTo(panel.scale, "y", target.scaleY, panelSpring, springOptions);
+  transitionSpringTo(panel, { x: target.x, y: target.y }, panelSpring, springOptions);
+  transitionSpringTo(panel.scale, { x: target.scaleX, y: target.scaleY }, panelSpring, springOptions);
 }
 
 export class FolderOverlayLayer extends Container {
@@ -131,6 +161,7 @@ export class FolderOverlayLayer extends Container {
     this.pageMask = new Graphics();
     this.pageMaskRect = null;
     this.pageTrack = new Container();
+    this.pageTrackMotion = createPageTrackMotionState();
     this.pageDotsLayer = new Container();
     this.openingGhostLayer = new Container();
     this.closingGhostLayer = new Container();
@@ -142,11 +173,14 @@ export class FolderOverlayLayer extends Container {
     this.iconNodes = new Map();
     this.iconBoundsRefreshers = new Map();
     this.openingGhostBoundsRefreshers = new Map();
+    this.registeredBoundsDirty = false;
+    this.registeredBoundsFlushQueued = false;
     this.onIconAction = options.onIconAction || (() => { });
     this.onClosingHandoffReady = options.onClosingHandoffReady || (() => { });
     this.onClosingHandoffVisualRelease = options.onClosingHandoffVisualRelease || (() => { });
     this.onInternalActivityChange = options.onInternalActivityChange || (() => { });
     this.onClosingFolderPointerDown = options.onClosingFolderPointerDown || (() => { });
+    this.onPanelPointerDown = options.onPanelPointerDown || (() => { });
     this.onOutsidePointerDown = options.onOutsidePointerDown || (() => { });
     this.onTitleFrameChange = options.onTitleFrameChange || (() => { });
     this.showFolderTitle = options.showFolderTitle === true;
@@ -202,10 +236,11 @@ export class FolderOverlayLayer extends Container {
       this.isClosing = false;
       this.isUserFolderClosing = false;
       this.sizeKey = null;
-      stopTargetSprings(this.pageTrack);
+      cancelPageTrackMotion(this.pageTrackMotion, "cleanup");
+      stopTargetSprings(this.pageTrack, { reason: FOLDER_OVERLAY_CLEAR_REASON });
       this.clearPageDots();
-      stopTargetSprings(this.panel);
-      stopTargetSprings(this.panel.scale);
+      stopTargetSprings(this.panel, { reason: FOLDER_OVERLAY_CLEAR_REASON });
+      stopTargetSprings(this.panel.scale, { reason: FOLDER_OVERLAY_CLEAR_REASON });
       this.openingGhosts.clear();
       this.closingGhosts.clear();
       this.stableFolderCloseTarget = null;
@@ -283,11 +318,18 @@ export class FolderOverlayLayer extends Container {
     this.refreshPageTrackMask();
     const targetTrackX = -state.folderPageIndex * geometry.grid.width;
     if (isNewFolder && !isClosing) {
-      stopTargetSprings(this.pageTrack);
+      cancelPageTrackMotion(this.pageTrackMotion, "replace");
+      stopTargetSprings(this.pageTrack, { reason: FOLDER_PAGE_TRACK_REPLACE_REASON });
       this.pageTrack.x = targetTrackX;
     } else {
-      const refreshBounds = () => this.refreshRegisteredIconBounds();
-      springTo(this.pageTrack, "x", targetTrackX, pageTrackSpring, { onComplete: refreshBounds, onUpdate: refreshBounds });
+      const markBoundsDirty = () => this.markRegisteredBoundsDirty();
+      updatePageTrackMotion(this.pageTrackMotion, this.pageTrack, {
+        onFrame: markBoundsDirty,
+        pageIndex: state.folderPageIndex,
+        pageSpan: geometry.grid.width,
+        scrub: state.folderPageTrackScrub,
+        springConfig: pageTrackSpring,
+      });
     }
     const { closeIconRect, closeThumbRect } = getStableFolderCloseRects({
       folderId,
@@ -373,7 +415,12 @@ export class FolderOverlayLayer extends Container {
       const iconBounds = refreshNodeBounds();
       if (isInteractivePage && !isPrewarm) boundsRefreshers.set(key, refreshNodeBounds);
       if (isNewNode) {
-        gsap.to(node, { alpha: 1, delay: Math.min(0.18, index * 0.012), duration: 0.24, ease: folderOpenEase });
+        transition(node)
+          .preset("folderOpen", { delay: Math.min(0.18, index * 0.012), duration: 0.24 })
+          .overlay()
+          .interrupt("retarget")
+          .to({ alpha: 1 })
+          .start();
       }
       springFolderIconLayoutPosition(node, { x, y }, refreshNodeBounds);
       if (entry.openingGhostInput) {
@@ -419,9 +466,14 @@ export class FolderOverlayLayer extends Container {
     for (const [key, node] of this.iconNodes) {
       if (seen.has(key)) continue;
       this.iconNodes.delete(key);
-      gsap.killTweensOf(node);
-      stopTargetSprings(node);
-      gsap.to(node, { alpha: 0, duration: 0.14, onComplete: () => node.destroy({ children: true }) });
+      killMotionOf(node, null, { reason: FOLDER_ICON_EXIT_REASON });
+      stopTargetSprings(node, { reason: FOLDER_ICON_EXIT_REASON });
+      transition(node)
+        .preset("fade", { duration: 0.14 })
+        .overlay()
+        .interrupt("retarget")
+        .to({ alpha: 0, onComplete: () => node.destroy({ children: true }) })
+        .start();
     }
     this.pageTrack.visible = !state.isFolderClosing &&
       !this.openingGhostKeys?.size &&
@@ -451,6 +503,31 @@ export class FolderOverlayLayer extends Container {
       count += 1;
     }
     return count;
+  }
+
+  markRegisteredBoundsDirty() {
+    this.registeredBoundsDirty = true;
+    if (this.registeredBoundsFlushQueued) return;
+    this.registeredBoundsFlushQueued = true;
+    const flush = () => {
+      this.registeredBoundsFlushQueued = false;
+      this.flushRegisteredIconBounds();
+    };
+    if (typeof globalThis.requestAnimationFrame === "function") {
+      motionRuntime.afterFrame(flush);
+      return;
+    }
+    if (typeof globalThis.queueMicrotask === "function") {
+      globalThis.queueMicrotask(flush);
+      return;
+    }
+    Promise.resolve().then(flush);
+  }
+
+  flushRegisteredIconBounds(options = {}) {
+    if (!options.force && !this.registeredBoundsDirty) return 0;
+    this.registeredBoundsDirty = false;
+    return this.refreshRegisteredIconBounds();
   }
 
   registerOpeningGhostBounds(state, target, ghost) {
@@ -596,26 +673,25 @@ export class FolderOverlayLayer extends Container {
   setPageDotHover(dot, active, hovered, options = {}) {
     const visual = getFolderPageDotVisualState({ active, hovered });
     this.drawPageDot(dot);
-    gsap.killTweensOf(dot, "alpha");
-    gsap.killTweensOf(dot.scale);
     if (options.immediate) {
+      killMotionOf(dot, "alpha");
+      killMotionOf(dot.scale);
       dot.alpha = visual.alpha;
       dot.scale.set(visual.scale);
       return;
     }
-    gsap.to(dot, {
-      alpha: visual.alpha,
-      duration: 0.16,
-      ease: "power2.out",
-      overwrite: "auto",
-    });
-    gsap.to(dot.scale, {
-      x: visual.scale,
-      y: visual.scale,
-      duration: 0.16,
-      ease: "power2.out",
-      overwrite: "auto",
-    });
+    transition(dot)
+      .preset("fade")
+      .overlay()
+      .blend(PAGE_DOT_BLEND_DURATION, PAGE_DOT_BLEND_EASE)
+      .to({ alpha: visual.alpha })
+      .start();
+    transition(dot.scale)
+      .preset("fade")
+      .overlay()
+      .blend(PAGE_DOT_BLEND_DURATION, PAGE_DOT_BLEND_EASE)
+      .to({ x: visual.scale, y: visual.scale })
+      .start();
   }
 
   updatePageDots(state, geometry) {
@@ -679,7 +755,7 @@ export class FolderOverlayLayer extends Container {
 
   animatePanel(state, targetX, targetY, panelRect, sourceRect = null) {
     const isClosing = Boolean(state.isFolderClosing || state.isFolderAppLaunchClosing);
-    const refreshBounds = () => this.refreshRegisteredIconBounds();
+    const markBoundsDirty = () => this.markRegisteredBoundsDirty();
     if (this.currentFolderId !== state.renderedFolder?.id) {
       this.currentFolderId = state.renderedFolder?.id;
       if (sourceRect) {
@@ -699,63 +775,63 @@ export class FolderOverlayLayer extends Container {
 
     if (state.isFolderClosing && sourceRect) {
       this.panelTitleOpening = false;
-      stopTargetSprings(this.panel);
-      stopTargetSprings(this.panel.scale);
-      gsap.killTweensOf(this.panel);
-      gsap.killTweensOf(this.panel.scale);
+      stopTargetSprings(this.panel, { reason: FOLDER_PANEL_HANDOFF_SNAP_REASON });
+      stopTargetSprings(this.panel.scale, { reason: FOLDER_PANEL_HANDOFF_SNAP_REASON });
+      killMotionOf(this.panel, null, { reason: FOLDER_PANEL_HANDOFF_SNAP_REASON });
+      killMotionOf(this.panel.scale, null, { reason: FOLDER_PANEL_HANDOFF_SNAP_REASON });
       this.panel.alpha = 0;
       return;
     }
 
     if (isClosing && sourceRect) {
       this.panelTitleOpening = false;
-      stopTargetSprings(this.panel);
-      stopTargetSprings(this.panel.scale);
-      gsap.killTweensOf(this.panel, "x,y");
-      gsap.killTweensOf(this.panel.scale, "x,y");
+      stopTargetSprings(this.panel, { reason: FOLDER_PANEL_CLOSE_REASON });
+      stopTargetSprings(this.panel.scale, { reason: FOLDER_PANEL_CLOSE_REASON });
+      killMotionOf(this.panel, "x,y", { reason: FOLDER_PANEL_CLOSE_REASON });
+      killMotionOf(this.panel.scale, "x,y", { reason: FOLDER_PANEL_CLOSE_REASON });
       const sourceLocalRect = clientRectToStageVisualRect(sourceRect, state.stageRect);
-      gsap.to(this.panel, {
-        alpha: state.isFolderAppLaunchClosing ? 0 : 0.8,
-        duration: folderPanelCloseDuration,
-        ease: folderCloseEase,
-        overwrite: "auto",
-      });
+      transition(this.panel)
+        .preset("folderPanelClose")
+        .overlay()
+        .interrupt("retarget")
+        .to({ alpha: state.isFolderAppLaunchClosing ? 0 : 0.8 })
+        .start();
       springPanelGeometry(this.panel, {
         scaleX: Math.max(0.08, sourceLocalRect.width / panelRect.width),
         scaleY: Math.max(0.08, sourceLocalRect.height / panelRect.height),
         x: sourceLocalRect.left + sourceLocalRect.width / 2,
         y: sourceLocalRect.top + sourceLocalRect.height / 2,
-      }, { onFrame: refreshBounds });
+      }, { onFrame: markBoundsDirty });
       return;
     }
 
     const updateOpeningPanelFrame = () => {
       this.notifyPanelTitleFrame(panelRect);
-      refreshBounds();
+      markBoundsDirty();
     };
-    gsap.to(this.panel, {
-      alpha: isClosing ? 0 : 1,
-      duration: folderOpenDuration,
-      ease: folderOpenEase,
-      overwrite: "auto",
-    });
+    transition(this.panel)
+      .preset(isClosing ? "folderClose" : "folderOpen")
+      .overlay()
+      .interrupt("retarget")
+      .to({ alpha: isClosing ? 0 : 1 })
+      .start();
     if (isClosing) {
       this.panelTitleOpening = false;
-      stopTargetSprings(this.panel);
-      stopTargetSprings(this.panel.scale);
-      gsap.killTweensOf(this.panel, "x,y");
-      gsap.killTweensOf(this.panel.scale, "x,y");
+      stopTargetSprings(this.panel, { reason: FOLDER_PANEL_CLOSE_REASON });
+      stopTargetSprings(this.panel.scale, { reason: FOLDER_PANEL_CLOSE_REASON });
+      killMotionOf(this.panel, "x,y", { reason: FOLDER_PANEL_CLOSE_REASON });
+      killMotionOf(this.panel.scale, "x,y", { reason: FOLDER_PANEL_CLOSE_REASON });
       springPanelGeometry(this.panel, {
         scaleX: 1.08,
         scaleY: 1.08,
         x: targetX,
         y: targetY,
-      }, { onFrame: refreshBounds });
+      }, { onFrame: markBoundsDirty });
       return;
     }
 
-    gsap.killTweensOf(this.panel, "x,y");
-    gsap.killTweensOf(this.panel.scale, "x,y");
+    killMotionOf(this.panel, "x,y", { reason: FOLDER_PANEL_OPEN_REASON });
+    killMotionOf(this.panel.scale, "x,y", { reason: FOLDER_PANEL_OPEN_REASON });
     springPanelGeometry(this.panel, {
       scaleX: 1,
       scaleY: 1,
@@ -807,7 +883,9 @@ export class FolderOverlayLayer extends Container {
     if (!panel) return;
     if (x < panel.left || x > panel.left + panel.width || y < panel.top || y > panel.top + panel.height) {
       this.onOutsidePointerDown(native);
+      return;
     }
+    this.onPanelPointerDown(native);
   }
 
   handleIconAction(action, originalEvent, item, source, node) {
@@ -818,12 +896,13 @@ export class FolderOverlayLayer extends Container {
   destroy(options) {
     this.openingGhosts.clear();
     this.closingGhosts.clear();
-    killAllMotion(this.panel);
-    killAllMotion(this.pageTrack);
+    killAllMotion(this.panel, { reason: "destroyed" });
+    killAllMotion(this.pageTrack, { reason: "destroyed" });
     this.clearPageDots();
-    stopTargetSprings(this.pageTrack);
-    stopTargetSprings(this.panel);
-    stopTargetSprings(this.panel.scale);
+    cancelPageTrackMotion(this.pageTrackMotion, "destroyed");
+    stopTargetSprings(this.pageTrack, { reason: "destroyed" });
+    stopTargetSprings(this.panel, { reason: "destroyed" });
+    stopTargetSprings(this.panel.scale, { reason: "destroyed" });
     super.destroy(options);
   }
 }

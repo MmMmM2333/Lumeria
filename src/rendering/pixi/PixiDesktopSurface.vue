@@ -15,6 +15,7 @@
           isSingleStageDragPreviewActive && 'pixi-desktop-host-root-stage-drag-active',
         ]"
         :style="rootStageHostStyle"
+        @pointerdown="$emit('surface-pointerdown', $event)"
         @wheel="$emit('wheel', $event)"
       />
       <div
@@ -100,6 +101,7 @@ const props = defineProps({
   isTextlessMode: { type: Boolean, default: false },
   launchTargetStatusById: { type: Object, default: () => ({}) },
   pageGridMeasureStyle: { type: Object, required: true },
+  pageTrackScrub: { type: Object, default: null },
   setPageRef: { type: Function, required: true },
   showMissingLaunchTargetBadge: { type: Boolean, default: true },
   singleStageOptions: { type: Object, default: null },
@@ -110,11 +112,13 @@ const emit = defineEmits([
   "choose-app-icon",
   "context-menu-icon",
   "desktop-focus",
+  "drag-release-complete",
   "internal-activity",
   "open-app",
   "pointerdown-icon",
   "remove-app",
   "reset-app-icon",
+  "surface-pointerdown",
   "wheel",
 ]);
 
@@ -131,6 +135,10 @@ function getResolvedSingleStageOptions() {
 
 function getResolvedSingleStageRuntimePlan(options = getResolvedSingleStageOptions()) {
   return makeSingleStageRuntimePlan(options);
+}
+
+function resolveMaybeRef(value) {
+  return value && typeof value === "object" && "value" in value ? value.value : value;
 }
 
 const initialSingleStageRuntimePlan = getResolvedSingleStageRuntimePlan();
@@ -453,6 +461,7 @@ function createSingleStageFolderState(metrics, options = {}, renderGeometry = ma
       openIconGhosts: source.folderOpenIconGhosts?.value,
       pageIndex: source.folderPageIndex?.value,
       pageIndexCommit: source.commitFolderPageIndex,
+      pageTrackScrub: resolveMaybeRef(source.folderPageTrackScrub) || null,
       pageDotsVisible: shouldShowSingleStageFolderPageDots(),
       pageSize: source.folderPageSize?.value || props.folderPageSize,
       pages: source.folderPages?.value,
@@ -601,6 +610,7 @@ function renderPixi() {
     isSearchMode: props.isSearchMode,
     isTextlessMode: props.isTextlessMode,
     launchTargetStatusById: props.launchTargetStatusById,
+    pageTrackScrub: props.pageTrackScrub,
     setPageRef: props.setPageRef,
     shouldSnapTrack: props.desktopTrackMotionKey.includes("snap"),
     showMissingLaunchTargetBadge: props.showMissingLaunchTargetBadge,
@@ -769,7 +779,9 @@ onMounted(async () => {
     onFolderGeometryChange: handleSingleStageFolderGeometryChange,
     onFolderInternalActivityChange: handleFolderInternalActivity,
     onFolderOutsidePointerDown: () => props.folderOverlayState?.handleFolderOverlayPointerDown?.(),
+    onFolderPanelPointerDown: (event) => props.folderOverlayState?.handleFolderPanelPointerDown?.(event),
     onFolderTitleFrameChange: handleSingleStageFolderTitleFrameChange,
+    onDragReleaseComplete: (release) => emit("drag-release-complete", release),
     onIconAction: handleIconAction,
   });
   app.stage.addChild(layer);
