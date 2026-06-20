@@ -1,5 +1,9 @@
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
+import {
+  clearMotionPreferencesForTests,
+  setReducedMotionForTests,
+} from "../animation/motionPreferences.js";
 
 function makeTimerHost() {
   let nextId = 1;
@@ -278,5 +282,30 @@ export function runFolderOpeningGhostControllerTests() {
     assert(timerHost.size === 1, "release should keep the fallback timer while another opening ghost remains");
     assert(completed.join(",") === "", "release should not complete unrelated opening keys");
     controller.clear();
+  }
+
+  {
+    const completed = [];
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const controller = new FolderOpeningGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+    setReducedMotionForTests(true);
+    try {
+      layer.iconNodes.set("app-2", { alpha: 1, item: { id: "app-2" }, visible: true });
+      controller.start(makeState(completed), [
+        { ...makeTarget("app-1"), controllerGhostKey: "open-a" },
+        { ...makeTarget("app-2"), controllerGhostKey: "open-b" },
+      ]);
+      assert(completed.join(",") === "open-a,open-b", "synchronous reduced-motion completion should notify every controller key");
+      assert(layer.openingGhostKeys.size === 0, "synchronous reduced-motion completion should clear the active key");
+      assert(layer.ghosts.length === 0, "synchronous reduced-motion completion should not leave opening ghost visuals");
+      assert(timerHost.size === 0, "synchronous reduced-motion completion should clear the fallback timer");
+    } finally {
+      clearMotionPreferencesForTests();
+      motionRuntime.reset();
+    }
   }
 }

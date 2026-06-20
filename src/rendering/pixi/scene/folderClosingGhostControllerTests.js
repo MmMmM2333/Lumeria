@@ -1,4 +1,9 @@
 import { FolderClosingGhostController } from "./folderClosingGhostController.js";
+import { motionRuntime } from "../animation/motionRuntime.js";
+import {
+  clearMotionPreferencesForTests,
+  setReducedMotionForTests,
+} from "../animation/motionPreferences.js";
 
 function makeTimerHost() {
   let nextId = 1;
@@ -549,5 +554,31 @@ export function runFolderClosingGhostControllerTests() {
     controller.clear();
 
     assert(layer.panel.visible === true, "clear should restore the panel for the next folder render");
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+    layer.iconNodes.set("app-2", { alpha: 0.4, item: { id: "app-2" }, visible: false });
+    setReducedMotionForTests(true);
+    try {
+      controller.start(makeState(), [
+        { ...makeTarget("app-1"), controllerGhostKey: "close-a" },
+        { ...makeTarget("app-2"), controllerGhostKey: "close-b" },
+      ], { height: 72, left: 10, top: 20, width: 72 }, { height: 360, left: 0, top: 0, width: 420 });
+
+      assert(layer.closingGhostKeys.size === 0, "synchronous reduced-motion completion should clear every active closing key");
+      assert(layer.closingGhostMotionControls.size === 0, "synchronous reduced-motion completion should not register stale motion controls");
+      assert(layer.completedClosingControllerGhostKeys.join(",") === "close-a,close-b", "synchronous reduced-motion completion should collect every close key");
+      assert(layer.closingGhosts.every((ghost) => ghost.destroyed), "synchronous reduced-motion completion should destroy completed closing ghost visuals");
+    } finally {
+      clearMotionPreferencesForTests();
+      motionRuntime.reset();
+      controller.clear();
+    }
   }
 }

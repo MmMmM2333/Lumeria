@@ -208,9 +208,14 @@ export class FolderOpeningGhostController {
 
     layer.pageTrack.visible = false;
     this.scheduleRevealFallback(usableTargets);
+
     for (const target of usableTargets) {
       const controllerGhostKey = target.controllerGhostKey || state.getFolderOpenIconGhostKey?.(target.item.id, target.index);
       if (controllerGhostKey) layer.openingGhostControllerKeys.set(target.item.id, controllerGhostKey);
+      layer.openingGhostKeys.add(target.item.id);
+    }
+
+    for (const target of usableTargets) {
       const ghost = this.ghostFactory();
       ghost.eventMode = "none";
       ghost.stageRect = state.stageRect;
@@ -245,18 +250,24 @@ export class FolderOpeningGhostController {
       }
       layer.openingGhostLayer.addChild(ghost);
       refreshGhostBounds();
-      layer.openingGhostKeys.add(target.item.id);
       for (const node of layer.iconNodes.values()) {
         if (node.item?.id === target.item.id) node.visible = false;
       }
 
-      const motionControl = animateOpeningGhost(ghost, motion, () => {
-        layer.openingGhostMotionControls?.delete(motionControl);
-        layer.openingGhostMotionControlsByItemId?.delete(target.item.id);
+      let didComplete = false;
+      let motionControl = null;
+      motionControl = animateOpeningGhost(ghost, motion, () => {
+        didComplete = true;
+        if (motionControl) {
+          layer.openingGhostMotionControls?.delete(motionControl);
+          layer.openingGhostMotionControlsByItemId?.delete(target.item.id);
+        }
         this.complete(state, target, ghost);
       }, { scheduler: this.scheduler, onFrame: refreshGhostBounds });
-      layer.openingGhostMotionControls.add(motionControl);
-      layer.openingGhostMotionControlsByItemId.set(target.item.id, motionControl);
+      if (!didComplete && layer.openingGhostKeys?.has(target.item.id)) {
+        layer.openingGhostMotionControls.add(motionControl);
+        layer.openingGhostMotionControlsByItemId.set(target.item.id, motionControl);
+      }
     }
   }
 }

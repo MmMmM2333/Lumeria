@@ -303,6 +303,14 @@ export class FolderClosingGhostController {
 
     layer.pageTrack.visible = false;
     this.scheduleRevealFallback(usableTargets);
+
+    for (const target of usableTargets) {
+      layer.closingGhostKeys.add(target.item.id);
+      if (target.isThumbnailChild) layer.closingVisualGhostKeys.add(target.item.id);
+      const controllerGhostKey = getClosingControllerGhostKey(state, target);
+      if (controllerGhostKey) layer.pendingClosingControllerGhostKeys.add(controllerGhostKey);
+    }
+
     for (const target of usableTargets) {
       const released = releasedOpeningGhosts.get(target.item?.id);
       const ghost = released?.ghost || this.ghostFactory();
@@ -341,22 +349,23 @@ export class FolderClosingGhostController {
           .start();
       }
       layer.closingGhostLayer.addChild(ghost);
-      layer.closingGhostKeys.add(target.item.id);
-      if (target.isThumbnailChild) layer.closingVisualGhostKeys.add(target.item.id);
-      const controllerGhostKey = getClosingControllerGhostKey(state, target);
-      if (controllerGhostKey) layer.pendingClosingControllerGhostKeys.add(controllerGhostKey);
       for (const node of layer.iconNodes.values()) {
         if (node.item?.id === target.item.id) node.visible = false;
       }
 
-      const motionControl = animateClosingGhost(ghost, motion, target, () => {
-        layer.closingGhostMotionControls?.delete(motionControl);
+      let didComplete = false;
+      let motionControl = null;
+      motionControl = animateClosingGhost(ghost, motion, target, () => {
+        didComplete = true;
+        if (motionControl) layer.closingGhostMotionControls?.delete(motionControl);
         this.completeGhost(state, target, ghost);
       }, {
         scheduler: this.scheduler,
         onVisualArrive: () => this.markClosingGhostVisuallyArrived(state, target),
       });
-      layer.closingGhostMotionControls.add(motionControl);
+      if (!didComplete && layer.closingGhostKeys?.has(target.item.id)) {
+        layer.closingGhostMotionControls.add(motionControl);
+      }
     }
   }
 
