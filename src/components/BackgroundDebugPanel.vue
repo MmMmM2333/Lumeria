@@ -284,6 +284,99 @@
         </dl>
 
         <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">Filters</div>
+          <div class="background-debug-mode-group background-debug-motion-filter-group" role="group" aria-label="Motion filter presets">
+            <button
+              v-for="preset in MOTION_FILTER_PRESETS"
+              :key="preset.value"
+              type="button"
+              :class="['background-debug-mode-button', motionFilterPreset === preset.value && 'background-debug-mode-button-active']"
+              @click="setMotionFilterPreset(preset.value)"
+            >
+              {{ preset.label }}
+            </button>
+          </div>
+          <label class="background-debug-control background-debug-motion-filter-control">
+            <span>
+              Filter
+              <output>{{ motionFilterSummary.text }}</output>
+            </span>
+            <input
+              type="search"
+              placeholder="target / lane / prop / event"
+              :value="motionFilterQuery"
+              @input="updateMotionFilterQuery"
+            >
+          </label>
+        </div>
+
+        <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">Properties</div>
+          <div class="background-debug-motion-property-table" role="table" aria-label="Pixi motion properties">
+            <div class="background-debug-motion-property-row background-debug-motion-row-head" role="row">
+              <span role="columnheader">target.prop</span>
+              <span role="columnheader">value</span>
+              <span role="columnheader">to</span>
+              <span role="columnheader">delta</span>
+              <span role="columnheader">velocity</span>
+              <span role="columnheader">driver</span>
+              <span role="columnheader">lane</span>
+              <span role="columnheader">laneKey</span>
+              <span role="columnheader">sourceLabel</span>
+            </div>
+            <div
+              v-for="(row, index) in motionPropertyRows"
+              :key="`${row.targetProp}-${row.laneKey}-${index}`"
+              class="background-debug-motion-property-row"
+              role="row"
+            >
+              <span role="cell" :title="row.targetProp">{{ row.targetProp }}</span>
+              <span role="cell" :title="row.value">{{ row.value }}</span>
+              <span role="cell" :title="row.to">{{ row.to }}</span>
+              <span role="cell" :title="row.delta">{{ row.delta }}</span>
+              <span role="cell" :title="row.velocity">{{ row.velocity }}</span>
+              <span role="cell" :title="row.driver">{{ row.driver }}</span>
+              <span role="cell" :title="row.lane">{{ row.lane }}</span>
+              <span role="cell" :title="row.laneKey">{{ row.laneKey }}</span>
+              <span role="cell" :title="row.sourceLabel">{{ row.sourceLabel }}</span>
+            </div>
+            <div v-if="motionPropertyRows.length === 0" class="background-debug-motion-empty">
+              no matching properties
+            </div>
+          </div>
+        </div>
+
+        <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">Timeline</div>
+          <div class="background-debug-motion-timeline">
+            <section
+              v-for="group in motionTimelineGroups"
+              :key="group.key"
+              class="background-debug-motion-timeline-group"
+            >
+              <header>
+                <strong :title="group.label">{{ group.label }}</strong>
+                <span>{{ group.events.length }} events</span>
+              </header>
+              <div
+                v-for="event in group.events"
+                :key="event.key"
+                class="background-debug-motion-timeline-event"
+                :title="event.detail"
+              >
+                <span>{{ event.time }}</span>
+                <span>{{ event.type }}</span>
+                <span>{{ event.prop }}</span>
+                <span>{{ event.detail }}</span>
+              </div>
+            </section>
+            <div v-if="motionTimelineGroups.length === 0" class="background-debug-motion-empty">
+              no matching timeline events
+            </div>
+          </div>
+        </div>
+
+        <div class="background-debug-subsection">
           <div class="background-debug-subtitle">Active Animations</div>
           <div class="background-debug-motion-table" role="table" aria-label="Active Pixi motion animations">
             <div class="background-debug-motion-row background-debug-motion-row-head" role="row">
@@ -588,11 +681,16 @@ import {
 import {
   buildMotionAnimationRows,
   buildMotionCancelReasonRows,
+  buildMotionFilterSummary,
   buildMotionOverviewRows,
+  buildMotionPropertyRows,
   buildMotionRuntimeDebugConfig,
+  buildMotionTimelineGroups,
   buildMotionWarningRows,
+  MOTION_FILTER_PRESETS,
   MOTION_RECORD_WINDOW_CUSTOM,
   MOTION_RECORD_WINDOW_PRESETS,
+  normalizeMotionFilterPreset,
   normalizeMotionCustomSeconds,
   normalizeMotionTimeScale,
   resolveMotionRecordWindowMs,
@@ -644,6 +742,8 @@ const motionRecordEnabled = ref(false);
 const motionWindowPreset = ref("30000");
 const motionCustomSeconds = ref(30);
 const motionTimeScale = ref(1);
+const motionFilterPreset = ref("all");
+const motionFilterQuery = ref("");
 const motionReport = ref(motionRuntime.debugReport({ includeChannels: true, includeTargets: true }));
 const liveDesktopRates = ref({
   framesPerSecond: 0,
@@ -869,6 +969,13 @@ const motionAnimationRows = computed(() => buildMotionAnimationRows(motionReport
 const motionCancelReasonRows = computed(() => buildMotionCancelReasonRows(motionReport.value));
 const motionWarningRows = computed(() => buildMotionWarningRows(motionReport.value));
 const motionWindowSeconds = computed(() => resolveMotionRecordWindowMs(motionWindowPreset.value, motionCustomSeconds.value) / 1000);
+const motionFilters = computed(() => ({
+  preset: motionFilterPreset.value,
+  query: motionFilterQuery.value,
+}));
+const motionFilterSummary = computed(() => buildMotionFilterSummary(motionReport.value, motionFilters.value));
+const motionPropertyRows = computed(() => buildMotionPropertyRows(motionReport.value, motionFilters.value));
+const motionTimelineGroups = computed(() => buildMotionTimelineGroups(motionReport.value, motionFilters.value));
 
 function formatValue(value, digits) {
   return Number(value).toFixed(digits);
@@ -884,7 +991,7 @@ function refreshMotionReport() {
   if (!canDebugMotion.value) return;
   motionReport.value = motionRuntime.debugReport({
     includeChannels: true,
-    includeHistory: motionRecordEnabled.value,
+    includeHistory: true,
     includeTargets: true,
   });
 }
@@ -920,6 +1027,14 @@ function setMotionWindowPreset(preset) {
     ? preset
     : "30000";
   applyMotionRuntimeDebugConfig();
+}
+
+function setMotionFilterPreset(preset) {
+  motionFilterPreset.value = normalizeMotionFilterPreset(preset);
+}
+
+function updateMotionFilterQuery(event) {
+  motionFilterQuery.value = event.target.value;
 }
 
 function updateMotionCustomSeconds(event) {
@@ -1533,6 +1648,22 @@ onBeforeUnmount(() => {
   opacity: 0.46;
 }
 
+.background-debug-motion-filter-group {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.background-debug-motion-filter-control input[type="search"] {
+  width: 100%;
+  height: 28px;
+  min-width: 0;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+}
+
 .background-debug-status-grid,
 .background-debug-diagnostics {
   display: grid;
@@ -1627,6 +1758,12 @@ onBeforeUnmount(() => {
   padding-bottom: 2px;
 }
 
+.background-debug-motion-property-table {
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
 .background-debug-motion-row {
   display: grid;
   grid-template-columns: minmax(78px, 1fr) 34px 76px 50px 64px 48px;
@@ -1641,6 +1778,20 @@ onBeforeUnmount(() => {
   line-height: 1.25;
 }
 
+.background-debug-motion-property-row {
+  display: grid;
+  grid-template-columns: 108px 48px 48px 48px 52px 48px 46px 78px 96px;
+  min-width: 606px;
+  gap: 6px;
+  align-items: center;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.78);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
 .background-debug-motion-row-head {
   color: rgba(255, 255, 255, 0.48);
   font-family: inherit;
@@ -1648,6 +1799,7 @@ onBeforeUnmount(() => {
   text-transform: uppercase;
 }
 
+.background-debug-motion-property-row span,
 .background-debug-motion-row span {
   min-width: 0;
   overflow: hidden;
@@ -1664,6 +1816,68 @@ onBeforeUnmount(() => {
 .background-debug-motion-list {
   display: grid;
   gap: 6px;
+}
+
+.background-debug-motion-timeline {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.background-debug-motion-timeline-group {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.background-debug-motion-timeline-group header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.background-debug-motion-timeline-group strong,
+.background-debug-motion-timeline-group header span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.background-debug-motion-timeline-group strong {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.background-debug-motion-timeline-group header span {
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.background-debug-motion-timeline-event {
+  display: grid;
+  grid-template-columns: 48px 52px 34px minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.7);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.background-debug-motion-timeline-event span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .background-debug-window-card {
