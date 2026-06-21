@@ -22,6 +22,14 @@ function runUntil(runtime, condition, maxSteps = 600) {
   return false;
 }
 
+function containsReference(value, reference, seen = new Set()) {
+  if (value === reference) return true;
+  if (!value || typeof value !== "object") return false;
+  if (seen.has(value)) return false;
+  seen.add(value);
+  return Object.values(value).some((entry) => containsReference(entry, reference, seen));
+}
+
 export function runMotionRuntimeTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Motion runtime test failed] ${message}`);
@@ -451,5 +459,201 @@ export function runMotionRuntimeTests() {
     assert(snapshot.counters.canceledByReason["route-change"] === 1, "runtime.stop should count custom cancel reasons");
     assert(snapshot.counters.canceledByReason.cleanup === 1, "runtime.cancelTarget should pass custom cancel reasons to stopped channels");
     assert(snapshot.animations.length === 0, "custom-reason cancellations should remove all active animations");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 10 });
+
+    assert(typeof runtime.configureDebug === "function", "runtime should expose configureDebug");
+    assert(typeof runtime.clearDebugHistory === "function", "runtime should expose clearDebugHistory");
+    assert(typeof runtime.describeTarget === "function", "runtime should expose describeTarget");
+    assert(typeof runtime.debugReport === "function", "runtime should expose debugReport");
+
+    const defaults = runtime.configureDebug();
+    assert(defaults.enabled === false, "debug config should default to disabled high-cost history");
+    assert(defaults.recordHistory === false, "debug config should default to no history recording");
+    assert(defaults.recordWindowMs === 30000, "debug config should default to a 30s recording window");
+    assert(defaults.sampleHz === 10, "debug config should default to 10Hz regular recording");
+    assert(defaults.timeScale === 1, "debug config should default to normal runtime speed");
+
+    const configured = runtime.configureDebug({
+      enabled: true,
+      maxEvents: 2,
+      maxSamples: 3,
+      recordHistory: true,
+      recordWindowMs: 60000,
+      sampleHz: 20,
+      timeScale: 0.5,
+    });
+    assert(configured.enabled === true, "configureDebug should apply enabled patches");
+    assert(configured.recordHistory === true, "configureDebug should apply history recording patches");
+    assert(configured.recordWindowMs === 60000, "configureDebug should apply recording window patches");
+    assert(configured.sampleHz === 20, "configureDebug should apply sample rate patches");
+    assert(configured.timeScale === 0.5, "configureDebug should apply timeScale patches");
+
+    const patched = runtime.configureDebug({ maxEvents: 4 });
+    assert(patched.maxEvents === 4, "configureDebug should patch individual fields");
+    assert(patched.recordWindowMs === 60000, "configureDebug should preserve omitted fields on patch");
+    assert(patched.timeScale === 0.5, "configureDebug should preserve timeScale on patch");
+
+    const lowerClamp = runtime.configureDebug({ recordWindowMs: 0 });
+    assert(lowerClamp.recordWindowMs === 1000, "custom recording window should clamp to at least 1s");
+    const upperClamp = runtime.configureDebug({ recordWindowMs: 600000 });
+    assert(upperClamp.recordWindowMs === 300000, "custom recording window should clamp to at most 300s");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 10 });
+    const target = { alpha: 0, scale: 1, x: 0, y: 0 };
+    runtime.configureDebug({
+      enabled: true,
+      maxEvents: 20,
+      maxSamples: 20,
+      recordHistory: true,
+      recordWindowMs: 30000,
+      sampleHz: 60,
+      timeScale: 1,
+    });
+    runtime.describeTarget(target, {
+      id: "app.calendar",
+      kind: "IconNode",
+      label: "Calendar",
+      layer: "desktop",
+      sourceLabel: "motion-runtime-tests",
+    });
+
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 0.2, ease: "linear" }),
+      from: 0,
+      laneKey: "layout",
+    });
+    runtime.step(0.1);
+    runtime.step(0.1);
+
+    const cancelControl = runtime.animate(target, "alpha", 1, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      laneKey: "fade",
+    });
+    runtime.step(0.1);
+    cancelControl.cancel("manual-test");
+
+    const releaseControl = runtime.animate(target, "scale", 1.1, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 1,
+      laneKey: "hover",
+    });
+    releaseControl.release();
+
+    runtime.animate(target, "y", 8, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      snap: true,
+    });
+
+    const snapshot = runtime.debugSnapshot({ includeChannels: true, includeTargets: true });
+    const report = runtime.debugReport({ includeChannels: true, includeHistory: true, includeTargets: true });
+    const activeTargetId = snapshot.animations.find((animation) => animation.prop === "scale")?.targetId;
+    const snapshotTarget = snapshot.targets.find((entry) => entry.targetId === activeTargetId);
+    const reportTarget = report.targets.find((entry) => entry.targetId === activeTargetId);
+    const eventTypes = report.history.events.map((event) => event.type);
+
+    assert(snapshotTarget?.label === "Calendar", "debug snapshot should include described target labels");
+    assert(snapshotTarget?.sourceLabel === "motion-runtime-tests", "debug snapshot should include target source labels");
+    assert(reportTarget?.kind === "IconNode", "debug report should include described target metadata");
+    assert(eventTypes.includes("start"), "debug history should record animation start events");
+    assert(eventTypes.includes("complete"), "debug history should record animation complete events");
+    assert(eventTypes.includes("cancel"), "debug history should record animation cancel events");
+    assert(eventTypes.includes("release"), "debug history should record animation release events");
+    assert(eventTypes.includes("snap"), "debug history should record snap events");
+    assert(report.history.samples.length > 0, "debug history should record timeline samples");
+    assert(!containsReference(report, target), "debug report should not retain raw target object references");
+    assert(!containsReference(snapshot, target), "debug snapshot should not retain raw target object references");
+    assert(typeof JSON.stringify(report) === "string", "debug report should be JSON serializable");
+
+    runtime.clearDebugHistory();
+    const emptyReport = runtime.debugReport({ includeHistory: true });
+    assert(emptyReport.history.events.length === 0, "clearDebugHistory should clear recorded events");
+    assert(emptyReport.history.samples.length === 0, "clearDebugHistory should clear recorded samples");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 10 });
+    const target = { x: 0 };
+    runtime.configureDebug({
+      enabled: true,
+      maxEvents: 3,
+      maxSamples: 2,
+      recordHistory: true,
+      recordWindowMs: 300000,
+      sampleHz: 60,
+    });
+
+    for (let index = 0; index < 6; index += 1) {
+      runtime.animate(target, "x", index + 1, {
+        driver: tween({ duration: 0.05, ease: "linear" }),
+        from: target.x,
+        interrupt: "replace",
+      });
+      runtime.step(0.05);
+    }
+
+    const trimmedByCount = runtime.debugReport({ includeHistory: true });
+    assert(trimmedByCount.history.events.length <= 3, "debug history should trim events by maxEvents");
+    assert(trimmedByCount.history.samples.length <= 2, "debug history should trim samples by maxSamples");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 10 });
+    const target = { x: 0, y: 0 };
+    runtime.configureDebug({
+      enabled: true,
+      maxEvents: 100,
+      maxSamples: 100,
+      recordHistory: true,
+      recordWindowMs: 1000,
+      sampleHz: 60,
+    });
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+    });
+    runtime.step(0.25);
+    runtime.step(1.5);
+    runtime.animate(target, "y", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      snap: true,
+    });
+
+    const trimmedByWindow = runtime.debugReport({ includeHistory: true });
+    const oldestAllowed = trimmedByWindow.runtime.timeMs - trimmedByWindow.config.recordWindowMs;
+    assert(trimmedByWindow.history.events.length > 0, "window trimming test should keep recent events");
+    assert(trimmedByWindow.history.samples.length > 0, "window trimming test should keep recent samples");
+    assert(
+      trimmedByWindow.history.events.every((event) => event.timeMs >= oldestAllowed),
+      "debug history should trim events outside recordWindowMs",
+    );
+    assert(
+      trimmedByWindow.history.samples.every((sample) => sample.timeMs >= oldestAllowed),
+      "debug history should trim samples outside recordWindowMs",
+    );
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 10 });
+    const target = { x: 0 };
+    runtime.configureDebug({ enabled: true, timeScale: 0.5 });
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+    });
+
+    runtime.step(1);
+    assert(nearlyEqual(target.x, 5), `timeScale should scale runtime delta, got ${target.x}`);
+    const restored = runtime.configureDebug({ timeScale: 1 });
+    assert(restored.timeScale === 1, "configureDebug should restore timeScale to 1");
+    runtime.step(0.5);
+    assert(nearlyEqual(target.x, 10), `restored timeScale should resume normal runtime delta, got ${target.x}`);
   }
 }
