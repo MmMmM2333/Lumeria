@@ -308,6 +308,46 @@ export function runMotionRuntimeTests() {
 
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { scale: 1, x: 0 };
+    playTrack(track(target, "scale", 1, 0.9, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      laneKey: "press-scale",
+    }), { runtime });
+    playTrack(factorTrack(target, "scale", 1, 1.1, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      laneKey: "hover-scale",
+    }), { runtime });
+    playTrack(additiveTrack(target, "x", 0, 6, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      laneKey: "jiggle-x",
+    }), { runtime });
+
+    runtime.step(0.5);
+    const report = runtime.debugReport({ includeChannels: true });
+    const snapshot = runtime.debugSnapshot({ includeChannels: true });
+    const scaleChannel = report.channels.find((channel) => channel.prop === "scale");
+    const jiggleChannel = report.channels.find((channel) => channel.prop === "x");
+
+    assert(scaleChannel, "channel breakdown should include the press/hover scale channel");
+    assert(jiggleChannel, "channel breakdown should include the jiggle additive channel");
+    assert(snapshot.channels.find((channel) => channel.prop === "scale")?.composed, "debug snapshot should expose channel breakdown too");
+    assert(scaleChannel.base.lanes[0].laneKey === "press-scale", "base breakdown should name the press lane");
+    assert(scaleChannel.factor.lanes[0].laneKey === "hover-scale", "factor breakdown should name the hover lane");
+    assert(jiggleChannel.additive.lanes[0].laneKey === "jiggle-x", "additive breakdown should name the jiggle lane");
+    assert(nearlyEqual(scaleChannel.base.value, 0.95), `base breakdown should expose press output, got ${scaleChannel.base.value}`);
+    assert(nearlyEqual(scaleChannel.additive.value, 0), "scale channel should expose neutral additive contribution");
+    assert(nearlyEqual(scaleChannel.factor.value, 1.05), `factor breakdown should expose hover multiplier, got ${scaleChannel.factor.value}`);
+    assert(nearlyEqual(scaleChannel.composed.value, target.scale), "composed scale value should match the target property");
+    assert(nearlyEqual(scaleChannel.composed.value, (scaleChannel.base.value + scaleChannel.additive.value) * scaleChannel.factor.value), "composed scale should equal (base + additive) * factor");
+    assert(nearlyEqual(jiggleChannel.base.value, 0), "additive-only jiggle channel should expose its neutral base");
+    assert(nearlyEqual(jiggleChannel.additive.value, 3), `jiggle additive contribution should be visible, got ${jiggleChannel.additive.value}`);
+    assert(nearlyEqual(jiggleChannel.factor.value, 1), "jiggle factor contribution should stay neutral");
+    assert(nearlyEqual(jiggleChannel.composed.value, target.x), "composed jiggle value should match the target property");
+    assert(typeof JSON.stringify(report.channels) === "string", "channel breakdown should remain JSON serializable");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { alpha: 0 };
     runtime.animate(target, "alpha", 1, {
       driver: tween({ duration: 1, ease: "linear", repeat: 1, yoyo: true }),

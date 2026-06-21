@@ -319,6 +319,56 @@ export function createMotionRuntime(options = {}) {
     trimDebugHistory();
   }
 
+  function makeDebugLaneRecord(animation) {
+    const record = {
+      driver: animation.driver?.type || "spring",
+      from: animation.from,
+      interrupt: animation.interrupt,
+      lane: animation.lane,
+      laneKey: animation.laneKey,
+      output: getAnimationOutputValue(animation),
+      released: animation.released,
+      to: animation.to,
+      value: animation.value,
+      velocity: animation.velocity,
+    };
+    const targetId = rememberTarget(animation.target);
+    const metadata = targetId == null ? null : debugTargetMetaById.get(targetId);
+    if (metadata?.sourceLabel != null) record.sourceLabel = metadata.sourceLabel;
+    return record;
+  }
+
+  function makeChannelBreakdown(channel) {
+    const baseLanes = Array.from(channel.base.values()).map((animation) => makeDebugLaneRecord(animation));
+    const additiveLanes = Array.from(channel.additive.values()).map((animation) => makeDebugLaneRecord(animation));
+    const factorLanes = Array.from(channel.factor.values()).map((animation) => makeDebugLaneRecord(animation));
+    const additiveValue = additiveLanes.reduce((total, lane) => total + lane.output, 0);
+    const factorValue = factorLanes.reduce((total, lane) => total * lane.output, 1);
+    const unclampedValue = (channel.baseValue + additiveValue) * factorValue;
+    const breakdown = {
+      additive: {
+        lanes: additiveLanes,
+        value: additiveValue,
+      },
+      base: {
+        activeKey: channel.activeBaseKey,
+        lanes: baseLanes,
+        value: channel.baseValue,
+      },
+      composed: {
+        formula: "(base + additive) * factor",
+        unclampedValue,
+        value: channel.value,
+      },
+      factor: {
+        lanes: factorLanes,
+        value: factorValue,
+      },
+    };
+    if (channel.clamp) breakdown.composed.clamp = { ...channel.clamp };
+    return breakdown;
+  }
+
   function makeDebugChannelRecords() {
     const channels = new Map();
     for (const animation of activeAnimations) {
@@ -326,8 +376,10 @@ export function createMotionRuntime(options = {}) {
       const key = `${targetId ?? "unknown"}:${animation.prop}`;
       let record = channels.get(key);
       if (!record) {
+        const breakdown = makeChannelBreakdown(animation.channel);
         record = {
           activeBaseKey: animation.channel.activeBaseKey,
+          ...breakdown,
           baseValue: animation.channel.baseValue,
           lanes: { additive: [], base: [], factor: [] },
           prop: animation.prop,
