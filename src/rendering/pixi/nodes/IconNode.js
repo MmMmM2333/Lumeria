@@ -312,18 +312,19 @@ export class IconNode extends Container {
       pageIndex: source.pageIndex ?? null,
       sourceType: source.type ?? null,
     };
-    const describe = (target, targetPart, suffix) => {
+    const describe = (target, targetPart, suffix, overlayTarget = target) => {
       if (!target) return;
       motionRuntime.describeTarget(target, {
         ...base,
+        overlayTarget,
         sourceLabel: `${prefix}.${suffix}`,
         targetPart,
       });
     };
     describe(this, "node", "node");
-    describe(this.scale, "node.scale", "nodeScale");
+    describe(this.scale, "node.scale", "nodeScale", this);
     describe(this.visualWrap, "visualWrap", "visualWrap");
-    describe(this.visualWrap?.scale, "visualWrap.scale", "visualScale");
+    describe(this.visualWrap?.scale, "visualWrap.scale", "visualScale", this.visualWrap);
     describe(this.jiggleWrap, "jiggleWrap", "jiggleWrap");
     describe(this.folderThumb, "folderThumb", "folderThumb");
     describe(this.folderChildrenWrap, "folderChildrenWrap", "folderChildren");
@@ -333,7 +334,7 @@ export class IconNode extends Container {
     describe(this.iconSprite, "iconSprite", "iconSprite");
     describe(this.emojiText, "emojiText", "emojiText");
     describe(this.labelText, "labelText", "label");
-    describe(this.labelText?.scale, "labelText.scale", "labelScale");
+    describe(this.labelText?.scale, "labelText.scale", "labelScale", this.labelText);
   }
 
   updateOpeningScale(state) {

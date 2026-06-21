@@ -126,6 +126,9 @@ function describeDebugTarget(runtime, target, track, sourceProp, vars = {}, opti
   if (typeof runtime?.describeTarget !== "function") return;
   const metadata = resolveDebugMetadata(target, track, sourceProp, vars, options);
   if (!metadata) return;
+  if (track.target !== target && metadata.overlayTarget == null && metadata.boundsTarget == null) {
+    metadata.overlayTarget = target;
+  }
   runtime.describeTarget(track.target, metadata);
 }
 

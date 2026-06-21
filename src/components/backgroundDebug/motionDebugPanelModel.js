@@ -46,6 +46,7 @@ export function normalizeMotionTimeScale(value) {
 export function buildMotionRuntimeDebugConfig(options = {}) {
   return {
     enabled: true,
+    overlayEnabled: Boolean(options.overlayEnabled),
     recordHistory: Boolean(options.recordEnabled),
     recordWindowMs: resolveMotionRecordWindowMs(options.windowPreset, options.customSeconds),
     sampleHz: 10,
@@ -212,6 +213,7 @@ export function buildMotionOverviewRows(report = {}) {
     { label: "channels", value: formatCount(summary.activeChannelCount) },
     { label: "warnings", value: formatCount(summary.warningCount) },
     { label: "record", value: config.recordHistory ? "on" : "off" },
+    { label: "overlay", value: config.overlayEnabled ? "on" : "off" },
     { label: "window", value: formatWindow(config.recordWindowMs) },
     { label: "timeScale", value: `${formatMotionNumber(config.timeScale ?? 1, 2)}x` },
     { label: "events/samples", value: `${formatCount(eventCount)} / ${formatCount(sampleCount)}`, wide: true },

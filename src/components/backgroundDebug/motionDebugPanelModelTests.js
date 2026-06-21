@@ -33,11 +33,13 @@ export function runMotionDebugPanelModelTests() {
 
   const config = buildMotionRuntimeDebugConfig({
     customSeconds: 45,
+    overlayEnabled: true,
     recordEnabled: true,
     timeScale: 0.5,
     windowPreset: MOTION_RECORD_WINDOW_CUSTOM,
   });
   assert(config.enabled === true, "runtime config should enable motion debug");
+  assert(config.overlayEnabled === true, "runtime config should preserve overlay toggle");
   assert(config.recordHistory === true, "runtime config should preserve record toggle");
   assert(config.recordWindowMs === 45000, "runtime config should use the custom window");
   assert(config.sampleHz === 10, "runtime config should use the MVP recording sample rate");
@@ -66,6 +68,7 @@ export function runMotionDebugPanelModelTests() {
       velocity: 2,
     }],
     config: {
+      overlayEnabled: true,
       recordHistory: true,
       recordWindowMs: 60000,
       timeScale: 0.5,
@@ -219,6 +222,7 @@ export function runMotionDebugPanelModelTests() {
 
   const overview = buildMotionOverviewRows(report);
   assert(overview.some((row) => row.label === "record" && row.value === "on"), "overview should expose record state");
+  assert(overview.some((row) => row.label === "overlay" && row.value === "on"), "overview should expose overlay state");
   assert(overview.some((row) => row.label === "events/samples" && row.value === "3 / 3"), "overview should expose history counts");
   assert(overview.some((row) => row.label === "timeScale" && row.value === "0.50x"), "overview should expose time scale");
 

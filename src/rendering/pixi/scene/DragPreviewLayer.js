@@ -42,11 +42,13 @@ function describeDragPreviewTargets(node, dragState, phase) {
   };
   motionRuntime.describeTarget(node, {
     ...base,
+    overlayTarget: node,
     sourceLabel: "dragPreview.node",
     targetPart: "node",
   });
   motionRuntime.describeTarget(node.scale, {
     ...base,
+    overlayTarget: node,
     sourceLabel: "dragPreview.scale",
     targetPart: "node.scale",
   });

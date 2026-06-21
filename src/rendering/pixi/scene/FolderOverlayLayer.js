@@ -292,6 +292,7 @@ function animateDetachedClosingGhost(ghost, tracker) {
     kind: "FolderGhost",
     label: ghost.item?.name || ghost.item?.id || "Detached closing ghost",
     layer: "ghost",
+    overlayTarget: ghost,
     phase: "detachedClosing",
     sourceLabel: "ghost.detachedClosing.node",
     targetPart: "node",
@@ -302,6 +303,7 @@ function animateDetachedClosingGhost(ghost, tracker) {
     kind: "FolderGhost",
     label: ghost.item?.name || ghost.item?.id || "Detached closing ghost",
     layer: "ghost",
+    overlayTarget: ghost,
     phase: "detachedClosing",
     sourceLabel: "ghost.detachedClosing.scale",
     targetPart: "node.scale",
@@ -1328,18 +1330,21 @@ export class FolderOverlayLayer extends Container {
     motionRuntime.describeTarget(this.panel, {
       ...base,
       kind: "FolderPanel",
+      overlayTarget: this.panel,
       sourceLabel: "folder.panel",
       targetPart: "panel",
     });
     motionRuntime.describeTarget(this.panel?.scale, {
       ...base,
       kind: "FolderPanel",
+      overlayTarget: this.panel,
       sourceLabel: "folder.panelScale",
       targetPart: "panel.scale",
     });
     motionRuntime.describeTarget(this.pageTrack, {
       ...base,
       kind: "PageTrack",
+      overlayTarget: this.pageTrack,
       pageIndex: state.folderPageIndex ?? null,
       pageSpan: geometry.grid?.width ?? null,
       sourceLabel: "folder.pageTrack",
@@ -1348,6 +1353,7 @@ export class FolderOverlayLayer extends Container {
     motionRuntime.describeTarget(this.pageDotsLayer, {
       ...base,
       kind: "PageDotsLayer",
+      overlayTarget: this.pageDotsLayer,
       sourceLabel: "folder.pageDotsLayer",
       targetPart: "pageDotsLayer",
     });
@@ -1372,11 +1378,13 @@ export class FolderOverlayLayer extends Container {
     dot.__motionDebugMetadata = metadata;
     motionRuntime.describeTarget(dot, {
       ...metadata,
+      overlayTarget: dot,
       sourceLabel: "folder.pageDot",
       targetPart: "pageDot",
     });
     motionRuntime.describeTarget(dot.scale, {
       ...metadata,
+      overlayTarget: dot,
       sourceLabel: "folder.pageDot.scale",
       targetPart: "pageDot.scale",
     });

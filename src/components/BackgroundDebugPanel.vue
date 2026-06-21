@@ -229,6 +229,16 @@
           <span>Record</span>
         </label>
 
+        <label class="background-debug-toggle">
+          <input
+            name="motionOverlayEnabled"
+            type="checkbox"
+            :checked="motionOverlayEnabled"
+            @change="setMotionOverlayEnabled($event.target.checked)"
+          >
+          <span>Overlay</span>
+        </label>
+
         <div class="background-debug-mode-group background-debug-motion-window-group" role="group" aria-label="Motion record window">
           <button
             v-for="preset in MOTION_RECORD_WINDOW_PRESETS"
@@ -797,6 +807,7 @@ const liveDesktopCssFallbackEffects = ref(canDebugLiveDesktop.value ? readLiveDe
 const liveDesktopSkipBlankFrames = ref(canDebugLiveDesktop.value ? readLiveDesktopSkipBlankFrames() : false);
 const liveDesktopForceDwmFlush = ref(canDebugLiveDesktop.value ? readLiveDesktopForceDwmFlush() : false);
 const isLiveDesktopActionBusy = ref(false);
+const motionOverlayEnabled = ref(false);
 const motionRecordEnabled = ref(false);
 const motionWindowPreset = ref("30000");
 const motionCustomSeconds = ref(30);
@@ -1065,6 +1076,7 @@ function applyMotionRuntimeDebugConfig() {
   if (!canDebugMotion.value) return;
   const config = buildMotionRuntimeDebugConfig({
     customSeconds: motionCustomSeconds.value,
+    overlayEnabled: motionOverlayEnabled.value,
     recordEnabled: motionRecordEnabled.value,
     timeScale: motionTimeScale.value,
     windowPreset: motionWindowPreset.value,
@@ -1082,8 +1094,20 @@ function restoreMotionTimeScale() {
   refreshMotionReport();
 }
 
+function restoreMotionOverlay() {
+  if (!canDebugMotion.value) return;
+  if (motionOverlayEnabled.value) motionOverlayEnabled.value = false;
+  motionRuntime.configureDebug({ overlayEnabled: false });
+  refreshMotionReport();
+}
+
 function setMotionRecordEnabled(enabled) {
   motionRecordEnabled.value = Boolean(enabled);
+  applyMotionRuntimeDebugConfig();
+}
+
+function setMotionOverlayEnabled(enabled) {
+  motionOverlayEnabled.value = Boolean(enabled);
   applyMotionRuntimeDebugConfig();
 }
 
@@ -1464,6 +1488,7 @@ onBeforeUnmount(() => {
   if (motionSummaryCopyStateTimer != null) window.clearTimeout(motionSummaryCopyStateTimer);
   if (kawaseLiveDesktopSyncTimer != null) window.clearTimeout(kawaseLiveDesktopSyncTimer);
   restoreMotionTimeScale();
+  restoreMotionOverlay();
   clearMotionRuntimePoller();
   clearLiveDesktopRuntimePoller();
 });

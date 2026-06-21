@@ -508,9 +508,11 @@ export function runMotionRuntimeTests() {
     assert(typeof runtime.clearDebugHistory === "function", "runtime should expose clearDebugHistory");
     assert(typeof runtime.describeTarget === "function", "runtime should expose describeTarget");
     assert(typeof runtime.debugReport === "function", "runtime should expose debugReport");
+    assert(typeof runtime.resolveDebugTarget === "function", "runtime should expose resolveDebugTarget for dev overlay lookup");
 
     const defaults = runtime.configureDebug();
     assert(defaults.enabled === false, "debug config should default to disabled high-cost history");
+    assert(defaults.overlayEnabled === false, "debug config should default motion overlay to disabled");
     assert(defaults.recordHistory === false, "debug config should default to no history recording");
     assert(defaults.recordWindowMs === 30000, "debug config should default to a 30s recording window");
     assert(defaults.sampleHz === 10, "debug config should default to 10Hz regular recording");
@@ -520,12 +522,14 @@ export function runMotionRuntimeTests() {
       enabled: true,
       maxEvents: 2,
       maxSamples: 3,
+      overlayEnabled: true,
       recordHistory: true,
       recordWindowMs: 60000,
       sampleHz: 20,
       timeScale: 0.5,
     });
     assert(configured.enabled === true, "configureDebug should apply enabled patches");
+    assert(configured.overlayEnabled === true, "configureDebug should apply overlay patches");
     assert(configured.recordHistory === true, "configureDebug should apply history recording patches");
     assert(configured.recordWindowMs === 60000, "configureDebug should apply recording window patches");
     assert(configured.sampleHz === 20, "configureDebug should apply sample rate patches");
@@ -540,6 +544,36 @@ export function runMotionRuntimeTests() {
     assert(lowerClamp.recordWindowMs === 1000, "custom recording window should clamp to at least 1s");
     const upperClamp = runtime.configureDebug({ recordWindowMs: 600000 });
     assert(upperClamp.recordWindowMs === 300000, "custom recording window should clamp to at most 300s");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 10 });
+    const target = { scale: { x: 1, y: 1 }, x: 0 };
+    const overlayTarget = { getGlobalTransform: () => null };
+    runtime.configureDebug({ enabled: true, overlayEnabled: true });
+    runtime.describeTarget(target.scale, {
+      kind: "Icon",
+      label: "Scale target",
+      overlayTarget,
+      sourceLabel: "motion-runtime-tests.overlay",
+      targetPart: "node.scale",
+    });
+    runtime.animate(target.scale, "x", 1.1, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 1,
+      laneKey: "scale",
+    });
+
+    const report = runtime.debugReport({ includeTargets: true });
+    const activeTargetId = report.animations[0]?.targetId;
+    const serialized = JSON.stringify(report);
+    const targetRecord = report.targets.find((entry) => entry.targetId === activeTargetId);
+
+    assert(runtime.resolveDebugTarget(activeTargetId, { bounds: true }) === overlayTarget, "dev overlay lookup should resolve the live bounds target");
+    assert(runtime.resolveDebugTarget(activeTargetId, { bounds: false }) === target.scale, "dev raw lookup should resolve the animated target");
+    assert(targetRecord?.sourceLabel === "motion-runtime-tests.overlay", "debug metadata should keep serializable labels");
+    assert(!containsReference(report, overlayTarget), "debug report should not retain overlay target references");
+    assert(!serialized.includes("overlayTarget"), "debug report should not serialize live overlay target fields");
   }
 
   {

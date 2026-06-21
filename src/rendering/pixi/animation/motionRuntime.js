@@ -20,11 +20,18 @@ const DEFAULT_DEBUG_CONFIG = Object.freeze({
   enabled: false,
   maxEvents: 1000,
   maxSamples: 1000,
+  overlayEnabled: false,
   recordHistory: false,
   recordWindowMs: 30000,
   sampleHz: 10,
   timeScale: 1,
 });
+const LIVE_DEBUG_METADATA_KEYS = new Set([
+  "boundsTarget",
+  "debugOverlayTarget",
+  "overlayTarget",
+]);
+const CAN_STORE_DEBUG_TARGET_REFS = import.meta.env?.DEV !== false;
 
 let nextLaneId = 1;
 
@@ -205,7 +212,12 @@ function sanitizeDebugValue(value, depth = 2, seen = new Set()) {
 
 function sanitizeDebugMetadata(metadata) {
   if (!metadata || typeof metadata !== "object") return {};
-  const sanitized = sanitizeDebugValue(metadata);
+  const filtered = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (LIVE_DEBUG_METADATA_KEYS.has(key)) continue;
+    filtered[key] = value;
+  }
+  const sanitized = sanitizeDebugValue(filtered);
   return sanitized && typeof sanitized === "object" && !Array.isArray(sanitized) ? sanitized : {};
 }
 
@@ -229,6 +241,7 @@ export function createMotionRuntime(options = {}) {
   const targetIds = new WeakMap();
   const debugTargetMetaByTarget = new WeakMap();
   const debugTargetMetaById = new Map();
+  const debugTargetRefsById = CAN_STORE_DEBUG_TARGET_REFS ? new Map() : null;
   const debugHistory = { events: [], samples: [] };
   const debug = makeDebugCounters();
   const activeAnimationScratch = [];
@@ -253,9 +266,20 @@ export function createMotionRuntime(options = {}) {
     return id;
   }
 
+  function rememberDebugTargetRef(targetId, target, metadata = null) {
+    if (!debugTargetRefsById || targetId == null || !target) return;
+    const liveTarget = metadata?.overlayTarget || metadata?.boundsTarget || metadata?.debugOverlayTarget || null;
+    const previous = debugTargetRefsById.get(targetId) || {};
+    debugTargetRefsById.set(targetId, {
+      overlayTarget: liveTarget || previous.overlayTarget || target,
+      target,
+    });
+  }
+
   function rememberTarget(target) {
     const targetId = getTargetId(target);
     if (targetId == null) return null;
+    rememberDebugTargetRef(targetId, target);
     const described = debugTargetMetaByTarget.get(target);
     if (described) debugTargetMetaById.set(targetId, described);
     else if (!debugTargetMetaById.has(targetId)) debugTargetMetaById.set(targetId, { targetId });
@@ -596,6 +620,7 @@ export function createMotionRuntime(options = {}) {
   function configureDebug(config = {}) {
     if (config && typeof config === "object") {
       if (Object.hasOwn(config, "enabled")) debugConfig.enabled = Boolean(config.enabled);
+      if (Object.hasOwn(config, "overlayEnabled")) debugConfig.overlayEnabled = Boolean(config.overlayEnabled);
       if (Object.hasOwn(config, "recordHistory")) debugConfig.recordHistory = Boolean(config.recordHistory);
       if (Object.hasOwn(config, "recordWindowMs")) {
         debugConfig.recordWindowMs = clamp(readNumber(config.recordWindowMs, debugConfig.recordWindowMs), DEBUG_RECORD_WINDOW_MIN_MS, DEBUG_RECORD_WINDOW_MAX_MS);
@@ -615,7 +640,16 @@ export function createMotionRuntime(options = {}) {
     const record = { targetId, ...sanitizeDebugMetadata(metadata) };
     debugTargetMetaByTarget.set(target, record);
     debugTargetMetaById.set(targetId, record);
+    rememberDebugTargetRef(targetId, target, metadata);
     return { ...record };
+  }
+
+  function resolveDebugTarget(targetId, options = {}) {
+    const numericId = Number(targetId);
+    if (!Number.isFinite(numericId)) return null;
+    const entry = debugTargetRefsById?.get(numericId);
+    if (!entry) return null;
+    return options.bounds === false ? entry.target : (entry.overlayTarget || entry.target);
   }
 
   function getTargetMap(target, create = false) {
@@ -1340,6 +1374,7 @@ export function createMotionRuntime(options = {}) {
     stopTicker();
     Object.assign(debug, makeDebugCounters());
     clearDebugHistory();
+    debugTargetRefsById?.clear();
     runtimeTimeMs = 0;
   }
 
@@ -1401,6 +1436,7 @@ export function createMotionRuntime(options = {}) {
     getChannel: (target, prop) => getChannel(target, prop),
     debug,
     reset,
+    resolveDebugTarget,
     set,
     step,
     stop,

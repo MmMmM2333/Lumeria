@@ -626,52 +626,52 @@ export class DesktopLayer extends Container {
       layer: "desktop",
       width: state.width ?? this.widthValue ?? null,
     };
-    const describe = (target, metadata) => {
-      if (target) motionRuntime.describeTarget(target, metadata);
+    const describe = (target, metadata, overlayTarget = target) => {
+      if (target) motionRuntime.describeTarget(target, { ...metadata, overlayTarget });
     };
     describe(this.visualRoot, {
       ...base,
       kind: "Desktop",
       sourceLabel: "desktop.visualRoot",
       targetPart: "visualRoot",
-    });
+    }, this.visualRoot);
     describe(this.visualRoot?.scale, {
       ...base,
       kind: "Desktop",
       sourceLabel: "desktop.visualScale",
       targetPart: "visualRoot.scale",
-    });
+    }, this.visualRoot);
     describe(this.desktopClosingUnderlayLayer, {
       ...base,
       kind: "Desktop",
       sourceLabel: "desktop.closingUnderlay",
       targetPart: "closingUnderlay",
-    });
+    }, this.desktopClosingUnderlayLayer);
     describe(this.desktopClosingUnderlayLayer?.scale, {
       ...base,
       kind: "Desktop",
       sourceLabel: "desktop.closingUnderlayScale",
       targetPart: "closingUnderlay.scale",
-    });
+    }, this.desktopClosingUnderlayLayer);
     describe(this.singleStageFolderLayer, {
       ...base,
       kind: "FolderOverlay",
       sourceLabel: "folder.overlay",
       targetPart: "singleStageFolderLayer",
-    });
+    }, this.singleStageFolderLayer);
     describe(this.singleStageFolderLayer?.scale, {
       ...base,
       kind: "FolderOverlay",
       sourceLabel: "folder.overlayScale",
       targetPart: "singleStageFolderLayer.scale",
-    });
+    }, this.singleStageFolderLayer);
     describe(this.pageTrack, {
       ...base,
       kind: "PageTrack",
       label: "Desktop page track",
       sourceLabel: "desktop.pageTrack",
       targetPart: "pageTrack",
-    });
+    }, this.pageTrack);
   }
 
   applyDesktopVisualTransform(state) {
