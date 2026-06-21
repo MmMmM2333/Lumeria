@@ -25,6 +25,7 @@ import { runDesktopLayoutDebugSettingsTests } from "../components/backgroundDebu
 import { runLiveDesktopDiagnosticsTests } from "../components/backgroundDebug/liveDesktopDiagnosticsTests.js";
 import { runMotionDebugPanelModelTests } from "../components/backgroundDebug/motionDebugPanelModelTests.js";
 import { runMotionReplayViewerModelTests } from "../components/backgroundDebug/motionReplayViewerModelTests.js";
+import { runMotionLabModelTests } from "../motionLab/motionLabModelTests.js";
 import { runBackgroundImageLayoutTests } from "./backgroundImageLayoutTests.js";
 import { runLaunchpadDataTests } from "./launchpadDataTests.js";
 import { runMainWindowShortcutTests } from "./mainWindowShortcutTests.js";
@@ -151,6 +152,7 @@ runDesktopLayoutDebugSettingsTests();
 runLiveDesktopDiagnosticsTests();
 runMotionDebugPanelModelTests();
 runMotionReplayViewerModelTests();
+runMotionLabModelTests();
 runFolderLayoutStylesTests();
 runFolderViewportMetricsTests();
 await runFolderPrewarmTests();
