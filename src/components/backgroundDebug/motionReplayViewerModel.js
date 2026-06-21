@@ -1,6 +1,7 @@
 import { MOTION_REPLAY_TRACE_SCHEMA } from "../../rendering/pixi/animation/motionReplayTrace.js";
 
 export const MOTION_REPLAY_INTERVAL_SCHEMA = "pixi-motion-replay-interval/v1";
+export const MOTION_REPLAY_IMPORT_MAX_BYTES = 6 * 1024 * 1024;
 
 const MAX_REPLAY_FRAME_ROWS = 10;
 const MAX_REPLAY_EVENT_ROWS = 16;
@@ -161,8 +162,19 @@ export function normalizeMotionReplayTrace(trace) {
   };
 }
 
-export function parseMotionReplayTraceJson(json) {
-  return normalizeMotionReplayTrace(JSON.parse(String(json || "")));
+export function assertMotionReplayImportSize(size, maxBytes = MOTION_REPLAY_IMPORT_MAX_BYTES) {
+  const byteCount = Math.max(0, Math.floor(readNumber(size, 0)));
+  const limit = Math.max(1, Math.floor(readNumber(maxBytes, MOTION_REPLAY_IMPORT_MAX_BYTES)));
+  if (byteCount > limit) {
+    const mb = (limit / (1024 * 1024)).toFixed(0);
+    throw new Error(`Replay trace import is too large. Maximum supported size is ${mb}MB.`);
+  }
+}
+
+export function parseMotionReplayTraceJson(json, options = {}) {
+  const text = String(json || "");
+  assertMotionReplayImportSize(text.length, options.maxBytes);
+  return normalizeMotionReplayTrace(JSON.parse(text));
 }
 
 export function getMotionReplayTimeRange(trace = {}) {

@@ -1,4 +1,5 @@
 import {
+  assertMotionReplayImportSize,
   buildMotionReplayCurveGroups,
   buildMotionReplayEventRows,
   buildMotionReplayFilterSummary,
@@ -7,6 +8,7 @@ import {
   buildMotionReplayOverviewRows,
   createMotionReplayIntervalExport,
   findMotionReplayFrame,
+  MOTION_REPLAY_IMPORT_MAX_BYTES,
   MOTION_REPLAY_INTERVAL_SCHEMA,
   normalizeMotionReplayTime,
   normalizeMotionReplayTrace,
@@ -197,6 +199,20 @@ export function runMotionReplayViewerModelTests() {
   assert(normalizeMotionReplayTime(trace, 200) === 100, "replay time should clamp to trace max");
   assert(findMotionReplayFrame(trace, 75).frame === 2, "scrub should use the latest frame at or before time");
   assert(parseMotionReplayTraceJson(JSON.stringify(makeTrace())).schema === "pixi-motion-replay-trace/v1", "JSON import should parse trace schema");
+  assert(MOTION_REPLAY_IMPORT_MAX_BYTES >= 1024 * 1024, "replay import size guard should allow MB-scale traces");
+  assertMotionReplayImportSize(MOTION_REPLAY_IMPORT_MAX_BYTES);
+  try {
+    assertMotionReplayImportSize(MOTION_REPLAY_IMPORT_MAX_BYTES + 1);
+    assert(false, "oversized replay imports should throw before parsing");
+  } catch (error) {
+    assert(String(error.message).includes("too large"), "oversized replay import error should be readable");
+  }
+  try {
+    parseMotionReplayTraceJson(JSON.stringify(makeTrace()), { maxBytes: 10 });
+    assert(false, "parse should reject oversized JSON text");
+  } catch (error) {
+    assert(String(error.message).includes("too large"), "parse size guard error should be readable");
+  }
   try {
     normalizeMotionReplayTrace({ schema: "bad" });
     assert(false, "unsupported schema should throw");

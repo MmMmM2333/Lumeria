@@ -351,6 +351,7 @@
             <textarea
               rows="3"
               spellcheck="false"
+              :maxlength="MOTION_REPLAY_IMPORT_MAX_BYTES"
               :value="motionReplayImportText"
               @input="updateMotionReplayImportText"
             ></textarea>
@@ -1099,6 +1100,8 @@ import {
   buildMotionReplayOverviewRows,
   createMotionReplayIntervalExport,
   getMotionReplayTimeRange,
+  assertMotionReplayImportSize,
+  MOTION_REPLAY_IMPORT_MAX_BYTES,
   normalizeMotionReplayTime,
   normalizeMotionReplayTrace,
   parseMotionReplayTraceJson,
@@ -1645,6 +1648,7 @@ async function importMotionReplayFile(event) {
   const file = event.target.files?.[0];
   if (!file) return;
   try {
+    assertMotionReplayImportSize(file.size);
     const text = await file.text();
     loadMotionReplayTrace(parseMotionReplayTraceJson(text), text, { updateImportText: false });
   } catch (error) {
