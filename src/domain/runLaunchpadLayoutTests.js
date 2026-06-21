@@ -24,6 +24,7 @@ import { runLaunchpadViewAdaptersTests } from "../composables/useLaunchpadViewAd
 import { runDesktopLayoutDebugSettingsTests } from "../components/backgroundDebug/desktopLayoutDebugSettingsTests.js";
 import { runLiveDesktopDiagnosticsTests } from "../components/backgroundDebug/liveDesktopDiagnosticsTests.js";
 import { runMotionDebugPanelModelTests } from "../components/backgroundDebug/motionDebugPanelModelTests.js";
+import { runMotionReplayViewerModelTests } from "../components/backgroundDebug/motionReplayViewerModelTests.js";
 import { runBackgroundImageLayoutTests } from "./backgroundImageLayoutTests.js";
 import { runLaunchpadDataTests } from "./launchpadDataTests.js";
 import { runMainWindowShortcutTests } from "./mainWindowShortcutTests.js";
@@ -149,6 +150,7 @@ runLaunchpadViewAdaptersTests();
 runDesktopLayoutDebugSettingsTests();
 runLiveDesktopDiagnosticsTests();
 runMotionDebugPanelModelTests();
+runMotionReplayViewerModelTests();
 runFolderLayoutStylesTests();
 runFolderViewportMetricsTests();
 await runFolderPrewarmTests();

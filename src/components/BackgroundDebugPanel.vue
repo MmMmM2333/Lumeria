@@ -341,6 +341,267 @@
           </div>
         </div>
 
+        <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">Replay Viewer</div>
+          <label class="background-debug-control background-debug-textarea-control">
+            <span>
+              Import JSON
+              <output>{{ motionReplayImportStatus }}</output>
+            </span>
+            <textarea
+              rows="3"
+              spellcheck="false"
+              :value="motionReplayImportText"
+              @input="updateMotionReplayImportText"
+            ></textarea>
+          </label>
+          <label class="background-debug-control background-debug-file-control">
+            <span>
+              Trace file
+              <output>{{ motionReplayViewerLoaded ? "loaded" : "none" }}</output>
+            </span>
+            <input
+              type="file"
+              accept="application/json,.json"
+              @change="importMotionReplayFile"
+            >
+          </label>
+          <div class="background-debug-actions background-debug-motion-replay-viewer-actions">
+            <button type="button" class="background-debug-button" @click="loadMotionReplayImportText">
+              Load Trace
+            </button>
+            <button
+              type="button"
+              class="background-debug-button"
+              :disabled="!motionReplayTrace"
+              @click="loadCapturedMotionReplayTrace"
+            >
+              Load Captured
+            </button>
+            <button
+              type="button"
+              class="background-debug-button"
+              :disabled="!motionReplayViewerLoaded"
+              @click="clearMotionReplayViewer"
+            >
+              Clear Viewer
+            </button>
+          </div>
+          <div v-if="motionReplayImportError" class="background-debug-error" :title="motionReplayImportError">
+            {{ motionReplayImportError }}
+          </div>
+
+          <dl class="background-debug-status-grid">
+            <div
+              v-for="row in motionReplayOverviewRows"
+              :key="row.label"
+              :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
+            >
+              <dt>{{ row.label }}</dt>
+              <dd>{{ row.value }}</dd>
+            </div>
+          </dl>
+
+          <label class="background-debug-control">
+            <span>
+              Scrub
+              <output>{{ formatMotionReplayTime(motionReplayCurrentTimeMs) }}</output>
+            </span>
+            <input
+              type="range"
+              :min="motionReplayTimeRange.min"
+              :max="motionReplayTimeRange.max"
+              step="1"
+              :disabled="!motionReplayViewerLoaded"
+              :value="motionReplayCurrentTimeMs"
+              @input="updateMotionReplayCurrentTime"
+            >
+          </label>
+
+          <label class="background-debug-control background-debug-motion-filter-control">
+            <span>
+              Replay Filter
+              <output>{{ motionReplayFilterSummary.text }}</output>
+            </span>
+            <input
+              type="search"
+              placeholder="target / lane / prop / event"
+              :disabled="!motionReplayViewerLoaded"
+              :value="motionReplayFilterQuery"
+              @input="updateMotionReplayFilterQuery"
+            >
+          </label>
+
+          <div class="background-debug-actions background-debug-motion-replay-viewer-actions">
+            <button
+              type="button"
+              class="background-debug-button"
+              :disabled="!motionReplayViewerLoaded"
+              @click="toggleMotionReplayPlayback"
+            >
+              {{ motionReplayPlayButtonLabel }}
+            </button>
+            <button
+              type="button"
+              class="background-debug-button"
+              :disabled="!motionReplayViewerLoaded"
+              @click="setMotionReplayCurrentTime(motionReplayTimeRange.min, { pause: true })"
+            >
+              Jump Start
+            </button>
+            <button
+              type="button"
+              class="background-debug-button"
+              :disabled="!motionReplayViewerLoaded"
+              @click="copyMotionReplayInterval"
+            >
+              {{ motionReplayIntervalCopyButtonLabel }}
+            </button>
+          </div>
+
+          <div class="background-debug-motion-replay-interval-grid">
+            <label class="background-debug-control background-debug-number-control">
+              <span>
+                Interval start
+                <output>{{ formatMotionReplayTime(motionReplayIntervalStartMs) }}</output>
+              </span>
+              <input
+                type="number"
+                step="1"
+                :disabled="!motionReplayViewerLoaded"
+                :value="motionReplayIntervalStartMs"
+                @change="updateMotionReplayIntervalStart"
+              >
+            </label>
+            <label class="background-debug-control background-debug-number-control">
+              <span>
+                Interval end
+                <output>{{ formatMotionReplayTime(motionReplayIntervalEndMs) }}</output>
+              </span>
+              <input
+                type="number"
+                step="1"
+                :disabled="!motionReplayViewerLoaded"
+                :value="motionReplayIntervalEndMs"
+                @change="updateMotionReplayIntervalEnd"
+              >
+            </label>
+          </div>
+
+          <div class="background-debug-motion-property-table" role="table" aria-label="Replay frame properties">
+            <div class="background-debug-motion-property-row background-debug-motion-row-head" role="row">
+              <span role="columnheader">target.prop</span>
+              <span role="columnheader">value</span>
+              <span role="columnheader">to</span>
+              <span role="columnheader">delta</span>
+              <span role="columnheader">velocity</span>
+              <span role="columnheader">driver</span>
+              <span role="columnheader">lane</span>
+              <span role="columnheader">laneKey</span>
+              <span role="columnheader">sourceLabel</span>
+            </div>
+            <div
+              v-for="(row, index) in motionReplayFrameRows"
+              :key="`${row.targetProp}-${row.laneKey}-${index}`"
+              class="background-debug-motion-property-row"
+              role="row"
+            >
+              <span role="cell" :title="row.targetProp">{{ row.targetProp }}</span>
+              <span role="cell" :title="row.value">{{ row.value }}</span>
+              <span role="cell" :title="row.to">{{ row.to }}</span>
+              <span role="cell" :title="row.delta">{{ row.delta }}</span>
+              <span role="cell" :title="row.velocity">{{ row.velocity }}</span>
+              <span role="cell" :title="row.driver">{{ row.driver }}</span>
+              <span role="cell" :title="row.lane">{{ row.lane }}</span>
+              <span role="cell" :title="row.laneKey">{{ row.laneKey }}</span>
+              <span role="cell" :title="row.sourceLabel">{{ row.sourceLabel }}</span>
+            </div>
+            <div v-if="motionReplayFrameRows.length === 0" class="background-debug-motion-empty">
+              no replay frame values
+            </div>
+          </div>
+
+          <div class="background-debug-motion-timeline">
+            <button
+              v-for="event in motionReplayEventRows"
+              :key="event.key"
+              type="button"
+              :class="['background-debug-motion-replay-event', event.isCurrent && 'background-debug-motion-replay-event-current']"
+              :title="event.detail"
+              @click="setMotionReplayCurrentTime(event.timeMs, { pause: true })"
+            >
+              <span>{{ event.time }}</span>
+              <span>{{ event.type }}</span>
+              <span>{{ event.sourceLabel }}</span>
+              <span>{{ event.detail }}</span>
+            </button>
+            <div v-if="motionReplayEventRows.length === 0" class="background-debug-motion-empty">
+              no replay events
+            </div>
+          </div>
+
+          <div class="background-debug-motion-curve-list">
+            <section
+              v-for="group in motionReplayCurveGroups"
+              :key="group.key"
+              class="background-debug-motion-curve-card"
+            >
+              <header>
+                <strong :title="group.label">{{ group.label }}</strong>
+                <span>{{ group.summary }}</span>
+              </header>
+              <div class="background-debug-motion-curve-meta">
+                <span :title="group.laneLabel">{{ group.laneLabel }}</span>
+                <span :title="group.sourceLabel">{{ group.sourceLabel }}</span>
+                <span>{{ formatMotionReplayTime(motionReplayCurrentTimeMs) }}</span>
+              </div>
+              <div class="background-debug-motion-curve-row">
+                <span>value/to/events</span>
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                  <path class="background-debug-motion-curve-grid" d="M 0 50 L 100 50" />
+                  <path v-if="group.toPath" class="background-debug-motion-curve-to" :d="group.toPath" />
+                  <path v-if="group.valuePath" class="background-debug-motion-curve-value" :d="group.valuePath" />
+                  <line
+                    v-for="marker in group.eventMarkers"
+                    :key="`${group.key}-${marker.type}-${marker.x}`"
+                    class="background-debug-motion-curve-event"
+                    :x1="marker.x"
+                    y1="5"
+                    :x2="marker.x"
+                    y2="95"
+                  />
+                  <line
+                    class="background-debug-motion-replay-curve-cursor"
+                    :x1="group.cursorX"
+                    y1="0"
+                    :x2="group.cursorX"
+                    y2="100"
+                  />
+                </svg>
+                <output>{{ group.rangeLabels.value }}</output>
+              </div>
+            </section>
+            <div v-if="motionReplayCurveGroups.length === 0" class="background-debug-motion-empty">
+              no replay curves
+            </div>
+          </div>
+
+          <div class="background-debug-motion-replay-overlay-list">
+            <article
+              v-for="row in motionReplayOverlayRows"
+              :key="row.key"
+              class="background-debug-motion-replay-overlay-card"
+            >
+              <strong :title="row.label">{{ row.label }}</strong>
+              <span :title="row.valueSummary">{{ row.valueSummary }}</span>
+              <span :title="row.laneSummary">{{ row.propSummary }} / {{ row.laneSummary }}</span>
+            </article>
+            <div v-if="motionReplayOverlayRows.length === 0" class="background-debug-motion-empty">
+              no replay overlay targets
+            </div>
+          </div>
+        </div>
+
         <dl class="background-debug-status-grid">
           <div
             v-for="row in motionOverviewRows"
@@ -829,6 +1090,19 @@ import {
   normalizeMotionTimeScale,
   resolveMotionRecordWindowMs,
 } from "./backgroundDebug/motionDebugPanelModel.js";
+import {
+  buildMotionReplayCurveGroups,
+  buildMotionReplayEventRows,
+  buildMotionReplayFilterSummary,
+  buildMotionReplayFrameRows,
+  buildMotionReplayOverlayRows,
+  buildMotionReplayOverviewRows,
+  createMotionReplayIntervalExport,
+  getMotionReplayTimeRange,
+  normalizeMotionReplayTime,
+  normalizeMotionReplayTrace,
+  parseMotionReplayTraceJson,
+} from "./backgroundDebug/motionReplayViewerModel.js";
 import { createMotionDebugAIReport } from "../rendering/pixi/animation/motionDebugReport.js";
 import {
   createMotionReplayCaptureController,
@@ -868,6 +1142,7 @@ const debugTabCount = computed(() => 2 + (canDebugMotion.value ? 1 : 0) + (canDe
 const hasCopiedAcrylic = ref(false);
 const hasCopiedDiagnostics = ref(false);
 const hasCopiedMotionFull = ref(false);
+const hasCopiedMotionReplayInterval = ref(false);
 const hasCopiedMotionReplayTrace = ref(false);
 const hasCopiedMotionSummary = ref(false);
 const liveDesktopDebugFrameSourceOverride = ref(canDebugLiveDesktop.value ? readLiveDesktopDebugFrameSourceOverride() : null);
@@ -890,6 +1165,14 @@ const motionReplayCaptureSeconds = ref(30);
 const motionReplayCaptureStatus = ref(motionReplayCapture.status());
 const motionReplayTrace = ref(null);
 const motionReplayTraceJson = ref("");
+const motionReplayViewerTrace = ref(null);
+const motionReplayImportText = ref("");
+const motionReplayImportError = ref("");
+const motionReplayCurrentTimeMs = ref(0);
+const motionReplayFilterQuery = ref("");
+const motionReplayPlaying = ref(false);
+const motionReplayIntervalStartMs = ref(0);
+const motionReplayIntervalEndMs = ref(0);
 const liveDesktopRates = ref({
   framesPerSecond: 0,
   arrivedPerSecond: 0,
@@ -902,6 +1185,9 @@ let acrylicCopyStateTimer = null;
 let diagnosticsCopyStateTimer = null;
 let motionFullCopyStateTimer = null;
 let motionRuntimePollTimer = null;
+let motionReplayIntervalCopyStateTimer = null;
+let motionReplayPlaybackLastTime = 0;
+let motionReplayPlaybackTimer = null;
 let motionReplayTraceCopyStateTimer = null;
 let motionSummaryCopyStateTimer = null;
 let liveDesktopRuntimePollTimer = null;
@@ -1030,7 +1316,14 @@ const acrylicCopyButtonLabel = computed(() => (hasCopiedAcrylic.value ? "已复�
 const diagnosticsCopyButtonLabel = computed(() => (hasCopiedDiagnostics.value ? "已复制" : "复制诊断"));
 const motionFullCopyButtonLabel = computed(() => (hasCopiedMotionFull.value ? "已复制" : "Copy Full Report"));
 const motionReplayCaptureActive = computed(() => Boolean(motionReplayCaptureStatus.value.active));
+const motionReplayIntervalCopyButtonLabel = computed(() => (hasCopiedMotionReplayInterval.value ? "Copied" : "Copy Interval"));
+const motionReplayPlayButtonLabel = computed(() => (motionReplayPlaying.value ? "Pause Replay" : "Play Replay"));
 const motionReplayTraceCopyButtonLabel = computed(() => (hasCopiedMotionReplayTrace.value ? "Copied" : "Copy Trace"));
+const motionReplayViewerLoaded = computed(() => Boolean(motionReplayViewerTrace.value));
+const motionReplayImportStatus = computed(() => {
+  if (motionReplayImportError.value) return "error";
+  return motionReplayViewerLoaded.value ? "loaded" : "empty";
+});
 const motionSummaryCopyButtonLabel = computed(() => (hasCopiedMotionSummary.value ? "已复制" : "Copy Summary"));
 const layoutDebugRows = computed(() => {
   const params = layoutParams.value;
@@ -1126,6 +1419,26 @@ const motionPropertyRows = computed(() => buildMotionPropertyRows(motionReport.v
 const motionTimelineGroups = computed(() => buildMotionTimelineGroups(motionReport.value, motionFilters.value));
 const motionCurveChartGroups = computed(() => buildMotionCurveChartGroups(motionReport.value, motionFilters.value));
 const motionReplayCaptureRows = computed(() => buildMotionReplayCaptureRows(motionReplayCaptureStatus.value, motionReplayTrace.value));
+const motionReplayTimeRange = computed(() => motionReplayViewerTrace.value ? getMotionReplayTimeRange(motionReplayViewerTrace.value) : { max: 0, min: 0 });
+const motionReplayFilters = computed(() => ({
+  query: motionReplayFilterQuery.value,
+}));
+const motionReplayOverviewRows = computed(() => buildMotionReplayOverviewRows(motionReplayViewerTrace.value, motionReplayCurrentTimeMs.value));
+const motionReplayFilterSummary = computed(() => motionReplayViewerTrace.value
+  ? buildMotionReplayFilterSummary(motionReplayViewerTrace.value, motionReplayCurrentTimeMs.value, motionReplayFilters.value)
+  : { query: "", text: "0 props / 0 events" });
+const motionReplayFrameRows = computed(() => motionReplayViewerTrace.value
+  ? buildMotionReplayFrameRows(motionReplayViewerTrace.value, motionReplayCurrentTimeMs.value, motionReplayFilters.value)
+  : []);
+const motionReplayEventRows = computed(() => motionReplayViewerTrace.value
+  ? buildMotionReplayEventRows(motionReplayViewerTrace.value, motionReplayCurrentTimeMs.value, motionReplayFilters.value)
+  : []);
+const motionReplayCurveGroups = computed(() => motionReplayViewerTrace.value
+  ? buildMotionReplayCurveGroups(motionReplayViewerTrace.value, motionReplayCurrentTimeMs.value, motionReplayFilters.value)
+  : []);
+const motionReplayOverlayRows = computed(() => motionReplayViewerTrace.value
+  ? buildMotionReplayOverlayRows(motionReplayViewerTrace.value, motionReplayCurrentTimeMs.value, motionReplayFilters.value)
+  : []);
 
 function formatValue(value, digits) {
   return Number(value).toFixed(digits);
@@ -1134,6 +1447,11 @@ function formatValue(value, digits) {
 function formatMotionChartStat(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number.toFixed(2) : "-";
+}
+
+function formatMotionReplayTime(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? `${number.toFixed(0)}ms` : "-";
 }
 
 function formatEffectLabel(effect) {
@@ -1257,9 +1575,140 @@ function stopMotionReplayCapture(options = {}) {
   motionReplayCaptureStatus.value = result.status;
   motionReplayTrace.value = result.trace;
   motionReplayTraceJson.value = result.json;
+  loadMotionReplayTrace(result.trace, result.json, { updateImportText: false });
   syncMotionControlsFromRuntimeConfig();
   refreshMotionReport();
   return result;
+}
+
+function syncMotionReplayIntervalToRange(trace) {
+  const range = trace ? getMotionReplayTimeRange(trace) : { max: 0, min: 0 };
+  motionReplayIntervalStartMs.value = Number(range.min) || 0;
+  motionReplayIntervalEndMs.value = Number(range.max) || 0;
+}
+
+function setMotionReplayCurrentTime(timeMs, options = {}) {
+  if (!motionReplayViewerTrace.value) return;
+  if (options.pause) stopMotionReplayPlayback();
+  motionReplayCurrentTimeMs.value = normalizeMotionReplayTime(motionReplayViewerTrace.value, timeMs);
+}
+
+function loadMotionReplayTrace(trace, json = "", options = {}) {
+  if (!canDebugMotion.value) return;
+  try {
+    const normalized = normalizeMotionReplayTrace(trace);
+    motionReplayViewerTrace.value = normalized;
+    if (options.updateImportText) {
+      motionReplayImportText.value = json || JSON.stringify(normalized, null, 2);
+    }
+    motionReplayImportError.value = "";
+    motionReplayFilterQuery.value = "";
+    const range = getMotionReplayTimeRange(normalized);
+    motionReplayCurrentTimeMs.value = normalizeMotionReplayTime(normalized, range.min);
+    syncMotionReplayIntervalToRange(normalized);
+    stopMotionReplayPlayback();
+  } catch (error) {
+    motionReplayImportError.value = error instanceof Error ? error.message : String(error);
+  }
+}
+
+function loadCapturedMotionReplayTrace() {
+  if (!motionReplayTrace.value) return;
+  loadMotionReplayTrace(motionReplayTrace.value, motionReplayTraceJson.value, { updateImportText: false });
+}
+
+function clearMotionReplayViewer() {
+  stopMotionReplayPlayback();
+  motionReplayViewerTrace.value = null;
+  motionReplayImportText.value = "";
+  motionReplayImportError.value = "";
+  motionReplayCurrentTimeMs.value = 0;
+  motionReplayFilterQuery.value = "";
+  motionReplayIntervalStartMs.value = 0;
+  motionReplayIntervalEndMs.value = 0;
+}
+
+function updateMotionReplayImportText(event) {
+  motionReplayImportText.value = event.target.value;
+  if (motionReplayImportError.value) motionReplayImportError.value = "";
+}
+
+function loadMotionReplayImportText() {
+  try {
+    loadMotionReplayTrace(parseMotionReplayTraceJson(motionReplayImportText.value), motionReplayImportText.value, { updateImportText: true });
+  } catch (error) {
+    motionReplayImportError.value = error instanceof Error ? error.message : String(error);
+  }
+}
+
+async function importMotionReplayFile(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    loadMotionReplayTrace(parseMotionReplayTraceJson(text), text, { updateImportText: false });
+  } catch (error) {
+    motionReplayImportError.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    event.target.value = "";
+  }
+}
+
+function updateMotionReplayCurrentTime(event) {
+  setMotionReplayCurrentTime(event.target.value, { pause: true });
+}
+
+function updateMotionReplayFilterQuery(event) {
+  motionReplayFilterQuery.value = event.target.value;
+}
+
+function updateMotionReplayIntervalStart(event) {
+  if (!motionReplayViewerTrace.value) return;
+  motionReplayIntervalStartMs.value = normalizeMotionReplayTime(motionReplayViewerTrace.value, event.target.value);
+}
+
+function updateMotionReplayIntervalEnd(event) {
+  if (!motionReplayViewerTrace.value) return;
+  motionReplayIntervalEndMs.value = normalizeMotionReplayTime(motionReplayViewerTrace.value, event.target.value);
+}
+
+function stopMotionReplayPlayback() {
+  if (motionReplayPlaybackTimer != null) window.clearInterval(motionReplayPlaybackTimer);
+  motionReplayPlaybackTimer = null;
+  motionReplayPlaybackLastTime = 0;
+  motionReplayPlaying.value = false;
+}
+
+function startMotionReplayPlayback() {
+  if (!motionReplayViewerTrace.value || motionReplayPlaying.value) return;
+  const range = getMotionReplayTimeRange(motionReplayViewerTrace.value);
+  if (motionReplayCurrentTimeMs.value >= range.max) {
+    motionReplayCurrentTimeMs.value = normalizeMotionReplayTime(motionReplayViewerTrace.value, range.min);
+  }
+  motionReplayPlaying.value = true;
+  motionReplayPlaybackLastTime = performance.now();
+  motionReplayPlaybackTimer = window.setInterval(() => {
+    if (!motionReplayViewerTrace.value) {
+      stopMotionReplayPlayback();
+      return;
+    }
+    const now = performance.now();
+    const delta = now - motionReplayPlaybackLastTime;
+    motionReplayPlaybackLastTime = now;
+    const nextTime = motionReplayCurrentTimeMs.value + delta;
+    const currentRange = getMotionReplayTimeRange(motionReplayViewerTrace.value);
+    if (nextTime >= currentRange.max) {
+      motionReplayCurrentTimeMs.value = normalizeMotionReplayTime(motionReplayViewerTrace.value, currentRange.max);
+      stopMotionReplayPlayback();
+      return;
+    }
+    motionReplayCurrentTimeMs.value = normalizeMotionReplayTime(motionReplayViewerTrace.value, nextTime);
+  }, 33);
+}
+
+function toggleMotionReplayPlayback() {
+  if (motionReplayPlaying.value) stopMotionReplayPlayback();
+  else startMotionReplayPlayback();
 }
 
 function updateLiveDesktopRates() {
@@ -1490,6 +1939,14 @@ function copyToClipboard(text, copiedRef, timerName) {
       }, 1200);
       return;
     }
+    if (timerName === "motionReplayInterval") {
+      if (motionReplayIntervalCopyStateTimer != null) window.clearTimeout(motionReplayIntervalCopyStateTimer);
+      motionReplayIntervalCopyStateTimer = window.setTimeout(() => {
+        motionReplayIntervalCopyStateTimer = null;
+        copiedRef.value = false;
+      }, 1200);
+      return;
+    }
     if (diagnosticsCopyStateTimer != null) window.clearTimeout(diagnosticsCopyStateTimer);
     diagnosticsCopyStateTimer = window.setTimeout(() => {
       diagnosticsCopyStateTimer = null;
@@ -1559,6 +2016,24 @@ async function copyMotionReplayTrace() {
   }
 }
 
+async function copyMotionReplayInterval() {
+  if (!canDebugMotion.value || !motionReplayViewerTrace.value) return;
+  try {
+    const interval = createMotionReplayIntervalExport(motionReplayViewerTrace.value, {
+      endMs: motionReplayIntervalEndMs.value,
+      filters: motionReplayFilters.value,
+      startMs: motionReplayIntervalStartMs.value,
+    });
+    await copyToClipboard(
+      interval.json,
+      hasCopiedMotionReplayInterval,
+      "motionReplayInterval",
+    );
+  } catch (error) {
+    console.warn("Failed to copy Pixi motion replay interval", error);
+  }
+}
+
 function clearLiveDesktopRuntimePoller() {
   if (liveDesktopRuntimePollTimer == null) return;
   window.clearInterval(liveDesktopRuntimePollTimer);
@@ -1579,6 +2054,7 @@ function restartMotionRuntimePoller() {
     || isCollapsed.value
     || activePanel.value !== "motion"
   ) {
+    stopMotionReplayPlayback();
     stopMotionReplayCapture();
     restoreMotionTimeScale();
     return;
@@ -1627,9 +2103,11 @@ onBeforeUnmount(() => {
   if (acrylicCopyStateTimer != null) window.clearTimeout(acrylicCopyStateTimer);
   if (diagnosticsCopyStateTimer != null) window.clearTimeout(diagnosticsCopyStateTimer);
   if (motionFullCopyStateTimer != null) window.clearTimeout(motionFullCopyStateTimer);
+  if (motionReplayIntervalCopyStateTimer != null) window.clearTimeout(motionReplayIntervalCopyStateTimer);
   if (motionReplayTraceCopyStateTimer != null) window.clearTimeout(motionReplayTraceCopyStateTimer);
   if (motionSummaryCopyStateTimer != null) window.clearTimeout(motionSummaryCopyStateTimer);
   if (kawaseLiveDesktopSyncTimer != null) window.clearTimeout(kawaseLiveDesktopSyncTimer);
+  stopMotionReplayPlayback();
   stopMotionReplayCapture();
   restoreMotionTimeScale();
   restoreMotionOverlay();
@@ -1898,6 +2376,29 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+.background-debug-textarea-control textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 68px;
+  max-height: 140px;
+  padding: 7px 8px;
+  resize: vertical;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.08);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+.background-debug-file-control input[type="file"] {
+  width: 100%;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+}
+
 .background-debug-status-grid,
 .background-debug-diagnostics {
   display: grid;
@@ -2114,6 +2615,35 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.background-debug-motion-replay-event {
+  display: grid;
+  grid-template-columns: 48px 52px minmax(68px, 0.7fr) minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  line-height: 1.25;
+  text-align: left;
+}
+
+.background-debug-motion-replay-event-current {
+  border-color: rgba(110, 220, 255, 0.44);
+  background: rgba(110, 220, 255, 0.12);
+}
+
+.background-debug-motion-replay-event span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .background-debug-motion-curve-list {
   display: grid;
   gap: 8px;
@@ -2225,6 +2755,49 @@ onBeforeUnmount(() => {
   stroke-width: 1;
 }
 
+.background-debug-motion-replay-curve-cursor {
+  stroke: rgba(255, 255, 255, 0.86);
+  stroke-width: 1.2;
+}
+
+.background-debug-motion-replay-interval-grid,
+.background-debug-motion-replay-overlay-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.background-debug-motion-replay-overlay-card {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.background-debug-motion-replay-overlay-card strong,
+.background-debug-motion-replay-overlay-card span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.background-debug-motion-replay-overlay-card strong {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.background-debug-motion-replay-overlay-card span {
+  color: rgba(255, 255, 255, 0.56);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
 .background-debug-window-card {
   display: grid;
   min-width: 0;
@@ -2258,6 +2831,7 @@ onBeforeUnmount(() => {
 
 .background-debug-motion-actions,
 .background-debug-motion-replay-actions,
+.background-debug-motion-replay-viewer-actions,
 .background-debug-live-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2266,6 +2840,7 @@ onBeforeUnmount(() => {
 
 .background-debug-motion-actions .background-debug-button,
 .background-debug-motion-replay-actions .background-debug-button,
+.background-debug-motion-replay-viewer-actions .background-debug-button,
 .background-debug-live-actions .background-debug-button {
   width: 100%;
 }
