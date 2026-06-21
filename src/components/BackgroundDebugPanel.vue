@@ -224,6 +224,7 @@
             name="motionRecordEnabled"
             type="checkbox"
             :checked="motionRecordEnabled"
+            :disabled="motionReplayCaptureActive"
             @change="setMotionRecordEnabled($event.target.checked)"
           >
           <span>Record</span>
@@ -234,6 +235,7 @@
             name="motionOverlayEnabled"
             type="checkbox"
             :checked="motionOverlayEnabled"
+            :disabled="motionReplayCaptureActive"
             @change="setMotionOverlayEnabled($event.target.checked)"
           >
           <span>Overlay</span>
@@ -245,6 +247,7 @@
             :key="preset.value"
             type="button"
             :class="['background-debug-mode-button', motionWindowPreset === preset.value && 'background-debug-mode-button-active']"
+            :disabled="motionReplayCaptureActive"
             @click="setMotionWindowPreset(preset.value)"
           >
             {{ preset.label }}
@@ -261,7 +264,7 @@
             min="1"
             max="300"
             step="1"
-            :disabled="motionWindowPreset !== MOTION_RECORD_WINDOW_CUSTOM"
+            :disabled="motionReplayCaptureActive || motionWindowPreset !== MOTION_RECORD_WINDOW_CUSTOM"
             :value="motionCustomSeconds"
             @change="updateMotionCustomSeconds"
           >
@@ -277,10 +280,66 @@
             min="0"
             max="2"
             step="0.05"
+            :disabled="motionReplayCaptureActive"
             :value="motionTimeScale"
             @input="updateMotionTimeScale"
           >
         </label>
+
+        <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">Replay Capture</div>
+          <label class="background-debug-control background-debug-number-control">
+            <span>
+              Capture seconds
+              <output>{{ motionReplayCaptureSeconds }}s / 60Hz</output>
+            </span>
+            <input
+              type="number"
+              min="1"
+              max="300"
+              step="1"
+              :disabled="motionReplayCaptureActive"
+              :value="motionReplayCaptureSeconds"
+              @change="updateMotionReplayCaptureSeconds"
+            >
+          </label>
+          <dl class="background-debug-status-grid">
+            <div
+              v-for="row in motionReplayCaptureRows"
+              :key="row.label"
+              :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
+            >
+              <dt>{{ row.label }}</dt>
+              <dd>{{ row.value }}</dd>
+            </div>
+          </dl>
+          <div class="background-debug-actions background-debug-motion-replay-actions">
+            <button
+              type="button"
+              class="background-debug-button"
+              :disabled="motionReplayCaptureActive"
+              @click="startMotionReplayCapture"
+            >
+              Start Capture
+            </button>
+            <button
+              type="button"
+              class="background-debug-button"
+              :disabled="!motionReplayCaptureActive"
+              @click="stopMotionReplayCapture"
+            >
+              Stop Capture
+            </button>
+            <button
+              type="button"
+              class="background-debug-button"
+              :disabled="motionReplayCaptureActive || !motionReplayTraceJson"
+              @click="copyMotionReplayTrace"
+            >
+              {{ motionReplayTraceCopyButtonLabel }}
+            </button>
+          </div>
+        </div>
 
         <dl class="background-debug-status-grid">
           <div
@@ -504,7 +563,12 @@
         </div>
 
         <div class="background-debug-actions background-debug-motion-actions">
-          <button type="button" class="background-debug-button" @click="clearMotionDebugHistory">
+          <button
+            type="button"
+            class="background-debug-button"
+            :disabled="motionReplayCaptureActive"
+            @click="clearMotionDebugHistory"
+          >
             Clear
           </button>
           <button type="button" class="background-debug-button" @click="copyMotionReport('summary')">
@@ -753,6 +817,7 @@ import {
   buildMotionFilterSummary,
   buildMotionOverviewRows,
   buildMotionPropertyRows,
+  buildMotionReplayCaptureRows,
   buildMotionRuntimeDebugConfig,
   buildMotionTimelineGroups,
   buildMotionWarningRows,
@@ -765,6 +830,10 @@ import {
   resolveMotionRecordWindowMs,
 } from "./backgroundDebug/motionDebugPanelModel.js";
 import { createMotionDebugAIReport } from "../rendering/pixi/animation/motionDebugReport.js";
+import {
+  createMotionReplayCaptureController,
+  normalizeMotionReplayCaptureSeconds,
+} from "../rendering/pixi/animation/motionReplayTrace.js";
 import { motionRuntime } from "../rendering/pixi/animation/motionRuntime.js";
 
 const props = defineProps({
@@ -799,6 +868,7 @@ const debugTabCount = computed(() => 2 + (canDebugMotion.value ? 1 : 0) + (canDe
 const hasCopiedAcrylic = ref(false);
 const hasCopiedDiagnostics = ref(false);
 const hasCopiedMotionFull = ref(false);
+const hasCopiedMotionReplayTrace = ref(false);
 const hasCopiedMotionSummary = ref(false);
 const liveDesktopDebugFrameSourceOverride = ref(canDebugLiveDesktop.value ? readLiveDesktopDebugFrameSourceOverride() : null);
 const liveDesktopDisableMouseRelay = ref(canDebugLiveDesktop.value ? readLiveDesktopDisableMouseRelay() : true);
@@ -815,6 +885,11 @@ const motionTimeScale = ref(1);
 const motionFilterPreset = ref("all");
 const motionFilterQuery = ref("");
 const motionReport = ref(motionRuntime.debugReport({ includeChannels: true, includeTargets: true }));
+const motionReplayCapture = createMotionReplayCaptureController(motionRuntime);
+const motionReplayCaptureSeconds = ref(30);
+const motionReplayCaptureStatus = ref(motionReplayCapture.status());
+const motionReplayTrace = ref(null);
+const motionReplayTraceJson = ref("");
 const liveDesktopRates = ref({
   framesPerSecond: 0,
   arrivedPerSecond: 0,
@@ -827,6 +902,7 @@ let acrylicCopyStateTimer = null;
 let diagnosticsCopyStateTimer = null;
 let motionFullCopyStateTimer = null;
 let motionRuntimePollTimer = null;
+let motionReplayTraceCopyStateTimer = null;
 let motionSummaryCopyStateTimer = null;
 let liveDesktopRuntimePollTimer = null;
 let kawaseLiveDesktopSyncTimer = null;
@@ -953,6 +1029,8 @@ const blurKernelStatus = computed(() => {
 const acrylicCopyButtonLabel = computed(() => (hasCopiedAcrylic.value ? "已复制" : "复制 JSON"));
 const diagnosticsCopyButtonLabel = computed(() => (hasCopiedDiagnostics.value ? "已复制" : "复制诊断"));
 const motionFullCopyButtonLabel = computed(() => (hasCopiedMotionFull.value ? "已复制" : "Copy Full Report"));
+const motionReplayCaptureActive = computed(() => Boolean(motionReplayCaptureStatus.value.active));
+const motionReplayTraceCopyButtonLabel = computed(() => (hasCopiedMotionReplayTrace.value ? "Copied" : "Copy Trace"));
 const motionSummaryCopyButtonLabel = computed(() => (hasCopiedMotionSummary.value ? "已复制" : "Copy Summary"));
 const layoutDebugRows = computed(() => {
   const params = layoutParams.value;
@@ -1047,6 +1125,7 @@ const motionFilterSummary = computed(() => buildMotionFilterSummary(motionReport
 const motionPropertyRows = computed(() => buildMotionPropertyRows(motionReport.value, motionFilters.value));
 const motionTimelineGroups = computed(() => buildMotionTimelineGroups(motionReport.value, motionFilters.value));
 const motionCurveChartGroups = computed(() => buildMotionCurveChartGroups(motionReport.value, motionFilters.value));
+const motionReplayCaptureRows = computed(() => buildMotionReplayCaptureRows(motionReplayCaptureStatus.value, motionReplayTrace.value));
 
 function formatValue(value, digits) {
   return Number(value).toFixed(digits);
@@ -1074,6 +1153,10 @@ function refreshMotionReport() {
 
 function applyMotionRuntimeDebugConfig() {
   if (!canDebugMotion.value) return;
+  if (motionReplayCaptureActive.value) {
+    refreshMotionReport();
+    return;
+  }
   const config = buildMotionRuntimeDebugConfig({
     customSeconds: motionCustomSeconds.value,
     overlayEnabled: motionOverlayEnabled.value,
@@ -1138,8 +1221,45 @@ function updateMotionTimeScale(event) {
 
 function clearMotionDebugHistory() {
   if (!canDebugMotion.value) return;
+  if (motionReplayCaptureActive.value) return;
   motionRuntime.clearDebugHistory();
   refreshMotionReport();
+}
+
+function updateMotionReplayCaptureSeconds(event) {
+  motionReplayCaptureSeconds.value = normalizeMotionReplayCaptureSeconds(event.target.value);
+}
+
+function syncMotionControlsFromRuntimeConfig() {
+  const config = motionRuntime.configureDebug();
+  motionOverlayEnabled.value = Boolean(config.overlayEnabled);
+  motionRecordEnabled.value = Boolean(config.recordHistory);
+  motionTimeScale.value = normalizeMotionTimeScale(config.timeScale);
+}
+
+function startMotionReplayCapture() {
+  if (!canDebugMotion.value || motionReplayCaptureActive.value) return;
+  motionReplayCaptureSeconds.value = normalizeMotionReplayCaptureSeconds(motionReplayCaptureSeconds.value);
+  motionReplayTrace.value = null;
+  motionReplayTraceJson.value = "";
+  hasCopiedMotionReplayTrace.value = false;
+  motionReplayCaptureStatus.value = motionReplayCapture.start({
+    seconds: motionReplayCaptureSeconds.value,
+  });
+  refreshMotionReport();
+}
+
+function stopMotionReplayCapture(options = {}) {
+  if (!canDebugMotion.value || !motionReplayCaptureActive.value) return null;
+  const result = motionReplayCapture.stop({
+    restore: options.restore !== false,
+  });
+  motionReplayCaptureStatus.value = result.status;
+  motionReplayTrace.value = result.trace;
+  motionReplayTraceJson.value = result.json;
+  syncMotionControlsFromRuntimeConfig();
+  refreshMotionReport();
+  return result;
 }
 
 function updateLiveDesktopRates() {
@@ -1362,6 +1482,14 @@ function copyToClipboard(text, copiedRef, timerName) {
       }, 1200);
       return;
     }
+    if (timerName === "motionReplayTrace") {
+      if (motionReplayTraceCopyStateTimer != null) window.clearTimeout(motionReplayTraceCopyStateTimer);
+      motionReplayTraceCopyStateTimer = window.setTimeout(() => {
+        motionReplayTraceCopyStateTimer = null;
+        copiedRef.value = false;
+      }, 1200);
+      return;
+    }
     if (diagnosticsCopyStateTimer != null) window.clearTimeout(diagnosticsCopyStateTimer);
     diagnosticsCopyStateTimer = window.setTimeout(() => {
       diagnosticsCopyStateTimer = null;
@@ -1418,6 +1546,19 @@ async function copyMotionReport(mode) {
   }
 }
 
+async function copyMotionReplayTrace() {
+  if (!canDebugMotion.value || !motionReplayTraceJson.value) return;
+  try {
+    await copyToClipboard(
+      motionReplayTraceJson.value,
+      hasCopiedMotionReplayTrace,
+      "motionReplayTrace",
+    );
+  } catch (error) {
+    console.warn("Failed to copy Pixi motion replay trace", error);
+  }
+}
+
 function clearLiveDesktopRuntimePoller() {
   if (liveDesktopRuntimePollTimer == null) return;
   window.clearInterval(liveDesktopRuntimePollTimer);
@@ -1438,6 +1579,7 @@ function restartMotionRuntimePoller() {
     || isCollapsed.value
     || activePanel.value !== "motion"
   ) {
+    stopMotionReplayCapture();
     restoreMotionTimeScale();
     return;
   }
@@ -1485,8 +1627,10 @@ onBeforeUnmount(() => {
   if (acrylicCopyStateTimer != null) window.clearTimeout(acrylicCopyStateTimer);
   if (diagnosticsCopyStateTimer != null) window.clearTimeout(diagnosticsCopyStateTimer);
   if (motionFullCopyStateTimer != null) window.clearTimeout(motionFullCopyStateTimer);
+  if (motionReplayTraceCopyStateTimer != null) window.clearTimeout(motionReplayTraceCopyStateTimer);
   if (motionSummaryCopyStateTimer != null) window.clearTimeout(motionSummaryCopyStateTimer);
   if (kawaseLiveDesktopSyncTimer != null) window.clearTimeout(kawaseLiveDesktopSyncTimer);
+  stopMotionReplayCapture();
   restoreMotionTimeScale();
   restoreMotionOverlay();
   clearMotionRuntimePoller();
@@ -2113,6 +2257,7 @@ onBeforeUnmount(() => {
 }
 
 .background-debug-motion-actions,
+.background-debug-motion-replay-actions,
 .background-debug-live-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2120,6 +2265,7 @@ onBeforeUnmount(() => {
 }
 
 .background-debug-motion-actions .background-debug-button,
+.background-debug-motion-replay-actions .background-debug-button,
 .background-debug-live-actions .background-debug-button {
   width: 100%;
 }

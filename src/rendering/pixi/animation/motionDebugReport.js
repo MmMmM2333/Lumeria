@@ -1,4 +1,8 @@
 import { motionRuntime } from "./motionRuntime.js";
+import {
+  createMotionReplayCaptureController,
+  createMotionReplayTraceFromRuntime,
+} from "./motionReplayTrace.js";
 
 export const MOTION_DEBUG_GLOBAL_KEY = "__LP_MOTION_DEBUG__";
 const REPORT_SCHEMA = "pixi-motion-ai-report/v1";
@@ -386,6 +390,7 @@ export function createMotionDebugAIReport(runtime = motionRuntime, options = {})
 export function createMotionDebugCommands(runtime = motionRuntime, options = {}) {
   const target = options.target || globalThis;
   const commandOptions = { target };
+  const replayCapture = createMotionReplayCaptureController(runtime);
   const commands = {
     aiReport(reportOptions = {}) {
       return createMotionDebugAIReport(runtime, reportOptions);
@@ -402,11 +407,21 @@ export function createMotionDebugCommands(runtime = motionRuntime, options = {})
       target?.navigator?.clipboard?.writeText?.(report.copyText);
       return report;
     },
+    copyReplayTrace(traceOptions = {}) {
+      const trace = createMotionReplayTraceFromRuntime(runtime, traceOptions);
+      const json = JSON.stringify(trace, null, 2);
+      target?.navigator?.clipboard?.writeText?.(json);
+      return { json, trace };
+    },
     full(reportOptions = {}) {
       return createMotionDebugAIReport(runtime, { ...reportOptions, mode: "full" });
     },
     report(reportOptions = {}) {
       return runtime.debugReport(reportOptions);
+    },
+    replayTrace(traceOptions = {}) {
+      const trace = createMotionReplayTraceFromRuntime(runtime, traceOptions);
+      return { json: JSON.stringify(trace, null, 2), trace };
     },
     selectedTarget(selection, reportOptions = {}) {
       return createMotionDebugAIReport(runtime, {
@@ -417,6 +432,12 @@ export function createMotionDebugCommands(runtime = motionRuntime, options = {})
     },
     snapshot(snapshotOptions = {}) {
       return runtime.debugSnapshot(snapshotOptions);
+    },
+    startReplayCapture(captureOptions = {}) {
+      return replayCapture.start(captureOptions);
+    },
+    stopReplayCapture(captureOptions = {}) {
+      return replayCapture.stop(captureOptions);
     },
     summary(reportOptions = {}) {
       return createMotionDebugAIReport(runtime, { ...reportOptions, mode: "summary" });

@@ -220,6 +220,21 @@ export function buildMotionOverviewRows(report = {}) {
   ];
 }
 
+export function buildMotionReplayCaptureRows(status = {}, trace = null) {
+  const summary = trace?.summary || {};
+  const capture = trace?.capture || {};
+  const requestedSeconds = status.seconds ?? (capture.requestedDurationMs != null ? capture.requestedDurationMs / 1000 : 30);
+  const sampleHz = status.sampleHz ?? capture.sampleHz ?? 60;
+  return [
+    { label: "capture", value: status.active ? "active" : "idle" },
+    { label: "window", value: `${formatMotionNumber(normalizeMotionCustomSeconds(requestedSeconds), 0)}s` },
+    { label: "sampleHz", value: `${formatMotionNumber(sampleHz, 0)}Hz` },
+    { label: "frames/events", value: `${formatCount(summary.frameCount)} / ${formatCount(summary.eventCount)}`, wide: true },
+    { label: "tracks/targets", value: `${formatCount(summary.trackCount)} / ${formatCount(summary.targetCount)}`, wide: true },
+    { label: "schema", value: trace?.schema || "none", wide: true },
+  ];
+}
+
 function resolveTargetLabel(animation = {}) {
   return resolveRecordLabel(animation);
 }

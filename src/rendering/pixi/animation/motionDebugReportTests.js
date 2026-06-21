@@ -151,12 +151,19 @@ export function runMotionDebugReportTests() {
     assert(typeof commands.full === "function", "global commands should expose full report");
     assert(typeof commands.selectedTarget === "function", "global commands should expose selected target report");
     assert(typeof commands.configure === "function", "global commands should expose runtime configuration");
+    assert(typeof commands.replayTrace === "function", "global commands should expose replay trace export");
+    assert(typeof commands.startReplayCapture === "function", "global commands should expose replay capture start");
+    assert(typeof commands.stopReplayCapture === "function", "global commands should expose replay capture stop");
     assert(JSON.parse(commands.summary().json).mode === "summary", "global summary should return parseable report JSON");
     assert(JSON.parse(commands.full().json).mode === "full", "global full should return parseable report JSON");
+    assert(JSON.parse(commands.replayTrace().json).schema === "pixi-motion-replay-trace/v1", "global replay trace should return parseable trace JSON");
     assert(
       JSON.parse(commands.selectedTarget({ sourceLabel: "folder.panel" }).json).report.targets[0].sourceLabel === "folder.panel",
       "global selected target should return the requested target",
     );
+    assert(commands.startReplayCapture({ seconds: 1 }).active === true, "global replay capture should start");
+    runtime.step(1 / 60);
+    assert(JSON.parse(commands.stopReplayCapture().json).schema === "pixi-motion-replay-trace/v1", "global replay capture should stop with a trace");
 
     commands.uninstall();
     assert(target[MOTION_DEBUG_GLOBAL_KEY] == null, "global commands should uninstall cleanly");

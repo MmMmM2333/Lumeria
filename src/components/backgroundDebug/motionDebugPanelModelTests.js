@@ -5,6 +5,7 @@ import {
   buildMotionCurveChartGroups,
   buildMotionOverviewRows,
   buildMotionPropertyRows,
+  buildMotionReplayCaptureRows,
   buildMotionRuntimeDebugConfig,
   buildMotionTimelineGroups,
   buildMotionWarningRows,
@@ -30,6 +31,19 @@ export function runMotionDebugPanelModelTests() {
   assert(normalizeMotionTimeScale(4) === 2, "time scale should clamp to 2");
   assert(MOTION_FILTER_PRESETS.length === 3, "filter presets should expose the MVP preset set");
   assert(normalizeMotionFilterPreset("bad") === "all", "unknown filter preset should normalize to all");
+  const replayRows = buildMotionReplayCaptureRows(
+    { active: true, sampleHz: 60, seconds: 12 },
+    {
+      capture: { requestedDurationMs: 12000, sampleHz: 60 },
+      schema: "pixi-motion-replay-trace/v1",
+      summary: { eventCount: 8, frameCount: 16, targetCount: 3, trackCount: 4 },
+    },
+  );
+  assert(replayRows.some((row) => row.label === "capture" && row.value === "active"), "replay rows should expose capture active state");
+  assert(replayRows.some((row) => row.label === "window" && row.value === "12s"), "replay rows should expose capture window");
+  assert(replayRows.some((row) => row.label === "sampleHz" && row.value === "60Hz"), "replay rows should expose capture sample rate");
+  assert(replayRows.some((row) => row.label === "frames/events" && row.value === "16 / 8"), "replay rows should expose trace frame/event counts");
+  assert(replayRows.some((row) => row.label === "schema" && row.value === "pixi-motion-replay-trace/v1"), "replay rows should expose trace schema");
 
   const config = buildMotionRuntimeDebugConfig({
     customSeconds: 45,
