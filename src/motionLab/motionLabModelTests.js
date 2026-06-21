@@ -1,11 +1,17 @@
 import {
   buildMotionLabCurveRows,
+  buildMotionLabAssertionRows,
   buildMotionLabOverviewRows,
   buildMotionLabScenarioRows,
   buildMotionLabTimelineRows,
-  MOTION_LAB_SCENARIOS,
   shouldMountMotionLab,
 } from "./motionLabModel.js";
+import {
+  evaluateMotionLabScenarioAssertions,
+  getMotionLabScenario,
+  MOTION_LAB_SCENARIO_IDS,
+  MOTION_LAB_SCENARIOS,
+} from "./motionLabScenarios.js";
 
 function makeReport() {
   return {
@@ -60,9 +66,15 @@ export function runMotionLabModelTests() {
   assert(!shouldMountMotionLab("?motionLab=false", true), "motionLab=false should not mount lab");
   assert(!shouldMountMotionLab("?motionLab=1", false), "motion lab should be dev-only");
 
-  const scenarioRows = buildMotionLabScenarioRows(MOTION_LAB_SCENARIOS, "desktop-page");
-  assert(scenarioRows.length >= 4, "scenario list should expose seed rows");
-  assert(scenarioRows.some((row) => row.id === "desktop-page" && row.selected), "selected scenario should be marked");
+  assert(MOTION_LAB_SCENARIOS.length === 12, "scenario DSL should expose the first 12 scenarios");
+  assert(MOTION_LAB_SCENARIO_IDS.every((id) => MOTION_LAB_SCENARIOS.some((scenario) => scenario.id === id)), "scenario IDs should match the required set");
+  assert(MOTION_LAB_SCENARIOS.every((scenario) => typeof scenario.run === "function"), "every scenario should expose a run function");
+  assert(MOTION_LAB_SCENARIOS.every((scenario) => scenario.assertions.length >= 1), "every scenario should expose at least one assertion");
+
+  const scenarioRows = buildMotionLabScenarioRows(MOTION_LAB_SCENARIOS, "desktop-page-scrub");
+  assert(scenarioRows.length === 12, "scenario list should expose all DSL rows");
+  assert(scenarioRows.some((row) => row.id === "desktop-page-scrub" && row.selected), "selected scenario should be marked");
+  assert(scenarioRows.every((row) => row.assertionCount >= 1), "scenario rows should expose assertion counts");
 
   const report = makeReport();
   const overviewRows = buildMotionLabOverviewRows(report, {
@@ -79,4 +91,16 @@ export function runMotionLabModelTests() {
   assert(curveRows.length === 1, "curve rows should expose curve stats");
   assert(curveRows[0].label === "motionLab.pageTrack.x", "curve row should include source label and prop");
   assert(curveRows[0].samples === "12", "curve row should expose sample count");
+
+  const scenario = getMotionLabScenario("desktop-page-scrub");
+  assert(scenario.id === "desktop-page-scrub", "scenario lookup should resolve known scenarios");
+  const passedAssertions = evaluateMotionLabScenarioAssertions({
+    assertions: [{
+      id: "sample",
+      label: "sample assertion",
+      test: () => true,
+    }],
+  }, { report });
+  const assertionRows = buildMotionLabAssertionRows(passedAssertions);
+  assert(assertionRows[0].status === "pass", "assertion rows should expose pass state");
 }

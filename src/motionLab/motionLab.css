@@ -299,8 +299,18 @@
   grid-template-columns: 64px 70px minmax(0, 1fr);
 }
 
+.motion-lab-assertion-row {
+  grid-template-columns: 54px minmax(0, 0.8fr) minmax(0, 1.2fr);
+}
+
+.motion-lab-assertion-pass {
+  border-color: rgba(45, 212, 191, 0.24);
+  background: rgba(45, 212, 191, 0.08);
+}
+
 .motion-lab-list-row span,
 .motion-lab-list-row strong,
+.motion-lab-list-row small,
 .motion-lab-curve-row span,
 .motion-lab-curve-row strong {
   min-width: 0;
@@ -313,6 +323,11 @@
 .motion-lab-curve-row strong {
   color: rgba(255, 255, 255, 0.84);
   font-weight: 650;
+}
+
+.motion-lab-list-row small {
+  color: rgba(255, 255, 255, 0.54);
+  font-size: 10.5px;
 }
 
 .motion-lab-curve-row {

@@ -17,7 +17,7 @@
         >
           <span>{{ scenario.label }}</span>
           <strong>{{ scenario.stage }}</strong>
-          <small>{{ scenario.description }}</small>
+          <small>{{ scenario.description }} / {{ scenario.assertionCount }} assertion</small>
         </button>
       </section>
 
@@ -98,6 +98,24 @@
 
         <div class="motion-lab-panel motion-lab-panel-wide">
           <header>
+            <h2>Assertions</h2>
+          </header>
+          <div class="motion-lab-list">
+            <div
+              v-for="row in assertionRows"
+              :key="row.id"
+              :class="['motion-lab-list-row', 'motion-lab-assertion-row', row.passed && 'motion-lab-assertion-pass']"
+            >
+              <span>{{ row.status }}</span>
+              <strong>{{ row.label }}</strong>
+              <small>{{ row.detail }}</small>
+            </div>
+            <div v-if="assertionRows.length === 0" class="motion-lab-empty">no assertions run</div>
+          </div>
+        </div>
+
+        <div class="motion-lab-panel motion-lab-panel-wide">
+          <header>
             <h2>Timeline</h2>
           </header>
           <div class="motion-lab-list">
@@ -157,16 +175,21 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { Container, Graphics, Text } from "pixi.js";
 import { buildMotionWarningRows } from "../components/backgroundDebug/motionDebugPanelModel.js";
 import { createPixiApp } from "../rendering/pixi/createPixiApp.js";
-import { createMotionRuntime, spring, tween } from "../rendering/pixi/animation/motionRuntime.js";
-import { motionSequence, motionTo } from "../rendering/pixi/animation/motionTween.js";
+import { createMotionRuntime } from "../rendering/pixi/animation/motionRuntime.js";
 import { createMotionReplayTrace } from "../rendering/pixi/animation/motionReplayTrace.js";
 import {
+  buildMotionLabAssertionRows,
   buildMotionLabCurveRows,
   buildMotionLabOverviewRows,
   buildMotionLabScenarioRows,
   buildMotionLabTimelineRows,
   MOTION_LAB_SCENARIOS,
 } from "./motionLabModel.js";
+import {
+  evaluateMotionLabScenarioAssertions,
+  getMotionLabScenario,
+  runMotionLabScenario,
+} from "./motionLabScenarios.js";
 import "./motionLab.css";
 
 const pixiHostRef = ref(null);
@@ -175,6 +198,7 @@ const previewStatus = ref("ready");
 const motionReport = ref(makeEmptyReport());
 const replayTrace = ref(null);
 const replayTraceJson = ref("");
+const assertionResults = ref([]);
 const copiedReport = ref(false);
 const copiedTrace = ref(false);
 const motionParams = reactive({
@@ -185,9 +209,11 @@ const motionParams = reactive({
 });
 
 const scenarioRows = computed(() => buildMotionLabScenarioRows(MOTION_LAB_SCENARIOS, selectedScenarioId.value));
-const selectedScenarioLabel = computed(() => scenarioRows.value.find((row) => row.selected)?.label || "Scenario");
+const selectedScenario = computed(() => getMotionLabScenario(selectedScenarioId.value));
+const selectedScenarioLabel = computed(() => selectedScenario.value?.label || "Scenario");
 const overviewRows = computed(() => buildMotionLabOverviewRows(motionReport.value, replayTrace.value));
 const warningRows = computed(() => buildMotionWarningRows(motionReport.value, 6));
+const assertionRows = computed(() => buildMotionLabAssertionRows(assertionResults.value));
 const timelineRows = computed(() => buildMotionLabTimelineRows(motionReport.value));
 const curveRows = computed(() => buildMotionLabCurveRows(motionReport.value));
 const reportCopyLabel = computed(() => copiedReport.value ? "Copied Report" : "Copy Report");
@@ -238,11 +264,31 @@ function makeIcon(label, color) {
 }
 
 function makePanel() {
-  return new Graphics()
+  const panel = new Container();
+  panel.background = new Graphics()
     .roundRect(-96, -70, 192, 140, 28)
     .fill({ alpha: 0.26, color: 0xffffff })
     .roundRect(-72, -42, 144, 84, 20)
     .fill({ alpha: 0.34, color: 0x2dd4bf });
+  panel.addChild(panel.background);
+  return panel;
+}
+
+function makeHoverTarget(color) {
+  const target = new Graphics()
+    .roundRect(-44, -44, 88, 88, 18)
+    .fill({ alpha: 0.16, color })
+    .roundRect(-38, -38, 76, 76, 16)
+    .fill({ alpha: 0.08, color: 0xffffff });
+  target.alpha = 0;
+  return target;
+}
+
+function makeMassIcon(index) {
+  const hue = index % 3 === 0 ? 0x38bdf8 : index % 3 === 1 ? 0xa3e635 : 0xf472b6;
+  return new Graphics()
+    .roundRect(-8, -8, 16, 16, 4)
+    .fill({ alpha: 0.68, color: hue });
 }
 
 function describeSceneTargets() {
@@ -265,12 +311,38 @@ function describeSceneTargets() {
     overlayTarget: scene.dragGhost,
     sourceLabel: "motionLab.drag.ghost",
   });
+  runtime.describeTarget(scene.folderPageTrack, {
+    kind: "MotionLabFolderPageTrack",
+    label: "folderPageTrack",
+    overlayTarget: scene.folderPageTrack,
+    sourceLabel: "motionLab.folder.pageTrack",
+  });
+  runtime.describeTarget(scene.folderHover, {
+    kind: "MotionLabHover",
+    label: "folderHover",
+    overlayTarget: scene.folderHover,
+    sourceLabel: "motionLab.folder.hover",
+  });
+  runtime.describeTarget(scene.createHover, {
+    kind: "MotionLabCreateHover",
+    label: "createHover",
+    overlayTarget: scene.createHover,
+    sourceLabel: "motionLab.appFolderCreate.hover",
+  });
   scene.icons.forEach((icon, index) => {
     runtime.describeTarget(icon, {
       kind: "MotionLabIcon",
       label: `icon ${index + 1}`,
       overlayTarget: icon,
       sourceLabel: `motionLab.icon.${index + 1}`,
+    });
+  });
+  scene.massIcons.forEach((icon, index) => {
+    runtime.describeTarget(icon, {
+      kind: "MotionLabMassIcon",
+      label: `mass icon ${index + 1}`,
+      overlayTarget: icon,
+      sourceLabel: `motionLab.massIcon.${index + 1}`,
     });
   });
 }
@@ -284,7 +356,12 @@ function createScene(app) {
     .fill({ alpha: 0.2, color: 0xffffff });
   const pageTrack = new Container();
   const folderPanel = makePanel();
+  const folderPageTrack = new Container();
+  const folderHover = makeHoverTarget(0x38bdf8);
+  const createHover = makeHoverTarget(0xa3e635);
   const dragGhost = makeIcon("D", 0xf97316);
+  const massIconLayer = new Container();
+  const massIcons = Array.from({ length: 108 }, (_, index) => makeMassIcon(index));
   const icons = [
     makeIcon("A", 0x38bdf8),
     makeIcon("B", 0xa3e635),
@@ -294,17 +371,43 @@ function createScene(app) {
     icon.position.set(180 + index * 104, 248);
     pageTrack.addChild(icon);
   });
+  for (let index = 0; index < 8; index += 1) {
+    const dot = new Graphics()
+      .roundRect(-12, -12, 24, 24, 6)
+      .fill({ alpha: 0.48, color: index % 2 ? 0xf472b6 : 0x38bdf8 });
+    dot.position.set(-54 + (index % 4) * 36, -22 + Math.floor(index / 4) * 36);
+    folderPageTrack.addChild(dot);
+  }
   folderPanel.position.set(520, 174);
+  folderPageTrack.position.set(0, 0);
+  folderPanel.addChild(folderPageTrack);
+  folderHover.position.set(284, 248);
+  createHover.position.set(388, 248);
   dragGhost.position.set(210, 112);
+  massIconLayer.alpha = 0.22;
+  massIcons.forEach((icon, index) => {
+    const col = index % 18;
+    const row = Math.floor(index / 18);
+    icon.position.set(82 + col * 32, 64 + row * 28);
+    massIconLayer.addChild(icon);
+  });
   stage.addChild(guide);
+  stage.addChild(massIconLayer);
   stage.addChild(pageTrack);
+  stage.addChild(folderHover);
+  stage.addChild(createHover);
   stage.addChild(folderPanel);
   stage.addChild(dragGhost);
   app.stage.addChild(stage);
   return {
+    createHover,
     dragGhost,
+    folderHover,
     folderPanel,
+    folderPageTrack,
     icons,
+    massIconLayer,
+    massIcons,
     pageTrack,
     stage,
   };
@@ -326,9 +429,16 @@ function configureRuntime() {
 function setSceneDefaults() {
   if (!scene) return;
   scene.pageTrack.position.set(0, 0);
+  scene.folderPageTrack.position.set(0, 0);
   scene.folderPanel.position.set(520, 174);
   scene.folderPanel.scale.set(0.86);
   scene.folderPanel.alpha = 0.22;
+  scene.folderHover.position.set(284, 248);
+  scene.folderHover.scale.set(1);
+  scene.folderHover.alpha = 0;
+  scene.createHover.position.set(388, 248);
+  scene.createHover.scale.set(1);
+  scene.createHover.alpha = 0;
   scene.dragGhost.position.set(210, 112);
   scene.dragGhost.scale.set(0.78);
   scene.dragGhost.alpha = 0.5;
@@ -336,6 +446,16 @@ function setSceneDefaults() {
     icon.position.set(180 + index * 104, 248);
     icon.scale.set(1);
     icon.alpha = 1;
+    icon.rotation = 0;
+  });
+  scene.massIconLayer.alpha = 0.22;
+  scene.massIcons.forEach((icon, index) => {
+    const col = index % 18;
+    const row = Math.floor(index / 18);
+    icon.position.set(82 + col * 32, 64 + row * 28);
+    icon.scale.set(1);
+    icon.alpha = 1;
+    icon.rotation = 0;
   });
 }
 
@@ -343,12 +463,18 @@ function cancelSceneMotion(reason = "motion-lab-reset") {
   if (!runtime || !scene) return;
   for (const target of [
     scene.pageTrack,
+    scene.folderPageTrack,
     scene.folderPanel,
     scene.folderPanel.scale,
+    scene.folderHover,
+    scene.folderHover.scale,
+    scene.createHover,
+    scene.createHover.scale,
     scene.dragGhost,
     scene.dragGhost.scale,
     ...scene.icons,
     ...scene.icons.map((icon) => icon.scale),
+    ...scene.massIcons,
   ]) {
     runtime.cancelTarget(target, { reason });
   }
@@ -373,108 +499,54 @@ function resetLabScene() {
   describeSceneTargets();
   replayTrace.value = null;
   replayTraceJson.value = "";
+  assertionResults.value = [];
   previewStatus.value = "ready";
   refreshMotionReport();
 }
 
-function runFolderOpen() {
-  const duration = motionParams.durationMs / 1000;
-  motionTo(scene.folderPanel, {
-    alpha: 1,
-    driver: tween({ duration, ease: "power2.out" }),
-    from: { alpha: 0.22, scale: 0.86, y: 214 },
-    lane: "base",
-    laneKey: "folder-open",
-    scale: 1,
-    sourceLabel: "motionLab.folder.panel",
-    y: 174,
-  }, {
-    debugMetadata: { kind: "MotionLabPanel", label: "folderPanel" },
-    runtime,
-  });
-  motionTo(scene.pageTrack, {
-    driver: spring({ damping: motionParams.damping, stiffness: motionParams.stiffness }),
-    lane: "base",
-    laneKey: "page-offset",
-    sourceLabel: "motionLab.pageTrack",
-    x: -Math.round(motionParams.distancePx * 0.25),
-  }, {
-    debugMetadata: { kind: "MotionLabPageTrack", label: "pageTrack" },
-    runtime,
+function wait(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
   });
 }
 
-function runDesktopPage() {
-  motionTo(scene.pageTrack, {
-    driver: spring({ damping: motionParams.damping, stiffness: motionParams.stiffness }),
-    from: { x: 0 },
-    lane: "base",
-    laneKey: "page-scrub",
-    sourceLabel: "motionLab.pageTrack",
-    x: -motionParams.distancePx,
-  }, {
-    debugMetadata: { kind: "MotionLabPageTrack", label: "pageTrack" },
+function makeScenarioContext() {
+  return {
+    motionParams,
+    refreshReport: refreshMotionReport,
+    report: motionReport.value,
     runtime,
-  });
+    scene,
+  };
 }
 
-function runIconPress() {
-  motionSequence(scene.icons[0], [
-    {
-      driver: tween({ duration: 0.12, ease: "power2.out" }),
-      lane: "factor",
-      laneKey: "press",
-      scale: 0.86,
-      sourceLabel: "motionLab.icon.1",
-    },
-    {
-      driver: spring({ damping: motionParams.damping, stiffness: motionParams.stiffness }),
-      lane: "factor",
-      laneKey: "press",
-      scale: 1,
-      sourceLabel: "motionLab.icon.1",
-    },
-  ], {
-    debugMetadata: { kind: "MotionLabIcon", label: "icon 1" },
-    runtime,
-  });
+function updateScenarioAssertions() {
+  refreshMotionReport();
+  const context = makeScenarioContext();
+  context.report = motionReport.value;
+  assertionResults.value = evaluateMotionLabScenarioAssertions(selectedScenario.value, context);
+  return assertionResults.value;
 }
 
-function runDragRelease() {
-  scene.dragGhost.alpha = 0.85;
-  scene.dragGhost.position.set(210, 112);
-  motionTo(scene.dragGhost, {
-    alpha: 1,
-    driver: spring({ damping: motionParams.damping, stiffness: motionParams.stiffness }),
-    lane: "base",
-    laneKey: "drag-release",
-    sourceLabel: "motionLab.drag.ghost",
-    x: 210 + motionParams.distancePx,
-    y: 248,
-  }, {
-    debugMetadata: { kind: "MotionLabGhost", label: "dragGhost" },
-    runtime,
-  });
-}
-
-function runSelectedScenario() {
+async function runSelectedScenario() {
   if (!runtime || !scene) return;
   resetLabScene();
   previewStatus.value = "running";
-  if (selectedScenarioId.value === "desktop-page") runDesktopPage();
-  else if (selectedScenarioId.value === "icon-press") runIconPress();
-  else if (selectedScenarioId.value === "drag-release") runDragRelease();
-  else runFolderOpen();
+  runMotionLabScenario(selectedScenarioId.value, makeScenarioContext());
   refreshMotionReport();
+  await wait(selectedScenario.value?.assertAfterMs ?? 760);
+  const assertions = updateScenarioAssertions();
+  previewStatus.value = assertions.every((assertion) => assertion.passed) ? "passed" : "failed";
 }
 
 function selectScenario(id) {
-  selectedScenarioId.value = id;
+  selectedScenarioId.value = getMotionLabScenario(id)?.id || MOTION_LAB_SCENARIOS[0].id;
   resetLabScene();
 }
 
 function captureReplayTrace() {
   if (!runtime) return;
+  updateScenarioAssertions();
   refreshMotionReport();
   const trace = createMotionReplayTrace(motionReport.value, {
     durationMs: 30000,
@@ -491,8 +563,17 @@ async function copyText(text) {
 }
 
 async function copyLabReport() {
+  updateScenarioAssertions();
   refreshMotionReport();
-  const ok = await copyText(JSON.stringify(motionReport.value, null, 2));
+  const payload = {
+    assertions: assertionResults.value,
+    report: motionReport.value,
+    scenario: {
+      id: selectedScenario.value?.id,
+      label: selectedScenario.value?.label,
+    },
+  };
+  const ok = await copyText(JSON.stringify(payload, null, 2));
   if (!ok) return;
   copiedReport.value = true;
   if (copyReportTimer != null) window.clearTimeout(copyReportTimer);
@@ -516,9 +597,23 @@ async function copyReplayTrace() {
 function installDebugApi() {
   globalThis.__LP_MOTION_LAB__ = {
     captureReplayTrace,
+    assertions: () => assertionResults.value,
+    copyReport: copyLabReport,
+    copyTrace: copyReplayTrace,
     report: () => motionReport.value,
     reset: resetLabScene,
     run: runSelectedScenario,
+    runScenario: async (id) => {
+      selectScenario(id);
+      await runSelectedScenario();
+      return {
+        assertions: assertionResults.value,
+        report: motionReport.value,
+        scenarioId: selectedScenarioId.value,
+      };
+    },
+    scenarios: () => scenarioRows.value,
+    selectScenario,
     status: () => ({
       hasPixiApp: Boolean(pixiApp),
       mounted: true,

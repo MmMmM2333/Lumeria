@@ -1,31 +1,7 @@
-export const MOTION_LAB_QUERY_PARAM = "motionLab";
+import { MOTION_LAB_SCENARIOS } from "./motionLabScenarios.js";
 
-export const MOTION_LAB_SCENARIOS = Object.freeze([
-  {
-    description: "folder panel scale and alpha",
-    id: "folder-open",
-    label: "Folder Open",
-    stage: "seed",
-  },
-  {
-    description: "page track spring retarget",
-    id: "desktop-page",
-    label: "Desktop Page",
-    stage: "seed",
-  },
-  {
-    description: "icon factor lane press",
-    id: "icon-press",
-    label: "Icon Press",
-    stage: "seed",
-  },
-  {
-    description: "drag release spring settle",
-    id: "drag-release",
-    label: "Drag Release",
-    stage: "seed",
-  },
-]);
+export const MOTION_LAB_QUERY_PARAM = "motionLab";
+export { MOTION_LAB_SCENARIOS };
 
 function readNumber(value, fallback = 0) {
   const number = Number(value);
@@ -62,6 +38,7 @@ export function shouldMountMotionLab(search = "", dev = false) {
 
 export function buildMotionLabScenarioRows(scenarios = MOTION_LAB_SCENARIOS, selectedId = "") {
   return scenarios.map((scenario, index) => ({
+    assertionCount: Array.isArray(scenario.assertions) ? scenario.assertions.length : 0,
     description: scenario.description || "",
     id: scenario.id || `scenario-${index}`,
     label: scenario.label || scenario.id || `Scenario ${index + 1}`,
@@ -83,6 +60,16 @@ export function buildMotionLabOverviewRows(report = {}, trace = null) {
     { label: "trace", value: trace ? "ready" : "none" },
     { label: "trace frames/events", value: `${formatCount(traceSummary.frameCount)} / ${formatCount(traceSummary.eventCount)}`, wide: true },
   ];
+}
+
+export function buildMotionLabAssertionRows(assertions = []) {
+  return assertions.map((assertion, index) => ({
+    detail: assertion.detail || assertion.label || "-",
+    id: assertion.id || `assertion-${index}`,
+    label: assertion.label || assertion.id || `Assertion ${index + 1}`,
+    passed: assertion.passed === true,
+    status: assertion.status || (assertion.passed ? "pass" : "fail"),
+  }));
 }
 
 export function buildMotionLabTimelineRows(report = {}, limit = 10) {
