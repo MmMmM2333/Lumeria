@@ -283,6 +283,7 @@ export function createMotionRuntime(options = {}) {
         ? 1
         : clamp(readNumber(animation.blendElapsed) / animation.blendDuration, 0, 1),
       driver: animation.driver?.type || "spring",
+      from: animation.from,
       interrupt: animation.interrupt,
       lane: animation.lane,
       laneKey: animation.laneKey,
@@ -407,6 +408,142 @@ export function createMotionRuntime(options = {}) {
         animations: sample.animations.map((animation) => ({ ...animation })),
       })),
     };
+  }
+
+  function makeCurveStatsKey(record) {
+    return `${record.targetId ?? "unknown"}:${record.prop ?? "unknown"}:${record.lane ?? "unknown"}:${record.laneKey ?? "unknown"}`;
+  }
+
+  function readFiniteNumber(value) {
+    if (value == null) return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function makeCurveStatsSeed(record) {
+    const key = makeCurveStatsKey(record);
+    return {
+      arriveCompleteGapMs: null,
+      arriveTimeMs: null,
+      completeTimeMs: null,
+      driver: record.driver || "unknown",
+      eventCount: 0,
+      key,
+      lane: record.lane,
+      laneKey: record.laneKey,
+      maxDelta: 0,
+      maxVelocity: 0,
+      overshootCount: 0,
+      prop: record.prop,
+      retargetCount: 0,
+      sampleCount: 0,
+      settleDurationMs: null,
+      sourceLabel: record.sourceLabel,
+      startTimeMs: null,
+      targetId: record.targetId,
+      _from: null,
+      _lastTimeMs: null,
+      _lastValue: null,
+      _overshooting: false,
+      _settleTimeMs: null,
+      _to: null,
+    };
+  }
+
+  function updateCurveStats(stats, point) {
+    const timeMs = readFiniteNumber(point.timeMs) ?? 0;
+    const value = readFiniteNumber(point.value);
+    const from = readFiniteNumber(point.from);
+    const to = readFiniteNumber(point.to);
+    const velocity = readFiniteNumber(point.velocity);
+    const isSample = point.type === "sample";
+
+    if (isSample) stats.sampleCount += 1;
+    else stats.eventCount += 1;
+    if (stats.startTimeMs == null || point.type === "start") stats.startTimeMs = timeMs;
+    if (point.driver) stats.driver = point.driver;
+    if (point.sourceLabel) stats.sourceLabel = point.sourceLabel;
+
+    if (point.type === "retarget") {
+      stats.retargetCount += 1;
+      stats._overshooting = false;
+    }
+    if (point.type === "settle") {
+      stats._settleTimeMs = timeMs;
+      stats._overshooting = false;
+    }
+    if (from != null) stats._from = from;
+    if (to != null) stats._to = to;
+
+    if (value != null && stats._to != null) {
+      stats.maxDelta = Math.max(stats.maxDelta, Math.abs(stats._to - value));
+    }
+    if (velocity != null) stats.maxVelocity = Math.max(stats.maxVelocity, Math.abs(velocity));
+    if (value != null && stats._lastValue != null && stats._lastTimeMs != null && timeMs > stats._lastTimeMs) {
+      const derivedVelocity = Math.abs((value - stats._lastValue) / ((timeMs - stats._lastTimeMs) / 1000));
+      stats.maxVelocity = Math.max(stats.maxVelocity, derivedVelocity);
+    }
+
+    if (value != null && stats._from != null && stats._to != null) {
+      const direction = Math.sign(stats._to - stats._from);
+      const overshooting = direction > 0
+        ? value > stats._to
+        : direction < 0
+          ? value < stats._to
+          : false;
+      if (overshooting && !stats._overshooting) stats.overshootCount += 1;
+      stats._overshooting = overshooting;
+    }
+
+    if (point.type === "arrive" && stats.arriveTimeMs == null) stats.arriveTimeMs = timeMs - stats.startTimeMs;
+    if ((point.type === "complete" || point.type === "snap") && stats.completeTimeMs == null) {
+      stats.completeTimeMs = timeMs - stats.startTimeMs;
+      if (stats._settleTimeMs != null) stats.settleDurationMs = timeMs - stats._settleTimeMs;
+    }
+
+    if (value != null) {
+      stats._lastValue = value;
+      stats._lastTimeMs = timeMs;
+    }
+  }
+
+  function makeCurveStats() {
+    const statsByKey = new Map();
+    const points = [];
+    for (const event of debugHistory.events) points.push(event);
+    for (const sample of debugHistory.samples) {
+      for (const animation of sample.animations) {
+        points.push({
+          ...animation,
+          frame: sample.frame,
+          timeMs: sample.timeMs,
+          type: "sample",
+        });
+      }
+    }
+    points.sort((a, b) => (a.timeMs - b.timeMs) || (a.frame - b.frame));
+
+    for (const point of points) {
+      if (point.prop == null || point.lane == null || point.laneKey == null) continue;
+      const key = makeCurveStatsKey(point);
+      let stats = statsByKey.get(key);
+      if (!stats) {
+        stats = makeCurveStatsSeed(point);
+        statsByKey.set(key, stats);
+      }
+      updateCurveStats(stats, point);
+    }
+
+    return Array.from(statsByKey.values()).map((stats) => {
+      const result = { ...stats };
+      if (result.arriveTimeMs != null && result.completeTimeMs != null) result.arriveCompleteGapMs = result.completeTimeMs - result.arriveTimeMs;
+      delete result._from;
+      delete result._lastTimeMs;
+      delete result._lastValue;
+      delete result._overshooting;
+      delete result._settleTimeMs;
+      return result;
+    });
   }
 
   function recordDebugSample() {
@@ -605,9 +742,11 @@ export function createMotionRuntime(options = {}) {
     removeActiveAnimation(animation);
     clearChannelLane(animation);
     debug.completed += 1;
+    const shouldFireArrive = !animation.arrived;
+    if (shouldFireArrive) recordDebugEvent("arrive", animation, { value: finalValue });
     recordDebugEvent("complete", animation, { value: finalValue });
     animation.onUpdate?.(finalValue);
-    if (!animation.arrived) {
+    if (shouldFireArrive) {
       animation.arrived = true;
       animation.onArrive?.(finalValue);
     }
@@ -709,6 +848,7 @@ export function createMotionRuntime(options = {}) {
       existing.arrived = false;
       existing.released = false;
       if (animation.lane === "base") channel.activeBaseKey = existing.laneKey;
+      recordDebugEvent("retarget", existing, { value: existing.value });
       return existing;
     }
     if (animation.interrupt === "retarget") {
@@ -726,6 +866,7 @@ export function createMotionRuntime(options = {}) {
       existing.released = false;
       if (existing.driver?.type === "progress") existing.driver.options.progress = 0;
       if (animation.lane === "base") channel.activeBaseKey = existing.laneKey;
+      recordDebugEvent("retarget", existing, { value: existing.value });
       return existing;
     }
     if (animation.interrupt === "blend") {
@@ -826,6 +967,7 @@ export function createMotionRuntime(options = {}) {
     const arriveDelta = Math.max(0, readNumber(config.arriveDelta, animation.arriveDelta ?? DEFAULT_ARRIVE_DELTA));
     if (!animation.arrived && delta <= arriveDelta) {
       animation.arrived = true;
+      recordDebugEvent("arrive", animation, { value: animation.value });
       animation.onArrive?.(animation.value);
     }
     const restDelta = Math.max(0, readNumber(config.restDelta, DEFAULT_REST_DELTA));
@@ -859,6 +1001,7 @@ export function createMotionRuntime(options = {}) {
     fireMilestones(animation, progress);
     if (!animation.arrived && Math.abs(animation.to - animation.value) <= readNumber(options.arriveDelta, DEFAULT_REST_DELTA)) {
       animation.arrived = true;
+      recordDebugEvent("arrive", animation, { value: animation.value });
       animation.onArrive?.(animation.value);
     }
     writeAnimation(animation);
@@ -907,6 +1050,7 @@ export function createMotionRuntime(options = {}) {
     fireMilestones(animation, progress);
     if (!animation.arrived && progress >= 1) {
       animation.arrived = true;
+      recordDebugEvent("arrive", animation, { value: animation.value });
       animation.onArrive?.(animation.value);
     }
     writeAnimation(animation);
@@ -1127,6 +1271,7 @@ export function createMotionRuntime(options = {}) {
         animation.arrived = false;
         animation.progress = targetProgress;
         if (animation.lane === "base" && animation.channel.activeBaseKey === animation.laneKey) animation.channel.baseValue = getAnimationOutputValue(animation);
+        recordDebugEvent("settle", animation, { value: animation.value });
       },
       get state() {
         return animation;
@@ -1197,6 +1342,7 @@ export function createMotionRuntime(options = {}) {
       animations: snapshot.animations,
       config: cloneDebugConfig(),
       counters: snapshot.counters,
+      curveStats: makeCurveStats(),
       runtime: {
         activeAnimationCount: snapshot.summary.activeAnimationCount,
         frames: debug.frames,

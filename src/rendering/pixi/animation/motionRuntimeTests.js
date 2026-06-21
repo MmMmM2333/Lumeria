@@ -696,4 +696,81 @@ export function runMotionRuntimeTests() {
     runtime.step(0.5);
     assert(nearlyEqual(target.x, 10), `restored timeScale should resume normal runtime delta, got ${target.x}`);
   }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    const driver = spring({
+      arriveDelta: 1,
+      damping: 4,
+      mass: 1,
+      restDelta: 0.05,
+      restSpeed: 0.05,
+      stiffness: 90,
+    });
+    runtime.configureDebug({
+      enabled: true,
+      maxEvents: 200,
+      maxSamples: 400,
+      recordHistory: true,
+      sampleHz: 120,
+    });
+    const control = runtime.animate(target, "x", 100, {
+      driver,
+      from: 0,
+      laneKey: "curve-spring",
+    });
+
+    runtime.step(0.12);
+    runtime.animate(target, "x", 60, {
+      driver,
+      laneKey: "curve-spring",
+    });
+
+    assert(runUntil(runtime, () => control.completed, 900), "curve stats spring should complete after retarget");
+    const report = runtime.debugReport({ includeHistory: true });
+    const stats = report.curveStats.find((entry) => entry.laneKey === "curve-spring");
+
+    assert(stats, "debug report should include curve stats for a completed spring");
+    assert(stats.prop === "x", "curve stats should include the animated property");
+    assert(stats.retargetCount === 1, `curve stats should count one retarget, got ${stats.retargetCount}`);
+    assert(stats.overshootCount > 0, "curve stats should count spring overshoot");
+    assert(stats.maxDelta >= 60, `curve stats should expose max distance to target, got ${stats.maxDelta}`);
+    assert(stats.maxVelocity > 0, "curve stats should expose max velocity");
+    assert(stats.arriveTimeMs != null && stats.arriveTimeMs > 0, "curve stats should expose arrive time");
+    assert(stats.completeTimeMs != null && stats.completeTimeMs >= stats.arriveTimeMs, "curve stats should expose complete time after arrival");
+    assert(stats.arriveCompleteGapMs === stats.completeTimeMs - stats.arriveTimeMs, "curve stats should expose arrive-complete gap");
+    assert(stats.sampleCount > 0, "curve stats should count samples");
+    assert(stats.eventCount > 0, "curve stats should count lifecycle events");
+    assert(typeof JSON.stringify(report.curveStats) === "string", "curve stats should remain JSON serializable");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    runtime.configureDebug({
+      enabled: true,
+      maxEvents: 100,
+      maxSamples: 200,
+      recordHistory: true,
+      sampleHz: 120,
+    });
+    const control = runtime.animate(target, "x", 100, {
+      driver: progressDriver({ completeAtEnd: false, ease: "linear", progress: 0 }),
+      from: 0,
+      laneKey: "curve-settle",
+    });
+
+    control.setProgress(0.4);
+    control.settle({ velocity: 0.8 });
+
+    assert(runUntil(runtime, () => control.completed, 900), "curve stats settled progress should complete");
+    const report = runtime.debugReport({ includeHistory: true });
+    const stats = report.curveStats.find((entry) => entry.laneKey === "curve-settle");
+
+    assert(stats, "debug report should include curve stats for settled progress");
+    assert(stats.settleDurationMs != null && stats.settleDurationMs > 0, "curve stats should expose settle duration");
+    assert(stats.completeTimeMs >= stats.settleDurationMs, "settle duration should be bounded by complete time");
+    assert(stats.maxVelocity > 0, "settled curve stats should expose velocity");
+  }
 }
