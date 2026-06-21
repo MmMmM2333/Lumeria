@@ -19,7 +19,11 @@
 
     <div v-if="!isCollapsed" class="background-debug-body">
       <div
-        :class="['background-debug-tabs', canDebugLiveDesktop && 'background-debug-tabs-three']"
+        :class="[
+          'background-debug-tabs',
+          debugTabCount === 3 && 'background-debug-tabs-three',
+          debugTabCount === 4 && 'background-debug-tabs-four',
+        ]"
         role="tablist"
         aria-label="Background debug sections"
       >
@@ -36,6 +40,14 @@
           @click="activePanel = 'layout'"
         >
           Layout
+        </button>
+        <button
+          v-if="canDebugMotion"
+          type="button"
+          :class="['background-debug-tab', activePanel === 'motion' && 'background-debug-tab-active']"
+          @click="activePanel = 'motion'"
+        >
+          Motion
         </button>
         <button
           v-if="canDebugLiveDesktop"
@@ -202,6 +214,143 @@
         <div class="background-debug-actions">
           <button type="button" class="background-debug-button" @click="resetLayoutDebugParams">
             重置
+          </button>
+        </div>
+      </div>
+
+      <div v-else-if="activePanel === 'motion' && canDebugMotion" class="background-debug-section">
+        <label class="background-debug-toggle">
+          <input
+            name="motionRecordEnabled"
+            type="checkbox"
+            :checked="motionRecordEnabled"
+            @change="setMotionRecordEnabled($event.target.checked)"
+          >
+          <span>Record</span>
+        </label>
+
+        <div class="background-debug-mode-group background-debug-motion-window-group" role="group" aria-label="Motion record window">
+          <button
+            v-for="preset in MOTION_RECORD_WINDOW_PRESETS"
+            :key="preset.value"
+            type="button"
+            :class="['background-debug-mode-button', motionWindowPreset === preset.value && 'background-debug-mode-button-active']"
+            @click="setMotionWindowPreset(preset.value)"
+          >
+            {{ preset.label }}
+          </button>
+        </div>
+
+        <label class="background-debug-control background-debug-number-control">
+          <span>
+            Custom seconds
+            <output>{{ motionWindowSeconds.toFixed(0) }}s</output>
+          </span>
+          <input
+            type="number"
+            min="1"
+            max="300"
+            step="1"
+            :disabled="motionWindowPreset !== MOTION_RECORD_WINDOW_CUSTOM"
+            :value="motionCustomSeconds"
+            @change="updateMotionCustomSeconds"
+          >
+        </label>
+
+        <label class="background-debug-control">
+          <span>
+            Time Scale
+            <output>{{ Number(motionTimeScale).toFixed(2) }}x</output>
+          </span>
+          <input
+            type="range"
+            min="0"
+            max="2"
+            step="0.05"
+            :value="motionTimeScale"
+            @input="updateMotionTimeScale"
+          >
+        </label>
+
+        <dl class="background-debug-status-grid">
+          <div
+            v-for="row in motionOverviewRows"
+            :key="row.label"
+            :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
+          >
+            <dt>{{ row.label }}</dt>
+            <dd>{{ row.value }}</dd>
+          </div>
+        </dl>
+
+        <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">Active Animations</div>
+          <div class="background-debug-motion-table" role="table" aria-label="Active Pixi motion animations">
+            <div class="background-debug-motion-row background-debug-motion-row-head" role="row">
+              <span role="columnheader">target</span>
+              <span role="columnheader">prop</span>
+              <span role="columnheader">value -> to</span>
+              <span role="columnheader">driver</span>
+              <span role="columnheader">lane</span>
+              <span role="columnheader">velocity</span>
+            </div>
+            <div
+              v-for="(row, index) in motionAnimationRows"
+              :key="`${row.target}-${row.prop}-${row.lane}-${index}`"
+              class="background-debug-motion-row"
+              role="row"
+            >
+              <span role="cell" :title="row.target">{{ row.target }}</span>
+              <span role="cell" :title="row.prop">{{ row.prop }}</span>
+              <span role="cell" :title="row.valueTo">{{ row.valueTo }}</span>
+              <span role="cell" :title="row.driver">{{ row.driver }}</span>
+              <span role="cell" :title="row.lane">{{ row.lane }}</span>
+              <span role="cell" :title="row.velocity">{{ row.velocity }}</span>
+            </div>
+            <div v-if="motionAnimationRows.length === 0" class="background-debug-motion-empty">
+              no active animations
+            </div>
+          </div>
+        </div>
+
+        <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">Top Cancel Reasons</div>
+          <dl class="background-debug-diagnostics">
+            <div
+              v-for="row in motionCancelReasonRows"
+              :key="row.key"
+              class="background-debug-stat"
+              :title="row.detail"
+            >
+              <dt>{{ row.key }}</dt>
+              <dd>{{ row.value }}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">Warnings</div>
+          <div class="background-debug-motion-list">
+            <div
+              v-for="row in motionWarningRows"
+              :key="`${row.key}-${row.detail}`"
+              class="background-debug-detail"
+              :title="row.detail"
+            >
+              {{ row.detail }}
+            </div>
+          </div>
+        </div>
+
+        <div class="background-debug-actions background-debug-motion-actions">
+          <button type="button" class="background-debug-button" @click="clearMotionDebugHistory">
+            Clear
+          </button>
+          <button type="button" class="background-debug-button" @click="copyMotionReport('summary')">
+            {{ motionSummaryCopyButtonLabel }}
+          </button>
+          <button type="button" class="background-debug-button" @click="copyMotionReport('full')">
+            {{ motionFullCopyButtonLabel }}
           </button>
         </div>
       </div>
@@ -436,6 +585,20 @@ import {
   DEFAULT_DESKTOP_LAYOUT_DEBUG_PARAMS,
   DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS,
 } from "./backgroundDebug/desktopLayoutDebugSettings.js";
+import {
+  buildMotionAnimationRows,
+  buildMotionCancelReasonRows,
+  buildMotionOverviewRows,
+  buildMotionRuntimeDebugConfig,
+  buildMotionWarningRows,
+  MOTION_RECORD_WINDOW_CUSTOM,
+  MOTION_RECORD_WINDOW_PRESETS,
+  normalizeMotionCustomSeconds,
+  normalizeMotionTimeScale,
+  resolveMotionRecordWindowMs,
+} from "./backgroundDebug/motionDebugPanelModel.js";
+import { createMotionDebugAIReport } from "../rendering/pixi/animation/motionDebugReport.js";
+import { motionRuntime } from "../rendering/pixi/animation/motionRuntime.js";
 
 const props = defineProps({
   desktopLayoutDebugParams: {
@@ -464,8 +627,12 @@ const layoutParams = computed(() => props.desktopLayoutDebugParams || DEFAULT_DE
 const isCollapsed = ref(false);
 const activePanel = ref("acrylic");
 const canDebugLiveDesktop = computed(() => isLiveDesktopExperimentEnabled());
+const canDebugMotion = computed(() => Boolean(import.meta.env.DEV));
+const debugTabCount = computed(() => 2 + (canDebugMotion.value ? 1 : 0) + (canDebugLiveDesktop.value ? 1 : 0));
 const hasCopiedAcrylic = ref(false);
 const hasCopiedDiagnostics = ref(false);
+const hasCopiedMotionFull = ref(false);
+const hasCopiedMotionSummary = ref(false);
 const liveDesktopDebugFrameSourceOverride = ref(canDebugLiveDesktop.value ? readLiveDesktopDebugFrameSourceOverride() : null);
 const liveDesktopDisableMouseRelay = ref(canDebugLiveDesktop.value ? readLiveDesktopDisableMouseRelay() : true);
 const liveDesktopCompositorKeeper = ref(canDebugLiveDesktop.value ? readLiveDesktopCompositorKeeper() : false);
@@ -473,6 +640,11 @@ const liveDesktopCssFallbackEffects = ref(canDebugLiveDesktop.value ? readLiveDe
 const liveDesktopSkipBlankFrames = ref(canDebugLiveDesktop.value ? readLiveDesktopSkipBlankFrames() : false);
 const liveDesktopForceDwmFlush = ref(canDebugLiveDesktop.value ? readLiveDesktopForceDwmFlush() : false);
 const isLiveDesktopActionBusy = ref(false);
+const motionRecordEnabled = ref(false);
+const motionWindowPreset = ref("30000");
+const motionCustomSeconds = ref(30);
+const motionTimeScale = ref(1);
+const motionReport = ref(motionRuntime.debugReport({ includeChannels: true, includeTargets: true }));
 const liveDesktopRates = ref({
   framesPerSecond: 0,
   arrivedPerSecond: 0,
@@ -483,6 +655,9 @@ const liveDesktopRates = ref({
 let liveDesktopRateSample = null;
 let acrylicCopyStateTimer = null;
 let diagnosticsCopyStateTimer = null;
+let motionFullCopyStateTimer = null;
+let motionRuntimePollTimer = null;
+let motionSummaryCopyStateTimer = null;
 let liveDesktopRuntimePollTimer = null;
 let kawaseLiveDesktopSyncTimer = null;
 
@@ -607,6 +782,8 @@ const blurKernelStatus = computed(() => {
 });
 const acrylicCopyButtonLabel = computed(() => (hasCopiedAcrylic.value ? "已复制" : "复制 JSON"));
 const diagnosticsCopyButtonLabel = computed(() => (hasCopiedDiagnostics.value ? "已复制" : "复制诊断"));
+const motionFullCopyButtonLabel = computed(() => (hasCopiedMotionFull.value ? "已复制" : "Copy Full Report"));
+const motionSummaryCopyButtonLabel = computed(() => (hasCopiedMotionSummary.value ? "已复制" : "Copy Summary"));
 const layoutDebugRows = computed(() => {
   const params = layoutParams.value;
   return [
@@ -687,6 +864,11 @@ const liveDesktopWindowRows = computed(() => {
     { label: "candidates", value: formatCount(diagnostics.candidateCount) },
   ];
 });
+const motionOverviewRows = computed(() => buildMotionOverviewRows(motionReport.value));
+const motionAnimationRows = computed(() => buildMotionAnimationRows(motionReport.value));
+const motionCancelReasonRows = computed(() => buildMotionCancelReasonRows(motionReport.value));
+const motionWarningRows = computed(() => buildMotionWarningRows(motionReport.value));
+const motionWindowSeconds = computed(() => resolveMotionRecordWindowMs(motionWindowPreset.value, motionCustomSeconds.value) / 1000);
 
 function formatValue(value, digits) {
   return Number(value).toFixed(digits);
@@ -696,6 +878,64 @@ function formatEffectLabel(effect) {
   if (effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) return "acrylic";
   if (effect === BACKGROUND_EFFECT_BLUR) return "blur";
   return effect;
+}
+
+function refreshMotionReport() {
+  if (!canDebugMotion.value) return;
+  motionReport.value = motionRuntime.debugReport({
+    includeChannels: true,
+    includeHistory: motionRecordEnabled.value,
+    includeTargets: true,
+  });
+}
+
+function applyMotionRuntimeDebugConfig() {
+  if (!canDebugMotion.value) return;
+  const config = buildMotionRuntimeDebugConfig({
+    customSeconds: motionCustomSeconds.value,
+    recordEnabled: motionRecordEnabled.value,
+    timeScale: motionTimeScale.value,
+    windowPreset: motionWindowPreset.value,
+  });
+  motionCustomSeconds.value = normalizeMotionCustomSeconds(motionCustomSeconds.value);
+  motionTimeScale.value = config.timeScale;
+  motionRuntime.configureDebug(config);
+  refreshMotionReport();
+}
+
+function restoreMotionTimeScale() {
+  if (!canDebugMotion.value) return;
+  if (motionTimeScale.value !== 1) motionTimeScale.value = 1;
+  motionRuntime.configureDebug({ timeScale: 1 });
+  refreshMotionReport();
+}
+
+function setMotionRecordEnabled(enabled) {
+  motionRecordEnabled.value = Boolean(enabled);
+  applyMotionRuntimeDebugConfig();
+}
+
+function setMotionWindowPreset(preset) {
+  motionWindowPreset.value = MOTION_RECORD_WINDOW_PRESETS.some((entry) => entry.value === preset)
+    ? preset
+    : "30000";
+  applyMotionRuntimeDebugConfig();
+}
+
+function updateMotionCustomSeconds(event) {
+  motionCustomSeconds.value = normalizeMotionCustomSeconds(event.target.value);
+  applyMotionRuntimeDebugConfig();
+}
+
+function updateMotionTimeScale(event) {
+  motionTimeScale.value = normalizeMotionTimeScale(event.target.value);
+  applyMotionRuntimeDebugConfig();
+}
+
+function clearMotionDebugHistory() {
+  if (!canDebugMotion.value) return;
+  motionRuntime.clearDebugHistory();
+  refreshMotionReport();
 }
 
 function updateLiveDesktopRates() {
@@ -902,6 +1142,22 @@ function copyToClipboard(text, copiedRef, timerName) {
       }, 1200);
       return;
     }
+    if (timerName === "motionSummary") {
+      if (motionSummaryCopyStateTimer != null) window.clearTimeout(motionSummaryCopyStateTimer);
+      motionSummaryCopyStateTimer = window.setTimeout(() => {
+        motionSummaryCopyStateTimer = null;
+        copiedRef.value = false;
+      }, 1200);
+      return;
+    }
+    if (timerName === "motionFull") {
+      if (motionFullCopyStateTimer != null) window.clearTimeout(motionFullCopyStateTimer);
+      motionFullCopyStateTimer = window.setTimeout(() => {
+        motionFullCopyStateTimer = null;
+        copiedRef.value = false;
+      }, 1200);
+      return;
+    }
     if (diagnosticsCopyStateTimer != null) window.clearTimeout(diagnosticsCopyStateTimer);
     diagnosticsCopyStateTimer = window.setTimeout(() => {
       diagnosticsCopyStateTimer = null;
@@ -943,10 +1199,46 @@ async function copyDiagnostics() {
   }
 }
 
+async function copyMotionReport(mode) {
+  if (!canDebugMotion.value) return;
+  try {
+    const report = createMotionDebugAIReport(motionRuntime, { mode });
+    await copyToClipboard(
+      report.copyText,
+      mode === "full" ? hasCopiedMotionFull : hasCopiedMotionSummary,
+      mode === "full" ? "motionFull" : "motionSummary",
+    );
+    refreshMotionReport();
+  } catch (error) {
+    console.warn("Failed to copy Pixi motion debug report", error);
+  }
+}
+
 function clearLiveDesktopRuntimePoller() {
   if (liveDesktopRuntimePollTimer == null) return;
   window.clearInterval(liveDesktopRuntimePollTimer);
   liveDesktopRuntimePollTimer = null;
+}
+
+function clearMotionRuntimePoller() {
+  if (motionRuntimePollTimer == null) return;
+  window.clearInterval(motionRuntimePollTimer);
+  motionRuntimePollTimer = null;
+}
+
+function restartMotionRuntimePoller() {
+  clearMotionRuntimePoller();
+  if (
+    typeof window === "undefined"
+    || !canDebugMotion.value
+    || isCollapsed.value
+    || activePanel.value !== "motion"
+  ) {
+    restoreMotionTimeScale();
+    return;
+  }
+  applyMotionRuntimeDebugConfig();
+  motionRuntimePollTimer = window.setInterval(refreshMotionReport, 500);
 }
 
 function restartLiveDesktopRuntimePoller() {
@@ -973,14 +1265,26 @@ watch(canDebugLiveDesktop, (enabled) => {
   if (!enabled && activePanel.value === "liveDesktop") activePanel.value = "acrylic";
 }, { immediate: true });
 
-watch([isCollapsed, activePanel, canDebugLiveDesktop], restartLiveDesktopRuntimePoller, { flush: "post" });
+watch(canDebugMotion, (enabled) => {
+  if (!enabled && activePanel.value === "motion") activePanel.value = "acrylic";
+}, { immediate: true });
 
-onMounted(restartLiveDesktopRuntimePoller);
+watch([isCollapsed, activePanel, canDebugLiveDesktop], restartLiveDesktopRuntimePoller, { flush: "post" });
+watch([isCollapsed, activePanel, canDebugMotion], restartMotionRuntimePoller, { flush: "post" });
+
+onMounted(() => {
+  restartLiveDesktopRuntimePoller();
+  restartMotionRuntimePoller();
+});
 
 onBeforeUnmount(() => {
   if (acrylicCopyStateTimer != null) window.clearTimeout(acrylicCopyStateTimer);
   if (diagnosticsCopyStateTimer != null) window.clearTimeout(diagnosticsCopyStateTimer);
+  if (motionFullCopyStateTimer != null) window.clearTimeout(motionFullCopyStateTimer);
+  if (motionSummaryCopyStateTimer != null) window.clearTimeout(motionSummaryCopyStateTimer);
   if (kawaseLiveDesktopSyncTimer != null) window.clearTimeout(kawaseLiveDesktopSyncTimer);
+  restoreMotionTimeScale();
+  clearMotionRuntimePoller();
   clearLiveDesktopRuntimePoller();
 });
 </script>
@@ -1095,6 +1399,10 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.background-debug-tabs-four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .background-debug-mode-group {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -1105,6 +1413,10 @@ onBeforeUnmount(() => {
 
 .background-debug-live-source-group {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.background-debug-motion-window-group {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .background-debug-tab,
@@ -1199,6 +1511,28 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
+.background-debug-number-control {
+  grid-template-columns: minmax(0, 1fr) 78px;
+  align-items: center;
+}
+
+.background-debug-number-control input[type="number"] {
+  width: 100%;
+  height: 28px;
+  min-width: 0;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.background-debug-number-control input[type="number"]:disabled {
+  opacity: 0.46;
+}
+
 .background-debug-status-grid,
 .background-debug-diagnostics {
   display: grid;
@@ -1287,6 +1621,51 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+.background-debug-motion-table {
+  min-width: 0;
+  overflow-x: hidden;
+  padding-bottom: 2px;
+}
+
+.background-debug-motion-row {
+  display: grid;
+  grid-template-columns: minmax(78px, 1fr) 34px 76px 50px 64px 48px;
+  min-width: 0;
+  gap: 6px;
+  align-items: center;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.78);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 10.5px;
+  line-height: 1.25;
+}
+
+.background-debug-motion-row-head {
+  color: rgba(255, 255, 255, 0.48);
+  font-family: inherit;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.background-debug-motion-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.background-debug-motion-empty {
+  padding: 7px 0 2px;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 11px;
+}
+
+.background-debug-motion-list {
+  display: grid;
+  gap: 6px;
+}
+
 .background-debug-window-card {
   display: grid;
   min-width: 0;
@@ -1318,12 +1697,14 @@ onBeforeUnmount(() => {
   line-height: 1.2;
 }
 
+.background-debug-motion-actions,
 .background-debug-live-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   justify-content: stretch;
 }
 
+.background-debug-motion-actions .background-debug-button,
 .background-debug-live-actions .background-debug-button {
   width: 100%;
 }
