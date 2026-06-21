@@ -1,5 +1,6 @@
 import { progressDriver, spring, tween } from "../rendering/pixi/animation/motionRuntime.js";
 import { motionSequence, motionTo } from "../rendering/pixi/animation/motionTween.js";
+import { normalizeMotionLabParams } from "./motionLabParams.js";
 
 export const MOTION_LAB_SCENARIO_IDS = Object.freeze([
   "folder-open",
@@ -36,30 +37,53 @@ function countEvents(report = {}, predicate = () => true) {
 }
 
 function makeSpring(params = {}, overrides = {}) {
+  const normalized = normalizeMotionLabParams(params);
   return spring({
-    damping: readNumber(params.damping, 34),
-    stiffness: readNumber(params.stiffness, 360),
+    damping: normalized.springDamping,
+    mass: normalized.springMass,
+    stiffness: normalized.springStiffness,
     ...overrides,
   });
 }
 
 function makeTween(params = {}, overrides = {}) {
+  const normalized = normalizeMotionLabParams(params);
   return tween({
-    duration: readNumber(params.durationMs, 360) / 1000,
-    ease: "power2.out",
+    duration: normalized.durationMs / 1000,
+    ease: normalized.ease,
     ...overrides,
   });
 }
 
+function interruptOptions(params = {}) {
+  const normalized = normalizeMotionLabParams(params);
+  return {
+    blendDuration: normalized.blendDurationMs / 1000,
+    blendEase: normalized.ease,
+    interrupt: normalized.interruptPolicy,
+  };
+}
+
+function shortTweenDuration(params = {}, factor = 0.33) {
+  const normalized = normalizeMotionLabParams(params);
+  return Math.max(0.06, (normalized.durationMs / 1000) * factor);
+}
+
+function degreesToRadians(value) {
+  return readNumber(value, 0) * (Math.PI / 180);
+}
+
 function playFolderOpen(context, laneKey = "folder-open") {
   const { motionParams, runtime, scene } = context;
+  const params = normalizeMotionLabParams(motionParams);
   motionTo(scene.folderPanel, {
     alpha: 1,
     driver: makeTween(motionParams),
-    from: { alpha: 0.22, scale: 0.86, y: 214 },
+    from: { alpha: 0.22, scale: params.folderClosedScale, y: 174 + params.folderTravelPx },
+    ...interruptOptions(motionParams),
     lane: "base",
     laneKey,
-    scale: 1,
+    scale: params.folderOpenScale,
     sourceLabel: "motionLab.folder.panel",
     y: 174,
   }, {
@@ -70,17 +94,19 @@ function playFolderOpen(context, laneKey = "folder-open") {
 
 function playFolderClose(context, laneKey = "folder-close") {
   const { motionParams, runtime, scene } = context;
+  const params = normalizeMotionLabParams(motionParams);
   scene.folderPanel.alpha = 1;
-  scene.folderPanel.scale.set(1);
+  scene.folderPanel.scale.set(params.folderOpenScale);
   scene.folderPanel.y = 174;
   motionTo(scene.folderPanel, {
     alpha: 0.18,
-    driver: makeTween(motionParams, { duration: 0.22 }),
+    driver: makeTween(motionParams, { duration: shortTweenDuration(motionParams, 0.62) }),
+    ...interruptOptions(motionParams),
     lane: "base",
     laneKey,
-    scale: 0.86,
+    scale: params.folderClosedScale,
     sourceLabel: "motionLab.folder.panel",
-    y: 214,
+    y: 174 + params.folderTravelPx,
   }, {
     debugMetadata: { kind: "MotionLabPanel", label: "folderPanel" },
     runtime,
@@ -90,6 +116,11 @@ function playFolderClose(context, laneKey = "folder-close") {
 function stepRuntime(context, seconds = 0.08) {
   context.runtime?.step?.(seconds);
   context.refreshReport?.();
+}
+
+function stepInterruptionDelay(context) {
+  const params = normalizeMotionLabParams(context.motionParams);
+  stepRuntime(context, params.interruptDelayMs / 1000);
 }
 
 function createScenario(definition) {
@@ -136,7 +167,7 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
     label: "Open Interrupted By Close",
     run: (context) => {
       playFolderOpen(context, "folder-panel-interrupt");
-      stepRuntime(context, 0.06);
+      stepInterruptionDelay(context);
       playFolderClose(context, "folder-panel-interrupt");
     },
   }),
@@ -151,7 +182,7 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
     label: "Close Interrupted By Open",
     run: (context) => {
       playFolderClose(context, "folder-panel-interrupt");
-      stepRuntime(context, 0.06);
+      stepInterruptionDelay(context);
       playFolderOpen(context, "folder-panel-interrupt");
     },
   }),
@@ -165,13 +196,15 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
     id: "desktop-page-scrub",
     label: "Desktop Page Scrub",
     run: ({ motionParams, runtime, scene }) => {
+      const params = normalizeMotionLabParams(motionParams);
       motionTo(scene.pageTrack, {
         driver: makeSpring(motionParams),
         from: { x: 0 },
+        ...interruptOptions(motionParams),
         lane: "base",
         laneKey: "desktop-page-scrub",
         sourceLabel: "motionLab.pageTrack",
-        x: -motionParams.distancePx,
+        x: -params.pageDistancePx,
       }, {
         debugMetadata: { kind: "MotionLabPageTrack", label: "pageTrack" },
         runtime,
@@ -179,10 +212,11 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
       runtime.step(0.08);
       motionTo(scene.pageTrack, {
         driver: makeSpring(motionParams),
+        ...interruptOptions(motionParams),
         lane: "base",
         laneKey: "desktop-page-scrub",
         sourceLabel: "motionLab.pageTrack",
-        x: -Math.round(motionParams.distancePx * 0.52),
+        x: -Math.round(params.pageDistancePx * 0.52),
       }, {
         debugMetadata: { kind: "MotionLabPageTrack", label: "pageTrack" },
         runtime,
@@ -198,16 +232,17 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
     description: "folder inner page track uses progress scrub",
     id: "folder-page-scrub",
     label: "Folder Page Scrub",
-    run: ({ runtime, scene }) => {
+    run: ({ motionParams, runtime, scene }) => {
+      const params = normalizeMotionLabParams(motionParams);
       scene.folderPanel.alpha = 1;
-      scene.folderPanel.scale.set(1);
+      scene.folderPanel.scale.set(params.folderOpenScale);
       motionTo(scene.folderPageTrack, {
-        driver: progressDriver({ completeAtEnd: false, ease: "sine.inOut", progress: 0.72 }),
+        driver: progressDriver({ completeAtEnd: false, ease: params.ease, progress: 0.72 }),
         from: { x: 0 },
         lane: "base",
         laneKey: "folder-page-scrub",
         sourceLabel: "motionLab.folder.pageTrack",
-        x: -126,
+        x: -Math.round(params.pageDistancePx * 0.57),
       }, {
         debugMetadata: { kind: "MotionLabFolderPageTrack", label: "folderPageTrack" },
         runtime,
@@ -225,16 +260,18 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
     id: "drag-release",
     label: "Drag Release",
     run: ({ motionParams, runtime, scene }) => {
+      const params = normalizeMotionLabParams(motionParams);
       scene.dragGhost.alpha = 0.85;
       scene.dragGhost.position.set(210, 112);
       motionTo(scene.dragGhost, {
         alpha: 1,
         driver: makeSpring(motionParams),
+        ...interruptOptions(motionParams),
         lane: "base",
         laneKey: "drag-release",
         sourceLabel: "motionLab.drag.ghost",
-        x: 210 + motionParams.distancePx,
-        y: 248,
+        x: 210 + params.dragDistancePx,
+        y: params.dragReleaseYPx,
       }, {
         debugMetadata: { kind: "MotionLabGhost", label: "dragGhost" },
         runtime,
@@ -251,12 +288,13 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
     id: "icon-press-release",
     label: "Icon Press / Release",
     run: ({ motionParams, runtime, scene }) => {
+      const params = normalizeMotionLabParams(motionParams);
       motionSequence(scene.icons[0], [
         {
-          driver: tween({ duration: 0.12, ease: "power2.out" }),
+          driver: tween({ duration: shortTweenDuration(motionParams), ease: params.ease }),
           lane: "factor",
           laneKey: "press",
-          scale: 0.86,
+          scale: params.iconPressScale,
           sourceLabel: "motionLab.icon.1",
         },
         {
@@ -282,13 +320,14 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
     id: "folder-hover",
     label: "Folder Hover",
     run: ({ motionParams, runtime, scene }) => {
+      const params = normalizeMotionLabParams(motionParams);
       scene.folderHover.alpha = 0;
       motionTo(scene.folderHover, {
         alpha: 0.82,
-        driver: makeTween(motionParams, { duration: 0.18 }),
+        driver: makeTween(motionParams, { duration: shortTweenDuration(motionParams, 0.5) }),
         lane: "base",
         laneKey: "folder-hover",
-        scale: 1.08,
+        scale: params.folderHoverScale,
         sourceLabel: "motionLab.folder.hover",
       }, {
         debugMetadata: { kind: "MotionLabHover", label: "folderHover" },
@@ -298,7 +337,7 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
         driver: makeSpring(motionParams),
         lane: "factor",
         laneKey: "folder-hover",
-        scale: 1.08,
+        scale: params.iconHoverScale,
         sourceLabel: "motionLab.icon.2",
       }, {
         debugMetadata: { kind: "MotionLabIcon", label: "icon 2" },
@@ -316,13 +355,14 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
     id: "app-folder-create-hover",
     label: "App-Folder-Create Hover",
     run: ({ motionParams, runtime, scene }) => {
+      const params = normalizeMotionLabParams(motionParams);
       scene.createHover.alpha = 0;
       motionTo(scene.createHover, {
         alpha: 0.9,
-        driver: makeTween(motionParams, { duration: 0.22 }),
+        driver: makeTween(motionParams, { duration: shortTweenDuration(motionParams, 0.62) }),
         lane: "base",
         laneKey: "app-folder-create-hover",
-        scale: 1.12,
+        scale: params.folderHoverScale,
         sourceLabel: "motionLab.appFolderCreate.hover",
       }, {
         debugMetadata: { kind: "MotionLabCreateHover", label: "createHover" },
@@ -339,22 +379,23 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
     description: "edit mode jiggle drives additive rotation",
     id: "edit-jiggle",
     label: "Edit Jiggle",
-    run: ({ runtime, scene }) => {
+    run: ({ motionParams, runtime, scene }) => {
+      const params = normalizeMotionLabParams(motionParams);
       motionTo(scene.icons[0], {
-        driver: tween({ duration: 0.08, ease: "sine.inOut", repeat: 5, yoyo: true }),
+        driver: tween({ duration: shortTweenDuration(motionParams, 0.22), ease: params.ease, repeat: 5, yoyo: true }),
         lane: "additive",
         laneKey: "edit-jiggle",
-        rotation: 0.075,
+        rotation: degreesToRadians(params.jiggleRotationDeg),
         sourceLabel: "motionLab.icon.1",
       }, {
         debugMetadata: { kind: "MotionLabIcon", label: "icon 1" },
         runtime,
       });
       motionTo(scene.icons[1], {
-        driver: tween({ duration: 0.08, ease: "sine.inOut", repeat: 5, yoyo: true }),
+        driver: tween({ duration: shortTweenDuration(motionParams, 0.22), ease: params.ease, repeat: 5, yoyo: true }),
         lane: "additive",
         laneKey: "edit-jiggle",
-        rotation: -0.075,
+        rotation: -degreesToRadians(params.jiggleRotationDeg),
         sourceLabel: "motionLab.icon.2",
       }, {
         debugMetadata: { kind: "MotionLabIcon", label: "icon 2" },
@@ -373,13 +414,15 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
     id: "hundred-icon-layout-retarget",
     label: "100+ Icon Layout Retarget",
     run: ({ motionParams, runtime, scene }) => {
+      const params = normalizeMotionLabParams(motionParams);
       scene.massIconLayer.alpha = 1;
       scene.massIcons.forEach((icon, index) => {
         const col = index % 18;
         const row = Math.floor(index / 18);
         const sourceLabel = `motionLab.massIcon.${index + 1}`;
         motionTo(icon, {
-          driver: makeSpring(motionParams, { damping: motionParams.damping + 4 }),
+          driver: makeSpring(motionParams, { damping: params.springDamping + 4 }),
+          ...interruptOptions(motionParams),
           lane: "base",
           laneKey: "mass-layout",
           sourceLabel,
@@ -396,7 +439,8 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
         const row = Math.floor(index / 18);
         const sourceLabel = `motionLab.massIcon.${index + 1}`;
         motionTo(icon, {
-          driver: makeSpring(motionParams, { damping: motionParams.damping + 4 }),
+          driver: makeSpring(motionParams, { damping: params.springDamping + 4 }),
+          ...interruptOptions(motionParams),
           lane: "base",
           laneKey: "mass-layout",
           sourceLabel,

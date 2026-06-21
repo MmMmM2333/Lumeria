@@ -1,9 +1,18 @@
 import {
   buildMotionLabCurveRows,
   buildMotionLabAssertionRows,
+  buildMotionLabCompareRows,
   buildMotionLabOverviewRows,
   buildMotionLabScenarioRows,
+  buildMotionLabTraceDiffRows,
+  createMotionLabCompareExport,
+  createMotionLabRunSnapshot,
+  createMotionLabTraceDiffExport,
+  DEFAULT_MOTION_LAB_PARAMS,
   buildMotionLabTimelineRows,
+  MOTION_LAB_COMPARE_SCHEMA,
+  MOTION_LAB_TRACE_DIFF_SCHEMA,
+  normalizeMotionLabParams,
   shouldMountMotionLab,
 } from "./motionLabModel.js";
 import {
@@ -103,4 +112,87 @@ export function runMotionLabModelTests() {
   }, { report });
   const assertionRows = buildMotionLabAssertionRows(passedAssertions);
   assert(assertionRows[0].status === "pass", "assertion rows should expose pass state");
+
+  const normalizedParams = normalizeMotionLabParams({
+    damping: 18,
+    distancePx: 180,
+    ease: "sine.inOut",
+    interruptPolicy: "blend",
+    springMass: 9,
+    stiffness: 500,
+  });
+  assert(normalizedParams.springDamping === 18, "params should keep legacy damping alias");
+  assert(normalizedParams.springStiffness === 500, "params should keep legacy stiffness alias");
+  assert(normalizedParams.pageDistancePx === 180, "params should keep legacy distance alias for page distance");
+  assert(normalizedParams.dragDistancePx === 180, "params should keep legacy distance alias for drag distance");
+  assert(normalizedParams.springMass === 3, "params should clamp spring mass");
+  assert(normalizedParams.ease === "sine.inOut", "params should accept supported ease");
+  assert(normalizedParams.interruptPolicy === "blend", "params should accept supported interrupt policy");
+  assert(normalizeMotionLabParams({ ease: "unknown" }).ease === DEFAULT_MOTION_LAB_PARAMS.ease, "params should reject unknown ease");
+
+  const traceA = {
+    capture: { durationMs: 120 },
+    summary: {
+      byDriver: { spring: 2, tween: 1 },
+      byProp: { x: 2, y: 1 },
+      eventCount: 3,
+      frameCount: 4,
+      targetCount: 2,
+      trackCount: 2,
+      valueCount: 5,
+      warningCount: 0,
+    },
+    timeline: { timeRangeMs: { max: 120, min: 0 } },
+  };
+  const traceB = {
+    capture: { durationMs: 240 },
+    summary: {
+      byDriver: { spring: 4, tween: 1 },
+      byProp: { alpha: 1, x: 4 },
+      eventCount: 6,
+      frameCount: 8,
+      targetCount: 3,
+      trackCount: 3,
+      valueCount: 11,
+      warningCount: 1,
+    },
+    timeline: { timeRangeMs: { max: 240, min: 0 } },
+  };
+  const snapshotA = createMotionLabRunSnapshot({
+    assertions: passedAssertions,
+    params: normalizedParams,
+    report,
+    scenario,
+    trace: traceA,
+  });
+  const snapshotB = createMotionLabRunSnapshot({
+    assertions: [{ id: "sample", passed: false }],
+    params: { ...normalizedParams, durationMs: 520 },
+    report: {
+      ...report,
+      history: { events: [...report.history.events, ...report.history.events], samples: report.history.samples },
+      summary: { activeAnimationCount: 0, warningCount: 1 },
+    },
+    scenario,
+    trace: traceB,
+  });
+  assert(snapshotA.schema == null, "run snapshot should stay lightweight without nested schema");
+  assert(snapshotA.summary.assertionPassedCount === 1, "run snapshot should count passed assertions");
+  assert(snapshotB.summary.assertionFailedCount === 1, "run snapshot should count failed assertions");
+  assert(snapshotB.summary.eventCount === 4, "run snapshot should count report events");
+
+  const compareRows = buildMotionLabCompareRows(snapshotB, snapshotA);
+  assert(compareRows.some((row) => row.label === "events" && row.delta === "+2"), "compare rows should expose event delta");
+  assert(compareRows.some((row) => row.label === "trace values" && row.delta === "+6"), "compare rows should expose trace value delta");
+  const compareExport = createMotionLabCompareExport(snapshotB, snapshotA);
+  assert(compareExport.schema === MOTION_LAB_COMPARE_SCHEMA, "compare export should expose schema");
+  assert(compareExport.rows.length === compareRows.length, "compare export should include rows");
+
+  const diffRows = buildMotionLabTraceDiffRows(traceB, traceA);
+  assert(diffRows.some((row) => row.label === "frames" && row.delta === "+4"), "trace diff rows should expose frame delta");
+  assert(diffRows.some((row) => row.label === "prop:alpha" && row.delta === "+1"), "trace diff rows should expose changed props");
+  assert(diffRows.some((row) => row.label === "driver:spring" && row.delta === "+2"), "trace diff rows should expose changed drivers");
+  const traceDiffExport = createMotionLabTraceDiffExport(traceB, traceA);
+  assert(traceDiffExport.schema === MOTION_LAB_TRACE_DIFF_SCHEMA, "trace diff export should expose schema");
+  assert(traceDiffExport.rows.length === diffRows.length, "trace diff export should include rows");
 }

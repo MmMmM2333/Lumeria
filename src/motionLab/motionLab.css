@@ -198,7 +198,7 @@
 
 .motion-lab-toolbar {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
   gap: 8px;
 }
 
@@ -301,6 +301,10 @@
 
 .motion-lab-assertion-row {
   grid-template-columns: 54px minmax(0, 0.8fr) minmax(0, 1.2fr);
+}
+
+.motion-lab-diff-row {
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) 72px;
 }
 
 .motion-lab-assertion-pass {

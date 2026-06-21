@@ -22,35 +22,26 @@
       </section>
 
       <section class="motion-lab-section">
-        <h2>Parameters</h2>
-        <label class="motion-lab-control">
-          <span>
-            stiffness
-            <output>{{ motionParams.stiffness }}</output>
-          </span>
-          <input v-model.number="motionParams.stiffness" type="range" min="120" max="720" step="10">
-        </label>
-        <label class="motion-lab-control">
-          <span>
-            damping
-            <output>{{ motionParams.damping }}</output>
-          </span>
-          <input v-model.number="motionParams.damping" type="range" min="12" max="80" step="1">
-        </label>
-        <label class="motion-lab-control">
-          <span>
-            duration
-            <output>{{ motionParams.durationMs }}ms</output>
-          </span>
-          <input v-model.number="motionParams.durationMs" type="range" min="120" max="900" step="20">
-        </label>
-        <label class="motion-lab-control">
-          <span>
-            distance
-            <output>{{ motionParams.distancePx }}px</output>
-          </span>
-          <input v-model.number="motionParams.distancePx" type="range" min="80" max="360" step="10">
-        </label>
+        <template v-for="group in parameterGroups" :key="group.title">
+          <h2>{{ group.title }}</h2>
+          <label v-for="control in group.controls" :key="control.key" class="motion-lab-control">
+            <span>
+              {{ control.label }}
+              <output>{{ formatParamOutput(control) }}</output>
+            </span>
+            <input
+              v-if="control.type === 'range'"
+              v-model.number="motionParams[control.key]"
+              type="range"
+              :min="control.min"
+              :max="control.max"
+              :step="control.step"
+            >
+            <select v-else v-model="motionParams[control.key]">
+              <option v-for="option in control.options" :key="option" :value="option">{{ option }}</option>
+            </select>
+          </label>
+        </template>
       </section>
     </aside>
 
@@ -67,8 +58,11 @@
         <button type="button" @click="runSelectedScenario">Run</button>
         <button type="button" @click="resetLabScene">Reset</button>
         <button type="button" @click="captureReplayTrace">Capture Replay</button>
+        <button type="button" :disabled="!canCompareLast" @click="compareLastRun">Compare Last</button>
         <button type="button" @click="copyLabReport">{{ reportCopyLabel }}</button>
         <button type="button" :disabled="!replayTraceJson" @click="copyReplayTrace">{{ traceCopyLabel }}</button>
+        <button type="button" :disabled="compareRows.length === 0" @click="copyCompareExport">{{ compareCopyLabel }}</button>
+        <button type="button" :disabled="traceDiffRows.length === 0" @click="copyTraceDiffExport">{{ diffCopyLabel }}</button>
       </section>
 
       <section class="motion-lab-grid">
@@ -111,6 +105,20 @@
               <small>{{ row.detail }}</small>
             </div>
             <div v-if="assertionRows.length === 0" class="motion-lab-empty">no assertions run</div>
+          </div>
+        </div>
+
+        <div class="motion-lab-panel motion-lab-panel-wide">
+          <header>
+            <h2>Compare Last</h2>
+          </header>
+          <div class="motion-lab-list">
+            <div v-for="row in compareRows" :key="row.label" class="motion-lab-list-row motion-lab-diff-row">
+              <span>{{ row.label }}</span>
+              <strong>{{ row.previous }} -> {{ row.current }}</strong>
+              <small>{{ row.delta }}</small>
+            </div>
+            <div v-if="compareRows.length === 0" class="motion-lab-empty">run two scenarios</div>
           </div>
         </div>
 
@@ -165,6 +173,20 @@
             </div>
           </dl>
         </div>
+
+        <div class="motion-lab-panel motion-lab-panel-wide">
+          <header>
+            <h2>Trace Diff</h2>
+          </header>
+          <div class="motion-lab-list">
+            <div v-for="row in traceDiffRows" :key="row.label" class="motion-lab-list-row motion-lab-diff-row">
+              <span>{{ row.label }}</span>
+              <strong>{{ row.previous }} -> {{ row.current }}</strong>
+              <small>{{ row.delta }}</small>
+            </div>
+            <div v-if="traceDiffRows.length === 0" class="motion-lab-empty">capture two traces</div>
+          </div>
+        </div>
       </section>
     </main>
   </div>
@@ -179,11 +201,20 @@ import { createMotionRuntime } from "../rendering/pixi/animation/motionRuntime.j
 import { createMotionReplayTrace } from "../rendering/pixi/animation/motionReplayTrace.js";
 import {
   buildMotionLabAssertionRows,
+  buildMotionLabCompareRows,
   buildMotionLabCurveRows,
   buildMotionLabOverviewRows,
   buildMotionLabScenarioRows,
+  buildMotionLabTraceDiffRows,
   buildMotionLabTimelineRows,
+  createMotionLabCompareExport,
+  createMotionLabRunSnapshot,
+  createMotionLabTraceDiffExport,
+  DEFAULT_MOTION_LAB_PARAMS,
+  MOTION_LAB_EASE_OPTIONS,
+  MOTION_LAB_INTERRUPT_OPTIONS,
   MOTION_LAB_SCENARIOS,
+  normalizeMotionLabParams,
 } from "./motionLabModel.js";
 import {
   evaluateMotionLabScenarioAssertions,
@@ -201,12 +232,67 @@ const replayTraceJson = ref("");
 const assertionResults = ref([]);
 const copiedReport = ref(false);
 const copiedTrace = ref(false);
-const motionParams = reactive({
-  damping: 34,
-  distancePx: 220,
-  durationMs: 360,
-  stiffness: 360,
-});
+const copiedCompare = ref(false);
+const copiedDiff = ref(false);
+const currentRunSnapshot = ref(null);
+const previousRunSnapshot = ref(null);
+const compareBaselineSnapshot = ref(null);
+const compareCurrentSnapshot = ref(null);
+const lastReplayTrace = ref(null);
+const traceDiffBaseline = ref(null);
+const traceDiffCurrent = ref(null);
+const motionParams = reactive({ ...DEFAULT_MOTION_LAB_PARAMS });
+
+const parameterGroups = Object.freeze([
+  {
+    title: "Spring",
+    controls: [
+      { key: "springStiffness", label: "stiffness", max: 720, min: 120, step: 10, type: "range" },
+      { key: "springDamping", label: "damping", max: 80, min: 12, step: 1, type: "range" },
+      { digits: 2, key: "springMass", label: "mass", max: 2, min: 0.4, step: 0.05, type: "range" },
+    ],
+  },
+  {
+    title: "Timing",
+    controls: [
+      { key: "durationMs", label: "duration", max: 900, min: 120, step: 20, suffix: "ms", type: "range" },
+      { key: "ease", label: "ease", options: MOTION_LAB_EASE_OPTIONS, type: "select" },
+    ],
+  },
+  {
+    title: "Interruption",
+    controls: [
+      { key: "interruptPolicy", label: "policy", options: MOTION_LAB_INTERRUPT_OPTIONS, type: "select" },
+      { key: "interruptDelayMs", label: "delay", max: 240, min: 0, step: 10, suffix: "ms", type: "range" },
+      { key: "blendDurationMs", label: "blend", max: 240, min: 0, step: 10, suffix: "ms", type: "range" },
+    ],
+  },
+  {
+    title: "Drag",
+    controls: [
+      { key: "dragDistancePx", label: "distance", max: 360, min: 80, step: 10, suffix: "px", type: "range" },
+      { key: "dragReleaseYPx", label: "release y", max: 320, min: 160, step: 8, suffix: "px", type: "range" },
+    ],
+  },
+  {
+    title: "Icon",
+    controls: [
+      { digits: 2, key: "iconPressScale", label: "press scale", max: 0.98, min: 0.7, step: 0.01, type: "range" },
+      { digits: 2, key: "iconHoverScale", label: "hover scale", max: 1.2, min: 1, step: 0.01, type: "range" },
+      { digits: 1, key: "jiggleRotationDeg", label: "jiggle", max: 9, min: 0, step: 0.3, suffix: "deg", type: "range" },
+    ],
+  },
+  {
+    title: "Folder",
+    controls: [
+      { digits: 2, key: "folderClosedScale", label: "closed scale", max: 0.98, min: 0.68, step: 0.01, type: "range" },
+      { digits: 2, key: "folderOpenScale", label: "open scale", max: 1.12, min: 0.9, step: 0.01, type: "range" },
+      { key: "folderTravelPx", label: "travel", max: 100, min: 0, step: 4, suffix: "px", type: "range" },
+      { digits: 2, key: "folderHoverScale", label: "hover scale", max: 1.22, min: 1, step: 0.01, type: "range" },
+      { key: "pageDistancePx", label: "page distance", max: 360, min: 80, step: 10, suffix: "px", type: "range" },
+    ],
+  },
+]);
 
 const scenarioRows = computed(() => buildMotionLabScenarioRows(MOTION_LAB_SCENARIOS, selectedScenarioId.value));
 const selectedScenario = computed(() => getMotionLabScenario(selectedScenarioId.value));
@@ -216,8 +302,13 @@ const warningRows = computed(() => buildMotionWarningRows(motionReport.value, 6)
 const assertionRows = computed(() => buildMotionLabAssertionRows(assertionResults.value));
 const timelineRows = computed(() => buildMotionLabTimelineRows(motionReport.value));
 const curveRows = computed(() => buildMotionLabCurveRows(motionReport.value));
+const canCompareLast = computed(() => Boolean(currentRunSnapshot.value && previousRunSnapshot.value));
+const compareRows = computed(() => buildMotionLabCompareRows(compareCurrentSnapshot.value, compareBaselineSnapshot.value));
+const traceDiffRows = computed(() => buildMotionLabTraceDiffRows(traceDiffCurrent.value, traceDiffBaseline.value));
 const reportCopyLabel = computed(() => copiedReport.value ? "Copied Report" : "Copy Report");
 const traceCopyLabel = computed(() => copiedTrace.value ? "Copied Trace" : "Copy Trace");
+const compareCopyLabel = computed(() => copiedCompare.value ? "Copied Compare" : "Copy Compare");
+const diffCopyLabel = computed(() => copiedDiff.value ? "Copied Diff" : "Copy Diff");
 
 let pixiApp = null;
 let runtime = null;
@@ -225,6 +316,23 @@ let scene = null;
 let reportTimer = null;
 let copyReportTimer = null;
 let copyTraceTimer = null;
+let copyCompareTimer = null;
+let copyDiffTimer = null;
+
+function getMotionParams() {
+  const normalized = normalizeMotionLabParams(motionParams);
+  Object.assign(motionParams, normalized);
+  return normalized;
+}
+
+function formatParamOutput(control) {
+  const value = motionParams[control.key];
+  if (control.type === "select") return String(value);
+  const number = Number(value);
+  const digits = Number.isFinite(Number(control.digits)) ? Number(control.digits) : 0;
+  const formatted = Number.isFinite(number) ? number.toFixed(digits) : "-";
+  return `${formatted}${control.suffix || ""}`;
+}
 
 function makeEmptyReport() {
   return {
@@ -428,10 +536,11 @@ function configureRuntime() {
 
 function setSceneDefaults() {
   if (!scene) return;
+  const params = getMotionParams();
   scene.pageTrack.position.set(0, 0);
   scene.folderPageTrack.position.set(0, 0);
   scene.folderPanel.position.set(520, 174);
-  scene.folderPanel.scale.set(0.86);
+  scene.folderPanel.scale.set(params.folderClosedScale);
   scene.folderPanel.alpha = 0.22;
   scene.folderHover.position.set(284, 248);
   scene.folderHover.scale.set(1);
@@ -512,7 +621,7 @@ function wait(ms) {
 
 function makeScenarioContext() {
   return {
-    motionParams,
+    motionParams: getMotionParams(),
     refreshReport: refreshMotionReport,
     report: motionReport.value,
     runtime,
@@ -537,6 +646,7 @@ async function runSelectedScenario() {
   await wait(selectedScenario.value?.assertAfterMs ?? 760);
   const assertions = updateScenarioAssertions();
   previewStatus.value = assertions.every((assertion) => assertion.passed) ? "passed" : "failed";
+  recordRunSnapshot();
 }
 
 function selectScenario(id) {
@@ -552,8 +662,12 @@ function captureReplayTrace() {
     durationMs: 30000,
     sampleHz: 30,
   });
+  traceDiffBaseline.value = lastReplayTrace.value;
+  traceDiffCurrent.value = trace;
+  lastReplayTrace.value = trace;
   replayTrace.value = trace;
   replayTraceJson.value = JSON.stringify(trace, null, 2);
+  recordRunSnapshot(trace, { replaceCurrent: true });
 }
 
 async function copyText(text) {
@@ -567,6 +681,7 @@ async function copyLabReport() {
   refreshMotionReport();
   const payload = {
     assertions: assertionResults.value,
+    params: getMotionParams(),
     report: motionReport.value,
     scenario: {
       id: selectedScenario.value?.id,
@@ -594,12 +709,72 @@ async function copyReplayTrace() {
   }, 1200);
 }
 
+function makeRunSnapshot(trace = replayTrace.value) {
+  return createMotionLabRunSnapshot({
+    assertions: assertionResults.value,
+    params: getMotionParams(),
+    report: motionReport.value,
+    scenario: selectedScenario.value,
+    trace,
+  });
+}
+
+function recordRunSnapshot(trace = replayTrace.value, options = {}) {
+  const snapshot = makeRunSnapshot(trace);
+  if (options.replaceCurrent && currentRunSnapshot.value) {
+    currentRunSnapshot.value = snapshot;
+  } else {
+    previousRunSnapshot.value = currentRunSnapshot.value;
+    currentRunSnapshot.value = snapshot;
+  }
+  compareLastRun();
+  return snapshot;
+}
+
+function compareLastRun() {
+  if (!currentRunSnapshot.value || !previousRunSnapshot.value) return null;
+  compareBaselineSnapshot.value = previousRunSnapshot.value;
+  compareCurrentSnapshot.value = currentRunSnapshot.value;
+  return compareRows.value;
+}
+
+async function copyCompareExport() {
+  compareLastRun();
+  const payload = createMotionLabCompareExport(compareCurrentSnapshot.value, compareBaselineSnapshot.value);
+  const ok = await copyText(JSON.stringify(payload, null, 2));
+  if (!ok) return;
+  copiedCompare.value = true;
+  if (copyCompareTimer != null) window.clearTimeout(copyCompareTimer);
+  copyCompareTimer = window.setTimeout(() => {
+    copiedCompare.value = false;
+    copyCompareTimer = null;
+  }, 1200);
+}
+
+async function copyTraceDiffExport() {
+  const payload = createMotionLabTraceDiffExport(traceDiffCurrent.value, traceDiffBaseline.value);
+  const ok = await copyText(JSON.stringify(payload, null, 2));
+  if (!ok) return;
+  copiedDiff.value = true;
+  if (copyDiffTimer != null) window.clearTimeout(copyDiffTimer);
+  copyDiffTimer = window.setTimeout(() => {
+    copiedDiff.value = false;
+    copyDiffTimer = null;
+  }, 1200);
+}
+
 function installDebugApi() {
   globalThis.__LP_MOTION_LAB__ = {
     captureReplayTrace,
     assertions: () => assertionResults.value,
+    compareExport: () => createMotionLabCompareExport(compareCurrentSnapshot.value, compareBaselineSnapshot.value),
+    compareLast: compareLastRun,
+    compareRows: () => compareRows.value,
+    copyCompare: copyCompareExport,
+    copyDiff: copyTraceDiffExport,
     copyReport: copyLabReport,
     copyTrace: copyReplayTrace,
+    params: () => getMotionParams(),
     report: () => motionReport.value,
     reset: resetLabScene,
     run: runSelectedScenario,
@@ -614,22 +789,34 @@ function installDebugApi() {
     },
     scenarios: () => scenarioRows.value,
     selectScenario,
+    setParams: (patch = {}) => {
+      Object.assign(motionParams, normalizeMotionLabParams({ ...motionParams, ...patch }));
+      return getMotionParams();
+    },
     status: () => ({
+      canCompareLast: canCompareLast.value,
       hasPixiApp: Boolean(pixiApp),
       mounted: true,
       scenarioCount: scenarioRows.value.length,
       selectedScenarioId: selectedScenarioId.value,
+      traceDiffRowCount: traceDiffRows.value.length,
       traceSchema: replayTrace.value?.schema || null,
     }),
     trace: () => replayTrace.value,
+    traceDiffExport: () => createMotionLabTraceDiffExport(traceDiffCurrent.value, traceDiffBaseline.value),
+    traceDiffRows: () => traceDiffRows.value,
   };
 }
 
 function clearCopyTimers() {
   if (copyReportTimer != null) window.clearTimeout(copyReportTimer);
   if (copyTraceTimer != null) window.clearTimeout(copyTraceTimer);
+  if (copyCompareTimer != null) window.clearTimeout(copyCompareTimer);
+  if (copyDiffTimer != null) window.clearTimeout(copyDiffTimer);
   copyReportTimer = null;
   copyTraceTimer = null;
+  copyCompareTimer = null;
+  copyDiffTimer = null;
 }
 
 onMounted(async () => {
