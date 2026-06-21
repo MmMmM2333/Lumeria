@@ -68,6 +68,110 @@ function makeOverview(report) {
   };
 }
 
+function makeTrackKey(record = {}) {
+  return [
+    record.targetId ?? "unknown",
+    record.prop ?? "unknown",
+    record.lane ?? "unknown",
+    record.laneKey ?? "unknown",
+  ].join(":");
+}
+
+function readFiniteNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function expandRange(range, value) {
+  const number = readFiniteNumber(value);
+  if (number == null) return;
+  range.min = range.min == null ? number : Math.min(range.min, number);
+  range.max = range.max == null ? number : Math.max(range.max, number);
+}
+
+function finalizeRange(range) {
+  return {
+    max: range.max,
+    min: range.min,
+  };
+}
+
+function makeCurveSummary(report = {}) {
+  const tracksByKey = new Map();
+  const ensureTrack = (record = {}) => {
+    const key = makeTrackKey(record);
+    let track = tracksByKey.get(key);
+    if (!track) {
+      track = {
+        driver: record.driver || "unknown",
+        eventCount: 0,
+        key,
+        lane: record.lane,
+        laneKey: record.laneKey,
+        prop: record.prop,
+        sampleCount: 0,
+        sourceLabel: record.sourceLabel,
+        targetId: record.targetId,
+        timeRangeMs: { max: null, min: null },
+        valueRange: { max: null, min: null },
+        velocityRange: { max: null, min: null },
+      };
+      tracksByKey.set(key, track);
+    }
+    if (record.driver) track.driver = record.driver;
+    if (record.sourceLabel) track.sourceLabel = record.sourceLabel;
+    return track;
+  };
+  for (const sample of report.history?.samples || []) {
+    for (const animation of sample.animations || []) {
+      const track = ensureTrack(animation);
+      track.sampleCount += 1;
+      expandRange(track.timeRangeMs, sample.timeMs);
+      expandRange(track.valueRange, animation.value);
+      expandRange(track.valueRange, animation.to);
+      expandRange(track.velocityRange, animation.velocity);
+    }
+  }
+  for (const event of report.history?.events || []) {
+    const track = ensureTrack(event);
+    track.eventCount += 1;
+    expandRange(track.timeRangeMs, event.timeMs);
+    expandRange(track.valueRange, event.value);
+    expandRange(track.valueRange, event.to);
+    expandRange(track.velocityRange, event.velocity);
+  }
+  const statsByKey = new Map((report.curveStats || []).map((stats) => [makeTrackKey(stats), stats]));
+  const tracks = Array.from(tracksByKey.values())
+    .map((track) => {
+      const stats = statsByKey.get(track.key) || {};
+      return {
+        driver: track.driver,
+        eventCount: track.eventCount,
+        key: track.key,
+        lane: track.lane,
+        laneKey: track.laneKey,
+        maxDelta: stats.maxDelta ?? null,
+        maxVelocity: stats.maxVelocity ?? null,
+        overshootCount: stats.overshootCount ?? 0,
+        prop: track.prop,
+        retargetCount: stats.retargetCount ?? 0,
+        sampleCount: track.sampleCount,
+        sourceLabel: track.sourceLabel,
+        targetId: track.targetId,
+        timeRangeMs: finalizeRange(track.timeRangeMs),
+        valueRange: finalizeRange(track.valueRange),
+        velocityRange: finalizeRange(track.velocityRange),
+      };
+    })
+    .sort((a, b) => (b.sampleCount - a.sampleCount) || String(a.key).localeCompare(String(b.key)));
+  return {
+    eventCount: tracks.reduce((total, track) => total + track.eventCount, 0),
+    sampleCount: tracks.reduce((total, track) => total + track.sampleCount, 0),
+    trackCount: tracks.length,
+    tracks,
+  };
+}
+
 function getReportOptions(mode) {
   if (mode === "summary") {
     return {
@@ -169,6 +273,7 @@ function makeReportData(runtime, options = {}) {
     ? filterReportForSelectedTarget(rawReport, selection)
     : rawReport;
   return {
+    curveSummary: makeCurveSummary(report),
     generatedAt: new Date().toISOString(),
     mode,
     overview: makeOverview(report),
@@ -214,6 +319,17 @@ function formatCurveStats(curveStats = []) {
     .join("\n");
 }
 
+function formatCurveSummary(curveSummary = {}) {
+  if (!curveSummary.tracks?.length) return "- none";
+  return curveSummary.tracks
+    .slice(0, 12)
+    .map((track) => {
+      const label = track.sourceLabel || `${track.targetId}:${track.prop}:${track.laneKey}`;
+      return `- ${label}: samples=${track.sampleCount}, events=${track.eventCount}, value=${track.valueRange.min}..${track.valueRange.max}, velocity=${track.velocityRange.min}..${track.velocityRange.max}`;
+    })
+    .join("\n");
+}
+
 export function formatMotionDebugMarkdown(data) {
   const overview = data.overview;
   return [
@@ -249,6 +365,9 @@ export function formatMotionDebugMarkdown(data) {
     "",
     "## Curve Stats",
     formatCurveStats(data.report.curveStats),
+    "",
+    "## Curve Summary",
+    formatCurveSummary(data.curveSummary),
   ].filter((line) => line != null).join("\n");
 }
 

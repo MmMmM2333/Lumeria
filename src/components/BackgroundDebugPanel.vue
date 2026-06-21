@@ -377,6 +377,64 @@
         </div>
 
         <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">Curve Chart</div>
+          <div class="background-debug-motion-curve-list">
+            <section
+              v-for="group in motionCurveChartGroups"
+              :key="group.key"
+              class="background-debug-motion-curve-card"
+            >
+              <header>
+                <strong :title="group.overlayLabel">{{ group.label }}</strong>
+                <span>{{ group.summary }}</span>
+              </header>
+              <div class="background-debug-motion-curve-meta">
+                <span :title="group.laneLabel">{{ group.laneLabel }}</span>
+                <span :title="group.sourceLabel">{{ group.sourceLabel }}</span>
+                <span>v {{ formatMotionChartStat(group.stats.maxVelocity) }}</span>
+              </div>
+              <div class="background-debug-motion-curve-row">
+                <span>value/to/events</span>
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                  <path class="background-debug-motion-curve-grid" d="M 0 50 L 100 50" />
+                  <path v-if="group.toPath" class="background-debug-motion-curve-to" :d="group.toPath" />
+                  <path v-if="group.valuePath" class="background-debug-motion-curve-value" :d="group.valuePath" />
+                  <line
+                    v-for="marker in group.eventMarkers"
+                    :key="`${group.key}-${marker.time}-${marker.type}`"
+                    class="background-debug-motion-curve-event"
+                    :x1="marker.x"
+                    y1="5"
+                    :x2="marker.x"
+                    y2="95"
+                  />
+                </svg>
+                <output>{{ group.rangeLabels.value }}</output>
+              </div>
+              <div class="background-debug-motion-curve-row">
+                <span>delta</span>
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                  <path class="background-debug-motion-curve-grid" d="M 0 50 L 100 50" />
+                  <path v-if="group.deltaPath" class="background-debug-motion-curve-delta" :d="group.deltaPath" />
+                </svg>
+                <output>{{ group.rangeLabels.delta }}</output>
+              </div>
+              <div class="background-debug-motion-curve-row">
+                <span>velocity</span>
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                  <path class="background-debug-motion-curve-grid" d="M 0 50 L 100 50" />
+                  <path v-if="group.velocityPath" class="background-debug-motion-curve-velocity" :d="group.velocityPath" />
+                </svg>
+                <output>{{ group.rangeLabels.velocity }}</output>
+              </div>
+            </section>
+            <div v-if="motionCurveChartGroups.length === 0" class="background-debug-motion-empty">
+              no matching curve samples
+            </div>
+          </div>
+        </div>
+
+        <div class="background-debug-subsection">
           <div class="background-debug-subtitle">Active Animations</div>
           <div class="background-debug-motion-table" role="table" aria-label="Active Pixi motion animations">
             <div class="background-debug-motion-row background-debug-motion-row-head" role="row">
@@ -681,6 +739,7 @@ import {
 import {
   buildMotionAnimationRows,
   buildMotionCancelReasonRows,
+  buildMotionCurveChartGroups,
   buildMotionFilterSummary,
   buildMotionOverviewRows,
   buildMotionPropertyRows,
@@ -976,9 +1035,15 @@ const motionFilters = computed(() => ({
 const motionFilterSummary = computed(() => buildMotionFilterSummary(motionReport.value, motionFilters.value));
 const motionPropertyRows = computed(() => buildMotionPropertyRows(motionReport.value, motionFilters.value));
 const motionTimelineGroups = computed(() => buildMotionTimelineGroups(motionReport.value, motionFilters.value));
+const motionCurveChartGroups = computed(() => buildMotionCurveChartGroups(motionReport.value, motionFilters.value));
 
 function formatValue(value, digits) {
   return Number(value).toFixed(digits);
+}
+
+function formatMotionChartStat(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(2) : "-";
 }
 
 function formatEffectLabel(effect) {
@@ -1878,6 +1943,117 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.background-debug-motion-curve-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.background-debug-motion-curve-card {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.background-debug-motion-curve-card header,
+.background-debug-motion-curve-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.background-debug-motion-curve-card strong,
+.background-debug-motion-curve-card header span,
+.background-debug-motion-curve-meta span,
+.background-debug-motion-curve-row span,
+.background-debug-motion-curve-row output {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.background-debug-motion-curve-card strong {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.background-debug-motion-curve-card header span,
+.background-debug-motion-curve-meta,
+.background-debug-motion-curve-row {
+  color: rgba(255, 255, 255, 0.52);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.background-debug-motion-curve-meta {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr) auto;
+}
+
+.background-debug-motion-curve-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) 92px;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.background-debug-motion-curve-row svg {
+  display: block;
+  width: 100%;
+  height: 32px;
+  min-width: 0;
+  overflow: visible;
+}
+
+.background-debug-motion-curve-row path,
+.background-debug-motion-curve-row line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.background-debug-motion-curve-grid {
+  stroke: rgba(255, 255, 255, 0.13);
+  stroke-width: 1;
+}
+
+.background-debug-motion-curve-value {
+  stroke: rgba(110, 220, 255, 0.95);
+  stroke-width: 1.7;
+}
+
+.background-debug-motion-curve-to {
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-dasharray: 3 3;
+  stroke-width: 1.1;
+}
+
+.background-debug-motion-curve-delta {
+  stroke: rgba(255, 205, 105, 0.95);
+  stroke-width: 1.5;
+}
+
+.background-debug-motion-curve-velocity {
+  stroke: rgba(170, 240, 130, 0.95);
+  stroke-width: 1.5;
+}
+
+.background-debug-motion-curve-event {
+  stroke: rgba(255, 135, 150, 0.76);
+  stroke-dasharray: 2 3;
+  stroke-width: 1;
 }
 
 .background-debug-window-card {

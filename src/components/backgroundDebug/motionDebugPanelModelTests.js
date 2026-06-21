@@ -2,6 +2,7 @@ import {
   buildMotionAnimationRows,
   buildMotionCancelReasonRows,
   buildMotionFilterSummary,
+  buildMotionCurveChartGroups,
   buildMotionOverviewRows,
   buildMotionPropertyRows,
   buildMotionRuntimeDebugConfig,
@@ -133,10 +134,92 @@ export function runMotionDebugPanelModelTests() {
     value: 0,
     velocity: 2,
   }];
+  report.history.samples = [{
+    activeAnimationCount: 2,
+    frame: 1,
+    timeMs: 0,
+    animations: [{
+      driver: "spring",
+      from: 0,
+      lane: "base",
+      laneKey: "panel-y",
+      prop: "y",
+      sourceLabel: "folder.panel",
+      targetId: 3,
+      to: 120,
+      value: 0,
+      velocity: 0,
+    }, {
+      driver: "tween",
+      from: 0,
+      lane: "additive",
+      laneKey: "icon-jiggle-x",
+      prop: "x",
+      sourceLabel: "desktop.icon.jiggle",
+      targetId: 9,
+      to: 10,
+      value: 0,
+      velocity: 2,
+    }],
+  }, {
+    activeAnimationCount: 2,
+    frame: 2,
+    timeMs: 50,
+    animations: [{
+      driver: "spring",
+      from: 0,
+      lane: "base",
+      laneKey: "panel-y",
+      prop: "y",
+      sourceLabel: "folder.panel",
+      targetId: 3,
+      to: 120,
+      value: 60,
+      velocity: 8,
+    }, {
+      driver: "tween",
+      from: 0,
+      lane: "additive",
+      laneKey: "icon-jiggle-x",
+      prop: "x",
+      sourceLabel: "desktop.icon.jiggle",
+      targetId: 9,
+      to: 10,
+      value: 5,
+      velocity: 2,
+    }],
+  }, {
+    activeAnimationCount: 2,
+    frame: 3,
+    timeMs: 100,
+    animations: [{
+      driver: "spring",
+      from: 0,
+      lane: "base",
+      laneKey: "panel-y",
+      prop: "y",
+      sourceLabel: "folder.panel",
+      targetId: 3,
+      to: 120,
+      value: 90,
+      velocity: 4,
+    }, {
+      driver: "tween",
+      from: 0,
+      lane: "additive",
+      laneKey: "icon-jiggle-x",
+      prop: "x",
+      sourceLabel: "desktop.icon.jiggle",
+      targetId: 9,
+      to: 10,
+      value: 10,
+      velocity: 0,
+    }],
+  }];
 
   const overview = buildMotionOverviewRows(report);
   assert(overview.some((row) => row.label === "record" && row.value === "on"), "overview should expose record state");
-  assert(overview.some((row) => row.label === "events/samples" && row.value === "3 / 1"), "overview should expose history counts");
+  assert(overview.some((row) => row.label === "events/samples" && row.value === "3 / 3"), "overview should expose history counts");
   assert(overview.some((row) => row.label === "timeScale" && row.value === "0.50x"), "overview should expose time scale");
 
   const animationRows = buildMotionAnimationRows(report);
@@ -173,4 +256,20 @@ export function runMotionDebugPanelModelTests() {
   const filterSummary = buildMotionFilterSummary(report, { preset: "active", query: "panel" });
   assert(filterSummary.preset === "active", "filter summary should preserve normalized preset");
   assert(filterSummary.text === "1 props / 2 events", "filter summary should count filtered properties and timeline events");
+
+  const curveGroups = buildMotionCurveChartGroups(report, { preset: "all", query: "" });
+  assert(curveGroups.length === 2, "curve chart should group sampled tracks");
+  const panelCurve = curveGroups.find((group) => group.label === "folder.panel.y");
+  assert(panelCurve, "curve chart should label target.prop");
+  assert(panelCurve.summary.includes("3 samples"), "curve chart summary should include sample count");
+  assert(panelCurve.valuePath.startsWith("M "), "curve chart should expose a value path");
+  assert(panelCurve.toPath.startsWith("M "), "curve chart should expose a target path");
+  assert(panelCurve.deltaPath.startsWith("M "), "curve chart should expose a delta path");
+  assert(panelCurve.velocityPath.startsWith("M "), "curve chart should expose a velocity path");
+  assert(panelCurve.eventMarkers.length === 2, "curve chart should include matching lifecycle event markers");
+  assert(panelCurve.series.value.length === 3, "curve chart should keep normalized value points");
+  assert(panelCurve.series.value.every((point) => point.x >= 0 && point.x <= 100 && point.y >= 0 && point.y <= 100), "normalized value points should stay in chart bounds");
+  assert(panelCurve.stats.maxVelocity === 8, "curve chart should expose track stats");
+  const queriedCurves = buildMotionCurveChartGroups(report, { preset: "all", query: "jiggle" });
+  assert(queriedCurves.length === 1 && queriedCurves[0].label === "desktop.icon.jiggle.x", "query filter should narrow curve groups");
 }

@@ -129,6 +129,11 @@ export function runMotionDebugReportTests() {
     assert(data.report.animations.length === 1, "selected target report should filter animations to the target");
     assert(data.report.animations[0].sourceLabel === "folder.panel", "selected animation should retain its source label");
     assert(data.report.warnings.length === 0, "selected target report should not include unrelated warnings");
+    assert(data.curveSummary.tracks.length === 1, "selected target report should include one curve summary track");
+    assert(data.curveSummary.tracks[0].sourceLabel === "folder.panel", "selected curve summary should retain source label");
+    assert(data.curveSummary.tracks[0].sampleCount > 0, "selected curve summary should count sampled points");
+    assert(data.curveSummary.tracks[0].eventCount > 0, "selected curve summary should count lifecycle events");
+    assert(data.markdown == null, "selected target JSON should not include generated markdown internally");
   }
 
   {

@@ -14,6 +14,7 @@ export const MOTION_FILTER_PRESETS = [
 
 const DEFAULT_RECORD_WINDOW_MS = 30000;
 const MAX_ROW_COUNT = 12;
+const MAX_CURVE_GROUP_COUNT = 4;
 const MAX_TIMELINE_EVENT_COUNT = 60;
 const MAX_TIMELINE_GROUP_COUNT = 8;
 const MIN_CUSTOM_SECONDS = 1;
@@ -93,6 +94,48 @@ function makeTargetLaneKey(record = {}) {
     record.lane ?? "unknown",
     record.laneKey ?? "unknown",
   ].join(":");
+}
+
+function makeSeriesRange(values) {
+  const finiteValues = values.map((value) => Number(value)).filter(Number.isFinite);
+  if (!finiteValues.length) return { max: 1, min: 0 };
+  let min = Math.min(...finiteValues);
+  let max = Math.max(...finiteValues);
+  if (min === max) {
+    min -= 1;
+    max += 1;
+  }
+  return { max, min };
+}
+
+function makeNormalizedPoint(timeMs, value, timeRange, valueRange) {
+  const time = readNumber(timeMs, 0);
+  const number = readNumber(value, 0);
+  const timeSpan = timeRange.max - timeRange.min;
+  const valueSpan = valueRange.max - valueRange.min;
+  return {
+    raw: number,
+    timeMs: time,
+    x: timeSpan > 0 ? clamp(((time - timeRange.min) / timeSpan) * 100, 0, 100) : 50,
+    y: valueSpan > 0 ? clamp(100 - ((number - valueRange.min) / valueSpan) * 100, 0, 100) : 50,
+  };
+}
+
+function formatPathNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "0";
+  return number.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function makeSvgPath(points) {
+  if (!points.length) return "";
+  return points
+    .map((point, index) => `${index === 0 ? "M" : "L"} ${formatPathNumber(point.x)} ${formatPathNumber(point.y)}`)
+    .join(" ");
+}
+
+function formatRange(range, digits = 2) {
+  return `${formatMotionNumber(range.min, digits)}..${formatMotionNumber(range.max, digits)}`;
 }
 
 function collectRecordText(record = {}) {
@@ -276,6 +319,118 @@ export function buildMotionTimelineGroups(report = {}, filters = {}, options = {
     group.events.push(buildTimelineEventRow(event));
   }
   return Array.from(groupsByKey.values()).slice(0, MAX_TIMELINE_GROUP_COUNT);
+}
+
+function collectMotionCurveTracks(report = {}, filters = {}) {
+  const predicate = makeFilterPredicate(report, filters, "track");
+  const tracksByKey = new Map();
+  for (const sample of report.history?.samples || []) {
+    for (const animation of sample.animations || []) {
+      if (!predicate(animation)) continue;
+      const key = makeTrackKey(animation);
+      let track = tracksByKey.get(key);
+      if (!track) {
+        track = {
+          driver: animation.driver || "unknown",
+          events: [],
+          from: animation.from,
+          key,
+          lane: animation.lane || "unknown",
+          laneKey: animation.laneKey || "unknown",
+          points: [],
+          prop: animation.prop || "unknown",
+          sourceLabel: animation.sourceLabel,
+          targetId: animation.targetId,
+        };
+        tracksByKey.set(key, track);
+      }
+      track.points.push({
+        delta: readNumber(animation.to, 0) - readNumber(animation.value, 0),
+        timeMs: sample.timeMs,
+        to: animation.to,
+        value: animation.value,
+        velocity: animation.velocity,
+      });
+    }
+  }
+  for (const event of report.history?.events || []) {
+    const track = tracksByKey.get(makeTrackKey(event));
+    if (!track || !predicate(event)) continue;
+    track.events.push(event);
+  }
+  return Array.from(tracksByKey.values());
+}
+
+export function buildMotionCurveChartGroups(report = {}, filters = {}, options = {}) {
+  const limit = Math.max(0, Math.floor(readNumber(options.limit, MAX_CURVE_GROUP_COUNT)));
+  const statsByKey = new Map((report.curveStats || []).map((stats) => [makeTrackKey(stats), stats]));
+  return collectMotionCurveTracks(report, filters)
+    .map((track) => {
+      const points = track.points
+        .filter((point) => Number.isFinite(readNumber(point.timeMs, NaN)))
+        .sort((a, b) => readNumber(a.timeMs, 0) - readNumber(b.timeMs, 0));
+      const events = track.events
+        .filter((event) => Number.isFinite(readNumber(event.timeMs, NaN)))
+        .sort((a, b) => readNumber(a.timeMs, 0) - readNumber(b.timeMs, 0));
+      const eventTimes = events.map((event) => readNumber(event.timeMs, 0));
+      const pointTimes = points.map((point) => readNumber(point.timeMs, 0));
+      const timeRange = makeSeriesRange([...pointTimes, ...eventTimes]);
+      const valueRange = makeSeriesRange([
+        ...points.map((point) => point.value),
+        ...points.map((point) => point.to),
+      ]);
+      const deltaRange = makeSeriesRange(points.map((point) => point.delta));
+      const velocityRange = makeSeriesRange(points.map((point) => point.velocity));
+      const value = points.map((point) => makeNormalizedPoint(point.timeMs, point.value, timeRange, valueRange));
+      const to = points.map((point) => makeNormalizedPoint(point.timeMs, point.to, timeRange, valueRange));
+      const delta = points.map((point) => makeNormalizedPoint(point.timeMs, point.delta, timeRange, deltaRange));
+      const velocity = points.map((point) => makeNormalizedPoint(point.timeMs, point.velocity, timeRange, velocityRange));
+      const maxDelta = Math.max(0, ...points.map((point) => Math.abs(readNumber(point.delta, 0))));
+      const maxVelocity = Math.max(0, ...points.map((point) => Math.abs(readNumber(point.velocity, 0))));
+      const eventMarkers = events.map((event) => ({
+        detail: [
+          event.type || "event",
+          event.prop,
+          `${formatMotionNumber(event.value)} -> ${formatMotionNumber(event.to)}`,
+          event.reason ? `reason=${event.reason}` : null,
+        ].filter(Boolean).join(" / "),
+        time: `${formatMotionNumber(event.timeMs, 0)}ms`,
+        type: event.type || "event",
+        x: makeNormalizedPoint(event.timeMs, 0, timeRange, { min: 0, max: 1 }).x,
+      }));
+      const stats = statsByKey.get(track.key) || {};
+      const label = `${resolveRecordLabel(track)}.${track.prop}`;
+      return {
+        deltaPath: makeSvgPath(delta),
+        driver: track.driver,
+        eventMarkers,
+        key: track.key,
+        label,
+        laneLabel: [track.lane, track.laneKey].filter(Boolean).join("/") || "-",
+        normalized: true,
+        overlayLabel: `${label} / ${track.laneKey}`,
+        rangeLabels: {
+          delta: formatRange(deltaRange),
+          value: formatRange(valueRange),
+          velocity: formatRange(velocityRange),
+        },
+        sampleCount: points.length,
+        series: { delta, to, value, velocity },
+        sourceLabel: track.sourceLabel || "-",
+        stats: {
+          maxDelta: stats.maxDelta ?? maxDelta,
+          maxVelocity: stats.maxVelocity ?? maxVelocity,
+          overshootCount: stats.overshootCount ?? 0,
+          retargetCount: stats.retargetCount ?? 0,
+        },
+        summary: `${formatCount(points.length)} samples / ${formatCount(events.length)} events / normalized`,
+        toPath: makeSvgPath(to),
+        valuePath: makeSvgPath(value),
+        velocityPath: makeSvgPath(velocity),
+      };
+    })
+    .sort((a, b) => (b.sampleCount - a.sampleCount) || a.label.localeCompare(b.label))
+    .slice(0, limit);
 }
 
 export function buildMotionFilterSummary(report = {}, filters = {}) {
