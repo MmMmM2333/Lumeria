@@ -1,15 +1,24 @@
 import {
+  closeMotionDebugWorkspace,
   createMotionDebugWorkspaceSession,
   isMotionDebugQuickPanelControl,
   isMotionDebugWorkspaceSection,
   MOTION_DEBUG_DEFAULT_PROFILE_ID,
   MOTION_DEBUG_QUICK_PANEL_CONTROLS,
+  MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_DEFAULT,
+  MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MAX,
+  MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MIN,
   MOTION_DEBUG_WORKSPACE_MODE_DOCK,
   MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN,
   MOTION_DEBUG_WORKSPACE_REGIONS,
+  normalizeMotionDebugWorkspaceDockWidth,
+  openMotionDebugWorkspace,
+  resizeMotionDebugWorkspaceDock,
   selectMotionDebugWorkspaceTarget,
   selectMotionDebugWorkspaceTrack,
   setMotionDebugWorkspaceFilters,
+  setMotionDebugWorkspaceMode,
+  toggleMotionDebugWorkspaceFullscreen,
   toggleMotionDebugWorkspacePin,
 } from "./motionDebugWorkspaceModel.js";
 
@@ -42,6 +51,7 @@ export function runMotionDebugWorkspaceModelTests() {
 
   const defaults = createMotionDebugWorkspaceSession();
   assert(defaults.captureProfileId === MOTION_DEBUG_DEFAULT_PROFILE_ID, "session should default to the default visual profile");
+  assert(defaults.dockWidthPx === MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_DEFAULT, "session should default to the default dock width");
   assert(defaults.isOpen === false, "workspace should default closed");
   assert(defaults.mode === MOTION_DEBUG_WORKSPACE_MODE_DOCK, "workspace should default to dock mode");
   assert(defaults.selectedTarget === null, "workspace should default without selected target");
@@ -53,6 +63,7 @@ export function runMotionDebugWorkspaceModelTests() {
   const normalized = createMotionDebugWorkspaceSession({
     captureProfileId: " alpha-focus ",
     filters: { preset: " active ", query: " panel " },
+    dockWidthPx: 9999,
     isOpen: true,
     mode: MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN,
     pinnedTargets: [
@@ -65,6 +76,7 @@ export function runMotionDebugWorkspaceModelTests() {
     selectedTrack: { lane: "base", laneKey: "panel-y", prop: "y", sourceLabel: "folder.panel", targetId: 3 },
   });
   assert(normalized.captureProfileId === "alpha-focus", "session should trim capture profile id");
+  assert(normalized.dockWidthPx === MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MAX, "session should clamp oversized dock width");
   assert(normalized.mode === MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN, "session should preserve fullscreen mode");
   assert(normalized.selectedTimeMs === 0, "session should clamp negative selected time");
   assert(normalized.filters.preset === "active" && normalized.filters.query === "panel", "session should normalize filters");
@@ -75,6 +87,34 @@ export function runMotionDebugWorkspaceModelTests() {
 
   const unknownMode = createMotionDebugWorkspaceSession({ mode: "float" });
   assert(unknownMode.mode === MOTION_DEBUG_WORKSPACE_MODE_DOCK, "unknown workspace modes should fall back to dock");
+
+  assert(normalizeMotionDebugWorkspaceDockWidth(10) === MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MIN, "dock width should clamp to min");
+  assert(normalizeMotionDebugWorkspaceDockWidth(9999) === MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MAX, "dock width should clamp to max");
+  assert(
+    normalizeMotionDebugWorkspaceDockWidth(900, { viewportWidth: 700 }) === 652,
+    "dock width should leave viewport margin when viewport is known",
+  );
+  assert(
+    normalizeMotionDebugWorkspaceDockWidth(400, { viewportWidth: 500 }) === MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MIN,
+    "dock width should never go below minimum even on narrow viewport",
+  );
+
+  const opened = openMotionDebugWorkspace(defaults, { dockWidthPx: 720 });
+  assert(opened.isOpen && opened.mode === MOTION_DEBUG_WORKSPACE_MODE_DOCK, "opening workspace should open in dock mode by default");
+  assert(opened.dockWidthPx === 720, "opening workspace should accept a dock width");
+  const openedFullscreen = openMotionDebugWorkspace(defaults, { mode: MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN });
+  assert(openedFullscreen.isOpen && openedFullscreen.mode === MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN, "opening workspace should support fullscreen mode");
+  const closed = closeMotionDebugWorkspace(openedFullscreen);
+  assert(!closed.isOpen && closed.mode === MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN, "closing workspace should preserve last mode");
+  const docked = setMotionDebugWorkspaceMode(openedFullscreen, MOTION_DEBUG_WORKSPACE_MODE_DOCK);
+  assert(docked.mode === MOTION_DEBUG_WORKSPACE_MODE_DOCK && docked.isOpen, "mode setter should preserve open state");
+  const full = toggleMotionDebugWorkspaceFullscreen(docked);
+  assert(full.isOpen && full.mode === MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN, "fullscreen toggle should open fullscreen");
+  const backToDock = toggleMotionDebugWorkspaceFullscreen(full);
+  assert(backToDock.mode === MOTION_DEBUG_WORKSPACE_MODE_DOCK, "fullscreen toggle should return to dock");
+  const resized = resizeMotionDebugWorkspaceDock(full, 600);
+  assert(resized.mode === MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN, "resize should preserve current mode");
+  assert(resized.dockWidthPx === 600, "resize should store the next dock width");
 
   const selectedTarget = selectMotionDebugWorkspaceTarget(defaults, { sourceLabel: "desktop.icon.node", layer: "desktop" });
   assert(selectedTarget.selectedTarget.sourceLabel === "desktop.icon.node", "target selection should set selected target");

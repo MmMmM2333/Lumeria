@@ -1,6 +1,9 @@
 export const MOTION_DEBUG_WORKSPACE_MODE_DOCK = "dock";
 export const MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN = "fullscreen";
 export const MOTION_DEBUG_DEFAULT_PROFILE_ID = "default-visual";
+export const MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_DEFAULT = 680;
+export const MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MIN = 520;
+export const MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MAX = 960;
 
 export const MOTION_DEBUG_QUICK_PANEL_CONTROLS = [
   { id: "record", label: "Record", kind: "toggle" },
@@ -34,6 +37,24 @@ function normalizeWorkspaceMode(value) {
   return value === MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN
     ? MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN
     : MOTION_DEBUG_WORKSPACE_MODE_DOCK;
+}
+
+function normalizeViewportDockMax(viewportWidth) {
+  const viewport = readNumber(viewportWidth, 0);
+  if (viewport <= 0) return MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MAX;
+  return Math.max(
+    MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MIN,
+    Math.min(MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MAX, Math.floor(viewport - 48)),
+  );
+}
+
+export function normalizeMotionDebugWorkspaceDockWidth(value, options = {}) {
+  const max = normalizeViewportDockMax(options.viewportWidth);
+  const fallback = Math.min(MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_DEFAULT, max);
+  return Math.min(max, Math.max(
+    MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MIN,
+    Math.round(readNumber(value, fallback)),
+  ));
 }
 
 function normalizeWorkspaceFilters(filters = {}) {
@@ -104,6 +125,7 @@ export function isMotionDebugWorkspaceSection(id) {
 export function createMotionDebugWorkspaceSession(input = {}) {
   return {
     captureProfileId: readString(input.captureProfileId, MOTION_DEBUG_DEFAULT_PROFILE_ID),
+    dockWidthPx: normalizeMotionDebugWorkspaceDockWidth(input.dockWidthPx, { viewportWidth: input.viewportWidth }),
     filters: normalizeWorkspaceFilters(input.filters),
     isOpen: Boolean(input.isOpen),
     mode: normalizeWorkspaceMode(input.mode),
@@ -111,6 +133,49 @@ export function createMotionDebugWorkspaceSession(input = {}) {
     selectedTarget: normalizeTargetRef(input.selectedTarget),
     selectedTimeMs: Math.max(0, readNumber(input.selectedTimeMs, 0)),
     selectedTrack: normalizeTrackRef(input.selectedTrack),
+  };
+}
+
+export function openMotionDebugWorkspace(session = {}, options = {}) {
+  return {
+    ...createMotionDebugWorkspaceSession(session),
+    dockWidthPx: normalizeMotionDebugWorkspaceDockWidth(options.dockWidthPx ?? session.dockWidthPx, {
+      viewportWidth: options.viewportWidth ?? session.viewportWidth,
+    }),
+    isOpen: true,
+    mode: normalizeWorkspaceMode(options.mode ?? session.mode),
+  };
+}
+
+export function closeMotionDebugWorkspace(session = {}) {
+  return {
+    ...createMotionDebugWorkspaceSession(session),
+    isOpen: false,
+  };
+}
+
+export function setMotionDebugWorkspaceMode(session = {}, mode = MOTION_DEBUG_WORKSPACE_MODE_DOCK) {
+  return {
+    ...createMotionDebugWorkspaceSession(session),
+    mode: normalizeWorkspaceMode(mode),
+  };
+}
+
+export function toggleMotionDebugWorkspaceFullscreen(session = {}) {
+  const current = createMotionDebugWorkspaceSession(session);
+  return {
+    ...current,
+    isOpen: true,
+    mode: current.mode === MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN
+      ? MOTION_DEBUG_WORKSPACE_MODE_DOCK
+      : MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN,
+  };
+}
+
+export function resizeMotionDebugWorkspaceDock(session = {}, widthPx, options = {}) {
+  return {
+    ...createMotionDebugWorkspaceSession(session),
+    dockWidthPx: normalizeMotionDebugWorkspaceDockWidth(widthPx, options),
   };
 }
 
