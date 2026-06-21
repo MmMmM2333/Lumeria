@@ -129,22 +129,48 @@ export function startFrameGhost(layer, fromRect, toRect, options = {}) {
   frame.strokeWidth = frame.strokeWidth ?? options.fromStrokeWidth ?? 1;
   layer.frameGhostState = frame;
   drawFrameGhost(layer, frame, options);
-  const panelFadeControl = transition(layer.panelMaterial)
-    .duration(fadeDuration)
-    .ease(ease)
-    .delay(duration * fadeStart)
-    .overlay()
-    .interrupt("retarget")
-    .to({ alpha: options.panelMaterialToAlpha ?? 1 })
-    .start();
-  const frameFadeControl = transition(layer.frameGhost)
-    .duration(fadeDuration)
-    .ease(ease)
-    .delay(duration * fadeStart)
-    .overlay()
-    .interrupt("retarget")
-    .to({ alpha: options.frameGhostToAlpha ?? 0 })
-    .start();
+  const fadeControls = [];
+  const cancelFadeControls = (reason) => {
+    for (const control of fadeControls) control.cancel?.(reason);
+  };
+  if (options.crossfadePanelMaterial) {
+    const alphaHandoff = { progress: 0 };
+    const panelMaterialFromAlpha = layer.panelMaterial.alpha;
+    const frameGhostFromAlpha = layer.frameGhost.alpha;
+    const panelMaterialToAlpha = options.panelMaterialToAlpha ?? 1;
+    const frameGhostToAlpha = options.frameGhostToAlpha ?? 0;
+    const updateAlphaHandoff = () => {
+      const mix = Math.max(0, Math.min(1, alphaHandoff.progress));
+      layer.panelMaterial.alpha = panelMaterialFromAlpha + (panelMaterialToAlpha - panelMaterialFromAlpha) * mix;
+      layer.frameGhost.alpha = frameGhostFromAlpha + (frameGhostToAlpha - frameGhostFromAlpha) * mix;
+    };
+    updateAlphaHandoff();
+    fadeControls.push(transition(alphaHandoff)
+      .duration(fadeDuration)
+      .ease(ease)
+      .delay(duration * fadeStart)
+      .overlay()
+      .interrupt("retarget")
+      .to({ onUpdate: updateAlphaHandoff, progress: 1, snap: options.snap })
+      .start());
+  } else {
+    fadeControls.push(transition(layer.panelMaterial)
+      .duration(fadeDuration)
+      .ease(ease)
+      .delay(duration * fadeStart)
+      .overlay()
+      .interrupt("retarget")
+      .to({ alpha: options.panelMaterialToAlpha ?? 1 })
+      .start());
+    fadeControls.push(transition(layer.frameGhost)
+      .duration(fadeDuration)
+      .ease(ease)
+      .delay(duration * fadeStart)
+      .overlay()
+      .interrupt("retarget")
+      .to({ alpha: options.frameGhostToAlpha ?? 0 })
+      .start());
+  }
   const updateFrame = () => {
     frame.fillColor = lerpColor(currentFillColor, toFillColor, frame.progress);
     frame.strokeColor = lerpColor(currentStrokeColor, toStrokeColor, frame.progress);
@@ -182,6 +208,7 @@ export function startFrameGhost(layer, fromRect, toRect, options = {}) {
         options.onComplete?.();
         return;
       }
+      cancelFadeControls("complete");
       clearFrameGhost(layer, { panelMaterialAlpha: options.panelMaterialFinalAlpha ?? 1 });
       options.onComplete?.();
     },
@@ -189,16 +216,14 @@ export function startFrameGhost(layer, fromRect, toRect, options = {}) {
   if (!frameMotionControlBase.completed) {
     frameMotionControl = {
       cancel() {
-        panelFadeControl.cancel();
-        frameFadeControl.cancel();
+        cancelFadeControls("cancel");
         frameMotionControlBase.cancel();
       },
       get completed() {
         return frameMotionControlBase.completed;
       },
       release() {
-        panelFadeControl.cancel();
-        frameFadeControl.cancel();
+        cancelFadeControls("release");
         frameMotionControlBase.cancel();
       },
     };

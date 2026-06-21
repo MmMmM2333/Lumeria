@@ -11,6 +11,7 @@ export function makeDesktopBoundsRegistration(state = {}, entries = [], desktopF
     deviceResolution: state.deviceResolution,
     entries,
     folderClosingHandoffId: state.folderClosingHandoffId,
+    folderClosingHandoffIds: state.folderClosingHandoffIds,
     height: state.height,
     isTextlessMode: state.isTextlessMode,
     desktopFrame,

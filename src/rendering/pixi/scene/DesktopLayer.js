@@ -71,6 +71,36 @@ function hasFolderSourceGhostedId(state, folderId) {
   return state.folderSourceGhostedId === folderId;
 }
 
+function hasFolderClosingHandoffId(state = {}, folderId) {
+  if (!folderId) return false;
+  if (state.folderClosingHandoffId === folderId) return true;
+  const ids = state.folderClosingHandoffIds;
+  if (ids instanceof Set) return ids.has(folderId);
+  if (Array.isArray(ids)) return ids.includes(folderId);
+  return false;
+}
+
+function hasAnyFolderClosingHandoffId(state = {}) {
+  return Boolean(
+    state.folderClosingHandoffId ||
+      (state.folderClosingHandoffIds instanceof Set && state.folderClosingHandoffIds.size > 0) ||
+      (Array.isArray(state.folderClosingHandoffIds) && state.folderClosingHandoffIds.length > 0)
+  );
+}
+
+function isFolderLayerHandoffActive(folderLayer = null, folderId = null) {
+  if (!folderLayer?.closingHandoffActive) return false;
+  if (!folderId) return true;
+  const activeFolderId = folderLayer.closingGhostFolderId || folderLayer.currentFolderId || null;
+  return !activeFolderId || activeFolderId === folderId;
+}
+
+function isFolderLayerHoldingDesktopSource(folderLayer = null, folderId = null) {
+  if (!folderId) return false;
+  const ids = folderLayer?.getDesktopSourceGhostedIds?.();
+  return ids?.has?.(folderId) === true;
+}
+
 function mergeFolderSourceGhostedIds(...sources) {
   const result = new Set();
   const add = (value) => {
@@ -112,7 +142,13 @@ export function resolveLaunchpadVisualTransform(state = {}) {
 }
 
 export function shouldFinishFolderHandoff(state = {}, folderLayer = null) {
-  return !state.folderClosingHandoffId && !folderLayer?.closingHandoffActive;
+  return !hasAnyFolderClosingHandoffId(state) && !folderLayer?.closingHandoffActive;
+}
+
+export function shouldFinishFolderHandoffEntry(state = {}, folderLayer = null, folderId = null) {
+  return !hasFolderClosingHandoffId(state, folderId) &&
+    !isFolderLayerHandoffActive(folderLayer, folderId) &&
+    !isFolderLayerHoldingDesktopSource(folderLayer, folderId);
 }
 
 function getFolderHandoffDebugOptions() {
@@ -342,6 +378,7 @@ export class DesktopLayer extends Container {
       onReleaseComplete: (release) => this.onDragReleaseComplete(release),
     });
     this.folderHandoffNode = null;
+    this.folderHandoffNodes = new Map();
     this.hasDesktopVisualAlpha = false;
     this.hasDesktopVisualTransform = false;
     this.hasFolderOverlayAlpha = false;
@@ -434,8 +471,9 @@ export class DesktopLayer extends Container {
         const stableScreenTarget = item?.type === "folder"
           ? makeFolderStableScreenTarget(state, targetX, stableLayoutTarget, sizing.iconSize, visualOffsetY)
           : null;
-        const isActiveFolderClosingHandoff = item?.type === "folder" && state.folderClosingHandoffId === item.id;
-        const isExistingFolderHandoff = item?.type === "folder" && this.folderHandoffNode?.folderId === item.id;
+        const existingFolderHandoffEntry = item?.type === "folder" ? this.getFolderHandoffEntry(item.id) : null;
+        const isActiveFolderClosingHandoff = item?.type === "folder" && hasFolderClosingHandoffId(state, item.id);
+        const isExistingFolderHandoff = Boolean(existingFolderHandoffEntry);
         const isFolderClosingHandoff = isActiveFolderClosingHandoff || isExistingFolderHandoff;
         const handoffLayoutTarget = isFolderClosingHandoff
           ? makeFolderPinnedLayoutTarget(state, targetX, stableScreenTarget, sizing.iconSize, visualOffsetY) || stableLayoutTarget
@@ -508,9 +546,14 @@ export class DesktopLayer extends Container {
           suppressLabelRevealAfterGhost,
           textless: state.isTextlessMode,
         });
-        if (isActiveFolderClosingHandoff) this.ensureFolderHandoffNode(item.id, node, layoutTarget);
-        else if (isExistingFolderHandoff) this.syncFolderHandoffNode(node, layoutTarget);
-        if (isFolderClosingHandoff && this.folderHandoffNode?.visualReleased) this.revealFolderHandoffLabel();
+        let folderHandoffEntry = existingFolderHandoffEntry;
+        if (isActiveFolderClosingHandoff) {
+          this.ensureFolderHandoffNode(item.id, node, layoutTarget);
+          folderHandoffEntry = this.getFolderHandoffEntry(item.id);
+        } else if (folderHandoffEntry) {
+          this.syncFolderHandoffNode(node, layoutTarget, folderHandoffEntry);
+        }
+        if (isFolderClosingHandoff && folderHandoffEntry?.visualReleased) this.revealFolderHandoffLabel(folderHandoffEntry);
 
         if (isInteractivePage) {
           const area = sourceArea(source);
@@ -561,8 +604,10 @@ export class DesktopLayer extends Container {
     this.singleStageDiagnosticsLayer.update(state.singleStageFolderState, {
       enabled: state.singleStageDiagnosticsEnabled,
     });
-    if (this.folderHandoffNode && shouldFinishFolderHandoff(state, this.singleStageFolderLayer)) {
-      this.finishFolderHandoffNodeAfterFrame();
+    for (const entry of Array.from(this.getFolderHandoffNodes().values())) {
+      if (shouldFinishFolderHandoffEntry(state, this.singleStageFolderLayer, entry.folderId)) {
+        this.finishFolderHandoffNodeAfterFrame(entry.folderId);
+      }
     }
   }
 
@@ -712,9 +757,32 @@ export class DesktopLayer extends Container {
       null;
   }
 
+  getFolderHandoffNodes() {
+    if (!(this.folderHandoffNodes instanceof Map)) this.folderHandoffNodes = new Map();
+    if (this.folderHandoffNode?.folderId && !this.folderHandoffNodes.has(this.folderHandoffNode.folderId)) {
+      this.folderHandoffNodes.set(this.folderHandoffNode.folderId, this.folderHandoffNode);
+    }
+    return this.folderHandoffNodes;
+  }
+
+  getFolderHandoffEntry(folderId = null) {
+    const entries = this.getFolderHandoffNodes();
+    if (folderId) return entries.get(folderId) || null;
+    return entries.values().next().value || null;
+  }
+
+  setPrimaryFolderHandoffNode(entry = null) {
+    if (entry) {
+      this.folderHandoffNode = entry;
+      return;
+    }
+    const entries = this.folderHandoffNodes instanceof Map ? this.folderHandoffNodes : null;
+    this.folderHandoffNode = entries?.values().next().value || null;
+  }
+
   startClosingFolderHandoffNow(folderId) {
     const entry = this.findFolderBoundsEntry(folderId);
-    const existing = this.folderHandoffNode?.folderId === folderId ? this.folderHandoffNode : null;
+    const existing = this.getFolderHandoffEntry(folderId);
     const node = entry?.node || existing?.node || this.findIconNodeByItemId(folderId);
     const layoutTarget = entry?.handoffLayoutTarget || (entry ? { x: entry.x, y: entry.y } : existing?.layoutTarget);
     if (!folderId || !node || node.destroyed || !layoutTarget) return false;
@@ -724,11 +792,10 @@ export class DesktopLayer extends Container {
 
   ensureFolderHandoffNode(folderId, node, layoutTarget) {
     if (!folderId || !node || node.destroyed) return;
-    if (this.folderHandoffNode?.folderId && this.folderHandoffNode.folderId !== folderId) {
-      this.clearFolderHandoffNode();
-    }
-    if (!this.folderHandoffNode) {
-      this.folderHandoffNode = {
+    const entries = this.getFolderHandoffNodes();
+    let entry = entries.get(folderId) || null;
+    if (!entry) {
+      entry = {
         cleanupFrame: null,
         folderId,
         labelRevealStarted: false,
@@ -737,23 +804,26 @@ export class DesktopLayer extends Container {
         visualHidden: false,
         visualReleased: false,
       };
-    } else if (this.folderHandoffNode.node !== node) {
-      this.restoreFolderHandoffNode(this.folderHandoffNode);
-      this.folderHandoffNode.node = node;
-      this.folderHandoffNode.originalIndex = this.getPageTrackChildIndex(node);
-      this.folderHandoffNode.labelRevealStarted = false;
-      this.folderHandoffNode.visualHidden = false;
-      this.folderHandoffNode.visualReleased = false;
+      entries.set(folderId, entry);
+    } else if (entry.node !== node) {
+      this.restoreFolderHandoffNode(entry);
+      entry.node = node;
+      entry.originalIndex = this.getPageTrackChildIndex(node);
+      entry.labelRevealStarted = false;
+      entry.visualHidden = false;
+      entry.visualReleased = false;
     }
-    if (this.folderHandoffNode.cleanupFrame != null) {
-      globalThis.cancelAnimationFrame?.(this.folderHandoffNode.cleanupFrame);
-      this.folderHandoffNode.cleanupFrame = null;
+    if (entry.cleanupFrame != null) {
+      globalThis.cancelAnimationFrame?.(entry.cleanupFrame);
+      entry.cleanupFrame = null;
     }
-    this.syncFolderHandoffNode(node, layoutTarget);
+    this.setPrimaryFolderHandoffNode(entry);
+    this.syncFolderHandoffNode(node, layoutTarget, entry);
+    this.revealFolderHandoffLabel(entry);
   }
 
-  syncFolderHandoffNode(node = this.folderHandoffNode?.node, layoutTarget = null) {
-    const entry = this.folderHandoffNode;
+  syncFolderHandoffNode(node = this.folderHandoffNode?.node, layoutTarget = null, handoffEntry = null) {
+    const entry = handoffEntry || this.getFolderHandoffEntry(node?.item?.id || this.folderHandoffNode?.folderId || null);
     if (!entry || !node || node.destroyed) return;
     const target = layoutTarget || entry.layoutTarget;
     if (!target) return;
@@ -789,14 +859,14 @@ export class DesktopLayer extends Container {
     }
   }
 
-  finishFolderHandoffNodeAfterFrame() {
-    const entry = this.folderHandoffNode;
+  finishFolderHandoffNodeAfterFrame(folderId = null) {
+    const entry = this.getFolderHandoffEntry(folderId);
     if (!entry || entry.cleanupFrame != null) return;
     if (entry.visualReleased) this.revealFolderHandoffLabel(entry);
     const finish = () => {
-      if (this.folderHandoffNode !== entry) return;
+      if (this.getFolderHandoffEntry(entry.folderId) !== entry) return;
       entry.cleanupFrame = null;
-      this.clearFolderHandoffNode();
+      this.clearFolderHandoffNode(entry.folderId);
     };
     if (typeof globalThis.requestAnimationFrame === "function") {
       entry.cleanupFrame = globalThis.requestAnimationFrame(finish);
@@ -806,7 +876,7 @@ export class DesktopLayer extends Container {
   }
 
   releaseClosingFolderHandoffVisual(folderId = null) {
-    const entry = this.folderHandoffNode;
+    const entry = this.getFolderHandoffEntry(folderId);
     if (!entry || (folderId && entry.folderId !== folderId)) return;
     this.restoreFolderHandoffVisual(entry);
     this.revealFolderHandoffLabel(entry);
@@ -828,17 +898,24 @@ export class DesktopLayer extends Container {
     else node.labelText.alpha = 1;
   }
 
-  clearFolderHandoffNode() {
-    const entry = this.folderHandoffNode;
+  clearFolderHandoffNode(folderId = null) {
+    if (!folderId) {
+      for (const entry of Array.from(this.getFolderHandoffNodes().values())) {
+        this.clearFolderHandoffNode(entry.folderId);
+      }
+      return;
+    }
+    const entry = this.getFolderHandoffEntry(folderId);
     if (entry) {
       this.lastFolderHandoffDebugSnapshot = this.makeFolderHandoffDebugSnapshot(entry, {
         active: false,
         clearing: true,
       }) || this.lastFolderHandoffDebugSnapshot;
     }
-    this.folderHandoffNode = null;
     if (!entry) return;
     if (entry.cleanupFrame != null) globalThis.cancelAnimationFrame?.(entry.cleanupFrame);
+    this.getFolderHandoffNodes().delete(entry.folderId);
+    if (this.folderHandoffNode === entry) this.setPrimaryFolderHandoffNode(null);
     this.restoreFolderHandoffNode(entry);
   }
 
@@ -931,7 +1008,8 @@ export class DesktopLayer extends Container {
   }
 
   getFolderHandoffDebugSnapshot(folderId = null) {
-    const activeSnapshot = this.makeFolderHandoffDebugSnapshot(this.folderHandoffNode);
+    const activeEntry = folderId ? this.getFolderHandoffEntry(folderId) : this.getFolderHandoffEntry();
+    const activeSnapshot = this.makeFolderHandoffDebugSnapshot(activeEntry);
     if (activeSnapshot) {
       this.lastFolderHandoffDebugSnapshot = activeSnapshot;
       return activeSnapshot;
@@ -989,9 +1067,13 @@ export class DesktopLayer extends Container {
       if (!item?.id || !node || node.destroyed) continue;
       const meta = { area, id: item.id, index, item, pageIndex };
       const visualOffsetY = getIconVisualOffsetY(registration.isTextlessMode);
+      const handoffEntry = item.type === "folder" ? this.getFolderHandoffEntry(item.id) : null;
       const boundsTargets = resolveDesktopBoundsTargets({
         handoffLayoutTarget,
-        isFolderClosingHandoff: registration.folderClosingHandoffId === item.id && this.folderHandoffNode?.folderId === item.id,
+        isFolderClosingHandoff: item.type === "folder" && (
+          hasFolderClosingHandoffId(registration, item.id) ||
+          Boolean(handoffEntry)
+        ),
         item,
         node,
         registration,
@@ -1002,7 +1084,9 @@ export class DesktopLayer extends Container {
         x,
         y,
       });
-      if (boundsTargets.syncHandoffLayoutTarget) this.syncFolderHandoffNode(node, boundsTargets.syncHandoffLayoutTarget);
+      if (boundsTargets.syncHandoffLayoutTarget && handoffEntry) {
+        this.syncFolderHandoffNode(node, boundsTargets.syncHandoffLayoutTarget, handoffEntry);
+      }
       registerRenderedClientLaunchIconBounds(
         { area, folderId: null, id: item.id, pageIndex },
         boundsTargets.renderedClientIconBounds,
@@ -1192,6 +1276,13 @@ export class DesktopLayer extends Container {
     );
     const ownershipSourceIds = getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership);
     const overlaySourceIds = overlay?.getDesktopSourceGhostedIds?.() || new Set();
+    const folderHandoffNodes = Array.from(this.getFolderHandoffNodes().values()).map((entry) => ({
+      display: readDisplay(entry.node),
+      folderId: entry.folderId || null,
+      labelRevealStarted: entry.labelRevealStarted === true,
+      visualHidden: entry.visualHidden === true,
+      visualReleased: entry.visualReleased === true,
+    }));
     return {
       detachedClosingVisuals: (overlay?.detachedClosingVisuals || []).map((visual) => ({
         clearing: visual.clearing === true,
@@ -1202,9 +1293,11 @@ export class DesktopLayer extends Container {
       folderHandoffNode: this.folderHandoffNode ? {
         display: readDisplay(this.folderHandoffNode.node),
         folderId: this.folderHandoffNode.folderId || null,
+        labelRevealStarted: this.folderHandoffNode.labelRevealStarted === true,
         visualHidden: this.folderHandoffNode.visualHidden === true,
         visualReleased: this.folderHandoffNode.visualReleased === true,
       } : null,
+      folderHandoffNodes,
       folderNodes,
       folderSourceGhostedIds: {
         lastState: Array.from(lastStateSourceIds),

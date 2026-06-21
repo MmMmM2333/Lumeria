@@ -58,6 +58,7 @@ function startOpeningFrameGhost(layer, state, options = {}) {
   layer.startFrameGhost(sourceRect, targetRect, {
     duration: folderOpenGhostDuration,
     ease: folderOpenGhostEase,
+    crossfadePanelMaterial: true,
     fromFillAlpha: thumb.fillAlpha,
     fromFillColor: thumb.fillColor,
     fromRadius: thumb.radius,

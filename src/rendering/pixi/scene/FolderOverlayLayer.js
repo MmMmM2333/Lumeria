@@ -915,6 +915,7 @@ export class FolderOverlayLayer extends Container {
         return { released, visual };
       },
       applyVisibility: () => {
+        this.onClosingHandoffVisualRelease?.(visual.folderId || null);
         this.notifyDesktopSourceGhostingChange();
       },
       destroyVisual: () => {
@@ -928,6 +929,7 @@ export class FolderOverlayLayer extends Container {
     const index = this.detachedClosingVisuals.indexOf(visual);
     if (index >= 0) this.detachedClosingVisuals.splice(index, 1);
     if (visual.desktopSourceKey && visual.ownerToken != null) this.releaseVisualOwnership(visual.desktopSourceKey, visual.ownerToken);
+    this.onClosingHandoffVisualRelease?.(visual.folderId || null);
     this.notifyDesktopSourceGhostingChange();
     this.destroyDetachedClosingVisual(visual);
   }

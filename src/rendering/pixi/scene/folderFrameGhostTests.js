@@ -83,6 +83,68 @@ export async function runFolderFrameGhostTests() {
 
   {
     const { startFrameGhost } = await import("./folderFrameGhost.js");
+    const { motionRuntime } = await import("../animation/motionRuntime.js");
+    const makeGraphics = () => ({
+      alpha: 0,
+      visible: false,
+      clear() {
+        return this;
+      },
+      fill() {
+        return this;
+      },
+      roundRect() {
+        return this;
+      },
+      stroke() {
+        return this;
+      },
+    });
+    const layer = {
+      closingGhostLayer: {},
+      closingPreviewSwapLayer: {},
+      frameGhost: makeGraphics(),
+      panelMaterial: { alpha: 0, visible: false },
+      notifyTitleFrame() {},
+    };
+
+    motionRuntime.reset();
+    const stepFrames = (seconds) => {
+      let remaining = seconds;
+      while (remaining > 0) {
+        const delta = Math.min(0.05, remaining);
+        motionRuntime.step(delta);
+        remaining -= delta;
+      }
+    };
+    startFrameGhost(layer, { height: 100, left: 10, top: 20, width: 200 }, { height: 120, left: 30, top: 40, width: 220 }, {
+      crossfadePanelMaterial: true,
+      duration: 1,
+      ease: (progress) => progress,
+      fadeStart: 0.5,
+      preserveOnComplete: true,
+    });
+
+    const initialPanelAlpha = layer.panelMaterial.alpha;
+    const initialFrameAlpha = layer.frameGhost.alpha;
+    stepFrames(0.55);
+    const midPanelAlpha = layer.panelMaterial.alpha;
+    const midFrameAlpha = layer.frameGhost.alpha;
+    stepFrames(0.2);
+    const laterPanelAlpha = layer.panelMaterial.alpha;
+    const laterFrameAlpha = layer.frameGhost.alpha;
+
+    assert(initialPanelAlpha === 0 && initialFrameAlpha === 1, "crossfade should start from a frame-only shell");
+    assert(midPanelAlpha > initialPanelAlpha && midFrameAlpha < initialFrameAlpha, "crossfade should move panel and frame alpha in opposite directions on the same frame");
+    assert(laterPanelAlpha > midPanelAlpha && laterFrameAlpha < midFrameAlpha, "crossfade should keep the opening shell opacity trend monotonic");
+    assert(nearlyEqual(midPanelAlpha + midFrameAlpha, 1), "crossfade should preserve combined shell opacity at mid progress");
+    assert(nearlyEqual(laterPanelAlpha + laterFrameAlpha, 1), "crossfade should preserve combined shell opacity at later progress");
+    layer.frameGhostMotionControl?.cancel?.();
+    motionRuntime.reset();
+  }
+
+  {
+    const { startFrameGhost } = await import("./folderFrameGhost.js");
     let arriveCount = 0;
     const makeGraphics = () => ({
       alpha: 0,

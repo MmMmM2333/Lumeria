@@ -83,6 +83,7 @@ function makeLayer(DesktopLayer, pageTrack) {
     visible: false,
   };
   layer.folderHandoffNode = null;
+  layer.folderHandoffNodes = new Map();
   layer.hasDesktopVisualAlpha = false;
   layer.hasDesktopVisualTransform = false;
   layer.hasFolderOverlayAlpha = false;
@@ -109,6 +110,7 @@ export async function runDesktopLayerTests() {
     resolveLaunchpadVisualAlpha,
     resolveLaunchpadVisualTransform,
     shouldFinishFolderHandoff,
+    shouldFinishFolderHandoffEntry,
   } = await import("./DesktopLayer.js");
   const {
     clearIconBoundsRegistry,
@@ -164,6 +166,9 @@ export async function runDesktopLayerTests() {
     assert(!shouldFinishFolderHandoff({}, { closingHandoffActive: true }), "local Pixi handoff activity should keep the desktop handoff alive before the Vue bridge updates");
     assert(shouldFinishFolderHandoff({}, { closingHandoffActive: false }), "idle state with no prop handoff should finish the desktop handoff");
     assert(!shouldFinishFolderHandoff({ folderClosingHandoffId: "folder-1" }, { closingHandoffActive: false }), "active prop handoff should keep the desktop handoff alive");
+    assert(!shouldFinishFolderHandoffEntry({}, { closingHandoffActive: true, closingGhostFolderId: "folder-1" }, "folder-1"), "matching Pixi activity should keep its folder handoff alive");
+    assert(!shouldFinishFolderHandoffEntry({}, { getDesktopSourceGhostedIds: () => new Set(["folder-1"]) }, "folder-1"), "detached desktop source ownership should keep its folder handoff alive");
+    assert(shouldFinishFolderHandoffEntry({}, { closingHandoffActive: true, closingGhostFolderId: "folder-2" }, "folder-1"), "different-folder Pixi activity should not keep an old handoff alive by itself");
 
     const actualLayer = new DesktopLayer();
     assert(
@@ -414,14 +419,14 @@ export async function runDesktopLayerTests() {
     assert(folder.eventMode === "static" && folder.cursor === "pointer", "handoff should restore folder interaction once the real node owns the icon");
     assert(folder.state.draggable === true && folder.state.interactive === true, "handoff should restore the node state used by pointer handling");
     assert(folder.state.ghosted === false, "handoff should clear the stale ghost flag before the next setState");
-    assert(folder.labelText.visible === true && folder.labelText.alpha === 0, "handoff should keep the folder label hidden until the overlay visual release");
-    assert(folder.labelRevealCount === 0, "plain handoff sync should not start the label fade");
+    assert(folder.labelText.visible === true && folder.labelText.alpha === 0, "handoff should start the folder label fade from a hidden label");
+    assert(folder.labelRevealCount === 1, "handoff should start the label fade when the icon arrives");
     folder.labelText.alpha = 0.4;
     layer.syncFolderHandoffNode(folder, { x: 12, y: 34 });
-    assert(folder.labelText.alpha === 0, "handoff position sync should keep the label hidden before visual release");
-    assert(folder.labelRevealCount === 0, "handoff position sync should not start the label reveal before visual release");
+    assert(folder.labelText.alpha === 0.4, "handoff position sync should not reset an in-progress label fade");
+    assert(folder.labelRevealCount === 1, "handoff position sync should not restart the label reveal");
     layer.releaseClosingFolderHandoffVisual("folder-1");
-    assert(folder.labelRevealCount === 1, "visual release should start the folder label fade");
+    assert(folder.labelRevealCount === 1, "visual release should not restart the folder label fade");
     assert(folder.visualWrap.visible === true, "settled overlay visual release should restore the real folder artwork");
     folder.labelText.alpha = 0.4;
     layer.syncFolderHandoffNode(folder, { x: 12, y: 34 });
@@ -431,6 +436,7 @@ export async function runDesktopLayerTests() {
     layer.clearFolderHandoffNode();
 
     assert(layer.folderHandoffNode === null, "clear should remove handoff state");
+    assert(layer.folderHandoffNodes.size === 0, "clear should remove all handoff entries");
     assert(pageTrack.children[1] === folder, "clear should restore original z order");
     assert(folder.visualWrap.visible === true, "clear should restore the real folder artwork after overlay cleanup");
     assert(folder.labelRevealCount === 1, "clear should not restart the folder label fade-in");
@@ -449,8 +455,11 @@ export async function runDesktopLayerTests() {
     layer.ensureFolderHandoffNode("folder-a", folderA, { x: 12, y: 34 });
     layer.ensureFolderHandoffNode("folder-b", folderB, { x: 56, y: 78 });
 
-    assert(folderA.visualWrap.visible === true, "replacing a handoff should restore the previous folder artwork");
-    assert(folderB.visualWrap.visible === false, "new handoff should hide only the new folder artwork");
+    assert(layer.folderHandoffNodes.size === 2, "different folder handoffs should coexist");
+    assert(folderA.visualWrap.visible === false, "starting folder B handoff should keep folder A hidden while its overlay visual is active");
+    assert(folderB.visualWrap.visible === false, "new handoff should hide the new folder artwork");
+    layer.releaseClosingFolderHandoffVisual("folder-a");
+    assert(folderA.visualWrap.visible === true && folderB.visualWrap.visible === false, "releasing folder A should not reveal folder B");
   }
 
   {
@@ -474,14 +483,14 @@ export async function runDesktopLayerTests() {
     assert(pageTrack.children[1] === folder, "ready handoff should raise the folder node");
     assert(folder.position.x === 22 && folder.position.y === 44, "ready handoff should snap to the current desktop target");
     assert(folder.visualWrap.visible === false, "ready handoff should keep the real folder artwork hidden under the overlay");
-    assert(folder.labelRevealCount === 0, "ready handoff should wait for visual release before starting the label fade");
-    assert(folder.labelText.alpha === 0, "ready handoff should prepare the label hidden before visual release");
+    assert(folder.labelRevealCount === 1, "ready handoff should start the label fade at handoff readiness");
+    assert(folder.labelText.alpha === 0, "ready handoff should start the label fade from a hidden label");
     folder.labelText.alpha = 0.4;
     assert(layer.startClosingFolderHandoffNow("folder-1"), "duplicate ready handoff should keep the existing handoff active");
-    assert(folder.labelRevealCount === 0, "duplicate ready handoff should not start the label fade before visual release");
-    assert(folder.labelText.alpha === 0, "duplicate ready handoff should keep the label hidden before visual release");
+    assert(folder.labelRevealCount === 1, "duplicate ready handoff should not restart the label fade");
+    assert(folder.labelText.alpha === 0.4, "duplicate ready handoff should keep the in-progress label fade");
     layer.releaseClosingFolderHandoffVisual("folder-1");
-    assert(folder.labelRevealCount === 1, "visual release should start the label fade after ready handoff");
+    assert(folder.labelRevealCount === 1, "visual release should not restart the label fade after ready handoff");
   }
 
   {
@@ -507,6 +516,7 @@ export async function runDesktopLayerTests() {
     layer.clearFolderHandoffNode();
 
     assert(layer.folderHandoffNode === null, "debug snapshot should not prevent handoff cleanup");
+    assert(layer.folderHandoffNodes.size === 0, "debug snapshot cleanup should remove the handoff entry");
     assert(layer.lastFolderHandoffDebugSnapshot?.childRows?.length === 1, "debug snapshot should include preview child rows");
     assert(layer.lastFolderHandoffDebugSnapshot.childRows[0].target, "debug snapshot should resolve preview child targets");
     clearIconBoundsRegistry();
@@ -598,16 +608,17 @@ export async function runDesktopLayerTests() {
       layer.finishFolderHandoffNodeAfterFrame();
 
       assert(layer.folderHandoffNode.cleanupFrame === 9, "finish should wait one frame before cleanup");
-      assert(folder.labelRevealCount === 0, "finish should not start the label reveal before visual release");
+      assert(folder.labelRevealCount === 1, "finish should not restart the label reveal after handoff readiness");
       assert(folder.visualWrap.visible === false, "finish should keep the real folder artwork hidden until settled overlay release");
       assert(pageTrack.children[1] === folder, "handoff should stay raised until the cleanup frame");
       layer.releaseClosingFolderHandoffVisual("folder-1");
-      assert(folder.labelRevealCount === 1, "visual release should start the label reveal before cleanup");
+      assert(folder.labelRevealCount === 1, "visual release should not restart the label reveal before cleanup");
       assert(folder.visualWrap.visible === true, "settled overlay release should restore artwork before final handoff cleanup");
 
       queuedFrame();
 
       assert(layer.folderHandoffNode === null, "cleanup frame should clear handoff state");
+      assert(layer.folderHandoffNodes.size === 0, "cleanup frame should clear handoff entries");
       assert(pageTrack.children[1] === folder, "cleanup frame should preserve the restored z order");
       assert(folder.visualWrap.visible === true, "cleanup frame should keep the real folder artwork visible");
       assert(folder.labelRevealCount === 1, "cleanup frame should not restart the label reveal");

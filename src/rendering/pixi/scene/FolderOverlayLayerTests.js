@@ -483,12 +483,16 @@ export async function runFolderOverlayLayerTests() {
     assert(clearOptions?.reveal === false && clearOptions?.restorePageTrack === false, "detaching should clear live closing ownership without revealing current folder visuals");
     assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "detached closing visual should keep the desktop source folder ghosted");
     const detachedVisual = layer.detachedClosingVisuals[0];
+    const handoffVisualReleases = [];
+    layer.onClosingHandoffVisualRelease = (folderId) => handoffVisualReleases.push(folderId);
     let sourceGhostingCommits = 0;
     layer.onDesktopSourceGhostingChange = () => { sourceGhostingCommits += 1; };
     layer.clearDetachedClosingVisual(detachedVisual);
     assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "queued detached release should keep the source ghosted until the visual commit");
     assert(detachedChildren.length === 1, "queued detached release should keep the visual alive until the visual commit");
+    assert(handoffVisualReleases.length === 0, "queued detached release should wait until commit before restoring the desktop handoff visual");
     layer.getVisualCommitQueue().flush();
+    assert(handoffVisualReleases.join(",") === "folder-a", "visual commit should restore the matching desktop handoff visual before destroying the detached visual");
     assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "visual commit should release the desktop source ownership");
     assert(detachedChildren.length === 0, "visual commit should destroy the detached visual after source visibility is applied");
     assert(sourceGhostingCommits === 1, "visual commit should explicitly notify desktop source ghosting once");
@@ -598,6 +602,8 @@ export async function runFolderOverlayLayerTests() {
     layer.nextDetachedClosingVisualToken = 1;
     layer.visualOwnership = new FolderVisualOwnershipRegistry();
     layer.ownedVisualTokens = new Set();
+    const handoffVisualReleases = [];
+    layer.onClosingHandoffVisualRelease = (folderId) => handoffVisualReleases.push(folderId);
 
     const existingAContainer = new Container();
     layer.detachedClosingVisualLayer.addChild(existingAContainer);
@@ -632,6 +638,7 @@ export async function runFolderOverlayLayerTests() {
     layer.detachClosingPresentationForOpen("folder-a");
 
     assert(existingA.destroyed === true, "reopening folder A should destroy its stale detached closing visual");
+    assert(handoffVisualReleases.includes("folder-a"), "immediate stale detached cleanup should restore folder A's desktop handoff visual");
     assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "stale folder A detached ownership should release before the new open owns the source");
     assert(layer.getDesktopSourceGhostedIds().has("folder-b"), "opening folder A should keep folder B closing as a detached visual");
     assert(detachedChildren.length === 1, "only folder B's detached close should remain mounted");

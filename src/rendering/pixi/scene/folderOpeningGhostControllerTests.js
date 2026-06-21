@@ -174,6 +174,7 @@ export function runFolderOpeningGhostControllerTests() {
     assert(layer.frameGhostCalls[0].toRect.left === 180 && layer.frameGhostCalls[0].toRect.width === 800, "opening frame should target the panel rect");
     assert(layer.frameGhostCalls[0].options.fromRadius === 14, "opening frame should keep the source folder thumb radius on its first frame");
     assert(layer.frameGhostCalls[0].options.toRadius === 48, "opening frame should morph to the panel radius");
+    assert(layer.frameGhostCalls[0].options.crossfadePanelMaterial === true, "opening frame should use a shared crossfade for the frame ghost and panel material");
     assert(layer.panelMaterial.visible && layer.panelMaterial.alpha === 0, "start should fade the real panel material in after the frame ghost starts");
     assert(layer.frameGhost.visible && layer.frameGhost.alpha === 1, "start should show the frame ghost during the opening shell morph");
     assert(timerHost.size === 1, "start should schedule a fallback clear timer");
