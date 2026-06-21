@@ -50,6 +50,7 @@ import { DesktopLayer } from "./scene/DesktopLayer.js";
 import { createFolderLayerState } from "./folderLayerState.js";
 import { readFolderOverlayStateRenderDependencies } from "./folderOverlayStateDependencies.js";
 import { clearIconTextureCache, preloadIconTextures } from "./assets/iconTextureCache.js";
+import { installMotionDebugGlobal } from "./animation/motionDebugReport.js";
 import { clearDesktopIconBounds } from "./geometry/iconBoundsRegistry.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { getPixiHostMetrics } from "./pixiHostMetrics.js";
@@ -162,6 +163,7 @@ let handoffRenderFrame = null;
 let renderFrame = null;
 let desktopDomGeometryCache = null;
 let pixiResizeSignature = "";
+let motionDebugCommands = null;
 const folderClosingHandoffRetainer = createFolderClosingHandoffRetainer();
 let handoffDebugSequence = 0;
 
@@ -759,6 +761,8 @@ function destroyPixi(options = {}) {
   invalidateDesktopDomGeometry();
   pixiResizeSignature = "";
   folderClosingHandoffRetainer.reset();
+  motionDebugCommands?.uninstall?.();
+  motionDebugCommands = null;
   if (globalThis.__LP_FOLDER_VISUAL_DEBUG__) delete globalThis.__LP_FOLDER_VISUAL_DEBUG__;
   singleStageFolderPanelGeometry.value = null;
   singleStageFolderTitleFrame.value = null;
@@ -795,6 +799,7 @@ onMounted(async () => {
     onIconAction: handleIconAction,
   });
   app.stage.addChild(layer);
+  motionDebugCommands = installMotionDebugGlobal();
   resizeObserver = new ResizeObserver(handleResize);
   resizeObserver.observe(hostRef.value);
   window.addEventListener("resize", handleResize);
