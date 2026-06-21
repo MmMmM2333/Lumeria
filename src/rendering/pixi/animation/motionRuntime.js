@@ -14,6 +14,17 @@ const DEFAULT_SETTLE_SPRING = Object.freeze({
   stiffness: 340,
 });
 const NEUTRAL_EPSILON = 0.0001;
+const DEBUG_RECORD_WINDOW_MIN_MS = 1000;
+const DEBUG_RECORD_WINDOW_MAX_MS = 300000;
+const DEFAULT_DEBUG_CONFIG = Object.freeze({
+  enabled: false,
+  maxEvents: 1000,
+  maxSamples: 1000,
+  recordHistory: false,
+  recordWindowMs: 30000,
+  sampleHz: 10,
+  timeScale: 1,
+});
 
 let nextLaneId = 1;
 
@@ -170,6 +181,34 @@ function makeDebugSummary(animations) {
   return summary;
 }
 
+function sanitizeDebugValue(value, depth = 2, seen = new Set()) {
+  if (value == null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "object") return undefined;
+  if (depth <= 0 || seen.has(value)) return undefined;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    const array = value
+      .map((entry) => sanitizeDebugValue(entry, depth - 1, seen))
+      .filter((entry) => entry !== undefined);
+    seen.delete(value);
+    return array;
+  }
+  const object = {};
+  for (const [key, entry] of Object.entries(value)) {
+    const sanitized = sanitizeDebugValue(entry, depth - 1, seen);
+    if (sanitized !== undefined) object[key] = sanitized;
+  }
+  seen.delete(value);
+  return object;
+}
+
+function sanitizeDebugMetadata(metadata) {
+  if (!metadata || typeof metadata !== "object") return {};
+  const sanitized = sanitizeDebugValue(metadata);
+  return sanitized && typeof sanitized === "object" && !Array.isArray(sanitized) ? sanitized : {};
+}
+
 export function createMotionRuntime(options = {}) {
   const scheduler = options.scheduler || globalThis;
   const autoStart = options.autoStart !== false;
@@ -183,14 +222,20 @@ export function createMotionRuntime(options = {}) {
   const dirtyChannels = new Set();
   const pendingUpdateAnimations = new Set();
   const targetIds = new WeakMap();
+  const debugTargetMetaByTarget = new WeakMap();
+  const debugTargetMetaById = new Map();
+  const debugHistory = { events: [], samples: [] };
   const debug = makeDebugCounters();
   const activeAnimationScratch = [];
   const afterFrameScratch = [];
   const dirtyChannelScratch = [];
   const pendingUpdateScratch = [];
+  let debugConfig = { ...DEFAULT_DEBUG_CONFIG };
   let frameHandle = null;
   let lastFrameTime = 0;
+  let lastSampleTimeMs = Number.NEGATIVE_INFINITY;
   let nextTargetId = 1;
+  let runtimeTimeMs = 0;
 
   function getTargetId(target) {
     if (!target) return null;
@@ -201,6 +246,161 @@ export function createMotionRuntime(options = {}) {
       targetIds.set(target, id);
     }
     return id;
+  }
+
+  function rememberTarget(target) {
+    const targetId = getTargetId(target);
+    if (targetId == null) return null;
+    const described = debugTargetMetaByTarget.get(target);
+    if (described) debugTargetMetaById.set(targetId, described);
+    else if (!debugTargetMetaById.has(targetId)) debugTargetMetaById.set(targetId, { targetId });
+    return targetId;
+  }
+
+  function cloneDebugConfig() {
+    return { ...debugConfig };
+  }
+
+  function trimDebugHistory() {
+    const minTimeMs = runtimeTimeMs - debugConfig.recordWindowMs;
+    while (debugHistory.events.length && debugHistory.events[0].timeMs < minTimeMs) debugHistory.events.shift();
+    while (debugHistory.samples.length && debugHistory.samples[0].timeMs < minTimeMs) debugHistory.samples.shift();
+    while (debugHistory.events.length > debugConfig.maxEvents) debugHistory.events.shift();
+    while (debugHistory.samples.length > debugConfig.maxSamples) debugHistory.samples.shift();
+  }
+
+  function shouldRecordDebugHistory() {
+    return debugConfig.enabled && debugConfig.recordHistory;
+  }
+
+  function makeDebugAnimationRecord(animation) {
+    const targetId = rememberTarget(animation.target);
+    const metadata = targetId == null ? null : debugTargetMetaById.get(targetId);
+    const record = {
+      delay: animation.delay,
+      blendDuration: animation.blendFrom == null ? 0 : animation.blendDuration,
+      blendProgress: animation.blendFrom == null || animation.blendDuration <= 0
+        ? 1
+        : clamp(readNumber(animation.blendElapsed) / animation.blendDuration, 0, 1),
+      driver: animation.driver?.type || "spring",
+      interrupt: animation.interrupt,
+      lane: animation.lane,
+      laneKey: animation.laneKey,
+      milestones: animation.milestones.filter((milestone) => !milestone.fired).map((milestone) => milestone.progress),
+      prop: animation.prop,
+      released: animation.released,
+      targetId,
+      to: animation.to,
+      value: animation.value,
+      velocity: animation.velocity,
+    };
+    if (metadata?.kind != null) record.targetKind = metadata.kind;
+    if (metadata?.label != null) record.targetLabel = metadata.label;
+    if (metadata?.sourceLabel != null) record.sourceLabel = metadata.sourceLabel;
+    return record;
+  }
+
+  function makeDebugEvent(type, animation, extra = {}) {
+    const record = makeDebugAnimationRecord(animation);
+    const event = {
+      frame: debug.frames,
+      timeMs: runtimeTimeMs,
+      type,
+      ...record,
+    };
+    if (extra.reason != null) event.reason = String(extra.reason);
+    if (extra.value != null) event.value = readNumber(extra.value);
+    return event;
+  }
+
+  function recordDebugEvent(type, animation, extra) {
+    if (!shouldRecordDebugHistory()) return;
+    debugHistory.events.push(makeDebugEvent(type, animation, extra));
+    trimDebugHistory();
+  }
+
+  function makeDebugChannelRecords() {
+    const channels = new Map();
+    for (const animation of activeAnimations) {
+      const targetId = rememberTarget(animation.target);
+      const key = `${targetId ?? "unknown"}:${animation.prop}`;
+      let record = channels.get(key);
+      if (!record) {
+        record = {
+          activeBaseKey: animation.channel.activeBaseKey,
+          baseValue: animation.channel.baseValue,
+          lanes: { additive: [], base: [], factor: [] },
+          prop: animation.prop,
+          targetId,
+          value: animation.channel.value,
+        };
+        channels.set(key, record);
+      }
+      record.lanes[animation.lane].push(animation.laneKey);
+    }
+    return Array.from(channels.values());
+  }
+
+  function makeDebugTargetRecords() {
+    return Array.from(debugTargetMetaById.values())
+      .map((metadata) => ({ ...metadata }))
+      .sort((a, b) => (a.targetId || 0) - (b.targetId || 0));
+  }
+
+  function cloneDebugHistory() {
+    return {
+      events: debugHistory.events.map((event) => ({ ...event })),
+      samples: debugHistory.samples.map((sample) => ({
+        ...sample,
+        animations: sample.animations.map((animation) => ({ ...animation })),
+      })),
+    };
+  }
+
+  function recordDebugSample() {
+    if (!shouldRecordDebugHistory()) return;
+    const intervalMs = debugConfig.sampleHz > 0 ? 1000 / debugConfig.sampleHz : 0;
+    if (intervalMs > 0 && runtimeTimeMs - lastSampleTimeMs < intervalMs) return;
+    const animations = Array.from(activeAnimations).map((animation) => makeDebugAnimationRecord(animation));
+    debugHistory.samples.push({
+      activeAnimationCount: animations.length,
+      animations,
+      frame: debug.frames,
+      timeMs: runtimeTimeMs,
+    });
+    lastSampleTimeMs = runtimeTimeMs;
+    trimDebugHistory();
+  }
+
+  function clearDebugHistory() {
+    debugHistory.events.length = 0;
+    debugHistory.samples.length = 0;
+    lastSampleTimeMs = Number.NEGATIVE_INFINITY;
+  }
+
+  function configureDebug(config = {}) {
+    if (config && typeof config === "object") {
+      if (Object.hasOwn(config, "enabled")) debugConfig.enabled = Boolean(config.enabled);
+      if (Object.hasOwn(config, "recordHistory")) debugConfig.recordHistory = Boolean(config.recordHistory);
+      if (Object.hasOwn(config, "recordWindowMs")) {
+        debugConfig.recordWindowMs = clamp(readNumber(config.recordWindowMs, debugConfig.recordWindowMs), DEBUG_RECORD_WINDOW_MIN_MS, DEBUG_RECORD_WINDOW_MAX_MS);
+      }
+      if (Object.hasOwn(config, "sampleHz")) debugConfig.sampleHz = Math.max(0, readNumber(config.sampleHz, debugConfig.sampleHz));
+      if (Object.hasOwn(config, "maxEvents")) debugConfig.maxEvents = Math.max(0, Math.floor(readNumber(config.maxEvents, debugConfig.maxEvents)));
+      if (Object.hasOwn(config, "maxSamples")) debugConfig.maxSamples = Math.max(0, Math.floor(readNumber(config.maxSamples, debugConfig.maxSamples)));
+      if (Object.hasOwn(config, "timeScale")) debugConfig.timeScale = Math.max(0, readNumber(config.timeScale, debugConfig.timeScale));
+      trimDebugHistory();
+    }
+    return cloneDebugConfig();
+  }
+
+  function describeTarget(target, metadata = {}) {
+    if (!target) return null;
+    const targetId = getTargetId(target);
+    const record = { targetId, ...sanitizeDebugMetadata(metadata) };
+    debugTargetMetaByTarget.set(target, record);
+    debugTargetMetaById.set(targetId, record);
+    return { ...record };
   }
 
   function getTargetMap(target, create = false) {
@@ -314,8 +514,9 @@ export function createMotionRuntime(options = {}) {
   function addActiveAnimation(animation) {
     activeAnimations.add(animation);
     activeTargets.add(animation.target);
-    getTargetId(animation.target);
+    rememberTarget(animation.target);
     debug.started += 1;
+    recordDebugEvent("start", animation);
     ensureTicker();
   }
 
@@ -336,6 +537,7 @@ export function createMotionRuntime(options = {}) {
     clearChannelLane(animation);
     debug.canceled += 1;
     debug.canceledByReason[reason] = (debug.canceledByReason[reason] || 0) + 1;
+    recordDebugEvent("cancel", animation, { reason });
     animation.onCancel?.(reason);
   }
 
@@ -351,6 +553,7 @@ export function createMotionRuntime(options = {}) {
     removeActiveAnimation(animation);
     clearChannelLane(animation);
     debug.completed += 1;
+    recordDebugEvent("complete", animation, { value: finalValue });
     animation.onUpdate?.(finalValue);
     if (!animation.arrived) {
       animation.arrived = true;
@@ -505,6 +708,7 @@ export function createMotionRuntime(options = {}) {
       composeChannel(animation.channel);
       fireMilestones(animation, 1);
       clearChannelLane(animation);
+      recordDebugEvent("snap", animation, { value: animation.to });
       animation.onUpdate?.(animation.to);
       animation.onArrive?.(animation.to);
       animation.onComplete?.();
@@ -714,9 +918,10 @@ export function createMotionRuntime(options = {}) {
   }
 
   function step(deltaSeconds = 0) {
-    const elapsed = Math.min(maxDeltaSeconds, Math.max(0, readNumber(deltaSeconds)));
+    const elapsed = Math.min(maxDeltaSeconds, Math.max(0, readNumber(deltaSeconds))) * debugConfig.timeScale;
     debug.frames += 1;
     debug.writesLastFrame = 0;
+    runtimeTimeMs += elapsed * 1000;
     if (elapsed > 0) {
       activeAnimationScratch.length = 0;
       for (const animation of activeAnimations) activeAnimationScratch.push(animation);
@@ -726,6 +931,7 @@ export function createMotionRuntime(options = {}) {
     flushDirtyChannels();
     flushPendingUpdates();
     flushAfterFrame();
+    recordDebugSample();
     debug.activeChannels = activeAnimations.size;
     debug.activeTargets = activeTargets.size;
     if (!activeAnimations.size && !afterFrameCallbacks.size) stopTicker();
@@ -741,6 +947,7 @@ export function createMotionRuntime(options = {}) {
     animation.milestones = [];
     pendingUpdateAnimations.delete(animation);
     debug.released += 1;
+    recordDebugEvent("release", animation);
     if (animation.started || animation.delay <= 0) return;
     animation.done = true;
     removeActiveAnimation(animation);
@@ -909,29 +1116,13 @@ export function createMotionRuntime(options = {}) {
     pendingUpdateAnimations.clear();
     stopTicker();
     Object.assign(debug, makeDebugCounters());
+    clearDebugHistory();
+    runtimeTimeMs = 0;
   }
 
-  function debugSnapshot() {
-    const animations = Array.from(activeAnimations).map((animation) => ({
-      delay: animation.delay,
-      blendDuration: animation.blendFrom == null ? 0 : animation.blendDuration,
-      blendProgress: animation.blendFrom == null || animation.blendDuration <= 0
-        ? 1
-        : clamp(readNumber(animation.blendElapsed) / animation.blendDuration, 0, 1),
-      driver: animation.driver?.type || "spring",
-      interrupt: animation.interrupt,
-      lane: animation.lane,
-      laneKey: animation.laneKey,
-      milestones: animation.milestones.filter((milestone) => !milestone.fired).map((milestone) => milestone.progress),
-      prop: animation.prop,
-      released: animation.released,
-      targetId: getTargetId(animation.target),
-      to: animation.to,
-      value: animation.value,
-      velocity: animation.velocity,
-    }));
-
-    return {
+  function debugSnapshot(snapshotOptions = {}) {
+    const animations = Array.from(activeAnimations).map((animation) => makeDebugAnimationRecord(animation));
+    const snapshot = {
       counters: {
         ...debug,
         canceledByReason: { ...debug.canceledByReason },
@@ -939,13 +1130,44 @@ export function createMotionRuntime(options = {}) {
       summary: makeDebugSummary(animations),
       animations,
     };
+    if (snapshotOptions.includeChannels) snapshot.channels = makeDebugChannelRecords();
+    if (snapshotOptions.includeTargets) snapshot.targets = makeDebugTargetRecords();
+    if (snapshotOptions.includeHistory) snapshot.history = cloneDebugHistory();
+    return snapshot;
+  }
+
+  function debugReport(reportOptions = {}) {
+    const snapshot = debugSnapshot({
+      includeChannels: reportOptions.includeChannels,
+      includeTargets: reportOptions.includeTargets,
+    });
+    const report = {
+      animations: snapshot.animations,
+      config: cloneDebugConfig(),
+      counters: snapshot.counters,
+      runtime: {
+        activeAnimationCount: snapshot.summary.activeAnimationCount,
+        frames: debug.frames,
+        timeMs: runtimeTimeMs,
+      },
+      summary: snapshot.summary,
+      version: 1,
+    };
+    if (reportOptions.includeChannels) report.channels = snapshot.channels;
+    if (reportOptions.includeHistory) report.history = cloneDebugHistory();
+    if (reportOptions.includeTargets) report.targets = snapshot.targets;
+    return report;
   }
 
   return {
     afterFrame,
     animate,
     cancelTarget,
+    clearDebugHistory,
+    configureDebug,
+    debugReport,
     debugSnapshot,
+    describeTarget,
     flushAfterFrameForTests: flushAfterFrame,
     getChannel: (target, prop) => getChannel(target, prop),
     debug,
