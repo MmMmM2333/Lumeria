@@ -227,7 +227,9 @@ export function runFolderClosingGhostControllerTests() {
     const layer = makeLayer();
     const completed = [];
     const order = [];
+    const releaseCalls = [];
     layer.onClosingHandoffReady = (folderId) => order.push(`ready:${folderId}`);
+    layer.releaseTransitionOwnership = (token, options) => releaseCalls.push({ options, token });
     const previewSwapCalls = [];
     const controller = new FolderClosingGhostController(layer, {
       previewSwap: makePreviewSwap(previewSwapCalls),
@@ -235,6 +237,7 @@ export function runFolderClosingGhostControllerTests() {
     });
     const completedPreviewGhost = makeGhost("preview");
     layer.closingFrameComplete = true;
+    layer.closingGhostSessionToken = "close-token";
     layer.completedClosingControllerGhostKeys = ["close-key"];
     layer.completedClosingPreviewGhosts = [completedPreviewGhost];
 
@@ -253,12 +256,20 @@ export function runFolderClosingGhostControllerTests() {
     assert(!completedPreviewGhost.destroyed, "finish should keep overlay preview ghosts until the next handoff frame");
     assert(!previewSwapCalls.includes("clear-preview-swap"), "finish should keep preview swap visuals until the next handoff frame");
     assert(!layer.calls.includes("clear-frame"), "finish should keep the frame ghost until the next handoff frame");
+    assert(releaseCalls.length === 0, "finish should keep transition ownership until overlay visuals are released");
 
     timerHost.runAllFrames();
     assert(layer.activityChanges.join(",") === "true", "first handoff frame should wait for desktop bounds refresh");
     assert(completedPreviewGhost.destroyed, "first handoff frame should clear overlay preview ghosts before paint");
     assert(previewSwapCalls.includes("clear-preview-swap"), "first handoff frame should clear preview swap visuals");
     assert(layer.calls.includes("clear-frame"), "first handoff frame should clear the frame ghost");
+    assert(releaseCalls.length === 1, "first handoff frame should release closing transition ownership");
+    assert(releaseCalls[0].token === "close-token", "handoff release should use the closing session token");
+    assert(
+      releaseCalls[0].options?.reveal === false && releaseCalls[0].options?.restorePageTrack === false,
+      "handoff release should not reveal real folder visuals or restore the page track"
+    );
+    assert(layer.closingGhostSessionToken === null, "handoff visual cleanup should clear the closing session token");
     assert(
       layer.calls.indexOf("release-visual:folder-1") >= 0 &&
       layer.calls.indexOf("release-visual:folder-1") < layer.calls.indexOf("clear-frame"),
@@ -268,6 +279,8 @@ export function runFolderClosingGhostControllerTests() {
     timerHost.runAllFrames();
     assert(layer.activityChanges.join(",") === "true,false", "handoff cleanup should clear Pixi internal handoff activity");
     assert(layer.visible === false && layer.currentFolderId === null, "handoff cleanup should hide the stale overlay state");
+    assert(layer.closingGhostFolderId === null, "handoff cleanup should clear the closing folder id");
+    assert(releaseCalls.length === 1, "final handoff cleanup should not release transition ownership twice");
   }
 
   {
@@ -554,6 +567,26 @@ export function runFolderClosingGhostControllerTests() {
     controller.clear();
 
     assert(layer.panel.visible === true, "clear should restore the panel for the next folder render");
+  }
+
+  {
+    const layer = makeLayer();
+    const controller = new FolderClosingGhostController(layer);
+    layer.closingGhostKeys = new Set(["app-1"]);
+    layer.closingVisualGhostKeys = new Set(["app-1"]);
+    layer.closingPreviewSwapKeys = new Set(["swap"]);
+    layer.closingGhostLayer.addChild(makeGhost());
+    layer.panel.visible = false;
+    layer.pageTrack.visible = false;
+    layer.iconNode.visible = false;
+
+    controller.clear({ restorePageTrack: false, reveal: false });
+
+    assert(layer.panel.visible === true, "non-reveal clear should still restore the panel container for the next render");
+    assert(layer.pageTrack.visible === false, "non-reveal clear should not restore the page track");
+    assert(layer.iconNode.visible === false, "non-reveal clear should not reveal real icon nodes");
+    assert(!layer.calls.includes("reveal-icons"), "non-reveal clear should not call revealIconNodes");
+    assert(layer.closingGhosts.length === 0, "non-reveal clear should still remove closing ghost visuals");
   }
 
   {

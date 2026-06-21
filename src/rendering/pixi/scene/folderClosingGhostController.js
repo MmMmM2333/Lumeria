@@ -169,6 +169,7 @@ export class FolderClosingGhostController {
     layer.closingHandoffVisualCleanupScheduled = false;
     layer.closingPreviewSwapKeys = new Set();
     layer.closingVisualGhostKeys = new Set();
+    layer.closingGhostSessionToken = null;
     layer.completedClosingControllerGhostKeys = [];
     layer.pendingClosingControllerGhostKeys = new Set();
     layer.completedClosingPreviewGhosts = [];
@@ -204,9 +205,9 @@ export class FolderClosingGhostController {
     return Boolean(layer.closingGhostKeys?.size || layer.closingPreviewSwapKeys?.size);
   }
 
-  begin(folderId) {
+  begin(folderId, options = {}) {
     const layer = this.layer;
-    this.clear();
+    this.clear(options);
     layer.closingGhostFolderId = folderId || null;
     layer.closingGhostKeys = new Set();
     layer.closingGhostMotionControls = new Set();
@@ -230,6 +231,7 @@ export class FolderClosingGhostController {
       handoffTarget = null,
       previewSwapTargets = [],
     } = options;
+    const folderId = state.renderedFolder?.id || layer.currentFolderId || null;
     const releasedOpeningGhosts = releaseOpeningGhostsForClosing(layer, state, targets);
     const closeFrameFromRect = resolveClosingFrameStartRect(layer, panelRect);
     const closeTargets = (targets || []).map((target) => {
@@ -244,8 +246,22 @@ export class FolderClosingGhostController {
         }
         : target;
     });
-    layer.openingGhosts.clear();
-    this.begin(state.renderedFolder?.id);
+    layer.openingGhosts.clear({
+      cancelSession: true,
+      completeControllerKeys: false,
+      restorePageTrack: false,
+      reveal: false,
+    });
+    this.begin(folderId, { restorePageTrack: false, reveal: false });
+    const sessionToken = typeof layer.createClosingGhostSessionToken === "function"
+      ? layer.createClosingGhostSessionToken(folderId)
+      : `closing:${folderId || ""}`;
+    layer.closingGhostSessionToken = sessionToken;
+    const owner = {
+      folderId,
+      kind: "closing",
+      token: sessionToken,
+    };
     const usableTargets = (closeTargets || []).filter(hasUsableFolderGhostTarget);
     if (!usableTargets.length) return;
     const isRetargetedOpeningClose = releasedOpeningGhosts.size > 0;
@@ -301,7 +317,11 @@ export class FolderClosingGhostController {
       updateClosingMask: true,
     });
 
-    layer.pageTrack.visible = false;
+    if (typeof layer.hidePageTrackForTransition === "function") {
+      layer.hidePageTrackForTransition(owner);
+    } else {
+      layer.pageTrack.visible = false;
+    }
     this.scheduleRevealFallback(usableTargets);
 
     for (const target of usableTargets) {
@@ -349,8 +369,12 @@ export class FolderClosingGhostController {
           .start();
       }
       layer.closingGhostLayer.addChild(ghost);
-      for (const node of layer.iconNodes.values()) {
-        if (node.item?.id === target.item.id) node.visible = false;
+      if (typeof layer.hideIconNodesForTransition === "function") {
+        layer.hideIconNodesForTransition(target.item.id, owner);
+      } else {
+        for (const node of layer.iconNodes.values()) {
+          if (node.item?.id === target.item.id) node.visible = false;
+        }
       }
 
       let didComplete = false;
@@ -429,6 +453,7 @@ export class FolderClosingGhostController {
     this.clearCompletedPreviewGhosts();
     this.clearClosingGhostVisuals();
     this.layer.clearFrameGhost();
+    this.releaseClosingTransitionOwnership({ restorePageTrack: false, reveal: false });
   }
 
   clearClosingGhostVisuals() {
@@ -454,10 +479,24 @@ export class FolderClosingGhostController {
 
   runHandoffCleanup() {
     const layer = this.layer;
+    this.releaseClosingTransitionOwnership({ restorePageTrack: false, reveal: false });
     this.clearFolderHandoffGhost();
     layer.visible = false;
     layer.currentFolderId = null;
+    layer.closingGhostFolderId = null;
     setLayerClosingHandoffActive(layer, false);
+  }
+
+  releaseClosingTransitionOwnership(options = {}) {
+    const layer = this.layer;
+    const sessionToken = layer.closingGhostSessionToken || null;
+    if (sessionToken == null) return false;
+    layer.releaseTransitionOwnership?.(sessionToken, {
+      restorePageTrack: options.restorePageTrack,
+      reveal: options.reveal,
+    });
+    layer.closingGhostSessionToken = null;
+    return true;
   }
 
   isHandoffVisuallyReady() {
@@ -580,7 +619,7 @@ export class FolderClosingGhostController {
     this.finishTransition(state);
   }
 
-  clear() {
+  clear(options = {}) {
     const layer = this.layer;
     this.cancelHandoffCleanup();
     this.clearRevealTimer();
@@ -594,15 +633,21 @@ export class FolderClosingGhostController {
     layer.completedClosingControllerGhostKeys = [];
     layer.pendingClosingControllerGhostKeys = new Set();
     layer.completedClosingPreviewGhosts = [];
+    this.releaseClosingTransitionOwnership({
+      restorePageTrack: options.restorePageTrack,
+      reveal: options.reveal,
+    });
     this.clearFolderHandoffGhost();
     layer.closingFolderHandoffRect = null;
     layer.closingFolderHandoffTarget = null;
     setLayerClosingHandoffActive(layer, false);
     layer.clearFrameGhost();
     layer.panel.visible = true;
-    layer.pageTrack.visible = true;
-    layer.revealIconNodes();
-    layer.rebuildPageTrackMask();
+    if (!layer.releaseTransitionOwnership && options.restorePageTrack !== false) layer.pageTrack.visible = true;
+    if (!layer.releaseTransitionOwnership && options.reveal !== false) {
+      layer.revealIconNodes();
+      layer.rebuildPageTrackMask();
+    }
     const ghosts = layer.closingGhostLayer.removeChildren();
     for (const ghost of ghosts) {
       killAllMotion(ghost);

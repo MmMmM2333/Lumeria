@@ -17,6 +17,12 @@ import {
   getRenderedClientLaunchIconBounds,
 } from "../geometry/iconBoundsRegistry.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
+import { FolderTransitionCoordinator } from "./folderTransitionCoordinator.js";
+import {
+  FolderVisualOwnershipRegistry,
+  makeFolderIconVisualKey,
+  makeFolderPageTrackVisualKey,
+} from "./folderVisualOwnershipRegistry.js";
 
 function makeClosingHandoffHarness(calls) {
   return {
@@ -120,6 +126,21 @@ export async function runFolderOverlayLayerTests() {
 
   {
     const layer = {
+      closingFolderHandoffRect: { height: 60, left: 140, top: 260, width: 60 },
+      frameGhostState: { height: 420, left: 20, top: 30, width: 620 },
+      hitArea: null,
+      pageDotsLayer: { eventMode: "static", hitArea: { width: 100 }, visible: true },
+      stageRect: { left: 100, top: 200, width: 800, height: 600 },
+    };
+
+    const hitArea = applyClosingPresentationOverlayState(layer);
+    assert(hitArea.contains(44, 64), "closing presentation overlay should keep the closing folder hit target active");
+    assert(!hitArea.contains(240, 260), "closing presentation overlay should not block unrelated desktop icon positions inside the frame ghost");
+    assert(layer.pageDotsLayer.visible === false && layer.pageDotsLayer.eventMode === "none" && layer.pageDotsLayer.hitArea === null, "closing presentation overlay should disable stale page dots");
+  }
+
+  {
+    const layer = {
       frameGhostState: { height: 60, left: 20, top: 30, width: 60 },
       hitArea: null,
       pageDotsLayer: { eventMode: "static", hitArea: { width: 100 }, visible: true },
@@ -127,9 +148,7 @@ export async function runFolderOverlayLayerTests() {
     };
 
     const hitArea = applyClosingPresentationOverlayState(layer);
-    assert(hitArea.contains(24, 34), "closing presentation overlay should keep the closing folder hit target active");
-    assert(!hitArea.contains(200, 200), "closing presentation overlay should not block unrelated desktop icon positions");
-    assert(layer.pageDotsLayer.visible === false && layer.pageDotsLayer.eventMode === "none" && layer.pageDotsLayer.hitArea === null, "closing presentation overlay should disable stale page dots");
+    assert(hitArea.contains(24, 34), "closing presentation overlay should fall back to the frame ghost without a stable source target");
   }
 
   {
@@ -170,12 +189,45 @@ export async function runFolderOverlayLayerTests() {
     assert(calls.join(",") === "prevent,stop,panel,prevent,stop,outside", "folder pointer down should route panel hits separately from outside hits");
   }
 
+  {
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    const calls = [];
+    layer.closingFolderHandoffRect = { height: 60, left: 140, top: 260, width: 60 };
+    layer.frameGhostState = { height: 420, left: 20, top: 30, width: 620 };
+    layer.isClosing = true;
+    layer.isUserFolderClosing = true;
+    layer.onClosingFolderPointerDown = (folderId) => calls.push(`closing:${folderId}`);
+    layer.stableFolderCloseTarget = { folderId: "folder-a" };
+    layer.stageRect = { height: 600, left: 100, top: 200, width: 800 };
+
+    const makeEvent = (clientX, clientY) => ({
+      nativeEvent: {
+        clientX,
+        clientY,
+        preventDefault() {
+          calls.push("prevent");
+        },
+        stopPropagation() {
+          calls.push("stop");
+        },
+      },
+    });
+
+    layer.handlePointerDown(makeEvent(180, 300));
+    layer.handlePointerDown(makeEvent(340, 460));
+    assert(calls.join(",") === "prevent,stop,closing:folder-a", "closing pointer handling should only intercept the closing folder target");
+  }
+
   const nearlyEqual = (a, b) => Math.abs(a - b) < 0.0001;
 
   {
     motionRuntime.reset();
     const layer = Object.create(FolderOverlayLayer.prototype);
     layer.currentFolderId = null;
+    layer.folderTransitions = new FolderTransitionCoordinator();
+    layer.openingGhosts = { finishTransition() {} };
+    layer.panelAlphaTarget = null;
+    layer.panelOpenTargetKey = null;
     layer.markRegisteredBoundsDirty = () => {};
     layer.notifyPanelTitleFrame = () => {};
     layer.panel = {
@@ -219,6 +271,305 @@ export async function runFolderOverlayLayerTests() {
     assert(handoffSnapCount >= 1, "folder panel handoff snap should use a specific cancel reason");
     assert(layer.panel.alpha === 0, "folder panel handoff snap should still hide the panel immediately");
     motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    layer.currentFolderId = null;
+    layer.folderTransitions = new FolderTransitionCoordinator();
+    layer.openingGhosts = { finishTransition() {} };
+    layer.panelAlphaTarget = null;
+    layer.panelOpenTargetKey = null;
+    layer.markRegisteredBoundsDirty = () => {};
+    layer.notifyPanelTitleFrame = () => {};
+    layer.panel = {
+      alpha: 1,
+      x: 0,
+      y: 0,
+      scale: {
+        x: 1,
+        y: 1,
+        set(x, y = x) {
+          this.x = x;
+          this.y = y;
+        },
+      },
+    };
+    layer.panel.position = {
+      set(x, y) {
+        layer.panel.x = x;
+        layer.panel.y = y;
+      },
+    };
+    const panelRect = { height: 360, left: 180, top: 200, width: 800 };
+    const state = {
+      isFolderAppLaunchClosing: false,
+      isFolderClosing: false,
+      renderedFolder: { id: "folder-1" },
+      stageRect: { height: 600, left: 0, top: 0, width: 1000 },
+    };
+
+    layer.animatePanel(state, 580, 380, panelRect, { height: 64, left: 200, top: 240, width: 64 });
+    motionRuntime.step(0.02);
+    layer.animatePanel(state, 580, 380, panelRect, { height: 64, left: 200, top: 240, width: 64 });
+
+    const cancelCount = motionRuntime.debugSnapshot().counters.canceledByReason["folder-panel-open"] || 0;
+    assert(cancelCount === 0, "same folder panel target should not restart the geometry spring");
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    layer.currentFolderId = null;
+    layer.folderTransitions = new FolderTransitionCoordinator();
+    layer.openingGhosts = { finishTransition() {} };
+    layer.panelAlphaTarget = null;
+    layer.panelOpenTargetKey = null;
+    layer.markRegisteredBoundsDirty = () => {};
+    layer.notifyPanelTitleFrame = () => {};
+    layer.panel = {
+      alpha: 1,
+      x: 0,
+      y: 0,
+      scale: {
+        x: 1,
+        y: 1,
+        set(x, y = x) {
+          this.x = x;
+          this.y = y;
+        },
+      },
+    };
+    layer.panel.position = {
+      set(x, y) {
+        layer.panel.x = x;
+        layer.panel.y = y;
+      },
+    };
+    const panelRect = { height: 360, left: 180, top: 200, width: 800 };
+    const firstSourceRect = { height: 64, left: 200, top: 240, width: 64 };
+    const secondSourceRect = { height: 64, left: 500, top: 540, width: 64 };
+    const firstChildRect = { height: 12, left: 210, top: 250, width: 12 };
+    const secondChildRect = { height: 12, left: 510, top: 550, width: 12 };
+    const state = {
+      height: 600,
+      isFolderAppLaunchClosing: false,
+      isFolderClosing: false,
+      renderedFolder: { id: "folder-1" },
+      stageRect: { height: 600, left: 0, top: 0, width: 1000 },
+      width: 1000,
+    };
+    const snapshotOptions = {
+      getPreviewChildRect: () => firstChildRect,
+      previewSlots: [{ id: "app-1" }],
+    };
+
+    const first = layer.animatePanel(state, 580, 380, panelRect, firstSourceRect, snapshotOptions).openingGeometrySnapshot;
+    layer.currentOpeningGeometrySnapshot = first;
+    const reused = layer.animatePanel(state, 580, 380, panelRect, secondSourceRect, {
+      getPreviewChildRect: () => secondChildRect,
+      previewSlots: [{ id: "app-1" }],
+    }).openingGeometrySnapshot;
+    layer.currentOpeningGeometrySnapshot = reused;
+
+    assert(first === reused, "same open session should reuse its geometry snapshot while the target is unchanged");
+    assert(reused.folderRect.left === firstSourceRect.left, "reused snapshot should keep the original folder source geometry");
+    assert(reused.previewChildRects.get("app-1:0").left === firstChildRect.left, "reused snapshot should keep the original preview child geometry");
+    const debug = layer.getVisualDebugSnapshot();
+    assert(debug.openingGeometry.session.token === first.sessionToken, "opening debug should expose the active geometry session token");
+    assert(debug.openingGeometry.currentGeometryMatchesSession, "opening debug should prove current geometry is the active session snapshot");
+    assert(debug.openingGeometry.snapshot.folderRect.left === firstSourceRect.left, "opening debug should expose the frozen source geometry");
+    assert(debug.openingGeometry.snapshot.panelRect.width === panelRect.width, "opening debug should expose the frozen panel geometry");
+
+    layer.currentFolderId = null;
+    layer.panelOpenTargetKey = null;
+    const reopened = layer.animatePanel(state, 580, 380, panelRect, secondSourceRect, {
+      getPreviewChildRect: () => secondChildRect,
+      previewSlots: [{ id: "app-1" }],
+    }).openingGeometrySnapshot;
+    layer.currentOpeningGeometrySnapshot = reopened;
+
+    assert(reopened !== first, "a new open session should capture a fresh geometry snapshot");
+    assert(reopened.folderRect.left === secondSourceRect.left, "fresh snapshot should use the new folder source geometry");
+    assert(reopened.previewChildRects.get("app-1:0").left === secondChildRect.left, "fresh snapshot should use the new preview child geometry");
+    const reopenedDebug = layer.getVisualDebugSnapshot();
+    assert(reopenedDebug.openingGeometry.session.token === reopened.sessionToken, "reopened debug should expose the fresh session token");
+    assert(reopenedDebug.openingGeometry.snapshot.folderRect.left === secondSourceRect.left, "reopened debug should expose the fresh source geometry");
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    layer.currentFolderId = "folder-1";
+    layer.folderTransitions = new FolderTransitionCoordinator();
+    layer.openingGhosts = { finishTransition() {} };
+    layer.panelAlphaTarget = 1;
+    layer.panelOpenTargetKey = null;
+    layer.markRegisteredBoundsDirty = () => {};
+    layer.notifyPanelTitleFrame = () => {};
+    layer.panel = {
+      alpha: 1,
+      x: 580,
+      y: 380,
+      scale: {
+        x: 1,
+        y: 1,
+        set(x, y = x) {
+          this.x = x;
+          this.y = y;
+        },
+      },
+    };
+    layer.panel.position = {
+      set(x, y) {
+        layer.panel.x = x;
+        layer.panel.y = y;
+      },
+    };
+
+    layer.animatePanel({
+      isFolderAppLaunchClosing: false,
+      isFolderClosing: false,
+      renderedFolder: { id: "folder-1" },
+      stageRect: { height: 600, left: 0, top: 0, width: 1000 },
+    }, 580, 380, { height: 360, left: 180, top: 200, width: 800 }, null);
+
+    assert(layer.folderTransitions.activeOpenSession === null, "settled same-folder updates should not create a pending open session");
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    const detachedChildren = [];
+    let clearCount = 0;
+    let clearOptions = null;
+    layer.closingGhostFolderId = "folder-a";
+    layer.closingGhostLayer = { removeChildren: () => [] };
+    layer.closingGhosts = { clear: (options) => { clearCount += 1; clearOptions = options; } };
+    layer.detachedClosingVisuals = [];
+    layer.nextDetachedClosingVisualToken = 1;
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.detachedClosingVisualLayer = {
+      addChild(child) {
+        child.parent = this;
+        detachedChildren.push(child);
+      },
+      removeChild(child) {
+        const index = detachedChildren.indexOf(child);
+        if (index >= 0) detachedChildren.splice(index, 1);
+      },
+    };
+    layer.frameGhostState = {
+      fillAlpha: 0.26,
+      height: 160,
+      left: 20,
+      radius: 40,
+      strokeAlpha: 0.24,
+      strokeWidth: 1,
+      top: 30,
+      width: 240,
+    };
+
+    layer.detachClosingPresentationForOpen("folder-b");
+    assert(layer.detachedClosingVisuals.length === 1, "opening a different folder should detach the interrupted closing frame");
+    assert(detachedChildren.length === 1, "detached closing frame should be added to the detached visual layer");
+    assert(clearCount === 1 && layer.closingGhostFolderId === null, "detaching should clear the live closing controller ownership");
+    assert(clearOptions?.reveal === false && clearOptions?.restorePageTrack === false, "detaching should clear live closing ownership without revealing current folder visuals");
+    assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "detached closing visual should keep the desktop source folder ghosted");
+    const detachedVisual = layer.detachedClosingVisuals[0];
+    let sourceGhostingCommits = 0;
+    layer.onDesktopSourceGhostingChange = () => { sourceGhostingCommits += 1; };
+    layer.clearDetachedClosingVisual(detachedVisual);
+    assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "queued detached release should keep the source ghosted until the visual commit");
+    assert(detachedChildren.length === 1, "queued detached release should keep the visual alive until the visual commit");
+    layer.getVisualCommitQueue().flush();
+    assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "visual commit should release the desktop source ownership");
+    assert(detachedChildren.length === 0, "visual commit should destroy the detached visual after source visibility is applied");
+    assert(sourceGhostingCommits === 1, "visual commit should explicitly notify desktop source ghosting once");
+    motionRuntime.reset();
+
+    const sameFolderLayer = Object.create(FolderOverlayLayer.prototype);
+    let sameFolderClearCount = 0;
+    sameFolderLayer.closingGhostFolderId = "folder-a";
+    sameFolderLayer.closingGhostLayer = { removeChildren: () => [] };
+    sameFolderLayer.closingGhosts = { clear: () => { sameFolderClearCount += 1; } };
+    sameFolderLayer.detachedClosingVisuals = [];
+    sameFolderLayer.nextDetachedClosingVisualToken = 1;
+    sameFolderLayer.visualOwnership = new FolderVisualOwnershipRegistry();
+    sameFolderLayer.detachedClosingVisualLayer = layer.detachedClosingVisualLayer;
+    sameFolderLayer.frameGhostState = layer.frameGhostState;
+
+    sameFolderLayer.detachClosingPresentationForOpen("folder-a");
+    assert(sameFolderLayer.detachedClosingVisuals.length === 0, "reopening the same folder should not keep an old closing double-image");
+    assert(sameFolderClearCount === 1, "same-folder reopen should still clear the live closing controller");
+  }
+
+  {
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    const iconNode = {
+      alpha: 0.35,
+      item: { id: "app-1" },
+      state: { source: { folderId: "folder-a", pageIndex: 0 } },
+      visible: true,
+    };
+    layer.currentFolderId = "folder-a";
+    layer.iconNodes = new Map([["app-1", iconNode]]);
+    layer.pageTrack = { visible: true };
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+
+    const closingOwner = { folderId: "folder-a", kind: "closing", token: "close-a" };
+    const openingOwner = { folderId: "folder-a", kind: "opening", token: "open-a" };
+    layer.hideIconNodesForTransition("app-1", closingOwner);
+    layer.hidePageTrackForTransition(closingOwner);
+
+    const iconKey = makeFolderIconVisualKey("folder-a", "app-1", 0);
+    const pageTrackKey = makeFolderPageTrackVisualKey("folder-a");
+    assert(iconNode.visible === false, "closing ownership should hide the real folder icon node");
+    assert(layer.pageTrack.visible === false, "closing ownership should hide the page track");
+    assert(layer.visualOwnership.isOwnedBy(iconKey, "close-a"), "closing ownership should claim the icon visual key");
+    assert(layer.visualOwnership.isOwnedBy(pageTrackKey, "close-a"), "closing ownership should claim the page track visual key");
+
+    layer.hideIconNodesForTransition("app-1", openingOwner);
+    layer.hidePageTrackForTransition(openingOwner);
+    layer.releaseTransitionOwnership("close-a", { reveal: true, restorePageTrack: true });
+
+    assert(iconNode.visible === false, "stale closing release should not reveal an icon now owned by opening");
+    assert(layer.pageTrack.visible === false, "stale closing release should not restore a page track now owned by opening");
+    assert(layer.visualOwnership.isOwnedBy(iconKey, "open-a"), "stale closing release should preserve the opening icon owner");
+    assert(layer.visualOwnership.isOwnedBy(pageTrackKey, "open-a"), "stale closing release should preserve the opening page track owner");
+
+    layer.releaseTransitionOwnership("open-a", { reveal: true, restorePageTrack: true });
+    assert(iconNode.visible === true && iconNode.alpha === 1, "current opening release should reveal the real icon node");
+    assert(layer.pageTrack.visible === true, "current opening release should restore the page track");
+    assert(!layer.visualOwnership.hasOwner(iconKey), "current opening release should clear icon ownership");
+    assert(!layer.visualOwnership.hasOwner(pageTrackKey), "current opening release should clear page track ownership");
+  }
+
+  {
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    const iconNode = {
+      alpha: 0.35,
+      item: { id: "app-1" },
+      state: { source: { folderId: "folder-a", pageIndex: 0 } },
+      visible: false,
+    };
+    layer.currentFolderId = "folder-a";
+    layer.iconNodes = new Map([["app-1", iconNode]]);
+    layer.pageTrack = { visible: false };
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+
+    const owner = { folderId: "folder-a", kind: "closing", token: "close-a" };
+    layer.hideIconNodesForTransition("app-1", owner);
+    layer.hidePageTrackForTransition(owner);
+    layer.releaseTransitionOwnership("close-a", { reveal: false, restorePageTrack: false });
+
+    assert(iconNode.visible === false, "non-reveal release should clear ownership without showing the icon");
+    assert(layer.pageTrack.visible === false, "non-restore release should clear ownership without showing the page track");
+    assert(layer.visualOwnership.snapshot().length === 0, "non-reveal release should still clear matching ownership entries");
   }
 
   {

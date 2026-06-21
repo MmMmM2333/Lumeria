@@ -7,6 +7,7 @@ export const motionEases = Object.freeze({
 });
 
 export const motionSprings = Object.freeze({
+  folderPanelOpen: Object.freeze({ damping: 35, mass: 0.78, restDelta: 0.01, restSpeed: 0.01, stiffness: 560 }),
   handoff: Object.freeze({ damping: 31, mass: 0.9, restDelta: 0.01, restSpeed: 0.01, stiffness: 340 }),
   layout: Object.freeze({ damping: 28, mass: 0.9, restDelta: 0.01, restSpeed: 0.01, stiffness: 190 }),
   settle: Object.freeze({ damping: 29, mass: 0.85, restDelta: 0.01, restSpeed: 0.01, stiffness: 260 }),
@@ -19,6 +20,7 @@ export const motionPresets = Object.freeze({
   folderOpen: Object.freeze({ duration: 0.38, ease: "power3.out" }),
   folderOpenGhost: Object.freeze({ duration: 0.36, ease: motionEases.emphasized }),
   folderPanelClose: Object.freeze({ duration: 0.38, ease: motionEases.material }),
+  folderPanelOpen: Object.freeze({ spring: motionSprings.folderPanelOpen }),
   folderPreviewSettle: Object.freeze({ duration: 0.22, ease: motionEases.settle }),
   handoff: Object.freeze({ spring: motionSprings.handoff }),
   layout: Object.freeze({ spring: motionSprings.layout }),

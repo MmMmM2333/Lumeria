@@ -83,6 +83,7 @@
         :icon-size="iconSize"
         :is-edit-mode="isEditMode"
         :folder-source-ghosted-id="folderSourceGhostedId"
+        :folder-source-ghosted-ids="folderSourceGhostedIds"
         :is-folder-opening-preview-frame-ghosted="isFolderOpeningPreviewFrameGhosted"
         :is-icon-opening="isIconOpening"
         :is-icon-selected="isIconSelected"
@@ -155,6 +156,7 @@ import {
 import {
   resolveFolderClosingHandoffId,
   resolveFolderPixiActivityUpdate,
+  resolveFolderSourceGhostedIds,
   shouldClearFolderClosingHandoffRetainId,
 } from "./rendering/pixi/scene/folderClosingHandoffActivity.js";
 import { getBackgroundLayoutContext } from "./api/launchpadApi.js";
@@ -255,6 +257,7 @@ const {
   isIconSelected,
   launchTargetStatusById,
   isIconOpening,
+  folderOpenPreviewFrameGhostedIds,
   isFolderOpeningPreviewFrameGhosted,
   beginDrag,
   openApp,
@@ -885,6 +888,20 @@ const folderSourceGhostedId = computed(() => {
   if (folderPixiInternalActivity.value && folderPixiInternalActivityFolderId.value === folderId) return folderId;
   if (openFolderId.value || isFolderAppLaunchClosing.value || isFolderZoomFadeClosing.value || isFolderClosing.value) return folderId;
   return isFolderOpeningPreviewFrameGhosted(folderId) ? folderId : null;
+});
+
+const folderSourceGhostedIds = computed(() => {
+  return resolveFolderSourceGhostedIds({
+    folderOpenPreviewFrameGhostedIds: folderOpenPreviewFrameGhostedIds.value,
+    folderPixiInternalActivity: folderPixiInternalActivity.value,
+    folderPixiInternalActivityFolderId: folderPixiInternalActivityFolderId.value,
+    isFolderAppLaunchClosing: isFolderAppLaunchClosing.value,
+    isFolderClosing: isFolderClosing.value,
+    isFolderOpeningPreviewFrameGhosted,
+    isFolderZoomFadeClosing: isFolderZoomFadeClosing.value,
+    openFolderId: openFolderId.value,
+    renderedFolderId: renderedFolder.value?.id || null,
+  });
 });
 
 function handleFolderPixiInternalActivity(active, folderId = null) {

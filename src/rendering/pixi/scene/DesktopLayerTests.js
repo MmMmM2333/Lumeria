@@ -76,6 +76,12 @@ function makeLayer(DesktopLayer, pageTrack) {
     visible: false,
   });
   const layer = Object.create(DesktopLayer.prototype);
+  layer.emptyText = {
+    position: {
+      set() {},
+    },
+    visible: false,
+  };
   layer.folderHandoffNode = null;
   layer.hasDesktopVisualAlpha = false;
   layer.hasDesktopVisualTransform = false;
@@ -84,6 +90,7 @@ function makeLayer(DesktopLayer, pageTrack) {
   layer.iconNodes = new Map();
   layer.pageTrack = pageTrack;
   layer.singleStageFolderLayer = makeTransformNode();
+  layer.visualOwnership = { snapshot: () => [] };
   layer.visualRoot = makeTransformNode();
   return layer;
 }
@@ -106,6 +113,10 @@ export async function runDesktopLayerTests() {
     clearIconBoundsRegistry,
     registerRenderedClientTopLevelFolderThumbBounds,
   } = await import("../geometry/iconBoundsRegistry.js");
+  const {
+    FolderVisualOwnershipRegistry,
+    makeDesktopSourceVisualKey,
+  } = await import("./folderVisualOwnershipRegistry.js");
   const { motionRuntime } = await import("../animation/motionRuntime.js");
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[DesktopLayer test failed] ${message}`);
@@ -202,6 +213,158 @@ export async function runDesktopLayerTests() {
       singleStageFolderLayerEnabled: true,
       singleStageFolderState: null,
     }), "missing folder state should count as no overlay content");
+  }
+
+  {
+    const makeFolderNode = (id) => ({
+      alpha: 1,
+      item: { id, type: "folder" },
+      setState(nextState) {
+        this.state = nextState;
+      },
+      state: { ghosted: false },
+    });
+    const folderA = makeFolderNode("folder-a");
+    const folderB = makeFolderNode("folder-b");
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.iconNodes.set("folder-a", folderA);
+    layer.iconNodes.set("folder-b", folderB);
+    layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set(["folder-a"]);
+
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(["folder-b"]),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    });
+
+    assert(folderA.state.ghosted === true, "overlay-owned detached folder source should stay ghosted on the desktop");
+    assert(folderB.state.ghosted === true, "Vue-owned opening folder source should stay ghosted on the desktop");
+    assert(folderA.__folderSourceGhostedByOwnership === true, "overlay-owned source ghosting should be tracked as ownership");
+    assert(folderB.__folderSourceGhostedByOwnership === true, "Vue-owned source ghosting should be tracked as ownership");
+
+    layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set(["folder-a"]);
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    });
+
+    assert(folderA.state.ghosted === true, "clearing folder B source ghosting should not reveal detached folder A");
+    assert(folderB.state.ghosted === false, "clearing folder B source ghosting should reveal only folder B");
+
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set();
+    layer.visualOwnership.acquire(makeDesktopSourceVisualKey("folder-a"), {
+      folderId: "folder-a",
+      kind: "detachedClosing",
+      token: "detached-a",
+    });
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    });
+    assert(folderA.state.ghosted === true, "root ownership should ghost a detached desktop source");
+    layer.visualOwnership.release(makeDesktopSourceVisualKey("folder-a"), "detached-a");
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    });
+    assert(folderA.state.ghosted === false, "root ownership release should restore the desktop source");
+
+    layer.visualOwnership.acquire(makeDesktopSourceVisualKey("folder-a"), {
+      folderId: "folder-a",
+      kind: "detachedClosing",
+      token: "detached-a-2",
+    });
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(["folder-b"]),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    });
+    assert(folderA.state.ghosted === true && folderB.state.ghosted === true, "raw and ownership source ghosting should compose while both are active");
+    layer.visualOwnership.release(makeDesktopSourceVisualKey("folder-a"), "detached-a-2");
+    layer.commitFolderSourceGhosting();
+    assert(folderA.state.ghosted === false, "ownership release should not be reintroduced from stale cached source ghosting");
+    assert(folderB.state.ghosted === true, "raw Vue source ghosting should remain after ownership release");
+  }
+
+  {
+    motionRuntime.reset();
+    const makeFolderNode = (id) => ({
+      alpha: 1,
+      item: { id, type: "folder" },
+      setState(nextState) {
+        this.state = nextState;
+      },
+      state: { ghosted: false },
+      x: 0,
+      y: 0,
+    });
+    const folderA = makeFolderNode("folder-a");
+    const folderB = makeFolderNode("folder-b");
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.applyDesktopVisualAlpha = () => {};
+    layer.applyDesktopVisualTransform = () => {};
+    layer.applyFolderOverlayAlpha = () => {};
+    layer.applyFolderOverlayTransform = () => {};
+    layer.flushInteractiveBounds = () => {};
+    layer.markInteractiveBoundsDirty = () => {};
+    layer.singleStageDiagnosticsLayer = { update() {} };
+    layer.singleStageFolderLayer = {
+      getDesktopSourceGhostedIds: () => new Set(),
+    };
+    layer.updateSingleStageDragPreviewLayer = () => {};
+    layer.updateSingleStageFolderLayer = () => {};
+    layer.pageTrackMotion = {
+      control: null,
+      grabProgressOffset: 0,
+      grabToken: null,
+      key: null,
+      mode: null,
+      settleToken: null,
+    };
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.visualOwnership.acquire(makeDesktopSourceVisualKey("folder-a"), {
+      folderId: "folder-a",
+      kind: "detachedClosing",
+      token: "detached-a",
+    });
+    layer.iconNodes.set("page:0:folder-a", folderA);
+    layer.iconNodes.set("page:0:folder-b", folderB);
+
+    layer.update({
+      activePageIndex: 0,
+      activePages: [[
+        { id: "folder-a", type: "folder" },
+        { id: "folder-b", type: "folder" },
+      ]],
+      desktopFrame: { height: 300, left: 0, top: 0, width: 400 },
+      deviceResolution: 1,
+      folderPageSize: 9,
+      folderSourceGhostedIds: new Set(["folder-b"]),
+      getDesktopPageRenderMode: () => "interactive",
+      getVisibleDesktopPage: (page) => page,
+      gridCols: 2,
+      gridRows: 1,
+      height: 300,
+      iconSize: 64,
+      isFolderOpeningPreviewFrameGhosted: () => false,
+      isIconOpening: () => false,
+      isIconSelected: () => false,
+      isSearchMode: false,
+      isTextlessMode: false,
+      launchTargetStatusById: {},
+      setPageRef: () => {},
+      showMissingLaunchTargetBadge: false,
+      stageRect: { height: 300, left: 0, top: 0, width: 400 },
+      width: 400,
+    });
+
+    assert(folderA.state.ghosted === true && folderB.state.ghosted === true, "update should compose raw Vue ghosting with live detached ownership");
+    layer.visualOwnership.release(makeDesktopSourceVisualKey("folder-a"), "detached-a");
+    layer.commitFolderSourceGhosting();
+    assert(folderA.state.ghosted === false, "update should cache raw source ghosting, not ownership-expanded source ghosting");
+    assert(folderB.state.ghosted === true, "update should keep the raw Vue folder source ghosted after detached ownership release");
+    motionRuntime.reset();
   }
 
   {
@@ -421,6 +584,22 @@ export async function runDesktopLayerTests() {
       if (hadCancelAnimationFrame) globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
       else delete globalThis.cancelAnimationFrame;
     }
+  }
+
+  {
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    const overlayDebug = {
+      openingGeometry: {
+        session: { folderId: "folder-1", token: 7 },
+        snapshot: { folderId: "folder-1", targetKey: "target-a" },
+      },
+    };
+    layer.singleStageFolderLayer.getVisualDebugSnapshot = () => overlayDebug;
+
+    const snapshot = layer.getFolderVisualDebugSnapshot();
+
+    assert(snapshot.overlay.debug === overlayDebug, "folder visual debug snapshot should expose overlay geometry diagnostics");
   }
 
   {

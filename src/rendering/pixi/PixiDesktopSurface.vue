@@ -94,6 +94,7 @@ const props = defineProps({
   iconSize: { type: Number, required: true },
   isEditMode: { type: Boolean, default: false },
   folderSourceGhostedId: { type: String, default: null },
+  folderSourceGhostedIds: { type: [Array, Set], default: () => [] },
   isFolderOpeningPreviewFrameGhosted: { type: Function, default: () => false },
   isHomeRevealSettling: { type: Boolean, default: false },
   isIconOpening: { type: Function, required: true },
@@ -563,6 +564,11 @@ function logFolderHandoffTimeline(metrics, folderClosingHandoffId) {
   folderClosingHandoffRetainer.consumePostReleaseFrame(folderClosingHandoffId);
 }
 
+function publishFolderVisualDebugSnapshot() {
+  if (!import.meta.env.DEV) return;
+  globalThis.__LP_FOLDER_VISUAL_DEBUG__ = () => layer?.getFolderVisualDebugSnapshot?.() || null;
+}
+
 function renderPixi() {
   if (!app || !layer || !hostRef.value) return;
   const domGeometry = getDesktopDomGeometry();
@@ -604,6 +610,7 @@ function renderPixi() {
     iconSize: props.iconSize,
     isEditMode: props.isEditMode,
     folderSourceGhostedId: props.folderSourceGhostedId,
+    folderSourceGhostedIds: props.folderSourceGhostedIds,
     isFolderOpeningPreviewFrameGhosted: props.isFolderOpeningPreviewFrameGhosted,
     isHomeRevealSettling: props.isHomeRevealSettling,
     isIconOpening: props.isIconOpening,
@@ -621,6 +628,7 @@ function renderPixi() {
   if (singleStageRuntimePlan.useDragPreview) {
     preloadIconTextures(collectDragPreviewTextureItems(props.dragPreviewState || props.dragReleaseState));
   }
+  publishFolderVisualDebugSnapshot();
   logFolderHandoffTimeline(metrics, folderClosingHandoffId);
 }
 
@@ -751,6 +759,7 @@ function destroyPixi(options = {}) {
   invalidateDesktopDomGeometry();
   pixiResizeSignature = "";
   folderClosingHandoffRetainer.reset();
+  if (globalThis.__LP_FOLDER_VISUAL_DEBUG__) delete globalThis.__LP_FOLDER_VISUAL_DEBUG__;
   singleStageFolderPanelGeometry.value = null;
   singleStageFolderTitleFrame.value = null;
   clearFolderTexturePrewarmTimer();
@@ -850,6 +859,7 @@ watchEffect(() => {
   void props.iconSize;
   void props.isEditMode;
   void props.folderSourceGhostedId;
+  void props.folderSourceGhostedIds;
   void props.isHomeRevealSettling;
   void props.isSearchMode;
   void props.isTextlessMode;

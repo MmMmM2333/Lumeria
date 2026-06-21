@@ -1,4 +1,5 @@
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
+import { FolderTransitionCoordinator } from "./folderTransitionCoordinator.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import {
   clearMotionPreferencesForTests,
@@ -172,6 +173,33 @@ export function runFolderOpeningGhostControllerTests() {
     const completed = [];
     const timerHost = makeTimerHost();
     const layer = makeLayer();
+    layer.folderTransitions = new FolderTransitionCoordinator();
+    const session = layer.folderTransitions.beginOpen("folder-1", "target-a").session;
+    const controller = new FolderOpeningGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+    const target = makeTarget();
+    controller.start(makeState(completed), [target], { sessionToken: session.token });
+    controller.complete(makeState(completed), target, layer.ghosts[0]);
+
+    assert(layer.openingGhostKeys.size === 0, "complete should clear ghost keys even when reveal is gated");
+    assert(layer.iconNode.visible === false, "ghost completion before panel ready should keep real icons hidden");
+    assert(layer.pageTrack.visible === false, "ghost completion before panel ready should keep the page track hidden");
+    assert(layer.ghosts.length === 1, "ghost completion before panel ready should retain ghost visuals");
+
+    layer.folderTransitions.markPanelReady(session.token);
+    controller.finishTransition({ sessionToken: session.token });
+    assert(layer.iconNode.visible === true, "panel ready after ghosts should reveal real icons");
+    assert(layer.pageTrack.visible === true, "panel ready after ghosts should restore the page track");
+    assert(layer.ghosts.length === 0, "panel ready after ghosts should remove retained ghost visuals");
+    motionRuntime.reset();
+  }
+
+  {
+    const completed = [];
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
     const controller = new FolderOpeningGhostController(layer, {
       ghostFactory: makeGhost,
       scheduler: timerHost,
@@ -238,6 +266,26 @@ export function runFolderOpeningGhostControllerTests() {
 
     assert(layer.ghosts.length === 1, "stage layout opening targets should not require a client target rect");
     controller.clear();
+  }
+
+  {
+    const completed = [];
+    const layer = makeLayer();
+    const controller = new FolderOpeningGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: makeTimerHost(),
+    });
+    controller.start(makeState(completed), [makeTarget()]);
+    controller.clear({
+      completeControllerKeys: false,
+      restorePageTrack: false,
+      reveal: false,
+    });
+
+    assert(completed.join(",") === "", "interrupt clear should not complete opening controller keys");
+    assert(layer.iconNode.visible === false, "interrupt clear should not reveal real icon nodes");
+    assert(layer.pageTrack.visible === false, "interrupt clear should not restore the page track");
+    assert(layer.ghosts.length === 0, "interrupt clear should still remove opening ghost visuals");
   }
 
   {

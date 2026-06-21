@@ -5,6 +5,7 @@ import { motionSprings } from "./motionPresets.js";
 
 export const pageTrackSpring = motionSprings.layout;
 export const panelSpring = motionSprings.handoff;
+export const folderPanelOpenSpring = motionSprings.folderPanelOpen;
 export const desktopVisualSpring = motionSprings.settle;
 
 const springStates = new WeakMap();

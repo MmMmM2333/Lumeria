@@ -37,6 +37,8 @@ import { getDesktopIconSizing } from "./desktopIconSizing.js";
 import { makeFolderThumbPreviewRect } from "./folderOverlayTargets.js";
 import { makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { FolderOverlayLayer } from "./FolderOverlayLayer.js";
+import { FolderVisualCommitQueue } from "./folderVisualCommitQueue.js";
+import { FolderVisualOwnershipRegistry } from "./folderVisualOwnershipRegistry.js";
 import { SingleStageDiagnosticsLayer } from "./singleStageDiagnostics.js";
 import { DragPreviewLayer } from "./DragPreviewLayer.js";
 import { IconNode } from "../nodes/IconNode.js";
@@ -59,6 +61,38 @@ function readNumber(value, fallback = 0) {
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, readNumber(value, 0)));
+}
+
+function hasFolderSourceGhostedId(state, folderId) {
+  if (!folderId) return false;
+  const ids = state.folderSourceGhostedIds;
+  if (ids instanceof Set) return ids.has(folderId);
+  if (Array.isArray(ids)) return ids.includes(folderId);
+  return state.folderSourceGhostedId === folderId;
+}
+
+function mergeFolderSourceGhostedIds(...sources) {
+  const result = new Set();
+  const add = (value) => {
+    if (!value) return;
+    if (value instanceof Set || Array.isArray(value)) {
+      for (const id of value) if (id) result.add(id);
+      return;
+    }
+    result.add(value);
+  };
+  for (const source of sources) add(source);
+  return result;
+}
+
+function getDesktopSourceGhostedIdsFromOwnership(visualOwnership) {
+  const ids = new Set();
+  for (const entry of visualOwnership?.snapshot?.() || []) {
+    if (!entry.key?.startsWith("desktopSource:")) continue;
+    const folderId = entry.owner?.folderId || entry.key.slice("desktopSource:".length);
+    if (folderId) ids.add(folderId);
+  }
+  return ids;
 }
 
 export function resolveDesktopVisualAlpha(state = {}) {
@@ -281,7 +315,12 @@ export class DesktopLayer extends Container {
     this.onFolderPanelPointerDown = options.onFolderPanelPointerDown || (() => {});
     this.onFolderTitleFrameChange = options.onFolderTitleFrameChange || (() => {});
     this.onDragReleaseComplete = options.onDragReleaseComplete || (() => {});
+    this.visualOwnership = options.visualOwnership || new FolderVisualOwnershipRegistry();
+    this.visualCommitQueue = options.visualCommitQueue || new FolderVisualCommitQueue();
+    this.lastFolderSourceGhostingState = null;
+    this.unsubscribeVisualOwnership = this.visualOwnership.subscribe(() => this.commitFolderSourceGhosting());
     this.singleStageFolderLayer = new FolderOverlayLayer({
+      onDesktopSourceGhostingChange: () => this.commitFolderSourceGhosting(),
       onClosingFolderPointerDown: (folderId, event) => this.onClosingFolderPointerDown(folderId, event),
       onClosingHandoffReady: (folderId) => this.startClosingFolderHandoffNow(folderId),
       onClosingHandoffVisualRelease: (folderId) => this.releaseClosingFolderHandoffVisual(folderId),
@@ -292,6 +331,8 @@ export class DesktopLayer extends Container {
       onPanelPointerDown: (event) => this.onFolderPanelPointerDown(event),
       showFolderTitle: false,
       onTitleFrameChange: (frame) => this.onFolderTitleFrameChange(frame),
+      visualCommitQueue: this.visualCommitQueue,
+      visualOwnership: this.visualOwnership,
     });
     this.singleStageDiagnosticsLayer = new SingleStageDiagnosticsLayer();
     this.singleStageDragPreviewLayer = new DragPreviewLayer({
@@ -323,6 +364,12 @@ export class DesktopLayer extends Container {
   }
 
   update(state) {
+    const effectiveFolderSourceGhostedIds = mergeFolderSourceGhostedIds(
+      state.folderSourceGhostedIds,
+      state.folderSourceGhostedId,
+      getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership),
+      this.singleStageFolderLayer.getDesktopSourceGhostedIds?.()
+    );
     this.stageRect = state.stageRect;
     this.widthValue = state.width;
     this.heightValue = state.height;
@@ -420,9 +467,10 @@ export class DesktopLayer extends Container {
 
         node.stageRect = state.stageRect;
         const isFolderSourceGhosted = item.type === "folder" && !isFolderClosingHandoff && (
-          state.folderSourceGhostedId === item.id ||
+          effectiveFolderSourceGhostedIds.has(item.id) ||
           state.isFolderOpeningPreviewFrameGhosted?.(item.id)
         );
+        node.__folderSourceGhostedByOwnership = Boolean(isFolderSourceGhosted);
         const suppressLabelRevealAfterGhost = isReleaseGhostItem || isFolderClosingHandoff;
         node.setState({
           cellHeight: slot.height,
@@ -504,6 +552,7 @@ export class DesktopLayer extends Container {
     });
     this.flushInteractiveBounds({ force: true });
     this.updateSingleStageFolderLayer(state);
+    this.applyFolderSourceGhosting(state);
     this.updateSingleStageDragPreviewLayer(state);
     this.singleStageDiagnosticsLayer.update(state.singleStageFolderState, {
       enabled: state.singleStageDiagnosticsEnabled,
@@ -599,6 +648,30 @@ export class DesktopLayer extends Container {
       stageRect: state.stageRect,
       width: state.width,
     }));
+  }
+
+  applyFolderSourceGhosting(state) {
+    this.lastFolderSourceGhostingState = state;
+    const nextIds = mergeFolderSourceGhostedIds(
+      state.folderSourceGhostedIds,
+      state.folderSourceGhostedId,
+      getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership),
+      this.singleStageFolderLayer.getDesktopSourceGhostedIds?.()
+    );
+    for (const node of this.iconNodes.values()) {
+      if (node.item?.type !== "folder" || !node.state) continue;
+      const nextGhosted = nextIds.has(node.item.id) || state.isFolderOpeningPreviewFrameGhosted?.(node.item.id);
+      const previousGhostedByOwnership = node.__folderSourceGhostedByOwnership === true;
+      if (previousGhostedByOwnership === Boolean(nextGhosted)) continue;
+      const baseGhosted = Boolean(node.state.ghosted) && !previousGhostedByOwnership;
+      node.__folderSourceGhostedByOwnership = Boolean(nextGhosted);
+      node.setState({ ...node.state, ghosted: baseGhosted || Boolean(nextGhosted) });
+    }
+  }
+
+  commitFolderSourceGhosting() {
+    if (!this.lastFolderSourceGhostingState) return;
+    this.applyFolderSourceGhosting(this.lastFolderSourceGhostingState);
   }
 
   updateSingleStageDragPreviewLayer(state) {
@@ -1069,7 +1142,80 @@ export class DesktopLayer extends Container {
     this.onIconAction(action, event, item, source, node);
   }
 
+  getFolderVisualDebugSnapshot() {
+    const readDisplay = (node) => ({
+      alpha: Math.round((node?.alpha ?? 0) * 1000) / 1000,
+      eventMode: node?.eventMode ?? null,
+      labelAlpha: node?.labelText ? Math.round((node.labelText.alpha ?? 0) * 1000) / 1000 : null,
+      labelVisible: node?.labelText?.visible ?? null,
+      scaleX: Math.round((node?.scale?.x ?? 1) * 1000) / 1000,
+      scaleY: Math.round((node?.scale?.y ?? 1) * 1000) / 1000,
+      visible: node?.visible ?? null,
+      visualWrapVisible: node?.visualWrap?.visible ?? null,
+      x: Math.round((node?.x ?? 0) * 1000) / 1000,
+      y: Math.round((node?.y ?? 0) * 1000) / 1000,
+    });
+    const folderNodes = [];
+    for (const [key, node] of this.iconNodes || []) {
+      if (node?.item?.type !== "folder") continue;
+      folderNodes.push({
+        display: readDisplay(node),
+        id: node.item.id,
+        key,
+        sourceGhostedByOwnership: node.__folderSourceGhostedByOwnership === true,
+        state: {
+          draggable: node.state?.draggable ?? null,
+          ghosted: node.state?.ghosted ?? null,
+          interactive: node.state?.interactive ?? null,
+          opening: node.state?.opening ?? null,
+        },
+      });
+    }
+    const overlay = this.singleStageFolderLayer;
+    const lastState = this.lastFolderSourceGhostingState || {};
+    const lastStateSourceIds = mergeFolderSourceGhostedIds(
+      lastState.folderSourceGhostedIds,
+      lastState.folderSourceGhostedId
+    );
+    const ownershipSourceIds = getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership);
+    const overlaySourceIds = overlay?.getDesktopSourceGhostedIds?.() || new Set();
+    return {
+      detachedClosingVisuals: (overlay?.detachedClosingVisuals || []).map((visual) => ({
+        clearing: visual.clearing === true,
+        destroyed: visual.destroyed === true,
+        folderId: visual.folderId || null,
+        ownerToken: visual.ownerToken || null,
+      })),
+      folderHandoffNode: this.folderHandoffNode ? {
+        display: readDisplay(this.folderHandoffNode.node),
+        folderId: this.folderHandoffNode.folderId || null,
+        visualHidden: this.folderHandoffNode.visualHidden === true,
+        visualReleased: this.folderHandoffNode.visualReleased === true,
+      } : null,
+      folderNodes,
+      folderSourceGhostedIds: {
+        lastState: Array.from(lastStateSourceIds),
+        ownership: Array.from(ownershipSourceIds),
+        overlay: Array.from(overlaySourceIds),
+      },
+      overlay: overlay ? {
+        closingFolderId: overlay.closingGhostFolderId || null,
+        closingGhostKeys: Array.from(overlay.closingGhostKeys || []),
+        closingGhostSessionToken: overlay.closingGhostSessionToken || null,
+        closingHandoffActive: overlay.closingHandoffActive === true,
+        currentFolderId: overlay.currentFolderId || null,
+        debug: overlay.getVisualDebugSnapshot?.() || null,
+        openingGhostKeys: Array.from(overlay.openingGhostKeys || []),
+        openingGhostSessionToken: overlay.openingGhostSessionToken || null,
+        pageTrackVisible: overlay.pageTrack?.visible ?? null,
+      } : null,
+      ownership: this.visualOwnership?.snapshot?.() || [],
+    };
+  }
+
   destroy(options) {
+    this.unsubscribeVisualOwnership?.();
+    this.unsubscribeVisualOwnership = null;
     this.boundsRegistration = null;
     this.clearFolderHandoffNode();
     stopTargetSprings(this.visualRoot, { reason: "destroyed" });
@@ -1078,6 +1224,7 @@ export class DesktopLayer extends Container {
     stopTargetSprings(this.singleStageFolderLayer?.scale, { reason: "destroyed" });
     cancelPageTrackMotion(this.pageTrackMotion, "destroyed");
     stopTargetSprings(this.pageTrack, { reason: "destroyed" });
+    this.visualCommitQueue?.clear?.();
     super.destroy(options);
   }
 }

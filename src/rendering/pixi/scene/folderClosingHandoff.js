@@ -29,14 +29,16 @@ export function applyClosingHandoffOnlyOverlayState(layer) {
 }
 
 export function getClosingPresentationStageHitRects(layer) {
-  const frameRect = layer?.frameGhostState;
-  if (isUsableRect(frameRect)) return [frameRect];
-  return getStableFolderClosePresentationHitRects({
+  const targetRects = getStableFolderClosePresentationHitRects({
     handoffRect: layer?.closingFolderHandoffRect,
     stableFolderCloseTarget: layer?.closingFolderHandoffTarget || layer?.stableFolderCloseTarget,
   })
     .map((rect) => clientRectToStageVisualRect(rect, layer?.stageRect))
     .filter(isUsableRect);
+  if (targetRects.length) return targetRects;
+  const frameRect = layer?.frameGhostState;
+  if (isUsableRect(frameRect)) return [frameRect];
+  return [];
 }
 
 export function makeClosingPresentationHitArea(layer) {

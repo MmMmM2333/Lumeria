@@ -148,6 +148,7 @@ export function useFolderOpenIconGhosts(options = {}) {
     completeFolderOpenIconGhost,
     folderCloseIconGhosts,
     folderOpenIconGhosts,
+    folderOpenPreviewFrameGhostedIds,
     isFolderCloseIconAnimationActive,
     isFolderClosingIconGhosted,
     isFolderOpenFrameGhostPending,

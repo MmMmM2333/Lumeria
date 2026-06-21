@@ -205,6 +205,7 @@ export function createFolderOverlayState(controller) {
     folderOpenWarmupRequest: controller.folderOpenWarmupRequest,
     folderOpeningOriginBounds: controller.folderOpeningOriginBounds,
     folderOpenIconGhosts: controller.folderOpenIconGhosts,
+    folderOpenPreviewFrameGhostedIds: controller.folderOpenPreviewFrameGhostedIds,
     folderPageIndex: controller.folderPageIndex,
     folderPageTrackScrub: controller.folderPageTrackScrub,
     folderPageSize: controller.folderPageSize,
