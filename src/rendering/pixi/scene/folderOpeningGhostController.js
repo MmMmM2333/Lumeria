@@ -1,6 +1,8 @@
 import { folderOpenGhostDuration, folderOpenGhostEase } from "../animation/eases.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
 import { killMotionOf, parallel, transition } from "../animation/motionTween.js";
+import { clientRectToStageVisualRect } from "../geometry/stageCoordinates.js";
+import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
 import { getMaxFolderGhostGridDelay, makeOpeningGhostMotion } from "./folderIconGhostMotion.js";
 import { makeFolderGhostIconNodeState } from "./folderGhostIconState.js";
 import { hasUsableFolderGhostTarget } from "./folderOverlayTargets.js";
@@ -45,6 +47,32 @@ function animateOpeningGhost(ghost, motion, onComplete, options = {}) {
       geometryControl.release();
     },
   };
+}
+
+function startOpeningFrameGhost(layer, state, options = {}) {
+  if (typeof layer.startFrameGhost !== "function") return false;
+  const sourceRect = clientRectToStageVisualRect(options.frameSourceRect, state.stageRect);
+  const targetRect = options.frameTargetRect;
+  if (!sourceRect || !targetRect) return false;
+  const thumb = getFolderThumbMetrics(sourceRect.width);
+  layer.startFrameGhost(sourceRect, targetRect, {
+    duration: folderOpenGhostDuration,
+    ease: folderOpenGhostEase,
+    fromFillAlpha: thumb.fillAlpha,
+    fromFillColor: thumb.fillColor,
+    fromRadius: thumb.radius,
+    fromStrokeAlpha: thumb.strokeAlpha,
+    fromStrokeColor: thumb.strokeColor,
+    fromStrokeWidth: thumb.strokeWidth,
+    notifyTitleFrame: false,
+    toFillAlpha: 0.26,
+    toFillColor: 0xf7f8ff,
+    toRadius: 48,
+    toStrokeAlpha: 0.24,
+    toStrokeColor: 0xffffff,
+    toStrokeWidth: 1,
+  });
+  return true;
 }
 
 export class FolderOpeningGhostController {
@@ -229,7 +257,27 @@ export class FolderOpeningGhostController {
       }
     }
 
+    const owner = {
+      folderId: state.renderedFolder?.id || layer.currentFolderId || null,
+      kind: "opening",
+      token: sessionToken,
+    };
+    const startedFrameGhost = startOpeningFrameGhost(layer, state, options);
+    if (!startedFrameGhost) {
+      layer.panelMaterial.visible = true;
+      layer.panelMaterial.alpha = 1;
+      layer.frameGhost.visible = false;
+      layer.frameGhost.alpha = 0;
+    }
+
     if (!usableTargets.length) {
+      if (startedFrameGhost) {
+        if (typeof layer.hidePageTrackForTransition === "function") {
+          layer.hidePageTrackForTransition(owner);
+        } else {
+          layer.pageTrack.visible = false;
+        }
+      }
       this.finishTransition({ sessionToken });
       return;
     }
@@ -237,16 +285,7 @@ export class FolderOpeningGhostController {
     layer.openingGhostControllerKeys = new Map();
     layer.openingGhostMotionControls = new Set();
     layer.openingGhostMotionControlsByItemId = new Map();
-    layer.panelMaterial.visible = true;
-    layer.panelMaterial.alpha = 1;
-    layer.frameGhost.visible = false;
-    layer.frameGhost.alpha = 0;
 
-    const owner = {
-      folderId: state.renderedFolder?.id || layer.currentFolderId || null,
-      kind: "opening",
-      token: sessionToken,
-    };
     if (typeof layer.hidePageTrackForTransition === "function") {
       layer.hidePageTrackForTransition(owner);
     } else {

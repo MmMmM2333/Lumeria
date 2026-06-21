@@ -53,8 +53,13 @@ export function resolveFolderOverlayTargets(options = {}) {
     warnIfMissing: true,
   });
   const liveFolderThumbClientRect = getRenderedClientTopLevelFolderThumbBounds(folderId) || liveFolderClientRect;
-  const folderClientRect = capturedOriginBounds?.iconRect || liveFolderClientRect;
-  const folderThumbClientRect = capturedOriginBounds?.thumbRect || liveFolderThumbClientRect || folderClientRect;
+  const shouldUseLiveOpeningBounds = Boolean(capturedOriginBounds && liveFolderClientRect);
+  const folderClientRect = shouldUseLiveOpeningBounds
+    ? liveFolderClientRect
+    : capturedOriginBounds?.iconRect || liveFolderClientRect;
+  const folderThumbClientRect = shouldUseLiveOpeningBounds
+    ? liveFolderThumbClientRect || liveFolderClientRect
+    : capturedOriginBounds?.thumbRect || liveFolderThumbClientRect || folderClientRect;
   const stableFolderStageLayoutRecord = getStableStageLayoutTopLevelIconTargetRecord(folderId);
   const stableFolderThumbStageLayoutRecord = getStableStageLayoutTopLevelFolderThumbTargetRecord(folderId);
   const shouldRefreshStableCloseTarget = Boolean(
@@ -71,9 +76,11 @@ export function resolveFolderOverlayTargets(options = {}) {
       folderClientRect,
       folderId,
       folderThumbClientRect,
-      getOpeningPreviewChildClientRect: (item, previewSlotIndex) =>
-        getCapturedPreviewChildRect(capturedOriginBounds, item?.id, previewSlotIndex) ||
-        getRenderedClientFolderPreviewChildBounds(folderId, item?.id, previewSlotIndex),
+      getOpeningPreviewChildClientRect: (item, previewSlotIndex) => shouldUseLiveOpeningBounds
+        ? getRenderedClientFolderPreviewChildBounds(folderId, item?.id, previewSlotIndex) ||
+          getCapturedPreviewChildRect(capturedOriginBounds, item?.id, previewSlotIndex)
+        : getCapturedPreviewChildRect(capturedOriginBounds, item?.id, previewSlotIndex) ||
+          getRenderedClientFolderPreviewChildBounds(folderId, item?.id, previewSlotIndex),
       previewSlots,
       stableFolderCloseTarget: previousStableFolderCloseTarget,
     };
@@ -107,9 +114,11 @@ export function resolveFolderOverlayTargets(options = {}) {
     folderClientRect,
     folderId,
     folderThumbClientRect,
-    getOpeningPreviewChildClientRect: (item, previewSlotIndex) =>
-      getCapturedPreviewChildRect(capturedOriginBounds, item?.id, previewSlotIndex) ||
-      getRenderedClientFolderPreviewChildBounds(folderId, item?.id, previewSlotIndex),
+    getOpeningPreviewChildClientRect: (item, previewSlotIndex) => shouldUseLiveOpeningBounds
+      ? getRenderedClientFolderPreviewChildBounds(folderId, item?.id, previewSlotIndex) ||
+        getCapturedPreviewChildRect(capturedOriginBounds, item?.id, previewSlotIndex)
+      : getCapturedPreviewChildRect(capturedOriginBounds, item?.id, previewSlotIndex) ||
+        getRenderedClientFolderPreviewChildBounds(folderId, item?.id, previewSlotIndex),
     previewSlots,
     stableFolderCloseTarget,
   };

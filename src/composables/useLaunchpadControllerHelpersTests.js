@@ -1,6 +1,7 @@
 import { ref, shallowRef } from "vue";
 import {
   createDeferredHandlers,
+  shouldDeferFolderOpenForClosingGhostHandoff,
   shouldIgnoreFolderCloseRequest,
   shouldPlayFolderOpenIconGhosts,
 } from "./useLaunchpadController.js";
@@ -111,4 +112,26 @@ export function runLaunchpadControllerHelpersTests() {
     openFolderId: ref("folder"),
     renderedFolder: ref({ id: "folder" }),
   }), "closing an open folder should be accepted");
+
+  assert(shouldDeferFolderOpenForClosingGhostHandoff("next-folder", {
+    folderCloseIconGhosts: ref([{ key: "close-ghost" }]),
+    isFolderAppLaunchClosing: ref(false),
+    isFolderClosing: ref(true),
+    isFolderZoomFadeClosing: ref(false),
+    renderedFolder: ref({ id: "folder" }),
+  }), "opening another folder during a pending close ghost handoff should wait for Pixi to consume the close");
+  assert(!shouldDeferFolderOpenForClosingGhostHandoff("folder", {
+    folderCloseIconGhosts: ref([{ key: "close-ghost" }]),
+    isFolderAppLaunchClosing: ref(false),
+    isFolderClosing: ref(true),
+    isFolderZoomFadeClosing: ref(false),
+    renderedFolder: ref({ id: "folder" }),
+  }), "reopening the same closing folder should not wait for a detached close handoff");
+  assert(!shouldDeferFolderOpenForClosingGhostHandoff("next-folder", {
+    folderCloseIconGhosts: ref([]),
+    isFolderAppLaunchClosing: ref(false),
+    isFolderClosing: ref(true),
+    isFolderZoomFadeClosing: ref(false),
+    renderedFolder: ref({ id: "folder" }),
+  }), "opening another folder without close ghosts should not be delayed");
 }

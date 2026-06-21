@@ -89,6 +89,7 @@ function makeLayer(DesktopLayer, pageTrack) {
   layer.hasFolderOverlayTransform = false;
   layer.iconNodes = new Map();
   layer.pageTrack = pageTrack;
+  layer.desktopClosingUnderlayLayer = makeTransformNode();
   layer.singleStageFolderLayer = makeTransformNode();
   layer.visualOwnership = { snapshot: () => [] };
   layer.visualRoot = makeTransformNode();
@@ -164,14 +165,40 @@ export async function runDesktopLayerTests() {
     assert(shouldFinishFolderHandoff({}, { closingHandoffActive: false }), "idle state with no prop handoff should finish the desktop handoff");
     assert(!shouldFinishFolderHandoff({ folderClosingHandoffId: "folder-1" }, { closingHandoffActive: false }), "active prop handoff should keep the desktop handoff alive");
 
+    const actualLayer = new DesktopLayer();
+    assert(
+      actualLayer.children.indexOf(actualLayer.visualRoot) <
+        actualLayer.children.indexOf(actualLayer.desktopClosingUnderlayLayer),
+      "desktop closing underlay should render above the desktop icons"
+    );
+    assert(
+      actualLayer.children.indexOf(actualLayer.desktopClosingUnderlayLayer) <
+        actualLayer.children.indexOf(actualLayer.singleStageFolderLayer),
+      "desktop closing underlay should render below the folder opening overlay"
+    );
+    assert(
+      actualLayer.singleStageFolderLayer.detachedClosingVisualLayer === actualLayer.desktopClosingUnderlayLayer,
+      "folder detached closing visuals should mount in the desktop underlay"
+    );
+    actualLayer.destroy({ children: true });
+
     const pageTrack = makePageTrack([]);
     const layer = makeLayer(DesktopLayer, pageTrack);
     layer.applyDesktopVisualAlpha({ desktopVisualAlpha: 0 });
 
     assert(layer.visualRoot.visible === true, "hidden desktop should stay renderable so alpha can animate");
     assert(layer.visualRoot.alpha === 0, "hidden desktop should apply the requested alpha");
+    assert(layer.desktopClosingUnderlayLayer.alpha === 0, "desktop closing underlay should fade with the desktop");
     assert(layer.visualRoot.interactiveChildren === false, "hidden desktop should not receive icon interaction");
     assert(layer.singleStageFolderLayer.alpha === 1, "desktop alpha should not hide the folder overlay layer");
+
+    layer.applyDesktopVisualTransform({
+      desktopVisualTransform: { scale: 0.92, y: 44 },
+      height: 600,
+      width: 800,
+    });
+    assert(layer.desktopClosingUnderlayLayer.scale.x === 0.92 && layer.desktopClosingUnderlayLayer.scale.y === 0.92, "desktop closing underlay should scale with the desktop");
+    assert(layer.desktopClosingUnderlayLayer.position.x === 400 && layer.desktopClosingUnderlayLayer.position.y === 344, "desktop closing underlay should move with the desktop");
 
     layer.applyFolderOverlayTransform({
       height: 600,
@@ -180,6 +207,7 @@ export async function runDesktopLayerTests() {
     });
     assert(layer.singleStageFolderLayer.scale.x === 1 && layer.singleStageFolderLayer.scale.y === 1, "open folder overlay should keep identity scale");
     assert(layer.singleStageFolderLayer.position.x === 400 && layer.singleStageFolderLayer.position.y === 300, "folder overlay should pivot around the stage center");
+    assert(layer.desktopClosingUnderlayLayer.alpha === 0, "folder overlay changes should not reveal desktop closing underlay");
 
     layer.applyFolderOverlayAlpha({ launchpadVisualAlpha: 0 });
     assert(layer.singleStageFolderLayer.visible === true, "hidden launchpad folder overlay should stay renderable so alpha can animate");
@@ -386,18 +414,19 @@ export async function runDesktopLayerTests() {
     assert(folder.eventMode === "static" && folder.cursor === "pointer", "handoff should restore folder interaction once the real node owns the icon");
     assert(folder.state.draggable === true && folder.state.interactive === true, "handoff should restore the node state used by pointer handling");
     assert(folder.state.ghosted === false, "handoff should clear the stale ghost flag before the next setState");
-    assert(folder.labelText.visible === true && folder.labelText.alpha === 0, "handoff should keep the folder label hidden until the ready signal");
+    assert(folder.labelText.visible === true && folder.labelText.alpha === 0, "handoff should keep the folder label hidden until the overlay visual release");
     assert(folder.labelRevealCount === 0, "plain handoff sync should not start the label fade");
-    layer.revealFolderHandoffLabel();
-    assert(folder.labelRevealCount === 1, "handoff ready should start the folder label fade");
     folder.labelText.alpha = 0.4;
     layer.syncFolderHandoffNode(folder, { x: 12, y: 34 });
-    assert(folder.labelText.alpha === 0.4, "handoff position sync should not hide an in-progress label fade");
-    assert(folder.labelRevealCount === 1, "handoff position sync should not restart the label reveal");
+    assert(folder.labelText.alpha === 0, "handoff position sync should keep the label hidden before visual release");
+    assert(folder.labelRevealCount === 0, "handoff position sync should not start the label reveal before visual release");
     layer.releaseClosingFolderHandoffVisual("folder-1");
+    assert(folder.labelRevealCount === 1, "visual release should start the folder label fade");
     assert(folder.visualWrap.visible === true, "settled overlay visual release should restore the real folder artwork");
+    folder.labelText.alpha = 0.4;
     layer.syncFolderHandoffNode(folder, { x: 12, y: 34 });
     assert(folder.visualWrap.visible === true, "handoff position sync should not hide artwork after settled overlay release");
+    assert(folder.labelText.alpha === 0.4, "handoff position sync should not hide an in-progress label fade after visual release");
 
     layer.clearFolderHandoffNode();
 
@@ -445,11 +474,14 @@ export async function runDesktopLayerTests() {
     assert(pageTrack.children[1] === folder, "ready handoff should raise the folder node");
     assert(folder.position.x === 22 && folder.position.y === 44, "ready handoff should snap to the current desktop target");
     assert(folder.visualWrap.visible === false, "ready handoff should keep the real folder artwork hidden under the overlay");
-    assert(folder.labelRevealCount === 1, "ready handoff should start the label fade immediately");
+    assert(folder.labelRevealCount === 0, "ready handoff should wait for visual release before starting the label fade");
+    assert(folder.labelText.alpha === 0, "ready handoff should prepare the label hidden before visual release");
     folder.labelText.alpha = 0.4;
     assert(layer.startClosingFolderHandoffNow("folder-1"), "duplicate ready handoff should keep the existing handoff active");
-    assert(folder.labelRevealCount === 1, "duplicate ready handoff should not restart the label fade");
-    assert(folder.labelText.alpha === 0.4, "duplicate ready handoff should not hide an in-progress label fade");
+    assert(folder.labelRevealCount === 0, "duplicate ready handoff should not start the label fade before visual release");
+    assert(folder.labelText.alpha === 0, "duplicate ready handoff should keep the label hidden before visual release");
+    layer.releaseClosingFolderHandoffVisual("folder-1");
+    assert(folder.labelRevealCount === 1, "visual release should start the label fade after ready handoff");
   }
 
   {
@@ -566,10 +598,11 @@ export async function runDesktopLayerTests() {
       layer.finishFolderHandoffNodeAfterFrame();
 
       assert(layer.folderHandoffNode.cleanupFrame === 9, "finish should wait one frame before cleanup");
-      assert(folder.labelRevealCount === 1, "finish should not restart the label reveal before cleanup");
+      assert(folder.labelRevealCount === 0, "finish should not start the label reveal before visual release");
       assert(folder.visualWrap.visible === false, "finish should keep the real folder artwork hidden until settled overlay release");
       assert(pageTrack.children[1] === folder, "handoff should stay raised until the cleanup frame");
       layer.releaseClosingFolderHandoffVisual("folder-1");
+      assert(folder.labelRevealCount === 1, "visual release should start the label reveal before cleanup");
       assert(folder.visualWrap.visible === true, "settled overlay release should restore artwork before final handoff cleanup");
 
       queuedFrame();

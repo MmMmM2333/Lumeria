@@ -306,6 +306,8 @@ export class DesktopLayer extends Container {
     super();
     this.visualRoot = new Container();
     this.pageTrack = new Container();
+    this.desktopClosingUnderlayLayer = new Container();
+    this.desktopClosingUnderlayLayer.eventMode = "none";
     this.handoffDebugLayer = new Graphics();
     this.onIconAction = options.onIconAction || (() => {});
     this.onClosingFolderPointerDown = options.onClosingFolderPointerDown || (() => {});
@@ -320,6 +322,7 @@ export class DesktopLayer extends Container {
     this.lastFolderSourceGhostingState = null;
     this.unsubscribeVisualOwnership = this.visualOwnership.subscribe(() => this.commitFolderSourceGhosting());
     this.singleStageFolderLayer = new FolderOverlayLayer({
+      detachedClosingVisualLayer: this.desktopClosingUnderlayLayer,
       onDesktopSourceGhostingChange: () => this.commitFolderSourceGhosting(),
       onClosingFolderPointerDown: (folderId, event) => this.onClosingFolderPointerDown(folderId, event),
       onClosingHandoffReady: (folderId) => this.startClosingFolderHandoffNow(folderId),
@@ -357,6 +360,7 @@ export class DesktopLayer extends Container {
     this.visualRoot.addChild(this.pageTrack);
     this.visualRoot.addChild(this.emptyText);
     this.addChild(this.visualRoot);
+    this.addChild(this.desktopClosingUnderlayLayer);
     this.addChild(this.singleStageFolderLayer);
     this.addChild(this.singleStageDragPreviewLayer);
     this.addChild(this.singleStageDiagnosticsLayer);
@@ -506,7 +510,7 @@ export class DesktopLayer extends Container {
         });
         if (isActiveFolderClosingHandoff) this.ensureFolderHandoffNode(item.id, node, layoutTarget);
         else if (isExistingFolderHandoff) this.syncFolderHandoffNode(node, layoutTarget);
-        if (isFolderClosingHandoff) this.revealFolderHandoffLabel();
+        if (isFolderClosingHandoff && this.folderHandoffNode?.visualReleased) this.revealFolderHandoffLabel();
 
         if (isInteractivePage) {
           const area = sourceArea(source);
@@ -570,27 +574,36 @@ export class DesktopLayer extends Container {
     const centerY = Math.max(1, readNumber(state.height, 1)) / 2;
     const targetY = centerY + offsetY;
     this.visualRoot.pivot.set(centerX, centerY);
+    this.desktopClosingUnderlayLayer.pivot.set(centerX, centerY);
     if (!this.hasDesktopVisualTransform) {
       this.visualRoot.position.set(centerX, targetY);
       this.visualRoot.scale.set(scale);
+      this.desktopClosingUnderlayLayer.position.set(centerX, targetY);
+      this.desktopClosingUnderlayLayer.scale.set(scale);
       this.hasDesktopVisualTransform = true;
       return;
     }
     const markBoundsDirty = () => this.markInteractiveBoundsDirty();
     transitionSpringTo(this.visualRoot, { x: centerX, y: targetY }, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
     transitionSpringTo(this.visualRoot.scale, { x: scale, y: scale }, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
+    transitionSpringTo(this.desktopClosingUnderlayLayer, { x: centerX, y: targetY }, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
+    transitionSpringTo(this.desktopClosingUnderlayLayer.scale, { x: scale, y: scale }, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
   }
 
   applyDesktopVisualAlpha(state) {
     const alpha = resolveDesktopVisualAlpha(state);
     this.visualRoot.visible = true;
     this.visualRoot.interactiveChildren = alpha > 0.001;
+    this.desktopClosingUnderlayLayer.visible = true;
+    this.desktopClosingUnderlayLayer.interactiveChildren = false;
     if (!this.hasDesktopVisualAlpha) {
       this.visualRoot.alpha = alpha;
+      this.desktopClosingUnderlayLayer.alpha = alpha;
       this.hasDesktopVisualAlpha = true;
       return;
     }
     transitionSpringTo(this.visualRoot, { alpha }, desktopVisualSpring);
+    transitionSpringTo(this.desktopClosingUnderlayLayer, { alpha }, desktopVisualSpring);
   }
 
   applyFolderOverlayAlpha(state) {
@@ -706,7 +719,6 @@ export class DesktopLayer extends Container {
     const layoutTarget = entry?.handoffLayoutTarget || (entry ? { x: entry.x, y: entry.y } : existing?.layoutTarget);
     if (!folderId || !node || node.destroyed || !layoutTarget) return false;
     this.ensureFolderHandoffNode(folderId, node, layoutTarget);
-    this.revealFolderHandoffLabel();
     return true;
   }
 
@@ -780,7 +792,7 @@ export class DesktopLayer extends Container {
   finishFolderHandoffNodeAfterFrame() {
     const entry = this.folderHandoffNode;
     if (!entry || entry.cleanupFrame != null) return;
-    this.revealFolderHandoffLabel(entry);
+    if (entry.visualReleased) this.revealFolderHandoffLabel(entry);
     const finish = () => {
       if (this.folderHandoffNode !== entry) return;
       entry.cleanupFrame = null;
@@ -797,6 +809,7 @@ export class DesktopLayer extends Container {
     const entry = this.folderHandoffNode;
     if (!entry || (folderId && entry.folderId !== folderId)) return;
     this.restoreFolderHandoffVisual(entry);
+    this.revealFolderHandoffLabel(entry);
   }
 
   restoreFolderHandoffVisual(entry) {
@@ -838,7 +851,7 @@ export class DesktopLayer extends Container {
     if (!childCount) return;
     const targetIndex = Math.max(0, Math.min(entry.originalIndex ?? childCount - 1, childCount - 1));
     if (this.getPageTrackChildIndex(node) !== targetIndex) this.pageTrack.setChildIndex(node, targetIndex);
-    this.revealFolderHandoffLabel(entry);
+    if (entry.visualReleased) this.revealFolderHandoffLabel(entry);
   }
 
   getPageTrackChildIndex(node) {
@@ -1220,6 +1233,8 @@ export class DesktopLayer extends Container {
     this.clearFolderHandoffNode();
     stopTargetSprings(this.visualRoot, { reason: "destroyed" });
     stopTargetSprings(this.visualRoot?.scale, { reason: "destroyed" });
+    stopTargetSprings(this.desktopClosingUnderlayLayer, { reason: "destroyed" });
+    stopTargetSprings(this.desktopClosingUnderlayLayer?.scale, { reason: "destroyed" });
     stopTargetSprings(this.singleStageFolderLayer, { reason: "destroyed" });
     stopTargetSprings(this.singleStageFolderLayer?.scale, { reason: "destroyed" });
     cancelPageTrackMotion(this.pageTrackMotion, "destroyed");

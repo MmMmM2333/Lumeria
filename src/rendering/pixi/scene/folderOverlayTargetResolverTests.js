@@ -64,8 +64,8 @@ export function runFolderOverlayTargetResolverTests() {
   });
 
   assert(resolved.coordinateSpace === "client-visual", "resolver should declare client visual coordinate output");
-  assert(resolved.folderClientRect.left === capturedIconRect.left, "opening folder rect should prefer captured origin bounds");
-  assert(resolved.folderThumbClientRect.left === capturedThumbRect.left, "opening thumb rect should prefer captured origin thumb bounds");
+  assert(resolved.folderClientRect.left === liveIconRect.left, "opening folder rect should prefer the current live desktop bounds when available");
+  assert(resolved.folderThumbClientRect.left === liveThumbRect.left, "opening thumb rect should prefer the current live desktop thumb bounds when available");
   assert(resolved.previewSlots[0].id === "app-a", "resolver should expose folder preview slots");
   assert(resolved.stableFolderCloseTarget.source === "stable-target", "stable target capture should describe its source");
   assert(resolved.stableFolderCloseTarget.coordinateSpace === "stage-layout", "stable close target should store stage layout coordinates");
@@ -83,8 +83,8 @@ export function runFolderOverlayTargetResolverTests() {
     "stable close target should retain registered stage layout preview child bounds"
   );
   assert(
-    resolved.getOpeningPreviewChildClientRect({ id: "app-b" }, 1).left === capturedChildRect.left,
-    "opening preview lookup should prefer captured child bounds by child id fallback"
+    resolved.getOpeningPreviewChildClientRect({ id: "app-b" }, 1).left === liveChildRect.left,
+    "opening preview lookup should prefer current live child bounds when live source bounds are available"
   );
 
   const reusedStableTarget = { coordinateSpace: "stage-layout", folderId: folder.id, iconRect: { left: 1, top: 2, width: 3, height: 4 }, source: "previous" };
@@ -96,6 +96,27 @@ export function runFolderOverlayTargetResolverTests() {
     wasClosing: false,
   });
   assert(reused.stableFolderCloseTarget === reusedStableTarget, "resolver should reuse an existing stable close target while not closing");
+
+  clearIconBoundsRegistry();
+  const capturedOnly = resolveFolderOverlayTargets({
+    folder,
+    folderOpeningOriginBounds: {
+      folderId: folder.id,
+      iconRect: capturedIconRect,
+      previewChildRects: [{ childId: "app-b", rect: capturedChildRect, slotIndex: 2 }],
+      thumbRect: capturedThumbRect,
+    },
+    folderPageSize: 9,
+    isClosing: false,
+    previousStableFolderCloseTarget: null,
+    wasClosing: false,
+  });
+  assert(capturedOnly.folderClientRect.left === capturedIconRect.left, "opening folder rect should fall back to captured origin bounds without live bounds");
+  assert(capturedOnly.folderThumbClientRect.left === capturedThumbRect.left, "opening thumb rect should fall back to captured origin thumb bounds without live bounds");
+  assert(
+    capturedOnly.getOpeningPreviewChildClientRect({ id: "app-b" }, 1).left === capturedChildRect.left,
+    "opening preview lookup should fall back to captured child bounds without live bounds"
+  );
 
   clearIconBoundsRegistry();
 }

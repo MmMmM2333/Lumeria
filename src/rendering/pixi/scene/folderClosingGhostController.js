@@ -176,6 +176,7 @@ export class FolderClosingGhostController {
     layer.closingFolderHandoffGhost = null;
     layer.closingFolderHandoffRect = null;
     layer.closingFolderHandoffTarget = null;
+    layer.closingFrameDetachedTarget = null;
     setLayerClosingHandoffActive(layer, false);
   }
 
@@ -221,6 +222,7 @@ export class FolderClosingGhostController {
     this.clearFolderHandoffGhost();
     layer.closingFolderHandoffRect = null;
     layer.closingFolderHandoffTarget = null;
+    layer.closingFrameDetachedTarget = null;
     setLayerClosingHandoffActive(layer, false);
   }
 
@@ -269,8 +271,17 @@ export class FolderClosingGhostController {
     const closeFrameToRect = clientRectToStageVisualRect(folderRect, state.stageRect);
     layer.closingFolderHandoffRect = handoffRect || folderRect;
     layer.closingFolderHandoffTarget = handoffTarget || null;
-    const previewTiming = getClosingPreviewTiming(closeFrameFromRect, closeFrameToRect);
     const thumb = getFolderThumbMetrics(folderRect.width);
+    layer.closingFrameDetachedTarget = {
+      ...closeFrameToRect,
+      fillAlpha: thumb.fillAlpha,
+      fillColor: thumb.fillColor,
+      radius: thumb.radius,
+      strokeAlpha: thumb.strokeAlpha,
+      strokeColor: thumb.strokeColor,
+      strokeWidth: thumb.strokeWidth,
+    };
+    const previewTiming = getClosingPreviewTiming(closeFrameFromRect, closeFrameToRect);
     let closingPreviewSwapStarted = false;
     const startClosingPreviewSwapWhenReady = (frame) => {
       if (closingPreviewSwapStarted || isRetargetedOpeningClose || !previewSwapTargets?.length) return;
@@ -349,6 +360,13 @@ export class FolderClosingGhostController {
       ghost.position.set(motion.fromX, motion.fromY);
       ghost.scale.set(motion.sourceScale);
       ghost.alpha = motion.sourceAlpha;
+      ghost.__closingDetachedMotion = {
+        alpha: target.isThumbnailChild ? 1 : 0,
+        duration: folderCloseDuration,
+        scale: motion.scale,
+        x: motion.toX,
+        y: motion.toY,
+      };
       if (ghost.labelText?.visible) {
         if (target.sourceLabelAlpha != null) ghost.labelText.alpha = target.sourceLabelAlpha;
         transition(ghost.labelText)
@@ -640,6 +658,7 @@ export class FolderClosingGhostController {
     this.clearFolderHandoffGhost();
     layer.closingFolderHandoffRect = null;
     layer.closingFolderHandoffTarget = null;
+    layer.closingFrameDetachedTarget = null;
     setLayerClosingHandoffActive(layer, false);
     layer.clearFrameGhost();
     layer.panel.visible = true;

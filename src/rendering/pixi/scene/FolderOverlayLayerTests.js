@@ -20,6 +20,7 @@ import { motionRuntime } from "../animation/motionRuntime.js";
 import { FolderTransitionCoordinator } from "./folderTransitionCoordinator.js";
 import {
   FolderVisualOwnershipRegistry,
+  makeDesktopSourceVisualKey,
   makeFolderIconVisualKey,
   makeFolderPageTrackVisualKey,
 } from "./folderVisualOwnershipRegistry.js";
@@ -63,6 +64,7 @@ export async function runFolderOverlayLayerTests() {
     });
   }
   const { FolderOverlayLayer } = await import("./FolderOverlayLayer.js");
+  const { Container } = await import("pixi.js");
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Pixi folder overlay layer test failed] ${message}`);
   };
@@ -506,6 +508,135 @@ export async function runFolderOverlayLayerTests() {
     sameFolderLayer.detachClosingPresentationForOpen("folder-a");
     assert(sameFolderLayer.detachedClosingVisuals.length === 0, "reopening the same folder should not keep an old closing double-image");
     assert(sameFolderClearCount === 1, "same-folder reopen should still clear the live closing controller");
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    const detachedChildren = [];
+    let clearCount = 0;
+    const closingGhost = new Container();
+    closingGhost.alpha = 1;
+    closingGhost.position.set(10, 20);
+    closingGhost.scale.set(1);
+    closingGhost.__closingDetachedMotion = {
+      alpha: 0,
+      duration: 0.36,
+      scale: 0.2,
+      x: 100,
+      y: 120,
+    };
+    layer.closingGhostFolderId = "folder-a";
+    layer.closingGhostLayer = { removeChildren: () => [closingGhost] };
+    layer.closingPreviewSwapLayer = { removeChildren: () => [] };
+    layer.closingGhosts = { clear: () => { clearCount += 1; } };
+    layer.detachedClosingVisuals = [];
+    layer.nextDetachedClosingVisualToken = 1;
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.detachedClosingVisualLayer = {
+      addChild(child) {
+        child.parent = this;
+        detachedChildren.push(child);
+      },
+      removeChild(child) {
+        const index = detachedChildren.indexOf(child);
+        if (index >= 0) detachedChildren.splice(index, 1);
+      },
+    };
+    layer.frameGhostState = {
+      fillAlpha: 0.26,
+      height: 160,
+      left: 20,
+      radius: 40,
+      strokeAlpha: 0.24,
+      strokeWidth: 1,
+      top: 30,
+      width: 240,
+    };
+    layer.closingFrameDetachedTarget = {
+      fillAlpha: 0.2,
+      height: 64,
+      left: 140,
+      radius: 18,
+      strokeAlpha: 0.18,
+      strokeWidth: 1,
+      top: 170,
+      width: 64,
+    };
+
+    layer.detachClosingPresentationForOpen("folder-b");
+    assert(clearCount === 1, "detached animation should clear the live closing controller once");
+    assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "detached animation should hold the desktop source while it is running");
+    assert(detachedChildren.length === 1, "detached animation should keep the visual mounted while it is running");
+    for (let index = 0; index < 3; index += 1) motionRuntime.step(0.04);
+    layer.getVisualCommitQueue().flush();
+    assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "partial detached animation progress should not reveal the desktop source early");
+    assert(detachedChildren.length === 1, "partial detached animation progress should keep the visual alive");
+    for (let index = 0; index < 14; index += 1) motionRuntime.step(0.05);
+    layer.getVisualCommitQueue().flush();
+    assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "completed detached animation should release the desktop source");
+    assert(detachedChildren.length === 0, "completed detached animation should destroy the detached visual");
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    const detachedChildren = [];
+    let clearCount = 0;
+    layer.detachedClosingVisualLayer = {
+      addChild(child) {
+        child.parent = this;
+        detachedChildren.push(child);
+      },
+      removeChild(child) {
+        const index = detachedChildren.indexOf(child);
+        if (index >= 0) detachedChildren.splice(index, 1);
+      },
+    };
+    layer.detachedClosingVisuals = [];
+    layer.nextDetachedClosingVisualToken = 1;
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.ownedVisualTokens = new Set();
+
+    const existingAContainer = new Container();
+    layer.detachedClosingVisualLayer.addChild(existingAContainer);
+    const existingA = {
+      container: existingAContainer,
+      desktopSourceKey: makeDesktopSourceVisualKey("folder-a"),
+      folderId: "folder-a",
+      ownerToken: "detached-close:folder-a:old",
+    };
+    layer.detachedClosingVisuals.push(existingA);
+    layer.acquireVisualOwnership(existingA.desktopSourceKey, {
+      folderId: "folder-a",
+      kind: "detachedClosing",
+      token: existingA.ownerToken,
+    });
+
+    layer.closingGhostFolderId = "folder-b";
+    layer.closingGhostLayer = { removeChildren: () => [] };
+    layer.closingPreviewSwapLayer = { removeChildren: () => [] };
+    layer.closingGhosts = { clear: () => { clearCount += 1; } };
+    layer.frameGhostState = {
+      fillAlpha: 0.26,
+      height: 160,
+      left: 20,
+      radius: 40,
+      strokeAlpha: 0.24,
+      strokeWidth: 1,
+      top: 30,
+      width: 240,
+    };
+
+    layer.detachClosingPresentationForOpen("folder-a");
+
+    assert(existingA.destroyed === true, "reopening folder A should destroy its stale detached closing visual");
+    assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "stale folder A detached ownership should release before the new open owns the source");
+    assert(layer.getDesktopSourceGhostedIds().has("folder-b"), "opening folder A should keep folder B closing as a detached visual");
+    assert(detachedChildren.length === 1, "only folder B's detached close should remain mounted");
+    assert(clearCount === 1, "detaching folder B should clear the live closing controller once");
+    motionRuntime.reset();
   }
 
   {

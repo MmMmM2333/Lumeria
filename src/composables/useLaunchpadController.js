@@ -85,6 +85,21 @@ export function shouldIgnoreFolderCloseRequest(state) {
   );
 }
 
+const DEFERRED_CLOSING_GHOST_HANDOFF_OPEN = "__deferredClosingGhostHandoffOpen";
+
+export function shouldDeferFolderOpenForClosingGhostHandoff(next, state, commitOptions = {}) {
+  if (!next || commitOptions?.[DEFERRED_CLOSING_GHOST_HANDOFF_OPEN]) return false;
+  if (!state?.isFolderClosing?.value || state?.isFolderAppLaunchClosing?.value || state?.isFolderZoomFadeClosing?.value) return false;
+  const renderedFolderId = state?.renderedFolder?.value?.id || null;
+  if (!renderedFolderId || renderedFolderId === next) return false;
+  return (state?.folderCloseIconGhosts?.value?.length || 0) > 0;
+}
+
+function stripDeferredClosingGhostHandoffOpen(commitOptions = {}) {
+  const { [DEFERRED_CLOSING_GHOST_HANDOFF_OPEN]: _deferred, ...rest } = commitOptions || {};
+  return rest;
+}
+
 function getSystemAppearance() {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
     return BACKGROUND_ACRYLIC_APPEARANCE_DARK;
@@ -403,8 +418,33 @@ export function useLaunchpadController() {
     resetFolderViewportMetrics,
     setFolderMotionGeometry: (next) => deferredHandlers.call("setFolderMotionGeometry", next),
   });
+  let deferredFolderOpenAfterCloseHandoffToken = 0;
+
+  function scheduleFolderOpenAfterClosingGhostHandoff(next, commitOptions = {}) {
+    const token = ++deferredFolderOpenAfterCloseHandoffToken;
+    const scheduler = typeof window !== "undefined" ? window : globalThis;
+    const scheduleFrame = (callback) => {
+      if (typeof scheduler.requestAnimationFrame === "function") {
+        return scheduler.requestAnimationFrame(callback);
+      }
+      if (typeof scheduler.setTimeout === "function") return scheduler.setTimeout(callback, 0);
+      callback();
+      return null;
+    };
+    scheduleFrame(() => {
+      scheduleFrame(() => {
+        if (token !== deferredFolderOpenAfterCloseHandoffToken) return;
+        commitOpenFolder(next, {
+          ...commitOptions,
+          [DEFERRED_CLOSING_GHOST_HANDOFF_OPEN]: true,
+        });
+      });
+    });
+  }
 
   function commitOpenFolder(next, commitOptions) {
+    const flowCommitOptions = stripDeferredClosingGhostHandoffOpen(commitOptions);
+    if (!commitOptions?.[DEFERRED_CLOSING_GHOST_HANDOFF_OPEN]) deferredFolderOpenAfterCloseHandoffToken += 1;
     if (!next) {
       if (shouldIgnoreFolderCloseRequest({
         isFolderAppLaunchClosing,
@@ -418,10 +458,21 @@ export function useLaunchpadController() {
       const capturedCloseGhosts = captureFolderCloseIconGhosts(closingFolder, closingFolderPage);
       clearFolderOpenIconGhosts();
       commitOpenFolderNow(next, {
-        ...commitOptions,
+        ...flowCommitOptions,
         waitForCloseGhosts: capturedCloseGhosts.length > 0,
       });
       playFolderCloseIconGhosts(closingFolder?.id, capturedCloseGhosts);
+      return;
+    }
+
+    if (shouldDeferFolderOpenForClosingGhostHandoff(next, {
+      folderCloseIconGhosts,
+      isFolderAppLaunchClosing,
+      isFolderClosing,
+      isFolderZoomFadeClosing,
+      renderedFolder,
+    }, commitOptions)) {
+      scheduleFolderOpenAfterClosingGhostHandoff(next, commitOptions);
       return;
     }
 
@@ -432,14 +483,14 @@ export function useLaunchpadController() {
       openFolderId,
       renderedFolder,
     })) {
-      commitOpenFolderNow(next, commitOptions);
+      commitOpenFolderNow(next, flowCommitOptions);
       return;
     }
 
     const folder = findFolder(pages.value, next)?.item || null;
     const openingFolderPage = folder ? getVisibleFolderPage(getFolderChildPages(folder, folderPageSize.value)[0] || []) : [];
     const capturedGhosts = captureFolderPreviewIconGhosts(folder, openingFolderPage);
-    commitOpenFolderNow(next, commitOptions);
+    commitOpenFolderNow(next, flowCommitOptions);
     playFolderOpenIconGhosts(next, capturedGhosts);
   }
 

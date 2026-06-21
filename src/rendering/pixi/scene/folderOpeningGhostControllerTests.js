@@ -69,9 +69,11 @@ function makeGhost() {
 function makeLayer() {
   const calls = [];
   const ghosts = [];
+  const frameGhostCalls = [];
   const iconNode = { alpha: 1, item: { id: "app-1" }, visible: true };
   return {
     calls,
+    frameGhostCalls,
     frameGhost: { alpha: 1, visible: true },
     iconNodes: new Map([["app-1", iconNode]]),
     openingGhostKeys: null,
@@ -88,6 +90,13 @@ function makeLayer() {
     panelMaterial: { alpha: 0, visible: false },
     clearFrameGhost() {
       calls.push("clear-frame");
+    },
+    startFrameGhost(fromRect, toRect, options) {
+      frameGhostCalls.push({ fromRect, options, toRect });
+      this.panelMaterial.visible = true;
+      this.panelMaterial.alpha = options.panelMaterialFromAlpha ?? 0;
+      this.frameGhost.visible = true;
+      this.frameGhost.alpha = options.frameGhostFromAlpha ?? 1;
     },
     rebuildPageTrackMask() {
       calls.push("rebuild-mask");
@@ -151,14 +160,22 @@ export function runFolderOpeningGhostControllerTests() {
       scheduler: timerHost,
     });
     const target = makeTarget();
-    controller.start(makeState(completed), [target]);
+    controller.start(makeState(completed), [target], {
+      frameSourceRect: { height: 48, left: 10, top: 20, width: 48 },
+      frameTargetRect: { height: 360, left: 180, top: 200, width: 800 },
+    });
 
     assert(layer.openingGhostKeys.has("app-1"), "start should track active opening ghost keys");
     assert(layer.ghosts.length === 1, "start should create one opening ghost");
     assert(layer.iconNode.visible === false, "start should hide the real icon node");
     assert(layer.pageTrack.visible === false, "start should hide the page track");
-    assert(layer.panelMaterial.visible && layer.panelMaterial.alpha === 1, "start should keep the real panel material visible");
-    assert(layer.frameGhost.visible === false && layer.frameGhost.alpha === 0, "start should hide the frame ghost");
+    assert(layer.frameGhostCalls.length === 1, "start should morph an opening frame ghost from the source folder thumb");
+    assert(layer.frameGhostCalls[0].fromRect.left === 10 && layer.frameGhostCalls[0].fromRect.width === 48, "opening frame should start at the source folder thumb rect");
+    assert(layer.frameGhostCalls[0].toRect.left === 180 && layer.frameGhostCalls[0].toRect.width === 800, "opening frame should target the panel rect");
+    assert(layer.frameGhostCalls[0].options.fromRadius === 14, "opening frame should keep the source folder thumb radius on its first frame");
+    assert(layer.frameGhostCalls[0].options.toRadius === 48, "opening frame should morph to the panel radius");
+    assert(layer.panelMaterial.visible && layer.panelMaterial.alpha === 0, "start should fade the real panel material in after the frame ghost starts");
+    assert(layer.frameGhost.visible && layer.frameGhost.alpha === 1, "start should show the frame ghost during the opening shell morph");
     assert(timerHost.size === 1, "start should schedule a fallback clear timer");
 
     controller.complete(makeState(completed), target, layer.ghosts[0]);
