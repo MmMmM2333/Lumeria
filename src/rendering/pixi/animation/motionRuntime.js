@@ -209,6 +209,11 @@ function sanitizeDebugMetadata(metadata) {
   return sanitized && typeof sanitized === "object" && !Array.isArray(sanitized) ? sanitized : {};
 }
 
+function hasReadableDebugMetadata(metadata) {
+  if (!metadata || typeof metadata !== "object") return false;
+  return Object.entries(metadata).some(([key, value]) => key !== "targetId" && value != null && value !== "");
+}
+
 export function createMotionRuntime(options = {}) {
   const scheduler = options.scheduler || globalThis;
   const autoStart = options.autoStart !== false;
@@ -398,6 +403,27 @@ export function createMotionRuntime(options = {}) {
     return Array.from(debugTargetMetaById.values())
       .map((metadata) => ({ ...metadata }))
       .sort((a, b) => (a.targetId || 0) - (b.targetId || 0));
+  }
+
+  function makeDebugWarnings(animations) {
+    const warnings = [];
+    const seen = new Set();
+    for (const animation of animations) {
+      const metadata = animation.targetId == null ? null : debugTargetMetaById.get(animation.targetId);
+      if (hasReadableDebugMetadata(metadata)) continue;
+      const key = `${animation.targetId ?? "unknown"}:${animation.prop ?? "unknown"}:${animation.lane ?? "unknown"}:${animation.laneKey ?? "unknown"}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      warnings.push({
+        lane: animation.lane,
+        laneKey: animation.laneKey,
+        message: "Active animation target is missing readable debug metadata.",
+        prop: animation.prop,
+        targetId: animation.targetId,
+        type: "missing-target-metadata",
+      });
+    }
+    return warnings;
   }
 
   function cloneDebugHistory() {
@@ -1319,13 +1345,17 @@ export function createMotionRuntime(options = {}) {
 
   function debugSnapshot(snapshotOptions = {}) {
     const animations = Array.from(activeAnimations).map((animation) => makeDebugAnimationRecord(animation));
+    const warnings = makeDebugWarnings(animations);
+    const summary = makeDebugSummary(animations);
+    summary.warningCount = warnings.length;
     const snapshot = {
       counters: {
         ...debug,
         canceledByReason: { ...debug.canceledByReason },
       },
-      summary: makeDebugSummary(animations),
+      summary,
       animations,
+      warnings,
     };
     if (snapshotOptions.includeChannels) snapshot.channels = makeDebugChannelRecords();
     if (snapshotOptions.includeTargets) snapshot.targets = makeDebugTargetRecords();
@@ -1350,6 +1380,7 @@ export function createMotionRuntime(options = {}) {
       },
       summary: snapshot.summary,
       version: 1,
+      warnings: snapshot.warnings,
     };
     if (reportOptions.includeChannels) report.channels = snapshot.channels;
     if (reportOptions.includeHistory) report.history = cloneDebugHistory();

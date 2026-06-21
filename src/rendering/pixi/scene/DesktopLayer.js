@@ -402,6 +402,7 @@ export class DesktopLayer extends Container {
     this.addChild(this.singleStageDragPreviewLayer);
     this.addChild(this.singleStageDiagnosticsLayer);
     this.addChild(this.handoffDebugLayer);
+    this.describeMotionTargets();
   }
 
   update(state) {
@@ -414,6 +415,7 @@ export class DesktopLayer extends Container {
     this.stageRect = state.stageRect;
     this.widthValue = state.width;
     this.heightValue = state.height;
+    this.describeMotionTargets(state);
     this.applyDesktopVisualTransform(state);
     this.applyDesktopVisualAlpha(state);
     this.applyFolderOverlayTransform(state);
@@ -590,10 +592,16 @@ export class DesktopLayer extends Container {
 
     this.boundsRegistration = makeDesktopBoundsRegistration(state, boundsEntries, desktopFrame);
     updatePageTrackMotion(this.pageTrackMotion, this.pageTrack, {
+      debugMetadata: {
+        kind: "PageTrack",
+        label: "Desktop page track",
+        layer: "desktop",
+      },
       onFrame: markBoundsDirty,
       pageIndex: activePageIndex,
       pageSpan: pageWidth,
       scrub: state.pageTrackScrub,
+      sourceLabel: "desktop.pageTrack",
       snap: shouldSnap,
       springConfig: pageTrackSpring,
     });
@@ -609,6 +617,61 @@ export class DesktopLayer extends Container {
         this.finishFolderHandoffNodeAfterFrame(entry.folderId);
       }
     }
+  }
+
+  describeMotionTargets(state = {}) {
+    const base = {
+      height: state.height ?? this.heightValue ?? null,
+      label: "Desktop",
+      layer: "desktop",
+      width: state.width ?? this.widthValue ?? null,
+    };
+    const describe = (target, metadata) => {
+      if (target) motionRuntime.describeTarget(target, metadata);
+    };
+    describe(this.visualRoot, {
+      ...base,
+      kind: "Desktop",
+      sourceLabel: "desktop.visualRoot",
+      targetPart: "visualRoot",
+    });
+    describe(this.visualRoot?.scale, {
+      ...base,
+      kind: "Desktop",
+      sourceLabel: "desktop.visualScale",
+      targetPart: "visualRoot.scale",
+    });
+    describe(this.desktopClosingUnderlayLayer, {
+      ...base,
+      kind: "Desktop",
+      sourceLabel: "desktop.closingUnderlay",
+      targetPart: "closingUnderlay",
+    });
+    describe(this.desktopClosingUnderlayLayer?.scale, {
+      ...base,
+      kind: "Desktop",
+      sourceLabel: "desktop.closingUnderlayScale",
+      targetPart: "closingUnderlay.scale",
+    });
+    describe(this.singleStageFolderLayer, {
+      ...base,
+      kind: "FolderOverlay",
+      sourceLabel: "folder.overlay",
+      targetPart: "singleStageFolderLayer",
+    });
+    describe(this.singleStageFolderLayer?.scale, {
+      ...base,
+      kind: "FolderOverlay",
+      sourceLabel: "folder.overlayScale",
+      targetPart: "singleStageFolderLayer.scale",
+    });
+    describe(this.pageTrack, {
+      ...base,
+      kind: "PageTrack",
+      label: "Desktop page track",
+      sourceLabel: "desktop.pageTrack",
+      targetPart: "pageTrack",
+    });
   }
 
   applyDesktopVisualTransform(state) {

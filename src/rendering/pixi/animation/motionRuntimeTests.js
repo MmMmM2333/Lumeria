@@ -618,6 +618,37 @@ export function runMotionRuntimeTests() {
   }
 
   {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    runtime.configureDebug({ enabled: true });
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      laneKey: "missing-meta",
+    });
+
+    const missingSnapshot = runtime.debugSnapshot();
+    const animation = missingSnapshot.animations[0];
+    const warning = missingSnapshot.warnings.find((entry) => entry.type === "missing-target-metadata");
+    assert(warning, "debug snapshot should warn about active targets without readable metadata");
+    assert(warning.targetId === animation.targetId, "missing metadata warning should identify the target id");
+    assert(warning.prop === "x", "missing metadata warning should identify the active property");
+    assert(warning.laneKey === "missing-meta", "missing metadata warning should identify the active lane key");
+
+    runtime.describeTarget(target, {
+      kind: "TestTarget",
+      label: "Registered Target",
+      sourceLabel: "motion-runtime-tests.warning",
+    });
+    const describedReport = runtime.debugReport({ includeTargets: true });
+    assert(describedReport.warnings.length === 0, "describing an active target should clear missing metadata warnings");
+    assert(
+      describedReport.targets.some((entry) => entry.label === "Registered Target"),
+      "debug report should include described metadata after warning clears",
+    );
+  }
+
+  {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 10 });
     const target = { x: 0 };
     runtime.configureDebug({

@@ -286,6 +286,26 @@ function animateDetachedFrame(graphics, frameState, targetState, tracker) {
 
 function animateDetachedClosingGhost(ghost, tracker) {
   if (!ghost || ghost.destroyed) return;
+  motionRuntime.describeTarget(ghost, {
+    itemId: ghost.item?.id ?? null,
+    itemType: ghost.item?.type ?? null,
+    kind: "FolderGhost",
+    label: ghost.item?.name || ghost.item?.id || "Detached closing ghost",
+    layer: "ghost",
+    phase: "detachedClosing",
+    sourceLabel: "ghost.detachedClosing.node",
+    targetPart: "node",
+  });
+  motionRuntime.describeTarget(ghost.scale, {
+    itemId: ghost.item?.id ?? null,
+    itemType: ghost.item?.type ?? null,
+    kind: "FolderGhost",
+    label: ghost.item?.name || ghost.item?.id || "Detached closing ghost",
+    layer: "ghost",
+    phase: "detachedClosing",
+    sourceLabel: "ghost.detachedClosing.scale",
+    targetPart: "node.scale",
+  });
   const motion = ghost.__closingDetachedMotion;
   const duration = Math.max(0.01, Number(motion?.duration) || folderCloseDuration);
   const hasGeometryTarget = Number.isFinite(Number(motion?.x)) &&
@@ -468,6 +488,7 @@ export class FolderOverlayLayer extends Container {
     this.pageTrack.mask = this.pageMask;
     this.eventMode = "static";
     this.on("pointerdown", (event) => this.handlePointerDown(event));
+    this.describeMotionTargets();
   }
 
   update(state) {
@@ -541,6 +562,7 @@ export class FolderOverlayLayer extends Container {
     this.isUserFolderClosing = Boolean(state.isFolderClosing);
     this.panelGeometry = geometry.panel;
     const folderId = state.renderedFolder.id;
+    this.describeMotionTargets(state, geometry);
     if (!isClosing && this.closingGhostFolderId) {
       this.detachClosingPresentationForOpen(folderId);
     }
@@ -599,10 +621,17 @@ export class FolderOverlayLayer extends Container {
     } else {
       const markBoundsDirty = () => this.markRegisteredBoundsDirty();
       updatePageTrackMotion(this.pageTrackMotion, this.pageTrack, {
+        debugMetadata: {
+          folderId,
+          kind: "PageTrack",
+          label: `${state.renderedFolder.name || folderId || "Folder"} page track`,
+          layer: "folder",
+        },
         onFrame: markBoundsDirty,
         pageIndex: state.folderPageIndex,
         pageSpan: geometry.grid.width,
         scrub: state.folderPageTrackScrub,
+        sourceLabel: "folder.pageTrack",
         springConfig: pageTrackSpring,
       });
     }
@@ -1225,6 +1254,7 @@ export class FolderOverlayLayer extends Container {
 
   setPageDotHover(dot, active, hovered, options = {}) {
     const visual = getFolderPageDotVisualState({ active, hovered });
+    this.describePageDotTargets(dot);
     this.drawPageDot(dot);
     if (options.immediate) {
       killMotionOf(dot, "alpha");
@@ -1269,6 +1299,7 @@ export class FolderOverlayLayer extends Container {
     for (let index = 0; index < pageCount; index += 1) {
       const dot = new Graphics();
       const isActive = index === state.folderPageIndex;
+      this.describePageDotTargets(dot, index, state, isActive);
       this.setPageDotHover(dot, isActive, false, { immediate: true });
       dot.position.set(startX + index * (FOLDER_PAGE_DOTS_SIZE + FOLDER_PAGE_DOTS_GAP), centerY);
       dot.eventMode = "static";
@@ -1282,6 +1313,73 @@ export class FolderOverlayLayer extends Container {
       });
       this.pageDotsLayer.addChild(dot);
     }
+  }
+
+  describeMotionTargets(state = {}, geometry = {}) {
+    const folder = state.renderedFolder || {};
+    const folderId = folder.id ?? this.currentFolderId ?? null;
+    const label = folder.name || folderId || "Folder overlay";
+    const base = {
+      folderId,
+      kind: "FolderOverlay",
+      label,
+      layer: "folder",
+    };
+    motionRuntime.describeTarget(this.panel, {
+      ...base,
+      kind: "FolderPanel",
+      sourceLabel: "folder.panel",
+      targetPart: "panel",
+    });
+    motionRuntime.describeTarget(this.panel?.scale, {
+      ...base,
+      kind: "FolderPanel",
+      sourceLabel: "folder.panelScale",
+      targetPart: "panel.scale",
+    });
+    motionRuntime.describeTarget(this.pageTrack, {
+      ...base,
+      kind: "PageTrack",
+      pageIndex: state.folderPageIndex ?? null,
+      pageSpan: geometry.grid?.width ?? null,
+      sourceLabel: "folder.pageTrack",
+      targetPart: "pageTrack",
+    });
+    motionRuntime.describeTarget(this.pageDotsLayer, {
+      ...base,
+      kind: "PageDotsLayer",
+      sourceLabel: "folder.pageDotsLayer",
+      targetPart: "pageDotsLayer",
+    });
+  }
+
+  describePageDotTargets(dot, index = dot?.__motionDebugMetadata?.index, state = null, active = dot?.__motionDebugMetadata?.active) {
+    if (!dot) return;
+    const existing = dot.__motionDebugMetadata;
+    let metadata = !state && existing ? existing : null;
+    if (!metadata) {
+      const folder = state?.renderedFolder || {};
+      metadata = {
+        active: active ?? null,
+        folderId: folder.id ?? this.currentFolderId ?? null,
+        index: index ?? null,
+        kind: "PageDot",
+        label: `Folder page dot ${index ?? ""}`.trim(),
+        layer: "folder",
+        pageIndex: state?.folderPageIndex ?? null,
+      };
+    }
+    dot.__motionDebugMetadata = metadata;
+    motionRuntime.describeTarget(dot, {
+      ...metadata,
+      sourceLabel: "folder.pageDot",
+      targetPart: "pageDot",
+    });
+    motionRuntime.describeTarget(dot.scale, {
+      ...metadata,
+      sourceLabel: "folder.pageDot.scale",
+      targetPart: "pageDot.scale",
+    });
   }
 
   rebuildPageTrackMask() {

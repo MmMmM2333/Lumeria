@@ -1,4 +1,5 @@
 import { transition } from "../animation/motionTween.js";
+import { motionRuntime } from "../animation/motionRuntime.js";
 import { pageTrackSpring } from "../animation/springMotion.js";
 
 const PAGE_TRACK_REPLACE_REASON = "page-track-replace";
@@ -80,6 +81,19 @@ function resolveScrubProgress(motionState, pageTrack, scrub, isNewControl) {
   return clamp01(readNumber(motionState.grabProgressOffset, 0) + scrub.progressDelta);
 }
 
+function describePageTrackTarget(runtime, pageTrack, options = {}) {
+  if (typeof runtime?.describeTarget !== "function" || !pageTrack) return;
+  const metadata = options.debugMetadata && typeof options.debugMetadata === "object" && !Array.isArray(options.debugMetadata)
+    ? { ...options.debugMetadata }
+    : {};
+  if (metadata.kind == null) metadata.kind = "PageTrack";
+  if (metadata.label == null) metadata.label = "Page track";
+  if (metadata.pageIndex == null) metadata.pageIndex = readNumber(options.pageIndex, 0);
+  if (metadata.pageSpan == null) metadata.pageSpan = readPageSpan(options.pageSpan);
+  if (options.sourceLabel != null && metadata.sourceLabel == null) metadata.sourceLabel = options.sourceLabel;
+  runtime.describeTarget(pageTrack, metadata);
+}
+
 export function createPageTrackMotionState() {
   return {
     control: null,
@@ -118,6 +132,7 @@ export function updatePageTrackMotion(motionState, pageTrack, options = {}) {
   } = options;
   const targetX = pageIndexToTrackX(pageIndex, pageSpan);
   if (!pageTrack) return { mode: "none", targetX };
+  describePageTrackTarget(runtime || motionRuntime, pageTrack, options);
 
   const normalizedScrub = normalizeScrub(scrub, pageSpan);
   if (normalizedScrub) {

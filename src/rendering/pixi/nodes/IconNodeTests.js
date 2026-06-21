@@ -118,6 +118,24 @@ export async function runIconNodeTests() {
     assert(node.iconSprite.alpha > iconAlphaBeforeClear && node.iconSprite.alpha < 1, "app-folder-create clear should blend icon alpha back without jumping");
     for (let index = 0; index < 20; index += 1) motionRuntime.step(0.05);
     assert(nearlyEqual(node.iconSprite.alpha, 1) && nearlyEqual(node.emojiText.alpha, 1), "app-folder-create clear should restore icon alpha");
+
+    motionRuntime.reset();
+    motionRuntime.configureDebug({ enabled: true });
+    node.item = { id: "app-meta", name: "App Meta", type: "app" };
+    node.source = { index: 2, pageIndex: 1, type: "page" };
+    node.describeMotionTargets();
+    node.setPressed(true, { pointerId: 2 });
+    snapshot = motionRuntime.debugReport({ includeTargets: true });
+    assert(
+      snapshot.targets.some((entry) => entry.sourceLabel === "desktop.icon.visualWrap" && entry.itemId === "app-meta"),
+      "IconNode should describe its animated visual wrapper target",
+    );
+    assert(
+      snapshot.targets.some((entry) => entry.sourceLabel === "desktop.icon.visualScale" && entry.targetPart === "visualWrap.scale"),
+      "IconNode should describe its animated visual scale target",
+    );
+    assert(snapshot.animations.every((animation) => animation.sourceLabel), "IconNode active animations should expose source labels");
+    assert(snapshot.warnings.length === 0, "described IconNode targets should not emit missing metadata warnings");
   } finally {
     node.destroy({ children: true });
     motionRuntime.reset();

@@ -1,6 +1,7 @@
 import { Container } from "pixi.js";
 import { IconNode } from "../nodes/IconNode.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import { motionRuntime } from "../animation/motionRuntime.js";
 import { killMotionOf, transition } from "../animation/motionTween.js";
 import {
   DRAG_PREVIEW_SCALE,
@@ -24,6 +25,31 @@ function springPreviewScale(node, scale) {
     .interrupt("retarget")
     .to({ x: scale, y: scale })
     .start();
+}
+
+function describeDragPreviewTargets(node, dragState, phase) {
+  if (!node || !dragState?.item) return;
+  const base = {
+    index: dragState.source?.index ?? null,
+    itemId: dragState.item.id ?? null,
+    itemType: dragState.item.type ?? null,
+    kind: "DragPreview",
+    label: dragState.item.name || dragState.item.id || "Drag preview",
+    layer: "dragPreview",
+    pageIndex: dragState.source?.pageIndex ?? null,
+    phase,
+    sourceType: dragState.source?.type ?? null,
+  };
+  motionRuntime.describeTarget(node, {
+    ...base,
+    sourceLabel: "dragPreview.node",
+    targetPart: "node",
+  });
+  motionRuntime.describeTarget(node.scale, {
+    ...base,
+    sourceLabel: "dragPreview.scale",
+    targetPart: "node.scale",
+  });
 }
 
 export class DragPreviewLayer extends Container {
@@ -91,6 +117,7 @@ export class DragPreviewLayer extends Container {
       stageWidth: state.width,
       textless: layout.textless,
     });
+    describeDragPreviewTargets(this.previewNode, preview, "preview");
     this.previewNode.position.set(layout.position.x, layout.position.y);
     this.previewNode.rotation = DRAG_PREVIEW_ROTATION;
     if (isNewPreview) {
@@ -143,6 +170,7 @@ export class DragPreviewLayer extends Container {
       stageWidth: state.width,
       textless: motion.textless,
     });
+    describeDragPreviewTargets(this.previewNode, release, "release");
     this.previewNode.rotation = 0;
 
     if (!isNewRelease) return;
