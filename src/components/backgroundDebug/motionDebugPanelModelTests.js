@@ -3,6 +3,7 @@ import {
   buildMotionCancelReasonRows,
   buildMotionFilterSummary,
   buildMotionCurveChartGroups,
+  buildMotionLayerTreeRows,
   buildMotionOverviewRows,
   buildMotionPropertyRows,
   buildMotionReplayCaptureRows,
@@ -103,6 +104,25 @@ export function runMotionDebugPanelModelTests() {
       activeTargetCount: 1,
       warningCount: 1,
     },
+    targets: [{
+      kind: "FolderPanel",
+      label: "Folder A panel",
+      layer: "folder",
+      sourceLabel: "folder.panel",
+      targetId: 3,
+    }, {
+      kind: "Icon",
+      label: "App A",
+      layer: "desktop",
+      sourceLabel: "desktop.icon.jiggle",
+      targetId: 9,
+    }, {
+      kind: "Icon",
+      label: "Idle App",
+      layer: "desktop",
+      sourceLabel: "desktop.icon.idle",
+      targetId: 12,
+    }],
     warnings: [{
       laneKey: "missing-metadata",
       prop: "x",
@@ -252,6 +272,18 @@ export function runMotionDebugPanelModelTests() {
   assert(propertyRows[0].sourceLabel === "folder.panel", "property rows should expose sourceLabel");
   const queriedProperties = buildMotionPropertyRows(report, { preset: "all", query: "jiggle" });
   assert(queriedProperties.length === 1 && queriedProperties[0].laneKey === "icon-jiggle-x", "query filter should narrow property rows");
+
+  const layerRows = buildMotionLayerTreeRows(report, { preset: "all", query: "" });
+  const desktopLayer = layerRows.find((row) => row.layer === "desktop");
+  const folderLayer = layerRows.find((row) => row.layer === "folder");
+  assert(desktopLayer?.targetCount === "2", "layer tree should group targets by layer");
+  assert(desktopLayer?.activeCount === "1", "layer tree should count active targets in a layer");
+  assert(desktopLayer?.sources.includes("desktop.icon.jiggle"), "layer tree should expose source labels");
+  assert(folderLayer?.props === "y", "layer tree should summarize animated props");
+  const queriedLayerRows = buildMotionLayerTreeRows(report, { preset: "all", query: "jiggle" });
+  assert(queriedLayerRows.length === 1 && queriedLayerRows[0].layer === "desktop", "query filter should narrow layer tree rows");
+  const warningLayerRows = buildMotionLayerTreeRows(report, { preset: "warnings", query: "" });
+  assert(warningLayerRows.length === 1 && warningLayerRows[0].layer === "unknown", "warnings preset should narrow layer tree to warning targets");
 
   const cancelRows = buildMotionCancelReasonRows(report);
   assert(cancelRows[0].key === "replace" && cancelRows[0].value === "2", "cancel reasons should sort by count");

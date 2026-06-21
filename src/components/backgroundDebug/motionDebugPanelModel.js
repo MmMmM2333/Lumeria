@@ -15,6 +15,7 @@ export const MOTION_FILTER_PRESETS = [
 const DEFAULT_RECORD_WINDOW_MS = 30000;
 const MAX_ROW_COUNT = 12;
 const MAX_CURVE_GROUP_COUNT = 4;
+const MAX_LAYER_TREE_ROW_COUNT = 8;
 const MAX_TIMELINE_EVENT_COUNT = 60;
 const MAX_TIMELINE_GROUP_COUNT = 8;
 const MIN_CUSTOM_SECONDS = 1;
@@ -143,6 +144,7 @@ function collectRecordText(record = {}) {
   return [
     record.type,
     record.reason,
+    record.layer,
     record.targetId,
     record.targetKind,
     record.targetLabel,
@@ -153,6 +155,92 @@ function collectRecordText(record = {}) {
     record.lane,
     record.laneKey,
   ].filter((value) => value != null).join(" ").toLowerCase();
+}
+
+function formatCompactList(values, limit = 4) {
+  const list = Array.from(new Set(values.filter(Boolean)));
+  if (!list.length) return "-";
+  const visible = list.slice(0, limit).join(", ");
+  const hiddenCount = list.length - limit;
+  return hiddenCount > 0 ? `${visible}, +${hiddenCount}` : visible;
+}
+
+function resolveTargetRecordLabel(target = {}) {
+  return target.sourceLabel
+    || target.label
+    || target.targetLabel
+    || (target.targetId != null ? `target ${target.targetId}` : "unknown");
+}
+
+function collectTargetTreeEntries(report = {}) {
+  const entriesById = new Map();
+  const ensureEntry = (targetId) => {
+    const key = String(targetId ?? "unknown");
+    let entry = entriesById.get(key);
+    if (!entry) {
+      entry = {
+        animations: [],
+        events: [],
+        id: key,
+        target: { targetId },
+        warnings: [],
+      };
+      entriesById.set(key, entry);
+    }
+    return entry;
+  };
+
+  for (const target of report.targets || []) {
+    ensureEntry(target.targetId).target = target;
+  }
+  for (const animation of report.animations || []) {
+    ensureEntry(animation.targetId).animations.push(animation);
+  }
+  for (const warning of report.warnings || []) {
+    ensureEntry(warning.targetId).warnings.push(warning);
+  }
+  for (const event of report.history?.events || []) {
+    ensureEntry(event.targetId).events.push(event);
+  }
+
+  return Array.from(entriesById.values()).map((entry) => {
+    const target = entry.target || {};
+    const records = [...entry.animations, ...entry.warnings, ...entry.events];
+    const label = resolveTargetRecordLabel(target);
+    const layer = target.layer || records.find((record) => record.layer)?.layer || "unknown";
+    const kind = target.kind || target.targetKind || records.find((record) => record.targetKind)?.targetKind || "unknown";
+    const props = records.map((record) => record.prop);
+    const sourceLabels = [
+      target.sourceLabel,
+      target.label,
+      target.targetLabel,
+      ...records.map((record) => record.sourceLabel || record.targetLabel || record.label),
+    ];
+    const displaySource = target.sourceLabel
+      || records.find((record) => record.sourceLabel)?.sourceLabel
+      || label;
+    const searchText = [
+      entry.id,
+      layer,
+      kind,
+      label,
+      ...props,
+      ...sourceLabels,
+      ...records.map(collectRecordText),
+    ].filter(Boolean).join(" ").toLowerCase();
+    return {
+      activeCount: entry.animations.length,
+      eventCount: entry.events.length,
+      id: entry.id,
+      kind,
+      label,
+      layer,
+      props: Array.from(new Set(props.filter(Boolean))),
+      searchText,
+      sourceLabel: displaySource,
+      warningCount: entry.warnings.length,
+    };
+  });
 }
 
 function collectPresetKeys(report = {}) {
@@ -294,6 +382,59 @@ export function buildMotionPropertyRows(report = {}, filters = {}, limit = MAX_R
         velocity: formatMotionNumber(animation.velocity),
       };
     });
+}
+
+export function buildMotionLayerTreeRows(report = {}, filters = {}, limit = MAX_LAYER_TREE_ROW_COUNT) {
+  const preset = normalizeMotionFilterPreset(filters.preset);
+  const query = normalizeQuery(filters.query);
+  const groupsByLayer = new Map();
+  for (const entry of collectTargetTreeEntries(report)) {
+    if (preset === "active" && entry.activeCount <= 0) continue;
+    if (preset === "warnings" && entry.warningCount <= 0) continue;
+    if (query && !entry.searchText.includes(query)) continue;
+    let group = groupsByLayer.get(entry.layer);
+    if (!group) {
+      group = {
+        activeTargetCount: 0,
+        eventCount: 0,
+        kinds: [],
+        layer: entry.layer,
+        props: [],
+        sources: [],
+        targetCount: 0,
+        warningCount: 0,
+      };
+      groupsByLayer.set(entry.layer, group);
+    }
+    group.targetCount += 1;
+    if (entry.activeCount > 0) group.activeTargetCount += 1;
+    group.eventCount += entry.eventCount;
+    group.warningCount += entry.warningCount;
+    group.kinds.push(entry.kind);
+    group.props.push(...entry.props);
+    group.sources.push(entry.sourceLabel || entry.label);
+  }
+
+  return Array.from(groupsByLayer.values())
+    .sort((a, b) => (
+      b.activeTargetCount - a.activeTargetCount
+      || b.warningCount - a.warningCount
+      || b.targetCount - a.targetCount
+      || a.layer.localeCompare(b.layer)
+    ))
+    .slice(0, Math.max(0, Math.floor(readNumber(limit, MAX_LAYER_TREE_ROW_COUNT))))
+    .map((group) => ({
+      activeCount: formatCount(group.activeTargetCount),
+      detail: `${formatCompactList(group.kinds)} / props ${formatCompactList(group.props)}`,
+      eventCount: formatCount(group.eventCount),
+      key: `layer:${group.layer}`,
+      layer: group.layer,
+      props: formatCompactList(group.props),
+      sources: formatCompactList(group.sources, 5),
+      summary: `${formatCount(group.targetCount)} targets / ${formatCount(group.activeTargetCount)} active / ${formatCount(group.warningCount)} warnings`,
+      targetCount: formatCount(group.targetCount),
+      warningCount: formatCount(group.warningCount),
+    }));
 }
 
 function buildTimelineEventRow(event = {}) {

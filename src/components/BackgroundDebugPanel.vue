@@ -642,6 +642,35 @@
         </div>
 
         <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">Layer Tree</div>
+          <div class="background-debug-motion-layer-tree">
+            <section
+              v-for="row in motionLayerTreeRows"
+              :key="row.key"
+              class="background-debug-motion-timeline-group"
+            >
+              <header>
+                <strong :title="row.layer">{{ row.layer }}</strong>
+                <span>{{ row.summary }}</span>
+              </header>
+              <div class="background-debug-motion-layer-row">
+                <span>{{ row.targetCount }} targets</span>
+                <span>{{ row.activeCount }} active</span>
+                <span>{{ row.warningCount }} warnings</span>
+                <span>{{ row.eventCount }} events</span>
+              </div>
+              <div class="background-debug-motion-layer-row">
+                <span :title="row.detail">{{ row.detail }}</span>
+                <span :title="row.sources">{{ row.sources }}</span>
+              </div>
+            </section>
+            <div v-if="motionLayerTreeRows.length === 0" class="background-debug-motion-empty">
+              no matching layers
+            </div>
+          </div>
+        </div>
+
+        <div class="background-debug-subsection">
           <div class="background-debug-subtitle">Properties</div>
           <div class="background-debug-motion-property-table" role="table" aria-label="Pixi motion properties">
             <div class="background-debug-motion-property-row background-debug-motion-row-head" role="row">
@@ -1077,6 +1106,7 @@ import {
   buildMotionCancelReasonRows,
   buildMotionCurveChartGroups,
   buildMotionFilterSummary,
+  buildMotionLayerTreeRows,
   buildMotionOverviewRows,
   buildMotionPropertyRows,
   buildMotionReplayCaptureRows,
@@ -1418,6 +1448,7 @@ const motionFilters = computed(() => ({
   query: motionFilterQuery.value,
 }));
 const motionFilterSummary = computed(() => buildMotionFilterSummary(motionReport.value, motionFilters.value));
+const motionLayerTreeRows = computed(() => buildMotionLayerTreeRows(motionReport.value, motionFilters.value));
 const motionPropertyRows = computed(() => buildMotionPropertyRows(motionReport.value, motionFilters.value));
 const motionTimelineGroups = computed(() => buildMotionTimelineGroups(motionReport.value, motionFilters.value));
 const motionCurveChartGroups = computed(() => buildMotionCurveChartGroups(motionReport.value, motionFilters.value));
@@ -2555,6 +2586,34 @@ onBeforeUnmount(() => {
 .background-debug-motion-list {
   display: grid;
   gap: 6px;
+}
+
+.background-debug-motion-layer-tree {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.background-debug-motion-layer-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.58);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.background-debug-motion-layer-row + .background-debug-motion-layer-row {
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr);
+}
+
+.background-debug-motion-layer-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .background-debug-motion-timeline {
