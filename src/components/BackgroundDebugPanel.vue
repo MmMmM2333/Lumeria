@@ -964,6 +964,35 @@
             </div>
           </dl>
 
+          <div v-if="motionTrackChartModel" class="motion-debug-anomaly-panel">
+            <header>
+              <strong>Anomaly Jumps</strong>
+              <span>{{ motionReplayAnomalyStatusLabel }}</span>
+            </header>
+            <div
+              v-if="motionReplayAnomalyRows.length"
+              class="motion-debug-anomaly-grid"
+              role="group"
+              aria-label="Motion replay anomaly jumps"
+            >
+              <button
+                v-for="row in motionReplayAnomalyRows"
+                :key="row.key"
+                type="button"
+                class="motion-debug-anomaly-button"
+                :title="row.detail"
+                @click="jumpMotionReplayAnomaly(row)"
+              >
+                <strong>{{ row.label }}</strong>
+                <span>{{ row.timeLabel }} / {{ row.track.prop }} / {{ row.track.lane }}</span>
+                <span>{{ row.metricLabel }}</span>
+              </button>
+            </div>
+            <div v-else class="background-debug-motion-empty">
+              no anomaly jump targets
+            </div>
+          </div>
+
           <div v-if="motionTrackChartModel" class="motion-debug-track-chart-axis" aria-hidden="true">
             <span
               v-for="tick in motionTrackChartModel.axis.ticks"
@@ -1919,6 +1948,10 @@ import {
   buildMotionInspectorModel,
 } from "./backgroundDebug/motionInspectorModel.js";
 import {
+  buildMotionReplayAnomalyJumps,
+  MOTION_REPLAY_ANOMALY_TYPES,
+} from "./backgroundDebug/motionReplayAnomalyModel.js";
+import {
   buildMotionTrackChartModel,
   MOTION_TRACK_CHART_DISPLAY_NORMALIZED,
   MOTION_TRACK_CHART_DISPLAY_RAW,
@@ -2385,6 +2418,12 @@ const motionTrackChartSummaryRows = computed(() => {
     { label: "cursor", value: formatMotionReplayTime(chart.cursor.timeMs) },
   ];
 });
+const motionReplayAnomalyRows = computed(() => motionReplayViewerTrace.value
+  ? buildMotionReplayAnomalyJumps(motionReplayViewerTrace.value, {
+    filters: motionReplayFilters.value,
+  })
+  : []);
+const motionReplayAnomalyStatusLabel = computed(() => `${motionReplayAnomalyRows.value.length}/${MOTION_REPLAY_ANOMALY_TYPES.length} signals`);
 const motionTrackChartIntervalOverlay = computed(() => {
   const chart = motionTrackChartModel.value;
   if (!chart) return { active: false, width: 0, x: 0 };
@@ -2871,6 +2910,14 @@ function resetMotionTrackChartZoom() {
   motionTrackChartZoomEndMs.value = null;
 }
 
+function ensureMotionTrackChartTimeVisible(timeMs) {
+  if (!motionReplayViewerTrace.value || !motionTrackChartZoomActive.value) return;
+  const zoom = motionTrackChartZoomWindow.value;
+  const time = Number(timeMs);
+  if (!Number.isFinite(time)) return;
+  if (time < zoom.startMs || time > zoom.endMs) resetMotionTrackChartZoom();
+}
+
 function zoomMotionTrackChartToInterval() {
   if (!motionTrackChartIntervalActive.value) return;
   setMotionTrackChartZoomWindow(motionReplayIntervalStartMs.value, motionReplayIntervalEndMs.value);
@@ -2887,6 +2934,13 @@ function selectMotionTrackChartEvent(track, marker) {
   selectMotionWorkspaceTrack(track);
   motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, marker.timeMs);
   setMotionReplayCurrentTime(marker.timeMs, { pause: true });
+}
+
+function jumpMotionReplayAnomaly(row = {}) {
+  if (!motionReplayViewerTrace.value || !row) return;
+  if (row.track) selectMotionWorkspaceTrack(row.track);
+  ensureMotionTrackChartTimeVisible(row.timeMs);
+  setMotionReplayCurrentTime(row.timeMs, { pause: true });
 }
 
 function clearMotionWorkspaceSelection() {
@@ -4434,6 +4488,78 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 8px;
   min-width: 0;
+}
+
+.motion-debug-anomaly-panel {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.motion-debug-anomaly-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.motion-debug-anomaly-panel header strong {
+  color: rgba(255, 255, 255, 0.84);
+}
+
+.motion-debug-anomaly-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+
+.motion-debug-anomaly-button {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 205, 105, 0.24);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 205, 105, 0.08);
+  cursor: pointer;
+  text-align: left;
+}
+
+.motion-debug-anomaly-button:hover {
+  border-color: rgba(255, 215, 130, 0.42);
+  background: rgba(255, 205, 105, 0.12);
+}
+
+.motion-debug-anomaly-button:focus-visible {
+  outline: 2px solid rgba(255, 215, 130, 0.55);
+  outline-offset: 2px;
+}
+
+.motion-debug-anomaly-button strong,
+.motion-debug-anomaly-button span {
+  min-width: 0;
+  overflow: hidden;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.motion-debug-anomaly-button strong {
+  color: rgba(255, 245, 220, 0.92);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.motion-debug-anomaly-button span {
+  color: rgba(255, 255, 255, 0.55);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 9.5px;
 }
 
 .motion-debug-track-chart-row {

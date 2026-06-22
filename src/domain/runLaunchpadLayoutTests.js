@@ -29,6 +29,7 @@ import { runMotionDebugWorkspaceModelTests } from "../components/backgroundDebug
 import { runMotionFocusedDebugExportModelTests } from "../components/backgroundDebug/motionFocusedDebugExportModelTests.js";
 import { runMotionInspectorModelTests } from "../components/backgroundDebug/motionInspectorModelTests.js";
 import { runMotionReplayBookmarkModelTests } from "../components/backgroundDebug/motionReplayBookmarkModelTests.js";
+import { runMotionReplayAnomalyModelTests } from "../components/backgroundDebug/motionReplayAnomalyModelTests.js";
 import { runMotionReplayViewerModelTests } from "../components/backgroundDebug/motionReplayViewerModelTests.js";
 import { runMotionTrackChartModelTests } from "../components/backgroundDebug/motionTrackChartModelTests.js";
 import { runMotionLabModelTests } from "../motionLab/motionLabModelTests.js";
@@ -161,6 +162,7 @@ runMotionDebugPanelModelTests();
 runMotionDebugWorkspaceModelTests();
 runMotionFocusedDebugExportModelTests();
 runMotionInspectorModelTests();
+runMotionReplayAnomalyModelTests();
 runMotionReplayBookmarkModelTests();
 runMotionReplayViewerModelTests();
 runMotionTrackChartModelTests();
