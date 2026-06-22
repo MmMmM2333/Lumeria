@@ -1260,6 +1260,73 @@
             </label>
           </div>
 
+          <div class="background-debug-motion-replay-bookmarks">
+            <header>
+              <strong>Bookmarks</strong>
+              <span>{{ motionReplayBookmarkStatusLabel }}</span>
+            </header>
+            <div class="background-debug-actions background-debug-motion-bookmark-actions">
+              <button
+                type="button"
+                class="background-debug-button"
+                :disabled="!motionReplayBookmarkCanSave"
+                @click="saveMotionReplayBookmark"
+              >
+                Save Bookmark
+              </button>
+              <button
+                type="button"
+                class="background-debug-button"
+                :disabled="motionReplayBookmarkRows.length === 0"
+                @click="clearMotionReplayBookmarks"
+              >
+                Clear Bookmarks
+              </button>
+            </div>
+            <div class="background-debug-motion-bookmark-list">
+              <article
+                v-for="bookmark in motionReplayBookmarkRows"
+                :key="bookmark.id"
+                class="background-debug-motion-bookmark-card"
+              >
+                <div class="background-debug-motion-bookmark-main">
+                  <strong :title="bookmark.label">{{ bookmark.label }}</strong>
+                  <span :title="formatMotionReplayBookmarkMeta(bookmark)">
+                    {{ formatMotionReplayBookmarkMeta(bookmark) }}
+                  </span>
+                </div>
+                <div class="background-debug-actions background-debug-motion-bookmark-row-actions">
+                  <button
+                    type="button"
+                    class="background-debug-button"
+                    :disabled="!motionReplayViewerLoaded"
+                    @click="applyMotionReplayBookmark(bookmark)"
+                  >
+                    Apply
+                  </button>
+                  <button
+                    type="button"
+                    class="background-debug-button"
+                    :disabled="!motionReplayViewerLoaded"
+                    @click="copyMotionFocusedDebugExport(bookmark)"
+                  >
+                    Focused AI
+                  </button>
+                  <button
+                    type="button"
+                    class="background-debug-button"
+                    @click="deleteMotionReplayBookmark(bookmark)"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </article>
+              <div v-if="motionReplayBookmarkRows.length === 0" class="background-debug-motion-empty">
+                no saved bookmarks
+              </div>
+            </div>
+          </div>
+
           <div class="background-debug-motion-property-table" role="table" aria-label="Replay frame properties">
             <div class="background-debug-motion-property-row background-debug-motion-row-head" role="row">
               <span role="columnheader">target.prop</span>
@@ -1619,7 +1686,7 @@
                 type="button"
                 class="background-debug-button"
                 :disabled="!motionFocusedDebugExportAvailable"
-                @click="copyMotionFocusedDebugExport"
+                @click="copyMotionFocusedDebugExport()"
               >
                 {{ motionFocusedCopyButtonLabel }}
               </button>
@@ -1749,6 +1816,11 @@ import {
   parseMotionReplayTraceJson,
 } from "./backgroundDebug/motionReplayViewerModel.js";
 import {
+  addMotionReplayBookmark,
+  MOTION_REPLAY_BOOKMARK_LIMIT,
+  removeMotionReplayBookmark,
+} from "./backgroundDebug/motionReplayBookmarkModel.js";
+import {
   estimateMotionCaptureProfileSize,
   getMotionCaptureProfiles,
   MOTION_CAPTURE_ALLOWED_PROPS,
@@ -1857,6 +1929,7 @@ const motionReplayFilterQuery = ref("");
 const motionReplayPlaying = ref(false);
 const motionReplayIntervalStartMs = ref(0);
 const motionReplayIntervalEndMs = ref(0);
+const motionReplayBookmarks = ref([]);
 const motionTrackChartDisplayMode = ref(MOTION_TRACK_CHART_DISPLAY_RAW);
 const motionTrackChartSeriesVisibility = ref(normalizeMotionTrackChartSeriesVisibility());
 const motionTrackChartBrushAnchorMs = ref(null);
@@ -2243,6 +2316,9 @@ const motionTrackChartIntervalActive = computed(() => Boolean(
   motionReplayViewerTrace.value
     && Math.round(motionReplayIntervalStartMs.value) !== Math.round(motionReplayIntervalEndMs.value)
 ));
+const motionReplayBookmarkCanSave = computed(() => Boolean(motionReplayViewerTrace.value && motionTrackChartIntervalActive.value));
+const motionReplayBookmarkRows = computed(() => motionReplayBookmarks.value);
+const motionReplayBookmarkStatusLabel = computed(() => `${motionReplayBookmarkRows.value.length}/${MOTION_REPLAY_BOOKMARK_LIMIT}`);
 const motionFocusedDebugExportAvailable = computed(() => Boolean(motionReplayViewerTrace.value));
 const motionWorkspaceOpen = computed(() => canDebugMotion.value && motionWorkspaceSession.value.isOpen);
 const motionWorkspaceFullscreen = computed(() => motionWorkspaceSession.value.mode === MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN);
@@ -2297,6 +2373,10 @@ const motionFocusedDebugScopeRows = computed(() => [
   {
     label: "filter",
     value: motionReplayFilters.value.query || "none",
+  },
+  {
+    label: "bookmarks",
+    value: motionReplayBookmarkStatusLabel.value,
   },
 ]);
 
@@ -2382,6 +2462,18 @@ function formatMotionFocusedDebugSelectionLabel() {
   if (targetLabel === "none" && trackLabel === "none") return "all visible replay tracks";
   if (trackLabel === "none") return targetLabel;
   return `${targetLabel} / ${trackLabel}`;
+}
+
+function formatMotionReplayBookmarkMeta(bookmark = {}) {
+  const parts = [
+    `${formatMotionReplayTime(bookmark.startMs)}..${formatMotionReplayTime(bookmark.endMs)}`,
+  ];
+  const trackLabel = formatMotionWorkspaceTrack(bookmark.track);
+  if (trackLabel !== "none") parts.push(trackLabel);
+  const targetLabel = formatMotionWorkspaceTarget(bookmark.selection);
+  if (targetLabel !== "none") parts.push(targetLabel);
+  if (bookmark.filters?.query) parts.push(`filter:${bookmark.filters.query}`);
+  return parts.join(" / ");
 }
 
 function formatMotionCaptureFilterList(values = []) {
@@ -2817,6 +2909,7 @@ function loadMotionReplayTrace(trace, json = "", options = {}) {
     motionReplayCurrentTimeMs.value = normalizeMotionReplayTime(normalized, range.min);
     motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, motionReplayCurrentTimeMs.value);
     syncMotionReplayIntervalToRange(normalized);
+    clearMotionReplayBookmarks();
     resetMotionTrackChartZoom();
     stopMotionReplayPlayback();
   } catch (error) {
@@ -2838,6 +2931,7 @@ function clearMotionReplayViewer() {
   motionReplayFilterQuery.value = "";
   motionReplayIntervalStartMs.value = 0;
   motionReplayIntervalEndMs.value = 0;
+  clearMotionReplayBookmarks();
   motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, 0);
   resetMotionTrackChartZoom();
 }
@@ -2885,6 +2979,51 @@ function updateMotionReplayIntervalStart(event) {
 function updateMotionReplayIntervalEnd(event) {
   if (!motionReplayViewerTrace.value) return;
   motionReplayIntervalEndMs.value = normalizeMotionReplayTime(motionReplayViewerTrace.value, event.target.value);
+}
+
+function buildMotionReplayBookmarkInput() {
+  const selectedTrack = motionWorkspaceSession.value.selectedTrack;
+  return {
+    endMs: motionReplayIntervalEndMs.value,
+    filters: motionReplayFilters.value,
+    selection: motionWorkspaceSession.value.selectedTarget,
+    startMs: motionReplayIntervalStartMs.value,
+    track: selectedTrack,
+  };
+}
+
+function saveMotionReplayBookmark() {
+  if (!motionReplayViewerTrace.value || !motionReplayBookmarkCanSave.value) return;
+  motionReplayBookmarks.value = addMotionReplayBookmark(
+    motionReplayBookmarks.value,
+    buildMotionReplayBookmarkInput(),
+    {
+      createdAt: new Date().toISOString(),
+      trace: motionReplayViewerTrace.value,
+    },
+  );
+}
+
+function applyMotionReplayBookmark(bookmark = {}) {
+  if (!motionReplayViewerTrace.value || !bookmark) return;
+  stopMotionReplayPlayback();
+  motionReplayIntervalStartMs.value = normalizeMotionReplayTime(motionReplayViewerTrace.value, bookmark.startMs);
+  motionReplayIntervalEndMs.value = normalizeMotionReplayTime(motionReplayViewerTrace.value, bookmark.endMs);
+  if (bookmark.filters?.query != null) motionReplayFilterQuery.value = bookmark.filters.query;
+  if (bookmark.track) {
+    motionWorkspaceSession.value = selectMotionDebugWorkspaceTrack(motionWorkspaceSession.value, bookmark.track);
+  } else if (bookmark.selection) {
+    motionWorkspaceSession.value = selectMotionDebugWorkspaceTarget(motionWorkspaceSession.value, bookmark.selection);
+  }
+  setMotionReplayCurrentTime(motionReplayIntervalStartMs.value, { pause: true });
+}
+
+function deleteMotionReplayBookmark(bookmark = {}) {
+  motionReplayBookmarks.value = removeMotionReplayBookmark(motionReplayBookmarks.value, bookmark.id);
+}
+
+function clearMotionReplayBookmarks() {
+  motionReplayBookmarks.value = [];
 }
 
 function stopMotionReplayPlayback() {
@@ -3226,28 +3365,31 @@ async function copyMotionReport(mode) {
   }
 }
 
-function buildMotionFocusedDebugExportOptions() {
-  const selectedTrack = motionWorkspaceSession.value.selectedTrack;
+function buildMotionFocusedDebugExportOptions(bookmark = null) {
+  const selectedTrack = bookmark?.track || motionWorkspaceSession.value.selectedTrack;
+  const selection = bookmark?.selection || motionWorkspaceSession.value.selectedTarget;
+  const filters = bookmark?.filters || motionReplayFilters.value;
+  const interval = bookmark
+    ? { endMs: bookmark.endMs, startMs: bookmark.startMs }
+    : { endMs: motionReplayIntervalEndMs.value, startMs: motionReplayIntervalStartMs.value };
   const visibleTracks = selectedTrack?.targetId != null ? [selectedTrack] : [];
   return {
+    bookmark,
     captureProfile: motionCaptureProfile.value,
-    filters: motionReplayFilters.value,
-    interval: {
-      endMs: motionReplayIntervalEndMs.value,
-      startMs: motionReplayIntervalStartMs.value,
-    },
-    selection: motionWorkspaceSession.value.selectedTarget,
+    filters,
+    interval,
+    selection,
     track: selectedTrack,
     visibleTracks,
   };
 }
 
-async function copyMotionFocusedDebugExport() {
+async function copyMotionFocusedDebugExport(bookmark = null) {
   if (!canDebugMotion.value || !motionReplayViewerTrace.value) return;
   try {
     const focused = createMotionFocusedDebugExport(
       motionReplayViewerTrace.value,
-      buildMotionFocusedDebugExportOptions(),
+      buildMotionFocusedDebugExportOptions(bookmark?.id ? bookmark : null),
     );
     await copyToClipboard(
       focused.copyText,
@@ -4379,6 +4521,87 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 6px;
   min-width: 0;
+}
+
+.background-debug-motion-replay-bookmarks {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.background-debug-motion-replay-bookmarks header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.background-debug-motion-replay-bookmarks header strong {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 11.5px;
+}
+
+.background-debug-motion-bookmark-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.background-debug-motion-bookmark-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.background-debug-motion-bookmark-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.background-debug-motion-bookmark-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.background-debug-motion-bookmark-main strong,
+.background-debug-motion-bookmark-main span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.background-debug-motion-bookmark-main strong {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.background-debug-motion-bookmark-main span {
+  color: rgba(255, 255, 255, 0.56);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.background-debug-motion-bookmark-row-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.background-debug-motion-bookmark-actions .background-debug-button,
+.background-debug-motion-bookmark-row-actions .background-debug-button {
+  width: 100%;
 }
 
 .background-debug-motion-replay-overlay-card {

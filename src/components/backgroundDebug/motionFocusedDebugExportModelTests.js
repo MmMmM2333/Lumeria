@@ -215,6 +215,14 @@ export function runMotionFocusedDebugExportModelTests() {
     filters: { query: "icon" },
     generatedAt: "2026-06-22T00:00:00.000Z",
     interval: { endMs: 60, startMs: 0 },
+    bookmark: {
+      createdAt: "2026-06-22T00:00:00.000Z",
+      endMs: 60,
+      id: "bookmark-1",
+      label: "retarget window",
+      rawTarget: { shouldNotLeak: true },
+      startMs: 0,
+    },
     selection: {
       lane: "base",
       laneKey: "layout",
@@ -231,6 +239,8 @@ export function runMotionFocusedDebugExportModelTests() {
   assert(data.context.captureProfile.label === "X Focus", "focused export should include capture profile context");
   assert(data.context.filters.query === "icon", "focused export should include filter context");
   assert(data.context.visibleTracks.length === 2, "focused export should include visible track context");
+  assert(data.context.bookmark.label === "retarget window", "focused export should include bookmark context");
+  assert(!focused.json.includes("shouldNotLeak"), "focused export should not serialize raw bookmark refs");
   assert(data.summary.frameCount === 2, "focused export should include matching frames in interval");
   assert(data.summary.eventCount === 2, "focused export should include matching events in interval");
   assert(data.summary.trackCount === 1 && data.tracks[0].key === "1:x:base:layout", "focused export should keep only matching visible tracks");
@@ -277,5 +287,6 @@ export function runMotionFocusedDebugExportModelTests() {
 
   const markdown = formatMotionFocusedDebugMarkdown(data);
   assert(markdown.includes(MOTION_FOCUSED_DEBUG_SCHEMA), "standalone markdown formatter should include schema");
+  assert(markdown.includes("Bookmark: retarget window"), "standalone markdown formatter should include bookmark context");
   assert(markdown.includes("frames/events: 2/2"), "standalone markdown formatter should include summary counts");
 }

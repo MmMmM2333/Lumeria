@@ -230,6 +230,20 @@ function sanitizeWarning(warning = {}) {
   };
 }
 
+function sanitizeBookmark(bookmark = null) {
+  if (!bookmark || typeof bookmark !== "object") return null;
+  const startMs = readNumber(bookmark.startMs ?? bookmark.interval?.startMs, NaN);
+  const endMs = readNumber(bookmark.endMs ?? bookmark.interval?.endMs, NaN);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null;
+  return {
+    createdAt: readString(bookmark.createdAt, ""),
+    endMs: Math.max(startMs, endMs),
+    id: readString(bookmark.id, ""),
+    label: readString(bookmark.label, `${Math.min(startMs, endMs)}ms..${Math.max(startMs, endMs)}ms`),
+    startMs: Math.min(startMs, endMs),
+  };
+}
+
 function collectUsedTargetIds(frames = [], events = []) {
   const ids = new Set();
   for (const frame of frames) {
@@ -262,6 +276,7 @@ function summarize(frames = [], events = [], targets = [], tracks = [], warnings
 function makeContext(trace = {}, options = {}, interval, selection) {
   const captureProfile = options.captureProfile || trace.capture?.profile || null;
   return {
+    bookmark: sanitizeBookmark(options.bookmark),
     captureProfile: captureProfile ? normalizeMotionCaptureProfile(captureProfile) : null,
     filters: {
       query: normalizeQuery(options.filters?.query),
@@ -371,6 +386,7 @@ export function formatMotionFocusedDebugMarkdown(data = {}) {
     `Schema: ${data.schema || MOTION_FOCUSED_DEBUG_SCHEMA}`,
     `Generated: ${context.generatedAt || "-"}`,
     `Interval: ${context.interval?.startMs ?? 0}ms..${context.interval?.endMs ?? 0}ms`,
+    `Bookmark: ${context.bookmark ? `${context.bookmark.label} (${context.bookmark.startMs}ms..${context.bookmark.endMs}ms)` : "none"}`,
     `Selection: ${JSON.stringify(context.selection || {})}`,
     `Capture Profile: ${context.captureProfile?.label || context.captureProfile?.id || "none"}`,
     `Filters: ${JSON.stringify(context.filters || {})}`,
