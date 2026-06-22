@@ -4563,7 +4563,26 @@ onBeforeUnmount(() => {
   }
 
   .motion-debug-workspace-grid {
+    align-content: start;
+    display: block;
     overflow: auto;
+  }
+
+  .motion-debug-workspace-region {
+    display: block;
+    overflow: visible;
+  }
+
+  .motion-debug-workspace-region + .motion-debug-workspace-region {
+    margin-top: 8px;
+  }
+
+  .motion-debug-workspace-region > header {
+    margin-bottom: 8px;
+  }
+
+  .motion-debug-workspace-section-list {
+    overflow: visible;
   }
 
   .motion-debug-track-chart-toolbar,
