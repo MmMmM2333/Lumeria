@@ -1347,6 +1347,16 @@
         </div>
           <div class="background-debug-subsection">
             <div class="background-debug-subtitle">AI Export</div>
+            <dl class="background-debug-status-grid">
+              <div
+                v-for="row in motionFocusedDebugScopeRows"
+                :key="row.label"
+                :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
+              >
+                <dt>{{ row.label }}</dt>
+                <dd :title="row.value">{{ row.value }}</dd>
+              </div>
+            </dl>
             <div class="background-debug-actions background-debug-motion-actions">
               <button
                 type="button"
@@ -1358,6 +1368,14 @@
               </button>
               <button type="button" class="background-debug-button" @click="copyMotionReport('summary')">
                 {{ motionSummaryCopyButtonLabel }}
+              </button>
+              <button
+                type="button"
+                class="background-debug-button"
+                :disabled="!motionFocusedDebugExportAvailable"
+                @click="copyMotionFocusedDebugExport"
+              >
+                {{ motionFocusedCopyButtonLabel }}
               </button>
               <button type="button" class="background-debug-button" @click="copyMotionReport('full')">
                 {{ motionFullCopyButtonLabel }}
@@ -1491,6 +1509,10 @@ import {
   MOTION_CAPTURE_DEFAULT_SAMPLE_HZ,
 } from "./backgroundDebug/motionCaptureProfileModel.js";
 import {
+  createMotionFocusedDebugExport,
+  MOTION_FOCUSED_DEBUG_SCHEMA,
+} from "./backgroundDebug/motionFocusedDebugExportModel.js";
+import {
   buildMotionDebugWorkspaceCaptureProfile,
   closeMotionDebugWorkspace,
   createMotionDebugWorkspaceSession,
@@ -1548,6 +1570,7 @@ const canDebugMotion = computed(() => Boolean(import.meta.env.DEV));
 const debugTabCount = computed(() => 2 + (canDebugMotion.value ? 1 : 0) + (canDebugLiveDesktop.value ? 1 : 0));
 const hasCopiedAcrylic = ref(false);
 const hasCopiedDiagnostics = ref(false);
+const hasCopiedMotionFocused = ref(false);
 const hasCopiedMotionFull = ref(false);
 const hasCopiedMotionReplayInterval = ref(false);
 const hasCopiedMotionReplayTrace = ref(false);
@@ -1593,6 +1616,7 @@ const liveDesktopRates = ref({
 let liveDesktopRateSample = null;
 let acrylicCopyStateTimer = null;
 let diagnosticsCopyStateTimer = null;
+let motionFocusedCopyStateTimer = null;
 let motionFullCopyStateTimer = null;
 let motionRuntimePollTimer = null;
 let motionReplayIntervalCopyStateTimer = null;
@@ -1896,6 +1920,7 @@ const motionReplayCurveGroups = computed(() => motionReplayViewerTrace.value
 const motionReplayOverlayRows = computed(() => motionReplayViewerTrace.value
   ? buildMotionReplayOverlayRows(motionReplayViewerTrace.value, motionReplayCurrentTimeMs.value, motionReplayFilters.value)
   : []);
+const motionFocusedDebugExportAvailable = computed(() => Boolean(motionReplayViewerTrace.value));
 const motionWorkspaceOpen = computed(() => canDebugMotion.value && motionWorkspaceSession.value.isOpen);
 const motionWorkspaceFullscreen = computed(() => motionWorkspaceSession.value.mode === MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN);
 const motionWorkspaceDockWidthPx = computed(() => motionWorkspaceSession.value.dockWidthPx);
@@ -1915,6 +1940,42 @@ const motionWorkspaceSelectedTargetPinned = computed(() => {
   return Boolean(selectedKey && motionWorkspaceSession.value.pinnedTargets.some((pin) => pin.key === selectedKey));
 });
 const motionWorkspacePinButtonLabel = computed(() => (motionWorkspaceSelectedTargetPinned.value ? "Unpin Target" : "Pin Target"));
+const motionFocusedCopyButtonLabel = computed(() => (hasCopiedMotionFocused.value ? "Copied" : "Copy Focused AI"));
+const motionFocusedDebugScopeRows = computed(() => [
+  {
+    label: "trace",
+    value: motionReplayViewerTrace.value ? "loaded" : "none",
+  },
+  {
+    label: "schema",
+    value: MOTION_FOCUSED_DEBUG_SCHEMA,
+    wide: true,
+  },
+  {
+    label: "interval",
+    value: motionReplayViewerTrace.value
+      ? `${formatMotionReplayTime(motionReplayIntervalStartMs.value)}..${formatMotionReplayTime(motionReplayIntervalEndMs.value)}`
+      : "-",
+    wide: true,
+  },
+  {
+    label: "selection",
+    value: formatMotionFocusedDebugSelectionLabel(),
+    wide: true,
+  },
+  {
+    label: "tracks",
+    value: motionWorkspaceSession.value.selectedTrack ? "selected track" : "all matching",
+  },
+  {
+    label: "profile",
+    value: motionCaptureProfile.value.label,
+  },
+  {
+    label: "filter",
+    value: motionReplayFilters.value.query || "none",
+  },
+]);
 
 function formatValue(value, digits) {
   return Number(value).toFixed(digits);
@@ -1942,6 +2003,14 @@ function formatMotionWorkspaceTarget(target) {
 function formatMotionWorkspaceTrack(track) {
   if (!track) return "none";
   return `${track.prop || "unknown"} / ${track.lane || "base"}`;
+}
+
+function formatMotionFocusedDebugSelectionLabel() {
+  const targetLabel = motionWorkspaceSelectedTargetLabel.value;
+  const trackLabel = motionWorkspaceSelectedTrackLabel.value;
+  if (targetLabel === "none" && trackLabel === "none") return "all visible replay tracks";
+  if (trackLabel === "none") return targetLabel;
+  return `${targetLabel} / ${trackLabel}`;
 }
 
 function formatMotionCaptureFilterList(values = []) {
@@ -2589,6 +2658,14 @@ function copyToClipboard(text, copiedRef, timerName) {
       }, 1200);
       return;
     }
+    if (timerName === "motionFocused") {
+      if (motionFocusedCopyStateTimer != null) window.clearTimeout(motionFocusedCopyStateTimer);
+      motionFocusedCopyStateTimer = window.setTimeout(() => {
+        motionFocusedCopyStateTimer = null;
+        copiedRef.value = false;
+      }, 1200);
+      return;
+    }
     if (timerName === "motionReplayTrace") {
       if (motionReplayTraceCopyStateTimer != null) window.clearTimeout(motionReplayTraceCopyStateTimer);
       motionReplayTraceCopyStateTimer = window.setTimeout(() => {
@@ -2658,6 +2735,39 @@ async function copyMotionReport(mode) {
     refreshMotionReport();
   } catch (error) {
     console.warn("Failed to copy Pixi motion debug report", error);
+  }
+}
+
+function buildMotionFocusedDebugExportOptions() {
+  const selectedTrack = motionWorkspaceSession.value.selectedTrack;
+  const visibleTracks = selectedTrack?.targetId != null ? [selectedTrack] : [];
+  return {
+    captureProfile: motionCaptureProfile.value,
+    filters: motionReplayFilters.value,
+    interval: {
+      endMs: motionReplayIntervalEndMs.value,
+      startMs: motionReplayIntervalStartMs.value,
+    },
+    selection: motionWorkspaceSession.value.selectedTarget,
+    track: selectedTrack,
+    visibleTracks,
+  };
+}
+
+async function copyMotionFocusedDebugExport() {
+  if (!canDebugMotion.value || !motionReplayViewerTrace.value) return;
+  try {
+    const focused = createMotionFocusedDebugExport(
+      motionReplayViewerTrace.value,
+      buildMotionFocusedDebugExportOptions(),
+    );
+    await copyToClipboard(
+      focused.copyText,
+      hasCopiedMotionFocused,
+      "motionFocused",
+    );
+  } catch (error) {
+    console.warn("Failed to copy focused Pixi motion debug export", error);
   }
 }
 
@@ -2762,6 +2872,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (acrylicCopyStateTimer != null) window.clearTimeout(acrylicCopyStateTimer);
   if (diagnosticsCopyStateTimer != null) window.clearTimeout(diagnosticsCopyStateTimer);
+  if (motionFocusedCopyStateTimer != null) window.clearTimeout(motionFocusedCopyStateTimer);
   if (motionFullCopyStateTimer != null) window.clearTimeout(motionFullCopyStateTimer);
   if (motionReplayIntervalCopyStateTimer != null) window.clearTimeout(motionReplayIntervalCopyStateTimer);
   if (motionReplayTraceCopyStateTimer != null) window.clearTimeout(motionReplayTraceCopyStateTimer);
