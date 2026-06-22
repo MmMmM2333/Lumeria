@@ -287,6 +287,26 @@
         </label>
 
         <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">Workspace</div>
+          <div class="background-debug-actions background-debug-motion-workspace-actions">
+            <button
+              type="button"
+              class="background-debug-button"
+              @click="openMotionWorkspace(MOTION_DEBUG_WORKSPACE_MODE_DOCK)"
+            >
+              Open Workspace
+            </button>
+            <button
+              type="button"
+              class="background-debug-button"
+              @click="openMotionWorkspace(MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN)"
+            >
+              Fullscreen
+            </button>
+          </div>
+        </div>
+
+        <div class="background-debug-subsection">
           <div class="background-debug-subtitle">Replay Capture</div>
           <label class="background-debug-control background-debug-number-control">
             <span>
@@ -1020,6 +1040,93 @@
       </div>
     </div>
   </section>
+
+  <aside
+    v-if="motionWorkspaceOpen"
+    :class="[
+      'motion-debug-workspace',
+      motionWorkspaceFullscreen ? 'motion-debug-workspace-fullscreen' : 'motion-debug-workspace-dock',
+    ]"
+    :style="motionWorkspaceStyle"
+    aria-label="Motion debug workspace"
+    @click.stop
+    @contextmenu.stop
+    @pointerdown.stop
+    @wheel.stop
+  >
+    <header class="motion-debug-workspace-toolbar">
+      <div class="motion-debug-workspace-title">
+        <strong>Motion Debug Workspace</strong>
+        <span>{{ motionWorkspaceModeLabel }} / dev only</span>
+      </div>
+      <div class="motion-debug-workspace-toolbar-actions">
+        <div class="background-debug-mode-group motion-debug-workspace-mode-group" role="group" aria-label="Workspace mode">
+          <button
+            type="button"
+            :class="[
+              'background-debug-mode-button',
+              !motionWorkspaceFullscreen && 'background-debug-mode-button-active',
+            ]"
+            @click="setMotionWorkspaceMode(MOTION_DEBUG_WORKSPACE_MODE_DOCK)"
+          >
+            Dock
+          </button>
+          <button
+            type="button"
+            :class="[
+              'background-debug-mode-button',
+              motionWorkspaceFullscreen && 'background-debug-mode-button-active',
+            ]"
+            @click="setMotionWorkspaceMode(MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN)"
+          >
+            Fullscreen
+          </button>
+        </div>
+        <button type="button" class="background-debug-button" @click="closeMotionWorkspace">
+          Close
+        </button>
+      </div>
+    </header>
+
+    <label v-if="!motionWorkspaceFullscreen" class="motion-debug-workspace-dock-control">
+      <span>
+        Dock width
+        <output>{{ motionWorkspaceDockWidthPx }}px</output>
+      </span>
+      <input
+        name="motionWorkspaceDockWidth"
+        type="range"
+        :min="MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MIN"
+        :max="MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MAX"
+        step="10"
+        :value="motionWorkspaceDockWidthPx"
+        @input="updateMotionWorkspaceDockWidth"
+      >
+    </label>
+
+    <div class="motion-debug-workspace-grid">
+      <section
+        v-for="region in motionWorkspaceRegions"
+        :key="region.id"
+        class="motion-debug-workspace-region"
+      >
+        <header>
+          <strong>{{ region.label }}</strong>
+          <span>{{ region.sections.length }} views</span>
+        </header>
+        <div class="motion-debug-workspace-section-list">
+          <article
+            v-for="section in region.sections"
+            :key="section.id"
+            class="motion-debug-workspace-section-row"
+          >
+            <strong>{{ section.label }}</strong>
+            <span>{{ getMotionWorkspaceSectionStatus(section.id) }}</span>
+          </article>
+        </div>
+      </section>
+    </div>
+  </aside>
 </template>
 
 <script setup>
@@ -1136,6 +1243,18 @@ import {
   normalizeMotionReplayTrace,
   parseMotionReplayTraceJson,
 } from "./backgroundDebug/motionReplayViewerModel.js";
+import {
+  closeMotionDebugWorkspace,
+  createMotionDebugWorkspaceSession,
+  MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MAX,
+  MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MIN,
+  MOTION_DEBUG_WORKSPACE_MODE_DOCK,
+  MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN,
+  MOTION_DEBUG_WORKSPACE_REGIONS,
+  openMotionDebugWorkspace,
+  resizeMotionDebugWorkspaceDock,
+  setMotionDebugWorkspaceMode,
+} from "./backgroundDebug/motionDebugWorkspaceModel.js";
 import { createMotionDebugAIReport } from "../rendering/pixi/animation/motionDebugReport.js";
 import {
   createMotionReplayCaptureController,
@@ -1206,6 +1325,9 @@ const motionReplayFilterQuery = ref("");
 const motionReplayPlaying = ref(false);
 const motionReplayIntervalStartMs = ref(0);
 const motionReplayIntervalEndMs = ref(0);
+const motionWorkspaceSession = ref(createMotionDebugWorkspaceSession({
+  viewportWidth: typeof window === "undefined" ? undefined : window.innerWidth,
+}));
 const liveDesktopRates = ref({
   framesPerSecond: 0,
   arrivedPerSecond: 0,
@@ -1311,6 +1433,22 @@ const autoBlurKernelSliders = [
   },
   ...kawaseSliders,
 ];
+
+const MOTION_WORKSPACE_SECTION_LABELS = {
+  "ai-export": "AI Export",
+  curves: "Curves",
+  filters: "Filters",
+  inspector: "Inspector",
+  "event-track": "Event Track",
+  "lane-breakdown": "Lane Breakdown",
+  "layer-tree": "Layer Tree",
+  pins: "Pins",
+  properties: "Properties",
+  "replay-scrubber": "Replay Scrubber",
+  "target-tree": "Target Tree",
+  timeline: "Timeline",
+  warnings: "Warnings",
+};
 
 const tintHex = computed(() => rgbArrayToHex(params.tintColor));
 const activeBlurKernelSliders = computed(() => (
@@ -1473,6 +1611,20 @@ const motionReplayCurveGroups = computed(() => motionReplayViewerTrace.value
 const motionReplayOverlayRows = computed(() => motionReplayViewerTrace.value
   ? buildMotionReplayOverlayRows(motionReplayViewerTrace.value, motionReplayCurrentTimeMs.value, motionReplayFilters.value)
   : []);
+const motionWorkspaceOpen = computed(() => canDebugMotion.value && motionWorkspaceSession.value.isOpen);
+const motionWorkspaceFullscreen = computed(() => motionWorkspaceSession.value.mode === MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN);
+const motionWorkspaceDockWidthPx = computed(() => motionWorkspaceSession.value.dockWidthPx);
+const motionWorkspaceModeLabel = computed(() => (motionWorkspaceFullscreen.value ? "Fullscreen" : "Dock"));
+const motionWorkspaceStyle = computed(() => (motionWorkspaceFullscreen.value
+  ? undefined
+  : { width: `${motionWorkspaceDockWidthPx.value}px` }));
+const motionWorkspaceRegions = computed(() => MOTION_DEBUG_WORKSPACE_REGIONS.map((region) => ({
+  ...region,
+  sections: region.sections.map((id) => ({
+    id,
+    label: MOTION_WORKSPACE_SECTION_LABELS[id] || id,
+  })),
+})));
 
 function formatValue(value, digits) {
   return Number(value).toFixed(digits);
@@ -1486,6 +1638,53 @@ function formatMotionChartStat(value) {
 function formatMotionReplayTime(value) {
   const number = Number(value);
   return Number.isFinite(number) ? `${number.toFixed(0)}ms` : "-";
+}
+
+function getMotionWorkspaceViewportWidth() {
+  return typeof window === "undefined" ? undefined : window.innerWidth;
+}
+
+function formatMotionWorkspaceTarget(target) {
+  if (!target) return "none";
+  return target.label || target.sourceLabel || target.layer || target.kind || `target ${target.targetId ?? "-"}`;
+}
+
+function formatMotionWorkspaceTrack(track) {
+  if (!track) return "none";
+  return `${track.prop || "unknown"} / ${track.lane || "base"}`;
+}
+
+function getMotionWorkspaceSectionStatus(id) {
+  switch (id) {
+    case "ai-export":
+      return "summary / full";
+    case "curves":
+      return `${motionCurveChartGroups.value.length} curves`;
+    case "event-track":
+      return `${motionReplayEventRows.value.length} events`;
+    case "filters":
+      return motionFilterSummary.value.text;
+    case "inspector":
+      return formatMotionWorkspaceTarget(motionWorkspaceSession.value.selectedTarget);
+    case "lane-breakdown":
+      return formatMotionWorkspaceTrack(motionWorkspaceSession.value.selectedTrack);
+    case "layer-tree":
+      return `${motionLayerTreeRows.value.length} groups`;
+    case "pins":
+      return `${motionWorkspaceSession.value.pinnedTargets.length} pinned`;
+    case "properties":
+      return `${motionPropertyRows.value.length} rows`;
+    case "replay-scrubber":
+      return motionReplayViewerLoaded.value ? formatMotionReplayTime(motionReplayCurrentTimeMs.value) : "no replay";
+    case "target-tree":
+      return `${motionAnimationRows.value.length} active`;
+    case "timeline":
+      return `${motionTimelineGroups.value.length} tracks`;
+    case "warnings":
+      return `${motionWarningRows.value.length} warnings`;
+    default:
+      return "-";
+  }
 }
 
 function formatEffectLabel(effect) {
@@ -1569,6 +1768,37 @@ function updateMotionCustomSeconds(event) {
 function updateMotionTimeScale(event) {
   motionTimeScale.value = normalizeMotionTimeScale(event.target.value);
   applyMotionRuntimeDebugConfig();
+}
+
+function openMotionWorkspace(mode = MOTION_DEBUG_WORKSPACE_MODE_DOCK) {
+  if (!canDebugMotion.value) return;
+  isCollapsed.value = false;
+  activePanel.value = "motion";
+  motionWorkspaceSession.value = openMotionDebugWorkspace(motionWorkspaceSession.value, {
+    mode,
+    viewportWidth: getMotionWorkspaceViewportWidth(),
+  });
+}
+
+function closeMotionWorkspace() {
+  motionWorkspaceSession.value = closeMotionDebugWorkspace(motionWorkspaceSession.value);
+}
+
+function setMotionWorkspaceMode(mode) {
+  motionWorkspaceSession.value = setMotionDebugWorkspaceMode(motionWorkspaceSession.value, mode);
+  if (mode === MOTION_DEBUG_WORKSPACE_MODE_DOCK) {
+    motionWorkspaceSession.value = resizeMotionDebugWorkspaceDock(
+      motionWorkspaceSession.value,
+      motionWorkspaceSession.value.dockWidthPx,
+      { viewportWidth: getMotionWorkspaceViewportWidth() },
+    );
+  }
+}
+
+function updateMotionWorkspaceDockWidth(event) {
+  motionWorkspaceSession.value = resizeMotionDebugWorkspaceDock(motionWorkspaceSession.value, event.target.value, {
+    viewportWidth: getMotionWorkspaceViewportWidth(),
+  });
 }
 
 function clearMotionDebugHistory() {
@@ -2123,7 +2353,9 @@ watch(canDebugLiveDesktop, (enabled) => {
 }, { immediate: true });
 
 watch(canDebugMotion, (enabled) => {
-  if (!enabled && activePanel.value === "motion") activePanel.value = "acrylic";
+  if (enabled) return;
+  closeMotionWorkspace();
+  if (activePanel.value === "motion") activePanel.value = "acrylic";
 }, { immediate: true });
 
 watch([isCollapsed, activePanel, canDebugLiveDesktop], restartLiveDesktopRuntimePoller, { flush: "post" });
@@ -2893,6 +3125,7 @@ onBeforeUnmount(() => {
 }
 
 .background-debug-motion-actions,
+.background-debug-motion-workspace-actions,
 .background-debug-motion-replay-actions,
 .background-debug-motion-replay-viewer-actions,
 .background-debug-live-actions {
@@ -2902,10 +3135,15 @@ onBeforeUnmount(() => {
 }
 
 .background-debug-motion-actions .background-debug-button,
+.background-debug-motion-workspace-actions .background-debug-button,
 .background-debug-motion-replay-actions .background-debug-button,
 .background-debug-motion-replay-viewer-actions .background-debug-button,
 .background-debug-live-actions .background-debug-button {
   width: 100%;
+}
+
+.background-debug-motion-workspace-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .background-debug-button {
@@ -2937,17 +3175,255 @@ onBeforeUnmount(() => {
   cursor: default;
 }
 
+.motion-debug-workspace {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  bottom: 14px;
+  z-index: 133;
+  display: flex;
+  flex-direction: column;
+  min-width: min(520px, calc(100vw - 28px));
+  max-width: calc(100vw - 28px);
+  min-height: 0;
+  padding: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(20, 23, 30, 0.94);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(22px) saturate(120%);
+  -webkit-backdrop-filter: blur(22px) saturate(120%);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.motion-debug-workspace *,
+.motion-debug-workspace *::before,
+.motion-debug-workspace *::after {
+  box-sizing: border-box;
+}
+
+.motion-debug-workspace button {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+}
+
+.motion-debug-workspace-fullscreen {
+  inset: 10px;
+  z-index: 134;
+  width: auto;
+  max-width: none;
+}
+
+.motion-debug-workspace-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.motion-debug-workspace-title {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.motion-debug-workspace-title strong {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.motion-debug-workspace-title span {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.motion-debug-workspace-toolbar-actions {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 72px;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.motion-debug-workspace-mode-group {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.motion-debug-workspace-dock-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+  padding: 9px 0 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.motion-debug-workspace-dock-control span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11.5px;
+  line-height: 1.2;
+}
+
+.motion-debug-workspace-dock-control output {
+  flex: none;
+  color: rgba(255, 255, 255, 0.88);
+  font-variant-numeric: tabular-nums;
+}
+
+.motion-debug-workspace-dock-control input[type="range"] {
+  width: 100%;
+  min-width: 0;
+  accent-color: rgba(255, 255, 255, 0.92);
+}
+
+.motion-debug-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(132px, 0.82fr) minmax(208px, 1.3fr) minmax(142px, 1fr);
+  gap: 8px;
+  min-height: 0;
+  min-width: 0;
+  padding-top: 10px;
+  overflow: hidden;
+}
+
+.motion-debug-workspace-region {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  gap: 8px;
+  padding: 9px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.motion-debug-workspace-region header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.motion-debug-workspace-region header strong,
+.motion-debug-workspace-region header span {
+  min-width: 0;
+  overflow: hidden;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.motion-debug-workspace-region header strong {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.motion-debug-workspace-region header span {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 10.5px;
+}
+
+.motion-debug-workspace-section-list {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.motion-debug-workspace-section-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(72px, auto);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+.motion-debug-workspace-section-row strong,
+.motion-debug-workspace-section-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.motion-debug-workspace-section-row strong {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.motion-debug-workspace-section-row span {
+  color: rgba(255, 255, 255, 0.52);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: right;
+}
+
 .background-debug-body::-webkit-scrollbar,
-.background-debug-detail::-webkit-scrollbar {
+.background-debug-detail::-webkit-scrollbar,
+.motion-debug-workspace-section-list::-webkit-scrollbar {
   width: 8px;
 }
 
 .background-debug-body::-webkit-scrollbar-thumb,
-.background-debug-detail::-webkit-scrollbar-thumb {
+.background-debug-detail::-webkit-scrollbar-thumb,
+.motion-debug-workspace-section-list::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.2);
   background-clip: padding-box;
+}
+
+@media (max-width: 900px) {
+  .motion-debug-workspace {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: auto !important;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .motion-debug-workspace-toolbar,
+  .motion-debug-workspace-toolbar-actions,
+  .motion-debug-workspace-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .motion-debug-workspace-grid {
+    overflow: auto;
+  }
 }
 
 @media (max-width: 760px) {
