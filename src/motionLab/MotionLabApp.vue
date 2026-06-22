@@ -54,12 +54,13 @@
             <input
               v-if="control.type === 'range'"
               v-model.number="motionParams[control.key]"
+              :name="`motionLab-${control.key}`"
               type="range"
               :min="control.min"
               :max="control.max"
               :step="control.step"
             >
-            <select v-else v-model="motionParams[control.key]">
+            <select v-else v-model="motionParams[control.key]" :name="`motionLab-${control.key}`">
               <option v-for="option in control.options" :key="option" :value="option">{{ option }}</option>
             </select>
           </label>
