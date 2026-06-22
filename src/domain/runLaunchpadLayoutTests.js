@@ -28,6 +28,7 @@ import { runMotionDebugPanelModelTests } from "../components/backgroundDebug/mot
 import { runMotionDebugWorkspaceModelTests } from "../components/backgroundDebug/motionDebugWorkspaceModelTests.js";
 import { runMotionFocusedDebugExportModelTests } from "../components/backgroundDebug/motionFocusedDebugExportModelTests.js";
 import { runMotionReplayViewerModelTests } from "../components/backgroundDebug/motionReplayViewerModelTests.js";
+import { runMotionTrackChartModelTests } from "../components/backgroundDebug/motionTrackChartModelTests.js";
 import { runMotionLabModelTests } from "../motionLab/motionLabModelTests.js";
 import { runBackgroundImageLayoutTests } from "./backgroundImageLayoutTests.js";
 import { runLaunchpadDataTests } from "./launchpadDataTests.js";
@@ -158,6 +159,7 @@ runMotionDebugPanelModelTests();
 runMotionDebugWorkspaceModelTests();
 runMotionFocusedDebugExportModelTests();
 runMotionReplayViewerModelTests();
+runMotionTrackChartModelTests();
 runMotionLabModelTests();
 runFolderLayoutStylesTests();
 runFolderViewportMetricsTests();
