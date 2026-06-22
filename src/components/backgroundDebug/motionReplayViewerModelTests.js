@@ -8,6 +8,9 @@ import {
   buildMotionReplayOverviewRows,
   createMotionReplayIntervalExport,
   findMotionReplayFrame,
+  findMotionReplayEventStep,
+  findMotionReplayEventStepTime,
+  findMotionReplayFrameStepTime,
   MOTION_REPLAY_IMPORT_MAX_BYTES,
   MOTION_REPLAY_INTERVAL_SCHEMA,
   normalizeMotionReplayTime,
@@ -198,6 +201,21 @@ export function runMotionReplayViewerModelTests() {
   assert(normalizeMotionReplayTime(trace, -10) === 0, "replay time should clamp to trace min");
   assert(normalizeMotionReplayTime(trace, 200) === 100, "replay time should clamp to trace max");
   assert(findMotionReplayFrame(trace, 75).frame === 2, "scrub should use the latest frame at or before time");
+  assert(findMotionReplayFrameStepTime(trace, 0, "next") === 50, "next frame step should jump to the next frame time");
+  assert(findMotionReplayFrameStepTime(trace, 75, "next") === 100, "next frame step should use the next strict frame time");
+  assert(findMotionReplayFrameStepTime(trace, 75, "previous") === 50, "previous frame step should use the previous strict frame time");
+  assert(findMotionReplayFrameStepTime(trace, 0, "previous") === 0, "previous frame step should stay on first frame at the lower edge");
+  assert(findMotionReplayFrameStepTime(trace, 100, "next") === 100, "next frame step should stay on last frame at the upper edge");
+
+  const nextIconEvent = findMotionReplayEventStep(trace, 0, "next", { query: "icon" });
+  assert(nextIconEvent.timeMs === 50 && nextIconEvent.type === "arrive", "next event step should return the next filtered event");
+  assert(findMotionReplayEventStepTime(trace, 0, "next", { query: "icon" }) === 50, "next event step time should follow the next filtered event");
+  assert(findMotionReplayEventStepTime(trace, 75, "previous", { query: "icon" }) === 50, "previous event step should follow the previous filtered event");
+  assert(findMotionReplayEventStep(trace, 0, "previous", { query: "icon" }) === null, "previous event step should return null before the first filtered event");
+  assert(findMotionReplayEventStepTime(trace, 0, "previous", { query: "icon" }) === 0, "previous event step time should stay unchanged before the first filtered event");
+  assert(findMotionReplayEventStep(trace, 100, "next", { query: "icon" }) === null, "next event step should return null after the last filtered event");
+  assert(findMotionReplayEventStepTime(trace, 100, "next", { query: "icon" }) === 100, "next event step time should stay unchanged after the last filtered event");
+  assert(findMotionReplayEventStep(trace, 50, "next", { query: "missing" }) === null, "event step should return null when no filtered event exists");
   assert(parseMotionReplayTraceJson(JSON.stringify(makeTrace())).schema === "pixi-motion-replay-trace/v1", "JSON import should parse trace schema");
   assert(MOTION_REPLAY_IMPORT_MAX_BYTES >= 1024 * 1024, "replay import size guard should allow MB-scale traces");
   assertMotionReplayImportSize(MOTION_REPLAY_IMPORT_MAX_BYTES);

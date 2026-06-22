@@ -1252,6 +1252,49 @@
               type="button"
               class="background-debug-button"
               :disabled="!motionReplayViewerLoaded"
+              @click="setMotionReplayCurrentTime(motionReplayTimeRange.max, { pause: true })"
+            >
+              Jump End
+            </button>
+          </div>
+
+          <div class="background-debug-actions background-debug-motion-replay-step-actions">
+            <button
+              type="button"
+              class="background-debug-button"
+              :disabled="!motionReplayViewerLoaded"
+              @click="stepMotionReplayFrame('previous')"
+            >
+              Prev Frame
+            </button>
+            <button
+              type="button"
+              class="background-debug-button"
+              :disabled="!motionReplayViewerLoaded"
+              @click="stepMotionReplayFrame('next')"
+            >
+              Next Frame
+            </button>
+            <button
+              type="button"
+              class="background-debug-button"
+              :disabled="!motionReplayViewerLoaded"
+              @click="stepMotionReplayEvent('previous')"
+            >
+              Prev Event
+            </button>
+            <button
+              type="button"
+              class="background-debug-button"
+              :disabled="!motionReplayViewerLoaded"
+              @click="stepMotionReplayEvent('next')"
+            >
+              Next Event
+            </button>
+            <button
+              type="button"
+              class="background-debug-button"
+              :disabled="!motionReplayViewerLoaded"
               @click="copyMotionReplayInterval"
             >
               {{ motionReplayIntervalCopyButtonLabel }}
@@ -1922,6 +1965,8 @@ import {
   buildMotionReplayOverlayRows,
   buildMotionReplayOverviewRows,
   createMotionReplayIntervalExport,
+  findMotionReplayEventStep,
+  findMotionReplayFrameStepTime,
   getMotionReplayTimeRange,
   assertMotionReplayImportSize,
   MOTION_REPLAY_IMPORT_MAX_BYTES,
@@ -3137,6 +3182,29 @@ function updateMotionReplayCurrentTime(event) {
   setMotionReplayCurrentTime(event.target.value, { pause: true });
 }
 
+function stepMotionReplayFrame(direction) {
+  if (!motionReplayViewerTrace.value) return;
+  const timeMs = findMotionReplayFrameStepTime(
+    motionReplayViewerTrace.value,
+    motionReplayCurrentTimeMs.value,
+    direction,
+  );
+  setMotionReplayCurrentTime(timeMs, { pause: true });
+}
+
+function stepMotionReplayEvent(direction) {
+  if (!motionReplayViewerTrace.value) return;
+  const event = findMotionReplayEventStep(
+    motionReplayViewerTrace.value,
+    motionReplayCurrentTimeMs.value,
+    direction,
+    motionReplayFilters.value,
+  );
+  if (!event) return;
+  selectMotionWorkspaceTrack(event);
+  setMotionReplayCurrentTime(event.timeMs, { pause: true });
+}
+
 function updateMotionReplayFilterQuery(event) {
   motionReplayFilterQuery.value = event.target.value;
 }
@@ -3222,11 +3290,11 @@ function startMotionReplayPlayback() {
     const nextTime = motionReplayCurrentTimeMs.value + delta;
     const currentRange = getMotionReplayTimeRange(motionReplayViewerTrace.value);
     if (nextTime >= currentRange.max) {
-      motionReplayCurrentTimeMs.value = normalizeMotionReplayTime(motionReplayViewerTrace.value, currentRange.max);
+      setMotionReplayCurrentTime(currentRange.max);
       stopMotionReplayPlayback();
       return;
     }
-    motionReplayCurrentTimeMs.value = normalizeMotionReplayTime(motionReplayViewerTrace.value, nextTime);
+    setMotionReplayCurrentTime(nextTime);
   }, 33);
 }
 
@@ -4973,6 +5041,7 @@ onBeforeUnmount(() => {
 .background-debug-motion-workspace-actions,
 .background-debug-motion-replay-actions,
 .background-debug-motion-replay-viewer-actions,
+.background-debug-motion-replay-step-actions,
 .background-debug-live-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -4984,6 +5053,7 @@ onBeforeUnmount(() => {
 .background-debug-motion-workspace-actions .background-debug-button,
 .background-debug-motion-replay-actions .background-debug-button,
 .background-debug-motion-replay-viewer-actions .background-debug-button,
+.background-debug-motion-replay-step-actions .background-debug-button,
 .background-debug-live-actions .background-debug-button {
   width: 100%;
 }
@@ -4993,6 +5063,10 @@ onBeforeUnmount(() => {
 }
 
 .background-debug-motion-workspace-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.background-debug-motion-replay-step-actions {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 

@@ -77,6 +77,10 @@ function normalizeQuery(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function normalizeStepDirection(value) {
+  return value === "previous" || value === "prev" || value === -1 ? "previous" : "next";
+}
+
 function makeTargetsById(trace = {}) {
   const targets = new Map();
   for (const target of trace.targets || []) {
@@ -207,6 +211,72 @@ export function findMotionReplayFrame(trace = {}, timeMs = 0) {
     selected = frame;
   }
   return selected;
+}
+
+function uniqueSortedTimes(records = []) {
+  return Array.from(new Set(
+    records
+      .map((record) => readNumber(record.timeMs, NaN))
+      .filter(Number.isFinite)
+      .map((timeMs) => Number(timeMs.toFixed(3))),
+  )).sort((a, b) => a - b);
+}
+
+function findAdjacentTime(times = [], currentTime = 0, direction = "next") {
+  if (!times.length) return null;
+  const normalizedDirection = normalizeStepDirection(direction);
+  const current = readNumber(currentTime, times[0]);
+  if (normalizedDirection === "previous") {
+    for (let index = times.length - 1; index >= 0; index -= 1) {
+      if (times[index] < current) return times[index];
+    }
+    return times[0];
+  }
+  for (const timeMs of times) {
+    if (timeMs > current) return timeMs;
+  }
+  return times.at(-1);
+}
+
+function findStrictAdjacentTime(times = [], currentTime = 0, direction = "next") {
+  if (!times.length) return null;
+  const normalizedDirection = normalizeStepDirection(direction);
+  const current = readNumber(currentTime, times[0]);
+  if (normalizedDirection === "previous") {
+    for (let index = times.length - 1; index >= 0; index -= 1) {
+      if (times[index] < current) return times[index];
+    }
+    return null;
+  }
+  for (const timeMs of times) {
+    if (timeMs > current) return timeMs;
+  }
+  return null;
+}
+
+export function findMotionReplayFrameStepTime(trace = {}, timeMs = 0, direction = "next") {
+  const normalized = normalizeMotionReplayTrace(trace);
+  const times = uniqueSortedTimes(normalized.timeline?.frames || []);
+  const adjacent = findAdjacentTime(times, normalizeMotionReplayTime(normalized, timeMs), direction);
+  return adjacent == null ? normalizeMotionReplayTime(normalized, timeMs) : normalizeMotionReplayTime(normalized, adjacent);
+}
+
+export function findMotionReplayEventStep(trace = {}, timeMs = 0, direction = "next", filters = {}) {
+  const normalized = normalizeMotionReplayTrace(trace);
+  const predicate = makeFilterPredicate(normalized, filters);
+  const events = (normalized.timeline?.events || []).filter(predicate);
+  const times = uniqueSortedTimes(events);
+  const adjacent = findStrictAdjacentTime(times, normalizeMotionReplayTime(normalized, timeMs), direction);
+  if (adjacent == null) return null;
+  const candidates = events
+    .filter((event) => Math.abs(readNumber(event.timeMs, 0) - adjacent) <= 0.5)
+    .sort((a, b) => readNumber(a.frame, 0) - readNumber(b.frame, 0) || makeTrackKey(a).localeCompare(makeTrackKey(b)));
+  return candidates[0] || null;
+}
+
+export function findMotionReplayEventStepTime(trace = {}, timeMs = 0, direction = "next", filters = {}) {
+  const event = findMotionReplayEventStep(trace, timeMs, direction, filters);
+  return event ? normalizeMotionReplayTime(trace, event.timeMs) : normalizeMotionReplayTime(trace, timeMs);
 }
 
 export function buildMotionReplayOverviewRows(trace = null, timeMs = 0) {
