@@ -514,6 +514,7 @@ export function runMotionRuntimeTests() {
     assert(defaults.enabled === false, "debug config should default to disabled high-cost history");
     assert(defaults.overlayEnabled === false, "debug config should default motion overlay to disabled");
     assert(defaults.recordHistory === false, "debug config should default to no history recording");
+    assert(defaults.recordFilter === null, "debug config should default to no record filter");
     assert(defaults.recordWindowMs === 30000, "debug config should default to a 30s recording window");
     assert(defaults.sampleHz === 10, "debug config should default to 10Hz regular recording");
     assert(defaults.timeScale === 1, "debug config should default to normal runtime speed");
@@ -544,6 +545,33 @@ export function runMotionRuntimeTests() {
     assert(lowerClamp.recordWindowMs === 1000, "custom recording window should clamp to at least 1s");
     const upperClamp = runtime.configureDebug({ recordWindowMs: 600000 });
     assert(upperClamp.recordWindowMs === 300000, "custom recording window should clamp to at most 300s");
+
+    const filtered = runtime.configureDebug({
+      recordFilter: {
+        eventTypes: [" cancel ", "RETARGET", "cancel"],
+        includeSamples: false,
+        propAllowlist: ["alpha", "x", "alpha"],
+        targetFilters: {
+          kind: "IconNode",
+          layer: "desktop",
+          sourceLabel: "desktop.icon.node",
+          sourceQuery: " icon ",
+        },
+      },
+    });
+    assert(filtered.recordFilter.includeSamples === false, "recordFilter should preserve includeSamples");
+    assert(filtered.recordFilter.includeEvents === true, "recordFilter should default to including events");
+    assert(filtered.recordFilter.props.join(",") === "alpha,x", "recordFilter should normalize prop allowlists");
+    assert(filtered.recordFilter.eventTypes.join(",") === "cancel,retarget", "recordFilter should normalize event types");
+    assert(filtered.recordFilter.layers[0] === "desktop", "recordFilter should normalize target layer filters");
+    assert(filtered.recordFilter.kinds[0] === "IconNode", "recordFilter should normalize target kind filters");
+    assert(filtered.recordFilter.sourceLabels[0] === "desktop.icon.node", "recordFilter should normalize source labels");
+    assert(filtered.recordFilter.sourceQuery === "icon", "recordFilter should trim source queries");
+    filtered.recordFilter.props[0] = "mutated";
+    assert(runtime.configureDebug().recordFilter.props[0] === "alpha", "configureDebug should return a cloned recordFilter");
+    const cleared = runtime.configureDebug({ recordFilter: null });
+    assert(cleared.recordFilter === null, "recordFilter should be clearable");
+    assert(runtime.configureDebug({ recordFilter: {} }).recordFilter === null, "empty recordFilter should behave like no filter");
   }
 
   {
@@ -649,6 +677,110 @@ export function runMotionRuntimeTests() {
     const emptyReport = runtime.debugReport({ includeHistory: true });
     assert(emptyReport.history.events.length === 0, "clearDebugHistory should clear recorded events");
     assert(emptyReport.history.samples.length === 0, "clearDebugHistory should clear recorded samples");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 10 });
+    const icon = { alpha: 0, x: 0 };
+    const panel = { alpha: 0 };
+    runtime.configureDebug({
+      enabled: true,
+      maxEvents: 50,
+      maxSamples: 50,
+      recordFilter: {
+        eventTypes: ["start", "cancel"],
+        propAllowlist: ["alpha"],
+        targetFilters: {
+          kind: "IconNode",
+          layer: "desktop",
+          sourceQuery: "icon",
+        },
+      },
+      recordHistory: true,
+      sampleHz: 60,
+    });
+    runtime.describeTarget(icon, {
+      kind: "IconNode",
+      label: "Calendar",
+      layer: "desktop",
+      sourceLabel: "desktop.icon.node",
+    });
+    runtime.describeTarget(panel, {
+      kind: "FolderPanel",
+      label: "Folder Panel",
+      layer: "folder",
+      sourceLabel: "folder.panel",
+    });
+
+    runtime.animate(icon, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      laneKey: "layout-x",
+    });
+    const alphaControl = runtime.animate(icon, "alpha", 1, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      laneKey: "icon-alpha",
+    });
+    runtime.animate(panel, "alpha", 1, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      laneKey: "panel-alpha",
+    });
+    runtime.step(1 / 60);
+    alphaControl.cancel("filtered-test");
+    runtime.step(1 / 60);
+
+    const report = runtime.debugReport({ includeHistory: true, includeTargets: true });
+    const events = report.history.events;
+    const sampleAnimations = report.history.samples.flatMap((sample) => sample.animations);
+
+    assert(events.length > 0, "recordFilter should keep matching lifecycle events");
+    assert(events.some((event) => event.type === "start"), "recordFilter should keep allowed start events");
+    assert(events.some((event) => event.type === "cancel"), "recordFilter should keep allowed cancel events");
+    assert(events.every((event) => event.prop === "alpha"), "recordFilter should filter events by prop");
+    assert(events.every((event) => event.layer === "desktop"), "recordFilter should filter events by layer");
+    assert(events.every((event) => event.targetKind === "IconNode"), "recordFilter should filter events by target kind");
+    assert(events.every((event) => event.sourceLabel === "desktop.icon.node"), "recordFilter should filter events by source label query");
+    assert(events.every((event) => event.type === "start" || event.type === "cancel"), "recordFilter should filter events by type");
+    assert(sampleAnimations.length > 0, "recordFilter should keep matching sampled animations");
+    assert(sampleAnimations.every((animation) => animation.prop === "alpha"), "recordFilter should filter samples by prop");
+    assert(sampleAnimations.every((animation) => animation.layer === "desktop"), "recordFilter should filter samples by layer");
+    assert(sampleAnimations.every((animation) => animation.targetKind === "IconNode"), "recordFilter should filter samples by target kind");
+    assert(sampleAnimations.every((animation) => animation.sourceLabel === "desktop.icon.node"), "recordFilter should filter samples by source label query");
+    assert(report.config.recordFilter.props.join(",") === "alpha", "debug report should expose the serializable recordFilter");
+    assert(!containsReference(report, icon), "filtered debug report should not retain raw target references");
+    assert(!containsReference(report, panel), "filtered debug report should not retain filtered-out target references");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 10 });
+    const target = { alpha: 0 };
+    runtime.configureDebug({
+      enabled: true,
+      maxEvents: 20,
+      maxSamples: 20,
+      recordFilter: {
+        eventTypes: ["cancel"],
+        includeSamples: false,
+        props: ["alpha"],
+      },
+      recordHistory: true,
+      sampleHz: 60,
+    });
+    const control = runtime.animate(target, "alpha", 1, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      laneKey: "events-only-alpha",
+    });
+    runtime.step(1 / 60);
+    control.cancel("events-only-test");
+
+    const report = runtime.debugReport({ includeHistory: true });
+    assert(report.history.samples.length === 0, "recordFilter should support event-only capture");
+    assert(report.history.events.length === 1, "recordFilter should only keep allowed event types");
+    assert(report.history.events[0].type === "cancel", "event-only recordFilter should keep the cancel event");
+    assert(report.history.events[0].prop === "alpha", "event-only recordFilter should still filter by prop");
   }
 
   {

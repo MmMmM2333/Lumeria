@@ -22,6 +22,7 @@ const DEFAULT_DEBUG_CONFIG = Object.freeze({
   maxSamples: 1000,
   overlayEnabled: false,
   recordHistory: false,
+  recordFilter: null,
   recordWindowMs: 30000,
   sampleHz: 10,
   timeScale: 1,
@@ -221,6 +222,109 @@ function sanitizeDebugMetadata(metadata) {
   return sanitized && typeof sanitized === "object" && !Array.isArray(sanitized) ? sanitized : {};
 }
 
+function readDebugString(value, fallback = "") {
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
+function normalizeDebugStringList(value, options = {}) {
+  const input = Array.isArray(value) ? value : value == null ? [] : [value];
+  const list = [];
+  const seen = new Set();
+  for (const entry of input) {
+    const text = readDebugString(entry);
+    if (!text) continue;
+    const normalized = options.lowercase ? text.toLowerCase() : text;
+    const key = options.caseInsensitive !== false ? normalized.toLowerCase() : normalized;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    list.push(normalized);
+  }
+  return list;
+}
+
+function readDebugFilterValue(input, targetFilters, keys) {
+  for (const key of keys) {
+    if (Object.hasOwn(input, key)) return input[key];
+  }
+  for (const key of keys) {
+    if (Object.hasOwn(targetFilters, key)) return targetFilters[key];
+  }
+  return undefined;
+}
+
+function normalizeDebugRecordFilter(input) {
+  if (input == null || input === false) return null;
+  if (typeof input !== "object") return null;
+  const targetFilters = input.targetFilters && typeof input.targetFilters === "object" ? input.targetFilters : {};
+  const filter = {
+    eventTypes: normalizeDebugStringList(readDebugFilterValue(input, targetFilters, ["eventTypes", "eventType", "events"]), { lowercase: true }),
+    includeEvents: input.includeEvents == null ? true : Boolean(input.includeEvents),
+    includeSamples: input.includeSamples == null ? true : Boolean(input.includeSamples),
+    kinds: normalizeDebugStringList(readDebugFilterValue(input, targetFilters, ["kinds", "kind", "targetKinds", "targetKind"])),
+    layers: normalizeDebugStringList(readDebugFilterValue(input, targetFilters, ["layers", "layer"])),
+    props: normalizeDebugStringList(readDebugFilterValue(input, targetFilters, ["props", "prop", "propAllowlist"]), { caseInsensitive: false }),
+    sourceLabels: normalizeDebugStringList(readDebugFilterValue(input, targetFilters, ["sourceLabels", "sourceLabel", "sources"])),
+    sourceQuery: readDebugString(readDebugFilterValue(input, targetFilters, ["sourceQuery", "query"])),
+  };
+  const hasCriteria = filter.eventTypes.length
+    || filter.kinds.length
+    || filter.layers.length
+    || filter.props.length
+    || filter.sourceLabels.length
+    || filter.sourceQuery
+    || !filter.includeEvents
+    || !filter.includeSamples;
+  return hasCriteria ? filter : null;
+}
+
+function cloneDebugRecordFilter(filter) {
+  if (!filter) return null;
+  return {
+    eventTypes: [...filter.eventTypes],
+    includeEvents: Boolean(filter.includeEvents),
+    includeSamples: Boolean(filter.includeSamples),
+    kinds: [...filter.kinds],
+    layers: [...filter.layers],
+    props: [...filter.props],
+    sourceLabels: [...filter.sourceLabels],
+    sourceQuery: filter.sourceQuery,
+  };
+}
+
+function hasCaseInsensitiveMatch(allowed, value) {
+  if (!allowed.length) return true;
+  const text = readDebugString(value).toLowerCase();
+  if (!text) return false;
+  return allowed.some((entry) => entry.toLowerCase() === text);
+}
+
+function readDebugRecordKind(record = {}) {
+  return record.targetKind ?? record.kind;
+}
+
+function readDebugRecordSourceLabel(record = {}) {
+  return record.sourceLabel ?? record.targetLabel ?? record.label;
+}
+
+function matchesDebugRecordFilter(record = {}, type = "sample", filter = null) {
+  if (!filter) return true;
+  const recordType = readDebugString(record.type ?? type, "sample").toLowerCase();
+  const isSample = recordType === "sample";
+  if (isSample && !filter.includeSamples) return false;
+  if (!isSample && !filter.includeEvents) return false;
+  if (!isSample && filter.eventTypes.length && !filter.eventTypes.includes(recordType)) return false;
+  if (filter.props.length && !filter.props.includes(readDebugString(record.prop))) return false;
+  if (!hasCaseInsensitiveMatch(filter.layers, record.layer)) return false;
+  if (!hasCaseInsensitiveMatch(filter.kinds, readDebugRecordKind(record))) return false;
+  if (!hasCaseInsensitiveMatch(filter.sourceLabels, readDebugRecordSourceLabel(record))) return false;
+  if (filter.sourceQuery) {
+    const sourceLabel = readDebugString(readDebugRecordSourceLabel(record)).toLowerCase();
+    if (!sourceLabel.includes(filter.sourceQuery.toLowerCase())) return false;
+  }
+  return true;
+}
+
 function hasReadableDebugMetadata(metadata) {
   if (!metadata || typeof metadata !== "object") return false;
   return Object.entries(metadata).some(([key, value]) => key !== "targetId" && value != null && value !== "");
@@ -287,7 +391,10 @@ export function createMotionRuntime(options = {}) {
   }
 
   function cloneDebugConfig() {
-    return { ...debugConfig };
+    return {
+      ...debugConfig,
+      recordFilter: cloneDebugRecordFilter(debugConfig.recordFilter),
+    };
   }
 
   function trimDebugHistory() {
@@ -324,6 +431,7 @@ export function createMotionRuntime(options = {}) {
       value: animation.value,
       velocity: animation.velocity,
     };
+    if (metadata?.layer != null) record.layer = metadata.layer;
     if (metadata?.kind != null) record.targetKind = metadata.kind;
     if (metadata?.label != null) record.targetLabel = metadata.label;
     if (metadata?.sourceLabel != null) record.sourceLabel = metadata.sourceLabel;
@@ -345,7 +453,9 @@ export function createMotionRuntime(options = {}) {
 
   function recordDebugEvent(type, animation, extra) {
     if (!shouldRecordDebugHistory()) return;
-    debugHistory.events.push(makeDebugEvent(type, animation, extra));
+    const event = makeDebugEvent(type, animation, extra);
+    if (!matchesDebugRecordFilter(event, type, debugConfig.recordFilter)) return;
+    debugHistory.events.push(event);
     trimDebugHistory();
   }
 
@@ -600,7 +710,13 @@ export function createMotionRuntime(options = {}) {
     if (!shouldRecordDebugHistory()) return;
     const intervalMs = debugConfig.sampleHz > 0 ? 1000 / debugConfig.sampleHz : 0;
     if (intervalMs > 0 && runtimeTimeMs - lastSampleTimeMs < intervalMs) return;
-    const animations = Array.from(activeAnimations).map((animation) => makeDebugAnimationRecord(animation));
+    const animations = Array.from(activeAnimations)
+      .map((animation) => makeDebugAnimationRecord(animation))
+      .filter((record) => matchesDebugRecordFilter(record, "sample", debugConfig.recordFilter));
+    if (debugConfig.recordFilter && animations.length === 0) {
+      lastSampleTimeMs = runtimeTimeMs;
+      return;
+    }
     debugHistory.samples.push({
       activeAnimationCount: animations.length,
       animations,
@@ -628,6 +744,7 @@ export function createMotionRuntime(options = {}) {
       if (Object.hasOwn(config, "sampleHz")) debugConfig.sampleHz = Math.max(0, readNumber(config.sampleHz, debugConfig.sampleHz));
       if (Object.hasOwn(config, "maxEvents")) debugConfig.maxEvents = Math.max(0, Math.floor(readNumber(config.maxEvents, debugConfig.maxEvents)));
       if (Object.hasOwn(config, "maxSamples")) debugConfig.maxSamples = Math.max(0, Math.floor(readNumber(config.maxSamples, debugConfig.maxSamples)));
+      if (Object.hasOwn(config, "recordFilter")) debugConfig.recordFilter = normalizeDebugRecordFilter(config.recordFilter);
       if (Object.hasOwn(config, "timeScale")) debugConfig.timeScale = Math.max(0, readNumber(config.timeScale, debugConfig.timeScale));
       trimDebugHistory();
     }
