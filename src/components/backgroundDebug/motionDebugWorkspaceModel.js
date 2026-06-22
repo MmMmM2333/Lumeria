@@ -239,6 +239,15 @@ export function resizeMotionDebugWorkspaceDock(session = {}, widthPx, options = 
   };
 }
 
+export function resizeMotionDebugWorkspaceDockByDelta(session = {}, deltaPx = 0, options = {}) {
+  const current = createMotionDebugWorkspaceSession(session);
+  return resizeMotionDebugWorkspaceDock(
+    current,
+    current.dockWidthPx + readNumber(deltaPx, 0),
+    options,
+  );
+}
+
 export function setMotionDebugWorkspaceCaptureProfile(session = {}, profileInput = MOTION_DEBUG_DEFAULT_PROFILE_ID) {
   return {
     ...createMotionDebugWorkspaceSession(session),

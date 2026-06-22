@@ -14,6 +14,7 @@ import {
   MOTION_DEBUG_WORKSPACE_REGIONS,
   normalizeMotionDebugWorkspaceDockWidth,
   openMotionDebugWorkspace,
+  resizeMotionDebugWorkspaceDockByDelta,
   resizeMotionDebugWorkspaceDock,
   selectMotionDebugWorkspaceTarget,
   selectMotionDebugWorkspaceTrack,
@@ -129,6 +130,16 @@ export function runMotionDebugWorkspaceModelTests() {
   const resized = resizeMotionDebugWorkspaceDock(full, 600);
   assert(resized.mode === MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN, "resize should preserve current mode");
   assert(resized.dockWidthPx === 600, "resize should store the next dock width");
+  const widenedByDelta = resizeMotionDebugWorkspaceDockByDelta(resized, 80);
+  assert(widenedByDelta.dockWidthPx === 680, "delta resize should increase dock width");
+  const narrowedByDelta = resizeMotionDebugWorkspaceDockByDelta(widenedByDelta, -200);
+  assert(narrowedByDelta.dockWidthPx === MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MIN, "delta resize should clamp to the minimum width");
+  const viewportClampedDelta = resizeMotionDebugWorkspaceDockByDelta(
+    resized,
+    500,
+    { viewportWidth: 700 },
+  );
+  assert(viewportClampedDelta.dockWidthPx === 652, "delta resize should respect viewport-aware maximum width");
 
   const selectedTarget = selectMotionDebugWorkspaceTarget(defaults, { sourceLabel: "desktop.icon.node", layer: "desktop" });
   assert(selectedTarget.selectedTarget.sourceLabel === "desktop.icon.node", "target selection should set selected target");

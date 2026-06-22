@@ -526,6 +526,7 @@
     :class="[
       'motion-debug-workspace',
       motionWorkspaceFullscreen ? 'motion-debug-workspace-fullscreen' : 'motion-debug-workspace-dock',
+      motionWorkspaceDockResizeActive && 'motion-debug-workspace-resizing',
     ]"
     :style="motionWorkspaceStyle"
     aria-label="Motion debug workspace"
@@ -534,6 +535,21 @@
     @pointerdown.stop
     @wheel.stop
   >
+    <div
+      v-if="!motionWorkspaceFullscreen"
+      class="motion-debug-workspace-resize-handle"
+      data-motion-workspace-resize-handle
+      role="separator"
+      tabindex="0"
+      aria-label="Resize workspace dock"
+      aria-orientation="vertical"
+      :aria-valuemin="MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MIN"
+      :aria-valuemax="MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MAX"
+      :aria-valuenow="motionWorkspaceDockWidthPx"
+      :aria-valuetext="`${motionWorkspaceDockWidthPx}px`"
+      @pointerdown.stop="startMotionWorkspaceDockResize"
+      @keydown="handleMotionWorkspaceResizeHandleKeydown"
+    />
     <header class="motion-debug-workspace-toolbar">
       <div class="motion-debug-workspace-title">
         <strong>Motion Debug Workspace</strong>
@@ -2026,6 +2042,7 @@ import {
   MOTION_DEBUG_WORKSPACE_MODE_DOCK,
   MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN,
   openMotionDebugWorkspace,
+  resizeMotionDebugWorkspaceDockByDelta,
   resizeMotionDebugWorkspaceDock,
   selectMotionDebugWorkspaceTarget,
   selectMotionDebugWorkspaceTrack,
@@ -2115,6 +2132,7 @@ const motionTrackChartBrushAnchorMs = ref(null);
 const motionTrackChartBrushPointerId = ref(null);
 const motionTrackChartZoomStartMs = ref(null);
 const motionTrackChartZoomEndMs = ref(null);
+const motionWorkspaceDockResize = ref(null);
 const motionWorkspaceSession = ref(createMotionDebugWorkspaceSession({
   viewportWidth: typeof window === "undefined" ? undefined : window.innerWidth,
 }));
@@ -2145,6 +2163,8 @@ const motionTrackChartSeriesOptions = MOTION_TRACK_CHART_SERIES_KEYS.map((key) =
   key,
   label: key,
 }));
+const MOTION_WORKSPACE_DOCK_RESIZE_STEP_PX = 20;
+const MOTION_WORKSPACE_DOCK_RESIZE_FAST_STEP_PX = 80;
 
 const sliders = [
   { key: "saturation", label: "saturation", min: 0.8, max: 1.8, step: 0.01, digits: 2 },
@@ -2511,6 +2531,7 @@ const motionFocusedDebugExportAvailable = computed(() => Boolean(motionReplayVie
 const motionWorkspaceOpen = computed(() => canDebugMotion.value && motionWorkspaceSession.value.isOpen);
 const motionWorkspaceFullscreen = computed(() => motionWorkspaceSession.value.mode === MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN);
 const motionWorkspaceDockWidthPx = computed(() => motionWorkspaceSession.value.dockWidthPx);
+const motionWorkspaceDockResizeActive = computed(() => motionWorkspaceDockResize.value != null);
 const motionWorkspaceModeLabel = computed(() => (motionWorkspaceFullscreen.value ? "Fullscreen" : "Dock"));
 const motionWorkspaceStyle = computed(() => (motionWorkspaceFullscreen.value
   ? undefined
@@ -2655,6 +2676,119 @@ function releaseMotionTrackChartPointer(target, pointerId) {
 
 function getMotionWorkspaceViewportWidth() {
   return typeof window === "undefined" ? undefined : window.innerWidth;
+}
+
+function isMotionWorkspaceEditableTarget(target) {
+  return Boolean(target?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable='false'])"));
+}
+
+function resizeMotionWorkspaceDockTo(widthPx) {
+  motionWorkspaceSession.value = resizeMotionDebugWorkspaceDock(motionWorkspaceSession.value, widthPx, {
+    viewportWidth: getMotionWorkspaceViewportWidth(),
+  });
+}
+
+function stepMotionWorkspaceDockWidth(direction, event = {}) {
+  const step = event.shiftKey ? MOTION_WORKSPACE_DOCK_RESIZE_FAST_STEP_PX : MOTION_WORKSPACE_DOCK_RESIZE_STEP_PX;
+  motionWorkspaceSession.value = resizeMotionDebugWorkspaceDockByDelta(
+    motionWorkspaceSession.value,
+    direction * step,
+    { viewportWidth: getMotionWorkspaceViewportWidth() },
+  );
+}
+
+function releaseMotionWorkspaceDockResizePointer() {
+  const state = motionWorkspaceDockResize.value;
+  if (!state) return;
+  try {
+    state.target?.releasePointerCapture?.(state.pointerId);
+  } catch {
+    // The pointer may already be released by the browser.
+  }
+}
+
+function removeMotionWorkspaceDockResizeListeners() {
+  if (typeof window === "undefined") return;
+  window.removeEventListener("pointermove", updateMotionWorkspaceDockResize);
+  window.removeEventListener("pointerup", endMotionWorkspaceDockResize);
+  window.removeEventListener("pointercancel", cancelMotionWorkspaceDockResize);
+}
+
+function clearMotionWorkspaceDockResize() {
+  releaseMotionWorkspaceDockResizePointer();
+  removeMotionWorkspaceDockResizeListeners();
+  motionWorkspaceDockResize.value = null;
+}
+
+function startMotionWorkspaceDockResize(event) {
+  if (motionWorkspaceFullscreen.value || event.button !== 0) return;
+  event.preventDefault();
+  clearMotionWorkspaceDockResize();
+  try {
+    event.currentTarget?.setPointerCapture?.(event.pointerId);
+  } catch {
+    // Synthetic pointer events in tests may not have a browser-owned pointer id.
+  }
+  motionWorkspaceDockResize.value = {
+    pointerId: event.pointerId,
+    startClientX: Number(event.clientX) || 0,
+    startWidthPx: motionWorkspaceSession.value.dockWidthPx,
+    target: event.currentTarget,
+  };
+  if (typeof window === "undefined") return;
+  window.addEventListener("pointermove", updateMotionWorkspaceDockResize);
+  window.addEventListener("pointerup", endMotionWorkspaceDockResize);
+  window.addEventListener("pointercancel", cancelMotionWorkspaceDockResize);
+}
+
+function updateMotionWorkspaceDockResize(event) {
+  const state = motionWorkspaceDockResize.value;
+  if (!state || event.pointerId !== state.pointerId) return;
+  const clientX = Number(event.clientX);
+  if (!Number.isFinite(clientX)) return;
+  event.preventDefault();
+  resizeMotionWorkspaceDockTo(state.startWidthPx + state.startClientX - clientX);
+}
+
+function endMotionWorkspaceDockResize(event) {
+  const state = motionWorkspaceDockResize.value;
+  if (!state || event.pointerId !== state.pointerId) return;
+  updateMotionWorkspaceDockResize(event);
+  clearMotionWorkspaceDockResize();
+}
+
+function cancelMotionWorkspaceDockResize(event) {
+  const state = motionWorkspaceDockResize.value;
+  if (!state || event.pointerId !== state.pointerId) return;
+  clearMotionWorkspaceDockResize();
+}
+
+function handleMotionWorkspaceResizeHandleKeydown(event) {
+  if (motionWorkspaceFullscreen.value) return;
+  if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    stepMotionWorkspaceDockWidth(1, event);
+  } else if (event.key === "ArrowRight") {
+    event.preventDefault();
+    stepMotionWorkspaceDockWidth(-1, event);
+  } else if (event.key === "Home") {
+    event.preventDefault();
+    resizeMotionWorkspaceDockTo(MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MIN);
+  } else if (event.key === "End") {
+    event.preventDefault();
+    resizeMotionWorkspaceDockTo(MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MAX);
+  }
+}
+
+function handleMotionWorkspaceGlobalKeydown(event) {
+  if (event.defaultPrevented || event.key !== "Escape" || !motionWorkspaceOpen.value) return;
+  if (isMotionWorkspaceEditableTarget(event.target)) return;
+  event.preventDefault();
+  if (motionWorkspaceFullscreen.value) {
+    setMotionWorkspaceMode(MOTION_DEBUG_WORKSPACE_MODE_DOCK);
+  } else {
+    closeMotionWorkspace();
+  }
 }
 
 function formatMotionWorkspaceTarget(target) {
@@ -3029,10 +3163,14 @@ function toggleMotionWorkspaceSelectedPin() {
 }
 
 function closeMotionWorkspace() {
+  clearMotionWorkspaceDockResize();
   motionWorkspaceSession.value = closeMotionDebugWorkspace(motionWorkspaceSession.value);
 }
 
 function setMotionWorkspaceMode(mode) {
+  if (mode === MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN) {
+    clearMotionWorkspaceDockResize();
+  }
   motionWorkspaceSession.value = setMotionDebugWorkspaceMode(motionWorkspaceSession.value, mode);
   if (mode === MOTION_DEBUG_WORKSPACE_MODE_DOCK) {
     motionWorkspaceSession.value = resizeMotionDebugWorkspaceDock(
@@ -3044,9 +3182,7 @@ function setMotionWorkspaceMode(mode) {
 }
 
 function updateMotionWorkspaceDockWidth(event) {
-  motionWorkspaceSession.value = resizeMotionDebugWorkspaceDock(motionWorkspaceSession.value, event.target.value, {
-    viewportWidth: getMotionWorkspaceViewportWidth(),
-  });
+  resizeMotionWorkspaceDockTo(event.target.value);
 }
 
 function updateMotionWorkspaceCaptureProfile(event) {
@@ -3760,6 +3896,7 @@ watch([isCollapsed, activePanel, canDebugLiveDesktop], restartLiveDesktopRuntime
 watch([isCollapsed, activePanel, canDebugMotion], restartMotionRuntimePoller, { flush: "post" });
 
 onMounted(() => {
+  window.addEventListener("keydown", handleMotionWorkspaceGlobalKeydown);
   restartLiveDesktopRuntimePoller();
   restartMotionRuntimePoller();
 });
@@ -3777,6 +3914,8 @@ onBeforeUnmount(() => {
   stopMotionReplayCapture();
   restoreMotionTimeScale();
   restoreMotionOverlay();
+  clearMotionWorkspaceDockResize();
+  window.removeEventListener("keydown", handleMotionWorkspaceGlobalKeydown);
   clearMotionRuntimePoller();
   clearLiveDesktopRuntimePoller();
 });
@@ -3926,6 +4065,8 @@ onBeforeUnmount(() => {
   background: transparent;
   cursor: pointer;
   font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -4158,6 +4299,7 @@ onBeforeUnmount(() => {
   color: rgba(255, 255, 255, 0.62);
   background: rgba(255, 255, 255, 0.06);
   line-height: 1.35;
+  overflow-wrap: anywhere;
   word-break: break-word;
 }
 
@@ -4245,9 +4387,14 @@ onBeforeUnmount(() => {
 }
 
 .background-debug-motion-empty {
-  padding: 7px 0 2px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
   color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.035);
   font-size: 11px;
+  overflow-wrap: anywhere;
 }
 
 .background-debug-motion-list {
@@ -5110,6 +5257,8 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.1);
   cursor: pointer;
   font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -5124,6 +5273,14 @@ onBeforeUnmount(() => {
 .background-debug-mode-button:disabled {
   opacity: 0.48;
   cursor: default;
+}
+
+.background-debug-button:focus-visible,
+.background-debug-tab:focus-visible,
+.background-debug-mode-button:focus-visible,
+.motion-debug-track-chart-event-button:focus-visible {
+  outline: 2px solid rgba(120, 190, 255, 0.55);
+  outline-offset: 2px;
 }
 
 .background-debug-motion-selectable {
@@ -5167,6 +5324,48 @@ onBeforeUnmount(() => {
   -webkit-backdrop-filter: blur(22px) saturate(120%);
   font-size: 12px;
   line-height: 1.3;
+}
+
+.motion-debug-workspace-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.motion-debug-workspace-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  width: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px 0 0 8px;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.motion-debug-workspace-resize-handle::before {
+  position: absolute;
+  top: 48px;
+  bottom: 48px;
+  left: 4px;
+  width: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  content: "";
+}
+
+.motion-debug-workspace-resize-handle:hover::before,
+.motion-debug-workspace-resize-handle:focus-visible::before,
+.motion-debug-workspace-resizing .motion-debug-workspace-resize-handle::before {
+  background: rgba(120, 190, 255, 0.72);
+}
+
+.motion-debug-workspace-resize-handle:focus-visible {
+  outline: 2px solid rgba(120, 190, 255, 0.55);
+  outline-offset: -2px;
 }
 
 .motion-debug-workspace *,
@@ -5450,6 +5649,11 @@ onBeforeUnmount(() => {
     max-width: none;
   }
 
+  .motion-debug-workspace-resize-handle,
+  .motion-debug-workspace-dock-control {
+    display: none;
+  }
+
   .motion-debug-workspace-toolbar,
   .motion-debug-workspace-toolbar-actions,
   .motion-debug-workspace-selection,
@@ -5481,6 +5685,12 @@ onBeforeUnmount(() => {
     overflow: visible;
   }
 
+  .motion-debug-workspace-selection-actions,
+  .motion-debug-track-chart-window-actions,
+  .motion-debug-anomaly-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .motion-debug-track-chart-toolbar,
   .motion-debug-track-chart-window-controls,
   .motion-debug-track-chart-row-meta,
@@ -5499,6 +5709,19 @@ onBeforeUnmount(() => {
     right: 14px;
     bottom: 14px;
     width: calc(100vw - 28px);
+  }
+
+  .motion-debug-workspace {
+    top: 8px;
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    padding: 10px;
+  }
+
+  .motion-debug-workspace .background-debug-status-grid,
+  .motion-debug-track-chart-series-controls {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>
