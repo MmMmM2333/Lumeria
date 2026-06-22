@@ -636,6 +636,113 @@
           </div>
         </dl>
         <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">Capture Profile</div>
+          <label class="background-debug-control background-debug-select-control">
+            <span>
+              Profile
+              <output>{{ motionCaptureProfile.label }}</output>
+            </span>
+            <select
+              name="motionCaptureProfileId"
+              :disabled="motionReplayCaptureActive"
+              :value="motionCaptureProfile.id"
+              @change="updateMotionWorkspaceCaptureProfile"
+            >
+              <option
+                v-for="profile in motionCaptureProfiles"
+                :key="profile.id"
+                :value="profile.id"
+              >
+                {{ profile.label }}
+              </option>
+            </select>
+          </label>
+          <div class="background-debug-motion-capture-props" role="group" aria-label="Capture properties">
+            <label
+              v-for="prop in motionCaptureAllowedProps"
+              :key="prop"
+              class="background-debug-toggle background-debug-motion-capture-prop"
+            >
+              <input
+                :name="`motionCaptureProp-${prop}`"
+                type="checkbox"
+                :checked="motionCaptureProfile.propAllowlist.includes(prop)"
+                :disabled="motionReplayCaptureActive || (motionCaptureProfile.propAllowlist.includes(prop) && motionCaptureSelectedPropCount <= 1)"
+                @change="toggleMotionWorkspaceCaptureProp(prop, $event)"
+              >
+              <span>{{ prop }}</span>
+            </label>
+          </div>
+          <div class="background-debug-motion-capture-filter-grid">
+            <label class="background-debug-control background-debug-motion-capture-filter-control">
+              <span>
+                Layers
+                <output>{{ motionCaptureTargetFilterText.layers || "all" }}</output>
+              </span>
+              <input
+                name="motionCaptureLayerFilter"
+                type="text"
+                placeholder="desktop, folder"
+                :disabled="motionReplayCaptureActive"
+                :value="motionCaptureTargetFilterText.layers"
+                @input="updateMotionWorkspaceCaptureTargetFilter('layers', $event)"
+              >
+            </label>
+            <label class="background-debug-control background-debug-motion-capture-filter-control">
+              <span>
+                Kinds
+                <output>{{ motionCaptureTargetFilterText.kinds || "all" }}</output>
+              </span>
+              <input
+                name="motionCaptureKindFilter"
+                type="text"
+                placeholder="Icon, FolderPanel"
+                :disabled="motionReplayCaptureActive"
+                :value="motionCaptureTargetFilterText.kinds"
+                @input="updateMotionWorkspaceCaptureTargetFilter('kinds', $event)"
+              >
+            </label>
+            <label class="background-debug-control background-debug-motion-capture-filter-control">
+              <span>
+                Sources
+                <output>{{ motionCaptureTargetFilterText.sourceLabels || "all" }}</output>
+              </span>
+              <input
+                name="motionCaptureSourceLabelFilter"
+                type="text"
+                placeholder="desktop.icon.node"
+                :disabled="motionReplayCaptureActive"
+                :value="motionCaptureTargetFilterText.sourceLabels"
+                @input="updateMotionWorkspaceCaptureTargetFilter('sourceLabels', $event)"
+              >
+            </label>
+            <label class="background-debug-control background-debug-motion-capture-filter-control">
+              <span>
+                Source query
+                <output>{{ motionCaptureTargetFilterText.sourceQuery || "all" }}</output>
+              </span>
+              <input
+                name="motionCaptureSourceQuery"
+                type="search"
+                placeholder="icon / panel"
+                :disabled="motionReplayCaptureActive"
+                :value="motionCaptureTargetFilterText.sourceQuery"
+                @input="updateMotionWorkspaceCaptureTargetFilter('sourceQuery', $event)"
+              >
+            </label>
+          </div>
+          <dl class="background-debug-status-grid background-debug-motion-capture-estimate">
+            <div
+              v-for="row in motionCaptureEstimateRows"
+              :key="row.label"
+              :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
+            >
+              <dt>{{ row.label }}</dt>
+              <dd :title="row.value">{{ row.value }}</dd>
+            </div>
+          </dl>
+        </div>
+        <div class="background-debug-subsection">
           <div class="background-debug-subtitle">Filters</div>
           <div class="background-debug-mode-group background-debug-motion-filter-group" role="group" aria-label="Motion filter presets">
             <button
@@ -1379,11 +1486,12 @@ import {
 } from "./backgroundDebug/motionReplayViewerModel.js";
 import {
   estimateMotionCaptureProfileSize,
-  normalizeMotionCaptureProfile,
+  getMotionCaptureProfiles,
+  MOTION_CAPTURE_ALLOWED_PROPS,
   MOTION_CAPTURE_DEFAULT_SAMPLE_HZ,
-  MOTION_CAPTURE_PROFILE_DEFAULT_VISUAL,
 } from "./backgroundDebug/motionCaptureProfileModel.js";
 import {
+  buildMotionDebugWorkspaceCaptureProfile,
   closeMotionDebugWorkspace,
   createMotionDebugWorkspaceSession,
   MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MAX,
@@ -1394,9 +1502,12 @@ import {
   resizeMotionDebugWorkspaceDock,
   selectMotionDebugWorkspaceTarget,
   selectMotionDebugWorkspaceTrack,
+  setMotionDebugWorkspaceCaptureProfile,
+  setMotionDebugWorkspaceCaptureTargetFilters,
   setMotionDebugWorkspaceFilters,
   setMotionDebugWorkspaceMode,
   setMotionDebugWorkspaceTime,
+  toggleMotionDebugWorkspaceCaptureProp,
   toggleMotionDebugWorkspacePin,
 } from "./backgroundDebug/motionDebugWorkspaceModel.js";
 import { createMotionDebugAIReport } from "../rendering/pixi/animation/motionDebugReport.js";
@@ -1491,6 +1602,9 @@ let motionReplayTraceCopyStateTimer = null;
 let motionSummaryCopyStateTimer = null;
 let liveDesktopRuntimePollTimer = null;
 let kawaseLiveDesktopSyncTimer = null;
+
+const motionCaptureProfiles = getMotionCaptureProfiles();
+const motionCaptureAllowedProps = MOTION_CAPTURE_ALLOWED_PROPS;
 
 const sliders = [
   { key: "saturation", label: "saturation", min: 0.8, max: 1.8, step: 0.01, digits: 2 },
@@ -1718,9 +1832,7 @@ const motionLayerTreeRows = computed(() => buildMotionLayerTreeRows(motionReport
 const motionPropertyRows = computed(() => buildMotionPropertyRows(motionReport.value, motionFilters.value));
 const motionTimelineGroups = computed(() => buildMotionTimelineGroups(motionReport.value, motionFilters.value));
 const motionCurveChartGroups = computed(() => buildMotionCurveChartGroups(motionReport.value, motionFilters.value));
-const motionCaptureProfile = computed(() => normalizeMotionCaptureProfile(
-  motionWorkspaceSession.value.captureProfileId || MOTION_CAPTURE_PROFILE_DEFAULT_VISUAL
-));
+const motionCaptureProfile = computed(() => buildMotionDebugWorkspaceCaptureProfile(motionWorkspaceSession.value));
 const motionReplayCaptureEstimate = computed(() => estimateMotionCaptureProfileSize(
   motionReport.value,
   motionCaptureProfile.value,
@@ -1738,6 +1850,32 @@ const motionReplayCaptureRows = computed(() => buildMotionReplayCaptureRows(
     profile: motionCaptureProfile.value,
   }
 ));
+const motionCaptureSelectedPropCount = computed(() => motionCaptureProfile.value.propAllowlist.length);
+const motionCaptureTargetFilterText = computed(() => {
+  const filters = motionCaptureProfile.value.targetFilters;
+  return {
+    kinds: formatMotionCaptureFilterList(filters.kinds),
+    layers: formatMotionCaptureFilterList(filters.layers),
+    sourceLabels: formatMotionCaptureFilterList(filters.sourceLabels),
+    sourceQuery: filters.sourceQuery,
+  };
+});
+const motionCaptureEstimateRows = computed(() => [
+  { label: "profile", value: motionCaptureProfile.value.label, wide: true },
+  { label: "props", value: motionCaptureProfile.value.propAllowlist.join(", "), wide: true },
+  { label: "targets", value: formatMotionCaptureTargetFilterSummary(motionCaptureProfile.value.targetFilters), wide: true },
+  {
+    label: "frames/events",
+    value: `${formatCount(motionReplayCaptureEstimate.value.frameCount)} / ${formatCount(motionReplayCaptureEstimate.value.eventCount)}`,
+    wide: true,
+  },
+  {
+    label: "tracks/targets",
+    value: `${formatCount(motionReplayCaptureEstimate.value.trackCount)} / ${formatCount(motionReplayCaptureEstimate.value.targetCount)}`,
+    wide: true,
+  },
+  { label: "json", value: motionReplayCaptureEstimate.value.jsonSizeLabel, wide: true },
+]);
 const motionReplayTimeRange = computed(() => motionReplayViewerTrace.value ? getMotionReplayTimeRange(motionReplayViewerTrace.value) : { max: 0, min: 0 });
 const motionReplayFilters = computed(() => ({
   query: motionReplayFilterQuery.value,
@@ -1804,6 +1942,26 @@ function formatMotionWorkspaceTarget(target) {
 function formatMotionWorkspaceTrack(track) {
   if (!track) return "none";
   return `${track.prop || "unknown"} / ${track.lane || "base"}`;
+}
+
+function formatMotionCaptureFilterList(values = []) {
+  return (Array.isArray(values) ? values : []).join(", ");
+}
+
+function formatMotionCaptureTargetFilterSummary(filters = {}) {
+  const parts = [];
+  if (filters.layers?.length) parts.push(`${filters.layers.length} layer`);
+  if (filters.kinds?.length) parts.push(`${filters.kinds.length} kind`);
+  if (filters.sourceLabels?.length) parts.push(`${filters.sourceLabels.length} source`);
+  if (filters.sourceQuery) parts.push(`query:${filters.sourceQuery}`);
+  return parts.length ? parts.join(" / ") : "all targets";
+}
+
+function parseMotionCaptureFilterList(value) {
+  return String(value ?? "")
+    .split(/[,\n;]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 }
 
 function getMotionWorkspaceTargetKey(target) {
@@ -2008,6 +2166,30 @@ function setMotionWorkspaceMode(mode) {
 function updateMotionWorkspaceDockWidth(event) {
   motionWorkspaceSession.value = resizeMotionDebugWorkspaceDock(motionWorkspaceSession.value, event.target.value, {
     viewportWidth: getMotionWorkspaceViewportWidth(),
+  });
+}
+
+function updateMotionWorkspaceCaptureProfile(event) {
+  motionWorkspaceSession.value = setMotionDebugWorkspaceCaptureProfile(
+    motionWorkspaceSession.value,
+    event.target.value,
+  );
+}
+
+function toggleMotionWorkspaceCaptureProp(prop, event) {
+  motionWorkspaceSession.value = toggleMotionDebugWorkspaceCaptureProp(
+    motionWorkspaceSession.value,
+    prop,
+    event.target.checked,
+  );
+}
+
+function updateMotionWorkspaceCaptureTargetFilter(key, event) {
+  const currentFilters = motionWorkspaceSession.value.captureTargetFilters;
+  const value = event.target.value;
+  motionWorkspaceSession.value = setMotionDebugWorkspaceCaptureTargetFilters(motionWorkspaceSession.value, {
+    ...currentFilters,
+    [key]: key === "sourceQuery" ? value : parseMotionCaptureFilterList(value),
   });
 }
 
@@ -2836,6 +3018,42 @@ onBeforeUnmount(() => {
 
 .background-debug-number-control input[type="number"]:disabled {
   opacity: 0.46;
+}
+
+.background-debug-select-control select,
+.background-debug-motion-capture-filter-control input[type="text"],
+.background-debug-motion-capture-filter-control input[type="search"] {
+  width: 100%;
+  height: 28px;
+  min-width: 0;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+}
+
+.background-debug-select-control select:disabled,
+.background-debug-motion-capture-filter-control input:disabled {
+  opacity: 0.46;
+}
+
+.background-debug-motion-capture-props {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 8px;
+  min-width: 0;
+}
+
+.background-debug-motion-capture-prop {
+  min-height: 22px;
+}
+
+.background-debug-motion-capture-filter-grid {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
 }
 
 .background-debug-motion-filter-group {

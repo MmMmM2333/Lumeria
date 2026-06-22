@@ -1,4 +1,5 @@
 import {
+  buildMotionDebugWorkspaceCaptureProfile,
   closeMotionDebugWorkspace,
   createMotionDebugWorkspaceSession,
   isMotionDebugQuickPanelControl,
@@ -16,12 +17,21 @@ import {
   resizeMotionDebugWorkspaceDock,
   selectMotionDebugWorkspaceTarget,
   selectMotionDebugWorkspaceTrack,
+  setMotionDebugWorkspaceCaptureProfile,
+  setMotionDebugWorkspaceCaptureTargetFilters,
   setMotionDebugWorkspaceFilters,
   setMotionDebugWorkspaceMode,
   setMotionDebugWorkspaceTime,
   toggleMotionDebugWorkspaceFullscreen,
+  toggleMotionDebugWorkspaceCaptureProp,
   toggleMotionDebugWorkspacePin,
 } from "./motionDebugWorkspaceModel.js";
+import {
+  MOTION_CAPTURE_ALLOWED_PROPS,
+  MOTION_CAPTURE_PROFILE_ALPHA_FOCUS,
+  MOTION_CAPTURE_PROFILE_CUSTOM,
+  MOTION_CAPTURE_PROFILE_INTERRUPTION_FOCUS,
+} from "./motionCaptureProfileModel.js";
 
 export function runMotionDebugWorkspaceModelTests() {
   const assert = (condition, message) => {
@@ -60,6 +70,8 @@ export function runMotionDebugWorkspaceModelTests() {
   assert(defaults.selectedTimeMs === 0, "workspace should default to time zero");
   assert(defaults.filters.preset === "all" && defaults.filters.query === "", "workspace filters should default to all");
   assert(Array.isArray(defaults.pinnedTargets) && defaults.pinnedTargets.length === 0, "workspace pins should default empty");
+  assert(defaults.capturePropAllowlist.join(",") === MOTION_CAPTURE_ALLOWED_PROPS.join(","), "session should default to all capture props");
+  assert(defaults.captureTargetFilters.layers.length === 0, "session should default without capture target filters");
 
   const normalized = createMotionDebugWorkspaceSession({
     captureProfileId: " alpha-focus ",
@@ -77,6 +89,7 @@ export function runMotionDebugWorkspaceModelTests() {
     selectedTrack: { lane: "base", laneKey: "panel-y", prop: "y", sourceLabel: "folder.panel", targetId: 3 },
   });
   assert(normalized.captureProfileId === "alpha-focus", "session should trim capture profile id");
+  assert(normalized.capturePropAllowlist.join(",") === "alpha", "session should derive props from the selected profile");
   assert(normalized.dockWidthPx === MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MAX, "session should clamp oversized dock width");
   assert(normalized.mode === MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN, "session should preserve fullscreen mode");
   assert(normalized.selectedTimeMs === 0, "session should clamp negative selected time");
@@ -135,6 +148,38 @@ export function runMotionDebugWorkspaceModelTests() {
 
   const filtered = setMotionDebugWorkspaceFilters(defaults, { preset: "warnings", query: "jiggle" });
   assert(filtered.filters.preset === "warnings" && filtered.filters.query === "jiggle", "filter setter should normalize filter patch");
+
+  const alphaCapture = setMotionDebugWorkspaceCaptureProfile(defaults, MOTION_CAPTURE_PROFILE_ALPHA_FOCUS);
+  assert(alphaCapture.captureProfileId === MOTION_CAPTURE_PROFILE_ALPHA_FOCUS, "capture profile setter should accept built-in ids");
+  assert(alphaCapture.capturePropAllowlist.join(",") === "alpha", "capture profile setter should update props from the built-in profile");
+  const profileFromSession = buildMotionDebugWorkspaceCaptureProfile(alphaCapture);
+  assert(profileFromSession.id === MOTION_CAPTURE_PROFILE_ALPHA_FOCUS, "capture profile builder should preserve selected profile id");
+  assert(profileFromSession.propAllowlist.join(",") === "alpha", "capture profile builder should expose selected props");
+
+  const customProps = toggleMotionDebugWorkspaceCaptureProp(alphaCapture, "x", true);
+  assert(customProps.captureProfileId === MOTION_CAPTURE_PROFILE_CUSTOM, "editing capture props should switch to custom profile");
+  assert(customProps.capturePropAllowlist.join(",") === "x,alpha", "editing capture props should keep allowed props in stable order");
+  const removedAlpha = toggleMotionDebugWorkspaceCaptureProp(customProps, "alpha", false);
+  assert(removedAlpha.capturePropAllowlist.join(",") === "x", "capture prop toggle should remove enabled props");
+  const refusedEmpty = toggleMotionDebugWorkspaceCaptureProp(removedAlpha, "x", false);
+  assert(refusedEmpty.capturePropAllowlist.join(",") === "x", "capture prop toggle should keep at least one selected prop");
+  const ignoredProp = toggleMotionDebugWorkspaceCaptureProp(removedAlpha, "z", true);
+  assert(ignoredProp.capturePropAllowlist.join(",") === "x", "capture prop toggle should ignore unsupported props");
+
+  const interruptionCapture = setMotionDebugWorkspaceCaptureProfile(defaults, MOTION_CAPTURE_PROFILE_INTERRUPTION_FOCUS);
+  const filteredCapture = setMotionDebugWorkspaceCaptureTargetFilters(interruptionCapture, {
+    kinds: [" Icon ", "Icon"],
+    layers: "desktop",
+    sourceLabels: ["desktop.icon.node"],
+    sourceQuery: " icon ",
+  });
+  assert(filteredCapture.captureProfileId === MOTION_CAPTURE_PROFILE_CUSTOM, "editing target filters should switch to custom profile");
+  assert(filteredCapture.captureTargetFilters.layers.join(",") === "desktop", "capture target filters should normalize layers");
+  assert(filteredCapture.captureTargetFilters.kinds.join(",") === "Icon", "capture target filters should dedupe kinds");
+  assert(filteredCapture.captureTargetFilters.sourceQuery === "icon", "capture target filters should trim query");
+  const customCaptureProfile = buildMotionDebugWorkspaceCaptureProfile(filteredCapture);
+  assert(!customCaptureProfile.includeSamples, "customized interruption filters should preserve sample/event semantics");
+  assert(customCaptureProfile.eventTypes.includes("cancel"), "customized interruption filters should preserve event types");
 
   const selectedTime = setMotionDebugWorkspaceTime(defaults, 42.8);
   assert(selectedTime.selectedTimeMs === 42.8, "time setter should preserve finite selected time");

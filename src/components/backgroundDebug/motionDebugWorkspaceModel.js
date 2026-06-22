@@ -1,6 +1,15 @@
+import {
+  MOTION_CAPTURE_ALLOWED_PROPS,
+  MOTION_CAPTURE_PROFILE_CUSTOM,
+  MOTION_CAPTURE_PROFILE_DEFAULT_VISUAL,
+  normalizeMotionCaptureProfile,
+  normalizeMotionCapturePropAllowlist,
+  normalizeMotionCaptureTargetFilters,
+} from "./motionCaptureProfileModel.js";
+
 export const MOTION_DEBUG_WORKSPACE_MODE_DOCK = "dock";
 export const MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN = "fullscreen";
-export const MOTION_DEBUG_DEFAULT_PROFILE_ID = "default-visual";
+export const MOTION_DEBUG_DEFAULT_PROFILE_ID = MOTION_CAPTURE_PROFILE_DEFAULT_VISUAL;
 export const MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_DEFAULT = 680;
 export const MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MIN = 520;
 export const MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MAX = 960;
@@ -64,6 +73,44 @@ function normalizeWorkspaceFilters(filters = {}) {
   };
 }
 
+function hasOwnValue(source, key) {
+  return Object.prototype.hasOwnProperty.call(source, key);
+}
+
+function normalizeCaptureProfileState(input = {}) {
+  const source = typeof input === "string" ? { id: input } : (input && typeof input === "object" ? input : {});
+  const profileInput = {
+    id: source.captureProfileId ?? source.id ?? MOTION_DEBUG_DEFAULT_PROFILE_ID,
+  };
+  if (hasOwnValue(source, "captureEventTypes") || hasOwnValue(source, "eventTypes")) {
+    profileInput.eventTypes = source.captureEventTypes ?? source.eventTypes;
+  }
+  if (hasOwnValue(source, "captureIncludeEvents") || hasOwnValue(source, "includeEvents")) {
+    profileInput.includeEvents = source.captureIncludeEvents ?? source.includeEvents;
+  }
+  if (hasOwnValue(source, "captureIncludeSamples") || hasOwnValue(source, "includeSamples")) {
+    profileInput.includeSamples = source.captureIncludeSamples ?? source.includeSamples;
+  }
+  if (hasOwnValue(source, "capturePropAllowlist") || hasOwnValue(source, "propAllowlist") || hasOwnValue(source, "props")) {
+    profileInput.propAllowlist = source.capturePropAllowlist ?? source.propAllowlist ?? source.props;
+  }
+  if (hasOwnValue(source, "captureTargetFilters") || hasOwnValue(source, "targetFilters") || hasOwnValue(source, "targets")) {
+    profileInput.targetFilters = source.captureTargetFilters ?? source.targetFilters ?? source.targets;
+  }
+  const profile = normalizeMotionCaptureProfile(profileInput);
+  const propAllowlist = profile.propAllowlist.length
+    ? profile.propAllowlist
+    : [MOTION_CAPTURE_ALLOWED_PROPS[0]];
+  return {
+    captureEventTypes: [...profile.eventTypes],
+    captureIncludeEvents: profile.includeEvents,
+    captureIncludeSamples: profile.includeSamples,
+    captureProfileId: profile.id,
+    capturePropAllowlist: [...propAllowlist],
+    captureTargetFilters: normalizeMotionCaptureTargetFilters(profile.targetFilters),
+  };
+}
+
 function normalizeTargetRef(target = null) {
   if (target == null) return null;
   if (typeof target === "string" || typeof target === "number") {
@@ -123,8 +170,9 @@ export function isMotionDebugWorkspaceSection(id) {
 }
 
 export function createMotionDebugWorkspaceSession(input = {}) {
+  const captureProfileState = normalizeCaptureProfileState(input);
   return {
-    captureProfileId: readString(input.captureProfileId, MOTION_DEBUG_DEFAULT_PROFILE_ID),
+    ...captureProfileState,
     dockWidthPx: normalizeMotionDebugWorkspaceDockWidth(input.dockWidthPx, { viewportWidth: input.viewportWidth }),
     filters: normalizeWorkspaceFilters(input.filters),
     isOpen: Boolean(input.isOpen),
@@ -134,6 +182,18 @@ export function createMotionDebugWorkspaceSession(input = {}) {
     selectedTimeMs: Math.max(0, readNumber(input.selectedTimeMs, 0)),
     selectedTrack: normalizeTrackRef(input.selectedTrack),
   };
+}
+
+export function buildMotionDebugWorkspaceCaptureProfile(session = {}) {
+  const current = createMotionDebugWorkspaceSession(session);
+  return normalizeMotionCaptureProfile({
+    eventTypes: current.captureEventTypes,
+    id: current.captureProfileId,
+    includeEvents: current.captureIncludeEvents,
+    includeSamples: current.captureIncludeSamples,
+    propAllowlist: current.capturePropAllowlist,
+    targetFilters: current.captureTargetFilters,
+  });
 }
 
 export function openMotionDebugWorkspace(session = {}, options = {}) {
@@ -176,6 +236,40 @@ export function resizeMotionDebugWorkspaceDock(session = {}, widthPx, options = 
   return {
     ...createMotionDebugWorkspaceSession(session),
     dockWidthPx: normalizeMotionDebugWorkspaceDockWidth(widthPx, options),
+  };
+}
+
+export function setMotionDebugWorkspaceCaptureProfile(session = {}, profileInput = MOTION_DEBUG_DEFAULT_PROFILE_ID) {
+  return {
+    ...createMotionDebugWorkspaceSession(session),
+    ...normalizeCaptureProfileState(profileInput),
+  };
+}
+
+export function toggleMotionDebugWorkspaceCaptureProp(session = {}, prop, enabled) {
+  const current = createMotionDebugWorkspaceSession(session);
+  const propName = readString(prop);
+  if (!MOTION_CAPTURE_ALLOWED_PROPS.includes(propName)) return current;
+  const propSet = new Set(normalizeMotionCapturePropAllowlist(current.capturePropAllowlist));
+  const shouldEnable = enabled == null ? !propSet.has(propName) : Boolean(enabled);
+  if (shouldEnable) {
+    propSet.add(propName);
+  } else {
+    if (propSet.size <= 1 && propSet.has(propName)) return current;
+    propSet.delete(propName);
+  }
+  return {
+    ...current,
+    captureProfileId: MOTION_CAPTURE_PROFILE_CUSTOM,
+    capturePropAllowlist: MOTION_CAPTURE_ALLOWED_PROPS.filter((allowedProp) => propSet.has(allowedProp)),
+  };
+}
+
+export function setMotionDebugWorkspaceCaptureTargetFilters(session = {}, filters = {}) {
+  return {
+    ...createMotionDebugWorkspaceSession(session),
+    captureProfileId: MOTION_CAPTURE_PROFILE_CUSTOM,
+    captureTargetFilters: normalizeMotionCaptureTargetFilters(filters),
   };
 }
 
