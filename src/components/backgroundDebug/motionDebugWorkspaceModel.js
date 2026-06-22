@@ -210,6 +210,13 @@ export function setMotionDebugWorkspaceFilters(session = {}, filters = {}) {
   };
 }
 
+export function setMotionDebugWorkspaceTime(session = {}, timeMs = 0) {
+  return {
+    ...createMotionDebugWorkspaceSession(session),
+    selectedTimeMs: Math.max(0, readNumber(timeMs, 0)),
+  };
+}
+
 export function toggleMotionDebugWorkspacePin(session = {}, target = null) {
   const current = createMotionDebugWorkspaceSession(session);
   const normalized = normalizeTargetRef(target);

@@ -18,6 +18,7 @@ import {
   selectMotionDebugWorkspaceTrack,
   setMotionDebugWorkspaceFilters,
   setMotionDebugWorkspaceMode,
+  setMotionDebugWorkspaceTime,
   toggleMotionDebugWorkspaceFullscreen,
   toggleMotionDebugWorkspacePin,
 } from "./motionDebugWorkspaceModel.js";
@@ -134,6 +135,11 @@ export function runMotionDebugWorkspaceModelTests() {
 
   const filtered = setMotionDebugWorkspaceFilters(defaults, { preset: "warnings", query: "jiggle" });
   assert(filtered.filters.preset === "warnings" && filtered.filters.query === "jiggle", "filter setter should normalize filter patch");
+
+  const selectedTime = setMotionDebugWorkspaceTime(defaults, 42.8);
+  assert(selectedTime.selectedTimeMs === 42.8, "time setter should preserve finite selected time");
+  const clampedTime = setMotionDebugWorkspaceTime(defaults, -5);
+  assert(clampedTime.selectedTimeMs === 0, "time setter should clamp negative selected time");
 
   const pinned = toggleMotionDebugWorkspacePin(defaults, { targetId: 9, sourceLabel: "desktop.icon.jiggle" });
   assert(pinned.pinnedTargets.length === 1, "pin toggle should add a target");

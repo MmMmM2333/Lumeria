@@ -270,6 +270,7 @@ export function runMotionDebugPanelModelTests() {
   assert(propertyRows[0].targetProp === "folder.panel.y", "property rows should include target.prop");
   assert(propertyRows[0].delta === "107.66", "property rows should expose to-value delta");
   assert(propertyRows[0].sourceLabel === "folder.panel", "property rows should expose sourceLabel");
+  assert(propertyRows[0].targetId === 3 && propertyRows[0].prop === "y", "property rows should expose selection identifiers");
   const queriedProperties = buildMotionPropertyRows(report, { preset: "all", query: "jiggle" });
   assert(queriedProperties.length === 1 && queriedProperties[0].laneKey === "icon-jiggle-x", "query filter should narrow property rows");
 
@@ -297,8 +298,10 @@ export function runMotionDebugPanelModelTests() {
   assert(timelineGroups.length === 2, "timeline groups should group events by target/lane");
   const panelTimeline = timelineGroups.find((group) => group.label.includes("folder.panel / base/panel-y"));
   assert(panelTimeline, "timeline groups should label target and lane");
+  assert(panelTimeline.targetId === 3 && panelTimeline.laneKey === "panel-y", "timeline groups should expose selection identifiers");
   assert(panelTimeline.events[0].type === "cancel", "timeline events should sort newest first inside grouped output");
   assert(panelTimeline.events[0].detail.includes("reason=replace"), "timeline event rows should expose cancel reason");
+  assert(panelTimeline.events[0].timeMs === 80 && panelTimeline.events[0].targetId === 3, "timeline events should expose selected time and target");
   const queriedTimeline = buildMotionTimelineGroups(report, { preset: "all", query: "jiggle" });
   assert(queriedTimeline.length === 1 && queriedTimeline[0].label.includes("desktop.icon.jiggle"), "query filter should narrow timeline groups");
   const warningTimeline = buildMotionTimelineGroups(report, { preset: "warnings", query: "" });
@@ -311,6 +314,8 @@ export function runMotionDebugPanelModelTests() {
   assert(curveGroups.length === 2, "curve chart should group sampled tracks");
   const panelCurve = curveGroups.find((group) => group.label === "folder.panel.y");
   assert(panelCurve, "curve chart should label target.prop");
+  assert(panelCurve.targetId === 3 && panelCurve.prop === "y" && panelCurve.laneKey === "panel-y", "curve chart should expose selection identifiers");
+  assert(panelCurve.latestTimeMs === 100, "curve chart should expose latest selected time");
   assert(panelCurve.summary.includes("3 samples"), "curve chart summary should include sample count");
   assert(panelCurve.valuePath.startsWith("M "), "curve chart should expose a value path");
   assert(panelCurve.toPath.startsWith("M "), "curve chart should expose a target path");

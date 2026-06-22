@@ -373,9 +373,12 @@ export function buildMotionPropertyRows(report = {}, filters = {}, limit = MAX_R
       return {
         delta: formatMotionNumber(delta),
         driver: animation.driver || "-",
+        key: makeTrackKey(animation),
         lane: animation.lane || "-",
         laneKey: animation.laneKey || "-",
+        prop: animation.prop || "-",
         sourceLabel: animation.sourceLabel || "-",
+        targetId: animation.targetId,
         targetProp: `${resolveRecordLabel(animation)}.${animation.prop || "-"}`,
         to: formatMotionNumber(animation.to),
         value: formatMotionNumber(animation.value),
@@ -447,8 +450,13 @@ function buildTimelineEventRow(event = {}) {
     ].filter(Boolean).join(" / "),
     frame: formatCount(event.frame),
     key: `${formatMotionNumber(event.timeMs, 0)}:${event.type || "event"}:${makeTrackKey(event)}`,
+    lane: event.lane || "-",
+    laneKey: event.laneKey || "-",
     prop: event.prop || "-",
+    sourceLabel: event.sourceLabel || event.targetLabel || event.label || "-",
+    targetId: event.targetId,
     time: `${formatMotionNumber(event.timeMs, 0)}ms`,
+    timeMs: readNumber(event.timeMs, 0),
     type: event.type || "event",
   };
 }
@@ -470,7 +478,11 @@ export function buildMotionTimelineGroups(report = {}, filters = {}, options = {
         events: [],
         key: groupKey,
         label: `${resolveRecordLabel(event)} / ${laneLabel}`,
+        lane: event.lane || "-",
+        laneKey: event.laneKey || "-",
         prop: event.prop || "-",
+        sourceLabel: event.sourceLabel || event.targetLabel || event.label || "-",
+        targetId: event.targetId,
       };
       groupsByKey.set(groupKey, group);
     }
@@ -564,9 +576,13 @@ export function buildMotionCurveChartGroups(report = {}, filters = {}, options =
         eventMarkers,
         key: track.key,
         label,
+        lane: track.lane,
+        laneKey: track.laneKey,
         laneLabel: [track.lane, track.laneKey].filter(Boolean).join("/") || "-",
+        latestTimeMs: timeRange.max,
         normalized: true,
         overlayLabel: `${label} / ${track.laneKey}`,
+        prop: track.prop,
         rangeLabels: {
           delta: formatRange(deltaRange),
           value: formatRange(valueRange),
@@ -582,6 +598,7 @@ export function buildMotionCurveChartGroups(report = {}, filters = {}, options =
           retargetCount: stats.retargetCount ?? 0,
         },
         summary: `${formatCount(points.length)} samples / ${formatCount(events.length)} events / normalized`,
+        targetId: track.targetId,
         toPath: makeSvgPath(to),
         valuePath: makeSvgPath(value),
         velocityPath: makeSvgPath(velocity),

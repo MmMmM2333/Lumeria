@@ -667,7 +667,16 @@
             <section
               v-for="row in motionLayerTreeRows"
               :key="row.key"
-              class="background-debug-motion-timeline-group"
+              :class="[
+                'background-debug-motion-timeline-group',
+                'background-debug-motion-selectable',
+                isMotionWorkspaceLayerSelected(row) && 'background-debug-motion-selected',
+              ]"
+              role="button"
+              tabindex="0"
+              @click="selectMotionWorkspaceLayer(row)"
+              @keydown.enter.prevent="selectMotionWorkspaceLayer(row)"
+              @keydown.space.prevent="selectMotionWorkspaceLayer(row)"
             >
               <header>
                 <strong :title="row.layer">{{ row.layer }}</strong>
@@ -692,7 +701,14 @@
 
         <div class="background-debug-subsection">
           <div class="background-debug-subtitle">Properties</div>
-          <div class="background-debug-motion-property-table" role="table" aria-label="Pixi motion properties">
+          <div
+            class="background-debug-motion-property-table"
+            role="table"
+            aria-label="Pixi motion properties"
+            @click="selectMotionWorkspacePropertyByEvent"
+            @keydown.enter.prevent="selectMotionWorkspacePropertyByEvent"
+            @keydown.space.prevent="selectMotionWorkspacePropertyByEvent"
+          >
             <div class="background-debug-motion-property-row background-debug-motion-row-head" role="row">
               <span role="columnheader">target.prop</span>
               <span role="columnheader">value</span>
@@ -707,8 +723,14 @@
             <div
               v-for="(row, index) in motionPropertyRows"
               :key="`${row.targetProp}-${row.laneKey}-${index}`"
-              class="background-debug-motion-property-row"
+              :class="[
+                'background-debug-motion-property-row',
+                'background-debug-motion-selectable',
+                isMotionWorkspaceTrackSelected(row) && 'background-debug-motion-selected',
+              ]"
               role="row"
+              tabindex="0"
+              :data-motion-property-index="index"
             >
               <span role="cell" :title="row.targetProp">{{ row.targetProp }}</span>
               <span role="cell" :title="row.value">{{ row.value }}</span>
@@ -732,7 +754,16 @@
             <section
               v-for="group in motionTimelineGroups"
               :key="group.key"
-              class="background-debug-motion-timeline-group"
+              :class="[
+                'background-debug-motion-timeline-group',
+                'background-debug-motion-selectable',
+                isMotionWorkspaceTrackSelected(group) && 'background-debug-motion-selected',
+              ]"
+              role="button"
+              tabindex="0"
+              @click="selectMotionWorkspaceTrack(group)"
+              @keydown.enter.prevent="selectMotionWorkspaceTrack(group)"
+              @keydown.space.prevent="selectMotionWorkspaceTrack(group)"
             >
               <header>
                 <strong :title="group.label">{{ group.label }}</strong>
@@ -741,8 +772,17 @@
               <div
                 v-for="event in group.events"
                 :key="event.key"
-                class="background-debug-motion-timeline-event"
+                :class="[
+                  'background-debug-motion-timeline-event',
+                  'background-debug-motion-selectable',
+                  isMotionWorkspaceTimelineEventSelected(event) && 'background-debug-motion-selected',
+                ]"
                 :title="event.detail"
+                role="button"
+                tabindex="0"
+                @click.stop="selectMotionWorkspaceTimelineEvent(event)"
+                @keydown.enter.prevent.stop="selectMotionWorkspaceTimelineEvent(event)"
+                @keydown.space.prevent.stop="selectMotionWorkspaceTimelineEvent(event)"
               >
                 <span>{{ event.time }}</span>
                 <span>{{ event.type }}</span>
@@ -762,7 +802,16 @@
             <section
               v-for="group in motionCurveChartGroups"
               :key="group.key"
-              class="background-debug-motion-curve-card"
+              :class="[
+                'background-debug-motion-curve-card',
+                'background-debug-motion-selectable',
+                isMotionWorkspaceTrackSelected(group) && 'background-debug-motion-selected',
+              ]"
+              role="button"
+              tabindex="0"
+              @click="selectMotionWorkspaceCurve(group)"
+              @keydown.enter.prevent="selectMotionWorkspaceCurve(group)"
+              @keydown.space.prevent="selectMotionWorkspaceCurve(group)"
             >
               <header>
                 <strong :title="group.overlayLabel">{{ group.label }}</strong>
@@ -1104,6 +1153,40 @@
       >
     </label>
 
+    <div class="motion-debug-workspace-selection" aria-label="Workspace selection">
+      <dl>
+        <div>
+          <dt>Target</dt>
+          <dd :title="motionWorkspaceSelectedTargetLabel">{{ motionWorkspaceSelectedTargetLabel }}</dd>
+        </div>
+        <div>
+          <dt>Track</dt>
+          <dd :title="motionWorkspaceSelectedTrackLabel">{{ motionWorkspaceSelectedTrackLabel }}</dd>
+        </div>
+        <div>
+          <dt>Time</dt>
+          <dd>{{ formatMotionReplayTime(motionWorkspaceSelectedTimeMs) }}</dd>
+        </div>
+        <div>
+          <dt>Filter</dt>
+          <dd :title="motionWorkspaceFilterLabel">{{ motionWorkspaceFilterLabel }}</dd>
+        </div>
+      </dl>
+      <div class="motion-debug-workspace-selection-actions">
+        <button
+          type="button"
+          class="background-debug-button"
+          :disabled="!motionWorkspaceSession.selectedTarget"
+          @click="toggleMotionWorkspaceSelectedPin"
+        >
+          {{ motionWorkspacePinButtonLabel }}
+        </button>
+        <button type="button" class="background-debug-button" @click="clearMotionWorkspaceSelection">
+          Clear Selection
+        </button>
+      </div>
+    </div>
+
     <div class="motion-debug-workspace-grid">
       <section
         v-for="region in motionWorkspaceRegions"
@@ -1253,7 +1336,12 @@ import {
   MOTION_DEBUG_WORKSPACE_REGIONS,
   openMotionDebugWorkspace,
   resizeMotionDebugWorkspaceDock,
+  selectMotionDebugWorkspaceTarget,
+  selectMotionDebugWorkspaceTrack,
+  setMotionDebugWorkspaceFilters,
   setMotionDebugWorkspaceMode,
+  setMotionDebugWorkspaceTime,
+  toggleMotionDebugWorkspacePin,
 } from "./backgroundDebug/motionDebugWorkspaceModel.js";
 import { createMotionDebugAIReport } from "../rendering/pixi/animation/motionDebugReport.js";
 import {
@@ -1618,6 +1706,18 @@ const motionWorkspaceModeLabel = computed(() => (motionWorkspaceFullscreen.value
 const motionWorkspaceStyle = computed(() => (motionWorkspaceFullscreen.value
   ? undefined
   : { width: `${motionWorkspaceDockWidthPx.value}px` }));
+const motionWorkspaceSelectedTimeMs = computed(() => motionWorkspaceSession.value.selectedTimeMs);
+const motionWorkspaceSelectedTargetLabel = computed(() => formatMotionWorkspaceTarget(motionWorkspaceSession.value.selectedTarget));
+const motionWorkspaceSelectedTrackLabel = computed(() => formatMotionWorkspaceTrack(motionWorkspaceSession.value.selectedTrack));
+const motionWorkspaceFilterLabel = computed(() => {
+  const filters = motionWorkspaceSession.value.filters;
+  return `${filters.preset || "all"}${filters.query ? ` / ${filters.query}` : ""}`;
+});
+const motionWorkspaceSelectedTargetPinned = computed(() => {
+  const selectedKey = getMotionWorkspaceTargetKey(motionWorkspaceSession.value.selectedTarget);
+  return Boolean(selectedKey && motionWorkspaceSession.value.pinnedTargets.some((pin) => pin.key === selectedKey));
+});
+const motionWorkspacePinButtonLabel = computed(() => (motionWorkspaceSelectedTargetPinned.value ? "Unpin Target" : "Pin Target"));
 const motionWorkspaceRegions = computed(() => MOTION_DEBUG_WORKSPACE_REGIONS.map((region) => ({
   ...region,
   sections: region.sections.map((id) => ({
@@ -1654,6 +1754,40 @@ function formatMotionWorkspaceTrack(track) {
   return `${track.prop || "unknown"} / ${track.lane || "base"}`;
 }
 
+function getMotionWorkspaceTargetKey(target) {
+  if (!target) return null;
+  if (target.targetId != null) return `id:${target.targetId}`;
+  if (target.sourceLabel) return `source:${target.sourceLabel}`;
+  if (target.label) return `label:${target.label}`;
+  return null;
+}
+
+function isSameMotionWorkspaceTarget(a, b) {
+  const keyA = getMotionWorkspaceTargetKey(a);
+  const keyB = getMotionWorkspaceTargetKey(b);
+  if (keyA || keyB) return keyA === keyB;
+  return Boolean(a?.layer && b?.layer && a.layer === b.layer);
+}
+
+function isMotionWorkspaceLayerSelected(row) {
+  const target = motionWorkspaceSession.value.selectedTarget;
+  return Boolean(target && target.kind === "layer" && target.layer === row.layer);
+}
+
+function isMotionWorkspaceTrackSelected(row) {
+  const track = motionWorkspaceSession.value.selectedTrack;
+  if (!track) return false;
+  return isSameMotionWorkspaceTarget(track, row)
+    && track.prop === row.prop
+    && track.lane === row.lane
+    && track.laneKey === row.laneKey;
+}
+
+function isMotionWorkspaceTimelineEventSelected(event) {
+  return isMotionWorkspaceTrackSelected(event)
+    && Math.round(motionWorkspaceSession.value.selectedTimeMs) === Math.round(Number(event.timeMs) || 0);
+}
+
 function getMotionWorkspaceSectionStatus(id) {
   switch (id) {
     case "ai-export":
@@ -1663,7 +1797,7 @@ function getMotionWorkspaceSectionStatus(id) {
     case "event-track":
       return `${motionReplayEventRows.value.length} events`;
     case "filters":
-      return motionFilterSummary.value.text;
+      return motionWorkspaceFilterLabel.value;
     case "inspector":
       return formatMotionWorkspaceTarget(motionWorkspaceSession.value.selectedTarget);
     case "lane-breakdown":
@@ -1675,7 +1809,9 @@ function getMotionWorkspaceSectionStatus(id) {
     case "properties":
       return `${motionPropertyRows.value.length} rows`;
     case "replay-scrubber":
-      return motionReplayViewerLoaded.value ? formatMotionReplayTime(motionReplayCurrentTimeMs.value) : "no replay";
+      return motionReplayViewerLoaded.value
+        ? formatMotionReplayTime(motionReplayCurrentTimeMs.value)
+        : formatMotionReplayTime(motionWorkspaceSession.value.selectedTimeMs);
     case "target-tree":
       return `${motionAnimationRows.value.length} active`;
     case "timeline":
@@ -1752,12 +1888,21 @@ function setMotionWindowPreset(preset) {
   applyMotionRuntimeDebugConfig();
 }
 
+function syncMotionWorkspaceFilters() {
+  motionWorkspaceSession.value = setMotionDebugWorkspaceFilters(motionWorkspaceSession.value, {
+    preset: motionFilterPreset.value,
+    query: motionFilterQuery.value,
+  });
+}
+
 function setMotionFilterPreset(preset) {
   motionFilterPreset.value = normalizeMotionFilterPreset(preset);
+  syncMotionWorkspaceFilters();
 }
 
 function updateMotionFilterQuery(event) {
   motionFilterQuery.value = event.target.value;
+  syncMotionWorkspaceFilters();
 }
 
 function updateMotionCustomSeconds(event) {
@@ -1770,7 +1915,7 @@ function updateMotionTimeScale(event) {
   applyMotionRuntimeDebugConfig();
 }
 
-function openMotionWorkspace(mode = MOTION_DEBUG_WORKSPACE_MODE_DOCK) {
+function openMotionWorkspace(mode = motionWorkspaceSession.value.mode || MOTION_DEBUG_WORKSPACE_MODE_DOCK) {
   if (!canDebugMotion.value) return;
   isCollapsed.value = false;
   activePanel.value = "motion";
@@ -1778,6 +1923,54 @@ function openMotionWorkspace(mode = MOTION_DEBUG_WORKSPACE_MODE_DOCK) {
     mode,
     viewportWidth: getMotionWorkspaceViewportWidth(),
   });
+}
+
+function selectMotionWorkspaceLayer(row) {
+  openMotionWorkspace();
+  motionWorkspaceSession.value = selectMotionDebugWorkspaceTarget(motionWorkspaceSession.value, {
+    kind: "layer",
+    label: row.layer,
+    layer: row.layer,
+  });
+}
+
+function selectMotionWorkspaceTrack(row) {
+  openMotionWorkspace();
+  motionWorkspaceSession.value = selectMotionDebugWorkspaceTrack(motionWorkspaceSession.value, row);
+}
+
+function selectMotionWorkspacePropertyByEvent(event) {
+  const rowElement = event.target?.closest?.("[data-motion-property-index]");
+  if (!rowElement) return;
+  const index = Number(rowElement.dataset.motionPropertyIndex);
+  const row = motionPropertyRows.value[index];
+  if (!row) return;
+  selectMotionWorkspaceTrack(row);
+}
+
+function selectMotionWorkspaceTimelineEvent(event) {
+  openMotionWorkspace();
+  motionWorkspaceSession.value = selectMotionDebugWorkspaceTrack(motionWorkspaceSession.value, event);
+  motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, event.timeMs);
+}
+
+function selectMotionWorkspaceCurve(group) {
+  openMotionWorkspace();
+  motionWorkspaceSession.value = selectMotionDebugWorkspaceTrack(motionWorkspaceSession.value, group);
+  motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, group.latestTimeMs);
+}
+
+function clearMotionWorkspaceSelection() {
+  motionWorkspaceSession.value = selectMotionDebugWorkspaceTarget(motionWorkspaceSession.value, null);
+  motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, 0);
+}
+
+function toggleMotionWorkspaceSelectedPin() {
+  if (!motionWorkspaceSession.value.selectedTarget) return;
+  motionWorkspaceSession.value = toggleMotionDebugWorkspacePin(
+    motionWorkspaceSession.value,
+    motionWorkspaceSession.value.selectedTarget,
+  );
 }
 
 function closeMotionWorkspace() {
@@ -3175,6 +3368,25 @@ onBeforeUnmount(() => {
   cursor: default;
 }
 
+.background-debug-motion-selectable {
+  cursor: pointer;
+}
+
+.background-debug-motion-selectable:hover {
+  border-color: rgba(120, 190, 255, 0.28);
+  background: rgba(120, 190, 255, 0.09);
+}
+
+.background-debug-motion-selectable:focus-visible {
+  outline: 2px solid rgba(120, 190, 255, 0.55);
+  outline-offset: 2px;
+}
+
+.background-debug-motion-selected {
+  border-color: rgba(120, 190, 255, 0.42);
+  background: rgba(120, 190, 255, 0.14);
+}
+
 .motion-debug-workspace {
   position: fixed;
   top: 14px;
@@ -3298,6 +3510,62 @@ onBeforeUnmount(() => {
   accent-color: rgba(255, 255, 255, 0.92);
 }
 
+.motion-debug-workspace-selection {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 10px 0 0;
+}
+
+.motion-debug-workspace-selection dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+}
+
+.motion-debug-workspace-selection dl div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  padding: 6px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.motion-debug-workspace-selection dt,
+.motion-debug-workspace-selection dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.motion-debug-workspace-selection dt {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 10.5px;
+}
+
+.motion-debug-workspace-selection dd {
+  color: rgba(255, 255, 255, 0.86);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.motion-debug-workspace-selection-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(98px, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
 .motion-debug-workspace-grid {
   display: grid;
   grid-template-columns: minmax(132px, 0.82fr) minmax(208px, 1.3fr) minmax(142px, 1fr);
@@ -3417,6 +3685,8 @@ onBeforeUnmount(() => {
 
   .motion-debug-workspace-toolbar,
   .motion-debug-workspace-toolbar-actions,
+  .motion-debug-workspace-selection,
+  .motion-debug-workspace-selection dl,
   .motion-debug-workspace-grid {
     grid-template-columns: minmax(0, 1fr);
   }
