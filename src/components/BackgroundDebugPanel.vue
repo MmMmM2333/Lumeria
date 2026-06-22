@@ -2799,8 +2799,8 @@ function setMotionTrackChartSelectedTime(timeMs) {
 
 function setMotionTrackChartBrushInterval(startMs, endMs) {
   if (!motionReplayViewerTrace.value) return;
-  const start = normalizeMotionReplayTime(motionReplayViewerTrace.value, startMs);
-  const end = normalizeMotionReplayTime(motionReplayViewerTrace.value, endMs);
+  const start = normalizeMotionReplayIntervalTime(startMs);
+  const end = normalizeMotionReplayIntervalTime(endMs);
   motionReplayIntervalStartMs.value = Math.min(start, end);
   motionReplayIntervalEndMs.value = Math.max(start, end);
 }
@@ -2998,6 +2998,11 @@ function syncMotionReplayIntervalToRange(trace) {
   motionReplayIntervalEndMs.value = Number(range.max) || 0;
 }
 
+function normalizeMotionReplayIntervalTime(timeMs) {
+  if (!motionReplayViewerTrace.value) return 0;
+  return Math.round(normalizeMotionReplayTime(motionReplayViewerTrace.value, timeMs));
+}
+
 function setMotionReplayCurrentTime(timeMs, options = {}) {
   if (!motionReplayViewerTrace.value) return;
   if (options.pause) stopMotionReplayPlayback();
@@ -3084,12 +3089,12 @@ function updateMotionReplayFilterQuery(event) {
 
 function updateMotionReplayIntervalStart(event) {
   if (!motionReplayViewerTrace.value) return;
-  motionReplayIntervalStartMs.value = normalizeMotionReplayTime(motionReplayViewerTrace.value, event.target.value);
+  motionReplayIntervalStartMs.value = normalizeMotionReplayIntervalTime(event.target.value);
 }
 
 function updateMotionReplayIntervalEnd(event) {
   if (!motionReplayViewerTrace.value) return;
-  motionReplayIntervalEndMs.value = normalizeMotionReplayTime(motionReplayViewerTrace.value, event.target.value);
+  motionReplayIntervalEndMs.value = normalizeMotionReplayIntervalTime(event.target.value);
 }
 
 function buildMotionReplayBookmarkInput() {
@@ -3118,8 +3123,8 @@ function saveMotionReplayBookmark() {
 function applyMotionReplayBookmark(bookmark = {}) {
   if (!motionReplayViewerTrace.value || !bookmark) return;
   stopMotionReplayPlayback();
-  motionReplayIntervalStartMs.value = normalizeMotionReplayTime(motionReplayViewerTrace.value, bookmark.startMs);
-  motionReplayIntervalEndMs.value = normalizeMotionReplayTime(motionReplayViewerTrace.value, bookmark.endMs);
+  motionReplayIntervalStartMs.value = normalizeMotionReplayIntervalTime(bookmark.startMs);
+  motionReplayIntervalEndMs.value = normalizeMotionReplayIntervalTime(bookmark.endMs);
   if (bookmark.filters?.query != null) motionReplayFilterQuery.value = bookmark.filters.query;
   if (bookmark.track) {
     motionWorkspaceSession.value = selectMotionDebugWorkspaceTrack(motionWorkspaceSession.value, bookmark.track);
