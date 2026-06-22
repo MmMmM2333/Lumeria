@@ -6,6 +6,8 @@ import {
 
 export const MOTION_TRACK_CHART_DISPLAY_RAW = "raw";
 export const MOTION_TRACK_CHART_DISPLAY_NORMALIZED = "normalized";
+export const MOTION_TRACK_CHART_DEFAULT_POINT_LIMIT = 240;
+export const MOTION_TRACK_CHART_DEFAULT_TRACK_LIMIT = 24;
 export const MOTION_TRACK_CHART_SERIES_KEYS = ["value", "to", "delta", "velocity"];
 
 const DEFAULT_SERIES_VISIBILITY = {
@@ -31,13 +33,21 @@ function normalizeQuery(value) {
 function formatNumber(value, digits = 2) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "0";
-  return number.toFixed(digits).replace(/\.?0+$/, "");
+  const fixed = number.toFixed(digits);
+  if (!fixed.includes(".")) return fixed;
+  const text = fixed.replace(/0+$/, "").replace(/\.$/, "");
+  return text || "0";
 }
 
 function normalizeDisplayMode(value) {
   return value === MOTION_TRACK_CHART_DISPLAY_NORMALIZED
     ? MOTION_TRACK_CHART_DISPLAY_NORMALIZED
     : MOTION_TRACK_CHART_DISPLAY_RAW;
+}
+
+function normalizePositiveInteger(value, fallback, min = 1, max = 10000) {
+  const number = Math.floor(readNumber(value, fallback));
+  return Math.min(max, Math.max(min, number));
 }
 
 function makeTrackKey(record = {}) {
@@ -118,6 +128,27 @@ function formatPath(points = []) {
     .join(" ");
 }
 
+function formatTimeLabel(timeMs) {
+  return `${formatNumber(timeMs, 0)}ms`;
+}
+
+function formatRangeLabel(range = {}, hasPoints = true) {
+  if (!hasPoints) return "none";
+  return `${formatNumber(range.min)}..${formatNumber(range.max)}`;
+}
+
+function downsamplePoints(points = [], maxPoints = MOTION_TRACK_CHART_DEFAULT_POINT_LIMIT) {
+  const limit = normalizePositiveInteger(maxPoints, MOTION_TRACK_CHART_DEFAULT_POINT_LIMIT, 2, 10000);
+  if (points.length <= limit) return points;
+  const sampled = [];
+  const lastIndex = points.length - 1;
+  for (let index = 0; index < limit; index += 1) {
+    const sourceIndex = Math.round((index / (limit - 1)) * lastIndex);
+    sampled.push(points[sourceIndex]);
+  }
+  return sampled;
+}
+
 function normalizeTimePercent(timeWindow = {}, timeMs = 0) {
   const startMs = readNumber(timeWindow.startMs, 0);
   const endMs = readNumber(timeWindow.endMs, startMs);
@@ -139,6 +170,18 @@ export function normalizeMotionTrackChartSeriesVisibility(input = {}) {
   }), {});
 }
 
+function normalizeTrackLimit(value) {
+  return normalizePositiveInteger(value, MOTION_TRACK_CHART_DEFAULT_TRACK_LIMIT, 1, 500);
+}
+
+function normalizePointLimit(value) {
+  return normalizePositiveInteger(value, MOTION_TRACK_CHART_DEFAULT_POINT_LIMIT, 2, 10000);
+}
+
+function normalizeAxisTickCount(value) {
+  return normalizePositiveInteger(value, 5, 1, 12);
+}
+
 export function normalizeMotionTrackChartZoomWindow(traceInput = {}, windowInput = {}) {
   const trace = normalizeMotionReplayTrace(traceInput);
   const range = getMotionReplayTimeRange(trace);
@@ -147,6 +190,32 @@ export function normalizeMotionTrackChartZoomWindow(traceInput = {}, windowInput
   return {
     endMs: Math.max(start, end),
     startMs: Math.min(start, end),
+  };
+}
+
+function buildTimeAxis(zoomWindow = {}, tickCountInput = 5) {
+  const tickCount = normalizeAxisTickCount(tickCountInput);
+  const startMs = readNumber(zoomWindow.startMs, 0);
+  const endMs = readNumber(zoomWindow.endMs, startMs);
+  const span = endMs - startMs;
+  if (tickCount <= 1 || span <= 0) {
+    return {
+      ticks: [{
+        label: formatTimeLabel(startMs),
+        timeMs: startMs,
+        x: 0,
+      }],
+    };
+  }
+  return {
+    ticks: Array.from({ length: tickCount }, (_, index) => {
+      const timeMs = startMs + (span * index) / (tickCount - 1);
+      return {
+        label: formatTimeLabel(timeMs),
+        timeMs,
+        x: normalizeTimePercent(zoomWindow, timeMs),
+      };
+    }),
   };
 }
 
@@ -201,7 +270,7 @@ function collectTrackRecords(trace = {}, zoomWindow = {}, filters = {}) {
 function buildSeries(track = {}, key, options = {}) {
   const values = track.samples.map((sample) => sample[key]);
   const rawRange = normalizeRange(values);
-  const points = track.samples.map((sample) => {
+  const allPoints = track.samples.map((sample) => {
     const raw = readNumber(sample[key], 0);
     const normalized = normalizeSeriesValue(raw, rawRange);
     return {
@@ -214,13 +283,17 @@ function buildSeries(track = {}, key, options = {}) {
       y: 100 - normalized * 100,
     };
   });
+  const points = downsamplePoints(allPoints, options.maxPointsPerSeries);
   const visible = Boolean(options.seriesVisibility[key]);
   return {
     key,
     normalizedRange: { max: 1, min: 0 },
     path: visible ? formatPath(points) : "",
+    pointCount: allPoints.length,
     points,
     rawRange,
+    rangeLabel: formatRangeLabel(rawRange, allPoints.length > 0),
+    renderedPointCount: points.length,
     visible,
   };
 }
@@ -260,9 +333,55 @@ function buildEventMarkers(track = {}, zoomWindow = {}) {
     }));
 }
 
+function findCursorSample(samples = [], cursorTimeMs = 0) {
+  if (!samples.length) return null;
+  const cursor = readNumber(cursorTimeMs, 0);
+  let selected = samples[0];
+  for (const sample of samples) {
+    if (readNumber(sample.timeMs, 0) > cursor) break;
+    selected = sample;
+  }
+  return selected;
+}
+
+function buildCurrentValues(track = {}, cursorTimeMs = 0, zoomWindow = {}) {
+  const sample = findCursorSample(track.samples, cursorTimeMs);
+  if (!sample) return null;
+  return {
+    delta: readNumber(sample.delta, 0),
+    frame: sample.frame ?? null,
+    timeMs: readNumber(sample.timeMs, 0),
+    to: readNumber(sample.to, 0),
+    value: readNumber(sample.value, 0),
+    velocity: readNumber(sample.velocity, 0),
+    x: normalizeTimePercent(zoomWindow, sample.timeMs),
+  };
+}
+
+function buildStats(track = {}) {
+  const absoluteDeltas = track.samples.map((sample) => Math.abs(readNumber(sample.delta, 0)));
+  const absoluteVelocities = track.samples.map((sample) => Math.abs(readNumber(sample.velocity, 0)));
+  return {
+    eventCount: track.events.length,
+    maxAbsDelta: absoluteDeltas.length ? Math.max(...absoluteDeltas) : 0,
+    maxAbsVelocity: absoluteVelocities.length ? Math.max(...absoluteVelocities) : 0,
+    sampleCount: track.samples.length,
+  };
+}
+
+function normalizeSelectedTrackKey(selectedTrack = null) {
+  if (!selectedTrack) return "";
+  if (typeof selectedTrack === "string") return selectedTrack;
+  if (typeof selectedTrack !== "object") return "";
+  return selectedTrack.key || makeTrackKey(selectedTrack);
+}
+
 export function buildMotionTrackChartModel(traceInput = {}, options = {}) {
   const trace = normalizeMotionReplayTrace(traceInput);
   const displayMode = normalizeDisplayMode(options.displayMode);
+  const maxPointsPerSeries = normalizePointLimit(options.maxPointsPerSeries);
+  const selectedTrackKey = normalizeSelectedTrackKey(options.selectedTrack);
+  const trackLimit = normalizeTrackLimit(options.trackLimit);
   const zoomWindow = normalizeMotionTrackChartZoomWindow(trace, options.zoomWindow || options.interval || {});
   const seriesVisibility = normalizeMotionTrackChartSeriesVisibility(options.seriesVisibility);
   const cursorTimeMs = clamp(
@@ -270,38 +389,71 @@ export function buildMotionTrackChartModel(traceInput = {}, options = {}) {
     zoomWindow.startMs,
     Math.max(zoomWindow.startMs, zoomWindow.endMs),
   );
-  const tracks = collectTrackRecords(trace, zoomWindow, options.filters)
+  const allTracks = collectTrackRecords(trace, zoomWindow, options.filters)
     .map((track) => {
       const series = MOTION_TRACK_CHART_SERIES_KEYS.reduce((result, key) => ({
         ...result,
-        [key]: buildSeries(track, key, { displayMode, seriesVisibility, zoomWindow }),
+        [key]: buildSeries(track, key, {
+          displayMode,
+          maxPointsPerSeries,
+          seriesVisibility,
+          zoomWindow,
+        }),
+      }), {});
+      const rangeLabels = MOTION_TRACK_CHART_SERIES_KEYS.reduce((result, key) => ({
+        ...result,
+        [key]: series[key].rangeLabel,
       }), {});
       return {
+        current: buildCurrentValues(track, cursorTimeMs, zoomWindow),
         driver: track.driver,
         eventCount: track.events.length,
         eventMarkers: buildEventMarkers(track, zoomWindow),
+        isSelected: Boolean(selectedTrackKey && selectedTrackKey === track.key),
         key: track.key,
         label: track.label,
         lane: track.lane,
+        laneLabel: [track.lane, track.laneKey].filter(Boolean).join("/") || "-",
         laneKey: track.laneKey,
         layer: track.layer,
         prop: track.prop,
+        rangeLabels,
         sampleCount: track.samples.length,
         series,
         sourceLabel: track.sourceLabel,
+        stats: buildStats(track),
+        summary: `${track.samples.length} samples / ${track.events.length} events`,
         targetId: track.targetId,
+        targetProp: track.label,
         timeline: buildTrackTimeline(track, zoomWindow),
         visibleSeries: MOTION_TRACK_CHART_SERIES_KEYS.filter((key) => seriesVisibility[key]),
       };
     })
     .sort((a, b) => (b.sampleCount - a.sampleCount) || a.label.localeCompare(b.label));
+  const tracks = allTracks.slice(0, trackLimit);
+  const totalSampleCount = allTracks.reduce((total, track) => total + track.sampleCount, 0);
+  const totalEventCount = allTracks.reduce((total, track) => total + track.eventCount, 0);
   return {
+    axis: buildTimeAxis(zoomWindow, options.axisTickCount),
     cursor: {
       timeMs: cursorTimeMs,
       x: normalizeTimePercent(zoomWindow, cursorTimeMs),
     },
     displayMode,
+    limits: {
+      maxPointsPerSeries,
+      trackLimit,
+      tracksLimited: allTracks.length > tracks.length,
+    },
     seriesVisibility,
+    summary: {
+      eventCount: totalEventCount,
+      hiddenTrackCount: Math.max(0, allTracks.length - tracks.length),
+      sampleCount: totalSampleCount,
+      trackCount: allTracks.length,
+      visibleTrackCount: tracks.length,
+      windowDurationMs: Math.max(0, readNumber(zoomWindow.endMs, 0) - readNumber(zoomWindow.startMs, 0)),
+    },
     timeRangeMs: getMotionReplayTimeRange(trace),
     tracks,
     zoomWindow,

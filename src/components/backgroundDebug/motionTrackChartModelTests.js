@@ -1,5 +1,7 @@
 import {
   buildMotionTrackChartModel,
+  MOTION_TRACK_CHART_DEFAULT_POINT_LIMIT,
+  MOTION_TRACK_CHART_DEFAULT_TRACK_LIMIT,
   MOTION_TRACK_CHART_DISPLAY_NORMALIZED,
   MOTION_TRACK_CHART_DISPLAY_RAW,
   normalizeMotionTrackChartSeriesVisibility,
@@ -157,18 +159,33 @@ export function runMotionTrackChartModelTests() {
   assert(chart.timeRangeMs.min === 0 && chart.timeRangeMs.max === 100, "chart should expose source time range");
   assert(chart.zoomWindow.startMs === 0 && chart.zoomWindow.endMs === 100, "default zoom should use full trace range");
   assert(chart.cursor.timeMs === 50 && chart.cursor.x === 50, "cursor should map to chart percentage");
+  assert(chart.axis.ticks.length === 5, "chart should expose default time axis ticks");
+  assert(chart.axis.ticks[0].label === "0ms" && chart.axis.ticks[4].label === "100ms", "axis ticks should expose readable labels");
+  assert(chart.limits.trackLimit === MOTION_TRACK_CHART_DEFAULT_TRACK_LIMIT, "chart should expose default track limit");
+  assert(chart.limits.maxPointsPerSeries === MOTION_TRACK_CHART_DEFAULT_POINT_LIMIT, "chart should expose default point limit");
+  assert(chart.summary.trackCount === 2 && chart.summary.visibleTrackCount === 2, "chart summary should expose track counts");
+  assert(chart.summary.sampleCount === 6 && chart.summary.eventCount === 4, "chart summary should expose sample and event counts");
   assert(chart.tracks.length === 2, "chart should group samples by track");
 
   const iconTrack = chart.tracks.find((track) => track.key === "1:x:base:default");
   assert(iconTrack, "chart should include the icon x track");
   assert(iconTrack.label === "desktop.icon.smoke.x", "track label should use source label and prop");
+  assert(iconTrack.targetProp === "desktop.icon.smoke.x", "track should expose targetProp for table UI");
+  assert(iconTrack.laneLabel === "base/default", "track should expose lane label");
+  assert(iconTrack.summary === "3 samples / 3 events", "track should expose compact summary");
   assert(iconTrack.sampleCount === 3 && iconTrack.eventCount === 3, "track should expose sample and event counts");
   assert(iconTrack.timeline.startMs === 0 && iconTrack.timeline.endMs === 100, "track timeline should expose active time range");
   assert(iconTrack.timeline.startX === 0 && iconTrack.timeline.endX === 100 && iconTrack.timeline.width === 100, "track timeline should expose percent bounds");
+  assert(iconTrack.current.timeMs === 50 && iconTrack.current.value === 50, "track should expose current value at cursor");
+  assert(iconTrack.current.to === 100 && iconTrack.current.delta === 50 && iconTrack.current.velocity === 12, "current value should include to/delta/velocity");
+  assert(iconTrack.stats.maxAbsDelta === 100 && iconTrack.stats.maxAbsVelocity === 12, "track should expose max absolute stats");
+  assert(iconTrack.rangeLabels.value === "0..100", "track should expose readable value range");
+  assert(iconTrack.rangeLabels.velocity === "0..12", "track should expose readable velocity range");
   assert(iconTrack.series.value.path.startsWith("M "), "value series should expose an SVG path");
   assert(iconTrack.series.to.path.startsWith("M "), "to series should expose an SVG path");
   assert(iconTrack.series.delta.path.startsWith("M "), "delta series should expose an SVG path");
   assert(iconTrack.series.velocity.path.startsWith("M "), "velocity series should expose an SVG path");
+  assert(iconTrack.series.value.pointCount === 3 && iconTrack.series.value.renderedPointCount === 3, "series should expose source and rendered point counts");
 
   const rawChart = buildMotionTrackChartModel(trace, {
     cursorTimeMs: 50,
@@ -186,6 +203,12 @@ export function runMotionTrackChartModelTests() {
   assert(normalizedChart.displayMode === MOTION_TRACK_CHART_DISPLAY_NORMALIZED, "normalized display mode should be preserved");
   assert(normalizedValuePoint.raw === 50 && normalizedValuePoint.value === 0.5, "normalized mode point value should use 0..1 units");
   assert(normalizedValuePoint.x === 50 && normalizedValuePoint.y === 50, "normalized point should keep chart coordinates");
+
+  const selectedChart = buildMotionTrackChartModel(trace, {
+    selectedTrack: { targetId: 1, prop: "x", lane: "base", laneKey: "default" },
+  });
+  assert(selectedChart.tracks.find((track) => track.key === iconTrack.key).isSelected === true, "selected track object should mark matching chart track");
+  assert(selectedChart.tracks.find((track) => track.key === "2:alpha:base:fade").isSelected === false, "nonmatching track should not be selected");
 
   const visibility = normalizeMotionTrackChartSeriesVisibility({
     delta: true,
@@ -218,6 +241,7 @@ export function runMotionTrackChartModelTests() {
   assert(zoomTrack.sampleCount === 1, "zoom should filter samples to the window");
   assert(zoomTrack.series.value.points[0].timeMs === 50 && zoomTrack.series.value.points[0].x === 50, "zoomed sample should be positioned within zoom window");
   assert(zoomTrack.eventMarkers.length === 1 && zoomTrack.eventMarkers[0].type === "retarget", "zoom should filter event markers to the window");
+  assert(zoomChart.axis.ticks[0].label === "25ms" && zoomChart.axis.ticks.at(-1).label === "75ms", "zoom should drive axis labels");
 
   const filteredChart = buildMotionTrackChartModel(trace, { filters: { query: "folder" } });
   assert(filteredChart.tracks.length === 1 && filteredChart.tracks[0].key === "2:alpha:base:fade", "query filters should narrow chart tracks");
@@ -252,4 +276,51 @@ export function runMotionTrackChartModelTests() {
   assert(eventOnlyChart.tracks[0].sampleCount === 0 && eventOnlyChart.tracks[0].eventCount === 1, "event-only track should expose event count without samples");
   assert(eventOnlyChart.tracks[0].eventMarkers[0].type === "cancel", "event-only track should expose event markers");
   assert(eventOnlyChart.tracks[0].series.value.path === "", "event-only track should not invent sample paths");
+  assert(eventOnlyChart.tracks[0].current === null, "event-only track should expose null current sample");
+  assert(eventOnlyChart.tracks[0].rangeLabels.value === "none", "event-only track should expose empty range label");
+
+  const denseTrace = {
+    ...trace,
+    summary: { eventCount: 0, frameCount: 12, targetCount: 3, trackCount: 3, valueCount: 36, warningCount: 0 },
+    targets: [1, 2, 3].map((targetId) => ({
+      kind: "Icon",
+      label: `Dense ${targetId}`,
+      layer: "desktop",
+      sourceLabel: `desktop.icon.dense-${targetId}`,
+      targetId,
+    })),
+    timeline: {
+      events: [],
+      frames: Array.from({ length: 12 }, (_, frame) => ({
+        activeAnimationCount: 3,
+        frame,
+        timeMs: frame * 10,
+        values: [1, 2, 3].map((targetId) => ({
+          driver: "spring",
+          lane: "base",
+          laneKey: "dense",
+          layer: "desktop",
+          prop: "x",
+          sourceLabel: `desktop.icon.dense-${targetId}`,
+          targetId,
+          to: 120,
+          value: frame * targetId,
+          velocity: targetId,
+        })),
+      })),
+      timeRangeMs: { max: 110, min: 0 },
+    },
+    tracks: [],
+  };
+  const denseChart = buildMotionTrackChartModel(denseTrace, {
+    maxPointsPerSeries: 4,
+    trackLimit: 2,
+  });
+  assert(denseChart.summary.trackCount === 3 && denseChart.summary.visibleTrackCount === 2 && denseChart.summary.hiddenTrackCount === 1, "track limit should be visible in summary");
+  assert(denseChart.limits.tracksLimited === true, "track limit should expose limited state");
+  assert(denseChart.tracks.length === 2, "track limit should cap rendered tracks");
+  assert(denseChart.tracks[0].series.value.pointCount === 12, "dense series should retain source point count");
+  assert(denseChart.tracks[0].series.value.renderedPointCount === 4, "dense series should downsample rendered point count");
+  assert(denseChart.tracks[0].series.value.points[0].timeMs === 0, "downsample should keep first point");
+  assert(denseChart.tracks[0].series.value.points.at(-1).timeMs === 110, "downsample should keep last point");
 }
