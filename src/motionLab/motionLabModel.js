@@ -29,6 +29,7 @@ export {
 
 export const MOTION_LAB_COMPARE_SCHEMA = "pixi-motion-lab-compare/v1";
 export const MOTION_LAB_TRACE_DIFF_SCHEMA = "pixi-motion-lab-trace-diff/v1";
+const MOTION_LAB_COMPARE_PARAM_KEYS = Object.freeze(Object.keys(DEFAULT_MOTION_LAB_PARAMS));
 
 function readNumber(value, fallback = 0) {
   const number = Number(value);
@@ -67,6 +68,35 @@ function makeMetric(label, current, previous, digits = 0) {
     previous: digits > 0 ? formatNumber(previousNumber, digits) : formatCount(previousNumber),
     value: currentNumber - previousNumber,
   };
+}
+
+function getMotionLabParamDigits(key = "") {
+  if (key.endsWith("Scale") || key === "springMass") return 2;
+  if (key === "jiggleRotationDeg") return 1;
+  return 0;
+}
+
+function makeMotionLabParamCompareRows(currentParams = {}, previousParams = {}, limit = 8) {
+  const current = normalizeMotionLabParams(currentParams);
+  const previous = normalizeMotionLabParams(previousParams);
+  return MOTION_LAB_COMPARE_PARAM_KEYS
+    .map((key) => {
+      const currentValue = current[key];
+      const previousValue = previous[key];
+      if (typeof currentValue === "number" && typeof previousValue === "number") {
+        return makeMetric(`param:${key}`, currentValue, previousValue, getMotionLabParamDigits(key));
+      }
+      return {
+        changed: currentValue !== previousValue,
+        current: String(currentValue),
+        delta: currentValue === previousValue ? "0" : "changed",
+        label: `param:${key}`,
+        previous: String(previousValue),
+        value: currentValue === previousValue ? 0 : 1,
+      };
+    })
+    .filter((row) => row.changed)
+    .slice(0, Math.max(0, Math.floor(readNumber(limit, 8))));
 }
 
 function normalizeSearch(search = "") {
@@ -202,7 +232,9 @@ export function buildMotionLabCompareRows(current = null, previous = null) {
   if (!current || !previous) return [];
   const currentSummary = current.summary || {};
   const previousSummary = previous.summary || {};
+  const paramRows = makeMotionLabParamCompareRows(current.params, previous.params);
   return [
+    ...paramRows,
     makeMetric("assert pass", currentSummary.assertionPassedCount, previousSummary.assertionPassedCount),
     makeMetric("assert fail", currentSummary.assertionFailedCount, previousSummary.assertionFailedCount),
     makeMetric("events", currentSummary.eventCount, previousSummary.eventCount),
@@ -266,6 +298,13 @@ export function createMotionLabCompareExport(current = null, previous = null) {
     rows: buildMotionLabCompareRows(current, previous),
     schema: MOTION_LAB_COMPARE_SCHEMA,
     version: 1,
+  };
+}
+
+export function createMotionLabBaselineCompareExport(current = null, baseline = null) {
+  return {
+    ...createMotionLabCompareExport(current, baseline),
+    compareMode: "baseline",
   };
 }
 

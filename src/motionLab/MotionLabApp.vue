@@ -80,6 +80,8 @@
         <button type="button" @click="runSelectedScenario">Run</button>
         <button type="button" @click="resetLabScene">Reset</button>
         <button type="button" @click="captureReplayTrace">Capture Replay</button>
+        <button type="button" :disabled="!canSaveBaseline" @click="saveBaselineRun">Save Baseline</button>
+        <button type="button" :disabled="!canCompareBaseline" @click="compareBaselineRun">Compare Baseline</button>
         <button type="button" :disabled="!canCompareLast" @click="compareLastRun">Compare Last</button>
         <button type="button" @click="copyLabReport">{{ reportCopyLabel }}</button>
         <button type="button" :disabled="!replayTraceJson" @click="copyReplayTrace">{{ traceCopyLabel }}</button>
@@ -132,15 +134,21 @@
 
         <div class="motion-lab-panel motion-lab-panel-wide">
           <header>
-            <h2>Compare Last</h2>
+            <h2>{{ comparePanelTitle }}</h2>
           </header>
+          <dl class="motion-lab-stats">
+            <div v-for="row in compareStatusRows" :key="row.label" :class="row.wide && 'motion-lab-stat-wide'">
+              <dt>{{ row.label }}</dt>
+              <dd>{{ row.value }}</dd>
+            </div>
+          </dl>
           <div class="motion-lab-list">
             <div v-for="row in compareRows" :key="row.label" class="motion-lab-list-row motion-lab-diff-row">
               <span>{{ row.label }}</span>
               <strong>{{ row.previous }} -> {{ row.current }}</strong>
               <small>{{ row.delta }}</small>
             </div>
-            <div v-if="compareRows.length === 0" class="motion-lab-empty">run two scenarios</div>
+            <div v-if="compareRows.length === 0" class="motion-lab-empty">{{ compareEmptyLabel }}</div>
           </div>
         </div>
 
@@ -232,6 +240,7 @@ import {
   buildMotionLabTraceDiffRows,
   buildMotionLabTimelineRows,
   createMotionLabCompareExport,
+  createMotionLabBaselineCompareExport,
   createMotionLabRunSnapshot,
   createMotionLabTraceDiffExport,
   DEFAULT_MOTION_LAB_PARAMS,
@@ -261,12 +270,14 @@ const copiedCompare = ref(false);
 const copiedDiff = ref(false);
 const currentRunSnapshot = ref(null);
 const previousRunSnapshot = ref(null);
+const savedBaselineSnapshot = ref(null);
 const compareBaselineSnapshot = ref(null);
 const compareCurrentSnapshot = ref(null);
 const lastReplayTrace = ref(null);
 const traceDiffBaseline = ref(null);
 const traceDiffCurrent = ref(null);
 const motionParams = reactive({ ...DEFAULT_MOTION_LAB_PARAMS });
+const compareMode = ref("last");
 
 const parameterGroups = Object.freeze([
   {
@@ -332,13 +343,31 @@ const warningRows = computed(() => buildMotionWarningRows(motionReport.value, 6)
 const assertionRows = computed(() => buildMotionLabAssertionRows(assertionResults.value));
 const timelineRows = computed(() => buildMotionLabTimelineRows(motionReport.value));
 const curveRows = computed(() => buildMotionLabCurveRows(motionReport.value));
+const canSaveBaseline = computed(() => Boolean(currentRunSnapshot.value));
 const canCompareLast = computed(() => Boolean(currentRunSnapshot.value && previousRunSnapshot.value));
+const canCompareBaseline = computed(() => Boolean(currentRunSnapshot.value && savedBaselineSnapshot.value));
 const compareRows = computed(() => buildMotionLabCompareRows(compareCurrentSnapshot.value, compareBaselineSnapshot.value));
 const traceDiffRows = computed(() => buildMotionLabTraceDiffRows(traceDiffCurrent.value, traceDiffBaseline.value));
 const reportCopyLabel = computed(() => copiedReport.value ? "Copied Report" : "Copy Report");
 const traceCopyLabel = computed(() => copiedTrace.value ? "Copied Trace" : "Copy Trace");
-const compareCopyLabel = computed(() => copiedCompare.value ? "Copied Compare" : "Copy Compare");
+const compareCopyLabel = computed(() => {
+  if (copiedCompare.value) return compareMode.value === "baseline" ? "Copied Baseline" : "Copied Compare";
+  return compareMode.value === "baseline" ? "Copy Baseline" : "Copy Compare";
+});
 const diffCopyLabel = computed(() => copiedDiff.value ? "Copied Diff" : "Copy Diff");
+const comparePanelTitle = computed(() => compareMode.value === "baseline" ? "Baseline Compare" : "Compare Last");
+const compareEmptyLabel = computed(() => {
+  if (compareMode.value === "baseline") {
+    if (!savedBaselineSnapshot.value) return "save a baseline run";
+    return "run a current scenario";
+  }
+  return "run two scenarios";
+});
+const compareStatusRows = computed(() => [
+  { label: "mode", value: compareMode.value === "baseline" ? "baseline" : "last" },
+  { label: "baseline", value: formatRunSnapshotLabel(compareBaselineSnapshot.value) },
+  { label: "current", value: formatRunSnapshotLabel(compareCurrentSnapshot.value), wide: true },
+]);
 
 let pixiApp = null;
 let runtime = null;
@@ -362,6 +391,15 @@ function formatParamOutput(control) {
   const digits = Number.isFinite(Number(control.digits)) ? Number(control.digits) : 0;
   const formatted = Number.isFinite(number) ? number.toFixed(digits) : "-";
   return `${formatted}${control.suffix || ""}`;
+}
+
+function formatRunSnapshotLabel(snapshot = null) {
+  if (!snapshot) return "none";
+  const scenarioLabel = snapshot.scenario?.label || snapshot.scenario?.id || "Scenario";
+  const summary = snapshot.summary || {};
+  const passCount = Number(summary.assertionPassedCount) || 0;
+  const failCount = Number(summary.assertionFailedCount) || 0;
+  return `${scenarioLabel} / pass ${passCount} / fail ${failCount}`;
 }
 
 function makeEmptyReport() {
@@ -763,20 +801,42 @@ function recordRunSnapshot(trace = replayTrace.value, options = {}) {
     previousRunSnapshot.value = currentRunSnapshot.value;
     currentRunSnapshot.value = snapshot;
   }
-  compareLastRun();
+  if (savedBaselineSnapshot.value) {
+    compareBaselineRun();
+  } else {
+    compareLastRun();
+  }
   return snapshot;
 }
 
 function compareLastRun() {
   if (!currentRunSnapshot.value || !previousRunSnapshot.value) return null;
+  compareMode.value = "last";
   compareBaselineSnapshot.value = previousRunSnapshot.value;
   compareCurrentSnapshot.value = currentRunSnapshot.value;
   return compareRows.value;
 }
 
+function saveBaselineRun() {
+  if (!currentRunSnapshot.value) return null;
+  savedBaselineSnapshot.value = currentRunSnapshot.value;
+  return compareBaselineRun();
+}
+
+function compareBaselineRun() {
+  if (!currentRunSnapshot.value || !savedBaselineSnapshot.value) return null;
+  compareMode.value = "baseline";
+  compareBaselineSnapshot.value = savedBaselineSnapshot.value;
+  compareCurrentSnapshot.value = currentRunSnapshot.value;
+  return compareRows.value;
+}
+
 async function copyCompareExport() {
-  compareLastRun();
-  const payload = createMotionLabCompareExport(compareCurrentSnapshot.value, compareBaselineSnapshot.value);
+  const rows = compareMode.value === "baseline" ? compareBaselineRun() : compareLastRun();
+  if (!rows || rows.length === 0) return;
+  const payload = compareMode.value === "baseline"
+    ? createMotionLabBaselineCompareExport(compareCurrentSnapshot.value, compareBaselineSnapshot.value)
+    : createMotionLabCompareExport(compareCurrentSnapshot.value, compareBaselineSnapshot.value);
   const ok = await copyText(JSON.stringify(payload, null, 2));
   if (!ok) return;
   copiedCompare.value = true;
@@ -803,8 +863,14 @@ function installDebugApi() {
   globalThis.__LP_MOTION_LAB__ = {
     captureReplayTrace,
     assertions: () => assertionResults.value,
-    compareExport: () => createMotionLabCompareExport(compareCurrentSnapshot.value, compareBaselineSnapshot.value),
+    baseline: () => savedBaselineSnapshot.value,
+    baselineCompareExport: () => createMotionLabBaselineCompareExport(currentRunSnapshot.value, savedBaselineSnapshot.value),
+    compareBaseline: compareBaselineRun,
+    compareExport: () => (compareMode.value === "baseline"
+      ? createMotionLabBaselineCompareExport(compareCurrentSnapshot.value, compareBaselineSnapshot.value)
+      : createMotionLabCompareExport(compareCurrentSnapshot.value, compareBaselineSnapshot.value)),
     compareLast: compareLastRun,
+    compareMode: () => compareMode.value,
     compareRows: () => compareRows.value,
     copyCompare: copyCompareExport,
     copyDiff: copyTraceDiffExport,
@@ -828,12 +894,15 @@ function installDebugApi() {
     },
     scenarios: () => scenarioRows.value,
     selectScenario,
+    saveBaseline: saveBaselineRun,
     setParams: (patch = {}) => {
       Object.assign(motionParams, normalizeMotionLabParams({ ...motionParams, ...patch }));
       return getMotionParams();
     },
     status: () => ({
       canCompareLast: canCompareLast.value,
+      canCompareBaseline: canCompareBaseline.value,
+      hasBaseline: Boolean(savedBaselineSnapshot.value),
       hasPixiApp: Boolean(pixiApp),
       mounted: true,
       scenarioCount: scenarioRows.value.length,

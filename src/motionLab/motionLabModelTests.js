@@ -8,6 +8,7 @@ import {
   buildMotionLabScenarioRows,
   buildMotionLabTraceDiffRows,
   createMotionLabCompareExport,
+  createMotionLabBaselineCompareExport,
   createMotionLabRunSnapshot,
   createMotionLabTraceDiffExport,
   DEFAULT_MOTION_LAB_PARAMS,
@@ -210,11 +211,19 @@ export function runMotionLabModelTests() {
   assert(snapshotB.summary.eventCount === 4, "run snapshot should count report events");
 
   const compareRows = buildMotionLabCompareRows(snapshotB, snapshotA);
+  assert(compareRows.some((row) => row.label === "param:durationMs" && row.delta === "+160"), "compare rows should expose changed motion params");
   assert(compareRows.some((row) => row.label === "events" && row.delta === "+2"), "compare rows should expose event delta");
   assert(compareRows.some((row) => row.label === "trace values" && row.delta === "+6"), "compare rows should expose trace value delta");
   const compareExport = createMotionLabCompareExport(snapshotB, snapshotA);
   assert(compareExport.schema === MOTION_LAB_COMPARE_SCHEMA, "compare export should expose schema");
   assert(compareExport.rows.length === compareRows.length, "compare export should include rows");
+  const baselineCompareExport = createMotionLabBaselineCompareExport(snapshotB, snapshotA);
+  assert(baselineCompareExport.schema === MOTION_LAB_COMPARE_SCHEMA, "baseline compare export should reuse compare schema");
+  assert(baselineCompareExport.compareMode === "baseline", "baseline compare export should expose compare mode");
+  assert(baselineCompareExport.baseline.summary.eventCount === snapshotA.summary.eventCount, "baseline compare export should include saved baseline snapshot");
+  assert(baselineCompareExport.current.summary.eventCount === snapshotB.summary.eventCount, "baseline compare export should include current run snapshot");
+  assert(baselineCompareExport.rows.some((row) => row.label === "param:durationMs" && row.delta === "+160"), "baseline compare export should include param deltas");
+  assert(baselineCompareExport.rows.some((row) => row.label === "events" && row.delta === "+2"), "baseline compare export should include metric deltas");
 
   const diffRows = buildMotionLabTraceDiffRows(traceB, traceA);
   assert(diffRows.some((row) => row.label === "frames" && row.delta === "+4"), "trace diff rows should expose frame delta");
