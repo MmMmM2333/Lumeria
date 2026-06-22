@@ -84,6 +84,7 @@
         <button type="button" :disabled="!canCompareBaseline" @click="compareBaselineRun">Compare Baseline</button>
         <button type="button" :disabled="!canCompareLast" @click="compareLastRun">Compare Last</button>
         <button type="button" @click="copyLabReport">{{ reportCopyLabel }}</button>
+        <button type="button" :disabled="!canCopyFocused" @click="copyFocusedExport">{{ focusedCopyLabel }}</button>
         <button type="button" :disabled="!replayTraceJson" @click="copyReplayTrace">{{ traceCopyLabel }}</button>
         <button type="button" :disabled="compareRows.length === 0" @click="copyCompareExport">{{ compareCopyLabel }}</button>
         <button type="button" :disabled="traceDiffRows.length === 0" @click="copyTraceDiffExport">{{ diffCopyLabel }}</button>
@@ -241,6 +242,7 @@ import {
   buildMotionLabTimelineRows,
   createMotionLabCompareExport,
   createMotionLabBaselineCompareExport,
+  createMotionLabFocusedExport,
   createMotionLabRunSnapshot,
   createMotionLabTraceDiffExport,
   DEFAULT_MOTION_LAB_PARAMS,
@@ -268,6 +270,7 @@ const copiedReport = ref(false);
 const copiedTrace = ref(false);
 const copiedCompare = ref(false);
 const copiedDiff = ref(false);
+const copiedFocused = ref(false);
 const currentRunSnapshot = ref(null);
 const previousRunSnapshot = ref(null);
 const savedBaselineSnapshot = ref(null);
@@ -344,11 +347,13 @@ const assertionRows = computed(() => buildMotionLabAssertionRows(assertionResult
 const timelineRows = computed(() => buildMotionLabTimelineRows(motionReport.value));
 const curveRows = computed(() => buildMotionLabCurveRows(motionReport.value));
 const canSaveBaseline = computed(() => Boolean(currentRunSnapshot.value));
+const canCopyFocused = computed(() => Boolean(currentRunSnapshot.value && assertionResults.value.length));
 const canCompareLast = computed(() => Boolean(currentRunSnapshot.value && previousRunSnapshot.value));
 const canCompareBaseline = computed(() => Boolean(currentRunSnapshot.value && savedBaselineSnapshot.value));
 const compareRows = computed(() => buildMotionLabCompareRows(compareCurrentSnapshot.value, compareBaselineSnapshot.value));
 const traceDiffRows = computed(() => buildMotionLabTraceDiffRows(traceDiffCurrent.value, traceDiffBaseline.value));
 const reportCopyLabel = computed(() => copiedReport.value ? "Copied Report" : "Copy Report");
+const focusedCopyLabel = computed(() => copiedFocused.value ? "Copied Focused" : "Copy Focused AI");
 const traceCopyLabel = computed(() => copiedTrace.value ? "Copied Trace" : "Copy Trace");
 const compareCopyLabel = computed(() => {
   if (copiedCompare.value) return compareMode.value === "baseline" ? "Copied Baseline" : "Copied Compare";
@@ -377,6 +382,7 @@ let copyReportTimer = null;
 let copyTraceTimer = null;
 let copyCompareTimer = null;
 let copyDiffTimer = null;
+let copyFocusedTimer = null;
 
 function getMotionParams() {
   const normalized = normalizeMotionLabParams(motionParams);
@@ -783,6 +789,24 @@ async function copyReplayTrace() {
   }, 1200);
 }
 
+function createFocusedExportPayload() {
+  if (!currentRunSnapshot.value) return null;
+  updateScenarioAssertions();
+  const currentSnapshot = makeRunSnapshot(replayTrace.value);
+  return createMotionLabFocusedExport({
+    assertions: assertionResults.value,
+    baselineSnapshot: savedBaselineSnapshot.value,
+    compareMode: compareMode.value,
+    compareRows: compareRows.value,
+    currentRunSnapshot: currentSnapshot,
+    params: getMotionParams(),
+    report: motionReport.value,
+    scenario: selectedScenario.value,
+    trace: replayTrace.value,
+    traceDiffRows: traceDiffRows.value,
+  });
+}
+
 function makeRunSnapshot(trace = replayTrace.value) {
   return createMotionLabRunSnapshot({
     assertions: assertionResults.value,
@@ -847,6 +871,19 @@ async function copyCompareExport() {
   }, 1200);
 }
 
+async function copyFocusedExport() {
+  const payload = createFocusedExportPayload();
+  if (!payload) return;
+  const ok = await copyText(payload.copyText);
+  if (!ok) return;
+  copiedFocused.value = true;
+  if (copyFocusedTimer != null) window.clearTimeout(copyFocusedTimer);
+  copyFocusedTimer = window.setTimeout(() => {
+    copiedFocused.value = false;
+    copyFocusedTimer = null;
+  }, 1200);
+}
+
 async function copyTraceDiffExport() {
   const payload = createMotionLabTraceDiffExport(traceDiffCurrent.value, traceDiffBaseline.value);
   const ok = await copyText(JSON.stringify(payload, null, 2));
@@ -874,8 +911,10 @@ function installDebugApi() {
     compareRows: () => compareRows.value,
     copyCompare: copyCompareExport,
     copyDiff: copyTraceDiffExport,
+    copyFocused: copyFocusedExport,
     copyReport: copyLabReport,
     copyTrace: copyReplayTrace,
+    focusedExport: createFocusedExportPayload,
     applyPreset: applyParamPreset,
     params: () => getMotionParams(),
     presetId: () => resolveMotionLabParamPresetId(motionParams),
@@ -902,6 +941,7 @@ function installDebugApi() {
     status: () => ({
       canCompareLast: canCompareLast.value,
       canCompareBaseline: canCompareBaseline.value,
+      canCopyFocused: canCopyFocused.value,
       hasBaseline: Boolean(savedBaselineSnapshot.value),
       hasPixiApp: Boolean(pixiApp),
       mounted: true,
@@ -921,10 +961,12 @@ function clearCopyTimers() {
   if (copyTraceTimer != null) window.clearTimeout(copyTraceTimer);
   if (copyCompareTimer != null) window.clearTimeout(copyCompareTimer);
   if (copyDiffTimer != null) window.clearTimeout(copyDiffTimer);
+  if (copyFocusedTimer != null) window.clearTimeout(copyFocusedTimer);
   copyReportTimer = null;
   copyTraceTimer = null;
   copyCompareTimer = null;
   copyDiffTimer = null;
+  copyFocusedTimer = null;
 }
 
 onMounted(async () => {

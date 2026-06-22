@@ -11,6 +11,7 @@ import {
   normalizeMotionLabParams,
   resolveMotionLabParamPresetId,
 } from "./motionLabParams.js";
+import { createMotionFocusedDebugExport } from "../components/backgroundDebug/motionFocusedDebugExportModel.js";
 
 export const MOTION_LAB_QUERY_PARAM = "motionLab";
 export { MOTION_LAB_SCENARIOS };
@@ -28,8 +29,21 @@ export {
 };
 
 export const MOTION_LAB_COMPARE_SCHEMA = "pixi-motion-lab-compare/v1";
+export const MOTION_LAB_FOCUSED_DEBUG_SCHEMA = "pixi-motion-lab-focused-debug/v1";
 export const MOTION_LAB_TRACE_DIFF_SCHEMA = "pixi-motion-lab-trace-diff/v1";
 const MOTION_LAB_COMPARE_PARAM_KEYS = Object.freeze(Object.keys(DEFAULT_MOTION_LAB_PARAMS));
+const MOTION_LAB_RAW_REF_KEYS = Object.freeze(new Set([
+  "app",
+  "displayObject",
+  "domNode",
+  "element",
+  "overlayTarget",
+  "pixiApp",
+  "rawTarget",
+  "runtime",
+  "scene",
+  "target",
+]));
 
 function readNumber(value, fallback = 0) {
   const number = Number(value);
@@ -48,6 +62,20 @@ function formatCount(value) {
 
 function clonePlain(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function cloneSafePlain(value) {
+  if (value == null) return value;
+  const seen = new WeakSet();
+  return JSON.parse(JSON.stringify(value, (key, entry) => {
+    if (MOTION_LAB_RAW_REF_KEYS.has(key)) return undefined;
+    if (typeof entry === "function" || typeof entry === "symbol") return undefined;
+    if (entry && typeof entry === "object") {
+      if (seen.has(entry)) return undefined;
+      seen.add(entry);
+    }
+    return entry;
+  }));
 }
 
 function formatSignedDelta(value, digits = 0) {
@@ -251,8 +279,9 @@ export function buildMotionLabCompareRows(current = null, previous = null) {
 }
 
 function countTraceDuration(trace = {}) {
-  const range = trace.timeline?.timeRangeMs || {};
-  if (range.max == null || range.min == null) return readNumber(trace.capture?.durationMs, 0);
+  const source = trace || {};
+  const range = source.timeline?.timeRangeMs || {};
+  if (range.max == null || range.min == null) return readNumber(source.capture?.durationMs, 0);
   return Math.max(0, readNumber(range.max) - readNumber(range.min));
 }
 
@@ -317,4 +346,267 @@ export function createMotionLabTraceDiffExport(currentTrace = null, previousTrac
     schema: MOTION_LAB_TRACE_DIFF_SCHEMA,
     version: 1,
   };
+}
+
+function sanitizeMotionLabScenario(scenario = {}) {
+  return {
+    description: scenario?.description || "",
+    id: scenario?.id || "unknown",
+    label: scenario?.label || scenario?.id || "Scenario",
+    stage: scenario?.stage || "draft",
+  };
+}
+
+function sanitizeMotionLabAssertions(assertions = []) {
+  return (Array.isArray(assertions) ? assertions : []).map((assertion, index) => ({
+    detail: assertion?.detail || assertion?.label || "-",
+    id: assertion?.id || `assertion-${index}`,
+    label: assertion?.label || assertion?.id || `Assertion ${index + 1}`,
+    passed: assertion?.passed === true,
+    status: assertion?.status || (assertion?.passed ? "pass" : "fail"),
+  }));
+}
+
+function summarizeMotionLabAssertions(assertions = []) {
+  const rows = sanitizeMotionLabAssertions(assertions);
+  const passed = rows.filter((row) => row.passed).length;
+  return {
+    failed: rows.length - passed,
+    passed,
+    total: rows.length,
+  };
+}
+
+function sanitizeMotionLabConfig(config = {}) {
+  return {
+    enabled: config.enabled === true,
+    maxEvents: readNumber(config.maxEvents, 0),
+    maxSamples: readNumber(config.maxSamples, 0),
+    overlayEnabled: config.overlayEnabled === true,
+    recordHistory: config.recordHistory === true,
+    recordWindowMs: readNumber(config.recordWindowMs, 0),
+    sampleHz: readNumber(config.sampleHz, 0),
+    timeScale: readNumber(config.timeScale, 1),
+  };
+}
+
+function sanitizeMotionLabEvent(event = {}, index = 0) {
+  return {
+    driver: event.driver || null,
+    frame: event.frame == null ? null : Math.max(0, Math.floor(readNumber(event.frame, 0))),
+    lane: event.lane || null,
+    laneKey: event.laneKey || null,
+    prop: event.prop || null,
+    reason: event.reason || null,
+    sourceLabel: event.sourceLabel || event.targetLabel || null,
+    targetId: event.targetId ?? null,
+    timeMs: readNumber(event.timeMs, index),
+    to: event.to ?? null,
+    type: event.type || "event",
+    value: event.value ?? null,
+    velocity: event.velocity ?? null,
+  };
+}
+
+function sanitizeMotionLabCurveStat(curve = {}, index = 0) {
+  return {
+    driver: curve.driver || null,
+    key: curve.key || `${curve.targetId ?? "target"}:${curve.prop || "prop"}:${index}`,
+    lane: curve.lane || null,
+    laneKey: curve.laneKey || null,
+    maxVelocity: readNumber(curve.maxVelocity, 0),
+    overshootCount: Math.max(0, Math.floor(readNumber(curve.overshootCount, 0))),
+    prop: curve.prop || null,
+    retargetCount: Math.max(0, Math.floor(readNumber(curve.retargetCount, 0))),
+    sampleCount: Math.max(0, Math.floor(readNumber(curve.sampleCount, 0))),
+    sourceLabel: curve.sourceLabel || null,
+    targetId: curve.targetId ?? null,
+  };
+}
+
+function sanitizeMotionLabWarning(warning = {}, index = 0) {
+  return {
+    detail: warning.detail || warning.message || warning.reason || "",
+    id: warning.id || `warning-${index}`,
+    laneKey: warning.laneKey ?? null,
+    prop: warning.prop ?? null,
+    sourceLabel: warning.sourceLabel ?? warning.targetLabel ?? null,
+    targetId: warning.targetId ?? null,
+    type: warning.type || "warning",
+  };
+}
+
+function sanitizeMotionLabReport(report = {}, trace = null) {
+  const events = Array.isArray(report.history?.events) ? report.history.events : [];
+  const samples = Array.isArray(report.history?.samples) ? report.history.samples : [];
+  const curveStats = Array.isArray(report.curveStats) ? report.curveStats : [];
+  const warnings = Array.isArray(report.warnings) ? report.warnings : [];
+  return {
+    config: sanitizeMotionLabConfig(report.config || {}),
+    curves: {
+      rows: buildMotionLabCurveRows(report, 8),
+      stats: curveStats.slice(0, 12).map(sanitizeMotionLabCurveStat),
+    },
+    overviewRows: buildMotionLabOverviewRows(report, trace),
+    summary: {
+      activeAnimationCount: readNumber(report.summary?.activeAnimationCount, 0),
+      curveCount: curveStats.length,
+      eventCount: events.length,
+      sampleCount: samples.length,
+      warningCount: readNumber(report.summary?.warningCount, warnings.length),
+    },
+    timeline: {
+      recentEvents: events.slice(-16).reverse().map(sanitizeMotionLabEvent),
+      rows: buildMotionLabTimelineRows(report, 12),
+    },
+    warnings: warnings.slice(-10).reverse().map(sanitizeMotionLabWarning),
+  };
+}
+
+function sanitizeMotionLabTraceSummary(trace = null) {
+  const summary = trace?.summary || {};
+  return {
+    durationMs: countTraceDuration(trace),
+    eventCount: readNumber(summary.eventCount, 0),
+    frameCount: readNumber(summary.frameCount, 0),
+    targetCount: readNumber(summary.targetCount, 0),
+    trackCount: readNumber(summary.trackCount, 0),
+    valueCount: readNumber(summary.valueCount, 0),
+    warningCount: readNumber(summary.warningCount, 0),
+  };
+}
+
+function createMotionLabReplayFocus(trace = null, options = {}, generatedAt = "") {
+  if (!trace) return null;
+  try {
+    return createMotionFocusedDebugExport(trace, {
+      generatedAt,
+      ...options,
+    }).data;
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "failed to create replay focus",
+      schema: trace?.schema || null,
+      summary: sanitizeMotionLabTraceSummary(trace),
+    };
+  }
+}
+
+function formatMotionLabParamLine(params = {}) {
+  return [
+    `duration=${params.durationMs}ms`,
+    `ease=${params.ease}`,
+    `spring=${params.springStiffness}/${params.springDamping}/${params.springMass}`,
+    `interrupt=${params.interruptPolicy}@${params.interruptDelayMs}ms`,
+  ].join(", ");
+}
+
+function formatMotionLabFocusedList(rows = [], formatter = (row) => String(row), empty = "- none") {
+  if (!rows.length) return empty;
+  return rows.map(formatter).join("\n");
+}
+
+export function createMotionLabFocusedExport(input = {}, options = {}) {
+  const generatedAt = options.generatedAt || new Date().toISOString();
+  const trace = input.trace || input.replayTrace || null;
+  const assertions = sanitizeMotionLabAssertions(input.assertions || []);
+  const scenario = sanitizeMotionLabScenario(input.scenario || {});
+  const params = normalizeMotionLabParams(input.params || {});
+  const currentRun = input.currentRunSnapshot
+    ? cloneSafePlain(input.currentRunSnapshot)
+    : createMotionLabRunSnapshot({
+      assertions,
+      params,
+      report: input.report || {},
+      scenario,
+      trace,
+    });
+  const baseline = input.baselineSnapshot ? cloneSafePlain(input.baselineSnapshot) : null;
+  const compareRows = Array.isArray(input.compareRows)
+    ? cloneSafePlain(input.compareRows)
+    : buildMotionLabCompareRows(currentRun, baseline);
+  const traceDiffRows = Array.isArray(input.traceDiffRows) ? cloneSafePlain(input.traceDiffRows) : [];
+  const replayFocused = createMotionLabReplayFocus(trace, options.replay || {}, generatedAt);
+  const data = {
+    assertions: {
+      rows: assertions,
+      summary: summarizeMotionLabAssertions(assertions),
+    },
+    compare: {
+      baseline,
+      mode: input.compareMode === "baseline" ? "baseline" : "last",
+      rows: compareRows,
+    },
+    generatedAt,
+    params,
+    replay: {
+      focused: replayFocused,
+      schema: trace?.schema || null,
+      summary: sanitizeMotionLabTraceSummary(trace),
+    },
+    report: sanitizeMotionLabReport(input.report || {}, trace),
+    run: {
+      current: currentRun,
+    },
+    scenario,
+    schema: MOTION_LAB_FOCUSED_DEBUG_SCHEMA,
+    source: {
+      kind: "motion-lab",
+    },
+    traceDiff: {
+      rows: traceDiffRows,
+    },
+    version: 1,
+  };
+  const json = JSON.stringify(data, null, 2);
+  const markdown = formatMotionLabFocusedDebugMarkdown(data);
+  return {
+    copyText: `${markdown}\n\n## JSON\n\n\`\`\`json\n${json}\n\`\`\``,
+    data,
+    json,
+    markdown,
+  };
+}
+
+export function formatMotionLabFocusedDebugMarkdown(data = {}) {
+  const scenario = data.scenario || {};
+  const assertions = data.assertions?.summary || {};
+  const replay = data.replay?.summary || {};
+  const report = data.report || {};
+  const params = data.params || {};
+  return [
+    "# Pixi Motion Lab Focused Debug",
+    "",
+    `Schema: ${data.schema || MOTION_LAB_FOCUSED_DEBUG_SCHEMA}`,
+    `Generated: ${data.generatedAt || "-"}`,
+    `Scenario: ${scenario.label || scenario.id || "Scenario"} (${scenario.id || "unknown"})`,
+    `Params: ${formatMotionLabParamLine(params)}`,
+    `Assertions: pass ${assertions.passed || 0} / fail ${assertions.failed || 0} / total ${assertions.total || 0}`,
+    `Trace: ${data.replay?.schema || "none"} frames=${replay.frameCount || 0}, events=${replay.eventCount || 0}, tracks=${replay.trackCount || 0}, targets=${replay.targetCount || 0}`,
+    `Compare: ${data.compare?.mode || "last"} rows=${data.compare?.rows?.length || 0}`,
+    "",
+    "## Failed Assertions",
+    formatMotionLabFocusedList(
+      (data.assertions?.rows || []).filter((row) => !row.passed),
+      (row) => `- ${row.label}: ${row.detail}`,
+    ),
+    "",
+    "## Recent Events",
+    formatMotionLabFocusedList(
+      report.timeline?.recentEvents || [],
+      (event) => `- ${event.timeMs}ms ${event.type}: ${event.sourceLabel || `target ${event.targetId}`}.${event.prop || "-"} ${event.value ?? "-"} -> ${event.to ?? "-"}`,
+    ),
+    "",
+    "## Curves",
+    formatMotionLabFocusedList(
+      report.curves?.rows || [],
+      (curve) => `- ${curve.label}: ${curve.samples} samples, lane=${curve.lane}, v=${curve.maxVelocity}`,
+    ),
+    "",
+    "## Compare Rows",
+    formatMotionLabFocusedList(
+      data.compare?.rows || [],
+      (row) => `- ${row.label}: ${row.previous} -> ${row.current} (${row.delta})`,
+    ),
+  ].join("\n");
 }

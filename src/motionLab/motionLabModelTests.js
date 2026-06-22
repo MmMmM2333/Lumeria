@@ -9,12 +9,15 @@ import {
   buildMotionLabTraceDiffRows,
   createMotionLabCompareExport,
   createMotionLabBaselineCompareExport,
+  createMotionLabFocusedExport,
   createMotionLabRunSnapshot,
   createMotionLabTraceDiffExport,
   DEFAULT_MOTION_LAB_PARAMS,
+  formatMotionLabFocusedDebugMarkdown,
   getMotionLabParamPreset,
   buildMotionLabTimelineRows,
   MOTION_LAB_COMPARE_SCHEMA,
+  MOTION_LAB_FOCUSED_DEBUG_SCHEMA,
   MOTION_LAB_PARAM_PRESET_IDS,
   MOTION_LAB_TRACE_DIFF_SCHEMA,
   normalizeMotionLabParams,
@@ -232,4 +235,114 @@ export function runMotionLabModelTests() {
   const traceDiffExport = createMotionLabTraceDiffExport(traceB, traceA);
   assert(traceDiffExport.schema === MOTION_LAB_TRACE_DIFF_SCHEMA, "trace diff export should expose schema");
   assert(traceDiffExport.rows.length === diffRows.length, "trace diff export should include rows");
+
+  const focusedTrace = {
+    ...traceB,
+    generatedAt: "2026-06-23T00:00:00.000Z",
+    mode: "property-accurate-visual-replay",
+    schema: "pixi-motion-replay-trace/v1",
+    targets: [{
+      kind: "MotionLabPageTrack",
+      label: "pageTrack",
+      rawTarget: { shouldNotLeak: true },
+      sourceLabel: "motionLab.pageTrack",
+      targetId: 1,
+    }],
+    timeline: {
+      events: [{
+        driver: "spring",
+        frame: 1,
+        lane: "base",
+        laneKey: "layout",
+        prop: "x",
+        rawTarget: { shouldNotLeak: true },
+        sourceLabel: "motionLab.pageTrack",
+        targetId: 1,
+        timeMs: 0,
+        to: 120,
+        type: "start",
+        value: 0,
+        velocity: 0,
+      }],
+      frames: [0, 40].map((timeMs, index) => ({
+        activeAnimationCount: 1,
+        frame: index + 1,
+        timeMs,
+        values: [{
+          driver: "spring",
+          lane: "base",
+          laneKey: "layout",
+          prop: "x",
+          rawTarget: { shouldNotLeak: true },
+          sourceLabel: "motionLab.pageTrack",
+          targetId: 1,
+          to: 120,
+          value: timeMs,
+          velocity: index,
+        }],
+      })),
+      timeRangeMs: { max: 40, min: 0 },
+    },
+    tracks: [{
+      driver: "spring",
+      eventCount: 1,
+      key: "1:x:base:layout",
+      lane: "base",
+      laneKey: "layout",
+      prop: "x",
+      sampleCount: 2,
+      sourceLabel: "motionLab.pageTrack",
+      targetId: 1,
+    }],
+    warnings: [{
+      prop: "x",
+      rawTarget: { shouldNotLeak: true },
+      sourceLabel: "motionLab.pageTrack",
+      targetId: 1,
+      type: "overshoot",
+    }],
+  };
+  const focusedReport = {
+    ...report,
+    history: {
+      events: [{ ...report.history.events[0], rawTarget: { shouldNotLeak: true } }, report.history.events[1]],
+      samples: report.history.samples,
+    },
+    warnings: [{ type: "overshoot", prop: "x", rawTarget: { shouldNotLeak: true }, targetId: 1 }],
+  };
+  const focusedExport = createMotionLabFocusedExport({
+    assertions: [...passedAssertions, { id: "failed", label: "failed assertion", passed: false, detail: "expected x to settle" }],
+    baselineSnapshot: snapshotA,
+    compareMode: "baseline",
+    currentRunSnapshot: snapshotB,
+    params: { ...normalizedParams, durationMs: 520 },
+    report: focusedReport,
+    scenario,
+    trace: focusedTrace,
+  }, { generatedAt: "2026-06-23T00:00:00.000Z" });
+  const focusedData = JSON.parse(focusedExport.json);
+  assert(focusedData.schema === MOTION_LAB_FOCUSED_DEBUG_SCHEMA, "motion lab focused export should expose schema");
+  assert(focusedData.scenario.id === "desktop-page-scrub", "motion lab focused export should include scenario context");
+  assert(focusedData.assertions.summary.failed === 1, "motion lab focused export should summarize failed assertions");
+  assert(focusedData.report.timeline.recentEvents.length === 2, "motion lab focused export should include recent timeline events");
+  assert(focusedData.report.curves.rows.length === 1, "motion lab focused export should include curve rows");
+  assert(focusedData.replay.schema === "pixi-motion-replay-trace/v1", "motion lab focused export should include replay schema");
+  assert(focusedData.replay.focused.summary.valueCount === 2, "motion lab focused export should include focused replay values");
+  assert(focusedData.compare.mode === "baseline", "motion lab focused export should include compare mode");
+  assert(focusedData.compare.rows.some((row) => row.label === "param:durationMs"), "motion lab focused export should include compare rows");
+  assert(focusedExport.copyText.includes("```json"), "motion lab focused export copy should include fenced JSON");
+  assert(focusedExport.markdown.includes("Pixi Motion Lab Focused Debug"), "motion lab focused export should include readable markdown");
+  assert(!focusedExport.json.includes("rawTarget"), "motion lab focused export should not serialize raw target keys");
+  assert(!focusedExport.json.includes("shouldNotLeak"), "motion lab focused export should not serialize raw target refs");
+
+  const noTraceFocused = createMotionLabFocusedExport({
+    assertions: passedAssertions,
+    params: normalizedParams,
+    report,
+    scenario,
+  }, { generatedAt: "2026-06-23T00:00:00.000Z" }).data;
+  assert(noTraceFocused.replay.schema == null, "motion lab focused export should work without replay trace");
+  assert(noTraceFocused.replay.focused == null, "motion lab focused export should not require focused replay data");
+  assert(noTraceFocused.replay.summary.frameCount === 0, "motion lab focused export should default missing trace counts");
+  assert(formatMotionLabFocusedDebugMarkdown(focusedData).includes(MOTION_LAB_FOCUSED_DEBUG_SCHEMA), "motion lab focused markdown formatter should include schema");
 }
