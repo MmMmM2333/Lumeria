@@ -6,6 +6,7 @@ import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
 import { getMaxFolderGhostGridDelay, makeOpeningGhostMotion } from "./folderIconGhostMotion.js";
 import { makeFolderGhostIconNodeState } from "./folderGhostIconState.js";
 import { hasUsableFolderGhostTarget } from "./folderOverlayTargets.js";
+import { makeDesktopSourceVisualKey } from "./folderVisualOwnershipRegistry.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 
 const GHOST_REVEAL_FALLBACK_PADDING_MS = 140;
@@ -58,7 +59,7 @@ function startOpeningFrameGhost(layer, state, options = {}) {
   layer.startFrameGhost(sourceRect, targetRect, {
     duration: folderOpenGhostDuration,
     ease: folderOpenGhostEase,
-    crossfadePanelMaterial: true,
+    exclusivePanelMaterialHandoff: true,
     fromFillAlpha: thumb.fillAlpha,
     fromFillColor: thumb.fillColor,
     fromRadius: thumb.radius,
@@ -74,6 +75,12 @@ function startOpeningFrameGhost(layer, state, options = {}) {
     toStrokeWidth: 1,
   });
   return true;
+}
+
+function acquireOpeningDesktopSourceOwnership(layer, owner) {
+  const key = makeDesktopSourceVisualKey(owner?.folderId);
+  if (!key || typeof layer.acquireVisualOwnership !== "function") return;
+  layer.acquireVisualOwnership(key, owner);
 }
 
 export class FolderOpeningGhostController {
@@ -263,6 +270,7 @@ export class FolderOpeningGhostController {
       kind: "opening",
       token: sessionToken,
     };
+    acquireOpeningDesktopSourceOwnership(layer, owner);
     const startedFrameGhost = startOpeningFrameGhost(layer, state, options);
     if (!startedFrameGhost) {
       layer.panelMaterial.visible = true;

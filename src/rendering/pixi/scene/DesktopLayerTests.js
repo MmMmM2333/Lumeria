@@ -463,6 +463,34 @@ export async function runDesktopLayerTests() {
   }
 
   {
+    const folder = makeNode("folder");
+    folder.item = { id: "folder-1", type: "folder" };
+    folder.state = { ghosted: true, suppressLabelRevealAfterGhost: true };
+    let setStateCount = 0;
+    folder.setState = (nextState) => {
+      setStateCount += 1;
+      folder.state = nextState;
+      folder.labelText.alpha = 1;
+    };
+    const pageTrack = makePageTrack([folder]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.iconNodes.set("page:0:folder-1", folder);
+    layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set();
+
+    layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 });
+    folder.__folderSourceGhostedByOwnership = true;
+    folder.labelText.alpha = 0.4;
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    });
+
+    assert(setStateCount === 0, "source ghosting commits should not use normal setState while a handoff entry owns the folder node");
+    assert(folder.labelText.alpha === 0.4, "source ghosting commits should not force an in-progress handoff label fade to full opacity");
+    assert(folder.__folderSourceGhostedByOwnership === false, "handoff source ghosting metadata should still track the latest ownership state");
+  }
+
+  {
     const before = makeNode("before");
     const folder = makeNode("folder");
     folder.item = { id: "folder-1", type: "folder" };

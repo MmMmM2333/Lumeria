@@ -102,8 +102,9 @@ export function startFrameGhost(layer, fromRect, toRect, options = {}) {
   const toFillColor = options.toFillColor ?? fromFillColor;
   const fromStrokeColor = options.fromStrokeColor ?? 0xffffff;
   const toStrokeColor = options.toStrokeColor ?? fromStrokeColor;
-  layer.panelMaterial.visible = true;
-  layer.panelMaterial.alpha = options.panelMaterialFromAlpha ?? 0;
+  const exclusivePanelMaterialHandoff = options.exclusivePanelMaterialHandoff === true;
+  layer.panelMaterial.visible = !exclusivePanelMaterialHandoff;
+  layer.panelMaterial.alpha = exclusivePanelMaterialHandoff ? 0 : options.panelMaterialFromAlpha ?? 0;
   layer.frameGhost.visible = true;
   layer.frameGhost.alpha = options.frameGhostFromAlpha ?? 1;
   const frame = layer.frameGhostState || {
@@ -133,7 +134,10 @@ export function startFrameGhost(layer, fromRect, toRect, options = {}) {
   const cancelFadeControls = (reason) => {
     for (const control of fadeControls) control.cancel?.(reason);
   };
-  if (options.crossfadePanelMaterial) {
+  if (exclusivePanelMaterialHandoff) {
+    // The frame ghost owns the shell until completion, then clearFrameGhost
+    // atomically reveals panelMaterial and hides the frame ghost.
+  } else if (options.crossfadePanelMaterial) {
     const alphaHandoff = { progress: 0 };
     const panelMaterialFromAlpha = layer.panelMaterial.alpha;
     const frameGhostFromAlpha = layer.frameGhost.alpha;

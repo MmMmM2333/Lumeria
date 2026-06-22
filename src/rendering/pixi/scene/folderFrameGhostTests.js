@@ -145,6 +145,78 @@ export async function runFolderFrameGhostTests() {
 
   {
     const { startFrameGhost } = await import("./folderFrameGhost.js");
+    const makeGraphics = () => ({
+      alpha: 0,
+      visible: false,
+      clear() {
+        return this;
+      },
+      fill() {
+        return this;
+      },
+      roundRect() {
+        return this;
+      },
+      stroke() {
+        return this;
+      },
+    });
+    const layer = {
+      closingGhostLayer: {},
+      closingPreviewSwapLayer: {},
+      frameGhost: makeGraphics(),
+      panelMaterial: { alpha: 1, visible: true },
+      notifyTitleFrame() {},
+    };
+
+    startFrameGhost(layer, { height: 100, left: 10, top: 20, width: 200 }, { height: 120, left: 30, top: 40, width: 220 }, {
+      exclusivePanelMaterialHandoff: true,
+      preserveOnComplete: true,
+    });
+
+    assert(!layer.panelMaterial.visible && layer.panelMaterial.alpha === 0, "exclusive handoff should hide panel material while frame ghost owns the shell");
+    assert(layer.frameGhost.visible && layer.frameGhost.alpha === 1, "exclusive handoff should keep the frame ghost as the only visible shell");
+    layer.frameGhostMotionControl?.cancel?.();
+  }
+
+  {
+    const { startFrameGhost } = await import("./folderFrameGhost.js");
+    const makeGraphics = () => ({
+      alpha: 0,
+      visible: false,
+      clear() {
+        return this;
+      },
+      fill() {
+        return this;
+      },
+      roundRect() {
+        return this;
+      },
+      stroke() {
+        return this;
+      },
+    });
+    const layer = {
+      closingGhostLayer: {},
+      closingPreviewSwapLayer: {},
+      frameGhost: makeGraphics(),
+      panelMaterial: { alpha: 1, visible: true },
+      notifyTitleFrame() {},
+    };
+
+    startFrameGhost(layer, { height: 100, left: 10, top: 20, width: 200 }, { height: 120, left: 30, top: 40, width: 220 }, {
+      exclusivePanelMaterialHandoff: true,
+      snap: true,
+      springConfig: { snap: true },
+    });
+
+    assert(layer.panelMaterial.visible && layer.panelMaterial.alpha === 1, "exclusive handoff completion should reveal panel material");
+    assert(!layer.frameGhost.visible && layer.frameGhost.alpha === 0, "exclusive handoff completion should hide the frame ghost");
+  }
+
+  {
+    const { startFrameGhost } = await import("./folderFrameGhost.js");
     let arriveCount = 0;
     const makeGraphics = () => ({
       alpha: 0,

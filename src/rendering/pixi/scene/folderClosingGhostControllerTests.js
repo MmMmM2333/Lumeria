@@ -4,6 +4,10 @@ import {
   clearMotionPreferencesForTests,
   setReducedMotionForTests,
 } from "../animation/motionPreferences.js";
+import {
+  FolderVisualOwnershipRegistry,
+  makeDesktopSourceVisualKey,
+} from "./folderVisualOwnershipRegistry.js";
 
 function makeTimerHost() {
   let nextId = 1;
@@ -459,20 +463,69 @@ export function runFolderClosingGhostControllerTests() {
   {
     const timerHost = makeTimerHost();
     const layer = makeLayer();
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+    const sourceKey = makeDesktopSourceVisualKey("folder-1");
+    const reusedGhost = makeGhost("reused");
+    reusedGhost.alpha = 0.7;
+    reusedGhost.item = { id: "app-1" };
+    layer.openingGhostKeys = new Set(["app-1"]);
+    layer.openingGhostLayer.children = [reusedGhost];
+    layer.openingGhostSessionToken = "open-token";
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.ownedVisualTokens = new Set();
+    layer.acquireVisualOwnership = (key, owner) => {
+      const acquired = layer.visualOwnership.acquire(key, owner);
+      if (acquired && owner?.token != null) layer.ownedVisualTokens.add(owner.token);
+      return acquired;
+    };
+    layer.releaseTransitionOwnership = (token) => {
+      const ownerAtRelease = layer.visualOwnership.getOwner(sourceKey);
+      layer.ownerKindAtOpeningClear = ownerAtRelease?.kind || null;
+      return layer.visualOwnership.releaseByToken(token);
+    };
+    layer.openingGhosts.releaseGhost = (itemId) => {
+      layer.openingGhostKeys.delete(itemId);
+      return reusedGhost;
+    };
+    layer.openingGhosts.clear = () => {
+      layer.releaseTransitionOwnership("open-token");
+    };
+    layer.acquireVisualOwnership(sourceKey, {
+      folderId: "folder-1",
+      kind: "opening",
+      token: "open-token",
+    });
+
+    controller.start(makeState(), [makeTarget()], { height: 72, left: 10, top: 20, width: 72 }, { height: 300, left: 0, top: 0, width: 400 });
+
+    assert(layer.ownerKindAtOpeningClear === "closing", "closing should own the desktop source before clearing the interrupted opening owner");
+    assert(layer.visualOwnership.getOwner(sourceKey)?.kind === "closing", "opening clear should not reveal a source already transferred to closing");
+    controller.clear();
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
     const completed = [];
     const controller = new FolderClosingGhostController(layer, { scheduler: timerHost });
     const ghost = makeGhost();
     const target = { ...makeTarget(), controllerGhostKey: "close-key" };
+    layer.closingGhostLayer.addChild(ghost);
     layer.closingGhostKeys = new Set(["app-1"]);
     layer.closingFrameComplete = true;
     layer.closingFrameVisualComplete = true;
 
     controller.completeGhost(makeState(completed), target, ghost);
-    assert(ghost.destroyed, "regular complete should destroy the closing ghost");
+    assert(!ghost.destroyed, "regular complete should retain the closing ghost until the handoff frame");
     assert(ghost.closingComplete, "regular complete should mark the ghost complete");
     assert(layer.closingGhostKeys.size === 0, "regular complete should remove the active key");
     assert(completed.join(",") === "close-key", "regular complete should flush the controller ghost key");
     assert(timerHost.frameCount === 1, "regular complete should schedule handoff cleanup when the frame is done");
+    timerHost.runAllFrames();
+    assert(ghost.destroyed, "handoff cleanup should destroy retained regular closing ghosts");
 
     controller.completeGhost(makeState(completed), target, ghost);
     assert(completed.join(",") === "close-key", "duplicate complete should not flush the key twice");
@@ -607,7 +660,10 @@ export function runFolderClosingGhostControllerTests() {
       assert(layer.closingGhostKeys.size === 0, "synchronous reduced-motion completion should clear every active closing key");
       assert(layer.closingGhostMotionControls.size === 0, "synchronous reduced-motion completion should not register stale motion controls");
       assert(layer.completedClosingControllerGhostKeys.join(",") === "close-a,close-b", "synchronous reduced-motion completion should collect every close key");
-      assert(layer.closingGhosts.every((ghost) => ghost.destroyed), "synchronous reduced-motion completion should destroy completed closing ghost visuals");
+      assert(layer.closingGhosts.every((ghost) => !ghost.destroyed), "synchronous reduced-motion completion should retain completed closing ghosts until handoff cleanup");
+      layer.frameGhostOptions.onComplete();
+      timerHost.runAllFrames();
+      assert(layer.closingGhosts.length === 0, "handoff cleanup should remove retained reduced-motion closing ghosts");
     } finally {
       clearMotionPreferencesForTests();
       motionRuntime.reset();

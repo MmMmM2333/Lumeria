@@ -587,6 +587,58 @@ export async function runFolderOverlayLayerTests() {
     motionRuntime.reset();
     const layer = Object.create(FolderOverlayLayer.prototype);
     const detachedChildren = [];
+    layer.closingGhostFolderId = "folder-a";
+    layer.closingGhostLayer = { removeChildren: () => [] };
+    layer.closingPreviewSwapLayer = { removeChildren: () => [] };
+    layer.closingGhosts = { clear: () => {} };
+    layer.detachedClosingVisuals = [];
+    layer.nextDetachedClosingVisualToken = 1;
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.detachedClosingVisualLayer = {
+      addChild(child) {
+        child.parent = this;
+        detachedChildren.push(child);
+      },
+      removeChild(child) {
+        const index = detachedChildren.indexOf(child);
+        if (index >= 0) detachedChildren.splice(index, 1);
+      },
+    };
+    layer.frameGhostState = {
+      fillAlpha: 0.26,
+      height: 160,
+      left: 20,
+      radius: 40,
+      strokeAlpha: 0.24,
+      strokeWidth: 1,
+      top: 30,
+      width: 240,
+    };
+    layer.closingFrameDetachedTarget = {
+      fillAlpha: 0.2,
+      height: 64,
+      left: 140,
+      radius: 18,
+      strokeAlpha: 0.18,
+      strokeWidth: 1,
+      top: 170,
+      width: 64,
+    };
+
+    layer.detachClosingPresentationForOpen("folder-b");
+    const visual = layer.detachedClosingVisuals[0];
+    assert(visual?.motionControls?.size >= 2, "detached frame should retain motion controls for cleanup");
+    layer.clearDetachedClosingVisualNow(visual);
+    assert(visual.destroyed === true && detachedChildren.length === 0, "immediate detached cleanup should destroy the visual");
+    for (let index = 0; index < 6; index += 1) motionRuntime.step(0.05);
+    assert(detachedChildren.length === 0, "stale detached frame callbacks should stay canceled after destruction");
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    const detachedChildren = [];
     let clearCount = 0;
     layer.detachedClosingVisualLayer = {
       addChild(child) {

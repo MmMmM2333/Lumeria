@@ -120,6 +120,18 @@ export async function runIconNodeTests() {
     assert(nearlyEqual(node.iconSprite.alpha, 1) && nearlyEqual(node.emojiText.alpha, 1), "app-folder-create clear should restore icon alpha");
 
     motionRuntime.reset();
+    node.item = { id: "folder-1", type: "folder" };
+    node.isFolder = true;
+    node.visualWrap.alpha = 0.42;
+    node.visualWrap.scale.set(0.86);
+    node.setFolderHandoffVisualHidden(true);
+    assert(node.visualWrap.visible === false, "folder handoff should hide artwork while the overlay owns the thumbnail");
+    node.setFolderHandoffVisualHidden(false);
+    assert(node.visualWrap.visible === true, "folder handoff release should show real artwork");
+    assert(node.visualWrap.alpha === 1, "folder handoff release should restore real artwork alpha to match the closing ghost");
+    assert(node.visualWrap.scale.x === 1 && node.visualWrap.scale.y === 1, "folder handoff release should restore real artwork scale");
+
+    motionRuntime.reset();
     motionRuntime.configureDebug({ enabled: true });
     node.item = { id: "app-meta", name: "App Meta", type: "app" };
     node.source = { index: 2, pageIndex: 1, type: "page" };

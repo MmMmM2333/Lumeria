@@ -782,6 +782,11 @@ export class DesktopLayer extends Container {
     for (const node of this.iconNodes.values()) {
       if (node.item?.type !== "folder" || !node.state) continue;
       const nextGhosted = nextIds.has(node.item.id) || state.isFolderOpeningPreviewFrameGhosted?.(node.item.id);
+      const handoffEntry = this.getFolderHandoffEntry(node.item.id);
+      if (handoffEntry) {
+        node.__folderSourceGhostedByOwnership = Boolean(nextGhosted);
+        continue;
+      }
       const previousGhostedByOwnership = node.__folderSourceGhostedByOwnership === true;
       if (previousGhostedByOwnership === Boolean(nextGhosted)) continue;
       const baseGhosted = Boolean(node.state.ghosted) && !previousGhostedByOwnership;

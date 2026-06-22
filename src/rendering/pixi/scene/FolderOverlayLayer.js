@@ -202,11 +202,24 @@ function registerFolderIconNodeBounds(options) {
 }
 
 function drawDetachedFrame(graphics, rect) {
-  if (!graphics || !rect) return;
+  if (!graphics || graphics.destroyed || !rect) return;
   graphics.clear()
     .roundRect(rect.left, rect.top, rect.width, rect.height, rect.radius ?? getFrameRadius(rect))
     .fill({ color: Math.round(rect.fillColor ?? 0xf7f8ff), alpha: rect.fillAlpha ?? 0.26 })
     .stroke({ color: Math.round(rect.strokeColor ?? 0xffffff), alpha: rect.strokeAlpha ?? 0.24, width: rect.strokeWidth ?? 1 });
+}
+
+function addDetachedVisualMotionControl(visual, control) {
+  if (!visual || !control || control.completed) return;
+  if (!visual.motionControls) visual.motionControls = new Set();
+  visual.motionControls.add(control);
+}
+
+function cancelDetachedVisualMotionControls(visual) {
+  const controls = visual?.motionControls;
+  visual.motionControls = null;
+  if (!controls?.size) return;
+  for (const control of controls) control.cancel?.(FOLDER_PANEL_DETACHED_CLOSE_REASON);
 }
 
 function makeCompletionTracker(onComplete) {
@@ -237,7 +250,7 @@ function makeCompletionTracker(onComplete) {
   };
 }
 
-function animateDetachedFrame(graphics, frameState, targetState, tracker) {
+function animateDetachedFrame(graphics, frameState, targetState, tracker, visual = null) {
   if (!graphics || !frameState) return;
   const frame = {
     ...frameState,
@@ -248,7 +261,7 @@ function animateDetachedFrame(graphics, frameState, targetState, tracker) {
   const finishGeometry = tracker.add();
   const update = () => drawDetachedFrame(graphics, frame);
   update();
-  transition(frame)
+  const geometryControl = transition(frame)
     .duration(duration)
     .ease(folderCloseEase)
     .overlay()
@@ -269,9 +282,10 @@ function animateDetachedFrame(graphics, frameState, targetState, tracker) {
       onUpdate: update,
     })
     .start();
+  addDetachedVisualMotionControl(visual, geometryControl);
 
   const finishFade = tracker.add();
-  transition(graphics)
+  const fadeControl = transition(graphics)
     .duration(DETACHED_CLOSING_FADE_TAIL_DURATION)
     .ease(folderCloseEase)
     .delay(Math.max(0, duration - DETACHED_CLOSING_FADE_TAIL_DURATION))
@@ -282,9 +296,10 @@ function animateDetachedFrame(graphics, frameState, targetState, tracker) {
       onComplete: finishFade,
     })
     .start();
+  addDetachedVisualMotionControl(visual, fadeControl);
 }
 
-function animateDetachedClosingGhost(ghost, tracker) {
+function animateDetachedClosingGhost(ghost, tracker, visual = null) {
   if (!ghost || ghost.destroyed) return;
   motionRuntime.describeTarget(ghost, {
     itemId: ghost.item?.id ?? null,
@@ -316,7 +331,7 @@ function animateDetachedClosingGhost(ghost, tracker) {
   const finishDisplay = tracker.add();
 
   if (hasGeometryTarget) {
-    transition(ghost)
+    const displayControl = transition(ghost)
       .duration(duration)
       .ease(folderCloseEase)
       .overlay()
@@ -328,8 +343,9 @@ function animateDetachedClosingGhost(ghost, tracker) {
         onComplete: finishDisplay,
       })
       .start();
+    addDetachedVisualMotionControl(visual, displayControl);
     const finishScale = tracker.add();
-    transition(ghost.scale)
+    const scaleControl = transition(ghost.scale)
       .duration(duration)
       .ease(folderCloseEase)
       .overlay()
@@ -340,10 +356,11 @@ function animateDetachedClosingGhost(ghost, tracker) {
         onComplete: finishScale,
       })
       .start();
+    addDetachedVisualMotionControl(visual, scaleControl);
     return;
   }
 
-  transition(ghost)
+  const fallbackControl = transition(ghost)
     .duration(DETACHED_CLOSING_FALLBACK_DURATION)
     .ease(folderCloseEase)
     .overlay()
@@ -353,13 +370,14 @@ function animateDetachedClosingGhost(ghost, tracker) {
       onComplete: finishDisplay,
     })
     .start();
+  addDetachedVisualMotionControl(visual, fallbackControl);
 }
 
-function animateDetachedClosingContainer(container, tracker) {
+function animateDetachedClosingContainer(container, tracker, visual = null) {
   if (!container) return;
   const duration = folderCloseDuration + DETACHED_CLOSING_FRAME_TAIL_DURATION;
   const finishFade = tracker.add();
-  transition(container)
+  const fadeControl = transition(container)
     .duration(DETACHED_CLOSING_FADE_TAIL_DURATION)
     .ease(folderCloseEase)
     .delay(Math.max(0, duration - DETACHED_CLOSING_FADE_TAIL_DURATION))
@@ -370,6 +388,7 @@ function animateDetachedClosingContainer(container, tracker) {
       onComplete: finishFade,
     })
     .start();
+  addDetachedVisualMotionControl(visual, fadeControl);
 }
 
 function springFolderIconLayoutPosition(node, target, refreshBounds) {
@@ -922,6 +941,7 @@ export class FolderOverlayLayer extends Container {
   destroyDetachedClosingVisual(visual) {
     if (!visual || visual.destroyed) return;
     visual.destroyed = true;
+    cancelDetachedVisualMotionControls(visual);
     killAllMotion(visual.container, { reason: FOLDER_PANEL_DETACHED_CLOSE_REASON });
     if (visual.container?.parent) visual.container.parent.removeChild(visual.container);
     visual.container?.destroy?.({ children: true });
@@ -1027,9 +1047,9 @@ export class FolderOverlayLayer extends Container {
       this.closingGhosts.clear({ restorePageTrack: false, reveal: false });
       const tracker = makeCompletionTracker(() => this.clearDetachedClosingVisual(detachedVisual));
       const frame = frameState ? container.children[0] : null;
-      if (frameState) animateDetachedFrame(frame, frameState, frameTarget, tracker);
-      for (const ghost of closingGhosts) animateDetachedClosingGhost(ghost, tracker);
-      animateDetachedClosingContainer(container, tracker);
+      if (frameState) animateDetachedFrame(frame, frameState, frameTarget, tracker, detachedVisual);
+      for (const ghost of closingGhosts) animateDetachedClosingGhost(ghost, tracker, detachedVisual);
+      animateDetachedClosingContainer(container, tracker, detachedVisual);
       tracker.finishIfIdle();
       return;
     }

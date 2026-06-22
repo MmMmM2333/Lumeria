@@ -1089,6 +1089,10 @@ export class IconNode extends Container {
 
   setFolderHandoffVisualHidden(hidden) {
     this.visualWrap.visible = !hidden;
+    if (hidden) return;
+    this.setPressed(false, { immediate: true });
+    killMotionOf(this.visualWrap.scale);
+    this.visualWrap.scale.set(1);
   }
 
   restoreLabelAfterGhost() {

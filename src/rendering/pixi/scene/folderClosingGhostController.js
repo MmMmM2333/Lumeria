@@ -13,6 +13,7 @@ import {
 } from "./folderIconGhostMotion.js";
 import { makeFolderGhostIconNodeState } from "./folderGhostIconState.js";
 import { hasUsableFolderGhostTarget } from "./folderOverlayTargets.js";
+import { makeDesktopSourceVisualKey } from "./folderVisualOwnershipRegistry.js";
 import {
   cancelClosingHandoffCleanup,
   scheduleClosingHandoffCleanup,
@@ -158,6 +159,21 @@ function resolveClosingFrameStartRect(layer, panelRect) {
   return cloneFramePresentation(layer.frameGhostState) || panelRect;
 }
 
+function acquireClosingDesktopSourceOwnership(layer, owner) {
+  const key = makeDesktopSourceVisualKey(owner?.folderId);
+  if (!key || typeof layer.acquireVisualOwnership !== "function") return;
+  layer.acquireVisualOwnership(key, owner);
+}
+
+function clearOpeningGhostsForClosing(layer) {
+  layer.openingGhosts.clear({
+    cancelSession: true,
+    completeControllerKeys: false,
+    restorePageTrack: false,
+    reveal: false,
+  });
+}
+
 export class FolderClosingGhostController {
   constructor(layer, options = {}) {
     this.layer = layer;
@@ -248,12 +264,12 @@ export class FolderClosingGhostController {
         }
         : target;
     });
-    layer.openingGhosts.clear({
-      cancelSession: true,
-      completeControllerKeys: false,
-      restorePageTrack: false,
-      reveal: false,
-    });
+    const usableTargets = (closeTargets || []).filter(hasUsableFolderGhostTarget);
+    if (!usableTargets.length) {
+      clearOpeningGhostsForClosing(layer);
+      this.begin(folderId, { restorePageTrack: false, reveal: false });
+      return;
+    }
     this.begin(folderId, { restorePageTrack: false, reveal: false });
     const sessionToken = typeof layer.createClosingGhostSessionToken === "function"
       ? layer.createClosingGhostSessionToken(folderId)
@@ -264,8 +280,8 @@ export class FolderClosingGhostController {
       kind: "closing",
       token: sessionToken,
     };
-    const usableTargets = (closeTargets || []).filter(hasUsableFolderGhostTarget);
-    if (!usableTargets.length) return;
+    acquireClosingDesktopSourceOwnership(layer, owner);
+    clearOpeningGhostsForClosing(layer);
     const isRetargetedOpeningClose = releasedOpeningGhosts.size > 0;
     const frameDuration = folderCloseDuration + CLOSING_FRAME_TAIL_DURATION;
     const closeFrameToRect = clientRectToStageVisualRect(folderRect, state.stageRect);
@@ -622,7 +638,6 @@ export class FolderClosingGhostController {
       return;
     }
     this.finishTransition(state);
-    if (!ghost.destroyed) ghost.destroy({ children: true });
   }
 
   completeFrameGhost(state) {
