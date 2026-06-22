@@ -491,6 +491,69 @@ export async function runDesktopLayerTests() {
   }
 
   {
+    const folder = makeNode("folder");
+    folder.item = { id: "folder-1", type: "folder" };
+    folder.state = { ghosted: false };
+    let setStateCount = 0;
+    folder.setState = (nextState) => {
+      setStateCount += 1;
+      folder.state = nextState;
+      folder.visible = !nextState.ghosted;
+    };
+    const pageTrack = makePageTrack([folder]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.iconNodes.set("page:0:folder-1", folder);
+    layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set();
+
+    layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 });
+    assert(layer.getFolderHandoffEntry("folder-1"), "test setup should create a handoff entry");
+
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(["folder-1"]),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    });
+
+    assert(!layer.getFolderHandoffEntry("folder-1"), "new raw source ghosting should clear a stale handoff entry");
+    assert(setStateCount === 1, "new raw source ghosting should be committed through normal icon state");
+    assert(folder.state.ghosted === true && folder.visible === false, "new raw source ghosting should hide the real folder icon");
+  }
+
+  {
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+    const frames = [];
+    globalThis.requestAnimationFrame = (callback) => {
+      frames.push(callback);
+      return frames.length;
+    };
+    globalThis.cancelAnimationFrame = () => {};
+    try {
+      const folder = makeNode("folder");
+      folder.item = { id: "folder-1", type: "folder" };
+      folder.state = { ghosted: false };
+      const pageTrack = makePageTrack([folder]);
+      const layer = makeLayer(DesktopLayer, pageTrack);
+      layer.iconNodes.set("page:0:folder-1", folder);
+      layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set();
+
+      layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 });
+      layer.releaseClosingFolderHandoffVisual("folder-1");
+      layer.lastFolderSourceGhostingState = {
+        folderSourceGhostedIds: new Set(),
+        isFolderOpeningPreviewFrameGhosted: () => false,
+      };
+
+      layer.commitFolderSourceGhosting();
+      assert(frames.length === 1, "source ghosting commit should schedule eligible handoff cleanup");
+      frames[0]();
+      assert(!layer.getFolderHandoffEntry("folder-1"), "scheduled source ghosting reconciliation should clear eligible handoff entries");
+    } finally {
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+      globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+    }
+  }
+
+  {
     const before = makeNode("before");
     const folder = makeNode("folder");
     folder.item = { id: "folder-1", type: "folder" };

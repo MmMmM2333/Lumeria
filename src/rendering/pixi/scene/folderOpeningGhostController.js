@@ -60,6 +60,8 @@ function startOpeningFrameGhost(layer, state, options = {}) {
     duration: folderOpenGhostDuration,
     ease: folderOpenGhostEase,
     exclusivePanelMaterialHandoff: true,
+    folderId: state.renderedFolder?.id || layer.currentFolderId || null,
+    frameGhostPhase: "opening",
     fromFillAlpha: thumb.fillAlpha,
     fromFillColor: thumb.fillColor,
     fromRadius: thumb.radius,

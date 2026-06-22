@@ -155,7 +155,8 @@ function cloneFramePresentation(frame) {
   };
 }
 
-function resolveClosingFrameStartRect(layer, panelRect) {
+function resolveClosingFrameStartRect(layer, panelRect, folderId) {
+  if (layer.frameGhostFolderId !== folderId) return panelRect;
   return cloneFramePresentation(layer.frameGhostState) || panelRect;
 }
 
@@ -251,7 +252,7 @@ export class FolderClosingGhostController {
     } = options;
     const folderId = state.renderedFolder?.id || layer.currentFolderId || null;
     const releasedOpeningGhosts = releaseOpeningGhostsForClosing(layer, state, targets);
-    const closeFrameFromRect = resolveClosingFrameStartRect(layer, panelRect);
+    const closeFrameFromRect = resolveClosingFrameStartRect(layer, panelRect, folderId);
     const closeTargets = (targets || []).map((target) => {
       const released = releasedOpeningGhosts.get(target?.item?.id);
       return released
@@ -264,12 +265,6 @@ export class FolderClosingGhostController {
         }
         : target;
     });
-    const usableTargets = (closeTargets || []).filter(hasUsableFolderGhostTarget);
-    if (!usableTargets.length) {
-      clearOpeningGhostsForClosing(layer);
-      this.begin(folderId, { restorePageTrack: false, reveal: false });
-      return;
-    }
     this.begin(folderId, { restorePageTrack: false, reveal: false });
     const sessionToken = typeof layer.createClosingGhostSessionToken === "function"
       ? layer.createClosingGhostSessionToken(folderId)
@@ -282,6 +277,7 @@ export class FolderClosingGhostController {
     };
     acquireClosingDesktopSourceOwnership(layer, owner);
     clearOpeningGhostsForClosing(layer);
+    const usableTargets = (closeTargets || []).filter(hasUsableFolderGhostTarget);
     const isRetargetedOpeningClose = releasedOpeningGhosts.size > 0;
     const frameDuration = folderCloseDuration + CLOSING_FRAME_TAIL_DURATION;
     const closeFrameToRect = clientRectToStageVisualRect(folderRect, state.stageRect);
@@ -315,13 +311,15 @@ export class FolderClosingGhostController {
       duration: frameDuration,
       ease: folderCloseEase,
       fadeStart: 0.86,
+      folderId,
+      frameGhostPhase: "closing",
       frameGhostToAlpha: 1,
-      fromFillAlpha: closeFrameFromRect?.fillAlpha ?? 0.26,
-      fromFillColor: closeFrameFromRect?.fillColor ?? thumb.fillColor,
+      fromFillAlpha: thumb.fillAlpha,
+      fromFillColor: thumb.fillColor,
       fromRadius: closeFrameFromRect?.radius ?? 48,
-      fromStrokeAlpha: closeFrameFromRect?.strokeAlpha ?? 0.24,
-      fromStrokeColor: closeFrameFromRect?.strokeColor ?? thumb.strokeColor,
-      fromStrokeWidth: closeFrameFromRect?.strokeWidth ?? thumb.strokeWidth,
+      fromStrokeAlpha: thumb.strokeAlpha,
+      fromStrokeColor: thumb.strokeColor,
+      fromStrokeWidth: thumb.strokeWidth,
       panelMaterialFinalAlpha: 0,
       panelMaterialFromAlpha: 0,
       panelMaterialToAlpha: 0,
@@ -349,7 +347,7 @@ export class FolderClosingGhostController {
     } else {
       layer.pageTrack.visible = false;
     }
-    this.scheduleRevealFallback(usableTargets);
+    if (usableTargets.length) this.scheduleRevealFallback(usableTargets);
 
     for (const target of usableTargets) {
       layer.closingGhostKeys.add(target.item.id);

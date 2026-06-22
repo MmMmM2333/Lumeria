@@ -83,7 +83,6 @@ const FOLDER_PANEL_OPEN_REASON = "folder-panel-open";
 const FOLDER_PANEL_READY_PROGRESS = 0.985;
 const MAX_DETACHED_CLOSING_VISUALS = 2;
 const DETACHED_CLOSING_FRAME_TAIL_DURATION = 0.04;
-const DETACHED_CLOSING_FADE_TAIL_DURATION = 0.12;
 const DETACHED_CLOSING_FALLBACK_DURATION = 0.22;
 
 function isPointInRect(x, y, rect) {
@@ -283,20 +282,6 @@ function animateDetachedFrame(graphics, frameState, targetState, tracker, visual
     })
     .start();
   addDetachedVisualMotionControl(visual, geometryControl);
-
-  const finishFade = tracker.add();
-  const fadeControl = transition(graphics)
-    .duration(DETACHED_CLOSING_FADE_TAIL_DURATION)
-    .ease(folderCloseEase)
-    .delay(Math.max(0, duration - DETACHED_CLOSING_FADE_TAIL_DURATION))
-    .overlay()
-    .interrupt("retarget")
-    .to({
-      alpha: 0,
-      onComplete: finishFade,
-    })
-    .start();
-  addDetachedVisualMotionControl(visual, fadeControl);
 }
 
 function animateDetachedClosingGhost(ghost, tracker, visual = null) {
@@ -373,22 +358,20 @@ function animateDetachedClosingGhost(ghost, tracker, visual = null) {
   addDetachedVisualMotionControl(visual, fallbackControl);
 }
 
-function animateDetachedClosingContainer(container, tracker, visual = null) {
-  if (!container) return;
-  const duration = folderCloseDuration + DETACHED_CLOSING_FRAME_TAIL_DURATION;
-  const finishFade = tracker.add();
-  const fadeControl = transition(container)
-    .duration(DETACHED_CLOSING_FADE_TAIL_DURATION)
+function animateDetachedGeometryHold(tracker, visual = null) {
+  const state = { progress: 0 };
+  const finishGeometry = tracker.add();
+  const holdControl = transition(state)
+    .duration(folderCloseDuration + DETACHED_CLOSING_FRAME_TAIL_DURATION)
     .ease(folderCloseEase)
-    .delay(Math.max(0, duration - DETACHED_CLOSING_FADE_TAIL_DURATION))
     .overlay()
     .interrupt("retarget")
     .to({
-      alpha: 0,
-      onComplete: finishFade,
+      progress: 1,
+      onComplete: finishGeometry,
     })
     .start();
-  addDetachedVisualMotionControl(visual, fadeControl);
+  addDetachedVisualMotionControl(visual, holdControl);
 }
 
 function springFolderIconLayoutPosition(node, target, refreshBounds) {
@@ -454,6 +437,7 @@ export class FolderOverlayLayer extends Container {
     this.registeredBoundsDirty = false;
     this.registeredBoundsFlushQueued = false;
     this.onIconAction = options.onIconAction || (() => { });
+    this.onClosingHandoffPrepare = options.onClosingHandoffPrepare || (() => { });
     this.onClosingHandoffReady = options.onClosingHandoffReady || (() => { });
     this.onClosingHandoffVisualRelease = options.onClosingHandoffVisualRelease || (() => { });
     this.onInternalActivityChange = options.onInternalActivityChange || (() => { });
@@ -539,8 +523,7 @@ export class FolderOverlayLayer extends Container {
       stopTargetSprings(this.panel.scale, { reason: FOLDER_OVERLAY_CLEAR_REASON });
       this.openingGhosts.clear({ cancelSession: true });
       this.closingGhosts.clear();
-      this.clearDetachedClosingVisuals(null, { immediate: true });
-      this.releaseAllOwnedVisualOwnership();
+      this.releaseAllOwnedVisualOwnership({ preserveDetachedClosing: true });
       this.stableFolderCloseTarget = null;
       if (state.folderPanelRef) state.folderPanelRef.value = null;
       if (state.folderViewportRef) state.folderViewportRef.value = null;
@@ -584,7 +567,7 @@ export class FolderOverlayLayer extends Container {
     this.panelGeometry = geometry.panel;
     const folderId = state.renderedFolder.id;
     this.describeMotionTargets(state, geometry);
-    if (!isClosing && this.closingGhostFolderId) {
+    if (this.closingGhostFolderId && (this.closingGhostFolderId !== folderId || !isClosing)) {
       this.detachClosingPresentationForOpen(folderId);
     }
     const overlayTargets = resolveFolderOverlayTargets({
@@ -929,10 +912,17 @@ export class FolderOverlayLayer extends Container {
     return released;
   }
 
-  releaseAllOwnedVisualOwnership() {
+  releaseAllOwnedVisualOwnership(options = {}) {
     const ownedVisualTokens = this.getOwnedVisualTokens();
-    const tokens = Array.from(ownedVisualTokens);
-    ownedVisualTokens.clear();
+    const preserveTokens = options.preserveDetachedClosing === true
+      ? new Set((this.detachedClosingVisuals || []).map((visual) => visual?.ownerToken).filter((token) => token != null))
+      : null;
+    const tokens = Array.from(ownedVisualTokens).filter((token) => !preserveTokens?.has(token));
+    if (preserveTokens) {
+      for (const token of tokens) ownedVisualTokens.delete(token);
+    } else {
+      ownedVisualTokens.clear();
+    }
     let released = 0;
     for (const token of tokens) released += this.visualOwnership.releaseByToken(token);
     return released;
@@ -951,6 +941,29 @@ export class FolderOverlayLayer extends Container {
     this.onDesktopSourceGhostingChange?.();
   }
 
+  releaseDetachedClosingSourceOwnership(visual) {
+    if (!visual?.desktopSourceKey || visual.ownerToken == null) return false;
+    const released = this.releaseVisualOwnership(visual.desktopSourceKey, visual.ownerToken);
+    if (released) visual.ownerToken = null;
+    return released;
+  }
+
+  releaseDetachedClosingHandoffVisual(visual, options = {}) {
+    if (!visual || visual.handoffReleased) return false;
+    visual.handoffReleased = true;
+    if (options.reveal !== false) this.onClosingHandoffVisualRelease?.(visual.folderId || null);
+    return true;
+  }
+
+  commitDetachedClosingHandoff(visual, options = {}) {
+    if (!visual || visual.handoffCommitted) return false;
+    visual.handoffCommitted = true;
+    this.releaseDetachedClosingHandoffVisual(visual, options);
+    this.releaseDetachedClosingSourceOwnership(visual);
+    this.notifyDesktopSourceGhostingChange();
+    return true;
+  }
+
   clearDetachedClosingVisual(visual, options = {}) {
     if (!visual || visual.clearing) return false;
     visual.clearing = true;
@@ -960,14 +973,11 @@ export class FolderOverlayLayer extends Container {
         const index = this.detachedClosingVisuals.indexOf(visual);
         if (index < 0) return false;
         this.detachedClosingVisuals.splice(index, 1);
-        const released = visual.desktopSourceKey && visual.ownerToken != null
-          ? this.releaseVisualOwnership(visual.desktopSourceKey, visual.ownerToken)
-          : false;
+        const released = this.releaseDetachedClosingSourceOwnership(visual);
         return { released, visual };
       },
       applyVisibility: () => {
-        this.onClosingHandoffVisualRelease?.(visual.folderId || null);
-        this.notifyDesktopSourceGhostingChange();
+        this.commitDetachedClosingHandoff(visual, { reveal: options.reveal !== false });
       },
       destroyVisual: () => {
         this.destroyDetachedClosingVisual(visual);
@@ -975,22 +985,20 @@ export class FolderOverlayLayer extends Container {
     }, { immediate: options.immediate === true });
   }
 
-  clearDetachedClosingVisualNow(visual) {
+  clearDetachedClosingVisualNow(visual, options = {}) {
     if (!visual) return;
     const index = this.detachedClosingVisuals.indexOf(visual);
     if (index >= 0) this.detachedClosingVisuals.splice(index, 1);
-    if (visual.desktopSourceKey && visual.ownerToken != null) this.releaseVisualOwnership(visual.desktopSourceKey, visual.ownerToken);
-    this.onClosingHandoffVisualRelease?.(visual.folderId || null);
-    this.notifyDesktopSourceGhostingChange();
     this.destroyDetachedClosingVisual(visual);
+    this.commitDetachedClosingHandoff(visual, { reveal: options.reveal !== false });
   }
 
   clearDetachedClosingVisuals(folderId = null, options = {}) {
     const visuals = Array.from(this.detachedClosingVisuals);
     for (const visual of visuals) {
       if (folderId && visual.folderId !== folderId) continue;
-      if (options.immediate) this.clearDetachedClosingVisualNow(visual);
-      else this.clearDetachedClosingVisual(visual);
+      if (options.immediate) this.clearDetachedClosingVisualNow(visual, options);
+      else this.clearDetachedClosingVisual(visual, options);
     }
   }
 
@@ -1001,7 +1009,7 @@ export class FolderOverlayLayer extends Container {
   }
 
   detachClosingPresentationForOpen(nextFolderId) {
-    if (nextFolderId) this.clearDetachedClosingVisuals(nextFolderId, { immediate: true });
+    if (nextFolderId) this.clearDetachedClosingVisuals(nextFolderId, { immediate: true, reveal: false });
     const closingFolderId = this.closingGhostFolderId || null;
     const shouldKeepDetachedVisual = Boolean(closingFolderId && closingFolderId !== nextFolderId);
     const frameState = shouldKeepDetachedVisual ? this.frameGhostState : null;
@@ -1015,6 +1023,7 @@ export class FolderOverlayLayer extends Container {
     let detachedVisual = null;
 
     if (shouldKeepDetachedVisual && (frameState || closingGhosts.length || previewSwapGhosts.length)) {
+      this.onClosingHandoffPrepare?.(closingFolderId);
       const container = new Container();
       container.eventMode = "none";
       container.alpha = 1;
@@ -1045,12 +1054,22 @@ export class FolderOverlayLayer extends Container {
       this.pruneDetachedClosingVisuals();
       this.closingGhostFolderId = null;
       this.closingGhosts.clear({ restorePageTrack: false, reveal: false });
-      const tracker = makeCompletionTracker(() => this.clearDetachedClosingVisual(detachedVisual));
+      const finishAfterGeometry = () => {
+        if (detachedVisual.destroyed || detachedVisual.finishQueued) return;
+        detachedVisual.finishQueued = true;
+        motionRuntime.afterFrame(() => {
+          if (detachedVisual.destroyed) return;
+          this.clearDetachedClosingVisualNow(detachedVisual);
+        });
+      };
+      const geometryTracker = makeCompletionTracker(finishAfterGeometry);
       const frame = frameState ? container.children[0] : null;
-      if (frameState) animateDetachedFrame(frame, frameState, frameTarget, tracker, detachedVisual);
-      for (const ghost of closingGhosts) animateDetachedClosingGhost(ghost, tracker, detachedVisual);
-      animateDetachedClosingContainer(container, tracker, detachedVisual);
-      tracker.finishIfIdle();
+      if (frameState) animateDetachedFrame(frame, frameState, frameTarget, geometryTracker, detachedVisual);
+      for (const ghost of closingGhosts) animateDetachedClosingGhost(ghost, geometryTracker, detachedVisual);
+      if (!frameState && !closingGhosts.length && previewSwapGhosts.length) {
+        animateDetachedGeometryHold(geometryTracker, detachedVisual);
+      }
+      geometryTracker.finishIfIdle();
       return;
     }
 
@@ -1061,7 +1080,7 @@ export class FolderOverlayLayer extends Container {
   getDesktopSourceGhostedIds() {
     const ids = new Set();
     for (const visual of this.detachedClosingVisuals || []) {
-      if (visual?.folderId) ids.add(visual.folderId);
+      if (visual?.folderId && !visual.handoffCommitted) ids.add(visual.folderId);
     }
     for (const entry of this.visualOwnership.snapshot()) {
       if (!entry.key?.startsWith("desktopSource:")) continue;

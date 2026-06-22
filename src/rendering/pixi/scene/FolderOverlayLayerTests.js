@@ -15,6 +15,8 @@ import {
 import {
   clearIconBoundsRegistry,
   getRenderedClientLaunchIconBounds,
+  registerRenderedClientLaunchIconBounds,
+  registerRenderedClientTopLevelFolderThumbBounds,
 } from "../geometry/iconBoundsRegistry.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { FolderTransitionCoordinator } from "./folderTransitionCoordinator.js";
@@ -218,6 +220,57 @@ export async function runFolderOverlayLayerTests() {
     layer.handlePointerDown(makeEvent(180, 300));
     layer.handlePointerDown(makeEvent(340, 460));
     assert(calls.join(",") === "prevent,stop,closing:folder-a", "closing pointer handling should only intercept the closing folder target");
+  }
+
+  {
+    clearIconBoundsRegistry();
+    registerRenderedClientLaunchIconBounds(
+      { area: "desktop", id: "folder-b" },
+      { height: 72, left: 400, top: 220, width: 72 },
+      { area: "desktop", id: "folder-b", item: { id: "folder-b", type: "folder" } }
+    );
+    registerRenderedClientTopLevelFolderThumbBounds("folder-b", { height: 64, left: 404, top: 224, width: 64 });
+    const layer = new FolderOverlayLayer();
+    const calls = [];
+    layer.currentFolderId = "folder-a";
+    layer.closingGhostFolderId = "folder-a";
+    layer.isClosing = true;
+    layer.detachClosingPresentationForOpen = (nextFolderId) => {
+      calls.push(`detach:${nextFolderId}:${layer.closingGhostFolderId}`);
+      layer.closingGhostFolderId = null;
+    };
+    layer.closingGhosts = {
+      clear() {},
+      hasActive: () => false,
+      hasPendingHandoff: () => false,
+      start() {
+        calls.push(`start:${layer.closingGhostFolderId}`);
+        layer.closingGhostFolderId = "folder-b";
+      },
+    };
+
+    layer.update({
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(3, 1fr)",
+        gridTemplateRows: "repeat(3, 1fr)",
+      },
+      folderPageIndex: 0,
+      folderPageSize: 9,
+      folderPages: [[]],
+      folderPanelStyle: {},
+      getVisibleFolderPage: (page) => page || [],
+      height: 800,
+      iconSize: 64,
+      isFolderClosing: true,
+      renderedFolder: { childPages: [[]], id: "folder-b", name: "B", type: "folder" },
+      stageRect: { height: 800, left: 0, top: 0, width: 1200 },
+      width: 1200,
+    });
+
+    assert(calls.join(",") === "detach:folder-b:folder-a,start:null", "cross-folder closing update should detach the old live closing before starting the new closing");
+    layer.destroy({ children: true });
+    clearIconBoundsRegistry();
+    motionRuntime.reset();
   }
 
   const nearlyEqual = (a, b) => Math.abs(a - b) < 0.0001;
@@ -519,6 +572,9 @@ export async function runFolderOverlayLayerTests() {
     const layer = Object.create(FolderOverlayLayer.prototype);
     const detachedChildren = [];
     let clearCount = 0;
+    const preparedHandoffs = [];
+    const releasedHandoffs = [];
+    const releaseDetachedChildCounts = [];
     const closingGhost = new Container();
     closingGhost.alpha = 1;
     closingGhost.position.set(10, 20);
@@ -534,6 +590,11 @@ export async function runFolderOverlayLayerTests() {
     layer.closingGhostLayer = { removeChildren: () => [closingGhost] };
     layer.closingPreviewSwapLayer = { removeChildren: () => [] };
     layer.closingGhosts = { clear: () => { clearCount += 1; } };
+    layer.onClosingHandoffPrepare = (folderId) => preparedHandoffs.push(folderId);
+    layer.onClosingHandoffVisualRelease = (folderId) => {
+      releasedHandoffs.push(folderId);
+      releaseDetachedChildCounts.push(detachedChildren.length);
+    };
     layer.detachedClosingVisuals = [];
     layer.nextDetachedClosingVisualToken = 1;
     layer.visualOwnership = new FolderVisualOwnershipRegistry();
@@ -570,16 +631,257 @@ export async function runFolderOverlayLayerTests() {
 
     layer.detachClosingPresentationForOpen("folder-b");
     assert(clearCount === 1, "detached animation should clear the live closing controller once");
+    assert(preparedHandoffs.join(",") === "folder-a", "detached animation should prepare the real folder handoff before it starts");
     assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "detached animation should hold the desktop source while it is running");
     assert(detachedChildren.length === 1, "detached animation should keep the visual mounted while it is running");
     for (let index = 0; index < 3; index += 1) motionRuntime.step(0.04);
     layer.getVisualCommitQueue().flush();
     assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "partial detached animation progress should not reveal the desktop source early");
     assert(detachedChildren.length === 1, "partial detached animation progress should keep the visual alive");
+    assert(releasedHandoffs.length === 0, "detached handoff should wait until the visual return point");
+    for (let index = 0; index < 6; index += 1) motionRuntime.step(0.05);
+    assert(releasedHandoffs.join(",") === "folder-a", "detached animation should release the real handoff at detached cleanup");
+    assert(releaseDetachedChildCounts[0] === 0, "detached visual should be removed before the real handoff is released");
+    assert(detachedChildren.length === 0, "detached visual should be gone when the real handoff is released");
     for (let index = 0; index < 14; index += 1) motionRuntime.step(0.05);
+    assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "completed detached animation should release the desktop source without a deferred flush");
+    assert(detachedChildren.length === 0, "completed detached animation should destroy the detached visual in the completion frame");
+    assert(releasedHandoffs.join(",") === "folder-a", "detached cleanup should not release the real handoff twice");
     layer.getVisualCommitQueue().flush();
-    assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "completed detached animation should release the desktop source");
-    assert(detachedChildren.length === 0, "completed detached animation should destroy the detached visual");
+    assert(detachedChildren.length === 0, "deferred detached flush should not be required after completion");
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    const detachedChildren = [];
+    const releasedHandoffs = [];
+    const releaseDetachedChildCounts = [];
+    let sourceGhostingCommits = 0;
+    layer.closingGhostFolderId = "folder-a";
+    layer.closingGhostLayer = { removeChildren: () => [] };
+    layer.closingPreviewSwapLayer = { removeChildren: () => [] };
+    layer.closingGhosts = { clear: () => {} };
+    layer.onClosingHandoffPrepare = () => {};
+    layer.onClosingHandoffVisualRelease = (folderId) => {
+      releasedHandoffs.push(folderId);
+      releaseDetachedChildCounts.push(detachedChildren.length);
+    };
+    layer.onDesktopSourceGhostingChange = () => { sourceGhostingCommits += 1; };
+    layer.detachedClosingVisuals = [];
+    layer.nextDetachedClosingVisualToken = 1;
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.detachedClosingVisualLayer = {
+      addChild(child) {
+        child.parent = this;
+        detachedChildren.push(child);
+      },
+      removeChild(child) {
+        const index = detachedChildren.indexOf(child);
+        if (index >= 0) detachedChildren.splice(index, 1);
+      },
+    };
+    layer.frameGhostState = {
+      fillAlpha: 0.26,
+      height: 64.4,
+      left: 139.6,
+      radius: 18.2,
+      strokeAlpha: 0.24,
+      strokeWidth: 1,
+      top: 170.3,
+      width: 63.7,
+    };
+    layer.closingFrameDetachedTarget = {
+      fillAlpha: 0.2,
+      height: 64,
+      left: 140,
+      radius: 18,
+      strokeAlpha: 0.18,
+      strokeWidth: 1,
+      top: 170,
+      width: 64,
+    };
+
+    layer.detachClosingPresentationForOpen("folder-b");
+
+    assert(releasedHandoffs.length === 0, "near-target detached frame should not release the handoff before the full geometry duration");
+    assert(sourceGhostingCommits === 0, "near-target detached frame should keep source ghosting until the full geometry duration");
+    assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "near-target detached frame should keep desktop source ownership while geometry is still running");
+    assert(detachedChildren.length === 1, "near-target detached frame should stay mounted while geometry is still running");
+    for (let index = 0; index < 7; index += 1) motionRuntime.step(0.05);
+    assert(releasedHandoffs.length === 0, "near-target detached frame should still wait before the geometry duration completes");
+    motionRuntime.step(0.05);
+    assert(releasedHandoffs.join(",") === "folder-a", "near-target detached frame should release after the full geometry duration");
+    assert(sourceGhostingCommits === 1, "near-target detached frame handoff should publish one source ghosting commit");
+    assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "near-target detached frame handoff should release desktop source ownership after geometry completes");
+    assert(releaseDetachedChildCounts[0] === 0, "near-target detached frame should be removed before handoff release");
+    assert(detachedChildren.length === 0, "near-target detached frame should be gone after handoff release");
+    for (let index = 0; index < 4; index += 1) motionRuntime.step(0.05);
+    assert(releasedHandoffs.join(",") === "folder-a", "near-target detached frame cleanup should not release the handoff twice");
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    const detachedChildren = [];
+    const releasedHandoffs = [];
+    const releaseDetachedChildCounts = [];
+    const closingGhost = new Container();
+    closingGhost.alpha = 1;
+    closingGhost.position.set(99.6, 120.3);
+    closingGhost.scale.set(0.205);
+    closingGhost.__closingDetachedMotion = {
+      alpha: 0,
+      duration: 0.36,
+      scale: 0.2,
+      x: 100,
+      y: 120,
+    };
+    layer.closingGhostFolderId = "folder-a";
+    layer.closingGhostLayer = { removeChildren: () => [closingGhost] };
+    layer.closingPreviewSwapLayer = { removeChildren: () => [] };
+    layer.closingGhosts = { clear: () => {} };
+    layer.onClosingHandoffPrepare = () => {};
+    layer.onClosingHandoffVisualRelease = (folderId) => {
+      releasedHandoffs.push(folderId);
+      releaseDetachedChildCounts.push(detachedChildren.length);
+    };
+    layer.detachedClosingVisuals = [];
+    layer.nextDetachedClosingVisualToken = 1;
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.detachedClosingVisualLayer = {
+      addChild(child) {
+        child.parent = this;
+        detachedChildren.push(child);
+      },
+      removeChild(child) {
+        const index = detachedChildren.indexOf(child);
+        if (index >= 0) detachedChildren.splice(index, 1);
+      },
+    };
+    layer.frameGhostState = null;
+
+    layer.detachClosingPresentationForOpen("folder-b");
+
+    assert(releasedHandoffs.length === 0, "near-target detached ghost should not release the handoff before its motion completes");
+    assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "near-target detached ghost should keep desktop source ownership while geometry is still running");
+    assert(detachedChildren.length === 1, "near-target detached ghost should stay mounted while geometry is still running");
+    for (let index = 0; index < 7; index += 1) motionRuntime.step(0.05);
+    assert(releasedHandoffs.length === 0, "near-target detached ghost should still wait before its motion completes");
+    motionRuntime.step(0.05);
+    assert(releasedHandoffs.join(",") === "folder-a", "near-target detached ghost should release after its motion completes");
+    assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "near-target detached ghost handoff should release desktop source ownership after motion completes");
+    assert(releaseDetachedChildCounts[0] === 0, "near-target detached ghost should be removed before handoff release");
+    assert(detachedChildren.length === 0, "near-target detached ghost should be gone after handoff release");
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    const detachedChildren = [];
+    const releasedHandoffs = [];
+    const releaseDetachedChildCounts = [];
+    const previewSwapGhost = new Container();
+    layer.closingGhostFolderId = "folder-a";
+    layer.closingGhostLayer = { removeChildren: () => [] };
+    layer.closingPreviewSwapLayer = { removeChildren: () => [previewSwapGhost] };
+    layer.closingGhosts = { clear: () => {} };
+    layer.onClosingHandoffPrepare = () => {};
+    layer.onClosingHandoffVisualRelease = (folderId) => {
+      releasedHandoffs.push(folderId);
+      releaseDetachedChildCounts.push(detachedChildren.length);
+    };
+    layer.detachedClosingVisuals = [];
+    layer.nextDetachedClosingVisualToken = 1;
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.detachedClosingVisualLayer = {
+      addChild(child) {
+        child.parent = this;
+        detachedChildren.push(child);
+      },
+      removeChild(child) {
+        const index = detachedChildren.indexOf(child);
+        if (index >= 0) detachedChildren.splice(index, 1);
+      },
+    };
+    layer.frameGhostState = null;
+
+    layer.detachClosingPresentationForOpen("folder-b");
+
+    assert(releasedHandoffs.length === 0, "preview-swap-only detached visual should wait for the geometry hold before releasing the handoff");
+    assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "preview-swap-only handoff should keep desktop source ownership during the geometry hold");
+    assert(detachedChildren.length === 1, "preview-swap-only detached visual should remain mounted during the geometry hold");
+    for (let index = 0; index < 7; index += 1) motionRuntime.step(0.05);
+    assert(releasedHandoffs.length === 0, "preview-swap-only detached visual should still wait before the geometry hold completes");
+    motionRuntime.step(0.05);
+    assert(releasedHandoffs.join(",") === "folder-a", "preview-swap-only detached visual should release after the geometry hold");
+    assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "preview-swap-only handoff should release desktop source ownership after the geometry hold");
+    assert(releaseDetachedChildCounts[0] === 0, "preview-swap-only detached visual should be removed before handoff release");
+    assert(detachedChildren.length === 0, "preview-swap-only detached visual should be gone after handoff release");
+    for (let index = 0; index < 4; index += 1) motionRuntime.step(0.05);
+    assert(releasedHandoffs.join(",") === "folder-a", "preview-swap-only cleanup should not release the handoff twice");
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    const detachedChildren = [];
+    const releasedHandoffs = [];
+    let sourceGhostingCommits = 0;
+    layer.closingGhostFolderId = "folder-a";
+    layer.closingGhostLayer = { removeChildren: () => [] };
+    layer.closingPreviewSwapLayer = { removeChildren: () => [] };
+    layer.closingGhosts = { clear: () => {} };
+    layer.onClosingHandoffPrepare = () => {};
+    layer.onClosingHandoffVisualRelease = (folderId) => releasedHandoffs.push(folderId);
+    layer.onDesktopSourceGhostingChange = () => { sourceGhostingCommits += 1; };
+    layer.detachedClosingVisuals = [];
+    layer.nextDetachedClosingVisualToken = 1;
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.detachedClosingVisualLayer = {
+      addChild(child) {
+        child.parent = this;
+        detachedChildren.push(child);
+      },
+      removeChild(child) {
+        const index = detachedChildren.indexOf(child);
+        if (index >= 0) detachedChildren.splice(index, 1);
+      },
+    };
+    layer.frameGhostState = {
+      fillAlpha: 0.26,
+      height: 160,
+      left: 20,
+      radius: 40,
+      strokeAlpha: 0.24,
+      strokeWidth: 1,
+      top: 30,
+      width: 240,
+    };
+    layer.closingFrameDetachedTarget = {
+      fillAlpha: 0.2,
+      height: 64,
+      left: 140,
+      radius: 18,
+      strokeAlpha: 0.18,
+      strokeWidth: 1,
+      top: 170,
+      width: 64,
+    };
+
+    layer.detachClosingPresentationForOpen("folder-b");
+    for (let index = 0; index < 11; index += 1) motionRuntime.step(0.05);
+
+    assert(releasedHandoffs.join(",") === "folder-a", "clamped frame steps should commit the detached handoff before cleanup");
+    assert(sourceGhostingCommits === 1, "detached handoff should publish one source ghosting commit");
+    assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "detached handoff should release desktop source ownership");
+    assert(detachedChildren.length === 0, "detached cleanup should still destroy the visual");
+    layer.getVisualCommitQueue().flush();
+    assert(releasedHandoffs.join(",") === "folder-a", "cleanup should not release the handoff twice");
     motionRuntime.reset();
   }
 
@@ -627,7 +929,7 @@ export async function runFolderOverlayLayerTests() {
 
     layer.detachClosingPresentationForOpen("folder-b");
     const visual = layer.detachedClosingVisuals[0];
-    assert(visual?.motionControls?.size >= 2, "detached frame should retain motion controls for cleanup");
+    assert(visual?.motionControls?.size >= 1, "detached frame should retain geometry motion controls for cleanup");
     layer.clearDetachedClosingVisualNow(visual);
     assert(visual.destroyed === true && detachedChildren.length === 0, "immediate detached cleanup should destroy the visual");
     for (let index = 0; index < 6; index += 1) motionRuntime.step(0.05);
@@ -690,12 +992,38 @@ export async function runFolderOverlayLayerTests() {
     layer.detachClosingPresentationForOpen("folder-a");
 
     assert(existingA.destroyed === true, "reopening folder A should destroy its stale detached closing visual");
-    assert(handoffVisualReleases.includes("folder-a"), "immediate stale detached cleanup should restore folder A's desktop handoff visual");
+    assert(!handoffVisualReleases.includes("folder-a"), "immediate stale same-folder cleanup should not reveal folder A before the new open owns the source");
     assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "stale folder A detached ownership should release before the new open owns the source");
     assert(layer.getDesktopSourceGhostedIds().has("folder-b"), "opening folder A should keep folder B closing as a detached visual");
     assert(detachedChildren.length === 1, "only folder B's detached close should remain mounted");
     assert(clearCount === 1, "detaching folder B should clear the live closing controller once");
     motionRuntime.reset();
+  }
+
+  {
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.ownedVisualTokens = new Set();
+    layer.detachedClosingVisuals = [{
+      desktopSourceKey: makeDesktopSourceVisualKey("folder-a"),
+      folderId: "folder-a",
+      ownerToken: "detached-close:folder-a:1",
+    }];
+    layer.acquireVisualOwnership(makeDesktopSourceVisualKey("folder-a"), {
+      folderId: "folder-a",
+      kind: "detachedClosing",
+      token: "detached-close:folder-a:1",
+    });
+    layer.acquireVisualOwnership(makeFolderPageTrackVisualKey("folder-b"), {
+      folderId: "folder-b",
+      kind: "opening",
+      token: "opening-folder-b",
+    });
+
+    layer.releaseAllOwnedVisualOwnership({ preserveDetachedClosing: true });
+
+    assert(layer.visualOwnership.isOwnedBy(makeDesktopSourceVisualKey("folder-a"), "detached-close:folder-a:1"), "empty overlay cleanup should preserve detached closing desktop source ownership");
+    assert(!layer.visualOwnership.hasOwner(makeFolderPageTrackVisualKey("folder-b")), "empty overlay cleanup should still release non-detached transition ownership");
   }
 
   {

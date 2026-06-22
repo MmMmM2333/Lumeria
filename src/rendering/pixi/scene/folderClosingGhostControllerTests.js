@@ -418,6 +418,7 @@ export function runFolderClosingGhostControllerTests() {
     const controller = new FolderClosingGhostController(layer);
     const target = makeTarget();
     layer.openingGhostKeys = new Set(["app-1"]);
+    layer.frameGhostFolderId = "folder-1";
     layer.frameGhostState = {
       fillAlpha: 0.26,
       fillColor: 0x111111,
@@ -457,6 +458,37 @@ export function runFolderClosingGhostControllerTests() {
     assert(reusedGhost.alpha === 0.7, "closing should preserve the released ghost alpha as the motion source");
     assert(reusedGhost.labelText.alpha === 0.4, "closing should preserve the released label alpha before fade out");
     assert(layer.frameGhostState.left === 20 && layer.frameGhostState.width === 240, "closing frame should start from the current frame presentation");
+    assert(layer.frameGhostOptions.frameGhostPhase === "closing", "closing frame should mark its frame ghost phase");
+    assert(layer.frameGhostOptions.folderId === "folder-1", "closing frame should carry the owning folder id");
+    assert(layer.frameGhostOptions.fromFillColor === 0xffffff && layer.frameGhostOptions.fromFillAlpha === 0.22, "closing frame should use folder thumb fill presentation at phase handoff");
+    controller.clear();
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+    layer.frameGhostFolderId = "folder-a";
+    layer.frameGhostState = {
+      fillAlpha: 0.26,
+      fillColor: 0x111111,
+      height: 180,
+      left: 20,
+      radius: 42,
+      strokeAlpha: 0.2,
+      strokeColor: 0xffffff,
+      strokeWidth: 1,
+      top: 30,
+      width: 240,
+    };
+
+    controller.start(makeState(), [makeTarget()], { height: 72, left: 10, top: 20, width: 72 }, { height: 300, left: 400, top: 500, width: 420 });
+
+    assert(layer.frameGhostState.left === 400 && layer.frameGhostState.width === 420, "closing a different folder should not start from a stale folder frame");
+    assert(layer.frameGhostOptions.folderId === "folder-1", "cross-folder stale frame fallback should still tag the new closing folder");
     controller.clear();
   }
 
@@ -503,6 +535,57 @@ export function runFolderClosingGhostControllerTests() {
 
     assert(layer.ownerKindAtOpeningClear === "closing", "closing should own the desktop source before clearing the interrupted opening owner");
     assert(layer.visualOwnership.getOwner(sourceKey)?.kind === "closing", "opening clear should not reveal a source already transferred to closing");
+    controller.clear();
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+    const sourceKey = makeDesktopSourceVisualKey("folder-1");
+    layer.openingGhostSessionToken = "open-token";
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.ownedVisualTokens = new Set();
+    layer.acquireVisualOwnership = (key, owner) => {
+      const acquired = layer.visualOwnership.acquire(key, owner);
+      if (acquired && owner?.token != null) layer.ownedVisualTokens.add(owner.token);
+      return acquired;
+    };
+    layer.releaseTransitionOwnership = (token) => {
+      const ownerAtRelease = layer.visualOwnership.getOwner(sourceKey);
+      layer.ownerKindAtOpeningClear = ownerAtRelease?.kind || null;
+      return layer.visualOwnership.releaseByToken(token);
+    };
+    layer.openingGhosts.clear = () => {
+      layer.releaseTransitionOwnership("open-token");
+    };
+    layer.acquireVisualOwnership(sourceKey, {
+      folderId: "folder-1",
+      kind: "opening",
+      token: "open-token",
+    });
+
+    controller.start(
+      makeState(),
+      [{ ...makeTarget(), targetStageLayoutRect: null }],
+      { height: 72, left: 10, top: 20, width: 72 },
+      { height: 300, left: 0, top: 0, width: 400 }
+    );
+
+    assert(layer.ownerKindAtOpeningClear === "closing", "closing should own the desktop source before clearing opening even without usable close targets");
+    assert(layer.visualOwnership.getOwner(sourceKey)?.kind === "closing", "no-target closing fallback should keep the source folder hidden");
+    assert(layer.frameGhostOptions?.frameGhostPhase === "closing", "no-target closing fallback should still start the folder frame handoff");
+    assert(timerHost.timerCount === 0, "no-target closing fallback should not schedule child ghost fallback timers");
+    layer.frameGhostOptions.onArrive();
+    assert(layer.closingHandoffActive === true, "no-target closing frame arrival should start handoff activity");
+    layer.frameGhostOptions.onComplete();
+    timerHost.runAllFrames();
+    assert(!layer.visualOwnership.hasOwner(sourceKey), "no-target closing handoff cleanup should release the desktop source");
+    timerHost.runAllFrames();
+    assert(layer.closingHandoffActive === false, "no-target closing handoff cleanup should end handoff activity");
     controller.clear();
   }
 

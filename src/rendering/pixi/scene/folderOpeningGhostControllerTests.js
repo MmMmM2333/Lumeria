@@ -193,6 +193,8 @@ export function runFolderOpeningGhostControllerTests() {
     assert(layer.frameGhostCalls[0].options.fromRadius === 14, "opening frame should keep the source folder thumb radius on its first frame");
     assert(layer.frameGhostCalls[0].options.toRadius === 48, "opening frame should morph to the panel radius");
     assert(layer.frameGhostCalls[0].options.exclusivePanelMaterialHandoff === true, "opening frame should keep one visible shell owner during the frame morph");
+    assert(layer.frameGhostCalls[0].options.frameGhostPhase === "opening", "opening frame should mark its frame ghost phase");
+    assert(layer.frameGhostCalls[0].options.folderId === "folder-1", "opening frame should carry the owning folder id");
     assert(!layer.panelMaterial.visible && layer.panelMaterial.alpha === 0, "start should keep the real panel material hidden while the frame ghost owns the shell");
     assert(layer.frameGhost.visible && layer.frameGhost.alpha === 1, "start should show the frame ghost during the opening shell morph");
     assert(timerHost.size === 1, "start should schedule a fallback clear timer");
