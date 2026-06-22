@@ -36,6 +36,29 @@ function makeTrackKey(record = {}) {
   ].join(":");
 }
 
+function normalizeComparable(value) {
+  return value == null ? "" : String(value);
+}
+
+function isSameReplayTarget(a = null, b = null) {
+  if (!a || !b) return false;
+  if (a.targetId != null && b.targetId != null) {
+    return normalizeComparable(a.targetId) === normalizeComparable(b.targetId);
+  }
+  if (a.sourceLabel && b.sourceLabel) return a.sourceLabel === b.sourceLabel;
+  if (a.label && b.label) return a.label === b.label;
+  if (a.layer && b.layer) return a.layer === b.layer;
+  return false;
+}
+
+function isSameReplayTrack(a = null, b = null) {
+  if (!a || !b) return false;
+  return isSameReplayTarget(a, b)
+    && normalizeComparable(a.prop || "unknown") === normalizeComparable(b.prop || "unknown")
+    && normalizeComparable(a.lane || "base") === normalizeComparable(b.lane || "base")
+    && normalizeComparable(a.laneKey || "default") === normalizeComparable(b.laneKey || "default");
+}
+
 function makeTargetLaneKey(record = {}) {
   return [
     record.targetId ?? "unknown",
@@ -465,6 +488,10 @@ export function buildMotionReplayCurveGroups(trace = {}, timeMs = 0, filters = {
 }
 
 export function buildMotionReplayOverlayRows(trace = {}, timeMs = 0, filters = {}, limit = MAX_REPLAY_OVERLAY_ROWS) {
+  const options = typeof limit === "object" && limit !== null ? limit : { limit };
+  const rowLimit = options.limit ?? MAX_REPLAY_OVERLAY_ROWS;
+  const selectedTarget = options.selectedTarget || null;
+  const selectedTrack = options.selectedTrack || null;
   const frame = findMotionReplayFrame(trace, timeMs);
   if (!frame) return [];
   const targetsById = makeTargetsById(trace);
@@ -475,30 +502,64 @@ export function buildMotionReplayOverlayRows(trace = {}, timeMs = 0, filters = {
     const key = String(value.targetId ?? resolveRecordLabel(value, targetsById));
     let group = groups.get(key);
     if (!group) {
+      const target = value.targetId != null ? targetsById.get(value.targetId) : null;
       group = {
+        kind: value.targetKind || target?.kind || null,
         label: resolveRecordLabel(value, targetsById),
         laneKeys: new Set(),
+        layer: value.layer || target?.layer || null,
+        primaryTrack: null,
         props: [],
+        sourceLabel: value.sourceLabel || target?.sourceLabel || null,
         targetId: value.targetId,
         values: [],
       };
       groups.set(key, group);
     }
+    const track = {
+      lane: value.lane || "base",
+      laneKey: value.laneKey || "default",
+      prop: value.prop || "unknown",
+      sourceLabel: value.sourceLabel || group.sourceLabel || group.label,
+      targetId: value.targetId,
+    };
+    if (!group.primaryTrack || isSameReplayTrack(track, selectedTrack)) {
+      group.primaryTrack = track;
+    }
     group.props.push(value.prop || "-");
     group.laneKeys.add([value.lane, value.laneKey].filter(Boolean).join("/") || "-");
-    group.values.push(`${value.prop || "-"}=${formatNumber(value.value)}`);
+    group.values.push({
+      isSelected: isSameReplayTrack(track, selectedTrack),
+      key: makeTrackKey(track),
+      summary: `${value.prop || "-"}=${formatNumber(value.value)}`,
+      track,
+    });
   }
   return Array.from(groups.values())
-    .map((group) => ({
-      key: String(group.targetId ?? group.label),
-      label: group.label,
-      laneSummary: Array.from(group.laneKeys).slice(0, 2).join(" "),
-      propSummary: Array.from(new Set(group.props)).slice(0, 4).join(","),
-      targetId: group.targetId,
-      valueSummary: group.values.slice(0, 4).join(" / "),
-    }))
-    .sort((a, b) => a.label.localeCompare(b.label))
-    .slice(0, Math.max(0, Math.floor(readNumber(limit, MAX_REPLAY_OVERLAY_ROWS))));
+    .map((group) => {
+      const isSelectedTarget = isSameReplayTarget(group, selectedTarget) || isSameReplayTarget(group, selectedTrack);
+      const selectedValue = group.values.find((value) => value.isSelected);
+      return {
+        isSelected: Boolean(isSelectedTarget || selectedValue),
+        key: String(group.targetId ?? group.sourceLabel ?? group.label),
+        kind: group.kind,
+        label: group.label,
+        lane: group.primaryTrack?.lane || "base",
+        laneKey: group.primaryTrack?.laneKey || "default",
+        laneSummary: Array.from(group.laneKeys).slice(0, 2).join(" "),
+        layer: group.layer,
+        primaryTrack: selectedValue?.track || group.primaryTrack,
+        prop: group.primaryTrack?.prop || "unknown",
+        propSummary: Array.from(new Set(group.props)).slice(0, 4).join(","),
+        sourceLabel: group.sourceLabel || group.label,
+        targetId: group.targetId,
+        valueCount: group.values.length,
+        valueRows: group.values.slice(0, 4),
+        valueSummary: group.values.map((value) => value.summary).slice(0, 4).join(" / "),
+      };
+    })
+    .sort((a, b) => Number(b.isSelected) - Number(a.isSelected) || a.label.localeCompare(b.label))
+    .slice(0, Math.max(0, Math.floor(readNumber(rowLimit, MAX_REPLAY_OVERLAY_ROWS))));
 }
 
 function collectUsedTargetIds(frames = [], events = []) {

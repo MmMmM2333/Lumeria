@@ -1501,11 +1501,24 @@
             <article
               v-for="row in motionReplayOverlayRows"
               :key="row.key"
-              class="background-debug-motion-replay-overlay-card"
+              :class="[
+                'background-debug-motion-replay-overlay-card',
+                'background-debug-motion-selectable',
+                row.isSelected && 'background-debug-motion-selected',
+              ]"
+              role="button"
+              tabindex="0"
+              @click="selectMotionWorkspaceReplayOverlay(row)"
+              @keydown.enter.prevent="selectMotionWorkspaceReplayOverlay(row)"
+              @keydown.space.prevent="selectMotionWorkspaceReplayOverlay(row)"
             >
               <strong :title="row.label">{{ row.label }}</strong>
+              <span :title="row.sourceLabel || row.kind || row.layer">
+                {{ row.sourceLabel || row.kind || row.layer || "target" }}
+              </span>
               <span :title="row.valueSummary">{{ row.valueSummary }}</span>
               <span :title="row.laneSummary">{{ row.propSummary }} / {{ row.laneSummary }}</span>
+              <span>{{ row.valueCount }} values</span>
             </article>
             <div v-if="motionReplayOverlayRows.length === 0" class="background-debug-motion-empty">
               no replay overlay targets
@@ -2421,7 +2434,10 @@ const motionReplayCurveGroups = computed(() => motionReplayViewerTrace.value
   ? buildMotionReplayCurveGroups(motionReplayViewerTrace.value, motionReplayCurrentTimeMs.value, motionReplayFilters.value)
   : []);
 const motionReplayOverlayRows = computed(() => motionReplayViewerTrace.value
-  ? buildMotionReplayOverlayRows(motionReplayViewerTrace.value, motionReplayCurrentTimeMs.value, motionReplayFilters.value)
+  ? buildMotionReplayOverlayRows(motionReplayViewerTrace.value, motionReplayCurrentTimeMs.value, motionReplayFilters.value, {
+    selectedTarget: motionWorkspaceSession.value.selectedTarget,
+    selectedTrack: motionWorkspaceSession.value.selectedTrack,
+  })
   : []);
 const motionTrackChartZoomWindow = computed(() => motionReplayViewerTrace.value
   ? normalizeMotionTrackChartZoomWindow(motionReplayViewerTrace.value, {
@@ -2839,6 +2855,17 @@ function selectMotionWorkspaceLayer(row) {
 function selectMotionWorkspaceTrack(row) {
   openMotionWorkspace();
   motionWorkspaceSession.value = selectMotionDebugWorkspaceTrack(motionWorkspaceSession.value, row);
+}
+
+function selectMotionWorkspaceReplayOverlay(row) {
+  if (!row) return;
+  openMotionWorkspace();
+  if (row.primaryTrack) {
+    motionWorkspaceSession.value = selectMotionDebugWorkspaceTrack(motionWorkspaceSession.value, row.primaryTrack);
+  } else {
+    motionWorkspaceSession.value = selectMotionDebugWorkspaceTarget(motionWorkspaceSession.value, row);
+  }
+  motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, motionReplayCurrentTimeMs.value);
 }
 
 function selectMotionWorkspacePropertyByEvent(event) {

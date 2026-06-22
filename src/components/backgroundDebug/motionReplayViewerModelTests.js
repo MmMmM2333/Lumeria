@@ -265,6 +265,27 @@ export function runMotionReplayViewerModelTests() {
   const overlayRows = buildMotionReplayOverlayRows(trace, 50, { query: "" });
   assert(overlayRows.length === 2, "overlay rows should group current frame values by target");
   assert(overlayRows.some((row) => row.label === "desktop.icon.node" && row.propSummary === "x"), "overlay rows should expose target prop summary");
+  assert(overlayRows.every((row) => row.valueCount >= 1 && row.primaryTrack), "overlay rows should expose selectable current tracks");
+
+  const selectedOverlayRows = buildMotionReplayOverlayRows(trace, 50, { query: "" }, {
+    selectedTarget: { targetId: 2 },
+    selectedTrack: {
+      lane: "base",
+      laneKey: "panel-y",
+      prop: "y",
+      targetId: 2,
+    },
+  });
+  assert(selectedOverlayRows[0].label === "folder.panel", "selected overlay target should sort first");
+  assert(selectedOverlayRows[0].isSelected === true, "selected overlay target should be marked selected");
+  assert(selectedOverlayRows[0].primaryTrack.prop === "y", "selected overlay row should expose selected primary track");
+  assert(selectedOverlayRows[0].valueRows.some((row) => row.isSelected), "selected overlay value should be marked");
+
+  const filteredOverlayRows = buildMotionReplayOverlayRows(trace, 50, { query: "folder" }, {
+    selectedTarget: { targetId: 1 },
+  });
+  assert(filteredOverlayRows.length === 1 && filteredOverlayRows[0].label === "folder.panel", "overlay rows should follow replay query filters");
+  assert(!JSON.stringify(filteredOverlayRows).includes("rawTarget"), "overlay rows should not leak raw target references");
 
   const filterSummary = buildMotionReplayFilterSummary(trace, 50, { query: "icon" });
   assert(filterSummary.text === "1 props / 2 events", "filter summary should count filtered frame values and events");
