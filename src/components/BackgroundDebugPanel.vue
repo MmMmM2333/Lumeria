@@ -361,6 +361,394 @@
           </div>
         </div>
 
+        <div class="background-debug-actions background-debug-motion-quick-actions">
+          <button type="button" class="background-debug-button" @click="copyMotionReport('full')">
+            {{ motionFullCopyButtonLabel }}
+          </button>
+        </div>
+      </div>
+
+      <div v-else-if="activePanel === 'liveDesktop' && canDebugLiveDesktop" class="background-debug-section">
+        <dl class="background-debug-status-grid">
+          <div
+            v-for="row in liveDesktopStatusRows"
+            :key="row.label"
+            :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
+          >
+            <dt>{{ row.label }}</dt>
+            <dd>{{ row.value }}</dd>
+          </div>
+        </dl>
+
+        <pre class="background-debug-detail" :title="liveDesktopStatus.detail">{{ liveDesktopStatus.detail || "no detail" }}</pre>
+
+        <div class="background-debug-mode-group background-debug-live-source-group" role="group" aria-label="Live desktop debug frame source override">
+          <button
+            type="button"
+            :class="['background-debug-mode-button', !liveDesktopDebugFrameSourceOverride && 'background-debug-mode-button-active']"
+            :disabled="isLiveDesktopActionBusy"
+            @click="setLiveDesktopDebugFrameSourceOverride(null)"
+          >
+            WE Popup
+          </button>
+          <button
+            type="button"
+            :class="['background-debug-mode-button', liveDesktopDebugFrameSourceOverride === 'testPattern' && 'background-debug-mode-button-active']"
+            :disabled="isLiveDesktopActionBusy"
+            @click="setLiveDesktopDebugFrameSourceOverride('testPattern')"
+          >
+            Test Pattern
+          </button>
+        </div>
+
+        <label class="background-debug-toggle">
+          <input
+            name="liveDesktopDisableMouseRelay"
+            type="checkbox"
+            :checked="liveDesktopDisableMouseRelay"
+            :disabled="isLiveDesktopActionBusy"
+            @change="setLiveDesktopDisableMouseRelay($event.target.checked)"
+          >
+          <span>禁用鼠标转发</span>
+        </label>
+
+        <label class="background-debug-toggle">
+          <input
+            name="liveDesktopCompositorKeeper"
+            type="checkbox"
+            :checked="liveDesktopCompositorKeeper"
+            :disabled="isLiveDesktopActionBusy"
+            @change="setLiveDesktopCompositorKeeper($event.target.checked)"
+          >
+          <span>合成稳定器</span>
+        </label>
+
+        <label class="background-debug-toggle">
+          <input
+            name="liveDesktopCssFallbackEffects"
+            type="checkbox"
+            :checked="liveDesktopCssFallbackEffects"
+            :disabled="isLiveDesktopActionBusy"
+            @change="setLiveDesktopCssFallbackEffects($event.target.checked)"
+          >
+          <span>CSS fallback 效果</span>
+        </label>
+
+        <label class="background-debug-toggle">
+          <input
+            name="liveDesktopSkipBlankFrames"
+            type="checkbox"
+            :checked="liveDesktopSkipBlankFrames"
+            :disabled="isLiveDesktopActionBusy"
+            @change="setLiveDesktopSkipBlankFrames($event.target.checked)"
+          >
+          <span>跳过疑似空白帧</span>
+        </label>
+
+        <label class="background-debug-toggle">
+          <input
+            name="liveDesktopForceDwmFlush"
+            type="checkbox"
+            :checked="liveDesktopForceDwmFlush"
+            :disabled="isLiveDesktopActionBusy"
+            @change="setLiveDesktopForceDwmFlush($event.target.checked)"
+          >
+          <span>强制 DWM Flush</span>
+        </label>
+
+        <dl class="background-debug-diagnostics">
+          <div
+            v-for="row in liveDesktopDiagnosticsRows"
+            :key="row.label"
+            :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
+          >
+            <dt>{{ row.label }}</dt>
+            <dd>{{ row.value }}</dd>
+          </div>
+        </dl>
+
+        <dl class="background-debug-diagnostics">
+          <div
+            v-for="row in liveDesktopWindowRows"
+            :key="row.label"
+            :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
+          >
+            <dt>{{ row.label }}</dt>
+            <dd>{{ row.value }}</dd>
+          </div>
+        </dl>
+
+        <div class="background-debug-window-list">
+          <article
+            v-for="windowInfo in liveDesktopCandidateWindows"
+            :key="windowInfo.hwnd"
+            class="background-debug-window-card"
+          >
+            <strong>{{ formatWindowTitle(windowInfo) }}</strong>
+            <span>{{ formatWindowMeta(windowInfo) }}</span>
+            <span>{{ formatWindowRect(windowInfo.rect) }}</span>
+          </article>
+          <article v-if="liveDesktopCandidateWindows.length === 0" class="background-debug-window-card">
+            <strong>No live desktop candidates</strong>
+            <span>{{ liveDesktopWindowDiagnostics.detail || liveDesktopWindowDiagnostics.reason }}</span>
+          </article>
+        </div>
+
+        <div v-if="liveDesktopLastError" class="background-debug-error" :title="liveDesktopLastError">
+          {{ liveDesktopLastError }}
+        </div>
+
+        <div class="background-debug-actions background-debug-live-actions">
+          <button type="button" class="background-debug-button" @click="refreshLiveDesktopRuntimeStatus">
+            刷新
+          </button>
+          <button
+            type="button"
+            class="background-debug-button"
+            :disabled="isLiveDesktopActionBusy"
+            @click="reconfigureLiveDesktopRuntime"
+          >
+            {{ isLiveDesktopActionBusy ? "处理中" : "重配" }}
+          </button>
+          <button type="button" class="background-debug-button" @click="copyDiagnostics">
+            {{ diagnosticsCopyButtonLabel }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <aside
+    v-if="motionWorkspaceOpen"
+    :class="[
+      'motion-debug-workspace',
+      motionWorkspaceFullscreen ? 'motion-debug-workspace-fullscreen' : 'motion-debug-workspace-dock',
+    ]"
+    :style="motionWorkspaceStyle"
+    aria-label="Motion debug workspace"
+    @click.stop
+    @contextmenu.stop
+    @pointerdown.stop
+    @wheel.stop
+  >
+    <header class="motion-debug-workspace-toolbar">
+      <div class="motion-debug-workspace-title">
+        <strong>Motion Debug Workspace</strong>
+        <span>{{ motionWorkspaceModeLabel }} / dev only</span>
+      </div>
+      <div class="motion-debug-workspace-toolbar-actions">
+        <div class="background-debug-mode-group motion-debug-workspace-mode-group" role="group" aria-label="Workspace mode">
+          <button
+            type="button"
+            :class="[
+              'background-debug-mode-button',
+              !motionWorkspaceFullscreen && 'background-debug-mode-button-active',
+            ]"
+            @click="setMotionWorkspaceMode(MOTION_DEBUG_WORKSPACE_MODE_DOCK)"
+          >
+            Dock
+          </button>
+          <button
+            type="button"
+            :class="[
+              'background-debug-mode-button',
+              motionWorkspaceFullscreen && 'background-debug-mode-button-active',
+            ]"
+            @click="setMotionWorkspaceMode(MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN)"
+          >
+            Fullscreen
+          </button>
+        </div>
+        <button type="button" class="background-debug-button" @click="closeMotionWorkspace">
+          Close
+        </button>
+      </div>
+    </header>
+
+    <label v-if="!motionWorkspaceFullscreen" class="motion-debug-workspace-dock-control">
+      <span>
+        Dock width
+        <output>{{ motionWorkspaceDockWidthPx }}px</output>
+      </span>
+      <input
+        name="motionWorkspaceDockWidth"
+        type="range"
+        :min="MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MIN"
+        :max="MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MAX"
+        step="10"
+        :value="motionWorkspaceDockWidthPx"
+        @input="updateMotionWorkspaceDockWidth"
+      >
+    </label>
+
+    <div class="motion-debug-workspace-selection" aria-label="Workspace selection">
+      <dl>
+        <div>
+          <dt>Target</dt>
+          <dd :title="motionWorkspaceSelectedTargetLabel">{{ motionWorkspaceSelectedTargetLabel }}</dd>
+        </div>
+        <div>
+          <dt>Track</dt>
+          <dd :title="motionWorkspaceSelectedTrackLabel">{{ motionWorkspaceSelectedTrackLabel }}</dd>
+        </div>
+        <div>
+          <dt>Time</dt>
+          <dd>{{ formatMotionReplayTime(motionWorkspaceSelectedTimeMs) }}</dd>
+        </div>
+        <div>
+          <dt>Filter</dt>
+          <dd :title="motionWorkspaceFilterLabel">{{ motionWorkspaceFilterLabel }}</dd>
+        </div>
+      </dl>
+      <div class="motion-debug-workspace-selection-actions">
+        <button
+          type="button"
+          class="background-debug-button"
+          :disabled="!motionWorkspaceSession.selectedTarget"
+          @click="toggleMotionWorkspaceSelectedPin"
+        >
+          {{ motionWorkspacePinButtonLabel }}
+        </button>
+        <button type="button" class="background-debug-button" @click="clearMotionWorkspaceSelection">
+          Clear Selection
+        </button>
+      </div>
+    </div>
+
+    <div class="motion-debug-workspace-grid">
+      <section class="motion-debug-workspace-region">
+        <header>
+          <strong>Targets</strong>
+          <span>{{ motionLayerTreeRows.length }} layers / {{ motionAnimationRows.length }} active</span>
+        </header>
+        <div class="motion-debug-workspace-section-list">
+        <dl class="background-debug-status-grid">
+          <div
+            v-for="row in motionOverviewRows"
+            :key="row.label"
+            :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
+          >
+            <dt>{{ row.label }}</dt>
+            <dd>{{ row.value }}</dd>
+          </div>
+        </dl>
+        <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">Filters</div>
+          <div class="background-debug-mode-group background-debug-motion-filter-group" role="group" aria-label="Motion filter presets">
+            <button
+              v-for="preset in MOTION_FILTER_PRESETS"
+              :key="preset.value"
+              type="button"
+              :class="['background-debug-mode-button', motionFilterPreset === preset.value && 'background-debug-mode-button-active']"
+              @click="setMotionFilterPreset(preset.value)"
+            >
+              {{ preset.label }}
+            </button>
+          </div>
+          <label class="background-debug-control background-debug-motion-filter-control">
+            <span>
+              Filter
+              <output>{{ motionFilterSummary.text }}</output>
+            </span>
+            <input
+              type="search"
+              placeholder="target / lane / prop / event"
+              :value="motionFilterQuery"
+              @input="updateMotionFilterQuery"
+            >
+          </label>
+        </div>
+        <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">Layer Tree</div>
+          <div class="background-debug-motion-layer-tree">
+            <section
+              v-for="row in motionLayerTreeRows"
+              :key="row.key"
+              :class="[
+                'background-debug-motion-timeline-group',
+                'background-debug-motion-selectable',
+                isMotionWorkspaceLayerSelected(row) && 'background-debug-motion-selected',
+              ]"
+              role="button"
+              tabindex="0"
+              @click="selectMotionWorkspaceLayer(row)"
+              @keydown.enter.prevent="selectMotionWorkspaceLayer(row)"
+              @keydown.space.prevent="selectMotionWorkspaceLayer(row)"
+            >
+              <header>
+                <strong :title="row.layer">{{ row.layer }}</strong>
+                <span>{{ row.summary }}</span>
+              </header>
+              <div class="background-debug-motion-layer-row">
+                <span>{{ row.targetCount }} targets</span>
+                <span>{{ row.activeCount }} active</span>
+                <span>{{ row.warningCount }} warnings</span>
+                <span>{{ row.eventCount }} events</span>
+              </div>
+              <div class="background-debug-motion-layer-row">
+                <span :title="row.detail">{{ row.detail }}</span>
+                <span :title="row.sources">{{ row.sources }}</span>
+              </div>
+            </section>
+            <div v-if="motionLayerTreeRows.length === 0" class="background-debug-motion-empty">
+              no matching layers
+            </div>
+          </div>
+        </div>
+        <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">Active Animations</div>
+          <div class="background-debug-motion-table" role="table" aria-label="Active Pixi motion animations">
+            <div class="background-debug-motion-row background-debug-motion-row-head" role="row">
+              <span role="columnheader">target</span>
+              <span role="columnheader">prop</span>
+              <span role="columnheader">value -> to</span>
+              <span role="columnheader">driver</span>
+              <span role="columnheader">lane</span>
+              <span role="columnheader">velocity</span>
+            </div>
+            <div
+              v-for="(row, index) in motionAnimationRows"
+              :key="`${row.target}-${row.prop}-${row.lane}-${index}`"
+              class="background-debug-motion-row"
+              role="row"
+            >
+              <span role="cell" :title="row.target">{{ row.target }}</span>
+              <span role="cell" :title="row.prop">{{ row.prop }}</span>
+              <span role="cell" :title="row.valueTo">{{ row.valueTo }}</span>
+              <span role="cell" :title="row.driver">{{ row.driver }}</span>
+              <span role="cell" :title="row.lane">{{ row.lane }}</span>
+              <span role="cell" :title="row.velocity">{{ row.velocity }}</span>
+            </div>
+            <div v-if="motionAnimationRows.length === 0" class="background-debug-motion-empty">
+              no active animations
+            </div>
+          </div>
+        </div>
+          <div class="background-debug-subsection">
+            <div class="background-debug-subtitle">Pins</div>
+            <div class="background-debug-motion-replay-overlay-list">
+              <article
+                v-for="pin in motionWorkspaceSession.pinnedTargets"
+                :key="pin.key"
+                class="background-debug-motion-replay-overlay-card"
+              >
+                <strong :title="pin.label">{{ pin.label }}</strong>
+                <span :title="pin.sourceLabel || pin.layer || pin.kind">{{ pin.sourceLabel || pin.layer || pin.kind || pin.key }}</span>
+              </article>
+              <div v-if="motionWorkspaceSession.pinnedTargets.length === 0" class="background-debug-motion-empty">
+                no pinned targets
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="motion-debug-workspace-region">
+        <header>
+          <strong>Timeline</strong>
+          <span>{{ motionTimelineGroups.length }} tracks / {{ motionReplayEventRows.length }} replay events</span>
+        </header>
+        <div class="motion-debug-workspace-section-list">
         <div class="background-debug-subsection">
           <div class="background-debug-subtitle">Replay Viewer</div>
           <label class="background-debug-control background-debug-textarea-control">
@@ -622,132 +1010,6 @@
             </div>
           </div>
         </div>
-
-        <dl class="background-debug-status-grid">
-          <div
-            v-for="row in motionOverviewRows"
-            :key="row.label"
-            :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
-          >
-            <dt>{{ row.label }}</dt>
-            <dd>{{ row.value }}</dd>
-          </div>
-        </dl>
-
-        <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Filters</div>
-          <div class="background-debug-mode-group background-debug-motion-filter-group" role="group" aria-label="Motion filter presets">
-            <button
-              v-for="preset in MOTION_FILTER_PRESETS"
-              :key="preset.value"
-              type="button"
-              :class="['background-debug-mode-button', motionFilterPreset === preset.value && 'background-debug-mode-button-active']"
-              @click="setMotionFilterPreset(preset.value)"
-            >
-              {{ preset.label }}
-            </button>
-          </div>
-          <label class="background-debug-control background-debug-motion-filter-control">
-            <span>
-              Filter
-              <output>{{ motionFilterSummary.text }}</output>
-            </span>
-            <input
-              type="search"
-              placeholder="target / lane / prop / event"
-              :value="motionFilterQuery"
-              @input="updateMotionFilterQuery"
-            >
-          </label>
-        </div>
-
-        <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Layer Tree</div>
-          <div class="background-debug-motion-layer-tree">
-            <section
-              v-for="row in motionLayerTreeRows"
-              :key="row.key"
-              :class="[
-                'background-debug-motion-timeline-group',
-                'background-debug-motion-selectable',
-                isMotionWorkspaceLayerSelected(row) && 'background-debug-motion-selected',
-              ]"
-              role="button"
-              tabindex="0"
-              @click="selectMotionWorkspaceLayer(row)"
-              @keydown.enter.prevent="selectMotionWorkspaceLayer(row)"
-              @keydown.space.prevent="selectMotionWorkspaceLayer(row)"
-            >
-              <header>
-                <strong :title="row.layer">{{ row.layer }}</strong>
-                <span>{{ row.summary }}</span>
-              </header>
-              <div class="background-debug-motion-layer-row">
-                <span>{{ row.targetCount }} targets</span>
-                <span>{{ row.activeCount }} active</span>
-                <span>{{ row.warningCount }} warnings</span>
-                <span>{{ row.eventCount }} events</span>
-              </div>
-              <div class="background-debug-motion-layer-row">
-                <span :title="row.detail">{{ row.detail }}</span>
-                <span :title="row.sources">{{ row.sources }}</span>
-              </div>
-            </section>
-            <div v-if="motionLayerTreeRows.length === 0" class="background-debug-motion-empty">
-              no matching layers
-            </div>
-          </div>
-        </div>
-
-        <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Properties</div>
-          <div
-            class="background-debug-motion-property-table"
-            role="table"
-            aria-label="Pixi motion properties"
-            @click="selectMotionWorkspacePropertyByEvent"
-            @keydown.enter.prevent="selectMotionWorkspacePropertyByEvent"
-            @keydown.space.prevent="selectMotionWorkspacePropertyByEvent"
-          >
-            <div class="background-debug-motion-property-row background-debug-motion-row-head" role="row">
-              <span role="columnheader">target.prop</span>
-              <span role="columnheader">value</span>
-              <span role="columnheader">to</span>
-              <span role="columnheader">delta</span>
-              <span role="columnheader">velocity</span>
-              <span role="columnheader">driver</span>
-              <span role="columnheader">lane</span>
-              <span role="columnheader">laneKey</span>
-              <span role="columnheader">sourceLabel</span>
-            </div>
-            <div
-              v-for="(row, index) in motionPropertyRows"
-              :key="`${row.targetProp}-${row.laneKey}-${index}`"
-              :class="[
-                'background-debug-motion-property-row',
-                'background-debug-motion-selectable',
-                isMotionWorkspaceTrackSelected(row) && 'background-debug-motion-selected',
-              ]"
-              role="row"
-              tabindex="0"
-              :data-motion-property-index="index"
-            >
-              <span role="cell" :title="row.targetProp">{{ row.targetProp }}</span>
-              <span role="cell" :title="row.value">{{ row.value }}</span>
-              <span role="cell" :title="row.to">{{ row.to }}</span>
-              <span role="cell" :title="row.delta">{{ row.delta }}</span>
-              <span role="cell" :title="row.velocity">{{ row.velocity }}</span>
-              <span role="cell" :title="row.driver">{{ row.driver }}</span>
-              <span role="cell" :title="row.lane">{{ row.lane }}</span>
-              <span role="cell" :title="row.laneKey">{{ row.laneKey }}</span>
-              <span role="cell" :title="row.sourceLabel">{{ row.sourceLabel }}</span>
-            </div>
-            <div v-if="motionPropertyRows.length === 0" class="background-debug-motion-empty">
-              no matching properties
-            </div>
-          </div>
-        </div>
-
         <div class="background-debug-subsection">
           <div class="background-debug-subtitle">Timeline</div>
           <div class="background-debug-motion-timeline">
@@ -795,7 +1057,6 @@
             </div>
           </div>
         </div>
-
         <div class="background-debug-subsection">
           <div class="background-debug-subtitle">Curve Chart</div>
           <div class="background-debug-motion-curve-list">
@@ -862,37 +1123,84 @@
             </div>
           </div>
         </div>
+        </div>
+      </section>
 
+      <section class="motion-debug-workspace-region">
+        <header>
+          <strong>Inspector</strong>
+          <span>{{ motionWorkspaceSelectedTargetLabel }}</span>
+        </header>
+        <div class="motion-debug-workspace-section-list">
+          <div class="background-debug-subsection">
+            <div class="background-debug-subtitle">Inspector</div>
+            <dl class="background-debug-status-grid">
+              <div class="background-debug-stat background-debug-stat-wide">
+                <dt>target</dt>
+                <dd :title="motionWorkspaceSelectedTargetLabel">{{ motionWorkspaceSelectedTargetLabel }}</dd>
+              </div>
+              <div class="background-debug-stat background-debug-stat-wide">
+                <dt>track</dt>
+                <dd :title="motionWorkspaceSelectedTrackLabel">{{ motionWorkspaceSelectedTrackLabel }}</dd>
+              </div>
+              <div class="background-debug-stat">
+                <dt>time</dt>
+                <dd>{{ formatMotionReplayTime(motionWorkspaceSelectedTimeMs) }}</dd>
+              </div>
+              <div class="background-debug-stat">
+                <dt>filter</dt>
+                <dd :title="motionWorkspaceFilterLabel">{{ motionWorkspaceFilterLabel }}</dd>
+              </div>
+            </dl>
+          </div>
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Active Animations</div>
-          <div class="background-debug-motion-table" role="table" aria-label="Active Pixi motion animations">
-            <div class="background-debug-motion-row background-debug-motion-row-head" role="row">
-              <span role="columnheader">target</span>
-              <span role="columnheader">prop</span>
-              <span role="columnheader">value -> to</span>
+          <div class="background-debug-subtitle">Properties</div>
+          <div
+            class="background-debug-motion-property-table"
+            role="table"
+            aria-label="Pixi motion properties"
+            @click="selectMotionWorkspacePropertyByEvent"
+            @keydown.enter.prevent="selectMotionWorkspacePropertyByEvent"
+            @keydown.space.prevent="selectMotionWorkspacePropertyByEvent"
+          >
+            <div class="background-debug-motion-property-row background-debug-motion-row-head" role="row">
+              <span role="columnheader">target.prop</span>
+              <span role="columnheader">value</span>
+              <span role="columnheader">to</span>
+              <span role="columnheader">delta</span>
+              <span role="columnheader">velocity</span>
               <span role="columnheader">driver</span>
               <span role="columnheader">lane</span>
-              <span role="columnheader">velocity</span>
+              <span role="columnheader">laneKey</span>
+              <span role="columnheader">sourceLabel</span>
             </div>
             <div
-              v-for="(row, index) in motionAnimationRows"
-              :key="`${row.target}-${row.prop}-${row.lane}-${index}`"
-              class="background-debug-motion-row"
+              v-for="(row, index) in motionPropertyRows"
+              :key="`${row.targetProp}-${row.laneKey}-${index}`"
+              :class="[
+                'background-debug-motion-property-row',
+                'background-debug-motion-selectable',
+                isMotionWorkspaceTrackSelected(row) && 'background-debug-motion-selected',
+              ]"
               role="row"
+              tabindex="0"
+              :data-motion-property-index="index"
             >
-              <span role="cell" :title="row.target">{{ row.target }}</span>
-              <span role="cell" :title="row.prop">{{ row.prop }}</span>
-              <span role="cell" :title="row.valueTo">{{ row.valueTo }}</span>
+              <span role="cell" :title="row.targetProp">{{ row.targetProp }}</span>
+              <span role="cell" :title="row.value">{{ row.value }}</span>
+              <span role="cell" :title="row.to">{{ row.to }}</span>
+              <span role="cell" :title="row.delta">{{ row.delta }}</span>
+              <span role="cell" :title="row.velocity">{{ row.velocity }}</span>
               <span role="cell" :title="row.driver">{{ row.driver }}</span>
               <span role="cell" :title="row.lane">{{ row.lane }}</span>
-              <span role="cell" :title="row.velocity">{{ row.velocity }}</span>
+              <span role="cell" :title="row.laneKey">{{ row.laneKey }}</span>
+              <span role="cell" :title="row.sourceLabel">{{ row.sourceLabel }}</span>
             </div>
-            <div v-if="motionAnimationRows.length === 0" class="background-debug-motion-empty">
-              no active animations
+            <div v-if="motionPropertyRows.length === 0" class="background-debug-motion-empty">
+              no matching properties
             </div>
           </div>
         </div>
-
         <div class="background-debug-subsection">
           <div class="background-debug-subtitle">Top Cancel Reasons</div>
           <dl class="background-debug-diagnostics">
@@ -907,7 +1215,6 @@
             </div>
           </dl>
         </div>
-
         <div class="background-debug-subsection">
           <div class="background-debug-subtitle">Warnings</div>
           <div class="background-debug-motion-list">
@@ -921,291 +1228,25 @@
             </div>
           </div>
         </div>
-
-        <div class="background-debug-actions background-debug-motion-actions">
-          <button
-            type="button"
-            class="background-debug-button"
-            :disabled="motionReplayCaptureActive"
-            @click="clearMotionDebugHistory"
-          >
-            Clear
-          </button>
-          <button type="button" class="background-debug-button" @click="copyMotionReport('summary')">
-            {{ motionSummaryCopyButtonLabel }}
-          </button>
-          <button type="button" class="background-debug-button" @click="copyMotionReport('full')">
-            {{ motionFullCopyButtonLabel }}
-          </button>
-        </div>
-      </div>
-
-      <div v-else-if="activePanel === 'liveDesktop' && canDebugLiveDesktop" class="background-debug-section">
-        <dl class="background-debug-status-grid">
-          <div
-            v-for="row in liveDesktopStatusRows"
-            :key="row.label"
-            :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
-          >
-            <dt>{{ row.label }}</dt>
-            <dd>{{ row.value }}</dd>
+          <div class="background-debug-subsection">
+            <div class="background-debug-subtitle">AI Export</div>
+            <div class="background-debug-actions background-debug-motion-actions">
+              <button
+                type="button"
+                class="background-debug-button"
+                :disabled="motionReplayCaptureActive"
+                @click="clearMotionDebugHistory"
+              >
+                Clear
+              </button>
+              <button type="button" class="background-debug-button" @click="copyMotionReport('summary')">
+                {{ motionSummaryCopyButtonLabel }}
+              </button>
+              <button type="button" class="background-debug-button" @click="copyMotionReport('full')">
+                {{ motionFullCopyButtonLabel }}
+              </button>
+            </div>
           </div>
-        </dl>
-
-        <pre class="background-debug-detail" :title="liveDesktopStatus.detail">{{ liveDesktopStatus.detail || "no detail" }}</pre>
-
-        <div class="background-debug-mode-group background-debug-live-source-group" role="group" aria-label="Live desktop debug frame source override">
-          <button
-            type="button"
-            :class="['background-debug-mode-button', !liveDesktopDebugFrameSourceOverride && 'background-debug-mode-button-active']"
-            :disabled="isLiveDesktopActionBusy"
-            @click="setLiveDesktopDebugFrameSourceOverride(null)"
-          >
-            WE Popup
-          </button>
-          <button
-            type="button"
-            :class="['background-debug-mode-button', liveDesktopDebugFrameSourceOverride === 'testPattern' && 'background-debug-mode-button-active']"
-            :disabled="isLiveDesktopActionBusy"
-            @click="setLiveDesktopDebugFrameSourceOverride('testPattern')"
-          >
-            Test Pattern
-          </button>
-        </div>
-
-        <label class="background-debug-toggle">
-          <input
-            name="liveDesktopDisableMouseRelay"
-            type="checkbox"
-            :checked="liveDesktopDisableMouseRelay"
-            :disabled="isLiveDesktopActionBusy"
-            @change="setLiveDesktopDisableMouseRelay($event.target.checked)"
-          >
-          <span>禁用鼠标转发</span>
-        </label>
-
-        <label class="background-debug-toggle">
-          <input
-            name="liveDesktopCompositorKeeper"
-            type="checkbox"
-            :checked="liveDesktopCompositorKeeper"
-            :disabled="isLiveDesktopActionBusy"
-            @change="setLiveDesktopCompositorKeeper($event.target.checked)"
-          >
-          <span>合成稳定器</span>
-        </label>
-
-        <label class="background-debug-toggle">
-          <input
-            name="liveDesktopCssFallbackEffects"
-            type="checkbox"
-            :checked="liveDesktopCssFallbackEffects"
-            :disabled="isLiveDesktopActionBusy"
-            @change="setLiveDesktopCssFallbackEffects($event.target.checked)"
-          >
-          <span>CSS fallback 效果</span>
-        </label>
-
-        <label class="background-debug-toggle">
-          <input
-            name="liveDesktopSkipBlankFrames"
-            type="checkbox"
-            :checked="liveDesktopSkipBlankFrames"
-            :disabled="isLiveDesktopActionBusy"
-            @change="setLiveDesktopSkipBlankFrames($event.target.checked)"
-          >
-          <span>跳过疑似空白帧</span>
-        </label>
-
-        <label class="background-debug-toggle">
-          <input
-            name="liveDesktopForceDwmFlush"
-            type="checkbox"
-            :checked="liveDesktopForceDwmFlush"
-            :disabled="isLiveDesktopActionBusy"
-            @change="setLiveDesktopForceDwmFlush($event.target.checked)"
-          >
-          <span>强制 DWM Flush</span>
-        </label>
-
-        <dl class="background-debug-diagnostics">
-          <div
-            v-for="row in liveDesktopDiagnosticsRows"
-            :key="row.label"
-            :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
-          >
-            <dt>{{ row.label }}</dt>
-            <dd>{{ row.value }}</dd>
-          </div>
-        </dl>
-
-        <dl class="background-debug-diagnostics">
-          <div
-            v-for="row in liveDesktopWindowRows"
-            :key="row.label"
-            :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
-          >
-            <dt>{{ row.label }}</dt>
-            <dd>{{ row.value }}</dd>
-          </div>
-        </dl>
-
-        <div class="background-debug-window-list">
-          <article
-            v-for="windowInfo in liveDesktopCandidateWindows"
-            :key="windowInfo.hwnd"
-            class="background-debug-window-card"
-          >
-            <strong>{{ formatWindowTitle(windowInfo) }}</strong>
-            <span>{{ formatWindowMeta(windowInfo) }}</span>
-            <span>{{ formatWindowRect(windowInfo.rect) }}</span>
-          </article>
-          <article v-if="liveDesktopCandidateWindows.length === 0" class="background-debug-window-card">
-            <strong>No live desktop candidates</strong>
-            <span>{{ liveDesktopWindowDiagnostics.detail || liveDesktopWindowDiagnostics.reason }}</span>
-          </article>
-        </div>
-
-        <div v-if="liveDesktopLastError" class="background-debug-error" :title="liveDesktopLastError">
-          {{ liveDesktopLastError }}
-        </div>
-
-        <div class="background-debug-actions background-debug-live-actions">
-          <button type="button" class="background-debug-button" @click="refreshLiveDesktopRuntimeStatus">
-            刷新
-          </button>
-          <button
-            type="button"
-            class="background-debug-button"
-            :disabled="isLiveDesktopActionBusy"
-            @click="reconfigureLiveDesktopRuntime"
-          >
-            {{ isLiveDesktopActionBusy ? "处理中" : "重配" }}
-          </button>
-          <button type="button" class="background-debug-button" @click="copyDiagnostics">
-            {{ diagnosticsCopyButtonLabel }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <aside
-    v-if="motionWorkspaceOpen"
-    :class="[
-      'motion-debug-workspace',
-      motionWorkspaceFullscreen ? 'motion-debug-workspace-fullscreen' : 'motion-debug-workspace-dock',
-    ]"
-    :style="motionWorkspaceStyle"
-    aria-label="Motion debug workspace"
-    @click.stop
-    @contextmenu.stop
-    @pointerdown.stop
-    @wheel.stop
-  >
-    <header class="motion-debug-workspace-toolbar">
-      <div class="motion-debug-workspace-title">
-        <strong>Motion Debug Workspace</strong>
-        <span>{{ motionWorkspaceModeLabel }} / dev only</span>
-      </div>
-      <div class="motion-debug-workspace-toolbar-actions">
-        <div class="background-debug-mode-group motion-debug-workspace-mode-group" role="group" aria-label="Workspace mode">
-          <button
-            type="button"
-            :class="[
-              'background-debug-mode-button',
-              !motionWorkspaceFullscreen && 'background-debug-mode-button-active',
-            ]"
-            @click="setMotionWorkspaceMode(MOTION_DEBUG_WORKSPACE_MODE_DOCK)"
-          >
-            Dock
-          </button>
-          <button
-            type="button"
-            :class="[
-              'background-debug-mode-button',
-              motionWorkspaceFullscreen && 'background-debug-mode-button-active',
-            ]"
-            @click="setMotionWorkspaceMode(MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN)"
-          >
-            Fullscreen
-          </button>
-        </div>
-        <button type="button" class="background-debug-button" @click="closeMotionWorkspace">
-          Close
-        </button>
-      </div>
-    </header>
-
-    <label v-if="!motionWorkspaceFullscreen" class="motion-debug-workspace-dock-control">
-      <span>
-        Dock width
-        <output>{{ motionWorkspaceDockWidthPx }}px</output>
-      </span>
-      <input
-        name="motionWorkspaceDockWidth"
-        type="range"
-        :min="MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MIN"
-        :max="MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MAX"
-        step="10"
-        :value="motionWorkspaceDockWidthPx"
-        @input="updateMotionWorkspaceDockWidth"
-      >
-    </label>
-
-    <div class="motion-debug-workspace-selection" aria-label="Workspace selection">
-      <dl>
-        <div>
-          <dt>Target</dt>
-          <dd :title="motionWorkspaceSelectedTargetLabel">{{ motionWorkspaceSelectedTargetLabel }}</dd>
-        </div>
-        <div>
-          <dt>Track</dt>
-          <dd :title="motionWorkspaceSelectedTrackLabel">{{ motionWorkspaceSelectedTrackLabel }}</dd>
-        </div>
-        <div>
-          <dt>Time</dt>
-          <dd>{{ formatMotionReplayTime(motionWorkspaceSelectedTimeMs) }}</dd>
-        </div>
-        <div>
-          <dt>Filter</dt>
-          <dd :title="motionWorkspaceFilterLabel">{{ motionWorkspaceFilterLabel }}</dd>
-        </div>
-      </dl>
-      <div class="motion-debug-workspace-selection-actions">
-        <button
-          type="button"
-          class="background-debug-button"
-          :disabled="!motionWorkspaceSession.selectedTarget"
-          @click="toggleMotionWorkspaceSelectedPin"
-        >
-          {{ motionWorkspacePinButtonLabel }}
-        </button>
-        <button type="button" class="background-debug-button" @click="clearMotionWorkspaceSelection">
-          Clear Selection
-        </button>
-      </div>
-    </div>
-
-    <div class="motion-debug-workspace-grid">
-      <section
-        v-for="region in motionWorkspaceRegions"
-        :key="region.id"
-        class="motion-debug-workspace-region"
-      >
-        <header>
-          <strong>{{ region.label }}</strong>
-          <span>{{ region.sections.length }} views</span>
-        </header>
-        <div class="motion-debug-workspace-section-list">
-          <article
-            v-for="section in region.sections"
-            :key="section.id"
-            class="motion-debug-workspace-section-row"
-          >
-            <strong>{{ section.label }}</strong>
-            <span>{{ getMotionWorkspaceSectionStatus(section.id) }}</span>
-          </article>
         </div>
       </section>
     </div>
@@ -1333,7 +1374,6 @@ import {
   MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MIN,
   MOTION_DEBUG_WORKSPACE_MODE_DOCK,
   MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN,
-  MOTION_DEBUG_WORKSPACE_REGIONS,
   openMotionDebugWorkspace,
   resizeMotionDebugWorkspaceDock,
   selectMotionDebugWorkspaceTarget,
@@ -1522,22 +1562,6 @@ const autoBlurKernelSliders = [
   ...kawaseSliders,
 ];
 
-const MOTION_WORKSPACE_SECTION_LABELS = {
-  "ai-export": "AI Export",
-  curves: "Curves",
-  filters: "Filters",
-  inspector: "Inspector",
-  "event-track": "Event Track",
-  "lane-breakdown": "Lane Breakdown",
-  "layer-tree": "Layer Tree",
-  pins: "Pins",
-  properties: "Properties",
-  "replay-scrubber": "Replay Scrubber",
-  "target-tree": "Target Tree",
-  timeline: "Timeline",
-  warnings: "Warnings",
-};
-
 const tintHex = computed(() => rgbArrayToHex(params.tintColor));
 const activeBlurKernelSliders = computed(() => (
   kawaseParams.kernel === BLUR_KERNEL_AUTO
@@ -1573,7 +1597,7 @@ const blurKernelStatus = computed(() => {
 });
 const acrylicCopyButtonLabel = computed(() => (hasCopiedAcrylic.value ? "已复制" : "复制 JSON"));
 const diagnosticsCopyButtonLabel = computed(() => (hasCopiedDiagnostics.value ? "已复制" : "复制诊断"));
-const motionFullCopyButtonLabel = computed(() => (hasCopiedMotionFull.value ? "已复制" : "Copy Full Report"));
+const motionFullCopyButtonLabel = computed(() => (hasCopiedMotionFull.value ? "已复制" : "Copy AI Report"));
 const motionReplayCaptureActive = computed(() => Boolean(motionReplayCaptureStatus.value.active));
 const motionReplayIntervalCopyButtonLabel = computed(() => (hasCopiedMotionReplayInterval.value ? "Copied" : "Copy Interval"));
 const motionReplayPlayButtonLabel = computed(() => (motionReplayPlaying.value ? "Pause Replay" : "Play Replay"));
@@ -1718,13 +1742,6 @@ const motionWorkspaceSelectedTargetPinned = computed(() => {
   return Boolean(selectedKey && motionWorkspaceSession.value.pinnedTargets.some((pin) => pin.key === selectedKey));
 });
 const motionWorkspacePinButtonLabel = computed(() => (motionWorkspaceSelectedTargetPinned.value ? "Unpin Target" : "Pin Target"));
-const motionWorkspaceRegions = computed(() => MOTION_DEBUG_WORKSPACE_REGIONS.map((region) => ({
-  ...region,
-  sections: region.sections.map((id) => ({
-    id,
-    label: MOTION_WORKSPACE_SECTION_LABELS[id] || id,
-  })),
-})));
 
 function formatValue(value, digits) {
   return Number(value).toFixed(digits);
@@ -1786,41 +1803,6 @@ function isMotionWorkspaceTrackSelected(row) {
 function isMotionWorkspaceTimelineEventSelected(event) {
   return isMotionWorkspaceTrackSelected(event)
     && Math.round(motionWorkspaceSession.value.selectedTimeMs) === Math.round(Number(event.timeMs) || 0);
-}
-
-function getMotionWorkspaceSectionStatus(id) {
-  switch (id) {
-    case "ai-export":
-      return "summary / full";
-    case "curves":
-      return `${motionCurveChartGroups.value.length} curves`;
-    case "event-track":
-      return `${motionReplayEventRows.value.length} events`;
-    case "filters":
-      return motionWorkspaceFilterLabel.value;
-    case "inspector":
-      return formatMotionWorkspaceTarget(motionWorkspaceSession.value.selectedTarget);
-    case "lane-breakdown":
-      return formatMotionWorkspaceTrack(motionWorkspaceSession.value.selectedTrack);
-    case "layer-tree":
-      return `${motionLayerTreeRows.value.length} groups`;
-    case "pins":
-      return `${motionWorkspaceSession.value.pinnedTargets.length} pinned`;
-    case "properties":
-      return `${motionPropertyRows.value.length} rows`;
-    case "replay-scrubber":
-      return motionReplayViewerLoaded.value
-        ? formatMotionReplayTime(motionReplayCurrentTimeMs.value)
-        : formatMotionReplayTime(motionWorkspaceSession.value.selectedTimeMs);
-    case "target-tree":
-      return `${motionAnimationRows.value.length} active`;
-    case "timeline":
-      return `${motionTimelineGroups.value.length} tracks`;
-    case "warnings":
-      return `${motionWarningRows.value.length} warnings`;
-    default:
-      return "-";
-  }
 }
 
 function formatEffectLabel(effect) {
@@ -3318,6 +3300,7 @@ onBeforeUnmount(() => {
 }
 
 .background-debug-motion-actions,
+.background-debug-motion-quick-actions,
 .background-debug-motion-workspace-actions,
 .background-debug-motion-replay-actions,
 .background-debug-motion-replay-viewer-actions,
@@ -3328,11 +3311,16 @@ onBeforeUnmount(() => {
 }
 
 .background-debug-motion-actions .background-debug-button,
+.background-debug-motion-quick-actions .background-debug-button,
 .background-debug-motion-workspace-actions .background-debug-button,
 .background-debug-motion-replay-actions .background-debug-button,
 .background-debug-motion-replay-viewer-actions .background-debug-button,
 .background-debug-live-actions .background-debug-button {
   width: 100%;
+}
+
+.background-debug-motion-quick-actions {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .background-debug-motion-workspace-actions {
@@ -3624,6 +3612,15 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 0;
   overflow: auto;
+}
+
+.motion-debug-workspace-section-list > .background-debug-subsection,
+.motion-debug-workspace-section-list > .background-debug-status-grid {
+  min-width: 0;
+}
+
+.motion-debug-workspace-section-list > .background-debug-subsection {
+  margin: 0;
 }
 
 .motion-debug-workspace-section-row {
