@@ -902,6 +902,57 @@
             </div>
           </div>
 
+          <div v-if="motionTrackChartModel" class="motion-debug-track-chart-window-controls">
+            <label class="background-debug-control background-debug-number-control motion-debug-track-chart-window-control">
+              <span>
+                Zoom start
+                <output>{{ formatMotionReplayTime(motionTrackChartZoomWindow.startMs) }}</output>
+              </span>
+              <input
+                name="motionTrackChartZoomStartMs"
+                type="number"
+                step="1"
+                :min="motionReplayTimeRange.min"
+                :max="motionReplayTimeRange.max"
+                :value="motionTrackChartZoomWindow.startMs"
+                @change="updateMotionTrackChartZoomStart"
+              >
+            </label>
+            <label class="background-debug-control background-debug-number-control motion-debug-track-chart-window-control">
+              <span>
+                Zoom end
+                <output>{{ formatMotionReplayTime(motionTrackChartZoomWindow.endMs) }}</output>
+              </span>
+              <input
+                name="motionTrackChartZoomEndMs"
+                type="number"
+                step="1"
+                :min="motionReplayTimeRange.min"
+                :max="motionReplayTimeRange.max"
+                :value="motionTrackChartZoomWindow.endMs"
+                @change="updateMotionTrackChartZoomEnd"
+              >
+            </label>
+            <div class="background-debug-actions motion-debug-track-chart-window-actions">
+              <button
+                type="button"
+                class="background-debug-button"
+                :disabled="!motionTrackChartIntervalActive"
+                @click="zoomMotionTrackChartToInterval"
+              >
+                Zoom Interval
+              </button>
+              <button
+                type="button"
+                class="background-debug-button"
+                :disabled="!motionTrackChartZoomActive"
+                @click="resetMotionTrackChartZoom"
+              >
+                Reset Zoom
+              </button>
+            </div>
+          </div>
+
           <dl v-if="motionTrackChartModel" class="background-debug-status-grid motion-debug-track-chart-summary">
             <div
               v-for="row in motionTrackChartSummaryRows"
@@ -962,8 +1013,25 @@
                   }"
                 ></span>
               </div>
-              <div class="motion-debug-track-chart-plot">
+              <div
+                :class="[
+                  'motion-debug-track-chart-plot',
+                  motionTrackChartBrushPointerId != null && 'motion-debug-track-chart-plot-brushing',
+                ]"
+                @pointermove="updateMotionTrackChartPointer"
+                @pointerdown="startMotionTrackChartBrush"
+                @pointerup="endMotionTrackChartBrush"
+                @pointercancel="cancelMotionTrackChartBrush"
+              >
                 <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                  <rect
+                    v-if="motionTrackChartIntervalOverlay.active"
+                    class="motion-debug-track-chart-brush-range"
+                    :x="motionTrackChartIntervalOverlay.x"
+                    y="0"
+                    :width="motionTrackChartIntervalOverlay.width"
+                    height="100"
+                  />
                   <line
                     v-for="tick in motionTrackChartModel.axis.ticks"
                     :key="`${track.key}-tick-${tick.timeMs}-${tick.x}`"
@@ -1695,6 +1763,7 @@ import {
   MOTION_TRACK_CHART_DISPLAY_NORMALIZED,
   MOTION_TRACK_CHART_DISPLAY_RAW,
   MOTION_TRACK_CHART_SERIES_KEYS,
+  normalizeMotionTrackChartZoomWindow,
   normalizeMotionTrackChartSeriesVisibility,
 } from "./backgroundDebug/motionTrackChartModel.js";
 import {
@@ -1790,6 +1859,10 @@ const motionReplayIntervalStartMs = ref(0);
 const motionReplayIntervalEndMs = ref(0);
 const motionTrackChartDisplayMode = ref(MOTION_TRACK_CHART_DISPLAY_RAW);
 const motionTrackChartSeriesVisibility = ref(normalizeMotionTrackChartSeriesVisibility());
+const motionTrackChartBrushAnchorMs = ref(null);
+const motionTrackChartBrushPointerId = ref(null);
+const motionTrackChartZoomStartMs = ref(null);
+const motionTrackChartZoomEndMs = ref(null);
 const motionWorkspaceSession = ref(createMotionDebugWorkspaceSession({
   viewportWidth: typeof window === "undefined" ? undefined : window.innerWidth,
 }));
@@ -2111,13 +2184,27 @@ const motionReplayCurveGroups = computed(() => motionReplayViewerTrace.value
 const motionReplayOverlayRows = computed(() => motionReplayViewerTrace.value
   ? buildMotionReplayOverlayRows(motionReplayViewerTrace.value, motionReplayCurrentTimeMs.value, motionReplayFilters.value)
   : []);
+const motionTrackChartZoomWindow = computed(() => motionReplayViewerTrace.value
+  ? normalizeMotionTrackChartZoomWindow(motionReplayViewerTrace.value, {
+    endMs: motionTrackChartZoomEndMs.value ?? motionReplayTimeRange.value.max,
+    startMs: motionTrackChartZoomStartMs.value ?? motionReplayTimeRange.value.min,
+  })
+  : { endMs: 0, startMs: 0 });
+const motionTrackChartZoomActive = computed(() => {
+  if (!motionReplayViewerTrace.value) return false;
+  const range = motionReplayTimeRange.value;
+  const zoom = motionTrackChartZoomWindow.value;
+  return Math.round(zoom.startMs) !== Math.round(range.min)
+    || Math.round(zoom.endMs) !== Math.round(range.max);
+});
 const motionTrackChartModel = computed(() => motionReplayViewerTrace.value
   ? buildMotionTrackChartModel(motionReplayViewerTrace.value, {
-    cursorTimeMs: motionReplayCurrentTimeMs.value,
+    cursorTimeMs: motionWorkspaceSelectedTimeMs.value,
     displayMode: motionTrackChartDisplayMode.value,
     filters: motionReplayFilters.value,
     selectedTrack: motionWorkspaceSession.value.selectedTrack,
     seriesVisibility: motionTrackChartSeriesVisibility.value,
+    zoomWindow: motionTrackChartZoomWindow.value,
   })
   : null);
 const motionTrackChartHeaderLabel = computed(() => {
@@ -2134,8 +2221,28 @@ const motionTrackChartSummaryRows = computed(() => {
     { label: "events", value: formatCount(chart.summary.eventCount) },
     { label: "tracks", value: `${formatCount(chart.summary.visibleTrackCount)} / ${formatCount(chart.summary.trackCount)}` },
     { label: "points", value: `<=${formatCount(chart.limits.maxPointsPerSeries)} / series` },
+    { label: "cursor", value: formatMotionReplayTime(chart.cursor.timeMs) },
   ];
 });
+const motionTrackChartIntervalOverlay = computed(() => {
+  const chart = motionTrackChartModel.value;
+  if (!chart) return { active: false, width: 0, x: 0 };
+  const startMs = Math.min(motionReplayIntervalStartMs.value, motionReplayIntervalEndMs.value);
+  const endMs = Math.max(motionReplayIntervalStartMs.value, motionReplayIntervalEndMs.value);
+  const clampedStart = Math.max(chart.zoomWindow.startMs, Math.min(chart.zoomWindow.endMs, startMs));
+  const clampedEnd = Math.max(chart.zoomWindow.startMs, Math.min(chart.zoomWindow.endMs, endMs));
+  const x = getMotionTrackChartTimePercent(clampedStart, chart.zoomWindow);
+  const endX = getMotionTrackChartTimePercent(clampedEnd, chart.zoomWindow);
+  return {
+    active: endX > x,
+    width: Math.max(0, endX - x),
+    x,
+  };
+});
+const motionTrackChartIntervalActive = computed(() => Boolean(
+  motionReplayViewerTrace.value
+    && Math.round(motionReplayIntervalStartMs.value) !== Math.round(motionReplayIntervalEndMs.value)
+));
 const motionFocusedDebugExportAvailable = computed(() => Boolean(motionReplayViewerTrace.value));
 const motionWorkspaceOpen = computed(() => canDebugMotion.value && motionWorkspaceSession.value.isOpen);
 const motionWorkspaceFullscreen = computed(() => motionWorkspaceSession.value.mode === MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN);
@@ -2211,6 +2318,48 @@ function formatMotionTrackChartValue(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "-";
   return number.toFixed(2);
+}
+
+function clampMotionTrackChartValue(value, min, max) {
+  const number = Number(value);
+  const lower = Number.isFinite(Number(min)) ? Number(min) : 0;
+  const upper = Math.max(lower, Number.isFinite(Number(max)) ? Number(max) : lower);
+  if (!Number.isFinite(number)) return lower;
+  return Math.min(upper, Math.max(lower, number));
+}
+
+function getMotionTrackChartTimePercent(timeMs, zoomWindow = motionTrackChartZoomWindow.value) {
+  const startMs = Number(zoomWindow?.startMs) || 0;
+  const endMs = Number(zoomWindow?.endMs) || startMs;
+  const span = endMs - startMs;
+  if (span <= 0) return 0;
+  return clampMotionTrackChartValue(((Number(timeMs) - startMs) / span) * 100, 0, 100);
+}
+
+function readMotionTrackChartPointerTime(event) {
+  const chart = motionTrackChartModel.value;
+  const target = event.currentTarget;
+  const rect = target?.getBoundingClientRect?.();
+  if (!chart || !rect || rect.width <= 0) return null;
+  const ratio = clampMotionTrackChartValue((event.clientX - rect.left) / rect.width, 0, 1);
+  const zoom = chart.zoomWindow;
+  return zoom.startMs + ratio * (zoom.endMs - zoom.startMs);
+}
+
+function captureMotionTrackChartPointer(target, pointerId) {
+  try {
+    target?.setPointerCapture?.(pointerId);
+  } catch {
+    // Synthetic pointer events in tests may not have a browser-owned pointer id.
+  }
+}
+
+function releaseMotionTrackChartPointer(target, pointerId) {
+  try {
+    target?.releasePointerCapture?.(pointerId);
+  } catch {
+    // The pointer may already be released by the browser.
+  }
 }
 
 function getMotionWorkspaceViewportWidth() {
@@ -2439,6 +2588,91 @@ function toggleMotionTrackChartSeries(key, event) {
   });
 }
 
+function setMotionTrackChartSelectedTime(timeMs) {
+  if (!motionReplayViewerTrace.value) return;
+  const normalizedTime = normalizeMotionReplayTime(motionReplayViewerTrace.value, timeMs);
+  motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, normalizedTime);
+}
+
+function setMotionTrackChartBrushInterval(startMs, endMs) {
+  if (!motionReplayViewerTrace.value) return;
+  const start = normalizeMotionReplayTime(motionReplayViewerTrace.value, startMs);
+  const end = normalizeMotionReplayTime(motionReplayViewerTrace.value, endMs);
+  motionReplayIntervalStartMs.value = Math.min(start, end);
+  motionReplayIntervalEndMs.value = Math.max(start, end);
+}
+
+function updateMotionTrackChartPointer(event) {
+  const timeMs = readMotionTrackChartPointerTime(event);
+  if (timeMs == null) return;
+  setMotionTrackChartSelectedTime(timeMs);
+  if (motionTrackChartBrushPointerId.value === event.pointerId && motionTrackChartBrushAnchorMs.value != null) {
+    setMotionTrackChartBrushInterval(motionTrackChartBrushAnchorMs.value, timeMs);
+  }
+}
+
+function startMotionTrackChartBrush(event) {
+  if (!motionReplayViewerTrace.value || event.button !== 0) return;
+  const timeMs = readMotionTrackChartPointerTime(event);
+  if (timeMs == null) return;
+  stopMotionReplayPlayback();
+  event.preventDefault();
+  captureMotionTrackChartPointer(event.currentTarget, event.pointerId);
+  motionTrackChartBrushPointerId.value = event.pointerId;
+  motionTrackChartBrushAnchorMs.value = timeMs;
+  setMotionTrackChartSelectedTime(timeMs);
+  setMotionTrackChartBrushInterval(timeMs, timeMs);
+}
+
+function endMotionTrackChartBrush(event) {
+  if (motionTrackChartBrushPointerId.value !== event.pointerId) return;
+  const timeMs = readMotionTrackChartPointerTime(event);
+  if (timeMs != null && motionTrackChartBrushAnchorMs.value != null) {
+    setMotionTrackChartSelectedTime(timeMs);
+    setMotionTrackChartBrushInterval(motionTrackChartBrushAnchorMs.value, timeMs);
+  }
+  releaseMotionTrackChartPointer(event.currentTarget, event.pointerId);
+  motionTrackChartBrushPointerId.value = null;
+  motionTrackChartBrushAnchorMs.value = null;
+}
+
+function cancelMotionTrackChartBrush(event) {
+  if (motionTrackChartBrushPointerId.value == null) return;
+  releaseMotionTrackChartPointer(event.currentTarget, motionTrackChartBrushPointerId.value);
+  motionTrackChartBrushPointerId.value = null;
+  motionTrackChartBrushAnchorMs.value = null;
+}
+
+function setMotionTrackChartZoomWindow(startMs, endMs) {
+  if (!motionReplayViewerTrace.value) return;
+  const zoom = normalizeMotionTrackChartZoomWindow(motionReplayViewerTrace.value, { endMs, startMs });
+  motionTrackChartZoomStartMs.value = zoom.startMs;
+  motionTrackChartZoomEndMs.value = zoom.endMs;
+  setMotionTrackChartSelectedTime(clampMotionTrackChartValue(
+    motionWorkspaceSession.value.selectedTimeMs,
+    zoom.startMs,
+    zoom.endMs,
+  ));
+}
+
+function updateMotionTrackChartZoomStart(event) {
+  setMotionTrackChartZoomWindow(event.target.value, motionTrackChartZoomWindow.value.endMs);
+}
+
+function updateMotionTrackChartZoomEnd(event) {
+  setMotionTrackChartZoomWindow(motionTrackChartZoomWindow.value.startMs, event.target.value);
+}
+
+function resetMotionTrackChartZoom() {
+  motionTrackChartZoomStartMs.value = null;
+  motionTrackChartZoomEndMs.value = null;
+}
+
+function zoomMotionTrackChartToInterval() {
+  if (!motionTrackChartIntervalActive.value) return;
+  setMotionTrackChartZoomWindow(motionReplayIntervalStartMs.value, motionReplayIntervalEndMs.value);
+}
+
 function selectMotionTrackChartTrack(track) {
   selectMotionWorkspaceTrack(track);
   if (track.current) {
@@ -2564,7 +2798,9 @@ function syncMotionReplayIntervalToRange(trace) {
 function setMotionReplayCurrentTime(timeMs, options = {}) {
   if (!motionReplayViewerTrace.value) return;
   if (options.pause) stopMotionReplayPlayback();
-  motionReplayCurrentTimeMs.value = normalizeMotionReplayTime(motionReplayViewerTrace.value, timeMs);
+  const normalizedTime = normalizeMotionReplayTime(motionReplayViewerTrace.value, timeMs);
+  motionReplayCurrentTimeMs.value = normalizedTime;
+  motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, normalizedTime);
 }
 
 function loadMotionReplayTrace(trace, json = "", options = {}) {
@@ -2579,7 +2815,9 @@ function loadMotionReplayTrace(trace, json = "", options = {}) {
     motionReplayFilterQuery.value = "";
     const range = getMotionReplayTimeRange(normalized);
     motionReplayCurrentTimeMs.value = normalizeMotionReplayTime(normalized, range.min);
+    motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, motionReplayCurrentTimeMs.value);
     syncMotionReplayIntervalToRange(normalized);
+    resetMotionTrackChartZoom();
     stopMotionReplayPlayback();
   } catch (error) {
     motionReplayImportError.value = error instanceof Error ? error.message : String(error);
@@ -2600,6 +2838,8 @@ function clearMotionReplayViewer() {
   motionReplayFilterQuery.value = "";
   motionReplayIntervalStartMs.value = 0;
   motionReplayIntervalEndMs.value = 0;
+  motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, 0);
+  resetMotionTrackChartZoom();
 }
 
 function updateMotionReplayImportText(event) {
@@ -3883,6 +4123,22 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.motion-debug-track-chart-window-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(168px, 0.85fr);
+  gap: 8px;
+  align-items: end;
+  min-width: 0;
+}
+
+.motion-debug-track-chart-window-control {
+  margin: 0;
+}
+
+.motion-debug-track-chart-window-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .motion-debug-track-chart-summary {
   margin: 0;
 }
@@ -4026,6 +4282,13 @@ onBeforeUnmount(() => {
 
 .motion-debug-track-chart-plot {
   min-width: 0;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.motion-debug-track-chart-plot-brushing {
+  cursor: col-resize;
 }
 
 .motion-debug-track-chart-plot svg {
@@ -4047,6 +4310,13 @@ onBeforeUnmount(() => {
 .motion-debug-track-chart-axis-line {
   stroke: rgba(255, 255, 255, 0.08);
   stroke-width: 1;
+}
+
+.motion-debug-track-chart-brush-range {
+  fill: rgba(110, 220, 255, 0.12);
+  stroke: rgba(110, 220, 255, 0.26);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
 }
 
 .motion-debug-track-chart-series {
@@ -4586,6 +4856,7 @@ onBeforeUnmount(() => {
   }
 
   .motion-debug-track-chart-toolbar,
+  .motion-debug-track-chart-window-controls,
   .motion-debug-track-chart-row-meta,
   .motion-debug-track-chart-current,
   .motion-debug-track-chart-ranges {
