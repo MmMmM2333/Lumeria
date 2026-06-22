@@ -1582,6 +1582,91 @@
                 <dd :title="motionWorkspaceFilterLabel">{{ motionWorkspaceFilterLabel }}</dd>
               </div>
             </dl>
+            <dl class="background-debug-status-grid motion-debug-inspector-current">
+              <div
+                v-for="row in motionInspectorStatusRows"
+                :key="row.label"
+                :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
+              >
+                <dt>{{ row.label }}</dt>
+                <dd :title="row.value">{{ row.value }}</dd>
+              </div>
+            </dl>
+            <div v-if="!motionInspectorModel" class="background-debug-motion-empty">
+              load a replay trace to inspect selected track values
+            </div>
+            <div v-else-if="!motionInspectorModel.current" class="background-debug-motion-empty">
+              no current sample for selected target or track
+            </div>
+          </div>
+          <div class="background-debug-subsection">
+            <div class="background-debug-subtitle">Lane Breakdown</div>
+            <div class="motion-debug-inspector-card-list">
+              <article
+                v-for="row in motionInspectorLaneRows"
+                :key="row.key"
+                :class="['motion-debug-inspector-card', row.isSelected && 'motion-debug-inspector-card-selected']"
+              >
+                <strong :title="`${row.lane}/${row.laneKey}`">{{ row.lane }} / {{ row.laneKey }}</strong>
+                <span :title="`${row.valueLabel} -> ${row.toLabel}`">{{ row.valueLabel }} -> {{ row.toLabel }}</span>
+                <span :title="`delta ${row.deltaLabel} / velocity ${row.velocityLabel}`">
+                  delta {{ row.deltaLabel }} / v {{ row.velocityLabel }}
+                </span>
+                <span :title="row.driver">{{ row.driver }}</span>
+              </article>
+              <div v-if="motionInspectorLaneRows.length === 0" class="background-debug-motion-empty">
+                no lane breakdown
+              </div>
+            </div>
+          </div>
+          <div class="background-debug-subsection">
+            <div class="background-debug-subtitle">Why Is It Moving?</div>
+            <div class="motion-debug-inspector-card-list">
+              <article
+                v-for="row in motionInspectorWhyRows"
+                :key="row.key"
+                :class="['motion-debug-inspector-card', `motion-debug-inspector-card-${row.tone}`]"
+              >
+                <strong>{{ row.label }}</strong>
+                <span :title="row.detail">{{ row.detail }}</span>
+              </article>
+              <div v-if="motionInspectorWhyRows.length === 0" class="background-debug-motion-empty">
+                no replay explanation
+              </div>
+            </div>
+          </div>
+          <div class="background-debug-subsection">
+            <div class="background-debug-subtitle">Recent Lifecycle Events</div>
+            <div class="motion-debug-inspector-card-list">
+              <article
+                v-for="event in motionInspectorEventRows"
+                :key="event.key"
+                :class="['motion-debug-inspector-card', event.isCurrent && 'motion-debug-inspector-card-selected']"
+              >
+                <strong>{{ event.timeLabel }} {{ event.type }}</strong>
+                <span :title="event.detail">{{ event.detail }}</span>
+                <span :title="`${event.lane}/${event.laneKey}`">{{ event.lane }} / {{ event.laneKey }}</span>
+              </article>
+              <div v-if="motionInspectorEventRows.length === 0" class="background-debug-motion-empty">
+                no matching lifecycle events
+              </div>
+            </div>
+          </div>
+          <div class="background-debug-subsection">
+            <div class="background-debug-subtitle">Matching Warnings</div>
+            <div class="motion-debug-inspector-card-list">
+              <article
+                v-for="warning in motionInspectorWarningRows"
+                :key="warning.key"
+                class="motion-debug-inspector-card motion-debug-inspector-card-warning"
+              >
+                <strong>{{ warning.type }}</strong>
+                <span :title="warning.detail">{{ warning.detail }}</span>
+              </article>
+              <div v-if="motionInspectorWarningRows.length === 0" class="background-debug-motion-empty">
+                no matching warnings
+              </div>
+            </div>
           </div>
         <div class="background-debug-subsection">
           <div class="background-debug-subtitle">Properties</div>
@@ -1830,6 +1915,9 @@ import {
   createMotionFocusedDebugExport,
   MOTION_FOCUSED_DEBUG_SCHEMA,
 } from "./backgroundDebug/motionFocusedDebugExportModel.js";
+import {
+  buildMotionInspectorModel,
+} from "./backgroundDebug/motionInspectorModel.js";
 import {
   buildMotionTrackChartModel,
   MOTION_TRACK_CHART_DISPLAY_NORMALIZED,
@@ -2339,6 +2427,29 @@ const motionWorkspaceSelectedTargetPinned = computed(() => {
   return Boolean(selectedKey && motionWorkspaceSession.value.pinnedTargets.some((pin) => pin.key === selectedKey));
 });
 const motionWorkspacePinButtonLabel = computed(() => (motionWorkspaceSelectedTargetPinned.value ? "Unpin Target" : "Pin Target"));
+const motionInspectorModel = computed(() => motionReplayViewerTrace.value
+  ? buildMotionInspectorModel(motionReplayViewerTrace.value, {
+    selectedTarget: motionWorkspaceSession.value.selectedTarget,
+    selectedTimeMs: motionWorkspaceSelectedTimeMs.value,
+    selectedTrack: motionWorkspaceSession.value.selectedTrack,
+  })
+  : null);
+const motionInspectorStatusRows = computed(() => {
+  const current = motionInspectorModel.value?.current;
+  return [
+    { label: "value", value: current?.valueLabel || "-" },
+    { label: "to", value: current?.toLabel || "-" },
+    { label: "delta", value: current?.deltaLabel || "-" },
+    { label: "velocity", value: current?.velocityLabel || "-" },
+    { label: "driver", value: current?.driver || "-" },
+    { label: "lane", value: current ? `${current.lane}/${current.laneKey}` : "-", wide: true },
+    { label: "source", value: current?.sourceLabel || "-", wide: true },
+  ];
+});
+const motionInspectorLaneRows = computed(() => motionInspectorModel.value?.laneBreakdown || []);
+const motionInspectorWhyRows = computed(() => motionInspectorModel.value?.whyRows || []);
+const motionInspectorEventRows = computed(() => motionInspectorModel.value?.recentEvents || []);
+const motionInspectorWarningRows = computed(() => motionInspectorModel.value?.warnings || []);
 const motionFocusedCopyButtonLabel = computed(() => (hasCopiedMotionFocused.value ? "Copied" : "Copy Focused AI"));
 const motionFocusedDebugScopeRows = computed(() => [
   {
@@ -4602,6 +4713,66 @@ onBeforeUnmount(() => {
 .background-debug-motion-bookmark-actions .background-debug-button,
 .background-debug-motion-bookmark-row-actions .background-debug-button {
   width: 100%;
+}
+
+.motion-debug-inspector-current {
+  margin-top: 8px;
+}
+
+.motion-debug-inspector-card-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.motion-debug-inspector-card {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.motion-debug-inspector-card strong,
+.motion-debug-inspector-card span {
+  min-width: 0;
+  overflow: hidden;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.motion-debug-inspector-card strong {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.motion-debug-inspector-card span {
+  color: rgba(255, 255, 255, 0.56);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+}
+
+.motion-debug-inspector-card-selected,
+.motion-debug-inspector-card-active {
+  border-color: rgba(110, 220, 255, 0.36);
+  background: rgba(110, 220, 255, 0.1);
+}
+
+.motion-debug-inspector-card-info {
+  border-color: rgba(140, 190, 255, 0.24);
+}
+
+.motion-debug-inspector-card-warning {
+  border-color: rgba(255, 205, 105, 0.34);
+  background: rgba(255, 205, 105, 0.08);
+}
+
+.motion-debug-inspector-card-muted {
+  opacity: 0.82;
 }
 
 .background-debug-motion-replay-overlay-card {
