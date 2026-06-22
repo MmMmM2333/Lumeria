@@ -69,6 +69,7 @@ export function buildMotionReplayCaptureDebugConfig(options = {}, previousConfig
     maxEvents: Math.min(60000, Math.max(1000, expectedSamples * 2)),
     maxSamples: Math.min(20000, Math.max(120, expectedSamples + 120)),
     overlayEnabled: previousConfig.overlayEnabled === true,
+    recordFilter: clonePlain(options.recordFilter ?? options.captureProfile ?? null),
     recordHistory: true,
     recordWindowMs: seconds * 1000,
     sampleHz,
@@ -82,6 +83,7 @@ function makeTraceValue(record = {}) {
     from: record.from ?? null,
     lane: record.lane || "base",
     laneKey: record.laneKey || "default",
+    layer: record.layer,
     prop: record.prop || "unknown",
     sourceLabel: record.sourceLabel,
     targetId: record.targetId ?? null,
@@ -138,6 +140,7 @@ function makeTraceTracks(frames = [], events = [], curveStats = []) {
         key,
         lane: record.lane,
         laneKey: record.laneKey,
+        layer: record.layer,
         prop: record.prop,
         sampleCount: 0,
         sourceLabel: record.sourceLabel,
@@ -149,6 +152,7 @@ function makeTraceTracks(frames = [], events = [], curveStats = []) {
       tracksByKey.set(key, track);
     }
     if (record.driver) track.driver = record.driver;
+    if (record.layer) track.layer = record.layer;
     if (record.sourceLabel) track.sourceLabel = record.sourceLabel;
     if (record.type === "sample") track.sampleCount += 1;
     else track.eventCount += 1;
@@ -166,6 +170,7 @@ function makeTraceTracks(frames = [], events = [], curveStats = []) {
         key: track.key,
         lane: track.lane,
         laneKey: track.laneKey,
+        layer: track.layer,
         maxDelta: stats.maxDelta ?? null,
         maxVelocity: stats.maxVelocity ?? null,
         overshootCount: stats.overshootCount ?? 0,
@@ -234,9 +239,11 @@ export function createMotionReplayTrace(report = {}, options = {}) {
   const captureConfig = report.config || {};
   const requestedDurationMs = readNumber(options.durationMs, readNumber(captureConfig.recordWindowMs, 0));
   const sampleHz = readNumber(options.sampleHz, readNumber(captureConfig.sampleHz, MOTION_REPLAY_CAPTURE_SAMPLE_HZ));
+  const captureProfile = clonePlain(options.captureProfile ?? null);
   const trace = {
     capture: {
       durationMs: timeRangeMs.max != null && timeRangeMs.min != null ? Math.max(0, timeRangeMs.max - timeRangeMs.min) : 0,
+      profile: captureProfile,
       requestedDurationMs,
       sampleHz,
       startedAt: options.startedAt ?? null,
@@ -284,6 +291,7 @@ export function createMotionReplayCaptureController(runtime = motionRuntime, opt
   function status() {
     return {
       active,
+      captureProfile: clonePlain(captureOptions.captureProfile ?? null),
       sampleHz: MOTION_REPLAY_CAPTURE_SAMPLE_HZ,
       seconds: normalizeMotionReplayCaptureSeconds(captureOptions.seconds),
       startedAt,
@@ -307,6 +315,7 @@ export function createMotionReplayCaptureController(runtime = motionRuntime, opt
   function stop(stopOptions = {}) {
     const stoppedAt = stopOptions.stoppedAt || new Date().toISOString();
     const trace = createMotionReplayTraceFromRuntime(runtime, {
+      captureProfile: captureOptions.captureProfile,
       durationMs: normalizeMotionReplayCaptureSeconds(captureOptions.seconds) * 1000,
       sampleHz: MOTION_REPLAY_CAPTURE_SAMPLE_HZ,
       startedAt,

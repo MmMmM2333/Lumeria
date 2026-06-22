@@ -65,6 +65,13 @@ function formatCount(value) {
   return String(Math.max(0, Math.floor(readNumber(value, 0))));
 }
 
+function formatBytes(value) {
+  const bytes = Math.max(0, Math.floor(readNumber(value, 0)));
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
 function formatWindow(ms) {
   return `${formatMotionNumber(readNumber(ms, DEFAULT_RECORD_WINDOW_MS) / 1000, 0)}s`;
 }
@@ -308,15 +315,25 @@ export function buildMotionOverviewRows(report = {}) {
   ];
 }
 
-export function buildMotionReplayCaptureRows(status = {}, trace = null) {
+export function buildMotionReplayCaptureRows(status = {}, trace = null, options = {}) {
   const summary = trace?.summary || {};
   const capture = trace?.capture || {};
+  const profile = status.captureProfile || capture.profile || options.profile || {};
+  const estimate = options.estimate || {};
+  const actualBytes = options.actualBytes ?? (trace ? JSON.stringify(trace).length : 0);
   const requestedSeconds = status.seconds ?? (capture.requestedDurationMs != null ? capture.requestedDurationMs / 1000 : 30);
   const sampleHz = status.sampleHz ?? capture.sampleHz ?? 60;
+  const profileLabel = profile.label || profile.id || "none";
+  const estimateLabel = estimate.jsonSizeLabel
+    ? `${formatCount(estimate.frameCount)}f / ${formatCount(estimate.eventCount)}e / ${estimate.jsonSizeLabel}`
+    : "-";
   return [
     { label: "capture", value: status.active ? "active" : "idle" },
+    { label: "profile", value: profileLabel, wide: true },
     { label: "window", value: `${formatMotionNumber(normalizeMotionCustomSeconds(requestedSeconds), 0)}s` },
     { label: "sampleHz", value: `${formatMotionNumber(sampleHz, 0)}Hz` },
+    { label: "estimate", value: estimateLabel, wide: true },
+    { label: "actual JSON", value: trace ? formatBytes(actualBytes) : "-", wide: true },
     { label: "frames/events", value: `${formatCount(summary.frameCount)} / ${formatCount(summary.eventCount)}`, wide: true },
     { label: "tracks/targets", value: `${formatCount(summary.trackCount)} / ${formatCount(summary.targetCount)}`, wide: true },
     { label: "schema", value: trace?.schema || "none", wide: true },

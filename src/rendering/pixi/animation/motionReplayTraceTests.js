@@ -52,7 +52,21 @@ export function runMotionReplayTraceTests() {
   assert(config.recordWindowMs === 30000, "replay capture should default to a 30s window");
   assert(config.maxSamples >= 1800, "replay capture should retain a full 30s 60Hz sample window");
   assert(config.overlayEnabled === true, "replay capture config should preserve overlay state");
+  assert(config.recordFilter === null, "replay capture should clear previous record filters when no profile is supplied");
   assert(config.timeScale === 0.5, "replay capture config should preserve timeScale");
+  const profileConfig = buildMotionReplayCaptureDebugConfig({
+    captureProfile: {
+      id: "alpha-focus",
+      includeEvents: true,
+      includeSamples: true,
+      label: "Alpha Focus",
+      propAllowlist: ["alpha"],
+      targetFilters: { layer: "desktop" },
+    },
+    seconds: 2,
+  });
+  assert(profileConfig.recordFilter?.propAllowlist?.[0] === "alpha", "replay capture config should pass capture profile as recordFilter");
+  assert(profileConfig.recordFilter?.targetFilters?.layer === "desktop", "replay capture config should preserve target filters");
 
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
@@ -86,6 +100,42 @@ export function runMotionReplayTraceTests() {
     assert(typeof stopped.json === "string" && JSON.parse(stopped.json).schema === MOTION_REPLAY_TRACE_SCHEMA, "controller should return parseable trace JSON");
     assert(typeof JSON.stringify(trace) === "string", "trace should be JSON serializable");
     assert(!containsReference(trace, icon), "trace should not retain raw target references");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    runtime.configureDebug({ enabled: true, recordHistory: false, sampleHz: 10, timeScale: 1 });
+    const alphaProfile = {
+      id: "alpha-focus",
+      includeEvents: true,
+      includeSamples: true,
+      label: "Alpha Focus",
+      propAllowlist: ["alpha"],
+      targetFilters: { layer: "desktop" },
+    };
+    const controller = createMotionReplayCaptureController(runtime);
+    const started = controller.start({
+      captureProfile: alphaProfile,
+      seconds: 2,
+      startedAt: "2026-06-21T00:00:03.000Z",
+    });
+    assert(started.captureProfile.label === "Alpha Focus", "capture status should expose the active capture profile");
+    assert(runtime.configureDebug().recordFilter.props[0] === "alpha", "controller start should configure runtime recordFilter from profile");
+
+    const icon = seedReplayRuntime(runtime);
+    const stopped = controller.stop({ stoppedAt: "2026-06-21T00:00:04.000Z" });
+    const trace = stopped.trace;
+    const frameValues = trace.timeline.frames.flatMap((frame) => frame.values);
+
+    assert(trace.capture.profile.label === "Alpha Focus", "trace capture metadata should include the capture profile");
+    assert(trace.timeline.events.length > 0, "profile-filtered trace should keep matching lifecycle events");
+    assert(trace.timeline.events.every((event) => event.prop === "alpha"), "profile-filtered trace should only keep alpha events");
+    assert(frameValues.length > 0, "profile-filtered trace should keep matching frame values");
+    assert(frameValues.every((value) => value.prop === "alpha"), "profile-filtered trace should only keep alpha frame values");
+    assert(frameValues.every((value) => value.layer === "desktop"), "profile-filtered trace should preserve layer on frame values");
+    assert(trace.tracks.length === 1 && trace.tracks[0].prop === "alpha", "profile-filtered trace should only summarize matching tracks");
+    assert(trace.targets.length === 1 && trace.targets[0].sourceLabel === "desktop.icon.node", "profile-filtered trace should only include used targets");
+    assert(!containsReference(trace, icon), "profile-filtered trace should not retain raw target references");
   }
 
   {

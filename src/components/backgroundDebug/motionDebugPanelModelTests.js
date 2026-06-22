@@ -39,10 +39,18 @@ export function runMotionDebugPanelModelTests() {
       schema: "pixi-motion-replay-trace/v1",
       summary: { eventCount: 8, frameCount: 16, targetCount: 3, trackCount: 4 },
     },
+    {
+      actualBytes: 4096,
+      estimate: { eventCount: 8, frameCount: 16, jsonSizeLabel: "4.0 KB" },
+      profile: { id: "alpha-focus", label: "Alpha Focus" },
+    },
   );
   assert(replayRows.some((row) => row.label === "capture" && row.value === "active"), "replay rows should expose capture active state");
+  assert(replayRows.some((row) => row.label === "profile" && row.value === "Alpha Focus"), "replay rows should expose capture profile");
   assert(replayRows.some((row) => row.label === "window" && row.value === "12s"), "replay rows should expose capture window");
   assert(replayRows.some((row) => row.label === "sampleHz" && row.value === "60Hz"), "replay rows should expose capture sample rate");
+  assert(replayRows.some((row) => row.label === "estimate" && row.value === "16f / 8e / 4.0 KB"), "replay rows should expose estimated capture size");
+  assert(replayRows.some((row) => row.label === "actual JSON" && row.value === "4.0 KB"), "replay rows should expose actual trace JSON size");
   assert(replayRows.some((row) => row.label === "frames/events" && row.value === "16 / 8"), "replay rows should expose trace frame/event counts");
   assert(replayRows.some((row) => row.label === "schema" && row.value === "pixi-motion-replay-trace/v1"), "replay rows should expose trace schema");
 

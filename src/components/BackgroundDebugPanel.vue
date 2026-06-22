@@ -1378,6 +1378,12 @@ import {
   parseMotionReplayTraceJson,
 } from "./backgroundDebug/motionReplayViewerModel.js";
 import {
+  estimateMotionCaptureProfileSize,
+  normalizeMotionCaptureProfile,
+  MOTION_CAPTURE_DEFAULT_SAMPLE_HZ,
+  MOTION_CAPTURE_PROFILE_DEFAULT_VISUAL,
+} from "./backgroundDebug/motionCaptureProfileModel.js";
+import {
   closeMotionDebugWorkspace,
   createMotionDebugWorkspaceSession,
   MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MAX,
@@ -1712,7 +1718,26 @@ const motionLayerTreeRows = computed(() => buildMotionLayerTreeRows(motionReport
 const motionPropertyRows = computed(() => buildMotionPropertyRows(motionReport.value, motionFilters.value));
 const motionTimelineGroups = computed(() => buildMotionTimelineGroups(motionReport.value, motionFilters.value));
 const motionCurveChartGroups = computed(() => buildMotionCurveChartGroups(motionReport.value, motionFilters.value));
-const motionReplayCaptureRows = computed(() => buildMotionReplayCaptureRows(motionReplayCaptureStatus.value, motionReplayTrace.value));
+const motionCaptureProfile = computed(() => normalizeMotionCaptureProfile(
+  motionWorkspaceSession.value.captureProfileId || MOTION_CAPTURE_PROFILE_DEFAULT_VISUAL
+));
+const motionReplayCaptureEstimate = computed(() => estimateMotionCaptureProfileSize(
+  motionReport.value,
+  motionCaptureProfile.value,
+  {
+    durationMs: normalizeMotionReplayCaptureSeconds(motionReplayCaptureSeconds.value) * 1000,
+    sampleHz: MOTION_CAPTURE_DEFAULT_SAMPLE_HZ,
+  }
+));
+const motionReplayCaptureRows = computed(() => buildMotionReplayCaptureRows(
+  motionReplayCaptureStatus.value,
+  motionReplayTrace.value,
+  {
+    actualBytes: motionReplayTraceJson.value.length,
+    estimate: motionReplayCaptureEstimate.value,
+    profile: motionCaptureProfile.value,
+  }
+));
 const motionReplayTimeRange = computed(() => motionReplayViewerTrace.value ? getMotionReplayTimeRange(motionReplayViewerTrace.value) : { max: 0, min: 0 });
 const motionReplayFilters = computed(() => ({
   query: motionReplayFilterQuery.value,
@@ -2011,6 +2036,7 @@ function startMotionReplayCapture() {
   motionReplayTraceJson.value = "";
   hasCopiedMotionReplayTrace.value = false;
   motionReplayCaptureStatus.value = motionReplayCapture.start({
+    captureProfile: motionCaptureProfile.value,
     seconds: motionReplayCaptureSeconds.value,
   });
   refreshMotionReport();
