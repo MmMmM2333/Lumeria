@@ -260,6 +260,7 @@
             <output>{{ motionWindowSeconds.toFixed(0) }}s</output>
           </span>
           <input
+            name="motionCustomSeconds"
             type="number"
             min="1"
             max="300"
@@ -276,6 +277,7 @@
             <output>{{ Number(motionTimeScale).toFixed(2) }}x</output>
           </span>
           <input
+            name="motionTimeScale"
             type="range"
             min="0"
             max="2"
@@ -314,6 +316,7 @@
               <output>{{ motionReplayCaptureSeconds }}s / 60Hz</output>
             </span>
             <input
+              name="motionReplayCaptureSeconds"
               type="number"
               min="1"
               max="300"
@@ -651,6 +654,7 @@
               <output>{{ motionFilterSummary.text }}</output>
             </span>
             <input
+              name="motionFilterQuery"
               type="search"
               placeholder="target / lane / prop / event"
               :value="motionFilterQuery"
@@ -757,6 +761,7 @@
               <output>{{ motionReplayImportStatus }}</output>
             </span>
             <textarea
+              name="motionReplayImportText"
               rows="3"
               spellcheck="false"
               :maxlength="MOTION_REPLAY_IMPORT_MAX_BYTES"
@@ -770,6 +775,7 @@
               <output>{{ motionReplayViewerLoaded ? "loaded" : "none" }}</output>
             </span>
             <input
+              name="motionReplayTraceFile"
               type="file"
               accept="application/json,.json"
               @change="importMotionReplayFile"
@@ -817,6 +823,7 @@
               <output>{{ formatMotionReplayTime(motionReplayCurrentTimeMs) }}</output>
             </span>
             <input
+              name="motionReplayScrub"
               type="range"
               :min="motionReplayTimeRange.min"
               :max="motionReplayTimeRange.max"
@@ -833,6 +840,7 @@
               <output>{{ motionReplayFilterSummary.text }}</output>
             </span>
             <input
+              name="motionReplayFilterQuery"
               type="search"
               placeholder="target / lane / prop / event"
               :disabled="!motionReplayViewerLoaded"
@@ -875,6 +883,7 @@
                 <output>{{ formatMotionReplayTime(motionReplayIntervalStartMs) }}</output>
               </span>
               <input
+                name="motionReplayIntervalStartMs"
                 type="number"
                 step="1"
                 :disabled="!motionReplayViewerLoaded"
@@ -888,6 +897,7 @@
                 <output>{{ formatMotionReplayTime(motionReplayIntervalEndMs) }}</output>
               </span>
               <input
+                name="motionReplayIntervalEndMs"
                 type="number"
                 step="1"
                 :disabled="!motionReplayViewerLoaded"
