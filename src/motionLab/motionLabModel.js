@@ -1,18 +1,30 @@
 import { MOTION_LAB_SCENARIOS } from "./motionLabScenarios.js";
 import {
+  applyMotionLabParamPreset,
+  buildMotionLabParamPresetRows,
   DEFAULT_MOTION_LAB_PARAMS,
   MOTION_LAB_EASE_OPTIONS,
   MOTION_LAB_INTERRUPT_OPTIONS,
+  MOTION_LAB_PARAM_PRESET_IDS,
+  MOTION_LAB_PARAM_PRESETS,
+  getMotionLabParamPreset,
   normalizeMotionLabParams,
+  resolveMotionLabParamPresetId,
 } from "./motionLabParams.js";
 
 export const MOTION_LAB_QUERY_PARAM = "motionLab";
 export { MOTION_LAB_SCENARIOS };
 export {
+  applyMotionLabParamPreset,
+  buildMotionLabParamPresetRows,
   DEFAULT_MOTION_LAB_PARAMS,
   MOTION_LAB_EASE_OPTIONS,
   MOTION_LAB_INTERRUPT_OPTIONS,
+  MOTION_LAB_PARAM_PRESET_IDS,
+  MOTION_LAB_PARAM_PRESETS,
+  getMotionLabParamPreset,
   normalizeMotionLabParams,
+  resolveMotionLabParamPresetId,
 };
 
 export const MOTION_LAB_COMPARE_SCHEMA = "pixi-motion-lab-compare/v1";

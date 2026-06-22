@@ -1,4 +1,6 @@
 import {
+  applyMotionLabParamPreset,
+  buildMotionLabParamPresetRows,
   buildMotionLabCurveRows,
   buildMotionLabAssertionRows,
   buildMotionLabCompareRows,
@@ -9,10 +11,13 @@ import {
   createMotionLabRunSnapshot,
   createMotionLabTraceDiffExport,
   DEFAULT_MOTION_LAB_PARAMS,
+  getMotionLabParamPreset,
   buildMotionLabTimelineRows,
   MOTION_LAB_COMPARE_SCHEMA,
+  MOTION_LAB_PARAM_PRESET_IDS,
   MOTION_LAB_TRACE_DIFF_SCHEMA,
   normalizeMotionLabParams,
+  resolveMotionLabParamPresetId,
   shouldMountMotionLab,
 } from "./motionLabModel.js";
 import {
@@ -129,6 +134,29 @@ export function runMotionLabModelTests() {
   assert(normalizedParams.ease === "sine.inOut", "params should accept supported ease");
   assert(normalizedParams.interruptPolicy === "blend", "params should accept supported interrupt policy");
   assert(normalizeMotionLabParams({ ease: "unknown" }).ease === DEFAULT_MOTION_LAB_PARAMS.ease, "params should reject unknown ease");
+
+  assert(MOTION_LAB_PARAM_PRESET_IDS.join(",") === "snappy,soft,slow,interrupt-heavy", "param presets should expose required IDs in stable order");
+  const snappyParams = applyMotionLabParamPreset(DEFAULT_MOTION_LAB_PARAMS, "snappy");
+  assert(snappyParams.durationMs < DEFAULT_MOTION_LAB_PARAMS.durationMs, "snappy preset should shorten tween duration");
+  assert(snappyParams.springStiffness > DEFAULT_MOTION_LAB_PARAMS.springStiffness, "snappy preset should stiffen spring");
+  assert(snappyParams.ease === "power3.out", "snappy preset should use a fast ease");
+  const softParams = applyMotionLabParamPreset(DEFAULT_MOTION_LAB_PARAMS, "soft");
+  assert(softParams.springStiffness < DEFAULT_MOTION_LAB_PARAMS.springStiffness, "soft preset should loosen spring stiffness");
+  assert(softParams.iconPressScale > DEFAULT_MOTION_LAB_PARAMS.iconPressScale, "soft preset should reduce press compression");
+  const slowParams = applyMotionLabParamPreset(DEFAULT_MOTION_LAB_PARAMS, "slow");
+  assert(slowParams.durationMs > DEFAULT_MOTION_LAB_PARAMS.durationMs, "slow preset should lengthen tween duration");
+  assert(slowParams.interruptDelayMs > DEFAULT_MOTION_LAB_PARAMS.interruptDelayMs, "slow preset should delay interruptions");
+  const interruptHeavyParams = applyMotionLabParamPreset(DEFAULT_MOTION_LAB_PARAMS, "interrupt-heavy");
+  assert(interruptHeavyParams.interruptPolicy === "replace", "interrupt-heavy preset should stress replacement interrupts");
+  assert(interruptHeavyParams.interruptDelayMs < DEFAULT_MOTION_LAB_PARAMS.interruptDelayMs, "interrupt-heavy preset should shorten interruption delay");
+  assert(applyMotionLabParamPreset({ durationMs: 777 }, "unknown").durationMs === 777, "unknown preset should keep current normalized params");
+  assert(getMotionLabParamPreset(" SNAPPY ")?.id === "snappy", "preset lookup should trim and lowercase ids");
+  assert(getMotionLabParamPreset("missing") == null, "unknown preset lookup should return null");
+  assert(resolveMotionLabParamPresetId(snappyParams) === "snappy", "preset resolver should identify exact preset params");
+  assert(resolveMotionLabParamPresetId({ ...snappyParams, durationMs: snappyParams.durationMs + 20 }) === "custom", "preset resolver should mark edited params as custom");
+  const presetRows = buildMotionLabParamPresetRows(snappyParams);
+  assert(presetRows.length === 4, "preset rows should expose all required presets");
+  assert(presetRows.some((row) => row.id === "snappy" && row.selected && row.summary.includes("ms")), "preset rows should mark selected preset and expose summary");
 
   const traceA = {
     capture: { durationMs: 120 },

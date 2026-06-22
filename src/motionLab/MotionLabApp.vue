@@ -22,6 +22,28 @@
       </section>
 
       <section class="motion-lab-section">
+        <h2>Presets</h2>
+        <div class="motion-lab-preset-status">
+          <span>current</span>
+          <strong>{{ activeParamPresetLabel }}</strong>
+        </div>
+        <div class="motion-lab-preset-grid">
+          <button
+            v-for="preset in paramPresetRows"
+            :key="preset.id"
+            type="button"
+            :aria-pressed="preset.selected"
+            :class="['motion-lab-preset', preset.selected && 'motion-lab-preset-selected']"
+            @click="applyParamPreset(preset.id)"
+          >
+            <span>{{ preset.label }}</span>
+            <strong>{{ preset.summary }}</strong>
+            <small>{{ preset.description }}</small>
+          </button>
+        </div>
+      </section>
+
+      <section class="motion-lab-section">
         <template v-for="group in parameterGroups" :key="group.title">
           <h2>{{ group.title }}</h2>
           <label v-for="control in group.controls" :key="control.key" class="motion-lab-control">
@@ -200,6 +222,8 @@ import { createPixiApp } from "../rendering/pixi/createPixiApp.js";
 import { createMotionRuntime } from "../rendering/pixi/animation/motionRuntime.js";
 import { createMotionReplayTrace } from "../rendering/pixi/animation/motionReplayTrace.js";
 import {
+  applyMotionLabParamPreset,
+  buildMotionLabParamPresetRows,
   buildMotionLabAssertionRows,
   buildMotionLabCompareRows,
   buildMotionLabCurveRows,
@@ -215,6 +239,7 @@ import {
   MOTION_LAB_INTERRUPT_OPTIONS,
   MOTION_LAB_SCENARIOS,
   normalizeMotionLabParams,
+  resolveMotionLabParamPresetId,
 } from "./motionLabModel.js";
 import {
   evaluateMotionLabScenarioAssertions,
@@ -297,6 +322,11 @@ const parameterGroups = Object.freeze([
 const scenarioRows = computed(() => buildMotionLabScenarioRows(MOTION_LAB_SCENARIOS, selectedScenarioId.value));
 const selectedScenario = computed(() => getMotionLabScenario(selectedScenarioId.value));
 const selectedScenarioLabel = computed(() => selectedScenario.value?.label || "Scenario");
+const paramPresetRows = computed(() => buildMotionLabParamPresetRows(motionParams));
+const activeParamPresetLabel = computed(() => {
+  const selectedRow = paramPresetRows.value.find((row) => row.selected);
+  return selectedRow?.label || "Custom";
+});
 const overviewRows = computed(() => buildMotionLabOverviewRows(motionReport.value, replayTrace.value));
 const warningRows = computed(() => buildMotionWarningRows(motionReport.value, 6));
 const assertionRows = computed(() => buildMotionLabAssertionRows(assertionResults.value));
@@ -654,6 +684,12 @@ function selectScenario(id) {
   resetLabScene();
 }
 
+function applyParamPreset(id) {
+  Object.assign(motionParams, applyMotionLabParamPreset(motionParams, id));
+  resetLabScene();
+  return getMotionParams();
+}
+
 function captureReplayTrace() {
   if (!runtime) return;
   updateScenarioAssertions();
@@ -774,7 +810,10 @@ function installDebugApi() {
     copyDiff: copyTraceDiffExport,
     copyReport: copyLabReport,
     copyTrace: copyReplayTrace,
+    applyPreset: applyParamPreset,
     params: () => getMotionParams(),
+    presetId: () => resolveMotionLabParamPresetId(motionParams),
+    presets: () => paramPresetRows.value,
     report: () => motionReport.value,
     reset: resetLabScene,
     run: runSelectedScenario,

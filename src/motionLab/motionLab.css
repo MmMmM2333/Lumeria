@@ -109,6 +109,88 @@
   line-height: 1.2;
 }
 
+.motion-lab-preset-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.motion-lab-preset-status span,
+.motion-lab-preset-status strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.motion-lab-preset-status span {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.motion-lab-preset-status strong {
+  color: rgba(45, 212, 191, 0.9);
+}
+
+.motion-lab-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.motion-lab-preset {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  text-align: left;
+}
+
+.motion-lab-preset-selected {
+  border-color: rgba(45, 212, 191, 0.45);
+  background: rgba(45, 212, 191, 0.1);
+}
+
+.motion-lab-preset span,
+.motion-lab-preset strong,
+.motion-lab-preset small {
+  min-width: 0;
+  overflow: hidden;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.motion-lab-preset span {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.motion-lab-preset strong {
+  color: rgba(255, 255, 255, 0.66);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.motion-lab-preset small {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 10px;
+}
+
 .motion-lab-control {
   display: grid;
   gap: 6px;
