@@ -26,6 +26,7 @@ import { runLiveDesktopDiagnosticsTests } from "../components/backgroundDebug/li
 import { runMotionCaptureProfileModelTests } from "../components/backgroundDebug/motionCaptureProfileModelTests.js";
 import { runMotionDebugPanelModelTests } from "../components/backgroundDebug/motionDebugPanelModelTests.js";
 import { runMotionDebugWorkspaceModelTests } from "../components/backgroundDebug/motionDebugWorkspaceModelTests.js";
+import { runMotionFocusedDebugExportModelTests } from "../components/backgroundDebug/motionFocusedDebugExportModelTests.js";
 import { runMotionReplayViewerModelTests } from "../components/backgroundDebug/motionReplayViewerModelTests.js";
 import { runMotionLabModelTests } from "../motionLab/motionLabModelTests.js";
 import { runBackgroundImageLayoutTests } from "./backgroundImageLayoutTests.js";
@@ -155,6 +156,7 @@ runLiveDesktopDiagnosticsTests();
 runMotionCaptureProfileModelTests();
 runMotionDebugPanelModelTests();
 runMotionDebugWorkspaceModelTests();
+runMotionFocusedDebugExportModelTests();
 runMotionReplayViewerModelTests();
 runMotionLabModelTests();
 runFolderLayoutStylesTests();
