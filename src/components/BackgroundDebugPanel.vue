@@ -857,9 +857,187 @@
       <section class="motion-debug-workspace-region">
         <header>
           <strong>Timeline</strong>
-          <span>{{ motionTimelineGroups.length }} tracks / {{ motionReplayEventRows.length }} replay events</span>
+          <span>{{ motionTrackChartHeaderLabel }}</span>
         </header>
         <div class="motion-debug-workspace-section-list">
+        <div class="background-debug-subsection motion-debug-track-chart-section">
+          <div class="background-debug-subtitle">Track Chart</div>
+          <div class="motion-debug-track-chart-toolbar">
+            <div class="background-debug-mode-group motion-debug-track-chart-mode-group" role="group" aria-label="Track chart display mode">
+              <button
+                type="button"
+                :class="[
+                  'background-debug-mode-button',
+                  motionTrackChartDisplayMode === MOTION_TRACK_CHART_DISPLAY_RAW && 'background-debug-mode-button-active',
+                ]"
+                @click="setMotionTrackChartDisplayMode(MOTION_TRACK_CHART_DISPLAY_RAW)"
+              >
+                Raw
+              </button>
+              <button
+                type="button"
+                :class="[
+                  'background-debug-mode-button',
+                  motionTrackChartDisplayMode === MOTION_TRACK_CHART_DISPLAY_NORMALIZED && 'background-debug-mode-button-active',
+                ]"
+                @click="setMotionTrackChartDisplayMode(MOTION_TRACK_CHART_DISPLAY_NORMALIZED)"
+              >
+                Normalized
+              </button>
+            </div>
+            <div class="motion-debug-track-chart-series-controls" role="group" aria-label="Track chart series visibility">
+              <label
+                v-for="option in motionTrackChartSeriesOptions"
+                :key="option.key"
+                class="background-debug-toggle motion-debug-track-chart-series-toggle"
+              >
+                <input
+                  :name="`motionTrackChartSeries-${option.key}`"
+                  type="checkbox"
+                  :checked="motionTrackChartSeriesVisibility[option.key]"
+                  @change="toggleMotionTrackChartSeries(option.key, $event)"
+                >
+                <span>{{ option.label }}</span>
+              </label>
+            </div>
+          </div>
+
+          <dl v-if="motionTrackChartModel" class="background-debug-status-grid motion-debug-track-chart-summary">
+            <div
+              v-for="row in motionTrackChartSummaryRows"
+              :key="row.label"
+              :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
+            >
+              <dt>{{ row.label }}</dt>
+              <dd :title="row.value">{{ row.value }}</dd>
+            </div>
+          </dl>
+
+          <div v-if="motionTrackChartModel" class="motion-debug-track-chart-axis" aria-hidden="true">
+            <span
+              v-for="tick in motionTrackChartModel.axis.ticks"
+              :key="`${tick.timeMs}-${tick.x}`"
+              :style="{ left: `${tick.x}%` }"
+            >
+              {{ tick.label }}
+            </span>
+          </div>
+
+          <div v-if="motionTrackChartModel" class="motion-debug-track-chart-list">
+            <section
+              v-for="track in motionTrackChartModel.tracks"
+              :key="track.key"
+              :class="[
+                'motion-debug-track-chart-row',
+                track.isSelected && 'background-debug-motion-selected',
+              ]"
+            >
+              <button
+                type="button"
+                class="motion-debug-track-chart-track-button"
+                @click="selectMotionTrackChartTrack(track)"
+              >
+                <span class="motion-debug-track-chart-row-header">
+                  <strong :title="track.targetProp">{{ track.targetProp }}</strong>
+                  <span>{{ track.summary }}</span>
+                </span>
+              </button>
+              <div class="motion-debug-track-chart-row-meta">
+                <span :title="track.laneLabel">{{ track.laneLabel }}</span>
+                <span :title="track.sourceLabel">{{ track.sourceLabel }}</span>
+                <span>v {{ formatMotionTrackChartValue(track.stats.maxAbsVelocity) }}</span>
+                <span>d {{ formatMotionTrackChartValue(track.stats.maxAbsDelta) }}</span>
+              </div>
+              <div class="motion-debug-track-chart-current">
+                <span>value {{ formatMotionTrackChartValue(track.current?.value) }}</span>
+                <span>to {{ formatMotionTrackChartValue(track.current?.to) }}</span>
+                <span>delta {{ formatMotionTrackChartValue(track.current?.delta) }}</span>
+                <span>velocity {{ formatMotionTrackChartValue(track.current?.velocity) }}</span>
+              </div>
+              <div class="motion-debug-track-chart-activity" aria-hidden="true">
+                <span
+                  :style="{
+                    left: `${track.timeline.startX}%`,
+                    width: `${track.timeline.width}%`,
+                  }"
+                ></span>
+              </div>
+              <div class="motion-debug-track-chart-plot">
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                  <line
+                    v-for="tick in motionTrackChartModel.axis.ticks"
+                    :key="`${track.key}-tick-${tick.timeMs}-${tick.x}`"
+                    class="motion-debug-track-chart-axis-line"
+                    :x1="tick.x"
+                    y1="0"
+                    :x2="tick.x"
+                    y2="100"
+                  />
+                  <path class="background-debug-motion-curve-grid" d="M 0 50 L 100 50" />
+                  <template v-for="seriesKey in track.visibleSeries" :key="`${track.key}-${seriesKey}`">
+                    <path
+                      v-if="track.series[seriesKey].path"
+                      :class="[
+                        'motion-debug-track-chart-series',
+                        `motion-debug-track-chart-series-${seriesKey}`,
+                      ]"
+                      :d="track.series[seriesKey].path"
+                    />
+                  </template>
+                  <line
+                    v-for="marker in track.eventMarkers"
+                    :key="`${track.key}-${marker.type}-${marker.timeMs}-${marker.x}`"
+                    class="background-debug-motion-curve-event"
+                    :x1="marker.x"
+                    y1="5"
+                    :x2="marker.x"
+                    y2="95"
+                  >
+                    <title>{{ marker.detail }}</title>
+                  </line>
+                  <line
+                    class="background-debug-motion-replay-curve-cursor"
+                    :x1="motionTrackChartModel.cursor.x"
+                    y1="0"
+                    :x2="motionTrackChartModel.cursor.x"
+                    y2="100"
+                  />
+                </svg>
+              </div>
+              <div class="motion-debug-track-chart-event-list" v-if="track.eventMarkers.length">
+                <button
+                  v-for="marker in track.eventMarkers"
+                  :key="`${track.key}-event-${marker.type}-${marker.timeMs}`"
+                  type="button"
+                  class="motion-debug-track-chart-event-button"
+                  :title="marker.detail"
+                  @click.stop="selectMotionTrackChartEvent(track, marker)"
+                >
+                  <span>{{ marker.type }}</span>
+                  <span>{{ formatMotionReplayTime(marker.timeMs) }}</span>
+                </button>
+              </div>
+              <div class="motion-debug-track-chart-ranges">
+                <span
+                  v-for="option in motionTrackChartSeriesOptions"
+                  :key="`${track.key}-range-${option.key}`"
+                  :title="track.rangeLabels[option.key]"
+                >
+                  {{ option.label }} {{ track.rangeLabels[option.key] }}
+                </span>
+              </div>
+            </section>
+            <div v-if="motionTrackChartModel.tracks.length === 0" class="background-debug-motion-empty">
+              no replay chart tracks
+            </div>
+            <div v-if="motionTrackChartModel.limits.tracksLimited" class="background-debug-motion-empty">
+              showing {{ motionTrackChartModel.summary.visibleTrackCount }} of {{ motionTrackChartModel.summary.trackCount }} chart tracks
+            </div>
+          </div>
+          <div v-else class="background-debug-motion-empty">
+            load a replay trace to inspect track curves
+          </div>
+        </div>
         <div class="background-debug-subsection">
           <div class="background-debug-subtitle">Replay Viewer</div>
           <label class="background-debug-control background-debug-textarea-control">
@@ -1513,6 +1691,13 @@ import {
   MOTION_FOCUSED_DEBUG_SCHEMA,
 } from "./backgroundDebug/motionFocusedDebugExportModel.js";
 import {
+  buildMotionTrackChartModel,
+  MOTION_TRACK_CHART_DISPLAY_NORMALIZED,
+  MOTION_TRACK_CHART_DISPLAY_RAW,
+  MOTION_TRACK_CHART_SERIES_KEYS,
+  normalizeMotionTrackChartSeriesVisibility,
+} from "./backgroundDebug/motionTrackChartModel.js";
+import {
   buildMotionDebugWorkspaceCaptureProfile,
   closeMotionDebugWorkspace,
   createMotionDebugWorkspaceSession,
@@ -1603,6 +1788,8 @@ const motionReplayFilterQuery = ref("");
 const motionReplayPlaying = ref(false);
 const motionReplayIntervalStartMs = ref(0);
 const motionReplayIntervalEndMs = ref(0);
+const motionTrackChartDisplayMode = ref(MOTION_TRACK_CHART_DISPLAY_RAW);
+const motionTrackChartSeriesVisibility = ref(normalizeMotionTrackChartSeriesVisibility());
 const motionWorkspaceSession = ref(createMotionDebugWorkspaceSession({
   viewportWidth: typeof window === "undefined" ? undefined : window.innerWidth,
 }));
@@ -1629,6 +1816,10 @@ let kawaseLiveDesktopSyncTimer = null;
 
 const motionCaptureProfiles = getMotionCaptureProfiles();
 const motionCaptureAllowedProps = MOTION_CAPTURE_ALLOWED_PROPS;
+const motionTrackChartSeriesOptions = MOTION_TRACK_CHART_SERIES_KEYS.map((key) => ({
+  key,
+  label: key,
+}));
 
 const sliders = [
   { key: "saturation", label: "saturation", min: 0.8, max: 1.8, step: 0.01, digits: 2 },
@@ -1920,6 +2111,31 @@ const motionReplayCurveGroups = computed(() => motionReplayViewerTrace.value
 const motionReplayOverlayRows = computed(() => motionReplayViewerTrace.value
   ? buildMotionReplayOverlayRows(motionReplayViewerTrace.value, motionReplayCurrentTimeMs.value, motionReplayFilters.value)
   : []);
+const motionTrackChartModel = computed(() => motionReplayViewerTrace.value
+  ? buildMotionTrackChartModel(motionReplayViewerTrace.value, {
+    cursorTimeMs: motionReplayCurrentTimeMs.value,
+    displayMode: motionTrackChartDisplayMode.value,
+    filters: motionReplayFilters.value,
+    selectedTrack: motionWorkspaceSession.value.selectedTrack,
+    seriesVisibility: motionTrackChartSeriesVisibility.value,
+  })
+  : null);
+const motionTrackChartHeaderLabel = computed(() => {
+  const chart = motionTrackChartModel.value;
+  if (!chart) return `${motionTimelineGroups.value.length} live tracks / no replay trace`;
+  return `${chart.summary.visibleTrackCount}/${chart.summary.trackCount} chart tracks / ${chart.summary.eventCount} events`;
+});
+const motionTrackChartSummaryRows = computed(() => {
+  const chart = motionTrackChartModel.value;
+  if (!chart) return [];
+  return [
+    { label: "window", value: `${formatMotionReplayTime(chart.zoomWindow.startMs)}..${formatMotionReplayTime(chart.zoomWindow.endMs)}`, wide: true },
+    { label: "samples", value: formatCount(chart.summary.sampleCount) },
+    { label: "events", value: formatCount(chart.summary.eventCount) },
+    { label: "tracks", value: `${formatCount(chart.summary.visibleTrackCount)} / ${formatCount(chart.summary.trackCount)}` },
+    { label: "points", value: `<=${formatCount(chart.limits.maxPointsPerSeries)} / series` },
+  ];
+});
 const motionFocusedDebugExportAvailable = computed(() => Boolean(motionReplayViewerTrace.value));
 const motionWorkspaceOpen = computed(() => canDebugMotion.value && motionWorkspaceSession.value.isOpen);
 const motionWorkspaceFullscreen = computed(() => motionWorkspaceSession.value.mode === MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN);
@@ -1989,6 +2205,12 @@ function formatMotionChartStat(value) {
 function formatMotionReplayTime(value) {
   const number = Number(value);
   return Number.isFinite(number) ? `${number.toFixed(0)}ms` : "-";
+}
+
+function formatMotionTrackChartValue(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+  return number.toFixed(2);
 }
 
 function getMotionWorkspaceViewportWidth() {
@@ -2202,6 +2424,32 @@ function selectMotionWorkspaceCurve(group) {
   openMotionWorkspace();
   motionWorkspaceSession.value = selectMotionDebugWorkspaceTrack(motionWorkspaceSession.value, group);
   motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, group.latestTimeMs);
+}
+
+function setMotionTrackChartDisplayMode(mode) {
+  motionTrackChartDisplayMode.value = mode === MOTION_TRACK_CHART_DISPLAY_NORMALIZED
+    ? MOTION_TRACK_CHART_DISPLAY_NORMALIZED
+    : MOTION_TRACK_CHART_DISPLAY_RAW;
+}
+
+function toggleMotionTrackChartSeries(key, event) {
+  motionTrackChartSeriesVisibility.value = normalizeMotionTrackChartSeriesVisibility({
+    ...motionTrackChartSeriesVisibility.value,
+    [key]: event.target.checked,
+  });
+}
+
+function selectMotionTrackChartTrack(track) {
+  selectMotionWorkspaceTrack(track);
+  if (track.current) {
+    motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, track.current.timeMs);
+  }
+}
+
+function selectMotionTrackChartEvent(track, marker) {
+  selectMotionWorkspaceTrack(track);
+  motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, marker.timeMs);
+  setMotionReplayCurrentTime(marker.timeMs, { pause: true });
 }
 
 function clearMotionWorkspaceSelection() {
@@ -3595,6 +3843,267 @@ onBeforeUnmount(() => {
   stroke-width: 1.2;
 }
 
+.motion-debug-track-chart-section {
+  display: grid;
+  gap: 8px;
+}
+
+.motion-debug-track-chart-toolbar {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.75fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.motion-debug-track-chart-mode-group {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.motion-debug-track-chart-series-controls {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(54px, 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+
+.motion-debug-track-chart-series-toggle {
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.motion-debug-track-chart-series-toggle span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.motion-debug-track-chart-summary {
+  margin: 0;
+}
+
+.motion-debug-track-chart-axis {
+  position: relative;
+  height: 18px;
+  margin: 0 2px;
+  color: rgba(255, 255, 255, 0.42);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 9.5px;
+  line-height: 1;
+}
+
+.motion-debug-track-chart-axis span {
+  position: absolute;
+  top: 2px;
+  min-width: 34px;
+  transform: translateX(-50%);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.motion-debug-track-chart-axis span:first-child {
+  transform: translateX(0);
+  text-align: left;
+}
+
+.motion-debug-track-chart-axis span:last-child {
+  transform: translateX(-100%);
+  text-align: right;
+}
+
+.motion-debug-track-chart-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.motion-debug-track-chart-row {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.motion-debug-track-chart-track-button {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.motion-debug-track-chart-track-button:hover strong {
+  color: white;
+}
+
+.motion-debug-track-chart-track-button:focus-visible {
+  outline: 2px solid rgba(120, 190, 255, 0.55);
+  outline-offset: 2px;
+}
+
+.motion-debug-track-chart-row-header,
+.motion-debug-track-chart-row-meta,
+.motion-debug-track-chart-current,
+.motion-debug-track-chart-ranges {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  align-items: center;
+}
+
+.motion-debug-track-chart-row-header {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.motion-debug-track-chart-row-meta {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr) auto auto;
+}
+
+.motion-debug-track-chart-current,
+.motion-debug-track-chart-ranges {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.motion-debug-track-chart-row-header strong,
+.motion-debug-track-chart-row-header span,
+.motion-debug-track-chart-row-meta span,
+.motion-debug-track-chart-current span,
+.motion-debug-track-chart-ranges span {
+  min-width: 0;
+  overflow: hidden;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.motion-debug-track-chart-row-header strong {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.motion-debug-track-chart-row-header span,
+.motion-debug-track-chart-row-meta,
+.motion-debug-track-chart-current,
+.motion-debug-track-chart-ranges {
+  color: rgba(255, 255, 255, 0.52);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+}
+
+.motion-debug-track-chart-current {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.motion-debug-track-chart-activity {
+  position: relative;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.motion-debug-track-chart-activity span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 2px;
+  border-radius: inherit;
+  background: rgba(110, 220, 255, 0.54);
+}
+
+.motion-debug-track-chart-plot {
+  min-width: 0;
+}
+
+.motion-debug-track-chart-plot svg {
+  display: block;
+  width: 100%;
+  height: 58px;
+  min-width: 0;
+  overflow: visible;
+}
+
+.motion-debug-track-chart-plot path,
+.motion-debug-track-chart-plot line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.motion-debug-track-chart-axis-line {
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 1;
+}
+
+.motion-debug-track-chart-series {
+  stroke-width: 1.6;
+}
+
+.motion-debug-track-chart-series-value {
+  stroke: rgba(110, 220, 255, 0.95);
+}
+
+.motion-debug-track-chart-series-to {
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-dasharray: 3 3;
+  stroke-width: 1.1;
+}
+
+.motion-debug-track-chart-series-delta {
+  stroke: rgba(255, 205, 105, 0.95);
+}
+
+.motion-debug-track-chart-series-velocity {
+  stroke: rgba(170, 240, 130, 0.95);
+}
+
+.motion-debug-track-chart-event-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.motion-debug-track-chart-event-button {
+  display: inline-grid;
+  grid-auto-flow: column;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid rgba(255, 135, 150, 0.22);
+  border-radius: 8px;
+  color: rgba(255, 210, 216, 0.82);
+  background: rgba(255, 135, 150, 0.08);
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 9.5px;
+  line-height: 1;
+}
+
+.motion-debug-track-chart-event-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .background-debug-motion-replay-interval-grid,
 .background-debug-motion-replay-overlay-list {
   display: grid;
@@ -4055,6 +4564,17 @@ onBeforeUnmount(() => {
 
   .motion-debug-workspace-grid {
     overflow: auto;
+  }
+
+  .motion-debug-track-chart-toolbar,
+  .motion-debug-track-chart-row-meta,
+  .motion-debug-track-chart-current,
+  .motion-debug-track-chart-ranges {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .motion-debug-track-chart-series-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
