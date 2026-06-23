@@ -123,6 +123,7 @@ export function runMotionRuntimeTests() {
     const target = { x: 0 };
     const driver = spring({ damping: 28, mass: 0.9, stiffness: 190, restDelta: 0.01, restSpeed: 0.01 });
     const canceled = [];
+    runtime.configureDebug({ enabled: true });
     const first = runtime.animate(target, "x", 100, {
       driver,
       onCancel: (reason) => canceled.push(reason),
@@ -416,6 +417,7 @@ export function runMotionRuntimeTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0, y: 0 };
+    runtime.configureDebug({ enabled: true });
     runtime.animate(target, "x", 10, { driver: tween({ duration: 1, ease: "linear" }) });
     runtime.animate(target, "y", 20, { driver: tween({ duration: 1, ease: "linear" }) });
 
@@ -512,6 +514,7 @@ export function runMotionRuntimeTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
+    runtime.configureDebug({ enabled: true });
     const control = runtime.animate(target, "x", 10, { driver: tween({ duration: 1, ease: "linear" }) });
     const snapshot = runtime.debugSnapshot();
 
@@ -528,6 +531,7 @@ export function runMotionRuntimeTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0, y: 0 };
+    runtime.configureDebug({ enabled: true });
     runtime.animate(target, "x", 10, { driver: tween({ duration: 1, ease: "linear" }) });
     runtime.animate(target, "y", 20, { driver: tween({ duration: 1, ease: "linear" }) });
 
@@ -659,7 +663,9 @@ export function runMotionRuntimeTests() {
     assert(eventTypes.includes("frame"), "observer should receive lightweight frame events");
     assert(!eventTypes.includes("sample"), "observer should not receive heavy sample events when debug sampling is disabled");
     assert(eventTypes.includes("cancel"), "observer should receive cancel events");
-    assert(events.some((event) => event.type === "start" && event.record?.laneKey === "observer-x"), "observer start event should expose animation record data");
+    assert(events.some((event) => event.type === "start" && event.record == null), "disabled debug observer start event should stay lightweight");
+    assert(runtime.debug.started === 0, "disabled debug should not count lifecycle start events");
+    assert(runtime.debug.activeTargets === 0, "disabled debug should not maintain active target counters");
     assert(events.some((event) => event.type === "frame" && event.activeAnimationCount === 1 && !Array.isArray(event.animations)), "observer frame event should expose lightweight runtime state without sampled animations");
     assert(objectEvents.includes("start"), "object observer should receive runtime events");
 
@@ -676,6 +682,26 @@ export function runMotionRuntimeTests() {
 
     assert(events.length === countBeforeUnsubscribe, "unsubscribe should stop function observer events");
     assert(objectEvents.length === objectCountBeforeUnsubscribe, "unsubscribe should stop object observer events");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    const events = [];
+    runtime.configureDebug({ enabled: true });
+    runtime.addObserver((event) => events.push(event));
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      laneKey: "observer-enabled-x",
+    });
+
+    assert(
+      events.some((event) => event.type === "start" && event.record?.laneKey === "observer-enabled-x"),
+      "enabled debug observer start event should expose animation record data",
+    );
+    assert(runtime.debug.started === 1, "enabled debug should count lifecycle start events");
+    assert(runtime.debug.activeTargets === 1, "enabled debug should maintain active target counters");
   }
 
   {

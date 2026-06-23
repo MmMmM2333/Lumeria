@@ -58,6 +58,7 @@ export function runPageTrackMotionTests() {
     const runtime = createMotionRuntime({ autoStart: false });
     const motionState = createPageTrackMotionState();
     const pageTrack = { x: 0 };
+    runtime.configureDebug({ enabled: true });
 
     updatePageTrackMotion(motionState, pageTrack, {
       pageSpan: 400,
@@ -114,6 +115,7 @@ export function runPageTrackMotionTests() {
     const runtime = createMotionRuntime({ autoStart: false });
     const motionState = createPageTrackMotionState();
     const pageTrack = { x: 0 };
+    runtime.configureDebug({ enabled: true });
 
     updatePageTrackMotion(motionState, pageTrack, {
       pageSpan: 400,
@@ -172,6 +174,7 @@ export function runPageTrackMotionTests() {
     const runtime = createMotionRuntime({ autoStart: false });
     const motionState = createPageTrackMotionState();
     const pageTrack = { x: 0 };
+    runtime.configureDebug({ enabled: true });
 
     updatePageTrackMotion(motionState, pageTrack, {
       pageSpan: 400,

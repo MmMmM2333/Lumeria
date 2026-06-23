@@ -223,6 +223,14 @@ export function createMotionRuntime(options = {}) {
   }
 
   function recordDebugEvent(type, animation, extra) {
+    if (!debugAdapter.isEnabled()) {
+      emitMotionEvent(type, {
+        active: activeAnimations.has(animation),
+        frame: frameCount,
+        timeMs: runtimeTimeMs,
+      });
+      return;
+    }
     const event = makeDebugEvent(type, animation, extra);
     emitMotionEvent(type, {
       active: activeAnimations.has(animation),

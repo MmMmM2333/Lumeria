@@ -566,20 +566,25 @@ export function createMotionRuntimeDebugAdapter() {
 
   function observe(event = {}) {
     if (!event || typeof event !== "object") return;
-    if (event.type === "targetMetadata") {
-      rememberTargetMetadata(event);
-      return;
-    }
     if (event.type === "frame") {
       observeFrame(event);
+      return;
+    }
+    if (event.type === "debugConfig") return;
+    if (!config.enabled) return;
+    if (event.type === "targetMetadata") {
+      rememberTargetMetadata(event);
       return;
     }
     if (event.type === "sample") {
       observeSample(event);
       return;
     }
-    if (event.type === "debugConfig") return;
     observeLifecycleEvent(event);
+  }
+
+  function isEnabled() {
+    return config.enabled === true;
   }
 
   function configureDebug(patch = {}) {
@@ -683,6 +688,7 @@ export function createMotionRuntimeDebugAdapter() {
     configureDebug,
     debug,
     getConfig: cloneConfig,
+    isEnabled,
     makeReport,
     makeSnapshot,
     makeTargetMetadataRecord,

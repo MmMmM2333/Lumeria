@@ -162,6 +162,7 @@ export async function runDragPreviewLayerTests() {
 
   {
     motionRuntime.reset();
+    motionRuntime.configureDebug({ enabled: true });
     const layer = new DragPreviewLayer();
     const previewState = {
       cellSize: { height: 80, width: 80 },
@@ -190,6 +191,7 @@ export async function runDragPreviewLayerTests() {
       );
 
       motionRuntime.reset();
+      motionRuntime.configureDebug({ enabled: true });
       layer.update({ ...baseState, previewState });
       layer.update({
         ...baseState,

@@ -343,6 +343,7 @@ export function runMotionTweenTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
+    runtime.configureDebug({ enabled: true });
     const first = motion(target)
       .interrupt("replace")
       .to({ duration: 1, ease: "linear", x: 10 })
@@ -362,6 +363,7 @@ export function runMotionTweenTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
+    runtime.configureDebug({ enabled: true });
     motion(target)
       .to({ duration: 1, ease: "linear", x: 10 })
       .start({ runtime });
@@ -543,6 +545,7 @@ export function runMotionTweenTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { scale: { x: 1, y: 1 } };
+    runtime.configureDebug({ enabled: true });
     motionTo(target, {
       debugMetadata: {
         itemId: "app-a",
@@ -631,6 +634,7 @@ export function runMotionTweenTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
+    runtime.configureDebug({ enabled: true });
     motionTo(target, { duration: 1, ease: "linear", x: 10 }, { runtime });
     motionTo(target, { duration: 1, ease: "linear", lane: "additive", laneKey: "jiggle", x: 4 }, { runtime });
 
@@ -731,6 +735,7 @@ export function runMotionTweenTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
+    runtime.configureDebug({ enabled: true });
     motionTo(target, { duration: 1, ease: "linear", x: 10 }, { runtime });
 
     killMotionOf(target, "x", { reason: "route-change", runtime });

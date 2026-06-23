@@ -9,6 +9,7 @@ export function runMotionCleanupTests() {
   };
 
   motionRuntime.reset();
+  motionRuntime.configureDebug({ enabled: true });
   const child = { children: [], scale: { x: 1, y: 1 }, x: 0 };
   const node = { children: [child], scale: { x: 1, y: 1 }, x: 0 };
   const reasons = [];

@@ -300,6 +300,7 @@ export async function runFolderOverlayLayerTests() {
 
   {
     motionRuntime.reset();
+    motionRuntime.configureDebug({ enabled: true });
     const layer = Object.create(FolderOverlayLayer.prototype);
     layer.currentFolderId = null;
     layer.folderTransitions = new FolderTransitionMachine(layer);
@@ -353,6 +354,7 @@ export async function runFolderOverlayLayerTests() {
 
   {
     motionRuntime.reset();
+    motionRuntime.configureDebug({ enabled: true });
     const layer = Object.create(FolderOverlayLayer.prototype);
     layer.currentFolderId = null;
     layer.folderTransitions = new FolderTransitionMachine(layer);
@@ -399,6 +401,7 @@ export async function runFolderOverlayLayerTests() {
 
   {
     motionRuntime.reset();
+    motionRuntime.configureDebug({ enabled: true });
     const layer = Object.create(FolderOverlayLayer.prototype);
     layer.currentFolderId = null;
     layer.folderTransitions = new FolderTransitionMachine(layer);
@@ -1141,6 +1144,7 @@ export async function runFolderOverlayLayerTests() {
 
   {
     motionRuntime.reset();
+    motionRuntime.configureDebug({ enabled: true });
     const layer = Object.create(FolderOverlayLayer.prototype);
     const dot = {
       alpha: 0,
