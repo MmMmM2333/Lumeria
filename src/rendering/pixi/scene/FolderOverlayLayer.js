@@ -22,6 +22,7 @@ import {
   applyClosingPresentationOverlayState,
   getClosingPresentationStageHitRects,
 } from "./folderClosingHandoff.js";
+import { FolderCloseSession } from "./folderCloseSession.js";
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
 import {
   FolderTransitionCoordinator,
@@ -450,6 +451,7 @@ export class FolderOverlayLayer extends Container {
     this.openingGhosts = new FolderOpeningGhostController(this, {
       ghostFactory: () => new IconNode(),
     });
+    this.closeSession = new FolderCloseSession(this);
     this.closingPreviewSwap = new FolderClosingPreviewSwapController(this, {
       containerFactory: () => new Container(),
       getIconTexture: (item, render, ghost) => getCachedIconTexture(item, render, ghost),
@@ -835,7 +837,7 @@ export class FolderOverlayLayer extends Container {
       });
     }
     if (!state.isFolderClosing && this.closingGhostFolderId) {
-      this.closingGhostFolderId = null;
+      this.clearClosingFolderId();
       this.closingGhosts.clear();
     }
 
@@ -1172,7 +1174,7 @@ export class FolderOverlayLayer extends Container {
       });
       this.detachedClosingVisuals.push(visual);
       this.pruneDetachedClosingVisuals();
-      this.closingGhostFolderId = null;
+      this.clearClosingFolderId();
       this.closingGhosts.clear({ restorePageTrack: false, reveal: false });
       const finishAfterGeometry = () => {
         if (detachedVisual.destroyed || detachedVisual.finishQueued) return;
@@ -1193,7 +1195,7 @@ export class FolderOverlayLayer extends Container {
       return;
     }
 
-    this.closingGhostFolderId = null;
+    this.clearClosingFolderId();
     this.closingGhosts.clear({ restorePageTrack: false, reveal: false });
   }
 
@@ -1217,6 +1219,11 @@ export class FolderOverlayLayer extends Container {
     const folderId = next ? this.closingGhostFolderId || this.currentFolderId || null : null;
     if (next) this.onClosingHandoffReady(folderId);
     this.onInternalActivityChange(next, folderId);
+  }
+
+  clearClosingFolderId() {
+    if (this.closeSession) this.closeSession.clearFolderId();
+    else this.closingGhostFolderId = null;
   }
 
   revealIconNodes() {
