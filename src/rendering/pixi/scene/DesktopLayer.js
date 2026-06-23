@@ -492,7 +492,17 @@ export class DesktopLayer extends Container {
         let existingFolderHandoffEntry = item?.type === "folder" ? this.getFolderHandoffEntry(item.id) : null;
         const isActiveFolderClosingHandoff = item?.type === "folder" && hasFolderClosingHandoffId(state, item.id);
         const isRawFolderSourceGhosted = item?.type === "folder" && hasRawFolderSourceGhosting(state, item.id);
-        if (existingFolderHandoffEntry && !isActiveFolderClosingHandoff && isRawFolderSourceGhosted) {
+        // Retire a stale handoff node when the source is ghosted but no longer
+        // actively closing — UNLESS it has already visually released (it is the
+        // icon's live visual). Clearing a released node here would drop it back
+        // to the ghosted (hidden) state while folderSourceGhostedIds lingers,
+        // leaving the icon blank until that ghosting clears (~1s later).
+        if (
+          existingFolderHandoffEntry &&
+          !isActiveFolderClosingHandoff &&
+          isRawFolderSourceGhosted &&
+          !existingFolderHandoffEntry.visualReleased
+        ) {
           this.clearFolderHandoffNode(item.id);
           existingFolderHandoffEntry = null;
         }
@@ -809,7 +819,11 @@ export class DesktopLayer extends Container {
       if (handoffEntry) {
         const activeHandoff = hasFolderClosingHandoffId(state, folderId) ||
           isFolderLayerHandoffActive(this.singleStageFolderLayer, folderId);
-        if (rawGhosted || (ownershipGhosted && !activeHandoff && handoffEntry.visualReleased === true)) {
+        // Only retire the handoff node once the closing handoff is no longer
+        // active; clearing it mid-handoff (rawGhosted is true throughout a close)
+        // re-creates a fresh entry every frame, resetting visualReleased and
+        // re-hiding visualWrap, so the icon stays blank until activeHandoff ends.
+        if (!activeHandoff && (rawGhosted || (ownershipGhosted && handoffEntry.visualReleased === true))) {
           this.clearFolderHandoffNode(folderId);
         } else {
           node.__folderSourceGhostedByOwnership = Boolean(nextGhosted);
