@@ -497,6 +497,15 @@ export class FolderOverlayLayer extends Container {
   }
 
   update(state) {
+    const prepared = this.prepareFolderOverlayState(state);
+    if (prepared.done) return prepared.result;
+    const resolved = this.resolveFolderOverlayGeometry(prepared);
+    const synced = this.syncFolderOverlayNodes(resolved);
+    this.startFolderOverlayTransitions(synced);
+    return resolved.geometry;
+  }
+
+  prepareFolderOverlayState(state) {
     this.stageRect = state.stageRect;
     const isPrewarm = Boolean(state.prewarm);
     if (!isPrewarm) clearLaunchIconBounds("folder");
@@ -505,7 +514,7 @@ export class FolderOverlayLayer extends Container {
     if (!state.renderedFolder) {
       this.clearRegisteredIconBounds();
       if (keepClosingHandoff) {
-        return applyClosingHandoffOnlyOverlayState(this);
+        return { done: true, result: applyClosingHandoffOnlyOverlayState(this) };
       }
       this.teardownTransientState({
         cancelPageTrackReason: "cleanup",
@@ -522,7 +531,7 @@ export class FolderOverlayLayer extends Container {
       if (state.folderPanelRef) state.folderPanelRef.value = null;
       if (state.folderViewportRef) state.folderViewportRef.value = null;
       this.notifyTitleFrame(null);
-      return null;
+      return { done: true, result: null };
     }
     this.panel.visible = true;
     this.closingPreviewSwap.ensureLayer();
@@ -556,6 +565,20 @@ export class FolderOverlayLayer extends Container {
     if (this.closingGhostFolderId && (this.closingGhostFolderId !== folderId || !isClosing)) {
       this.detachClosingPresentationForOpen(folderId);
     }
+    return {
+      done: false,
+      folderId,
+      geometry,
+      isClosing,
+      isNewFolder,
+      isPrewarm,
+      state,
+      wasClosing,
+    };
+  }
+
+  resolveFolderOverlayGeometry(context) {
+    const { folderId, geometry, isClosing, isNewFolder, isPrewarm, state, wasClosing } = context;
     const overlayTargets = resolveFolderOverlayTargets({
       folder: state.renderedFolder,
       folderOpeningOriginBounds: state.folderOpeningOriginBounds,
@@ -634,10 +657,6 @@ export class FolderOverlayLayer extends Container {
     });
 
     if (!isPrewarm) this.bindFakeRefs(state, geometry);
-    const seen = new Set();
-    const boundsRefreshers = new Map();
-    const openingGhostTargets = [];
-    const closingGhostTargets = [];
     const renderPlan = makeFolderOverlayRenderPlan({
       closeThumbRect,
       closingGhostKeys: this.closingGhostKeys,
@@ -672,7 +691,34 @@ export class FolderOverlayLayer extends Container {
       stageWidth: state.width,
       targetTrackX,
     });
+    return {
+      ...context,
+      closeIconRect,
+      closeThumbRect,
+      folderClientRect,
+      folderThumbClientRect,
+      getOpeningPreviewChildClientRect,
+      iconSize,
+      previewSlots,
+      renderPlan,
+    };
+  }
 
+  syncFolderOverlayNodes(context) {
+    const {
+      closeThumbRect,
+      folderClientRect,
+      folderId,
+      getOpeningPreviewChildClientRect,
+      iconSize,
+      isPrewarm,
+      renderPlan,
+      state,
+    } = context;
+    const seen = new Set();
+    const boundsRefreshers = new Map();
+    const openingGhostTargets = [];
+    const closingGhostTargets = [];
     for (const entry of renderPlan.entries) {
       const { index, isInteractivePage, item, key, nodeState, pageIndex, targetCenter, x, y } = entry;
       seen.add(key);
@@ -743,6 +789,31 @@ export class FolderOverlayLayer extends Container {
 
     const closingPreviewSwapTargets = renderPlan.closingPreviewSwapTargets;
     this.iconBoundsRefreshers = boundsRefreshers;
+    return {
+      ...context,
+      closingGhostTargets,
+      closingPreviewSwapTargets,
+      openingGhostTargets,
+      seen,
+    };
+  }
+
+  startFolderOverlayTransitions(context) {
+    const {
+      closeIconRect,
+      closeThumbRect,
+      closingGhostTargets,
+      closingPreviewSwapTargets,
+      folderClientRect,
+      folderId,
+      folderThumbClientRect,
+      geometry,
+      isClosing,
+      isNewFolder,
+      openingGhostTargets,
+      seen,
+      state,
+    } = context;
     if (isNewFolder && !isClosing) {
       this.openingGhosts.start(state, openingGhostTargets, {
         frameSourceRect: folderThumbClientRect || folderClientRect,
@@ -790,7 +861,6 @@ export class FolderOverlayLayer extends Container {
       else this.notifyTitleFrame(geometry.panel);
     }
     this.refreshRegisteredIconBounds();
-    return geometry;
   }
 
   resetPanelMotion(reason, options = {}) {
