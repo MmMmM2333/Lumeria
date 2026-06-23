@@ -529,6 +529,7 @@ export function runMotionRuntimeTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 10 });
 
+    assert(typeof runtime.addObserver === "function", "runtime should expose addObserver");
     assert(typeof runtime.configureDebug === "function", "runtime should expose configureDebug");
     assert(typeof runtime.clearDebugHistory === "function", "runtime should expose clearDebugHistory");
     assert(typeof runtime.describeTarget === "function", "runtime should expose describeTarget");
@@ -597,6 +598,55 @@ export function runMotionRuntimeTests() {
     const cleared = runtime.configureDebug({ recordFilter: null });
     assert(cleared.recordFilter === null, "recordFilter should be clearable");
     assert(runtime.configureDebug({ recordFilter: {} }).recordFilter === null, "empty recordFilter should behave like no filter");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    const events = [];
+    const objectEvents = [];
+    const unsubscribe = runtime.addObserver((event) => events.push(event));
+    const unsubscribeObject = runtime.addObserver({
+      handleEvent(event) {
+        objectEvents.push(event.type);
+      },
+    });
+
+    runtime.describeTarget(target, {
+      kind: "ObserverTarget",
+      label: "Observer target",
+      sourceLabel: "motion-runtime-tests.observer",
+    });
+    const control = runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      laneKey: "observer-x",
+    });
+    runtime.step(0.25);
+    control.cancel("observer-test");
+
+    const eventTypes = events.map((event) => event.type);
+    assert(eventTypes.includes("targetMetadata"), "observer should receive target metadata events");
+    assert(eventTypes.includes("start"), "observer should receive start events");
+    assert(eventTypes.includes("sample"), "observer should receive sample events");
+    assert(eventTypes.includes("cancel"), "observer should receive cancel events");
+    assert(events.some((event) => event.type === "start" && event.record?.laneKey === "observer-x"), "observer start event should expose animation record data");
+    assert(events.some((event) => event.type === "sample" && Array.isArray(event.animations)), "observer sample event should expose sampled animations");
+    assert(objectEvents.includes("start"), "object observer should receive runtime events");
+
+    const countBeforeUnsubscribe = events.length;
+    const objectCountBeforeUnsubscribe = objectEvents.length;
+    unsubscribe();
+    unsubscribeObject();
+    runtime.animate(target, "x", 20, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: target.x,
+      laneKey: "observer-after-unsubscribe",
+    });
+    runtime.step(0.1);
+
+    assert(events.length === countBeforeUnsubscribe, "unsubscribe should stop function observer events");
+    assert(objectEvents.length === objectCountBeforeUnsubscribe, "unsubscribe should stop object observer events");
   }
 
   {
