@@ -472,7 +472,7 @@ export class FolderOverlayLayer extends Container {
     this.panelOpenTargetKey = null;
     this.detachedClosingVisuals = [];
     this.nextDetachedClosingVisualToken = 1;
-    this.nextClosingGhostSessionToken = 1;
+    this.nextClosingGhostToken = 1;
     this.titleFrameKey = null;
     this.panelTitleOpening = false;
     this.panelTitleStartScaleX = 1;
@@ -853,7 +853,7 @@ export class FolderOverlayLayer extends Container {
     this.pageTrack.visible = !state.isFolderClosing &&
       !this.folderTransitions.isRevealPending() &&
       !this.openingGhostKeys?.size &&
-      !this.folderTransitions.hasActiveVisuals();
+      !this.folderTransitions.hasActiveCloseVisuals();
     if (!this.frameGhostState) {
       if (!isClosing) this.notifyPanelTitleFrame(geometry.panel);
       else this.notifyTitleFrame(geometry.panel);
@@ -1209,11 +1209,11 @@ export class FolderOverlayLayer extends Container {
   }
 
   setClosingHandoffActive(active) {
-    this.folderTransitions.setHandoffActive(active);
+    this.folderTransitions.setCloseHandoffActive(active);
   }
 
   clearClosingFolderId() {
-    this.folderTransitions.clearFolderId();
+    this.folderTransitions.clearCloseFolderId();
   }
 
   revealIconNodes() {
@@ -1223,9 +1223,9 @@ export class FolderOverlayLayer extends Container {
     }
   }
 
-  createClosingGhostSessionToken(folderId = null) {
-    const token = `closing:${folderId || ""}:${this.nextClosingGhostSessionToken}`;
-    this.nextClosingGhostSessionToken += 1;
+  createClosingGhostToken(folderId = null) {
+    const token = `closing:${folderId || ""}:${this.nextClosingGhostToken}`;
+    this.nextClosingGhostToken += 1;
     return token;
   }
 

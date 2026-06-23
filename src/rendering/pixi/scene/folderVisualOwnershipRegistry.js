@@ -12,7 +12,7 @@ export function makeFolderPageTrackVisualKey(folderId) {
 }
 
 function normalizeOwner(owner = {}) {
-  const token = owner.token ?? owner.sessionToken ?? null;
+  const token = owner.token ?? null;
   if (token == null) return null;
   return {
     folderId: owner.folderId || null,

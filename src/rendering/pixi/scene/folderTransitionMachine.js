@@ -69,6 +69,9 @@ function normalizeToken(token) {
   return token == null ? null : token;
 }
 
+// Open and close intentionally keep independent state/token lines. Open tokens
+// live on activeOpenSession and guard reveal; close tokens live on state.token
+// and guard closing handoff/settlement.
 export class FolderTransitionMachine {
   constructor(layer) {
     this.layer = layer;
@@ -196,7 +199,8 @@ export class FolderTransitionMachine {
     return true;
   }
 
-  beginClose(folderId = null) {
+  beginCloseTransition(folderId = null, options = {}) {
+    const { closeToken = null, handoffGeometry = null } = options;
     const wasHandoffActive = this.state.handoffActive;
     const previousCleanupFrame = this.state.handoffCleanupFrame;
     const previousCleanupToken = this.state.handoffCleanupToken;
@@ -206,9 +210,12 @@ export class FolderTransitionMachine {
       handoffCleanupFrame: previousCleanupFrame,
       handoffCleanupToken: previousCleanupToken,
       phase: "closing",
+      token: normalizeToken(closeToken),
     };
     this.registerFramePending();
+    if (handoffGeometry) this.setCloseHandoffGeometry(handoffGeometry);
     if (wasHandoffActive) this.layer?.onInternalActivityChange?.(false, null);
+    return this.closeToken;
   }
 
   resetSettlement() {
@@ -222,7 +229,7 @@ export class FolderTransitionMachine {
     state.visualPendingKeys = new Set();
   }
 
-  clearAfterVisualReset() {
+  clearCloseVisualState() {
     const state = this.state;
     state.completedControllerGhostKeys = [];
     state.completedPreviewGhosts = [];
@@ -238,7 +245,7 @@ export class FolderTransitionMachine {
     state.previewSwapMotionControls = null;
     state.visualGhostKeys.clear();
     this.resetSettlement();
-    this.setHandoffActive(false);
+    this.setCloseHandoffActive(false);
   }
 
   snapshot() {
@@ -272,25 +279,27 @@ export class FolderTransitionMachine {
     };
   }
 
-  setFolderId(folderId = null) {
+  setCloseFolderId(folderId = null) {
     this.state.folderId = folderId || null;
     if (this.state.folderId && this.state.phase === "idle") this.state.phase = "closing";
   }
 
-  clearFolderId() {
-    this.setFolderId(null);
-    if (!this.hasActiveVisuals() && !this.state.handoffActive) this.state.phase = "idle";
+  clearCloseFolderId() {
+    this.setCloseFolderId(null);
+    if (!this.hasActiveCloseVisuals() && !this.state.handoffActive) this.state.phase = "idle";
   }
 
-  setSessionToken(token = null) {
-    this.state.token = normalizeToken(token);
-  }
-
-  clearSessionToken() {
+  clearCloseToken() {
     this.state.token = null;
   }
 
-  isCurrentToken(token = null) {
+  takeCloseToken() {
+    const token = this.closeToken;
+    this.clearCloseToken();
+    return token;
+  }
+
+  isCurrentCloseToken(token = null) {
     return this.state.token === normalizeToken(token);
   }
 
@@ -330,7 +339,7 @@ export class FolderTransitionMachine {
   }
 
   releasePending(token, keys) {
-    if (!this.isCurrentToken(token)) return [];
+    if (!this.isCurrentCloseToken(token)) return [];
     const pendingKeys = Array.isArray(keys) ? keys : [keys];
     for (const key of pendingKeys) {
       if (!key) continue;
@@ -340,14 +349,14 @@ export class FolderTransitionMachine {
     return this.collectSettlementEvents();
   }
 
-  releaseFrameVisual(token = this.state.token) {
-    if (!this.isCurrentToken(token)) return [];
+  completeCloseFrameVisual(token = this.state.token) {
+    if (!this.isCurrentCloseToken(token)) return [];
     this.state.frameVisualComplete = true;
     return this.releasePending(token, FRAME_VISUAL_PENDING_KEY);
   }
 
-  releaseFrameComplete(token = this.state.token) {
-    if (!this.isCurrentToken(token)) return [];
+  completeCloseFrame(token = this.state.token) {
+    if (!this.isCurrentCloseToken(token)) return [];
     this.state.frameComplete = true;
     this.state.frameVisualComplete = true;
     return this.releasePending(token, [
@@ -356,15 +365,16 @@ export class FolderTransitionMachine {
     ]);
   }
 
-  releaseGhostVisual(token = this.state.token, itemId = null) {
-    if (!this.isCurrentToken(token)) return [];
+  completeCloseGhostVisual(token = this.state.token, itemId = null) {
+    if (!this.isCurrentCloseToken(token)) return null;
     const key = makeGhostVisualPendingKey(itemId);
     if (itemId) this.state.visualGhostKeys.delete(itemId);
     return this.releasePending(token, key);
   }
 
-  releaseGhostComplete(token = this.state.token, itemId = null) {
-    if (!this.isCurrentToken(token)) return [];
+  completeCloseGhost(token = this.state.token, itemId = null, controllerGhostKey = null) {
+    if (!this.isCurrentCloseToken(token)) return null;
+    if (controllerGhostKey) this.state.completedControllerGhostKeys.push(controllerGhostKey);
     const keys = [makeGhostCompletePendingKey(itemId)];
     if (itemId) {
       this.state.ghostKeys.delete(itemId);
@@ -376,14 +386,17 @@ export class FolderTransitionMachine {
     return this.releasePending(token, keys);
   }
 
-  releasePreviewSwap(token = this.state.token, key = null) {
-    if (!this.isCurrentToken(token)) return [];
+  completeClosePreviewSwap(token = this.state.token, key = null) {
+    if (!this.isCurrentCloseToken(token)) return null;
+    if (key && !this.state.previewSwapKeys.has(key)) return null;
     if (key) this.state.previewSwapKeys.delete(key);
     return this.releasePending(token, makePreviewSwapPendingKey(key));
   }
 
-  releaseAllOverlayPending(token = this.state.token) {
-    if (!this.isCurrentToken(token)) return [];
+  releaseCloseOverlayVisuals(token = this.state.token) {
+    if (!this.isCurrentCloseToken(token)) return null;
+    if (this.state.handoffVisualReleased) return null;
+    this.state.handoffVisualReleased = true;
     this.state.frameComplete = true;
     this.state.frameVisualComplete = true;
     this.state.ghostKeys.clear();
@@ -394,14 +407,7 @@ export class FolderTransitionMachine {
     return this.collectSettlementEvents();
   }
 
-  releaseHandoffVisual(token = this.state.token) {
-    if (!this.isCurrentToken(token)) return false;
-    if (this.state.handoffVisualReleased) return false;
-    this.state.handoffVisualReleased = true;
-    return true;
-  }
-
-  resetHandoffVisualRelease() {
+  resetCloseHandoffVisualRelease() {
     this.state.handoffVisualReleased = false;
   }
 
@@ -421,7 +427,7 @@ export class FolderTransitionMachine {
     this.state.revealTimer = null;
   }
 
-  setHandoffGeometry({ detachedTarget = null, rect = null, target = null } = {}) {
+  setCloseHandoffGeometry({ detachedTarget = null, rect = null, target = null } = {}) {
     this.state.detachedFrameTarget = detachedTarget;
     this.state.handoffRect = rect;
     this.state.handoffTarget = target;
@@ -439,7 +445,7 @@ export class FolderTransitionMachine {
     return this.state.detachedFrameTarget;
   }
 
-  addGhostTarget(target, controllerGhostKey = null) {
+  trackCloseGhost(target, controllerGhostKey = null) {
     const itemId = target?.item?.id;
     if (itemId) {
       this.state.ghostKeys.add(itemId);
@@ -452,21 +458,30 @@ export class FolderTransitionMachine {
     if (controllerGhostKey) this.state.pendingControllerGhostKeys.add(controllerGhostKey);
   }
 
-  hasGhost(itemId) {
+  trackCloseGhosts(targets, getControllerGhostKey = null) {
+    for (const target of targets || []) {
+      const controllerGhostKey = typeof getControllerGhostKey === "function"
+        ? getControllerGhostKey(target)
+        : target?.controllerGhostKey || null;
+      this.trackCloseGhost(target, controllerGhostKey);
+    }
+  }
+
+  hasCloseGhost(itemId) {
     return this.state.ghostKeys.has(itemId) === true;
   }
 
-  deleteGhost(itemId) {
+  deleteCloseGhost(itemId) {
     if (!itemId) return;
     this.state.ghostKeys.delete(itemId);
   }
 
-  deleteVisualGhost(itemId) {
+  deleteCloseVisualGhost(itemId) {
     if (!itemId) return;
     this.state.visualGhostKeys.delete(itemId);
   }
 
-  clearGhostKeys() {
+  clearCloseGhostKeys() {
     this.state.ghostKeys.clear();
     this.state.visualGhostKeys.clear();
   }
@@ -479,23 +494,23 @@ export class FolderTransitionMachine {
     return this.state.visualGhostKeys;
   }
 
-  addMotionControl(control) {
+  addCloseMotionControl(control) {
     if (!control) return;
     if (!this.state.motionControls) this.state.motionControls = new Set();
     this.state.motionControls.add(control);
   }
 
-  deleteMotionControl(control) {
+  deleteCloseMotionControl(control) {
     this.state.motionControls?.delete(control);
   }
 
-  consumeMotionControls() {
+  consumeCloseMotionControls() {
     const controls = this.state.motionControls;
     this.state.motionControls = null;
     return controls;
   }
 
-  addPreviewSwapKey(key) {
+  trackClosePreviewSwap(key) {
     if (!key) return;
     this.state.previewSwapKeys.add(key);
     const pendingKey = makePreviewSwapPendingKey(key);
@@ -503,11 +518,11 @@ export class FolderTransitionMachine {
     this.registerOverlayPending(pendingKey);
   }
 
-  hasPreviewSwapKey(key) {
+  hasClosePreviewSwap(key) {
     return this.state.previewSwapKeys.has(key) === true;
   }
 
-  clearPreviewSwapKeys() {
+  clearClosePreviewSwaps() {
     this.state.previewSwapKeys.clear();
   }
 
@@ -515,28 +530,28 @@ export class FolderTransitionMachine {
     return this.state.previewSwapKeys;
   }
 
-  resetPreviewSwapMotionControls() {
+  resetClosePreviewSwapMotionControls() {
     this.state.previewSwapMotionControls = new Set();
     return this.state.previewSwapMotionControls;
   }
 
-  consumePreviewSwapMotionControls() {
+  consumeClosePreviewSwapMotionControls() {
     const controls = this.state.previewSwapMotionControls;
     this.state.previewSwapMotionControls = null;
     return controls;
   }
 
-  addPreviewSwapMotionControl(control) {
+  addClosePreviewSwapMotionControl(control) {
     if (!control) return;
-    if (!this.state.previewSwapMotionControls) this.resetPreviewSwapMotionControls();
+    if (!this.state.previewSwapMotionControls) this.resetClosePreviewSwapMotionControls();
     this.state.previewSwapMotionControls.add(control);
   }
 
-  deletePreviewSwapMotionControl(control) {
+  deleteClosePreviewSwapMotionControl(control) {
     this.state.previewSwapMotionControls?.delete(control);
   }
 
-  ensurePreviewSwapKeys() {
+  ensureClosePreviewSwaps() {
     return this.state.previewSwapKeys;
   }
 
@@ -546,11 +561,6 @@ export class FolderTransitionMachine {
 
   isFrameComplete() {
     return this.state.frameComplete;
-  }
-
-  markControllerGhostComplete(key) {
-    if (!key) return;
-    this.state.completedControllerGhostKeys.push(key);
   }
 
   consumeControllerGhostKeys() {
@@ -592,11 +602,11 @@ export class FolderTransitionMachine {
     return ghost;
   }
 
-  isHandoffActive() {
+  isCloseHandoffActive() {
     return this.state.handoffActive === true;
   }
 
-  setHandoffActive(active) {
+  setCloseHandoffActive(active) {
     const next = Boolean(active);
     if (this.state.handoffActive === next) return;
     this.state.handoffActive = next;
@@ -605,7 +615,19 @@ export class FolderTransitionMachine {
     this.layer?.onInternalActivityChange?.(next, folderId);
   }
 
-  hasActiveVisuals() {
+  startCloseHandoff() {
+    if (this.isCloseHandoffActive()) return false;
+    this.setCloseHandoffActive(true);
+    return true;
+  }
+
+  finishCloseHandoffCleanup() {
+    this.clearCloseFolderId();
+    this.resetCloseHandoffVisualRelease();
+    this.setCloseHandoffActive(false);
+  }
+
+  hasActiveCloseVisuals() {
     return Boolean(this.state.ghostKeys.size || this.state.previewSwapKeys.size);
   }
 
@@ -638,7 +660,7 @@ export class FolderTransitionMachine {
     return this.state.folderId || null;
   }
 
-  get sessionToken() {
+  get closeToken() {
     return this.state.token || null;
   }
 }

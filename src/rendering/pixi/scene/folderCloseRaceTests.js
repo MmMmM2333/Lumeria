@@ -166,7 +166,7 @@ function makeRaceHarness() {
     clearFrameGhost() {
       calls.push("clear-frame");
     },
-    createClosingGhostSessionToken(folderId = null) {
+    createClosingGhostToken(folderId = null) {
       const token = `close:${folderId || "folder"}:${closeTokenCounter}`;
       closeTokenCounter += 1;
       return token;
@@ -276,11 +276,11 @@ function startClosing(harness) {
     { height: 72, left: 10, top: 20, width: 72 },
     { height: 360, left: 180, top: 200, width: 800 }
   );
-  return harness.layer.folderTransitions.sessionToken;
+  return harness.layer.folderTransitions.closeToken;
 }
 
 function interruptCloseWithOpen(harness, token) {
-  harness.layer.folderTransitions.clearFolderId();
+  harness.layer.folderTransitions.clearCloseFolderId();
   harness.layer.closingGhosts.clear({ restorePageTrack: false, reveal: false });
   startOpening(harness, token);
 }
@@ -312,7 +312,7 @@ export function runFolderCloseRaceTests() {
 
     assert(harness.layer.closingGhostLayer.children.length === 0, "open after close should clear closing ghost visuals");
     assert(harness.layer.openingGhostLayer.children.length === 1, "open after close should leave only the new opening ghost");
-    assert(harness.layer.folderTransitions.sessionToken === null, "open after close should clear the stale closing token");
+    assert(harness.layer.folderTransitions.closeToken === null, "open after close should clear the stale closing token");
     assert(harness.layer.folderTransitions.folderId === null, "open after close should clear the stale closing folder id");
     assert(!hasOwnerToken(harness.visualOwnership, closeToken), "open after close should not leak the stale closing ownership token");
     motionRuntime.reset();
@@ -326,7 +326,7 @@ export function runFolderCloseRaceTests() {
     interruptCloseWithOpen(harness, "open:middle");
     assert(harness.layer.closingGhostLayer.children.length === 0, "open interrupt should clear the first closing ghost");
     assert(harness.layer.openingGhostLayer.children.length === 1, "open interrupt should create one opening ghost");
-    assert(harness.layer.folderTransitions.sessionToken === null, "open interrupt should clear the first close token");
+    assert(harness.layer.folderTransitions.closeToken === null, "open interrupt should clear the first close token");
 
     const secondCloseToken = startClosing(harness);
 
@@ -341,18 +341,17 @@ export function runFolderCloseRaceTests() {
 
   {
     const session = new FolderTransitionMachine({});
-    session.beginClose("folder-1");
-    session.setSessionToken("close:ordered");
-    session.addGhostTarget({ isThumbnailChild: true, item: { id: "app-1" } }, "close-key");
-    session.addPreviewSwapKey("swap");
+    session.beginCloseTransition("folder-1", { closeToken: "close:ordered" });
+    session.trackCloseGhost({ isThumbnailChild: true, item: { id: "app-1" } }, "close-key");
+    session.trackClosePreviewSwap("swap");
 
     const events = [
-      ...session.releaseFrameComplete("close:ordered"),
-      ...session.releasePreviewSwap("close:ordered", "swap"),
-      ...session.releaseGhostVisual("close:ordered", "app-1"),
-      ...session.releaseGhostComplete("close:ordered", "app-1"),
-      ...session.releaseFrameComplete("close:ordered"),
-      ...session.releaseGhostComplete("close:ordered", "app-1"),
+      ...session.completeCloseFrame("close:ordered"),
+      ...session.completeClosePreviewSwap("close:ordered", "swap"),
+      ...session.completeCloseGhostVisual("close:ordered", "app-1"),
+      ...session.completeCloseGhost("close:ordered", "app-1"),
+      ...session.completeCloseFrame("close:ordered"),
+      ...session.completeCloseGhost("close:ordered", "app-1"),
     ];
 
     assert(collectEventTypes(events).join(",") === "handoffReady,overlaySettled", "out-of-order releases should settle handoff and overlay exactly once");
@@ -362,17 +361,15 @@ export function runFolderCloseRaceTests() {
 
   {
     const session = new FolderTransitionMachine({});
-    session.beginClose("folder-1");
-    session.setSessionToken("close:first");
-    session.addGhostTarget({ item: { id: "old-app" } }, "old-key");
-    session.beginClose("folder-1");
-    session.setSessionToken("close:current");
-    session.addGhostTarget({ item: { id: "current-app" } }, "current-key");
+    session.beginCloseTransition("folder-1", { closeToken: "close:first" });
+    session.trackCloseGhost({ item: { id: "old-app" } }, "old-key");
+    session.beginCloseTransition("folder-1", { closeToken: "close:current" });
+    session.trackCloseGhost({ item: { id: "current-app" } }, "current-key");
 
     const staleEvents = [
-      ...session.releaseFrameComplete("close:first"),
-      ...session.releaseGhostComplete("close:first", "current-app"),
-      ...session.releasePreviewSwap("close:first", "swap"),
+      ...session.completeCloseFrame("close:first"),
+      ...(session.completeCloseGhost("close:first", "current-app") || []),
+      ...(session.completeClosePreviewSwap("close:first", "swap") || []),
     ];
     const staleSnapshot = session.snapshot();
 
@@ -383,8 +380,8 @@ export function runFolderCloseRaceTests() {
     assert(!staleSnapshot.ghostKeys.has("old-app"), "new session should not retain old ghost keys");
 
     const currentEvents = [
-      ...session.releaseFrameComplete("close:current"),
-      ...session.releaseGhostComplete("close:current", "current-app"),
+      ...session.completeCloseFrame("close:current"),
+      ...session.completeCloseGhost("close:current", "current-app"),
     ];
     assert(collectEventTypes(currentEvents).join(",") === "handoffReady,overlaySettled", "current token releases should still settle normally");
   }

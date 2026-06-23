@@ -108,7 +108,7 @@ function makeTransitionMachine(options = {}) {
     get folderId() {
       return folderId;
     },
-    isHandoffActive() {
+    isCloseHandoffActive() {
       return active;
     },
     snapshot() {

@@ -84,7 +84,7 @@ function makeClosingLayer() {
     clearFrameGhost() {
       this.calls.push("clear-frame");
     },
-    createClosingGhostSessionToken(folderId = null) {
+    createClosingGhostToken(folderId = null) {
       return `closing:${folderId || ""}:test`;
     },
     enableClosingFrameMask() {
@@ -217,22 +217,22 @@ export async function runFolderTransitionMachineTests() {
   {
     const layer = {};
     const session = new FolderTransitionMachine(layer);
-    session.beginClose("folder-a");
-    session.setSessionToken("close-token");
-    session.setHandoffGeometry({
+    session.beginCloseTransition("folder-a", { closeToken: "close-token" });
+    session.setCloseHandoffGeometry({
       detachedTarget: { height: 20, left: 1, top: 2, width: 20 },
       rect: { height: 64, left: 10, top: 20, width: 64 },
       target: { folderId: "folder-a" },
     });
-    session.addGhostTarget({ isThumbnailChild: true, item: { id: "app-1" } }, "close-a");
-    session.releaseFrameVisual("close-token");
-    session.markControllerGhostComplete("close-b");
+    session.trackCloseGhost({ isThumbnailChild: true, item: { id: "app-1" } }, "close-a");
+    session.completeCloseFrameVisual("close-token");
+    session.trackCloseGhost({ item: { id: "app-2" } }, "close-b");
+    session.completeCloseGhost("close-token", "app-2");
 
     const snapshot = session.snapshot();
-    assert(snapshot.folderId === "folder-a", "begin should store the closing folder id in the session");
+    assert(snapshot.folderId === "folder-a", "begin should store the closing folder id in the close transition");
     assert(snapshot.token === "close-token", "session should store the transition token");
-    assert(snapshot.ghostKeys.has("app-1"), "session should track active closing ghosts");
-    assert(snapshot.visualGhostKeys.has("app-1"), "session should track visual-critical closing ghosts");
+    assert(snapshot.ghostKeys.has("app-1"), "close transition should track active closing ghosts");
+    assert(snapshot.visualGhostKeys.has("app-1"), "close transition should track visual-critical closing ghosts");
     assert(snapshot.frameVisualComplete === true, "session should track frame visual readiness");
     assert(snapshot.handoffTarget.folderId === "folder-a", "session should store handoff target metadata");
     assert(session.consumeControllerGhostKeys().join(",") === "close-a,close-b", "session should merge pending and completed controller keys once");
@@ -240,10 +240,9 @@ export async function runFolderTransitionMachineTests() {
 
   {
     const session = new FolderTransitionMachine({});
-    session.beginClose("folder-a");
-    session.setSessionToken("close-a");
+    session.beginCloseTransition("folder-a", { closeToken: "close-a" });
 
-    const staleEvents = session.releaseFrameComplete("close-old");
+    const staleEvents = session.completeCloseFrame("close-old");
     const snapshot = session.snapshot();
 
     assert(staleEvents.length === 0, "stale frame release should not emit settlement events");
@@ -254,13 +253,12 @@ export async function runFolderTransitionMachineTests() {
 
   {
     const session = new FolderTransitionMachine({});
-    session.beginClose("folder-a");
-    session.setSessionToken("close-a");
+    session.beginCloseTransition("folder-a", { closeToken: "close-a" });
 
-    const handoffEvents = session.releaseFrameVisual("close-a");
-    const duplicateHandoffEvents = session.releaseFrameVisual("close-a");
-    const overlayEvents = session.releaseFrameComplete("close-a");
-    const duplicateOverlayEvents = session.releaseFrameComplete("close-a");
+    const handoffEvents = session.completeCloseFrameVisual("close-a");
+    const duplicateHandoffEvents = session.completeCloseFrameVisual("close-a");
+    const overlayEvents = session.completeCloseFrame("close-a");
+    const duplicateOverlayEvents = session.completeCloseFrame("close-a");
 
     assert(handoffEvents.map((event) => event.type).join(",") === "handoffReady", "visual release should emit handoff-ready once");
     assert(duplicateHandoffEvents.length === 0, "duplicate visual release should not emit handoff-ready twice");
@@ -285,7 +283,7 @@ export async function runFolderTransitionMachineTests() {
     );
 
     assert(layer.ownerKindAtOpeningClear === "closing", "open interrupted by close should transfer source ownership before clearing opening");
-    assert(layer.visualOwnership.getOwner(sourceKey)?.kind === "closing", "session-backed closing should keep the desktop source hidden after opening clear");
+    assert(layer.visualOwnership.getOwner(sourceKey)?.kind === "closing", "token-backed closing should keep the desktop source hidden after opening clear");
     controller.clear();
     motionRuntime.reset();
   }
@@ -303,7 +301,7 @@ export async function runFolderTransitionMachineTests() {
     layer.onClosingHandoffReady = () => {};
     layer.onInternalActivityChange = () => {};
     layer.folderTransitions = new FolderTransitionMachine(layer);
-    layer.folderTransitions.beginClose("folder-a");
+    layer.folderTransitions.beginCloseTransition("folder-a");
     layer.closingGhostLayer = { removeChildren: () => [] };
     layer.closingPreviewSwapLayer = { removeChildren: () => [] };
     layer.closingGhosts = {
@@ -318,7 +316,7 @@ export async function runFolderTransitionMachineTests() {
 
     layer.detachClosingPresentationForOpen("folder-b");
 
-    assert(layer.folderTransitions.folderId === null, "close interrupted by open should clear the live closing folder id through the session");
+    assert(layer.folderTransitions.folderId === null, "close interrupted by open should clear the live closing folder id through the transition");
     assert(calls.some((entry) => entry?.restorePageTrack === false && entry?.reveal === false), "close interrupted by open should clear closing visuals without revealing stale folder content");
   }
 }

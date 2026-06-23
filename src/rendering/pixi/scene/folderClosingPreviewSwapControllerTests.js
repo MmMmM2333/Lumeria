@@ -113,7 +113,7 @@ export function runFolderClosingPreviewSwapControllerTests() {
     const { controller, layer } = createController();
     const ghost = makeContainer();
     layer.closingPreviewSwapLayer.addChild(ghost);
-    controller.transitionMachine.addPreviewSwapKey("swap");
+    controller.transitionMachine.trackClosePreviewSwap("swap");
     controller.clear();
     assert(controller.transitionMachine.getPreviewSwapKeys().size === 0, "clear should reset preview swap keys");
     assert(layer.closingPreviewSwapLayer.children.length === 0, "clear should remove swap visuals");
@@ -172,13 +172,13 @@ export function runFolderClosingPreviewSwapControllerTests() {
     const root = makeContainer();
     const iconsWrap = makeContainer();
     let finished = false;
-    controller.transitionMachine.addPreviewSwapKey("swap-key");
+    controller.transitionMachine.trackClosePreviewSwap("swap-key");
 
     controller.complete({}, "swap-key", root, iconsWrap, () => {
       finished = true;
     });
 
-    assert(!controller.transitionMachine.hasPreviewSwapKey("swap-key"), "complete should remove the active key");
+    assert(!controller.transitionMachine.hasClosePreviewSwap("swap-key"), "complete should remove the active key");
     assert(finished, "complete should notify the closing controller");
     assert(root.alpha === 1, "complete should restore root alpha");
   }

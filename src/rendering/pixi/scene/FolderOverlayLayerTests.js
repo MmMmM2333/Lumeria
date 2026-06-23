@@ -30,11 +30,11 @@ import {
 function attachTransitionMachine(layer, options = {}) {
   const transitionMachine = new FolderTransitionMachine(layer);
   layer.folderTransitions = transitionMachine;
-  if (options.folderId) transitionMachine.beginClose(options.folderId);
-  if (options.frameComplete) transitionMachine.releaseFrameComplete(transitionMachine.sessionToken);
-  for (const key of options.previewSwapKeys || []) transitionMachine.addPreviewSwapKey(key);
+  if (options.folderId) transitionMachine.beginCloseTransition(options.folderId);
+  if (options.frameComplete) transitionMachine.completeCloseFrame(transitionMachine.closeToken);
+  for (const key of options.previewSwapKeys || []) transitionMachine.trackClosePreviewSwap(key);
   if (options.handoffRect || options.handoffTarget || options.detachedTarget) {
-    transitionMachine.setHandoffGeometry({
+    transitionMachine.setCloseHandoffGeometry({
       detachedTarget: options.detachedTarget || null,
       rect: options.handoffRect || null,
       target: options.handoffTarget || null,
@@ -256,11 +256,11 @@ export async function runFolderOverlayLayerTests() {
     const layer = new FolderOverlayLayer();
     const calls = [];
     layer.currentFolderId = "folder-a";
-    layer.folderTransitions.beginClose("folder-a");
+    layer.folderTransitions.beginCloseTransition("folder-a");
     layer.isClosing = true;
     layer.detachClosingPresentationForOpen = (nextFolderId) => {
       calls.push(`detach:${nextFolderId}:${layer.folderTransitions.folderId}`);
-      layer.folderTransitions.clearFolderId();
+      layer.folderTransitions.clearCloseFolderId();
     };
     layer.closingGhosts = {
       clear() {},
@@ -268,7 +268,7 @@ export async function runFolderOverlayLayerTests() {
       hasPendingHandoff: () => false,
       start() {
         calls.push(`start:${layer.folderTransitions.folderId}`);
-        layer.folderTransitions.beginClose("folder-b");
+        layer.folderTransitions.beginCloseTransition("folder-b");
       },
     };
 
@@ -662,7 +662,7 @@ export async function runFolderOverlayLayerTests() {
       top: 30,
       width: 240,
     };
-    layer.folderTransitions.setHandoffGeometry({
+    layer.folderTransitions.setCloseHandoffGeometry({
       detachedTarget: {
       fillAlpha: 0.2,
       height: 64,
@@ -738,7 +738,7 @@ export async function runFolderOverlayLayerTests() {
       top: 170.3,
       width: 63.7,
     };
-    layer.folderTransitions.setHandoffGeometry({
+    layer.folderTransitions.setCloseHandoffGeometry({
       detachedTarget: {
       fillAlpha: 0.2,
       height: 64,
@@ -910,7 +910,7 @@ export async function runFolderOverlayLayerTests() {
       top: 30,
       width: 240,
     };
-    layer.folderTransitions.setHandoffGeometry({
+    layer.folderTransitions.setCloseHandoffGeometry({
       detachedTarget: {
       fillAlpha: 0.2,
       height: 64,
@@ -966,7 +966,7 @@ export async function runFolderOverlayLayerTests() {
       top: 30,
       width: 240,
     };
-    layer.folderTransitions.setHandoffGeometry({
+    layer.folderTransitions.setCloseHandoffGeometry({
       detachedTarget: {
       fillAlpha: 0.2,
       height: 64,
@@ -1285,7 +1285,7 @@ export async function runFolderOverlayLayerTests() {
 
     const clearOverlay = (layer) => {
       layer.clearCompletedClosingPreviewGhosts();
-      layer.folderTransitions.clearPreviewSwapKeys();
+      layer.folderTransitions.clearClosePreviewSwaps();
       layer.closingPreviewSwapLayer.removeChildren();
       layer.clearFrameGhost();
     };
