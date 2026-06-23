@@ -1,3 +1,18 @@
+const FRAME_VISUAL_PENDING_KEY = "frame:visual";
+const FRAME_COMPLETE_PENDING_KEY = "frame:complete";
+
+function makeGhostVisualPendingKey(itemId) {
+  return itemId ? `ghost:visual:${itemId}` : null;
+}
+
+function makeGhostCompletePendingKey(itemId) {
+  return itemId ? `ghost:complete:${itemId}` : null;
+}
+
+function makePreviewSwapPendingKey(key) {
+  return key ? `preview:${key}` : null;
+}
+
 function makeInitialState() {
   return {
     completedControllerGhostKeys: [],
@@ -11,23 +26,31 @@ function makeInitialState() {
     handoffActive: false,
     handoffCleanupFrame: null,
     handoffCleanupToken: 0,
+    handoffReadySettled: false,
     handoffRect: null,
     handoffTarget: null,
-    handoffVisualCleanupScheduled: false,
     handoffVisualReleased: false,
     motionControls: new Set(),
+    overlayPendingKeys: new Set(),
+    overlaySettled: false,
     pendingControllerGhostKeys: new Set(),
     phase: "idle",
     previewSwapKeys: new Set(),
     previewSwapMotionControls: null,
     revealTimer: null,
+    settlementStarted: false,
     token: null,
     visualGhostKeys: new Set(),
+    visualPendingKeys: new Set(),
   };
 }
 
 function cloneRect(rect) {
   return rect ? { ...rect } : null;
+}
+
+function normalizeToken(token) {
+  return token == null ? null : token;
 }
 
 export class FolderCloseSession {
@@ -51,7 +74,19 @@ export class FolderCloseSession {
       handoffCleanupToken: previousCleanupToken,
       phase: "closing",
     };
+    this.registerFramePending();
     if (wasHandoffActive) this.layer?.onInternalActivityChange?.(false, null);
+  }
+
+  resetSettlement() {
+    const state = this.state;
+    state.frameComplete = false;
+    state.frameVisualComplete = false;
+    state.handoffReadySettled = false;
+    state.overlayPendingKeys = new Set();
+    state.overlaySettled = false;
+    state.settlementStarted = false;
+    state.visualPendingKeys = new Set();
   }
 
   clearAfterVisualReset() {
@@ -59,12 +94,9 @@ export class FolderCloseSession {
     state.completedControllerGhostKeys = [];
     state.completedPreviewGhosts = [];
     state.detachedFrameTarget = null;
-    state.frameComplete = false;
-    state.frameVisualComplete = false;
     state.ghostKeys.clear();
     state.handoffRect = null;
     state.handoffTarget = null;
-    state.handoffVisualCleanupScheduled = false;
     state.handoffVisualReleased = false;
     state.motionControls = new Set();
     state.pendingControllerGhostKeys = new Set();
@@ -72,6 +104,7 @@ export class FolderCloseSession {
     state.previewSwapKeys.clear();
     state.previewSwapMotionControls = null;
     state.visualGhostKeys.clear();
+    this.resetSettlement();
     this.setHandoffActive(false);
   }
 
@@ -88,11 +121,13 @@ export class FolderCloseSession {
       handoffActive: state.handoffActive,
       handoffCleanupFrame: state.handoffCleanupFrame,
       handoffCleanupToken: state.handoffCleanupToken,
+      handoffReadySettled: state.handoffReadySettled,
       handoffRect: cloneRect(state.handoffRect),
       handoffTarget: state.handoffTarget,
-      handoffVisualCleanupScheduled: state.handoffVisualCleanupScheduled,
       handoffVisualReleased: state.handoffVisualReleased,
       motionControlCount: state.motionControls?.size || 0,
+      overlayPendingKeys: new Set(state.overlayPendingKeys),
+      overlaySettled: state.overlaySettled,
       pendingControllerGhostKeys: new Set(state.pendingControllerGhostKeys),
       phase: state.phase,
       previewSwapKeys: new Set(state.previewSwapKeys),
@@ -100,6 +135,7 @@ export class FolderCloseSession {
       revealTimerActive: Boolean(state.revealTimer),
       token: state.token,
       visualGhostKeys: new Set(state.visualGhostKeys),
+      visualPendingKeys: new Set(state.visualPendingKeys),
     };
   }
 
@@ -114,11 +150,126 @@ export class FolderCloseSession {
   }
 
   setSessionToken(token = null) {
-    this.state.token = token || null;
+    this.state.token = normalizeToken(token);
   }
 
   clearSessionToken() {
     this.state.token = null;
+  }
+
+  isCurrentToken(token = null) {
+    return this.state.token === normalizeToken(token);
+  }
+
+  registerFramePending() {
+    const state = this.state;
+    state.settlementStarted = true;
+    state.visualPendingKeys.add(FRAME_VISUAL_PENDING_KEY);
+    state.overlayPendingKeys.add(FRAME_COMPLETE_PENDING_KEY);
+  }
+
+  registerVisualPending(key) {
+    if (!key) return;
+    this.state.settlementStarted = true;
+    this.state.visualPendingKeys.add(key);
+  }
+
+  registerOverlayPending(key) {
+    if (!key) return;
+    this.state.settlementStarted = true;
+    this.state.overlayPendingKeys.add(key);
+  }
+
+  collectSettlementEvents() {
+    const state = this.state;
+    if (!state.settlementStarted) return [];
+    const events = [];
+    if (!state.handoffReadySettled && state.visualPendingKeys.size === 0) {
+      state.handoffReadySettled = true;
+      events.push({ folderId: state.folderId || null, token: state.token, type: "handoffReady" });
+    }
+    if (!state.overlaySettled && state.overlayPendingKeys.size === 0) {
+      state.overlaySettled = true;
+      state.phase = state.folderId ? "settled" : "idle";
+      events.push({ folderId: state.folderId || null, token: state.token, type: "overlaySettled" });
+    }
+    return events;
+  }
+
+  releasePending(token, keys) {
+    if (!this.isCurrentToken(token)) return [];
+    const pendingKeys = Array.isArray(keys) ? keys : [keys];
+    for (const key of pendingKeys) {
+      if (!key) continue;
+      this.state.visualPendingKeys.delete(key);
+      this.state.overlayPendingKeys.delete(key);
+    }
+    return this.collectSettlementEvents();
+  }
+
+  releaseFrameVisual(token = this.state.token) {
+    if (!this.isCurrentToken(token)) return [];
+    this.state.frameVisualComplete = true;
+    return this.releasePending(token, FRAME_VISUAL_PENDING_KEY);
+  }
+
+  releaseFrameComplete(token = this.state.token) {
+    if (!this.isCurrentToken(token)) return [];
+    this.state.frameComplete = true;
+    this.state.frameVisualComplete = true;
+    return this.releasePending(token, [
+      FRAME_VISUAL_PENDING_KEY,
+      FRAME_COMPLETE_PENDING_KEY,
+    ]);
+  }
+
+  releaseGhostVisual(token = this.state.token, itemId = null) {
+    if (!this.isCurrentToken(token)) return [];
+    const key = makeGhostVisualPendingKey(itemId);
+    if (itemId) this.state.visualGhostKeys.delete(itemId);
+    return this.releasePending(token, key);
+  }
+
+  releaseGhostComplete(token = this.state.token, itemId = null) {
+    if (!this.isCurrentToken(token)) return [];
+    const keys = [makeGhostCompletePendingKey(itemId)];
+    if (itemId) {
+      this.state.ghostKeys.delete(itemId);
+      if (this.state.visualGhostKeys.has(itemId)) {
+        this.state.visualGhostKeys.delete(itemId);
+        keys.push(makeGhostVisualPendingKey(itemId));
+      }
+    }
+    return this.releasePending(token, keys);
+  }
+
+  releasePreviewSwap(token = this.state.token, key = null) {
+    if (!this.isCurrentToken(token)) return [];
+    if (key) this.state.previewSwapKeys.delete(key);
+    return this.releasePending(token, makePreviewSwapPendingKey(key));
+  }
+
+  releaseAllOverlayPending(token = this.state.token) {
+    if (!this.isCurrentToken(token)) return [];
+    this.state.frameComplete = true;
+    this.state.frameVisualComplete = true;
+    this.state.ghostKeys.clear();
+    this.state.previewSwapKeys.clear();
+    this.state.visualGhostKeys.clear();
+    this.state.visualPendingKeys.clear();
+    this.state.overlayPendingKeys.clear();
+    return this.collectSettlementEvents();
+  }
+
+  releaseHandoffVisual(token = this.state.token) {
+    if (!this.isCurrentToken(token)) return false;
+    if (this.state.handoffVisualReleased) return false;
+    this.state.handoffVisualReleased = true;
+    return true;
+  }
+
+  resetHandoffVisualRelease() {
+    this.state.handoffVisualReleased = false;
   }
 
   setRevealTimer(timer = null) {
@@ -159,7 +310,11 @@ export class FolderCloseSession {
     const itemId = target?.item?.id;
     if (itemId) {
       this.state.ghostKeys.add(itemId);
-      if (target.isThumbnailChild) this.state.visualGhostKeys.add(itemId);
+      this.registerOverlayPending(makeGhostCompletePendingKey(itemId));
+      if (target.isThumbnailChild) {
+        this.state.visualGhostKeys.add(itemId);
+        this.registerVisualPending(makeGhostVisualPendingKey(itemId));
+      }
     }
     if (controllerGhostKey) this.state.pendingControllerGhostKeys.add(controllerGhostKey);
   }
@@ -210,11 +365,9 @@ export class FolderCloseSession {
   addPreviewSwapKey(key) {
     if (!key) return;
     this.state.previewSwapKeys.add(key);
-  }
-
-  deletePreviewSwapKey(key) {
-    if (!key) return;
-    this.state.previewSwapKeys.delete(key);
+    const pendingKey = makePreviewSwapPendingKey(key);
+    this.registerVisualPending(pendingKey);
+    this.registerOverlayPending(pendingKey);
   }
 
   hasPreviewSwapKey(key) {
@@ -254,39 +407,12 @@ export class FolderCloseSession {
     return this.state.previewSwapKeys;
   }
 
-  markFrameVisualComplete() {
-    if (this.state.frameVisualComplete) return false;
-    this.state.frameVisualComplete = true;
-    return true;
-  }
-
-  markFrameComplete() {
-    this.state.frameComplete = true;
-    this.state.frameVisualComplete = true;
-  }
-
   isFrameVisualComplete() {
     return this.state.frameVisualComplete || this.state.frameComplete;
   }
 
   isFrameComplete() {
     return this.state.frameComplete;
-  }
-
-  markHandoffVisualReleased() {
-    if (this.state.handoffVisualReleased) return false;
-    this.state.handoffVisualReleased = true;
-    return true;
-  }
-
-  clearHandoffVisualReleased() {
-    this.state.handoffVisualReleased = false;
-  }
-
-  markHandoffVisualCleanupScheduled() {
-    if (this.state.handoffVisualCleanupScheduled) return false;
-    this.state.handoffVisualCleanupScheduled = true;
-    return true;
   }
 
   markControllerGhostComplete(key) {
@@ -348,24 +474,6 @@ export class FolderCloseSession {
 
   hasActiveVisuals() {
     return Boolean(this.state.ghostKeys.size || this.state.previewSwapKeys.size);
-  }
-
-  isHandoffVisuallyReady(openingGhostKeys = null) {
-    return !(
-      openingGhostKeys?.size ||
-      this.state.visualGhostKeys.size ||
-      this.state.previewSwapKeys.size ||
-      !this.isFrameVisualComplete()
-    );
-  }
-
-  isOverlaySettled(openingGhostKeys = null) {
-    return !(
-      openingGhostKeys?.size ||
-      this.state.ghostKeys.size ||
-      this.state.previewSwapKeys.size ||
-      !this.state.frameComplete
-    );
   }
 
   cancelHandoffCleanup(cancelAnimationFrame = globalThis.cancelAnimationFrame) {

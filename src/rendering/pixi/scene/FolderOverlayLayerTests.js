@@ -32,7 +32,7 @@ function attachCloseSession(layer, options = {}) {
   const session = new FolderCloseSession(layer);
   layer.closeSession = session;
   if (options.folderId) session.begin(options.folderId);
-  if (options.frameComplete) session.markFrameComplete();
+  if (options.frameComplete) session.releaseFrameComplete(session.sessionToken);
   for (const key of options.previewSwapKeys || []) session.addPreviewSwapKey(key);
   if (options.handoffRect || options.handoffTarget || options.detachedTarget) {
     session.setHandoffGeometry({

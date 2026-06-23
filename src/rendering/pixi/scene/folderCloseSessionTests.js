@@ -155,7 +155,7 @@ export async function runFolderCloseSessionTests() {
       target: { folderId: "folder-a" },
     });
     session.addGhostTarget({ isThumbnailChild: true, item: { id: "app-1" } }, "close-a");
-    session.markFrameVisualComplete();
+    session.releaseFrameVisual("close-token");
     session.markControllerGhostComplete("close-b");
 
     const snapshot = session.snapshot();
@@ -166,6 +166,36 @@ export async function runFolderCloseSessionTests() {
     assert(snapshot.frameVisualComplete === true, "session should track frame visual readiness");
     assert(snapshot.handoffTarget.folderId === "folder-a", "session should store handoff target metadata");
     assert(session.consumeControllerGhostKeys().join(",") === "close-a,close-b", "session should merge pending and completed controller keys once");
+  }
+
+  {
+    const session = new FolderCloseSession({});
+    session.begin("folder-a");
+    session.setSessionToken("close-a");
+
+    const staleEvents = session.releaseFrameComplete("close-old");
+    const snapshot = session.snapshot();
+
+    assert(staleEvents.length === 0, "stale frame release should not emit settlement events");
+    assert(snapshot.frameComplete === false, "stale frame release should not mutate the active session");
+    assert(snapshot.visualPendingKeys.has("frame:visual"), "stale frame release should keep visual pending state intact");
+    assert(snapshot.overlayPendingKeys.has("frame:complete"), "stale frame release should keep overlay pending state intact");
+  }
+
+  {
+    const session = new FolderCloseSession({});
+    session.begin("folder-a");
+    session.setSessionToken("close-a");
+
+    const handoffEvents = session.releaseFrameVisual("close-a");
+    const duplicateHandoffEvents = session.releaseFrameVisual("close-a");
+    const overlayEvents = session.releaseFrameComplete("close-a");
+    const duplicateOverlayEvents = session.releaseFrameComplete("close-a");
+
+    assert(handoffEvents.map((event) => event.type).join(",") === "handoffReady", "visual release should emit handoff-ready once");
+    assert(duplicateHandoffEvents.length === 0, "duplicate visual release should not emit handoff-ready twice");
+    assert(overlayEvents.map((event) => event.type).join(",") === "overlaySettled", "frame complete should emit overlay-settled once");
+    assert(duplicateOverlayEvents.length === 0, "duplicate frame complete should not emit overlay-settled twice");
   }
 
   {
