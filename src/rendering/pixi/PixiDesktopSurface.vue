@@ -680,7 +680,6 @@ function scheduleHandoffRenderLoop() {
     handoffRenderFrame = null;
     if (!shouldRunHandoffRenderLoop()) return;
     requestRender("folder-handoff-loop");
-    scheduleHandoffRenderLoop();
   });
 }
 

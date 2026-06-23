@@ -29,7 +29,9 @@ import {
   getMotionLabScenario,
   MOTION_LAB_SCENARIO_IDS,
   MOTION_LAB_SCENARIOS,
+  runMotionLabScenario,
 } from "./motionLabScenarios.js";
+import { createMotionRuntime } from "../rendering/pixi/animation/motionRuntime.js";
 
 function makeReport() {
   return {
@@ -72,6 +74,75 @@ function makeReport() {
   };
 }
 
+function makeMotionLabTarget() {
+  return {
+    alpha: 1,
+    rotation: 0,
+    scale: {
+      x: 1,
+      y: 1,
+      set(value, y = value) {
+        this.x = value;
+        this.y = y;
+      },
+    },
+    x: 0,
+    y: 0,
+    position: {
+      set(x, y) {
+        this.x = x;
+        this.y = y;
+      },
+    },
+  };
+}
+
+function makeMotionLabScenarioScene() {
+  return {
+    createHover: makeMotionLabTarget(),
+    dragGhost: makeMotionLabTarget(),
+    folderHover: makeMotionLabTarget(),
+    folderPageTrack: makeMotionLabTarget(),
+    folderPanel: makeMotionLabTarget(),
+    icons: Array.from({ length: 4 }, makeMotionLabTarget),
+    massIconLayer: makeMotionLabTarget(),
+    massIcons: Array.from({ length: 108 }, makeMotionLabTarget),
+    pageTrack: makeMotionLabTarget(),
+  };
+}
+
+function runMotionLabScenarioForTest(id, params = DEFAULT_MOTION_LAB_PARAMS) {
+  const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+  runtime.configureDebug({
+    enabled: true,
+    maxEvents: 5000,
+    recordHistory: true,
+    recordFilter: { includeSamples: false },
+  });
+  const scene = makeMotionLabScenarioScene();
+  const context = {
+    motionParams: params,
+    refreshReport() {
+      context.report = runtime.debugReport({
+        includeChannels: true,
+        includeHistory: true,
+        includeTargets: true,
+      });
+    },
+    report: null,
+    runtime,
+    scene,
+  };
+  const scenario = runMotionLabScenario(id, context);
+  runtime.step((scenario.assertAfterMs || 760) / 1000);
+  context.refreshReport();
+  return {
+    assertions: evaluateMotionLabScenarioAssertions(scenario, context),
+    context,
+    scenario,
+  };
+}
+
 export function runMotionLabModelTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Motion lab model test failed] ${message}`);
@@ -88,6 +159,16 @@ export function runMotionLabModelTests() {
   assert(MOTION_LAB_SCENARIO_IDS.every((id) => MOTION_LAB_SCENARIOS.some((scenario) => scenario.id === id)), "scenario IDs should match the required set");
   assert(MOTION_LAB_SCENARIOS.every((scenario) => typeof scenario.run === "function"), "every scenario should expose a run function");
   assert(MOTION_LAB_SCENARIOS.every((scenario) => scenario.assertions.length >= 1), "every scenario should expose at least one assertion");
+
+  for (const id of [
+    "folder-open-interrupted-by-close",
+    "folder-close-interrupted-by-open",
+    "hundred-icon-layout-retarget",
+  ]) {
+    const { assertions } = runMotionLabScenarioForTest(id);
+    assert(assertions.length >= 1, `${id} should expose assertions`);
+    assert(assertions.every((assertion) => assertion.passed), `${id} assertions should pass when run through the Motion Lab DSL`);
+  }
 
   const scenarioRows = buildMotionLabScenarioRows(MOTION_LAB_SCENARIOS, "desktop-page-scrub");
   assert(scenarioRows.length === 12, "scenario list should expose all DSL rows");
