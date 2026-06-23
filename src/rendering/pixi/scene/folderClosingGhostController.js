@@ -499,25 +499,6 @@ export class FolderClosingGhostController {
       phase: "visual-arrive",
     });
     console.log("[folder-closing-ghost-visual-arrive]", payload);
-    if (!target?.isThumbnailChild) return;
-    const slot = target.previewSlotIndex ?? "na";
-    const itemId = target.item?.id || "unknown";
-    console.log(`[folder-closing-ghost-compact-v3:visual-arrive:slot-${slot}:${itemId}]`, {
-      deltaHeight: payload.delta?.height ?? null,
-      deltaLeft: payload.delta?.left ?? null,
-      deltaTop: payload.delta?.top ?? null,
-      deltaWidth: payload.delta?.width ?? null,
-      height: payload.actualRect?.height ?? null,
-      left: payload.actualRect?.left ?? null,
-      scaleX: payload.scaleX,
-      scaleY: payload.scaleY,
-      targetHeight: payload.targetRect?.height ?? null,
-      targetLeft: payload.targetRect?.left ?? null,
-      targetTop: payload.targetRect?.top ?? null,
-      targetWidth: payload.targetRect?.width ?? null,
-      top: payload.actualRect?.top ?? null,
-      width: payload.actualRect?.width ?? null,
-    });
   }
 
   debugHandoffVisualRelease(phase) {
@@ -551,27 +532,7 @@ export class FolderClosingGhostController {
     const options = getFolderHandoffDebugOptions();
     if (!options?.log || !options.timeline) return;
     const payload = this.makeClosingGhostDebugPayload(state, target, ghost, phase);
-    console.log("[folder-closing-ghost-complete-v2]", payload);
-    if (target?.isThumbnailChild) {
-      const slot = target.previewSlotIndex ?? "na";
-      const itemId = target.item?.id || "unknown";
-      console.log(`[folder-closing-ghost-compact-v2:${phase}:slot-${slot}:${itemId}]`, {
-        deltaHeight: payload.delta?.height ?? null,
-        deltaLeft: payload.delta?.left ?? null,
-        deltaTop: payload.delta?.top ?? null,
-        deltaWidth: payload.delta?.width ?? null,
-        height: payload.actualRect?.height ?? null,
-        left: payload.actualRect?.left ?? null,
-        scaleX: payload.scaleX,
-        scaleY: payload.scaleY,
-        targetHeight: payload.targetRect?.height ?? null,
-        targetLeft: payload.targetRect?.left ?? null,
-        targetTop: payload.targetRect?.top ?? null,
-        targetWidth: payload.targetRect?.width ?? null,
-        top: payload.actualRect?.top ?? null,
-        width: payload.actualRect?.width ?? null,
-      });
-    }
+    console.log("[folder-closing-ghost-complete]", payload);
   }
 
   completeGhost(state, target, ghost, token = this.closeSession.sessionToken) {

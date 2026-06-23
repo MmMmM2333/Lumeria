@@ -50,6 +50,34 @@ export function runPixiRenderSchedulerTests() {
 
   {
     const callbacks = [];
+    let renderCount = 0;
+    let requestNextFrame = true;
+    let scheduler = null;
+    scheduler = createPixiRenderScheduler({
+      cancelAnimationFrame: () => {},
+      render: () => {
+        renderCount += 1;
+        if (!requestNextFrame) return;
+        requestNextFrame = false;
+        assert(scheduler.requestRender("folder-handoff-loop") === true, "render callback should be able to request the next frame");
+      },
+      requestAnimationFrame: (callback) => {
+        callbacks.push(callback);
+        return callbacks.length;
+      },
+    });
+
+    assert(scheduler.requestRender("folder-handoff-start") === true, "handoff start should schedule a frame");
+    callbacks[0]();
+    assert(renderCount === 1, "first handoff frame should render once");
+    assert(callbacks.length === 2, "handoff follow-up should schedule the next frame through the scheduler");
+    callbacks[1]();
+    assert(renderCount === 2, "handoff follow-up frame should render once");
+    assert(callbacks.length === 2, "handoff follow-up should stop when no new request is made");
+  }
+
+  {
+    const callbacks = [];
     const canceled = [];
     let renderCount = 0;
     const scheduler = createPixiRenderScheduler({

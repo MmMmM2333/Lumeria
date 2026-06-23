@@ -173,7 +173,6 @@ let layer = null;
 let resizeObserver = null;
 let destroyed = false;
 let folderTexturePrewarmTimer = null;
-let handoffRenderFrame = null;
 let renderScheduler = null;
 let desktopDomGeometryCache = null;
 let pixiResizeSignature = "";
@@ -322,49 +321,6 @@ function flattenFolderHandoffSnapshot(snapshot) {
     desktopTargetDelta: snapshot.targetDelta,
     desktopTargetRect: snapshot.targetRect,
     desktopThumbRect: snapshot.thumbRect,
-  };
-}
-
-function makeFolderHandoffCompactLog(snapshot, decision, metrics, folderClosingHandoffId, seq) {
-  const node = snapshot?.node || {};
-  const thumbRect = snapshot?.thumbRect || {};
-  const targetRect = snapshot?.targetRect || {};
-  const targetDelta = snapshot?.targetDelta || {};
-  const childMaxDelta = snapshot?.childMaxDelta || {};
-  const childWorstDelta = snapshot?.childWorstDelta || {};
-  return {
-    active: snapshot?.active ?? null,
-    childMaxDeltaHeight: childMaxDelta.height ?? null,
-    childMaxDeltaLeft: childMaxDelta.left ?? null,
-    childMaxDeltaTop: childMaxDelta.top ?? null,
-    childMaxDeltaWidth: childMaxDelta.width ?? null,
-    childWorstDeltaHeight: childWorstDelta.height ?? null,
-    childWorstDeltaLeft: childWorstDelta.left ?? null,
-    childWorstDeltaSlot: childWorstDelta.slot ?? null,
-    childWorstDeltaTop: childWorstDelta.top ?? null,
-    childWorstDeltaWidth: childWorstDelta.width ?? null,
-    folderId: decision.folderId,
-    nodeScaleX: node.scaleX ?? null,
-    nodeScaleY: node.scaleY ?? null,
-    nodeX: node.x ?? null,
-    nodeY: node.y ?? null,
-    phase: decision.phase,
-    rectDeltaTop: roundDebugNumber((metrics.rect?.top || 0) - (metrics.layoutRect?.top || 0)),
-    resolvedId: folderClosingHandoffId,
-    seq,
-    source: snapshot?.source || null,
-    targetDeltaHeight: targetDelta.height ?? null,
-    targetDeltaLeft: targetDelta.left ?? null,
-    targetDeltaTop: targetDelta.top ?? null,
-    targetDeltaWidth: targetDelta.width ?? null,
-    targetHeight: targetRect.height ?? null,
-    targetLeft: targetRect.left ?? null,
-    targetTop: targetRect.top ?? null,
-    targetWidth: targetRect.width ?? null,
-    thumbHeight: thumbRect.height ?? null,
-    thumbLeft: thumbRect.left ?? null,
-    thumbTop: thumbRect.top ?? null,
-    thumbWidth: thumbRect.width ?? null,
   };
 }
 
@@ -536,7 +492,6 @@ function logFolderHandoffTimeline(metrics, folderClosingHandoffId) {
     seq,
     settledFramesAtDecision: decision.settledFrames,
   });
-  console.log("[folder-handoff-compact-v2]", makeFolderHandoffCompactLog(snapshot, decision, metrics, folderClosingHandoffId, seq));
   folderClosingHandoffRetainer.consumePostReleaseFrame(folderClosingHandoffId);
 }
 
@@ -648,8 +603,7 @@ function getRenderScheduler() {
     render: () => {
       renderPixi();
       app?.render?.();
-      if (shouldRunHandoffRenderLoop()) scheduleHandoffRenderLoop();
-      else cancelHandoffRenderLoop();
+      if (requestFrame && shouldRunHandoffRenderLoop()) requestRender("folder-handoff-loop");
     },
     requestAnimationFrame: requestFrame,
   });
@@ -666,21 +620,6 @@ function shouldRunHandoffRenderLoop() {
     propFolderClosingHandoffId: props.folderClosingHandoffId,
     timelineDebug: hasFolderHandoffTimelineDebug(),
   }) && app && layer && hostRef.value && !destroyed);
-}
-
-function cancelHandoffRenderLoop() {
-  if (handoffRenderFrame == null) return;
-  window.cancelAnimationFrame(handoffRenderFrame);
-  handoffRenderFrame = null;
-}
-
-function scheduleHandoffRenderLoop() {
-  if (handoffRenderFrame != null || !shouldRunHandoffRenderLoop()) return;
-  handoffRenderFrame = window.requestAnimationFrame(() => {
-    handoffRenderFrame = null;
-    if (!shouldRunHandoffRenderLoop()) return;
-    requestRender("folder-handoff-loop");
-  });
 }
 
 function clearFolderTexturePrewarmTimer() {
@@ -767,7 +706,6 @@ function destroyPixi(options = {}) {
   cancelScheduledRenderPixi();
   renderScheduler?.destroy();
   renderScheduler = null;
-  cancelHandoffRenderLoop();
   invalidateDesktopDomGeometry();
   pixiResizeSignature = "";
   folderClosingHandoffRetainer.reset();
@@ -842,7 +780,6 @@ onMounted(async () => {
   await nextTick();
   refreshDesktopDomGeometry();
   requestRender("mount");
-  scheduleHandoffRenderLoop();
   scheduleFolderTexturePrewarm();
 });
 
@@ -910,8 +847,6 @@ watchEffect(() => {
   void props.singleStageOptions;
   void props.singleStageRenderKey;
   requestRender("watch-effect");
-  if (shouldRunHandoffRenderLoop()) scheduleHandoffRenderLoop();
-  else cancelHandoffRenderLoop();
   scheduleFolderTexturePrewarm();
 });
 
