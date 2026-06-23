@@ -973,7 +973,10 @@ function clearCopyTimers() {
 onMounted(async () => {
   runtime = createMotionRuntime();
   configureRuntime();
-  pixiApp = await createPixiApp(pixiHostRef.value, { className: "motion-lab-canvas" });
+  pixiApp = await createPixiApp(pixiHostRef.value, {
+    autoStart: true,
+    className: "motion-lab-canvas",
+  });
   scene = createScene(pixiApp);
   setSceneDefaults();
   describeSceneTargets();

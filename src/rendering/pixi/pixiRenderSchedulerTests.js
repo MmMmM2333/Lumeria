@@ -1,0 +1,89 @@
+import { createPixiRenderScheduler } from "./pixiRenderScheduler.js";
+
+export function runPixiRenderSchedulerTests() {
+  const assert = (condition, message) => {
+    if (!condition) throw new Error(`[Pixi render scheduler test failed] ${message}`);
+  };
+
+  {
+    const callbacks = [];
+    let renderCount = 0;
+    const scheduler = createPixiRenderScheduler({
+      cancelAnimationFrame: () => {},
+      render: () => {
+        renderCount += 1;
+      },
+      requestAnimationFrame: (callback) => {
+        callbacks.push(callback);
+        return callbacks.length;
+      },
+    });
+
+    assert(scheduler.requestRender("state-change") === true, "first request should schedule a frame");
+    assert(scheduler.requestRender("resize") === false, "same-frame request should merge into the pending frame");
+    assert(callbacks.length === 1, "merged requests should use one animation frame");
+    callbacks[0]();
+    assert(renderCount === 1, "merged requests should render once");
+    assert(scheduler.isScheduled() === false, "scheduler should be idle after the frame runs");
+  }
+
+  {
+    const callbacks = [];
+    const canceled = [];
+    let renderCount = 0;
+    const scheduler = createPixiRenderScheduler({
+      cancelAnimationFrame: (frame) => canceled.push(frame),
+      render: () => {
+        renderCount += 1;
+      },
+      requestAnimationFrame: (callback) => {
+        callbacks.push(callback);
+        return 42;
+      },
+    });
+
+    scheduler.requestRender("mount");
+    scheduler.destroy();
+    assert(canceled[0] === 42, "destroy should cancel the pending frame");
+    callbacks[0]();
+    assert(renderCount === 0, "destroyed scheduler should ignore a stale frame callback");
+    assert(scheduler.requestRender("after-destroy") === false, "destroyed scheduler should reject new requests");
+  }
+
+  {
+    const callbacks = [];
+    let ready = false;
+    let renderCount = 0;
+    const scheduler = createPixiRenderScheduler({
+      canRender: () => ready,
+      cancelAnimationFrame: () => {},
+      render: () => {
+        renderCount += 1;
+      },
+      requestAnimationFrame: (callback) => {
+        callbacks.push(callback);
+        return callbacks.length;
+      },
+    });
+
+    assert(scheduler.requestRender("before-init") === false, "request before app readiness should not schedule");
+    ready = true;
+    assert(scheduler.requestRender("init") === true, "request after app readiness should schedule the first frame");
+    assert(callbacks.length === 1, "first ready request should schedule one frame");
+    callbacks[0]();
+    assert(renderCount === 1, "first ready frame should render");
+  }
+
+  {
+    let renderCount = 0;
+    const scheduler = createPixiRenderScheduler({
+      render: () => {
+        renderCount += 1;
+      },
+      requestAnimationFrame: null,
+    });
+
+    assert(scheduler.requestRender("no-raf") === true, "scheduler should render immediately without RAF");
+    assert(renderCount === 1, "no-RAF fallback should render synchronously");
+  }
+}

@@ -50,6 +50,7 @@ import { DesktopLayer } from "./scene/DesktopLayer.js";
 import { createFolderLayerState } from "./folderLayerState.js";
 import { readFolderOverlayStateRenderDependencies } from "./folderOverlayStateDependencies.js";
 import { clearIconTextureCache, preloadIconTextures } from "./assets/iconTextureCache.js";
+import { createPixiRenderScheduler } from "./pixiRenderScheduler.js";
 import { installMotionDebugGlobal } from "./animation/motionDebugReport.js";
 import { motionRuntime } from "./animation/motionRuntime.js";
 import { MotionDebugOverlayLayer } from "./animation/motionDebugOverlayLayer.js";
@@ -168,7 +169,7 @@ let resizeObserver = null;
 let destroyed = false;
 let folderTexturePrewarmTimer = null;
 let handoffRenderFrame = null;
-let renderFrame = null;
+let renderScheduler = null;
 let desktopDomGeometryCache = null;
 let pixiResizeSignature = "";
 let motionDebugCommands = null;
@@ -281,7 +282,7 @@ function syncPixiResizeTarget(metrics = null) {
 
 function handleResize() {
   refreshDesktopDomGeometry();
-  scheduleRenderPixi();
+  requestRender("resize");
 }
 
 function nowMs() {
@@ -625,27 +626,34 @@ function renderPixi() {
 }
 
 function cancelScheduledRenderPixi() {
-  if (renderFrame == null) return;
-  window.cancelAnimationFrame(renderFrame);
-  renderFrame = null;
+  renderScheduler?.cancel();
 }
 
-function scheduleRenderPixi(options = {}) {
+function getRenderScheduler() {
+  if (renderScheduler) return renderScheduler;
+  const requestFrame = typeof window.requestAnimationFrame === "function"
+    ? (callback) => window.requestAnimationFrame(callback)
+    : null;
+  const cancelFrame = typeof window.cancelAnimationFrame === "function"
+    ? (frame) => window.cancelAnimationFrame(frame)
+    : null;
+  renderScheduler = createPixiRenderScheduler({
+    cancelAnimationFrame: cancelFrame,
+    canRender: () => Boolean(!destroyed && app && layer && hostRef.value),
+    render: () => {
+      renderPixi();
+      app?.render?.();
+      if (shouldRunHandoffRenderLoop()) scheduleHandoffRenderLoop();
+      else cancelHandoffRenderLoop();
+    },
+    requestAnimationFrame: requestFrame,
+  });
+  return renderScheduler;
+}
+
+function requestRender(reason = "desktop-update", options = {}) {
   if (options.invalidateGeometry) invalidateDesktopDomGeometry();
-  if (renderFrame != null || destroyed || !app || !layer || !hostRef.value) return;
-  const run = () => {
-    renderFrame = null;
-    if (destroyed) return;
-    renderPixi();
-    if (options.renderNow) app?.render?.();
-    if (shouldRunHandoffRenderLoop()) scheduleHandoffRenderLoop();
-    else cancelHandoffRenderLoop();
-  };
-  if (typeof window.requestAnimationFrame === "function") {
-    renderFrame = window.requestAnimationFrame(run);
-  } else {
-    run();
-  }
+  return getRenderScheduler().requestRender(reason);
 }
 
 function shouldRunHandoffRenderLoop() {
@@ -666,7 +674,7 @@ function scheduleHandoffRenderLoop() {
   handoffRenderFrame = window.requestAnimationFrame(() => {
     handoffRenderFrame = null;
     if (!shouldRunHandoffRenderLoop()) return;
-    scheduleRenderPixi({ renderNow: true });
+    requestRender("folder-handoff-loop");
     scheduleHandoffRenderLoop();
   });
 }
@@ -751,6 +759,8 @@ function destroyPixi(options = {}) {
   motionDebugOverlay = null;
   motionDebugOverlayTicker = null;
   cancelScheduledRenderPixi();
+  renderScheduler?.destroy();
+  renderScheduler = null;
   cancelHandoffRenderLoop();
   invalidateDesktopDomGeometry();
   pixiResizeSignature = "";
@@ -781,7 +791,10 @@ function destroyPixi(options = {}) {
 onMounted(async () => {
   destroyed = false;
   if (props.domRefs?.desktopMainRef) props.domRefs.desktopMainRef.value = mainRef.value;
-  const nextApp = await createPixiApp(hostRef.value, { className: "pixi-launchpad-canvas" });
+  const nextApp = await createPixiApp(hostRef.value, {
+    autoStart: false,
+    className: "pixi-launchpad-canvas",
+  });
   if (destroyed) {
     nextApp.destroy(true);
     hostRef.value?.replaceChildren?.();
@@ -812,7 +825,7 @@ onMounted(async () => {
   window.addEventListener("resize", handleResize);
   await nextTick();
   refreshDesktopDomGeometry();
-  renderPixi();
+  requestRender("mount");
   scheduleHandoffRenderLoop();
   scheduleFolderTexturePrewarm();
 });
@@ -832,19 +845,19 @@ watch(
 
 watch(
   () => props.singleStageRenderKey,
-  () => scheduleRenderPixi(),
+  () => requestRender("single-stage-render-key"),
   { flush: "post" }
 );
 
 watch(
   () => props.desktopProjectionEpoch,
-  () => scheduleRenderPixi({ invalidateGeometry: true }),
+  () => requestRender("desktop-projection", { invalidateGeometry: true }),
   { flush: "post" }
 );
 
 watch(
   () => props.pageGridMeasureStyle,
-  () => scheduleRenderPixi({ invalidateGeometry: true }),
+  () => requestRender("page-grid-measure", { invalidateGeometry: true }),
   { flush: "post" }
 );
 
@@ -880,7 +893,7 @@ watchEffect(() => {
   void props.folderPageSize;
   void props.singleStageOptions;
   void props.singleStageRenderKey;
-  scheduleRenderPixi();
+  requestRender("watch-effect");
   if (shouldRunHandoffRenderLoop()) scheduleHandoffRenderLoop();
   else cancelHandoffRenderLoop();
   scheduleFolderTexturePrewarm();

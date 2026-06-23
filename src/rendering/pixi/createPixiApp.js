@@ -7,7 +7,7 @@ export async function createPixiApp(host, options = {}) {
   const app = new Application();
   await app.init({
     antialias: options.antialias ?? true,
-    autoStart: options.autoStart ?? true,
+    autoStart: options.autoStart === true,
     autoDensity: true,
     backgroundAlpha: 0,
     preference: options.preference,
@@ -17,7 +17,6 @@ export async function createPixiApp(host, options = {}) {
   });
   app.canvas.className = options.className || "pixi-launchpad-canvas";
   host.appendChild(app.canvas);
-  if (options.autoStart !== false) app.start?.();
   return app;
 }
 
