@@ -106,6 +106,7 @@ export async function runDesktopLayerTests() {
   }
   const {
     DesktopLayer,
+    normalizeDesktopHandoffState,
     resolveDesktopVisualAlpha,
     resolveLaunchpadVisualAlpha,
     resolveLaunchpadVisualTransform,
@@ -124,6 +125,25 @@ export async function runDesktopLayerTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[DesktopLayer test failed] ${message}`);
   };
+
+  {
+    const normalized = normalizeDesktopHandoffState({
+      folderClosingHandoffId: "folder-a",
+      folderClosingHandoffIds: ["folder-b", "folder-c"],
+      folderSourceGhostedId: "folder-d",
+      folderSourceGhostedIds: new Set(["folder-e"]),
+    });
+
+    assert(normalized.folderClosingHandoffIds instanceof Set, "closing handoff ids should normalize to a Set");
+    assert(normalized.folderClosingHandoffId === "folder-a", "closing handoff normalizer should preserve the legacy singular id as primary");
+    assert(normalized.folderClosingHandoffIds.has("folder-a"), "closing handoff normalizer should keep the legacy singular id");
+    assert(normalized.folderClosingHandoffIds.has("folder-b") && normalized.folderClosingHandoffIds.has("folder-c"), "closing handoff normalizer should keep array ids");
+    assert(normalized.folderSourceGhostedIds instanceof Set, "source ghosted ids should normalize to a Set");
+    assert(normalized.folderSourceGhostedId === "folder-d", "source ghosted normalizer should preserve the legacy singular id as primary");
+    assert(normalized.folderSourceGhostedIds.has("folder-d") && normalized.folderSourceGhostedIds.has("folder-e"), "source ghosted normalizer should merge singular and Set ids");
+    assert(!shouldFinishFolderHandoff({ folderClosingHandoffIds: ["folder-b"] }, { closingHandoffActive: false }), "array closing handoff ids should keep the desktop handoff alive");
+    assert(!shouldFinishFolderHandoffEntry({ folderClosingHandoffId: "folder-a" }, null, "folder-a"), "legacy singular closing handoff id should keep its folder handoff alive");
+  }
 
   {
     const originalRaf = globalThis.requestAnimationFrame;
@@ -411,6 +431,7 @@ export async function runDesktopLayerTests() {
 
     assert(pageTrack.children.length === 3, "handoff should reuse the real folder node");
     assert(pageTrack.children[2] === folder, "handoff should raise the real folder node");
+    assert(!Object.prototype.hasOwnProperty.call(layer, "folderHandoffNode"), "primary handoff node should be derived from the handoff map");
     assert(layer.folderHandoffNode.node === folder, "handoff state should reference the real node");
     assert(folder.position.x === 12 && folder.position.y === 34, "handoff should snap node to the target");
     assert(folder.scale.x === 1 && folder.scale.y === 1, "handoff should reset node scale");

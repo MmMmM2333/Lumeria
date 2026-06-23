@@ -68,12 +68,46 @@ function clamp01(value) {
   return Math.max(0, Math.min(1, readNumber(value, 0)));
 }
 
+function normalizeFolderIdSet(...sources) {
+  const result = new Set();
+  const add = (value) => {
+    if (!value) return;
+    if (value instanceof Set || Array.isArray(value)) {
+      for (const id of value) if (id) result.add(id);
+      return;
+    }
+    result.add(value);
+  };
+  for (const source of sources) add(source);
+  return result;
+}
+
+function readPrimaryFolderId(ids) {
+  return ids.values().next().value || null;
+}
+
+export function normalizeDesktopHandoffState(state = {}) {
+  const source = state || {};
+  const folderSourceGhostedIds = normalizeFolderIdSet(
+    source.folderSourceGhostedId,
+    source.folderSourceGhostedIds
+  );
+  const folderClosingHandoffIds = normalizeFolderIdSet(
+    source.folderClosingHandoffId,
+    source.folderClosingHandoffIds
+  );
+  return {
+    ...source,
+    folderClosingHandoffId: readPrimaryFolderId(folderClosingHandoffIds),
+    folderClosingHandoffIds,
+    folderSourceGhostedId: readPrimaryFolderId(folderSourceGhostedIds),
+    folderSourceGhostedIds,
+  };
+}
+
 function hasFolderSourceGhostedId(state, folderId) {
   if (!folderId) return false;
-  const ids = state.folderSourceGhostedIds;
-  if (ids instanceof Set) return ids.has(folderId);
-  if (Array.isArray(ids)) return ids.includes(folderId);
-  return state.folderSourceGhostedId === folderId;
+  return normalizeDesktopHandoffState(state).folderSourceGhostedIds.has(folderId);
 }
 
 function hasRawFolderSourceGhosting(state = {}, folderId = null) {
@@ -83,19 +117,11 @@ function hasRawFolderSourceGhosting(state = {}, folderId = null) {
 
 function hasFolderClosingHandoffId(state = {}, folderId) {
   if (!folderId) return false;
-  if (state.folderClosingHandoffId === folderId) return true;
-  const ids = state.folderClosingHandoffIds;
-  if (ids instanceof Set) return ids.has(folderId);
-  if (Array.isArray(ids)) return ids.includes(folderId);
-  return false;
+  return normalizeDesktopHandoffState(state).folderClosingHandoffIds.has(folderId);
 }
 
 function hasAnyFolderClosingHandoffId(state = {}) {
-  return Boolean(
-    state.folderClosingHandoffId ||
-      (state.folderClosingHandoffIds instanceof Set && state.folderClosingHandoffIds.size > 0) ||
-      (Array.isArray(state.folderClosingHandoffIds) && state.folderClosingHandoffIds.length > 0)
-  );
+  return normalizeDesktopHandoffState(state).folderClosingHandoffIds.size > 0;
 }
 
 function isFolderLayerHandoffActive(folderLayer = null, folderId = null) {
@@ -109,20 +135,6 @@ function isFolderLayerHoldingDesktopSource(folderLayer = null, folderId = null) 
   if (!folderId) return false;
   const ids = folderLayer?.getDesktopSourceGhostedIds?.();
   return ids?.has?.(folderId) === true;
-}
-
-function mergeFolderSourceGhostedIds(...sources) {
-  const result = new Set();
-  const add = (value) => {
-    if (!value) return;
-    if (value instanceof Set || Array.isArray(value)) {
-      for (const id of value) if (id) result.add(id);
-      return;
-    }
-    result.add(value);
-  };
-  for (const source of sources) add(source);
-  return result;
 }
 
 function getDesktopSourceGhostedIdsFromOwnership(visualOwnership) {
@@ -366,8 +378,8 @@ export class DesktopLayer extends Container {
     this.singleStageDragPreviewLayer = new DragPreviewLayer({
       onReleaseComplete: (release) => this.onDragReleaseComplete(release),
     });
-    this.folderHandoffNode = null;
     this.folderHandoffNodes = new Map();
+    this.primaryFolderHandoffId = null;
     this.hasDesktopVisualAlpha = false;
     this.hasDesktopVisualTransform = false;
     this.hasFolderOverlayAlpha = false;
@@ -394,10 +406,24 @@ export class DesktopLayer extends Container {
     this.describeMotionTargets();
   }
 
+  get folderHandoffNode() {
+    return this.getPrimaryFolderHandoffNode();
+  }
+
+  set folderHandoffNode(entry) {
+    if (!entry) {
+      this.primaryFolderHandoffId = null;
+      return;
+    }
+    if (!entry.folderId) return;
+    this.getFolderHandoffNodes().set(entry.folderId, entry);
+    this.primaryFolderHandoffId = entry.folderId;
+  }
+
   update(state) {
-    const effectiveFolderSourceGhostedIds = mergeFolderSourceGhostedIds(
+    state = normalizeDesktopHandoffState(state);
+    const effectiveFolderSourceGhostedIds = normalizeFolderIdSet(
       state.folderSourceGhostedIds,
-      state.folderSourceGhostedId,
       getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership),
       this.singleStageFolderLayer.getDesktopSourceGhostedIds?.()
     );
@@ -766,12 +792,10 @@ export class DesktopLayer extends Container {
   }
 
   applyFolderSourceGhosting(state) {
+    state = normalizeDesktopHandoffState(state);
     this.lastFolderSourceGhostingState = state;
-    const rawIds = mergeFolderSourceGhostedIds(
-      state.folderSourceGhostedIds,
-      state.folderSourceGhostedId
-    );
-    const ownershipIds = mergeFolderSourceGhostedIds(
+    const rawIds = state.folderSourceGhostedIds;
+    const ownershipIds = normalizeFolderIdSet(
       getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership),
       this.singleStageFolderLayer.getDesktopSourceGhostedIds?.()
     );
@@ -841,25 +865,25 @@ export class DesktopLayer extends Container {
 
   getFolderHandoffNodes() {
     if (!(this.folderHandoffNodes instanceof Map)) this.folderHandoffNodes = new Map();
-    if (this.folderHandoffNode?.folderId && !this.folderHandoffNodes.has(this.folderHandoffNode.folderId)) {
-      this.folderHandoffNodes.set(this.folderHandoffNode.folderId, this.folderHandoffNode);
-    }
     return this.folderHandoffNodes;
+  }
+
+  getPrimaryFolderHandoffNode() {
+    const entries = this.getFolderHandoffNodes();
+    if (this.primaryFolderHandoffId && entries.has(this.primaryFolderHandoffId)) {
+      return entries.get(this.primaryFolderHandoffId);
+    }
+    return entries.values().next().value || null;
   }
 
   getFolderHandoffEntry(folderId = null) {
     const entries = this.getFolderHandoffNodes();
     if (folderId) return entries.get(folderId) || null;
-    return entries.values().next().value || null;
+    return this.getPrimaryFolderHandoffNode();
   }
 
   setPrimaryFolderHandoffNode(entry = null) {
-    if (entry) {
-      this.folderHandoffNode = entry;
-      return;
-    }
-    const entries = this.folderHandoffNodes instanceof Map ? this.folderHandoffNodes : null;
-    this.folderHandoffNode = entries?.values().next().value || null;
+    this.primaryFolderHandoffId = entry?.folderId || null;
   }
 
   startClosingFolderHandoffNow(folderId, options = {}) {
@@ -1006,7 +1030,7 @@ export class DesktopLayer extends Container {
     if (!entry) return;
     if (entry.cleanupFrame != null) globalThis.cancelAnimationFrame?.(entry.cleanupFrame);
     this.getFolderHandoffNodes().delete(entry.folderId);
-    if (this.folderHandoffNode === entry) this.setPrimaryFolderHandoffNode(null);
+    if (this.primaryFolderHandoffId === entry.folderId) this.setPrimaryFolderHandoffNode(null);
     this.restoreFolderHandoffNode(entry);
   }
 
@@ -1389,11 +1413,8 @@ export class DesktopLayer extends Container {
       });
     }
     const overlay = this.singleStageFolderLayer;
-    const lastState = this.lastFolderSourceGhostingState || {};
-    const lastStateSourceIds = mergeFolderSourceGhostedIds(
-      lastState.folderSourceGhostedIds,
-      lastState.folderSourceGhostedId
-    );
+    const lastState = normalizeDesktopHandoffState(this.lastFolderSourceGhostingState || {});
+    const lastStateSourceIds = lastState.folderSourceGhostedIds;
     const ownershipSourceIds = getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership);
     const overlaySourceIds = overlay?.getDesktopSourceGhostedIds?.() || new Set();
     const folderHandoffNodes = Array.from(this.getFolderHandoffNodes().values()).map((entry) => ({
