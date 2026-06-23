@@ -168,7 +168,7 @@ export class FolderClosingGhostController {
     );
     this.closeSession.setRevealTimer(this.scheduler.setTimeout?.(() => {
       this.closeSession.clearRevealTimerRef();
-      if (layer.closingGhostKeys?.size || layer.closingPreviewSwapKeys?.size) this.clear();
+      if (this.closeSession.hasActiveVisuals()) this.clear();
     }, timeoutMs) || null);
   }
 
@@ -375,9 +375,7 @@ export class FolderClosingGhostController {
   }
 
   clearCompletedPreviewGhosts() {
-    const layer = this.layer;
-    const ghosts = layer.completedClosingPreviewGhosts || [];
-    layer.completedClosingPreviewGhosts = [];
+    const ghosts = this.closeSession.consumeCompletedPreviewGhosts();
     this.destroyCompletedPreviewGhosts(ghosts);
   }
 
@@ -409,7 +407,7 @@ export class FolderClosingGhostController {
     this.closeSession.markFrameComplete();
     layer.clearFrameGhost();
     this.debugHandoffVisualRelease("overlay-release-after-clear");
-    layer.onClosingHandoffVisualRelease?.(layer.closingGhostFolderId || layer.currentFolderId || null);
+    layer.onClosingHandoffVisualRelease?.(this.closeSession.folderId || layer.currentFolderId || null);
     this.releaseClosingTransitionOwnership({ restorePageTrack: false, reveal: false });
   }
 
@@ -456,28 +454,16 @@ export class FolderClosingGhostController {
   }
 
   isHandoffVisuallyReady() {
-    const layer = this.layer;
-    return !(
-      layer.openingGhostKeys?.size ||
-      layer.closingVisualGhostKeys?.size ||
-      layer.closingPreviewSwapKeys?.size ||
-      !(layer.closingFrameVisualComplete || layer.closingFrameComplete)
-    );
+    return this.closeSession.isHandoffVisuallyReady(this.layer.openingGhostKeys);
   }
 
   isOverlaySettled() {
-    const layer = this.layer;
-    return !(
-      layer.openingGhostKeys?.size ||
-      layer.closingGhostKeys?.size ||
-      layer.closingPreviewSwapKeys?.size ||
-      !layer.closingFrameComplete
-    );
+    return this.closeSession.isOverlaySettled(this.layer.openingGhostKeys);
   }
 
   finishTransition(state) {
     const layer = this.layer;
-    if (!layer.closingHandoffActive) {
+    if (!this.closeSession.isHandoffActive()) {
       if (!this.isHandoffVisuallyReady()) return;
       this.clearRevealTimer();
       layer.panel.visible = false;
@@ -499,7 +485,7 @@ export class FolderClosingGhostController {
       actualRect: roundRect(actualRect),
       alpha: roundNumber(ghost?.alpha),
       delta: rectDelta(actualRect, targetRect),
-      folderId: state.renderedFolder?.id || this.layer.closingGhostFolderId || this.layer.currentFolderId || null,
+      folderId: state.renderedFolder?.id || this.closeSession.folderId || this.layer.currentFolderId || null,
       isThumbnailChild: Boolean(target?.isThumbnailChild),
       itemId: target?.item?.id || null,
       phase,
@@ -547,14 +533,15 @@ export class FolderClosingGhostController {
     const options = getFolderHandoffDebugOptions();
     if (!options?.log) return;
     const layer = this.layer;
-    const folderId = layer.closingGhostFolderId || layer.currentFolderId || null;
+    const closeSnapshot = this.closeSession.snapshot();
+    const folderId = closeSnapshot.folderId || layer.currentFolderId || null;
     const payload = {
-      closingFrameComplete: Boolean(layer.closingFrameComplete),
-      closingFrameVisualComplete: Boolean(layer.closingFrameVisualComplete),
+      closingFrameComplete: closeSnapshot.frameComplete,
+      closingFrameVisualComplete: closeSnapshot.frameVisualComplete,
       closingGhostCount: layer.closingGhostLayer?.children?.length ?? null,
-      closingGhostKeys: Array.from(layer.closingGhostKeys || []),
-      closingPreviewSwapKeys: Array.from(layer.closingPreviewSwapKeys || []),
-      closingVisualGhostKeys: Array.from(layer.closingVisualGhostKeys || []),
+      closingGhostKeys: Array.from(closeSnapshot.ghostKeys),
+      closingPreviewSwapKeys: Array.from(closeSnapshot.previewSwapKeys),
+      closingVisualGhostKeys: Array.from(closeSnapshot.visualGhostKeys),
       folderId,
       frameGhostState: roundRect(layer.frameGhostState),
       panelVisible: layer.panel?.visible ?? null,
@@ -617,7 +604,7 @@ export class FolderClosingGhostController {
       ghost.scale.set(completedPreviewMotion.scale);
       ghost.alpha = 1;
       this.debugClosingGhostComplete(state, target, ghost, "completed-preview");
-      layer.completedClosingPreviewGhosts.push(ghost);
+      this.closeSession.addCompletedPreviewGhost(ghost);
       this.finishTransition(state);
       return;
     }

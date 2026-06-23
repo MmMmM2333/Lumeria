@@ -463,8 +463,6 @@ export class FolderOverlayLayer extends Container {
       previewSwap: this.closingPreviewSwap,
     });
     this.openingGhostRevealTimer = null;
-    this.closingHandoffCleanupFrame = null;
-    this.closingHandoffCleanupToken = 0;
     this.folderTransitions = new FolderTransitionCoordinator();
     this.visualCommitQueue = options.visualCommitQueue || new FolderVisualCommitQueue();
     this.visualOwnership = options.visualOwnership || new FolderVisualOwnershipRegistry();
@@ -563,7 +561,7 @@ export class FolderOverlayLayer extends Container {
     this.panelGeometry = geometry.panel;
     const folderId = state.renderedFolder.id;
     this.describeMotionTargets(state, geometry);
-    if (this.closingGhostFolderId && (this.closingGhostFolderId !== folderId || !isClosing)) {
+    if (this.closeSession.folderId && (this.closeSession.folderId !== folderId || !isClosing)) {
       this.detachClosingPresentationForOpen(folderId);
     }
     return {
@@ -660,7 +658,7 @@ export class FolderOverlayLayer extends Container {
     if (!isPrewarm) this.bindFakeRefs(state, geometry);
     const renderPlan = makeFolderOverlayRenderPlan({
       closeThumbRect,
-      closingGhostKeys: this.closingGhostKeys,
+      closingGhostKeys: this.closeSession.getGhostKeys(),
       cols,
       dragMeta: state.dragMeta,
       dragReleaseGhostId: state.dragReleaseGhostId,
@@ -827,7 +825,7 @@ export class FolderOverlayLayer extends Container {
         if (ghost?.key) state.completeFolderOpenIconGhost?.(ghost.key);
       }
     }
-    if (state.isFolderClosing && this.closingGhostFolderId !== folderId) {
+    if (state.isFolderClosing && this.closeSession.folderId !== folderId) {
       const closeFrameRect = this.getPanelVisualRect(geometry.panel) || geometry.panel;
       this.closingGhosts.start(state, closingGhostTargets, closeThumbRect, closeFrameRect, {
         handoffRect: closeIconRect,
@@ -835,7 +833,7 @@ export class FolderOverlayLayer extends Container {
         previewSwapTargets: closingPreviewSwapTargets,
       });
     }
-    if (!state.isFolderClosing && this.closingGhostFolderId) {
+    if (!state.isFolderClosing && this.closeSession.folderId) {
       this.clearClosingFolderId();
       this.closingGhosts.clear();
     }
@@ -855,8 +853,7 @@ export class FolderOverlayLayer extends Container {
     this.pageTrack.visible = !state.isFolderClosing &&
       !this.folderTransitions.isRevealPending() &&
       !this.openingGhostKeys?.size &&
-      !this.closingGhostKeys?.size &&
-      !this.closingPreviewSwapKeys?.size;
+      !this.closeSession.hasActiveVisuals();
     if (!this.frameGhostState) {
       if (!isClosing) this.notifyPanelTitleFrame(geometry.panel);
       else this.notifyTitleFrame(geometry.panel);
@@ -1113,10 +1110,10 @@ export class FolderOverlayLayer extends Container {
 
   detachClosingPresentationForOpen(nextFolderId) {
     if (nextFolderId) this.clearDetachedClosingVisuals(nextFolderId, { immediate: true, reveal: false });
-    const closingFolderId = this.closingGhostFolderId || null;
+    const closingFolderId = this.closeSession.folderId || null;
     const shouldKeepDetachedVisual = Boolean(closingFolderId && closingFolderId !== nextFolderId);
     const frameState = shouldKeepDetachedVisual ? this.frameGhostState : null;
-    const frameTarget = shouldKeepDetachedVisual ? this.closingFrameDetachedTarget : null;
+    const frameTarget = shouldKeepDetachedVisual ? this.closeSession.getDetachedFrameTarget() : null;
     const closingGhosts = shouldKeepDetachedVisual
       ? this.closingGhostLayer?.removeChildren?.() || []
       : [];
@@ -1212,17 +1209,11 @@ export class FolderOverlayLayer extends Container {
   }
 
   setClosingHandoffActive(active) {
-    const next = Boolean(active);
-    if (this.closingHandoffActive === next) return;
-    this.closingHandoffActive = next;
-    const folderId = next ? this.closingGhostFolderId || this.currentFolderId || null : null;
-    if (next) this.onClosingHandoffReady(folderId);
-    this.onInternalActivityChange(next, folderId);
+    this.closeSession.setHandoffActive(active);
   }
 
   clearClosingFolderId() {
-    if (this.closeSession) this.closeSession.clearFolderId();
-    else this.closingGhostFolderId = null;
+    this.closeSession.clearFolderId();
   }
 
   revealIconNodes() {

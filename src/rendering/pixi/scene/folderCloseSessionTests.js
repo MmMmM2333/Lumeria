@@ -99,9 +99,6 @@ function makeClosingLayer() {
       this.ownerKindAtOpeningClear = this.visualOwnership.getOwner(sourceKey)?.kind || null;
       return this.visualOwnership.releaseByToken(token);
     },
-    setClosingHandoffActive(active) {
-      this.closingHandoffActive = Boolean(active);
-    },
     startFrameGhost(fromRect, toRect, options = {}) {
       this.frameGhostState = { ...fromRect, progress: 0 };
       this.frameGhostTarget = toRect;
@@ -148,11 +145,7 @@ export async function runFolderCloseSessionTests() {
   };
 
   {
-    const layer = {
-      setClosingHandoffActive(active) {
-        this.closingHandoffActive = Boolean(active);
-      },
-    };
+    const layer = {};
     const session = new FolderCloseSession(layer);
     session.begin("folder-a");
     session.setSessionToken("close-token");
@@ -165,12 +158,13 @@ export async function runFolderCloseSessionTests() {
     session.markFrameVisualComplete();
     session.markControllerGhostComplete("close-b");
 
-    assert(layer.closingGhostFolderId === "folder-a", "begin should publish the closing folder id");
-    assert(layer.closingGhostSessionToken === "close-token", "session should publish the transition token");
-    assert(layer.closingGhostKeys.has("app-1"), "session should track active closing ghosts");
-    assert(layer.closingVisualGhostKeys.has("app-1"), "session should track visual-critical closing ghosts");
-    assert(layer.closingFrameVisualComplete === true, "session should track frame visual readiness");
-    assert(layer.closingFolderHandoffTarget.folderId === "folder-a", "session should publish handoff target metadata");
+    const snapshot = session.snapshot();
+    assert(snapshot.folderId === "folder-a", "begin should store the closing folder id in the session");
+    assert(snapshot.token === "close-token", "session should store the transition token");
+    assert(snapshot.ghostKeys.has("app-1"), "session should track active closing ghosts");
+    assert(snapshot.visualGhostKeys.has("app-1"), "session should track visual-critical closing ghosts");
+    assert(snapshot.frameVisualComplete === true, "session should track frame visual readiness");
+    assert(snapshot.handoffTarget.folderId === "folder-a", "session should store handoff target metadata");
     assert(session.consumeControllerGhostKeys().join(",") === "close-a,close-b", "session should merge pending and completed controller keys once");
   }
 
@@ -224,7 +218,7 @@ export async function runFolderCloseSessionTests() {
 
     layer.detachClosingPresentationForOpen("folder-b");
 
-    assert(layer.closingGhostFolderId === null, "close interrupted by open should clear the live closing folder id through the session");
+    assert(layer.closeSession.folderId === null, "close interrupted by open should clear the live closing folder id through the session");
     assert(calls.some((entry) => entry?.restorePageTrack === false && entry?.reveal === false), "close interrupted by open should clear closing visuals without revealing stale folder content");
   }
 }

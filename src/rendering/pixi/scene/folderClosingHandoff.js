@@ -1,5 +1,6 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { clientRectToStageVisualRect } from "../geometry/stageCoordinates.js";
+import { ensureFolderCloseSession } from "./folderCloseSession.js";
 import { getStableFolderClosePresentationHitRects } from "./folderOverlayTargets.js";
 
 function isUsableRect(rect) {
@@ -15,10 +16,7 @@ function isPointInRect(x, y, rect) {
 }
 
 export function cancelClosingHandoffCleanup(layer, cancelAnimationFrame = globalThis.cancelAnimationFrame) {
-  layer.closingHandoffCleanupToken = (Number(layer.closingHandoffCleanupToken) || 0) + 1;
-  if (layer.closingHandoffCleanupFrame == null) return;
-  if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(layer.closingHandoffCleanupFrame);
-  layer.closingHandoffCleanupFrame = null;
+  ensureFolderCloseSession(layer).cancelHandoffCleanup(cancelAnimationFrame);
 }
 
 export function applyClosingHandoffOnlyOverlayState(layer) {
@@ -29,9 +27,10 @@ export function applyClosingHandoffOnlyOverlayState(layer) {
 }
 
 export function getClosingPresentationStageHitRects(layer) {
+  const closeSnapshot = layer?.closeSession?.snapshot?.() || null;
   const targetRects = getStableFolderClosePresentationHitRects({
-    handoffRect: layer?.closingFolderHandoffRect,
-    stableFolderCloseTarget: layer?.closingFolderHandoffTarget || layer?.stableFolderCloseTarget,
+    handoffRect: closeSnapshot?.handoffRect,
+    stableFolderCloseTarget: closeSnapshot?.handoffTarget || layer?.stableFolderCloseTarget,
   })
     .map((rect) => clientRectToStageVisualRect(rect, layer?.stageRect))
     .filter(isUsableRect);
@@ -60,21 +59,7 @@ export function applyClosingPresentationOverlayState(layer) {
 }
 
 export function scheduleClosingHandoffCleanup(layer, cleanup, scheduler = globalThis) {
-  cancelClosingHandoffCleanup(layer, scheduler.cancelAnimationFrame);
-  const token = (Number(layer.closingHandoffCleanupToken) || 0) + 1;
-  layer.closingHandoffCleanupToken = token;
-
-  const runCleanup = () => {
-    if (token !== layer.closingHandoffCleanupToken) return;
-    layer.closingHandoffCleanupFrame = null;
-    cleanup();
-  };
-
-  if (typeof scheduler.requestAnimationFrame === "function") {
-    layer.closingHandoffCleanupFrame = scheduler.requestAnimationFrame(runCleanup);
-    return;
-  }
-  runCleanup();
+  ensureFolderCloseSession(layer).scheduleHandoffCleanup(cleanup, scheduler);
 }
 
 export function finishClosingHandoff(layer, state, cleanup, scheduler = globalThis) {

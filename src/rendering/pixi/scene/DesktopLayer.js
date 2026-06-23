@@ -125,9 +125,10 @@ function hasAnyFolderClosingHandoffId(state = {}) {
 }
 
 function isFolderLayerHandoffActive(folderLayer = null, folderId = null) {
-  if (!folderLayer?.closingHandoffActive) return false;
+  const closeSession = folderLayer?.closeSession || null;
+  if (!closeSession?.isHandoffActive?.()) return false;
   if (!folderId) return true;
-  const activeFolderId = folderLayer.closingGhostFolderId || folderLayer.currentFolderId || null;
+  const activeFolderId = closeSession.folderId || folderLayer.currentFolderId || null;
   return !activeFolderId || activeFolderId === folderId;
 }
 
@@ -164,7 +165,7 @@ export function resolveLaunchpadVisualTransform(state = {}) {
 }
 
 export function shouldFinishFolderHandoff(state = {}, folderLayer = null) {
-  return !hasAnyFolderClosingHandoffId(state) && !folderLayer?.closingHandoffActive;
+  return !hasAnyFolderClosingHandoffId(state) && !folderLayer?.closeSession?.isHandoffActive?.();
 }
 
 export function shouldFinishFolderHandoffEntry(state = {}, folderLayer = null, folderId = null) {
@@ -1415,6 +1416,7 @@ export class DesktopLayer extends Container {
     const lastStateSourceIds = lastState.folderSourceGhostedIds;
     const ownershipSourceIds = getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership);
     const overlaySourceIds = overlay?.getDesktopSourceGhostedIds?.() || new Set();
+    const overlayCloseSnapshot = overlay?.closeSession?.snapshot?.() || null;
     const folderHandoffNodes = Array.from(this.getFolderHandoffNodes().values()).map((entry) => ({
       display: readDisplay(entry.node),
       folderId: entry.folderId || null,
@@ -1444,10 +1446,10 @@ export class DesktopLayer extends Container {
         overlay: Array.from(overlaySourceIds),
       },
       overlay: overlay ? {
-        closingFolderId: overlay.closingGhostFolderId || null,
-        closingGhostKeys: Array.from(overlay.closingGhostKeys || []),
-        closingGhostSessionToken: overlay.closingGhostSessionToken || null,
-        closingHandoffActive: overlay.closingHandoffActive === true,
+        closingFolderId: overlayCloseSnapshot?.folderId || null,
+        closingGhostKeys: Array.from(overlayCloseSnapshot?.ghostKeys || []),
+        closingGhostSessionToken: overlayCloseSnapshot?.token || null,
+        closingHandoffActive: overlayCloseSnapshot?.handoffActive === true,
         currentFolderId: overlay.currentFolderId || null,
         debug: overlay.getVisualDebugSnapshot?.() || null,
         openingGhostKeys: Array.from(overlay.openingGhostKeys || []),
