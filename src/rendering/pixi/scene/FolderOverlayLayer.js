@@ -83,7 +83,6 @@ const FOLDER_PANEL_OPEN_REASON = "folder-panel-open";
 const FOLDER_PANEL_READY_PROGRESS = 0.985;
 const MAX_DETACHED_CLOSING_VISUALS = 2;
 const DETACHED_CLOSING_FRAME_TAIL_DURATION = 0.04;
-const DETACHED_CLOSING_FADE_TAIL_DURATION = 0.12;
 const DETACHED_CLOSING_FALLBACK_DURATION = 0.22;
 
 function isPointInRect(x, y, rect) {
@@ -202,11 +201,24 @@ function registerFolderIconNodeBounds(options) {
 }
 
 function drawDetachedFrame(graphics, rect) {
-  if (!graphics || !rect) return;
+  if (!graphics || graphics.destroyed || !rect) return;
   graphics.clear()
     .roundRect(rect.left, rect.top, rect.width, rect.height, rect.radius ?? getFrameRadius(rect))
     .fill({ color: Math.round(rect.fillColor ?? 0xf7f8ff), alpha: rect.fillAlpha ?? 0.26 })
     .stroke({ color: Math.round(rect.strokeColor ?? 0xffffff), alpha: rect.strokeAlpha ?? 0.24, width: rect.strokeWidth ?? 1 });
+}
+
+function addDetachedVisualMotionControl(visual, control) {
+  if (!visual || !control || control.completed) return;
+  if (!visual.motionControls) visual.motionControls = new Set();
+  visual.motionControls.add(control);
+}
+
+function cancelDetachedVisualMotionControls(visual) {
+  const controls = visual?.motionControls;
+  visual.motionControls = null;
+  if (!controls?.size) return;
+  for (const control of controls) control.cancel?.(FOLDER_PANEL_DETACHED_CLOSE_REASON);
 }
 
 function makeCompletionTracker(onComplete) {
@@ -237,7 +249,7 @@ function makeCompletionTracker(onComplete) {
   };
 }
 
-function animateDetachedFrame(graphics, frameState, targetState, tracker) {
+function animateDetachedFrame(graphics, frameState, targetState, tracker, visual = null) {
   if (!graphics || !frameState) return;
   const frame = {
     ...frameState,
@@ -248,7 +260,7 @@ function animateDetachedFrame(graphics, frameState, targetState, tracker) {
   const finishGeometry = tracker.add();
   const update = () => drawDetachedFrame(graphics, frame);
   update();
-  transition(frame)
+  const geometryControl = transition(frame)
     .duration(duration)
     .ease(folderCloseEase)
     .overlay()
@@ -269,23 +281,33 @@ function animateDetachedFrame(graphics, frameState, targetState, tracker) {
       onUpdate: update,
     })
     .start();
-
-  const finishFade = tracker.add();
-  transition(graphics)
-    .duration(DETACHED_CLOSING_FADE_TAIL_DURATION)
-    .ease(folderCloseEase)
-    .delay(Math.max(0, duration - DETACHED_CLOSING_FADE_TAIL_DURATION))
-    .overlay()
-    .interrupt("retarget")
-    .to({
-      alpha: 0,
-      onComplete: finishFade,
-    })
-    .start();
+  addDetachedVisualMotionControl(visual, geometryControl);
 }
 
-function animateDetachedClosingGhost(ghost, tracker) {
+function animateDetachedClosingGhost(ghost, tracker, visual = null) {
   if (!ghost || ghost.destroyed) return;
+  motionRuntime.describeTarget(ghost, {
+    itemId: ghost.item?.id ?? null,
+    itemType: ghost.item?.type ?? null,
+    kind: "FolderGhost",
+    label: ghost.item?.name || ghost.item?.id || "Detached closing ghost",
+    layer: "ghost",
+    overlayTarget: ghost,
+    phase: "detachedClosing",
+    sourceLabel: "ghost.detachedClosing.node",
+    targetPart: "node",
+  });
+  motionRuntime.describeTarget(ghost.scale, {
+    itemId: ghost.item?.id ?? null,
+    itemType: ghost.item?.type ?? null,
+    kind: "FolderGhost",
+    label: ghost.item?.name || ghost.item?.id || "Detached closing ghost",
+    layer: "ghost",
+    overlayTarget: ghost,
+    phase: "detachedClosing",
+    sourceLabel: "ghost.detachedClosing.scale",
+    targetPart: "node.scale",
+  });
   const motion = ghost.__closingDetachedMotion;
   const duration = Math.max(0.01, Number(motion?.duration) || folderCloseDuration);
   const hasGeometryTarget = Number.isFinite(Number(motion?.x)) &&
@@ -294,7 +316,7 @@ function animateDetachedClosingGhost(ghost, tracker) {
   const finishDisplay = tracker.add();
 
   if (hasGeometryTarget) {
-    transition(ghost)
+    const displayControl = transition(ghost)
       .duration(duration)
       .ease(folderCloseEase)
       .overlay()
@@ -306,8 +328,9 @@ function animateDetachedClosingGhost(ghost, tracker) {
         onComplete: finishDisplay,
       })
       .start();
+    addDetachedVisualMotionControl(visual, displayControl);
     const finishScale = tracker.add();
-    transition(ghost.scale)
+    const scaleControl = transition(ghost.scale)
       .duration(duration)
       .ease(folderCloseEase)
       .overlay()
@@ -318,10 +341,11 @@ function animateDetachedClosingGhost(ghost, tracker) {
         onComplete: finishScale,
       })
       .start();
+    addDetachedVisualMotionControl(visual, scaleControl);
     return;
   }
 
-  transition(ghost)
+  const fallbackControl = transition(ghost)
     .duration(DETACHED_CLOSING_FALLBACK_DURATION)
     .ease(folderCloseEase)
     .overlay()
@@ -331,23 +355,23 @@ function animateDetachedClosingGhost(ghost, tracker) {
       onComplete: finishDisplay,
     })
     .start();
+  addDetachedVisualMotionControl(visual, fallbackControl);
 }
 
-function animateDetachedClosingContainer(container, tracker) {
-  if (!container) return;
-  const duration = folderCloseDuration + DETACHED_CLOSING_FRAME_TAIL_DURATION;
-  const finishFade = tracker.add();
-  transition(container)
-    .duration(DETACHED_CLOSING_FADE_TAIL_DURATION)
+function animateDetachedGeometryHold(tracker, visual = null) {
+  const state = { progress: 0 };
+  const finishGeometry = tracker.add();
+  const holdControl = transition(state)
+    .duration(folderCloseDuration + DETACHED_CLOSING_FRAME_TAIL_DURATION)
     .ease(folderCloseEase)
-    .delay(Math.max(0, duration - DETACHED_CLOSING_FADE_TAIL_DURATION))
     .overlay()
     .interrupt("retarget")
     .to({
-      alpha: 0,
-      onComplete: finishFade,
+      progress: 1,
+      onComplete: finishGeometry,
     })
     .start();
+  addDetachedVisualMotionControl(visual, holdControl);
 }
 
 function springFolderIconLayoutPosition(node, target, refreshBounds) {
@@ -413,6 +437,7 @@ export class FolderOverlayLayer extends Container {
     this.registeredBoundsDirty = false;
     this.registeredBoundsFlushQueued = false;
     this.onIconAction = options.onIconAction || (() => { });
+    this.onClosingHandoffPrepare = options.onClosingHandoffPrepare || (() => { });
     this.onClosingHandoffReady = options.onClosingHandoffReady || (() => { });
     this.onClosingHandoffVisualRelease = options.onClosingHandoffVisualRelease || (() => { });
     this.onInternalActivityChange = options.onInternalActivityChange || (() => { });
@@ -468,6 +493,7 @@ export class FolderOverlayLayer extends Container {
     this.pageTrack.mask = this.pageMask;
     this.eventMode = "static";
     this.on("pointerdown", (event) => this.handlePointerDown(event));
+    this.describeMotionTargets();
   }
 
   update(state) {
@@ -497,8 +523,7 @@ export class FolderOverlayLayer extends Container {
       stopTargetSprings(this.panel.scale, { reason: FOLDER_OVERLAY_CLEAR_REASON });
       this.openingGhosts.clear({ cancelSession: true });
       this.closingGhosts.clear();
-      this.clearDetachedClosingVisuals(null, { immediate: true });
-      this.releaseAllOwnedVisualOwnership();
+      this.releaseAllOwnedVisualOwnership({ preserveDetachedClosing: true });
       this.stableFolderCloseTarget = null;
       if (state.folderPanelRef) state.folderPanelRef.value = null;
       if (state.folderViewportRef) state.folderViewportRef.value = null;
@@ -541,7 +566,8 @@ export class FolderOverlayLayer extends Container {
     this.isUserFolderClosing = Boolean(state.isFolderClosing);
     this.panelGeometry = geometry.panel;
     const folderId = state.renderedFolder.id;
-    if (!isClosing && this.closingGhostFolderId) {
+    this.describeMotionTargets(state, geometry);
+    if (this.closingGhostFolderId && (this.closingGhostFolderId !== folderId || !isClosing)) {
       this.detachClosingPresentationForOpen(folderId);
     }
     const overlayTargets = resolveFolderOverlayTargets({
@@ -599,10 +625,17 @@ export class FolderOverlayLayer extends Container {
     } else {
       const markBoundsDirty = () => this.markRegisteredBoundsDirty();
       updatePageTrackMotion(this.pageTrackMotion, this.pageTrack, {
+        debugMetadata: {
+          folderId,
+          kind: "PageTrack",
+          label: `${state.renderedFolder.name || folderId || "Folder"} page track`,
+          layer: "folder",
+        },
         onFrame: markBoundsDirty,
         pageIndex: state.folderPageIndex,
         pageSpan: geometry.grid.width,
         scrub: state.folderPageTrackScrub,
+        sourceLabel: "folder.pageTrack",
         springConfig: pageTrackSpring,
       });
     }
@@ -879,10 +912,17 @@ export class FolderOverlayLayer extends Container {
     return released;
   }
 
-  releaseAllOwnedVisualOwnership() {
+  releaseAllOwnedVisualOwnership(options = {}) {
     const ownedVisualTokens = this.getOwnedVisualTokens();
-    const tokens = Array.from(ownedVisualTokens);
-    ownedVisualTokens.clear();
+    const preserveTokens = options.preserveDetachedClosing === true
+      ? new Set((this.detachedClosingVisuals || []).map((visual) => visual?.ownerToken).filter((token) => token != null))
+      : null;
+    const tokens = Array.from(ownedVisualTokens).filter((token) => !preserveTokens?.has(token));
+    if (preserveTokens) {
+      for (const token of tokens) ownedVisualTokens.delete(token);
+    } else {
+      ownedVisualTokens.clear();
+    }
     let released = 0;
     for (const token of tokens) released += this.visualOwnership.releaseByToken(token);
     return released;
@@ -891,6 +931,7 @@ export class FolderOverlayLayer extends Container {
   destroyDetachedClosingVisual(visual) {
     if (!visual || visual.destroyed) return;
     visual.destroyed = true;
+    cancelDetachedVisualMotionControls(visual);
     killAllMotion(visual.container, { reason: FOLDER_PANEL_DETACHED_CLOSE_REASON });
     if (visual.container?.parent) visual.container.parent.removeChild(visual.container);
     visual.container?.destroy?.({ children: true });
@@ -898,6 +939,29 @@ export class FolderOverlayLayer extends Container {
 
   notifyDesktopSourceGhostingChange() {
     this.onDesktopSourceGhostingChange?.();
+  }
+
+  releaseDetachedClosingSourceOwnership(visual) {
+    if (!visual?.desktopSourceKey || visual.ownerToken == null) return false;
+    const released = this.releaseVisualOwnership(visual.desktopSourceKey, visual.ownerToken);
+    if (released) visual.ownerToken = null;
+    return released;
+  }
+
+  releaseDetachedClosingHandoffVisual(visual, options = {}) {
+    if (!visual || visual.handoffReleased) return false;
+    visual.handoffReleased = true;
+    if (options.reveal !== false) this.onClosingHandoffVisualRelease?.(visual.folderId || null);
+    return true;
+  }
+
+  commitDetachedClosingHandoff(visual, options = {}) {
+    if (!visual || visual.handoffCommitted) return false;
+    visual.handoffCommitted = true;
+    this.releaseDetachedClosingHandoffVisual(visual, options);
+    this.releaseDetachedClosingSourceOwnership(visual);
+    this.notifyDesktopSourceGhostingChange();
+    return true;
   }
 
   clearDetachedClosingVisual(visual, options = {}) {
@@ -909,14 +973,11 @@ export class FolderOverlayLayer extends Container {
         const index = this.detachedClosingVisuals.indexOf(visual);
         if (index < 0) return false;
         this.detachedClosingVisuals.splice(index, 1);
-        const released = visual.desktopSourceKey && visual.ownerToken != null
-          ? this.releaseVisualOwnership(visual.desktopSourceKey, visual.ownerToken)
-          : false;
+        const released = this.releaseDetachedClosingSourceOwnership(visual);
         return { released, visual };
       },
       applyVisibility: () => {
-        this.onClosingHandoffVisualRelease?.(visual.folderId || null);
-        this.notifyDesktopSourceGhostingChange();
+        this.commitDetachedClosingHandoff(visual, { reveal: options.reveal !== false });
       },
       destroyVisual: () => {
         this.destroyDetachedClosingVisual(visual);
@@ -924,22 +985,20 @@ export class FolderOverlayLayer extends Container {
     }, { immediate: options.immediate === true });
   }
 
-  clearDetachedClosingVisualNow(visual) {
+  clearDetachedClosingVisualNow(visual, options = {}) {
     if (!visual) return;
     const index = this.detachedClosingVisuals.indexOf(visual);
     if (index >= 0) this.detachedClosingVisuals.splice(index, 1);
-    if (visual.desktopSourceKey && visual.ownerToken != null) this.releaseVisualOwnership(visual.desktopSourceKey, visual.ownerToken);
-    this.onClosingHandoffVisualRelease?.(visual.folderId || null);
-    this.notifyDesktopSourceGhostingChange();
     this.destroyDetachedClosingVisual(visual);
+    this.commitDetachedClosingHandoff(visual, { reveal: options.reveal !== false });
   }
 
   clearDetachedClosingVisuals(folderId = null, options = {}) {
     const visuals = Array.from(this.detachedClosingVisuals);
     for (const visual of visuals) {
       if (folderId && visual.folderId !== folderId) continue;
-      if (options.immediate) this.clearDetachedClosingVisualNow(visual);
-      else this.clearDetachedClosingVisual(visual);
+      if (options.immediate) this.clearDetachedClosingVisualNow(visual, options);
+      else this.clearDetachedClosingVisual(visual, options);
     }
   }
 
@@ -950,7 +1009,7 @@ export class FolderOverlayLayer extends Container {
   }
 
   detachClosingPresentationForOpen(nextFolderId) {
-    if (nextFolderId) this.clearDetachedClosingVisuals(nextFolderId, { immediate: true });
+    if (nextFolderId) this.clearDetachedClosingVisuals(nextFolderId, { immediate: true, reveal: false });
     const closingFolderId = this.closingGhostFolderId || null;
     const shouldKeepDetachedVisual = Boolean(closingFolderId && closingFolderId !== nextFolderId);
     const frameState = shouldKeepDetachedVisual ? this.frameGhostState : null;
@@ -964,8 +1023,27 @@ export class FolderOverlayLayer extends Container {
     let detachedVisual = null;
 
     if (shouldKeepDetachedVisual && (frameState || closingGhosts.length || previewSwapGhosts.length)) {
+      this.onClosingHandoffPrepare?.(closingFolderId);
       const container = new Container();
-      container.eventMode = "none";
+      container.eventMode = "static";
+      container.interactiveChildren = false;
+      container.hitArea = {
+        contains: (x, y) => {
+          if (container.destroyed || !container.children.length) return false;
+          const bounds = container.getLocalBounds();
+          return x >= bounds.x && x <= bounds.x + bounds.width
+            && y >= bounds.y && y <= bounds.y + bounds.height;
+        },
+      };
+      container.cursor = "pointer";
+      container.on("pointerdown", (event) => {
+        const nativeEvent = event?.nativeEvent || event;
+        if (nativeEvent?.button != null && nativeEvent.button !== 0) return;
+        event?.stopPropagation?.();
+        nativeEvent?.preventDefault?.();
+        nativeEvent?.stopPropagation?.();
+        this.onClosingFolderPointerDown?.(closingFolderId, nativeEvent);
+      });
       container.alpha = 1;
       const visual = { container, folderId: closingFolderId };
       detachedVisual = visual;
@@ -994,12 +1072,22 @@ export class FolderOverlayLayer extends Container {
       this.pruneDetachedClosingVisuals();
       this.closingGhostFolderId = null;
       this.closingGhosts.clear({ restorePageTrack: false, reveal: false });
-      const tracker = makeCompletionTracker(() => this.clearDetachedClosingVisual(detachedVisual));
+      const finishAfterGeometry = () => {
+        if (detachedVisual.destroyed || detachedVisual.finishQueued) return;
+        detachedVisual.finishQueued = true;
+        motionRuntime.afterFrame(() => {
+          if (detachedVisual.destroyed) return;
+          this.clearDetachedClosingVisualNow(detachedVisual);
+        });
+      };
+      const geometryTracker = makeCompletionTracker(finishAfterGeometry);
       const frame = frameState ? container.children[0] : null;
-      if (frameState) animateDetachedFrame(frame, frameState, frameTarget, tracker);
-      for (const ghost of closingGhosts) animateDetachedClosingGhost(ghost, tracker);
-      animateDetachedClosingContainer(container, tracker);
-      tracker.finishIfIdle();
+      if (frameState) animateDetachedFrame(frame, frameState, frameTarget, geometryTracker, detachedVisual);
+      for (const ghost of closingGhosts) animateDetachedClosingGhost(ghost, geometryTracker, detachedVisual);
+      if (!frameState && !closingGhosts.length && previewSwapGhosts.length) {
+        animateDetachedGeometryHold(geometryTracker, detachedVisual);
+      }
+      geometryTracker.finishIfIdle();
       return;
     }
 
@@ -1010,7 +1098,7 @@ export class FolderOverlayLayer extends Container {
   getDesktopSourceGhostedIds() {
     const ids = new Set();
     for (const visual of this.detachedClosingVisuals || []) {
-      if (visual?.folderId) ids.add(visual.folderId);
+      if (visual?.folderId && !visual.handoffCommitted) ids.add(visual.folderId);
     }
     for (const entry of this.visualOwnership.snapshot()) {
       if (!entry.key?.startsWith("desktopSource:")) continue;
@@ -1225,6 +1313,7 @@ export class FolderOverlayLayer extends Container {
 
   setPageDotHover(dot, active, hovered, options = {}) {
     const visual = getFolderPageDotVisualState({ active, hovered });
+    this.describePageDotTargets(dot);
     this.drawPageDot(dot);
     if (options.immediate) {
       killMotionOf(dot, "alpha");
@@ -1269,6 +1358,7 @@ export class FolderOverlayLayer extends Container {
     for (let index = 0; index < pageCount; index += 1) {
       const dot = new Graphics();
       const isActive = index === state.folderPageIndex;
+      this.describePageDotTargets(dot, index, state, isActive);
       this.setPageDotHover(dot, isActive, false, { immediate: true });
       dot.position.set(startX + index * (FOLDER_PAGE_DOTS_SIZE + FOLDER_PAGE_DOTS_GAP), centerY);
       dot.eventMode = "static";
@@ -1282,6 +1372,79 @@ export class FolderOverlayLayer extends Container {
       });
       this.pageDotsLayer.addChild(dot);
     }
+  }
+
+  describeMotionTargets(state = {}, geometry = {}) {
+    const folder = state.renderedFolder || {};
+    const folderId = folder.id ?? this.currentFolderId ?? null;
+    const label = folder.name || folderId || "Folder overlay";
+    const base = {
+      folderId,
+      kind: "FolderOverlay",
+      label,
+      layer: "folder",
+    };
+    motionRuntime.describeTarget(this.panel, {
+      ...base,
+      kind: "FolderPanel",
+      overlayTarget: this.panel,
+      sourceLabel: "folder.panel",
+      targetPart: "panel",
+    });
+    motionRuntime.describeTarget(this.panel?.scale, {
+      ...base,
+      kind: "FolderPanel",
+      overlayTarget: this.panel,
+      sourceLabel: "folder.panelScale",
+      targetPart: "panel.scale",
+    });
+    motionRuntime.describeTarget(this.pageTrack, {
+      ...base,
+      kind: "PageTrack",
+      overlayTarget: this.pageTrack,
+      pageIndex: state.folderPageIndex ?? null,
+      pageSpan: geometry.grid?.width ?? null,
+      sourceLabel: "folder.pageTrack",
+      targetPart: "pageTrack",
+    });
+    motionRuntime.describeTarget(this.pageDotsLayer, {
+      ...base,
+      kind: "PageDotsLayer",
+      overlayTarget: this.pageDotsLayer,
+      sourceLabel: "folder.pageDotsLayer",
+      targetPart: "pageDotsLayer",
+    });
+  }
+
+  describePageDotTargets(dot, index = dot?.__motionDebugMetadata?.index, state = null, active = dot?.__motionDebugMetadata?.active) {
+    if (!dot) return;
+    const existing = dot.__motionDebugMetadata;
+    let metadata = !state && existing ? existing : null;
+    if (!metadata) {
+      const folder = state?.renderedFolder || {};
+      metadata = {
+        active: active ?? null,
+        folderId: folder.id ?? this.currentFolderId ?? null,
+        index: index ?? null,
+        kind: "PageDot",
+        label: `Folder page dot ${index ?? ""}`.trim(),
+        layer: "folder",
+        pageIndex: state?.folderPageIndex ?? null,
+      };
+    }
+    dot.__motionDebugMetadata = metadata;
+    motionRuntime.describeTarget(dot, {
+      ...metadata,
+      overlayTarget: dot,
+      sourceLabel: "folder.pageDot",
+      targetPart: "pageDot",
+    });
+    motionRuntime.describeTarget(dot.scale, {
+      ...metadata,
+      overlayTarget: dot,
+      sourceLabel: "folder.pageDot.scale",
+      targetPart: "pageDot.scale",
+    });
   }
 
   rebuildPageTrackMask() {

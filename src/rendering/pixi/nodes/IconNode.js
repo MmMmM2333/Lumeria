@@ -1,6 +1,7 @@
 import { Container, Graphics, Rectangle, Sprite, Text } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
+import { motionRuntime } from "../animation/motionRuntime.js";
 import { killMotionOf, motionAdd, motionSequence, transition } from "../animation/motionTween.js";
 import { getCachedIconTexture } from "../assets/iconTextureCache.js";
 import {
@@ -95,6 +96,24 @@ function setTextValue(textNode, value) {
 function setPositionValue(point, x, y) {
   if (point?.x === x && point?.y === y) return;
   point?.set?.(x, y);
+}
+
+function getIconMotionLayer(source) {
+  const type = source?.type || "";
+  if (type === "folder") return "folder";
+  if (type === "search") return "search";
+  if (String(type).includes("ghost")) return "ghost";
+  return "desktop";
+}
+
+function getIconMotionKind(item, source) {
+  if (String(source?.type || "").includes("ghost")) return "FolderGhost";
+  if (item?.type === "folder") return "Folder";
+  return "Icon";
+}
+
+function getIconMotionLabel(item, fallback = "Icon") {
+  return item?.name || item?.title || item?.id || fallback;
 }
 
 const PRESSED_VISUAL_ALPHA = 0.58;
@@ -243,6 +262,7 @@ export class IconNode extends Container {
     this.on("pointerupoutside", () => this.cancelPressAndClickIntent());
     this.on("pointercancel", () => this.cancelPressAndClickIntent());
     this.on("rightdown", (event) => this.handleContextMenu(event));
+    this.describeMotionTargets();
   }
 
   setState(state) {
@@ -257,6 +277,7 @@ export class IconNode extends Container {
     this.textless = Boolean(state.textless);
     this.isFolder = state.item?.type === "folder";
     this.state = state;
+    this.describeMotionTargets(state);
     this.eventMode = state.interactive === false ? "none" : "static";
     this.cursor = state.interactive === false ? "default" : "pointer";
     this.visible = !state.dragging && !state.ghosted;
@@ -274,6 +295,46 @@ export class IconNode extends Container {
       if (shouldRestoreLabelAfterGhost) this.restoreLabelAfterGhost();
       else this.revealLabelAfterGhost();
     }
+  }
+
+  describeMotionTargets(state = this.state || {}) {
+    const item = state.item || this.item || null;
+    const source = state.source || this.source || {};
+    const layer = getIconMotionLayer(source);
+    const prefix = layer === "ghost" ? "ghost.icon" : `${layer}.icon`;
+    const base = {
+      index: source.index ?? null,
+      itemId: item?.id ?? null,
+      itemType: item?.type ?? null,
+      kind: getIconMotionKind(item, source),
+      label: getIconMotionLabel(item),
+      layer,
+      pageIndex: source.pageIndex ?? null,
+      sourceType: source.type ?? null,
+    };
+    const describe = (target, targetPart, suffix, overlayTarget = target) => {
+      if (!target) return;
+      motionRuntime.describeTarget(target, {
+        ...base,
+        overlayTarget,
+        sourceLabel: `${prefix}.${suffix}`,
+        targetPart,
+      });
+    };
+    describe(this, "node", "node");
+    describe(this.scale, "node.scale", "nodeScale", this);
+    describe(this.visualWrap, "visualWrap", "visualWrap");
+    describe(this.visualWrap?.scale, "visualWrap.scale", "visualScale", this.visualWrap);
+    describe(this.jiggleWrap, "jiggleWrap", "jiggleWrap");
+    describe(this.folderThumb, "folderThumb", "folderThumb");
+    describe(this.folderChildrenWrap, "folderChildrenWrap", "folderChildren");
+    describe(this.folderFlashOverlay, "folderFlashOverlay", "folderFlash");
+    describe(this.folderCreateBackdrop, "folderCreateBackdrop", "folderCreateBackdrop");
+    describe(this.folderCreateFlashOverlay, "folderCreateFlashOverlay", "folderCreateFlash");
+    describe(this.iconSprite, "iconSprite", "iconSprite");
+    describe(this.emojiText, "emojiText", "emojiText");
+    describe(this.labelText, "labelText", "label");
+    describe(this.labelText?.scale, "labelText.scale", "labelScale", this.labelText);
   }
 
   updateOpeningScale(state) {
@@ -1028,6 +1089,10 @@ export class IconNode extends Container {
 
   setFolderHandoffVisualHidden(hidden) {
     this.visualWrap.visible = !hidden;
+    if (hidden) return;
+    this.setPressed(false, { immediate: true });
+    killMotionOf(this.visualWrap.scale);
+    this.visualWrap.scale.set(1);
   }
 
   restoreLabelAfterGhost() {

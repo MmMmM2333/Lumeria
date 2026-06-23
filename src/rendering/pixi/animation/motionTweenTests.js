@@ -543,6 +543,30 @@ export function runMotionTweenTests() {
 
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { scale: { x: 1, y: 1 } };
+    motionTo(target, {
+      debugMetadata: {
+        itemId: "app-a",
+        kind: "Icon",
+        label: "App A",
+        layer: "desktop",
+      },
+      duration: 1,
+      ease: "linear",
+      scale: 2,
+      sourceLabel: "desktop.icon.press",
+    }, { runtime });
+
+    const report = runtime.debugReport({ includeTargets: true });
+    const scaleTargets = report.targets.filter((entry) => entry.sourceLabel === "desktop.icon.press");
+    assert(scaleTargets.length === 1, "scale adapter should describe the actual scale target once");
+    assert(scaleTargets[0].targetPart === "scale", "scale adapter metadata should identify the adapted target part");
+    assert(report.animations.every((animation) => animation.sourceLabel === "desktop.icon.press"), "motionTo animations should carry source labels");
+    assert(report.warnings.length === 0, "motionTo debug metadata should prevent missing target warnings");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0, y: 0 };
     const control = motionTo(target, {
       driver: springDriver({ damping: 28, mass: 0.9, restDelta: 0.01, restSpeed: 0.01, stiffness: 190 }),

@@ -210,4 +210,30 @@ export function runPageTrackMotionTests() {
     assert(runUntil(runtime, () => motionState.control.completed), "ordinary page-track spring should complete");
     assert(nearlyEqual(pageTrack.x, -600), `ordinary spring should land on the target page, got ${pageTrack.x}`);
   }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false });
+    const motionState = createPageTrackMotionState();
+    const pageTrack = { x: 0 };
+    runtime.configureDebug({ enabled: true });
+
+    updatePageTrackMotion(motionState, pageTrack, {
+      debugMetadata: {
+        kind: "PageTrack",
+        label: "Desktop page track",
+        layer: "desktop",
+      },
+      pageIndex: 1,
+      pageSpan: 320,
+      runtime,
+      sourceLabel: "desktop.pageTrack",
+    });
+
+    const report = runtime.debugReport({ includeTargets: true });
+    const target = report.targets.find((entry) => entry.sourceLabel === "desktop.pageTrack");
+    assert(target?.kind === "PageTrack", "page track motion should describe its animated target");
+    assert(target?.pageIndex === 1, "page track metadata should include the destination page index");
+    assert(report.animations[0]?.sourceLabel === "desktop.pageTrack", "page track animation should expose its source label");
+    assert(report.warnings.length === 0, "described page track motion should not produce missing metadata warnings");
+  }
 }

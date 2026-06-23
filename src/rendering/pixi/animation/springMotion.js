@@ -54,9 +54,17 @@ function makeSpringState(control) {
 
 export function springTo(target, prop, to, config, options = {}) {
   if (!target || !prop) return null;
+  const runtime = options.runtime || motionRuntime;
   const numericTarget = readNumber(to, readNumber(target[prop]));
+  if (typeof runtime.describeTarget === "function") {
+    const metadata = options.debugMetadata && typeof options.debugMetadata === "object" && !Array.isArray(options.debugMetadata)
+      ? { ...options.debugMetadata }
+      : {};
+    if (options.sourceLabel != null && metadata.sourceLabel == null) metadata.sourceLabel = options.sourceLabel;
+    if (Object.keys(metadata).length) runtime.describeTarget(target, metadata);
+  }
   if (options.snap || prefersReducedMotion()) {
-    stopSpring(target, prop, { reason: options.reason || "snap" });
+    stopSpring(target, prop, { reason: options.reason || "snap", runtime });
     target[prop] = numericTarget;
     options.onUpdate?.(numericTarget);
     options.onArrive?.(numericTarget);
@@ -64,7 +72,7 @@ export function springTo(target, prop, to, config, options = {}) {
     return null;
   }
 
-  const control = motionRuntime.animate(target, prop, numericTarget, {
+  const control = runtime.animate(target, prop, numericTarget, {
     driver: spring(config || pageTrackSpring),
     lane: "base",
     onArrive: options.onArrive,
@@ -77,11 +85,13 @@ export function springTo(target, prop, to, config, options = {}) {
 }
 
 export function stopSpring(target, prop, options = {}) {
-  return motionRuntime.stop(target, prop, { lane: "base", reason: options.reason });
+  const runtime = options.runtime || motionRuntime;
+  return runtime.stop(target, prop, { lane: "base", reason: options.reason });
 }
 
 export function stopTargetSprings(target, options = {}) {
-  return motionRuntime.cancelTarget(target, { lane: "base", reason: options.reason });
+  const runtime = options.runtime || motionRuntime;
+  return runtime.cancelTarget(target, { lane: "base", reason: options.reason });
 }
 
 function stopAllSprings() {

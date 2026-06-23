@@ -117,6 +117,7 @@ export async function runDragPreviewLayerTests() {
 
   {
     motionRuntime.reset();
+    motionRuntime.configureDebug({ enabled: true });
     const layer = new DragPreviewLayer();
     try {
       layer.update({
@@ -137,6 +138,18 @@ export async function runDragPreviewLayerTests() {
         stageRect: { height: 600, left: 0, top: 0, width: 800 },
         width: 800,
       });
+
+      const report = motionRuntime.debugReport({ includeTargets: true });
+      assert(
+        report.targets.some((entry) => entry.sourceLabel === "dragPreview.node" && entry.itemId === "app-a"),
+        "drag preview should describe its animated preview node",
+      );
+      assert(
+        report.targets.some((entry) => entry.sourceLabel === "dragPreview.scale" && entry.kind === "DragPreview"),
+        "drag preview should describe its animated scale target",
+      );
+      assert(report.animations.every((animation) => animation.sourceLabel), "drag preview active animations should expose source labels");
+      assert(report.warnings.length === 0, "described drag preview targets should not emit missing metadata warnings");
 
       layer.destroy({ children: true });
       const destroyedCount = motionRuntime.debugSnapshot().counters.canceledByReason.destroyed || 0;

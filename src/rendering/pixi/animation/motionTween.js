@@ -11,6 +11,7 @@ const RESERVED_KEYS = new Set([
   "delay",
   "blendDuration",
   "blendEase",
+  "debugMetadata",
   "driver",
   "duration",
   "ease",
@@ -29,6 +30,7 @@ const RESERVED_KEYS = new Set([
   "repeat",
   "snap",
   "spring",
+  "sourceLabel",
   "target",
   "velocity",
   "yoyo",
@@ -104,6 +106,32 @@ function appendMilestone(step, milestone) {
   step.milestones = [...(step.milestones || []), milestone];
 }
 
+function resolveDebugMetadata(target, track, sourceProp, vars = {}, options = {}) {
+  const input = vars.debugMetadata ?? options.debugMetadata;
+  const sourceLabel = vars.sourceLabel ?? options.sourceLabel;
+  if (!input && sourceLabel == null) return null;
+  const raw = typeof input === "function"
+    ? input({ prop: track.prop, sourceProp, target, trackTarget: track.target })
+    : input;
+  const metadata = raw && typeof raw === "object" && !Array.isArray(raw) ? { ...raw } : {};
+  if (sourceLabel != null && metadata.sourceLabel == null) metadata.sourceLabel = sourceLabel;
+  if (metadata.sourceProp == null && sourceProp !== track.prop) metadata.sourceProp = sourceProp;
+  if (metadata.targetPart == null && track.target !== target) {
+    metadata.targetPart = track.target === target?.scale ? "scale" : "adapted";
+  }
+  return metadata;
+}
+
+function describeDebugTarget(runtime, target, track, sourceProp, vars = {}, options = {}) {
+  if (typeof runtime?.describeTarget !== "function") return;
+  const metadata = resolveDebugMetadata(target, track, sourceProp, vars, options);
+  if (!metadata) return;
+  if (track.target !== target && metadata.overlayTarget == null && metadata.boundsTarget == null) {
+    metadata.overlayTarget = target;
+  }
+  runtime.describeTarget(track.target, metadata);
+}
+
 export function motionTo(targetOrTargets, vars = {}, options = {}) {
   const runtime = options.runtime || motionRuntime;
   const shouldSnap = vars.snap || (prefersReducedMotion() && vars.driver?.type !== "progress");
@@ -145,6 +173,7 @@ export function motionTo(targetOrTargets, vars = {}, options = {}) {
       }
     for (const prop of props) {
       for (const track of getPropTracks(target, prop, vars)) {
+        describeDebugTarget(runtime, target, track, prop, vars, options);
         const velocity = getTrackVelocity(track, vars, prop);
         if (shouldSnap) {
           runtime.animate(track.target, track.prop, track.to, {

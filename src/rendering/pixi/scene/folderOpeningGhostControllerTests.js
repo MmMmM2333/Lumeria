@@ -1,5 +1,9 @@
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
 import { FolderTransitionCoordinator } from "./folderTransitionCoordinator.js";
+import {
+  FolderVisualOwnershipRegistry,
+  makeDesktopSourceVisualKey,
+} from "./folderVisualOwnershipRegistry.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import {
   clearMotionPreferencesForTests,
@@ -93,8 +97,8 @@ function makeLayer() {
     },
     startFrameGhost(fromRect, toRect, options) {
       frameGhostCalls.push({ fromRect, options, toRect });
-      this.panelMaterial.visible = true;
-      this.panelMaterial.alpha = options.panelMaterialFromAlpha ?? 0;
+      this.panelMaterial.visible = options.exclusivePanelMaterialHandoff === true ? false : true;
+      this.panelMaterial.alpha = options.exclusivePanelMaterialHandoff === true ? 0 : options.panelMaterialFromAlpha ?? 0;
       this.frameGhost.visible = true;
       this.frameGhost.alpha = options.frameGhostFromAlpha ?? 1;
     },
@@ -155,6 +159,15 @@ export function runFolderOpeningGhostControllerTests() {
     const completed = [];
     const timerHost = makeTimerHost();
     const layer = makeLayer();
+    layer.currentFolderId = "folder-1";
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.acquireVisualOwnership = (key, owner) => layer.visualOwnership.acquire(key, owner);
+    layer.releaseTransitionOwnership = (token, options = {}) => {
+      layer.visualOwnership.releaseByToken(token);
+      if (options.reveal !== false) layer.revealIconNodes();
+      if (options.restorePageTrack !== false) layer.pageTrack.visible = true;
+    };
+    const sessionToken = "open-folder-1";
     const controller = new FolderOpeningGhostController(layer, {
       ghostFactory: makeGhost,
       scheduler: timerHost,
@@ -163,9 +176,14 @@ export function runFolderOpeningGhostControllerTests() {
     controller.start(makeState(completed), [target], {
       frameSourceRect: { height: 48, left: 10, top: 20, width: 48 },
       frameTargetRect: { height: 360, left: 180, top: 200, width: 800 },
+      sessionToken,
     });
 
     assert(layer.openingGhostKeys.has("app-1"), "start should track active opening ghost keys");
+    assert(
+      layer.visualOwnership.isOwnedBy(makeDesktopSourceVisualKey("folder-1"), sessionToken),
+      "opening should own the desktop source folder until reveal"
+    );
     assert(layer.ghosts.length === 1, "start should create one opening ghost");
     assert(layer.iconNode.visible === false, "start should hide the real icon node");
     assert(layer.pageTrack.visible === false, "start should hide the page track");
@@ -174,14 +192,20 @@ export function runFolderOpeningGhostControllerTests() {
     assert(layer.frameGhostCalls[0].toRect.left === 180 && layer.frameGhostCalls[0].toRect.width === 800, "opening frame should target the panel rect");
     assert(layer.frameGhostCalls[0].options.fromRadius === 14, "opening frame should keep the source folder thumb radius on its first frame");
     assert(layer.frameGhostCalls[0].options.toRadius === 48, "opening frame should morph to the panel radius");
-    assert(layer.frameGhostCalls[0].options.crossfadePanelMaterial === true, "opening frame should use a shared crossfade for the frame ghost and panel material");
-    assert(layer.panelMaterial.visible && layer.panelMaterial.alpha === 0, "start should fade the real panel material in after the frame ghost starts");
+    assert(layer.frameGhostCalls[0].options.exclusivePanelMaterialHandoff === true, "opening frame should keep one visible shell owner during the frame morph");
+    assert(layer.frameGhostCalls[0].options.frameGhostPhase === "opening", "opening frame should mark its frame ghost phase");
+    assert(layer.frameGhostCalls[0].options.folderId === "folder-1", "opening frame should carry the owning folder id");
+    assert(!layer.panelMaterial.visible && layer.panelMaterial.alpha === 0, "start should keep the real panel material hidden while the frame ghost owns the shell");
     assert(layer.frameGhost.visible && layer.frameGhost.alpha === 1, "start should show the frame ghost during the opening shell morph");
     assert(timerHost.size === 1, "start should schedule a fallback clear timer");
 
     controller.complete(makeState(completed), target, layer.ghosts[0]);
     assert(completed.join(",") === "controller-open-key", "complete should notify the controller ghost key");
     assert(layer.openingGhostKeys.size === 0, "complete should clear the finished key");
+    assert(
+      !layer.visualOwnership.hasOwner(makeDesktopSourceVisualKey("folder-1")),
+      "opening completion should release desktop source ownership"
+    );
     assert(layer.iconNode.visible === true, "complete should reveal icon nodes after all ghosts finish");
     assert(layer.ghosts.length === 0, "complete should remove opening ghost visuals");
     assert(timerHost.size === 0, "complete should clear the fallback timer");

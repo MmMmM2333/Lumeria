@@ -129,9 +129,29 @@ export function useLaunchpadSurfaceInteractions(options) {
     return true;
   }
 
-  function getSurfaceIconTarget(event) {
+  function getSurfaceIconTarget(event, targetOptions = undefined) {
     if (typeof options.getDesktopTargetAtPoint !== "function") return null;
-    return options.getDesktopTargetAtPoint(event.clientX, event.clientY) || null;
+    return options.getDesktopTargetAtPoint(event.clientX, event.clientY, targetOptions) || null;
+  }
+
+  function isDesktopFolderTarget(target) {
+    return Boolean(
+      target?.id &&
+        target?.meta?.area === "desktop" &&
+        target?.meta?.item?.type === "folder"
+    );
+  }
+
+  function handleFolderClosingDesktopPointerDown(event) {
+    if (event.target?.closest?.(DESKTOP_SURFACE_IGNORED_SELECTOR)) return false;
+    const iconTarget = getSurfaceIconTarget(event, { area: "desktop" });
+    if (!isDesktopFolderTarget(iconTarget)) return false;
+    clearFolderPageTrackScrubNow();
+    clearPageTrackScrubNow();
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    options.commitOpenFolder?.(iconTarget.id);
+    return true;
   }
 
   function isSettlingPageScrub(scrub) {
@@ -491,7 +511,11 @@ export function useLaunchpadSurfaceInteractions(options) {
   function handleDesktopSurfacePointerDown(event) {
     if (event?.button !== 0) return;
     if (!options.isDesktopOpen.value || options.isDragActive() || options.isAppLaunching.value) return;
-    if (options.isFolderClosing?.value || options.isFolderAppLaunchClosing?.value) return;
+    if (options.isFolderAppLaunchClosing?.value) return;
+    if (options.isFolderClosing?.value) {
+      handleFolderClosingDesktopPointerDown(event);
+      return;
+    }
 
     if (event.target?.closest?.(DESKTOP_SURFACE_IGNORED_SELECTOR)) return;
     const iconTarget = getSurfaceIconTarget(event);

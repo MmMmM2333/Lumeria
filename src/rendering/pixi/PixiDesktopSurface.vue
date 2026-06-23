@@ -50,6 +50,9 @@ import { DesktopLayer } from "./scene/DesktopLayer.js";
 import { createFolderLayerState } from "./folderLayerState.js";
 import { readFolderOverlayStateRenderDependencies } from "./folderOverlayStateDependencies.js";
 import { clearIconTextureCache, preloadIconTextures } from "./assets/iconTextureCache.js";
+import { installMotionDebugGlobal } from "./animation/motionDebugReport.js";
+import { motionRuntime } from "./animation/motionRuntime.js";
+import { MotionDebugOverlayLayer } from "./animation/motionDebugOverlayLayer.js";
 import { clearDesktopIconBounds } from "./geometry/iconBoundsRegistry.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { getPixiHostMetrics } from "./pixiHostMetrics.js";
@@ -162,6 +165,9 @@ let handoffRenderFrame = null;
 let renderFrame = null;
 let desktopDomGeometryCache = null;
 let pixiResizeSignature = "";
+let motionDebugCommands = null;
+let motionDebugOverlay = null;
+let motionDebugOverlayTicker = null;
 const folderClosingHandoffRetainer = createFolderClosingHandoffRetainer();
 let handoffDebugSequence = 0;
 
@@ -569,6 +575,27 @@ function publishFolderVisualDebugSnapshot() {
   globalThis.__LP_FOLDER_VISUAL_DEBUG__ = () => layer?.getFolderVisualDebugSnapshot?.() || null;
 }
 
+function updateMotionDebugOverlay() {
+  if (!import.meta.env.DEV || !motionDebugOverlay) return;
+  const config = motionRuntime.configureDebug();
+  if (!config.overlayEnabled) {
+    motionDebugOverlay.update({ enabled: false });
+    return;
+  }
+  motionDebugOverlay.update({
+    enabled: true,
+    maxItems: 18,
+    runtime: motionRuntime,
+    stageHeight: pixiResizeSignature ? app?.renderer?.height : undefined,
+    stageWidth: pixiResizeSignature ? app?.renderer?.width : undefined,
+  });
+}
+
+function publishMotionOverlayDebugSnapshot() {
+  if (!import.meta.env.DEV) return;
+  globalThis.__LP_MOTION_OVERLAY_DEBUG__ = () => motionDebugOverlay?.debugSnapshot?.() || null;
+}
+
 function renderPixi() {
   if (!app || !layer || !hostRef.value) return;
   const domGeometry = getDesktopDomGeometry();
@@ -629,6 +656,7 @@ function renderPixi() {
     preloadIconTextures(collectDragPreviewTextureItems(props.dragPreviewState || props.dragReleaseState));
   }
   publishFolderVisualDebugSnapshot();
+  updateMotionDebugOverlay();
   logFolderHandoffTimeline(metrics, folderClosingHandoffId);
 }
 
@@ -752,20 +780,32 @@ function destroyPixi(options = {}) {
   resizeObserver = null;
   const currentApp = app;
   const currentLayer = layer;
+  const currentOverlay = motionDebugOverlay;
+  const currentOverlayTicker = motionDebugOverlayTicker;
   app = null;
   layer = null;
+  motionDebugOverlay = null;
+  motionDebugOverlayTicker = null;
   cancelScheduledRenderPixi();
   cancelHandoffRenderLoop();
   invalidateDesktopDomGeometry();
   pixiResizeSignature = "";
   folderClosingHandoffRetainer.reset();
+  motionDebugCommands?.uninstall?.();
+  motionDebugCommands = null;
   if (globalThis.__LP_FOLDER_VISUAL_DEBUG__) delete globalThis.__LP_FOLDER_VISUAL_DEBUG__;
+  if (globalThis.__LP_MOTION_OVERLAY_DEBUG__) delete globalThis.__LP_MOTION_OVERLAY_DEBUG__;
   singleStageFolderPanelGeometry.value = null;
   singleStageFolderTitleFrame.value = null;
   clearFolderTexturePrewarmTimer();
   if (currentLayer) {
     currentApp?.stage?.removeChild(currentLayer);
     if (deep) currentLayer.destroy({ children: true });
+  }
+  if (currentOverlayTicker) currentApp?.ticker?.remove?.(currentOverlayTicker);
+  if (currentOverlay) {
+    currentApp?.stage?.removeChild(currentOverlay);
+    if (deep) currentOverlay.destroy({ children: true });
   }
   if (deep) currentApp?.destroy(true);
   else currentApp?.stop?.();
@@ -795,6 +835,14 @@ onMounted(async () => {
     onIconAction: handleIconAction,
   });
   app.stage.addChild(layer);
+  if (import.meta.env.DEV) {
+    motionDebugOverlay = new MotionDebugOverlayLayer();
+    app.stage.addChild(motionDebugOverlay);
+    motionDebugOverlayTicker = updateMotionDebugOverlay;
+    app.ticker?.add?.(motionDebugOverlayTicker);
+    publishMotionOverlayDebugSnapshot();
+  }
+  motionDebugCommands = installMotionDebugGlobal();
   resizeObserver = new ResizeObserver(handleResize);
   resizeObserver.observe(hostRef.value);
   window.addEventListener("resize", handleResize);
