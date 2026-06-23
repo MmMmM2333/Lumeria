@@ -1,6 +1,6 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { clientRectToStageVisualRect } from "../geometry/stageCoordinates.js";
-import { ensureFolderCloseSession } from "./folderCloseSession.js";
+import { ensureFolderTransitionMachine } from "./folderTransitionMachine.js";
 import { getStableFolderClosePresentationHitRects } from "./folderOverlayTargets.js";
 
 function isUsableRect(rect) {
@@ -16,7 +16,7 @@ function isPointInRect(x, y, rect) {
 }
 
 export function cancelClosingHandoffCleanup(layer, cancelAnimationFrame = globalThis.cancelAnimationFrame) {
-  ensureFolderCloseSession(layer).cancelHandoffCleanup(cancelAnimationFrame);
+  ensureFolderTransitionMachine(layer).cancelHandoffCleanup(cancelAnimationFrame);
 }
 
 export function applyClosingHandoffOnlyOverlayState(layer) {
@@ -27,7 +27,7 @@ export function applyClosingHandoffOnlyOverlayState(layer) {
 }
 
 export function getClosingPresentationStageHitRects(layer) {
-  const closeSnapshot = layer?.closeSession?.snapshot?.() || null;
+  const closeSnapshot = layer?.folderTransitions?.snapshot?.() || null;
   const targetRects = getStableFolderClosePresentationHitRects({
     handoffRect: closeSnapshot?.handoffRect,
     stableFolderCloseTarget: closeSnapshot?.handoffTarget || layer?.stableFolderCloseTarget,
@@ -59,7 +59,7 @@ export function applyClosingPresentationOverlayState(layer) {
 }
 
 export function scheduleClosingHandoffCleanup(layer, cleanup, scheduler = globalThis) {
-  ensureFolderCloseSession(layer).scheduleHandoffCleanup(cleanup, scheduler);
+  ensureFolderTransitionMachine(layer).scheduleHandoffCleanup(cleanup, scheduler);
 }
 
 export function finishClosingHandoff(layer, state, cleanup, scheduler = globalThis) {

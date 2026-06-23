@@ -125,10 +125,10 @@ function hasAnyFolderClosingHandoffId(state = {}) {
 }
 
 function isFolderLayerHandoffActive(folderLayer = null, folderId = null) {
-  const closeSession = folderLayer?.closeSession || null;
-  if (!closeSession?.isHandoffActive?.()) return false;
+  const transitionMachine = folderLayer?.folderTransitions || null;
+  if (!transitionMachine?.isHandoffActive?.()) return false;
   if (!folderId) return true;
-  const activeFolderId = closeSession.folderId || folderLayer.currentFolderId || null;
+  const activeFolderId = transitionMachine.folderId || folderLayer.currentFolderId || null;
   return !activeFolderId || activeFolderId === folderId;
 }
 
@@ -165,7 +165,7 @@ export function resolveLaunchpadVisualTransform(state = {}) {
 }
 
 export function shouldFinishFolderHandoff(state = {}, folderLayer = null) {
-  return !hasAnyFolderClosingHandoffId(state) && !folderLayer?.closeSession?.isHandoffActive?.();
+  return !hasAnyFolderClosingHandoffId(state) && !folderLayer?.folderTransitions?.isHandoffActive?.();
 }
 
 export function shouldFinishFolderHandoffEntry(state = {}, folderLayer = null, folderId = null) {
@@ -1416,7 +1416,7 @@ export class DesktopLayer extends Container {
     const lastStateSourceIds = lastState.folderSourceGhostedIds;
     const ownershipSourceIds = getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership);
     const overlaySourceIds = overlay?.getDesktopSourceGhostedIds?.() || new Set();
-    const overlayCloseSnapshot = overlay?.closeSession?.snapshot?.() || null;
+    const overlayCloseSnapshot = overlay?.folderTransitions?.snapshot?.() || null;
     const folderHandoffNodes = Array.from(this.getFolderHandoffNodes().values()).map((entry) => ({
       display: readDisplay(entry.node),
       folderId: entry.folderId || null,

@@ -2,7 +2,7 @@ import { killAllMotion } from "../animation/motionCleanup.js";
 import { killMotionOf, parallel, motion } from "../animation/motionTween.js";
 import { motionPresets, motionSprings } from "../animation/motionPresets.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { ensureFolderCloseSession } from "./folderCloseSession.js";
+import { ensureFolderTransitionMachine } from "./folderTransitionMachine.js";
 import { makeClosingPreviewSwapPlan } from "./folderPreviewSwapMotion.js";
 
 function makeClosingPreviewSwapKey(folderId, pageIndex) {
@@ -23,24 +23,24 @@ function previewSwapSpring(target, vars, options = {}) {
 export class FolderClosingPreviewSwapController {
   constructor(layer, options = {}) {
     this.layer = layer;
-    this.closeSession = options.closeSession || ensureFolderCloseSession(layer);
+    this.transitionMachine = options.transitionMachine || ensureFolderTransitionMachine(layer);
     this.containerFactory = options.containerFactory;
     this.graphicsFactory = options.graphicsFactory;
     this.spriteFactory = options.spriteFactory;
     this.textFactory = options.textFactory;
     this.getIconTexture = options.getIconTexture;
-    this.closeSession.ensurePreviewSwapKeys();
+    this.transitionMachine.ensurePreviewSwapKeys();
   }
 
   cancelMotionControls() {
-    const controls = this.closeSession.consumePreviewSwapMotionControls();
+    const controls = this.transitionMachine.consumePreviewSwapMotionControls();
     if (!controls?.size) return;
     for (const control of controls) control.cancel();
   }
 
   ensureLayer() {
     const layer = this.layer;
-    this.closeSession.ensurePreviewSwapKeys();
+    this.transitionMachine.ensurePreviewSwapKeys();
     if (layer.closingPreviewSwapLayer && !layer.closingPreviewSwapLayer.destroyed) {
       return layer.closingPreviewSwapLayer;
     }
@@ -54,7 +54,7 @@ export class FolderClosingPreviewSwapController {
   clear() {
     const layer = this.layer;
     this.cancelMotionControls();
-    this.closeSession.clearPreviewSwapKeys();
+    this.transitionMachine.clearPreviewSwapKeys();
     const swapLayer = layer.closingPreviewSwapLayer;
     if (!swapLayer || swapLayer.destroyed) return;
     const ghosts = swapLayer.removeChildren();
@@ -97,10 +97,10 @@ export class FolderClosingPreviewSwapController {
     return ghost;
   }
 
-  complete(state, key, root, iconsWrap, onComplete, token = this.closeSession.sessionToken) {
+  complete(state, key, root, iconsWrap, onComplete, token = this.transitionMachine.sessionToken) {
     const layer = this.layer;
-    if (!this.closeSession.isCurrentToken(token)) return;
-    if (!this.closeSession.hasPreviewSwapKey(key)) return;
+    if (!this.transitionMachine.isCurrentToken(token)) return;
+    if (!this.transitionMachine.hasPreviewSwapKey(key)) return;
     this.cancelMotionControls();
     killMotionOf(root);
     killMotionOf(iconsWrap);
@@ -108,7 +108,7 @@ export class FolderClosingPreviewSwapController {
     root.alpha = 1;
     iconsWrap.position.set(iconsWrap.pivot.x, iconsWrap.pivot.y);
     iconsWrap.scale.set(1);
-    onComplete(state, this.closeSession.releasePreviewSwap(token, key));
+    onComplete(state, this.transitionMachine.releasePreviewSwap(token, key));
   }
 
   start(state, targets, timing, onComplete, options = {}) {
@@ -123,7 +123,7 @@ export class FolderClosingPreviewSwapController {
     if (!plan) return;
 
     const layer = this.layer;
-    const sessionToken = options.sessionToken ?? this.closeSession.sessionToken;
+    const sessionToken = options.sessionToken ?? this.transitionMachine.sessionToken;
     const key = makeClosingPreviewSwapKey(state.renderedFolder?.id, state.folderPageIndex);
     const root = this.containerFactory();
     const mask = this.graphicsFactory();
@@ -139,8 +139,8 @@ export class FolderClosingPreviewSwapController {
     root.addChild(mask);
     root.addChild(iconsWrap);
     this.ensureLayer().addChild(root);
-    this.closeSession.addPreviewSwapKey(key);
-    this.closeSession.resetPreviewSwapMotionControls();
+    this.transitionMachine.addPreviewSwapKey(key);
+    this.transitionMachine.resetPreviewSwapMotionControls();
 
     const iconMotions = [];
     const springItems = [
@@ -182,12 +182,12 @@ export class FolderClosingPreviewSwapController {
     motionControl = parallel(springItems, {
       onComplete: () => {
         didComplete = true;
-        if (motionControl) this.closeSession.deletePreviewSwapMotionControl(motionControl);
+        if (motionControl) this.transitionMachine.deletePreviewSwapMotionControl(motionControl);
         this.complete(state, key, root, iconsWrap, onComplete, sessionToken);
       },
     });
     if (!didComplete && motionControl) {
-      this.closeSession.addPreviewSwapMotionControl(motionControl);
+      this.transitionMachine.addPreviewSwapMotionControl(motionControl);
     }
   }
 }

@@ -1,5 +1,5 @@
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
-import { FolderTransitionCoordinator } from "./folderTransitionCoordinator.js";
+import { FolderTransitionMachine } from "./folderTransitionMachine.js";
 import {
   FolderVisualOwnershipRegistry,
   makeDesktopSourceVisualKey,
@@ -227,7 +227,7 @@ export function runFolderOpeningGhostControllerTests() {
     const completed = [];
     const timerHost = makeTimerHost();
     const layer = makeLayer();
-    layer.folderTransitions = new FolderTransitionCoordinator();
+    layer.folderTransitions = new FolderTransitionMachine(layer);
     const session = layer.folderTransitions.beginOpen("folder-1", "target-a").session;
     const controller = new FolderOpeningGhostController(layer, {
       ghostFactory: makeGhost,

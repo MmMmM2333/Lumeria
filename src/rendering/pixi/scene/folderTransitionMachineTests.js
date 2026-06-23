@@ -1,6 +1,9 @@
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { FolderClosingGhostController } from "./folderClosingGhostController.js";
-import { FolderCloseSession } from "./folderCloseSession.js";
+import {
+  FolderTransitionMachine,
+  makeFolderPanelTargetKey,
+} from "./folderTransitionMachine.js";
 import {
   FolderVisualOwnershipRegistry,
   makeDesktopSourceVisualKey,
@@ -139,15 +142,82 @@ function makeTarget() {
   };
 }
 
-export async function runFolderCloseSessionTests() {
+export async function runFolderTransitionMachineTests() {
   const assert = (condition, message) => {
-    if (!condition) throw new Error(`[Folder close session test failed] ${message}`);
+    if (!condition) throw new Error(`[Folder transition machine test failed] ${message}`);
   };
 
   {
+    const key = makeFolderPanelTargetKey("folder-1", 10.123, 20.456, { height: 300.333, width: 400.777 });
+    assert(key === "folder-1:10.12:20.46:400.78:300.33", "target key should normalize folder panel geometry");
+  }
+
+  {
+    const machine = new FolderTransitionMachine();
+    const first = machine.beginOpen("folder-1", "target-a");
+    const second = machine.beginOpen("folder-1", "target-a");
+
+    assert(first.started, "first open should create a session");
+    assert(!second.started, "same folder target should reuse the current session");
+    assert(first.session.token === second.session.token, "same target reuse should preserve the token");
+  }
+
+  {
+    const machine = new FolderTransitionMachine();
+    const first = machine.beginOpen("folder-1", "target-a");
+    machine.markPanelReady(first.session.token);
+    const second = machine.beginOpen("folder-1", "target-b");
+
+    assert(first.session.token === second.session.token, "same folder retarget should preserve the open token");
+    assert(!second.session.panelReady, "unrevealed retarget should make panel readiness pending again");
+  }
+
+  {
+    const machine = new FolderTransitionMachine();
+    const session = machine.beginOpen("folder-1", "target-a").session;
+    const snapshot = { folderId: "folder-1", layoutKey: "layout-a" };
+
+    assert(machine.setOpenGeometrySnapshot(session.token, snapshot), "current open token should attach a geometry snapshot");
+    assert(machine.getOpenGeometrySnapshot(session.token) === snapshot, "current open token should read its geometry snapshot");
+    assert(machine.getOpenGeometrySnapshot("stale") === null, "stale open token should not read the current geometry snapshot");
+    assert(!machine.setOpenGeometrySnapshot("stale", { layoutKey: "layout-b" }), "stale open token should not replace the geometry snapshot");
+    assert(machine.getOpenGeometrySnapshot(session.token) === snapshot, "stale geometry writes should leave the current snapshot intact");
+
+    machine.markPanelReady(session.token);
+    assert(machine.setOpenGeometrySnapshot(session.token, { folderId: "folder-1", layoutKey: "layout-b" }), "layout changes should replace the geometry snapshot");
+    assert(!machine.activeOpenSession.panelReady, "unrevealed layout changes should make panel readiness pending");
+  }
+
+  {
+    const machine = new FolderTransitionMachine();
+    const first = machine.beginOpen("folder-1", "target-a").session;
+    const snapshot = { folderId: "folder-1", layoutKey: "layout-a" };
+    machine.setOpenGeometrySnapshot(first.token, snapshot);
+    const second = machine.beginOpen("folder-1", "target-b").session;
+
+    assert(first.token === second.token, "same folder target changes should keep the open token");
+    assert(machine.getOpenGeometrySnapshot(second.token) === null, "same folder retarget should invalidate stale geometry");
+  }
+
+  {
+    const machine = new FolderTransitionMachine();
+    const first = machine.beginOpen("folder-1", "target-a").session;
+    const second = machine.beginOpen("folder-2", "target-b", { forceNew: true }).session;
+
+    assert(first.token !== second.token, "new folder should get a new token");
+    assert(!machine.markPanelReady(first.token), "stale token should not mark panel ready");
+    assert(machine.markPanelReady(second.token), "current token should mark panel ready");
+    assert(!machine.canReveal(second.token), "panel ready alone should not reveal");
+    assert(machine.markGhostsReady(second.token), "current token should mark ghosts ready");
+    assert(machine.canReveal(second.token), "panel and ghosts ready should allow reveal");
+    assert(machine.finishReveal(second.token), "finishReveal should mark the current session revealed");
+    assert(!machine.isRevealPending(), "revealed session should not block pageTrack visibility");
+  }
+
+  {
     const layer = {};
-    const session = new FolderCloseSession(layer);
-    session.begin("folder-a");
+    const session = new FolderTransitionMachine(layer);
+    session.beginClose("folder-a");
     session.setSessionToken("close-token");
     session.setHandoffGeometry({
       detachedTarget: { height: 20, left: 1, top: 2, width: 20 },
@@ -169,8 +239,8 @@ export async function runFolderCloseSessionTests() {
   }
 
   {
-    const session = new FolderCloseSession({});
-    session.begin("folder-a");
+    const session = new FolderTransitionMachine({});
+    session.beginClose("folder-a");
     session.setSessionToken("close-a");
 
     const staleEvents = session.releaseFrameComplete("close-old");
@@ -183,8 +253,8 @@ export async function runFolderCloseSessionTests() {
   }
 
   {
-    const session = new FolderCloseSession({});
-    session.begin("folder-a");
+    const session = new FolderTransitionMachine({});
+    session.beginClose("folder-a");
     session.setSessionToken("close-a");
 
     const handoffEvents = session.releaseFrameVisual("close-a");
@@ -232,8 +302,8 @@ export async function runFolderCloseSessionTests() {
     const calls = [];
     layer.onClosingHandoffReady = () => {};
     layer.onInternalActivityChange = () => {};
-    layer.closeSession = new FolderCloseSession(layer);
-    layer.closeSession.begin("folder-a");
+    layer.folderTransitions = new FolderTransitionMachine(layer);
+    layer.folderTransitions.beginClose("folder-a");
     layer.closingGhostLayer = { removeChildren: () => [] };
     layer.closingPreviewSwapLayer = { removeChildren: () => [] };
     layer.closingGhosts = {
@@ -248,7 +318,7 @@ export async function runFolderCloseSessionTests() {
 
     layer.detachClosingPresentationForOpen("folder-b");
 
-    assert(layer.closeSession.folderId === null, "close interrupted by open should clear the live closing folder id through the session");
+    assert(layer.folderTransitions.folderId === null, "close interrupted by open should clear the live closing folder id through the session");
     assert(calls.some((entry) => entry?.restorePageTrack === false && entry?.reveal === false), "close interrupted by open should clear closing visuals without revealing stale folder content");
   }
 }

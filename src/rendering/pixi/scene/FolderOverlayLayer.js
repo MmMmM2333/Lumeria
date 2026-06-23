@@ -21,12 +21,11 @@ import {
   applyClosingPresentationOverlayState,
   getClosingPresentationStageHitRects,
 } from "./folderClosingHandoff.js";
-import { FolderCloseSession } from "./folderCloseSession.js";
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
 import {
-  FolderTransitionCoordinator,
+  FolderTransitionMachine,
   makeFolderPanelTargetKey,
-} from "./folderTransitionCoordinator.js";
+} from "./folderTransitionMachine.js";
 import {
   getFolderOpeningPreviewChildRect,
   makeFolderOpeningGeometryLayoutKey,
@@ -450,20 +449,21 @@ export class FolderOverlayLayer extends Container {
     this.openingGhosts = new FolderOpeningGhostController(this, {
       ghostFactory: () => new IconNode(),
     });
-    this.closeSession = new FolderCloseSession(this);
+    this.folderTransitions = new FolderTransitionMachine(this);
     this.closingPreviewSwap = new FolderClosingPreviewSwapController(this, {
       containerFactory: () => new Container(),
       getIconTexture: (item, render, ghost) => getCachedIconTexture(item, render, ghost),
       graphicsFactory: () => new Graphics(),
       spriteFactory: () => new Sprite(),
       textFactory: (size) => new Text({ text: "", style: { align: "center", fill: 0xffffff, fontSize: size, lineHeight: size } }),
+      transitionMachine: this.folderTransitions,
     });
     this.closingGhosts = new FolderClosingGhostController(this, {
       ghostFactory: () => new IconNode(),
       previewSwap: this.closingPreviewSwap,
+      transitionMachine: this.folderTransitions,
     });
     this.openingGhostRevealTimer = null;
-    this.folderTransitions = new FolderTransitionCoordinator();
     this.visualCommitQueue = options.visualCommitQueue || new FolderVisualCommitQueue();
     this.visualOwnership = options.visualOwnership || new FolderVisualOwnershipRegistry();
     this.ownedVisualTokens = new Set();
@@ -561,7 +561,7 @@ export class FolderOverlayLayer extends Container {
     this.panelGeometry = geometry.panel;
     const folderId = state.renderedFolder.id;
     this.describeMotionTargets(state, geometry);
-    if (this.closeSession.folderId && (this.closeSession.folderId !== folderId || !isClosing)) {
+    if (this.folderTransitions.folderId && (this.folderTransitions.folderId !== folderId || !isClosing)) {
       this.detachClosingPresentationForOpen(folderId);
     }
     return {
@@ -658,7 +658,7 @@ export class FolderOverlayLayer extends Container {
     if (!isPrewarm) this.bindFakeRefs(state, geometry);
     const renderPlan = makeFolderOverlayRenderPlan({
       closeThumbRect,
-      closingGhostKeys: this.closeSession.getGhostKeys(),
+      closingGhostKeys: this.folderTransitions.getGhostKeys(),
       cols,
       dragMeta: state.dragMeta,
       dragReleaseGhostId: state.dragReleaseGhostId,
@@ -825,7 +825,7 @@ export class FolderOverlayLayer extends Container {
         if (ghost?.key) state.completeFolderOpenIconGhost?.(ghost.key);
       }
     }
-    if (state.isFolderClosing && this.closeSession.folderId !== folderId) {
+    if (state.isFolderClosing && this.folderTransitions.folderId !== folderId) {
       const closeFrameRect = this.getPanelVisualRect(geometry.panel) || geometry.panel;
       this.closingGhosts.start(state, closingGhostTargets, closeThumbRect, closeFrameRect, {
         handoffRect: closeIconRect,
@@ -833,7 +833,7 @@ export class FolderOverlayLayer extends Container {
         previewSwapTargets: closingPreviewSwapTargets,
       });
     }
-    if (!state.isFolderClosing && this.closeSession.folderId) {
+    if (!state.isFolderClosing && this.folderTransitions.folderId) {
       this.clearClosingFolderId();
       this.closingGhosts.clear();
     }
@@ -853,7 +853,7 @@ export class FolderOverlayLayer extends Container {
     this.pageTrack.visible = !state.isFolderClosing &&
       !this.folderTransitions.isRevealPending() &&
       !this.openingGhostKeys?.size &&
-      !this.closeSession.hasActiveVisuals();
+      !this.folderTransitions.hasActiveVisuals();
     if (!this.frameGhostState) {
       if (!isClosing) this.notifyPanelTitleFrame(geometry.panel);
       else this.notifyTitleFrame(geometry.panel);
@@ -1110,10 +1110,10 @@ export class FolderOverlayLayer extends Container {
 
   detachClosingPresentationForOpen(nextFolderId) {
     if (nextFolderId) this.clearDetachedClosingVisuals(nextFolderId, { immediate: true, reveal: false });
-    const closingFolderId = this.closeSession.folderId || null;
+    const closingFolderId = this.folderTransitions.folderId || null;
     const shouldKeepDetachedVisual = Boolean(closingFolderId && closingFolderId !== nextFolderId);
     const frameState = shouldKeepDetachedVisual ? this.frameGhostState : null;
-    const frameTarget = shouldKeepDetachedVisual ? this.closeSession.getDetachedFrameTarget() : null;
+    const frameTarget = shouldKeepDetachedVisual ? this.folderTransitions.getDetachedFrameTarget() : null;
     const closingGhosts = shouldKeepDetachedVisual
       ? this.closingGhostLayer?.removeChildren?.() || []
       : [];
@@ -1209,11 +1209,11 @@ export class FolderOverlayLayer extends Container {
   }
 
   setClosingHandoffActive(active) {
-    this.closeSession.setHandoffActive(active);
+    this.folderTransitions.setHandoffActive(active);
   }
 
   clearClosingFolderId() {
-    this.closeSession.clearFolderId();
+    this.folderTransitions.clearFolderId();
   }
 
   revealIconNodes() {
