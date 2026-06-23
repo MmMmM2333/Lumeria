@@ -1,6 +1,6 @@
-import { folderOpenGhostDuration, folderOpenGhostEase } from "../animation/eases.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
-import { killMotionOf, parallel, transition } from "../animation/motionTween.js";
+import { killMotionOf, parallel, motion } from "../animation/motionTween.js";
+import { motionPresets } from "../animation/motionPresets.js";
 import { clientRectToStageVisualRect } from "../geometry/stageCoordinates.js";
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
 import { getMaxFolderGhostGridDelay, makeOpeningGhostMotion } from "./folderIconGhostMotion.js";
@@ -12,21 +12,21 @@ import { reloadOnPixiHotUpdate } from "../devHmr.js";
 const GHOST_REVEAL_FALLBACK_PADDING_MS = 140;
 const GHOST_GEOMETRY_FALLBACK_SECONDS = 0.75;
 
-function animateOpeningGhost(ghost, motion, onComplete, options = {}) {
-  const springOptions = { delay: motion.delay, onUpdate: options.onFrame };
-  const fadeControl = transition(ghost)
-    .preset("folderOpenGhost", { delay: motion.delay })
+function animateOpeningGhost(ghost, ghostMotion, onComplete, options = {}) {
+  const springOptions = { delay: ghostMotion.delay, onUpdate: options.onFrame };
+  const fadeControl = motion(ghost)
+    .preset("folderOpenGhost", { delay: ghostMotion.delay })
     .overlay()
     .interrupt("retarget")
     .to({ alpha: 1 })
     .start();
   const geometryControl = parallel([
-    transition(ghost)
+    motion(ghost)
       .preset("handoff")
       .handoff()
       .interrupt("retarget")
-      .to({ ...springOptions, x: motion.toX, y: motion.toY }),
-    transition(ghost.scale)
+      .to({ ...springOptions, x: ghostMotion.toX, y: ghostMotion.toY }),
+    motion(ghost.scale)
       .preset("handoff")
       .handoff()
       .interrupt("retarget")
@@ -57,8 +57,8 @@ function startOpeningFrameGhost(layer, state, options = {}) {
   if (!sourceRect || !targetRect) return false;
   const thumb = getFolderThumbMetrics(sourceRect.width);
   layer.startFrameGhost(sourceRect, targetRect, {
-    duration: folderOpenGhostDuration,
-    ease: folderOpenGhostEase,
+    duration: motionPresets.folderOpenGhost.duration,
+    ease: motionPresets.folderOpenGhost.ease,
     exclusivePanelMaterialHandoff: true,
     folderId: state.renderedFolder?.id || layer.currentFolderId || null,
     frameGhostPhase: "opening",
@@ -104,7 +104,7 @@ export class FolderOpeningGhostController {
     this.clearRevealTimer();
     const sessionToken = layer.openingGhostSessionToken || null;
     const maxDelay = getMaxFolderGhostGridDelay(targets, 0.18);
-    const fallbackSeconds = Math.max(folderOpenGhostDuration, GHOST_GEOMETRY_FALLBACK_SECONDS);
+    const fallbackSeconds = Math.max(motionPresets.folderOpenGhost.duration, GHOST_GEOMETRY_FALLBACK_SECONDS);
     const timeoutMs = Math.round((maxDelay + fallbackSeconds) * 1000 + GHOST_REVEAL_FALLBACK_PADDING_MS);
     layer.openingGhostRevealTimer = this.scheduler.setTimeout?.(() => {
       layer.openingGhostRevealTimer = null;
@@ -296,29 +296,29 @@ export class FolderOpeningGhostController {
       ghost.eventMode = "none";
       ghost.stageRect = state.stageRect;
       ghost.setState(makeFolderGhostIconNodeState({ sourceType: "folder-open-ghost", state, target }));
-      const motion = makeOpeningGhostMotion(target, {
+      const ghostMotion = makeOpeningGhostMotion(target, {
         isTextlessMode: state.isTextlessMode,
-        openDuration: folderOpenGhostDuration,
+        openDuration: motionPresets.folderOpenGhost.duration,
         stageHeight: state.height,
         stageRect: state.stageRect,
         stageWidth: state.width,
       });
-      ghost.position.set(motion.fromX, motion.fromY);
-      ghost.scale.set(motion.scale);
-      ghost.alpha = motion.alpha;
+      ghost.position.set(ghostMotion.fromX, ghostMotion.fromY);
+      ghost.scale.set(ghostMotion.scale);
+      ghost.alpha = ghostMotion.alpha;
       const refreshGhostBounds = () => layer.registerOpeningGhostBounds?.(state, target, ghost);
       layer.openingGhostBoundsRefreshers?.set(target.item.id, refreshGhostBounds);
       if (ghost.labelText?.visible) {
         ghost.labelText.alpha = 0;
         ghost.labelText.scale.set(0.94);
-        transition(ghost.labelText)
-          .preset("fade", { delay: motion.labelDelay, duration: 0.13 })
+        motion(ghost.labelText)
+          .preset("fade", { delay: ghostMotion.labelDelay, duration: 0.13 })
           .overlay()
           .interrupt("retarget")
           .to({ alpha: 1 })
           .start();
-        transition(ghost.labelText.scale)
-          .preset("fade", { delay: motion.labelDelay, duration: 0.13 })
+        motion(ghost.labelText.scale)
+          .preset("fade", { delay: ghostMotion.labelDelay, duration: 0.13 })
           .overlay()
           .interrupt("retarget")
           .to({ x: 1, y: 1 })
@@ -330,7 +330,7 @@ export class FolderOpeningGhostController {
 
       let didComplete = false;
       let motionControl = null;
-      motionControl = animateOpeningGhost(ghost, motion, () => {
+      motionControl = animateOpeningGhost(ghost, ghostMotion, () => {
         didComplete = true;
         if (motionControl) {
           layer.openingGhostMotionControls?.delete(motionControl);

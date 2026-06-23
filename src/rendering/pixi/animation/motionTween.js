@@ -7,8 +7,7 @@ import {
 import { prefersReducedMotion } from "./motionPreferences.js";
 import { getMotionPreset } from "./motionPresets.js";
 
-// Public surface: motionTo/transition/killMotionOf/lanePreset/motionLanes are production APIs.
-// sequence()/stagger() stay exported as test-covered experimental helpers for compatibility.
+// Public surface: motion/motionTo/motionSequence/parallel/killMotionOf/lanePreset/motionLanes are production APIs.
 const RESERVED_KEYS = new Set([
   "delay",
   "blendDuration",
@@ -372,8 +371,6 @@ export function motion(targetOrTargets, defaults = {}) {
   return builder;
 }
 
-export const transition = motion;
-
 export function scrub(targetOrTargets, vars = {}, options = {}) {
   const driver = progressDriver({
     completeAtEnd: false,
@@ -539,81 +536,6 @@ export function parallel(items = [], options = {}) {
   };
 }
 
-/**
- * @experimental No production consumers yet; keep behavior covered by motionTweenTests.
- */
-export function sequence(items = [], options = {}) {
-  let current = null;
-  let arrived = false;
-  let canceled = false;
-  let completed = false;
-  let released = false;
-  let index = 0;
-
-  const playNext = () => {
-    if (canceled || released) return;
-    if (index >= items.length) {
-      completed = true;
-      options.onComplete?.();
-      return;
-    }
-    const item = items[index];
-    index += 1;
-    current = startMotionItem(item, {
-      ...options,
-      onArrive: () => {
-        if (index >= items.length && !arrived) {
-          arrived = true;
-          options.onArrive?.();
-        }
-      },
-      onComplete: playNext,
-    });
-    if (!current || current.completed) playNext();
-  };
-
-  playNext();
-
-  return {
-    cancel(reason = "cancel") {
-      if (completed || canceled || released) return;
-      canceled = true;
-      current?.cancel?.(reason);
-      options.onCancel?.(reason);
-    },
-    get completed() {
-      return completed;
-    },
-    get arrived() {
-      return arrived;
-    },
-    release() {
-      if (completed || canceled || released) return;
-      released = true;
-      current?.release?.();
-    },
-    get released() {
-      return released;
-    },
-  };
-}
-
-/**
- * @experimental No production consumers yet; keep behavior covered by motionTweenTests.
- */
-export function stagger(targets = [], varsOrFactory = {}, options = {}) {
-  const delayStep = readNumber(options.stagger, readNumber(options.each, 0));
-  const baseDelay = readNumber(options.delay, 0);
-  const items = (targets || []).map((target, index) => (childOptions) => {
-    const vars = typeof varsOrFactory === "function" ? varsOrFactory(target, index) : varsOrFactory;
-    return motionTo(target, {
-      ...vars,
-      delay: readNumber(vars?.delay, baseDelay) + index * delayStep,
-    }, childOptions);
-  });
-  return parallel(items, options);
-}
-
 export function motionSet(targetOrTargets, vars = {}, options = {}) {
   const runtime = options.runtime || motionRuntime;
   const laneOptions = vars.lanePreset ? lanePreset(vars.lanePreset) : {};
@@ -654,7 +576,6 @@ function startMotionItem(item, options = {}) {
   if (!item) return null;
   if (typeof item === "function") return item(options);
   if (typeof item.start === "function") return item.start(options);
-  if (Array.isArray(item)) return sequence(item, options);
   if (typeof item.cancel === "function") return item;
   if (item.target && item.to) return motionTo(item.target, item.to, options);
   return null;

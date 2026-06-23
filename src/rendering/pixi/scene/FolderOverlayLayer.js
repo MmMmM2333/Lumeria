@@ -2,9 +2,8 @@ import { Container, Graphics, Rectangle, Sprite, Text } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
-import { folderCloseDuration, folderCloseEase } from "../animation/eases.js";
-import { killMotionOf, transition } from "../animation/motionTween.js";
-import { folderPanelOpenSpring, pageTrackSpring, panelSpring, stopTargetSprings } from "../animation/springMotion.js";
+import { motionPresets, motionSprings } from "../animation/motionPresets.js";
+import { killMotionOf, motion } from "../animation/motionTween.js";
 import { getFolderGridMetrics, getFolderPanelGeometry, parseRepeatCount, readPx } from "../geometry/gridGeometry.js";
 import {
   clearFrameGhost as clearFrameGhostState,
@@ -257,13 +256,13 @@ function animateDetachedFrame(graphics, frameState, targetState, tracker, visual
     progress: frameState.progress ?? 0,
   };
   const target = targetState || frameState;
-  const duration = folderCloseDuration + DETACHED_CLOSING_FRAME_TAIL_DURATION;
+  const duration = motionPresets.folderClose.duration + DETACHED_CLOSING_FRAME_TAIL_DURATION;
   const finishGeometry = tracker.add();
   const update = () => drawDetachedFrame(graphics, frame);
   update();
-  const geometryControl = transition(frame)
+  const geometryControl = motion(frame)
     .duration(duration)
-    .ease(folderCloseEase)
+    .ease(motionPresets.folderClose.ease)
     .overlay()
     .interrupt("retarget")
     .to({
@@ -309,36 +308,36 @@ function animateDetachedClosingGhost(ghost, tracker, visual = null) {
     sourceLabel: "ghost.detachedClosing.scale",
     targetPart: "node.scale",
   });
-  const motion = ghost.__closingDetachedMotion;
-  const duration = Math.max(0.01, Number(motion?.duration) || folderCloseDuration);
-  const hasGeometryTarget = Number.isFinite(Number(motion?.x)) &&
-    Number.isFinite(Number(motion?.y)) &&
-    Number.isFinite(Number(motion?.scale));
+  const detachedMotion = ghost.__closingDetachedMotion;
+  const duration = Math.max(0.01, Number(detachedMotion?.duration) || motionPresets.folderClose.duration);
+  const hasGeometryTarget = Number.isFinite(Number(detachedMotion?.x)) &&
+    Number.isFinite(Number(detachedMotion?.y)) &&
+    Number.isFinite(Number(detachedMotion?.scale));
   const finishDisplay = tracker.add();
 
   if (hasGeometryTarget) {
-    const displayControl = transition(ghost)
+    const displayControl = motion(ghost)
       .duration(duration)
-      .ease(folderCloseEase)
+      .ease(motionPresets.folderClose.ease)
       .overlay()
       .interrupt("retarget")
       .to({
-        alpha: Number.isFinite(Number(motion.alpha)) ? motion.alpha : ghost.alpha,
-        x: motion.x,
-        y: motion.y,
+        alpha: Number.isFinite(Number(detachedMotion.alpha)) ? detachedMotion.alpha : ghost.alpha,
+        x: detachedMotion.x,
+        y: detachedMotion.y,
         onComplete: finishDisplay,
       })
       .start();
     addDetachedVisualMotionControl(visual, displayControl);
     const finishScale = tracker.add();
-    const scaleControl = transition(ghost.scale)
+    const scaleControl = motion(ghost.scale)
       .duration(duration)
-      .ease(folderCloseEase)
+      .ease(motionPresets.folderClose.ease)
       .overlay()
       .interrupt("retarget")
       .to({
-        x: motion.scale,
-        y: motion.scale,
+        x: detachedMotion.scale,
+        y: detachedMotion.scale,
         onComplete: finishScale,
       })
       .start();
@@ -346,9 +345,9 @@ function animateDetachedClosingGhost(ghost, tracker, visual = null) {
     return;
   }
 
-  const fallbackControl = transition(ghost)
+  const fallbackControl = motion(ghost)
     .duration(DETACHED_CLOSING_FALLBACK_DURATION)
-    .ease(folderCloseEase)
+    .ease(motionPresets.folderClose.ease)
     .overlay()
     .interrupt("retarget")
     .to({
@@ -362,9 +361,9 @@ function animateDetachedClosingGhost(ghost, tracker, visual = null) {
 function animateDetachedGeometryHold(tracker, visual = null) {
   const state = { progress: 0 };
   const finishGeometry = tracker.add();
-  const holdControl = transition(state)
-    .duration(folderCloseDuration + DETACHED_CLOSING_FRAME_TAIL_DURATION)
-    .ease(folderCloseEase)
+  const holdControl = motion(state)
+    .duration(motionPresets.folderClose.duration + DETACHED_CLOSING_FRAME_TAIL_DURATION)
+    .ease(motionPresets.folderClose.ease)
     .overlay()
     .interrupt("retarget")
     .to({
@@ -376,9 +375,9 @@ function animateDetachedGeometryHold(tracker, visual = null) {
 }
 
 function springFolderIconLayoutPosition(node, target, refreshBounds) {
-  transition(node)
+  motion(node)
     .layout()
-    .spring(pageTrackSpring)
+    .spring(motionSprings.layout)
     .interrupt("retarget")
     .to({
       onComplete: refreshBounds,
@@ -389,8 +388,8 @@ function springFolderIconLayoutPosition(node, target, refreshBounds) {
     .start();
 }
 
-function transitionSpringTo(target, vars, config, options = {}) {
-  transition(target)
+function motionSpringTo(target, vars, config, options = {}) {
+  motion(target)
     .layout()
     .spring(config)
     .interrupt("retarget")
@@ -405,9 +404,9 @@ function transitionSpringTo(target, vars, config, options = {}) {
 
 function springPanelGeometry(panel, target, options = {}) {
   const springOptions = options.onFrame ? { onComplete: options.onFrame, onUpdate: options.onFrame } : {};
-  const springConfig = options.spring || panelSpring;
-  transitionSpringTo(panel, { x: target.x, y: target.y }, springConfig, springOptions);
-  transitionSpringTo(panel.scale, { x: target.scaleX, y: target.scaleY }, springConfig, springOptions);
+  const springConfig = options.spring || motionSprings.handoff;
+  motionSpringTo(panel, { x: target.x, y: target.y }, springConfig, springOptions);
+  motionSpringTo(panel.scale, { x: target.scaleX, y: target.scaleY }, springConfig, springOptions);
 }
 
 export class FolderOverlayLayer extends Container {
@@ -631,7 +630,7 @@ export class FolderOverlayLayer extends Container {
     const targetTrackX = -state.folderPageIndex * geometry.grid.width;
     if (isNewFolder && !isClosing) {
       cancelPageTrackMotion(this.pageTrackMotion, "replace");
-      stopTargetSprings(this.pageTrack, { reason: FOLDER_PAGE_TRACK_REPLACE_REASON });
+      killMotionOf(this.pageTrack, null, { lane: "base", reason: FOLDER_PAGE_TRACK_REPLACE_REASON });
       this.pageTrack.x = targetTrackX;
     } else {
       const markBoundsDirty = () => this.markRegisteredBoundsDirty();
@@ -647,7 +646,7 @@ export class FolderOverlayLayer extends Container {
         pageSpan: geometry.grid.width,
         scrub: state.folderPageTrackScrub,
         sourceLabel: "folder.pageTrack",
-        springConfig: pageTrackSpring,
+        springConfig: motionSprings.layout,
       });
     }
     const { closeIconRect, closeThumbRect } = getStableFolderCloseRects({
@@ -757,7 +756,7 @@ export class FolderOverlayLayer extends Container {
       const iconBounds = refreshNodeBounds();
       if (isInteractivePage && !isPrewarm) boundsRefreshers.set(key, refreshNodeBounds);
       if (isNewNode) {
-        transition(node)
+        motion(node)
           .preset("folderOpen", { delay: Math.min(0.18, index * 0.012), duration: 0.24 })
           .overlay()
           .interrupt("retarget")
@@ -845,8 +844,8 @@ export class FolderOverlayLayer extends Container {
       if (seen.has(key)) continue;
       this.iconNodes.delete(key);
       killMotionOf(node, null, { reason: FOLDER_ICON_EXIT_REASON });
-      stopTargetSprings(node, { reason: FOLDER_ICON_EXIT_REASON });
-      transition(node)
+      killMotionOf(node, null, { lane: "base", reason: FOLDER_ICON_EXIT_REASON });
+      motion(node)
         .preset("fade", { duration: 0.14 })
         .overlay()
         .interrupt("retarget")
@@ -872,8 +871,8 @@ export class FolderOverlayLayer extends Container {
       stopSprings = true,
     } = options;
     if (stopSprings) {
-      stopTargetSprings(this.panel, { reason });
-      stopTargetSprings(this.panel.scale, { reason });
+      killMotionOf(this.panel, null, { lane: "base", reason });
+      killMotionOf(this.panel.scale, null, { lane: "base", reason });
     }
     killMotionOf(this.panel, panelProps, { reason });
     killMotionOf(this.panel.scale, scaleProps, { reason });
@@ -903,11 +902,11 @@ export class FolderOverlayLayer extends Container {
     if (cancelPageTrackReason) {
       cancelPageTrackMotion(this.pageTrackMotion, cancelPageTrackReason);
     }
-    if (clearPageTrackSpringsReason) stopTargetSprings(this.pageTrack, { reason: clearPageTrackSpringsReason });
+    if (clearPageTrackSpringsReason) killMotionOf(this.pageTrack, null, { lane: "base", reason: clearPageTrackSpringsReason });
     if (clearPageDots) this.clearPageDots();
     if (clearPanelSpringsReason) {
-      stopTargetSprings(this.panel, { reason: clearPanelSpringsReason });
-      stopTargetSprings(this.panel.scale, { reason: clearPanelSpringsReason });
+      killMotionOf(this.panel, null, { lane: "base", reason: clearPanelSpringsReason });
+      killMotionOf(this.panel.scale, null, { lane: "base", reason: clearPanelSpringsReason });
     }
   }
 
@@ -1431,13 +1430,13 @@ export class FolderOverlayLayer extends Container {
       dot.scale.set(visual.scale);
       return;
     }
-    transition(dot)
+    motion(dot)
       .preset("fade")
       .overlay()
       .blend(PAGE_DOT_BLEND_DURATION, PAGE_DOT_BLEND_EASE)
       .to({ alpha: visual.alpha })
       .start();
-    transition(dot.scale)
+    motion(dot.scale)
       .preset("fade")
       .overlay()
       .blend(PAGE_DOT_BLEND_DURATION, PAGE_DOT_BLEND_EASE)
@@ -1650,7 +1649,7 @@ export class FolderOverlayLayer extends Container {
       this.panelTitleOpening = false;
       this.resetPanelMotion(FOLDER_PANEL_CLOSE_REASON, { panelProps: "x,y", scaleProps: "x,y" });
       const sourceLocalRect = clientRectToStageVisualRect(sourceRect, state.stageRect);
-      transition(this.panel)
+      motion(this.panel)
         .preset("folderPanelClose")
         .overlay()
         .interrupt("retarget")
@@ -1668,7 +1667,7 @@ export class FolderOverlayLayer extends Container {
     if (isClosing) {
       this.panelTitleOpening = false;
       this.resetPanelMotion(FOLDER_PANEL_CLOSE_REASON, { panelProps: "x,y", scaleProps: "x,y" });
-      transition(this.panel)
+      motion(this.panel)
         .preset("folderClose")
         .overlay()
         .interrupt("retarget")
@@ -1708,7 +1707,7 @@ export class FolderOverlayLayer extends Container {
     };
     if (this.panelAlphaTarget !== 1) {
       this.panelAlphaTarget = 1;
-      transition(this.panel)
+      motion(this.panel)
         .preset("folderOpen")
         .overlay()
         .interrupt("retarget")
@@ -1729,7 +1728,7 @@ export class FolderOverlayLayer extends Container {
         scaleY: 1,
         x: targetX,
         y: targetY,
-      }, { onFrame: updateOpeningPanelFrame, spring: folderPanelOpenSpring });
+      }, { onFrame: updateOpeningPanelFrame, spring: motionSprings.folderPanelOpen });
       if (sessionToken) this.scheduleOpeningPanelReadyCheck(sessionToken, openingGeometrySnapshot?.panelRect || panelRect);
     }
     updateOpeningPanelFrame();
@@ -1813,9 +1812,9 @@ export class FolderOverlayLayer extends Container {
     killAllMotion(this.pageTrack, { reason: "destroyed" });
     this.clearPageDots();
     cancelPageTrackMotion(this.pageTrackMotion, "destroyed");
-    stopTargetSprings(this.pageTrack, { reason: "destroyed" });
-    stopTargetSprings(this.panel, { reason: "destroyed" });
-    stopTargetSprings(this.panel.scale, { reason: "destroyed" });
+    killMotionOf(this.pageTrack, null, { lane: "base", reason: "destroyed" });
+    killMotionOf(this.panel, null, { lane: "base", reason: "destroyed" });
+    killMotionOf(this.panel.scale, null, { lane: "base", reason: "destroyed" });
     super.destroy(options);
   }
 }

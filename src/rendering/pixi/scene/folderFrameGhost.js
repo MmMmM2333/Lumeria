@@ -1,8 +1,7 @@
 import { Graphics } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { folderOpenGhostDuration, folderOpenGhostEase } from "../animation/eases.js";
-import { killMotionOf, parallel, transition } from "../animation/motionTween.js";
-import { panelSpring } from "../animation/springMotion.js";
+import { killMotionOf, parallel, motion } from "../animation/motionTween.js";
+import { motionPresets, motionSprings } from "../animation/motionPresets.js";
 import { getFrameRadius, lerpColor } from "./folderFrameGhostMath.js";
 
 export { getFrameRadius, lerpColor } from "./folderFrameGhostMath.js";
@@ -63,7 +62,7 @@ function releaseFrameGhostMotion(layer) {
 }
 
 function frameSpring(frame, prop, to, springConfig, options = {}) {
-  return transition(frame)
+  return motion(frame)
     .layout()
     .spring(springConfig)
     .interrupt("retarget")
@@ -96,8 +95,8 @@ export function startFrameGhost(layer, fromRect, toRect, options = {}) {
   releaseFrameGhostMotion(layer);
   killMotionOf(layer.frameGhost);
   killMotionOf(layer.panelMaterial);
-  const duration = options.duration ?? folderOpenGhostDuration;
-  const ease = options.ease ?? folderOpenGhostEase;
+  const duration = options.duration ?? motionPresets.folderOpenGhost.duration;
+  const ease = options.ease ?? motionPresets.folderOpenGhost.ease;
   const fadeStart = Math.max(0, Math.min(0.95, options.fadeStart ?? 0.72));
   const fadeDuration = Math.max(0.01, duration * (1 - fadeStart));
   const fromFillColor = options.fromFillColor ?? 0xf7f8ff;
@@ -158,7 +157,7 @@ export function startFrameGhost(layer, fromRect, toRect, options = {}) {
       layer.frameGhost.alpha = frameGhostFromAlpha + (frameGhostToAlpha - frameGhostFromAlpha) * mix;
     };
     updateAlphaHandoff();
-    fadeControls.push(transition(alphaHandoff)
+    fadeControls.push(motion(alphaHandoff)
       .duration(fadeDuration)
       .ease(ease)
       .delay(duration * fadeStart)
@@ -167,7 +166,7 @@ export function startFrameGhost(layer, fromRect, toRect, options = {}) {
       .to({ onUpdate: updateAlphaHandoff, progress: 1, snap: options.snap })
       .start());
   } else {
-    fadeControls.push(transition(layer.panelMaterial)
+    fadeControls.push(motion(layer.panelMaterial)
       .duration(fadeDuration)
       .ease(ease)
       .delay(duration * fadeStart)
@@ -175,7 +174,7 @@ export function startFrameGhost(layer, fromRect, toRect, options = {}) {
       .interrupt("retarget")
       .to({ alpha: options.panelMaterialToAlpha ?? 1 })
       .start());
-    fadeControls.push(transition(layer.frameGhost)
+    fadeControls.push(motion(layer.frameGhost)
       .duration(fadeDuration)
       .ease(ease)
       .delay(duration * fadeStart)
@@ -199,7 +198,7 @@ export function startFrameGhost(layer, fromRect, toRect, options = {}) {
     options.onArrive?.(frame);
   };
   let frameMotionControl = null;
-  const springConfig = options.springConfig || panelSpring;
+  const springConfig = options.springConfig || motionSprings.handoff;
   const frameMotionControlBase = parallel([
     frameSpring(frame, "fillAlpha", options.toFillAlpha ?? 0.26, springConfig, { onUpdate: updateFrame, snap: options.snap }),
     frameSpring(frame, "height", toRect.height, springConfig, { onArrive: arriveGeometryTrack, onUpdate: updateFrame, snap: options.snap }),

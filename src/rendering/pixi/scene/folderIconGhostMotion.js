@@ -1,5 +1,5 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { folderCloseDuration, folderOpenGhostDuration } from "../animation/eases.js";
+import { motionPresets } from "../animation/motionPresets.js";
 import { getIconNodeOffsetFromVisualCenter } from "../geometry/iconMetrics.js";
 import { clientRectToStageVisualRect, stageLayoutRectToStageVisualRect } from "../geometry/stageCoordinates.js";
 
@@ -38,7 +38,7 @@ function resolveTargetStageVisualRect(target, options = {}) {
 export function makeOpeningGhostMotion(target, options = {}) {
   const {
     isTextlessMode = false,
-    openDuration = folderOpenGhostDuration,
+    openDuration = motionPresets.folderOpenGhost.duration,
     stageHeight,
     stageRect,
     stageWidth,
@@ -82,7 +82,7 @@ export function makeCompletedClosingPreviewMotion(target, options = {}) {
 export function makeClosingGhostMotion(target, options = {}) {
   const {
     alphaHold = 0.16,
-    closeDuration = folderCloseDuration,
+    closeDuration = motionPresets.folderClose.duration,
     isTextlessMode = false,
     stageHeight,
     stageRect,

@@ -2,7 +2,7 @@ import { Container, Graphics, Rectangle, Sprite, Text } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
-import { killMotionOf, motionAdd, motionSequence, transition } from "../animation/motionTween.js";
+import { killMotionOf, motionAdd, motionSequence, motion } from "../animation/motionTween.js";
 import { getCachedIconTexture } from "../assets/iconTextureCache.js";
 import {
   getCenteredLocalRect,
@@ -352,7 +352,7 @@ export class IconNode extends Container {
       this.scale.set(nextScale);
       return;
     }
-    transition(this.scale)
+    motion(this.scale)
       .preset(shouldOpenScale ? "snappy" : "settle")
       .layout()
       .interrupt("retarget")
@@ -468,7 +468,7 @@ export class IconNode extends Container {
         y: impulse,
       });
     }
-    transition(this.visualWrap)
+    motion(this.visualWrap)
       .preset(pressed ? "press" : "release")
       .interrupt("retarget")
       .to({ alpha: nextAlpha })
@@ -621,7 +621,7 @@ export class IconNode extends Container {
     const duration = seed % 3 === 0 ? 0.17 : 0.15;
     const fromRotation = -direction * JIGGLE_ROTATION;
     const fromY = -direction * JIGGLE_Y;
-    transition(this.jiggleWrap)
+    motion(this.jiggleWrap)
       .jiggle()
       .to({
         delay: (seed % 5) * 0.018,
@@ -773,7 +773,7 @@ export class IconNode extends Container {
     this.prepareFolderHoverFrame(this.getFolderHoverTargetPadding());
     if (!wasActive) {
       killMotionOf(this.folderHoverFrame);
-      transition(this.folderThumb)
+      motion(this.folderThumb)
         .duration(FOLDER_HOVER_FRAME_DURATION)
         .ease("power3.out")
         .overlay()
@@ -791,7 +791,7 @@ export class IconNode extends Container {
       killMotionOf(this.folderChildrenWrap, "y");
       this.folderChildrenWrap.y = plan.startY;
       if (plan.endY !== plan.startY) {
-        transition(this.folderChildrenWrap)
+        motion(this.folderChildrenWrap)
           .duration(FOLDER_THUMB_SCROLL_DURATION)
           .ease("power2.inOut")
           .overlay()
@@ -823,7 +823,7 @@ export class IconNode extends Container {
     killMotionOf(this.folderHoverFrame);
     const targetPadding = this.getFolderHoverPadding();
     const hiddenScale = getPaddedFrameScale(this.iconSize, 0, targetPadding);
-    transition(this.folderThumb)
+    motion(this.folderThumb)
       .duration(FOLDER_HOVER_RESET_DURATION)
       .ease("power3.out")
       .overlay()
@@ -841,7 +841,7 @@ export class IconNode extends Container {
       })
       .start();
     killMotionOf(this.visualWrap.scale);
-    transition(this.folderChildrenWrap)
+    motion(this.folderChildrenWrap)
       .duration(FOLDER_HOVER_RESET_DURATION)
       .ease("power3.out")
       .overlay()
@@ -928,7 +928,7 @@ export class IconNode extends Container {
       this.emojiText.alpha = alpha;
       return;
     }
-    transition([this.iconSprite, this.emojiText])
+    motion([this.iconSprite, this.emojiText])
       .preset("fade", { duration: APP_FOLDER_CREATE_DIM_DURATION })
       .overlay()
       .blend(APP_FOLDER_CREATE_BLEND_DURATION, APP_FOLDER_CREATE_BLEND_EASE)
@@ -951,7 +951,7 @@ export class IconNode extends Container {
     });
     if (!wasActive) {
       killMotionOf(this.appFolderCreateFrame);
-      transition(this.folderCreateBackdrop)
+      motion(this.folderCreateBackdrop)
         .duration(APP_FOLDER_CREATE_FRAME_DURATION)
         .ease("power3.out")
         .overlay()
@@ -1014,7 +1014,7 @@ export class IconNode extends Container {
 
     const targetPadding = Math.max(0, Number(this.appFolderCreateFrame.padding) || 0);
     const hiddenScale = getPaddedFrameScale(this.iconSize, 0, targetPadding);
-    transition(this.folderCreateBackdrop)
+    motion(this.folderCreateBackdrop)
       .duration(FOLDER_HOVER_RESET_DURATION)
       .ease("power3.out")
       .overlay()
@@ -1079,7 +1079,7 @@ export class IconNode extends Container {
     if (!this.labelText.visible) return;
     killMotionOf(this.labelText);
     this.labelText.alpha = 0;
-    transition(this.labelText)
+    motion(this.labelText)
       .preset("fade", { duration: 0.18 })
       .overlay()
       .interrupt("retarget")

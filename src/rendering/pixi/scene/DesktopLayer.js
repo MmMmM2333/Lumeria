@@ -25,8 +25,8 @@ import {
   registerStableStageLayoutTopLevelIconTargetBounds,
 } from "../geometry/iconBoundsRegistry.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
-import { desktopVisualSpring, pageTrackSpring, stopTargetSprings } from "../animation/springMotion.js";
-import { killMotionOf, transition } from "../animation/motionTween.js";
+import { motionSprings } from "../animation/motionPresets.js";
+import { killMotionOf, motion } from "../animation/motionTween.js";
 import {
   isActiveDraggedLaunchItem,
   isReleaseGhostLaunchItem,
@@ -310,9 +310,9 @@ function getDesktopFrame(state) {
 }
 
 function springIconLayoutPosition(node, layoutTarget, markBoundsDirty) {
-  transition(node)
+  motion(node)
     .layout()
-    .spring(pageTrackSpring)
+    .spring(motionSprings.layout)
     .interrupt("retarget")
     .to({
       onComplete: markBoundsDirty,
@@ -323,8 +323,8 @@ function springIconLayoutPosition(node, layoutTarget, markBoundsDirty) {
     .start();
 }
 
-function transitionSpringTo(target, vars, config, options = {}) {
-  transition(target)
+function motionSpringTo(target, vars, config, options = {}) {
+  motion(target)
     .layout()
     .spring(config)
     .interrupt("retarget")
@@ -517,7 +517,7 @@ export class DesktopLayer extends Container {
           this.iconNodes.set(key, node);
           this.pageTrack.addChild(node);
           if (!isFolderClosingHandoff) {
-            transition(node)
+            motion(node)
               .preset("fade")
               .layout()
               .interrupt("retarget")
@@ -601,8 +601,7 @@ export class DesktopLayer extends Container {
       if (seen.has(key)) continue;
       this.iconNodes.delete(key);
       killMotionOf(node);
-      stopTargetSprings(node);
-      transition(node)
+      motion(node)
         .preset("fade")
         .layout()
         .interrupt("retarget")
@@ -623,7 +622,7 @@ export class DesktopLayer extends Container {
       scrub: state.pageTrackScrub,
       sourceLabel: "desktop.pageTrack",
       snap: shouldSnap,
-      springConfig: pageTrackSpring,
+      springConfig: motionSprings.layout,
     });
     this.flushInteractiveBounds({ force: true });
     this.updateSingleStageFolderLayer(state);
@@ -712,10 +711,10 @@ export class DesktopLayer extends Container {
       return;
     }
     const markBoundsDirty = () => this.markInteractiveBoundsDirty();
-    transitionSpringTo(this.visualRoot, { x: centerX, y: targetY }, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
-    transitionSpringTo(this.visualRoot.scale, { x: scale, y: scale }, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
-    transitionSpringTo(this.desktopClosingUnderlayLayer, { x: centerX, y: targetY }, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
-    transitionSpringTo(this.desktopClosingUnderlayLayer.scale, { x: scale, y: scale }, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
+    motionSpringTo(this.visualRoot, { x: centerX, y: targetY }, motionSprings.settle, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
+    motionSpringTo(this.visualRoot.scale, { x: scale, y: scale }, motionSprings.settle, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
+    motionSpringTo(this.desktopClosingUnderlayLayer, { x: centerX, y: targetY }, motionSprings.settle, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
+    motionSpringTo(this.desktopClosingUnderlayLayer.scale, { x: scale, y: scale }, motionSprings.settle, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
   }
 
   applyDesktopVisualAlpha(state) {
@@ -730,8 +729,8 @@ export class DesktopLayer extends Container {
       this.hasDesktopVisualAlpha = true;
       return;
     }
-    transitionSpringTo(this.visualRoot, { alpha }, desktopVisualSpring);
-    transitionSpringTo(this.desktopClosingUnderlayLayer, { alpha }, desktopVisualSpring);
+    motionSpringTo(this.visualRoot, { alpha }, motionSprings.settle);
+    motionSpringTo(this.desktopClosingUnderlayLayer, { alpha }, motionSprings.settle);
   }
 
   applyFolderOverlayAlpha(state) {
@@ -743,7 +742,7 @@ export class DesktopLayer extends Container {
       this.hasFolderOverlayAlpha = true;
       return;
     }
-    transitionSpringTo(this.singleStageFolderLayer, { alpha }, desktopVisualSpring);
+    motionSpringTo(this.singleStageFolderLayer, { alpha }, motionSprings.settle);
   }
 
   hasSingleStageFolderOverlayContent(state = {}) {
@@ -764,12 +763,12 @@ export class DesktopLayer extends Container {
       return;
     }
     const markBoundsDirty = () => this.markInteractiveBoundsDirty();
-    transitionSpringTo(this.singleStageFolderLayer, { x: centerX, y: targetY }, desktopVisualSpring, {
+    motionSpringTo(this.singleStageFolderLayer, { x: centerX, y: targetY }, motionSprings.settle, {
       onComplete: markBoundsDirty,
       onUpdate: markBoundsDirty,
       snap: shouldSnap,
     });
-    transitionSpringTo(this.singleStageFolderLayer.scale, { x: transform.scale, y: transform.scale }, desktopVisualSpring, {
+    motionSpringTo(this.singleStageFolderLayer.scale, { x: transform.scale, y: transform.scale }, motionSprings.settle, {
       onComplete: markBoundsDirty,
       onUpdate: markBoundsDirty,
       snap: shouldSnap,
@@ -1464,14 +1463,14 @@ export class DesktopLayer extends Container {
     this.unsubscribeVisualOwnership = null;
     this.boundsRegistration = null;
     this.clearFolderHandoffNode();
-    stopTargetSprings(this.visualRoot, { reason: "destroyed" });
-    stopTargetSprings(this.visualRoot?.scale, { reason: "destroyed" });
-    stopTargetSprings(this.desktopClosingUnderlayLayer, { reason: "destroyed" });
-    stopTargetSprings(this.desktopClosingUnderlayLayer?.scale, { reason: "destroyed" });
-    stopTargetSprings(this.singleStageFolderLayer, { reason: "destroyed" });
-    stopTargetSprings(this.singleStageFolderLayer?.scale, { reason: "destroyed" });
+    killMotionOf(this.visualRoot, null, { lane: "base", reason: "destroyed" });
+    killMotionOf(this.visualRoot?.scale, null, { lane: "base", reason: "destroyed" });
+    killMotionOf(this.desktopClosingUnderlayLayer, null, { lane: "base", reason: "destroyed" });
+    killMotionOf(this.desktopClosingUnderlayLayer?.scale, null, { lane: "base", reason: "destroyed" });
+    killMotionOf(this.singleStageFolderLayer, null, { lane: "base", reason: "destroyed" });
+    killMotionOf(this.singleStageFolderLayer?.scale, null, { lane: "base", reason: "destroyed" });
     cancelPageTrackMotion(this.pageTrackMotion, "destroyed");
-    stopTargetSprings(this.pageTrack, { reason: "destroyed" });
+    killMotionOf(this.pageTrack, null, { lane: "base", reason: "destroyed" });
     this.visualCommitQueue?.clear?.();
     super.destroy(options);
   }

@@ -10,9 +10,6 @@ import {
   killMotionOf,
   parallel,
   scrub,
-  sequence,
-  stagger,
-  transition,
 } from "./motionTween.js";
 
 function nearlyEqual(actual, expected, epsilon = 0.001) {
@@ -36,16 +33,16 @@ export function runMotionTweenTests() {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { alpha: 1 };
     const calls = [];
-    transition(target)
+    motion(target)
       .from({ alpha: 0 })
       .to({ alpha: 1, duration: 1, ease: "linear", onComplete: () => calls.push("step") })
-      .start({ runtime, onComplete: () => calls.push("transition") });
+      .start({ runtime, onComplete: () => calls.push("motion") });
 
     runtime.step(0.5);
-    assert(nearlyEqual(target.alpha, 0.5), `transition builder should honor from/to, got ${target.alpha}`);
+    assert(nearlyEqual(target.alpha, 0.5), `motion builder should honor from/to, got ${target.alpha}`);
     runtime.step(0.5);
-    assert(nearlyEqual(target.alpha, 1), "transition builder should complete at the target value");
-    assert(calls.join(",") === "step,transition", "transition builder should run step and group completions");
+    assert(nearlyEqual(target.alpha, 1), "motion builder should complete at the target value");
+    assert(calls.join(",") === "step,motion", "motion builder should run step and group completions");
   }
 
   {
@@ -54,14 +51,14 @@ export function runMotionTweenTests() {
     setReducedMotionForTests(true);
     let completed = 0;
     try {
-      transition(target)
+      motion(target)
         .preset("folderOpen")
         .to({ alpha: 1 })
         .start({ runtime, onComplete: () => { completed += 1; } });
 
-      assert(nearlyEqual(target.alpha, 1), "reduced-motion transition should snap to the final value");
-      assert(completed === 1, "reduced-motion transition should still complete");
-      assert(runtime.debugSnapshot().animations.length === 0, "reduced-motion transition should not leave active animations");
+      assert(nearlyEqual(target.alpha, 1), "reduced-motion motion should snap to the final value");
+      assert(completed === 1, "reduced-motion motion should still complete");
+      assert(runtime.debugSnapshot().animations.length === 0, "reduced-motion motion should not leave active animations");
     } finally {
       clearMotionPreferencesForTests();
     }
@@ -70,7 +67,7 @@ export function runMotionTweenTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { alpha: 0 };
-    transition(target)
+    motion(target)
       .preset("fade")
       .to({ alpha: 1 })
       .start({ runtime });
@@ -83,7 +80,7 @@ export function runMotionTweenTests() {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { alpha: 0 };
     const calls = [];
-    transition(target)
+    motion(target)
       .from({ alpha: 0 })
       .to({ alpha: 1, duration: 1, ease: "linear" })
       .at(0.5, (value, event) => calls.push(`half:${Math.round(value * 10)}:${event.prop}`))
@@ -101,7 +98,7 @@ export function runMotionTweenTests() {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
     const calls = [];
-    transition(target)
+    motion(target)
       .at(0.25, () => calls.push("default-threshold"))
       .to({ duration: 1, ease: "linear", x: 10 })
       .start({ runtime });
@@ -113,7 +110,7 @@ export function runMotionTweenTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { alpha: 0 };
-    transition(target)
+    motion(target)
       .preset("folderOpen", { duration: 0.24 })
       .overlay()
       .interrupt("retarget")
@@ -127,7 +124,7 @@ export function runMotionTweenTests() {
     assert(target.alpha > 0.5 && target.alpha < 1, "preset overrides should preserve easing while overriding duration");
 
     const valueBeforeRetarget = target.alpha;
-    transition(target)
+    motion(target)
       .preset("fade", { duration: 0.24 })
       .overlay()
       .interrupt("retarget")
@@ -142,13 +139,13 @@ export function runMotionTweenTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
-    transition(target)
+    motion(target)
       .layout()
       .to({ duration: 1, ease: "linear", x: 10 })
       .start({ runtime });
     runtime.step(0.25);
     const layoutValue = target.x;
-    transition(target)
+    motion(target)
       .drag()
       .to({ duration: 1, ease: "linear", x: 100 })
       .start({ runtime });
@@ -167,7 +164,7 @@ export function runMotionTweenTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const targets = [{ alpha: 1 }, { alpha: 1 }];
-    transition(targets)
+    motion(targets)
       .preset("fade", { duration: 0.12 })
       .overlay()
       .interrupt("retarget")
@@ -175,16 +172,16 @@ export function runMotionTweenTests() {
       .start({ runtime });
 
     runtime.step(0.06);
-    assert(targets[0].alpha < 1 && targets[1].alpha < 1, "transition builder should animate array targets");
+    assert(targets[0].alpha < 1 && targets[1].alpha < 1, "motion builder should animate array targets");
     runtime.step(0.06);
-    assert(nearlyEqual(targets[0].alpha, 0.48), "transition builder should complete first array target");
-    assert(nearlyEqual(targets[1].alpha, 0.48), "transition builder should complete second array target");
+    assert(nearlyEqual(targets[0].alpha, 0.48), "motion builder should complete first array target");
+    assert(nearlyEqual(targets[1].alpha, 0.48), "motion builder should complete second array target");
   }
 
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
-    const control = transition(target)
+    const control = motion(target)
       .preset("snappy")
       .to({ x: 10 })
       .start({ runtime });
@@ -233,35 +230,35 @@ export function runMotionTweenTests() {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
     let completed = 0;
-    sequence([
-      motion(target).to({ duration: 0.5, ease: "linear", x: 10 }),
-      motion(target).to({ duration: 0.5, ease: "linear", x: 20 }),
+    motionSequence(target, [
+      { duration: 0.5, ease: "linear", x: 10 },
+      { duration: 0.5, ease: "linear", x: 20 },
     ], { runtime, onComplete: () => { completed += 1; } });
 
     runtime.step(0.5);
-    assert(nearlyEqual(target.x, 10), "sequence should complete the first item before starting the next");
-    assert(completed === 0, "sequence should not complete until all items finish");
+    assert(nearlyEqual(target.x, 10), "motionSequence should complete the first item before starting the next");
+    assert(completed === 0, "motionSequence should not complete until all items finish");
     runtime.step(0.25);
-    assert(nearlyEqual(target.x, 15), `sequence should advance the second item from the first target, got ${target.x}`);
+    assert(nearlyEqual(target.x, 15), `motionSequence should advance the second item from the first target, got ${target.x}`);
     runtime.step(0.25);
-    assert(nearlyEqual(target.x, 20), "sequence should complete at the final item target");
-    assert(completed === 1, "sequence should fire onComplete once");
+    assert(nearlyEqual(target.x, 20), "motionSequence should complete at the final item target");
+    assert(completed === 1, "motionSequence should fire onComplete once");
   }
 
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
     const calls = [];
-    const control = sequence([
-      motion(target).to({ duration: 0.25, ease: "linear", x: 10 }),
-      motion(target).to({ duration: 0.25, ease: "linear", x: 20 }),
+    const control = motionSequence(target, [
+      { duration: 0.25, ease: "linear", x: 10 },
+      { duration: 0.25, ease: "linear", x: 20 },
     ], { runtime, onArrive: () => calls.push("arrive") });
 
     runtime.step(0.25);
-    assert(calls.length === 0, "sequence onArrive should not fire after an intermediate item arrives");
+    assert(calls.length === 0, "motionSequence onArrive should not fire after an intermediate item arrives");
     runtime.step(0.25);
-    assert(calls.join(",") === "arrive", "sequence onArrive should fire after the final item arrives");
-    assert(control.arrived === true, "sequence control should expose final arrival state");
+    assert(calls.join(",") === "arrive", "motionSequence onArrive should fire after the final item arrives");
+    assert(control.arrived === true, "motionSequence control should expose final arrival state");
   }
 
   {
@@ -282,13 +279,15 @@ export function runMotionTweenTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const targets = [{ alpha: 0 }, { alpha: 0 }, { alpha: 0 }];
-    stagger(targets, { alpha: 1, duration: 1, ease: "linear" }, { runtime, stagger: 0.25 });
+    parallel(targets.map((target, index) =>
+      motion(target).to({ alpha: 1, delay: index * 0.25, duration: 1, ease: "linear" })
+    ), { runtime });
 
     runtime.step(0.25);
-    assert(nearlyEqual(targets[0].alpha, 0.25), "stagger should start the first target immediately");
-    assert(nearlyEqual(targets[1].alpha, 0), "stagger should delay the second target");
+    assert(nearlyEqual(targets[0].alpha, 0.25), "parallel delayed motion should start the first target immediately");
+    assert(nearlyEqual(targets[1].alpha, 0), "parallel delayed motion should delay the second target");
     runtime.step(0.25);
-    assert(nearlyEqual(targets[1].alpha, 0.25), "stagger should start subsequent targets with spacing");
+    assert(nearlyEqual(targets[1].alpha, 0.25), "parallel delayed motion should start subsequent targets with spacing");
   }
 
   {
@@ -434,7 +433,7 @@ export function runMotionTweenTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { alpha: 0 };
-    const control = transition(target)
+    const control = motion(target)
       .from({ alpha: 0 })
       .to({ alpha: 1 })
       .scrub(0)
@@ -449,7 +448,7 @@ export function runMotionTweenTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { alpha: 0 };
-    const control = transition(target)
+    const control = motion(target)
       .from({ alpha: 0 })
       .to({ alpha: 1 })
       .scrub(0)
@@ -482,7 +481,7 @@ export function runMotionTweenTests() {
     const target = { x: 0 };
     const driver = springDriver({ damping: 28, mass: 0.9, restDelta: 0.01, restSpeed: 0.01, stiffness: 190 });
     const calls = [];
-    const first = transition(target)
+    const first = motion(target)
       .spring(driver.config)
       .interrupt("retarget")
       .to({ onComplete: () => calls.push("old-complete"), velocity: 30, x: 100 })
@@ -492,19 +491,19 @@ export function runMotionTweenTests() {
     first.release();
     runtime.step(1 / 60);
     const velocityBeforeReleaseRetarget = first.velocity;
-    const second = transition(target)
+    const second = motion(target)
       .spring(driver.config)
       .interrupt("retarget")
       .to({ onComplete: () => calls.push("new-complete"), x: 200 })
       .start({ runtime });
 
     first.cancel("old-owner");
-    assert(first.released === true, "transition control should expose release state");
-    assert(second.state === first.state, "released transition spring should be retargetable by the next owner");
-    assert(second.velocity === velocityBeforeReleaseRetarget, "released transition retarget should preserve velocity");
-    assert(runtime.debug.canceledByReason["old-owner"] == null, "released transition control should not cancel the retargeted owner");
-    assert(runUntil(runtime, () => calls.includes("new-complete")), "retargeted transition should complete under the new owner");
-    assert(!calls.includes("old-complete"), "released transition should detach old completion callbacks");
+    assert(first.released === true, "motion control should expose release state");
+    assert(second.state === first.state, "released motion spring should be retargetable by the next owner");
+    assert(second.velocity === velocityBeforeReleaseRetarget, "released motion retarget should preserve velocity");
+    assert(runtime.debug.canceledByReason["old-owner"] == null, "released motion control should not cancel the retargeted owner");
+    assert(runUntil(runtime, () => calls.includes("new-complete")), "retargeted motion should complete under the new owner");
+    assert(!calls.includes("old-complete"), "released motion should detach old completion callbacks");
   }
 
   {
@@ -523,8 +522,8 @@ export function runMotionTweenTests() {
     assert(runtime.debug.canceledByReason["released-group"] == null, "released parallel control should not cancel children");
     assert(runtime.debugSnapshot().animations.length === 2, "released parallel children should remain active");
 
-    transition(first).interrupt("retarget").to({ duration: 1, ease: "linear", x: 30 }).start({ runtime });
-    transition(second).interrupt("retarget").to({ duration: 1, ease: "linear", y: 40 }).start({ runtime });
+    motion(first).interrupt("retarget").to({ duration: 1, ease: "linear", x: 30 }).start({ runtime });
+    motion(second).interrupt("retarget").to({ duration: 1, ease: "linear", y: 40 }).start({ runtime });
     assert(runtime.debugSnapshot().animations.length === 2, "retargeting released parallel children should reuse active lane animations");
     runtime.step(1);
     assert(nearlyEqual(first.x, 30), "released parallel first child should retarget to the new value");
@@ -661,7 +660,7 @@ export function runMotionTweenTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 5 };
-    transition(target)
+    motion(target)
       .additive("pulse")
       .to({ duration: 1, ease: "linear", x: 4 })
       .start({ runtime });
@@ -704,7 +703,7 @@ export function runMotionTweenTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { opacity: 2 };
-    transition(target)
+    motion(target)
       .factor("press-opacity")
       .to({ duration: 1, ease: "linear", opacity: 0.5 })
       .start({ runtime });

@@ -1,7 +1,6 @@
-import { folderCloseDuration, folderCloseEase } from "../animation/eases.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
-import { parallel, transition } from "../animation/motionTween.js";
-import { panelSpring } from "../animation/springMotion.js";
+import { parallel, motion } from "../animation/motionTween.js";
+import { motionPresets, motionSprings } from "../animation/motionPresets.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { clientRectToStageVisualRect, stageLayoutRectToStageVisualRect } from "../geometry/stageCoordinates.js";
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
@@ -51,31 +50,31 @@ function getClosingControllerGhostKey(state, target) {
   return target?.controllerGhostKey || state.getFolderCloseIconGhostKey?.(target?.item?.id, target?.index) || null;
 }
 
-function animateClosingGhost(ghost, motion, target, onComplete, options = {}) {
-  const positionSpring = { ...panelSpring, arriveDelta: CLOSING_GHOST_VISUAL_POSITION_EPSILON };
-  const scaleSpring = { ...panelSpring, arriveDelta: CLOSING_GHOST_VISUAL_SCALE_EPSILON };
-  const motionOptions = { delay: motion.delay };
+function animateClosingGhost(ghost, ghostMotion, target, onComplete, options = {}) {
+  const positionSpring = { ...motionSprings.handoff, arriveDelta: CLOSING_GHOST_VISUAL_POSITION_EPSILON };
+  const scaleSpring = { ...motionSprings.handoff, arriveDelta: CLOSING_GHOST_VISUAL_SCALE_EPSILON };
+  const motionOptions = { delay: ghostMotion.delay };
   if (!target.isThumbnailChild) {
-    transition(ghost)
+    motion(ghost)
       .duration(CLOSING_EXTRA_GHOST_ALPHA_DURATION)
       .ease("power2.in")
-      .delay(motion.alphaDelay)
+      .delay(ghostMotion.alphaDelay)
       .overlay()
       .interrupt("retarget")
       .to({ alpha: 0 })
       .start();
   }
   return parallel([
-    transition(ghost)
+    motion(ghost)
       .spring(positionSpring)
       .handoff()
       .interrupt("retarget")
-      .to({ ...motionOptions, x: motion.toX, y: motion.toY }),
-    transition(ghost.scale)
+      .to({ ...motionOptions, x: ghostMotion.toX, y: ghostMotion.toY }),
+    motion(ghost.scale)
       .spring(scaleSpring)
       .handoff()
       .interrupt("retarget")
-      .to({ ...motionOptions, x: motion.scale, y: motion.scale }),
+      .to({ ...motionOptions, x: ghostMotion.scale, y: ghostMotion.scale }),
   ], {
     scheduler: options.scheduler,
     onArrive: () => options.onVisualArrive?.(),
@@ -163,7 +162,7 @@ export class FolderClosingGhostController {
     const layer = this.layer;
     this.clearRevealTimer();
     const maxDelay = getMaxFolderGhostGridDelay(targets, CLOSING_GHOST_MAX_DELAY);
-    const fallbackSeconds = Math.max(folderCloseDuration, CLOSING_GHOST_GEOMETRY_FALLBACK_SECONDS);
+    const fallbackSeconds = Math.max(motionPresets.folderClose.duration, CLOSING_GHOST_GEOMETRY_FALLBACK_SECONDS);
     const timeoutMs = Math.round(
       (maxDelay + fallbackSeconds + CLOSING_PREVIEW_FALLBACK_DURATION) * 1000 + GHOST_REVEAL_FALLBACK_PADDING_MS
     );
@@ -217,7 +216,7 @@ export class FolderClosingGhostController {
     clearOpeningGhostsForClosing(layer);
     const usableTargets = (closeTargets || []).filter(hasUsableFolderGhostTarget);
     const isRetargetedOpeningClose = releasedOpeningGhosts.size > 0;
-    const frameDuration = folderCloseDuration + CLOSING_FRAME_TAIL_DURATION;
+    const frameDuration = motionPresets.folderClose.duration + CLOSING_FRAME_TAIL_DURATION;
     const closeFrameToRect = clientRectToStageVisualRect(folderRect, state.stageRect);
     const thumb = getFolderThumbMetrics(folderRect.width);
     this.closeSession.setHandoffGeometry({
@@ -248,7 +247,7 @@ export class FolderClosingGhostController {
     };
     layer.startFrameGhost(closeFrameFromRect, closeFrameToRect, {
       duration: frameDuration,
-      ease: folderCloseEase,
+      ease: motionPresets.folderClose.ease,
       fadeStart: 0.86,
       folderId,
       frameGhostPhase: "closing",
@@ -296,38 +295,38 @@ export class FolderClosingGhostController {
       ghost.stageRect = state.stageRect;
       ghost.isThumbnailChild = Boolean(target.isThumbnailChild);
       ghost.setState(makeFolderGhostIconNodeState({ sourceType: "folder-close-ghost", state, target }));
-      const motion = makeClosingGhostMotion(target, {
+      const ghostMotion = makeClosingGhostMotion(target, {
         alphaHold: CLOSING_EXTRA_GHOST_ALPHA_HOLD,
-        closeDuration: folderCloseDuration,
+        closeDuration: motionPresets.folderClose.duration,
         isTextlessMode: state.isTextlessMode,
         stageHeight: state.height,
         stageRect: state.stageRect,
         stageWidth: state.width,
       });
-      ghost.position.set(motion.fromX, motion.fromY);
-      ghost.scale.set(motion.sourceScale);
-      ghost.alpha = motion.sourceAlpha;
+      ghost.position.set(ghostMotion.fromX, ghostMotion.fromY);
+      ghost.scale.set(ghostMotion.sourceScale);
+      ghost.alpha = ghostMotion.sourceAlpha;
       ghost.__closingDetachedMotion = {
         alpha: target.isThumbnailChild ? 1 : 0,
-        duration: folderCloseDuration,
-        scale: motion.scale,
-        x: motion.toX,
-        y: motion.toY,
+        duration: motionPresets.folderClose.duration,
+        scale: ghostMotion.scale,
+        x: ghostMotion.toX,
+        y: ghostMotion.toY,
       };
       if (ghost.labelText?.visible) {
         if (target.sourceLabelAlpha != null) ghost.labelText.alpha = target.sourceLabelAlpha;
-        transition(ghost.labelText)
+        motion(ghost.labelText)
           .duration(0.1)
           .ease("power2.in")
-          .delay(motion.delay)
+          .delay(ghostMotion.delay)
           .overlay()
           .interrupt("retarget")
           .to({ alpha: 0 })
           .start();
-        transition(ghost.labelText.scale)
+        motion(ghost.labelText.scale)
           .duration(0.1)
           .ease("power2.in")
-          .delay(motion.delay)
+          .delay(ghostMotion.delay)
           .overlay()
           .interrupt("retarget")
           .to({ x: 0.94, y: 0.94 })
@@ -338,7 +337,7 @@ export class FolderClosingGhostController {
 
       let didComplete = false;
       let motionControl = null;
-      motionControl = animateClosingGhost(ghost, motion, target, () => {
+      motionControl = animateClosingGhost(ghost, ghostMotion, target, () => {
         didComplete = true;
         if (motionControl) this.closeSession.deleteMotionControl(motionControl);
         this.completeGhost(state, target, ghost);
@@ -608,14 +607,14 @@ export class FolderClosingGhostController {
     this.debugClosingGhostComplete(state, target, ghost, "before-complete");
     killAllMotion(ghost);
     if (target.isThumbnailChild && !ghost.destroyed) {
-      const motion = makeCompletedClosingPreviewMotion(target, {
+      const completedPreviewMotion = makeCompletedClosingPreviewMotion(target, {
         isTextlessMode: state.isTextlessMode,
         stageHeight: state.height,
         stageRect: state.stageRect,
         stageWidth: state.width,
       });
-      ghost.position.set(motion.x, motion.y);
-      ghost.scale.set(motion.scale);
+      ghost.position.set(completedPreviewMotion.x, completedPreviewMotion.y);
+      ghost.scale.set(completedPreviewMotion.scale);
       ghost.alpha = 1;
       this.debugClosingGhostComplete(state, target, ghost, "completed-preview");
       layer.completedClosingPreviewGhosts.push(ghost);

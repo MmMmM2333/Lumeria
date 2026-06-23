@@ -1,7 +1,6 @@
-import { folderPreviewSettleEase } from "../animation/eases.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
-import { killMotionOf, parallel, transition } from "../animation/motionTween.js";
-import { panelSpring } from "../animation/springMotion.js";
+import { killMotionOf, parallel, motion } from "../animation/motionTween.js";
+import { motionPresets, motionSprings } from "../animation/motionPresets.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { ensureFolderCloseSession } from "./folderCloseSession.js";
 import { makeClosingPreviewSwapPlan } from "./folderPreviewSwapMotion.js";
@@ -11,9 +10,9 @@ function makeClosingPreviewSwapKey(folderId, pageIndex) {
 }
 
 function previewSwapSpring(target, vars, options = {}) {
-  return transition(target)
+  return motion(target)
     .handoff()
-    .spring(panelSpring)
+    .spring(motionSprings.handoff)
     .interrupt("retarget")
     .to({
       ...vars,
@@ -146,31 +145,31 @@ export class FolderClosingPreviewSwapController {
     const springItems = [
       previewSwapSpring(iconsWrap.scale, { x: 1, y: 1 }),
     ];
-    for (const motion of plan.iconMotions) {
-      const ghost = this.createIcon(motion.item, motion.size);
-      ghost.position.set(motion.fromX, motion.fromY);
-      ghost.scale.set(motion.fromScale);
+    for (const iconMotion of plan.iconMotions) {
+      const ghost = this.createIcon(iconMotion.item, iconMotion.size);
+      ghost.position.set(iconMotion.fromX, iconMotion.fromY);
+      ghost.scale.set(iconMotion.fromScale);
       ghost.alpha = 0.78;
       iconsWrap.addChild(ghost);
-      iconMotions.push({ ...motion, ghost });
+      iconMotions.push({ ...iconMotion, ghost });
       springItems.push(
-        previewSwapSpring(ghost, { x: motion.toX, y: motion.toY }, { delay: motion.delay }),
-        previewSwapSpring(ghost.scale, { x: 1, y: 1 }, { delay: motion.delay })
+        previewSwapSpring(ghost, { x: iconMotion.toX, y: iconMotion.toY }, { delay: iconMotion.delay }),
+        previewSwapSpring(ghost.scale, { x: 1, y: 1 }, { delay: iconMotion.delay })
       );
     }
 
-    transition(root)
+    motion(root)
       .duration(0.08)
       .ease("power1.out")
       .overlay()
       .interrupt("retarget")
       .to({ alpha: 1 })
       .start();
-    for (const motion of iconMotions) {
-      transition(motion.ghost)
+    for (const iconMotion of iconMotions) {
+      motion(iconMotion.ghost)
         .duration(timing.iconDuration)
-        .ease(folderPreviewSettleEase)
-        .delay(motion.delay)
+        .ease(motionPresets.folderPreviewSettle.ease)
+        .delay(iconMotion.delay)
         .overlay()
         .interrupt("retarget")
         .to({ alpha: 1 })

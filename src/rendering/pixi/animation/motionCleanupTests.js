@@ -1,7 +1,7 @@
 import { killAllMotion } from "./motionCleanup.js";
-import { motionRuntime } from "./motionRuntime.js";
+import { motionRuntime, spring } from "./motionRuntime.js";
+import { motionSprings } from "./motionPresets.js";
 import { motionTo } from "./motionTween.js";
-import { pageTrackSpring, springTo } from "./springMotion.js";
 
 export function runMotionCleanupTests() {
   const assert = (condition, message) => {
@@ -15,7 +15,7 @@ export function runMotionCleanupTests() {
   const nodeTween = motionTo(node, { duration: 1, onCancel: (reason) => reasons.push(`node:${reason}`), x: 10 });
   const scaleTween = motionTo(node.scale, { duration: 1, onCancel: (reason) => reasons.push(`scale:${reason}`), x: 2 });
   const childTween = motionTo(child, { duration: 1, onCancel: (reason) => reasons.push(`child:${reason}`), x: 10 });
-  springTo(node, "x", 20, pageTrackSpring);
+  motionTo(node, { driver: spring(motionSprings.layout), x: 20 });
 
   killAllMotion(node);
 

@@ -1,6 +1,6 @@
-import { transition } from "../animation/motionTween.js";
+import { motion } from "../animation/motionTween.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
-import { pageTrackSpring } from "../animation/springMotion.js";
+import { motionSprings } from "../animation/motionPresets.js";
 
 const PAGE_TRACK_REPLACE_REASON = "page-track-replace";
 
@@ -128,7 +128,7 @@ export function updatePageTrackMotion(motionState, pageTrack, options = {}) {
     runtime,
     scrub,
     snap = false,
-    springConfig = pageTrackSpring,
+    springConfig = motionSprings.layout,
   } = options;
   const targetX = pageIndexToTrackX(pageIndex, pageSpan);
   if (!pageTrack) return { mode: "none", targetX };
@@ -155,7 +155,7 @@ export function updatePageTrackMotion(motionState, pageTrack, options = {}) {
 
     if (needsNewControl) {
       motionState.control?.cancel?.(PAGE_TRACK_REPLACE_REASON);
-      motionState.control = transition(pageTrack)
+      motionState.control = motion(pageTrack)
         .layout()
         .interrupt("replace")
         .ease(normalizedScrub.ease || "linear")
@@ -197,7 +197,7 @@ export function updatePageTrackMotion(motionState, pageTrack, options = {}) {
   if (motionState.mode === "scrub" || motionState.mode === "settle") {
     cancelPageTrackMotion(motionState, PAGE_TRACK_REPLACE_REASON);
   }
-  motionState.control = transition(pageTrack)
+  motionState.control = motion(pageTrack)
     .layout()
     .spring(springConfig)
     .interrupt("retarget")
