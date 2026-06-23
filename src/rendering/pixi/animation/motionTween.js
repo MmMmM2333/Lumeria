@@ -7,6 +7,8 @@ import {
 import { prefersReducedMotion } from "./motionPreferences.js";
 import { getMotionPreset } from "./motionPresets.js";
 
+// Public surface: motionTo/transition/killMotionOf/lanePreset/motionLanes are production APIs.
+// sequence()/stagger() stay exported as test-covered experimental helpers for compatibility.
 const RESERVED_KEYS = new Set([
   "delay",
   "blendDuration",

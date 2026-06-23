@@ -1349,7 +1349,7 @@ export class FolderOverlayLayer extends Container {
 
   cancelOpeningPanelReadyCheck() {
     if (this.openingPanelReadyFrame == null) return;
-    globalThis.cancelAnimationFrame?.(this.openingPanelReadyFrame);
+    this.openingPanelReadyFrame.cancelled = true;
     this.openingPanelReadyFrame = null;
   }
 
@@ -1366,7 +1366,13 @@ export class FolderOverlayLayer extends Container {
 
   scheduleOpeningPanelReadyCheck(sessionToken, panelRect) {
     this.cancelOpeningPanelReadyCheck();
-    const check = () => {
+    const queueCheck = () => {
+      const frame = { cancelled: false };
+      this.openingPanelReadyFrame = frame;
+      motionRuntime.afterFrame(() => check(frame));
+    };
+    const check = (frame) => {
+      if (frame.cancelled || this.openingPanelReadyFrame !== frame) return;
       this.openingPanelReadyFrame = null;
       if (!this.folderTransitions.isCurrentOpen(sessionToken)) return;
       this.notifyPanelTitleFrame(panelRect);
@@ -1375,15 +1381,9 @@ export class FolderOverlayLayer extends Container {
         this.markOpeningPanelReady(sessionToken);
         return;
       }
-      if (typeof globalThis.requestAnimationFrame === "function") {
-        this.openingPanelReadyFrame = globalThis.requestAnimationFrame(check);
-      }
+      queueCheck();
     };
-    if (typeof globalThis.requestAnimationFrame === "function") {
-      this.openingPanelReadyFrame = globalThis.requestAnimationFrame(check);
-      return;
-    }
-    check();
+    queueCheck();
   }
 
   enableClosingFrameMask() {

@@ -924,7 +924,7 @@ export class DesktopLayer extends Container {
       entry.visualReleased = false;
     }
     if (entry.cleanupFrame != null) {
-      globalThis.cancelAnimationFrame?.(entry.cleanupFrame);
+      entry.cleanupFrame.cancelled = true;
       entry.cleanupFrame = null;
     }
     this.setPrimaryFolderHandoffNode(entry);
@@ -976,16 +976,15 @@ export class DesktopLayer extends Container {
     const entry = this.getFolderHandoffEntry(folderId);
     if (!entry || entry.cleanupFrame != null) return;
     if (entry.visualReleased) this.revealFolderHandoffLabel(entry);
+    const cleanupFrame = { cancelled: false };
+    entry.cleanupFrame = cleanupFrame;
     const finish = () => {
+      if (cleanupFrame.cancelled || entry.cleanupFrame !== cleanupFrame) return;
       if (this.getFolderHandoffEntry(entry.folderId) !== entry) return;
       entry.cleanupFrame = null;
       this.clearFolderHandoffNode(entry.folderId);
     };
-    if (typeof globalThis.requestAnimationFrame === "function") {
-      entry.cleanupFrame = globalThis.requestAnimationFrame(finish);
-    } else {
-      finish();
-    }
+    motionRuntime.afterFrame(finish);
   }
 
   releaseClosingFolderHandoffVisual(folderId = null) {
@@ -1028,7 +1027,7 @@ export class DesktopLayer extends Container {
       }) || this.lastFolderHandoffDebugSnapshot;
     }
     if (!entry) return;
-    if (entry.cleanupFrame != null) globalThis.cancelAnimationFrame?.(entry.cleanupFrame);
+    if (entry.cleanupFrame != null) entry.cleanupFrame.cancelled = true;
     this.getFolderHandoffNodes().delete(entry.folderId);
     if (this.primaryFolderHandoffId === entry.folderId) this.setPrimaryFolderHandoffNode(null);
     this.restoreFolderHandoffNode(entry);

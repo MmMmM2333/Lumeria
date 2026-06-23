@@ -674,14 +674,6 @@ export async function runDesktopLayerTests() {
   }
 
   {
-    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
-    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
-    const frames = [];
-    globalThis.requestAnimationFrame = (callback) => {
-      frames.push(callback);
-      return frames.length;
-    };
-    globalThis.cancelAnimationFrame = () => {};
     try {
       const folder = makeNode("folder");
       folder.item = { id: "folder-1", type: "folder" };
@@ -699,12 +691,11 @@ export async function runDesktopLayerTests() {
       };
 
       layer.commitFolderSourceGhosting();
-      assert(frames.length === 1, "source ghosting commit should schedule eligible handoff cleanup");
-      frames[0]();
+      assert(layer.getFolderHandoffEntry("folder-1")?.cleanupFrame?.cancelled === false, "source ghosting commit should schedule eligible handoff cleanup");
+      motionRuntime.flushAfterFrameForTests();
       assert(!layer.getFolderHandoffEntry("folder-1"), "scheduled source ghosting reconciliation should clear eligible handoff entries");
     } finally {
-      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
-      globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+      motionRuntime.reset();
     }
   }
 
@@ -838,22 +829,12 @@ export async function runDesktopLayerTests() {
     const folder = makeNode("folder");
     const pageTrack = makePageTrack([before, folder]);
     const layer = makeLayer(DesktopLayer, pageTrack);
-    const hadRequestAnimationFrame = "requestAnimationFrame" in globalThis;
-    const hadCancelAnimationFrame = "cancelAnimationFrame" in globalThis;
-    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
-    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
-    let queuedFrame = null;
-    globalThis.requestAnimationFrame = (callback) => {
-      queuedFrame = callback;
-      return 9;
-    };
-    globalThis.cancelAnimationFrame = () => {};
 
     try {
       layer.ensureFolderHandoffNode("folder-1", folder, { x: 20, y: 30 });
       layer.finishFolderHandoffNodeAfterFrame();
 
-      assert(layer.folderHandoffNode.cleanupFrame === 9, "finish should wait one frame before cleanup");
+      assert(layer.folderHandoffNode.cleanupFrame?.cancelled === false, "finish should wait one runtime frame before cleanup");
       assert(folder.labelRevealCount === 1, "finish should not restart the label reveal after handoff readiness");
       assert(folder.visualWrap.visible === false, "finish should keep the real folder artwork hidden until settled overlay release");
       assert(pageTrack.children[1] === folder, "handoff should stay raised until the cleanup frame");
@@ -861,7 +842,7 @@ export async function runDesktopLayerTests() {
       assert(folder.labelRevealCount === 1, "visual release should not restart the label reveal before cleanup");
       assert(folder.visualWrap.visible === true, "settled overlay release should restore artwork before final handoff cleanup");
 
-      queuedFrame();
+      motionRuntime.flushAfterFrameForTests();
 
       assert(layer.folderHandoffNode === null, "cleanup frame should clear handoff state");
       assert(layer.folderHandoffNodes.size === 0, "cleanup frame should clear handoff entries");
@@ -869,10 +850,7 @@ export async function runDesktopLayerTests() {
       assert(folder.visualWrap.visible === true, "cleanup frame should keep the real folder artwork visible");
       assert(folder.labelRevealCount === 1, "cleanup frame should not restart the label reveal");
     } finally {
-      if (hadRequestAnimationFrame) globalThis.requestAnimationFrame = originalRequestAnimationFrame;
-      else delete globalThis.requestAnimationFrame;
-      if (hadCancelAnimationFrame) globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
-      else delete globalThis.cancelAnimationFrame;
+      motionRuntime.reset();
     }
   }
 
