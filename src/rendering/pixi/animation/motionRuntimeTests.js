@@ -616,6 +616,20 @@ export function runMotionRuntimeTests() {
 
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const events = [];
+    runtime.addObserver((event) => events.push(event));
+
+    runtime.configureDebug();
+    assert(events.length === 0, "reading debug config should not emit debugConfig events");
+
+    runtime.configureDebug({ overlayEnabled: true });
+    assert(events.length === 1, "patching debug config should emit one debugConfig event");
+    assert(events[0].type === "debugConfig", "debug config observer event should be typed");
+    assert(events[0].config?.overlayEnabled === true, "debug config observer event should include the next config");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
     const events = [];
     const objectEvents = [];

@@ -56,6 +56,7 @@ import { runFolderLayerStateTests } from "../rendering/pixi/folderLayerStateTest
 import { runFolderOverlayStateDependenciesTests } from "../rendering/pixi/folderOverlayStateDependenciesTests.js";
 import { runPixiHostMetricsTests } from "../rendering/pixi/pixiHostMetricsTests.js";
 import { runPixiRenderSchedulerTests } from "../rendering/pixi/pixiRenderSchedulerTests.js";
+import { runPixiRenderTriggersTests } from "../rendering/pixi/pixiRenderTriggersTests.js";
 import { runIconControlDrawingTests } from "../rendering/pixi/nodes/iconControlDrawingTests.js";
 import { runIconFolderHoverStateTests } from "../rendering/pixi/nodes/iconFolderHoverStateTests.js";
 import { runIconInteractionGeometryTests } from "../rendering/pixi/nodes/iconInteractionGeometryTests.js";
@@ -189,6 +190,7 @@ runFolderLayerStateTests();
 runFolderOverlayStateDependenciesTests();
 runPixiHostMetricsTests();
 runPixiRenderSchedulerTests();
+runPixiRenderTriggersTests();
 await runAcrylicFiltersTests();
 runAcrylicParamsTests();
 await runAcrylicNoiseTextureTests();

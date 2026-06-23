@@ -51,6 +51,11 @@ import { createFolderLayerState } from "./folderLayerState.js";
 import { readFolderOverlayStateRenderDependencies } from "./folderOverlayStateDependencies.js";
 import { clearIconTextureCache, preloadIconTextures } from "./assets/iconTextureCache.js";
 import { createPixiRenderScheduler } from "./pixiRenderScheduler.js";
+import {
+  createMotionRenderObserver,
+  makeFolderInternalActivityRenderReason,
+  makeIconActionRenderReason,
+} from "./pixiRenderTriggers.js";
 import { installMotionDebugGlobal } from "./animation/motionDebugReport.js";
 import { motionRuntime } from "./animation/motionRuntime.js";
 import { MotionDebugOverlayLayer } from "./animation/motionDebugOverlayLayer.js";
@@ -174,7 +179,7 @@ let desktopDomGeometryCache = null;
 let pixiResizeSignature = "";
 let motionDebugCommands = null;
 let motionDebugOverlay = null;
-let motionDebugOverlayTicker = null;
+let unsubscribeMotionRuntimeRender = null;
 const folderClosingHandoffRetainer = createFolderClosingHandoffRetainer();
 let handoffDebugSequence = 0;
 
@@ -730,10 +735,12 @@ function handleIconAction(action, event, item, source) {
   if (action === "remove") emit("remove-app", item.id);
   if (action === "choose-icon") emit("choose-app-icon", item.id);
   if (action === "reset-icon") emit("reset-app-icon", item.id);
+  requestRender(makeIconActionRenderReason(action));
 }
 
 function handleFolderInternalActivity(active, folderId = null) {
   emit("internal-activity", Boolean(active), folderId);
+  requestRender(makeFolderInternalActivityRenderReason(active));
 }
 
 function handleSingleStageFolderGeometryChange(geometry) {
@@ -753,11 +760,11 @@ function destroyPixi(options = {}) {
   const currentApp = app;
   const currentLayer = layer;
   const currentOverlay = motionDebugOverlay;
-  const currentOverlayTicker = motionDebugOverlayTicker;
   app = null;
   layer = null;
   motionDebugOverlay = null;
-  motionDebugOverlayTicker = null;
+  unsubscribeMotionRuntimeRender?.();
+  unsubscribeMotionRuntimeRender = null;
   cancelScheduledRenderPixi();
   renderScheduler?.destroy();
   renderScheduler = null;
@@ -776,7 +783,6 @@ function destroyPixi(options = {}) {
     currentApp?.stage?.removeChild(currentLayer);
     if (deep) currentLayer.destroy({ children: true });
   }
-  if (currentOverlayTicker) currentApp?.ticker?.remove?.(currentOverlayTicker);
   if (currentOverlay) {
     currentApp?.stage?.removeChild(currentOverlay);
     if (deep) currentOverlay.destroy({ children: true });
@@ -801,22 +807,33 @@ onMounted(async () => {
     return;
   }
   app = nextApp;
+  unsubscribeMotionRuntimeRender = motionRuntime.addObserver(createMotionRenderObserver(requestRender));
   layer = new DesktopLayer({
-    onClosingFolderPointerDown: (folderId) => props.folderOverlayState?.commitOpenFolder?.(folderId),
+    onClosingFolderPointerDown: (folderId) => {
+      props.folderOverlayState?.commitOpenFolder?.(folderId);
+      requestRender("folder-closing-pointerdown");
+    },
     onFolderGeometryChange: handleSingleStageFolderGeometryChange,
     onFolderInternalActivityChange: handleFolderInternalActivity,
-    onFolderOutsidePointerDown: () => props.folderOverlayState?.handleFolderOverlayPointerDown?.(),
-    onFolderPanelPointerDown: (event) => props.folderOverlayState?.handleFolderPanelPointerDown?.(event),
+    onFolderOutsidePointerDown: () => {
+      props.folderOverlayState?.handleFolderOverlayPointerDown?.();
+      requestRender("folder-outside-pointerdown");
+    },
+    onFolderPanelPointerDown: (event) => {
+      props.folderOverlayState?.handleFolderPanelPointerDown?.(event);
+      requestRender("folder-panel-pointerdown");
+    },
     onFolderTitleFrameChange: handleSingleStageFolderTitleFrameChange,
-    onDragReleaseComplete: (release) => emit("drag-release-complete", release),
+    onDragReleaseComplete: (release) => {
+      emit("drag-release-complete", release);
+      requestRender("drag-release-complete");
+    },
     onIconAction: handleIconAction,
   });
   app.stage.addChild(layer);
   if (import.meta.env.DEV) {
     motionDebugOverlay = new MotionDebugOverlayLayer();
     app.stage.addChild(motionDebugOverlay);
-    motionDebugOverlayTicker = updateMotionDebugOverlay;
-    app.ticker?.add?.(motionDebugOverlayTicker);
     publishMotionOverlayDebugSnapshot();
   }
   motionDebugCommands = installMotionDebugGlobal();

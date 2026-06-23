@@ -578,6 +578,7 @@ export function createMotionRuntimeDebugAdapter() {
       observeSample(event);
       return;
     }
+    if (event.type === "debugConfig") return;
     observeLifecycleEvent(event);
   }
 

@@ -331,7 +331,10 @@ export function createMotionRuntime(options = {}) {
   }
 
   function configureDebug(config = {}) {
-    return debugAdapter.configureDebug(config);
+    const hasPatch = Boolean(config && typeof config === "object" && Object.keys(config).length);
+    const nextConfig = debugAdapter.configureDebug(config);
+    if (hasPatch) emitMotionEvent("debugConfig", { config: nextConfig });
+    return nextConfig;
   }
 
   function describeTarget(target, metadata = {}) {
