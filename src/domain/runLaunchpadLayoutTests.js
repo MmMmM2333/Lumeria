@@ -77,6 +77,7 @@ import { runFolderGhostIconStateTests } from "../rendering/pixi/scene/folderGhos
 import { runFolderIconGhostMotionTests } from "../rendering/pixi/scene/folderIconGhostMotionTests.js";
 import { runFolderOverlayIconPlanTests } from "../rendering/pixi/scene/folderOverlayIconPlanTests.js";
 import { runFolderOverlayRenderPlanTests } from "../rendering/pixi/scene/folderOverlayRenderPlanTests.js";
+import { runFolderCloseRaceTests } from "../rendering/pixi/scene/folderCloseRaceTests.js";
 import { runFolderCloseSessionTests } from "../rendering/pixi/scene/folderCloseSessionTests.js";
 import { runFolderClosingGhostControllerTests } from "../rendering/pixi/scene/folderClosingGhostControllerTests.js";
 import { runFolderClosingHandoffActivityTests } from "../rendering/pixi/scene/folderClosingHandoffActivityTests.js";
@@ -217,6 +218,7 @@ runFolderGhostIconStateTests();
 runFolderIconGhostMotionTests();
 runFolderOverlayIconPlanTests();
 runFolderOverlayRenderPlanTests();
+runFolderCloseRaceTests();
 await runFolderCloseSessionTests();
 runFolderClosingGhostControllerTests();
 runFolderClosingHandoffActivityTests();
