@@ -7,38 +7,19 @@ import {
   normalizeMotionReplayTime,
   normalizeMotionReplayTrace,
 } from "./motionReplayViewerModel.js";
+import {
+  collectRecordText,
+  makeTargetsById,
+  makeTrackKey,
+  normalizeQuery,
+  readNumber,
+} from "../../rendering/pixi/animation/motionTraceShared.js";
 
 export const MOTION_FOCUSED_DEBUG_SCHEMA = "pixi-motion-focused-debug/v1";
-
-function readNumber(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
 
 function readString(value, fallback = "") {
   const text = String(value ?? "").trim();
   return text || fallback;
-}
-
-function makeTrackKey(record = {}) {
-  return [
-    record.targetId ?? "unknown",
-    record.prop ?? "unknown",
-    record.lane ?? "unknown",
-    record.laneKey ?? "unknown",
-  ].join(":");
-}
-
-function makeTargetsById(trace = {}) {
-  const targets = new Map();
-  for (const target of trace.targets || []) {
-    if (target?.targetId != null) targets.set(target.targetId, target);
-  }
-  return targets;
-}
-
-function normalizeQuery(value) {
-  return String(value || "").trim().toLowerCase();
 }
 
 function normalizeInterval(trace = {}, options = {}) {
@@ -113,28 +94,6 @@ function trackMatchesSelection(record = {}, selection = {}) {
   return true;
 }
 
-function collectRecordText(record = {}, targetsById = new Map()) {
-  const target = record.targetId != null ? targetsById.get(record.targetId) : null;
-  return [
-    record.type,
-    record.reason,
-    record.targetId,
-    record.targetKind,
-    record.targetLabel,
-    record.sourceLabel,
-    record.label,
-    record.layer,
-    record.prop,
-    record.driver,
-    record.lane,
-    record.laneKey,
-    target?.kind,
-    target?.label,
-    target?.layer,
-    target?.sourceLabel,
-  ].filter((value) => value != null).join(" ").toLowerCase();
-}
-
 function createRecordPredicate(trace = {}, options = {}) {
   const targetsById = makeTargetsById(trace);
   const selection = normalizeSelection(options);
@@ -148,7 +107,7 @@ function createRecordPredicate(trace = {}, options = {}) {
     if (hasSelectionFilter(selection) && !targetMatchesSelection(recordWithType, target, selection)) return false;
     if (!trackMatchesSelection(recordWithType, selection)) return false;
     if (visibleTrackKeys.size && !visibleTrackKeys.has(makeTrackKey(recordWithType))) return false;
-    if (query && !collectRecordText(recordWithType, targetsById).includes(query)) return false;
+    if (query && !collectRecordText(recordWithType, targetsById, { includeLayer: true, includeTargetLayer: true }).includes(query)) return false;
     if (profile && !matchesMotionCaptureProfileRecord(recordWithType, profile)) return false;
     return true;
   };

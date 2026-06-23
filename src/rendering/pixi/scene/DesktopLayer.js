@@ -43,6 +43,11 @@ import { SingleStageDiagnosticsLayer } from "./singleStageDiagnostics.js";
 import { DragPreviewLayer } from "./DragPreviewLayer.js";
 import { IconNode } from "../nodes/IconNode.js";
 import {
+  getFolderHandoffDebugOptions,
+  rectDelta,
+  roundRect,
+} from "./folderHandoffDebug.js";
+import {
   cancelPageTrackMotion,
   createPageTrackMotionState,
   updatePageTrackMotion,
@@ -156,32 +161,6 @@ export function shouldFinishFolderHandoffEntry(state = {}, folderLayer = null, f
     !isFolderLayerHoldingDesktopSource(folderLayer, folderId);
 }
 
-function getFolderHandoffDebugOptions() {
-  const value = globalThis.__LP_DEBUG_FOLDER_HANDOFF__;
-  if (!value) return null;
-  if (value === true) return { lineWidth: 3, log: true, overlay: true };
-  if (typeof value === "object") {
-    return {
-      lineWidth: Math.max(1, Number(value.lineWidth) || 3),
-      log: value.log !== false,
-      overlay: value.overlay !== false,
-      timeline: value.timeline === true,
-    };
-  }
-  return null;
-}
-
-function roundRect(rect) {
-  if (!rect) return null;
-  const round = (value) => Math.round((Number(value) || 0) * 100) / 100;
-  return {
-    height: round(rect.height),
-    left: round(rect.left),
-    top: round(rect.top),
-    width: round(rect.width),
-  };
-}
-
 function projectStageLayoutRecordToClient(record) {
   return stageLayoutRecordToClientRect(record);
 }
@@ -207,17 +186,6 @@ function roundTransformObject(object) {
     visible: object.visible ?? null,
     x: pointValue(object.position || object, "x"),
     y: pointValue(object.position || object, "y"),
-  };
-}
-
-function rectDelta(rect, target) {
-  if (!rect || !target) return null;
-  const round = (value) => Math.round((Number(value) || 0) * 1000) / 1000;
-  return {
-    height: round(rect.height - target.height),
-    left: round(rect.left - target.left),
-    top: round(rect.top - target.top),
-    width: round(rect.width - target.width),
   };
 }
 
@@ -1095,10 +1063,10 @@ export class DesktopLayer extends Container {
       const actualRect = node.getFolderPreviewChildBounds(stageRect, slotIndex);
       const targetChildRect = targetRect ? makeFolderThumbPreviewRect(targetRect, slotIndex) : null;
       childRows.push({
-        actual: roundRect(actualRect),
+        actual: roundRect(actualRect, 2),
         delta: rectDelta(actualRect, targetChildRect),
         slot: slotIndex,
-        target: roundRect(targetChildRect),
+        target: roundRect(targetChildRect, 2),
       });
     }
     return {
@@ -1110,9 +1078,9 @@ export class DesktopLayer extends Container {
       clearing: options.clearing === true,
       desktopClosingUnderlayLayer: roundTransformObject(this.desktopClosingUnderlayLayer),
       folderId,
-      iconRect: roundRect(iconRect),
+      iconRect: roundRect(iconRect, 2),
       layoutTarget: roundDebugObject(entry.layoutTarget),
-      liveTargetRect: roundRect(liveTargetRect),
+      liveTargetRect: roundRect(liveTargetRect, 2),
       node: {
         alpha: Math.round((node.alpha ?? 0) * 1000) / 1000,
         eventMode: node.eventMode,
@@ -1136,17 +1104,17 @@ export class DesktopLayer extends Container {
       pageTrack: roundTransformObject(this.pageTrack),
       pageTrackX: Math.round((this.pageTrack?.x || 0) * 1000) / 1000,
       phase: options.phase || null,
-      registeredThumbRect: roundRect(registeredThumbRect),
+      registeredThumbRect: roundRect(registeredThumbRect, 2),
       singleStageFolderLayer: roundTransformObject(this.singleStageFolderLayer),
       source: options.source || "handoff-node",
-      stableStageLayoutTargetRect: roundRect(stableStageLayoutTargetRecord),
-      stableTargetRect: roundRect(stableTargetRect),
-      stageRect: roundRect(stageRect),
+      stableStageLayoutTargetRect: roundRect(stableStageLayoutTargetRecord, 2),
+      stableTargetRect: roundRect(stableTargetRect, 2),
+      stageRect: roundRect(stageRect, 2),
       stageScaleX: registration.stageRect?.width && registration.width ? Math.round((registration.stageRect.width / registration.width) * 1000000) / 1000000 : null,
       stageScaleY: registration.stageRect?.height && registration.height ? Math.round((registration.stageRect.height / registration.height) * 1000000) / 1000000 : null,
       targetDelta: rectDelta(thumbRect, targetRect),
-      targetRect: roundRect(targetRect),
-      thumbRect: roundRect(thumbRect),
+      targetRect: roundRect(targetRect, 2),
+      thumbRect: roundRect(thumbRect, 2),
       visualRoot: roundTransformObject(this.visualRoot),
     };
   }
@@ -1306,11 +1274,11 @@ export class DesktopLayer extends Container {
       getRenderedClientTopLevelFolderThumbBounds(folder.id) ||
       stableTargetRect;
     rows.push({
-      actual: roundRect(actualThumbRect),
+      actual: roundRect(actualThumbRect, 2),
       delta: rectDelta(actualThumbRect, targetThumbRect),
       kind: "thumb",
       slot: "",
-      target: roundRect(targetThumbRect),
+      target: roundRect(targetThumbRect, 2),
     });
     for (let slotIndex = 0; slotIndex < 9; slotIndex += 1) {
       const child = node.item ? node.item.childPages?.[0]?.[slotIndex] || node.item.children?.[slotIndex] : null;
@@ -1323,11 +1291,11 @@ export class DesktopLayer extends Container {
         getRenderedClientFolderPreviewChildBounds(folder.id, child.id, slotIndex) ||
         stableChildTargetRect;
       rows.push({
-        actual: roundRect(actualRect),
+        actual: roundRect(actualRect, 2),
         delta: rectDelta(actualRect, targetRect),
         kind: "child",
         slot: slotIndex,
-        target: roundRect(targetRect),
+        target: roundRect(targetRect, 2),
       });
     }
     debugState.desktopLogged = true;

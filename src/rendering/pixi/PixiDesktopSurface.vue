@@ -61,6 +61,12 @@ import {
   makeRootStageHostStyle as makeRootStageHostStyleFromRect,
 } from "./geometry/rootStageCoordinates.js";
 import { createFolderClosingHandoffRetainer } from "./scene/folderClosingHandoffRetainer.js";
+import {
+  getFolderHandoffDebugOptions,
+  rectDelta as getDebugRectDelta,
+  roundNumber as roundDebugNumber,
+  roundRect as roundDebugRect,
+} from "./scene/folderHandoffDebug.js";
 import { getSingleStageOptions, makeSingleStageRuntimePlan } from "./scene/singleStagePlan.js";
 import {
   getSingleStageFolderTitleOpenOpacity,
@@ -282,56 +288,14 @@ function nowMs() {
   return globalThis.performance?.now?.() || Date.now();
 }
 
-function getFolderHandoffDebugOptions() {
-  const value = globalThis.__LP_DEBUG_FOLDER_HANDOFF__;
-  if (!value) return null;
-  if (value === true) return { lineWidth: 3, log: true, overlay: true, timeline: false };
-  if (typeof value === "object") {
-    return {
-      lineWidth: Math.max(1, Number(value.lineWidth) || 3),
-      log: value.log !== false,
-      overlay: value.overlay !== false,
-      timeline: value.timeline === true,
-    };
-  }
-  return null;
-}
-
 function hasFolderHandoffTimelineDebug() {
   const options = getFolderHandoffDebugOptions();
   return Boolean(options?.log && options.timeline);
 }
 
-function roundDebugNumber(value, digits = 3) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return null;
-  const factor = 10 ** digits;
-  return Math.round(number * factor) / factor;
-}
-
-function roundDebugRect(rect) {
-  if (!rect) return null;
-  return {
-    height: roundDebugNumber(rect.height),
-    left: roundDebugNumber(rect.left),
-    top: roundDebugNumber(rect.top),
-    width: roundDebugNumber(rect.width),
-  };
-}
-
 function readCssPx(value) {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function getDebugRectDelta(rect, layoutRect) {
-  if (!rect || !layoutRect) return null;
-  return {
-    height: roundDebugNumber((rect.height || 0) - (layoutRect.height || 0)),
-    left: roundDebugNumber((rect.left || 0) - (layoutRect.left || 0)),
-    top: roundDebugNumber((rect.top || 0) - (layoutRect.top || 0)),
-    width: roundDebugNumber((rect.width || 0) - (layoutRect.width || 0)),
-  };
 }
 
 function flattenFolderHandoffSnapshot(snapshot) {

@@ -2,6 +2,11 @@ import {
   getCenteredLocalRect,
   getTransformedLocalRectBounds,
 } from "../geometry/displayObjectBounds.js";
+import {
+  makeTrackKey,
+  readNumber,
+  resolveRecordLabel,
+} from "./motionTraceShared.js";
 
 const DEFAULT_MAX_OVERLAY_ITEMS = 18;
 const FALLBACK_TARGET_SIZE = 28;
@@ -11,29 +16,8 @@ const OVERLAY_COLORS = Object.freeze({
   warning: 0xffc857,
 });
 
-function readNumber(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
 function readPositiveNumber(value, fallback = 0) {
   return Math.max(0, readNumber(value, fallback));
-}
-
-function makeTrackKey(record = {}) {
-  return [
-    record.targetId ?? "unknown",
-    record.prop ?? "unknown",
-    record.lane ?? "unknown",
-    record.laneKey ?? "unknown",
-  ].join(":");
-}
-
-function resolveRecordLabel(record = {}) {
-  return record.sourceLabel
-    || record.targetLabel
-    || record.label
-    || (record.targetId != null ? `target ${record.targetId}` : "unknown");
 }
 
 function normalizeRect(rect) {

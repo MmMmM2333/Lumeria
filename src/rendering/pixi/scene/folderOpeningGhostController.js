@@ -177,7 +177,7 @@ export class FolderOpeningGhostController {
       }
     }
     const sessionToken = layer.openingGhostSessionToken || null;
-    layer.releaseTransitionOwnership?.(sessionToken, {
+    layer.releaseTransitionOwnership(sessionToken, {
       restorePageTrack: options.restorePageTrack,
       reveal: options.reveal,
     });
@@ -188,12 +188,6 @@ export class FolderOpeningGhostController {
     layer.openingGhostKeys?.clear();
     layer.openingGhostBoundsRefreshers?.clear();
     layer.clearFrameGhost();
-    if (!layer.releaseTransitionOwnership && options.restorePageTrack !== false) layer.pageTrack.visible = true;
-    if (!layer.releaseTransitionOwnership && options.reveal !== false) {
-      layer.revealIconNodes();
-      layer.refreshRegisteredIconBounds?.();
-      layer.rebuildPageTrackMask();
-    }
     const ghosts = layer.openingGhostLayer.removeChildren();
     for (const ghost of ghosts) {
       killAllMotion(ghost);
@@ -217,12 +211,7 @@ export class FolderOpeningGhostController {
     layer.openingGhostState = null;
     layer.openingGhostMotionControlsByItemId = null;
     layer.openingGhostBoundsRefreshers?.clear();
-    if (layer.releaseTransitionOwnership) {
-      layer.releaseTransitionOwnership(sessionToken, { restorePageTrack: true, reveal: true });
-    } else {
-      layer.revealIconNodes();
-      layer.pageTrack.visible = true;
-    }
+    layer.releaseTransitionOwnership(sessionToken, { restorePageTrack: true, reveal: true });
     layer.refreshRegisteredIconBounds?.();
     layer.rebuildPageTrackMask();
     const ghosts = layer.openingGhostLayer.removeChildren();
@@ -283,11 +272,7 @@ export class FolderOpeningGhostController {
 
     if (!usableTargets.length) {
       if (startedFrameGhost) {
-        if (typeof layer.hidePageTrackForTransition === "function") {
-          layer.hidePageTrackForTransition(owner);
-        } else {
-          layer.pageTrack.visible = false;
-        }
+        layer.hidePageTrackForTransition(owner);
       }
       this.finishTransition({ sessionToken });
       return;
@@ -297,11 +282,7 @@ export class FolderOpeningGhostController {
     layer.openingGhostMotionControls = new Set();
     layer.openingGhostMotionControlsByItemId = new Map();
 
-    if (typeof layer.hidePageTrackForTransition === "function") {
-      layer.hidePageTrackForTransition(owner);
-    } else {
-      layer.pageTrack.visible = false;
-    }
+    layer.hidePageTrackForTransition(owner);
     this.scheduleRevealFallback(usableTargets);
 
     for (const target of usableTargets) {
@@ -345,13 +326,7 @@ export class FolderOpeningGhostController {
       }
       layer.openingGhostLayer.addChild(ghost);
       refreshGhostBounds();
-      if (typeof layer.hideIconNodesForTransition === "function") {
-        layer.hideIconNodesForTransition(target.item.id, owner);
-      } else {
-        for (const node of layer.iconNodes.values()) {
-          if (node.item?.id === target.item.id) node.visible = false;
-        }
-      }
+      layer.hideIconNodesForTransition(target.item.id, owner);
 
       let didComplete = false;
       let motionControl = null;

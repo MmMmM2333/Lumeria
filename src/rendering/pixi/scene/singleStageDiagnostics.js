@@ -1,5 +1,6 @@
 import { Container, Graphics, Text } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import { roundRect } from "./folderHandoffDebug.js";
 import { getSingleStageOptions, makeSingleStageDiagnosticsPlan } from "./singleStagePlan.js";
 
 export {
@@ -7,21 +8,6 @@ export {
   isSingleStageDiagnosticsEnabled,
   makeSingleStageDiagnosticsPlan,
 } from "./singleStagePlan.js";
-
-function roundNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? Math.round(number * 1000) / 1000 : null;
-}
-
-function roundRect(rect) {
-  if (!rect) return null;
-  return {
-    height: roundNumber(rect.height),
-    left: roundNumber(rect.left),
-    top: roundNumber(rect.top),
-    width: roundNumber(rect.width),
-  };
-}
 
 function makeDebugSnapshot(plan) {
   if (!plan) return null;

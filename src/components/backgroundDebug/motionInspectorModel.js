@@ -3,6 +3,12 @@ import {
   normalizeMotionReplayTime,
   normalizeMotionReplayTrace,
 } from "./motionReplayViewerModel.js";
+import {
+  makeTargetsById,
+  makeTrackKey,
+  readNumber,
+  resolveRecordLabel,
+} from "../../rendering/pixi/animation/motionTraceShared.js";
 
 const DEFAULT_EVENT_LIMIT = 6;
 const DEFAULT_WARNING_LIMIT = 6;
@@ -11,11 +17,6 @@ const LANE_ORDER = new Map([
   ["additive", 1],
   ["factor", 2],
 ]);
-
-function readNumber(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
 
 function readString(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -27,32 +28,6 @@ function formatNumber(value, digits = 2) {
   if (!Number.isFinite(number)) return "-";
   const fixed = number.toFixed(digits);
   return fixed.includes(".") ? fixed.replace(/\.?0+$/, "") : fixed;
-}
-
-function makeTrackKey(record = {}) {
-  return [
-    record.targetId ?? "unknown",
-    record.prop ?? "unknown",
-    record.lane ?? "unknown",
-    record.laneKey ?? "unknown",
-  ].join(":");
-}
-
-function makeTargetsById(trace = {}) {
-  const targets = new Map();
-  for (const target of trace.targets || []) {
-    if (target?.targetId != null) targets.set(target.targetId, target);
-  }
-  return targets;
-}
-
-function resolveRecordLabel(record = {}, targetsById = new Map()) {
-  const target = record.targetId != null ? targetsById.get(record.targetId) : null;
-  return record.sourceLabel
-    || record.targetLabel
-    || target?.sourceLabel
-    || target?.label
-    || (record.targetId != null ? `target ${record.targetId}` : "unknown");
 }
 
 function normalizeTargetRef(target = null) {

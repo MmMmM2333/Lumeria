@@ -507,23 +507,17 @@ export class FolderOverlayLayer extends Container {
       if (keepClosingHandoff) {
         return applyClosingHandoffOnlyOverlayState(this);
       }
-      this.folderTransitions.cancelOpen();
-      this.cancelOpeningPanelReadyCheck();
-      this.panelOpenTargetKey = null;
-      this.panelAlphaTarget = null;
-      this.currentOpeningGeometrySnapshot = null;
+      this.teardownTransientState({
+        cancelPageTrackReason: "cleanup",
+        clearPageDots: true,
+        clearPageTrackSpringsReason: FOLDER_OVERLAY_CLEAR_REASON,
+        clearPanelSpringsReason: FOLDER_OVERLAY_CLEAR_REASON,
+        preserveDetachedClosing: true,
+      });
       this.currentFolderId = null;
       this.isClosing = false;
       this.isUserFolderClosing = false;
       this.sizeKey = null;
-      cancelPageTrackMotion(this.pageTrackMotion, "cleanup");
-      stopTargetSprings(this.pageTrack, { reason: FOLDER_OVERLAY_CLEAR_REASON });
-      this.clearPageDots();
-      stopTargetSprings(this.panel, { reason: FOLDER_OVERLAY_CLEAR_REASON });
-      stopTargetSprings(this.panel.scale, { reason: FOLDER_OVERLAY_CLEAR_REASON });
-      this.openingGhosts.clear({ cancelSession: true });
-      this.closingGhosts.clear();
-      this.releaseAllOwnedVisualOwnership({ preserveDetachedClosing: true });
       this.stableFolderCloseTarget = null;
       if (state.folderPanelRef) state.folderPanelRef.value = null;
       if (state.folderViewportRef) state.folderViewportRef.value = null;
@@ -536,15 +530,7 @@ export class FolderOverlayLayer extends Container {
     this.hitArea = new Rectangle(0, 0, state.width, state.height);
     const sizeKey = `${state.width}x${state.height}`;
     if (this.sizeKey && this.sizeKey !== sizeKey) {
-      this.folderTransitions.cancelOpen();
-      this.cancelOpeningPanelReadyCheck();
-      this.panelOpenTargetKey = null;
-      this.panelAlphaTarget = null;
-      this.currentOpeningGeometrySnapshot = null;
-      this.openingGhosts.clear({ cancelSession: true });
-      this.closingGhosts.clear();
-      this.clearDetachedClosingVisuals(null, { immediate: true });
-      this.releaseAllOwnedVisualOwnership();
+      this.teardownTransientState({ clearDetachedClosingVisuals: true });
     }
     this.sizeKey = sizeKey;
 
@@ -805,6 +791,52 @@ export class FolderOverlayLayer extends Container {
     }
     this.refreshRegisteredIconBounds();
     return geometry;
+  }
+
+  resetPanelMotion(reason, options = {}) {
+    const {
+      panelProps = null,
+      scaleProps = null,
+      stopSprings = true,
+    } = options;
+    if (stopSprings) {
+      stopTargetSprings(this.panel, { reason });
+      stopTargetSprings(this.panel.scale, { reason });
+    }
+    killMotionOf(this.panel, panelProps, { reason });
+    killMotionOf(this.panel.scale, scaleProps, { reason });
+  }
+
+  teardownTransientState(options = {}) {
+    const {
+      cancelPageTrackReason = null,
+      clearDetachedClosingVisuals = false,
+      clearPageDots = false,
+      clearPageTrackSpringsReason = null,
+      clearPanelSpringsReason = null,
+      clearVisualCommitQueue = false,
+      preserveDetachedClosing = false,
+      releaseOwnership = true,
+    } = options;
+    this.folderTransitions.cancelOpen();
+    this.cancelOpeningPanelReadyCheck();
+    this.panelOpenTargetKey = null;
+    this.panelAlphaTarget = null;
+    this.currentOpeningGeometrySnapshot = null;
+    this.openingGhosts.clear({ cancelSession: true });
+    this.closingGhosts.clear();
+    if (clearDetachedClosingVisuals) this.clearDetachedClosingVisuals(null, { immediate: true });
+    if (releaseOwnership) this.releaseAllOwnedVisualOwnership({ preserveDetachedClosing });
+    if (clearVisualCommitQueue) this.getVisualCommitQueue().clear();
+    if (cancelPageTrackReason) {
+      cancelPageTrackMotion(this.pageTrackMotion, cancelPageTrackReason);
+    }
+    if (clearPageTrackSpringsReason) stopTargetSprings(this.pageTrack, { reason: clearPageTrackSpringsReason });
+    if (clearPageDots) this.clearPageDots();
+    if (clearPanelSpringsReason) {
+      stopTargetSprings(this.panel, { reason: clearPanelSpringsReason });
+      stopTargetSprings(this.panel.scale, { reason: clearPanelSpringsReason });
+    }
   }
 
   clearRegisteredIconBounds() {
@@ -1511,10 +1543,7 @@ export class FolderOverlayLayer extends Container {
       this.panelAlphaTarget = null;
     }
     if (isNewPanelSource) {
-      stopTargetSprings(this.panel, { reason: FOLDER_PANEL_OPEN_REASON });
-      stopTargetSprings(this.panel.scale, { reason: FOLDER_PANEL_OPEN_REASON });
-      killMotionOf(this.panel, "x,y,alpha", { reason: FOLDER_PANEL_OPEN_REASON });
-      killMotionOf(this.panel.scale, "x,y", { reason: FOLDER_PANEL_OPEN_REASON });
+      this.resetPanelMotion(FOLDER_PANEL_OPEN_REASON, { panelProps: "x,y,alpha", scaleProps: "x,y" });
       this.currentFolderId = folderId;
       this.panelOpenTargetKey = null;
       this.panelAlphaTarget = null;
@@ -1535,20 +1564,14 @@ export class FolderOverlayLayer extends Container {
 
     if (state.isFolderClosing && sourceRect) {
       this.panelTitleOpening = false;
-      stopTargetSprings(this.panel, { reason: FOLDER_PANEL_HANDOFF_SNAP_REASON });
-      stopTargetSprings(this.panel.scale, { reason: FOLDER_PANEL_HANDOFF_SNAP_REASON });
-      killMotionOf(this.panel, null, { reason: FOLDER_PANEL_HANDOFF_SNAP_REASON });
-      killMotionOf(this.panel.scale, null, { reason: FOLDER_PANEL_HANDOFF_SNAP_REASON });
+      this.resetPanelMotion(FOLDER_PANEL_HANDOFF_SNAP_REASON);
       this.panel.alpha = 0;
       return;
     }
 
     if (isClosing && sourceRect) {
       this.panelTitleOpening = false;
-      stopTargetSprings(this.panel, { reason: FOLDER_PANEL_CLOSE_REASON });
-      stopTargetSprings(this.panel.scale, { reason: FOLDER_PANEL_CLOSE_REASON });
-      killMotionOf(this.panel, "x,y", { reason: FOLDER_PANEL_CLOSE_REASON });
-      killMotionOf(this.panel.scale, "x,y", { reason: FOLDER_PANEL_CLOSE_REASON });
+      this.resetPanelMotion(FOLDER_PANEL_CLOSE_REASON, { panelProps: "x,y", scaleProps: "x,y" });
       const sourceLocalRect = clientRectToStageVisualRect(sourceRect, state.stageRect);
       transition(this.panel)
         .preset("folderPanelClose")
@@ -1567,10 +1590,7 @@ export class FolderOverlayLayer extends Container {
 
     if (isClosing) {
       this.panelTitleOpening = false;
-      stopTargetSprings(this.panel, { reason: FOLDER_PANEL_CLOSE_REASON });
-      stopTargetSprings(this.panel.scale, { reason: FOLDER_PANEL_CLOSE_REASON });
-      killMotionOf(this.panel, "x,y", { reason: FOLDER_PANEL_CLOSE_REASON });
-      killMotionOf(this.panel.scale, "x,y", { reason: FOLDER_PANEL_CLOSE_REASON });
+      this.resetPanelMotion(FOLDER_PANEL_CLOSE_REASON, { panelProps: "x,y", scaleProps: "x,y" });
       transition(this.panel)
         .preset("folderClose")
         .overlay()
@@ -1622,8 +1642,11 @@ export class FolderOverlayLayer extends Container {
     if (this.panelOpenTargetKey !== targetKey) {
       if (sessionToken) this.folderTransitions.markPanelPending(sessionToken, targetKey);
       this.panelOpenTargetKey = targetKey;
-      killMotionOf(this.panel, "x,y", { reason: FOLDER_PANEL_OPEN_REASON });
-      killMotionOf(this.panel.scale, "x,y", { reason: FOLDER_PANEL_OPEN_REASON });
+      this.resetPanelMotion(FOLDER_PANEL_OPEN_REASON, {
+        panelProps: "x,y",
+        scaleProps: "x,y",
+        stopSprings: false,
+      });
       springPanelGeometry(this.panel, {
         scaleX: 1,
         scaleY: 1,
@@ -1705,13 +1728,10 @@ export class FolderOverlayLayer extends Container {
   }
 
   destroy(options) {
-    this.folderTransitions.cancelOpen();
-    this.cancelOpeningPanelReadyCheck();
-    this.openingGhosts.clear({ cancelSession: true });
-    this.closingGhosts.clear();
-    this.clearDetachedClosingVisuals(null, { immediate: true });
-    this.releaseAllOwnedVisualOwnership();
-    this.getVisualCommitQueue().clear();
+    this.teardownTransientState({
+      clearDetachedClosingVisuals: true,
+      clearVisualCommitQueue: true,
+    });
     killAllMotion(this.panel, { reason: "destroyed" });
     killAllMotion(this.pageTrack, { reason: "destroyed" });
     this.clearPageDots();

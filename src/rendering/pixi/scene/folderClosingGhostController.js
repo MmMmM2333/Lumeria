@@ -18,6 +18,12 @@ import {
   cancelClosingHandoffCleanup,
   scheduleClosingHandoffCleanup,
 } from "./folderClosingHandoff.js";
+import {
+  getFolderHandoffDebugOptions,
+  rectDelta,
+  roundNumber,
+  roundRect,
+} from "./folderHandoffDebug.js";
 
 const GHOST_REVEAL_FALLBACK_PADDING_MS = 140;
 const CLOSING_GHOST_MAX_DELAY = 0.06;
@@ -28,46 +34,6 @@ const CLOSING_GHOST_GEOMETRY_FALLBACK_SECONDS = 0.75;
 const CLOSING_PREVIEW_FALLBACK_DURATION = 0.22;
 const CLOSING_GHOST_VISUAL_POSITION_EPSILON = 0.5;
 const CLOSING_GHOST_VISUAL_SCALE_EPSILON = 0.01;
-
-function getFolderHandoffDebugOptions() {
-  const value = globalThis.__LP_DEBUG_FOLDER_HANDOFF__;
-  if (!value) return null;
-  if (value === true) return { log: true, timeline: false };
-  if (typeof value === "object") {
-    return {
-      log: value.log !== false,
-      timeline: value.timeline === true,
-    };
-  }
-  return null;
-}
-
-function roundNumber(value, digits = 3) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return null;
-  const factor = 10 ** digits;
-  return Math.round(number * factor) / factor;
-}
-
-function roundRect(rect) {
-  if (!rect) return null;
-  return {
-    height: roundNumber(rect.height),
-    left: roundNumber(rect.left),
-    top: roundNumber(rect.top),
-    width: roundNumber(rect.width),
-  };
-}
-
-function rectDelta(rect, target) {
-  if (!rect || !target) return null;
-  return {
-    height: roundNumber((rect.height || 0) - (target.height || 0)),
-    left: roundNumber((rect.left || 0) - (target.left || 0)),
-    top: roundNumber((rect.top || 0) - (target.top || 0)),
-    width: roundNumber((rect.width || 0) - (target.width || 0)),
-  };
-}
 
 function publishLastFolderHandoffDebug(payload) {
   const folderId = payload?.folderId || null;
@@ -81,11 +47,7 @@ function publishLastFolderHandoffDebug(payload) {
 }
 
 function setLayerClosingHandoffActive(layer, active) {
-  if (typeof layer.setClosingHandoffActive === "function") {
-    layer.setClosingHandoffActive(active);
-    return;
-  }
-  layer.closingHandoffActive = Boolean(active);
+  layer.setClosingHandoffActive(active);
 }
 
 function getClosingControllerGhostKey(state, target) {
@@ -279,9 +241,7 @@ export class FolderClosingGhostController {
         : target;
     });
     this.begin(folderId, { restorePageTrack: false, reveal: false });
-    const sessionToken = typeof layer.createClosingGhostSessionToken === "function"
-      ? layer.createClosingGhostSessionToken(folderId)
-      : `closing:${folderId || ""}`;
+    const sessionToken = layer.createClosingGhostSessionToken(folderId);
     layer.closingGhostSessionToken = sessionToken;
     const owner = {
       folderId,
@@ -355,11 +315,7 @@ export class FolderClosingGhostController {
       updateClosingMask: true,
     });
 
-    if (typeof layer.hidePageTrackForTransition === "function") {
-      layer.hidePageTrackForTransition(owner);
-    } else {
-      layer.pageTrack.visible = false;
-    }
+    layer.hidePageTrackForTransition(owner);
     if (usableTargets.length) this.scheduleRevealFallback(usableTargets);
 
     for (const target of usableTargets) {
@@ -414,13 +370,7 @@ export class FolderClosingGhostController {
           .start();
       }
       layer.closingGhostLayer.addChild(ghost);
-      if (typeof layer.hideIconNodesForTransition === "function") {
-        layer.hideIconNodesForTransition(target.item.id, owner);
-      } else {
-        for (const node of layer.iconNodes.values()) {
-          if (node.item?.id === target.item.id) node.visible = false;
-        }
-      }
+      layer.hideIconNodesForTransition(target.item.id, owner);
 
       let didComplete = false;
       let motionControl = null;
@@ -548,7 +498,7 @@ export class FolderClosingGhostController {
     const layer = this.layer;
     const sessionToken = layer.closingGhostSessionToken || null;
     if (sessionToken == null) return false;
-    layer.releaseTransitionOwnership?.(sessionToken, {
+    layer.releaseTransitionOwnership(sessionToken, {
       restorePageTrack: options.restorePageTrack,
       reveal: options.reveal,
     });
@@ -764,11 +714,6 @@ export class FolderClosingGhostController {
     setLayerClosingHandoffActive(layer, false);
     layer.clearFrameGhost();
     layer.panel.visible = true;
-    if (!layer.releaseTransitionOwnership && options.restorePageTrack !== false) layer.pageTrack.visible = true;
-    if (!layer.releaseTransitionOwnership && options.reveal !== false) {
-      layer.revealIconNodes();
-      layer.rebuildPageTrackMask();
-    }
     const ghosts = layer.closingGhostLayer.removeChildren();
     for (const ghost of ghosts) {
       killAllMotion(ghost);

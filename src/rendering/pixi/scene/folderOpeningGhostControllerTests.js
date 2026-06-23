@@ -105,12 +105,24 @@ function makeLayer() {
     rebuildPageTrackMask() {
       calls.push("rebuild-mask");
     },
+    hideIconNodesForTransition(itemId) {
+      for (const node of this.iconNodes.values()) {
+        if (node.item?.id === itemId) node.visible = false;
+      }
+    },
+    hidePageTrackForTransition() {
+      this.pageTrack.visible = false;
+    },
     revealIconNodes() {
       calls.push("reveal-icons");
       for (const node of this.iconNodes.values()) {
         node.visible = true;
         node.alpha = 1;
       }
+    },
+    releaseTransitionOwnership(_token, options = {}) {
+      if (options.reveal !== false) this.revealIconNodes();
+      if (options.restorePageTrack !== false) this.pageTrack.visible = true;
     },
     get ghosts() {
       return ghosts;

@@ -3,6 +3,11 @@ import {
   createMotionReplayCaptureController,
   createMotionReplayTraceFromRuntime,
 } from "./motionReplayTrace.js";
+import {
+  expandRange,
+  finalizeRange,
+  makeTrackKey,
+} from "./motionTraceShared.js";
 
 export const MOTION_DEBUG_GLOBAL_KEY = "__LP_MOTION_DEBUG__";
 const REPORT_SCHEMA = "pixi-motion-ai-report/v1";
@@ -69,34 +74,6 @@ function makeOverview(report) {
     topLaneKeys: countMapToTopEntries(report.summary?.byLaneKey),
     topProps: countMapToTopEntries(report.summary?.byProp),
     warningCount: report.warnings?.length || 0,
-  };
-}
-
-function makeTrackKey(record = {}) {
-  return [
-    record.targetId ?? "unknown",
-    record.prop ?? "unknown",
-    record.lane ?? "unknown",
-    record.laneKey ?? "unknown",
-  ].join(":");
-}
-
-function readFiniteNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
-}
-
-function expandRange(range, value) {
-  const number = readFiniteNumber(value);
-  if (number == null) return;
-  range.min = range.min == null ? number : Math.min(range.min, number);
-  range.max = range.max == null ? number : Math.max(range.max, number);
-}
-
-function finalizeRange(range) {
-  return {
-    max: range.max,
-    min: range.min,
   };
 }
 

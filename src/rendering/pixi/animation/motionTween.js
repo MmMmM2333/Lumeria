@@ -139,8 +139,9 @@ export function motionTo(targetOrTargets, vars = {}, options = {}) {
   const targets = Array.isArray(targetOrTargets) ? targetOrTargets : [targetOrTargets];
   const props = getTweenProps(vars);
   const controls = [];
-  let arriveRemaining = targets.reduce((count, target) => count + getTrackCount(target, props, vars), 0);
-  let remaining = targets.reduce((count, target) => count + getTrackCount(target, props, vars), 0);
+  const trackCount = targets.reduce((count, target) => count + getTrackCount(target, props, vars), 0);
+  let arriveRemaining = trackCount;
+  let remaining = trackCount;
   let arrived = false;
   let completed = false;
 
@@ -536,6 +537,9 @@ export function parallel(items = [], options = {}) {
   };
 }
 
+/**
+ * @experimental No production consumers yet; keep behavior covered by motionTweenTests.
+ */
 export function sequence(items = [], options = {}) {
   let current = null;
   let arrived = false;
@@ -592,6 +596,9 @@ export function sequence(items = [], options = {}) {
   };
 }
 
+/**
+ * @experimental No production consumers yet; keep behavior covered by motionTweenTests.
+ */
 export function stagger(targets = [], varsOrFactory = {}, options = {}) {
   const delayStep = readNumber(options.stagger, readNumber(options.each, 0));
   const baseDelay = readNumber(options.delay, 0);

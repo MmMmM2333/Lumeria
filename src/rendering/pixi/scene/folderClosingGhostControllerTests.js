@@ -135,6 +135,17 @@ function makeLayer() {
     rebuildPageTrackMask() {
       calls.push("rebuild-mask");
     },
+    createClosingGhostSessionToken(folderId = null) {
+      return `closing:${folderId || ""}:test`;
+    },
+    hideIconNodesForTransition(itemId) {
+      for (const node of this.iconNodes.values()) {
+        if (node.item?.id === itemId) node.visible = false;
+      }
+    },
+    hidePageTrackForTransition() {
+      this.pageTrack.visible = false;
+    },
     revealIconNodes() {
       calls.push("reveal-icons");
       for (const node of this.iconNodes.values()) {
@@ -142,12 +153,21 @@ function makeLayer() {
         node.alpha = 1;
       }
     },
+    releaseTransitionOwnership(_token, options = {}) {
+      if (options.restorePageTrack !== false) this.pageTrack.visible = true;
+      if (options.reveal !== false) {
+        this.revealIconNodes();
+        this.rebuildPageTrackMask();
+      }
+    },
     setClosingHandoffActive(active) {
       const next = Boolean(active);
       if (this.closingHandoffActive === next) return;
       this.closingHandoffActive = next;
-      if (next) this.onClosingHandoffReady?.(this.closingGhostFolderId || this.currentFolderId || null);
+      const folderId = next ? this.closingGhostFolderId || this.currentFolderId || null : null;
+      if (next) this.onClosingHandoffReady?.(folderId);
       activityChanges.push(next);
+      this.onInternalActivityChange?.(next, folderId);
     },
     startFrameGhost(fromRect, toRect, options = {}) {
       this.frameGhostState = { ...fromRect, progress: 0 };
@@ -212,6 +232,7 @@ export function runFolderClosingGhostControllerTests() {
     layer.closingGhostLayer.addChild(ghost);
     layer.closingGhostKeys = new Set(["app-1"]);
     layer.closingPreviewSwapKeys = new Set(["swap"]);
+    layer.closingGhostSessionToken = "close-token";
     controller.scheduleRevealFallback([makeTarget()]);
 
     assert(timerHost.timerCount === 1, "fallback should schedule one timer");
@@ -278,6 +299,23 @@ export function runFolderClosingGhostControllerTests() {
     assert(layer.visible === false && layer.currentFolderId === null, "handoff cleanup should hide the stale overlay state");
     assert(layer.closingGhostFolderId === null, "handoff cleanup should clear the closing folder id");
     assert(releaseCalls.length === 1, "final handoff cleanup should not release transition ownership twice");
+  }
+
+  {
+    const layer = makeLayer();
+    const order = [];
+    layer.onClosingHandoffReady = (folderId) => order.push(`ready:${folderId}`);
+    layer.onInternalActivityChange = (active, folderId) => order.push(`activity:${active}:${folderId}`);
+    const controller = new FolderClosingGhostController(layer, { scheduler: makeTimerHost() });
+    layer.closingFrameComplete = true;
+    layer.closingFrameVisualComplete = true;
+
+    controller.finishTransition(makeState());
+
+    assert(
+      order.join(",") === "ready:folder-1,activity:true:folder-1",
+      "closing handoff activation should publish ready and internal activity callbacks"
+    );
   }
 
   {

@@ -2,6 +2,14 @@ import {
   normalizeMotionReplayTime,
   normalizeMotionReplayTrace,
 } from "./motionReplayViewerModel.js";
+import {
+  collectRecordText,
+  makeTargetsById,
+  makeTrackKey,
+  normalizeQuery,
+  readNumber,
+  resolveRecordLabel,
+} from "../../rendering/pixi/animation/motionTraceShared.js";
 
 export const MOTION_REPLAY_ANOMALY_TYPES = [
   "max-velocity",
@@ -21,15 +29,6 @@ const ANOMALY_LABELS = {
   warning: "Warning",
 };
 
-function readNumber(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function normalizeQuery(value) {
-  return String(value || "").trim().toLowerCase();
-}
-
 function formatNumber(value, digits = 2) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "-";
@@ -37,59 +36,14 @@ function formatNumber(value, digits = 2) {
   return fixed.includes(".") ? fixed.replace(/\.?0+$/, "") : fixed;
 }
 
-function makeTrackKey(record = {}) {
-  return [
-    record.targetId ?? "unknown",
-    record.prop ?? "unknown",
-    record.lane ?? "unknown",
-    record.laneKey ?? "unknown",
-  ].join(":");
-}
-
-function makeTargetsById(trace = {}) {
-  const targets = new Map();
-  for (const target of trace.targets || []) {
-    if (target?.targetId != null) targets.set(target.targetId, target);
-  }
-  return targets;
-}
-
-function resolveRecordLabel(record = {}, targetsById = new Map()) {
-  const target = record.targetId != null ? targetsById.get(record.targetId) : null;
-  return record.sourceLabel
-    || record.targetLabel
-    || target?.sourceLabel
-    || target?.label
-    || (record.targetId != null ? `target ${record.targetId}` : "unknown");
-}
-
-function collectRecordText(record = {}, targetsById = new Map()) {
-  const target = record.targetId != null ? targetsById.get(record.targetId) : null;
-  return [
-    record.type,
-    record.reason,
-    record.warningType,
-    record.targetId,
-    record.targetKind,
-    record.targetLabel,
-    record.sourceLabel,
-    record.label,
-    record.layer,
-    record.kind,
-    record.prop,
-    record.driver,
-    record.lane,
-    record.laneKey,
-    target?.kind,
-    target?.label,
-    target?.layer,
-    target?.sourceLabel,
-  ].filter((value) => value != null).join(" ").toLowerCase();
-}
-
 function matchesFilters(record = {}, targetsById = new Map(), filters = {}) {
   const query = normalizeQuery(filters.query);
-  return !query || collectRecordText(record, targetsById).includes(query);
+  return !query || collectRecordText(record, targetsById, {
+    includeLayer: true,
+    includeRecordKind: true,
+    includeTargetLayer: true,
+    includeWarningType: true,
+  }).includes(query);
 }
 
 function toTrackRef(record = {}, targetsById = new Map()) {

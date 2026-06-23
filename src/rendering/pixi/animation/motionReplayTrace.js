@@ -1,4 +1,11 @@
 import { motionRuntime } from "./motionRuntime.js";
+import {
+  clamp,
+  expandRange,
+  finalizeRange,
+  makeTrackKey,
+  readNumber,
+} from "./motionTraceShared.js";
 
 export const MOTION_REPLAY_TRACE_SCHEMA = "pixi-motion-replay-trace/v1";
 export const MOTION_REPLAY_TRACE_VERSION = 1;
@@ -7,26 +14,8 @@ export const MOTION_REPLAY_CAPTURE_MIN_SECONDS = 1;
 export const MOTION_REPLAY_CAPTURE_MAX_SECONDS = 300;
 export const MOTION_REPLAY_CAPTURE_SAMPLE_HZ = 60;
 
-function readNumber(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
 function clonePlain(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
-}
-
-function makeTrackKey(record = {}) {
-  return [
-    record.targetId ?? "unknown",
-    record.prop ?? "unknown",
-    record.lane ?? "unknown",
-    record.laneKey ?? "unknown",
-  ].join(":");
 }
 
 function countBy(records = [], getKey = () => "unknown") {
@@ -36,20 +25,6 @@ function countBy(records = [], getKey = () => "unknown") {
     counts[key] = (counts[key] || 0) + 1;
   }
   return counts;
-}
-
-function expandRange(range, value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return;
-  range.min = range.min == null ? number : Math.min(range.min, number);
-  range.max = range.max == null ? number : Math.max(range.max, number);
-}
-
-function finalizeRange(range) {
-  return {
-    max: range.max,
-    min: range.min,
-  };
 }
 
 export function normalizeMotionReplayCaptureSeconds(value) {

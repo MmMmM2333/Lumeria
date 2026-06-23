@@ -35,15 +35,6 @@ function resolveTargetStageVisualRect(target, options = {}) {
   return stageLayoutRectToStageVisualRect(stageRect, stageWidth, stageHeight, target?.targetStageLayoutRect);
 }
 
-function resolveOpeningTargetStageVisualRect(target, options = {}) {
-  const {
-    stageHeight,
-    stageRect,
-    stageWidth,
-  } = options;
-  return stageLayoutRectToStageVisualRect(stageRect, stageWidth, stageHeight, target?.targetStageLayoutRect);
-}
-
 export function makeOpeningGhostMotion(target, options = {}) {
   const {
     isTextlessMode = false,
@@ -53,7 +44,7 @@ export function makeOpeningGhostMotion(target, options = {}) {
     stageWidth,
   } = options;
   const sourceRect = clientRectToStageVisualRect(target.sourceRect, stageRect);
-  const targetRect = resolveOpeningTargetStageVisualRect(target, { stageHeight, stageRect, stageWidth });
+  const targetRect = resolveTargetStageVisualRect(target, { stageHeight, stageRect, stageWidth });
   const labelOffset = getIconNodeOffsetFromVisualCenter(isTextlessMode);
   const scale = Math.max(0.16, target.sourceRect.width / Math.max(1, target.iconSize));
   const fromX = sourceRect.left + sourceRect.width / 2;
