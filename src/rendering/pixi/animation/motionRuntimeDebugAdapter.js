@@ -478,6 +478,11 @@ export function createMotionRuntimeDebugAdapter() {
     return config.enabled && config.recordHistory;
   }
 
+  function shouldObserveSamples() {
+    if (!shouldRecordHistory()) return false;
+    return !config.recordFilter || config.recordFilter.includeSamples !== false;
+  }
+
   function recordEvent(record, type) {
     if (!shouldRecordHistory()) return;
     if (!matchesDebugRecordFilter(record, type, config.recordFilter)) return;
@@ -515,7 +520,21 @@ export function createMotionRuntimeDebugAdapter() {
     recordEvent(record, type);
   }
 
+  function observeFrame(event = {}) {
+    runtimeState = {
+      ...runtimeState,
+      activeAnimationCount: Math.max(0, Math.floor(readNumber(event.activeAnimationCount, runtimeState.activeAnimationCount))),
+      frames: event.frame ?? runtimeState.frames,
+      timeMs: event.timeMs ?? runtimeState.timeMs,
+    };
+    debug.frames = runtimeState.frames;
+    debug.writes += Math.max(0, Math.floor(readNumber(event.writesLastFrame, 0)));
+    debug.writesLastFrame = Math.max(0, Math.floor(readNumber(event.writesLastFrame, 0)));
+    debug.afterFrameFlushes += Math.max(0, Math.floor(readNumber(event.afterFrameFlushes, 0)));
+  }
+
   function observeSample(event = {}) {
+    if (!shouldObserveSamples()) return;
     const animations = enrichRecords(event.animations || []);
     activeAnimations.clear();
     for (const record of animations) setActiveAnimation(record);
@@ -526,12 +545,8 @@ export function createMotionRuntimeDebugAdapter() {
       timeMs: event.timeMs ?? runtimeState.timeMs,
     };
     debug.frames = runtimeState.frames;
-    debug.writes += Math.max(0, Math.floor(readNumber(event.writesLastFrame, 0)));
-    debug.writesLastFrame = Math.max(0, Math.floor(readNumber(event.writesLastFrame, 0)));
-    debug.afterFrameFlushes += Math.max(0, Math.floor(readNumber(event.afterFrameFlushes, 0)));
     updateActiveCounters(animations);
 
-    if (!shouldRecordHistory()) return;
     const intervalMs = config.sampleHz > 0 ? 1000 / config.sampleHz : 0;
     if (intervalMs > 0 && runtimeState.timeMs - lastSampleTimeMs < intervalMs) return;
     const filteredAnimations = animations.filter((record) => matchesDebugRecordFilter(record, "sample", config.recordFilter));
@@ -553,6 +568,10 @@ export function createMotionRuntimeDebugAdapter() {
     if (!event || typeof event !== "object") return;
     if (event.type === "targetMetadata") {
       rememberTargetMetadata(event);
+      return;
+    }
+    if (event.type === "frame") {
+      observeFrame(event);
       return;
     }
     if (event.type === "sample") {
@@ -669,5 +688,6 @@ export function createMotionRuntimeDebugAdapter() {
     observe,
     reset,
     resolveTarget,
+    shouldObserveSamples,
   };
 }

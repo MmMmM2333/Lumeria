@@ -498,6 +498,20 @@ export function runMotionRuntimeTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+    });
+
+    runtime.step(1);
+
+    assert(nearlyEqual(target.x, 10), "completed tween should still land on the final value");
+    assert(runtime.debug.writesLastFrame === 1, `complete path should compose the final channel once, got ${runtime.debug.writesLastFrame}`);
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
     const control = runtime.animate(target, "x", 10, { driver: tween({ duration: 1, ease: "linear" }) });
     const snapshot = runtime.debugSnapshot();
 
@@ -628,10 +642,11 @@ export function runMotionRuntimeTests() {
     const eventTypes = events.map((event) => event.type);
     assert(eventTypes.includes("targetMetadata"), "observer should receive target metadata events");
     assert(eventTypes.includes("start"), "observer should receive start events");
-    assert(eventTypes.includes("sample"), "observer should receive sample events");
+    assert(eventTypes.includes("frame"), "observer should receive lightweight frame events");
+    assert(!eventTypes.includes("sample"), "observer should not receive heavy sample events when debug sampling is disabled");
     assert(eventTypes.includes("cancel"), "observer should receive cancel events");
     assert(events.some((event) => event.type === "start" && event.record?.laneKey === "observer-x"), "observer start event should expose animation record data");
-    assert(events.some((event) => event.type === "sample" && Array.isArray(event.animations)), "observer sample event should expose sampled animations");
+    assert(events.some((event) => event.type === "frame" && event.activeAnimationCount === 1 && !Array.isArray(event.animations)), "observer frame event should expose lightweight runtime state without sampled animations");
     assert(objectEvents.includes("start"), "object observer should receive runtime events");
 
     const countBeforeUnsubscribe = events.length;
@@ -647,6 +662,31 @@ export function runMotionRuntimeTests() {
 
     assert(events.length === countBeforeUnsubscribe, "unsubscribe should stop function observer events");
     assert(objectEvents.length === objectCountBeforeUnsubscribe, "unsubscribe should stop object observer events");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    const events = [];
+    runtime.configureDebug({
+      enabled: true,
+      maxSamples: 10,
+      recordHistory: true,
+      sampleHz: 60,
+    });
+    runtime.addObserver((event) => events.push(event));
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      laneKey: "sample-enabled",
+    });
+    runtime.step(1 / 60);
+
+    const sample = events.find((event) => event.type === "sample");
+    const report = runtime.debugReport({ includeHistory: true });
+    assert(sample && Array.isArray(sample.animations), "enabled history recording should emit heavy sample events");
+    assert(sample.animations.some((animation) => animation.laneKey === "sample-enabled"), "sample event should include active animation records");
+    assert(report.history.samples.length === 1, "enabled history recording should keep sampled frames");
   }
 
   {

@@ -306,6 +306,14 @@ export function createMotionRuntime(options = {}) {
   }
 
   function recordDebugSample() {
+    emitMotionEvent("frame", {
+      activeAnimationCount: activeAnimations.size,
+      afterFrameFlushes: frameAfterFrameFlushes,
+      frame: frameCount,
+      timeMs: runtimeTimeMs,
+      writesLastFrame,
+    });
+    if (!debugAdapter.shouldObserveSamples()) return;
     const animations = Array.from(activeAnimations)
       .map((animation) => makeDebugAnimationRecord(animation));
     emitMotionEvent("sample", {
@@ -392,6 +400,7 @@ export function createMotionRuntime(options = {}) {
   }
 
   function composeChannel(channel) {
+    dirtyChannels.delete(channel);
     if (channel.target?.destroyed) {
       cleanupChannel(channel);
       return channel.value;
@@ -430,7 +439,7 @@ export function createMotionRuntime(options = {}) {
     return fallback;
   }
 
-  function clearChannelLane(animation) {
+  function clearChannelLane(animation, options = {}) {
     const channel = animation.channel;
     if (!channel) return;
     if (animation.lane === "base") {
@@ -445,7 +454,7 @@ export function createMotionRuntime(options = {}) {
     } else if (channel.additive.get(animation.laneKey) === animation) {
       channel.additive.delete(animation.laneKey);
     }
-    composeChannel(channel);
+    if (options.compose !== false) composeChannel(channel);
     cleanupChannel(channel);
   }
 
@@ -477,7 +486,6 @@ export function createMotionRuntime(options = {}) {
     animation.value = finalValue;
     animation.blendElapsed = animation.blendDuration;
     if (animation.lane === "base" && animation.channel.activeBaseKey === animation.laneKey) animation.channel.baseValue = getAnimationOutputValue(animation);
-    composeChannel(animation.channel);
     fireMilestones(animation, 1);
     removeActiveAnimation(animation);
     clearChannelLane(animation);
