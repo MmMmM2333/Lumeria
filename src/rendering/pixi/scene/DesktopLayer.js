@@ -195,6 +195,21 @@ function roundDebugObject(object) {
   return result;
 }
 
+function roundTransformObject(object) {
+  if (!object || typeof object !== "object") return null;
+  const pointValue = (point, key, fallback = 0) => Math.round(readNumber(point?.[key], fallback) * 1000) / 1000;
+  return {
+    alpha: Math.round(readNumber(object.alpha, 1) * 1000) / 1000,
+    pivotX: pointValue(object.pivot, "x"),
+    pivotY: pointValue(object.pivot, "y"),
+    scaleX: pointValue(object.scale, "x", 1),
+    scaleY: pointValue(object.scale, "y", 1),
+    visible: object.visible ?? null,
+    x: pointValue(object.position || object, "x"),
+    y: pointValue(object.position || object, "y"),
+  };
+}
+
 function rectDelta(rect, target) {
   if (!rect || !target) return null;
   const round = (value) => Math.round((Number(value) || 0) * 1000) / 1000;
@@ -984,7 +999,9 @@ export class DesktopLayer extends Container {
   releaseClosingFolderHandoffVisual(folderId = null) {
     const entry = this.getFolderHandoffEntry(folderId);
     if (!entry || (folderId && entry.folderId !== folderId)) return;
+    this.debugFolderHandoffRestore(entry, "desktop-restore-before");
     this.restoreFolderHandoffVisual(entry);
+    this.debugFolderHandoffRestore(entry, "desktop-restore-after");
     this.revealFolderHandoffLabel(entry);
   }
 
@@ -1041,6 +1058,23 @@ export class DesktopLayer extends Container {
     return this.pageTrack.children.indexOf(node);
   }
 
+  debugFolderHandoffRestore(entry, phase) {
+    const options = getFolderHandoffDebugOptions();
+    if (!options?.log) return null;
+    const snapshot = this.makeFolderHandoffDebugSnapshot(entry, { phase });
+    if (!snapshot) return null;
+    globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__ = {
+      ...snapshot,
+      desktopLogged: false,
+      phase,
+    };
+    console.log("[folder-handoff-debug] desktop-restore", {
+      ...snapshot,
+      phase,
+    });
+    return snapshot;
+  }
+
   makeFolderHandoffDebugSnapshot(entry, options = {}) {
     const node = entry?.node;
     if (!entry || !node || node.destroyed) return null;
@@ -1074,6 +1108,7 @@ export class DesktopLayer extends Container {
       childWorstDelta: worstRectDelta(childRows),
       childIndex: this.getPageTrackChildIndex(node),
       clearing: options.clearing === true,
+      desktopClosingUnderlayLayer: roundTransformObject(this.desktopClosingUnderlayLayer),
       folderId,
       iconRect: roundRect(iconRect),
       layoutTarget: roundDebugObject(entry.layoutTarget),
@@ -1081,18 +1116,28 @@ export class DesktopLayer extends Container {
       node: {
         alpha: Math.round((node.alpha ?? 0) * 1000) / 1000,
         eventMode: node.eventMode,
+        folderChildrenWrapScaleX: node.folderChildrenWrap?.scale ? Math.round((node.folderChildrenWrap.scale.x ?? 1) * 1000) / 1000 : null,
+        folderChildrenWrapScaleY: node.folderChildrenWrap?.scale ? Math.round((node.folderChildrenWrap.scale.y ?? 1) * 1000) / 1000 : null,
+        folderChildrenWrapY: node.folderChildrenWrap ? Math.round((node.folderChildrenWrap.y || 0) * 1000) / 1000 : null,
         labelAlpha: node.labelText ? Math.round((node.labelText.alpha ?? 0) * 1000) / 1000 : null,
         labelVisible: node.labelText ? node.labelText.visible : null,
         parentIsPageTrack: node.parent === this.pageTrack,
         scaleX: Math.round((node.scale?.x ?? 1) * 1000) / 1000,
         scaleY: Math.round((node.scale?.y ?? 1) * 1000) / 1000,
         visible: node.visible,
+        visualWrapAlpha: node.visualWrap ? Math.round((node.visualWrap.alpha ?? 1) * 1000) / 1000 : null,
+        visualWrapScaleX: node.visualWrap?.scale ? Math.round((node.visualWrap.scale.x ?? 1) * 1000) / 1000 : null,
+        visualWrapScaleY: node.visualWrap?.scale ? Math.round((node.visualWrap.scale.y ?? 1) * 1000) / 1000 : null,
+        visualWrapVisible: node.visualWrap ? node.visualWrap.visible : null,
         x: Math.round((node.x || 0) * 1000) / 1000,
         y: Math.round((node.y || 0) * 1000) / 1000,
       },
       originalIndex: entry.originalIndex ?? null,
+      pageTrack: roundTransformObject(this.pageTrack),
       pageTrackX: Math.round((this.pageTrack?.x || 0) * 1000) / 1000,
+      phase: options.phase || null,
       registeredThumbRect: roundRect(registeredThumbRect),
+      singleStageFolderLayer: roundTransformObject(this.singleStageFolderLayer),
       source: options.source || "handoff-node",
       stableStageLayoutTargetRect: roundRect(stableStageLayoutTargetRecord),
       stableTargetRect: roundRect(stableTargetRect),
@@ -1102,6 +1147,7 @@ export class DesktopLayer extends Container {
       targetDelta: rectDelta(thumbRect, targetRect),
       targetRect: roundRect(targetRect),
       thumbRect: roundRect(thumbRect),
+      visualRoot: roundTransformObject(this.visualRoot),
     };
   }
 

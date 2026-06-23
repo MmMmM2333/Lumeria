@@ -384,6 +384,56 @@ export function runFolderClosingGhostControllerTests() {
   {
     const timerHost = makeTimerHost();
     const layer = makeLayer();
+    const completed = [];
+    const logs = [];
+    const originalDebug = globalThis.__LP_DEBUG_FOLDER_HANDOFF__;
+    const originalLastDebug = globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__;
+    const originalLog = console.log;
+    globalThis.__LP_DEBUG_FOLDER_HANDOFF__ = { log: true, timeline: true };
+    console.log = (...args) => logs.push(args);
+    try {
+      const ghost = makeGhost();
+      const controller = new FolderClosingGhostController(layer, { scheduler: timerHost });
+      layer.closingGhostLayer.addChild(ghost);
+      layer.closingGhostFolderId = "folder-1";
+      layer.closingGhostKeys = new Set(["app-1"]);
+      layer.closingVisualGhostKeys = new Set(["app-1"]);
+      layer.closingFrameVisualComplete = true;
+      layer.pendingClosingControllerGhostKeys = new Set(["close-key"]);
+
+      controller.markClosingGhostVisuallyArrived(makeState(completed), {
+        ...makeTarget(),
+        isThumbnailChild: true,
+        previewSlotIndex: 2,
+      }, ghost);
+
+      assert(
+        logs.some(([label]) => label === "[folder-closing-ghost-visual-arrive]"),
+        "visual arrival debug should log before ghost complete"
+      );
+      assert(
+        logs.some(([label, payload]) => label === "[folder-handoff-debug] overlay-release" && payload?.phase === "overlay-release-before-clear"),
+        "visual handoff release debug should log before overlay visuals are cleared"
+      );
+      assert(
+        globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__?.folderId === "folder-1" &&
+          globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__?.phase === "overlay-release-after-clear",
+        "visual handoff debug should publish the latest folder handoff snapshot"
+      );
+      assert(completed.join(",") === "close-key", "debug logging should not change visual arrival completion");
+    } finally {
+      console.log = originalLog;
+      if (originalDebug === undefined) delete globalThis.__LP_DEBUG_FOLDER_HANDOFF__;
+      else globalThis.__LP_DEBUG_FOLDER_HANDOFF__ = originalDebug;
+      if (originalLastDebug === undefined) delete globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__;
+      else globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__ = originalLastDebug;
+      motionRuntime.reset();
+    }
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
     const controller = new FolderClosingGhostController(layer, { scheduler: timerHost });
     const order = [];
     const completedPreviewGhost = makeGhost("preview");

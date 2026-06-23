@@ -463,6 +463,46 @@ export async function runDesktopLayerTests() {
   }
 
   {
+    const logs = [];
+    const originalDebug = globalThis.__LP_DEBUG_FOLDER_HANDOFF__;
+    const originalLastDebug = globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__;
+    const originalLog = console.log;
+    globalThis.__LP_DEBUG_FOLDER_HANDOFF__ = { log: true };
+    console.log = (...args) => logs.push(args);
+    try {
+      const folder = makeNode("folder");
+      folder.item = { id: "folder-1", type: "folder" };
+      const pageTrack = makePageTrack([folder]);
+      const layer = makeLayer(DesktopLayer, pageTrack);
+
+      layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 });
+      layer.releaseClosingFolderHandoffVisual("folder-1");
+
+      const before = logs.find(([label, payload]) =>
+        label === "[folder-handoff-debug] desktop-restore" && payload?.phase === "desktop-restore-before"
+      );
+      const after = logs.find(([label, payload]) =>
+        label === "[folder-handoff-debug] desktop-restore" && payload?.phase === "desktop-restore-after"
+      );
+      assert(before?.[1]?.node?.visualWrapVisible === false, "desktop restore debug should capture hidden artwork before release");
+      assert(after?.[1]?.node?.visualWrapVisible === true, "desktop restore debug should capture restored artwork after release");
+      assert(after?.[1]?.visualRoot, "desktop restore debug should include desktop transform context");
+      assert(after?.[1]?.singleStageFolderLayer, "desktop restore debug should include folder overlay transform context");
+      assert(
+        globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__?.folderId === "folder-1" &&
+          globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__?.phase === "desktop-restore-after",
+        "desktop restore debug should publish the latest folder handoff snapshot"
+      );
+    } finally {
+      console.log = originalLog;
+      if (originalDebug === undefined) delete globalThis.__LP_DEBUG_FOLDER_HANDOFF__;
+      else globalThis.__LP_DEBUG_FOLDER_HANDOFF__ = originalDebug;
+      if (originalLastDebug === undefined) delete globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__;
+      else globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__ = originalLastDebug;
+    }
+  }
+
+  {
     const folder = makeNode("folder");
     folder.item = { id: "folder-1", type: "folder" };
     folder.state = { ghosted: true, suppressLabelRevealAfterGhost: true };

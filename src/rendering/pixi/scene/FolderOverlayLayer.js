@@ -1025,7 +1025,25 @@ export class FolderOverlayLayer extends Container {
     if (shouldKeepDetachedVisual && (frameState || closingGhosts.length || previewSwapGhosts.length)) {
       this.onClosingHandoffPrepare?.(closingFolderId);
       const container = new Container();
-      container.eventMode = "none";
+      container.eventMode = "static";
+      container.interactiveChildren = false;
+      container.hitArea = {
+        contains: (x, y) => {
+          if (container.destroyed || !container.children.length) return false;
+          const bounds = container.getLocalBounds();
+          return x >= bounds.x && x <= bounds.x + bounds.width
+            && y >= bounds.y && y <= bounds.y + bounds.height;
+        },
+      };
+      container.cursor = "pointer";
+      container.on("pointerdown", (event) => {
+        const nativeEvent = event?.nativeEvent || event;
+        if (nativeEvent?.button != null && nativeEvent.button !== 0) return;
+        event?.stopPropagation?.();
+        nativeEvent?.preventDefault?.();
+        nativeEvent?.stopPropagation?.();
+        this.onClosingFolderPointerDown?.(closingFolderId, nativeEvent);
+      });
       container.alpha = 1;
       const visual = { container, folderId: closingFolderId };
       detachedVisual = visual;

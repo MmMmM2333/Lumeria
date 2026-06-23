@@ -528,10 +528,28 @@ export async function runFolderOverlayLayerTests() {
       top: 30,
       width: 240,
     };
+    const pointerProxyCalls = [];
+    layer.onClosingFolderPointerDown = (folderId, event) => {
+      pointerProxyCalls.push(`${folderId}:${event?.type || "event"}`);
+    };
 
     layer.detachClosingPresentationForOpen("folder-b");
     assert(layer.detachedClosingVisuals.length === 1, "opening a different folder should detach the interrupted closing frame");
     assert(detachedChildren.length === 1, "detached closing frame should be added to the detached visual layer");
+    assert(detachedChildren[0].eventMode === "static", "detached closing visual should remain interactive while the real source is ghosted");
+    assert(detachedChildren[0].interactiveChildren === false, "detached closing visual should own hover and click targeting while acting as a source proxy");
+    assert(detachedChildren[0].hitArea?.contains?.(25, 35) === true, "detached closing visual should expose a hit area over its current visible bounds");
+    assert(detachedChildren[0].cursor === "pointer", "detached closing visual should show the same click affordance as the desktop source");
+    detachedChildren[0].emit("pointerdown", {
+      nativeEvent: {
+        button: 0,
+        type: "pointerdown",
+        preventDefault() {},
+        stopPropagation() {},
+      },
+      stopPropagation() {},
+    });
+    assert(pointerProxyCalls.join(",") === "folder-a:pointerdown", "detached closing visual should forward clicks to the closing folder source");
     assert(clearCount === 1 && layer.closingGhostFolderId === null, "detaching should clear the live closing controller ownership");
     assert(clearOptions?.reveal === false && clearOptions?.restorePageTrack === false, "detaching should clear live closing ownership without revealing current folder visuals");
     assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "detached closing visual should keep the desktop source folder ghosted");

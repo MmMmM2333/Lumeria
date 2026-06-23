@@ -130,6 +130,29 @@ export function runLaunchpadSurfaceInteractionsTests() {
   const folderClosing = createSurfaceInteractions({ isFolderClosing: true });
   folderClosing.interactions.handleDesktopSurfacePointerDown(makePointerEvent());
   assert(folderClosing.calls.closeDesktop.length === 0, "folder-closing desktop pointer down should be ignored");
+  assert(folderClosing.calls.commitOpenFolder.length === 0, "folder-closing empty desktop pointer down should not open a folder");
+
+  const folderClosingDesktopFolder = createSurfaceInteractions({
+    getDesktopTargetAtPoint: () => ({
+      id: "folder-2",
+      meta: { area: "desktop", item: { id: "folder-2", type: "folder" } },
+    }),
+    isFolderClosing: true,
+  });
+  const folderClosingFolderEvent = makePointerEvent();
+  folderClosingDesktopFolder.interactions.handleDesktopSurfacePointerDown(folderClosingFolderEvent);
+  assert(folderClosingDesktopFolder.calls.commitOpenFolder.join(",") === "folder-2", "folder-closing desktop folder pointer down should open the target folder early");
+  assert(folderClosingFolderEvent.defaultPrevented && folderClosingFolderEvent.propagationStopped, "early folder open should consume the desktop pointer event");
+
+  const folderClosingDesktopApp = createSurfaceInteractions({
+    getDesktopTargetAtPoint: () => ({
+      id: "app-a",
+      meta: { area: "desktop", item: { id: "app-a", type: "app" } },
+    }),
+    isFolderClosing: true,
+  });
+  folderClosingDesktopApp.interactions.handleDesktopSurfacePointerDown(makePointerEvent());
+  assert(folderClosingDesktopApp.calls.commitOpenFolder.length === 0, "folder-closing desktop app pointer down should stay ignored by the surface handler");
 
   const folderAppLaunchClosing = createSurfaceInteractions({ isFolderAppLaunchClosing: true });
   folderAppLaunchClosing.interactions.handleDesktopSurfacePointerDown(makePointerEvent());
