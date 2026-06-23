@@ -1,5 +1,4 @@
 import {
-  createMotionRenderObserver,
   makeFolderInternalActivityRenderReason,
   makeIconActionRenderReason,
   shouldRequestRenderForMotionEvent,
@@ -19,17 +18,6 @@ export function runPixiRenderTriggersTests() {
   assert(shouldRequestRenderForMotionEvent({ type: "frame", activeAnimationCount: 1 }), "active animation frame should request render");
   assert(shouldRequestRenderForMotionEvent({ type: "frame", writesLastFrame: 2 }), "written frame should request render");
   assert(shouldRequestRenderForMotionEvent({ type: "frame", afterFrameFlushes: 1 }), "afterFrame flush should request render");
-
-  const reasons = [];
-  const observer = createMotionRenderObserver((reason) => reasons.push(reason));
-  observer({ type: "targetMetadata" });
-  observer({ type: "frame", activeAnimationCount: 0, afterFrameFlushes: 0, writesLastFrame: 0 });
-  observer({ type: "retarget" });
-  observer({ type: "frame", writesLastFrame: 1 });
-
-  assert(reasons.length === 2, "observer should only request render for visual motion events");
-  assert(reasons[0] === "motion-retarget", "observer should include the lifecycle reason");
-  assert(reasons[1] === "motion-frame", "observer should include the frame reason");
 
   assert(makeIconActionRenderReason("pointerdown") === "icon-pointerdown", "pointer press should map to an icon render reason");
   assert(makeIconActionRenderReason("context-menu") === "icon-context-menu", "context menu should map to an icon render reason");

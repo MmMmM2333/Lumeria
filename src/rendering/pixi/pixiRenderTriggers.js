@@ -28,13 +28,6 @@ export function shouldRequestRenderForMotionEvent(event) {
   return MOTION_RENDER_EVENT_TYPES.has(event.type);
 }
 
-export function createMotionRenderObserver(requestRender) {
-  return (event) => {
-    if (!shouldRequestRenderForMotionEvent(event)) return;
-    requestRender(`motion-${event.type || "event"}`);
-  };
-}
-
 export function makeIconActionRenderReason(action) {
   return `icon-${action || "action"}`;
 }

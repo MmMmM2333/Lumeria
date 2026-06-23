@@ -112,10 +112,6 @@ export function tween(options = {}) {
   return Object.freeze({ options, type: "tween" });
 }
 
-export function decay(options = {}) {
-  return Object.freeze({ options, type: "decay" });
-}
-
 export function progressDriver(options = {}) {
   return { options: { progress: 0, ...options }, type: "progress" };
 }
@@ -682,21 +678,6 @@ export function createMotionRuntime(options = {}) {
     return makeControl(animation);
   }
 
-  function set(target, prop, value, setOptions = {}) {
-    if (!target || !prop) return;
-    stop(target, prop, setOptions);
-    const channel = getChannel(target, prop);
-    if (channel) {
-      if (!setOptions.lane || setOptions.lane === "base") {
-        const laneKey = setOptions.laneKey || "base";
-        if (!setOptions.laneKey || channel.activeBaseKey === laneKey || !channel.base.size) channel.baseValue = readNumber(value, channel.baseValue);
-      }
-      composeChannel(channel);
-      return;
-    }
-    target[prop] = readNumber(value, target[prop]);
-  }
-
   function getLaneAnimation(channel, animation) {
     if (!channel || !animation) return null;
     if (animation.lane === "base") return channel.base.get(animation.laneKey);
@@ -772,19 +753,6 @@ export function createMotionRuntime(options = {}) {
     if (!repeatsForever && animation.elapsed >= totalDuration) completeAnimation(animation, animation.value);
   }
 
-  function tickDecay(animation, deltaSeconds) {
-    const options = animation.driver.options || {};
-    const friction = clamp(readNumber(options.friction, 0.92), 0, 1);
-    const restSpeed = Math.max(0, readNumber(options.restSpeed, DEFAULT_REST_SPEED));
-    animation.velocity *= friction ** (deltaSeconds * 60);
-    animation.value += animation.velocity * deltaSeconds;
-    if (Math.abs(animation.velocity) <= restSpeed) {
-      completeAnimation(animation);
-      return;
-    }
-    writeAnimation(animation);
-  }
-
   function tickAnimation(animation, deltaSeconds) {
     if (animation.done) return;
     if (animation.target?.destroyed) {
@@ -801,7 +769,6 @@ export function createMotionRuntime(options = {}) {
     animation.started = true;
     advanceBlend(animation, deltaSeconds);
     if (animation.driver.type === "tween") tickTween(animation, deltaSeconds);
-    else if (animation.driver.type === "decay") tickDecay(animation, deltaSeconds);
     else if (animation.driver.type === "progress") tickProgress(animation);
     else tickSpring(animation, deltaSeconds);
   }
@@ -1146,7 +1113,6 @@ export function createMotionRuntime(options = {}) {
     reset,
     resolveDebugTarget,
     resumeAutoTicker,
-    set,
     step,
     stop,
     suspendAutoTicker,
@@ -1154,44 +1120,6 @@ export function createMotionRuntime(options = {}) {
 }
 
 export const motionRuntime = createMotionRuntime();
-
-export function track(target, prop, from, to, options = {}) {
-  return { ...options, from, lane: "base", prop, target, to };
-}
-
-export function additiveTrack(target, prop, from, to, options = {}) {
-  return { ...options, from, lane: "additive", prop, target, to };
-}
-
-export function factorTrack(target, prop, from, to, options = {}) {
-  return { ...options, from, lane: "factor", prop, target, to };
-}
-
-export function alphaFactor(target, from, to, options = {}) {
-  return factorTrack(target, "alpha", from, to, { clamp: { min: 0, max: 1 }, ...options });
-}
-
-export function playTrack(spec, options = {}) {
-  const runtime = options.runtime || motionRuntime;
-  return runtime.animate(spec.target, spec.prop, spec.to, {
-    clamp: spec.clamp,
-    delay: spec.delay,
-    driver: spec.driver || options.driver,
-    from: spec.from,
-    interrupt: spec.interrupt,
-    blendDuration: spec.blendDuration,
-    blendEase: spec.blendEase,
-    lane: spec.lane,
-    laneKey: spec.laneKey,
-    onArrive: spec.onArrive,
-    onCancel: spec.onCancel,
-    onComplete: spec.onComplete,
-    onUpdate: spec.onUpdate,
-    milestones: spec.milestones,
-    snap: spec.snap,
-    velocity: spec.velocity,
-  });
-}
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => motionRuntime.reset());

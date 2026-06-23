@@ -1,12 +1,7 @@
 import {
-  additiveTrack,
   createMotionRuntime,
-  decay,
-  factorTrack,
-  playTrack,
   progressDriver,
   spring,
-  track,
   tween,
 } from "./motionRuntime.js";
 
@@ -229,8 +224,15 @@ export function runMotionRuntimeTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
-    playTrack(track(target, "x", 0, 10, { driver: tween({ duration: 1, ease: "linear" }) }), { runtime });
-    playTrack(additiveTrack(target, "x", 5, 0, { driver: tween({ duration: 1, ease: "linear" }) }), { runtime });
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+    });
+    runtime.animate(target, "x", 0, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 5,
+      lane: "additive",
+    });
 
     runtime.step(0.5);
     assert(nearlyEqual(target.x, 7.5), `base and additive lanes should compose additively, got ${target.x}`);
@@ -241,27 +243,44 @@ export function runMotionRuntimeTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
-    playTrack(track(target, "x", 0, 100, { driver: tween({ duration: 1, ease: "linear" }) }), { runtime });
+    runtime.animate(target, "x", 100, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+    });
     runtime.step(0.4);
     const valueBeforeBlend = target.x;
-    playTrack(track(target, "x", 0, 20, {
+    runtime.animate(target, "x", 20, {
       blendDuration: 0.2,
       blendEase: "linear",
       driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
       interrupt: "blend",
-    }), { runtime });
+    });
 
-    assert(nearlyEqual(target.x, valueBeforeBlend), "playTrack blend should keep the current visual value on takeover");
+    assert(nearlyEqual(target.x, valueBeforeBlend), "runtime blend should keep the current visual value on takeover");
     runtime.step(0.1);
-    assert(nearlyEqual(target.x, 21), `playTrack blend should cross-blend explicit from tracks, got ${target.x}`);
+    assert(nearlyEqual(target.x, 21), `runtime blend should cross-blend explicit from tracks, got ${target.x}`);
   }
 
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
-    playTrack(track(target, "x", 0, 10, { driver: tween({ duration: 1, ease: "linear" }) }), { runtime });
-    playTrack(additiveTrack(target, "x", 4, 0, { driver: tween({ duration: 1, ease: "linear" }), laneKey: "pulse-a" }), { runtime });
-    playTrack(additiveTrack(target, "x", -2, 0, { driver: tween({ duration: 1, ease: "linear" }), laneKey: "pulse-b" }), { runtime });
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+    });
+    runtime.animate(target, "x", 0, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 4,
+      lane: "additive",
+      laneKey: "pulse-a",
+    });
+    runtime.animate(target, "x", 0, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: -2,
+      lane: "additive",
+      laneKey: "pulse-b",
+    });
 
     runtime.step(0.5);
     assert(nearlyEqual(target.x, 6), `multiple additive lanes should sum on the same property, got ${target.x}`);
@@ -298,8 +317,15 @@ export function runMotionRuntimeTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { scale: 1 };
-    playTrack(track(target, "scale", 1, 2, { driver: tween({ duration: 1, ease: "linear" }) }), { runtime });
-    playTrack(factorTrack(target, "scale", 0.5, 1, { driver: tween({ duration: 1, ease: "linear" }) }), { runtime });
+    runtime.animate(target, "scale", 2, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 1,
+    });
+    runtime.animate(target, "scale", 1, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0.5,
+      lane: "factor",
+    });
 
     runtime.step(0.5);
     assert(nearlyEqual(target.scale, 1.125), `base and factor lanes should compose multiplicatively, got ${target.scale}`);
@@ -310,18 +336,23 @@ export function runMotionRuntimeTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { scale: 1, x: 0 };
-    playTrack(track(target, "scale", 1, 0.9, {
+    runtime.animate(target, "scale", 0.9, {
       driver: tween({ duration: 1, ease: "linear" }),
+      from: 1,
       laneKey: "press-scale",
-    }), { runtime });
-    playTrack(factorTrack(target, "scale", 1, 1.1, {
+    });
+    runtime.animate(target, "scale", 1.1, {
       driver: tween({ duration: 1, ease: "linear" }),
+      from: 1,
+      lane: "factor",
       laneKey: "hover-scale",
-    }), { runtime });
-    playTrack(additiveTrack(target, "x", 0, 6, {
+    });
+    runtime.animate(target, "x", 6, {
       driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      lane: "additive",
       laneKey: "jiggle-x",
-    }), { runtime });
+    });
 
     runtime.step(0.5);
     const report = runtime.debugReport({ includeChannels: true });
@@ -466,11 +497,11 @@ export function runMotionRuntimeTests() {
       driver: tween({ duration: 1, ease: "linear" }),
       laneKey: "fade",
     });
-    runtime.animate(targetA, "x", 0, {
-      driver: decay({ restSpeed: 0.01 }),
+    runtime.animate(targetA, "x", 6, {
+      driver: spring({ damping: 30, mass: 0.8, restDelta: 0.01, restSpeed: 0.01, stiffness: 240 }),
+      from: 0,
       lane: "additive",
       laneKey: "impulse",
-      velocity: 100,
     });
     runtime.animate(targetB, "alpha", 1, {
       driver: progressDriver({ completeAtEnd: false, progress: 0 }),
@@ -491,9 +522,8 @@ export function runMotionRuntimeTests() {
     assert(snapshot.summary.activeAnimationCount === 5, "debug summary should count active animations");
     assert(snapshot.summary.activeTargetCount === 2, "debug summary should count active targets");
     assert(snapshot.summary.activeChannelCount === 4, "debug summary should count active target/property channels");
-    assert(snapshot.summary.byDriver.spring === 2, "debug summary should count spring drivers");
+    assert(snapshot.summary.byDriver.spring === 3, "debug summary should count spring drivers");
     assert(snapshot.summary.byDriver.tween === 1, "debug summary should count tween drivers");
-    assert(snapshot.summary.byDriver.decay === 1, "debug summary should count decay drivers");
     assert(snapshot.summary.byDriver.progress === 1, "debug summary should count progress drivers");
     assert(snapshot.summary.byLane.base === 3, "debug summary should count base lanes");
     assert(snapshot.summary.byLane.additive === 1, "debug summary should count additive lanes");
@@ -508,14 +538,17 @@ export function runMotionRuntimeTests() {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
     const observed = [];
-    playTrack(track(target, "x", 0, 10, {
+    runtime.animate(target, "x", 10, {
       driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
       onUpdate: () => observed.push(target.x),
-    }), { runtime });
-    playTrack(additiveTrack(target, "x", 0, 4, {
+    });
+    runtime.animate(target, "x", 4, {
       driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      lane: "additive",
       onUpdate: () => observed.push(target.x),
-    }), { runtime });
+    });
 
     runtime.step(0.5);
     assert(nearlyEqual(target.x, 7), `coalesced writes should still compose lanes, got ${target.x}`);

@@ -9,7 +9,6 @@ import {
   motionTo,
   killMotionOf,
   parallel,
-  scrub,
 } from "./motionTween.js";
 
 function nearlyEqual(actual, expected, epsilon = 0.001) {
@@ -410,7 +409,11 @@ export function runMotionTweenTests() {
     const target = { x: 0 };
     setReducedMotionForTests(true);
     try {
-      const control = scrub(target, { x: 100, from: { x: 0 }, ease: "linear" }, { runtime });
+      const control = motion(target)
+        .from({ x: 0 })
+        .to({ ease: "linear", x: 100 })
+        .scrub(0)
+        .start({ runtime });
 
       control.setProgress(0.25);
       assert(nearlyEqual(target.x, 25), "reduced-motion should not snap externally controlled scrub progress");
@@ -423,7 +426,11 @@ export function runMotionTweenTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
-    const control = scrub(target, { x: 100, from: { x: 0 }, ease: "linear" }, { runtime });
+    const control = motion(target)
+      .from({ x: 0 })
+      .to({ ease: "linear", x: 100 })
+      .scrub(0)
+      .start({ runtime });
 
     control.setProgress(0.25);
     assert(nearlyEqual(target.x, 25), `scrub should set progress-driven values, got ${target.x}`);
@@ -687,7 +694,7 @@ export function runMotionTweenTests() {
     assert(nearlyEqual(target.x, 12), `motionAdd should apply an additive x impulse over the base value, got ${target.x}`);
     assert(nearlyEqual(target.y, -1), `motionAdd should apply a multi-property additive impulse, got ${target.y}`);
     runtime.step(0.5);
-    assert(nearlyEqual(target.x, 10) && nearlyEqual(target.y, 0), "motionAdd impulses should decay back to the base values");
+    assert(nearlyEqual(target.x, 10) && nearlyEqual(target.y, 0), "motionAdd impulses should settle back to the base values");
   }
 
   {

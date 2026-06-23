@@ -7,7 +7,7 @@ import {
 import { prefersReducedMotion } from "./motionPreferences.js";
 import { getMotionPreset } from "./motionPresets.js";
 
-// Public surface: motion/motionTo/motionSequence/parallel/killMotionOf/lanePreset/motionLanes are production APIs.
+// Public surface: motion/motionTo/motionAdd/motionSequence/parallel/killMotionOf/lanePreset/motionLanes are production APIs.
 const RESERVED_KEYS = new Set([
   "delay",
   "blendDuration",
@@ -371,15 +371,6 @@ export function motion(targetOrTargets, defaults = {}) {
   return builder;
 }
 
-export function scrub(targetOrTargets, vars = {}, options = {}) {
-  const driver = progressDriver({
-    completeAtEnd: false,
-    ease: vars.ease,
-    progress: readNumber(options.progress, readNumber(vars.progress, 0)),
-  });
-  return motionTo(targetOrTargets, { ...vars, driver }, options);
-}
-
 export function motionAdd(targetOrTargets, vars = {}, options = {}) {
   const props = getTweenProps(vars);
   if (!props.length) return makeGroupControl([]);
@@ -534,20 +525,6 @@ export function parallel(items = [], options = {}) {
       return released;
     },
   };
-}
-
-export function motionSet(targetOrTargets, vars = {}, options = {}) {
-  const runtime = options.runtime || motionRuntime;
-  const laneOptions = vars.lanePreset ? lanePreset(vars.lanePreset) : {};
-  const targets = Array.isArray(targetOrTargets) ? targetOrTargets : [targetOrTargets];
-  for (const target of targets) {
-    if (!target) continue;
-    for (const prop of getTweenProps(vars)) {
-      for (const track of getPropTracks(target, prop, vars)) {
-        runtime.set(track.target, track.prop, track.to, { lane: vars.lane || laneOptions.lane || "base", laneKey: vars.laneKey || laneOptions.laneKey });
-      }
-    }
-  }
 }
 
 export function killMotionOf(targetOrTargets, props = null, options = {}) {
