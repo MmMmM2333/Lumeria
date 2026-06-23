@@ -184,6 +184,7 @@ export class FolderClosingGhostController {
     layer.closingGhostRevealTimer = null;
     layer.closingFrameComplete = false;
     layer.closingHandoffVisualCleanupScheduled = false;
+    layer.closingHandoffVisualReleased = false;
     layer.closingPreviewSwapKeys = new Set();
     layer.closingVisualGhostKeys = new Set();
     layer.closingGhostSessionToken = null;
@@ -232,6 +233,7 @@ export class FolderClosingGhostController {
     layer.closingFrameComplete = false;
     layer.closingFrameVisualComplete = false;
     layer.closingHandoffVisualCleanupScheduled = false;
+    layer.closingHandoffVisualReleased = false;
     layer.closingVisualGhostKeys = new Set();
     layer.completedClosingControllerGhostKeys = [];
     layer.pendingClosingControllerGhostKeys = new Set();
@@ -480,11 +482,20 @@ export class FolderClosingGhostController {
   }
 
   clearHandoffOverlayVisuals() {
-    this.layer.onClosingHandoffVisualRelease?.(this.layer.closingGhostFolderId || this.layer.currentFolderId || null);
+    this.commitHandoffVisualRelease();
+  }
+
+  commitHandoffVisualRelease() {
+    const layer = this.layer;
+    if (layer.closingHandoffVisualReleased) return;
+    layer.closingHandoffVisualReleased = true;
     this.previewSwap.clear();
     this.clearCompletedPreviewGhosts();
     this.clearClosingGhostVisuals();
-    this.layer.clearFrameGhost();
+    layer.closingFrameComplete = true;
+    layer.closingFrameVisualComplete = true;
+    layer.clearFrameGhost();
+    layer.onClosingHandoffVisualRelease?.(layer.closingGhostFolderId || layer.currentFolderId || null);
     this.releaseClosingTransitionOwnership({ restorePageTrack: false, reveal: false });
   }
 
@@ -516,6 +527,7 @@ export class FolderClosingGhostController {
     layer.visible = false;
     layer.currentFolderId = null;
     layer.closingGhostFolderId = null;
+    layer.closingHandoffVisualReleased = false;
     setLayerClosingHandoffActive(layer, false);
   }
 
@@ -559,7 +571,8 @@ export class FolderClosingGhostController {
       layer.panel.visible = false;
       layer.pageTrack.visible = false;
       setLayerClosingHandoffActive(layer, true);
-      if (this.isOverlaySettled()) this.deferRunHandoffVisualCleanup();
+      this.commitHandoffVisualRelease();
+      this.deferRunHandoffCleanup();
       this.flushCompletedControllerGhosts(state);
       return;
     }
@@ -661,6 +674,7 @@ export class FolderClosingGhostController {
     layer.closingFrameComplete = false;
     layer.closingFrameVisualComplete = false;
     layer.closingHandoffVisualCleanupScheduled = false;
+    layer.closingHandoffVisualReleased = false;
     layer.completedClosingControllerGhostKeys = [];
     layer.pendingClosingControllerGhostKeys = new Set();
     layer.completedClosingPreviewGhosts = [];

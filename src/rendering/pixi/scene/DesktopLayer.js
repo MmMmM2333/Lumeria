@@ -366,7 +366,7 @@ export class DesktopLayer extends Container {
       detachedClosingVisualLayer: this.desktopClosingUnderlayLayer,
       onDesktopSourceGhostingChange: () => this.commitFolderSourceGhosting(),
       onClosingFolderPointerDown: (folderId, event) => this.onClosingFolderPointerDown(folderId, event),
-      onClosingHandoffPrepare: (folderId) => this.startClosingFolderHandoffNow(folderId, { revealLabel: false }),
+      onClosingHandoffPrepare: (folderId) => this.startClosingFolderHandoffNow(folderId, { resetVisual: true, revealLabel: false }),
       onClosingHandoffReady: (folderId) => this.startClosingFolderHandoffNow(folderId),
       onClosingHandoffVisualRelease: (folderId) => this.releaseClosingFolderHandoffVisual(folderId),
       onIconAction: (action, originalEvent, item, source, iconNode) =>
@@ -784,19 +784,26 @@ export class DesktopLayer extends Container {
 
   applyFolderSourceGhosting(state) {
     this.lastFolderSourceGhostingState = state;
-    const nextIds = mergeFolderSourceGhostedIds(
+    const rawIds = mergeFolderSourceGhostedIds(
       state.folderSourceGhostedIds,
-      state.folderSourceGhostedId,
+      state.folderSourceGhostedId
+    );
+    const ownershipIds = mergeFolderSourceGhostedIds(
       getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership),
       this.singleStageFolderLayer.getDesktopSourceGhostedIds?.()
     );
     for (const node of this.iconNodes.values()) {
       if (node.item?.type !== "folder" || !node.state) continue;
-      const nextGhosted = nextIds.has(node.item.id) || state.isFolderOpeningPreviewFrameGhosted?.(node.item.id);
-      const handoffEntry = this.getFolderHandoffEntry(node.item.id);
+      const folderId = node.item.id;
+      const rawGhosted = rawIds.has(folderId) || state.isFolderOpeningPreviewFrameGhosted?.(folderId);
+      const ownershipGhosted = ownershipIds.has(folderId);
+      const nextGhosted = rawGhosted || ownershipGhosted;
+      const handoffEntry = this.getFolderHandoffEntry(folderId);
       if (handoffEntry) {
-        if (!hasFolderClosingHandoffId(state, node.item.id) && hasRawFolderSourceGhosting(state, node.item.id)) {
-          this.clearFolderHandoffNode(node.item.id);
+        const activeHandoff = hasFolderClosingHandoffId(state, folderId) ||
+          isFolderLayerHandoffActive(this.singleStageFolderLayer, folderId);
+        if (rawGhosted || (ownershipGhosted && !activeHandoff && handoffEntry.visualReleased === true)) {
+          this.clearFolderHandoffNode(folderId);
         } else {
           node.__folderSourceGhostedByOwnership = Boolean(nextGhosted);
           continue;
@@ -904,6 +911,10 @@ export class DesktopLayer extends Container {
       entry.labelRevealStarted = false;
       entry.visualHidden = false;
       entry.visualReleased = false;
+    } else if (options.resetVisual === true) {
+      entry.labelRevealStarted = false;
+      entry.visualHidden = false;
+      entry.visualReleased = false;
     }
     if (entry.cleanupFrame != null) {
       globalThis.cancelAnimationFrame?.(entry.cleanupFrame);
@@ -938,6 +949,9 @@ export class DesktopLayer extends Container {
     if (!entry.visualReleased) {
       node.setFolderHandoffVisualHidden?.(true);
       entry.visualHidden = true;
+    } else if (entry.visualHidden) {
+      node.setFolderHandoffVisualHidden?.(false);
+      entry.visualHidden = false;
     }
     if (node.labelText) {
       node.labelText.visible = true;

@@ -390,6 +390,31 @@ export function runMotionRuntimeTests() {
 
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = {
+      destroyed: false,
+      value: 0,
+      get x() {
+        return this.value;
+      },
+      set x(value) {
+        if (this.destroyed) throw new Error("write-after-destroy");
+        this.value = value;
+      },
+    };
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      onComplete: () => {
+        target.destroyed = true;
+      },
+    });
+
+    runtime.step(1);
+
+    assert(target.value === 10, "dirty channel flush should not write to a target destroyed by completion callbacks");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0, y: 0 };
     runtime.animate(target, "x", 10, { driver: tween({ duration: 1, ease: "linear" }) });
     runtime.animate(target, "y", 20, { driver: tween({ duration: 1, ease: "linear" }) });

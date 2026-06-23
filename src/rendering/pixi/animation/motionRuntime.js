@@ -823,6 +823,10 @@ export function createMotionRuntime(options = {}) {
   }
 
   function composeChannel(channel) {
+    if (channel.target?.destroyed) {
+      cleanupChannel(channel);
+      return channel.value;
+    }
     let value = channel.baseValue;
     for (const animation of channel.additive.values()) value += getAnimationOutputValue(animation);
     for (const animation of channel.factor.values()) value *= getAnimationOutputValue(animation);
