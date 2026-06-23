@@ -144,6 +144,7 @@ export function createMotionRuntime(options = {}) {
   let lastFrameTime = 0;
   let nextTargetId = 1;
   let runtimeTimeMs = 0;
+  let autoTickerSuspended = 0;
   let writesLastFrame = 0;
 
   function getTargetId(target) {
@@ -512,7 +513,12 @@ export function createMotionRuntime(options = {}) {
   }
 
   function scheduleFrame() {
-    if (!autoStart || frameHandle != null || typeof scheduler.requestAnimationFrame !== "function") return;
+    if (
+      !autoStart ||
+      autoTickerSuspended > 0 ||
+      frameHandle != null ||
+      typeof scheduler.requestAnimationFrame !== "function"
+    ) return;
     frameHandle = scheduler.requestAnimationFrame((time) => {
       frameHandle = null;
       const nextTime = Number.isFinite(Number(time)) ? Number(time) : nowMs();
@@ -909,6 +915,28 @@ export function createMotionRuntime(options = {}) {
   function afterFrame(callback) {
     if (typeof callback !== "function") return;
     afterFrameCallbacks.add(callback);
+    if (autoTickerSuspended > 0) {
+      emitMotionEvent("frameRequest", {
+        activeAnimationCount: activeAnimations.size,
+        afterFramePending: afterFrameCallbacks.size,
+        frame: frameCount,
+        timeMs: runtimeTimeMs,
+      });
+    }
+    ensureTicker();
+  }
+
+  function hasActiveWork() {
+    return Boolean(activeAnimations.size || afterFrameCallbacks.size);
+  }
+
+  function suspendAutoTicker() {
+    autoTickerSuspended += 1;
+    stopTicker();
+  }
+
+  function resumeAutoTicker() {
+    autoTickerSuspended = Math.max(0, autoTickerSuspended - 1);
     ensureTicker();
   }
 
@@ -1073,6 +1101,7 @@ export function createMotionRuntime(options = {}) {
     frameCount = 0;
     frameAfterFrameFlushes = 0;
     runtimeTimeMs = 0;
+    autoTickerSuspended = 0;
     writesLastFrame = 0;
   }
 
@@ -1113,11 +1142,14 @@ export function createMotionRuntime(options = {}) {
     flushAfterFrameForTests: flushAfterFrame,
     getChannel: (target, prop) => getChannel(target, prop),
     debug: debugAdapter.debug,
+    hasActiveWork,
     reset,
     resolveDebugTarget,
+    resumeAutoTicker,
     set,
     step,
     stop,
+    suspendAutoTicker,
   };
 }
 

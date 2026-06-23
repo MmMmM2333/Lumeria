@@ -135,4 +135,26 @@ export function runPixiRenderSchedulerTests() {
     assert(scheduler.requestRender("no-raf") === true, "scheduler should render immediately without RAF");
     assert(renderCount === 1, "no-RAF fallback should render synchronously");
   }
+
+  {
+    const callbacks = [];
+    const reasons = [];
+    const scheduler = createPixiRenderScheduler({
+      cancelAnimationFrame: () => {},
+      render: (reason) => reasons.push(reason),
+      requestAnimationFrame: (callback) => {
+        callbacks.push(callback);
+        return callbacks.length;
+      },
+    });
+
+    assert(scheduler.markRenderPending("motion-frame") === true, "mark should create pending render work without scheduling");
+    assert(scheduler.markRenderPending("resize") === false, "second mark should merge with the existing pending reason");
+    assert(callbacks.length === 0, "marking pending render should not schedule an animation frame");
+    assert(scheduler.hasPendingRender(), "marked render should be observable as pending");
+    assert(scheduler.runPendingRender() === true, "pending render should run inline when the frame driver consumes it");
+    assert(reasons.join(",") === "motion-frame", "inline render should preserve the first pending reason");
+    assert(!scheduler.hasPendingRender(), "inline render should clear pending work");
+    assert(scheduler.runPendingRender() === false, "running without pending work should be a no-op");
+  }
 }

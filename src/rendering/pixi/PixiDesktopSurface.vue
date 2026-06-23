@@ -52,9 +52,9 @@ import { readFolderOverlayStateRenderDependencies } from "./folderOverlayStateDe
 import { clearIconTextureCache, preloadIconTextures } from "./assets/iconTextureCache.js";
 import { createPixiRenderScheduler } from "./pixiRenderScheduler.js";
 import {
-  createMotionRenderObserver,
   makeFolderInternalActivityRenderReason,
   makeIconActionRenderReason,
+  shouldRequestRenderForMotionEvent,
 } from "./pixiRenderTriggers.js";
 import { installMotionDebugGlobal } from "./animation/motionDebugReport.js";
 import { motionRuntime } from "./animation/motionRuntime.js";
@@ -178,7 +178,11 @@ let desktopDomGeometryCache = null;
 let pixiResizeSignature = "";
 let motionDebugCommands = null;
 let motionDebugOverlay = null;
-let unsubscribeMotionRuntimeRender = null;
+let unsubscribeMotionRuntimeFrameDriver = null;
+let desktopMotionRuntimeSuspended = false;
+let desktopFrameHandle = null;
+let desktopFrameLastTime = 0;
+let desktopMotionFrameNeedsRender = false;
 const folderClosingHandoffRetainer = createFolderClosingHandoffRetainer();
 let handoffDebugSequence = 0;
 
@@ -587,6 +591,11 @@ function renderPixi() {
 
 function cancelScheduledRenderPixi() {
   renderScheduler?.cancel();
+  if (desktopFrameHandle != null) {
+    window.cancelAnimationFrame?.(desktopFrameHandle);
+    desktopFrameHandle = null;
+  }
+  desktopFrameLastTime = 0;
 }
 
 function getRenderScheduler() {
@@ -603,16 +612,70 @@ function getRenderScheduler() {
     render: () => {
       renderPixi();
       app?.render?.();
-      if (requestFrame && shouldRunHandoffRenderLoop()) requestRender("folder-handoff-loop");
     },
     requestAnimationFrame: requestFrame,
   });
   return renderScheduler;
 }
 
+function shouldRunDesktopFrameLoop() {
+  return Boolean(
+    !destroyed &&
+    app &&
+    layer &&
+    hostRef.value &&
+    (
+      getRenderScheduler().hasPendingRender() ||
+      motionRuntime.hasActiveWork?.() ||
+      shouldRunHandoffRenderLoop()
+    )
+  );
+}
+
+function runDesktopFrame(time) {
+  desktopFrameHandle = null;
+  if (!app || !layer || !hostRef.value || destroyed) {
+    desktopFrameLastTime = 0;
+    return;
+  }
+
+  const frameTime = Number.isFinite(Number(time)) ? Number(time) : nowMs();
+  const deltaSeconds = desktopFrameLastTime
+    ? Math.max(0, (frameTime - desktopFrameLastTime) / 1000)
+    : 0;
+  desktopFrameLastTime = frameTime;
+
+  motionRuntime.step(deltaSeconds);
+  const scheduler = getRenderScheduler();
+  if (desktopMotionFrameNeedsRender) {
+    scheduler.markRenderPending("motion-frame");
+    desktopMotionFrameNeedsRender = false;
+  }
+  scheduler.runPendingRender();
+  if (shouldRunHandoffRenderLoop()) scheduler.markRenderPending("folder-handoff-loop");
+
+  if (typeof window.requestAnimationFrame === "function" && shouldRunDesktopFrameLoop()) {
+    scheduleDesktopFrame();
+  } else {
+    desktopFrameLastTime = 0;
+  }
+}
+
+function scheduleDesktopFrame() {
+  if (desktopFrameHandle != null || destroyed || !app || !layer || !hostRef.value) return false;
+  if (typeof window.requestAnimationFrame === "function") {
+    desktopFrameHandle = window.requestAnimationFrame(runDesktopFrame);
+    return true;
+  }
+  runDesktopFrame(nowMs());
+  return true;
+}
+
 function requestRender(reason = "desktop-update", options = {}) {
   if (options.invalidateGeometry) invalidateDesktopDomGeometry();
-  return getRenderScheduler().requestRender(reason);
+  const didMark = getRenderScheduler().markRenderPending(reason);
+  scheduleDesktopFrame();
+  return didMark;
 }
 
 function shouldRunHandoffRenderLoop() {
@@ -701,8 +764,13 @@ function destroyPixi(options = {}) {
   app = null;
   layer = null;
   motionDebugOverlay = null;
-  unsubscribeMotionRuntimeRender?.();
-  unsubscribeMotionRuntimeRender = null;
+  unsubscribeMotionRuntimeFrameDriver?.();
+  unsubscribeMotionRuntimeFrameDriver = null;
+  if (desktopMotionRuntimeSuspended) {
+    motionRuntime.resumeAutoTicker?.();
+    desktopMotionRuntimeSuspended = false;
+  }
+  desktopMotionFrameNeedsRender = false;
   cancelScheduledRenderPixi();
   renderScheduler?.destroy();
   renderScheduler = null;
@@ -744,7 +812,8 @@ onMounted(async () => {
     return;
   }
   app = nextApp;
-  unsubscribeMotionRuntimeRender = motionRuntime.addObserver(createMotionRenderObserver(requestRender));
+  motionRuntime.suspendAutoTicker?.();
+  desktopMotionRuntimeSuspended = true;
   layer = new DesktopLayer({
     onClosingFolderPointerDown: (folderId) => {
       props.folderOverlayState?.commitOpenFolder?.(folderId);
@@ -768,6 +837,20 @@ onMounted(async () => {
     onIconAction: handleIconAction,
   });
   app.stage.addChild(layer);
+  unsubscribeMotionRuntimeFrameDriver = motionRuntime.addObserver((event) => {
+    if (event?.type === "frame") {
+      desktopMotionFrameNeedsRender = Boolean(
+        Number(event.activeAnimationCount) > 0 ||
+        Number(event.afterFrameFlushes) > 0 ||
+        Number(event.writesLastFrame) > 0
+      );
+      return;
+    }
+    if (shouldRequestRenderForMotionEvent(event)) {
+      getRenderScheduler().markRenderPending(`motion-${event?.type || "event"}`);
+    }
+    if (motionRuntime.hasActiveWork?.() || getRenderScheduler().hasPendingRender()) scheduleDesktopFrame();
+  });
   if (import.meta.env.DEV) {
     motionDebugOverlay = new MotionDebugOverlayLayer();
     app.stage.addChild(motionDebugOverlay);

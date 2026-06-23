@@ -19,10 +19,7 @@ export function createPixiRenderScheduler({
 
   const run = () => {
     frame = null;
-    const reason = pendingReason;
-    pendingReason = null;
-    if (destroyed || !canRender()) return;
-    render(reason);
+    runPendingRender();
   };
 
   function requestRender(reason = "update") {
@@ -34,6 +31,25 @@ export function createPixiRenderScheduler({
       return true;
     }
     run();
+    return true;
+  }
+
+  function markRenderPending(reason = "update") {
+    if (destroyed || !canRender()) return false;
+    const hadPending = pendingReason != null;
+    pendingReason = pendingReason || reason;
+    return !hadPending;
+  }
+
+  function hasPendingRender() {
+    return pendingReason != null;
+  }
+
+  function runPendingRender() {
+    const reason = pendingReason;
+    pendingReason = null;
+    if (destroyed || !canRender() || reason == null) return false;
+    render(reason);
     return true;
   }
 
@@ -51,7 +67,10 @@ export function createPixiRenderScheduler({
   return {
     cancel,
     destroy,
+    hasPendingRender,
     isScheduled: () => frame != null,
+    markRenderPending,
     requestRender,
+    runPendingRender,
   };
 }

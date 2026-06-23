@@ -362,7 +362,7 @@ export function runMotionRuntimeTests() {
   }
 
   {
-    const runtime = createMotionRuntime({ autoStart: false });
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const order = [];
     const callback = () => order.push("flush");
     runtime.afterFrame(callback);
@@ -371,6 +371,32 @@ export function runMotionRuntimeTests() {
 
     assert(order.join(",") === "flush", "afterFrame should coalesce duplicate callbacks per frame");
     assert(runtime.debug.afterFrameFlushes === 1, "afterFrame debug counter should track flushes");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    assert(!runtime.hasActiveWork(), "idle runtime should report no active work");
+    runtime.animate(target, "x", 1, { driver: tween({ duration: 1 }) });
+    assert(runtime.hasActiveWork(), "active animation should report runtime work");
+    runtime.step(1);
+    assert(!runtime.hasActiveWork(), "completed animation should clear active runtime work");
+    runtime.afterFrame(() => {});
+    assert(runtime.hasActiveWork(), "pending afterFrame callback should report runtime work");
+    runtime.step(0);
+    assert(!runtime.hasActiveWork(), "flushed afterFrame callback should clear runtime work");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: true });
+    const events = [];
+    const unsubscribe = runtime.addObserver((event) => events.push(event.type));
+    runtime.suspendAutoTicker();
+    runtime.afterFrame(() => {});
+    assert(events.includes("frameRequest"), "suspended runtime should emit a frame request for external frame drivers");
+    runtime.step(0);
+    runtime.resumeAutoTicker();
+    unsubscribe();
   }
 
   {
