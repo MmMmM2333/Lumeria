@@ -130,7 +130,7 @@ export class MotionDebugOverlayLayer extends Container {
         .roundRect(labelX, labelY, labelWidth, LABEL_HEIGHT, 4)
         .fill({ alpha: 0.88, color });
       const label = this.getLabel(index);
-      label.text = badge;
+      if (label.text !== badge) label.text = badge;
       label.visible = true;
       label.position.set(labelX + 5, labelY + 2);
     });
