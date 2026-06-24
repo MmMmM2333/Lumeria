@@ -109,6 +109,7 @@ export function runMotionDebugReportTests() {
     assert(data.report.history?.events?.length > 0, "full report should include lifecycle history");
     assert(data.report.history?.samples?.length > 0, "full report should include timeline samples");
     assert(data.report.channels?.length > 0, "full report should include channel breakdown");
+    assert(data.report.curveStats?.length > 0, "full report should include opt-in curve stats");
     assert(data.report.targets?.some((entry) => entry.sourceLabel === "folder.panel"), "full report should include target metadata");
   }
 

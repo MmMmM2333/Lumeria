@@ -125,6 +125,7 @@ function runMotionLabScenarioForTest(id, params = DEFAULT_MOTION_LAB_PARAMS) {
     refreshReport() {
       context.report = runtime.debugReport({
         includeChannels: true,
+        includeCurveStats: true,
         includeHistory: true,
         includeTargets: true,
       });

@@ -251,6 +251,7 @@ export function createMotionReplayTrace(report = {}, options = {}) {
 export function createMotionReplayTraceFromRuntime(runtime = motionRuntime, options = {}) {
   const report = runtime.debugReport({
     includeChannels: true,
+    includeCurveStats: true,
     includeHistory: true,
     includeTargets: true,
   });

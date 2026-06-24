@@ -671,6 +671,7 @@ function refreshMotionReport() {
   }
   motionReport.value = runtime.debugReport({
     includeChannels: true,
+    includeCurveStats: true,
     includeHistory: true,
     includeTargets: true,
   });

@@ -163,6 +163,7 @@ function getReportOptions(mode) {
   }
   return {
     includeChannels: true,
+    includeCurveStats: true,
     includeHistory: true,
     includeTargets: true,
   };

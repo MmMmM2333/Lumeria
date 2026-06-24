@@ -1644,6 +1644,7 @@ function refreshMotionReport() {
   if (!canDebugMotion.value) return;
   motionReport.value = motionRuntime.debugReport({
     includeChannels: true,
+    includeCurveStats: true,
     includeHistory: true,
     includeTargets: true,
   });
