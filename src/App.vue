@@ -93,7 +93,7 @@
         :is-textless-mode="isTextlessMode"
         :launch-target-status-by-id="launchTargetStatusById"
         :page-grid-measure-style="pageGridMeasureStyle"
-        :page-track-scrub="resolveMaybeRef(controller.pageTrackScrub)"
+        :page-track-scrub="resolveMaybeRef(pageTrackScrub)"
         :desktop-grid-debug-options="desktopGridDebugOptions"
         :set-page-ref="setPageRef"
         :show-missing-launch-target-badge="showMissingLaunchTargetBadge"
@@ -185,7 +185,33 @@ import "./styles/launchpad.css";
 const controller = useLaunchpadController();
 installSingleStageGlobalFlag();
 const {
+  appActions,
+  background: backgroundDomain,
+  chrome,
+  desktopSurface,
+  dialogs,
+  folderFlow,
+  folderOverlay,
+  overlays,
+  search: searchDomain,
+  settingsPanel,
+  shell,
+} = controller;
+const {
   rootRef,
+  cx,
+  isTextlessMode,
+  isDesktopOpen,
+  isDesktopClosing,
+  isHomeInteractionDisabled,
+  isAppLaunching,
+  isNativeLayoutReady,
+  isEditMode,
+  handleLaunchpadWheel,
+  shellRef,
+  windowMode,
+} = shell;
+const {
   rootStyle,
   backgroundAcrylicParams,
   backgroundEffect,
@@ -198,82 +224,84 @@ const {
   liveDesktopCssFallbackEffectsEnabled,
   liveDesktopRuntimeStatus,
   shouldRenderPixiBackgroundEffect,
-  cx,
-  gridRows,
-  gridCols,
-  iconSize,
-  iconBoundsRegistry,
-  isTextlessMode,
-  isDesktopOpen,
-  isDesktopClosing,
-  isHomeInteractionDisabled,
-  isAppLaunching,
-  isNativeLayoutReady,
-  isEditMode,
-  isSettingsPanelOpen,
-  shouldRenderSettingsPanel,
-  settingsOverlayAnimate,
-  settingsPanelInitial,
-  settingsPanelAnimate,
-  handleLaunchpadWheel,
-  shellRef,
-  desktopVisualTransform,
-  desktopVisualAlpha,
-  launchpadVisualTransform,
-  launchpadVisualAlpha,
+} = backgroundDomain;
+const {
   homeChromeInitial,
   homeChromeAnimate,
   homeChromeTransition,
   homeChromeStyle,
   headerRef,
+  pageDotsRef,
+} = chrome;
+const {
   openEditManagedApp,
   openExistingAppIconChooser,
+  openApp,
+  removeAppById,
+  resetAppCustomIcon,
   showMissingLaunchTargetBadge,
+} = appActions;
+const {
+  isSettingsPanelOpen,
+  shouldRenderSettingsPanel,
+  settingsOverlayAnimate,
+  settingsPanelInitial,
+  settingsPanelAnimate,
+  openSettingsPanel,
+} = settingsPanel;
+const {
+  clearSearch,
+  handleSearchInput,
+  isSearchMode,
+  keyboardFocusArea,
+  searchInputRef,
+  searchQuery,
+  searchRef,
+} = searchDomain;
+const {
+  activePageIndex,
+  activePages,
+  beginDrag,
+  clearDragRelease,
+  commitActivePageIndex,
+  desktopMainRef,
+  desktopProjectionEpoch,
+  desktopTrackMotionKey,
+  desktopVisualAlpha,
+  desktopVisualTransform,
   dragFolderHoverState,
   dragFolderTargetId,
   dragMeta,
   dragPreviewState,
   dragReleaseState,
-  clearDragRelease,
-  openSettingsPanel,
-  searchRef,
-  isSearchMode,
-  searchInputRef,
-  searchQuery,
-  handleSearchInput,
-  keyboardFocusArea,
-  clearSearch,
-  desktopMainRef,
   handleDesktopSurfacePointerDown,
-  activePageIndex,
-  activePages,
-  commitActivePageIndex,
-  desktopProjectionEpoch,
-  desktopTrackMotionKey,
+  gridCols,
+  gridRows,
+  iconBoundsRegistry,
+  iconSize,
+  isIconOpening,
+  isIconSelected,
+  launchTargetStatusById,
+  launchpadVisualAlpha,
+  launchpadVisualTransform,
   getDesktopPageRenderMode,
   setPageRef,
   pageGridMeasureStyle,
+  pageTrackScrub,
   schedulePageGridMetrics,
   getVisibleDesktopPage,
   folderPageSize,
-  isIconSelected,
-  launchTargetStatusById,
-  isIconOpening,
+} = desktopSurface;
+const {
   folderOpenPreviewFrameGhostedIds,
   isFolderOpeningPreviewFrameGhosted,
-  beginDrag,
-  openApp,
-  removeAppById,
-  resetAppCustomIcon,
-  pageDotsRef,
   openFolderId,
   renderedFolder,
   isFolderClosing,
   isFolderAppLaunchClosing,
   isFolderZoomFadeClosing,
   isHomeRevealSettling,
-  windowMode,
-} = controller;
+} = folderFlow;
 
 const appVersion = appPackage.version;
 const isAcrylicDebugPanelEnabled = import.meta.env.DEV;
@@ -867,10 +895,10 @@ const headerDomRefs = { headerRef, searchRef, searchInputRef };
 const desktopDomRefs = { desktopMainRef, rootRef, shellRef };
 const chromeFrameRefs = { pageDotsRef, shellRef };
 
-const settingsPanelState = createSettingsPanelState(controller, appVersion);
-const dialogState = createDialogState(controller);
-const folderOverlayState = createFolderOverlayState(controller);
-const overlayState = createOverlayState(controller);
+const settingsPanelState = createSettingsPanelState(settingsPanel, appVersion);
+const dialogState = createDialogState(dialogs);
+const folderOverlayState = createFolderOverlayState(folderOverlay);
+const overlayState = createOverlayState(overlays);
 
 function resolveMaybeRef(value) {
   return value && typeof value === "object" && "value" in value ? value.value : value;
