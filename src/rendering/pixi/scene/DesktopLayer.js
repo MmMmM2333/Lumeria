@@ -818,7 +818,8 @@ export class DesktopLayer extends Container {
       const handoffEntry = this.getFolderHandoffEntry(folderId);
       if (handoffEntry) {
         const activeHandoff = hasFolderClosingHandoffId(state, folderId) ||
-          isFolderLayerHandoffActive(this.singleStageFolderLayer, folderId);
+          isFolderLayerHandoffActive(this.singleStageFolderLayer, folderId) ||
+          isFolderLayerHoldingDesktopSource(this.singleStageFolderLayer, folderId);
         // Only retire the handoff node once the closing handoff is no longer
         // active; clearing it mid-handoff (rawGhosted is true throughout a close)
         // re-creates a fresh entry every frame, resetting visualReleased and

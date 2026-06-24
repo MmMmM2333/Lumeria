@@ -139,6 +139,11 @@ function makeRaceHarness() {
   const openingLayer = makeLayerList();
   const timerHost = makeTimerHost();
   const visualOwnership = new FolderVisualOwnershipRegistry();
+  const desktopSource = {
+    item: { id: "folder-1", type: "folder" },
+    visible: true,
+    visualWrap: { visible: true },
+  };
   const iconNode = {
     alpha: 1,
     item: { id: "app-1" },
@@ -190,8 +195,13 @@ function makeRaceHarness() {
     onClosingHandoffReady(folderId) {
       calls.push(`ready:${folderId}`);
     },
+    onClosingHandoffPrepare(folderId) {
+      calls.push(`prepare:${folderId}`);
+      if (folderId === desktopSource.item.id) desktopSource.visualWrap.visible = false;
+    },
     onClosingHandoffVisualRelease(folderId) {
       calls.push(`visual-release:${folderId}`);
+      if (folderId === desktopSource.item.id) desktopSource.visualWrap.visible = true;
     },
     onInternalActivityChange(active, folderId = null) {
       activityChanges.push({ active, folderId });
@@ -255,6 +265,7 @@ function makeRaceHarness() {
   return {
     activityChanges,
     calls,
+    desktopSource,
     layer,
     timerHost,
     visualOwnership,
@@ -293,6 +304,18 @@ function collectEventTypes(events) {
   return events.map((event) => event.type);
 }
 
+function hasFolderSubstituteVisual(harness) {
+  return Boolean(
+    harness.layer.frameGhost?.visible ||
+    harness.layer.openingGhostLayer.children.length ||
+    harness.layer.closingGhostLayer.children.length
+  );
+}
+
+function isDesktopSourceArtworkVisible(harness) {
+  return Boolean(harness.desktopSource.visible && harness.desktopSource.visualWrap.visible);
+}
+
 export function runFolderCloseRaceTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Folder close race test failed] ${message}`);
@@ -307,6 +330,9 @@ export function runFolderCloseRaceTests() {
     assert(harness.layer.openingGhostLayer.children.length === 0, "close should consume interrupted opening ghosts");
     assert(harness.layer.closingGhostLayer.children.length === 1, "close should retarget the opening ghost into the closing layer");
     assert(harness.visualOwnership.isOwnedBy(makeDesktopSourceVisualKey("folder-1"), closeToken), "close should own the desktop source after interrupting open");
+    assert(harness.calls.includes("prepare:folder-1"), "close should prepare the desktop source handoff in the start frame");
+    assert(hasFolderSubstituteVisual(harness), "close should keep an overlay substitute visible when the desktop source artwork is hidden");
+    assert(!isDesktopSourceArtworkVisible(harness), "close should not show the desktop source artwork while opening or closing ghosts are visible");
 
     interruptCloseWithOpen(harness, "open:second");
 
@@ -334,6 +360,8 @@ export function runFolderCloseRaceTests() {
     assert(harness.layer.openingGhostLayer.children.length === 0, "second close should consume the interrupted opening ghost");
     assert(harness.layer.closingGhostLayer.children.length === 1, "second close should leave only the current closing ghost");
     assert(harness.visualOwnership.isOwnedBy(makeDesktopSourceVisualKey("folder-1"), secondCloseToken), "second close should own the desktop source");
+    assert(hasFolderSubstituteVisual(harness), "second close should keep a substitute visual during desktop source handoff");
+    assert(!isDesktopSourceArtworkVisible(harness), "second close should keep desktop source artwork hidden while ghosts are visible");
     assert(!hasOwnerToken(harness.visualOwnership, firstCloseToken), "second close should not leak the first close token");
     assert(!hasOwnerToken(harness.visualOwnership, "open:middle"), "second close should not leak the interrupted opening token");
     motionRuntime.reset();

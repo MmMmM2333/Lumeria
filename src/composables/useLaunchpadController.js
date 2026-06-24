@@ -456,12 +456,12 @@ export function useLaunchpadController() {
       const closingFolder = renderedFolder.value;
       const closingFolderPage = closingFolder ? getVisibleFolderPage(folderPages.value[folderPageIndex.value] || []) : [];
       const capturedCloseGhosts = captureFolderCloseIconGhosts(closingFolder, closingFolderPage);
-      clearFolderOpenIconGhosts();
       commitOpenFolderNow(next, {
         ...flowCommitOptions,
         waitForCloseGhosts: capturedCloseGhosts.length > 0,
       });
       playFolderCloseIconGhosts(closingFolder?.id, capturedCloseGhosts);
+      clearFolderOpenIconGhosts();
       return;
     }
 

@@ -353,6 +353,7 @@ export class FolderClosingGhostController {
         this.transitionMachine.addCloseMotionControl(motionControl);
       }
     }
+    layer.onClosingHandoffPrepare?.(folderId);
   }
 
   flushCompletedControllerGhosts(state) {

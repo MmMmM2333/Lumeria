@@ -677,6 +677,33 @@ export async function runDesktopLayerTests() {
     const folder = makeNode("folder");
     folder.item = { id: "folder-1", type: "folder" };
     folder.state = { ghosted: false };
+    let setStateCount = 0;
+    folder.setState = (nextState) => {
+      setStateCount += 1;
+      folder.state = nextState;
+      folder.visible = !nextState.ghosted;
+    };
+    const pageTrack = makePageTrack([folder]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.iconNodes.set("page:0:folder-1", folder);
+    layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set(["folder-1"]);
+
+    layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 }, { revealLabel: false });
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(["folder-1"]),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    });
+
+    assert(layer.getFolderHandoffEntry("folder-1"), "closing-owned raw source ghosting should keep the prepared handoff entry");
+    assert(setStateCount === 0, "closing-owned prepared handoff should not fall back to normal ghosted setState");
+    assert(folder.visualWrap.visible === false, "closing-owned prepared handoff should keep desktop artwork hidden while ghosts own the source");
+    assert(folder.__folderSourceGhostedByOwnership === true, "closing-owned prepared handoff should track source ownership ghosting");
+  }
+
+  {
+    const folder = makeNode("folder");
+    folder.item = { id: "folder-1", type: "folder" };
+    folder.state = { ghosted: false };
     const pageTrack = makePageTrack([folder]);
     const layer = makeLayer(DesktopLayer, pageTrack);
 

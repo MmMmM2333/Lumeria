@@ -374,6 +374,59 @@ export function runFolderClosingGhostControllerTests() {
   {
     const timerHost = makeTimerHost();
     const layer = makeLayer();
+    let prepareSnapshot = null;
+    layer.onClosingHandoffPrepare = (folderId) => {
+      prepareSnapshot = {
+        closingGhostCount: layer.closingGhosts.length,
+        folderId,
+        frameGhostPhase: layer.frameGhostOptions?.frameGhostPhase || null,
+      };
+    };
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+
+    controller.start(makeState(), [makeTarget()], { height: 72, left: 10, top: 20, width: 72 }, { height: 300, left: 0, top: 0, width: 400 });
+
+    assert(prepareSnapshot?.folderId === "folder-1", "closing start should prepare the desktop handoff immediately");
+    assert(prepareSnapshot.frameGhostPhase === "closing", "desktop handoff prepare should run after the closing frame ghost exists");
+    assert(prepareSnapshot.closingGhostCount === 1, "desktop handoff prepare should run after closing ghosts are installed");
+    assert(controller.transitionMachine.isCloseHandoffActive() === false, "early prepare should not mark the visual handoff ready");
+    controller.clear();
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    let prepareSnapshot = null;
+    layer.onClosingHandoffPrepare = (folderId) => {
+      prepareSnapshot = {
+        folderId,
+        frameGhostPhase: layer.frameGhostOptions?.frameGhostPhase || null,
+      };
+    };
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+
+    controller.start(
+      makeState(),
+      [{ ...makeTarget(), targetStageLayoutRect: null }],
+      { height: 72, left: 10, top: 20, width: 72 },
+      { height: 300, left: 0, top: 0, width: 400 }
+    );
+
+    assert(prepareSnapshot?.folderId === "folder-1", "no-target closing should still prepare the desktop source handoff");
+    assert(prepareSnapshot.frameGhostPhase === "closing", "no-target closing should prepare after the frame substitute exists");
+    assert(layer.closingGhosts.length === 0, "no-target closing should not install child ghosts");
+    controller.clear();
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
     const controller = new FolderClosingGhostController(layer, {
       ghostFactory: makeGhost,
       scheduler: timerHost,
