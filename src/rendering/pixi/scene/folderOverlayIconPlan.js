@@ -53,7 +53,7 @@ export function makeFolderIconNodeState(options = {}) {
     isTextlessMode = false,
     item = null,
     launchTargetStatusById = null,
-    openingGhostKeys = null,
+    openingGhostItemIds = null,
     pageIndex = 0,
     showMissingLaunchTargetBadge = true,
     slot = null,
@@ -64,7 +64,7 @@ export function makeFolderIconNodeState(options = {}) {
   const itemId = item?.id;
   const ghosted = Boolean(isReleaseGhostItem ||
     (isInteractivePage && (
-      openingGhostKeys?.has(itemId) ||
+      openingGhostItemIds?.has(itemId) ||
       closingGhostKeys?.has(itemId)
     )));
   return {

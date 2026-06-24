@@ -2,7 +2,7 @@ import { killAllMotion } from "../animation/motionCleanup.js";
 import { killMotionOf, parallel, motion } from "../animation/motionTween.js";
 import { motionPresets, motionSprings } from "../animation/motionPresets.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { ensureFolderTransitionMachine } from "./folderTransitionMachine.js";
+import { ensureFolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
 import { makeClosingPreviewSwapPlan } from "./folderPreviewSwapMotion.js";
 
 function makeClosingPreviewSwapKey(folderId, pageIndex) {
@@ -23,24 +23,24 @@ function previewSwapSpring(target, vars, options = {}) {
 export class FolderClosingPreviewSwapController {
   constructor(layer, options = {}) {
     this.layer = layer;
-    this.transitionMachine = options.transitionMachine || ensureFolderTransitionMachine(layer);
+    this.handoffCoordinator = options.handoffCoordinator || ensureFolderHandoffCoordinator(layer);
     this.containerFactory = options.containerFactory;
     this.graphicsFactory = options.graphicsFactory;
     this.spriteFactory = options.spriteFactory;
     this.textFactory = options.textFactory;
     this.getIconTexture = options.getIconTexture;
-    this.transitionMachine.ensureClosePreviewSwaps();
+    this.handoffCoordinator.ensureClosePreviewSwaps();
   }
 
   cancelMotionControls() {
-    const controls = this.transitionMachine.consumeClosePreviewSwapMotionControls();
+    const controls = this.handoffCoordinator.consumeClosePreviewSwapMotionControls();
     if (!controls?.size) return;
     for (const control of controls) control.cancel();
   }
 
   ensureLayer() {
     const layer = this.layer;
-    this.transitionMachine.ensureClosePreviewSwaps();
+    this.handoffCoordinator.ensureClosePreviewSwaps();
     if (layer.closingPreviewSwapLayer && !layer.closingPreviewSwapLayer.destroyed) {
       return layer.closingPreviewSwapLayer;
     }
@@ -54,7 +54,7 @@ export class FolderClosingPreviewSwapController {
   clear() {
     const layer = this.layer;
     this.cancelMotionControls();
-    this.transitionMachine.clearClosePreviewSwaps();
+    this.handoffCoordinator.clearClosePreviewSwaps();
     const swapLayer = layer.closingPreviewSwapLayer;
     if (!swapLayer || swapLayer.destroyed) return;
     const ghosts = swapLayer.removeChildren();
@@ -97,9 +97,9 @@ export class FolderClosingPreviewSwapController {
     return ghost;
   }
 
-  complete(state, key, root, iconsWrap, onComplete, token = this.transitionMachine.closeToken) {
+  complete(state, key, root, iconsWrap, onComplete, token = this.handoffCoordinator.closeToken) {
     const layer = this.layer;
-    const settlementEvents = this.transitionMachine.completeClosePreviewSwap(token, key);
+    const settlementEvents = this.handoffCoordinator.completeClosePreviewSwap(token, key);
     if (!settlementEvents) return;
     this.cancelMotionControls();
     killMotionOf(root);
@@ -123,7 +123,7 @@ export class FolderClosingPreviewSwapController {
     if (!plan) return;
 
     const layer = this.layer;
-    const closeToken = options.closeToken ?? this.transitionMachine.closeToken;
+    const closeToken = options.closeToken ?? this.handoffCoordinator.closeToken;
     const key = makeClosingPreviewSwapKey(state.renderedFolder?.id, state.folderPageIndex);
     const root = this.containerFactory();
     const mask = this.graphicsFactory();
@@ -139,8 +139,8 @@ export class FolderClosingPreviewSwapController {
     root.addChild(mask);
     root.addChild(iconsWrap);
     this.ensureLayer().addChild(root);
-    this.transitionMachine.trackClosePreviewSwap(key);
-    this.transitionMachine.resetClosePreviewSwapMotionControls();
+    this.handoffCoordinator.trackClosePreviewSwap(key);
+    this.handoffCoordinator.resetClosePreviewSwapMotionControls();
 
     const iconMotions = [];
     const springItems = [
@@ -182,12 +182,12 @@ export class FolderClosingPreviewSwapController {
     motionControl = parallel(springItems, {
       onComplete: () => {
         didComplete = true;
-        if (motionControl) this.transitionMachine.deleteClosePreviewSwapMotionControl(motionControl);
+        if (motionControl) this.handoffCoordinator.deleteClosePreviewSwapMotionControl(motionControl);
         this.complete(state, key, root, iconsWrap, onComplete, closeToken);
       },
     });
     if (!didComplete && motionControl) {
-      this.transitionMachine.addClosePreviewSwapMotionControl(motionControl);
+      this.handoffCoordinator.addClosePreviewSwapMotionControl(motionControl);
     }
   }
 }

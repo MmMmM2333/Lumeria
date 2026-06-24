@@ -59,7 +59,7 @@ export function runFolderOverlayIconPlanTests() {
     isInteractivePage: true,
     item: { customIconPath: "icon.png", id: "app-1", type: "app" },
     launchTargetStatusById: { "app-1": "missing" },
-    openingGhostKeys: new Set(["app-1"]),
+    openingGhostItemIds: new Set(["app-1"]),
     pageIndex: 2,
     showMissingLaunchTargetBadge: true,
     slot,

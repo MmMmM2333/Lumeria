@@ -1175,7 +1175,7 @@ export class DesktopLayer extends Container {
     const lastStateSourceIds = lastState.folderSourceGhostedIds;
     const ownershipSourceIds = getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership);
     const overlaySourceIds = overlay?.getDesktopSourceGhostedIds?.() || new Set();
-    const overlayCloseSnapshot = overlay?.folderTransitions?.snapshot?.() || null;
+    const overlayCloseSnapshot = overlay?.folderHandoff?.snapshot?.() || null;
     const folderHandoffNodes = Array.from(this.getFolderHandoffNodes().values()).map((entry) => ({
       display: readDisplay(entry.node),
       folderId: entry.folderId || null,
@@ -1211,8 +1211,8 @@ export class DesktopLayer extends Container {
         closingHandoffActive: overlayCloseSnapshot?.handoffActive === true,
         currentFolderId: overlay.currentFolderId || null,
         debug: overlay.getVisualDebugSnapshot?.() || null,
-        openingGhostKeys: Array.from(overlay.openingGhostKeys || []),
-        openingGhostSessionToken: overlay.openingGhostSessionToken || null,
+        openingGhostItemIds: Array.from(overlayCloseSnapshot?.opening?.ghostKeys || []),
+        openingSessionToken: overlayCloseSnapshot?.opening?.sessionToken || null,
         pageTrackVisible: overlay.pageTrack?.visible ?? null,
       } : null,
       ownership: this.visualOwnership?.snapshot?.() || [],

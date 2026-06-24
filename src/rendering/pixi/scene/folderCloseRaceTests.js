@@ -1,7 +1,7 @@
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { FolderClosingGhostController } from "./folderClosingGhostController.js";
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
-import { FolderTransitionMachine } from "./folderTransitionMachine.js";
+import { FolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
 import {
   FolderVisualOwnershipRegistry,
   makeDesktopSourceVisualKey,
@@ -244,7 +244,7 @@ function makeRaceHarness() {
     },
   };
 
-  layer.folderTransitions = new FolderTransitionMachine(layer);
+  layer.folderHandoff = new FolderHandoffCoordinator(layer);
   layer.openingGhosts = new FolderOpeningGhostController(layer, {
     ghostFactory: () => makeGhost("opening"),
     scheduler: timerHost,
@@ -287,11 +287,11 @@ function startClosing(harness) {
     { height: 72, left: 10, top: 20, width: 72 },
     { height: 360, left: 180, top: 200, width: 800 }
   );
-  return harness.layer.folderTransitions.closeToken;
+  return harness.layer.folderHandoff.closeToken;
 }
 
 function interruptCloseWithOpen(harness, token) {
-  harness.layer.folderTransitions.clearCloseFolderId();
+  harness.layer.folderHandoff.clearCloseFolderId();
   harness.layer.closingGhosts.clear({ restorePageTrack: false, reveal: false });
   startOpening(harness, token);
 }
@@ -338,8 +338,8 @@ export function runFolderCloseRaceTests() {
 
     assert(harness.layer.closingGhostLayer.children.length === 0, "open after close should clear closing ghost visuals");
     assert(harness.layer.openingGhostLayer.children.length === 1, "open after close should leave only the new opening ghost");
-    assert(harness.layer.folderTransitions.closeToken === null, "open after close should clear the stale closing token");
-    assert(harness.layer.folderTransitions.folderId === null, "open after close should clear the stale closing folder id");
+    assert(harness.layer.folderHandoff.closeToken === null, "open after close should clear the stale closing token");
+    assert(harness.layer.folderHandoff.folderId === null, "open after close should clear the stale closing folder id");
     assert(!hasOwnerToken(harness.visualOwnership, closeToken), "open after close should not leak the stale closing ownership token");
     motionRuntime.reset();
   }
@@ -352,7 +352,7 @@ export function runFolderCloseRaceTests() {
     interruptCloseWithOpen(harness, "open:middle");
     assert(harness.layer.closingGhostLayer.children.length === 0, "open interrupt should clear the first closing ghost");
     assert(harness.layer.openingGhostLayer.children.length === 1, "open interrupt should create one opening ghost");
-    assert(harness.layer.folderTransitions.closeToken === null, "open interrupt should clear the first close token");
+    assert(harness.layer.folderHandoff.closeToken === null, "open interrupt should clear the first close token");
 
     const secondCloseToken = startClosing(harness);
 
@@ -368,7 +368,7 @@ export function runFolderCloseRaceTests() {
   }
 
   {
-    const session = new FolderTransitionMachine({});
+    const session = new FolderHandoffCoordinator({});
     session.beginCloseTransition("folder-1", { closeToken: "close:ordered" });
     session.trackCloseGhost({ isThumbnailChild: true, item: { id: "app-1" } }, "close-key");
     session.trackClosePreviewSwap("swap");
@@ -388,7 +388,7 @@ export function runFolderCloseRaceTests() {
   }
 
   {
-    const session = new FolderTransitionMachine({});
+    const session = new FolderHandoffCoordinator({});
     session.beginCloseTransition("folder-1", { closeToken: "close:first" });
     session.trackCloseGhost({ item: { id: "old-app" } }, "old-key");
     session.beginCloseTransition("folder-1", { closeToken: "close:current" });

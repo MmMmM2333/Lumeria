@@ -61,6 +61,18 @@ function makeInitialState() {
   };
 }
 
+function makeOpeningVisualState() {
+  return {
+    controllerKeys: new Map(),
+    ghostKeys: new Set(),
+    motionControls: new Set(),
+    motionControlsByItemId: new Map(),
+    revealTimer: null,
+    sessionToken: null,
+    state: null,
+  };
+}
+
 function cloneRect(rect) {
   return rect ? { ...rect } : null;
 }
@@ -72,7 +84,7 @@ function normalizeToken(token) {
 // Open and close intentionally keep independent state/token lines. Open tokens
 // live on activeOpenSession and guard reveal; close tokens live on state.token
 // and guard closing handoff/settlement.
-export class FolderTransitionMachine {
+export class FolderHandoffCoordinator {
   constructor(layer) {
     this.layer = layer;
     this.activeOpenSession = null;
@@ -82,6 +94,134 @@ export class FolderTransitionMachine {
 
   initialize() {
     if (!this.state) this.state = makeInitialState();
+    if (!this.opening) this.opening = makeOpeningVisualState();
+  }
+
+  beginOpeningVisuals({ sessionToken = null, state = null } = {}) {
+    this.opening = {
+      ...makeOpeningVisualState(),
+      sessionToken: sessionToken || null,
+      state: state || null,
+    };
+    return this.opening;
+  }
+
+  clearOpeningVisuals(options = {}) {
+    const previous = this.opening || makeOpeningVisualState();
+    this.opening = makeOpeningVisualState();
+    if (options.keepSessionToken) this.opening.sessionToken = previous.sessionToken || null;
+    return previous;
+  }
+
+  getOpeningSessionToken() {
+    return this.opening?.sessionToken || null;
+  }
+
+  setOpeningSessionToken(sessionToken = null) {
+    this.opening.sessionToken = sessionToken || null;
+    return this.opening.sessionToken;
+  }
+
+  isCurrentOpeningVisualSession(sessionToken = null) {
+    const activeToken = this.getOpeningSessionToken();
+    return Boolean(sessionToken && activeToken === sessionToken);
+  }
+
+  getOpeningGhostKeys() {
+    return this.opening?.ghostKeys || null;
+  }
+
+  hasOpeningGhost(itemId = null) {
+    const keys = this.getOpeningGhostKeys();
+    if (!keys?.size) return false;
+    return itemId == null ? true : keys.has(itemId);
+  }
+
+  registerOpeningGhost(itemId, controllerGhostKey = null) {
+    if (!itemId) return false;
+    this.opening.ghostKeys.add(itemId);
+    if (controllerGhostKey) this.opening.controllerKeys.set(itemId, controllerGhostKey);
+    return true;
+  }
+
+  completeOpeningGhost(itemId, controllerGhostKey = null, sessionToken = null) {
+    if (sessionToken && !this.isCurrentOpeningVisualSession(sessionToken)) return false;
+    if (!itemId || !this.opening.ghostKeys.has(itemId)) return false;
+    this.opening.ghostKeys.delete(itemId);
+    this.opening.controllerKeys.delete(itemId);
+    if (controllerGhostKey) this.opening.state?.completeFolderOpenIconGhost?.(controllerGhostKey);
+    return true;
+  }
+
+  releaseOpeningGhost(itemId, sessionToken = null) {
+    if (sessionToken && !this.isCurrentOpeningVisualSession(sessionToken)) return false;
+    if (!itemId || !this.opening.ghostKeys.has(itemId)) return false;
+    this.opening.ghostKeys.delete(itemId);
+    this.opening.controllerKeys.delete(itemId);
+    this.opening.motionControlsByItemId.delete(itemId);
+    return true;
+  }
+
+  getOpeningControllerGhostKeys() {
+    return this.opening?.controllerKeys || null;
+  }
+
+  completeOpeningControllerGhostKeys() {
+    const keys = Array.from(this.opening?.controllerKeys?.values?.() || []);
+    for (const key of keys) {
+      if (key) this.opening.state?.completeFolderOpenIconGhost?.(key);
+    }
+    this.opening.controllerKeys.clear();
+    return keys;
+  }
+
+  setOpeningRevealTimer(timer = null) {
+    this.opening.revealTimer = timer || null;
+    return this.opening.revealTimer;
+  }
+
+  clearOpeningRevealTimer(cancelTimer = null) {
+    const timer = this.opening?.revealTimer || null;
+    if (!timer) return null;
+    if (typeof cancelTimer === "function") cancelTimer(timer);
+    this.opening.revealTimer = null;
+    return timer;
+  }
+
+  clearOpeningRevealTimerRef() {
+    this.opening.revealTimer = null;
+  }
+
+  getOpeningRevealTimer() {
+    return this.opening?.revealTimer || null;
+  }
+
+  addOpeningMotionControl(itemId, control) {
+    if (!itemId || !control) return false;
+    this.opening.motionControls.add(control);
+    this.opening.motionControlsByItemId.set(itemId, control);
+    return true;
+  }
+
+  deleteOpeningMotionControl(itemId, control = null) {
+    const activeControl = control || this.opening.motionControlsByItemId.get(itemId);
+    if (activeControl) this.opening.motionControls.delete(activeControl);
+    if (itemId) this.opening.motionControlsByItemId.delete(itemId);
+  }
+
+  getOpeningMotionControl(itemId) {
+    return itemId ? this.opening.motionControlsByItemId.get(itemId) || null : null;
+  }
+
+  consumeOpeningMotionControls() {
+    const controls = this.opening.motionControls;
+    this.opening.motionControls = new Set();
+    this.opening.motionControlsByItemId = new Map();
+    return controls;
+  }
+
+  hasActiveOpeningVisuals() {
+    return Boolean(this.opening?.ghostKeys?.size);
   }
 
   beginOpen(folderId, targetKey, options = {}) {
@@ -268,6 +408,13 @@ export class FolderTransitionMachine {
       motionControlCount: state.motionControls?.size || 0,
       overlayPendingKeys: new Set(state.overlayPendingKeys),
       overlaySettled: state.overlaySettled,
+      opening: {
+        controllerKeys: new Map(this.opening?.controllerKeys || []),
+        ghostKeys: new Set(this.opening?.ghostKeys || []),
+        motionControlCount: this.opening?.motionControls?.size || 0,
+        revealTimerActive: Boolean(this.opening?.revealTimer),
+        sessionToken: this.opening?.sessionToken || null,
+      },
       pendingControllerGhostKeys: new Set(state.pendingControllerGhostKeys),
       phase: state.phase,
       previewSwapKeys: new Set(state.previewSwapKeys),
@@ -665,11 +812,11 @@ export class FolderTransitionMachine {
   }
 }
 
-export function ensureFolderTransitionMachine(layer) {
-  if (!layer.folderTransitions) layer.folderTransitions = new FolderTransitionMachine(layer);
+export function ensureFolderHandoffCoordinator(layer) {
+  if (!layer.folderHandoff) layer.folderHandoff = new FolderHandoffCoordinator(layer);
   else {
-    layer.folderTransitions.layer = layer;
-    layer.folderTransitions.initialize?.();
+    layer.folderHandoff.layer = layer;
+    layer.folderHandoff.initialize?.();
   }
-  return layer.folderTransitions;
+  return layer.folderHandoff;
 }

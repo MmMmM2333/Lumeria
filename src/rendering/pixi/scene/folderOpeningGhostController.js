@@ -5,6 +5,7 @@ import { clientRectToStageVisualRect } from "../geometry/stageCoordinates.js";
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
 import { getMaxFolderGhostGridDelay, makeOpeningGhostMotion } from "./folderIconGhostMotion.js";
 import { makeFolderGhostIconNodeState } from "./folderGhostIconState.js";
+import { ensureFolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
 import { hasUsableFolderGhostTarget } from "./folderOverlayTargets.js";
 import { makeDesktopSourceVisualKey } from "./folderVisualOwnershipRegistry.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
@@ -89,42 +90,36 @@ export class FolderOpeningGhostController {
   constructor(layer, options = {}) {
     this.layer = layer;
     this.ghostFactory = options.ghostFactory;
+    this.handoffCoordinator = options.handoffCoordinator || ensureFolderHandoffCoordinator(layer);
     this.scheduler = options.scheduler || globalThis;
   }
 
   clearRevealTimer() {
-    const layer = this.layer;
-    if (!layer.openingGhostRevealTimer) return;
-    this.scheduler.clearTimeout?.(layer.openingGhostRevealTimer);
-    layer.openingGhostRevealTimer = null;
+    this.handoffCoordinator.clearOpeningRevealTimer(this.scheduler.clearTimeout?.bind(this.scheduler));
   }
 
   scheduleRevealFallback(targets) {
-    const layer = this.layer;
     this.clearRevealTimer();
-    const sessionToken = layer.openingGhostSessionToken || null;
+    const sessionToken = this.handoffCoordinator.getOpeningSessionToken();
     const maxDelay = getMaxFolderGhostGridDelay(targets, 0.18);
     const fallbackSeconds = Math.max(motionPresets.folderOpenGhost.duration, GHOST_GEOMETRY_FALLBACK_SECONDS);
     const timeoutMs = Math.round((maxDelay + fallbackSeconds) * 1000 + GHOST_REVEAL_FALLBACK_PADDING_MS);
-    layer.openingGhostRevealTimer = this.scheduler.setTimeout?.(() => {
-      layer.openingGhostRevealTimer = null;
-      if (sessionToken && layer.openingGhostSessionToken !== sessionToken) return;
-      if (layer.openingGhostKeys?.size) this.clear();
-    }, timeoutMs) || null;
+    this.handoffCoordinator.setOpeningRevealTimer(this.scheduler.setTimeout?.(() => {
+      this.handoffCoordinator.clearOpeningRevealTimerRef();
+      if (sessionToken && !this.handoffCoordinator.isCurrentOpeningVisualSession(sessionToken)) return;
+      if (this.handoffCoordinator.hasActiveOpeningVisuals()) this.clear();
+    }, timeoutMs) || null);
   }
 
   cancelMotionControls() {
-    const layer = this.layer;
-    const controls = layer.openingGhostMotionControls;
-    layer.openingGhostMotionControls = null;
-    layer.openingGhostMotionControlsByItemId = null;
+    const controls = this.handoffCoordinator.consumeOpeningMotionControls();
     if (!controls?.size) return;
     for (const control of controls) control.cancel();
   }
 
   releaseGhost(itemId) {
     const layer = this.layer;
-    if (!itemId || !layer.openingGhostKeys?.has(itemId)) return null;
+    if (!itemId || !this.handoffCoordinator.hasOpeningGhost(itemId)) return null;
     let releasedGhost = null;
     for (const ghost of layer.openingGhostLayer.children || []) {
       if (ghost?.item?.id === itemId && !ghost.destroyed) {
@@ -133,17 +128,15 @@ export class FolderOpeningGhostController {
       }
     }
     if (!releasedGhost) return null;
-    const control = layer.openingGhostMotionControlsByItemId?.get(itemId);
+    const control = this.handoffCoordinator.getOpeningMotionControl(itemId);
     control?.release?.();
-    if (control) layer.openingGhostMotionControls?.delete(control);
-    layer.openingGhostMotionControlsByItemId?.delete(itemId);
+    this.handoffCoordinator.deleteOpeningMotionControl(itemId, control);
     killMotionOf(releasedGhost, "alpha", { lane: "base", laneKey: "overlay" });
     if (releasedGhost.labelText) {
       killMotionOf(releasedGhost.labelText);
       killMotionOf(releasedGhost.labelText.scale);
     }
-    layer.openingGhostKeys.delete(itemId);
-    layer.openingGhostControllerKeys?.delete(itemId);
+    this.handoffCoordinator.releaseOpeningGhost(itemId);
     layer.openingGhostBoundsRefreshers?.delete(itemId);
     const children = layer.openingGhostLayer.children;
     if (Array.isArray(children)) {
@@ -152,12 +145,9 @@ export class FolderOpeningGhostController {
     } else {
       layer.openingGhostLayer.removeChild?.(releasedGhost);
     }
-    if (!layer.openingGhostKeys.size) {
+    if (!this.handoffCoordinator.hasActiveOpeningVisuals()) {
       this.clearRevealTimer();
-      layer.openingGhostControllerKeys = null;
-      layer.openingGhostState = null;
-      layer.openingGhostMotionControls = null;
-      layer.openingGhostMotionControlsByItemId = null;
+      this.handoffCoordinator.clearOpeningVisuals({ keepSessionToken: true });
     }
     return releasedGhost;
   }
@@ -166,26 +156,18 @@ export class FolderOpeningGhostController {
     const layer = this.layer;
     this.clearRevealTimer();
     this.cancelMotionControls();
+    const sessionToken = this.handoffCoordinator.getOpeningSessionToken();
     if (options.cancelSession !== false) {
-      layer.folderTransitions?.cancelOpen(layer.openingGhostSessionToken || null);
+      this.handoffCoordinator.cancelOpen(sessionToken);
     }
-    if (options.completeControllerKeys !== false &&
-      layer.openingGhostControllerKeys?.size &&
-      layer.openingGhostState?.completeFolderOpenIconGhost) {
-      for (const key of layer.openingGhostControllerKeys.values()) {
-        if (key) layer.openingGhostState.completeFolderOpenIconGhost(key);
-      }
+    if (options.completeControllerKeys !== false) {
+      this.handoffCoordinator.completeOpeningControllerGhostKeys();
     }
-    const sessionToken = layer.openingGhostSessionToken || null;
     layer.releaseTransitionOwnership(sessionToken, {
       restorePageTrack: options.restorePageTrack,
       reveal: options.reveal,
     });
-    layer.openingGhostSessionToken = null;
-    layer.openingGhostControllerKeys = null;
-    layer.openingGhostState = null;
-    layer.openingGhostMotionControlsByItemId = null;
-    layer.openingGhostKeys?.clear();
+    this.handoffCoordinator.clearOpeningVisuals();
     layer.openingGhostBoundsRefreshers?.clear();
     layer.clearFrameGhost();
     const ghosts = layer.openingGhostLayer.removeChildren();
@@ -197,19 +179,14 @@ export class FolderOpeningGhostController {
 
   finishTransition(options = {}) {
     const layer = this.layer;
-    if (layer.openingGhostKeys?.size) return;
-    const sessionToken = options.sessionToken || layer.openingGhostSessionToken || null;
+    if (this.handoffCoordinator.hasActiveOpeningVisuals()) return;
+    const sessionToken = options.sessionToken || this.handoffCoordinator.getOpeningSessionToken();
     this.clearRevealTimer();
     this.cancelMotionControls();
-    if (layer.folderTransitions) {
-      layer.folderTransitions.markGhostsReady(sessionToken);
-      if (!layer.folderTransitions.canReveal(sessionToken)) return;
-      layer.folderTransitions.finishReveal(sessionToken);
-    }
-    layer.openingGhostSessionToken = null;
-    layer.openingGhostControllerKeys = null;
-    layer.openingGhostState = null;
-    layer.openingGhostMotionControlsByItemId = null;
+    this.handoffCoordinator.markGhostsReady(sessionToken);
+    if (!this.handoffCoordinator.canReveal(sessionToken)) return;
+    this.handoffCoordinator.finishReveal(sessionToken);
+    this.handoffCoordinator.clearOpeningVisuals();
     layer.openingGhostBoundsRefreshers?.clear();
     layer.releaseTransitionOwnership(sessionToken, { restorePageTrack: true, reveal: true });
     layer.refreshRegisteredIconBounds?.();
@@ -223,27 +200,24 @@ export class FolderOpeningGhostController {
 
   complete(state, target, ghost) {
     const layer = this.layer;
-    layer.openingGhostKeys?.delete(target.item.id);
-    layer.openingGhostControllerKeys?.delete(target.item.id);
     const controllerGhostKey = target.controllerGhostKey || state.getFolderOpenIconGhostKey?.(target.item.id, target.index);
-    if (controllerGhostKey) state.completeFolderOpenIconGhost?.(controllerGhostKey);
+    this.handoffCoordinator.completeOpeningGhost(target.item.id, controllerGhostKey);
     ghost.alpha = 1;
     ghost.scale.set(1);
     layer.openingGhostBoundsRefreshers?.delete(target.item.id);
-    this.finishTransition({ sessionToken: layer.openingGhostSessionToken });
+    this.finishTransition({ sessionToken: this.handoffCoordinator.getOpeningSessionToken() });
   }
 
   start(state, targets, options = {}) {
     const layer = this.layer;
-    const sessionToken = options.sessionToken || layer.folderTransitions?.activeOpenToken || null;
+    const sessionToken = options.sessionToken || this.handoffCoordinator.activeOpenToken || null;
     this.clear({
       cancelSession: false,
       completeControllerKeys: false,
       restorePageTrack: false,
       reveal: false,
     });
-    layer.openingGhostSessionToken = sessionToken;
-    layer.openingGhostKeys = new Set();
+    this.handoffCoordinator.beginOpeningVisuals({ sessionToken, state });
     const usableTargets = (targets || []).filter(hasUsableFolderGhostTarget);
     const usableControllerGhostKeys = new Set();
     for (const target of usableTargets) {
@@ -277,18 +251,12 @@ export class FolderOpeningGhostController {
       this.finishTransition({ sessionToken });
       return;
     }
-    layer.openingGhostState = state;
-    layer.openingGhostControllerKeys = new Map();
-    layer.openingGhostMotionControls = new Set();
-    layer.openingGhostMotionControlsByItemId = new Map();
-
     layer.hidePageTrackForTransition(owner);
     this.scheduleRevealFallback(usableTargets);
 
     for (const target of usableTargets) {
       const controllerGhostKey = target.controllerGhostKey || state.getFolderOpenIconGhostKey?.(target.item.id, target.index);
-      if (controllerGhostKey) layer.openingGhostControllerKeys.set(target.item.id, controllerGhostKey);
-      layer.openingGhostKeys.add(target.item.id);
+      this.handoffCoordinator.registerOpeningGhost(target.item.id, controllerGhostKey);
     }
 
     for (const target of usableTargets) {
@@ -333,14 +301,12 @@ export class FolderOpeningGhostController {
       motionControl = animateOpeningGhost(ghost, ghostMotion, () => {
         didComplete = true;
         if (motionControl) {
-          layer.openingGhostMotionControls?.delete(motionControl);
-          layer.openingGhostMotionControlsByItemId?.delete(target.item.id);
+          this.handoffCoordinator.deleteOpeningMotionControl(target.item.id, motionControl);
         }
         this.complete(state, target, ghost);
       }, { scheduler: this.scheduler, onFrame: refreshGhostBounds });
-      if (!didComplete && layer.openingGhostKeys?.has(target.item.id)) {
-        layer.openingGhostMotionControls.add(motionControl);
-        layer.openingGhostMotionControlsByItemId.set(target.item.id, motionControl);
+      if (!didComplete && this.handoffCoordinator.hasOpeningGhost(target.item.id)) {
+        this.handoffCoordinator.addOpeningMotionControl(target.item.id, motionControl);
       }
     }
   }

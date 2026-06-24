@@ -1,9 +1,9 @@
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { FolderClosingGhostController } from "./folderClosingGhostController.js";
 import {
-  FolderTransitionMachine,
+  FolderHandoffCoordinator,
   makeFolderPanelTargetKey,
-} from "./folderTransitionMachine.js";
+} from "./folderHandoffCoordinator.js";
 import {
   FolderVisualOwnershipRegistry,
   makeDesktopSourceVisualKey,
@@ -61,15 +61,14 @@ function makeClosingLayer() {
     },
     currentFolderId: "folder-1",
     iconNodes: new Map([["app-1", { item: { id: "app-1" }, visible: false }]]),
-    openingGhostKeys: new Set(["app-1"]),
     openingGhostLayer: { children: [openingGhost] },
-    openingGhostSessionToken: "open-token",
     openingGhosts: {
       clear() {
+        layer.folderHandoff.clearOpeningVisuals();
         layer.releaseTransitionOwnership("open-token");
       },
       releaseGhost(itemId) {
-        layer.openingGhostKeys.delete(itemId);
+        layer.folderHandoff.releaseOpeningGhost(itemId);
         return itemId === "app-1" ? openingGhost : null;
       },
     },
@@ -117,6 +116,9 @@ function makeClosingLayer() {
     kind: "opening",
     token: "open-token",
   });
+  layer.folderHandoff = new FolderHandoffCoordinator(layer);
+  layer.folderHandoff.beginOpeningVisuals({ sessionToken: "open-token" });
+  layer.folderHandoff.registerOpeningGhost("app-1");
   return { layer, sourceKey };
 }
 
@@ -142,7 +144,7 @@ function makeTarget() {
   };
 }
 
-export async function runFolderTransitionMachineTests() {
+export async function runFolderHandoffCoordinatorTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Folder transition machine test failed] ${message}`);
   };
@@ -153,7 +155,7 @@ export async function runFolderTransitionMachineTests() {
   }
 
   {
-    const machine = new FolderTransitionMachine();
+    const machine = new FolderHandoffCoordinator();
     const first = machine.beginOpen("folder-1", "target-a");
     const second = machine.beginOpen("folder-1", "target-a");
 
@@ -163,7 +165,7 @@ export async function runFolderTransitionMachineTests() {
   }
 
   {
-    const machine = new FolderTransitionMachine();
+    const machine = new FolderHandoffCoordinator();
     const first = machine.beginOpen("folder-1", "target-a");
     machine.markPanelReady(first.session.token);
     const second = machine.beginOpen("folder-1", "target-b");
@@ -173,7 +175,7 @@ export async function runFolderTransitionMachineTests() {
   }
 
   {
-    const machine = new FolderTransitionMachine();
+    const machine = new FolderHandoffCoordinator();
     const session = machine.beginOpen("folder-1", "target-a").session;
     const snapshot = { folderId: "folder-1", layoutKey: "layout-a" };
 
@@ -189,7 +191,7 @@ export async function runFolderTransitionMachineTests() {
   }
 
   {
-    const machine = new FolderTransitionMachine();
+    const machine = new FolderHandoffCoordinator();
     const first = machine.beginOpen("folder-1", "target-a").session;
     const snapshot = { folderId: "folder-1", layoutKey: "layout-a" };
     machine.setOpenGeometrySnapshot(first.token, snapshot);
@@ -200,7 +202,7 @@ export async function runFolderTransitionMachineTests() {
   }
 
   {
-    const machine = new FolderTransitionMachine();
+    const machine = new FolderHandoffCoordinator();
     const first = machine.beginOpen("folder-1", "target-a").session;
     const second = machine.beginOpen("folder-2", "target-b", { forceNew: true }).session;
 
@@ -215,8 +217,27 @@ export async function runFolderTransitionMachineTests() {
   }
 
   {
+    const completed = [];
+    const coordinator = new FolderHandoffCoordinator();
+    const session = coordinator.beginOpen("folder-1", "target-a").session;
+    coordinator.beginOpeningVisuals({
+      sessionToken: session.token,
+      state: { completeFolderOpenIconGhost: (key) => completed.push(key) },
+    });
+    coordinator.registerOpeningGhost("app-1", "open-key");
+
+    assert(!coordinator.releaseOpeningGhost("app-1", "stale-token"), "stale opening token should not release visual state");
+    assert(coordinator.hasOpeningGhost("app-1"), "stale opening release should leave the active visual state intact");
+    assert(!coordinator.completeOpeningGhost("app-1", "open-key", "stale-token"), "stale opening token should not complete visual state");
+    assert(completed.length === 0, "stale opening completion should not notify controller ghosts");
+    assert(coordinator.completeOpeningGhost("app-1", "open-key", session.token), "current opening token should complete visual state");
+    assert(!coordinator.hasOpeningGhost("app-1"), "current opening completion should clear residual visual state");
+    assert(completed.join(",") === "open-key", "current opening completion should notify the controller ghost once");
+  }
+
+  {
     const layer = {};
-    const session = new FolderTransitionMachine(layer);
+    const session = new FolderHandoffCoordinator(layer);
     session.beginCloseTransition("folder-a", { closeToken: "close-token" });
     session.setCloseHandoffGeometry({
       detachedTarget: { height: 20, left: 1, top: 2, width: 20 },
@@ -239,7 +260,7 @@ export async function runFolderTransitionMachineTests() {
   }
 
   {
-    const session = new FolderTransitionMachine({});
+    const session = new FolderHandoffCoordinator({});
     session.beginCloseTransition("folder-a", { closeToken: "close-a" });
 
     const staleEvents = session.completeCloseFrame("close-old");
@@ -252,7 +273,7 @@ export async function runFolderTransitionMachineTests() {
   }
 
   {
-    const session = new FolderTransitionMachine({});
+    const session = new FolderHandoffCoordinator({});
     session.beginCloseTransition("folder-a", { closeToken: "close-a" });
 
     const handoffEvents = session.completeCloseFrameVisual("close-a");
@@ -300,8 +321,8 @@ export async function runFolderTransitionMachineTests() {
     const calls = [];
     layer.onClosingHandoffReady = () => {};
     layer.onInternalActivityChange = () => {};
-    layer.folderTransitions = new FolderTransitionMachine(layer);
-    layer.folderTransitions.beginCloseTransition("folder-a");
+    layer.folderHandoff = new FolderHandoffCoordinator(layer);
+    layer.folderHandoff.beginCloseTransition("folder-a");
     layer.closingGhostLayer = { removeChildren: () => [] };
     layer.closingPreviewSwapLayer = { removeChildren: () => [] };
     layer.closingGhosts = {
@@ -316,7 +337,7 @@ export async function runFolderTransitionMachineTests() {
 
     layer.detachClosingPresentationForOpen("folder-b");
 
-    assert(layer.folderTransitions.folderId === null, "close interrupted by open should clear the live closing folder id through the transition");
+    assert(layer.folderHandoff.folderId === null, "close interrupted by open should clear the live closing folder id through the transition");
     assert(calls.some((entry) => entry?.restorePageTrack === false && entry?.reveal === false), "close interrupted by open should clear closing visuals without revealing stale folder content");
   }
 }

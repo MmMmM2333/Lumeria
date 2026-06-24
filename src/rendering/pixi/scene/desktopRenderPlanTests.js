@@ -29,7 +29,7 @@ function makeBaseState(overrides = {}) {
   };
 }
 
-function makeTransitionMachine(active, folderId = null) {
+function makeHandoffCoordinator(active, folderId = null) {
   return {
     get folderId() {
       return folderId;
@@ -59,7 +59,7 @@ export function runDesktopRenderPlanTests() {
       launchTargetStatusById: { [app.id]: { missing: true } },
     }), {
       folderHandoffEntries: new Map([[folder.id, handoffEntry]]),
-      folderLayer: { folderTransitions: makeTransitionMachine(true, folder.id) },
+      folderLayer: { folderHandoff: makeHandoffCoordinator(true, folder.id) },
     });
 
     assert(plan.entries.length === 2, "plan should include visible desktop entries");
@@ -92,7 +92,7 @@ export function runDesktopRenderPlanTests() {
     }), {
       effectiveFolderSourceGhostedIds: new Set([folder.id]),
       folderHandoffEntries: new Map([[folder.id, { folderId: folder.id, visualReleased: false }]]),
-      folderLayer: { folderTransitions: makeTransitionMachine(false, null) },
+      folderLayer: { folderHandoff: makeHandoffCoordinator(false, null) },
     });
 
     const [entry] = plan.entries;

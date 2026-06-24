@@ -1,5 +1,5 @@
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
-import { FolderTransitionMachine } from "./folderTransitionMachine.js";
+import { FolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
 import {
   FolderVisualOwnershipRegistry,
   makeDesktopSourceVisualKey,
@@ -80,7 +80,6 @@ function makeLayer() {
     frameGhostCalls,
     frameGhost: { alpha: 1, visible: true },
     iconNodes: new Map([["app-1", iconNode]]),
-    openingGhostKeys: null,
     openingGhostLayer: {
       children: ghosts,
       addChild(ghost) {
@@ -162,6 +161,12 @@ function makeTarget(id = "app-1") {
   };
 }
 
+function beginReadyOpenSession(layer, folderId = "folder-1", targetKey = "target-a") {
+  const session = layer.folderHandoff.beginOpen(folderId, targetKey, { forceNew: true }).session;
+  layer.folderHandoff.markPanelReady(session.token);
+  return session.token;
+}
+
 export function runFolderOpeningGhostControllerTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Folder opening ghost controller test failed] ${message}`);
@@ -179,11 +184,11 @@ export function runFolderOpeningGhostControllerTests() {
       if (options.reveal !== false) layer.revealIconNodes();
       if (options.restorePageTrack !== false) layer.pageTrack.visible = true;
     };
-    const sessionToken = "open-folder-1";
     const controller = new FolderOpeningGhostController(layer, {
       ghostFactory: makeGhost,
       scheduler: timerHost,
     });
+    const sessionToken = beginReadyOpenSession(layer);
     const target = makeTarget();
     controller.start(makeState(completed), [target], {
       frameSourceRect: { height: 48, left: 10, top: 20, width: 48 },
@@ -191,7 +196,7 @@ export function runFolderOpeningGhostControllerTests() {
       sessionToken,
     });
 
-    assert(layer.openingGhostKeys.has("app-1"), "start should track active opening ghost keys");
+    assert(layer.folderHandoff.hasOpeningGhost("app-1"), "start should track active opening ghost item ids");
     assert(
       layer.visualOwnership.isOwnedBy(makeDesktopSourceVisualKey("folder-1"), sessionToken),
       "opening should own the desktop source folder until reveal"
@@ -213,7 +218,7 @@ export function runFolderOpeningGhostControllerTests() {
 
     controller.complete(makeState(completed), target, layer.ghosts[0]);
     assert(completed.join(",") === "controller-open-key", "complete should notify the controller ghost key");
-    assert(layer.openingGhostKeys.size === 0, "complete should clear the finished key");
+    assert(layer.folderHandoff.getOpeningGhostKeys().size === 0, "complete should clear the finished key");
     assert(
       !layer.visualOwnership.hasOwner(makeDesktopSourceVisualKey("folder-1")),
       "opening completion should release desktop source ownership"
@@ -227,8 +232,8 @@ export function runFolderOpeningGhostControllerTests() {
     const completed = [];
     const timerHost = makeTimerHost();
     const layer = makeLayer();
-    layer.folderTransitions = new FolderTransitionMachine(layer);
-    const session = layer.folderTransitions.beginOpen("folder-1", "target-a").session;
+    layer.folderHandoff = new FolderHandoffCoordinator(layer);
+    const session = layer.folderHandoff.beginOpen("folder-1", "target-a").session;
     const controller = new FolderOpeningGhostController(layer, {
       ghostFactory: makeGhost,
       scheduler: timerHost,
@@ -237,12 +242,12 @@ export function runFolderOpeningGhostControllerTests() {
     controller.start(makeState(completed), [target], { sessionToken: session.token });
     controller.complete(makeState(completed), target, layer.ghosts[0]);
 
-    assert(layer.openingGhostKeys.size === 0, "complete should clear ghost keys even when reveal is gated");
+    assert(layer.folderHandoff.getOpeningGhostKeys().size === 0, "complete should clear ghost item ids even when reveal is gated");
     assert(layer.iconNode.visible === false, "ghost completion before panel ready should keep real icons hidden");
     assert(layer.pageTrack.visible === false, "ghost completion before panel ready should keep the page track hidden");
     assert(layer.ghosts.length === 1, "ghost completion before panel ready should retain ghost visuals");
 
-    layer.folderTransitions.markPanelReady(session.token);
+    layer.folderHandoff.markPanelReady(session.token);
     controller.finishTransition({ sessionToken: session.token });
     assert(layer.iconNode.visible === true, "panel ready after ghosts should reveal real icons");
     assert(layer.pageTrack.visible === true, "panel ready after ghosts should restore the page track");
@@ -261,7 +266,7 @@ export function runFolderOpeningGhostControllerTests() {
     controller.start(makeState(completed), [makeTarget()]);
     timerHost.runAll();
 
-    assert(layer.openingGhostKeys.size === 0, "fallback should clear active keys");
+    assert(layer.folderHandoff.getOpeningGhostKeys().size === 0, "fallback should clear active item ids");
     assert(completed.join(",") === "controller-open-key", "fallback should complete pending controller keys");
     assert(layer.iconNode.visible === true, "fallback should reveal hidden icon nodes");
     assert(layer.ghosts.length === 0, "fallback should destroy opening ghost visuals");
@@ -356,7 +361,7 @@ export function runFolderOpeningGhostControllerTests() {
     assert(released, "release should return the matching opening ghost");
     assert(!released.destroyed, "release should not destroy the ghost handed to closing");
     assert(layer.ghosts.length === 0, "release should remove the ghost from the opening layer");
-    assert(!layer.openingGhostKeys?.has("app-1"), "release should clear the active opening key");
+    assert(!layer.folderHandoff.hasOpeningGhost("app-1"), "release should clear the active opening item id");
     assert(completed.join(",") === "", "release should not complete the opening controller key");
     assert(timerHost.size === 0, "release should clear the fallback timer when no opening ghosts remain");
     assert(motionRuntime.getChannel(released, "x")?.base?.size === 1, "release should keep opening ghost x spring available for closing retarget");
@@ -380,7 +385,7 @@ export function runFolderOpeningGhostControllerTests() {
 
     assert(released?.item?.id === "app-1", "release should return the requested ghost");
     assert(layer.ghosts.length === 1 && layer.ghosts[0].item.id === "app-2", "release should keep unrelated opening ghosts active");
-    assert(layer.openingGhostKeys.has("app-2"), "release should preserve unrelated active opening keys");
+    assert(layer.folderHandoff.hasOpeningGhost("app-2"), "release should preserve unrelated active opening item ids");
     assert(timerHost.size === 1, "release should keep the fallback timer while another opening ghost remains");
     assert(completed.join(",") === "", "release should not complete unrelated opening keys");
     controller.clear();
@@ -394,15 +399,16 @@ export function runFolderOpeningGhostControllerTests() {
       ghostFactory: makeGhost,
       scheduler: timerHost,
     });
+    const sessionToken = beginReadyOpenSession(layer);
     setReducedMotionForTests(true);
     try {
       layer.iconNodes.set("app-2", { alpha: 1, item: { id: "app-2" }, visible: true });
       controller.start(makeState(completed), [
         { ...makeTarget("app-1"), controllerGhostKey: "open-a" },
         { ...makeTarget("app-2"), controllerGhostKey: "open-b" },
-      ]);
+      ], { sessionToken });
       assert(completed.join(",") === "open-a,open-b", "synchronous reduced-motion completion should notify every controller key");
-      assert(layer.openingGhostKeys.size === 0, "synchronous reduced-motion completion should clear the active key");
+      assert(layer.folderHandoff.getOpeningGhostKeys().size === 0, "synchronous reduced-motion completion should clear the active item id");
       assert(layer.ghosts.length === 0, "synchronous reduced-motion completion should not leave opening ghost visuals");
       assert(timerHost.size === 0, "synchronous reduced-motion completion should clear the fallback timer");
     } finally {
