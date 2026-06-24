@@ -56,9 +56,7 @@ import {
   makeIconActionRenderReason,
   shouldRequestRenderForMotionEvent,
 } from "./pixiRenderTriggers.js";
-import { installMotionDebugGlobal } from "./animation/motionDebugReport.js";
 import { motionRuntime } from "./animation/motionRuntime.js";
-import { MotionDebugOverlayLayer } from "./animation/motionDebugOverlayLayer.js";
 import { clearDesktopIconBounds } from "./geometry/iconBoundsRegistry.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { getPixiHostMetrics } from "./pixiHostMetrics.js";
@@ -520,11 +518,6 @@ function updateMotionDebugOverlay() {
   });
 }
 
-function publishMotionOverlayDebugSnapshot() {
-  if (!import.meta.env.DEV) return;
-  globalThis.__LP_MOTION_OVERLAY_DEBUG__ = () => motionDebugOverlay?.debugSnapshot?.() || null;
-}
-
 function renderPixi() {
   if (!app || !layer || !hostRef.value) return;
   const domGeometry = getDesktopDomGeometry();
@@ -780,7 +773,9 @@ function destroyPixi(options = {}) {
   motionDebugCommands?.uninstall?.();
   motionDebugCommands = null;
   if (globalThis.__LP_FOLDER_VISUAL_DEBUG__) delete globalThis.__LP_FOLDER_VISUAL_DEBUG__;
-  if (globalThis.__LP_MOTION_OVERLAY_DEBUG__) delete globalThis.__LP_MOTION_OVERLAY_DEBUG__;
+  if (import.meta.env.DEV && globalThis.__LP_MOTION_OVERLAY_DEBUG__) {
+    delete globalThis.__LP_MOTION_OVERLAY_DEBUG__;
+  }
   singleStageFolderPanelGeometry.value = null;
   singleStageFolderTitleFrame.value = null;
   clearFolderTexturePrewarmTimer();
@@ -852,11 +847,18 @@ onMounted(async () => {
     if (motionRuntime.hasActiveWork?.() || getRenderScheduler().hasPendingRender()) scheduleDesktopFrame();
   });
   if (import.meta.env.DEV) {
+    const [
+      { MotionDebugOverlayLayer },
+      { installMotionDebugGlobal },
+    ] = await Promise.all([
+      import("./animation/motionDebugOverlayLayer.js"),
+      import("./animation/motionDebugReport.js"),
+    ]);
     motionDebugOverlay = new MotionDebugOverlayLayer();
     app.stage.addChild(motionDebugOverlay);
-    publishMotionOverlayDebugSnapshot();
+    globalThis.__LP_MOTION_OVERLAY_DEBUG__ = () => motionDebugOverlay?.debugSnapshot?.() || null;
+    motionDebugCommands = installMotionDebugGlobal();
   }
-  motionDebugCommands = installMotionDebugGlobal();
   resizeObserver = new ResizeObserver(handleResize);
   resizeObserver.observe(hostRef.value);
   window.addEventListener("resize", handleResize);
