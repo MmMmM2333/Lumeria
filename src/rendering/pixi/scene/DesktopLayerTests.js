@@ -331,7 +331,6 @@ export async function runDesktopLayerTests() {
     closingLayer.applyFolderOverlayTransform({
       height: 600,
       launchpadVisualTransform: { scale: 1.08, y: 0 },
-      singleStageFolderLayerEnabled: true,
       singleStageFolderState: { renderedFolder: { id: "folder-1" } },
       width: 800,
     });
@@ -341,17 +340,14 @@ export async function runDesktopLayerTests() {
     closingLayer.applyFolderOverlayTransform({
       height: 600,
       launchpadVisualTransform: { scale: 1, y: 0 },
-      singleStageFolderLayerEnabled: true,
       singleStageFolderState: null,
       width: 800,
     });
     assert(closingLayer.singleStageFolderLayer.scale.x === 1 && closingLayer.singleStageFolderLayer.scale.y === 1, "inactive folder overlay should snap back to identity scale");
     assert(closingLayer.hasSingleStageFolderOverlayContent({
-      singleStageFolderLayerEnabled: true,
       singleStageFolderState: { renderedFolder: { id: "folder-1" } },
-    }), "folder overlay content should require an enabled layer and rendered folder");
+    }), "folder overlay content should require a rendered folder");
     assert(!closingLayer.hasSingleStageFolderOverlayContent({
-      singleStageFolderLayerEnabled: true,
       singleStageFolderState: null,
     }), "missing folder state should count as no overlay content");
   }
@@ -1031,7 +1027,6 @@ export async function runDesktopLayerTests() {
       isTextlessMode: false,
       launchTargetStatusById: {},
       showMissingLaunchTargetBadge: true,
-      singleStageDragPreviewEnabled: true,
       stageRect: { height: 600, left: 10, top: 20, width: 800 },
       width: 800,
     });
@@ -1040,21 +1035,20 @@ export async function runDesktopLayerTests() {
     assert(calls[0].releaseState === releaseState, "root-stage drag preview should receive the active release state");
 
     layer.updateSingleStageDragPreviewLayer({
-      dragPreviewState: previewState,
-      dragReleaseState: releaseState,
+      dragPreviewState: null,
+      dragReleaseState: null,
       folderPageSize: 9,
       height: 600,
       iconSize: 64,
       isTextlessMode: false,
       launchTargetStatusById: {},
       showMissingLaunchTargetBadge: true,
-      singleStageDragPreviewEnabled: false,
       stageRect: { height: 600, left: 10, top: 20, width: 800 },
       width: 800,
     });
 
-    assert(calls[1].previewState === null, "disabled root-stage drag preview should clear the preview state");
-    assert(calls[1].releaseState === null, "disabled root-stage drag preview should clear the release state");
+    assert(calls[1].previewState === null, "root-stage drag preview should clear when no preview state is active");
+    assert(calls[1].releaseState === null, "root-stage drag preview should clear when no release state is active");
   }
 
   {
@@ -1154,14 +1148,12 @@ export async function runDesktopLayerTests() {
       layer.applyFolderOverlayTransform({
         height: 600,
         launchpadVisualTransform: { scale: 1, y: 0 },
-        singleStageFolderLayerEnabled: true,
         singleStageFolderState: { renderedFolder: { id: "folder-1" } },
         width: 800,
       });
       layer.applyFolderOverlayTransform({
         height: 600,
         launchpadVisualTransform: { scale: 1.08, y: 0 },
-        singleStageFolderLayerEnabled: true,
         singleStageFolderState: { renderedFolder: { id: "folder-1" } },
         width: 800,
       });
@@ -1170,7 +1162,6 @@ export async function runDesktopLayerTests() {
       layer.applyFolderOverlayTransform({
         height: 600,
         launchpadVisualTransform: { scale: 1, y: 0 },
-        singleStageFolderLayerEnabled: false,
         singleStageFolderState: null,
         width: 800,
       });

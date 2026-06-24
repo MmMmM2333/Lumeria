@@ -8,20 +8,12 @@ import {
 } from "./folderOverlayTargets.js";
 import { resolveFolderOverlayTargets } from "./folderOverlayTargetResolver.js";
 
-export const SINGLE_STAGE_CHANGED_EVENT = "launchpad-single-stage-change";
-export const SINGLE_STAGE_DIAGNOSTICS_CHANGED_EVENT = "launchpad-single-stage-diagnostics-change";
-const SINGLE_STAGE_GLOBAL_FLAG = "__LP_SINGLE_STAGE__";
-const SINGLE_STAGE_SETTER_GLOBAL = "__LP_SET_SINGLE_STAGE__";
-const DEFAULT_SINGLE_STAGE_OPTIONS = Object.freeze({
+export const SINGLE_STAGE_RENDER_KEY = "single-stage";
+const DEFAULT_SINGLE_STAGE_DIAGNOSTICS_OPTIONS = Object.freeze({
   diagnostics: false,
-  dragPreview: true,
-  enabled: true,
-  folderLayer: true,
   log: false,
   probe: false,
-  rootStage: true,
 });
-let singleStageGlobalValue;
 
 function cloneOptions(options) {
   return { ...options };
@@ -31,124 +23,26 @@ function hasOwn(object, key) {
   return Object.prototype.hasOwnProperty.call(object, key);
 }
 
-function dispatchEvent(name) {
-  if (typeof globalThis.dispatchEvent !== "function") return;
-  const EventConstructor = globalThis.CustomEvent || globalThis.Event;
-  if (!EventConstructor) return;
-  globalThis.dispatchEvent(new EventConstructor(name));
-}
-
-function dispatchSingleStageChanged() {
-  dispatchEvent(SINGLE_STAGE_CHANGED_EVENT);
-  dispatchEvent(SINGLE_STAGE_DIAGNOSTICS_CHANGED_EVENT);
-}
-
-function readSingleStageGlobalValue() {
-  if (singleStageGlobalValue !== undefined) return singleStageGlobalValue;
-  return globalThis[SINGLE_STAGE_GLOBAL_FLAG];
-}
-
-function installSingleStageGlobalAccessor(name) {
-  const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
-  if (descriptor?.get?.__launchpadSingleStage === true) return;
-  if (descriptor && descriptor.configurable === false) return;
-  if (singleStageGlobalValue === undefined && globalThis[name] !== undefined) {
-    singleStageGlobalValue = globalThis[name];
-  }
-  const getter = function getLaunchpadSingleStageFlag() {
-    return singleStageGlobalValue;
-  };
-  getter.__launchpadSingleStage = true;
-  Object.defineProperty(globalThis, name, {
-    configurable: true,
-    get: getter,
-    set(value) {
-      singleStageGlobalValue = value;
-      dispatchSingleStageChanged();
-    },
-  });
-}
-
-export function installSingleStageGlobalFlag() {
-  installSingleStageGlobalAccessor(SINGLE_STAGE_GLOBAL_FLAG);
-  globalThis[SINGLE_STAGE_SETTER_GLOBAL] = setSingleStageOptions;
-}
-
-export function getSingleStageOptions(value = readSingleStageGlobalValue()) {
-  if (value === undefined) return cloneOptions(DEFAULT_SINGLE_STAGE_OPTIONS);
-  if (value === true) return { ...DEFAULT_SINGLE_STAGE_OPTIONS, diagnostics: true, probe: true };
-  if (!value || typeof value !== "object") return cloneOptions(DEFAULT_SINGLE_STAGE_OPTIONS);
+export function getSingleStageDiagnosticsOptions(value = undefined) {
+  if (value === undefined) return cloneOptions(DEFAULT_SINGLE_STAGE_DIAGNOSTICS_OPTIONS);
+  if (value === true) return { ...DEFAULT_SINGLE_STAGE_DIAGNOSTICS_OPTIONS, diagnostics: true, probe: true };
+  if (!value || typeof value !== "object") return cloneOptions(DEFAULT_SINGLE_STAGE_DIAGNOSTICS_OPTIONS);
   const hasDiagnosticsOption = hasOwn(value, "diagnostics");
   const diagnosticsValue = hasDiagnosticsOption ? value.diagnostics : value.probe;
   const diagnostics = diagnosticsValue === true;
   return {
     diagnostics,
-    dragPreview: true,
-    enabled: true,
-    folderLayer: true,
     log: value.log === true,
     probe: diagnostics,
-    rootStage: true,
   };
-}
-
-export function getSingleStageOptionsKey(options = getSingleStageOptions()) {
-  return [
-    options.log ? "1" : "0",
-    (options.diagnostics ?? options.probe) ? "1" : "0",
-  ].join("");
 }
 
 export function getSingleStageRenderKey() {
-  return "single-stage";
+  return SINGLE_STAGE_RENDER_KEY;
 }
 
-export function makeSingleStageRuntimePlan() {
-  return {
-    renderKey: getSingleStageRenderKey(),
-    useDragPreview: true,
-    useFolderLayer: true,
-    useRootStage: true,
-  };
-}
-
-export function makeSingleStageRuntimeProbe(runtimePlan = makeSingleStageRuntimePlan(), state = {}) {
-  const canvasCount = Number(state.canvasCount);
-  const hasOneCanvas = Number.isFinite(canvasCount) && canvasCount === 1;
-  const hasRootStageHost = state.rootStageHost === true;
-  const hasRootStageMain = state.rootStageMain === true;
-  const stableStageIsUnified = state.stableStageIsUnified === true;
-  const unifiedStageCoordinates = stableStageIsUnified;
-  const expectedSingleStage = Boolean(runtimePlan.useRootStage && runtimePlan.useFolderLayer && runtimePlan.useDragPreview);
-  const failures = [];
-
-  if (expectedSingleStage) {
-    if (!hasOneCanvas) failures.push("canvas-count");
-    if (!hasRootStageHost) failures.push("root-stage-host");
-    if (!hasRootStageMain) failures.push("root-stage-main");
-    if (!stableStageIsUnified) failures.push("stable-stage-unified");
-  }
-
-  return {
-    canvasCount: Number.isFinite(canvasCount) ? canvasCount : null,
-    expectedSingleStage,
-    failures,
-    isSingleStageStable: expectedSingleStage && failures.length === 0,
-    rootStageHost: hasRootStageHost,
-    rootStageMain: hasRootStageMain,
-    stableStageIsUnified,
-    unifiedStageCoordinates,
-  };
-}
-
-export function setSingleStageOptions(value) {
-  installSingleStageGlobalFlag();
-  globalThis[SINGLE_STAGE_GLOBAL_FLAG] = value;
-  return getSingleStageOptions(value);
-}
-
-export function isSingleStageDiagnosticsEnabled(value = readSingleStageGlobalValue()) {
-  return getSingleStageOptions(value).diagnostics;
+export function isSingleStageDiagnosticsEnabled(value = undefined) {
+  return getSingleStageDiagnosticsOptions(value).diagnostics;
 }
 
 export function makeSingleStageDiagnosticsPlan(state, options = {}) {

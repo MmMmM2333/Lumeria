@@ -1,10 +1,10 @@
 import { Container, Graphics, Text } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { roundRect } from "./folderHandoffDebug.js";
-import { getSingleStageOptions, makeSingleStageDiagnosticsPlan } from "./singleStagePlan.js";
+import { getSingleStageDiagnosticsOptions, makeSingleStageDiagnosticsPlan } from "./singleStagePlan.js";
 
 export {
-  getSingleStageOptions,
+  getSingleStageDiagnosticsOptions,
   isSingleStageDiagnosticsEnabled,
   makeSingleStageDiagnosticsPlan,
 } from "./singleStagePlan.js";
@@ -62,7 +62,7 @@ export class SingleStageDiagnosticsLayer extends Container {
   }
 
   update(state, options = {}) {
-    const diagnosticsOptions = getSingleStageOptions(options.enabled);
+    const diagnosticsOptions = getSingleStageDiagnosticsOptions(options.enabled);
     const plan = makeSingleStageDiagnosticsPlan(state, {
       enabled: diagnosticsOptions,
       iconBoundsRegistry: options.iconBoundsRegistry,

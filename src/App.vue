@@ -1,7 +1,7 @@
 <template>
   <div
     ref="rootRef"
-    :class="cx('launchpad-root', windowMode === 'windowed' && 'launchpad-root-windowed', isTextlessMode && 'launchpad-root-textless', isStartupMaskMounted && 'launchpad-root-startup-masked', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching', shouldUseLiveDesktopCssFallbackEffects && 'launchpad-root-live-desktop-css-fallback-effects', shouldUseSingleStageRootStage && 'launchpad-root-pixi-root-stage', shouldUseSingleStageFolderLayer && 'launchpad-root-single-stage-folder-layer')"
+    :class="cx('launchpad-root', 'launchpad-root-pixi-root-stage', 'launchpad-root-single-stage-folder-layer', windowMode === 'windowed' && 'launchpad-root-windowed', isTextlessMode && 'launchpad-root-textless', isStartupMaskMounted && 'launchpad-root-startup-masked', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching', shouldUseLiveDesktopCssFallbackEffects && 'launchpad-root-live-desktop-css-fallback-effects')"
     :style="launchpadRootStyle"
     @wheel="handleLaunchpadWheel"
     @pointerdown="handleLaunchpadSurfacePointerDown"
@@ -97,8 +97,7 @@
         :desktop-grid-debug-options="desktopGridDebugOptions"
         :set-page-ref="setPageRef"
         :show-missing-launch-target-badge="showMissingLaunchTargetBadge"
-        :single-stage-options="singleStageOptions"
-        :single-stage-render-key="singleStageRenderKey"
+        :single-stage-diagnostics-options="singleStageDiagnosticsOptions"
         @desktop-focus="keyboardFocusArea = 'desktop'"
         @drag-release-complete="clearDragRelease"
         @internal-activity="handleFolderPixiInternalActivity"
@@ -147,12 +146,8 @@ import WindowChromeOverlay from "./components/WindowChromeOverlay.vue";
 import PixiBackgroundSurface from "./rendering/pixi/PixiBackgroundSurface.vue";
 import PixiDesktopSurface from "./rendering/pixi/PixiDesktopSurface.vue";
 import {
-  getSingleStageOptions,
-  getSingleStageOptionsKey,
-  installSingleStageGlobalFlag,
-  makeSingleStageRuntimeProbe,
-  makeSingleStageRuntimePlan,
-  SINGLE_STAGE_CHANGED_EVENT,
+  getSingleStageDiagnosticsOptions,
+  getSingleStageRenderKey,
 } from "./rendering/pixi/scene/singleStagePlan.js";
 import {
   resolveFolderClosingHandoffId,
@@ -183,7 +178,6 @@ import appPackage from "../package.json";
 import "./styles/launchpad.css";
 
 const controller = useLaunchpadController();
-installSingleStageGlobalFlag();
 const {
   appActions,
   background: backgroundDomain,
@@ -321,7 +315,6 @@ const LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT = "launchpad-live-desktop-com
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_INTERVAL_MS = 250;
 const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY = "launchpadLiveDesktopCssFallbackEffects";
 const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT = "launchpad-live-desktop-css-fallback-effects-change";
-const SINGLE_STAGE_REFRESH_MS = 250;
 const launchpadOverlaysRef = ref(null);
 const BACKGROUND_MEDIA_FADE_MS = 220;
 const PIXI_BACKGROUND_HANDOFF_DELAY_MS = 220;
@@ -350,41 +343,8 @@ const backgroundImageLayers = ref([
 const folderPixiInternalActivity = ref(false);
 const folderPixiInternalActivityFolderId = ref(null);
 const folderClosingHandoffRetainId = ref(null);
-const singleStageOptions = ref(getSingleStageOptions());
-const shouldRunPixiOverlays = computed(() => Boolean(
-  isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value
-));
-const singleStageRuntimePlan = computed(() => makeSingleStageRuntimePlan(singleStageOptions.value, {
-  dragMeta: dragMeta.value,
-  dragPreviewItem: dragPreviewState.value?.item,
-  dragReleaseItem: dragReleaseState.value?.item,
-  folderPixiInternalActivity: folderPixiInternalActivity.value,
-  isFolderAppLaunchClosing: isFolderAppLaunchClosing.value,
-  isFolderClosing: isFolderClosing.value,
-  openFolderId: openFolderId.value,
-  renderedFolder: renderedFolder.value,
-  shouldRunPixiOverlays: shouldRunPixiOverlays.value,
-}));
-const shouldUseSingleStageRootStage = computed(() => singleStageRuntimePlan.value.useRootStage);
-const shouldUseSingleStageFolderLayer = computed(() => singleStageRuntimePlan.value.useFolderLayer);
-const singleStageRenderKey = computed(() => singleStageRuntimePlan.value.renderKey);
-function publishSingleStageRuntimeProbe() {
-  if (typeof document === "undefined") return;
-  const runtimePlan = singleStageRuntimePlan.value;
-  const probe = makeSingleStageRuntimeProbe(runtimePlan, {
-    canvasCount: document.querySelectorAll("canvas").length,
-    rootStageHost: Boolean(document.querySelector(".pixi-desktop-host-root-stage")),
-    rootStageMain: Boolean(document.querySelector(".pixi-desktop-main-root-stage")),
-    stableStageIsUnified: runtimePlan.useRootStage === true,
-  });
-  globalThis.__LP_SINGLE_STAGE_RUNTIME__ = probe;
-  if (probe.expectedSingleStage && !probe.isSingleStageStable && singleStageRuntimeProbeFrame == null && typeof window !== "undefined") {
-    singleStageRuntimeProbeFrame = window.requestAnimationFrame(() => {
-      singleStageRuntimeProbeFrame = null;
-      publishSingleStageRuntimeProbe();
-    });
-  }
-}
+const singleStageDiagnosticsOptions = getSingleStageDiagnosticsOptions();
+const singleStageRenderKey = getSingleStageRenderKey();
 const shouldRenderLiveDesktopCompositorKeeper = computed(() => Boolean(
   import.meta.env.DEV
     && isLiveDesktopExperimentActive.value
@@ -409,14 +369,11 @@ let pixiBackgroundHideTimer = null;
 let startupMaskRemoveTimer = null;
 let startupMaskMaxWaitTimer = null;
 let startupBackgroundFrame = null;
-let singleStageRuntimeProbeFrame = null;
 let backgroundImageGeneration = 0;
 let backgroundImageShowFrame = null;
 let backgroundImageClearTimer = null;
 let liveDesktopCompositorKeeperTimer = null;
-let singleStageRefreshTimer = null;
 let activeBackgroundImageLayerIndex = 0;
-let lastSingleStageOptionsKey = getSingleStageOptionsKey(singleStageOptions.value);
 
 function parseCssOpacity(value) {
   const number = Number.parseFloat(value);
@@ -586,12 +543,6 @@ function clearStartupMaskTimers() {
   }
 }
 
-function clearSingleStageRuntimeProbeFrame() {
-  if (singleStageRuntimeProbeFrame == null) return;
-  window.cancelAnimationFrame(singleStageRuntimeProbeFrame);
-  singleStageRuntimeProbeFrame = null;
-}
-
 function releaseStartupMask() {
   if (!isStartupMaskMounted.value || !isStartupMaskVisible.value) return;
   isStartupMaskVisible.value = false;
@@ -738,38 +689,6 @@ function clearBackgroundImageTimers() {
   clearBackgroundImageClearTimer();
 }
 
-function refreshSingleStageOptions() {
-  const nextOptions = getSingleStageOptions();
-  const nextKey = getSingleStageOptionsKey(nextOptions);
-  if (nextKey === lastSingleStageOptionsKey) return;
-  lastSingleStageOptionsKey = nextKey;
-  singleStageOptions.value = nextOptions;
-}
-
-function startSingleStageRefreshTimer() {
-  if (!import.meta.env.DEV || singleStageRefreshTimer != null) return;
-  singleStageRefreshTimer = window.setInterval(
-    refreshSingleStageOptions,
-    SINGLE_STAGE_REFRESH_MS
-  );
-}
-
-function clearSingleStageRefreshTimer() {
-  if (singleStageRefreshTimer == null) return;
-  window.clearInterval(singleStageRefreshTimer);
-  singleStageRefreshTimer = null;
-}
-
-watch(
-  [
-    singleStageRuntimePlan,
-    shouldUseSingleStageRootStage,
-    shouldUseSingleStageFolderLayer,
-  ],
-  publishSingleStageRuntimeProbe,
-  { flush: "post", immediate: true }
-);
-
 watch(
   shouldRenderPixiBackgroundEffect,
   (shouldRender) => {
@@ -864,19 +783,13 @@ onBeforeUnmount(clearPixiBackgroundHideTimer);
 onBeforeUnmount(clearStartupMaskTimers);
 onBeforeUnmount(clearBackgroundImageTimers);
 onBeforeUnmount(clearLiveDesktopCompositorKeeperTimer);
-onBeforeUnmount(clearSingleStageRefreshTimer);
-onBeforeUnmount(clearSingleStageRuntimeProbeFrame);
 
 onMounted(() => {
   refreshBackgroundLayoutMetrics();
-  refreshSingleStageOptions();
-  publishSingleStageRuntimeProbe();
-  startSingleStageRefreshTimer();
   window.addEventListener("resize", refreshBackgroundLayoutMetrics);
   window.addEventListener("focus", refreshBackgroundLayoutMetrics);
   window.addEventListener(LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT, handleLiveDesktopCompositorKeeperChanged);
   window.addEventListener(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT, handleLiveDesktopCssFallbackEffectsChanged);
-  window.addEventListener(SINGLE_STAGE_CHANGED_EVENT, refreshSingleStageOptions);
   window.addEventListener("storage", handleLiveDesktopCompositorKeeperStorage);
   window.addEventListener("storage", handleLiveDesktopCssFallbackEffectsStorage);
 });
@@ -886,7 +799,6 @@ onBeforeUnmount(() => {
   window.removeEventListener("focus", refreshBackgroundLayoutMetrics);
   window.removeEventListener(LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT, handleLiveDesktopCompositorKeeperChanged);
   window.removeEventListener(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT, handleLiveDesktopCssFallbackEffectsChanged);
-  window.removeEventListener(SINGLE_STAGE_CHANGED_EVENT, refreshSingleStageOptions);
   window.removeEventListener("storage", handleLiveDesktopCompositorKeeperStorage);
   window.removeEventListener("storage", handleLiveDesktopCssFallbackEffectsStorage);
 });

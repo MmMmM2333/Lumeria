@@ -494,7 +494,7 @@ export class DesktopLayer extends Container {
   }
 
   hasSingleStageFolderOverlayContent(state = {}) {
-    return Boolean(state.singleStageFolderLayerEnabled && state.singleStageFolderState?.renderedFolder);
+    return Boolean(state.singleStageFolderState?.renderedFolder);
   }
 
   applyFolderOverlayTransform(state) {
@@ -524,7 +524,7 @@ export class DesktopLayer extends Container {
   }
 
   updateSingleStageFolderLayer(state) {
-    if (state.singleStageFolderLayerEnabled && state.singleStageFolderState) {
+    if (state.singleStageFolderState) {
       this.onFolderGeometryChange(this.singleStageFolderLayer.update(state.singleStageFolderState));
       return;
     }
@@ -591,8 +591,6 @@ export class DesktopLayer extends Container {
   }
 
   updateSingleStageDragPreviewLayer(state) {
-    const previewState = state.singleStageDragPreviewEnabled ? state.dragPreviewState : null;
-    const releaseState = state.singleStageDragPreviewEnabled ? state.dragReleaseState : null;
     this.singleStageDragPreviewLayer.update({
       folderHoverState: state.dragFolderHoverState,
       folderPageSize: state.folderPageSize,
@@ -600,8 +598,8 @@ export class DesktopLayer extends Container {
       iconSize: state.iconSize,
       isTextlessMode: state.isTextlessMode,
       launchTargetStatusById: state.launchTargetStatusById,
-      previewState,
-      releaseState,
+      previewState: state.dragPreviewState,
+      releaseState: state.dragReleaseState,
       showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge,
       stageRect: state.stageRect,
       width: state.width,
