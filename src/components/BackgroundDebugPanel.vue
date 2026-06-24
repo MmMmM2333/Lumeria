@@ -221,10 +221,21 @@
       <div v-else-if="activePanel === 'motion' && canDebugMotion" class="background-debug-section">
         <label class="background-debug-toggle">
           <input
+            name="motionRuntimeDebugEnabled"
+            type="checkbox"
+            :checked="motionRuntimeDebugEnabled"
+            :disabled="motionReplayCaptureActive"
+            @change="setMotionRuntimeDebugEnabled($event.target.checked)"
+          >
+          <span>Enable</span>
+        </label>
+
+        <label class="background-debug-toggle">
+          <input
             name="motionRecordEnabled"
             type="checkbox"
             :checked="motionRecordEnabled"
-            :disabled="motionReplayCaptureActive"
+            :disabled="motionReplayCaptureActive || !motionRuntimeDebugEnabled"
             @change="setMotionRecordEnabled($event.target.checked)"
           >
           <span>Record</span>
@@ -235,7 +246,7 @@
             name="motionOverlayEnabled"
             type="checkbox"
             :checked="motionOverlayEnabled"
-            :disabled="motionReplayCaptureActive"
+            :disabled="motionReplayCaptureActive || !motionRuntimeDebugEnabled"
             @change="setMotionOverlayEnabled($event.target.checked)"
           >
           <span>Overlay</span>
@@ -247,7 +258,7 @@
             :key="preset.value"
             type="button"
             :class="['background-debug-mode-button', motionWindowPreset === preset.value && 'background-debug-mode-button-active']"
-            :disabled="motionReplayCaptureActive"
+            :disabled="motionReplayCaptureActive || !motionRuntimeDebugEnabled"
             @click="setMotionWindowPreset(preset.value)"
           >
             {{ preset.label }}
@@ -265,7 +276,7 @@
             min="1"
             max="300"
             step="1"
-            :disabled="motionReplayCaptureActive || motionWindowPreset !== MOTION_RECORD_WINDOW_CUSTOM"
+            :disabled="motionReplayCaptureActive || !motionRuntimeDebugEnabled || motionWindowPreset !== MOTION_RECORD_WINDOW_CUSTOM"
             :value="motionCustomSeconds"
             @change="updateMotionCustomSeconds"
           >
@@ -282,7 +293,7 @@
             min="0"
             max="2"
             step="0.05"
-            :disabled="motionReplayCaptureActive"
+            :disabled="motionReplayCaptureActive || !motionRuntimeDebugEnabled"
             :value="motionTimeScale"
             @input="updateMotionTimeScale"
           >
@@ -863,6 +874,7 @@ const liveDesktopCssFallbackEffects = ref(canDebugLiveDesktop.value ? readLiveDe
 const liveDesktopSkipBlankFrames = ref(canDebugLiveDesktop.value ? readLiveDesktopSkipBlankFrames() : false);
 const liveDesktopForceDwmFlush = ref(canDebugLiveDesktop.value ? readLiveDesktopForceDwmFlush() : false);
 const isLiveDesktopActionBusy = ref(false);
+const motionRuntimeDebugEnabled = ref(false);
 const motionOverlayEnabled = ref(false);
 const motionRecordEnabled = ref(false);
 const motionWindowPreset = ref("30000");
@@ -1643,9 +1655,14 @@ function formatEffectLabel(effect) {
 
 function readMotionRuntimeSnapshot() {
   if (!canDebugMotion.value) return {};
+  const config = motionRuntime.configureDebug();
+  const includeDebugDetails = Boolean(config.enabled);
   return {
-    ...motionRuntime.debugSnapshot({ includeChannels: true, includeTargets: true }),
-    config: motionRuntime.configureDebug(),
+    ...motionRuntime.debugSnapshot({
+      includeChannels: includeDebugDetails,
+      includeTargets: includeDebugDetails,
+    }),
+    config,
   };
 }
 
@@ -1673,6 +1690,7 @@ function applyMotionRuntimeDebugConfig() {
   }
   const config = buildMotionRuntimeDebugConfig({
     customSeconds: motionCustomSeconds.value,
+    enabled: motionRuntimeDebugEnabled.value,
     overlayEnabled: motionOverlayEnabled.value,
     recordEnabled: motionRecordEnabled.value,
     timeScale: motionTimeScale.value,
@@ -1684,26 +1702,38 @@ function applyMotionRuntimeDebugConfig() {
   refreshMotionSnapshot();
 }
 
-function restoreMotionTimeScale() {
-  if (!canDebugMotion.value) return;
+function disableMotionRuntimeDebug() {
+  motionRuntimeDebugEnabled.value = false;
+  motionRecordEnabled.value = false;
+  motionOverlayEnabled.value = false;
   if (motionTimeScale.value !== 1) motionTimeScale.value = 1;
-  motionRuntime.configureDebug({ timeScale: 1 });
+  motionRuntime.configureDebug({
+    enabled: false,
+    overlayEnabled: false,
+    recordHistory: false,
+    timeScale: 1,
+  });
   refreshMotionSnapshot();
 }
 
-function restoreMotionOverlay() {
-  if (!canDebugMotion.value) return;
-  if (motionOverlayEnabled.value) motionOverlayEnabled.value = false;
-  motionRuntime.configureDebug({ overlayEnabled: false });
-  refreshMotionSnapshot();
+function setMotionRuntimeDebugEnabled(enabled) {
+  motionRuntimeDebugEnabled.value = Boolean(enabled);
+  if (!motionRuntimeDebugEnabled.value) {
+    disableMotionRuntimeDebug();
+  } else {
+    applyMotionRuntimeDebugConfig();
+  }
+  restartMotionRuntimePoller();
 }
 
 function setMotionRecordEnabled(enabled) {
+  if (!motionRuntimeDebugEnabled.value) return;
   motionRecordEnabled.value = Boolean(enabled);
   applyMotionRuntimeDebugConfig();
 }
 
 function setMotionOverlayEnabled(enabled) {
+  if (!motionRuntimeDebugEnabled.value) return;
   motionOverlayEnabled.value = Boolean(enabled);
   applyMotionRuntimeDebugConfig();
 }
@@ -1999,8 +2029,9 @@ function updateMotionReplayCaptureSeconds(event) {
 
 function syncMotionControlsFromRuntimeConfig() {
   const config = motionRuntime.configureDebug();
-  motionOverlayEnabled.value = Boolean(config.overlayEnabled);
-  motionRecordEnabled.value = Boolean(config.recordHistory);
+  motionRuntimeDebugEnabled.value = Boolean(config.enabled);
+  motionOverlayEnabled.value = Boolean(config.enabled && config.overlayEnabled);
+  motionRecordEnabled.value = Boolean(config.enabled && config.recordHistory);
   motionTimeScale.value = normalizeMotionTimeScale(config.timeScale);
 }
 
@@ -2014,7 +2045,9 @@ function startMotionReplayCapture() {
     captureProfile: motionCaptureProfile.value,
     seconds: motionReplayCaptureSeconds.value,
   });
+  syncMotionControlsFromRuntimeConfig();
   refreshMotionSnapshot();
+  restartMotionRuntimePoller();
 }
 
 function stopMotionReplayCapture(options = {}) {
@@ -2028,6 +2061,7 @@ function stopMotionReplayCapture(options = {}) {
   loadMotionReplayTrace(result.trace, result.json, { updateImportText: false });
   syncMotionControlsFromRuntimeConfig();
   refreshMotionSnapshot();
+  restartMotionRuntimePoller();
   return result;
 }
 
@@ -2628,19 +2662,21 @@ function clearMotionRuntimePoller() {
 
 function restartMotionRuntimePoller() {
   clearMotionRuntimePoller();
-  if (
-    typeof window === "undefined"
-    || !canDebugMotion.value
-    || isCollapsed.value
-    || activePanel.value !== "motion"
-  ) {
+  if (typeof window === "undefined") return;
+  if (!canDebugMotion.value) {
     stopMotionReplayPlayback();
     stopMotionReplayCapture();
-    restoreMotionTimeScale();
+    disableMotionRuntimeDebug();
+    return;
+  }
+  if (isCollapsed.value || activePanel.value !== "motion") {
+    stopMotionReplayPlayback();
     return;
   }
   applyMotionRuntimeDebugConfig();
-  motionRuntimePollTimer = window.setInterval(refreshMotionSnapshot, 500);
+  if (motionRuntimeDebugEnabled.value || motionReplayCaptureActive.value) {
+    motionRuntimePollTimer = window.setInterval(refreshMotionSnapshot, 500);
+  }
 }
 
 function restartLiveDesktopRuntimePoller() {
@@ -2822,8 +2858,7 @@ onBeforeUnmount(() => {
   if (kawaseLiveDesktopSyncTimer != null) window.clearTimeout(kawaseLiveDesktopSyncTimer);
   stopMotionReplayPlayback();
   stopMotionReplayCapture();
-  restoreMotionTimeScale();
-  restoreMotionOverlay();
+  disableMotionRuntimeDebug();
   clearMotionWorkspaceDockResize();
   window.removeEventListener("keydown", handleMotionWorkspaceGlobalKeydown);
   clearMotionRuntimePoller();

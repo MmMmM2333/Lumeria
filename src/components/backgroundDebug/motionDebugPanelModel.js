@@ -45,10 +45,11 @@ export function normalizeMotionTimeScale(value) {
 }
 
 export function buildMotionRuntimeDebugConfig(options = {}) {
+  const enabled = Boolean(options.enabled);
   return {
-    enabled: true,
-    overlayEnabled: Boolean(options.overlayEnabled),
-    recordHistory: Boolean(options.recordEnabled),
+    enabled,
+    overlayEnabled: enabled && Boolean(options.overlayEnabled),
+    recordHistory: enabled && Boolean(options.recordEnabled),
     recordWindowMs: resolveMotionRecordWindowMs(options.windowPreset, options.customSeconds),
     sampleHz: 10,
     timeScale: normalizeMotionTimeScale(options.timeScale),

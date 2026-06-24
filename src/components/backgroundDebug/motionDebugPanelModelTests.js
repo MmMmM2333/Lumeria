@@ -54,8 +54,17 @@ export function runMotionDebugPanelModelTests() {
   assert(replayRows.some((row) => row.label === "frames/events" && row.value === "16 / 8"), "replay rows should expose trace frame/event counts");
   assert(replayRows.some((row) => row.label === "schema" && row.value === "pixi-motion-replay-trace/v1"), "replay rows should expose trace schema");
 
+  const disabledConfig = buildMotionRuntimeDebugConfig({
+    overlayEnabled: true,
+    recordEnabled: true,
+  });
+  assert(disabledConfig.enabled === false, "runtime config should keep motion debug disabled by default");
+  assert(disabledConfig.overlayEnabled === false, "runtime config should gate overlay behind Enable");
+  assert(disabledConfig.recordHistory === false, "runtime config should gate recording behind Enable");
+
   const config = buildMotionRuntimeDebugConfig({
     customSeconds: 45,
+    enabled: true,
     overlayEnabled: true,
     recordEnabled: true,
     timeScale: 0.5,
