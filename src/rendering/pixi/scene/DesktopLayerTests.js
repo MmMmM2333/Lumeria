@@ -122,6 +122,64 @@ function makeTransitionMachine(options = {}) {
   };
 }
 
+function makeDesktopQuiescenceState(item = { id: "app-a", type: "app" }) {
+  return {
+    activePageIndex: 0,
+    activePages: [[item]],
+    desktopFrame: { height: 320, left: 0, top: 0, width: 480 },
+    deviceResolution: 1,
+    folderPageSize: 9,
+    folderSourceGhostedIds: new Set(),
+    getDesktopPageRenderMode: () => "interactive",
+    getVisibleDesktopPage: (page) => page,
+    gridCols: 1,
+    gridRows: 1,
+    height: 320,
+    iconSize: 64,
+    isFolderOpeningPreviewFrameGhosted: () => false,
+    isIconOpening: () => false,
+    isIconSelected: () => false,
+    isSearchMode: false,
+    isTextlessMode: false,
+    launchTargetStatusById: {},
+    setPageRef: () => {},
+    showMissingLaunchTargetBadge: false,
+    stageRect: { height: 320, left: 0, top: 0, width: 480 },
+    width: 480,
+  };
+}
+
+function prepareLayerForDesktopQuiescenceTest(layer, item) {
+  layer.applyDesktopVisualAlpha = () => {};
+  layer.applyDesktopVisualTransform = () => {};
+  layer.applyFolderOverlayAlpha = () => {};
+  layer.applyFolderOverlayTransform = () => {};
+  layer.flushInteractiveBounds = () => {};
+  layer.markInteractiveBoundsDirty = () => {};
+  layer.singleStageDiagnosticsLayer = { update() {} };
+  layer.singleStageFolderLayer = {
+    getDesktopSourceGhostedIds: () => new Set(),
+  };
+  layer.updateSingleStageDragPreviewLayer = () => {};
+  layer.updateSingleStageFolderLayer = () => {};
+  layer.pageTrackMotion = {
+    control: null,
+    grabProgressOffset: 0,
+    grabToken: null,
+    key: null,
+    mode: null,
+    settleToken: null,
+  };
+  layer.visualOwnership = { snapshot: () => [] };
+  const node = makeNode(item.id);
+  node.item = item;
+  node.setState = (nextState) => {
+    node.state = nextState;
+  };
+  layer.iconNodes.set(`page:0:${item.id}`, node);
+  return node;
+}
+
 export async function runDesktopLayerTests() {
   if (!("navigator" in globalThis)) {
     Object.defineProperty(globalThis, "navigator", {
@@ -443,6 +501,46 @@ export async function runDesktopLayerTests() {
     assert(folderA.state.ghosted === false, "update should cache raw source ghosting, not ownership-expanded source ghosting");
     assert(folderB.state.ghosted === true, "update should keep the raw Vue folder source ghosted after detached ownership release");
     motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const item = { id: "app-a", type: "app" };
+    const pageTrack = makePageTrack([]);
+    pageTrack.x = 0;
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    prepareLayerForDesktopQuiescenceTest(layer, item);
+    const state = makeDesktopQuiescenceState(item);
+    let scheduledFrameCount = 0;
+    let pendingRender = true;
+
+    try {
+      layer.update(state);
+      for (let frame = 0; frame < 600 && motionRuntime.hasActiveWork(); frame += 1) {
+        motionRuntime.step(1 / 60);
+      }
+      assert(!motionRuntime.hasActiveWork(), "test setup should settle the initial desktop mount animation before checking idle rendering");
+      motionRuntime.reset();
+
+      for (let frame = 0; frame < 12; frame += 1) {
+        scheduledFrameCount += 1;
+        motionRuntime.step(frame === 0 ? 0 : 1 / 60);
+        if (motionRuntime.debug.writesLastFrame > 0) pendingRender = true;
+        if (pendingRender) {
+          pendingRender = false;
+          layer.update(state);
+        }
+        if (!pendingRender && !motionRuntime.hasActiveWork()) break;
+      }
+
+      assert(
+        !motionRuntime.hasActiveWork(),
+        `unchanged desktop render plan should settle to idle motion work, got ${motionRuntime.debugSnapshot().summary.activeAnimationCount} active animation(s)`
+      );
+      assert(scheduledFrameCount <= 4, `unchanged desktop render plan should stop scheduling frames after settling, got ${scheduledFrameCount}`);
+    } finally {
+      motionRuntime.reset();
+    }
   }
 
   {
