@@ -870,7 +870,8 @@ const motionCustomSeconds = ref(30);
 const motionTimeScale = ref(1);
 const motionFilterPreset = ref("all");
 const motionFilterQuery = ref("");
-const motionReport = ref(motionRuntime.debugReport({ includeChannels: true, includeTargets: true }));
+const motionSnapshot = ref(readMotionRuntimeSnapshot());
+const motionReport = ref({});
 const motionReplayCapture = createMotionReplayCaptureController(motionRuntime);
 const motionReplayCaptureSeconds = ref(30);
 const motionReplayCaptureStatus = ref(motionReplayCapture.status());
@@ -1137,23 +1138,23 @@ const liveDesktopWindowRows = computed(() => {
     { label: "candidates", value: formatCount(diagnostics.candidateCount) },
   ];
 });
-const motionOverviewRows = computed(() => buildMotionOverviewRows(motionReport.value));
-const motionAnimationRows = computed(() => buildMotionAnimationRows(motionReport.value));
-const motionCancelReasonRows = computed(() => buildMotionCancelReasonRows(motionReport.value));
-const motionWarningRows = computed(() => buildMotionWarningRows(motionReport.value));
+const motionOverviewRows = computed(() => buildMotionOverviewRows(motionSnapshot.value));
+const motionAnimationRows = computed(() => buildMotionAnimationRows(motionSnapshot.value));
+const motionCancelReasonRows = computed(() => buildMotionCancelReasonRows(motionSnapshot.value));
+const motionWarningRows = computed(() => buildMotionWarningRows(motionSnapshot.value));
 const motionWindowSeconds = computed(() => resolveMotionRecordWindowMs(motionWindowPreset.value, motionCustomSeconds.value) / 1000);
 const motionFilters = computed(() => ({
   preset: motionFilterPreset.value,
   query: motionFilterQuery.value,
 }));
-const motionFilterSummary = computed(() => buildMotionFilterSummary(motionReport.value, motionFilters.value));
-const motionLayerTreeRows = computed(() => buildMotionLayerTreeRows(motionReport.value, motionFilters.value));
-const motionPropertyRows = computed(() => buildMotionPropertyRows(motionReport.value, motionFilters.value));
+const motionFilterSummary = computed(() => buildMotionFilterSummary(motionSnapshot.value, motionFilters.value));
+const motionLayerTreeRows = computed(() => buildMotionLayerTreeRows(motionSnapshot.value, motionFilters.value));
+const motionPropertyRows = computed(() => buildMotionPropertyRows(motionSnapshot.value, motionFilters.value));
 const motionTimelineGroups = computed(() => buildMotionTimelineGroups(motionReport.value, motionFilters.value));
 const motionCurveChartGroups = computed(() => buildMotionCurveChartGroups(motionReport.value, motionFilters.value));
 const motionCaptureProfile = computed(() => buildMotionDebugWorkspaceCaptureProfile(motionWorkspaceSession.value));
 const motionReplayCaptureEstimate = computed(() => estimateMotionCaptureProfileSize(
-  motionReport.value,
+  motionSnapshot.value,
   motionCaptureProfile.value,
   {
     durationMs: normalizeMotionReplayCaptureSeconds(motionReplayCaptureSeconds.value) * 1000,
@@ -1640,6 +1641,19 @@ function formatEffectLabel(effect) {
   return effect;
 }
 
+function readMotionRuntimeSnapshot() {
+  if (!canDebugMotion.value) return {};
+  return {
+    ...motionRuntime.debugSnapshot({ includeChannels: true, includeTargets: true }),
+    config: motionRuntime.configureDebug(),
+  };
+}
+
+function refreshMotionSnapshot() {
+  if (!canDebugMotion.value) return;
+  motionSnapshot.value = readMotionRuntimeSnapshot();
+}
+
 function refreshMotionReport() {
   if (!canDebugMotion.value) return;
   motionReport.value = motionRuntime.debugReport({
@@ -1648,12 +1662,13 @@ function refreshMotionReport() {
     includeHistory: true,
     includeTargets: true,
   });
+  refreshMotionSnapshot();
 }
 
 function applyMotionRuntimeDebugConfig() {
   if (!canDebugMotion.value) return;
   if (motionReplayCaptureActive.value) {
-    refreshMotionReport();
+    refreshMotionSnapshot();
     return;
   }
   const config = buildMotionRuntimeDebugConfig({
@@ -1666,21 +1681,21 @@ function applyMotionRuntimeDebugConfig() {
   motionCustomSeconds.value = normalizeMotionCustomSeconds(motionCustomSeconds.value);
   motionTimeScale.value = config.timeScale;
   motionRuntime.configureDebug(config);
-  refreshMotionReport();
+  refreshMotionSnapshot();
 }
 
 function restoreMotionTimeScale() {
   if (!canDebugMotion.value) return;
   if (motionTimeScale.value !== 1) motionTimeScale.value = 1;
   motionRuntime.configureDebug({ timeScale: 1 });
-  refreshMotionReport();
+  refreshMotionSnapshot();
 }
 
 function restoreMotionOverlay() {
   if (!canDebugMotion.value) return;
   if (motionOverlayEnabled.value) motionOverlayEnabled.value = false;
   motionRuntime.configureDebug({ overlayEnabled: false });
-  refreshMotionReport();
+  refreshMotionSnapshot();
 }
 
 function setMotionRecordEnabled(enabled) {
@@ -1997,7 +2012,7 @@ function startMotionReplayCapture() {
     captureProfile: motionCaptureProfile.value,
     seconds: motionReplayCaptureSeconds.value,
   });
-  refreshMotionReport();
+  refreshMotionSnapshot();
 }
 
 function stopMotionReplayCapture(options = {}) {
@@ -2010,7 +2025,7 @@ function stopMotionReplayCapture(options = {}) {
   motionReplayTraceJson.value = result.json;
   loadMotionReplayTrace(result.trace, result.json, { updateImportText: false });
   syncMotionControlsFromRuntimeConfig();
-  refreshMotionReport();
+  refreshMotionSnapshot();
   return result;
 }
 
@@ -2520,7 +2535,11 @@ async function copyMotionReport(mode) {
       mode === "full" ? hasCopiedMotionFull : hasCopiedMotionSummary,
       mode === "full" ? "motionFull" : "motionSummary",
     );
-    refreshMotionReport();
+    if (mode === "full") {
+      refreshMotionReport();
+    } else {
+      refreshMotionSnapshot();
+    }
   } catch (error) {
     console.warn("Failed to copy Pixi motion debug report", error);
   }
@@ -2619,7 +2638,7 @@ function restartMotionRuntimePoller() {
     return;
   }
   applyMotionRuntimeDebugConfig();
-  motionRuntimePollTimer = window.setInterval(refreshMotionReport, 500);
+  motionRuntimePollTimer = window.setInterval(refreshMotionSnapshot, 500);
 }
 
 function restartLiveDesktopRuntimePoller() {
