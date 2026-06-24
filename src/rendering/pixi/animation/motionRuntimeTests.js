@@ -360,6 +360,8 @@ export function runMotionRuntimeTests() {
     const scaleChannel = report.channels.find((channel) => channel.prop === "scale");
     const jiggleChannel = report.channels.find((channel) => channel.prop === "x");
 
+    assert(!Object.hasOwn(report, "curveStats"), "debug report should not include curve stats unless requested");
+    assert(!Object.hasOwn(snapshot, "curveStats"), "debug snapshot should not expose curve stats");
     assert(scaleChannel, "channel breakdown should include the press/hover scale channel");
     assert(jiggleChannel, "channel breakdown should include the jiggle additive channel");
     assert(snapshot.channels.find((channel) => channel.prop === "scale")?.composed, "debug snapshot should expose channel breakdown too");
@@ -1139,9 +1141,11 @@ export function runMotionRuntimeTests() {
     });
 
     assert(runUntil(runtime, () => control.completed, 900), "curve stats spring should complete after retarget");
-    const report = runtime.debugReport({ includeHistory: true });
+    const defaultReport = runtime.debugReport({ includeHistory: true });
+    const report = runtime.debugReport({ includeCurveStats: true, includeHistory: true });
     const stats = report.curveStats.find((entry) => entry.laneKey === "curve-spring");
 
+    assert(!Object.hasOwn(defaultReport, "curveStats"), "debug report should omit curve stats by default");
     assert(stats, "debug report should include curve stats for a completed spring");
     assert(stats.prop === "x", "curve stats should include the animated property");
     assert(stats.retargetCount === 1, `curve stats should count one retarget, got ${stats.retargetCount}`);
@@ -1176,7 +1180,7 @@ export function runMotionRuntimeTests() {
     control.settle({ velocity: 0.8 });
 
     assert(runUntil(runtime, () => control.completed, 900), "curve stats settled progress should complete");
-    const report = runtime.debugReport({ includeHistory: true });
+    const report = runtime.debugReport({ includeCurveStats: true, includeHistory: true });
     const stats = report.curveStats.find((entry) => entry.laneKey === "curve-settle");
 
     assert(stats, "debug report should include curve stats for settled progress");

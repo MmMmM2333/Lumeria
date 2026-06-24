@@ -667,7 +667,6 @@ export function createMotionRuntimeDebugAdapter() {
       animations: snapshot.animations,
       config: cloneConfig(),
       counters: snapshot.counters,
-      curveStats: makeCurveStats(history),
       runtime: {
         activeAnimationCount: snapshot.summary.activeAnimationCount,
         frames: runtimeState.frames,
@@ -677,6 +676,7 @@ export function createMotionRuntimeDebugAdapter() {
       version: 1,
       warnings: snapshot.warnings,
     };
+    if (reportOptions.includeCurveStats) report.curveStats = makeCurveStats(history);
     if (reportOptions.includeChannels) report.channels = snapshot.channels;
     if (reportOptions.includeHistory) report.history = cloneHistory(history);
     if (reportOptions.includeTargets) report.targets = snapshot.targets;
