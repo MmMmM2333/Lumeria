@@ -250,6 +250,39 @@ export function createMotionRuntime(options = {}) {
     });
   }
 
+  function recordCoordinationEvent(payload = {}) {
+    if (!debugAdapter.isEnabled()) return;
+    const sanitized = sanitizeDebugMetadata(payload);
+    const action = String(sanitized.action || "coordination");
+    const event = {
+      ...sanitized,
+      action,
+      category: "coordination",
+      domain: sanitized.domain || "coordination",
+      driver: "coordination",
+      frame: frameCount,
+      lane: "coordination",
+      laneKey: action,
+      layer: sanitized.layer || "handoff",
+      phase: sanitized.phase || null,
+      prop: sanitized.prop || "handoff",
+      sourceLabel: sanitized.sourceLabel || "folder.handoff.coordination",
+      targetId: null,
+      targetKind: sanitized.targetKind || "FolderHandoff",
+      targetLabel: sanitized.targetLabel || (sanitized.folderId ? `Folder handoff ${sanitized.folderId}` : "Folder handoff"),
+      timeMs: runtimeTimeMs,
+      to: readNumber(sanitized.to, 0),
+      type: "coordination",
+      value: readNumber(sanitized.value, 0),
+      velocity: readNumber(sanitized.velocity, 0),
+    };
+    emitMotionEvent("coordination", {
+      frame: event.frame,
+      record: event,
+      timeMs: event.timeMs,
+    });
+  }
+
   function recordMotionLifecycle(type, animation, extra) {
     emitRenderSignal(type);
     recordDebugEvent(type, animation, extra);
@@ -1168,6 +1201,7 @@ export function createMotionRuntime(options = {}) {
     debug: debugAdapter.debug,
     hasActiveWork,
     onRenderSignal,
+    recordCoordinationEvent,
     reset,
     resolveDebugTarget,
     resumeAutoTicker,

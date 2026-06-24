@@ -4,6 +4,7 @@ import { motionPresets, motionSprings } from "../animation/motionPresets.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { ensureFolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
 import { makeClosingPreviewSwapPlan } from "./folderPreviewSwapMotion.js";
+import { ensureLayerTransitionPort } from "./layerTransitionPort.js";
 
 function makeClosingPreviewSwapKey(folderId, pageIndex) {
   return `closing-preview-swap:${folderId || "folder"}:${pageIndex}`;
@@ -24,6 +25,7 @@ export class FolderClosingPreviewSwapController {
   constructor(layer, options = {}) {
     this.layer = layer;
     this.handoffCoordinator = options.handoffCoordinator || ensureFolderHandoffCoordinator(layer);
+    this.transitionPort = options.transitionPort || ensureLayerTransitionPort(layer);
     this.containerFactory = options.containerFactory;
     this.graphicsFactory = options.graphicsFactory;
     this.spriteFactory = options.spriteFactory;
@@ -39,25 +41,14 @@ export class FolderClosingPreviewSwapController {
   }
 
   ensureLayer() {
-    const layer = this.layer;
     this.handoffCoordinator.ensureClosePreviewSwaps();
-    if (layer.closingPreviewSwapLayer && !layer.closingPreviewSwapLayer.destroyed) {
-      return layer.closingPreviewSwapLayer;
-    }
-    layer.closingPreviewSwapLayer = this.containerFactory();
-    const closingIndex = layer.children?.indexOf?.(layer.closingGhostLayer);
-    if (closingIndex >= 0) layer.addChildAt(layer.closingPreviewSwapLayer, closingIndex + 1);
-    else layer.addChild(layer.closingPreviewSwapLayer);
-    return layer.closingPreviewSwapLayer;
+    return this.transitionPort.ensureClosingPreviewSwapLayer(this.containerFactory);
   }
 
   clear() {
-    const layer = this.layer;
     this.cancelMotionControls();
     this.handoffCoordinator.clearClosePreviewSwaps();
-    const swapLayer = layer.closingPreviewSwapLayer;
-    if (!swapLayer || swapLayer.destroyed) return;
-    const ghosts = swapLayer.removeChildren();
+    const ghosts = this.transitionPort.removeClosingPreviewSwapChildren();
     for (const ghost of ghosts) {
       killAllMotion(ghost);
       ghost.destroy?.({ children: true });

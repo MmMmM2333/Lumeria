@@ -68,6 +68,7 @@ import {
   updatePageTrackMotion,
 } from "./pageTrackMotion.js";
 import { isLayoutTargetChanged } from "./desktopRenderPlan.js";
+import { ensureLayerTransitionPort } from "./layerTransitionPort.js";
 
 const PAGE_DOT_BLEND_DURATION = 0.08;
 const PAGE_DOT_BLEND_EASE = "power2.out";
@@ -291,7 +292,7 @@ function animateDetachedFrame(graphics, frameState, targetState, tracker, visual
   addDetachedVisualMotionControl(visual, geometryControl);
 }
 
-function animateDetachedClosingGhost(ghost, tracker, visual = null) {
+function animateDetachedClosingGhost(ghost, tracker, visual = null, detachedMotion = null) {
   if (!ghost || ghost.destroyed) return;
   motionRuntime.describeTarget(ghost, {
     itemId: ghost.item?.id ?? null,
@@ -315,7 +316,6 @@ function animateDetachedClosingGhost(ghost, tracker, visual = null) {
     sourceLabel: "ghost.detachedClosing.scale",
     targetPart: "node.scale",
   });
-  const detachedMotion = ghost.__closingDetachedMotion;
   const duration = Math.max(0.01, Number(detachedMotion?.duration) || motionPresets.folderClose.duration);
   const hasGeometryTarget = Number.isFinite(Number(detachedMotion?.x)) &&
     Number.isFinite(Number(detachedMotion?.y)) &&
@@ -457,10 +457,12 @@ export class FolderOverlayLayer extends Container {
     this.showFolderTitle = options.showFolderTitle === true;
     if (!options.iconBoundsRegistry) throw new Error("FolderOverlayLayer requires iconBoundsRegistry");
     this.iconBoundsRegistry = options.iconBoundsRegistry;
+    this.transitionPort = ensureLayerTransitionPort(this);
     this.folderHandoff = new FolderHandoffCoordinator(this);
     this.openingGhosts = new FolderOpeningGhostController(this, {
       ghostFactory: () => new IconNode(),
       handoffCoordinator: this.folderHandoff,
+      transitionPort: this.transitionPort,
     });
     this.closingPreviewSwap = new FolderClosingPreviewSwapController(this, {
       containerFactory: () => new Container(),
@@ -469,11 +471,13 @@ export class FolderOverlayLayer extends Container {
       spriteFactory: () => new Sprite(),
       textFactory: (size) => new Text({ text: "", style: { align: "center", fill: 0xffffff, fontSize: size, lineHeight: size } }),
       handoffCoordinator: this.folderHandoff,
+      transitionPort: this.transitionPort,
     });
     this.closingGhosts = new FolderClosingGhostController(this, {
       ghostFactory: () => new IconNode(),
       previewSwap: this.closingPreviewSwap,
       handoffCoordinator: this.folderHandoff,
+      transitionPort: this.transitionPort,
     });
     this.visualCommitQueue = options.visualCommitQueue || new FolderVisualCommitQueue();
     this.visualOwnership = options.visualOwnership || new FolderVisualOwnershipRegistry();
@@ -1131,15 +1135,20 @@ export class FolderOverlayLayer extends Container {
 
   detachClosingPresentationForOpen(nextFolderId) {
     if (nextFolderId) this.clearDetachedClosingVisuals(nextFolderId, { immediate: true, reveal: false });
+    const transitionPort = ensureLayerTransitionPort(this);
     const closingFolderId = this.folderHandoff.folderId || null;
     const shouldKeepDetachedVisual = Boolean(closingFolderId && closingFolderId !== nextFolderId);
     const frameState = shouldKeepDetachedVisual ? this.frameGhostState : null;
     const frameTarget = shouldKeepDetachedVisual ? this.folderHandoff.getDetachedFrameTarget() : null;
     const closingGhosts = shouldKeepDetachedVisual
-      ? this.closingGhostLayer?.removeChildren?.() || []
+      ? transitionPort.removeClosingGhosts()
       : [];
+    const detachedGhostMotions = new Map(closingGhosts.map((ghost) => [
+      ghost,
+      this.folderHandoff.getDetachedClosingGhostMotion(ghost),
+    ]));
     const previewSwapGhosts = shouldKeepDetachedVisual
-      ? this.closingPreviewSwapLayer?.removeChildren?.() || []
+      ? transitionPort.removeClosingPreviewSwapChildren()
       : [];
     let detachedVisual = null;
 
@@ -1204,7 +1213,14 @@ export class FolderOverlayLayer extends Container {
       const geometryTracker = makeCompletionTracker(finishAfterGeometry);
       const frame = frameState ? container.children[0] : null;
       if (frameState) animateDetachedFrame(frame, frameState, frameTarget, geometryTracker, detachedVisual);
-      for (const ghost of closingGhosts) animateDetachedClosingGhost(ghost, geometryTracker, detachedVisual);
+      for (const ghost of closingGhosts) {
+        animateDetachedClosingGhost(
+          ghost,
+          geometryTracker,
+          detachedVisual,
+          detachedGhostMotions.get(ghost)
+        );
+      }
       if (!frameState && !closingGhosts.length && previewSwapGhosts.length) {
         animateDetachedGeometryHold(geometryTracker, detachedVisual);
       }

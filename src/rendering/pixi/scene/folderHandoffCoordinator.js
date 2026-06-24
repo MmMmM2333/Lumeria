@@ -1,3 +1,5 @@
+import { motionRuntime } from "../animation/motionRuntime.js";
+
 const FRAME_VISUAL_PENDING_KEY = "frame:visual";
 const FRAME_COMPLETE_PENDING_KEY = "frame:complete";
 
@@ -34,6 +36,7 @@ function makeInitialState() {
     completedControllerGhostKeys: [],
     completedPreviewGhosts: [],
     detachedFrameTarget: null,
+    detachedGhostMotion: new WeakMap(),
     folderHandoffGhost: null,
     folderId: null,
     frameComplete: false,
@@ -85,8 +88,9 @@ function normalizeToken(token) {
 // live on activeOpenSession and guard reveal; close tokens live on state.token
 // and guard closing handoff/settlement.
 export class FolderHandoffCoordinator {
-  constructor(layer) {
+  constructor(layer, options = {}) {
     this.layer = layer;
+    this.eventSink = options.eventSink || motionRuntime;
     this.activeOpenSession = null;
     this.nextOpenToken = 1;
     this.initialize();
@@ -95,6 +99,17 @@ export class FolderHandoffCoordinator {
   initialize() {
     if (!this.state) this.state = makeInitialState();
     if (!this.opening) this.opening = makeOpeningVisualState();
+  }
+
+  recordCoordinationEvent(action, details = {}) {
+    this.eventSink?.recordCoordinationEvent?.({
+      action,
+      domain: "folderHandoff",
+      folderId: details.folderId ?? this.state?.folderId ?? this.activeOpenSession?.folderId ?? null,
+      phase: details.phase ?? this.state?.phase ?? "idle",
+      token: details.token ?? this.state?.token ?? this.activeOpenSession?.token ?? null,
+      ...details,
+    });
   }
 
   beginOpeningVisuals({ sessionToken = null, state = null } = {}) {
@@ -238,6 +253,13 @@ export class FolderHandoffCoordinator {
         current.geometrySnapshot = null;
         current.geometryLayoutKey = null;
         if (!current.revealed) current.panelReady = false;
+        this.recordCoordinationEvent("phase", {
+          event: "open-retarget",
+          folderId: nextFolderId,
+          phase: "opening",
+          targetKey: nextTargetKey,
+          token: current.token,
+        });
       }
       return { session: current, started: false };
     }
@@ -254,6 +276,13 @@ export class FolderHandoffCoordinator {
     };
     this.nextOpenToken += 1;
     this.activeOpenSession = session;
+    this.recordCoordinationEvent("phase", {
+      event: "open-begin",
+      folderId: nextFolderId,
+      phase: "opening",
+      targetKey: nextTargetKey,
+      token: session.token,
+    });
     return { session, started: true };
   }
 
@@ -300,6 +329,12 @@ export class FolderHandoffCoordinator {
     if (!this.isCurrentOpen(token)) return false;
     if (this.activeOpenSession.panelReady) return false;
     this.activeOpenSession.panelReady = true;
+    this.recordCoordinationEvent("visibility", {
+      event: "open-panel-ready",
+      folderId: this.activeOpenSession.folderId || null,
+      phase: "opening",
+      token,
+    });
     return true;
   }
 
@@ -307,6 +342,12 @@ export class FolderHandoffCoordinator {
     if (!this.isCurrentOpen(token)) return false;
     if (this.activeOpenSession.ghostsReady) return false;
     this.activeOpenSession.ghostsReady = true;
+    this.recordCoordinationEvent("visibility", {
+      event: "open-ghosts-ready",
+      folderId: this.activeOpenSession.folderId || null,
+      phase: "opening",
+      token,
+    });
     return true;
   }
 
@@ -324,6 +365,12 @@ export class FolderHandoffCoordinator {
   finishReveal(token) {
     if (!this.canReveal(token)) return false;
     this.activeOpenSession.revealed = true;
+    this.recordCoordinationEvent("visibility", {
+      event: "open-reveal",
+      folderId: this.activeOpenSession.folderId || null,
+      phase: "opening",
+      token,
+    });
     return true;
   }
 
@@ -335,7 +382,14 @@ export class FolderHandoffCoordinator {
   cancelOpen(token = null) {
     if (token && !this.isCurrentOpen(token)) return false;
     if (!this.activeOpenSession) return false;
+    const session = this.activeOpenSession;
     this.activeOpenSession = null;
+    this.recordCoordinationEvent("phase", {
+      event: "open-cancel",
+      folderId: session.folderId || null,
+      phase: "idle",
+      token: session.token,
+    });
     return true;
   }
 
@@ -355,6 +409,12 @@ export class FolderHandoffCoordinator {
     this.registerFramePending();
     if (handoffGeometry) this.setCloseHandoffGeometry(handoffGeometry);
     if (wasHandoffActive) this.layer?.onInternalActivityChange?.(false, null);
+    this.recordCoordinationEvent("phase", {
+      event: "close-begin",
+      folderId: this.state.folderId || null,
+      phase: "closing",
+      token: this.state.token,
+    });
     return this.closeToken;
   }
 
@@ -374,6 +434,7 @@ export class FolderHandoffCoordinator {
     state.completedControllerGhostKeys = [];
     state.completedPreviewGhosts = [];
     state.detachedFrameTarget = null;
+    state.detachedGhostMotion = new WeakMap();
     state.ghostKeys.clear();
     state.handoffRect = null;
     state.handoffTarget = null;
@@ -475,12 +536,30 @@ export class FolderHandoffCoordinator {
     const events = [];
     if (!state.handoffReadySettled && state.visualPendingKeys.size === 0) {
       state.handoffReadySettled = true;
-      events.push({ folderId: state.folderId || null, token: state.token, type: "handoffReady" });
+      const event = { folderId: state.folderId || null, token: state.token, type: "handoffReady" };
+      events.push(event);
+      this.recordCoordinationEvent("settlement", {
+        event: "handoff-ready",
+        folderId: event.folderId,
+        pendingOverlayCount: state.overlayPendingKeys.size,
+        pendingVisualCount: state.visualPendingKeys.size,
+        phase: state.phase,
+        token: event.token,
+      });
     }
     if (!state.overlaySettled && state.overlayPendingKeys.size === 0) {
       state.overlaySettled = true;
       state.phase = state.folderId ? "settled" : "idle";
-      events.push({ folderId: state.folderId || null, token: state.token, type: "overlaySettled" });
+      const event = { folderId: state.folderId || null, token: state.token, type: "overlaySettled" };
+      events.push(event);
+      this.recordCoordinationEvent("settlement", {
+        event: "overlay-settled",
+        folderId: event.folderId,
+        pendingOverlayCount: state.overlayPendingKeys.size,
+        pendingVisualCount: state.visualPendingKeys.size,
+        phase: state.phase,
+        token: event.token,
+      });
     }
     return events;
   }
@@ -551,6 +630,12 @@ export class FolderHandoffCoordinator {
     this.state.visualGhostKeys.clear();
     this.state.visualPendingKeys.clear();
     this.state.overlayPendingKeys.clear();
+    this.recordCoordinationEvent("ownership", {
+      event: "overlay-visual-release",
+      folderId: this.state.folderId || null,
+      phase: this.state.phase,
+      token,
+    });
     return this.collectSettlementEvents();
   }
 
@@ -578,6 +663,15 @@ export class FolderHandoffCoordinator {
     this.state.detachedFrameTarget = detachedTarget;
     this.state.handoffRect = rect;
     this.state.handoffTarget = target;
+    this.recordCoordinationEvent("ownership", {
+      event: "close-geometry",
+      folderId: this.state.folderId || target?.folderId || null,
+      hasDetachedTarget: Boolean(detachedTarget),
+      hasHandoffRect: Boolean(rect),
+      hasHandoffTarget: Boolean(target),
+      phase: this.state.phase,
+      token: this.state.token,
+    });
   }
 
   getHandoffRect() {
@@ -590,6 +684,23 @@ export class FolderHandoffCoordinator {
 
   getDetachedFrameTarget() {
     return this.state.detachedFrameTarget;
+  }
+
+  setDetachedClosingGhostMotion(ghost, motion = null) {
+    if (!ghost || !motion) return false;
+    this.state.detachedGhostMotion.set(ghost, { ...motion });
+    return true;
+  }
+
+  getDetachedClosingGhostMotion(ghost) {
+    if (!ghost) return null;
+    const motion = this.state.detachedGhostMotion.get(ghost);
+    return motion ? { ...motion } : null;
+  }
+
+  deleteDetachedClosingGhostMotion(ghost) {
+    if (!ghost) return false;
+    return this.state.detachedGhostMotion.delete(ghost);
   }
 
   trackCloseGhost(target, controllerGhostKey = null) {
@@ -758,6 +869,13 @@ export class FolderHandoffCoordinator {
     if (this.state.handoffActive === next) return;
     this.state.handoffActive = next;
     const folderId = next ? this.state.folderId || this.layer?.currentFolderId || null : null;
+    this.recordCoordinationEvent("visibility", {
+      active: next,
+      event: "close-handoff-active",
+      folderId,
+      phase: this.state.phase,
+      token: this.state.token,
+    });
     if (next) this.layer?.onClosingHandoffReady?.(folderId);
     this.layer?.onInternalActivityChange?.(next, folderId);
   }
@@ -769,9 +887,17 @@ export class FolderHandoffCoordinator {
   }
 
   finishCloseHandoffCleanup() {
+    const folderId = this.state.folderId || null;
+    const token = this.state.token;
     this.clearCloseFolderId();
     this.resetCloseHandoffVisualRelease();
     this.setCloseHandoffActive(false);
+    this.recordCoordinationEvent("phase", {
+      event: "close-cleanup-finish",
+      folderId,
+      phase: "idle",
+      token,
+    });
   }
 
   hasActiveCloseVisuals() {
@@ -816,6 +942,7 @@ export function ensureFolderHandoffCoordinator(layer) {
   if (!layer.folderHandoff) layer.folderHandoff = new FolderHandoffCoordinator(layer);
   else {
     layer.folderHandoff.layer = layer;
+    if (!layer.folderHandoff.eventSink) layer.folderHandoff.eventSink = motionRuntime;
     layer.folderHandoff.initialize?.();
   }
   return layer.folderHandoff;

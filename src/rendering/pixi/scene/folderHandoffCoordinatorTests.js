@@ -1,4 +1,5 @@
 import { motionRuntime } from "../animation/motionRuntime.js";
+import { createMotionReplayTraceFromRuntime } from "../animation/motionReplayTrace.js";
 import { FolderClosingGhostController } from "./folderClosingGhostController.js";
 import {
   FolderHandoffCoordinator,
@@ -285,6 +286,58 @@ export async function runFolderHandoffCoordinatorTests() {
     assert(duplicateHandoffEvents.length === 0, "duplicate visual release should not emit handoff-ready twice");
     assert(overlayEvents.map((event) => event.type).join(",") === "overlaySettled", "frame complete should emit overlay-settled once");
     assert(duplicateOverlayEvents.length === 0, "duplicate frame complete should not emit overlay-settled twice");
+  }
+
+  {
+    motionRuntime.reset();
+    const previousConfig = motionRuntime.configureDebug();
+    motionRuntime.configureDebug({
+      enabled: true,
+      maxEvents: 100,
+      maxSamples: 100,
+      recordHistory: true,
+      sampleHz: 60,
+    });
+    try {
+      const layer = {
+        onClosingHandoffReady() {},
+        onInternalActivityChange() {},
+      };
+      const coordinator = new FolderHandoffCoordinator(layer);
+      coordinator.beginCloseTransition("folder-observable", { closeToken: "close-observe" });
+      coordinator.setCloseHandoffGeometry({
+        detachedTarget: { height: 64, left: 10, top: 20, width: 64 },
+        rect: { height: 64, left: 10, top: 20, width: 64 },
+        target: { folderId: "folder-observable" },
+      });
+      coordinator.completeCloseFrameVisual("close-observe");
+      coordinator.startCloseHandoff();
+      coordinator.releaseCloseOverlayVisuals("close-observe");
+
+      const trace = createMotionReplayTraceFromRuntime(motionRuntime, {
+        generatedAt: "2026-06-25T00:00:00.000Z",
+        sampleHz: 60,
+      });
+      const coordinationEvents = trace.timeline.events.filter((event) => event.type === "coordination");
+      const actions = new Set(coordinationEvents.map((event) => event.action));
+      const eventNames = new Set(coordinationEvents.map((event) => event.event));
+
+      assert(coordinationEvents.length >= 5, "folder close replay trace should include coordination events");
+      assert(actions.has("phase"), "coordination trace should include close phase events");
+      assert(actions.has("ownership"), "coordination trace should include ownership handoff events");
+      assert(actions.has("visibility"), "coordination trace should include visibility commit events");
+      assert(actions.has("settlement"), "coordination trace should include settlement events");
+      assert(eventNames.has("close-begin"), "coordination trace should include close-begin");
+      assert(eventNames.has("close-geometry"), "coordination trace should include geometry ownership");
+      assert(eventNames.has("close-handoff-active"), "coordination trace should include visibility activation");
+      assert(eventNames.has("handoff-ready"), "coordination trace should include handoff-ready settlement");
+      assert(eventNames.has("overlay-settled"), "coordination trace should include overlay-settled settlement");
+      assert(coordinationEvents.every((event) => event.domain === "folderHandoff"), "coordination events should identify the folder handoff domain");
+      assert(trace.summary.eventCount === trace.timeline.events.length, "replay summary should count coordination events");
+    } finally {
+      motionRuntime.configureDebug(previousConfig);
+      motionRuntime.reset();
+    }
   }
 
   {

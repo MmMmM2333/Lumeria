@@ -626,14 +626,14 @@ export async function runFolderOverlayLayerTests() {
     closingGhost.alpha = 1;
     closingGhost.position.set(10, 20);
     closingGhost.scale.set(1);
-    closingGhost.__closingDetachedMotion = {
+    attachHandoffCoordinator(layer, { folderId: "folder-a" });
+    layer.folderHandoff.setDetachedClosingGhostMotion(closingGhost, {
       alpha: 0,
       duration: 0.36,
       scale: 0.2,
       x: 100,
       y: 120,
-    };
-    attachHandoffCoordinator(layer, { folderId: "folder-a" });
+    });
     layer.closingGhostLayer = { removeChildren: () => [closingGhost] };
     layer.closingPreviewSwapLayer = { removeChildren: () => [] };
     layer.closingGhosts = { clear: () => { clearCount += 1; } };
@@ -783,14 +783,14 @@ export async function runFolderOverlayLayerTests() {
     closingGhost.alpha = 1;
     closingGhost.position.set(99.6, 120.3);
     closingGhost.scale.set(0.205);
-    closingGhost.__closingDetachedMotion = {
+    attachHandoffCoordinator(layer, { folderId: "folder-a" });
+    layer.folderHandoff.setDetachedClosingGhostMotion(closingGhost, {
       alpha: 0,
       duration: 0.36,
       scale: 0.2,
       x: 100,
       y: 120,
-    };
-    attachHandoffCoordinator(layer, { folderId: "folder-a" });
+    });
     layer.closingGhostLayer = { removeChildren: () => [closingGhost] };
     layer.closingPreviewSwapLayer = { removeChildren: () => [] };
     layer.closingGhosts = { clear: () => {} };
