@@ -86,6 +86,7 @@ export function runLaunchpadViewStateTests() {
   assert(desktop.view.appLaunchGhostTransition === appLaunchGhostTransition, "view state should expose the app launch ghost transition");
   assert(desktop.view.homeChromeTransition === homeChromeTransition, "view state should expose the home chrome transition");
   assert(desktop.view.panelSpring === panelSpring, "view state should expose the settings panel spring");
+  assert(!("stiffness" in panelSpring) && !("damping" in panelSpring) && !("mass" in panelSpring), "settings panel transition should not expose GSAP-ignored spring fields");
 
   const imageBackground = createViewState({ backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE, backgroundImageOpacity: 58 });
   assert(imageBackground.view.rootStyle.value["--launchpad-background-image-opacity"] === "0.58", "root style should expose image opacity in image background mode");

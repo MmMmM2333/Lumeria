@@ -4,6 +4,10 @@ import {
   installMotionDebugGlobal,
   MOTION_DEBUG_GLOBAL_KEY,
 } from "./motionDebugReport.js";
+import {
+  LAUNCHPAD_DEBUG_GLOBAL_KEY,
+  readLaunchpadDebugValue,
+} from "../debugNamespace.js";
 
 function parseReportJson(report) {
   return JSON.parse(report.json);
@@ -142,12 +146,12 @@ export function runMotionDebugReportTests() {
     const target = {};
 
     assert(installMotionDebugGlobal({ dev: false, runtime, target }) == null, "global commands should not install outside dev mode");
-    assert(target[MOTION_DEBUG_GLOBAL_KEY] == null, "non-dev install should not mutate the target");
+    assert(readLaunchpadDebugValue(MOTION_DEBUG_GLOBAL_KEY, target) == null, "non-dev install should not mutate the target");
 
     seedRuntime(runtime);
     const commands = installMotionDebugGlobal({ dev: true, runtime, target });
 
-    assert(target[MOTION_DEBUG_GLOBAL_KEY] === commands, "dev install should expose global motion debug commands");
+    assert(target[LAUNCHPAD_DEBUG_GLOBAL_KEY]?.[MOTION_DEBUG_GLOBAL_KEY] === commands, "dev install should expose namespaced global motion debug commands");
     assert(typeof commands.summary === "function", "global commands should expose summary report");
     assert(typeof commands.full === "function", "global commands should expose full report");
     assert(typeof commands.selectedTarget === "function", "global commands should expose selected target report");
@@ -167,6 +171,6 @@ export function runMotionDebugReportTests() {
     assert(JSON.parse(commands.stopReplayCapture().json).schema === "pixi-motion-replay-trace/v1", "global replay capture should stop with a trace");
 
     commands.uninstall();
-    assert(target[MOTION_DEBUG_GLOBAL_KEY] == null, "global commands should uninstall cleanly");
+    assert(readLaunchpadDebugValue(MOTION_DEBUG_GLOBAL_KEY, target) == null, "global commands should uninstall cleanly");
   }
 }

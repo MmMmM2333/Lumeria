@@ -2,6 +2,10 @@ import { killAllMotion } from "../animation/motionCleanup.js";
 import { parallel, motion } from "../animation/motionTween.js";
 import { motionPresets, motionSprings } from "../animation/motionPresets.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import {
+  readLaunchpadDebugValue,
+  setLaunchpadDebugValue,
+} from "../debugNamespace.js";
 import { clientRectToStageVisualRect, stageLayoutRectToStageVisualRect } from "../geometry/stageCoordinates.js";
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
 import { getClosingPreviewTiming } from "./folderOverlayGeometry.js";
@@ -38,12 +42,12 @@ const CLOSING_GHOST_VISUAL_SCALE_EPSILON = 0.01;
 function publishLastFolderHandoffDebug(payload) {
   const folderId = payload?.folderId || null;
   if (!folderId) return;
-  const previous = globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__;
-  globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__ = {
+  const previous = readLaunchpadDebugValue("lastFolderHandoff");
+  setLaunchpadDebugValue("lastFolderHandoff", {
     ...(previous && typeof previous === "object" ? previous : {}),
     ...payload,
     desktopLogged: false,
-  };
+  });
 }
 
 function getClosingControllerGhostKey(state, target) {

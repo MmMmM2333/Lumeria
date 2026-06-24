@@ -1,6 +1,11 @@
 import { FolderClosingGhostController } from "./folderClosingGhostController.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import {
+  deleteLaunchpadDebugValue,
+  readLaunchpadDebugValue,
+  setLaunchpadDebugValue,
+} from "../debugNamespace.js";
+import {
   clearMotionPreferencesForTests,
   setReducedMotionForTests,
 } from "../animation/motionPreferences.js";
@@ -495,10 +500,10 @@ export function runFolderClosingGhostControllerTests() {
     const layer = makeLayer();
     const completed = [];
     const logs = [];
-    const originalDebug = globalThis.__LP_DEBUG_FOLDER_HANDOFF__;
-    const originalLastDebug = globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__;
+    const originalDebug = readLaunchpadDebugValue("folderHandoff");
+    const originalLastDebug = readLaunchpadDebugValue("lastFolderHandoff");
     const originalLog = console.log;
-    globalThis.__LP_DEBUG_FOLDER_HANDOFF__ = { log: true, timeline: true };
+    setLaunchpadDebugValue("folderHandoff", { log: true, timeline: true });
     console.log = (...args) => logs.push(args);
     try {
       const ghost = makeGhost();
@@ -523,17 +528,17 @@ export function runFolderClosingGhostControllerTests() {
         "visual handoff release debug should log before overlay visuals are cleared"
       );
       assert(
-        globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__?.folderId === "folder-1" &&
-          globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__?.phase === "overlay-release-after-clear",
+        readLaunchpadDebugValue("lastFolderHandoff")?.folderId === "folder-1" &&
+          readLaunchpadDebugValue("lastFolderHandoff")?.phase === "overlay-release-after-clear",
         "visual handoff debug should publish the latest folder handoff snapshot"
       );
       assert(completed.join(",") === "close-key", "debug logging should not change visual arrival completion");
     } finally {
       console.log = originalLog;
-      if (originalDebug === undefined) delete globalThis.__LP_DEBUG_FOLDER_HANDOFF__;
-      else globalThis.__LP_DEBUG_FOLDER_HANDOFF__ = originalDebug;
-      if (originalLastDebug === undefined) delete globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__;
-      else globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__ = originalLastDebug;
+      if (originalDebug === undefined) deleteLaunchpadDebugValue("folderHandoff");
+      else setLaunchpadDebugValue("folderHandoff", originalDebug);
+      if (originalLastDebug === undefined) deleteLaunchpadDebugValue("lastFolderHandoff");
+      else setLaunchpadDebugValue("lastFolderHandoff", originalLastDebug);
       motionRuntime.reset();
     }
   }

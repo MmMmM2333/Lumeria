@@ -9,6 +9,10 @@ import {
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { motionSprings } from "../animation/motionPresets.js";
 import { killMotionOf, motion } from "../animation/motionTween.js";
+import {
+  readLaunchpadDebugValue,
+  setLaunchpadDebugValue,
+} from "../debugNamespace.js";
 import { makeDesktopBoundsRegistration } from "./desktopBoundsRegistration.js";
 import { resolveDesktopBoundsTargets, resolveFolderPreviewChildBoundsTargets } from "./desktopBoundsTargets.js";
 import { makeFolderThumbPreviewRect } from "./folderOverlayTargets.js";
@@ -804,11 +808,11 @@ export class DesktopLayer extends Container {
     if (!options?.log) return null;
     const snapshot = this.makeFolderHandoffDebugSnapshot(entry, { phase });
     if (!snapshot) return null;
-    globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__ = {
+    setLaunchpadDebugValue("lastFolderHandoff", {
       ...snapshot,
       desktopLogged: false,
       phase,
-    };
+    });
     console.log("[folder-handoff-debug] desktop-restore", {
       ...snapshot,
       phase,
@@ -1043,7 +1047,7 @@ export class DesktopLayer extends Container {
 
   debugFolderHandoffDesktopActual(folder, node, registration) {
     const options = getFolderHandoffDebugOptions();
-    const debugState = globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__;
+    const debugState = readLaunchpadDebugValue("lastFolderHandoff");
     if (!options?.log || debugState?.desktopLogged || debugState?.folderId !== folder?.id) return;
     const rows = [];
     const actualThumbRect = node.getFolderThumbBounds(registration.stageRect);
@@ -1102,11 +1106,11 @@ export class DesktopLayer extends Container {
       targetWidth: row.target?.width ?? null,
     })));
     if (options.overlay) {
-      const previousClear = globalThis.__LP_CLEAR_FOLDER_HANDOFF_DEBUG__;
-      globalThis.__LP_CLEAR_FOLDER_HANDOFF_DEBUG__ = () => {
+      const previousClear = readLaunchpadDebugValue("clearFolderHandoff");
+      setLaunchpadDebugValue("clearFolderHandoff", () => {
         previousClear?.();
         this.handoffDebugLayer.clear();
-      };
+      });
       this.handoffDebugLayer.clear();
       drawDebugRect(this.handoffDebugLayer, actualThumbRect, registration.stageRect, 0xbf5af2, 0.98, options.lineWidth);
       for (const row of rows) {

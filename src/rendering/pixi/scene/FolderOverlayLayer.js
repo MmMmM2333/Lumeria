@@ -1092,7 +1092,7 @@ export class FolderOverlayLayer extends Container {
   clearDetachedClosingVisual(visual, options = {}) {
     if (!visual || visual.clearing) return false;
     visual.clearing = true;
-    return this.getVisualCommitQueue().enqueueDetachedVisualRelease({
+    return this.getVisualCommitQueue().enqueue({
       isStale: () => !this.detachedClosingVisuals.includes(visual),
       mutateOwnership: () => {
         const index = this.detachedClosingVisuals.indexOf(visual);

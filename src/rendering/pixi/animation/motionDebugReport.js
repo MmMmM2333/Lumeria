@@ -1,5 +1,11 @@
 import { motionRuntime } from "./motionRuntime.js";
 import {
+  deleteLaunchpadDebugValue,
+  hasLaunchpadDebugValue,
+  readLaunchpadDebugValue,
+  setLaunchpadDebugValue,
+} from "../debugNamespace.js";
+import {
   createMotionReplayCaptureController,
   createMotionReplayTraceFromRuntime,
 } from "./motionReplayTrace.js";
@@ -10,7 +16,7 @@ import {
   makeTrackKey,
 } from "./motionTraceShared.js";
 
-export const MOTION_DEBUG_GLOBAL_KEY = "__LP_MOTION_DEBUG__";
+export const MOTION_DEBUG_GLOBAL_KEY = "motion";
 const REPORT_SCHEMA = "pixi-motion-ai-report/v1";
 const REPORT_VERSION = 1;
 const REPORT_MODES = new Set(["summary", "full", "selectedTarget"]);
@@ -343,15 +349,15 @@ export function installMotionDebugGlobal(options = {}) {
     target = globalThis,
   } = options;
   if (!dev || !target) return null;
-  const hadPrevious = Object.prototype.hasOwnProperty.call(target, key);
-  const previous = target[key];
+  const hadPrevious = hasLaunchpadDebugValue(key, target);
+  const previous = readLaunchpadDebugValue(key, target);
   const commands = createMotionDebugCommands(runtime, { target });
   commands.uninstall = () => {
-    if (target[key] !== commands) return;
-    if (hadPrevious) target[key] = previous;
-    else delete target[key];
+    if (readLaunchpadDebugValue(key, target) !== commands) return;
+    if (hadPrevious) setLaunchpadDebugValue(key, previous, target);
+    else deleteLaunchpadDebugValue(key, target);
   };
-  target[key] = commands;
+  setLaunchpadDebugValue(key, commands, target);
   return commands;
 }
 
@@ -361,5 +367,5 @@ export function uninstallMotionDebugGlobal(options = {}) {
     target = globalThis,
   } = options;
   if (!target) return;
-  delete target[key];
+  deleteLaunchpadDebugValue(key, target);
 }

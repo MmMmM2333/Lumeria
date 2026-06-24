@@ -1,5 +1,6 @@
 import { Container, Graphics, Text } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import { setLaunchpadDebugValue } from "../debugNamespace.js";
 import { roundRect } from "./folderHandoffDebug.js";
 import { getSingleStageDiagnosticsOptions, makeSingleStageDiagnosticsPlan } from "./singleStagePlan.js";
 
@@ -113,7 +114,7 @@ export class SingleStageDiagnosticsLayer extends Container {
   publishDebugSnapshot(plan, options) {
     if (!options.diagnostics && !options.probe) return;
     const snapshot = makeDebugSnapshot(plan);
-    globalThis.__LP_LAST_SINGLE_STAGE_DIAGNOSTICS__ = snapshot;
+    setLaunchpadDebugValue("singleStageDiagnostics", snapshot);
     if (!options.log) return;
     const debugKey = JSON.stringify({
       closeThumb: snapshot?.closeThumbRect,

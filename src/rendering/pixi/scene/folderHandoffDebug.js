@@ -1,5 +1,7 @@
+import { readLaunchpadDebugValue } from "../debugNamespace.js";
+
 export function getFolderHandoffDebugOptions() {
-  const value = globalThis.__LP_DEBUG_FOLDER_HANDOFF__;
+  const value = readLaunchpadDebugValue("folderHandoff");
   if (!value) return null;
   if (value === true) return { lineWidth: 3, log: true, overlay: true, timeline: false };
   if (typeof value === "object") {

@@ -50,6 +50,11 @@ import { DesktopLayer } from "./scene/DesktopLayer.js";
 import { createFolderLayerState } from "./folderLayerState.js";
 import { readFolderOverlayStateRenderDependencies } from "./folderOverlayStateDependencies.js";
 import { clearIconTextureCache, preloadIconTextures } from "./assets/iconTextureCache.js";
+import {
+  deleteLaunchpadDebugValue,
+  readLaunchpadDebugValue,
+  setLaunchpadDebugValue,
+} from "./debugNamespace.js";
 import { createPixiRenderScheduler } from "./pixiRenderScheduler.js";
 import {
   makeFolderInternalActivityRenderReason,
@@ -488,7 +493,7 @@ function logFolderHandoffTimeline(metrics, folderClosingHandoffId) {
 
 function publishFolderVisualDebugSnapshot() {
   if (!import.meta.env.DEV) return;
-  globalThis.__LP_FOLDER_VISUAL_DEBUG__ = () => layer?.getFolderVisualDebugSnapshot?.() || null;
+  setLaunchpadDebugValue("folderVisual", () => layer?.getFolderVisualDebugSnapshot?.() || null);
 }
 
 function updateMotionDebugOverlay() {
@@ -766,9 +771,9 @@ function destroyPixi(options = {}) {
   folderClosingHandoffRetainer.reset();
   motionDebugCommands?.uninstall?.();
   motionDebugCommands = null;
-  if (globalThis.__LP_FOLDER_VISUAL_DEBUG__) delete globalThis.__LP_FOLDER_VISUAL_DEBUG__;
-  if (import.meta.env.DEV && globalThis.__LP_MOTION_OVERLAY_DEBUG__) {
-    delete globalThis.__LP_MOTION_OVERLAY_DEBUG__;
+  deleteLaunchpadDebugValue("folderVisual");
+  if (import.meta.env.DEV && readLaunchpadDebugValue("motionOverlay")) {
+    deleteLaunchpadDebugValue("motionOverlay");
   }
   singleStageFolderPanelGeometry.value = null;
   singleStageFolderTitleFrame.value = null;
@@ -857,7 +862,7 @@ onMounted(async () => {
     installMotionRuntimeDebugAdapterFactory(createMotionRuntimeDebugAdapter);
     motionDebugOverlay = new MotionDebugOverlayLayer();
     app.stage.addChild(motionDebugOverlay);
-    globalThis.__LP_MOTION_OVERLAY_DEBUG__ = () => motionDebugOverlay?.debugSnapshot?.() || null;
+    setLaunchpadDebugValue("motionOverlay", () => motionDebugOverlay?.debugSnapshot?.() || null);
     motionDebugCommands = installMotionDebugGlobal();
   }
   resizeObserver = new ResizeObserver(handleResize);

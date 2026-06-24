@@ -103,41 +103,6 @@ export class FolderVisualOwnershipRegistry {
     return count;
   }
 
-  releaseByScope(scope = {}) {
-    const {
-      folderId = null,
-      keyPrefix = null,
-      kind = null,
-      token = null,
-    } = scope;
-    let count = 0;
-    const released = [];
-    for (const [key, owner] of Array.from(this.owners.entries())) {
-      if (token != null && owner.token !== token) continue;
-      if (folderId != null && owner.folderId !== folderId) continue;
-      if (kind != null && owner.kind !== kind) continue;
-      if (keyPrefix != null && !key.startsWith(keyPrefix)) continue;
-      this.owners.delete(key);
-      released.push({ key, owner: { ...owner } });
-      count += 1;
-    }
-    if (released.length) {
-      this.notifyChange({
-        released,
-        scope: { folderId, keyPrefix, kind, token },
-        type: "releaseByScope",
-      });
-    }
-    return count;
-  }
-
-  transfer(key, fromToken, owner) {
-    if (!key) return false;
-    const current = this.owners.get(key);
-    if (!ownerMatches(current, fromToken)) return false;
-    return this.acquire(key, owner);
-  }
-
   getOwner(key) {
     return key ? this.owners.get(key) || null : null;
   }

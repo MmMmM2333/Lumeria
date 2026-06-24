@@ -210,6 +210,11 @@ export async function runDesktopLayerTests() {
     makeDesktopSourceVisualKey,
   } = await import("./folderVisualOwnershipRegistry.js");
   const { motionRuntime } = await import("../animation/motionRuntime.js");
+  const {
+    deleteLaunchpadDebugValue,
+    readLaunchpadDebugValue,
+    setLaunchpadDebugValue,
+  } = await import("../debugNamespace.js");
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[DesktopLayer test failed] ${message}`);
   };
@@ -686,10 +691,10 @@ export async function runDesktopLayerTests() {
 
   {
     const logs = [];
-    const originalDebug = globalThis.__LP_DEBUG_FOLDER_HANDOFF__;
-    const originalLastDebug = globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__;
+    const originalDebug = readLaunchpadDebugValue("folderHandoff");
+    const originalLastDebug = readLaunchpadDebugValue("lastFolderHandoff");
     const originalLog = console.log;
-    globalThis.__LP_DEBUG_FOLDER_HANDOFF__ = { log: true };
+    setLaunchpadDebugValue("folderHandoff", { log: true });
     console.log = (...args) => logs.push(args);
     try {
       const folder = makeNode("folder");
@@ -710,17 +715,18 @@ export async function runDesktopLayerTests() {
       assert(after?.[1]?.node?.visualWrapVisible === true, "desktop restore debug should capture restored artwork after release");
       assert(after?.[1]?.visualRoot, "desktop restore debug should include desktop transform context");
       assert(after?.[1]?.singleStageFolderLayer, "desktop restore debug should include folder overlay transform context");
+      const lastDebug = readLaunchpadDebugValue("lastFolderHandoff");
       assert(
-        globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__?.folderId === "folder-1" &&
-          globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__?.phase === "desktop-restore-after",
+        lastDebug?.folderId === "folder-1" &&
+          lastDebug?.phase === "desktop-restore-after",
         "desktop restore debug should publish the latest folder handoff snapshot"
       );
     } finally {
       console.log = originalLog;
-      if (originalDebug === undefined) delete globalThis.__LP_DEBUG_FOLDER_HANDOFF__;
-      else globalThis.__LP_DEBUG_FOLDER_HANDOFF__ = originalDebug;
-      if (originalLastDebug === undefined) delete globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__;
-      else globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__ = originalLastDebug;
+      if (originalDebug === undefined) deleteLaunchpadDebugValue("folderHandoff");
+      else setLaunchpadDebugValue("folderHandoff", originalDebug);
+      if (originalLastDebug === undefined) deleteLaunchpadDebugValue("lastFolderHandoff");
+      else setLaunchpadDebugValue("lastFolderHandoff", originalLastDebug);
     }
   }
 

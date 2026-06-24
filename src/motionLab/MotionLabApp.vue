@@ -234,6 +234,10 @@ import {
   installMotionRuntimeDebugAdapterFactory,
 } from "../rendering/pixi/animation/motionRuntime.js";
 import {
+  deleteLaunchpadDebugValue,
+  setLaunchpadDebugValue,
+} from "../rendering/pixi/debugNamespace.js";
+import {
   applyMotionLabParamPreset,
   buildMotionLabParamPresetRows,
   buildMotionLabAssertionRows,
@@ -922,7 +926,7 @@ async function copyTraceDiffExport() {
 }
 
 function installDebugApi() {
-  globalThis.__LP_MOTION_LAB__ = {
+  setLaunchpadDebugValue("motionLab", {
     captureReplayTrace,
     assertions: () => assertionResults.value,
     baseline: () => savedBaselineSnapshot.value,
@@ -978,7 +982,7 @@ function installDebugApi() {
     trace: () => replayTrace.value,
     traceDiffExport: () => createMotionLabTraceDiffExport(traceDiffCurrent.value, traceDiffBaseline.value),
     traceDiffRows: () => traceDiffRows.value,
-  };
+  });
 }
 
 function clearCopyTimers() {
@@ -1020,6 +1024,6 @@ onBeforeUnmount(() => {
   pixiApp?.destroy(false, { children: true });
   pixiApp = null;
   scene = null;
-  if (globalThis.__LP_MOTION_LAB__) delete globalThis.__LP_MOTION_LAB__;
+  deleteLaunchpadDebugValue("motionLab");
 });
 </script>
