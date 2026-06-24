@@ -167,6 +167,7 @@ export function makeSingleStageDiagnosticsPlan(state, options = {}) {
     folder: state.renderedFolder,
     folderOpeningOriginBounds: state.folderOpeningOriginBounds,
     folderPageSize: state.folderPageSize,
+    iconBoundsRegistry: options.iconBoundsRegistry,
     isClosing,
     previousStableFolderCloseTarget: options.previousStableFolderCloseTarget,
     wasClosing: options.wasClosing,

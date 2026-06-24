@@ -6,12 +6,14 @@ import {
   shouldFinishDragForPointerEvent,
 } from "./useLaunchpadDrag.js";
 import {
-  clearIconBoundsRegistry,
-  registerLiveClientLaunchIconTargetBounds,
-  registerRenderedClientLaunchIconBounds,
-  registerStableStageLayoutLaunchIconTargetBounds,
+  createIconBoundsRegistry,
+  ICON_BOUNDS_KIND,
+  ICON_BOUNDS_VARIANT,
 } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 import { nextTick, ref, shallowRef } from "vue";
+
+const K = ICON_BOUNDS_KIND;
+const V = ICON_BOUNDS_VARIANT;
 
 async function withMockPointerEnvironment(run) {
   const originalWindow = globalThis.window;
@@ -119,6 +121,7 @@ function createDragHarness(overrides = {}) {
   }
   const folderPanelRef = overrides.folderPanelRef || ref(null);
   const folderPageRefs = overrides.folderPageRefs || [];
+  const iconBoundsRegistry = overrides.iconBoundsRegistry || createIconBoundsRegistry();
   const drag = useLaunchpadDrag({
     canCreateDesktopPageAfterDrag: overrides.canCreateDesktopPageAfterDrag || (() => false),
     canCreateFolderPageAfterDrag: overrides.canCreateFolderPageAfterDrag || (() => false),
@@ -167,6 +170,7 @@ function createDragHarness(overrides = {}) {
     getTopLevelIconMotionGeometry: () => null,
     gridCols: ref(7),
     gridRows: ref(5),
+    iconBoundsRegistry,
     insertAppIntoFolder,
     insertTopLevelItem,
     isFolderLayerActive: overrides.isFolderLayerActive || ref(false),
@@ -196,7 +200,11 @@ function createDragHarness(overrides = {}) {
     wouldTopLevelInsertOverflow: () => false,
   });
 
-  return { app, calls, drag, folderPanelRef, folderSession, isLayoutProjectionActive, openFolderId, pages };
+  return { app, calls, drag, folderPanelRef, folderSession, iconBoundsRegistry, isLayoutProjectionActive, openFolderId, pages };
+}
+
+function putLaunchBounds(registry, variant, source, rect, meta = {}) {
+  registry.registerBounds(K.LAUNCH, variant, source, rect, meta);
 }
 
 function makePointerDownEvent(pointerId, target) {
@@ -279,19 +287,22 @@ export async function runLaunchpadDragTests() {
   });
 
   await withMockPointerEnvironment(async ({ timers }) => {
-    clearIconBoundsRegistry();
     const isHomeRevealSettling = ref(true);
     let finishSettleCalls = 0;
+    const iconBoundsRegistry = createIconBoundsRegistry();
     const { app, drag } = createDragHarness({
       finishHomeRevealSettleWindow: () => {
         finishSettleCalls += 1;
         isHomeRevealSettling.value = false;
-        registerRenderedClientLaunchIconBounds(
+        putLaunchBounds(
+          iconBoundsRegistry,
+          V.RENDERED,
           { area: "desktop", id: "app-a", pageIndex: 0 },
           { left: 20, top: 22, width: 64, height: 64 },
           { area: "desktop", id: "app-a", index: 0, pageIndex: 0 }
         );
       },
+      iconBoundsRegistry,
       isHomeRevealSettling,
     });
     const target = {
@@ -305,13 +316,14 @@ export async function runLaunchpadDragTests() {
 
     assert(finishSettleCalls === 1, "first drag after desktop reveal should finish the settle window");
     assert(drag.dragPreviewState.value?.offset.x === 4 && drag.dragPreviewState.value?.offset.y === 10, "settled desktop drag should recompute pointer offset from fresh Pixi bounds");
-    clearIconBoundsRegistry();
+    iconBoundsRegistry.clearBounds();
   });
 
   await withMockPointerEnvironment(async ({ timers }) => {
-    clearIconBoundsRegistry();
     const isHomeRevealSettling = ref(true);
+    const iconBoundsRegistry = createIconBoundsRegistry();
     const { app, drag } = createDragHarness({
+      iconBoundsRegistry,
       isHomeRevealSettling,
     });
     const target = {
@@ -320,7 +332,9 @@ export async function runLaunchpadDragTests() {
 
     drag.beginDrag(makePointerDownEvent(43, target), app, { type: "page", pageIndex: 0, index: 0 });
     isHomeRevealSettling.value = false;
-    registerRenderedClientLaunchIconBounds(
+    putLaunchBounds(
+      iconBoundsRegistry,
+      V.RENDERED,
       { area: "desktop", id: "app-a", pageIndex: 0 },
       { left: 20, top: 22, width: 64, height: 64 },
       { area: "desktop", id: "app-a", index: 0, pageIndex: 0 }
@@ -330,7 +344,7 @@ export async function runLaunchpadDragTests() {
     await nextTick();
 
     assert(drag.dragPreviewState.value?.offset.x === 4 && drag.dragPreviewState.value?.offset.y === 10, "desktop drag should refresh bounds when pointerdown happened during reveal settle");
-    clearIconBoundsRegistry();
+    iconBoundsRegistry.clearBounds();
   });
 
   await withMockPointerEnvironment(async ({ listeners, timers }) => {
@@ -383,15 +397,20 @@ export async function runLaunchpadDragTests() {
   });
 
   await withMockPointerEnvironment(async ({ listeners, timers }) => {
-    clearIconBoundsRegistry();
+    const iconBoundsRegistry = createIconBoundsRegistry();
     const { app, drag, pages } = createDragHarness({
+      iconBoundsRegistry,
       onCommitPages: () => {
-        registerLiveClientLaunchIconTargetBounds(
+        putLaunchBounds(
+          iconBoundsRegistry,
+          V.LIVE_TARGET,
           { area: "desktop", id: "app-a", pageIndex: 0 },
           { left: 123, top: 45, width: 64, height: 64 },
           { area: "desktop", id: "app-a", index: 1, pageIndex: 0 }
         );
-        registerStableStageLayoutLaunchIconTargetBounds(
+        putLaunchBounds(
+          iconBoundsRegistry,
+          V.STABLE_STAGE_LAYOUT,
           { area: "desktop", id: "app-a", pageIndex: 0 },
           { left: 23, top: 25, width: 64, height: 64 },
           {
@@ -422,18 +441,21 @@ export async function runLaunchpadDragTests() {
     const stageRect = drag.dragReleaseState.value?.targetStageLayoutRect;
     assert(Math.round(rect?.left) === 123 && Math.round(rect?.top) === 45, "desktop release should prefer Pixi target bounds over fallback slot geometry");
     assert(Math.round(stageRect?.left) === 23 && Math.round(stageRect?.top) === 25, "desktop release should carry the committed stage layout target");
-    clearIconBoundsRegistry();
+    iconBoundsRegistry.clearBounds();
   });
 
   await withMockPointerEnvironment(async ({ listeners, timers }) => {
     const folderPanelRef = ref({ getBoundingClientRect: () => ({ left: 100, top: 100, right: 500, bottom: 420, width: 400, height: 320 }) });
     const folderPageRefs = [{ getBoundingClientRect: () => ({ left: 120, top: 120, right: 400, bottom: 340, width: 280, height: 220 }) }];
-    clearIconBoundsRegistry();
+    const iconBoundsRegistry = createIconBoundsRegistry();
     const { app, drag, openFolderId, pages } = createDragHarness({
       folderPageRefs,
       folderPanelRef,
+      iconBoundsRegistry,
       onCommitPages: () => {
-        registerStableStageLayoutLaunchIconTargetBounds(
+        putLaunchBounds(
+          iconBoundsRegistry,
+          V.STABLE_STAGE_LAYOUT,
           { area: "folder", folderId: "folder-1", id: "app-a", pageIndex: 0 },
           { left: 28, top: 46, width: 56, height: 56 },
           {
@@ -467,7 +489,7 @@ export async function runLaunchpadDragTests() {
     const stageRect = drag.dragReleaseState.value?.targetStageLayoutRect;
     assert(Math.round(rect?.left) === 128 && Math.round(rect?.top) === 106, "folder release should animate to the committed compact visual slot, not the empty pointer slot");
     assert(Math.round(stageRect?.left) === 28 && Math.round(stageRect?.top) === 46, "folder release should carry the committed stage layout target");
-    clearIconBoundsRegistry();
+    iconBoundsRegistry.clearBounds();
   });
 
   await withMockPointerEnvironment(async ({ listeners, timers }) => {
@@ -565,15 +587,17 @@ export async function runLaunchpadDragTests() {
 
   await withMockPointerEnvironment(async ({ listeners, timers }) => {
     const folder = { id: "folder-1", type: "folder", name: "Folder", childPages: [[]], children: [] };
-    clearIconBoundsRegistry();
-    registerRenderedClientLaunchIconBounds(
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    putLaunchBounds(
+      iconBoundsRegistry,
+      V.RENDERED,
       { area: "desktop", id: "folder-1", pageIndex: 0 },
       { left: 100, top: 100, width: 80, height: 80 },
       { area: "desktop", id: "folder-1", item: folder, pageIndex: 0 }
     );
     const folderPanelRef = ref({ getBoundingClientRect: () => ({ left: 100, top: 100, right: 500, bottom: 420, width: 400, height: 320 }) });
     const folderPageRefs = [{ getBoundingClientRect: () => ({ left: 120, top: 120, right: 400, bottom: 340, width: 280, height: 220 }) }];
-    const { app, calls, drag, folderSession, openFolderId, pages } = createDragHarness({ folderPageRefs, folderPanelRef });
+    const { app, calls, drag, folderSession, openFolderId, pages } = createDragHarness({ folderPageRefs, folderPanelRef, iconBoundsRegistry });
     pages.value = [[app, folder]];
     const target = {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
@@ -619,18 +643,20 @@ export async function runLaunchpadDragTests() {
 
     for (let index = 0; index < 5 && calls.insertAppIntoFolder.length === 0; index += 1) runNextTimer(timers);
     assert(calls.insertAppIntoFolder.length === 1, "folder open gate completion should allow folder sorting at the current pointer");
-    clearIconBoundsRegistry();
+    iconBoundsRegistry.clearBounds();
   });
 
   await withMockPointerEnvironment(async ({ listeners, timers }) => {
     const folder = { id: "folder-2", type: "folder", name: "Folder", childPages: [[]], children: [] };
-    clearIconBoundsRegistry();
-    registerRenderedClientLaunchIconBounds(
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    putLaunchBounds(
+      iconBoundsRegistry,
+      V.RENDERED,
       { area: "desktop", id: "folder-2", pageIndex: 0 },
       { left: 100, top: 100, width: 80, height: 80 },
       { area: "desktop", id: "folder-2", item: folder, pageIndex: 0 }
     );
-    const { app, drag, pages } = createDragHarness();
+    const { app, drag, pages } = createDragHarness({ iconBoundsRegistry });
     pages.value = [[app, folder]];
     const target = {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
@@ -662,23 +688,27 @@ export async function runLaunchpadDragTests() {
     runNextTimer(timers);
     assert(drag.dragFolderHoverState.value === null, "leaving the folder sticky zone should clear folder hover state");
     assert(!Array.from(timers.values()).some((timer) => timer.delay > 400), "leaving the folder sticky zone should cancel delayed folder hover timers");
-    clearIconBoundsRegistry();
+    iconBoundsRegistry.clearBounds();
   });
 
   await withMockPointerEnvironment(async ({ listeners, timers }) => {
     const folder = { id: "folder-3", type: "folder", name: "Folder", childPages: [[]], children: [] };
-    clearIconBoundsRegistry();
-    registerRenderedClientLaunchIconBounds(
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    putLaunchBounds(
+      iconBoundsRegistry,
+      V.RENDERED,
       { area: "desktop", id: "folder-3", pageIndex: 0 },
       { left: 100, top: 100, width: 80, height: 80 },
       { area: "desktop", id: "folder-3", item: folder, pageIndex: 0 }
     );
-    registerLiveClientLaunchIconTargetBounds(
+    putLaunchBounds(
+      iconBoundsRegistry,
+      V.LIVE_TARGET,
       { area: "desktop", id: "folder-3", pageIndex: 0 },
       { left: 100, top: 100, width: 80, height: 80 },
       { area: "desktop", id: "folder-3", index: 1, item: folder, pageIndex: 0 }
     );
-    const { app, calls, drag, pages } = createDragHarness();
+    const { app, calls, drag, pages } = createDragHarness({ iconBoundsRegistry });
     pages.value = [[app, folder]];
     const target = {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
@@ -699,13 +729,17 @@ export async function runLaunchpadDragTests() {
     runNextTimer(timers);
     assert(drag.dragFolderHoverState.value?.targetId === "folder-3", "folder hover state should lock the target before layout motion");
 
-    clearIconBoundsRegistry();
-    registerRenderedClientLaunchIconBounds(
+    iconBoundsRegistry.clearBounds();
+    putLaunchBounds(
+      iconBoundsRegistry,
+      V.RENDERED,
       { area: "desktop", id: "folder-3", pageIndex: 0 },
       { left: 400, top: 100, width: 80, height: 80 },
       { area: "desktop", id: "folder-3", item: folder, pageIndex: 0 }
     );
-    registerLiveClientLaunchIconTargetBounds(
+    putLaunchBounds(
+      iconBoundsRegistry,
+      V.LIVE_TARGET,
       { area: "desktop", id: "folder-3", pageIndex: 0 },
       { left: 220, top: 100, width: 80, height: 80 },
       { area: "desktop", id: "folder-3", index: 1, item: folder, pageIndex: 0 }
@@ -726,6 +760,6 @@ export async function runLaunchpadDragTests() {
     listeners.get("pointerup")({ type: "pointerup", pointerId: 83, button: 0, clientX: 232, clientY: 132 });
     assert(calls.insertAppIntoFolder.length === 1, "pointerup should prefer the locked folder target over moving visual bounds");
     assert(calls.insertAppIntoFolder[0].folderId === "folder-3", "locked folder drop should use the original folder id");
-    clearIconBoundsRegistry();
+    iconBoundsRegistry.clearBounds();
   });
 }

@@ -4,11 +4,13 @@ import {
   useLaunchpadIconActivation,
 } from "./useLaunchpadIconActivation.js";
 import {
-  clearIconBoundsRegistry,
-  registerLiveClientLaunchIconTargetBounds,
-  registerRenderedClientLaunchIconBounds,
-  registerStableStageLayoutLaunchIconTargetBounds,
+  createIconBoundsRegistry,
+  ICON_BOUNDS_KIND,
+  ICON_BOUNDS_VARIANT,
 } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
+
+const K = ICON_BOUNDS_KIND;
+const V = ICON_BOUNDS_VARIANT;
 
 const desktopApp = { id: "desktop-app", type: "app", name: "Desktop App" };
 const folderApp = { id: "folder-app", type: "app", name: "Folder App" };
@@ -50,6 +52,7 @@ function createIconActivation(overrides = {}) {
     selectFirstIconInCurrentScope: [],
   };
   const pages = ref(overrides.pages ?? [[desktopApp, folder], [searchApp]]);
+  const iconBoundsRegistry = overrides.iconBoundsRegistry || createIconBoundsRegistry();
   const folderPages = ref(overrides.folderPages ?? [[folderApp]]);
   const renderedFolder = ref(overrides.renderedFolder ?? null);
   const searchPages = ref(overrides.searchPages ?? [[searchApp], [folderApp]]);
@@ -73,6 +76,7 @@ function createIconActivation(overrides = {}) {
     getVisibleDesktopPage: (page) => (page || []).slice(0, overrides.desktopLimit ?? 20),
     getVisibleFolderPage: (page) => (page || []).slice(0, overrides.folderLimit ?? 20),
     gridCols: ref(overrides.gridCols ?? 7),
+    iconBoundsRegistry,
     isFolderAppLaunchClosing: ref(overrides.isFolderAppLaunchClosing ?? false),
     isFolderClosing: ref(overrides.isFolderClosing ?? false),
     isSearchMode: () => Boolean(overrides.isSearchMode),
@@ -88,6 +92,7 @@ function createIconActivation(overrides = {}) {
     activation,
     calls,
     folderPages,
+    iconBoundsRegistry,
     pages,
     renderedFolder,
     searchPages,
@@ -101,28 +106,35 @@ export function runLaunchpadIconActivationTests() {
     if (!condition) throw new Error(`[Launchpad icon activation test failed] ${message}`);
   };
 
-  clearIconBoundsRegistry();
-  assert(getLaunchIconRect({ area: "desktop", id: "desktop-app", pageIndex: 0 }) === null, "rect lookup should return null without pixi bounds");
-  registerRenderedClientLaunchIconBounds({ area: "desktop", id: "desktop-app", pageIndex: 0 }, { left: 12, top: 24, width: 36, height: 48 });
-  const rect = getLaunchIconRect({ area: "desktop", id: "desktop-app", pageIndex: 0 });
+  const registry = createIconBoundsRegistry();
+  registry.clearBounds();
+  assert(getLaunchIconRect({ area: "desktop", id: "desktop-app", pageIndex: 0 }, registry) === null, "rect lookup should return null without pixi bounds");
+  registry.registerBounds(K.LAUNCH, V.RENDERED, { area: "desktop", id: "desktop-app", pageIndex: 0 }, { left: 12, top: 24, width: 36, height: 48 });
+  const rect = getLaunchIconRect({ area: "desktop", id: "desktop-app", pageIndex: 0 }, registry);
   assert(rect.left === 12 && rect.width === 36, "rect lookup should return plain geometry");
-  clearIconBoundsRegistry();
+  registry.clearBounds();
 
-  registerRenderedClientLaunchIconBounds(
+  registry.registerBounds(
+    K.LAUNCH,
+    V.RENDERED,
     { area: "folder", folderId: "folder-1", id: "folder-app", pageIndex: 0 },
     { left: 12, top: 24, width: 36, height: 48 },
     { area: "folder", folderId: "old-folder", id: "folder-app", pageIndex: 0 }
   );
-  registerLiveClientLaunchIconTargetBounds(
+  registry.registerBounds(
+    K.LAUNCH,
+    V.LIVE_TARGET,
     { area: "folder", folderId: "folder-1", id: "folder-app", pageIndex: 0 },
     { left: 40, top: 50, width: 60, height: 70 },
     { area: "folder", folderId: "folder-1", id: "folder-app", pageIndex: 0 }
   );
-  const liveFallbackRect = getLaunchIconRect({ area: "folder", folderId: "folder-1", id: "folder-app", pageIndex: 0 });
+  const liveFallbackRect = getLaunchIconRect({ area: "folder", folderId: "folder-1", id: "folder-app", pageIndex: 0 }, registry);
   assert(liveFallbackRect.left === 40 && liveFallbackRect.height === 70, "folder launch rect should reject stale rendered metadata and fall back to live target bounds");
-  clearIconBoundsRegistry();
+  registry.clearBounds();
 
-  registerStableStageLayoutLaunchIconTargetBounds(
+  registry.registerBounds(
+    K.LAUNCH,
+    V.STABLE_STAGE_LAYOUT,
     { area: "folder", folderId: "folder-1", id: "folder-app", pageIndex: 0 },
     { left: 20, top: 30, width: 40, height: 50 },
     {
@@ -135,9 +147,9 @@ export function runLaunchpadIconActivationTests() {
       stageWidth: 150,
     }
   );
-  const stableFallbackRect = getLaunchIconRect({ area: "folder", folderId: "folder-1", id: "folder-app", pageIndex: 0 });
+  const stableFallbackRect = getLaunchIconRect({ area: "folder", folderId: "folder-1", id: "folder-app", pageIndex: 0 }, registry);
   assert(stableFallbackRect.left === 50 && stableFallbackRect.top === 80, "folder launch rect should project stable stage layout fallback bounds");
-  clearIconBoundsRegistry();
+  registry.clearBounds();
 
   const desktop = createIconActivation({ pageIndex: 1 });
   const desktopScope = desktop.activation.getCurrentIconScope();

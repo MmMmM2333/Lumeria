@@ -81,6 +81,7 @@
         :grid-cols="gridCols"
         :grid-rows="gridRows"
         :icon-size="iconSize"
+        :icon-bounds-registry="iconBoundsRegistry"
         :is-edit-mode="isEditMode"
         :folder-source-ghosted-id="folderSourceGhostedId"
         :folder-source-ghosted-ids="folderSourceGhostedIds"
@@ -201,6 +202,7 @@ const {
   gridRows,
   gridCols,
   iconSize,
+  iconBoundsRegistry,
   isTextlessMode,
   isDesktopOpen,
   isDesktopClosing,

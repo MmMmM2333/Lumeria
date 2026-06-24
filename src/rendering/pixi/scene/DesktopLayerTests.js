@@ -89,6 +89,7 @@ function makeLayer(DesktopLayer, pageTrack) {
   layer.hasFolderOverlayAlpha = false;
   layer.hasFolderOverlayTransform = false;
   layer.iconNodes = new Map();
+  layer.iconBoundsRegistry = makeLayer.iconBoundsRegistry;
   layer.pageTrack = pageTrack;
   layer.desktopClosingUnderlayLayer = makeTransformNode();
   layer.singleStageFolderLayer = makeTransformNode();
@@ -197,9 +198,13 @@ export async function runDesktopLayerTests() {
     shouldFinishFolderHandoffEntry,
   } = await import("./DesktopLayer.js");
   const {
-    clearIconBoundsRegistry,
-    registerRenderedClientTopLevelFolderThumbBounds,
+    createIconBoundsRegistry,
+    ICON_BOUNDS_KIND,
+    ICON_BOUNDS_VARIANT,
   } = await import("../geometry/iconBoundsRegistry.js");
+  const K = ICON_BOUNDS_KIND;
+  const V = ICON_BOUNDS_VARIANT;
+  makeLayer.iconBoundsRegistry = createIconBoundsRegistry();
   const {
     FolderVisualOwnershipRegistry,
     makeDesktopSourceVisualKey,
@@ -273,7 +278,7 @@ export async function runDesktopLayerTests() {
     assert(!shouldFinishFolderHandoffEntry({}, { getDesktopSourceGhostedIds: () => new Set(["folder-1"]) }, "folder-1"), "detached desktop source ownership should keep its folder handoff alive");
     assert(shouldFinishFolderHandoffEntry({}, { folderTransitions: makeTransitionMachine({ active: true, folderId: "folder-2" }) }, "folder-1"), "different-folder Pixi activity should not keep an old handoff alive by itself");
 
-    const actualLayer = new DesktopLayer();
+    const actualLayer = new DesktopLayer({ iconBoundsRegistry: createIconBoundsRegistry() });
     assert(
       actualLayer.children.indexOf(actualLayer.visualRoot) <
         actualLayer.children.indexOf(actualLayer.desktopClosingUnderlayLayer),
@@ -958,7 +963,8 @@ export async function runDesktopLayerTests() {
   }
 
   {
-    clearIconBoundsRegistry();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    makeLayer.iconBoundsRegistry = iconBoundsRegistry;
     const folder = makeNode("folder");
     folder.item = {
       children: [{ id: "child-1" }],
@@ -971,7 +977,7 @@ export async function runDesktopLayerTests() {
     const pageTrack = makePageTrack([folder]);
     const layer = makeLayer(DesktopLayer, pageTrack);
 
-    registerRenderedClientTopLevelFolderThumbBounds("folder-1", { height: 60, left: 10, top: 20, width: 60 }, {
+    iconBoundsRegistry.registerBounds(K.FOLDER_THUMB, V.RENDERED, "folder-1", { height: 60, left: 10, top: 20, width: 60 }, {
       area: "desktop",
       id: "folder-1",
     });
@@ -983,7 +989,7 @@ export async function runDesktopLayerTests() {
     assert(layer.folderHandoffNodes.size === 0, "debug snapshot cleanup should remove the handoff entry");
     assert(layer.lastFolderHandoffDebugSnapshot?.childRows?.length === 1, "debug snapshot should include preview child rows");
     assert(layer.lastFolderHandoffDebugSnapshot.childRows[0].target, "debug snapshot should resolve preview child targets");
-    clearIconBoundsRegistry();
+    iconBoundsRegistry.clearBounds();
   }
 
   {

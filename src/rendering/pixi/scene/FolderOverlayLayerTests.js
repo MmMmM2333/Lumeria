@@ -13,10 +13,9 @@ import {
   getClosingPresentationStageHitRects,
 } from "./folderClosingHandoff.js";
 import {
-  clearIconBoundsRegistry,
-  getRenderedClientLaunchIconBounds,
-  registerRenderedClientLaunchIconBounds,
-  registerRenderedClientTopLevelFolderThumbBounds,
+  createIconBoundsRegistry,
+  ICON_BOUNDS_KIND,
+  ICON_BOUNDS_VARIANT,
 } from "../geometry/iconBoundsRegistry.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { FolderTransitionMachine } from "./folderTransitionMachine.js";
@@ -26,6 +25,9 @@ import {
   makeFolderIconVisualKey,
   makeFolderPageTrackVisualKey,
 } from "./folderVisualOwnershipRegistry.js";
+
+const K = ICON_BOUNDS_KIND;
+const V = ICON_BOUNDS_VARIANT;
 
 function attachTransitionMachine(layer, options = {}) {
   const transitionMachine = new FolderTransitionMachine(layer);
@@ -246,14 +248,16 @@ export async function runFolderOverlayLayerTests() {
   }
 
   {
-    clearIconBoundsRegistry();
-    registerRenderedClientLaunchIconBounds(
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    iconBoundsRegistry.registerBounds(
+      K.LAUNCH,
+      V.RENDERED,
       { area: "desktop", id: "folder-b" },
       { height: 72, left: 400, top: 220, width: 72 },
       { area: "desktop", id: "folder-b", item: { id: "folder-b", type: "folder" } }
     );
-    registerRenderedClientTopLevelFolderThumbBounds("folder-b", { height: 64, left: 404, top: 224, width: 64 });
-    const layer = new FolderOverlayLayer();
+    iconBoundsRegistry.registerBounds(K.FOLDER_THUMB, V.RENDERED, "folder-b", { height: 64, left: 404, top: 224, width: 64 });
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
     const calls = [];
     layer.currentFolderId = "folder-a";
     layer.folderTransitions.beginCloseTransition("folder-a");
@@ -292,7 +296,7 @@ export async function runFolderOverlayLayerTests() {
 
     assert(calls.join(",") === "detach:folder-b:folder-a,start:null", "cross-folder closing update should detach the old live closing before starting the new closing");
     layer.destroy({ children: true });
-    clearIconBoundsRegistry();
+    iconBoundsRegistry.clearBounds();
     motionRuntime.reset();
   }
 
@@ -1235,8 +1239,9 @@ export async function runFolderOverlayLayerTests() {
   }
 
   {
-    clearIconBoundsRegistry();
+    const iconBoundsRegistry = createIconBoundsRegistry();
     const layer = Object.create(FolderOverlayLayer.prototype);
+    layer.iconBoundsRegistry = iconBoundsRegistry;
     layer.iconBoundsRefreshers = new Map();
     layer.openingGhostBoundsRefreshers = new Map();
 
@@ -1263,12 +1268,14 @@ export async function runFolderOverlayLayerTests() {
     layer.openingGhostBoundsRefreshers.set("app-1", () => layer.registerOpeningGhostBounds(state, target, makeNode(52)));
     layer.refreshRegisteredIconBounds();
 
-    const rect = getRenderedClientLaunchIconBounds(
+    const rect = iconBoundsRegistry.getBounds(
+      K.LAUNCH,
+      V.RENDERED,
       { area: "folder", folderId: "folder-1", id: "app-1", pageIndex: 0 },
-      { area: "folder", folderId: "folder-1", id: "app-1", pageIndex: 0 }
+      { expected: { area: "folder", folderId: "folder-1", id: "app-1", pageIndex: 0 } }
     );
     assert(rect.left === 52, "opening ghost bounds should refresh after hidden real icon bounds and win during folder open");
-    clearIconBoundsRegistry();
+    iconBoundsRegistry.clearBounds();
   }
 
   {

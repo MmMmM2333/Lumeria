@@ -1,10 +1,7 @@
 import {
-  clearIconBoundsRegistry,
-  registerRenderedClientLaunchIconBounds,
-  registerRenderedClientTopLevelFolderThumbBounds,
-  registerStableStageLayoutFolderPreviewChildTargetBounds,
-  registerStableStageLayoutTopLevelFolderThumbTargetBounds,
-  registerStableStageLayoutTopLevelIconTargetBounds,
+  createIconBoundsRegistry,
+  ICON_BOUNDS_KIND,
+  ICON_BOUNDS_VARIANT,
 } from "../geometry/iconBoundsRegistry.js";
 import {
   getSingleStageOptions,
@@ -18,6 +15,9 @@ import {
   SINGLE_STAGE_CHANGED_EVENT,
   SINGLE_STAGE_DIAGNOSTICS_CHANGED_EVENT,
 } from "./singleStagePlan.js";
+
+const K = ICON_BOUNDS_KIND;
+const V = ICON_BOUNDS_VARIANT;
 
 function identityStageMeta(meta = {}) {
   return {
@@ -154,13 +154,14 @@ export function runSingleStageDiagnosticsTests() {
     else delete globalThis[setterName];
   }
 
-  clearIconBoundsRegistry();
-  registerRenderedClientLaunchIconBounds({ area: "desktop", id: folder.id, pageIndex: 0 }, iconRect, { area: "desktop", id: folder.id });
-  registerRenderedClientTopLevelFolderThumbBounds(folder.id, thumbRect, { area: "desktop", id: folder.id });
-  registerStableStageLayoutTopLevelIconTargetBounds(folder.id, iconRect, identityStageMeta({ area: "desktop", id: folder.id }));
-  registerStableStageLayoutTopLevelFolderThumbTargetBounds(folder.id, thumbRect, identityStageMeta({ area: "desktop", id: folder.id }));
+  const iconBoundsRegistry = createIconBoundsRegistry();
+  iconBoundsRegistry.clearBounds();
+  iconBoundsRegistry.registerBounds(K.LAUNCH, V.RENDERED, { area: "desktop", id: folder.id, pageIndex: 0 }, iconRect, { area: "desktop", id: folder.id });
+  iconBoundsRegistry.registerBounds(K.FOLDER_THUMB, V.RENDERED, folder.id, thumbRect, { area: "desktop", id: folder.id });
+  iconBoundsRegistry.registerBounds(K.TOP_LEVEL, V.STABLE_STAGE_LAYOUT, folder.id, iconRect, identityStageMeta({ area: "desktop", id: folder.id }));
+  iconBoundsRegistry.registerBounds(K.FOLDER_THUMB, V.STABLE_STAGE_LAYOUT, folder.id, thumbRect, identityStageMeta({ area: "desktop", id: folder.id }));
   for (let index = 0; index < 9; index += 1) {
-    registerStableStageLayoutFolderPreviewChildTargetBounds(folder.id, `app-${index}`, index, {
+    iconBoundsRegistry.registerBounds(K.PREVIEW_CHILD, V.STABLE_STAGE_LAYOUT, { childId: `app-${index}`, folderId: folder.id, slotIndex: index }, {
       height: 16,
       left: thumbRect.left + index,
       top: thumbRect.top + index,
@@ -170,7 +171,7 @@ export function runSingleStageDiagnosticsTests() {
 
   assert(makeSingleStageDiagnosticsPlan(state, { enabled: false }) === null, "disabled diagnostics should not create a plan");
 
-  const plan = makeSingleStageDiagnosticsPlan(state, { enabled: true });
+  const plan = makeSingleStageDiagnosticsPlan(state, { enabled: true, iconBoundsRegistry });
   assert(plan?.folderId === folder.id, "enabled diagnostics should create a plan for the rendered folder");
   assert(plan.stableFolderCloseTarget?.source === "stable-final-close", "closing diagnostics should capture a stable final close target");
   assert(plan.previewRects.length === 9, "diagnostics should only draw the folder thumbnail preview slots");
@@ -186,5 +187,5 @@ export function runSingleStageDiagnosticsTests() {
   assert(plan.stableCloseThumbClientRect.left === thumbRect.left, "diagnostics should expose the stable thumb client rect");
   assert(plan.previewRects[0].stageLayoutRect.left === thumbRect.left, "diagnostics should retain preview child stage layout rects");
 
-  clearIconBoundsRegistry();
+  iconBoundsRegistry.clearBounds();
 }

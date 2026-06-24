@@ -65,6 +65,7 @@ export class SingleStageDiagnosticsLayer extends Container {
     const diagnosticsOptions = getSingleStageOptions(options.enabled);
     const plan = makeSingleStageDiagnosticsPlan(state, {
       enabled: diagnosticsOptions,
+      iconBoundsRegistry: options.iconBoundsRegistry,
       previousStableFolderCloseTarget: this.stableFolderCloseTarget,
       wasClosing: this.wasClosing,
     });

@@ -40,10 +40,8 @@ import {
 import { FolderVisualCommitQueue } from "./folderVisualCommitQueue.js";
 import { clientPointToStageVisualPoint, clientRectToStageVisualRect, makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import {
-  clearLaunchIconBounds,
-  registerLiveClientLaunchIconTargetBounds,
-  registerRenderedClientLaunchIconBounds,
-  registerStableStageLayoutLaunchIconTargetBounds,
+  ICON_BOUNDS_KIND,
+  ICON_BOUNDS_VARIANT,
 } from "../geometry/iconBoundsRegistry.js";
 import {
   FOLDER_PAGE_DOTS_GAP,
@@ -84,6 +82,8 @@ const FOLDER_PANEL_READY_PROGRESS = 0.985;
 const MAX_DETACHED_CLOSING_VISUALS = 2;
 const DETACHED_CLOSING_FRAME_TAIL_DURATION = 0.04;
 const DETACHED_CLOSING_FALLBACK_DURATION = 0.22;
+const BOUNDS_KIND = ICON_BOUNDS_KIND;
+const BOUNDS_VARIANT = ICON_BOUNDS_VARIANT;
 
 function isPointInRect(x, y, rect) {
   return Boolean(rect) &&
@@ -162,6 +162,7 @@ function makeOpeningGeometryDebugSnapshot(session, currentSnapshot, panel) {
 function registerFolderIconNodeBounds(options) {
   const {
     folderId,
+    iconBoundsRegistry,
     iconSize,
     index,
     isInteractivePage,
@@ -177,17 +178,23 @@ function registerFolderIconNodeBounds(options) {
   const iconBounds = node.getIconBounds(stageRect);
   if (!isInteractivePage || isPrewarm) return iconBounds;
   const meta = { area: "folder", folderId, id: item.id, index, item, pageIndex };
-  registerRenderedClientLaunchIconBounds(
+  iconBoundsRegistry.registerBounds(
+    BOUNDS_KIND.LAUNCH,
+    BOUNDS_VARIANT.RENDERED,
     { area: "folder", folderId, id: item.id, pageIndex },
     iconBounds,
     meta
   );
-  registerLiveClientLaunchIconTargetBounds(
+  iconBoundsRegistry.registerBounds(
+    BOUNDS_KIND.LAUNCH,
+    BOUNDS_VARIANT.LIVE_TARGET,
     { area: "folder", folderId, id: item.id, pageIndex },
     makeTargetIconBounds(stageRect, stageWidth, stageHeight, targetCenter.x, targetCenter.y, iconSize),
     meta
   );
-  registerStableStageLayoutLaunchIconTargetBounds(
+  iconBoundsRegistry.registerBounds(
+    BOUNDS_KIND.LAUNCH,
+    BOUNDS_VARIANT.STABLE_STAGE_LAYOUT,
     { area: "folder", folderId, id: item.id, pageIndex },
     makeIconRect(targetCenter.x, targetCenter.y, iconSize),
     {
@@ -448,6 +455,8 @@ export class FolderOverlayLayer extends Container {
     this.onTitleFrameChange = options.onTitleFrameChange || (() => { });
     this.onDesktopSourceGhostingChange = options.onDesktopSourceGhostingChange || (() => { });
     this.showFolderTitle = options.showFolderTitle === true;
+    if (!options.iconBoundsRegistry) throw new Error("FolderOverlayLayer requires iconBoundsRegistry");
+    this.iconBoundsRegistry = options.iconBoundsRegistry;
     this.openingGhosts = new FolderOpeningGhostController(this, {
       ghostFactory: () => new IconNode(),
     });
@@ -509,7 +518,7 @@ export class FolderOverlayLayer extends Container {
   prepareFolderOverlayState(state) {
     this.stageRect = state.stageRect;
     const isPrewarm = Boolean(state.prewarm);
-    if (!isPrewarm) clearLaunchIconBounds("folder");
+    if (!isPrewarm) this.iconBoundsRegistry.clearBounds("folder");
     const keepClosingHandoff = this.closingGhosts.hasPendingHandoff();
     this.visible = Boolean(state.renderedFolder) || keepClosingHandoff;
     if (!state.renderedFolder) {
@@ -584,6 +593,7 @@ export class FolderOverlayLayer extends Container {
       folder: state.renderedFolder,
       folderOpeningOriginBounds: state.folderOpeningOriginBounds,
       folderPageSize: state.folderPageSize,
+      iconBoundsRegistry: this.iconBoundsRegistry,
       isClosing,
       previousStableFolderCloseTarget: this.stableFolderCloseTarget,
       wasClosing,
@@ -742,6 +752,7 @@ export class FolderOverlayLayer extends Container {
 
       const refreshNodeBounds = () => registerFolderIconNodeBounds({
         folderId: state.renderedFolder.id,
+        iconBoundsRegistry: this.iconBoundsRegistry,
         iconSize,
         index,
         isInteractivePage,
@@ -965,6 +976,7 @@ export class FolderOverlayLayer extends Container {
     if (!rect || !item?.id || !target?.folderId) return null;
     return registerFolderIconNodeBounds({
       folderId: target.folderId,
+      iconBoundsRegistry: this.iconBoundsRegistry,
       iconSize: target.iconSize,
       index: target.index,
       isInteractivePage: true,

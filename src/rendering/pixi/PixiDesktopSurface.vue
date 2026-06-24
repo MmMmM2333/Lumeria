@@ -56,7 +56,6 @@ import {
   makeIconActionRenderReason,
 } from "./pixiRenderTriggers.js";
 import { motionRuntime } from "./animation/motionRuntime.js";
-import { clearDesktopIconBounds } from "./geometry/iconBoundsRegistry.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { getPixiHostMetrics } from "./pixiHostMetrics.js";
 import {
@@ -104,6 +103,7 @@ const props = defineProps({
   gridCols: { type: Number, required: true },
   gridRows: { type: Number, required: true },
   iconSize: { type: Number, required: true },
+  iconBoundsRegistry: { type: Object, required: true },
   isEditMode: { type: Boolean, default: false },
   folderSourceGhostedId: { type: String, default: null },
   folderSourceGhostedIds: { type: [Array, Set], default: () => [] },
@@ -802,7 +802,8 @@ function destroyPixi(options = {}) {
   if (deep) currentApp?.destroy(true);
   else currentApp?.stop?.();
   hostRef.value?.replaceChildren?.();
-  clearDesktopIconBounds();
+  props.iconBoundsRegistry.clearBounds("desktop");
+  props.iconBoundsRegistry.clearBounds("search");
   if (deep) clearIconTextureCache();
 }
 
@@ -837,6 +838,7 @@ onMounted(async () => {
       requestRender("folder-panel-pointerdown");
     },
     onFolderTitleFrameChange: handleSingleStageFolderTitleFrameChange,
+    iconBoundsRegistry: props.iconBoundsRegistry,
     onDragReleaseComplete: (release) => {
       emit("drag-release-complete", release);
       requestRender("drag-release-complete");

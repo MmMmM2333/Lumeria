@@ -1,12 +1,14 @@
 import { clamp } from "../domain/launchpadLayout.js";
 import {
-  getLiveClientLaunchIconTargetBounds,
-  getRenderedClientLaunchIconBounds,
-  getStableStageLayoutLaunchIconTargetRecord,
+  ICON_BOUNDS_KIND,
+  ICON_BOUNDS_VARIANT,
 } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 import { stageLayoutRecordToClientRect } from "../rendering/pixi/geometry/stageCoordinates.js";
 
-export function getLaunchIconRect(launchSource) {
+const BOUNDS_KIND = ICON_BOUNDS_KIND;
+const BOUNDS_VARIANT = ICON_BOUNDS_VARIANT;
+
+export function getLaunchIconRect(launchSource, iconBoundsRegistry) {
   const expected = launchSource?.area === "folder"
     ? {
       area: launchSource.area,
@@ -15,9 +17,9 @@ export function getLaunchIconRect(launchSource) {
       pageIndex: launchSource.pageIndex ?? 0,
     }
     : null;
-  return getRenderedClientLaunchIconBounds(launchSource, expected) ||
-    getLiveClientLaunchIconTargetBounds(launchSource, expected) ||
-    stageLayoutRecordToClientRect(getStableStageLayoutLaunchIconTargetRecord(launchSource, expected));
+  return iconBoundsRegistry.getBounds(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.RENDERED, launchSource, { expected }) ||
+    iconBoundsRegistry.getBounds(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.LIVE_TARGET, launchSource, { expected }) ||
+    stageLayoutRecordToClientRect(iconBoundsRegistry.getBounds(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, launchSource, { expected }));
 }
 
 export function useLaunchpadIconActivation(options) {
@@ -116,7 +118,7 @@ export function useLaunchpadIconActivation(options) {
 
   return {
     getCurrentIconScope,
-    getLaunchIconRect,
+    getLaunchIconRect: (launchSource) => getLaunchIconRect(launchSource, options.iconBoundsRegistry),
     normalizeLaunchSource,
     openSelectedIcon,
   };

@@ -35,7 +35,12 @@ import {
 import { usePageRenderRange } from "./usePageRenderRange.js";
 import { usePageGridMetrics } from "./usePageGridMetrics.js";
 import { useSettingsPanelFlow } from "./useSettingsPanelFlow.js";
-import { getRenderedClientLaunchIconTargetAtPoint } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
+import {
+  createIconBoundsRegistry,
+  ICON_BOUNDS_KIND,
+} from "../rendering/pixi/geometry/iconBoundsRegistry.js";
+
+const BOUNDS_KIND = ICON_BOUNDS_KIND;
 
 export function createDeferredHandlers(defaults = {}) {
   const handlers = { ...defaults };
@@ -141,6 +146,7 @@ function useSystemAppearance() {
 }
 
 export function useLaunchpadController() {
+  const iconBoundsRegistry = createIconBoundsRegistry();
   const {
     backgroundBaseColor,
     backgroundBaseOpacity,
@@ -509,6 +515,7 @@ export function useLaunchpadController() {
     folderPages,
     gridCols,
     gridRows,
+    iconBoundsRegistry,
     pageRefs,
   });
   deferredHandlers.set("getFolderIconMotionGeometry", getFolderIconMotionGeometry);
@@ -576,6 +583,7 @@ export function useLaunchpadController() {
     getVisibleDesktopPage,
     getVisibleFolderPage,
     gridCols,
+    iconBoundsRegistry,
     isFolderAppLaunchClosing,
     isFolderClosing,
     isSearchMode: () => isSearchMode.value,
@@ -1122,6 +1130,7 @@ export function useLaunchpadController() {
     getTopLevelIconMotionGeometry,
     gridCols,
     gridRows,
+    iconBoundsRegistry,
     iconSize,
     effectiveFolderIconSize,
     insertAppIntoFolder,
@@ -1399,7 +1408,7 @@ export function useLaunchpadController() {
     commitOpenFolder,
     activePageIndex,
     activePages,
-    getDesktopTargetAtPoint: getRenderedClientLaunchIconTargetAtPoint,
+    getDesktopTargetAtPoint: (x, y, options = {}) => iconBoundsRegistry.getAtPoint(BOUNDS_KIND.LAUNCH, x, y, options),
     commitFolderPageIndex,
     folderPageIndex,
     folderPages,
@@ -1512,6 +1521,7 @@ export function useLaunchpadController() {
 
   return {
     rootRef,
+    iconBoundsRegistry,
     rootStyle,
     backgroundImageStyle,
     desktopVisualTransform,

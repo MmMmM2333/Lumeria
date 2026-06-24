@@ -3,25 +3,8 @@ import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { clientRectToStageVisualRect, stageLayoutRecordToClientRect } from "../geometry/stageCoordinates.js";
 import {
-  clearFolderPreviewChildBounds,
-  clearLaunchIconBounds,
-  getLiveClientFolderPreviewChildTargetBounds,
-  getLiveClientTopLevelFolderThumbTargetBounds,
-  getRenderedClientFolderPreviewChildBounds,
-  getRenderedClientTopLevelFolderThumbBounds,
-  getStableStageLayoutFolderPreviewChildTargetRecord,
-  getStableStageLayoutTopLevelFolderThumbTargetRecord,
-  registerLiveClientFolderPreviewChildTargetBounds,
-  registerLiveClientLaunchIconTargetBounds,
-  registerLiveClientTopLevelFolderThumbTargetBounds,
-  registerLiveClientTopLevelIconTargetBounds,
-  registerRenderedClientFolderPreviewChildBounds,
-  registerRenderedClientLaunchIconBounds,
-  registerRenderedClientTopLevelFolderThumbBounds,
-  registerStableStageLayoutLaunchIconTargetBounds,
-  registerStableStageLayoutFolderPreviewChildTargetBounds,
-  registerStableStageLayoutTopLevelFolderThumbTargetBounds,
-  registerStableStageLayoutTopLevelIconTargetBounds,
+  ICON_BOUNDS_KIND,
+  ICON_BOUNDS_VARIANT,
 } from "../geometry/iconBoundsRegistry.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { motionSprings } from "../animation/motionPresets.js";
@@ -71,6 +54,9 @@ export {
   shouldFinishFolderHandoff,
   shouldFinishFolderHandoffEntry,
 };
+
+const BOUNDS_KIND = ICON_BOUNDS_KIND;
+const BOUNDS_VARIANT = ICON_BOUNDS_VARIANT;
 
 function projectStageLayoutRecordToClient(record) {
   return stageLayoutRecordToClientRect(record);
@@ -190,12 +176,15 @@ export class DesktopLayer extends Container {
     this.onFolderPanelPointerDown = options.onFolderPanelPointerDown || (() => {});
     this.onFolderTitleFrameChange = options.onFolderTitleFrameChange || (() => {});
     this.onDragReleaseComplete = options.onDragReleaseComplete || (() => {});
+    if (!options.iconBoundsRegistry) throw new Error("DesktopLayer requires iconBoundsRegistry");
+    this.iconBoundsRegistry = options.iconBoundsRegistry;
     this.visualOwnership = options.visualOwnership || new FolderVisualOwnershipRegistry();
     this.visualCommitQueue = options.visualCommitQueue || new FolderVisualCommitQueue();
     this.lastFolderSourceGhostingState = null;
     this.unsubscribeVisualOwnership = this.visualOwnership.subscribe(() => this.commitFolderSourceGhosting());
     this.singleStageFolderLayer = new FolderOverlayLayer({
       detachedClosingVisualLayer: this.desktopClosingUnderlayLayer,
+      iconBoundsRegistry: this.iconBoundsRegistry,
       onDesktopSourceGhostingChange: () => this.commitFolderSourceGhosting(),
       onClosingFolderPointerDown: (folderId, event) => this.onClosingFolderPointerDown(folderId, event),
       onClosingHandoffPrepare: (folderId) => this.startClosingFolderHandoffNow(folderId, { resetVisual: true, revealLabel: false }),
@@ -286,9 +275,9 @@ export class DesktopLayer extends Container {
 
     if (shouldApplyDesktopPlan) {
       const previousEntries = new Map((previousPlan?.entries || []).map((entry) => [entry.key, entry]));
-      clearLaunchIconBounds(plan.clearLaunchArea);
+      this.iconBoundsRegistry.clearBounds(plan.clearLaunchArea);
       for (const folderId of plan.clearFolderPreviewChildIds) {
-        clearFolderPreviewChildBounds(folderId);
+        this.iconBoundsRegistry.clearBounds({ folderId, kind: BOUNDS_KIND.PREVIEW_CHILD });
       }
       for (const pageRef of plan.pageRefs) {
         state.setPageRef(pageRef.element, pageRef.pageIndex);
@@ -388,6 +377,7 @@ export class DesktopLayer extends Container {
     this.updateSingleStageDragPreviewLayer(state);
     this.singleStageDiagnosticsLayer.update(state.singleStageFolderState, {
       enabled: state.singleStageDiagnosticsEnabled,
+      iconBoundsRegistry: this.iconBoundsRegistry,
     });
     for (const entry of Array.from(this.getFolderHandoffNodes().values())) {
       if (shouldFinishFolderHandoffEntry(state, this.singleStageFolderLayer, entry.folderId)) {
@@ -836,10 +826,10 @@ export class DesktopLayer extends Container {
     const folderId = entry.folderId || node.item?.id || null;
     const thumbRect = node.getFolderThumbBounds?.(stageRect) || null;
     const iconRect = node.getIconBounds?.(stageRect) || null;
-    const liveTargetRect = folderId ? getLiveClientTopLevelFolderThumbTargetBounds(folderId) : null;
-    const stableStageLayoutTargetRecord = folderId ? getStableStageLayoutTopLevelFolderThumbTargetRecord(folderId) : null;
+    const liveTargetRect = folderId ? this.iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.LIVE_TARGET, folderId) : null;
+    const stableStageLayoutTargetRecord = folderId ? this.iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, folderId) : null;
     const stableTargetRect = projectStageLayoutRecordToClient(stableStageLayoutTargetRecord);
-    const registeredThumbRect = folderId ? getRenderedClientTopLevelFolderThumbBounds(folderId) : null;
+    const registeredThumbRect = folderId ? this.iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.RENDERED, folderId) : null;
     const targetRect = liveTargetRect || registeredThumbRect || stableTargetRect;
     const childRows = [];
     for (let slotIndex = 0; slotIndex < 9; slotIndex += 1) {
@@ -992,17 +982,23 @@ export class DesktopLayer extends Container {
       if (boundsTargets.syncHandoffLayoutTarget && handoffEntry) {
         this.syncFolderHandoffNode(node, boundsTargets.syncHandoffLayoutTarget, handoffEntry);
       }
-      registerRenderedClientLaunchIconBounds(
+      this.iconBoundsRegistry.registerBounds(
+        BOUNDS_KIND.LAUNCH,
+        BOUNDS_VARIANT.RENDERED,
         { area, folderId: null, id: item.id, pageIndex },
         boundsTargets.renderedClientIconBounds,
         meta
       );
-      registerLiveClientLaunchIconTargetBounds(
+      this.iconBoundsRegistry.registerBounds(
+        BOUNDS_KIND.LAUNCH,
+        BOUNDS_VARIANT.LIVE_TARGET,
         { area, folderId: null, id: item.id, pageIndex },
         boundsTargets.liveClientTargetBounds,
         meta
       );
-      registerStableStageLayoutLaunchIconTargetBounds(
+      this.iconBoundsRegistry.registerBounds(
+        BOUNDS_KIND.LAUNCH,
+        BOUNDS_VARIANT.STABLE_STAGE_LAYOUT,
         { area, folderId: null, id: item.id, pageIndex },
         boundsTargets.stableStageLayoutTargetBounds,
         {
@@ -1013,10 +1009,10 @@ export class DesktopLayer extends Container {
         }
       );
       if (area === "desktop") {
-        registerLiveClientTopLevelIconTargetBounds(item.id, boundsTargets.liveClientTargetBounds, {
+        this.iconBoundsRegistry.registerBounds(BOUNDS_KIND.TOP_LEVEL, BOUNDS_VARIANT.LIVE_TARGET, item.id, boundsTargets.liveClientTargetBounds, {
           ...meta,
         });
-        registerStableStageLayoutTopLevelIconTargetBounds(item.id, boundsTargets.stableStageLayoutTargetBounds, {
+        this.iconBoundsRegistry.registerBounds(BOUNDS_KIND.TOP_LEVEL, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, item.id, boundsTargets.stableStageLayoutTargetBounds, {
           ...meta,
           stageHeight: registration.height,
           stageRect: registration.stageRect,
@@ -1024,12 +1020,12 @@ export class DesktopLayer extends Container {
         });
       }
       if (item.type === "folder") {
-        registerRenderedClientTopLevelFolderThumbBounds(item.id, boundsTargets.renderedClientThumbBounds, meta);
+        this.iconBoundsRegistry.registerBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.RENDERED, item.id, boundsTargets.renderedClientThumbBounds, meta);
         if (area === "desktop") {
-          registerLiveClientTopLevelFolderThumbTargetBounds(item.id, boundsTargets.liveClientTargetBounds, {
+          this.iconBoundsRegistry.registerBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.LIVE_TARGET, item.id, boundsTargets.liveClientTargetBounds, {
             ...meta,
           });
-          registerStableStageLayoutTopLevelFolderThumbTargetBounds(item.id, boundsTargets.stableStageLayoutTargetBounds, {
+          this.iconBoundsRegistry.registerBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, item.id, boundsTargets.stableStageLayoutTargetBounds, {
             ...meta,
             stageHeight: registration.height,
             stageRect: registration.stageRect,
@@ -1053,10 +1049,10 @@ export class DesktopLayer extends Container {
     if (!options?.log || debugState?.desktopLogged || debugState?.folderId !== folder?.id) return;
     const rows = [];
     const actualThumbRect = node.getFolderThumbBounds(registration.stageRect);
-    const stableStageLayoutTargetRecord = getStableStageLayoutTopLevelFolderThumbTargetRecord(folder.id);
+    const stableStageLayoutTargetRecord = this.iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, folder.id);
     const stableTargetRect = projectStageLayoutRecordToClient(stableStageLayoutTargetRecord);
-    const targetThumbRect = getLiveClientTopLevelFolderThumbTargetBounds(folder.id) ||
-      getRenderedClientTopLevelFolderThumbBounds(folder.id) ||
+    const targetThumbRect = this.iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.LIVE_TARGET, folder.id) ||
+      this.iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.RENDERED, folder.id) ||
       stableTargetRect;
     rows.push({
       actual: roundRect(actualThumbRect, 2),
@@ -1070,10 +1066,10 @@ export class DesktopLayer extends Container {
       if (!child?.id) continue;
       const actualRect = node.getFolderPreviewChildBounds(registration.stageRect, slotIndex);
       const stableChildTargetRect = projectStageLayoutRecordToClient(
-        getStableStageLayoutFolderPreviewChildTargetRecord(folder.id, child.id, slotIndex)
+        this.iconBoundsRegistry.getBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, { childId: child.id, folderId: folder.id, slotIndex })
       );
-      const targetRect = getLiveClientFolderPreviewChildTargetBounds(folder.id, child.id, slotIndex) ||
-        getRenderedClientFolderPreviewChildBounds(folder.id, child.id, slotIndex) ||
+      const targetRect = this.iconBoundsRegistry.getBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.LIVE_TARGET, { childId: child.id, folderId: folder.id, slotIndex }) ||
+        this.iconBoundsRegistry.getBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.RENDERED, { childId: child.id, folderId: folder.id, slotIndex }) ||
         stableChildTargetRect;
       rows.push({
         actual: roundRect(actualRect, 2),
@@ -1127,10 +1123,11 @@ export class DesktopLayer extends Container {
       const child = node.item ? node.item.childPages?.[0]?.[index] || node.item.children?.[index] : null;
       if (!child?.id) continue;
       const childTargets = resolveFolderPreviewChildBoundsTargets({ node, slotIndex: index, stageRect, target });
-      if (childTargets.renderedClientBounds) registerRenderedClientFolderPreviewChildBounds(folder.id, child.id, index, childTargets.renderedClientBounds);
-      if (childTargets.liveClientTargetBounds) registerLiveClientFolderPreviewChildTargetBounds(folder.id, child.id, index, childTargets.liveClientTargetBounds);
+      const keyInput = { childId: child.id, folderId: folder.id, slotIndex: index };
+      if (childTargets.renderedClientBounds) this.iconBoundsRegistry.registerBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.RENDERED, keyInput, childTargets.renderedClientBounds);
+      if (childTargets.liveClientTargetBounds) this.iconBoundsRegistry.registerBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.LIVE_TARGET, keyInput, childTargets.liveClientTargetBounds);
       if (childTargets.stableStageLayoutTargetBounds) {
-        registerStableStageLayoutFolderPreviewChildTargetBounds(folder.id, child.id, index, childTargets.stableStageLayoutTargetBounds, {
+        this.iconBoundsRegistry.registerBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, keyInput, childTargets.stableStageLayoutTargetBounds, {
           stageHeight: target.stageHeight,
           stageRect,
           stageWidth: target.stageWidth,
