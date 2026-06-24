@@ -22,7 +22,7 @@ function makeTarget(offsetX = 0, offsetY = 0, extra = {}) {
   };
 }
 
-export function runMotionDebugOverlayTests() {
+export async function runMotionDebugOverlayTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Motion debug overlay test failed] ${message}`);
   };
@@ -114,4 +114,37 @@ export function runMotionDebugOverlayTests() {
   assert(local.left === -32 && local.width === 64, "local rect should prefer live icon size");
   const mapped = mapMotionOverlayTargetRect(targetOne, local);
   assert(mapped.left === 68 && mapped.top === 168, "target rect mapping should use global transform without getBounds");
+
+  if (!("navigator" in globalThis)) {
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { userAgent: "node.js" },
+    });
+  }
+  const { MotionDebugOverlayLayer } = await import("./motionDebugOverlayLayer.js");
+  let snapshotCalls = 0;
+  let reportCalls = 0;
+  const layer = new MotionDebugOverlayLayer({ maxItems: 4 });
+  let drawnItems = null;
+  layer.draw = (nextItems) => {
+    drawnItems = nextItems;
+  };
+  layer.update({
+    enabled: true,
+    runtime: {
+      debugReport: () => {
+        reportCalls += 1;
+        throw new Error("overlay should not request a debug report");
+      },
+      debugSnapshot: (options = {}) => {
+        snapshotCalls += 1;
+        assert(options.includeTargets === true, "overlay snapshot should request targets");
+        return report;
+      },
+      resolveDebugTarget: (targetId) => (targetId === 1 ? targetOne : targetTwo),
+    },
+  });
+  assert(snapshotCalls === 1, "overlay layer should read runtime debugSnapshot once");
+  assert(reportCalls === 0, "overlay layer should not call runtime debugReport");
+  assert(drawnItems?.length === 2, "overlay layer should draw items from the snapshot data");
 }

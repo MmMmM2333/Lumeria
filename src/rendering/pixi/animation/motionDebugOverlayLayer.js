@@ -85,7 +85,7 @@ export class MotionDebugOverlayLayer extends Container {
       return this.lastSnapshot;
     }
     const runtime = options.runtime;
-    const report = options.report || runtime?.debugReport?.({ includeTargets: true });
+    const report = options.report || runtime?.debugSnapshot?.({ includeTargets: true });
     const items = buildMotionOverlayItems(report, {
       enabled: true,
       maxItems: options.maxItems ?? this.maxItems,

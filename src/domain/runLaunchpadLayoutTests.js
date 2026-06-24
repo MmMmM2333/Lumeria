@@ -175,7 +175,7 @@ runSettingsPanelFlowTests();
 await runLaunchpadSearchTests();
 await runPageRenderRangeTests();
 runMotionPresetsTests();
-runMotionDebugOverlayTests();
+await runMotionDebugOverlayTests();
 runMotionDebugReportTests();
 runMotionReplayTraceTests();
 runMotionRuntimeTests();
