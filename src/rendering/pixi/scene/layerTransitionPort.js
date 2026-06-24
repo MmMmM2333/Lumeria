@@ -27,11 +27,26 @@ export function createLayerTransitionPort(layer) {
     addClosingGhost(ghost) {
       return layer.closingGhostLayer?.addChild?.(ghost);
     },
+    addOpeningGhost(ghost) {
+      return layer.openingGhostLayer?.addChild?.(ghost);
+    },
+    clearCurrentFolder() {
+      layer.currentFolderId = null;
+    },
     clearFrameGhost(options = {}) {
       return layer.clearFrameGhost?.(options);
     },
+    clearOpeningGhostBounds() {
+      return layer.openingGhostBoundsRefreshers?.clear?.();
+    },
+    clearOpeningGhosts(options = {}) {
+      return layer.openingGhosts?.clear?.(options);
+    },
     createClosingGhostToken(folderId = null) {
       return layer.createClosingGhostToken?.(folderId);
+    },
+    deleteOpeningGhostBounds(itemId) {
+      return layer.openingGhostBoundsRefreshers?.delete?.(itemId);
     },
     enableClosingFrameMask() {
       return layer.enableClosingFrameMask?.();
@@ -53,6 +68,9 @@ export function createLayerTransitionPort(layer) {
     getClosingGhostCount() {
       return layer.closingGhostLayer?.children?.length ?? null;
     },
+    getCurrentFolderId() {
+      return layer.currentFolderId || null;
+    },
     getClosingPresentationFrameRect() {
       return cloneFramePresentation(layer.frameGhostState);
     },
@@ -63,6 +81,9 @@ export function createLayerTransitionPort(layer) {
         panelVisible: layer.panel?.visible ?? null,
         pageTrackVisible: layer.pageTrack?.visible ?? null,
       };
+    },
+    getOpeningGhostChildren() {
+      return layer.openingGhostLayer?.children || [];
     },
     hideIconNodesForTransition(itemId, owner) {
       return layer.hideIconNodesForTransition?.(itemId, owner);
@@ -79,6 +100,18 @@ export function createLayerTransitionPort(layer) {
     releaseTransitionOwnership(token, options = {}) {
       return layer.releaseTransitionOwnership?.(token, options);
     },
+    refreshRegisteredIconBounds() {
+      return layer.refreshRegisteredIconBounds?.();
+    },
+    registerOpeningGhostBounds(state, target, ghost) {
+      return layer.registerOpeningGhostBounds?.(state, target, ghost);
+    },
+    releaseOpeningGhost(itemId) {
+      return layer.openingGhosts?.releaseGhost?.(itemId) || null;
+    },
+    rebuildPageTrackMask() {
+      return layer.rebuildPageTrackMask?.();
+    },
     removeClosingGhosts() {
       return layer.closingGhostLayer?.removeChildren?.() || [];
     },
@@ -87,18 +120,49 @@ export function createLayerTransitionPort(layer) {
       if (!swapLayer || swapLayer.destroyed) return [];
       return swapLayer.removeChildren?.() || [];
     },
+    removeOpeningGhost(ghost) {
+      const children = layer.openingGhostLayer?.children;
+      if (Array.isArray(children)) {
+        const index = children.indexOf(ghost);
+        if (index >= 0) children.splice(index, 1);
+        return ghost;
+      }
+      return layer.openingGhostLayer?.removeChild?.(ghost);
+    },
+    removeOpeningGhosts() {
+      return layer.openingGhostLayer?.removeChildren?.() || [];
+    },
     setHitArea(hitArea) {
       layer.hitArea = hitArea;
       return hitArea;
     },
+    setFrameGhostVisible(visible, alpha = null) {
+      if (!layer.frameGhost) return;
+      layer.frameGhost.visible = Boolean(visible);
+      if (alpha != null) layer.frameGhost.alpha = Number(alpha) || 0;
+    },
+    setLayerVisible(visible) {
+      layer.visible = Boolean(visible);
+    },
+    setOpeningGhostBoundsRefresher(itemId, refreshBounds) {
+      if (!itemId || typeof refreshBounds !== "function") return;
+      layer.openingGhostBoundsRefreshers?.set?.(itemId, refreshBounds);
+    },
     setPageTrackVisible(visible) {
       if (layer.pageTrack) layer.pageTrack.visible = Boolean(visible);
+    },
+    setPanelMaterialVisible(visible, alpha = null) {
+      if (!layer.panelMaterial) return;
+      layer.panelMaterial.visible = Boolean(visible);
+      if (alpha != null) layer.panelMaterial.alpha = Number(alpha) || 0;
     },
     setPanelVisible(visible) {
       if (layer.panel) layer.panel.visible = Boolean(visible);
     },
     startFrameGhost(fromRect, toRect, options = {}) {
-      return layer.startFrameGhost?.(fromRect, toRect, options);
+      if (typeof layer.startFrameGhost !== "function") return false;
+      layer.startFrameGhost(fromRect, toRect, options);
+      return true;
     },
   };
 }
