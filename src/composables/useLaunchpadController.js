@@ -11,7 +11,10 @@ import { useLaunchpadApps } from "./useLaunchpadApps.js";
 import { useLaunchpadDrag } from "./useLaunchpadDrag.js";
 import { useFolderOpenIconGhosts } from "./useFolderOpenIconGhosts.js";
 import { useLaunchpadFolderFlow } from "./useLaunchpadFolderFlow.js";
-import { useLaunchpadIconActivation } from "./useLaunchpadIconActivation.js";
+import {
+  resolveCurrentIconScope,
+  useLaunchpadIconActivation,
+} from "./useLaunchpadIconActivation.js";
 import { useLaunchpadLaunchFlow } from "./useLaunchpadLaunchFlow.js";
 import { useIconSelection } from "./useIconSelection.js";
 import { useLaunchpadKeyboard } from "./useLaunchpadKeyboard.js";
@@ -41,34 +44,6 @@ import {
 } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 
 const BOUNDS_KIND = ICON_BOUNDS_KIND;
-
-export function createDeferredHandlers(defaults = {}) {
-  const handlers = { ...defaults };
-  const warned = new Set();
-
-  function shouldWarn() {
-    return Boolean(import.meta.env?.DEV) && typeof console !== "undefined" && typeof console.warn === "function";
-  }
-
-  function warnOnce(name) {
-    if (!shouldWarn() || warned.has(name)) return;
-    warned.add(name);
-    console.warn(`LaunchPad deferred handler "${name}" was called before it was bound.`);
-  }
-
-  return {
-    call(name, ...args) {
-      const handler = handlers[name];
-      if (typeof handler === "function") return handler(...args);
-      warnOnce(name);
-      return undefined;
-    },
-    set(name, handler) {
-      if (typeof handler === "function") handlers[name] = handler;
-      else delete handlers[name];
-    },
-  };
-}
 
 export function shouldPlayFolderOpenIconGhosts(next, state) {
   if (!next) return false;
@@ -147,6 +122,26 @@ function useSystemAppearance() {
 
 export function useLaunchpadController() {
   const iconBoundsRegistry = createIconBoundsRegistry();
+  function getCurrentIconScope() {
+    return resolveCurrentIconScope({
+      folderCols,
+      folderPageIndex,
+      getFolderPages: () => folderPages.value,
+      getRenderedFolder: () => renderedFolder.value,
+      getSearchPages: () => searchPages.value,
+      getVisibleDesktopPage,
+      getVisibleFolderPage,
+      gridCols,
+      isFolderAppLaunchClosing,
+      isFolderClosing,
+      isSearchMode: () => isSearchMode.value,
+      openFolderId,
+      pageIndex,
+      pages,
+      searchPageIndex,
+    });
+  }
+
   const {
     backgroundBaseColor,
     backgroundBaseOpacity,
@@ -254,39 +249,6 @@ export function useLaunchpadController() {
       ? backgroundAcrylicBlurStrength.value
       : backgroundBlurStrength.value
   ));
-  const deferredHandlers = createDeferredHandlers({
-    cancelLongPress: () => {},
-    clearFolderPageTurn: () => {},
-    closeAddManagedAppPage: () => {},
-    closeScanResultDialog: () => {},
-    commitSearchPageIndex: () => {},
-    getCurrentIconScope: () => ({
-      area: "desktop",
-      pageIndex: 0,
-      folderId: null,
-      items: [],
-      columns: gridCols.value,
-    }),
-    getDragMeta: () => null,
-    getFolderIconMotionGeometry: () => null,
-    getFolderMotionGeometry: () => null,
-    getLaunchTargetStatus: (app) => launchTargetStatusById.value[String(app?.id || "")] || null,
-    hideNativeWindow: () => {},
-    isDragActive: () => false,
-    launchNativeAppIfAvailable: () => {},
-    openApp: () => {},
-    openLaunchErrorDialog: () => {},
-    prepareNativeLaunch: () => true,
-    setNativeMainWindowShortcut: () => true,
-    setNativeMainWindowShortcutCaptureActive: () => {},
-    setFolderMotionGeometry: () => {},
-    setNativeWindowMode: () => {},
-    setNativeWindowEffectsEnabled: () => {},
-    setNativeWindowShadowEnabled: () => {},
-    showNativeLaunchError: () => {},
-    restartLiveDesktopBackgroundRuntime: () => {},
-    syncLiveDesktopBackgroundRuntime: () => {},
-  });
   const {
     appendAppsToPages,
     assertNoDuplicateItemIds,
@@ -352,7 +314,7 @@ export function useLaunchpadController() {
     selectFirstIconInCurrentScope,
     selectedIcon,
     selectionMatchesScope,
-  } = useIconSelection({ getCurrentIconScope: () => deferredHandlers.call("getCurrentIconScope") });
+  } = useIconSelection({ getCurrentIconScope: () => getCurrentIconScope() });
 
   const {
     captureFolderCloseIconGhosts,
@@ -407,7 +369,7 @@ export function useLaunchpadController() {
     startFolderZoomFadeClose,
     startHomeRevealSettleWindow,
   } = useLaunchpadFolderFlow({
-    clearFolderPageTurn: () => deferredHandlers.call("clearFolderPageTurn"),
+    clearFolderPageTurn: () => clearFolderPageTurn(),
     clearFolderCloseIconGhosts,
     clearFolderOpenIconGhosts,
     cloneItem,
@@ -415,14 +377,16 @@ export function useLaunchpadController() {
     folderPageIndex,
     folderPageRefs,
     folderPageSize,
-    getFolderIconMotionGeometry: (folderId) => deferredHandlers.call("getFolderIconMotionGeometry", folderId),
-    getFolderMotionGeometry: () => deferredHandlers.call("getFolderMotionGeometry"),
+    getFolderIconMotionGeometry: (folderId) => getFolderIconMotionGeometry(folderId),
+    getFolderMotionGeometry: () => folderMotionGeometry.value,
     getVisibleFolderPages,
     isDragActive: () => dragControls?.isDragActive() || false,
     pageRefs,
     pages,
     resetFolderViewportMetrics,
-    setFolderMotionGeometry: (next) => deferredHandlers.call("setFolderMotionGeometry", next),
+    setFolderMotionGeometry: (next) => {
+      folderMotionGeometry.value = next;
+    },
   });
   let deferredFolderOpenAfterCloseHandoffToken = 0;
 
@@ -518,11 +482,6 @@ export function useLaunchpadController() {
     iconBoundsRegistry,
     pageRefs,
   });
-  deferredHandlers.set("getFolderIconMotionGeometry", getFolderIconMotionGeometry);
-  deferredHandlers.set("getFolderMotionGeometry", () => folderMotionGeometry.value);
-  deferredHandlers.set("setFolderMotionGeometry", (next) => {
-    folderMotionGeometry.value = next;
-  });
   const {
     effectiveFolderIconSize,
     folderGridStyle,
@@ -552,7 +511,7 @@ export function useLaunchpadController() {
     clearSelectedIcon,
     collectAppsFromPages,
     commitOpenFolder,
-    commitSearchPageIndex: (next) => deferredHandlers.call("commitSearchPageIndex", next),
+    commitSearchPageIndex: (next) => commitSearchPageIndex(next),
     filterAppsForSearch,
     isDragActive: () => isDragActive(),
     openFolderId,
@@ -564,7 +523,6 @@ export function useLaunchpadController() {
     selectFirstIconInCurrentScope,
   });
   const {
-    getCurrentIconScope,
     getLaunchIconRect,
     normalizeLaunchSource,
     openSelectedIcon,
@@ -576,6 +534,7 @@ export function useLaunchpadController() {
     findTopLevel,
     folderCols,
     folderPageIndex,
+    getCurrentIconScope,
     getFolderPages: () => folderPages.value,
     getRenderedFolder: () => renderedFolder.value,
     getSearchPages: () => searchPages.value,
@@ -587,14 +546,13 @@ export function useLaunchpadController() {
     isFolderAppLaunchClosing,
     isFolderClosing,
     isSearchMode: () => isSearchMode.value,
-    openApp: (app, source) => deferredHandlers.call("openApp", app, source),
+    openApp: (app, source) => openApp(app, source),
     openFolderId,
     pageIndex,
     pages,
     searchPageIndex,
     selectFirstIconInCurrentScope,
   });
-  deferredHandlers.set("getCurrentIconScope", getCurrentIconScope);
   const {
     clearAppLaunchTimer,
     clearDesktopCloseTimer,
@@ -610,7 +568,7 @@ export function useLaunchpadController() {
     openApp,
     openDesktop,
   } = useLaunchpadLaunchFlow({
-    cancelLongPress: () => deferredHandlers.call("cancelLongPress"),
+    cancelLongPress: () => cancelLongPress(),
     clearOpeningIcon,
     clearFolderCloseIconGhosts,
     clearFolderOpenIconGhosts,
@@ -620,7 +578,7 @@ export function useLaunchpadController() {
     desktopMainRef,
     getLaunchIconRect,
     hasFolderLayer: () => Boolean(renderedFolder.value || openFolderId.value),
-    hideNativeWindow: () => deferredHandlers.call("hideNativeWindow"),
+    hideNativeWindow: () => hideNativeWindow(),
     finishFolderZoomFadeClose,
     finishHomeRevealSettleWindow,
     folderZoomFadeCloseReason,
@@ -629,24 +587,23 @@ export function useLaunchpadController() {
     isFolderZoomFadeClosing,
     isSearchMode: () => isSearchMode.value,
     keyboardFocusArea,
-    getLaunchTargetStatus: (app) => deferredHandlers.call("getLaunchTargetStatus", app),
-    launchNativeAppIfAvailable: (app) => deferredHandlers.call("launchNativeAppIfAvailable", app),
+    getLaunchTargetStatus: (app) => getLaunchTargetStatus(app),
+    launchNativeAppIfAvailable: (app) => launchNativeAppIfAvailable(app),
     launchTargetStatusById,
     normalizeLaunchSource,
-    openLaunchErrorDialog: (config) => deferredHandlers.call("openLaunchErrorDialog", config),
+    openLaunchErrorDialog: (config) => openLaunchErrorDialog(config),
     openingIcon,
-    prepareNativeLaunch: (app) => deferredHandlers.call("prepareNativeLaunch", app),
+    prepareNativeLaunch: (app) => prepareNativeLaunch(app),
     schedulePageGridMetrics: () => schedulePageGridMetrics(),
     searchInputRef,
-    setNativeWindowEffectsEnabled: (enabled) => deferredHandlers.call("setNativeWindowEffectsEnabled", enabled),
-    setNativeWindowShadowEnabled: (enabled) => deferredHandlers.call("setNativeWindowShadowEnabled", enabled),
-    showNativeLaunchError: (error) => deferredHandlers.call("showNativeLaunchError", error),
+    setNativeWindowEffectsEnabled: (enabled) => setNativeWindowEffectsEnabled(enabled),
+    setNativeWindowShadowEnabled: (enabled) => setNativeWindowShadowEnabled(enabled),
+    showNativeLaunchError: (error) => showNativeLaunchError(error),
     shouldValidateLaunchTarget: () => isNativeBridgeAvailable(),
     startFolderAppLaunchClose,
     startFolderZoomFadeClose,
     startHomeRevealSettleWindow,
   });
-  deferredHandlers.set("openApp", openApp);
 
   const {
     appLaunchGhostTransition,
@@ -713,15 +670,14 @@ export function useLaunchpadController() {
     activePageIndex,
     folderPageIndex,
     folderPages,
-    getDragMeta: () => deferredHandlers.call("getDragMeta"),
-    isDragActive: () => deferredHandlers.call("isDragActive"),
+    getDragMeta: () => dragMeta.value,
+    isDragActive: () => isDragActive(),
     isSearchMode,
     pageIndex,
     pages,
     searchPageIndex,
     searchPages,
   });
-  deferredHandlers.set("commitSearchPageIndex", commitSearchPageIndex);
   const {
     clearLayoutSaveNoticeTimer,
     clearWarningDialogTimer,
@@ -741,7 +697,6 @@ export function useLaunchpadController() {
     showLayoutSaveRecovered,
     warningDialog,
   } = useLaunchpadNotices();
-  deferredHandlers.set("openLaunchErrorDialog", openLaunchErrorDialog);
   const {
     commitPages,
     confirmForceFillAllPages,
@@ -749,7 +704,7 @@ export function useLaunchpadController() {
     renameFolder,
   } = useLaunchpadPageCommands({
     assertNoDuplicateItemIds,
-    cancelLongPress: () => deferredHandlers.call("cancelLongPress"),
+    cancelLongPress: () => cancelLongPress(),
     chunkIntoPages,
     clonePages,
     compactPages,
@@ -761,7 +716,7 @@ export function useLaunchpadController() {
     flattenTopLevelPages,
     folderPageIndex,
     folderPageSize,
-    isDragActive: () => deferredHandlers.call("isDragActive"),
+    isDragActive: () => isDragActive(),
     openFolderId,
     openWarningDialog,
     pageIndex,
@@ -798,8 +753,8 @@ export function useLaunchpadController() {
     backgroundImagePath,
     backgroundImageUrl,
     backgroundSource,
-    closeAddManagedAppPage: () => deferredHandlers.call("closeAddManagedAppPage"),
-    closeScanResultDialog: () => deferredHandlers.call("closeScanResultDialog"),
+    closeAddManagedAppPage: () => closeAddManagedAppPage(),
+    closeScanResultDialog: () => closeScanResultDialog(),
     draftBackgroundBaseColor,
     draftBackgroundBaseOpacity,
     draftBackgroundAcrylicAppearance,
@@ -884,10 +839,10 @@ export function useLaunchpadController() {
     setDraftWindowEffectMaterial,
     useDraftDesktopWallpaper,
   } = useLaunchpadSettingsConfig({
-    applyNativeMainWindowShortcut: (shortcut) => deferredHandlers.call("setNativeMainWindowShortcut", shortcut),
-    applyNativeWindowMode: () => deferredHandlers.call("setNativeWindowMode"),
-    applyNativeWindowEffects: () => deferredHandlers.call("setNativeWindowEffectsEnabled", true),
-    syncLiveDesktopBackgroundRuntime: () => deferredHandlers.call("syncLiveDesktopBackgroundRuntime"),
+    applyNativeMainWindowShortcut: (shortcut) => setNativeMainWindowShortcut(shortcut),
+    applyNativeWindowMode: () => setNativeWindowMode(),
+    applyNativeWindowEffects: () => setNativeWindowEffectsEnabled(true),
+    syncLiveDesktopBackgroundRuntime: () => syncLiveDesktopBackgroundRuntime(),
     backgroundBaseColor,
     backgroundBaseOpacity,
     backgroundAcrylicAppearance,
@@ -1090,18 +1045,6 @@ export function useLaunchpadController() {
     windowEffectMaterial,
     windowEffectsSupport,
   });
-  deferredHandlers.set("getLaunchTargetStatus", getLaunchTargetStatus);
-  deferredHandlers.set("hideNativeWindow", hideNativeWindow);
-  deferredHandlers.set("launchNativeAppIfAvailable", launchNativeAppIfAvailable);
-  deferredHandlers.set("prepareNativeLaunch", prepareNativeLaunch);
-  deferredHandlers.set("setNativeMainWindowShortcut", setNativeMainWindowShortcut);
-  deferredHandlers.set("setNativeMainWindowShortcutCaptureActive", setNativeMainWindowShortcutCaptureActive);
-  deferredHandlers.set("setNativeWindowMode", setNativeWindowMode);
-  deferredHandlers.set("setNativeWindowEffectsEnabled", setNativeWindowEffectsEnabled);
-  deferredHandlers.set("setNativeWindowShadowEnabled", setNativeWindowShadowEnabled);
-  deferredHandlers.set("showNativeLaunchError", showNativeLaunchError);
-  deferredHandlers.set("restartLiveDesktopBackgroundRuntime", restartLiveDesktopBackgroundRuntime);
-  deferredHandlers.set("syncLiveDesktopBackgroundRuntime", syncLiveDesktopBackgroundRuntime);
   dragControls = useLaunchpadDrag({
     canCreateDesktopPageAfterDrag,
     canCreateFolderPageAfterDrag,
@@ -1175,10 +1118,6 @@ export function useLaunchpadController() {
     dragReleaseState,
     isDragActive,
   } = dragControls;
-  deferredHandlers.set("cancelLongPress", cancelLongPress);
-  deferredHandlers.set("clearFolderPageTurn", clearFolderPageTurn);
-  deferredHandlers.set("isDragActive", isDragActive);
-  deferredHandlers.set("getDragMeta", () => dragMeta.value);
   const {
     cancelAltEditMode,
     clearAltEditTimer,
@@ -1302,8 +1241,6 @@ export function useLaunchpadController() {
     showMissingLaunchTargetBadge,
     shouldUseNativeCatalog,
   });
-  deferredHandlers.set("closeAddManagedAppPage", closeAddManagedAppPage);
-  deferredHandlers.set("closeScanResultDialog", closeScanResultDialog);
 
   function closeTopmostModalFromKeyboard() {
     if (warningDialog.value) {
@@ -1637,7 +1574,7 @@ export function useLaunchpadController() {
     resetDraftBackgroundAcrylicParams,
     setDraftFolderIconSizeMode,
     setDraftMainWindowShortcut,
-    setMainWindowShortcutCaptureActive: (active) => deferredHandlers.call("setNativeMainWindowShortcutCaptureActive", active),
+    setMainWindowShortcutCaptureActive: setNativeMainWindowShortcutCaptureActive,
     setDraftWindowMode,
     setDraftWindowEffectAppearance,
     setDraftWindowEffectMaterial,

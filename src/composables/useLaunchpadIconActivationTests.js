@@ -1,6 +1,7 @@
 import { ref } from "vue";
 import {
   getLaunchIconRect,
+  resolveCurrentIconScope,
   useLaunchpadIconActivation,
 } from "./useLaunchpadIconActivation.js";
 import {
@@ -59,7 +60,7 @@ function createIconActivation(overrides = {}) {
   const selectedIcon = ref(overrides.selectedIcon ?? null);
   const selectedItem = ref(overrides.selectedItem ?? null);
 
-  const activation = useLaunchpadIconActivation({
+  const activationOptions = {
     clearSelectedIcon: () => {
       calls.clearSelectedIcon += 1;
     },
@@ -86,7 +87,9 @@ function createIconActivation(overrides = {}) {
     pages,
     searchPageIndex: ref(overrides.searchPageIndex ?? 1),
     selectFirstIconInCurrentScope: (options) => calls.selectFirstIconInCurrentScope.push(options),
-  });
+  };
+  activationOptions.getCurrentIconScope = () => resolveCurrentIconScope(activationOptions);
+  const activation = useLaunchpadIconActivation(activationOptions);
 
   return {
     activation,
