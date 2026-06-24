@@ -50,6 +50,7 @@ import {
   buildDesktopRenderPlan,
   getDesktopSourceGhostedIdsFromOwnership,
   hasFolderClosingHandoffId,
+  isDesktopLayoutTargetChanged,
   isFolderLayerHandoffActive,
   isFolderLayerHoldingDesktopSource,
   normalizeDesktopHandoffState,
@@ -221,6 +222,7 @@ export class DesktopLayer extends Container {
     this.hasFolderOverlayAlpha = false;
     this.hasFolderOverlayTransform = false;
     this.lastFolderHandoffDebugSnapshot = null;
+    this.lastDesktopRenderPlan = null;
     this.iconNodes = new Map();
     this.pageTrackMotion = createPageTrackMotionState();
     this.boundsRegistration = null;
@@ -278,99 +280,109 @@ export class DesktopLayer extends Container {
     this.applyFolderOverlayTransform(state);
     this.applyFolderOverlayAlpha(state);
     const markBoundsDirty = () => this.markInteractiveBoundsDirty();
+    const previousPlan = this.lastDesktopRenderPlan;
+    const shouldApplyDesktopPlan = previousPlan?.signature !== plan.signature;
+    this.lastDesktopRenderPlan = plan;
 
-    clearLaunchIconBounds(plan.clearLaunchArea);
-    for (const folderId of plan.clearFolderPreviewChildIds) {
-      clearFolderPreviewChildBounds(folderId);
-    }
-    for (const pageRef of plan.pageRefs) {
-      state.setPageRef(pageRef.element, pageRef.pageIndex);
-    }
+    if (shouldApplyDesktopPlan) {
+      const previousEntries = new Map((previousPlan?.entries || []).map((entry) => [entry.key, entry]));
+      clearLaunchIconBounds(plan.clearLaunchArea);
+      for (const folderId of plan.clearFolderPreviewChildIds) {
+        clearFolderPreviewChildBounds(folderId);
+      }
+      for (const pageRef of plan.pageRefs) {
+        state.setPageRef(pageRef.element, pageRef.pageIndex);
+      }
 
-    const seen = new Set();
-    const boundsEntries = [];
-    for (const entry of plan.entries) {
-      const {
-        effectiveFolderHandoffEntry,
-        isActiveFolderClosingHandoff,
-        isFolderClosingHandoff,
-        item,
-        key,
-        layoutTarget,
-        nodeState,
-        shouldRetireStaleHandoff,
-      } = entry;
-      if (shouldRetireStaleHandoff) this.clearFolderHandoffNode(item.id);
-      seen.add(key);
-      let node = this.iconNodes.get(key);
-      if (!node) {
-        node = new IconNode({
-          onAction: (action, originalEvent, actionItem, actionSource, iconNode) =>
-            this.handleIconAction(action, originalEvent, actionItem, actionSource, iconNode),
-        });
-        node.alpha = isFolderClosingHandoff ? 1 : 0;
-        node.position.set(layoutTarget.x, isFolderClosingHandoff ? layoutTarget.y : layoutTarget.y + 8);
-        this.iconNodes.set(key, node);
-        this.pageTrack.addChild(node);
-        if (!isFolderClosingHandoff) {
-          motion(node)
-            .preset("fade")
-            .layout()
-            .interrupt("retarget")
-            .to({ alpha: 1 })
-            .start();
+      const seen = new Set();
+      const boundsEntries = [];
+      for (const entry of plan.entries) {
+        const {
+          effectiveFolderHandoffEntry,
+          isActiveFolderClosingHandoff,
+          isFolderClosingHandoff,
+          item,
+          key,
+          layoutTarget,
+          nodeState,
+          shouldRetireStaleHandoff,
+        } = entry;
+        const previousEntry = previousEntries.get(key);
+        const shouldSpringLayout = !previousEntry ||
+          previousEntry.isFolderClosingHandoff !== isFolderClosingHandoff ||
+          isDesktopLayoutTargetChanged(previousEntry.layoutTarget, layoutTarget);
+        if (shouldRetireStaleHandoff) this.clearFolderHandoffNode(item.id);
+        seen.add(key);
+        let node = this.iconNodes.get(key);
+        if (!node) {
+          node = new IconNode({
+            onAction: (action, originalEvent, actionItem, actionSource, iconNode) =>
+              this.handleIconAction(action, originalEvent, actionItem, actionSource, iconNode),
+          });
+          node.alpha = isFolderClosingHandoff ? 1 : 0;
+          node.position.set(layoutTarget.x, isFolderClosingHandoff ? layoutTarget.y : layoutTarget.y + 8);
+          this.iconNodes.set(key, node);
+          this.pageTrack.addChild(node);
+          if (!isFolderClosingHandoff) {
+            motion(node)
+              .preset("fade")
+              .layout()
+              .interrupt("retarget")
+              .to({ alpha: 1 })
+              .start();
+            springIconLayoutPosition(node, layoutTarget, markBoundsDirty);
+          }
+        } else if (!isFolderClosingHandoff && shouldSpringLayout) {
           springIconLayoutPosition(node, layoutTarget, markBoundsDirty);
         }
-      } else if (!isFolderClosingHandoff) {
-        springIconLayoutPosition(node, layoutTarget, markBoundsDirty);
+
+        node.stageRect = state.stageRect;
+        node.__folderSourceGhostedByOwnership = Boolean(entry.isFolderSourceGhosted);
+        node.setState(nodeState);
+        let folderHandoffEntry = effectiveFolderHandoffEntry;
+        if (isActiveFolderClosingHandoff) {
+          this.ensureFolderHandoffNode(item.id, node, layoutTarget);
+          folderHandoffEntry = this.getFolderHandoffEntry(item.id);
+        } else if (folderHandoffEntry) {
+          this.syncFolderHandoffNode(node, layoutTarget, folderHandoffEntry);
+        }
+        if (isFolderClosingHandoff && folderHandoffEntry?.visualReleased) this.revealFolderHandoffLabel(folderHandoffEntry);
+
+        if (entry.boundsEntry) {
+          boundsEntries.push({
+            ...entry.boundsEntry,
+            node,
+          });
+        }
       }
 
-      node.stageRect = state.stageRect;
-      node.__folderSourceGhostedByOwnership = Boolean(entry.isFolderSourceGhosted);
-      node.setState(nodeState);
-      let folderHandoffEntry = effectiveFolderHandoffEntry;
-      if (isActiveFolderClosingHandoff) {
-        this.ensureFolderHandoffNode(item.id, node, layoutTarget);
-        folderHandoffEntry = this.getFolderHandoffEntry(item.id);
-      } else if (folderHandoffEntry) {
-        this.syncFolderHandoffNode(node, layoutTarget, folderHandoffEntry);
+      this.emptyText.visible = plan.emptyText.visible;
+      this.emptyText.position.set(plan.emptyText.x, plan.emptyText.y);
+      for (const [key, node] of this.iconNodes) {
+        if (seen.has(key)) continue;
+        this.iconNodes.delete(key);
+        killMotionOf(node);
+        motion(node)
+          .preset("fade")
+          .layout()
+          .interrupt("retarget")
+          .to({ alpha: 0, onComplete: () => node.destroy({ children: true }) })
+          .start();
       }
-      if (isFolderClosingHandoff && folderHandoffEntry?.visualReleased) this.revealFolderHandoffLabel(folderHandoffEntry);
 
-      if (entry.boundsEntry) {
-        boundsEntries.push({
-          ...entry.boundsEntry,
-          node,
-        });
-      }
+      this.boundsRegistration = makeDesktopBoundsRegistration(state, boundsEntries, plan.desktopFrame);
+      updatePageTrackMotion(this.pageTrackMotion, this.pageTrack, {
+        debugMetadata: plan.pageTrack.debugMetadata,
+        onFrame: markBoundsDirty,
+        pageIndex: plan.pageTrack.pageIndex,
+        pageSpan: plan.pageTrack.pageSpan,
+        scrub: plan.pageTrack.scrub,
+        sourceLabel: plan.pageTrack.sourceLabel,
+        snap: plan.pageTrack.snap,
+        springConfig: motionSprings.layout,
+      });
+      this.flushInteractiveBounds({ force: true });
     }
-
-    this.emptyText.visible = plan.emptyText.visible;
-    this.emptyText.position.set(plan.emptyText.x, plan.emptyText.y);
-    for (const [key, node] of this.iconNodes) {
-      if (seen.has(key)) continue;
-      this.iconNodes.delete(key);
-      killMotionOf(node);
-      motion(node)
-        .preset("fade")
-        .layout()
-        .interrupt("retarget")
-        .to({ alpha: 0, onComplete: () => node.destroy({ children: true }) })
-        .start();
-    }
-
-    this.boundsRegistration = makeDesktopBoundsRegistration(state, boundsEntries, plan.desktopFrame);
-    updatePageTrackMotion(this.pageTrackMotion, this.pageTrack, {
-      debugMetadata: plan.pageTrack.debugMetadata,
-      onFrame: markBoundsDirty,
-      pageIndex: plan.pageTrack.pageIndex,
-      pageSpan: plan.pageTrack.pageSpan,
-      scrub: plan.pageTrack.scrub,
-      sourceLabel: plan.pageTrack.sourceLabel,
-      snap: plan.pageTrack.snap,
-      springConfig: motionSprings.layout,
-    });
-    this.flushInteractiveBounds({ force: true });
     this.updateSingleStageFolderLayer(state);
     this.applyFolderSourceGhosting(state);
     this.updateSingleStageDragPreviewLayer(state);

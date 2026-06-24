@@ -188,6 +188,7 @@ export function motionTo(targetOrTargets, vars = {}, options = {}) {
           });
           continue;
         }
+        const remainingBeforeStart = remaining;
         const control = runtime.animate(track.target, track.prop, track.to, {
           delay: vars.delay,
           blendDuration: vars.blendDuration,
@@ -211,7 +212,7 @@ export function motionTo(targetOrTargets, vars = {}, options = {}) {
           velocity,
         });
         if (control) controls.push(control);
-        else completeOne();
+        else if (remaining === remainingBeforeStart) completeOne();
       }
     }
   }

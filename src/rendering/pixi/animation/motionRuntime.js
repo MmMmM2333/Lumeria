@@ -581,6 +581,27 @@ export function createMotionRuntime(options = {}) {
     return animation;
   }
 
+  function isEmptySpringAnimation(animation) {
+    if (animation.driver?.type !== "spring") return false;
+    if (animation.delay > 0) return false;
+    if (animation.onUpdate || animation.milestones.length) return false;
+    const current = readNumber(animation.target?.[animation.prop], animation.from);
+    return Math.abs(animation.from - animation.to) <= NEUTRAL_EPSILON &&
+      Math.abs(current - animation.to) <= NEUTRAL_EPSILON &&
+      Math.abs(animation.velocity) <= NEUTRAL_EPSILON;
+  }
+
+  function finishEmptySpringAnimation(animation) {
+    animation.done = true;
+    animation.value = animation.to;
+    animation.arrived = true;
+    cleanupChannel(animation.channel);
+    recordDebugEvent("snap", animation, { value: animation.to });
+    animation.onArrive?.(animation.to);
+    animation.onComplete?.();
+    return null;
+  }
+
   function replaceExistingLane(channel, animation) {
     const existing = animation.lane === "base"
       ? channel.base.get(animation.laneKey)
@@ -661,6 +682,9 @@ export function createMotionRuntime(options = {}) {
       animation.onArrive?.(animation.to);
       animation.onComplete?.();
       return null;
+    }
+    if (!existingLaneAnimation && isEmptySpringAnimation(animation)) {
+      return finishEmptySpringAnimation(animation);
     }
 
     const retargeted = replaceExistingLane(animation.channel, animation);

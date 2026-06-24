@@ -69,6 +69,7 @@ import {
   createPageTrackMotionState,
   updatePageTrackMotion,
 } from "./pageTrackMotion.js";
+import { isLayoutTargetChanged } from "./desktopRenderPlan.js";
 
 const PAGE_DOT_BLEND_DURATION = 0.08;
 const PAGE_DOT_BLEND_EASE = "power2.out";
@@ -431,6 +432,7 @@ export class FolderOverlayLayer extends Container {
       style: { fill: 0xffffff, fontSize: 18, fontWeight: "620", fontFamily: "Inter, Segoe UI, sans-serif" },
     });
     this.iconNodes = new Map();
+    this.folderIconLayoutTargets = new Map();
     this.iconBoundsRefreshers = new Map();
     this.openingGhostBoundsRefreshers = new Map();
     this.registeredBoundsDirty = false;
@@ -716,6 +718,7 @@ export class FolderOverlayLayer extends Container {
     } = context;
     const seen = new Set();
     const boundsRefreshers = new Map();
+    const nextLayoutTargets = new Map();
     const openingGhostTargets = [];
     const closingGhostTargets = [];
     for (const entry of renderPlan.entries) {
@@ -761,7 +764,11 @@ export class FolderOverlayLayer extends Container {
           .to({ alpha: 1 })
           .start();
       }
-      springFolderIconLayoutPosition(node, { x, y }, refreshNodeBounds);
+      const layoutTarget = { x, y };
+      nextLayoutTargets.set(key, layoutTarget);
+      if (isNewNode || isLayoutTargetChanged(this.folderIconLayoutTargets?.get(key), layoutTarget)) {
+        springFolderIconLayoutPosition(node, layoutTarget, refreshNodeBounds);
+      }
       if (entry.openingGhostInput) {
         const openingGeometrySnapshot = this.currentOpeningGeometrySnapshot?.folderId === folderId
           ? this.currentOpeningGeometrySnapshot
@@ -787,6 +794,7 @@ export class FolderOverlayLayer extends Container {
     }
 
     const closingPreviewSwapTargets = renderPlan.closingPreviewSwapTargets;
+    this.folderIconLayoutTargets = nextLayoutTargets;
     this.iconBoundsRefreshers = boundsRefreshers;
     return {
       ...context,
@@ -908,6 +916,7 @@ export class FolderOverlayLayer extends Container {
   }
 
   clearRegisteredIconBounds() {
+    this.folderIconLayoutTargets?.clear?.();
     this.iconBoundsRefreshers?.clear();
     this.openingGhostBoundsRefreshers?.clear();
   }

@@ -3,6 +3,7 @@ import { motionRuntime } from "../animation/motionRuntime.js";
 import { motionSprings } from "../animation/motionPresets.js";
 
 const PAGE_TRACK_REPLACE_REASON = "page-track-replace";
+const PAGE_TRACK_TARGET_EPSILON = 0.5;
 
 function readNumber(value, fallback = 0) {
   const number = Number(value);
@@ -15,6 +16,10 @@ function clamp01(value) {
 
 function readPageSpan(value) {
   return Math.max(1, readNumber(value, 1));
+}
+
+function isSameTrackTarget(previousX, nextX) {
+  return Math.abs(readNumber(previousX, 0) - readNumber(nextX, 0)) <= PAGE_TRACK_TARGET_EPSILON;
 }
 
 function pageIndexToTrackX(index, pageSpan) {
@@ -102,6 +107,7 @@ export function createPageTrackMotionState() {
     key: null,
     mode: null,
     settleToken: null,
+    targetX: null,
   };
 }
 
@@ -114,6 +120,7 @@ export function cancelPageTrackMotion(motionState, reason = "cancel") {
   motionState.key = null;
   motionState.mode = null;
   motionState.settleToken = null;
+  motionState.targetX = null;
 }
 
 export function getPageTrackX(index, pageSpan) {
@@ -197,6 +204,17 @@ export function updatePageTrackMotion(motionState, pageTrack, options = {}) {
   if (motionState.mode === "scrub" || motionState.mode === "settle") {
     cancelPageTrackMotion(motionState, PAGE_TRACK_REPLACE_REASON);
   }
+  if (motionState.mode === "spring" && isSameTrackTarget(motionState.targetX, targetX)) {
+    return { control: motionState.control, mode: "spring", targetX };
+  }
+  if (!motionState.control && isSameTrackTarget(pageTrack.x, targetX)) {
+    motionState.key = null;
+    motionState.mode = "spring";
+    motionState.settleToken = null;
+    motionState.targetX = targetX;
+    pageTrack.x = targetX;
+    return { control: null, mode: "spring", targetX };
+  }
   motionState.control = motion(pageTrack)
     .layout()
     .spring(springConfig)
@@ -211,5 +229,6 @@ export function updatePageTrackMotion(motionState, pageTrack, options = {}) {
   motionState.key = null;
   motionState.mode = "spring";
   motionState.settleToken = null;
+  motionState.targetX = targetX;
   return { control: motionState.control, mode: "spring", targetX };
 }

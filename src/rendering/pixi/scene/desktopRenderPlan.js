@@ -180,6 +180,163 @@ function makeFolderPinnedLayoutTarget(state, targetX, stableScreenTarget, iconSi
   };
 }
 
+export const DESKTOP_LAYOUT_TARGET_EPSILON = 0.5;
+
+function stableNumber(value) {
+  const number = readNumber(value, Number.NaN);
+  if (!Number.isFinite(number)) return null;
+  return Math.round(number * 1000) / 1000;
+}
+
+function stableDataUrlSignature(value) {
+  if (typeof value !== "string" || !value) return null;
+  return `${value.length}:${value.slice(0, 64)}:${value.slice(-64)}`;
+}
+
+function makeItemRenderSignature(item, depth = 0) {
+  if (!item || typeof item !== "object") return null;
+  const childSource = Array.isArray(item.children)
+    ? item.children
+    : Array.isArray(item.childPages)
+      ? item.childPages.flat()
+      : [];
+  const children = depth >= 2
+    ? null
+    : childSource
+      .filter(Boolean)
+      .map((child) => makeItemRenderSignature(child, depth + 1));
+  return {
+    children,
+    customIconDataUrl: stableDataUrlSignature(item.customIconDataUrl),
+    customIconPath: item.customIconPath || null,
+    customIconUrl: item.customIconUrl || null,
+    emoji: item.emoji || null,
+    iconDataUrl: stableDataUrlSignature(item.iconDataUrl),
+    iconPath: item.iconPath || null,
+    iconUrl: item.iconUrl || null,
+    id: item.id || null,
+    name: item.name || null,
+    title: item.title || null,
+    type: item.type || null,
+  };
+}
+
+function stableValue(value, seen = new WeakSet()) {
+  if (value == null) return value;
+  if (typeof value === "number") return stableNumber(value);
+  if (typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "function" || typeof value === "symbol") return undefined;
+  if (value instanceof Set) {
+    return Array.from(value).map((entry) => stableValue(entry, seen)).sort();
+  }
+  if (value instanceof Map) {
+    return Array.from(value.entries())
+      .map(([key, entry]) => [stableValue(key, seen), stableValue(entry, seen)])
+      .sort(([left], [right]) => String(left).localeCompare(String(right)));
+  }
+  if (Array.isArray(value)) return value.map((entry) => stableValue(entry, seen));
+  if (typeof value === "object") {
+    if (seen.has(value)) return "[Circular]";
+    seen.add(value);
+    const result = {};
+    for (const key of Object.keys(value).sort()) {
+      const nextValue = stableValue(value[key], seen);
+      if (nextValue !== undefined) result[key] = nextValue;
+    }
+    seen.delete(value);
+    return result;
+  }
+  return undefined;
+}
+
+function makeNodeStateSignature(nodeState, item) {
+  const { item: _item, ...rest } = nodeState || {};
+  return {
+    ...stableValue(rest),
+    item: makeItemRenderSignature(item),
+  };
+}
+
+function makeBoundsEntrySignature(boundsEntry) {
+  if (!boundsEntry) return null;
+  const { item: _item, ...rest } = boundsEntry;
+  return {
+    ...stableValue(rest),
+    item: makeItemRenderSignature(boundsEntry.item),
+  };
+}
+
+function makeFolderHandoffEntrySignature(entry) {
+  if (!entry) return null;
+  return {
+    folderId: entry.folderId || null,
+    labelRevealStarted: entry.labelRevealStarted === true,
+    layoutTarget: makeTargetSignature(entry.layoutTarget),
+    visualHidden: entry.visualHidden === true,
+    visualReleased: entry.visualReleased === true,
+  };
+}
+
+function makeTargetSignature(target) {
+  if (!target) return null;
+  return {
+    scaleX: stableNumber(target.scaleX),
+    scaleY: stableNumber(target.scaleY),
+    x: stableNumber(target.x),
+    y: stableNumber(target.y),
+  };
+}
+
+export function isLayoutTargetChanged(previousTarget, nextTarget, epsilon = DESKTOP_LAYOUT_TARGET_EPSILON) {
+  if (!previousTarget || !nextTarget) return true;
+  for (const key of ["x", "y", "scaleX", "scaleY"]) {
+    if (previousTarget[key] == null && nextTarget[key] == null) continue;
+    const previousValue = readNumber(previousTarget[key], key === "scaleX" || key === "scaleY" ? 1 : 0);
+    const nextValue = readNumber(nextTarget[key], key === "scaleX" || key === "scaleY" ? 1 : 0);
+    if (Math.abs(previousValue - nextValue) > epsilon) return true;
+  }
+  return false;
+}
+
+export const isDesktopLayoutTargetChanged = isLayoutTargetChanged;
+
+export function makeDesktopRenderPlanSignature(plan) {
+  const state = plan.state || {};
+  return JSON.stringify(stableValue({
+    clearFolderPreviewChildIds: plan.clearFolderPreviewChildIds,
+    clearLaunchArea: plan.clearLaunchArea,
+    desktopFrame: plan.desktopFrame,
+    emptyText: plan.emptyText,
+    entries: plan.entries.map((entry) => ({
+      boundsEntry: makeBoundsEntrySignature(entry.boundsEntry),
+      effectiveFolderHandoffEntry: makeFolderHandoffEntrySignature(entry.effectiveFolderHandoffEntry),
+      handoffLayoutTarget: makeTargetSignature(entry.handoffLayoutTarget),
+      isActiveDraggedItem: entry.isActiveDraggedItem,
+      isActiveFolderClosingHandoff: entry.isActiveFolderClosingHandoff,
+      isFolderClosingHandoff: entry.isFolderClosingHandoff,
+      isFolderSourceGhosted: entry.isFolderSourceGhosted,
+      isInteractivePage: entry.isInteractivePage,
+      isReleaseGhostItem: entry.isReleaseGhostItem,
+      item: makeItemRenderSignature(entry.item),
+      key: entry.key,
+      layoutTarget: makeTargetSignature(entry.layoutTarget),
+      nodeState: makeNodeStateSignature(entry.nodeState, entry.item),
+      pageIndex: entry.pageIndex,
+      shouldRetireStaleHandoff: entry.shouldRetireStaleHandoff,
+      source: entry.source,
+      stableLayoutTarget: makeTargetSignature(entry.stableLayoutTarget),
+      stableScreenTarget: entry.stableScreenTarget,
+    })),
+    height: state.height,
+    pageRefs: plan.pageRefs.map((entry) => ({ pageIndex: entry.pageIndex })),
+    pageTrack: plan.pageTrack,
+    pageWidth: plan.pageWidth,
+    stageRect: state.stageRect,
+    targetX: plan.targetX,
+    width: state.width,
+  }));
+}
+
 export function getDesktopFrame(state) {
   const frame = state.desktopFrame || {};
   const width = Math.max(1, readNumber(frame.width, state.width));
@@ -346,7 +503,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
     });
   });
 
-  return {
+  const plan = {
     activePageIndex,
     clearFolderPreviewChildIds,
     clearLaunchArea: state.isSearchMode ? "search" : "desktop",
@@ -374,6 +531,10 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
     pages,
     state,
     targetX,
+  };
+  return {
+    ...plan,
+    signature: makeDesktopRenderPlanSignature(plan),
   };
 }
 

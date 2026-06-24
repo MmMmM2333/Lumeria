@@ -592,6 +592,23 @@ export function runMotionTweenTests() {
   }
 
   {
+    const runtime = createMotionRuntime({ autoStart: false });
+    const target = { x: 10, y: 10 };
+    const calls = [];
+    const control = motionTo(target, {
+      driver: springDriver({ damping: 28, mass: 0.9, stiffness: 190 }),
+      onArrive: () => calls.push("arrive"),
+      onComplete: () => calls.push("complete"),
+      x: 10,
+      y: 10,
+    }, { runtime });
+
+    assert(!runtime.hasActiveWork(), "multi-property empty spring should not enter the active runtime set");
+    assert(control.completed === true, "multi-property empty spring should return a completed group control");
+    assert(calls.join(",") === "arrive,complete", "multi-property empty spring should complete the group exactly once");
+  }
+
+  {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0, y: 0 };
     const calls = [];

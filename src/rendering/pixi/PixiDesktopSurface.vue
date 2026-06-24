@@ -181,6 +181,7 @@ let desktopMotionRuntimeSuspended = false;
 let desktopFrameHandle = null;
 let desktopFrameLastTime = 0;
 let desktopMotionFrameNeedsRender = false;
+let desktopLayerUpdatePending = false;
 const folderClosingHandoffRetainer = createFolderClosingHandoffRetainer();
 let handoffDebugSequence = 0;
 
@@ -518,68 +519,72 @@ function updateMotionDebugOverlay() {
   });
 }
 
-function renderPixi() {
-  if (!app || !layer || !hostRef.value) return;
+function renderPixi(options = {}) {
+  if (!app || !layer || !hostRef.value) return false;
+  const shouldUpdateLayer = options.updateLayer !== false;
   const domGeometry = getDesktopDomGeometry();
-  if (!domGeometry) return;
+  if (!domGeometry) return false;
   const { metrics, renderGeometry } = domGeometry;
   const folderClosingHandoffId = resolveFolderClosingHandoffId(metrics);
-  const singleStageOptions = getResolvedSingleStageOptions();
-  const singleStageRuntimePlan = getResolvedSingleStageRuntimePlan(singleStageOptions);
-  singleStageDragPreviewEnabled.value = singleStageRuntimePlan.useDragPreview;
-  singleStageFolderLayerEnabled.value = singleStageRuntimePlan.useFolderLayer;
-  layer.update({
-    activePageIndex: props.activePageIndex,
-    activePages: props.activePages,
-    desktopVisualTransform: props.desktopVisualTransform,
-    desktopVisualAlpha: props.desktopVisualAlpha,
-    launchpadVisualAlpha: props.launchpadVisualAlpha,
-    launchpadVisualTransform: props.launchpadVisualTransform,
-    desktopFrame: renderGeometry.desktopFrame,
-    desktopGridDebugOptions: props.desktopGridDebugOptions,
-    desktopTrackMotionKey: props.desktopTrackMotionKey,
-    dragFolderHoverState: props.dragFolderHoverState,
-    dragFolderTargetId: props.dragFolderTargetId,
-    dragMeta: props.dragMeta,
-    dragPreviewState: props.dragPreviewState,
-    dragReleaseGhostId: props.dragReleaseGhostId,
-    dragReleaseState: props.dragReleaseState,
-    deviceResolution: app.renderer?.resolution || 1,
-    folderClosingHandoffId,
-    singleStageDragPreviewEnabled: singleStageRuntimePlan.useDragPreview,
-    singleStageDiagnosticsEnabled: singleStageOptions,
-    singleStageFolderLayerEnabled: singleStageRuntimePlan.useFolderLayer,
-    singleStageFolderState: singleStageOptions.enabled ? createSingleStageFolderState(metrics, singleStageOptions, renderGeometry) : null,
-    folderPageSize: props.folderPageSize,
-    getDesktopPageRenderMode: props.getDesktopPageRenderMode,
-    getVisibleDesktopPage: props.getVisibleDesktopPage,
-    gridCols: props.gridCols,
-    gridRows: props.gridRows,
-    height: renderGeometry.height,
-    iconSize: props.iconSize,
-    isEditMode: props.isEditMode,
-    folderSourceGhostedId: props.folderSourceGhostedId,
-    folderSourceGhostedIds: props.folderSourceGhostedIds,
-    isFolderOpeningPreviewFrameGhosted: props.isFolderOpeningPreviewFrameGhosted,
-    isHomeRevealSettling: props.isHomeRevealSettling,
-    isIconOpening: props.isIconOpening,
-    isIconSelected: props.isIconSelected,
-    isSearchMode: props.isSearchMode,
-    isTextlessMode: props.isTextlessMode,
-    launchTargetStatusById: props.launchTargetStatusById,
-    pageTrackScrub: props.pageTrackScrub,
-    setPageRef: props.setPageRef,
-    shouldSnapTrack: props.desktopTrackMotionKey.includes("snap"),
-    showMissingLaunchTargetBadge: props.showMissingLaunchTargetBadge,
-    stageRect: renderGeometry.stageRect,
-    width: renderGeometry.width,
-  });
-  if (singleStageRuntimePlan.useDragPreview) {
-    preloadIconTextures(collectDragPreviewTextureItems(props.dragPreviewState || props.dragReleaseState));
+  if (shouldUpdateLayer) {
+    const singleStageOptions = getResolvedSingleStageOptions();
+    const singleStageRuntimePlan = getResolvedSingleStageRuntimePlan(singleStageOptions);
+    singleStageDragPreviewEnabled.value = singleStageRuntimePlan.useDragPreview;
+    singleStageFolderLayerEnabled.value = singleStageRuntimePlan.useFolderLayer;
+    layer.update({
+      activePageIndex: props.activePageIndex,
+      activePages: props.activePages,
+      desktopVisualTransform: props.desktopVisualTransform,
+      desktopVisualAlpha: props.desktopVisualAlpha,
+      launchpadVisualAlpha: props.launchpadVisualAlpha,
+      launchpadVisualTransform: props.launchpadVisualTransform,
+      desktopFrame: renderGeometry.desktopFrame,
+      desktopGridDebugOptions: props.desktopGridDebugOptions,
+      desktopTrackMotionKey: props.desktopTrackMotionKey,
+      dragFolderHoverState: props.dragFolderHoverState,
+      dragFolderTargetId: props.dragFolderTargetId,
+      dragMeta: props.dragMeta,
+      dragPreviewState: props.dragPreviewState,
+      dragReleaseGhostId: props.dragReleaseGhostId,
+      dragReleaseState: props.dragReleaseState,
+      deviceResolution: app.renderer?.resolution || 1,
+      folderClosingHandoffId,
+      singleStageDragPreviewEnabled: singleStageRuntimePlan.useDragPreview,
+      singleStageDiagnosticsEnabled: singleStageOptions,
+      singleStageFolderLayerEnabled: singleStageRuntimePlan.useFolderLayer,
+      singleStageFolderState: singleStageOptions.enabled ? createSingleStageFolderState(metrics, singleStageOptions, renderGeometry) : null,
+      folderPageSize: props.folderPageSize,
+      getDesktopPageRenderMode: props.getDesktopPageRenderMode,
+      getVisibleDesktopPage: props.getVisibleDesktopPage,
+      gridCols: props.gridCols,
+      gridRows: props.gridRows,
+      height: renderGeometry.height,
+      iconSize: props.iconSize,
+      isEditMode: props.isEditMode,
+      folderSourceGhostedId: props.folderSourceGhostedId,
+      folderSourceGhostedIds: props.folderSourceGhostedIds,
+      isFolderOpeningPreviewFrameGhosted: props.isFolderOpeningPreviewFrameGhosted,
+      isHomeRevealSettling: props.isHomeRevealSettling,
+      isIconOpening: props.isIconOpening,
+      isIconSelected: props.isIconSelected,
+      isSearchMode: props.isSearchMode,
+      isTextlessMode: props.isTextlessMode,
+      launchTargetStatusById: props.launchTargetStatusById,
+      pageTrackScrub: props.pageTrackScrub,
+      setPageRef: props.setPageRef,
+      shouldSnapTrack: props.desktopTrackMotionKey.includes("snap"),
+      showMissingLaunchTargetBadge: props.showMissingLaunchTargetBadge,
+      stageRect: renderGeometry.stageRect,
+      width: renderGeometry.width,
+    });
+    if (singleStageRuntimePlan.useDragPreview) {
+      preloadIconTextures(collectDragPreviewTextureItems(props.dragPreviewState || props.dragReleaseState));
+    }
+    publishFolderVisualDebugSnapshot();
+    logFolderHandoffTimeline(metrics, folderClosingHandoffId);
   }
-  publishFolderVisualDebugSnapshot();
   updateMotionDebugOverlay();
-  logFolderHandoffTimeline(metrics, folderClosingHandoffId);
+  return true;
 }
 
 function cancelScheduledRenderPixi() {
@@ -589,6 +594,7 @@ function cancelScheduledRenderPixi() {
     desktopFrameHandle = null;
   }
   desktopFrameLastTime = 0;
+  desktopLayerUpdatePending = false;
 }
 
 function getRenderScheduler() {
@@ -603,7 +609,10 @@ function getRenderScheduler() {
     cancelAnimationFrame: cancelFrame,
     canRender: () => Boolean(!destroyed && app && layer && hostRef.value),
     render: () => {
-      renderPixi();
+      const updateLayer = desktopLayerUpdatePending;
+      desktopLayerUpdatePending = false;
+      const didRender = renderPixi({ updateLayer });
+      if (!didRender && updateLayer) desktopLayerUpdatePending = true;
       app?.render?.();
     },
     requestAnimationFrame: requestFrame,
@@ -645,7 +654,10 @@ function runDesktopFrame(time) {
     desktopMotionFrameNeedsRender = false;
   }
   scheduler.runPendingRender();
-  if (shouldRunHandoffRenderLoop()) scheduler.markRenderPending("folder-handoff-loop");
+  if (shouldRunHandoffRenderLoop()) {
+    desktopLayerUpdatePending = true;
+    scheduler.markRenderPending("folder-handoff-loop");
+  }
 
   if (typeof window.requestAnimationFrame === "function" && shouldRunDesktopFrameLoop()) {
     scheduleDesktopFrame();
@@ -666,6 +678,7 @@ function scheduleDesktopFrame() {
 
 function requestRender(reason = "desktop-update", options = {}) {
   if (options.invalidateGeometry) invalidateDesktopDomGeometry();
+  desktopLayerUpdatePending = true;
   const didMark = getRenderScheduler().markRenderPending(reason);
   scheduleDesktopFrame();
   return didMark;

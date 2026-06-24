@@ -421,6 +421,36 @@ export function runMotionRuntimeTests() {
   }
 
   {
+    const runtime = createMotionRuntime({ autoStart: false });
+    const target = { x: 10 };
+    let arrived = 0;
+    let completed = 0;
+    const control = runtime.animate(target, "x", 10, {
+      driver: spring({ damping: 28, mass: 0.9, stiffness: 190 }),
+      onArrive: () => { arrived += 1; },
+      onComplete: () => { completed += 1; },
+    });
+
+    assert(control === null, "empty spring without per-frame callbacks should not create a control");
+    assert(!runtime.hasActiveWork(), "empty spring without per-frame callbacks should not enter the active set");
+    assert(arrived === 1 && completed === 1, "empty spring should still finish lifecycle callbacks");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false });
+    const target = { x: 10 };
+    const control = runtime.animate(target, "x", 10, {
+      driver: spring({ damping: 28, mass: 0.9, stiffness: 190 }),
+      onUpdate: () => {},
+    });
+
+    assert(control, "empty spring with an update callback should remain caller-visible");
+    assert(runtime.hasActiveWork(), "empty spring with an update callback should preserve active work for callback delivery");
+    runtime.step(1 / 60);
+    assert(!runtime.hasActiveWork(), "empty spring with an update callback should still settle on the next frame");
+  }
+
+  {
     const runtime = createMotionRuntime({ autoStart: true });
     const events = [];
     const unsubscribe = runtime.addObserver((event) => events.push(event.type));

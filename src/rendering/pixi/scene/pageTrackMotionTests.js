@@ -218,6 +218,33 @@ export function runPageTrackMotionTests() {
     const runtime = createMotionRuntime({ autoStart: false });
     const motionState = createPageTrackMotionState();
     const pageTrack = { x: 0 };
+    let frameCount = 0;
+
+    updatePageTrackMotion(motionState, pageTrack, {
+      onFrame: () => { frameCount += 1; },
+      pageIndex: 0,
+      pageSpan: 300,
+      runtime,
+    });
+
+    assert(!runtime.hasActiveWork(), "page track should not create a spring when it is already at the target");
+    assert(frameCount === 0, "unchanged page track target should not emit frame callbacks");
+
+    updatePageTrackMotion(motionState, pageTrack, {
+      onFrame: () => { frameCount += 1; },
+      pageIndex: 0,
+      pageSpan: 300,
+      runtime,
+    });
+
+    assert(!runtime.hasActiveWork(), "reapplying the same page track target should stay idle");
+    assert(frameCount === 0, "reapplying the same page track target should stay silent");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false });
+    const motionState = createPageTrackMotionState();
+    const pageTrack = { x: 0 };
     runtime.configureDebug({ enabled: true });
 
     updatePageTrackMotion(motionState, pageTrack, {
