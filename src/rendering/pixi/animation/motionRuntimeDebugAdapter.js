@@ -585,6 +585,7 @@ export function createMotionRuntimeDebugAdapter() {
     latestChannels = [];
     runtimeState = { activeAnimationCount: 0, frames: 0, timeMs: 0 };
     clearHistory();
+    targetMetaById.clear();
     targetRefsById?.clear();
   }
 

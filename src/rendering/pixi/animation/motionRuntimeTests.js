@@ -1031,6 +1031,24 @@ export function runMotionRuntimeTests() {
   }
 
   {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    runtime.configureDebug({ enabled: true });
+    runtime.describeTarget(target, {
+      kind: "ResetTarget",
+      label: "Reset Target",
+      sourceLabel: "motion-runtime-tests.reset",
+    });
+
+    const describedReport = runtime.debugReport({ includeTargets: true });
+    assert(describedReport.targets.some((entry) => entry.label === "Reset Target"), "debug report should include metadata before reset");
+
+    runtime.reset();
+    const resetReport = runtime.debugReport({ includeTargets: true });
+    assert(resetReport.targets.length === 0, "runtime reset should clear described target metadata");
+  }
+
+  {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 10 });
     const target = { x: 0 };
     runtime.configureDebug({
