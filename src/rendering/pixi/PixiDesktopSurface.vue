@@ -55,7 +55,10 @@ import {
   makeFolderInternalActivityRenderReason,
   makeIconActionRenderReason,
 } from "./pixiRenderTriggers.js";
-import { motionRuntime } from "./animation/motionRuntime.js";
+import {
+  installMotionRuntimeDebugAdapterFactory,
+  motionRuntime,
+} from "./animation/motionRuntime.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { getPixiHostMetrics } from "./pixiHostMetrics.js";
 import {
@@ -866,10 +869,13 @@ onMounted(async () => {
     const [
       { MotionDebugOverlayLayer },
       { installMotionDebugGlobal },
+      { createMotionRuntimeDebugAdapter },
     ] = await Promise.all([
       import("./animation/motionDebugOverlayLayer.js"),
       import("./animation/motionDebugReport.js"),
+      import("./animation/motionRuntimeDebugAdapter.dev.js"),
     ]);
+    installMotionRuntimeDebugAdapterFactory(createMotionRuntimeDebugAdapter);
     motionDebugOverlay = new MotionDebugOverlayLayer();
     app.stage.addChild(motionDebugOverlay);
     globalThis.__LP_MOTION_OVERLAY_DEBUG__ = () => motionDebugOverlay?.debugSnapshot?.() || null;

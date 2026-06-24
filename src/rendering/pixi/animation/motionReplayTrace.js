@@ -1,5 +1,9 @@
 import { motionRuntime } from "./motionRuntime.js";
 import {
+  MOTION_REPLAY_TRACE_SCHEMA,
+  MOTION_REPLAY_TRACE_VERSION,
+} from "./motionReplayTraceSchema.js";
+import {
   aggregateMotionTracks,
   clamp,
   collectMotionTrackRecordsFromReplay,
@@ -9,8 +13,10 @@ import {
   readNumber,
 } from "./motionTraceShared.js";
 
-export const MOTION_REPLAY_TRACE_SCHEMA = "pixi-motion-replay-trace/v1";
-export const MOTION_REPLAY_TRACE_VERSION = 1;
+export {
+  MOTION_REPLAY_TRACE_SCHEMA,
+  MOTION_REPLAY_TRACE_VERSION,
+} from "./motionReplayTraceSchema.js";
 export const MOTION_REPLAY_CAPTURE_DEFAULT_SECONDS = 30;
 export const MOTION_REPLAY_CAPTURE_MIN_SECONDS = 1;
 export const MOTION_REPLAY_CAPTURE_MAX_SECONDS = 300;

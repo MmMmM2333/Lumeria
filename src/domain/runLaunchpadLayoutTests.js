@@ -43,6 +43,8 @@ import { runMotionPresetsTests } from "../rendering/pixi/animation/motionPresets
 import { runMotionDebugOverlayTests } from "../rendering/pixi/animation/motionDebugOverlayTests.js";
 import { runMotionDebugReportTests } from "../rendering/pixi/animation/motionDebugReportTests.js";
 import { runMotionReplayTraceTests } from "../rendering/pixi/animation/motionReplayTraceTests.js";
+import { createMotionRuntimeDebugAdapter } from "../rendering/pixi/animation/motionRuntimeDebugAdapter.dev.js";
+import { installMotionRuntimeDebugAdapterFactory } from "../rendering/pixi/animation/motionRuntime.js";
 import { runMotionRuntimeTests } from "../rendering/pixi/animation/motionRuntimeTests.js";
 import { runMotionTweenTests } from "../rendering/pixi/animation/motionTweenTests.js";
 import { runMotionCleanupTests } from "../rendering/pixi/animation/motionCleanupTests.js";
@@ -122,6 +124,8 @@ const folderPageSize = {
     return makePageSize(state.folderRows.value, state.folderCols.value);
   },
 };
+
+installMotionRuntimeDebugAdapterFactory(createMotionRuntimeDebugAdapter);
 
 const helpers = createLaunchpadLayoutHelpers({
   getPageSize: () => pageSize.value,

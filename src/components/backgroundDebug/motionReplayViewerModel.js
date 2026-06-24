@@ -1,4 +1,4 @@
-import { MOTION_REPLAY_TRACE_SCHEMA } from "../../rendering/pixi/animation/motionReplayTrace.js";
+import { MOTION_REPLAY_TRACE_SCHEMA } from "../../rendering/pixi/animation/motionReplayTraceSchema.js";
 import {
   clamp,
   collectRecordText,

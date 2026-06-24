@@ -229,8 +229,10 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { Container, Graphics, Text } from "pixi.js";
 import { buildMotionWarningRows } from "../components/backgroundDebug/motionDebugPanelModel.js";
 import { createPixiApp } from "../rendering/pixi/createPixiApp.js";
-import { createMotionRuntime } from "../rendering/pixi/animation/motionRuntime.js";
-import { createMotionReplayTrace } from "../rendering/pixi/animation/motionReplayTrace.js";
+import {
+  createMotionRuntime,
+  installMotionRuntimeDebugAdapterFactory,
+} from "../rendering/pixi/animation/motionRuntime.js";
 import {
   applyMotionLabParamPreset,
   buildMotionLabParamPresetRows,
@@ -758,9 +760,10 @@ function applyParamPreset(id) {
   return getMotionParams();
 }
 
-function captureReplayTrace() {
+async function captureReplayTrace() {
   if (!runtime) return;
   updateScenarioAssertions("capture-replay-trace");
+  const { createMotionReplayTrace } = await import("../rendering/pixi/animation/motionReplayTrace.js");
   const trace = createMotionReplayTrace(motionReport.value, {
     durationMs: 30000,
     sampleHz: 30,
@@ -992,6 +995,8 @@ function clearCopyTimers() {
 }
 
 onMounted(async () => {
+  const { createMotionRuntimeDebugAdapter } = await import("../rendering/pixi/animation/motionRuntimeDebugAdapter.dev.js");
+  installMotionRuntimeDebugAdapterFactory(createMotionRuntimeDebugAdapter);
   runtime = createMotionRuntime();
   configureRuntime();
   pixiApp = await createPixiApp(pixiHostRef.value, {

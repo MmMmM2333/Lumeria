@@ -5,6 +5,9 @@ import {
   readNumber,
 } from "./motionTraceShared.js";
 
+let motionRuntimeDebugAdapterFactory = createMotionRuntimeDebugAdapter;
+const motionRuntimeDebugAdapterInstallers = new Set();
+
 const DEFAULT_MAX_DELTA_SECONDS = 0.05;
 const DEFAULT_STEP_SECONDS = 1 / 120;
 const DEFAULT_REST_DELTA = 0.01;
@@ -20,6 +23,14 @@ const DEFAULT_SETTLE_SPRING = Object.freeze({
 });
 const NEUTRAL_EPSILON = 0.0001;
 let nextLaneId = 1;
+
+export function installMotionRuntimeDebugAdapterFactory(factory) {
+  if (typeof factory !== "function") return false;
+  if (motionRuntimeDebugAdapterFactory === factory) return true;
+  motionRuntimeDebugAdapterFactory = factory;
+  for (const installAdapter of motionRuntimeDebugAdapterInstallers) installAdapter(factory);
+  return true;
+}
 
 function nowMs() {
   if (typeof performance !== "undefined" && typeof performance.now === "function") return performance.now();
@@ -123,7 +134,7 @@ export function createMotionRuntime(options = {}) {
   const dirtyChannels = new Set();
   const pendingUpdateAnimations = new Set();
   const targetIds = new WeakMap();
-  const debugAdapter = createMotionRuntimeDebugAdapter();
+  let debugAdapter = motionRuntimeDebugAdapterFactory();
   const observers = new Set();
   const renderSignalObservers = new Set();
   const activeAnimationScratch = [];
@@ -138,6 +149,17 @@ export function createMotionRuntime(options = {}) {
   let runtimeTimeMs = 0;
   let autoTickerSuspended = 0;
   let writesLastFrame = 0;
+
+  function installDebugAdapter(factory = motionRuntimeDebugAdapterFactory) {
+    if (typeof factory !== "function") return false;
+    const previousConfig = debugAdapter.getConfig?.() || {};
+    const nextAdapter = factory();
+    nextAdapter.configureDebug?.(previousConfig);
+    debugAdapter = nextAdapter;
+    return true;
+  }
+
+  motionRuntimeDebugAdapterInstallers.add(installDebugAdapter);
 
   function getTargetId(target) {
     if (!target) return null;
@@ -1198,8 +1220,11 @@ export function createMotionRuntime(options = {}) {
     describeTarget,
     flushAfterFrameForTests: flushAfterFrame,
     getChannel: (target, prop) => getChannel(target, prop),
-    debug: debugAdapter.debug,
+    get debug() {
+      return debugAdapter.debug;
+    },
     hasActiveWork,
+    installDebugAdapter,
     onRenderSignal,
     recordCoordinationEvent,
     reset,
