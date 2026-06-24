@@ -1,4 +1,9 @@
-import { makeTrackKey } from "./motionTraceShared.js";
+import {
+  clamp,
+  makeMotionDebugSummary,
+  makeTrackKey,
+  readNumber,
+} from "./motionTraceShared.js";
 
 const DEBUG_RECORD_WINDOW_MIN_MS = 1000;
 const DEBUG_RECORD_WINDOW_MAX_MS = 300000;
@@ -19,15 +24,6 @@ const LIVE_DEBUG_METADATA_KEYS = new Set([
   "overlayTarget",
 ]);
 const CAN_STORE_DEBUG_TARGET_REFS = import.meta.env?.DEV !== false;
-
-function readNumber(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
 
 function makeDebugCounters() {
   return {
@@ -203,35 +199,6 @@ function cloneHistory(history) {
       animations: sample.animations.map(cloneRecord),
     })),
   };
-}
-
-function makeDebugSummary(animations) {
-  const targetIds = new Set();
-  const channelKeys = new Set();
-  const summary = {
-    activeAnimationCount: animations.length,
-    activeChannelCount: 0,
-    activeTargetCount: 0,
-    byDriver: {},
-    byLane: {},
-    byLaneKey: {},
-    byProp: {},
-    byTargetId: {},
-  };
-
-  for (const animation of animations) {
-    incrementDebugCount(summary.byDriver, animation.driver);
-    incrementDebugCount(summary.byLane, animation.lane);
-    incrementDebugCount(summary.byLaneKey, animation.laneKey);
-    incrementDebugCount(summary.byProp, animation.prop);
-    incrementDebugCount(summary.byTargetId, animation.targetId);
-    if (animation.targetId != null) targetIds.add(animation.targetId);
-    channelKeys.add(`${animation.targetId ?? "unknown"}:${animation.prop}`);
-  }
-
-  summary.activeTargetCount = targetIds.size;
-  summary.activeChannelCount = channelKeys.size;
-  return summary;
 }
 
 function makeCurveStatsSeed(record) {
@@ -460,7 +427,7 @@ export function createMotionRuntimeDebugAdapter() {
   }
 
   function updateActiveCounters(animations = Array.from(activeAnimations.values())) {
-    const summary = makeDebugSummary(animations);
+    const summary = makeMotionDebugSummary(animations);
     debug.activeTargets = summary.activeTargetCount;
     debug.activeChannels = summary.activeChannelCount;
     runtimeState.activeAnimationCount = summary.activeAnimationCount;
@@ -641,7 +608,7 @@ export function createMotionRuntimeDebugAdapter() {
     if (currentState.runtime) runtimeState = { ...runtimeState, ...currentState.runtime };
     updateActiveCounters(animations);
     const warnings = makeDebugWarnings(animations, targetMetaById);
-    const summary = makeDebugSummary(animations);
+    const summary = makeMotionDebugSummary(animations);
     summary.warningCount = warnings.length;
     const snapshot = {
       animations,

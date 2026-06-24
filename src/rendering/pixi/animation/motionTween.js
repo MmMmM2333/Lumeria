@@ -6,6 +6,7 @@ import {
 } from "./motionRuntime.js";
 import { prefersReducedMotion } from "./motionPreferences.js";
 import { getMotionPreset } from "./motionPresets.js";
+import { readNumber } from "./motionTraceShared.js";
 
 // Public surface: motion/motionTo/motionAdd/motionSequence/parallel/killMotionOf/lanePreset/motionLanes are production APIs.
 const RESERVED_KEYS = new Set([
@@ -51,11 +52,6 @@ export const motionLanes = Object.freeze({
 
 export function lanePreset(name, overrides = {}) {
   return { ...(motionLanes[name] || { lane: name }), ...overrides };
-}
-
-function readNumber(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
 }
 
 function getTweenProps(vars = {}) {

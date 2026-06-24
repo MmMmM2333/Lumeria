@@ -1,5 +1,9 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { createMotionRuntimeDebugAdapter, sanitizeDebugMetadata } from "./motionRuntimeDebugAdapter.js";
+import {
+  clamp,
+  readNumber,
+} from "./motionTraceShared.js";
 
 const DEFAULT_MAX_DELTA_SECONDS = 0.05;
 const DEFAULT_STEP_SECONDS = 1 / 120;
@@ -20,15 +24,6 @@ let nextLaneId = 1;
 function nowMs() {
   if (typeof performance !== "undefined" && typeof performance.now === "function") return performance.now();
   return Date.now();
-}
-
-function readNumber(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
 }
 
 function clamp01(value) {

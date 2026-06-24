@@ -1,6 +1,8 @@
 import { motionRuntime } from "./motionRuntime.js";
 import {
+  aggregateMotionTracks,
   clamp,
+  collectMotionTrackRecordsFromReplay,
   expandRange,
   finalizeRange,
   makeTrackKey,
@@ -86,82 +88,6 @@ function makeTraceFrame(sample = {}) {
   };
 }
 
-function collectTraceRecords(frames = [], events = []) {
-  const records = [];
-  for (const frame of frames) {
-    for (const value of frame.values || []) {
-      records.push({
-        ...value,
-        frame: frame.frame,
-        timeMs: frame.timeMs,
-        type: "sample",
-      });
-    }
-  }
-  for (const event of events) records.push(event);
-  return records;
-}
-
-function makeTraceTracks(frames = [], events = [], curveStats = []) {
-  const statsByKey = new Map((curveStats || []).map((stats) => [makeTrackKey(stats), stats]));
-  const tracksByKey = new Map();
-  for (const record of collectTraceRecords(frames, events)) {
-    const key = makeTrackKey(record);
-    let track = tracksByKey.get(key);
-    if (!track) {
-      track = {
-        driver: record.driver || "unknown",
-        eventCount: 0,
-        key,
-        lane: record.lane,
-        laneKey: record.laneKey,
-        layer: record.layer,
-        prop: record.prop,
-        sampleCount: 0,
-        sourceLabel: record.sourceLabel,
-        targetId: record.targetId,
-        timeRangeMs: { max: null, min: null },
-        valueRange: { max: null, min: null },
-        velocityRange: { max: null, min: null },
-      };
-      tracksByKey.set(key, track);
-    }
-    if (record.driver) track.driver = record.driver;
-    if (record.layer) track.layer = record.layer;
-    if (record.sourceLabel) track.sourceLabel = record.sourceLabel;
-    if (record.type === "sample") track.sampleCount += 1;
-    else track.eventCount += 1;
-    expandRange(track.timeRangeMs, record.timeMs);
-    expandRange(track.valueRange, record.value);
-    expandRange(track.valueRange, record.to);
-    expandRange(track.velocityRange, record.velocity);
-  }
-  return Array.from(tracksByKey.values())
-    .map((track) => {
-      const stats = statsByKey.get(track.key) || {};
-      return {
-        driver: track.driver,
-        eventCount: track.eventCount,
-        key: track.key,
-        lane: track.lane,
-        laneKey: track.laneKey,
-        layer: track.layer,
-        maxDelta: stats.maxDelta ?? null,
-        maxVelocity: stats.maxVelocity ?? null,
-        overshootCount: stats.overshootCount ?? 0,
-        prop: track.prop,
-        retargetCount: stats.retargetCount ?? 0,
-        sampleCount: track.sampleCount,
-        sourceLabel: track.sourceLabel,
-        targetId: track.targetId,
-        timeRangeMs: finalizeRange(track.timeRangeMs),
-        valueRange: finalizeRange(track.valueRange),
-        velocityRange: finalizeRange(track.velocityRange),
-      };
-    })
-    .sort((a, b) => String(a.key).localeCompare(String(b.key)));
-}
-
 function makeTraceTimeRange(frames = [], events = []) {
   const range = { max: null, min: null };
   for (const frame of frames) expandRange(range, frame.timeMs);
@@ -206,7 +132,11 @@ export function createMotionReplayTrace(report = {}, options = {}) {
   const frames = (history.samples || []).map(makeTraceFrame);
   const events = clonePlain(history.events || []);
   const curveStats = clonePlain(report.curveStats || []);
-  const tracks = makeTraceTracks(frames, events, curveStats);
+  const tracks = aggregateMotionTracks(
+    collectMotionTrackRecordsFromReplay(frames, events),
+    curveStats,
+    { includeLayer: true, sortMode: "key" }
+  );
   const usedTargetIds = collectUsedTargetIds(frames, events);
   const targets = filterByUsedTargets(clonePlain(report.targets || []), usedTargetIds);
   const warnings = filterByUsedTargets(clonePlain(report.warnings || []), usedTargetIds);

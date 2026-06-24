@@ -5,6 +5,7 @@ import {
 import {
   makeTrackKey,
   readNumber,
+  readPositiveNumber,
   resolveRecordLabel,
 } from "./motionTraceShared.js";
 
@@ -15,10 +16,6 @@ const OVERLAY_COLORS = Object.freeze({
   target: 0xffffff,
   warning: 0xffc857,
 });
-
-function readPositiveNumber(value, fallback = 0) {
-  return Math.max(0, readNumber(value, fallback));
-}
 
 function normalizeRect(rect) {
   if (!rect) return null;
