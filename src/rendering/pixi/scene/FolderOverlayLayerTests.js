@@ -687,8 +687,8 @@ export async function runFolderOverlayLayerTests() {
     assert(releasedHandoffs.length === 0, "detached handoff should wait until the visual return point");
     for (let index = 0; index < 6; index += 1) motionRuntime.step(0.05);
     assert(releasedHandoffs.join(",") === "folder-a", "detached animation should release the real handoff at detached cleanup");
-    assert(releaseDetachedChildCounts[0] === 0, "detached visual should be removed before the real handoff is released");
-    assert(detachedChildren.length === 0, "detached visual should be gone when the real handoff is released");
+    assert(releaseDetachedChildCounts[0] === 1, "detached visual should still be mounted when the real handoff is released");
+    assert(detachedChildren.length === 0, "detached visual should be gone after the real handoff is released");
     for (let index = 0; index < 14; index += 1) motionRuntime.step(0.05);
     assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "completed detached animation should release the desktop source without a deferred flush");
     assert(detachedChildren.length === 0, "completed detached animation should destroy the detached visual in the completion frame");
@@ -763,7 +763,7 @@ export async function runFolderOverlayLayerTests() {
     assert(releasedHandoffs.join(",") === "folder-a", "near-target detached frame should release after the full geometry duration");
     assert(sourceGhostingCommits === 1, "near-target detached frame handoff should publish one source ghosting commit");
     assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "near-target detached frame handoff should release desktop source ownership after geometry completes");
-    assert(releaseDetachedChildCounts[0] === 0, "near-target detached frame should be removed before handoff release");
+    assert(releaseDetachedChildCounts[0] === 1, "near-target detached frame should stay mounted until handoff release");
     assert(detachedChildren.length === 0, "near-target detached frame should be gone after handoff release");
     for (let index = 0; index < 4; index += 1) motionRuntime.step(0.05);
     assert(releasedHandoffs.join(",") === "folder-a", "near-target detached frame cleanup should not release the handoff twice");
@@ -821,7 +821,7 @@ export async function runFolderOverlayLayerTests() {
     motionRuntime.step(0.05);
     assert(releasedHandoffs.join(",") === "folder-a", "near-target detached ghost should release after its motion completes");
     assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "near-target detached ghost handoff should release desktop source ownership after motion completes");
-    assert(releaseDetachedChildCounts[0] === 0, "near-target detached ghost should be removed before handoff release");
+    assert(releaseDetachedChildCounts[0] === 1, "near-target detached ghost should stay mounted until handoff release");
     assert(detachedChildren.length === 0, "near-target detached ghost should be gone after handoff release");
     motionRuntime.reset();
   }
@@ -867,7 +867,7 @@ export async function runFolderOverlayLayerTests() {
     motionRuntime.step(0.05);
     assert(releasedHandoffs.join(",") === "folder-a", "preview-swap-only detached visual should release after the geometry hold");
     assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "preview-swap-only handoff should release desktop source ownership after the geometry hold");
-    assert(releaseDetachedChildCounts[0] === 0, "preview-swap-only detached visual should be removed before handoff release");
+    assert(releaseDetachedChildCounts[0] === 1, "preview-swap-only detached visual should stay mounted until handoff release");
     assert(detachedChildren.length === 0, "preview-swap-only detached visual should be gone after handoff release");
     for (let index = 0; index < 4; index += 1) motionRuntime.step(0.05);
     assert(releasedHandoffs.join(",") === "folder-a", "preview-swap-only cleanup should not release the handoff twice");

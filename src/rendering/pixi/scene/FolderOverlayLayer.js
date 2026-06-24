@@ -1089,8 +1089,8 @@ export class FolderOverlayLayer extends Container {
     if (!visual) return;
     const index = this.detachedClosingVisuals.indexOf(visual);
     if (index >= 0) this.detachedClosingVisuals.splice(index, 1);
-    this.destroyDetachedClosingVisual(visual);
     this.commitDetachedClosingHandoff(visual, { reveal: options.reveal !== false });
+    this.destroyDetachedClosingVisual(visual);
   }
 
   clearDetachedClosingVisuals(folderId = null, options = {}) {

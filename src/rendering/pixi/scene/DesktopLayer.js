@@ -492,14 +492,11 @@ export class DesktopLayer extends Container {
         let existingFolderHandoffEntry = item?.type === "folder" ? this.getFolderHandoffEntry(item.id) : null;
         const isActiveFolderClosingHandoff = item?.type === "folder" && hasFolderClosingHandoffId(state, item.id);
         const isRawFolderSourceGhosted = item?.type === "folder" && hasRawFolderSourceGhosting(state, item.id);
-        // Retire a stale handoff node when the source is ghosted but no longer
-        // actively closing — UNLESS it has already visually released (it is the
-        // icon's live visual). Clearing a released node here would drop it back
-        // to the ghosted (hidden) state while folderSourceGhostedIds lingers,
-        // leaving the icon blank until that ghosting clears (~1s later).
+        // Retire stale unreleased handoffs only when no Vue, Pixi, or detached
+        // ownership path still owns this folder source.
         if (
           existingFolderHandoffEntry &&
-          !isActiveFolderClosingHandoff &&
+          shouldFinishFolderHandoffEntry(state, this.singleStageFolderLayer, item.id) &&
           isRawFolderSourceGhosted &&
           !existingFolderHandoffEntry.visualReleased
         ) {

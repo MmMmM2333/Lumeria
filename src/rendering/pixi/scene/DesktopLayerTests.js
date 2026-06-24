@@ -446,6 +446,83 @@ export async function runDesktopLayerTests() {
   }
 
   {
+    motionRuntime.reset();
+    const makeFolderNode = (id) => {
+      const node = makeNode(id);
+      node.alpha = 1;
+      node.item = { id, type: "folder" };
+      node.setState = (nextState) => {
+        node.state = nextState;
+        node.visible = !nextState.ghosted;
+      };
+      return node;
+    };
+    const folderA = makeFolderNode("folder-a");
+    const folderB = makeFolderNode("folder-b");
+    const pageTrack = makePageTrack([folderA, folderB]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.applyDesktopVisualAlpha = () => {};
+    layer.applyDesktopVisualTransform = () => {};
+    layer.applyFolderOverlayAlpha = () => {};
+    layer.applyFolderOverlayTransform = () => {};
+    layer.flushInteractiveBounds = () => {};
+    layer.markInteractiveBoundsDirty = () => {};
+    layer.singleStageDiagnosticsLayer = { update() {} };
+    layer.singleStageFolderLayer = {
+      folderTransitions: makeTransitionMachine({ active: true, folderId: "folder-b" }),
+      getDesktopSourceGhostedIds: () => new Set(["folder-a"]),
+    };
+    layer.updateSingleStageDragPreviewLayer = () => {};
+    layer.updateSingleStageFolderLayer = () => {};
+    layer.pageTrackMotion = {
+      control: null,
+      grabProgressOffset: 0,
+      grabToken: null,
+      key: null,
+      mode: null,
+      settleToken: null,
+    };
+    layer.iconNodes.set("page:0:folder-a", folderA);
+    layer.iconNodes.set("page:0:folder-b", folderB);
+    layer.ensureFolderHandoffNode("folder-a", folderA, { x: 12, y: 34 }, { revealLabel: false });
+
+    layer.update({
+      activePageIndex: 0,
+      activePages: [[
+        { id: "folder-a", type: "folder" },
+        { id: "folder-b", type: "folder" },
+      ]],
+      desktopFrame: { height: 300, left: 0, top: 0, width: 400 },
+      deviceResolution: 1,
+      folderClosingHandoffIds: new Set(["folder-b"]),
+      folderPageSize: 9,
+      folderSourceGhostedIds: new Set(["folder-a", "folder-b"]),
+      getDesktopPageRenderMode: () => "interactive",
+      getVisibleDesktopPage: (page) => page,
+      gridCols: 2,
+      gridRows: 1,
+      height: 300,
+      iconSize: 64,
+      isFolderOpeningPreviewFrameGhosted: () => false,
+      isIconOpening: () => false,
+      isIconSelected: () => false,
+      isSearchMode: false,
+      isTextlessMode: false,
+      launchTargetStatusById: {},
+      setPageRef: () => {},
+      showMissingLaunchTargetBadge: false,
+      stageRect: { height: 300, left: 0, top: 0, width: 400 },
+      width: 400,
+    });
+
+    assert(layer.getFolderHandoffEntry("folder-a"), "detached folder A handoff should survive folder B's live close update");
+    assert(folderA.visualWrap.visible === false, "detached folder A artwork should stay hidden until its detached visual releases");
+    assert(folderA.visible === true && folderA.state.ghosted === false, "detached folder A handoff node should not fall back to the ordinary ghosted path");
+    assert(folderA.__folderSourceGhostedByOwnership === true, "detached folder A handoff should still track ownership ghosting");
+    motionRuntime.reset();
+  }
+
+  {
     const before = makeNode("before");
     const folder = makeNode("folder");
     const after = makeNode("after");
