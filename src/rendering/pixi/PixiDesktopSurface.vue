@@ -54,7 +54,6 @@ import { createPixiRenderScheduler } from "./pixiRenderScheduler.js";
 import {
   makeFolderInternalActivityRenderReason,
   makeIconActionRenderReason,
-  shouldRequestRenderForMotionEvent,
 } from "./pixiRenderTriggers.js";
 import { motionRuntime } from "./animation/motionRuntime.js";
 import { clearDesktopIconBounds } from "./geometry/iconBoundsRegistry.js";
@@ -176,7 +175,7 @@ let desktopDomGeometryCache = null;
 let pixiResizeSignature = "";
 let motionDebugCommands = null;
 let motionDebugOverlay = null;
-let unsubscribeMotionRuntimeFrameDriver = null;
+let unsubscribeMotionRuntimeRenderSignal = null;
 let desktopMotionRuntimeSuspended = false;
 let desktopFrameHandle = null;
 let desktopFrameLastTime = 0;
@@ -770,8 +769,8 @@ function destroyPixi(options = {}) {
   app = null;
   layer = null;
   motionDebugOverlay = null;
-  unsubscribeMotionRuntimeFrameDriver?.();
-  unsubscribeMotionRuntimeFrameDriver = null;
+  unsubscribeMotionRuntimeRenderSignal?.();
+  unsubscribeMotionRuntimeRenderSignal = null;
   if (desktopMotionRuntimeSuspended) {
     motionRuntime.resumeAutoTicker?.();
     desktopMotionRuntimeSuspended = false;
@@ -845,17 +844,19 @@ onMounted(async () => {
     onIconAction: handleIconAction,
   });
   app.stage.addChild(layer);
-  unsubscribeMotionRuntimeFrameDriver = motionRuntime.addObserver((event) => {
-    if (event?.type === "frame") {
-      desktopMotionFrameNeedsRender = Boolean(
-        Number(event.activeAnimationCount) > 0 ||
-        Number(event.afterFrameFlushes) > 0 ||
-        Number(event.writesLastFrame) > 0
-      );
-      return;
-    }
-    if (shouldRequestRenderForMotionEvent(event)) {
-      getRenderScheduler().markRenderPending(`motion-${event?.type || "event"}`);
+  unsubscribeMotionRuntimeRenderSignal = motionRuntime.onRenderSignal((
+    activeAnimationCount,
+    writesLastFrame,
+    afterFrameFlushes,
+    reason
+  ) => {
+    desktopMotionFrameNeedsRender = Boolean(
+      Number(activeAnimationCount) > 0 ||
+      Number(afterFrameFlushes) > 0 ||
+      Number(writesLastFrame) > 0
+    );
+    if (reason && reason !== "frame") {
+      getRenderScheduler().markRenderPending(`motion-${reason}`);
     }
     if (motionRuntime.hasActiveWork?.() || getRenderScheduler().hasPendingRender()) scheduleDesktopFrame();
   });

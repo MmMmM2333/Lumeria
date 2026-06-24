@@ -398,6 +398,7 @@ export function runMotionRuntimeTests() {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const order = [];
     const callback = () => order.push("flush");
+    runtime.configureDebug({ enabled: true });
     runtime.afterFrame(callback);
     runtime.afterFrame(callback);
     runtime.step(0);
@@ -452,11 +453,16 @@ export function runMotionRuntimeTests() {
 
   {
     const runtime = createMotionRuntime({ autoStart: true });
-    const events = [];
-    const unsubscribe = runtime.addObserver((event) => events.push(event.type));
+    const signals = [];
+    const unsubscribe = runtime.onRenderSignal((
+      activeAnimationCount,
+      writesLastFrame,
+      afterFrameFlushes,
+      reason
+    ) => signals.push({ activeAnimationCount, afterFrameFlushes, reason, writesLastFrame }));
     runtime.suspendAutoTicker();
     runtime.afterFrame(() => {});
-    assert(events.includes("frameRequest"), "suspended runtime should emit a frame request for external frame drivers");
+    assert(signals.some((signal) => signal.reason === "frame-request"), "suspended runtime should emit a render signal for external frame drivers");
     runtime.step(0);
     runtime.resumeAutoTicker();
     unsubscribe();
@@ -570,6 +576,7 @@ export function runMotionRuntimeTests() {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
     const observed = [];
+    runtime.configureDebug({ enabled: true });
     runtime.animate(target, "x", 10, {
       driver: tween({ duration: 1, ease: "linear" }),
       from: 0,
@@ -591,6 +598,7 @@ export function runMotionRuntimeTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
+    runtime.configureDebug({ enabled: true });
     runtime.animate(target, "x", 10, {
       driver: tween({ duration: 1, ease: "linear" }),
       from: 0,
@@ -643,6 +651,7 @@ export function runMotionRuntimeTests() {
     assert(typeof runtime.clearDebugHistory === "function", "runtime should expose clearDebugHistory");
     assert(typeof runtime.describeTarget === "function", "runtime should expose describeTarget");
     assert(typeof runtime.debugReport === "function", "runtime should expose debugReport");
+    assert(typeof runtime.onRenderSignal === "function", "runtime should expose an independent render signal channel");
     assert(typeof runtime.resolveDebugTarget === "function", "runtime should expose resolveDebugTarget for dev overlay lookup");
 
     const defaults = runtime.configureDebug();
@@ -711,16 +720,26 @@ export function runMotionRuntimeTests() {
 
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
-    const events = [];
-    runtime.addObserver((event) => events.push(event));
+    const debugEvents = [];
+    const renderSignals = [];
+    runtime.addObserver((event) => debugEvents.push(event));
+    runtime.onRenderSignal((activeAnimationCount, writesLastFrame, afterFrameFlushes, reason) => {
+      renderSignals.push({ activeAnimationCount, afterFrameFlushes, reason, writesLastFrame });
+    });
 
     runtime.configureDebug();
-    assert(events.length === 0, "reading debug config should not emit debugConfig events");
+    assert(debugEvents.length === 0, "reading debug config should not emit debugConfig events");
+    assert(renderSignals.length === 0, "reading debug config should not emit render signals");
 
     runtime.configureDebug({ overlayEnabled: true });
-    assert(events.length === 1, "patching debug config should emit one debugConfig event");
-    assert(events[0].type === "debugConfig", "debug config observer event should be typed");
-    assert(events[0].config?.overlayEnabled === true, "debug config observer event should include the next config");
+    assert(debugEvents.length === 0, "disabled debug config patches should not emit debug observer events");
+    assert(renderSignals.length === 1, "debug config patches should request a render through the render signal channel");
+    assert(renderSignals[0].reason === "debug-config", "debug config render signal should be typed by reason");
+
+    runtime.configureDebug({ enabled: true });
+    assert(debugEvents.length === 1, "enabling debug should emit one debugConfig observer event");
+    assert(debugEvents[0].type === "debugConfig", "debug config observer event should be typed");
+    assert(debugEvents[0].config?.enabled === true, "debug config observer event should include the next config");
   }
 
   {
@@ -728,11 +747,20 @@ export function runMotionRuntimeTests() {
     const target = { x: 0 };
     const events = [];
     const objectEvents = [];
+    const renderSignals = [];
     const unsubscribe = runtime.addObserver((event) => events.push(event));
     const unsubscribeObject = runtime.addObserver({
       handleEvent(event) {
         objectEvents.push(event.type);
       },
+    });
+    const unsubscribeRenderSignal = runtime.onRenderSignal((
+      activeAnimationCount,
+      writesLastFrame,
+      afterFrameFlushes,
+      reason
+    ) => {
+      renderSignals.push({ activeAnimationCount, afterFrameFlushes, reason, writesLastFrame });
     });
 
     runtime.describeTarget(target, {
@@ -749,21 +777,20 @@ export function runMotionRuntimeTests() {
     control.cancel("observer-test");
 
     const eventTypes = events.map((event) => event.type);
-    assert(eventTypes.includes("targetMetadata"), "observer should receive target metadata events");
-    assert(eventTypes.includes("start"), "observer should receive start events");
-    assert(eventTypes.includes("frame"), "observer should receive lightweight frame events");
-    assert(!eventTypes.includes("sample"), "observer should not receive heavy sample events when debug sampling is disabled");
-    assert(eventTypes.includes("cancel"), "observer should receive cancel events");
-    assert(events.some((event) => event.type === "start" && event.record == null), "disabled debug observer start event should stay lightweight");
+    assert(eventTypes.length === 0, "disabled debug observer should not receive motion debug events");
+    assert(renderSignals.some((signal) => signal.reason === "start"), "render signal should receive motion start without using debug events");
+    assert(renderSignals.some((signal) => signal.reason === "frame" && signal.activeAnimationCount === 1 && signal.writesLastFrame > 0), "render signal should receive frame writes without sampled animations");
+    assert(renderSignals.some((signal) => signal.reason === "cancel"), "render signal should receive cancellation without using debug events");
     assert(runtime.debug.started === 0, "disabled debug should not count lifecycle start events");
     assert(runtime.debug.activeTargets === 0, "disabled debug should not maintain active target counters");
-    assert(events.some((event) => event.type === "frame" && event.activeAnimationCount === 1 && !Array.isArray(event.animations)), "observer frame event should expose lightweight runtime state without sampled animations");
-    assert(objectEvents.includes("start"), "object observer should receive runtime events");
+    assert(objectEvents.length === 0, "disabled debug object observer should not receive runtime debug events");
 
     const countBeforeUnsubscribe = events.length;
     const objectCountBeforeUnsubscribe = objectEvents.length;
+    const signalCountBeforeUnsubscribe = renderSignals.length;
     unsubscribe();
     unsubscribeObject();
+    unsubscribeRenderSignal();
     runtime.animate(target, "x", 20, {
       driver: tween({ duration: 1, ease: "linear" }),
       from: target.x,
@@ -773,6 +800,7 @@ export function runMotionRuntimeTests() {
 
     assert(events.length === countBeforeUnsubscribe, "unsubscribe should stop function observer events");
     assert(objectEvents.length === objectCountBeforeUnsubscribe, "unsubscribe should stop object observer events");
+    assert(renderSignals.length === signalCountBeforeUnsubscribe, "unsubscribe should stop render signal callbacks");
   }
 
   {

@@ -533,12 +533,12 @@ export function createMotionRuntimeDebugAdapter() {
 
   function observe(event = {}) {
     if (!event || typeof event !== "object") return;
+    if (!config.enabled) return;
     if (event.type === "frame") {
       observeFrame(event);
       return;
     }
     if (event.type === "debugConfig") return;
-    if (!config.enabled) return;
     if (event.type === "targetMetadata") {
       rememberTargetMetadata(event);
       return;

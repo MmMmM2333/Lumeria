@@ -125,6 +125,7 @@ export function createMotionRuntime(options = {}) {
   const targetIds = new WeakMap();
   const debugAdapter = createMotionRuntimeDebugAdapter();
   const observers = new Set();
+  const renderSignalObservers = new Set();
   const activeAnimationScratch = [];
   const afterFrameScratch = [];
   const dirtyChannelScratch = [];
@@ -150,6 +151,7 @@ export function createMotionRuntime(options = {}) {
   }
 
   function emitMotionEvent(type, payload = {}) {
+    if (!debugAdapter.isEnabled()) return;
     const event = { ...payload, type };
     debugAdapter.observe(event);
     for (const observer of observers) {
@@ -164,6 +166,27 @@ export function createMotionRuntime(options = {}) {
     }
     observers.add(observer);
     return () => observers.delete(observer);
+  }
+
+  function onRenderSignal(observer) {
+    if (!observer || (typeof observer !== "function" && typeof observer.handleRenderSignal !== "function")) {
+      return () => {};
+    }
+    renderSignalObservers.add(observer);
+    return () => renderSignalObservers.delete(observer);
+  }
+
+  function emitRenderSignal(reason = "motion", options = {}) {
+    if (!renderSignalObservers.size) return;
+    const activeAnimationCount = Math.max(0, Math.floor(readNumber(options.activeAnimationCount, activeAnimations.size)));
+    const afterFrameFlushes = Math.max(0, Math.floor(readNumber(options.afterFrameFlushes, frameAfterFrameFlushes)));
+    const frame = Math.max(0, Math.floor(readNumber(options.frame, frameCount)));
+    const timeMs = readNumber(options.timeMs, runtimeTimeMs);
+    const writes = Math.max(0, Math.floor(readNumber(options.writesLastFrame, writesLastFrame)));
+    for (const observer of renderSignalObservers) {
+      if (typeof observer === "function") observer(activeAnimationCount, writes, afterFrameFlushes, reason, frame, timeMs);
+      else observer?.handleRenderSignal?.(activeAnimationCount, writes, afterFrameFlushes, reason, frame, timeMs);
+    }
   }
 
   function rememberTarget(target, metadata = null) {
@@ -215,14 +238,7 @@ export function createMotionRuntime(options = {}) {
   }
 
   function recordDebugEvent(type, animation, extra) {
-    if (!debugAdapter.isEnabled()) {
-      emitMotionEvent(type, {
-        active: activeAnimations.has(animation),
-        frame: frameCount,
-        timeMs: runtimeTimeMs,
-      });
-      return;
-    }
+    if (!debugAdapter.isEnabled()) return;
     const event = makeDebugEvent(type, animation, extra);
     emitMotionEvent(type, {
       active: activeAnimations.has(animation),
@@ -230,6 +246,11 @@ export function createMotionRuntime(options = {}) {
       record: event,
       timeMs: event.timeMs,
     });
+  }
+
+  function recordMotionLifecycle(type, animation, extra) {
+    emitRenderSignal(type);
+    recordDebugEvent(type, animation, extra);
   }
 
   function makeDebugLaneRecord(animation) {
@@ -306,6 +327,14 @@ export function createMotionRuntime(options = {}) {
   }
 
   function recordDebugSample() {
+    emitRenderSignal("frame", {
+      activeAnimationCount: activeAnimations.size,
+      afterFrameFlushes: frameAfterFrameFlushes,
+      frame: frameCount,
+      timeMs: runtimeTimeMs,
+      writesLastFrame,
+    });
+    if (!debugAdapter.isEnabled()) return;
     emitMotionEvent("frame", {
       activeAnimationCount: activeAnimations.size,
       afterFrameFlushes: frameAfterFrameFlushes,
@@ -333,7 +362,10 @@ export function createMotionRuntime(options = {}) {
   function configureDebug(config = {}) {
     const hasPatch = Boolean(config && typeof config === "object" && Object.keys(config).length);
     const nextConfig = debugAdapter.configureDebug(config);
-    if (hasPatch) emitMotionEvent("debugConfig", { config: nextConfig });
+    if (hasPatch) {
+      emitRenderSignal("debug-config");
+      emitMotionEvent("debugConfig", { config: nextConfig });
+    }
     return nextConfig;
   }
 
@@ -463,8 +495,7 @@ export function createMotionRuntime(options = {}) {
 
   function addActiveAnimation(animation) {
     activeAnimations.add(animation);
-    rememberTarget(animation.target);
-    recordDebugEvent("start", animation);
+    recordMotionLifecycle("start", animation);
     ensureTicker();
   }
 
@@ -478,7 +509,7 @@ export function createMotionRuntime(options = {}) {
     removeActiveAnimation(animation);
     pendingUpdateAnimations.delete(animation);
     clearChannelLane(animation);
-    recordDebugEvent("cancel", animation, { reason });
+    recordMotionLifecycle("cancel", animation, { reason });
     animation.onCancel?.(reason);
   }
 
@@ -493,8 +524,8 @@ export function createMotionRuntime(options = {}) {
     removeActiveAnimation(animation);
     clearChannelLane(animation);
     const shouldFireArrive = !animation.arrived;
-    if (shouldFireArrive) recordDebugEvent("arrive", animation, { value: finalValue });
-    recordDebugEvent("complete", animation, { value: finalValue });
+    if (shouldFireArrive) recordMotionLifecycle("arrive", animation, { value: finalValue });
+    recordMotionLifecycle("complete", animation, { value: finalValue });
     animation.onUpdate?.(finalValue);
     if (shouldFireArrive) {
       animation.arrived = true;
@@ -596,7 +627,7 @@ export function createMotionRuntime(options = {}) {
     animation.value = animation.to;
     animation.arrived = true;
     cleanupChannel(animation.channel);
-    recordDebugEvent("snap", animation, { value: animation.to });
+    recordMotionLifecycle("snap", animation, { value: animation.to });
     animation.onArrive?.(animation.to);
     animation.onComplete?.();
     return null;
@@ -624,7 +655,7 @@ export function createMotionRuntime(options = {}) {
       existing.arrived = false;
       existing.released = false;
       if (animation.lane === "base") channel.activeBaseKey = existing.laneKey;
-      recordDebugEvent("retarget", existing, { value: existing.value });
+      recordMotionLifecycle("retarget", existing, { value: existing.value });
       return existing;
     }
     if (animation.interrupt === "retarget") {
@@ -642,7 +673,7 @@ export function createMotionRuntime(options = {}) {
       existing.released = false;
       if (existing.driver?.type === "progress") existing.driver.options.progress = 0;
       if (animation.lane === "base") channel.activeBaseKey = existing.laneKey;
-      recordDebugEvent("retarget", existing, { value: existing.value });
+      recordMotionLifecycle("retarget", existing, { value: existing.value });
       return existing;
     }
     if (animation.interrupt === "blend") {
@@ -677,7 +708,7 @@ export function createMotionRuntime(options = {}) {
       composeChannel(animation.channel);
       fireMilestones(animation, 1);
       clearChannelLane(animation);
-      recordDebugEvent("snap", animation, { value: animation.to });
+      recordMotionLifecycle("snap", animation, { value: animation.to });
       animation.onUpdate?.(animation.to);
       animation.onArrive?.(animation.to);
       animation.onComplete?.();
@@ -731,7 +762,7 @@ export function createMotionRuntime(options = {}) {
     const arriveDelta = Math.max(0, readNumber(config.arriveDelta, animation.arriveDelta ?? DEFAULT_ARRIVE_DELTA));
     if (!animation.arrived && delta <= arriveDelta) {
       animation.arrived = true;
-      recordDebugEvent("arrive", animation, { value: animation.value });
+      recordMotionLifecycle("arrive", animation, { value: animation.value });
       animation.onArrive?.(animation.value);
     }
     const restDelta = Math.max(0, readNumber(config.restDelta, DEFAULT_REST_DELTA));
@@ -765,7 +796,7 @@ export function createMotionRuntime(options = {}) {
     fireMilestones(animation, progress);
     if (!animation.arrived && Math.abs(animation.to - animation.value) <= readNumber(options.arriveDelta, DEFAULT_REST_DELTA)) {
       animation.arrived = true;
-      recordDebugEvent("arrive", animation, { value: animation.value });
+      recordMotionLifecycle("arrive", animation, { value: animation.value });
       animation.onArrive?.(animation.value);
     }
     writeAnimation(animation);
@@ -800,7 +831,7 @@ export function createMotionRuntime(options = {}) {
     fireMilestones(animation, progress);
     if (!animation.arrived && progress >= 1) {
       animation.arrived = true;
-      recordDebugEvent("arrive", animation, { value: animation.value });
+      recordMotionLifecycle("arrive", animation, { value: animation.value });
       animation.onArrive?.(animation.value);
     }
     writeAnimation(animation);
@@ -891,7 +922,7 @@ export function createMotionRuntime(options = {}) {
     animation.onUpdate = null;
     animation.milestones = [];
     pendingUpdateAnimations.delete(animation);
-    recordDebugEvent("release", animation);
+    recordMotionLifecycle("release", animation);
     if (animation.started || animation.delay <= 0) return;
     animation.done = true;
     removeActiveAnimation(animation);
@@ -902,7 +933,7 @@ export function createMotionRuntime(options = {}) {
     if (typeof callback !== "function") return;
     afterFrameCallbacks.add(callback);
     if (autoTickerSuspended > 0) {
-      emitMotionEvent("frameRequest", {
+      emitRenderSignal("frame-request", {
         activeAnimationCount: activeAnimations.size,
         afterFramePending: afterFrameCallbacks.size,
         frame: frameCount,
@@ -1041,7 +1072,7 @@ export function createMotionRuntime(options = {}) {
         animation.arrived = false;
         animation.progress = targetProgress;
         if (animation.lane === "base" && animation.channel.activeBaseKey === animation.laneKey) animation.channel.baseValue = getAnimationOutputValue(animation);
-        recordDebugEvent("settle", animation, { value: animation.value });
+        recordMotionLifecycle("settle", animation, { value: animation.value });
       },
       get state() {
         return animation;
@@ -1129,6 +1160,7 @@ export function createMotionRuntime(options = {}) {
     getChannel: (target, prop) => getChannel(target, prop),
     debug: debugAdapter.debug,
     hasActiveWork,
+    onRenderSignal,
     reset,
     resolveDebugTarget,
     resumeAutoTicker,
