@@ -1654,7 +1654,7 @@ function refreshMotionSnapshot() {
   motionSnapshot.value = readMotionRuntimeSnapshot();
 }
 
-function refreshMotionReport() {
+function refreshMotionHistoryReport(_reason = "manual") {
   if (!canDebugMotion.value) return;
   motionReport.value = motionRuntime.debugReport({
     includeChannels: true,
@@ -1744,12 +1744,14 @@ function updateMotionTimeScale(event) {
 
 function openMotionWorkspace(mode = motionWorkspaceSession.value.mode || MOTION_DEBUG_WORKSPACE_MODE_DOCK) {
   if (!canDebugMotion.value) return;
+  const wasOpen = motionWorkspaceSession.value.isOpen;
   isCollapsed.value = false;
   activePanel.value = "motion";
   motionWorkspaceSession.value = openMotionDebugWorkspace(motionWorkspaceSession.value, {
     mode,
     viewportWidth: getMotionWorkspaceViewportWidth(),
   });
+  if (!wasOpen) refreshMotionHistoryReport("open-workspace");
 }
 
 function selectMotionWorkspaceLayer(row) {
@@ -1988,7 +1990,7 @@ function clearMotionDebugHistory() {
   if (!canDebugMotion.value) return;
   if (motionReplayCaptureActive.value) return;
   motionRuntime.clearDebugHistory();
-  refreshMotionReport();
+  refreshMotionHistoryReport("clear-history");
 }
 
 function updateMotionReplayCaptureSeconds(event) {
@@ -2536,7 +2538,7 @@ async function copyMotionReport(mode) {
       mode === "full" ? "motionFull" : "motionSummary",
     );
     if (mode === "full") {
-      refreshMotionReport();
+      refreshMotionHistoryReport("copy-full-ai-report");
     } else {
       refreshMotionSnapshot();
     }
