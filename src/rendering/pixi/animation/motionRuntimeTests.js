@@ -526,6 +526,74 @@ export function runMotionRuntimeTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const targetA = { x: 0, y: 0 };
+    const targetB = { x: 0 };
+    runtime.configureDebug({ enabled: true });
+    const baseA = runtime.animate(targetA, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      laneKey: "layout",
+    });
+    const additiveA = runtime.animate(targetA, "x", 2, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      lane: "additive",
+      laneKey: "nudge",
+    });
+    const yA = runtime.animate(targetA, "y", 20, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      laneKey: "vertical",
+    });
+    const baseB = runtime.animate(targetB, "x", 5, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      laneKey: "layout",
+    });
+
+    assert(runtime.debug.activeTargets === 2, "incremental counters should count active targets after starts");
+    assert(runtime.debug.activeChannels === 3, "incremental counters should count unique target/property channels after starts");
+    const startedCounters = {
+      activeChannels: runtime.debug.activeChannels,
+      activeTargets: runtime.debug.activeTargets,
+    };
+    const startedSummary = runtime.debugSnapshot().summary;
+    assert(startedCounters.activeTargets === startedSummary.activeTargetCount, "incremental target count should match full summary after starts");
+    assert(startedCounters.activeChannels === startedSummary.activeChannelCount, "incremental channel count should match full summary after starts");
+
+    additiveA.cancel("test");
+    assert(runtime.debug.activeTargets === 2, "canceling one lane should keep target count while another lane remains");
+    assert(runtime.debug.activeChannels === 3, "canceling one lane should keep channel count while the same channel has a base lane");
+    yA.cancel("test");
+    assert(runtime.debug.activeTargets === 2, "canceling one channel should keep target count while another channel remains on the target");
+    assert(runtime.debug.activeChannels === 2, "canceling one channel should decrement active channel count");
+    baseA.cancel("test");
+    assert(runtime.debug.activeTargets === 1, "canceling the last lane on a target should decrement active target count");
+    assert(runtime.debug.activeChannels === 1, "canceling the last lane on a target should decrement channel count");
+    baseB.cancel("test");
+    assert(runtime.debug.activeTargets === 0, "canceling all lanes should clear active target count");
+    assert(runtime.debug.activeChannels === 0, "canceling all lanes should clear active channel count");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      laneKey: "midflight-enable",
+    });
+    runtime.step(0.5);
+    runtime.configureDebug({ enabled: true });
+    const snapshot = runtime.debugSnapshot();
+
+    assert(snapshot.summary.activeAnimationCount === 1, "debug snapshot should see animations that started before debug was enabled");
+    assert(runtime.debug.activeTargets === 1, "snapshot should seed incremental active target counters");
+    assert(runtime.debug.activeChannels === 1, "snapshot should seed incremental active channel counters");
+
+    runtime.step(0.5);
+    assert(runtime.debug.activeTargets === 0, "pre-enabled animation completion should decrement seeded active target counters");
+    assert(runtime.debug.activeChannels === 0, "pre-enabled animation completion should decrement seeded active channel counters");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const targetA = { x: 0, y: 0 };
     const targetB = { alpha: 0, scale: 1 };
     runtime.animate(targetA, "x", 10, {
       driver: spring({ damping: 28, mass: 0.9, restDelta: 0.01, restSpeed: 0.01, stiffness: 190 }),
@@ -846,6 +914,44 @@ export function runMotionRuntimeTests() {
     assert(sample && Array.isArray(sample.animations), "enabled history recording should emit heavy sample events");
     assert(sample.animations.some((animation) => animation.laneKey === "sample-enabled"), "sample event should include active animation records");
     assert(report.history.samples.length === 1, "enabled history recording should keep sampled frames");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    const events = [];
+    runtime.configureDebug({
+      enabled: true,
+      maxEvents: 200,
+      maxSamples: 200,
+      recordHistory: true,
+      sampleHz: 10,
+    });
+    runtime.describeTarget(target, {
+      kind: "SampleTarget",
+      label: "Sample target",
+      sourceLabel: "motion-runtime-tests.sample-gating",
+    });
+    runtime.animate(target, "x", 100, {
+      driver: tween({ duration: 2, ease: "linear" }),
+      from: 0,
+      laneKey: "sample-gated",
+    });
+    runtime.addObserver((event) => events.push(event));
+
+    for (let frame = 0; frame < 60; frame += 1) runtime.step(1 / 60);
+
+    const sampleEvents = events.filter((event) => event.type === "sample");
+    const targetMetadataEvents = events.filter((event) => event.type === "targetMetadata");
+    const report = runtime.debugReport({ includeHistory: true });
+    assert(sampleEvents.length >= 9 && sampleEvents.length <= 11, `sample construction should follow sampleHz, got ${sampleEvents.length}`);
+    assert(sampleEvents.length < 20, "sample construction should not run at frameHz");
+    assert(targetMetadataEvents.length === 0, "sample construction should not re-emit target metadata");
+    assert(report.history.samples.length === sampleEvents.length, "history should only keep sampled frames that passed sampleHz gating");
+    assert(
+      report.history.samples.every((sample) => sample.animations.some((animation) => animation.laneKey === "sample-gated")),
+      "sampled frames should still include active animations",
+    );
   }
 
   {

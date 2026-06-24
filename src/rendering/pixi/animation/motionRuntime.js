@@ -201,8 +201,10 @@ export function createMotionRuntime(options = {}) {
     return targetId;
   }
 
-  function makeDebugAnimationRecord(animation) {
-    const targetId = rememberTarget(animation.target);
+  function makeDebugAnimationRecord(animation, options = {}) {
+    const targetId = options.emitTargetMetadata === false
+      ? getTargetId(animation.target)
+      : rememberTarget(animation.target);
     return {
       delay: animation.delay,
       blendDuration: animation.blendFrom == null ? 0 : animation.blendDuration,
@@ -253,7 +255,7 @@ export function createMotionRuntime(options = {}) {
     recordDebugEvent(type, animation, extra);
   }
 
-  function makeDebugLaneRecord(animation) {
+  function makeDebugLaneRecord(animation, options = {}) {
     const record = {
       driver: animation.driver?.type || "spring",
       from: animation.from,
@@ -266,15 +268,17 @@ export function createMotionRuntime(options = {}) {
       value: animation.value,
       velocity: animation.velocity,
     };
-    const targetId = rememberTarget(animation.target);
+    const targetId = options.emitTargetMetadata === false
+      ? getTargetId(animation.target)
+      : rememberTarget(animation.target);
     record.targetId = targetId;
     return record;
   }
 
-  function makeChannelBreakdown(channel) {
-    const baseLanes = Array.from(channel.base.values()).map((animation) => makeDebugLaneRecord(animation));
-    const additiveLanes = Array.from(channel.additive.values()).map((animation) => makeDebugLaneRecord(animation));
-    const factorLanes = Array.from(channel.factor.values()).map((animation) => makeDebugLaneRecord(animation));
+  function makeChannelBreakdown(channel, options = {}) {
+    const baseLanes = Array.from(channel.base.values()).map((animation) => makeDebugLaneRecord(animation, options));
+    const additiveLanes = Array.from(channel.additive.values()).map((animation) => makeDebugLaneRecord(animation, options));
+    const factorLanes = Array.from(channel.factor.values()).map((animation) => makeDebugLaneRecord(animation, options));
     const additiveValue = additiveLanes.reduce((total, lane) => total + lane.output, 0);
     const factorValue = factorLanes.reduce((total, lane) => total * lane.output, 1);
     const unclampedValue = (channel.baseValue + additiveValue) * factorValue;
@@ -302,14 +306,16 @@ export function createMotionRuntime(options = {}) {
     return breakdown;
   }
 
-  function makeDebugChannelRecords() {
+  function makeDebugChannelRecords(options = {}) {
     const channels = new Map();
     for (const animation of activeAnimations) {
-      const targetId = rememberTarget(animation.target);
+      const targetId = options.emitTargetMetadata === false
+        ? getTargetId(animation.target)
+        : rememberTarget(animation.target);
       const key = `${targetId ?? "unknown"}:${animation.prop}`;
       let record = channels.get(key);
       if (!record) {
-        const breakdown = makeChannelBreakdown(animation.channel);
+        const breakdown = makeChannelBreakdown(animation.channel, options);
         record = {
           activeBaseKey: animation.channel.activeBaseKey,
           ...breakdown,
@@ -342,13 +348,14 @@ export function createMotionRuntime(options = {}) {
       timeMs: runtimeTimeMs,
       writesLastFrame,
     });
-    if (!debugAdapter.shouldObserveSamples()) return;
+    if (!debugAdapter.shouldBuildSample(runtimeTimeMs)) return;
+    const sampleRecordOptions = { emitTargetMetadata: false };
     const animations = Array.from(activeAnimations)
-      .map((animation) => makeDebugAnimationRecord(animation));
+      .map((animation) => makeDebugAnimationRecord(animation, sampleRecordOptions));
     emitMotionEvent("sample", {
       afterFrameFlushes: frameAfterFrameFlushes,
       animations,
-      channels: makeDebugChannelRecords(),
+      channels: makeDebugChannelRecords(sampleRecordOptions),
       frame: frameCount,
       timeMs: runtimeTimeMs,
       writesLastFrame,

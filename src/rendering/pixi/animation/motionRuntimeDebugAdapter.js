@@ -358,6 +358,8 @@ export function createMotionRuntimeDebugAdapter() {
   const targetMetaById = new Map();
   const targetRefsById = CAN_STORE_DEBUG_TARGET_REFS ? new Map() : null;
   const activeAnimations = new Map();
+  const activeTargetRefs = new Map();
+  const activeChannelRefs = new Map();
   const history = { events: [], samples: [] };
   const debug = makeDebugCounters();
   let latestChannels = [];
@@ -417,20 +419,72 @@ export function createMotionRuntimeDebugAdapter() {
     return makeTrackKey(record);
   }
 
+  function activeChannelKey(record = {}) {
+    return `${record.targetId ?? "unknown"}:${record.prop ?? "unknown"}`;
+  }
+
+  function incrementRefCount(counts, key) {
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+
+  function decrementRefCount(counts, key) {
+    const current = counts.get(key) || 0;
+    if (current <= 1) counts.delete(key);
+    else counts.set(key, current - 1);
+  }
+
+  function syncActiveCounterValues() {
+    debug.activeTargets = activeTargetRefs.size;
+    debug.activeChannels = activeChannelRefs.size;
+    runtimeState.activeAnimationCount = activeAnimations.size;
+  }
+
+  function addActiveCounterRecord(record = {}) {
+    if (record.targetId != null) incrementRefCount(activeTargetRefs, record.targetId);
+    incrementRefCount(activeChannelRefs, activeChannelKey(record));
+  }
+
+  function removeActiveCounterRecord(record = {}) {
+    if (record.targetId != null) decrementRefCount(activeTargetRefs, record.targetId);
+    decrementRefCount(activeChannelRefs, activeChannelKey(record));
+  }
+
+  function setActiveCountersFromSummary(summary = {}) {
+    debug.activeTargets = Math.max(0, Math.floor(readNumber(summary.activeTargetCount)));
+    debug.activeChannels = Math.max(0, Math.floor(readNumber(summary.activeChannelCount)));
+    runtimeState.activeAnimationCount = Math.max(0, Math.floor(readNumber(summary.activeAnimationCount)));
+  }
+
+  function clearActiveAnimationRecords() {
+    activeAnimations.clear();
+    activeTargetRefs.clear();
+    activeChannelRefs.clear();
+    syncActiveCounterValues();
+  }
+
   function setActiveAnimation(record = {}) {
     if (record.targetId == null || record.prop == null || record.lane == null || record.laneKey == null) return;
-    activeAnimations.set(animationKey(record), enrichRecord(record));
+    const enriched = enrichRecord(record);
+    const key = animationKey(enriched);
+    const previous = activeAnimations.get(key);
+    if (previous) removeActiveCounterRecord(previous);
+    activeAnimations.set(key, enriched);
+    addActiveCounterRecord(enriched);
+    syncActiveCounterValues();
   }
 
   function deleteActiveAnimation(record = {}) {
-    activeAnimations.delete(animationKey(record));
+    const key = animationKey(record);
+    const previous = activeAnimations.get(key);
+    if (!previous) return;
+    activeAnimations.delete(key);
+    removeActiveCounterRecord(previous);
+    syncActiveCounterValues();
   }
 
-  function updateActiveCounters(animations = Array.from(activeAnimations.values())) {
-    const summary = makeMotionDebugSummary(animations);
-    debug.activeTargets = summary.activeTargetCount;
-    debug.activeChannels = summary.activeChannelCount;
-    runtimeState.activeAnimationCount = summary.activeAnimationCount;
+  function replaceActiveAnimationRecords(records = []) {
+    clearActiveAnimationRecords();
+    for (const record of records) setActiveAnimation(record);
   }
 
   function trimHistory() {
@@ -448,6 +502,13 @@ export function createMotionRuntimeDebugAdapter() {
   function shouldObserveSamples() {
     if (!shouldRecordHistory()) return false;
     return !config.recordFilter || config.recordFilter.includeSamples !== false;
+  }
+
+  function shouldBuildSample(timeMs = runtimeState.timeMs) {
+    if (!shouldObserveSamples()) return false;
+    const sampleTimeMs = readNumber(timeMs, runtimeState.timeMs);
+    const intervalMs = config.sampleHz > 0 ? 1000 / config.sampleHz : 0;
+    return intervalMs <= 0 || sampleTimeMs - lastSampleTimeMs >= intervalMs;
   }
 
   function recordEvent(record, type) {
@@ -483,7 +544,6 @@ export function createMotionRuntimeDebugAdapter() {
       setActiveAnimation(record);
     }
 
-    updateActiveCounters();
     recordEvent(record, type);
   }
 
@@ -501,21 +561,16 @@ export function createMotionRuntimeDebugAdapter() {
   }
 
   function observeSample(event = {}) {
-    if (!shouldObserveSamples()) return;
+    if (!shouldBuildSample(event.timeMs)) return;
     const animations = enrichRecords(event.animations || []);
-    activeAnimations.clear();
-    for (const record of animations) setActiveAnimation(record);
     latestChannels = enrichRecords(event.channels || []);
     runtimeState = {
       activeAnimationCount: animations.length,
       frames: event.frame ?? runtimeState.frames,
       timeMs: event.timeMs ?? runtimeState.timeMs,
     };
+    replaceActiveAnimationRecords(animations);
     debug.frames = runtimeState.frames;
-    updateActiveCounters(animations);
-
-    const intervalMs = config.sampleHz > 0 ? 1000 / config.sampleHz : 0;
-    if (intervalMs > 0 && runtimeState.timeMs - lastSampleTimeMs < intervalMs) return;
     const filteredAnimations = animations.filter((record) => matchesDebugRecordFilter(record, "sample", config.recordFilter));
     if (config.recordFilter && filteredAnimations.length === 0) {
       lastSampleTimeMs = runtimeState.timeMs;
@@ -581,7 +636,7 @@ export function createMotionRuntimeDebugAdapter() {
   function reset() {
     Object.assign(debug, makeDebugCounters());
     debug.canceledByReason = {};
-    activeAnimations.clear();
+    clearActiveAnimationRecords();
     latestChannels = [];
     runtimeState = { activeAnimationCount: 0, frames: 0, timeMs: 0 };
     clearHistory();
@@ -607,10 +662,11 @@ export function createMotionRuntimeDebugAdapter() {
     const animations = enrichRecords(currentState.animations || Array.from(activeAnimations.values()));
     const channels = enrichRecords(currentState.channels || latestChannels);
     if (currentState.runtime) runtimeState = { ...runtimeState, ...currentState.runtime };
-    updateActiveCounters(animations);
+    replaceActiveAnimationRecords(animations);
     const warnings = makeDebugWarnings(animations, targetMetaById);
     const summary = makeMotionDebugSummary(animations);
     summary.warningCount = warnings.length;
+    setActiveCountersFromSummary(summary);
     const snapshot = {
       animations,
       counters: {
@@ -663,6 +719,7 @@ export function createMotionRuntimeDebugAdapter() {
     observe,
     reset,
     resolveTarget,
+    shouldBuildSample,
     shouldObserveSamples,
   };
 }
