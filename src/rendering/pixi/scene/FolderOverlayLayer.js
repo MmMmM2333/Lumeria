@@ -286,6 +286,7 @@ function animateDetachedFrame(graphics, frameState, targetState, tracker, visual
       top: target.top ?? frame.top,
       width: target.width ?? frame.width,
       onComplete: finishGeometry,
+      onCancel: finishGeometry,
       onUpdate: update,
     })
     .start();
@@ -333,6 +334,7 @@ function animateDetachedClosingGhost(ghost, tracker, visual = null, detachedMoti
         x: detachedMotion.x,
         y: detachedMotion.y,
         onComplete: finishDisplay,
+        onCancel: finishDisplay,
       })
       .start();
     addDetachedVisualMotionControl(visual, displayControl);
@@ -346,6 +348,7 @@ function animateDetachedClosingGhost(ghost, tracker, visual = null, detachedMoti
         x: detachedMotion.scale,
         y: detachedMotion.scale,
         onComplete: finishScale,
+        onCancel: finishScale,
       })
       .start();
     addDetachedVisualMotionControl(visual, scaleControl);
@@ -360,6 +363,7 @@ function animateDetachedClosingGhost(ghost, tracker, visual = null, detachedMoti
     .to({
       alpha: 0,
       onComplete: finishDisplay,
+      onCancel: finishDisplay,
     })
     .start();
   addDetachedVisualMotionControl(visual, fallbackControl);
@@ -376,6 +380,7 @@ function animateDetachedGeometryHold(tracker, visual = null) {
     .to({
       progress: 1,
       onComplete: finishGeometry,
+      onCancel: finishGeometry,
     })
     .start();
   addDetachedVisualMotionControl(visual, holdControl);
@@ -448,6 +453,7 @@ export class FolderOverlayLayer extends Container {
     this.onClosingHandoffPrepare = options.onClosingHandoffPrepare || (() => { });
     this.onClosingHandoffReady = options.onClosingHandoffReady || (() => { });
     this.onClosingHandoffVisualRelease = options.onClosingHandoffVisualRelease || (() => { });
+    this.isHandoffSourceVisible = options.isHandoffSourceVisible || (() => false);
     this.onInternalActivityChange = options.onInternalActivityChange || (() => { });
     this.onClosingFolderPointerDown = options.onClosingFolderPointerDown || (() => { });
     this.onPanelPointerDown = options.onPanelPointerDown || (() => { });
@@ -1137,7 +1143,15 @@ export class FolderOverlayLayer extends Container {
     if (nextFolderId) this.clearDetachedClosingVisuals(nextFolderId, { immediate: true, reveal: false });
     const transitionPort = ensureLayerTransitionPort(this);
     const closingFolderId = this.folderHandoff.folderId || null;
-    const shouldKeepDetachedVisual = Boolean(closingFolderId && closingFolderId !== nextFolderId);
+    // Do not re-detach / re-prepare a close whose real desktop icon is already
+    // visible (its handoff effectively finished): re-engaging would re-acquire
+    // desktop-source ownership and re-hide the icon for the whole detached
+    // animation — the precise-timing cross-folder blink. Trust the desktop truth.
+    const closingSourceAlreadyVisible = Boolean(closingFolderId) &&
+      this.isHandoffSourceVisible?.(closingFolderId) === true;
+    const shouldKeepDetachedVisual = Boolean(
+      closingFolderId && closingFolderId !== nextFolderId && !closingSourceAlreadyVisible
+    );
     const frameState = shouldKeepDetachedVisual ? this.frameGhostState : null;
     const frameTarget = shouldKeepDetachedVisual ? this.folderHandoff.getDetachedFrameTarget() : null;
     const closingGhosts = shouldKeepDetachedVisual
@@ -1243,6 +1257,26 @@ export class FolderOverlayLayer extends Container {
       if (folderId) ids.add(folderId);
     }
     return ids;
+  }
+
+  // Whether an ACTUALLY VISIBLE overlay/detached substitute currently covers this
+  // folder's desktop source position. Distinct from getDesktopSourceGhostedIds()
+  // (which is ownership-based): a leaked desktop-source ownership keeps the real
+  // icon ghosted with NO visible cover — exactly the orphan we must detect.
+  hasVisibleFolderSubstitute(folderId) {
+    if (!folderId) return false;
+    for (const visual of this.detachedClosingVisuals || []) {
+      if (visual?.folderId === folderId && !visual.destroyed && !visual.handoffCommitted) return true;
+    }
+    const coversActiveFolder = this.currentFolderId === folderId ||
+      this.folderHandoff?.folderId === folderId;
+    if (!coversActiveFolder) return false;
+    return Boolean(
+      this.frameGhost?.visible ||
+      (this.closingGhostLayer?.children?.length || 0) > 0 ||
+      (this.closingPreviewSwapLayer?.children?.length || 0) > 0 ||
+      (this.openingGhostLayer?.children?.length || 0) > 0
+    );
   }
 
   setClosingHandoffActive(active) {

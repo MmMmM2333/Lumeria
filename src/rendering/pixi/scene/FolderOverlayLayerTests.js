@@ -615,6 +615,48 @@ export async function runFolderOverlayLayerTests() {
   }
 
   {
+    // A detached closing animation that is CANCELLED (interrupted) rather than
+    // completing must still commit and reveal the desktop source icon. The
+    // completion tracker only advanced on natural onComplete, so a cancel stalled
+    // it forever -> the real icon stayed hidden / ownership held ("交接失败").
+    motionRuntime.reset();
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    const detachedChildren = [];
+    attachHandoffCoordinator(layer, { folderId: "folder-a" });
+    layer.closingGhostLayer = { removeChildren: () => [] };
+    layer.closingPreviewSwapLayer = { removeChildren: () => [] };
+    layer.closingGhosts = { clear: () => {} };
+    layer.detachedClosingVisuals = [];
+    layer.nextDetachedClosingVisualToken = 1;
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.detachedClosingVisualLayer = {
+      addChild(child) { child.parent = this; detachedChildren.push(child); },
+      removeChild(child) {
+        const index = detachedChildren.indexOf(child);
+        if (index >= 0) detachedChildren.splice(index, 1);
+      },
+    };
+    layer.frameGhostState = {
+      fillAlpha: 0.26, height: 160, left: 20, radius: 40,
+      strokeAlpha: 0.24, strokeWidth: 1, top: 30, width: 240,
+    };
+    const handoffVisualReleases = [];
+    layer.onClosingHandoffVisualRelease = (folderId) => handoffVisualReleases.push(folderId);
+
+    layer.detachClosingPresentationForOpen("folder-b");
+    const detachedVisual = layer.detachedClosingVisuals[0];
+    assert(Boolean(detachedVisual) && layer.getDesktopSourceGhostedIds().has("folder-a"), "test setup: detach should ghost the desktop source");
+    assert((detachedVisual.motionControls?.size || 0) > 0, "test setup: detached frame should register a geometry animation control");
+
+    for (const control of Array.from(detachedVisual.motionControls || [])) control.cancel?.("interrupted");
+    motionRuntime.flushAfterFrameForTests();
+
+    assert(handoffVisualReleases.join(",") === "folder-a", "a cancelled detached closing animation must still reveal the desktop source icon (no stuck-hidden handoff)");
+    assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "a cancelled detached closing animation must release the desktop source ownership");
+    motionRuntime.reset();
+  }
+
+  {
     motionRuntime.reset();
     const layer = Object.create(FolderOverlayLayer.prototype);
     const detachedChildren = [];

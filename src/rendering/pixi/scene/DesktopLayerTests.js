@@ -236,6 +236,47 @@ export async function runDesktopLayerTests() {
     assert(normalized.folderSourceGhostedIds.has("folder-d") && normalized.folderSourceGhostedIds.has("folder-e"), "source ghosted normalizer should merge singular and Set ids");
     assert(!shouldFinishFolderHandoff({ folderClosingHandoffIds: ["folder-b"] }, { folderHandoff: makeHandoffCoordinator() }), "array closing handoff ids should keep the desktop handoff alive");
     assert(!shouldFinishFolderHandoffEntry({ folderClosingHandoffId: "folder-a" }, null, "folder-a"), "legacy singular closing handoff id should keep its folder handoff alive");
+    {
+      // A stale closing id keeps a never-revealed handoff entry alive while no
+      // substitute covers the folder: reconcile must REVEAL it in place (real icon
+      // shown) WITHOUT retiring — retiring would let the stale id recreate + re-hide
+      // it every frame (the icon/label flash regression).
+      const folder = makeNode("folder");
+      folder.item = { id: "folder-a", type: "folder" };
+      const pageTrack = makePageTrack([folder]);
+      const layer = makeLayer(DesktopLayer, pageTrack);
+      layer.singleStageFolderLayer = {
+        folderHandoff: { folderId: null, isCloseHandoffActive: () => false },
+        getDesktopSourceGhostedIds: () => new Set(),
+        hasVisibleFolderSubstitute: () => false,
+      };
+      layer.ensureFolderHandoffNode("folder-a", folder, { x: 0, y: 0 }, { revealLabel: false });
+      const entry = layer.getFolderHandoffEntry("folder-a");
+      assert(folder.visualWrap.visible === false && entry.visualReleased !== true, "test setup: a fresh handoff entry hides the real icon");
+
+      layer.reconcileFolderHandoffEntry({ folderClosingHandoffId: "folder-a" }, entry);
+      assert(layer.getFolderHandoffEntry("folder-a") === entry, "a stale-id orphan should be healed in place, not retired (avoids the recreate/flash loop)");
+      assert(entry.visualReleased === true && folder.visualWrap.visible === true, "a stale-id orphan with no visible substitute should reveal the real folder icon");
+    }
+
+    {
+      // While a visible substitute still covers the folder (normal close handoff),
+      // the entry stays hidden — no premature reveal / flash.
+      const folder = makeNode("folder");
+      folder.item = { id: "folder-a", type: "folder" };
+      const pageTrack = makePageTrack([folder]);
+      const layer = makeLayer(DesktopLayer, pageTrack);
+      layer.singleStageFolderLayer = {
+        folderHandoff: { folderId: "folder-a", isCloseHandoffActive: () => false },
+        getDesktopSourceGhostedIds: () => new Set(),
+        hasVisibleFolderSubstitute: (folderId) => folderId === "folder-a",
+      };
+      layer.ensureFolderHandoffNode("folder-a", folder, { x: 0, y: 0 }, { revealLabel: false });
+      const entry = layer.getFolderHandoffEntry("folder-a");
+
+      layer.reconcileFolderHandoffEntry({ folderClosingHandoffId: "folder-a" }, entry);
+      assert(layer.getFolderHandoffEntry("folder-a") === entry && entry.visualReleased !== true && folder.visualWrap.visible === false, "a closing handoff with a visible substitute should keep the real icon hidden");
+    }
   }
 
   {

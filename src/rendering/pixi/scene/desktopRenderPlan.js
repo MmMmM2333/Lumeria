@@ -94,6 +94,14 @@ export function isFolderLayerHoldingDesktopSource(folderLayer = null, folderId =
   return ids?.has?.(folderId) === true;
 }
 
+export function isFolderLayerShowingSubstitute(folderLayer = null, folderId = null) {
+  if (!folderId) return false;
+  // When the overlay cannot be inspected (e.g. unit mocks), assume a substitute
+  // exists so the Vue closing id still protects the close-start gap (legacy behavior).
+  if (typeof folderLayer?.hasVisibleFolderSubstitute !== "function") return true;
+  return folderLayer.hasVisibleFolderSubstitute(folderId) === true;
+}
+
 export function getDesktopSourceGhostedIdsFromOwnership(visualOwnership) {
   const ids = new Set();
   for (const entry of visualOwnership?.snapshot?.() || []) {
@@ -128,6 +136,20 @@ export function shouldFinishFolderHandoffEntry(state = {}, folderLayer = null, f
   return !hasFolderClosingHandoffId(state, folderId) &&
     !isFolderLayerHandoffActive(folderLayer, folderId) &&
     !isFolderLayerHoldingDesktopSource(folderLayer, folderId);
+}
+
+export function isStaleHiddenFolderHandoffEntry(entry = null, folderLayer = null, folderId = null) {
+  // A handoff entry that is still HIDDEN (never revealed) yet has no live cover —
+  // no coordinator activity, no desktop-source ownership, and no visible substitute.
+  // This is the interrupted-close orphan: its close was preempted before the reveal
+  // fired, but a stale Vue closing id keeps the entry alive (and re-hidden). It must
+  // be revealed WITHOUT retiring (retiring would let isActiveFolderClosingHandoff
+  // recreate + re-hide it every frame, flashing the icon/label).
+  if (!entry || entry.visualReleased) return false;
+  if (isFolderLayerHandoffActive(folderLayer, folderId)) return false;
+  if (isFolderLayerHoldingDesktopSource(folderLayer, folderId)) return false;
+  if (isFolderLayerShowingSubstitute(folderLayer, folderId)) return false;
+  return true;
 }
 
 function makeLayoutTargetFromScreenRect(state, stageRect, targetX, rect, visualOffsetY) {

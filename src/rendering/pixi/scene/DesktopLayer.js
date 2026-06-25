@@ -40,6 +40,7 @@ import {
   isDesktopLayoutTargetChanged,
   isFolderLayerHandoffActive,
   isFolderLayerHoldingDesktopSource,
+  isStaleHiddenFolderHandoffEntry,
   normalizeDesktopHandoffState,
   normalizeFolderIdSet,
   readNumber,
@@ -194,6 +195,15 @@ export class DesktopLayer extends Container {
       onClosingHandoffPrepare: (folderId) => this.startClosingFolderHandoffNow(folderId, { resetVisual: true, revealLabel: false }),
       onClosingHandoffReady: (folderId) => this.startClosingFolderHandoffNow(folderId),
       onClosingHandoffVisualRelease: (folderId) => this.releaseClosingFolderHandoffVisual(folderId),
+      // Authoritative "is this folder's real desktop icon currently visible". The
+      // overlay/coordinator's own released flags can desync from the desktop handoff
+      // entry across the cross-layer round-trip; the open-interrupt guard must use
+      // this desktop truth so it never re-detaches (and re-hides) an already-revealed
+      // source icon.
+      isHandoffSourceVisible: (folderId) => {
+        const entry = this.getFolderHandoffEntry(folderId);
+        return !entry || entry.visualReleased === true;
+      },
       onIconAction: (action, originalEvent, item, source, iconNode) =>
         this.handleIconAction(action, originalEvent, item, source, iconNode),
       onInternalActivityChange: (active, folderId = null) => this.onFolderInternalActivityChange(active, folderId),
@@ -384,10 +394,23 @@ export class DesktopLayer extends Container {
       iconBoundsRegistry: this.iconBoundsRegistry,
     });
     for (const entry of Array.from(this.getFolderHandoffNodes().values())) {
-      if (shouldFinishFolderHandoffEntry(state, this.singleStageFolderLayer, entry.folderId)) {
-        this.finishFolderHandoffNodeAfterFrame(entry.folderId);
-      }
+      this.reconcileFolderHandoffEntry(state, entry);
     }
+  }
+
+  reconcileFolderHandoffEntry(state, entry) {
+    const noSubstitute = shouldFinishFolderHandoffEntry(state, this.singleStageFolderLayer, entry.folderId);
+    if (noSubstitute) {
+      this.finishFolderHandoffNodeAfterFrame(entry.folderId);
+    } else if (isStaleHiddenFolderHandoffEntry(entry, this.singleStageFolderLayer, entry.folderId)) {
+      // Close finished without ever revealing this entry (its reveal was preempted
+      // by another folder), yet a stale Vue closing id keeps it alive and hidden.
+      // Reveal WITHOUT retiring — retiring would let isActiveFolderClosingHandoff
+      // recreate + re-hide it every frame (icon/label flash).
+      this.restoreFolderHandoffVisual(entry);
+      this.revealFolderHandoffLabel(entry);
+    }
+    return noSubstitute;
   }
 
   describeMotionTargets(state = {}) {
@@ -588,9 +611,7 @@ export class DesktopLayer extends Container {
 
   reconcileFolderHandoffEntries(state = this.lastFolderSourceGhostingState || {}) {
     for (const entry of Array.from(this.getFolderHandoffNodes().values())) {
-      if (shouldFinishFolderHandoffEntry(state, this.singleStageFolderLayer, entry.folderId)) {
-        this.finishFolderHandoffNodeAfterFrame(entry.folderId);
-      }
+      this.reconcileFolderHandoffEntry(state, entry);
     }
   }
 
