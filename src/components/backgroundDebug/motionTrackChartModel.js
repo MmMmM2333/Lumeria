@@ -3,6 +3,15 @@ import {
   normalizeMotionReplayTime,
   normalizeMotionReplayTrace,
 } from "./motionReplayViewerModel.js";
+import {
+  clamp,
+  collectRecordText,
+  makeTargetsById,
+  makeTrackKey,
+  normalizeQuery,
+  readNumber,
+  resolveRecordLabel,
+} from "../../rendering/pixi/animation/motionTraceShared.js";
 
 export const MOTION_TRACK_CHART_DISPLAY_RAW = "raw";
 export const MOTION_TRACK_CHART_DISPLAY_NORMALIZED = "normalized";
@@ -16,19 +25,6 @@ const DEFAULT_SERIES_VISIBILITY = {
   value: true,
   velocity: true,
 };
-
-function readNumber(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function normalizeQuery(value) {
-  return String(value || "").trim().toLowerCase();
-}
 
 function formatNumber(value, digits = 2) {
   const number = Number(value);
@@ -50,57 +46,9 @@ function normalizePositiveInteger(value, fallback, min = 1, max = 10000) {
   return Math.min(max, Math.max(min, number));
 }
 
-function makeTrackKey(record = {}) {
-  return [
-    record.targetId ?? "unknown",
-    record.prop ?? "unknown",
-    record.lane ?? "unknown",
-    record.laneKey ?? "unknown",
-  ].join(":");
-}
-
-function makeTargetsById(trace = {}) {
-  const targets = new Map();
-  for (const target of trace.targets || []) {
-    if (target?.targetId != null) targets.set(target.targetId, target);
-  }
-  return targets;
-}
-
-function resolveRecordLabel(record = {}, targetsById = new Map()) {
-  const target = record.targetId != null ? targetsById.get(record.targetId) : null;
-  return record.sourceLabel
-    || record.targetLabel
-    || target?.sourceLabel
-    || target?.label
-    || (record.targetId != null ? `target ${record.targetId}` : "unknown");
-}
-
-function collectRecordText(record = {}, targetsById = new Map()) {
-  const target = record.targetId != null ? targetsById.get(record.targetId) : null;
-  return [
-    record.type,
-    record.reason,
-    record.targetId,
-    record.targetKind,
-    record.targetLabel,
-    record.sourceLabel,
-    record.label,
-    record.layer,
-    record.prop,
-    record.driver,
-    record.lane,
-    record.laneKey,
-    target?.kind,
-    target?.label,
-    target?.layer,
-    target?.sourceLabel,
-  ].filter((value) => value != null).join(" ").toLowerCase();
-}
-
 function matchesFilters(record = {}, targetsById = new Map(), filters = {}) {
   const query = normalizeQuery(filters.query);
-  return !query || collectRecordText(record, targetsById).includes(query);
+  return !query || collectRecordText(record, targetsById, { includeLayer: true, includeTargetLayer: true }).includes(query);
 }
 
 function normalizeRange(values = []) {

@@ -2,7 +2,7 @@ import { Container } from "pixi.js";
 import { IconNode } from "../nodes/IconNode.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
-import { killMotionOf, transition } from "../animation/motionTween.js";
+import { killMotionOf, motion } from "../animation/motionTween.js";
 import {
   DRAG_PREVIEW_SCALE,
   getDragPreviewLayout,
@@ -19,7 +19,7 @@ function stopPreviewScaleMotion(node, options = {}) {
 }
 
 function springPreviewScale(node, scale) {
-  transition(node.scale)
+  motion(node.scale)
     .preset("handoff")
     .drag()
     .interrupt("retarget")
@@ -135,8 +135,8 @@ export class DragPreviewLayer extends Container {
 
   updateRelease(state) {
     const release = state.releaseState;
-    const motion = getDragReleaseMotion(release, state);
-    const isNewRelease = this.releaseKey !== motion.key;
+    const releaseMotion = getDragReleaseMotion(release, state);
+    const isNewRelease = this.releaseKey !== releaseMotion.key;
 
     if (isNewRelease) {
       killMotionOf(this.previewNode, null, { reason: DRAG_RELEASE_START_REASON });
@@ -146,10 +146,10 @@ export class DragPreviewLayer extends Container {
     this.visible = true;
     this.previewNode.visible = true;
     this.previewNode.eventMode = "none";
-    this.previewNode.stageRect = motion.stageRect;
+    this.previewNode.stageRect = releaseMotion.stageRect;
     this.previewNode.setState({
-      cellHeight: motion.cellHeight,
-      cellWidth: motion.cellWidth,
+      cellHeight: releaseMotion.cellHeight,
+      cellWidth: releaseMotion.cellWidth,
       compact: false,
       draggable: false,
       dropTarget: false,
@@ -157,7 +157,7 @@ export class DragPreviewLayer extends Container {
       folderPreviewPageSize: state.folderPageSize,
       ghosted: false,
       hasCustomIcon: false,
-      iconSize: motion.iconSize,
+      iconSize: releaseMotion.iconSize,
       interactive: false,
       item: release.item,
       launchTargetStatus: release.item.type === "app" && state.showMissingLaunchTargetBadge
@@ -170,37 +170,37 @@ export class DragPreviewLayer extends Container {
       source: release.source,
       stageHeight: state.height,
       stageWidth: state.width,
-      textless: motion.textless,
+      textless: releaseMotion.textless,
     });
     describeDragPreviewTargets(this.previewNode, release, "release");
     this.previewNode.rotation = 0;
 
     if (!isNewRelease) return;
-    this.releaseKey = motion.key;
+    this.releaseKey = releaseMotion.key;
     this.releaseCompleteKey = null;
     this.previewKey = null;
     this.previewScaleKey = null;
     this.previewNode.alpha = 1;
-    this.previewNode.position.set(motion.start.x, motion.start.y);
+    this.previewNode.position.set(releaseMotion.start.x, releaseMotion.start.y);
     this.previewNode.scale.set(DRAG_PREVIEW_SCALE);
-    if (!motion.hasTargetRect) return;
+    if (!releaseMotion.hasTargetRect) return;
     const completeRelease = () => {
-      if (this.releaseCompleteKey === motion.key || this.releaseKey !== motion.key) return;
-      this.releaseCompleteKey = motion.key;
+      if (this.releaseCompleteKey === releaseMotion.key || this.releaseKey !== releaseMotion.key) return;
+      this.releaseCompleteKey = releaseMotion.key;
       this.onReleaseComplete(release);
     };
-    transition(this.previewNode)
+    motion(this.previewNode)
       .preset("handoff")
       .drag()
       .interrupt("retarget")
       .to({
         onComplete: completeRelease,
-        velocity: motion.velocity,
-        x: motion.target.x,
-        y: motion.target.y,
+        velocity: releaseMotion.velocity,
+        x: releaseMotion.target.x,
+        y: releaseMotion.target.y,
       })
       .start();
-    springPreviewScale(this.previewNode, motion.targetScale);
+    springPreviewScale(this.previewNode, releaseMotion.targetScale);
   }
 
   destroy(options) {

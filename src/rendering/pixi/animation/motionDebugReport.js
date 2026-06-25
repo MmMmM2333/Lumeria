@@ -1,10 +1,22 @@
 import { motionRuntime } from "./motionRuntime.js";
 import {
+  deleteLaunchpadDebugValue,
+  hasLaunchpadDebugValue,
+  readLaunchpadDebugValue,
+  setLaunchpadDebugValue,
+} from "../debugNamespace.js";
+import {
   createMotionReplayCaptureController,
   createMotionReplayTraceFromRuntime,
 } from "./motionReplayTrace.js";
+import {
+  aggregateMotionTracks,
+  collectMotionTrackRecordsFromHistory,
+  makeMotionDebugSummary,
+  makeTrackKey,
+} from "./motionTraceShared.js";
 
-export const MOTION_DEBUG_GLOBAL_KEY = "__LP_MOTION_DEBUG__";
+export const MOTION_DEBUG_GLOBAL_KEY = "motion";
 const REPORT_SCHEMA = "pixi-motion-ai-report/v1";
 const REPORT_VERSION = 1;
 const REPORT_MODES = new Set(["summary", "full", "selectedTarget"]);
@@ -24,37 +36,6 @@ function makeTopCancelReasons(counters = {}, limit = 8) {
   return countMapToTopEntries(counters.canceledByReason || {}, limit);
 }
 
-function makeSummary(animations = []) {
-  const targetIds = new Set();
-  const channelKeys = new Set();
-  const summary = {
-    activeAnimationCount: animations.length,
-    activeChannelCount: 0,
-    activeTargetCount: 0,
-    byDriver: {},
-    byLane: {},
-    byLaneKey: {},
-    byProp: {},
-    byTargetId: {},
-  };
-  const add = (bucket, key) => {
-    const normalized = key == null ? "unknown" : String(key);
-    bucket[normalized] = (bucket[normalized] || 0) + 1;
-  };
-  for (const animation of animations) {
-    add(summary.byDriver, animation.driver);
-    add(summary.byLane, animation.lane);
-    add(summary.byLaneKey, animation.laneKey);
-    add(summary.byProp, animation.prop);
-    add(summary.byTargetId, animation.targetId);
-    if (animation.targetId != null) targetIds.add(animation.targetId);
-    channelKeys.add(`${animation.targetId ?? "unknown"}:${animation.prop ?? "unknown"}`);
-  }
-  summary.activeTargetCount = targetIds.size;
-  summary.activeChannelCount = channelKeys.size;
-  return summary;
-}
-
 function makeOverview(report) {
   return {
     activeAnimationCount: report.summary?.activeAnimationCount || 0,
@@ -72,102 +53,12 @@ function makeOverview(report) {
   };
 }
 
-function makeTrackKey(record = {}) {
-  return [
-    record.targetId ?? "unknown",
-    record.prop ?? "unknown",
-    record.lane ?? "unknown",
-    record.laneKey ?? "unknown",
-  ].join(":");
-}
-
-function readFiniteNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
-}
-
-function expandRange(range, value) {
-  const number = readFiniteNumber(value);
-  if (number == null) return;
-  range.min = range.min == null ? number : Math.min(range.min, number);
-  range.max = range.max == null ? number : Math.max(range.max, number);
-}
-
-function finalizeRange(range) {
-  return {
-    max: range.max,
-    min: range.min,
-  };
-}
-
 function makeCurveSummary(report = {}) {
-  const tracksByKey = new Map();
-  const ensureTrack = (record = {}) => {
-    const key = makeTrackKey(record);
-    let track = tracksByKey.get(key);
-    if (!track) {
-      track = {
-        driver: record.driver || "unknown",
-        eventCount: 0,
-        key,
-        lane: record.lane,
-        laneKey: record.laneKey,
-        prop: record.prop,
-        sampleCount: 0,
-        sourceLabel: record.sourceLabel,
-        targetId: record.targetId,
-        timeRangeMs: { max: null, min: null },
-        valueRange: { max: null, min: null },
-        velocityRange: { max: null, min: null },
-      };
-      tracksByKey.set(key, track);
-    }
-    if (record.driver) track.driver = record.driver;
-    if (record.sourceLabel) track.sourceLabel = record.sourceLabel;
-    return track;
-  };
-  for (const sample of report.history?.samples || []) {
-    for (const animation of sample.animations || []) {
-      const track = ensureTrack(animation);
-      track.sampleCount += 1;
-      expandRange(track.timeRangeMs, sample.timeMs);
-      expandRange(track.valueRange, animation.value);
-      expandRange(track.valueRange, animation.to);
-      expandRange(track.velocityRange, animation.velocity);
-    }
-  }
-  for (const event of report.history?.events || []) {
-    const track = ensureTrack(event);
-    track.eventCount += 1;
-    expandRange(track.timeRangeMs, event.timeMs);
-    expandRange(track.valueRange, event.value);
-    expandRange(track.valueRange, event.to);
-    expandRange(track.velocityRange, event.velocity);
-  }
-  const statsByKey = new Map((report.curveStats || []).map((stats) => [makeTrackKey(stats), stats]));
-  const tracks = Array.from(tracksByKey.values())
-    .map((track) => {
-      const stats = statsByKey.get(track.key) || {};
-      return {
-        driver: track.driver,
-        eventCount: track.eventCount,
-        key: track.key,
-        lane: track.lane,
-        laneKey: track.laneKey,
-        maxDelta: stats.maxDelta ?? null,
-        maxVelocity: stats.maxVelocity ?? null,
-        overshootCount: stats.overshootCount ?? 0,
-        prop: track.prop,
-        retargetCount: stats.retargetCount ?? 0,
-        sampleCount: track.sampleCount,
-        sourceLabel: track.sourceLabel,
-        targetId: track.targetId,
-        timeRangeMs: finalizeRange(track.timeRangeMs),
-        valueRange: finalizeRange(track.valueRange),
-        velocityRange: finalizeRange(track.velocityRange),
-      };
-    })
-    .sort((a, b) => (b.sampleCount - a.sampleCount) || String(a.key).localeCompare(String(b.key)));
+  const tracks = aggregateMotionTracks(
+    collectMotionTrackRecordsFromHistory(report.history),
+    report.curveStats,
+    { sortMode: "sampleCount" }
+  );
   return {
     eventCount: tracks.reduce((total, track) => total + track.eventCount, 0),
     sampleCount: tracks.reduce((total, track) => total + track.sampleCount, 0),
@@ -186,6 +77,7 @@ function getReportOptions(mode) {
   }
   return {
     includeChannels: true,
+    includeCurveStats: true,
     includeHistory: true,
     includeTargets: true,
   };
@@ -254,7 +146,7 @@ function filterHistoryByTargetIds(history, ids) {
 function filterReportForSelectedTarget(report, selection) {
   const selectedTargetIds = resolveSelectedTargetIds(report, selection);
   const animations = filterByTargetIds(report.animations || [], selectedTargetIds);
-  const filteredSummary = makeSummary(animations);
+  const filteredSummary = makeMotionDebugSummary(animations);
   filteredSummary.warningCount = filterByTargetIds(report.warnings || [], selectedTargetIds).length;
   return {
     ...report,
@@ -457,15 +349,15 @@ export function installMotionDebugGlobal(options = {}) {
     target = globalThis,
   } = options;
   if (!dev || !target) return null;
-  const hadPrevious = Object.prototype.hasOwnProperty.call(target, key);
-  const previous = target[key];
+  const hadPrevious = hasLaunchpadDebugValue(key, target);
+  const previous = readLaunchpadDebugValue(key, target);
   const commands = createMotionDebugCommands(runtime, { target });
   commands.uninstall = () => {
-    if (target[key] !== commands) return;
-    if (hadPrevious) target[key] = previous;
-    else delete target[key];
+    if (readLaunchpadDebugValue(key, target) !== commands) return;
+    if (hadPrevious) setLaunchpadDebugValue(key, previous, target);
+    else deleteLaunchpadDebugValue(key, target);
   };
-  target[key] = commands;
+  setLaunchpadDebugValue(key, commands, target);
   return commands;
 }
 
@@ -475,5 +367,5 @@ export function uninstallMotionDebugGlobal(options = {}) {
     target = globalThis,
   } = options;
   if (!target) return;
-  delete target[key];
+  deleteLaunchpadDebugValue(key, target);
 }

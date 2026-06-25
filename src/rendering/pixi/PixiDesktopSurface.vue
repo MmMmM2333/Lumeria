@@ -50,10 +50,20 @@ import { DesktopLayer } from "./scene/DesktopLayer.js";
 import { createFolderLayerState } from "./folderLayerState.js";
 import { readFolderOverlayStateRenderDependencies } from "./folderOverlayStateDependencies.js";
 import { clearIconTextureCache, preloadIconTextures } from "./assets/iconTextureCache.js";
-import { installMotionDebugGlobal } from "./animation/motionDebugReport.js";
-import { motionRuntime } from "./animation/motionRuntime.js";
-import { MotionDebugOverlayLayer } from "./animation/motionDebugOverlayLayer.js";
-import { clearDesktopIconBounds } from "./geometry/iconBoundsRegistry.js";
+import {
+  deleteLaunchpadDebugValue,
+  readLaunchpadDebugValue,
+  setLaunchpadDebugValue,
+} from "./debugNamespace.js";
+import { createPixiRenderScheduler } from "./pixiRenderScheduler.js";
+import {
+  makeFolderInternalActivityRenderReason,
+  makeIconActionRenderReason,
+} from "./pixiRenderTriggers.js";
+import {
+  installMotionRuntimeDebugAdapterFactory,
+  motionRuntime,
+} from "./animation/motionRuntime.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { getPixiHostMetrics } from "./pixiHostMetrics.js";
 import {
@@ -61,10 +71,15 @@ import {
   makeRootStageHostStyle as makeRootStageHostStyleFromRect,
 } from "./geometry/rootStageCoordinates.js";
 import { createFolderClosingHandoffRetainer } from "./scene/folderClosingHandoffRetainer.js";
-import { getSingleStageOptions, makeSingleStageRuntimePlan } from "./scene/singleStagePlan.js";
+import {
+  getFolderHandoffDebugOptions,
+  rectDelta as getDebugRectDelta,
+  roundNumber as roundDebugNumber,
+  roundRect as roundDebugRect,
+} from "./scene/folderHandoffDebug.js";
+import { getSingleStageDiagnosticsOptions } from "./scene/singleStagePlan.js";
 import {
   getSingleStageFolderTitleOpenOpacity,
-  isSingleStageFolderPageDotsReady as getSingleStageFolderPageDotsReady,
   makeSingleStageFolderNameInputStyle,
 } from "./scene/singleStageFolderDomControls.js";
 
@@ -95,7 +110,9 @@ const props = defineProps({
   gridCols: { type: Number, required: true },
   gridRows: { type: Number, required: true },
   iconSize: { type: Number, required: true },
+  iconBoundsRegistry: { type: Object, required: true },
   isEditMode: { type: Boolean, default: false },
+  isDesktopClosing: { type: Boolean, default: false },
   folderSourceGhostedId: { type: String, default: null },
   folderSourceGhostedIds: { type: [Array, Set], default: () => [] },
   isFolderOpeningPreviewFrameGhosted: { type: Function, default: () => false },
@@ -109,8 +126,7 @@ const props = defineProps({
   pageTrackScrub: { type: Object, default: null },
   setPageRef: { type: Function, required: true },
   showMissingLaunchTargetBadge: { type: Boolean, default: true },
-  singleStageOptions: { type: Object, default: null },
-  singleStageRenderKey: { type: String, default: "" },
+  singleStageDiagnosticsOptions: { type: [Boolean, Object], default: null },
 });
 
 const emit = defineEmits([
@@ -127,31 +143,21 @@ const emit = defineEmits([
   "wheel",
 ]);
 
-function getResolvedSingleStageOptions() {
-  const options = props.singleStageOptions;
+function getResolvedSingleStageDiagnosticsOptions() {
+  const options = props.singleStageDiagnosticsOptions;
   if (options && typeof options === "object") {
-    if ("rootStage" in options || "folderLayer" in options || "enabled" in options || "dragPreview" in options) {
-      return getSingleStageOptions(options);
-    }
-    if ("value" in options && options.value) return getSingleStageOptions(options.value);
+    if ("value" in options) return getSingleStageDiagnosticsOptions(options.value);
   }
-  return getSingleStageOptions();
-}
-
-function getResolvedSingleStageRuntimePlan(options = getResolvedSingleStageOptions()) {
-  return makeSingleStageRuntimePlan(options);
+  return getSingleStageDiagnosticsOptions(options);
 }
 
 function resolveMaybeRef(value) {
   return value && typeof value === "object" && "value" in value ? value.value : value;
 }
 
-const initialSingleStageRuntimePlan = getResolvedSingleStageRuntimePlan();
 const hostRef = ref(null);
 const mainRef = ref(null);
 const rootStageHostStyle = ref(makeRootStageHostStyle());
-const singleStageDragPreviewEnabled = ref(initialSingleStageRuntimePlan.useDragPreview);
-const singleStageFolderLayerEnabled = ref(initialSingleStageRuntimePlan.useFolderLayer);
 const singleStageFolderPanelGeometry = ref(null);
 const singleStageFolderTitleFrame = ref(null);
 const singleStageFolderNameBeforeEdit = ref("");
@@ -161,13 +167,17 @@ let layer = null;
 let resizeObserver = null;
 let destroyed = false;
 let folderTexturePrewarmTimer = null;
-let handoffRenderFrame = null;
-let renderFrame = null;
+let renderScheduler = null;
 let desktopDomGeometryCache = null;
 let pixiResizeSignature = "";
 let motionDebugCommands = null;
 let motionDebugOverlay = null;
-let motionDebugOverlayTicker = null;
+let unsubscribeMotionRuntimeRenderSignal = null;
+let desktopMotionRuntimeSuspended = false;
+let desktopFrameHandle = null;
+let desktopFrameLastTime = 0;
+let desktopMotionFrameNeedsRender = false;
+let desktopLayerUpdatePending = false;
 const folderClosingHandoffRetainer = createFolderClosingHandoffRetainer();
 let handoffDebugSequence = 0;
 
@@ -187,7 +197,6 @@ const isSingleStageFolderClosing = computed(() => Boolean(
 ));
 
 const shouldRenderSingleStageFolderDomControls = computed(() => Boolean(
-  singleStageFolderLayerEnabled.value &&
   props.folderOverlayState?.renderedFolder?.value
 ));
 
@@ -198,16 +207,10 @@ const isSingleStageFolderInputDisabled = computed(() => Boolean(
 
 const isSingleStageFolderPageDotsBlocked = computed(() => Boolean(
   isSingleStageFolderClosing.value ||
-  props.folderOverlayState?.isFolderOpenFrameGhostPending?.value ||
-  isSingleStageFolderGhostTransitionActive.value
-));
-
-const isSingleStageFolderPageDotsReady = computed(() => (
-  getSingleStageFolderPageDotsReady(singleStageFolderTitleFrame.value)
+  props.folderOverlayState?.isFolderOpenFrameGhostPending?.value
 ));
 
 const isSingleStageDragPreviewActive = computed(() => Boolean(
-  singleStageDragPreviewEnabled.value &&
   (props.dragPreviewState?.item || props.dragReleaseState?.item)
 ));
 
@@ -228,8 +231,7 @@ function shouldShowSingleStageFolderPageDots() {
     shouldRenderSingleStageFolderDomControls.value &&
     state?.renderedFolder?.value &&
     state.folderPages?.value?.length > 1 &&
-    !isSingleStageFolderPageDotsBlocked.value &&
-    isSingleStageFolderPageDotsReady.value
+    !isSingleStageFolderPageDotsBlocked.value
   );
 }
 
@@ -275,26 +277,11 @@ function syncPixiResizeTarget(metrics = null) {
 
 function handleResize() {
   refreshDesktopDomGeometry();
-  scheduleRenderPixi();
+  requestRender("resize");
 }
 
 function nowMs() {
   return globalThis.performance?.now?.() || Date.now();
-}
-
-function getFolderHandoffDebugOptions() {
-  const value = globalThis.__LP_DEBUG_FOLDER_HANDOFF__;
-  if (!value) return null;
-  if (value === true) return { lineWidth: 3, log: true, overlay: true, timeline: false };
-  if (typeof value === "object") {
-    return {
-      lineWidth: Math.max(1, Number(value.lineWidth) || 3),
-      log: value.log !== false,
-      overlay: value.overlay !== false,
-      timeline: value.timeline === true,
-    };
-  }
-  return null;
 }
 
 function hasFolderHandoffTimelineDebug() {
@@ -302,36 +289,9 @@ function hasFolderHandoffTimelineDebug() {
   return Boolean(options?.log && options.timeline);
 }
 
-function roundDebugNumber(value, digits = 3) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return null;
-  const factor = 10 ** digits;
-  return Math.round(number * factor) / factor;
-}
-
-function roundDebugRect(rect) {
-  if (!rect) return null;
-  return {
-    height: roundDebugNumber(rect.height),
-    left: roundDebugNumber(rect.left),
-    top: roundDebugNumber(rect.top),
-    width: roundDebugNumber(rect.width),
-  };
-}
-
 function readCssPx(value) {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function getDebugRectDelta(rect, layoutRect) {
-  if (!rect || !layoutRect) return null;
-  return {
-    height: roundDebugNumber((rect.height || 0) - (layoutRect.height || 0)),
-    left: roundDebugNumber((rect.left || 0) - (layoutRect.left || 0)),
-    top: roundDebugNumber((rect.top || 0) - (layoutRect.top || 0)),
-    width: roundDebugNumber((rect.width || 0) - (layoutRect.width || 0)),
-  };
 }
 
 function flattenFolderHandoffSnapshot(snapshot) {
@@ -352,49 +312,6 @@ function flattenFolderHandoffSnapshot(snapshot) {
     desktopTargetDelta: snapshot.targetDelta,
     desktopTargetRect: snapshot.targetRect,
     desktopThumbRect: snapshot.thumbRect,
-  };
-}
-
-function makeFolderHandoffCompactLog(snapshot, decision, metrics, folderClosingHandoffId, seq) {
-  const node = snapshot?.node || {};
-  const thumbRect = snapshot?.thumbRect || {};
-  const targetRect = snapshot?.targetRect || {};
-  const targetDelta = snapshot?.targetDelta || {};
-  const childMaxDelta = snapshot?.childMaxDelta || {};
-  const childWorstDelta = snapshot?.childWorstDelta || {};
-  return {
-    active: snapshot?.active ?? null,
-    childMaxDeltaHeight: childMaxDelta.height ?? null,
-    childMaxDeltaLeft: childMaxDelta.left ?? null,
-    childMaxDeltaTop: childMaxDelta.top ?? null,
-    childMaxDeltaWidth: childMaxDelta.width ?? null,
-    childWorstDeltaHeight: childWorstDelta.height ?? null,
-    childWorstDeltaLeft: childWorstDelta.left ?? null,
-    childWorstDeltaSlot: childWorstDelta.slot ?? null,
-    childWorstDeltaTop: childWorstDelta.top ?? null,
-    childWorstDeltaWidth: childWorstDelta.width ?? null,
-    folderId: decision.folderId,
-    nodeScaleX: node.scaleX ?? null,
-    nodeScaleY: node.scaleY ?? null,
-    nodeX: node.x ?? null,
-    nodeY: node.y ?? null,
-    phase: decision.phase,
-    rectDeltaTop: roundDebugNumber((metrics.rect?.top || 0) - (metrics.layoutRect?.top || 0)),
-    resolvedId: folderClosingHandoffId,
-    seq,
-    source: snapshot?.source || null,
-    targetDeltaHeight: targetDelta.height ?? null,
-    targetDeltaLeft: targetDelta.left ?? null,
-    targetDeltaTop: targetDelta.top ?? null,
-    targetDeltaWidth: targetDelta.width ?? null,
-    targetHeight: targetRect.height ?? null,
-    targetLeft: targetRect.left ?? null,
-    targetTop: targetRect.top ?? null,
-    targetWidth: targetRect.width ?? null,
-    thumbHeight: thumbRect.height ?? null,
-    thumbLeft: thumbRect.left ?? null,
-    thumbTop: thumbRect.top ?? null,
-    thumbWidth: thumbRect.width ?? null,
   };
 }
 
@@ -442,19 +359,19 @@ function resolveFolderClosingHandoffId(metrics) {
   return result.folderClosingHandoffId;
 }
 
-function createSingleStageFolderState(metrics, options = {}, renderGeometry = makeDesktopRenderGeometry(metrics, options)) {
+function createSingleStageFolderState(metrics, diagnosticsOptions = {}, renderGeometry = makeDesktopRenderGeometry(metrics)) {
   const source = props.folderOverlayState;
   if (!source) return null;
-  const isFolderLayer = options.folderLayer === true;
   return createFolderLayerState({
     callbacks: {
-      completeFolderCloseIconGhost: isFolderLayer ? source.completeFolderCloseIconGhost : () => {},
-      completeFolderOpenIconGhost: isFolderLayer ? source.completeFolderOpenIconGhost : () => {},
+      completeFolderCloseIconGhost: source.completeFolderCloseIconGhost,
+      completeFolderOpenFrameGhost: source.completeFolderOpenFrameGhost,
+      completeFolderOpenIconGhost: source.completeFolderOpenIconGhost,
       getFolderPageRenderMode: source.getFolderPageRenderMode,
       getVisibleFolderPage: source.getVisibleFolderPage,
       isIconOpening: source.isIconOpening,
       isIconSelected: source.isIconSelected,
-      setFolderPageRef: isFolderLayer ? source.setFolderPageRef : () => {},
+      setFolderPageRef: source.setFolderPageRef,
     },
     drag: {
       meta: source.dragMeta?.value,
@@ -462,9 +379,12 @@ function createSingleStageFolderState(metrics, options = {}, renderGeometry = ma
     },
     folder: {
       closeIconGhosts: source.folderCloseIconGhosts?.value,
+      desktopClosing: props.isDesktopClosing,
       gridStyle: source.folderGridStyle?.value,
       isAppLaunchClosing: source.isFolderAppLaunchClosing?.value,
       isClosing: Boolean(source.isFolderClosing?.value || source.isFolderZoomFadeClosingFromFolderClose?.value),
+      isZoomFadeClosing: source.isFolderZoomFadeClosing?.value,
+      zoomFadeCloseReason: source.folderZoomFadeCloseReason?.value,
       openingOriginBounds: source.folderOpeningOriginBounds?.value,
       openIconGhosts: source.folderOpenIconGhosts?.value,
       pageIndex: source.folderPageIndex?.value,
@@ -473,10 +393,10 @@ function createSingleStageFolderState(metrics, options = {}, renderGeometry = ma
       pageDotsVisible: shouldShowSingleStageFolderPageDots(),
       pageSize: source.folderPageSize?.value || props.folderPageSize,
       pages: source.folderPages?.value,
-      panelRef: isFolderLayer ? source.folderPanelRef : null,
+      panelRef: source.folderPanelRef,
       panelStyle: source.folderPanelStyle?.value,
       renderedFolder: source.renderedFolder?.value,
-      viewportRef: isFolderLayer ? source.folderViewportRef : null,
+      viewportRef: source.folderViewportRef,
     },
     stage: { rect: renderGeometry.stageRect },
     ui: {
@@ -489,7 +409,7 @@ function createSingleStageFolderState(metrics, options = {}, renderGeometry = ma
     canvasStageRect: metrics.rect,
     desktopFrame: renderGeometry.desktopFrame,
     desktopStageRect: renderGeometry.desktopStageRect,
-    singleStageDiagnostics: true,
+    singleStageDiagnostics: diagnosticsOptions.diagnostics === true,
   });
 }
 
@@ -532,7 +452,7 @@ function getDesktopDomGeometry() {
   return desktopDomGeometryCache || refreshDesktopDomGeometry();
 }
 
-function makeDesktopRenderGeometry(metrics, options) {
+function makeDesktopRenderGeometry(metrics) {
   if (desktopDomGeometryCache?.metrics === metrics) return desktopDomGeometryCache.renderGeometry;
   const cached = getDesktopDomGeometry();
   return cached?.renderGeometry || makeDesktopRenderGeometryFromDom(metrics).renderGeometry;
@@ -566,13 +486,12 @@ function logFolderHandoffTimeline(metrics, folderClosingHandoffId) {
     seq,
     settledFramesAtDecision: decision.settledFrames,
   });
-  console.log("[folder-handoff-compact-v2]", makeFolderHandoffCompactLog(snapshot, decision, metrics, folderClosingHandoffId, seq));
   folderClosingHandoffRetainer.consumePostReleaseFrame(folderClosingHandoffId);
 }
 
 function publishFolderVisualDebugSnapshot() {
   if (!import.meta.env.DEV) return;
-  globalThis.__LP_FOLDER_VISUAL_DEBUG__ = () => layer?.getFolderVisualDebugSnapshot?.() || null;
+  setLaunchpadDebugValue("folderVisual", () => layer?.getFolderVisualDebugSnapshot?.() || null);
 }
 
 function updateMotionDebugOverlay() {
@@ -591,97 +510,162 @@ function updateMotionDebugOverlay() {
   });
 }
 
-function publishMotionOverlayDebugSnapshot() {
-  if (!import.meta.env.DEV) return;
-  globalThis.__LP_MOTION_OVERLAY_DEBUG__ = () => motionDebugOverlay?.debugSnapshot?.() || null;
-}
-
-function renderPixi() {
-  if (!app || !layer || !hostRef.value) return;
+function renderPixi(options = {}) {
+  if (!app || !layer || !hostRef.value) return false;
+  const shouldUpdateLayer = options.updateLayer !== false;
   const domGeometry = getDesktopDomGeometry();
-  if (!domGeometry) return;
+  if (!domGeometry) return false;
   const { metrics, renderGeometry } = domGeometry;
   const folderClosingHandoffId = resolveFolderClosingHandoffId(metrics);
-  const singleStageOptions = getResolvedSingleStageOptions();
-  const singleStageRuntimePlan = getResolvedSingleStageRuntimePlan(singleStageOptions);
-  singleStageDragPreviewEnabled.value = singleStageRuntimePlan.useDragPreview;
-  singleStageFolderLayerEnabled.value = singleStageRuntimePlan.useFolderLayer;
-  layer.update({
-    activePageIndex: props.activePageIndex,
-    activePages: props.activePages,
-    desktopVisualTransform: props.desktopVisualTransform,
-    desktopVisualAlpha: props.desktopVisualAlpha,
-    launchpadVisualAlpha: props.launchpadVisualAlpha,
-    launchpadVisualTransform: props.launchpadVisualTransform,
-    desktopFrame: renderGeometry.desktopFrame,
-    desktopGridDebugOptions: props.desktopGridDebugOptions,
-    desktopTrackMotionKey: props.desktopTrackMotionKey,
-    dragFolderHoverState: props.dragFolderHoverState,
-    dragFolderTargetId: props.dragFolderTargetId,
-    dragMeta: props.dragMeta,
-    dragPreviewState: props.dragPreviewState,
-    dragReleaseGhostId: props.dragReleaseGhostId,
-    dragReleaseState: props.dragReleaseState,
-    deviceResolution: app.renderer?.resolution || 1,
-    folderClosingHandoffId,
-    singleStageDragPreviewEnabled: singleStageRuntimePlan.useDragPreview,
-    singleStageDiagnosticsEnabled: singleStageOptions,
-    singleStageFolderLayerEnabled: singleStageRuntimePlan.useFolderLayer,
-    singleStageFolderState: singleStageOptions.enabled ? createSingleStageFolderState(metrics, singleStageOptions, renderGeometry) : null,
-    folderPageSize: props.folderPageSize,
-    getDesktopPageRenderMode: props.getDesktopPageRenderMode,
-    getVisibleDesktopPage: props.getVisibleDesktopPage,
-    gridCols: props.gridCols,
-    gridRows: props.gridRows,
-    height: renderGeometry.height,
-    iconSize: props.iconSize,
-    isEditMode: props.isEditMode,
-    folderSourceGhostedId: props.folderSourceGhostedId,
-    folderSourceGhostedIds: props.folderSourceGhostedIds,
-    isFolderOpeningPreviewFrameGhosted: props.isFolderOpeningPreviewFrameGhosted,
-    isHomeRevealSettling: props.isHomeRevealSettling,
-    isIconOpening: props.isIconOpening,
-    isIconSelected: props.isIconSelected,
-    isSearchMode: props.isSearchMode,
-    isTextlessMode: props.isTextlessMode,
-    launchTargetStatusById: props.launchTargetStatusById,
-    pageTrackScrub: props.pageTrackScrub,
-    setPageRef: props.setPageRef,
-    shouldSnapTrack: props.desktopTrackMotionKey.includes("snap"),
-    showMissingLaunchTargetBadge: props.showMissingLaunchTargetBadge,
-    stageRect: renderGeometry.stageRect,
-    width: renderGeometry.width,
-  });
-  if (singleStageRuntimePlan.useDragPreview) {
+  if (shouldUpdateLayer) {
+    const singleStageDiagnosticsOptions = getResolvedSingleStageDiagnosticsOptions();
+    layer.update({
+      activePageIndex: props.activePageIndex,
+      activePages: props.activePages,
+      desktopVisualTransform: props.desktopVisualTransform,
+      desktopVisualAlpha: props.desktopVisualAlpha,
+      launchpadVisualAlpha: props.launchpadVisualAlpha,
+      launchpadVisualTransform: props.launchpadVisualTransform,
+      desktopFrame: renderGeometry.desktopFrame,
+      desktopGridDebugOptions: props.desktopGridDebugOptions,
+      desktopTrackMotionKey: props.desktopTrackMotionKey,
+      dragFolderHoverState: props.dragFolderHoverState,
+      dragFolderTargetId: props.dragFolderTargetId,
+      dragMeta: props.dragMeta,
+      dragPreviewState: props.dragPreviewState,
+      dragReleaseGhostId: props.dragReleaseGhostId,
+      dragReleaseState: props.dragReleaseState,
+      deviceResolution: app.renderer?.resolution || 1,
+      folderClosingHandoffId,
+      singleStageDiagnosticsEnabled: singleStageDiagnosticsOptions,
+      singleStageFolderState: createSingleStageFolderState(metrics, singleStageDiagnosticsOptions, renderGeometry),
+      folderPageSize: props.folderPageSize,
+      getDesktopPageRenderMode: props.getDesktopPageRenderMode,
+      getVisibleDesktopPage: props.getVisibleDesktopPage,
+      gridCols: props.gridCols,
+      gridRows: props.gridRows,
+      height: renderGeometry.height,
+      iconSize: props.iconSize,
+      isEditMode: props.isEditMode,
+      folderSourceGhostedId: props.folderSourceGhostedId,
+      folderSourceGhostedIds: props.folderSourceGhostedIds,
+      isFolderOpeningPreviewFrameGhosted: props.isFolderOpeningPreviewFrameGhosted,
+      isHomeRevealSettling: props.isHomeRevealSettling,
+      isIconOpening: props.isIconOpening,
+      isIconSelected: props.isIconSelected,
+      isSearchMode: props.isSearchMode,
+      isTextlessMode: props.isTextlessMode,
+      launchTargetStatusById: props.launchTargetStatusById,
+      pageTrackScrub: props.pageTrackScrub,
+      setPageRef: props.setPageRef,
+      shouldSnapTrack: props.desktopTrackMotionKey.includes("snap"),
+      showMissingLaunchTargetBadge: props.showMissingLaunchTargetBadge,
+      stageRect: renderGeometry.stageRect,
+      width: renderGeometry.width,
+    });
     preloadIconTextures(collectDragPreviewTextureItems(props.dragPreviewState || props.dragReleaseState));
+    publishFolderVisualDebugSnapshot();
+    logFolderHandoffTimeline(metrics, folderClosingHandoffId);
   }
-  publishFolderVisualDebugSnapshot();
   updateMotionDebugOverlay();
-  logFolderHandoffTimeline(metrics, folderClosingHandoffId);
+  return true;
 }
 
 function cancelScheduledRenderPixi() {
-  if (renderFrame == null) return;
-  window.cancelAnimationFrame(renderFrame);
-  renderFrame = null;
+  renderScheduler?.cancel();
+  if (desktopFrameHandle != null) {
+    window.cancelAnimationFrame?.(desktopFrameHandle);
+    desktopFrameHandle = null;
+  }
+  desktopFrameLastTime = 0;
+  desktopLayerUpdatePending = false;
 }
 
-function scheduleRenderPixi(options = {}) {
-  if (options.invalidateGeometry) invalidateDesktopDomGeometry();
-  if (renderFrame != null || destroyed || !app || !layer || !hostRef.value) return;
-  const run = () => {
-    renderFrame = null;
-    if (destroyed) return;
-    renderPixi();
-    if (options.renderNow) app?.render?.();
-    if (shouldRunHandoffRenderLoop()) scheduleHandoffRenderLoop();
-    else cancelHandoffRenderLoop();
-  };
-  if (typeof window.requestAnimationFrame === "function") {
-    renderFrame = window.requestAnimationFrame(run);
-  } else {
-    run();
+function getRenderScheduler() {
+  if (renderScheduler) return renderScheduler;
+  const requestFrame = typeof window.requestAnimationFrame === "function"
+    ? (callback) => window.requestAnimationFrame(callback)
+    : null;
+  const cancelFrame = typeof window.cancelAnimationFrame === "function"
+    ? (frame) => window.cancelAnimationFrame(frame)
+    : null;
+  renderScheduler = createPixiRenderScheduler({
+    cancelAnimationFrame: cancelFrame,
+    canRender: () => Boolean(!destroyed && app && layer && hostRef.value),
+    render: () => {
+      const updateLayer = desktopLayerUpdatePending;
+      desktopLayerUpdatePending = false;
+      const didRender = renderPixi({ updateLayer });
+      if (!didRender && updateLayer) desktopLayerUpdatePending = true;
+      app?.render?.();
+    },
+    requestAnimationFrame: requestFrame,
+  });
+  return renderScheduler;
+}
+
+function shouldRunDesktopFrameLoop() {
+  return Boolean(
+    !destroyed &&
+    app &&
+    layer &&
+    hostRef.value &&
+    (
+      getRenderScheduler().hasPendingRender() ||
+      motionRuntime.hasActiveWork?.() ||
+      shouldRunHandoffRenderLoop()
+    )
+  );
+}
+
+function runDesktopFrame(time) {
+  desktopFrameHandle = null;
+  if (!app || !layer || !hostRef.value || destroyed) {
+    desktopFrameLastTime = 0;
+    return;
   }
+
+  const frameTime = Number.isFinite(Number(time)) ? Number(time) : nowMs();
+  const deltaSeconds = desktopFrameLastTime
+    ? Math.max(0, (frameTime - desktopFrameLastTime) / 1000)
+    : 0;
+  desktopFrameLastTime = frameTime;
+
+  motionRuntime.step(deltaSeconds);
+  const scheduler = getRenderScheduler();
+  if (desktopMotionFrameNeedsRender) {
+    scheduler.markRenderPending("motion-frame");
+    desktopMotionFrameNeedsRender = false;
+  }
+  scheduler.runPendingRender();
+  if (shouldRunHandoffRenderLoop()) {
+    desktopLayerUpdatePending = true;
+    scheduler.markRenderPending("folder-handoff-loop");
+  }
+
+  if (typeof window.requestAnimationFrame === "function" && shouldRunDesktopFrameLoop()) {
+    scheduleDesktopFrame();
+  } else {
+    desktopFrameLastTime = 0;
+  }
+}
+
+function scheduleDesktopFrame() {
+  if (desktopFrameHandle != null || destroyed || !app || !layer || !hostRef.value) return false;
+  if (typeof window.requestAnimationFrame === "function") {
+    desktopFrameHandle = window.requestAnimationFrame(runDesktopFrame);
+    return true;
+  }
+  runDesktopFrame(nowMs());
+  return true;
+}
+
+function requestRender(reason = "desktop-update", options = {}) {
+  if (options.invalidateGeometry) invalidateDesktopDomGeometry();
+  desktopLayerUpdatePending = true;
+  const didMark = getRenderScheduler().markRenderPending(reason);
+  scheduleDesktopFrame();
+  return didMark;
 }
 
 function shouldRunHandoffRenderLoop() {
@@ -689,22 +673,6 @@ function shouldRunHandoffRenderLoop() {
     propFolderClosingHandoffId: props.folderClosingHandoffId,
     timelineDebug: hasFolderHandoffTimelineDebug(),
   }) && app && layer && hostRef.value && !destroyed);
-}
-
-function cancelHandoffRenderLoop() {
-  if (handoffRenderFrame == null) return;
-  window.cancelAnimationFrame(handoffRenderFrame);
-  handoffRenderFrame = null;
-}
-
-function scheduleHandoffRenderLoop() {
-  if (handoffRenderFrame != null || !shouldRunHandoffRenderLoop()) return;
-  handoffRenderFrame = window.requestAnimationFrame(() => {
-    handoffRenderFrame = null;
-    if (!shouldRunHandoffRenderLoop()) return;
-    scheduleRenderPixi({ renderNow: true });
-    scheduleHandoffRenderLoop();
-  });
 }
 
 function clearFolderTexturePrewarmTimer() {
@@ -758,10 +726,12 @@ function handleIconAction(action, event, item, source) {
   if (action === "remove") emit("remove-app", item.id);
   if (action === "choose-icon") emit("choose-app-icon", item.id);
   if (action === "reset-icon") emit("reset-app-icon", item.id);
+  requestRender(makeIconActionRenderReason(action));
 }
 
 function handleFolderInternalActivity(active, folderId = null) {
   emit("internal-activity", Boolean(active), folderId);
+  requestRender(makeFolderInternalActivityRenderReason(active));
 }
 
 function handleSingleStageFolderGeometryChange(geometry) {
@@ -781,20 +751,28 @@ function destroyPixi(options = {}) {
   const currentApp = app;
   const currentLayer = layer;
   const currentOverlay = motionDebugOverlay;
-  const currentOverlayTicker = motionDebugOverlayTicker;
   app = null;
   layer = null;
   motionDebugOverlay = null;
-  motionDebugOverlayTicker = null;
+  unsubscribeMotionRuntimeRenderSignal?.();
+  unsubscribeMotionRuntimeRenderSignal = null;
+  if (desktopMotionRuntimeSuspended) {
+    motionRuntime.resumeAutoTicker?.();
+    desktopMotionRuntimeSuspended = false;
+  }
+  desktopMotionFrameNeedsRender = false;
   cancelScheduledRenderPixi();
-  cancelHandoffRenderLoop();
+  renderScheduler?.destroy();
+  renderScheduler = null;
   invalidateDesktopDomGeometry();
   pixiResizeSignature = "";
   folderClosingHandoffRetainer.reset();
   motionDebugCommands?.uninstall?.();
   motionDebugCommands = null;
-  if (globalThis.__LP_FOLDER_VISUAL_DEBUG__) delete globalThis.__LP_FOLDER_VISUAL_DEBUG__;
-  if (globalThis.__LP_MOTION_OVERLAY_DEBUG__) delete globalThis.__LP_MOTION_OVERLAY_DEBUG__;
+  deleteLaunchpadDebugValue("folderVisual");
+  if (import.meta.env.DEV && readLaunchpadDebugValue("motionOverlay")) {
+    deleteLaunchpadDebugValue("motionOverlay");
+  }
   singleStageFolderPanelGeometry.value = null;
   singleStageFolderTitleFrame.value = null;
   clearFolderTexturePrewarmTimer();
@@ -802,7 +780,6 @@ function destroyPixi(options = {}) {
     currentApp?.stage?.removeChild(currentLayer);
     if (deep) currentLayer.destroy({ children: true });
   }
-  if (currentOverlayTicker) currentApp?.ticker?.remove?.(currentOverlayTicker);
   if (currentOverlay) {
     currentApp?.stage?.removeChild(currentOverlay);
     if (deep) currentOverlay.destroy({ children: true });
@@ -810,46 +787,88 @@ function destroyPixi(options = {}) {
   if (deep) currentApp?.destroy(true);
   else currentApp?.stop?.();
   hostRef.value?.replaceChildren?.();
-  clearDesktopIconBounds();
+  props.iconBoundsRegistry.clearBounds("desktop");
+  props.iconBoundsRegistry.clearBounds("search");
   if (deep) clearIconTextureCache();
 }
 
 onMounted(async () => {
   destroyed = false;
   if (props.domRefs?.desktopMainRef) props.domRefs.desktopMainRef.value = mainRef.value;
-  const nextApp = await createPixiApp(hostRef.value, { className: "pixi-launchpad-canvas" });
+  const nextApp = await createPixiApp(hostRef.value, {
+    autoStart: false,
+    className: "pixi-launchpad-canvas",
+  });
   if (destroyed) {
     nextApp.destroy(true);
     hostRef.value?.replaceChildren?.();
     return;
   }
   app = nextApp;
+  motionRuntime.suspendAutoTicker?.();
+  desktopMotionRuntimeSuspended = true;
   layer = new DesktopLayer({
-    onClosingFolderPointerDown: (folderId) => props.folderOverlayState?.commitOpenFolder?.(folderId),
+    onClosingFolderPointerDown: (folderId) => {
+      props.folderOverlayState?.commitOpenFolder?.(folderId);
+      requestRender("folder-closing-pointerdown");
+    },
     onFolderGeometryChange: handleSingleStageFolderGeometryChange,
     onFolderInternalActivityChange: handleFolderInternalActivity,
-    onFolderOutsidePointerDown: () => props.folderOverlayState?.handleFolderOverlayPointerDown?.(),
-    onFolderPanelPointerDown: (event) => props.folderOverlayState?.handleFolderPanelPointerDown?.(event),
+    onFolderOutsidePointerDown: () => {
+      props.folderOverlayState?.handleFolderOverlayPointerDown?.();
+      requestRender("folder-outside-pointerdown");
+    },
+    onFolderPanelPointerDown: (event) => {
+      props.folderOverlayState?.handleFolderPanelPointerDown?.(event);
+      requestRender("folder-panel-pointerdown");
+    },
     onFolderTitleFrameChange: handleSingleStageFolderTitleFrameChange,
-    onDragReleaseComplete: (release) => emit("drag-release-complete", release),
+    iconBoundsRegistry: props.iconBoundsRegistry,
+    onDragReleaseComplete: (release) => {
+      emit("drag-release-complete", release);
+      requestRender("drag-release-complete");
+    },
     onIconAction: handleIconAction,
   });
   app.stage.addChild(layer);
+  unsubscribeMotionRuntimeRenderSignal = motionRuntime.onRenderSignal((
+    activeAnimationCount,
+    writesLastFrame,
+    afterFrameFlushes,
+    reason
+  ) => {
+    desktopMotionFrameNeedsRender = Boolean(
+      Number(activeAnimationCount) > 0 ||
+      Number(afterFrameFlushes) > 0 ||
+      Number(writesLastFrame) > 0
+    );
+    if (reason && reason !== "frame") {
+      getRenderScheduler().markRenderPending(`motion-${reason}`);
+    }
+    if (motionRuntime.hasActiveWork?.() || getRenderScheduler().hasPendingRender()) scheduleDesktopFrame();
+  });
   if (import.meta.env.DEV) {
+    const [
+      { MotionDebugOverlayLayer },
+      { installMotionDebugGlobal },
+      { createMotionRuntimeDebugAdapter },
+    ] = await Promise.all([
+      import("./animation/motionDebugOverlayLayer.js"),
+      import("./animation/motionDebugReport.js"),
+      import("./animation/motionRuntimeDebugAdapter.dev.js"),
+    ]);
+    installMotionRuntimeDebugAdapterFactory(createMotionRuntimeDebugAdapter);
     motionDebugOverlay = new MotionDebugOverlayLayer();
     app.stage.addChild(motionDebugOverlay);
-    motionDebugOverlayTicker = updateMotionDebugOverlay;
-    app.ticker?.add?.(motionDebugOverlayTicker);
-    publishMotionOverlayDebugSnapshot();
+    setLaunchpadDebugValue("motionOverlay", () => motionDebugOverlay?.debugSnapshot?.() || null);
+    motionDebugCommands = installMotionDebugGlobal();
   }
-  motionDebugCommands = installMotionDebugGlobal();
   resizeObserver = new ResizeObserver(handleResize);
   resizeObserver.observe(hostRef.value);
   window.addEventListener("resize", handleResize);
   await nextTick();
   refreshDesktopDomGeometry();
-  renderPixi();
-  scheduleHandoffRenderLoop();
+  requestRender("mount");
   scheduleFolderTexturePrewarm();
 });
 
@@ -867,20 +886,14 @@ watch(
 );
 
 watch(
-  () => props.singleStageRenderKey,
-  () => scheduleRenderPixi(),
-  { flush: "post" }
-);
-
-watch(
   () => props.desktopProjectionEpoch,
-  () => scheduleRenderPixi({ invalidateGeometry: true }),
+  () => requestRender("desktop-projection", { invalidateGeometry: true }),
   { flush: "post" }
 );
 
 watch(
   () => props.pageGridMeasureStyle,
-  () => scheduleRenderPixi({ invalidateGeometry: true }),
+  () => requestRender("page-grid-measure", { invalidateGeometry: true }),
   { flush: "post" }
 );
 
@@ -906,6 +919,7 @@ watchEffect(() => {
   void props.gridRows;
   void props.iconSize;
   void props.isEditMode;
+  void props.isDesktopClosing;
   void props.folderSourceGhostedId;
   void props.folderSourceGhostedIds;
   void props.isHomeRevealSettling;
@@ -914,11 +928,8 @@ watchEffect(() => {
   void props.launchTargetStatusById;
   void props.pageGridMeasureStyle;
   void props.folderPageSize;
-  void props.singleStageOptions;
-  void props.singleStageRenderKey;
-  scheduleRenderPixi();
-  if (shouldRunHandoffRenderLoop()) scheduleHandoffRenderLoop();
-  else cancelHandoffRenderLoop();
+  void props.singleStageDiagnosticsOptions;
+  requestRender("watch-effect");
   scheduleFolderTexturePrewarm();
 });
 

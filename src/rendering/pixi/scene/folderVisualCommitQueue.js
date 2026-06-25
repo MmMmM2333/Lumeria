@@ -33,10 +33,6 @@ export class FolderVisualCommitQueue {
     return true;
   }
 
-  enqueueDetachedVisualRelease(transaction, options = {}) {
-    return this.enqueue(transaction, options);
-  }
-
   scheduleFlush() {
     if (this.flushQueued) return;
     this.flushQueued = true;

@@ -377,6 +377,11 @@ body {
   pointer-events: auto !important;
 }
 
+.launchpad-root-folder-layer-active .launchpad-header,
+.launchpad-root-folder-layer-active .page-dots {
+  pointer-events: none !important;
+}
+
 .launchpad-header {
   display: grid;
   grid-template-columns: 1fr minmax(240px, 348px) 1fr;

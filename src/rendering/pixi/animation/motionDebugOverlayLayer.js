@@ -1,19 +1,14 @@
 import { Container, Graphics, Text } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { buildMotionOverlayItems } from "./motionDebugOverlay.js";
+import {
+  readNumber,
+  readPositiveNumber,
+} from "./motionTraceShared.js";
 
 const DEFAULT_MAX_OVERLAY_ITEMS = 18;
 const LABEL_HEIGHT = 16;
 const OVERLAY_TARGET_COLOR = 0xffffff;
-
-function readNumber(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function readPositiveNumber(value, fallback = 0) {
-  return Math.max(0, readNumber(value, fallback));
-}
 
 function makeLabelText() {
   return new Text({
@@ -90,7 +85,7 @@ export class MotionDebugOverlayLayer extends Container {
       return this.lastSnapshot;
     }
     const runtime = options.runtime;
-    const report = options.report || runtime?.debugReport?.({ includeTargets: true });
+    const report = options.report || runtime?.debugSnapshot?.({ includeTargets: true });
     const items = buildMotionOverlayItems(report, {
       enabled: true,
       maxItems: options.maxItems ?? this.maxItems,
@@ -135,7 +130,7 @@ export class MotionDebugOverlayLayer extends Container {
         .roundRect(labelX, labelY, labelWidth, LABEL_HEIGHT, 4)
         .fill({ alpha: 0.88, color });
       const label = this.getLabel(index);
-      label.text = badge;
+      if (label.text !== badge) label.text = badge;
       label.visible = true;
       label.position.set(labelX + 5, labelY + 2);
     });

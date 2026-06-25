@@ -229,8 +229,14 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { Container, Graphics, Text } from "pixi.js";
 import { buildMotionWarningRows } from "../components/backgroundDebug/motionDebugPanelModel.js";
 import { createPixiApp } from "../rendering/pixi/createPixiApp.js";
-import { createMotionRuntime } from "../rendering/pixi/animation/motionRuntime.js";
-import { createMotionReplayTrace } from "../rendering/pixi/animation/motionReplayTrace.js";
+import {
+  createMotionRuntime,
+  installMotionRuntimeDebugAdapterFactory,
+} from "../rendering/pixi/animation/motionRuntime.js";
+import {
+  deleteLaunchpadDebugValue,
+  setLaunchpadDebugValue,
+} from "../rendering/pixi/debugNamespace.js";
 import {
   applyMotionLabParamPreset,
   buildMotionLabParamPresetRows,
@@ -263,6 +269,7 @@ import "./motionLab.css";
 const pixiHostRef = ref(null);
 const selectedScenarioId = ref(MOTION_LAB_SCENARIOS[0]?.id || "folder-open");
 const previewStatus = ref("ready");
+const motionSnapshot = ref(makeEmptyReport());
 const motionReport = ref(makeEmptyReport());
 const replayTrace = ref(null);
 const replayTraceJson = ref("");
@@ -342,8 +349,12 @@ const activeParamPresetLabel = computed(() => {
   const selectedRow = paramPresetRows.value.find((row) => row.selected);
   return selectedRow?.label || "Custom";
 });
-const overviewRows = computed(() => buildMotionLabOverviewRows(motionReport.value, replayTrace.value));
-const warningRows = computed(() => buildMotionWarningRows(motionReport.value, 6));
+const overviewReport = computed(() => ({
+  ...motionSnapshot.value,
+  history: motionReport.value.history || {},
+}));
+const overviewRows = computed(() => buildMotionLabOverviewRows(overviewReport.value, replayTrace.value));
+const warningRows = computed(() => buildMotionWarningRows(motionSnapshot.value, 6));
 const assertionRows = computed(() => buildMotionLabAssertionRows(assertionResults.value));
 const timelineRows = computed(() => buildMotionLabTimelineRows(motionReport.value));
 const curveRows = computed(() => buildMotionLabCurveRows(motionReport.value));
@@ -378,7 +389,7 @@ const compareStatusRows = computed(() => [
 let pixiApp = null;
 let runtime = null;
 let scene = null;
-let reportTimer = null;
+let snapshotTimer = null;
 let copyReportTimer = null;
 let copyTraceTimer = null;
 let copyCompareTimer = null;
@@ -664,16 +675,33 @@ function cancelSceneMotion(reason = "motion-lab-reset") {
   }
 }
 
-function refreshMotionReport() {
+function refreshMotionSnapshot() {
+  if (!runtime) {
+    motionSnapshot.value = makeEmptyReport();
+    return;
+  }
+  motionSnapshot.value = {
+    ...runtime.debugSnapshot({
+      includeChannels: true,
+      includeTargets: true,
+    }),
+    config: runtime.configureDebug(),
+  };
+}
+
+function refreshMotionHistoryReport(_reason = "manual") {
   if (!runtime) {
     motionReport.value = makeEmptyReport();
+    refreshMotionSnapshot();
     return;
   }
   motionReport.value = runtime.debugReport({
     includeChannels: true,
+    includeCurveStats: true,
     includeHistory: true,
     includeTargets: true,
   });
+  refreshMotionSnapshot();
 }
 
 function resetLabScene() {
@@ -685,7 +713,8 @@ function resetLabScene() {
   replayTraceJson.value = "";
   assertionResults.value = [];
   previewStatus.value = "ready";
-  refreshMotionReport();
+  motionReport.value = makeEmptyReport();
+  refreshMotionSnapshot();
 }
 
 function wait(ms) {
@@ -697,15 +726,15 @@ function wait(ms) {
 function makeScenarioContext() {
   return {
     motionParams: getMotionParams(),
-    refreshReport: refreshMotionReport,
+    refreshReport: refreshMotionHistoryReport,
     report: motionReport.value,
     runtime,
     scene,
   };
 }
 
-function updateScenarioAssertions() {
-  refreshMotionReport();
+function updateScenarioAssertions(reason = "scenario-assertions") {
+  refreshMotionHistoryReport(reason);
   const context = makeScenarioContext();
   context.report = motionReport.value;
   assertionResults.value = evaluateMotionLabScenarioAssertions(selectedScenario.value, context);
@@ -717,7 +746,7 @@ async function runSelectedScenario() {
   resetLabScene();
   previewStatus.value = "running";
   runMotionLabScenario(selectedScenarioId.value, makeScenarioContext());
-  refreshMotionReport();
+  refreshMotionSnapshot();
   await wait(selectedScenario.value?.assertAfterMs ?? 760);
   const assertions = updateScenarioAssertions();
   previewStatus.value = assertions.every((assertion) => assertion.passed) ? "passed" : "failed";
@@ -735,10 +764,10 @@ function applyParamPreset(id) {
   return getMotionParams();
 }
 
-function captureReplayTrace() {
+async function captureReplayTrace() {
   if (!runtime) return;
-  updateScenarioAssertions();
-  refreshMotionReport();
+  updateScenarioAssertions("capture-replay-trace");
+  const { createMotionReplayTrace } = await import("../rendering/pixi/animation/motionReplayTrace.js");
   const trace = createMotionReplayTrace(motionReport.value, {
     durationMs: 30000,
     sampleHz: 30,
@@ -758,8 +787,7 @@ async function copyText(text) {
 }
 
 async function copyLabReport() {
-  updateScenarioAssertions();
-  refreshMotionReport();
+  updateScenarioAssertions("copy-lab-report");
   const payload = {
     assertions: assertionResults.value,
     params: getMotionParams(),
@@ -898,7 +926,7 @@ async function copyTraceDiffExport() {
 }
 
 function installDebugApi() {
-  globalThis.__LP_MOTION_LAB__ = {
+  setLaunchpadDebugValue("motionLab", {
     captureReplayTrace,
     assertions: () => assertionResults.value,
     baseline: () => savedBaselineSnapshot.value,
@@ -954,7 +982,7 @@ function installDebugApi() {
     trace: () => replayTrace.value,
     traceDiffExport: () => createMotionLabTraceDiffExport(traceDiffCurrent.value, traceDiffBaseline.value),
     traceDiffRows: () => traceDiffRows.value,
-  };
+  });
 }
 
 function clearCopyTimers() {
@@ -971,26 +999,31 @@ function clearCopyTimers() {
 }
 
 onMounted(async () => {
+  const { createMotionRuntimeDebugAdapter } = await import("../rendering/pixi/animation/motionRuntimeDebugAdapter.dev.js");
+  installMotionRuntimeDebugAdapterFactory(createMotionRuntimeDebugAdapter);
   runtime = createMotionRuntime();
   configureRuntime();
-  pixiApp = await createPixiApp(pixiHostRef.value, { className: "motion-lab-canvas" });
+  pixiApp = await createPixiApp(pixiHostRef.value, {
+    autoStart: true,
+    className: "motion-lab-canvas",
+  });
   scene = createScene(pixiApp);
   setSceneDefaults();
   describeSceneTargets();
-  refreshMotionReport();
-  reportTimer = window.setInterval(refreshMotionReport, 180);
+  refreshMotionSnapshot();
+  snapshotTimer = window.setInterval(refreshMotionSnapshot, 180);
   installDebugApi();
 });
 
 onBeforeUnmount(() => {
   clearCopyTimers();
-  if (reportTimer != null) window.clearInterval(reportTimer);
-  reportTimer = null;
+  if (snapshotTimer != null) window.clearInterval(snapshotTimer);
+  snapshotTimer = null;
   runtime?.reset();
   runtime = null;
   pixiApp?.destroy(false, { children: true });
   pixiApp = null;
   scene = null;
-  if (globalThis.__LP_MOTION_LAB__) delete globalThis.__LP_MOTION_LAB__;
+  deleteLaunchpadDebugValue("motionLab");
 });
 </script>

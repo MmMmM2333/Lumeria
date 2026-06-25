@@ -93,6 +93,7 @@ export function runMotionReplayTraceTests() {
     assert(trace.timeline.frames.length > 0, "trace should include sampled replay frames");
     assert(trace.timeline.frames[0].values.length > 0, "trace frames should include property values");
     assert(trace.timeline.events.some((event) => event.type === "start"), "trace should include lifecycle events");
+    assert(trace.curveStats.length > 0, "runtime replay trace should include opt-in curve stats");
     assert(trace.targets.some((target) => target.sourceLabel === "desktop.icon.node"), "trace should include used target metadata");
     assert(trace.tracks.some((track) => track.prop === "x"), "trace should include track summaries");
     assert(trace.summary.frameCount === trace.timeline.frames.length, "trace summary should count frames");
@@ -148,7 +149,7 @@ export function runMotionReplayTraceTests() {
       sampleHz: 60,
     });
     const icon = seedReplayRuntime(runtime);
-    const report = runtime.debugReport({ includeHistory: true, includeTargets: true });
+    const report = runtime.debugReport({ includeCurveStats: true, includeHistory: true, includeTargets: true });
     const trace = createMotionReplayTrace(report, {
       durationMs: 30000,
       generatedAt: "2026-06-21T00:00:02.000Z",

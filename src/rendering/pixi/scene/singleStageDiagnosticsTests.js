@@ -1,23 +1,17 @@
 import {
-  clearIconBoundsRegistry,
-  registerRenderedClientLaunchIconBounds,
-  registerRenderedClientTopLevelFolderThumbBounds,
-  registerStableStageLayoutFolderPreviewChildTargetBounds,
-  registerStableStageLayoutTopLevelFolderThumbTargetBounds,
-  registerStableStageLayoutTopLevelIconTargetBounds,
+  createIconBoundsRegistry,
+  ICON_BOUNDS_KIND,
+  ICON_BOUNDS_VARIANT,
 } from "../geometry/iconBoundsRegistry.js";
 import {
-  getSingleStageOptions,
-  getSingleStageOptionsKey,
+  getSingleStageDiagnosticsOptions,
   getSingleStageRenderKey,
-  installSingleStageGlobalFlag,
+  isSingleStageDiagnosticsEnabled,
   makeSingleStageDiagnosticsPlan,
-  makeSingleStageRuntimeProbe,
-  makeSingleStageRuntimePlan,
-  setSingleStageOptions,
-  SINGLE_STAGE_CHANGED_EVENT,
-  SINGLE_STAGE_DIAGNOSTICS_CHANGED_EVENT,
 } from "./singleStagePlan.js";
+
+const K = ICON_BOUNDS_KIND;
+const V = ICON_BOUNDS_VARIANT;
 
 function identityStageMeta(meta = {}) {
   return {
@@ -50,117 +44,39 @@ export function runSingleStageDiagnosticsTests() {
   };
   const iconRect = { height: 96, left: 200, top: 220, width: 96 };
   const thumbRect = { height: 72, left: 212, top: 232, width: 72 };
-  const defaultOptions = getSingleStageOptions(undefined);
-  assert(defaultOptions.enabled && defaultOptions.rootStage && defaultOptions.dragPreview, "single-stage should default to root-stage drag preview ownership");
-  assert(defaultOptions.folderLayer && !defaultOptions.diagnostics && !defaultOptions.probe, "single-stage should default to folder layer ownership without diagnostics");
-  const defaultRuntimePlan = makeSingleStageRuntimePlan(defaultOptions);
-  assert(defaultRuntimePlan.useRootStage && defaultRuntimePlan.useFolderLayer && defaultRuntimePlan.useDragPreview, "default runtime plan should use full single-stage ownership");
-  assert(defaultRuntimePlan.renderKey === "single-stage", "runtime plan should expose a fixed single-stage render key");
-  const stableRuntimeProbeState = {
-    canvasCount: 1,
-    rootStageHost: true,
-    rootStageMain: true,
-    stableStageIsUnified: true,
-  };
-  const stableRuntimeProbe = makeSingleStageRuntimeProbe(defaultRuntimePlan, stableRuntimeProbeState);
-  assert(stableRuntimeProbe.isSingleStageStable, "default single-stage runtime probe should pass when root stage and fallback state are clean");
-  assert(stableRuntimeProbe.unifiedStageCoordinates, "default single-stage runtime probe should require unified stage coordinates");
-  assert(!("fallbackFolderMounted" in stableRuntimeProbe) && !("fallbackDragPreviewMounted" in stableRuntimeProbe), "runtime probe should not expose fallback overlay fields");
-  const runtimeFailureCases = [
-    { failure: "canvas-count", state: { canvasCount: 2 } },
-    { failure: "root-stage-host", state: { rootStageHost: false } },
-    { failure: "root-stage-main", state: { rootStageMain: false } },
-    { failure: "stable-stage-unified", state: { stableStageIsUnified: false } },
-  ];
-  for (const { failure, state: override } of runtimeFailureCases) {
-    const probe = makeSingleStageRuntimeProbe(defaultRuntimePlan, { ...stableRuntimeProbeState, ...override });
-    assert(!probe.isSingleStageStable, `runtime probe should fail on ${failure}`);
-    assert(probe.failures.includes(failure), `runtime probe should report ${failure}`);
-  }
-  const disabledOptions = getSingleStageOptions(false);
-  assert(disabledOptions.enabled && disabledOptions.rootStage && disabledOptions.dragPreview, "explicit false should not disable single-stage ownership");
-  assert(disabledOptions.folderLayer && !disabledOptions.diagnostics && !disabledOptions.probe, "explicit false should only disable diagnostics");
-  const disabledRuntimePlan = makeSingleStageRuntimePlan(disabledOptions);
-  assert(disabledRuntimePlan.useRootStage && disabledRuntimePlan.useFolderLayer && disabledRuntimePlan.useDragPreview, "runtime plan should always claim single-stage ownership");
-  assert(!makeSingleStageRuntimeProbe(disabledRuntimePlan, {
-    canvasCount: 1,
-    rootStageHost: false,
-    rootStageMain: false,
-    stableStageIsUnified: false,
-  }).isSingleStageStable, "single-stage runtime probe should fail when required root-stage invariants are missing");
-  const diagnosticsOptions = getSingleStageOptions(true);
-  assert(diagnosticsOptions.diagnostics && diagnosticsOptions.probe && diagnosticsOptions.rootStage && diagnosticsOptions.dragPreview, "explicit true should enable diagnostics on the default single-stage base");
-  assert(diagnosticsOptions.folderLayer, "explicit true should keep the default folder layer ownership");
-  const formalDiagnosticsOptions = getSingleStageOptions({ diagnostics: true, folderLayer: true });
-  assert(formalDiagnosticsOptions.diagnostics && formalDiagnosticsOptions.probe, "formal diagnostics option should mirror the probe flag");
-  const formalDiagnosticsDisabledOptions = getSingleStageOptions({ diagnostics: false, folderLayer: true });
-  assert(formalDiagnosticsDisabledOptions.folderLayer && !formalDiagnosticsDisabledOptions.diagnostics && !formalDiagnosticsDisabledOptions.probe, "formal diagnostics false should keep stage ownership without enabling diagnostics");
+  const defaultOptions = getSingleStageDiagnosticsOptions(undefined);
+  assert(!("enabled" in defaultOptions), "diagnostics options should not expose structural enabled flags");
+  assert(!("rootStage" in defaultOptions), "diagnostics options should not expose root-stage migration flags");
+  assert(!("folderLayer" in defaultOptions), "diagnostics options should not expose folder-layer migration flags");
+  assert(!("dragPreview" in defaultOptions), "diagnostics options should not expose drag-preview migration flags");
+  assert(!defaultOptions.diagnostics && !defaultOptions.log && !defaultOptions.probe, "single-stage diagnostics should default off");
+  assert(getSingleStageRenderKey() === "single-stage", "single-stage render key should be fixed");
 
-  const options = getSingleStageOptions({ enabled: true, folderLayer: true, log: true });
+  const disabledOptions = getSingleStageDiagnosticsOptions(false);
+  assert(!disabledOptions.diagnostics && !disabledOptions.log && !disabledOptions.probe, "explicit false should keep diagnostics disabled");
 
-  assert(options.enabled && options.log, "single-stage options should preserve explicit logging");
-  assert(options.folderLayer, "single-stage options should preserve the folder layer flag");
-  assert(options.dragPreview, "folder layer should enable the single-stage drag preview");
-  assert(options.rootStage, "single-stage options should preserve the root-stage canvas flag");
-  assert(getSingleStageOptionsKey(options) === "10", "single-stage option key should only reflect mutable diagnostics flags");
-  assert(getSingleStageRenderKey(options) === "single-stage", "single-stage render key should be fixed");
-  const renderKeyWithoutDiagnostics = getSingleStageRenderKey(
-    getSingleStageOptions({ enabled: true, folderLayer: true, log: false, probe: false })
-  );
-  const renderKeyWithDiagnostics = getSingleStageRenderKey(
-    getSingleStageOptions({ enabled: true, folderLayer: true, log: true, probe: true })
-  );
-  assert(
-    renderKeyWithoutDiagnostics === renderKeyWithDiagnostics,
-    "diagnostic flags should not change the render key"
-  );
-  const rootStageOnlyOptions = getSingleStageOptions({ probe: false, rootStage: true });
-  assert(rootStageOnlyOptions.enabled && rootStageOnlyOptions.rootStage && rootStageOnlyOptions.dragPreview, "root-stage legacy flags should not disable drag preview ownership");
-  const dragPreviewOnlyOptions = getSingleStageOptions({ dragPreview: true, probe: false });
-  assert(dragPreviewOnlyOptions.rootStage && dragPreviewOnlyOptions.dragPreview, "drag preview should request the root-stage host");
-  const folderLayerOnlyOptions = getSingleStageOptions({ folderLayer: true, probe: false });
-  assert(folderLayerOnlyOptions.enabled && folderLayerOnlyOptions.folderLayer && folderLayerOnlyOptions.dragPreview && folderLayerOnlyOptions.rootStage, "folder layer ownership should enable the dependent single-stage layers");
+  const diagnosticsOptions = getSingleStageDiagnosticsOptions(true);
+  assert(diagnosticsOptions.diagnostics && diagnosticsOptions.probe && !diagnosticsOptions.log, "explicit true should enable diagnostics and probe");
 
-  const flagName = "__LP_SINGLE_STAGE__";
-  const setterName = "__LP_SET_SINGLE_STAGE__";
-  const previousFlagDescriptor = Object.getOwnPropertyDescriptor(globalThis, flagName);
-  const previousSetterDescriptor = Object.getOwnPropertyDescriptor(globalThis, setterName);
-  let changeCount = 0;
-  let diagnosticsChangeCount = 0;
-  const handleFlagChange = () => { changeCount += 1; };
-  const handleDiagnosticsFlagChange = () => { diagnosticsChangeCount += 1; };
-  try {
-    installSingleStageGlobalFlag();
-    globalThis.addEventListener?.(SINGLE_STAGE_CHANGED_EVENT, handleFlagChange);
-    globalThis.addEventListener?.(SINGLE_STAGE_DIAGNOSTICS_CHANGED_EVENT, handleDiagnosticsFlagChange);
-    globalThis[flagName] = { rootStage: false, probe: false };
-    assert(getSingleStageOptions().rootStage, "direct global flag assignment should update root-stage options");
-    globalThis[flagName] = { dragPreview: false, probe: false };
-    assert(getSingleStageOptions().dragPreview && globalThis[flagName]?.dragPreview === false, "direct global flag assignment should preserve input while normalized options keep drag preview ownership");
-    assert(getSingleStageOptions({ dragPreview: false, probe: false }).rootStage, "legacy drag preview false should keep a root-stage canvas");
-    const normalized = setSingleStageOptions({ folderLayer: false, probe: false });
-    assert(normalized.rootStage && normalized.dragPreview && !normalized.probe, "global flag setter should return normalized options");
-    assert(typeof globalThis[setterName] === "function", "formal global setter should be installed");
-    if (typeof globalThis.addEventListener === "function") {
-      assert(changeCount >= 3, "global flag changes should dispatch formal change events");
-      assert(diagnosticsChangeCount >= 3, "global flag changes should dispatch formal diagnostics change events");
-    }
-  } finally {
-    globalThis.removeEventListener?.(SINGLE_STAGE_DIAGNOSTICS_CHANGED_EVENT, handleDiagnosticsFlagChange);
-    globalThis.removeEventListener?.(SINGLE_STAGE_CHANGED_EVENT, handleFlagChange);
-    if (previousFlagDescriptor) Object.defineProperty(globalThis, flagName, previousFlagDescriptor);
-    else delete globalThis[flagName];
-    if (previousSetterDescriptor) Object.defineProperty(globalThis, setterName, previousSetterDescriptor);
-    else delete globalThis[setterName];
-  }
+  const formalDiagnosticsOptions = getSingleStageDiagnosticsOptions({ diagnostics: true, log: true });
+  assert(formalDiagnosticsOptions.diagnostics && formalDiagnosticsOptions.probe && formalDiagnosticsOptions.log, "formal diagnostics option should preserve logging");
 
-  clearIconBoundsRegistry();
-  registerRenderedClientLaunchIconBounds({ area: "desktop", id: folder.id, pageIndex: 0 }, iconRect, { area: "desktop", id: folder.id });
-  registerRenderedClientTopLevelFolderThumbBounds(folder.id, thumbRect, { area: "desktop", id: folder.id });
-  registerStableStageLayoutTopLevelIconTargetBounds(folder.id, iconRect, identityStageMeta({ area: "desktop", id: folder.id }));
-  registerStableStageLayoutTopLevelFolderThumbTargetBounds(folder.id, thumbRect, identityStageMeta({ area: "desktop", id: folder.id }));
+  const probeDiagnosticsOptions = getSingleStageDiagnosticsOptions({ probe: true, log: false });
+  assert(probeDiagnosticsOptions.diagnostics && probeDiagnosticsOptions.probe && !probeDiagnosticsOptions.log, "probe true should enable diagnostics");
+
+  const formalDiagnosticsDisabledOptions = getSingleStageDiagnosticsOptions({ diagnostics: false, log: true, probe: true });
+  assert(!formalDiagnosticsDisabledOptions.diagnostics && !formalDiagnosticsDisabledOptions.probe && formalDiagnosticsDisabledOptions.log, "formal diagnostics false should override probe");
+  assert(isSingleStageDiagnosticsEnabled({ diagnostics: true }), "diagnostics helper should read enabled diagnostics");
+  assert(!isSingleStageDiagnosticsEnabled({ probe: false }), "diagnostics helper should read disabled probe");
+
+  const iconBoundsRegistry = createIconBoundsRegistry();
+  iconBoundsRegistry.clearBounds();
+  iconBoundsRegistry.registerBounds(K.LAUNCH, V.RENDERED, { area: "desktop", id: folder.id, pageIndex: 0 }, iconRect, { area: "desktop", id: folder.id });
+  iconBoundsRegistry.registerBounds(K.FOLDER_THUMB, V.RENDERED, folder.id, thumbRect, { area: "desktop", id: folder.id });
+  iconBoundsRegistry.registerBounds(K.TOP_LEVEL, V.STABLE_STAGE_LAYOUT, folder.id, iconRect, identityStageMeta({ area: "desktop", id: folder.id }));
+  iconBoundsRegistry.registerBounds(K.FOLDER_THUMB, V.STABLE_STAGE_LAYOUT, folder.id, thumbRect, identityStageMeta({ area: "desktop", id: folder.id }));
   for (let index = 0; index < 9; index += 1) {
-    registerStableStageLayoutFolderPreviewChildTargetBounds(folder.id, `app-${index}`, index, {
+    iconBoundsRegistry.registerBounds(K.PREVIEW_CHILD, V.STABLE_STAGE_LAYOUT, { childId: `app-${index}`, folderId: folder.id, slotIndex: index }, {
       height: 16,
       left: thumbRect.left + index,
       top: thumbRect.top + index,
@@ -170,7 +86,7 @@ export function runSingleStageDiagnosticsTests() {
 
   assert(makeSingleStageDiagnosticsPlan(state, { enabled: false }) === null, "disabled diagnostics should not create a plan");
 
-  const plan = makeSingleStageDiagnosticsPlan(state, { enabled: true });
+  const plan = makeSingleStageDiagnosticsPlan(state, { enabled: true, iconBoundsRegistry });
   assert(plan?.folderId === folder.id, "enabled diagnostics should create a plan for the rendered folder");
   assert(plan.stableFolderCloseTarget?.source === "stable-final-close", "closing diagnostics should capture a stable final close target");
   assert(plan.previewRects.length === 9, "diagnostics should only draw the folder thumbnail preview slots");
@@ -186,5 +102,5 @@ export function runSingleStageDiagnosticsTests() {
   assert(plan.stableCloseThumbClientRect.left === thumbRect.left, "diagnostics should expose the stable thumb client rect");
   assert(plan.previewRects[0].stageLayoutRect.left === thumbRect.left, "diagnostics should retain preview child stage layout rects");
 
-  clearIconBoundsRegistry();
+  iconBoundsRegistry.clearBounds();
 }

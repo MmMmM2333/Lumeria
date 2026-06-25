@@ -106,16 +106,16 @@ export function runFolderClosingPreviewSwapControllerTests() {
     const { controller, layer } = createController();
     const swapLayer = controller.ensureLayer();
     assert(swapLayer === layer.closingPreviewSwapLayer, "ensure should reuse the existing swap layer");
-    assert(layer.closingPreviewSwapKeys instanceof Set, "ensure should initialize preview swap keys");
+    assert(controller.handoffCoordinator.getPreviewSwapKeys() instanceof Set, "ensure should initialize preview swap keys");
   }
 
   {
     const { controller, layer } = createController();
     const ghost = makeContainer();
     layer.closingPreviewSwapLayer.addChild(ghost);
-    layer.closingPreviewSwapKeys.add("swap");
+    controller.handoffCoordinator.trackClosePreviewSwap("swap");
     controller.clear();
-    assert(layer.closingPreviewSwapKeys.size === 0, "clear should reset preview swap keys");
+    assert(controller.handoffCoordinator.getPreviewSwapKeys().size === 0, "clear should reset preview swap keys");
     assert(layer.closingPreviewSwapLayer.children.length === 0, "clear should remove swap visuals");
     assert(ghost.destroyed, "clear should destroy swap children");
   }
@@ -133,7 +133,7 @@ export function runFolderClosingPreviewSwapControllerTests() {
       targetStageLayoutRect: { height: 24, left: 40, top: 50, width: 24 },
     }], { iconDuration: 0.01, progress: 1, swapDuration: 0.01 }, () => {});
 
-    assert(layer.closingPreviewSwapKeys.size === 1, "start should track an active preview swap");
+    assert(controller.handoffCoordinator.getPreviewSwapKeys().size === 1, "start should track an active preview swap");
     assert(layer.closingPreviewSwapLayer.children.length === 1, "start should add the swap root to the layer");
     controller.clear();
   }
@@ -163,8 +163,8 @@ export function runFolderClosingPreviewSwapControllerTests() {
     }
 
     assert(finished === 1, "synchronous reduced-motion preview swap should finish once");
-    assert(layer.closingPreviewSwapKeys.size === 0, "synchronous reduced-motion preview swap should clear its active key");
-    assert(!layer.closingPreviewSwapMotionControls?.size, "synchronous reduced-motion preview swap should not register a stale motion control");
+    assert(controller.handoffCoordinator.getPreviewSwapKeys().size === 0, "synchronous reduced-motion preview swap should clear its active key");
+    assert(controller.handoffCoordinator.snapshot().previewSwapMotionControlCount === 0, "synchronous reduced-motion preview swap should not register a stale motion control");
   }
 
   {
@@ -172,13 +172,13 @@ export function runFolderClosingPreviewSwapControllerTests() {
     const root = makeContainer();
     const iconsWrap = makeContainer();
     let finished = false;
-    layer.closingPreviewSwapKeys.add("swap-key");
+    controller.handoffCoordinator.trackClosePreviewSwap("swap-key");
 
     controller.complete({}, "swap-key", root, iconsWrap, () => {
       finished = true;
     });
 
-    assert(!layer.closingPreviewSwapKeys.has("swap-key"), "complete should remove the active key");
+    assert(!controller.handoffCoordinator.hasClosePreviewSwap("swap-key"), "complete should remove the active key");
     assert(finished, "complete should notify the closing controller");
     assert(root.alpha === 1, "complete should restore root alpha");
   }

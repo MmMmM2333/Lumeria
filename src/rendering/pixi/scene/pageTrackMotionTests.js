@@ -58,6 +58,7 @@ export function runPageTrackMotionTests() {
     const runtime = createMotionRuntime({ autoStart: false });
     const motionState = createPageTrackMotionState();
     const pageTrack = { x: 0 };
+    runtime.configureDebug({ enabled: true });
 
     updatePageTrackMotion(motionState, pageTrack, {
       pageSpan: 400,
@@ -114,6 +115,7 @@ export function runPageTrackMotionTests() {
     const runtime = createMotionRuntime({ autoStart: false });
     const motionState = createPageTrackMotionState();
     const pageTrack = { x: 0 };
+    runtime.configureDebug({ enabled: true });
 
     updatePageTrackMotion(motionState, pageTrack, {
       pageSpan: 400,
@@ -172,6 +174,7 @@ export function runPageTrackMotionTests() {
     const runtime = createMotionRuntime({ autoStart: false });
     const motionState = createPageTrackMotionState();
     const pageTrack = { x: 0 };
+    runtime.configureDebug({ enabled: true });
 
     updatePageTrackMotion(motionState, pageTrack, {
       pageSpan: 400,
@@ -209,6 +212,33 @@ export function runPageTrackMotionTests() {
     assert(motionState.mode === "spring", "missing scrub state should use the ordinary spring path");
     assert(runUntil(runtime, () => motionState.control.completed), "ordinary page-track spring should complete");
     assert(nearlyEqual(pageTrack.x, -600), `ordinary spring should land on the target page, got ${pageTrack.x}`);
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false });
+    const motionState = createPageTrackMotionState();
+    const pageTrack = { x: 0 };
+    let frameCount = 0;
+
+    updatePageTrackMotion(motionState, pageTrack, {
+      onFrame: () => { frameCount += 1; },
+      pageIndex: 0,
+      pageSpan: 300,
+      runtime,
+    });
+
+    assert(!runtime.hasActiveWork(), "page track should not create a spring when it is already at the target");
+    assert(frameCount === 0, "unchanged page track target should not emit frame callbacks");
+
+    updatePageTrackMotion(motionState, pageTrack, {
+      onFrame: () => { frameCount += 1; },
+      pageIndex: 0,
+      pageSpan: 300,
+      runtime,
+    });
+
+    assert(!runtime.hasActiveWork(), "reapplying the same page track target should stay idle");
+    assert(frameCount === 0, "reapplying the same page track target should stay silent");
   }
 
   {

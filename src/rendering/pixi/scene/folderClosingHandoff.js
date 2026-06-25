@@ -1,6 +1,8 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { clientRectToStageVisualRect } from "../geometry/stageCoordinates.js";
+import { ensureFolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
 import { getStableFolderClosePresentationHitRects } from "./folderOverlayTargets.js";
+import { ensureLayerTransitionPort } from "./layerTransitionPort.js";
 
 function isUsableRect(rect) {
   return Boolean(rect) && rect.width > 0 && rect.height > 0;
@@ -15,28 +17,33 @@ function isPointInRect(x, y, rect) {
 }
 
 export function cancelClosingHandoffCleanup(layer, cancelAnimationFrame = globalThis.cancelAnimationFrame) {
-  layer.closingHandoffCleanupToken = (Number(layer.closingHandoffCleanupToken) || 0) + 1;
-  if (layer.closingHandoffCleanupFrame == null) return;
-  if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(layer.closingHandoffCleanupFrame);
-  layer.closingHandoffCleanupFrame = null;
+  ensureFolderHandoffCoordinator(layer).cancelHandoffCleanup(cancelAnimationFrame);
 }
 
 export function applyClosingHandoffOnlyOverlayState(layer) {
-  layer.hitArea = null;
-  layer.panel.visible = false;
-  layer.pageTrack.visible = false;
+  const transitionPort = ensureLayerTransitionPort(layer);
+  transitionPort.setHitArea(null);
+  transitionPort.setPanelVisible(false);
+  transitionPort.setPageTrackVisible(false);
+  if (layer.pageDotsLayer) {
+    layer.pageDotsLayer.visible = false;
+    layer.pageDotsLayer.eventMode = "none";
+    layer.pageDotsLayer.hitArea = null;
+  }
+  layer.notifyTitleFrame?.(null);
   return null;
 }
 
 export function getClosingPresentationStageHitRects(layer) {
+  const closeSnapshot = layer?.folderHandoff?.snapshot?.() || null;
   const targetRects = getStableFolderClosePresentationHitRects({
-    handoffRect: layer?.closingFolderHandoffRect,
-    stableFolderCloseTarget: layer?.closingFolderHandoffTarget || layer?.stableFolderCloseTarget,
+    handoffRect: closeSnapshot?.handoffRect,
+    stableFolderCloseTarget: closeSnapshot?.handoffTarget || layer?.stableFolderCloseTarget,
   })
     .map((rect) => clientRectToStageVisualRect(rect, layer?.stageRect))
     .filter(isUsableRect);
   if (targetRects.length) return targetRects;
-  const frameRect = layer?.frameGhostState;
+  const frameRect = ensureLayerTransitionPort(layer).getClosingPresentationFrameRect();
   if (isUsableRect(frameRect)) return [frameRect];
   return [];
 }
@@ -60,26 +67,12 @@ export function applyClosingPresentationOverlayState(layer) {
 }
 
 export function scheduleClosingHandoffCleanup(layer, cleanup, scheduler = globalThis) {
-  cancelClosingHandoffCleanup(layer, scheduler.cancelAnimationFrame);
-  const token = (Number(layer.closingHandoffCleanupToken) || 0) + 1;
-  layer.closingHandoffCleanupToken = token;
-
-  const runCleanup = () => {
-    if (token !== layer.closingHandoffCleanupToken) return;
-    layer.closingHandoffCleanupFrame = null;
-    cleanup();
-  };
-
-  if (typeof scheduler.requestAnimationFrame === "function") {
-    layer.closingHandoffCleanupFrame = scheduler.requestAnimationFrame(runCleanup);
-    return;
-  }
-  runCleanup();
+  ensureFolderHandoffCoordinator(layer).scheduleHandoffCleanup(cleanup, scheduler);
 }
 
 export function finishClosingHandoff(layer, state, cleanup, scheduler = globalThis) {
   layer.clearClosingGhostRevealTimer();
-  layer.pageTrack.visible = false;
+  ensureLayerTransitionPort(layer).setPageTrackVisible(false);
   scheduleClosingHandoffCleanup(layer, cleanup, scheduler);
   layer.flushCompletedClosingControllerGhosts(state);
 }

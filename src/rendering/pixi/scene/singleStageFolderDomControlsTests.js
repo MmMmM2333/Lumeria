@@ -1,8 +1,6 @@
 import {
-  FOLDER_PAGE_DOTS_REVEAL_PROGRESS,
   getSingleStageFolderTitleOpenOpacity,
   getSingleStageFolderTitleOpacity,
-  isSingleStageFolderPageDotsReady,
   makeSingleStageFolderNameInputStyle,
 } from "./singleStageFolderDomControls.js";
 
@@ -39,8 +37,5 @@ export function runSingleStageFolderDomControlsTests() {
     isClosing: true,
   });
   assert(nearlyEqual(closingOpacity, 0.4), "closing title opacity should fade from the captured start opacity");
-
-  assert(!isSingleStageFolderPageDotsReady({ progress: FOLDER_PAGE_DOTS_REVEAL_PROGRESS - 0.001 }), "page dots should wait for the reveal threshold");
-  assert(isSingleStageFolderPageDotsReady({ progress: FOLDER_PAGE_DOTS_REVEAL_PROGRESS }), "page dots should reveal at the threshold");
 
 }

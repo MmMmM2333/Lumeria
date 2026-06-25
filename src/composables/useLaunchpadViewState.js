@@ -134,7 +134,7 @@ export function useLaunchpadViewState(options) {
     return { opacity: 1, filter: "blur(0px)" };
   });
   const homeChromeStyle = computed(() => ({
-    pointerEvents: shouldHideHomeShell.value || isHomeInteractionDisabled.value ? "none" : "auto",
+    pointerEvents: options.isFolderLayerActive.value || shouldHideHomeShell.value || isHomeInteractionDisabled.value ? "none" : "auto",
   }));
 
   return {

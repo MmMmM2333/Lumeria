@@ -1,41 +1,22 @@
 import { Container, Graphics, Text } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { getDesktopGridMetrics, getGridSlotRect, makeRect } from "../geometry/gridGeometry.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
-import { clientRectToStageVisualRect, getStageScale, makeStageVirtualElement, snapRectToDevicePixels, stageLayoutRecordToClientRect } from "../geometry/stageCoordinates.js";
+import { clientRectToStageVisualRect, stageLayoutRecordToClientRect } from "../geometry/stageCoordinates.js";
 import {
-  clearFolderPreviewChildBounds,
-  clearLaunchIconBounds,
-  getLiveClientFolderPreviewChildTargetBounds,
-  getLiveClientTopLevelFolderThumbTargetBounds,
-  getRenderedClientFolderPreviewChildBounds,
-  getRenderedClientTopLevelFolderThumbBounds,
-  getStableStageLayoutFolderPreviewChildTargetRecord,
-  getStableStageLayoutTopLevelFolderThumbTargetRecord,
-  registerLiveClientFolderPreviewChildTargetBounds,
-  registerLiveClientLaunchIconTargetBounds,
-  registerLiveClientTopLevelFolderThumbTargetBounds,
-  registerLiveClientTopLevelIconTargetBounds,
-  registerRenderedClientFolderPreviewChildBounds,
-  registerRenderedClientLaunchIconBounds,
-  registerRenderedClientTopLevelFolderThumbBounds,
-  registerStableStageLayoutLaunchIconTargetBounds,
-  registerStableStageLayoutFolderPreviewChildTargetBounds,
-  registerStableStageLayoutTopLevelFolderThumbTargetBounds,
-  registerStableStageLayoutTopLevelIconTargetBounds,
+  ICON_BOUNDS_KIND,
+  ICON_BOUNDS_VARIANT,
 } from "../geometry/iconBoundsRegistry.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
-import { desktopVisualSpring, pageTrackSpring, stopTargetSprings } from "../animation/springMotion.js";
-import { killMotionOf, transition } from "../animation/motionTween.js";
+import { motionSprings } from "../animation/motionPresets.js";
+import { killMotionOf, motion } from "../animation/motionTween.js";
 import {
-  isActiveDraggedLaunchItem,
-  isReleaseGhostLaunchItem,
-} from "./dragVisibility.js";
+  readLaunchpadDebugValue,
+  setLaunchpadDebugValue,
+} from "../debugNamespace.js";
 import { makeDesktopBoundsRegistration } from "./desktopBoundsRegistration.js";
 import { resolveDesktopBoundsTargets, resolveFolderPreviewChildBoundsTargets } from "./desktopBoundsTargets.js";
-import { getDesktopIconSizing } from "./desktopIconSizing.js";
 import { makeFolderThumbPreviewRect } from "./folderOverlayTargets.js";
-import { makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
+import { makeSyntheticPointerEvent } from "./iconSceneHelpers.js";
 import { FolderOverlayLayer } from "./FolderOverlayLayer.js";
 import { FolderVisualCommitQueue } from "./folderVisualCommitQueue.js";
 import { FolderVisualOwnershipRegistry } from "./folderVisualOwnershipRegistry.js";
@@ -43,144 +24,44 @@ import { SingleStageDiagnosticsLayer } from "./singleStageDiagnostics.js";
 import { DragPreviewLayer } from "./DragPreviewLayer.js";
 import { IconNode } from "../nodes/IconNode.js";
 import {
+  getFolderHandoffDebugOptions,
+  rectDelta,
+  roundRect,
+} from "./folderHandoffDebug.js";
+import {
   cancelPageTrackMotion,
   createPageTrackMotionState,
   updatePageTrackMotion,
 } from "./pageTrackMotion.js";
+import {
+  buildDesktopRenderPlan,
+  getDesktopSourceGhostedIdsFromOwnership,
+  hasFolderClosingHandoffId,
+  isDesktopLayoutTargetChanged,
+  isFolderLayerHandoffActive,
+  isFolderLayerHoldingDesktopSource,
+  isStaleHiddenFolderHandoffEntry,
+  normalizeDesktopHandoffState,
+  normalizeFolderIdSet,
+  readNumber,
+  resolveDesktopVisualAlpha,
+  resolveLaunchpadVisualAlpha,
+  resolveLaunchpadVisualTransform,
+  shouldFinishFolderHandoff,
+  shouldFinishFolderHandoffEntry,
+} from "./desktopRenderPlan.js";
 
-function sourceArea(source) {
-  if (source.type === "folder") return "folder";
-  if (source.type === "search") return "search";
-  return "desktop";
-}
+export {
+  normalizeDesktopHandoffState,
+  resolveDesktopVisualAlpha,
+  resolveLaunchpadVisualAlpha,
+  resolveLaunchpadVisualTransform,
+  shouldFinishFolderHandoff,
+  shouldFinishFolderHandoffEntry,
+};
 
-function readNumber(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function clamp01(value) {
-  return Math.max(0, Math.min(1, readNumber(value, 0)));
-}
-
-function hasFolderSourceGhostedId(state, folderId) {
-  if (!folderId) return false;
-  const ids = state.folderSourceGhostedIds;
-  if (ids instanceof Set) return ids.has(folderId);
-  if (Array.isArray(ids)) return ids.includes(folderId);
-  return state.folderSourceGhostedId === folderId;
-}
-
-function hasRawFolderSourceGhosting(state = {}, folderId = null) {
-  return hasFolderSourceGhostedId(state, folderId) ||
-    state.isFolderOpeningPreviewFrameGhosted?.(folderId) === true;
-}
-
-function hasFolderClosingHandoffId(state = {}, folderId) {
-  if (!folderId) return false;
-  if (state.folderClosingHandoffId === folderId) return true;
-  const ids = state.folderClosingHandoffIds;
-  if (ids instanceof Set) return ids.has(folderId);
-  if (Array.isArray(ids)) return ids.includes(folderId);
-  return false;
-}
-
-function hasAnyFolderClosingHandoffId(state = {}) {
-  return Boolean(
-    state.folderClosingHandoffId ||
-      (state.folderClosingHandoffIds instanceof Set && state.folderClosingHandoffIds.size > 0) ||
-      (Array.isArray(state.folderClosingHandoffIds) && state.folderClosingHandoffIds.length > 0)
-  );
-}
-
-function isFolderLayerHandoffActive(folderLayer = null, folderId = null) {
-  if (!folderLayer?.closingHandoffActive) return false;
-  if (!folderId) return true;
-  const activeFolderId = folderLayer.closingGhostFolderId || folderLayer.currentFolderId || null;
-  return !activeFolderId || activeFolderId === folderId;
-}
-
-function isFolderLayerHoldingDesktopSource(folderLayer = null, folderId = null) {
-  if (!folderId) return false;
-  const ids = folderLayer?.getDesktopSourceGhostedIds?.();
-  return ids?.has?.(folderId) === true;
-}
-
-function mergeFolderSourceGhostedIds(...sources) {
-  const result = new Set();
-  const add = (value) => {
-    if (!value) return;
-    if (value instanceof Set || Array.isArray(value)) {
-      for (const id of value) if (id) result.add(id);
-      return;
-    }
-    result.add(value);
-  };
-  for (const source of sources) add(source);
-  return result;
-}
-
-function getDesktopSourceGhostedIdsFromOwnership(visualOwnership) {
-  const ids = new Set();
-  for (const entry of visualOwnership?.snapshot?.() || []) {
-    if (!entry.key?.startsWith("desktopSource:")) continue;
-    const folderId = entry.owner?.folderId || entry.key.slice("desktopSource:".length);
-    if (folderId) ids.add(folderId);
-  }
-  return ids;
-}
-
-export function resolveDesktopVisualAlpha(state = {}) {
-  return clamp01(state.desktopVisualAlpha ?? 1);
-}
-
-export function resolveLaunchpadVisualAlpha(state = {}) {
-  return clamp01(state.launchpadVisualAlpha ?? 1);
-}
-
-export function resolveLaunchpadVisualTransform(state = {}) {
-  const transform = state.launchpadVisualTransform || {};
-  return {
-    scale: Math.max(0.01, readNumber(transform.scale, 1)),
-    y: readNumber(transform.y, 0),
-  };
-}
-
-export function shouldFinishFolderHandoff(state = {}, folderLayer = null) {
-  return !hasAnyFolderClosingHandoffId(state) && !folderLayer?.closingHandoffActive;
-}
-
-export function shouldFinishFolderHandoffEntry(state = {}, folderLayer = null, folderId = null) {
-  return !hasFolderClosingHandoffId(state, folderId) &&
-    !isFolderLayerHandoffActive(folderLayer, folderId) &&
-    !isFolderLayerHoldingDesktopSource(folderLayer, folderId);
-}
-
-function getFolderHandoffDebugOptions() {
-  const value = globalThis.__LP_DEBUG_FOLDER_HANDOFF__;
-  if (!value) return null;
-  if (value === true) return { lineWidth: 3, log: true, overlay: true };
-  if (typeof value === "object") {
-    return {
-      lineWidth: Math.max(1, Number(value.lineWidth) || 3),
-      log: value.log !== false,
-      overlay: value.overlay !== false,
-      timeline: value.timeline === true,
-    };
-  }
-  return null;
-}
-
-function roundRect(rect) {
-  if (!rect) return null;
-  const round = (value) => Math.round((Number(value) || 0) * 100) / 100;
-  return {
-    height: round(rect.height),
-    left: round(rect.left),
-    top: round(rect.top),
-    width: round(rect.width),
-  };
-}
+const BOUNDS_KIND = ICON_BOUNDS_KIND;
+const BOUNDS_VARIANT = ICON_BOUNDS_VARIANT;
 
 function projectStageLayoutRecordToClient(record) {
   return stageLayoutRecordToClientRect(record);
@@ -207,17 +88,6 @@ function roundTransformObject(object) {
     visible: object.visible ?? null,
     x: pointValue(object.position || object, "x"),
     y: pointValue(object.position || object, "y"),
-  };
-}
-
-function rectDelta(rect, target) {
-  if (!rect || !target) return null;
-  const round = (value) => Math.round((Number(value) || 0) * 1000) / 1000;
-  return {
-    height: round(rect.height - target.height),
-    left: round(rect.left - target.left),
-    top: round(rect.top - target.top),
-    width: round(rect.width - target.width),
   };
 }
 
@@ -267,72 +137,10 @@ function drawDebugRect(graphics, rect, stageRect, color, alpha = 0.95, width = 3
     .stroke({ alpha, color, width });
 }
 
-function makeLayoutTargetFromScreenRect(state, stageRect, targetX, rect, visualOffsetY) {
-  if (!rect) return null;
-  const { scaleX, scaleY } = getStageScale(stageRect, state.width, state.height);
-  const stageLeft = Number(stageRect?.left) || 0;
-  const stageTop = Number(stageRect?.top) || 0;
-  const visualCenterX = (rect.left - stageLeft + rect.width / 2) / scaleX;
-  const visualCenterY = (rect.top - stageTop + rect.height / 2) / scaleY;
-  return {
-    x: visualCenterX - targetX,
-    y: visualCenterY - visualOffsetY,
-  };
-}
-
-function makeSnappedFolderLayoutTarget(state, targetX, x, y, iconSize, visualOffsetY) {
-  const targetStageRect = state.stageRect;
-  const targetBounds = snapRectToDevicePixels(makeTargetIconBounds(
-    targetStageRect,
-    state.width,
-    state.height,
-    targetX + x,
-    y,
-    iconSize,
-    visualOffsetY
-  ), state.deviceResolution);
-  return makeLayoutTargetFromScreenRect(state, targetStageRect, targetX, targetBounds, visualOffsetY) || { x, y };
-}
-
-function makeFolderStableScreenTarget(state, targetX, layoutTarget, iconSize, visualOffsetY) {
-  return snapRectToDevicePixels(makeTargetIconBounds(
-    state.stageRect,
-    state.width,
-    state.height,
-    targetX + layoutTarget.x,
-    layoutTarget.y,
-    iconSize,
-    visualOffsetY
-  ), state.deviceResolution);
-}
-
-function makeFolderPinnedLayoutTarget(state, targetX, stableScreenTarget, iconSize, visualOffsetY) {
-  const target = makeLayoutTargetFromScreenRect(state, state.stageRect, targetX, stableScreenTarget, visualOffsetY);
-  if (!target) return null;
-  const { scaleX, scaleY } = getStageScale(state.stageRect, state.width, state.height);
-  return {
-    ...target,
-    scaleX: stableScreenTarget.width / Math.max(1, iconSize * scaleX),
-    scaleY: stableScreenTarget.height / Math.max(1, iconSize * scaleY),
-  };
-}
-
-function getDesktopFrame(state) {
-  const frame = state.desktopFrame || {};
-  const width = Math.max(1, readNumber(frame.width, state.width));
-  const height = Math.max(1, readNumber(frame.height, state.height));
-  return {
-    height,
-    left: readNumber(frame.left, 0),
-    top: readNumber(frame.top, 0),
-    width,
-  };
-}
-
 function springIconLayoutPosition(node, layoutTarget, markBoundsDirty) {
-  transition(node)
+  motion(node)
     .layout()
-    .spring(pageTrackSpring)
+    .spring(motionSprings.layout)
     .interrupt("retarget")
     .to({
       onComplete: markBoundsDirty,
@@ -343,8 +151,8 @@ function springIconLayoutPosition(node, layoutTarget, markBoundsDirty) {
     .start();
 }
 
-function transitionSpringTo(target, vars, config, options = {}) {
-  transition(target)
+function motionSpringTo(target, vars, config, options = {}) {
+  motion(target)
     .layout()
     .spring(config)
     .interrupt("retarget")
@@ -373,17 +181,29 @@ export class DesktopLayer extends Container {
     this.onFolderPanelPointerDown = options.onFolderPanelPointerDown || (() => {});
     this.onFolderTitleFrameChange = options.onFolderTitleFrameChange || (() => {});
     this.onDragReleaseComplete = options.onDragReleaseComplete || (() => {});
+    if (!options.iconBoundsRegistry) throw new Error("DesktopLayer requires iconBoundsRegistry");
+    this.iconBoundsRegistry = options.iconBoundsRegistry;
     this.visualOwnership = options.visualOwnership || new FolderVisualOwnershipRegistry();
     this.visualCommitQueue = options.visualCommitQueue || new FolderVisualCommitQueue();
     this.lastFolderSourceGhostingState = null;
     this.unsubscribeVisualOwnership = this.visualOwnership.subscribe(() => this.commitFolderSourceGhosting());
     this.singleStageFolderLayer = new FolderOverlayLayer({
       detachedClosingVisualLayer: this.desktopClosingUnderlayLayer,
+      iconBoundsRegistry: this.iconBoundsRegistry,
       onDesktopSourceGhostingChange: () => this.commitFolderSourceGhosting(),
       onClosingFolderPointerDown: (folderId, event) => this.onClosingFolderPointerDown(folderId, event),
       onClosingHandoffPrepare: (folderId) => this.startClosingFolderHandoffNow(folderId, { resetVisual: true, revealLabel: false }),
       onClosingHandoffReady: (folderId) => this.startClosingFolderHandoffNow(folderId),
       onClosingHandoffVisualRelease: (folderId) => this.releaseClosingFolderHandoffVisual(folderId),
+      // Authoritative "is this folder's real desktop icon currently visible". The
+      // overlay/coordinator's own released flags can desync from the desktop handoff
+      // entry across the cross-layer round-trip; the open-interrupt guard must use
+      // this desktop truth so it never re-detaches (and re-hides) an already-revealed
+      // source icon.
+      isHandoffSourceVisible: (folderId) => {
+        const entry = this.getFolderHandoffEntry(folderId);
+        return !entry || entry.visualReleased === true;
+      },
       onIconAction: (action, originalEvent, item, source, iconNode) =>
         this.handleIconAction(action, originalEvent, item, source, iconNode),
       onInternalActivityChange: (active, folderId = null) => this.onFolderInternalActivityChange(active, folderId),
@@ -398,13 +218,14 @@ export class DesktopLayer extends Container {
     this.singleStageDragPreviewLayer = new DragPreviewLayer({
       onReleaseComplete: (release) => this.onDragReleaseComplete(release),
     });
-    this.folderHandoffNode = null;
     this.folderHandoffNodes = new Map();
+    this.primaryFolderHandoffId = null;
     this.hasDesktopVisualAlpha = false;
     this.hasDesktopVisualTransform = false;
     this.hasFolderOverlayAlpha = false;
     this.hasFolderOverlayTransform = false;
     this.lastFolderHandoffDebugSnapshot = null;
+    this.lastDesktopRenderPlan = null;
     this.iconNodes = new Map();
     this.pageTrackMotion = createPageTrackMotionState();
     this.boundsRegistration = null;
@@ -426,13 +247,33 @@ export class DesktopLayer extends Container {
     this.describeMotionTargets();
   }
 
+  get folderHandoffNode() {
+    return this.getPrimaryFolderHandoffNode();
+  }
+
+  set folderHandoffNode(entry) {
+    if (!entry) {
+      this.primaryFolderHandoffId = null;
+      return;
+    }
+    if (!entry.folderId) return;
+    this.getFolderHandoffNodes().set(entry.folderId, entry);
+    this.primaryFolderHandoffId = entry.folderId;
+  }
+
   update(state) {
-    const effectiveFolderSourceGhostedIds = mergeFolderSourceGhostedIds(
+    state = normalizeDesktopHandoffState(state);
+    const effectiveFolderSourceGhostedIds = normalizeFolderIdSet(
       state.folderSourceGhostedIds,
-      state.folderSourceGhostedId,
       getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership),
       this.singleStageFolderLayer.getDesktopSourceGhostedIds?.()
     );
+    const plan = buildDesktopRenderPlan(state, {
+      effectiveFolderSourceGhostedIds,
+      folderHandoffEntries: this.getFolderHandoffNodes(),
+      folderLayer: this.singleStageFolderLayer,
+    });
+    state = plan.state;
     this.stageRect = state.stageRect;
     this.widthValue = state.width;
     this.heightValue = state.height;
@@ -441,76 +282,39 @@ export class DesktopLayer extends Container {
     this.applyDesktopVisualAlpha(state);
     this.applyFolderOverlayTransform(state);
     this.applyFolderOverlayAlpha(state);
-    const pages = state.activePages || [];
-    const activePageIndex = state.activePageIndex || 0;
-    const desktopFrame = getDesktopFrame(state);
-    const pageWidth = desktopFrame.width;
-    const targetX = -activePageIndex * pageWidth;
-    const shouldSnap = state.shouldSnapTrack;
     const markBoundsDirty = () => this.markInteractiveBoundsDirty();
+    const previousPlan = this.lastDesktopRenderPlan;
+    const shouldApplyDesktopPlan = previousPlan?.signature !== plan.signature;
+    this.lastDesktopRenderPlan = plan;
 
-    clearLaunchIconBounds(state.isSearchMode ? "search" : "desktop");
-    for (const page of pages) {
-      for (const item of page || []) {
-        if (item?.type === "folder") clearFolderPreviewChildBounds(item.id);
+    if (shouldApplyDesktopPlan) {
+      const previousEntries = new Map((previousPlan?.entries || []).map((entry) => [entry.key, entry]));
+      this.iconBoundsRegistry.clearBounds(plan.clearLaunchArea);
+      for (const folderId of plan.clearFolderPreviewChildIds) {
+        this.iconBoundsRegistry.clearBounds({ folderId, kind: BOUNDS_KIND.PREVIEW_CHILD });
       }
-    }
-
-    const seen = new Set();
-    const boundsEntries = [];
-    pages.forEach((page, pageIndex) => {
-      const visibleItems = state.getVisibleDesktopPage(page);
-      const renderMode = state.getDesktopPageRenderMode?.(pageIndex) || "interactive";
-      const isInteractivePage = renderMode === "interactive";
-      const metrics = getDesktopGridMetrics({
-        cols: state.gridCols,
-        height: desktopFrame.height,
-        isSearchMode: state.isSearchMode,
-        paddingTop: state.desktopGridDebugOptions?.paddingTop,
-        rows: state.gridRows,
-        visibleCount: visibleItems.length,
-        width: desktopFrame.width,
-      });
-      if (typeof state.setPageRef === "function") {
-        const gridRect = makeRect(
-          desktopFrame.left + metrics.gridLeft,
-          desktopFrame.top + metrics.gridTop,
-          metrics.gridWidth,
-          metrics.gridHeight
-        );
-        state.setPageRef(makeStageVirtualElement(state.stageRect, state.width, state.height, gridRect), pageIndex);
+      for (const pageRef of plan.pageRefs) {
+        state.setPageRef(pageRef.element, pageRef.pageIndex);
       }
-      if (renderMode === "empty") return;
 
-      visibleItems.forEach((item, index) => {
-        const slot = getGridSlotRect(metrics, index);
-        const sizing = getDesktopIconSizing(state, slot);
-        const x = pageIndex * pageWidth + desktopFrame.left + slot.left + slot.width / 2;
-        const y = desktopFrame.top + slot.top + slot.height / 2;
-        const visualOffsetY = getIconVisualOffsetY(state.isTextlessMode);
-        const stableLayoutTarget = item?.type === "folder"
-          ? makeSnappedFolderLayoutTarget(state, targetX, x, y, sizing.iconSize, visualOffsetY)
-          : { x, y };
-        const stableScreenTarget = item?.type === "folder"
-          ? makeFolderStableScreenTarget(state, targetX, stableLayoutTarget, sizing.iconSize, visualOffsetY)
-          : null;
-        let existingFolderHandoffEntry = item?.type === "folder" ? this.getFolderHandoffEntry(item.id) : null;
-        const isActiveFolderClosingHandoff = item?.type === "folder" && hasFolderClosingHandoffId(state, item.id);
-        const isRawFolderSourceGhosted = item?.type === "folder" && hasRawFolderSourceGhosting(state, item.id);
-        if (existingFolderHandoffEntry && !isActiveFolderClosingHandoff && isRawFolderSourceGhosted) {
-          this.clearFolderHandoffNode(item.id);
-          existingFolderHandoffEntry = null;
-        }
-        const isExistingFolderHandoff = Boolean(existingFolderHandoffEntry);
-        const isFolderClosingHandoff = isActiveFolderClosingHandoff || isExistingFolderHandoff;
-        const handoffLayoutTarget = isFolderClosingHandoff
-          ? makeFolderPinnedLayoutTarget(state, targetX, stableScreenTarget, sizing.iconSize, visualOffsetY) || stableLayoutTarget
-          : null;
-        const layoutTarget = handoffLayoutTarget || stableLayoutTarget;
-        const source = { type: state.isSearchMode ? "search" : "page", pageIndex, index };
-        const key = `${source.type}:${pageIndex}:${item.id}`;
-        const isActiveDraggedItem = isActiveDraggedLaunchItem(item, state);
-        const isReleaseGhostItem = isReleaseGhostLaunchItem(item, state);
+      const seen = new Set();
+      const boundsEntries = [];
+      for (const entry of plan.entries) {
+        const {
+          effectiveFolderHandoffEntry,
+          isActiveFolderClosingHandoff,
+          isFolderClosingHandoff,
+          item,
+          key,
+          layoutTarget,
+          nodeState,
+          shouldRetireStaleHandoff,
+        } = entry;
+        const previousEntry = previousEntries.get(key);
+        const shouldSpringLayout = !previousEntry ||
+          previousEntry.isFolderClosingHandoff !== isFolderClosingHandoff ||
+          isDesktopLayoutTargetChanged(previousEntry.layoutTarget, layoutTarget);
+        if (shouldRetireStaleHandoff) this.clearFolderHandoffNode(item.id);
         seen.add(key);
         let node = this.iconNodes.get(key);
         if (!node) {
@@ -523,7 +327,7 @@ export class DesktopLayer extends Container {
           this.iconNodes.set(key, node);
           this.pageTrack.addChild(node);
           if (!isFolderClosingHandoff) {
-            transition(node)
+            motion(node)
               .preset("fade")
               .layout()
               .interrupt("retarget")
@@ -531,50 +335,14 @@ export class DesktopLayer extends Container {
               .start();
             springIconLayoutPosition(node, layoutTarget, markBoundsDirty);
           }
-        } else if (!isFolderClosingHandoff) {
+        } else if (!isFolderClosingHandoff && shouldSpringLayout) {
           springIconLayoutPosition(node, layoutTarget, markBoundsDirty);
         }
 
         node.stageRect = state.stageRect;
-        const isFolderSourceGhosted = item.type === "folder" && !isFolderClosingHandoff && (
-          effectiveFolderSourceGhostedIds.has(item.id) ||
-          state.isFolderOpeningPreviewFrameGhosted?.(item.id)
-        );
-        node.__folderSourceGhostedByOwnership = Boolean(isFolderSourceGhosted);
-        const suppressLabelRevealAfterGhost = isReleaseGhostItem || isFolderClosingHandoff;
-        node.setState({
-          cellHeight: slot.height,
-          cellWidth: slot.width,
-          compact: sizing.compact,
-          dragging: !isFolderClosingHandoff && !state.isSearchMode && isActiveDraggedItem,
-          draggable: isInteractivePage && !state.isSearchMode && !isFolderClosingHandoff,
-          dropTarget: isInteractivePage && !state.isSearchMode && !isFolderClosingHandoff && state.dragFolderTargetId === item.id,
-          editing: isInteractivePage && !isFolderClosingHandoff && state.isEditMode,
-          folderHoverState: isInteractivePage && !state.isSearchMode && !isFolderClosingHandoff && state.dragFolderHoverState?.targetId === item.id
-            ? state.dragFolderHoverState
-            : null,
-          folderPreviewPageSize: state.folderPageSize,
-          ghosted: !isFolderClosingHandoff && (
-            isReleaseGhostItem || (isInteractivePage && isFolderSourceGhosted)
-          ),
-          hasCustomIcon: Boolean(item.customIconPath || item.customIconDataUrl),
-          iconSize: sizing.iconSize,
-          interactive: isInteractivePage && !isFolderClosingHandoff,
-          item,
-          jiggleSeed: pageIndex * 100 + index,
-          launchTargetStatus: isInteractivePage && !isFolderClosingHandoff && state.showMissingLaunchTargetBadge ? state.launchTargetStatusById?.[item.id] : null,
-          opening: !isFolderClosingHandoff && isInteractivePage && state.isIconOpening?.(state.isSearchMode ? "search" : "desktop", item.id, pageIndex),
-          preserveNodeScale: isFolderClosingHandoff,
-          removable: item.type === "app",
-          selected: !isFolderClosingHandoff && isInteractivePage && state.isIconSelected?.(state.isSearchMode ? "search" : "desktop", item.id, pageIndex),
-          source,
-          singleLineLabel: sizing.singleLineLabel,
-          stageHeight: state.height,
-          stageWidth: state.width,
-          suppressLabelRevealAfterGhost,
-          textless: state.isTextlessMode,
-        });
-        let folderHandoffEntry = existingFolderHandoffEntry;
+        node.__folderSourceGhostedByOwnership = Boolean(entry.isFolderSourceGhosted);
+        node.setState(nodeState);
+        let folderHandoffEntry = effectiveFolderHandoffEntry;
         if (isActiveFolderClosingHandoff) {
           this.ensureFolderHandoffNode(item.id, node, layoutTarget);
           folderHandoffEntry = this.getFolderHandoffEntry(item.id);
@@ -583,66 +351,66 @@ export class DesktopLayer extends Container {
         }
         if (isFolderClosingHandoff && folderHandoffEntry?.visualReleased) this.revealFolderHandoffLabel(folderHandoffEntry);
 
-        if (isInteractivePage) {
-          const area = sourceArea(source);
+        if (entry.boundsEntry) {
           boundsEntries.push({
-            area,
-            handoffLayoutTarget,
-            index,
-            item,
+            ...entry.boundsEntry,
             node,
-            pageIndex,
-            sizing,
-            targetX,
-            x: stableLayoutTarget.x,
-            y: stableLayoutTarget.y,
           });
         }
+      }
+
+      this.emptyText.visible = plan.emptyText.visible;
+      this.emptyText.position.set(plan.emptyText.x, plan.emptyText.y);
+      for (const [key, node] of this.iconNodes) {
+        if (seen.has(key)) continue;
+        this.iconNodes.delete(key);
+        killMotionOf(node);
+        motion(node)
+          .preset("fade")
+          .layout()
+          .interrupt("retarget")
+          .to({ alpha: 0, onComplete: () => node.destroy({ children: true }) })
+          .start();
+      }
+
+      this.boundsRegistration = makeDesktopBoundsRegistration(state, boundsEntries, plan.desktopFrame);
+      updatePageTrackMotion(this.pageTrackMotion, this.pageTrack, {
+        debugMetadata: plan.pageTrack.debugMetadata,
+        onFrame: markBoundsDirty,
+        pageIndex: plan.pageTrack.pageIndex,
+        pageSpan: plan.pageTrack.pageSpan,
+        scrub: plan.pageTrack.scrub,
+        sourceLabel: plan.pageTrack.sourceLabel,
+        snap: plan.pageTrack.snap,
+        springConfig: motionSprings.layout,
       });
-    });
-
-    this.emptyText.visible = Boolean(state.isSearchMode && pages[activePageIndex]?.length === 0);
-    this.emptyText.position.set(desktopFrame.left + desktopFrame.width / 2, desktopFrame.top + desktopFrame.height / 2);
-    for (const [key, node] of this.iconNodes) {
-      if (seen.has(key)) continue;
-      this.iconNodes.delete(key);
-      killMotionOf(node);
-      stopTargetSprings(node);
-      transition(node)
-        .preset("fade")
-        .layout()
-        .interrupt("retarget")
-        .to({ alpha: 0, onComplete: () => node.destroy({ children: true }) })
-        .start();
+      this.flushInteractiveBounds({ force: true });
     }
-
-    this.boundsRegistration = makeDesktopBoundsRegistration(state, boundsEntries, desktopFrame);
-    updatePageTrackMotion(this.pageTrackMotion, this.pageTrack, {
-      debugMetadata: {
-        kind: "PageTrack",
-        label: "Desktop page track",
-        layer: "desktop",
-      },
-      onFrame: markBoundsDirty,
-      pageIndex: activePageIndex,
-      pageSpan: pageWidth,
-      scrub: state.pageTrackScrub,
-      sourceLabel: "desktop.pageTrack",
-      snap: shouldSnap,
-      springConfig: pageTrackSpring,
-    });
-    this.flushInteractiveBounds({ force: true });
     this.updateSingleStageFolderLayer(state);
     this.applyFolderSourceGhosting(state);
     this.updateSingleStageDragPreviewLayer(state);
     this.singleStageDiagnosticsLayer.update(state.singleStageFolderState, {
       enabled: state.singleStageDiagnosticsEnabled,
+      iconBoundsRegistry: this.iconBoundsRegistry,
     });
     for (const entry of Array.from(this.getFolderHandoffNodes().values())) {
-      if (shouldFinishFolderHandoffEntry(state, this.singleStageFolderLayer, entry.folderId)) {
-        this.finishFolderHandoffNodeAfterFrame(entry.folderId);
-      }
+      this.reconcileFolderHandoffEntry(state, entry);
     }
+  }
+
+  reconcileFolderHandoffEntry(state, entry) {
+    const noSubstitute = shouldFinishFolderHandoffEntry(state, this.singleStageFolderLayer, entry.folderId);
+    if (noSubstitute) {
+      this.finishFolderHandoffNodeAfterFrame(entry.folderId);
+    } else if (isStaleHiddenFolderHandoffEntry(entry, this.singleStageFolderLayer, entry.folderId)) {
+      // Close finished without ever revealing this entry (its reveal was preempted
+      // by another folder), yet a stale Vue closing id keeps it alive and hidden.
+      // Reveal WITHOUT retiring — retiring would let isActiveFolderClosingHandoff
+      // recreate + re-hide it every frame (icon/label flash).
+      this.restoreFolderHandoffVisual(entry);
+      this.revealFolderHandoffLabel(entry);
+    }
+    return noSubstitute;
   }
 
   describeMotionTargets(state = {}) {
@@ -718,10 +486,10 @@ export class DesktopLayer extends Container {
       return;
     }
     const markBoundsDirty = () => this.markInteractiveBoundsDirty();
-    transitionSpringTo(this.visualRoot, { x: centerX, y: targetY }, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
-    transitionSpringTo(this.visualRoot.scale, { x: scale, y: scale }, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
-    transitionSpringTo(this.desktopClosingUnderlayLayer, { x: centerX, y: targetY }, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
-    transitionSpringTo(this.desktopClosingUnderlayLayer.scale, { x: scale, y: scale }, desktopVisualSpring, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
+    motionSpringTo(this.visualRoot, { x: centerX, y: targetY }, motionSprings.settle, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
+    motionSpringTo(this.visualRoot.scale, { x: scale, y: scale }, motionSprings.settle, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
+    motionSpringTo(this.desktopClosingUnderlayLayer, { x: centerX, y: targetY }, motionSprings.settle, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
+    motionSpringTo(this.desktopClosingUnderlayLayer.scale, { x: scale, y: scale }, motionSprings.settle, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
   }
 
   applyDesktopVisualAlpha(state) {
@@ -736,8 +504,8 @@ export class DesktopLayer extends Container {
       this.hasDesktopVisualAlpha = true;
       return;
     }
-    transitionSpringTo(this.visualRoot, { alpha }, desktopVisualSpring);
-    transitionSpringTo(this.desktopClosingUnderlayLayer, { alpha }, desktopVisualSpring);
+    motionSpringTo(this.visualRoot, { alpha }, motionSprings.settle);
+    motionSpringTo(this.desktopClosingUnderlayLayer, { alpha }, motionSprings.settle);
   }
 
   applyFolderOverlayAlpha(state) {
@@ -749,11 +517,11 @@ export class DesktopLayer extends Container {
       this.hasFolderOverlayAlpha = true;
       return;
     }
-    transitionSpringTo(this.singleStageFolderLayer, { alpha }, desktopVisualSpring);
+    motionSpringTo(this.singleStageFolderLayer, { alpha }, motionSprings.settle);
   }
 
   hasSingleStageFolderOverlayContent(state = {}) {
-    return Boolean(state.singleStageFolderLayerEnabled && state.singleStageFolderState?.renderedFolder);
+    return Boolean(state.singleStageFolderState?.renderedFolder);
   }
 
   applyFolderOverlayTransform(state) {
@@ -770,12 +538,12 @@ export class DesktopLayer extends Container {
       return;
     }
     const markBoundsDirty = () => this.markInteractiveBoundsDirty();
-    transitionSpringTo(this.singleStageFolderLayer, { x: centerX, y: targetY }, desktopVisualSpring, {
+    motionSpringTo(this.singleStageFolderLayer, { x: centerX, y: targetY }, motionSprings.settle, {
       onComplete: markBoundsDirty,
       onUpdate: markBoundsDirty,
       snap: shouldSnap,
     });
-    transitionSpringTo(this.singleStageFolderLayer.scale, { x: transform.scale, y: transform.scale }, desktopVisualSpring, {
+    motionSpringTo(this.singleStageFolderLayer.scale, { x: transform.scale, y: transform.scale }, motionSprings.settle, {
       onComplete: markBoundsDirty,
       onUpdate: markBoundsDirty,
       snap: shouldSnap,
@@ -783,7 +551,7 @@ export class DesktopLayer extends Container {
   }
 
   updateSingleStageFolderLayer(state) {
-    if (state.singleStageFolderLayerEnabled && state.singleStageFolderState) {
+    if (state.singleStageFolderState) {
       this.onFolderGeometryChange(this.singleStageFolderLayer.update(state.singleStageFolderState));
       return;
     }
@@ -798,12 +566,10 @@ export class DesktopLayer extends Container {
   }
 
   applyFolderSourceGhosting(state) {
+    state = normalizeDesktopHandoffState(state);
     this.lastFolderSourceGhostingState = state;
-    const rawIds = mergeFolderSourceGhostedIds(
-      state.folderSourceGhostedIds,
-      state.folderSourceGhostedId
-    );
-    const ownershipIds = mergeFolderSourceGhostedIds(
+    const rawIds = state.folderSourceGhostedIds;
+    const ownershipIds = normalizeFolderIdSet(
       getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership),
       this.singleStageFolderLayer.getDesktopSourceGhostedIds?.()
     );
@@ -816,8 +582,13 @@ export class DesktopLayer extends Container {
       const handoffEntry = this.getFolderHandoffEntry(folderId);
       if (handoffEntry) {
         const activeHandoff = hasFolderClosingHandoffId(state, folderId) ||
-          isFolderLayerHandoffActive(this.singleStageFolderLayer, folderId);
-        if (rawGhosted || (ownershipGhosted && !activeHandoff && handoffEntry.visualReleased === true)) {
+          isFolderLayerHandoffActive(this.singleStageFolderLayer, folderId) ||
+          isFolderLayerHoldingDesktopSource(this.singleStageFolderLayer, folderId);
+        // Only retire the handoff node once the closing handoff is no longer
+        // active; clearing it mid-handoff (rawGhosted is true throughout a close)
+        // re-creates a fresh entry every frame, resetting visualReleased and
+        // re-hiding visualWrap, so the icon stays blank until activeHandoff ends.
+        if (!activeHandoff && (rawGhosted || (ownershipGhosted && handoffEntry.visualReleased === true))) {
           this.clearFolderHandoffNode(folderId);
         } else {
           node.__folderSourceGhostedByOwnership = Boolean(nextGhosted);
@@ -840,15 +611,11 @@ export class DesktopLayer extends Container {
 
   reconcileFolderHandoffEntries(state = this.lastFolderSourceGhostingState || {}) {
     for (const entry of Array.from(this.getFolderHandoffNodes().values())) {
-      if (shouldFinishFolderHandoffEntry(state, this.singleStageFolderLayer, entry.folderId)) {
-        this.finishFolderHandoffNodeAfterFrame(entry.folderId);
-      }
+      this.reconcileFolderHandoffEntry(state, entry);
     }
   }
 
   updateSingleStageDragPreviewLayer(state) {
-    const previewState = state.singleStageDragPreviewEnabled ? state.dragPreviewState : null;
-    const releaseState = state.singleStageDragPreviewEnabled ? state.dragReleaseState : null;
     this.singleStageDragPreviewLayer.update({
       folderHoverState: state.dragFolderHoverState,
       folderPageSize: state.folderPageSize,
@@ -856,8 +623,8 @@ export class DesktopLayer extends Container {
       iconSize: state.iconSize,
       isTextlessMode: state.isTextlessMode,
       launchTargetStatusById: state.launchTargetStatusById,
-      previewState,
-      releaseState,
+      previewState: state.dragPreviewState,
+      releaseState: state.dragReleaseState,
       showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge,
       stageRect: state.stageRect,
       width: state.width,
@@ -873,25 +640,25 @@ export class DesktopLayer extends Container {
 
   getFolderHandoffNodes() {
     if (!(this.folderHandoffNodes instanceof Map)) this.folderHandoffNodes = new Map();
-    if (this.folderHandoffNode?.folderId && !this.folderHandoffNodes.has(this.folderHandoffNode.folderId)) {
-      this.folderHandoffNodes.set(this.folderHandoffNode.folderId, this.folderHandoffNode);
-    }
     return this.folderHandoffNodes;
+  }
+
+  getPrimaryFolderHandoffNode() {
+    const entries = this.getFolderHandoffNodes();
+    if (this.primaryFolderHandoffId && entries.has(this.primaryFolderHandoffId)) {
+      return entries.get(this.primaryFolderHandoffId);
+    }
+    return entries.values().next().value || null;
   }
 
   getFolderHandoffEntry(folderId = null) {
     const entries = this.getFolderHandoffNodes();
     if (folderId) return entries.get(folderId) || null;
-    return entries.values().next().value || null;
+    return this.getPrimaryFolderHandoffNode();
   }
 
   setPrimaryFolderHandoffNode(entry = null) {
-    if (entry) {
-      this.folderHandoffNode = entry;
-      return;
-    }
-    const entries = this.folderHandoffNodes instanceof Map ? this.folderHandoffNodes : null;
-    this.folderHandoffNode = entries?.values().next().value || null;
+    this.primaryFolderHandoffId = entry?.folderId || null;
   }
 
   startClosingFolderHandoffNow(folderId, options = {}) {
@@ -932,7 +699,7 @@ export class DesktopLayer extends Container {
       entry.visualReleased = false;
     }
     if (entry.cleanupFrame != null) {
-      globalThis.cancelAnimationFrame?.(entry.cleanupFrame);
+      entry.cleanupFrame.cancelled = true;
       entry.cleanupFrame = null;
     }
     this.setPrimaryFolderHandoffNode(entry);
@@ -984,16 +751,15 @@ export class DesktopLayer extends Container {
     const entry = this.getFolderHandoffEntry(folderId);
     if (!entry || entry.cleanupFrame != null) return;
     if (entry.visualReleased) this.revealFolderHandoffLabel(entry);
+    const cleanupFrame = { cancelled: false };
+    entry.cleanupFrame = cleanupFrame;
     const finish = () => {
+      if (cleanupFrame.cancelled || entry.cleanupFrame !== cleanupFrame) return;
       if (this.getFolderHandoffEntry(entry.folderId) !== entry) return;
       entry.cleanupFrame = null;
       this.clearFolderHandoffNode(entry.folderId);
     };
-    if (typeof globalThis.requestAnimationFrame === "function") {
-      entry.cleanupFrame = globalThis.requestAnimationFrame(finish);
-    } else {
-      finish();
-    }
+    motionRuntime.afterFrame(finish);
   }
 
   releaseClosingFolderHandoffVisual(folderId = null) {
@@ -1036,9 +802,9 @@ export class DesktopLayer extends Container {
       }) || this.lastFolderHandoffDebugSnapshot;
     }
     if (!entry) return;
-    if (entry.cleanupFrame != null) globalThis.cancelAnimationFrame?.(entry.cleanupFrame);
+    if (entry.cleanupFrame != null) entry.cleanupFrame.cancelled = true;
     this.getFolderHandoffNodes().delete(entry.folderId);
-    if (this.folderHandoffNode === entry) this.setPrimaryFolderHandoffNode(null);
+    if (this.primaryFolderHandoffId === entry.folderId) this.setPrimaryFolderHandoffNode(null);
     this.restoreFolderHandoffNode(entry);
   }
 
@@ -1063,11 +829,11 @@ export class DesktopLayer extends Container {
     if (!options?.log) return null;
     const snapshot = this.makeFolderHandoffDebugSnapshot(entry, { phase });
     if (!snapshot) return null;
-    globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__ = {
+    setLaunchpadDebugValue("lastFolderHandoff", {
       ...snapshot,
       desktopLogged: false,
       phase,
-    };
+    });
     console.log("[folder-handoff-debug] desktop-restore", {
       ...snapshot,
       phase,
@@ -1083,10 +849,10 @@ export class DesktopLayer extends Container {
     const folderId = entry.folderId || node.item?.id || null;
     const thumbRect = node.getFolderThumbBounds?.(stageRect) || null;
     const iconRect = node.getIconBounds?.(stageRect) || null;
-    const liveTargetRect = folderId ? getLiveClientTopLevelFolderThumbTargetBounds(folderId) : null;
-    const stableStageLayoutTargetRecord = folderId ? getStableStageLayoutTopLevelFolderThumbTargetRecord(folderId) : null;
+    const liveTargetRect = folderId ? this.iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.LIVE_TARGET, folderId) : null;
+    const stableStageLayoutTargetRecord = folderId ? this.iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, folderId) : null;
     const stableTargetRect = projectStageLayoutRecordToClient(stableStageLayoutTargetRecord);
-    const registeredThumbRect = folderId ? getRenderedClientTopLevelFolderThumbBounds(folderId) : null;
+    const registeredThumbRect = folderId ? this.iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.RENDERED, folderId) : null;
     const targetRect = liveTargetRect || registeredThumbRect || stableTargetRect;
     const childRows = [];
     for (let slotIndex = 0; slotIndex < 9; slotIndex += 1) {
@@ -1095,10 +861,10 @@ export class DesktopLayer extends Container {
       const actualRect = node.getFolderPreviewChildBounds(stageRect, slotIndex);
       const targetChildRect = targetRect ? makeFolderThumbPreviewRect(targetRect, slotIndex) : null;
       childRows.push({
-        actual: roundRect(actualRect),
+        actual: roundRect(actualRect, 2),
         delta: rectDelta(actualRect, targetChildRect),
         slot: slotIndex,
-        target: roundRect(targetChildRect),
+        target: roundRect(targetChildRect, 2),
       });
     }
     return {
@@ -1110,9 +876,9 @@ export class DesktopLayer extends Container {
       clearing: options.clearing === true,
       desktopClosingUnderlayLayer: roundTransformObject(this.desktopClosingUnderlayLayer),
       folderId,
-      iconRect: roundRect(iconRect),
+      iconRect: roundRect(iconRect, 2),
       layoutTarget: roundDebugObject(entry.layoutTarget),
-      liveTargetRect: roundRect(liveTargetRect),
+      liveTargetRect: roundRect(liveTargetRect, 2),
       node: {
         alpha: Math.round((node.alpha ?? 0) * 1000) / 1000,
         eventMode: node.eventMode,
@@ -1136,17 +902,17 @@ export class DesktopLayer extends Container {
       pageTrack: roundTransformObject(this.pageTrack),
       pageTrackX: Math.round((this.pageTrack?.x || 0) * 1000) / 1000,
       phase: options.phase || null,
-      registeredThumbRect: roundRect(registeredThumbRect),
+      registeredThumbRect: roundRect(registeredThumbRect, 2),
       singleStageFolderLayer: roundTransformObject(this.singleStageFolderLayer),
       source: options.source || "handoff-node",
-      stableStageLayoutTargetRect: roundRect(stableStageLayoutTargetRecord),
-      stableTargetRect: roundRect(stableTargetRect),
-      stageRect: roundRect(stageRect),
+      stableStageLayoutTargetRect: roundRect(stableStageLayoutTargetRecord, 2),
+      stableTargetRect: roundRect(stableTargetRect, 2),
+      stageRect: roundRect(stageRect, 2),
       stageScaleX: registration.stageRect?.width && registration.width ? Math.round((registration.stageRect.width / registration.width) * 1000000) / 1000000 : null,
       stageScaleY: registration.stageRect?.height && registration.height ? Math.round((registration.stageRect.height / registration.height) * 1000000) / 1000000 : null,
       targetDelta: rectDelta(thumbRect, targetRect),
-      targetRect: roundRect(targetRect),
-      thumbRect: roundRect(thumbRect),
+      targetRect: roundRect(targetRect, 2),
+      thumbRect: roundRect(thumbRect, 2),
       visualRoot: roundTransformObject(this.visualRoot),
     };
   }
@@ -1239,17 +1005,23 @@ export class DesktopLayer extends Container {
       if (boundsTargets.syncHandoffLayoutTarget && handoffEntry) {
         this.syncFolderHandoffNode(node, boundsTargets.syncHandoffLayoutTarget, handoffEntry);
       }
-      registerRenderedClientLaunchIconBounds(
+      this.iconBoundsRegistry.registerBounds(
+        BOUNDS_KIND.LAUNCH,
+        BOUNDS_VARIANT.RENDERED,
         { area, folderId: null, id: item.id, pageIndex },
         boundsTargets.renderedClientIconBounds,
         meta
       );
-      registerLiveClientLaunchIconTargetBounds(
+      this.iconBoundsRegistry.registerBounds(
+        BOUNDS_KIND.LAUNCH,
+        BOUNDS_VARIANT.LIVE_TARGET,
         { area, folderId: null, id: item.id, pageIndex },
         boundsTargets.liveClientTargetBounds,
         meta
       );
-      registerStableStageLayoutLaunchIconTargetBounds(
+      this.iconBoundsRegistry.registerBounds(
+        BOUNDS_KIND.LAUNCH,
+        BOUNDS_VARIANT.STABLE_STAGE_LAYOUT,
         { area, folderId: null, id: item.id, pageIndex },
         boundsTargets.stableStageLayoutTargetBounds,
         {
@@ -1260,10 +1032,10 @@ export class DesktopLayer extends Container {
         }
       );
       if (area === "desktop") {
-        registerLiveClientTopLevelIconTargetBounds(item.id, boundsTargets.liveClientTargetBounds, {
+        this.iconBoundsRegistry.registerBounds(BOUNDS_KIND.TOP_LEVEL, BOUNDS_VARIANT.LIVE_TARGET, item.id, boundsTargets.liveClientTargetBounds, {
           ...meta,
         });
-        registerStableStageLayoutTopLevelIconTargetBounds(item.id, boundsTargets.stableStageLayoutTargetBounds, {
+        this.iconBoundsRegistry.registerBounds(BOUNDS_KIND.TOP_LEVEL, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, item.id, boundsTargets.stableStageLayoutTargetBounds, {
           ...meta,
           stageHeight: registration.height,
           stageRect: registration.stageRect,
@@ -1271,12 +1043,12 @@ export class DesktopLayer extends Container {
         });
       }
       if (item.type === "folder") {
-        registerRenderedClientTopLevelFolderThumbBounds(item.id, boundsTargets.renderedClientThumbBounds, meta);
+        this.iconBoundsRegistry.registerBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.RENDERED, item.id, boundsTargets.renderedClientThumbBounds, meta);
         if (area === "desktop") {
-          registerLiveClientTopLevelFolderThumbTargetBounds(item.id, boundsTargets.liveClientTargetBounds, {
+          this.iconBoundsRegistry.registerBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.LIVE_TARGET, item.id, boundsTargets.liveClientTargetBounds, {
             ...meta,
           });
-          registerStableStageLayoutTopLevelFolderThumbTargetBounds(item.id, boundsTargets.stableStageLayoutTargetBounds, {
+          this.iconBoundsRegistry.registerBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, item.id, boundsTargets.stableStageLayoutTargetBounds, {
             ...meta,
             stageHeight: registration.height,
             stageRect: registration.stageRect,
@@ -1296,38 +1068,38 @@ export class DesktopLayer extends Container {
 
   debugFolderHandoffDesktopActual(folder, node, registration) {
     const options = getFolderHandoffDebugOptions();
-    const debugState = globalThis.__LP_LAST_FOLDER_HANDOFF_DEBUG__;
+    const debugState = readLaunchpadDebugValue("lastFolderHandoff");
     if (!options?.log || debugState?.desktopLogged || debugState?.folderId !== folder?.id) return;
     const rows = [];
     const actualThumbRect = node.getFolderThumbBounds(registration.stageRect);
-    const stableStageLayoutTargetRecord = getStableStageLayoutTopLevelFolderThumbTargetRecord(folder.id);
+    const stableStageLayoutTargetRecord = this.iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, folder.id);
     const stableTargetRect = projectStageLayoutRecordToClient(stableStageLayoutTargetRecord);
-    const targetThumbRect = getLiveClientTopLevelFolderThumbTargetBounds(folder.id) ||
-      getRenderedClientTopLevelFolderThumbBounds(folder.id) ||
+    const targetThumbRect = this.iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.LIVE_TARGET, folder.id) ||
+      this.iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.RENDERED, folder.id) ||
       stableTargetRect;
     rows.push({
-      actual: roundRect(actualThumbRect),
+      actual: roundRect(actualThumbRect, 2),
       delta: rectDelta(actualThumbRect, targetThumbRect),
       kind: "thumb",
       slot: "",
-      target: roundRect(targetThumbRect),
+      target: roundRect(targetThumbRect, 2),
     });
     for (let slotIndex = 0; slotIndex < 9; slotIndex += 1) {
       const child = node.item ? node.item.childPages?.[0]?.[slotIndex] || node.item.children?.[slotIndex] : null;
       if (!child?.id) continue;
       const actualRect = node.getFolderPreviewChildBounds(registration.stageRect, slotIndex);
       const stableChildTargetRect = projectStageLayoutRecordToClient(
-        getStableStageLayoutFolderPreviewChildTargetRecord(folder.id, child.id, slotIndex)
+        this.iconBoundsRegistry.getBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, { childId: child.id, folderId: folder.id, slotIndex })
       );
-      const targetRect = getLiveClientFolderPreviewChildTargetBounds(folder.id, child.id, slotIndex) ||
-        getRenderedClientFolderPreviewChildBounds(folder.id, child.id, slotIndex) ||
+      const targetRect = this.iconBoundsRegistry.getBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.LIVE_TARGET, { childId: child.id, folderId: folder.id, slotIndex }) ||
+        this.iconBoundsRegistry.getBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.RENDERED, { childId: child.id, folderId: folder.id, slotIndex }) ||
         stableChildTargetRect;
       rows.push({
-        actual: roundRect(actualRect),
+        actual: roundRect(actualRect, 2),
         delta: rectDelta(actualRect, targetRect),
         kind: "child",
         slot: slotIndex,
-        target: roundRect(targetRect),
+        target: roundRect(targetRect, 2),
       });
     }
     debugState.desktopLogged = true;
@@ -1355,11 +1127,11 @@ export class DesktopLayer extends Container {
       targetWidth: row.target?.width ?? null,
     })));
     if (options.overlay) {
-      const previousClear = globalThis.__LP_CLEAR_FOLDER_HANDOFF_DEBUG__;
-      globalThis.__LP_CLEAR_FOLDER_HANDOFF_DEBUG__ = () => {
+      const previousClear = readLaunchpadDebugValue("clearFolderHandoff");
+      setLaunchpadDebugValue("clearFolderHandoff", () => {
         previousClear?.();
         this.handoffDebugLayer.clear();
-      };
+      });
       this.handoffDebugLayer.clear();
       drawDebugRect(this.handoffDebugLayer, actualThumbRect, registration.stageRect, 0xbf5af2, 0.98, options.lineWidth);
       for (const row of rows) {
@@ -1374,10 +1146,11 @@ export class DesktopLayer extends Container {
       const child = node.item ? node.item.childPages?.[0]?.[index] || node.item.children?.[index] : null;
       if (!child?.id) continue;
       const childTargets = resolveFolderPreviewChildBoundsTargets({ node, slotIndex: index, stageRect, target });
-      if (childTargets.renderedClientBounds) registerRenderedClientFolderPreviewChildBounds(folder.id, child.id, index, childTargets.renderedClientBounds);
-      if (childTargets.liveClientTargetBounds) registerLiveClientFolderPreviewChildTargetBounds(folder.id, child.id, index, childTargets.liveClientTargetBounds);
+      const keyInput = { childId: child.id, folderId: folder.id, slotIndex: index };
+      if (childTargets.renderedClientBounds) this.iconBoundsRegistry.registerBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.RENDERED, keyInput, childTargets.renderedClientBounds);
+      if (childTargets.liveClientTargetBounds) this.iconBoundsRegistry.registerBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.LIVE_TARGET, keyInput, childTargets.liveClientTargetBounds);
       if (childTargets.stableStageLayoutTargetBounds) {
-        registerStableStageLayoutFolderPreviewChildTargetBounds(folder.id, child.id, index, childTargets.stableStageLayoutTargetBounds, {
+        this.iconBoundsRegistry.registerBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, keyInput, childTargets.stableStageLayoutTargetBounds, {
           stageHeight: target.stageHeight,
           stageRect,
           stageWidth: target.stageWidth,
@@ -1421,13 +1194,11 @@ export class DesktopLayer extends Container {
       });
     }
     const overlay = this.singleStageFolderLayer;
-    const lastState = this.lastFolderSourceGhostingState || {};
-    const lastStateSourceIds = mergeFolderSourceGhostedIds(
-      lastState.folderSourceGhostedIds,
-      lastState.folderSourceGhostedId
-    );
+    const lastState = normalizeDesktopHandoffState(this.lastFolderSourceGhostingState || {});
+    const lastStateSourceIds = lastState.folderSourceGhostedIds;
     const ownershipSourceIds = getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership);
     const overlaySourceIds = overlay?.getDesktopSourceGhostedIds?.() || new Set();
+    const overlayCloseSnapshot = overlay?.folderHandoff?.snapshot?.() || null;
     const folderHandoffNodes = Array.from(this.getFolderHandoffNodes().values()).map((entry) => ({
       display: readDisplay(entry.node),
       folderId: entry.folderId || null,
@@ -1457,14 +1228,14 @@ export class DesktopLayer extends Container {
         overlay: Array.from(overlaySourceIds),
       },
       overlay: overlay ? {
-        closingFolderId: overlay.closingGhostFolderId || null,
-        closingGhostKeys: Array.from(overlay.closingGhostKeys || []),
-        closingGhostSessionToken: overlay.closingGhostSessionToken || null,
-        closingHandoffActive: overlay.closingHandoffActive === true,
+        closingFolderId: overlayCloseSnapshot?.folderId || null,
+        closingGhostKeys: Array.from(overlayCloseSnapshot?.ghostKeys || []),
+        closingGhostSessionToken: overlayCloseSnapshot?.token || null,
+        closingHandoffActive: overlayCloseSnapshot?.handoffActive === true,
         currentFolderId: overlay.currentFolderId || null,
         debug: overlay.getVisualDebugSnapshot?.() || null,
-        openingGhostKeys: Array.from(overlay.openingGhostKeys || []),
-        openingGhostSessionToken: overlay.openingGhostSessionToken || null,
+        openingGhostItemIds: Array.from(overlayCloseSnapshot?.opening?.ghostKeys || []),
+        openingSessionToken: overlayCloseSnapshot?.opening?.sessionToken || null,
         pageTrackVisible: overlay.pageTrack?.visible ?? null,
       } : null,
       ownership: this.visualOwnership?.snapshot?.() || [],
@@ -1476,14 +1247,14 @@ export class DesktopLayer extends Container {
     this.unsubscribeVisualOwnership = null;
     this.boundsRegistration = null;
     this.clearFolderHandoffNode();
-    stopTargetSprings(this.visualRoot, { reason: "destroyed" });
-    stopTargetSprings(this.visualRoot?.scale, { reason: "destroyed" });
-    stopTargetSprings(this.desktopClosingUnderlayLayer, { reason: "destroyed" });
-    stopTargetSprings(this.desktopClosingUnderlayLayer?.scale, { reason: "destroyed" });
-    stopTargetSprings(this.singleStageFolderLayer, { reason: "destroyed" });
-    stopTargetSprings(this.singleStageFolderLayer?.scale, { reason: "destroyed" });
+    killMotionOf(this.visualRoot, null, { lane: "base", reason: "destroyed" });
+    killMotionOf(this.visualRoot?.scale, null, { lane: "base", reason: "destroyed" });
+    killMotionOf(this.desktopClosingUnderlayLayer, null, { lane: "base", reason: "destroyed" });
+    killMotionOf(this.desktopClosingUnderlayLayer?.scale, null, { lane: "base", reason: "destroyed" });
+    killMotionOf(this.singleStageFolderLayer, null, { lane: "base", reason: "destroyed" });
+    killMotionOf(this.singleStageFolderLayer?.scale, null, { lane: "base", reason: "destroyed" });
     cancelPageTrackMotion(this.pageTrackMotion, "destroyed");
-    stopTargetSprings(this.pageTrack, { reason: "destroyed" });
+    killMotionOf(this.pageTrack, null, { lane: "base", reason: "destroyed" });
     this.visualCommitQueue?.clear?.();
     super.destroy(options);
   }

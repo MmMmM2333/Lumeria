@@ -1,4 +1,12 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import { createMotionRuntimeDebugAdapter, sanitizeDebugMetadata } from "./motionRuntimeDebugAdapter.js";
+import {
+  clamp,
+  readNumber,
+} from "./motionTraceShared.js";
+
+let motionRuntimeDebugAdapterFactory = createMotionRuntimeDebugAdapter;
+const motionRuntimeDebugAdapterInstallers = new Set();
 
 const DEFAULT_MAX_DELTA_SECONDS = 0.05;
 const DEFAULT_STEP_SECONDS = 1 / 120;
@@ -14,40 +22,19 @@ const DEFAULT_SETTLE_SPRING = Object.freeze({
   stiffness: 340,
 });
 const NEUTRAL_EPSILON = 0.0001;
-const DEBUG_RECORD_WINDOW_MIN_MS = 1000;
-const DEBUG_RECORD_WINDOW_MAX_MS = 300000;
-const DEFAULT_DEBUG_CONFIG = Object.freeze({
-  enabled: false,
-  maxEvents: 1000,
-  maxSamples: 1000,
-  overlayEnabled: false,
-  recordHistory: false,
-  recordFilter: null,
-  recordWindowMs: 30000,
-  sampleHz: 10,
-  timeScale: 1,
-});
-const LIVE_DEBUG_METADATA_KEYS = new Set([
-  "boundsTarget",
-  "debugOverlayTarget",
-  "overlayTarget",
-]);
-const CAN_STORE_DEBUG_TARGET_REFS = import.meta.env?.DEV !== false;
-
 let nextLaneId = 1;
+
+export function installMotionRuntimeDebugAdapterFactory(factory) {
+  if (typeof factory !== "function") return false;
+  if (motionRuntimeDebugAdapterFactory === factory) return true;
+  motionRuntimeDebugAdapterFactory = factory;
+  for (const installAdapter of motionRuntimeDebugAdapterInstallers) installAdapter(factory);
+  return true;
+}
 
 function nowMs() {
   if (typeof performance !== "undefined" && typeof performance.now === "function") return performance.now();
   return Date.now();
-}
-
-function readNumber(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
 }
 
 function clamp01(value) {
@@ -131,203 +118,8 @@ export function tween(options = {}) {
   return Object.freeze({ options, type: "tween" });
 }
 
-export function decay(options = {}) {
-  return Object.freeze({ options, type: "decay" });
-}
-
 export function progressDriver(options = {}) {
   return { options: { progress: 0, ...options }, type: "progress" };
-}
-
-function makeDebugCounters() {
-  return {
-    activeChannels: 0,
-    activeTargets: 0,
-    afterFrameFlushes: 0,
-    canceled: 0,
-    canceledByReason: {},
-    completed: 0,
-    frames: 0,
-    released: 0,
-    writes: 0,
-    writesLastFrame: 0,
-    started: 0,
-  };
-}
-
-function incrementDebugCount(counts, key) {
-  const normalizedKey = key == null ? "unknown" : String(key);
-  counts[normalizedKey] = (counts[normalizedKey] || 0) + 1;
-}
-
-function makeDebugSummary(animations) {
-  const targetIds = new Set();
-  const channelKeys = new Set();
-  const summary = {
-    activeAnimationCount: animations.length,
-    activeChannelCount: 0,
-    activeTargetCount: 0,
-    byDriver: {},
-    byLane: {},
-    byLaneKey: {},
-    byProp: {},
-    byTargetId: {},
-  };
-
-  for (const animation of animations) {
-    incrementDebugCount(summary.byDriver, animation.driver);
-    incrementDebugCount(summary.byLane, animation.lane);
-    incrementDebugCount(summary.byLaneKey, animation.laneKey);
-    incrementDebugCount(summary.byProp, animation.prop);
-    incrementDebugCount(summary.byTargetId, animation.targetId);
-    if (animation.targetId != null) targetIds.add(animation.targetId);
-    channelKeys.add(`${animation.targetId ?? "unknown"}:${animation.prop}`);
-  }
-
-  summary.activeTargetCount = targetIds.size;
-  summary.activeChannelCount = channelKeys.size;
-  return summary;
-}
-
-function sanitizeDebugValue(value, depth = 2, seen = new Set()) {
-  if (value == null || typeof value === "string" || typeof value === "boolean") return value;
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  if (typeof value !== "object") return undefined;
-  if (depth <= 0 || seen.has(value)) return undefined;
-  seen.add(value);
-  if (Array.isArray(value)) {
-    const array = value
-      .map((entry) => sanitizeDebugValue(entry, depth - 1, seen))
-      .filter((entry) => entry !== undefined);
-    seen.delete(value);
-    return array;
-  }
-  const object = {};
-  for (const [key, entry] of Object.entries(value)) {
-    const sanitized = sanitizeDebugValue(entry, depth - 1, seen);
-    if (sanitized !== undefined) object[key] = sanitized;
-  }
-  seen.delete(value);
-  return object;
-}
-
-function sanitizeDebugMetadata(metadata) {
-  if (!metadata || typeof metadata !== "object") return {};
-  const filtered = {};
-  for (const [key, value] of Object.entries(metadata)) {
-    if (LIVE_DEBUG_METADATA_KEYS.has(key)) continue;
-    filtered[key] = value;
-  }
-  const sanitized = sanitizeDebugValue(filtered);
-  return sanitized && typeof sanitized === "object" && !Array.isArray(sanitized) ? sanitized : {};
-}
-
-function readDebugString(value, fallback = "") {
-  const text = String(value ?? "").trim();
-  return text || fallback;
-}
-
-function normalizeDebugStringList(value, options = {}) {
-  const input = Array.isArray(value) ? value : value == null ? [] : [value];
-  const list = [];
-  const seen = new Set();
-  for (const entry of input) {
-    const text = readDebugString(entry);
-    if (!text) continue;
-    const normalized = options.lowercase ? text.toLowerCase() : text;
-    const key = options.caseInsensitive !== false ? normalized.toLowerCase() : normalized;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    list.push(normalized);
-  }
-  return list;
-}
-
-function readDebugFilterValue(input, targetFilters, keys) {
-  for (const key of keys) {
-    if (Object.hasOwn(input, key)) return input[key];
-  }
-  for (const key of keys) {
-    if (Object.hasOwn(targetFilters, key)) return targetFilters[key];
-  }
-  return undefined;
-}
-
-function normalizeDebugRecordFilter(input) {
-  if (input == null || input === false) return null;
-  if (typeof input !== "object") return null;
-  const targetFilters = input.targetFilters && typeof input.targetFilters === "object" ? input.targetFilters : {};
-  const filter = {
-    eventTypes: normalizeDebugStringList(readDebugFilterValue(input, targetFilters, ["eventTypes", "eventType", "events"]), { lowercase: true }),
-    includeEvents: input.includeEvents == null ? true : Boolean(input.includeEvents),
-    includeSamples: input.includeSamples == null ? true : Boolean(input.includeSamples),
-    kinds: normalizeDebugStringList(readDebugFilterValue(input, targetFilters, ["kinds", "kind", "targetKinds", "targetKind"])),
-    layers: normalizeDebugStringList(readDebugFilterValue(input, targetFilters, ["layers", "layer"])),
-    props: normalizeDebugStringList(readDebugFilterValue(input, targetFilters, ["props", "prop", "propAllowlist"]), { caseInsensitive: false }),
-    sourceLabels: normalizeDebugStringList(readDebugFilterValue(input, targetFilters, ["sourceLabels", "sourceLabel", "sources"])),
-    sourceQuery: readDebugString(readDebugFilterValue(input, targetFilters, ["sourceQuery", "query"])),
-  };
-  const hasCriteria = filter.eventTypes.length
-    || filter.kinds.length
-    || filter.layers.length
-    || filter.props.length
-    || filter.sourceLabels.length
-    || filter.sourceQuery
-    || !filter.includeEvents
-    || !filter.includeSamples;
-  return hasCriteria ? filter : null;
-}
-
-function cloneDebugRecordFilter(filter) {
-  if (!filter) return null;
-  return {
-    eventTypes: [...filter.eventTypes],
-    includeEvents: Boolean(filter.includeEvents),
-    includeSamples: Boolean(filter.includeSamples),
-    kinds: [...filter.kinds],
-    layers: [...filter.layers],
-    props: [...filter.props],
-    sourceLabels: [...filter.sourceLabels],
-    sourceQuery: filter.sourceQuery,
-  };
-}
-
-function hasCaseInsensitiveMatch(allowed, value) {
-  if (!allowed.length) return true;
-  const text = readDebugString(value).toLowerCase();
-  if (!text) return false;
-  return allowed.some((entry) => entry.toLowerCase() === text);
-}
-
-function readDebugRecordKind(record = {}) {
-  return record.targetKind ?? record.kind;
-}
-
-function readDebugRecordSourceLabel(record = {}) {
-  return record.sourceLabel ?? record.targetLabel ?? record.label;
-}
-
-function matchesDebugRecordFilter(record = {}, type = "sample", filter = null) {
-  if (!filter) return true;
-  const recordType = readDebugString(record.type ?? type, "sample").toLowerCase();
-  const isSample = recordType === "sample";
-  if (isSample && !filter.includeSamples) return false;
-  if (!isSample && !filter.includeEvents) return false;
-  if (!isSample && filter.eventTypes.length && !filter.eventTypes.includes(recordType)) return false;
-  if (filter.props.length && !filter.props.includes(readDebugString(record.prop))) return false;
-  if (!hasCaseInsensitiveMatch(filter.layers, record.layer)) return false;
-  if (!hasCaseInsensitiveMatch(filter.kinds, readDebugRecordKind(record))) return false;
-  if (!hasCaseInsensitiveMatch(filter.sourceLabels, readDebugRecordSourceLabel(record))) return false;
-  if (filter.sourceQuery) {
-    const sourceLabel = readDebugString(readDebugRecordSourceLabel(record)).toLowerCase();
-    if (!sourceLabel.includes(filter.sourceQuery.toLowerCase())) return false;
-  }
-  return true;
-}
-
-function hasReadableDebugMetadata(metadata) {
-  if (!metadata || typeof metadata !== "object") return false;
-  return Object.entries(metadata).some(([key, value]) => key !== "targetId" && value != null && value !== "");
 }
 
 export function createMotionRuntime(options = {}) {
@@ -338,26 +130,36 @@ export function createMotionRuntime(options = {}) {
 
   const targetChannels = new WeakMap();
   const activeAnimations = new Set();
-  const activeTargets = new Set();
   const afterFrameCallbacks = new Set();
   const dirtyChannels = new Set();
   const pendingUpdateAnimations = new Set();
   const targetIds = new WeakMap();
-  const debugTargetMetaByTarget = new WeakMap();
-  const debugTargetMetaById = new Map();
-  const debugTargetRefsById = CAN_STORE_DEBUG_TARGET_REFS ? new Map() : null;
-  const debugHistory = { events: [], samples: [] };
-  const debug = makeDebugCounters();
+  let debugAdapter = motionRuntimeDebugAdapterFactory();
+  const observers = new Set();
+  const renderSignalObservers = new Set();
   const activeAnimationScratch = [];
   const afterFrameScratch = [];
   const dirtyChannelScratch = [];
   const pendingUpdateScratch = [];
-  let debugConfig = { ...DEFAULT_DEBUG_CONFIG };
   let frameHandle = null;
+  let frameCount = 0;
+  let frameAfterFrameFlushes = 0;
   let lastFrameTime = 0;
-  let lastSampleTimeMs = Number.NEGATIVE_INFINITY;
   let nextTargetId = 1;
   let runtimeTimeMs = 0;
+  let autoTickerSuspended = 0;
+  let writesLastFrame = 0;
+
+  function installDebugAdapter(factory = motionRuntimeDebugAdapterFactory) {
+    if (typeof factory !== "function") return false;
+    const previousConfig = debugAdapter.getConfig?.() || {};
+    const nextAdapter = factory();
+    nextAdapter.configureDebug?.(previousConfig);
+    debugAdapter = nextAdapter;
+    return true;
+  }
+
+  motionRuntimeDebugAdapterInstallers.add(installDebugAdapter);
 
   function getTargetId(target) {
     if (!target) return null;
@@ -370,49 +172,62 @@ export function createMotionRuntime(options = {}) {
     return id;
   }
 
-  function rememberDebugTargetRef(targetId, target, metadata = null) {
-    if (!debugTargetRefsById || targetId == null || !target) return;
-    const liveTarget = metadata?.overlayTarget || metadata?.boundsTarget || metadata?.debugOverlayTarget || null;
-    const previous = debugTargetRefsById.get(targetId) || {};
-    debugTargetRefsById.set(targetId, {
-      overlayTarget: liveTarget || previous.overlayTarget || target,
-      target,
-    });
+  function emitMotionEvent(type, payload = {}) {
+    if (!debugAdapter.isEnabled()) return;
+    const event = { ...payload, type };
+    debugAdapter.observe(event);
+    for (const observer of observers) {
+      if (typeof observer === "function") observer(event);
+      else observer?.handleEvent?.(event);
+    }
   }
 
-  function rememberTarget(target) {
+  function addObserver(observer) {
+    if (!observer || (typeof observer !== "function" && typeof observer.handleEvent !== "function")) {
+      return () => {};
+    }
+    observers.add(observer);
+    return () => observers.delete(observer);
+  }
+
+  function onRenderSignal(observer) {
+    if (!observer || (typeof observer !== "function" && typeof observer.handleRenderSignal !== "function")) {
+      return () => {};
+    }
+    renderSignalObservers.add(observer);
+    return () => renderSignalObservers.delete(observer);
+  }
+
+  function emitRenderSignal(reason = "motion", options = {}) {
+    if (!renderSignalObservers.size) return;
+    const activeAnimationCount = Math.max(0, Math.floor(readNumber(options.activeAnimationCount, activeAnimations.size)));
+    const afterFrameFlushes = Math.max(0, Math.floor(readNumber(options.afterFrameFlushes, frameAfterFrameFlushes)));
+    const frame = Math.max(0, Math.floor(readNumber(options.frame, frameCount)));
+    const timeMs = readNumber(options.timeMs, runtimeTimeMs);
+    const writes = Math.max(0, Math.floor(readNumber(options.writesLastFrame, writesLastFrame)));
+    for (const observer of renderSignalObservers) {
+      if (typeof observer === "function") observer(activeAnimationCount, writes, afterFrameFlushes, reason, frame, timeMs);
+      else observer?.handleRenderSignal?.(activeAnimationCount, writes, afterFrameFlushes, reason, frame, timeMs);
+    }
+  }
+
+  function rememberTarget(target, metadata = null) {
     const targetId = getTargetId(target);
     if (targetId == null) return null;
-    rememberDebugTargetRef(targetId, target);
-    const described = debugTargetMetaByTarget.get(target);
-    if (described) debugTargetMetaById.set(targetId, described);
-    else if (!debugTargetMetaById.has(targetId)) debugTargetMetaById.set(targetId, { targetId });
+    emitMotionEvent("targetMetadata", {
+      metadata,
+      record: debugAdapter.makeTargetMetadataRecord(targetId, metadata),
+      target,
+      targetId,
+    });
     return targetId;
   }
 
-  function cloneDebugConfig() {
+  function makeDebugAnimationRecord(animation, options = {}) {
+    const targetId = options.emitTargetMetadata === false
+      ? getTargetId(animation.target)
+      : rememberTarget(animation.target);
     return {
-      ...debugConfig,
-      recordFilter: cloneDebugRecordFilter(debugConfig.recordFilter),
-    };
-  }
-
-  function trimDebugHistory() {
-    const minTimeMs = runtimeTimeMs - debugConfig.recordWindowMs;
-    while (debugHistory.events.length && debugHistory.events[0].timeMs < minTimeMs) debugHistory.events.shift();
-    while (debugHistory.samples.length && debugHistory.samples[0].timeMs < minTimeMs) debugHistory.samples.shift();
-    while (debugHistory.events.length > debugConfig.maxEvents) debugHistory.events.shift();
-    while (debugHistory.samples.length > debugConfig.maxSamples) debugHistory.samples.shift();
-  }
-
-  function shouldRecordDebugHistory() {
-    return debugConfig.enabled && debugConfig.recordHistory;
-  }
-
-  function makeDebugAnimationRecord(animation) {
-    const targetId = rememberTarget(animation.target);
-    const metadata = targetId == null ? null : debugTargetMetaById.get(targetId);
-    const record = {
       delay: animation.delay,
       blendDuration: animation.blendFrom == null ? 0 : animation.blendDuration,
       blendProgress: animation.blendFrom == null || animation.blendDuration <= 0
@@ -431,17 +246,12 @@ export function createMotionRuntime(options = {}) {
       value: animation.value,
       velocity: animation.velocity,
     };
-    if (metadata?.layer != null) record.layer = metadata.layer;
-    if (metadata?.kind != null) record.targetKind = metadata.kind;
-    if (metadata?.label != null) record.targetLabel = metadata.label;
-    if (metadata?.sourceLabel != null) record.sourceLabel = metadata.sourceLabel;
-    return record;
   }
 
   function makeDebugEvent(type, animation, extra = {}) {
     const record = makeDebugAnimationRecord(animation);
     const event = {
-      frame: debug.frames,
+      frame: frameCount,
       timeMs: runtimeTimeMs,
       type,
       ...record,
@@ -452,14 +262,55 @@ export function createMotionRuntime(options = {}) {
   }
 
   function recordDebugEvent(type, animation, extra) {
-    if (!shouldRecordDebugHistory()) return;
+    if (!debugAdapter.isEnabled()) return;
     const event = makeDebugEvent(type, animation, extra);
-    if (!matchesDebugRecordFilter(event, type, debugConfig.recordFilter)) return;
-    debugHistory.events.push(event);
-    trimDebugHistory();
+    emitMotionEvent(type, {
+      active: activeAnimations.has(animation),
+      frame: event.frame,
+      record: event,
+      timeMs: event.timeMs,
+    });
   }
 
-  function makeDebugLaneRecord(animation) {
+  function recordCoordinationEvent(payload = {}) {
+    if (!debugAdapter.isEnabled()) return;
+    const sanitized = sanitizeDebugMetadata(payload);
+    const action = String(sanitized.action || "coordination");
+    const event = {
+      ...sanitized,
+      action,
+      category: "coordination",
+      domain: sanitized.domain || "coordination",
+      driver: "coordination",
+      frame: frameCount,
+      lane: "coordination",
+      laneKey: action,
+      layer: sanitized.layer || "handoff",
+      phase: sanitized.phase || null,
+      prop: sanitized.prop || "handoff",
+      sourceLabel: sanitized.sourceLabel || "folder.handoff.coordination",
+      targetId: null,
+      targetKind: sanitized.targetKind || "FolderHandoff",
+      targetLabel: sanitized.targetLabel || (sanitized.folderId ? `Folder handoff ${sanitized.folderId}` : "Folder handoff"),
+      timeMs: runtimeTimeMs,
+      to: readNumber(sanitized.to, 0),
+      type: "coordination",
+      value: readNumber(sanitized.value, 0),
+      velocity: readNumber(sanitized.velocity, 0),
+    };
+    emitMotionEvent("coordination", {
+      frame: event.frame,
+      record: event,
+      timeMs: event.timeMs,
+    });
+  }
+
+  function recordMotionLifecycle(type, animation, extra) {
+    emitRenderSignal(type);
+    recordDebugEvent(type, animation, extra);
+  }
+
+  function makeDebugLaneRecord(animation, options = {}) {
     const record = {
       driver: animation.driver?.type || "spring",
       from: animation.from,
@@ -472,16 +323,17 @@ export function createMotionRuntime(options = {}) {
       value: animation.value,
       velocity: animation.velocity,
     };
-    const targetId = rememberTarget(animation.target);
-    const metadata = targetId == null ? null : debugTargetMetaById.get(targetId);
-    if (metadata?.sourceLabel != null) record.sourceLabel = metadata.sourceLabel;
+    const targetId = options.emitTargetMetadata === false
+      ? getTargetId(animation.target)
+      : rememberTarget(animation.target);
+    record.targetId = targetId;
     return record;
   }
 
-  function makeChannelBreakdown(channel) {
-    const baseLanes = Array.from(channel.base.values()).map((animation) => makeDebugLaneRecord(animation));
-    const additiveLanes = Array.from(channel.additive.values()).map((animation) => makeDebugLaneRecord(animation));
-    const factorLanes = Array.from(channel.factor.values()).map((animation) => makeDebugLaneRecord(animation));
+  function makeChannelBreakdown(channel, options = {}) {
+    const baseLanes = Array.from(channel.base.values()).map((animation) => makeDebugLaneRecord(animation, options));
+    const additiveLanes = Array.from(channel.additive.values()).map((animation) => makeDebugLaneRecord(animation, options));
+    const factorLanes = Array.from(channel.factor.values()).map((animation) => makeDebugLaneRecord(animation, options));
     const additiveValue = additiveLanes.reduce((total, lane) => total + lane.output, 0);
     const factorValue = factorLanes.reduce((total, lane) => total * lane.output, 1);
     const unclampedValue = (channel.baseValue + additiveValue) * factorValue;
@@ -509,14 +361,16 @@ export function createMotionRuntime(options = {}) {
     return breakdown;
   }
 
-  function makeDebugChannelRecords() {
+  function makeDebugChannelRecords(options = {}) {
     const channels = new Map();
     for (const animation of activeAnimations) {
-      const targetId = rememberTarget(animation.target);
+      const targetId = options.emitTargetMetadata === false
+        ? getTargetId(animation.target)
+        : rememberTarget(animation.target);
       const key = `${targetId ?? "unknown"}:${animation.prop}`;
       let record = channels.get(key);
       if (!record) {
-        const breakdown = makeChannelBreakdown(animation.channel);
+        const breakdown = makeChannelBreakdown(animation.channel, options);
         record = {
           activeBaseKey: animation.channel.activeBaseKey,
           ...breakdown,
@@ -533,240 +387,60 @@ export function createMotionRuntime(options = {}) {
     return Array.from(channels.values());
   }
 
-  function makeDebugTargetRecords() {
-    return Array.from(debugTargetMetaById.values())
-      .map((metadata) => ({ ...metadata }))
-      .sort((a, b) => (a.targetId || 0) - (b.targetId || 0));
-  }
-
-  function makeDebugWarnings(animations) {
-    const warnings = [];
-    const seen = new Set();
-    for (const animation of animations) {
-      const metadata = animation.targetId == null ? null : debugTargetMetaById.get(animation.targetId);
-      if (hasReadableDebugMetadata(metadata)) continue;
-      const key = `${animation.targetId ?? "unknown"}:${animation.prop ?? "unknown"}:${animation.lane ?? "unknown"}:${animation.laneKey ?? "unknown"}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      warnings.push({
-        lane: animation.lane,
-        laneKey: animation.laneKey,
-        message: "Active animation target is missing readable debug metadata.",
-        prop: animation.prop,
-        targetId: animation.targetId,
-        type: "missing-target-metadata",
-      });
-    }
-    return warnings;
-  }
-
-  function cloneDebugHistory() {
-    return {
-      events: debugHistory.events.map((event) => ({ ...event })),
-      samples: debugHistory.samples.map((sample) => ({
-        ...sample,
-        animations: sample.animations.map((animation) => ({ ...animation })),
-      })),
-    };
-  }
-
-  function makeCurveStatsKey(record) {
-    return `${record.targetId ?? "unknown"}:${record.prop ?? "unknown"}:${record.lane ?? "unknown"}:${record.laneKey ?? "unknown"}`;
-  }
-
-  function readFiniteNumber(value) {
-    if (value == null) return null;
-    const number = Number(value);
-    return Number.isFinite(number) ? number : null;
-  }
-
-  function makeCurveStatsSeed(record) {
-    const key = makeCurveStatsKey(record);
-    return {
-      arriveCompleteGapMs: null,
-      arriveTimeMs: null,
-      completeTimeMs: null,
-      driver: record.driver || "unknown",
-      eventCount: 0,
-      key,
-      lane: record.lane,
-      laneKey: record.laneKey,
-      maxDelta: 0,
-      maxVelocity: 0,
-      overshootCount: 0,
-      prop: record.prop,
-      retargetCount: 0,
-      sampleCount: 0,
-      settleDurationMs: null,
-      sourceLabel: record.sourceLabel,
-      startTimeMs: null,
-      targetId: record.targetId,
-      _from: null,
-      _lastTimeMs: null,
-      _lastValue: null,
-      _overshooting: false,
-      _settleTimeMs: null,
-      _to: null,
-    };
-  }
-
-  function updateCurveStats(stats, point) {
-    const timeMs = readFiniteNumber(point.timeMs) ?? 0;
-    const value = readFiniteNumber(point.value);
-    const from = readFiniteNumber(point.from);
-    const to = readFiniteNumber(point.to);
-    const velocity = readFiniteNumber(point.velocity);
-    const isSample = point.type === "sample";
-
-    if (isSample) stats.sampleCount += 1;
-    else stats.eventCount += 1;
-    if (stats.startTimeMs == null || point.type === "start") stats.startTimeMs = timeMs;
-    if (point.driver) stats.driver = point.driver;
-    if (point.sourceLabel) stats.sourceLabel = point.sourceLabel;
-
-    if (point.type === "retarget") {
-      stats.retargetCount += 1;
-      stats._overshooting = false;
-    }
-    if (point.type === "settle") {
-      stats._settleTimeMs = timeMs;
-      stats._overshooting = false;
-    }
-    if (from != null) stats._from = from;
-    if (to != null) stats._to = to;
-
-    if (value != null && stats._to != null) {
-      stats.maxDelta = Math.max(stats.maxDelta, Math.abs(stats._to - value));
-    }
-    if (velocity != null) stats.maxVelocity = Math.max(stats.maxVelocity, Math.abs(velocity));
-    if (value != null && stats._lastValue != null && stats._lastTimeMs != null && timeMs > stats._lastTimeMs) {
-      const derivedVelocity = Math.abs((value - stats._lastValue) / ((timeMs - stats._lastTimeMs) / 1000));
-      stats.maxVelocity = Math.max(stats.maxVelocity, derivedVelocity);
-    }
-
-    if (value != null && stats._from != null && stats._to != null) {
-      const direction = Math.sign(stats._to - stats._from);
-      const overshooting = direction > 0
-        ? value > stats._to
-        : direction < 0
-          ? value < stats._to
-          : false;
-      if (overshooting && !stats._overshooting) stats.overshootCount += 1;
-      stats._overshooting = overshooting;
-    }
-
-    if (point.type === "arrive" && stats.arriveTimeMs == null) stats.arriveTimeMs = timeMs - stats.startTimeMs;
-    if ((point.type === "complete" || point.type === "snap") && stats.completeTimeMs == null) {
-      stats.completeTimeMs = timeMs - stats.startTimeMs;
-      if (stats._settleTimeMs != null) stats.settleDurationMs = timeMs - stats._settleTimeMs;
-    }
-
-    if (value != null) {
-      stats._lastValue = value;
-      stats._lastTimeMs = timeMs;
-    }
-  }
-
-  function makeCurveStats() {
-    const statsByKey = new Map();
-    const points = [];
-    for (const event of debugHistory.events) points.push(event);
-    for (const sample of debugHistory.samples) {
-      for (const animation of sample.animations) {
-        points.push({
-          ...animation,
-          frame: sample.frame,
-          timeMs: sample.timeMs,
-          type: "sample",
-        });
-      }
-    }
-    points.sort((a, b) => (a.timeMs - b.timeMs) || (a.frame - b.frame));
-
-    for (const point of points) {
-      if (point.prop == null || point.lane == null || point.laneKey == null) continue;
-      const key = makeCurveStatsKey(point);
-      let stats = statsByKey.get(key);
-      if (!stats) {
-        stats = makeCurveStatsSeed(point);
-        statsByKey.set(key, stats);
-      }
-      updateCurveStats(stats, point);
-    }
-
-    return Array.from(statsByKey.values()).map((stats) => {
-      const result = { ...stats };
-      if (result.arriveTimeMs != null && result.completeTimeMs != null) result.arriveCompleteGapMs = result.completeTimeMs - result.arriveTimeMs;
-      delete result._from;
-      delete result._lastTimeMs;
-      delete result._lastValue;
-      delete result._overshooting;
-      delete result._settleTimeMs;
-      return result;
-    });
-  }
-
   function recordDebugSample() {
-    if (!shouldRecordDebugHistory()) return;
-    const intervalMs = debugConfig.sampleHz > 0 ? 1000 / debugConfig.sampleHz : 0;
-    if (intervalMs > 0 && runtimeTimeMs - lastSampleTimeMs < intervalMs) return;
-    const animations = Array.from(activeAnimations)
-      .map((animation) => makeDebugAnimationRecord(animation))
-      .filter((record) => matchesDebugRecordFilter(record, "sample", debugConfig.recordFilter));
-    if (debugConfig.recordFilter && animations.length === 0) {
-      lastSampleTimeMs = runtimeTimeMs;
-      return;
-    }
-    debugHistory.samples.push({
-      activeAnimationCount: animations.length,
-      animations,
-      frame: debug.frames,
+    emitRenderSignal("frame", {
+      activeAnimationCount: activeAnimations.size,
+      afterFrameFlushes: frameAfterFrameFlushes,
+      frame: frameCount,
       timeMs: runtimeTimeMs,
+      writesLastFrame,
     });
-    lastSampleTimeMs = runtimeTimeMs;
-    trimDebugHistory();
+    if (!debugAdapter.isEnabled()) return;
+    emitMotionEvent("frame", {
+      activeAnimationCount: activeAnimations.size,
+      afterFrameFlushes: frameAfterFrameFlushes,
+      frame: frameCount,
+      timeMs: runtimeTimeMs,
+      writesLastFrame,
+    });
+    if (!debugAdapter.shouldBuildSample(runtimeTimeMs)) return;
+    const sampleRecordOptions = { emitTargetMetadata: false };
+    const animations = Array.from(activeAnimations)
+      .map((animation) => makeDebugAnimationRecord(animation, sampleRecordOptions));
+    emitMotionEvent("sample", {
+      afterFrameFlushes: frameAfterFrameFlushes,
+      animations,
+      channels: makeDebugChannelRecords(sampleRecordOptions),
+      frame: frameCount,
+      timeMs: runtimeTimeMs,
+      writesLastFrame,
+    });
   }
 
   function clearDebugHistory() {
-    debugHistory.events.length = 0;
-    debugHistory.samples.length = 0;
-    lastSampleTimeMs = Number.NEGATIVE_INFINITY;
+    debugAdapter.clearHistory();
   }
 
   function configureDebug(config = {}) {
-    if (config && typeof config === "object") {
-      if (Object.hasOwn(config, "enabled")) debugConfig.enabled = Boolean(config.enabled);
-      if (Object.hasOwn(config, "overlayEnabled")) debugConfig.overlayEnabled = Boolean(config.overlayEnabled);
-      if (Object.hasOwn(config, "recordHistory")) debugConfig.recordHistory = Boolean(config.recordHistory);
-      if (Object.hasOwn(config, "recordWindowMs")) {
-        debugConfig.recordWindowMs = clamp(readNumber(config.recordWindowMs, debugConfig.recordWindowMs), DEBUG_RECORD_WINDOW_MIN_MS, DEBUG_RECORD_WINDOW_MAX_MS);
-      }
-      if (Object.hasOwn(config, "sampleHz")) debugConfig.sampleHz = Math.max(0, readNumber(config.sampleHz, debugConfig.sampleHz));
-      if (Object.hasOwn(config, "maxEvents")) debugConfig.maxEvents = Math.max(0, Math.floor(readNumber(config.maxEvents, debugConfig.maxEvents)));
-      if (Object.hasOwn(config, "maxSamples")) debugConfig.maxSamples = Math.max(0, Math.floor(readNumber(config.maxSamples, debugConfig.maxSamples)));
-      if (Object.hasOwn(config, "recordFilter")) debugConfig.recordFilter = normalizeDebugRecordFilter(config.recordFilter);
-      if (Object.hasOwn(config, "timeScale")) debugConfig.timeScale = Math.max(0, readNumber(config.timeScale, debugConfig.timeScale));
-      trimDebugHistory();
+    const hasPatch = Boolean(config && typeof config === "object" && Object.keys(config).length);
+    const nextConfig = debugAdapter.configureDebug(config);
+    if (hasPatch) {
+      emitRenderSignal("debug-config");
+      emitMotionEvent("debugConfig", { config: nextConfig });
     }
-    return cloneDebugConfig();
+    return nextConfig;
   }
 
   function describeTarget(target, metadata = {}) {
     if (!target) return null;
     const targetId = getTargetId(target);
     const record = { targetId, ...sanitizeDebugMetadata(metadata) };
-    debugTargetMetaByTarget.set(target, record);
-    debugTargetMetaById.set(targetId, record);
-    rememberDebugTargetRef(targetId, target, metadata);
+    emitMotionEvent("targetMetadata", { metadata, record, target, targetId });
     return { ...record };
   }
 
   function resolveDebugTarget(targetId, options = {}) {
-    const numericId = Number(targetId);
-    if (!Number.isFinite(numericId)) return null;
-    const entry = debugTargetRefsById?.get(numericId);
-    if (!entry) return null;
-    return options.bounds === false ? entry.target : (entry.overlayTarget || entry.target);
+    return debugAdapter.resolveTarget(targetId, options);
   }
 
   function getTargetMap(target, create = false) {
@@ -823,6 +497,7 @@ export function createMotionRuntime(options = {}) {
   }
 
   function composeChannel(channel) {
+    dirtyChannels.delete(channel);
     if (channel.target?.destroyed) {
       cleanupChannel(channel);
       return channel.value;
@@ -833,8 +508,7 @@ export function createMotionRuntime(options = {}) {
     if (channel.clamp) value = clamp(value, channel.clamp.min, channel.clamp.max);
     channel.value = value;
     channel.target[channel.prop] = value;
-    debug.writes += 1;
-    debug.writesLastFrame += 1;
+    writesLastFrame += 1;
     return value;
   }
 
@@ -862,7 +536,7 @@ export function createMotionRuntime(options = {}) {
     return fallback;
   }
 
-  function clearChannelLane(animation) {
+  function clearChannelLane(animation, options = {}) {
     const channel = animation.channel;
     if (!channel) return;
     if (animation.lane === "base") {
@@ -877,26 +551,18 @@ export function createMotionRuntime(options = {}) {
     } else if (channel.additive.get(animation.laneKey) === animation) {
       channel.additive.delete(animation.laneKey);
     }
-    composeChannel(channel);
+    if (options.compose !== false) composeChannel(channel);
     cleanupChannel(channel);
   }
 
   function addActiveAnimation(animation) {
     activeAnimations.add(animation);
-    activeTargets.add(animation.target);
-    rememberTarget(animation.target);
-    debug.started += 1;
-    recordDebugEvent("start", animation);
+    recordMotionLifecycle("start", animation);
     ensureTicker();
   }
 
   function removeActiveAnimation(animation) {
     activeAnimations.delete(animation);
-    if (!animation?.target) return;
-    for (const activeAnimation of activeAnimations) {
-      if (activeAnimation.target === animation.target) return;
-    }
-    activeTargets.delete(animation.target);
   }
 
   function cancelAnimation(animation, reason = "cancel") {
@@ -905,9 +571,7 @@ export function createMotionRuntime(options = {}) {
     removeActiveAnimation(animation);
     pendingUpdateAnimations.delete(animation);
     clearChannelLane(animation);
-    debug.canceled += 1;
-    debug.canceledByReason[reason] = (debug.canceledByReason[reason] || 0) + 1;
-    recordDebugEvent("cancel", animation, { reason });
+    recordMotionLifecycle("cancel", animation, { reason });
     animation.onCancel?.(reason);
   }
 
@@ -918,14 +582,12 @@ export function createMotionRuntime(options = {}) {
     animation.value = finalValue;
     animation.blendElapsed = animation.blendDuration;
     if (animation.lane === "base" && animation.channel.activeBaseKey === animation.laneKey) animation.channel.baseValue = getAnimationOutputValue(animation);
-    composeChannel(animation.channel);
     fireMilestones(animation, 1);
     removeActiveAnimation(animation);
     clearChannelLane(animation);
-    debug.completed += 1;
     const shouldFireArrive = !animation.arrived;
-    if (shouldFireArrive) recordDebugEvent("arrive", animation, { value: finalValue });
-    recordDebugEvent("complete", animation, { value: finalValue });
+    if (shouldFireArrive) recordMotionLifecycle("arrive", animation, { value: finalValue });
+    recordMotionLifecycle("complete", animation, { value: finalValue });
     animation.onUpdate?.(finalValue);
     if (shouldFireArrive) {
       animation.arrived = true;
@@ -935,7 +597,12 @@ export function createMotionRuntime(options = {}) {
   }
 
   function scheduleFrame() {
-    if (!autoStart || frameHandle != null || typeof scheduler.requestAnimationFrame !== "function") return;
+    if (
+      !autoStart ||
+      autoTickerSuspended > 0 ||
+      frameHandle != null ||
+      typeof scheduler.requestAnimationFrame !== "function"
+    ) return;
     frameHandle = scheduler.requestAnimationFrame((time) => {
       frameHandle = null;
       const nextTime = Number.isFinite(Number(time)) ? Number(time) : nowMs();
@@ -1007,6 +674,27 @@ export function createMotionRuntime(options = {}) {
     return animation;
   }
 
+  function isEmptySpringAnimation(animation) {
+    if (animation.driver?.type !== "spring") return false;
+    if (animation.delay > 0) return false;
+    if (animation.onUpdate || animation.milestones.length) return false;
+    const current = readNumber(animation.target?.[animation.prop], animation.from);
+    return Math.abs(animation.from - animation.to) <= NEUTRAL_EPSILON &&
+      Math.abs(current - animation.to) <= NEUTRAL_EPSILON &&
+      Math.abs(animation.velocity) <= NEUTRAL_EPSILON;
+  }
+
+  function finishEmptySpringAnimation(animation) {
+    animation.done = true;
+    animation.value = animation.to;
+    animation.arrived = true;
+    cleanupChannel(animation.channel);
+    recordMotionLifecycle("snap", animation, { value: animation.to });
+    animation.onArrive?.(animation.to);
+    animation.onComplete?.();
+    return null;
+  }
+
   function replaceExistingLane(channel, animation) {
     const existing = animation.lane === "base"
       ? channel.base.get(animation.laneKey)
@@ -1029,7 +717,7 @@ export function createMotionRuntime(options = {}) {
       existing.arrived = false;
       existing.released = false;
       if (animation.lane === "base") channel.activeBaseKey = existing.laneKey;
-      recordDebugEvent("retarget", existing, { value: existing.value });
+      recordMotionLifecycle("retarget", existing, { value: existing.value });
       return existing;
     }
     if (animation.interrupt === "retarget") {
@@ -1047,7 +735,7 @@ export function createMotionRuntime(options = {}) {
       existing.released = false;
       if (existing.driver?.type === "progress") existing.driver.options.progress = 0;
       if (animation.lane === "base") channel.activeBaseKey = existing.laneKey;
-      recordDebugEvent("retarget", existing, { value: existing.value });
+      recordMotionLifecycle("retarget", existing, { value: existing.value });
       return existing;
     }
     if (animation.interrupt === "blend") {
@@ -1082,11 +770,14 @@ export function createMotionRuntime(options = {}) {
       composeChannel(animation.channel);
       fireMilestones(animation, 1);
       clearChannelLane(animation);
-      recordDebugEvent("snap", animation, { value: animation.to });
+      recordMotionLifecycle("snap", animation, { value: animation.to });
       animation.onUpdate?.(animation.to);
       animation.onArrive?.(animation.to);
       animation.onComplete?.();
       return null;
+    }
+    if (!existingLaneAnimation && isEmptySpringAnimation(animation)) {
+      return finishEmptySpringAnimation(animation);
     }
 
     const retargeted = replaceExistingLane(animation.channel, animation);
@@ -1097,21 +788,6 @@ export function createMotionRuntime(options = {}) {
     composeChannel(animation.channel);
     addActiveAnimation(animation);
     return makeControl(animation);
-  }
-
-  function set(target, prop, value, setOptions = {}) {
-    if (!target || !prop) return;
-    stop(target, prop, setOptions);
-    const channel = getChannel(target, prop);
-    if (channel) {
-      if (!setOptions.lane || setOptions.lane === "base") {
-        const laneKey = setOptions.laneKey || "base";
-        if (!setOptions.laneKey || channel.activeBaseKey === laneKey || !channel.base.size) channel.baseValue = readNumber(value, channel.baseValue);
-      }
-      composeChannel(channel);
-      return;
-    }
-    target[prop] = readNumber(value, target[prop]);
   }
 
   function getLaneAnimation(channel, animation) {
@@ -1148,7 +824,7 @@ export function createMotionRuntime(options = {}) {
     const arriveDelta = Math.max(0, readNumber(config.arriveDelta, animation.arriveDelta ?? DEFAULT_ARRIVE_DELTA));
     if (!animation.arrived && delta <= arriveDelta) {
       animation.arrived = true;
-      recordDebugEvent("arrive", animation, { value: animation.value });
+      recordMotionLifecycle("arrive", animation, { value: animation.value });
       animation.onArrive?.(animation.value);
     }
     const restDelta = Math.max(0, readNumber(config.restDelta, DEFAULT_REST_DELTA));
@@ -1182,24 +858,11 @@ export function createMotionRuntime(options = {}) {
     fireMilestones(animation, progress);
     if (!animation.arrived && Math.abs(animation.to - animation.value) <= readNumber(options.arriveDelta, DEFAULT_REST_DELTA)) {
       animation.arrived = true;
-      recordDebugEvent("arrive", animation, { value: animation.value });
+      recordMotionLifecycle("arrive", animation, { value: animation.value });
       animation.onArrive?.(animation.value);
     }
     writeAnimation(animation);
     if (!repeatsForever && animation.elapsed >= totalDuration) completeAnimation(animation, animation.value);
-  }
-
-  function tickDecay(animation, deltaSeconds) {
-    const options = animation.driver.options || {};
-    const friction = clamp(readNumber(options.friction, 0.92), 0, 1);
-    const restSpeed = Math.max(0, readNumber(options.restSpeed, DEFAULT_REST_SPEED));
-    animation.velocity *= friction ** (deltaSeconds * 60);
-    animation.value += animation.velocity * deltaSeconds;
-    if (Math.abs(animation.velocity) <= restSpeed) {
-      completeAnimation(animation);
-      return;
-    }
-    writeAnimation(animation);
   }
 
   function tickAnimation(animation, deltaSeconds) {
@@ -1218,7 +881,6 @@ export function createMotionRuntime(options = {}) {
     animation.started = true;
     advanceBlend(animation, deltaSeconds);
     if (animation.driver.type === "tween") tickTween(animation, deltaSeconds);
-    else if (animation.driver.type === "decay") tickDecay(animation, deltaSeconds);
     else if (animation.driver.type === "progress") tickProgress(animation);
     else tickSpring(animation, deltaSeconds);
   }
@@ -1231,7 +893,7 @@ export function createMotionRuntime(options = {}) {
     fireMilestones(animation, progress);
     if (!animation.arrived && progress >= 1) {
       animation.arrived = true;
-      recordDebugEvent("arrive", animation, { value: animation.value });
+      recordMotionLifecycle("arrive", animation, { value: animation.value });
       animation.onArrive?.(animation.value);
     }
     writeAnimation(animation);
@@ -1286,7 +948,7 @@ export function createMotionRuntime(options = {}) {
 
   function flushAfterFrame() {
     if (!afterFrameCallbacks.size) return;
-    debug.afterFrameFlushes += 1;
+    frameAfterFrameFlushes += 1;
     afterFrameScratch.length = 0;
     for (const callback of afterFrameCallbacks) afterFrameScratch.push(callback);
     afterFrameCallbacks.clear();
@@ -1295,9 +957,10 @@ export function createMotionRuntime(options = {}) {
   }
 
   function step(deltaSeconds = 0) {
-    const elapsed = Math.min(maxDeltaSeconds, Math.max(0, readNumber(deltaSeconds))) * debugConfig.timeScale;
-    debug.frames += 1;
-    debug.writesLastFrame = 0;
+    const elapsed = Math.min(maxDeltaSeconds, Math.max(0, readNumber(deltaSeconds))) * debugAdapter.getConfig().timeScale;
+    frameCount += 1;
+    frameAfterFrameFlushes = 0;
+    writesLastFrame = 0;
     runtimeTimeMs += elapsed * 1000;
     if (elapsed > 0) {
       activeAnimationScratch.length = 0;
@@ -1309,8 +972,6 @@ export function createMotionRuntime(options = {}) {
     flushPendingUpdates();
     flushAfterFrame();
     recordDebugSample();
-    debug.activeChannels = activeAnimations.size;
-    debug.activeTargets = activeTargets.size;
     if (!activeAnimations.size && !afterFrameCallbacks.size) stopTicker();
   }
 
@@ -1323,8 +984,7 @@ export function createMotionRuntime(options = {}) {
     animation.onUpdate = null;
     animation.milestones = [];
     pendingUpdateAnimations.delete(animation);
-    debug.released += 1;
-    recordDebugEvent("release", animation);
+    recordMotionLifecycle("release", animation);
     if (animation.started || animation.delay <= 0) return;
     animation.done = true;
     removeActiveAnimation(animation);
@@ -1334,6 +994,28 @@ export function createMotionRuntime(options = {}) {
   function afterFrame(callback) {
     if (typeof callback !== "function") return;
     afterFrameCallbacks.add(callback);
+    if (autoTickerSuspended > 0) {
+      emitRenderSignal("frame-request", {
+        activeAnimationCount: activeAnimations.size,
+        afterFramePending: afterFrameCallbacks.size,
+        frame: frameCount,
+        timeMs: runtimeTimeMs,
+      });
+    }
+    ensureTicker();
+  }
+
+  function hasActiveWork() {
+    return Boolean(activeAnimations.size || afterFrameCallbacks.size);
+  }
+
+  function suspendAutoTicker() {
+    autoTickerSuspended += 1;
+    stopTicker();
+  }
+
+  function resumeAutoTicker() {
+    autoTickerSuspended = Math.max(0, autoTickerSuspended - 1);
     ensureTicker();
   }
 
@@ -1452,7 +1134,7 @@ export function createMotionRuntime(options = {}) {
         animation.arrived = false;
         animation.progress = targetProgress;
         if (animation.lane === "base" && animation.channel.activeBaseKey === animation.laneKey) animation.channel.baseValue = getAnimationOutputValue(animation);
-        recordDebugEvent("settle", animation, { value: animation.value });
+        recordMotionLifecycle("settle", animation, { value: animation.value });
       },
       get state() {
         return animation;
@@ -1493,58 +1175,41 @@ export function createMotionRuntime(options = {}) {
     dirtyChannels.clear();
     pendingUpdateAnimations.clear();
     stopTicker();
-    Object.assign(debug, makeDebugCounters());
+    debugAdapter.reset();
     clearDebugHistory();
-    debugTargetRefsById?.clear();
+    frameCount = 0;
+    frameAfterFrameFlushes = 0;
     runtimeTimeMs = 0;
+    autoTickerSuspended = 0;
+    writesLastFrame = 0;
   }
 
   function debugSnapshot(snapshotOptions = {}) {
-    const animations = Array.from(activeAnimations).map((animation) => makeDebugAnimationRecord(animation));
-    const warnings = makeDebugWarnings(animations);
-    const summary = makeDebugSummary(animations);
-    summary.warningCount = warnings.length;
-    const snapshot = {
-      counters: {
-        ...debug,
-        canceledByReason: { ...debug.canceledByReason },
+    return debugAdapter.makeSnapshot(snapshotOptions, {
+      animations: Array.from(activeAnimations).map((animation) => makeDebugAnimationRecord(animation)),
+      channels: snapshotOptions.includeChannels ? makeDebugChannelRecords() : undefined,
+      runtime: {
+        activeAnimationCount: activeAnimations.size,
+        frames: frameCount,
+        timeMs: runtimeTimeMs,
       },
-      summary,
-      animations,
-      warnings,
-    };
-    if (snapshotOptions.includeChannels) snapshot.channels = makeDebugChannelRecords();
-    if (snapshotOptions.includeTargets) snapshot.targets = makeDebugTargetRecords();
-    if (snapshotOptions.includeHistory) snapshot.history = cloneDebugHistory();
-    return snapshot;
+    });
   }
 
   function debugReport(reportOptions = {}) {
-    const snapshot = debugSnapshot({
-      includeChannels: reportOptions.includeChannels,
-      includeTargets: reportOptions.includeTargets,
-    });
-    const report = {
-      animations: snapshot.animations,
-      config: cloneDebugConfig(),
-      counters: snapshot.counters,
-      curveStats: makeCurveStats(),
+    return debugAdapter.makeReport(reportOptions, {
+      animations: Array.from(activeAnimations).map((animation) => makeDebugAnimationRecord(animation)),
+      channels: reportOptions.includeChannels ? makeDebugChannelRecords() : undefined,
       runtime: {
-        activeAnimationCount: snapshot.summary.activeAnimationCount,
-        frames: debug.frames,
+        activeAnimationCount: activeAnimations.size,
+        frames: frameCount,
         timeMs: runtimeTimeMs,
       },
-      summary: snapshot.summary,
-      version: 1,
-      warnings: snapshot.warnings,
-    };
-    if (reportOptions.includeChannels) report.channels = snapshot.channels;
-    if (reportOptions.includeHistory) report.history = cloneDebugHistory();
-    if (reportOptions.includeTargets) report.targets = snapshot.targets;
-    return report;
+    });
   }
 
   return {
+    addObserver,
     afterFrame,
     animate,
     cancelTarget,
@@ -1555,54 +1220,23 @@ export function createMotionRuntime(options = {}) {
     describeTarget,
     flushAfterFrameForTests: flushAfterFrame,
     getChannel: (target, prop) => getChannel(target, prop),
-    debug,
+    get debug() {
+      return debugAdapter.debug;
+    },
+    hasActiveWork,
+    installDebugAdapter,
+    onRenderSignal,
+    recordCoordinationEvent,
     reset,
     resolveDebugTarget,
-    set,
+    resumeAutoTicker,
     step,
     stop,
+    suspendAutoTicker,
   };
 }
 
 export const motionRuntime = createMotionRuntime();
-
-export function track(target, prop, from, to, options = {}) {
-  return { ...options, from, lane: "base", prop, target, to };
-}
-
-export function additiveTrack(target, prop, from, to, options = {}) {
-  return { ...options, from, lane: "additive", prop, target, to };
-}
-
-export function factorTrack(target, prop, from, to, options = {}) {
-  return { ...options, from, lane: "factor", prop, target, to };
-}
-
-export function alphaFactor(target, from, to, options = {}) {
-  return factorTrack(target, "alpha", from, to, { clamp: { min: 0, max: 1 }, ...options });
-}
-
-export function playTrack(spec, options = {}) {
-  const runtime = options.runtime || motionRuntime;
-  return runtime.animate(spec.target, spec.prop, spec.to, {
-    clamp: spec.clamp,
-    delay: spec.delay,
-    driver: spec.driver || options.driver,
-    from: spec.from,
-    interrupt: spec.interrupt,
-    blendDuration: spec.blendDuration,
-    blendEase: spec.blendEase,
-    lane: spec.lane,
-    laneKey: spec.laneKey,
-    onArrive: spec.onArrive,
-    onCancel: spec.onCancel,
-    onComplete: spec.onComplete,
-    onUpdate: spec.onUpdate,
-    milestones: spec.milestones,
-    snap: spec.snap,
-    velocity: spec.velocity,
-  });
-}
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => motionRuntime.reset());

@@ -1,4 +1,13 @@
-import { MOTION_REPLAY_TRACE_SCHEMA } from "../../rendering/pixi/animation/motionReplayTrace.js";
+import { MOTION_REPLAY_TRACE_SCHEMA } from "../../rendering/pixi/animation/motionReplayTraceSchema.js";
+import {
+  clamp,
+  collectRecordText,
+  makeTargetsById,
+  makeTrackKey,
+  normalizeQuery,
+  readNumber,
+  resolveRecordLabel,
+} from "../../rendering/pixi/animation/motionTraceShared.js";
 
 export const MOTION_REPLAY_INTERVAL_SCHEMA = "pixi-motion-replay-interval/v1";
 export const MOTION_REPLAY_IMPORT_MAX_BYTES = 6 * 1024 * 1024;
@@ -8,15 +17,6 @@ const MAX_REPLAY_EVENT_ROWS = 16;
 const MAX_REPLAY_CURVE_GROUPS = 4;
 const MAX_REPLAY_OVERLAY_ROWS = 8;
 
-function readNumber(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
 function formatNumber(value, digits = 2) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "-";
@@ -25,15 +25,6 @@ function formatNumber(value, digits = 2) {
 
 function formatCount(value) {
   return String(Math.max(0, Math.floor(readNumber(value, 0))));
-}
-
-function makeTrackKey(record = {}) {
-  return [
-    record.targetId ?? "unknown",
-    record.prop ?? "unknown",
-    record.lane ?? "unknown",
-    record.laneKey ?? "unknown",
-  ].join(":");
 }
 
 function normalizeComparable(value) {
@@ -67,49 +58,8 @@ function makeTargetLaneKey(record = {}) {
   ].join(":");
 }
 
-function resolveRecordLabel(record = {}, targetsById = new Map()) {
-  const target = record.targetId != null ? targetsById.get(record.targetId) : null;
-  return record.sourceLabel
-    || record.targetLabel
-    || target?.sourceLabel
-    || target?.label
-    || (record.targetId != null ? `target ${record.targetId}` : "unknown");
-}
-
-function collectRecordText(record = {}, targetsById = new Map()) {
-  const target = record.targetId != null ? targetsById.get(record.targetId) : null;
-  return [
-    record.type,
-    record.reason,
-    record.targetId,
-    record.targetKind,
-    record.targetLabel,
-    record.sourceLabel,
-    record.label,
-    record.prop,
-    record.driver,
-    record.lane,
-    record.laneKey,
-    target?.kind,
-    target?.label,
-    target?.sourceLabel,
-  ].filter((value) => value != null).join(" ").toLowerCase();
-}
-
-function normalizeQuery(value) {
-  return String(value || "").trim().toLowerCase();
-}
-
 function normalizeStepDirection(value) {
   return value === "previous" || value === "prev" || value === -1 ? "previous" : "next";
-}
-
-function makeTargetsById(trace = {}) {
-  const targets = new Map();
-  for (const target of trace.targets || []) {
-    if (target?.targetId != null) targets.set(target.targetId, target);
-  }
-  return targets;
 }
 
 function makeFilterPredicate(trace = {}, filters = {}) {

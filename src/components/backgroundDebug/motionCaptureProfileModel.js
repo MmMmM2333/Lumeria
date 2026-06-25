@@ -1,3 +1,8 @@
+import {
+  makeTrackKey as makeMotionTrackKey,
+  readNumber,
+} from "../../rendering/pixi/animation/motionTraceShared.js";
+
 export const MOTION_CAPTURE_PROFILE_DEFAULT_VISUAL = "default-visual";
 export const MOTION_CAPTURE_PROFILE_TRANSFORM_FOCUS = "transform-focus";
 export const MOTION_CAPTURE_PROFILE_ALPHA_FOCUS = "alpha-focus";
@@ -20,6 +25,7 @@ export const MOTION_CAPTURE_DEFAULT_DURATION_MS = 30000;
 const TRANSFORM_PROPS = ["x", "y", "scale", "scaleX", "scaleY", "rotation"];
 const INTERRUPTION_EVENT_TYPES = ["cancel", "retarget", "release", "snap"];
 const ALLOWED_PROP_SET = new Set(MOTION_CAPTURE_ALLOWED_PROPS);
+const CAPTURE_TRACK_KEY_OPTIONS = { laneFallback: "base", laneKeyFallback: "default" };
 
 export const MOTION_CAPTURE_PROFILE_DEFINITIONS = [
   {
@@ -75,11 +81,6 @@ export const MOTION_CAPTURE_PROFILE_DEFINITIONS = [
 ];
 
 const PROFILE_BY_ID = new Map(MOTION_CAPTURE_PROFILE_DEFINITIONS.map((profile) => [profile.id, profile]));
-
-function readNumber(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
 
 function readString(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -201,15 +202,6 @@ function matchesTargetFilters(record = {}, filters = {}) {
   return true;
 }
 
-function makeTrackKey(record = {}) {
-  return [
-    record.targetId ?? "unknown",
-    record.prop ?? "unknown",
-    record.lane ?? "base",
-    record.laneKey ?? "default",
-  ].join(":");
-}
-
 function isSampleRecord(record = {}) {
   return readString(record.type, "sample").toLowerCase() === "sample";
 }
@@ -284,7 +276,9 @@ export function estimateMotionCaptureProfileSize(report = {}, profileInput = MOT
   const { eventRecords, sampleRecords } = collectReportRecords(report);
   const matchingSampleRecords = sampleRecords.filter((record) => matchesMotionCaptureProfileRecord(record, profile));
   const matchingEventRecords = eventRecords.filter((record) => matchesMotionCaptureProfileRecord(record, profile));
-  const trackKeys = new Set([...matchingSampleRecords, ...matchingEventRecords].map(makeTrackKey));
+  const trackKeys = new Set(
+    [...matchingSampleRecords, ...matchingEventRecords].map((record) => makeMotionTrackKey(record, CAPTURE_TRACK_KEY_OPTIONS))
+  );
   const targetIds = collectMatchedTargetIds([...matchingSampleRecords, ...matchingEventRecords]);
   const trackCount = trackKeys.size;
   const targetCount = targetIds.size;

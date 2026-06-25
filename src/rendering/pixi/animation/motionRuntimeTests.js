@@ -1,12 +1,7 @@
 import {
-  additiveTrack,
   createMotionRuntime,
-  decay,
-  factorTrack,
-  playTrack,
   progressDriver,
   spring,
-  track,
   tween,
 } from "./motionRuntime.js";
 
@@ -123,6 +118,7 @@ export function runMotionRuntimeTests() {
     const target = { x: 0 };
     const driver = spring({ damping: 28, mass: 0.9, stiffness: 190, restDelta: 0.01, restSpeed: 0.01 });
     const canceled = [];
+    runtime.configureDebug({ enabled: true });
     const first = runtime.animate(target, "x", 100, {
       driver,
       onCancel: (reason) => canceled.push(reason),
@@ -228,8 +224,15 @@ export function runMotionRuntimeTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
-    playTrack(track(target, "x", 0, 10, { driver: tween({ duration: 1, ease: "linear" }) }), { runtime });
-    playTrack(additiveTrack(target, "x", 5, 0, { driver: tween({ duration: 1, ease: "linear" }) }), { runtime });
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+    });
+    runtime.animate(target, "x", 0, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 5,
+      lane: "additive",
+    });
 
     runtime.step(0.5);
     assert(nearlyEqual(target.x, 7.5), `base and additive lanes should compose additively, got ${target.x}`);
@@ -240,27 +243,44 @@ export function runMotionRuntimeTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
-    playTrack(track(target, "x", 0, 100, { driver: tween({ duration: 1, ease: "linear" }) }), { runtime });
+    runtime.animate(target, "x", 100, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+    });
     runtime.step(0.4);
     const valueBeforeBlend = target.x;
-    playTrack(track(target, "x", 0, 20, {
+    runtime.animate(target, "x", 20, {
       blendDuration: 0.2,
       blendEase: "linear",
       driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
       interrupt: "blend",
-    }), { runtime });
+    });
 
-    assert(nearlyEqual(target.x, valueBeforeBlend), "playTrack blend should keep the current visual value on takeover");
+    assert(nearlyEqual(target.x, valueBeforeBlend), "runtime blend should keep the current visual value on takeover");
     runtime.step(0.1);
-    assert(nearlyEqual(target.x, 21), `playTrack blend should cross-blend explicit from tracks, got ${target.x}`);
+    assert(nearlyEqual(target.x, 21), `runtime blend should cross-blend explicit from tracks, got ${target.x}`);
   }
 
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
-    playTrack(track(target, "x", 0, 10, { driver: tween({ duration: 1, ease: "linear" }) }), { runtime });
-    playTrack(additiveTrack(target, "x", 4, 0, { driver: tween({ duration: 1, ease: "linear" }), laneKey: "pulse-a" }), { runtime });
-    playTrack(additiveTrack(target, "x", -2, 0, { driver: tween({ duration: 1, ease: "linear" }), laneKey: "pulse-b" }), { runtime });
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+    });
+    runtime.animate(target, "x", 0, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 4,
+      lane: "additive",
+      laneKey: "pulse-a",
+    });
+    runtime.animate(target, "x", 0, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: -2,
+      lane: "additive",
+      laneKey: "pulse-b",
+    });
 
     runtime.step(0.5);
     assert(nearlyEqual(target.x, 6), `multiple additive lanes should sum on the same property, got ${target.x}`);
@@ -297,8 +317,15 @@ export function runMotionRuntimeTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { scale: 1 };
-    playTrack(track(target, "scale", 1, 2, { driver: tween({ duration: 1, ease: "linear" }) }), { runtime });
-    playTrack(factorTrack(target, "scale", 0.5, 1, { driver: tween({ duration: 1, ease: "linear" }) }), { runtime });
+    runtime.animate(target, "scale", 2, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 1,
+    });
+    runtime.animate(target, "scale", 1, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0.5,
+      lane: "factor",
+    });
 
     runtime.step(0.5);
     assert(nearlyEqual(target.scale, 1.125), `base and factor lanes should compose multiplicatively, got ${target.scale}`);
@@ -309,18 +336,23 @@ export function runMotionRuntimeTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { scale: 1, x: 0 };
-    playTrack(track(target, "scale", 1, 0.9, {
+    runtime.animate(target, "scale", 0.9, {
       driver: tween({ duration: 1, ease: "linear" }),
+      from: 1,
       laneKey: "press-scale",
-    }), { runtime });
-    playTrack(factorTrack(target, "scale", 1, 1.1, {
+    });
+    runtime.animate(target, "scale", 1.1, {
       driver: tween({ duration: 1, ease: "linear" }),
+      from: 1,
+      lane: "factor",
       laneKey: "hover-scale",
-    }), { runtime });
-    playTrack(additiveTrack(target, "x", 0, 6, {
+    });
+    runtime.animate(target, "x", 6, {
       driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      lane: "additive",
       laneKey: "jiggle-x",
-    }), { runtime });
+    });
 
     runtime.step(0.5);
     const report = runtime.debugReport({ includeChannels: true });
@@ -328,6 +360,8 @@ export function runMotionRuntimeTests() {
     const scaleChannel = report.channels.find((channel) => channel.prop === "scale");
     const jiggleChannel = report.channels.find((channel) => channel.prop === "x");
 
+    assert(!Object.hasOwn(report, "curveStats"), "debug report should not include curve stats unless requested");
+    assert(!Object.hasOwn(snapshot, "curveStats"), "debug snapshot should not expose curve stats");
     assert(scaleChannel, "channel breakdown should include the press/hover scale channel");
     assert(jiggleChannel, "channel breakdown should include the jiggle additive channel");
     assert(snapshot.channels.find((channel) => channel.prop === "scale")?.composed, "debug snapshot should expose channel breakdown too");
@@ -361,15 +395,77 @@ export function runMotionRuntimeTests() {
   }
 
   {
-    const runtime = createMotionRuntime({ autoStart: false });
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const order = [];
     const callback = () => order.push("flush");
+    runtime.configureDebug({ enabled: true });
     runtime.afterFrame(callback);
     runtime.afterFrame(callback);
     runtime.step(0);
 
     assert(order.join(",") === "flush", "afterFrame should coalesce duplicate callbacks per frame");
     assert(runtime.debug.afterFrameFlushes === 1, "afterFrame debug counter should track flushes");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    assert(!runtime.hasActiveWork(), "idle runtime should report no active work");
+    runtime.animate(target, "x", 1, { driver: tween({ duration: 1 }) });
+    assert(runtime.hasActiveWork(), "active animation should report runtime work");
+    runtime.step(1);
+    assert(!runtime.hasActiveWork(), "completed animation should clear active runtime work");
+    runtime.afterFrame(() => {});
+    assert(runtime.hasActiveWork(), "pending afterFrame callback should report runtime work");
+    runtime.step(0);
+    assert(!runtime.hasActiveWork(), "flushed afterFrame callback should clear runtime work");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false });
+    const target = { x: 10 };
+    let arrived = 0;
+    let completed = 0;
+    const control = runtime.animate(target, "x", 10, {
+      driver: spring({ damping: 28, mass: 0.9, stiffness: 190 }),
+      onArrive: () => { arrived += 1; },
+      onComplete: () => { completed += 1; },
+    });
+
+    assert(control === null, "empty spring without per-frame callbacks should not create a control");
+    assert(!runtime.hasActiveWork(), "empty spring without per-frame callbacks should not enter the active set");
+    assert(arrived === 1 && completed === 1, "empty spring should still finish lifecycle callbacks");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false });
+    const target = { x: 10 };
+    const control = runtime.animate(target, "x", 10, {
+      driver: spring({ damping: 28, mass: 0.9, stiffness: 190 }),
+      onUpdate: () => {},
+    });
+
+    assert(control, "empty spring with an update callback should remain caller-visible");
+    assert(runtime.hasActiveWork(), "empty spring with an update callback should preserve active work for callback delivery");
+    runtime.step(1 / 60);
+    assert(!runtime.hasActiveWork(), "empty spring with an update callback should still settle on the next frame");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: true });
+    const signals = [];
+    const unsubscribe = runtime.onRenderSignal((
+      activeAnimationCount,
+      writesLastFrame,
+      afterFrameFlushes,
+      reason
+    ) => signals.push({ activeAnimationCount, afterFrameFlushes, reason, writesLastFrame }));
+    runtime.suspendAutoTicker();
+    runtime.afterFrame(() => {});
+    assert(signals.some((signal) => signal.reason === "frame-request"), "suspended runtime should emit a render signal for external frame drivers");
+    runtime.step(0);
+    runtime.resumeAutoTicker();
+    unsubscribe();
   }
 
   {
@@ -416,6 +512,7 @@ export function runMotionRuntimeTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0, y: 0 };
+    runtime.configureDebug({ enabled: true });
     runtime.animate(target, "x", 10, { driver: tween({ duration: 1, ease: "linear" }) });
     runtime.animate(target, "y", 20, { driver: tween({ duration: 1, ease: "linear" }) });
 
@@ -424,6 +521,74 @@ export function runMotionRuntimeTests() {
     assert(runtime.debug.activeChannels === 2, "debug counters should track active channel count");
     assert(runtime.debug.writesLastFrame >= 2, "debug counters should track writes per frame");
     assert(runtime.debug.writes >= runtime.debug.writesLastFrame, "debug counters should track cumulative writes");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const targetA = { x: 0, y: 0 };
+    const targetB = { x: 0 };
+    runtime.configureDebug({ enabled: true });
+    const baseA = runtime.animate(targetA, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      laneKey: "layout",
+    });
+    const additiveA = runtime.animate(targetA, "x", 2, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      lane: "additive",
+      laneKey: "nudge",
+    });
+    const yA = runtime.animate(targetA, "y", 20, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      laneKey: "vertical",
+    });
+    const baseB = runtime.animate(targetB, "x", 5, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      laneKey: "layout",
+    });
+
+    assert(runtime.debug.activeTargets === 2, "incremental counters should count active targets after starts");
+    assert(runtime.debug.activeChannels === 3, "incremental counters should count unique target/property channels after starts");
+    const startedCounters = {
+      activeChannels: runtime.debug.activeChannels,
+      activeTargets: runtime.debug.activeTargets,
+    };
+    const startedSummary = runtime.debugSnapshot().summary;
+    assert(startedCounters.activeTargets === startedSummary.activeTargetCount, "incremental target count should match full summary after starts");
+    assert(startedCounters.activeChannels === startedSummary.activeChannelCount, "incremental channel count should match full summary after starts");
+
+    additiveA.cancel("test");
+    assert(runtime.debug.activeTargets === 2, "canceling one lane should keep target count while another lane remains");
+    assert(runtime.debug.activeChannels === 3, "canceling one lane should keep channel count while the same channel has a base lane");
+    yA.cancel("test");
+    assert(runtime.debug.activeTargets === 2, "canceling one channel should keep target count while another channel remains on the target");
+    assert(runtime.debug.activeChannels === 2, "canceling one channel should decrement active channel count");
+    baseA.cancel("test");
+    assert(runtime.debug.activeTargets === 1, "canceling the last lane on a target should decrement active target count");
+    assert(runtime.debug.activeChannels === 1, "canceling the last lane on a target should decrement channel count");
+    baseB.cancel("test");
+    assert(runtime.debug.activeTargets === 0, "canceling all lanes should clear active target count");
+    assert(runtime.debug.activeChannels === 0, "canceling all lanes should clear active channel count");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      laneKey: "midflight-enable",
+    });
+    runtime.step(0.5);
+    runtime.configureDebug({ enabled: true });
+    const snapshot = runtime.debugSnapshot();
+
+    assert(snapshot.summary.activeAnimationCount === 1, "debug snapshot should see animations that started before debug was enabled");
+    assert(runtime.debug.activeTargets === 1, "snapshot should seed incremental active target counters");
+    assert(runtime.debug.activeChannels === 1, "snapshot should seed incremental active channel counters");
+
+    runtime.step(0.5);
+    assert(runtime.debug.activeTargets === 0, "pre-enabled animation completion should decrement seeded active target counters");
+    assert(runtime.debug.activeChannels === 0, "pre-enabled animation completion should decrement seeded active channel counters");
   }
 
   {
@@ -438,11 +603,11 @@ export function runMotionRuntimeTests() {
       driver: tween({ duration: 1, ease: "linear" }),
       laneKey: "fade",
     });
-    runtime.animate(targetA, "x", 0, {
-      driver: decay({ restSpeed: 0.01 }),
+    runtime.animate(targetA, "x", 6, {
+      driver: spring({ damping: 30, mass: 0.8, restDelta: 0.01, restSpeed: 0.01, stiffness: 240 }),
+      from: 0,
       lane: "additive",
       laneKey: "impulse",
-      velocity: 100,
     });
     runtime.animate(targetB, "alpha", 1, {
       driver: progressDriver({ completeAtEnd: false, progress: 0 }),
@@ -463,9 +628,8 @@ export function runMotionRuntimeTests() {
     assert(snapshot.summary.activeAnimationCount === 5, "debug summary should count active animations");
     assert(snapshot.summary.activeTargetCount === 2, "debug summary should count active targets");
     assert(snapshot.summary.activeChannelCount === 4, "debug summary should count active target/property channels");
-    assert(snapshot.summary.byDriver.spring === 2, "debug summary should count spring drivers");
+    assert(snapshot.summary.byDriver.spring === 3, "debug summary should count spring drivers");
     assert(snapshot.summary.byDriver.tween === 1, "debug summary should count tween drivers");
-    assert(snapshot.summary.byDriver.decay === 1, "debug summary should count decay drivers");
     assert(snapshot.summary.byDriver.progress === 1, "debug summary should count progress drivers");
     assert(snapshot.summary.byLane.base === 3, "debug summary should count base lanes");
     assert(snapshot.summary.byLane.additive === 1, "debug summary should count additive lanes");
@@ -480,14 +644,18 @@ export function runMotionRuntimeTests() {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
     const observed = [];
-    playTrack(track(target, "x", 0, 10, {
+    runtime.configureDebug({ enabled: true });
+    runtime.animate(target, "x", 10, {
       driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
       onUpdate: () => observed.push(target.x),
-    }), { runtime });
-    playTrack(additiveTrack(target, "x", 0, 4, {
+    });
+    runtime.animate(target, "x", 4, {
       driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      lane: "additive",
       onUpdate: () => observed.push(target.x),
-    }), { runtime });
+    });
 
     runtime.step(0.5);
     assert(nearlyEqual(target.x, 7), `coalesced writes should still compose lanes, got ${target.x}`);
@@ -498,6 +666,22 @@ export function runMotionRuntimeTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0 };
+    runtime.configureDebug({ enabled: true });
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+    });
+
+    runtime.step(1);
+
+    assert(nearlyEqual(target.x, 10), "completed tween should still land on the final value");
+    assert(runtime.debug.writesLastFrame === 1, `complete path should compose the final channel once, got ${runtime.debug.writesLastFrame}`);
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    runtime.configureDebug({ enabled: true });
     const control = runtime.animate(target, "x", 10, { driver: tween({ duration: 1, ease: "linear" }) });
     const snapshot = runtime.debugSnapshot();
 
@@ -514,6 +698,7 @@ export function runMotionRuntimeTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
     const target = { x: 0, y: 0 };
+    runtime.configureDebug({ enabled: true });
     runtime.animate(target, "x", 10, { driver: tween({ duration: 1, ease: "linear" }) });
     runtime.animate(target, "y", 20, { driver: tween({ duration: 1, ease: "linear" }) });
 
@@ -529,10 +714,12 @@ export function runMotionRuntimeTests() {
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 10 });
 
+    assert(typeof runtime.addObserver === "function", "runtime should expose addObserver");
     assert(typeof runtime.configureDebug === "function", "runtime should expose configureDebug");
     assert(typeof runtime.clearDebugHistory === "function", "runtime should expose clearDebugHistory");
     assert(typeof runtime.describeTarget === "function", "runtime should expose describeTarget");
     assert(typeof runtime.debugReport === "function", "runtime should expose debugReport");
+    assert(typeof runtime.onRenderSignal === "function", "runtime should expose an independent render signal channel");
     assert(typeof runtime.resolveDebugTarget === "function", "runtime should expose resolveDebugTarget for dev overlay lookup");
 
     const defaults = runtime.configureDebug();
@@ -597,6 +784,174 @@ export function runMotionRuntimeTests() {
     const cleared = runtime.configureDebug({ recordFilter: null });
     assert(cleared.recordFilter === null, "recordFilter should be clearable");
     assert(runtime.configureDebug({ recordFilter: {} }).recordFilter === null, "empty recordFilter should behave like no filter");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const debugEvents = [];
+    const renderSignals = [];
+    runtime.addObserver((event) => debugEvents.push(event));
+    runtime.onRenderSignal((activeAnimationCount, writesLastFrame, afterFrameFlushes, reason) => {
+      renderSignals.push({ activeAnimationCount, afterFrameFlushes, reason, writesLastFrame });
+    });
+
+    runtime.configureDebug();
+    assert(debugEvents.length === 0, "reading debug config should not emit debugConfig events");
+    assert(renderSignals.length === 0, "reading debug config should not emit render signals");
+
+    runtime.configureDebug({ overlayEnabled: true });
+    assert(debugEvents.length === 0, "disabled debug config patches should not emit debug observer events");
+    assert(renderSignals.length === 1, "debug config patches should request a render through the render signal channel");
+    assert(renderSignals[0].reason === "debug-config", "debug config render signal should be typed by reason");
+
+    runtime.configureDebug({ enabled: true });
+    assert(debugEvents.length === 1, "enabling debug should emit one debugConfig observer event");
+    assert(debugEvents[0].type === "debugConfig", "debug config observer event should be typed");
+    assert(debugEvents[0].config?.enabled === true, "debug config observer event should include the next config");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    const events = [];
+    const objectEvents = [];
+    const renderSignals = [];
+    const unsubscribe = runtime.addObserver((event) => events.push(event));
+    const unsubscribeObject = runtime.addObserver({
+      handleEvent(event) {
+        objectEvents.push(event.type);
+      },
+    });
+    const unsubscribeRenderSignal = runtime.onRenderSignal((
+      activeAnimationCount,
+      writesLastFrame,
+      afterFrameFlushes,
+      reason
+    ) => {
+      renderSignals.push({ activeAnimationCount, afterFrameFlushes, reason, writesLastFrame });
+    });
+
+    runtime.describeTarget(target, {
+      kind: "ObserverTarget",
+      label: "Observer target",
+      sourceLabel: "motion-runtime-tests.observer",
+    });
+    const control = runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      laneKey: "observer-x",
+    });
+    runtime.step(0.25);
+    control.cancel("observer-test");
+
+    const eventTypes = events.map((event) => event.type);
+    assert(eventTypes.length === 0, "disabled debug observer should not receive motion debug events");
+    assert(renderSignals.some((signal) => signal.reason === "start"), "render signal should receive motion start without using debug events");
+    assert(renderSignals.some((signal) => signal.reason === "frame" && signal.activeAnimationCount === 1 && signal.writesLastFrame > 0), "render signal should receive frame writes without sampled animations");
+    assert(renderSignals.some((signal) => signal.reason === "cancel"), "render signal should receive cancellation without using debug events");
+    assert(runtime.debug.started === 0, "disabled debug should not count lifecycle start events");
+    assert(runtime.debug.activeTargets === 0, "disabled debug should not maintain active target counters");
+    assert(objectEvents.length === 0, "disabled debug object observer should not receive runtime debug events");
+
+    const countBeforeUnsubscribe = events.length;
+    const objectCountBeforeUnsubscribe = objectEvents.length;
+    const signalCountBeforeUnsubscribe = renderSignals.length;
+    unsubscribe();
+    unsubscribeObject();
+    unsubscribeRenderSignal();
+    runtime.animate(target, "x", 20, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: target.x,
+      laneKey: "observer-after-unsubscribe",
+    });
+    runtime.step(0.1);
+
+    assert(events.length === countBeforeUnsubscribe, "unsubscribe should stop function observer events");
+    assert(objectEvents.length === objectCountBeforeUnsubscribe, "unsubscribe should stop object observer events");
+    assert(renderSignals.length === signalCountBeforeUnsubscribe, "unsubscribe should stop render signal callbacks");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    const events = [];
+    runtime.configureDebug({ enabled: true });
+    runtime.addObserver((event) => events.push(event));
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      laneKey: "observer-enabled-x",
+    });
+
+    assert(
+      events.some((event) => event.type === "start" && event.record?.laneKey === "observer-enabled-x"),
+      "enabled debug observer start event should expose animation record data",
+    );
+    assert(runtime.debug.started === 1, "enabled debug should count lifecycle start events");
+    assert(runtime.debug.activeTargets === 1, "enabled debug should maintain active target counters");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    const events = [];
+    runtime.configureDebug({
+      enabled: true,
+      maxSamples: 10,
+      recordHistory: true,
+      sampleHz: 60,
+    });
+    runtime.addObserver((event) => events.push(event));
+    runtime.animate(target, "x", 10, {
+      driver: tween({ duration: 1, ease: "linear" }),
+      from: 0,
+      laneKey: "sample-enabled",
+    });
+    runtime.step(1 / 60);
+
+    const sample = events.find((event) => event.type === "sample");
+    const report = runtime.debugReport({ includeHistory: true });
+    assert(sample && Array.isArray(sample.animations), "enabled history recording should emit heavy sample events");
+    assert(sample.animations.some((animation) => animation.laneKey === "sample-enabled"), "sample event should include active animation records");
+    assert(report.history.samples.length === 1, "enabled history recording should keep sampled frames");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    const events = [];
+    runtime.configureDebug({
+      enabled: true,
+      maxEvents: 200,
+      maxSamples: 200,
+      recordHistory: true,
+      sampleHz: 10,
+    });
+    runtime.describeTarget(target, {
+      kind: "SampleTarget",
+      label: "Sample target",
+      sourceLabel: "motion-runtime-tests.sample-gating",
+    });
+    runtime.animate(target, "x", 100, {
+      driver: tween({ duration: 2, ease: "linear" }),
+      from: 0,
+      laneKey: "sample-gated",
+    });
+    runtime.addObserver((event) => events.push(event));
+
+    for (let frame = 0; frame < 60; frame += 1) runtime.step(1 / 60);
+
+    const sampleEvents = events.filter((event) => event.type === "sample");
+    const targetMetadataEvents = events.filter((event) => event.type === "targetMetadata");
+    const report = runtime.debugReport({ includeHistory: true });
+    assert(sampleEvents.length >= 9 && sampleEvents.length <= 11, `sample construction should follow sampleHz, got ${sampleEvents.length}`);
+    assert(sampleEvents.length < 20, "sample construction should not run at frameHz");
+    assert(targetMetadataEvents.length === 0, "sample construction should not re-emit target metadata");
+    assert(report.history.samples.length === sampleEvents.length, "history should only keep sampled frames that passed sampleHz gating");
+    assert(
+      report.history.samples.every((sample) => sample.animations.some((animation) => animation.laneKey === "sample-gated")),
+      "sampled frames should still include active animations",
+    );
   }
 
   {
@@ -840,6 +1195,24 @@ export function runMotionRuntimeTests() {
   }
 
   {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    const target = { x: 0 };
+    runtime.configureDebug({ enabled: true });
+    runtime.describeTarget(target, {
+      kind: "ResetTarget",
+      label: "Reset Target",
+      sourceLabel: "motion-runtime-tests.reset",
+    });
+
+    const describedReport = runtime.debugReport({ includeTargets: true });
+    assert(describedReport.targets.some((entry) => entry.label === "Reset Target"), "debug report should include metadata before reset");
+
+    runtime.reset();
+    const resetReport = runtime.debugReport({ includeTargets: true });
+    assert(resetReport.targets.length === 0, "runtime reset should clear described target metadata");
+  }
+
+  {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 10 });
     const target = { x: 0 };
     runtime.configureDebug({
@@ -950,9 +1323,11 @@ export function runMotionRuntimeTests() {
     });
 
     assert(runUntil(runtime, () => control.completed, 900), "curve stats spring should complete after retarget");
-    const report = runtime.debugReport({ includeHistory: true });
+    const defaultReport = runtime.debugReport({ includeHistory: true });
+    const report = runtime.debugReport({ includeCurveStats: true, includeHistory: true });
     const stats = report.curveStats.find((entry) => entry.laneKey === "curve-spring");
 
+    assert(!Object.hasOwn(defaultReport, "curveStats"), "debug report should omit curve stats by default");
     assert(stats, "debug report should include curve stats for a completed spring");
     assert(stats.prop === "x", "curve stats should include the animated property");
     assert(stats.retargetCount === 1, `curve stats should count one retarget, got ${stats.retargetCount}`);
@@ -987,7 +1362,7 @@ export function runMotionRuntimeTests() {
     control.settle({ velocity: 0.8 });
 
     assert(runUntil(runtime, () => control.completed, 900), "curve stats settled progress should complete");
-    const report = runtime.debugReport({ includeHistory: true });
+    const report = runtime.debugReport({ includeCurveStats: true, includeHistory: true });
     const stats = report.curveStats.find((entry) => entry.laneKey === "curve-settle");
 
     assert(stats, "debug report should include curve stats for settled progress");

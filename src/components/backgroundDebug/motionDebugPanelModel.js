@@ -1,3 +1,12 @@
+import {
+  clamp,
+  collectRecordText,
+  makeTrackKey,
+  normalizeQuery,
+  readNumber,
+  resolveRecordLabel,
+} from "../../rendering/pixi/animation/motionTraceShared.js";
+
 export const MOTION_RECORD_WINDOW_CUSTOM = "custom";
 export const MOTION_RECORD_WINDOW_PRESETS = [
   { label: "10s", value: "10000" },
@@ -21,15 +30,6 @@ const MAX_TIMELINE_GROUP_COUNT = 8;
 const MIN_CUSTOM_SECONDS = 1;
 const MAX_CUSTOM_SECONDS = 300;
 
-function readNumber(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
 export function normalizeMotionCustomSeconds(value) {
   return clamp(Math.round(readNumber(value, DEFAULT_RECORD_WINDOW_MS / 1000)), MIN_CUSTOM_SECONDS, MAX_CUSTOM_SECONDS);
 }
@@ -45,10 +45,11 @@ export function normalizeMotionTimeScale(value) {
 }
 
 export function buildMotionRuntimeDebugConfig(options = {}) {
+  const enabled = Boolean(options.enabled);
   return {
-    enabled: true,
-    overlayEnabled: Boolean(options.overlayEnabled),
-    recordHistory: Boolean(options.recordEnabled),
+    enabled,
+    overlayEnabled: enabled && Boolean(options.overlayEnabled),
+    recordHistory: enabled && Boolean(options.recordEnabled),
     recordWindowMs: resolveMotionRecordWindowMs(options.windowPreset, options.customSeconds),
     sampleHz: 10,
     timeScale: normalizeMotionTimeScale(options.timeScale),
@@ -82,19 +83,6 @@ function makeEmptyRow(label = "none") {
 
 export function normalizeMotionFilterPreset(value) {
   return MOTION_FILTER_PRESETS.some((entry) => entry.value === value) ? value : "all";
-}
-
-function normalizeQuery(value) {
-  return String(value || "").trim().toLowerCase();
-}
-
-function makeTrackKey(record = {}) {
-  return [
-    record.targetId ?? "unknown",
-    record.prop ?? "unknown",
-    record.lane ?? "unknown",
-    record.laneKey ?? "unknown",
-  ].join(":");
 }
 
 function makeTargetLaneKey(record = {}) {
@@ -145,23 +133,6 @@ function makeSvgPath(points) {
 
 function formatRange(range, digits = 2) {
   return `${formatMotionNumber(range.min, digits)}..${formatMotionNumber(range.max, digits)}`;
-}
-
-function collectRecordText(record = {}) {
-  return [
-    record.type,
-    record.reason,
-    record.layer,
-    record.targetId,
-    record.targetKind,
-    record.targetLabel,
-    record.sourceLabel,
-    record.label,
-    record.prop,
-    record.driver,
-    record.lane,
-    record.laneKey,
-  ].filter((value) => value != null).join(" ").toLowerCase();
 }
 
 function formatCompactList(values, limit = 4) {
@@ -285,15 +256,8 @@ function makeFilterPredicate(report = {}, filters = {}, keyMode = "track") {
       const keys = keyMode === "targetLane" ? presetKeys.warningTargetLaneKeys : presetKeys.warningTrackKeys;
       if (!keys.has(keyGetter(record))) return false;
     }
-    return !query || collectRecordText(record).includes(query);
+    return !query || collectRecordText(record, null, { includeLayer: true }).includes(query);
   };
-}
-
-function resolveRecordLabel(record = {}) {
-  return record.sourceLabel
-    || record.targetLabel
-    || record.label
-    || (record.targetId != null ? `target ${record.targetId}` : "unknown");
 }
 
 export function buildMotionOverviewRows(report = {}) {

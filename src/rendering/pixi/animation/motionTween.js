@@ -6,7 +6,9 @@ import {
 } from "./motionRuntime.js";
 import { prefersReducedMotion } from "./motionPreferences.js";
 import { getMotionPreset } from "./motionPresets.js";
+import { readNumber } from "./motionTraceShared.js";
 
+// Public surface: motion/motionTo/motionAdd/motionSequence/parallel/killMotionOf/lanePreset/motionLanes are production APIs.
 const RESERVED_KEYS = new Set([
   "delay",
   "blendDuration",
@@ -50,11 +52,6 @@ export const motionLanes = Object.freeze({
 
 export function lanePreset(name, overrides = {}) {
   return { ...(motionLanes[name] || { lane: name }), ...overrides };
-}
-
-function readNumber(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
 }
 
 function getTweenProps(vars = {}) {
@@ -139,8 +136,9 @@ export function motionTo(targetOrTargets, vars = {}, options = {}) {
   const targets = Array.isArray(targetOrTargets) ? targetOrTargets : [targetOrTargets];
   const props = getTweenProps(vars);
   const controls = [];
-  let arriveRemaining = targets.reduce((count, target) => count + getTrackCount(target, props, vars), 0);
-  let remaining = targets.reduce((count, target) => count + getTrackCount(target, props, vars), 0);
+  const trackCount = targets.reduce((count, target) => count + getTrackCount(target, props, vars), 0);
+  let arriveRemaining = trackCount;
+  let remaining = trackCount;
   let arrived = false;
   let completed = false;
 
@@ -190,6 +188,7 @@ export function motionTo(targetOrTargets, vars = {}, options = {}) {
           });
           continue;
         }
+        const remainingBeforeStart = remaining;
         const control = runtime.animate(track.target, track.prop, track.to, {
           delay: vars.delay,
           blendDuration: vars.blendDuration,
@@ -213,7 +212,7 @@ export function motionTo(targetOrTargets, vars = {}, options = {}) {
           velocity,
         });
         if (control) controls.push(control);
-        else completeOne();
+        else if (remaining === remainingBeforeStart) completeOne();
       }
     }
   }
@@ -367,17 +366,6 @@ export function motion(targetOrTargets, defaults = {}) {
   };
 
   return builder;
-}
-
-export const transition = motion;
-
-export function scrub(targetOrTargets, vars = {}, options = {}) {
-  const driver = progressDriver({
-    completeAtEnd: false,
-    ease: vars.ease,
-    progress: readNumber(options.progress, readNumber(vars.progress, 0)),
-  });
-  return motionTo(targetOrTargets, { ...vars, driver }, options);
 }
 
 export function motionAdd(targetOrTargets, vars = {}, options = {}) {
@@ -536,89 +524,6 @@ export function parallel(items = [], options = {}) {
   };
 }
 
-export function sequence(items = [], options = {}) {
-  let current = null;
-  let arrived = false;
-  let canceled = false;
-  let completed = false;
-  let released = false;
-  let index = 0;
-
-  const playNext = () => {
-    if (canceled || released) return;
-    if (index >= items.length) {
-      completed = true;
-      options.onComplete?.();
-      return;
-    }
-    const item = items[index];
-    index += 1;
-    current = startMotionItem(item, {
-      ...options,
-      onArrive: () => {
-        if (index >= items.length && !arrived) {
-          arrived = true;
-          options.onArrive?.();
-        }
-      },
-      onComplete: playNext,
-    });
-    if (!current || current.completed) playNext();
-  };
-
-  playNext();
-
-  return {
-    cancel(reason = "cancel") {
-      if (completed || canceled || released) return;
-      canceled = true;
-      current?.cancel?.(reason);
-      options.onCancel?.(reason);
-    },
-    get completed() {
-      return completed;
-    },
-    get arrived() {
-      return arrived;
-    },
-    release() {
-      if (completed || canceled || released) return;
-      released = true;
-      current?.release?.();
-    },
-    get released() {
-      return released;
-    },
-  };
-}
-
-export function stagger(targets = [], varsOrFactory = {}, options = {}) {
-  const delayStep = readNumber(options.stagger, readNumber(options.each, 0));
-  const baseDelay = readNumber(options.delay, 0);
-  const items = (targets || []).map((target, index) => (childOptions) => {
-    const vars = typeof varsOrFactory === "function" ? varsOrFactory(target, index) : varsOrFactory;
-    return motionTo(target, {
-      ...vars,
-      delay: readNumber(vars?.delay, baseDelay) + index * delayStep,
-    }, childOptions);
-  });
-  return parallel(items, options);
-}
-
-export function motionSet(targetOrTargets, vars = {}, options = {}) {
-  const runtime = options.runtime || motionRuntime;
-  const laneOptions = vars.lanePreset ? lanePreset(vars.lanePreset) : {};
-  const targets = Array.isArray(targetOrTargets) ? targetOrTargets : [targetOrTargets];
-  for (const target of targets) {
-    if (!target) continue;
-    for (const prop of getTweenProps(vars)) {
-      for (const track of getPropTracks(target, prop, vars)) {
-        runtime.set(track.target, track.prop, track.to, { lane: vars.lane || laneOptions.lane || "base", laneKey: vars.laneKey || laneOptions.laneKey });
-      }
-    }
-  }
-}
-
 export function killMotionOf(targetOrTargets, props = null, options = {}) {
   const runtime = options.runtime || motionRuntime;
   const targets = Array.isArray(targetOrTargets) ? targetOrTargets : [targetOrTargets];
@@ -645,7 +550,6 @@ function startMotionItem(item, options = {}) {
   if (!item) return null;
   if (typeof item === "function") return item(options);
   if (typeof item.start === "function") return item.start(options);
-  if (Array.isArray(item)) return sequence(item, options);
   if (typeof item.cancel === "function") return item;
   if (item.target && item.to) return motionTo(item.target, item.to, options);
   return null;

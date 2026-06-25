@@ -1,12 +1,14 @@
 import { clamp } from "../domain/launchpadLayout.js";
 import {
-  getLiveClientLaunchIconTargetBounds,
-  getRenderedClientLaunchIconBounds,
-  getStableStageLayoutLaunchIconTargetRecord,
+  ICON_BOUNDS_KIND,
+  ICON_BOUNDS_VARIANT,
 } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 import { stageLayoutRecordToClientRect } from "../rendering/pixi/geometry/stageCoordinates.js";
 
-export function getLaunchIconRect(launchSource) {
+const BOUNDS_KIND = ICON_BOUNDS_KIND;
+const BOUNDS_VARIANT = ICON_BOUNDS_VARIANT;
+
+export function getLaunchIconRect(launchSource, iconBoundsRegistry) {
   const expected = launchSource?.area === "folder"
     ? {
       area: launchSource.area,
@@ -15,48 +17,50 @@ export function getLaunchIconRect(launchSource) {
       pageIndex: launchSource.pageIndex ?? 0,
     }
     : null;
-  return getRenderedClientLaunchIconBounds(launchSource, expected) ||
-    getLiveClientLaunchIconTargetBounds(launchSource, expected) ||
-    stageLayoutRecordToClientRect(getStableStageLayoutLaunchIconTargetRecord(launchSource, expected));
+  return iconBoundsRegistry.getBounds(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.RENDERED, launchSource, { expected }) ||
+    iconBoundsRegistry.getBounds(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.LIVE_TARGET, launchSource, { expected }) ||
+    stageLayoutRecordToClientRect(iconBoundsRegistry.getBounds(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, launchSource, { expected }));
 }
 
-export function useLaunchpadIconActivation(options) {
-  function getCurrentIconScope() {
-    const renderedFolder = options.getRenderedFolder();
-    if (renderedFolder && (options.openFolderId.value || options.isFolderClosing.value || options.isFolderAppLaunchClosing.value)) {
-      const folderPages = options.getFolderPages();
-      const pageNumber = clamp(options.folderPageIndex.value, 0, Math.max(0, folderPages.length - 1));
-      return {
-        area: "folder",
-        pageIndex: pageNumber,
-        folderId: renderedFolder.id,
-        items: options.getVisibleFolderPage(folderPages[pageNumber] || []),
-        columns: options.folderCols.value,
-      };
-    }
-
-    if (options.isSearchMode()) {
-      const searchPages = options.getSearchPages();
-      const pageNumber = clamp(options.searchPageIndex.value, 0, Math.max(0, searchPages.length - 1));
-      return {
-        area: "search",
-        pageIndex: pageNumber,
-        folderId: null,
-        items: options.getVisibleDesktopPage(searchPages[pageNumber] || []),
-        columns: options.gridCols.value,
-      };
-    }
-
-    const pages = options.pages.value;
-    const pageNumber = clamp(options.pageIndex.value, 0, Math.max(0, pages.length - 1));
+export function resolveCurrentIconScope(options) {
+  const renderedFolder = options.getRenderedFolder();
+  if (renderedFolder && (options.openFolderId.value || options.isFolderClosing.value || options.isFolderAppLaunchClosing.value)) {
+    const folderPages = options.getFolderPages();
+    const pageNumber = clamp(options.folderPageIndex.value, 0, Math.max(0, folderPages.length - 1));
     return {
-      area: "desktop",
+      area: "folder",
+      pageIndex: pageNumber,
+      folderId: renderedFolder.id,
+      items: options.getVisibleFolderPage(folderPages[pageNumber] || []),
+      columns: options.folderCols.value,
+    };
+  }
+
+  if (options.isSearchMode()) {
+    const searchPages = options.getSearchPages();
+    const pageNumber = clamp(options.searchPageIndex.value, 0, Math.max(0, searchPages.length - 1));
+    return {
+      area: "search",
       pageIndex: pageNumber,
       folderId: null,
-      items: options.getVisibleDesktopPage(pages[pageNumber] || []),
+      items: options.getVisibleDesktopPage(searchPages[pageNumber] || []),
       columns: options.gridCols.value,
     };
   }
+
+  const pages = options.pages.value;
+  const pageNumber = clamp(options.pageIndex.value, 0, Math.max(0, pages.length - 1));
+  return {
+    area: "desktop",
+    pageIndex: pageNumber,
+    folderId: null,
+    items: options.getVisibleDesktopPage(pages[pageNumber] || []),
+    columns: options.gridCols.value,
+  };
+}
+
+export function useLaunchpadIconActivation(options) {
+  const getCurrentIconScope = options.getCurrentIconScope;
 
   function openSelectedIcon() {
     const selected = options.findSelectedItem();
@@ -116,7 +120,7 @@ export function useLaunchpadIconActivation(options) {
 
   return {
     getCurrentIconScope,
-    getLaunchIconRect,
+    getLaunchIconRect: (launchSource) => getLaunchIconRect(launchSource, options.iconBoundsRegistry),
     normalizeLaunchSource,
     openSelectedIcon,
   };

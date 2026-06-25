@@ -1,14 +1,13 @@
 import {
-  clearIconBoundsRegistry,
-  registerRenderedClientFolderPreviewChildBounds,
-  registerRenderedClientLaunchIconBounds,
-  registerRenderedClientTopLevelFolderThumbBounds,
-  registerStableStageLayoutFolderPreviewChildTargetBounds,
-  registerStableStageLayoutTopLevelFolderThumbTargetBounds,
-  registerStableStageLayoutTopLevelIconTargetBounds,
+  createIconBoundsRegistry,
+  ICON_BOUNDS_KIND,
+  ICON_BOUNDS_VARIANT,
 } from "../geometry/iconBoundsRegistry.js";
 import { projectFolderCloseTargetToClient } from "./folderOverlayTargets.js";
 import { resolveFolderOverlayTargets } from "./folderOverlayTargetResolver.js";
+
+const K = ICON_BOUNDS_KIND;
+const V = ICON_BOUNDS_VARIANT;
 
 function projectedStageMeta(meta = {}) {
   return {
@@ -41,13 +40,14 @@ export function runFolderOverlayTargetResolverTests() {
   const capturedChildRect = { height: 14, left: 316, top: 336, width: 14 };
   const liveChildRect = { height: 13, left: 116, top: 136, width: 13 };
 
-  clearIconBoundsRegistry();
-  registerRenderedClientLaunchIconBounds({ area: "desktop", id: folder.id, pageIndex: 0 }, liveIconRect, { area: "desktop", id: folder.id });
-  registerRenderedClientTopLevelFolderThumbBounds(folder.id, liveThumbRect, { area: "desktop", id: folder.id });
-  registerStableStageLayoutTopLevelIconTargetBounds(folder.id, targetIconStageRect, projectedStageMeta({ area: "desktop", id: folder.id }));
-  registerStableStageLayoutTopLevelFolderThumbTargetBounds(folder.id, targetThumbStageRect, projectedStageMeta({ area: "desktop", id: folder.id }));
-  registerRenderedClientFolderPreviewChildBounds(folder.id, "app-b", 1, liveChildRect);
-  registerStableStageLayoutFolderPreviewChildTargetBounds(folder.id, "app-a", 0, targetChildStageRect, projectedStageMeta({ area: "desktop", folderId: folder.id, id: "app-a" }));
+  const registry = createIconBoundsRegistry();
+  registry.clearBounds();
+  registry.registerBounds(K.LAUNCH, V.RENDERED, { area: "desktop", id: folder.id, pageIndex: 0 }, liveIconRect, { area: "desktop", id: folder.id });
+  registry.registerBounds(K.FOLDER_THUMB, V.RENDERED, folder.id, liveThumbRect, { area: "desktop", id: folder.id });
+  registry.registerBounds(K.TOP_LEVEL, V.STABLE_STAGE_LAYOUT, folder.id, targetIconStageRect, projectedStageMeta({ area: "desktop", id: folder.id }));
+  registry.registerBounds(K.FOLDER_THUMB, V.STABLE_STAGE_LAYOUT, folder.id, targetThumbStageRect, projectedStageMeta({ area: "desktop", id: folder.id }));
+  registry.registerBounds(K.PREVIEW_CHILD, V.RENDERED, { childId: "app-b", folderId: folder.id, slotIndex: 1 }, liveChildRect);
+  registry.registerBounds(K.PREVIEW_CHILD, V.STABLE_STAGE_LAYOUT, { childId: "app-a", folderId: folder.id, slotIndex: 0 }, targetChildStageRect, projectedStageMeta({ area: "desktop", folderId: folder.id, id: "app-a" }));
 
   const resolved = resolveFolderOverlayTargets({
     folder,
@@ -58,6 +58,7 @@ export function runFolderOverlayTargetResolverTests() {
       thumbRect: capturedThumbRect,
     },
     folderPageSize: 9,
+    iconBoundsRegistry: registry,
     isClosing: false,
     previousStableFolderCloseTarget: null,
     wasClosing: false,
@@ -91,13 +92,14 @@ export function runFolderOverlayTargetResolverTests() {
   const reused = resolveFolderOverlayTargets({
     folder,
     folderPageSize: 9,
+    iconBoundsRegistry: registry,
     isClosing: false,
     previousStableFolderCloseTarget: reusedStableTarget,
     wasClosing: false,
   });
   assert(reused.stableFolderCloseTarget === reusedStableTarget, "resolver should reuse an existing stable close target while not closing");
 
-  clearIconBoundsRegistry();
+  registry.clearBounds();
   const capturedOnly = resolveFolderOverlayTargets({
     folder,
     folderOpeningOriginBounds: {
@@ -107,6 +109,7 @@ export function runFolderOverlayTargetResolverTests() {
       thumbRect: capturedThumbRect,
     },
     folderPageSize: 9,
+    iconBoundsRegistry: registry,
     isClosing: false,
     previousStableFolderCloseTarget: null,
     wasClosing: false,
@@ -118,5 +121,5 @@ export function runFolderOverlayTargetResolverTests() {
     "opening preview lookup should fall back to captured child bounds without live bounds"
   );
 
-  clearIconBoundsRegistry();
+  registry.clearBounds();
 }

@@ -19,14 +19,13 @@ import {
 } from "../domain/launchpadLayout.js";
 import { getDomRefElement } from "./usePageGridMetrics.js";
 import {
-  getLiveClientLaunchIconTargetBounds,
-  getRenderedClientLaunchIconBounds,
-  getRenderedClientTopLevelIconBounds,
-  getRenderedClientTopLevelTargetAtPoint as getPixiTopLevelTargetAtPoint,
-  getStableStageLayoutLaunchIconTargetRecord,
+  ICON_BOUNDS_KIND,
+  ICON_BOUNDS_VARIANT,
 } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 import { stageLayoutRecordToClientRect } from "../rendering/pixi/geometry/stageCoordinates.js";
 
+const BOUNDS_KIND = ICON_BOUNDS_KIND;
+const BOUNDS_VARIANT = ICON_BOUNDS_VARIANT;
 const LAYOUT_PROJECTION_RELEASE_DELAY = 260;
 const DRAG_RELEASE_DURATION_MS = 180;
 const DRAG_RELEASE_GHOST_PADDING_MS = 60;
@@ -183,7 +182,7 @@ export function useLaunchpadDrag(options) {
 
   function resolveLongPressSourceRect(lp) {
     if (!lp?.refreshBoundsOnStart) return lp?.rect || null;
-    return getRenderedClientLaunchIconBounds({
+    return options.iconBoundsRegistry.getBounds(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.RENDERED, {
       area: getLaunchBoundsArea(lp.source),
       folderId: lp.source?.folderId,
       id: lp.item?.id,
@@ -464,8 +463,8 @@ export function useLaunchpadDrag(options) {
     return makeReleaseTarget(target) || { clientRect: null, stageLayoutRect: null };
   }
 
-  function getStableStageLayoutReleaseTarget(source, expected = null) {
-    const record = getStableStageLayoutLaunchIconTargetRecord(source, expected);
+  function getStableLayoutReleaseTarget(source, expected = null) {
+    const record = options.iconBoundsRegistry.getBounds(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, source, { expected });
     const clientRect = stageLayoutRecordToClientRect(record);
     return clientRect ? makeReleaseTarget(clientRect, record) : null;
   }
@@ -523,8 +522,8 @@ export function useLaunchpadDrag(options) {
     if (!target) return null;
     const source = { area: "desktop", folderId: null, id: itemId, pageIndex: target.pageIndex };
     const expected = { area: "desktop", id: itemId, index: target.index, pageIndex: target.pageIndex };
-    return getStableStageLayoutReleaseTarget(source, expected) ||
-      makeReleaseTarget(getLiveClientLaunchIconTargetBounds(source, expected));
+    return getStableLayoutReleaseTarget(source, expected) ||
+      makeReleaseTarget(options.iconBoundsRegistry.getBounds(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.LIVE_TARGET, source, { expected }));
   }
 
   function getCommittedFolderTargetBounds(folderId, itemId) {
@@ -532,8 +531,8 @@ export function useLaunchpadDrag(options) {
     if (!target) return null;
     const source = { area: "folder", folderId, id: itemId, pageIndex: target.pageIndex };
     const expected = { area: "folder", folderId, id: itemId, index: target.index, pageIndex: target.pageIndex };
-    return getStableStageLayoutReleaseTarget(source, expected) ||
-      makeReleaseTarget(getLiveClientLaunchIconTargetBounds(source, expected));
+    return getStableLayoutReleaseTarget(source, expected) ||
+      makeReleaseTarget(options.iconBoundsRegistry.getBounds(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.LIVE_TARGET, source, { expected }));
   }
 
   function getPointerReleaseRect(activeDrag) {
@@ -737,10 +736,10 @@ export function useLaunchpadDrag(options) {
     const source = { area: "desktop", folderId: null, id: found.item.id, pageIndex: found.pageIndex };
     const exactExpected = { area: "desktop", id: found.item.id, index: found.index, pageIndex: found.pageIndex };
     const pageExpected = { area: "desktop", id: found.item.id, pageIndex: found.pageIndex };
-    return getStableStageLayoutReleaseTarget(source, exactExpected) ||
-      getStableStageLayoutReleaseTarget(source, pageExpected) ||
-      makeReleaseTarget(getLiveClientLaunchIconTargetBounds(source, exactExpected)) ||
-      makeReleaseTarget(getLiveClientLaunchIconTargetBounds(source, pageExpected));
+    return getStableLayoutReleaseTarget(source, exactExpected) ||
+      getStableLayoutReleaseTarget(source, pageExpected) ||
+      makeReleaseTarget(options.iconBoundsRegistry.getBounds(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.LIVE_TARGET, source, { expected: exactExpected })) ||
+      makeReleaseTarget(options.iconBoundsRegistry.getBounds(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.LIVE_TARGET, source, { expected: pageExpected }));
   }
 
   function normalizeTopLevelTarget(found, fallbackRect = null, node = null) {
@@ -753,11 +752,11 @@ export function useLaunchpadDrag(options) {
   function getTopLevelTargetById(targetId) {
     if (!targetId || targetId === dragRuntime?.item.id) return null;
     const found = options.findTopLevel(options.pages.value, targetId);
-    return normalizeTopLevelTarget(found, getRenderedClientTopLevelIconBounds(targetId));
+    return normalizeTopLevelTarget(found, options.iconBoundsRegistry.getBounds(BOUNDS_KIND.TOP_LEVEL, BOUNDS_VARIANT.RENDERED, targetId));
   }
 
-  function getRenderedClientTopLevelTargetAtPoint(clientX, clientY) {
-    const pixiTarget = getPixiTopLevelTargetAtPoint(clientX, clientY, dragRuntime?.item.id);
+  function getTopLevelTargetAtPoint(clientX, clientY) {
+    const pixiTarget = options.iconBoundsRegistry.getAtPoint(BOUNDS_KIND.TOP_LEVEL, clientX, clientY, { excludeId: dragRuntime?.item.id });
     if (pixiTarget?.id) {
       const found = options.findTopLevel(options.pages.value, pixiTarget.id);
       const target = normalizeTopLevelTarget(found, pixiTarget.rect);
@@ -768,7 +767,7 @@ export function useLaunchpadDrag(options) {
 
   function getTopLevelTargetForDrag(activeDrag, center) {
     if (!activeDrag || !center) return null;
-    const pointTarget = getRenderedClientTopLevelTargetAtPoint(center.x, center.y);
+    const pointTarget = getTopLevelTargetAtPoint(center.x, center.y);
     if (pointTarget) return pointTarget;
 
     const dragRect = getDragVisualRect(activeDrag);

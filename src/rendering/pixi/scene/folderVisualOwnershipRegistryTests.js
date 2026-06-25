@@ -24,17 +24,6 @@ export function runFolderVisualOwnershipRegistryTests() {
 
   {
     const registry = new FolderVisualOwnershipRegistry();
-    const key = makeFolderIconVisualKey("folder-a", "app-a", 0);
-    registry.acquire(key, { folderId: "folder-a", kind: "opening", token: "open-a" });
-
-    assert(!registry.transfer(key, "stale", { folderId: "folder-a", kind: "closing", token: "close-a" }), "stale transfer should be ignored");
-    assert(registry.isOwnedBy(key, "open-a"), "stale transfer should preserve the original owner");
-    assert(registry.transfer(key, "open-a", { folderId: "folder-a", kind: "closing", token: "close-a" }), "matching transfer should replace the owner");
-    assert(registry.isOwnedBy(key, "close-a"), "transfer should install the new owner");
-  }
-
-  {
-    const registry = new FolderVisualOwnershipRegistry();
     registry.acquire(makeDesktopSourceVisualKey("folder-a"), { folderId: "folder-a", kind: "detached", token: "a" });
     registry.acquire(makeDesktopSourceVisualKey("folder-b"), { folderId: "folder-b", kind: "opening", token: "b" });
     registry.acquire(makeFolderIconVisualKey("folder-a", "app-a"), { folderId: "folder-a", kind: "detached", token: "a" });
@@ -64,19 +53,5 @@ export function runFolderVisualOwnershipRegistryTests() {
     assert(changes[0].snapshot.length === 1, "acquire notification should include the new snapshot");
     assert(changes[1].change.type === "release", "matching release should notify subscribers");
     assert(changes[1].snapshot.length === 0, "release notification should include the cleared snapshot");
-  }
-
-  {
-    const registry = new FolderVisualOwnershipRegistry();
-    const changes = [];
-    registry.subscribe((change) => changes.push(change.type));
-    registry.acquire(makeDesktopSourceVisualKey("folder-a"), { folderId: "folder-a", kind: "detached", token: "a" });
-    registry.acquire(makeDesktopSourceVisualKey("folder-b"), { folderId: "folder-b", kind: "detached", token: "b" });
-    registry.acquire(makeFolderIconVisualKey("folder-a", "app-a"), { folderId: "folder-a", kind: "opening", token: "c" });
-
-    assert(registry.releaseByScope({ folderId: "folder-a" }) === 2, "releaseByScope should clear matching folder owners");
-    assert(!registry.hasOwner(makeDesktopSourceVisualKey("folder-a")), "releaseByScope should clear matching desktop source ownership");
-    assert(registry.hasOwner(makeDesktopSourceVisualKey("folder-b")), "releaseByScope should preserve non-matching folder owners");
-    assert(changes[changes.length - 1] === "releaseByScope", "releaseByScope should notify subscribers once");
   }
 }

@@ -1,8 +1,8 @@
 import { createApp } from "vue";
-import { shouldMountMotionLab } from "./motionLab/motionLabModel.js";
+import { shouldMountMotionLab } from "./motionLab/motionLabGate.js";
 
 const search = typeof window === "undefined" ? "" : window.location.search;
-const loadApp = shouldMountMotionLab(search, import.meta.env.DEV)
+const loadApp = import.meta.env.DEV && shouldMountMotionLab(search, true)
   ? () => import("./motionLab/MotionLabApp.vue")
   : () => import("./App.vue");
 

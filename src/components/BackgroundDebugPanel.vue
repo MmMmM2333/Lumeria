@@ -221,10 +221,21 @@
       <div v-else-if="activePanel === 'motion' && canDebugMotion" class="background-debug-section">
         <label class="background-debug-toggle">
           <input
+            name="motionRuntimeDebugEnabled"
+            type="checkbox"
+            :checked="motionRuntimeDebugEnabled"
+            :disabled="motionReplayCaptureActive"
+            @change="setMotionRuntimeDebugEnabled($event.target.checked)"
+          >
+          <span>Enable</span>
+        </label>
+
+        <label class="background-debug-toggle">
+          <input
             name="motionRecordEnabled"
             type="checkbox"
             :checked="motionRecordEnabled"
-            :disabled="motionReplayCaptureActive"
+            :disabled="motionReplayCaptureActive || !motionRuntimeDebugEnabled"
             @change="setMotionRecordEnabled($event.target.checked)"
           >
           <span>Record</span>
@@ -235,7 +246,7 @@
             name="motionOverlayEnabled"
             type="checkbox"
             :checked="motionOverlayEnabled"
-            :disabled="motionReplayCaptureActive"
+            :disabled="motionReplayCaptureActive || !motionRuntimeDebugEnabled"
             @change="setMotionOverlayEnabled($event.target.checked)"
           >
           <span>Overlay</span>
@@ -247,7 +258,7 @@
             :key="preset.value"
             type="button"
             :class="['background-debug-mode-button', motionWindowPreset === preset.value && 'background-debug-mode-button-active']"
-            :disabled="motionReplayCaptureActive"
+            :disabled="motionReplayCaptureActive || !motionRuntimeDebugEnabled"
             @click="setMotionWindowPreset(preset.value)"
           >
             {{ preset.label }}
@@ -265,7 +276,7 @@
             min="1"
             max="300"
             step="1"
-            :disabled="motionReplayCaptureActive || motionWindowPreset !== MOTION_RECORD_WINDOW_CUSTOM"
+            :disabled="motionReplayCaptureActive || !motionRuntimeDebugEnabled || motionWindowPreset !== MOTION_RECORD_WINDOW_CUSTOM"
             :value="motionCustomSeconds"
             @change="updateMotionCustomSeconds"
           >
@@ -282,7 +293,7 @@
             min="0"
             max="2"
             step="0.05"
-            :disabled="motionReplayCaptureActive"
+            :disabled="motionReplayCaptureActive || !motionRuntimeDebugEnabled"
             :value="motionTimeScale"
             @input="updateMotionTimeScale"
           >
@@ -635,1260 +646,19 @@
     </div>
 
     <div class="motion-debug-workspace-grid">
-      <section class="motion-debug-workspace-region">
-        <header>
-          <strong>Targets</strong>
-          <span>{{ motionLayerTreeRows.length }} layers / {{ motionAnimationRows.length }} active</span>
-        </header>
-        <div class="motion-debug-workspace-section-list">
-        <dl class="background-debug-status-grid">
-          <div
-            v-for="row in motionOverviewRows"
-            :key="row.label"
-            :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
-          >
-            <dt>{{ row.label }}</dt>
-            <dd>{{ row.value }}</dd>
-          </div>
-        </dl>
-        <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Capture Profile</div>
-          <label class="background-debug-control background-debug-select-control">
-            <span>
-              Profile
-              <output>{{ motionCaptureProfile.label }}</output>
-            </span>
-            <select
-              name="motionCaptureProfileId"
-              :disabled="motionReplayCaptureActive"
-              :value="motionCaptureProfile.id"
-              @change="updateMotionWorkspaceCaptureProfile"
-            >
-              <option
-                v-for="profile in motionCaptureProfiles"
-                :key="profile.id"
-                :value="profile.id"
-              >
-                {{ profile.label }}
-              </option>
-            </select>
-          </label>
-          <div class="background-debug-motion-capture-props" role="group" aria-label="Capture properties">
-            <label
-              v-for="prop in motionCaptureAllowedProps"
-              :key="prop"
-              class="background-debug-toggle background-debug-motion-capture-prop"
-            >
-              <input
-                :name="`motionCaptureProp-${prop}`"
-                type="checkbox"
-                :checked="motionCaptureProfile.propAllowlist.includes(prop)"
-                :disabled="motionReplayCaptureActive || (motionCaptureProfile.propAllowlist.includes(prop) && motionCaptureSelectedPropCount <= 1)"
-                @change="toggleMotionWorkspaceCaptureProp(prop, $event)"
-              >
-              <span>{{ prop }}</span>
-            </label>
-          </div>
-          <div class="background-debug-motion-capture-filter-grid">
-            <label class="background-debug-control background-debug-motion-capture-filter-control">
-              <span>
-                Layers
-                <output>{{ motionCaptureTargetFilterText.layers || "all" }}</output>
-              </span>
-              <input
-                name="motionCaptureLayerFilter"
-                type="text"
-                placeholder="desktop, folder"
-                :disabled="motionReplayCaptureActive"
-                :value="motionCaptureTargetFilterText.layers"
-                @input="updateMotionWorkspaceCaptureTargetFilter('layers', $event)"
-              >
-            </label>
-            <label class="background-debug-control background-debug-motion-capture-filter-control">
-              <span>
-                Kinds
-                <output>{{ motionCaptureTargetFilterText.kinds || "all" }}</output>
-              </span>
-              <input
-                name="motionCaptureKindFilter"
-                type="text"
-                placeholder="Icon, FolderPanel"
-                :disabled="motionReplayCaptureActive"
-                :value="motionCaptureTargetFilterText.kinds"
-                @input="updateMotionWorkspaceCaptureTargetFilter('kinds', $event)"
-              >
-            </label>
-            <label class="background-debug-control background-debug-motion-capture-filter-control">
-              <span>
-                Sources
-                <output>{{ motionCaptureTargetFilterText.sourceLabels || "all" }}</output>
-              </span>
-              <input
-                name="motionCaptureSourceLabelFilter"
-                type="text"
-                placeholder="desktop.icon.node"
-                :disabled="motionReplayCaptureActive"
-                :value="motionCaptureTargetFilterText.sourceLabels"
-                @input="updateMotionWorkspaceCaptureTargetFilter('sourceLabels', $event)"
-              >
-            </label>
-            <label class="background-debug-control background-debug-motion-capture-filter-control">
-              <span>
-                Source query
-                <output>{{ motionCaptureTargetFilterText.sourceQuery || "all" }}</output>
-              </span>
-              <input
-                name="motionCaptureSourceQuery"
-                type="search"
-                placeholder="icon / panel"
-                :disabled="motionReplayCaptureActive"
-                :value="motionCaptureTargetFilterText.sourceQuery"
-                @input="updateMotionWorkspaceCaptureTargetFilter('sourceQuery', $event)"
-              >
-            </label>
-          </div>
-          <dl class="background-debug-status-grid background-debug-motion-capture-estimate">
-            <div
-              v-for="row in motionCaptureEstimateRows"
-              :key="row.label"
-              :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
-            >
-              <dt>{{ row.label }}</dt>
-              <dd :title="row.value">{{ row.value }}</dd>
-            </div>
-          </dl>
-        </div>
-        <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Filters</div>
-          <div class="background-debug-mode-group background-debug-motion-filter-group" role="group" aria-label="Motion filter presets">
-            <button
-              v-for="preset in MOTION_FILTER_PRESETS"
-              :key="preset.value"
-              type="button"
-              :class="['background-debug-mode-button', motionFilterPreset === preset.value && 'background-debug-mode-button-active']"
-              @click="setMotionFilterPreset(preset.value)"
-            >
-              {{ preset.label }}
-            </button>
-          </div>
-          <label class="background-debug-control background-debug-motion-filter-control">
-            <span>
-              Filter
-              <output>{{ motionFilterSummary.text }}</output>
-            </span>
-            <input
-              name="motionFilterQuery"
-              type="search"
-              placeholder="target / lane / prop / event"
-              :value="motionFilterQuery"
-              @input="updateMotionFilterQuery"
-            >
-          </label>
-        </div>
-        <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Layer Tree</div>
-          <div class="background-debug-motion-layer-tree">
-            <section
-              v-for="row in motionLayerTreeRows"
-              :key="row.key"
-              :class="[
-                'background-debug-motion-timeline-group',
-                'background-debug-motion-selectable',
-                isMotionWorkspaceLayerSelected(row) && 'background-debug-motion-selected',
-              ]"
-              role="button"
-              tabindex="0"
-              @click="selectMotionWorkspaceLayer(row)"
-              @keydown.enter.prevent="selectMotionWorkspaceLayer(row)"
-              @keydown.space.prevent="selectMotionWorkspaceLayer(row)"
-            >
-              <header>
-                <strong :title="row.layer">{{ row.layer }}</strong>
-                <span>{{ row.summary }}</span>
-              </header>
-              <div class="background-debug-motion-layer-row">
-                <span>{{ row.targetCount }} targets</span>
-                <span>{{ row.activeCount }} active</span>
-                <span>{{ row.warningCount }} warnings</span>
-                <span>{{ row.eventCount }} events</span>
-              </div>
-              <div class="background-debug-motion-layer-row">
-                <span :title="row.detail">{{ row.detail }}</span>
-                <span :title="row.sources">{{ row.sources }}</span>
-              </div>
-            </section>
-            <div v-if="motionLayerTreeRows.length === 0" class="background-debug-motion-empty">
-              no matching layers
-            </div>
-          </div>
-        </div>
-        <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Active Animations</div>
-          <div class="background-debug-motion-table" role="table" aria-label="Active Pixi motion animations">
-            <div class="background-debug-motion-row background-debug-motion-row-head" role="row">
-              <span role="columnheader">target</span>
-              <span role="columnheader">prop</span>
-              <span role="columnheader">value -> to</span>
-              <span role="columnheader">driver</span>
-              <span role="columnheader">lane</span>
-              <span role="columnheader">velocity</span>
-            </div>
-            <div
-              v-for="(row, index) in motionAnimationRows"
-              :key="`${row.target}-${row.prop}-${row.lane}-${index}`"
-              class="background-debug-motion-row"
-              role="row"
-            >
-              <span role="cell" :title="row.target">{{ row.target }}</span>
-              <span role="cell" :title="row.prop">{{ row.prop }}</span>
-              <span role="cell" :title="row.valueTo">{{ row.valueTo }}</span>
-              <span role="cell" :title="row.driver">{{ row.driver }}</span>
-              <span role="cell" :title="row.lane">{{ row.lane }}</span>
-              <span role="cell" :title="row.velocity">{{ row.velocity }}</span>
-            </div>
-            <div v-if="motionAnimationRows.length === 0" class="background-debug-motion-empty">
-              no active animations
-            </div>
-          </div>
-        </div>
-          <div class="background-debug-subsection">
-            <div class="background-debug-subtitle">Pins</div>
-            <div class="background-debug-motion-replay-overlay-list">
-              <article
-                v-for="pin in motionWorkspaceSession.pinnedTargets"
-                :key="pin.key"
-                class="background-debug-motion-replay-overlay-card"
-              >
-                <strong :title="pin.label">{{ pin.label }}</strong>
-                <span :title="pin.sourceLabel || pin.layer || pin.kind">{{ pin.sourceLabel || pin.layer || pin.kind || pin.key }}</span>
-              </article>
-              <div v-if="motionWorkspaceSession.pinnedTargets.length === 0" class="background-debug-motion-empty">
-                no pinned targets
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="motion-debug-workspace-region">
-        <header>
-          <strong>Timeline</strong>
-          <span>{{ motionTrackChartHeaderLabel }}</span>
-        </header>
-        <div class="motion-debug-workspace-section-list">
-        <div class="background-debug-subsection motion-debug-track-chart-section">
-          <div class="background-debug-subtitle">Track Chart</div>
-          <div class="motion-debug-track-chart-toolbar">
-            <div class="background-debug-mode-group motion-debug-track-chart-mode-group" role="group" aria-label="Track chart display mode">
-              <button
-                type="button"
-                :class="[
-                  'background-debug-mode-button',
-                  motionTrackChartDisplayMode === MOTION_TRACK_CHART_DISPLAY_RAW && 'background-debug-mode-button-active',
-                ]"
-                @click="setMotionTrackChartDisplayMode(MOTION_TRACK_CHART_DISPLAY_RAW)"
-              >
-                Raw
-              </button>
-              <button
-                type="button"
-                :class="[
-                  'background-debug-mode-button',
-                  motionTrackChartDisplayMode === MOTION_TRACK_CHART_DISPLAY_NORMALIZED && 'background-debug-mode-button-active',
-                ]"
-                @click="setMotionTrackChartDisplayMode(MOTION_TRACK_CHART_DISPLAY_NORMALIZED)"
-              >
-                Normalized
-              </button>
-            </div>
-            <div class="motion-debug-track-chart-series-controls" role="group" aria-label="Track chart series visibility">
-              <label
-                v-for="option in motionTrackChartSeriesOptions"
-                :key="option.key"
-                class="background-debug-toggle motion-debug-track-chart-series-toggle"
-              >
-                <input
-                  :name="`motionTrackChartSeries-${option.key}`"
-                  type="checkbox"
-                  :checked="motionTrackChartSeriesVisibility[option.key]"
-                  @change="toggleMotionTrackChartSeries(option.key, $event)"
-                >
-                <span>{{ option.label }}</span>
-              </label>
-            </div>
-          </div>
-
-          <div v-if="motionTrackChartModel" class="motion-debug-track-chart-window-controls">
-            <label class="background-debug-control background-debug-number-control motion-debug-track-chart-window-control">
-              <span>
-                Zoom start
-                <output>{{ formatMotionReplayTime(motionTrackChartZoomWindow.startMs) }}</output>
-              </span>
-              <input
-                name="motionTrackChartZoomStartMs"
-                type="number"
-                step="1"
-                :min="motionReplayTimeRange.min"
-                :max="motionReplayTimeRange.max"
-                :value="motionTrackChartZoomWindow.startMs"
-                @change="updateMotionTrackChartZoomStart"
-              >
-            </label>
-            <label class="background-debug-control background-debug-number-control motion-debug-track-chart-window-control">
-              <span>
-                Zoom end
-                <output>{{ formatMotionReplayTime(motionTrackChartZoomWindow.endMs) }}</output>
-              </span>
-              <input
-                name="motionTrackChartZoomEndMs"
-                type="number"
-                step="1"
-                :min="motionReplayTimeRange.min"
-                :max="motionReplayTimeRange.max"
-                :value="motionTrackChartZoomWindow.endMs"
-                @change="updateMotionTrackChartZoomEnd"
-              >
-            </label>
-            <div class="background-debug-actions motion-debug-track-chart-window-actions">
-              <button
-                type="button"
-                class="background-debug-button"
-                :disabled="!motionTrackChartIntervalActive"
-                @click="zoomMotionTrackChartToInterval"
-              >
-                Zoom Interval
-              </button>
-              <button
-                type="button"
-                class="background-debug-button"
-                :disabled="!motionTrackChartZoomActive"
-                @click="resetMotionTrackChartZoom"
-              >
-                Reset Zoom
-              </button>
-            </div>
-          </div>
-
-          <dl v-if="motionTrackChartModel" class="background-debug-status-grid motion-debug-track-chart-summary">
-            <div
-              v-for="row in motionTrackChartSummaryRows"
-              :key="row.label"
-              :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
-            >
-              <dt>{{ row.label }}</dt>
-              <dd :title="row.value">{{ row.value }}</dd>
-            </div>
-          </dl>
-
-          <div v-if="motionTrackChartModel" class="motion-debug-anomaly-panel">
-            <header>
-              <strong>Anomaly Jumps</strong>
-              <span>{{ motionReplayAnomalyStatusLabel }}</span>
-            </header>
-            <div
-              v-if="motionReplayAnomalyRows.length"
-              class="motion-debug-anomaly-grid"
-              role="group"
-              aria-label="Motion replay anomaly jumps"
-            >
-              <button
-                v-for="row in motionReplayAnomalyRows"
-                :key="row.key"
-                type="button"
-                class="motion-debug-anomaly-button"
-                :title="row.detail"
-                @click="jumpMotionReplayAnomaly(row)"
-              >
-                <strong>{{ row.label }}</strong>
-                <span>{{ row.timeLabel }} / {{ row.track.prop }} / {{ row.track.lane }}</span>
-                <span>{{ row.metricLabel }}</span>
-              </button>
-            </div>
-            <div v-else class="background-debug-motion-empty">
-              no anomaly jump targets
-            </div>
-          </div>
-
-          <div v-if="motionTrackChartModel" class="motion-debug-track-chart-axis" aria-hidden="true">
-            <span
-              v-for="tick in motionTrackChartModel.axis.ticks"
-              :key="`${tick.timeMs}-${tick.x}`"
-              :style="{ left: `${tick.x}%` }"
-            >
-              {{ tick.label }}
-            </span>
-          </div>
-
-          <div v-if="motionTrackChartModel" class="motion-debug-track-chart-list">
-            <section
-              v-for="track in motionTrackChartModel.tracks"
-              :key="track.key"
-              :class="[
-                'motion-debug-track-chart-row',
-                track.isSelected && 'background-debug-motion-selected',
-              ]"
-            >
-              <button
-                type="button"
-                class="motion-debug-track-chart-track-button"
-                @click="selectMotionTrackChartTrack(track)"
-              >
-                <span class="motion-debug-track-chart-row-header">
-                  <strong :title="track.targetProp">{{ track.targetProp }}</strong>
-                  <span>{{ track.summary }}</span>
-                </span>
-              </button>
-              <div class="motion-debug-track-chart-row-meta">
-                <span :title="track.laneLabel">{{ track.laneLabel }}</span>
-                <span :title="track.sourceLabel">{{ track.sourceLabel }}</span>
-                <span>v {{ formatMotionTrackChartValue(track.stats.maxAbsVelocity) }}</span>
-                <span>d {{ formatMotionTrackChartValue(track.stats.maxAbsDelta) }}</span>
-              </div>
-              <div class="motion-debug-track-chart-current">
-                <span>value {{ formatMotionTrackChartValue(track.current?.value) }}</span>
-                <span>to {{ formatMotionTrackChartValue(track.current?.to) }}</span>
-                <span>delta {{ formatMotionTrackChartValue(track.current?.delta) }}</span>
-                <span>velocity {{ formatMotionTrackChartValue(track.current?.velocity) }}</span>
-              </div>
-              <div class="motion-debug-track-chart-activity" aria-hidden="true">
-                <span
-                  :style="{
-                    left: `${track.timeline.startX}%`,
-                    width: `${track.timeline.width}%`,
-                  }"
-                ></span>
-              </div>
-              <div
-                :class="[
-                  'motion-debug-track-chart-plot',
-                  motionTrackChartBrushPointerId != null && 'motion-debug-track-chart-plot-brushing',
-                ]"
-                @pointermove="updateMotionTrackChartPointer"
-                @pointerdown="startMotionTrackChartBrush"
-                @pointerup="endMotionTrackChartBrush"
-                @pointercancel="cancelMotionTrackChartBrush"
-              >
-                <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                  <rect
-                    v-if="motionTrackChartIntervalOverlay.active"
-                    class="motion-debug-track-chart-brush-range"
-                    :x="motionTrackChartIntervalOverlay.x"
-                    y="0"
-                    :width="motionTrackChartIntervalOverlay.width"
-                    height="100"
-                  />
-                  <line
-                    v-for="tick in motionTrackChartModel.axis.ticks"
-                    :key="`${track.key}-tick-${tick.timeMs}-${tick.x}`"
-                    class="motion-debug-track-chart-axis-line"
-                    :x1="tick.x"
-                    y1="0"
-                    :x2="tick.x"
-                    y2="100"
-                  />
-                  <path class="background-debug-motion-curve-grid" d="M 0 50 L 100 50" />
-                  <template v-for="seriesKey in track.visibleSeries" :key="`${track.key}-${seriesKey}`">
-                    <path
-                      v-if="track.series[seriesKey].path"
-                      :class="[
-                        'motion-debug-track-chart-series',
-                        `motion-debug-track-chart-series-${seriesKey}`,
-                      ]"
-                      :d="track.series[seriesKey].path"
-                    />
-                  </template>
-                  <line
-                    v-for="marker in track.eventMarkers"
-                    :key="`${track.key}-${marker.type}-${marker.timeMs}-${marker.x}`"
-                    class="background-debug-motion-curve-event"
-                    :x1="marker.x"
-                    y1="5"
-                    :x2="marker.x"
-                    y2="95"
-                  >
-                    <title>{{ marker.detail }}</title>
-                  </line>
-                  <line
-                    class="background-debug-motion-replay-curve-cursor"
-                    :x1="motionTrackChartModel.cursor.x"
-                    y1="0"
-                    :x2="motionTrackChartModel.cursor.x"
-                    y2="100"
-                  />
-                </svg>
-              </div>
-              <div class="motion-debug-track-chart-event-list" v-if="track.eventMarkers.length">
-                <button
-                  v-for="marker in track.eventMarkers"
-                  :key="`${track.key}-event-${marker.type}-${marker.timeMs}`"
-                  type="button"
-                  class="motion-debug-track-chart-event-button"
-                  :title="marker.detail"
-                  @click.stop="selectMotionTrackChartEvent(track, marker)"
-                >
-                  <span>{{ marker.type }}</span>
-                  <span>{{ formatMotionReplayTime(marker.timeMs) }}</span>
-                </button>
-              </div>
-              <div class="motion-debug-track-chart-ranges">
-                <span
-                  v-for="option in motionTrackChartSeriesOptions"
-                  :key="`${track.key}-range-${option.key}`"
-                  :title="track.rangeLabels[option.key]"
-                >
-                  {{ option.label }} {{ track.rangeLabels[option.key] }}
-                </span>
-              </div>
-            </section>
-            <div v-if="motionTrackChartModel.tracks.length === 0" class="background-debug-motion-empty">
-              no replay chart tracks
-            </div>
-            <div v-if="motionTrackChartModel.limits.tracksLimited" class="background-debug-motion-empty">
-              showing {{ motionTrackChartModel.summary.visibleTrackCount }} of {{ motionTrackChartModel.summary.trackCount }} chart tracks
-            </div>
-          </div>
-          <div v-else class="background-debug-motion-empty">
-            load a replay trace to inspect track curves
-          </div>
-        </div>
-        <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Replay Viewer</div>
-          <label class="background-debug-control background-debug-textarea-control">
-            <span>
-              Import JSON
-              <output>{{ motionReplayImportStatus }}</output>
-            </span>
-            <textarea
-              name="motionReplayImportText"
-              rows="3"
-              spellcheck="false"
-              :maxlength="MOTION_REPLAY_IMPORT_MAX_BYTES"
-              :value="motionReplayImportText"
-              @input="updateMotionReplayImportText"
-            ></textarea>
-          </label>
-          <label class="background-debug-control background-debug-file-control">
-            <span>
-              Trace file
-              <output>{{ motionReplayViewerLoaded ? "loaded" : "none" }}</output>
-            </span>
-            <input
-              name="motionReplayTraceFile"
-              type="file"
-              accept="application/json,.json"
-              @change="importMotionReplayFile"
-            >
-          </label>
-          <div class="background-debug-actions background-debug-motion-replay-viewer-actions">
-            <button type="button" class="background-debug-button" @click="loadMotionReplayImportText">
-              Load Trace
-            </button>
-            <button
-              type="button"
-              class="background-debug-button"
-              :disabled="!motionReplayTrace"
-              @click="loadCapturedMotionReplayTrace"
-            >
-              Load Captured
-            </button>
-            <button
-              type="button"
-              class="background-debug-button"
-              :disabled="!motionReplayViewerLoaded"
-              @click="clearMotionReplayViewer"
-            >
-              Clear Viewer
-            </button>
-          </div>
-          <div v-if="motionReplayImportError" class="background-debug-error" :title="motionReplayImportError">
-            {{ motionReplayImportError }}
-          </div>
-
-          <dl class="background-debug-status-grid">
-            <div
-              v-for="row in motionReplayOverviewRows"
-              :key="row.label"
-              :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
-            >
-              <dt>{{ row.label }}</dt>
-              <dd>{{ row.value }}</dd>
-            </div>
-          </dl>
-
-          <label class="background-debug-control">
-            <span>
-              Scrub
-              <output>{{ formatMotionReplayTime(motionReplayCurrentTimeMs) }}</output>
-            </span>
-            <input
-              name="motionReplayScrub"
-              type="range"
-              :min="motionReplayTimeRange.min"
-              :max="motionReplayTimeRange.max"
-              step="1"
-              :disabled="!motionReplayViewerLoaded"
-              :value="motionReplayCurrentTimeMs"
-              @input="updateMotionReplayCurrentTime"
-            >
-          </label>
-
-          <label class="background-debug-control background-debug-motion-filter-control">
-            <span>
-              Replay Filter
-              <output>{{ motionReplayFilterSummary.text }}</output>
-            </span>
-            <input
-              name="motionReplayFilterQuery"
-              type="search"
-              placeholder="target / lane / prop / event"
-              :disabled="!motionReplayViewerLoaded"
-              :value="motionReplayFilterQuery"
-              @input="updateMotionReplayFilterQuery"
-            >
-          </label>
-
-          <div class="background-debug-actions background-debug-motion-replay-viewer-actions">
-            <button
-              type="button"
-              class="background-debug-button"
-              :disabled="!motionReplayViewerLoaded"
-              @click="toggleMotionReplayPlayback"
-            >
-              {{ motionReplayPlayButtonLabel }}
-            </button>
-            <button
-              type="button"
-              class="background-debug-button"
-              :disabled="!motionReplayViewerLoaded"
-              @click="setMotionReplayCurrentTime(motionReplayTimeRange.min, { pause: true })"
-            >
-              Jump Start
-            </button>
-            <button
-              type="button"
-              class="background-debug-button"
-              :disabled="!motionReplayViewerLoaded"
-              @click="setMotionReplayCurrentTime(motionReplayTimeRange.max, { pause: true })"
-            >
-              Jump End
-            </button>
-          </div>
-
-          <div class="background-debug-actions background-debug-motion-replay-step-actions">
-            <button
-              type="button"
-              class="background-debug-button"
-              :disabled="!motionReplayViewerLoaded"
-              @click="stepMotionReplayFrame('previous')"
-            >
-              Prev Frame
-            </button>
-            <button
-              type="button"
-              class="background-debug-button"
-              :disabled="!motionReplayViewerLoaded"
-              @click="stepMotionReplayFrame('next')"
-            >
-              Next Frame
-            </button>
-            <button
-              type="button"
-              class="background-debug-button"
-              :disabled="!motionReplayViewerLoaded"
-              @click="stepMotionReplayEvent('previous')"
-            >
-              Prev Event
-            </button>
-            <button
-              type="button"
-              class="background-debug-button"
-              :disabled="!motionReplayViewerLoaded"
-              @click="stepMotionReplayEvent('next')"
-            >
-              Next Event
-            </button>
-            <button
-              type="button"
-              class="background-debug-button"
-              :disabled="!motionReplayViewerLoaded"
-              @click="copyMotionReplayInterval"
-            >
-              {{ motionReplayIntervalCopyButtonLabel }}
-            </button>
-          </div>
-
-          <div class="background-debug-motion-replay-interval-grid">
-            <label class="background-debug-control background-debug-number-control">
-              <span>
-                Interval start
-                <output>{{ formatMotionReplayTime(motionReplayIntervalStartMs) }}</output>
-              </span>
-              <input
-                name="motionReplayIntervalStartMs"
-                type="number"
-                step="1"
-                :disabled="!motionReplayViewerLoaded"
-                :value="motionReplayIntervalStartMs"
-                @change="updateMotionReplayIntervalStart"
-              >
-            </label>
-            <label class="background-debug-control background-debug-number-control">
-              <span>
-                Interval end
-                <output>{{ formatMotionReplayTime(motionReplayIntervalEndMs) }}</output>
-              </span>
-              <input
-                name="motionReplayIntervalEndMs"
-                type="number"
-                step="1"
-                :disabled="!motionReplayViewerLoaded"
-                :value="motionReplayIntervalEndMs"
-                @change="updateMotionReplayIntervalEnd"
-              >
-            </label>
-          </div>
-
-          <div class="background-debug-motion-replay-bookmarks">
-            <header>
-              <strong>Bookmarks</strong>
-              <span>{{ motionReplayBookmarkStatusLabel }}</span>
-            </header>
-            <div class="background-debug-actions background-debug-motion-bookmark-actions">
-              <button
-                type="button"
-                class="background-debug-button"
-                :disabled="!motionReplayBookmarkCanSave"
-                @click="saveMotionReplayBookmark"
-              >
-                Save Bookmark
-              </button>
-              <button
-                type="button"
-                class="background-debug-button"
-                :disabled="motionReplayBookmarkRows.length === 0"
-                @click="clearMotionReplayBookmarks"
-              >
-                Clear Bookmarks
-              </button>
-            </div>
-            <div class="background-debug-motion-bookmark-list">
-              <article
-                v-for="bookmark in motionReplayBookmarkRows"
-                :key="bookmark.id"
-                class="background-debug-motion-bookmark-card"
-              >
-                <div class="background-debug-motion-bookmark-main">
-                  <strong :title="bookmark.label">{{ bookmark.label }}</strong>
-                  <span :title="formatMotionReplayBookmarkMeta(bookmark)">
-                    {{ formatMotionReplayBookmarkMeta(bookmark) }}
-                  </span>
-                </div>
-                <div class="background-debug-actions background-debug-motion-bookmark-row-actions">
-                  <button
-                    type="button"
-                    class="background-debug-button"
-                    :disabled="!motionReplayViewerLoaded"
-                    @click="applyMotionReplayBookmark(bookmark)"
-                  >
-                    Apply
-                  </button>
-                  <button
-                    type="button"
-                    class="background-debug-button"
-                    :disabled="!motionReplayViewerLoaded"
-                    @click="copyMotionFocusedDebugExport(bookmark)"
-                  >
-                    Focused AI
-                  </button>
-                  <button
-                    type="button"
-                    class="background-debug-button"
-                    @click="deleteMotionReplayBookmark(bookmark)"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </article>
-              <div v-if="motionReplayBookmarkRows.length === 0" class="background-debug-motion-empty">
-                no saved bookmarks
-              </div>
-            </div>
-          </div>
-
-          <div class="background-debug-motion-property-table" role="table" aria-label="Replay frame properties">
-            <div class="background-debug-motion-property-row background-debug-motion-row-head" role="row">
-              <span role="columnheader">target.prop</span>
-              <span role="columnheader">value</span>
-              <span role="columnheader">to</span>
-              <span role="columnheader">delta</span>
-              <span role="columnheader">velocity</span>
-              <span role="columnheader">driver</span>
-              <span role="columnheader">lane</span>
-              <span role="columnheader">laneKey</span>
-              <span role="columnheader">sourceLabel</span>
-            </div>
-            <div
-              v-for="(row, index) in motionReplayFrameRows"
-              :key="`${row.targetProp}-${row.laneKey}-${index}`"
-              class="background-debug-motion-property-row"
-              role="row"
-            >
-              <span role="cell" :title="row.targetProp">{{ row.targetProp }}</span>
-              <span role="cell" :title="row.value">{{ row.value }}</span>
-              <span role="cell" :title="row.to">{{ row.to }}</span>
-              <span role="cell" :title="row.delta">{{ row.delta }}</span>
-              <span role="cell" :title="row.velocity">{{ row.velocity }}</span>
-              <span role="cell" :title="row.driver">{{ row.driver }}</span>
-              <span role="cell" :title="row.lane">{{ row.lane }}</span>
-              <span role="cell" :title="row.laneKey">{{ row.laneKey }}</span>
-              <span role="cell" :title="row.sourceLabel">{{ row.sourceLabel }}</span>
-            </div>
-            <div v-if="motionReplayFrameRows.length === 0" class="background-debug-motion-empty">
-              no replay frame values
-            </div>
-          </div>
-
-          <div class="background-debug-motion-timeline">
-            <button
-              v-for="event in motionReplayEventRows"
-              :key="event.key"
-              type="button"
-              :class="['background-debug-motion-replay-event', event.isCurrent && 'background-debug-motion-replay-event-current']"
-              :title="event.detail"
-              @click="setMotionReplayCurrentTime(event.timeMs, { pause: true })"
-            >
-              <span>{{ event.time }}</span>
-              <span>{{ event.type }}</span>
-              <span>{{ event.sourceLabel }}</span>
-              <span>{{ event.detail }}</span>
-            </button>
-            <div v-if="motionReplayEventRows.length === 0" class="background-debug-motion-empty">
-              no replay events
-            </div>
-          </div>
-
-          <div class="background-debug-motion-curve-list">
-            <section
-              v-for="group in motionReplayCurveGroups"
-              :key="group.key"
-              class="background-debug-motion-curve-card"
-            >
-              <header>
-                <strong :title="group.label">{{ group.label }}</strong>
-                <span>{{ group.summary }}</span>
-              </header>
-              <div class="background-debug-motion-curve-meta">
-                <span :title="group.laneLabel">{{ group.laneLabel }}</span>
-                <span :title="group.sourceLabel">{{ group.sourceLabel }}</span>
-                <span>{{ formatMotionReplayTime(motionReplayCurrentTimeMs) }}</span>
-              </div>
-              <div class="background-debug-motion-curve-row">
-                <span>value/to/events</span>
-                <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                  <path class="background-debug-motion-curve-grid" d="M 0 50 L 100 50" />
-                  <path v-if="group.toPath" class="background-debug-motion-curve-to" :d="group.toPath" />
-                  <path v-if="group.valuePath" class="background-debug-motion-curve-value" :d="group.valuePath" />
-                  <line
-                    v-for="marker in group.eventMarkers"
-                    :key="`${group.key}-${marker.type}-${marker.x}`"
-                    class="background-debug-motion-curve-event"
-                    :x1="marker.x"
-                    y1="5"
-                    :x2="marker.x"
-                    y2="95"
-                  />
-                  <line
-                    class="background-debug-motion-replay-curve-cursor"
-                    :x1="group.cursorX"
-                    y1="0"
-                    :x2="group.cursorX"
-                    y2="100"
-                  />
-                </svg>
-                <output>{{ group.rangeLabels.value }}</output>
-              </div>
-            </section>
-            <div v-if="motionReplayCurveGroups.length === 0" class="background-debug-motion-empty">
-              no replay curves
-            </div>
-          </div>
-
-          <div class="background-debug-motion-replay-overlay-list">
-            <article
-              v-for="row in motionReplayOverlayRows"
-              :key="row.key"
-              :class="[
-                'background-debug-motion-replay-overlay-card',
-                'background-debug-motion-selectable',
-                row.isSelected && 'background-debug-motion-selected',
-              ]"
-              role="button"
-              tabindex="0"
-              @click="selectMotionWorkspaceReplayOverlay(row)"
-              @keydown.enter.prevent="selectMotionWorkspaceReplayOverlay(row)"
-              @keydown.space.prevent="selectMotionWorkspaceReplayOverlay(row)"
-            >
-              <strong :title="row.label">{{ row.label }}</strong>
-              <span :title="row.sourceLabel || row.kind || row.layer">
-                {{ row.sourceLabel || row.kind || row.layer || "target" }}
-              </span>
-              <span :title="row.valueSummary">{{ row.valueSummary }}</span>
-              <span :title="row.laneSummary">{{ row.propSummary }} / {{ row.laneSummary }}</span>
-              <span>{{ row.valueCount }} values</span>
-            </article>
-            <div v-if="motionReplayOverlayRows.length === 0" class="background-debug-motion-empty">
-              no replay overlay targets
-            </div>
-          </div>
-        </div>
-        <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Timeline</div>
-          <div class="background-debug-motion-timeline">
-            <section
-              v-for="group in motionTimelineGroups"
-              :key="group.key"
-              :class="[
-                'background-debug-motion-timeline-group',
-                'background-debug-motion-selectable',
-                isMotionWorkspaceTrackSelected(group) && 'background-debug-motion-selected',
-              ]"
-              role="button"
-              tabindex="0"
-              @click="selectMotionWorkspaceTrack(group)"
-              @keydown.enter.prevent="selectMotionWorkspaceTrack(group)"
-              @keydown.space.prevent="selectMotionWorkspaceTrack(group)"
-            >
-              <header>
-                <strong :title="group.label">{{ group.label }}</strong>
-                <span>{{ group.events.length }} events</span>
-              </header>
-              <div
-                v-for="event in group.events"
-                :key="event.key"
-                :class="[
-                  'background-debug-motion-timeline-event',
-                  'background-debug-motion-selectable',
-                  isMotionWorkspaceTimelineEventSelected(event) && 'background-debug-motion-selected',
-                ]"
-                :title="event.detail"
-                role="button"
-                tabindex="0"
-                @click.stop="selectMotionWorkspaceTimelineEvent(event)"
-                @keydown.enter.prevent.stop="selectMotionWorkspaceTimelineEvent(event)"
-                @keydown.space.prevent.stop="selectMotionWorkspaceTimelineEvent(event)"
-              >
-                <span>{{ event.time }}</span>
-                <span>{{ event.type }}</span>
-                <span>{{ event.prop }}</span>
-                <span>{{ event.detail }}</span>
-              </div>
-            </section>
-            <div v-if="motionTimelineGroups.length === 0" class="background-debug-motion-empty">
-              no matching timeline events
-            </div>
-          </div>
-        </div>
-        <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Curve Chart</div>
-          <div class="background-debug-motion-curve-list">
-            <section
-              v-for="group in motionCurveChartGroups"
-              :key="group.key"
-              :class="[
-                'background-debug-motion-curve-card',
-                'background-debug-motion-selectable',
-                isMotionWorkspaceTrackSelected(group) && 'background-debug-motion-selected',
-              ]"
-              role="button"
-              tabindex="0"
-              @click="selectMotionWorkspaceCurve(group)"
-              @keydown.enter.prevent="selectMotionWorkspaceCurve(group)"
-              @keydown.space.prevent="selectMotionWorkspaceCurve(group)"
-            >
-              <header>
-                <strong :title="group.overlayLabel">{{ group.label }}</strong>
-                <span>{{ group.summary }}</span>
-              </header>
-              <div class="background-debug-motion-curve-meta">
-                <span :title="group.laneLabel">{{ group.laneLabel }}</span>
-                <span :title="group.sourceLabel">{{ group.sourceLabel }}</span>
-                <span>v {{ formatMotionChartStat(group.stats.maxVelocity) }}</span>
-              </div>
-              <div class="background-debug-motion-curve-row">
-                <span>value/to/events</span>
-                <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                  <path class="background-debug-motion-curve-grid" d="M 0 50 L 100 50" />
-                  <path v-if="group.toPath" class="background-debug-motion-curve-to" :d="group.toPath" />
-                  <path v-if="group.valuePath" class="background-debug-motion-curve-value" :d="group.valuePath" />
-                  <line
-                    v-for="marker in group.eventMarkers"
-                    :key="`${group.key}-${marker.time}-${marker.type}`"
-                    class="background-debug-motion-curve-event"
-                    :x1="marker.x"
-                    y1="5"
-                    :x2="marker.x"
-                    y2="95"
-                  />
-                </svg>
-                <output>{{ group.rangeLabels.value }}</output>
-              </div>
-              <div class="background-debug-motion-curve-row">
-                <span>delta</span>
-                <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                  <path class="background-debug-motion-curve-grid" d="M 0 50 L 100 50" />
-                  <path v-if="group.deltaPath" class="background-debug-motion-curve-delta" :d="group.deltaPath" />
-                </svg>
-                <output>{{ group.rangeLabels.delta }}</output>
-              </div>
-              <div class="background-debug-motion-curve-row">
-                <span>velocity</span>
-                <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                  <path class="background-debug-motion-curve-grid" d="M 0 50 L 100 50" />
-                  <path v-if="group.velocityPath" class="background-debug-motion-curve-velocity" :d="group.velocityPath" />
-                </svg>
-                <output>{{ group.rangeLabels.velocity }}</output>
-              </div>
-            </section>
-            <div v-if="motionCurveChartGroups.length === 0" class="background-debug-motion-empty">
-              no matching curve samples
-            </div>
-          </div>
-        </div>
-        </div>
-      </section>
-
-      <section class="motion-debug-workspace-region">
-        <header>
-          <strong>Inspector</strong>
-          <span>{{ motionWorkspaceSelectedTargetLabel }}</span>
-        </header>
-        <div class="motion-debug-workspace-section-list">
-          <div class="background-debug-subsection">
-            <div class="background-debug-subtitle">Inspector</div>
-            <dl class="background-debug-status-grid">
-              <div class="background-debug-stat background-debug-stat-wide">
-                <dt>target</dt>
-                <dd :title="motionWorkspaceSelectedTargetLabel">{{ motionWorkspaceSelectedTargetLabel }}</dd>
-              </div>
-              <div class="background-debug-stat background-debug-stat-wide">
-                <dt>track</dt>
-                <dd :title="motionWorkspaceSelectedTrackLabel">{{ motionWorkspaceSelectedTrackLabel }}</dd>
-              </div>
-              <div class="background-debug-stat">
-                <dt>time</dt>
-                <dd>{{ formatMotionReplayTime(motionWorkspaceSelectedTimeMs) }}</dd>
-              </div>
-              <div class="background-debug-stat">
-                <dt>filter</dt>
-                <dd :title="motionWorkspaceFilterLabel">{{ motionWorkspaceFilterLabel }}</dd>
-              </div>
-            </dl>
-            <dl class="background-debug-status-grid motion-debug-inspector-current">
-              <div
-                v-for="row in motionInspectorStatusRows"
-                :key="row.label"
-                :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
-              >
-                <dt>{{ row.label }}</dt>
-                <dd :title="row.value">{{ row.value }}</dd>
-              </div>
-            </dl>
-            <div v-if="!motionInspectorModel" class="background-debug-motion-empty">
-              load a replay trace to inspect selected track values
-            </div>
-            <div v-else-if="!motionInspectorModel.current" class="background-debug-motion-empty">
-              no current sample for selected target or track
-            </div>
-          </div>
-          <div class="background-debug-subsection">
-            <div class="background-debug-subtitle">Lane Breakdown</div>
-            <div class="motion-debug-inspector-card-list">
-              <article
-                v-for="row in motionInspectorLaneRows"
-                :key="row.key"
-                :class="['motion-debug-inspector-card', row.isSelected && 'motion-debug-inspector-card-selected']"
-              >
-                <strong :title="`${row.lane}/${row.laneKey}`">{{ row.lane }} / {{ row.laneKey }}</strong>
-                <span :title="`${row.valueLabel} -> ${row.toLabel}`">{{ row.valueLabel }} -> {{ row.toLabel }}</span>
-                <span :title="`delta ${row.deltaLabel} / velocity ${row.velocityLabel}`">
-                  delta {{ row.deltaLabel }} / v {{ row.velocityLabel }}
-                </span>
-                <span :title="row.driver">{{ row.driver }}</span>
-              </article>
-              <div v-if="motionInspectorLaneRows.length === 0" class="background-debug-motion-empty">
-                no lane breakdown
-              </div>
-            </div>
-          </div>
-          <div class="background-debug-subsection">
-            <div class="background-debug-subtitle">Why Is It Moving?</div>
-            <div class="motion-debug-inspector-card-list">
-              <article
-                v-for="row in motionInspectorWhyRows"
-                :key="row.key"
-                :class="['motion-debug-inspector-card', `motion-debug-inspector-card-${row.tone}`]"
-              >
-                <strong>{{ row.label }}</strong>
-                <span :title="row.detail">{{ row.detail }}</span>
-              </article>
-              <div v-if="motionInspectorWhyRows.length === 0" class="background-debug-motion-empty">
-                no replay explanation
-              </div>
-            </div>
-          </div>
-          <div class="background-debug-subsection">
-            <div class="background-debug-subtitle">Recent Lifecycle Events</div>
-            <div class="motion-debug-inspector-card-list">
-              <article
-                v-for="event in motionInspectorEventRows"
-                :key="event.key"
-                :class="['motion-debug-inspector-card', event.isCurrent && 'motion-debug-inspector-card-selected']"
-              >
-                <strong>{{ event.timeLabel }} {{ event.type }}</strong>
-                <span :title="event.detail">{{ event.detail }}</span>
-                <span :title="`${event.lane}/${event.laneKey}`">{{ event.lane }} / {{ event.laneKey }}</span>
-              </article>
-              <div v-if="motionInspectorEventRows.length === 0" class="background-debug-motion-empty">
-                no matching lifecycle events
-              </div>
-            </div>
-          </div>
-          <div class="background-debug-subsection">
-            <div class="background-debug-subtitle">Matching Warnings</div>
-            <div class="motion-debug-inspector-card-list">
-              <article
-                v-for="warning in motionInspectorWarningRows"
-                :key="warning.key"
-                class="motion-debug-inspector-card motion-debug-inspector-card-warning"
-              >
-                <strong>{{ warning.type }}</strong>
-                <span :title="warning.detail">{{ warning.detail }}</span>
-              </article>
-              <div v-if="motionInspectorWarningRows.length === 0" class="background-debug-motion-empty">
-                no matching warnings
-              </div>
-            </div>
-          </div>
-        <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Properties</div>
-          <div
-            class="background-debug-motion-property-table"
-            role="table"
-            aria-label="Pixi motion properties"
-            @click="selectMotionWorkspacePropertyByEvent"
-            @keydown.enter.prevent="selectMotionWorkspacePropertyByEvent"
-            @keydown.space.prevent="selectMotionWorkspacePropertyByEvent"
-          >
-            <div class="background-debug-motion-property-row background-debug-motion-row-head" role="row">
-              <span role="columnheader">target.prop</span>
-              <span role="columnheader">value</span>
-              <span role="columnheader">to</span>
-              <span role="columnheader">delta</span>
-              <span role="columnheader">velocity</span>
-              <span role="columnheader">driver</span>
-              <span role="columnheader">lane</span>
-              <span role="columnheader">laneKey</span>
-              <span role="columnheader">sourceLabel</span>
-            </div>
-            <div
-              v-for="(row, index) in motionPropertyRows"
-              :key="`${row.targetProp}-${row.laneKey}-${index}`"
-              :class="[
-                'background-debug-motion-property-row',
-                'background-debug-motion-selectable',
-                isMotionWorkspaceTrackSelected(row) && 'background-debug-motion-selected',
-              ]"
-              role="row"
-              tabindex="0"
-              :data-motion-property-index="index"
-            >
-              <span role="cell" :title="row.targetProp">{{ row.targetProp }}</span>
-              <span role="cell" :title="row.value">{{ row.value }}</span>
-              <span role="cell" :title="row.to">{{ row.to }}</span>
-              <span role="cell" :title="row.delta">{{ row.delta }}</span>
-              <span role="cell" :title="row.velocity">{{ row.velocity }}</span>
-              <span role="cell" :title="row.driver">{{ row.driver }}</span>
-              <span role="cell" :title="row.lane">{{ row.lane }}</span>
-              <span role="cell" :title="row.laneKey">{{ row.laneKey }}</span>
-              <span role="cell" :title="row.sourceLabel">{{ row.sourceLabel }}</span>
-            </div>
-            <div v-if="motionPropertyRows.length === 0" class="background-debug-motion-empty">
-              no matching properties
-            </div>
-          </div>
-        </div>
-        <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Top Cancel Reasons</div>
-          <dl class="background-debug-diagnostics">
-            <div
-              v-for="row in motionCancelReasonRows"
-              :key="row.key"
-              class="background-debug-stat"
-              :title="row.detail"
-            >
-              <dt>{{ row.key }}</dt>
-              <dd>{{ row.value }}</dd>
-            </div>
-          </dl>
-        </div>
-        <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Warnings</div>
-          <div class="background-debug-motion-list">
-            <div
-              v-for="row in motionWarningRows"
-              :key="`${row.key}-${row.detail}`"
-              class="background-debug-detail"
-              :title="row.detail"
-            >
-              {{ row.detail }}
-            </div>
-          </div>
-        </div>
-          <div class="background-debug-subsection">
-            <div class="background-debug-subtitle">AI Export</div>
-            <dl class="background-debug-status-grid">
-              <div
-                v-for="row in motionFocusedDebugScopeRows"
-                :key="row.label"
-                :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
-              >
-                <dt>{{ row.label }}</dt>
-                <dd :title="row.value">{{ row.value }}</dd>
-              </div>
-            </dl>
-            <div class="background-debug-actions background-debug-motion-actions">
-              <button
-                type="button"
-                class="background-debug-button"
-                :disabled="motionReplayCaptureActive"
-                @click="clearMotionDebugHistory"
-              >
-                Clear
-              </button>
-              <button type="button" class="background-debug-button" @click="copyMotionReport('summary')">
-                {{ motionSummaryCopyButtonLabel }}
-              </button>
-              <button
-                type="button"
-                class="background-debug-button"
-                :disabled="!motionFocusedDebugExportAvailable"
-                @click="copyMotionFocusedDebugExport()"
-              >
-                {{ motionFocusedCopyButtonLabel }}
-              </button>
-              <button type="button" class="background-debug-button" @click="copyMotionReport('full')">
-                {{ motionFullCopyButtonLabel }}
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
+      <BackgroundDebugMotionTargets />
+      <BackgroundDebugMotionTimeline />
+      <BackgroundDebugMotionInspector />
     </div>
   </aside>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
+import BackgroundDebugMotionInspector from "./backgroundDebug/BackgroundDebugMotionInspector.vue";
+import BackgroundDebugMotionTargets from "./backgroundDebug/BackgroundDebugMotionTargets.vue";
+import BackgroundDebugMotionTimeline from "./backgroundDebug/BackgroundDebugMotionTimeline.vue";
+import { MOTION_DEBUG_WORKSPACE_CONTEXT_KEY } from "./backgroundDebug/motionDebugWorkspaceContext.js";
 import {
   formatAcrylicDebugParams,
   hexToRgbArray,
@@ -2104,6 +874,7 @@ const liveDesktopCssFallbackEffects = ref(canDebugLiveDesktop.value ? readLiveDe
 const liveDesktopSkipBlankFrames = ref(canDebugLiveDesktop.value ? readLiveDesktopSkipBlankFrames() : false);
 const liveDesktopForceDwmFlush = ref(canDebugLiveDesktop.value ? readLiveDesktopForceDwmFlush() : false);
 const isLiveDesktopActionBusy = ref(false);
+const motionRuntimeDebugEnabled = ref(false);
 const motionOverlayEnabled = ref(false);
 const motionRecordEnabled = ref(false);
 const motionWindowPreset = ref("30000");
@@ -2111,7 +882,8 @@ const motionCustomSeconds = ref(30);
 const motionTimeScale = ref(1);
 const motionFilterPreset = ref("all");
 const motionFilterQuery = ref("");
-const motionReport = ref(motionRuntime.debugReport({ includeChannels: true, includeTargets: true }));
+const motionSnapshot = ref(readMotionRuntimeSnapshot());
+const motionReport = ref({});
 const motionReplayCapture = createMotionReplayCaptureController(motionRuntime);
 const motionReplayCaptureSeconds = ref(30);
 const motionReplayCaptureStatus = ref(motionReplayCapture.status());
@@ -2378,23 +1150,23 @@ const liveDesktopWindowRows = computed(() => {
     { label: "candidates", value: formatCount(diagnostics.candidateCount) },
   ];
 });
-const motionOverviewRows = computed(() => buildMotionOverviewRows(motionReport.value));
-const motionAnimationRows = computed(() => buildMotionAnimationRows(motionReport.value));
-const motionCancelReasonRows = computed(() => buildMotionCancelReasonRows(motionReport.value));
-const motionWarningRows = computed(() => buildMotionWarningRows(motionReport.value));
+const motionOverviewRows = computed(() => buildMotionOverviewRows(motionSnapshot.value));
+const motionAnimationRows = computed(() => buildMotionAnimationRows(motionSnapshot.value));
+const motionCancelReasonRows = computed(() => buildMotionCancelReasonRows(motionSnapshot.value));
+const motionWarningRows = computed(() => buildMotionWarningRows(motionSnapshot.value));
 const motionWindowSeconds = computed(() => resolveMotionRecordWindowMs(motionWindowPreset.value, motionCustomSeconds.value) / 1000);
 const motionFilters = computed(() => ({
   preset: motionFilterPreset.value,
   query: motionFilterQuery.value,
 }));
-const motionFilterSummary = computed(() => buildMotionFilterSummary(motionReport.value, motionFilters.value));
-const motionLayerTreeRows = computed(() => buildMotionLayerTreeRows(motionReport.value, motionFilters.value));
-const motionPropertyRows = computed(() => buildMotionPropertyRows(motionReport.value, motionFilters.value));
+const motionFilterSummary = computed(() => buildMotionFilterSummary(motionSnapshot.value, motionFilters.value));
+const motionLayerTreeRows = computed(() => buildMotionLayerTreeRows(motionSnapshot.value, motionFilters.value));
+const motionPropertyRows = computed(() => buildMotionPropertyRows(motionSnapshot.value, motionFilters.value));
 const motionTimelineGroups = computed(() => buildMotionTimelineGroups(motionReport.value, motionFilters.value));
 const motionCurveChartGroups = computed(() => buildMotionCurveChartGroups(motionReport.value, motionFilters.value));
 const motionCaptureProfile = computed(() => buildMotionDebugWorkspaceCaptureProfile(motionWorkspaceSession.value));
 const motionReplayCaptureEstimate = computed(() => estimateMotionCaptureProfileSize(
-  motionReport.value,
+  motionSnapshot.value,
   motionCaptureProfile.value,
   {
     durationMs: normalizeMotionReplayCaptureSeconds(motionReplayCaptureSeconds.value) * 1000,
@@ -2881,23 +1653,44 @@ function formatEffectLabel(effect) {
   return effect;
 }
 
-function refreshMotionReport() {
+function readMotionRuntimeSnapshot() {
+  if (!canDebugMotion.value) return {};
+  const config = motionRuntime.configureDebug();
+  const includeDebugDetails = Boolean(config.enabled);
+  return {
+    ...motionRuntime.debugSnapshot({
+      includeChannels: includeDebugDetails,
+      includeTargets: includeDebugDetails,
+    }),
+    config,
+  };
+}
+
+function refreshMotionSnapshot() {
+  if (!canDebugMotion.value) return;
+  motionSnapshot.value = readMotionRuntimeSnapshot();
+}
+
+function refreshMotionHistoryReport(_reason = "manual") {
   if (!canDebugMotion.value) return;
   motionReport.value = motionRuntime.debugReport({
     includeChannels: true,
+    includeCurveStats: true,
     includeHistory: true,
     includeTargets: true,
   });
+  refreshMotionSnapshot();
 }
 
 function applyMotionRuntimeDebugConfig() {
   if (!canDebugMotion.value) return;
   if (motionReplayCaptureActive.value) {
-    refreshMotionReport();
+    refreshMotionSnapshot();
     return;
   }
   const config = buildMotionRuntimeDebugConfig({
     customSeconds: motionCustomSeconds.value,
+    enabled: motionRuntimeDebugEnabled.value,
     overlayEnabled: motionOverlayEnabled.value,
     recordEnabled: motionRecordEnabled.value,
     timeScale: motionTimeScale.value,
@@ -2906,29 +1699,41 @@ function applyMotionRuntimeDebugConfig() {
   motionCustomSeconds.value = normalizeMotionCustomSeconds(motionCustomSeconds.value);
   motionTimeScale.value = config.timeScale;
   motionRuntime.configureDebug(config);
-  refreshMotionReport();
+  refreshMotionSnapshot();
 }
 
-function restoreMotionTimeScale() {
-  if (!canDebugMotion.value) return;
+function disableMotionRuntimeDebug() {
+  motionRuntimeDebugEnabled.value = false;
+  motionRecordEnabled.value = false;
+  motionOverlayEnabled.value = false;
   if (motionTimeScale.value !== 1) motionTimeScale.value = 1;
-  motionRuntime.configureDebug({ timeScale: 1 });
-  refreshMotionReport();
+  motionRuntime.configureDebug({
+    enabled: false,
+    overlayEnabled: false,
+    recordHistory: false,
+    timeScale: 1,
+  });
+  refreshMotionSnapshot();
 }
 
-function restoreMotionOverlay() {
-  if (!canDebugMotion.value) return;
-  if (motionOverlayEnabled.value) motionOverlayEnabled.value = false;
-  motionRuntime.configureDebug({ overlayEnabled: false });
-  refreshMotionReport();
+function setMotionRuntimeDebugEnabled(enabled) {
+  motionRuntimeDebugEnabled.value = Boolean(enabled);
+  if (!motionRuntimeDebugEnabled.value) {
+    disableMotionRuntimeDebug();
+  } else {
+    applyMotionRuntimeDebugConfig();
+  }
+  restartMotionRuntimePoller();
 }
 
 function setMotionRecordEnabled(enabled) {
+  if (!motionRuntimeDebugEnabled.value) return;
   motionRecordEnabled.value = Boolean(enabled);
   applyMotionRuntimeDebugConfig();
 }
 
 function setMotionOverlayEnabled(enabled) {
+  if (!motionRuntimeDebugEnabled.value) return;
   motionOverlayEnabled.value = Boolean(enabled);
   applyMotionRuntimeDebugConfig();
 }
@@ -2969,12 +1774,14 @@ function updateMotionTimeScale(event) {
 
 function openMotionWorkspace(mode = motionWorkspaceSession.value.mode || MOTION_DEBUG_WORKSPACE_MODE_DOCK) {
   if (!canDebugMotion.value) return;
+  const wasOpen = motionWorkspaceSession.value.isOpen;
   isCollapsed.value = false;
   activePanel.value = "motion";
   motionWorkspaceSession.value = openMotionDebugWorkspace(motionWorkspaceSession.value, {
     mode,
     viewportWidth: getMotionWorkspaceViewportWidth(),
   });
+  if (!wasOpen) refreshMotionHistoryReport("open-workspace");
 }
 
 function selectMotionWorkspaceLayer(row) {
@@ -3213,7 +2020,7 @@ function clearMotionDebugHistory() {
   if (!canDebugMotion.value) return;
   if (motionReplayCaptureActive.value) return;
   motionRuntime.clearDebugHistory();
-  refreshMotionReport();
+  refreshMotionHistoryReport("clear-history");
 }
 
 function updateMotionReplayCaptureSeconds(event) {
@@ -3222,8 +2029,9 @@ function updateMotionReplayCaptureSeconds(event) {
 
 function syncMotionControlsFromRuntimeConfig() {
   const config = motionRuntime.configureDebug();
-  motionOverlayEnabled.value = Boolean(config.overlayEnabled);
-  motionRecordEnabled.value = Boolean(config.recordHistory);
+  motionRuntimeDebugEnabled.value = Boolean(config.enabled);
+  motionOverlayEnabled.value = Boolean(config.enabled && config.overlayEnabled);
+  motionRecordEnabled.value = Boolean(config.enabled && config.recordHistory);
   motionTimeScale.value = normalizeMotionTimeScale(config.timeScale);
 }
 
@@ -3237,7 +2045,9 @@ function startMotionReplayCapture() {
     captureProfile: motionCaptureProfile.value,
     seconds: motionReplayCaptureSeconds.value,
   });
-  refreshMotionReport();
+  syncMotionControlsFromRuntimeConfig();
+  refreshMotionSnapshot();
+  restartMotionRuntimePoller();
 }
 
 function stopMotionReplayCapture(options = {}) {
@@ -3250,7 +2060,8 @@ function stopMotionReplayCapture(options = {}) {
   motionReplayTraceJson.value = result.json;
   loadMotionReplayTrace(result.trace, result.json, { updateImportText: false });
   syncMotionControlsFromRuntimeConfig();
-  refreshMotionReport();
+  refreshMotionSnapshot();
+  restartMotionRuntimePoller();
   return result;
 }
 
@@ -3760,7 +2571,11 @@ async function copyMotionReport(mode) {
       mode === "full" ? hasCopiedMotionFull : hasCopiedMotionSummary,
       mode === "full" ? "motionFull" : "motionSummary",
     );
-    refreshMotionReport();
+    if (mode === "full") {
+      refreshMotionHistoryReport("copy-full-ai-report");
+    } else {
+      refreshMotionSnapshot();
+    }
   } catch (error) {
     console.warn("Failed to copy Pixi motion debug report", error);
   }
@@ -3847,19 +2662,21 @@ function clearMotionRuntimePoller() {
 
 function restartMotionRuntimePoller() {
   clearMotionRuntimePoller();
-  if (
-    typeof window === "undefined"
-    || !canDebugMotion.value
-    || isCollapsed.value
-    || activePanel.value !== "motion"
-  ) {
+  if (typeof window === "undefined") return;
+  if (!canDebugMotion.value) {
     stopMotionReplayPlayback();
     stopMotionReplayCapture();
-    restoreMotionTimeScale();
+    disableMotionRuntimeDebug();
+    return;
+  }
+  if (isCollapsed.value || activePanel.value !== "motion") {
+    stopMotionReplayPlayback();
     return;
   }
   applyMotionRuntimeDebugConfig();
-  motionRuntimePollTimer = window.setInterval(refreshMotionReport, 500);
+  if (motionRuntimeDebugEnabled.value || motionReplayCaptureActive.value) {
+    motionRuntimePollTimer = window.setInterval(refreshMotionSnapshot, 500);
+  }
 }
 
 function restartLiveDesktopRuntimePoller() {
@@ -3881,6 +2698,135 @@ function restartLiveDesktopRuntimePoller() {
   refreshLiveDesktopRuntimeStatus();
   liveDesktopRuntimePollTimer = window.setInterval(refreshLiveDesktopRuntimeStatus, 1000);
 }
+
+const motionDebugWorkspaceContext = {
+  MOTION_FILTER_PRESETS,
+  MOTION_REPLAY_IMPORT_MAX_BYTES,
+  MOTION_TRACK_CHART_DISPLAY_NORMALIZED,
+  MOTION_TRACK_CHART_DISPLAY_RAW,
+  applyMotionReplayBookmark,
+  cancelMotionTrackChartBrush,
+  clearMotionDebugHistory,
+  clearMotionReplayBookmarks,
+  clearMotionReplayViewer,
+  copyMotionFocusedDebugExport,
+  copyMotionReplayInterval,
+  copyMotionReport,
+  deleteMotionReplayBookmark,
+  endMotionTrackChartBrush,
+  formatMotionChartStat,
+  formatMotionReplayBookmarkMeta,
+  formatMotionReplayTime,
+  formatMotionTrackChartValue,
+  importMotionReplayFile,
+  isMotionWorkspaceLayerSelected,
+  isMotionWorkspaceTimelineEventSelected,
+  isMotionWorkspaceTrackSelected,
+  jumpMotionReplayAnomaly,
+  loadCapturedMotionReplayTrace,
+  loadMotionReplayImportText,
+  motionAnimationRows,
+  motionCancelReasonRows,
+  motionCaptureAllowedProps,
+  motionCaptureEstimateRows,
+  motionCaptureProfile,
+  motionCaptureProfiles,
+  motionCaptureSelectedPropCount,
+  motionCaptureTargetFilterText,
+  motionCurveChartGroups,
+  motionFilterPreset,
+  motionFilterQuery,
+  motionFilterSummary,
+  motionFocusedCopyButtonLabel,
+  motionFocusedDebugExportAvailable,
+  motionFocusedDebugScopeRows,
+  motionFullCopyButtonLabel,
+  motionInspectorEventRows,
+  motionInspectorLaneRows,
+  motionInspectorModel,
+  motionInspectorStatusRows,
+  motionInspectorWarningRows,
+  motionInspectorWhyRows,
+  motionLayerTreeRows,
+  motionOverviewRows,
+  motionPropertyRows,
+  motionReplayAnomalyRows,
+  motionReplayAnomalyStatusLabel,
+  motionReplayBookmarkCanSave,
+  motionReplayBookmarkRows,
+  motionReplayBookmarkStatusLabel,
+  motionReplayCaptureActive,
+  motionReplayCurrentTimeMs,
+  motionReplayCurveGroups,
+  motionReplayEventRows,
+  motionReplayFilterQuery,
+  motionReplayFilterSummary,
+  motionReplayFrameRows,
+  motionReplayImportError,
+  motionReplayImportStatus,
+  motionReplayImportText,
+  motionReplayIntervalCopyButtonLabel,
+  motionReplayIntervalEndMs,
+  motionReplayIntervalStartMs,
+  motionReplayOverlayRows,
+  motionReplayOverviewRows,
+  motionReplayPlayButtonLabel,
+  motionReplayTimeRange,
+  motionReplayTrace,
+  motionReplayViewerLoaded,
+  motionSummaryCopyButtonLabel,
+  motionTimelineGroups,
+  motionTrackChartBrushPointerId,
+  motionTrackChartDisplayMode,
+  motionTrackChartHeaderLabel,
+  motionTrackChartIntervalActive,
+  motionTrackChartIntervalOverlay,
+  motionTrackChartModel,
+  motionTrackChartSeriesOptions,
+  motionTrackChartSeriesVisibility,
+  motionTrackChartSummaryRows,
+  motionTrackChartZoomActive,
+  motionTrackChartZoomWindow,
+  motionWarningRows,
+  motionWorkspaceFilterLabel,
+  motionWorkspaceSelectedTargetLabel,
+  motionWorkspaceSelectedTimeMs,
+  motionWorkspaceSelectedTrackLabel,
+  motionWorkspaceSession,
+  resetMotionTrackChartZoom,
+  saveMotionReplayBookmark,
+  selectMotionTrackChartEvent,
+  selectMotionTrackChartTrack,
+  selectMotionWorkspaceCurve,
+  selectMotionWorkspaceLayer,
+  selectMotionWorkspacePropertyByEvent,
+  selectMotionWorkspaceReplayOverlay,
+  selectMotionWorkspaceTimelineEvent,
+  selectMotionWorkspaceTrack,
+  setMotionFilterPreset,
+  setMotionReplayCurrentTime,
+  setMotionTrackChartDisplayMode,
+  startMotionTrackChartBrush,
+  stepMotionReplayEvent,
+  stepMotionReplayFrame,
+  toggleMotionReplayPlayback,
+  toggleMotionTrackChartSeries,
+  toggleMotionWorkspaceCaptureProp,
+  updateMotionFilterQuery,
+  updateMotionReplayCurrentTime,
+  updateMotionReplayFilterQuery,
+  updateMotionReplayImportText,
+  updateMotionReplayIntervalEnd,
+  updateMotionReplayIntervalStart,
+  updateMotionTrackChartPointer,
+  updateMotionTrackChartZoomEnd,
+  updateMotionTrackChartZoomStart,
+  updateMotionWorkspaceCaptureProfile,
+  updateMotionWorkspaceCaptureTargetFilter,
+  zoomMotionTrackChartToInterval,
+};
+
+provide(MOTION_DEBUG_WORKSPACE_CONTEXT_KEY, motionDebugWorkspaceContext);
 
 watch(canDebugLiveDesktop, (enabled) => {
   if (!enabled && activePanel.value === "liveDesktop") activePanel.value = "acrylic";
@@ -3912,8 +2858,7 @@ onBeforeUnmount(() => {
   if (kawaseLiveDesktopSyncTimer != null) window.clearTimeout(kawaseLiveDesktopSyncTimer);
   stopMotionReplayPlayback();
   stopMotionReplayCapture();
-  restoreMotionTimeScale();
-  restoreMotionOverlay();
+  disableMotionRuntimeDebug();
   clearMotionWorkspaceDockResize();
   window.removeEventListener("keydown", handleMotionWorkspaceGlobalKeydown);
   clearMotionRuntimePoller();
@@ -3921,7 +2866,7 @@ onBeforeUnmount(() => {
 });
 </script>
 
-<style scoped>
+<style>
 .background-debug-panel {
   position: fixed;
   right: 18px;
