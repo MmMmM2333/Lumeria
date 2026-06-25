@@ -80,7 +80,6 @@ import {
 import { getSingleStageDiagnosticsOptions } from "./scene/singleStagePlan.js";
 import {
   getSingleStageFolderTitleOpenOpacity,
-  isSingleStageFolderPageDotsReady as getSingleStageFolderPageDotsReady,
   makeSingleStageFolderNameInputStyle,
 } from "./scene/singleStageFolderDomControls.js";
 
@@ -207,12 +206,7 @@ const isSingleStageFolderInputDisabled = computed(() => Boolean(
 
 const isSingleStageFolderPageDotsBlocked = computed(() => Boolean(
   isSingleStageFolderClosing.value ||
-  props.folderOverlayState?.isFolderOpenFrameGhostPending?.value ||
-  isSingleStageFolderGhostTransitionActive.value
-));
-
-const isSingleStageFolderPageDotsReady = computed(() => (
-  getSingleStageFolderPageDotsReady(singleStageFolderTitleFrame.value)
+  props.folderOverlayState?.isFolderOpenFrameGhostPending?.value
 ));
 
 const isSingleStageDragPreviewActive = computed(() => Boolean(
@@ -236,8 +230,7 @@ function shouldShowSingleStageFolderPageDots() {
     shouldRenderSingleStageFolderDomControls.value &&
     state?.renderedFolder?.value &&
     state.folderPages?.value?.length > 1 &&
-    !isSingleStageFolderPageDotsBlocked.value &&
-    isSingleStageFolderPageDotsReady.value
+    !isSingleStageFolderPageDotsBlocked.value
   );
 }
 
@@ -371,6 +364,7 @@ function createSingleStageFolderState(metrics, diagnosticsOptions = {}, renderGe
   return createFolderLayerState({
     callbacks: {
       completeFolderCloseIconGhost: source.completeFolderCloseIconGhost,
+      completeFolderOpenFrameGhost: source.completeFolderOpenFrameGhost,
       completeFolderOpenIconGhost: source.completeFolderOpenIconGhost,
       getFolderPageRenderMode: source.getFolderPageRenderMode,
       getVisibleFolderPage: source.getVisibleFolderPage,

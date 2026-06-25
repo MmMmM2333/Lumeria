@@ -216,6 +216,9 @@ export function runLaunchpadViewStateTests() {
   assert(openFolder.view.homeChromeAnimate.value.filter === "blur(0px)", "open folder should avoid chrome blur compositor flicker");
   assert(openFolder.view.homeChromeStyle.value.pointerEvents === "none", "open folder should disable home chrome pointer events");
 
+  const activeFolderLayer = createViewState({ isFolderLayerActive: true });
+  assert(activeFolderLayer.view.homeChromeStyle.value.pointerEvents === "none", "active folder layer should keep home chrome pointer events disabled even without an open id");
+
   const settling = createViewState({ isHomeRevealSettling: true, isFolderLayerActive: true, openFolderId: "folder-1" });
   assert(settling.view.desktopTrackMotionKey.value === "open-desktop-snap", "home reveal settling should snap the desktop track");
   setLiveDesktopExperimentEnabledForTests(null);

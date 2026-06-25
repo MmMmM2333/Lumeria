@@ -72,6 +72,8 @@ import { ensureLayerTransitionPort } from "./layerTransitionPort.js";
 
 const PAGE_DOT_BLEND_DURATION = 0.08;
 const PAGE_DOT_BLEND_EASE = "power2.out";
+const PAGE_DOTS_REVEAL_DURATION = 0.12;
+const PAGE_DOTS_REVEAL_EASE = "power2.out";
 const FOLDER_ICON_EXIT_REASON = "folder-icon-exit";
 const FOLDER_OVERLAY_CLEAR_REASON = "folder-overlay-clear";
 const FOLDER_PAGE_TRACK_REPLACE_REASON = "folder-page-track-replace";
@@ -434,6 +436,7 @@ export class FolderOverlayLayer extends Container {
     this.pageTrack = new Container();
     this.pageTrackMotion = createPageTrackMotionState();
     this.pageDotsLayer = new Container();
+    this.pageDotsLayer.alpha = 0;
     this.openingGhostLayer = new Container();
     this.closingGhostLayer = new Container();
     this.closingPreviewSwapLayer = new Container();
@@ -495,6 +498,7 @@ export class FolderOverlayLayer extends Container {
     this.nextDetachedClosingVisualToken = 1;
     this.nextClosingGhostToken = 1;
     this.titleFrameKey = null;
+    this.pageDotsLayerRevealKey = null;
     this.panelTitleOpening = false;
     this.panelTitleStartScaleX = 1;
     this.panelTitleStartScaleY = 1;
@@ -1009,6 +1013,9 @@ export class FolderOverlayLayer extends Container {
     this.pageDotsLayer.visible = false;
     this.pageDotsLayer.eventMode = "none";
     this.pageDotsLayer.hitArea = null;
+    this.pageDotsLayer.alpha = 0;
+    this.pageDotsLayerRevealKey = null;
+    killMotionOf(this.pageDotsLayer, "alpha");
   }
 
   hasActiveIconGhosts() {
@@ -1517,11 +1524,15 @@ export class FolderOverlayLayer extends Container {
       this.clearPageDots();
       return;
     }
+    const folderId = state.renderedFolder?.id || this.currentFolderId || null;
+    const revealKey = folderId || "";
+    const shouldReveal = !this.pageDotsLayer.visible || this.pageDotsLayerRevealKey !== revealKey;
     this.pageDotsLayer.removeChildren().forEach((child) => child.destroy?.());
     this.pageDotsLayer.visible = true;
     this.pageDotsLayer.eventMode = "static";
     this.pageDotsLayer.cursor = "default";
     this.pageDotsLayer.hitArea = new Rectangle(frame.left, frame.top, frame.width, frame.height);
+    this.pageDotsLayerRevealKey = revealKey;
     const totalWidth = pageCount * FOLDER_PAGE_DOTS_SIZE + (pageCount - 1) * FOLDER_PAGE_DOTS_GAP;
     const startX = frame.left + frame.width / 2 - totalWidth / 2 + FOLDER_PAGE_DOTS_SIZE / 2;
     const centerY = frame.top + FOLDER_PAGE_DOTS_HIT_HEIGHT / 2;
@@ -1537,10 +1548,24 @@ export class FolderOverlayLayer extends Container {
       dot.on("pointerover", () => this.setPageDotHover(dot, isActive, true));
       dot.on("pointerout", () => this.setPageDotHover(dot, isActive, false));
       dot.on("pointerdown", (event) => {
+        event.preventDefault?.();
         event.stopPropagation?.();
+        const native = event?.nativeEvent;
+        native?.preventDefault?.();
+        native?.stopPropagation?.();
         state.folderPageIndexCommit?.(index);
       });
       this.pageDotsLayer.addChild(dot);
+    }
+    if (shouldReveal) {
+      killMotionOf(this.pageDotsLayer, "alpha");
+      this.pageDotsLayer.alpha = 0;
+      motion(this.pageDotsLayer)
+        .preset("fade", { duration: PAGE_DOTS_REVEAL_DURATION, ease: PAGE_DOTS_REVEAL_EASE })
+        .overlay()
+        .interrupt("retarget")
+        .to({ alpha: 1 })
+        .start();
     }
   }
 

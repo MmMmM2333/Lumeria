@@ -16,6 +16,7 @@ export function createFolderLayerState(groups, overrides = {}) {
 
   return {
     completeFolderCloseIconGhost: callbacks.completeFolderCloseIconGhost,
+    completeFolderOpenFrameGhost: callbacks.completeFolderOpenFrameGhost,
     completeFolderOpenIconGhost: callbacks.completeFolderOpenIconGhost,
     dragMeta: drag.meta,
     dragReleaseGhostId: drag.releaseState?.item?.id || null,

@@ -1236,6 +1236,67 @@ export async function runFolderOverlayLayerTests() {
     motionRuntime.reset();
   }
 
+  {
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    const commits = [];
+    const calls = [];
+    layer.pageDotsLayer = new Container();
+    layer.currentFolderId = "folder-1";
+
+    layer.updatePageDots({
+      folderPageDotsVisible: true,
+      folderPageIndex: 0,
+      folderPageIndexCommit: (index) => commits.push(index),
+      folderPages: [[], []],
+      renderedFolder: { id: "folder-1", name: "Folder" },
+    }, {
+      grid: { height: 120, left: 40, top: 80, width: 320 },
+      panel: { height: 240, left: 20, top: 40, width: 360 },
+    });
+
+    assert(layer.pageDotsLayer.visible === true, "folder page dots should become visible once enabled");
+    assert(layer.pageDotsLayer.alpha === 0, "folder page dots should start their reveal from transparent");
+    motionRuntime.step(0.04);
+    assert(layer.pageDotsLayer.alpha > 0 && layer.pageDotsLayer.alpha < 1, "folder page dots should fade in after reveal starts");
+    const alphaDuringReveal = layer.pageDotsLayer.alpha;
+    layer.updatePageDots({
+      folderPageDotsVisible: true,
+      folderPageIndex: 0,
+      folderPageIndexCommit: (index) => commits.push(index),
+      folderPages: [[], []],
+      renderedFolder: { id: "folder-1", name: "Folder" },
+    }, {
+      grid: { height: 120, left: 40, top: 80, width: 320 },
+      panel: { height: 240, left: 20, top: 40, width: 360 },
+    });
+    assert(nearlyEqual(layer.pageDotsLayer.alpha, alphaDuringReveal), "same-folder page dot updates should not restart the reveal");
+    for (let index = 0; index < 10; index += 1) motionRuntime.step(0.04);
+    assert(nearlyEqual(layer.pageDotsLayer.alpha, 1), "folder page dots should settle fully opaque");
+
+    const targetDot = layer.pageDotsLayer.children[1];
+    targetDot.emit("pointerdown", {
+      nativeEvent: {
+        preventDefault() {
+          calls.push("native-prevent");
+        },
+        stopPropagation() {
+          calls.push("native-stop");
+        },
+      },
+      preventDefault() {
+        calls.push("pixi-prevent");
+      },
+      stopPropagation() {
+        calls.push("pixi-stop");
+      },
+    });
+
+    assert(commits.join(",") === "1", "folder page dot pointer down should commit only the selected page");
+    assert(calls.join(",") === "pixi-prevent,pixi-stop,native-prevent,native-stop", "folder page dot pointer down should stop both Pixi and native propagation");
+    layer.pageDotsLayer.destroy({ children: true });
+    motionRuntime.reset();
+  }
+
   const compactTiming = getClosingPreviewTiming({ height: 490 }, { height: 70 });
   assert(compactTiming.progress === 0.76, "compact folder preview swap should keep the default start progress");
   assert(compactTiming.iconDuration === 0.22, "compact folder preview icons should keep the default duration");

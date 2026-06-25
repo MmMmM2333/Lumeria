@@ -13,6 +13,18 @@ import { reloadOnPixiHotUpdate } from "../devHmr.js";
 const GHOST_REVEAL_FALLBACK_PADDING_MS = 140;
 const GHOST_GEOMETRY_FALLBACK_SECONDS = 0.75;
 
+function getOpeningFrameGhostRequestId(state) {
+  const ids = new Set((state.folderOpenIconGhosts || [])
+    .map((ghost) => ghost?.requestId)
+    .filter((id) => id != null));
+  return ids.size === 1 ? Array.from(ids)[0] : null;
+}
+
+function completeOpeningFrameGhost(transitionPort, state) {
+  const folderId = state.renderedFolder?.id || transitionPort.getCurrentFolderId() || null;
+  return state.completeFolderOpenFrameGhost?.(folderId, getOpeningFrameGhostRequestId(state));
+}
+
 function animateOpeningGhost(ghost, ghostMotion, onComplete, options = {}) {
   const springOptions = { delay: ghostMotion.delay, onUpdate: options.onFrame };
   const fadeControl = motion(ghost)
@@ -56,11 +68,13 @@ function startOpeningFrameGhost(transitionPort, state, options = {}) {
   const targetRect = options.frameTargetRect;
   if (!sourceRect || !targetRect) return false;
   const thumb = getFolderThumbMetrics(sourceRect.width);
+  const folderId = state.renderedFolder?.id || transitionPort.getCurrentFolderId() || null;
+  const requestId = getOpeningFrameGhostRequestId(state);
   return transitionPort.startFrameGhost(sourceRect, targetRect, {
     duration: motionPresets.folderOpenGhost.duration,
     ease: motionPresets.folderOpenGhost.ease,
     exclusivePanelMaterialHandoff: true,
-    folderId: state.renderedFolder?.id || transitionPort.getCurrentFolderId() || null,
+    folderId,
     frameGhostPhase: "opening",
     fromFillAlpha: thumb.fillAlpha,
     fromFillColor: thumb.fillColor,
@@ -75,6 +89,7 @@ function startOpeningFrameGhost(transitionPort, state, options = {}) {
     toStrokeAlpha: 0.24,
     toStrokeColor: 0xffffff,
     toStrokeWidth: 1,
+    onArrive: () => state.completeFolderOpenFrameGhost?.(folderId, requestId),
   });
 }
 
@@ -222,6 +237,7 @@ export class FolderOpeningGhostController {
     if (!startedFrameGhost) {
       this.transitionPort.setPanelMaterialVisible(true, 1);
       this.transitionPort.setFrameGhostVisible(false, 0);
+      completeOpeningFrameGhost(this.transitionPort, state);
     }
 
     if (!usableTargets.length) {

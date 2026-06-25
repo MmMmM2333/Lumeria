@@ -1,6 +1,5 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 
-export const FOLDER_PAGE_DOTS_REVEAL_PROGRESS = 0.995;
 export const SINGLE_STAGE_FOLDER_NAME_INPUT_WIDTH = 360;
 
 function clamp01(value) {
@@ -17,10 +16,6 @@ export function getSingleStageFolderTitleOpacity(frame, options = {}) {
   const progress = clamp01(frame?.progress ?? 0);
   const closingStartOpacity = clamp01(options.closingStartOpacity ?? 1);
   return closingStartOpacity * clamp01(1 - progress / 0.28);
-}
-
-export function isSingleStageFolderPageDotsReady(frame) {
-  return clamp01(frame?.progress ?? 0) >= FOLDER_PAGE_DOTS_REVEAL_PROGRESS;
 }
 
 export function makeSingleStageFolderNameInputStyle(options = {}) {

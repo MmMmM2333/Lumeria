@@ -190,7 +190,14 @@ export function runFolderOpeningGhostControllerTests() {
     });
     const sessionToken = beginReadyOpenSession(layer);
     const target = makeTarget();
-    controller.start(makeState(completed), [target], {
+    const frameCompletions = [];
+    const state = {
+      ...makeState(completed),
+      folderOpenIconGhosts: [{ key: "controller-open-key", requestId: 7 }],
+      renderedFolder: { id: "folder-1" },
+      completeFolderOpenFrameGhost: (folderId, requestId) => frameCompletions.push(`${folderId}:${requestId}`),
+    };
+    controller.start(state, [target], {
       frameSourceRect: { height: 48, left: 10, top: 20, width: 48 },
       frameTargetRect: { height: 360, left: 180, top: 200, width: 800 },
       sessionToken,
@@ -212,6 +219,8 @@ export function runFolderOpeningGhostControllerTests() {
     assert(layer.frameGhostCalls[0].options.exclusivePanelMaterialHandoff === true, "opening frame should keep one visible shell owner during the frame morph");
     assert(layer.frameGhostCalls[0].options.frameGhostPhase === "opening", "opening frame should mark its frame ghost phase");
     assert(layer.frameGhostCalls[0].options.folderId === "folder-1", "opening frame should carry the owning folder id");
+    layer.frameGhostCalls[0].options.onArrive();
+    assert(frameCompletions.join(",") === "folder-1:7", "opening frame arrive should unblock page dots with the current request id");
     assert(!layer.panelMaterial.visible && layer.panelMaterial.alpha === 0, "start should keep the real panel material hidden while the frame ghost owns the shell");
     assert(layer.frameGhost.visible && layer.frameGhost.alpha === 1, "start should show the frame ghost during the opening shell morph");
     assert(timerHost.size === 1, "start should schedule a fallback clear timer");
@@ -253,6 +262,25 @@ export function runFolderOpeningGhostControllerTests() {
     assert(layer.pageTrack.visible === true, "panel ready after ghosts should restore the page track");
     assert(layer.ghosts.length === 0, "panel ready after ghosts should remove retained ghost visuals");
     motionRuntime.reset();
+  }
+
+  {
+    const completed = [];
+    const frameCompletions = [];
+    const layer = makeLayer();
+    const controller = new FolderOpeningGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: makeTimerHost(),
+    });
+    controller.start({
+      ...makeState(completed),
+      folderOpenIconGhosts: [{ key: "controller-open-key", requestId: 8 }],
+      renderedFolder: { id: "folder-1" },
+      completeFolderOpenFrameGhost: (folderId, requestId) => frameCompletions.push(`${folderId}:${requestId}`),
+    }, [makeTarget()]);
+
+    assert(frameCompletions.join(",") === "folder-1:8", "missing opening frame ghost should unblock page dots immediately");
+    controller.clear();
   }
 
   {

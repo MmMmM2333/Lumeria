@@ -1,7 +1,7 @@
 <template>
   <div
     ref="rootRef"
-    :class="cx('launchpad-root', 'launchpad-root-pixi-root-stage', 'launchpad-root-single-stage-folder-layer', windowMode === 'windowed' && 'launchpad-root-windowed', isTextlessMode && 'launchpad-root-textless', isStartupMaskMounted && 'launchpad-root-startup-masked', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching', shouldUseLiveDesktopCssFallbackEffects && 'launchpad-root-live-desktop-css-fallback-effects')"
+    :class="cx('launchpad-root', 'launchpad-root-pixi-root-stage', 'launchpad-root-single-stage-folder-layer', isFolderLayerActive && 'launchpad-root-folder-layer-active', windowMode === 'windowed' && 'launchpad-root-windowed', isTextlessMode && 'launchpad-root-textless', isStartupMaskMounted && 'launchpad-root-startup-masked', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching', shouldUseLiveDesktopCssFallbackEffects && 'launchpad-root-live-desktop-css-fallback-effects')"
     :style="launchpadRootStyle"
     @wheel="handleLaunchpadWheel"
     @pointerdown="handleLaunchpadSurfacePointerDown"
@@ -288,6 +288,7 @@ const {
 } = desktopSurface;
 const {
   folderOpenPreviewFrameGhostedIds,
+  isFolderLayerActive,
   isFolderOpeningPreviewFrameGhosted,
   openFolderId,
   renderedFolder,
