@@ -8,12 +8,15 @@ export function makeFolderIconRenderPlan(options = {}) {
     index = 0,
     item = null,
     pageIndex = 0,
+    pageSpan = null,
     slot = null,
   } = options;
   const safePageIndex = Math.max(0, Number(pageIndex) || 0);
   const safeIndex = Math.max(0, Number(index) || 0);
-  const gridWidth = Number(geometry?.grid?.width) || 0;
-  const x = safePageIndex * gridWidth + (Number(slot?.left) || 0) + (Number(slot?.width) || 0) / 2;
+  const resolvedPageSpan = pageSpan != null && Number.isFinite(Number(pageSpan))
+    ? Number(pageSpan)
+    : Number(geometry?.grid?.width) || 0;
+  const x = safePageIndex * resolvedPageSpan + (Number(slot?.left) || 0) + (Number(slot?.width) || 0) / 2;
   const y = (Number(slot?.top) || 0) + (Number(slot?.height) || 0) / 2;
   const source = { type: "folder", folderId, index: safeIndex, pageIndex: safePageIndex, slotIndex: safeIndex };
   return {
@@ -53,7 +56,7 @@ export function makeFolderIconNodeState(options = {}) {
     isTextlessMode = false,
     item = null,
     launchTargetStatusById = null,
-    openingGhostKeys = null,
+    openingGhostItemIds = null,
     pageIndex = 0,
     showMissingLaunchTargetBadge = true,
     slot = null,
@@ -64,7 +67,7 @@ export function makeFolderIconNodeState(options = {}) {
   const itemId = item?.id;
   const ghosted = Boolean(isReleaseGhostItem ||
     (isInteractivePage && (
-      openingGhostKeys?.has(itemId) ||
+      openingGhostItemIds?.has(itemId) ||
       closingGhostKeys?.has(itemId)
     )));
   return {

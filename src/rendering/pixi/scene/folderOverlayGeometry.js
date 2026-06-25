@@ -24,9 +24,9 @@ function lerp(from, to, progress) {
 
 export function getFolderPageMaskRect(geometry, localGridLeft, localGridTop) {
   return {
-    left: localGridLeft,
+    left: 0,
     top: localGridTop,
-    width: geometry.grid.width,
+    width: geometry.panel.width,
     height: Math.max(geometry.grid.height, geometry.panel.height - localGridTop - 20),
   };
 }

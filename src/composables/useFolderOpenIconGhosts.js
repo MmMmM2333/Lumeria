@@ -73,6 +73,12 @@ export function useFolderOpenIconGhosts(options = {}) {
     isFolderOpenFrameGhostPending.value = false;
   }
 
+  function finishFolderOpenIconGhosts() {
+    completedFolderOpenIconGhostKeys.clear();
+    folderOpenIconGhosts.value = [];
+    folderOpenIconGhostedKeys.value = new Set();
+  }
+
   function clearFolderCloseIconGhosts() {
     folderCloseIconGhostRequestId += 1;
     completedFolderCloseIconGhostKeys.clear();
@@ -87,7 +93,15 @@ export function useFolderOpenIconGhosts(options = {}) {
     completedFolderOpenIconGhostKeys.add(key);
     if (completedFolderOpenIconGhostKeys.size < folderOpenIconGhosts.value.length) return;
 
-    clearFolderOpenIconGhosts();
+    finishFolderOpenIconGhosts();
+  }
+
+  function completeFolderOpenFrameGhost(folderId, requestId) {
+    if (requestId !== folderOpenIconGhostRequestId) return false;
+    if (folderId && !folderOpenPreviewFrameGhostedIds.value.has(folderId)) return false;
+    folderOpenPreviewFrameGhostedIds.value = new Set();
+    isFolderOpenFrameGhostPending.value = false;
+    return true;
   }
 
   function completeFolderCloseIconGhost(key) {
@@ -144,10 +158,12 @@ export function useFolderOpenIconGhosts(options = {}) {
     captureFolderPreviewIconGhosts,
     clearFolderCloseIconGhosts,
     clearFolderOpenIconGhosts,
+    completeFolderOpenFrameGhost,
     completeFolderCloseIconGhost,
     completeFolderOpenIconGhost,
     folderCloseIconGhosts,
     folderOpenIconGhosts,
+    folderOpenPreviewFrameGhostedIds,
     isFolderCloseIconAnimationActive,
     isFolderClosingIconGhosted,
     isFolderOpenFrameGhostPending,

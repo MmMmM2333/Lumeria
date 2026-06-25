@@ -16,8 +16,12 @@ src-tauri/icon-dump/
 .claude/
 .vscode/
 .idea/
+
+# AI
 CLAUDE.md
 AGENTS.md
+docs-agents/
+goal-*/
 
 # Logs
 *.log

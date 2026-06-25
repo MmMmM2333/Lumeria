@@ -1,18 +1,21 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 
-const launchIconBounds = new Map();
-const launchIconTargetBounds = new Map();
-const launchIconStageLayoutTargetBounds = new Map();
-const topLevelBounds = new Map();
-const topLevelLiveTargetBounds = new Map();
-const topLevelStageLayoutTargetBounds = new Map();
-const topLevelFolderThumbBounds = new Map();
-const topLevelFolderThumbLiveTargetBounds = new Map();
-const topLevelFolderThumbStageLayoutTargetBounds = new Map();
-const folderPreviewChildBounds = new Map();
-const folderPreviewChildLiveTargetBounds = new Map();
-const folderPreviewChildStageLayoutTargetBounds = new Map();
-const missingBoundsWarnings = new Set();
+export const ICON_BOUNDS_KIND = Object.freeze({
+  FOLDER_THUMB: "folderThumb",
+  LAUNCH: "launch",
+  PREVIEW_CHILD: "previewChild",
+  TOP_LEVEL: "topLevel",
+});
+
+export const ICON_BOUNDS_VARIANT = Object.freeze({
+  LIVE_TARGET: "liveTarget",
+  RENDERED: "rendered",
+  STABLE_STAGE_LAYOUT: "stableStageLayout",
+});
+
+const ALL_KINDS = Object.freeze(Object.values(ICON_BOUNDS_KIND));
+const ALL_VARIANTS = Object.freeze(Object.values(ICON_BOUNDS_VARIANT));
+const EXPECTED_META_KEYS = Object.freeze(["area", "folderId", "id", "index", "pageIndex"]);
 
 function isDevMode() {
   return Boolean(import.meta.env?.DEV);
@@ -34,25 +37,29 @@ function makeFolderPreviewChildBoundsKey(folderId, childId, slotIndex) {
   return `${folderId}:${childId}:${slotIndex}`;
 }
 
-export function makeIconBoundsKey(type, value) {
-  if (type === "launch") return makeLaunchBoundsKey(value);
-  if (type === "top-level") return makeTopLevelBoundsKey(value);
-  if (type === "folder-preview-child") {
+export function makeIconBoundsKey(kind, value) {
+  if (kind === ICON_BOUNDS_KIND.LAUNCH) return makeLaunchBoundsKey(value);
+  if (kind === ICON_BOUNDS_KIND.TOP_LEVEL || kind === ICON_BOUNDS_KIND.FOLDER_THUMB) {
+    return makeTopLevelBoundsKey(value);
+  }
+  if (kind === ICON_BOUNDS_KIND.PREVIEW_CHILD) {
     return makeFolderPreviewChildBoundsKey(value?.folderId, value?.childId, value?.slotIndex);
   }
   return null;
 }
 
-function warnMissingBounds(type, key, options = {}) {
-  if (!options.warnIfMissing || !isDevMode() || !key) return;
-  const warningKey = `${type}:${key}:${options.owner || ""}`;
-  if (missingBoundsWarnings.has(warningKey)) return;
-  missingBoundsWarnings.add(warningKey);
-  console.warn("[iconBoundsRegistry] missing icon bounds", {
-    key,
-    owner: options.owner,
-    type,
-  });
+function storeKey(kind, variant) {
+  return `${kind}:${variant}`;
+}
+
+function createStores() {
+  const stores = new Map();
+  for (const kind of ALL_KINDS) {
+    for (const variant of ALL_VARIANTS) {
+      stores.set(storeKey(kind, variant), new Map());
+    }
+  }
+  return stores;
 }
 
 function cloneRect(rect) {
@@ -67,10 +74,20 @@ function cloneRect(rect) {
   };
 }
 
+function cloneMeta(meta = {}) {
+  return { ...(meta || {}) };
+}
+
+function makeBoundsRecord(rect, meta = {}) {
+  const safeRect = cloneRect(rect);
+  if (!safeRect) return null;
+  return { ...safeRect, meta: cloneMeta(meta) };
+}
+
 function makeStageLayoutRecord(rect, meta = {}) {
   const safeRect = cloneRect(rect);
   if (!safeRect) return null;
-  return { ...safeRect, meta };
+  return { ...safeRect, meta: cloneMeta(meta) };
 }
 
 function cloneStageLayoutRecord(record) {
@@ -78,7 +95,7 @@ function cloneStageLayoutRecord(record) {
   if (!safeRect) return null;
   return {
     ...safeRect,
-    meta: { ...(record.meta || {}) },
+    meta: cloneMeta(record.meta),
   };
 }
 
@@ -88,15 +105,19 @@ function normalizeClearScope(scope, folderId) {
     return {
       area: scope.area || (targetFolderId ? "folder" : null),
       folderId: targetFolderId,
+      kind: scope.kind || null,
+      variant: scope.variant || null,
     };
   }
   return {
     area: scope || null,
     folderId: folderId ?? null,
+    kind: null,
+    variant: null,
   };
 }
 
-function shouldClearLaunchBounds(key, value, criteria) {
+function shouldClearLaunchRecord(key, value, criteria) {
   if (!criteria.area && criteria.folderId == null) return true;
   if (criteria.area && !key.startsWith(`${criteria.area}:`)) return false;
   if (criteria.folderId == null) return true;
@@ -104,275 +125,196 @@ function shouldClearLaunchBounds(key, value, criteria) {
   return value?.meta?.folderId === folderId || key.startsWith(`folder:${folderId}:`);
 }
 
-export function registerRenderedClientLaunchIconBounds(source, rect, meta = {}) {
-  const key = makeIconBoundsKey("launch", source);
-  const safeRect = cloneRect(rect);
-  if (!key || !safeRect) return;
-  launchIconBounds.set(key, { ...safeRect, meta });
-  if (source.area === "desktop") topLevelBounds.set(makeIconBoundsKey("top-level", source.id), { ...safeRect, meta });
+function shouldClearMetaRecord(value, criteria) {
+  if (!criteria.area && criteria.folderId == null) return true;
+  if (criteria.area && value?.meta?.area !== criteria.area) return false;
+  if (criteria.folderId == null) return true;
+  return value?.meta?.folderId === String(criteria.folderId);
 }
 
-export function registerLiveClientLaunchIconTargetBounds(source, rect, meta = {}) {
-  const key = makeIconBoundsKey("launch", source);
-  const safeRect = cloneRect(rect);
-  if (!key || !safeRect) return;
-  launchIconTargetBounds.set(key, { ...safeRect, meta });
+function shouldClearPreviewChildKey(key, criteria) {
+  if (!criteria.folderId) return true;
+  return key.startsWith(`${criteria.folderId}:`);
 }
 
-export function registerStableStageLayoutLaunchIconTargetBounds(source, rect, meta = {}) {
-  const key = makeIconBoundsKey("launch", source);
-  const record = makeStageLayoutRecord(rect, meta);
-  if (!key || !record) return;
-  launchIconStageLayoutTargetBounds.set(key, record);
+function hasExpectedMetaShape(value) {
+  return EXPECTED_META_KEYS.some((key) => value?.[key] != null);
 }
 
-export function registerRenderedClientTopLevelFolderThumbBounds(id, rect, meta = {}) {
-  const key = makeIconBoundsKey("top-level", id);
-  const safeRect = cloneRect(rect);
-  if (!key || !safeRect) return;
-  topLevelFolderThumbBounds.set(key, { ...safeRect, meta });
-}
-
-export function registerStableStageLayoutTopLevelIconTargetBounds(id, rect, meta = {}) {
-  const key = makeIconBoundsKey("top-level", id);
-  const record = makeStageLayoutRecord(rect, meta);
-  if (!key || !record) return;
-  topLevelStageLayoutTargetBounds.set(key, record);
-}
-
-export function registerLiveClientTopLevelIconTargetBounds(id, rect, meta = {}) {
-  const key = makeIconBoundsKey("top-level", id);
-  const safeRect = cloneRect(rect);
-  if (!key || !safeRect) return;
-  topLevelLiveTargetBounds.set(key, { ...safeRect, meta });
-}
-
-export function registerStableStageLayoutTopLevelFolderThumbTargetBounds(id, rect, meta = {}) {
-  const key = makeIconBoundsKey("top-level", id);
-  const record = makeStageLayoutRecord(rect, meta);
-  if (!key || !record) return;
-  topLevelFolderThumbStageLayoutTargetBounds.set(key, record);
-}
-
-export function registerLiveClientTopLevelFolderThumbTargetBounds(id, rect, meta = {}) {
-  const key = makeIconBoundsKey("top-level", id);
-  const safeRect = cloneRect(rect);
-  if (!key || !safeRect) return;
-  topLevelFolderThumbLiveTargetBounds.set(key, { ...safeRect, meta });
-}
-
-export function unregisterLaunchIconBounds(source) {
-  const key = makeIconBoundsKey("launch", source);
-  if (key) launchIconBounds.delete(key);
-  if (key) launchIconTargetBounds.delete(key);
-  if (key) launchIconStageLayoutTargetBounds.delete(key);
-  const topLevelKey = makeIconBoundsKey("top-level", source?.id);
-  if ((source?.area === "desktop" || source?.area === "search") && source.id) {
-    topLevelFolderThumbBounds.delete(topLevelKey);
-    topLevelFolderThumbLiveTargetBounds.delete(topLevelKey);
-    topLevelFolderThumbStageLayoutTargetBounds.delete(topLevelKey);
-  }
-  if (source?.area === "desktop" && source.id) {
-    topLevelBounds.delete(topLevelKey);
-    topLevelLiveTargetBounds.delete(topLevelKey);
-    topLevelStageLayoutTargetBounds.delete(topLevelKey);
-  }
-}
-
-export function clearLaunchIconBounds(scope, folderId = null) {
-  const criteria = normalizeClearScope(scope, folderId);
-  const shouldClearAll = !criteria.area && criteria.folderId == null;
-  for (const [key, value] of launchIconBounds) {
-    if (shouldClearLaunchBounds(key, value, criteria)) launchIconBounds.delete(key);
-    if (value?.meta?.area === "desktop" && (shouldClearAll || criteria.area === "desktop")) {
-      const topLevelKey = makeIconBoundsKey("top-level", value.meta.id);
-      topLevelBounds.delete(topLevelKey);
-      topLevelLiveTargetBounds.delete(topLevelKey);
-      topLevelStageLayoutTargetBounds.delete(topLevelKey);
-      topLevelFolderThumbBounds.delete(topLevelKey);
-      topLevelFolderThumbLiveTargetBounds.delete(topLevelKey);
-      topLevelFolderThumbStageLayoutTargetBounds.delete(topLevelKey);
-    }
-  }
-  for (const [key, value] of launchIconTargetBounds) {
-    if (shouldClearLaunchBounds(key, value, criteria)) launchIconTargetBounds.delete(key);
-  }
-  for (const [key, value] of launchIconStageLayoutTargetBounds) {
-    if (shouldClearLaunchBounds(key, value, criteria)) launchIconStageLayoutTargetBounds.delete(key);
-  }
-  for (const [id, value] of topLevelFolderThumbBounds) {
-    if (shouldClearAll || value?.meta?.area === criteria.area) topLevelFolderThumbBounds.delete(id);
-  }
-  for (const [id, value] of topLevelFolderThumbLiveTargetBounds) {
-    if (shouldClearAll || value?.meta?.area === criteria.area) topLevelFolderThumbLiveTargetBounds.delete(id);
-  }
-  for (const [id, value] of topLevelFolderThumbStageLayoutTargetBounds) {
-    if (shouldClearAll || value?.meta?.area === criteria.area) topLevelFolderThumbStageLayoutTargetBounds.delete(id);
-  }
-  if (shouldClearAll || criteria.area === "desktop") {
-    topLevelBounds.clear();
-    topLevelLiveTargetBounds.clear();
-    topLevelStageLayoutTargetBounds.clear();
-  }
+function normalizeGetOptions(options = {}) {
+  if (!options) return {};
+  if (options.expected || options.warnIfMissing || options.owner) return options;
+  if (hasExpectedMetaShape(options)) return { expected: options };
+  return options;
 }
 
 function matchesExpectedMeta(meta, expected) {
   if (!expected) return true;
-  for (const key of ["area", "folderId", "id", "index", "pageIndex"]) {
+  for (const key of EXPECTED_META_KEYS) {
     if (expected[key] == null) continue;
     if (meta?.[key] !== expected[key]) return false;
   }
   return true;
 }
 
-export function getRenderedClientLaunchIconBounds(source, expected = null) {
-  const key = makeIconBoundsKey("launch", source);
-  if (!key) return null;
-  const value = launchIconBounds.get(key);
-  if (!value || !matchesExpectedMeta(value.meta, expected)) return null;
-  return cloneRect(value);
+function rectContainsPoint(rect, x, y) {
+  return Boolean(rect) &&
+    x >= rect.left &&
+    x <= rect.right &&
+    y >= rect.top &&
+    y <= rect.bottom;
 }
 
-export function getLiveClientLaunchIconTargetBounds(source, expected = null) {
-  const key = makeIconBoundsKey("launch", source);
-  if (!key) return null;
-  const value = launchIconTargetBounds.get(key);
-  if (!value || !matchesExpectedMeta(value.meta, expected)) return null;
-  return cloneRect(value);
-}
+export function createIconBoundsRegistry() {
+  const stores = createStores();
+  const missingWarnings = new Set();
 
-export function getStableStageLayoutLaunchIconTargetRecord(source, expected = null) {
-  const key = makeIconBoundsKey("launch", source);
-  if (!key) return null;
-  const value = launchIconStageLayoutTargetBounds.get(key);
-  if (!value || !matchesExpectedMeta(value.meta, expected)) return null;
-  return cloneStageLayoutRecord(value);
-}
+  function getStore(kind, variant) {
+    return stores.get(storeKey(kind, variant)) || null;
+  }
 
-export function getRenderedClientTopLevelIconBounds(id, options = {}) {
-  const key = makeIconBoundsKey("top-level", id);
-  const value = key ? topLevelBounds.get(key) : null;
-  if (!value) warnMissingBounds("top-level-icon", key, options);
-  return cloneRect(value);
-}
+  function warnMissingBounds(kind, variant, key, options = {}) {
+    if (!options.warnIfMissing || !isDevMode() || !key) return;
+    const warningKey = `${kind}:${variant}:${key}:${options.owner || ""}`;
+    if (missingWarnings.has(warningKey)) return;
+    missingWarnings.add(warningKey);
+    console.warn("[iconBoundsRegistry] missing icon bounds", {
+      key,
+      kind,
+      owner: options.owner,
+      variant,
+    });
+  }
 
-export function getStableStageLayoutTopLevelIconTargetRecord(id, options = {}) {
-  const key = makeIconBoundsKey("top-level", id);
-  const value = key ? topLevelStageLayoutTargetBounds.get(key) : null;
-  if (!value) warnMissingBounds("top-level-icon-stage-layout-target-record", key, options);
-  return cloneStageLayoutRecord(value);
-}
-
-export function getLiveClientTopLevelIconTargetBounds(id, options = {}) {
-  const key = makeIconBoundsKey("top-level", id);
-  const value = key ? topLevelLiveTargetBounds.get(key) : null;
-  if (!value) warnMissingBounds("top-level-icon-live-target", key, options);
-  return cloneRect(value);
-}
-
-export function getRenderedClientTopLevelFolderThumbBounds(id, options = {}) {
-  const key = makeIconBoundsKey("top-level", id);
-  const value = key ? topLevelFolderThumbBounds.get(key) : null;
-  if (!value) warnMissingBounds("top-level-folder-thumb", key, options);
-  return cloneRect(value);
-}
-
-export function getLiveClientTopLevelFolderThumbTargetBounds(id, options = {}) {
-  const key = makeIconBoundsKey("top-level", id);
-  const value = key ? topLevelFolderThumbLiveTargetBounds.get(key) : null;
-  if (!value) warnMissingBounds("top-level-folder-thumb-live-target", key, options);
-  return cloneRect(value);
-}
-
-export function getStableStageLayoutTopLevelFolderThumbTargetRecord(id, options = {}) {
-  const key = makeIconBoundsKey("top-level", id);
-  const value = key ? topLevelFolderThumbStageLayoutTargetBounds.get(key) : null;
-  if (!value) warnMissingBounds("top-level-folder-thumb-stage-layout-target-record", key, options);
-  return cloneStageLayoutRecord(value);
-}
-
-export function getRenderedClientTopLevelTargetAtPoint(x, y, excludeId = null) {
-  for (const [id, rect] of topLevelBounds) {
-    if (id === excludeId) continue;
-    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-      return { id, rect: cloneRect(rect) };
+  function registerBounds(kind, variant, keyInput, rect, meta = {}) {
+    const key = makeIconBoundsKey(kind, keyInput);
+    const store = getStore(kind, variant);
+    if (!key || !store) return;
+    const record = variant === ICON_BOUNDS_VARIANT.STABLE_STAGE_LAYOUT
+      ? makeStageLayoutRecord(rect, meta)
+      : makeBoundsRecord(rect, meta);
+    if (!record) return;
+    store.set(key, record);
+    if (
+      kind === ICON_BOUNDS_KIND.LAUNCH &&
+      variant === ICON_BOUNDS_VARIANT.RENDERED &&
+      keyInput?.area === "desktop"
+    ) {
+      const topLevelKey = makeIconBoundsKey(ICON_BOUNDS_KIND.TOP_LEVEL, keyInput.id);
+      if (topLevelKey) getStore(ICON_BOUNDS_KIND.TOP_LEVEL, ICON_BOUNDS_VARIANT.RENDERED)?.set(topLevelKey, record);
     }
   }
-  return null;
-}
 
-export function registerRenderedClientFolderPreviewChildBounds(folderId, childId, slotIndex, rect) {
-  const key = makeIconBoundsKey("folder-preview-child", { childId, folderId, slotIndex });
-  const safeRect = cloneRect(rect);
-  if (!key || !safeRect) return;
-  folderPreviewChildBounds.set(key, safeRect);
-}
-
-export function registerStableStageLayoutFolderPreviewChildTargetBounds(folderId, childId, slotIndex, rect, meta = {}) {
-  const key = makeIconBoundsKey("folder-preview-child", { childId, folderId, slotIndex });
-  const record = makeStageLayoutRecord(rect, meta);
-  if (!key || !record) return;
-  folderPreviewChildStageLayoutTargetBounds.set(key, record);
-}
-
-export function registerLiveClientFolderPreviewChildTargetBounds(folderId, childId, slotIndex, rect) {
-  const key = makeIconBoundsKey("folder-preview-child", { childId, folderId, slotIndex });
-  const safeRect = cloneRect(rect);
-  if (!key || !safeRect) return;
-  folderPreviewChildLiveTargetBounds.set(key, safeRect);
-}
-
-export function clearFolderPreviewChildBounds(folderId) {
-  for (const key of folderPreviewChildBounds.keys()) {
-    if (!folderId || key.startsWith(`${folderId}:`)) folderPreviewChildBounds.delete(key);
+  function getBounds(kind, variant, keyInput, options = {}) {
+    const normalizedOptions = normalizeGetOptions(options);
+    const key = makeIconBoundsKey(kind, keyInput);
+    const store = getStore(kind, variant);
+    const value = key && store ? store.get(key) : null;
+    if (!value) warnMissingBounds(kind, variant, key, normalizedOptions);
+    if (!value || !matchesExpectedMeta(value.meta, normalizedOptions.expected)) return null;
+    return variant === ICON_BOUNDS_VARIANT.STABLE_STAGE_LAYOUT
+      ? cloneStageLayoutRecord(value)
+      : cloneRect(value);
   }
-  for (const key of folderPreviewChildLiveTargetBounds.keys()) {
-    if (!folderId || key.startsWith(`${folderId}:`)) folderPreviewChildLiveTargetBounds.delete(key);
+
+  function getAtPoint(kind, x, y, options = {}) {
+    const store = getStore(kind, ICON_BOUNDS_VARIANT.RENDERED);
+    if (!store) return null;
+    const excludeId = options?.excludeId == null ? null : String(options.excludeId);
+    for (const [key, rect] of store) {
+      const meta = rect?.meta || {};
+      const id = kind === ICON_BOUNDS_KIND.LAUNCH
+        ? String(meta.id == null ? key.split(":").pop() : meta.id)
+        : String(key);
+      if (excludeId && id === excludeId) continue;
+      if (options.area && meta.area !== options.area) continue;
+      if (options.folderId != null && meta.folderId !== options.folderId) continue;
+      if (!rectContainsPoint(rect, x, y)) continue;
+      if (kind === ICON_BOUNDS_KIND.TOP_LEVEL) return { id, rect: cloneRect(rect) };
+      return {
+        id,
+        key,
+        meta: cloneMeta(meta),
+        rect: cloneRect(rect),
+      };
+    }
+    return null;
   }
-  for (const key of folderPreviewChildStageLayoutTargetBounds.keys()) {
-    if (!folderId || key.startsWith(`${folderId}:`)) folderPreviewChildStageLayoutTargetBounds.delete(key);
+
+  function clearSpecificKind(criteria) {
+    const kinds = criteria.kind ? [criteria.kind] : ALL_KINDS;
+    const variants = criteria.variant ? [criteria.variant] : ALL_VARIANTS;
+    for (const kind of kinds) {
+      for (const variant of variants) {
+        const store = getStore(kind, variant);
+        if (!store) continue;
+        if (kind === ICON_BOUNDS_KIND.LAUNCH) {
+          for (const [key, value] of store) {
+            if (shouldClearLaunchRecord(key, value, criteria)) store.delete(key);
+          }
+          continue;
+        }
+        if (kind === ICON_BOUNDS_KIND.PREVIEW_CHILD) {
+          for (const key of store.keys()) {
+            if (shouldClearPreviewChildKey(key, criteria)) store.delete(key);
+          }
+          continue;
+        }
+        for (const [key, value] of store) {
+          if (shouldClearMetaRecord(value, criteria)) store.delete(key);
+        }
+      }
+    }
   }
-}
 
-export function clearDesktopIconBounds() {
-  clearLaunchIconBounds("desktop");
-  clearLaunchIconBounds("search");
-}
+  function clearTopLevelDesktopRecords(criteria, shouldClearAll) {
+    if (shouldClearAll || criteria.area === "desktop") {
+      for (const variant of ALL_VARIANTS) {
+        getStore(ICON_BOUNDS_KIND.TOP_LEVEL, variant)?.clear();
+      }
+    }
+    if (shouldClearAll) {
+      for (const variant of ALL_VARIANTS) {
+        getStore(ICON_BOUNDS_KIND.FOLDER_THUMB, variant)?.clear();
+      }
+      return;
+    }
+    for (const variant of ALL_VARIANTS) {
+      const store = getStore(ICON_BOUNDS_KIND.FOLDER_THUMB, variant);
+      for (const [key, value] of store || []) {
+        if (shouldClearMetaRecord(value, criteria)) store.delete(key);
+      }
+    }
+  }
 
-export function clearFolderIconBounds(folderId = null) {
-  clearLaunchIconBounds(folderId ? { area: "folder", folderId } : "folder");
-  clearFolderPreviewChildBounds(folderId);
-}
+  function clearBounds(scope = null, folderId = null) {
+    const criteria = normalizeClearScope(scope, folderId);
+    const shouldClearAll = !criteria.area && criteria.folderId == null && !criteria.kind && !criteria.variant;
+    if (shouldClearAll) {
+      for (const store of stores.values()) store.clear();
+      missingWarnings.clear();
+      return;
+    }
+    if (criteria.kind || criteria.variant) {
+      clearSpecificKind(criteria);
+      return;
+    }
+    for (const variant of ALL_VARIANTS) {
+      const store = getStore(ICON_BOUNDS_KIND.LAUNCH, variant);
+      for (const [key, value] of store || []) {
+        if (shouldClearLaunchRecord(key, value, criteria)) store.delete(key);
+      }
+    }
+    clearTopLevelDesktopRecords(criteria, shouldClearAll);
+  }
 
-export function getRenderedClientFolderPreviewChildBounds(folderId, childId, slotIndex) {
-  const key = makeIconBoundsKey("folder-preview-child", { childId, folderId, slotIndex });
-  return key ? cloneRect(folderPreviewChildBounds.get(key)) : null;
-}
-
-export function getLiveClientFolderPreviewChildTargetBounds(folderId, childId, slotIndex) {
-  const key = makeIconBoundsKey("folder-preview-child", { childId, folderId, slotIndex });
-  return key ? cloneRect(folderPreviewChildLiveTargetBounds.get(key)) : null;
-}
-
-export function getStableStageLayoutFolderPreviewChildTargetRecord(folderId, childId, slotIndex) {
-  const key = makeIconBoundsKey("folder-preview-child", { childId, folderId, slotIndex });
-  return key ? cloneStageLayoutRecord(folderPreviewChildStageLayoutTargetBounds.get(key)) : null;
-}
-
-export function clearIconBoundsRegistry() {
-  launchIconBounds.clear();
-  launchIconTargetBounds.clear();
-  launchIconStageLayoutTargetBounds.clear();
-  topLevelBounds.clear();
-  topLevelLiveTargetBounds.clear();
-  topLevelStageLayoutTargetBounds.clear();
-  topLevelFolderThumbBounds.clear();
-  topLevelFolderThumbLiveTargetBounds.clear();
-  topLevelFolderThumbStageLayoutTargetBounds.clear();
-  folderPreviewChildBounds.clear();
-  folderPreviewChildLiveTargetBounds.clear();
-  folderPreviewChildStageLayoutTargetBounds.clear();
-  missingBoundsWarnings.clear();
+  return {
+    clearBounds,
+    getAtPoint,
+    getBounds,
+    makeKey: makeIconBoundsKey,
+    registerBounds,
+  };
 }
 
 reloadOnPixiHotUpdate(import.meta.hot);

@@ -7,6 +7,7 @@ export function runFolderLayerStateTests() {
 
   const callbacks = {
     completeFolderCloseIconGhost: () => {},
+    completeFolderOpenFrameGhost: () => {},
     completeFolderOpenIconGhost: () => {},
     getFolderPageRenderMode: () => "interactive",
     getVisibleFolderPage: (page) => page,
@@ -53,6 +54,7 @@ export function runFolderLayerStateTests() {
   assert(state.getFolderOpenIconGhostKey("app-a", 0) === "open-a", "open ghost lookup should use current open ghosts");
   assert(state.getFolderCloseIconGhostKey("app-b", 1) === "close-b", "close ghost lookup should use current close ghosts");
   assert(state.completeFolderOpenIconGhost === callbacks.completeFolderOpenIconGhost, "callbacks should be forwarded");
+  assert(state.completeFolderOpenFrameGhost === callbacks.completeFolderOpenFrameGhost, "frame completion callback should be forwarded");
   assert(state.isFolderAppLaunchClosing, "folder app-launch closing state should be forwarded");
   assert(state.singleStageDiagnostics, "single-stage diagnostics flag should be preserved");
   assert(state.prewarm, "overrides should be applied last");

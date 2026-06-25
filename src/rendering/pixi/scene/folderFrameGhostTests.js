@@ -24,6 +24,7 @@ export async function runFolderFrameGhostTests() {
 
   {
     const { startFrameGhost } = await import("./folderFrameGhost.js");
+    const { motionRuntime } = await import("../animation/motionRuntime.js");
     const calls = [];
     const makeGraphics = () => ({
       alpha: 0,
@@ -79,5 +80,311 @@ export async function runFolderFrameGhostTests() {
     assert(layer.frameGhostState === state, "retargeted frame ghost should reuse the existing presentation object");
     assert(state.left === 50 && state.top === 60, "retargeted frame ghost should settle to the new target");
     assert(state.fillColor === 0x444444 && state.strokeColor === 0x555555, "retargeted frame ghost should update final colors");
+    motionRuntime.reset();
+  }
+
+  {
+    const { startFrameGhost } = await import("./folderFrameGhost.js");
+    const { motionRuntime } = await import("../animation/motionRuntime.js");
+    const makeGraphics = () => ({
+      alpha: 0,
+      visible: false,
+      clear() {
+        return this;
+      },
+      fill() {
+        return this;
+      },
+      roundRect() {
+        return this;
+      },
+      stroke() {
+        return this;
+      },
+    });
+    const staleOpeningFrame = {
+      fillAlpha: 0.8,
+      fillColor: 0x123456,
+      height: 320,
+      left: 40,
+      progress: 0.6,
+      radius: 48,
+      strokeAlpha: 0.7,
+      strokeColor: 0x654321,
+      strokeWidth: 3,
+      top: 50,
+      width: 420,
+    };
+    const layer = {
+      closingGhostLayer: {},
+      closingPreviewSwapLayer: {},
+      frameGhost: makeGraphics(),
+      frameGhostPhase: "opening",
+      frameGhostState: staleOpeningFrame,
+      panelMaterial: { alpha: 1, visible: true },
+      notifyTitleFrame() {},
+    };
+
+    motionRuntime.reset();
+    startFrameGhost(layer, staleOpeningFrame, { height: 80, left: 120, top: 130, width: 80 }, {
+      frameGhostPhase: "closing",
+      fromFillAlpha: 0.22,
+      fromFillColor: 0xffffff,
+      fromRadius: 18,
+      fromStrokeAlpha: 0.26,
+      fromStrokeColor: 0xffffff,
+      fromStrokeWidth: 1,
+      preserveOnComplete: true,
+      toFillColor: 0xffffff,
+      toStrokeColor: 0xffffff,
+    });
+
+    assert(layer.frameGhostState !== staleOpeningFrame, "cross-phase frame ghost retarget should not reuse stale presentation state");
+    assert(layer.frameGhostPhase === "closing", "cross-phase retarget should record the new frame ghost phase");
+    assert(layer.frameGhostState.fillAlpha === 0.22 && layer.frameGhostState.fillColor === 0xffffff, "cross-phase retarget should use the new phase fill presentation");
+    assert(layer.frameGhostState.strokeAlpha === 0.26 && layer.frameGhostState.strokeColor === 0xffffff, "cross-phase retarget should use the new phase stroke presentation");
+    assert(layer.frameGhostState.radius === 18 && layer.frameGhostState.strokeWidth === 1, "cross-phase retarget should use the new phase shape presentation");
+    layer.frameGhostMotionControl?.cancel?.();
+    motionRuntime.reset();
+  }
+
+  {
+    const { startFrameGhost } = await import("./folderFrameGhost.js");
+    const { motionRuntime } = await import("../animation/motionRuntime.js");
+    const makeGraphics = () => ({
+      alpha: 0,
+      visible: false,
+      clear() {
+        return this;
+      },
+      fill() {
+        return this;
+      },
+      roundRect() {
+        return this;
+      },
+      stroke() {
+        return this;
+      },
+    });
+    const staleClosingFrame = {
+      fillAlpha: 0.8,
+      fillColor: 0x123456,
+      height: 320,
+      left: 40,
+      progress: 0.6,
+      radius: 48,
+      strokeAlpha: 0.7,
+      strokeColor: 0x654321,
+      strokeWidth: 3,
+      top: 50,
+      width: 420,
+    };
+    const layer = {
+      closingGhostLayer: {},
+      closingPreviewSwapLayer: {},
+      frameGhost: makeGraphics(),
+      frameGhostFolderId: "folder-a",
+      frameGhostPhase: "closing",
+      frameGhostState: staleClosingFrame,
+      panelMaterial: { alpha: 1, visible: true },
+      notifyTitleFrame() {},
+    };
+    const fromRect = { height: 90, left: 120, top: 130, width: 90 };
+
+    motionRuntime.reset();
+    startFrameGhost(layer, fromRect, { height: 80, left: 140, top: 150, width: 80 }, {
+      folderId: "folder-b",
+      frameGhostPhase: "closing",
+      fromFillAlpha: 0.22,
+      fromFillColor: 0xffffff,
+      fromRadius: 18,
+      fromStrokeAlpha: 0.26,
+      fromStrokeColor: 0xffffff,
+      fromStrokeWidth: 1,
+      preserveOnComplete: true,
+      toFillColor: 0xffffff,
+      toStrokeColor: 0xffffff,
+    });
+
+    assert(layer.frameGhostState !== staleClosingFrame, "cross-folder frame ghost retarget should not reuse stale same-phase presentation state");
+    assert(layer.frameGhostFolderId === "folder-b", "cross-folder retarget should record the new frame ghost folder");
+    assert(layer.frameGhostState.left === fromRect.left && layer.frameGhostState.width === fromRect.width, "cross-folder retarget should start from the new folder frame");
+    assert(layer.frameGhostState.fillAlpha === 0.22 && layer.frameGhostState.fillColor === 0xffffff, "cross-folder retarget should use the new folder fill presentation");
+    layer.frameGhostMotionControl?.cancel?.();
+    motionRuntime.reset();
+  }
+
+  {
+    const { startFrameGhost } = await import("./folderFrameGhost.js");
+    const { motionRuntime } = await import("../animation/motionRuntime.js");
+    const makeGraphics = () => ({
+      alpha: 0,
+      visible: false,
+      clear() {
+        return this;
+      },
+      fill() {
+        return this;
+      },
+      roundRect() {
+        return this;
+      },
+      stroke() {
+        return this;
+      },
+    });
+    const layer = {
+      closingGhostLayer: {},
+      closingPreviewSwapLayer: {},
+      frameGhost: makeGraphics(),
+      panelMaterial: { alpha: 0, visible: false },
+      notifyTitleFrame() {},
+    };
+
+    motionRuntime.reset();
+    const stepFrames = (seconds) => {
+      let remaining = seconds;
+      while (remaining > 0) {
+        const delta = Math.min(0.05, remaining);
+        motionRuntime.step(delta);
+        remaining -= delta;
+      }
+    };
+    startFrameGhost(layer, { height: 100, left: 10, top: 20, width: 200 }, { height: 120, left: 30, top: 40, width: 220 }, {
+      crossfadePanelMaterial: true,
+      duration: 1,
+      ease: (progress) => progress,
+      fadeStart: 0.5,
+      preserveOnComplete: true,
+    });
+
+    const initialPanelAlpha = layer.panelMaterial.alpha;
+    const initialFrameAlpha = layer.frameGhost.alpha;
+    stepFrames(0.55);
+    const midPanelAlpha = layer.panelMaterial.alpha;
+    const midFrameAlpha = layer.frameGhost.alpha;
+    stepFrames(0.2);
+    const laterPanelAlpha = layer.panelMaterial.alpha;
+    const laterFrameAlpha = layer.frameGhost.alpha;
+
+    assert(initialPanelAlpha === 0 && initialFrameAlpha === 1, "crossfade should start from a frame-only shell");
+    assert(midPanelAlpha > initialPanelAlpha && midFrameAlpha < initialFrameAlpha, "crossfade should move panel and frame alpha in opposite directions on the same frame");
+    assert(laterPanelAlpha > midPanelAlpha && laterFrameAlpha < midFrameAlpha, "crossfade should keep the opening shell opacity trend monotonic");
+    assert(nearlyEqual(midPanelAlpha + midFrameAlpha, 1), "crossfade should preserve combined shell opacity at mid progress");
+    assert(nearlyEqual(laterPanelAlpha + laterFrameAlpha, 1), "crossfade should preserve combined shell opacity at later progress");
+    layer.frameGhostMotionControl?.cancel?.();
+    motionRuntime.reset();
+  }
+
+  {
+    const { startFrameGhost } = await import("./folderFrameGhost.js");
+    const makeGraphics = () => ({
+      alpha: 0,
+      visible: false,
+      clear() {
+        return this;
+      },
+      fill() {
+        return this;
+      },
+      roundRect() {
+        return this;
+      },
+      stroke() {
+        return this;
+      },
+    });
+    const layer = {
+      closingGhostLayer: {},
+      closingPreviewSwapLayer: {},
+      frameGhost: makeGraphics(),
+      panelMaterial: { alpha: 1, visible: true },
+      notifyTitleFrame() {},
+    };
+
+    startFrameGhost(layer, { height: 100, left: 10, top: 20, width: 200 }, { height: 120, left: 30, top: 40, width: 220 }, {
+      exclusivePanelMaterialHandoff: true,
+      preserveOnComplete: true,
+    });
+
+    assert(!layer.panelMaterial.visible && layer.panelMaterial.alpha === 0, "exclusive handoff should hide panel material while frame ghost owns the shell");
+    assert(layer.frameGhost.visible && layer.frameGhost.alpha === 1, "exclusive handoff should keep the frame ghost as the only visible shell");
+    layer.frameGhostMotionControl?.cancel?.();
+  }
+
+  {
+    const { startFrameGhost } = await import("./folderFrameGhost.js");
+    const makeGraphics = () => ({
+      alpha: 0,
+      visible: false,
+      clear() {
+        return this;
+      },
+      fill() {
+        return this;
+      },
+      roundRect() {
+        return this;
+      },
+      stroke() {
+        return this;
+      },
+    });
+    const layer = {
+      closingGhostLayer: {},
+      closingPreviewSwapLayer: {},
+      frameGhost: makeGraphics(),
+      panelMaterial: { alpha: 1, visible: true },
+      notifyTitleFrame() {},
+    };
+
+    startFrameGhost(layer, { height: 100, left: 10, top: 20, width: 200 }, { height: 120, left: 30, top: 40, width: 220 }, {
+      exclusivePanelMaterialHandoff: true,
+      snap: true,
+      springConfig: { snap: true },
+    });
+
+    assert(layer.panelMaterial.visible && layer.panelMaterial.alpha === 1, "exclusive handoff completion should reveal panel material");
+    assert(!layer.frameGhost.visible && layer.frameGhost.alpha === 0, "exclusive handoff completion should hide the frame ghost");
+  }
+
+  {
+    const { startFrameGhost } = await import("./folderFrameGhost.js");
+    let arriveCount = 0;
+    const makeGraphics = () => ({
+      alpha: 0,
+      visible: false,
+      clear() {
+        return this;
+      },
+      fill() {
+        return this;
+      },
+      roundRect() {
+        return this;
+      },
+      stroke() {
+        return this;
+      },
+    });
+    const layer = {
+      closingGhostLayer: {},
+      closingPreviewSwapLayer: {},
+      frameGhost: makeGraphics(),
+      panelMaterial: { alpha: 0, visible: false },
+      notifyTitleFrame() {},
+    };
+
+    startFrameGhost(layer, { height: 100, left: 10, top: 20, width: 200 }, { height: 120, left: 30, top: 40, width: 220 }, {
+      onArrive: () => {
+        arriveCount += 1;
+      },
+      preserveOnComplete: true,
+      snap: true,
+      springConfig: { snap: true },
+    });
+
+    assert(arriveCount === 1, "frame ghost onArrive should fire once after geometry tracks arrive");
   }
 }

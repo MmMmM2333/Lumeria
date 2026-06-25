@@ -1,5 +1,5 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { folderCloseDuration, folderOpenGhostDuration } from "../animation/eases.js";
+import { motionPresets } from "../animation/motionPresets.js";
 import { getIconNodeOffsetFromVisualCenter } from "../geometry/iconMetrics.js";
 import { clientRectToStageVisualRect, stageLayoutRectToStageVisualRect } from "../geometry/stageCoordinates.js";
 
@@ -35,25 +35,16 @@ function resolveTargetStageVisualRect(target, options = {}) {
   return stageLayoutRectToStageVisualRect(stageRect, stageWidth, stageHeight, target?.targetStageLayoutRect);
 }
 
-function resolveOpeningTargetStageVisualRect(target, options = {}) {
-  const {
-    stageHeight,
-    stageRect,
-    stageWidth,
-  } = options;
-  return stageLayoutRectToStageVisualRect(stageRect, stageWidth, stageHeight, target?.targetStageLayoutRect);
-}
-
 export function makeOpeningGhostMotion(target, options = {}) {
   const {
     isTextlessMode = false,
-    openDuration = folderOpenGhostDuration,
+    openDuration = motionPresets.folderOpenGhost.duration,
     stageHeight,
     stageRect,
     stageWidth,
   } = options;
   const sourceRect = clientRectToStageVisualRect(target.sourceRect, stageRect);
-  const targetRect = resolveOpeningTargetStageVisualRect(target, { stageHeight, stageRect, stageWidth });
+  const targetRect = resolveTargetStageVisualRect(target, { stageHeight, stageRect, stageWidth });
   const labelOffset = getIconNodeOffsetFromVisualCenter(isTextlessMode);
   const scale = Math.max(0.16, target.sourceRect.width / Math.max(1, target.iconSize));
   const fromX = sourceRect.left + sourceRect.width / 2;
@@ -91,7 +82,7 @@ export function makeCompletedClosingPreviewMotion(target, options = {}) {
 export function makeClosingGhostMotion(target, options = {}) {
   const {
     alphaHold = 0.16,
-    closeDuration = folderCloseDuration,
+    closeDuration = motionPresets.folderClose.duration,
     isTextlessMode = false,
     stageHeight,
     stageRect,

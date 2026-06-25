@@ -1,6 +1,5 @@
 import { APP_LAUNCH_DURATION } from "./launchpadConstants.js";
 
-export const springRest = { restDelta: 0.01, restSpeed: 0.01 };
-export const panelSpring = { type: "spring", stiffness: 340, damping: 31, mass: 0.9, ...springRest };
-export const homeChromeTransition = { type: "spring", stiffness: 260, damping: 29, mass: 0.85, ...springRest };
+export const panelSpring = { duration: 0.34, ease: "power3.out" };
+export const homeChromeTransition = { duration: 0.24, ease: "power2.out" };
 export const appLaunchGhostTransition = { duration: APP_LAUNCH_DURATION / 1000, ease: "easeOut" };

@@ -129,11 +129,13 @@ export function runFolderOverlayTargetsTests() {
     cellWidth: 100,
     cols: 5,
     controllerGhostKey: "open-ghost",
+    folderId: "folder-1",
     folderRect,
     getPreviewChildRect: (item, slotIndex) => item.id === "app-b" && slotIndex === 1 ? childRect : null,
     iconSize: 56,
     index: 5,
     item: { id: "app-b" },
+    pageIndex: 2,
     previewSlotById,
     rows: 2,
     targetCenterX: 200,
@@ -141,6 +143,7 @@ export function runFolderOverlayTargetsTests() {
   });
   assert(openingTarget.isThumbnailChild && openingTarget.previewSlotIndex === 1, "opening target should identify thumbnail children");
   assert(openingTarget.sourceRect === childRect, "opening target should use registered preview bounds first");
+  assert(openingTarget.folderId === "folder-1" && openingTarget.pageIndex === 2, "opening target should keep folder identity for bounds ownership");
   assert(openingTarget.targetStageLayoutRect.left === 172 && openingTarget.targetStageLayoutRect.top === 272, "opening target should build a centered stage layout icon target");
 
   stableTarget.previewChildRects = new Map([[makePreviewChildKey("app-b", 1), { height: 7, left: 11, top: 13, width: 7 }]]);

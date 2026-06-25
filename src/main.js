@@ -1,4 +1,11 @@
 import { createApp } from "vue";
-import App from "./App.vue";
+import { shouldMountMotionLab } from "./motionLab/motionLabGate.js";
 
-createApp(App).mount("#app");
+const search = typeof window === "undefined" ? "" : window.location.search;
+const loadApp = import.meta.env.DEV && shouldMountMotionLab(search, true)
+  ? () => import("./motionLab/MotionLabApp.vue")
+  : () => import("./App.vue");
+
+loadApp().then((appModule) => {
+  createApp(appModule.default).mount("#app");
+});

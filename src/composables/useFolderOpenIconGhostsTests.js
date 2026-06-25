@@ -26,8 +26,9 @@ export function runFolderOpenIconGhostsTests() {
 
   ghosts.playFolderOpenIconGhosts(folder.id, capturedOpen);
   assert(ghosts.folderOpenIconGhosts.value.length === 3, "open play should publish controller ghosts");
+  const openRequestId = ghosts.folderOpenIconGhosts.value[0].requestId;
   assert(ghosts.isFolderOpenIconAnimationActive.value, "open play should mark the animation active");
-  assert(ghosts.isFolderOpenFrameGhostPending.value, "open play should keep page dots blocked while ghosts are active");
+  assert(ghosts.isFolderOpenFrameGhostPending.value, "open play should keep page dots blocked until the frame ghost arrives");
   assert(ghosts.isFolderOpeningIconGhosted(folder.id, appC.id), "open play should ghost folder targets");
   assert(ghosts.isFolderOpeningPreviewFrameGhosted(folder.id), "open play should hide the source folder thumbnail frame");
 
@@ -36,8 +37,12 @@ export function runFolderOpenIconGhostsTests() {
   ghosts.folderOpenIconGhosts.value.forEach((ghost) => ghosts.completeFolderOpenIconGhost(ghost.key));
   assert(ghosts.folderOpenIconGhosts.value.length === 0, "open ghosts should clear after all completions");
   assert(!ghosts.isFolderOpenIconAnimationActive.value, "open completion should clear animation state");
-  assert(!ghosts.isFolderOpenFrameGhostPending.value, "open completion should unblock page dots");
-  assert(!ghosts.isFolderOpeningPreviewFrameGhosted(folder.id), "open completion should reveal the source folder thumbnail frame");
+  assert(ghosts.isFolderOpenFrameGhostPending.value, "open icon completion should not unblock page dots before frame arrive");
+  assert(ghosts.isFolderOpeningPreviewFrameGhosted(folder.id), "open icon completion should keep the source folder thumbnail hidden before frame arrive");
+  assert(!ghosts.completeFolderOpenFrameGhost(folder.id, openRequestId - 1), "stale frame completion should not unblock page dots");
+  assert(ghosts.completeFolderOpenFrameGhost(folder.id, openRequestId), "current frame completion should unblock page dots");
+  assert(!ghosts.isFolderOpenFrameGhostPending.value, "frame completion should unblock page dots");
+  assert(!ghosts.isFolderOpeningPreviewFrameGhosted(folder.id), "frame completion should reveal the source folder thumbnail frame");
 
   const capturedClose = ghosts.captureFolderCloseIconGhosts(folder, [appA, appB]);
   ghosts.playFolderCloseIconGhosts(folder.id, capturedClose);

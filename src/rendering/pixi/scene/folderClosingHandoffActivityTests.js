@@ -1,6 +1,7 @@
 import {
   resolveFolderClosingHandoffId,
   resolveFolderPixiActivityUpdate,
+  resolveFolderSourceGhostedIds,
   shouldClearFolderClosingHandoffRetainId,
 } from "./folderClosingHandoffActivity.js";
 
@@ -74,4 +75,25 @@ export function runFolderClosingHandoffActivityTests() {
     !shouldClearFolderClosingHandoffRetainId({ hasPixiActivity: false, isHomeRevealSettling: true }),
     "home reveal settling should keep the retained handoff id"
   );
+
+  const currentOnlyGhosts = resolveFolderSourceGhostedIds({
+    folderOpenPreviewFrameGhostedIds: ["folder-opening"],
+    folderPixiInternalActivity: false,
+    folderPixiInternalActivityFolderId: "folder-detached",
+    isFolderClosing: true,
+    isFolderOpeningPreviewFrameGhosted: (folderId) => folderId === "folder-current",
+    openFolderId: null,
+    renderedFolderId: "folder-current",
+  });
+  assert(currentOnlyGhosts.has("folder-current"), "current closing folder should keep its desktop source ghosted");
+  assert(currentOnlyGhosts.has("folder-opening"), "opening preview frame ghosts should still hide their desktop source");
+  assert(!currentOnlyGhosts.has("folder-detached"), "inactive retained handoff ids should not ghost old desktop sources");
+
+  const activityGhosts = resolveFolderSourceGhostedIds({
+    folderPixiInternalActivity: true,
+    folderPixiInternalActivityFolderId: "folder-detached",
+    renderedFolderId: "folder-current",
+  });
+  assert(activityGhosts.has("folder-detached"), "active Pixi activity should own its desktop source ghosting");
+  assert(!activityGhosts.has("folder-current"), "rendered folders should not be ghosted without an active open or closing phase");
 }

@@ -1,9 +1,11 @@
-import { gsap } from "gsap";
-import { folderCloseDuration, folderCloseEase } from "../animation/eases.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
-import { springGroupTo } from "../animation/springGroup.js";
-import { panelSpring } from "../animation/springMotion.js";
+import { parallel, motion } from "../animation/motionTween.js";
+import { motionPresets, motionSprings } from "../animation/motionPresets.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import {
+  readLaunchpadDebugValue,
+  setLaunchpadDebugValue,
+} from "../debugNamespace.js";
 import { clientRectToStageVisualRect, stageLayoutRectToStageVisualRect } from "../geometry/stageCoordinates.js";
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
 import { getClosingPreviewTiming } from "./folderOverlayGeometry.js";
@@ -18,6 +20,14 @@ import {
   cancelClosingHandoffCleanup,
   scheduleClosingHandoffCleanup,
 } from "./folderClosingHandoff.js";
+import { ensureFolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
+import {
+  getFolderHandoffDebugOptions,
+  rectDelta,
+  roundNumber,
+  roundRect,
+} from "./folderHandoffDebug.js";
+import { ensureLayerTransitionPort } from "./layerTransitionPort.js";
 
 const GHOST_REVEAL_FALLBACK_PADDING_MS = 140;
 const CLOSING_GHOST_MAX_DELAY = 0.06;
@@ -26,115 +36,65 @@ const CLOSING_EXTRA_GHOST_ALPHA_DURATION = 0.12;
 const CLOSING_EXTRA_GHOST_ALPHA_HOLD = 0.16;
 const CLOSING_GHOST_GEOMETRY_FALLBACK_SECONDS = 0.75;
 const CLOSING_PREVIEW_FALLBACK_DURATION = 0.22;
-const CLOSING_FRAME_VISUAL_EPSILON = 0.5;
 const CLOSING_GHOST_VISUAL_POSITION_EPSILON = 0.5;
 const CLOSING_GHOST_VISUAL_SCALE_EPSILON = 0.01;
 
-function getFolderHandoffDebugOptions() {
-  const value = globalThis.__LP_DEBUG_FOLDER_HANDOFF__;
-  if (!value) return null;
-  if (value === true) return { log: true, timeline: false };
-  if (typeof value === "object") {
-    return {
-      log: value.log !== false,
-      timeline: value.timeline === true,
-    };
-  }
-  return null;
-}
-
-function roundNumber(value, digits = 3) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return null;
-  const factor = 10 ** digits;
-  return Math.round(number * factor) / factor;
-}
-
-function roundRect(rect) {
-  if (!rect) return null;
-  return {
-    height: roundNumber(rect.height),
-    left: roundNumber(rect.left),
-    top: roundNumber(rect.top),
-    width: roundNumber(rect.width),
-  };
-}
-
-function rectDelta(rect, target) {
-  if (!rect || !target) return null;
-  return {
-    height: roundNumber((rect.height || 0) - (target.height || 0)),
-    left: roundNumber((rect.left || 0) - (target.left || 0)),
-    top: roundNumber((rect.top || 0) - (target.top || 0)),
-    width: roundNumber((rect.width || 0) - (target.width || 0)),
-  };
-}
-
-function setLayerClosingHandoffActive(layer, active) {
-  if (typeof layer.setClosingHandoffActive === "function") {
-    layer.setClosingHandoffActive(active);
-    return;
-  }
-  layer.closingHandoffActive = Boolean(active);
+function publishLastFolderHandoffDebug(payload) {
+  const folderId = payload?.folderId || null;
+  if (!folderId) return;
+  const previous = readLaunchpadDebugValue("lastFolderHandoff");
+  setLaunchpadDebugValue("lastFolderHandoff", {
+    ...(previous && typeof previous === "object" ? previous : {}),
+    ...payload,
+    desktopLogged: false,
+  });
 }
 
 function getClosingControllerGhostKey(state, target) {
   return target?.controllerGhostKey || state.getFolderCloseIconGhostKey?.(target?.item?.id, target?.index) || null;
 }
 
-function isFrameVisuallyArrived(frame, targetRect) {
-  if (!frame || !targetRect) return false;
-  return Math.abs((frame.left || 0) - (targetRect.left || 0)) <= CLOSING_FRAME_VISUAL_EPSILON &&
-    Math.abs((frame.top || 0) - (targetRect.top || 0)) <= CLOSING_FRAME_VISUAL_EPSILON &&
-    Math.abs((frame.width || 0) - (targetRect.width || 0)) <= CLOSING_FRAME_VISUAL_EPSILON &&
-    Math.abs((frame.height || 0) - (targetRect.height || 0)) <= CLOSING_FRAME_VISUAL_EPSILON;
-}
-
-function isGhostVisuallyArrived(ghost, motion) {
-  if (!ghost || !motion) return false;
-  return Math.abs((ghost.x || 0) - motion.toX) <= CLOSING_GHOST_VISUAL_POSITION_EPSILON &&
-    Math.abs((ghost.y || 0) - motion.toY) <= CLOSING_GHOST_VISUAL_POSITION_EPSILON &&
-    Math.abs((ghost.scale?.x || 0) - motion.scale) <= CLOSING_GHOST_VISUAL_SCALE_EPSILON &&
-    Math.abs((ghost.scale?.y || 0) - motion.scale) <= CLOSING_GHOST_VISUAL_SCALE_EPSILON;
-}
-
-function animateClosingGhost(ghost, motion, target, onComplete, options = {}) {
-  let visualArrived = false;
-  const markVisualArrived = () => {
-    if (visualArrived || !isGhostVisuallyArrived(ghost, motion)) return;
-    visualArrived = true;
-    options.onVisualArrive?.();
-  };
-  const motionOptions = { delay: motion.delay, onUpdate: markVisualArrived };
+function animateClosingGhost(ghost, ghostMotion, target, onComplete, options = {}) {
+  const positionSpring = { ...motionSprings.handoff, arriveDelta: CLOSING_GHOST_VISUAL_POSITION_EPSILON };
+  const scaleSpring = { ...motionSprings.handoff, arriveDelta: CLOSING_GHOST_VISUAL_SCALE_EPSILON };
+  const motionOptions = { delay: ghostMotion.delay };
   if (!target.isThumbnailChild) {
-    gsap.to(ghost, {
-      alpha: 0,
-      delay: motion.alphaDelay,
-      duration: CLOSING_EXTRA_GHOST_ALPHA_DURATION,
-      ease: "power2.in",
-    });
+    motion(ghost)
+      .duration(CLOSING_EXTRA_GHOST_ALPHA_DURATION)
+      .ease("power2.in")
+      .delay(ghostMotion.alphaDelay)
+      .overlay()
+      .interrupt("retarget")
+      .to({ alpha: 0 })
+      .start();
   }
-  return springGroupTo([
-    { target: ghost, prop: "x", to: motion.toX, config: panelSpring, options: motionOptions },
-    { target: ghost, prop: "y", to: motion.toY, config: panelSpring, options: motionOptions },
-    { target: ghost.scale, prop: "x", to: motion.scale, config: panelSpring, options: motionOptions },
-    { target: ghost.scale, prop: "y", to: motion.scale, config: panelSpring, options: motionOptions },
+  return parallel([
+    motion(ghost)
+      .spring(positionSpring)
+      .handoff()
+      .interrupt("retarget")
+      .to({ ...motionOptions, x: ghostMotion.toX, y: ghostMotion.toY }),
+    motion(ghost.scale)
+      .spring(scaleSpring)
+      .handoff()
+      .interrupt("retarget")
+      .to({ ...motionOptions, x: ghostMotion.scale, y: ghostMotion.scale }),
   ], {
     scheduler: options.scheduler,
+    onArrive: () => options.onVisualArrive?.(),
     onComplete: () => {
-      markVisualArrived();
       onComplete?.();
     },
   });
 }
 
-function releaseOpeningGhostsForClosing(layer, state, targets) {
+function releaseOpeningGhostsForClosing(transitionPort, handoffCoordinator, state, targets) {
   const released = new Map();
-  if (!layer.openingGhostKeys?.size || typeof layer.openingGhosts?.releaseGhost !== "function") return released;
+  if (!handoffCoordinator?.hasActiveOpeningVisuals?.()) return released;
   for (const target of targets || []) {
     const itemId = target?.item?.id;
-    if (!itemId || !target?.targetStageLayoutRect || !layer.openingGhostKeys.has(itemId)) continue;
-    const ghost = layer.openingGhosts.releaseGhost(itemId);
+    if (!itemId || !target?.targetStageLayoutRect || !handoffCoordinator.hasOpeningGhost(itemId)) continue;
+    const ghost = transitionPort.releaseOpeningGhost(itemId);
     const sourceRect = ghost?.getIconBounds?.(state.stageRect);
     if (!ghost || !sourceRect) {
       ghost?.destroy?.({ children: true });
@@ -151,101 +111,62 @@ function releaseOpeningGhostsForClosing(layer, state, targets) {
   return released;
 }
 
-function cloneFramePresentation(frame) {
-  if (!frame) return null;
-  return {
-    fillAlpha: frame.fillAlpha,
-    fillColor: frame.fillColor,
-    height: frame.height,
-    left: frame.left,
-    progress: frame.progress,
-    radius: frame.radius,
-    strokeAlpha: frame.strokeAlpha,
-    strokeColor: frame.strokeColor,
-    strokeWidth: frame.strokeWidth,
-    top: frame.top,
-    width: frame.width,
-  };
-}
-
-function resolveClosingFrameStartRect(layer, panelRect) {
-  return cloneFramePresentation(layer.frameGhostState) || panelRect;
+function clearOpeningGhostsForClosing(transitionPort) {
+  transitionPort.clearOpeningGhosts({
+    cancelSession: true,
+    completeControllerKeys: false,
+    restorePageTrack: false,
+    reveal: false,
+  });
 }
 
 export class FolderClosingGhostController {
   constructor(layer, options = {}) {
     this.layer = layer;
+    this.handoffCoordinator = options.handoffCoordinator || ensureFolderHandoffCoordinator(layer);
+    this.transitionPort = options.transitionPort || ensureLayerTransitionPort(layer);
     this.scheduler = options.scheduler || globalThis;
     this.ghostFactory = options.ghostFactory;
     this.previewSwap = options.previewSwap || { clear: () => {}, start: () => {} };
-    layer.closingGhostRevealTimer = null;
-    layer.closingFrameComplete = false;
-    layer.closingHandoffVisualCleanupScheduled = false;
-    layer.closingPreviewSwapKeys = new Set();
-    layer.closingVisualGhostKeys = new Set();
-    layer.completedClosingControllerGhostKeys = [];
-    layer.pendingClosingControllerGhostKeys = new Set();
-    layer.completedClosingPreviewGhosts = [];
-    layer.closingFolderHandoffGhost = null;
-    layer.closingFolderHandoffRect = null;
-    layer.closingFolderHandoffTarget = null;
-    setLayerClosingHandoffActive(layer, false);
+    this.handoffCoordinator.setCloseHandoffActive(false);
   }
 
   clearRevealTimer() {
-    const layer = this.layer;
-    if (!layer.closingGhostRevealTimer) return;
-    this.scheduler.clearTimeout?.(layer.closingGhostRevealTimer);
-    layer.closingGhostRevealTimer = null;
+    this.handoffCoordinator.clearRevealTimer(this.scheduler.clearTimeout?.bind(this.scheduler));
   }
 
   scheduleRevealFallback(targets) {
-    const layer = this.layer;
     this.clearRevealTimer();
     const maxDelay = getMaxFolderGhostGridDelay(targets, CLOSING_GHOST_MAX_DELAY);
-    const fallbackSeconds = Math.max(folderCloseDuration, CLOSING_GHOST_GEOMETRY_FALLBACK_SECONDS);
+    const fallbackSeconds = Math.max(motionPresets.folderClose.duration, CLOSING_GHOST_GEOMETRY_FALLBACK_SECONDS);
     const timeoutMs = Math.round(
       (maxDelay + fallbackSeconds + CLOSING_PREVIEW_FALLBACK_DURATION) * 1000 + GHOST_REVEAL_FALLBACK_PADDING_MS
     );
-    layer.closingGhostRevealTimer = this.scheduler.setTimeout?.(() => {
-      layer.closingGhostRevealTimer = null;
-      if (layer.closingGhostKeys?.size || layer.closingPreviewSwapKeys?.size) this.clear();
-    }, timeoutMs) || null;
+    this.handoffCoordinator.setRevealTimer(this.scheduler.setTimeout?.(() => {
+      this.handoffCoordinator.clearRevealTimerRef();
+      if (this.handoffCoordinator.hasActiveCloseVisuals()) this.clear();
+    }, timeoutMs) || null);
   }
 
   hasActive() {
-    const layer = this.layer;
-    return Boolean(layer.closingGhostKeys?.size || layer.closingPreviewSwapKeys?.size);
+    return this.handoffCoordinator.hasActiveCloseVisuals();
   }
 
-  begin(folderId) {
-    const layer = this.layer;
-    this.clear();
-    layer.closingGhostFolderId = folderId || null;
-    layer.closingGhostKeys = new Set();
-    layer.closingGhostMotionControls = new Set();
-    layer.closingFrameComplete = false;
-    layer.closingFrameVisualComplete = false;
-    layer.closingHandoffVisualCleanupScheduled = false;
-    layer.closingVisualGhostKeys = new Set();
-    layer.completedClosingControllerGhostKeys = [];
-    layer.pendingClosingControllerGhostKeys = new Set();
-    layer.completedClosingPreviewGhosts = [];
+  begin(folderId, options = {}) {
+    this.clear(options);
+    this.handoffCoordinator.beginCloseTransition(folderId, { closeToken: options.closeToken || null });
     this.clearFolderHandoffGhost();
-    layer.closingFolderHandoffRect = null;
-    layer.closingFolderHandoffTarget = null;
-    setLayerClosingHandoffActive(layer, false);
   }
 
   start(state, targets, folderRect, panelRect, options = {}) {
-    const layer = this.layer;
     const {
       handoffRect = null,
       handoffTarget = null,
       previewSwapTargets = [],
     } = options;
-    const releasedOpeningGhosts = releaseOpeningGhostsForClosing(layer, state, targets);
-    const closeFrameFromRect = resolveClosingFrameStartRect(layer, panelRect);
+    const folderId = state.renderedFolder?.id || this.transitionPort.getCurrentFolderId() || null;
+    const releasedOpeningGhosts = releaseOpeningGhostsForClosing(this.transitionPort, this.handoffCoordinator, state, targets);
+    const closeFrameFromRect = this.transitionPort.getClosingFrameStartRect(panelRect, folderId);
     const closeTargets = (targets || []).map((target) => {
       const released = releasedOpeningGhosts.get(target?.item?.id);
       return released
@@ -258,53 +179,76 @@ export class FolderClosingGhostController {
         }
         : target;
     });
-    layer.openingGhosts.clear();
-    this.begin(state.renderedFolder?.id);
+    const closeToken = this.transitionPort.createClosingGhostToken(folderId);
+    this.begin(folderId, { closeToken, restorePageTrack: false, reveal: false });
+    const owner = {
+      folderId,
+      kind: "closing",
+      token: closeToken,
+    };
+    this.transitionPort.acquireDesktopSourceOwnership(owner);
+    clearOpeningGhostsForClosing(this.transitionPort);
     const usableTargets = (closeTargets || []).filter(hasUsableFolderGhostTarget);
-    if (!usableTargets.length) return;
     const isRetargetedOpeningClose = releasedOpeningGhosts.size > 0;
-    const frameDuration = folderCloseDuration + CLOSING_FRAME_TAIL_DURATION;
+    const frameDuration = motionPresets.folderClose.duration + CLOSING_FRAME_TAIL_DURATION;
     const closeFrameToRect = clientRectToStageVisualRect(folderRect, state.stageRect);
-    layer.closingFolderHandoffRect = handoffRect || folderRect;
-    layer.closingFolderHandoffTarget = handoffTarget || null;
-    const previewTiming = getClosingPreviewTiming(closeFrameFromRect, closeFrameToRect);
     const thumb = getFolderThumbMetrics(folderRect.width);
+    this.handoffCoordinator.setCloseHandoffGeometry({
+      detachedTarget: {
+        ...closeFrameToRect,
+        fillAlpha: thumb.fillAlpha,
+        fillColor: thumb.fillColor,
+        radius: thumb.radius,
+        strokeAlpha: thumb.strokeAlpha,
+        strokeColor: thumb.strokeColor,
+        strokeWidth: thumb.strokeWidth,
+      },
+      rect: handoffRect || folderRect,
+      target: handoffTarget || null,
+    });
+    const previewTiming = getClosingPreviewTiming(closeFrameFromRect, closeFrameToRect);
     let closingPreviewSwapStarted = false;
     const startClosingPreviewSwapWhenReady = (frame) => {
       if (closingPreviewSwapStarted || isRetargetedOpeningClose || !previewSwapTargets?.length) return;
       if ((frame?.progress ?? 0) < previewTiming.progress) return;
       closingPreviewSwapStarted = true;
-      this.previewSwap.start(state, previewSwapTargets, previewTiming, (finishState) => this.finishTransition(finishState));
+      this.previewSwap.start(
+        state,
+        previewSwapTargets,
+        previewTiming,
+        (finishState, events) => this.handleSettlementEvents(finishState, events),
+        { closeToken }
+      );
     };
-    layer.enableClosingFrameMask();
-    const markFrameVisualComplete = (frame) => {
-      if (layer.closingFrameVisualComplete || !isFrameVisuallyArrived(frame, closeFrameToRect)) return;
-      layer.closingFrameVisualComplete = true;
-      this.finishTransition(state);
+    this.transitionPort.enableClosingFrameMask();
+    const completeFrameVisual = () => {
+      this.handleSettlementEvents(state, this.handoffCoordinator.completeCloseFrameVisual(closeToken));
     };
-    layer.startFrameGhost(closeFrameFromRect, closeFrameToRect, {
+    this.transitionPort.startFrameGhost(closeFrameFromRect, closeFrameToRect, {
       duration: frameDuration,
-      ease: folderCloseEase,
+      ease: motionPresets.folderClose.ease,
       fadeStart: 0.86,
+      folderId,
+      frameGhostPhase: "closing",
       frameGhostToAlpha: 1,
-      fromFillAlpha: closeFrameFromRect?.fillAlpha ?? 0.26,
-      fromFillColor: closeFrameFromRect?.fillColor ?? thumb.fillColor,
+      fromFillAlpha: thumb.fillAlpha,
+      fromFillColor: thumb.fillColor,
       fromRadius: closeFrameFromRect?.radius ?? 48,
-      fromStrokeAlpha: closeFrameFromRect?.strokeAlpha ?? 0.24,
-      fromStrokeColor: closeFrameFromRect?.strokeColor ?? thumb.strokeColor,
-      fromStrokeWidth: closeFrameFromRect?.strokeWidth ?? thumb.strokeWidth,
+      fromStrokeAlpha: thumb.strokeAlpha,
+      fromStrokeColor: thumb.strokeColor,
+      fromStrokeWidth: thumb.strokeWidth,
       panelMaterialFinalAlpha: 0,
       panelMaterialFromAlpha: 0,
       panelMaterialToAlpha: 0,
+      progressMilestones: [{
+        callback: () => startClosingPreviewSwapWhenReady({ progress: previewTiming.progress }),
+        progress: previewTiming.progress,
+      }],
       onComplete: () => {
         startClosingPreviewSwapWhenReady({ progress: 1 });
-        markFrameVisualComplete(closeFrameToRect);
-        this.completeFrameGhost(state);
+        this.completeFrameGhost(state, closeToken);
       },
-      onUpdate: (frame) => {
-        startClosingPreviewSwapWhenReady(frame);
-        markFrameVisualComplete(frame);
-      },
+      onArrive: completeFrameVisual,
       preserveOnComplete: true,
       toFillAlpha: thumb.fillAlpha,
       toFillColor: thumb.fillColor,
@@ -315,8 +259,14 @@ export class FolderClosingGhostController {
       updateClosingMask: true,
     });
 
-    layer.pageTrack.visible = false;
-    this.scheduleRevealFallback(usableTargets);
+    this.transitionPort.hidePageTrackForTransition(owner);
+    if (usableTargets.length) this.scheduleRevealFallback(usableTargets);
+
+    this.handoffCoordinator.trackCloseGhosts(
+      usableTargets,
+      (target) => getClosingControllerGhostKey(state, target)
+    );
+
     for (const target of usableTargets) {
       const released = releasedOpeningGhosts.get(target.item?.id);
       const ghost = released?.ghost || this.ghostFactory();
@@ -324,61 +274,74 @@ export class FolderClosingGhostController {
       ghost.stageRect = state.stageRect;
       ghost.isThumbnailChild = Boolean(target.isThumbnailChild);
       ghost.setState(makeFolderGhostIconNodeState({ sourceType: "folder-close-ghost", state, target }));
-      const motion = makeClosingGhostMotion(target, {
+      const ghostMotion = makeClosingGhostMotion(target, {
         alphaHold: CLOSING_EXTRA_GHOST_ALPHA_HOLD,
-        closeDuration: folderCloseDuration,
+        closeDuration: motionPresets.folderClose.duration,
         isTextlessMode: state.isTextlessMode,
         stageHeight: state.height,
         stageRect: state.stageRect,
         stageWidth: state.width,
       });
-      ghost.position.set(motion.fromX, motion.fromY);
-      ghost.scale.set(motion.sourceScale);
-      ghost.alpha = motion.sourceAlpha;
+      ghost.position.set(ghostMotion.fromX, ghostMotion.fromY);
+      ghost.scale.set(ghostMotion.sourceScale);
+      ghost.alpha = ghostMotion.sourceAlpha;
+      this.handoffCoordinator.setDetachedClosingGhostMotion(ghost, {
+        alpha: target.isThumbnailChild ? 1 : 0,
+        duration: motionPresets.folderClose.duration,
+        scale: ghostMotion.scale,
+        x: ghostMotion.toX,
+        y: ghostMotion.toY,
+      });
       if (ghost.labelText?.visible) {
         if (target.sourceLabelAlpha != null) ghost.labelText.alpha = target.sourceLabelAlpha;
-        gsap.to(ghost.labelText, { alpha: 0, delay: motion.delay, duration: 0.1, ease: "power2.in" });
-        gsap.to(ghost.labelText.scale, { x: 0.94, y: 0.94, delay: motion.delay, duration: 0.1, ease: "power2.in" });
+        motion(ghost.labelText)
+          .duration(0.1)
+          .ease("power2.in")
+          .delay(ghostMotion.delay)
+          .overlay()
+          .interrupt("retarget")
+          .to({ alpha: 0 })
+          .start();
+        motion(ghost.labelText.scale)
+          .duration(0.1)
+          .ease("power2.in")
+          .delay(ghostMotion.delay)
+          .overlay()
+          .interrupt("retarget")
+          .to({ x: 0.94, y: 0.94 })
+          .start();
       }
-      layer.closingGhostLayer.addChild(ghost);
-      layer.closingGhostKeys.add(target.item.id);
-      if (target.isThumbnailChild) layer.closingVisualGhostKeys.add(target.item.id);
-      const controllerGhostKey = getClosingControllerGhostKey(state, target);
-      if (controllerGhostKey) layer.pendingClosingControllerGhostKeys.add(controllerGhostKey);
-      for (const node of layer.iconNodes.values()) {
-        if (node.item?.id === target.item.id) node.visible = false;
-      }
+      this.transitionPort.addClosingGhost(ghost);
+      this.transitionPort.hideIconNodesForTransition(target.item.id, owner);
 
-      const motionControl = animateClosingGhost(ghost, motion, target, () => {
-        layer.closingGhostMotionControls?.delete(motionControl);
-        this.completeGhost(state, target, ghost);
+      let didComplete = false;
+      let motionControl = null;
+      motionControl = animateClosingGhost(ghost, ghostMotion, target, () => {
+        didComplete = true;
+        if (motionControl) this.handoffCoordinator.deleteCloseMotionControl(motionControl);
+        this.completeGhost(state, target, ghost, closeToken);
       }, {
         scheduler: this.scheduler,
-        onVisualArrive: () => this.markClosingGhostVisuallyArrived(state, target),
+        onVisualArrive: () => this.markClosingGhostVisuallyArrived(state, target, ghost, closeToken),
       });
-      layer.closingGhostMotionControls.add(motionControl);
+      if (!didComplete && this.handoffCoordinator.hasCloseGhost(target.item.id)) {
+        this.handoffCoordinator.addCloseMotionControl(motionControl);
+      }
     }
+    this.transitionPort.notifyClosingHandoffPrepare(folderId);
   }
 
   flushCompletedControllerGhosts(state) {
-    const layer = this.layer;
-    const pendingKeys = Array.from(layer.pendingClosingControllerGhostKeys || []);
-    const keys = pendingKeys.length
-      ? Array.from(new Set([...pendingKeys, ...(layer.completedClosingControllerGhostKeys || [])]))
-      : layer.completedClosingControllerGhostKeys || [];
-    layer.pendingClosingControllerGhostKeys = new Set();
-    layer.completedClosingControllerGhostKeys = [];
+    const keys = this.handoffCoordinator.consumeControllerGhostKeys();
     for (const key of keys) state.completeFolderCloseIconGhost?.(key);
   }
 
   hasPendingHandoff() {
-    return Boolean(this.layer.closingHandoffActive);
+    return this.handoffCoordinator.isCloseHandoffActive();
   }
 
   clearFolderHandoffGhost() {
-    const layer = this.layer;
-    const ghost = layer.closingFolderHandoffGhost;
-    layer.closingFolderHandoffGhost = null;
+    const ghost = this.handoffCoordinator.takeFolderHandoffGhost();
     if (!ghost) return;
     killAllMotion(ghost);
     if (!ghost.destroyed) ghost.destroy({ children: true });
@@ -392,9 +355,7 @@ export class FolderClosingGhostController {
   }
 
   clearCompletedPreviewGhosts() {
-    const layer = this.layer;
-    const ghosts = layer.completedClosingPreviewGhosts || [];
-    layer.completedClosingPreviewGhosts = [];
+    const ghosts = this.handoffCoordinator.consumeCompletedPreviewGhosts();
     this.destroyCompletedPreviewGhosts(ghosts);
   }
 
@@ -403,9 +364,7 @@ export class FolderClosingGhostController {
   }
 
   cancelMotionControls() {
-    const layer = this.layer;
-    const controls = layer.closingGhostMotionControls;
-    layer.closingGhostMotionControls = null;
+    const controls = this.handoffCoordinator.consumeCloseMotionControls();
     if (!controls?.size) return;
     for (const control of controls) control.cancel();
   }
@@ -414,89 +373,77 @@ export class FolderClosingGhostController {
     scheduleClosingHandoffCleanup(this.layer, () => this.runHandoffCleanup(), this.scheduler);
   }
 
-  clearHandoffOverlayVisuals() {
-    this.layer.onClosingHandoffVisualRelease?.(this.layer.closingGhostFolderId || this.layer.currentFolderId || null);
+  commitHandoffVisualRelease(token = this.handoffCoordinator.closeToken) {
+    const settlementEvents = this.handoffCoordinator.releaseCloseOverlayVisuals(token);
+    if (!settlementEvents) return [];
+    this.debugHandoffVisualRelease("overlay-release-before-clear");
     this.previewSwap.clear();
     this.clearCompletedPreviewGhosts();
     this.clearClosingGhostVisuals();
-    this.layer.clearFrameGhost();
+    this.transitionPort.clearFrameGhost();
+    this.debugHandoffVisualRelease("overlay-release-after-clear");
+    this.transitionPort.notifyClosingHandoffVisualRelease(this.handoffCoordinator.folderId || this.transitionPort.getCurrentFolderId() || null);
+    this.releaseClosingTransitionOwnership({ restorePageTrack: false, reveal: false });
+    return settlementEvents;
   }
 
   clearClosingGhostVisuals() {
-    const layer = this.layer;
     this.cancelMotionControls();
-    layer.closingGhostKeys?.clear();
-    layer.closingVisualGhostKeys?.clear();
-    const ghosts = layer.closingGhostLayer?.removeChildren?.() || [];
+    this.handoffCoordinator.clearCloseGhostKeys();
+    const ghosts = this.transitionPort.removeClosingGhosts();
     for (const ghost of ghosts) {
       killAllMotion(ghost);
+      this.handoffCoordinator.deleteDetachedClosingGhostMotion(ghost);
       if (!ghost.destroyed) ghost.destroy?.({ children: true });
     }
   }
 
-  deferRunHandoffVisualCleanup() {
-    if (this.layer.closingHandoffVisualCleanupScheduled) return;
-    this.layer.closingHandoffVisualCleanupScheduled = true;
-    scheduleClosingHandoffCleanup(this.layer, () => {
-      this.clearHandoffOverlayVisuals();
-      this.deferRunHandoffCleanup();
-    }, this.scheduler);
-  }
-
   runHandoffCleanup() {
-    const layer = this.layer;
+    this.releaseClosingTransitionOwnership({ restorePageTrack: false, reveal: false });
     this.clearFolderHandoffGhost();
-    layer.visible = false;
-    layer.currentFolderId = null;
-    setLayerClosingHandoffActive(layer, false);
+    this.transitionPort.setLayerVisible(false);
+    this.transitionPort.clearCurrentFolder();
+    this.handoffCoordinator.finishCloseHandoffCleanup();
   }
 
-  isHandoffVisuallyReady() {
-    const layer = this.layer;
-    return !(
-      layer.openingGhostKeys?.size ||
-      layer.closingVisualGhostKeys?.size ||
-      layer.closingPreviewSwapKeys?.size ||
-      !(layer.closingFrameVisualComplete || layer.closingFrameComplete)
-    );
+  releaseClosingTransitionOwnership(options = {}) {
+    const closeToken = this.handoffCoordinator.takeCloseToken();
+    if (closeToken == null) return false;
+    this.transitionPort.releaseTransitionOwnership(closeToken, {
+      restorePageTrack: options.restorePageTrack,
+      reveal: options.reveal,
+    });
+    return true;
   }
 
-  isOverlaySettled() {
-    const layer = this.layer;
-    return !(
-      layer.openingGhostKeys?.size ||
-      layer.closingGhostKeys?.size ||
-      layer.closingPreviewSwapKeys?.size ||
-      !layer.closingFrameComplete
-    );
-  }
-
-  finishTransition(state) {
-    const layer = this.layer;
-    if (!layer.closingHandoffActive) {
-      if (!this.isHandoffVisuallyReady()) return;
-      this.clearRevealTimer();
-      layer.panel.visible = false;
-      layer.pageTrack.visible = false;
-      setLayerClosingHandoffActive(layer, true);
-      if (this.isOverlaySettled()) this.deferRunHandoffVisualCleanup();
-      this.flushCompletedControllerGhosts(state);
-      return;
+  handleSettlementEvents(state, events = []) {
+    for (const event of events || []) {
+      if (event?.type === "handoffReady") {
+        this.startClosingHandoff(state, event.token);
+      } else if (event?.type === "overlaySettled") {
+        this.deferRunHandoffCleanup();
+      }
     }
-    if (!this.isOverlaySettled()) return;
-    this.deferRunHandoffVisualCleanup();
   }
 
-  debugClosingGhostComplete(state, target, ghost, phase) {
-    const options = getFolderHandoffDebugOptions();
-    if (!options?.log || !options.timeline) return;
+  startClosingHandoff(state, token = this.handoffCoordinator.closeToken) {
+    if (!this.handoffCoordinator.startCloseHandoff()) return;
+    this.clearRevealTimer();
+    this.transitionPort.setPanelVisible(false);
+    this.transitionPort.setPageTrackVisible(false);
+    const settlementEvents = this.commitHandoffVisualRelease(token);
+    this.flushCompletedControllerGhosts(state);
+    this.handleSettlementEvents(state, settlementEvents);
+  }
+
+  makeClosingGhostDebugPayload(state, target, ghost, phase) {
     const actualRect = ghost?.getIconBounds?.(state.stageRect) || null;
     const targetRect = stageLayoutRectToStageVisualRect(state.stageRect, state.width, state.height, target?.targetStageLayoutRect);
-    const payload = {
+    return {
       actualRect: roundRect(actualRect),
       alpha: roundNumber(ghost?.alpha),
       delta: rectDelta(actualRect, targetRect),
-      folderId: state.renderedFolder?.id || this.layer.closingGhostFolderId || null,
+      folderId: state.renderedFolder?.id || this.handoffCoordinator.folderId || this.transitionPort.getCurrentFolderId() || null,
       isThumbnailChild: Boolean(target?.isThumbnailChild),
       itemId: target?.item?.id || null,
       phase,
@@ -504,99 +451,111 @@ export class FolderClosingGhostController {
       scaleX: roundNumber(ghost?.scale?.x),
       scaleY: roundNumber(ghost?.scale?.y),
       targetRect: roundRect(targetRect),
-      x: roundNumber(ghost?.x),
-      y: roundNumber(ghost?.y),
+      x: roundNumber(ghost?.x ?? ghost?.position?.x),
+      y: roundNumber(ghost?.y ?? ghost?.position?.y),
     };
-    console.log("[folder-closing-ghost-complete-v2]", payload);
-    if (target?.isThumbnailChild) {
-      const slot = target.previewSlotIndex ?? "na";
-      const itemId = target.item?.id || "unknown";
-      console.log(`[folder-closing-ghost-compact-v2:${phase}:slot-${slot}:${itemId}]`, {
-        deltaHeight: payload.delta?.height ?? null,
-        deltaLeft: payload.delta?.left ?? null,
-        deltaTop: payload.delta?.top ?? null,
-        deltaWidth: payload.delta?.width ?? null,
-        height: payload.actualRect?.height ?? null,
-        left: payload.actualRect?.left ?? null,
-        scaleX: payload.scaleX,
-        scaleY: payload.scaleY,
-        targetHeight: payload.targetRect?.height ?? null,
-        targetLeft: payload.targetRect?.left ?? null,
-        targetTop: payload.targetRect?.top ?? null,
-        targetWidth: payload.targetRect?.width ?? null,
-        top: payload.actualRect?.top ?? null,
-        width: payload.actualRect?.width ?? null,
-      });
-    }
   }
 
-  completeGhost(state, target, ghost) {
-    const layer = this.layer;
+  debugClosingGhostVisualArrive(state, target, ghost) {
+    const options = getFolderHandoffDebugOptions();
+    if (!options?.log) return;
+    const payload = this.makeClosingGhostDebugPayload(state, target, ghost, "visual-arrive");
+    publishLastFolderHandoffDebug({
+      folderId: payload.folderId,
+      ghost: payload,
+      phase: "visual-arrive",
+    });
+    console.log("[folder-closing-ghost-visual-arrive]", payload);
+  }
+
+  debugHandoffVisualRelease(phase) {
+    const options = getFolderHandoffDebugOptions();
+    if (!options?.log) return;
+    const closeSnapshot = this.handoffCoordinator.snapshot();
+    const debugSnapshot = this.transitionPort.getDebugSnapshot();
+    const folderId = closeSnapshot.folderId || this.transitionPort.getCurrentFolderId() || null;
+    const payload = {
+      closingFrameComplete: closeSnapshot.frameComplete,
+      closingFrameVisualComplete: closeSnapshot.frameVisualComplete,
+      closingGhostCount: debugSnapshot.closingGhostCount,
+      closingGhostKeys: Array.from(closeSnapshot.ghostKeys),
+      closingPreviewSwapKeys: Array.from(closeSnapshot.previewSwapKeys),
+      closingVisualGhostKeys: Array.from(closeSnapshot.visualGhostKeys),
+      folderId,
+      framePresentation: roundRect(debugSnapshot.framePresentation),
+      panelVisible: debugSnapshot.panelVisible,
+      pageTrackVisible: debugSnapshot.pageTrackVisible,
+      phase,
+    };
+    publishLastFolderHandoffDebug({
+      folderId,
+      overlay: payload,
+      phase,
+    });
+    console.log("[folder-handoff-debug] overlay-release", payload);
+  }
+
+  debugClosingGhostComplete(state, target, ghost, phase) {
+    const options = getFolderHandoffDebugOptions();
+    if (!options?.log || !options.timeline) return;
+    const payload = this.makeClosingGhostDebugPayload(state, target, ghost, phase);
+    console.log("[folder-closing-ghost-complete]", payload);
+  }
+
+  completeGhost(state, target, ghost, token = this.handoffCoordinator.closeToken) {
     if (!ghost || ghost.closingComplete) return;
-    ghost.closingComplete = true;
-    layer.closingGhostKeys?.delete(target.item.id);
-    if (target.isThumbnailChild) layer.closingVisualGhostKeys?.delete(target.item.id);
     const controllerGhostKey = getClosingControllerGhostKey(state, target);
-    if (controllerGhostKey) layer.completedClosingControllerGhostKeys.push(controllerGhostKey);
+    const settlementEvents = this.handoffCoordinator.completeCloseGhost(token, target.item.id, controllerGhostKey);
+    if (!settlementEvents) return;
+    ghost.closingComplete = true;
     this.debugClosingGhostComplete(state, target, ghost, "before-complete");
     killAllMotion(ghost);
     if (target.isThumbnailChild && !ghost.destroyed) {
-      const motion = makeCompletedClosingPreviewMotion(target, {
+      const completedPreviewMotion = makeCompletedClosingPreviewMotion(target, {
         isTextlessMode: state.isTextlessMode,
         stageHeight: state.height,
         stageRect: state.stageRect,
         stageWidth: state.width,
       });
-      ghost.position.set(motion.x, motion.y);
-      ghost.scale.set(motion.scale);
+      ghost.position.set(completedPreviewMotion.x, completedPreviewMotion.y);
+      ghost.scale.set(completedPreviewMotion.scale);
       ghost.alpha = 1;
       this.debugClosingGhostComplete(state, target, ghost, "completed-preview");
-      layer.completedClosingPreviewGhosts.push(ghost);
-      this.finishTransition(state);
+      this.handoffCoordinator.addCompletedPreviewGhost(ghost);
+      this.handleSettlementEvents(state, settlementEvents);
       return;
     }
-    this.finishTransition(state);
-    if (!ghost.destroyed) ghost.destroy({ children: true });
+    this.handleSettlementEvents(state, settlementEvents);
   }
 
-  completeFrameGhost(state) {
-    this.layer.closingFrameComplete = true;
-    this.layer.closingFrameVisualComplete = true;
-    this.finishTransition(state);
+  completeFrameGhost(state, token = this.handoffCoordinator.closeToken) {
+    this.handleSettlementEvents(state, this.handoffCoordinator.completeCloseFrame(token));
   }
 
-  markClosingGhostVisuallyArrived(state, target) {
+  markClosingGhostVisuallyArrived(state, target, ghost = null, token = this.handoffCoordinator.closeToken) {
     if (!target?.isThumbnailChild) return;
-    this.layer.closingVisualGhostKeys?.delete(target.item?.id);
-    this.finishTransition(state);
+    const settlementEvents = this.handoffCoordinator.completeCloseGhostVisual(token, target.item?.id);
+    if (!settlementEvents) return;
+    this.debugClosingGhostVisualArrive(state, target, ghost);
+    this.handleSettlementEvents(state, settlementEvents);
   }
 
-  clear() {
-    const layer = this.layer;
+  clear(options = {}) {
     this.cancelHandoffCleanup();
     this.clearRevealTimer();
     this.cancelMotionControls();
-    layer.closingGhostKeys?.clear();
-    layer.closingVisualGhostKeys?.clear();
-    layer.closingPreviewSwapKeys?.clear();
-    layer.closingFrameComplete = false;
-    layer.closingFrameVisualComplete = false;
-    layer.closingHandoffVisualCleanupScheduled = false;
-    layer.completedClosingControllerGhostKeys = [];
-    layer.pendingClosingControllerGhostKeys = new Set();
-    layer.completedClosingPreviewGhosts = [];
+    this.releaseClosingTransitionOwnership({
+      restorePageTrack: options.restorePageTrack,
+      reveal: options.reveal,
+    });
     this.clearFolderHandoffGhost();
-    layer.closingFolderHandoffRect = null;
-    layer.closingFolderHandoffTarget = null;
-    setLayerClosingHandoffActive(layer, false);
-    layer.clearFrameGhost();
-    layer.panel.visible = true;
-    layer.pageTrack.visible = true;
-    layer.revealIconNodes();
-    layer.rebuildPageTrackMask();
-    const ghosts = layer.closingGhostLayer.removeChildren();
+    this.handoffCoordinator.clearCloseVisualState();
+    this.transitionPort.clearFrameGhost();
+    this.transitionPort.setPanelVisible(true);
+    const ghosts = this.transitionPort.removeClosingGhosts();
     for (const ghost of ghosts) {
       killAllMotion(ghost);
+      this.handoffCoordinator.deleteDetachedClosingGhostMotion(ghost);
       ghost.destroy?.({ children: true });
     }
     this.previewSwap.clear();

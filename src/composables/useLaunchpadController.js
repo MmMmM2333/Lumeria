@@ -11,7 +11,10 @@ import { useLaunchpadApps } from "./useLaunchpadApps.js";
 import { useLaunchpadDrag } from "./useLaunchpadDrag.js";
 import { useFolderOpenIconGhosts } from "./useFolderOpenIconGhosts.js";
 import { useLaunchpadFolderFlow } from "./useLaunchpadFolderFlow.js";
-import { useLaunchpadIconActivation } from "./useLaunchpadIconActivation.js";
+import {
+  resolveCurrentIconScope,
+  useLaunchpadIconActivation,
+} from "./useLaunchpadIconActivation.js";
 import { useLaunchpadLaunchFlow } from "./useLaunchpadLaunchFlow.js";
 import { useIconSelection } from "./useIconSelection.js";
 import { useLaunchpadKeyboard } from "./useLaunchpadKeyboard.js";
@@ -35,34 +38,12 @@ import {
 import { usePageRenderRange } from "./usePageRenderRange.js";
 import { usePageGridMetrics } from "./usePageGridMetrics.js";
 import { useSettingsPanelFlow } from "./useSettingsPanelFlow.js";
+import {
+  createIconBoundsRegistry,
+  ICON_BOUNDS_KIND,
+} from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 
-export function createDeferredHandlers(defaults = {}) {
-  const handlers = { ...defaults };
-  const warned = new Set();
-
-  function shouldWarn() {
-    return Boolean(import.meta.env?.DEV) && typeof console !== "undefined" && typeof console.warn === "function";
-  }
-
-  function warnOnce(name) {
-    if (!shouldWarn() || warned.has(name)) return;
-    warned.add(name);
-    console.warn(`LaunchPad deferred handler "${name}" was called before it was bound.`);
-  }
-
-  return {
-    call(name, ...args) {
-      const handler = handlers[name];
-      if (typeof handler === "function") return handler(...args);
-      warnOnce(name);
-      return undefined;
-    },
-    set(name, handler) {
-      if (typeof handler === "function") handlers[name] = handler;
-      else delete handlers[name];
-    },
-  };
-}
+const BOUNDS_KIND = ICON_BOUNDS_KIND;
 
 export function shouldPlayFolderOpenIconGhosts(next, state) {
   if (!next) return false;
@@ -82,6 +63,21 @@ export function shouldIgnoreFolderCloseRequest(state) {
     state?.isFolderZoomFadeClosing?.value ||
     (!state?.openFolderId?.value && !state?.renderedFolder?.value)
   );
+}
+
+const DEFERRED_CLOSING_GHOST_HANDOFF_OPEN = "__deferredClosingGhostHandoffOpen";
+
+export function shouldDeferFolderOpenForClosingGhostHandoff(next, state, commitOptions = {}) {
+  if (!next || commitOptions?.[DEFERRED_CLOSING_GHOST_HANDOFF_OPEN]) return false;
+  if (!state?.isFolderClosing?.value || state?.isFolderAppLaunchClosing?.value || state?.isFolderZoomFadeClosing?.value) return false;
+  const renderedFolderId = state?.renderedFolder?.value?.id || null;
+  if (!renderedFolderId || renderedFolderId === next) return false;
+  return (state?.folderCloseIconGhosts?.value?.length || 0) > 0;
+}
+
+function stripDeferredClosingGhostHandoffOpen(commitOptions = {}) {
+  const { [DEFERRED_CLOSING_GHOST_HANDOFF_OPEN]: _deferred, ...rest } = commitOptions || {};
+  return rest;
 }
 
 function getSystemAppearance() {
@@ -125,6 +121,27 @@ function useSystemAppearance() {
 }
 
 export function useLaunchpadController() {
+  const iconBoundsRegistry = createIconBoundsRegistry();
+  function getCurrentIconScope() {
+    return resolveCurrentIconScope({
+      folderCols,
+      folderPageIndex,
+      getFolderPages: () => folderPages.value,
+      getRenderedFolder: () => renderedFolder.value,
+      getSearchPages: () => searchPages.value,
+      getVisibleDesktopPage,
+      getVisibleFolderPage,
+      gridCols,
+      isFolderAppLaunchClosing,
+      isFolderClosing,
+      isSearchMode: () => isSearchMode.value,
+      openFolderId,
+      pageIndex,
+      pages,
+      searchPageIndex,
+    });
+  }
+
   const {
     backgroundBaseColor,
     backgroundBaseOpacity,
@@ -232,39 +249,6 @@ export function useLaunchpadController() {
       ? backgroundAcrylicBlurStrength.value
       : backgroundBlurStrength.value
   ));
-  const deferredHandlers = createDeferredHandlers({
-    cancelLongPress: () => {},
-    clearFolderPageTurn: () => {},
-    closeAddManagedAppPage: () => {},
-    closeScanResultDialog: () => {},
-    commitSearchPageIndex: () => {},
-    getCurrentIconScope: () => ({
-      area: "desktop",
-      pageIndex: 0,
-      folderId: null,
-      items: [],
-      columns: gridCols.value,
-    }),
-    getDragMeta: () => null,
-    getFolderIconMotionGeometry: () => null,
-    getFolderMotionGeometry: () => null,
-    getLaunchTargetStatus: (app) => launchTargetStatusById.value[String(app?.id || "")] || null,
-    hideNativeWindow: () => {},
-    isDragActive: () => false,
-    launchNativeAppIfAvailable: () => {},
-    openApp: () => {},
-    openLaunchErrorDialog: () => {},
-    prepareNativeLaunch: () => true,
-    setNativeMainWindowShortcut: () => true,
-    setNativeMainWindowShortcutCaptureActive: () => {},
-    setFolderMotionGeometry: () => {},
-    setNativeWindowMode: () => {},
-    setNativeWindowEffectsEnabled: () => {},
-    setNativeWindowShadowEnabled: () => {},
-    showNativeLaunchError: () => {},
-    restartLiveDesktopBackgroundRuntime: () => {},
-    syncLiveDesktopBackgroundRuntime: () => {},
-  });
   const {
     appendAppsToPages,
     assertNoDuplicateItemIds,
@@ -330,7 +314,7 @@ export function useLaunchpadController() {
     selectFirstIconInCurrentScope,
     selectedIcon,
     selectionMatchesScope,
-  } = useIconSelection({ getCurrentIconScope: () => deferredHandlers.call("getCurrentIconScope") });
+  } = useIconSelection({ getCurrentIconScope: () => getCurrentIconScope() });
 
   const {
     captureFolderCloseIconGhosts,
@@ -338,9 +322,11 @@ export function useLaunchpadController() {
     clearFolderCloseIconGhosts,
     clearFolderOpenIconGhosts,
     completeFolderCloseIconGhost: completeFolderCloseIconGhostNow,
+    completeFolderOpenFrameGhost,
     completeFolderOpenIconGhost,
     folderCloseIconGhosts,
     folderOpenIconGhosts,
+    folderOpenPreviewFrameGhostedIds,
     isFolderCloseIconAnimationActive,
     isFolderOpenFrameGhostPending,
     isFolderOpenIconAnimationActive,
@@ -384,7 +370,7 @@ export function useLaunchpadController() {
     startFolderZoomFadeClose,
     startHomeRevealSettleWindow,
   } = useLaunchpadFolderFlow({
-    clearFolderPageTurn: () => deferredHandlers.call("clearFolderPageTurn"),
+    clearFolderPageTurn: () => clearFolderPageTurn(),
     clearFolderCloseIconGhosts,
     clearFolderOpenIconGhosts,
     cloneItem,
@@ -392,17 +378,44 @@ export function useLaunchpadController() {
     folderPageIndex,
     folderPageRefs,
     folderPageSize,
-    getFolderIconMotionGeometry: (folderId) => deferredHandlers.call("getFolderIconMotionGeometry", folderId),
-    getFolderMotionGeometry: () => deferredHandlers.call("getFolderMotionGeometry"),
+    getFolderIconMotionGeometry: (folderId) => getFolderIconMotionGeometry(folderId),
+    getFolderMotionGeometry: () => folderMotionGeometry.value,
     getVisibleFolderPages,
     isDragActive: () => dragControls?.isDragActive() || false,
     pageRefs,
     pages,
     resetFolderViewportMetrics,
-    setFolderMotionGeometry: (next) => deferredHandlers.call("setFolderMotionGeometry", next),
+    setFolderMotionGeometry: (next) => {
+      folderMotionGeometry.value = next;
+    },
   });
+  let deferredFolderOpenAfterCloseHandoffToken = 0;
+
+  function scheduleFolderOpenAfterClosingGhostHandoff(next, commitOptions = {}) {
+    const token = ++deferredFolderOpenAfterCloseHandoffToken;
+    const scheduler = typeof window !== "undefined" ? window : globalThis;
+    const scheduleFrame = (callback) => {
+      if (typeof scheduler.requestAnimationFrame === "function") {
+        return scheduler.requestAnimationFrame(callback);
+      }
+      if (typeof scheduler.setTimeout === "function") return scheduler.setTimeout(callback, 0);
+      callback();
+      return null;
+    };
+    scheduleFrame(() => {
+      scheduleFrame(() => {
+        if (token !== deferredFolderOpenAfterCloseHandoffToken) return;
+        commitOpenFolder(next, {
+          ...commitOptions,
+          [DEFERRED_CLOSING_GHOST_HANDOFF_OPEN]: true,
+        });
+      });
+    });
+  }
 
   function commitOpenFolder(next, commitOptions) {
+    const flowCommitOptions = stripDeferredClosingGhostHandoffOpen(commitOptions);
+    if (!commitOptions?.[DEFERRED_CLOSING_GHOST_HANDOFF_OPEN]) deferredFolderOpenAfterCloseHandoffToken += 1;
     if (!next) {
       if (shouldIgnoreFolderCloseRequest({
         isFolderAppLaunchClosing,
@@ -414,12 +427,23 @@ export function useLaunchpadController() {
       const closingFolder = renderedFolder.value;
       const closingFolderPage = closingFolder ? getVisibleFolderPage(folderPages.value[folderPageIndex.value] || []) : [];
       const capturedCloseGhosts = captureFolderCloseIconGhosts(closingFolder, closingFolderPage);
-      clearFolderOpenIconGhosts();
       commitOpenFolderNow(next, {
-        ...commitOptions,
+        ...flowCommitOptions,
         waitForCloseGhosts: capturedCloseGhosts.length > 0,
       });
       playFolderCloseIconGhosts(closingFolder?.id, capturedCloseGhosts);
+      clearFolderOpenIconGhosts();
+      return;
+    }
+
+    if (shouldDeferFolderOpenForClosingGhostHandoff(next, {
+      folderCloseIconGhosts,
+      isFolderAppLaunchClosing,
+      isFolderClosing,
+      isFolderZoomFadeClosing,
+      renderedFolder,
+    }, commitOptions)) {
+      scheduleFolderOpenAfterClosingGhostHandoff(next, commitOptions);
       return;
     }
 
@@ -430,14 +454,14 @@ export function useLaunchpadController() {
       openFolderId,
       renderedFolder,
     })) {
-      commitOpenFolderNow(next, commitOptions);
+      commitOpenFolderNow(next, flowCommitOptions);
       return;
     }
 
     const folder = findFolder(pages.value, next)?.item || null;
     const openingFolderPage = folder ? getVisibleFolderPage(getFolderChildPages(folder, folderPageSize.value)[0] || []) : [];
     const capturedGhosts = captureFolderPreviewIconGhosts(folder, openingFolderPage);
-    commitOpenFolderNow(next, commitOptions);
+    commitOpenFolderNow(next, flowCommitOptions);
     playFolderOpenIconGhosts(next, capturedGhosts);
   }
 
@@ -456,12 +480,8 @@ export function useLaunchpadController() {
     folderPages,
     gridCols,
     gridRows,
+    iconBoundsRegistry,
     pageRefs,
-  });
-  deferredHandlers.set("getFolderIconMotionGeometry", getFolderIconMotionGeometry);
-  deferredHandlers.set("getFolderMotionGeometry", () => folderMotionGeometry.value);
-  deferredHandlers.set("setFolderMotionGeometry", (next) => {
-    folderMotionGeometry.value = next;
   });
   const {
     effectiveFolderIconSize,
@@ -492,7 +512,7 @@ export function useLaunchpadController() {
     clearSelectedIcon,
     collectAppsFromPages,
     commitOpenFolder,
-    commitSearchPageIndex: (next) => deferredHandlers.call("commitSearchPageIndex", next),
+    commitSearchPageIndex: (next) => commitSearchPageIndex(next),
     filterAppsForSearch,
     isDragActive: () => isDragActive(),
     openFolderId,
@@ -504,7 +524,6 @@ export function useLaunchpadController() {
     selectFirstIconInCurrentScope,
   });
   const {
-    getCurrentIconScope,
     getLaunchIconRect,
     normalizeLaunchSource,
     openSelectedIcon,
@@ -516,6 +535,7 @@ export function useLaunchpadController() {
     findTopLevel,
     folderCols,
     folderPageIndex,
+    getCurrentIconScope,
     getFolderPages: () => folderPages.value,
     getRenderedFolder: () => renderedFolder.value,
     getSearchPages: () => searchPages.value,
@@ -523,17 +543,17 @@ export function useLaunchpadController() {
     getVisibleDesktopPage,
     getVisibleFolderPage,
     gridCols,
+    iconBoundsRegistry,
     isFolderAppLaunchClosing,
     isFolderClosing,
     isSearchMode: () => isSearchMode.value,
-    openApp: (app, source) => deferredHandlers.call("openApp", app, source),
+    openApp: (app, source) => openApp(app, source),
     openFolderId,
     pageIndex,
     pages,
     searchPageIndex,
     selectFirstIconInCurrentScope,
   });
-  deferredHandlers.set("getCurrentIconScope", getCurrentIconScope);
   const {
     clearAppLaunchTimer,
     clearDesktopCloseTimer,
@@ -549,7 +569,7 @@ export function useLaunchpadController() {
     openApp,
     openDesktop,
   } = useLaunchpadLaunchFlow({
-    cancelLongPress: () => deferredHandlers.call("cancelLongPress"),
+    cancelLongPress: () => cancelLongPress(),
     clearOpeningIcon,
     clearFolderCloseIconGhosts,
     clearFolderOpenIconGhosts,
@@ -559,7 +579,7 @@ export function useLaunchpadController() {
     desktopMainRef,
     getLaunchIconRect,
     hasFolderLayer: () => Boolean(renderedFolder.value || openFolderId.value),
-    hideNativeWindow: () => deferredHandlers.call("hideNativeWindow"),
+    hideNativeWindow: () => hideNativeWindow(),
     finishFolderZoomFadeClose,
     finishHomeRevealSettleWindow,
     folderZoomFadeCloseReason,
@@ -568,24 +588,23 @@ export function useLaunchpadController() {
     isFolderZoomFadeClosing,
     isSearchMode: () => isSearchMode.value,
     keyboardFocusArea,
-    getLaunchTargetStatus: (app) => deferredHandlers.call("getLaunchTargetStatus", app),
-    launchNativeAppIfAvailable: (app) => deferredHandlers.call("launchNativeAppIfAvailable", app),
+    getLaunchTargetStatus: (app) => getLaunchTargetStatus(app),
+    launchNativeAppIfAvailable: (app) => launchNativeAppIfAvailable(app),
     launchTargetStatusById,
     normalizeLaunchSource,
-    openLaunchErrorDialog: (config) => deferredHandlers.call("openLaunchErrorDialog", config),
+    openLaunchErrorDialog: (config) => openLaunchErrorDialog(config),
     openingIcon,
-    prepareNativeLaunch: (app) => deferredHandlers.call("prepareNativeLaunch", app),
+    prepareNativeLaunch: (app) => prepareNativeLaunch(app),
     schedulePageGridMetrics: () => schedulePageGridMetrics(),
     searchInputRef,
-    setNativeWindowEffectsEnabled: (enabled) => deferredHandlers.call("setNativeWindowEffectsEnabled", enabled),
-    setNativeWindowShadowEnabled: (enabled) => deferredHandlers.call("setNativeWindowShadowEnabled", enabled),
-    showNativeLaunchError: (error) => deferredHandlers.call("showNativeLaunchError", error),
+    setNativeWindowEffectsEnabled: (enabled) => setNativeWindowEffectsEnabled(enabled),
+    setNativeWindowShadowEnabled: (enabled) => setNativeWindowShadowEnabled(enabled),
+    showNativeLaunchError: (error) => showNativeLaunchError(error),
     shouldValidateLaunchTarget: () => isNativeBridgeAvailable(),
     startFolderAppLaunchClose,
     startFolderZoomFadeClose,
     startHomeRevealSettleWindow,
   });
-  deferredHandlers.set("openApp", openApp);
 
   const {
     appLaunchGhostTransition,
@@ -652,15 +671,14 @@ export function useLaunchpadController() {
     activePageIndex,
     folderPageIndex,
     folderPages,
-    getDragMeta: () => deferredHandlers.call("getDragMeta"),
-    isDragActive: () => deferredHandlers.call("isDragActive"),
+    getDragMeta: () => dragMeta.value,
+    isDragActive: () => isDragActive(),
     isSearchMode,
     pageIndex,
     pages,
     searchPageIndex,
     searchPages,
   });
-  deferredHandlers.set("commitSearchPageIndex", commitSearchPageIndex);
   const {
     clearLayoutSaveNoticeTimer,
     clearWarningDialogTimer,
@@ -680,7 +698,6 @@ export function useLaunchpadController() {
     showLayoutSaveRecovered,
     warningDialog,
   } = useLaunchpadNotices();
-  deferredHandlers.set("openLaunchErrorDialog", openLaunchErrorDialog);
   const {
     commitPages,
     confirmForceFillAllPages,
@@ -688,7 +705,7 @@ export function useLaunchpadController() {
     renameFolder,
   } = useLaunchpadPageCommands({
     assertNoDuplicateItemIds,
-    cancelLongPress: () => deferredHandlers.call("cancelLongPress"),
+    cancelLongPress: () => cancelLongPress(),
     chunkIntoPages,
     clonePages,
     compactPages,
@@ -700,7 +717,7 @@ export function useLaunchpadController() {
     flattenTopLevelPages,
     folderPageIndex,
     folderPageSize,
-    isDragActive: () => deferredHandlers.call("isDragActive"),
+    isDragActive: () => isDragActive(),
     openFolderId,
     openWarningDialog,
     pageIndex,
@@ -737,8 +754,8 @@ export function useLaunchpadController() {
     backgroundImagePath,
     backgroundImageUrl,
     backgroundSource,
-    closeAddManagedAppPage: () => deferredHandlers.call("closeAddManagedAppPage"),
-    closeScanResultDialog: () => deferredHandlers.call("closeScanResultDialog"),
+    closeAddManagedAppPage: () => closeAddManagedAppPage(),
+    closeScanResultDialog: () => closeScanResultDialog(),
     draftBackgroundBaseColor,
     draftBackgroundBaseOpacity,
     draftBackgroundAcrylicAppearance,
@@ -823,10 +840,10 @@ export function useLaunchpadController() {
     setDraftWindowEffectMaterial,
     useDraftDesktopWallpaper,
   } = useLaunchpadSettingsConfig({
-    applyNativeMainWindowShortcut: (shortcut) => deferredHandlers.call("setNativeMainWindowShortcut", shortcut),
-    applyNativeWindowMode: () => deferredHandlers.call("setNativeWindowMode"),
-    applyNativeWindowEffects: () => deferredHandlers.call("setNativeWindowEffectsEnabled", true),
-    syncLiveDesktopBackgroundRuntime: () => deferredHandlers.call("syncLiveDesktopBackgroundRuntime"),
+    applyNativeMainWindowShortcut: (shortcut) => setNativeMainWindowShortcut(shortcut),
+    applyNativeWindowMode: () => setNativeWindowMode(),
+    applyNativeWindowEffects: () => setNativeWindowEffectsEnabled(true),
+    syncLiveDesktopBackgroundRuntime: () => syncLiveDesktopBackgroundRuntime(),
     backgroundBaseColor,
     backgroundBaseOpacity,
     backgroundAcrylicAppearance,
@@ -1029,18 +1046,6 @@ export function useLaunchpadController() {
     windowEffectMaterial,
     windowEffectsSupport,
   });
-  deferredHandlers.set("getLaunchTargetStatus", getLaunchTargetStatus);
-  deferredHandlers.set("hideNativeWindow", hideNativeWindow);
-  deferredHandlers.set("launchNativeAppIfAvailable", launchNativeAppIfAvailable);
-  deferredHandlers.set("prepareNativeLaunch", prepareNativeLaunch);
-  deferredHandlers.set("setNativeMainWindowShortcut", setNativeMainWindowShortcut);
-  deferredHandlers.set("setNativeMainWindowShortcutCaptureActive", setNativeMainWindowShortcutCaptureActive);
-  deferredHandlers.set("setNativeWindowMode", setNativeWindowMode);
-  deferredHandlers.set("setNativeWindowEffectsEnabled", setNativeWindowEffectsEnabled);
-  deferredHandlers.set("setNativeWindowShadowEnabled", setNativeWindowShadowEnabled);
-  deferredHandlers.set("showNativeLaunchError", showNativeLaunchError);
-  deferredHandlers.set("restartLiveDesktopBackgroundRuntime", restartLiveDesktopBackgroundRuntime);
-  deferredHandlers.set("syncLiveDesktopBackgroundRuntime", syncLiveDesktopBackgroundRuntime);
   dragControls = useLaunchpadDrag({
     canCreateDesktopPageAfterDrag,
     canCreateFolderPageAfterDrag,
@@ -1069,6 +1074,7 @@ export function useLaunchpadController() {
     getTopLevelIconMotionGeometry,
     gridCols,
     gridRows,
+    iconBoundsRegistry,
     iconSize,
     effectiveFolderIconSize,
     insertAppIntoFolder,
@@ -1113,10 +1119,6 @@ export function useLaunchpadController() {
     dragReleaseState,
     isDragActive,
   } = dragControls;
-  deferredHandlers.set("cancelLongPress", cancelLongPress);
-  deferredHandlers.set("clearFolderPageTurn", clearFolderPageTurn);
-  deferredHandlers.set("isDragActive", isDragActive);
-  deferredHandlers.set("getDragMeta", () => dragMeta.value);
   const {
     cancelAltEditMode,
     clearAltEditTimer,
@@ -1240,8 +1242,6 @@ export function useLaunchpadController() {
     showMissingLaunchTargetBadge,
     shouldUseNativeCatalog,
   });
-  deferredHandlers.set("closeAddManagedAppPage", closeAddManagedAppPage);
-  deferredHandlers.set("closeScanResultDialog", closeScanResultDialog);
 
   function closeTopmostModalFromKeyboard() {
     if (warningDialog.value) {
@@ -1333,23 +1333,37 @@ export function useLaunchpadController() {
     startFolderZoomFadeClose,
   });
   const {
+    folderPageTrackScrub,
     handleDesktopSurfacePointerDown,
+    handleFolderPanelPointerDown,
     handleFolderOverlayPointerDown,
+    pageTrackScrub,
     setFolderPageRef,
     setPageRef,
   } = useLaunchpadSurfaceInteractions({
     closeDesktop,
+    commitActivePageIndex,
     commitOpenFolder,
+    activePageIndex,
+    activePages,
+    getDesktopTargetAtPoint: (x, y, options = {}) => iconBoundsRegistry.getAtPoint(BOUNDS_KIND.LAUNCH, x, y, options),
+    commitFolderPageIndex,
+    folderPageIndex,
+    folderPages,
     folderPageRefs,
+    folderPanelRef,
+    folderViewportRef,
     hideNativeWindowAfterCloseAnimation,
     isAppLaunching,
     isDesktopOpen,
+    isSearchMode,
     isDragActive,
     isFolderAppLaunchClosing,
     isFolderClosing,
     openFolderId,
     pageRefs,
     renderedFolder,
+    rootRef,
   });
 
   useLaunchpadLifecycle({
@@ -1443,307 +1457,390 @@ export function useLaunchpadController() {
     windowEffectMaterial,
   });
 
-  return {
+  const shell = {
     rootRef,
-    rootStyle,
-    backgroundImageStyle,
-    desktopVisualTransform,
-    desktopVisualAlpha,
-    launchpadVisualTransform,
-    launchpadVisualAlpha,
     cx,
-    gridRows,
-    gridCols,
-    iconSize,
     isTextlessMode,
-    launchTargetStatusById,
     isDesktopOpen,
     isDesktopClosing,
-    isApplyingSettingsConfig,
     isHomeInteractionDisabled,
     isAppLaunching,
     isNativeLayoutReady,
     isEditMode,
-    isSettingsPanelOpen,
-    shouldRenderSettingsPanel,
-    settingsOverlayAnimate,
-    settingsPanelInitial,
-    settingsPanelAnimate,
     handleLaunchpadWheel,
-    shouldRenderPixiBackgroundEffect,
     shellRef,
-    homeChromeInitial,
-    homeChromeAnimate,
-    homeChromeTransition,
-    homeChromeStyle,
-    headerRef,
-    draftRows,
-    draftBackgroundBaseColor,
-    draftBackgroundBaseOpacity,
-    draftBackgroundAcrylicAppearance,
-    draftBackgroundAcrylicBlurStrength,
-    draftBackgroundAcrylicDarkParams,
-    draftBackgroundAcrylicLightParams,
-    draftBackgroundBlurStrength,
-    draftBackgroundDarkenColor,
-    draftBackgroundDarkenStrength,
-    draftBackgroundEffect,
-    draftBackgroundImageOpacity,
-    draftBackgroundLiveDesktopOpacity,
-    draftBackgroundImageLayout,
-    draftBackgroundImagePath,
-    draftBackgroundImageUrl,
-    draftBackgroundSource,
-    draftCols,
-    draftFolderRows,
-    draftFolderCols,
-    draftIconSize,
-    draftIsTextlessMode,
-    draftFolderIconSizeMode,
-    draftFolderIconSize,
+    windowMode,
+  };
+
+  const background = {
+    rootStyle,
+    backgroundImageStyle,
+    backgroundAcrylicParams,
+    backgroundEffect,
+    backgroundEffectBlurStrength,
     backgroundImageOpacity,
-    backgroundLiveDesktopOpacity,
     backgroundImageLayout,
-    backgroundBlurStrength,
-    backgroundDarkenColor,
-    backgroundDarkenStrength,
     backgroundImagePath,
     backgroundImageUrl,
-    backgroundBaseColor,
-    backgroundBaseOpacity,
-    backgroundAcrylicAppearance,
-    backgroundAcrylicBlurStrength,
-    backgroundAcrylicDarkParams,
-    backgroundAcrylicEffectiveAppearance,
-    backgroundAcrylicLightParams,
-    backgroundAcrylicParams,
-    backgroundEffectBlurStrength,
-    backgroundEffect,
     backgroundSource,
-    draftWindowEffectAppearance,
-    draftWindowEffectMaterial,
-    draftWindowMode,
-    draftMainWindowShortcut,
-    mainWindowShortcut,
-    mainWindowShortcutError,
-    liveDesktopBackgroundSupport,
     liveDesktopCssFallbackEffectsEnabled,
     liveDesktopRuntimeStatus,
-    windowEffectAppearance,
-    windowEffectMaterial,
-    windowEffectsSupport,
-    windowMode,
-    changeDraftRows,
-    changeDraftBackgroundBaseOpacity,
-    changeDraftBackgroundImageOpacity,
-    changeDraftBackgroundLiveDesktopOpacity,
-    chooseDraftBackgroundImage,
-    clearDraftBackgroundImage,
-    changeDraftCols,
-    changeDraftFolderRows,
-    changeDraftFolderCols,
-    changeDraftIconSize,
-    changeDraftFolderIconSize,
-    setDraftBackgroundBlurStrength,
-    setDraftBackgroundAcrylicBlurStrength,
-    setDraftBackgroundDarkenColor,
-    setDraftBackgroundDarkenStrength,
-    setDraftBackgroundImageLayout,
-    setDraftBackgroundImageOpacity,
-    setDraftBackgroundLiveDesktopOpacity,
-    setDraftBackgroundAcrylicAppearance,
-    setDraftBackgroundAcrylicParam,
-    setDraftBackgroundBaseColor,
-    setDraftBackgroundBaseOpacity,
-    setDraftBackgroundEffect,
-    setDraftBackgroundSource,
-    resetDraftBackgroundAcrylicParams,
-    setDraftFolderIconSizeMode,
-    setDraftMainWindowShortcut,
-    setMainWindowShortcutCaptureActive: (active) => deferredHandlers.call("setNativeMainWindowShortcutCaptureActive", active),
-    setDraftWindowMode,
-    setDraftWindowEffectAppearance,
-    setDraftWindowEffectMaterial,
-    canUseWindowEffectMaterial,
-    canUseLiveDesktopBackground,
-    canUseLiveDesktopBackgroundEffect,
-    canUseDraftBackgroundEffect,
-    refreshLiveDesktopRuntimeStatus,
-    restartLiveDesktopBackgroundRuntime,
-    syncLiveDesktopBackgroundRuntime,
-    startNativeLiveDesktopBackground,
-    stopNativeLiveDesktopBackground,
-    useDraftDesktopWallpaper,
-    managedApps,
-    filteredManagedApps,
-    appManagerSelectedIds,
-    appManagerSearchQuery,
-    isScanResultDialogOpen,
-    scanResultApps,
-    scanResultWarnings,
-    scanResultSelectedIds,
-    scanResultSelectedCount,
-    canAddScannedApps,
-    isAddingManagedApp,
-    selectedManagedAppCount,
-    newAppName,
-    newAppTarget,
-    newAppArgs,
-    newAppIconPath,
-    newAppIconDataUrl,
-    isBrowsingNewAppTarget,
-    newManagedAppGlyph,
-    editingManagedApp,
-    editAppName,
-    editAppTarget,
-    editAppArgs,
-    editAppIconPath,
-    editAppIconDataUrl,
-    isEditAppIconReset,
-    isBrowsingEditAppTarget,
-    isScanningApps,
-    canAddManagedApp,
-    canSaveEditingManagedApp,
-    canEditAppArgs,
-    canEditNewAppArgs,
-    canBrowseLaunchFile,
-    canBrowseScanRoots,
-    canScanManagedApps,
-    changeScanRootPath,
-    changeScanRootLabel,
-    browseScanRootDirectory,
+    shouldRenderPixiBackgroundEffect,
+  };
+
+  const chrome = {
+    activePageIndex,
+    activePages,
+    commitActivePageIndex,
+    dragMeta,
+    headerRef,
+    homeChromeAnimate,
+    homeChromeInitial,
+    homeChromeStyle,
+    homeChromeTransition,
+    isSearchMode,
+    openSettingsPanel,
+    pageDotsRef,
+    searchQuery,
+  };
+
+  const search = {
+    clearSearch,
+    handleSearchInput,
+    isSearchMode,
+    keyboardFocusArea,
+    searchInputRef,
+    searchQuery,
+    searchRef,
+  };
+
+  const appActions = {
     getLaunchTargetPath,
-    toggleManagedAppSelection,
-    selectAllManagedApps,
-    clearManagedAppSelection,
-    toggleScanResultSelection,
-    selectAllScanResultApps,
-    clearScanResultSelection,
-    closeScanResultDialog,
-    addSelectedScannedApps,
-    addScanKeywordBlacklistItem,
-    addScanRoot,
-    removeScanRoot,
-    openAddManagedAppPage,
-    closeAddManagedAppPage,
-    openNewAppIconChooser,
-    resetNewAppIcon,
-    browseNewAppLaunchFile,
+    openApp,
     openEditManagedApp,
-    closeEditManagedApp,
-    openEditAppIconChooser,
-    resetEditAppIcon,
-    browseEditAppLaunchFile,
-    iconChooser,
-    iconChoices,
-    iconChoicesError,
-    isLoadingIconChoices,
-    closeIconChooser,
-    chooseIconCandidate,
-    handleIconChooserUpload,
-    ignoreManagedApp,
-    ignoreSelectedManagedApps,
     openExistingAppIconChooser,
-    saveEditingManagedApp,
-    deleteManagedApp,
-    confirmForceFillAllPages,
-    isWarningDialogOpen,
-    warningDialog,
-    closeWarningDialog,
-    confirmWarningDialog,
-    layoutRecoveryNotice,
-    layoutSaveNotice,
-    closeLayoutRecoveryNotice,
-    closeLayoutSaveNotice,
-    confirmResetScanRoots,
-    rescanManagedApps,
-    addManagedApp,
-    deleteSelectedManagedApps,
-    newScanKeyword,
-    removeScanAppBlacklistItem,
-    removeScanKeywordBlacklistItem,
-    scanAppBlacklist,
-    scanKeywordBlacklist,
-    scanRoots,
+    removeAppById,
+    resetAppCustomIcon,
     showMissingLaunchTargetBadge,
-    toggleMissingLaunchTargetBadge,
-    toggleScanRootEnabled,
-    isBrowsingScanRoot,
-    isChoosingBackgroundImage,
+  };
+
+  const desktopSurface = {
+    activePageIndex,
+    activePages,
+    beginDrag,
+    clearDragRelease,
+    commitActivePageIndex,
+    desktopMainRef,
+    desktopProjectionEpoch,
+    desktopTrackMotionKey,
+    desktopVisualAlpha,
+    desktopVisualTransform,
     dragFolderHoverState,
     dragFolderTargetId,
     dragMeta,
     dragPreviewState,
     dragReleaseState,
-    applyGridConfig,
-    applySettingsConfig,
-    openSettingsPanel,
-    closeSettingsPanel,
-    searchRef,
-    isSearchMode,
-    searchInputRef,
-    searchQuery,
-    handleSearchInput,
-    keyboardFocusArea,
-    clearSearch,
-    desktopMainRef,
-    handleDesktopSurfacePointerDown,
-    activePageIndex,
-    activePages,
-    commitActivePageIndex,
-    desktopProjectionEpoch,
-    desktopTrackMotionKey,
-    getDesktopPageRenderMode,
-    setPageRef,
-    pageGridMeasureStyle,
-    schedulePageGridMetrics,
-    getVisibleDesktopPage,
+    folderOpenPreviewFrameGhostedIds,
     folderPageSize,
-    isIconSelected,
+    getDesktopPageRenderMode,
+    getVisibleDesktopPage,
+    gridCols,
+    gridRows,
+    handleDesktopSurfacePointerDown,
+    iconBoundsRegistry,
+    iconSize,
+    isEditMode,
+    isHomeRevealSettling,
     isIconOpening,
-    beginDrag,
+    isIconSelected,
+    isSearchMode,
+    isTextlessMode,
+    launchTargetStatusById,
+    launchpadVisualAlpha,
+    launchpadVisualTransform,
     openApp,
+    openExistingAppIconChooser,
+    pageGridMeasureStyle,
+    pageTrackScrub,
     removeAppById,
-    updateAppCustomIcon,
     resetAppCustomIcon,
-    pageDotsRef,
-    openFolderId,
-    renderedFolder,
-    isFolderClosing,
+    schedulePageGridMetrics,
+    setPageRef,
+    showMissingLaunchTargetBadge,
+  };
+
+  const folderFlow = {
+    finishFolderZoomFadeClose,
+    folderOpenPreviewFrameGhostedIds,
     isFolderAppLaunchClosing,
+    isFolderClosing,
+    isFolderLayerActive,
+    isFolderOpeningPreviewFrameGhosted,
     isFolderZoomFadeClosing,
     isFolderZoomFadeClosingFromFolderClose,
     isHomeRevealSettling,
-    finishFolderZoomFadeClose,
+    openFolderId,
+    renderedFolder,
     startFolderZoomFadeClose,
-    handleFolderOverlayPointerDown,
-    folderPanelRef,
-    folderOpenWarmupRequest,
-    folderOpeningOriginBounds,
-    folderViewportRef,
+  };
+
+  const settingsPanel = {
+    addScanKeywordBlacklistItem,
+    addScanRoot,
+    appManagerSearchQuery,
+    appManagerSelectedIds,
+    applySettingsConfig,
+    browseScanRootDirectory,
+    canBrowseScanRoots,
+    canScanManagedApps,
+    canUseDraftBackgroundEffect,
+    canUseLiveDesktopBackground,
+    canUseLiveDesktopBackgroundEffect,
+    canUseWindowEffectMaterial,
+    changeDraftBackgroundBaseOpacity,
+    changeDraftBackgroundImageOpacity,
+    changeDraftBackgroundLiveDesktopOpacity,
+    changeDraftCols,
+    changeDraftFolderCols,
+    changeDraftFolderIconSize,
+    changeDraftFolderRows,
+    changeDraftIconSize,
+    changeDraftRows,
+    changeScanRootLabel,
+    changeScanRootPath,
+    chooseDraftBackgroundImage,
+    clearDraftBackgroundImage,
+    clearManagedAppSelection,
+    closeSettingsPanel,
+    confirmForceFillAllPages,
+    confirmResetScanRoots,
+    deleteManagedApp,
+    deleteSelectedManagedApps,
+    draftBackgroundAcrylicAppearance,
+    draftBackgroundAcrylicBlurStrength,
+    draftBackgroundAcrylicDarkParams,
+    draftBackgroundAcrylicLightParams,
+    draftBackgroundBaseColor,
+    draftBackgroundBaseOpacity,
+    draftBackgroundBlurStrength,
+    draftBackgroundDarkenColor,
+    draftBackgroundDarkenStrength,
+    draftBackgroundEffect,
+    draftBackgroundImageLayout,
+    draftBackgroundImageOpacity,
+    draftBackgroundImagePath,
+    draftBackgroundImageUrl,
+    draftBackgroundLiveDesktopOpacity,
+    draftBackgroundSource,
+    draftCols,
+    draftFolderCols,
+    draftFolderIconSize,
+    draftFolderIconSizeMode,
+    draftFolderRows,
+    draftIconSize,
+    draftIsTextlessMode,
+    draftMainWindowShortcut,
+    draftRows,
+    draftWindowEffectAppearance,
+    draftWindowEffectMaterial,
+    draftWindowMode,
+    dragMeta,
+    filteredManagedApps,
+    getLaunchTargetPath,
+    ignoreManagedApp,
+    ignoreSelectedManagedApps,
+    isApplyingSettingsConfig,
+    isBrowsingScanRoot,
+    isChoosingBackgroundImage,
+    isScanningApps,
+    isSettingsPanelOpen,
+    isTextlessMode,
+    liveDesktopBackgroundSupport,
+    liveDesktopRuntimeStatus,
+    mainWindowShortcutError,
+    managedApps,
+    newScanKeyword,
+    openAddManagedAppPage,
+    openEditManagedApp,
+    openSettingsPanel,
     panelSpring,
-    folderPanelStyle,
-    renameFolder,
+    refreshLiveDesktopRuntimeStatus,
+    removeScanAppBlacklistItem,
+    removeScanKeywordBlacklistItem,
+    removeScanRoot,
+    rescanManagedApps,
+    resetDraftBackgroundAcrylicParams,
+    restartLiveDesktopBackgroundRuntime,
+    scanAppBlacklist,
+    scanKeywordBlacklist,
+    scanRoots,
+    selectedManagedAppCount,
+    selectAllManagedApps,
+    setDraftBackgroundAcrylicAppearance,
+    setDraftBackgroundAcrylicBlurStrength,
+    setDraftBackgroundAcrylicParam,
+    setDraftBackgroundBaseColor,
+    setDraftBackgroundBaseOpacity,
+    setDraftBackgroundBlurStrength,
+    setDraftBackgroundDarkenColor,
+    setDraftBackgroundDarkenStrength,
+    setDraftBackgroundEffect,
+    setDraftBackgroundImageLayout,
+    setDraftBackgroundImageOpacity,
+    setDraftBackgroundLiveDesktopOpacity,
+    setDraftBackgroundSource,
+    setDraftFolderIconSizeMode,
+    setDraftMainWindowShortcut,
+    setDraftWindowEffectAppearance,
+    setDraftWindowEffectMaterial,
+    setDraftWindowMode,
+    setMainWindowShortcutCaptureActive: setNativeMainWindowShortcutCaptureActive,
+    settingsOverlayAnimate,
+    settingsPanelAnimate,
+    settingsPanelInitial,
+    shouldRenderSettingsPanel,
+    showMissingLaunchTargetBadge,
+    syncLiveDesktopBackgroundRuntime,
+    toggleManagedAppSelection,
+    toggleMissingLaunchTargetBadge,
+    toggleScanRootEnabled,
+    useDraftDesktopWallpaper,
+    windowEffectsSupport,
+  };
+
+  const dialogs = {
+    addManagedApp,
+    addSelectedScannedApps,
+    browseEditAppLaunchFile,
+    browseNewAppLaunchFile,
+    canAddManagedApp,
+    canAddScannedApps,
+    canBrowseLaunchFile,
+    canEditAppArgs,
+    canEditNewAppArgs,
+    canSaveEditingManagedApp,
+    chooseIconCandidate,
+    clearLayoutRecoveryNotice: closeLayoutRecoveryNotice,
+    clearLayoutSaveNotice: closeLayoutSaveNotice,
+    clearScanResultSelection,
+    closeAddManagedAppPage,
+    closeEditManagedApp,
+    closeIconChooser,
+    closeLayoutRecoveryNotice,
+    closeLayoutSaveNotice,
+    closeScanResultDialog,
+    closeWarningDialog,
+    confirmWarningDialog,
+    editAppArgs,
+    editAppIconDataUrl,
+    editAppIconPath,
+    editAppName,
+    editAppTarget,
+    editingManagedApp,
+    getLaunchTargetPath,
+    handleIconChooserUpload,
+    iconChooser,
+    iconChoices,
+    iconChoicesError,
+    isAddingManagedApp,
+    isBrowsingEditAppTarget,
+    isBrowsingNewAppTarget,
+    isEditAppIconReset,
+    isLoadingIconChoices,
+    isScanResultDialogOpen,
+    isWarningDialogOpen,
+    layoutRecoveryNotice,
+    layoutSaveNotice,
+    newAppArgs,
+    newAppIconDataUrl,
+    newAppIconPath,
+    newAppName,
+    newAppTarget,
+    newManagedAppGlyph,
+    openEditAppIconChooser,
+    openNewAppIconChooser,
+    resetEditAppIcon,
+    resetNewAppIcon,
+    saveEditingManagedApp,
+    scanResultApps,
+    scanResultSelectedCount,
+    scanResultSelectedIds,
+    scanResultWarnings,
+    selectAllScanResultApps,
+    toggleScanResultSelection,
+    warningDialog,
+  };
+
+  const folderOverlay = {
+    activePageIndex,
+    activePages,
+    beginDrag,
+    commitFolderPageIndex,
+    commitOpenFolder,
+    completeFolderCloseIconGhost,
+    completeFolderOpenFrameGhost,
+    completeFolderOpenIconGhost,
+    dragMeta,
+    dragReleaseState,
+    finishFolderZoomFadeClose,
+    folderCloseIconGhosts,
+    folderGridStyle,
+    folderOpeningOriginBounds,
+    folderOpenIconGhosts,
+    folderOpenPreviewFrameGhostedIds,
+    folderOpenWarmupRequest,
     folderPageIndex,
     folderPages,
-    setFolderPageRef,
-    folderGridStyle,
-    getVisibleFolderPage,
+    folderPageSize,
+    folderPageTrackScrub,
+    folderPanelRef,
+    folderPanelStyle,
+    folderViewportRef,
+    folderZoomFadeCloseReason,
     getFolderPageRenderMode,
-    commitOpenFolder,
-    commitFolderPageIndex,
-    launchGhost,
-    appLaunchGhostTransition,
-    launchGhostStyle,
-    completeFolderOpenIconGhost,
-    completeFolderCloseIconGhost,
-    folderCloseIconGhosts,
-    folderOpenIconGhosts,
+    getVisibleFolderPage,
+    handleFolderOverlayPointerDown,
+    handleFolderPanelPointerDown,
+    isEditMode,
+    isFolderAppLaunchClosing,
     isFolderCloseIconAnimationActive,
+    isFolderClosing,
+    isFolderClosingIconGhosted,
     isFolderOpenFrameGhostPending,
     isFolderOpenIconAnimationActive,
-    isFolderClosingIconGhosted,
     isFolderOpeningIconGhosted,
-    isFolderOpeningPreviewFrameGhosted,
+    isFolderZoomFadeClosing,
+    isFolderZoomFadeClosingFromFolderClose,
+    isIconOpening,
+    isIconSelected,
+    isTextlessMode,
+    launchTargetStatusById,
+    openExistingAppIconChooser,
+    removeAppById,
+    renderedFolder,
+    renameFolder,
+    resetAppCustomIcon,
+    setFolderPageRef,
+    showMissingLaunchTargetBadge,
+  };
+
+  const overlays = {
+    appLaunchGhostTransition,
+    launchGhost,
+    launchGhostStyle,
+  };
+
+  return {
+    appActions,
+    background,
+    chrome,
+    desktopSurface,
+    dialogs,
+    folderFlow,
+    folderOverlay,
+    search,
+    settingsPanel,
+    shell,
+    overlays,
   };
 }

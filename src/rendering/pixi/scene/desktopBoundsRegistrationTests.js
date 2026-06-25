@@ -12,6 +12,7 @@ export function runDesktopBoundsRegistrationTests() {
     const registration = makeDesktopBoundsRegistration({
       deviceResolution: 2,
       folderClosingHandoffId: "folder-1",
+      folderClosingHandoffIds: new Set(["folder-1", "folder-2"]),
       height: 600,
       isTextlessMode: false,
       stageRect,
@@ -26,6 +27,7 @@ export function runDesktopBoundsRegistrationTests() {
     assert(!("stableStageRect" in registration.coordinateSpace), "registration coordinate spaces should not expose a client-layout stable rect");
     assert(!("stageVisualOffsetX" in registration) && !("stageVisualOffsetY" in registration), "root-stage registration should not expose legacy visual compensation");
     assert(registration.folderClosingHandoffId === "folder-1", "registration should carry the handoff id");
+    assert(registration.folderClosingHandoffIds.has("folder-2"), "registration should carry multiple handoff ids when provided");
   }
 
   {

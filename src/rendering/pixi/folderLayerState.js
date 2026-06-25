@@ -16,6 +16,7 @@ export function createFolderLayerState(groups, overrides = {}) {
 
   return {
     completeFolderCloseIconGhost: callbacks.completeFolderCloseIconGhost,
+    completeFolderOpenFrameGhost: callbacks.completeFolderOpenFrameGhost,
     completeFolderOpenIconGhost: callbacks.completeFolderOpenIconGhost,
     dragMeta: drag.meta,
     dragReleaseGhostId: drag.releaseState?.item?.id || null,
@@ -25,6 +26,7 @@ export function createFolderLayerState(groups, overrides = {}) {
     folderOpenIconGhosts,
     folderPageIndex: folder.pageIndex,
     folderPageIndexCommit: folder.pageIndexCommit,
+    folderPageTrackScrub: folder.pageTrackScrub,
     folderPageDotsVisible: folder.pageDotsVisible === true,
     folderPageSize: folder.pageSize,
     folderPages: folder.pages,
@@ -37,9 +39,12 @@ export function createFolderLayerState(groups, overrides = {}) {
     getVisibleFolderPage: callbacks.getVisibleFolderPage,
     height: Math.max(1, rect.height),
     iconSize: Number.parseFloat(folderPanelStyle["--folder-icon-size"]) || 64,
+    isDesktopClosing: folder.desktopClosing === true,
     isEditMode: ui.isEditMode,
     isFolderAppLaunchClosing: folder.isAppLaunchClosing,
     isFolderClosing: folder.isClosing,
+    isFolderZoomFadeClosing: folder.isZoomFadeClosing,
+    folderZoomFadeCloseReason: folder.zoomFadeCloseReason || null,
     isIconOpening: callbacks.isIconOpening,
     isIconSelected: callbacks.isIconSelected,
     isTextlessMode: ui.isTextlessMode,

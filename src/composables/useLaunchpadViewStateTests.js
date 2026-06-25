@@ -86,6 +86,7 @@ export function runLaunchpadViewStateTests() {
   assert(desktop.view.appLaunchGhostTransition === appLaunchGhostTransition, "view state should expose the app launch ghost transition");
   assert(desktop.view.homeChromeTransition === homeChromeTransition, "view state should expose the home chrome transition");
   assert(desktop.view.panelSpring === panelSpring, "view state should expose the settings panel spring");
+  assert(!("stiffness" in panelSpring) && !("damping" in panelSpring) && !("mass" in panelSpring), "settings panel transition should not expose GSAP-ignored spring fields");
 
   const imageBackground = createViewState({ backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE, backgroundImageOpacity: 58 });
   assert(imageBackground.view.rootStyle.value["--launchpad-background-image-opacity"] === "0.58", "root style should expose image opacity in image background mode");
@@ -214,6 +215,9 @@ export function runLaunchpadViewStateTests() {
   assert(openFolder.view.launchpadVisualAlpha.value === 1, "open folder should keep folder overlay layers visible");
   assert(openFolder.view.homeChromeAnimate.value.filter === "blur(0px)", "open folder should avoid chrome blur compositor flicker");
   assert(openFolder.view.homeChromeStyle.value.pointerEvents === "none", "open folder should disable home chrome pointer events");
+
+  const activeFolderLayer = createViewState({ isFolderLayerActive: true });
+  assert(activeFolderLayer.view.homeChromeStyle.value.pointerEvents === "none", "active folder layer should keep home chrome pointer events disabled even without an open id");
 
   const settling = createViewState({ isHomeRevealSettling: true, isFolderLayerActive: true, openFolderId: "folder-1" });
   assert(settling.view.desktopTrackMotionKey.value === "open-desktop-snap", "home reveal settling should snap the desktop track");

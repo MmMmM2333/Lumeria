@@ -5,6 +5,7 @@ import {
   drawFolderPreviewMask,
   drawFolderThumbFrame,
   getFolderPreviewMaskRect,
+  getPaddedFrameScale,
 } from "./folderThumbDrawing.js";
 import { getFolderThumbChildLocalRect, getFolderThumbMetrics } from "./folderThumbMetrics.js";
 
@@ -52,6 +53,9 @@ export function runFolderThumbDrawingTests() {
   const maskRect = getFolderPreviewMaskRect(iconSize, thumb);
   assert(maskRect.width === maskRect.height, "folder preview mask should be square");
   assert(maskRect.width > thumb.childSize * 3, "folder preview mask should include padding around preview children");
+  assert(getPaddedFrameScale(iconSize, 0, 8) === iconSize / (iconSize + 16), "padded frame scale should map base size into target padded size");
+  assert(getPaddedFrameScale(iconSize, 8, 8) === 1, "padded frame scale should be one when current and target padding match");
+  assert(getPaddedFrameScale(0, -2, -4) === 1, "padded frame scale should clamp invalid size and padding");
 
   const frame = makeGraphicsRecorder();
   drawFolderThumbFrame(frame, iconSize, thumb, 4);

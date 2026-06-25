@@ -1,4 +1,18 @@
 import { FolderClosingGhostController } from "./folderClosingGhostController.js";
+import { motionRuntime } from "../animation/motionRuntime.js";
+import {
+  deleteLaunchpadDebugValue,
+  readLaunchpadDebugValue,
+  setLaunchpadDebugValue,
+} from "../debugNamespace.js";
+import {
+  clearMotionPreferencesForTests,
+  setReducedMotionForTests,
+} from "../animation/motionPreferences.js";
+import {
+  FolderVisualOwnershipRegistry,
+  makeDesktopSourceVisualKey,
+} from "./folderVisualOwnershipRegistry.js";
 
 function makeTimerHost() {
   let nextId = 1;
@@ -93,7 +107,6 @@ function makeLayer() {
   return {
     activityChanges,
     calls,
-    closingHandoffActive: false,
     currentFolderId: "folder-1",
     closingGhostLayer: {
       addChild(ghost) {
@@ -105,7 +118,6 @@ function makeLayer() {
     },
     iconNodes: new Map([["app-1", iconNode]]),
     openingGhostLayer: { children: [] },
-    openingGhostKeys: null,
     openingGhosts: {
       clear() {
         calls.push("clear-opening");
@@ -120,11 +132,25 @@ function makeLayer() {
     onClosingHandoffVisualRelease(folderId) {
       calls.push(`release-visual:${folderId}`);
     },
+    onInternalActivityChange(active) {
+      activityChanges.push(active);
+    },
     enableClosingFrameMask() {
       calls.push("enable-mask");
     },
     rebuildPageTrackMask() {
       calls.push("rebuild-mask");
+    },
+    createClosingGhostToken(folderId = null) {
+      return `closing:${folderId || ""}:test`;
+    },
+    hideIconNodesForTransition(itemId) {
+      for (const node of this.iconNodes.values()) {
+        if (node.item?.id === itemId) node.visible = false;
+      }
+    },
+    hidePageTrackForTransition() {
+      this.pageTrack.visible = false;
     },
     revealIconNodes() {
       calls.push("reveal-icons");
@@ -133,16 +159,17 @@ function makeLayer() {
         node.alpha = 1;
       }
     },
-    setClosingHandoffActive(active) {
-      const next = Boolean(active);
-      if (this.closingHandoffActive === next) return;
-      this.closingHandoffActive = next;
-      if (next) this.onClosingHandoffReady?.(this.closingGhostFolderId || this.currentFolderId || null);
-      activityChanges.push(next);
+    releaseTransitionOwnership(_token, options = {}) {
+      if (options.restorePageTrack !== false) this.pageTrack.visible = true;
+      if (options.reveal !== false) {
+        this.revealIconNodes();
+        this.rebuildPageTrackMask();
+      }
     },
-    startFrameGhost(fromRect, toRect) {
+    startFrameGhost(fromRect, toRect, options = {}) {
       this.frameGhostState = { ...fromRect, progress: 0 };
       this.frameGhostTarget = toRect;
+      this.frameGhostOptions = options;
     },
     get closingGhosts() {
       return closingGhosts;
@@ -185,6 +212,14 @@ function makePreviewSwap(calls = []) {
   };
 }
 
+function completeFrameVisual(controller, state = makeState(), token = controller.handoffCoordinator.closeToken) {
+  controller.handleSettlementEvents(state, controller.handoffCoordinator.completeCloseFrameVisual(token));
+}
+
+function completeFrame(controller, state = makeState(), token = controller.handoffCoordinator.closeToken) {
+  controller.handleSettlementEvents(state, controller.handoffCoordinator.completeCloseFrame(token));
+}
+
 export function runFolderClosingGhostControllerTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Folder closing ghost controller test failed] ${message}`);
@@ -200,15 +235,16 @@ export function runFolderClosingGhostControllerTests() {
     });
     const ghost = makeGhost();
     layer.closingGhostLayer.addChild(ghost);
-    layer.closingGhostKeys = new Set(["app-1"]);
-    layer.closingPreviewSwapKeys = new Set(["swap"]);
+    controller.handoffCoordinator.beginCloseTransition("folder-1", { closeToken: "close-token" });
+    controller.handoffCoordinator.trackCloseGhost({ item: { id: "app-1" } });
+    controller.handoffCoordinator.trackClosePreviewSwap("swap");
     controller.scheduleRevealFallback([makeTarget()]);
 
     assert(timerHost.timerCount === 1, "fallback should schedule one timer");
     timerHost.runAllTimers();
 
-    assert(layer.closingGhostKeys.size === 0, "fallback should clear active closing keys");
-    assert(layer.closingPreviewSwapKeys.size === 0, "fallback should clear preview swap keys");
+    assert(controller.handoffCoordinator.getGhostKeys().size === 0, "fallback should clear active closing keys");
+    assert(controller.handoffCoordinator.getPreviewSwapKeys().size === 0, "fallback should clear preview swap keys");
     assert(layer.closingGhosts.length === 0, "fallback should remove closing ghost visuals");
     assert(ghost.destroyed, "fallback should destroy closing ghosts");
     assert(layer.iconNode.visible === true && layer.iconNode.alpha === 1, "fallback should reveal hidden icon nodes");
@@ -221,47 +257,85 @@ export function runFolderClosingGhostControllerTests() {
     const layer = makeLayer();
     const completed = [];
     const order = [];
+    const releaseCalls = [];
     layer.onClosingHandoffReady = (folderId) => order.push(`ready:${folderId}`);
+    layer.releaseTransitionOwnership = (token, options) => releaseCalls.push({ options, token });
     const previewSwapCalls = [];
     const controller = new FolderClosingGhostController(layer, {
       previewSwap: makePreviewSwap(previewSwapCalls),
       scheduler: timerHost,
     });
     const completedPreviewGhost = makeGhost("preview");
-    layer.closingFrameComplete = true;
-    layer.completedClosingControllerGhostKeys = ["close-key"];
-    layer.completedClosingPreviewGhosts = [completedPreviewGhost];
+    controller.handoffCoordinator.beginCloseTransition("folder-1", { closeToken: "close-token" });
+    controller.handoffCoordinator.trackCloseGhost({ item: { id: "app-1" } }, "close-key");
+    controller.handoffCoordinator.completeCloseGhost("close-token", "app-1");
+    controller.handoffCoordinator.addCompletedPreviewGhost(completedPreviewGhost);
 
-    controller.finishTransition({
+    completeFrame(controller, {
       completeFolderCloseIconGhost: (key) => {
         completed.push(key);
         order.push(`flush:${key}`);
       },
-    });
-    assert(timerHost.frameCount === 1, "settled finish should schedule deferred handoff cleanup");
+    }, "close-token");
+    assert(timerHost.frameCount === 1, "settled finish should schedule deferred final handoff cleanup");
     assert(completed.join(",") === "close-key", "finish should flush completed controller ghost keys");
     assert(order.join(",") === "ready:folder-1,flush:close-key", "finish should publish handoff-ready before flushing through the Vue bridge");
     assert(layer.activityChanges.join(",") === "true", "finish should mark Pixi internal handoff active");
     assert(layer.panel.visible === false, "finish should hide the stale folder panel during handoff");
     assert(layer.pageTrack.visible === false, "finish should keep page track hidden until handoff cleanup");
-    assert(!completedPreviewGhost.destroyed, "finish should keep overlay preview ghosts until the next handoff frame");
-    assert(!previewSwapCalls.includes("clear-preview-swap"), "finish should keep preview swap visuals until the next handoff frame");
-    assert(!layer.calls.includes("clear-frame"), "finish should keep the frame ghost until the next handoff frame");
-
-    timerHost.runAllFrames();
-    assert(layer.activityChanges.join(",") === "true", "first handoff frame should wait for desktop bounds refresh");
-    assert(completedPreviewGhost.destroyed, "first handoff frame should clear overlay preview ghosts before paint");
-    assert(previewSwapCalls.includes("clear-preview-swap"), "first handoff frame should clear preview swap visuals");
-    assert(layer.calls.includes("clear-frame"), "first handoff frame should clear the frame ghost");
+    assert(completedPreviewGhost.destroyed, "finish should clear overlay preview ghosts at the visual handoff point");
+    assert(previewSwapCalls.includes("clear-preview-swap"), "finish should clear preview swap visuals at the visual handoff point");
+    assert(layer.calls.includes("clear-frame"), "finish should clear the frame ghost at the visual handoff point");
+    assert(releaseCalls.length === 1, "finish should release closing transition ownership at the visual handoff point");
+    assert(releaseCalls[0].token === "close-token", "handoff release should use the close token");
+    assert(
+      releaseCalls[0].options?.reveal === false && releaseCalls[0].options?.restorePageTrack === false,
+      "handoff release should not reveal real folder visuals or restore the page track"
+    );
+    assert(controller.handoffCoordinator.closeToken === null, "handoff visual cleanup should clear the closing token");
     assert(
       layer.calls.indexOf("release-visual:folder-1") >= 0 &&
-      layer.calls.indexOf("release-visual:folder-1") < layer.calls.indexOf("clear-frame"),
-      "first handoff frame should restore desktop folder artwork before clearing the settled overlay frame"
+      layer.calls.indexOf("clear-frame") < layer.calls.indexOf("release-visual:folder-1"),
+      "visual handoff should clear the overlay frame before restoring desktop folder artwork"
     );
     assert(layer.visible === true && layer.currentFolderId === "folder-1", "first handoff frame should keep internal handoff ownership active");
     timerHost.runAllFrames();
     assert(layer.activityChanges.join(",") === "true,false", "handoff cleanup should clear Pixi internal handoff activity");
     assert(layer.visible === false && layer.currentFolderId === null, "handoff cleanup should hide the stale overlay state");
+    assert(controller.handoffCoordinator.folderId === null, "handoff cleanup should clear the closing folder id");
+    assert(releaseCalls.length === 1, "final handoff cleanup should not release transition ownership twice");
+  }
+
+  {
+    const layer = makeLayer();
+    const order = [];
+    layer.onClosingHandoffReady = (folderId) => order.push(`ready:${folderId}`);
+    layer.onInternalActivityChange = (active, folderId) => order.push(`activity:${active}:${folderId}`);
+    const controller = new FolderClosingGhostController(layer, { scheduler: makeTimerHost() });
+    controller.handoffCoordinator.beginCloseTransition("folder-1");
+
+    completeFrame(controller, makeState());
+
+    assert(
+      order.join(",") === "ready:folder-1,activity:true:folder-1",
+      "closing handoff activation should publish ready and internal activity callbacks"
+    );
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const readyCalls = [];
+    layer.onClosingHandoffReady = (folderId) => readyCalls.push(folderId);
+    const controller = new FolderClosingGhostController(layer, { scheduler: timerHost });
+    controller.handoffCoordinator.beginCloseTransition("folder-1", { closeToken: "close-token" });
+
+    completeFrameVisual(controller, makeState(), "close-token");
+    completeFrameVisual(controller, makeState(), "close-token");
+    completeFrame(controller, makeState(), "close-token");
+
+    assert(readyCalls.join(",") === "folder-1", "settled session should not publish handoff ready twice");
+    assert(timerHost.frameCount === 1, "settled session should not schedule duplicate handoff cleanup frames");
   }
 
   {
@@ -273,11 +347,14 @@ export function runFolderClosingGhostControllerTests() {
       ghostFactory: () => folderGhost,
       scheduler: timerHost,
     });
-    layer.closingFrameComplete = true;
-    layer.closingFolderHandoffRect = { height: 64, left: 100, top: 120, width: 64 };
-    layer.completedClosingControllerGhostKeys = ["close-key"];
+    controller.handoffCoordinator.beginCloseTransition("folder-1");
+    controller.handoffCoordinator.setCloseHandoffGeometry({
+      rect: { height: 64, left: 100, top: 120, width: 64 },
+    });
+    controller.handoffCoordinator.trackCloseGhost({ item: { id: "app-1" } }, "close-key");
+    controller.handoffCoordinator.completeCloseGhost(controller.handoffCoordinator.closeToken, "app-1");
 
-    controller.finishTransition({
+    completeFrame(controller, {
       completeFolderCloseIconGhost: (key) => completed.push(key),
       folderPageIndex: 0,
       folderPageSize: 9,
@@ -288,7 +365,7 @@ export function runFolderClosingGhostControllerTests() {
       width: 1200,
     });
 
-    assert(layer.closingFolderHandoffGhost === null, "finish should not create a second overlay folder handoff ghost");
+    assert(controller.handoffCoordinator.getFolderHandoffGhost() === null, "finish should not create a second overlay folder handoff ghost");
     assert(!folderGhost.state, "desktop handoff should own the final full folder ghost");
     assert(completed.join(",") === "close-key", "finish should still release the desktop ghost state");
 
@@ -296,6 +373,59 @@ export function runFolderClosingGhostControllerTests() {
     assert(!folderGhost.destroyed, "first handoff frame should leave unused overlay handoff ghosts untouched");
     timerHost.runAllFrames();
     assert(!folderGhost.destroyed, "handoff cleanup should not manage the desktop-owned handoff ghost");
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    let prepareSnapshot = null;
+    layer.onClosingHandoffPrepare = (folderId) => {
+      prepareSnapshot = {
+        closingGhostCount: layer.closingGhosts.length,
+        folderId,
+        frameGhostPhase: layer.frameGhostOptions?.frameGhostPhase || null,
+      };
+    };
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+
+    controller.start(makeState(), [makeTarget()], { height: 72, left: 10, top: 20, width: 72 }, { height: 300, left: 0, top: 0, width: 400 });
+
+    assert(prepareSnapshot?.folderId === "folder-1", "closing start should prepare the desktop handoff immediately");
+    assert(prepareSnapshot.frameGhostPhase === "closing", "desktop handoff prepare should run after the closing frame ghost exists");
+    assert(prepareSnapshot.closingGhostCount === 1, "desktop handoff prepare should run after closing ghosts are installed");
+    assert(controller.handoffCoordinator.isCloseHandoffActive() === false, "early prepare should not mark the visual handoff ready");
+    controller.clear();
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    let prepareSnapshot = null;
+    layer.onClosingHandoffPrepare = (folderId) => {
+      prepareSnapshot = {
+        folderId,
+        frameGhostPhase: layer.frameGhostOptions?.frameGhostPhase || null,
+      };
+    };
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+
+    controller.start(
+      makeState(),
+      [{ ...makeTarget(), targetStageLayoutRect: null }],
+      { height: 72, left: 10, top: 20, width: 72 },
+      { height: 300, left: 0, top: 0, width: 400 }
+    );
+
+    assert(prepareSnapshot?.folderId === "folder-1", "no-target closing should still prepare the desktop source handoff");
+    assert(prepareSnapshot.frameGhostPhase === "closing", "no-target closing should prepare after the frame substitute exists");
+    assert(layer.closingGhosts.length === 0, "no-target closing should not install child ghosts");
+    controller.clear();
   }
 
   {
@@ -311,8 +441,106 @@ export function runFolderClosingGhostControllerTests() {
     }], { height: 72, left: 10, top: 20, width: 72 }, { height: 300, left: 0, top: 0, width: 400 });
 
     assert(layer.closingGhosts.length === 1, "stage layout closing targets should not require a client target rect");
-    assert(layer.closingGhostKeys.has("app-1"), "stage layout closing targets should be tracked as active ghosts");
+    assert(controller.handoffCoordinator.hasCloseGhost("app-1"), "stage layout closing targets should be tracked as active ghosts");
     controller.clear();
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const previewSwapCalls = [];
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      previewSwap: makePreviewSwap(previewSwapCalls),
+      scheduler: timerHost,
+    });
+
+    controller.start(makeState(), [makeTarget()], { height: 72, left: 10, top: 20, width: 72 }, { height: 360, left: 0, top: 0, width: 420 }, {
+      previewSwapTargets: [{ item: { id: "preview-1" } }],
+    });
+
+    assert(layer.frameGhostOptions.progressMilestones?.length === 1, "closing frame should declare a preview-swap progress milestone");
+    const startCount = () => previewSwapCalls.filter((call) => call === "start-preview-swap").length;
+    layer.frameGhostOptions.onUpdate?.({ progress: layer.frameGhostOptions.progressMilestones[0].progress - 0.01 });
+    assert(startCount() === 0, "frame onUpdate below the milestone should not start preview swap");
+    layer.frameGhostOptions.progressMilestones[0].callback();
+    assert(startCount() === 1, "preview swap should start from the frame progress milestone");
+    layer.frameGhostOptions.onUpdate?.({ progress: 1 });
+    layer.frameGhostOptions.onComplete?.();
+    assert(startCount() === 1, "preview swap milestone should be one-shot across update and complete fallbacks");
+    controller.clear();
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const completed = [];
+    const order = [];
+    layer.onClosingHandoffReady = (folderId) => order.push(`ready:${folderId}`);
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+
+    controller.start(makeState(completed), [makeTarget()], { height: 72, left: 10, top: 20, width: 72 }, { height: 360, left: 0, top: 0, width: 420 });
+
+    assert(controller.handoffCoordinator.isCloseHandoffActive() === false, "closing handoff should wait for frame visual arrival");
+    layer.frameGhostOptions.onArrive?.();
+    assert(controller.handoffCoordinator.snapshot().frameVisualComplete === true, "frame onArrive should mark the closing frame visually complete");
+    assert(controller.handoffCoordinator.isCloseHandoffActive() === true, "frame visual arrival should start handoff before ghost physical completion");
+    assert(order.join(",") === "ready:folder-1", "frame visual arrival should publish the handoff ready signal");
+    assert(completed.join(",") === "fallback-close-key", "frame visual arrival should flush pending controller ghost keys");
+    assert(!controller.handoffCoordinator.hasCloseGhost("app-1"), "frame visual arrival should clear overlay ghosts before desktop artwork release");
+    assert(timerHost.frameCount === 1, "early frame handoff should schedule final cleanup after visual release");
+    controller.clear();
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const completed = [];
+    const logs = [];
+    const originalDebug = readLaunchpadDebugValue("folderHandoff");
+    const originalLastDebug = readLaunchpadDebugValue("lastFolderHandoff");
+    const originalLog = console.log;
+    setLaunchpadDebugValue("folderHandoff", { log: true, timeline: true });
+    console.log = (...args) => logs.push(args);
+    try {
+      const ghost = makeGhost();
+      const controller = new FolderClosingGhostController(layer, { scheduler: timerHost });
+      layer.closingGhostLayer.addChild(ghost);
+      controller.handoffCoordinator.beginCloseTransition("folder-1");
+      controller.handoffCoordinator.trackCloseGhost({ isThumbnailChild: true, item: { id: "app-1" } }, "close-key");
+      completeFrameVisual(controller, makeState(completed));
+
+      controller.markClosingGhostVisuallyArrived(makeState(completed), {
+        ...makeTarget(),
+        isThumbnailChild: true,
+        previewSlotIndex: 2,
+      }, ghost);
+
+      assert(
+        logs.some(([label]) => label === "[folder-closing-ghost-visual-arrive]"),
+        "visual arrival debug should log before ghost complete"
+      );
+      assert(
+        logs.some(([label, payload]) => label === "[folder-handoff-debug] overlay-release" && payload?.phase === "overlay-release-before-clear"),
+        "visual handoff release debug should log before overlay visuals are cleared"
+      );
+      assert(
+        readLaunchpadDebugValue("lastFolderHandoff")?.folderId === "folder-1" &&
+          readLaunchpadDebugValue("lastFolderHandoff")?.phase === "overlay-release-after-clear",
+        "visual handoff debug should publish the latest folder handoff snapshot"
+      );
+      assert(completed.join(",") === "close-key", "debug logging should not change visual arrival completion");
+    } finally {
+      console.log = originalLog;
+      if (originalDebug === undefined) deleteLaunchpadDebugValue("folderHandoff");
+      else setLaunchpadDebugValue("folderHandoff", originalDebug);
+      if (originalLastDebug === undefined) deleteLaunchpadDebugValue("lastFolderHandoff");
+      else setLaunchpadDebugValue("lastFolderHandoff", originalLastDebug);
+      motionRuntime.reset();
+    }
   }
 
   {
@@ -321,30 +549,33 @@ export function runFolderClosingGhostControllerTests() {
     const controller = new FolderClosingGhostController(layer, { scheduler: timerHost });
     const order = [];
     const completedPreviewGhost = makeGhost("preview");
-    layer.closingFrameComplete = true;
-    layer.completedClosingControllerGhostKeys = ["close-key"];
-    layer.completedClosingPreviewGhosts = [completedPreviewGhost];
+    controller.handoffCoordinator.beginCloseTransition("folder-1");
+    controller.handoffCoordinator.trackCloseGhost({ item: { id: "app-1" } }, "close-key");
+    controller.handoffCoordinator.completeCloseGhost(controller.handoffCoordinator.closeToken, "app-1");
+    controller.handoffCoordinator.addCompletedPreviewGhost(completedPreviewGhost);
     layer.clearFrameGhost = () => order.push("cleanup");
 
-    controller.finishTransition({
+    completeFrame(controller, {
       completeFolderCloseIconGhost: () => {
         order.push("flush");
         timerHost.requestAnimationFrame(() => order.push("finish-close"));
       },
     });
 
-    assert(order.join(",") === "flush", "folder flow should be released after scheduling Pixi overlay cleanup");
+    assert(order.join(",") === "cleanup,flush", "visual handoff should clear Pixi overlay before releasing the folder flow");
     timerHost.runAllFrames();
-    assert(order.join(",") === "flush,cleanup,finish-close", "Pixi overlay cleanup should run in the same frame as folder flow reveal");
+    assert(order.join(",") === "cleanup,flush,finish-close", "folder flow reveal should run after Pixi overlay visual cleanup");
     timerHost.runAllFrames();
-    assert(order.join(",") === "flush,cleanup,finish-close", "final handoff cleanup should not redraw overlay visuals");
+    assert(order.join(",") === "cleanup,flush,finish-close", "final handoff cleanup should not redraw overlay visuals");
   }
 
   {
     const layer = makeLayer();
     const controller = new FolderClosingGhostController(layer);
     const target = makeTarget();
-    layer.openingGhostKeys = new Set(["app-1"]);
+    controller.handoffCoordinator.beginOpeningVisuals({ sessionToken: "open-token" });
+    controller.handoffCoordinator.registerOpeningGhost("app-1");
+    layer.frameGhostFolderId = "folder-1";
     layer.frameGhostState = {
       fillAlpha: 0.26,
       fillColor: 0x111111,
@@ -368,7 +599,7 @@ export function runFolderClosingGhostControllerTests() {
     let releasedItemId = null;
     layer.openingGhosts.releaseGhost = (itemId) => {
       releasedItemId = itemId;
-      layer.openingGhostKeys.delete(itemId);
+      controller.handoffCoordinator.releaseOpeningGhost(itemId);
       return reusedGhost;
     };
     controller.ghostFactory = () => {
@@ -384,6 +615,136 @@ export function runFolderClosingGhostControllerTests() {
     assert(reusedGhost.alpha === 0.7, "closing should preserve the released ghost alpha as the motion source");
     assert(reusedGhost.labelText.alpha === 0.4, "closing should preserve the released label alpha before fade out");
     assert(layer.frameGhostState.left === 20 && layer.frameGhostState.width === 240, "closing frame should start from the current frame presentation");
+    assert(layer.frameGhostOptions.frameGhostPhase === "closing", "closing frame should mark its frame ghost phase");
+    assert(layer.frameGhostOptions.folderId === "folder-1", "closing frame should carry the owning folder id");
+    assert(layer.frameGhostOptions.fromFillColor === 0xffffff && layer.frameGhostOptions.fromFillAlpha === 0.22, "closing frame should use folder thumb fill presentation at phase handoff");
+    controller.clear();
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+    layer.frameGhostFolderId = "folder-a";
+    layer.frameGhostState = {
+      fillAlpha: 0.26,
+      fillColor: 0x111111,
+      height: 180,
+      left: 20,
+      radius: 42,
+      strokeAlpha: 0.2,
+      strokeColor: 0xffffff,
+      strokeWidth: 1,
+      top: 30,
+      width: 240,
+    };
+
+    controller.start(makeState(), [makeTarget()], { height: 72, left: 10, top: 20, width: 72 }, { height: 300, left: 400, top: 500, width: 420 });
+
+    assert(layer.frameGhostState.left === 400 && layer.frameGhostState.width === 420, "closing a different folder should not start from a stale folder frame");
+    assert(layer.frameGhostOptions.folderId === "folder-1", "cross-folder stale frame fallback should still tag the new closing folder");
+    controller.clear();
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+    const sourceKey = makeDesktopSourceVisualKey("folder-1");
+    const reusedGhost = makeGhost("reused");
+    reusedGhost.alpha = 0.7;
+    reusedGhost.item = { id: "app-1" };
+    controller.handoffCoordinator.beginOpeningVisuals({ sessionToken: "open-token" });
+    controller.handoffCoordinator.registerOpeningGhost("app-1");
+    layer.openingGhostLayer.children = [reusedGhost];
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.ownedVisualTokens = new Set();
+    layer.acquireVisualOwnership = (key, owner) => {
+      const acquired = layer.visualOwnership.acquire(key, owner);
+      if (acquired && owner?.token != null) layer.ownedVisualTokens.add(owner.token);
+      return acquired;
+    };
+    layer.releaseTransitionOwnership = (token) => {
+      const ownerAtRelease = layer.visualOwnership.getOwner(sourceKey);
+      layer.ownerKindAtOpeningClear = ownerAtRelease?.kind || null;
+      return layer.visualOwnership.releaseByToken(token);
+    };
+    layer.openingGhosts.releaseGhost = (itemId) => {
+      controller.handoffCoordinator.releaseOpeningGhost(itemId);
+      return reusedGhost;
+    };
+    layer.openingGhosts.clear = () => {
+      controller.handoffCoordinator.clearOpeningVisuals();
+      layer.releaseTransitionOwnership("open-token");
+    };
+    layer.acquireVisualOwnership(sourceKey, {
+      folderId: "folder-1",
+      kind: "opening",
+      token: "open-token",
+    });
+
+    controller.start(makeState(), [makeTarget()], { height: 72, left: 10, top: 20, width: 72 }, { height: 300, left: 0, top: 0, width: 400 });
+
+    assert(layer.ownerKindAtOpeningClear === "closing", "closing should own the desktop source before clearing the interrupted opening owner");
+    assert(layer.visualOwnership.getOwner(sourceKey)?.kind === "closing", "opening clear should not reveal a source already transferred to closing");
+    controller.clear();
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+    const sourceKey = makeDesktopSourceVisualKey("folder-1");
+    controller.handoffCoordinator.beginOpeningVisuals({ sessionToken: "open-token" });
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.ownedVisualTokens = new Set();
+    layer.acquireVisualOwnership = (key, owner) => {
+      const acquired = layer.visualOwnership.acquire(key, owner);
+      if (acquired && owner?.token != null) layer.ownedVisualTokens.add(owner.token);
+      return acquired;
+    };
+    layer.releaseTransitionOwnership = (token) => {
+      const ownerAtRelease = layer.visualOwnership.getOwner(sourceKey);
+      layer.ownerKindAtOpeningClear = ownerAtRelease?.kind || null;
+      return layer.visualOwnership.releaseByToken(token);
+    };
+    layer.openingGhosts.clear = () => {
+      controller.handoffCoordinator.clearOpeningVisuals();
+      layer.releaseTransitionOwnership("open-token");
+    };
+    layer.acquireVisualOwnership(sourceKey, {
+      folderId: "folder-1",
+      kind: "opening",
+      token: "open-token",
+    });
+
+    controller.start(
+      makeState(),
+      [{ ...makeTarget(), targetStageLayoutRect: null }],
+      { height: 72, left: 10, top: 20, width: 72 },
+      { height: 300, left: 0, top: 0, width: 400 }
+    );
+
+    assert(layer.ownerKindAtOpeningClear === "closing", "closing should own the desktop source before clearing opening even without usable close targets");
+    assert(layer.visualOwnership.getOwner(sourceKey)?.kind === "closing", "no-target closing fallback should keep the source folder hidden");
+    assert(layer.frameGhostOptions?.frameGhostPhase === "closing", "no-target closing fallback should still start the folder frame handoff");
+    assert(timerHost.timerCount === 0, "no-target closing fallback should not schedule child ghost fallback timers");
+    layer.frameGhostOptions.onArrive();
+    assert(controller.handoffCoordinator.isCloseHandoffActive() === true, "no-target closing frame arrival should start handoff activity");
+    layer.frameGhostOptions.onComplete();
+    timerHost.runAllFrames();
+    assert(!layer.visualOwnership.hasOwner(sourceKey), "no-target closing handoff cleanup should release the desktop source");
+    timerHost.runAllFrames();
+    assert(controller.handoffCoordinator.isCloseHandoffActive() === false, "no-target closing handoff cleanup should end handoff activity");
     controller.clear();
   }
 
@@ -394,16 +755,19 @@ export function runFolderClosingGhostControllerTests() {
     const controller = new FolderClosingGhostController(layer, { scheduler: timerHost });
     const ghost = makeGhost();
     const target = { ...makeTarget(), controllerGhostKey: "close-key" };
-    layer.closingGhostKeys = new Set(["app-1"]);
-    layer.closingFrameComplete = true;
-    layer.closingFrameVisualComplete = true;
+    layer.closingGhostLayer.addChild(ghost);
+    controller.handoffCoordinator.beginCloseTransition("folder-1");
+    controller.handoffCoordinator.trackCloseGhost({ item: { id: "app-1" } });
 
     controller.completeGhost(makeState(completed), target, ghost);
-    assert(ghost.destroyed, "regular complete should destroy the closing ghost");
+    completeFrame(controller, makeState(completed));
+    assert(ghost.destroyed, "regular complete should clear the closing ghost at the visual handoff point");
     assert(ghost.closingComplete, "regular complete should mark the ghost complete");
-    assert(layer.closingGhostKeys.size === 0, "regular complete should remove the active key");
+    assert(controller.handoffCoordinator.getGhostKeys().size === 0, "regular complete should remove the active key");
     assert(completed.join(",") === "close-key", "regular complete should flush the controller ghost key");
     assert(timerHost.frameCount === 1, "regular complete should schedule handoff cleanup when the frame is done");
+    timerHost.runAllFrames();
+    assert(ghost.destroyed, "handoff cleanup should not recreate cleared closing ghosts");
 
     controller.completeGhost(makeState(completed), target, ghost);
     assert(completed.join(",") === "close-key", "duplicate complete should not flush the key twice");
@@ -418,37 +782,31 @@ export function runFolderClosingGhostControllerTests() {
     const controller = new FolderClosingGhostController(layer, { scheduler: timerHost });
     const trailingGhost = makeGhost("trailing");
     layer.closingGhostLayer.addChild(trailingGhost);
-    layer.closingGhostKeys = new Set(["thumb-1", "extra-1"]);
-    layer.closingVisualGhostKeys = new Set(["thumb-1"]);
-    layer.pendingClosingControllerGhostKeys = new Set(["thumb-key", "extra-key"]);
-    layer.closingFrameVisualComplete = true;
+    controller.handoffCoordinator.beginCloseTransition("folder-1");
+    controller.handoffCoordinator.trackCloseGhost({ isThumbnailChild: true, item: { id: "thumb-1" } }, "thumb-key");
+    controller.handoffCoordinator.trackCloseGhost({ item: { id: "extra-1" } }, "extra-key");
+    completeFrameVisual(controller, makeState(completed));
 
     controller.markClosingGhostVisuallyArrived(makeState(completed), {
       ...makeTarget("thumb-1"),
       isThumbnailChild: true,
     });
 
-    assert(layer.closingHandoffActive === true, "critical visual arrival should start handoff before non-thumbnail ghosts settle");
+    assert(controller.handoffCoordinator.isCloseHandoffActive() === true, "critical visual arrival should start handoff before non-thumbnail ghosts settle");
     assert(order.join(",") === "ready:folder-1", "critical handoff should publish the ready signal");
     assert(completed.join(",") === "thumb-key,extra-key", "critical handoff should flush all controller ghost keys so Vue does not fall back");
-    assert(layer.closingGhostKeys.has("extra-1"), "non-thumbnail ghost should not block handoff before cleanup");
-    assert(timerHost.frameCount === 0, "critical handoff should keep overlay visuals until all closing ghosts settle");
+    assert(!controller.handoffCoordinator.hasCloseGhost("extra-1"), "visual handoff should clear non-thumbnail overlay ghosts instead of waiting for final cleanup");
+    assert(trailingGhost.destroyed, "visual handoff should remove remaining overlay ghosts before restoring desktop artwork");
+    assert(timerHost.frameCount === 1, "critical handoff should schedule final cleanup after visual release");
 
-    layer.closingGhostKeys.clear();
-    layer.closingFrameComplete = true;
-    controller.finishTransition(makeState(completed));
-    assert(timerHost.frameCount === 1, "settled overlay should schedule visual cleanup after handoff is already active");
-
-    timerHost.runAllFrames();
-    assert(trailingGhost.destroyed, "settled handoff visual cleanup should remove remaining non-critical ghosts");
-    assert(layer.closingGhostKeys.size === 0, "settled handoff visual cleanup should clear remaining closing ghost keys");
+    assert(controller.handoffCoordinator.getGhostKeys().size === 0, "settled handoff visual cleanup should clear remaining closing ghost keys");
     assert(
       layer.calls.indexOf("release-visual:folder-1") >= 0 &&
-      layer.calls.indexOf("release-visual:folder-1") < layer.calls.indexOf("clear-frame"),
-      "settled handoff visual cleanup should restore desktop artwork before clearing overlay visuals"
+      layer.calls.indexOf("clear-frame") < layer.calls.indexOf("release-visual:folder-1"),
+      "visual handoff should clear overlay visuals before restoring desktop artwork"
     );
     timerHost.runAllFrames();
-    assert(layer.closingHandoffActive === false, "handoff cleanup should end internal activity after visual cleanup");
+    assert(controller.handoffCoordinator.isCloseHandoffActive() === false, "handoff cleanup should end internal activity after visual cleanup");
   }
 
   {
@@ -462,33 +820,34 @@ export function runFolderClosingGhostControllerTests() {
       isThumbnailChild: true,
       targetStageLayoutRect: { height: 16, left: 90, top: 110, width: 16 },
     };
-    layer.closingGhostKeys = new Set(["app-1"]);
-    layer.closingFrameComplete = true;
-    layer.closingFrameVisualComplete = true;
-    layer.closingVisualGhostKeys = new Set(["app-1"]);
+    controller.handoffCoordinator.beginCloseTransition("folder-1");
+    controller.handoffCoordinator.trackCloseGhost({ isThumbnailChild: true, item: { id: "app-1" } });
 
     controller.completeGhost(makeState(completed), target, ghost);
-    assert(!ghost.destroyed, "thumbnail complete should retain the preview ghost through the handoff frame");
-    assert(layer.completedClosingPreviewGhosts.length === 1, "finish should keep retained preview ghosts until handoff cleanup");
+    completeFrame(controller, makeState(completed));
+    assert(ghost.destroyed, "thumbnail complete should clear the preview ghost at the visual handoff point");
+    assert(controller.handoffCoordinator.getCompletedPreviewGhosts().length === 0, "visual handoff should remove retained preview ghost references");
     assert(completed.join(",") === "fallback-close-key", "thumbnail complete should flush the fallback controller ghost key");
 
     timerHost.runAllFrames();
-    assert(ghost.destroyed, "first handoff frame should clear the retained preview ghost before paint");
-    assert(layer.completedClosingPreviewGhosts.length === 0, "first handoff frame should remove retained preview ghost references");
+    assert(ghost.destroyed, "handoff cleanup should not recreate cleared preview ghosts");
+    assert(controller.handoffCoordinator.getCompletedPreviewGhosts().length === 0, "handoff cleanup should keep preview ghost references clear");
     timerHost.runAllFrames();
-    assert(layer.closingHandoffActive === false, "handoff cleanup should end internal activity");
+    assert(controller.handoffCoordinator.isCloseHandoffActive() === false, "handoff cleanup should end internal activity");
   }
 
   {
     const timerHost = makeTimerHost();
     const layer = makeLayer();
     const controller = new FolderClosingGhostController(layer, { scheduler: timerHost });
-    layer.closingGhostKeys = new Set(["stale"]);
+    controller.handoffCoordinator.beginCloseTransition("old-folder");
+    controller.handoffCoordinator.trackCloseGhost({ item: { id: "stale" } });
+    controller.handoffCoordinator.completeCloseFrame(controller.handoffCoordinator.closeToken);
     controller.begin("folder-1");
 
-    assert(layer.closingGhostFolderId === "folder-1", "begin should store the closing folder id");
-    assert(layer.closingGhostKeys.size === 0, "begin should reset active closing keys");
-    assert(layer.closingFrameComplete === false, "begin should reset frame completion");
+    assert(controller.handoffCoordinator.folderId === "folder-1", "begin should store the closing folder id");
+    assert(controller.handoffCoordinator.getGhostKeys().size === 0, "begin should reset active closing keys");
+    assert(controller.handoffCoordinator.snapshot().frameComplete === false, "begin should reset frame completion");
   }
 
   {
@@ -498,5 +857,55 @@ export function runFolderClosingGhostControllerTests() {
     controller.clear();
 
     assert(layer.panel.visible === true, "clear should restore the panel for the next folder render");
+  }
+
+  {
+    const layer = makeLayer();
+    const controller = new FolderClosingGhostController(layer);
+    controller.handoffCoordinator.beginCloseTransition("folder-1");
+    controller.handoffCoordinator.trackCloseGhost({ isThumbnailChild: true, item: { id: "app-1" } });
+    controller.handoffCoordinator.trackClosePreviewSwap("swap");
+    layer.closingGhostLayer.addChild(makeGhost());
+    layer.panel.visible = false;
+    layer.pageTrack.visible = false;
+    layer.iconNode.visible = false;
+
+    controller.clear({ restorePageTrack: false, reveal: false });
+
+    assert(layer.panel.visible === true, "non-reveal clear should still restore the panel container for the next render");
+    assert(layer.pageTrack.visible === false, "non-reveal clear should not restore the page track");
+    assert(layer.iconNode.visible === false, "non-reveal clear should not reveal real icon nodes");
+    assert(!layer.calls.includes("reveal-icons"), "non-reveal clear should not call revealIconNodes");
+    assert(layer.closingGhosts.length === 0, "non-reveal clear should still remove closing ghost visuals");
+  }
+
+  {
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+    layer.iconNodes.set("app-2", { alpha: 0.4, item: { id: "app-2" }, visible: false });
+    setReducedMotionForTests(true);
+    try {
+      controller.start(makeState(), [
+        { ...makeTarget("app-1"), controllerGhostKey: "close-a" },
+        { ...makeTarget("app-2"), controllerGhostKey: "close-b" },
+      ], { height: 72, left: 10, top: 20, width: 72 }, { height: 360, left: 0, top: 0, width: 420 });
+
+      const snapshot = controller.handoffCoordinator.snapshot();
+      assert(snapshot.ghostKeys.size === 0, "synchronous reduced-motion completion should clear every active closing key");
+      assert(snapshot.motionControlCount === 0, "synchronous reduced-motion completion should not register stale motion controls");
+      assert(snapshot.completedControllerGhostKeys.join(",") === "close-a,close-b", "synchronous reduced-motion completion should collect every close key");
+      assert(layer.closingGhosts.every((ghost) => !ghost.destroyed), "synchronous reduced-motion completion should retain completed closing ghosts until handoff cleanup");
+      layer.frameGhostOptions.onComplete();
+      timerHost.runAllFrames();
+      assert(layer.closingGhosts.length === 0, "handoff cleanup should remove retained reduced-motion closing ghosts");
+    } finally {
+      clearMotionPreferencesForTests();
+      motionRuntime.reset();
+      controller.clear();
+    }
   }
 }

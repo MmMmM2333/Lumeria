@@ -1,7 +1,7 @@
 <template>
   <div
     ref="rootRef"
-    :class="cx('launchpad-root', windowMode === 'windowed' && 'launchpad-root-windowed', isTextlessMode && 'launchpad-root-textless', isStartupMaskMounted && 'launchpad-root-startup-masked', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching', shouldUseLiveDesktopCssFallbackEffects && 'launchpad-root-live-desktop-css-fallback-effects', shouldUseSingleStageRootStage && 'launchpad-root-pixi-root-stage', shouldUseSingleStageFolderLayer && 'launchpad-root-single-stage-folder-layer')"
+    :class="cx('launchpad-root', 'launchpad-root-pixi-root-stage', 'launchpad-root-single-stage-folder-layer', isFolderLayerActive && 'launchpad-root-folder-layer-active', windowMode === 'windowed' && 'launchpad-root-windowed', isTextlessMode && 'launchpad-root-textless', isStartupMaskMounted && 'launchpad-root-startup-masked', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching', shouldUseLiveDesktopCssFallbackEffects && 'launchpad-root-live-desktop-css-fallback-effects')"
     :style="launchpadRootStyle"
     @wheel="handleLaunchpadWheel"
     @pointerdown="handleLaunchpadSurfacePointerDown"
@@ -81,8 +81,11 @@
         :grid-cols="gridCols"
         :grid-rows="gridRows"
         :icon-size="iconSize"
+        :icon-bounds-registry="iconBoundsRegistry"
         :is-edit-mode="isEditMode"
+        :is-desktop-closing="isDesktopClosing"
         :folder-source-ghosted-id="folderSourceGhostedId"
+        :folder-source-ghosted-ids="folderSourceGhostedIds"
         :is-folder-opening-preview-frame-ghosted="isFolderOpeningPreviewFrameGhosted"
         :is-icon-opening="isIconOpening"
         :is-icon-selected="isIconSelected"
@@ -91,12 +94,13 @@
         :is-textless-mode="isTextlessMode"
         :launch-target-status-by-id="launchTargetStatusById"
         :page-grid-measure-style="pageGridMeasureStyle"
+        :page-track-scrub="resolveMaybeRef(pageTrackScrub)"
         :desktop-grid-debug-options="desktopGridDebugOptions"
         :set-page-ref="setPageRef"
         :show-missing-launch-target-badge="showMissingLaunchTargetBadge"
-        :single-stage-options="singleStageOptions"
-        :single-stage-render-key="singleStageRenderKey"
+        :single-stage-diagnostics-options="singleStageDiagnosticsOptions"
         @desktop-focus="keyboardFocusArea = 'desktop'"
+        @drag-release-complete="clearDragRelease"
         @internal-activity="handleFolderPixiInternalActivity"
         @pointerdown-icon="beginDrag"
         @open-app="openApp"
@@ -104,6 +108,7 @@
         @remove-app="removeAppById"
         @choose-app-icon="openExistingAppIconChooser"
         @reset-app-icon="resetAppCustomIcon"
+        @surface-pointerdown="handleLaunchpadSurfacePointerDown"
         @wheel="handleLaunchpadWheel"
       />
     </LaunchpadChromeFrame>
@@ -142,16 +147,13 @@ import WindowChromeOverlay from "./components/WindowChromeOverlay.vue";
 import PixiBackgroundSurface from "./rendering/pixi/PixiBackgroundSurface.vue";
 import PixiDesktopSurface from "./rendering/pixi/PixiDesktopSurface.vue";
 import {
-  getSingleStageOptions,
-  getSingleStageOptionsKey,
-  installSingleStageGlobalFlag,
-  makeSingleStageRuntimeProbe,
-  makeSingleStageRuntimePlan,
-  SINGLE_STAGE_CHANGED_EVENT,
+  getSingleStageDiagnosticsOptions,
+  getSingleStageRenderKey,
 } from "./rendering/pixi/scene/singleStagePlan.js";
 import {
   resolveFolderClosingHandoffId,
   resolveFolderPixiActivityUpdate,
+  resolveFolderSourceGhostedIds,
   shouldClearFolderClosingHandoffRetainId,
 } from "./rendering/pixi/scene/folderClosingHandoffActivity.js";
 import { getBackgroundLayoutContext } from "./api/launchpadApi.js";
@@ -177,9 +179,34 @@ import appPackage from "../package.json";
 import "./styles/launchpad.css";
 
 const controller = useLaunchpadController();
-installSingleStageGlobalFlag();
+const {
+  appActions,
+  background: backgroundDomain,
+  chrome,
+  desktopSurface,
+  dialogs,
+  folderFlow,
+  folderOverlay,
+  overlays,
+  search: searchDomain,
+  settingsPanel,
+  shell,
+} = controller;
 const {
   rootRef,
+  cx,
+  isTextlessMode,
+  isDesktopOpen,
+  isDesktopClosing,
+  isHomeInteractionDisabled,
+  isAppLaunching,
+  isNativeLayoutReady,
+  isEditMode,
+  handleLaunchpadWheel,
+  shellRef,
+  windowMode,
+} = shell;
+const {
   rootStyle,
   backgroundAcrylicParams,
   backgroundEffect,
@@ -192,79 +219,85 @@ const {
   liveDesktopCssFallbackEffectsEnabled,
   liveDesktopRuntimeStatus,
   shouldRenderPixiBackgroundEffect,
-  cx,
-  gridRows,
-  gridCols,
-  iconSize,
-  isTextlessMode,
-  isDesktopOpen,
-  isDesktopClosing,
-  isHomeInteractionDisabled,
-  isAppLaunching,
-  isNativeLayoutReady,
-  isEditMode,
-  isSettingsPanelOpen,
-  shouldRenderSettingsPanel,
-  settingsOverlayAnimate,
-  settingsPanelInitial,
-  settingsPanelAnimate,
-  handleLaunchpadWheel,
-  shellRef,
-  desktopVisualTransform,
-  desktopVisualAlpha,
-  launchpadVisualTransform,
-  launchpadVisualAlpha,
+} = backgroundDomain;
+const {
   homeChromeInitial,
   homeChromeAnimate,
   homeChromeTransition,
   homeChromeStyle,
   headerRef,
+  pageDotsRef,
+} = chrome;
+const {
   openEditManagedApp,
   openExistingAppIconChooser,
+  openApp,
+  removeAppById,
+  resetAppCustomIcon,
   showMissingLaunchTargetBadge,
+} = appActions;
+const {
+  isSettingsPanelOpen,
+  shouldRenderSettingsPanel,
+  settingsOverlayAnimate,
+  settingsPanelInitial,
+  settingsPanelAnimate,
+  openSettingsPanel,
+} = settingsPanel;
+const {
+  clearSearch,
+  handleSearchInput,
+  isSearchMode,
+  keyboardFocusArea,
+  searchInputRef,
+  searchQuery,
+  searchRef,
+} = searchDomain;
+const {
+  activePageIndex,
+  activePages,
+  beginDrag,
+  clearDragRelease,
+  commitActivePageIndex,
+  desktopMainRef,
+  desktopProjectionEpoch,
+  desktopTrackMotionKey,
+  desktopVisualAlpha,
+  desktopVisualTransform,
   dragFolderHoverState,
   dragFolderTargetId,
   dragMeta,
   dragPreviewState,
   dragReleaseState,
-  openSettingsPanel,
-  searchRef,
-  isSearchMode,
-  searchInputRef,
-  searchQuery,
-  handleSearchInput,
-  keyboardFocusArea,
-  clearSearch,
-  desktopMainRef,
   handleDesktopSurfacePointerDown,
-  activePageIndex,
-  activePages,
-  commitActivePageIndex,
-  desktopProjectionEpoch,
-  desktopTrackMotionKey,
+  gridCols,
+  gridRows,
+  iconBoundsRegistry,
+  iconSize,
+  isIconOpening,
+  isIconSelected,
+  launchTargetStatusById,
+  launchpadVisualAlpha,
+  launchpadVisualTransform,
   getDesktopPageRenderMode,
   setPageRef,
   pageGridMeasureStyle,
+  pageTrackScrub,
   schedulePageGridMetrics,
   getVisibleDesktopPage,
   folderPageSize,
-  isIconSelected,
-  launchTargetStatusById,
-  isIconOpening,
+} = desktopSurface;
+const {
+  folderOpenPreviewFrameGhostedIds,
+  isFolderLayerActive,
   isFolderOpeningPreviewFrameGhosted,
-  beginDrag,
-  openApp,
-  removeAppById,
-  resetAppCustomIcon,
-  pageDotsRef,
   openFolderId,
   renderedFolder,
   isFolderClosing,
   isFolderAppLaunchClosing,
   isFolderZoomFadeClosing,
   isHomeRevealSettling,
-  windowMode,
-} = controller;
+} = folderFlow;
 
 const appVersion = appPackage.version;
 const isAcrylicDebugPanelEnabled = import.meta.env.DEV;
@@ -284,7 +317,6 @@ const LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT = "launchpad-live-desktop-com
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_INTERVAL_MS = 250;
 const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY = "launchpadLiveDesktopCssFallbackEffects";
 const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT = "launchpad-live-desktop-css-fallback-effects-change";
-const SINGLE_STAGE_REFRESH_MS = 250;
 const launchpadOverlaysRef = ref(null);
 const BACKGROUND_MEDIA_FADE_MS = 220;
 const PIXI_BACKGROUND_HANDOFF_DELAY_MS = 220;
@@ -313,41 +345,8 @@ const backgroundImageLayers = ref([
 const folderPixiInternalActivity = ref(false);
 const folderPixiInternalActivityFolderId = ref(null);
 const folderClosingHandoffRetainId = ref(null);
-const singleStageOptions = ref(getSingleStageOptions());
-const shouldRunPixiOverlays = computed(() => Boolean(
-  isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value
-));
-const singleStageRuntimePlan = computed(() => makeSingleStageRuntimePlan(singleStageOptions.value, {
-  dragMeta: dragMeta.value,
-  dragPreviewItem: dragPreviewState.value?.item,
-  dragReleaseItem: dragReleaseState.value?.item,
-  folderPixiInternalActivity: folderPixiInternalActivity.value,
-  isFolderAppLaunchClosing: isFolderAppLaunchClosing.value,
-  isFolderClosing: isFolderClosing.value,
-  openFolderId: openFolderId.value,
-  renderedFolder: renderedFolder.value,
-  shouldRunPixiOverlays: shouldRunPixiOverlays.value,
-}));
-const shouldUseSingleStageRootStage = computed(() => singleStageRuntimePlan.value.useRootStage);
-const shouldUseSingleStageFolderLayer = computed(() => singleStageRuntimePlan.value.useFolderLayer);
-const singleStageRenderKey = computed(() => singleStageRuntimePlan.value.renderKey);
-function publishSingleStageRuntimeProbe() {
-  if (typeof document === "undefined") return;
-  const runtimePlan = singleStageRuntimePlan.value;
-  const probe = makeSingleStageRuntimeProbe(runtimePlan, {
-    canvasCount: document.querySelectorAll("canvas").length,
-    rootStageHost: Boolean(document.querySelector(".pixi-desktop-host-root-stage")),
-    rootStageMain: Boolean(document.querySelector(".pixi-desktop-main-root-stage")),
-    stableStageIsUnified: runtimePlan.useRootStage === true,
-  });
-  globalThis.__LP_SINGLE_STAGE_RUNTIME__ = probe;
-  if (probe.expectedSingleStage && !probe.isSingleStageStable && singleStageRuntimeProbeFrame == null && typeof window !== "undefined") {
-    singleStageRuntimeProbeFrame = window.requestAnimationFrame(() => {
-      singleStageRuntimeProbeFrame = null;
-      publishSingleStageRuntimeProbe();
-    });
-  }
-}
+const singleStageDiagnosticsOptions = getSingleStageDiagnosticsOptions();
+const singleStageRenderKey = getSingleStageRenderKey();
 const shouldRenderLiveDesktopCompositorKeeper = computed(() => Boolean(
   import.meta.env.DEV
     && isLiveDesktopExperimentActive.value
@@ -372,14 +371,11 @@ let pixiBackgroundHideTimer = null;
 let startupMaskRemoveTimer = null;
 let startupMaskMaxWaitTimer = null;
 let startupBackgroundFrame = null;
-let singleStageRuntimeProbeFrame = null;
 let backgroundImageGeneration = 0;
 let backgroundImageShowFrame = null;
 let backgroundImageClearTimer = null;
 let liveDesktopCompositorKeeperTimer = null;
-let singleStageRefreshTimer = null;
 let activeBackgroundImageLayerIndex = 0;
-let lastSingleStageOptionsKey = getSingleStageOptionsKey(singleStageOptions.value);
 
 function parseCssOpacity(value) {
   const number = Number.parseFloat(value);
@@ -549,12 +545,6 @@ function clearStartupMaskTimers() {
   }
 }
 
-function clearSingleStageRuntimeProbeFrame() {
-  if (singleStageRuntimeProbeFrame == null) return;
-  window.cancelAnimationFrame(singleStageRuntimeProbeFrame);
-  singleStageRuntimeProbeFrame = null;
-}
-
 function releaseStartupMask() {
   if (!isStartupMaskMounted.value || !isStartupMaskVisible.value) return;
   isStartupMaskVisible.value = false;
@@ -701,38 +691,6 @@ function clearBackgroundImageTimers() {
   clearBackgroundImageClearTimer();
 }
 
-function refreshSingleStageOptions() {
-  const nextOptions = getSingleStageOptions();
-  const nextKey = getSingleStageOptionsKey(nextOptions);
-  if (nextKey === lastSingleStageOptionsKey) return;
-  lastSingleStageOptionsKey = nextKey;
-  singleStageOptions.value = nextOptions;
-}
-
-function startSingleStageRefreshTimer() {
-  if (!import.meta.env.DEV || singleStageRefreshTimer != null) return;
-  singleStageRefreshTimer = window.setInterval(
-    refreshSingleStageOptions,
-    SINGLE_STAGE_REFRESH_MS
-  );
-}
-
-function clearSingleStageRefreshTimer() {
-  if (singleStageRefreshTimer == null) return;
-  window.clearInterval(singleStageRefreshTimer);
-  singleStageRefreshTimer = null;
-}
-
-watch(
-  [
-    singleStageRuntimePlan,
-    shouldUseSingleStageRootStage,
-    shouldUseSingleStageFolderLayer,
-  ],
-  publishSingleStageRuntimeProbe,
-  { flush: "post", immediate: true }
-);
-
 watch(
   shouldRenderPixiBackgroundEffect,
   (shouldRender) => {
@@ -827,19 +785,13 @@ onBeforeUnmount(clearPixiBackgroundHideTimer);
 onBeforeUnmount(clearStartupMaskTimers);
 onBeforeUnmount(clearBackgroundImageTimers);
 onBeforeUnmount(clearLiveDesktopCompositorKeeperTimer);
-onBeforeUnmount(clearSingleStageRefreshTimer);
-onBeforeUnmount(clearSingleStageRuntimeProbeFrame);
 
 onMounted(() => {
   refreshBackgroundLayoutMetrics();
-  refreshSingleStageOptions();
-  publishSingleStageRuntimeProbe();
-  startSingleStageRefreshTimer();
   window.addEventListener("resize", refreshBackgroundLayoutMetrics);
   window.addEventListener("focus", refreshBackgroundLayoutMetrics);
   window.addEventListener(LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT, handleLiveDesktopCompositorKeeperChanged);
   window.addEventListener(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT, handleLiveDesktopCssFallbackEffectsChanged);
-  window.addEventListener(SINGLE_STAGE_CHANGED_EVENT, refreshSingleStageOptions);
   window.addEventListener("storage", handleLiveDesktopCompositorKeeperStorage);
   window.addEventListener("storage", handleLiveDesktopCssFallbackEffectsStorage);
 });
@@ -849,7 +801,6 @@ onBeforeUnmount(() => {
   window.removeEventListener("focus", refreshBackgroundLayoutMetrics);
   window.removeEventListener(LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT, handleLiveDesktopCompositorKeeperChanged);
   window.removeEventListener(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT, handleLiveDesktopCssFallbackEffectsChanged);
-  window.removeEventListener(SINGLE_STAGE_CHANGED_EVENT, refreshSingleStageOptions);
   window.removeEventListener("storage", handleLiveDesktopCompositorKeeperStorage);
   window.removeEventListener("storage", handleLiveDesktopCssFallbackEffectsStorage);
 });
@@ -858,10 +809,14 @@ const headerDomRefs = { headerRef, searchRef, searchInputRef };
 const desktopDomRefs = { desktopMainRef, rootRef, shellRef };
 const chromeFrameRefs = { pageDotsRef, shellRef };
 
-const settingsPanelState = createSettingsPanelState(controller, appVersion);
-const dialogState = createDialogState(controller);
-const folderOverlayState = createFolderOverlayState(controller);
-const overlayState = createOverlayState(controller);
+const settingsPanelState = createSettingsPanelState(settingsPanel, appVersion);
+const dialogState = createDialogState(dialogs);
+const folderOverlayState = createFolderOverlayState(folderOverlay);
+const overlayState = createOverlayState(overlays);
+
+function resolveMaybeRef(value) {
+  return value && typeof value === "object" && "value" in value ? value.value : value;
+}
 
 const dragReleaseGhostId = computed(() => dragReleaseState.value?.item?.id || null);
 const folderClosingHandoffId = computed(() => resolveFolderClosingHandoffId({
@@ -877,6 +832,20 @@ const folderSourceGhostedId = computed(() => {
   if (folderPixiInternalActivity.value && folderPixiInternalActivityFolderId.value === folderId) return folderId;
   if (openFolderId.value || isFolderAppLaunchClosing.value || isFolderZoomFadeClosing.value || isFolderClosing.value) return folderId;
   return isFolderOpeningPreviewFrameGhosted(folderId) ? folderId : null;
+});
+
+const folderSourceGhostedIds = computed(() => {
+  return resolveFolderSourceGhostedIds({
+    folderOpenPreviewFrameGhostedIds: folderOpenPreviewFrameGhostedIds.value,
+    folderPixiInternalActivity: folderPixiInternalActivity.value,
+    folderPixiInternalActivityFolderId: folderPixiInternalActivityFolderId.value,
+    isFolderAppLaunchClosing: isFolderAppLaunchClosing.value,
+    isFolderClosing: isFolderClosing.value,
+    isFolderOpeningPreviewFrameGhosted,
+    isFolderZoomFadeClosing: isFolderZoomFadeClosing.value,
+    openFolderId: openFolderId.value,
+    renderedFolderId: renderedFolder.value?.id || null,
+  });
 });
 
 function handleFolderPixiInternalActivity(active, folderId = null) {

@@ -76,16 +76,109 @@ function makeLayer(DesktopLayer, pageTrack) {
     visible: false,
   });
   const layer = Object.create(DesktopLayer.prototype);
+  layer.emptyText = {
+    position: {
+      set() {},
+    },
+    visible: false,
+  };
   layer.folderHandoffNode = null;
+  layer.folderHandoffNodes = new Map();
   layer.hasDesktopVisualAlpha = false;
   layer.hasDesktopVisualTransform = false;
   layer.hasFolderOverlayAlpha = false;
   layer.hasFolderOverlayTransform = false;
   layer.iconNodes = new Map();
+  layer.iconBoundsRegistry = makeLayer.iconBoundsRegistry;
   layer.pageTrack = pageTrack;
+  layer.desktopClosingUnderlayLayer = makeTransformNode();
   layer.singleStageFolderLayer = makeTransformNode();
+  layer.visualOwnership = { snapshot: () => [] };
   layer.visualRoot = makeTransformNode();
   return layer;
+}
+
+function makeHandoffCoordinator(options = {}) {
+  const {
+    active = false,
+    folderId = null,
+    ghostKeys = [],
+    token = null,
+  } = options;
+  return {
+    get folderId() {
+      return folderId;
+    },
+    isCloseHandoffActive() {
+      return active;
+    },
+    snapshot() {
+      return {
+        folderId,
+        ghostKeys: new Set(ghostKeys),
+        handoffActive: active,
+        token,
+      };
+    },
+  };
+}
+
+function makeDesktopQuiescenceState(item = { id: "app-a", type: "app" }) {
+  return {
+    activePageIndex: 0,
+    activePages: [[item]],
+    desktopFrame: { height: 320, left: 0, top: 0, width: 480 },
+    deviceResolution: 1,
+    folderPageSize: 9,
+    folderSourceGhostedIds: new Set(),
+    getDesktopPageRenderMode: () => "interactive",
+    getVisibleDesktopPage: (page) => page,
+    gridCols: 1,
+    gridRows: 1,
+    height: 320,
+    iconSize: 64,
+    isFolderOpeningPreviewFrameGhosted: () => false,
+    isIconOpening: () => false,
+    isIconSelected: () => false,
+    isSearchMode: false,
+    isTextlessMode: false,
+    launchTargetStatusById: {},
+    setPageRef: () => {},
+    showMissingLaunchTargetBadge: false,
+    stageRect: { height: 320, left: 0, top: 0, width: 480 },
+    width: 480,
+  };
+}
+
+function prepareLayerForDesktopQuiescenceTest(layer, item) {
+  layer.applyDesktopVisualAlpha = () => {};
+  layer.applyDesktopVisualTransform = () => {};
+  layer.applyFolderOverlayAlpha = () => {};
+  layer.applyFolderOverlayTransform = () => {};
+  layer.flushInteractiveBounds = () => {};
+  layer.markInteractiveBoundsDirty = () => {};
+  layer.singleStageDiagnosticsLayer = { update() {} };
+  layer.singleStageFolderLayer = {
+    getDesktopSourceGhostedIds: () => new Set(),
+  };
+  layer.updateSingleStageDragPreviewLayer = () => {};
+  layer.updateSingleStageFolderLayer = () => {};
+  layer.pageTrackMotion = {
+    control: null,
+    grabProgressOffset: 0,
+    grabToken: null,
+    key: null,
+    mode: null,
+    settleToken: null,
+  };
+  layer.visualOwnership = { snapshot: () => [] };
+  const node = makeNode(item.id);
+  node.item = item;
+  node.setState = (nextState) => {
+    node.state = nextState;
+  };
+  layer.iconNodes.set(`page:0:${item.id}`, node);
+  return node;
 }
 
 export async function runDesktopLayerTests() {
@@ -97,18 +190,122 @@ export async function runDesktopLayerTests() {
   }
   const {
     DesktopLayer,
+    normalizeDesktopHandoffState,
     resolveDesktopVisualAlpha,
     resolveLaunchpadVisualAlpha,
     resolveLaunchpadVisualTransform,
     shouldFinishFolderHandoff,
+    shouldFinishFolderHandoffEntry,
   } = await import("./DesktopLayer.js");
   const {
-    clearIconBoundsRegistry,
-    registerRenderedClientTopLevelFolderThumbBounds,
+    createIconBoundsRegistry,
+    ICON_BOUNDS_KIND,
+    ICON_BOUNDS_VARIANT,
   } = await import("../geometry/iconBoundsRegistry.js");
+  const K = ICON_BOUNDS_KIND;
+  const V = ICON_BOUNDS_VARIANT;
+  makeLayer.iconBoundsRegistry = createIconBoundsRegistry();
+  const {
+    FolderVisualOwnershipRegistry,
+    makeDesktopSourceVisualKey,
+  } = await import("./folderVisualOwnershipRegistry.js");
+  const { motionRuntime } = await import("../animation/motionRuntime.js");
+  const {
+    deleteLaunchpadDebugValue,
+    readLaunchpadDebugValue,
+    setLaunchpadDebugValue,
+  } = await import("../debugNamespace.js");
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[DesktopLayer test failed] ${message}`);
   };
+
+  {
+    const normalized = normalizeDesktopHandoffState({
+      folderClosingHandoffId: "folder-a",
+      folderClosingHandoffIds: ["folder-b", "folder-c"],
+      folderSourceGhostedId: "folder-d",
+      folderSourceGhostedIds: new Set(["folder-e"]),
+    });
+
+    assert(normalized.folderClosingHandoffIds instanceof Set, "closing handoff ids should normalize to a Set");
+    assert(normalized.folderClosingHandoffId === "folder-a", "closing handoff normalizer should preserve the legacy singular id as primary");
+    assert(normalized.folderClosingHandoffIds.has("folder-a"), "closing handoff normalizer should keep the legacy singular id");
+    assert(normalized.folderClosingHandoffIds.has("folder-b") && normalized.folderClosingHandoffIds.has("folder-c"), "closing handoff normalizer should keep array ids");
+    assert(normalized.folderSourceGhostedIds instanceof Set, "source ghosted ids should normalize to a Set");
+    assert(normalized.folderSourceGhostedId === "folder-d", "source ghosted normalizer should preserve the legacy singular id as primary");
+    assert(normalized.folderSourceGhostedIds.has("folder-d") && normalized.folderSourceGhostedIds.has("folder-e"), "source ghosted normalizer should merge singular and Set ids");
+    assert(!shouldFinishFolderHandoff({ folderClosingHandoffIds: ["folder-b"] }, { folderHandoff: makeHandoffCoordinator() }), "array closing handoff ids should keep the desktop handoff alive");
+    assert(!shouldFinishFolderHandoffEntry({ folderClosingHandoffId: "folder-a" }, null, "folder-a"), "legacy singular closing handoff id should keep its folder handoff alive");
+    {
+      // A stale closing id keeps a never-revealed handoff entry alive while no
+      // substitute covers the folder: reconcile must REVEAL it in place (real icon
+      // shown) WITHOUT retiring — retiring would let the stale id recreate + re-hide
+      // it every frame (the icon/label flash regression).
+      const folder = makeNode("folder");
+      folder.item = { id: "folder-a", type: "folder" };
+      const pageTrack = makePageTrack([folder]);
+      const layer = makeLayer(DesktopLayer, pageTrack);
+      layer.singleStageFolderLayer = {
+        folderHandoff: { folderId: null, isCloseHandoffActive: () => false },
+        getDesktopSourceGhostedIds: () => new Set(),
+        hasVisibleFolderSubstitute: () => false,
+      };
+      layer.ensureFolderHandoffNode("folder-a", folder, { x: 0, y: 0 }, { revealLabel: false });
+      const entry = layer.getFolderHandoffEntry("folder-a");
+      assert(folder.visualWrap.visible === false && entry.visualReleased !== true, "test setup: a fresh handoff entry hides the real icon");
+
+      layer.reconcileFolderHandoffEntry({ folderClosingHandoffId: "folder-a" }, entry);
+      assert(layer.getFolderHandoffEntry("folder-a") === entry, "a stale-id orphan should be healed in place, not retired (avoids the recreate/flash loop)");
+      assert(entry.visualReleased === true && folder.visualWrap.visible === true, "a stale-id orphan with no visible substitute should reveal the real folder icon");
+    }
+
+    {
+      // While a visible substitute still covers the folder (normal close handoff),
+      // the entry stays hidden — no premature reveal / flash.
+      const folder = makeNode("folder");
+      folder.item = { id: "folder-a", type: "folder" };
+      const pageTrack = makePageTrack([folder]);
+      const layer = makeLayer(DesktopLayer, pageTrack);
+      layer.singleStageFolderLayer = {
+        folderHandoff: { folderId: "folder-a", isCloseHandoffActive: () => false },
+        getDesktopSourceGhostedIds: () => new Set(),
+        hasVisibleFolderSubstitute: (folderId) => folderId === "folder-a",
+      };
+      layer.ensureFolderHandoffNode("folder-a", folder, { x: 0, y: 0 }, { revealLabel: false });
+      const entry = layer.getFolderHandoffEntry("folder-a");
+
+      layer.reconcileFolderHandoffEntry({ folderClosingHandoffId: "folder-a" }, entry);
+      assert(layer.getFolderHandoffEntry("folder-a") === entry && entry.visualReleased !== true && folder.visualWrap.visible === false, "a closing handoff with a visible substitute should keep the real icon hidden");
+    }
+  }
+
+  {
+    const originalRaf = globalThis.requestAnimationFrame;
+    globalThis.requestAnimationFrame = () => 1;
+    try {
+      const pageTrack = makePageTrack([]);
+      const layer = makeLayer(DesktopLayer, pageTrack);
+      let refreshCount = 0;
+      let folderRefreshCount = 0;
+      layer.refreshInteractiveBounds = () => {
+        refreshCount += 1;
+      };
+      layer.singleStageFolderLayer.refreshRegisteredIconBounds = () => {
+        folderRefreshCount += 1;
+      };
+
+      layer.markInteractiveBoundsDirty();
+      layer.markInteractiveBoundsDirty();
+      assert(refreshCount === 0, "bounds dirty should wait until the runtime frame-end flush");
+      motionRuntime.flushAfterFrameForTests();
+      assert(refreshCount === 1, "bounds dirty should coalesce repeated marks into one refresh");
+      assert(folderRefreshCount === 1, "bounds dirty flush should refresh folder overlay bounds once");
+      assert(layer.boundsDirty === false && layer.boundsFlushQueued === false, "bounds dirty flush should clear queued flags");
+    } finally {
+      globalThis.requestAnimationFrame = originalRaf;
+      motionRuntime.reset();
+    }
+  }
 
   {
     assert(resolveDesktopVisualAlpha({ desktopVisualAlpha: -1 }) === 0, "desktop alpha should clamp low values");
@@ -120,9 +317,29 @@ export async function runDesktopLayerTests() {
     assert(resolveLaunchpadVisualTransform({ launchpadVisualTransform: { scale: -1, y: 12 } }).scale === 0.01, "launchpad transform should clamp scale low");
     assert(resolveLaunchpadVisualTransform({ launchpadVisualTransform: { scale: 1.08, y: 12 } }).y === 12, "launchpad transform should preserve y offset");
     assert(resolveLaunchpadVisualTransform({}).scale === 1, "launchpad transform should default to identity scale");
-    assert(!shouldFinishFolderHandoff({}, { closingHandoffActive: true }), "local Pixi handoff activity should keep the desktop handoff alive before the Vue bridge updates");
-    assert(shouldFinishFolderHandoff({}, { closingHandoffActive: false }), "idle state with no prop handoff should finish the desktop handoff");
-    assert(!shouldFinishFolderHandoff({ folderClosingHandoffId: "folder-1" }, { closingHandoffActive: false }), "active prop handoff should keep the desktop handoff alive");
+    assert(!shouldFinishFolderHandoff({}, { folderHandoff: makeHandoffCoordinator({ active: true }) }), "local Pixi handoff activity should keep the desktop handoff alive before the Vue bridge updates");
+    assert(shouldFinishFolderHandoff({}, { folderHandoff: makeHandoffCoordinator({ active: false }) }), "idle state with no prop handoff should finish the desktop handoff");
+    assert(!shouldFinishFolderHandoff({ folderClosingHandoffId: "folder-1" }, { folderHandoff: makeHandoffCoordinator({ active: false }) }), "active prop handoff should keep the desktop handoff alive");
+    assert(!shouldFinishFolderHandoffEntry({}, { folderHandoff: makeHandoffCoordinator({ active: true, folderId: "folder-1" }) }, "folder-1"), "matching Pixi activity should keep its folder handoff alive");
+    assert(!shouldFinishFolderHandoffEntry({}, { getDesktopSourceGhostedIds: () => new Set(["folder-1"]) }, "folder-1"), "detached desktop source ownership should keep its folder handoff alive");
+    assert(shouldFinishFolderHandoffEntry({}, { folderHandoff: makeHandoffCoordinator({ active: true, folderId: "folder-2" }) }, "folder-1"), "different-folder Pixi activity should not keep an old handoff alive by itself");
+
+    const actualLayer = new DesktopLayer({ iconBoundsRegistry: createIconBoundsRegistry() });
+    assert(
+      actualLayer.children.indexOf(actualLayer.visualRoot) <
+        actualLayer.children.indexOf(actualLayer.desktopClosingUnderlayLayer),
+      "desktop closing underlay should render above the desktop icons"
+    );
+    assert(
+      actualLayer.children.indexOf(actualLayer.desktopClosingUnderlayLayer) <
+        actualLayer.children.indexOf(actualLayer.singleStageFolderLayer),
+      "desktop closing underlay should render below the folder opening overlay"
+    );
+    assert(
+      actualLayer.singleStageFolderLayer.detachedClosingVisualLayer === actualLayer.desktopClosingUnderlayLayer,
+      "folder detached closing visuals should mount in the desktop underlay"
+    );
+    actualLayer.destroy({ children: true });
 
     const pageTrack = makePageTrack([]);
     const layer = makeLayer(DesktopLayer, pageTrack);
@@ -130,8 +347,17 @@ export async function runDesktopLayerTests() {
 
     assert(layer.visualRoot.visible === true, "hidden desktop should stay renderable so alpha can animate");
     assert(layer.visualRoot.alpha === 0, "hidden desktop should apply the requested alpha");
+    assert(layer.desktopClosingUnderlayLayer.alpha === 0, "desktop closing underlay should fade with the desktop");
     assert(layer.visualRoot.interactiveChildren === false, "hidden desktop should not receive icon interaction");
     assert(layer.singleStageFolderLayer.alpha === 1, "desktop alpha should not hide the folder overlay layer");
+
+    layer.applyDesktopVisualTransform({
+      desktopVisualTransform: { scale: 0.92, y: 44 },
+      height: 600,
+      width: 800,
+    });
+    assert(layer.desktopClosingUnderlayLayer.scale.x === 0.92 && layer.desktopClosingUnderlayLayer.scale.y === 0.92, "desktop closing underlay should scale with the desktop");
+    assert(layer.desktopClosingUnderlayLayer.position.x === 400 && layer.desktopClosingUnderlayLayer.position.y === 344, "desktop closing underlay should move with the desktop");
 
     layer.applyFolderOverlayTransform({
       height: 600,
@@ -140,6 +366,7 @@ export async function runDesktopLayerTests() {
     });
     assert(layer.singleStageFolderLayer.scale.x === 1 && layer.singleStageFolderLayer.scale.y === 1, "open folder overlay should keep identity scale");
     assert(layer.singleStageFolderLayer.position.x === 400 && layer.singleStageFolderLayer.position.y === 300, "folder overlay should pivot around the stage center");
+    assert(layer.desktopClosingUnderlayLayer.alpha === 0, "folder overlay changes should not reveal desktop closing underlay");
 
     layer.applyFolderOverlayAlpha({ launchpadVisualAlpha: 0 });
     assert(layer.singleStageFolderLayer.visible === true, "hidden launchpad folder overlay should stay renderable so alpha can animate");
@@ -150,7 +377,6 @@ export async function runDesktopLayerTests() {
     closingLayer.applyFolderOverlayTransform({
       height: 600,
       launchpadVisualTransform: { scale: 1.08, y: 0 },
-      singleStageFolderLayerEnabled: true,
       singleStageFolderState: { renderedFolder: { id: "folder-1" } },
       width: 800,
     });
@@ -160,19 +386,285 @@ export async function runDesktopLayerTests() {
     closingLayer.applyFolderOverlayTransform({
       height: 600,
       launchpadVisualTransform: { scale: 1, y: 0 },
-      singleStageFolderLayerEnabled: true,
       singleStageFolderState: null,
       width: 800,
     });
     assert(closingLayer.singleStageFolderLayer.scale.x === 1 && closingLayer.singleStageFolderLayer.scale.y === 1, "inactive folder overlay should snap back to identity scale");
     assert(closingLayer.hasSingleStageFolderOverlayContent({
-      singleStageFolderLayerEnabled: true,
       singleStageFolderState: { renderedFolder: { id: "folder-1" } },
-    }), "folder overlay content should require an enabled layer and rendered folder");
+    }), "folder overlay content should require a rendered folder");
     assert(!closingLayer.hasSingleStageFolderOverlayContent({
-      singleStageFolderLayerEnabled: true,
       singleStageFolderState: null,
     }), "missing folder state should count as no overlay content");
+  }
+
+  {
+    const makeFolderNode = (id) => ({
+      alpha: 1,
+      item: { id, type: "folder" },
+      setState(nextState) {
+        this.state = nextState;
+      },
+      state: { ghosted: false },
+    });
+    const folderA = makeFolderNode("folder-a");
+    const folderB = makeFolderNode("folder-b");
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.iconNodes.set("folder-a", folderA);
+    layer.iconNodes.set("folder-b", folderB);
+    layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set(["folder-a"]);
+
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(["folder-b"]),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    });
+
+    assert(folderA.state.ghosted === true, "overlay-owned detached folder source should stay ghosted on the desktop");
+    assert(folderB.state.ghosted === true, "Vue-owned opening folder source should stay ghosted on the desktop");
+    assert(folderA.__folderSourceGhostedByOwnership === true, "overlay-owned source ghosting should be tracked as ownership");
+    assert(folderB.__folderSourceGhostedByOwnership === true, "Vue-owned source ghosting should be tracked as ownership");
+
+    layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set(["folder-a"]);
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    });
+
+    assert(folderA.state.ghosted === true, "clearing folder B source ghosting should not reveal detached folder A");
+    assert(folderB.state.ghosted === false, "clearing folder B source ghosting should reveal only folder B");
+
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set();
+    layer.visualOwnership.acquire(makeDesktopSourceVisualKey("folder-a"), {
+      folderId: "folder-a",
+      kind: "detachedClosing",
+      token: "detached-a",
+    });
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    });
+    assert(folderA.state.ghosted === true, "root ownership should ghost a detached desktop source");
+    layer.visualOwnership.release(makeDesktopSourceVisualKey("folder-a"), "detached-a");
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    });
+    assert(folderA.state.ghosted === false, "root ownership release should restore the desktop source");
+
+    layer.visualOwnership.acquire(makeDesktopSourceVisualKey("folder-a"), {
+      folderId: "folder-a",
+      kind: "detachedClosing",
+      token: "detached-a-2",
+    });
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(["folder-b"]),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    });
+    assert(folderA.state.ghosted === true && folderB.state.ghosted === true, "raw and ownership source ghosting should compose while both are active");
+    layer.visualOwnership.release(makeDesktopSourceVisualKey("folder-a"), "detached-a-2");
+    layer.commitFolderSourceGhosting();
+    assert(folderA.state.ghosted === false, "ownership release should not be reintroduced from stale cached source ghosting");
+    assert(folderB.state.ghosted === true, "raw Vue source ghosting should remain after ownership release");
+  }
+
+  {
+    motionRuntime.reset();
+    const makeFolderNode = (id) => ({
+      alpha: 1,
+      item: { id, type: "folder" },
+      setState(nextState) {
+        this.state = nextState;
+      },
+      state: { ghosted: false },
+      x: 0,
+      y: 0,
+    });
+    const folderA = makeFolderNode("folder-a");
+    const folderB = makeFolderNode("folder-b");
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.applyDesktopVisualAlpha = () => {};
+    layer.applyDesktopVisualTransform = () => {};
+    layer.applyFolderOverlayAlpha = () => {};
+    layer.applyFolderOverlayTransform = () => {};
+    layer.flushInteractiveBounds = () => {};
+    layer.markInteractiveBoundsDirty = () => {};
+    layer.singleStageDiagnosticsLayer = { update() {} };
+    layer.singleStageFolderLayer = {
+      getDesktopSourceGhostedIds: () => new Set(),
+    };
+    layer.updateSingleStageDragPreviewLayer = () => {};
+    layer.updateSingleStageFolderLayer = () => {};
+    layer.pageTrackMotion = {
+      control: null,
+      grabProgressOffset: 0,
+      grabToken: null,
+      key: null,
+      mode: null,
+      settleToken: null,
+    };
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.visualOwnership.acquire(makeDesktopSourceVisualKey("folder-a"), {
+      folderId: "folder-a",
+      kind: "detachedClosing",
+      token: "detached-a",
+    });
+    layer.iconNodes.set("page:0:folder-a", folderA);
+    layer.iconNodes.set("page:0:folder-b", folderB);
+
+    layer.update({
+      activePageIndex: 0,
+      activePages: [[
+        { id: "folder-a", type: "folder" },
+        { id: "folder-b", type: "folder" },
+      ]],
+      desktopFrame: { height: 300, left: 0, top: 0, width: 400 },
+      deviceResolution: 1,
+      folderPageSize: 9,
+      folderSourceGhostedIds: new Set(["folder-b"]),
+      getDesktopPageRenderMode: () => "interactive",
+      getVisibleDesktopPage: (page) => page,
+      gridCols: 2,
+      gridRows: 1,
+      height: 300,
+      iconSize: 64,
+      isFolderOpeningPreviewFrameGhosted: () => false,
+      isIconOpening: () => false,
+      isIconSelected: () => false,
+      isSearchMode: false,
+      isTextlessMode: false,
+      launchTargetStatusById: {},
+      setPageRef: () => {},
+      showMissingLaunchTargetBadge: false,
+      stageRect: { height: 300, left: 0, top: 0, width: 400 },
+      width: 400,
+    });
+
+    assert(folderA.state.ghosted === true && folderB.state.ghosted === true, "update should compose raw Vue ghosting with live detached ownership");
+    layer.visualOwnership.release(makeDesktopSourceVisualKey("folder-a"), "detached-a");
+    layer.commitFolderSourceGhosting();
+    assert(folderA.state.ghosted === false, "update should cache raw source ghosting, not ownership-expanded source ghosting");
+    assert(folderB.state.ghosted === true, "update should keep the raw Vue folder source ghosted after detached ownership release");
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const item = { id: "app-a", type: "app" };
+    const pageTrack = makePageTrack([]);
+    pageTrack.x = 0;
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    prepareLayerForDesktopQuiescenceTest(layer, item);
+    const state = makeDesktopQuiescenceState(item);
+    let scheduledFrameCount = 0;
+    let pendingRender = true;
+
+    try {
+      layer.update(state);
+      for (let frame = 0; frame < 600 && motionRuntime.hasActiveWork(); frame += 1) {
+        motionRuntime.step(1 / 60);
+      }
+      assert(!motionRuntime.hasActiveWork(), "test setup should settle the initial desktop mount animation before checking idle rendering");
+      motionRuntime.reset();
+
+      for (let frame = 0; frame < 12; frame += 1) {
+        scheduledFrameCount += 1;
+        motionRuntime.step(frame === 0 ? 0 : 1 / 60);
+        if (motionRuntime.debug.writesLastFrame > 0) pendingRender = true;
+        if (pendingRender) {
+          pendingRender = false;
+          layer.update(state);
+        }
+        if (!pendingRender && !motionRuntime.hasActiveWork()) break;
+      }
+
+      assert(
+        !motionRuntime.hasActiveWork(),
+        `unchanged desktop render plan should settle to idle motion work, got ${motionRuntime.debugSnapshot().summary.activeAnimationCount} active animation(s)`
+      );
+      assert(scheduledFrameCount <= 4, `unchanged desktop render plan should stop scheduling frames after settling, got ${scheduledFrameCount}`);
+    } finally {
+      motionRuntime.reset();
+    }
+  }
+
+  {
+    motionRuntime.reset();
+    const makeFolderNode = (id) => {
+      const node = makeNode(id);
+      node.alpha = 1;
+      node.item = { id, type: "folder" };
+      node.setState = (nextState) => {
+        node.state = nextState;
+        node.visible = !nextState.ghosted;
+      };
+      return node;
+    };
+    const folderA = makeFolderNode("folder-a");
+    const folderB = makeFolderNode("folder-b");
+    const pageTrack = makePageTrack([folderA, folderB]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.applyDesktopVisualAlpha = () => {};
+    layer.applyDesktopVisualTransform = () => {};
+    layer.applyFolderOverlayAlpha = () => {};
+    layer.applyFolderOverlayTransform = () => {};
+    layer.flushInteractiveBounds = () => {};
+    layer.markInteractiveBoundsDirty = () => {};
+    layer.singleStageDiagnosticsLayer = { update() {} };
+    layer.singleStageFolderLayer = {
+      folderHandoff: makeHandoffCoordinator({ active: true, folderId: "folder-b" }),
+      getDesktopSourceGhostedIds: () => new Set(["folder-a"]),
+    };
+    layer.updateSingleStageDragPreviewLayer = () => {};
+    layer.updateSingleStageFolderLayer = () => {};
+    layer.pageTrackMotion = {
+      control: null,
+      grabProgressOffset: 0,
+      grabToken: null,
+      key: null,
+      mode: null,
+      settleToken: null,
+    };
+    layer.iconNodes.set("page:0:folder-a", folderA);
+    layer.iconNodes.set("page:0:folder-b", folderB);
+    layer.ensureFolderHandoffNode("folder-a", folderA, { x: 12, y: 34 }, { revealLabel: false });
+
+    layer.update({
+      activePageIndex: 0,
+      activePages: [[
+        { id: "folder-a", type: "folder" },
+        { id: "folder-b", type: "folder" },
+      ]],
+      desktopFrame: { height: 300, left: 0, top: 0, width: 400 },
+      deviceResolution: 1,
+      folderClosingHandoffIds: new Set(["folder-b"]),
+      folderPageSize: 9,
+      folderSourceGhostedIds: new Set(["folder-a", "folder-b"]),
+      getDesktopPageRenderMode: () => "interactive",
+      getVisibleDesktopPage: (page) => page,
+      gridCols: 2,
+      gridRows: 1,
+      height: 300,
+      iconSize: 64,
+      isFolderOpeningPreviewFrameGhosted: () => false,
+      isIconOpening: () => false,
+      isIconSelected: () => false,
+      isSearchMode: false,
+      isTextlessMode: false,
+      launchTargetStatusById: {},
+      setPageRef: () => {},
+      showMissingLaunchTargetBadge: false,
+      stageRect: { height: 300, left: 0, top: 0, width: 400 },
+      width: 400,
+    });
+
+    assert(layer.getFolderHandoffEntry("folder-a"), "detached folder A handoff should survive folder B's live close update");
+    assert(folderA.visualWrap.visible === false, "detached folder A artwork should stay hidden until its detached visual releases");
+    assert(folderA.visible === true && folderA.state.ghosted === false, "detached folder A handoff node should not fall back to the ordinary ghosted path");
+    assert(folderA.__folderSourceGhostedByOwnership === true, "detached folder A handoff should still track ownership ghosting");
+    motionRuntime.reset();
   }
 
   {
@@ -186,6 +678,7 @@ export async function runDesktopLayerTests() {
 
     assert(pageTrack.children.length === 3, "handoff should reuse the real folder node");
     assert(pageTrack.children[2] === folder, "handoff should raise the real folder node");
+    assert(!Object.prototype.hasOwnProperty.call(layer, "folderHandoffNode"), "primary handoff node should be derived from the handoff map");
     assert(layer.folderHandoffNode.node === folder, "handoff state should reference the real node");
     assert(folder.position.x === 12 && folder.position.y === 34, "handoff should snap node to the target");
     assert(folder.scale.x === 1 && folder.scale.y === 1, "handoff should reset node scale");
@@ -194,22 +687,24 @@ export async function runDesktopLayerTests() {
     assert(folder.eventMode === "static" && folder.cursor === "pointer", "handoff should restore folder interaction once the real node owns the icon");
     assert(folder.state.draggable === true && folder.state.interactive === true, "handoff should restore the node state used by pointer handling");
     assert(folder.state.ghosted === false, "handoff should clear the stale ghost flag before the next setState");
-    assert(folder.labelText.visible === true && folder.labelText.alpha === 0, "handoff should keep the folder label hidden until the ready signal");
-    assert(folder.labelRevealCount === 0, "plain handoff sync should not start the label fade");
-    layer.revealFolderHandoffLabel();
-    assert(folder.labelRevealCount === 1, "handoff ready should start the folder label fade");
+    assert(folder.labelText.visible === true && folder.labelText.alpha === 0, "handoff should start the folder label fade from a hidden label");
+    assert(folder.labelRevealCount === 1, "handoff should start the label fade when the icon arrives");
     folder.labelText.alpha = 0.4;
     layer.syncFolderHandoffNode(folder, { x: 12, y: 34 });
-    assert(folder.labelText.alpha === 0.4, "handoff position sync should not hide an in-progress label fade");
+    assert(folder.labelText.alpha === 0.4, "handoff position sync should not reset an in-progress label fade");
     assert(folder.labelRevealCount === 1, "handoff position sync should not restart the label reveal");
     layer.releaseClosingFolderHandoffVisual("folder-1");
+    assert(folder.labelRevealCount === 1, "visual release should not restart the folder label fade");
     assert(folder.visualWrap.visible === true, "settled overlay visual release should restore the real folder artwork");
+    folder.labelText.alpha = 0.4;
     layer.syncFolderHandoffNode(folder, { x: 12, y: 34 });
     assert(folder.visualWrap.visible === true, "handoff position sync should not hide artwork after settled overlay release");
+    assert(folder.labelText.alpha === 0.4, "handoff position sync should not hide an in-progress label fade after visual release");
 
     layer.clearFolderHandoffNode();
 
     assert(layer.folderHandoffNode === null, "clear should remove handoff state");
+    assert(layer.folderHandoffNodes.size === 0, "clear should remove all handoff entries");
     assert(pageTrack.children[1] === folder, "clear should restore original z order");
     assert(folder.visualWrap.visible === true, "clear should restore the real folder artwork after overlay cleanup");
     assert(folder.labelRevealCount === 1, "clear should not restart the folder label fade-in");
@@ -228,8 +723,255 @@ export async function runDesktopLayerTests() {
     layer.ensureFolderHandoffNode("folder-a", folderA, { x: 12, y: 34 });
     layer.ensureFolderHandoffNode("folder-b", folderB, { x: 56, y: 78 });
 
-    assert(folderA.visualWrap.visible === true, "replacing a handoff should restore the previous folder artwork");
-    assert(folderB.visualWrap.visible === false, "new handoff should hide only the new folder artwork");
+    assert(layer.folderHandoffNodes.size === 2, "different folder handoffs should coexist");
+    assert(folderA.visualWrap.visible === false, "starting folder B handoff should keep folder A hidden while its overlay visual is active");
+    assert(folderB.visualWrap.visible === false, "new handoff should hide the new folder artwork");
+    layer.releaseClosingFolderHandoffVisual("folder-a");
+    assert(folderA.visualWrap.visible === true && folderB.visualWrap.visible === false, "releasing folder A should not reveal folder B");
+  }
+
+  {
+    const logs = [];
+    const originalDebug = readLaunchpadDebugValue("folderHandoff");
+    const originalLastDebug = readLaunchpadDebugValue("lastFolderHandoff");
+    const originalLog = console.log;
+    setLaunchpadDebugValue("folderHandoff", { log: true });
+    console.log = (...args) => logs.push(args);
+    try {
+      const folder = makeNode("folder");
+      folder.item = { id: "folder-1", type: "folder" };
+      const pageTrack = makePageTrack([folder]);
+      const layer = makeLayer(DesktopLayer, pageTrack);
+
+      layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 });
+      layer.releaseClosingFolderHandoffVisual("folder-1");
+
+      const before = logs.find(([label, payload]) =>
+        label === "[folder-handoff-debug] desktop-restore" && payload?.phase === "desktop-restore-before"
+      );
+      const after = logs.find(([label, payload]) =>
+        label === "[folder-handoff-debug] desktop-restore" && payload?.phase === "desktop-restore-after"
+      );
+      assert(before?.[1]?.node?.visualWrapVisible === false, "desktop restore debug should capture hidden artwork before release");
+      assert(after?.[1]?.node?.visualWrapVisible === true, "desktop restore debug should capture restored artwork after release");
+      assert(after?.[1]?.visualRoot, "desktop restore debug should include desktop transform context");
+      assert(after?.[1]?.singleStageFolderLayer, "desktop restore debug should include folder overlay transform context");
+      const lastDebug = readLaunchpadDebugValue("lastFolderHandoff");
+      assert(
+        lastDebug?.folderId === "folder-1" &&
+          lastDebug?.phase === "desktop-restore-after",
+        "desktop restore debug should publish the latest folder handoff snapshot"
+      );
+    } finally {
+      console.log = originalLog;
+      if (originalDebug === undefined) deleteLaunchpadDebugValue("folderHandoff");
+      else setLaunchpadDebugValue("folderHandoff", originalDebug);
+      if (originalLastDebug === undefined) deleteLaunchpadDebugValue("lastFolderHandoff");
+      else setLaunchpadDebugValue("lastFolderHandoff", originalLastDebug);
+    }
+  }
+
+  {
+    const folder = makeNode("folder");
+    folder.item = { id: "folder-1", type: "folder" };
+    folder.state = { ghosted: true, suppressLabelRevealAfterGhost: true };
+    let setStateCount = 0;
+    folder.setState = (nextState) => {
+      setStateCount += 1;
+      folder.state = nextState;
+      folder.labelText.alpha = 1;
+    };
+    const pageTrack = makePageTrack([folder]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.iconNodes.set("page:0:folder-1", folder);
+    layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set();
+
+    layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 });
+    folder.__folderSourceGhostedByOwnership = true;
+    folder.labelText.alpha = 0.4;
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    });
+
+    assert(setStateCount === 0, "source ghosting commits should not use normal setState while a handoff entry owns the folder node");
+    assert(folder.labelText.alpha === 0.4, "source ghosting commits should not force an in-progress handoff label fade to full opacity");
+    assert(folder.__folderSourceGhostedByOwnership === false, "handoff source ghosting metadata should still track the latest ownership state");
+  }
+
+  {
+    const folder = makeNode("folder");
+    folder.item = { id: "folder-1", type: "folder" };
+    folder.state = { ghosted: false };
+    let setStateCount = 0;
+    folder.setState = (nextState) => {
+      setStateCount += 1;
+      folder.state = nextState;
+      folder.visible = !nextState.ghosted;
+    };
+    const pageTrack = makePageTrack([folder]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.iconNodes.set("page:0:folder-1", folder);
+    layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set();
+
+    layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 });
+    assert(layer.getFolderHandoffEntry("folder-1"), "test setup should create a handoff entry");
+
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(["folder-1"]),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    });
+
+    assert(!layer.getFolderHandoffEntry("folder-1"), "new raw source ghosting should clear a stale handoff entry");
+    assert(setStateCount === 1, "new raw source ghosting should be committed through normal icon state");
+    assert(folder.state.ghosted === true && folder.visible === false, "new raw source ghosting should hide the real folder icon");
+  }
+
+  {
+    const folder = makeNode("folder");
+    folder.item = { id: "folder-1", type: "folder" };
+    folder.state = { ghosted: false };
+    let setStateCount = 0;
+    folder.setState = (nextState) => {
+      setStateCount += 1;
+      folder.state = nextState;
+      folder.visible = !nextState.ghosted;
+    };
+    const pageTrack = makePageTrack([folder]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.iconNodes.set("page:0:folder-1", folder);
+    layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set();
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+
+    layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 });
+    layer.releaseClosingFolderHandoffVisual("folder-1");
+    assert(layer.getFolderHandoffEntry("folder-1")?.visualReleased === true, "test setup should leave a released stale handoff entry");
+    layer.visualOwnership.acquire(makeDesktopSourceVisualKey("folder-1"), {
+      folderId: "folder-1",
+      kind: "closing",
+      token: "close-folder-1",
+    });
+
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    });
+
+    assert(!layer.getFolderHandoffEntry("folder-1"), "ownership source ghosting should clear a released stale handoff entry");
+    assert(setStateCount === 1, "ownership source ghosting should be committed through normal icon state after stale handoff cleanup");
+    assert(folder.state.ghosted === true && folder.visible === false, "ownership source ghosting should hide the real folder icon");
+  }
+
+  {
+    const folder = makeNode("folder");
+    folder.item = { id: "folder-1", type: "folder" };
+    folder.state = { ghosted: false };
+    let setStateCount = 0;
+    folder.setState = (nextState) => {
+      setStateCount += 1;
+      folder.state = nextState;
+      folder.visible = !nextState.ghosted;
+    };
+    const pageTrack = makePageTrack([folder]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.iconNodes.set("page:0:folder-1", folder);
+    layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set();
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+
+    layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 }, { revealLabel: false });
+    layer.visualOwnership.acquire(makeDesktopSourceVisualKey("folder-1"), {
+      folderId: "folder-1",
+      kind: "detachedClosing",
+      token: "detached-folder-1",
+    });
+
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    });
+
+    assert(layer.getFolderHandoffEntry("folder-1"), "ownership source ghosting should keep an unreleased prepared handoff entry");
+    assert(setStateCount === 0, "prepared handoff should not route ownership ghosting through normal setState");
+    assert(folder.visualWrap.visible === false, "prepared handoff should keep the real folder artwork hidden");
+    assert(folder.__folderSourceGhostedByOwnership === true, "prepared handoff should still track ownership ghosting metadata");
+  }
+
+  {
+    const folder = makeNode("folder");
+    folder.item = { id: "folder-1", type: "folder" };
+    folder.state = { ghosted: false };
+    let setStateCount = 0;
+    folder.setState = (nextState) => {
+      setStateCount += 1;
+      folder.state = nextState;
+      folder.visible = !nextState.ghosted;
+    };
+    const pageTrack = makePageTrack([folder]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.iconNodes.set("page:0:folder-1", folder);
+    layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set(["folder-1"]);
+
+    layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 }, { revealLabel: false });
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(["folder-1"]),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    });
+
+    assert(layer.getFolderHandoffEntry("folder-1"), "closing-owned raw source ghosting should keep the prepared handoff entry");
+    assert(setStateCount === 0, "closing-owned prepared handoff should not fall back to normal ghosted setState");
+    assert(folder.visualWrap.visible === false, "closing-owned prepared handoff should keep desktop artwork hidden while ghosts own the source");
+    assert(folder.__folderSourceGhostedByOwnership === true, "closing-owned prepared handoff should track source ownership ghosting");
+  }
+
+  {
+    const folder = makeNode("folder");
+    folder.item = { id: "folder-1", type: "folder" };
+    folder.state = { ghosted: false };
+    const pageTrack = makePageTrack([folder]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+
+    layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 });
+    layer.releaseClosingFolderHandoffVisual("folder-1");
+    assert(folder.visualWrap.visible === true, "test setup should restore artwork after visual release");
+    assert(layer.getFolderHandoffEntry("folder-1")?.visualReleased === true, "test setup should leave a released handoff entry");
+
+    layer.ensureFolderHandoffNode("folder-1", folder, { x: 18, y: 42 }, { revealLabel: false });
+
+    const entry = layer.getFolderHandoffEntry("folder-1");
+    assert(entry?.visualReleased === true, "ordinary handoff sync should not restart visual ownership after release");
+    assert(folder.visualWrap.visible === true, "ordinary handoff sync should not hide released folder artwork again");
+
+    layer.ensureFolderHandoffNode("folder-1", folder, { x: 20, y: 44 }, { resetVisual: true, revealLabel: false });
+
+    assert(entry?.visualReleased === false, "explicit handoff prepare should restart visual ownership");
+    assert(entry?.labelRevealStarted === false, "explicit handoff prepare should reset stale label reveal state");
+    assert(folder.visualWrap.visible === false, "explicit handoff prepare should hide the real folder artwork again");
+  }
+
+  {
+    try {
+      const folder = makeNode("folder");
+      folder.item = { id: "folder-1", type: "folder" };
+      folder.state = { ghosted: false };
+      const pageTrack = makePageTrack([folder]);
+      const layer = makeLayer(DesktopLayer, pageTrack);
+      layer.iconNodes.set("page:0:folder-1", folder);
+      layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set();
+
+      layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 });
+      layer.releaseClosingFolderHandoffVisual("folder-1");
+      layer.lastFolderSourceGhostingState = {
+        folderSourceGhostedIds: new Set(),
+        isFolderOpeningPreviewFrameGhosted: () => false,
+      };
+
+      layer.commitFolderSourceGhosting();
+      assert(layer.getFolderHandoffEntry("folder-1")?.cleanupFrame?.cancelled === false, "source ghosting commit should schedule eligible handoff cleanup");
+      motionRuntime.flushAfterFrameForTests();
+      assert(!layer.getFolderHandoffEntry("folder-1"), "scheduled source ghosting reconciliation should clear eligible handoff entries");
+    } finally {
+      motionRuntime.reset();
+    }
   }
 
   {
@@ -253,15 +995,19 @@ export async function runDesktopLayerTests() {
     assert(pageTrack.children[1] === folder, "ready handoff should raise the folder node");
     assert(folder.position.x === 22 && folder.position.y === 44, "ready handoff should snap to the current desktop target");
     assert(folder.visualWrap.visible === false, "ready handoff should keep the real folder artwork hidden under the overlay");
-    assert(folder.labelRevealCount === 1, "ready handoff should start the label fade immediately");
+    assert(folder.labelRevealCount === 1, "ready handoff should start the label fade at handoff readiness");
+    assert(folder.labelText.alpha === 0, "ready handoff should start the label fade from a hidden label");
     folder.labelText.alpha = 0.4;
     assert(layer.startClosingFolderHandoffNow("folder-1"), "duplicate ready handoff should keep the existing handoff active");
     assert(folder.labelRevealCount === 1, "duplicate ready handoff should not restart the label fade");
-    assert(folder.labelText.alpha === 0.4, "duplicate ready handoff should not hide an in-progress label fade");
+    assert(folder.labelText.alpha === 0.4, "duplicate ready handoff should keep the in-progress label fade");
+    layer.releaseClosingFolderHandoffVisual("folder-1");
+    assert(folder.labelRevealCount === 1, "visual release should not restart the label fade after ready handoff");
   }
 
   {
-    clearIconBoundsRegistry();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    makeLayer.iconBoundsRegistry = iconBoundsRegistry;
     const folder = makeNode("folder");
     folder.item = {
       children: [{ id: "child-1" }],
@@ -274,7 +1020,7 @@ export async function runDesktopLayerTests() {
     const pageTrack = makePageTrack([folder]);
     const layer = makeLayer(DesktopLayer, pageTrack);
 
-    registerRenderedClientTopLevelFolderThumbBounds("folder-1", { height: 60, left: 10, top: 20, width: 60 }, {
+    iconBoundsRegistry.registerBounds(K.FOLDER_THUMB, V.RENDERED, "folder-1", { height: 60, left: 10, top: 20, width: 60 }, {
       area: "desktop",
       id: "folder-1",
     });
@@ -283,9 +1029,10 @@ export async function runDesktopLayerTests() {
     layer.clearFolderHandoffNode();
 
     assert(layer.folderHandoffNode === null, "debug snapshot should not prevent handoff cleanup");
+    assert(layer.folderHandoffNodes.size === 0, "debug snapshot cleanup should remove the handoff entry");
     assert(layer.lastFolderHandoffDebugSnapshot?.childRows?.length === 1, "debug snapshot should include preview child rows");
     assert(layer.lastFolderHandoffDebugSnapshot.childRows[0].target, "debug snapshot should resolve preview child targets");
-    clearIconBoundsRegistry();
+    iconBoundsRegistry.clearBounds();
   }
 
   {
@@ -327,7 +1074,6 @@ export async function runDesktopLayerTests() {
       isTextlessMode: false,
       launchTargetStatusById: {},
       showMissingLaunchTargetBadge: true,
-      singleStageDragPreviewEnabled: true,
       stageRect: { height: 600, left: 10, top: 20, width: 800 },
       width: 800,
     });
@@ -336,21 +1082,20 @@ export async function runDesktopLayerTests() {
     assert(calls[0].releaseState === releaseState, "root-stage drag preview should receive the active release state");
 
     layer.updateSingleStageDragPreviewLayer({
-      dragPreviewState: previewState,
-      dragReleaseState: releaseState,
+      dragPreviewState: null,
+      dragReleaseState: null,
       folderPageSize: 9,
       height: 600,
       iconSize: 64,
       isTextlessMode: false,
       launchTargetStatusById: {},
       showMissingLaunchTargetBadge: true,
-      singleStageDragPreviewEnabled: false,
       stageRect: { height: 600, left: 10, top: 20, width: 800 },
       width: 800,
     });
 
-    assert(calls[1].previewState === null, "disabled root-stage drag preview should clear the preview state");
-    assert(calls[1].releaseState === null, "disabled root-stage drag preview should clear the release state");
+    assert(calls[1].previewState === null, "root-stage drag preview should clear when no preview state is active");
+    assert(calls[1].releaseState === null, "root-stage drag preview should clear when no release state is active");
   }
 
   {
@@ -358,40 +1103,45 @@ export async function runDesktopLayerTests() {
     const folder = makeNode("folder");
     const pageTrack = makePageTrack([before, folder]);
     const layer = makeLayer(DesktopLayer, pageTrack);
-    const hadRequestAnimationFrame = "requestAnimationFrame" in globalThis;
-    const hadCancelAnimationFrame = "cancelAnimationFrame" in globalThis;
-    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
-    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
-    let queuedFrame = null;
-    globalThis.requestAnimationFrame = (callback) => {
-      queuedFrame = callback;
-      return 9;
-    };
-    globalThis.cancelAnimationFrame = () => {};
 
     try {
       layer.ensureFolderHandoffNode("folder-1", folder, { x: 20, y: 30 });
       layer.finishFolderHandoffNodeAfterFrame();
 
-      assert(layer.folderHandoffNode.cleanupFrame === 9, "finish should wait one frame before cleanup");
-      assert(folder.labelRevealCount === 1, "finish should not restart the label reveal before cleanup");
+      assert(layer.folderHandoffNode.cleanupFrame?.cancelled === false, "finish should wait one runtime frame before cleanup");
+      assert(folder.labelRevealCount === 1, "finish should not restart the label reveal after handoff readiness");
       assert(folder.visualWrap.visible === false, "finish should keep the real folder artwork hidden until settled overlay release");
       assert(pageTrack.children[1] === folder, "handoff should stay raised until the cleanup frame");
       layer.releaseClosingFolderHandoffVisual("folder-1");
+      assert(folder.labelRevealCount === 1, "visual release should not restart the label reveal before cleanup");
       assert(folder.visualWrap.visible === true, "settled overlay release should restore artwork before final handoff cleanup");
 
-      queuedFrame();
+      motionRuntime.flushAfterFrameForTests();
 
       assert(layer.folderHandoffNode === null, "cleanup frame should clear handoff state");
+      assert(layer.folderHandoffNodes.size === 0, "cleanup frame should clear handoff entries");
       assert(pageTrack.children[1] === folder, "cleanup frame should preserve the restored z order");
       assert(folder.visualWrap.visible === true, "cleanup frame should keep the real folder artwork visible");
       assert(folder.labelRevealCount === 1, "cleanup frame should not restart the label reveal");
     } finally {
-      if (hadRequestAnimationFrame) globalThis.requestAnimationFrame = originalRequestAnimationFrame;
-      else delete globalThis.requestAnimationFrame;
-      if (hadCancelAnimationFrame) globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
-      else delete globalThis.cancelAnimationFrame;
+      motionRuntime.reset();
     }
+  }
+
+  {
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    const overlayDebug = {
+      openingGeometry: {
+        session: { folderId: "folder-1", token: 7 },
+        snapshot: { folderId: "folder-1", targetKey: "target-a" },
+      },
+    };
+    layer.singleStageFolderLayer.getVisualDebugSnapshot = () => overlayDebug;
+
+    const snapshot = layer.getFolderVisualDebugSnapshot();
+
+    assert(snapshot.overlay.debug === overlayDebug, "folder visual debug snapshot should expose overlay geometry diagnostics");
   }
 
   {
@@ -445,14 +1195,12 @@ export async function runDesktopLayerTests() {
       layer.applyFolderOverlayTransform({
         height: 600,
         launchpadVisualTransform: { scale: 1, y: 0 },
-        singleStageFolderLayerEnabled: true,
         singleStageFolderState: { renderedFolder: { id: "folder-1" } },
         width: 800,
       });
       layer.applyFolderOverlayTransform({
         height: 600,
         launchpadVisualTransform: { scale: 1.08, y: 0 },
-        singleStageFolderLayerEnabled: true,
         singleStageFolderState: { renderedFolder: { id: "folder-1" } },
         width: 800,
       });
@@ -461,7 +1209,6 @@ export async function runDesktopLayerTests() {
       layer.applyFolderOverlayTransform({
         height: 600,
         launchpadVisualTransform: { scale: 1, y: 0 },
-        singleStageFolderLayerEnabled: false,
         singleStageFolderState: null,
         width: 800,
       });

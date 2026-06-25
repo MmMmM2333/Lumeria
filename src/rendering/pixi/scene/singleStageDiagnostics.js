@@ -1,27 +1,14 @@
 import { Container, Graphics, Text } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { getSingleStageOptions, makeSingleStageDiagnosticsPlan } from "./singleStagePlan.js";
+import { setLaunchpadDebugValue } from "../debugNamespace.js";
+import { roundRect } from "./folderHandoffDebug.js";
+import { getSingleStageDiagnosticsOptions, makeSingleStageDiagnosticsPlan } from "./singleStagePlan.js";
 
 export {
-  getSingleStageOptions,
+  getSingleStageDiagnosticsOptions,
   isSingleStageDiagnosticsEnabled,
   makeSingleStageDiagnosticsPlan,
 } from "./singleStagePlan.js";
-
-function roundNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? Math.round(number * 1000) / 1000 : null;
-}
-
-function roundRect(rect) {
-  if (!rect) return null;
-  return {
-    height: roundNumber(rect.height),
-    left: roundNumber(rect.left),
-    top: roundNumber(rect.top),
-    width: roundNumber(rect.width),
-  };
-}
 
 function makeDebugSnapshot(plan) {
   if (!plan) return null;
@@ -76,9 +63,10 @@ export class SingleStageDiagnosticsLayer extends Container {
   }
 
   update(state, options = {}) {
-    const diagnosticsOptions = getSingleStageOptions(options.enabled);
+    const diagnosticsOptions = getSingleStageDiagnosticsOptions(options.enabled);
     const plan = makeSingleStageDiagnosticsPlan(state, {
       enabled: diagnosticsOptions,
+      iconBoundsRegistry: options.iconBoundsRegistry,
       previousStableFolderCloseTarget: this.stableFolderCloseTarget,
       wasClosing: this.wasClosing,
     });
@@ -126,7 +114,7 @@ export class SingleStageDiagnosticsLayer extends Container {
   publishDebugSnapshot(plan, options) {
     if (!options.diagnostics && !options.probe) return;
     const snapshot = makeDebugSnapshot(plan);
-    globalThis.__LP_LAST_SINGLE_STAGE_DIAGNOSTICS__ = snapshot;
+    setLaunchpadDebugValue("singleStageDiagnostics", snapshot);
     if (!options.log) return;
     const debugKey = JSON.stringify({
       closeThumb: snapshot?.closeThumbRect,
