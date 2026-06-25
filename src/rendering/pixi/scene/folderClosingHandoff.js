@@ -25,6 +25,12 @@ export function applyClosingHandoffOnlyOverlayState(layer) {
   transitionPort.setHitArea(null);
   transitionPort.setPanelVisible(false);
   transitionPort.setPageTrackVisible(false);
+  if (layer.pageDotsLayer) {
+    layer.pageDotsLayer.visible = false;
+    layer.pageDotsLayer.eventMode = "none";
+    layer.pageDotsLayer.hitArea = null;
+  }
+  layer.notifyTitleFrame?.(null);
   return null;
 }
 

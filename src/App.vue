@@ -83,6 +83,7 @@
         :icon-size="iconSize"
         :icon-bounds-registry="iconBoundsRegistry"
         :is-edit-mode="isEditMode"
+        :is-desktop-closing="isDesktopClosing"
         :folder-source-ghosted-id="folderSourceGhostedId"
         :folder-source-ghosted-ids="folderSourceGhostedIds"
         :is-folder-opening-preview-frame-ghosted="isFolderOpeningPreviewFrameGhosted"

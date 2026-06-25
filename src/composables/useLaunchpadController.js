@@ -1796,6 +1796,7 @@ export function useLaunchpadController() {
     folderPanelRef,
     folderPanelStyle,
     folderViewportRef,
+    folderZoomFadeCloseReason,
     getFolderPageRenderMode,
     getVisibleFolderPage,
     handleFolderOverlayPointerDown,

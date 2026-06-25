@@ -137,6 +137,7 @@ export async function runFolderOverlayLayerTests() {
   {
     const layer = {
       hitArea: { width: 100 },
+      pageDotsLayer: { eventMode: "static", hitArea: { width: 100 }, visible: true },
       pageTrack: { visible: true },
       panel: { visible: true },
     };
@@ -144,6 +145,7 @@ export async function runFolderOverlayLayerTests() {
     applyClosingHandoffOnlyOverlayState(layer);
     assert(layer.hitArea === null, "handoff-only overlay should not keep a full-screen pointer hit area");
     assert(layer.panel.visible === false && layer.pageTrack.visible === false, "handoff-only overlay should hide stale folder visuals");
+    assert(layer.pageDotsLayer.visible === false && layer.pageDotsLayer.eventMode === "none" && layer.pageDotsLayer.hitArea === null, "handoff-only overlay should disable stale page dots");
   }
 
   {
@@ -612,6 +614,189 @@ export async function runFolderOverlayLayerTests() {
     sameFolderLayer.detachClosingPresentationForOpen("folder-a");
     assert(sameFolderLayer.detachedClosingVisuals.length === 0, "reopening the same folder should not keep an old closing double-image");
     assert(sameFolderClearCount === 1, "same-folder reopen should still clear the live closing controller");
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    const detachedChildren = [];
+    const releasedHandoffs = [];
+    let sourceGhostingCommits = 0;
+    attachHandoffCoordinator(layer, { folderId: "folder-a" });
+    layer.closingGhostLayer = { removeChildren: () => [] };
+    layer.closingPreviewSwapLayer = { removeChildren: () => [] };
+    layer.closingGhosts = { clear: () => {} };
+    layer.onClosingHandoffPrepare = () => {};
+    layer.onClosingHandoffVisualRelease = (folderId) => releasedHandoffs.push(folderId);
+    layer.onDesktopSourceGhostingChange = () => { sourceGhostingCommits += 1; };
+    layer.detachedClosingVisuals = [];
+    layer.nextDetachedClosingVisualToken = 1;
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.detachedClosingVisualLayer = {
+      addChild(child) {
+        child.parent = this;
+        detachedChildren.push(child);
+      },
+      removeChild(child) {
+        const index = detachedChildren.indexOf(child);
+        if (index >= 0) detachedChildren.splice(index, 1);
+      },
+    };
+    layer.frameGhostState = {
+      fillAlpha: 0.26,
+      height: 160,
+      left: 20,
+      radius: 40,
+      strokeAlpha: 0.24,
+      strokeWidth: 1,
+      top: 30,
+      width: 240,
+    };
+    layer.folderHandoff.setCloseHandoffGeometry({
+      detachedTarget: {
+        fillAlpha: 0.2,
+        height: 64,
+        left: 140,
+        radius: 18,
+        strokeAlpha: 0.18,
+        strokeWidth: 1,
+        top: 170,
+        width: 64,
+      },
+    });
+
+    layer.detachClosingPresentationForDesktopClose("folder-a");
+    assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "desktop close detach should keep the source ghosted immediately");
+    for (let index = 0; index < 12; index += 1) motionRuntime.step(0.05);
+    layer.getVisualCommitQueue().flush();
+    assert(releasedHandoffs.length === 0, "desktop close detach should not reveal the real source when geometry finishes before desktop close");
+    assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "desktop close detach should keep source ownership after geometry finishes");
+    assert(detachedChildren.length === 1, "desktop close detach should keep the visual mounted until desktop close ends");
+    layer.syncDesktopCloseDetachedHandoff({ isDesktopClosing: false });
+    assert(releasedHandoffs.join(",") === "folder-a", "desktop close completion should release the real source handoff");
+    assert(sourceGhostingCommits === 1, "desktop close completion should publish one source ghosting update");
+    assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "desktop close completion should release desktop source ownership");
+    assert(detachedChildren.length === 0, "desktop close completion should destroy the detached visual");
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    const detachedChildren = [];
+    let clearCount = 0;
+    let sourceGhostingCommits = 0;
+    attachHandoffCoordinator(layer);
+    layer.closingGhostLayer = { removeChildren: () => [] };
+    layer.closingPreviewSwapLayer = { removeChildren: () => [] };
+    layer.closingGhosts = { clear: () => { clearCount += 1; } };
+    layer.onClosingHandoffPrepare = () => {};
+    layer.onDesktopSourceGhostingChange = () => { sourceGhostingCommits += 1; };
+    layer.detachedClosingVisuals = [];
+    layer.nextDetachedClosingVisualToken = 1;
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    layer.detachedClosingVisualLayer = {
+      addChild(child) {
+        child.parent = this;
+        detachedChildren.push(child);
+      },
+      removeChild(child) {
+        const index = detachedChildren.indexOf(child);
+        if (index >= 0) detachedChildren.splice(index, 1);
+      },
+    };
+    layer.frameGhostState = null;
+
+    layer.syncDesktopCloseDetachedHandoff({
+      folderZoomFadeCloseReason: "desktop",
+      isDesktopClosing: true,
+      isFolderZoomFadeClosing: true,
+      renderedFolder: { id: "folder-a" },
+    });
+    assert(layer.detachedClosingVisuals.length === 1, "desktop close without visible ghosts should still create a source lock");
+    assert(detachedChildren.length === 1 && detachedChildren[0].children.length === 0, "source lock should not need a visible substitute");
+    assert(detachedChildren[0].eventMode === "none", "source lock should not create a stale pointer target");
+    assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "source lock should keep the real desktop folder ghosted");
+    assert(clearCount === 1, "source lock setup should still clear live closing controller state");
+    motionRuntime.flushAfterFrameForTests();
+    assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "source lock should survive idle geometry completion while desktop is still closing");
+    layer.syncDesktopCloseDetachedHandoff({ isDesktopClosing: false });
+    assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "source lock should release after desktop close completes");
+    assert(detachedChildren.length === 0, "source lock should destroy its empty holder after release");
+    assert(sourceGhostingCommits === 1, "source lock release should publish one source ghosting update");
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const titleFrames = [];
+    const layer = new FolderOverlayLayer({
+      iconBoundsRegistry,
+      onTitleFrameChange: (frame) => titleFrames.push(frame),
+    });
+    layer.panel.visible = true;
+    layer.pageTrack.visible = true;
+    layer.pageDotsLayer.visible = true;
+    layer.pageDotsLayer.eventMode = "static";
+    layer.pageDotsLayer.hitArea = { contains: () => true };
+    layer.hitArea = { contains: () => true };
+    layer.titleFrameKey = "active";
+
+    const result = layer.update({
+      folderZoomFadeCloseReason: "desktop",
+      height: 800,
+      isDesktopClosing: true,
+      isFolderZoomFadeClosing: true,
+      renderedFolder: { childPages: [[]], id: "folder-a", name: "A", type: "folder" },
+      stageRect: { height: 800, left: 0, top: 0, width: 1200 },
+      width: 1200,
+    });
+
+    assert(result === null, "desktop close detached state should not continue into normal folder overlay rendering");
+    assert(layer.panel.visible === false, "desktop close detached state should hide the original open folder panel");
+    assert(layer.pageTrack.visible === false, "desktop close detached state should hide the original open folder page track");
+    assert(layer.pageDotsLayer.visible === false && layer.pageDotsLayer.eventMode === "none" && layer.pageDotsLayer.hitArea === null, "desktop close detached state should hide stale folder page dots");
+    assert(layer.hitArea === null, "desktop close detached state should not keep the open folder pointer hit area");
+    assert(titleFrames.length === 1 && titleFrames[0] === null, "desktop close detached state should hide the folder title frame");
+    assert(layer.detachedClosingVisuals.length === 1, "desktop close detached state should keep a detached handoff/source lock");
+    assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "desktop close detached state should keep the real source ghosted");
+
+    motionRuntime.flushAfterFrameForTests();
+    layer.panel.visible = true;
+    layer.pageTrack.visible = true;
+    layer.pageDotsLayer.visible = true;
+    layer.pageDotsLayer.eventMode = "static";
+    layer.pageDotsLayer.hitArea = { contains: () => true };
+    layer.hitArea = { contains: () => true };
+
+    const noRenderedResult = layer.update({
+      height: 800,
+      isDesktopClosing: true,
+      renderedFolder: null,
+      stageRect: { height: 800, left: 0, top: 0, width: 1200 },
+      width: 1200,
+    });
+
+    assert(noRenderedResult === null, "desktop close detached state should stay handoff-only after renderedFolder clears");
+    assert(layer.visible === true, "folder layer should stay available while it owns a desktop close detached handoff");
+    assert(layer.panel.visible === false && layer.pageTrack.visible === false, "desktop close detached tail should keep original folder visuals hidden");
+    assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "desktop close detached tail should keep the real source ghosted until desktop close ends");
+    assert(layer.detachedClosingVisuals.length === 1, "desktop close detached tail should keep the detached source lock mounted");
+
+    layer.update({
+      height: 800,
+      isDesktopClosing: false,
+      renderedFolder: null,
+      stageRect: { height: 800, left: 0, top: 0, width: 1200 },
+      width: 1200,
+    });
+
+    assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "desktop close completion should release the detached source lock from update");
+    assert(layer.detachedClosingVisuals.length === 0, "desktop close completion should destroy the detached source lock from update");
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
   }
 
   {

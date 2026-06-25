@@ -112,6 +112,7 @@ const props = defineProps({
   iconSize: { type: Number, required: true },
   iconBoundsRegistry: { type: Object, required: true },
   isEditMode: { type: Boolean, default: false },
+  isDesktopClosing: { type: Boolean, default: false },
   folderSourceGhostedId: { type: String, default: null },
   folderSourceGhostedIds: { type: [Array, Set], default: () => [] },
   isFolderOpeningPreviewFrameGhosted: { type: Function, default: () => false },
@@ -378,9 +379,12 @@ function createSingleStageFolderState(metrics, diagnosticsOptions = {}, renderGe
     },
     folder: {
       closeIconGhosts: source.folderCloseIconGhosts?.value,
+      desktopClosing: props.isDesktopClosing,
       gridStyle: source.folderGridStyle?.value,
       isAppLaunchClosing: source.isFolderAppLaunchClosing?.value,
       isClosing: Boolean(source.isFolderClosing?.value || source.isFolderZoomFadeClosingFromFolderClose?.value),
+      isZoomFadeClosing: source.isFolderZoomFadeClosing?.value,
+      zoomFadeCloseReason: source.folderZoomFadeCloseReason?.value,
       openingOriginBounds: source.folderOpeningOriginBounds?.value,
       openIconGhosts: source.folderOpenIconGhosts?.value,
       pageIndex: source.folderPageIndex?.value,
@@ -915,6 +919,7 @@ watchEffect(() => {
   void props.gridRows;
   void props.iconSize;
   void props.isEditMode;
+  void props.isDesktopClosing;
   void props.folderSourceGhostedId;
   void props.folderSourceGhostedIds;
   void props.isHomeRevealSettling;
