@@ -95,8 +95,8 @@ export async function runFolderOverlayLayerTests() {
   };
   const mask = getFolderPageMaskRect(geometry, 58, 64);
 
-  assert(mask.left === 58, "folder page mask should start at the grid left edge");
-  assert(mask.width === 884, "folder page mask should match the grid width, not the full panel width");
+  assert(mask.left === 0, "folder page mask should start at the panel left edge");
+  assert(mask.width === 1000, "folder page mask should cover the full panel width");
   assert(mask.top === 64, "folder page mask should preserve the grid top edge");
   assert(mask.height === 476, "folder page mask should keep the existing vertical panel coverage");
 

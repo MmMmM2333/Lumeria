@@ -28,6 +28,16 @@ export function runFolderOverlayIconPlanTests() {
   assert(plan.source.type === "folder" && plan.source.folderId === "folder-1", "folder icon plan should build folder source metadata");
   assert(plan.source.index === 3 && plan.source.slotIndex === 3 && plan.source.pageIndex === 2, "folder icon plan should preserve index metadata");
 
+  const panelSpacedPlan = makeFolderIconRenderPlan({
+    folderId: "folder-1",
+    geometry,
+    item: { id: "app-1" },
+    pageIndex: 2,
+    pageSpan: 620,
+    slot,
+  });
+  assert(panelSpacedPlan.x === 1320, "folder icon plan should allow page spacing wider than the icon grid");
+
   const normalTarget = makeFolderIconTargetCenter({
     geometry,
     isTextlessMode: false,

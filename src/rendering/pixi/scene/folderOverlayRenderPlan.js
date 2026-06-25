@@ -28,6 +28,7 @@ export function makeFolderOverlayRenderPlan(options = {}) {
     folderPageIndex = 0,
     folderPages = [],
     folderPageSize = 0,
+    folderPageSpan = null,
     geometry = null,
     getFolderPageRenderMode = null,
     getVisibleFolderPage = null,
@@ -68,6 +69,7 @@ export function makeFolderOverlayRenderPlan(options = {}) {
         index,
         item,
         pageIndex,
+        pageSpan: folderPageSpan,
         slot,
       });
       const { key, source, x, y } = iconPlan;

@@ -651,7 +651,8 @@ export class FolderOverlayLayer extends Container {
     this.pageMaskRect = getFolderPageMaskRect(geometry, localGridLeft, localGridTop);
     this.drawPageMask(this.pageMask, this.pageMaskRect);
     this.refreshPageTrackMask();
-    const targetTrackX = -state.folderPageIndex * geometry.grid.width;
+    const folderPageSpan = geometry.panel.width;
+    const targetTrackX = -state.folderPageIndex * folderPageSpan;
     if (isNewFolder && !isClosing) {
       cancelPageTrackMotion(this.pageTrackMotion, "replace");
       killMotionOf(this.pageTrack, null, { lane: "base", reason: FOLDER_PAGE_TRACK_REPLACE_REASON });
@@ -667,7 +668,7 @@ export class FolderOverlayLayer extends Container {
         },
         onFrame: markBoundsDirty,
         pageIndex: state.folderPageIndex,
-        pageSpan: geometry.grid.width,
+        pageSpan: folderPageSpan,
         scrub: state.folderPageTrackScrub,
         sourceLabel: "folder.pageTrack",
         springConfig: motionSprings.layout,
@@ -694,6 +695,7 @@ export class FolderOverlayLayer extends Container {
       folderPageIndex: state.folderPageIndex,
       folderPages: state.folderPages,
       folderPageSize: state.folderPageSize,
+      folderPageSpan,
       geometry,
       getFolderPageRenderMode: state.getFolderPageRenderMode,
       getVisibleFolderPage: state.getVisibleFolderPage,
@@ -1598,7 +1600,7 @@ export class FolderOverlayLayer extends Container {
       kind: "PageTrack",
       overlayTarget: this.pageTrack,
       pageIndex: state.folderPageIndex ?? null,
-      pageSpan: geometry.grid?.width ?? null,
+      pageSpan: geometry.panel?.width ?? null,
       sourceLabel: "folder.pageTrack",
       targetPart: "pageTrack",
     });
