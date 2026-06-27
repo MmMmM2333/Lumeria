@@ -319,6 +319,7 @@ struct LiveDesktopRendererResources {
     config: LiveDesktopRuntimeConfig,
     diagnostics: Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
     test_pattern: LiveDesktopTestPatternState,
+    visible: bool,
     source_width: u32,
     source_height: u32,
     _com: ComApartment,
@@ -335,6 +336,30 @@ struct LiveDesktopRendererResources {
     _scale_transform: IDCompositionScaleTransform,
     _swap_chain: LiveDesktopCompositionSwapChain,
     _shader_pipeline: Option<LiveDesktopShaderPipeline>,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, PartialEq, Eq)]
+enum LiveDesktopFramePumpAction {
+    PumpFrame,
+    WaitForVisibility,
+    Stop,
+}
+
+#[cfg(target_os = "windows")]
+fn live_desktop_frame_pump_visibility_action(
+    visible: bool,
+    stop_receiver: &mpsc::Receiver<()>,
+    timeout: Duration,
+) -> LiveDesktopFramePumpAction {
+    if visible {
+        return LiveDesktopFramePumpAction::PumpFrame;
+    }
+
+    match stop_receiver.recv_timeout(timeout) {
+        Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => LiveDesktopFramePumpAction::Stop,
+        Err(mpsc::RecvTimeoutError::Timeout) => LiveDesktopFramePumpAction::WaitForVisibility,
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -2856,6 +2881,19 @@ impl LiveDesktopRendererResources {
     ) {
         loop {
             self.apply_pending_commands(&command_receiver);
+            match live_desktop_frame_pump_visibility_action(
+                self.visible,
+                &stop_receiver,
+                Duration::from_millis(LIVE_DESKTOP_FRAME_PUMP_INTERVAL_MS),
+            ) {
+                LiveDesktopFramePumpAction::PumpFrame => {}
+                LiveDesktopFramePumpAction::WaitForVisibility => {
+                    self.drain_window_capture_frame_arrivals();
+                    continue;
+                }
+                LiveDesktopFramePumpAction::Stop => break,
+            }
+
             if self.config.effective_frame_source().uses_window_capture() {
                 if self.wait_for_window_capture_frame_or_stop(&stop_receiver) {
                     break;
@@ -2913,6 +2951,16 @@ impl LiveDesktopRendererResources {
         }
     }
 
+    fn drain_window_capture_frame_arrivals(&self) {
+        let frame_arrived_receiver = self
+            ._window_capture
+            .as_ref()
+            .and_then(|capture| capture.frame_arrived_receiver.as_ref());
+        if let Some(frame_arrived_receiver) = frame_arrived_receiver {
+            while frame_arrived_receiver.try_recv().is_ok() {}
+        }
+    }
+
     fn apply_pending_commands(
         &mut self,
         command_receiver: &mpsc::Receiver<LiveDesktopRendererCommand>,
@@ -2938,8 +2986,11 @@ impl LiveDesktopRendererResources {
             }
         }
         if let Some(visible) = next_visible {
-            if let Err(error) = unsafe { self.set_visual_visible(visible) } {
-                record_live_desktop_config_error(&self.diagnostics, &error);
+            match unsafe { self.set_visual_visible(visible) } {
+                Ok(()) => {
+                    self.visible = visible;
+                }
+                Err(error) => record_live_desktop_config_error(&self.diagnostics, &error),
             }
         }
     }
@@ -5436,6 +5487,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 config,
                 diagnostics,
                 test_pattern: LiveDesktopTestPatternState::default(),
+                visible: true,
                 source_width,
                 source_height,
                 _com: com,
@@ -7353,6 +7405,43 @@ mod tests {
 
         assert!(summary.contains("shaderCopyFallbacks=2"));
         assert!(summary.contains("lastShaderCopyError=shader failed"));
+    }
+
+    #[test]
+    fn live_desktop_frame_pump_visibility_gate_waits_without_copying_when_hidden() {
+        let (_stop_sender, stop_receiver) = mpsc::channel();
+
+        assert_eq!(
+            live_desktop_frame_pump_visibility_action(
+                true,
+                &stop_receiver,
+                Duration::from_millis(0)
+            ),
+            LiveDesktopFramePumpAction::PumpFrame
+        );
+        assert_eq!(
+            live_desktop_frame_pump_visibility_action(
+                false,
+                &stop_receiver,
+                Duration::from_millis(0)
+            ),
+            LiveDesktopFramePumpAction::WaitForVisibility
+        );
+    }
+
+    #[test]
+    fn live_desktop_frame_pump_visibility_gate_stops_while_hidden() {
+        let (stop_sender, stop_receiver) = mpsc::channel();
+        stop_sender.send(()).unwrap();
+
+        assert_eq!(
+            live_desktop_frame_pump_visibility_action(
+                false,
+                &stop_receiver,
+                Duration::from_millis(0)
+            ),
+            LiveDesktopFramePumpAction::Stop
+        );
     }
 
     #[test]
