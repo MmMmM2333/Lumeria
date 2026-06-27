@@ -16,10 +16,7 @@ use windows::{
         Graphics::Gdi::{
             GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
         },
-        System::Com::{
-            CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_ALL,
-            CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
-        },
+        System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL, CLSCTX_INPROC_SERVER},
         UI::Shell::{
             Common::COMDLG_FILTERSPEC, DesktopWallpaper, FileOpenDialog, IDesktopWallpaper,
             IFileOpenDialog, FOS_FILEMUSTEXIST, FOS_FORCEFILESYSTEM, FOS_PATHMUSTEXIST,
@@ -36,6 +33,8 @@ use tauri::{AppHandle, Manager};
 
 #[cfg(target_os = "windows")]
 use crate::encoding::{cache_content_addressed, encode_base64, PNG_SIGNATURE};
+#[cfg(target_os = "windows")]
+use crate::windows_com::ComGuard;
 use crate::{
     catalog::{icon_cache_dir, icon_file_data_url, stable_app_id},
     icons::cache_app_icon,
@@ -616,32 +615,6 @@ fn take_cotaskmem_string(value: PWSTR) -> Result<String, std::string::FromUtf16E
     let result = unsafe { value.to_string() };
     free_cotaskmem_string(value);
     result
-}
-
-#[cfg(target_os = "windows")]
-struct ComGuard {
-    initialized: bool,
-}
-
-#[cfg(target_os = "windows")]
-impl ComGuard {
-    fn new() -> Result<Self, String> {
-        unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }
-            .ok()
-            .map_err(|error| format!("Failed to initialize COM apartment: {error}"))?;
-        Ok(Self { initialized: true })
-    }
-}
-
-#[cfg(target_os = "windows")]
-impl Drop for ComGuard {
-    fn drop(&mut self) {
-        if self.initialized {
-            unsafe {
-                CoUninitialize();
-            }
-        }
-    }
 }
 
 #[cfg(all(test, target_os = "windows"))]

@@ -8,6 +8,7 @@ mod live_desktop;
 mod models;
 mod path_utils;
 mod tray;
+mod windows_com;
 
 use std::{
     collections::HashMap,
