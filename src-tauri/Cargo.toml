@@ -20,6 +20,12 @@ name = "icon_dump"
 path = "test_tools/icon_dump.rs"
 required-features = ["debug-tools"]
 
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
 [features]
 debug-tools = []
 
