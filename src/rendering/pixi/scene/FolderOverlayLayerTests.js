@@ -1434,12 +1434,15 @@ export async function runFolderOverlayLayerTests() {
       folderPageIndexCommit: (index) => commits.push(index),
       folderPages: [[], []],
       renderedFolder: { id: "folder-1", name: "Folder" },
+      visualFolderPageIndex: 1,
     }, {
       grid: { height: 120, left: 40, top: 80, width: 320 },
       panel: { height: 240, left: 20, top: 40, width: 360 },
     });
 
     assert(layer.pageDotsLayer.visible === true, "folder page dots should become visible once enabled");
+    assert(layer.pageDotsLayer.children[0].alpha === getFolderPageDotVisualState({ active: false }).alpha, "committed page dot should render idle when visual page differs");
+    assert(layer.pageDotsLayer.children[1].alpha === getFolderPageDotVisualState({ active: true }).alpha, "visual page dot should render active");
     assert(layer.pageDotsLayer.alpha === 0, "folder page dots should start their reveal from transparent");
     motionRuntime.step(0.04);
     assert(layer.pageDotsLayer.alpha > 0 && layer.pageDotsLayer.alpha < 1, "folder page dots should fade in after reveal starts");
@@ -1450,6 +1453,7 @@ export async function runFolderOverlayLayerTests() {
       folderPageIndexCommit: (index) => commits.push(index),
       folderPages: [[], []],
       renderedFolder: { id: "folder-1", name: "Folder" },
+      visualFolderPageIndex: 1,
     }, {
       grid: { height: 120, left: 40, top: 80, width: 320 },
       panel: { height: 240, left: 20, top: 40, width: 360 },

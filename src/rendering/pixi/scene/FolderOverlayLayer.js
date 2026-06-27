@@ -703,8 +703,10 @@ export class FolderOverlayLayer extends Container {
     this.folderTitle.anchor.set(0.5);
     this.folderTitle.position.set(geometry.panel.width / 2, -34);
 
+    const committedFolderPageIndex = state.folderPageIndex ?? 0;
+    const visualFolderPageIndex = state.visualFolderPageIndex ?? committedFolderPageIndex;
     const cols = parseRepeatCount(state.folderGridStyle?.gridTemplateColumns, 5);
-    const rows = parseRepeatCount(state.folderGridStyle?.gridTemplateRows, Math.max(1, Math.ceil((state.folderPages?.[state.folderPageIndex] || []).length / cols)));
+    const rows = parseRepeatCount(state.folderGridStyle?.gridTemplateRows, Math.max(1, Math.ceil((state.folderPages?.[visualFolderPageIndex] || []).length / cols)));
     const rowGap = readPx(state.folderPanelStyle?.["--folder-row-gap"], 18);
     const fixedCellHeight = readPx(state.folderPanelStyle?.["--folder-icon-cell-height"], 0);
     const iconSize = Math.min(readPx(state.folderPanelStyle?.["--folder-icon-size"], state.iconSize), 56);
@@ -716,7 +718,7 @@ export class FolderOverlayLayer extends Container {
     this.drawPageMask(this.pageMask, this.pageMaskRect);
     this.refreshPageTrackMask();
     const folderPageSpan = geometry.panel.width;
-    const targetTrackX = -state.folderPageIndex * folderPageSpan;
+    const targetTrackX = -visualFolderPageIndex * folderPageSpan;
     if (isNewFolder && !isClosing) {
       cancelPageTrackMotion(this.pageTrackMotion, "replace");
       killMotionOf(this.pageTrack, null, { lane: "base", reason: FOLDER_PAGE_TRACK_REPLACE_REASON });
@@ -731,7 +733,7 @@ export class FolderOverlayLayer extends Container {
           layer: "folder",
         },
         onFrame: markBoundsDirty,
-        pageIndex: state.folderPageIndex,
+        pageIndex: visualFolderPageIndex,
         pageSpan: folderPageSpan,
         scrub: state.folderPageTrackScrub,
         sourceLabel: "folder.pageTrack",
@@ -756,7 +758,7 @@ export class FolderOverlayLayer extends Container {
       folderCloseIconGhosts: state.folderCloseIconGhosts,
       folderId,
       folderOpenIconGhosts: state.folderOpenIconGhosts,
-      folderPageIndex: state.folderPageIndex,
+      folderPageIndex: committedFolderPageIndex,
       folderPages: state.folderPages,
       folderPageSize: state.folderPageSize,
       folderPageSpan,
@@ -781,6 +783,7 @@ export class FolderOverlayLayer extends Container {
       stageHeight: state.height,
       stageWidth: state.width,
       targetTrackX,
+      visualFolderPageIndex,
     });
     return {
       ...context,
@@ -1620,9 +1623,10 @@ export class FolderOverlayLayer extends Container {
     const totalWidth = pageCount * FOLDER_PAGE_DOTS_SIZE + (pageCount - 1) * FOLDER_PAGE_DOTS_GAP;
     const startX = frame.left + frame.width / 2 - totalWidth / 2 + FOLDER_PAGE_DOTS_SIZE / 2;
     const centerY = frame.top + FOLDER_PAGE_DOTS_HIT_HEIGHT / 2;
+    const activePageIndex = state.visualFolderPageIndex ?? state.folderPageIndex;
     for (let index = 0; index < pageCount; index += 1) {
       const dot = new Graphics();
-      const isActive = index === state.folderPageIndex;
+      const isActive = index === activePageIndex;
       this.describePageDotTargets(dot, index, state, isActive);
       this.setPageDotHover(dot, isActive, false, { immediate: true });
       dot.position.set(startX + index * (FOLDER_PAGE_DOTS_SIZE + FOLDER_PAGE_DOTS_GAP), centerY);

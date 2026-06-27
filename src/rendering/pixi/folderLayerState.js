@@ -26,6 +26,7 @@ export function createFolderLayerState(groups, overrides = {}) {
     folderOpenIconGhosts,
     folderPageIndex: folder.pageIndex,
     folderPageIndexCommit: folder.pageIndexCommit,
+    folderPageTurnToken: folder.pageTurnToken ?? null,
     folderPageTrackScrub: folder.pageTrackScrub,
     folderPageDotsVisible: folder.pageDotsVisible === true,
     folderPageSize: folder.pageSize,
@@ -53,6 +54,7 @@ export function createFolderLayerState(groups, overrides = {}) {
     setFolderPageRef: callbacks.setFolderPageRef,
     showMissingLaunchTargetBadge: ui.showMissingLaunchTargetBadge,
     stageRect: rect,
+    visualFolderPageIndex: folder.visualPageIndex ?? folder.pageIndex,
     width: Math.max(1, rect.width),
     ...overrides,
   };

@@ -389,6 +389,7 @@ function createSingleStageFolderState(metrics, diagnosticsOptions = {}, renderGe
       openIconGhosts: source.folderOpenIconGhosts?.value,
       pageIndex: source.folderPageIndex?.value,
       pageIndexCommit: source.commitFolderPageIndex,
+      pageTurnToken: source.folderPageTurnRequest?.value?.token ?? null,
       pageTrackScrub: resolveMaybeRef(source.folderPageTrackScrub) || null,
       pageDotsVisible: shouldShowSingleStageFolderPageDots(),
       pageSize: source.folderPageSize?.value || props.folderPageSize,
@@ -397,6 +398,7 @@ function createSingleStageFolderState(metrics, diagnosticsOptions = {}, renderGe
       panelStyle: source.folderPanelStyle?.value,
       renderedFolder: source.renderedFolder?.value,
       viewportRef: source.folderViewportRef,
+      visualPageIndex: source.visualFolderPageIndex?.value ?? source.folderPageIndex?.value,
     },
     stage: { rect: renderGeometry.stageRect },
     ui: {

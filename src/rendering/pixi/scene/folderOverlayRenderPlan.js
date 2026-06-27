@@ -50,6 +50,7 @@ export function makeFolderOverlayRenderPlan(options = {}) {
     stageHeight = 1,
     stageWidth = 1,
     targetTrackX = 0,
+    visualFolderPageIndex = folderPageIndex,
   } = options;
   const previewSlotById = makePreviewSlotById(previewSlots);
   const dragState = { dragMeta, dragReleaseGhostId };
@@ -126,7 +127,7 @@ export function makeFolderOverlayRenderPlan(options = {}) {
           !isReleaseGhostItem &&
           isNewFolder &&
           !isClosing &&
-          pageIndex === folderPageIndex
+          pageIndex === visualFolderPageIndex
           ? {
             cellHeight: slot.height,
             cellWidth: slot.width,

@@ -29,12 +29,14 @@ export function runFolderLayerStateTests() {
       openingOriginBounds: { folderId: "folder-1" },
       openIconGhosts: [{ item: { id: "app-a" }, key: "open-a", slotIndex: 0 }],
       pageIndex: 2,
+      pageTurnToken: 42,
       pageSize: 9,
       pages: [[{ id: "app-a" }]],
       panelRef: { value: null },
       panelStyle: { "--folder-icon-size": "52px" },
       renderedFolder: { id: "folder-1" },
       viewportRef: { value: null },
+      visualPageIndex: 3,
     },
     stage: {
       rect: { height: 0, left: 4, top: 5, width: 0 },
@@ -53,6 +55,9 @@ export function runFolderLayerStateTests() {
   assert(state.dragReleaseGhostId === "released-app", "drag release ghost id should come from release state");
   assert(state.getFolderOpenIconGhostKey("app-a", 0) === "open-a", "open ghost lookup should use current open ghosts");
   assert(state.getFolderCloseIconGhostKey("app-b", 1) === "close-b", "close ghost lookup should use current close ghosts");
+  assert(state.folderPageIndex === 2, "committed folder page index should be forwarded");
+  assert(state.visualFolderPageIndex === 3, "visual folder page index should be forwarded separately");
+  assert(state.folderPageTurnToken === 42, "folder page turn token should be forwarded for render state changes");
   assert(state.completeFolderOpenIconGhost === callbacks.completeFolderOpenIconGhost, "callbacks should be forwarded");
   assert(state.completeFolderOpenFrameGhost === callbacks.completeFolderOpenFrameGhost, "frame completion callback should be forwarded");
   assert(state.isFolderAppLaunchClosing, "folder app-launch closing state should be forwarded");
