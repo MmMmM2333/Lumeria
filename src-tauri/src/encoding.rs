@@ -1,5 +1,21 @@
 pub(crate) const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 
+#[derive(Debug)]
+pub(crate) struct CacheContentAddressedError {
+    path: std::path::PathBuf,
+    source: std::io::Error,
+}
+
+impl CacheContentAddressedError {
+    pub(crate) fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
+    pub(crate) fn source(&self) -> &std::io::Error {
+        &self.source
+    }
+}
+
 pub(crate) fn encode_base64(bytes: &[u8]) -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
@@ -93,6 +109,23 @@ pub(crate) fn short_blake3_hex(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex()[..32].to_string()
 }
 
+pub(crate) fn cache_content_addressed(
+    dir: &std::path::Path,
+    prefix: &str,
+    ext: &str,
+    bytes: &[u8],
+) -> Result<std::path::PathBuf, CacheContentAddressedError> {
+    let file_name = format!("{prefix}-{}.{ext}", short_blake3_hex(bytes));
+    let path = dir.join(file_name);
+    if !path.exists() {
+        std::fs::write(&path, bytes).map_err(|source| CacheContentAddressedError {
+            path: path.clone(),
+            source,
+        })?;
+    }
+    Ok(path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -116,5 +149,35 @@ mod tests {
         let error = decode_base64("AB==").expect_err("non-zero trailing bits should fail");
 
         assert!(error.contains("trailing bits"));
+    }
+
+    #[test]
+    fn cache_content_addressed_writes_short_hash_file_once() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time should be after unix epoch")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("launchpad-cache-addressed-{unique}"));
+        std::fs::create_dir_all(&dir).expect("test cache directory should be created");
+        let bytes = b"cache me";
+
+        let path = cache_content_addressed(&dir, "asset", "bin", bytes)
+            .expect("content addressed write should succeed");
+        let expected_name = format!("asset-{}.bin", short_blake3_hex(bytes));
+
+        assert_eq!(
+            path.file_name().and_then(|name| name.to_str()),
+            Some(expected_name.as_str())
+        );
+        assert_eq!(
+            std::fs::read(&path).expect("cached file should be readable"),
+            bytes
+        );
+
+        let reused_path = cache_content_addressed(&dir, "asset", "bin", bytes)
+            .expect("existing content addressed file should be reused");
+
+        assert_eq!(reused_path, path);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

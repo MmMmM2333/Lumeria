@@ -23,7 +23,7 @@ use catalog::{
     icon_cache_dir, icon_file_data_url, scan_apps_from_roots, stable_app_id, ScanAppsResult,
     ScanFilters, ScanRoot,
 };
-use encoding::{decode_base64, PNG_SIGNATURE};
+use encoding::{cache_content_addressed, decode_base64, PNG_SIGNATURE};
 use file_dialog::{
     cached_background_image_data_url as load_native_cached_background_image_data_url,
     get_desktop_wallpaper_background as get_native_desktop_wallpaper_background,
@@ -272,18 +272,15 @@ fn load_app_icon_choices(
 #[tauri::command]
 fn cache_custom_icon(app: AppHandle, data_url: String) -> Result<CachedCustomIconResult, String> {
     let bytes = decode_custom_icon_data_url(&data_url)?;
-    let hash = blake3::hash(&bytes);
-    let hex = hash.to_hex();
     let icon_dir = icon_cache_dir(&app)?;
-    let icon_path = icon_dir.join(format!("custom-icon-{}.png", &hex[..32]));
-    if !icon_path.exists() {
-        std::fs::write(&icon_path, &bytes).map_err(|error| {
+    let icon_path =
+        cache_content_addressed(&icon_dir, "custom-icon", "png", &bytes).map_err(|error| {
             format!(
                 "Failed to write custom icon {}: {error}",
-                icon_path.display()
+                error.path().display(),
+                error = error.source()
             )
         })?;
-    }
     let icon_path = icon_path.to_string_lossy().to_string();
     let icon_data_url = icon_file_data_url(&icon_path)
         .ok_or_else(|| "Failed to read cached custom icon".to_string())?;

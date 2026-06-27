@@ -35,7 +35,7 @@ use windows::{
 use tauri::{AppHandle, Manager};
 
 #[cfg(target_os = "windows")]
-use crate::encoding::{encode_base64, PNG_SIGNATURE};
+use crate::encoding::{cache_content_addressed, encode_base64, PNG_SIGNATURE};
 use crate::{
     catalog::{icon_cache_dir, icon_file_data_url, stable_app_id},
     icons::cache_app_icon,
@@ -441,21 +441,18 @@ fn cache_background_image(
             selected_path.display()
         )
     })?;
-    let hash = blake3::hash(&bytes);
-    let hex = hash.to_hex();
     let extension = detect_background_image_extension(selected_path, &bytes).ok_or_else(|| {
         "Background image must be a PNG, JPG, JPEG, WEBP, or BMP file".to_string()
     })?;
     let background_dir = background_cache_dir(app)?;
-    let background_path = background_dir.join(format!("background-{}.{}", &hex[..32], extension));
-    if !background_path.exists() {
-        fs::write(&background_path, &bytes).map_err(|error| {
+    let background_path = cache_content_addressed(&background_dir, "background", extension, &bytes)
+        .map_err(|error| {
             format!(
                 "Failed to cache background image {}: {error}",
-                background_path.display()
+                error.path().display(),
+                error = error.source()
             )
         })?;
-    }
 
     Ok(PickedBackgroundImage {
         name: selected_path
