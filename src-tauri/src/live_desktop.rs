@@ -7,6 +7,7 @@ use std::sync::{
 
 #[cfg(target_os = "windows")]
 use std::{
+    cell::RefCell,
     collections::HashSet,
     env, fs,
     path::{Path, PathBuf},
@@ -547,6 +548,7 @@ struct LiveDesktopD3DDevice {
 #[cfg(target_os = "windows")]
 struct LiveDesktopCompositionSwapChain {
     swap_chain: IDXGISwapChain1,
+    cached_back_buffer: RefCell<Option<ID3D11Texture2D>>,
     width: u32,
     height: u32,
 }
@@ -718,14 +720,21 @@ impl LiveDesktopCompositionSwapChain {
                 })?;
         Ok(Self {
             swap_chain,
+            cached_back_buffer: RefCell::new(None),
             width: desc.Width,
             height: desc.Height,
         })
     }
 
     unsafe fn back_buffer(&self, label: &str) -> Result<ID3D11Texture2D, String> {
-        unsafe { self.swap_chain.GetBuffer::<ID3D11Texture2D>(0) }
-            .map_err(|error| format!("{label} swap chain GetBuffer(0) failed: {error}"))
+        if let Some(texture) = self.cached_back_buffer.borrow().as_ref().cloned() {
+            return Ok(texture);
+        }
+
+        let texture = unsafe { self.swap_chain.GetBuffer::<ID3D11Texture2D>(0) }
+            .map_err(|error| format!("{label} swap chain GetBuffer(0) failed: {error}"))?;
+        *self.cached_back_buffer.borrow_mut() = Some(texture.clone());
+        Ok(texture)
     }
 
     unsafe fn present(&self) -> Result<(), String> {
