@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
+use std::{
+    collections::VecDeque,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
 };
 
 #[cfg(target_os = "windows")]
@@ -10,6 +13,7 @@ use std::{
     cell::RefCell,
     collections::HashSet,
     env, fs,
+    ops::ControlFlow,
     path::{Path, PathBuf},
     process::Command,
     sync::mpsc,
@@ -117,6 +121,11 @@ const LIVE_DESKTOP_WGC_FRAME_POOL_BUFFER_COUNT: i32 = 3;
 
 #[cfg(target_os = "windows")]
 const LIVE_DESKTOP_WGC_FRAME_EVENT_FALLBACK_MS: u64 = 16;
+
+#[cfg(target_os = "windows")]
+const LIVE_DESKTOP_FRAME_ERROR_CIRCUIT_BREAK: u32 = 5;
+
+const LIVE_DESKTOP_RECENT_ERROR_LIMIT: usize = 16;
 
 #[cfg(target_os = "windows")]
 const LIVE_DESKTOP_RENDERER_INIT_TIMEOUT_MS: u64 = 10_000;
@@ -321,6 +330,7 @@ struct LiveDesktopRendererResources {
     diagnostics: Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
     test_pattern: LiveDesktopTestPatternState,
     visible: bool,
+    consecutive_frame_errors: u32,
     source_width: u32,
     source_height: u32,
     _com: ComApartment,
@@ -345,6 +355,15 @@ enum LiveDesktopFramePumpAction {
     PumpFrame,
     WaitForVisibility,
     Stop,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FrameOutcome {
+    Presented,
+    BlankSkipped,
+    TimedOut,
+    NoSource,
 }
 
 #[cfg(target_os = "windows")]
@@ -2100,6 +2119,7 @@ pub(crate) struct LiveDesktopRuntimeDiagnostics {
     last_shader_copy_error: String,
     last_abandoned_renderer_reason: String,
     last_error: String,
+    recent_errors: VecDeque<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -2914,7 +2934,9 @@ impl LiveDesktopRendererResources {
             {
                 Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 Err(mpsc::RecvTimeoutError::Timeout) => {
-                    let _ = unsafe { self.copy_next_frame_to_surface() };
+                    if let ControlFlow::Break(()) = self.pump_one_frame() {
+                        break;
+                    }
                 }
             }
         }
@@ -2938,13 +2960,19 @@ impl LiveDesktopRendererResources {
             )) {
                 Ok(()) => {
                     while frame_arrived_receiver.try_recv().is_ok() {}
-                    let _ = unsafe { self.copy_next_frame_to_surface() };
+                    if let ControlFlow::Break(()) = self.pump_one_frame() {
+                        return true;
+                    }
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
-                    let _ = unsafe { self.copy_next_frame_to_surface() };
+                    if let ControlFlow::Break(()) = self.pump_one_frame() {
+                        return true;
+                    }
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    let _ = unsafe { self.copy_next_frame_to_surface() };
+                    if let ControlFlow::Break(()) = self.pump_one_frame() {
+                        return true;
+                    }
                 }
             }
             return live_desktop_renderer_should_stop(stop_receiver);
@@ -2954,8 +2982,7 @@ impl LiveDesktopRendererResources {
         {
             Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => true,
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                let _ = unsafe { self.copy_next_frame_to_surface() };
-                false
+                matches!(self.pump_one_frame(), ControlFlow::Break(()))
             }
         }
     }
@@ -3068,7 +3095,47 @@ impl LiveDesktopRendererResources {
         Ok(())
     }
 
-    unsafe fn copy_next_frame_to_surface(&mut self) -> Result<bool, String> {
+    fn pump_one_frame(&mut self) -> ControlFlow<()> {
+        let error = match unsafe { self.copy_next_frame_to_surface() } {
+            Ok(_outcome) => {
+                self.consecutive_frame_errors = 0;
+                return ControlFlow::Continue(());
+            }
+            Err(error) => error,
+        };
+
+        self.consecutive_frame_errors = self.consecutive_frame_errors.saturating_add(1);
+        let device_removed = self.device_removed_detail();
+        if self.consecutive_frame_errors >= LIVE_DESKTOP_FRAME_ERROR_CIRCUIT_BREAK
+            || device_removed.is_some()
+        {
+            let mut detail = format!(
+                "Live desktop frame pump stopped after {} consecutive frame errors; last error: {}",
+                self.consecutive_frame_errors, error
+            );
+            if let Some(device_removed) = device_removed {
+                detail.push_str("; ");
+                detail.push_str(&device_removed);
+            }
+            record_live_desktop_frame_pump_circuit_breaker(&self.diagnostics, &detail);
+            return ControlFlow::Break(());
+        }
+
+        ControlFlow::Continue(())
+    }
+
+    fn device_removed_detail(&self) -> Option<String> {
+        let reason = unsafe { self._d3d_device.GetDeviceRemovedReason() };
+        if reason.is_ok() {
+            None
+        } else {
+            Some(format!(
+                "D3D11 device removed during frame pump: {reason:?}"
+            ))
+        }
+    }
+
+    unsafe fn copy_next_frame_to_surface(&mut self) -> Result<FrameOutcome, String> {
         match unsafe { self.host_window.sync_to_owner_rect() } {
             Ok(true) => {
                 if let Err(error) = unsafe { self.apply_current_visual_placement() } {
@@ -3101,7 +3168,7 @@ impl LiveDesktopRendererResources {
             }
             record_live_desktop_frame_commit_duration(&self.diagnostics, commit_started.elapsed());
             record_live_desktop_test_pattern_frame(&self.diagnostics, &pattern_frame);
-            return Ok(true);
+            return Ok(FrameOutcome::Presented);
         }
 
         if self.config.effective_frame_source().uses_window_capture() {
@@ -3136,16 +3203,16 @@ impl LiveDesktopRendererResources {
                     return Err(error);
                 }
             };
-            if copied_frame.is_none() {
+            let Some(frame_probe) = copied_frame else {
                 if live_desktop_blank_frame_skip_count(&self.diagnostics)
                     == blank_frame_skips_before
                 {
                     record_live_desktop_frame_timeout(&self.diagnostics);
+                    return Ok(FrameOutcome::TimedOut);
                 }
-                return Ok(false);
-            }
+                return Ok(FrameOutcome::BlankSkipped);
+            };
             record_live_desktop_frame_copy_duration(&self.diagnostics, copy_started.elapsed());
-            let frame_probe = copied_frame.expect("checked copied WGC frame");
             let commit_started = Instant::now();
             if let Err(detail) = unsafe { self.present_and_commit_composition() } {
                 record_live_desktop_commit_error(&self.diagnostics, &detail);
@@ -3153,10 +3220,10 @@ impl LiveDesktopRendererResources {
             }
             record_live_desktop_frame_commit_duration(&self.diagnostics, commit_started.elapsed());
             record_live_desktop_frame_copied(&self.diagnostics, &frame_probe);
-            return Ok(true);
+            return Ok(FrameOutcome::Presented);
         }
 
-        Ok(false)
+        Ok(FrameOutcome::NoSource)
     }
 }
 
@@ -4597,6 +4664,14 @@ fn update_live_desktop_diagnostics(
     }
 }
 
+fn push_live_desktop_recent_error(diagnostics: &mut LiveDesktopRuntimeDiagnostics, detail: &str) {
+    if diagnostics.recent_errors.len() >= LIVE_DESKTOP_RECENT_ERROR_LIMIT {
+        diagnostics.recent_errors.pop_front();
+    }
+    diagnostics.recent_errors.push_back(detail.to_string());
+    diagnostics.last_error = detail.to_string();
+}
+
 #[cfg(target_os = "windows")]
 fn live_desktop_duration_micros(duration: Duration) -> u64 {
     duration.as_micros().min(u64::MAX as u128) as u64
@@ -4733,7 +4808,7 @@ fn record_live_desktop_pixel_probe_error(
 ) {
     update_live_desktop_diagnostics(diagnostics, |diagnostics| {
         diagnostics.pixel_probe_errors += 1;
-        diagnostics.last_error = detail.to_string();
+        push_live_desktop_recent_error(diagnostics, detail);
     });
 }
 
@@ -4744,7 +4819,7 @@ fn record_live_desktop_blank_frame_skipped(
 ) {
     update_live_desktop_diagnostics(diagnostics, |diagnostics| {
         diagnostics.blank_frame_skips += 1;
-        diagnostics.last_error = format!(
+        let detail = format!(
             "Skipped suspected blank WGC frame: {}x{} rgb max {} avg {} alpha max {} avg {}",
             probe.width,
             probe.height,
@@ -4753,6 +4828,7 @@ fn record_live_desktop_blank_frame_skipped(
             probe.max_alpha,
             probe.avg_alpha
         );
+        push_live_desktop_recent_error(diagnostics, &detail);
     });
 }
 
@@ -4774,7 +4850,7 @@ fn record_live_desktop_copy_error(
 ) {
     update_live_desktop_diagnostics(diagnostics, |diagnostics| {
         diagnostics.copy_errors += 1;
-        diagnostics.last_error = detail.to_string();
+        push_live_desktop_recent_error(diagnostics, detail);
     });
 }
 
@@ -4785,7 +4861,7 @@ fn record_live_desktop_commit_error(
 ) {
     update_live_desktop_diagnostics(diagnostics, |diagnostics| {
         diagnostics.commit_errors += 1;
-        diagnostics.last_error = detail.to_string();
+        push_live_desktop_recent_error(diagnostics, detail);
     });
 }
 
@@ -4803,7 +4879,17 @@ fn record_live_desktop_config_error(
 ) {
     update_live_desktop_diagnostics(diagnostics, |diagnostics| {
         diagnostics.config_errors += 1;
-        diagnostics.last_error = detail.to_string();
+        push_live_desktop_recent_error(diagnostics, detail);
+    });
+}
+
+#[cfg(target_os = "windows")]
+fn record_live_desktop_frame_pump_circuit_breaker(
+    diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
+    detail: &str,
+) {
+    update_live_desktop_diagnostics(diagnostics, |diagnostics| {
+        push_live_desktop_recent_error(diagnostics, detail);
     });
 }
 
@@ -5497,6 +5583,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 diagnostics,
                 test_pattern: LiveDesktopTestPatternState::default(),
                 visible: true,
+                consecutive_frame_errors: 0,
                 source_width,
                 source_height,
                 _com: com,
@@ -7414,6 +7501,28 @@ mod tests {
 
         assert!(summary.contains("shaderCopyFallbacks=2"));
         assert!(summary.contains("lastShaderCopyError=shader failed"));
+    }
+
+    #[test]
+    fn runtime_diagnostics_recent_errors_keep_latest_entries() {
+        let mut diagnostics = LiveDesktopRuntimeDiagnostics::default();
+        for index in 0..(LIVE_DESKTOP_RECENT_ERROR_LIMIT + 3) {
+            push_live_desktop_recent_error(&mut diagnostics, &format!("error {index}"));
+        }
+
+        assert_eq!(
+            diagnostics.recent_errors.len(),
+            LIVE_DESKTOP_RECENT_ERROR_LIMIT
+        );
+        assert_eq!(diagnostics.recent_errors.front().unwrap(), "error 3");
+        assert_eq!(
+            diagnostics.recent_errors.back().unwrap(),
+            &format!("error {}", LIVE_DESKTOP_RECENT_ERROR_LIMIT + 2)
+        );
+        assert_eq!(
+            diagnostics.last_error,
+            format!("error {}", LIVE_DESKTOP_RECENT_ERROR_LIMIT + 2)
+        );
     }
 
     #[test]
