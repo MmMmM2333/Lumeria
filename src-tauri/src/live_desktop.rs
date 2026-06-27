@@ -2190,17 +2190,14 @@ enum LiveDesktopBackgroundEffect {
     AcrylicWebgl,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LiveDesktopEffectPlan {
     effect: LiveDesktopBackgroundEffect,
-    opacity: f32,
     blur: LiveDesktopBlurEffectPlan,
     acrylic: LiveDesktopAcrylicEffectPlan,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LiveDesktopBlurEffectPlan {
@@ -2208,7 +2205,6 @@ struct LiveDesktopBlurEffectPlan {
     kernel: LiveDesktopBlurKernel,
     #[serde(default)]
     gaussian_radius_px: f32,
-    strength: u32,
     render_max_width: u32,
     render_max_height: u32,
     pass_count: u32,
@@ -2227,7 +2223,6 @@ enum LiveDesktopBlurKernel {
     Gaussian,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LiveDesktopAcrylicEffectPlan {
@@ -6357,11 +6352,9 @@ mod tests {
     fn test_live_desktop_effect_plan() -> LiveDesktopEffectPlan {
         LiveDesktopEffectPlan {
             effect: LiveDesktopBackgroundEffect::Blur,
-            opacity: 1.0,
             blur: LiveDesktopBlurEffectPlan {
                 kernel: LiveDesktopBlurKernel::DualKawase,
                 gaussian_radius_px: 4.0,
-                strength: 72,
                 render_max_width: 960,
                 render_max_height: 540,
                 pass_count: 4,
@@ -6673,10 +6666,8 @@ mod tests {
             effect_plan.effect,
             LiveDesktopBackgroundEffect::AcrylicWebgl
         );
-        assert!((effect_plan.opacity - 0.37).abs() < 0.001);
         assert_eq!(effect_plan.blur.kernel, LiveDesktopBlurKernel::Gaussian);
         assert!((effect_plan.blur.gaussian_radius_px - 20.0).abs() < 0.001);
-        assert_eq!(effect_plan.blur.strength, 72);
         assert_eq!(effect_plan.blur.render_max_width, 960);
         assert!((effect_plan.blur.offset_scale - 1.275).abs() < 0.001);
         assert_eq!(effect_plan.blur.down_offsets.len(), 4);
