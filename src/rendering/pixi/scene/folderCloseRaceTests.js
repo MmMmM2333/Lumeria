@@ -280,10 +280,10 @@ function startOpening(harness, token = "open:folder-1") {
   });
 }
 
-function startClosing(harness) {
+function startClosing(harness, targets = [makeTarget()], stateOverrides = {}) {
   harness.layer.closingGhosts.start(
-    makeState(),
-    [makeTarget()],
+    { ...makeState(), ...stateOverrides },
+    targets,
     { height: 72, left: 10, top: 20, width: 72 },
     { height: 360, left: 180, top: 200, width: 800 }
   );
@@ -364,6 +364,26 @@ export function runFolderCloseRaceTests() {
     assert(!isDesktopSourceArtworkVisible(harness), "second close should keep desktop source artwork hidden while ghosts are visible");
     assert(!hasOwnerToken(harness.visualOwnership, firstCloseToken), "second close should not leak the first close token");
     assert(!hasOwnerToken(harness.visualOwnership, "open:middle"), "second close should not leak the interrupted opening token");
+    motionRuntime.reset();
+  }
+
+  {
+    const harness = makeRaceHarness();
+    startOpening(harness, "open:page-0");
+    harness.layer.iconNodes.set("app-2", {
+      alpha: 1,
+      item: { id: "app-2" },
+      source: { folderId: "folder-1", pageIndex: 1 },
+      visible: true,
+    });
+
+    const committedPageTarget = makeTarget("app-2");
+    startClosing(harness, [committedPageTarget], { folderPageIndex: 1 });
+
+    assert(harness.layer.openingGhostLayer.children.length === 0, "open-turn-close should currently clear the interrupted origin-page opening ghost");
+    assert(harness.layer.closingGhostLayer.children.length === 1, "open-turn-close should currently create one closing ghost for the committed page");
+    assert(harness.layer.closingGhostLayer.children[0].item.id === "app-2", "open-turn-close should currently hand off the committed page item");
+    assert(!hasOwnerToken(harness.visualOwnership, "open:page-0"), "open-turn-close should not keep stale origin-page opening ownership");
     motionRuntime.reset();
   }
 

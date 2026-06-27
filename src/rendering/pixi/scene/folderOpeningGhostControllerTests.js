@@ -167,6 +167,11 @@ function beginReadyOpenSession(layer, folderId = "folder-1", targetKey = "target
   return session.token;
 }
 
+function getBaseAnimation(target, prop) {
+  const channel = motionRuntime.getChannel(target, prop);
+  return Array.from(channel?.base?.values?.() || [])[0] || null;
+}
+
 export function runFolderOpeningGhostControllerTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Folder opening ghost controller test failed] ${message}`);
@@ -353,6 +358,36 @@ export function runFolderOpeningGhostControllerTests() {
 
     assert(layer.ghosts.length === 1, "stage layout opening targets should not require a client target rect");
     controller.clear();
+  }
+
+  {
+    const completed = [];
+    const layer = makeLayer();
+    const controller = new FolderOpeningGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: makeTimerHost(),
+    });
+    const openingTarget = makeTarget();
+    controller.start(makeState(completed), [openingTarget]);
+    const ghost = layer.ghosts[0];
+    const initialXTarget = getBaseAnimation(ghost, "x")?.to;
+    const initialYTarget = getBaseAnimation(ghost, "y")?.to;
+    const turnedPageTarget = {
+      ...openingTarget,
+      targetStageLayoutRect: { height: 64, left: 500, top: 520, width: 64 },
+    };
+
+    motionRuntime.step(0.016);
+
+    assert(initialXTarget === 132, "current opening ghost should target the page slot captured at start");
+    assert(getBaseAnimation(ghost, "x")?.to === initialXTarget, "current opening ghost should keep its initial x target after a folder page turn");
+    assert(getBaseAnimation(ghost, "y")?.to === initialYTarget, "current opening ghost should keep its initial y target after a folder page turn");
+    assert(
+      getBaseAnimation(ghost, "x")?.to !== turnedPageTarget.targetStageLayoutRect.left + turnedPageTarget.targetStageLayoutRect.width / 2,
+      "current opening ghost should not retarget to the new visual page slot"
+    );
+    controller.clear();
+    motionRuntime.reset();
   }
 
   {

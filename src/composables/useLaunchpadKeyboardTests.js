@@ -7,12 +7,24 @@ function createKeyboard(overrides = {}) {
     clearSelectedIcon: 0,
     closeDesktop: [],
     closeTopmostModal: 0,
+    commitFolderPageIndex: [],
+    commitPageIndex: [],
     commitOpenFolder: [],
     startFolderZoomFadeClose: [],
     focusDesktopSurface: 0,
     hideNativeWindowAfterCloseAnimation: 0,
     moveSelectionByArrow: [],
     openSelectedIcon: 0,
+  };
+  const state = {
+    folderPageIndex: ref(overrides.folderPageIndex ?? 0),
+    folderPages: ref(overrides.folderPages ?? [[]]),
+    isFolderClosing: ref(Boolean(overrides.isFolderClosing)),
+    isFolderZoomFadeClosing: ref(false),
+    openFolderId: ref(overrides.openFolderId || null),
+    pageIndex: ref(overrides.pageIndex ?? 0),
+    pages: ref(overrides.pages ?? [[]]),
+    renderedFolder: ref(overrides.renderedFolder || null),
   };
   const keyboard = useLaunchpadKeyboard({
     clearSearch: () => {
@@ -26,16 +38,16 @@ function createKeyboard(overrides = {}) {
       calls.closeTopmostModal += 1;
       return Boolean(overrides.hasModal);
     },
-    commitFolderPageIndex: () => {},
+    commitFolderPageIndex: (index) => calls.commitFolderPageIndex.push(index),
     commitOpenFolder: (value) => calls.commitOpenFolder.push(value),
-    commitPageIndex: () => {},
+    commitPageIndex: (index) => calls.commitPageIndex.push(index),
     commitSearchPageIndex: () => {},
     finishHomeRevealSettleWindow: () => {},
     focusDesktopSurface: () => {
       calls.focusDesktopSurface += 1;
     },
-    folderPageIndex: ref(0),
-    folderPages: ref([[]]),
+    folderPageIndex: state.folderPageIndex,
+    folderPages: state.folderPages,
     folderPanelRef: ref(null),
     getCurrentIconScope: () => ({ items: [] }),
     cancelAltEditMode: () => {},
@@ -49,21 +61,21 @@ function createKeyboard(overrides = {}) {
     isDesktopOpen: ref(true),
     isDragActive: () => false,
     isFolderAppLaunchClosing: ref(false),
-    isFolderClosing: ref(Boolean(overrides.isFolderClosing)),
-    isFolderZoomFadeClosing: ref(false),
+    isFolderClosing: state.isFolderClosing,
+    isFolderZoomFadeClosing: state.isFolderZoomFadeClosing,
     isHomeRevealSettling: ref(false),
     isModalOpen: () => Boolean(overrides.hasModal),
     isSearchMode: ref(Boolean(overrides.isSearchMode)),
     keyboardFocusArea: ref("desktop"),
     moveSelectionByArrow: (key) => calls.moveSelectionByArrow.push(key),
     openDesktop: () => {},
-    openFolderId: ref(overrides.openFolderId || null),
+    openFolderId: state.openFolderId,
     openSelectedIcon: () => {
       calls.openSelectedIcon += 1;
     },
-    pageIndex: ref(0),
-    pages: ref([[]]),
-    renderedFolder: ref(overrides.renderedFolder || null),
+    pageIndex: state.pageIndex,
+    pages: state.pages,
+    renderedFolder: state.renderedFolder,
     schedulePageGridMetrics: () => {},
     searchInputRef: ref(null),
     searchPageIndex: ref(0),
@@ -78,7 +90,7 @@ function createKeyboard(overrides = {}) {
     },
   });
 
-  return { calls, keyboard };
+  return { calls, keyboard, state };
 }
 
 function makeKeyEvent(key) {
@@ -94,6 +106,43 @@ function makeKeyEvent(key) {
       this.preventDefaultCalled += 1;
     },
   };
+}
+
+function makeWheelEvent(deltaY = 120) {
+  return {
+    deltaX: 0,
+    deltaY,
+    preventDefaultCalled: 0,
+    preventDefault() {
+      this.preventDefaultCalled += 1;
+    },
+  };
+}
+
+function withAnimationFrameQueue(run) {
+  const originalWindow = globalThis.window;
+  const frames = [];
+  globalThis.window = {
+    ...(originalWindow || {}),
+    requestAnimationFrame(callback) {
+      frames.push(callback);
+      return frames.length;
+    },
+  };
+  try {
+    run({
+      flushOne() {
+        const callback = frames.shift();
+        if (callback) callback();
+      },
+      get size() {
+        return frames.length;
+      },
+    });
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
 }
 
 export function runLaunchpadKeyboardTests() {
@@ -133,6 +182,45 @@ export function runLaunchpadKeyboardTests() {
   assert(desktop.calls.closeTopmostModal === 1, "Escape should check modal state before desktop actions");
   assert(desktop.calls.closeDesktop.length === 1, "Escape with no modal should fall back to desktop close");
   assert(desktop.calls.hideNativeWindowAfterCloseAnimation === 1, "desktop Escape should still schedule native window hide");
+
+  const openingFolderWheel = createKeyboard({
+    folderPageIndex: 0,
+    folderPages: [[{ id: "app-a" }], [{ id: "app-b" }]],
+    openFolderId: "folder-1",
+    renderedFolder: { id: "folder-1", type: "folder", name: "Folder" },
+  });
+  const openingWheelEvent = makeWheelEvent();
+  openingFolderWheel.keyboard.handleLaunchpadWheel(openingWheelEvent);
+  assert(openingWheelEvent.preventDefaultCalled === 1, "opening-folder wheel should currently consume the wheel turn");
+  assert(openingFolderWheel.calls.commitFolderPageIndex.join(",") === "1", "opening-folder wheel should currently commit the folder page immediately");
+  assert(openingFolderWheel.calls.commitPageIndex.length === 0, "opening-folder wheel should not turn the desktop page");
+
+  withAnimationFrameQueue((raf) => {
+    const closingFolderWheel = createKeyboard({
+      folderPageIndex: 0,
+      folderPages: [[{ id: "app-a" }], [{ id: "app-b" }]],
+      isFolderClosing: true,
+      pageIndex: 0,
+      pages: [[{ id: "folder-1" }], [{ id: "folder-2" }]],
+      renderedFolder: { id: "folder-1", type: "folder", name: "Folder" },
+    });
+    const closingWheelEvent = makeWheelEvent();
+    closingFolderWheel.keyboard.handleLaunchpadWheel(closingWheelEvent);
+    assert(closingWheelEvent.preventDefaultCalled === 1, "closing-folder wheel should currently consume the queued turn");
+    assert(closingFolderWheel.calls.commitFolderPageIndex.length === 0, "closing-folder wheel should not change the folder page");
+    assert(closingFolderWheel.calls.commitPageIndex.length === 0, "closing-folder wheel should wait for the folder to close before turning desktop");
+    assert(closingFolderWheel.state.folderPageIndex.value === 0, "closing-folder queued desktop turn should leave the folder page unchanged");
+    assert(raf.size === 1, "closing-folder wheel should queue a desktop turn wait frame");
+
+    raf.flushOne();
+    assert(closingFolderWheel.calls.commitPageIndex.length === 0, "queued desktop turn should keep waiting while the folder interaction layer exists");
+    assert(raf.size === 1, "queued desktop turn should reschedule while closing remains active");
+
+    closingFolderWheel.state.isFolderClosing.value = false;
+    closingFolderWheel.state.renderedFolder.value = null;
+    raf.flushOne();
+    assert(closingFolderWheel.calls.commitPageIndex.join(",") === "1", "queued desktop turn should commit only after the folder interaction layer disappears");
+  });
 
   const closingFolderEscape = createKeyboard({
     isFolderClosing: true,
