@@ -1,4 +1,5 @@
 mod catalog;
+mod dwm;
 mod encoding;
 mod file_dialog;
 mod icons;
@@ -8,6 +9,7 @@ mod live_desktop;
 mod models;
 mod path_utils;
 mod tray;
+mod window_effects;
 mod windows_com;
 
 use std::{
@@ -410,8 +412,8 @@ fn show_launch_error_message(report: LaunchFailureReport) {
 }
 
 #[tauri::command]
-fn get_main_window_effects_support() -> tray::MainWindowEffectsSupport {
-    tray::main_window_effects_support()
+fn get_main_window_effects_support() -> window_effects::MainWindowEffectsSupport {
+    window_effects::main_window_effects_support()
 }
 
 #[tauri::command]
