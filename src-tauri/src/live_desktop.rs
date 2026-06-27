@@ -349,7 +349,7 @@ struct LiveDesktopRendererResources {
     _com: ComApartment,
     _d3d_device: ID3D11Device,
     _d3d_context: ID3D11DeviceContext,
-    _window_capture: Option<LiveDesktopWindowCapture>,
+    window_capture: Option<LiveDesktopWindowCapture>,
     _composition_device: LiveDesktopCompositionDevice,
     _blur_effect: Option<IDCompositionGaussianBlurEffect>,
     _color_matrix_effect: Option<IDCompositionColorMatrixEffect>,
@@ -406,9 +406,10 @@ struct LiveDesktopWindowCapture {
     popup_close_command: Option<LiveDesktopWallpaperEnginePopupCloseCommand>,
     mouse_relay: Option<Mutex<LiveDesktopMouseRelay>>,
     frame_crop: Option<LiveDesktopFrameCrop>,
+    diagnostics: Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
     _item: GraphicsCaptureItem,
     frame_pool: Direct3D11CaptureFramePool,
-    _session: GraphicsCaptureSession,
+    session: GraphicsCaptureSession,
     frame_arrived_receiver: Option<mpsc::Receiver<()>>,
     frame_arrived_token: Option<i64>,
     _frame_arrived_handler: Option<TypedEventHandler<Direct3D11CaptureFramePool, IInspectable>>,
@@ -440,16 +441,50 @@ struct LiveDesktopMouseRelayPosition {
 }
 
 #[cfg(target_os = "windows")]
+impl LiveDesktopWindowCapture {
+    fn record_teardown_error(&self, detail: String) {
+        eprintln!("{detail}");
+        update_live_desktop_diagnostics(&self.diagnostics, |diagnostics| {
+            push_live_desktop_recent_error(diagnostics, &detail);
+        });
+    }
+}
+
+#[cfg(target_os = "windows")]
 impl Drop for LiveDesktopWindowCapture {
     fn drop(&mut self) {
+        if let Some(token) = self.frame_arrived_token.take() {
+            if let Err(error) = self.frame_pool.RemoveFrameArrived(token) {
+                self.record_teardown_error(format!(
+                    "Direct3D11CaptureFramePool::RemoveFrameArrived during WGC teardown failed: {error}"
+                ));
+            }
+        }
+        self.frame_arrived_receiver.take();
+
+        if let Err(error) = self.session.Close() {
+            self.record_teardown_error(format!(
+                "GraphicsCaptureSession::Close during WGC teardown failed: {error}"
+            ));
+        }
+        if let Err(error) = self.frame_pool.Close() {
+            self.record_teardown_error(format!(
+                "Direct3D11CaptureFramePool::Close during WGC teardown failed: {error}"
+            ));
+        }
         if let Some(command) = self.popup_close_command.as_ref() {
-            let _ = close_wallpaper_engine_named_popup(command);
+            if let Err(error) = close_wallpaper_engine_named_popup(command) {
+                self.record_teardown_error(format!(
+                    "Wallpaper Engine popup close during WGC teardown failed: {error}"
+                ));
+            }
         }
         if let Some(state) = self.popup_restore_state.as_ref() {
-            let _ = unsafe { restore_wallpaper_engine_popup_after_capture(state) };
-        }
-        if let Some(token) = self.frame_arrived_token.take() {
-            let _ = self.frame_pool.RemoveFrameArrived(token);
+            if let Err(error) = unsafe { restore_wallpaper_engine_popup_after_capture(state) } {
+                self.record_teardown_error(format!(
+                    "Wallpaper Engine popup restore during WGC teardown failed: {error}"
+                ));
+            }
         }
     }
 }
@@ -2909,7 +2944,7 @@ impl LiveDesktopRendererResources {
         }
 
         let frame_arrived_receiver = self
-            ._window_capture
+            .window_capture
             .as_ref()
             .and_then(|capture| capture.frame_arrived_receiver.as_ref());
         if let Some(frame_arrived_receiver) = frame_arrived_receiver {
@@ -2947,7 +2982,7 @@ impl LiveDesktopRendererResources {
 
     fn drain_window_capture_frame_arrivals(&self) {
         let frame_arrived_receiver = self
-            ._window_capture
+            .window_capture
             .as_ref()
             .and_then(|capture| capture.frame_arrived_receiver.as_ref());
         if let Some(frame_arrived_receiver) = frame_arrived_receiver {
@@ -3130,7 +3165,7 @@ impl LiveDesktopRendererResources {
         }
 
         if self.config.effective_frame_source().uses_window_capture() {
-            let window_capture = match self._window_capture.as_ref() {
+            let window_capture = match self.window_capture.as_ref() {
                 Some(window_capture) => window_capture,
                 None => {
                     let error = format!(
@@ -4739,7 +4774,7 @@ unsafe fn create_live_desktop_renderer_resources(
                 _com: com,
                 _d3d_device: d3d.device,
                 _d3d_context: d3d.context,
-                _window_capture: window_capture,
+                window_capture,
                 _composition_device: composition_device,
                 _blur_effect: blur_effect,
                 _color_matrix_effect: color_matrix_effect,
@@ -5242,9 +5277,10 @@ unsafe fn create_live_desktop_window_capture(
             popup_close_command,
             mouse_relay,
             frame_crop,
+            diagnostics: Arc::clone(&diagnostics),
             _item: item,
             frame_pool,
-            _session: session,
+            session,
             frame_arrived_receiver,
             frame_arrived_token,
             _frame_arrived_handler: frame_arrived_handler,
