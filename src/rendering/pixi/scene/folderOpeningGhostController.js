@@ -25,7 +25,7 @@ function completeOpeningFrameGhost(transitionPort, state) {
   return state.completeFolderOpenFrameGhost?.(folderId, getOpeningFrameGhostRequestId(state));
 }
 
-function animateOpeningGhost(ghost, ghostMotion, onComplete, options = {}) {
+function animateOpeningGhost(ghost, ghostMotion, onArrive, options = {}) {
   const springOptions = { delay: ghostMotion.delay, onUpdate: options.onFrame };
   const fadeControl = motion(ghost)
     .preset("folderOpenGhost", { delay: ghostMotion.delay })
@@ -46,7 +46,7 @@ function animateOpeningGhost(ghost, ghostMotion, onComplete, options = {}) {
       .to({ ...springOptions, x: 1, y: 1 }),
   ], {
     scheduler: options.scheduler,
-    onComplete,
+    onArrive,
   });
   return {
     cancel() {
@@ -63,7 +63,7 @@ function animateOpeningGhost(ghost, ghostMotion, onComplete, options = {}) {
   };
 }
 
-function retargetOpeningGhost(ghost, ghostMotion, onComplete, options = {}) {
+function retargetOpeningGhost(ghost, ghostMotion, onArrive, options = {}) {
   const geometryControl = parallel([
     motion(ghost)
       .preset("layout")
@@ -77,7 +77,7 @@ function retargetOpeningGhost(ghost, ghostMotion, onComplete, options = {}) {
       .to({ x: 1, y: 1 }),
   ], {
     scheduler: options.scheduler,
-    onComplete,
+    onArrive,
   });
   return {
     cancel() {
@@ -95,6 +95,13 @@ function retargetOpeningGhost(ghost, ghostMotion, onComplete, options = {}) {
 function findOpeningGhostByItemId(children, itemId) {
   if (!itemId) return null;
   return (children || []).find((ghost) => ghost?.item?.id === itemId && !ghost.destroyed) || null;
+}
+
+function destroyOpeningGhostVisual(transitionPort, ghost) {
+  if (!ghost) return;
+  transitionPort.removeOpeningGhost(ghost);
+  killAllMotion(ghost);
+  ghost.destroy?.({ children: true });
 }
 
 function makeOpeningGhostTargetKey(target = {}) {
@@ -248,13 +255,16 @@ export class FolderOpeningGhostController {
   }
 
   complete(state, target, ghost) {
+    const sessionToken = this.handoffCoordinator.getOpeningSessionToken();
     const controllerGhostKey = target.controllerGhostKey || state.getFolderOpenIconGhostKey?.(target.item.id, target.index);
     this.handoffCoordinator.completeOpeningGhost(target.item.id, controllerGhostKey);
     this.openingTargetKeysByItemId.delete(target.item.id);
     ghost.alpha = 1;
     ghost.scale.set(1);
     this.transitionPort.deleteOpeningGhostBounds(target.item.id);
-    this.finishTransition({ sessionToken: this.handoffCoordinator.getOpeningSessionToken() });
+    this.transitionPort.releaseIconNodesForTransition(target.item.id, sessionToken, { reveal: true });
+    destroyOpeningGhostVisual(this.transitionPort, ghost);
+    this.finishTransition({ sessionToken });
   }
 
   start(state, targets, options = {}) {
@@ -292,13 +302,9 @@ export class FolderOpeningGhostController {
     }
 
     if (!usableTargets.length) {
-      if (startedFrameGhost) {
-        this.transitionPort.hidePageTrackForTransition(owner);
-      }
       this.finishTransition({ sessionToken });
       return;
     }
-    this.transitionPort.hidePageTrackForTransition(owner);
     this.scheduleRevealFallback(usableTargets);
 
     for (const target of usableTargets) {

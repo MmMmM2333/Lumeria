@@ -3,6 +3,7 @@ import { FolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
 import {
   FolderVisualOwnershipRegistry,
   makeDesktopSourceVisualKey,
+  makeFolderIconVisualKey,
 } from "./folderVisualOwnershipRegistry.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import {
@@ -74,9 +75,11 @@ function makeLayer() {
   const calls = [];
   const ghosts = [];
   const frameGhostCalls = [];
-  const iconNode = { alpha: 1, item: { id: "app-1" }, visible: true };
+  const iconNode = { alpha: 1, item: { id: "app-1" }, state: { source: { folderId: "folder-1", pageIndex: 0 } }, visible: true };
+  const visualOwnership = new FolderVisualOwnershipRegistry();
   return {
     calls,
+    currentFolderId: "folder-1",
     frameGhostCalls,
     frameGhost: { alpha: 1, visible: true },
     iconNodes: new Map([["app-1", iconNode]]),
@@ -93,8 +96,19 @@ function makeLayer() {
     },
     pageTrack: { visible: true },
     panelMaterial: { alpha: 0, visible: false },
+    visualOwnership,
+    acquireVisualOwnership(key, owner) {
+      return this.visualOwnership.acquire(key, owner);
+    },
     clearFrameGhost() {
       calls.push("clear-frame");
+    },
+    getIconNodeVisualKey(node, fallbackFolderId = null) {
+      return makeFolderIconVisualKey(
+        node?.state?.source?.folderId || fallbackFolderId || this.currentFolderId,
+        node?.item?.id,
+        node?.state?.source?.pageIndex ?? 0
+      );
     },
     startFrameGhost(fromRect, toRect, options) {
       frameGhostCalls.push({ fromRect, options, toRect });
@@ -110,9 +124,12 @@ function makeLayer() {
       this.lastOpeningBoundsTarget = target;
       return target;
     },
-    hideIconNodesForTransition(itemId) {
+    hideIconNodesForTransition(itemId, owner = {}) {
       for (const node of this.iconNodes.values()) {
-        if (node.item?.id === itemId) node.visible = false;
+        if (node.item?.id !== itemId) continue;
+        const key = this.getIconNodeVisualKey(node, owner.folderId);
+        if (key) this.acquireVisualOwnership(key, owner);
+        node.visible = false;
       }
     },
     hidePageTrackForTransition() {
@@ -126,8 +143,23 @@ function makeLayer() {
       }
     },
     releaseTransitionOwnership(_token, options = {}) {
+      this.visualOwnership.releaseByToken(_token);
       if (options.reveal !== false) this.revealIconNodes();
       if (options.restorePageTrack !== false) this.pageTrack.visible = true;
+    },
+    releaseIconNodesForTransition(itemId, token, options = {}) {
+      let released = 0;
+      for (const node of this.iconNodes.values()) {
+        if (node.item?.id !== itemId) continue;
+        const key = this.getIconNodeVisualKey(node);
+        if (!this.visualOwnership.release(key, token)) continue;
+        released += 1;
+        if (options.reveal !== false && !this.visualOwnership.hasOwner(key)) {
+          node.visible = true;
+          node.alpha = 1;
+        }
+      }
+      return released;
     },
     get ghosts() {
       return ghosts;
@@ -221,7 +253,7 @@ export function runFolderOpeningGhostControllerTests() {
     );
     assert(layer.ghosts.length === 1, "start should create one opening ghost");
     assert(layer.iconNode.visible === false, "start should hide the real icon node");
-    assert(layer.pageTrack.visible === false, "start should hide the page track");
+    assert(layer.pageTrack.visible === true, "start should keep the page track visible during opening");
     assert(layer.frameGhostCalls.length === 1, "start should morph an opening frame ghost from the source folder thumb");
     assert(layer.frameGhostCalls[0].fromRect.left === 10 && layer.frameGhostCalls[0].fromRect.width === 48, "opening frame should start at the source folder thumb rect");
     assert(layer.frameGhostCalls[0].toRect.left === 180 && layer.frameGhostCalls[0].toRect.width === 800, "opening frame should target the panel rect");
@@ -263,15 +295,20 @@ export function runFolderOpeningGhostControllerTests() {
     controller.complete(makeState(completed), target, layer.ghosts[0]);
 
     assert(layer.folderHandoff.getOpeningGhostKeys().size === 0, "complete should clear ghost item ids even when reveal is gated");
-    assert(layer.iconNode.visible === false, "ghost completion before panel ready should keep real icons hidden");
-    assert(layer.pageTrack.visible === false, "ghost completion before panel ready should keep the page track hidden");
-    assert(layer.ghosts.length === 1, "ghost completion before panel ready should retain ghost visuals");
+    assert(layer.iconNode.visible === true, "ghost completion before panel ready should reveal the completed real icon");
+    assert(layer.pageTrack.visible === true, "ghost completion before panel ready should keep the page track visible");
+    assert(layer.ghosts.length === 0, "ghost completion before panel ready should remove completed ghost visuals");
+    assert(
+      layer.visualOwnership.isOwnedBy(makeDesktopSourceVisualKey("folder-1"), session.token),
+      "ghost completion before panel ready should keep desktop source ownership until reveal"
+    );
 
     layer.folderHandoff.markPanelReady(session.token);
     controller.finishTransition({ sessionToken: session.token });
-    assert(layer.iconNode.visible === true, "panel ready after ghosts should reveal real icons");
-    assert(layer.pageTrack.visible === true, "panel ready after ghosts should restore the page track");
-    assert(layer.ghosts.length === 0, "panel ready after ghosts should remove retained ghost visuals");
+    assert(layer.iconNode.visible === true, "panel ready after ghosts should keep real icons visible");
+    assert(layer.pageTrack.visible === true, "panel ready after ghosts should leave the page track visible");
+    assert(layer.ghosts.length === 0, "panel ready after ghosts should keep completed ghost visuals removed");
+    assert(!layer.visualOwnership.hasOwner(makeDesktopSourceVisualKey("folder-1")), "panel ready after ghosts should release desktop source ownership");
     motionRuntime.reset();
   }
 
@@ -421,7 +458,7 @@ export function runFolderOpeningGhostControllerTests() {
 
     assert(completed.join(",") === "", "interrupt clear should not complete opening controller keys");
     assert(layer.iconNode.visible === false, "interrupt clear should not reveal real icon nodes");
-    assert(layer.pageTrack.visible === false, "interrupt clear should not restore the page track");
+    assert(layer.pageTrack.visible === true, "interrupt clear should leave the opening page track visible");
     assert(layer.ghosts.length === 0, "interrupt clear should still remove opening ghost visuals");
   }
 

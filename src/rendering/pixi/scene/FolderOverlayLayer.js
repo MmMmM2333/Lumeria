@@ -954,9 +954,7 @@ export class FolderOverlayLayer extends Container {
         .to({ alpha: 0, onComplete: () => node.destroy({ children: true }) })
         .start();
     }
-    this.pageTrack.visible = !state.isFolderClosing &&
-      !this.folderHandoff.isRevealPending() &&
-      !this.folderHandoff.hasActiveOpeningVisuals() &&
+    this.pageTrack.visible = !isClosing &&
       !this.folderHandoff.hasActiveCloseVisuals();
     if (!this.frameGhostState) {
       if (!isClosing) this.notifyPanelTitleFrame(geometry.panel);
@@ -1446,6 +1444,32 @@ export class FolderOverlayLayer extends Container {
     if (restorePageTrack && !this.hasPageTrackOwner()) {
       this.pageTrack.visible = true;
     }
+  }
+
+  releaseIconNodesForTransition(itemId, token, options = {}) {
+    if (!itemId || token == null) return 0;
+    const reveal = options.reveal !== false;
+    let released = 0;
+    for (const entry of this.visualOwnership.snapshot()) {
+      if (entry.owner?.token !== token || !entry.key?.startsWith("folderIcon:")) continue;
+      let matchedNode = null;
+      for (const node of this.iconNodes.values()) {
+        if (node.item?.id !== itemId) continue;
+        const key = this.getIconNodeVisualKey(node, entry.owner.folderId);
+        if (key === entry.key) {
+          matchedNode = node;
+          break;
+        }
+      }
+      if (!matchedNode) continue;
+      if (!this.releaseVisualOwnership(entry.key, token)) continue;
+      released += 1;
+      if (reveal && !this.visualOwnership.hasOwner(entry.key)) {
+        matchedNode.visible = true;
+        matchedNode.alpha = 1;
+      }
+    }
+    return released;
   }
 
   clearFrameGhost(options = {}) {

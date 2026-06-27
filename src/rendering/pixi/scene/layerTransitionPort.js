@@ -100,6 +100,9 @@ export function createLayerTransitionPort(layer) {
     releaseTransitionOwnership(token, options = {}) {
       return layer.releaseTransitionOwnership?.(token, options);
     },
+    releaseIconNodesForTransition(itemId, token, options = {}) {
+      return layer.releaseIconNodesForTransition?.(itemId, token, options);
+    },
     refreshRegisteredIconBounds() {
       return layer.refreshRegisteredIconBounds?.();
     },

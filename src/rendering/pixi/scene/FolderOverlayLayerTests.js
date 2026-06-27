@@ -1334,19 +1334,18 @@ export async function runFolderOverlayLayerTests() {
     assert(layer.visualOwnership.isOwnedBy(pageTrackKey, "close-a"), "closing ownership should claim the page track visual key");
 
     layer.hideIconNodesForTransition("app-1", openingOwner);
-    layer.hidePageTrackForTransition(openingOwner);
     layer.releaseTransitionOwnership("close-a", { reveal: true, restorePageTrack: true });
 
     assert(iconNode.visible === false, "stale closing release should not reveal an icon now owned by opening");
-    assert(layer.pageTrack.visible === false, "stale closing release should not restore a page track now owned by opening");
+    assert(layer.pageTrack.visible === true, "stale closing release should restore the page track because opening no longer owns it");
     assert(layer.visualOwnership.isOwnedBy(iconKey, "open-a"), "stale closing release should preserve the opening icon owner");
-    assert(layer.visualOwnership.isOwnedBy(pageTrackKey, "open-a"), "stale closing release should preserve the opening page track owner");
+    assert(!layer.visualOwnership.hasOwner(pageTrackKey), "opening ownership should not claim the page track visual key");
 
-    layer.releaseTransitionOwnership("open-a", { reveal: true, restorePageTrack: true });
-    assert(iconNode.visible === true && iconNode.alpha === 1, "current opening release should reveal the real icon node");
-    assert(layer.pageTrack.visible === true, "current opening release should restore the page track");
+    assert(layer.releaseIconNodesForTransition("app-1", "open-a", { reveal: true }) === 1, "current opening icon release should only clear the completed icon");
+    assert(iconNode.visible === true && iconNode.alpha === 1, "current opening icon release should reveal the real icon node");
+    assert(layer.pageTrack.visible === true, "current opening icon release should leave the page track visible");
     assert(!layer.visualOwnership.hasOwner(iconKey), "current opening release should clear icon ownership");
-    assert(!layer.visualOwnership.hasOwner(pageTrackKey), "current opening release should clear page track ownership");
+    assert(!layer.visualOwnership.hasOwner(pageTrackKey), "current opening release should not create page track ownership");
   }
 
   {
@@ -1370,6 +1369,57 @@ export async function runFolderOverlayLayerTests() {
     assert(iconNode.visible === false, "non-reveal release should clear ownership without showing the icon");
     assert(layer.pageTrack.visible === false, "non-restore release should clear ownership without showing the page track");
     assert(layer.visualOwnership.snapshot().length === 0, "non-reveal release should still clear matching ownership entries");
+  }
+
+  {
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    layer.folderHandoff = new FolderHandoffCoordinator(layer);
+    const session = layer.folderHandoff.beginOpen("folder-a", "target-a").session;
+    layer.folderHandoff.beginOpeningVisuals({ sessionToken: session.token, state: {} });
+    layer.folderHandoff.registerOpeningGhost("app-1", "open-key");
+    let retargets = 0;
+    layer.openingGhosts = {
+      retarget() {
+        retargets += 1;
+      },
+      start() {
+        throw new Error("existing opening visuals should retarget instead of restarting");
+      },
+    };
+    layer.closingGhosts = {
+      clear() {},
+      start() {},
+    };
+    layer.iconNodes = new Map();
+    layer.pageTrack = { visible: false };
+    layer.frameGhostState = null;
+    layer.notifyPanelTitleFrame = () => {};
+    layer.notifyTitleFrame = () => {};
+    layer.refreshRegisteredIconBounds = () => {};
+    layer.clearClosingFolderId = () => {};
+
+    layer.startFolderOverlayTransitions({
+      closeIconRect: null,
+      closeThumbRect: null,
+      closingGhostTargets: [],
+      closingPreviewSwapTargets: [],
+      folderClientRect: null,
+      folderId: "folder-a",
+      folderThumbClientRect: null,
+      geometry: { panel: { height: 100, left: 0, top: 0, width: 100 } },
+      isClosing: false,
+      isNewFolder: false,
+      openingGhostTargets: [],
+      seen: new Set(),
+      state: {
+        folderOpenIconGhosts: [],
+        isFolderClosing: false,
+      },
+    });
+
+    assert(layer.folderHandoff.isRevealPending(), "opening reveal should still be pending during active opening visuals");
+    assert(retargets === 1, "active opening visuals should still retarget during folder overlay updates");
+    assert(layer.pageTrack.visible === true, "opening reveal and opening ghosts should no longer hide the page track");
   }
 
   {
