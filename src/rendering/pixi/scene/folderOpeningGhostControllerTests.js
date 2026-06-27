@@ -80,6 +80,8 @@ function makeLayer() {
     frameGhostCalls,
     frameGhost: { alpha: 1, visible: true },
     iconNodes: new Map([["app-1", iconNode]]),
+    lastOpeningBoundsTarget: null,
+    openingGhostBoundsRefreshers: new Map(),
     openingGhostLayer: {
       children: ghosts,
       addChild(ghost) {
@@ -103,6 +105,10 @@ function makeLayer() {
     },
     rebuildPageTrackMask() {
       calls.push("rebuild-mask");
+    },
+    registerOpeningGhostBounds(_state, target) {
+      this.lastOpeningBoundsTarget = target;
+      return target;
     },
     hideIconNodesForTransition(itemId) {
       for (const node of this.iconNodes.values()) {
@@ -370,22 +376,31 @@ export function runFolderOpeningGhostControllerTests() {
     const openingTarget = makeTarget();
     controller.start(makeState(completed), [openingTarget]);
     const ghost = layer.ghosts[0];
-    const initialXTarget = getBaseAnimation(ghost, "x")?.to;
+    const initialXAnimation = getBaseAnimation(ghost, "x");
     const initialYTarget = getBaseAnimation(ghost, "y")?.to;
+    const initialControl = layer.folderHandoff.getOpeningMotionControl("app-1");
     const turnedPageTarget = {
       ...openingTarget,
+      pageIndex: 1,
       targetStageLayoutRect: { height: 64, left: 500, top: 520, width: 64 },
     };
 
     motionRuntime.step(0.016);
 
-    assert(initialXTarget === 132, "current opening ghost should target the page slot captured at start");
-    assert(getBaseAnimation(ghost, "x")?.to === initialXTarget, "current opening ghost should keep its initial x target after a folder page turn");
-    assert(getBaseAnimation(ghost, "y")?.to === initialYTarget, "current opening ghost should keep its initial y target after a folder page turn");
-    assert(
-      getBaseAnimation(ghost, "x")?.to !== turnedPageTarget.targetStageLayoutRect.left + turnedPageTarget.targetStageLayoutRect.width / 2,
-      "current opening ghost should not retarget to the new visual page slot"
-    );
+    assert(initialXAnimation?.to === 132, "opening ghost should target the page slot captured at start");
+    assert(initialXAnimation?.driver?.config?.stiffness === 340, "initial opening ghost motion should keep the existing handoff spring");
+    assert(controller.retarget(makeState(completed), [turnedPageTarget]) === 1, "folder page turn should retarget the active opening ghost");
+    assert(layer.ghosts.length === 1, "retarget should reuse the existing opening ghost visual");
+    assert(layer.folderHandoff.getOpeningMotionControl("app-1") !== initialControl, "retarget should replace the tracked motion control");
+    assert(getBaseAnimation(ghost, "x")?.to === 532, "opening ghost should retarget x to the new visual page slot");
+    assert(getBaseAnimation(ghost, "y")?.to !== initialYTarget, "opening ghost should retarget y to the new visual page slot");
+    assert(getBaseAnimation(ghost, "x")?.driver?.config?.stiffness === 190, "retargeted opening ghost position should use the pageTrack layout spring");
+    assert(controller.retarget(makeState(completed), [turnedPageTarget]) === 0, "unchanged opening ghost targets should not restart retarget motion");
+    layer.openingGhostBoundsRefreshers.get("app-1")?.();
+    assert(layer.lastOpeningBoundsTarget === turnedPageTarget, "retarget should replace the opening ghost bounds refresher target");
+    for (let index = 0; index < 40; index += 1) motionRuntime.step(0.05);
+    assert(completed.join(",") === "controller-open-key", "retargeted opening ghost should still complete the controller ghost key");
+    assert(!layer.folderHandoff.hasOpeningGhost("app-1"), "retargeted opening ghost completion should clear the active item id");
     controller.clear();
     motionRuntime.reset();
   }

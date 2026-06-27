@@ -921,6 +921,8 @@ export class FolderOverlayLayer extends Container {
         frameTargetRect: geometry.panel,
         sessionToken: this.folderHandoff.activeOpenToken,
       });
+    } else if (!isClosing && this.folderHandoff.hasActiveOpeningVisuals()) {
+      this.openingGhosts.retarget(state, openingGhostTargets);
     }
     if (!isNewFolder && !isClosing && state.folderOpenIconGhosts?.length && !this.folderHandoff.hasActiveOpeningVisuals()) {
       for (const ghost of state.folderOpenIconGhosts) {

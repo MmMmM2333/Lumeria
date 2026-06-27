@@ -76,6 +76,7 @@ export function makeFolderOverlayRenderPlan(options = {}) {
       const { key, source, x, y } = iconPlan;
       const isActiveDraggedItem = isActiveDraggedLaunchItem(item, dragState);
       const isReleaseGhostItem = isReleaseGhostLaunchItem(item, dragState);
+      const hasActiveOpeningGhost = openingGhostItemIds?.has(item.id) === true;
       const targetCenter = makeFolderIconTargetCenter({ geometry, isTextlessMode, targetTrackX, x, y });
       const nodeState = makeFolderIconNodeState({
         closingGhostKeys,
@@ -122,12 +123,12 @@ export function makeFolderOverlayRenderPlan(options = {}) {
         item,
         key,
         nodeState,
-        openingGhostInput: isInteractivePage &&
+        openingGhostInput: (isInteractivePage || hasActiveOpeningGhost) &&
           !isActiveDraggedItem &&
           !isReleaseGhostItem &&
-          isNewFolder &&
+          (isNewFolder || hasActiveOpeningGhost) &&
           !isClosing &&
-          pageIndex === visualFolderPageIndex
+          (pageIndex === visualFolderPageIndex || hasActiveOpeningGhost)
           ? {
             cellHeight: slot.height,
             cellWidth: slot.width,
