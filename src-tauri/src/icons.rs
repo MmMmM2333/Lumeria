@@ -9,6 +9,8 @@ use std::{
     slice,
 };
 
+#[cfg(target_os = "windows")]
+use crate::encoding::PNG_SIGNATURE;
 use crate::path_utils::{expand_windows_env_vars, extension, windows_api_path};
 
 #[cfg(target_os = "windows")]
@@ -913,7 +915,7 @@ fn icon_size_byte(value: u8) -> u32 {
 
 #[cfg(target_os = "windows")]
 fn is_png(data: &[u8]) -> bool {
-    data.starts_with(b"\x89PNG\r\n\x1a\n")
+    data.starts_with(PNG_SIGNATURE)
 }
 
 #[cfg(target_os = "windows")]

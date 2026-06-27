@@ -1,4 +1,5 @@
 mod catalog;
+mod encoding;
 mod file_dialog;
 mod icons;
 mod launcher;
@@ -22,6 +23,7 @@ use catalog::{
     icon_cache_dir, icon_file_data_url, scan_apps_from_roots, stable_app_id, ScanAppsResult,
     ScanFilters, ScanRoot,
 };
+use encoding::{decode_base64, PNG_SIGNATURE};
 use file_dialog::{
     cached_background_image_data_url as load_native_cached_background_image_data_url,
     get_desktop_wallpaper_background as get_native_desktop_wallpaper_background,
@@ -1074,73 +1076,10 @@ fn decode_custom_icon_data_url(data_url: &str) -> Result<Vec<u8>, String> {
     if bytes.len() > MAX_CUSTOM_ICON_BYTES {
         return Err("Custom icon image is too large".to_string());
     }
-    if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+    if !bytes.starts_with(PNG_SIGNATURE) {
         return Err("Custom icon data is not a PNG image".to_string());
     }
     Ok(bytes)
-}
-
-fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
-    let mut output = Vec::with_capacity(input.len() * 3 / 4);
-    let mut buffer = 0u32;
-    let mut bits = 0u8;
-    let mut data_chars = 0usize;
-    let mut padding_count = 0usize;
-    let mut padding_started = false;
-
-    for byte in input.bytes() {
-        let value = match byte {
-            b'A'..=b'Z' => Some(byte - b'A'),
-            b'a'..=b'z' => Some(byte - b'a' + 26),
-            b'0'..=b'9' => Some(byte - b'0' + 52),
-            b'+' => Some(62),
-            b'/' => Some(63),
-            b'=' => {
-                padding_started = true;
-                padding_count += 1;
-                if padding_count > 2 {
-                    return Err("Custom icon data URL has invalid base64 padding".to_string());
-                }
-                None
-            }
-            b'\r' | b'\n' | b'\t' | b' ' => None,
-            _ => return Err("Custom icon data URL has invalid base64".to_string()),
-        };
-
-        let Some(value) = value else {
-            continue;
-        };
-        if padding_started {
-            return Err("Custom icon data URL has invalid base64 padding".to_string());
-        }
-        data_chars += 1;
-        buffer = (buffer << 6) | u32::from(value);
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            output.push((buffer >> bits) as u8);
-            buffer &= (1 << bits) - 1;
-        }
-    }
-
-    if data_chars % 4 == 1 {
-        return Err("Custom icon data URL has invalid base64 length".to_string());
-    }
-    if padding_count > 0 {
-        let expected_padding = match data_chars % 4 {
-            2 => 2,
-            3 => 1,
-            _ => return Err("Custom icon data URL has invalid base64 padding".to_string()),
-        };
-        if padding_count != expected_padding {
-            return Err("Custom icon data URL has invalid base64 padding".to_string());
-        }
-    }
-    if bits > 0 && buffer != 0 {
-        return Err("Custom icon data URL has invalid base64 trailing bits".to_string());
-    }
-
-    Ok(output)
 }
 
 #[cfg(test)]
@@ -1306,7 +1245,7 @@ mod tests {
         let bytes = decode_custom_icon_data_url("data:image/png;base64,iVBORw0KGgo=")
             .expect("png data url should decode");
 
-        assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert!(bytes.starts_with(PNG_SIGNATURE));
     }
 
     #[test]
@@ -1315,26 +1254,5 @@ mod tests {
             .expect_err("non-png data urls should fail");
 
         assert!(error.contains("PNG"));
-    }
-
-    #[test]
-    fn decode_base64_rejects_invalid_length() {
-        let error = decode_base64("A").expect_err("single base64 sextet should fail");
-
-        assert!(error.contains("length"));
-    }
-
-    #[test]
-    fn decode_base64_rejects_invalid_padding() {
-        let error = decode_base64("AAAA=").expect_err("unexpected padding should fail");
-
-        assert!(error.contains("padding"));
-    }
-
-    #[test]
-    fn decode_base64_rejects_non_zero_trailing_bits() {
-        let error = decode_base64("AB==").expect_err("non-zero trailing bits should fail");
-
-        assert!(error.contains("trailing bits"));
     }
 }

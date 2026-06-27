@@ -34,6 +34,8 @@ use windows::{
 #[cfg(target_os = "windows")]
 use tauri::{AppHandle, Manager};
 
+#[cfg(target_os = "windows")]
+use crate::encoding::{encode_base64, PNG_SIGNATURE};
 use crate::{
     catalog::{icon_cache_dir, icon_file_data_url, stable_app_id},
     icons::cache_app_icon,
@@ -319,7 +321,7 @@ fn detect_background_image_extension(path: &Path, bytes: &[u8]) -> Option<&'stat
 
 #[cfg(target_os = "windows")]
 fn detect_background_image_extension_from_bytes(bytes: &[u8]) -> Option<&'static str> {
-    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+    if bytes.starts_with(PNG_SIGNATURE) {
         return Some("png");
     }
     if bytes.starts_with(b"\xff\xd8\xff") {
@@ -342,33 +344,6 @@ fn background_image_mime_type(extension: &str) -> &'static str {
         "bmp" => "image/bmp",
         _ => "image/png",
     }
-}
-
-#[cfg(target_os = "windows")]
-fn encode_base64(bytes: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
-
-    for chunk in bytes.chunks(3) {
-        let first = chunk[0];
-        let second = *chunk.get(1).unwrap_or(&0);
-        let third = *chunk.get(2).unwrap_or(&0);
-
-        output.push(TABLE[(first >> 2) as usize] as char);
-        output.push(TABLE[(((first & 0b0000_0011) << 4) | (second >> 4)) as usize] as char);
-        output.push(if chunk.len() > 1 {
-            TABLE[(((second & 0b0000_1111) << 2) | (third >> 6)) as usize] as char
-        } else {
-            '='
-        });
-        output.push(if chunk.len() > 2 {
-            TABLE[(third & 0b0011_1111) as usize] as char
-        } else {
-            '='
-        });
-    }
-
-    output
 }
 
 #[cfg(target_os = "windows")]
