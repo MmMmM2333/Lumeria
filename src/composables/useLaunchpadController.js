@@ -1348,6 +1348,7 @@ export function useLaunchpadController() {
     pageIndex,
     pages,
     renderedFolder,
+    requestFolderPageTurn,
     schedulePageGridMetrics,
     searchInputRef,
     searchPageIndex,
@@ -1357,6 +1358,7 @@ export function useLaunchpadController() {
     selectedIcon,
     selectionMatchesScope,
     startFolderZoomFadeClose,
+    visualFolderPageIndex,
   });
   const {
     folderPageTrackScrub,

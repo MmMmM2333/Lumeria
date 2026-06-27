@@ -15,6 +15,7 @@ function createKeyboard(overrides = {}) {
     hideNativeWindowAfterCloseAnimation: 0,
     moveSelectionByArrow: [],
     openSelectedIcon: 0,
+    requestFolderPageTurn: [],
   };
   const state = {
     folderPageIndex: ref(overrides.folderPageIndex ?? 0),
@@ -25,7 +26,9 @@ function createKeyboard(overrides = {}) {
     pageIndex: ref(overrides.pageIndex ?? 0),
     pages: ref(overrides.pages ?? [[]]),
     renderedFolder: ref(overrides.renderedFolder || null),
+    visualFolderPageIndex: ref(overrides.visualFolderPageIndex ?? overrides.folderPageIndex ?? 0),
   };
+  let nextFolderPageTurnToken = 1;
   const keyboard = useLaunchpadKeyboard({
     clearSearch: () => {
       calls.clearSearch += 1;
@@ -76,6 +79,13 @@ function createKeyboard(overrides = {}) {
     pageIndex: state.pageIndex,
     pages: state.pages,
     renderedFolder: state.renderedFolder,
+    requestFolderPageTurn: (index, options) => {
+      const token = nextFolderPageTurnToken;
+      nextFolderPageTurnToken += 1;
+      calls.requestFolderPageTurn.push({ index, options, token });
+      state.visualFolderPageIndex.value = index;
+      return token;
+    },
     schedulePageGridMetrics: () => {},
     searchInputRef: ref(null),
     searchPageIndex: ref(0),
@@ -88,6 +98,7 @@ function createKeyboard(overrides = {}) {
       calls.startFolderZoomFadeClose.push(options);
       return Boolean(overrides.startFolderZoomFadeCloseResult ?? true);
     },
+    visualFolderPageIndex: state.visualFolderPageIndex,
   });
 
   return { calls, keyboard, state };
@@ -117,32 +128,6 @@ function makeWheelEvent(deltaY = 120) {
       this.preventDefaultCalled += 1;
     },
   };
-}
-
-function withAnimationFrameQueue(run) {
-  const originalWindow = globalThis.window;
-  const frames = [];
-  globalThis.window = {
-    ...(originalWindow || {}),
-    requestAnimationFrame(callback) {
-      frames.push(callback);
-      return frames.length;
-    },
-  };
-  try {
-    run({
-      flushOne() {
-        const callback = frames.shift();
-        if (callback) callback();
-      },
-      get size() {
-        return frames.length;
-      },
-    });
-  } finally {
-    if (originalWindow === undefined) delete globalThis.window;
-    else globalThis.window = originalWindow;
-  }
 }
 
 export function runLaunchpadKeyboardTests() {
@@ -191,36 +176,89 @@ export function runLaunchpadKeyboardTests() {
   });
   const openingWheelEvent = makeWheelEvent();
   openingFolderWheel.keyboard.handleLaunchpadWheel(openingWheelEvent);
-  assert(openingWheelEvent.preventDefaultCalled === 1, "opening-folder wheel should currently consume the wheel turn");
-  assert(openingFolderWheel.calls.commitFolderPageIndex.join(",") === "1", "opening-folder wheel should currently commit the folder page immediately");
+  assert(openingWheelEvent.preventDefaultCalled === 1, "opening/open folder wheel should consume a valid folder page request");
+  assert(openingFolderWheel.calls.requestFolderPageTurn.length === 1, "opening/open folder wheel should request a folder page turn");
+  assert(openingFolderWheel.calls.requestFolderPageTurn[0].index === 1, "opening/open folder wheel should request the next folder page");
+  assert(openingFolderWheel.calls.requestFolderPageTurn[0].options.source === "wheel", "opening/open folder wheel should mark wheel as the request source");
+  assert(openingFolderWheel.calls.requestFolderPageTurn[0].options.phase === "open", "opening/open folder wheel should carry the active folder phase");
+  assert(openingFolderWheel.calls.commitFolderPageIndex.length === 0, "opening/open folder wheel should not directly commit the folder page");
   assert(openingFolderWheel.calls.commitPageIndex.length === 0, "opening-folder wheel should not turn the desktop page");
 
-  withAnimationFrameQueue((raf) => {
-    const closingFolderWheel = createKeyboard({
-      folderPageIndex: 0,
-      folderPages: [[{ id: "app-a" }], [{ id: "app-b" }]],
-      isFolderClosing: true,
-      pageIndex: 0,
-      pages: [[{ id: "folder-1" }], [{ id: "folder-2" }]],
-      renderedFolder: { id: "folder-1", type: "folder", name: "Folder" },
-    });
-    const closingWheelEvent = makeWheelEvent();
-    closingFolderWheel.keyboard.handleLaunchpadWheel(closingWheelEvent);
-    assert(closingWheelEvent.preventDefaultCalled === 1, "closing-folder wheel should currently consume the queued turn");
-    assert(closingFolderWheel.calls.commitFolderPageIndex.length === 0, "closing-folder wheel should not change the folder page");
-    assert(closingFolderWheel.calls.commitPageIndex.length === 0, "closing-folder wheel should wait for the folder to close before turning desktop");
-    assert(closingFolderWheel.state.folderPageIndex.value === 0, "closing-folder queued desktop turn should leave the folder page unchanged");
-    assert(raf.size === 1, "closing-folder wheel should queue a desktop turn wait frame");
-
-    raf.flushOne();
-    assert(closingFolderWheel.calls.commitPageIndex.length === 0, "queued desktop turn should keep waiting while the folder interaction layer exists");
-    assert(raf.size === 1, "queued desktop turn should reschedule while closing remains active");
-
-    closingFolderWheel.state.isFolderClosing.value = false;
-    closingFolderWheel.state.renderedFolder.value = null;
-    raf.flushOne();
-    assert(closingFolderWheel.calls.commitPageIndex.join(",") === "1", "queued desktop turn should commit only after the folder interaction layer disappears");
+  const keyboardFolderTurn = createKeyboard({
+    folderPageIndex: 0,
+    folderPages: [[{ id: "app-a" }], [{ id: "app-b" }]],
+    openFolderId: "folder-1",
+    renderedFolder: { id: "folder-1", type: "folder", name: "Folder" },
   });
+  const folderArrowEvent = makeKeyEvent("ArrowRight");
+  folderArrowEvent.ctrlKey = true;
+  keyboardFolderTurn.keyboard.handleGlobalKeydown(folderArrowEvent);
+  assert(folderArrowEvent.preventDefaultCalled === 1, "Ctrl+ArrowRight should prevent default for a valid folder page request");
+  assert(keyboardFolderTurn.calls.requestFolderPageTurn.length === 1, "Ctrl+ArrowRight should request a folder page turn while the folder is active");
+  assert(keyboardFolderTurn.calls.requestFolderPageTurn[0].index === 1, "Ctrl+ArrowRight should request the next folder page");
+  assert(keyboardFolderTurn.calls.requestFolderPageTurn[0].options.source === "keyboard", "Ctrl+ArrowRight should mark keyboard as the request source");
+  assert(keyboardFolderTurn.calls.commitFolderPageIndex.length === 0, "Ctrl+ArrowRight should not directly commit the folder page");
+
+  const closingFolderWheel = createKeyboard({
+    folderPageIndex: 0,
+    folderPages: [[{ id: "app-a" }], [{ id: "app-b" }]],
+    isFolderClosing: true,
+    pageIndex: 0,
+    pages: [[{ id: "folder-1" }], [{ id: "folder-2" }]],
+    renderedFolder: { id: "folder-1", type: "folder", name: "Folder" },
+  });
+  const closingWheelEvent = makeWheelEvent();
+  closingFolderWheel.keyboard.handleLaunchpadWheel(closingWheelEvent);
+  assert(closingWheelEvent.preventDefaultCalled === 1, "closing-folder wheel should consume a valid desktop turn");
+  assert(closingFolderWheel.calls.requestFolderPageTurn.length === 0, "closing-folder wheel should not request a folder page turn");
+  assert(closingFolderWheel.calls.commitFolderPageIndex.length === 0, "closing-folder wheel should not change the folder page");
+  assert(closingFolderWheel.calls.commitPageIndex.join(",") === "1", "closing-folder wheel should commit the desktop page immediately");
+  assert(closingFolderWheel.state.folderPageIndex.value === 0, "closing-folder desktop turn should leave the folder page unchanged");
+
+  const onePageFolderWheel = createKeyboard({
+    folderPageIndex: 0,
+    folderPages: [[{ id: "app-a" }]],
+    openFolderId: "folder-1",
+    renderedFolder: { id: "folder-1", type: "folder", name: "Folder" },
+  });
+  const onePageWheelEvent = makeWheelEvent();
+  onePageFolderWheel.keyboard.handleLaunchpadWheel(onePageWheelEvent);
+  assert(onePageWheelEvent.preventDefaultCalled === 0, "single-page folder wheel should not consume the event");
+  assert(onePageFolderWheel.calls.requestFolderPageTurn.length === 0, "single-page folder wheel should not create an invalid request");
+
+  const firstPageFolderWheel = createKeyboard({
+    folderPageIndex: 0,
+    folderPages: [[{ id: "app-a" }], [{ id: "app-b" }]],
+    openFolderId: "folder-1",
+    renderedFolder: { id: "folder-1", type: "folder", name: "Folder" },
+  });
+  const firstPageWheelEvent = makeWheelEvent(-120);
+  firstPageFolderWheel.keyboard.handleLaunchpadWheel(firstPageWheelEvent);
+  assert(firstPageWheelEvent.preventDefaultCalled === 0, "first folder page previous wheel should not consume the event");
+  assert(firstPageFolderWheel.calls.requestFolderPageTurn.length === 0, "first folder page previous wheel should not create an invalid request");
+
+  const lastPageFolderWheel = createKeyboard({
+    folderPageIndex: 1,
+    folderPages: [[{ id: "app-a" }], [{ id: "app-b" }]],
+    openFolderId: "folder-1",
+    renderedFolder: { id: "folder-1", type: "folder", name: "Folder" },
+  });
+  const lastPageWheelEvent = makeWheelEvent();
+  lastPageFolderWheel.keyboard.handleLaunchpadWheel(lastPageWheelEvent);
+  assert(lastPageWheelEvent.preventDefaultCalled === 0, "last folder page next wheel should not consume the event");
+  assert(lastPageFolderWheel.calls.requestFolderPageTurn.length === 0, "last folder page next wheel should not create an invalid request");
+
+  const pendingVisualLastPageWheel = createKeyboard({
+    folderPageIndex: 0,
+    folderPages: [[{ id: "app-a" }], [{ id: "app-b" }]],
+    openFolderId: "folder-1",
+    renderedFolder: { id: "folder-1", type: "folder", name: "Folder" },
+    visualFolderPageIndex: 1,
+  });
+  const pendingVisualLastPageWheelEvent = makeWheelEvent();
+  pendingVisualLastPageWheel.keyboard.handleLaunchpadWheel(pendingVisualLastPageWheelEvent);
+  assert(pendingVisualLastPageWheelEvent.preventDefaultCalled === 0, "pending visual last page next wheel should not consume the event");
+  assert(pendingVisualLastPageWheel.calls.requestFolderPageTurn.length === 0, "pending visual last page next wheel should not create an invalid request from committed index");
 
   const closingFolderEscape = createKeyboard({
     isFolderClosing: true,
