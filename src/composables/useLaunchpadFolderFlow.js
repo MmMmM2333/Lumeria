@@ -91,6 +91,7 @@ export function useLaunchpadFolderFlow(options) {
     isFolderZoomFadeClosingFromFolderClose.value = false;
     folderZoomFadeCloseReason.value = null;
     folderOpeningOriginBounds.value = null;
+    options.clearFolderPageTurnRequest?.("folder-close-finish");
     options.folderPageIndex.value = 0;
     options.folderPageRefs.length = 0;
     options.resetFolderViewportMetrics?.();
@@ -123,6 +124,7 @@ export function useLaunchpadFolderFlow(options) {
     folderZoomFadeCloseReason.value = null;
     folderOpeningOriginBounds.value = null;
     isFolderAppLaunchClosing.value = true;
+    options.clearFolderPageTurnRequest?.("folder-app-launch-close");
     options.clearFolderPageTurn();
     clearFolderCloseTimer();
     clearFolderAppLaunchTimer();
@@ -153,7 +155,10 @@ export function useLaunchpadFolderFlow(options) {
       folderZoomFadeCloseReason.value = null;
       folderOpeningOriginBounds.value = commitOptions?.originBounds || null;
       folderClosingSnapshot.value = null;
-      if (!isSameFolder) options.resetFolderViewportMetrics?.();
+      if (!isSameFolder) {
+        options.clearFolderPageTurnRequest?.("folder-open");
+        options.resetFolderViewportMetrics?.();
+      }
       options.setFolderMotionGeometry(originGeometry ? { ...originGeometry, id: next } : options.getFolderIconMotionGeometry(next));
       openFolderId.value = next;
       renderedFolderId.value = next;
@@ -176,6 +181,7 @@ export function useLaunchpadFolderFlow(options) {
     folderZoomFadeCloseReason.value = null;
     folderOpeningOriginBounds.value = null;
     startHomeRevealSettleWindow();
+    options.clearFolderPageTurnRequest?.("folder-close-start");
     options.clearFolderPageTurn();
     clearFolderCloseTimer();
     folderCloseTimer = window.setTimeout(
@@ -215,6 +221,7 @@ export function useLaunchpadFolderFlow(options) {
     isFolderZoomFadeClosingFromFolderClose.value = false;
     folderZoomFadeCloseReason.value = null;
     folderOpeningOriginBounds.value = null;
+    options.clearFolderPageTurnRequest?.("folder-zoom-fade-finish");
     options.folderPageIndex.value = 0;
     options.folderPageRefs.length = 0;
     options.resetFolderViewportMetrics?.();
@@ -235,6 +242,7 @@ export function useLaunchpadFolderFlow(options) {
     options.clearFolderCloseIconGhosts?.();
     if (closeOptions.revealHome) startHomeRevealSettleWindow();
     else finishHomeRevealSettleWindow();
+    options.clearFolderPageTurnRequest?.("folder-zoom-fade-start");
     options.clearFolderPageTurn();
     folderZoomFadeCloseTimer = window.setTimeout(finishFolderZoomFadeClose, FOLDER_ZOOM_FADE_CLOSE_DURATION + 80);
     return true;

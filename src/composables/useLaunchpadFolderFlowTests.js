@@ -86,6 +86,7 @@ function createFolderFlow(overrides = {}) {
     clearFolderCloseIconGhosts: 0,
     clearFolderOpenIconGhosts: 0,
     clearFolderPageTurn: 0,
+    clearFolderPageTurnRequest: 0,
     resetFolderViewportMetrics: 0,
     setFolderMotionGeometry: [],
   };
@@ -98,6 +99,9 @@ function createFolderFlow(overrides = {}) {
   const flow = useLaunchpadFolderFlow({
     clearFolderPageTurn: () => {
       calls.clearFolderPageTurn += 1;
+    },
+    clearFolderPageTurnRequest: () => {
+      calls.clearFolderPageTurnRequest += 1;
     },
     clearFolderCloseIconGhosts: () => {
       calls.clearFolderCloseIconGhosts += 1;
@@ -164,16 +168,19 @@ export function runLaunchpadFolderFlowTests() {
     assert(open.folderPageIndex.value === 0, "opening a different folder should reset folder page index");
     assert(open.folderMotionGeometry.id === "folder-1" && open.folderMotionGeometry.x === 18, "opening should set origin geometry with the folder id");
     assert(open.calls.resetFolderViewportMetrics === 1, "opening a different folder should reset stale folder viewport metrics");
+    assert(open.calls.clearFolderPageTurnRequest === 1, "opening a different folder should clear stale folder page turn requests");
 
     open.folderPageIndex.value = 2;
     open.flow.commitOpenFolder("folder-1");
     assert(open.folderPageIndex.value === 2, "reopening the same folder should preserve folder page index");
     assert(open.calls.resetFolderViewportMetrics === 1, "reopening the same folder should preserve current folder viewport metrics");
+    assert(open.calls.clearFolderPageTurnRequest === 1, "reopening the same folder should not clear a same-folder page turn boundary");
 
     const switchFolder = createFolderFlow({ pages: [[folder, secondFolder]] });
     switchFolder.flow.commitOpenFolder("folder-1");
     switchFolder.flow.commitOpenFolder("folder-2");
     assert(switchFolder.calls.resetFolderViewportMetrics === 2, "switching folders should reset viewport metrics for the new folder");
+    assert(switchFolder.calls.clearFolderPageTurnRequest === 2, "switching folders should clear stale folder page turn requests");
 
     const close = createFolderFlow();
     close.flow.commitOpenFolder("folder-1");
@@ -184,6 +191,7 @@ export function runLaunchpadFolderFlowTests() {
     assert(close.flow.isFolderClosing.value, "closing should enter folder closing state immediately");
     assert(close.flow.isHomeRevealSettling.value, "closing should start home reveal settle state");
     assert(close.calls.clearFolderPageTurn === 1, "closing should clear folder page turn timers");
+    assert(close.calls.clearFolderPageTurnRequest === 2, "closing should clear folder page turn requests when close starts");
     assert(close.calls.resetFolderViewportMetrics === 1, "closing should keep viewport metrics until the close animation finishes");
     timers.runDelay(FOLDER_CLOSE_DURATION);
     assert(!close.flow.isFolderClosing.value, "folder close timer should clear folder closing state");
@@ -191,6 +199,7 @@ export function runLaunchpadFolderFlowTests() {
     assert(close.folderPageIndex.value === 0, "folder close timer should reset folder page index");
     assert(close.folderPageRefs.length === 0, "folder close timer should clear folder page refs");
     assert(close.calls.resetFolderViewportMetrics === 2, "finishing close should clear viewport metrics for the next folder");
+    assert(close.calls.clearFolderPageTurnRequest === 3, "finishing close should clear any remaining folder page turn request");
     timers.runDelay(HOME_REVEAL_SETTLE_DURATION);
     assert(!close.flow.isHomeRevealSettling.value, "home reveal timer should finish settle state");
     assert(close.flow.desktopProjectionEpoch.value === 1, "home reveal timer should advance projection epoch");
