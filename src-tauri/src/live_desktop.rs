@@ -451,7 +451,11 @@ impl LiveDesktopRendererResources {
         } else {
             unsafe { self._target.SetRoot(None::<&IDCompositionVisual>) }
         }
-        .map_err(|error| error.to_string())?;
+        .map_err(|source| LiveDesktopError::Composition {
+            context: "SetRoot(visual visibility)",
+            source,
+        })
+        .map_err(String::from)?;
         unsafe { self.host_window.set_visible(visible) }?;
         unsafe { self.commit_composition() }?;
         Ok(())

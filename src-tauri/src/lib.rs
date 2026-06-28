@@ -42,6 +42,7 @@ use layout_store::{
     find_layout_app, load_layout as load_saved_layout, save_layout as save_saved_layout,
 };
 use models::AppCatalogItem;
+use native_error::NativeError;
 use serde::{Deserialize, Serialize};
 use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconEvent},
@@ -217,13 +218,23 @@ fn get_background_layout_context(
     };
     let Some(monitor) = window
         .current_monitor()
-        .map_err(|error| error.to_string())?
+        .map_err(|source| NativeError::Tauri {
+            context: "current_monitor",
+            source,
+        })
+        .map_err(String::from)?
     else {
         return Ok(None);
     };
     let monitor_position = monitor.position();
     let monitor_size = monitor.size();
-    let window_position = window.outer_position().map_err(|error| error.to_string())?;
+    let window_position = window
+        .outer_position()
+        .map_err(|source| NativeError::Tauri {
+            context: "outer_position",
+            source,
+        })
+        .map_err(String::from)?;
     Ok(Some(BackgroundLayoutContext {
         monitor_physical_x: monitor_position.x,
         monitor_physical_y: monitor_position.y,
@@ -476,7 +487,13 @@ fn start_live_desktop_background(
 fn native_live_desktop_window_handle(
     window: &tauri::WebviewWindow,
 ) -> Result<live_desktop::LiveDesktopWindowHandle, String> {
-    window.hwnd().map_err(|error| error.to_string())
+    window
+        .hwnd()
+        .map_err(|source| NativeError::Tauri {
+            context: "live_desktop hwnd",
+            source,
+        })
+        .map_err(String::from)
 }
 
 #[cfg(not(target_os = "windows"))]
