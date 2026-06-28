@@ -84,11 +84,13 @@ use windows::{
     },
 };
 
+mod config;
 mod constants;
 mod test_pattern;
 mod wallpaper_engine;
 mod window_diagnostics;
 
+pub(crate) use config::*;
 pub(crate) use constants::*;
 
 #[cfg(target_os = "windows")]
@@ -2125,184 +2127,6 @@ pub(crate) struct LiveDesktopWindowRect {
     bottom: i32,
     width: i32,
     height: i32,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct LiveDesktopRuntimeConfig {
-    effect: LiveDesktopBackgroundEffect,
-    #[serde(default)]
-    debug_frame_source_override: Option<LiveDesktopDebugFrameSourceOverride>,
-    blur_strength: u32,
-    darken_strength: u32,
-    darken_color: String,
-    #[serde(default = "default_live_desktop_opacity")]
-    opacity: u32,
-    #[serde(default)]
-    effect_plan: Option<LiveDesktopEffectPlan>,
-    acrylic_appearance: LiveDesktopAcrylicAppearance,
-    acrylic_params: LiveDesktopAcrylicParams,
-    #[serde(default = "default_live_desktop_disable_mouse_relay")]
-    disable_mouse_relay: bool,
-    #[serde(default)]
-    skip_blank_frames: bool,
-    #[serde(default)]
-    force_dwm_flush: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-enum LiveDesktopBackgroundEffect {
-    None,
-    Dimmed,
-    Blur,
-    AcrylicWebgl,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LiveDesktopEffectPlan {
-    effect: LiveDesktopBackgroundEffect,
-    blur: LiveDesktopBlurEffectPlan,
-    acrylic: LiveDesktopAcrylicEffectPlan,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LiveDesktopBlurEffectPlan {
-    #[serde(default)]
-    kernel: LiveDesktopBlurKernel,
-    #[serde(default)]
-    gaussian_radius_px: f32,
-    render_max_width: u32,
-    render_max_height: u32,
-    pass_count: u32,
-    min_size: u32,
-    offset_scale: f32,
-    down_offsets: Vec<f32>,
-    up_offsets: Vec<f32>,
-    final_up_offset: f32,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-enum LiveDesktopBlurKernel {
-    #[default]
-    DualKawase,
-    Gaussian,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LiveDesktopAcrylicEffectPlan {
-    brightness: f32,
-    contrast: f32,
-    noise: f32,
-    saturation: f32,
-    seed: f32,
-    tint_color: [f32; 3],
-    tint_strength: f32,
-    alpha: f32,
-    enabled: bool,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-enum LiveDesktopFrameSource {
-    #[default]
-    WallpaperEnginePopupCapture,
-    TestPattern,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-enum LiveDesktopDebugFrameSourceOverride {
-    TestPattern,
-}
-
-fn default_live_desktop_disable_mouse_relay() -> bool {
-    true
-}
-
-fn default_live_desktop_opacity() -> u32 {
-    100
-}
-
-impl LiveDesktopFrameSource {
-    fn uses_window_capture(&self) -> bool {
-        matches!(self, Self::WallpaperEnginePopupCapture)
-    }
-
-    fn window_capture_label(&self) -> &'static str {
-        "Wallpaper Engine popup WGC"
-    }
-
-    fn window_capture_unavailable_reason(&self) -> &'static str {
-        "wallpaperEnginePopupCaptureUnavailable"
-    }
-}
-
-impl LiveDesktopRuntimeConfig {
-    fn effective_frame_source(&self) -> LiveDesktopFrameSource {
-        match self.debug_frame_source_override {
-            Some(LiveDesktopDebugFrameSourceOverride::TestPattern) => {
-                LiveDesktopFrameSource::TestPattern
-            }
-            None => LiveDesktopFrameSource::WallpaperEnginePopupCapture,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-enum LiveDesktopAcrylicAppearance {
-    System,
-    Dark,
-    Light,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LiveDesktopAcrylicParams {
-    brightness: f32,
-    contrast: f32,
-    noise: f32,
-    saturation: f32,
-    seed: f32,
-    tint_color: [f32; 3],
-    tint_strength: f32,
-}
-
-impl Default for LiveDesktopRuntimeConfig {
-    fn default() -> Self {
-        Self {
-            effect: LiveDesktopBackgroundEffect::Dimmed,
-            debug_frame_source_override: None,
-            blur_strength: 50,
-            darken_strength: 28,
-            darken_color: "#1c1c1c".to_string(),
-            opacity: default_live_desktop_opacity(),
-            effect_plan: None,
-            acrylic_appearance: LiveDesktopAcrylicAppearance::System,
-            acrylic_params: LiveDesktopAcrylicParams::default(),
-            disable_mouse_relay: default_live_desktop_disable_mouse_relay(),
-            skip_blank_frames: false,
-            force_dwm_flush: false,
-        }
-    }
-}
-
-impl Default for LiveDesktopAcrylicParams {
-    fn default() -> Self {
-        Self {
-            brightness: 0.8,
-            contrast: 0.85,
-            noise: 0.005,
-            saturation: 1.5,
-            seed: 0.0,
-            tint_color: [0.23529412, 0.23529412, 0.23529412],
-            tint_strength: 0.2,
-        }
-    }
 }
 
 impl Default for LiveDesktopRuntime {
