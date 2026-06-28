@@ -11,6 +11,8 @@ use std::{
 
 #[cfg(target_os = "windows")]
 use crate::encoding::PNG_SIGNATURE;
+#[cfg(target_os = "windows")]
+use crate::native_error::NativeError;
 use crate::path_utils::{expand_windows_env_vars, extension, windows_api_path};
 #[cfg(target_os = "windows")]
 use crate::windows_com::ComGuard;
@@ -71,7 +73,8 @@ pub(crate) fn cache_app_icon_choices(
                 continue;
             }
             if let Ok(bytes) = fs::read(&output_path) {
-                if seen.insert(bytes) {
+                let fingerprint = (bytes.len(), *blake3::hash(&bytes).as_bytes());
+                if seen.insert(fingerprint) {
                     output_paths.push(output_path);
                 }
             }
@@ -122,8 +125,12 @@ fn extract_shell_icon_png(source_path: &Path, output_path: &Path) -> Result<(), 
     let _com_guard = ComGuard::new()?;
     let source = HSTRING::from(windows_api_path(source_path));
     let factory: IShellItemImageFactory = unsafe {
-        SHCreateItemFromParsingName(&source, None::<&IBindCtx>)
-            .map_err(|error| format!("Failed to create shell item image factory: {error}"))?
+        SHCreateItemFromParsingName(&source, None::<&IBindCtx>).map_err(|source| {
+            NativeError::Shell {
+                context: "SHCreateItemFromParsingName(icon source)",
+                source,
+            }
+        })?
     };
     let primary = read_shell_icon_bitmap(&factory, 256)?;
     let primary_has_halo = has_suspicious_edge_halo(&primary);
@@ -162,7 +169,10 @@ fn read_shell_icon_bitmap(
                 SIZE { cx: size, cy: size },
                 SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK | SIIGBF_SCALEUP,
             )
-            .map_err(|error| format!("Failed to get shell item icon: {error}"))?
+            .map_err(|source| NativeError::Shell {
+                context: "IShellItemImageFactory::GetImage",
+                source,
+            })?
     };
     let result = read_hbitmap_rgba(bitmap);
     unsafe {
@@ -338,15 +348,31 @@ fn resolve_shortcut_icon_sources(path: &Path) -> Result<Vec<IconSource>, String>
     let _com_guard = ComGuard::new()?;
     let mut sources = Vec::new();
     let shell_link =
-        unsafe { CoCreateInstance::<_, IShellLinkW>(&ShellLink, None, CLSCTX_INPROC_SERVER) };
-    let Ok(shell_link) = shell_link else {
-        return Ok(sources);
-    };
-    let Ok(persist_file) = shell_link.cast::<IPersistFile>() else {
-        return Ok(sources);
+        match unsafe { CoCreateInstance::<_, IShellLinkW>(&ShellLink, None, CLSCTX_INPROC_SERVER) }
+            .map_err(|source| NativeError::Com {
+                context: "CoCreateInstance(ShellLink)",
+                source,
+            }) {
+            Ok(shell_link) => shell_link,
+            Err(_) => return Ok(sources),
+        };
+    let persist_file = match shell_link
+        .cast::<IPersistFile>()
+        .map_err(|source| NativeError::Com {
+            context: "IShellLinkW::cast(IPersistFile)",
+            source,
+        }) {
+        Ok(persist_file) => persist_file,
+        Err(_) => return Ok(sources),
     };
     let shortcut = HSTRING::from(windows_api_path(path));
-    if unsafe { persist_file.Load(&shortcut, STGM_READ) }.is_err() {
+    if unsafe { persist_file.Load(&shortcut, STGM_READ) }
+        .map_err(|source| NativeError::Com {
+            context: "IPersistFile::Load(shortcut)",
+            source,
+        })
+        .is_err()
+    {
         return Ok(sources);
     }
 
@@ -643,8 +669,11 @@ fn read_resource(module: HMODULE, name: PCWSTR, resource_type: PCWSTR) -> Result
     if size == 0 {
         return Err("Icon resource is empty".to_string());
     }
-    let handle = unsafe { LoadResource(Some(module), resource) }
-        .map_err(|error| format!("Failed to load icon resource: {error}"))?;
+    let handle =
+        unsafe { LoadResource(Some(module), resource) }.map_err(|source| NativeError::Win32 {
+            context: "LoadResource(icon)",
+            source,
+        })?;
     let pointer = unsafe { LockResource(handle) };
     if pointer.is_null() {
         return Err("Failed to lock icon resource".to_string());

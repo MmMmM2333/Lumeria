@@ -34,21 +34,22 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 blake3 = "1"
+log = "0.4"
 png = "0.17"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
 tauri-plugin-global-shortcut = "2.3.1"
+tauri-plugin-log = "2"
+thiserror = "2"
 windows-version = "0.1.7"
 windows = { version = "0.61.3", features = [
   "Win32_Foundation",
   "Win32_Graphics_Direct2D_Common",
-  "Win32_Graphics_Direct3D",
   "Win32_Graphics_Direct3D_Fxc",
   "Win32_Graphics_Direct3D11",
   "Win32_Graphics_DirectComposition",
   "Win32_Graphics_Dwm",
-  "Win32_Graphics_Dxgi",
   "Win32_Graphics_Dxgi_Common",
   "Win32_Graphics_Gdi",
   "Win32_Storage_FileSystem",
@@ -58,12 +59,8 @@ windows = { version = "0.61.3", features = [
   "Win32_System_Threading",
   "Win32_System_WinRT_Direct3D11",
   "Win32_System_WinRT_Graphics_Capture",
-  "Foundation",
-  "Graphics",
   "Graphics_Capture",
-  "Graphics_DirectX",
   "Graphics_DirectX_Direct3D11",
-  "Win32_UI_Shell",
   "Win32_UI_Shell_Common",
   "Win32_UI_WindowsAndMessaging",
 ] }

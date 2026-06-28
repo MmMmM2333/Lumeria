@@ -7,6 +7,7 @@ use tauri::{
 };
 
 use crate::dwm::set_window_backdrop_dark_mode;
+use crate::native_error::NativeError;
 
 const MAIN_WINDOW_ACRYLIC_DARK_COLOR: Color = Color(0x10, 0x14, 0x1f, 0xcc);
 const MAIN_WINDOW_ACRYLIC_LIGHT_COLOR: Color = Color(0xf3, 0xf6, 0xfb, 0xcc);
@@ -136,20 +137,29 @@ pub(crate) fn set_window_effects_enabled_with_config(
         if settings.material == MainWindowEffectMaterial::None {
             window
                 .set_effects(None)
-                .map_err(|error| error.to_string())?;
+                .map_err(|source| NativeError::Tauri {
+                    context: "WebviewWindow::set_effects(clear unsupported material)",
+                    source,
+                })?;
             return Ok(());
         }
         if !is_effect_settings_supported(settings, &support) {
             window
                 .set_effects(None)
-                .map_err(|error| error.to_string())?;
+                .map_err(|source| NativeError::Tauri {
+                    context: "WebviewWindow::set_effects(clear unsupported build)",
+                    source,
+                })?;
             return Ok(());
         }
 
         if clear_first {
             window
                 .set_effects(None)
-                .map_err(|error| error.to_string())?;
+                .map_err(|source| NativeError::Tauri {
+                    context: "WebviewWindow::set_effects(clear before reapply)",
+                    source,
+                })?;
         }
 
         set_window_backdrop_dark_mode(window, settings.is_dark())?;
@@ -166,12 +176,18 @@ pub(crate) fn set_window_effects_enabled_with_config(
         };
         window
             .set_effects(effects)
-            .map_err(|error| error.to_string())?;
+            .map_err(|source| NativeError::Tauri {
+                context: "WebviewWindow::set_effects(apply native effect)",
+                source,
+            })?;
         set_window_backdrop_dark_mode(window, settings.is_dark())?;
     } else {
         window
             .set_effects(None)
-            .map_err(|error| error.to_string())?;
+            .map_err(|source| NativeError::Tauri {
+                context: "WebviewWindow::set_effects(disable native effect)",
+                source,
+            })?;
     }
     Ok(())
 }

@@ -90,7 +90,8 @@ fn save_layout_to_path(path: &Path, layout: &Value) -> Result<(), String> {
 
 fn recover_invalid_layout_file(path: &Path, reason: String) -> Result<LoadLayoutResult, String> {
     let backup_path = backup_invalid_layout_file(path)?;
-    eprintln!(
+    log::warn!(
+        target: "layout_store",
         "{reason}; moved invalid layout to {}",
         backup_path.display()
     );
@@ -592,7 +593,13 @@ fn write_file_atomic(path: &Path, contents: &str) -> Result<(), String> {
     })?;
 
     replace_file(&temp_path, path).inspect_err(|_| {
-        let _ = fs::remove_file(&temp_path);
+        if let Err(error) = fs::remove_file(&temp_path) {
+            log::warn!(
+                target: "layout_store",
+                "Failed to remove temporary layout {} after save failure: {error}",
+                temp_path.display()
+            );
+        }
     })
 }
 
@@ -642,7 +649,8 @@ fn replace_file(source: &Path, target: &Path) -> Result<(), String> {
 
 fn find_app_in_layout_value(value: &Value, app_id: &str, depth: usize) -> Option<AppCatalogItem> {
     if depth > MAX_LAYOUT_LOOKUP_DEPTH {
-        eprintln!(
+        log::warn!(
+            target: "layout_store",
             "Skipping layout app lookup beyond maximum traversal depth {MAX_LAYOUT_LOOKUP_DEPTH} while searching for app id {app_id}"
         );
         return None;
@@ -655,7 +663,10 @@ fn find_app_in_layout_value(value: &Value, app_id: &str, depth: usize) -> Option
         return match AppCatalogItem::deserialize(value) {
             Ok(app) => Some(app),
             Err(error) => {
-                eprintln!("Failed to deserialize saved layout app {app_id}: {error}");
+                log::warn!(
+                    target: "layout_store",
+                    "Failed to deserialize saved layout app {app_id}: {error}"
+                );
                 None
             }
         };

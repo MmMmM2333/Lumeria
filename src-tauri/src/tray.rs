@@ -13,6 +13,7 @@ use crate::{
         set_main_window_topmost, set_window_cloaked, set_window_non_client_rendering,
         set_window_shadow_enabled, set_window_transitions_enabled,
     },
+    native_error::NativeError,
     window_effects::{
         set_window_effects_enabled, set_window_effects_enabled_with_config,
         update_main_window_effect_settings,
@@ -149,7 +150,9 @@ fn schedule_main_window_cloak_fallback(app: &AppHandle, open_sequence: u64) {
         std::thread::sleep(Duration::from_millis(
             MAIN_WINDOW_CLOAKED_REVEAL_FALLBACK_DELAY_MS,
         ));
-        let _ = reveal_main_window(&app, Some(open_sequence));
+        if let Err(error) = reveal_main_window(&app, Some(open_sequence)) {
+            log::warn!(target: "tray", "Failed to run main window cloak fallback: {error}");
+        }
     });
 }
 
@@ -228,19 +231,23 @@ fn set_main_window_non_client_subclass(
 ) -> Result<(), String> {
     use windows::Win32::UI::Shell::{RemoveWindowSubclass, SetWindowSubclass};
 
-    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::hwnd for non-client subclass",
+        source,
+    })?;
     unsafe {
         if enabled {
-            if !SetWindowSubclass(
+            SetWindowSubclass(
                 hwnd,
                 Some(main_window_non_client_subclass_proc),
                 MAIN_WINDOW_NON_CLIENT_SUBCLASS_ID,
                 0,
             )
-            .as_bool()
-            {
-                return Err("Failed to install main window non-client subclass".to_string());
-            }
+            .ok()
+            .map_err(|source| NativeError::Win32 {
+                context: "SetWindowSubclass(main window non-client)",
+                source,
+            })?;
         } else {
             let _ = RemoveWindowSubclass(
                 hwnd,
@@ -327,7 +334,10 @@ fn strip_main_window_non_client_style(window: &WebviewWindow) -> Result<(), Stri
         WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
     };
 
-    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::hwnd for stripping non-client style",
+        source,
+    })?;
     let current_style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) };
     let next_style = (current_style
         & !main_window_style_mask([
@@ -353,7 +363,10 @@ fn restore_main_window_resizable_frame_style(window: &WebviewWindow) -> Result<(
         WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
     };
 
-    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::hwnd for restoring resizable frame",
+        source,
+    })?;
     let current_style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) };
     let next_style = (current_style & !main_window_style_mask([WS_POPUP.0]))
         | main_window_style_mask([
@@ -380,7 +393,10 @@ fn refresh_main_window_frame(window: &WebviewWindow) -> Result<(), String> {
 
     unsafe {
         SetWindowPos(
-            window.hwnd().map_err(|error| error.to_string())?,
+            window.hwnd().map_err(|source| NativeError::Tauri {
+                context: "WebviewWindow::hwnd for frame refresh",
+                source,
+            })?,
             None,
             0,
             0,
@@ -395,7 +411,11 @@ fn refresh_main_window_frame(window: &WebviewWindow) -> Result<(), String> {
                 | SWP_NOZORDER,
         )
     }
-    .map_err(|error| error.to_string())
+    .map_err(|source| NativeError::Win32 {
+        context: "SetWindowPos(refresh main window frame)",
+        source,
+    })?;
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]
@@ -431,27 +451,45 @@ fn apply_main_window_mode_to_window(
             prepare_main_window_fullscreen_surface(window)?;
             window
                 .set_decorations(false)
-                .map_err(|error| error.to_string())?;
+                .map_err(|source| NativeError::Tauri {
+                    context: "WebviewWindow::set_decorations(false fullscreen)",
+                    source,
+                })?;
             window
                 .set_resizable(false)
-                .map_err(|error| error.to_string())?;
+                .map_err(|source| NativeError::Tauri {
+                    context: "WebviewWindow::set_resizable(false fullscreen)",
+                    source,
+                })?;
             if !window.is_fullscreen().unwrap_or(false) {
                 window
                     .set_fullscreen(true)
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|source| NativeError::Tauri {
+                        context: "WebviewWindow::set_fullscreen(true)",
+                        source,
+                    })?;
             }
         }
         MainWindowMode::Windowed => {
             window
                 .set_decorations(false)
-                .map_err(|error| error.to_string())?;
+                .map_err(|source| NativeError::Tauri {
+                    context: "WebviewWindow::set_decorations(false windowed)",
+                    source,
+                })?;
             window
                 .set_resizable(true)
-                .map_err(|error| error.to_string())?;
+                .map_err(|source| NativeError::Tauri {
+                    context: "WebviewWindow::set_resizable(true windowed)",
+                    source,
+                })?;
             if window.is_fullscreen().unwrap_or(false) {
                 window
                     .set_fullscreen(false)
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|source| NativeError::Tauri {
+                        context: "WebviewWindow::set_fullscreen(false)",
+                        source,
+                    })?;
             }
         }
     }
@@ -480,7 +518,10 @@ fn confirm_main_window_mode_after_show(
         MainWindowMode::Fullscreen => {
             window
                 .set_fullscreen(true)
-                .map_err(|error| error.to_string())?;
+                .map_err(|source| NativeError::Tauri {
+                    context: "WebviewWindow::set_fullscreen(confirm fullscreen)",
+                    source,
+                })?;
             apply_main_window_win32_surface_policy(window, mode)
         }
         MainWindowMode::Windowed => Ok(()),
@@ -570,7 +611,10 @@ fn disable_window_transitions(_window: &WebviewWindow) -> Result<(), String> {
 fn activate_window(window: &WebviewWindow) -> Result<(), String> {
     use windows::Win32::UI::WindowsAndMessaging::{BringWindowToTop, SetForegroundWindow};
 
-    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::hwnd for activation",
+        source,
+    })?;
     unsafe {
         let _ = BringWindowToTop(hwnd);
         let _ = SetForegroundWindow(hwnd);
@@ -704,7 +748,9 @@ fn schedule_window_effect_reapply(
 
 pub(crate) fn open_main_window(app: &AppHandle) {
     let open_sequence = next_main_window_open_sequence();
-    let _ = app.emit(OPEN_DESKTOP_EVENT, open_sequence);
+    if let Err(error) = app.emit(OPEN_DESKTOP_EVENT, open_sequence) {
+        log::warn!(target: "tray", "Failed to emit open desktop event: {error}");
+    }
     schedule_main_window_show(app, open_sequence, main_window_deferred_show_delay(app));
 }
 
@@ -736,18 +782,24 @@ pub(crate) fn trigger_main_window_shortcut(app: &AppHandle) {
             let _ = apply_main_window_native_surface_policy(&window, mode);
         }
         let open_sequence = MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed);
-        let _ = app.emit(TOGGLE_DESKTOP_EVENT, open_sequence);
+        if let Err(error) = app.emit(TOGGLE_DESKTOP_EVENT, open_sequence) {
+            log::warn!(target: "tray", "Failed to emit toggle desktop event: {error}");
+        }
         return;
     }
 
     let open_sequence = next_main_window_open_sequence();
-    let _ = app.emit(OPEN_DESKTOP_EVENT, open_sequence);
+    if let Err(error) = app.emit(OPEN_DESKTOP_EVENT, open_sequence) {
+        log::warn!(target: "tray", "Failed to emit open desktop event: {error}");
+    }
     schedule_main_window_show(app, open_sequence, main_window_deferred_show_delay(app));
 }
 
 pub(crate) fn open_settings(app: &AppHandle) {
     open_main_window(app);
-    let _ = app.emit("launchpad-open-settings", ());
+    if let Err(error) = app.emit("launchpad-open-settings", ()) {
+        log::warn!(target: "tray", "Failed to emit open settings event: {error}");
+    }
 }
 
 pub(crate) fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
