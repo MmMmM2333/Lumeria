@@ -6,19 +6,22 @@ use std::{
     time::Duration,
 };
 
-use serde::Serialize;
-use tauri::{
-    menu::MenuBuilder,
-    tray::TrayIconBuilder,
-    window::{Color, Effect, EffectsBuilder},
-    AppHandle, Emitter, Manager, WebviewWindow,
+use tauri::{menu::MenuBuilder, tray::TrayIconBuilder, AppHandle, Emitter, Manager, WebviewWindow};
+
+use crate::{
+    dwm::{
+        set_main_window_topmost, set_window_cloaked, set_window_non_client_rendering,
+        set_window_shadow_enabled, set_window_transitions_enabled,
+    },
+    window_effects::{
+        set_window_effects_enabled, set_window_effects_enabled_with_config,
+        update_main_window_effect_settings,
+    },
 };
 
 pub(crate) const OPEN_DESKTOP_EVENT: &str = "launchpad-open-desktop";
 pub(crate) const TOGGLE_DESKTOP_EVENT: &str = "launchpad-toggle-desktop";
 pub(crate) const CLOSE_DESKTOP_EVENT: &str = "launchpad-close-desktop";
-const MAIN_WINDOW_ACRYLIC_DARK_COLOR: Color = Color(0x10, 0x14, 0x1f, 0xcc);
-const MAIN_WINDOW_ACRYLIC_LIGHT_COLOR: Color = Color(0xf3, 0xf6, 0xfb, 0xcc);
 const MAIN_WINDOW_EFFECT_REAPPLY_DELAYS_MS: [u64; 2] = [80, 180];
 const MAIN_WINDOW_DEFERRED_SHOW_DELAY_MS: u64 = 0;
 const MAIN_WINDOW_CLOAKED_REVEAL_FALLBACK_DELAY_MS: u64 = 160;
@@ -26,104 +29,9 @@ const MAIN_WINDOW_NON_CLIENT_SUBCLASS_ID: usize = 1;
 const EXPERIMENT_WINDOWED_THICKFRAME_NCCALCSIZE: bool = true;
 const WM_NCUAHDRAWCAPTION: u32 = 0x00AE;
 const WM_NCUAHDRAWFRAME: u32 = 0x00AF;
-const WINDOWS_ACRYLIC_MIN_BUILD: u32 = 17763;
-const WINDOWS_MICA_MIN_BUILD: u32 = 22000;
-const WINDOWS_MICA_ALT_MIN_BUILD: u32 = 22621;
 static MAIN_WINDOW_EFFECT_DISABLE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static MAIN_WINDOW_OPEN_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-static MAIN_WINDOW_EFFECT_SETTINGS: Mutex<MainWindowEffectSettings> =
-    Mutex::new(MainWindowEffectSettings::DEFAULT);
 static MAIN_WINDOW_MODE: Mutex<MainWindowMode> = Mutex::new(MainWindowMode::DEFAULT);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum MainWindowEffectMaterial {
-    None,
-    Acrylic,
-    Mica,
-    MicaAlt,
-}
-
-impl MainWindowEffectMaterial {
-    fn from_str(value: &str) -> Option<Self> {
-        match value {
-            "none" => Some(Self::None),
-            "acrylic" => Some(Self::Acrylic),
-            "mica" => Some(Self::Mica),
-            "micaAlt" | "mica-alt" => Some(Self::MicaAlt),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum MainWindowEffectAppearance {
-    Dark,
-    Light,
-}
-
-impl MainWindowEffectAppearance {
-    fn from_str(value: &str) -> Option<Self> {
-        match value {
-            "dark" => Some(Self::Dark),
-            "light" => Some(Self::Light),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct MainWindowEffectSettings {
-    material: MainWindowEffectMaterial,
-    appearance: MainWindowEffectAppearance,
-}
-
-impl MainWindowEffectSettings {
-    const DEFAULT: Self = Self {
-        material: MainWindowEffectMaterial::Acrylic,
-        appearance: MainWindowEffectAppearance::Dark,
-    };
-
-    fn from_options(material: Option<&str>, appearance: Option<&str>, fallback: Self) -> Self {
-        Self {
-            material: material
-                .and_then(MainWindowEffectMaterial::from_str)
-                .unwrap_or(fallback.material),
-            appearance: appearance
-                .and_then(MainWindowEffectAppearance::from_str)
-                .unwrap_or(fallback.appearance),
-        }
-    }
-
-    fn effect(self) -> Option<Effect> {
-        match (self.material, self.appearance) {
-            (MainWindowEffectMaterial::None, _) => None,
-            (MainWindowEffectMaterial::Acrylic, _) => Some(Effect::Acrylic),
-            (MainWindowEffectMaterial::Mica, MainWindowEffectAppearance::Dark) => {
-                Some(Effect::MicaDark)
-            }
-            (MainWindowEffectMaterial::Mica, MainWindowEffectAppearance::Light) => {
-                Some(Effect::MicaLight)
-            }
-            (MainWindowEffectMaterial::MicaAlt, MainWindowEffectAppearance::Dark) => {
-                Some(Effect::TabbedDark)
-            }
-            (MainWindowEffectMaterial::MicaAlt, MainWindowEffectAppearance::Light) => {
-                Some(Effect::TabbedLight)
-            }
-        }
-    }
-
-    fn acrylic_color(self) -> Color {
-        match self.appearance {
-            MainWindowEffectAppearance::Dark => MAIN_WINDOW_ACRYLIC_DARK_COLOR,
-            MainWindowEffectAppearance::Light => MAIN_WINDOW_ACRYLIC_LIGHT_COLOR,
-        }
-    }
-
-    fn is_dark(self) -> bool {
-        self.appearance == MainWindowEffectAppearance::Dark
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MainWindowMode {
@@ -148,16 +56,6 @@ impl MainWindowMode {
             Self::Windowed => "windowed",
         }
     }
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct MainWindowEffectsSupport {
-    platform: &'static str,
-    build: Option<u32>,
-    supports_acrylic: bool,
-    supports_mica: bool,
-    supports_mica_alt: bool,
 }
 
 fn next_main_window_open_sequence() -> u64 {
@@ -309,34 +207,6 @@ pub(crate) fn set_main_window_shadow_enabled(app: &AppHandle, enabled: bool) -> 
     Ok(())
 }
 
-fn set_window_shadow_enabled(window: &WebviewWindow, enabled: bool) -> Result<(), String> {
-    window
-        .set_shadow(enabled)
-        .map_err(|error| error.to_string())
-}
-
-#[cfg(target_os = "windows")]
-fn set_window_cloaked(window: &WebviewWindow, cloaked: bool) -> Result<(), String> {
-    use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CLOAK};
-
-    let cloak = if cloaked { 1i32 } else { 0i32 };
-    unsafe {
-        DwmSetWindowAttribute(
-            window.hwnd().map_err(|error| error.to_string())?,
-            DWMWA_CLOAK,
-            &cloak as *const _ as _,
-            std::mem::size_of_val(&cloak) as u32,
-        )
-        .map_err(|error| error.to_string())?;
-    }
-    Ok(())
-}
-
-#[cfg(not(target_os = "windows"))]
-fn set_window_cloaked(_window: &WebviewWindow, _cloaked: bool) -> Result<(), String> {
-    Ok(())
-}
-
 #[cfg(target_os = "windows")]
 fn update_window_now(window: &WebviewWindow) {
     use windows::Win32::Graphics::Gdi::UpdateWindow;
@@ -350,29 +220,6 @@ fn update_window_now(window: &WebviewWindow) {
 
 #[cfg(not(target_os = "windows"))]
 fn update_window_now(_window: &WebviewWindow) {}
-
-#[cfg(target_os = "windows")]
-fn set_window_non_client_rendering(window: &WebviewWindow, enabled: bool) -> Result<(), String> {
-    use windows::Win32::Graphics::Dwm::{
-        DwmSetWindowAttribute, DWMNCRP_DISABLED, DWMNCRP_USEWINDOWSTYLE, DWMWA_NCRENDERING_POLICY,
-    };
-
-    let policy = if enabled {
-        DWMNCRP_USEWINDOWSTYLE
-    } else {
-        DWMNCRP_DISABLED
-    };
-    unsafe {
-        DwmSetWindowAttribute(
-            window.hwnd().map_err(|error| error.to_string())?,
-            DWMWA_NCRENDERING_POLICY,
-            &policy as *const _ as _,
-            std::mem::size_of_val(&policy) as u32,
-        )
-        .map_err(|error| error.to_string())?;
-    }
-    Ok(())
-}
 
 #[cfg(target_os = "windows")]
 fn set_main_window_non_client_subclass(
@@ -430,9 +277,8 @@ unsafe extern "system" fn main_window_non_client_subclass_proc(
 
     match message {
         WM_NCCALCSIZE => {
-            let is_windowed_mode =
-                current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT)
-                    == MainWindowMode::Windowed;
+            let is_windowed_mode = current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT)
+                == MainWindowMode::Windowed;
             if is_windowed_mode && wparam.0 != 0 && lparam.0 != 0 && IsZoomed(hwnd).as_bool() {
                 let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
                 if !monitor.is_invalid() {
@@ -550,37 +396,6 @@ fn refresh_main_window_frame(window: &WebviewWindow) -> Result<(), String> {
         )
     }
     .map_err(|error| error.to_string())
-}
-
-#[cfg(target_os = "windows")]
-fn set_main_window_topmost(window: &WebviewWindow, topmost: bool) -> Result<(), String> {
-    use windows::Win32::UI::WindowsAndMessaging::{
-        SetWindowPos, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
-        SWP_NOSENDCHANGING, SWP_NOSIZE,
-    };
-
-    let hwnd_insert_after = if topmost {
-        Some(HWND_TOPMOST)
-    } else {
-        Some(HWND_NOTOPMOST)
-    };
-    unsafe {
-        SetWindowPos(
-            window.hwnd().map_err(|error| error.to_string())?,
-            hwnd_insert_after,
-            0,
-            0,
-            0,
-            0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOSENDCHANGING,
-        )
-    }
-    .map_err(|error| error.to_string())
-}
-
-#[cfg(not(target_os = "windows"))]
-fn set_main_window_topmost(_window: &WebviewWindow, _topmost: bool) -> Result<(), String> {
-    Ok(())
 }
 
 #[cfg(target_os = "windows")]
@@ -746,28 +561,6 @@ fn disable_window_transitions(window: &WebviewWindow) -> Result<(), String> {
     set_window_transitions_enabled(window, false)
 }
 
-#[cfg(target_os = "windows")]
-fn set_window_transitions_enabled(window: &WebviewWindow, enabled: bool) -> Result<(), String> {
-    use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED};
-
-    let disabled = if enabled { 0i32 } else { 1i32 };
-    unsafe {
-        DwmSetWindowAttribute(
-            window.hwnd().map_err(|error| error.to_string())?,
-            DWMWA_TRANSITIONS_FORCEDISABLED,
-            &disabled as *const _ as _,
-            std::mem::size_of_val(&disabled) as u32,
-        )
-        .map_err(|error| error.to_string())?;
-    }
-    Ok(())
-}
-
-#[cfg(not(target_os = "windows"))]
-fn set_window_transitions_enabled(_window: &WebviewWindow, _enabled: bool) -> Result<(), String> {
-    Ok(())
-}
-
 #[cfg(not(target_os = "windows"))]
 fn disable_window_transitions(_window: &WebviewWindow) -> Result<(), String> {
     Ok(())
@@ -817,193 +610,6 @@ pub(crate) fn set_main_window_effects_enabled(
         )?;
         apply_main_window_win32_surface_policy(&window, mode)?;
     }
-    Ok(())
-}
-
-fn set_window_effects_enabled(window: &WebviewWindow, enabled: bool) -> Result<(), String> {
-    let settings = current_main_window_effect_settings()?;
-    set_window_effects_enabled_with_config(window, enabled, settings, false)
-}
-
-fn set_window_effects_enabled_with_config(
-    window: &WebviewWindow,
-    enabled: bool,
-    settings: MainWindowEffectSettings,
-    clear_first: bool,
-) -> Result<(), String> {
-    if enabled {
-        let support = main_window_effects_support();
-        let settings = coerce_effect_settings_for_support(settings, &support);
-        if settings.material == MainWindowEffectMaterial::None {
-            window
-                .set_effects(None)
-                .map_err(|error| error.to_string())?;
-            return Ok(());
-        }
-        if !is_effect_settings_supported(settings, &support) {
-            window
-                .set_effects(None)
-                .map_err(|error| error.to_string())?;
-            return Ok(());
-        }
-
-        if clear_first {
-            window
-                .set_effects(None)
-                .map_err(|error| error.to_string())?;
-        }
-
-        set_window_backdrop_dark_mode(window, settings.is_dark())?;
-        let effect = settings
-            .effect()
-            .ok_or_else(|| "Window effect material does not map to a native effect".to_string())?;
-        let effects = if settings.material == MainWindowEffectMaterial::Acrylic {
-            EffectsBuilder::new()
-                .effect(effect)
-                .color(settings.acrylic_color())
-                .build()
-        } else {
-            EffectsBuilder::new().effect(effect).build()
-        };
-        window
-            .set_effects(effects)
-            .map_err(|error| error.to_string())?;
-        set_window_backdrop_dark_mode(window, settings.is_dark())?;
-    } else {
-        window
-            .set_effects(None)
-            .map_err(|error| error.to_string())?;
-    }
-    Ok(())
-}
-
-pub(crate) fn main_window_effects_support() -> MainWindowEffectsSupport {
-    let build = current_windows_build();
-    let (supports_acrylic, supports_mica, supports_mica_alt) =
-        effect_support_for_windows_build(build);
-    MainWindowEffectsSupport {
-        platform: current_platform(),
-        build,
-        supports_acrylic,
-        supports_mica,
-        supports_mica_alt,
-    }
-}
-
-fn current_main_window_effect_settings() -> Result<MainWindowEffectSettings, String> {
-    MAIN_WINDOW_EFFECT_SETTINGS
-        .lock()
-        .map(|settings| *settings)
-        .map_err(|_| "Failed to lock main window effect settings".to_string())
-}
-
-fn update_main_window_effect_settings(
-    material: Option<&str>,
-    appearance: Option<&str>,
-) -> Result<(MainWindowEffectSettings, bool), String> {
-    let support = main_window_effects_support();
-    let mut settings = MAIN_WINDOW_EFFECT_SETTINGS
-        .lock()
-        .map_err(|_| "Failed to lock main window effect settings".to_string())?;
-    let requested = MainWindowEffectSettings::from_options(material, appearance, *settings);
-    let next = coerce_effect_settings_for_support(requested, &support);
-    let changed = next != *settings;
-    *settings = next;
-    Ok((next, changed))
-}
-
-fn coerce_effect_settings_for_support(
-    settings: MainWindowEffectSettings,
-    support: &MainWindowEffectsSupport,
-) -> MainWindowEffectSettings {
-    let material = if is_material_supported(settings.material, support) {
-        settings.material
-    } else if settings.material == MainWindowEffectMaterial::MicaAlt && support.supports_mica {
-        MainWindowEffectMaterial::Mica
-    } else if support.supports_acrylic {
-        MainWindowEffectMaterial::Acrylic
-    } else if support.supports_mica {
-        MainWindowEffectMaterial::Mica
-    } else if support.supports_mica_alt {
-        MainWindowEffectMaterial::MicaAlt
-    } else {
-        MainWindowEffectMaterial::Acrylic
-    };
-    MainWindowEffectSettings {
-        material,
-        appearance: settings.appearance,
-    }
-}
-
-fn is_effect_settings_supported(
-    settings: MainWindowEffectSettings,
-    support: &MainWindowEffectsSupport,
-) -> bool {
-    is_material_supported(settings.material, support)
-}
-
-fn is_material_supported(
-    material: MainWindowEffectMaterial,
-    support: &MainWindowEffectsSupport,
-) -> bool {
-    match material {
-        MainWindowEffectMaterial::None => true,
-        MainWindowEffectMaterial::Acrylic => support.supports_acrylic,
-        MainWindowEffectMaterial::Mica => support.supports_mica,
-        MainWindowEffectMaterial::MicaAlt => support.supports_mica_alt,
-    }
-}
-
-fn effect_support_for_windows_build(build: Option<u32>) -> (bool, bool, bool) {
-    let Some(build) = build else {
-        return (false, false, false);
-    };
-    (
-        build >= WINDOWS_ACRYLIC_MIN_BUILD,
-        build >= WINDOWS_MICA_MIN_BUILD,
-        build >= WINDOWS_MICA_ALT_MIN_BUILD,
-    )
-}
-
-#[cfg(target_os = "windows")]
-fn current_platform() -> &'static str {
-    "windows"
-}
-
-#[cfg(not(target_os = "windows"))]
-fn current_platform() -> &'static str {
-    std::env::consts::OS
-}
-
-#[cfg(target_os = "windows")]
-fn current_windows_build() -> Option<u32> {
-    Some(windows_version::OsVersion::current().build)
-}
-
-#[cfg(not(target_os = "windows"))]
-fn current_windows_build() -> Option<u32> {
-    None
-}
-
-#[cfg(target_os = "windows")]
-fn set_window_backdrop_dark_mode(window: &WebviewWindow, dark: bool) -> Result<(), String> {
-    use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE};
-
-    let enabled = if dark { 1i32 } else { 0i32 };
-    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
-    unsafe {
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_USE_IMMERSIVE_DARK_MODE,
-            &enabled as *const _ as _,
-            std::mem::size_of_val(&enabled) as u32,
-        );
-    }
-    Ok(())
-}
-
-#[cfg(not(target_os = "windows"))]
-fn set_window_backdrop_dark_mode(_window: &WebviewWindow, _dark: bool) -> Result<(), String> {
     Ok(())
 }
 
@@ -1168,18 +774,6 @@ pub(crate) fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error:
 mod tests {
     use super::*;
 
-    fn support(build: Option<u32>) -> MainWindowEffectsSupport {
-        let (supports_acrylic, supports_mica, supports_mica_alt) =
-            effect_support_for_windows_build(build);
-        MainWindowEffectsSupport {
-            platform: "windows",
-            build,
-            supports_acrylic,
-            supports_mica,
-            supports_mica_alt,
-        }
-    }
-
     #[test]
     fn main_window_mode_accepts_known_modes() {
         assert_eq!(
@@ -1200,77 +794,5 @@ mod tests {
     fn main_window_mode_rejects_unknown_modes() {
         assert_eq!(MainWindowMode::from_str("maximized"), None);
         assert_eq!(MainWindowMode::from_str(""), None);
-    }
-
-    #[test]
-    fn windows_effect_support_tracks_build_thresholds() {
-        assert_eq!(
-            effect_support_for_windows_build(None),
-            (false, false, false)
-        );
-        assert_eq!(
-            effect_support_for_windows_build(Some(WINDOWS_ACRYLIC_MIN_BUILD - 1)),
-            (false, false, false)
-        );
-        assert_eq!(
-            effect_support_for_windows_build(Some(WINDOWS_ACRYLIC_MIN_BUILD)),
-            (true, false, false)
-        );
-        assert_eq!(
-            effect_support_for_windows_build(Some(WINDOWS_MICA_MIN_BUILD - 1)),
-            (true, false, false)
-        );
-        assert_eq!(
-            effect_support_for_windows_build(Some(WINDOWS_MICA_MIN_BUILD)),
-            (true, true, false)
-        );
-        assert_eq!(
-            effect_support_for_windows_build(Some(WINDOWS_MICA_ALT_MIN_BUILD - 1)),
-            (true, true, false)
-        );
-        assert_eq!(
-            effect_support_for_windows_build(Some(WINDOWS_MICA_ALT_MIN_BUILD)),
-            (true, true, true)
-        );
-    }
-
-    #[test]
-    fn requested_mica_alt_falls_back_to_mica_when_supported() {
-        let requested = MainWindowEffectSettings {
-            material: MainWindowEffectMaterial::MicaAlt,
-            appearance: MainWindowEffectAppearance::Light,
-        };
-        let coerced =
-            coerce_effect_settings_for_support(requested, &support(Some(WINDOWS_MICA_MIN_BUILD)));
-
-        assert_eq!(coerced.material, MainWindowEffectMaterial::Mica);
-        assert_eq!(coerced.appearance, MainWindowEffectAppearance::Light);
-    }
-
-    #[test]
-    fn requested_mica_falls_back_to_acrylic_when_unsupported() {
-        let requested = MainWindowEffectSettings {
-            material: MainWindowEffectMaterial::Mica,
-            appearance: MainWindowEffectAppearance::Light,
-        };
-        let coerced = coerce_effect_settings_for_support(
-            requested,
-            &support(Some(WINDOWS_ACRYLIC_MIN_BUILD)),
-        );
-
-        assert_eq!(coerced.material, MainWindowEffectMaterial::Acrylic);
-        assert_eq!(coerced.appearance, MainWindowEffectAppearance::Light);
-    }
-
-    #[test]
-    fn requested_none_material_stays_none_without_native_support() {
-        let requested = MainWindowEffectSettings {
-            material: MainWindowEffectMaterial::None,
-            appearance: MainWindowEffectAppearance::Light,
-        };
-        let coerced = coerce_effect_settings_for_support(requested, &support(None));
-
-        assert_eq!(coerced.material, MainWindowEffectMaterial::None);
-        assert_eq!(coerced.appearance, MainWindowEffectAppearance::Light);
     }
 }

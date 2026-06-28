@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 use crate::{
+    encoding::{encode_base64, short_blake3_hex},
     icons::cache_app_icon,
     models::{AppCatalogItem, AppSource, LaunchTarget},
     path_utils::{expand_windows_env_vars, extension, windows_api_path},
@@ -570,9 +571,7 @@ fn normalize_path_key(value: &str) -> String {
 
 pub(crate) fn stable_app_id(path: &str) -> String {
     let normalized = path.to_lowercase();
-    let hash = blake3::hash(normalized.as_bytes());
-    let hex = hash.to_hex();
-    format!("win-app-{}", &hex[..32])
+    format!("win-app-{}", short_blake3_hex(normalized.as_bytes()))
 }
 
 fn app_glyph(name: &str) -> String {
@@ -585,32 +584,6 @@ fn app_glyph(name: &str) -> String {
 pub(crate) fn icon_file_data_url(path: &str) -> Option<String> {
     let bytes = fs::read(path).ok()?;
     Some(format!("data:image/png;base64,{}", encode_base64(&bytes)))
-}
-
-fn encode_base64(bytes: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
-
-    for chunk in bytes.chunks(3) {
-        let first = chunk[0];
-        let second = *chunk.get(1).unwrap_or(&0);
-        let third = *chunk.get(2).unwrap_or(&0);
-
-        output.push(TABLE[(first >> 2) as usize] as char);
-        output.push(TABLE[(((first & 0b0000_0011) << 4) | (second >> 4)) as usize] as char);
-        output.push(if chunk.len() > 1 {
-            TABLE[(((second & 0b0000_1111) << 2) | (third >> 6)) as usize] as char
-        } else {
-            '='
-        });
-        output.push(if chunk.len() > 2 {
-            TABLE[(third & 0b0011_1111) as usize] as char
-        } else {
-            '='
-        });
-    }
-
-    output
 }
 
 #[cfg(test)]

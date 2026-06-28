@@ -16,10 +16,7 @@ use windows::{
         Graphics::Gdi::{
             GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
         },
-        System::Com::{
-            CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_ALL,
-            CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
-        },
+        System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL, CLSCTX_INPROC_SERVER},
         UI::Shell::{
             Common::COMDLG_FILTERSPEC, DesktopWallpaper, FileOpenDialog, IDesktopWallpaper,
             IFileOpenDialog, FOS_FILEMUSTEXIST, FOS_FORCEFILESYSTEM, FOS_PATHMUSTEXIST,
@@ -34,6 +31,10 @@ use windows::{
 #[cfg(target_os = "windows")]
 use tauri::{AppHandle, Manager};
 
+#[cfg(target_os = "windows")]
+use crate::encoding::{cache_content_addressed, encode_base64, PNG_SIGNATURE};
+#[cfg(target_os = "windows")]
+use crate::windows_com::ComGuard;
 use crate::{
     catalog::{icon_cache_dir, icon_file_data_url, stable_app_id},
     icons::cache_app_icon,
@@ -319,7 +320,7 @@ fn detect_background_image_extension(path: &Path, bytes: &[u8]) -> Option<&'stat
 
 #[cfg(target_os = "windows")]
 fn detect_background_image_extension_from_bytes(bytes: &[u8]) -> Option<&'static str> {
-    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+    if bytes.starts_with(PNG_SIGNATURE) {
         return Some("png");
     }
     if bytes.starts_with(b"\xff\xd8\xff") {
@@ -342,33 +343,6 @@ fn background_image_mime_type(extension: &str) -> &'static str {
         "bmp" => "image/bmp",
         _ => "image/png",
     }
-}
-
-#[cfg(target_os = "windows")]
-fn encode_base64(bytes: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
-
-    for chunk in bytes.chunks(3) {
-        let first = chunk[0];
-        let second = *chunk.get(1).unwrap_or(&0);
-        let third = *chunk.get(2).unwrap_or(&0);
-
-        output.push(TABLE[(first >> 2) as usize] as char);
-        output.push(TABLE[(((first & 0b0000_0011) << 4) | (second >> 4)) as usize] as char);
-        output.push(if chunk.len() > 1 {
-            TABLE[(((second & 0b0000_1111) << 2) | (third >> 6)) as usize] as char
-        } else {
-            '='
-        });
-        output.push(if chunk.len() > 2 {
-            TABLE[(third & 0b0011_1111) as usize] as char
-        } else {
-            '='
-        });
-    }
-
-    output
 }
 
 #[cfg(target_os = "windows")]
@@ -466,21 +440,18 @@ fn cache_background_image(
             selected_path.display()
         )
     })?;
-    let hash = blake3::hash(&bytes);
-    let hex = hash.to_hex();
     let extension = detect_background_image_extension(selected_path, &bytes).ok_or_else(|| {
         "Background image must be a PNG, JPG, JPEG, WEBP, or BMP file".to_string()
     })?;
     let background_dir = background_cache_dir(app)?;
-    let background_path = background_dir.join(format!("background-{}.{}", &hex[..32], extension));
-    if !background_path.exists() {
-        fs::write(&background_path, &bytes).map_err(|error| {
+    let background_path = cache_content_addressed(&background_dir, "background", extension, &bytes)
+        .map_err(|error| {
             format!(
                 "Failed to cache background image {}: {error}",
-                background_path.display()
+                error.path().display(),
+                error = error.source()
             )
         })?;
-    }
 
     Ok(PickedBackgroundImage {
         name: selected_path
@@ -644,32 +615,6 @@ fn take_cotaskmem_string(value: PWSTR) -> Result<String, std::string::FromUtf16E
     let result = unsafe { value.to_string() };
     free_cotaskmem_string(value);
     result
-}
-
-#[cfg(target_os = "windows")]
-struct ComGuard {
-    initialized: bool,
-}
-
-#[cfg(target_os = "windows")]
-impl ComGuard {
-    fn new() -> Result<Self, String> {
-        unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }
-            .ok()
-            .map_err(|error| format!("Failed to initialize COM apartment: {error}"))?;
-        Ok(Self { initialized: true })
-    }
-}
-
-#[cfg(target_os = "windows")]
-impl Drop for ComGuard {
-    fn drop(&mut self) {
-        if self.initialized {
-            unsafe {
-                CoUninitialize();
-            }
-        }
-    }
 }
 
 #[cfg(all(test, target_os = "windows"))]

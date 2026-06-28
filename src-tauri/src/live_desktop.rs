@@ -1,16 +1,17 @@
 use serde::{Deserialize, Serialize};
 
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
+use std::{
+    collections::VecDeque,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
 };
 
 #[cfg(target_os = "windows")]
 use std::{
-    collections::HashSet,
-    env, fs,
-    path::{Path, PathBuf},
-    process::Command,
+    cell::RefCell,
+    ops::ControlFlow,
     sync::mpsc,
     thread,
     time::{Duration, Instant},
@@ -83,18 +84,35 @@ use windows::{
     },
 };
 
+mod test_pattern;
+mod wallpaper_engine;
 mod window_diagnostics;
 
+#[cfg(target_os = "windows")]
+use test_pattern::{
+    draw_live_desktop_test_pattern_to_composition_surface, LiveDesktopTestPatternState,
+};
+use wallpaper_engine::{
+    collect_wallpaper_engine_mouse_relay_targets, collect_wallpaper_engine_popup_wgc_targets,
+    format_wallpaper_engine_popup_runtime_detail, wallpaper_engine_popup_root_for_target,
+    wallpaper_engine_popup_target_matches_window_name,
+};
 use window_diagnostics::{format_live_desktop_window_long, live_desktop_window_diagnostics};
 
 #[cfg(test)]
 use window_diagnostics::{classify_live_desktop_window, is_live_desktop_root_class};
 
 #[cfg(target_os = "windows")]
+use wallpaper_engine::{
+    cleanup_wallpaper_engine_popup_after_failed_capture, close_wallpaper_engine_named_popup,
+    create_wallpaper_engine_popup_plan, ensure_wallpaper_engine_named_popup,
+    LiveDesktopWallpaperEnginePopupCloseCommand,
+};
+
+#[cfg(target_os = "windows")]
 use window_diagnostics::{
     format_live_desktop_window_handle, probe_windows_live_desktop_windows,
-    read_live_desktop_process_image_path, read_live_desktop_window_client_size,
-    read_live_desktop_window_long,
+    read_live_desktop_window_client_size, read_live_desktop_window_long,
 };
 
 #[cfg(target_os = "windows")]
@@ -116,6 +134,11 @@ const LIVE_DESKTOP_WGC_FRAME_POOL_BUFFER_COUNT: i32 = 3;
 
 #[cfg(target_os = "windows")]
 const LIVE_DESKTOP_WGC_FRAME_EVENT_FALLBACK_MS: u64 = 16;
+
+#[cfg(target_os = "windows")]
+const LIVE_DESKTOP_FRAME_ERROR_CIRCUIT_BREAK: u32 = 5;
+
+const LIVE_DESKTOP_RECENT_ERROR_LIMIT: usize = 16;
 
 #[cfg(target_os = "windows")]
 const LIVE_DESKTOP_RENDERER_INIT_TIMEOUT_MS: u64 = 10_000;
@@ -319,12 +342,14 @@ struct LiveDesktopRendererResources {
     config: LiveDesktopRuntimeConfig,
     diagnostics: Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
     test_pattern: LiveDesktopTestPatternState,
+    visible: bool,
+    consecutive_frame_errors: u32,
     source_width: u32,
     source_height: u32,
     _com: ComApartment,
     _d3d_device: ID3D11Device,
     _d3d_context: ID3D11DeviceContext,
-    _window_capture: Option<LiveDesktopWindowCapture>,
+    window_capture: Option<LiveDesktopWindowCapture>,
     _composition_device: LiveDesktopCompositionDevice,
     _blur_effect: Option<IDCompositionGaussianBlurEffect>,
     _color_matrix_effect: Option<IDCompositionColorMatrixEffect>,
@@ -338,12 +363,36 @@ struct LiveDesktopRendererResources {
 }
 
 #[cfg(target_os = "windows")]
-#[derive(Default)]
-struct LiveDesktopTestPatternState;
+#[derive(Debug, PartialEq, Eq)]
+enum LiveDesktopFramePumpAction {
+    PumpFrame,
+    WaitForVisibility,
+    Stop,
+}
 
 #[cfg(target_os = "windows")]
-impl LiveDesktopTestPatternState {
-    fn invalidate(&mut self) {}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FrameOutcome {
+    Presented,
+    BlankSkipped,
+    TimedOut,
+    NoSource,
+}
+
+#[cfg(target_os = "windows")]
+fn live_desktop_frame_pump_visibility_action(
+    visible: bool,
+    stop_receiver: &mpsc::Receiver<()>,
+    timeout: Duration,
+) -> LiveDesktopFramePumpAction {
+    if visible {
+        return LiveDesktopFramePumpAction::PumpFrame;
+    }
+
+    match stop_receiver.recv_timeout(timeout) {
+        Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => LiveDesktopFramePumpAction::Stop,
+        Err(mpsc::RecvTimeoutError::Timeout) => LiveDesktopFramePumpAction::WaitForVisibility,
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -357,9 +406,10 @@ struct LiveDesktopWindowCapture {
     popup_close_command: Option<LiveDesktopWallpaperEnginePopupCloseCommand>,
     mouse_relay: Option<Mutex<LiveDesktopMouseRelay>>,
     frame_crop: Option<LiveDesktopFrameCrop>,
+    diagnostics: Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
     _item: GraphicsCaptureItem,
     frame_pool: Direct3D11CaptureFramePool,
-    _session: GraphicsCaptureSession,
+    session: GraphicsCaptureSession,
     frame_arrived_receiver: Option<mpsc::Receiver<()>>,
     frame_arrived_token: Option<i64>,
     _frame_arrived_handler: Option<TypedEventHandler<Direct3D11CaptureFramePool, IInspectable>>,
@@ -391,16 +441,50 @@ struct LiveDesktopMouseRelayPosition {
 }
 
 #[cfg(target_os = "windows")]
+impl LiveDesktopWindowCapture {
+    fn record_teardown_error(&self, detail: String) {
+        eprintln!("{detail}");
+        update_live_desktop_diagnostics(&self.diagnostics, |diagnostics| {
+            push_live_desktop_recent_error(diagnostics, &detail);
+        });
+    }
+}
+
+#[cfg(target_os = "windows")]
 impl Drop for LiveDesktopWindowCapture {
     fn drop(&mut self) {
+        if let Some(token) = self.frame_arrived_token.take() {
+            if let Err(error) = self.frame_pool.RemoveFrameArrived(token) {
+                self.record_teardown_error(format!(
+                    "Direct3D11CaptureFramePool::RemoveFrameArrived during WGC teardown failed: {error}"
+                ));
+            }
+        }
+        self.frame_arrived_receiver.take();
+
+        if let Err(error) = self.session.Close() {
+            self.record_teardown_error(format!(
+                "GraphicsCaptureSession::Close during WGC teardown failed: {error}"
+            ));
+        }
+        if let Err(error) = self.frame_pool.Close() {
+            self.record_teardown_error(format!(
+                "Direct3D11CaptureFramePool::Close during WGC teardown failed: {error}"
+            ));
+        }
         if let Some(command) = self.popup_close_command.as_ref() {
-            let _ = close_wallpaper_engine_named_popup(command);
+            if let Err(error) = close_wallpaper_engine_named_popup(command) {
+                self.record_teardown_error(format!(
+                    "Wallpaper Engine popup close during WGC teardown failed: {error}"
+                ));
+            }
         }
         if let Some(state) = self.popup_restore_state.as_ref() {
-            let _ = unsafe { restore_wallpaper_engine_popup_after_capture(state) };
-        }
-        if let Some(token) = self.frame_arrived_token.take() {
-            let _ = self.frame_pool.RemoveFrameArrived(token);
+            if let Err(error) = unsafe { restore_wallpaper_engine_popup_after_capture(state) } {
+                self.record_teardown_error(format!(
+                    "Wallpaper Engine popup restore during WGC teardown failed: {error}"
+                ));
+            }
         }
     }
 }
@@ -427,52 +511,6 @@ struct LiveDesktopPopupWindowRestoreState {
     style: isize,
     ex_style: isize,
     rect: LiveDesktopWindowRect,
-}
-
-#[cfg(target_os = "windows")]
-#[derive(Clone)]
-struct LiveDesktopWallpaperEnginePopupPlan {
-    window_name: String,
-    monitor_index: u32,
-    width: u32,
-    height: u32,
-    x: i32,
-    y: i32,
-}
-
-#[cfg(target_os = "windows")]
-struct LiveDesktopWallpaperEnginePopupEnsureResult {
-    detail: String,
-    close_command: Option<LiveDesktopWallpaperEnginePopupCloseCommand>,
-}
-
-#[cfg(target_os = "windows")]
-#[derive(Clone)]
-struct LiveDesktopWallpaperEnginePopupCloseCommand {
-    executable_path: PathBuf,
-    window_name: String,
-}
-
-#[cfg(target_os = "windows")]
-struct LiveDesktopWallpaperEngineGetWallpaperAttempt {
-    label: String,
-    success: bool,
-    status_code: Option<i32>,
-    stdout: String,
-    stderr: String,
-    error: Option<String>,
-}
-
-#[cfg(target_os = "windows")]
-struct LiveDesktopWallpaperEngineWallpaperPath {
-    path: String,
-    detail: String,
-}
-
-#[cfg(target_os = "windows")]
-struct LiveDesktopWallpaperEngineConfigRead {
-    value: Option<serde_json::Value>,
-    detail: String,
 }
 
 #[cfg(target_os = "windows")]
@@ -522,6 +560,7 @@ struct LiveDesktopD3DDevice {
 #[cfg(target_os = "windows")]
 struct LiveDesktopCompositionSwapChain {
     swap_chain: IDXGISwapChain1,
+    cached_back_buffer: RefCell<Option<ID3D11Texture2D>>,
     width: u32,
     height: u32,
 }
@@ -693,14 +732,21 @@ impl LiveDesktopCompositionSwapChain {
                 })?;
         Ok(Self {
             swap_chain,
+            cached_back_buffer: RefCell::new(None),
             width: desc.Width,
             height: desc.Height,
         })
     }
 
     unsafe fn back_buffer(&self, label: &str) -> Result<ID3D11Texture2D, String> {
-        unsafe { self.swap_chain.GetBuffer::<ID3D11Texture2D>(0) }
-            .map_err(|error| format!("{label} swap chain GetBuffer(0) failed: {error}"))
+        if let Some(texture) = self.cached_back_buffer.borrow().as_ref().cloned() {
+            return Ok(texture);
+        }
+
+        let texture = unsafe { self.swap_chain.GetBuffer::<ID3D11Texture2D>(0) }
+            .map_err(|error| format!("{label} swap chain GetBuffer(0) failed: {error}"))?;
+        *self.cached_back_buffer.borrow_mut() = Some(texture.clone());
+        Ok(texture)
     }
 
     unsafe fn present(&self) -> Result<(), String> {
@@ -2066,6 +2112,7 @@ pub(crate) struct LiveDesktopRuntimeDiagnostics {
     last_shader_copy_error: String,
     last_abandoned_renderer_reason: String,
     last_error: String,
+    recent_errors: VecDeque<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -2143,17 +2190,14 @@ enum LiveDesktopBackgroundEffect {
     AcrylicWebgl,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LiveDesktopEffectPlan {
     effect: LiveDesktopBackgroundEffect,
-    opacity: f32,
     blur: LiveDesktopBlurEffectPlan,
     acrylic: LiveDesktopAcrylicEffectPlan,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LiveDesktopBlurEffectPlan {
@@ -2161,7 +2205,6 @@ struct LiveDesktopBlurEffectPlan {
     kernel: LiveDesktopBlurKernel,
     #[serde(default)]
     gaussian_radius_px: f32,
-    strength: u32,
     render_max_width: u32,
     render_max_height: u32,
     pass_count: u32,
@@ -2180,7 +2223,6 @@ enum LiveDesktopBlurKernel {
     Gaussian,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LiveDesktopAcrylicEffectPlan {
@@ -2856,6 +2898,19 @@ impl LiveDesktopRendererResources {
     ) {
         loop {
             self.apply_pending_commands(&command_receiver);
+            match live_desktop_frame_pump_visibility_action(
+                self.visible,
+                &stop_receiver,
+                Duration::from_millis(LIVE_DESKTOP_FRAME_PUMP_INTERVAL_MS),
+            ) {
+                LiveDesktopFramePumpAction::PumpFrame => {}
+                LiveDesktopFramePumpAction::WaitForVisibility => {
+                    self.drain_window_capture_frame_arrivals();
+                    continue;
+                }
+                LiveDesktopFramePumpAction::Stop => break,
+            }
+
             if self.config.effective_frame_source().uses_window_capture() {
                 if self.wait_for_window_capture_frame_or_stop(&stop_receiver) {
                     break;
@@ -2867,7 +2922,9 @@ impl LiveDesktopRendererResources {
             {
                 Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 Err(mpsc::RecvTimeoutError::Timeout) => {
-                    let _ = unsafe { self.copy_next_frame_to_surface() };
+                    if let ControlFlow::Break(()) = self.pump_one_frame() {
+                        break;
+                    }
                 }
             }
         }
@@ -2882,7 +2939,7 @@ impl LiveDesktopRendererResources {
         }
 
         let frame_arrived_receiver = self
-            ._window_capture
+            .window_capture
             .as_ref()
             .and_then(|capture| capture.frame_arrived_receiver.as_ref());
         if let Some(frame_arrived_receiver) = frame_arrived_receiver {
@@ -2891,13 +2948,19 @@ impl LiveDesktopRendererResources {
             )) {
                 Ok(()) => {
                     while frame_arrived_receiver.try_recv().is_ok() {}
-                    let _ = unsafe { self.copy_next_frame_to_surface() };
+                    if let ControlFlow::Break(()) = self.pump_one_frame() {
+                        return true;
+                    }
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
-                    let _ = unsafe { self.copy_next_frame_to_surface() };
+                    if let ControlFlow::Break(()) = self.pump_one_frame() {
+                        return true;
+                    }
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    let _ = unsafe { self.copy_next_frame_to_surface() };
+                    if let ControlFlow::Break(()) = self.pump_one_frame() {
+                        return true;
+                    }
                 }
             }
             return live_desktop_renderer_should_stop(stop_receiver);
@@ -2907,9 +2970,18 @@ impl LiveDesktopRendererResources {
         {
             Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => true,
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                let _ = unsafe { self.copy_next_frame_to_surface() };
-                false
+                matches!(self.pump_one_frame(), ControlFlow::Break(()))
             }
+        }
+    }
+
+    fn drain_window_capture_frame_arrivals(&self) {
+        let frame_arrived_receiver = self
+            .window_capture
+            .as_ref()
+            .and_then(|capture| capture.frame_arrived_receiver.as_ref());
+        if let Some(frame_arrived_receiver) = frame_arrived_receiver {
+            while frame_arrived_receiver.try_recv().is_ok() {}
         }
     }
 
@@ -2938,8 +3010,11 @@ impl LiveDesktopRendererResources {
             }
         }
         if let Some(visible) = next_visible {
-            if let Err(error) = unsafe { self.set_visual_visible(visible) } {
-                record_live_desktop_config_error(&self.diagnostics, &error);
+            match unsafe { self.set_visual_visible(visible) } {
+                Ok(()) => {
+                    self.visible = visible;
+                }
+                Err(error) => record_live_desktop_config_error(&self.diagnostics, &error),
             }
         }
     }
@@ -3008,7 +3083,47 @@ impl LiveDesktopRendererResources {
         Ok(())
     }
 
-    unsafe fn copy_next_frame_to_surface(&mut self) -> Result<bool, String> {
+    fn pump_one_frame(&mut self) -> ControlFlow<()> {
+        let error = match unsafe { self.copy_next_frame_to_surface() } {
+            Ok(_outcome) => {
+                self.consecutive_frame_errors = 0;
+                return ControlFlow::Continue(());
+            }
+            Err(error) => error,
+        };
+
+        self.consecutive_frame_errors = self.consecutive_frame_errors.saturating_add(1);
+        let device_removed = self.device_removed_detail();
+        if self.consecutive_frame_errors >= LIVE_DESKTOP_FRAME_ERROR_CIRCUIT_BREAK
+            || device_removed.is_some()
+        {
+            let mut detail = format!(
+                "Live desktop frame pump stopped after {} consecutive frame errors; last error: {}",
+                self.consecutive_frame_errors, error
+            );
+            if let Some(device_removed) = device_removed {
+                detail.push_str("; ");
+                detail.push_str(&device_removed);
+            }
+            record_live_desktop_frame_pump_circuit_breaker(&self.diagnostics, &detail);
+            return ControlFlow::Break(());
+        }
+
+        ControlFlow::Continue(())
+    }
+
+    fn device_removed_detail(&self) -> Option<String> {
+        let reason = unsafe { self._d3d_device.GetDeviceRemovedReason() };
+        if reason.is_ok() {
+            None
+        } else {
+            Some(format!(
+                "D3D11 device removed during frame pump: {reason:?}"
+            ))
+        }
+    }
+
+    unsafe fn copy_next_frame_to_surface(&mut self) -> Result<FrameOutcome, String> {
         match unsafe { self.host_window.sync_to_owner_rect() } {
             Ok(true) => {
                 if let Err(error) = unsafe { self.apply_current_visual_placement() } {
@@ -3041,11 +3156,11 @@ impl LiveDesktopRendererResources {
             }
             record_live_desktop_frame_commit_duration(&self.diagnostics, commit_started.elapsed());
             record_live_desktop_test_pattern_frame(&self.diagnostics, &pattern_frame);
-            return Ok(true);
+            return Ok(FrameOutcome::Presented);
         }
 
         if self.config.effective_frame_source().uses_window_capture() {
-            let window_capture = match self._window_capture.as_ref() {
+            let window_capture = match self.window_capture.as_ref() {
                 Some(window_capture) => window_capture,
                 None => {
                     let error = format!(
@@ -3076,16 +3191,16 @@ impl LiveDesktopRendererResources {
                     return Err(error);
                 }
             };
-            if copied_frame.is_none() {
+            let Some(frame_probe) = copied_frame else {
                 if live_desktop_blank_frame_skip_count(&self.diagnostics)
                     == blank_frame_skips_before
                 {
                     record_live_desktop_frame_timeout(&self.diagnostics);
+                    return Ok(FrameOutcome::TimedOut);
                 }
-                return Ok(false);
-            }
+                return Ok(FrameOutcome::BlankSkipped);
+            };
             record_live_desktop_frame_copy_duration(&self.diagnostics, copy_started.elapsed());
-            let frame_probe = copied_frame.expect("checked copied WGC frame");
             let commit_started = Instant::now();
             if let Err(detail) = unsafe { self.present_and_commit_composition() } {
                 record_live_desktop_commit_error(&self.diagnostics, &detail);
@@ -3093,10 +3208,10 @@ impl LiveDesktopRendererResources {
             }
             record_live_desktop_frame_commit_duration(&self.diagnostics, commit_started.elapsed());
             record_live_desktop_frame_copied(&self.diagnostics, &frame_probe);
-            return Ok(true);
+            return Ok(FrameOutcome::Presented);
         }
 
-        Ok(false)
+        Ok(FrameOutcome::NoSource)
     }
 }
 
@@ -3384,774 +3499,6 @@ fn append_live_desktop_runtime_diagnostics(
     )
 }
 
-fn collect_wallpaper_engine_popup_wgc_targets(
-    diagnostics: &LiveDesktopWindowDiagnostics,
-    preferred_window_name: Option<&str>,
-) -> Vec<LiveDesktopWindowInfo> {
-    let mut targets = Vec::new();
-    let mut seen = std::collections::HashSet::<String>::new();
-    if let Some(window_name) = preferred_window_name {
-        for popup in diagnostics
-            .candidates
-            .iter()
-            .filter(|info| info.role == "wallpaperPopup" && info.title == window_name)
-        {
-            for info in diagnostics.windows.iter().filter(|info| {
-                info.parent_hwnd == popup.hwnd && is_wallpaper_engine_popup_content_window(info)
-            }) {
-                push_live_desktop_wgc_target(&mut targets, &mut seen, info);
-            }
-            push_live_desktop_wgc_target(&mut targets, &mut seen, popup);
-        }
-    }
-    for popup in diagnostics
-        .candidates
-        .iter()
-        .filter(|info| info.role == "wallpaperPopup")
-    {
-        for info in diagnostics.windows.iter().filter(|info| {
-            info.parent_hwnd == popup.hwnd && is_wallpaper_engine_popup_content_window(info)
-        }) {
-            push_live_desktop_wgc_target(&mut targets, &mut seen, info);
-        }
-    }
-    for info in diagnostics
-        .candidates
-        .iter()
-        .filter(|info| info.role == "wallpaperPopup")
-    {
-        push_live_desktop_wgc_target(&mut targets, &mut seen, info);
-    }
-    targets
-}
-
-fn is_wallpaper_engine_popup_content_window(info: &LiveDesktopWindowInfo) -> bool {
-    info.visible
-        && info.class_name.eq_ignore_ascii_case("WPEDesktopDX11Window")
-        && info.candidate_reason == "wallpaperProcessOrTitle"
-        && info.rect.width >= 320
-        && info.rect.height >= 180
-}
-
-fn wallpaper_engine_popup_target_matches_window_name(
-    target: &LiveDesktopWindowInfo,
-    diagnostics: &LiveDesktopWindowDiagnostics,
-    window_name: &str,
-) -> bool {
-    wallpaper_engine_popup_root_for_target(target, diagnostics)
-        .map(|popup| popup.title == window_name)
-        .unwrap_or(false)
-}
-
-#[cfg(target_os = "windows")]
-fn create_wallpaper_engine_popup_plan(
-    output_context: &LiveDesktopOutputContext,
-) -> LiveDesktopWallpaperEnginePopupPlan {
-    LiveDesktopWallpaperEnginePopupPlan {
-        window_name: format!(
-            "LaunchPad::LiveDesktop::display{}::{}x{}",
-            output_context.output_index, output_context.output_width, output_context.output_height
-        ),
-        monitor_index: output_context.output_index,
-        width: output_context.output_width.max(1),
-        height: output_context.output_height.max(1),
-        x: -(output_context.output_width.max(1) as i32) - 128,
-        y: 0,
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn ensure_wallpaper_engine_named_popup(
-    plan: &LiveDesktopWallpaperEnginePopupPlan,
-    progress_sender: &mpsc::Sender<LiveDesktopRendererStartupMessage>,
-) -> LiveDesktopWallpaperEnginePopupEnsureResult {
-    let before = unsafe { probe_windows_live_desktop_windows() };
-    if let Some(existing) = find_wallpaper_engine_popup_by_name(&before, &plan.window_name) {
-        let executable_path = find_wallpaper_engine_executable_path(&before);
-        return LiveDesktopWallpaperEnginePopupEnsureResult {
-            detail: format!(
-                "popupOwner=launchpad popupLifecycle=foundExisting popupWindowName={} root={} size={}x{}",
-                plan.window_name, existing.hwnd, existing.rect.width, existing.rect.height
-            ),
-            close_command: executable_path.map(|path| LiveDesktopWallpaperEnginePopupCloseCommand {
-                executable_path: path,
-                window_name: plan.window_name.clone(),
-            }),
-        };
-    }
-
-    let Some(executable_path) = find_wallpaper_engine_executable_path(&before) else {
-        return LiveDesktopWallpaperEnginePopupEnsureResult {
-            detail: format!(
-                "popupOwner=userFallback popupLifecycle=manualFallback popupWindowName={} error=wallpaperEngineExecutableNotFound",
-                plan.window_name
-            ),
-            close_command: None,
-        };
-    };
-    report_live_desktop_renderer_startup_progress(
-        progress_sender,
-        format!(
-            "Querying Wallpaper Engine current wallpaper through {}",
-            executable_path.display()
-        ),
-    );
-    let wallpaper_query = match read_wallpaper_engine_current_wallpaper_path(
-        &executable_path,
-        plan.monitor_index,
-    ) {
-        Ok(query) => query,
-        Err(error) => {
-            return LiveDesktopWallpaperEnginePopupEnsureResult {
-                detail: format!(
-                    "popupOwner=userFallback popupLifecycle=manualFallback popupWindowName={} error={}",
-                    plan.window_name, error
-                ),
-                close_command: None,
-            };
-        }
-    };
-    let wallpaper_path = wallpaper_query.path;
-
-    report_live_desktop_renderer_startup_progress(
-        progress_sender,
-        format!(
-            "Opening Wallpaper Engine popup {} at {}x{}",
-            plan.window_name, plan.width, plan.height
-        ),
-    );
-    if let Err(error) = open_wallpaper_engine_named_popup(&executable_path, &wallpaper_path, plan) {
-        return LiveDesktopWallpaperEnginePopupEnsureResult {
-            detail: format!(
-                "popupOwner=userFallback popupLifecycle=manualFallback popupWindowName={} wallpaper={} wallpaperSource={} error={}",
-                plan.window_name, wallpaper_path, wallpaper_query.detail, error
-            ),
-            close_command: None,
-        };
-    }
-
-    let deadline = Instant::now() + Duration::from_millis(5_000);
-    while Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(150));
-        let diagnostics = unsafe { probe_windows_live_desktop_windows() };
-        if let Some(created) = find_wallpaper_engine_popup_by_name(&diagnostics, &plan.window_name)
-        {
-            return LiveDesktopWallpaperEnginePopupEnsureResult {
-                detail: format!(
-                    "popupOwner=launchpad popupLifecycle=created popupWindowName={} root={} targetSize={}x{} wallpaper={} wallpaperSource={}",
-                    plan.window_name, created.hwnd, plan.width, plan.height, wallpaper_path, wallpaper_query.detail
-                ),
-                close_command: Some(LiveDesktopWallpaperEnginePopupCloseCommand {
-                    executable_path,
-                    window_name: plan.window_name.clone(),
-                }),
-            };
-        }
-    }
-
-    LiveDesktopWallpaperEnginePopupEnsureResult {
-        detail: format!(
-            "popupOwner=userFallback popupLifecycle=openSentButNotFound popupWindowName={} targetSize={}x{} wallpaper={} wallpaperSource={}",
-            plan.window_name, plan.width, plan.height, wallpaper_path, wallpaper_query.detail
-        ),
-        close_command: Some(LiveDesktopWallpaperEnginePopupCloseCommand {
-            executable_path,
-            window_name: plan.window_name.clone(),
-        }),
-    }
-}
-
-fn find_wallpaper_engine_popup_by_name<'a>(
-    diagnostics: &'a LiveDesktopWindowDiagnostics,
-    window_name: &str,
-) -> Option<&'a LiveDesktopWindowInfo> {
-    diagnostics
-        .windows
-        .iter()
-        .find(|info| info.role == "wallpaperPopup" && info.title == window_name)
-        .or_else(|| {
-            diagnostics
-                .candidates
-                .iter()
-                .find(|info| info.role == "wallpaperPopup" && info.title == window_name)
-        })
-}
-
-#[cfg(target_os = "windows")]
-fn find_wallpaper_engine_executable_path(
-    diagnostics: &LiveDesktopWindowDiagnostics,
-) -> Option<PathBuf> {
-    diagnostics
-        .windows
-        .iter()
-        .chain(diagnostics.candidates.iter())
-        .filter(|info| {
-            info.process_name.eq_ignore_ascii_case("wallpaper64.exe")
-                || info.process_name.eq_ignore_ascii_case("wallpaper32.exe")
-        })
-        .filter_map(|info| read_live_desktop_process_image_path(info.pid).map(PathBuf::from))
-        .find(|path| path.exists())
-        .or_else(find_wallpaper_engine_executable_in_standard_locations)
-}
-
-#[cfg(target_os = "windows")]
-fn find_wallpaper_engine_executable_in_standard_locations() -> Option<PathBuf> {
-    let mut roots = Vec::new();
-    if let Some(path) = env::var_os("ProgramFiles(x86)") {
-        roots.push(PathBuf::from(path));
-    }
-    if let Some(path) = env::var_os("ProgramFiles") {
-        roots.push(PathBuf::from(path));
-    }
-    for root in roots {
-        for relative in [
-            "Steam\\steamapps\\common\\wallpaper_engine\\wallpaper64.exe",
-            "Steam\\steamapps\\common\\wallpaper_engine\\wallpaper32.exe",
-        ] {
-            let path = root.join(relative);
-            if path.exists() {
-                return Some(path);
-            }
-        }
-    }
-    None
-}
-
-#[cfg(target_os = "windows")]
-fn read_wallpaper_engine_current_wallpaper_path(
-    executable_path: &PathBuf,
-    monitor_index: u32,
-) -> Result<LiveDesktopWallpaperEngineWallpaperPath, String> {
-    let config = read_wallpaper_engine_config(executable_path);
-    let (location_candidates, location_detail) =
-        read_wallpaper_engine_location_candidates(config.value.as_ref(), &config.detail);
-    let mut attempts = Vec::new();
-
-    for location in location_candidates.iter().take(16) {
-        let args = vec![
-            "-control".to_string(),
-            "getWallpaper".to_string(),
-            "-location".to_string(),
-            location.clone(),
-        ];
-        let label = format!(
-            "location:{}",
-            truncate_wallpaper_engine_cli_text(location, 64)
-        );
-        if let Some(path) =
-            run_wallpaper_engine_get_wallpaper_attempt(executable_path, label, &args, &mut attempts)
-        {
-            return Ok(LiveDesktopWallpaperEngineWallpaperPath {
-                path,
-                detail: "getWallpaper".to_string(),
-            });
-        }
-    }
-
-    for index in wallpaper_engine_get_wallpaper_monitor_indexes(monitor_index) {
-        let args = vec![
-            "-control".to_string(),
-            "getWallpaper".to_string(),
-            "-monitor".to_string(),
-            index.to_string(),
-        ];
-        if let Some(path) = run_wallpaper_engine_get_wallpaper_attempt(
-            executable_path,
-            format!("monitor:{index}"),
-            &args,
-            &mut attempts,
-        ) {
-            return Ok(LiveDesktopWallpaperEngineWallpaperPath {
-                path,
-                detail: "getWallpaper".to_string(),
-            });
-        }
-    }
-
-    let default_args = vec!["-control".to_string(), "getWallpaper".to_string()];
-    if let Some(path) = run_wallpaper_engine_get_wallpaper_attempt(
-        executable_path,
-        "default".to_string(),
-        &default_args,
-        &mut attempts,
-    ) {
-        return Ok(LiveDesktopWallpaperEngineWallpaperPath {
-            path,
-            detail: "getWallpaper".to_string(),
-        });
-    }
-
-    let attempts_detail = attempts
-        .iter()
-        .map(format_wallpaper_engine_get_wallpaper_attempt)
-        .collect::<Vec<_>>()
-        .join(" | ");
-    if let Some(value) = config.value.as_ref() {
-        if let Some(config_wallpaper) =
-            read_wallpaper_engine_current_wallpaper_path_from_config(value, monitor_index)
-        {
-            return Ok(LiveDesktopWallpaperEngineWallpaperPath {
-                path: config_wallpaper.path,
-                detail: format!(
-                    "{} getWallpaperStdout=empty attempts={}",
-                    config_wallpaper.detail, attempts_detail
-                ),
-            });
-        }
-    }
-
-    Err(format!(
-        "getWallpaperReturnedEmptyPath {location_detail} attempts={attempts_detail}"
-    ))
-}
-
-#[cfg(target_os = "windows")]
-fn read_wallpaper_engine_config(executable_path: &Path) -> LiveDesktopWallpaperEngineConfigRead {
-    let Some(config_path) = executable_path
-        .parent()
-        .map(|directory| directory.join("config.json"))
-    else {
-        return LiveDesktopWallpaperEngineConfigRead {
-            value: None,
-            detail: "config=missingExecutableParent".to_string(),
-        };
-    };
-    if !config_path.exists() {
-        return LiveDesktopWallpaperEngineConfigRead {
-            value: None,
-            detail: format!("configNotFound={}", config_path.display()),
-        };
-    }
-    let content = match fs::read_to_string(&config_path) {
-        Ok(content) => content,
-        Err(error) => {
-            return LiveDesktopWallpaperEngineConfigRead {
-                value: None,
-                detail: format!("configReadFailed={} error={error}", config_path.display()),
-            };
-        }
-    };
-    let value = match serde_json::from_str::<serde_json::Value>(&content) {
-        Ok(value) => value,
-        Err(error) => {
-            return LiveDesktopWallpaperEngineConfigRead {
-                value: None,
-                detail: format!("configParseFailed={} error={error}", config_path.display()),
-            };
-        }
-    };
-    LiveDesktopWallpaperEngineConfigRead {
-        value: Some(value),
-        detail: format!("config={}", config_path.display()),
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn read_wallpaper_engine_location_candidates(
-    config: Option<&serde_json::Value>,
-    config_detail: &str,
-) -> (Vec<String>, String) {
-    let mut candidates = Vec::new();
-    if let Some(config) = config {
-        collect_wallpaper_engine_location_candidates_from_json(config, "", &mut candidates);
-    }
-    let mut seen = HashSet::new();
-    candidates.retain(|candidate| seen.insert(candidate.to_ascii_lowercase()));
-    let total_candidates = candidates.len();
-    candidates.truncate(16);
-    (
-        candidates,
-        format!("{config_detail} locationCandidates={total_candidates}"),
-    )
-}
-
-#[cfg(target_os = "windows")]
-fn read_wallpaper_engine_current_wallpaper_path_from_config(
-    config: &serde_json::Value,
-    monitor_index: u32,
-) -> Option<LiveDesktopWallpaperEngineWallpaperPath> {
-    if let Some(location) = find_wallpaper_engine_config_string(config, "lastselectedmonitor") {
-        if let Some(path) = find_wallpaper_engine_selected_wallpaper_file(config, &location) {
-            return Some(LiveDesktopWallpaperEngineWallpaperPath {
-                path,
-                detail: format!(
-                    "configFallback=lastselectedmonitor location={}",
-                    truncate_wallpaper_engine_cli_text(&location, 64)
-                ),
-            });
-        }
-    }
-
-    let display_location = format!("//./DISPLAY{}", monitor_index + 1);
-    if let Some(path) = find_wallpaper_engine_selected_wallpaper_file(config, &display_location) {
-        return Some(LiveDesktopWallpaperEngineWallpaperPath {
-            path,
-            detail: format!("configFallback=displayAlias location={display_location}"),
-        });
-    }
-
-    find_first_wallpaper_engine_selected_wallpaper_file(config).map(|path| {
-        LiveDesktopWallpaperEngineWallpaperPath {
-            path,
-            detail: "configFallback=firstSelectedWallpaper".to_string(),
-        }
-    })
-}
-
-#[cfg(target_os = "windows")]
-fn find_wallpaper_engine_config_string(
-    value: &serde_json::Value,
-    leaf_key: &str,
-) -> Option<String> {
-    match value {
-        serde_json::Value::Object(object) => {
-            for (key, child) in object {
-                if key.eq_ignore_ascii_case(leaf_key) {
-                    if let Some(text) = child.as_str() {
-                        return Some(text.trim().to_string());
-                    }
-                }
-                if let Some(found) = find_wallpaper_engine_config_string(child, leaf_key) {
-                    return Some(found);
-                }
-            }
-            None
-        }
-        serde_json::Value::Array(items) => items
-            .iter()
-            .find_map(|item| find_wallpaper_engine_config_string(item, leaf_key)),
-        _ => None,
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn find_wallpaper_engine_selected_wallpaper_file(
-    value: &serde_json::Value,
-    location: &str,
-) -> Option<String> {
-    match value {
-        serde_json::Value::Object(object) => {
-            if let Some(selected) = object
-                .get("selectedwallpapers")
-                .and_then(|value| value.as_object())
-            {
-                if let Some(file) = selected
-                    .get(location)
-                    .and_then(|entry| entry.get("file"))
-                    .and_then(|file| file.as_str())
-                    .map(|file| file.trim().to_string())
-                    .filter(|file| !file.is_empty())
-                {
-                    return Some(file);
-                }
-            }
-            object
-                .values()
-                .find_map(|child| find_wallpaper_engine_selected_wallpaper_file(child, location))
-        }
-        serde_json::Value::Array(items) => items
-            .iter()
-            .find_map(|item| find_wallpaper_engine_selected_wallpaper_file(item, location)),
-        _ => None,
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn find_first_wallpaper_engine_selected_wallpaper_file(
-    value: &serde_json::Value,
-) -> Option<String> {
-    match value {
-        serde_json::Value::Object(object) => {
-            if let Some(selected) = object
-                .get("selectedwallpapers")
-                .and_then(|value| value.as_object())
-            {
-                if let Some(file) = selected
-                    .values()
-                    .find_map(|entry| entry.get("file"))
-                    .and_then(|file| file.as_str())
-                    .map(|file| file.trim().to_string())
-                    .filter(|file| !file.is_empty())
-                {
-                    return Some(file);
-                }
-            }
-            object
-                .values()
-                .find_map(find_first_wallpaper_engine_selected_wallpaper_file)
-        }
-        serde_json::Value::Array(items) => items
-            .iter()
-            .find_map(find_first_wallpaper_engine_selected_wallpaper_file),
-        _ => None,
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn collect_wallpaper_engine_location_candidates_from_json(
-    value: &serde_json::Value,
-    key_hint: &str,
-    candidates: &mut Vec<String>,
-) {
-    match value {
-        serde_json::Value::Object(object) => {
-            for (key, child) in object {
-                let next_key_hint = if key_hint.is_empty() {
-                    key.to_string()
-                } else {
-                    format!("{key_hint}.{key}")
-                };
-                collect_wallpaper_engine_location_candidates_from_json(
-                    child,
-                    &next_key_hint,
-                    candidates,
-                );
-            }
-        }
-        serde_json::Value::Array(items) => {
-            for item in items {
-                collect_wallpaper_engine_location_candidates_from_json(item, key_hint, candidates);
-            }
-        }
-        serde_json::Value::String(text)
-            if is_wallpaper_engine_location_candidate(key_hint, text) =>
-        {
-            candidates.push(text.trim().to_string());
-        }
-        _ => {}
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn is_wallpaper_engine_location_candidate(key_hint: &str, value: &str) -> bool {
-    let value = value.trim();
-    if value.is_empty() || value.len() > 512 {
-        return false;
-    }
-
-    let key_hint = key_hint.to_ascii_lowercase();
-    let leaf_key = key_hint.rsplit('.').next().unwrap_or(&key_hint);
-    let value_lower = value.to_ascii_lowercase();
-    let value_looks_relevant = value_lower.contains("display") || value_lower.contains("monitor");
-    let leaf_can_hold_location = matches!(
-        leaf_key,
-        "location" | "deviceid" | "displayid" | "monitorid" | "lastselectedmonitor"
-    );
-    if !value_looks_relevant && !leaf_can_hold_location {
-        return false;
-    }
-    if matches!(
-        value_lower.as_str(),
-        "default" | "devicepath" | "pause" | "run" | "stop"
-    ) {
-        return false;
-    }
-
-    let looks_like_wallpaper_path = value_lower.contains(":\\")
-        || value_lower.contains('/')
-        || [
-            ".json", ".pkg", ".mp4", ".webm", ".html", ".jpg", ".jpeg", ".png", ".exe",
-        ]
-        .iter()
-        .any(|extension| value_lower.ends_with(extension));
-    if looks_like_wallpaper_path && !value_looks_relevant {
-        return false;
-    }
-
-    true
-}
-
-#[cfg(target_os = "windows")]
-fn wallpaper_engine_get_wallpaper_monitor_indexes(preferred_index: u32) -> Vec<u32> {
-    let mut indexes = vec![preferred_index];
-    for index in 0..4 {
-        if !indexes.contains(&index) {
-            indexes.push(index);
-        }
-    }
-    indexes
-}
-
-#[cfg(target_os = "windows")]
-fn run_wallpaper_engine_get_wallpaper_attempt(
-    executable_path: &PathBuf,
-    label: String,
-    args: &[String],
-    attempts: &mut Vec<LiveDesktopWallpaperEngineGetWallpaperAttempt>,
-) -> Option<String> {
-    let output = wallpaper_engine_command(executable_path)
-        .args(args)
-        .output();
-    let attempt = match output {
-        Ok(output) => LiveDesktopWallpaperEngineGetWallpaperAttempt {
-            label,
-            success: output.status.success(),
-            status_code: output.status.code(),
-            stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
-            error: None,
-        },
-        Err(error) => LiveDesktopWallpaperEngineGetWallpaperAttempt {
-            label,
-            success: false,
-            status_code: None,
-            stdout: String::new(),
-            stderr: String::new(),
-            error: Some(error.to_string()),
-        },
-    };
-    let path = attempt
-        .success
-        .then_some(())
-        .and_then(|_| (!attempt.stdout.is_empty()).then(|| attempt.stdout.clone()));
-    attempts.push(attempt);
-    path
-}
-
-#[cfg(target_os = "windows")]
-fn format_wallpaper_engine_get_wallpaper_attempt(
-    attempt: &LiveDesktopWallpaperEngineGetWallpaperAttempt,
-) -> String {
-    let stdout = if attempt.stdout.is_empty() {
-        "empty".to_string()
-    } else {
-        truncate_wallpaper_engine_cli_text(&attempt.stdout, 96)
-    };
-    let stderr = if attempt.stderr.is_empty() {
-        "empty".to_string()
-    } else {
-        truncate_wallpaper_engine_cli_text(&attempt.stderr, 96)
-    };
-    let error = attempt
-        .error
-        .as_ref()
-        .map(|error| truncate_wallpaper_engine_cli_text(error, 96))
-        .unwrap_or_else(|| "none".to_string());
-    format!(
-        "{}:success={},status={:?},stdout={},stderr={},error={}",
-        attempt.label, attempt.success, attempt.status_code, stdout, stderr, error
-    )
-}
-
-#[cfg(target_os = "windows")]
-fn truncate_wallpaper_engine_cli_text(value: &str, max_chars: usize) -> String {
-    let value = value.trim();
-    let mut output = value.chars().take(max_chars).collect::<String>();
-    if value.chars().count() > max_chars {
-        output.push_str("...");
-    }
-    output
-}
-
-#[cfg(target_os = "windows")]
-fn wallpaper_engine_command(executable_path: &PathBuf) -> Command {
-    let mut command = Command::new(executable_path);
-    if let Some(directory) = executable_path.parent() {
-        command.current_dir(directory);
-    }
-    command
-}
-
-#[cfg(target_os = "windows")]
-fn open_wallpaper_engine_named_popup(
-    executable_path: &PathBuf,
-    wallpaper_path: &str,
-    plan: &LiveDesktopWallpaperEnginePopupPlan,
-) -> Result<(), String> {
-    let width = plan.width.to_string();
-    let height = plan.height.to_string();
-    let x = plan.x.to_string();
-    let y = plan.y.to_string();
-    let output = Command::new(executable_path)
-        .args([
-            "-control",
-            "openWallpaper",
-            "-file",
-            wallpaper_path,
-            "-playInWindow",
-            &plan.window_name,
-            "-width",
-            &width,
-            "-height",
-            &height,
-            "-x",
-            &x,
-            "-y",
-            &y,
-            "-borderless",
-        ])
-        .output()
-        .map_err(|error| format!("openWallpaperLaunchFailed={error}"))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(format!(
-            "openWallpaperFailed=status {:?} stderr={}",
-            output.status.code(),
-            String::from_utf8_lossy(&output.stderr).trim()
-        ))
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn close_wallpaper_engine_named_popup(
-    command: &LiveDesktopWallpaperEnginePopupCloseCommand,
-) -> Result<(), String> {
-    let output = Command::new(&command.executable_path)
-        .args([
-            "-control",
-            "closeWallpaper",
-            "-location",
-            &command.window_name,
-        ])
-        .output()
-        .map_err(|error| format!("closeWallpaperLaunchFailed={error}"))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(format!(
-            "closeWallpaperFailed=status {:?} stderr={}",
-            output.status.code(),
-            String::from_utf8_lossy(&output.stderr).trim()
-        ))
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn cleanup_wallpaper_engine_popup_after_failed_capture(
-    ensure: &mut LiveDesktopWallpaperEnginePopupEnsureResult,
-) -> String {
-    let Some(command) = ensure.close_command.take() else {
-        return String::new();
-    };
-    match close_wallpaper_engine_named_popup(&command) {
-        Ok(()) => "; launchpad popup closed after failed WGC attempts".to_string(),
-        Err(error) => format!("; {error}"),
-    }
-}
-
-fn format_wallpaper_engine_popup_runtime_detail(
-    ensure_detail: &str,
-    prepare_detail: &str,
-) -> String {
-    [ensure_detail, prepare_detail]
-        .into_iter()
-        .filter(|detail| !detail.trim().is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn push_live_desktop_wgc_target(
-    targets: &mut Vec<LiveDesktopWindowInfo>,
-    seen: &mut std::collections::HashSet<String>,
-    info: &LiveDesktopWindowInfo,
-) {
-    if info.hwnd.is_empty() || !seen.insert(info.hwnd.clone()) {
-        return;
-    }
-    targets.push(info.clone());
-}
-
 fn format_live_desktop_wgc_attempt(info: &LiveDesktopWindowInfo, result: String) -> String {
     format!(
         "{} role={} class={} process={} reason={} parent={} root={} visible={} style={} exStyle={} cloaked={} rect={}x{} result={}",
@@ -4395,46 +3742,6 @@ fn live_desktop_window_style_mask<const N: usize>(parts: [u32; N]) -> isize {
         .fold(0usize, |mask, part| mask | part as usize) as isize
 }
 
-fn wallpaper_engine_popup_root_for_target<'a>(
-    target: &'a LiveDesktopWindowInfo,
-    diagnostics: &'a LiveDesktopWindowDiagnostics,
-) -> Option<&'a LiveDesktopWindowInfo> {
-    if target.role == "wallpaperPopup" {
-        return Some(target);
-    }
-    diagnostics
-        .windows
-        .iter()
-        .find(|info| info.hwnd == target.parent_hwnd && info.role == "wallpaperPopup")
-        .or_else(|| {
-            diagnostics
-                .windows
-                .iter()
-                .find(|info| info.hwnd == target.root_hwnd && info.role == "wallpaperPopup")
-        })
-}
-
-fn collect_wallpaper_engine_mouse_relay_targets(
-    target: &LiveDesktopWindowInfo,
-    diagnostics: &LiveDesktopWindowDiagnostics,
-) -> Vec<LiveDesktopWindowInfo> {
-    let mut targets = Vec::new();
-    let mut seen = std::collections::HashSet::<String>::new();
-    let Some(popup) = wallpaper_engine_popup_root_for_target(target, diagnostics) else {
-        push_live_desktop_wgc_target(&mut targets, &mut seen, target);
-        return targets;
-    };
-
-    for info in diagnostics.windows.iter().filter(|info| {
-        info.parent_hwnd == popup.hwnd && is_wallpaper_engine_popup_content_window(info)
-    }) {
-        push_live_desktop_wgc_target(&mut targets, &mut seen, info);
-    }
-    push_live_desktop_wgc_target(&mut targets, &mut seen, popup);
-    push_live_desktop_wgc_target(&mut targets, &mut seen, target);
-    targets
-}
-
 #[cfg(target_os = "windows")]
 fn live_desktop_effective_frame_source_label(
     window_capture: Option<&LiveDesktopWindowCapture>,
@@ -4535,6 +3842,14 @@ fn update_live_desktop_diagnostics(
     if let Ok(mut diagnostics) = diagnostics.lock() {
         update(&mut diagnostics);
     }
+}
+
+fn push_live_desktop_recent_error(diagnostics: &mut LiveDesktopRuntimeDiagnostics, detail: &str) {
+    if diagnostics.recent_errors.len() >= LIVE_DESKTOP_RECENT_ERROR_LIMIT {
+        diagnostics.recent_errors.pop_front();
+    }
+    diagnostics.recent_errors.push_back(detail.to_string());
+    diagnostics.last_error = detail.to_string();
 }
 
 #[cfg(target_os = "windows")]
@@ -4673,7 +3988,7 @@ fn record_live_desktop_pixel_probe_error(
 ) {
     update_live_desktop_diagnostics(diagnostics, |diagnostics| {
         diagnostics.pixel_probe_errors += 1;
-        diagnostics.last_error = detail.to_string();
+        push_live_desktop_recent_error(diagnostics, detail);
     });
 }
 
@@ -4684,7 +3999,7 @@ fn record_live_desktop_blank_frame_skipped(
 ) {
     update_live_desktop_diagnostics(diagnostics, |diagnostics| {
         diagnostics.blank_frame_skips += 1;
-        diagnostics.last_error = format!(
+        let detail = format!(
             "Skipped suspected blank WGC frame: {}x{} rgb max {} avg {} alpha max {} avg {}",
             probe.width,
             probe.height,
@@ -4693,6 +4008,7 @@ fn record_live_desktop_blank_frame_skipped(
             probe.max_alpha,
             probe.avg_alpha
         );
+        push_live_desktop_recent_error(diagnostics, &detail);
     });
 }
 
@@ -4714,7 +4030,7 @@ fn record_live_desktop_copy_error(
 ) {
     update_live_desktop_diagnostics(diagnostics, |diagnostics| {
         diagnostics.copy_errors += 1;
-        diagnostics.last_error = detail.to_string();
+        push_live_desktop_recent_error(diagnostics, detail);
     });
 }
 
@@ -4725,7 +4041,7 @@ fn record_live_desktop_commit_error(
 ) {
     update_live_desktop_diagnostics(diagnostics, |diagnostics| {
         diagnostics.commit_errors += 1;
-        diagnostics.last_error = detail.to_string();
+        push_live_desktop_recent_error(diagnostics, detail);
     });
 }
 
@@ -4743,7 +4059,17 @@ fn record_live_desktop_config_error(
 ) {
     update_live_desktop_diagnostics(diagnostics, |diagnostics| {
         diagnostics.config_errors += 1;
-        diagnostics.last_error = detail.to_string();
+        push_live_desktop_recent_error(diagnostics, detail);
+    });
+}
+
+#[cfg(target_os = "windows")]
+fn record_live_desktop_frame_pump_circuit_breaker(
+    diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
+    detail: &str,
+) {
+    update_live_desktop_diagnostics(diagnostics, |diagnostics| {
+        push_live_desktop_recent_error(diagnostics, detail);
     });
 }
 
@@ -5436,12 +4762,14 @@ unsafe fn create_live_desktop_renderer_resources(
                 config,
                 diagnostics,
                 test_pattern: LiveDesktopTestPatternState::default(),
+                visible: true,
+                consecutive_frame_errors: 0,
                 source_width,
                 source_height,
                 _com: com,
                 _d3d_device: d3d.device,
                 _d3d_context: d3d.context,
-                _window_capture: window_capture,
+                window_capture,
                 _composition_device: composition_device,
                 _blur_effect: blur_effect,
                 _color_matrix_effect: color_matrix_effect,
@@ -5944,9 +5272,10 @@ unsafe fn create_live_desktop_window_capture(
             popup_close_command,
             mouse_relay,
             frame_crop,
+            diagnostics: Arc::clone(&diagnostics),
             _item: item,
             frame_pool,
-            _session: session,
+            session,
             frame_arrived_receiver,
             frame_arrived_token,
             _frame_arrived_handler: frame_arrived_handler,
@@ -6353,297 +5682,6 @@ unsafe fn copy_window_capture_frame_to_composition_surface(
         (Err(error), _) => Err(error),
         (Ok(_), Err(error)) => Err(error),
     }
-}
-
-#[cfg(target_os = "windows")]
-fn make_live_desktop_test_pattern_pixels(width: u32, height: u32) -> Vec<u8> {
-    let width_usize = width as usize;
-    let height_usize = height as usize;
-    let mut pixels = vec![0u8; width_usize.saturating_mul(height_usize).saturating_mul(4)];
-    let cell = (width.min(height) / 12).max(24) as usize;
-    let dark = [28, 28, 28, 255];
-    let light = [214, 214, 214, 255];
-    let accent = [255, 255, 0, 255];
-
-    for y in 0..height_usize {
-        for x in 0..width_usize {
-            let checker = ((x / cell) + (y / cell)) % 2 == 0;
-            let color = if checker { light } else { dark };
-            set_live_desktop_test_pattern_pixel(&mut pixels, width_usize, x, y, color);
-        }
-    }
-
-    let corner = (width.min(height) / 7).max(72) as usize;
-    fill_live_desktop_test_pattern_rect(
-        &mut pixels,
-        width_usize,
-        height_usize,
-        0,
-        0,
-        corner,
-        corner,
-        [64, 0, 255, 255],
-    );
-    fill_live_desktop_test_pattern_rect(
-        &mut pixels,
-        width_usize,
-        height_usize,
-        width_usize.saturating_sub(corner),
-        0,
-        corner,
-        corner,
-        [48, 220, 0, 255],
-    );
-    fill_live_desktop_test_pattern_rect(
-        &mut pixels,
-        width_usize,
-        height_usize,
-        0,
-        height_usize.saturating_sub(corner),
-        corner,
-        corner,
-        [255, 80, 16, 255],
-    );
-    fill_live_desktop_test_pattern_rect(
-        &mut pixels,
-        width_usize,
-        height_usize,
-        width_usize.saturating_sub(corner),
-        height_usize.saturating_sub(corner),
-        corner,
-        corner,
-        [0, 220, 255, 255],
-    );
-
-    let bar_width = (width_usize / 24).max(18);
-    let bar_x = width_usize / 5;
-    fill_live_desktop_test_pattern_rect(
-        &mut pixels,
-        width_usize,
-        height_usize,
-        bar_x,
-        0,
-        bar_width.min(width_usize.saturating_sub(bar_x)),
-        height_usize,
-        [255, 255, 255, 255],
-    );
-
-    let cross = (width.min(height) / 180).max(4) as usize;
-    fill_live_desktop_test_pattern_rect(
-        &mut pixels,
-        width_usize,
-        height_usize,
-        (width_usize / 2).saturating_sub(cross / 2),
-        0,
-        cross,
-        height_usize,
-        accent,
-    );
-    fill_live_desktop_test_pattern_rect(
-        &mut pixels,
-        width_usize,
-        height_usize,
-        0,
-        (height_usize / 2).saturating_sub(cross / 2),
-        width_usize,
-        cross,
-        accent,
-    );
-
-    draw_live_desktop_test_pattern_counter(&mut pixels, width_usize, height_usize, 0);
-    draw_live_desktop_test_pattern_binary_bar(&mut pixels, width_usize, height_usize);
-    pixels
-}
-
-#[cfg(target_os = "windows")]
-fn set_live_desktop_test_pattern_pixel(
-    pixels: &mut [u8],
-    width: usize,
-    x: usize,
-    y: usize,
-    color: [u8; 4],
-) {
-    let offset = y.saturating_mul(width).saturating_add(x).saturating_mul(4);
-    if offset + 3 >= pixels.len() {
-        return;
-    }
-    pixels[offset] = color[0];
-    pixels[offset + 1] = color[1];
-    pixels[offset + 2] = color[2];
-    pixels[offset + 3] = color[3];
-}
-
-#[cfg(target_os = "windows")]
-fn fill_live_desktop_test_pattern_rect(
-    pixels: &mut [u8],
-    width: usize,
-    height: usize,
-    left: usize,
-    top: usize,
-    rect_width: usize,
-    rect_height: usize,
-    color: [u8; 4],
-) {
-    let right = left.saturating_add(rect_width).min(width);
-    let bottom = top.saturating_add(rect_height).min(height);
-    for y in top..bottom {
-        for x in left..right {
-            set_live_desktop_test_pattern_pixel(pixels, width, x, y, color);
-        }
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn draw_live_desktop_test_pattern_counter(
-    pixels: &mut [u8],
-    width: usize,
-    height: usize,
-    value: u64,
-) {
-    let text = format!("{value:05}");
-    let scale = (width.min(height) / 72).max(5);
-    let digit_width = scale * 5;
-    let gap = scale * 2;
-    let total_width = text.len() * digit_width + text.len().saturating_sub(1) * gap;
-    let start_x = width.saturating_sub(total_width) / 2;
-    let start_y = (height / 9).min(height.saturating_sub(scale * 11));
-    fill_live_desktop_test_pattern_rect(
-        pixels,
-        width,
-        height,
-        start_x.saturating_sub(scale),
-        start_y.saturating_sub(scale),
-        total_width + scale * 2,
-        scale * 11,
-        [0, 0, 0, 220],
-    );
-    for (index, digit) in text.bytes().enumerate() {
-        draw_live_desktop_test_pattern_digit(
-            pixels,
-            width,
-            height,
-            (digit - b'0') as usize,
-            start_x + index * (digit_width + gap),
-            start_y,
-            scale,
-            [255, 255, 255, 255],
-        );
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn draw_live_desktop_test_pattern_digit(
-    pixels: &mut [u8],
-    width: usize,
-    height: usize,
-    digit: usize,
-    x: usize,
-    y: usize,
-    scale: usize,
-    color: [u8; 4],
-) {
-    const SEGMENTS: [[bool; 7]; 10] = [
-        [true, true, true, true, true, true, false],
-        [false, true, true, false, false, false, false],
-        [true, true, false, true, true, false, true],
-        [true, true, true, true, false, false, true],
-        [false, true, true, false, false, true, true],
-        [true, false, true, true, false, true, true],
-        [true, false, true, true, true, true, true],
-        [true, true, true, false, false, false, false],
-        [true, true, true, true, true, true, true],
-        [true, true, true, true, false, true, true],
-    ];
-    let Some(segments) = SEGMENTS.get(digit) else {
-        return;
-    };
-    let thickness = scale.max(2);
-    let long = scale * 5;
-    let short = scale * 4;
-    let segment_rects = [
-        (x, y, long, thickness),
-        (x + long - thickness, y, thickness, short),
-        (x + long - thickness, y + short, thickness, short),
-        (x, y + short * 2, long, thickness),
-        (x, y + short, thickness, short),
-        (x, y, thickness, short),
-        (x, y + short, long, thickness),
-    ];
-    for (enabled, rect) in segments.iter().zip(segment_rects) {
-        if *enabled {
-            fill_live_desktop_test_pattern_rect(
-                pixels, width, height, rect.0, rect.1, rect.2, rect.3, color,
-            );
-        }
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn draw_live_desktop_test_pattern_binary_bar(pixels: &mut [u8], width: usize, height: usize) {
-    let bits = 16usize;
-    let gap = (width / 260).max(2);
-    let bar_width = ((width / 3).max(bits * 8) - gap * (bits - 1)) / bits;
-    let bar_height = (height / 28).max(14);
-    let total_width = bits * bar_width + (bits - 1) * gap;
-    let start_x = width.saturating_sub(total_width) / 2;
-    let y = height.saturating_sub(bar_height * 2);
-    for bit in 0..bits {
-        let enabled = bit % 2 == 0;
-        fill_live_desktop_test_pattern_rect(
-            pixels,
-            width,
-            height,
-            start_x + bit * (bar_width + gap),
-            y,
-            bar_width,
-            bar_height,
-            if enabled {
-                [32, 255, 255, 255]
-            } else {
-                [24, 24, 24, 255]
-            },
-        );
-    }
-}
-
-#[cfg(target_os = "windows")]
-unsafe fn draw_live_desktop_test_pattern_to_composition_surface(
-    swap_chain: &LiveDesktopCompositionSwapChain,
-    context: &ID3D11DeviceContext,
-    _state: &mut LiveDesktopTestPatternState,
-) -> Result<LiveDesktopFrameProbe, String> {
-    let target_texture = unsafe { swap_chain.back_buffer("Test pattern") }?;
-    let mut desc = D3D11_TEXTURE2D_DESC::default();
-    unsafe { target_texture.GetDesc(&mut desc) };
-    if desc.Width == 0 || desc.Height == 0 {
-        return Err("Test pattern target texture has invalid size".to_string());
-    }
-    let target_resource = target_texture
-        .cast::<ID3D11Resource>()
-        .map_err(|error| format!("Test pattern target texture resource cast failed: {error}"))?;
-    let pixels = make_live_desktop_test_pattern_pixels(desc.Width, desc.Height);
-    unsafe {
-        context.UpdateSubresource(
-            &target_resource,
-            0,
-            None,
-            pixels.as_ptr() as *const std::ffi::c_void,
-            desc.Width * 4,
-            0,
-        )
-    };
-
-    Ok(LiveDesktopFrameProbe {
-        supports_frame_texture: true,
-        width: desc.Width,
-        height: desc.Height,
-        format: desc.Format.0,
-        reason: "testPattern",
-        detail: format!(
-            "Drew DirectComposition swap chain static test pattern {}x{} format {}",
-            desc.Width, desc.Height, desc.Format.0
-        ),
-    })
 }
 
 #[cfg(target_os = "windows")]
@@ -7314,11 +6352,9 @@ mod tests {
     fn test_live_desktop_effect_plan() -> LiveDesktopEffectPlan {
         LiveDesktopEffectPlan {
             effect: LiveDesktopBackgroundEffect::Blur,
-            opacity: 1.0,
             blur: LiveDesktopBlurEffectPlan {
                 kernel: LiveDesktopBlurKernel::DualKawase,
                 gaussian_radius_px: 4.0,
-                strength: 72,
                 render_max_width: 960,
                 render_max_height: 540,
                 pass_count: 4,
@@ -7353,6 +6389,65 @@ mod tests {
 
         assert!(summary.contains("shaderCopyFallbacks=2"));
         assert!(summary.contains("lastShaderCopyError=shader failed"));
+    }
+
+    #[test]
+    fn runtime_diagnostics_recent_errors_keep_latest_entries() {
+        let mut diagnostics = LiveDesktopRuntimeDiagnostics::default();
+        for index in 0..(LIVE_DESKTOP_RECENT_ERROR_LIMIT + 3) {
+            push_live_desktop_recent_error(&mut diagnostics, &format!("error {index}"));
+        }
+
+        assert_eq!(
+            diagnostics.recent_errors.len(),
+            LIVE_DESKTOP_RECENT_ERROR_LIMIT
+        );
+        assert_eq!(diagnostics.recent_errors.front().unwrap(), "error 3");
+        assert_eq!(
+            diagnostics.recent_errors.back().unwrap(),
+            &format!("error {}", LIVE_DESKTOP_RECENT_ERROR_LIMIT + 2)
+        );
+        assert_eq!(
+            diagnostics.last_error,
+            format!("error {}", LIVE_DESKTOP_RECENT_ERROR_LIMIT + 2)
+        );
+    }
+
+    #[test]
+    fn live_desktop_frame_pump_visibility_gate_waits_without_copying_when_hidden() {
+        let (_stop_sender, stop_receiver) = mpsc::channel();
+
+        assert_eq!(
+            live_desktop_frame_pump_visibility_action(
+                true,
+                &stop_receiver,
+                Duration::from_millis(0)
+            ),
+            LiveDesktopFramePumpAction::PumpFrame
+        );
+        assert_eq!(
+            live_desktop_frame_pump_visibility_action(
+                false,
+                &stop_receiver,
+                Duration::from_millis(0)
+            ),
+            LiveDesktopFramePumpAction::WaitForVisibility
+        );
+    }
+
+    #[test]
+    fn live_desktop_frame_pump_visibility_gate_stops_while_hidden() {
+        let (stop_sender, stop_receiver) = mpsc::channel();
+        stop_sender.send(()).unwrap();
+
+        assert_eq!(
+            live_desktop_frame_pump_visibility_action(
+                false,
+                &stop_receiver,
+                Duration::from_millis(0)
+            ),
+            LiveDesktopFramePumpAction::Stop
+        );
     }
 
     #[test]
@@ -7571,10 +6666,8 @@ mod tests {
             effect_plan.effect,
             LiveDesktopBackgroundEffect::AcrylicWebgl
         );
-        assert!((effect_plan.opacity - 0.37).abs() < 0.001);
         assert_eq!(effect_plan.blur.kernel, LiveDesktopBlurKernel::Gaussian);
         assert!((effect_plan.blur.gaussian_radius_px - 20.0).abs() < 0.001);
-        assert_eq!(effect_plan.blur.strength, 72);
         assert_eq!(effect_plan.blur.render_max_width, 960);
         assert!((effect_plan.blur.offset_scale - 1.275).abs() < 0.001);
         assert_eq!(effect_plan.blur.down_offsets.len(), 4);
@@ -7776,213 +6869,6 @@ mod tests {
         assert!(is_live_desktop_root_class("workerw"));
         assert!(!is_live_desktop_root_class("Chrome_WidgetWin_1"));
         assert!(!is_live_desktop_root_class("CabinetWClass"));
-    }
-
-    #[test]
-    fn wallpaper_engine_popup_wgc_targets_prefer_popup_content_window() {
-        fn info(
-            hwnd: &str,
-            parent_hwnd: &str,
-            role: &str,
-            reason: &str,
-            class_name: &str,
-        ) -> LiveDesktopWindowInfo {
-            LiveDesktopWindowInfo {
-                hwnd: hwnd.to_string(),
-                parent_hwnd: parent_hwnd.to_string(),
-                root_hwnd: if parent_hwnd.is_empty() {
-                    hwnd.to_string()
-                } else {
-                    parent_hwnd.to_string()
-                },
-                role: role.to_string(),
-                candidate_reason: reason.to_string(),
-                class_name: class_name.to_string(),
-                visible: true,
-                rect: LiveDesktopWindowRect {
-                    width: 1920,
-                    height: 1080,
-                    ..LiveDesktopWindowRect::default()
-                },
-                ..LiveDesktopWindowInfo::default()
-            }
-        }
-
-        let popup = info(
-            "0x400",
-            "",
-            "wallpaperPopup",
-            "wallpaperPopup",
-            "WPEOverlappedWallpaper",
-        );
-        let mut launchpad_popup = info(
-            "0x500",
-            "",
-            "wallpaperPopup",
-            "wallpaperPopup",
-            "WPEOverlappedWallpaper",
-        );
-        launchpad_popup.title = "LaunchPad::LiveDesktop::display0::1920x1080".to_string();
-        let popup_child = info(
-            "0x401",
-            "0x400",
-            "window",
-            "wallpaperProcessOrTitle",
-            "WPEDesktopDX11Window",
-        );
-        let launchpad_popup_child = info(
-            "0x501",
-            "0x500",
-            "window",
-            "wallpaperProcessOrTitle",
-            "WPEDesktopDX11Window",
-        );
-        let wallpaper_child = info(
-            "0x300",
-            "0x200",
-            "desktopChild",
-            "wallpaperProcessOrTitle",
-            "WPEDesktopDX11Window",
-        );
-        let workerw = info("0x200", "", "workerw", "workerwLayer", "WorkerW");
-        let diagnostics = LiveDesktopWindowDiagnostics {
-            platform: "windows",
-            available: true,
-            reason: "available",
-            detail: String::new(),
-            window_count: 6,
-            candidate_count: 6,
-            windows: vec![
-                workerw.clone(),
-                wallpaper_child.clone(),
-                popup.clone(),
-                popup_child.clone(),
-                launchpad_popup.clone(),
-                launchpad_popup_child.clone(),
-            ],
-            candidates: vec![
-                wallpaper_child,
-                workerw,
-                popup,
-                popup_child,
-                launchpad_popup,
-                launchpad_popup_child,
-            ],
-        };
-
-        let targets = collect_wallpaper_engine_popup_wgc_targets(&diagnostics, None);
-        let hwnds: Vec<&str> = targets.iter().map(|info| info.hwnd.as_str()).collect();
-        assert_eq!(hwnds, vec!["0x401", "0x501", "0x400", "0x500"]);
-
-        let preferred_targets = collect_wallpaper_engine_popup_wgc_targets(
-            &diagnostics,
-            Some("LaunchPad::LiveDesktop::display0::1920x1080"),
-        );
-        let preferred_hwnds: Vec<&str> = preferred_targets
-            .iter()
-            .map(|info| info.hwnd.as_str())
-            .collect();
-        assert_eq!(preferred_hwnds, vec!["0x501", "0x500", "0x401", "0x400"]);
-
-        let relay_root = diagnostics
-            .windows
-            .iter()
-            .find(|info| info.hwnd == "0x500")
-            .unwrap();
-        let relay_targets = collect_wallpaper_engine_mouse_relay_targets(relay_root, &diagnostics);
-        let relay_hwnds: Vec<&str> = relay_targets
-            .iter()
-            .map(|info| info.hwnd.as_str())
-            .collect();
-        assert_eq!(relay_hwnds, vec!["0x501", "0x500"]);
-    }
-
-    #[test]
-    fn wallpaper_engine_config_location_candidates_are_extracted_recursively() {
-        let config = serde_json::json!({
-            "monitors": [
-                {
-                    "deviceId": "\\\\?\\DISPLAY#AAA",
-                    "wallpaper": "C:\\Steam\\wallpapers\\scene.json"
-                },
-                {
-                    "location": "DISPLAY2",
-                    "name": "secondary"
-                }
-            ],
-            "selectedDisplay": "MONITOR-PRIMARY"
-        });
-        let mut candidates = Vec::new();
-        collect_wallpaper_engine_location_candidates_from_json(&config, "", &mut candidates);
-
-        assert_eq!(
-            candidates,
-            vec!["\\\\?\\DISPLAY#AAA", "DISPLAY2", "MONITOR-PRIMARY"]
-        );
-    }
-
-    #[test]
-    fn wallpaper_engine_location_candidate_filter_rejects_wallpaper_paths() {
-        assert!(is_wallpaper_engine_location_candidate(
-            "monitors.0.deviceId",
-            "\\\\?\\DISPLAY#AAA"
-        ));
-        assert!(is_wallpaper_engine_location_candidate(
-            "monitors.0.location",
-            "DISPLAY1"
-        ));
-        assert!(!is_wallpaper_engine_location_candidate(
-            "monitors.0.wallpaper",
-            "C:\\Steam\\wallpapers\\scene.json"
-        ));
-        assert!(!is_wallpaper_engine_location_candidate(
-            "general.theme",
-            "dark"
-        ));
-    }
-
-    #[test]
-    fn wallpaper_engine_config_wallpaper_path_prefers_last_selected_monitor() {
-        let config = serde_json::json!({
-            "user": {
-                "lastselectedmonitor": "//?/DISPLAY#CURRENT"
-            },
-            "wallpaperconfig": {
-                "selectedwallpapers": {
-                    "//./DISPLAY1": {
-                        "file": "D:/Steam/old/scene.pkg"
-                    },
-                    "//?/DISPLAY#CURRENT": {
-                        "file": "D:/Steam/current/scene.pkg"
-                    }
-                }
-            }
-        });
-
-        let wallpaper =
-            read_wallpaper_engine_current_wallpaper_path_from_config(&config, 0).unwrap();
-
-        assert_eq!(wallpaper.path, "D:/Steam/current/scene.pkg");
-        assert!(wallpaper.detail.contains("lastselectedmonitor"));
-    }
-
-    #[test]
-    fn wallpaper_engine_config_wallpaper_path_falls_back_to_display_alias() {
-        let config = serde_json::json!({
-            "wallpaperconfig": {
-                "selectedwallpapers": {
-                    "//./DISPLAY2": {
-                        "file": "D:/Steam/display2/scene.pkg"
-                    }
-                }
-            }
-        });
-
-        let wallpaper =
-            read_wallpaper_engine_current_wallpaper_path_from_config(&config, 1).unwrap();
-
-        assert_eq!(wallpaper.path, "D:/Steam/display2/scene.pkg");
-        assert!(wallpaper.detail.contains("displayAlias"));
     }
 
     #[test]

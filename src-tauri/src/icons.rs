@@ -9,7 +9,11 @@ use std::{
     slice,
 };
 
+#[cfg(target_os = "windows")]
+use crate::encoding::PNG_SIGNATURE;
 use crate::path_utils::{expand_windows_env_vars, extension, windows_api_path};
+#[cfg(target_os = "windows")]
+use crate::windows_com::ComGuard;
 
 #[cfg(target_os = "windows")]
 use windows::{
@@ -21,10 +25,7 @@ use windows::{
             BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
         },
         System::{
-            Com::{
-                CoCreateInstance, CoInitializeEx, CoUninitialize, IBindCtx, IPersistFile,
-                CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, STGM_READ,
-            },
+            Com::{CoCreateInstance, IBindCtx, IPersistFile, CLSCTX_INPROC_SERVER, STGM_READ},
             LibraryLoader::{
                 EnumResourceNamesW, FindResourceW, LoadLibraryExW, LoadResource, LockResource,
                 SizeofResource, LOAD_LIBRARY_AS_DATAFILE, LOAD_LIBRARY_AS_IMAGE_RESOURCE,
@@ -913,7 +914,7 @@ fn icon_size_byte(value: u8) -> u32 {
 
 #[cfg(target_os = "windows")]
 fn is_png(data: &[u8]) -> bool {
-    data.starts_with(b"\x89PNG\r\n\x1a\n")
+    data.starts_with(PNG_SIGNATURE)
 }
 
 #[cfg(target_os = "windows")]
@@ -948,32 +949,6 @@ fn read_i32(data: &[u8], offset: usize) -> Result<i32, String> {
         .get(offset..offset + 4)
         .ok_or_else(|| "Unexpected end of icon data".to_string())?;
     Ok(i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
-}
-
-#[cfg(target_os = "windows")]
-struct ComGuard {
-    initialized: bool,
-}
-
-#[cfg(target_os = "windows")]
-impl ComGuard {
-    fn new() -> Result<Self, String> {
-        unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }
-            .ok()
-            .map_err(|error| format!("Failed to initialize COM apartment: {error}"))?;
-        Ok(Self { initialized: true })
-    }
-}
-
-#[cfg(target_os = "windows")]
-impl Drop for ComGuard {
-    fn drop(&mut self) {
-        if self.initialized {
-            unsafe {
-                CoUninitialize();
-            }
-        }
-    }
 }
 
 #[cfg(target_os = "windows")]

@@ -5,11 +5,13 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
 use crate::models::AppCatalogItem;
+
+const MAX_LAYOUT_LOOKUP_DEPTH: usize = 32;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,7 +36,7 @@ pub(crate) fn save_layout(app: &AppHandle, layout: &Value) -> Result<(), String>
 }
 
 pub(crate) fn find_layout_app(layout: &Value, app_id: &str) -> Option<AppCatalogItem> {
-    find_app_in_layout_value(layout, app_id)
+    find_app_in_layout_value(layout, app_id, 0)
 }
 
 fn load_layout_from_path(path: &Path) -> Result<LoadLayoutResult, String> {
@@ -638,21 +640,34 @@ fn replace_file(source: &Path, target: &Path) -> Result<(), String> {
         .map_err(|error| format!("Failed to replace layout {}: {error}", target.display()))
 }
 
-fn find_app_in_layout_value(value: &Value, app_id: &str) -> Option<AppCatalogItem> {
+fn find_app_in_layout_value(value: &Value, app_id: &str, depth: usize) -> Option<AppCatalogItem> {
+    if depth > MAX_LAYOUT_LOOKUP_DEPTH {
+        eprintln!(
+            "Skipping layout app lookup beyond maximum traversal depth {MAX_LAYOUT_LOOKUP_DEPTH} while searching for app id {app_id}"
+        );
+        return None;
+    }
+
     if value.get("type").and_then(Value::as_str) == Some("app")
         && value.get("id").and_then(Value::as_str) == Some(app_id)
         && value.get("launchTarget").is_some()
     {
-        return serde_json::from_value(value.clone()).ok();
+        return match AppCatalogItem::deserialize(value) {
+            Ok(app) => Some(app),
+            Err(error) => {
+                eprintln!("Failed to deserialize saved layout app {app_id}: {error}");
+                None
+            }
+        };
     }
 
     match value {
         Value::Array(items) => items
             .iter()
-            .find_map(|item| find_app_in_layout_value(item, app_id)),
+            .find_map(|item| find_app_in_layout_value(item, app_id, depth + 1)),
         Value::Object(map) => map
             .values()
-            .find_map(|item| find_app_in_layout_value(item, app_id)),
+            .find_map(|item| find_app_in_layout_value(item, app_id, depth + 1)),
         _ => None,
     }
 }
@@ -756,6 +771,30 @@ mod tests {
                 "mainWindowShortcut": "control+alt+KeyL"
             }
         })
+    }
+
+    fn nested_folder_item(depth: usize) -> Value {
+        let mut item = json!({
+            "id": "deep-app",
+            "type": "app",
+            "name": "Deep App",
+            "launchTarget": {
+                "kind": "shortcut",
+                "path": "C:/Apps/Deep App.lnk"
+            }
+        });
+
+        for level in (0..depth).rev() {
+            item = json!({
+                "id": format!("folder-{level}"),
+                "type": "folder",
+                "name": format!("Folder {level}"),
+                "childPages": [[item.clone()]],
+                "children": [item]
+            });
+        }
+
+        item
     }
 
     fn corrupt_backups(dir: &Path) -> Vec<PathBuf> {
@@ -999,6 +1038,61 @@ mod tests {
         assert!(error.contains("unique"));
         assert!(!path.exists(), "invalid layout should not be written");
         fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn find_layout_app_deserializes_matching_app_and_reports_corrupt_match() {
+        let layout = valid_layout();
+
+        let app = find_layout_app(&layout, "app-a").expect("saved app should deserialize");
+
+        assert_eq!(app.id, "app-a");
+        assert_eq!(app.name, "App A");
+
+        let mut corrupt = valid_layout();
+        corrupt["pages"][0][0]
+            .as_object_mut()
+            .expect("app object")
+            .remove("name");
+
+        assert!(
+            find_layout_app(&corrupt, "app-a").is_none(),
+            "corrupt matching app should not be treated as missing silently"
+        );
+    }
+
+    #[test]
+    fn save_layout_to_path_rejects_nested_folder_children() {
+        let dir = test_dir("nested-folder-child");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        let nested = nested_folder_item(2);
+        invalid["pages"][0][1]["childPages"][0][0] = nested.clone();
+        invalid["pages"][0][1]["children"][0] = nested;
+
+        let error = save_layout_to_path(&path, &invalid).expect_err("nested folder should fail");
+
+        assert!(error.contains("type must be app"));
+        assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn find_layout_app_stops_at_maximum_nesting_depth() {
+        let mut layout = json!({
+            "id": "deep-app",
+            "type": "app",
+            "name": "Deep App",
+            "launchTarget": {
+                "kind": "shortcut",
+                "path": "C:/Apps/Deep App.lnk"
+            }
+        });
+        for _ in 0..(MAX_LAYOUT_LOOKUP_DEPTH + 2) {
+            layout = json!([layout]);
+        }
+
+        assert!(find_layout_app(&layout, "deep-app").is_none());
     }
 
     #[test]
