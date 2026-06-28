@@ -34,6 +34,18 @@ pub(crate) enum LiveDesktopError {
         source: windows::core::Error,
         fallback: windows::core::Error,
     },
+    #[error("capture {context} failed: {source}")]
+    Capture {
+        context: &'static str,
+        #[source]
+        source: windows::core::Error,
+    },
+    #[error("capture {context} failed: {source}")]
+    CaptureContext {
+        context: String,
+        #[source]
+        source: windows::core::Error,
+    },
     #[error("shader {context} compile failed: {source}; {message}")]
     ShaderCompile {
         context: String,

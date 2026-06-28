@@ -230,7 +230,13 @@ unsafe fn prepare_wallpaper_engine_popup_for_capture(
             managed_width,
             managed_height
         ),
-        Err(error) => format!("alignToDisplayFailed={error}"),
+        Err(source) => {
+            let error = LiveDesktopError::Capture {
+                context: "Wallpaper Engine popup align SetWindowPos",
+                source,
+            };
+            format!("alignToDisplayFailed={}", String::from(error))
+        }
     };
 
     LiveDesktopPopupPreparation {
@@ -250,7 +256,7 @@ unsafe fn prepare_wallpaper_engine_popup_for_capture(
 #[cfg(target_os = "windows")]
 unsafe fn restore_wallpaper_engine_popup_after_capture(
     state: &LiveDesktopPopupWindowRestoreState,
-) -> Result<(), String> {
+) -> Result<(), LiveDesktopError> {
     unsafe {
         SetWindowLongPtrW(state.hwnd, GWL_STYLE, state.style);
         SetWindowLongPtrW(state.hwnd, GWL_EXSTYLE, state.ex_style);
@@ -270,7 +276,10 @@ unsafe fn restore_wallpaper_engine_popup_after_capture(
                 | SWP_NOZORDER,
         )
     }
-    .map_err(|error| format!("Wallpaper Engine popup restore failed: {error}"))?;
+    .map_err(|source| LiveDesktopError::Capture {
+        context: "Wallpaper Engine popup restore SetWindowPos",
+        source,
+    })?;
     Ok(())
 }
 
@@ -443,7 +452,7 @@ fn register_live_desktop_wgc_frame_arrived(
         i64,
         TypedEventHandler<Direct3D11CaptureFramePool, IInspectable>,
     ),
-    String,
+    LiveDesktopError,
 > {
     let (frame_arrived_sender, frame_arrived_receiver) = mpsc::sync_channel::<()>(1);
     let handler_sender = frame_arrived_sender.clone();
@@ -456,7 +465,10 @@ fn register_live_desktop_wgc_frame_arrived(
     });
     let token = frame_pool
         .FrameArrived(&handler)
-        .map_err(|error| format!("Direct3D11CaptureFramePool::FrameArrived failed: {error}"))?;
+        .map_err(|source| LiveDesktopError::Capture {
+            context: "Direct3D11CaptureFramePool::FrameArrived",
+            source,
+        })?;
     Ok((frame_arrived_receiver, token, handler))
 }
 
@@ -467,7 +479,7 @@ pub(crate) unsafe fn create_live_desktop_window_capture(
     output_context: &LiveDesktopOutputContext,
     diagnostics: Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
     progress_sender: &mpsc::Sender<LiveDesktopRendererStartupMessage>,
-) -> Result<LiveDesktopWindowCapture, String> {
+) -> Result<LiveDesktopWindowCapture, LiveDesktopError> {
     let capture_label = LiveDesktopFrameSource::WallpaperEnginePopupCapture.window_capture_label();
     report_live_desktop_renderer_startup_progress(
         progress_sender,
@@ -494,17 +506,17 @@ pub(crate) unsafe fn create_live_desktop_window_capture(
         } else {
             format!("; {}", popup_ensure.detail)
         };
-        return Err(format!(
+        return Err(LiveDesktopError::Message(format!(
             "{capture_label} diagnostics found no WGC capture targets: {}; open a Wallpaper Engine pop-out window when using popup capture{}{}",
             window_diagnostics.detail, ensure_detail, close_detail
-        ));
+        )));
     }
     let target_count = targets.len();
     let first_target = targets.first().ok_or_else(|| {
-        format!(
+        LiveDesktopError::Message(format!(
             "{capture_label} diagnostics found no WGC capture targets: {}",
             window_diagnostics.detail
-        )
+        ))
     })?;
     report_live_desktop_renderer_startup_progress(
         progress_sender,
@@ -515,15 +527,31 @@ pub(crate) unsafe fn create_live_desktop_window_capture(
     );
     let dxgi_device = d3d_device
         .cast::<IDXGIDevice>()
-        .map_err(|error| format!("IDXGIDevice cast for WGC failed: {error}"))?;
-    let winrt_device = unsafe { CreateDirect3D11DeviceFromDXGIDevice(&dxgi_device) }
-        .map_err(|error| format!("CreateDirect3D11DeviceFromDXGIDevice failed: {error}"))?;
-    let winrt_device: IDirect3DDevice = winrt_device
-        .cast()
-        .map_err(|error| format!("IDirect3DDevice cast for WGC failed: {error}"))?;
+        .map_err(|source| LiveDesktopError::D3d {
+            context: "IDXGIDevice cast for WGC",
+            source,
+        })?;
+    let winrt_device =
+        unsafe { CreateDirect3D11DeviceFromDXGIDevice(&dxgi_device) }.map_err(|source| {
+            LiveDesktopError::D3d {
+                context: "CreateDirect3D11DeviceFromDXGIDevice",
+                source,
+            }
+        })?;
+    let winrt_device: IDirect3DDevice =
+        winrt_device
+            .cast()
+            .map_err(|source| LiveDesktopError::D3d {
+                context: "IDirect3DDevice cast for WGC",
+                source,
+            })?;
     let interop: IGraphicsCaptureItemInterop =
-        factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>()
-            .map_err(|error| format!("GraphicsCaptureItem interop factory failed: {error}"))?;
+        factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>().map_err(|source| {
+            LiveDesktopError::Capture {
+                context: "GraphicsCaptureItem interop factory",
+                source,
+            }
+        })?;
     let manages_launchpad_popup = wallpaper_engine_popup_target_matches_window_name(
         first_target,
         &window_diagnostics,
@@ -577,21 +605,23 @@ pub(crate) unsafe fn create_live_desktop_window_capture(
         );
         let item: GraphicsCaptureItem = match unsafe { interop.CreateForWindow(hwnd) } {
             Ok(item) => item,
-            Err(error) => {
-                attempt_details.push(format_live_desktop_wgc_attempt(
-                    target,
-                    format!("CreateForWindow failed: {error}"),
-                ));
+            Err(source) => {
+                let error = LiveDesktopError::CaptureContext {
+                    context: format!("GraphicsCaptureItem::CreateForWindow({})", target.hwnd),
+                    source,
+                };
+                attempt_details.push(format_live_desktop_wgc_attempt(target, String::from(error)));
                 continue;
             }
         };
         let size = match item.Size() {
             Ok(size) => size,
-            Err(error) => {
-                attempt_details.push(format_live_desktop_wgc_attempt(
-                    target,
-                    format!("GraphicsCaptureItem.Size failed: {error}"),
-                ));
+            Err(source) => {
+                let error = LiveDesktopError::Capture {
+                    context: "GraphicsCaptureItem::Size",
+                    source,
+                };
+                attempt_details.push(format_live_desktop_wgc_attempt(target, String::from(error)));
                 continue;
             }
         };
@@ -629,11 +659,15 @@ pub(crate) unsafe fn create_live_desktop_window_capture(
             size,
         ) {
             Ok(frame_pool) => frame_pool,
-            Err(error) => {
-                attempt_details.push(format_live_desktop_wgc_attempt(
-                    target,
-                    format!("Direct3D11CaptureFramePool::CreateFreeThreaded failed: {error}"),
-                ));
+            Err(source) => {
+                let error = LiveDesktopError::CaptureContext {
+                    context: format!(
+                        "Direct3D11CaptureFramePool::CreateFreeThreaded({}x{})",
+                        size.Width, size.Height
+                    ),
+                    source,
+                };
+                attempt_details.push(format_live_desktop_wgc_attempt(target, String::from(error)));
                 continue;
             }
         };
@@ -653,16 +687,17 @@ pub(crate) unsafe fn create_live_desktop_window_capture(
                 None,
                 None,
                 None,
-                format!("frameArrivedRegistrationFailed={error}"),
+                format!("frameArrivedRegistrationFailed={}", String::from(error)),
             ),
         };
         let session = match frame_pool.CreateCaptureSession(&item) {
             Ok(session) => session,
-            Err(error) => {
-                attempt_details.push(format_live_desktop_wgc_attempt(
-                    target,
-                    format!("CreateCaptureSession failed: {error}"),
-                ));
+            Err(source) => {
+                let error = LiveDesktopError::Capture {
+                    context: "Direct3D11CaptureFramePool::CreateCaptureSession",
+                    source,
+                };
+                attempt_details.push(format_live_desktop_wgc_attempt(target, String::from(error)));
                 continue;
             }
         };
@@ -676,13 +711,20 @@ pub(crate) unsafe fn create_live_desktop_window_capture(
         );
         let cursor_capture_detail = match session.SetIsCursorCaptureEnabled(false) {
             Ok(()) => "cursorCapture=false".to_string(),
-            Err(error) => format!("cursorCaptureDisableFailed={error}"),
+            Err(source) => {
+                let error = LiveDesktopError::Capture {
+                    context: "GraphicsCaptureSession::SetIsCursorCaptureEnabled(false)",
+                    source,
+                };
+                format!("cursorCaptureDisableFailed={}", String::from(error))
+            }
         };
-        if let Err(error) = session.StartCapture() {
-            attempt_details.push(format_live_desktop_wgc_attempt(
-                target,
-                format!("GraphicsCaptureSession.StartCapture failed: {error}"),
-            ));
+        if let Err(source) = session.StartCapture() {
+            let error = LiveDesktopError::Capture {
+                context: "GraphicsCaptureSession::StartCapture",
+                source,
+            };
+            attempt_details.push(format_live_desktop_wgc_attempt(target, String::from(error)));
             continue;
         }
         report_live_desktop_renderer_startup_progress(
@@ -835,18 +877,18 @@ pub(crate) unsafe fn create_live_desktop_window_capture(
     let restore_detail = if let Some(state) = popup_preparation.restore_state.as_ref() {
         match unsafe { restore_wallpaper_engine_popup_after_capture(state) } {
             Ok(()) => "; popup restored after failed WGC attempts".to_string(),
-            Err(error) => format!("; {error}"),
+            Err(error) => format!("; {}", String::from(error)),
         }
     } else {
         String::new()
     };
     let close_detail = cleanup_wallpaper_engine_popup_after_failed_capture(&mut popup_ensure);
-    Err(format!(
+    Err(LiveDesktopError::Message(format!(
         "{capture_label} failed for all {target_count} WGC targets: {}{}{}",
         attempt_details.join(" | "),
         restore_detail,
         close_detail
-    ))
+    )))
 }
 
 #[cfg(target_os = "windows")]
@@ -869,7 +911,7 @@ pub(crate) unsafe fn copy_initial_live_desktop_frame_to_composition_surface(
     config: &LiveDesktopRuntimeConfig,
     diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
     shader_pipeline: Option<&LiveDesktopShaderPipeline>,
-) -> Result<Option<LiveDesktopFrameProbe>, String> {
+) -> Result<Option<LiveDesktopFrameProbe>, LiveDesktopError> {
     let Some(window_capture) = window_capture else {
         return Ok(None);
     };
@@ -903,17 +945,19 @@ unsafe fn probe_live_desktop_texture_pixels(
     context: &ID3D11DeviceContext,
     preferred_crop: Option<LiveDesktopFrameCrop>,
     label: &str,
-) -> Result<LiveDesktopPixelProbe, String> {
+) -> Result<LiveDesktopPixelProbe, LiveDesktopError> {
     let mut source_desc = D3D11_TEXTURE2D_DESC::default();
     unsafe { source_texture.GetDesc(&mut source_desc) };
     if source_desc.Width == 0 || source_desc.Height == 0 {
-        return Err(format!("{label} source texture has invalid size"));
+        return Err(LiveDesktopError::Message(format!(
+            "{label} source texture has invalid size"
+        )));
     }
     if source_desc.SampleDesc.Count != 1 {
-        return Err(format!(
+        return Err(LiveDesktopError::Message(format!(
             "{label} does not support multisampled textures: sampleCount={}",
             source_desc.SampleDesc.Count
-        ));
+        )));
     }
 
     let crop = preferred_crop
@@ -957,16 +1001,28 @@ unsafe fn probe_live_desktop_texture_pixels(
         MiscFlags: 0,
     };
     let mut staging_texture: Option<ID3D11Texture2D> = None;
-    unsafe { device.CreateTexture2D(&staging_desc, None, Some(&mut staging_texture)) }
-        .map_err(|error| format!("{label} CreateTexture2D failed: {error}"))?;
-    let staging_texture =
-        staging_texture.ok_or_else(|| format!("{label} CreateTexture2D returned no texture"))?;
-    let source_resource = source_texture
-        .cast::<ID3D11Resource>()
-        .map_err(|error| format!("{label} source resource cast failed: {error}"))?;
-    let staging_resource = staging_texture
-        .cast::<ID3D11Resource>()
-        .map_err(|error| format!("{label} staging resource cast failed: {error}"))?;
+    unsafe { device.CreateTexture2D(&staging_desc, None, Some(&mut staging_texture)) }.map_err(
+        |source| LiveDesktopError::D3dContext {
+            context: format!("{label} CreateTexture2D"),
+            source,
+        },
+    )?;
+    let staging_texture = staging_texture.ok_or_else(|| {
+        LiveDesktopError::Message(format!("{label} CreateTexture2D returned no texture"))
+    })?;
+    let source_resource =
+        source_texture
+            .cast::<ID3D11Resource>()
+            .map_err(|source| LiveDesktopError::D3dContext {
+                context: format!("{label} source resource cast"),
+                source,
+            })?;
+    let staging_resource = staging_texture.cast::<ID3D11Resource>().map_err(|source| {
+        LiveDesktopError::D3dContext {
+            context: format!("{label} staging resource cast"),
+            source,
+        }
+    })?;
     unsafe {
         context.CopySubresourceRegion(
             &staging_resource,
@@ -981,11 +1037,17 @@ unsafe fn probe_live_desktop_texture_pixels(
     };
 
     let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-    unsafe { context.Map(&staging_resource, 0, D3D11_MAP_READ, 0, Some(&mut mapped)) }
-        .map_err(|error| format!("{label} Map failed: {error}"))?;
-    let probe_result = (|| -> Result<LiveDesktopPixelProbe, String> {
+    unsafe { context.Map(&staging_resource, 0, D3D11_MAP_READ, 0, Some(&mut mapped)) }.map_err(
+        |source| LiveDesktopError::D3dContext {
+            context: format!("{label} Map"),
+            source,
+        },
+    )?;
+    let probe_result = (|| -> Result<LiveDesktopPixelProbe, LiveDesktopError> {
         if mapped.pData.is_null() {
-            return Err(format!("{label} Map returned null data"));
+            return Err(LiveDesktopError::Message(format!(
+                "{label} Map returned null data"
+            )));
         }
         let row_pitch = mapped.RowPitch as usize;
         let bytes = unsafe {
@@ -1023,7 +1085,9 @@ unsafe fn probe_live_desktop_texture_pixels(
             }
         }
         if sample_count == 0 {
-            return Err(format!("{label} sampled no pixels"));
+            return Err(LiveDesktopError::Message(format!(
+                "{label} sampled no pixels"
+            )));
         }
         Ok(LiveDesktopPixelProbe {
             width: probe_width,
@@ -1058,7 +1122,7 @@ pub(crate) unsafe fn copy_window_capture_frame_to_composition_surface(
     config: &LiveDesktopRuntimeConfig,
     diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
     shader_pipeline: Option<&LiveDesktopShaderPipeline>,
-) -> Result<Option<LiveDesktopFrameProbe>, String> {
+) -> Result<Option<LiveDesktopFrameProbe>, LiveDesktopError> {
     let mut frame = match window_capture.frame_pool.TryGetNextFrame() {
         Ok(frame) => frame,
         Err(_) => return Ok(None),
@@ -1067,15 +1131,24 @@ pub(crate) unsafe fn copy_window_capture_frame_to_composition_surface(
         let _ = frame.Close();
         frame = next_frame;
     }
-    let copy_result = (|| -> Result<Option<LiveDesktopFrameProbe>, String> {
+    let copy_result = (|| -> Result<Option<LiveDesktopFrameProbe>, LiveDesktopError> {
         let frame_surface = frame
             .Surface()
-            .map_err(|error| format!("WGC frame Surface failed: {error}"))?;
+            .map_err(|source| LiveDesktopError::Capture {
+                context: "Direct3D11CaptureFrame::Surface",
+                source,
+            })?;
         let access = frame_surface
             .cast::<IDirect3DDxgiInterfaceAccess>()
-            .map_err(|error| format!("WGC frame surface DXGI access cast failed: {error}"))?;
-        let source_texture: ID3D11Texture2D = unsafe { access.GetInterface() }
-            .map_err(|error| format!("WGC frame ID3D11Texture2D access failed: {error}"))?;
+            .map_err(|source| LiveDesktopError::D3d {
+                context: "WGC frame surface DXGI access cast",
+                source,
+            })?;
+        let source_texture: ID3D11Texture2D =
+            unsafe { access.GetInterface() }.map_err(|source| LiveDesktopError::D3d {
+                context: "WGC frame ID3D11Texture2D access",
+                source,
+            })?;
         let mut source_desc = D3D11_TEXTURE2D_DESC::default();
         unsafe { source_texture.GetDesc(&mut source_desc) };
         let should_probe_frame =
@@ -1099,7 +1172,10 @@ pub(crate) unsafe fn copy_window_capture_frame_to_composition_surface(
                         return Ok(None);
                     }
                 }
-                Err(error) => record_live_desktop_pixel_probe_error(diagnostics, &error),
+                Err(error) => {
+                    let error = String::from(error);
+                    record_live_desktop_pixel_probe_error(diagnostics, &error);
+                }
             }
         }
 
@@ -1114,17 +1190,17 @@ pub(crate) unsafe fn copy_window_capture_frame_to_composition_surface(
             target_desc.Height,
         );
         if copy_crop.width == 0 || copy_crop.height == 0 {
-            return Err(format!(
+            return Err(LiveDesktopError::Message(format!(
                 "WGC source size {}x{} cannot be copied into composition swap chain {}x{}",
                 source_desc.Width, source_desc.Height, target_desc.Width, target_desc.Height
-            ));
+            )));
         }
         if copy_crop.left.saturating_add(copy_crop.width) > source_desc.Width
             || copy_crop.top.saturating_add(copy_crop.height) > source_desc.Height
             || copy_crop.width > target_desc.Width
             || copy_crop.height > target_desc.Height
         {
-            return Err(format!(
+            return Err(LiveDesktopError::Message(format!(
                 "WGC crop {}x{}@{},{} is outside source {}x{} or target {}x{}",
                 copy_crop.width,
                 copy_crop.height,
@@ -1134,16 +1210,24 @@ pub(crate) unsafe fn copy_window_capture_frame_to_composition_surface(
                 source_desc.Height,
                 target_desc.Width,
                 target_desc.Height
-            ));
+            )));
         }
-        let source_resource = source_texture
-            .cast::<ID3D11Resource>()
-            .map_err(|error| format!("WGC source texture resource cast failed: {error}"))?;
-        let target_resource = target_texture
-            .cast::<ID3D11Resource>()
-            .map_err(|error| format!("WGC target texture resource cast failed: {error}"))?;
+        let source_resource =
+            source_texture
+                .cast::<ID3D11Resource>()
+                .map_err(|source| LiveDesktopError::D3d {
+                    context: "WGC source texture resource cast",
+                    source,
+                })?;
+        let target_resource =
+            target_texture
+                .cast::<ID3D11Resource>()
+                .map_err(|source| LiveDesktopError::D3d {
+                    context: "WGC target texture resource cast",
+                    source,
+                })?;
         let shader_copy_error = if let Some(shader_pipeline) = shader_pipeline {
-            let copy_result = (|| -> Result<(), String> {
+            let copy_result = (|| -> Result<(), LiveDesktopError> {
                 unsafe {
                     shader_pipeline.render_source_region_to_texture(
                         context,
@@ -1158,7 +1242,7 @@ pub(crate) unsafe fn copy_window_capture_frame_to_composition_surface(
                 }
                 Ok(())
             })();
-            copy_result.err()
+            copy_result.err().map(String::from)
         } else {
             None
         };
@@ -1223,9 +1307,10 @@ pub(crate) unsafe fn copy_window_capture_frame_to_composition_surface(
             ),
         }))
     })();
-    let close_result = frame
-        .Close()
-        .map_err(|error| format!("WGC frame Close failed after copy: {error}"));
+    let close_result = frame.Close().map_err(|source| LiveDesktopError::Capture {
+        context: "Direct3D11CaptureFrame::Close after copy",
+        source,
+    });
 
     match (copy_result, close_result) {
         (Ok(frame_probe), Ok(())) => Ok(frame_probe),

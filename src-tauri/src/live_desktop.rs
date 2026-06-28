@@ -561,6 +561,7 @@ impl LiveDesktopRendererResources {
             } {
                 Ok(copied_frame) => copied_frame,
                 Err(error) => {
+                    let error = String::from(error);
                     record_live_desktop_copy_error(&self.diagnostics, &error);
                     return Err(error);
                 }

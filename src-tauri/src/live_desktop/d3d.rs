@@ -743,6 +743,7 @@ pub(crate) unsafe fn create_live_desktop_renderer_resources(
                 "initial frame pending after startup wait".to_string()
             }
             Err(error) => {
+                let error = String::from(error);
                 record_live_desktop_copy_error(&diagnostics, &error);
                 format!("initial frame copy failed: {error}")
             }
