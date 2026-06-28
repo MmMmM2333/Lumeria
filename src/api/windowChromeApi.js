@@ -12,6 +12,8 @@ export const WINDOW_RESIZE_DIRECTIONS = Object.freeze([
   "SouthEast",
 ]);
 
+export const WINDOW_CHROME_STATE_CHANGE_EVENT = "launchpad-window-chrome-state-change";
+
 const WINDOW_RESIZE_DIRECTION_SET = new Set(WINDOW_RESIZE_DIRECTIONS);
 
 let windowChromeBridgeOverride = null;
@@ -60,6 +62,15 @@ export async function toggleWindowMaximize() {
   const bridge = getWindowChromeBridge();
   if (typeof bridge?.toggleMaximize !== "function") return false;
   await bridge.toggleMaximize();
+  return true;
+}
+
+export function emitWindowChromeStateChange(detail = {}, target = globalThis.window) {
+  if (!target || typeof target.dispatchEvent !== "function") return false;
+  const event = typeof globalThis.CustomEvent === "function"
+    ? new globalThis.CustomEvent(WINDOW_CHROME_STATE_CHANGE_EVENT, { detail })
+    : { type: WINDOW_CHROME_STATE_CHANGE_EVENT, detail };
+  target.dispatchEvent(event);
   return true;
 }
 

@@ -39,6 +39,7 @@ import RestoreIcon from "~icons/fluent/square-multiple-24-regular";
 import SubtractIcon from "~icons/fluent/subtract-24-regular";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
+  emitWindowChromeStateChange,
   hideWindow,
   isWindowMaximized,
   minimizeWindow,
@@ -90,7 +91,10 @@ function handleMinimizeClick() {
 
 async function toggleMaximizeAndRefresh() {
   const didToggle = await toggleWindowMaximize();
-  if (didToggle) await refreshWindowMaximized();
+  if (!didToggle) return;
+  emitWindowChromeStateChange({ reason: "maximize-toggle" });
+  await refreshWindowMaximized();
+  emitWindowChromeStateChange({ reason: "maximize-state-refresh" });
 }
 
 function handleMaximizeClick() {

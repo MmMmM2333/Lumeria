@@ -179,6 +179,7 @@ export class DesktopLayer extends Container {
     this.onClosingFolderPointerDown = options.onClosingFolderPointerDown || (() => {});
     this.onFolderGeometryChange = options.onFolderGeometryChange || (() => {});
     this.onFolderInternalActivityChange = options.onFolderInternalActivityChange || (() => {});
+    this.onFolderRenderRequest = options.onFolderRenderRequest || (() => {});
     this.onFolderOutsidePointerDown = options.onFolderOutsidePointerDown || (() => {});
     this.onFolderPanelPointerDown = options.onFolderPanelPointerDown || (() => {});
     this.onFolderTitleFrameChange = options.onFolderTitleFrameChange || (() => {});
@@ -209,6 +210,7 @@ export class DesktopLayer extends Container {
       onIconAction: (action, originalEvent, item, source, iconNode) =>
         this.handleIconAction(action, originalEvent, item, source, iconNode),
       onInternalActivityChange: (active, folderId = null) => this.onFolderInternalActivityChange(active, folderId),
+      onRenderRequest: (reason) => this.onFolderRenderRequest(reason),
       onOutsidePointerDown: (event) => this.onFolderOutsidePointerDown(event),
       onPanelPointerDown: (event) => this.onFolderPanelPointerDown(event),
       showFolderTitle: false,

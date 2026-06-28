@@ -60,6 +60,7 @@ import { runFolderOverlayStateDependenciesTests } from "../rendering/pixi/folder
 import { runPixiHostMetricsTests } from "../rendering/pixi/pixiHostMetricsTests.js";
 import { runPixiRenderSchedulerTests } from "../rendering/pixi/pixiRenderSchedulerTests.js";
 import { runPixiRenderTriggersTests } from "../rendering/pixi/pixiRenderTriggersTests.js";
+import { runResizeSettleSchedulerTests } from "../rendering/pixi/resizeSettleSchedulerTests.js";
 import { runIconControlDrawingTests } from "../rendering/pixi/nodes/iconControlDrawingTests.js";
 import { runIconFolderHoverStateTests } from "../rendering/pixi/nodes/iconFolderHoverStateTests.js";
 import { runIconInteractionGeometryTests } from "../rendering/pixi/nodes/iconInteractionGeometryTests.js";
@@ -199,6 +200,7 @@ runFolderOverlayStateDependenciesTests();
 runPixiHostMetricsTests();
 runPixiRenderSchedulerTests();
 runPixiRenderTriggersTests();
+runResizeSettleSchedulerTests();
 await runAcrylicFiltersTests();
 runAcrylicParamsTests();
 await runAcrylicNoiseTextureTests();

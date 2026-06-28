@@ -353,6 +353,177 @@ export async function runFolderOverlayLayerTests() {
 
   const nearlyEqual = (a, b) => Math.abs(a - b) < 0.0001;
 
+  const makeFolderResizeItems = (prefix, count = 9) =>
+    Array.from({ length: count }, (_, index) => ({
+      id: `${prefix}-${index + 1}`,
+      name: `${prefix} ${index + 1}`,
+      type: "app",
+    }));
+  const folderResizePages = [
+    makeFolderResizeItems("page-a"),
+    makeFolderResizeItems("page-b"),
+  ];
+  const makeFolderResizeState = (overrides = {}) => {
+    const width = overrides.width ?? 1000;
+    const height = overrides.height ?? 760;
+    const folderPageIndex = overrides.folderPageIndex ?? 0;
+    const pages = overrides.folderPages || folderResizePages;
+    return {
+      dragMeta: null,
+      dragReleaseGhostId: null,
+      folderCloseIconGhosts: [],
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(3, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(3, var(--folder-icon-cell-height))",
+        ...overrides.folderGridStyle,
+      },
+      folderOpenIconGhosts: [],
+      folderPageIndex,
+      folderPages: pages,
+      folderPageSize: 9,
+      folderPanelStyle: {
+        "--folder-icon-cell-height": "128px",
+        "--folder-icon-size": "56px",
+        "--folder-row-gap": "18px",
+        "--folder-shell-min-height": "520px",
+        ...overrides.folderPanelStyle,
+      },
+      getFolderPageRenderMode: overrides.getFolderPageRenderMode || (() => "interactive"),
+      getVisibleFolderPage: (page) => page || [],
+      height,
+      iconSize: 64,
+      isEditMode: false,
+      isFolderClosing: false,
+      isIconOpening: () => false,
+      isIconSelected: () => false,
+      isTextlessMode: false,
+      launchTargetStatusById: {},
+      renderedFolder: {
+        childPages: pages,
+        id: overrides.folderId || "folder-resize",
+        name: "Resize Folder",
+        type: "folder",
+      },
+      showMissingLaunchTargetBadge: true,
+      stageRect: { height, left: 0, top: 0, width },
+      visualFolderPageIndex: overrides.visualFolderPageIndex ?? folderPageIndex,
+      width,
+      ...overrides,
+    };
+  };
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    iconBoundsRegistry.registerBounds(
+      K.TOP_LEVEL,
+      V.RENDERED,
+      "folder-resize",
+      { height: 64, left: 80, top: 90, width: 64 },
+      { area: "desktop", id: "folder-resize" }
+    );
+    iconBoundsRegistry.registerBounds(
+      K.FOLDER_THUMB,
+      V.RENDERED,
+      "folder-resize",
+      { height: 58, left: 83, top: 93, width: 58 },
+      { area: "desktop", id: "folder-resize" }
+    );
+    const renderRequests = [];
+    const layer = new FolderOverlayLayer({
+      iconBoundsRegistry,
+      onRenderRequest: (reason) => renderRequests.push(reason),
+    });
+
+    layer.update(makeFolderResizeState({ folderPageIndex: 1, height: 746, visualFolderPageIndex: 1, width: 824 }));
+    const smallPageMask = layer.pageMask;
+    const smallPanelClipMask = layer.panelClipMask;
+    const largeGeometry = layer.update(makeFolderResizeState({ folderPageIndex: 1, height: 912, visualFolderPageIndex: 1, width: 1707 }));
+
+    assert(layer.resizeLayoutSync?.remainingRenders === 1, "window resize should keep resize layout sync active for one follow-up render");
+    assert(renderRequests.length === 1, "window resize should request the follow-up render needed to settle Pixi mask/layout state");
+    assert(renderRequests[0] === "folder-resize-layout", "window resize follow-up render should use the resize layout reason");
+    assert(layer.panelClipMask !== smallPanelClipMask, "resize should replace the panel clip mask so content is not clipped by stale rounded geometry");
+    assert(smallPanelClipMask.destroyed === true, "resize should destroy the stale panel clip mask after replacement");
+    assert(layer.panelContentLayer.mask === layer.panelClipMask, "resize should bind panel content to the rebuilt panel clip mask");
+    assert(layer.openingGhostLayer.mask === layer.panelClipMask, "resize should bind opening ghosts to the rebuilt panel clip mask");
+    assert(nearlyEqual(layer.pageMaskRect.width, largeGeometry.panel.width), "resize should redraw the folder page mask to the new panel width");
+    assert(layer.pageMask !== smallPageMask, "resize should replace the page mask instance so Pixi does not keep a stale clip");
+    assert(smallPageMask.destroyed === true, "resize should destroy the stale page mask after replacement");
+    assert(layer.pageTrack.mask === layer.pageMask, "resize should bind pageTrack to the rebuilt page mask");
+    assert(nearlyEqual(layer.pageTrack.x, -largeGeometry.panel.width), "settled second-page resize should snap pageTrack to the new page span");
+    assert(nearlyEqual(layer.panel.x, largeGeometry.panel.left + largeGeometry.panel.width / 2), "resize should snap the panel x to the new geometry target");
+    assert(nearlyEqual(layer.panel.y, largeGeometry.panel.top + largeGeometry.panel.height / 2), "resize should snap the panel y to the new geometry target");
+    for (const [key, target] of layer.folderIconLayoutTargets) {
+      const node = layer.iconNodes.get(key);
+      assert(node, `resize test setup should keep icon node ${key}`);
+      assert(nearlyEqual(node.x, target.x), `resize should snap ${key} icon x to the render plan target`);
+      assert(nearlyEqual(node.y, target.y), `resize should snap ${key} icon y to the render plan target`);
+    }
+
+    layer.update(makeFolderResizeState({ folderPageIndex: 1, height: 912, visualFolderPageIndex: 1, width: 1707 }));
+    assert(layer.resizeLayoutSync === null, "resize layout sync should end after the follow-up render consumes the stable layout");
+    assert(renderRequests.length === 2, "settled resize follow-up should request one final stable render after resize sync clears");
+    layer.update(makeFolderResizeState({ folderPageIndex: 1, height: 912, visualFolderPageIndex: 1, width: 1707 }));
+    assert(renderRequests.length === 2, "final stable resize render should not request another frame");
+
+    const firstIconNode = layer.iconNodes.values().next().value;
+    firstIconNode.position.set(firstIconNode.x + 80, firstIconNode.y + 40);
+    layer.pageTrack.x = -320;
+    const beforeLateStyleMask = layer.pageMask;
+    const beforeLateStylePanelClipMask = layer.panelClipMask;
+    const lateStyleGeometry = layer.update(makeFolderResizeState({
+      folderPageIndex: 1,
+      folderPanelStyle: {
+        "--folder-icon-cell-height": "108px",
+        "--folder-icon-size": "48px",
+        "--folder-row-gap": "12px",
+      },
+      height: 912,
+      visualFolderPageIndex: 1,
+      width: 1707,
+    }));
+    assert(layer.resizeLayoutSync?.remainingRenders === 1, "late folder viewport style changes should restart resize layout sync");
+    assert(renderRequests.length === 3, "late folder viewport style changes should request another resize follow-up render");
+    assert(layer.panelClipMask !== beforeLateStylePanelClipMask, "late folder viewport style changes should rebuild the panel clip mask instance");
+    assert(layer.pageMask !== beforeLateStyleMask, "late folder viewport style changes should rebuild the page mask instance");
+    assert(nearlyEqual(layer.pageTrack.x, -lateStyleGeometry.panel.width), "late folder viewport style changes should resnap pageTrack");
+    for (const [key, target] of layer.folderIconLayoutTargets) {
+      const node = layer.iconNodes.get(key);
+      assert(nearlyEqual(node.x, target.x), `late folder viewport style changes should snap ${key} icon x`);
+      assert(nearlyEqual(node.y, target.y), `late folder viewport style changes should snap ${key} icon y`);
+    }
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+
+    layer.update(makeFolderResizeState({ folderPageIndex: 0, height: 760, visualFolderPageIndex: 0, width: 1000 }));
+    layer.update(makeFolderResizeState({ folderPageIndex: 1, height: 760, visualFolderPageIndex: 1, width: 1000 }));
+    const livePageTrackX = layer.pageTrack.x;
+    const resizedGeometry = layer.update(makeFolderResizeState({
+      folderPageIndex: 1,
+      folderPageTurnToken: "turn-1",
+      height: 840,
+      visualFolderPageIndex: 1,
+      width: 1320,
+    }));
+
+    assert(layer.resizeLayoutSync?.mode === "page-turn", "resize during an active page turn should preserve page-turn mode");
+    assert(nearlyEqual(layer.pageTrack.x, livePageTrackX), "resize during an active page turn should not snap pageTrack to the destination page");
+    assert(nearlyEqual(layer.pageTrackMotion.targetX, -resizedGeometry.panel.width), "page-turn resize should retarget motion to the new page span");
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
   {
     motionRuntime.reset();
     motionRuntime.configureDebug({ enabled: true });
