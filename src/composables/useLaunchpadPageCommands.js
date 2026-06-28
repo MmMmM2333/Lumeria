@@ -1,9 +1,39 @@
+import { nextTick } from "vue";
+
 export function shouldAssertLaunchpadLayout() {
   if (typeof import.meta.env?.DEV === "boolean") return import.meta.env.DEV;
   return typeof process === "undefined" || process.env?.NODE_ENV !== "production";
 }
 
 export function useLaunchpadPageCommands(options) {
+  function requestAnimationFrameOnce(callback) {
+    if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
+      callback();
+      return;
+    }
+    window.requestAnimationFrame(callback);
+  }
+
+  function scheduleChromePageIndexCommit(callback) {
+    if (typeof options.scheduleChromePageIndexCommit === "function") {
+      options.scheduleChromePageIndexCommit(callback);
+      return;
+    }
+    nextTick(() => requestAnimationFrameOnce(callback));
+  }
+
+  function commitChromePageIndex(next) {
+    const commitPage = typeof options.commitActivePageIndex === "function"
+      ? options.commitActivePageIndex
+      : options.commitPageIndex;
+    if (options.isHomeRevealSettling?.value) {
+      options.finishHomeRevealSettleWindow?.();
+      scheduleChromePageIndexCommit(() => commitPage(next));
+      return;
+    }
+    commitPage(next);
+  }
+
   function commitPages(next) {
     if (shouldAssertLaunchpadLayout() && !options.isDragActive()) options.assertNoDuplicateItemIds(next);
     options.pages.value = next;
@@ -56,6 +86,7 @@ export function useLaunchpadPageCommands(options) {
   }
 
   return {
+    commitChromePageIndex,
     commitPages,
     confirmForceFillAllPages,
     forceFillAllPages,

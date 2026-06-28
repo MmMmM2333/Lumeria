@@ -54,7 +54,7 @@
       @search-focus="keyboardFocusArea = 'search'"
       @clear-search="clearSearch"
       @open-settings="openSettingsPanel"
-      @page-index="commitActivePageIndex"
+      @page-index="commitChromePageIndex"
     >
       <PixiDesktopSurface
         :key="singleStageRenderKey"
@@ -221,6 +221,7 @@ const {
   shouldRenderPixiBackgroundEffect,
 } = backgroundDomain;
 const {
+  commitChromePageIndex,
   homeChromeInitial,
   homeChromeAnimate,
   homeChromeTransition,
