@@ -300,10 +300,6 @@ pub(super) unsafe fn draw_live_desktop_test_pattern_to_composition_surface(
         height: desc.Height,
         format: desc.Format.0,
         reason: "testPattern",
-        detail: format!(
-            "Drew DirectComposition swap chain static test pattern {}x{} format {}",
-            desc.Width, desc.Height, desc.Format.0
-        ),
     })
 }
 

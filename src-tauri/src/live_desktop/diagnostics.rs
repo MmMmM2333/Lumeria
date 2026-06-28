@@ -19,7 +19,6 @@ pub(crate) struct LiveDesktopFrameProbe {
     pub(crate) height: u32,
     pub(crate) format: i32,
     pub(crate) reason: &'static str,
-    pub(crate) detail: String,
 }
 
 #[derive(Clone, Debug, Serialize)]

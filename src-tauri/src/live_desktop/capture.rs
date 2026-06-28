@@ -3,7 +3,6 @@ use super::*;
 
 #[cfg(target_os = "windows")]
 pub(crate) struct LiveDesktopWindowCapture {
-    hwnd: HWND,
     pub(crate) width: u32,
     pub(crate) height: u32,
     source_label: &'static str,
@@ -826,7 +825,6 @@ pub(crate) unsafe fn create_live_desktop_window_capture(
             .unwrap_or_else(|| "frameCrop=none".to_string());
 
         return Ok(LiveDesktopWindowCapture {
-            hwnd,
             width: render_width,
             height: render_height,
             source_label: capture_label,
@@ -1128,182 +1126,165 @@ pub(crate) unsafe fn copy_window_capture_frame_to_composition_surface(
         let _ = frame.Close();
         frame = next_frame;
     }
-    let copy_result = (|| -> Result<Option<LiveDesktopFrameProbe>, LiveDesktopError> {
-        let frame_surface = frame
-            .Surface()
-            .map_err(|source| LiveDesktopError::Capture {
-                context: "Direct3D11CaptureFrame::Surface",
-                source,
-            })?;
-        let access = frame_surface
-            .cast::<IDirect3DDxgiInterfaceAccess>()
-            .map_err(|source| LiveDesktopError::D3d {
-                context: "WGC frame surface DXGI access cast",
-                source,
-            })?;
-        let source_texture: ID3D11Texture2D =
-            unsafe { access.GetInterface() }.map_err(|source| LiveDesktopError::D3d {
-                context: "WGC frame ID3D11Texture2D access",
-                source,
-            })?;
-        let mut source_desc = D3D11_TEXTURE2D_DESC::default();
-        unsafe { source_texture.GetDesc(&mut source_desc) };
-        let should_probe_frame =
-            config.skip_blank_frames || should_probe_live_desktop_pixels(diagnostics);
-        if should_probe_frame {
-            match unsafe {
-                probe_live_desktop_texture_pixels(
-                    &source_texture,
-                    device,
-                    context,
-                    window_capture.frame_crop,
-                    "WGC pixel probe",
-                )
-            } {
-                Ok(probe) => {
-                    let should_skip =
-                        config.skip_blank_frames && is_live_desktop_suspected_blank_frame(&probe);
-                    record_live_desktop_pixel_probe(diagnostics, &probe);
-                    if should_skip {
-                        record_live_desktop_blank_frame_skipped(diagnostics, &probe);
-                        return Ok(None);
+    let copy_result =
+        (|| {
+            let frame_surface = frame
+                .Surface()
+                .map_err(|source| LiveDesktopError::Capture {
+                    context: "Direct3D11CaptureFrame::Surface",
+                    source,
+                })?;
+            let access = frame_surface
+                .cast::<IDirect3DDxgiInterfaceAccess>()
+                .map_err(|source| LiveDesktopError::D3d {
+                    context: "WGC frame surface DXGI access cast",
+                    source,
+                })?;
+            let source_texture: ID3D11Texture2D =
+                unsafe { access.GetInterface() }.map_err(|source| LiveDesktopError::D3d {
+                    context: "WGC frame ID3D11Texture2D access",
+                    source,
+                })?;
+            let mut source_desc = D3D11_TEXTURE2D_DESC::default();
+            unsafe { source_texture.GetDesc(&mut source_desc) };
+            let should_probe_frame =
+                config.skip_blank_frames || should_probe_live_desktop_pixels(diagnostics);
+            if should_probe_frame {
+                match unsafe {
+                    probe_live_desktop_texture_pixels(
+                        &source_texture,
+                        device,
+                        context,
+                        window_capture.frame_crop,
+                        "WGC pixel probe",
+                    )
+                } {
+                    Ok(probe) => {
+                        let should_skip = config.skip_blank_frames
+                            && is_live_desktop_suspected_blank_frame(&probe);
+                        record_live_desktop_pixel_probe(diagnostics, &probe);
+                        if should_skip {
+                            record_live_desktop_blank_frame_skipped(diagnostics, &probe);
+                            return Ok(None);
+                        }
+                    }
+                    Err(error) => {
+                        let error = String::from(error);
+                        record_live_desktop_pixel_probe_error(diagnostics, &error);
                     }
                 }
-                Err(error) => {
-                    let error = String::from(error);
-                    record_live_desktop_pixel_probe_error(diagnostics, &error);
-                }
             }
-        }
 
-        let target_texture = unsafe { swap_chain.back_buffer("WGC") }?;
-        let mut target_desc = D3D11_TEXTURE2D_DESC::default();
-        unsafe { target_texture.GetDesc(&mut target_desc) };
-        let copy_crop = resolve_live_desktop_wgc_copy_crop(
-            window_capture.frame_crop,
-            source_desc.Width,
-            source_desc.Height,
-            target_desc.Width,
-            target_desc.Height,
-        );
-        if copy_crop.width == 0 || copy_crop.height == 0 {
-            return Err(LiveDesktopError::Message(format!(
-                "WGC source size {}x{} cannot be copied into composition swap chain {}x{}",
-                source_desc.Width, source_desc.Height, target_desc.Width, target_desc.Height
-            )));
-        }
-        if copy_crop.left.saturating_add(copy_crop.width) > source_desc.Width
-            || copy_crop.top.saturating_add(copy_crop.height) > source_desc.Height
-            || copy_crop.width > target_desc.Width
-            || copy_crop.height > target_desc.Height
-        {
-            return Err(LiveDesktopError::Message(format!(
-                "WGC crop {}x{}@{},{} is outside source {}x{} or target {}x{}",
-                copy_crop.width,
-                copy_crop.height,
-                copy_crop.left,
-                copy_crop.top,
+            let target_texture = unsafe { swap_chain.back_buffer("WGC") }?;
+            let mut target_desc = D3D11_TEXTURE2D_DESC::default();
+            unsafe { target_texture.GetDesc(&mut target_desc) };
+            let copy_crop = resolve_live_desktop_wgc_copy_crop(
+                window_capture.frame_crop,
                 source_desc.Width,
                 source_desc.Height,
                 target_desc.Width,
-                target_desc.Height
-            )));
-        }
-        let source_resource =
-            source_texture
-                .cast::<ID3D11Resource>()
-                .map_err(|source| LiveDesktopError::D3d {
+                target_desc.Height,
+            );
+            if copy_crop.width == 0 || copy_crop.height == 0 {
+                return Err(LiveDesktopError::Message(format!(
+                    "WGC source size {}x{} cannot be copied into composition swap chain {}x{}",
+                    source_desc.Width, source_desc.Height, target_desc.Width, target_desc.Height
+                )));
+            }
+            if copy_crop.left.saturating_add(copy_crop.width) > source_desc.Width
+                || copy_crop.top.saturating_add(copy_crop.height) > source_desc.Height
+                || copy_crop.width > target_desc.Width
+                || copy_crop.height > target_desc.Height
+            {
+                return Err(LiveDesktopError::Message(format!(
+                    "WGC crop {}x{}@{},{} is outside source {}x{} or target {}x{}",
+                    copy_crop.width,
+                    copy_crop.height,
+                    copy_crop.left,
+                    copy_crop.top,
+                    source_desc.Width,
+                    source_desc.Height,
+                    target_desc.Width,
+                    target_desc.Height
+                )));
+            }
+            let source_resource = source_texture.cast::<ID3D11Resource>().map_err(|source| {
+                LiveDesktopError::D3d {
                     context: "WGC source texture resource cast",
                     source,
-                })?;
-        let target_resource =
-            target_texture
-                .cast::<ID3D11Resource>()
-                .map_err(|source| LiveDesktopError::D3d {
+                }
+            })?;
+            let target_resource = target_texture.cast::<ID3D11Resource>().map_err(|source| {
+                LiveDesktopError::D3d {
                     context: "WGC target texture resource cast",
                     source,
-                })?;
-        let shader_copy_error = if let Some(shader_pipeline) = shader_pipeline {
-            let copy_result = (|| -> Result<(), LiveDesktopError> {
-                unsafe {
-                    shader_pipeline.render_source_region_to_texture(
-                        context,
-                        &source_resource,
-                        source_desc.Width,
-                        source_desc.Height,
-                        copy_crop,
-                        &target_texture,
-                        config,
-                        "WGC",
-                    )?;
                 }
-                Ok(())
-            })();
-            copy_result.err().map(String::from)
-        } else {
-            None
-        };
-        let used_shader_pipeline = shader_pipeline.is_some() && shader_copy_error.is_none();
-        if let Some(error) = shader_copy_error.as_ref() {
-            record_live_desktop_shader_copy_fallback(diagnostics, error);
-        }
-        if !used_shader_pipeline {
-            if copy_crop.left == 0
-                && copy_crop.top == 0
-                && copy_crop.width == source_desc.Width
-                && copy_crop.height == source_desc.Height
-                && source_desc.Width == target_desc.Width
-                && source_desc.Height == target_desc.Height
-            {
-                unsafe { context.CopyResource(&target_resource, &source_resource) };
+            })?;
+            let shader_copy_error = if let Some(shader_pipeline) = shader_pipeline {
+                let copy_result = (|| -> Result<(), LiveDesktopError> {
+                    unsafe {
+                        shader_pipeline.render_source_region_to_texture(
+                            context,
+                            &source_resource,
+                            source_desc.Width,
+                            source_desc.Height,
+                            copy_crop,
+                            &target_texture,
+                            config,
+                            "WGC",
+                        )?;
+                    }
+                    Ok(())
+                })();
+                copy_result.err().map(String::from)
             } else {
-                let source_box = D3D11_BOX {
-                    left: copy_crop.left,
-                    top: copy_crop.top,
-                    front: 0,
-                    right: copy_crop.left + copy_crop.width,
-                    bottom: copy_crop.top + copy_crop.height,
-                    back: 1,
-                };
-                unsafe {
-                    context.CopySubresourceRegion(
-                        &target_resource,
-                        0,
-                        0,
-                        0,
-                        0,
-                        &source_resource,
-                        0,
-                        Some(&source_box),
-                    )
-                };
+                None
+            };
+            let used_shader_pipeline = shader_pipeline.is_some() && shader_copy_error.is_none();
+            if let Some(error) = shader_copy_error.as_ref() {
+                record_live_desktop_shader_copy_fallback(diagnostics, error);
             }
-        }
+            if !used_shader_pipeline {
+                if copy_crop.left == 0
+                    && copy_crop.top == 0
+                    && copy_crop.width == source_desc.Width
+                    && copy_crop.height == source_desc.Height
+                    && source_desc.Width == target_desc.Width
+                    && source_desc.Height == target_desc.Height
+                {
+                    unsafe { context.CopyResource(&target_resource, &source_resource) };
+                } else {
+                    let source_box = D3D11_BOX {
+                        left: copy_crop.left,
+                        top: copy_crop.top,
+                        front: 0,
+                        right: copy_crop.left + copy_crop.width,
+                        bottom: copy_crop.top + copy_crop.height,
+                        back: 1,
+                    };
+                    unsafe {
+                        context.CopySubresourceRegion(
+                            &target_resource,
+                            0,
+                            0,
+                            0,
+                            0,
+                            &source_resource,
+                            0,
+                            Some(&source_box),
+                        )
+                    };
+                }
+            }
 
-        Ok(Some(LiveDesktopFrameProbe {
-            supports_frame_texture: true,
-            width: copy_crop.width,
-            height: copy_crop.height,
-            format: source_desc.Format.0,
-            reason: "available",
-            detail: format!(
-                "Copied GPU WGC frame from {} into composition swap chain: source {}x{} crop {}x{}@{},{} format {} shaderCopy {}{}",
-                format_live_desktop_window_handle(window_capture.hwnd),
-                source_desc.Width,
-                source_desc.Height,
-                copy_crop.width,
-                copy_crop.height,
-                copy_crop.left,
-                copy_crop.top,
-                source_desc.Format.0,
-                used_shader_pipeline,
-                shader_copy_error
-                    .as_ref()
-                    .map(|error| format!(" shaderCopyFallback={error}"))
-                    .unwrap_or_default()
-            ),
-        }))
-    })();
+            Ok(Some(LiveDesktopFrameProbe {
+                supports_frame_texture: true,
+                width: copy_crop.width,
+                height: copy_crop.height,
+                format: source_desc.Format.0,
+                reason: "available",
+            }))
+        })();
     let close_result = frame.Close().map_err(|source| LiveDesktopError::Capture {
         context: "Direct3D11CaptureFrame::Close after copy",
         source,
