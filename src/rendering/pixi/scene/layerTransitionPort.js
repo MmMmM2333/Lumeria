@@ -17,6 +17,18 @@ function cloneFramePresentation(frame) {
   };
 }
 
+function getClosingMirrorOffsetX(layer) {
+  const offsetX = Number(layer?.closingDesktopPageTrackMirrorX);
+  return Number.isFinite(offsetX) ? offsetX : 0;
+}
+
+function cloneMirroredFramePresentation(layer) {
+  const frame = cloneFramePresentation(layer?.frameGhostState);
+  const offsetX = getClosingMirrorOffsetX(layer);
+  if (frame && offsetX !== 0) frame.left += offsetX;
+  return frame;
+}
+
 export function createLayerTransitionPort(layer) {
   return {
     acquireDesktopSourceOwnership(owner) {
@@ -72,12 +84,12 @@ export function createLayerTransitionPort(layer) {
       return layer.currentFolderId || null;
     },
     getClosingPresentationFrameRect() {
-      return cloneFramePresentation(layer.frameGhostState);
+      return cloneMirroredFramePresentation(layer);
     },
     getDebugSnapshot() {
       return {
         closingGhostCount: layer.closingGhostLayer?.children?.length ?? null,
-        framePresentation: cloneFramePresentation(layer.frameGhostState),
+        framePresentation: cloneMirroredFramePresentation(layer),
         panelVisible: layer.panel?.visible ?? null,
         pageTrackVisible: layer.pageTrack?.visible ?? null,
       };

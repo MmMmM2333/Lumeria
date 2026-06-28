@@ -1239,6 +1239,8 @@ export class DesktopLayer extends Container {
       overlay: overlay ? {
         closingFolderId: overlayCloseSnapshot?.folderId || null,
         closingGhostKeys: Array.from(overlayCloseSnapshot?.ghostKeys || []),
+        closingPreviewSwapKeys: Array.from(overlayCloseSnapshot?.previewSwapKeys || []),
+        closingPreviewSwapLayerChildCount: overlay.closingPreviewSwapLayer?.children?.length ?? null,
         closingGhostSessionToken: overlayCloseSnapshot?.token || null,
         closingHandoffActive: overlayCloseSnapshot?.handoffActive === true,
         currentFolderId: overlay.currentFolderId || null,

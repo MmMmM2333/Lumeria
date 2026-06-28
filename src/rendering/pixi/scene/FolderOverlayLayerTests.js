@@ -84,6 +84,7 @@ export async function runFolderOverlayLayerTests() {
     });
   }
   const { FolderOverlayLayer } = await import("./FolderOverlayLayer.js");
+  const { createLayerTransitionPort } = await import("./layerTransitionPort.js");
   const { Container } = await import("pixi.js");
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Pixi folder overlay layer test failed] ${message}`);
@@ -116,6 +117,22 @@ export async function runFolderOverlayLayerTests() {
   assert(getFolderPageDotVisualState({ hovered: true }).alpha === 0.5, "hovered Pixi page dots should match the DOM hover alpha");
   const activeDot = getFolderPageDotVisualState({ active: true, hovered: true });
   assert(activeDot.alpha === 0.96 && activeDot.scale === 1.02, "active Pixi page dots should keep the active visual while hovered");
+
+  {
+    const layer = {
+      closingDesktopPageTrackMirrorX: 42,
+      closingGhostLayer: { children: [] },
+      frameGhostState: { height: 80, left: 120, top: 60, width: 90 },
+      pageTrack: { visible: false },
+      panel: { visible: false },
+    };
+    const port = createLayerTransitionPort(layer);
+    const frame = port.getClosingPresentationFrameRect();
+    const debug = port.getDebugSnapshot();
+    assert(frame.left === 162, "closing presentation frame rect should include desktop mirror offset");
+    assert(layer.frameGhostState.left === 120, "closing presentation frame rect should not mutate the stored frame state");
+    assert(debug.framePresentation.left === 162, "closing debug frame presentation should include desktop mirror offset");
+  }
 
   const visualRect = makePanelVisualRect(
     {
@@ -1424,6 +1441,38 @@ export async function runFolderOverlayLayerTests() {
 
   {
     const layer = Object.create(FolderOverlayLayer.prototype);
+    layer.frameGhost = { destroyed: false, x: 99 };
+    layer.closingFrameMask = { destroyed: false, x: 99 };
+    layer.closingPreviewSwapLayer = { destroyed: false, x: 99 };
+    layer.closingGhostLayer = { destroyed: false, x: 44 };
+
+    const initialOffset = layer.syncClosingDesktopPageTrackMirror({
+      desktopPageTrackOffset: { liveX: -100, targetX: -400 },
+    }, "folder-a", true);
+    assert(initialOffset === 0, "closing mirror should establish its baseline from the first desktop live offset");
+    assert(layer.frameGhost.x === 0, "closing mirror baseline should not shift the frame ghost");
+    assert(layer.closingFrameMask.x === 0, "closing mirror baseline should not shift the close frame mask");
+    assert(layer.closingPreviewSwapLayer.x === 0, "closing mirror baseline should not shift the preview swap layer");
+
+    const updatedOffset = layer.syncClosingDesktopPageTrackMirror({
+      desktopPageTrackOffset: { liveX: -235, targetX: -400 },
+    }, "folder-a", true);
+    assert(updatedOffset === -135, "closing mirror should follow desktop pageTrack live delta from close start");
+    assert(layer.frameGhost.x === -135, "closing mirror should shift the frame ghost with desktop pageTrack delta");
+    assert(layer.closingFrameMask.x === -135, "closing mirror should shift the close frame mask with desktop pageTrack delta");
+    assert(layer.closingPreviewSwapLayer.x === -135, "closing mirror should shift start-once preview swap visuals with desktop pageTrack delta");
+    assert(layer.closingGhostLayer.x === 44, "closing mirror must not shift closingGhostLayer because ghosts retarget individually");
+
+    layer.syncClosingDesktopPageTrackMirror({}, "folder-a", false);
+    assert(layer.closingDesktopPageTrackMirrorBaseline === null, "closing mirror should clear its session baseline after closing ends");
+    assert(layer.frameGhost.x === 0, "closing mirror reset should restore frame ghost x");
+    assert(layer.closingFrameMask.x === 0, "closing mirror reset should restore frame mask x");
+    assert(layer.closingPreviewSwapLayer.x === 0, "closing mirror reset should restore preview swap layer x");
+    assert(layer.closingGhostLayer.x === 44, "closing mirror reset should still leave closingGhostLayer untouched");
+  }
+
+  {
+    const layer = Object.create(FolderOverlayLayer.prototype);
     layer.folderHandoff = new FolderHandoffCoordinator(layer);
     layer.folderHandoff.beginCloseTransition("folder-a", { closeToken: "close-a" });
     const closeThumbRect = { height: 58, left: 300, top: 340, width: 58 };
@@ -1446,6 +1495,10 @@ export async function runFolderOverlayLayerTests() {
       },
     };
     layer.iconNodes = new Map();
+    layer.frameGhost = { destroyed: false, x: 0 };
+    layer.closingFrameMask = { destroyed: false, x: 0 };
+    layer.closingPreviewSwapLayer = { destroyed: false, x: 0 };
+    layer.closingGhostLayer = { destroyed: false, x: 31 };
     layer.pageTrack = { visible: true };
     layer.frameGhostState = null;
     layer.getPanelVisualRect = () => ({ height: 220, left: 20, top: 30, width: 260 });
@@ -1454,6 +1507,9 @@ export async function runFolderOverlayLayerTests() {
     layer.refreshRegisteredIconBounds = () => {};
     layer.clearClosingFolderId = () => {};
     layer.stableFolderCloseTarget = { folderId: "folder-a", trackingKey: "live-target" };
+    layer.syncClosingDesktopPageTrackMirror({
+      desktopPageTrackOffset: { liveX: -100, targetX: -400 },
+    }, "folder-a", true);
 
     layer.startFolderOverlayTransitions({
       closeIconRect: { height: 64, left: 360, top: 400, width: 64 },
@@ -1469,6 +1525,7 @@ export async function runFolderOverlayLayerTests() {
       openingGhostTargets: [],
       seen: new Set(),
       state: {
+        desktopPageTrackOffset: { liveX: -180, targetX: -400 },
         folderOpenIconGhosts: [],
         isFolderClosing: true,
       },
@@ -1478,6 +1535,10 @@ export async function runFolderOverlayLayerTests() {
     assert(retargets === 1, "active same-folder close updates should retarget closing ghosts");
     assert(retargetArgs?.[2] === closeThumbRect, "closing retarget should receive the close thumb target rect");
     assert(retargetArgs?.[4]?.handoffRect === renderedFolderRect, "closing retarget should bind handoff geometry to the rendered folder rect");
+    assert(layer.frameGhost.x === -80, "active same-folder close updates should mirror the frame ghost by desktop pageTrack delta");
+    assert(layer.closingFrameMask.x === -80, "active same-folder close updates should mirror the close mask by desktop pageTrack delta");
+    assert(layer.closingPreviewSwapLayer.x === -80, "active same-folder close updates should mirror preview swap visuals by desktop pageTrack delta");
+    assert(layer.closingGhostLayer.x === 31, "active same-folder close updates should not mirror closingGhostLayer because ghosts retarget");
   }
 
   {
