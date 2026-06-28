@@ -180,11 +180,12 @@ function makeLayer() {
   };
 }
 
-function makeTarget(id = "app-1") {
+function makeTarget(id = "app-1", pageIndex = 0) {
   return {
     iconSize: 64,
     index: 0,
     item: { id },
+    pageIndex,
     sourceRect: { height: 32, left: 10, top: 20, width: 32 },
     targetStageLayoutRect: { height: 12, left: 100, top: 120, width: 12 },
   };
@@ -623,6 +624,45 @@ export function runFolderClosingGhostControllerTests() {
     assert(layer.frameGhostOptions.frameGhostPhase === "closing", "closing frame should mark its frame ghost phase");
     assert(layer.frameGhostOptions.folderId === "folder-1", "closing frame should carry the owning folder id");
     assert(layer.frameGhostOptions.fromFillColor === 0xffffff && layer.frameGhostOptions.fromFillAlpha === 0.22, "closing frame should use folder thumb fill presentation at phase handoff");
+    controller.clear();
+  }
+
+  {
+    const layer = makeLayer();
+    const controller = new FolderClosingGhostController(layer);
+    const target = makeTarget("app-1", 1);
+    controller.handoffCoordinator.beginOpeningVisuals({ sessionToken: "open-token" });
+    controller.handoffCoordinator.registerOpeningGhost("app-1");
+    const stalePageGhost = makeGhost("stale-page-opening");
+    stalePageGhost.item = { id: "app-1" };
+    stalePageGhost.openingPageIndex = 0;
+    layer.openingGhostLayer.children = [stalePageGhost];
+
+    let releaseCalls = 0;
+    let clearCalls = 0;
+    layer.openingGhosts.releaseGhost = () => {
+      releaseCalls += 1;
+      throw new Error("closing should not reuse an opening ghost from a different page");
+    };
+    layer.openingGhosts.clear = (options = {}) => {
+      clearCalls += 1;
+      assert(options.cancelSession === true, "closing should cancel the stale opening visual session");
+      controller.handoffCoordinator.clearOpeningVisuals();
+      layer.openingGhostLayer.children = [];
+    };
+    let factoryCalls = 0;
+    controller.ghostFactory = () => {
+      factoryCalls += 1;
+      return makeGhost("fresh-close");
+    };
+
+    controller.start(makeState(), [target], { height: 72, left: 10, top: 20, width: 72 }, { height: 300, left: 0, top: 0, width: 400 });
+
+    assert(releaseCalls === 0, "closing should not release a different-page opening ghost as a close source");
+    assert(clearCalls === 1, "closing should still clear stale opening visuals after taking close ownership");
+    assert(factoryCalls === 1, "closing should create a fresh ghost for the current visual page");
+    assert(layer.closingGhosts.length === 1 && layer.closingGhosts[0] !== stalePageGhost, "closing layer should not contain the stale opening-page ghost");
+    assert(layer.openingGhostLayer.children.length === 0, "stale opening ghost visuals should be removed during close takeover");
     controller.clear();
   }
 

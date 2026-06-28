@@ -117,12 +117,33 @@ function makeDetachedCloseFrameTarget(folderRect, stageRect) {
   };
 }
 
+function normalizePageIndex(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.trunc(number)) : null;
+}
+
+function findOpeningGhost(transitionPort, itemId) {
+  if (!itemId) return null;
+  return (transitionPort.getOpeningGhostChildren?.() || []).find((ghost) =>
+    ghost?.item?.id === itemId && !ghost.destroyed
+  ) || null;
+}
+
+function canReuseOpeningGhostForClose(ghost, target, state) {
+  const openingPageIndex = normalizePageIndex(ghost?.openingPageIndex);
+  if (openingPageIndex == null) return true;
+  const closingPageIndex = normalizePageIndex(target?.pageIndex ?? state?.folderPageIndex);
+  return closingPageIndex == null || openingPageIndex === closingPageIndex;
+}
+
 function releaseOpeningGhostsForClosing(transitionPort, handoffCoordinator, state, targets) {
   const released = new Map();
   if (!handoffCoordinator?.hasActiveOpeningVisuals?.()) return released;
   for (const target of targets || []) {
     const itemId = target?.item?.id;
     if (!itemId || !hasUsableFolderGhostTarget(target) || !handoffCoordinator.hasOpeningGhost(itemId)) continue;
+    const activeOpeningGhost = findOpeningGhost(transitionPort, itemId);
+    if (!canReuseOpeningGhostForClose(activeOpeningGhost, target, state)) continue;
     const ghost = transitionPort.releaseOpeningGhost(itemId);
     const sourceRect = ghost?.getIconBounds?.(state.stageRect);
     if (!ghost || !sourceRect) {

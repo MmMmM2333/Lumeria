@@ -118,7 +118,7 @@ function makeState(completed = []) {
   };
 }
 
-function makeTarget(id = "app-1", index = 0) {
+function makeTarget(id = "app-1", index = 0, pageIndex = 0) {
   return {
     cellHeight: 80,
     cellWidth: 80,
@@ -127,6 +127,7 @@ function makeTarget(id = "app-1", index = 0) {
     iconSize: 64,
     index,
     item: { id, type: "app" },
+    pageIndex,
     sourceRect: { height: 32, left: 10, top: 20, width: 32 },
     targetStageLayoutRect: { height: 64, left: 100, top: 120, width: 64 },
   };
@@ -377,12 +378,12 @@ export function runFolderCloseRaceTests() {
       visible: true,
     });
 
-    const committedPageTarget = makeTarget("app-2");
+    const committedPageTarget = makeTarget("app-2", 0, 1);
     startClosing(harness, [committedPageTarget], { folderPageIndex: 1 });
 
-    assert(harness.layer.openingGhostLayer.children.length === 0, "open-turn-close should currently clear the interrupted origin-page opening ghost");
-    assert(harness.layer.closingGhostLayer.children.length === 1, "open-turn-close should currently create one closing ghost for the committed page");
-    assert(harness.layer.closingGhostLayer.children[0].item.id === "app-2", "open-turn-close should currently hand off the committed page item");
+    assert(harness.layer.openingGhostLayer.children.length === 0, "open-turn-close should clear the interrupted non-current opening ghost");
+    assert(harness.layer.closingGhostLayer.children.length === 1, "open-turn-close should create one closing ghost for the close anchor page");
+    assert(harness.layer.closingGhostLayer.children[0].item.id === "app-2", "open-turn-close should hand off the current visual page item");
     assert(!hasOwnerToken(harness.visualOwnership, "open:page-0"), "open-turn-close should not keep stale origin-page opening ownership");
     motionRuntime.reset();
   }

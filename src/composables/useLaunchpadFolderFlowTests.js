@@ -21,6 +21,15 @@ const secondFolder = {
   name: "Second Folder",
   childPages: [[{ ...folderApp, id: "second-folder-app" }]],
 };
+const pagedFolder = {
+  id: "folder-paged",
+  type: "folder",
+  name: "Paged Folder",
+  childPages: [
+    [{ ...folderApp, id: "paged-folder-app-1" }],
+    [{ ...folderApp, id: "paged-folder-app-2" }],
+  ],
+};
 
 function createTimerWindow() {
   let nextId = 1;
@@ -87,11 +96,13 @@ function createFolderFlow(overrides = {}) {
     clearFolderOpenIconGhosts: 0,
     clearFolderPageTurn: 0,
     clearFolderPageTurnRequest: 0,
+    commitFolderPageTurnRequest: 0,
     resetFolderViewportMetrics: 0,
     setFolderMotionGeometry: [],
   };
   const pages = ref(overrides.pages ?? [[folder]]);
   const folderPageIndex = ref(overrides.folderPageIndex ?? 1);
+  const folderPageTurnRequest = ref(overrides.folderPageTurnRequest ?? null);
   const folderPageRefs = [{ id: "folder-page" }];
   const pageRefs = [{ id: "page" }];
   let folderMotionGeometry = overrides.folderMotionGeometry ?? { id: null, x: 0 };
@@ -102,6 +113,17 @@ function createFolderFlow(overrides = {}) {
     },
     clearFolderPageTurnRequest: () => {
       calls.clearFolderPageTurnRequest += 1;
+      folderPageTurnRequest.value = null;
+    },
+    commitFolderPageTurnRequest: (token, commitOptions = {}) => {
+      calls.commitFolderPageTurnRequest += 1;
+      const request = folderPageTurnRequest.value;
+      if (!request || request.token !== token || request.folderId !== commitOptions.folderId || commitOptions.phase !== "open") return false;
+      const maxIndex = Math.max(0, Number(commitOptions.maxIndex) || 0);
+      if (request.targetIndex < 0 || request.targetIndex > maxIndex) return false;
+      folderPageIndex.value = request.targetIndex;
+      folderPageTurnRequest.value = null;
+      return true;
     },
     clearFolderCloseIconGhosts: () => {
       calls.clearFolderCloseIconGhosts += 1;
@@ -112,6 +134,7 @@ function createFolderFlow(overrides = {}) {
     cloneItem,
     findFolder,
     folderPageIndex,
+    folderPageTurnRequest,
     folderPageRefs,
     folderPageSize: ref(overrides.folderPageSize ?? 2),
     getFolderIconMotionGeometry: (folderId) => ({ id: folderId, source: "icon" }),
@@ -137,6 +160,7 @@ function createFolderFlow(overrides = {}) {
     calls,
     flow,
     folderPageIndex,
+    folderPageTurnRequest,
     folderPageRefs,
     get folderMotionGeometry() {
       return folderMotionGeometry;
@@ -203,6 +227,23 @@ export function runLaunchpadFolderFlowTests() {
     timers.runDelay(HOME_REVEAL_SETTLE_DURATION);
     assert(!close.flow.isHomeRevealSettling.value, "home reveal timer should finish settle state");
     assert(close.flow.desktopProjectionEpoch.value === 1, "home reveal timer should advance projection epoch");
+
+    const closeWithPendingPageTurn = createFolderFlow({
+      folderPageIndex: 0,
+      pages: [[pagedFolder]],
+    });
+    closeWithPendingPageTurn.flow.commitOpenFolder("folder-paged");
+    closeWithPendingPageTurn.folderPageTurnRequest.value = {
+      folderId: "folder-paged",
+      fromIndex: 0,
+      targetIndex: 1,
+      token: 42,
+    };
+    closeWithPendingPageTurn.flow.commitOpenFolder(null);
+    assert(closeWithPendingPageTurn.calls.commitFolderPageTurnRequest === 1, "closing should commit the pending visual folder page request before clearing it");
+    assert(closeWithPendingPageTurn.folderPageIndex.value === 1, "closing should use the pending visual folder page as the committed close anchor");
+    assert(closeWithPendingPageTurn.folderPageTurnRequest.value === null, "committing the pending visual page should clear the folder page request");
+    timers.runDelay(FOLDER_CLOSE_DURATION);
 
     const closeWithGhosts = createFolderFlow();
     closeWithGhosts.flow.commitOpenFolder("folder-1");

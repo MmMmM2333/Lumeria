@@ -315,6 +315,7 @@ export class FolderOpeningGhostController {
     for (const target of usableTargets) {
       const ghost = this.ghostFactory();
       ghost.eventMode = "none";
+      ghost.openingPageIndex = target.pageIndex;
       ghost.stageRect = state.stageRect;
       ghost.setState(makeFolderGhostIconNodeState({ sourceType: "folder-open-ghost", state, target }));
       const ghostMotion = makeOpeningGhostMotion(target, {
@@ -383,6 +384,7 @@ export class FolderOpeningGhostController {
       const targetKey = makeOpeningGhostTargetKey(target);
       if (this.openingTargetKeysByItemId.get(itemId) === targetKey) continue;
 
+      ghost.openingPageIndex = target.pageIndex;
       const ghostMotion = makeOpeningGhostMotion(target, {
         isTextlessMode: state.isTextlessMode,
         openDuration: motionPresets.folderOpenGhost.duration,

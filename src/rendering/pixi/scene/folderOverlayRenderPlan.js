@@ -112,6 +112,7 @@ export function makeFolderOverlayRenderPlan(options = {}) {
             iconSize,
             index,
             item,
+            pageIndex,
             previewSlotById,
           }
           : null,

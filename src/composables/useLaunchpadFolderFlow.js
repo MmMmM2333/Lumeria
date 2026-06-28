@@ -81,6 +81,16 @@ export function useLaunchpadFolderFlow(options) {
     homeRevealSettleTimer = window.setTimeout(finishHomeRevealSettleWindow, HOME_REVEAL_SETTLE_DURATION);
   }
 
+  function commitPendingFolderPageTurnForClose(folderId) {
+    const request = options.folderPageTurnRequest?.value;
+    if (!request || !folderId || request.folderId !== folderId || typeof options.commitFolderPageTurnRequest !== "function") return false;
+    return options.commitFolderPageTurnRequest(request.token, {
+      folderId,
+      maxIndex: Math.max(0, folderPages.value.length - 1),
+      phase: "open",
+    }) === true;
+  }
+
   function finishFolderClose() {
     clearFolderCloseHandoffFrame();
     clearFolderZoomFadeCloseTimer();
@@ -167,6 +177,7 @@ export function useLaunchpadFolderFlow(options) {
     }
 
     const closingId = renderedFolderId.value || openFolderId.value;
+    commitPendingFolderPageTurnForClose(closingId);
     const current = closingId ? options.findFolder(options.pages.value, closingId)?.item : null;
     const fallback = renderedFolder.value;
     folderClosingSnapshot.value = current ? options.cloneItem(current) : fallback ? options.cloneItem(fallback) : null;

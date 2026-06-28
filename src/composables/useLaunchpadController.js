@@ -378,11 +378,13 @@ export function useLaunchpadController() {
   } = useLaunchpadFolderFlow({
     clearFolderPageTurn: () => clearFolderPageTurn(),
     clearFolderPageTurnRequest,
+    commitFolderPageTurnRequest: commitFolderPageTurnRequestState,
     clearFolderCloseIconGhosts,
     clearFolderOpenIconGhosts,
     cloneItem,
     findFolder,
     folderPageIndex,
+    folderPageTurnRequest,
     folderPageRefs,
     folderPageSize,
     getFolderIconMotionGeometry: (folderId) => getFolderIconMotionGeometry(folderId),

@@ -213,6 +213,7 @@ export function makeClosingGhostTarget(options = {}) {
     iconSize,
     index,
     item,
+    pageIndex = 0,
     previewSlotById,
     stableFolderCloseTarget,
   } = options;
@@ -237,6 +238,7 @@ export function makeClosingGhostTarget(options = {}) {
     index,
     isThumbnailChild,
     item,
+    pageIndex,
     previewSlotIndex,
     sourceRect: iconBounds,
     targetClientRect: isClientTarget ? rawTargetRect : null,
