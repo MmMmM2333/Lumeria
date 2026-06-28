@@ -483,29 +483,48 @@ fn read_wallpaper_engine_current_wallpaper_path_from_config(
 }
 
 #[cfg(target_os = "windows")]
+fn json_find<'a, T, F>(value: &'a serde_json::Value, predicate: &mut F) -> Option<T>
+where
+    F: FnMut(Option<&'a str>, &'a serde_json::Value) -> Option<T>,
+{
+    fn visit<'a, T, F>(
+        key: Option<&'a str>,
+        value: &'a serde_json::Value,
+        predicate: &mut F,
+    ) -> Option<T>
+    where
+        F: FnMut(Option<&'a str>, &'a serde_json::Value) -> Option<T>,
+    {
+        if let Some(found) = predicate(key, value) {
+            return Some(found);
+        }
+
+        match value {
+            serde_json::Value::Object(object) => object
+                .iter()
+                .find_map(|(key, child)| visit(Some(key.as_str()), child, predicate)),
+            serde_json::Value::Array(items) => {
+                items.iter().find_map(|item| visit(None, item, predicate))
+            }
+            _ => None,
+        }
+    }
+
+    visit(None, value, predicate)
+}
+
+#[cfg(target_os = "windows")]
 fn find_wallpaper_engine_config_string(
     value: &serde_json::Value,
     leaf_key: &str,
 ) -> Option<String> {
-    match value {
-        serde_json::Value::Object(object) => {
-            for (key, child) in object {
-                if key.eq_ignore_ascii_case(leaf_key) {
-                    if let Some(text) = child.as_str() {
-                        return Some(text.trim().to_string());
-                    }
-                }
-                if let Some(found) = find_wallpaper_engine_config_string(child, leaf_key) {
-                    return Some(found);
-                }
-            }
-            None
+    json_find(value, &mut |key, candidate| {
+        let key = key?;
+        if !key.eq_ignore_ascii_case(leaf_key) {
+            return None;
         }
-        serde_json::Value::Array(items) => items
-            .iter()
-            .find_map(|item| find_wallpaper_engine_config_string(item, leaf_key)),
-        _ => None,
-    }
+        candidate.as_str().map(|text| text.trim().to_string())
+    })
 }
 
 #[cfg(target_os = "windows")]
@@ -513,62 +532,33 @@ fn find_wallpaper_engine_selected_wallpaper_file(
     value: &serde_json::Value,
     location: &str,
 ) -> Option<String> {
-    match value {
-        serde_json::Value::Object(object) => {
-            if let Some(selected) = object
-                .get("selectedwallpapers")
-                .and_then(|value| value.as_object())
-            {
-                if let Some(file) = selected
-                    .get(location)
-                    .and_then(|entry| entry.get("file"))
-                    .and_then(|file| file.as_str())
-                    .map(|file| file.trim().to_string())
-                    .filter(|file| !file.is_empty())
-                {
-                    return Some(file);
-                }
-            }
-            object
-                .values()
-                .find_map(|child| find_wallpaper_engine_selected_wallpaper_file(child, location))
-        }
-        serde_json::Value::Array(items) => items
-            .iter()
-            .find_map(|item| find_wallpaper_engine_selected_wallpaper_file(item, location)),
-        _ => None,
-    }
+    json_find(value, &mut |_, candidate| {
+        candidate
+            .as_object()
+            .and_then(|object| object.get("selectedwallpapers"))
+            .and_then(|value| value.as_object())
+            .and_then(|selected| selected.get(location))
+            .and_then(|entry| entry.get("file"))
+            .and_then(|file| file.as_str())
+            .map(|file| file.trim().to_string())
+            .filter(|file| !file.is_empty())
+    })
 }
 
 #[cfg(target_os = "windows")]
 fn find_first_wallpaper_engine_selected_wallpaper_file(
     value: &serde_json::Value,
 ) -> Option<String> {
-    match value {
-        serde_json::Value::Object(object) => {
-            if let Some(selected) = object
-                .get("selectedwallpapers")
-                .and_then(|value| value.as_object())
-            {
-                if let Some(file) = selected
-                    .values()
-                    .find_map(|entry| entry.get("file"))
-                    .and_then(|file| file.as_str())
-                    .map(|file| file.trim().to_string())
-                    .filter(|file| !file.is_empty())
-                {
-                    return Some(file);
-                }
-            }
-            object
-                .values()
-                .find_map(find_first_wallpaper_engine_selected_wallpaper_file)
-        }
-        serde_json::Value::Array(items) => items
-            .iter()
-            .find_map(find_first_wallpaper_engine_selected_wallpaper_file),
-        _ => None,
-    }
+    json_find(value, &mut |_, candidate| {
+        candidate
+            .as_object()
+            .and_then(|object| object.get("selectedwallpapers"))
+            .and_then(|value| value.as_object())
+            .and_then(|selected| selected.values().find_map(|entry| entry.get("file")))
+            .and_then(|file| file.as_str())
+            .map(|file| file.trim().to_string())
+            .filter(|file| !file.is_empty())
+    })
 }
 
 #[cfg(target_os = "windows")]
