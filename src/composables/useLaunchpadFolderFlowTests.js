@@ -305,19 +305,25 @@ export function runLaunchpadFolderFlowTests() {
     interruptedClose.folderPageIndex.value = 2;
     interruptedClose.folderPageRefs.push({ id: "extra-folder-page" });
     interruptedClose.flow.commitOpenFolder(null, { waitForCloseGhosts: true });
+    const staleNormalCloseProgressAnimation = interruptedClose.calls.folderOpenProgressAnimations.at(-1);
     assert(interruptedClose.flow.startFolderZoomFadeClose({ reason: "desktop" }), "zoom-fade close should interrupt a normal folder close");
     assert(!interruptedClose.flow.isFolderClosing.value, "interrupted normal close should leave folder closing state");
     assert(interruptedClose.flow.isFolderZoomFadeClosing.value, "interrupted normal close should enter zoom-fade closing state");
     assert(interruptedClose.flow.isFolderZoomFadeClosingFromFolderClose.value, "interrupted normal close should keep the folder visually closing");
     assert(interruptedClose.flow.folderZoomFadeCloseReason.value === "desktop", "interrupted normal close should store the zoom-fade reason");
     assert(interruptedClose.flow.renderedFolder.value?.id === "folder-1", "interrupted normal close should keep the rendered folder for zoom-fade");
+    assert(interruptedClose.flow.folderOpenProgressTarget.value === 0, "interrupted normal close should keep targeting zero open progress");
+    assert(interruptedClose.calls.folderOpenProgressAnimations.at(-1)?.target === 0, "interrupted normal close should retarget zoom-fade progress to zero");
     assert(interruptedClose.calls.clearFolderCloseIconGhosts === 1, "interrupted normal close should clear close ghosts");
     assert(interruptedClose.calls.clearFolderOpenIconGhosts === 1, "interrupted normal close should clear open ghosts");
     assert(interruptedClose.calls.clearFolderPageTurn === 2, "interrupted normal close should clear folder page turn timers again");
+    staleNormalCloseProgressAnimation.progress.value = staleNormalCloseProgressAnimation.target;
+    staleNormalCloseProgressAnimation.onArrive?.();
+    assert(interruptedClose.flow.isFolderZoomFadeClosing.value, "stale normal close progress arrival should not finish an interrupted zoom-fade close");
     timers.runDelay(FOLDER_CLOSE_GHOST_FALLBACK_DURATION);
     assert(interruptedClose.flow.isFolderZoomFadeClosing.value, "interrupted normal close should cancel the normal close fallback timer");
     assert(interruptedClose.flow.renderedFolder.value?.id === "folder-1", "normal close fallback should not clear the zoom-fading folder");
-    interruptedClose.flow.finishFolderZoomFadeClose();
+    interruptedClose.arriveFolderOpenProgress(0);
     assert(!interruptedClose.flow.isFolderZoomFadeClosingFromFolderClose.value, "zoom-fade finish should clear the visual closing flag");
 
     const closeAfterFrame = createFolderFlow();
@@ -355,17 +361,37 @@ export function runLaunchpadFolderFlowTests() {
     launchClose.flow.commitOpenFolder("folder-1");
     launchClose.folderPageIndex.value = 1;
     launchClose.folderPageRefs.push({ id: "extra-folder-page" });
-    launchClose.flow.startFolderAppLaunchClose();
+    assert(launchClose.flow.startFolderAppLaunchClose(), "app launch close should start for an open folder");
     assert(launchClose.flow.openFolderId.value === null, "app launch close should clear open folder id immediately");
     assert(launchClose.flow.isFolderAppLaunchClosing.value, "app launch close should enter launch closing state");
     assert(!launchClose.flow.isFolderClosing.value, "app launch close should not use normal folder closing state");
     assert(launchClose.flow.folderClosingSnapshot.value.id === "folder-1", "app launch close should keep a closing snapshot");
     assert(launchClose.flow.folderClosingSnapshot.value !== folder, "app launch close snapshot should be cloned");
+    assert(launchClose.flow.folderOpenProgressTarget.value === 0, "app launch close should target zero open progress");
+    assert(launchClose.calls.folderOpenProgressAnimations.at(-1)?.target === 0, "app launch close should animate open progress to zero");
+    launchClose.arriveFolderOpenProgress(0);
+    assert(!launchClose.flow.isFolderAppLaunchClosing.value, "app launch close progress arrival should clear launch closing state");
+    assert(launchClose.flow.renderedFolder.value === null, "app launch close progress arrival should clear rendered folder");
+    assert(launchClose.folderPageIndex.value === 0, "app launch close progress arrival should reset folder page index");
+    assert(launchClose.folderPageRefs.length === 0, "app launch close progress arrival should clear folder page refs");
     timers.runDelay(FOLDER_APP_LAUNCH_DURATION);
-    assert(!launchClose.flow.isFolderAppLaunchClosing.value, "app launch close timer should clear launch closing state");
-    assert(launchClose.flow.renderedFolder.value === null, "app launch close timer should clear rendered folder");
-    assert(launchClose.folderPageIndex.value === 0, "app launch close timer should reset folder page index");
-    assert(launchClose.folderPageRefs.length === 0, "app launch close timer should clear folder page refs");
+    assert(launchClose.flow.renderedFolder.value === null, "app launch close fallback should be cleared after progress arrival");
+
+    const launchCloseFallback = createFolderFlow();
+    launchCloseFallback.flow.commitOpenFolder("folder-1");
+    launchCloseFallback.flow.startFolderAppLaunchClose();
+    timers.runDelay(FOLDER_APP_LAUNCH_DURATION);
+    assert(!launchCloseFallback.flow.isFolderAppLaunchClosing.value, "app launch close fallback timer should finish a stuck progress close");
+    assert(launchCloseFallback.flow.renderedFolder.value === null, "app launch close fallback timer should clear rendered folder");
+
+    const launchCloseReopen = createFolderFlow();
+    launchCloseReopen.flow.commitOpenFolder("folder-1");
+    launchCloseReopen.flow.startFolderAppLaunchClose();
+    launchCloseReopen.flow.commitOpenFolder("folder-1");
+    timers.runDelay(FOLDER_APP_LAUNCH_DURATION);
+    assert(launchCloseReopen.flow.openFolderId.value === "folder-1", "reopening should cancel a stale app launch close fallback");
+    assert(launchCloseReopen.flow.renderedFolder.value?.id === "folder-1", "stale app launch fallback should not clear a reopened folder");
+    assert(launchCloseReopen.calls.folderOpenProgressAnimations.at(-1)?.target === 1, "reopening after app launch close should retarget open progress to one");
 
     const dragActive = createFolderFlow({ isDragActive: true });
     dragActive.flow.commitOpenFolder("folder-1");
@@ -382,15 +408,23 @@ export function runLaunchpadFolderFlowTests() {
     assert(zoomFadeClose.flow.folderZoomFadeCloseReason.value === null, "zoom-fade close should allow a missing reason");
     assert(!zoomFadeClose.flow.isFolderClosing.value, "zoom-fade close should not use the normal folder closing state");
     assert(!zoomFadeClose.flow.isFolderZoomFadeClosingFromFolderClose.value, "open-folder zoom-fade close should not use the visual folder-close flag");
+    assert(zoomFadeClose.flow.folderOpenProgressTarget.value === 0, "zoom-fade close should target zero open progress");
+    assert(zoomFadeClose.calls.folderOpenProgressAnimations.at(-1)?.target === 0, "zoom-fade close should animate open progress to zero");
     assert(!zoomFadeClose.flow.isHomeRevealSettling.value, "zoom-fade close should not settle the home reveal by default");
     assert(zoomFadeClose.calls.clearFolderPageTurn === 1, "zoom-fade close should clear folder page turn timers");
     assert(zoomFadeClose.calls.clearFolderOpenIconGhosts === 1, "zoom-fade close should clear interrupted folder open ghosts");
     assert(zoomFadeClose.calls.clearFolderCloseIconGhosts === 1, "zoom-fade close should clear interrupted folder close ghosts");
-    zoomFadeClose.flow.finishFolderZoomFadeClose();
+    zoomFadeClose.arriveFolderOpenProgress(0);
     assert(zoomFadeClose.flow.openFolderId.value === null, "zoom-fade finish should clear the open folder id");
     assert(zoomFadeClose.flow.renderedFolder.value === null, "zoom-fade finish should clear the rendered folder");
     assert(zoomFadeClose.folderPageIndex.value === 0, "zoom-fade finish should reset folder page index");
     assert(zoomFadeClose.folderPageRefs.length === 0, "zoom-fade finish should clear folder page refs");
+
+    const zoomFadeDirectFinish = createFolderFlow();
+    zoomFadeDirectFinish.flow.commitOpenFolder("folder-1");
+    zoomFadeDirectFinish.flow.startFolderZoomFadeClose();
+    assert(zoomFadeDirectFinish.flow.finishFolderZoomFadeClose(), "zoom-fade close should still support direct external finish");
+    assert(zoomFadeDirectFinish.flow.openFolderId.value === null, "direct zoom-fade finish should clear the open folder id");
 
     const zoomFadeRevealHome = createFolderFlow();
     zoomFadeRevealHome.flow.commitOpenFolder("folder-1");
@@ -403,6 +437,15 @@ export function runLaunchpadFolderFlowTests() {
     zoomFadeFallback.flow.startFolderZoomFadeClose();
     timers.runDelay(FOLDER_ZOOM_FADE_CLOSE_DURATION + 80);
     assert(!zoomFadeFallback.flow.isFolderZoomFadeClosing.value, "zoom-fade fallback timer should finish the close");
+
+    const zoomFadeReopen = createFolderFlow();
+    zoomFadeReopen.flow.commitOpenFolder("folder-1");
+    zoomFadeReopen.flow.startFolderZoomFadeClose();
+    zoomFadeReopen.flow.commitOpenFolder("folder-1");
+    timers.runDelay(FOLDER_ZOOM_FADE_CLOSE_DURATION + 80);
+    assert(zoomFadeReopen.flow.openFolderId.value === "folder-1", "reopening should cancel a stale zoom-fade fallback");
+    assert(zoomFadeReopen.flow.renderedFolder.value?.id === "folder-1", "stale zoom-fade fallback should not clear a reopened folder");
+    assert(zoomFadeReopen.calls.folderOpenProgressAnimations.at(-1)?.target === 1, "reopening after zoom-fade should retarget open progress to one");
   } finally {
     if (originalWindow === undefined) {
       delete globalThis.window;
