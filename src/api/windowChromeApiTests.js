@@ -1,4 +1,5 @@
 import {
+  emitWindowChromeStateChange,
   hideWindow,
   isWindowMaximized,
   minimizeWindow,
@@ -7,6 +8,7 @@ import {
   startWindowDrag,
   startWindowResize,
   toggleWindowMaximize,
+  WINDOW_CHROME_STATE_CHANGE_EVENT,
 } from "./windowChromeApi.js";
 
 export async function runWindowChromeApiTests() {
@@ -51,6 +53,17 @@ export async function runWindowChromeApiTests() {
   assert(calls[4][0] === "isMaximized", "maximize state should call isMaximized");
 
   setWindowChromeBridgeForTests(null);
+
+  const dispatched = [];
+  assert(emitWindowChromeStateChange({ reason: "unit-test" }, {
+    dispatchEvent(event) {
+      dispatched.push(event);
+      return true;
+    },
+  }), "window chrome state change should dispatch through the provided target");
+  assert(dispatched[0].type === WINDOW_CHROME_STATE_CHANGE_EVENT, "window chrome state change should use the shared event name");
+  assert(dispatched[0].detail.reason === "unit-test", "window chrome state change should preserve event details");
+  assert(!emitWindowChromeStateChange({ reason: "missing-target" }, null), "missing event target should be ignored");
 
   assert(!(await isWindowMaximized()), "maximize state should be false without a native bridge");
   assert(!(await hideWindow()), "hide should be a no-op without a native bridge");

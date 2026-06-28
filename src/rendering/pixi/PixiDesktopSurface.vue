@@ -44,6 +44,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect } from "vue";
+import { WINDOW_CHROME_STATE_CHANGE_EVENT } from "../../api/windowChromeApi.js";
 import { getFolderPreviewSlots } from "../../domain/launchpadLayout.js";
 import { createPixiApp } from "./createPixiApp.js";
 import { DesktopLayer } from "./scene/DesktopLayer.js";
@@ -71,6 +72,7 @@ import {
   makeRootStageHostStyle as makeRootStageHostStyleFromRect,
 } from "./geometry/rootStageCoordinates.js";
 import { createFolderClosingHandoffRetainer } from "./scene/folderClosingHandoffRetainer.js";
+import { createResizeSettleScheduler } from "./resizeSettleScheduler.js";
 import {
   getFolderHandoffDebugOptions,
   rectDelta as getDebugRectDelta,
@@ -84,6 +86,8 @@ import {
 } from "./scene/singleStageFolderDomControls.js";
 
 const FOLDER_TEXTURE_PREWARM_LIMIT = 80;
+const RESIZE_SETTLE_FRAMES = 3;
+const WINDOW_CHROME_RESIZE_SETTLE_FRAMES = 12;
 
 const props = defineProps({
   activePageIndex: { type: Number, required: true },
@@ -178,6 +182,7 @@ let desktopFrameHandle = null;
 let desktopFrameLastTime = 0;
 let desktopMotionFrameNeedsRender = false;
 let desktopLayerUpdatePending = false;
+let resizeSettleScheduler = null;
 const folderClosingHandoffRetainer = createFolderClosingHandoffRetainer();
 let handoffDebugSequence = 0;
 
@@ -275,9 +280,33 @@ function syncPixiResizeTarget(metrics = null) {
   if (shouldResize) app.resize?.();
 }
 
+function getResizeSettleScheduler() {
+  if (resizeSettleScheduler) return resizeSettleScheduler;
+  resizeSettleScheduler = createResizeSettleScheduler({
+    defaultFrameCount: RESIZE_SETTLE_FRAMES,
+    onFrame: (reason) => {
+      invalidateDesktopDomGeometry();
+      refreshDesktopDomGeometry();
+      desktopLayerUpdatePending = true;
+      getRenderScheduler().markRenderPending(reason);
+    },
+  });
+  return resizeSettleScheduler;
+}
+
+function requestResizeSettle(reason = "resize", frameCount = RESIZE_SETTLE_FRAMES) {
+  if (destroyed) return false;
+  const didStart = getResizeSettleScheduler().request(reason, frameCount);
+  scheduleDesktopFrame();
+  return didStart;
+}
+
 function handleResize() {
-  refreshDesktopDomGeometry();
-  requestRender("resize");
+  requestResizeSettle("resize", RESIZE_SETTLE_FRAMES);
+}
+
+function handleWindowChromeStateChange() {
+  requestResizeSettle("window-state-resize", WINDOW_CHROME_RESIZE_SETTLE_FRAMES);
 }
 
 function nowMs() {
@@ -577,6 +606,7 @@ function renderPixi(options = {}) {
 
 function cancelScheduledRenderPixi() {
   renderScheduler?.cancel();
+  resizeSettleScheduler?.reset?.();
   if (desktopFrameHandle != null) {
     window.cancelAnimationFrame?.(desktopFrameHandle);
     desktopFrameHandle = null;
@@ -616,6 +646,7 @@ function shouldRunDesktopFrameLoop() {
     hostRef.value &&
     (
       getRenderScheduler().hasPendingRender() ||
+      resizeSettleScheduler?.hasPending?.() ||
       motionRuntime.hasActiveWork?.() ||
       shouldRunHandoffRenderLoop()
     )
@@ -637,6 +668,7 @@ function runDesktopFrame(time) {
 
   motionRuntime.step(deltaSeconds);
   const scheduler = getRenderScheduler();
+  resizeSettleScheduler?.consumeFrame?.();
   if (desktopMotionFrameNeedsRender) {
     scheduler.markRenderPending("motion-frame");
     desktopMotionFrameNeedsRender = false;
@@ -750,6 +782,7 @@ function destroyPixi(options = {}) {
   const deep = options.deep !== false;
   destroyed = true;
   window.removeEventListener("resize", handleResize);
+  window.removeEventListener(WINDOW_CHROME_STATE_CHANGE_EVENT, handleWindowChromeStateChange);
   resizeObserver?.disconnect();
   resizeObserver = null;
   const currentApp = app;
@@ -765,6 +798,7 @@ function destroyPixi(options = {}) {
     desktopMotionRuntimeSuspended = false;
   }
   desktopMotionFrameNeedsRender = false;
+  resizeSettleScheduler?.reset?.();
   cancelScheduledRenderPixi();
   renderScheduler?.destroy();
   renderScheduler = null;
@@ -818,6 +852,7 @@ onMounted(async () => {
     },
     onFolderGeometryChange: handleSingleStageFolderGeometryChange,
     onFolderInternalActivityChange: handleFolderInternalActivity,
+    onFolderRenderRequest: (reason) => requestRender(reason || "folder-overlay-render-request"),
     onFolderOutsidePointerDown: () => {
       props.folderOverlayState?.handleFolderOverlayPointerDown?.();
       requestRender("folder-outside-pointerdown");
@@ -870,6 +905,7 @@ onMounted(async () => {
   resizeObserver = new ResizeObserver(handleResize);
   resizeObserver.observe(hostRef.value);
   window.addEventListener("resize", handleResize);
+  window.addEventListener(WINDOW_CHROME_STATE_CHANGE_EVENT, handleWindowChromeStateChange);
   await nextTick();
   refreshDesktopDomGeometry();
   requestRender("mount");

@@ -220,6 +220,19 @@ export async function runDesktopLayerTests() {
   };
 
   {
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const renderRequests = [];
+    const layer = new DesktopLayer({
+      iconBoundsRegistry,
+      onFolderRenderRequest: (reason) => renderRequests.push(reason),
+    });
+    layer.singleStageFolderLayer.onRenderRequest("folder-resize-layout");
+    assert(renderRequests[0] === "folder-resize-layout", "folder overlay render requests should be forwarded to the desktop surface scheduler");
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+  }
+
+  {
     const normalized = normalizeDesktopHandoffState({
       folderClosingHandoffId: "folder-a",
       folderClosingHandoffIds: ["folder-b", "folder-c"],
