@@ -340,7 +340,6 @@ export class IconNode extends Container {
   updateOpeningScale(state) {
     if (state.preserveNodeScale) {
       this.openingScaleActive = null;
-      killMotionOf(this.scale);
       return;
     }
     const shouldOpenScale = Boolean(state.opening);
@@ -682,6 +681,10 @@ export class IconNode extends Container {
       node.position.set(childRect.left + childRect.width / 2, childRect.top + childRect.height / 2);
       node.visible = Boolean(child);
       if (!child) continue;
+      if (child.id === state.suppressedFolderPreviewChildId) {
+        node.visible = false;
+        continue;
+      }
       const childId = child.id;
       const texture = getCachedIconTexture(child, () => {
         if (this.destroyed || !this.state || this.item?.type !== "folder") return;

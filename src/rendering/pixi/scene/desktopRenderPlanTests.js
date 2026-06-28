@@ -113,4 +113,21 @@ export function runDesktopRenderPlanTests() {
     assert(plan.emptyText.x === 200 && plan.emptyText.y === 150, "empty text should be centered in the desktop frame");
     assert(plan.clearLaunchArea === "search", "search mode should clear search launch bounds");
   }
+
+  {
+    const folderA = { id: "folder-a", type: "folder" };
+    const folderB = { id: "folder-b", type: "folder" };
+    const plan = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[folderA, folderB]],
+      dragReleaseState: {
+        suppressFolderPreviewChildId: "app-a",
+        suppressFolderPreviewFolderId: "folder-b",
+      },
+      gridCols: 2,
+      gridRows: 1,
+    }));
+
+    assert(plan.entries[0].nodeState.suppressedFolderPreviewChildId == null, "non-target folder should not receive preview child suppression");
+    assert(plan.entries[1].nodeState.suppressedFolderPreviewChildId === "app-a", "target folder should receive preview child suppression");
+  }
 }

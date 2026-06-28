@@ -1,5 +1,47 @@
 import { motionRuntime } from "../animation/motionRuntime.js";
 
+function installPixiTextTestDom() {
+  if (!("CanvasRenderingContext2D" in globalThis)) {
+    globalThis.CanvasRenderingContext2D = class CanvasRenderingContext2D {};
+  }
+  if ("document" in globalThis) return;
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: {
+      baseURI: "http://localhost/",
+      fonts: null,
+      createElement(tagName) {
+        if (tagName !== "canvas") return {};
+        const context = Object.create(globalThis.CanvasRenderingContext2D.prototype);
+        Object.assign(context, {
+          canvas: null,
+          clearRect: () => {},
+          fillRect: () => {},
+          getImageData: () => ({ data: new Uint8ClampedArray(4) }),
+          measureText: (text) => ({
+            actualBoundingBoxAscent: 10,
+            actualBoundingBoxDescent: 3,
+            width: String(text || "").length * 8,
+          }),
+          restore: () => {},
+          save: () => {},
+          scale: () => {},
+          setTransform: () => {},
+          strokeText: () => {},
+          fillText: () => {},
+        });
+        const canvas = {
+          height: 0,
+          width: 0,
+          getContext: () => context,
+        };
+        context.canvas = canvas;
+        return canvas;
+      },
+    },
+  });
+}
+
 export async function runIconNodeTests() {
   if (!("navigator" in globalThis)) {
     Object.defineProperty(globalThis, "navigator", {
@@ -7,6 +49,7 @@ export async function runIconNodeTests() {
       value: { userAgent: "node.js" },
     });
   }
+  installPixiTextTestDom();
   const { IconNode } = await import("./IconNode.js");
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[IconNode test failed] ${message}`);
@@ -132,10 +175,42 @@ export async function runIconNodeTests() {
     assert(node.visualWrap.scale.x === 1 && node.visualWrap.scale.y === 1, "folder handoff release should restore real artwork scale");
 
     motionRuntime.reset();
+    const folderChildA = { id: "folder-child-a", name: "Folder Child A", type: "app" };
+    const folderChildB = { id: "folder-child-b", name: "Folder Child B", type: "app" };
+    const folderWithChildren = {
+      id: "folder-suppress",
+      name: "Folder Suppress",
+      type: "folder",
+      childPages: [[folderChildA, folderChildB]],
+      children: [folderChildA, folderChildB],
+    };
+    const folderNodeState = {
+      cellHeight: 80,
+      cellWidth: 80,
+      compact: false,
+      editing: false,
+      folderPreviewPageSize: 9,
+      ghosted: false,
+      iconSize: 64,
+      interactive: true,
+      item: folderWithChildren,
+      opening: false,
+      source: { index: 0, pageIndex: 0, type: "page" },
+      stageHeight: 600,
+      stageWidth: 800,
+      textless: false,
+    };
+    node.setState({ ...folderNodeState, suppressedFolderPreviewChildId: "folder-child-b" });
+    assert(node.folderChildNodes[0].visible === true, "unsuppressed folder preview child should remain visible");
+    assert(node.folderChildNodes[1].visible === false, "suppressed folder preview child should be hidden");
+    node.setState(folderNodeState);
+    assert(node.folderChildNodes[1].visible === true, "folder preview child should reappear after suppression is cleared");
+
+    motionRuntime.reset();
     motionRuntime.configureDebug({ enabled: true });
     node.item = { id: "app-meta", name: "App Meta", type: "app" };
     node.source = { index: 2, pageIndex: 1, type: "page" };
-    node.describeMotionTargets();
+    node.describeMotionTargets({ item: node.item, source: node.source });
     node.setPressed(true, { pointerId: 2 });
     snapshot = motionRuntime.debugReport({ includeTargets: true });
     assert(

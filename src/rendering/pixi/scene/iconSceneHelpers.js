@@ -34,6 +34,7 @@ export function makeSyntheticPointerEvent(original, node) {
   const native = original?.nativeEvent || original || {};
   const bounds = node.getIconBounds(node.stageRect || { left: 0, top: 0 });
   const folderOriginBounds = makeFolderOriginBounds(node, bounds);
+  const nodeState = node?.state || {};
   return {
     button: native.button ?? 0,
     buttons: native.buttons ?? 1,
@@ -41,6 +42,13 @@ export function makeSyntheticPointerEvent(original, node) {
     clientY: native.clientY ?? 0,
     currentTarget: {
       getBoundingClientRect: () => bounds,
+    },
+    dragVisualState: {
+      cellHeight: nodeState.cellHeight,
+      cellWidth: nodeState.cellWidth,
+      compact: nodeState.compact === true,
+      iconSize: nodeState.iconSize,
+      singleLineLabel: nodeState.singleLineLabel === true,
     },
     folderOriginBounds,
     pointerId: native.pointerId,

@@ -4,6 +4,9 @@ import { clientPointToStageVisualPoint, clientRectToStageVisualRect, getStageSca
 
 export const DRAG_PREVIEW_SCALE = 1.12;
 export const DRAG_PREVIEW_FOLDER_HOVER_SCALE = 0.92;
+export const DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB = "folder-center-absorb";
+export const DRAG_RELEASE_MODE_FOLDER_PREVIEW_SLOT = "folder-preview-slot";
+export const DRAG_RELEASE_MODE_SLOT = "slot";
 
 function getPreviewIconSize(preview, fallbackIconSize) {
   return Math.max(1, Number(preview?.size?.width) || Number(fallbackIconSize) || 64);
@@ -57,10 +60,12 @@ export function getDragPreviewLayout(preview, state = {}) {
   return {
     cellHeight: cellSize.height,
     cellWidth: cellSize.width,
+    compact: preview?.compact === true,
     iconSize,
     key,
     position,
     scaleKey: `${key}:${targetScale}`,
+    singleLineLabel: preview?.singleLineLabel === true,
     stageRect,
     targetScale,
     textless,
@@ -78,17 +83,26 @@ export function getDragReleaseMotion(release, state = {}) {
   const hasStageLayoutTargetRect = Boolean(targetStageLayoutRect?.width && targetStageLayoutRect?.height);
   const hasClientTargetRect = Boolean(targetRect?.width && targetRect?.height);
   const hasTargetRect = hasStageLayoutTargetRect || hasClientTargetRect;
+  const releaseMode = release?.releaseMode || DRAG_RELEASE_MODE_SLOT;
   const visualOffsetY = getIconVisualOffsetY(textless);
   const targetLocalRect = hasStageLayoutTargetRect
     ? targetStageLayoutRect
     : clientRectToStageVisualRect(targetRect, stageRect);
-  const targetScale = hasTargetRect ? Math.max(0.1, targetLocalRect.width / iconSize) : 1;
+  const rawTargetScale = hasTargetRect ? Math.max(0.1, targetLocalRect.width / iconSize) : 1;
+  const targetScale = releaseMode === DRAG_RELEASE_MODE_SLOT
+    ? 1
+    : releaseMode === DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB
+      ? Math.max(0.06, Math.min(0.1, rawTargetScale))
+      : rawTargetScale;
   const target = hasTargetRect
     ? {
       x: targetLocalRect.left + targetLocalRect.width / 2,
-      y: targetLocalRect.top + targetLocalRect.height / 2 - visualOffsetY,
+      y: targetLocalRect.top + targetLocalRect.height / 2 - visualOffsetY * targetScale,
     }
     : start;
+  const targetAlpha = releaseMode === DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB ? 0 : 1;
+  const targetLabelAlpha = releaseMode === DRAG_RELEASE_MODE_SLOT ? 1 : 0;
+  const targetLabelScale = releaseMode === DRAG_RELEASE_MODE_SLOT ? 1 : 0.72;
   const stageScale = getStageScale(stageRect, state.width, state.height);
   const clientVelocity = release?.velocity || {};
   const velocity = {
@@ -98,13 +112,20 @@ export function getDragReleaseMotion(release, state = {}) {
   return {
     cellHeight: cellSize.height,
     cellWidth: cellSize.width,
+    completeOnScale: true,
+    compact: release?.compact === true,
     hasStageLayoutTargetRect,
     hasTargetRect,
     iconSize,
     key: `${release?.key || makeDragPreviewKey(release)}:${release?.targetVersion ?? 0}:${hasTargetRect ? "target" : "pending"}`,
+    releaseMode,
+    singleLineLabel: release?.singleLineLabel === true,
     stageRect,
     start,
     target,
+    targetAlpha,
+    targetLabelAlpha,
+    targetLabelScale,
     targetScale,
     textless,
     velocity,

@@ -454,6 +454,10 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
         effectiveFolderSourceGhostedIds.has(item.id) ||
         state.isFolderOpeningPreviewFrameGhosted?.(item.id)
       );
+      const suppressedFolderPreviewChildId = item.type === "folder" &&
+        state.dragReleaseState?.suppressFolderPreviewFolderId === item.id
+        ? state.dragReleaseState.suppressFolderPreviewChildId || null
+        : null;
       const suppressLabelRevealAfterGhost = isReleaseGhostItem || isFolderClosingHandoff;
 
       entries.push({
@@ -509,6 +513,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
           singleLineLabel: sizing.singleLineLabel,
           stageHeight: state.height,
           stageWidth: state.width,
+          suppressedFolderPreviewChildId,
           suppressLabelRevealAfterGhost,
           textless: state.isTextlessMode,
         },
