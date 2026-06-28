@@ -100,6 +100,34 @@ function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
 }
 
+function readProgress01(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return clamp01(number);
+}
+
+function lerpNumber(from, to, progress) {
+  return from + (to - from) * progress;
+}
+
+function getPanelOpenStartGeometry(targetX, targetY, panelRect, sourceRect = null, stageRect = null) {
+  if (sourceRect) {
+    const sourceLocalRect = clientRectToStageVisualRect(sourceRect, stageRect);
+    return {
+      scaleX: Math.max(0.08, sourceLocalRect.width / panelRect.width),
+      scaleY: Math.max(0.08, sourceLocalRect.height / panelRect.height),
+      x: sourceLocalRect.left + sourceLocalRect.width / 2,
+      y: sourceLocalRect.top + sourceLocalRect.height / 2,
+    };
+  }
+  return {
+    scaleX: 0.12,
+    scaleY: 0.16,
+    x: targetX,
+    y: targetY + 36,
+  };
+}
+
 function roundDebugValue(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return null;
@@ -510,6 +538,7 @@ export class FolderOverlayLayer extends Container {
     this.openingPanelReadyFrame = null;
     this.panelAlphaTarget = null;
     this.panelOpenTargetKey = null;
+    this.panelOpenProgressDriven = false;
     this.detachedClosingVisuals = [];
     this.closingDesktopPageTrackMirrorBaseline = null;
     this.closingDesktopPageTrackMirrorX = 0;
@@ -1045,6 +1074,7 @@ export class FolderOverlayLayer extends Container {
     this.cancelOpeningPanelReadyCheck();
     this.panelOpenTargetKey = null;
     this.panelAlphaTarget = null;
+    this.panelOpenProgressDriven = false;
     this.currentOpeningGeometrySnapshot = null;
     this.openingGhosts.clear({ cancelSession: true });
     this.closingGhosts.clear();
@@ -1882,19 +1912,22 @@ export class FolderOverlayLayer extends Container {
       this.cancelOpeningPanelReadyCheck();
       this.panelOpenTargetKey = null;
       this.panelAlphaTarget = null;
+      this.panelOpenProgressDriven = false;
     }
     if (isNewPanelSource) {
       this.resetPanelMotion(FOLDER_PANEL_OPEN_REASON, { panelProps: "x,y,alpha", scaleProps: "x,y" });
       this.currentFolderId = folderId;
       this.panelOpenTargetKey = null;
       this.panelAlphaTarget = null;
+      this.panelOpenProgressDriven = false;
       if (sourceRect) {
-        const sourceLocalRect = clientRectToStageVisualRect(sourceRect, state.stageRect);
-        this.panel.position.set(sourceLocalRect.left + sourceLocalRect.width / 2, sourceLocalRect.top + sourceLocalRect.height / 2);
-        this.panel.scale.set(Math.max(0.08, sourceLocalRect.width / panelRect.width), Math.max(0.08, sourceLocalRect.height / panelRect.height));
+        const startGeometry = getPanelOpenStartGeometry(targetX, targetY, panelRect, sourceRect, state.stageRect);
+        this.panel.position.set(startGeometry.x, startGeometry.y);
+        this.panel.scale.set(startGeometry.scaleX, startGeometry.scaleY);
       } else {
-        this.panel.position.set(targetX, targetY + 36);
-        this.panel.scale.set(0.12, 0.16);
+        const startGeometry = getPanelOpenStartGeometry(targetX, targetY, panelRect, null, state.stageRect);
+        this.panel.position.set(startGeometry.x, startGeometry.y);
+        this.panel.scale.set(startGeometry.scaleX, startGeometry.scaleY);
       }
       this.panel.alpha = 0.94;
       this.panelTitleOpening = !isClosing;
@@ -1970,6 +2003,38 @@ export class FolderOverlayLayer extends Container {
       if (this.getPanelTitleProgress() < FOLDER_PANEL_READY_PROGRESS) return;
       this.markOpeningPanelReady(sessionToken);
     };
+    const openProgress = readProgress01(state.folderOpenProgress);
+    if (openProgress !== null) {
+      const shouldRetargetPresentation = !this.panelOpenProgressDriven || this.panelOpenTargetKey !== targetKey;
+      if (shouldRetargetPresentation) {
+        if (sessionToken) this.folderHandoff.markPanelPending(sessionToken, targetKey);
+        this.panelOpenTargetKey = targetKey;
+        this.panelOpenProgressDriven = true;
+        this.resetPanelMotion(FOLDER_PANEL_OPEN_REASON, {
+          panelProps: "x,y,alpha",
+          scaleProps: "x,y",
+        });
+        if (sessionToken) this.scheduleOpeningPanelReadyCheck(sessionToken, openingGeometrySnapshot?.panelRect || panelRect);
+      }
+      this.panelAlphaTarget = 1;
+      const startGeometry = getPanelOpenStartGeometry(targetX, targetY, panelRect, sourceRect, state.stageRect);
+      this.panel.position.set(
+        lerpNumber(startGeometry.x, targetX, openProgress),
+        lerpNumber(startGeometry.y, targetY, openProgress)
+      );
+      this.panel.scale.set(
+        lerpNumber(startGeometry.scaleX, 1, openProgress),
+        lerpNumber(startGeometry.scaleY, 1, openProgress)
+      );
+      this.panel.alpha = lerpNumber(0.94, 1, openProgress);
+      updateOpeningPanelFrame();
+      return {
+        openingGeometrySnapshot,
+        sessionToken,
+      };
+    }
+    if (this.panelOpenProgressDriven) this.panelOpenTargetKey = null;
+    this.panelOpenProgressDriven = false;
     if (this.panelAlphaTarget !== 1) {
       this.panelAlphaTarget = 1;
       motion(this.panel)

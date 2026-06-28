@@ -28,6 +28,8 @@ export function runFolderLayerStateTests() {
       isAppLaunchClosing: true,
       isClosing: false,
       openingOriginBounds: { folderId: "folder-1" },
+      openProgress: 0.42,
+      openProgressTarget: 1,
       openIconGhosts: [{ item: { id: "app-a" }, key: "open-a", slotIndex: 0 }],
       pageIndex: 2,
       pageTurnToken: 42,
@@ -60,6 +62,8 @@ export function runFolderLayerStateTests() {
   assert(state.folderPageIndex === 2, "committed folder page index should be forwarded");
   assert(state.visualFolderPageIndex === 3, "visual folder page index should be forwarded separately");
   assert(state.folderPageTurnToken === 42, "folder page turn token should be forwarded for render state changes");
+  assert(state.folderOpenProgress === 0.42, "folder open progress should be forwarded");
+  assert(state.folderOpenProgressTarget === 1, "folder open progress target should be forwarded");
   assert(state.completeFolderOpenIconGhost === callbacks.completeFolderOpenIconGhost, "callbacks should be forwarded");
   assert(state.completeFolderOpenFrameGhost === callbacks.completeFolderOpenFrameGhost, "frame completion callback should be forwarded");
   assert(state.isFolderAppLaunchClosing, "folder app-launch closing state should be forwarded");

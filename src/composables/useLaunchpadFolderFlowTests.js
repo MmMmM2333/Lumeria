@@ -97,6 +97,7 @@ function createFolderFlow(overrides = {}) {
     clearFolderPageTurn: 0,
     clearFolderPageTurnRequest: 0,
     commitFolderPageTurnRequest: 0,
+    folderOpenProgressAnimations: [],
     resetFolderViewportMetrics: 0,
     setFolderMotionGeometry: [],
   };
@@ -106,8 +107,20 @@ function createFolderFlow(overrides = {}) {
   const folderPageRefs = [{ id: "folder-page" }];
   const pageRefs = [{ id: "page" }];
   let folderMotionGeometry = overrides.folderMotionGeometry ?? { id: null, x: 0 };
+  const folderOpenProgressControls = [];
 
   const flow = useLaunchpadFolderFlow({
+    animateFolderOpenProgress: (animation) => {
+      calls.folderOpenProgressAnimations.push(animation);
+      const control = {
+        cancelReason: null,
+        cancel(reason) {
+          control.cancelReason = reason;
+        },
+      };
+      folderOpenProgressControls.push(control);
+      return control;
+    },
     clearFolderPageTurn: () => {
       calls.clearFolderPageTurn += 1;
     },
@@ -157,8 +170,17 @@ function createFolderFlow(overrides = {}) {
   });
 
   return {
+    arriveFolderOpenProgress(target = undefined) {
+      const animation = [...calls.folderOpenProgressAnimations]
+        .reverse()
+        .find((candidate) => target === undefined || candidate.target === target);
+      if (!animation) throw new Error(`Missing folder open progress animation for target ${target}`);
+      animation.progress.value = animation.target;
+      animation.onArrive?.();
+    },
     calls,
     flow,
+    folderOpenProgressControls,
     folderPageIndex,
     folderPageTurnRequest,
     folderPageRefs,
@@ -186,6 +208,9 @@ export function runLaunchpadFolderFlowTests() {
     assert(open.flow.renderedFolderId.value === "folder-1", "opening should store the rendered folder id");
     assert(open.flow.renderedFolder.value.id === "folder-1", "opening should expose the rendered folder");
     assert(open.flow.isFolderLayerActive.value, "opening should activate the folder layer");
+    assert(open.flow.folderOpenProgress.value === 0, "opening should start from the current open progress value");
+    assert(open.flow.folderOpenProgressTarget.value === 1, "opening should target full open progress");
+    assert(open.calls.folderOpenProgressAnimations.at(-1)?.target === 1, "opening should animate open progress to one");
     assert(open.flow.desktopProjectionEpoch.value === 1, "opening should finish any pending home reveal settle window");
     assert(!open.flow.isHomeRevealSettling.value, "opening should clear home reveal settle state");
     assert(open.pageRefs.length === 0, "finishing home reveal settle should clear page refs");
@@ -214,19 +239,31 @@ export function runLaunchpadFolderFlowTests() {
     assert(close.flow.openFolderId.value === null, "closing should clear the open folder id immediately");
     assert(close.flow.isFolderClosing.value, "closing should enter folder closing state immediately");
     assert(close.flow.isHomeRevealSettling.value, "closing should start home reveal settle state");
+    assert(close.flow.folderOpenProgressTarget.value === 0, "closing should target zero open progress");
+    assert(close.calls.folderOpenProgressAnimations.at(-1)?.target === 0, "closing should animate open progress to zero");
     assert(close.calls.clearFolderPageTurn === 1, "closing should clear folder page turn timers");
     assert(close.calls.clearFolderPageTurnRequest === 2, "closing should clear folder page turn requests when close starts");
     assert(close.calls.resetFolderViewportMetrics === 1, "closing should keep viewport metrics until the close animation finishes");
-    timers.runDelay(FOLDER_CLOSE_DURATION);
-    assert(!close.flow.isFolderClosing.value, "folder close timer should clear folder closing state");
-    assert(close.flow.renderedFolder.value === null, "folder close timer should clear rendered folder");
-    assert(close.folderPageIndex.value === 0, "folder close timer should reset folder page index");
-    assert(close.folderPageRefs.length === 0, "folder close timer should clear folder page refs");
+    close.arriveFolderOpenProgress(0);
+    assert(close.flow.isFolderClosing.value, "folder close progress arrival should wait one handoff frame before cleanup");
+    timers.runAnimationFrames();
+    assert(!close.flow.isFolderClosing.value, "folder close progress arrival should clear folder closing state");
+    assert(close.flow.renderedFolder.value === null, "folder close progress arrival should clear rendered folder");
+    assert(close.folderPageIndex.value === 0, "folder close progress arrival should reset folder page index");
+    assert(close.folderPageRefs.length === 0, "folder close progress arrival should clear folder page refs");
     assert(close.calls.resetFolderViewportMetrics === 2, "finishing close should clear viewport metrics for the next folder");
     assert(close.calls.clearFolderPageTurnRequest === 3, "finishing close should clear any remaining folder page turn request");
     timers.runDelay(HOME_REVEAL_SETTLE_DURATION);
     assert(!close.flow.isHomeRevealSettling.value, "home reveal timer should finish settle state");
     assert(close.flow.desktopProjectionEpoch.value === 1, "home reveal timer should advance projection epoch");
+
+    const closeFallback = createFolderFlow();
+    closeFallback.flow.commitOpenFolder("folder-1");
+    closeFallback.flow.commitOpenFolder(null);
+    timers.runDelay(FOLDER_CLOSE_DURATION);
+    assert(closeFallback.flow.isFolderClosing.value, "normal close fallback should schedule cleanup on the next frame");
+    timers.runAnimationFrames();
+    assert(!closeFallback.flow.isFolderClosing.value, "normal close fallback should finish if open progress gets stuck");
 
     const closeWithPendingPageTurn = createFolderFlow({
       folderPageIndex: 0,
@@ -244,6 +281,7 @@ export function runLaunchpadFolderFlowTests() {
     assert(closeWithPendingPageTurn.folderPageIndex.value === 1, "closing should use the pending visual folder page as the committed close anchor");
     assert(closeWithPendingPageTurn.folderPageTurnRequest.value === null, "committing the pending visual page should clear the folder page request");
     timers.runDelay(FOLDER_CLOSE_DURATION);
+    timers.runAnimationFrames();
 
     const closeWithGhosts = createFolderFlow();
     closeWithGhosts.flow.commitOpenFolder("folder-1");
@@ -253,9 +291,14 @@ export function runLaunchpadFolderFlowTests() {
     timers.runDelay(FOLDER_CLOSE_DURATION);
     assert(closeWithGhosts.flow.isFolderClosing.value, "ghost handoff close should not finish on the DOM close duration");
     assert(closeWithGhosts.flow.renderedFolder.value?.id === "folder-1", "ghost handoff close should keep the rendered folder until handoff completion");
-    closeWithGhosts.flow.finishFolderClose();
-    assert(!closeWithGhosts.flow.isFolderClosing.value, "ghost handoff completion should clear folder closing state");
-    assert(closeWithGhosts.flow.renderedFolder.value === null, "ghost handoff completion should clear rendered folder");
+    closeWithGhosts.arriveFolderOpenProgress(0);
+    timers.runAnimationFrames();
+    assert(closeWithGhosts.flow.isFolderClosing.value, "ghost handoff close should wait for handoff after open progress arrives");
+    closeWithGhosts.flow.finishFolderCloseAfterHandoffFrame();
+    assert(closeWithGhosts.flow.isFolderClosing.value, "ghost handoff completion should wait one frame after both close latches");
+    timers.runAnimationFrames();
+    assert(!closeWithGhosts.flow.isFolderClosing.value, "ghost handoff completion should clear folder closing state after progress arrival");
+    assert(closeWithGhosts.flow.renderedFolder.value === null, "ghost handoff completion should clear rendered folder after progress arrival");
 
     const interruptedClose = createFolderFlow();
     interruptedClose.flow.commitOpenFolder("folder-1");
@@ -281,6 +324,8 @@ export function runLaunchpadFolderFlowTests() {
     closeAfterFrame.flow.commitOpenFolder("folder-1");
     closeAfterFrame.flow.commitOpenFolder(null, { waitForCloseGhosts: true });
     closeAfterFrame.flow.finishFolderCloseAfterHandoffFrame();
+    assert(closeAfterFrame.flow.isFolderClosing.value, "ghost handoff should not finish before open progress reaches zero");
+    closeAfterFrame.arriveFolderOpenProgress(0);
     assert(closeAfterFrame.flow.isFolderClosing.value, "ghost handoff frame should keep the folder closing for one frame");
     assert(closeAfterFrame.flow.renderedFolder.value?.id === "folder-1", "ghost handoff frame should keep the rendered folder for overlay cleanup");
     timers.runAnimationFrames();
@@ -290,16 +335,20 @@ export function runLaunchpadFolderFlowTests() {
     const canceledCloseAfterFrame = createFolderFlow();
     canceledCloseAfterFrame.flow.commitOpenFolder("folder-1");
     canceledCloseAfterFrame.flow.commitOpenFolder(null, { waitForCloseGhosts: true });
+    canceledCloseAfterFrame.arriveFolderOpenProgress(0);
     canceledCloseAfterFrame.flow.finishFolderCloseAfterHandoffFrame();
     canceledCloseAfterFrame.flow.commitOpenFolder("folder-1");
     timers.runAnimationFrames();
     assert(canceledCloseAfterFrame.flow.openFolderId.value === "folder-1", "reopening should cancel a pending ghost handoff finish");
     assert(canceledCloseAfterFrame.flow.renderedFolder.value?.id === "folder-1", "canceled ghost handoff should keep the reopened folder rendered");
+    assert(canceledCloseAfterFrame.calls.folderOpenProgressAnimations.at(-1)?.target === 1, "reopening during close should retarget open progress to one");
 
     const closeWithGhostFallback = createFolderFlow();
     closeWithGhostFallback.flow.commitOpenFolder("folder-1");
     closeWithGhostFallback.flow.commitOpenFolder(null, { waitForCloseGhosts: true });
     timers.runDelay(FOLDER_CLOSE_GHOST_FALLBACK_DURATION);
+    assert(closeWithGhostFallback.flow.isFolderClosing.value, "ghost handoff fallback should schedule cleanup on the next frame");
+    timers.runAnimationFrames();
     assert(!closeWithGhostFallback.flow.isFolderClosing.value, "ghost handoff fallback should clear folder closing state");
 
     const launchClose = createFolderFlow();

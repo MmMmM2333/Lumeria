@@ -428,6 +428,63 @@ export async function runFolderOverlayLayerTests() {
     layer.currentFolderId = null;
     layer.folderHandoff = new FolderHandoffCoordinator(layer);
     layer.openingGhosts = { finishTransition() {} };
+    layer.openingPanelReadyFrame = null;
+    layer.panelAlphaTarget = null;
+    layer.panelOpenProgressDriven = false;
+    layer.panelOpenTargetKey = null;
+    layer.markRegisteredBoundsDirty = () => {};
+    layer.notifyPanelTitleFrame = () => {};
+    layer.scheduleOpeningPanelReadyCheck = () => {};
+    layer.panel = {
+      alpha: 1,
+      x: 0,
+      y: 0,
+      scale: {
+        x: 1,
+        y: 1,
+        set(x, y = x) {
+          this.x = x;
+          this.y = y;
+        },
+      },
+    };
+    layer.panel.position = {
+      set(x, y) {
+        layer.panel.x = x;
+        layer.panel.y = y;
+      },
+    };
+    const panelRect = { height: 360, left: 180, top: 200, width: 800 };
+    const sourceRect = { height: 64, left: 200, top: 240, width: 64 };
+    const state = {
+      folderOpenProgress: 0.5,
+      height: 600,
+      isFolderAppLaunchClosing: false,
+      isFolderClosing: false,
+      renderedFolder: { id: "folder-1" },
+      stageRect: { height: 600, left: 0, top: 0, width: 1000 },
+      width: 1000,
+    };
+
+    layer.animatePanel(state, 580, 380, panelRect, sourceRect);
+
+    assert(Math.abs(layer.panel.x - 406) < 0.001, "open progress should interpolate panel x from source to target");
+    assert(Math.abs(layer.panel.y - 326) < 0.001, "open progress should interpolate panel y from source to target");
+    assert(Math.abs(layer.panel.scale.x - 0.54) < 0.001, "open progress should interpolate panel scale x");
+    assert(Math.abs(layer.panel.scale.y - 0.5888889) < 0.001, "open progress should interpolate panel scale y");
+    assert(Math.abs(layer.panel.alpha - 0.97) < 0.001, "open progress should interpolate panel alpha");
+    assert(layer.panelOpenProgressDriven, "open progress should mark the panel presentation as progress-driven");
+    assert(motionRuntime.debugSnapshot().summary.activeAnimationCount === 0, "open progress should not start a competing panel spring");
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    motionRuntime.configureDebug({ enabled: true });
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    layer.currentFolderId = null;
+    layer.folderHandoff = new FolderHandoffCoordinator(layer);
+    layer.openingGhosts = { finishTransition() {} };
     layer.panelAlphaTarget = null;
     layer.panelOpenTargetKey = null;
     layer.markRegisteredBoundsDirty = () => {};

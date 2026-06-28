@@ -24,6 +24,8 @@ export function createFolderLayerState(groups, overrides = {}) {
     desktopPageTrackOffset: folder.desktopPageTrackOffset || null,
     folderGridStyle: folder.gridStyle,
     folderOpeningOriginBounds: folder.openingOriginBounds,
+    folderOpenProgress: folder.openProgress ?? (folder.renderedFolder ? 1 : 0),
+    folderOpenProgressTarget: folder.openProgressTarget ?? (folder.renderedFolder ? 1 : 0),
     folderOpenIconGhosts,
     folderPageIndex: folder.pageIndex,
     folderPageIndexCommit: folder.pageIndexCommit,

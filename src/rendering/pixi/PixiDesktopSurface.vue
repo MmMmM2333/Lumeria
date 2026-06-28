@@ -386,6 +386,8 @@ function createSingleStageFolderState(metrics, diagnosticsOptions = {}, renderGe
       isZoomFadeClosing: source.isFolderZoomFadeClosing?.value,
       zoomFadeCloseReason: source.folderZoomFadeCloseReason?.value,
       openingOriginBounds: source.folderOpeningOriginBounds?.value,
+      openProgress: source.folderOpenProgress?.value,
+      openProgressTarget: source.folderOpenProgressTarget?.value,
       openIconGhosts: source.folderOpenIconGhosts?.value,
       pageIndex: source.folderPageIndex?.value,
       pageIndexCommit: source.commitFolderPageIndex,
