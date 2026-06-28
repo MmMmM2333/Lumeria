@@ -150,7 +150,9 @@ fn schedule_main_window_cloak_fallback(app: &AppHandle, open_sequence: u64) {
         std::thread::sleep(Duration::from_millis(
             MAIN_WINDOW_CLOAKED_REVEAL_FALLBACK_DELAY_MS,
         ));
-        let _ = reveal_main_window(&app, Some(open_sequence));
+        if let Err(error) = reveal_main_window(&app, Some(open_sequence)) {
+            log::warn!(target: "tray", "Failed to run main window cloak fallback: {error}");
+        }
     });
 }
 
@@ -746,7 +748,9 @@ fn schedule_window_effect_reapply(
 
 pub(crate) fn open_main_window(app: &AppHandle) {
     let open_sequence = next_main_window_open_sequence();
-    let _ = app.emit(OPEN_DESKTOP_EVENT, open_sequence);
+    if let Err(error) = app.emit(OPEN_DESKTOP_EVENT, open_sequence) {
+        log::warn!(target: "tray", "Failed to emit open desktop event: {error}");
+    }
     schedule_main_window_show(app, open_sequence, main_window_deferred_show_delay(app));
 }
 
@@ -778,18 +782,24 @@ pub(crate) fn trigger_main_window_shortcut(app: &AppHandle) {
             let _ = apply_main_window_native_surface_policy(&window, mode);
         }
         let open_sequence = MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed);
-        let _ = app.emit(TOGGLE_DESKTOP_EVENT, open_sequence);
+        if let Err(error) = app.emit(TOGGLE_DESKTOP_EVENT, open_sequence) {
+            log::warn!(target: "tray", "Failed to emit toggle desktop event: {error}");
+        }
         return;
     }
 
     let open_sequence = next_main_window_open_sequence();
-    let _ = app.emit(OPEN_DESKTOP_EVENT, open_sequence);
+    if let Err(error) = app.emit(OPEN_DESKTOP_EVENT, open_sequence) {
+        log::warn!(target: "tray", "Failed to emit open desktop event: {error}");
+    }
     schedule_main_window_show(app, open_sequence, main_window_deferred_show_delay(app));
 }
 
 pub(crate) fn open_settings(app: &AppHandle) {
     open_main_window(app);
-    let _ = app.emit("launchpad-open-settings", ());
+    if let Err(error) = app.emit("launchpad-open-settings", ()) {
+        log::warn!(target: "tray", "Failed to emit open settings event: {error}");
+    }
 }
 
 pub(crate) fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {

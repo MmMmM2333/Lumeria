@@ -179,7 +179,9 @@ fn check_launch_targets(
 fn load_layout(app: AppHandle) -> Result<Option<serde_json::Value>, String> {
     let result = load_saved_layout(&app)?;
     if let Some(recovery) = result.recovery {
-        let _ = app.emit("launchpad-layout-recovered", recovery);
+        if let Err(error) = app.emit("launchpad-layout-recovered", recovery) {
+            log::warn!(target: "layout_store", "Failed to emit layout recovery event: {error}");
+        }
     }
     Ok(result.layout)
 }
@@ -401,7 +403,7 @@ fn quit_app(app: AppHandle) {
 #[tauri::command]
 fn confirm_quit_after_save(app: AppHandle, saved: bool) {
     if !saved {
-        eprintln!("Quitting LaunchPad after layout save failed or was skipped");
+        log::warn!(target: "launchpad", "Quitting LaunchPad after layout save failed or was skipped");
     }
     QUIT_ACKNOWLEDGED.store(true, Ordering::Relaxed);
     app.exit(0);
@@ -742,7 +744,7 @@ fn show_launch_error_report(report: &LaunchFailureReport) {
 
 #[cfg(not(target_os = "windows"))]
 fn show_launch_error_report(report: &LaunchFailureReport) {
-    eprintln!("{}\n\n建议：{}", report.message, report.suggestion);
+    log::error!(target: "launcher", "{}\n\n建议：{}", report.message, report.suggestion);
 }
 
 fn find_app_in_saved_scan_roots(
@@ -828,10 +830,10 @@ fn check_launch_target_status(target: &models::LaunchTarget) -> String {
 fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     setup_tray(app)?;
     if let Err(error) = apply_main_window_mode(app.handle()) {
-        eprintln!("Failed to apply LaunchPad window mode: {error}");
+        log::warn!(target: "launchpad", "Failed to apply LaunchPad window mode: {error}");
     }
     if let Err(error) = disable_main_window_transitions(app.handle()) {
-        eprintln!("Failed to disable LaunchPad window transitions: {error}");
+        log::warn!(target: "launchpad", "Failed to disable LaunchPad window transitions: {error}");
     }
     setup_global_shortcuts(app);
     Ok(())
@@ -841,23 +843,23 @@ fn setup_global_shortcuts(app: &mut tauri::App) {
     let plugin = tauri_plugin_global_shortcut::Builder::new().build();
 
     if let Err(error) = app.handle().plugin(plugin) {
-        eprintln!("Failed to install LaunchPad shortcut plugin: {error}");
+        log::error!(target: "shortcut", "Failed to install LaunchPad shortcut plugin: {error}");
         return;
     }
 
     match load_initial_main_window_shortcut(app.handle()) {
         Ok(Some(shortcut)) => {
             if let Err(error) = set_main_window_shortcut_internal(app.handle(), Some(&shortcut)) {
-                eprintln!("Failed to register configured LaunchPad shortcut: {error}");
+                log::warn!(target: "shortcut", "Failed to register configured LaunchPad shortcut: {error}");
             }
         }
         Ok(None) => {}
         Err(error) => {
-            eprintln!("Failed to load configured LaunchPad shortcut: {error}");
+            log::warn!(target: "shortcut", "Failed to load configured LaunchPad shortcut: {error}");
             if let Err(error) =
                 set_main_window_shortcut_internal(app.handle(), Some(DEFAULT_MAIN_WINDOW_SHORTCUT))
             {
-                eprintln!("Failed to register default LaunchPad shortcut: {error}");
+                log::error!(target: "shortcut", "Failed to register default LaunchPad shortcut: {error}");
             }
         }
     }
@@ -944,7 +946,14 @@ fn set_main_window_shortcut_internal(
                     .main_window_shortcut_capture_active
                     .load(Ordering::Relaxed)
                 {
-                    let _ = app.emit(MAIN_WINDOW_SHORTCUT_CAPTURED_EVENT, shortcut.into_string());
+                    if let Err(error) =
+                        app.emit(MAIN_WINDOW_SHORTCUT_CAPTURED_EVENT, shortcut.into_string())
+                    {
+                        log::warn!(
+                            target: "shortcut",
+                            "Failed to emit captured LaunchPad shortcut event: {error}"
+                        );
+                    }
                     return;
                 }
                 trigger_main_window_shortcut(app);
@@ -957,7 +966,8 @@ fn set_main_window_shortcut_internal(
     if let Some(previous_shortcut) = previous_shortcut {
         if previous_shortcut != next_shortcut {
             if let Err(error) = app.global_shortcut().unregister(previous_shortcut.as_str()) {
-                eprintln!(
+                log::warn!(
+                    target: "shortcut",
                     "Failed to unregister previous LaunchPad shortcut {previous_shortcut}: {error}"
                 );
             }
@@ -974,12 +984,14 @@ fn set_main_window_shortcut_internal(
 
 fn request_app_quit(app: &AppHandle) {
     QUIT_ACKNOWLEDGED.store(false, Ordering::Relaxed);
-    let _ = app.emit(QUIT_REQUESTED_EVENT, ());
+    if let Err(error) = app.emit(QUIT_REQUESTED_EVENT, ()) {
+        log::warn!(target: "launchpad", "Failed to emit quit request event: {error}");
+    }
     let app = app.clone();
     thread::spawn(move || {
         thread::sleep(Duration::from_millis(QUIT_FALLBACK_DELAY_MS));
         if !QUIT_ACKNOWLEDGED.load(Ordering::Relaxed) {
-            eprintln!("LaunchPad quit request timed out; forcing exit");
+            log::error!(target: "launchpad", "LaunchPad quit request timed out; forcing exit");
             app.exit(0);
         }
     });
@@ -987,6 +999,7 @@ fn request_app_quit(app: &AppHandle) {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_log::Builder::new().build())
         .manage(AppState::default())
         .setup(setup_app)
         .on_menu_event(|app, event| {
@@ -1017,7 +1030,9 @@ pub fn run() {
         .on_window_event(|window, event| match event {
             WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
-                let _ = window.emit(CLOSE_DESKTOP_EVENT, ());
+                if let Err(error) = window.emit(CLOSE_DESKTOP_EVENT, ()) {
+                    log::warn!(target: "launchpad", "Failed to emit close desktop event: {error}");
+                }
             }
             WindowEvent::Focused(true) => refresh_main_window_effects(window.app_handle()),
             WindowEvent::Focused(false) => tray::release_main_window_topmost(window.app_handle()),

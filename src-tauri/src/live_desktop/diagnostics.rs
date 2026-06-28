@@ -393,6 +393,26 @@ pub(crate) fn push_live_desktop_recent_error(
     diagnostics.last_error = detail.to_string();
 }
 
+fn push_logged_live_desktop_error(diagnostics: &mut LiveDesktopRuntimeDiagnostics, detail: &str) {
+    log::error!(target: "live_desktop", "{detail}");
+    push_live_desktop_recent_error(diagnostics, detail);
+}
+
+fn push_logged_live_desktop_warning(diagnostics: &mut LiveDesktopRuntimeDiagnostics, detail: &str) {
+    log::warn!(target: "live_desktop", "{detail}");
+    push_live_desktop_recent_error(diagnostics, detail);
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn record_live_desktop_runtime_error(
+    diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
+    detail: &str,
+) {
+    update_live_desktop_diagnostics(diagnostics, |diagnostics| {
+        push_logged_live_desktop_error(diagnostics, detail);
+    });
+}
+
 #[cfg(target_os = "windows")]
 pub(crate) fn live_desktop_duration_micros(duration: Duration) -> u64 {
     duration.as_micros().min(u64::MAX as u128) as u64
@@ -531,7 +551,7 @@ pub(crate) fn record_live_desktop_pixel_probe_error(
 ) {
     update_live_desktop_diagnostics(diagnostics, |diagnostics| {
         diagnostics.pixel_probe_errors += 1;
-        push_live_desktop_recent_error(diagnostics, detail);
+        push_logged_live_desktop_error(diagnostics, detail);
     });
 }
 
@@ -551,7 +571,7 @@ pub(crate) fn record_live_desktop_blank_frame_skipped(
             probe.max_alpha,
             probe.avg_alpha
         );
-        push_live_desktop_recent_error(diagnostics, &detail);
+        push_logged_live_desktop_warning(diagnostics, &detail);
     });
 }
 
@@ -560,6 +580,7 @@ pub(crate) fn record_live_desktop_shader_copy_fallback(
     diagnostics: &Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
     detail: &str,
 ) {
+    log::warn!(target: "live_desktop", "{detail}");
     update_live_desktop_diagnostics(diagnostics, |diagnostics| {
         diagnostics.shader_copy_fallbacks += 1;
         diagnostics.last_shader_copy_error = detail.to_string();
@@ -573,7 +594,7 @@ pub(crate) fn record_live_desktop_copy_error(
 ) {
     update_live_desktop_diagnostics(diagnostics, |diagnostics| {
         diagnostics.copy_errors += 1;
-        push_live_desktop_recent_error(diagnostics, detail);
+        push_logged_live_desktop_error(diagnostics, detail);
     });
 }
 
@@ -584,7 +605,7 @@ pub(crate) fn record_live_desktop_commit_error(
 ) {
     update_live_desktop_diagnostics(diagnostics, |diagnostics| {
         diagnostics.commit_errors += 1;
-        push_live_desktop_recent_error(diagnostics, detail);
+        push_logged_live_desktop_error(diagnostics, detail);
     });
 }
 
@@ -604,7 +625,7 @@ pub(crate) fn record_live_desktop_config_error(
 ) {
     update_live_desktop_diagnostics(diagnostics, |diagnostics| {
         diagnostics.config_errors += 1;
-        push_live_desktop_recent_error(diagnostics, detail);
+        push_logged_live_desktop_error(diagnostics, detail);
     });
 }
 
@@ -614,6 +635,6 @@ pub(crate) fn record_live_desktop_frame_pump_circuit_breaker(
     detail: &str,
 ) {
     update_live_desktop_diagnostics(diagnostics, |diagnostics| {
-        push_live_desktop_recent_error(diagnostics, detail);
+        push_logged_live_desktop_error(diagnostics, detail);
     });
 }

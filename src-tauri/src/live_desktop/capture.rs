@@ -49,10 +49,7 @@ pub(crate) struct LiveDesktopMouseRelayPosition {
 #[cfg(target_os = "windows")]
 impl LiveDesktopWindowCapture {
     fn record_teardown_error(&self, detail: String) {
-        eprintln!("{detail}");
-        update_live_desktop_diagnostics(&self.diagnostics, |diagnostics| {
-            push_live_desktop_recent_error(diagnostics, &detail);
-        });
+        record_live_desktop_runtime_error(&self.diagnostics, &detail);
     }
 }
 
