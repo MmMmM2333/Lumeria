@@ -1,5 +1,5 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { stageLayoutRectToStageVisualRect } from "../geometry/stageCoordinates.js";
+import { clientRectToStageVisualRect, stageLayoutRectToStageVisualRect } from "../geometry/stageCoordinates.js";
 
 const CLOSING_PREVIEW_SWAP_START_SCALE = 1.02;
 const CLOSING_PREVIEW_ICON_ROW_STAGGER = 0.01;
@@ -55,7 +55,9 @@ export function makeClosingPreviewSwapPlan(targets, options = {}) {
   const localTargets = [];
   let bounds = null;
   for (const target of targets || []) {
-    const rect = stageLayoutRectToStageVisualRect(stageRect, stageWidth, stageHeight, target?.targetStageLayoutRect);
+    const rect = target?.targetClientRect
+      ? clientRectToStageVisualRect(target.targetClientRect, stageRect)
+      : stageLayoutRectToStageVisualRect(stageRect, stageWidth, stageHeight, target?.targetStageLayoutRect);
     if (!rect || rect.width <= 0 || rect.height <= 0) continue;
     localTargets.push({ ...target, rect });
     bounds = expandBounds(bounds, rect);

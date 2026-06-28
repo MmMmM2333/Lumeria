@@ -551,11 +551,20 @@ export class DesktopLayer extends Container {
   }
 
   updateSingleStageFolderLayer(state) {
+    const liveX = Number.isFinite(Number(this.pageTrack?.x)) ? Number(this.pageTrack.x) : 0;
+    const targetX = Number.isFinite(Number(this.lastDesktopRenderPlan?.targetX))
+      ? Number(this.lastDesktopRenderPlan.targetX)
+      : liveX;
+    const desktopPageTrackOffset = { liveX, targetX };
     if (state.singleStageFolderState) {
-      this.onFolderGeometryChange(this.singleStageFolderLayer.update(state.singleStageFolderState));
+      this.onFolderGeometryChange(this.singleStageFolderLayer.update({
+        ...state.singleStageFolderState,
+        desktopPageTrackOffset,
+      }));
       return;
     }
     this.onFolderGeometryChange(this.singleStageFolderLayer.update({
+      desktopPageTrackOffset,
       folderPanelRef: null,
       folderViewportRef: null,
       height: state.height,

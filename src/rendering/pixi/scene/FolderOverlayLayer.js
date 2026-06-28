@@ -668,6 +668,7 @@ export class FolderOverlayLayer extends Container {
   resolveFolderOverlayGeometry(context) {
     const { folderId, geometry, isClosing, isNewFolder, isPrewarm, state, wasClosing } = context;
     const overlayTargets = resolveFolderOverlayTargets({
+      desktopPageTrackOffset: state.desktopPageTrackOffset,
       folder: state.renderedFolder,
       folderOpeningOriginBounds: state.folderOpeningOriginBounds,
       folderPageSize: state.folderPageSize,

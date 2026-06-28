@@ -21,6 +21,7 @@ export function createFolderLayerState(groups, overrides = {}) {
     dragMeta: drag.meta,
     dragReleaseGhostId: drag.releaseState?.item?.id || null,
     folderCloseIconGhosts,
+    desktopPageTrackOffset: folder.desktopPageTrackOffset || null,
     folderGridStyle: folder.gridStyle,
     folderOpeningOriginBounds: folder.openingOriginBounds,
     folderOpenIconGhosts,

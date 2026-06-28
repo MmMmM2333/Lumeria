@@ -93,7 +93,7 @@ function releaseOpeningGhostsForClosing(transitionPort, handoffCoordinator, stat
   if (!handoffCoordinator?.hasActiveOpeningVisuals?.()) return released;
   for (const target of targets || []) {
     const itemId = target?.item?.id;
-    if (!itemId || !target?.targetStageLayoutRect || !handoffCoordinator.hasOpeningGhost(itemId)) continue;
+    if (!itemId || !hasUsableFolderGhostTarget(target) || !handoffCoordinator.hasOpeningGhost(itemId)) continue;
     const ghost = transitionPort.releaseOpeningGhost(itemId);
     const sourceRect = ghost?.getIconBounds?.(state.stageRect);
     if (!ghost || !sourceRect) {
@@ -438,7 +438,9 @@ export class FolderClosingGhostController {
 
   makeClosingGhostDebugPayload(state, target, ghost, phase) {
     const actualRect = ghost?.getIconBounds?.(state.stageRect) || null;
-    const targetRect = stageLayoutRectToStageVisualRect(state.stageRect, state.width, state.height, target?.targetStageLayoutRect);
+    const targetRect = target?.targetClientRect
+      ? clientRectToStageVisualRect(target.targetClientRect, state.stageRect)
+      : stageLayoutRectToStageVisualRect(state.stageRect, state.width, state.height, target?.targetStageLayoutRect);
     return {
       actualRect: roundRect(actualRect),
       alpha: roundNumber(ghost?.alpha),

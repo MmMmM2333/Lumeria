@@ -58,6 +58,7 @@ export function makeSingleStageDiagnosticsPlan(state, options = {}) {
   const folderId = state.renderedFolder.id;
   const isClosing = Boolean(state.isFolderClosing || state.isFolderAppLaunchClosing);
   const overlayTargets = resolveFolderOverlayTargets({
+    desktopPageTrackOffset: state.desktopPageTrackOffset,
     folder: state.renderedFolder,
     folderOpeningOriginBounds: state.folderOpeningOriginBounds,
     folderPageSize: state.folderPageSize,

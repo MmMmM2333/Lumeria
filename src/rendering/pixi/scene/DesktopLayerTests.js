@@ -1099,6 +1099,48 @@ export async function runDesktopLayerTests() {
   }
 
   {
+    const calls = [];
+    const geometries = [];
+    const pageTrack = makePageTrack([]);
+    pageTrack.x = -123.25;
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.lastDesktopRenderPlan = { targetX: -480 };
+    layer.onFolderGeometryChange = (geometry) => geometries.push(geometry);
+    layer.singleStageFolderLayer = {
+      update(state) {
+        calls.push(state);
+        return { folderRect: state.renderedFolder ? { left: 1, top: 2, width: 3, height: 4 } : null };
+      },
+    };
+
+    layer.updateSingleStageFolderLayer({
+      singleStageFolderState: {
+        height: 600,
+        renderedFolder: { id: "folder-1" },
+        stageRect: { height: 600, left: 0, top: 0, width: 800 },
+        width: 800,
+      },
+    });
+
+    assert(calls[0].desktopPageTrackOffset.liveX === -123.25, "folder overlay state should receive the desktop pageTrack live x");
+    assert(calls[0].desktopPageTrackOffset.targetX === -480, "folder overlay state should receive the desktop render target x");
+    assert(geometries[0].folderRect.left === 1, "folder geometry changes should still be forwarded after offset injection");
+
+    layer.lastDesktopRenderPlan = null;
+    pageTrack.x = 18;
+    layer.updateSingleStageFolderLayer({
+      height: 500,
+      singleStageFolderState: null,
+      stageRect: { height: 500, left: 10, top: 20, width: 700 },
+      width: 700,
+    });
+
+    assert(calls[1].renderedFolder === null, "empty folder overlay state should still clear rendered folder");
+    assert(calls[1].desktopPageTrackOffset.liveX === 18, "empty folder overlay state should receive desktop pageTrack live x");
+    assert(calls[1].desktopPageTrackOffset.targetX === 18, "missing render plan target should fall back to live x");
+  }
+
+  {
     const before = makeNode("before");
     const folder = makeNode("folder");
     const pageTrack = makePageTrack([before, folder]);

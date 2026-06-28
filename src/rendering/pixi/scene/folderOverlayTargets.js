@@ -1,5 +1,5 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { stageLayoutRectToClientRect } from "../geometry/stageCoordinates.js";
+import { STAGE_COORDINATE_SPACES, stageLayoutRectToClientRect } from "../geometry/stageCoordinates.js";
 import { getFolderThumbChildLocalRect } from "../nodes/folderThumbMetrics.js";
 import { makeIconRect } from "./iconSceneHelpers.js";
 
@@ -32,7 +32,7 @@ export function findFolderGhostKey(ghosts, itemId, slotIndex) {
 }
 
 export function hasUsableFolderGhostTarget(target) {
-  return Boolean(target?.sourceRect && target.targetStageLayoutRect);
+  return Boolean(target?.sourceRect && (target.targetStageLayoutRect || target.targetClientRect));
 }
 
 export function makeFolderCenterCollapseRect(folderRect) {
@@ -74,6 +74,7 @@ export function makeFolderThumbPreviewRect(folderRect, slotIndex) {
 
 export function makeStableFolderCloseTarget(options = {}) {
   const {
+    coordinateSpace = STAGE_COORDINATE_SPACES.STAGE_LAYOUT,
     folderId,
     getStageLayoutPreviewChildRect,
     iconRect,
@@ -81,6 +82,7 @@ export function makeStableFolderCloseTarget(options = {}) {
     projection,
     source = null,
     thumbRect,
+    trackingKey = null,
   } = options;
   if (!folderId || !iconRect) return null;
   const previewChildRects = new Map();
@@ -90,18 +92,20 @@ export function makeStableFolderCloseTarget(options = {}) {
     if (childRect) previewChildRects.set(makePreviewChildKey(item.id, previewSlotIndex), cloneRect(childRect));
   });
   return {
-    coordinateSpace: "stage-layout",
+    coordinateSpace,
     folderId,
     iconRect: cloneRect(iconRect),
     previewChildRects,
     projection: projection ? { ...projection } : null,
     source,
     thumbRect: cloneRect(thumbRect),
+    trackingKey,
   };
 }
 
 export function projectFolderCloseTargetRectToClient(stableFolderCloseTarget, rect) {
   if (!stableFolderCloseTarget || !rect) return null;
+  if (stableFolderCloseTarget.coordinateSpace === STAGE_COORDINATE_SPACES.CLIENT_VISUAL) return cloneRect(rect);
   const { stageHeight, stageRect, stageWidth } = stableFolderCloseTarget.projection || {};
   if (!stageRect || !stageWidth || !stageHeight) return null;
   return stageLayoutRectToClientRect(stageRect, stageWidth, stageHeight, rect);
@@ -220,9 +224,10 @@ export function makeClosingGhostTarget(options = {}) {
   const stableThumbStageLayoutRect = stableFolderCloseTarget?.folderId === folderId
     ? stableFolderCloseTarget.thumbRect
     : null;
-  const targetStageLayoutRect = isThumbnailChild
+  const rawTargetRect = isThumbnailChild
     ? stablePreviewChildStageLayoutRect || makeFolderThumbPreviewRect(stableThumbStageLayoutRect, previewSlotIndex)
     : makeFolderCenterCollapseRect(stableThumbStageLayoutRect);
+  const isClientTarget = stableFolderCloseTarget?.coordinateSpace === STAGE_COORDINATE_SPACES.CLIENT_VISUAL;
   return {
     cellHeight,
     cellWidth,
@@ -234,7 +239,8 @@ export function makeClosingGhostTarget(options = {}) {
     item,
     previewSlotIndex,
     sourceRect: iconBounds,
-    targetStageLayoutRect,
+    targetClientRect: isClientTarget ? rawTargetRect : null,
+    targetStageLayoutRect: isClientTarget ? null : rawTargetRect,
   };
 }
 
@@ -249,9 +255,12 @@ export function makeClosingPreviewSwapTargets(options = {}) {
     const stableThumbStageLayoutRect = stableFolderCloseTarget?.folderId === folderId
       ? stableFolderCloseTarget.thumbRect
       : null;
-    const targetStageLayoutRect = stablePreviewChildStageLayoutRect ||
+    const rawTargetRect = stablePreviewChildStageLayoutRect ||
       makeFolderThumbPreviewRect(stableThumbStageLayoutRect, previewSlotIndex);
-    return targetStageLayoutRect ? { item, previewSlotIndex, targetStageLayoutRect } : null;
+    if (!rawTargetRect) return null;
+    return stableFolderCloseTarget?.coordinateSpace === STAGE_COORDINATE_SPACES.CLIENT_VISUAL
+      ? { item, previewSlotIndex, targetClientRect: rawTargetRect }
+      : { item, previewSlotIndex, targetStageLayoutRect: rawTargetRect };
   }).filter(Boolean);
 }
 

@@ -23,6 +23,7 @@ export function runFolderLayerStateTests() {
     },
     folder: {
       closeIconGhosts: [{ item: { id: "app-b" }, key: "close-b", slotIndex: 1 }],
+      desktopPageTrackOffset: { liveX: -120, targetX: -400 },
       gridStyle: { gridTemplateColumns: "repeat(3, 1fr)" },
       isAppLaunchClosing: true,
       isClosing: false,
@@ -53,6 +54,7 @@ export function runFolderLayerStateTests() {
   assert(state.stageRect.left === 4 && state.stageRect.top === 5, "stage rect should be preserved");
   assert(state.iconSize === 52, "folder icon size should be parsed from panel style");
   assert(state.dragReleaseGhostId === "released-app", "drag release ghost id should come from release state");
+  assert(state.desktopPageTrackOffset.liveX === -120 && state.desktopPageTrackOffset.targetX === -400, "desktop page track offset should be forwarded");
   assert(state.getFolderOpenIconGhostKey("app-a", 0) === "open-a", "open ghost lookup should use current open ghosts");
   assert(state.getFolderCloseIconGhostKey("app-b", 1) === "close-b", "close ghost lookup should use current close ghosts");
   assert(state.folderPageIndex === 2, "committed folder page index should be forwarded");
