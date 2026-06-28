@@ -45,7 +45,15 @@ function createPageRenderRange(overrides = {}) {
         };
         return token;
       },
-      commitFolderPageTurnRequest: (token) => {
+      commitFolderPageTurnRequest: (token, commitOptions = {}) => {
+        if (typeof overrides.commitFolderPageTurnRequest === "function") {
+          return overrides.commitFolderPageTurnRequest({
+            commitOptions,
+            folderPageIndex,
+            folderPageTurnRequest,
+            token,
+          });
+        }
         const request = folderPageTurnRequest.value;
         if (!request || request.token !== token) return false;
         folderPageIndex.value = request.targetIndex;
@@ -194,6 +202,29 @@ export async function runPageRenderRangeTests() {
     range.requestFolderPageTurn(2, { folderId: "folder-1", phase: "open" });
     await flushPageJump();
     assert(folderPageIndex.value === 0, "superseded folder page turn requests should not commit through a stale token");
+  });
+
+  await withFakeWindow(async ({ flushTimeouts }) => {
+    let phase = "open";
+    const { folderPageIndex, range } = createPageRenderRange({
+      commitFolderPageTurnRequest: ({ folderPageTurnRequest, token }) => {
+        const request = folderPageTurnRequest.value;
+        if (phase !== "open" || !request || request.token !== token) return false;
+        folderPageIndex.value = request.targetIndex;
+        folderPageTurnRequest.value = null;
+        return true;
+      },
+      folderPageIndex: 0,
+      folderPages: [[], [], [], [], []],
+    });
+    const token = range.requestFolderPageTurn(4, { folderId: "folder-1", phase: "open" });
+    assert(range.commitFolderPageTurnRequest(token), "folder page turn request should schedule before close interrupts it");
+    phase = "closing";
+    await flushPageJump();
+    assert(folderPageIndex.value === 0, "folder page turn requests rejected after close starts should not commit");
+    assert(range.getFolderPageRenderMode(2) === "empty", "rejected delayed folder page turn requests should clear the transient render range");
+    flushTimeouts();
+    assert(range.getFolderPageRenderMode(4) === "empty", "rejected delayed folder page turn requests should not leave a release timer behind");
   });
 
   await withFakeWindow(async () => {
