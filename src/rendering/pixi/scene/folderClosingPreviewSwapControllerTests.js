@@ -24,11 +24,26 @@ function makeContainer() {
     x: 0,
     y: 0,
     addChild(child) {
+      child.parent?.removeChild?.(child);
+      child.parent = this;
       children.push(child);
       return child;
     },
+    removeChild(child) {
+      const index = children.indexOf(child);
+      if (index >= 0) children.splice(index, 1);
+      if (child.parent === this) child.parent = null;
+      return child;
+    },
     removeChildren() {
-      return children.splice(0);
+      const removed = children.splice(0);
+      for (const child of removed) {
+        if (child.parent === this) child.parent = null;
+      }
+      return removed;
+    },
+    removeFromParent() {
+      this.parent?.removeChild?.(this);
     },
     destroy() {
       this.destroyed = true;
@@ -76,10 +91,14 @@ function makeLayer() {
     closingGhostLayer: makeContainer(),
     closingPreviewSwapLayer: makeContainer(),
     addChild(child) {
+      child.parent?.removeChild?.(child);
+      child.parent = this;
       children.push(child);
       return child;
     },
     addChildAt(child, index) {
+      child.parent?.removeChild?.(child);
+      child.parent = this;
       children.splice(index, 0, child);
       return child;
     },

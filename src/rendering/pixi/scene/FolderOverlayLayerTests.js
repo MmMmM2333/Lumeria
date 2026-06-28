@@ -101,6 +101,39 @@ export async function runFolderOverlayLayerTests() {
   assert(mask.top === 64, "folder page mask should preserve the grid top edge");
   assert(mask.height === 476, "folder page mask should keep the existing vertical panel coverage");
 
+  {
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    assert(layer.panelContentLayer.parent === layer.panel, "folder panel content should be a child of the panel");
+    assert(layer.panelClipMask.parent === layer.panel, "folder panel clip mask should track the panel transform");
+    assert(layer.pageMask.parent === layer.panelContentLayer, "folder page mask should live inside the panel content layer");
+    assert(layer.pageTrack.parent === layer.panelContentLayer, "folder page track should live inside the panel content layer");
+    assert(layer.panelContentLayer.mask === layer.panelClipMask, "folder panel content should be clipped by the rounded panel mask");
+    assert(layer.openingGhostLayer.mask === layer.panelClipMask, "opening ghosts should be clipped by the rounded panel mask");
+    assert(layer.pageTrack.mask === layer.pageMask, "folder page track should keep its page viewport mask");
+
+    layer.panelContentLayer.mask = null;
+    layer.openingGhostLayer.mask = null;
+    layer.refreshPanelClipMask();
+    assert(layer.panelContentLayer.mask === layer.panelClipMask, "panel clip refresh should restore the panel content mask");
+    assert(layer.openingGhostLayer.mask === layer.panelClipMask, "panel clip refresh should restore the opening ghost mask");
+
+    const previousMask = layer.pageMask;
+    layer.pageMaskRect = { left: 4, top: 8, width: 120, height: 160 };
+    layer.rebuildPageTrackMask();
+    assert(layer.pageMask !== previousMask, "page track mask rebuild should replace the stale mask instance");
+    assert(previousMask.destroyed === true, "page track mask rebuild should destroy the old mask");
+    assert(layer.pageMask.parent === layer.panelContentLayer, "rebuilt page mask should stay inside the panel content layer");
+    assert(layer.pageTrack.mask === layer.pageMask, "page track should use the rebuilt mask");
+    assert(
+      layer.panelContentLayer.children.indexOf(layer.pageMask) < layer.panelContentLayer.children.indexOf(layer.pageTrack),
+      "rebuilt page mask should remain before the page track"
+    );
+    assert(layer.openingGhostLayer.mask === layer.panelClipMask, "rebuilt page mask should not disturb the opening ghost panel clip");
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+  }
+
   const dotsFrame = getFolderPageDotsFrame({
     grid: { height: 240, left: 220, top: 270, width: 720 },
     panel: { height: 360, left: 180, top: 200, width: 800 },

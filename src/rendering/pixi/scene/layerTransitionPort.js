@@ -1,4 +1,5 @@
 import { makeDesktopSourceVisualKey } from "./folderVisualOwnershipRegistry.js";
+import { detachDisplayObject } from "./displayObjectLifecycle.js";
 
 function cloneFramePresentation(frame) {
   if (!frame) return null;
@@ -136,13 +137,7 @@ export function createLayerTransitionPort(layer) {
       return swapLayer.removeChildren?.() || [];
     },
     removeOpeningGhost(ghost) {
-      const children = layer.openingGhostLayer?.children;
-      if (Array.isArray(children)) {
-        const index = children.indexOf(ghost);
-        if (index >= 0) children.splice(index, 1);
-        return ghost;
-      }
-      return layer.openingGhostLayer?.removeChild?.(ghost);
+      return detachDisplayObject(ghost, layer.openingGhostLayer) ? ghost : null;
     },
     removeOpeningGhosts() {
       return layer.openingGhostLayer?.removeChildren?.() || [];

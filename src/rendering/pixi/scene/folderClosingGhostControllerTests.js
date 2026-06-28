@@ -87,6 +87,9 @@ function makeGhost(id = "ghost") {
       x: 1,
       y: 1,
     },
+    removeFromParent() {
+      this.parent?.removeChild?.(this);
+    },
     destroy() {
       this.destroyed = true;
     },
@@ -110,10 +113,23 @@ function makeLayer() {
     currentFolderId: "folder-1",
     closingGhostLayer: {
       addChild(ghost) {
+        ghost.parent?.removeChild?.(ghost);
+        ghost.parent = this;
         closingGhosts.push(ghost);
+        return ghost;
+      },
+      removeChild(ghost) {
+        const index = closingGhosts.indexOf(ghost);
+        if (index >= 0) closingGhosts.splice(index, 1);
+        if (ghost.parent === this) ghost.parent = null;
+        return ghost;
       },
       removeChildren() {
-        return closingGhosts.splice(0);
+        const removed = closingGhosts.splice(0);
+        for (const ghost of removed) {
+          if (ghost.parent === this) ghost.parent = null;
+        }
+        return removed;
       },
     },
     iconNodes: new Map([["app-1", iconNode]]),

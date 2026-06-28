@@ -22,6 +22,7 @@ import {
   getClosingPresentationStageHitRects,
 } from "./folderClosingHandoff.js";
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
+import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import {
   FolderHandoffCoordinator,
   makeFolderPanelTargetKey,
@@ -472,6 +473,8 @@ export class FolderOverlayLayer extends Container {
     super();
     this.panel = new Container();
     this.panelMaterial = new Graphics();
+    this.panelContentLayer = new Container();
+    this.panelClipMask = new Graphics();
     this.frameGhost = new Graphics();
     this.frameGhost.visible = false;
     this.closingFrameMask = new Graphics();
@@ -554,13 +557,16 @@ export class FolderOverlayLayer extends Container {
     if (this.ownsDetachedClosingVisualLayer) this.addChild(this.detachedClosingVisualLayer);
     this.addChild(this.panel);
     this.panel.addChild(this.panelMaterial);
-    this.panel.addChild(this.pageMask);
-    this.panel.addChild(this.pageTrack);
+    this.panel.addChild(this.panelClipMask);
+    this.panel.addChild(this.panelContentLayer);
+    this.panelContentLayer.addChild(this.pageMask);
+    this.panelContentLayer.addChild(this.pageTrack);
     this.panel.addChild(this.folderTitle);
     this.addChild(this.pageDotsLayer);
     this.addChild(this.openingGhostLayer);
     this.addChild(this.closingGhostLayer);
     this.addChild(this.closingPreviewSwapLayer);
+    this.refreshPanelClipMask();
     this.pageTrack.mask = this.pageMask;
     this.eventMode = "static";
     this.on("pointerdown", (event) => this.handlePointerDown(event));
@@ -728,6 +734,8 @@ export class FolderOverlayLayer extends Container {
     this.stableFolderCloseTarget = overlayTargets.stableFolderCloseTarget;
     const { folderClientRect, folderThumbClientRect, getOpeningPreviewChildClientRect, previewSlots } = overlayTargets;
     this.drawPanel(geometry.panel);
+    this.drawPanelClipMask(geometry.panel);
+    this.refreshPanelClipMask();
     this.updatePageDots(state, geometry);
     if (isClosing) applyClosingPresentationOverlayState(this);
     this.panel.pivot.set(geometry.panel.width / 2, geometry.panel.height / 2);
@@ -1006,7 +1014,7 @@ export class FolderOverlayLayer extends Container {
         .preset("fade", { duration: 0.14 })
         .overlay()
         .interrupt("retarget")
-        .to({ alpha: 0, onComplete: () => node.destroy({ children: true }) })
+        .to({ alpha: 0, onComplete: () => destroyDisplayObjectAfterFrame(node, { children: true }) })
         .start();
     }
     this.pageTrack.visible = !isClosing &&
@@ -1682,6 +1690,15 @@ export class FolderOverlayLayer extends Container {
     this.pageTrack.mask = this.pageMask;
   }
 
+  refreshPanelClipMask() {
+    if (this.panelContentLayer && this.panelContentLayer.mask !== this.panelClipMask) {
+      this.panelContentLayer.mask = this.panelClipMask;
+    }
+    if (this.openingGhostLayer && this.openingGhostLayer.mask !== this.panelClipMask) {
+      this.openingGhostLayer.mask = this.panelClipMask;
+    }
+  }
+
   drawPageMask(mask, rect) {
     if (!mask || !rect) return;
     mask.clear()
@@ -1858,14 +1875,15 @@ export class FolderOverlayLayer extends Container {
     const previousMask = this.pageMask;
     const nextMask = new Graphics();
     this.drawPageMask(nextMask, this.pageMaskRect);
-    const previousIndex = this.panel.children.indexOf(previousMask);
+    const maskParent = this.panelContentLayer || this.panel;
+    const previousIndex = maskParent.children.indexOf(previousMask);
     this.pageTrack.mask = null;
     if (previousIndex >= 0) {
-      this.panel.removeChild(previousMask);
-      this.panel.addChildAt(nextMask, previousIndex);
+      maskParent.removeChild(previousMask);
+      maskParent.addChildAt(nextMask, previousIndex);
     } else {
-      const trackIndex = this.panel.children.indexOf(this.pageTrack);
-      this.panel.addChildAt(nextMask, Math.max(0, trackIndex));
+      const trackIndex = maskParent.children.indexOf(this.pageTrack);
+      maskParent.addChildAt(nextMask, Math.max(0, trackIndex));
     }
     this.pageMask = nextMask;
     this.pageTrack.mask = this.pageMask;
@@ -2073,6 +2091,12 @@ export class FolderOverlayLayer extends Container {
       .roundRect(0, 0, panel.width, panel.height, 48)
       .fill({ color: 0xf7f8ff, alpha: 0.26 })
       .stroke({ color: 0xffffff, alpha: 0.24, width: 1 });
+  }
+
+  drawPanelClipMask(panel) {
+    this.panelClipMask.clear()
+      .roundRect(0, 0, panel.width, panel.height, 48)
+      .fill({ color: 0xffffff, alpha: 1 });
   }
 
   bindFakeRefs(state, geometry) {

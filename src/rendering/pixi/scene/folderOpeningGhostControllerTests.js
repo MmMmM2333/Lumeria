@@ -65,6 +65,9 @@ function makeGhost() {
       this.item = state.item;
       this.state = state;
     },
+    removeFromParent() {
+      this.parent?.removeChild?.(this);
+    },
     destroy() {
       this.destroyed = true;
     },
@@ -88,10 +91,23 @@ function makeLayer() {
     openingGhostLayer: {
       children: ghosts,
       addChild(ghost) {
+        ghost.parent?.removeChild?.(ghost);
+        ghost.parent = this;
         ghosts.push(ghost);
+        return ghost;
+      },
+      removeChild(ghost) {
+        const index = ghosts.indexOf(ghost);
+        if (index >= 0) ghosts.splice(index, 1);
+        if (ghost.parent === this) ghost.parent = null;
+        return ghost;
       },
       removeChildren() {
-        return ghosts.splice(0);
+        const removed = ghosts.splice(0);
+        for (const ghost of removed) {
+          if (ghost.parent === this) ghost.parent = null;
+        }
+        return removed;
       },
     },
     pageTrack: { visible: true },

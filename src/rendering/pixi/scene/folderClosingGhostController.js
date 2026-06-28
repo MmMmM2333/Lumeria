@@ -21,6 +21,7 @@ import {
   scheduleClosingHandoffCleanup,
 } from "./folderClosingHandoff.js";
 import { ensureFolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
+import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import {
   getFolderHandoffDebugOptions,
   rectDelta,
@@ -147,7 +148,8 @@ function releaseOpeningGhostsForClosing(transitionPort, handoffCoordinator, stat
     const ghost = transitionPort.releaseOpeningGhost(itemId);
     const sourceRect = ghost?.getIconBounds?.(state.stageRect);
     if (!ghost || !sourceRect) {
-      ghost?.destroy?.({ children: true });
+      killAllMotion(ghost);
+      destroyDisplayObjectAfterFrame(ghost, { children: true });
       continue;
     }
     released.set(itemId, {
@@ -463,13 +465,13 @@ export class FolderClosingGhostController {
     const ghost = this.handoffCoordinator.takeFolderHandoffGhost();
     if (!ghost) return;
     killAllMotion(ghost);
-    if (!ghost.destroyed) ghost.destroy({ children: true });
+    destroyDisplayObjectAfterFrame(ghost, { children: true });
   }
 
   destroyCompletedPreviewGhosts(ghosts) {
     for (const ghost of ghosts) {
       killAllMotion(ghost);
-      if (!ghost.destroyed) ghost.destroy({ children: true });
+      destroyDisplayObjectAfterFrame(ghost, { children: true });
     }
   }
 
@@ -514,7 +516,7 @@ export class FolderClosingGhostController {
     for (const ghost of ghosts) {
       killAllMotion(ghost);
       this.handoffCoordinator.deleteDetachedClosingGhostMotion(ghost);
-      if (!ghost.destroyed) ghost.destroy?.({ children: true });
+      destroyDisplayObjectAfterFrame(ghost, { children: true });
     }
   }
 
@@ -684,7 +686,7 @@ export class FolderClosingGhostController {
     for (const ghost of ghosts) {
       killAllMotion(ghost);
       this.handoffCoordinator.deleteDetachedClosingGhostMotion(ghost);
-      ghost.destroy?.({ children: true });
+      destroyDisplayObjectAfterFrame(ghost, { children: true });
     }
     this.previewSwap.clear();
   }

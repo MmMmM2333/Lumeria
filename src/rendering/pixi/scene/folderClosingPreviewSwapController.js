@@ -3,6 +3,7 @@ import { killMotionOf, parallel, motion } from "../animation/motionTween.js";
 import { motionPresets, motionSprings } from "../animation/motionPresets.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { ensureFolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
+import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import { makeClosingPreviewSwapPlan } from "./folderPreviewSwapMotion.js";
 import { ensureLayerTransitionPort } from "./layerTransitionPort.js";
 
@@ -31,6 +32,7 @@ export class FolderClosingPreviewSwapController {
     this.spriteFactory = options.spriteFactory;
     this.textFactory = options.textFactory;
     this.getIconTexture = options.getIconTexture;
+    this.scheduler = options.scheduler || globalThis;
     this.handoffCoordinator.ensureClosePreviewSwaps();
   }
 
@@ -51,7 +53,7 @@ export class FolderClosingPreviewSwapController {
     const ghosts = this.transitionPort.removeClosingPreviewSwapChildren();
     for (const ghost of ghosts) {
       killAllMotion(ghost);
-      ghost.destroy?.({ children: true });
+      destroyDisplayObjectAfterFrame(ghost, { children: true }, this.scheduler);
     }
   }
 

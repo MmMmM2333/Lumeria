@@ -8,6 +8,7 @@ import { makeFolderGhostIconNodeState } from "./folderGhostIconState.js";
 import { ensureFolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
 import { hasUsableFolderGhostTarget } from "./folderOverlayTargets.js";
 import { ensureLayerTransitionPort } from "./layerTransitionPort.js";
+import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 
 const GHOST_REVEAL_FALLBACK_PADDING_MS = 140;
@@ -97,11 +98,11 @@ function findOpeningGhostByItemId(children, itemId) {
   return (children || []).find((ghost) => ghost?.item?.id === itemId && !ghost.destroyed) || null;
 }
 
-function destroyOpeningGhostVisual(transitionPort, ghost) {
+function destroyOpeningGhostVisual(transitionPort, ghost, scheduler = globalThis) {
   if (!ghost) return;
   transitionPort.removeOpeningGhost(ghost);
   killAllMotion(ghost);
-  ghost.destroy?.({ children: true });
+  destroyDisplayObjectAfterFrame(ghost, { children: true }, scheduler);
 }
 
 function makeOpeningGhostTargetKey(target = {}) {
@@ -229,7 +230,7 @@ export class FolderOpeningGhostController {
     const ghosts = this.transitionPort.removeOpeningGhosts();
     for (const ghost of ghosts) {
       killAllMotion(ghost);
-      ghost.destroy?.({ children: true });
+      destroyDisplayObjectAfterFrame(ghost, { children: true }, this.scheduler);
     }
   }
 
@@ -250,7 +251,7 @@ export class FolderOpeningGhostController {
     const ghosts = this.transitionPort.removeOpeningGhosts();
     for (const ghost of ghosts) {
       killAllMotion(ghost);
-      ghost.destroy?.({ children: true });
+      destroyDisplayObjectAfterFrame(ghost, { children: true }, this.scheduler);
     }
   }
 
@@ -263,7 +264,7 @@ export class FolderOpeningGhostController {
     ghost.scale.set(1);
     this.transitionPort.deleteOpeningGhostBounds(target.item.id);
     this.transitionPort.releaseIconNodesForTransition(target.item.id, sessionToken, { reveal: true });
-    destroyOpeningGhostVisual(this.transitionPort, ghost);
+    destroyOpeningGhostVisual(this.transitionPort, ghost, this.scheduler);
     this.finishTransition({ sessionToken });
   }
 

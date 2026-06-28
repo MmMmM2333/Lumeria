@@ -20,6 +20,7 @@ import { makeSyntheticPointerEvent } from "./iconSceneHelpers.js";
 import { FolderOverlayLayer } from "./FolderOverlayLayer.js";
 import { FolderVisualCommitQueue } from "./folderVisualCommitQueue.js";
 import { FolderVisualOwnershipRegistry } from "./folderVisualOwnershipRegistry.js";
+import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import { SingleStageDiagnosticsLayer } from "./singleStageDiagnostics.js";
 import { DragPreviewLayer } from "./DragPreviewLayer.js";
 import { IconNode } from "../nodes/IconNode.js";
@@ -370,7 +371,7 @@ export class DesktopLayer extends Container {
           .preset("fade")
           .layout()
           .interrupt("retarget")
-          .to({ alpha: 0, onComplete: () => node.destroy({ children: true }) })
+          .to({ alpha: 0, onComplete: () => destroyDisplayObjectAfterFrame(node, { children: true }) })
           .start();
       }
 
