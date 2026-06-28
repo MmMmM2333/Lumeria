@@ -1,5 +1,7 @@
 use tauri::WebviewWindow;
 
+use crate::native_error::NativeError;
+
 #[cfg(target_os = "windows")]
 use windows::Win32::{
     Foundation::HWND,
@@ -20,7 +22,11 @@ pub(crate) fn set_window_shadow_enabled(
 ) -> Result<(), String> {
     window
         .set_shadow(enabled)
-        .map_err(|error| error.to_string())
+        .map_err(|source| NativeError::Tauri {
+            context: "WebviewWindow::set_shadow",
+            source,
+        })?;
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]
@@ -28,7 +34,7 @@ unsafe fn set_dwm_attribute_for_hwnd<T>(
     hwnd: HWND,
     attribute: DWMWINDOWATTRIBUTE,
     value: &T,
-) -> Result<(), String> {
+) -> Result<(), NativeError> {
     unsafe {
         DwmSetWindowAttribute(
             hwnd,
@@ -37,7 +43,10 @@ unsafe fn set_dwm_attribute_for_hwnd<T>(
             std::mem::size_of_val(value) as u32,
         )
     }
-    .map_err(|error| error.to_string())
+    .map_err(|source| NativeError::Dwm {
+        context: "DwmSetWindowAttribute",
+        source,
+    })
 }
 
 #[cfg(target_os = "windows")]
@@ -45,15 +54,19 @@ fn set_dwm_attribute<T>(
     window: &WebviewWindow,
     attribute: DWMWINDOWATTRIBUTE,
     value: &T,
-) -> Result<(), String> {
-    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+) -> Result<(), NativeError> {
+    let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::hwnd",
+        source,
+    })?;
     unsafe { set_dwm_attribute_for_hwnd(hwnd, attribute, value) }
 }
 
 #[cfg(target_os = "windows")]
 pub(crate) fn set_window_cloaked(window: &WebviewWindow, cloaked: bool) -> Result<(), String> {
     let cloak = if cloaked { 1i32 } else { 0i32 };
-    set_dwm_attribute(window, DWMWA_CLOAK, &cloak)
+    set_dwm_attribute(window, DWMWA_CLOAK, &cloak)?;
+    Ok(())
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -71,7 +84,8 @@ pub(crate) fn set_window_non_client_rendering(
     } else {
         DWMNCRP_DISABLED
     };
-    set_dwm_attribute(window, DWMWA_NCRENDERING_POLICY, &policy)
+    set_dwm_attribute(window, DWMWA_NCRENDERING_POLICY, &policy)?;
+    Ok(())
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -88,7 +102,8 @@ pub(crate) fn set_window_transitions_enabled(
     enabled: bool,
 ) -> Result<(), String> {
     let disabled = if enabled { 0i32 } else { 1i32 };
-    set_dwm_attribute(window, DWMWA_TRANSITIONS_FORCEDISABLED, &disabled)
+    set_dwm_attribute(window, DWMWA_TRANSITIONS_FORCEDISABLED, &disabled)?;
+    Ok(())
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -105,7 +120,10 @@ pub(crate) fn set_window_backdrop_dark_mode(
     dark: bool,
 ) -> Result<(), String> {
     let enabled = if dark { 1i32 } else { 0i32 };
-    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::hwnd for backdrop dark mode",
+        source,
+    })?;
     unsafe {
         let _ = set_dwm_attribute_for_hwnd(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &enabled);
     }
@@ -129,7 +147,10 @@ pub(crate) fn set_main_window_topmost(window: &WebviewWindow, topmost: bool) -> 
     };
     unsafe {
         SetWindowPos(
-            window.hwnd().map_err(|error| error.to_string())?,
+            window.hwnd().map_err(|source| NativeError::Tauri {
+                context: "WebviewWindow::hwnd for topmost",
+                source,
+            })?,
             hwnd_insert_after,
             0,
             0,
@@ -138,7 +159,11 @@ pub(crate) fn set_main_window_topmost(window: &WebviewWindow, topmost: bool) -> 
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOSENDCHANGING,
         )
     }
-    .map_err(|error| error.to_string())
+    .map_err(|source| NativeError::Win32 {
+        context: "SetWindowPos(topmost)",
+        source,
+    })?;
+    Ok(())
 }
 
 #[cfg(not(target_os = "windows"))]

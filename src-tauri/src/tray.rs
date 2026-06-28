@@ -13,6 +13,7 @@ use crate::{
         set_main_window_topmost, set_window_cloaked, set_window_non_client_rendering,
         set_window_shadow_enabled, set_window_transitions_enabled,
     },
+    native_error::NativeError,
     window_effects::{
         set_window_effects_enabled, set_window_effects_enabled_with_config,
         update_main_window_effect_settings,
@@ -228,19 +229,23 @@ fn set_main_window_non_client_subclass(
 ) -> Result<(), String> {
     use windows::Win32::UI::Shell::{RemoveWindowSubclass, SetWindowSubclass};
 
-    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::hwnd for non-client subclass",
+        source,
+    })?;
     unsafe {
         if enabled {
-            if !SetWindowSubclass(
+            SetWindowSubclass(
                 hwnd,
                 Some(main_window_non_client_subclass_proc),
                 MAIN_WINDOW_NON_CLIENT_SUBCLASS_ID,
                 0,
             )
-            .as_bool()
-            {
-                return Err("Failed to install main window non-client subclass".to_string());
-            }
+            .ok()
+            .map_err(|source| NativeError::Win32 {
+                context: "SetWindowSubclass(main window non-client)",
+                source,
+            })?;
         } else {
             let _ = RemoveWindowSubclass(
                 hwnd,
@@ -327,7 +332,10 @@ fn strip_main_window_non_client_style(window: &WebviewWindow) -> Result<(), Stri
         WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
     };
 
-    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::hwnd for stripping non-client style",
+        source,
+    })?;
     let current_style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) };
     let next_style = (current_style
         & !main_window_style_mask([
@@ -353,7 +361,10 @@ fn restore_main_window_resizable_frame_style(window: &WebviewWindow) -> Result<(
         WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
     };
 
-    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::hwnd for restoring resizable frame",
+        source,
+    })?;
     let current_style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) };
     let next_style = (current_style & !main_window_style_mask([WS_POPUP.0]))
         | main_window_style_mask([
@@ -380,7 +391,10 @@ fn refresh_main_window_frame(window: &WebviewWindow) -> Result<(), String> {
 
     unsafe {
         SetWindowPos(
-            window.hwnd().map_err(|error| error.to_string())?,
+            window.hwnd().map_err(|source| NativeError::Tauri {
+                context: "WebviewWindow::hwnd for frame refresh",
+                source,
+            })?,
             None,
             0,
             0,
@@ -395,7 +409,11 @@ fn refresh_main_window_frame(window: &WebviewWindow) -> Result<(), String> {
                 | SWP_NOZORDER,
         )
     }
-    .map_err(|error| error.to_string())
+    .map_err(|source| NativeError::Win32 {
+        context: "SetWindowPos(refresh main window frame)",
+        source,
+    })?;
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]
@@ -431,27 +449,45 @@ fn apply_main_window_mode_to_window(
             prepare_main_window_fullscreen_surface(window)?;
             window
                 .set_decorations(false)
-                .map_err(|error| error.to_string())?;
+                .map_err(|source| NativeError::Tauri {
+                    context: "WebviewWindow::set_decorations(false fullscreen)",
+                    source,
+                })?;
             window
                 .set_resizable(false)
-                .map_err(|error| error.to_string())?;
+                .map_err(|source| NativeError::Tauri {
+                    context: "WebviewWindow::set_resizable(false fullscreen)",
+                    source,
+                })?;
             if !window.is_fullscreen().unwrap_or(false) {
                 window
                     .set_fullscreen(true)
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|source| NativeError::Tauri {
+                        context: "WebviewWindow::set_fullscreen(true)",
+                        source,
+                    })?;
             }
         }
         MainWindowMode::Windowed => {
             window
                 .set_decorations(false)
-                .map_err(|error| error.to_string())?;
+                .map_err(|source| NativeError::Tauri {
+                    context: "WebviewWindow::set_decorations(false windowed)",
+                    source,
+                })?;
             window
                 .set_resizable(true)
-                .map_err(|error| error.to_string())?;
+                .map_err(|source| NativeError::Tauri {
+                    context: "WebviewWindow::set_resizable(true windowed)",
+                    source,
+                })?;
             if window.is_fullscreen().unwrap_or(false) {
                 window
                     .set_fullscreen(false)
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|source| NativeError::Tauri {
+                        context: "WebviewWindow::set_fullscreen(false)",
+                        source,
+                    })?;
             }
         }
     }
@@ -480,7 +516,10 @@ fn confirm_main_window_mode_after_show(
         MainWindowMode::Fullscreen => {
             window
                 .set_fullscreen(true)
-                .map_err(|error| error.to_string())?;
+                .map_err(|source| NativeError::Tauri {
+                    context: "WebviewWindow::set_fullscreen(confirm fullscreen)",
+                    source,
+                })?;
             apply_main_window_win32_surface_policy(window, mode)
         }
         MainWindowMode::Windowed => Ok(()),
@@ -570,7 +609,10 @@ fn disable_window_transitions(_window: &WebviewWindow) -> Result<(), String> {
 fn activate_window(window: &WebviewWindow) -> Result<(), String> {
     use windows::Win32::UI::WindowsAndMessaging::{BringWindowToTop, SetForegroundWindow};
 
-    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::hwnd for activation",
+        source,
+    })?;
     unsafe {
         let _ = BringWindowToTop(hwnd);
         let _ = SetForegroundWindow(hwnd);

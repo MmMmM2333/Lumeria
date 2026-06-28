@@ -7,6 +7,7 @@ mod launcher;
 mod layout_store;
 mod live_desktop;
 mod models;
+mod native_error;
 mod path_utils;
 mod tray;
 mod window_effects;

@@ -2,16 +2,22 @@
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
 
 #[cfg(target_os = "windows")]
+use crate::native_error::NativeError;
+
+#[cfg(target_os = "windows")]
 pub(crate) struct ComGuard {
     initialized: bool,
 }
 
 #[cfg(target_os = "windows")]
 impl ComGuard {
-    pub(crate) fn new() -> Result<Self, String> {
+    pub(crate) fn new() -> Result<Self, NativeError> {
         unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }
             .ok()
-            .map_err(|error| format!("Failed to initialize COM apartment: {error}"))?;
+            .map_err(|source| NativeError::Com {
+                context: "CoInitializeEx(COINIT_APARTMENTTHREADED)",
+                source,
+            })?;
         Ok(Self { initialized: true })
     }
 }

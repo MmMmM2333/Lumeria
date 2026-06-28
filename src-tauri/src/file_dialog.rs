@@ -34,6 +34,8 @@ use tauri::{AppHandle, Manager};
 #[cfg(target_os = "windows")]
 use crate::encoding::{cache_content_addressed, encode_base64, PNG_SIGNATURE};
 #[cfg(target_os = "windows")]
+use crate::native_error::NativeError;
+#[cfg(target_os = "windows")]
 use crate::windows_com::ComGuard;
 use crate::{
     catalog::{icon_cache_dir, icon_file_data_url, stable_app_id},
@@ -78,8 +80,10 @@ pub(crate) fn pick_launch_file(app: &AppHandle) -> Result<Option<PickedLaunchFil
     let result = unsafe { pick_launch_file_inner() };
     match result {
         Ok(path) => make_picked_launch_file(app, Path::new(&path)).map(Some),
-        Err(error) if error.code() == HRESULT::from_win32(ERROR_CANCELLED.0) => Ok(None),
-        Err(error) => Err(format!("Failed to pick launch file: {error}")),
+        Err(error) if error.windows_code() == Some(HRESULT::from_win32(ERROR_CANCELLED.0)) => {
+            Ok(None)
+        }
+        Err(error) => Err(String::from(error)),
     }
 }
 
@@ -98,8 +102,10 @@ pub(crate) fn pick_background_image(
     let result = unsafe { pick_background_image_inner() };
     match result {
         Ok(path) => cache_picked_background_image(app, Path::new(&path)).map(Some),
-        Err(error) if error.code() == HRESULT::from_win32(ERROR_CANCELLED.0) => Ok(None),
-        Err(error) => Err(format!("Failed to pick background image: {error}")),
+        Err(error) if error.windows_code() == Some(HRESULT::from_win32(ERROR_CANCELLED.0)) => {
+            Ok(None)
+        }
+        Err(error) => Err(String::from(error)),
     }
 }
 
@@ -198,8 +204,10 @@ pub(crate) fn pick_scan_root_directory() -> Result<Option<String>, String> {
     let result = unsafe { pick_scan_root_directory_inner() };
     match result {
         Ok(path) => Ok(Some(path)),
-        Err(error) if error.code() == HRESULT::from_win32(ERROR_CANCELLED.0) => Ok(None),
-        Err(error) => Err(format!("Failed to pick scan root directory: {error}")),
+        Err(error) if error.windows_code() == Some(HRESULT::from_win32(ERROR_CANCELLED.0)) => {
+            Ok(None)
+        }
+        Err(error) => Err(String::from(error)),
     }
 }
 
@@ -209,9 +217,15 @@ pub(crate) fn pick_scan_root_directory() -> Result<Option<String>, String> {
 }
 
 #[cfg(target_os = "windows")]
-unsafe fn pick_launch_file_inner() -> windows::core::Result<String> {
-    let dialog: IFileOpenDialog =
-        unsafe { CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)? };
+unsafe fn pick_launch_file_inner() -> Result<String, NativeError> {
+    let dialog: IFileOpenDialog = unsafe {
+        CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).map_err(|source| {
+            NativeError::Com {
+                context: "CoCreateInstance(FileOpenDialog launch file)",
+                source,
+            }
+        })?
+    };
     let launch_files_name = HSTRING::from("Applications and shortcuts");
     let launch_files_spec = HSTRING::from("*.exe;*.lnk;*.url");
     let filters = [COMDLG_FILTERSPEC {
@@ -220,34 +234,67 @@ unsafe fn pick_launch_file_inner() -> windows::core::Result<String> {
     }];
 
     unsafe {
-        dialog.SetTitle(&HSTRING::from("选择应用"))?;
-        dialog.SetFileTypes(&filters)?;
-        dialog.SetOptions(FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST)?;
-        dialog.Show(None)?;
+        dialog
+            .SetTitle(&HSTRING::from("选择应用"))
+            .map_err(|source| NativeError::Com {
+                context: "IFileOpenDialog::SetTitle(launch file)",
+                source,
+            })?;
+        dialog
+            .SetFileTypes(&filters)
+            .map_err(|source| NativeError::Com {
+                context: "IFileOpenDialog::SetFileTypes(launch file)",
+                source,
+            })?;
+        dialog
+            .SetOptions(FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST)
+            .map_err(|source| NativeError::Com {
+                context: "IFileOpenDialog::SetOptions(launch file)",
+                source,
+            })?;
+        dialog.Show(None).map_err(|source| NativeError::Com {
+            context: "IFileOpenDialog::Show(launch file)",
+            source,
+        })?;
     }
 
-    let item = unsafe { dialog.GetResult()? };
-    let display_name = unsafe { item.GetDisplayName(SIGDN_FILESYSPATH)? };
-    let path = unsafe {
-        let value = display_name.to_string()?;
-        CoTaskMemFree(Some(display_name.as_ptr().cast()));
-        value
-    };
+    let item = unsafe { dialog.GetResult() }.map_err(|source| NativeError::Com {
+        context: "IFileOpenDialog::GetResult(launch file)",
+        source,
+    })?;
+    let display_name =
+        unsafe { item.GetDisplayName(SIGDN_FILESYSPATH) }.map_err(|source| NativeError::Com {
+            context: "IShellItem::GetDisplayName(launch file)",
+            source,
+        })?;
+    let path = take_cotaskmem_string(display_name).map_err(|source| NativeError::Utf16 {
+        context: "launch file path",
+        source,
+    })?;
 
     if is_supported_launch_file(Path::new(&path)) {
         Ok(path)
     } else {
-        Err(windows::core::Error::new(
-            HRESULT::from_win32(ERROR_CANCELLED.0),
-            "Unsupported launch file type",
-        ))
+        Err(NativeError::Shell {
+            context: "unsupported launch file type",
+            source: windows::core::Error::new(
+                HRESULT::from_win32(ERROR_CANCELLED.0),
+                "Unsupported launch file type",
+            ),
+        })
     }
 }
 
 #[cfg(target_os = "windows")]
-unsafe fn pick_background_image_inner() -> windows::core::Result<String> {
-    let dialog: IFileOpenDialog =
-        unsafe { CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)? };
+unsafe fn pick_background_image_inner() -> Result<String, NativeError> {
+    let dialog: IFileOpenDialog = unsafe {
+        CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).map_err(|source| {
+            NativeError::Com {
+                context: "CoCreateInstance(FileOpenDialog background image)",
+                source,
+            }
+        })?
+    };
     let image_files_name = HSTRING::from("Image files");
     let image_files_spec = HSTRING::from("*.png;*.jpg;*.jpeg;*.webp");
     let filters = [COMDLG_FILTERSPEC {
@@ -256,39 +303,88 @@ unsafe fn pick_background_image_inner() -> windows::core::Result<String> {
     }];
 
     unsafe {
-        dialog.SetTitle(&HSTRING::from("选择背景图片"))?;
-        dialog.SetFileTypes(&filters)?;
-        dialog.SetOptions(FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST)?;
-        dialog.Show(None)?;
+        dialog
+            .SetTitle(&HSTRING::from("选择背景图片"))
+            .map_err(|source| NativeError::Com {
+                context: "IFileOpenDialog::SetTitle(background image)",
+                source,
+            })?;
+        dialog
+            .SetFileTypes(&filters)
+            .map_err(|source| NativeError::Com {
+                context: "IFileOpenDialog::SetFileTypes(background image)",
+                source,
+            })?;
+        dialog
+            .SetOptions(FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST)
+            .map_err(|source| NativeError::Com {
+                context: "IFileOpenDialog::SetOptions(background image)",
+                source,
+            })?;
+        dialog.Show(None).map_err(|source| NativeError::Com {
+            context: "IFileOpenDialog::Show(background image)",
+            source,
+        })?;
     }
 
-    let item = unsafe { dialog.GetResult()? };
-    let display_name = unsafe { item.GetDisplayName(SIGDN_FILESYSPATH)? };
-    unsafe {
-        let value = display_name.to_string()?;
-        CoTaskMemFree(Some(display_name.as_ptr().cast()));
-        Ok(value)
-    }
+    let item = unsafe { dialog.GetResult() }.map_err(|source| NativeError::Com {
+        context: "IFileOpenDialog::GetResult(background image)",
+        source,
+    })?;
+    let display_name =
+        unsafe { item.GetDisplayName(SIGDN_FILESYSPATH) }.map_err(|source| NativeError::Com {
+            context: "IShellItem::GetDisplayName(background image)",
+            source,
+        })?;
+    take_cotaskmem_string(display_name).map_err(|source| NativeError::Utf16 {
+        context: "background image path",
+        source,
+    })
 }
 
 #[cfg(target_os = "windows")]
-unsafe fn pick_scan_root_directory_inner() -> windows::core::Result<String> {
-    let dialog: IFileOpenDialog =
-        unsafe { CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)? };
+unsafe fn pick_scan_root_directory_inner() -> Result<String, NativeError> {
+    let dialog: IFileOpenDialog = unsafe {
+        CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).map_err(|source| {
+            NativeError::Com {
+                context: "CoCreateInstance(FileOpenDialog scan root)",
+                source,
+            }
+        })?
+    };
 
     unsafe {
-        dialog.SetTitle(&HSTRING::from("选择扫描来源"))?;
-        dialog.SetOptions(FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_PICKFOLDERS)?;
-        dialog.Show(None)?;
+        dialog
+            .SetTitle(&HSTRING::from("选择扫描来源"))
+            .map_err(|source| NativeError::Com {
+                context: "IFileOpenDialog::SetTitle(scan root)",
+                source,
+            })?;
+        dialog
+            .SetOptions(FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_PICKFOLDERS)
+            .map_err(|source| NativeError::Com {
+                context: "IFileOpenDialog::SetOptions(scan root)",
+                source,
+            })?;
+        dialog.Show(None).map_err(|source| NativeError::Com {
+            context: "IFileOpenDialog::Show(scan root)",
+            source,
+        })?;
     }
 
-    let item = unsafe { dialog.GetResult()? };
-    let display_name = unsafe { item.GetDisplayName(SIGDN_FILESYSPATH)? };
-    unsafe {
-        let value = display_name.to_string()?;
-        CoTaskMemFree(Some(display_name.as_ptr().cast()));
-        Ok(value)
-    }
+    let item = unsafe { dialog.GetResult() }.map_err(|source| NativeError::Com {
+        context: "IFileOpenDialog::GetResult(scan root)",
+        source,
+    })?;
+    let display_name =
+        unsafe { item.GetDisplayName(SIGDN_FILESYSPATH) }.map_err(|source| NativeError::Com {
+            context: "IShellItem::GetDisplayName(scan root)",
+            source,
+        })?;
+    take_cotaskmem_string(display_name).map_err(|source| NativeError::Utf16 {
+        context: "scan root path",
+        source,
+    })
 }
 
 #[cfg(target_os = "windows")]
@@ -393,7 +489,10 @@ fn background_cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let data_dir = app
         .path()
         .app_data_dir()
-        .map_err(|error| format!("Failed to resolve app data directory: {error}"))?;
+        .map_err(|source| NativeError::Tauri {
+            context: "PathResolver::app_data_dir(background cache)",
+            source,
+        })?;
     let background_dir = data_dir.join("backgrounds");
     fs::create_dir_all(&background_dir).map_err(|error| {
         format!(
@@ -514,19 +613,35 @@ fn current_desktop_wallpaper_path(app: &AppHandle) -> Result<String, String> {
 }
 
 #[cfg(target_os = "windows")]
-fn current_desktop_wallpaper_path_for_window(app: &AppHandle) -> Result<Option<String>, String> {
+fn current_desktop_wallpaper_path_for_window(
+    app: &AppHandle,
+) -> Result<Option<String>, NativeError> {
     let _com_guard = ComGuard::new()?;
-    let desktop_wallpaper: IDesktopWallpaper =
-        unsafe { CoCreateInstance(&DesktopWallpaper, None, CLSCTX_ALL) }
-            .map_err(|error| format!("Failed to create IDesktopWallpaper: {error}"))?;
+    let desktop_wallpaper: IDesktopWallpaper = unsafe {
+        CoCreateInstance(&DesktopWallpaper, None, CLSCTX_ALL)
+    }
+    .map_err(|source| NativeError::Com {
+        context: "CoCreateInstance(DesktopWallpaper)",
+        source,
+    })?;
     let target_rect = main_window_monitor_rect(app);
-    let monitor_count = unsafe { desktop_wallpaper.GetMonitorDevicePathCount() }
-        .map_err(|error| format!("Failed to enumerate desktop wallpaper monitors: {error}"))?;
+    let monitor_count =
+        unsafe { desktop_wallpaper.GetMonitorDevicePathCount() }.map_err(|source| {
+            NativeError::Com {
+                context: "IDesktopWallpaper::GetMonitorDevicePathCount",
+                source,
+            }
+        })?;
     let mut best: Option<(i64, String)> = None;
 
     for index in 0..monitor_count {
-        let monitor_id = unsafe { desktop_wallpaper.GetMonitorDevicePathAt(index) }
-            .map_err(|error| format!("Failed to read desktop wallpaper monitor id: {error}"))?;
+        let monitor_id =
+            unsafe { desktop_wallpaper.GetMonitorDevicePathAt(index) }.map_err(|source| {
+                NativeError::Com {
+                    context: "IDesktopWallpaper::GetMonitorDevicePathAt",
+                    source,
+                }
+            })?;
         let monitor_id_pcwstr = PCWSTR(monitor_id.as_ptr() as *const u16);
         let monitor_rect = unsafe { desktop_wallpaper.GetMonitorRECT(monitor_id_pcwstr) }.ok();
         let wallpaper = unsafe { desktop_wallpaper.GetWallpaper(monitor_id_pcwstr) };
@@ -534,8 +649,11 @@ fn current_desktop_wallpaper_path_for_window(app: &AppHandle) -> Result<Option<S
         let Ok(wallpaper) = wallpaper else {
             continue;
         };
-        let wallpaper_path = take_cotaskmem_string(wallpaper)
-            .map_err(|error| format!("Failed to read desktop wallpaper path: {error}"))?;
+        let wallpaper_path =
+            take_cotaskmem_string(wallpaper).map_err(|source| NativeError::Utf16 {
+                context: "desktop wallpaper path",
+                source,
+            })?;
         let wallpaper_path = wallpaper_path.trim().to_string();
         if wallpaper_path.is_empty() {
             continue;
@@ -569,7 +687,10 @@ fn current_desktop_wallpaper_path_from_system_parameters() -> Result<String, Str
             Some(buffer.as_mut_ptr().cast()),
             SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
         )
-        .map_err(|error| format!("Failed to read Windows desktop wallpaper path: {error}"))?;
+        .map_err(|source| NativeError::Win32 {
+            context: "SystemParametersInfoW(SPI_GETDESKWALLPAPER)",
+            source,
+        })?;
     }
     let end = buffer
         .iter()
