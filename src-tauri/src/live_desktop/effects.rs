@@ -349,27 +349,17 @@ impl LiveDesktopShaderPipeline {
             )
         }?;
 
-        let input_desc = D3D11_TEXTURE2D_DESC {
-            Width: width,
-            Height: height,
-            MipLevels: 1,
-            ArraySize: 1,
-            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-            SampleDesc: DXGI_SAMPLE_DESC {
-                Count: 1,
-                Quality: 0,
-            },
-            Usage: D3D11_USAGE_DEFAULT,
-            BindFlags: (D3D11_BIND_SHADER_RESOURCE.0 | D3D11_BIND_RENDER_TARGET.0) as u32,
-            CPUAccessFlags: 0,
-            MiscFlags: 0,
-        };
-        let mut input_texture = None;
-        unsafe { device.CreateTexture2D(&input_desc, None, Some(&mut input_texture)) }.map_err(
-            |error| format!("CreateTexture2D(shader input {width}x{height}) failed: {error}"),
-        )?;
-        let input_texture = input_texture
-            .ok_or_else(|| "CreateTexture2D(shader input) returned no texture".to_string())?;
+        let input_texture = unsafe {
+            create_bgra_texture(
+                device,
+                (width, height),
+                D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET,
+                D3D11_USAGE_DEFAULT,
+                D3D11_CPU_ACCESS_FLAG(0),
+                None,
+                "shader input",
+            )
+        }?;
         let input_resource = input_texture
             .cast::<ID3D11Resource>()
             .map_err(|error| format!("Shader input texture resource cast failed: {error}"))?;
@@ -962,6 +952,40 @@ impl LiveDesktopShaderPipeline {
 }
 
 #[cfg(target_os = "windows")]
+pub(crate) unsafe fn create_bgra_texture(
+    device: &ID3D11Device,
+    size: (u32, u32),
+    bind_flags: D3D11_BIND_FLAG,
+    usage: D3D11_USAGE,
+    cpu_access: D3D11_CPU_ACCESS_FLAG,
+    initial_data: Option<&D3D11_SUBRESOURCE_DATA>,
+    label: &str,
+) -> Result<ID3D11Texture2D, String> {
+    let width = size.0.max(1);
+    let height = size.1.max(1);
+    let texture_desc = D3D11_TEXTURE2D_DESC {
+        Width: width,
+        Height: height,
+        MipLevels: 1,
+        ArraySize: 1,
+        Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+        SampleDesc: DXGI_SAMPLE_DESC {
+            Count: 1,
+            Quality: 0,
+        },
+        Usage: usage,
+        BindFlags: bind_flags.0 as u32,
+        CPUAccessFlags: cpu_access.0 as u32,
+        MiscFlags: 0,
+    };
+    let mut texture = None;
+    let initial_data = initial_data.map(|data| data as *const D3D11_SUBRESOURCE_DATA);
+    unsafe { device.CreateTexture2D(&texture_desc, initial_data, Some(&mut texture)) }
+        .map_err(|error| format!("CreateTexture2D({label} {width}x{height}) failed: {error}"))?;
+    texture.ok_or_else(|| format!("CreateTexture2D({label}) returned no texture"))
+}
+
+#[cfg(target_os = "windows")]
 impl LiveDesktopShaderTexture {
     pub(crate) unsafe fn create(
         device: &ID3D11Device,
@@ -969,29 +993,17 @@ impl LiveDesktopShaderTexture {
         height: u32,
         label: &str,
     ) -> Result<Self, String> {
-        let width = width.max(1);
-        let height = height.max(1);
-        let texture_desc = D3D11_TEXTURE2D_DESC {
-            Width: width,
-            Height: height,
-            MipLevels: 1,
-            ArraySize: 1,
-            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-            SampleDesc: DXGI_SAMPLE_DESC {
-                Count: 1,
-                Quality: 0,
-            },
-            Usage: D3D11_USAGE_DEFAULT,
-            BindFlags: (D3D11_BIND_SHADER_RESOURCE.0 | D3D11_BIND_RENDER_TARGET.0) as u32,
-            CPUAccessFlags: 0,
-            MiscFlags: 0,
-        };
-        let mut texture = None;
-        unsafe { device.CreateTexture2D(&texture_desc, None, Some(&mut texture)) }.map_err(
-            |error| format!("CreateTexture2D({label} {width}x{height}) failed: {error}"),
-        )?;
-        let texture =
-            texture.ok_or_else(|| format!("CreateTexture2D({label}) returned no texture"))?;
+        let texture = unsafe {
+            create_bgra_texture(
+                device,
+                (width, height),
+                D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET,
+                D3D11_USAGE_DEFAULT,
+                D3D11_CPU_ACCESS_FLAG(0),
+                None,
+                label,
+            )
+        }?;
         let resource = texture
             .cast::<ID3D11Resource>()
             .map_err(|error| format!("{label} texture resource cast failed: {error}"))?;
@@ -1022,31 +1034,22 @@ impl LiveDesktopShaderNoiseTexture {
     ) -> Result<Self, String> {
         let size = size.clamp(16, 512);
         let pixels = make_live_desktop_acrylic_noise_pixels(size, seed);
-        let texture_desc = D3D11_TEXTURE2D_DESC {
-            Width: size,
-            Height: size,
-            MipLevels: 1,
-            ArraySize: 1,
-            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-            SampleDesc: DXGI_SAMPLE_DESC {
-                Count: 1,
-                Quality: 0,
-            },
-            Usage: D3D11_USAGE_DEFAULT,
-            BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
-            CPUAccessFlags: 0,
-            MiscFlags: 0,
-        };
         let initial_data = D3D11_SUBRESOURCE_DATA {
             pSysMem: pixels.as_ptr() as *const std::ffi::c_void,
             SysMemPitch: size * 4,
             SysMemSlicePitch: 0,
         };
-        let mut texture = None;
-        unsafe { device.CreateTexture2D(&texture_desc, Some(&initial_data), Some(&mut texture)) }
-            .map_err(|error| format!("CreateTexture2D(acrylic noise {size}x{size}) failed: {error}"))?;
-        let texture = texture
-            .ok_or_else(|| "CreateTexture2D(acrylic noise) returned no texture".to_string())?;
+        let texture = unsafe {
+            create_bgra_texture(
+                device,
+                (size, size),
+                D3D11_BIND_SHADER_RESOURCE,
+                D3D11_USAGE_DEFAULT,
+                D3D11_CPU_ACCESS_FLAG(0),
+                Some(&initial_data),
+                "acrylic noise",
+            )
+        }?;
         let resource = texture
             .cast::<ID3D11Resource>()
             .map_err(|error| format!("Acrylic noise texture resource cast failed: {error}"))?;
@@ -1295,4 +1298,248 @@ pub(crate) unsafe fn live_desktop_d3d_blob_string(blob: &ID3DBlob) -> String {
         .trim_matches(char::from(0))
         .trim()
         .to_string()
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) unsafe fn apply_live_desktop_config_to_effects(
+    blur_effect: Option<&IDCompositionGaussianBlurEffect>,
+    color_matrix_effect: Option<&IDCompositionColorMatrixEffect>,
+    config: &LiveDesktopRuntimeConfig,
+    apply_opacity_in_color_matrix: bool,
+    suppress_native_effects: bool,
+) -> Result<(), String> {
+    if let Some(blur_effect) = blur_effect {
+        unsafe { blur_effect.SetBorderMode(D2D1_BORDER_MODE_HARD) }
+            .map_err(|error| error.to_string())?;
+        let standard_deviation = if suppress_native_effects {
+            0.0
+        } else {
+            resolve_live_desktop_blur_standard_deviation(config)
+        };
+        unsafe { blur_effect.SetStandardDeviation2(standard_deviation) }
+            .map_err(|error| error.to_string())?;
+    }
+    if let Some(color_matrix_effect) = color_matrix_effect {
+        unsafe {
+            apply_live_desktop_config_to_color_matrix(
+                color_matrix_effect,
+                config,
+                apply_opacity_in_color_matrix,
+                suppress_native_effects,
+            )
+        }?;
+    }
+    Ok(())
+}
+
+pub(crate) fn resolve_live_desktop_blur_standard_deviation(
+    config: &LiveDesktopRuntimeConfig,
+) -> f32 {
+    if !matches!(
+        &config.effect,
+        LiveDesktopBackgroundEffect::Blur | LiveDesktopBackgroundEffect::AcrylicWebgl
+    ) {
+        return 0.0;
+    }
+    2.0 + (config.blur_strength.min(100) as f32 / 100.0) * 28.0
+}
+
+pub(crate) fn resolve_live_desktop_opacity(config: &LiveDesktopRuntimeConfig) -> f32 {
+    config.opacity.min(100) as f32 / 100.0
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) unsafe fn apply_live_desktop_visual_opacity(
+    visual3: Option<&IDCompositionVisual3>,
+    config: &LiveDesktopRuntimeConfig,
+) -> Result<(), String> {
+    if let Some(visual3) = visual3 {
+        unsafe { visual3.SetOpacity2(resolve_live_desktop_opacity(config)) }
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) unsafe fn apply_live_desktop_config_to_color_matrix(
+    effect: &IDCompositionColorMatrixEffect,
+    config: &LiveDesktopRuntimeConfig,
+    apply_opacity_in_color_matrix: bool,
+    suppress_color_effect: bool,
+) -> Result<(), String> {
+    let mut matrix = if suppress_color_effect {
+        live_desktop_identity_color_matrix()
+    } else {
+        resolve_live_desktop_color_matrix(config)
+    };
+    if apply_opacity_in_color_matrix {
+        matrix[3][3] *= resolve_live_desktop_opacity(config);
+    }
+    for (row_index, row) in matrix.iter().enumerate() {
+        for (column_index, value) in row.iter().enumerate() {
+            unsafe { effect.SetMatrixElement2(row_index as i32, column_index as i32, *value) }
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    unsafe { effect.SetClampOutput(true) }.map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+pub(crate) fn resolve_live_desktop_color_matrix(
+    config: &LiveDesktopRuntimeConfig,
+) -> [[f32; 4]; 5] {
+    match &config.effect {
+        LiveDesktopBackgroundEffect::Dimmed => resolve_live_desktop_dimmed_color_matrix(config),
+        LiveDesktopBackgroundEffect::AcrylicWebgl => {
+            resolve_live_desktop_acrylic_color_matrix(config)
+        }
+        LiveDesktopBackgroundEffect::None | LiveDesktopBackgroundEffect::Blur => {
+            live_desktop_identity_color_matrix()
+        }
+    }
+}
+
+pub(crate) fn live_desktop_identity_color_matrix() -> [[f32; 4]; 5] {
+    [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 0.0, 0.0],
+    ]
+}
+
+pub(crate) fn resolve_live_desktop_dimmed_color_matrix(
+    config: &LiveDesktopRuntimeConfig,
+) -> [[f32; 4]; 5] {
+    let amount = config.darken_strength.min(100) as f32 / 100.0;
+    let scale = 1.0 - amount;
+    let color = parse_live_desktop_hex_color(&config.darken_color);
+    [
+        [scale, 0.0, 0.0, 0.0],
+        [0.0, scale, 0.0, 0.0],
+        [0.0, 0.0, scale, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+        [color[0] * amount, color[1] * amount, color[2] * amount, 0.0],
+    ]
+}
+
+pub(crate) fn resolve_live_desktop_acrylic_color_matrix(
+    config: &LiveDesktopRuntimeConfig,
+) -> [[f32; 4]; 5] {
+    let fallback = LiveDesktopAcrylicParams::default();
+    let brightness = clamp_live_desktop_f32(
+        config.acrylic_params.brightness,
+        0.4,
+        1.4,
+        fallback.brightness,
+    );
+    let contrast =
+        clamp_live_desktop_f32(config.acrylic_params.contrast, 0.6, 1.4, fallback.contrast);
+    let saturation = clamp_live_desktop_f32(
+        config.acrylic_params.saturation,
+        0.4,
+        1.8,
+        fallback.saturation,
+    );
+    let tint_strength = clamp_live_desktop_f32(
+        config.acrylic_params.tint_strength,
+        0.0,
+        0.8,
+        fallback.tint_strength,
+    );
+    let tint_color = [
+        clamp_live_desktop_f32(
+            config.acrylic_params.tint_color[0],
+            0.0,
+            1.0,
+            fallback.tint_color[0],
+        ),
+        clamp_live_desktop_f32(
+            config.acrylic_params.tint_color[1],
+            0.0,
+            1.0,
+            fallback.tint_color[1],
+        ),
+        clamp_live_desktop_f32(
+            config.acrylic_params.tint_color[2],
+            0.0,
+            1.0,
+            fallback.tint_color[2],
+        ),
+    ];
+    let tint_scale = 1.0 - tint_strength;
+    let gain = contrast * brightness * tint_scale;
+    let saturation_inverse = 1.0 - saturation;
+    let luminance = [0.299, 0.587, 0.114];
+    let saturation_matrix = [
+        [
+            luminance[0] * saturation_inverse + saturation,
+            luminance[0] * saturation_inverse,
+            luminance[0] * saturation_inverse,
+        ],
+        [
+            luminance[1] * saturation_inverse,
+            luminance[1] * saturation_inverse + saturation,
+            luminance[1] * saturation_inverse,
+        ],
+        [
+            luminance[2] * saturation_inverse,
+            luminance[2] * saturation_inverse,
+            luminance[2] * saturation_inverse + saturation,
+        ],
+    ];
+    let contrast_offset = (0.5 - 0.5 * contrast) * brightness * tint_scale;
+    [
+        [
+            saturation_matrix[0][0] * gain,
+            saturation_matrix[0][1] * gain,
+            saturation_matrix[0][2] * gain,
+            0.0,
+        ],
+        [
+            saturation_matrix[1][0] * gain,
+            saturation_matrix[1][1] * gain,
+            saturation_matrix[1][2] * gain,
+            0.0,
+        ],
+        [
+            saturation_matrix[2][0] * gain,
+            saturation_matrix[2][1] * gain,
+            saturation_matrix[2][2] * gain,
+            0.0,
+        ],
+        [0.0, 0.0, 0.0, 1.0],
+        [
+            contrast_offset + tint_color[0] * tint_strength,
+            contrast_offset + tint_color[1] * tint_strength,
+            contrast_offset + tint_color[2] * tint_strength,
+            0.0,
+        ],
+    ]
+}
+
+pub(crate) fn clamp_live_desktop_f32(value: f32, min: f32, max: f32, fallback: f32) -> f32 {
+    if !value.is_finite() {
+        return fallback;
+    }
+    value.clamp(min, max)
+}
+
+pub(crate) fn parse_live_desktop_hex_color(value: &str) -> [f32; 3] {
+    let value = value.trim().strip_prefix('#').unwrap_or(value.trim());
+    if value.len() != 6 {
+        return [28.0 / 255.0, 28.0 / 255.0, 28.0 / 255.0];
+    }
+    let red = u8::from_str_radix(&value[0..2], 16);
+    let green = u8::from_str_radix(&value[2..4], 16);
+    let blue = u8::from_str_radix(&value[4..6], 16);
+    match (red, green, blue) {
+        (Ok(red), Ok(green), Ok(blue)) => [
+            red as f32 / 255.0,
+            green as f32 / 255.0,
+            blue as f32 / 255.0,
+        ],
+        _ => [28.0 / 255.0, 28.0 / 255.0, 28.0 / 255.0],
+    }
 }
