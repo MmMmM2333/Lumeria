@@ -300,7 +300,7 @@ pub(crate) unsafe fn probe_windows_live_desktop_renderer(
                 } {
                     Ok(result) => result,
                     Err(error) => {
-                        last_detail = error;
+                        last_detail = String::from(error);
                         return ControlFlow::Continue(());
                     }
                 };
@@ -314,7 +314,9 @@ pub(crate) unsafe fn probe_windows_live_desktop_renderer(
                 } {
                     Ok(detail) => detail,
                     Err(error) => {
-                        last_detail = error;
+                        last_detail = format!(
+                            "DirectComposition swap chain probe failed on adapter {adapter_index}: {error}"
+                        );
                         return ControlFlow::Continue(());
                     }
                 };

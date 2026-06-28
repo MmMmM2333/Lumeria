@@ -182,7 +182,7 @@ impl LiveDesktopShaderPipeline {
         width: u32,
         height: u32,
         config: &LiveDesktopRuntimeConfig,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, LiveDesktopError> {
         let width = width.max(1);
         let height = height.max(1);
         let vertex_shader_blob = unsafe {
@@ -243,9 +243,13 @@ impl LiveDesktopShaderPipeline {
                 Some(&mut vertex_shader),
             )
         }
-        .map_err(|error| format!("CreateVertexShader(copy) failed: {error}"))?;
-        let vertex_shader = vertex_shader
-            .ok_or_else(|| "CreateVertexShader(copy) returned no shader".to_string())?;
+        .map_err(|source| LiveDesktopError::D3d {
+            context: "CreateVertexShader(copy)",
+            source,
+        })?;
+        let vertex_shader = vertex_shader.ok_or_else(|| {
+            LiveDesktopError::Message("CreateVertexShader(copy) returned no shader".to_string())
+        })?;
 
         let copy_pixel_shader =
             unsafe { create_live_desktop_pixel_shader(device, copy_pixel_shader_bytes, "copy") }?;
@@ -287,9 +291,13 @@ impl LiveDesktopShaderPipeline {
                 Some(&mut input_layout),
             )
         }
-        .map_err(|error| format!("CreateInputLayout(copy) failed: {error}"))?;
-        let input_layout =
-            input_layout.ok_or_else(|| "CreateInputLayout(copy) returned no layout".to_string())?;
+        .map_err(|source| LiveDesktopError::D3d {
+            context: "CreateInputLayout(copy)",
+            source,
+        })?;
+        let input_layout = input_layout.ok_or_else(|| {
+            LiveDesktopError::Message("CreateInputLayout(copy) returned no layout".to_string())
+        })?;
 
         let vertices = [
             LiveDesktopShaderVertex {
@@ -326,9 +334,15 @@ impl LiveDesktopShaderPipeline {
                 Some(&mut vertex_buffer),
             )
         }
-        .map_err(|error| format!("CreateBuffer(copy vertex buffer) failed: {error}"))?;
-        let vertex_buffer = vertex_buffer
-            .ok_or_else(|| "CreateBuffer(copy vertex buffer) returned no buffer".to_string())?;
+        .map_err(|source| LiveDesktopError::D3d {
+            context: "CreateBuffer(copy vertex buffer)",
+            source,
+        })?;
+        let vertex_buffer = vertex_buffer.ok_or_else(|| {
+            LiveDesktopError::Message(
+                "CreateBuffer(copy vertex buffer) returned no buffer".to_string(),
+            )
+        })?;
 
         let point_sampler = unsafe {
             create_live_desktop_sampler(device, D3D11_FILTER_MIN_MAG_MIP_POINT, "point")
@@ -360,14 +374,24 @@ impl LiveDesktopShaderPipeline {
                 "shader input",
             )
         }?;
-        let input_resource = input_texture
-            .cast::<ID3D11Resource>()
-            .map_err(|error| format!("Shader input texture resource cast failed: {error}"))?;
+        let input_resource =
+            input_texture
+                .cast::<ID3D11Resource>()
+                .map_err(|source| LiveDesktopError::D3d {
+                    context: "shader input texture resource cast",
+                    source,
+                })?;
         let mut input_srv = None;
         unsafe { device.CreateShaderResourceView(&input_resource, None, Some(&mut input_srv)) }
-            .map_err(|error| format!("CreateShaderResourceView(shader input) failed: {error}"))?;
-        let input_srv = input_srv
-            .ok_or_else(|| "CreateShaderResourceView(shader input) returned no view".to_string())?;
+            .map_err(|source| LiveDesktopError::D3d {
+                context: "CreateShaderResourceView(shader input)",
+                source,
+            })?;
+        let input_srv = input_srv.ok_or_else(|| {
+            LiveDesktopError::Message(
+                "CreateShaderResourceView(shader input) returned no view".to_string(),
+            )
+        })?;
         let (effect_width, effect_height) =
             resolve_live_desktop_effect_render_size(width, height, config.effect_plan.as_ref());
         let levels = create_live_desktop_dual_kawase_levels(
@@ -429,16 +453,18 @@ impl LiveDesktopShaderPipeline {
         source_height: u32,
         copy_crop: LiveDesktopFrameCrop,
         label: &str,
-    ) -> Result<(), String> {
+    ) -> Result<(), LiveDesktopError> {
         if copy_crop.width == 0 || copy_crop.height == 0 {
-            return Err(format!("{label} shader copy crop has invalid size"));
+            return Err(LiveDesktopError::Message(format!(
+                "{label} shader copy crop has invalid size"
+            )));
         }
         if copy_crop.left.saturating_add(copy_crop.width) > source_width
             || copy_crop.top.saturating_add(copy_crop.height) > source_height
             || copy_crop.width > self.width
             || copy_crop.height > self.height
         {
-            return Err(format!(
+            return Err(LiveDesktopError::Message(format!(
                 "{label} shader copy crop {}x{}@{},{} is outside source {}x{} or input {}x{}",
                 copy_crop.width,
                 copy_crop.height,
@@ -448,7 +474,7 @@ impl LiveDesktopShaderPipeline {
                 source_height,
                 self.width,
                 self.height
-            ));
+            )));
         }
 
         if copy_crop.left == 0
@@ -505,7 +531,7 @@ impl LiveDesktopShaderPipeline {
         target_texture: &ID3D11Texture2D,
         config: &LiveDesktopRuntimeConfig,
         label: &str,
-    ) -> Result<(), String> {
+    ) -> Result<(), LiveDesktopError> {
         unsafe {
             self.copy_source_region_to_input(
                 context,
@@ -529,11 +555,12 @@ impl LiveDesktopShaderPipeline {
         target_texture: &ID3D11Texture2D,
         config: &LiveDesktopRuntimeConfig,
         label: &str,
-    ) -> Result<(), String> {
-        let effect_plan = config
-            .effect_plan
-            .as_ref()
-            .ok_or_else(|| format!("{label} shader effect requested without effect plan"))?;
+    ) -> Result<(), LiveDesktopError> {
+        let effect_plan = config.effect_plan.as_ref().ok_or_else(|| {
+            LiveDesktopError::Message(format!(
+                "{label} shader effect requested without effect plan"
+            ))
+        })?;
 
         unsafe {
             self.draw_shader_resource_to_render_target(
@@ -687,7 +714,7 @@ impl LiveDesktopShaderPipeline {
         context: &ID3D11DeviceContext,
         target_texture: &ID3D11Texture2D,
         label: &str,
-    ) -> Result<(), String> {
+    ) -> Result<(), LiveDesktopError> {
         unsafe {
             self.draw_shader_resource_to_texture(
                 context,
@@ -708,12 +735,15 @@ impl LiveDesktopShaderPipeline {
         constant_buffer: Option<&ID3D11Buffer>,
         target_texture: &ID3D11Texture2D,
         label: &str,
-    ) -> Result<(), String> {
+    ) -> Result<(), LiveDesktopError> {
         let mut target_desc = D3D11_TEXTURE2D_DESC::default();
         unsafe { target_texture.GetDesc(&mut target_desc) };
-        let target_resource = target_texture
-            .cast::<ID3D11Resource>()
-            .map_err(|error| format!("{label} shader target resource cast failed: {error}"))?;
+        let target_resource = target_texture.cast::<ID3D11Resource>().map_err(|source| {
+            LiveDesktopError::D3dContext {
+                context: format!("{label} shader target resource cast"),
+                source,
+            }
+        })?;
         let mut render_target_view = None;
         unsafe {
             self.device.CreateRenderTargetView(
@@ -722,11 +752,13 @@ impl LiveDesktopShaderPipeline {
                 Some(&mut render_target_view),
             )
         }
-        .map_err(|error| {
-            format!("{label} CreateRenderTargetView(shader target) failed: {error}")
+        .map_err(|source| LiveDesktopError::D3dContext {
+            context: format!("{label} CreateRenderTargetView(shader target)"),
+            source,
         })?;
-        let render_target_view = render_target_view
-            .ok_or_else(|| format!("{label} CreateRenderTargetView returned no view"))?;
+        let render_target_view = render_target_view.ok_or_else(|| {
+            LiveDesktopError::Message(format!("{label} CreateRenderTargetView returned no view"))
+        })?;
         unsafe {
             self.draw_shader_resource_to_render_target(
                 context,
@@ -807,7 +839,7 @@ impl LiveDesktopShaderPipeline {
         target: &LiveDesktopShaderTexture,
         offset: f32,
         label: &str,
-    ) -> Result<(), String> {
+    ) -> Result<(), LiveDesktopError> {
         let constants = LiveDesktopKawaseConstants {
             values0: [
                 1.0 / source_width.max(1) as f32,
@@ -837,7 +869,9 @@ impl LiveDesktopShaderPipeline {
             );
         }
         if target.width == 0 || target.height == 0 {
-            return Err(format!("{label} kawase target has invalid size"));
+            return Err(LiveDesktopError::Message(format!(
+                "{label} kawase target has invalid size"
+            )));
         }
         Ok(())
     }
@@ -853,7 +887,7 @@ impl LiveDesktopShaderPipeline {
         sigma: f32,
         direction: [f32; 2],
         label: &str,
-    ) -> Result<(), String> {
+    ) -> Result<(), LiveDesktopError> {
         let sigma = if sigma.is_finite() {
             sigma.max(0.001)
         } else {
@@ -889,7 +923,9 @@ impl LiveDesktopShaderPipeline {
             );
         }
         if target.width == 0 || target.height == 0 {
-            return Err(format!("{label} gaussian target has invalid size"));
+            return Err(LiveDesktopError::Message(format!(
+                "{label} gaussian target has invalid size"
+            )));
         }
         Ok(())
     }
@@ -901,7 +937,7 @@ impl LiveDesktopShaderPipeline {
         target: &LiveDesktopShaderTexture,
         acrylic: &LiveDesktopAcrylicEffectPlan,
         _label: &str,
-    ) -> Result<(), String> {
+    ) -> Result<(), LiveDesktopError> {
         let constants = LiveDesktopAcrylicConstants {
             values0: [
                 acrylic.alpha.clamp(0.0, 1.0),
@@ -960,7 +996,7 @@ pub(crate) unsafe fn create_bgra_texture(
     cpu_access: D3D11_CPU_ACCESS_FLAG,
     initial_data: Option<&D3D11_SUBRESOURCE_DATA>,
     label: &str,
-) -> Result<ID3D11Texture2D, String> {
+) -> Result<ID3D11Texture2D, LiveDesktopError> {
     let width = size.0.max(1);
     let height = size.1.max(1);
     let texture_desc = D3D11_TEXTURE2D_DESC {
@@ -980,9 +1016,15 @@ pub(crate) unsafe fn create_bgra_texture(
     };
     let mut texture = None;
     let initial_data = initial_data.map(|data| data as *const D3D11_SUBRESOURCE_DATA);
-    unsafe { device.CreateTexture2D(&texture_desc, initial_data, Some(&mut texture)) }
-        .map_err(|error| format!("CreateTexture2D({label} {width}x{height}) failed: {error}"))?;
-    texture.ok_or_else(|| format!("CreateTexture2D({label}) returned no texture"))
+    unsafe { device.CreateTexture2D(&texture_desc, initial_data, Some(&mut texture)) }.map_err(
+        |source| LiveDesktopError::D3dContext {
+            context: format!("CreateTexture2D({label} {width}x{height})"),
+            source,
+        },
+    )?;
+    texture.ok_or_else(|| {
+        LiveDesktopError::Message(format!("CreateTexture2D({label}) returned no texture"))
+    })
 }
 
 #[cfg(target_os = "windows")]
@@ -992,7 +1034,7 @@ impl LiveDesktopShaderTexture {
         width: u32,
         height: u32,
         label: &str,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, LiveDesktopError> {
         let texture = unsafe {
             create_bgra_texture(
                 device,
@@ -1004,18 +1046,35 @@ impl LiveDesktopShaderTexture {
                 label,
             )
         }?;
-        let resource = texture
-            .cast::<ID3D11Resource>()
-            .map_err(|error| format!("{label} texture resource cast failed: {error}"))?;
+        let resource =
+            texture
+                .cast::<ID3D11Resource>()
+                .map_err(|source| LiveDesktopError::D3dContext {
+                    context: format!("{label} texture resource cast"),
+                    source,
+                })?;
         let mut srv = None;
-        unsafe { device.CreateShaderResourceView(&resource, None, Some(&mut srv)) }
-            .map_err(|error| format!("CreateShaderResourceView({label}) failed: {error}"))?;
-        let srv =
-            srv.ok_or_else(|| format!("CreateShaderResourceView({label}) returned no view"))?;
+        unsafe { device.CreateShaderResourceView(&resource, None, Some(&mut srv)) }.map_err(
+            |source| LiveDesktopError::D3dContext {
+                context: format!("CreateShaderResourceView({label})"),
+                source,
+            },
+        )?;
+        let srv = srv.ok_or_else(|| {
+            LiveDesktopError::Message(format!(
+                "CreateShaderResourceView({label}) returned no view"
+            ))
+        })?;
         let mut rtv = None;
-        unsafe { device.CreateRenderTargetView(&resource, None, Some(&mut rtv)) }
-            .map_err(|error| format!("CreateRenderTargetView({label}) failed: {error}"))?;
-        let rtv = rtv.ok_or_else(|| format!("CreateRenderTargetView({label}) returned no view"))?;
+        unsafe { device.CreateRenderTargetView(&resource, None, Some(&mut rtv)) }.map_err(
+            |source| LiveDesktopError::D3dContext {
+                context: format!("CreateRenderTargetView({label})"),
+                source,
+            },
+        )?;
+        let rtv = rtv.ok_or_else(|| {
+            LiveDesktopError::Message(format!("CreateRenderTargetView({label}) returned no view"))
+        })?;
         Ok(Self {
             srv,
             rtv,
@@ -1031,7 +1090,7 @@ impl LiveDesktopShaderNoiseTexture {
         device: &ID3D11Device,
         size: u32,
         seed: u32,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, LiveDesktopError> {
         let size = size.clamp(16, 512);
         let pixels = make_live_desktop_acrylic_noise_pixels(size, seed);
         let initial_data = D3D11_SUBRESOURCE_DATA {
@@ -1050,14 +1109,24 @@ impl LiveDesktopShaderNoiseTexture {
                 "acrylic noise",
             )
         }?;
-        let resource = texture
-            .cast::<ID3D11Resource>()
-            .map_err(|error| format!("Acrylic noise texture resource cast failed: {error}"))?;
+        let resource =
+            texture
+                .cast::<ID3D11Resource>()
+                .map_err(|source| LiveDesktopError::D3d {
+                    context: "acrylic noise texture resource cast",
+                    source,
+                })?;
         let mut srv = None;
-        unsafe { device.CreateShaderResourceView(&resource, None, Some(&mut srv)) }
-            .map_err(|error| format!("CreateShaderResourceView(acrylic noise) failed: {error}"))?;
+        unsafe { device.CreateShaderResourceView(&resource, None, Some(&mut srv)) }.map_err(
+            |source| LiveDesktopError::D3d {
+                context: "CreateShaderResourceView(acrylic noise)",
+                source,
+            },
+        )?;
         let srv = srv.ok_or_else(|| {
-            "CreateShaderResourceView(acrylic noise) returned no view".to_string()
+            LiveDesktopError::Message(
+                "CreateShaderResourceView(acrylic noise) returned no view".to_string(),
+            )
         })?;
         Ok(Self {
             srv,
@@ -1072,7 +1141,7 @@ pub(crate) unsafe fn create_live_desktop_shader_textures(
     device: &ID3D11Device,
     levels: &[(u32, u32)],
     label: &str,
-) -> Result<Vec<LiveDesktopShaderTexture>, String> {
+) -> Result<Vec<LiveDesktopShaderTexture>, LiveDesktopError> {
     let mut textures = Vec::with_capacity(levels.len());
     for (index, (width, height)) in levels.iter().copied().enumerate() {
         textures.push(unsafe {
@@ -1092,7 +1161,7 @@ pub(crate) unsafe fn create_live_desktop_pixel_shader(
     device: &ID3D11Device,
     shader_bytes: &[u8],
     label: &str,
-) -> Result<ID3D11PixelShader, String> {
+) -> Result<ID3D11PixelShader, LiveDesktopError> {
     let mut pixel_shader = None;
     unsafe {
         device.CreatePixelShader(
@@ -1101,8 +1170,13 @@ pub(crate) unsafe fn create_live_desktop_pixel_shader(
             Some(&mut pixel_shader),
         )
     }
-    .map_err(|error| format!("CreatePixelShader({label}) failed: {error}"))?;
-    pixel_shader.ok_or_else(|| format!("CreatePixelShader({label}) returned no shader"))
+    .map_err(|source| LiveDesktopError::D3dContext {
+        context: format!("CreatePixelShader({label})"),
+        source,
+    })?;
+    pixel_shader.ok_or_else(|| {
+        LiveDesktopError::Message(format!("CreatePixelShader({label}) returned no shader"))
+    })
 }
 
 #[cfg(target_os = "windows")]
@@ -1110,7 +1184,7 @@ pub(crate) unsafe fn create_live_desktop_sampler(
     device: &ID3D11Device,
     filter: windows::Win32::Graphics::Direct3D11::D3D11_FILTER,
     label: &str,
-) -> Result<ID3D11SamplerState, String> {
+) -> Result<ID3D11SamplerState, LiveDesktopError> {
     let sampler_desc = D3D11_SAMPLER_DESC {
         Filter: filter,
         AddressU: D3D11_TEXTURE_ADDRESS_CLAMP,
@@ -1124,16 +1198,22 @@ pub(crate) unsafe fn create_live_desktop_sampler(
         MaxLOD: D3D11_FLOAT32_MAX,
     };
     let mut sampler = None;
-    unsafe { device.CreateSamplerState(&sampler_desc, Some(&mut sampler)) }
-        .map_err(|error| format!("CreateSamplerState({label}) failed: {error}"))?;
-    sampler.ok_or_else(|| format!("CreateSamplerState({label}) returned no sampler"))
+    unsafe { device.CreateSamplerState(&sampler_desc, Some(&mut sampler)) }.map_err(|source| {
+        LiveDesktopError::D3dContext {
+            context: format!("CreateSamplerState({label})"),
+            source,
+        }
+    })?;
+    sampler.ok_or_else(|| {
+        LiveDesktopError::Message(format!("CreateSamplerState({label}) returned no sampler"))
+    })
 }
 
 #[cfg(target_os = "windows")]
 pub(crate) unsafe fn create_live_desktop_constant_buffer<T>(
     device: &ID3D11Device,
     label: &str,
-) -> Result<ID3D11Buffer, String> {
+) -> Result<ID3D11Buffer, LiveDesktopError> {
     let byte_width = (std::mem::size_of::<T>() as u32).div_ceil(16) * 16;
     let desc = D3D11_BUFFER_DESC {
         ByteWidth: byte_width.max(16),
@@ -1144,9 +1224,15 @@ pub(crate) unsafe fn create_live_desktop_constant_buffer<T>(
         StructureByteStride: 0,
     };
     let mut buffer = None;
-    unsafe { device.CreateBuffer(&desc, None, Some(&mut buffer)) }
-        .map_err(|error| format!("CreateBuffer({label}) failed: {error}"))?;
-    buffer.ok_or_else(|| format!("CreateBuffer({label}) returned no buffer"))
+    unsafe { device.CreateBuffer(&desc, None, Some(&mut buffer)) }.map_err(|source| {
+        LiveDesktopError::D3dContext {
+            context: format!("CreateBuffer({label})"),
+            source,
+        }
+    })?;
+    buffer.ok_or_else(|| {
+        LiveDesktopError::Message(format!("CreateBuffer({label}) returned no buffer"))
+    })
 }
 
 #[cfg(target_os = "windows")]
@@ -1155,10 +1241,14 @@ pub(crate) unsafe fn update_live_desktop_constant_buffer<T>(
     buffer: &ID3D11Buffer,
     value: &T,
     label: &str,
-) -> Result<(), String> {
-    let resource = buffer
-        .cast::<ID3D11Resource>()
-        .map_err(|error| format!("{label} resource cast failed: {error}"))?;
+) -> Result<(), LiveDesktopError> {
+    let resource =
+        buffer
+            .cast::<ID3D11Resource>()
+            .map_err(|source| LiveDesktopError::D3dContext {
+                context: format!("{label} resource cast"),
+                source,
+            })?;
     unsafe {
         context.UpdateSubresource(
             &resource,
@@ -1253,7 +1343,7 @@ pub(crate) unsafe fn compile_live_desktop_shader(
     entry_point: PCSTR,
     target: PCSTR,
     label: &str,
-) -> Result<ID3DBlob, String> {
+) -> Result<ID3DBlob, LiveDesktopError> {
     let mut code = None;
     let mut errors = None;
     let result = unsafe {
@@ -1272,14 +1362,20 @@ pub(crate) unsafe fn compile_live_desktop_shader(
         )
     };
     match result {
-        Ok(()) => code.ok_or_else(|| format!("D3DCompile({label}) returned no blob")),
+        Ok(()) => code.ok_or_else(|| {
+            LiveDesktopError::Message(format!("D3DCompile({label}) returned no blob"))
+        }),
         Err(error) => {
             let message = errors
                 .as_ref()
                 .map(|blob| unsafe { live_desktop_d3d_blob_string(blob) })
                 .filter(|message| !message.is_empty())
                 .unwrap_or_else(|| "no compiler diagnostics".to_string());
-            Err(format!("D3DCompile({label}) failed: {error}; {message}"))
+            Err(LiveDesktopError::ShaderCompile {
+                context: label.to_string(),
+                source: error,
+                message,
+            })
         }
     }
 }
@@ -1307,17 +1403,25 @@ pub(crate) unsafe fn apply_live_desktop_config_to_effects(
     config: &LiveDesktopRuntimeConfig,
     apply_opacity_in_color_matrix: bool,
     suppress_native_effects: bool,
-) -> Result<(), String> {
+) -> Result<(), LiveDesktopError> {
     if let Some(blur_effect) = blur_effect {
-        unsafe { blur_effect.SetBorderMode(D2D1_BORDER_MODE_HARD) }
-            .map_err(|error| error.to_string())?;
+        unsafe { blur_effect.SetBorderMode(D2D1_BORDER_MODE_HARD) }.map_err(|source| {
+            LiveDesktopError::Composition {
+                context: "IDCompositionGaussianBlurEffect::SetBorderMode",
+                source,
+            }
+        })?;
         let standard_deviation = if suppress_native_effects {
             0.0
         } else {
             resolve_live_desktop_blur_standard_deviation(config)
         };
-        unsafe { blur_effect.SetStandardDeviation2(standard_deviation) }
-            .map_err(|error| error.to_string())?;
+        unsafe { blur_effect.SetStandardDeviation2(standard_deviation) }.map_err(|source| {
+            LiveDesktopError::Composition {
+                context: "IDCompositionGaussianBlurEffect::SetStandardDeviation2",
+                source,
+            }
+        })?;
     }
     if let Some(color_matrix_effect) = color_matrix_effect {
         unsafe {
@@ -1352,10 +1456,14 @@ pub(crate) fn resolve_live_desktop_opacity(config: &LiveDesktopRuntimeConfig) ->
 pub(crate) unsafe fn apply_live_desktop_visual_opacity(
     visual3: Option<&IDCompositionVisual3>,
     config: &LiveDesktopRuntimeConfig,
-) -> Result<(), String> {
+) -> Result<(), LiveDesktopError> {
     if let Some(visual3) = visual3 {
-        unsafe { visual3.SetOpacity2(resolve_live_desktop_opacity(config)) }
-            .map_err(|error| error.to_string())?;
+        unsafe { visual3.SetOpacity2(resolve_live_desktop_opacity(config)) }.map_err(|source| {
+            LiveDesktopError::Composition {
+                context: "IDCompositionVisual3::SetOpacity2",
+                source,
+            }
+        })?;
     }
     Ok(())
 }
@@ -1366,7 +1474,7 @@ pub(crate) unsafe fn apply_live_desktop_config_to_color_matrix(
     config: &LiveDesktopRuntimeConfig,
     apply_opacity_in_color_matrix: bool,
     suppress_color_effect: bool,
-) -> Result<(), String> {
+) -> Result<(), LiveDesktopError> {
     let mut matrix = if suppress_color_effect {
         live_desktop_identity_color_matrix()
     } else {
@@ -1378,10 +1486,18 @@ pub(crate) unsafe fn apply_live_desktop_config_to_color_matrix(
     for (row_index, row) in matrix.iter().enumerate() {
         for (column_index, value) in row.iter().enumerate() {
             unsafe { effect.SetMatrixElement2(row_index as i32, column_index as i32, *value) }
-                .map_err(|error| error.to_string())?;
+                .map_err(|source| LiveDesktopError::CompositionContext {
+                    context: format!(
+                        "IDCompositionColorMatrixEffect::SetMatrixElement2({row_index},{column_index})"
+                    ),
+                    source,
+                })?;
         }
     }
-    unsafe { effect.SetClampOutput(true) }.map_err(|error| error.to_string())?;
+    unsafe { effect.SetClampOutput(true) }.map_err(|source| LiveDesktopError::Composition {
+        context: "IDCompositionColorMatrixEffect::SetClampOutput",
+        source,
+    })?;
     Ok(())
 }
 

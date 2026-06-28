@@ -42,43 +42,55 @@ pub(crate) struct LiveDesktopCompositionHost {
 
 #[cfg(target_os = "windows")]
 impl LiveDesktopCompositionDevice {
-    pub(crate) unsafe fn commit(&self) -> Result<(), String> {
+    pub(crate) unsafe fn commit(&self) -> Result<(), LiveDesktopError> {
         match self {
             Self::Desktop(device) => unsafe { device.Commit() },
             Self::Legacy(device) => unsafe { device.Commit() },
         }
-        .map_err(|error| error.to_string())
+        .map_err(|source| LiveDesktopError::Composition {
+            context: "IDCompositionDevice::Commit",
+            source,
+        })
     }
 
     pub(crate) unsafe fn create_target_for_hwnd(
         &self,
         hwnd: HWND,
         topmost: bool,
-    ) -> Result<IDCompositionTarget, String> {
+    ) -> Result<IDCompositionTarget, LiveDesktopError> {
         match self {
             Self::Desktop(device) => unsafe { device.CreateTargetForHwnd(hwnd, topmost) },
             Self::Legacy(device) => unsafe { device.CreateTargetForHwnd(hwnd, topmost) },
         }
-        .map_err(|error| error.to_string())
+        .map_err(|source| LiveDesktopError::Composition {
+            context: "IDCompositionDevice::CreateTargetForHwnd",
+            source,
+        })
     }
 
-    pub(crate) unsafe fn create_visual(&self) -> Result<IDCompositionVisual, String> {
+    pub(crate) unsafe fn create_visual(&self) -> Result<IDCompositionVisual, LiveDesktopError> {
         match self {
             Self::Desktop(device) => unsafe { device.CreateVisual() }
                 .and_then(|visual| visual.cast::<IDCompositionVisual>()),
             Self::Legacy(device) => unsafe { device.CreateVisual() },
         }
-        .map_err(|error| error.to_string())
+        .map_err(|source| LiveDesktopError::Composition {
+            context: "IDCompositionDevice::CreateVisual",
+            source,
+        })
     }
 
     pub(crate) unsafe fn create_scale_transform(
         &self,
-    ) -> Result<IDCompositionScaleTransform, String> {
+    ) -> Result<IDCompositionScaleTransform, LiveDesktopError> {
         match self {
             Self::Desktop(device) => unsafe { device.CreateScaleTransform() },
             Self::Legacy(device) => unsafe { device.CreateScaleTransform() },
         }
-        .map_err(|error| error.to_string())
+        .map_err(|source| LiveDesktopError::Composition {
+            context: "IDCompositionDevice::CreateScaleTransform",
+            source,
+        })
     }
 }
 
@@ -89,10 +101,13 @@ impl LiveDesktopCompositionSwapChain {
         device: &ID3D11Device,
         width: u32,
         height: u32,
-    ) -> Result<Self, String> {
-        let factory2 = factory.cast::<IDXGIFactory2>().map_err(|error| {
-            format!("IDXGIFactory2 cast failed before creating composition swap chain: {error}")
-        })?;
+    ) -> Result<Self, LiveDesktopError> {
+        let factory2 = factory
+            .cast::<IDXGIFactory2>()
+            .map_err(|source| LiveDesktopError::D3d {
+                context: "IDXGIFactory2 cast before creating composition swap chain",
+                source,
+            })?;
         let desc = DXGI_SWAP_CHAIN_DESC1 {
             Width: width.max(1),
             Height: height.max(1),
@@ -111,11 +126,12 @@ impl LiveDesktopCompositionSwapChain {
         };
         let swap_chain =
             unsafe { factory2.CreateSwapChainForComposition(device, &desc, None::<&IDXGIOutput>) }
-                .map_err(|error| {
-                    format!(
-                        "CreateSwapChainForComposition({}x{}) failed: {error}",
+                .map_err(|source| LiveDesktopError::CompositionContext {
+                    context: format!(
+                        "CreateSwapChainForComposition({}x{})",
                         desc.Width, desc.Height
-                    )
+                    ),
+                    source,
                 })?;
         Ok(Self {
             swap_chain,
@@ -125,29 +141,37 @@ impl LiveDesktopCompositionSwapChain {
         })
     }
 
-    pub(crate) unsafe fn back_buffer(&self, label: &str) -> Result<ID3D11Texture2D, String> {
+    pub(crate) unsafe fn back_buffer(
+        &self,
+        label: &str,
+    ) -> Result<ID3D11Texture2D, LiveDesktopError> {
         if let Some(texture) = self.cached_back_buffer.borrow().as_ref().cloned() {
             return Ok(texture);
         }
 
-        let texture = unsafe { self.swap_chain.GetBuffer::<ID3D11Texture2D>(0) }
-            .map_err(|error| format!("{label} swap chain GetBuffer(0) failed: {error}"))?;
+        let texture =
+            unsafe { self.swap_chain.GetBuffer::<ID3D11Texture2D>(0) }.map_err(|source| {
+                LiveDesktopError::D3dContext {
+                    context: format!("{label} swap chain GetBuffer(0)"),
+                    source,
+                }
+            })?;
         *self.cached_back_buffer.borrow_mut() = Some(texture.clone());
         Ok(texture)
     }
 
-    pub(crate) unsafe fn present(&self) -> Result<(), String> {
+    pub(crate) unsafe fn present(&self) -> Result<(), LiveDesktopError> {
         let present_params = DXGI_PRESENT_PARAMETERS::default();
         let result = unsafe {
             self.swap_chain
                 .Present1(1, DXGI_PRESENT(0), &present_params)
         };
-        result.ok().map_err(|error| {
-            format!(
-                "Composition swap chain Present1({}x{}) failed: {error}",
-                self.width, self.height
-            )
-        })
+        result
+            .ok()
+            .map_err(|source| LiveDesktopError::CompositionContext {
+                context: format!("swap chain Present1({}x{})", self.width, self.height),
+                source,
+            })
     }
 }
 
@@ -230,10 +254,13 @@ impl LiveDesktopCompositionHost {
 
 #[cfg(target_os = "windows")]
 impl ComApartment {
-    pub(crate) unsafe fn initialize() -> Result<Self, String> {
+    pub(crate) unsafe fn initialize() -> Result<Self, LiveDesktopError> {
         unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }
             .ok()
-            .map_err(|error| error.to_string())?;
+            .map_err(|source| LiveDesktopError::Composition {
+                context: "CoInitializeEx",
+                source,
+            })?;
         Ok(Self)
     }
 }
@@ -271,7 +298,7 @@ pub(crate) unsafe fn create_live_desktop_composition_device(
     dxgi_device: &IDXGIDevice,
     adapter_index: u32,
     phase: &str,
-) -> Result<(LiveDesktopCompositionDevice, LiveDesktopNativeEffects), String> {
+) -> Result<(LiveDesktopCompositionDevice, LiveDesktopNativeEffects), LiveDesktopError> {
     match unsafe { DCompositionCreateDevice3::<_, IDCompositionDesktopDevice>(dxgi_device) } {
         Ok(device) => {
             let native_effects =
@@ -282,13 +309,24 @@ pub(crate) unsafe fn create_live_desktop_composition_device(
             ))
         }
         Err(device3_error) => {
+            let device3_context = format!(
+                "DCompositionCreateDevice3<IDCompositionDesktopDevice> during {phase} on adapter {adapter_index}"
+            );
             let legacy_device =
-                unsafe { DCompositionCreateDevice::<_, IDCompositionDevice>(dxgi_device) }
-                    .map_err(|legacy_error| {
-                        format!(
-                            "DCompositionCreateDevice3<IDCompositionDesktopDevice> failed during {phase} on adapter {adapter_index}: {device3_error}; legacy DCompositionCreateDevice<IDCompositionDevice> fallback failed: {legacy_error}"
-                        )
-                    })?;
+                match unsafe { DCompositionCreateDevice::<_, IDCompositionDevice>(dxgi_device) } {
+                    Ok(device) => device,
+                    Err(legacy_error) => {
+                        return Err(LiveDesktopError::CompositionFallback {
+                            context: device3_context,
+                            source: device3_error,
+                            fallback: legacy_error,
+                        });
+                    }
+                };
+            let device3_error = LiveDesktopError::CompositionContext {
+                context: device3_context,
+                source: device3_error,
+            };
             Ok((
                 LiveDesktopCompositionDevice::Legacy(legacy_device),
                 LiveDesktopNativeEffects {
@@ -309,28 +347,19 @@ pub(crate) unsafe fn probe_live_desktop_composition_swap_chain(
     d3d_device: &ID3D11Device,
     composition_device: &LiveDesktopCompositionDevice,
     adapter_index: u32,
-) -> Result<String, String> {
+) -> Result<String, LiveDesktopError> {
     let swap_chain =
-        unsafe { LiveDesktopCompositionSwapChain::create(factory, d3d_device, 16, 16) }.map_err(
-            |error| {
-                format!(
-                    "DirectComposition swap chain probe failed on adapter {adapter_index}: {error}"
-                )
-            },
-        )?;
-    let visual = unsafe { composition_device.create_visual() }.map_err(|error| {
-        format!("CreateVisual failed during swap chain probe on adapter {adapter_index}: {error}")
+        unsafe { LiveDesktopCompositionSwapChain::create(factory, d3d_device, 16, 16) }?;
+    let visual = unsafe { composition_device.create_visual() }?;
+    unsafe { visual.SetContent(&swap_chain.swap_chain) }.map_err(|source| {
+        LiveDesktopError::CompositionContext {
+            context: format!(
+                "visual.SetContent(swapChain) during probe on adapter {adapter_index}"
+            ),
+            source,
+        }
     })?;
-    unsafe { visual.SetContent(&swap_chain.swap_chain) }.map_err(|error| {
-        format!(
-            "visual.SetContent(swapChain) failed during probe on adapter {adapter_index}: {error}"
-        )
-    })?;
-    unsafe { composition_device.commit() }.map_err(|error| {
-        format!(
-            "DirectComposition commit failed during swap chain probe on adapter {adapter_index}: {error}"
-        )
-    })?;
+    unsafe { composition_device.commit() }?;
     Ok("composition swap chain probe succeeded".to_string())
 }
 
@@ -342,7 +371,11 @@ pub(crate) unsafe fn create_live_desktop_native_effects(
 ) -> LiveDesktopNativeEffects {
     let device3 = match device.cast::<IDCompositionDevice3>() {
         Ok(device) => device,
-        Err(error) => {
+        Err(source) => {
+            let error = LiveDesktopError::Composition {
+                context: "IDCompositionDesktopDevice cast to IDCompositionDevice3",
+                source,
+            };
             return LiveDesktopNativeEffects {
                 color_matrix_effect: None,
                 blur_effect: None,
@@ -355,7 +388,11 @@ pub(crate) unsafe fn create_live_desktop_native_effects(
 
     let color_matrix_effect = match unsafe { device3.CreateColorMatrixEffect() } {
         Ok(effect) => Some(effect),
-        Err(error) => {
+        Err(source) => {
+            let error = LiveDesktopError::Composition {
+                context: "IDCompositionDevice3::CreateColorMatrixEffect",
+                source,
+            };
             return LiveDesktopNativeEffects {
                 color_matrix_effect: None,
                 blur_effect: None,
@@ -368,7 +405,11 @@ pub(crate) unsafe fn create_live_desktop_native_effects(
 
     let blur_effect = match unsafe { device3.CreateGaussianBlurEffect() } {
         Ok(effect) => Some(effect),
-        Err(error) => {
+        Err(source) => {
+            let error = LiveDesktopError::Composition {
+                context: "IDCompositionDevice3::CreateGaussianBlurEffect",
+                source,
+            };
             return LiveDesktopNativeEffects {
                 color_matrix_effect: None,
                 blur_effect: None,
@@ -399,30 +440,33 @@ pub(crate) unsafe fn set_direct_composition_root(
     visual3: Option<&IDCompositionVisual3>,
     config: &LiveDesktopRuntimeConfig,
     placement: &LiveDesktopVisualPlacement,
-) -> Result<IDCompositionScaleTransform, String> {
-    let scale_transform = unsafe { device.create_scale_transform() }.map_err(|error| {
-        format!("CreateScaleTransform failed while placing live desktop visual: {error}")
-    })?;
+) -> Result<IDCompositionScaleTransform, LiveDesktopError> {
+    let scale_transform = unsafe { device.create_scale_transform() }?;
     unsafe { apply_direct_composition_visual_placement(visual, &scale_transform, placement) }?;
-    unsafe { visual.SetContent(swap_chain) }.map_err(|error| {
-        format!("DirectComposition visual.SetContent(swapChain) failed: {error}")
+    unsafe { visual.SetContent(swap_chain) }.map_err(|source| LiveDesktopError::Composition {
+        context: "IDCompositionVisual::SetContent(swapChain)",
+        source,
     })?;
-    unsafe { apply_live_desktop_visual_opacity(visual3, config) }
-        .map_err(|error| format!("DirectComposition visual.SetOpacity failed: {error}"))?;
+    unsafe { apply_live_desktop_visual_opacity(visual3, config) }?;
     if let Some(effect) = effect {
         if let Some(blur_effect) = blur_effect {
-            unsafe { effect.SetInput(0, blur_effect, 0) }.map_err(|error| {
-                format!("DirectComposition colorMatrix.SetInput(blurEffect) failed: {error}")
+            unsafe { effect.SetInput(0, blur_effect, 0) }.map_err(|source| {
+                LiveDesktopError::Composition {
+                    context: "IDCompositionColorMatrixEffect::SetInput(blurEffect)",
+                    source,
+                }
             })?;
         }
-        unsafe { visual.SetEffect(effect) }.map_err(|error| {
-            format!("DirectComposition visual.SetEffect(colorMatrix) failed: {error}")
+        unsafe { visual.SetEffect(effect) }.map_err(|source| LiveDesktopError::Composition {
+            context: "IDCompositionVisual::SetEffect(colorMatrix)",
+            source,
         })?;
     }
-    unsafe { target.SetRoot(visual) }
-        .map_err(|error| format!("DirectComposition target.SetRoot failed: {error}"))?;
-    unsafe { device.commit() }
-        .map_err(|error| format!("DirectComposition initial commit failed: {error}"))?;
+    unsafe { target.SetRoot(visual) }.map_err(|source| LiveDesktopError::Composition {
+        context: "IDCompositionTarget::SetRoot",
+        source,
+    })?;
+    unsafe { device.commit() }?;
     Ok(scale_transform)
 }
 
@@ -431,13 +475,48 @@ pub(crate) unsafe fn apply_direct_composition_visual_placement(
     visual: &IDCompositionVisual,
     scale_transform: &IDCompositionScaleTransform,
     placement: &LiveDesktopVisualPlacement,
-) -> Result<(), String> {
-    unsafe { scale_transform.SetCenterX2(0.0) }.map_err(|error| error.to_string())?;
-    unsafe { scale_transform.SetCenterY2(0.0) }.map_err(|error| error.to_string())?;
-    unsafe { scale_transform.SetScaleX2(placement.scale) }.map_err(|error| error.to_string())?;
-    unsafe { scale_transform.SetScaleY2(placement.scale) }.map_err(|error| error.to_string())?;
-    unsafe { visual.SetOffsetX2(placement.offset_x) }.map_err(|error| error.to_string())?;
-    unsafe { visual.SetOffsetY2(placement.offset_y) }.map_err(|error| error.to_string())?;
-    unsafe { visual.SetTransform(scale_transform) }.map_err(|error| error.to_string())?;
+) -> Result<(), LiveDesktopError> {
+    unsafe { scale_transform.SetCenterX2(0.0) }.map_err(|source| {
+        LiveDesktopError::Composition {
+            context: "IDCompositionScaleTransform::SetCenterX2",
+            source,
+        }
+    })?;
+    unsafe { scale_transform.SetCenterY2(0.0) }.map_err(|source| {
+        LiveDesktopError::Composition {
+            context: "IDCompositionScaleTransform::SetCenterY2",
+            source,
+        }
+    })?;
+    unsafe { scale_transform.SetScaleX2(placement.scale) }.map_err(|source| {
+        LiveDesktopError::Composition {
+            context: "IDCompositionScaleTransform::SetScaleX2",
+            source,
+        }
+    })?;
+    unsafe { scale_transform.SetScaleY2(placement.scale) }.map_err(|source| {
+        LiveDesktopError::Composition {
+            context: "IDCompositionScaleTransform::SetScaleY2",
+            source,
+        }
+    })?;
+    unsafe { visual.SetOffsetX2(placement.offset_x) }.map_err(|source| {
+        LiveDesktopError::Composition {
+            context: "IDCompositionVisual::SetOffsetX2",
+            source,
+        }
+    })?;
+    unsafe { visual.SetOffsetY2(placement.offset_y) }.map_err(|source| {
+        LiveDesktopError::Composition {
+            context: "IDCompositionVisual::SetOffsetY2",
+            source,
+        }
+    })?;
+    unsafe { visual.SetTransform(scale_transform) }.map_err(|source| {
+        LiveDesktopError::Composition {
+            context: "IDCompositionVisual::SetTransform",
+            source,
+        }
+    })?;
     Ok(())
 }

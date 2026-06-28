@@ -9,12 +9,37 @@ pub(crate) enum LiveDesktopError {
         #[source]
         source: windows::core::Error,
     },
-    #[allow(dead_code)]
+    #[error("D3D11 {context} failed: {source}")]
+    D3dContext {
+        context: String,
+        #[source]
+        source: windows::core::Error,
+    },
     #[error("composition {context} failed: {source}")]
     Composition {
         context: &'static str,
         #[source]
         source: windows::core::Error,
+    },
+    #[error("composition {context} failed: {source}")]
+    CompositionContext {
+        context: String,
+        #[source]
+        source: windows::core::Error,
+    },
+    #[error("composition {context} failed: {source}; fallback failed: {fallback}")]
+    CompositionFallback {
+        context: String,
+        #[source]
+        source: windows::core::Error,
+        fallback: windows::core::Error,
+    },
+    #[error("shader {context} compile failed: {source}; {message}")]
+    ShaderCompile {
+        context: String,
+        #[source]
+        source: windows::core::Error,
+        message: String,
     },
     #[error(transparent)]
     Io(#[from] std::io::Error),
