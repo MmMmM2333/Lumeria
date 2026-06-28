@@ -387,4 +387,86 @@ export async function runFolderFrameGhostTests() {
 
     assert(arriveCount === 1, "frame ghost onArrive should fire once after geometry tracks arrive");
   }
+
+  {
+    const { retargetFrameGhost } = await import("./folderFrameGhost.js");
+    const { motionRuntime } = await import("../animation/motionRuntime.js");
+    let released = false;
+    const makeGraphics = () => ({
+      alpha: 0,
+      visible: false,
+      clear() {
+        return this;
+      },
+      fill() {
+        return this;
+      },
+      roundRect(left, top, width, height, radius) {
+        this.drawn = { height, left, radius, top, width };
+        return this;
+      },
+      stroke() {
+        return this;
+      },
+    });
+    const layer = {
+      closingGhostLayer: {},
+      closingPreviewSwapLayer: {},
+      frameGhost: makeGraphics(),
+      frameGhostFolderId: "folder-1",
+      frameGhostMotionControl: {
+        release() {
+          released = true;
+        },
+      },
+      frameGhostPhase: "closing",
+      frameGhostState: {
+        fillAlpha: 0.22,
+        fillColor: 0x222222,
+        height: 120,
+        left: 30,
+        progress: 0.42,
+        radius: 30,
+        strokeAlpha: 0.26,
+        strokeColor: 0x333333,
+        strokeWidth: 1,
+        top: 40,
+        width: 220,
+      },
+      panelMaterial: { alpha: 0, visible: false },
+      notifyTitleFrame(frame) {
+        this.titleFrame = frame;
+      },
+    };
+    const frame = layer.frameGhostState;
+    const target = { height: 90, left: 50, top: 60, width: 140 };
+    const stepFrames = (seconds) => {
+      let remaining = seconds;
+      while (remaining > 0) {
+        const delta = Math.min(0.05, remaining);
+        motionRuntime.step(delta);
+        remaining -= delta;
+      }
+    };
+
+    motionRuntime.reset();
+    const retargeted = retargetFrameGhost(layer, target, {
+      folderId: "folder-1",
+      frameGhostPhase: "closing",
+      preserveOnComplete: true,
+      toFillColor: 0x444444,
+      toStrokeColor: 0x555555,
+    });
+
+    assert(retargeted === true, "frame ghost retarget should accept an active frame presentation");
+    assert(released === true, "frame ghost retarget should release the previous geometry motion");
+    assert(layer.frameGhostState === frame, "frame ghost retarget should keep the current presentation object");
+    assert(frame.progress === 0.42, "frame ghost retarget should preserve current progress before the new spring advances");
+    stepFrames(3);
+    assert(Math.abs(frame.left - 50) < 0.5 && Math.abs(frame.top - 60) < 0.5, "frame ghost retarget should settle to the new target position");
+    assert(Math.abs(frame.width - 140) < 0.5 && Math.abs(frame.height - 90) < 0.5, "frame ghost retarget should settle to the new target size");
+    assert(frame.fillColor === 0x444444 && frame.strokeColor === 0x555555, "frame ghost retarget should settle to the new final colors");
+    layer.frameGhostMotionControl?.cancel?.();
+    motionRuntime.reset();
+  }
 }

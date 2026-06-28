@@ -125,6 +125,10 @@ export function createLayerTransitionPort(layer) {
     releaseOpeningGhost(itemId) {
       return layer.openingGhosts?.releaseGhost?.(itemId) || null;
     },
+    retargetFrameGhost(toRect, options = {}) {
+      if (typeof layer.retargetFrameGhost !== "function") return false;
+      return layer.retargetFrameGhost(toRect, options);
+    },
     rebuildPageTrackMask() {
       return layer.rebuildPageTrackMask?.();
     },

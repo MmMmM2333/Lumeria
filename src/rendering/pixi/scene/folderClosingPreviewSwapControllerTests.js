@@ -1,5 +1,6 @@
 import { FolderClosingPreviewSwapController } from "./folderClosingPreviewSwapController.js";
 import { clearMotionPreferencesForTests, setReducedMotionForTests } from "../animation/motionPreferences.js";
+import { motionRuntime } from "../animation/motionRuntime.js";
 
 function makePoint() {
   return {
@@ -54,6 +55,9 @@ function makeContainer() {
 function makeGraphics() {
   return {
     destroyed: false,
+    clear() {
+      return this;
+    },
     rect(left, top, width, height) {
       this.rectArgs = { height, left, top, width };
       return this;
@@ -155,6 +159,45 @@ export function runFolderClosingPreviewSwapControllerTests() {
     assert(controller.handoffCoordinator.getPreviewSwapKeys().size === 1, "start should track an active preview swap");
     assert(layer.closingPreviewSwapLayer.children.length === 1, "start should add the swap root to the layer");
     controller.clear();
+  }
+
+  {
+    motionRuntime.reset();
+    const { controller, layer } = createController();
+    const state = {
+      folderPageIndex: 1,
+      height: 600,
+      renderedFolder: { id: "folder-1" },
+      stageRect: { left: 0, top: 0 },
+      width: 800,
+    };
+    let finished = 0;
+    controller.start(state, [{
+      item: { id: "app-1", name: "App" },
+      previewSlotIndex: 0,
+      targetStageLayoutRect: { height: 24, left: 40, top: 50, width: 24 },
+    }], { iconDuration: 0.01, progress: 1, swapDuration: 0.01 }, () => {
+      finished += 1;
+    });
+
+    const root = layer.closingPreviewSwapLayer.children[0];
+    const iconsWrap = root.children[1];
+    const ghost = iconsWrap.children[0];
+    const retargeted = controller.retarget(state, [{
+      item: { id: "app-1", name: "App" },
+      previewSlotIndex: 0,
+      targetStageLayoutRect: { height: 24, left: 80, top: 90, width: 24 },
+    }]);
+
+    assert(retargeted === true, "retarget should accept updated active preview swap targets");
+    assert(layer.closingPreviewSwapLayer.children[0] === root, "retarget should reuse the active preview swap root");
+    assert(iconsWrap.children[0] === ghost, "retarget should reuse existing preview icon ghosts");
+    assert(controller.handoffCoordinator.snapshot().previewSwapMotionControlCount === 1, "retarget should replace the tracked preview swap motion control");
+    for (let remaining = 3; remaining > 0; remaining -= 0.05) motionRuntime.step(Math.min(0.05, remaining));
+    assert(Math.abs(ghost.x - 92) < 0.5 && Math.abs(ghost.y - 102) < 0.5, "retarget should settle the preview icon at the new target center");
+    assert(finished === 1, "retargeted preview swap should complete once");
+    controller.clear();
+    motionRuntime.reset();
   }
 
   {

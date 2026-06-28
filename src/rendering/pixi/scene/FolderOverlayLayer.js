@@ -12,6 +12,7 @@ import {
   enableClosingFrameMask as enableClosingFrameMaskState,
   ensureClosingFrameMaskState,
   getFrameRadius,
+  retargetFrameGhost as retargetFrameGhostState,
   startFrameGhost as startFrameGhostState,
 } from "./folderFrameGhost.js";
 import { FolderClosingGhostController } from "./folderClosingGhostController.js";
@@ -1029,9 +1030,6 @@ export class FolderOverlayLayer extends Container {
   setClosingDesktopPageTrackMirrorX(offsetX) {
     const x = Number.isFinite(Number(offsetX)) ? Number(offsetX) : 0;
     this.closingDesktopPageTrackMirrorX = x;
-    if (this.frameGhost && !this.frameGhost.destroyed) this.frameGhost.x = x;
-    if (this.closingFrameMask && !this.closingFrameMask.destroyed) this.closingFrameMask.x = x;
-    if (this.closingPreviewSwapLayer && !this.closingPreviewSwapLayer.destroyed) this.closingPreviewSwapLayer.x = x;
     return x;
   }
 
@@ -1683,6 +1681,10 @@ export class FolderOverlayLayer extends Container {
 
   startFrameGhost(fromRect, toRect, options = {}) {
     startFrameGhostState(this, fromRect, toRect, options);
+  }
+
+  retargetFrameGhost(toRect, options = {}) {
+    return retargetFrameGhostState(this, toRect, options);
   }
 
   refreshPageTrackMask() {

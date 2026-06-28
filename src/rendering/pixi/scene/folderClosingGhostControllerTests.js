@@ -106,6 +106,7 @@ function makeLayer() {
   const calls = [];
   const activityChanges = [];
   const closingGhosts = [];
+  const frameGhostRetargets = [];
   const iconNode = { alpha: 0.4, item: { id: "app-1" }, visible: false };
   return {
     activityChanges,
@@ -187,8 +188,17 @@ function makeLayer() {
       this.frameGhostTarget = toRect;
       this.frameGhostOptions = options;
     },
+    retargetFrameGhost(toRect, options = {}) {
+      this.frameGhostTarget = toRect;
+      this.frameGhostOptions = options;
+      frameGhostRetargets.push({ options, toRect });
+      return true;
+    },
     get closingGhosts() {
       return closingGhosts;
+    },
+    get frameGhostRetargets() {
+      return frameGhostRetargets;
     },
     get iconNode() {
       return iconNode;
@@ -222,6 +232,10 @@ function makePreviewSwap(calls = []) {
   return {
     clear() {
       calls.push("clear-preview-swap");
+    },
+    retarget(_state, targets) {
+      calls.push({ targets, type: "retarget-preview-swap" });
+      return true;
     },
     start() {
       calls.push("start-preview-swap");
@@ -986,6 +1000,7 @@ export function runFolderClosingGhostControllerTests() {
     };
     const controller = new FolderClosingGhostController(layer, {
       ghostFactory: makeGhost,
+      previewSwap: makePreviewSwap(layer.calls),
       scheduler: timerHost,
     });
     const folderRect = { height: 72, left: 10, top: 20, width: 72 };
@@ -993,6 +1008,11 @@ export function runFolderClosingGhostControllerTests() {
     controller.start(makeState(), [makeTarget()], folderRect, panelRect, {
       handoffRect: { height: 60, left: 100, top: 110, width: 60 },
       handoffTarget: { folderId: "folder-1", trackingKey: "initial" },
+      previewSwapTargets: [{
+        item: { id: "preview-1" },
+        previewSlotIndex: 0,
+        targetStageLayoutRect: { height: 12, left: 100, top: 110, width: 12 },
+      }],
     });
     const token = controller.handoffCoordinator.closeToken;
     const ghost = layer.closingGhosts[0];
@@ -1011,10 +1031,16 @@ export function runFolderClosingGhostControllerTests() {
     }, panelRect, {
       handoffRect: { height: 64, left: 44, top: 55, width: 64 },
       handoffTarget: { folderId: "folder-1", trackingKey: "retargeted" },
+      previewSwapTargets: [{
+        item: { id: "preview-1" },
+        previewSlotIndex: 0,
+        targetStageLayoutRect: { height: 12, left: 130, top: 140, width: 12 },
+      }],
     });
 
     const nextRecord = controller.activeGhostsByItemId.get("app-1");
     const detachedMotion = controller.handoffCoordinator.getDetachedClosingGhostMotion(ghost);
+    const previewSwapRetarget = layer.calls.find((call) => call?.type === "retarget-preview-swap");
     assert(retargeted === 1, "same-session close update should retarget the existing ghost");
     assert(controller.handoffCoordinator.closeToken === token, "retarget should keep the original close token");
     assert(createTokenCount === 1, "retarget should not create a second close token");
@@ -1026,6 +1052,11 @@ export function runFolderClosingGhostControllerTests() {
     assert(detachedMotion?.x === 230 && detachedMotion?.y > 0, "retarget should update detached ghost motion to the new landing rect");
     assert(getBaseAnimation(ghost, "x")?.to === 230, "retarget should retarget the ghost x spring to the new target");
     assert(controller.handoffCoordinator.snapshot().handoffRect?.left === 44, "retarget should update handoff geometry to the current rendered rect");
+    assert(layer.frameGhostRetargets.length === 1, "retarget should retarget the active closing frame ghost");
+    assert(layer.frameGhostRetargets[0].toRect.left === 30 && layer.frameGhostRetargets[0].toRect.top === 40, "frame retarget should use the latest close thumb rect");
+    assert(layer.frameGhostRetargets[0].options.updateClosingMask === true, "frame retarget should keep the rounded mask bound to the frame");
+    assert(layer.frameGhostRetargets[0].options.progressMilestones?.length === 1, "frame retarget should keep the one-shot preview swap milestone");
+    assert(previewSwapRetarget?.targets?.[0]?.targetStageLayoutRect.left === 130, "retarget should forward updated preview swap targets for second-page thumbnail ghosts");
     controller.clear();
     motionRuntime.reset();
   }

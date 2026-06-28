@@ -118,6 +118,22 @@ function makeDetachedCloseFrameTarget(folderRect, stageRect) {
   };
 }
 
+function makeClosingFrameTargetKey(rect, thumb) {
+  if (!rect) return "";
+  return [
+    rect.left,
+    rect.top,
+    rect.width,
+    rect.height,
+    thumb?.fillAlpha,
+    thumb?.fillColor,
+    thumb?.radius,
+    thumb?.strokeAlpha,
+    thumb?.strokeColor,
+    thumb?.strokeWidth,
+  ].join("|");
+}
+
 function normalizePageIndex(value) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(0, Math.trunc(number)) : null;
@@ -181,6 +197,7 @@ export class FolderClosingGhostController {
     this.ghostFactory = options.ghostFactory;
     this.previewSwap = options.previewSwap || { clear: () => {}, start: () => {} };
     this.activeGhostsByItemId = new Map();
+    this.activeFrameState = null;
     this.handoffCoordinator.setCloseHandoffActive(false);
   }
 
@@ -254,34 +271,36 @@ export class FolderClosingGhostController {
     const previewTiming = getClosingPreviewTiming(closeFrameFromRect, closeFrameToRect);
     let closingPreviewSwapStarted = false;
     const startClosingPreviewSwapWhenReady = (frame) => {
-      if (closingPreviewSwapStarted || isRetargetedOpeningClose || !previewSwapTargets?.length) return;
+      const currentPreviewSwapTargets = this.activeFrameState?.previewSwapTargets || previewSwapTargets;
+      if (closingPreviewSwapStarted || isRetargetedOpeningClose || !currentPreviewSwapTargets?.length) return;
       if ((frame?.progress ?? 0) < previewTiming.progress) return;
       closingPreviewSwapStarted = true;
+      if (this.activeFrameState) this.activeFrameState.previewSwapStarted = true;
       this.previewSwap.start(
         state,
-        previewSwapTargets,
+        currentPreviewSwapTargets,
         previewTiming,
         (finishState, events) => this.handleSettlementEvents(finishState, events),
         { closeToken }
       );
     };
     this.transitionPort.enableClosingFrameMask();
-    const completeFrameVisual = () => {
-      this.handleSettlementEvents(state, this.handoffCoordinator.completeCloseFrameVisual(closeToken));
+    const completeFrameVisual = (completionState = state) => {
+      this.handleSettlementEvents(completionState, this.handoffCoordinator.completeCloseFrameVisual(closeToken));
     };
-    this.transitionPort.startFrameGhost(closeFrameFromRect, closeFrameToRect, {
+    const makeFrameOptions = (completionState = state, frameThumb = thumb) => ({
       duration: frameDuration,
       ease: motionPresets.folderClose.ease,
       fadeStart: 0.86,
       folderId,
       frameGhostPhase: "closing",
       frameGhostToAlpha: 1,
-      fromFillAlpha: thumb.fillAlpha,
-      fromFillColor: thumb.fillColor,
+      fromFillAlpha: frameThumb.fillAlpha,
+      fromFillColor: frameThumb.fillColor,
       fromRadius: closeFrameFromRect?.radius ?? 48,
-      fromStrokeAlpha: thumb.strokeAlpha,
-      fromStrokeColor: thumb.strokeColor,
-      fromStrokeWidth: thumb.strokeWidth,
+      fromStrokeAlpha: frameThumb.strokeAlpha,
+      fromStrokeColor: frameThumb.strokeColor,
+      fromStrokeWidth: frameThumb.strokeWidth,
       panelMaterialFinalAlpha: 0,
       panelMaterialFromAlpha: 0,
       panelMaterialToAlpha: 0,
@@ -291,18 +310,28 @@ export class FolderClosingGhostController {
       }],
       onComplete: () => {
         startClosingPreviewSwapWhenReady({ progress: 1 });
-        this.completeFrameGhost(state, closeToken);
+        this.completeFrameGhost(completionState, closeToken);
       },
-      onArrive: completeFrameVisual,
+      onArrive: () => completeFrameVisual(completionState),
       preserveOnComplete: true,
-      toFillAlpha: thumb.fillAlpha,
-      toFillColor: thumb.fillColor,
-      toRadius: thumb.radius,
-      toStrokeAlpha: thumb.strokeAlpha,
-      toStrokeColor: thumb.strokeColor,
-      toStrokeWidth: thumb.strokeWidth,
+      toFillAlpha: frameThumb.fillAlpha,
+      toFillColor: frameThumb.fillColor,
+      toRadius: frameThumb.radius,
+      toStrokeAlpha: frameThumb.strokeAlpha,
+      toStrokeColor: frameThumb.strokeColor,
+      toStrokeWidth: frameThumb.strokeWidth,
       updateClosingMask: true,
     });
+    const frameOptions = makeFrameOptions(state, thumb);
+    this.activeFrameState = {
+      closeToken,
+      folderId,
+      makeOptions: makeFrameOptions,
+      previewSwapStarted: false,
+      previewSwapTargets,
+      targetKey: makeClosingFrameTargetKey(closeFrameToRect, thumb),
+    };
+    this.transitionPort.startFrameGhost(closeFrameFromRect, closeFrameToRect, frameOptions);
 
     this.transitionPort.hidePageTrackForTransition(owner);
     if (usableTargets.length) this.scheduleRevealFallback(usableTargets);
@@ -426,6 +455,23 @@ export class FolderClosingGhostController {
       target: options.handoffTarget || null,
     });
 
+    const closeFrameToRect = clientRectToStageVisualRect(folderRect, state.stageRect);
+    const thumb = folderRect ? getFolderThumbMetrics(folderRect.width) : null;
+    const frameTargetKey = makeClosingFrameTargetKey(closeFrameToRect, thumb);
+    if (this.activeFrameState?.closeToken === closeToken &&
+      this.activeFrameState.folderId === folderId &&
+      closeFrameToRect) {
+      if (Object.prototype.hasOwnProperty.call(options, "previewSwapTargets")) {
+        this.activeFrameState.previewSwapTargets = options.previewSwapTargets || [];
+      }
+      this.previewSwap.retarget?.(state, this.activeFrameState.previewSwapTargets);
+      if (frameTargetKey && this.activeFrameState.targetKey !== frameTargetKey) {
+        const frameOptions = this.activeFrameState.makeOptions?.(state, thumb) || {};
+        const retargetedFrame = this.transitionPort.retargetFrameGhost?.(closeFrameToRect, frameOptions);
+        if (retargetedFrame) this.activeFrameState.targetKey = frameTargetKey;
+      }
+    }
+
     let retargeted = 0;
     const usableTargets = (targets || []).filter((target) =>
       target?.item?.id &&
@@ -501,6 +547,7 @@ export class FolderClosingGhostController {
     this.previewSwap.clear();
     this.clearCompletedPreviewGhosts();
     this.clearClosingGhostVisuals();
+    this.activeFrameState = null;
     this.transitionPort.clearFrameGhost();
     this.debugHandoffVisualRelease("overlay-release-after-clear");
     this.transitionPort.notifyClosingHandoffVisualRelease(this.handoffCoordinator.folderId || this.transitionPort.getCurrentFolderId() || null);
@@ -673,6 +720,7 @@ export class FolderClosingGhostController {
     this.cancelHandoffCleanup();
     this.clearRevealTimer();
     this.cancelMotionControls();
+    this.activeFrameState = null;
     this.activeGhostsByItemId.clear();
     this.releaseClosingTransitionOwnership({
       restorePageTrack: options.restorePageTrack,
