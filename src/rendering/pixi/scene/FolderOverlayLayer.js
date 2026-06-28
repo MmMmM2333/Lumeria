@@ -930,13 +930,18 @@ export class FolderOverlayLayer extends Container {
         if (ghost?.key) state.completeFolderOpenIconGhost?.(ghost.key);
       }
     }
-    if (state.isFolderClosing && this.folderHandoff.folderId !== folderId) {
+    if (state.isFolderClosing) {
       const closeFrameRect = this.getPanelVisualRect(geometry.panel) || geometry.panel;
-      this.closingGhosts.start(state, closingGhostTargets, closeThumbRect, closeFrameRect, {
-        handoffRect: closeIconRect,
+      const closeOptions = {
+        handoffRect: folderClientRect || closeIconRect,
         handoffTarget: this.stableFolderCloseTarget,
         previewSwapTargets: closingPreviewSwapTargets,
-      });
+      };
+      if (this.folderHandoff.folderId === folderId) {
+        this.closingGhosts.retarget(state, closingGhostTargets, closeThumbRect, closeFrameRect, closeOptions);
+      } else {
+        this.closingGhosts.start(state, closingGhostTargets, closeThumbRect, closeFrameRect, closeOptions);
+      }
     }
     if (!state.isFolderClosing && this.folderHandoff.folderId) {
       this.clearClosingFolderId();

@@ -220,6 +220,11 @@ function completeFrame(controller, state = makeState(), token = controller.hando
   controller.handleSettlementEvents(state, controller.handoffCoordinator.completeCloseFrame(token));
 }
 
+function getBaseAnimation(target, prop) {
+  const channel = motionRuntime.getChannel(target, prop);
+  return Array.from(channel?.base?.values?.() || [])[0] || null;
+}
+
 export function runFolderClosingGhostControllerTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Folder closing ghost controller test failed] ${message}`);
@@ -907,5 +912,105 @@ export function runFolderClosingGhostControllerTests() {
       motionRuntime.reset();
       controller.clear();
     }
+  }
+
+  {
+    motionRuntime.reset();
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    let createTokenCount = 0;
+    let ownershipCount = 0;
+    layer.createClosingGhostToken = (folderId = null) => {
+      createTokenCount += 1;
+      return `closing:${folderId || ""}:retarget`;
+    };
+    layer.acquireVisualOwnership = () => {
+      ownershipCount += 1;
+      return true;
+    };
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+    const folderRect = { height: 72, left: 10, top: 20, width: 72 };
+    const panelRect = { height: 360, left: 0, top: 0, width: 420 };
+    controller.start(makeState(), [makeTarget()], folderRect, panelRect, {
+      handoffRect: { height: 60, left: 100, top: 110, width: 60 },
+      handoffTarget: { folderId: "folder-1", trackingKey: "initial" },
+    });
+    const token = controller.handoffCoordinator.closeToken;
+    const ghost = layer.closingGhosts[0];
+    const previousRecord = controller.activeGhostsByItemId.get("app-1");
+    const previousControl = previousRecord?.motionControl;
+    const retargetedTarget = {
+      ...makeTarget(),
+      targetStageLayoutRect: { height: 20, left: 220, top: 260, width: 20 },
+    };
+
+    const retargeted = controller.retarget(makeState(), [retargetedTarget], {
+      height: 80,
+      left: 30,
+      top: 40,
+      width: 80,
+    }, panelRect, {
+      handoffRect: { height: 64, left: 44, top: 55, width: 64 },
+      handoffTarget: { folderId: "folder-1", trackingKey: "retargeted" },
+    });
+
+    const nextRecord = controller.activeGhostsByItemId.get("app-1");
+    const detachedMotion = controller.handoffCoordinator.getDetachedClosingGhostMotion(ghost);
+    assert(retargeted === 1, "same-session close update should retarget the existing ghost");
+    assert(controller.handoffCoordinator.closeToken === token, "retarget should keep the original close token");
+    assert(createTokenCount === 1, "retarget should not create a second close token");
+    assert(ownershipCount === 1, "retarget should not re-acquire desktop source ownership");
+    assert(layer.closingGhosts.length === 1 && layer.closingGhosts[0] === ghost, "retarget should not create or replace closing ghost visuals");
+    assert(previousControl?.released === true, "retarget should release the previous motion owner before rebinding callbacks");
+    assert(nextRecord?.motionControl && nextRecord.motionControl !== previousControl, "retarget should install a fresh motion control for the same ghost");
+    assert(controller.handoffCoordinator.snapshot().motionControlCount === 1, "retarget should replace the tracked motion control instead of accumulating controls");
+    assert(detachedMotion?.x === 230 && detachedMotion?.y > 0, "retarget should update detached ghost motion to the new landing rect");
+    assert(getBaseAnimation(ghost, "x")?.to === 230, "retarget should retarget the ghost x spring to the new target");
+    assert(controller.handoffCoordinator.snapshot().handoffRect?.left === 44, "retarget should update handoff geometry to the current rendered rect");
+    controller.clear();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+    const folderRect = { height: 72, left: 10, top: 20, width: 72 };
+    const panelRect = { height: 360, left: 0, top: 0, width: 420 };
+    controller.start(makeState(), [makeTarget()], folderRect, panelRect);
+    const ghost = layer.closingGhosts[0];
+    const activeBefore = controller.activeGhostsByItemId.get("app-1")?.motionControl;
+
+    assert(
+      controller.retarget(makeState(), [makeTarget("app-2")], folderRect, panelRect) === 0,
+      "retarget should skip targets that do not already have an active closing ghost"
+    );
+    assert(layer.closingGhosts.length === 1 && layer.closingGhosts[0] === ghost, "unknown target retarget should not create a new ghost");
+    assert(controller.activeGhostsByItemId.get("app-1")?.motionControl === activeBefore, "unknown target retarget should leave active ghost control untouched");
+    assert(
+      controller.retarget({
+        ...makeState(),
+        renderedFolder: { id: "other-folder" },
+      }, [makeTarget()], folderRect, panelRect) === 0,
+      "retarget should ignore a different closing folder"
+    );
+    const token = controller.handoffCoordinator.closeToken;
+    controller.handoffCoordinator.releaseCloseOverlayVisuals(token);
+    assert(
+      controller.retarget(makeState(), [{
+        ...makeTarget(),
+        targetStageLayoutRect: { height: 20, left: 280, top: 300, width: 20 },
+      }], folderRect, panelRect) === 0,
+      "retarget should no-op after handoff visual release"
+    );
+    controller.clear();
+    motionRuntime.reset();
   }
 }

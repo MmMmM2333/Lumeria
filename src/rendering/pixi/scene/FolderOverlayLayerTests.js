@@ -1423,6 +1423,64 @@ export async function runFolderOverlayLayerTests() {
   }
 
   {
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    layer.folderHandoff = new FolderHandoffCoordinator(layer);
+    layer.folderHandoff.beginCloseTransition("folder-a", { closeToken: "close-a" });
+    const closeThumbRect = { height: 58, left: 300, top: 340, width: 58 };
+    const renderedFolderRect = { height: 64, left: 120, top: 160, width: 64 };
+    let starts = 0;
+    let retargets = 0;
+    let retargetArgs = null;
+    layer.openingGhosts = {
+      retarget() {},
+      start() {},
+    };
+    layer.closingGhosts = {
+      clear() {},
+      retarget(...args) {
+        retargets += 1;
+        retargetArgs = args;
+      },
+      start() {
+        starts += 1;
+      },
+    };
+    layer.iconNodes = new Map();
+    layer.pageTrack = { visible: true };
+    layer.frameGhostState = null;
+    layer.getPanelVisualRect = () => ({ height: 220, left: 20, top: 30, width: 260 });
+    layer.notifyPanelTitleFrame = () => {};
+    layer.notifyTitleFrame = () => {};
+    layer.refreshRegisteredIconBounds = () => {};
+    layer.clearClosingFolderId = () => {};
+    layer.stableFolderCloseTarget = { folderId: "folder-a", trackingKey: "live-target" };
+
+    layer.startFolderOverlayTransitions({
+      closeIconRect: { height: 64, left: 360, top: 400, width: 64 },
+      closeThumbRect,
+      closingGhostTargets: [{ item: { id: "app-1" }, sourceRect: renderedFolderRect, targetClientRect: closeThumbRect }],
+      closingPreviewSwapTargets: [{ item: { id: "app-1" } }],
+      folderClientRect: renderedFolderRect,
+      folderId: "folder-a",
+      folderThumbClientRect: renderedFolderRect,
+      geometry: { panel: { height: 200, left: 0, top: 0, width: 240 } },
+      isClosing: true,
+      isNewFolder: false,
+      openingGhostTargets: [],
+      seen: new Set(),
+      state: {
+        folderOpenIconGhosts: [],
+        isFolderClosing: true,
+      },
+    });
+
+    assert(starts === 0, "active same-folder close updates should not restart closing ghosts");
+    assert(retargets === 1, "active same-folder close updates should retarget closing ghosts");
+    assert(retargetArgs?.[2] === closeThumbRect, "closing retarget should receive the close thumb target rect");
+    assert(retargetArgs?.[4]?.handoffRect === renderedFolderRect, "closing retarget should bind handoff geometry to the rendered folder rect");
+  }
+
+  {
     motionRuntime.reset();
     motionRuntime.configureDebug({ enabled: true });
     const layer = Object.create(FolderOverlayLayer.prototype);
