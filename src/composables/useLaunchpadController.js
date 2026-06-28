@@ -1152,6 +1152,9 @@ export function useLaunchpadController() {
     dragMeta,
     dragPreviewState,
     dragReleaseState,
+    folderCreateReleaseState,
+    clearFolderCreateRelease,
+    completeFolderCreateRelease,
     isDragActive,
   } = dragControls;
   const {
@@ -1578,6 +1581,9 @@ export function useLaunchpadController() {
     dragMeta,
     dragPreviewState,
     dragReleaseState,
+    folderCreateReleaseState,
+    clearFolderCreateRelease,
+    completeFolderCreateRelease,
     folderOpenPreviewFrameGhostedIds,
     folderPageSize,
     getDesktopPageRenderMode,

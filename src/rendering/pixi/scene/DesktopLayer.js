@@ -24,6 +24,7 @@ import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import { makeIconVisualSpecFromNodeState } from "./iconVisualSpec.js";
 import { SingleStageDiagnosticsLayer } from "./singleStageDiagnostics.js";
 import { DragPreviewLayer } from "./DragPreviewLayer.js";
+import { FolderCreateReleaseLayer } from "./FolderCreateReleaseLayer.js";
 import { IconNode } from "../nodes/IconNode.js";
 import {
   getFolderHandoffDebugOptions,
@@ -185,6 +186,7 @@ export class DesktopLayer extends Container {
     this.onFolderPanelPointerDown = options.onFolderPanelPointerDown || (() => {});
     this.onFolderTitleFrameChange = options.onFolderTitleFrameChange || (() => {});
     this.onDragReleaseComplete = options.onDragReleaseComplete || (() => {});
+    this.onFolderCreateReleaseComplete = options.onFolderCreateReleaseComplete || (() => {});
     if (!options.iconBoundsRegistry) throw new Error("DesktopLayer requires iconBoundsRegistry");
     this.iconBoundsRegistry = options.iconBoundsRegistry;
     this.visualOwnership = options.visualOwnership || new FolderVisualOwnershipRegistry();
@@ -223,6 +225,9 @@ export class DesktopLayer extends Container {
     this.singleStageDragPreviewLayer = new DragPreviewLayer({
       onReleaseComplete: (release) => this.onDragReleaseComplete(release),
     });
+    this.folderCreateReleaseLayer = new FolderCreateReleaseLayer({
+      onReleaseComplete: (release) => this.onFolderCreateReleaseComplete(release),
+    });
     this.folderHandoffNodes = new Map();
     this.primaryFolderHandoffId = null;
     this.hasDesktopVisualAlpha = false;
@@ -247,6 +252,7 @@ export class DesktopLayer extends Container {
     this.addChild(this.desktopClosingUnderlayLayer);
     this.addChild(this.singleStageFolderLayer);
     this.addChild(this.singleStageDragPreviewLayer);
+    this.addChild(this.folderCreateReleaseLayer);
     this.addChild(this.singleStageDiagnosticsLayer);
     this.addChild(this.handoffDebugLayer);
     this.describeMotionTargets();
@@ -394,6 +400,7 @@ export class DesktopLayer extends Container {
     this.updateSingleStageFolderLayer(state);
     this.applyFolderSourceGhosting(state);
     this.updateSingleStageDragPreviewLayer(state);
+    this.updateFolderCreateReleaseLayer(state);
     this.singleStageDiagnosticsLayer.update(state.singleStageFolderState, {
       enabled: state.singleStageDiagnosticsEnabled,
       iconBoundsRegistry: this.iconBoundsRegistry,
@@ -641,6 +648,18 @@ export class DesktopLayer extends Container {
       previewState: state.dragPreviewState,
       releaseState: state.dragReleaseState,
       showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge,
+      stageRect: state.stageRect,
+      width: state.width,
+    });
+  }
+
+  updateFolderCreateReleaseLayer(state) {
+    if (!this.folderCreateReleaseLayer) return;
+    this.folderCreateReleaseLayer.update({
+      folderPageSize: state.folderPageSize,
+      height: state.height,
+      iconSize: state.iconSize,
+      releaseState: state.folderCreateReleaseState,
       stageRect: state.stageRect,
       width: state.width,
     });
@@ -1271,6 +1290,7 @@ export class DesktopLayer extends Container {
     killMotionOf(this.desktopClosingUnderlayLayer?.scale, null, { lane: "base", reason: "destroyed" });
     killMotionOf(this.singleStageFolderLayer, null, { lane: "base", reason: "destroyed" });
     killMotionOf(this.singleStageFolderLayer?.scale, null, { lane: "base", reason: "destroyed" });
+    this.folderCreateReleaseLayer?.clearVisuals?.("destroyed");
     cancelPageTrackMotion(this.pageTrackMotion, "destroyed");
     killMotionOf(this.pageTrack, null, { lane: "base", reason: "destroyed" });
     this.visualCommitQueue?.clear?.();

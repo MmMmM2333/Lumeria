@@ -442,6 +442,91 @@ export async function runLaunchpadDragTests() {
   });
 
   await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const targetApp = { id: "app-b", type: "app", name: "App B" };
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    putLaunchBounds(
+      iconBoundsRegistry,
+      V.RENDERED,
+      { area: "desktop", id: targetApp.id, pageIndex: 0 },
+      { left: 120, top: 112, width: 64, height: 64 },
+      { area: "desktop", id: targetApp.id, index: 1, item: targetApp, pageIndex: 0 }
+    );
+    const { app, calls, drag, folderSession, openFolderId, pages } = createDragHarness({ iconBoundsRegistry });
+    pages.value = [[app, targetApp]];
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+    };
+
+    drag.beginDrag(makePointerDownEvent(89, target), app, { type: "page", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+
+    listeners.get("pointerup")({ type: "pointerup", pointerId: 89, button: 0, clientX: 132, clientY: 132 });
+    await nextTick();
+
+    const [folder] = pages.value[0];
+    const childIds = folder?.childPages?.[0]?.map((item) => item.id).join(",");
+    assert(folder?.type === "folder", "dropping an app on another app should create a desktop folder");
+    assert(childIds === "app-b,app-a", "direct app-on-app drop should create the folder with target and dragged apps");
+    assert(calls.commitOpenFolder.length === 0 && openFolderId.value == null, "direct app-on-app drop should not open the created folder");
+    assert(folderSession.value == null, "direct app-on-app drop should not enter a folder drag session");
+    assert(drag.dragReleaseState.value == null, "direct app-on-app drop should not use the single-icon release state");
+    assert(drag.folderCreateReleaseState.value?.folderId === folder.id, "direct app-on-app drop should start a folder-create release animation");
+    assert(drag.folderCreateReleaseState.value?.targetApp?.id === "app-b", "folder-create release should track the target app ghost");
+    assert(drag.folderCreateReleaseState.value?.draggedApp?.id === "app-a", "folder-create release should track the dragged app ghost");
+    assert(drag.folderCreateReleaseState.value?.targetAppSlotRect?.width > 0, "folder-create release should expose a target-app preview slot");
+    assert(drag.isDragActive(), "folder-create release should keep surface interactions blocked");
+    drag.completeFolderCreateRelease(drag.folderCreateReleaseState.value);
+    assert(!drag.isDragActive(), "folder-create release completion should unblock interactions");
+    iconBoundsRegistry.clearBounds();
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const targetApp = { id: "app-b", type: "app", name: "App B" };
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    putLaunchBounds(
+      iconBoundsRegistry,
+      V.RENDERED,
+      { area: "desktop", id: targetApp.id, pageIndex: 0 },
+      { left: 120, top: 112, width: 64, height: 64 },
+      { area: "desktop", id: targetApp.id, index: 1, item: targetApp, pageIndex: 0 }
+    );
+    const { app, calls, drag, folderSession, openFolderId, pages } = createDragHarness({ iconBoundsRegistry });
+    pages.value = [[app, targetApp]];
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+    };
+
+    drag.beginDrag(makePointerDownEvent(90, target), app, { type: "page", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+    listeners.get("pointermove")({
+      type: "pointermove",
+      pointerId: 90,
+      buttons: 1,
+      clientX: 132,
+      clientY: 132,
+      preventDefault: () => {},
+    });
+
+    runNextTimer(timers);
+    assert(drag.dragFolderHoverState.value?.targetId === "app-b", "hovering an app target should expose the folder-create hover target");
+    runNextTimer(timers);
+    runNextTimer(timers);
+    runNextTimer(timers);
+
+    const [folder] = pages.value[0];
+    const childIds = folder?.childPages?.[0]?.map((item) => item.id).join(",");
+    assert(folder?.type === "folder", "hovering an app target until open should create a folder");
+    assert(childIds === "app-b", "hover-created folder should contain only the target app until the dragged app is dropped inside");
+    assert(openFolderId.value === folder.id, "hover-created folder should still open for drag");
+    assert(calls.commitOpenFolder.length === 1, "hover-created folder should commit an open folder");
+    assert(folderSession.value?.mode === "created", "hover-created folder should enter a created-folder drag session");
+    assert(drag.folderCreateReleaseState.value == null, "hover-created folder should not start the create-only release animation");
+    iconBoundsRegistry.clearBounds();
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
     const { app, drag } = createDragHarness();
     const target = {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),

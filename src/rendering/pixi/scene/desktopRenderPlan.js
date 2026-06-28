@@ -450,6 +450,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
       const key = `${source.type}:${pageIndex}:${item.id}`;
       const isActiveDraggedItem = isActiveDraggedLaunchItem(item, state);
       const isReleaseGhostItem = isReleaseGhostLaunchItem(item, state);
+      const isFolderCreateReleaseItem = item.type === "folder" && state.folderCreateReleaseState?.folderId === item.id;
       const isFolderSourceGhosted = item.type === "folder" && !isFolderClosingHandoff && (
         effectiveFolderSourceGhostedIds.has(item.id) ||
         state.isFolderOpeningPreviewFrameGhosted?.(item.id)
@@ -481,6 +482,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
         isFolderSourceGhosted,
         isInteractivePage,
         isReleaseGhostItem,
+        isFolderCreateReleaseItem,
         item,
         key,
         layoutTarget,
@@ -497,7 +499,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
             : null,
           folderPreviewPageSize: state.folderPageSize,
           ghosted: !isFolderClosingHandoff && (
-            isReleaseGhostItem || (isInteractivePage && isFolderSourceGhosted)
+            isReleaseGhostItem || isFolderCreateReleaseItem || (isInteractivePage && isFolderSourceGhosted)
           ),
           hasCustomIcon: Boolean(item.customIconPath || item.customIconDataUrl),
           iconSize: sizing.iconSize,

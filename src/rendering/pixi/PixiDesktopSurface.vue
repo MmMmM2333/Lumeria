@@ -106,6 +106,7 @@ const props = defineProps({
   dragPreviewState: { type: Object, default: null },
   dragReleaseGhostId: { type: String, default: null },
   dragReleaseState: { type: Object, default: null },
+  folderCreateReleaseState: { type: Object, default: null },
   folderClosingHandoffId: { type: String, default: null },
   folderOverlayState: { type: Object, default: null },
   folderPageSize: { type: Number, required: true },
@@ -138,6 +139,7 @@ const emit = defineEmits([
   "context-menu-icon",
   "desktop-focus",
   "drag-release-complete",
+  "folder-create-release-complete",
   "internal-activity",
   "open-app",
   "pointerdown-icon",
@@ -216,7 +218,7 @@ const isSingleStageFolderPageDotsBlocked = computed(() => Boolean(
 ));
 
 const isSingleStageDragPreviewActive = computed(() => Boolean(
-  (props.dragPreviewState?.item || props.dragReleaseState?.item)
+  (props.dragPreviewState?.item || props.dragReleaseState?.item || props.folderCreateReleaseState?.folderId)
 ));
 
 const singleStageFolderNameInputStyle = computed(() => {
@@ -568,6 +570,7 @@ function renderPixi(options = {}) {
       dragPreviewState: props.dragPreviewState,
       dragReleaseGhostId: props.dragReleaseGhostId,
       dragReleaseState: props.dragReleaseState,
+      folderCreateReleaseState: props.folderCreateReleaseState,
       deviceResolution: app.renderer?.resolution || 1,
       folderClosingHandoffId,
       singleStageDiagnosticsEnabled: singleStageDiagnosticsOptions,
@@ -596,7 +599,10 @@ function renderPixi(options = {}) {
       stageRect: renderGeometry.stageRect,
       width: renderGeometry.width,
     });
-    preloadIconTextures(collectDragPreviewTextureItems(props.dragPreviewState || props.dragReleaseState));
+    preloadIconTextures([
+      ...collectDragPreviewTextureItems(props.dragPreviewState || props.dragReleaseState),
+      ...collectFolderCreateReleaseTextureItems(props.folderCreateReleaseState),
+    ]);
     publishFolderVisualDebugSnapshot();
     logFolderHandoffTimeline(metrics, folderClosingHandoffId);
   }
@@ -745,6 +751,10 @@ function collectDragPreviewTextureItems(previewState) {
   return getFolderPreviewSlots(item, props.folderPageSize).filter(Boolean);
 }
 
+function collectFolderCreateReleaseTextureItems(releaseState) {
+  return [releaseState?.targetApp, releaseState?.draggedApp].filter(Boolean);
+}
+
 function scheduleFolderTexturePrewarm() {
   if (!app) return;
   clearFolderTexturePrewarmTimer();
@@ -867,6 +877,10 @@ onMounted(async () => {
       emit("drag-release-complete", release);
       requestRender("drag-release-complete");
     },
+    onFolderCreateReleaseComplete: (release) => {
+      emit("folder-create-release-complete", release);
+      requestRender("folder-create-release-complete");
+    },
     onIconAction: handleIconAction,
   });
   app.stage.addChild(layer);
@@ -953,6 +967,7 @@ watchEffect(() => {
   void props.dragPreviewState;
   void props.dragReleaseGhostId;
   void props.dragReleaseState;
+  void props.folderCreateReleaseState;
   void props.folderClosingHandoffId;
   readFolderOverlayStateRenderDependencies(props.folderOverlayState);
   void props.gridCols;

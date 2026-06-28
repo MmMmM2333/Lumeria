@@ -130,4 +130,20 @@ export function runDesktopRenderPlanTests() {
     assert(plan.entries[0].nodeState.suppressedFolderPreviewChildId == null, "non-target folder should not receive preview child suppression");
     assert(plan.entries[1].nodeState.suppressedFolderPreviewChildId === "app-a", "target folder should receive preview child suppression");
   }
+
+  {
+    const folder = { id: "folder-created", type: "folder" };
+    const plan = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[folder]],
+      folderCreateReleaseState: {
+        folderId: folder.id,
+        key: "folder-create-release",
+      },
+    }));
+
+    const [entry] = plan.entries;
+    assert(entry.nodeState.ghosted === true, "folder-create release should ghost the real created folder until the handoff completes");
+    assert(entry.nodeState.suppressedFolderPreviewChildId == null, "folder-create release should not reuse the single child suppression path");
+    assert(entry.nodeState.suppressLabelRevealAfterGhost === false, "folder-create release should let the real folder label reveal after the handoff");
+  }
 }
