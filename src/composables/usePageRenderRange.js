@@ -78,8 +78,7 @@ export function usePageRenderRange(options) {
     const distance = Math.abs(next - current);
     if (distance <= 1 || options.isDragActive() || current < 0 || current > maxIndex) {
       clearPageJumpRenderRange();
-      commitNow(next);
-      return;
+      return commitNow(next) !== false;
     }
 
     if (pageJumpRenderTimer) window.clearTimeout(pageJumpRenderTimer);
@@ -98,10 +97,34 @@ export function usePageRenderRange(options) {
         if (requestId !== pageJumpRenderRequestId) return;
         const range = transientPageRenderRange.value;
         if (!range || range.mode !== mode || next < range.from || next > range.to) return;
-        commitNow(next);
+        const didCommit = commitNow(next) !== false;
+        if (!didCommit) {
+          if (requestId === pageJumpRenderRequestId) clearPageJumpRenderRange();
+          return;
+        }
         schedulePageJumpRenderRelease();
       });
     });
+    return true;
+  }
+
+  function preparePageIndexRenderRange(mode, current, requested, maxIndex) {
+    const next = clamp(requested, 0, maxIndex);
+    const distance = Math.abs(next - current);
+    if (distance <= 1 || options.isDragActive() || current < 0 || current > maxIndex) {
+      clearPageJumpRenderRange();
+      return next;
+    }
+
+    if (pageJumpRenderTimer) window.clearTimeout(pageJumpRenderTimer);
+    pageJumpRenderTimer = null;
+    pageJumpRenderRequestId += 1;
+    transientPageRenderRange.value = {
+      mode,
+      from: Math.min(current, next),
+      to: Math.max(current, next),
+    };
+    return next;
   }
 
   function commitPageIndex(next) {
@@ -120,16 +143,47 @@ export function usePageRenderRange(options) {
   function commitFolderPageIndex(next, commitOptions) {
     const allowCreate = Boolean(commitOptions?.allowCreate);
     const maxIndex = Math.max(0, options.folderPages.value.length - 1 + (allowCreate ? 1 : 0));
+    const folderPageTurnToken = commitOptions?.folderPageTurnToken;
+    if (folderPageTurnToken != null) {
+      return commitFolderPageTurnRequest(folderPageTurnToken, { ...commitOptions, maxIndex });
+    }
     commitPageIndexWithRenderRange("folder", options.folderPageIndex.value, next, maxIndex, (value) => commitFolderPageIndexNow(value, maxIndex));
+  }
+
+  function requestFolderPageTurn(next, requestOptions = {}) {
+    if (typeof options.requestFolderPageTurn !== "function") return null;
+    const allowCreate = Boolean(requestOptions?.allowCreate);
+    const maxIndex = Math.max(0, options.folderPages.value.length - 1 + (allowCreate ? 1 : 0));
+    const token = options.requestFolderPageTurn(next, { ...requestOptions, maxIndex });
+    const request = options.folderPageTurnRequest?.value;
+    const target = request?.token === token ? request.targetIndex : clamp(next, 0, maxIndex);
+    preparePageIndexRenderRange("folder", options.folderPageIndex.value, target, maxIndex);
+    return token;
+  }
+
+  function commitFolderPageTurnRequest(token, commitOptions = {}) {
+    const request = options.folderPageTurnRequest?.value;
+    if (!request || request.token !== token) return false;
+    const allowCreate = Boolean(commitOptions?.allowCreate);
+    const maxIndex = Math.max(0, options.folderPages.value.length - 1 + (allowCreate ? 1 : 0));
+    return commitPageIndexWithRenderRange(
+      "folder",
+      options.folderPageIndex.value,
+      request.targetIndex,
+      maxIndex,
+      () => options.commitFolderPageTurnRequest?.(token, { ...commitOptions, maxIndex })
+    );
   }
 
   return {
     clearPageJumpRenderRange,
     commitActivePageIndex,
+    commitFolderPageTurnRequest,
     commitFolderPageIndex,
     commitPageIndex,
     commitSearchPageIndex,
     getDesktopPageRenderMode,
     getFolderPageRenderMode,
+    requestFolderPageTurn,
   };
 }

@@ -1,3 +1,4 @@
+import { ref } from "vue";
 import {
   DEFAULT_COLS,
   DEFAULT_FOLDER_COLS,
@@ -97,6 +98,8 @@ export function runLaunchpadControllerStateTests() {
   assert(state.pageIndex.value === 0, "desktop page index should start at zero");
   assert(state.searchPageIndex.value === 0, "search page index should start at zero");
   assert(state.folderPageIndex.value === 0, "folder page index should start at zero");
+  assert(state.folderPageTurnRequest.value === null, "folder page turn request should start empty");
+  assert(state.visualFolderPageIndex.value === 0, "visual folder page index should start from the committed page");
   assert(state.keyboardFocusArea.value === "desktop", "keyboard focus should start on the desktop");
   assert(state.isLayoutProjectionActive.value === false, "layout projection should start disabled");
   assert(state.isTextlessMode.value === false, "textless mode should start disabled");
@@ -105,4 +108,43 @@ export function runLaunchpadControllerStateTests() {
   assert(state.rootRef.value === null && state.shellRef.value === null, "DOM refs should start empty");
   assert(Array.isArray(state.pageRefs) && state.pageRefs.length === 0, "page refs should start empty");
   assert(Array.isArray(state.folderPageRefs) && state.folderPageRefs.length === 0, "folder page refs should start empty");
+
+  const phase = ref("open");
+  const folderId = ref("folder-a");
+  const maxIndex = ref(3);
+  state.setFolderPageTurnContextResolver(() => ({
+    folderId: folderId.value,
+    maxIndex: maxIndex.value,
+    phase: phase.value,
+  }));
+
+  const firstToken = state.requestFolderPageTurn(2, { source: "test" });
+  assert(state.folderPageTurnRequest.value.token === firstToken, "folder page turn request should expose its token");
+  assert(state.folderPageTurnRequest.value.folderId === "folder-a", "folder page turn request should bind the active folder id");
+  assert(state.folderPageTurnRequest.value.fromIndex === 0, "folder page turn request should capture the committed source page");
+  assert(state.folderPageTurnRequest.value.targetIndex === 2, "folder page turn request should capture the requested target page");
+  assert(state.folderPageTurnRequest.value.phaseAtRequest === "open", "folder page turn request should capture the request phase");
+  assert(state.visualFolderPageIndex.value === 2, "visual folder page index should use a valid open-phase request");
+
+  phase.value = "closing";
+  assert(state.visualFolderPageIndex.value === 0, "closing phase should ignore pending folder page requests visually");
+  assert(!state.commitFolderPageTurnRequest(firstToken), "closing phase should reject a pending folder page request commit");
+  assert(state.folderPageIndex.value === 0, "rejected folder page turn request should not change the committed page");
+
+  phase.value = "open";
+  folderId.value = "folder-b";
+  assert(state.visualFolderPageIndex.value === 0, "a request for another folder should not affect the visual page");
+  assert(!state.commitFolderPageTurnRequest(firstToken), "a request for another folder should not commit");
+
+  folderId.value = "folder-a";
+  const secondToken = state.requestFolderPageTurn(99);
+  assert(state.folderPageTurnRequest.value.targetIndex === 3, "folder page turn request targets should clamp to folder bounds");
+  assert(!state.commitFolderPageTurnRequest(firstToken), "superseded folder page turn request tokens should be stale");
+  assert(state.commitFolderPageTurnRequest(secondToken), "current folder page turn request token should commit");
+  assert(state.folderPageIndex.value === 3, "committing a folder page turn request should update the committed page");
+  assert(state.folderPageTurnRequest.value === null, "committing a folder page turn request should clear the request");
+
+  state.requestFolderPageTurn(1);
+  assert(state.clearFolderPageTurnRequest("test"), "clearFolderPageTurnRequest should report clearing an active request");
+  assert(state.folderPageTurnRequest.value === null, "clearFolderPageTurnRequest should clear pending requests");
 }

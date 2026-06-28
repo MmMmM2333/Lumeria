@@ -19,7 +19,11 @@ export function runFolderOverlayStateDependenciesTests() {
         get() {
           reads.push(key);
           if (key === "folderPageIndex") return 2;
+          if (key === "folderPageTurnRequest") return { token: 7, targetIndex: 3 };
           if (key === "folderPageTrackScrub") return { progress: 0.5 };
+          if (key === "folderOpenProgress") return 0.42;
+          if (key === "folderOpenProgressTarget") return 1;
+          if (key === "visualFolderPageIndex") return 3;
           return key;
         },
       }),
@@ -32,5 +36,9 @@ export function runFolderOverlayStateDependenciesTests() {
     assert(reads.includes(key), `${key} should be read for Vue render scheduling`);
   }
   assert(dependencies.folderPageIndex === 2, "folder page index should resolve through refs");
+  assert(dependencies.visualFolderPageIndex === 3, "visual folder page index should resolve through refs");
+  assert(dependencies.folderOpenProgress === 0.42, "folder open progress should resolve through refs");
+  assert(dependencies.folderOpenProgressTarget === 1, "folder open progress target should resolve through refs");
+  assert(dependencies.folderPageTurnRequest.token === 7, "folder page turn request should resolve through refs");
   assert(dependencies.folderPageTrackScrub.progress === 0.5, "folder page scrub should resolve through refs");
 }

@@ -5,13 +5,16 @@ function createPageRenderRange(overrides = {}) {
   const pageIndex = ref(overrides.pageIndex ?? 0);
   const searchPageIndex = ref(overrides.searchPageIndex ?? 0);
   const folderPageIndex = ref(overrides.folderPageIndex ?? 0);
+  const folderPageTurnRequest = ref(null);
   const pages = ref(overrides.pages ?? [[], [], [], [], [], []]);
   const searchPages = ref(overrides.searchPages ?? [[], [], [], []]);
   const folderPages = ref(overrides.folderPages ?? [[], [], []]);
   const isSearchMode = ref(overrides.isSearchMode ?? false);
   const dragMeta = ref(overrides.dragMeta ?? null);
+  let nextFolderPageTurnToken = 1;
 
   return {
+    folderPageTurnRequest,
     pageIndex,
     searchPageIndex,
     folderPageIndex,
@@ -21,12 +24,42 @@ function createPageRenderRange(overrides = {}) {
     range: usePageRenderRange({
       activePageIndex: overrides.activePageIndex ?? pageIndex,
       folderPageIndex,
+      folderPageTurnRequest,
       folderPages,
       getDragMeta: () => dragMeta.value,
       isDragActive: () => Boolean(dragMeta.value),
       isSearchMode,
       pageIndex,
       pages,
+      requestFolderPageTurn: (targetIndex, requestOptions = {}) => {
+        const maxIndex = Math.max(0, Number(requestOptions.maxIndex) || 0);
+        const token = nextFolderPageTurnToken;
+        nextFolderPageTurnToken += 1;
+        folderPageTurnRequest.value = {
+          token,
+          folderId: requestOptions.folderId || "folder-1",
+          fromIndex: folderPageIndex.value,
+          targetIndex: Math.min(Math.max(0, targetIndex), maxIndex),
+          source: requestOptions.source || null,
+          phaseAtRequest: requestOptions.phase || "open",
+        };
+        return token;
+      },
+      commitFolderPageTurnRequest: (token, commitOptions = {}) => {
+        if (typeof overrides.commitFolderPageTurnRequest === "function") {
+          return overrides.commitFolderPageTurnRequest({
+            commitOptions,
+            folderPageIndex,
+            folderPageTurnRequest,
+            token,
+          });
+        }
+        const request = folderPageTurnRequest.value;
+        if (!request || request.token !== token) return false;
+        folderPageIndex.value = request.targetIndex;
+        folderPageTurnRequest.value = null;
+        return true;
+      },
       searchPageIndex,
       searchPages,
     }),
@@ -132,6 +165,66 @@ export async function runPageRenderRangeTests() {
     assert(folderPageIndex.value === 4, "folder jumps should allow committing to the create page");
     flushTimeouts();
     assert(range.getFolderPageRenderMode(1) === "empty", "folder release timers should clear bridged static pages");
+  });
+
+  await withFakeWindow(async () => {
+    const { folderPageIndex, folderPageTurnRequest, range } = createPageRenderRange({
+      folderPageIndex: 0,
+      folderPages: [[], [], [], [], []],
+    });
+    const token = range.requestFolderPageTurn(4, { folderId: "folder-1", phase: "open", source: "wheel" });
+    assert(folderPageTurnRequest.value.token === token, "folder page turn requests should be recorded before commit");
+    assert(folderPageIndex.value === 0, "folder page turn requests should not commit immediately");
+    assert(range.getFolderPageRenderMode(0) === "interactive", "folder page turn requests should keep the source page interactive");
+    assert(range.getFolderPageRenderMode(4) === "interactive", "folder page turn requests should make the target page interactive");
+    assert(range.getFolderPageRenderMode(2) === "static-real", "folder page turn requests should render bridged middle pages");
+  });
+
+  await withFakeWindow(async () => {
+    const { folderPageIndex, range } = createPageRenderRange({
+      folderPageIndex: 0,
+      folderPages: [[], [], [], [], []],
+    });
+    const token = range.requestFolderPageTurn(4, { folderId: "folder-1", phase: "open" });
+    assert(range.commitFolderPageTurnRequest(token), "folder page turn request commits should schedule through render range");
+    assert(folderPageIndex.value === 0, "long folder page turn request commits should wait for the render bridge");
+    await flushPageJump();
+    assert(folderPageIndex.value === 4, "folder page turn request commits should land after the render bridge");
+  });
+
+  await withFakeWindow(async () => {
+    const { folderPageIndex, range } = createPageRenderRange({
+      folderPageIndex: 0,
+      folderPages: [[], [], [], [], []],
+    });
+    const staleToken = range.requestFolderPageTurn(4, { folderId: "folder-1", phase: "open" });
+    range.commitFolderPageTurnRequest(staleToken);
+    range.requestFolderPageTurn(2, { folderId: "folder-1", phase: "open" });
+    await flushPageJump();
+    assert(folderPageIndex.value === 0, "superseded folder page turn requests should not commit through a stale token");
+  });
+
+  await withFakeWindow(async ({ flushTimeouts }) => {
+    let phase = "open";
+    const { folderPageIndex, range } = createPageRenderRange({
+      commitFolderPageTurnRequest: ({ folderPageTurnRequest, token }) => {
+        const request = folderPageTurnRequest.value;
+        if (phase !== "open" || !request || request.token !== token) return false;
+        folderPageIndex.value = request.targetIndex;
+        folderPageTurnRequest.value = null;
+        return true;
+      },
+      folderPageIndex: 0,
+      folderPages: [[], [], [], [], []],
+    });
+    const token = range.requestFolderPageTurn(4, { folderId: "folder-1", phase: "open" });
+    assert(range.commitFolderPageTurnRequest(token), "folder page turn request should schedule before close interrupts it");
+    phase = "closing";
+    await flushPageJump();
+    assert(folderPageIndex.value === 0, "folder page turn requests rejected after close starts should not commit");
+    assert(range.getFolderPageRenderMode(2) === "empty", "rejected delayed folder page turn requests should clear the transient render range");
+    flushTimeouts();
+    assert(range.getFolderPageRenderMode(4) === "empty", "rejected delayed folder page turn requests should not leave a release timer behind");
   });
 
   await withFakeWindow(async () => {

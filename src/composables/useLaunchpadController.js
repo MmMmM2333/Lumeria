@@ -192,6 +192,7 @@ export function useLaunchpadController() {
     folderIconSize,
     folderIconSizeMode,
     folderPageIndex,
+    folderPageTurnRequest,
     folderPageRefs,
     folderPageSize,
     folderPanelRef,
@@ -231,6 +232,11 @@ export function useLaunchpadController() {
     windowEffectAppearance,
     windowEffectMaterial,
     windowEffectsSupport,
+    clearFolderPageTurnRequest,
+    commitFolderPageTurnRequest: commitFolderPageTurnRequestState,
+    requestFolderPageTurn: requestFolderPageTurnState,
+    setFolderPageTurnContextResolver,
+    visualFolderPageIndex,
   } = useLaunchpadControllerState();
   const systemAppearance = useSystemAppearance();
   const backgroundAcrylicEffectiveAppearance = computed(() => {
@@ -352,6 +358,8 @@ export function useLaunchpadController() {
     finishFolderZoomFadeClose,
     finishHomeRevealSettleWindow,
     consumeFirstFolderOpenPrepare,
+    folderOpenProgress,
+    folderOpenProgressTarget,
     folderOpenWarmupRequest,
     folderOpeningOriginBounds,
     folderPages,
@@ -371,11 +379,14 @@ export function useLaunchpadController() {
     startHomeRevealSettleWindow,
   } = useLaunchpadFolderFlow({
     clearFolderPageTurn: () => clearFolderPageTurn(),
+    clearFolderPageTurnRequest,
+    commitFolderPageTurnRequest: commitFolderPageTurnRequestState,
     clearFolderCloseIconGhosts,
     clearFolderOpenIconGhosts,
     cloneItem,
     findFolder,
     folderPageIndex,
+    folderPageTurnRequest,
     folderPageRefs,
     folderPageSize,
     getFolderIconMotionGeometry: (folderId) => getFolderIconMotionGeometry(folderId),
@@ -388,6 +399,19 @@ export function useLaunchpadController() {
     setFolderMotionGeometry: (next) => {
       folderMotionGeometry.value = next;
     },
+  });
+  setFolderPageTurnContextResolver(() => {
+    const isClosingPhase = Boolean(
+      isFolderClosing.value ||
+      isFolderAppLaunchClosing.value ||
+      isFolderZoomFadeClosing.value
+    );
+    const hasFolderLayer = Boolean(openFolderId.value || renderedFolder.value);
+    return {
+      folderId: renderedFolder.value?.id || openFolderId.value || null,
+      maxIndex: Math.max(0, folderPages.value.length - 1),
+      phase: isClosingPhase ? "closing" : hasFolderLayer ? "open" : "idle",
+    };
   });
   let deferredFolderOpenAfterCloseHandoffToken = 0;
 
@@ -642,6 +666,7 @@ export function useLaunchpadController() {
     isDesktopOpen,
     isFolderClosing,
     isFolderLayerActive,
+    isFolderZoomFadeClosing,
     isHomeRevealSettling,
     isSearchMode,
     liveDesktopBackgroundSupport,
@@ -662,20 +687,25 @@ export function useLaunchpadController() {
   const {
     clearPageJumpRenderRange,
     commitActivePageIndex,
+    commitFolderPageTurnRequest,
     commitFolderPageIndex,
     commitPageIndex,
     commitSearchPageIndex,
     getDesktopPageRenderMode,
     getFolderPageRenderMode,
+    requestFolderPageTurn,
   } = usePageRenderRange({
     activePageIndex,
     folderPageIndex,
+    folderPageTurnRequest,
     folderPages,
     getDragMeta: () => dragMeta.value,
     isDragActive: () => isDragActive(),
     isSearchMode,
     pageIndex,
     pages,
+    commitFolderPageTurnRequest: commitFolderPageTurnRequestState,
+    requestFolderPageTurn: requestFolderPageTurnState,
     searchPageIndex,
     searchPages,
   });
@@ -699,6 +729,7 @@ export function useLaunchpadController() {
     warningDialog,
   } = useLaunchpadNotices();
   const {
+    commitChromePageIndex,
     commitPages,
     confirmForceFillAllPages,
     removeAppById,
@@ -709,14 +740,18 @@ export function useLaunchpadController() {
     chunkIntoPages,
     clonePages,
     compactPages,
+    commitActivePageIndex,
     commitFolderPageIndex,
     commitOpenFolder,
     commitPageIndex,
     commitSearchPageIndex,
     findFolder,
+    finishHomeRevealSettleWindow,
     flattenTopLevelPages,
     folderPageIndex,
     folderPageSize,
+    isFolderClosing,
+    isHomeRevealSettling,
     isDragActive: () => isDragActive(),
     openFolderId,
     openWarningDialog,
@@ -1298,6 +1333,7 @@ export function useLaunchpadController() {
     finishHomeRevealSettleWindow,
     focusDesktopSurface,
     folderPageIndex,
+    folderPageTurnRequest,
     folderPages,
     folderPanelRef,
     getCurrentIconScope,
@@ -1322,6 +1358,7 @@ export function useLaunchpadController() {
     pageIndex,
     pages,
     renderedFolder,
+    requestFolderPageTurn,
     schedulePageGridMetrics,
     searchInputRef,
     searchPageIndex,
@@ -1331,6 +1368,7 @@ export function useLaunchpadController() {
     selectedIcon,
     selectionMatchesScope,
     startFolderZoomFadeClose,
+    visualFolderPageIndex,
   });
   const {
     folderPageTrackScrub,
@@ -1491,7 +1529,7 @@ export function useLaunchpadController() {
   const chrome = {
     activePageIndex,
     activePages,
-    commitActivePageIndex,
+    commitChromePageIndex,
     dragMeta,
     headerRef,
     homeChromeAnimate,
@@ -1786,10 +1824,13 @@ export function useLaunchpadController() {
     folderCloseIconGhosts,
     folderGridStyle,
     folderOpeningOriginBounds,
+    folderOpenProgress,
+    folderOpenProgressTarget,
     folderOpenIconGhosts,
     folderOpenPreviewFrameGhostedIds,
     folderOpenWarmupRequest,
     folderPageIndex,
+    folderPageTurnRequest,
     folderPages,
     folderPageSize,
     folderPageTrackScrub,
@@ -1797,6 +1838,9 @@ export function useLaunchpadController() {
     folderPanelStyle,
     folderViewportRef,
     folderZoomFadeCloseReason,
+    clearFolderPageTurnRequest,
+    commitFolderPageTurnRequest,
+    requestFolderPageTurn,
     getFolderPageRenderMode,
     getVisibleFolderPage,
     handleFolderOverlayPointerDown,
@@ -1822,6 +1866,7 @@ export function useLaunchpadController() {
     resetAppCustomIcon,
     setFolderPageRef,
     showMissingLaunchTargetBadge,
+    visualFolderPageIndex,
   };
 
   const overlays = {

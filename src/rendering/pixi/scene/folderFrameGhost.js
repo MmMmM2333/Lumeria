@@ -75,6 +75,94 @@ function frameSpring(frame, prop, to, springConfig, options = {}) {
     });
 }
 
+function clamp01(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.max(0, Math.min(1, number));
+}
+
+function remapProgressMilestones(milestones, fromProgress) {
+  if (!Array.isArray(milestones) || !milestones.length) return milestones;
+  const from = clamp01(fromProgress);
+  if (from <= 0) return milestones;
+  const span = Math.max(0.0001, 1 - from);
+  return milestones.map((milestone) => ({
+    ...milestone,
+    progress: clamp01((clamp01(milestone?.progress) - from) / span),
+  }));
+}
+
+function startFrameGeometryMotion(layer, frame, toRect, options = {}, fadeControls = []) {
+  if (!frame || !toRect) return null;
+  const toFillColor = options.toFillColor ?? frame.fillColor ?? 0xf7f8ff;
+  const toStrokeColor = options.toStrokeColor ?? frame.strokeColor ?? 0xffffff;
+  const currentFillColor = frame.fillColor ?? toFillColor;
+  const currentStrokeColor = frame.strokeColor ?? toStrokeColor;
+  const progressMilestones = remapProgressMilestones(options.progressMilestones, frame.progress);
+  const cancelFadeControls = (reason) => {
+    for (const control of fadeControls) control.cancel?.(reason);
+  };
+  const updateFrame = () => {
+    frame.fillColor = lerpColor(currentFillColor, toFillColor, frame.progress);
+    frame.strokeColor = lerpColor(currentStrokeColor, toStrokeColor, frame.progress);
+    drawFrameGhost(layer, frame, options);
+    options.onUpdate?.(frame);
+  };
+  let geometryArrived = false;
+  let geometryArriveRemaining = 4;
+  const arriveGeometryTrack = () => {
+    geometryArriveRemaining -= 1;
+    if (geometryArriveRemaining > 0 || geometryArrived) return;
+    geometryArrived = true;
+    options.onArrive?.(frame);
+  };
+  let frameMotionControl = null;
+  const springConfig = options.springConfig || motionSprings.handoff;
+  const frameMotionControlBase = parallel([
+    frameSpring(frame, "fillAlpha", options.toFillAlpha ?? 0.26, springConfig, { onUpdate: updateFrame, snap: options.snap }),
+    frameSpring(frame, "height", toRect.height, springConfig, { onArrive: arriveGeometryTrack, onUpdate: updateFrame, snap: options.snap }),
+    frameSpring(frame, "left", toRect.left, springConfig, { onArrive: arriveGeometryTrack, onUpdate: updateFrame, snap: options.snap }),
+    frameSpring(frame, "progress", 1, springConfig, { milestones: progressMilestones, onUpdate: updateFrame, snap: options.snap }),
+    frameSpring(frame, "radius", options.toRadius ?? getFrameRadius(toRect, 48), springConfig, { onUpdate: updateFrame, snap: options.snap }),
+    frameSpring(frame, "strokeAlpha", options.toStrokeAlpha ?? 0.24, springConfig, { onUpdate: updateFrame, snap: options.snap }),
+    frameSpring(frame, "strokeWidth", options.toStrokeWidth ?? frame.strokeWidth, springConfig, { onUpdate: updateFrame, snap: options.snap }),
+    frameSpring(frame, "top", toRect.top, springConfig, { onArrive: arriveGeometryTrack, onUpdate: updateFrame, snap: options.snap }),
+    frameSpring(frame, "width", toRect.width, springConfig, { onArrive: arriveGeometryTrack, onUpdate: updateFrame, snap: options.snap }),
+  ], {
+    onComplete: () => {
+      if (layer.frameGhostMotionControl === frameMotionControl) layer.frameGhostMotionControl = null;
+      frame.fillColor = toFillColor;
+      frame.strokeColor = toStrokeColor;
+      if (options.preserveOnComplete) {
+        layer.frameGhostState = frame;
+        drawFrameGhost(layer, frame, options);
+        options.onComplete?.();
+        return;
+      }
+      cancelFadeControls("complete");
+      clearFrameGhost(layer, { panelMaterialAlpha: options.panelMaterialFinalAlpha ?? 1 });
+      options.onComplete?.();
+    },
+  });
+  if (!frameMotionControlBase.completed) {
+    frameMotionControl = {
+      cancel() {
+        cancelFadeControls("cancel");
+        frameMotionControlBase.cancel();
+      },
+      get completed() {
+        return frameMotionControlBase.completed;
+      },
+      release() {
+        cancelFadeControls("release");
+        frameMotionControlBase.cancel();
+      },
+    };
+    layer.frameGhostMotionControl = frameMotionControl;
+  }
+  return frameMotionControlBase;
+}
+
 export function clearFrameGhost(layer, options = {}) {
   cancelFrameGhostMotion(layer);
   layer.frameGhostState = null;
@@ -113,6 +201,9 @@ export function startFrameGhost(layer, fromRect, toRect, options = {}) {
   layer.panelMaterial.alpha = exclusivePanelMaterialHandoff ? 0 : options.panelMaterialFromAlpha ?? 0;
   layer.frameGhost.visible = true;
   layer.frameGhost.alpha = options.frameGhostFromAlpha ?? 1;
+  const nextProgress = canReuseFrameState && options.preserveProgressOnReuse
+    ? clamp01(layer.frameGhostState?.progress)
+    : 0;
   const frame = canReuseFrameState ? layer.frameGhostState : {
     fillAlpha: options.fromFillAlpha ?? 0.22,
     fillColor: fromFillColor,
@@ -131,7 +222,7 @@ export function startFrameGhost(layer, fromRect, toRect, options = {}) {
   const currentStrokeColor = frame.strokeColor ?? fromStrokeColor;
   frame.fillAlpha = frame.fillAlpha ?? options.fromFillAlpha ?? 0.22;
   frame.fillColor = currentFillColor;
-  frame.progress = 0;
+  frame.progress = nextProgress;
   frame.radius = frame.radius ?? options.fromRadius ?? getFrameRadius(fromRect);
   frame.strokeAlpha = frame.strokeAlpha ?? options.fromStrokeAlpha ?? 0.26;
   frame.strokeColor = currentStrokeColor;
@@ -183,64 +274,22 @@ export function startFrameGhost(layer, fromRect, toRect, options = {}) {
       .to({ alpha: options.frameGhostToAlpha ?? 0 })
       .start());
   }
-  const updateFrame = () => {
-    frame.fillColor = lerpColor(currentFillColor, toFillColor, frame.progress);
-    frame.strokeColor = lerpColor(currentStrokeColor, toStrokeColor, frame.progress);
-    drawFrameGhost(layer, frame, options);
-    options.onUpdate?.(frame);
-  };
-  let geometryArrived = false;
-  let geometryArriveRemaining = 4;
-  const arriveGeometryTrack = () => {
-    geometryArriveRemaining -= 1;
-    if (geometryArriveRemaining > 0 || geometryArrived) return;
-    geometryArrived = true;
-    options.onArrive?.(frame);
-  };
-  let frameMotionControl = null;
-  const springConfig = options.springConfig || motionSprings.handoff;
-  const frameMotionControlBase = parallel([
-    frameSpring(frame, "fillAlpha", options.toFillAlpha ?? 0.26, springConfig, { onUpdate: updateFrame, snap: options.snap }),
-    frameSpring(frame, "height", toRect.height, springConfig, { onArrive: arriveGeometryTrack, onUpdate: updateFrame, snap: options.snap }),
-    frameSpring(frame, "left", toRect.left, springConfig, { onArrive: arriveGeometryTrack, onUpdate: updateFrame, snap: options.snap }),
-    frameSpring(frame, "progress", 1, springConfig, { milestones: options.progressMilestones, onUpdate: updateFrame, snap: options.snap }),
-    frameSpring(frame, "radius", options.toRadius ?? getFrameRadius(toRect, 48), springConfig, { onUpdate: updateFrame, snap: options.snap }),
-    frameSpring(frame, "strokeAlpha", options.toStrokeAlpha ?? 0.24, springConfig, { onUpdate: updateFrame, snap: options.snap }),
-    frameSpring(frame, "strokeWidth", options.toStrokeWidth ?? frame.strokeWidth, springConfig, { onUpdate: updateFrame, snap: options.snap }),
-    frameSpring(frame, "top", toRect.top, springConfig, { onArrive: arriveGeometryTrack, onUpdate: updateFrame, snap: options.snap }),
-    frameSpring(frame, "width", toRect.width, springConfig, { onArrive: arriveGeometryTrack, onUpdate: updateFrame, snap: options.snap }),
-  ], {
-    onComplete: () => {
-      if (layer.frameGhostMotionControl === frameMotionControl) layer.frameGhostMotionControl = null;
-      frame.fillColor = toFillColor;
-      frame.strokeColor = toStrokeColor;
-      if (options.preserveOnComplete) {
-        layer.frameGhostState = frame;
-        drawFrameGhost(layer, frame, options);
-        options.onComplete?.();
-        return;
-      }
-      cancelFadeControls("complete");
-      clearFrameGhost(layer, { panelMaterialAlpha: options.panelMaterialFinalAlpha ?? 1 });
-      options.onComplete?.();
-    },
+  startFrameGeometryMotion(layer, frame, toRect, options, fadeControls);
+}
+
+export function retargetFrameGhost(layer, toRect, options = {}) {
+  const frame = layer?.frameGhostState;
+  if (!frame || !toRect) return false;
+  releaseFrameGhostMotion(layer);
+  layer.frameGhostPhase = options.frameGhostPhase || layer.frameGhostPhase || null;
+  layer.frameGhostFolderId = options.folderId || layer.frameGhostFolderId || null;
+  layer.frameGhost.visible = true;
+  if (options.frameGhostFromAlpha != null) layer.frameGhost.alpha = options.frameGhostFromAlpha;
+  startFrameGeometryMotion(layer, frame, toRect, {
+    ...options,
+    preserveOnComplete: options.preserveOnComplete !== false,
   });
-  if (!frameMotionControlBase.completed) {
-    frameMotionControl = {
-      cancel() {
-        cancelFadeControls("cancel");
-        frameMotionControlBase.cancel();
-      },
-      get completed() {
-        return frameMotionControlBase.completed;
-      },
-      release() {
-        cancelFadeControls("release");
-        frameMotionControlBase.cancel();
-      },
-    };
-    layer.frameGhostMotionControl = frameMotionControl;
-  }
+  return true;
 }
 
 reloadOnPixiHotUpdate(import.meta.hot);

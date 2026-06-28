@@ -12,6 +12,7 @@ import {
   enableClosingFrameMask as enableClosingFrameMaskState,
   ensureClosingFrameMaskState,
   getFrameRadius,
+  retargetFrameGhost as retargetFrameGhostState,
   startFrameGhost as startFrameGhostState,
 } from "./folderFrameGhost.js";
 import { FolderClosingGhostController } from "./folderClosingGhostController.js";
@@ -22,6 +23,7 @@ import {
   getClosingPresentationStageHitRects,
 } from "./folderClosingHandoff.js";
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
+import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import {
   FolderHandoffCoordinator,
   makeFolderPanelTargetKey,
@@ -98,6 +100,34 @@ function isPointInRect(x, y, rect) {
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+function readProgress01(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return clamp01(number);
+}
+
+function lerpNumber(from, to, progress) {
+  return from + (to - from) * progress;
+}
+
+function getPanelOpenStartGeometry(targetX, targetY, panelRect, sourceRect = null, stageRect = null) {
+  if (sourceRect) {
+    const sourceLocalRect = clientRectToStageVisualRect(sourceRect, stageRect);
+    return {
+      scaleX: Math.max(0.08, sourceLocalRect.width / panelRect.width),
+      scaleY: Math.max(0.08, sourceLocalRect.height / panelRect.height),
+      x: sourceLocalRect.left + sourceLocalRect.width / 2,
+      y: sourceLocalRect.top + sourceLocalRect.height / 2,
+    };
+  }
+  return {
+    scaleX: 0.12,
+    scaleY: 0.16,
+    x: targetX,
+    y: targetY + 36,
+  };
 }
 
 function roundDebugValue(value) {
@@ -216,6 +246,22 @@ function drawDetachedFrame(graphics, rect) {
     .roundRect(rect.left, rect.top, rect.width, rect.height, rect.radius ?? getFrameRadius(rect))
     .fill({ color: Math.round(rect.fillColor ?? 0xf7f8ff), alpha: rect.fillAlpha ?? 0.26 })
     .stroke({ color: Math.round(rect.strokeColor ?? 0xffffff), alpha: rect.strokeAlpha ?? 0.24, width: rect.strokeWidth ?? 1 });
+}
+
+function getDesktopPageTrackLiveX(state = {}) {
+  const liveX = Number(state.desktopPageTrackOffset?.liveX);
+  if (Number.isFinite(liveX)) return liveX;
+  const targetX = Number(state.desktopPageTrackOffset?.targetX);
+  return Number.isFinite(targetX) ? targetX : 0;
+}
+
+function addXOffsetToFrameState(frameState, offsetX) {
+  if (!frameState || !Number.isFinite(offsetX) || offsetX === 0) return frameState;
+  const left = Number(frameState.left);
+  return {
+    ...frameState,
+    left: Number.isFinite(left) ? left + offsetX : frameState.left,
+  };
 }
 
 function addDetachedVisualMotionControl(visual, control) {
@@ -428,6 +474,8 @@ export class FolderOverlayLayer extends Container {
     super();
     this.panel = new Container();
     this.panelMaterial = new Graphics();
+    this.panelContentLayer = new Container();
+    this.panelClipMask = new Graphics();
     this.frameGhost = new Graphics();
     this.frameGhost.visible = false;
     this.closingFrameMask = new Graphics();
@@ -494,7 +542,10 @@ export class FolderOverlayLayer extends Container {
     this.openingPanelReadyFrame = null;
     this.panelAlphaTarget = null;
     this.panelOpenTargetKey = null;
+    this.panelOpenProgressDriven = false;
     this.detachedClosingVisuals = [];
+    this.closingDesktopPageTrackMirrorBaseline = null;
+    this.closingDesktopPageTrackMirrorX = 0;
     this.nextDetachedClosingVisualToken = 1;
     this.nextClosingGhostToken = 1;
     this.titleFrameKey = null;
@@ -507,13 +558,16 @@ export class FolderOverlayLayer extends Container {
     if (this.ownsDetachedClosingVisualLayer) this.addChild(this.detachedClosingVisualLayer);
     this.addChild(this.panel);
     this.panel.addChild(this.panelMaterial);
-    this.panel.addChild(this.pageMask);
-    this.panel.addChild(this.pageTrack);
+    this.panel.addChild(this.panelClipMask);
+    this.panel.addChild(this.panelContentLayer);
+    this.panelContentLayer.addChild(this.pageMask);
+    this.panelContentLayer.addChild(this.pageTrack);
     this.panel.addChild(this.folderTitle);
     this.addChild(this.pageDotsLayer);
     this.addChild(this.openingGhostLayer);
     this.addChild(this.closingGhostLayer);
     this.addChild(this.closingPreviewSwapLayer);
+    this.refreshPanelClipMask();
     this.pageTrack.mask = this.pageMask;
     this.eventMode = "static";
     this.on("pointerdown", (event) => this.handlePointerDown(event));
@@ -612,6 +666,7 @@ export class FolderOverlayLayer extends Container {
       this.isUserFolderClosing = false;
       this.sizeKey = null;
       this.stableFolderCloseTarget = null;
+      this.resetClosingDesktopPageTrackMirror();
       if (state.folderPanelRef) state.folderPanelRef.value = null;
       if (state.folderViewportRef) state.folderViewportRef.value = null;
       this.notifyTitleFrame(null);
@@ -668,6 +723,7 @@ export class FolderOverlayLayer extends Container {
   resolveFolderOverlayGeometry(context) {
     const { folderId, geometry, isClosing, isNewFolder, isPrewarm, state, wasClosing } = context;
     const overlayTargets = resolveFolderOverlayTargets({
+      desktopPageTrackOffset: state.desktopPageTrackOffset,
       folder: state.renderedFolder,
       folderOpeningOriginBounds: state.folderOpeningOriginBounds,
       folderPageSize: state.folderPageSize,
@@ -679,6 +735,8 @@ export class FolderOverlayLayer extends Container {
     this.stableFolderCloseTarget = overlayTargets.stableFolderCloseTarget;
     const { folderClientRect, folderThumbClientRect, getOpeningPreviewChildClientRect, previewSlots } = overlayTargets;
     this.drawPanel(geometry.panel);
+    this.drawPanelClipMask(geometry.panel);
+    this.refreshPanelClipMask();
     this.updatePageDots(state, geometry);
     if (isClosing) applyClosingPresentationOverlayState(this);
     this.panel.pivot.set(geometry.panel.width / 2, geometry.panel.height / 2);
@@ -703,8 +761,10 @@ export class FolderOverlayLayer extends Container {
     this.folderTitle.anchor.set(0.5);
     this.folderTitle.position.set(geometry.panel.width / 2, -34);
 
+    const committedFolderPageIndex = state.folderPageIndex ?? 0;
+    const visualFolderPageIndex = state.visualFolderPageIndex ?? committedFolderPageIndex;
     const cols = parseRepeatCount(state.folderGridStyle?.gridTemplateColumns, 5);
-    const rows = parseRepeatCount(state.folderGridStyle?.gridTemplateRows, Math.max(1, Math.ceil((state.folderPages?.[state.folderPageIndex] || []).length / cols)));
+    const rows = parseRepeatCount(state.folderGridStyle?.gridTemplateRows, Math.max(1, Math.ceil((state.folderPages?.[visualFolderPageIndex] || []).length / cols)));
     const rowGap = readPx(state.folderPanelStyle?.["--folder-row-gap"], 18);
     const fixedCellHeight = readPx(state.folderPanelStyle?.["--folder-icon-cell-height"], 0);
     const iconSize = Math.min(readPx(state.folderPanelStyle?.["--folder-icon-size"], state.iconSize), 56);
@@ -716,7 +776,7 @@ export class FolderOverlayLayer extends Container {
     this.drawPageMask(this.pageMask, this.pageMaskRect);
     this.refreshPageTrackMask();
     const folderPageSpan = geometry.panel.width;
-    const targetTrackX = -state.folderPageIndex * folderPageSpan;
+    const targetTrackX = -visualFolderPageIndex * folderPageSpan;
     if (isNewFolder && !isClosing) {
       cancelPageTrackMotion(this.pageTrackMotion, "replace");
       killMotionOf(this.pageTrack, null, { lane: "base", reason: FOLDER_PAGE_TRACK_REPLACE_REASON });
@@ -731,7 +791,7 @@ export class FolderOverlayLayer extends Container {
           layer: "folder",
         },
         onFrame: markBoundsDirty,
-        pageIndex: state.folderPageIndex,
+        pageIndex: visualFolderPageIndex,
         pageSpan: folderPageSpan,
         scrub: state.folderPageTrackScrub,
         sourceLabel: "folder.pageTrack",
@@ -756,7 +816,7 @@ export class FolderOverlayLayer extends Container {
       folderCloseIconGhosts: state.folderCloseIconGhosts,
       folderId,
       folderOpenIconGhosts: state.folderOpenIconGhosts,
-      folderPageIndex: state.folderPageIndex,
+      folderPageIndex: committedFolderPageIndex,
       folderPages: state.folderPages,
       folderPageSize: state.folderPageSize,
       folderPageSpan,
@@ -781,6 +841,7 @@ export class FolderOverlayLayer extends Container {
       stageHeight: state.height,
       stageWidth: state.width,
       targetTrackX,
+      visualFolderPageIndex,
     });
     return {
       ...context,
@@ -912,25 +973,33 @@ export class FolderOverlayLayer extends Container {
       seen,
       state,
     } = context;
+    this.syncClosingDesktopPageTrackMirror(state, folderId, isClosing);
     if (isNewFolder && !isClosing) {
       this.openingGhosts.start(state, openingGhostTargets, {
         frameSourceRect: folderThumbClientRect || folderClientRect,
         frameTargetRect: geometry.panel,
         sessionToken: this.folderHandoff.activeOpenToken,
       });
+    } else if (!isClosing && this.folderHandoff.hasActiveOpeningVisuals()) {
+      this.openingGhosts.retarget(state, openingGhostTargets);
     }
     if (!isNewFolder && !isClosing && state.folderOpenIconGhosts?.length && !this.folderHandoff.hasActiveOpeningVisuals()) {
       for (const ghost of state.folderOpenIconGhosts) {
         if (ghost?.key) state.completeFolderOpenIconGhost?.(ghost.key);
       }
     }
-    if (state.isFolderClosing && this.folderHandoff.folderId !== folderId) {
+    if (state.isFolderClosing) {
       const closeFrameRect = this.getPanelVisualRect(geometry.panel) || geometry.panel;
-      this.closingGhosts.start(state, closingGhostTargets, closeThumbRect, closeFrameRect, {
-        handoffRect: closeIconRect,
+      const closeOptions = {
+        handoffRect: folderClientRect || closeIconRect,
         handoffTarget: this.stableFolderCloseTarget,
         previewSwapTargets: closingPreviewSwapTargets,
-      });
+      };
+      if (this.folderHandoff.folderId === folderId) {
+        this.closingGhosts.retarget(state, closingGhostTargets, closeThumbRect, closeFrameRect, closeOptions);
+      } else {
+        this.closingGhosts.start(state, closingGhostTargets, closeThumbRect, closeFrameRect, closeOptions);
+      }
     }
     if (!state.isFolderClosing && this.folderHandoff.folderId) {
       this.clearClosingFolderId();
@@ -946,18 +1015,40 @@ export class FolderOverlayLayer extends Container {
         .preset("fade", { duration: 0.14 })
         .overlay()
         .interrupt("retarget")
-        .to({ alpha: 0, onComplete: () => node.destroy({ children: true }) })
+        .to({ alpha: 0, onComplete: () => destroyDisplayObjectAfterFrame(node, { children: true }) })
         .start();
     }
-    this.pageTrack.visible = !state.isFolderClosing &&
-      !this.folderHandoff.isRevealPending() &&
-      !this.folderHandoff.hasActiveOpeningVisuals() &&
+    this.pageTrack.visible = !isClosing &&
       !this.folderHandoff.hasActiveCloseVisuals();
     if (!this.frameGhostState) {
       if (!isClosing) this.notifyPanelTitleFrame(geometry.panel);
       else this.notifyTitleFrame(geometry.panel);
     }
     this.refreshRegisteredIconBounds();
+  }
+
+  setClosingDesktopPageTrackMirrorX(offsetX) {
+    const x = Number.isFinite(Number(offsetX)) ? Number(offsetX) : 0;
+    this.closingDesktopPageTrackMirrorX = x;
+    return x;
+  }
+
+  syncClosingDesktopPageTrackMirror(state = {}, folderId = null, isClosing = false) {
+    if (!isClosing || !folderId) {
+      this.resetClosingDesktopPageTrackMirror();
+      return 0;
+    }
+    const liveX = getDesktopPageTrackLiveX(state);
+    if (!this.closingDesktopPageTrackMirrorBaseline ||
+      this.closingDesktopPageTrackMirrorBaseline.folderId !== folderId) {
+      this.closingDesktopPageTrackMirrorBaseline = { folderId, liveX };
+    }
+    return this.setClosingDesktopPageTrackMirrorX(liveX - this.closingDesktopPageTrackMirrorBaseline.liveX);
+  }
+
+  resetClosingDesktopPageTrackMirror() {
+    this.closingDesktopPageTrackMirrorBaseline = null;
+    return this.setClosingDesktopPageTrackMirrorX(0);
   }
 
   resetPanelMotion(reason, options = {}) {
@@ -989,9 +1080,11 @@ export class FolderOverlayLayer extends Container {
     this.cancelOpeningPanelReadyCheck();
     this.panelOpenTargetKey = null;
     this.panelAlphaTarget = null;
+    this.panelOpenProgressDriven = false;
     this.currentOpeningGeometrySnapshot = null;
     this.openingGhosts.clear({ cancelSession: true });
     this.closingGhosts.clear();
+    this.resetClosingDesktopPageTrackMirror();
     if (clearDetachedClosingVisuals) this.clearDetachedClosingVisuals(null, { immediate: true });
     if (releaseOwnership) this.releaseAllOwnedVisualOwnership({ preserveDetachedClosing });
     if (clearVisualCommitQueue) this.getVisualCommitQueue().clear();
@@ -1227,7 +1320,10 @@ export class FolderOverlayLayer extends Container {
     const shouldKeepDetachedVisual = Boolean(
       closingFolderId && (waitForDesktopClose || closingFolderId !== nextFolderId) && !closingSourceAlreadyVisible
     );
-    const frameState = shouldKeepDetachedVisual ? this.frameGhostState : null;
+    const closingMirrorOffsetX = shouldKeepDetachedVisual ? this.closingDesktopPageTrackMirrorX : 0;
+    const frameState = shouldKeepDetachedVisual
+      ? addXOffsetToFrameState(this.frameGhostState, closingMirrorOffsetX)
+      : null;
     const frameTarget = shouldKeepDetachedVisual ? this.folderHandoff.getDetachedFrameTarget() : null;
     const closingGhosts = shouldKeepDetachedVisual
       ? transitionPort.removeClosingGhosts()
@@ -1239,6 +1335,12 @@ export class FolderOverlayLayer extends Container {
     const previewSwapGhosts = shouldKeepDetachedVisual
       ? transitionPort.removeClosingPreviewSwapChildren()
       : [];
+    if (closingMirrorOffsetX && previewSwapGhosts.length) {
+      for (const ghost of previewSwapGhosts) {
+        if (!ghost || ghost.destroyed) continue;
+        ghost.x = (Number(ghost.x) || 0) + closingMirrorOffsetX;
+      }
+    }
     let detachedVisual = null;
 
     if (shouldKeepDetachedVisual && (frameState || closingGhosts.length || previewSwapGhosts.length || waitForDesktopClose)) {
@@ -1376,6 +1478,7 @@ export class FolderOverlayLayer extends Container {
 
   clearClosingFolderId() {
     this.folderHandoff.clearCloseFolderId();
+    this.resetClosingDesktopPageTrackMirror();
   }
 
   revealIconNodes() {
@@ -1441,6 +1544,32 @@ export class FolderOverlayLayer extends Container {
     if (restorePageTrack && !this.hasPageTrackOwner()) {
       this.pageTrack.visible = true;
     }
+  }
+
+  releaseIconNodesForTransition(itemId, token, options = {}) {
+    if (!itemId || token == null) return 0;
+    const reveal = options.reveal !== false;
+    let released = 0;
+    for (const entry of this.visualOwnership.snapshot()) {
+      if (entry.owner?.token !== token || !entry.key?.startsWith("folderIcon:")) continue;
+      let matchedNode = null;
+      for (const node of this.iconNodes.values()) {
+        if (node.item?.id !== itemId) continue;
+        const key = this.getIconNodeVisualKey(node, entry.owner.folderId);
+        if (key === entry.key) {
+          matchedNode = node;
+          break;
+        }
+      }
+      if (!matchedNode) continue;
+      if (!this.releaseVisualOwnership(entry.key, token)) continue;
+      released += 1;
+      if (reveal && !this.visualOwnership.hasOwner(entry.key)) {
+        matchedNode.visible = true;
+        matchedNode.alpha = 1;
+      }
+    }
+    return released;
   }
 
   clearFrameGhost(options = {}) {
@@ -1554,9 +1683,22 @@ export class FolderOverlayLayer extends Container {
     startFrameGhostState(this, fromRect, toRect, options);
   }
 
+  retargetFrameGhost(toRect, options = {}) {
+    return retargetFrameGhostState(this, toRect, options);
+  }
+
   refreshPageTrackMask() {
     this.pageTrack.mask = null;
     this.pageTrack.mask = this.pageMask;
+  }
+
+  refreshPanelClipMask() {
+    if (this.panelContentLayer && this.panelContentLayer.mask !== this.panelClipMask) {
+      this.panelContentLayer.mask = this.panelClipMask;
+    }
+    if (this.openingGhostLayer && this.openingGhostLayer.mask !== this.panelClipMask) {
+      this.openingGhostLayer.mask = this.panelClipMask;
+    }
   }
 
   drawPageMask(mask, rect) {
@@ -1620,9 +1762,10 @@ export class FolderOverlayLayer extends Container {
     const totalWidth = pageCount * FOLDER_PAGE_DOTS_SIZE + (pageCount - 1) * FOLDER_PAGE_DOTS_GAP;
     const startX = frame.left + frame.width / 2 - totalWidth / 2 + FOLDER_PAGE_DOTS_SIZE / 2;
     const centerY = frame.top + FOLDER_PAGE_DOTS_HIT_HEIGHT / 2;
+    const activePageIndex = state.visualFolderPageIndex ?? state.folderPageIndex;
     for (let index = 0; index < pageCount; index += 1) {
       const dot = new Graphics();
-      const isActive = index === state.folderPageIndex;
+      const isActive = index === activePageIndex;
       this.describePageDotTargets(dot, index, state, isActive);
       this.setPageDotHover(dot, isActive, false, { immediate: true });
       dot.position.set(startX + index * (FOLDER_PAGE_DOTS_SIZE + FOLDER_PAGE_DOTS_GAP), centerY);
@@ -1734,14 +1877,15 @@ export class FolderOverlayLayer extends Container {
     const previousMask = this.pageMask;
     const nextMask = new Graphics();
     this.drawPageMask(nextMask, this.pageMaskRect);
-    const previousIndex = this.panel.children.indexOf(previousMask);
+    const maskParent = this.panelContentLayer || this.panel;
+    const previousIndex = maskParent.children.indexOf(previousMask);
     this.pageTrack.mask = null;
     if (previousIndex >= 0) {
-      this.panel.removeChild(previousMask);
-      this.panel.addChildAt(nextMask, previousIndex);
+      maskParent.removeChild(previousMask);
+      maskParent.addChildAt(nextMask, previousIndex);
     } else {
-      const trackIndex = this.panel.children.indexOf(this.pageTrack);
-      this.panel.addChildAt(nextMask, Math.max(0, trackIndex));
+      const trackIndex = maskParent.children.indexOf(this.pageTrack);
+      maskParent.addChildAt(nextMask, Math.max(0, trackIndex));
     }
     this.pageMask = nextMask;
     this.pageTrack.mask = this.pageMask;
@@ -1788,19 +1932,22 @@ export class FolderOverlayLayer extends Container {
       this.cancelOpeningPanelReadyCheck();
       this.panelOpenTargetKey = null;
       this.panelAlphaTarget = null;
+      this.panelOpenProgressDriven = false;
     }
     if (isNewPanelSource) {
       this.resetPanelMotion(FOLDER_PANEL_OPEN_REASON, { panelProps: "x,y,alpha", scaleProps: "x,y" });
       this.currentFolderId = folderId;
       this.panelOpenTargetKey = null;
       this.panelAlphaTarget = null;
+      this.panelOpenProgressDriven = false;
       if (sourceRect) {
-        const sourceLocalRect = clientRectToStageVisualRect(sourceRect, state.stageRect);
-        this.panel.position.set(sourceLocalRect.left + sourceLocalRect.width / 2, sourceLocalRect.top + sourceLocalRect.height / 2);
-        this.panel.scale.set(Math.max(0.08, sourceLocalRect.width / panelRect.width), Math.max(0.08, sourceLocalRect.height / panelRect.height));
+        const startGeometry = getPanelOpenStartGeometry(targetX, targetY, panelRect, sourceRect, state.stageRect);
+        this.panel.position.set(startGeometry.x, startGeometry.y);
+        this.panel.scale.set(startGeometry.scaleX, startGeometry.scaleY);
       } else {
-        this.panel.position.set(targetX, targetY + 36);
-        this.panel.scale.set(0.12, 0.16);
+        const startGeometry = getPanelOpenStartGeometry(targetX, targetY, panelRect, null, state.stageRect);
+        this.panel.position.set(startGeometry.x, startGeometry.y);
+        this.panel.scale.set(startGeometry.scaleX, startGeometry.scaleY);
       }
       this.panel.alpha = 0.94;
       this.panelTitleOpening = !isClosing;
@@ -1876,6 +2023,38 @@ export class FolderOverlayLayer extends Container {
       if (this.getPanelTitleProgress() < FOLDER_PANEL_READY_PROGRESS) return;
       this.markOpeningPanelReady(sessionToken);
     };
+    const openProgress = readProgress01(state.folderOpenProgress);
+    if (openProgress !== null) {
+      const shouldRetargetPresentation = !this.panelOpenProgressDriven || this.panelOpenTargetKey !== targetKey;
+      if (shouldRetargetPresentation) {
+        if (sessionToken) this.folderHandoff.markPanelPending(sessionToken, targetKey);
+        this.panelOpenTargetKey = targetKey;
+        this.panelOpenProgressDriven = true;
+        this.resetPanelMotion(FOLDER_PANEL_OPEN_REASON, {
+          panelProps: "x,y,alpha",
+          scaleProps: "x,y",
+        });
+        if (sessionToken) this.scheduleOpeningPanelReadyCheck(sessionToken, openingGeometrySnapshot?.panelRect || panelRect);
+      }
+      this.panelAlphaTarget = 1;
+      const startGeometry = getPanelOpenStartGeometry(targetX, targetY, panelRect, sourceRect, state.stageRect);
+      this.panel.position.set(
+        lerpNumber(startGeometry.x, targetX, openProgress),
+        lerpNumber(startGeometry.y, targetY, openProgress)
+      );
+      this.panel.scale.set(
+        lerpNumber(startGeometry.scaleX, 1, openProgress),
+        lerpNumber(startGeometry.scaleY, 1, openProgress)
+      );
+      this.panel.alpha = lerpNumber(0.94, 1, openProgress);
+      updateOpeningPanelFrame();
+      return {
+        openingGeometrySnapshot,
+        sessionToken,
+      };
+    }
+    if (this.panelOpenProgressDriven) this.panelOpenTargetKey = null;
+    this.panelOpenProgressDriven = false;
     if (this.panelAlphaTarget !== 1) {
       this.panelAlphaTarget = 1;
       motion(this.panel)
@@ -1914,6 +2093,12 @@ export class FolderOverlayLayer extends Container {
       .roundRect(0, 0, panel.width, panel.height, 48)
       .fill({ color: 0xf7f8ff, alpha: 0.26 })
       .stroke({ color: 0xffffff, alpha: 0.24, width: 1 });
+  }
+
+  drawPanelClipMask(panel) {
+    this.panelClipMask.clear()
+      .roundRect(0, 0, panel.width, panel.height, 48)
+      .fill({ color: 0xffffff, alpha: 1 });
   }
 
   bindFakeRefs(state, geometry) {
@@ -1966,6 +2151,16 @@ export class FolderOverlayLayer extends Container {
 
   getVisualDebugSnapshot() {
     return {
+      closingMirror: {
+        baselineFolderId: this.closingDesktopPageTrackMirrorBaseline?.folderId || null,
+        baselineLiveX: this.closingDesktopPageTrackMirrorBaseline
+          ? Math.round(this.closingDesktopPageTrackMirrorBaseline.liveX * 1000) / 1000
+          : null,
+        frameGhostX: Math.round((this.frameGhost?.x ?? 0) * 1000) / 1000,
+        maskX: Math.round((this.closingFrameMask?.x ?? 0) * 1000) / 1000,
+        offsetX: Math.round((this.closingDesktopPageTrackMirrorX ?? 0) * 1000) / 1000,
+        previewSwapLayerX: Math.round((this.closingPreviewSwapLayer?.x ?? 0) * 1000) / 1000,
+      },
       openingGeometry: makeOpeningGeometryDebugSnapshot(
         this.folderHandoff?.activeOpenSession || null,
         this.currentOpeningGeometrySnapshot || null,

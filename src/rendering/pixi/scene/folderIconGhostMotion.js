@@ -32,6 +32,7 @@ function resolveTargetStageVisualRect(target, options = {}) {
     stageRect,
     stageWidth,
   } = options;
+  if (target?.targetClientRect) return clientRectToStageVisualRect(target.targetClientRect, stageRect);
   return stageLayoutRectToStageVisualRect(stageRect, stageWidth, stageHeight, target?.targetStageLayoutRect);
 }
 

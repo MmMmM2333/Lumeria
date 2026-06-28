@@ -1,4 +1,5 @@
 import { makeDesktopSourceVisualKey } from "./folderVisualOwnershipRegistry.js";
+import { detachDisplayObject } from "./displayObjectLifecycle.js";
 
 function cloneFramePresentation(frame) {
   if (!frame) return null;
@@ -15,6 +16,18 @@ function cloneFramePresentation(frame) {
     top: frame.top,
     width: frame.width,
   };
+}
+
+function getClosingMirrorOffsetX(layer) {
+  const offsetX = Number(layer?.closingDesktopPageTrackMirrorX);
+  return Number.isFinite(offsetX) ? offsetX : 0;
+}
+
+function cloneMirroredFramePresentation(layer) {
+  const frame = cloneFramePresentation(layer?.frameGhostState);
+  const offsetX = getClosingMirrorOffsetX(layer);
+  if (frame && offsetX !== 0) frame.left += offsetX;
+  return frame;
 }
 
 export function createLayerTransitionPort(layer) {
@@ -72,12 +85,12 @@ export function createLayerTransitionPort(layer) {
       return layer.currentFolderId || null;
     },
     getClosingPresentationFrameRect() {
-      return cloneFramePresentation(layer.frameGhostState);
+      return cloneMirroredFramePresentation(layer);
     },
     getDebugSnapshot() {
       return {
         closingGhostCount: layer.closingGhostLayer?.children?.length ?? null,
-        framePresentation: cloneFramePresentation(layer.frameGhostState),
+        framePresentation: cloneMirroredFramePresentation(layer),
         panelVisible: layer.panel?.visible ?? null,
         pageTrackVisible: layer.pageTrack?.visible ?? null,
       };
@@ -100,6 +113,9 @@ export function createLayerTransitionPort(layer) {
     releaseTransitionOwnership(token, options = {}) {
       return layer.releaseTransitionOwnership?.(token, options);
     },
+    releaseIconNodesForTransition(itemId, token, options = {}) {
+      return layer.releaseIconNodesForTransition?.(itemId, token, options);
+    },
     refreshRegisteredIconBounds() {
       return layer.refreshRegisteredIconBounds?.();
     },
@@ -108,6 +124,10 @@ export function createLayerTransitionPort(layer) {
     },
     releaseOpeningGhost(itemId) {
       return layer.openingGhosts?.releaseGhost?.(itemId) || null;
+    },
+    retargetFrameGhost(toRect, options = {}) {
+      if (typeof layer.retargetFrameGhost !== "function") return false;
+      return layer.retargetFrameGhost(toRect, options);
     },
     rebuildPageTrackMask() {
       return layer.rebuildPageTrackMask?.();
@@ -121,13 +141,7 @@ export function createLayerTransitionPort(layer) {
       return swapLayer.removeChildren?.() || [];
     },
     removeOpeningGhost(ghost) {
-      const children = layer.openingGhostLayer?.children;
-      if (Array.isArray(children)) {
-        const index = children.indexOf(ghost);
-        if (index >= 0) children.splice(index, 1);
-        return ghost;
-      }
-      return layer.openingGhostLayer?.removeChild?.(ghost);
+      return detachDisplayObject(ghost, layer.openingGhostLayer) ? ghost : null;
     },
     removeOpeningGhosts() {
       return layer.openingGhostLayer?.removeChildren?.() || [];

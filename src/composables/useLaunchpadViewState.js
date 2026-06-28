@@ -25,8 +25,10 @@ import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.j
 
 export function useLaunchpadViewState(options) {
   const isDesktopFullyClosed = computed(() => Boolean(!options.isDesktopOpen.value && !options.isDesktopClosing.value));
+  const isFolderLayerClosing = computed(() => Boolean(options.isFolderClosing.value || options.isFolderZoomFadeClosing?.value));
+  const shouldSnapForFolderLayer = computed(() => Boolean(options.isFolderLayerActive.value && !isFolderLayerClosing.value));
   const shouldSnapDesktopTrack = computed(() => Boolean(
-    options.isFolderLayerActive.value ||
+    shouldSnapForFolderLayer.value ||
     options.isHomeRevealSettling.value ||
     isDesktopFullyClosed.value ||
     options.isAppLaunching.value

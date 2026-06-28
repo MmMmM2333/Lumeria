@@ -13,6 +13,7 @@ import {
   makeStableFolderCloseTarget,
   projectFolderCloseTargetToClient,
 } from "./folderOverlayTargets.js";
+import { STAGE_COORDINATE_SPACES } from "../geometry/stageCoordinates.js";
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
 
 export function runFolderOverlayTargetsTests() {
@@ -46,6 +47,10 @@ export function runFolderOverlayTargetsTests() {
     sourceRect: { height: 10, left: 0, top: 0, width: 10 },
     targetStageLayoutRect: { height: 10, left: 20, top: 20, width: 10 },
   }), "ghost targets should be usable with a stage layout target rect");
+  assert(hasUsableFolderGhostTarget({
+    sourceRect: { height: 10, left: 0, top: 0, width: 10 },
+    targetClientRect: { height: 10, left: 20, top: 20, width: 10 },
+  }), "ghost targets should be usable with a client visual target rect");
   assert(!hasUsableFolderGhostTarget({
     sourceRect: { height: 10, left: 0, top: 0, width: 10 },
   }), "ghost targets should still require a target rect");
@@ -96,6 +101,20 @@ export function runFolderOverlayTargetsTests() {
   );
   const projectedStableTarget = projectFolderCloseTargetToClient(stableTarget);
   assert(projectedStableTarget.iconRect.left === folderRect.left, "stable close target should project icon rect at client boundaries");
+
+  const clientTarget = makeStableFolderCloseTarget({
+    coordinateSpace: STAGE_COORDINATE_SPACES.CLIENT_VISUAL,
+    folderId: "folder-1",
+    getStageLayoutPreviewChildRect: (item, slotIndex) => item.id === "app-b" && slotIndex === 1 ? childRect : null,
+    iconRect: { height: 95, left: 210, top: 220, width: 95 },
+    previewSlots,
+    projection: { stageHeight: 1, stageRect: { height: 1, left: 999, top: 999, width: 1 }, stageWidth: 1 },
+    thumbRect: folderThumbRect,
+    trackingKey: "live-close-target|folder-1",
+  });
+  const projectedClientTarget = projectFolderCloseTargetToClient(clientTarget);
+  assert(projectedClientTarget.iconRect.left === 210, "client visual close targets should not be stage-layout projected");
+  assert(clientTarget.trackingKey === "live-close-target|folder-1", "stable close target should keep the tracking key");
 
   const closeRects = getStableFolderCloseRects({
     folderId: "folder-1",
@@ -165,6 +184,23 @@ export function runFolderOverlayTargetsTests() {
   assert(closingTarget.isThumbnailChild, "closing target should identify thumbnail children");
   assert(closingTarget.targetStageLayoutRect.left === 11, "closing target should retain the stable stage layout preview target");
 
+  const clientClosingTarget = makeClosingGhostTarget({
+    cellHeight: 80,
+    cellWidth: 100,
+    closeThumbRect: folderThumbRect,
+    cols: 5,
+    controllerGhostKey: "close-client-ghost",
+    folderId: "folder-1",
+    iconBounds: { height: 56, left: 150, top: 160, width: 56 },
+    iconSize: 56,
+    index: 5,
+    item: { id: "app-b" },
+    previewSlotById,
+    stableFolderCloseTarget: clientTarget,
+  });
+  assert(clientClosingTarget.targetClientRect.left === childRect.left, "client close targets should expose a client target rect");
+  assert(clientClosingTarget.targetStageLayoutRect === null, "client close targets should not expose a stage-layout target rect");
+
   const projectedThumbnailTarget = makeClosingGhostTarget({
     cellHeight: 80,
     cellWidth: 100,
@@ -210,4 +246,13 @@ export function runFolderOverlayTargetsTests() {
   });
   assert(swapTargets.length === 3, "preview swap should emit one target per visible preview slot");
   assert(swapTargets[1].targetStageLayoutRect.left === 11, "preview swap should retain stable stage layout preview child bounds");
+
+  const clientSwapTargets = makeClosingPreviewSwapTargets({
+    folderId: "folder-1",
+    folderRect: folderThumbRect,
+    previewSlots,
+    stableFolderCloseTarget: clientTarget,
+  });
+  assert(clientSwapTargets[1].targetClientRect.left === childRect.left, "preview swap should retain client visual child bounds");
+  assert(!clientSwapTargets[1].targetStageLayoutRect, "preview swap client targets should not expose stage layout bounds");
 }

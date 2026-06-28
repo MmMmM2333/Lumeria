@@ -84,6 +84,7 @@ export async function runFolderOverlayLayerTests() {
     });
   }
   const { FolderOverlayLayer } = await import("./FolderOverlayLayer.js");
+  const { createLayerTransitionPort } = await import("./layerTransitionPort.js");
   const { Container } = await import("pixi.js");
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Pixi folder overlay layer test failed] ${message}`);
@@ -99,6 +100,39 @@ export async function runFolderOverlayLayerTests() {
   assert(mask.width === 1000, "folder page mask should cover the full panel width");
   assert(mask.top === 64, "folder page mask should preserve the grid top edge");
   assert(mask.height === 476, "folder page mask should keep the existing vertical panel coverage");
+
+  {
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    assert(layer.panelContentLayer.parent === layer.panel, "folder panel content should be a child of the panel");
+    assert(layer.panelClipMask.parent === layer.panel, "folder panel clip mask should track the panel transform");
+    assert(layer.pageMask.parent === layer.panelContentLayer, "folder page mask should live inside the panel content layer");
+    assert(layer.pageTrack.parent === layer.panelContentLayer, "folder page track should live inside the panel content layer");
+    assert(layer.panelContentLayer.mask === layer.panelClipMask, "folder panel content should be clipped by the rounded panel mask");
+    assert(layer.openingGhostLayer.mask === layer.panelClipMask, "opening ghosts should be clipped by the rounded panel mask");
+    assert(layer.pageTrack.mask === layer.pageMask, "folder page track should keep its page viewport mask");
+
+    layer.panelContentLayer.mask = null;
+    layer.openingGhostLayer.mask = null;
+    layer.refreshPanelClipMask();
+    assert(layer.panelContentLayer.mask === layer.panelClipMask, "panel clip refresh should restore the panel content mask");
+    assert(layer.openingGhostLayer.mask === layer.panelClipMask, "panel clip refresh should restore the opening ghost mask");
+
+    const previousMask = layer.pageMask;
+    layer.pageMaskRect = { left: 4, top: 8, width: 120, height: 160 };
+    layer.rebuildPageTrackMask();
+    assert(layer.pageMask !== previousMask, "page track mask rebuild should replace the stale mask instance");
+    assert(previousMask.destroyed === true, "page track mask rebuild should destroy the old mask");
+    assert(layer.pageMask.parent === layer.panelContentLayer, "rebuilt page mask should stay inside the panel content layer");
+    assert(layer.pageTrack.mask === layer.pageMask, "page track should use the rebuilt mask");
+    assert(
+      layer.panelContentLayer.children.indexOf(layer.pageMask) < layer.panelContentLayer.children.indexOf(layer.pageTrack),
+      "rebuilt page mask should remain before the page track"
+    );
+    assert(layer.openingGhostLayer.mask === layer.panelClipMask, "rebuilt page mask should not disturb the opening ghost panel clip");
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+  }
 
   const dotsFrame = getFolderPageDotsFrame({
     grid: { height: 240, left: 220, top: 270, width: 720 },
@@ -116,6 +150,22 @@ export async function runFolderOverlayLayerTests() {
   assert(getFolderPageDotVisualState({ hovered: true }).alpha === 0.5, "hovered Pixi page dots should match the DOM hover alpha");
   const activeDot = getFolderPageDotVisualState({ active: true, hovered: true });
   assert(activeDot.alpha === 0.96 && activeDot.scale === 1.02, "active Pixi page dots should keep the active visual while hovered");
+
+  {
+    const layer = {
+      closingDesktopPageTrackMirrorX: 42,
+      closingGhostLayer: { children: [] },
+      frameGhostState: { height: 80, left: 120, top: 60, width: 90 },
+      pageTrack: { visible: false },
+      panel: { visible: false },
+    };
+    const port = createLayerTransitionPort(layer);
+    const frame = port.getClosingPresentationFrameRect();
+    const debug = port.getDebugSnapshot();
+    assert(frame.left === 162, "closing presentation frame rect should include desktop mirror offset");
+    assert(layer.frameGhostState.left === 120, "closing presentation frame rect should not mutate the stored frame state");
+    assert(debug.framePresentation.left === 162, "closing debug frame presentation should include desktop mirror offset");
+  }
 
   const visualRect = makePanelVisualRect(
     {
@@ -401,6 +451,63 @@ export async function runFolderOverlayLayerTests() {
 
     const cancelCount = motionRuntime.debugSnapshot().counters.canceledByReason["folder-panel-open"] || 0;
     assert(cancelCount === 0, "same folder panel target should not restart the geometry spring");
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    motionRuntime.configureDebug({ enabled: true });
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    layer.currentFolderId = null;
+    layer.folderHandoff = new FolderHandoffCoordinator(layer);
+    layer.openingGhosts = { finishTransition() {} };
+    layer.openingPanelReadyFrame = null;
+    layer.panelAlphaTarget = null;
+    layer.panelOpenProgressDriven = false;
+    layer.panelOpenTargetKey = null;
+    layer.markRegisteredBoundsDirty = () => {};
+    layer.notifyPanelTitleFrame = () => {};
+    layer.scheduleOpeningPanelReadyCheck = () => {};
+    layer.panel = {
+      alpha: 1,
+      x: 0,
+      y: 0,
+      scale: {
+        x: 1,
+        y: 1,
+        set(x, y = x) {
+          this.x = x;
+          this.y = y;
+        },
+      },
+    };
+    layer.panel.position = {
+      set(x, y) {
+        layer.panel.x = x;
+        layer.panel.y = y;
+      },
+    };
+    const panelRect = { height: 360, left: 180, top: 200, width: 800 };
+    const sourceRect = { height: 64, left: 200, top: 240, width: 64 };
+    const state = {
+      folderOpenProgress: 0.5,
+      height: 600,
+      isFolderAppLaunchClosing: false,
+      isFolderClosing: false,
+      renderedFolder: { id: "folder-1" },
+      stageRect: { height: 600, left: 0, top: 0, width: 1000 },
+      width: 1000,
+    };
+
+    layer.animatePanel(state, 580, 380, panelRect, sourceRect);
+
+    assert(Math.abs(layer.panel.x - 406) < 0.001, "open progress should interpolate panel x from source to target");
+    assert(Math.abs(layer.panel.y - 326) < 0.001, "open progress should interpolate panel y from source to target");
+    assert(Math.abs(layer.panel.scale.x - 0.54) < 0.001, "open progress should interpolate panel scale x");
+    assert(Math.abs(layer.panel.scale.y - 0.5888889) < 0.001, "open progress should interpolate panel scale y");
+    assert(Math.abs(layer.panel.alpha - 0.97) < 0.001, "open progress should interpolate panel alpha");
+    assert(layer.panelOpenProgressDriven, "open progress should mark the panel presentation as progress-driven");
+    assert(motionRuntime.debugSnapshot().summary.activeAnimationCount === 0, "open progress should not start a competing panel spring");
     motionRuntime.reset();
   }
 
@@ -1334,19 +1441,18 @@ export async function runFolderOverlayLayerTests() {
     assert(layer.visualOwnership.isOwnedBy(pageTrackKey, "close-a"), "closing ownership should claim the page track visual key");
 
     layer.hideIconNodesForTransition("app-1", openingOwner);
-    layer.hidePageTrackForTransition(openingOwner);
     layer.releaseTransitionOwnership("close-a", { reveal: true, restorePageTrack: true });
 
     assert(iconNode.visible === false, "stale closing release should not reveal an icon now owned by opening");
-    assert(layer.pageTrack.visible === false, "stale closing release should not restore a page track now owned by opening");
+    assert(layer.pageTrack.visible === true, "stale closing release should restore the page track because opening no longer owns it");
     assert(layer.visualOwnership.isOwnedBy(iconKey, "open-a"), "stale closing release should preserve the opening icon owner");
-    assert(layer.visualOwnership.isOwnedBy(pageTrackKey, "open-a"), "stale closing release should preserve the opening page track owner");
+    assert(!layer.visualOwnership.hasOwner(pageTrackKey), "opening ownership should not claim the page track visual key");
 
-    layer.releaseTransitionOwnership("open-a", { reveal: true, restorePageTrack: true });
-    assert(iconNode.visible === true && iconNode.alpha === 1, "current opening release should reveal the real icon node");
-    assert(layer.pageTrack.visible === true, "current opening release should restore the page track");
+    assert(layer.releaseIconNodesForTransition("app-1", "open-a", { reveal: true }) === 1, "current opening icon release should only clear the completed icon");
+    assert(iconNode.visible === true && iconNode.alpha === 1, "current opening icon release should reveal the real icon node");
+    assert(layer.pageTrack.visible === true, "current opening icon release should leave the page track visible");
     assert(!layer.visualOwnership.hasOwner(iconKey), "current opening release should clear icon ownership");
-    assert(!layer.visualOwnership.hasOwner(pageTrackKey), "current opening release should clear page track ownership");
+    assert(!layer.visualOwnership.hasOwner(pageTrackKey), "current opening release should not create page track ownership");
   }
 
   {
@@ -1370,6 +1476,161 @@ export async function runFolderOverlayLayerTests() {
     assert(iconNode.visible === false, "non-reveal release should clear ownership without showing the icon");
     assert(layer.pageTrack.visible === false, "non-restore release should clear ownership without showing the page track");
     assert(layer.visualOwnership.snapshot().length === 0, "non-reveal release should still clear matching ownership entries");
+  }
+
+  {
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    layer.folderHandoff = new FolderHandoffCoordinator(layer);
+    const session = layer.folderHandoff.beginOpen("folder-a", "target-a").session;
+    layer.folderHandoff.beginOpeningVisuals({ sessionToken: session.token, state: {} });
+    layer.folderHandoff.registerOpeningGhost("app-1", "open-key");
+    let retargets = 0;
+    layer.openingGhosts = {
+      retarget() {
+        retargets += 1;
+      },
+      start() {
+        throw new Error("existing opening visuals should retarget instead of restarting");
+      },
+    };
+    layer.closingGhosts = {
+      clear() {},
+      start() {},
+    };
+    layer.iconNodes = new Map();
+    layer.pageTrack = { visible: false };
+    layer.frameGhostState = null;
+    layer.notifyPanelTitleFrame = () => {};
+    layer.notifyTitleFrame = () => {};
+    layer.refreshRegisteredIconBounds = () => {};
+    layer.clearClosingFolderId = () => {};
+
+    layer.startFolderOverlayTransitions({
+      closeIconRect: null,
+      closeThumbRect: null,
+      closingGhostTargets: [],
+      closingPreviewSwapTargets: [],
+      folderClientRect: null,
+      folderId: "folder-a",
+      folderThumbClientRect: null,
+      geometry: { panel: { height: 100, left: 0, top: 0, width: 100 } },
+      isClosing: false,
+      isNewFolder: false,
+      openingGhostTargets: [],
+      seen: new Set(),
+      state: {
+        folderOpenIconGhosts: [],
+        isFolderClosing: false,
+      },
+    });
+
+    assert(layer.folderHandoff.isRevealPending(), "opening reveal should still be pending during active opening visuals");
+    assert(retargets === 1, "active opening visuals should still retarget during folder overlay updates");
+    assert(layer.pageTrack.visible === true, "opening reveal and opening ghosts should no longer hide the page track");
+  }
+
+  {
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    layer.frameGhost = { destroyed: false, x: 99 };
+    layer.closingFrameMask = { destroyed: false, x: 99 };
+    layer.closingPreviewSwapLayer = { destroyed: false, x: 99 };
+    layer.closingGhostLayer = { destroyed: false, x: 44 };
+
+    const initialOffset = layer.syncClosingDesktopPageTrackMirror({
+      desktopPageTrackOffset: { liveX: -100, targetX: -400 },
+    }, "folder-a", true);
+    assert(initialOffset === 0, "closing mirror should establish its baseline from the first desktop live offset");
+    assert(layer.frameGhost.x === 99, "closing mirror baseline should not shift the active frame ghost");
+    assert(layer.closingFrameMask.x === 99, "closing mirror baseline should not shift the active close frame mask");
+    assert(layer.closingPreviewSwapLayer.x === 99, "closing mirror baseline should not shift active preview swap visuals");
+
+    const updatedOffset = layer.syncClosingDesktopPageTrackMirror({
+      desktopPageTrackOffset: { liveX: -235, targetX: -400 },
+    }, "folder-a", true);
+    assert(updatedOffset === -135, "closing mirror should follow desktop pageTrack live delta from close start");
+    assert(layer.closingDesktopPageTrackMirrorX === -135, "closing mirror should store the desktop pageTrack delta for detached presentation");
+    assert(layer.frameGhost.x === 99, "closing mirror should not shift the active frame ghost because the frame retargets directly");
+    assert(layer.closingFrameMask.x === 99, "closing mirror should not shift the active close frame mask because the frame retargets directly");
+    assert(layer.closingPreviewSwapLayer.x === 99, "closing mirror should not shift active preview swap visuals");
+    assert(layer.closingGhostLayer.x === 44, "closing mirror must not shift closingGhostLayer because ghosts retarget individually");
+
+    layer.syncClosingDesktopPageTrackMirror({}, "folder-a", false);
+    assert(layer.closingDesktopPageTrackMirrorBaseline === null, "closing mirror should clear its session baseline after closing ends");
+    assert(layer.frameGhost.x === 99, "closing mirror reset should leave the active frame ghost x untouched");
+    assert(layer.closingFrameMask.x === 99, "closing mirror reset should leave the active frame mask x untouched");
+    assert(layer.closingPreviewSwapLayer.x === 99, "closing mirror reset should leave active preview swap x untouched");
+    assert(layer.closingGhostLayer.x === 44, "closing mirror reset should still leave closingGhostLayer untouched");
+  }
+
+  {
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    layer.folderHandoff = new FolderHandoffCoordinator(layer);
+    layer.folderHandoff.beginCloseTransition("folder-a", { closeToken: "close-a" });
+    const closeThumbRect = { height: 58, left: 300, top: 340, width: 58 };
+    const renderedFolderRect = { height: 64, left: 120, top: 160, width: 64 };
+    let starts = 0;
+    let retargets = 0;
+    let retargetArgs = null;
+    layer.openingGhosts = {
+      retarget() {},
+      start() {},
+    };
+    layer.closingGhosts = {
+      clear() {},
+      retarget(...args) {
+        retargets += 1;
+        retargetArgs = args;
+      },
+      start() {
+        starts += 1;
+      },
+    };
+    layer.iconNodes = new Map();
+    layer.frameGhost = { destroyed: false, x: 0 };
+    layer.closingFrameMask = { destroyed: false, x: 0 };
+    layer.closingPreviewSwapLayer = { destroyed: false, x: 0 };
+    layer.closingGhostLayer = { destroyed: false, x: 31 };
+    layer.pageTrack = { visible: true };
+    layer.frameGhostState = null;
+    layer.getPanelVisualRect = () => ({ height: 220, left: 20, top: 30, width: 260 });
+    layer.notifyPanelTitleFrame = () => {};
+    layer.notifyTitleFrame = () => {};
+    layer.refreshRegisteredIconBounds = () => {};
+    layer.clearClosingFolderId = () => {};
+    layer.stableFolderCloseTarget = { folderId: "folder-a", trackingKey: "live-target" };
+    layer.syncClosingDesktopPageTrackMirror({
+      desktopPageTrackOffset: { liveX: -100, targetX: -400 },
+    }, "folder-a", true);
+
+    layer.startFolderOverlayTransitions({
+      closeIconRect: { height: 64, left: 360, top: 400, width: 64 },
+      closeThumbRect,
+      closingGhostTargets: [{ item: { id: "app-1" }, sourceRect: renderedFolderRect, targetClientRect: closeThumbRect }],
+      closingPreviewSwapTargets: [{ item: { id: "app-1" } }],
+      folderClientRect: renderedFolderRect,
+      folderId: "folder-a",
+      folderThumbClientRect: renderedFolderRect,
+      geometry: { panel: { height: 200, left: 0, top: 0, width: 240 } },
+      isClosing: true,
+      isNewFolder: false,
+      openingGhostTargets: [],
+      seen: new Set(),
+      state: {
+        desktopPageTrackOffset: { liveX: -180, targetX: -400 },
+        folderOpenIconGhosts: [],
+        isFolderClosing: true,
+      },
+    });
+
+    assert(starts === 0, "active same-folder close updates should not restart closing ghosts");
+    assert(retargets === 1, "active same-folder close updates should retarget closing ghosts");
+    assert(retargetArgs?.[2] === closeThumbRect, "closing retarget should receive the close thumb target rect");
+    assert(retargetArgs?.[4]?.handoffRect === renderedFolderRect, "closing retarget should bind handoff geometry to the rendered folder rect");
+    assert(layer.closingDesktopPageTrackMirrorX === -80, "active same-folder close updates should store the desktop pageTrack delta");
+    assert(layer.frameGhost.x === 0, "active same-folder close updates should not mirror the frame ghost because it retargets directly");
+    assert(layer.closingFrameMask.x === 0, "active same-folder close updates should not mirror the close mask because the frame retargets directly");
+    assert(layer.closingPreviewSwapLayer.x === 0, "active same-folder close updates should not mirror active preview swap visuals");
+    assert(layer.closingGhostLayer.x === 31, "active same-folder close updates should not mirror closingGhostLayer because ghosts retarget");
   }
 
   {
@@ -1434,12 +1695,15 @@ export async function runFolderOverlayLayerTests() {
       folderPageIndexCommit: (index) => commits.push(index),
       folderPages: [[], []],
       renderedFolder: { id: "folder-1", name: "Folder" },
+      visualFolderPageIndex: 1,
     }, {
       grid: { height: 120, left: 40, top: 80, width: 320 },
       panel: { height: 240, left: 20, top: 40, width: 360 },
     });
 
     assert(layer.pageDotsLayer.visible === true, "folder page dots should become visible once enabled");
+    assert(layer.pageDotsLayer.children[0].alpha === getFolderPageDotVisualState({ active: false }).alpha, "committed page dot should render idle when visual page differs");
+    assert(layer.pageDotsLayer.children[1].alpha === getFolderPageDotVisualState({ active: true }).alpha, "visual page dot should render active");
     assert(layer.pageDotsLayer.alpha === 0, "folder page dots should start their reveal from transparent");
     motionRuntime.step(0.04);
     assert(layer.pageDotsLayer.alpha > 0 && layer.pageDotsLayer.alpha < 1, "folder page dots should fade in after reveal starts");
@@ -1450,6 +1714,7 @@ export async function runFolderOverlayLayerTests() {
       folderPageIndexCommit: (index) => commits.push(index),
       folderPages: [[], []],
       renderedFolder: { id: "folder-1", name: "Folder" },
+      visualFolderPageIndex: 1,
     }, {
       grid: { height: 120, left: 40, top: 80, width: 320 },
       panel: { height: 240, left: 20, top: 40, width: 360 },

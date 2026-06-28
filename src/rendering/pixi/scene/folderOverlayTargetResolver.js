@@ -19,8 +19,45 @@ function projectStableRecordToClient(record) {
   return stageLayoutRecordToClientRect(record);
 }
 
+function rectTrackingKey(rect) {
+  if (!rect) return "null";
+  return [
+    rect.left,
+    rect.top,
+    rect.width,
+    rect.height,
+  ].map((value) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.round(number * 1000) / 1000 : "null";
+  }).join(",");
+}
+
+function makeLiveCloseTargetTrackingKey(options = {}) {
+  const {
+    desktopPageTrackOffset = null,
+    folderId = null,
+    iconRect = null,
+    thumbRect = null,
+  } = options;
+  const liveX = Number.isFinite(Number(desktopPageTrackOffset?.liveX))
+    ? Math.round(Number(desktopPageTrackOffset.liveX) * 1000) / 1000
+    : "null";
+  const targetX = Number.isFinite(Number(desktopPageTrackOffset?.targetX))
+    ? Math.round(Number(desktopPageTrackOffset.targetX) * 1000) / 1000
+    : "null";
+  return [
+    "live-close-target",
+    folderId || "",
+    `liveX:${liveX}`,
+    `targetX:${targetX}`,
+    `icon:${rectTrackingKey(iconRect)}`,
+    `thumb:${rectTrackingKey(thumbRect)}`,
+  ].join("|");
+}
+
 export function resolveFolderOverlayTargets(options = {}) {
   const {
+    desktopPageTrackOffset = null,
     folder,
     folderOpeningOriginBounds = null,
     folderPageSize,
@@ -63,13 +100,37 @@ export function resolveFolderOverlayTargets(options = {}) {
     : capturedOriginBounds?.thumbRect || liveFolderThumbClientRect || folderClientRect;
   const stableFolderStageLayoutRecord = iconBoundsRegistry.getBounds(BOUNDS_KIND.TOP_LEVEL, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, folderId);
   const stableFolderThumbStageLayoutRecord = iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, folderId);
+  const liveFolderTargetRect = isClosing
+    ? iconBoundsRegistry.getBounds(BOUNDS_KIND.TOP_LEVEL, BOUNDS_VARIANT.LIVE_TARGET, folderId)
+    : null;
+  const liveFolderThumbTargetRect = isClosing
+    ? iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.LIVE_TARGET, folderId) || liveFolderTargetRect
+    : null;
+  const liveCloseTrackingKey = liveFolderTargetRect
+    ? makeLiveCloseTargetTrackingKey({
+      desktopPageTrackOffset,
+      folderId,
+      iconRect: liveFolderTargetRect,
+      thumbRect: liveFolderThumbTargetRect,
+    })
+    : null;
+  const shouldUseLiveCloseTarget = Boolean(isClosing && liveFolderTargetRect);
+  const shouldRefreshLiveCloseTarget = Boolean(
+    shouldUseLiveCloseTarget &&
+    (!previousStableFolderCloseTarget ||
+      previousStableFolderCloseTarget.folderId !== folderId ||
+      previousStableFolderCloseTarget.coordinateSpace !== STAGE_COORDINATE_SPACES.CLIENT_VISUAL ||
+      previousStableFolderCloseTarget.trackingKey !== liveCloseTrackingKey)
+  );
   const shouldRefreshStableCloseTarget = Boolean(
+    !shouldUseLiveCloseTarget &&
     stableFolderStageLayoutRecord &&
     (!previousStableFolderCloseTarget ||
       previousStableFolderCloseTarget.folderId !== folderId ||
+      previousStableFolderCloseTarget.coordinateSpace !== STAGE_COORDINATE_SPACES.STAGE_LAYOUT ||
       (isClosing && !wasClosing))
   );
-  if (!shouldRefreshStableCloseTarget) {
+  if (!shouldRefreshLiveCloseTarget && !shouldRefreshStableCloseTarget) {
     return {
       capturedOriginBounds,
       closeTargetSource: previousStableFolderCloseTarget?.source || null,
@@ -94,19 +155,32 @@ export function resolveFolderOverlayTargets(options = {}) {
       stageWidth: stableFolderStageLayoutRecord.meta.stageWidth,
     }
     : null;
-  const stableFolderCloseTarget = makeStableFolderCloseTarget({
-    folderId,
-    getStageLayoutPreviewChildRect: (item, previewSlotIndex) => {
-      const stablePreviewRecord = iconBoundsRegistry.getBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, { childId: item.id, folderId, slotIndex: previewSlotIndex });
-      const stablePreviewClientRect = projectStableRecordToClient(stablePreviewRecord);
-      return stablePreviewClientRect ? stablePreviewRecord : null;
-    },
-    iconRect: stableFolderStageLayoutRecord,
-    previewSlots,
-    projection: stableProjection,
-    source: isClosing && !wasClosing ? "stable-final-close" : "stable-target",
-    thumbRect: stableFolderThumbStageLayoutRecord || stableFolderStageLayoutRecord,
-  });
+  const stableFolderCloseTarget = shouldRefreshLiveCloseTarget
+    ? makeStableFolderCloseTarget({
+      coordinateSpace: STAGE_COORDINATE_SPACES.CLIENT_VISUAL,
+      folderId,
+      getStageLayoutPreviewChildRect: (item, previewSlotIndex) =>
+        iconBoundsRegistry.getBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.LIVE_TARGET, { childId: item.id, folderId, slotIndex: previewSlotIndex }),
+      iconRect: liveFolderTargetRect,
+      previewSlots,
+      projection: null,
+      source: isClosing && !wasClosing ? "live-final-close" : "live-target",
+      thumbRect: liveFolderThumbTargetRect || liveFolderTargetRect,
+      trackingKey: liveCloseTrackingKey,
+    })
+    : makeStableFolderCloseTarget({
+      folderId,
+      getStageLayoutPreviewChildRect: (item, previewSlotIndex) => {
+        const stablePreviewRecord = iconBoundsRegistry.getBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, { childId: item.id, folderId, slotIndex: previewSlotIndex });
+        const stablePreviewClientRect = projectStableRecordToClient(stablePreviewRecord);
+        return stablePreviewClientRect ? stablePreviewRecord : null;
+      },
+      iconRect: stableFolderStageLayoutRecord,
+      previewSlots,
+      projection: stableProjection,
+      source: isClosing && !wasClosing ? "stable-final-close" : "stable-target",
+      thumbRect: stableFolderThumbStageLayoutRecord || stableFolderStageLayoutRecord,
+    });
 
   return {
     capturedOriginBounds,

@@ -6,7 +6,7 @@ import {
   DEFAULT_ICON_SIZE,
   DEFAULT_ROWS,
 } from "./launchpadConstants.js";
-import { makePageSize } from "../domain/launchpadLayout.js";
+import { clamp, makePageSize } from "../domain/launchpadLayout.js";
 import { DEFAULT_MAIN_WINDOW_SHORTCUT } from "../domain/mainWindowShortcut.js";
 import {
   DEFAULT_SCAN_KEYWORD_BLACKLIST,
@@ -35,6 +35,21 @@ import {
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
   createDefaultBackgroundAcrylicParams,
 } from "./useLaunchpadSettingsConfig.js";
+
+const FOLDER_PAGE_TURN_PHASES = new Set(["idle", "opening", "open", "closing"]);
+
+function normalizeFolderPageTurnPhase(value) {
+  return FOLDER_PAGE_TURN_PHASES.has(value) ? value : "idle";
+}
+
+function normalizePageIndex(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.trunc(number) : fallback;
+}
+
+function normalizeMaxIndex(value) {
+  return Math.max(0, normalizePageIndex(value, 0));
+}
 
 export function useLaunchpadControllerState() {
   const gridRows = ref(DEFAULT_ROWS);
@@ -121,6 +136,70 @@ export function useLaunchpadControllerState() {
   const isLayoutProjectionActive = ref(false);
   const keyboardFocusArea = ref("desktop");
   const folderPageIndex = ref(0);
+  const folderPageTurnRequest = shallowRef(null);
+  const folderPageTurnContextVersion = ref(0);
+  let folderPageTurnContextResolver = null;
+  let nextFolderPageTurnToken = 1;
+
+  function setFolderPageTurnContextResolver(resolver) {
+    folderPageTurnContextResolver = typeof resolver === "function" ? resolver : null;
+    folderPageTurnContextVersion.value += 1;
+  }
+
+  function resolveFolderPageTurnContext(overrides = {}) {
+    folderPageTurnContextVersion.value;
+    const resolved = folderPageTurnContextResolver?.() || {};
+    const phase = normalizeFolderPageTurnPhase(overrides.phase ?? resolved.phase);
+    const folderId = overrides.folderId ?? resolved.folderId ?? null;
+    const maxIndex = normalizeMaxIndex(overrides.maxIndex ?? resolved.maxIndex);
+    return { folderId, maxIndex, phase };
+  }
+
+  function isFolderPageTurnRequestValid(request, context = resolveFolderPageTurnContext()) {
+    if (!request) return false;
+    if (context.phase !== "opening" && context.phase !== "open") return false;
+    if ((request.folderId ?? null) !== (context.folderId ?? null)) return false;
+    return request.targetIndex >= 0 && request.targetIndex <= context.maxIndex;
+  }
+
+  function requestFolderPageTurn(targetIndex, options = {}) {
+    const context = resolveFolderPageTurnContext(options);
+    const fallback = normalizePageIndex(folderPageIndex.value, 0);
+    const target = clamp(normalizePageIndex(targetIndex, fallback), 0, context.maxIndex);
+    const token = nextFolderPageTurnToken;
+    nextFolderPageTurnToken += 1;
+    folderPageTurnRequest.value = {
+      token,
+      folderId: context.folderId,
+      fromIndex: clamp(fallback, 0, context.maxIndex),
+      targetIndex: target,
+      source: options.source || null,
+      phaseAtRequest: context.phase,
+    };
+    return token;
+  }
+
+  function commitFolderPageTurnRequest(token, options = {}) {
+    const request = folderPageTurnRequest.value;
+    if (!request || request.token !== token) return false;
+    const context = resolveFolderPageTurnContext(options);
+    if (!isFolderPageTurnRequestValid(request, context)) return false;
+    folderPageIndex.value = request.targetIndex;
+    folderPageTurnRequest.value = null;
+    return true;
+  }
+
+  function clearFolderPageTurnRequest(_reason = null) {
+    if (!folderPageTurnRequest.value) return false;
+    folderPageTurnRequest.value = null;
+    return true;
+  }
+
+  const visualFolderPageIndex = computed(() => {
+    const request = folderPageTurnRequest.value;
+    const context = resolveFolderPageTurnContext();
+    return isFolderPageTurnRequestValid(request, context) ? request.targetIndex : folderPageIndex.value;
+  });
 
   const rootRef = ref(null);
   const shellRef = ref(null);
@@ -183,6 +262,7 @@ export function useLaunchpadControllerState() {
     folderIconSize,
     folderIconSizeMode,
     folderPageIndex,
+    folderPageTurnRequest,
     folderPageRefs,
     folderPageSize,
     folderPanelRef,
@@ -218,7 +298,12 @@ export function useLaunchpadControllerState() {
     searchPageIndex,
     showMissingLaunchTargetBadge,
     searchRef,
+    clearFolderPageTurnRequest,
+    commitFolderPageTurnRequest,
+    requestFolderPageTurn,
+    setFolderPageTurnContextResolver,
     shellRef,
+    visualFolderPageIndex,
     windowEffectAppearance,
     windowEffectMaterial,
     windowEffectsSupport,

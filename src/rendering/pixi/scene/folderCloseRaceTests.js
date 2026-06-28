@@ -67,6 +67,9 @@ function makeGhost(id = "ghost") {
     },
     position: makePoint(),
     scale: makePoint(),
+    removeFromParent() {
+      this.parent?.removeChild?.(this);
+    },
     destroy() {
       this.destroyed = true;
     },
@@ -90,11 +93,23 @@ function makeLayerList() {
   return {
     children,
     addChild(child) {
+      child.parent?.removeChild?.(child);
+      child.parent = this;
       children.push(child);
       return child;
     },
+    removeChild(child) {
+      const index = children.indexOf(child);
+      if (index >= 0) children.splice(index, 1);
+      if (child.parent === this) child.parent = null;
+      return child;
+    },
     removeChildren() {
-      return children.splice(0);
+      const removed = children.splice(0);
+      for (const child of removed) {
+        if (child.parent === this) child.parent = null;
+      }
+      return removed;
     },
   };
 }
@@ -118,7 +133,7 @@ function makeState(completed = []) {
   };
 }
 
-function makeTarget(id = "app-1", index = 0) {
+function makeTarget(id = "app-1", index = 0, pageIndex = 0) {
   return {
     cellHeight: 80,
     cellWidth: 80,
@@ -127,6 +142,7 @@ function makeTarget(id = "app-1", index = 0) {
     iconSize: 64,
     index,
     item: { id, type: "app" },
+    pageIndex,
     sourceRect: { height: 32, left: 10, top: 20, width: 32 },
     targetStageLayoutRect: { height: 64, left: 100, top: 120, width: 64 },
   };
@@ -280,10 +296,10 @@ function startOpening(harness, token = "open:folder-1") {
   });
 }
 
-function startClosing(harness) {
+function startClosing(harness, targets = [makeTarget()], stateOverrides = {}) {
   harness.layer.closingGhosts.start(
-    makeState(),
-    [makeTarget()],
+    { ...makeState(), ...stateOverrides },
+    targets,
     { height: 72, left: 10, top: 20, width: 72 },
     { height: 360, left: 180, top: 200, width: 800 }
   );
@@ -364,6 +380,26 @@ export function runFolderCloseRaceTests() {
     assert(!isDesktopSourceArtworkVisible(harness), "second close should keep desktop source artwork hidden while ghosts are visible");
     assert(!hasOwnerToken(harness.visualOwnership, firstCloseToken), "second close should not leak the first close token");
     assert(!hasOwnerToken(harness.visualOwnership, "open:middle"), "second close should not leak the interrupted opening token");
+    motionRuntime.reset();
+  }
+
+  {
+    const harness = makeRaceHarness();
+    startOpening(harness, "open:page-0");
+    harness.layer.iconNodes.set("app-2", {
+      alpha: 1,
+      item: { id: "app-2" },
+      source: { folderId: "folder-1", pageIndex: 1 },
+      visible: true,
+    });
+
+    const committedPageTarget = makeTarget("app-2", 0, 1);
+    startClosing(harness, [committedPageTarget], { folderPageIndex: 1 });
+
+    assert(harness.layer.openingGhostLayer.children.length === 0, "open-turn-close should clear the interrupted non-current opening ghost");
+    assert(harness.layer.closingGhostLayer.children.length === 1, "open-turn-close should create one closing ghost for the close anchor page");
+    assert(harness.layer.closingGhostLayer.children[0].item.id === "app-2", "open-turn-close should hand off the current visual page item");
+    assert(!hasOwnerToken(harness.visualOwnership, "open:page-0"), "open-turn-close should not keep stale origin-page opening ownership");
     motionRuntime.reset();
   }
 

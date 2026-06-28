@@ -53,6 +53,15 @@ export function runFolderPreviewSwapMotionTests() {
   });
   assert(layoutPlan.iconMotions[0].toX === 50, "swap plan should prefer stage layout target rects");
 
+  const clientPlan = makeClosingPreviewSwapPlan([{
+    item: { id: "app-d" },
+    previewSlotIndex: 0,
+    targetClientRect: { height: 20, left: 130, top: 250, width: 20 },
+  }], {
+    stageRect: { left: 100, top: 200, width: 500, height: 400 },
+  });
+  assert(clientPlan.iconMotions[0].toX === 40 && clientPlan.iconMotions[0].toY === 60, "swap plan should map client visual target rects into local stage coordinates");
+
   assert(makeClosingPreviewSwapPlan([], { stageRect: { left: 0, top: 0 } }) === null, "empty targets should not create a swap plan");
   assert(
     makeClosingPreviewSwapPlan([{ targetStageLayoutRect: { left: 1, top: 1, width: 0, height: 10 } }], {

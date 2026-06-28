@@ -61,6 +61,56 @@ export function runFolderOverlayRenderPlanTests() {
   assert(entryB.isActiveDraggedItem, "entries should expose active dragged state");
   assert(!entryB.openingGhostInput, "dragged entries should not create opening ghost input");
 
+  const visualOpeningPlan = makeFolderOverlayRenderPlan({
+    cols: 2,
+    folderId: folder.id,
+    folderOpenIconGhosts: [{ item: appC, key: "open-c", slotIndex: 0 }],
+    folderPageIndex: 0,
+    folderPages: [[appA], [appC]],
+    folderPageSpan: 500,
+    geometry,
+    getFolderPageRenderMode: () => "interactive",
+    getVisibleFolderPage: (page) => page,
+    iconSize: 56,
+    isNewFolder: true,
+    localMetrics,
+    previewSlots: [appA, appC],
+    rows: 1,
+    targetTrackX: -500,
+    visualFolderPageIndex: 1,
+  });
+  const committedEntry = visualOpeningPlan.entries.find((entry) => entry.pageIndex === 0);
+  const visualEntry = visualOpeningPlan.entries.find((entry) => entry.pageIndex === 1);
+  assert(!committedEntry.openingGhostInput, "opening ghost input should not stay on the committed folder page when visual page differs");
+  assert(visualEntry.openingGhostInput?.controllerGhostKey === "open-c", "opening ghost input should target the visual folder page");
+  assert(visualEntry.targetCenter.x === 170, "visual page target center should include the visual page track offset");
+
+  const activeOpeningPlan = makeFolderOverlayRenderPlan({
+    cols: 2,
+    folderId: folder.id,
+    folderOpenIconGhosts: [{ item: appA, key: "open-a", slotIndex: 0 }],
+    folderPageIndex: 0,
+    folderPages: [[appA], [appC]],
+    folderPageSpan: 500,
+    geometry,
+    getFolderPageRenderMode: (pageIndex) => pageIndex === 0 ? "static-real" : "interactive",
+    getVisibleFolderPage: (page) => page,
+    iconSize: 56,
+    isNewFolder: false,
+    localMetrics,
+    openingGhostItemIds: new Set(["app-a"]),
+    previewSlots: [appA, appC],
+    rows: 1,
+    targetTrackX: -500,
+    visualFolderPageIndex: 1,
+  });
+  const activeOpeningEntry = activeOpeningPlan.entries.find((entry) => entry.item.id === "app-a");
+  const inactiveVisualEntry = activeOpeningPlan.entries.find((entry) => entry.item.id === "app-c");
+  assert(activeOpeningEntry.openingGhostInput?.controllerGhostKey === "open-a", "active opening ghost should keep receiving a retarget input after visual page changes");
+  assert(!activeOpeningEntry.isInteractivePage, "active opening ghost retarget coverage should include static-real origin pages");
+  assert(activeOpeningEntry.targetCenter.x === -330, "active opening ghost retarget should use the original page live target shifted outside the mask");
+  assert(!inactiveVisualEntry.openingGhostInput, "visual page items without active opening ghosts should not create new retarget inputs");
+
   const closingPlan = makeFolderOverlayRenderPlan({
     closeThumbRect: { height: 72, left: 10, top: 20, width: 72 },
     cols: 2,
@@ -83,6 +133,7 @@ export function runFolderOverlayRenderPlanTests() {
       projection: { stageHeight: 100, stageRect: { height: 100, left: 0, top: 0, width: 100 }, stageWidth: 100 },
       thumbRect: { height: 72, left: 10, top: 20, width: 72 },
     },
+    visualFolderPageIndex: 0,
   });
 
   assert(closingPlan.entries.length === 2, "closing plan should keep interactive pages in range");

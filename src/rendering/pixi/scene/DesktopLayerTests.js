@@ -277,6 +277,43 @@ export async function runDesktopLayerTests() {
       layer.reconcileFolderHandoffEntry({ folderClosingHandoffId: "folder-a" }, entry);
       assert(layer.getFolderHandoffEntry("folder-a") === entry && entry.visualReleased !== true && folder.visualWrap.visible === false, "a closing handoff with a visible substitute should keep the real icon hidden");
     }
+
+    {
+      // If the close finishes while a desktop page turn is still moving, the
+      // raised handoff node is the only stable desktop source. Do not reveal or
+      // retire it until the pageTrack has reached the new page target.
+      const folder = makeNode("folder");
+      folder.item = { id: "folder-a", type: "folder" };
+      const pageTrack = makePageTrack([folder]);
+      pageTrack.x = -120;
+      const layer = makeLayer(DesktopLayer, pageTrack);
+      layer.singleStageFolderLayer = {
+        folderHandoff: { folderId: null, isCloseHandoffActive: () => false },
+        getDesktopSourceGhostedIds: () => new Set(),
+        hasVisibleFolderSubstitute: () => false,
+      };
+      layer.pageTrackMotion = {
+        control: { completed: false, released: false },
+        targetX: -480,
+      };
+      layer.ensureFolderHandoffNode("folder-a", folder, { x: 0, y: 0 }, { revealLabel: false });
+      const entry = layer.getFolderHandoffEntry("folder-a");
+
+      assert(!layer.reconcileFolderHandoffEntry({}, entry), "in-flight desktop page motion should block handoff cleanup");
+      assert(entry.cleanupFrame == null, "blocked handoff cleanup should not schedule a cleanup frame");
+      assert(folder.visualWrap.visible === false, "blocked handoff cleanup should keep real folder artwork hidden");
+
+      layer.pageTrackMotion.control = { completed: true, released: false };
+      assert(!layer.reconcileFolderHandoffEntry({}, entry), "pageTrack geometry that has not reached target should still block cleanup");
+      assert(entry.cleanupFrame == null, "target mismatch should keep the handoff entry alive");
+
+      pageTrack.x = -480;
+      assert(layer.reconcileFolderHandoffEntry({}, entry), "settled desktop page motion should allow handoff cleanup");
+      assert(entry.cleanupFrame?.cancelled === false, "settled handoff cleanup should schedule the normal cleanup frame");
+      motionRuntime.flushAfterFrameForTests();
+      assert(!layer.getFolderHandoffEntry("folder-a"), "settled cleanup frame should clear the handoff entry");
+      motionRuntime.reset();
+    }
   }
 
   {
@@ -1096,6 +1133,48 @@ export async function runDesktopLayerTests() {
 
     assert(calls[1].previewState === null, "root-stage drag preview should clear when no preview state is active");
     assert(calls[1].releaseState === null, "root-stage drag preview should clear when no release state is active");
+  }
+
+  {
+    const calls = [];
+    const geometries = [];
+    const pageTrack = makePageTrack([]);
+    pageTrack.x = -123.25;
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.lastDesktopRenderPlan = { targetX: -480 };
+    layer.onFolderGeometryChange = (geometry) => geometries.push(geometry);
+    layer.singleStageFolderLayer = {
+      update(state) {
+        calls.push(state);
+        return { folderRect: state.renderedFolder ? { left: 1, top: 2, width: 3, height: 4 } : null };
+      },
+    };
+
+    layer.updateSingleStageFolderLayer({
+      singleStageFolderState: {
+        height: 600,
+        renderedFolder: { id: "folder-1" },
+        stageRect: { height: 600, left: 0, top: 0, width: 800 },
+        width: 800,
+      },
+    });
+
+    assert(calls[0].desktopPageTrackOffset.liveX === -123.25, "folder overlay state should receive the desktop pageTrack live x");
+    assert(calls[0].desktopPageTrackOffset.targetX === -480, "folder overlay state should receive the desktop render target x");
+    assert(geometries[0].folderRect.left === 1, "folder geometry changes should still be forwarded after offset injection");
+
+    layer.lastDesktopRenderPlan = null;
+    pageTrack.x = 18;
+    layer.updateSingleStageFolderLayer({
+      height: 500,
+      singleStageFolderState: null,
+      stageRect: { height: 500, left: 10, top: 20, width: 700 },
+      width: 700,
+    });
+
+    assert(calls[1].renderedFolder === null, "empty folder overlay state should still clear rendered folder");
+    assert(calls[1].desktopPageTrackOffset.liveX === 18, "empty folder overlay state should receive desktop pageTrack live x");
+    assert(calls[1].desktopPageTrackOffset.targetX === 18, "missing render plan target should fall back to live x");
   }
 
   {

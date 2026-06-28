@@ -24,12 +24,15 @@ function createPageCommands(overrides = {}) {
   const calls = {
     assertNoDuplicateItemIds: 0,
     cancelLongPress: 0,
+    commitActivePageIndex: [],
     commitFolderPageIndex: [],
     commitOpenFolder: [],
     commitPageIndex: [],
     commitSearchPageIndex: [],
+    finishHomeRevealSettleWindow: 0,
     openWarningDialog: [],
     schedulePageGridMetrics: 0,
+    scheduledChromePageIndexCommits: [],
   };
   const pages = shallowRef(overrides.pages ?? [[appA, folder], [appC]]);
   const pageIndex = ref(overrides.pageIndex ?? 2);
@@ -37,6 +40,8 @@ function createPageCommands(overrides = {}) {
   const folderPageIndex = ref(overrides.folderPageIndex ?? 3);
   const renderedFolder = ref(overrides.renderedFolder ?? null);
   const openFolderId = ref(overrides.openFolderId ?? null);
+  const isFolderClosing = ref(Boolean(overrides.isFolderClosing));
+  const isHomeRevealSettling = ref(Boolean(overrides.isHomeRevealSettling));
   const pageSize = ref(overrides.pageSize ?? makePageSize(1, 2));
   const folderPageSize = ref(overrides.folderPageSize ?? makePageSize(1, 2));
   const helpers = createLaunchpadLayoutHelpers({
@@ -54,14 +59,21 @@ function createPageCommands(overrides = {}) {
     chunkIntoPages,
     clonePages: helpers.clonePages,
     compactPages: helpers.compactPages,
+    commitActivePageIndex: (value) => calls.commitActivePageIndex.push(value),
     commitFolderPageIndex: (value) => calls.commitFolderPageIndex.push(value),
     commitOpenFolder: (value) => calls.commitOpenFolder.push(value),
     commitPageIndex: (value) => calls.commitPageIndex.push(value),
     commitSearchPageIndex: (value) => calls.commitSearchPageIndex.push(value),
+    finishHomeRevealSettleWindow: () => {
+      calls.finishHomeRevealSettleWindow += 1;
+      isHomeRevealSettling.value = false;
+    },
     findFolder: helpers.findFolder,
     flattenTopLevelPages: helpers.flattenTopLevelPages,
     folderPageIndex,
     folderPageSize,
+    isFolderClosing,
+    isHomeRevealSettling,
     isDragActive: () => Boolean(overrides.isDragActive),
     openFolderId,
     openWarningDialog: (config) => calls.openWarningDialog.push(config),
@@ -70,6 +82,7 @@ function createPageCommands(overrides = {}) {
     pageSize,
     removeEverywhere: helpers.removeEverywhere,
     renderedFolder,
+    scheduleChromePageIndexCommit: (callback) => calls.scheduledChromePageIndexCommits.push(callback),
     schedulePageGridMetrics: () => {
       calls.schedulePageGridMetrics += 1;
     },
@@ -81,6 +94,8 @@ function createPageCommands(overrides = {}) {
     commands,
     folderPageIndex,
     folderPageSize,
+    isFolderClosing,
+    isHomeRevealSettling,
     openFolderId,
     pageIndex,
     pages,
@@ -115,6 +130,27 @@ export function runLaunchpadPageCommandsTests() {
   dragCommit.commands.commitPages([[appC]]);
   assert(dragCommit.calls.assertNoDuplicateItemIds === 0, "drag-active commitPages should skip duplicate assertions");
   assert(dragCommit.pages.value[0][0].id === "app-c", "drag-active commitPages should still commit pages");
+
+  const chromePage = createPageCommands();
+  chromePage.commands.commitChromePageIndex(1);
+  assert(chromePage.calls.commitActivePageIndex.join(",") === "1", "chrome page dots should commit the active page by default");
+  assert(chromePage.calls.finishHomeRevealSettleWindow === 0, "normal chrome page dots should not touch home reveal settle");
+
+  const closingChromePage = createPageCommands({ isFolderClosing: true, isHomeRevealSettling: true });
+  closingChromePage.commands.commitChromePageIndex(1);
+  assert(closingChromePage.calls.finishHomeRevealSettleWindow === 1, "closing chrome page dots should finish home reveal settle first");
+  assert(closingChromePage.calls.commitActivePageIndex.length === 0, "closing chrome page dots should defer the page commit until the next frame");
+  assert(closingChromePage.calls.scheduledChromePageIndexCommits.length === 1, "closing chrome page dots should schedule a deferred page commit");
+  closingChromePage.calls.scheduledChromePageIndexCommits[0]();
+  assert(closingChromePage.calls.commitActivePageIndex.join(",") === "1", "closing chrome page dots should commit after settle has been cleared");
+
+  const settlingChromePage = createPageCommands({ isHomeRevealSettling: true });
+  settlingChromePage.commands.commitChromePageIndex(1);
+  assert(settlingChromePage.calls.finishHomeRevealSettleWindow === 1, "settling chrome page dots should finish home reveal settle even after folder close");
+  assert(settlingChromePage.calls.commitActivePageIndex.length === 0, "settling chrome page dots should defer the page commit until the next frame");
+  assert(settlingChromePage.calls.scheduledChromePageIndexCommits.length === 1, "settling chrome page dots should schedule a deferred page commit");
+  settlingChromePage.calls.scheduledChromePageIndexCommits[0]();
+  assert(settlingChromePage.calls.commitActivePageIndex.join(",") === "1", "settling chrome page dots should commit after settle has been cleared");
 
   const rename = createPageCommands();
   rename.commands.renameFolder("folder-1", "");

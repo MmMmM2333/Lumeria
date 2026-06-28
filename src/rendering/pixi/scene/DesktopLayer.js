@@ -20,6 +20,7 @@ import { makeSyntheticPointerEvent } from "./iconSceneHelpers.js";
 import { FolderOverlayLayer } from "./FolderOverlayLayer.js";
 import { FolderVisualCommitQueue } from "./folderVisualCommitQueue.js";
 import { FolderVisualOwnershipRegistry } from "./folderVisualOwnershipRegistry.js";
+import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import { SingleStageDiagnosticsLayer } from "./singleStageDiagnostics.js";
 import { DragPreviewLayer } from "./DragPreviewLayer.js";
 import { IconNode } from "../nodes/IconNode.js";
@@ -31,6 +32,7 @@ import {
 import {
   cancelPageTrackMotion,
   createPageTrackMotionState,
+  isPageTrackMotionActive,
   updatePageTrackMotion,
 } from "./pageTrackMotion.js";
 import {
@@ -369,7 +371,7 @@ export class DesktopLayer extends Container {
           .preset("fade")
           .layout()
           .interrupt("retarget")
-          .to({ alpha: 0, onComplete: () => node.destroy({ children: true }) })
+          .to({ alpha: 0, onComplete: () => destroyDisplayObjectAfterFrame(node, { children: true }) })
           .start();
       }
 
@@ -400,9 +402,10 @@ export class DesktopLayer extends Container {
 
   reconcileFolderHandoffEntry(state, entry) {
     const noSubstitute = shouldFinishFolderHandoffEntry(state, this.singleStageFolderLayer, entry.folderId);
-    if (noSubstitute) {
+    const pageTrackInFlight = noSubstitute && isPageTrackMotionActive(this.pageTrackMotion, this.pageTrack);
+    if (noSubstitute && !pageTrackInFlight) {
       this.finishFolderHandoffNodeAfterFrame(entry.folderId);
-    } else if (isStaleHiddenFolderHandoffEntry(entry, this.singleStageFolderLayer, entry.folderId)) {
+    } else if (!pageTrackInFlight && isStaleHiddenFolderHandoffEntry(entry, this.singleStageFolderLayer, entry.folderId)) {
       // Close finished without ever revealing this entry (its reveal was preempted
       // by another folder), yet a stale Vue closing id keeps it alive and hidden.
       // Reveal WITHOUT retiring — retiring would let isActiveFolderClosingHandoff
@@ -410,7 +413,7 @@ export class DesktopLayer extends Container {
       this.restoreFolderHandoffVisual(entry);
       this.revealFolderHandoffLabel(entry);
     }
-    return noSubstitute;
+    return noSubstitute && !pageTrackInFlight;
   }
 
   describeMotionTargets(state = {}) {
@@ -551,11 +554,20 @@ export class DesktopLayer extends Container {
   }
 
   updateSingleStageFolderLayer(state) {
+    const liveX = Number.isFinite(Number(this.pageTrack?.x)) ? Number(this.pageTrack.x) : 0;
+    const targetX = Number.isFinite(Number(this.lastDesktopRenderPlan?.targetX))
+      ? Number(this.lastDesktopRenderPlan.targetX)
+      : liveX;
+    const desktopPageTrackOffset = { liveX, targetX };
     if (state.singleStageFolderState) {
-      this.onFolderGeometryChange(this.singleStageFolderLayer.update(state.singleStageFolderState));
+      this.onFolderGeometryChange(this.singleStageFolderLayer.update({
+        ...state.singleStageFolderState,
+        desktopPageTrackOffset,
+      }));
       return;
     }
     this.onFolderGeometryChange(this.singleStageFolderLayer.update({
+      desktopPageTrackOffset,
       folderPanelRef: null,
       folderViewportRef: null,
       height: state.height,
@@ -1230,6 +1242,8 @@ export class DesktopLayer extends Container {
       overlay: overlay ? {
         closingFolderId: overlayCloseSnapshot?.folderId || null,
         closingGhostKeys: Array.from(overlayCloseSnapshot?.ghostKeys || []),
+        closingPreviewSwapKeys: Array.from(overlayCloseSnapshot?.previewSwapKeys || []),
+        closingPreviewSwapLayerChildCount: overlay.closingPreviewSwapLayer?.children?.length ?? null,
         closingGhostSessionToken: overlayCloseSnapshot?.token || null,
         closingHandoffActive: overlayCloseSnapshot?.handoffActive === true,
         currentFolderId: overlay.currentFolderId || null,

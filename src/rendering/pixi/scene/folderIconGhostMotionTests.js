@@ -78,6 +78,22 @@ export function runFolderIconGhostMotionTests() {
   assert(nearlyEqual(completed.scale, 0.25), "completed preview motion should scale to the thumbnail child size");
   assert(nearlyEqual(completed.x, closing.toX) && nearlyEqual(completed.y, closing.toY), "completed preview motion should match the closing target");
 
+  const clientClosingTarget = {
+    ...closingTarget,
+    targetClientRect: { height: 14, left: 110, top: 220, width: 14 },
+    targetStageLayoutRect: null,
+  };
+  const clientClosing = makeClosingGhostMotion(clientClosingTarget, {
+    alphaHold: 0.25,
+    closeDuration: 0.4,
+    isTextlessMode: false,
+    stageRect,
+  });
+  assert(nearlyEqual(clientClosing.targetRect.left, 100), "closing motion should map client targets into stage visual coordinates");
+  assert(nearlyEqual(clientClosing.toX, 107) && nearlyEqual(clientClosing.toY, 210.5), "closing motion should target the client visual rect center");
+  const clientCompleted = makeCompletedClosingPreviewMotion(clientClosingTarget, { isTextlessMode: false, stageRect });
+  assert(nearlyEqual(clientCompleted.x, clientClosing.toX) && nearlyEqual(clientCompleted.y, clientClosing.toY), "completed preview motion should match client visual closing targets");
+
   const layoutClosingTarget = {
     ...closingTarget,
     targetStageLayoutRect: { height: 10, left: 20, top: 10, width: 10 },

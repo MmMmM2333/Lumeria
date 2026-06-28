@@ -23,7 +23,6 @@ function isDevOpenDesktopShortcut(event) {
 
 export function useLaunchpadKeyboard(options) {
   let wheelPageLockUntil = 0;
-  let pendingDesktopPageTurnId = 0;
 
   function requestAnimationFrameOnce(callback) {
     if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
@@ -63,6 +62,25 @@ export function useLaunchpadKeyboard(options) {
     return next;
   }
 
+  function getFolderPageTurnPhase() {
+    if (!hasFolderInteractionLayer()) return "idle";
+    if (
+      options.isFolderClosing.value ||
+      options.isFolderAppLaunchClosing.value ||
+      options.isFolderZoomFadeClosing?.value
+    ) {
+      return "closing";
+    }
+    return "open";
+  }
+
+  function getNextFolderPageIndex(step) {
+    const current = options.visualFolderPageIndex?.value ?? options.folderPageIndex.value;
+    const next = current + step;
+    if (next < 0 || next > options.folderPages.value.length - 1) return null;
+    return next;
+  }
+
   function commitDesktopPageIndex(next, turnOptions) {
     if (options.isHomeRevealSettling.value) {
       options.finishHomeRevealSettleWindow();
@@ -77,39 +95,26 @@ export function useLaunchpadKeyboard(options) {
     return false;
   }
 
-  function queueDesktopPageTurnAfterFolderClose(step, turnOptions) {
-    if (getNextDesktopPageIndex(step) === null) return false;
-
-    const requestId = (pendingDesktopPageTurnId += 1);
-    requestAnimationFrameOnce(function waitForFolderClose() {
-      if (requestId !== pendingDesktopPageTurnId) return;
-      if (hasFolderInteractionLayer()) {
-        requestAnimationFrameOnce(waitForFolderClose);
-        return;
-      }
-
-      const next = getNextDesktopPageIndex(step);
-      if (next !== null) commitDesktopPageIndex(next, turnOptions);
-    });
-
-    return true;
-  }
-
   function turnCurrentPage(direction, turnOptions) {
     const step = direction > 0 ? 1 : -1;
+    const folderPhase = getFolderPageTurnPhase();
     let didTurn = false;
     let didDeferSelection = false;
 
-    if (hasFolderInteractionLayer()) {
-      if (options.isFolderClosing.value) {
-        didTurn = queueDesktopPageTurnAfterFolderClose(step, turnOptions);
-        didDeferSelection = didTurn && Boolean(turnOptions?.selectFirst);
-      } else {
-        const next = options.folderPageIndex.value + step;
-        if (next >= 0 && next <= options.folderPages.value.length - 1) {
-          options.commitFolderPageIndex(next);
-          didTurn = true;
-        }
+    if (folderPhase === "opening" || folderPhase === "open") {
+      const next = getNextFolderPageIndex(step);
+      if (next !== null) {
+        const token = options.requestFolderPageTurn?.(next, {
+          phase: folderPhase,
+          source: turnOptions?.source || "keyboard",
+        });
+        didTurn = token != null;
+      }
+    } else if (folderPhase === "closing") {
+      const next = getNextDesktopPageIndex(step);
+      if (next !== null) {
+        didDeferSelection = commitDesktopPageIndex(next, turnOptions);
+        didTurn = true;
       }
     } else if (options.isSearchMode.value) {
       const next = options.searchPageIndex.value + step;
@@ -136,7 +141,7 @@ export function useLaunchpadKeyboard(options) {
 
     const now = Date.now();
     if (now < wheelPageLockUntil) return;
-    if (turnCurrentPage(primaryDelta > 0 ? 1 : -1, { selectFirst: false })) {
+    if (turnCurrentPage(primaryDelta > 0 ? 1 : -1, { selectFirst: false, source: "wheel" })) {
       event.preventDefault();
       wheelPageLockUntil = now + WHEEL_PAGE_LOCK_DURATION;
     }
@@ -234,7 +239,7 @@ export function useLaunchpadKeyboard(options) {
     if (event.ctrlKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
       event.preventDefault();
       options.keyboardFocusArea.value = "desktop";
-      turnCurrentPage(event.key === "ArrowRight" ? 1 : -1, { selectFirst: true });
+      turnCurrentPage(event.key === "ArrowRight" ? 1 : -1, { selectFirst: true, source: "keyboard" });
       return;
     }
 

@@ -45,6 +45,7 @@ function createViewState(overrides = {}) {
     isDesktopOpen: ref(overrides.isDesktopOpen ?? true),
     isFolderClosing: ref(Boolean(overrides.isFolderClosing)),
     isFolderLayerActive: ref(Boolean(overrides.isFolderLayerActive)),
+    isFolderZoomFadeClosing: ref(Boolean(overrides.isFolderZoomFadeClosing)),
     isHomeRevealSettling: ref(Boolean(overrides.isHomeRevealSettling)),
     isSearchMode: ref(Boolean(overrides.isSearchMode)),
     liveDesktopBackgroundSupport: ref(overrides.liveDesktopBackgroundSupport ?? {
@@ -218,6 +219,14 @@ export function runLaunchpadViewStateTests() {
 
   const activeFolderLayer = createViewState({ isFolderLayerActive: true });
   assert(activeFolderLayer.view.homeChromeStyle.value.pointerEvents === "none", "active folder layer should keep home chrome pointer events disabled even without an open id");
+
+  const closingFolderLayer = createViewState({ isFolderClosing: true, isFolderLayerActive: true });
+  assert(closingFolderLayer.view.desktopTrackMotionKey.value === "open-desktop-spring", "closing folder should keep desktop page turns animated");
+  assert(closingFolderLayer.view.homeChromeStyle.value.pointerEvents === "none", "closing folder should keep home chrome pointer events disabled");
+
+  const zoomFadeClosingFolderLayer = createViewState({ isFolderZoomFadeClosing: true, isFolderLayerActive: true, openFolderId: "folder-1" });
+  assert(zoomFadeClosingFolderLayer.view.desktopTrackMotionKey.value === "open-desktop-spring", "zoom-fade closing folder should keep desktop page turns animated");
+  assert(zoomFadeClosingFolderLayer.view.homeChromeStyle.value.pointerEvents === "none", "zoom-fade closing folder should keep home chrome pointer events disabled");
 
   const settling = createViewState({ isHomeRevealSettling: true, isFolderLayerActive: true, openFolderId: "folder-1" });
   assert(settling.view.desktopTrackMotionKey.value === "open-desktop-snap", "home reveal settling should snap the desktop track");

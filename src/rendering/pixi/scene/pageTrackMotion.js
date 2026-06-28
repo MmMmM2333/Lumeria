@@ -123,6 +123,15 @@ export function cancelPageTrackMotion(motionState, reason = "cancel") {
   motionState.targetX = null;
 }
 
+export function isPageTrackMotionActive(motionState, pageTrack = null) {
+  if (!motionState) return false;
+  const control = motionState.control;
+  if (control && !control.completed && !control.released) return true;
+  const targetX = Number(motionState.targetX);
+  if (!Number.isFinite(targetX)) return false;
+  return !isSameTrackTarget(pageTrack?.x, targetX);
+}
+
 export function getPageTrackX(index, pageSpan) {
   return pageIndexToTrackX(index, pageSpan);
 }

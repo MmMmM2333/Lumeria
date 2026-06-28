@@ -4,8 +4,11 @@ export const FOLDER_OVERLAY_STATE_RENDER_REF_KEYS = Object.freeze([
   "folderCloseIconGhosts",
   "folderGridStyle",
   "folderOpeningOriginBounds",
+  "folderOpenProgress",
+  "folderOpenProgressTarget",
   "folderOpenIconGhosts",
   "folderPageIndex",
+  "folderPageTurnRequest",
   "folderPageTrackScrub",
   "folderPageSize",
   "folderPages",
@@ -23,6 +26,7 @@ export const FOLDER_OVERLAY_STATE_RENDER_REF_KEYS = Object.freeze([
   "launchTargetStatusById",
   "renderedFolder",
   "showMissingLaunchTargetBadge",
+  "visualFolderPageIndex",
 ]);
 
 export function resolveMaybeRefValue(value) {

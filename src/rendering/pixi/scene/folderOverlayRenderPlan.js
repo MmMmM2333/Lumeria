@@ -50,6 +50,7 @@ export function makeFolderOverlayRenderPlan(options = {}) {
     stageHeight = 1,
     stageWidth = 1,
     targetTrackX = 0,
+    visualFolderPageIndex = folderPageIndex,
   } = options;
   const previewSlotById = makePreviewSlotById(previewSlots);
   const dragState = { dragMeta, dragReleaseGhostId };
@@ -75,6 +76,7 @@ export function makeFolderOverlayRenderPlan(options = {}) {
       const { key, source, x, y } = iconPlan;
       const isActiveDraggedItem = isActiveDraggedLaunchItem(item, dragState);
       const isReleaseGhostItem = isReleaseGhostLaunchItem(item, dragState);
+      const hasActiveOpeningGhost = openingGhostItemIds?.has(item.id) === true;
       const targetCenter = makeFolderIconTargetCenter({ geometry, isTextlessMode, targetTrackX, x, y });
       const nodeState = makeFolderIconNodeState({
         closingGhostKeys,
@@ -110,6 +112,7 @@ export function makeFolderOverlayRenderPlan(options = {}) {
             iconSize,
             index,
             item,
+            pageIndex,
             previewSlotById,
           }
           : null,
@@ -121,12 +124,12 @@ export function makeFolderOverlayRenderPlan(options = {}) {
         item,
         key,
         nodeState,
-        openingGhostInput: isInteractivePage &&
+        openingGhostInput: (isInteractivePage || hasActiveOpeningGhost) &&
           !isActiveDraggedItem &&
           !isReleaseGhostItem &&
-          isNewFolder &&
+          (isNewFolder || hasActiveOpeningGhost) &&
           !isClosing &&
-          pageIndex === folderPageIndex
+          (pageIndex === visualFolderPageIndex || hasActiveOpeningGhost)
           ? {
             cellHeight: slot.height,
             cellWidth: slot.width,

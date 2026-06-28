@@ -87,6 +87,9 @@ function makeGhost(id = "ghost") {
       x: 1,
       y: 1,
     },
+    removeFromParent() {
+      this.parent?.removeChild?.(this);
+    },
     destroy() {
       this.destroyed = true;
     },
@@ -103,6 +106,7 @@ function makeLayer() {
   const calls = [];
   const activityChanges = [];
   const closingGhosts = [];
+  const frameGhostRetargets = [];
   const iconNode = { alpha: 0.4, item: { id: "app-1" }, visible: false };
   return {
     activityChanges,
@@ -110,10 +114,23 @@ function makeLayer() {
     currentFolderId: "folder-1",
     closingGhostLayer: {
       addChild(ghost) {
+        ghost.parent?.removeChild?.(ghost);
+        ghost.parent = this;
         closingGhosts.push(ghost);
+        return ghost;
+      },
+      removeChild(ghost) {
+        const index = closingGhosts.indexOf(ghost);
+        if (index >= 0) closingGhosts.splice(index, 1);
+        if (ghost.parent === this) ghost.parent = null;
+        return ghost;
       },
       removeChildren() {
-        return closingGhosts.splice(0);
+        const removed = closingGhosts.splice(0);
+        for (const ghost of removed) {
+          if (ghost.parent === this) ghost.parent = null;
+        }
+        return removed;
       },
     },
     iconNodes: new Map([["app-1", iconNode]]),
@@ -171,8 +188,17 @@ function makeLayer() {
       this.frameGhostTarget = toRect;
       this.frameGhostOptions = options;
     },
+    retargetFrameGhost(toRect, options = {}) {
+      this.frameGhostTarget = toRect;
+      this.frameGhostOptions = options;
+      frameGhostRetargets.push({ options, toRect });
+      return true;
+    },
     get closingGhosts() {
       return closingGhosts;
+    },
+    get frameGhostRetargets() {
+      return frameGhostRetargets;
     },
     get iconNode() {
       return iconNode;
@@ -180,11 +206,12 @@ function makeLayer() {
   };
 }
 
-function makeTarget(id = "app-1") {
+function makeTarget(id = "app-1", pageIndex = 0) {
   return {
     iconSize: 64,
     index: 0,
     item: { id },
+    pageIndex,
     sourceRect: { height: 32, left: 10, top: 20, width: 32 },
     targetStageLayoutRect: { height: 12, left: 100, top: 120, width: 12 },
   };
@@ -206,6 +233,10 @@ function makePreviewSwap(calls = []) {
     clear() {
       calls.push("clear-preview-swap");
     },
+    retarget(_state, targets) {
+      calls.push({ targets, type: "retarget-preview-swap" });
+      return true;
+    },
     start() {
       calls.push("start-preview-swap");
     },
@@ -218,6 +249,11 @@ function completeFrameVisual(controller, state = makeState(), token = controller
 
 function completeFrame(controller, state = makeState(), token = controller.handoffCoordinator.closeToken) {
   controller.handleSettlementEvents(state, controller.handoffCoordinator.completeCloseFrame(token));
+}
+
+function getBaseAnimation(target, prop) {
+  const channel = motionRuntime.getChannel(target, prop);
+  return Array.from(channel?.base?.values?.() || [])[0] || null;
 }
 
 export function runFolderClosingGhostControllerTests() {
@@ -622,6 +658,45 @@ export function runFolderClosingGhostControllerTests() {
   }
 
   {
+    const layer = makeLayer();
+    const controller = new FolderClosingGhostController(layer);
+    const target = makeTarget("app-1", 1);
+    controller.handoffCoordinator.beginOpeningVisuals({ sessionToken: "open-token" });
+    controller.handoffCoordinator.registerOpeningGhost("app-1");
+    const stalePageGhost = makeGhost("stale-page-opening");
+    stalePageGhost.item = { id: "app-1" };
+    stalePageGhost.openingPageIndex = 0;
+    layer.openingGhostLayer.children = [stalePageGhost];
+
+    let releaseCalls = 0;
+    let clearCalls = 0;
+    layer.openingGhosts.releaseGhost = () => {
+      releaseCalls += 1;
+      throw new Error("closing should not reuse an opening ghost from a different page");
+    };
+    layer.openingGhosts.clear = (options = {}) => {
+      clearCalls += 1;
+      assert(options.cancelSession === true, "closing should cancel the stale opening visual session");
+      controller.handoffCoordinator.clearOpeningVisuals();
+      layer.openingGhostLayer.children = [];
+    };
+    let factoryCalls = 0;
+    controller.ghostFactory = () => {
+      factoryCalls += 1;
+      return makeGhost("fresh-close");
+    };
+
+    controller.start(makeState(), [target], { height: 72, left: 10, top: 20, width: 72 }, { height: 300, left: 0, top: 0, width: 400 });
+
+    assert(releaseCalls === 0, "closing should not release a different-page opening ghost as a close source");
+    assert(clearCalls === 1, "closing should still clear stale opening visuals after taking close ownership");
+    assert(factoryCalls === 1, "closing should create a fresh ghost for the current visual page");
+    assert(layer.closingGhosts.length === 1 && layer.closingGhosts[0] !== stalePageGhost, "closing layer should not contain the stale opening-page ghost");
+    assert(layer.openingGhostLayer.children.length === 0, "stale opening ghost visuals should be removed during close takeover");
+    controller.clear();
+  }
+
+  {
     const timerHost = makeTimerHost();
     const layer = makeLayer();
     const controller = new FolderClosingGhostController(layer, {
@@ -907,5 +982,122 @@ export function runFolderClosingGhostControllerTests() {
       motionRuntime.reset();
       controller.clear();
     }
+  }
+
+  {
+    motionRuntime.reset();
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    let createTokenCount = 0;
+    let ownershipCount = 0;
+    layer.createClosingGhostToken = (folderId = null) => {
+      createTokenCount += 1;
+      return `closing:${folderId || ""}:retarget`;
+    };
+    layer.acquireVisualOwnership = () => {
+      ownershipCount += 1;
+      return true;
+    };
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      previewSwap: makePreviewSwap(layer.calls),
+      scheduler: timerHost,
+    });
+    const folderRect = { height: 72, left: 10, top: 20, width: 72 };
+    const panelRect = { height: 360, left: 0, top: 0, width: 420 };
+    controller.start(makeState(), [makeTarget()], folderRect, panelRect, {
+      handoffRect: { height: 60, left: 100, top: 110, width: 60 },
+      handoffTarget: { folderId: "folder-1", trackingKey: "initial" },
+      previewSwapTargets: [{
+        item: { id: "preview-1" },
+        previewSlotIndex: 0,
+        targetStageLayoutRect: { height: 12, left: 100, top: 110, width: 12 },
+      }],
+    });
+    const token = controller.handoffCoordinator.closeToken;
+    const ghost = layer.closingGhosts[0];
+    const previousRecord = controller.activeGhostsByItemId.get("app-1");
+    const previousControl = previousRecord?.motionControl;
+    const retargetedTarget = {
+      ...makeTarget(),
+      targetStageLayoutRect: { height: 20, left: 220, top: 260, width: 20 },
+    };
+
+    const retargeted = controller.retarget(makeState(), [retargetedTarget], {
+      height: 80,
+      left: 30,
+      top: 40,
+      width: 80,
+    }, panelRect, {
+      handoffRect: { height: 64, left: 44, top: 55, width: 64 },
+      handoffTarget: { folderId: "folder-1", trackingKey: "retargeted" },
+      previewSwapTargets: [{
+        item: { id: "preview-1" },
+        previewSlotIndex: 0,
+        targetStageLayoutRect: { height: 12, left: 130, top: 140, width: 12 },
+      }],
+    });
+
+    const nextRecord = controller.activeGhostsByItemId.get("app-1");
+    const detachedMotion = controller.handoffCoordinator.getDetachedClosingGhostMotion(ghost);
+    const previewSwapRetarget = layer.calls.find((call) => call?.type === "retarget-preview-swap");
+    assert(retargeted === 1, "same-session close update should retarget the existing ghost");
+    assert(controller.handoffCoordinator.closeToken === token, "retarget should keep the original close token");
+    assert(createTokenCount === 1, "retarget should not create a second close token");
+    assert(ownershipCount === 1, "retarget should not re-acquire desktop source ownership");
+    assert(layer.closingGhosts.length === 1 && layer.closingGhosts[0] === ghost, "retarget should not create or replace closing ghost visuals");
+    assert(previousControl?.released === true, "retarget should release the previous motion owner before rebinding callbacks");
+    assert(nextRecord?.motionControl && nextRecord.motionControl !== previousControl, "retarget should install a fresh motion control for the same ghost");
+    assert(controller.handoffCoordinator.snapshot().motionControlCount === 1, "retarget should replace the tracked motion control instead of accumulating controls");
+    assert(detachedMotion?.x === 230 && detachedMotion?.y > 0, "retarget should update detached ghost motion to the new landing rect");
+    assert(getBaseAnimation(ghost, "x")?.to === 230, "retarget should retarget the ghost x spring to the new target");
+    assert(controller.handoffCoordinator.snapshot().handoffRect?.left === 44, "retarget should update handoff geometry to the current rendered rect");
+    assert(layer.frameGhostRetargets.length === 1, "retarget should retarget the active closing frame ghost");
+    assert(layer.frameGhostRetargets[0].toRect.left === 30 && layer.frameGhostRetargets[0].toRect.top === 40, "frame retarget should use the latest close thumb rect");
+    assert(layer.frameGhostRetargets[0].options.updateClosingMask === true, "frame retarget should keep the rounded mask bound to the frame");
+    assert(layer.frameGhostRetargets[0].options.progressMilestones?.length === 1, "frame retarget should keep the one-shot preview swap milestone");
+    assert(previewSwapRetarget?.targets?.[0]?.targetStageLayoutRect.left === 130, "retarget should forward updated preview swap targets for second-page thumbnail ghosts");
+    controller.clear();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
+    const controller = new FolderClosingGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: timerHost,
+    });
+    const folderRect = { height: 72, left: 10, top: 20, width: 72 };
+    const panelRect = { height: 360, left: 0, top: 0, width: 420 };
+    controller.start(makeState(), [makeTarget()], folderRect, panelRect);
+    const ghost = layer.closingGhosts[0];
+    const activeBefore = controller.activeGhostsByItemId.get("app-1")?.motionControl;
+
+    assert(
+      controller.retarget(makeState(), [makeTarget("app-2")], folderRect, panelRect) === 0,
+      "retarget should skip targets that do not already have an active closing ghost"
+    );
+    assert(layer.closingGhosts.length === 1 && layer.closingGhosts[0] === ghost, "unknown target retarget should not create a new ghost");
+    assert(controller.activeGhostsByItemId.get("app-1")?.motionControl === activeBefore, "unknown target retarget should leave active ghost control untouched");
+    assert(
+      controller.retarget({
+        ...makeState(),
+        renderedFolder: { id: "other-folder" },
+      }, [makeTarget()], folderRect, panelRect) === 0,
+      "retarget should ignore a different closing folder"
+    );
+    const token = controller.handoffCoordinator.closeToken;
+    controller.handoffCoordinator.releaseCloseOverlayVisuals(token);
+    assert(
+      controller.retarget(makeState(), [{
+        ...makeTarget(),
+        targetStageLayoutRect: { height: 20, left: 280, top: 300, width: 20 },
+      }], folderRect, panelRect) === 0,
+      "retarget should no-op after handoff visual release"
+    );
+    controller.clear();
+    motionRuntime.reset();
   }
 }
