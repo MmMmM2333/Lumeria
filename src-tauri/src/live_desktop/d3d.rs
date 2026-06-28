@@ -24,11 +24,11 @@ enum LiveDesktopDxgiAdapterEvent<'a> {
     AdapterEnumerationFailed {
         adapter_index: u32,
         adapter_count: u32,
-        error: windows::core::Error,
+        error: LiveDesktopError,
     },
     AdapterDescriptionFailed {
         adapter_index: u32,
-        error: windows::core::Error,
+        error: LiveDesktopError,
     },
     SoftwareAdapter {
         adapter_index: u32,
@@ -64,7 +64,10 @@ fn for_each_dxgi_adapter<T>(
                 let event = LiveDesktopDxgiAdapterEvent::AdapterEnumerationFailed {
                     adapter_index,
                     adapter_count,
-                    error,
+                    error: LiveDesktopError::D3d {
+                        context: "EnumAdapters1",
+                        source: error,
+                    },
                 };
                 return match visit(event) {
                     ControlFlow::Break(result) => (adapter_count, Some(result)),
@@ -79,7 +82,10 @@ fn for_each_dxgi_adapter<T>(
             Err(error) => {
                 let event = LiveDesktopDxgiAdapterEvent::AdapterDescriptionFailed {
                     adapter_index,
-                    error,
+                    error: LiveDesktopError::D3d {
+                        context: "IDXGIAdapter1::GetDesc1",
+                        source: error,
+                    },
                 };
                 if let ControlFlow::Break(result) = visit(event) {
                     return (adapter_count, Some(result));
@@ -228,12 +234,14 @@ pub(crate) unsafe fn probe_windows_live_desktop_renderer(
             format!("CoInitializeEx failed before probing DirectComposition renderer: {error}"),
         )
     })?;
-    let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.map_err(|error| {
-        LiveDesktopRendererProbe::unavailable(
-            "dxgiUnavailable",
-            format!("CreateDXGIFactory1 failed while probing renderer: {error}"),
-        )
-    })?;
+    let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }
+        .map_err(|source| LiveDesktopError::D3d {
+            context: "CreateDXGIFactory1 while probing renderer",
+            source,
+        })
+        .map_err(|error| {
+            LiveDesktopRendererProbe::unavailable("dxgiUnavailable", String::from(error))
+        })?;
 
     let mut last_detail = String::new();
 
@@ -276,7 +284,11 @@ pub(crate) unsafe fn probe_windows_live_desktop_renderer(
                 };
                 let dxgi_device = match device.cast::<IDXGIDevice>() {
                     Ok(device) => device,
-                    Err(error) => {
+                    Err(source) => {
+                        let error = LiveDesktopError::D3d {
+                            context: "IDXGIDevice cast while probing renderer",
+                            source,
+                        };
                         last_detail = format!(
                             "IDXGIDevice cast({adapter_index}) failed while probing renderer: {error}"
                         );
@@ -382,12 +394,14 @@ pub(crate) unsafe fn create_live_desktop_renderer_resources(
         progress_sender,
         "Creating DXGI factory for renderer",
     );
-    let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.map_err(|error| {
-        LiveDesktopRendererProbe::unavailable(
-            "dxgiUnavailable",
-            format!("CreateDXGIFactory1 failed while creating renderer resources: {error}"),
-        )
-    })?;
+    let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }
+        .map_err(|source| LiveDesktopError::D3d {
+            context: "CreateDXGIFactory1 while creating renderer resources",
+            source,
+        })
+        .map_err(|error| {
+            LiveDesktopRendererProbe::unavailable("dxgiUnavailable", String::from(error))
+        })?;
 
     let mut last_detail = String::new();
     let target_monitor = unsafe { MonitorFromWindow(window_handle, MONITOR_DEFAULTTONEAREST) };
@@ -477,14 +491,18 @@ pub(crate) unsafe fn create_live_desktop_renderer_resources(
             resolve_live_desktop_output_context_for_adapter(adapter, adapter_index, target_monitor)
         } {
             Ok(output_context) => output_context,
-            Err(detail) => {
-                last_detail = detail;
+            Err(error) => {
+                last_detail = String::from(error);
                 break 'adapter ControlFlow::Continue(());
             }
         };
         let dxgi_device = match d3d.device.cast::<IDXGIDevice>() {
             Ok(device) => device,
-            Err(error) => {
+            Err(source) => {
+                let error = LiveDesktopError::D3d {
+                    context: "IDXGIDevice cast while creating renderer resources",
+                    source,
+                };
                 last_detail = format!(
                     "IDXGIDevice cast({adapter_index}, {adapter_name}) failed while creating renderer resources: {error}"
                 );
@@ -897,7 +915,7 @@ unsafe fn resolve_live_desktop_output_context_for_adapter(
     adapter: &IDXGIAdapter1,
     adapter_index: u32,
     target_monitor: HMONITOR,
-) -> Result<LiveDesktopOutputContext, String> {
+) -> Result<LiveDesktopOutputContext, LiveDesktopError> {
     let mut output_count = 0;
     let mut last_detail = String::new();
 
@@ -905,7 +923,11 @@ unsafe fn resolve_live_desktop_output_context_for_adapter(
         let output = match unsafe { adapter.EnumOutputs(output_index) } {
             Ok(output) => output,
             Err(error) if error.code() == DXGI_ERROR_NOT_FOUND => break,
-            Err(error) => {
+            Err(source) => {
+                let error = LiveDesktopError::D3d {
+                    context: "IDXGIAdapter1::EnumOutputs",
+                    source,
+                };
                 last_detail =
                     format!("EnumOutputs({adapter_index}, {output_index}) failed: {error}");
                 break;
@@ -915,7 +937,11 @@ unsafe fn resolve_live_desktop_output_context_for_adapter(
 
         let output_desc = match unsafe { output.GetDesc() } {
             Ok(desc) => desc,
-            Err(error) => {
+            Err(source) => {
+                let error = LiveDesktopError::D3d {
+                    context: "IDXGIOutput::GetDesc",
+                    source,
+                };
                 last_detail = format!("GetDesc({adapter_index}, {output_index}) failed: {error}");
                 continue;
             }
@@ -960,16 +986,16 @@ unsafe fn resolve_live_desktop_output_context_for_adapter(
     }
 
     if output_count == 0 {
-        return Err(format!(
+        return Err(LiveDesktopError::Message(format!(
             "DXGI did not report any outputs for hardware adapter {adapter_index}"
-        ));
+        )));
     }
     if last_detail.is_empty() {
-        Err(format!(
+        Err(LiveDesktopError::Message(format!(
             "Live desktop output context startup failed on adapter {adapter_index} without a detailed DXGI error"
-        ))
+        )))
     } else {
-        Err(last_detail)
+        Err(LiveDesktopError::Message(last_detail))
     }
 }
 
@@ -1003,14 +1029,16 @@ fn live_desktop_output_name(device_name: &[u16; 32]) -> String {
 }
 
 #[cfg(target_os = "windows")]
-unsafe fn create_d3d11_device_for_adapter(adapter: &IDXGIAdapter1) -> Result<ID3D11Device, String> {
+unsafe fn create_d3d11_device_for_adapter(
+    adapter: &IDXGIAdapter1,
+) -> Result<ID3D11Device, LiveDesktopError> {
     Ok(unsafe { create_d3d11_device_with_context_for_adapter(adapter) }?.device)
 }
 
 #[cfg(target_os = "windows")]
 unsafe fn create_d3d11_device_with_context_for_adapter(
     adapter: &IDXGIAdapter1,
-) -> Result<LiveDesktopD3DDevice, String> {
+) -> Result<LiveDesktopD3DDevice, LiveDesktopError> {
     let mut device: Option<ID3D11Device> = None;
     let mut context: Option<ID3D11DeviceContext> = None;
     unsafe {
@@ -1026,12 +1054,18 @@ unsafe fn create_d3d11_device_with_context_for_adapter(
             Some(&mut context),
         )
     }
-    .map_err(|error| error.to_string())?;
+    .map_err(|source| LiveDesktopError::D3d {
+        context: "D3D11CreateDevice",
+        source,
+    })?;
 
     Ok(LiveDesktopD3DDevice {
-        device: device.ok_or_else(|| "D3D11CreateDevice returned no device".to_string())?,
-        context: context
-            .ok_or_else(|| "D3D11CreateDevice returned no immediate context".to_string())?,
+        device: device.ok_or_else(|| {
+            LiveDesktopError::Message("D3D11CreateDevice returned no device".to_string())
+        })?,
+        context: context.ok_or_else(|| {
+            LiveDesktopError::Message("D3D11CreateDevice returned no immediate context".to_string())
+        })?,
     })
 }
 
@@ -1057,15 +1091,14 @@ pub(crate) fn probe_live_desktop_prerequisites() -> LiveDesktopPrerequisiteProbe
 #[cfg(target_os = "windows")]
 pub(crate) unsafe fn probe_windows_live_desktop_prerequisites(
 ) -> Result<LiveDesktopPrerequisiteProbe, LiveDesktopPrerequisiteProbe> {
-    let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.map_err(|error| {
-        prerequisite_probe_error(
-            false,
-            0,
-            0,
-            "dxgiUnavailable",
-            format!("CreateDXGIFactory1 failed: {error}"),
-        )
-    })?;
+    let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }
+        .map_err(|source| LiveDesktopError::D3d {
+            context: "CreateDXGIFactory1",
+            source,
+        })
+        .map_err(|error| {
+            prerequisite_probe_error(false, 0, 0, "dxgiUnavailable", String::from(error))
+        })?;
 
     let mut output_count = 0;
     let mut last_detail = String::new();
@@ -1110,7 +1143,11 @@ pub(crate) unsafe fn probe_windows_live_desktop_prerequisites(
                     let output = match unsafe { adapter.EnumOutputs(output_index) } {
                         Ok(output) => output,
                         Err(error) if error.code() == DXGI_ERROR_NOT_FOUND => break,
-                        Err(error) => {
+                        Err(source) => {
+                            let error = LiveDesktopError::D3d {
+                                context: "IDXGIAdapter1::EnumOutputs",
+                                source,
+                            };
                             last_detail = format!(
                                 "EnumOutputs({adapter_index}, {output_index}) failed: {error}"
                             );
@@ -1121,7 +1158,11 @@ pub(crate) unsafe fn probe_windows_live_desktop_prerequisites(
 
                     let output_desc = match unsafe { output.GetDesc() } {
                         Ok(desc) => desc,
-                        Err(error) => {
+                        Err(source) => {
+                            let error = LiveDesktopError::D3d {
+                                context: "IDXGIOutput::GetDesc",
+                                source,
+                            };
                             last_detail =
                                 format!("GetDesc({adapter_index}, {output_index}) failed: {error}");
                             continue;

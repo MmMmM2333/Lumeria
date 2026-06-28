@@ -92,6 +92,7 @@ mod constants;
 mod d3d;
 mod diagnostics;
 mod effects;
+mod errors;
 mod renderer_session;
 mod runtime;
 mod test_pattern;
@@ -105,6 +106,7 @@ pub(crate) use constants::*;
 pub(crate) use d3d::*;
 pub(crate) use diagnostics::*;
 pub(crate) use effects::*;
+pub(crate) use errors::*;
 pub(crate) use renderer_session::*;
 pub(crate) use runtime::*;
 
