@@ -73,7 +73,8 @@ pub(crate) fn cache_app_icon_choices(
                 continue;
             }
             if let Ok(bytes) = fs::read(&output_path) {
-                if seen.insert(bytes) {
+                let fingerprint = (bytes.len(), *blake3::hash(&bytes).as_bytes());
+                if seen.insert(fingerprint) {
                     output_paths.push(output_path);
                 }
             }

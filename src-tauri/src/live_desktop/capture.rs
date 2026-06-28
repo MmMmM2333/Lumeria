@@ -11,6 +11,7 @@ pub(crate) struct LiveDesktopWindowCapture {
     popup_close_command: Option<LiveDesktopWallpaperEnginePopupCloseCommand>,
     mouse_relay: Option<Mutex<LiveDesktopMouseRelay>>,
     frame_crop: Option<LiveDesktopFrameCrop>,
+    pixel_probe_staging: RefCell<Option<LiveDesktopPixelProbeStagingTexture>>,
     diagnostics: Arc<Mutex<LiveDesktopRuntimeDiagnostics>>,
     _item: GraphicsCaptureItem,
     frame_pool: Direct3D11CaptureFramePool,
@@ -29,6 +30,67 @@ struct LiveDesktopMouseRelay {
     source_width: u32,
     source_height: u32,
     last_position: Option<LiveDesktopMouseRelayPosition>,
+}
+
+#[cfg(target_os = "windows")]
+struct LiveDesktopPixelProbeStagingTexture {
+    width: u32,
+    height: u32,
+    format: DXGI_FORMAT,
+    resource: ID3D11Resource,
+}
+
+#[cfg(target_os = "windows")]
+impl LiveDesktopPixelProbeStagingTexture {
+    fn matches(&self, width: u32, height: u32, format: DXGI_FORMAT) -> bool {
+        self.width == width && self.height == height && self.format == format
+    }
+
+    unsafe fn create(
+        device: &ID3D11Device,
+        width: u32,
+        height: u32,
+        format: DXGI_FORMAT,
+        label: &str,
+    ) -> Result<Self, LiveDesktopError> {
+        let staging_desc = D3D11_TEXTURE2D_DESC {
+            Width: width,
+            Height: height,
+            MipLevels: 1,
+            ArraySize: 1,
+            Format: format,
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
+            Usage: D3D11_USAGE_STAGING,
+            BindFlags: 0,
+            CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+            MiscFlags: 0,
+        };
+        let mut staging_texture: Option<ID3D11Texture2D> = None;
+        unsafe { device.CreateTexture2D(&staging_desc, None, Some(&mut staging_texture)) }
+            .map_err(|source| LiveDesktopError::D3dContext {
+                context: format!("{label} CreateTexture2D"),
+                source,
+            })?;
+        let staging_texture = staging_texture.ok_or_else(|| {
+            LiveDesktopError::Message(format!("{label} CreateTexture2D returned no texture"))
+        })?;
+        let resource = staging_texture.cast::<ID3D11Resource>().map_err(|source| {
+            LiveDesktopError::D3dContext {
+                context: format!("{label} staging resource cast"),
+                source,
+            }
+        })?;
+
+        Ok(Self {
+            width,
+            height,
+            format,
+            resource,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -859,6 +921,7 @@ pub(crate) unsafe fn create_live_desktop_window_capture(
             popup_close_command,
             mouse_relay,
             frame_crop,
+            pixel_probe_staging: RefCell::new(None),
             diagnostics: Arc::clone(&diagnostics),
             _item: item,
             frame_pool,
@@ -938,6 +1001,7 @@ unsafe fn probe_live_desktop_texture_pixels(
     source_texture: &ID3D11Texture2D,
     device: &ID3D11Device,
     context: &ID3D11DeviceContext,
+    staging_cache: &RefCell<Option<LiveDesktopPixelProbeStagingTexture>>,
     preferred_crop: Option<LiveDesktopFrameCrop>,
     label: &str,
 ) -> Result<LiveDesktopPixelProbe, LiveDesktopError> {
@@ -980,31 +1044,28 @@ unsafe fn probe_live_desktop_texture_pixels(
         bottom: top + probe_height,
         back: 1,
     };
-    let staging_desc = D3D11_TEXTURE2D_DESC {
-        Width: probe_width,
-        Height: probe_height,
-        MipLevels: 1,
-        ArraySize: 1,
-        Format: source_desc.Format,
-        SampleDesc: DXGI_SAMPLE_DESC {
-            Count: 1,
-            Quality: 0,
-        },
-        Usage: D3D11_USAGE_STAGING,
-        BindFlags: 0,
-        CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
-        MiscFlags: 0,
+    let staging_resource = {
+        let mut staging_cache = staging_cache.borrow_mut();
+        let should_recreate = staging_cache
+            .as_ref()
+            .is_none_or(|staging| !staging.matches(probe_width, probe_height, source_desc.Format));
+        if should_recreate {
+            *staging_cache = Some(unsafe {
+                LiveDesktopPixelProbeStagingTexture::create(
+                    device,
+                    probe_width,
+                    probe_height,
+                    source_desc.Format,
+                    label,
+                )
+            }?);
+        }
+        staging_cache
+            .as_ref()
+            .expect("pixel probe staging texture should be initialized")
+            .resource
+            .clone()
     };
-    let mut staging_texture: Option<ID3D11Texture2D> = None;
-    unsafe { device.CreateTexture2D(&staging_desc, None, Some(&mut staging_texture)) }.map_err(
-        |source| LiveDesktopError::D3dContext {
-            context: format!("{label} CreateTexture2D"),
-            source,
-        },
-    )?;
-    let staging_texture = staging_texture.ok_or_else(|| {
-        LiveDesktopError::Message(format!("{label} CreateTexture2D returned no texture"))
-    })?;
     let source_resource =
         source_texture
             .cast::<ID3D11Resource>()
@@ -1012,12 +1073,6 @@ unsafe fn probe_live_desktop_texture_pixels(
                 context: format!("{label} source resource cast"),
                 source,
             })?;
-    let staging_resource = staging_texture.cast::<ID3D11Resource>().map_err(|source| {
-        LiveDesktopError::D3dContext {
-            context: format!("{label} staging resource cast"),
-            source,
-        }
-    })?;
     unsafe {
         context.CopySubresourceRegion(
             &staging_resource,
@@ -1147,21 +1202,25 @@ pub(crate) unsafe fn copy_window_capture_frame_to_composition_surface(
                 })?;
             let mut source_desc = D3D11_TEXTURE2D_DESC::default();
             unsafe { source_texture.GetDesc(&mut source_desc) };
-            let should_probe_frame =
-                config.skip_blank_frames || should_probe_live_desktop_pixels(diagnostics);
+            let probe_for_blank_skip = config.skip_blank_frames;
+            let probe_for_periodic_diagnostics =
+                !probe_for_blank_skip && should_probe_live_desktop_pixels(diagnostics);
+            // One GPU readback serves blank-frame skipping and periodic diagnostics sampling.
+            let should_probe_frame = probe_for_blank_skip || probe_for_periodic_diagnostics;
             if should_probe_frame {
                 match unsafe {
                     probe_live_desktop_texture_pixels(
                         &source_texture,
                         device,
                         context,
+                        &window_capture.pixel_probe_staging,
                         window_capture.frame_crop,
                         "WGC pixel probe",
                     )
                 } {
                     Ok(probe) => {
-                        let should_skip = config.skip_blank_frames
-                            && is_live_desktop_suspected_blank_frame(&probe);
+                        let should_skip =
+                            probe_for_blank_skip && is_live_desktop_suspected_blank_frame(&probe);
                         record_live_desktop_pixel_probe(diagnostics, &probe);
                         if should_skip {
                             record_live_desktop_blank_frame_skipped(diagnostics, &probe);
