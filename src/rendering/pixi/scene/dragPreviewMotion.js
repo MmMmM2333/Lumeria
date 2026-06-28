@@ -1,6 +1,7 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { clientPointToStageVisualPoint, clientRectToStageVisualRect, getStageScale } from "../geometry/stageCoordinates.js";
+import { cloneIconVisualSpec } from "./iconVisualSpec.js";
 
 export const DRAG_PREVIEW_SCALE = 1.12;
 export const DRAG_PREVIEW_FOLDER_HOVER_SCALE = 0.92;
@@ -28,6 +29,16 @@ function getPointerPlacement(preview, stageRect, iconSize, textless) {
   return {
     x: visualLeft + iconSize / 2,
     y: visualTop + iconSize / 2 - getIconVisualOffsetY(textless),
+  };
+}
+
+function getPointerIconCenter(preview, stageRect, iconSize) {
+  const offset = preview?.offset || { x: iconSize / 2, y: iconSize / 2 };
+  const pointer = preview?.pointer || { x: 0, y: 0 };
+  const localPointer = clientPointToStageVisualPoint(pointer, stageRect) || { x: 0, y: 0 };
+  return {
+    x: localPointer.x - offset.x + iconSize / 2,
+    y: localPointer.y - offset.y + iconSize / 2,
   };
 }
 
@@ -73,18 +84,37 @@ export function getDragPreviewLayout(preview, state = {}) {
 }
 
 export function getDragReleaseMotion(release, state = {}) {
-  const iconSize = getPreviewIconSize(release, state.iconSize);
-  const cellSize = getPreviewCellSize(release, iconSize);
+  const releaseMode = release?.releaseMode || DRAG_RELEASE_MODE_SLOT;
+  const sourceIconSize = getPreviewIconSize(release, state.iconSize);
+  const targetVisualSpec = releaseMode === DRAG_RELEASE_MODE_SLOT
+    ? cloneIconVisualSpec(release?.targetVisualSpec || release?.visualSpec)
+    : null;
+  const iconSize = targetVisualSpec?.iconSize || sourceIconSize;
+  const cellSize = targetVisualSpec
+    ? {
+      height: targetVisualSpec.cellHeight,
+      width: targetVisualSpec.cellWidth,
+    }
+    : getPreviewCellSize(release, iconSize);
   const stageRect = state.stageRect || { left: 0, top: 0 };
-  const textless = Boolean(release?.textless ?? state.isTextlessMode);
-  const start = getPointerPlacement(release, stageRect, iconSize, textless);
+  const textless = targetVisualSpec
+    ? targetVisualSpec.textless === true
+    : Boolean(release?.textless ?? state.isTextlessMode);
+  const sourceTextless = Boolean(release?.textless ?? state.isTextlessMode);
+  const startIconCenter = targetVisualSpec ? getPointerIconCenter(release, stageRect, sourceIconSize) : null;
+  const startScaleMultiplier = targetVisualSpec ? Math.max(0.01, sourceIconSize / iconSize) : 1;
+  const visualOffsetY = getIconVisualOffsetY(textless);
+  const start = startIconCenter
+    ? {
+      x: startIconCenter.x,
+      y: startIconCenter.y - visualOffsetY * startScaleMultiplier,
+    }
+    : getPointerPlacement(release, stageRect, iconSize, sourceTextless);
   const targetRect = release?.targetRect;
   const targetStageLayoutRect = release?.targetStageLayoutRect;
   const hasStageLayoutTargetRect = Boolean(targetStageLayoutRect?.width && targetStageLayoutRect?.height);
   const hasClientTargetRect = Boolean(targetRect?.width && targetRect?.height);
   const hasTargetRect = hasStageLayoutTargetRect || hasClientTargetRect;
-  const releaseMode = release?.releaseMode || DRAG_RELEASE_MODE_SLOT;
-  const visualOffsetY = getIconVisualOffsetY(textless);
   const targetLocalRect = hasStageLayoutTargetRect
     ? targetStageLayoutRect
     : clientRectToStageVisualRect(targetRect, stageRect);
@@ -113,20 +143,23 @@ export function getDragReleaseMotion(release, state = {}) {
     cellHeight: cellSize.height,
     cellWidth: cellSize.width,
     completeOnScale: true,
-    compact: release?.compact === true,
+    compact: targetVisualSpec ? targetVisualSpec.compact === true : release?.compact === true,
     hasStageLayoutTargetRect,
     hasTargetRect,
     iconSize,
     key: `${release?.key || makeDragPreviewKey(release)}:${release?.targetVersion ?? 0}:${hasTargetRect ? "target" : "pending"}`,
     releaseMode,
-    singleLineLabel: release?.singleLineLabel === true,
+    singleLineLabel: targetVisualSpec ? targetVisualSpec.singleLineLabel === true : release?.singleLineLabel === true,
     stageRect,
     start,
+    startIconCenter,
+    startScaleMultiplier,
     target,
     targetAlpha,
     targetLabelAlpha,
     targetLabelScale,
     targetScale,
+    visualOffsetY,
     textless,
     velocity,
   };

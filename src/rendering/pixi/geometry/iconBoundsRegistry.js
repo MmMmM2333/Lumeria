@@ -90,7 +90,7 @@ function makeStageLayoutRecord(rect, meta = {}) {
   return { ...safeRect, meta: cloneMeta(meta) };
 }
 
-function cloneStageLayoutRecord(record) {
+function cloneBoundsRecord(record) {
   const safeRect = cloneRect(record);
   if (!safeRect) return null;
   return {
@@ -205,16 +205,22 @@ export function createIconBoundsRegistry() {
     }
   }
 
-  function getBounds(kind, variant, keyInput, options = {}) {
+  function getRecord(kind, variant, keyInput, options = {}) {
     const normalizedOptions = normalizeGetOptions(options);
     const key = makeIconBoundsKey(kind, keyInput);
     const store = getStore(kind, variant);
     const value = key && store ? store.get(key) : null;
     if (!value) warnMissingBounds(kind, variant, key, normalizedOptions);
     if (!value || !matchesExpectedMeta(value.meta, normalizedOptions.expected)) return null;
+    return cloneBoundsRecord(value);
+  }
+
+  function getBounds(kind, variant, keyInput, options = {}) {
+    const record = getRecord(kind, variant, keyInput, options);
+    if (!record) return null;
     return variant === ICON_BOUNDS_VARIANT.STABLE_STAGE_LAYOUT
-      ? cloneStageLayoutRecord(value)
-      : cloneRect(value);
+      ? record
+      : cloneRect(record);
   }
 
   function getAtPoint(kind, x, y, options = {}) {
@@ -312,6 +318,7 @@ export function createIconBoundsRegistry() {
     clearBounds,
     getAtPoint,
     getBounds,
+    getRecord,
     makeKey: makeIconBoundsKey,
     registerBounds,
   };

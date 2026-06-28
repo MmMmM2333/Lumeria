@@ -153,6 +153,52 @@ export async function runDragPreviewLayerTests() {
 
   {
     motionRuntime.reset();
+    const layer = new DragPreviewLayer();
+    const releaseState = {
+      cellSize: { height: 80, width: 80 },
+      item: { id: "app-target-spec", name: "App Target Spec", type: "app" },
+      key: "release-target-spec",
+      offset: { x: 32, y: 32 },
+      pointer: { x: 180, y: 220 },
+      size: { height: 64, width: 64 },
+      source: { index: 0, pageIndex: 0, type: "page" },
+      targetRect: { height: 56, left: 240, top: 260, width: 56 },
+      targetVersion: 1,
+      targetVisualSpec: {
+        cellHeight: 90,
+        cellWidth: 76,
+        compact: false,
+        iconSize: 56,
+        singleLineLabel: false,
+        textless: false,
+      },
+      velocity: { x: 0, y: 0 },
+    };
+    try {
+      layer.previewNode.scale.set(1.12);
+      layer.update({
+        folderPageSize: 9,
+        height: 600,
+        iconSize: 64,
+        isTextlessMode: false,
+        launchTargetStatusById: {},
+        releaseState,
+        showMissingLaunchTargetBadge: true,
+        stageRect: { height: 600, left: 0, top: 0, width: 800 },
+        width: 800,
+      });
+
+      assert(layer.previewNode.state.iconSize === 56, "target-spec release should render the ghost with the target icon size");
+      assert(layer.previewNode.state.cellWidth === 76 && layer.previewNode.state.cellHeight === 90, "target-spec release should render with the target cell dimensions");
+      assert(Math.abs(layer.previewNode.scale.x - 1.28) < 0.0001, "target-spec release should compensate the current drag scale by the source-to-target icon ratio");
+    } finally {
+      layer.destroy({ children: true });
+      motionRuntime.reset();
+    }
+  }
+
+  {
+    motionRuntime.reset();
     const calls = [];
     const layer = new DragPreviewLayer({
       onReleaseComplete: (release) => calls.push(release.key),

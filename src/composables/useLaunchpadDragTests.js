@@ -539,6 +539,14 @@ export async function runLaunchpadDragTests() {
             stageHeight: 500,
             stageRect: { left: 100, top: 60, width: 500, height: 500 },
             stageWidth: 500,
+            visualSpec: {
+              cellHeight: 80,
+              cellWidth: 70,
+              compact: false,
+              iconSize: 56,
+              singleLineLabel: false,
+              textless: false,
+            },
           }
         );
       },
@@ -559,8 +567,10 @@ export async function runLaunchpadDragTests() {
 
     const rect = drag.dragReleaseState.value?.targetRect;
     const stageRect = drag.dragReleaseState.value?.targetStageLayoutRect;
+    const visualSpec = drag.dragReleaseState.value?.targetVisualSpec;
     assert(Math.round(rect?.left) === 128 && Math.round(rect?.top) === 106, "folder release should animate to the committed compact visual slot, not the empty pointer slot");
     assert(Math.round(stageRect?.left) === 28 && Math.round(stageRect?.top) === 46, "folder release should carry the committed stage layout target");
+    assert(visualSpec?.iconSize === 56 && visualSpec?.cellWidth === 70, "folder release should carry the target folder visual spec for 64-to-56 slot release");
     iconBoundsRegistry.clearBounds();
   });
 

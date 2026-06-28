@@ -77,6 +77,30 @@ export function runDragPreviewMotionTests() {
   assert(targetedRelease.targetAlpha === 1 && targetedRelease.targetLabelAlpha === 1, "slot release should keep icon and label visible");
   assert(!targetedRelease.textless, "release textless override should win over current state");
 
+  const targetSpecRelease = getDragReleaseMotion({
+    ...preview,
+    targetRect: { height: 56, left: 300, top: 400, width: 56 },
+    targetVersion: 8,
+    targetVisualSpec: {
+      cellHeight: 90,
+      cellWidth: 76,
+      compact: false,
+      iconSize: 56,
+      singleLineLabel: false,
+      textless: false,
+    },
+    textless: false,
+  }, {
+    iconSize: 64,
+    stageRect: { left: 100, top: 200 },
+  });
+  assert(targetSpecRelease.iconSize === 56, "slot release should render with the target icon size when visual spec is available");
+  assert(targetSpecRelease.cellWidth === 76 && targetSpecRelease.cellHeight === 90, "slot release should use the target cell dimensions");
+  assert(targetSpecRelease.compact === false && targetSpecRelease.singleLineLabel === false, "slot release should use target label layout flags");
+  assert(Math.round(targetSpecRelease.startScaleMultiplier * 10000) === 11429, "slot release should compensate source-to-target icon size at the start");
+  assert(targetSpecRelease.targetScale === 1, "target-spec slot release should finish at neutral node scale");
+  assert(targetSpecRelease.startIconCenter.x === 142 && targetSpecRelease.startIconCenter.y === 132, "target-spec slot release should preserve the source pointer icon center");
+
   const stageTargetedRelease = getDragReleaseMotion({
     ...preview,
     targetRect: { height: 32, left: 300, top: 400, width: 32 },

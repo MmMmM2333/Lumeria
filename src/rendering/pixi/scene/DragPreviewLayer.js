@@ -186,9 +186,16 @@ export class DragPreviewLayer extends Container {
     this.releaseCompleteKey = null;
     this.previewKey = null;
     this.previewScaleKey = null;
-    this.previewNode.position.set(releaseMotion.start.x, releaseMotion.start.y);
     const currentScale = Math.max(0.01, Number(this.previewNode.scale?.x) || DRAG_PREVIEW_SCALE);
-    this.previewNode.scale.set(currentScale);
+    const startScale = Math.max(0.01, currentScale * (Number(releaseMotion.startScaleMultiplier) || 1));
+    const startPosition = releaseMotion.startIconCenter
+      ? {
+        x: releaseMotion.startIconCenter.x,
+        y: releaseMotion.startIconCenter.y - releaseMotion.visualOffsetY * startScale,
+      }
+      : releaseMotion.start;
+    this.previewNode.position.set(startPosition.x, startPosition.y);
+    this.previewNode.scale.set(startScale);
     this.previewNode.alpha = 1;
     if (this.previewNode.labelText) {
       this.previewNode.labelText.alpha = 1;

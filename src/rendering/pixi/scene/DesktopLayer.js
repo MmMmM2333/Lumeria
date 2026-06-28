@@ -21,6 +21,7 @@ import { FolderOverlayLayer } from "./FolderOverlayLayer.js";
 import { FolderVisualCommitQueue } from "./folderVisualCommitQueue.js";
 import { FolderVisualOwnershipRegistry } from "./folderVisualOwnershipRegistry.js";
 import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
+import { makeIconVisualSpecFromNodeState } from "./iconVisualSpec.js";
 import { SingleStageDiagnosticsLayer } from "./singleStageDiagnostics.js";
 import { DragPreviewLayer } from "./DragPreviewLayer.js";
 import { IconNode } from "../nodes/IconNode.js";
@@ -997,7 +998,8 @@ export class DesktopLayer extends Container {
     for (const entry of registration.entries) {
       const { area, handoffLayoutTarget, index, item, node, pageIndex, sizing, targetX, x, y } = entry;
       if (!item?.id || !node || node.destroyed) continue;
-      const meta = { area, id: item.id, index, item, pageIndex };
+      const visualSpec = makeIconVisualSpecFromNodeState(node.state);
+      const meta = { area, id: item.id, index, item, pageIndex, visualSpec };
       const visualOffsetY = getIconVisualOffsetY(registration.isTextlessMode);
       const handoffEntry = item.type === "folder" ? this.getFolderHandoffEntry(item.id) : null;
       const boundsTargets = resolveDesktopBoundsTargets({
