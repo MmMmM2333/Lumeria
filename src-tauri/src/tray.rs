@@ -119,7 +119,7 @@ fn show_main_window_for_sequence(app: &AppHandle, open_sequence: u64) {
 }
 
 fn should_disable_main_window_transitions_before_show(mode: MainWindowMode) -> bool {
-    mode == MainWindowMode::Fullscreen || !EXPERIMENT_WINDOWED_THICKFRAME_NCCALCSIZE
+    mode == MainWindowMode::Windowed && !EXPERIMENT_WINDOWED_THICKFRAME_NCCALCSIZE
 }
 
 fn should_disable_main_window_transitions_before_hide(mode: MainWindowMode) -> bool {
@@ -197,6 +197,11 @@ pub(crate) fn set_main_window_mode(app: &AppHandle, mode: &str) -> Result<String
     if let Some(window) = app.get_webview_window("main") {
         apply_main_window_mode_to_window(&window, mode)?;
         apply_main_window_native_surface_policy(&window, mode)?;
+        if should_use_native_window_effects(mode) {
+            let open_sequence = MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed);
+            let disable_sequence = MAIN_WINDOW_EFFECT_DISABLE_SEQUENCE.load(Ordering::Relaxed);
+            schedule_window_effect_reapply(window, open_sequence, disable_sequence);
+        }
     }
     Ok(mode.as_str().to_string())
 }
@@ -284,25 +289,53 @@ unsafe extern "system" fn main_window_non_client_subclass_proc(
 
     match message {
         WM_NCCALCSIZE => {
-            let is_windowed_mode = current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT)
-                == MainWindowMode::Windowed;
-            if is_windowed_mode && wparam.0 != 0 && lparam.0 != 0 && IsZoomed(hwnd).as_bool() {
-                let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-                if !monitor.is_invalid() {
-                    let mut info = MONITORINFO {
-                        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
-                        ..Default::default()
-                    };
-                    if GetMonitorInfoW(monitor, &mut info).as_bool() {
-                        let params = &mut *(lparam.0 as *mut NCCALCSIZE_PARAMS);
-                        params.rgrc[0] = info.rcWork;
+            let uses_borderless_non_client = matches!(
+                current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT),
+                MainWindowMode::Fullscreen | MainWindowMode::Windowed
+            );
+            if uses_borderless_non_client {
+                if wparam.0 != 0 && lparam.0 != 0 {
+                    if IsZoomed(hwnd).as_bool() {
+                        let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+                        if !monitor.is_invalid() {
+                            let mut info = MONITORINFO {
+                                cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+                                ..Default::default()
+                            };
+                            if GetMonitorInfoW(monitor, &mut info).as_bool() {
+                                let params = &mut *(lparam.0 as *mut NCCALCSIZE_PARAMS);
+                                params.rgrc[0] = info.rcWork;
+                            }
+                        }
                     }
+                    return LRESULT(0);
                 }
+                return DefSubclassProc(hwnd, message, wparam, lparam);
             }
             LRESULT(0)
         }
-        WM_NCPAINT | WM_NCUAHDRAWCAPTION | WM_NCUAHDRAWFRAME => LRESULT(0),
-        WM_NCACTIVATE => LRESULT(1),
+        WM_NCPAINT | WM_NCUAHDRAWCAPTION | WM_NCUAHDRAWFRAME => {
+            let uses_borderless_non_client = matches!(
+                current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT),
+                MainWindowMode::Fullscreen | MainWindowMode::Windowed
+            );
+            if uses_borderless_non_client {
+                DefSubclassProc(hwnd, message, wparam, lparam)
+            } else {
+                LRESULT(0)
+            }
+        }
+        WM_NCACTIVATE => {
+            let uses_borderless_non_client = matches!(
+                current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT),
+                MainWindowMode::Fullscreen | MainWindowMode::Windowed
+            );
+            if uses_borderless_non_client {
+                DefSubclassProc(hwnd, message, wparam, lparam)
+            } else {
+                LRESULT(1)
+            }
+        }
         WM_SYSCOMMAND => {
             let command = (wparam.0 & 0xfff0) as u32;
             if command == SC_KEYMENU {
@@ -328,35 +361,6 @@ unsafe extern "system" fn main_window_non_client_subclass_proc(
 }
 
 #[cfg(target_os = "windows")]
-fn strip_main_window_non_client_style(window: &WebviewWindow) -> Result<(), String> {
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongPtrW, SetWindowLongPtrW, GWL_STYLE, WS_CAPTION, WS_MAXIMIZEBOX,
-        WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
-    };
-
-    let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
-        context: "WebviewWindow::hwnd for stripping non-client style",
-        source,
-    })?;
-    let current_style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) };
-    let next_style = (current_style
-        & !main_window_style_mask([
-            WS_CAPTION.0,
-            WS_THICKFRAME.0,
-            WS_SYSMENU.0,
-            WS_MINIMIZEBOX.0,
-            WS_MAXIMIZEBOX.0,
-        ]))
-        | main_window_style_mask([WS_POPUP.0]);
-    if next_style != current_style {
-        unsafe {
-            SetWindowLongPtrW(hwnd, GWL_STYLE, next_style);
-        }
-    }
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
 fn restore_main_window_resizable_frame_style(window: &WebviewWindow) -> Result<(), String> {
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindowLongPtrW, SetWindowLongPtrW, GWL_STYLE, WS_CAPTION, WS_MAXIMIZEBOX,
@@ -368,8 +372,9 @@ fn restore_main_window_resizable_frame_style(window: &WebviewWindow) -> Result<(
         source,
     })?;
     let current_style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) };
-    let next_style = (current_style & !main_window_style_mask([WS_POPUP.0]))
+    let next_style = current_style
         | main_window_style_mask([
+            WS_POPUP.0,
             WS_CAPTION.0,
             WS_THICKFRAME.0,
             WS_SYSMENU.0,
@@ -448,7 +453,6 @@ fn apply_main_window_mode_to_window(
 ) -> Result<(), String> {
     match mode {
         MainWindowMode::Fullscreen => {
-            prepare_main_window_fullscreen_surface(window)?;
             window
                 .set_decorations(false)
                 .map_err(|source| NativeError::Tauri {
@@ -456,19 +460,20 @@ fn apply_main_window_mode_to_window(
                     source,
                 })?;
             window
-                .set_resizable(false)
+                .set_resizable(true)
                 .map_err(|source| NativeError::Tauri {
-                    context: "WebviewWindow::set_resizable(false fullscreen)",
+                    context: "WebviewWindow::set_resizable(true fullscreen borderless)",
                     source,
                 })?;
-            if !window.is_fullscreen().unwrap_or(false) {
+            if window.is_fullscreen().unwrap_or(false) {
                 window
-                    .set_fullscreen(true)
+                    .set_fullscreen(false)
                     .map_err(|source| NativeError::Tauri {
-                        context: "WebviewWindow::set_fullscreen(true)",
+                        context: "WebviewWindow::set_fullscreen(false fullscreen borderless)",
                         source,
                     })?;
             }
+            prepare_main_window_fullscreen_surface(window)?;
         }
         MainWindowMode::Windowed => {
             window
@@ -498,15 +503,66 @@ fn apply_main_window_mode_to_window(
 
 #[cfg(target_os = "windows")]
 fn prepare_main_window_fullscreen_surface(window: &WebviewWindow) -> Result<(), String> {
-    set_window_transitions_enabled(window, false)?;
-    set_window_non_client_rendering(window, false)?;
+    restore_main_window_resizable_frame_style(window)?;
     set_main_window_non_client_subclass(window, true)?;
-    strip_main_window_non_client_style(window)?;
-    refresh_main_window_frame(window)
+    set_window_transitions_enabled(window, true)?;
+    set_window_non_client_rendering(window, true)?;
+    refresh_main_window_frame(window)?;
+    apply_main_window_borderless_fullscreen_bounds(window)
 }
 
 #[cfg(not(target_os = "windows"))]
 fn prepare_main_window_fullscreen_surface(_window: &WebviewWindow) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn apply_main_window_borderless_fullscreen_bounds(window: &WebviewWindow) -> Result<(), String> {
+    use windows::Win32::{
+        Graphics::Gdi::{
+            GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+        },
+        UI::WindowsAndMessaging::{
+            SetWindowPos, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOSENDCHANGING, SWP_NOZORDER,
+        },
+    };
+
+    let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::hwnd for borderless fullscreen bounds",
+        source,
+    })?;
+    let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
+    if monitor.is_invalid() {
+        return Err("Failed to find monitor for borderless fullscreen bounds".to_string());
+    }
+    let mut info = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    if !unsafe { GetMonitorInfoW(monitor, &mut info).as_bool() } {
+        return Err("Failed to read monitor info for borderless fullscreen bounds".to_string());
+    }
+    let rect = info.rcMonitor;
+    unsafe {
+        SetWindowPos(
+            hwnd,
+            None,
+            rect.left,
+            rect.top,
+            rect.right - rect.left,
+            rect.bottom - rect.top,
+            SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOSENDCHANGING | SWP_NOZORDER,
+        )
+    }
+    .map_err(|source| NativeError::Win32 {
+        context: "SetWindowPos(borderless fullscreen bounds)",
+        source,
+    })?;
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn apply_main_window_borderless_fullscreen_bounds(_window: &WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
@@ -516,12 +572,15 @@ fn confirm_main_window_mode_after_show(
 ) -> Result<(), String> {
     match mode {
         MainWindowMode::Fullscreen => {
-            window
-                .set_fullscreen(true)
-                .map_err(|source| NativeError::Tauri {
-                    context: "WebviewWindow::set_fullscreen(confirm fullscreen)",
-                    source,
-                })?;
+            if window.is_fullscreen().unwrap_or(false) {
+                window
+                    .set_fullscreen(false)
+                    .map_err(|source| NativeError::Tauri {
+                        context:
+                            "WebviewWindow::set_fullscreen(false confirm borderless fullscreen)",
+                        source,
+                    })?;
+            }
             apply_main_window_win32_surface_policy(window, mode)
         }
         MainWindowMode::Windowed => Ok(()),
@@ -529,9 +588,7 @@ fn confirm_main_window_mode_after_show(
 }
 
 fn should_use_native_window_effects(mode: MainWindowMode) -> bool {
-    // Fullscreen is a transparent borderless surface; DWM material
-    // or shadow can expose frame artifacts.
-    mode == MainWindowMode::Windowed
+    matches!(mode, MainWindowMode::Fullscreen | MainWindowMode::Windowed)
 }
 
 fn apply_main_window_native_surface_policy(
@@ -539,13 +596,15 @@ fn apply_main_window_native_surface_policy(
     mode: MainWindowMode,
 ) -> Result<(), String> {
     let enabled = should_use_native_window_effects(mode);
-    set_window_shadow_enabled(window, enabled)?;
     if enabled {
+        apply_main_window_win32_surface_policy(window, mode)?;
+        set_window_shadow_enabled(window, true)?;
         set_window_effects_enabled(window, true)?;
     } else {
+        set_window_shadow_enabled(window, false)?;
         set_window_effects_enabled(window, false)?;
+        apply_main_window_win32_surface_policy(window, mode)?;
     }
-    apply_main_window_win32_surface_policy(window, mode)?;
     Ok(())
 }
 
@@ -555,17 +614,18 @@ fn apply_main_window_win32_surface_policy(
     mode: MainWindowMode,
 ) -> Result<(), String> {
     // `decorations: false` removes the regular frame, but Tao still owns
-    // the Windows fullscreen state machine. Focus changes can make Windows
-    // recalculate and paint non-client chrome for a frame, which is visible
-    // on our transparent overlay. Fullscreen therefore needs explicit Win32
-    // style stripping and non-client message suppression.
+    // the underlying Win32 style. Keep the native caption/thickframe bits so
+    // DWM materials and system animations stay active, then consume the
+    // non-client area through WM_NCCALCSIZE.
     match mode {
         MainWindowMode::Fullscreen => {
-            set_window_transitions_enabled(window, false)?;
-            set_window_non_client_rendering(window, false)?;
+            restore_main_window_resizable_frame_style(window)?;
             set_main_window_non_client_subclass(window, true)?;
-            strip_main_window_non_client_style(window)?;
-            refresh_main_window_frame(window)
+            set_window_transitions_enabled(window, true)?;
+            set_window_non_client_rendering(window, true)?;
+            set_main_window_topmost(window, true)?;
+            refresh_main_window_frame(window)?;
+            apply_main_window_borderless_fullscreen_bounds(window)
         }
         MainWindowMode::Windowed => {
             if EXPERIMENT_WINDOWED_THICKFRAME_NCCALCSIZE {
@@ -674,6 +734,10 @@ pub(crate) fn refresh_main_window_effects(app: &AppHandle) {
         let open_sequence = MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed);
         let disable_sequence = MAIN_WINDOW_EFFECT_DISABLE_SEQUENCE.load(Ordering::Relaxed);
         let _ = set_window_effects_enabled(&window, true);
+        if mode == MainWindowMode::Fullscreen {
+            let _ = set_main_window_topmost(&window, true);
+            let _ = apply_main_window_borderless_fullscreen_bounds(&window);
+        }
         schedule_window_effect_reapply(window, open_sequence, disable_sequence);
     }
 }
