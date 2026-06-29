@@ -2,7 +2,7 @@ import { Container } from "pixi.js";
 import { IconNode } from "../nodes/IconNode.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
-import { killMotionOf, motion } from "../animation/motionTween.js";
+import { killMotionOf, motion, parallel } from "../animation/motionTween.js";
 import {
   DRAG_PREVIEW_SCALE,
   getDragPreviewLayout,
@@ -97,7 +97,7 @@ export class DragPreviewLayer extends Container {
     this.previewNode.setState({
       cellHeight: layout.cellHeight,
       cellWidth: layout.cellWidth,
-      compact: false,
+      compact: layout.compact,
       draggable: false,
       dropTarget: false,
       editing: false,
@@ -114,11 +114,16 @@ export class DragPreviewLayer extends Container {
       preserveNodeScale: true,
       removable: false,
       selected: false,
+      singleLineLabel: layout.singleLineLabel,
       source: preview.source,
       stageHeight: state.height,
       stageWidth: state.width,
       textless: layout.textless,
     });
+    if (this.previewNode.labelText) {
+      this.previewNode.labelText.alpha = 1;
+      this.previewNode.labelText.scale.set(1);
+    }
     describeDragPreviewTargets(this.previewNode, preview, "preview");
     this.previewNode.position.set(layout.position.x, layout.position.y);
     this.previewNode.rotation = DRAG_PREVIEW_ROTATION;
@@ -150,7 +155,7 @@ export class DragPreviewLayer extends Container {
     this.previewNode.setState({
       cellHeight: releaseMotion.cellHeight,
       cellWidth: releaseMotion.cellWidth,
-      compact: false,
+      compact: releaseMotion.compact,
       draggable: false,
       dropTarget: false,
       editing: false,
@@ -167,6 +172,7 @@ export class DragPreviewLayer extends Container {
       preserveNodeScale: true,
       removable: false,
       selected: false,
+      singleLineLabel: releaseMotion.singleLineLabel,
       source: release.source,
       stageHeight: state.height,
       stageWidth: state.width,
@@ -180,27 +186,77 @@ export class DragPreviewLayer extends Container {
     this.releaseCompleteKey = null;
     this.previewKey = null;
     this.previewScaleKey = null;
+    const currentScale = Math.max(0.01, Number(this.previewNode.scale?.x) || DRAG_PREVIEW_SCALE);
+    const startScale = Math.max(0.01, currentScale * (Number(releaseMotion.startScaleMultiplier) || 1));
+    const startPosition = releaseMotion.startIconCenter
+      ? {
+        x: releaseMotion.startIconCenter.x,
+        y: releaseMotion.startIconCenter.y - releaseMotion.visualOffsetY * startScale,
+      }
+      : releaseMotion.start;
+    this.previewNode.position.set(startPosition.x, startPosition.y);
+    this.previewNode.scale.set(startScale);
     this.previewNode.alpha = 1;
-    this.previewNode.position.set(releaseMotion.start.x, releaseMotion.start.y);
-    this.previewNode.scale.set(DRAG_PREVIEW_SCALE);
+    if (this.previewNode.labelText) {
+      this.previewNode.labelText.alpha = 1;
+      this.previewNode.labelText.scale.set(1);
+    }
     if (!releaseMotion.hasTargetRect) return;
     const completeRelease = () => {
       if (this.releaseCompleteKey === releaseMotion.key || this.releaseKey !== releaseMotion.key) return;
       this.releaseCompleteKey = releaseMotion.key;
       this.onReleaseComplete(release);
     };
-    motion(this.previewNode)
-      .preset("handoff")
-      .drag()
-      .interrupt("retarget")
-      .to({
-        onComplete: completeRelease,
-        velocity: releaseMotion.velocity,
-        x: releaseMotion.target.x,
-        y: releaseMotion.target.y,
-      })
-      .start();
-    springPreviewScale(this.previewNode, releaseMotion.targetScale);
+    const duration = Math.max(0.01, Number(release.duration) || 0.18);
+    const releaseAnimations = [
+      motion(this.previewNode)
+        .preset("handoff")
+        .drag()
+        .interrupt("retarget")
+        .to({
+          velocity: releaseMotion.velocity,
+          x: releaseMotion.target.x,
+          y: releaseMotion.target.y,
+        }),
+      motion(this.previewNode.scale)
+        .preset("handoff")
+        .drag()
+        .interrupt("retarget")
+        .to({ x: releaseMotion.targetScale, y: releaseMotion.targetScale }),
+    ];
+    if (releaseMotion.targetAlpha !== this.previewNode.alpha) {
+      releaseAnimations.push(
+        motion(this.previewNode)
+          .duration(duration)
+          .ease("power2.out")
+          .handoff()
+          .interrupt("retarget")
+          .to({ alpha: releaseMotion.targetAlpha })
+      );
+    }
+    if (this.previewNode.labelText?.visible) {
+      if (releaseMotion.targetLabelAlpha !== this.previewNode.labelText.alpha) {
+        releaseAnimations.push(
+          motion(this.previewNode.labelText)
+            .duration(Math.min(duration, 0.14))
+            .ease("power2.out")
+            .overlay()
+            .interrupt("retarget")
+            .to({ alpha: releaseMotion.targetLabelAlpha })
+        );
+      }
+      if (releaseMotion.targetLabelScale !== this.previewNode.labelText.scale.x) {
+        releaseAnimations.push(
+          motion(this.previewNode.labelText.scale)
+            .duration(Math.min(duration, 0.14))
+            .ease("power2.out")
+            .overlay()
+            .interrupt("retarget")
+            .to({ x: releaseMotion.targetLabelScale, y: releaseMotion.targetLabelScale })
+        );
+      }
+    }
+    parallel(releaseAnimations, { onComplete: completeRelease });
   }
 
   destroy(options) {

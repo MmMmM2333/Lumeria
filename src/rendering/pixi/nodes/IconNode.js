@@ -292,6 +292,7 @@ export class IconNode extends Container {
     this.updateJiggle(state);
     if (this.isFolder && wasGhosted && !state.ghosted && !state.dragging && !state.opening) {
       this.resetFolderPreviewAfterGhost();
+      if (this.folderHandoffLabelRevealInProgress) return;
       if (shouldRestoreLabelAfterGhost) this.restoreLabelAfterGhost();
       else this.revealLabelAfterGhost();
     }
@@ -340,7 +341,6 @@ export class IconNode extends Container {
   updateOpeningScale(state) {
     if (state.preserveNodeScale) {
       this.openingScaleActive = null;
-      killMotionOf(this.scale);
       return;
     }
     const shouldOpenScale = Boolean(state.opening);
@@ -682,6 +682,10 @@ export class IconNode extends Container {
       node.position.set(childRect.left + childRect.width / 2, childRect.top + childRect.height / 2);
       node.visible = Boolean(child);
       if (!child) continue;
+      if (child.id === state.suppressedFolderPreviewChildId) {
+        node.visible = false;
+        continue;
+      }
       const childId = child.id;
       const texture = getCachedIconTexture(child, () => {
         if (this.destroyed || !this.state || this.item?.type !== "folder") return;
@@ -1075,28 +1079,118 @@ export class IconNode extends Container {
     setPositionValue(this.labelText.position, labelState.x, labelState.y);
   }
 
-  revealLabelAfterGhost() {
+  revealLabelAfterGhost(options = {}) {
     if (!this.labelText.visible) return;
+    this.cancelFolderHandoffLabelFade();
     killMotionOf(this.labelText);
-    this.labelText.alpha = 0;
+    const currentAlpha = Number(this.labelText.alpha);
+    if (!(currentAlpha > 0 && currentAlpha < 1)) this.labelText.alpha = 0;
     motion(this.labelText)
       .preset("fade", { duration: 0.18 })
       .overlay()
       .interrupt("retarget")
-      .to({ alpha: 1 })
+      .to({ alpha: 1, onCancel: options.onCancel, onComplete: options.onComplete })
       .start();
   }
 
-  setFolderHandoffVisualHidden(hidden) {
-    this.visualWrap.visible = !hidden;
-    if (hidden) return;
+  cancelFolderHandoffLabelFade() {
+    if (this.folderHandoffLabelFadeFrame == null) return;
+    if (typeof globalThis.cancelAnimationFrame === "function") {
+      globalThis.cancelAnimationFrame(this.folderHandoffLabelFadeFrame);
+    }
+    if (typeof globalThis.clearTimeout === "function") {
+      globalThis.clearTimeout(this.folderHandoffLabelFadeFrame);
+    }
+    this.folderHandoffLabelFadeFrame = null;
+  }
+
+  startFolderHandoffLabelFade() {
+    if (!this.labelText?.visible) return;
+    this.cancelFolderHandoffLabelFade();
+    killMotionOf(this.labelText);
+    this.labelText.renderable = true;
+    this.labelText.alpha = 0;
+    this.folderHandoffLabelRevealInProgress = true;
+    const finish = () => {
+      this.folderHandoffLabelFadeFrame = null;
+      this.folderHandoffLabelRevealInProgress = false;
+      if (!this.folderHandoffSourceHidden && this.labelText?.visible) {
+        this.labelText.renderable = true;
+        this.labelText.alpha = 1;
+      }
+    };
+    if (typeof globalThis.setTimeout !== "function") {
+      motion(this.labelText)
+        .preset("fade", { duration: 0.18 })
+        .overlay()
+        .interrupt("retarget")
+        .to({ alpha: 1, onCancel: finish, onComplete: finish })
+        .start();
+      return;
+    }
+    const startTime = globalThis.performance?.now?.() ?? Date.now();
+    const duration = 180;
+    const step = () => {
+      if (this.destroyed || this.folderHandoffSourceHidden || !this.labelText?.visible) {
+        this.folderHandoffLabelFadeFrame = null;
+        this.folderHandoffLabelRevealInProgress = false;
+        return;
+      }
+      const now = globalThis.performance?.now?.() ?? Date.now();
+      const elapsed = Math.max(0, (Number(now) || Date.now()) - startTime);
+      const progress = Math.min(1, elapsed / duration);
+      const eased = 1 - (1 - progress) * (1 - progress);
+      this.labelText.alpha = eased;
+      if (progress >= 1) {
+        finish();
+        return;
+      }
+      this.folderHandoffLabelFadeFrame = globalThis.setTimeout(step, 16);
+    };
+    this.folderHandoffLabelFadeFrame = globalThis.setTimeout(step, 16);
+  }
+
+  setFolderHandoffSourceHidden(hidden) {
+    const sourceHidden = Boolean(hidden);
+    this.folderHandoffSourceHidden = sourceHidden;
+    this.visualWrap.visible = !sourceHidden;
+    if (this.labelText) {
+      this.labelText.renderable = !sourceHidden;
+      if (sourceHidden) {
+        this.folderHandoffLabelRevealInProgress = false;
+        this.cancelFolderHandoffLabelFade();
+        killMotionOf(this.labelText);
+        this.labelText.alpha = 0;
+      }
+    }
+    if (sourceHidden) return;
     this.setPressed(false, { immediate: true });
+    this.visualWrap.alpha = 1;
     killMotionOf(this.visualWrap.scale);
     this.visualWrap.scale.set(1);
   }
 
+  setFolderHandoffVisualHidden(hidden) {
+    this.setFolderHandoffSourceHidden(hidden);
+  }
+
+  releaseFolderHandoffSource(options = {}) {
+    this.setFolderHandoffSourceHidden(false);
+    if (!this.labelText?.visible) return;
+    this.labelText.renderable = true;
+    if (options.fadeLabel === false) {
+      this.folderHandoffLabelRevealInProgress = false;
+      this.cancelFolderHandoffLabelFade();
+      this.restoreLabelAfterGhost();
+    } else {
+      this.startFolderHandoffLabelFade();
+    }
+  }
+
   restoreLabelAfterGhost() {
     if (!this.labelText.visible) return;
+    this.folderHandoffLabelRevealInProgress = false;
+    this.cancelFolderHandoffLabelFade();
     killMotionOf(this.labelText);
     this.labelText.alpha = 1;
   }
@@ -1116,6 +1210,7 @@ export class IconNode extends Container {
 
   destroy(options) {
     this.stopJiggle();
+    this.cancelFolderHandoffLabelFade();
     killMotionOf(this.folderHoverFrame);
     killMotionOf(this.appFolderCreateFrame);
     killAllMotion(this, { reason: "destroyed" });

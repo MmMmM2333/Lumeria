@@ -21,8 +21,10 @@ import { FolderOverlayLayer } from "./FolderOverlayLayer.js";
 import { FolderVisualCommitQueue } from "./folderVisualCommitQueue.js";
 import { FolderVisualOwnershipRegistry } from "./folderVisualOwnershipRegistry.js";
 import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
+import { makeIconVisualSpecFromNodeState } from "./iconVisualSpec.js";
 import { SingleStageDiagnosticsLayer } from "./singleStageDiagnostics.js";
 import { DragPreviewLayer } from "./DragPreviewLayer.js";
+import { FolderCreateReleaseLayer } from "./FolderCreateReleaseLayer.js";
 import { IconNode } from "../nodes/IconNode.js";
 import {
   getFolderHandoffDebugOptions,
@@ -184,6 +186,7 @@ export class DesktopLayer extends Container {
     this.onFolderPanelPointerDown = options.onFolderPanelPointerDown || (() => {});
     this.onFolderTitleFrameChange = options.onFolderTitleFrameChange || (() => {});
     this.onDragReleaseComplete = options.onDragReleaseComplete || (() => {});
+    this.onFolderCreateReleaseComplete = options.onFolderCreateReleaseComplete || (() => {});
     if (!options.iconBoundsRegistry) throw new Error("DesktopLayer requires iconBoundsRegistry");
     this.iconBoundsRegistry = options.iconBoundsRegistry;
     this.visualOwnership = options.visualOwnership || new FolderVisualOwnershipRegistry();
@@ -196,7 +199,7 @@ export class DesktopLayer extends Container {
       onDesktopSourceGhostingChange: () => this.commitFolderSourceGhosting(),
       onClosingFolderPointerDown: (folderId, event) => this.onClosingFolderPointerDown(folderId, event),
       onClosingHandoffPrepare: (folderId) => this.startClosingFolderHandoffNow(folderId, { resetVisual: true, revealLabel: false }),
-      onClosingHandoffReady: (folderId) => this.startClosingFolderHandoffNow(folderId),
+      onClosingHandoffReady: (folderId) => this.startClosingFolderHandoffNow(folderId, { revealLabel: false }),
       onClosingHandoffVisualRelease: (folderId) => this.releaseClosingFolderHandoffVisual(folderId),
       // Authoritative "is this folder's real desktop icon currently visible". The
       // overlay/coordinator's own released flags can desync from the desktop handoff
@@ -222,6 +225,9 @@ export class DesktopLayer extends Container {
     this.singleStageDragPreviewLayer = new DragPreviewLayer({
       onReleaseComplete: (release) => this.onDragReleaseComplete(release),
     });
+    this.folderCreateReleaseLayer = new FolderCreateReleaseLayer({
+      onReleaseComplete: (release) => this.onFolderCreateReleaseComplete(release),
+    });
     this.folderHandoffNodes = new Map();
     this.primaryFolderHandoffId = null;
     this.hasDesktopVisualAlpha = false;
@@ -246,6 +252,7 @@ export class DesktopLayer extends Container {
     this.addChild(this.desktopClosingUnderlayLayer);
     this.addChild(this.singleStageFolderLayer);
     this.addChild(this.singleStageDragPreviewLayer);
+    this.addChild(this.folderCreateReleaseLayer);
     this.addChild(this.singleStageDiagnosticsLayer);
     this.addChild(this.handoffDebugLayer);
     this.describeMotionTargets();
@@ -348,12 +355,14 @@ export class DesktopLayer extends Container {
         node.setState(nodeState);
         let folderHandoffEntry = effectiveFolderHandoffEntry;
         if (isActiveFolderClosingHandoff) {
-          this.ensureFolderHandoffNode(item.id, node, layoutTarget);
+          this.ensureFolderHandoffNode(item.id, node, layoutTarget, { revealLabel: false });
           folderHandoffEntry = this.getFolderHandoffEntry(item.id);
         } else if (folderHandoffEntry) {
           this.syncFolderHandoffNode(node, layoutTarget, folderHandoffEntry);
         }
-        if (isFolderClosingHandoff && folderHandoffEntry?.visualReleased) this.revealFolderHandoffLabel(folderHandoffEntry);
+        if (isFolderClosingHandoff && folderHandoffEntry?.visualReleased) {
+          this.revealFolderHandoffLabelWhenSettled(folderHandoffEntry, state, { animate: false });
+        }
 
         if (entry.boundsEntry) {
           boundsEntries.push({
@@ -393,6 +402,7 @@ export class DesktopLayer extends Container {
     this.updateSingleStageFolderLayer(state);
     this.applyFolderSourceGhosting(state);
     this.updateSingleStageDragPreviewLayer(state);
+    this.updateFolderCreateReleaseLayer(state);
     this.singleStageDiagnosticsLayer.update(state.singleStageFolderState, {
       enabled: state.singleStageDiagnosticsEnabled,
       iconBoundsRegistry: this.iconBoundsRegistry,
@@ -407,13 +417,12 @@ export class DesktopLayer extends Container {
     const pageTrackInFlight = noSubstitute && isPageTrackMotionActive(this.pageTrackMotion, this.pageTrack);
     if (noSubstitute && !pageTrackInFlight) {
       this.finishFolderHandoffNodeAfterFrame(entry.folderId);
-    } else if (!pageTrackInFlight && isStaleHiddenFolderHandoffEntry(entry, this.singleStageFolderLayer, entry.folderId)) {
-      // Close finished without ever revealing this entry (its reveal was preempted
-      // by another folder), yet a stale Vue closing id keeps it alive and hidden.
-      // Reveal WITHOUT retiring — retiring would let isActiveFolderClosingHandoff
-      // recreate + re-hide it every frame (icon/label flash).
+    } else if (!pageTrackInFlight && isStaleHiddenFolderHandoffEntry(state, entry, this.singleStageFolderLayer, entry.folderId)) {
+      // Close finished without ever restoring this entry, yet a stale Vue closing
+      // id keeps it alive and hidden. Restore the artwork without retiring; the
+      // label still waits for source ownership to settle.
       this.restoreFolderHandoffVisual(entry);
-      this.revealFolderHandoffLabel(entry);
+      this.revealFolderHandoffLabelWhenSettled(entry, state, { animate: false });
     }
     return noSubstitute && !pageTrackInFlight;
   }
@@ -579,9 +588,9 @@ export class DesktopLayer extends Container {
     }));
   }
 
-  applyFolderSourceGhosting(state) {
+  applyFolderSourceGhosting(state, options = {}) {
     state = normalizeDesktopHandoffState(state);
-    this.lastFolderSourceGhostingState = state;
+    if (options.remember !== false) this.lastFolderSourceGhostingState = state;
     const rawIds = state.folderSourceGhostedIds;
     const ownershipIds = normalizeFolderIdSet(
       getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership),
@@ -645,6 +654,18 @@ export class DesktopLayer extends Container {
     });
   }
 
+  updateFolderCreateReleaseLayer(state) {
+    if (!this.folderCreateReleaseLayer) return;
+    this.folderCreateReleaseLayer.update({
+      folderPageSize: state.folderPageSize,
+      height: state.height,
+      iconSize: state.iconSize,
+      releaseState: state.folderCreateReleaseState,
+      stageRect: state.stageRect,
+      width: state.width,
+    });
+  }
+
   findFolderBoundsEntry(folderId) {
     const entries = this.boundsRegistration?.entries || [];
     return entries.find((entry) => entry?.item?.id === folderId && entry.item.type === "folder" && entry.area === "desktop") ||
@@ -681,7 +702,7 @@ export class DesktopLayer extends Container {
     const node = entry?.node || existing?.node || this.findIconNodeByItemId(folderId);
     const layoutTarget = entry?.handoffLayoutTarget || (entry ? { x: entry.x, y: entry.y } : existing?.layoutTarget);
     if (!folderId || !node || node.destroyed || !layoutTarget) return false;
-    this.ensureFolderHandoffNode(folderId, node, layoutTarget, options);
+    this.ensureFolderHandoffNode(folderId, node, layoutTarget, { revealLabel: false, ...options });
     return true;
   }
 
@@ -718,7 +739,7 @@ export class DesktopLayer extends Container {
     }
     this.setPrimaryFolderHandoffNode(entry);
     this.syncFolderHandoffNode(node, layoutTarget, entry);
-    if (options.revealLabel !== false) this.revealFolderHandoffLabel(entry);
+    if (options.revealLabel !== false && entry.visualReleased) this.revealFolderHandoffLabel(entry);
   }
 
   syncFolderHandoffNode(node = this.folderHandoffNode?.node, layoutTarget = null, handoffEntry = null) {
@@ -743,18 +764,13 @@ export class DesktopLayer extends Container {
     }
     node.resetFolderPreviewAfterGhost?.();
     if (!entry.visualReleased) {
-      node.setFolderHandoffVisualHidden?.(true);
+      if (typeof node.setFolderHandoffSourceHidden === "function") node.setFolderHandoffSourceHidden(true);
+      else node.setFolderHandoffVisualHidden?.(true);
       entry.visualHidden = true;
     } else if (entry.visualHidden) {
-      node.setFolderHandoffVisualHidden?.(false);
+      if (typeof node.setFolderHandoffSourceHidden === "function") node.setFolderHandoffSourceHidden(false);
+      else node.setFolderHandoffVisualHidden?.(false);
       entry.visualHidden = false;
-    }
-    if (node.labelText) {
-      node.labelText.visible = true;
-      if (!entry.labelRevealStarted) {
-        killMotionOf(node.labelText);
-        node.labelText.alpha = 0;
-      }
     }
     if (node.parent === this.pageTrack && this.pageTrack.children.length > 1) {
       this.pageTrack.setChildIndex(node, this.pageTrack.children.length - 1);
@@ -764,7 +780,8 @@ export class DesktopLayer extends Container {
   finishFolderHandoffNodeAfterFrame(folderId = null) {
     const entry = this.getFolderHandoffEntry(folderId);
     if (!entry || entry.cleanupFrame != null) return;
-    if (entry.visualReleased) this.revealFolderHandoffLabel(entry);
+    if (!entry.visualReleased) this.restoreFolderHandoffVisual(entry, { fadeLabel: true });
+    else this.revealFolderHandoffLabelWhenSettled(entry, undefined, { animate: false });
     const cleanupFrame = { cancelled: false };
     entry.cleanupFrame = cleanupFrame;
     const finish = () => {
@@ -780,24 +797,67 @@ export class DesktopLayer extends Container {
     const entry = this.getFolderHandoffEntry(folderId);
     if (!entry || (folderId && entry.folderId !== folderId)) return;
     this.debugFolderHandoffRestore(entry, "desktop-restore-before");
-    this.restoreFolderHandoffVisual(entry);
+    this.restoreFolderHandoffVisual(entry, { fadeLabel: true });
     this.debugFolderHandoffRestore(entry, "desktop-restore-after");
-    this.revealFolderHandoffLabel(entry);
   }
 
-  restoreFolderHandoffVisual(entry) {
+  restoreFolderHandoffVisual(entry, options = {}) {
     const node = entry?.node;
     if (!node || node.destroyed) return;
-    node.setFolderHandoffVisualHidden?.(false);
     entry.visualHidden = false;
     entry.visualReleased = true;
+    const labelFadeActive = node.folderHandoffLabelRevealInProgress === true &&
+      node.folderHandoffLabelFadeFrame != null;
+    const shouldReleaseLabel = !entry.labelRevealStarted ||
+      (
+        options.fadeLabel !== false &&
+        !labelFadeActive &&
+        node.labelText?.visible &&
+        Number(node.labelText.alpha) <= 0.001
+      );
+    if (shouldReleaseLabel) {
+      entry.labelRevealStarted = true;
+      if (typeof node.releaseFolderHandoffSource === "function") {
+        node.releaseFolderHandoffSource({ fadeLabel: options.fadeLabel !== false });
+      } else {
+        node.setFolderHandoffVisualHidden?.(false);
+        if (options.fadeLabel === false && typeof node.restoreLabelAfterGhost === "function") node.restoreLabelAfterGhost();
+        else if (typeof node.revealLabelAfterGhost === "function") node.revealLabelAfterGhost();
+        else if (node.labelText) node.labelText.alpha = 1;
+      }
+      return;
+    }
+    if (typeof node.setFolderHandoffSourceHidden === "function") node.setFolderHandoffSourceHidden(false);
+    else node.setFolderHandoffVisualHidden?.(false);
   }
 
-  revealFolderHandoffLabel(entry = this.folderHandoffNode) {
+  isFolderHandoffLabelRevealSafe(entry, state = this.lastFolderSourceGhostingState || {}) {
+    if (!entry || !entry.visualReleased || entry.visualHidden) return false;
+    const normalized = normalizeDesktopHandoffState(state || {});
+    if (normalized.folderSourceGhostedIds.has(entry.folderId)) return false;
+    if (normalized.isFolderOpeningPreviewFrameGhosted?.(entry.folderId) === true) return false;
+    const ownershipIds = normalizeFolderIdSet(
+      getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership),
+      this.singleStageFolderLayer.getDesktopSourceGhostedIds?.()
+    );
+    if (ownershipIds.has(entry.folderId)) return false;
+    return shouldFinishFolderHandoffEntry(normalized, this.singleStageFolderLayer, entry.folderId);
+  }
+
+  revealFolderHandoffLabelWhenSettled(entry = this.folderHandoffNode, state = this.lastFolderSourceGhostingState || {}, options = {}) {
+    if (!this.isFolderHandoffLabelRevealSafe(entry, state)) return false;
+    this.revealFolderHandoffLabel(entry, options);
+    return true;
+  }
+
+  revealFolderHandoffLabel(entry = this.folderHandoffNode, options = {}) {
     const node = entry?.node;
     if (!entry || entry.labelRevealStarted || !node || node.destroyed || !node.labelText?.visible) return;
     entry.labelRevealStarted = true;
-    if (typeof node.revealLabelAfterGhost === "function") node.revealLabelAfterGhost();
+    if (typeof node.releaseFolderHandoffSource === "function") {
+      node.releaseFolderHandoffSource({ fadeLabel: options.animate !== false });
+    } else if (options.animate === false && typeof node.restoreLabelAfterGhost === "function") node.restoreLabelAfterGhost();
+    else if (typeof node.revealLabelAfterGhost === "function") node.revealLabelAfterGhost();
     else node.labelText.alpha = 1;
   }
 
@@ -825,13 +885,13 @@ export class DesktopLayer extends Container {
   restoreFolderHandoffNode(entry) {
     const node = entry?.node;
     if (!node || node.destroyed) return;
-    this.restoreFolderHandoffVisual(entry);
+    this.restoreFolderHandoffVisual(entry, { fadeLabel: true });
     if (node.parent !== this.pageTrack) return;
     const childCount = this.pageTrack.children.length;
     if (!childCount) return;
     const targetIndex = Math.max(0, Math.min(entry.originalIndex ?? childCount - 1, childCount - 1));
     if (this.getPageTrackChildIndex(node) !== targetIndex) this.pageTrack.setChildIndex(node, targetIndex);
-    if (entry.visualReleased) this.revealFolderHandoffLabel(entry);
+    if (entry.visualReleased) this.revealFolderHandoffLabel(entry, { animate: false });
   }
 
   getPageTrackChildIndex(node) {
@@ -900,6 +960,9 @@ export class DesktopLayer extends Container {
         folderChildrenWrapScaleY: node.folderChildrenWrap?.scale ? Math.round((node.folderChildrenWrap.scale.y ?? 1) * 1000) / 1000 : null,
         folderChildrenWrapY: node.folderChildrenWrap ? Math.round((node.folderChildrenWrap.y || 0) * 1000) / 1000 : null,
         labelAlpha: node.labelText ? Math.round((node.labelText.alpha ?? 0) * 1000) / 1000 : null,
+        labelFadeFrameActive: node.folderHandoffLabelFadeFrame != null,
+        labelRenderable: node.labelText ? node.labelText.renderable : null,
+        labelRevealInProgress: node.folderHandoffLabelRevealInProgress === true,
         labelVisible: node.labelText ? node.labelText.visible : null,
         parentIsPageTrack: node.parent === this.pageTrack,
         scaleX: Math.round((node.scale?.x ?? 1) * 1000) / 1000,
@@ -997,7 +1060,8 @@ export class DesktopLayer extends Container {
     for (const entry of registration.entries) {
       const { area, handoffLayoutTarget, index, item, node, pageIndex, sizing, targetX, x, y } = entry;
       if (!item?.id || !node || node.destroyed) continue;
-      const meta = { area, id: item.id, index, item, pageIndex };
+      const visualSpec = makeIconVisualSpecFromNodeState(node.state);
+      const meta = { area, id: item.id, index, item, pageIndex, visualSpec };
       const visualOffsetY = getIconVisualOffsetY(registration.isTextlessMode);
       const handoffEntry = item.type === "folder" ? this.getFolderHandoffEntry(item.id) : null;
       const boundsTargets = resolveDesktopBoundsTargets({
@@ -1183,6 +1247,9 @@ export class DesktopLayer extends Container {
       alpha: Math.round((node?.alpha ?? 0) * 1000) / 1000,
       eventMode: node?.eventMode ?? null,
       labelAlpha: node?.labelText ? Math.round((node.labelText.alpha ?? 0) * 1000) / 1000 : null,
+      labelFadeFrameActive: node?.folderHandoffLabelFadeFrame != null,
+      labelRenderable: node?.labelText?.renderable ?? null,
+      labelRevealInProgress: node?.folderHandoffLabelRevealInProgress === true,
       labelVisible: node?.labelText?.visible ?? null,
       scaleX: Math.round((node?.scale?.x ?? 1) * 1000) / 1000,
       scaleY: Math.round((node?.scale?.y ?? 1) * 1000) / 1000,
@@ -1269,6 +1336,7 @@ export class DesktopLayer extends Container {
     killMotionOf(this.desktopClosingUnderlayLayer?.scale, null, { lane: "base", reason: "destroyed" });
     killMotionOf(this.singleStageFolderLayer, null, { lane: "base", reason: "destroyed" });
     killMotionOf(this.singleStageFolderLayer?.scale, null, { lane: "base", reason: "destroyed" });
+    this.folderCreateReleaseLayer?.clearVisuals?.("destroyed");
     cancelPageTrackMotion(this.pageTrackMotion, "destroyed");
     killMotionOf(this.pageTrack, null, { lane: "base", reason: "destroyed" });
     this.visualCommitQueue?.clear?.();

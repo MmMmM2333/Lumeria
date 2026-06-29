@@ -23,6 +23,15 @@ import {
   ICON_BOUNDS_VARIANT,
 } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 import { stageLayoutRecordToClientRect } from "../rendering/pixi/geometry/stageCoordinates.js";
+import { getDesktopIconSizing } from "../rendering/pixi/scene/desktopIconSizing.js";
+import {
+  makeFolderCenterCollapseRect,
+  makeFolderThumbPreviewRect,
+} from "../rendering/pixi/scene/folderOverlayTargets.js";
+import {
+  cloneIconVisualSpec,
+  makeIconVisualSpec,
+} from "../rendering/pixi/scene/iconVisualSpec.js";
 
 const BOUNDS_KIND = ICON_BOUNDS_KIND;
 const BOUNDS_VARIANT = ICON_BOUNDS_VARIANT;
@@ -31,6 +40,9 @@ const DRAG_RELEASE_DURATION_MS = 180;
 const DRAG_RELEASE_GHOST_PADDING_MS = 60;
 const DRAG_RELEASE_FALLBACK_CLEAR_MS = 1200;
 const DRAG_RELEASE_TARGET_RESOLVE_FRAMES = 3;
+const DRAG_RELEASE_MODE_SLOT = "slot";
+const DRAG_RELEASE_MODE_FOLDER_PREVIEW_SLOT = "folder-preview-slot";
+const DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB = "folder-center-absorb";
 const FOLDER_HOVER_SETTLE_MS = 660;
 const FOLDER_HOVER_FLASH_TOTAL_MS = 540;
 const FOLDER_HOVER_OPEN_BUFFER_MS = 20;
@@ -111,6 +123,7 @@ export function useLaunchpadDrag(options) {
   const dragFolderTargetId = shallowRef(null);
   const dragPreviewState = shallowRef(null);
   const dragReleaseState = shallowRef(null);
+  const folderCreateReleaseState = shallowRef(null);
 
   let dragRuntime = null;
   let dragPlacement = null;
@@ -132,11 +145,14 @@ export function useLaunchpadDrag(options) {
   let dragReleaseTimer = null;
   let dragReleaseResolveRaf = 0;
   let dragReleaseKey = 0;
+  let folderCreateReleaseTimer = null;
+  let folderCreateReleaseResolveRaf = 0;
+  let folderCreateReleaseKey = 0;
   let dragFolderHoverKey = 0;
   let settledDragStartRaf = 0;
 
   function isDragActive() {
-    return Boolean(dragRuntime || dragReleaseState.value);
+    return Boolean(dragRuntime || dragReleaseState.value || folderCreateReleaseState.value);
   }
 
   function placementKey(kind) {
@@ -193,15 +209,41 @@ export function useLaunchpadDrag(options) {
   function getLongPressDragGeometry(lp) {
     const rect = resolveLongPressSourceRect(lp);
     if (!rect) return { offset: lp.offset, size: lp.size };
+    const visualSize = lp.dragVisualState?.iconSize;
+    const width = visualSize || rect.width;
+    const height = visualSize || rect.height;
+    const left = rect.left + rect.width / 2 - width / 2;
+    const top = rect.top + rect.height / 2 - height / 2;
     return {
       offset: {
-        x: lp.startPoint.x - rect.left,
-        y: lp.startPoint.y - rect.top,
+        x: lp.startPoint.x - left,
+        y: lp.startPoint.y - top,
       },
       size: {
-        height: rect.height,
-        width: rect.width,
+        height,
+        width,
       },
+    };
+  }
+
+  function normalizeDragVisualState(value) {
+    if (!value || typeof value !== "object") return null;
+    const cellHeight = Math.max(1, Number(value.cellHeight) || 0) || null;
+    const cellWidth = Math.max(1, Number(value.cellWidth) || 0) || null;
+    return {
+      cellHeight,
+      cellWidth,
+      compact: value.compact === true,
+      iconSize: Math.max(1, Number(value.iconSize) || 0) || null,
+      singleLineLabel: value.singleLineLabel === true,
+    };
+  }
+
+  function getDragVisualCellSize(dragVisualState) {
+    if (!dragVisualState?.cellWidth || !dragVisualState?.cellHeight) return null;
+    return {
+      height: dragVisualState.cellHeight,
+      width: dragVisualState.cellWidth,
     };
   }
 
@@ -359,9 +401,11 @@ export function useLaunchpadDrag(options) {
     if (!pendingPreviewPoint || !dragRuntime) return;
     dragPreviewState.value = {
       cellSize: { ...dragRuntime.cellSize },
+      compact: dragRuntime.compact === true,
       item: dragRuntime.item,
       offset: { ...dragRuntime.offset },
       pointer: { ...pendingPreviewPoint },
+      singleLineLabel: dragRuntime.singleLineLabel === true,
       size: { ...dragRuntime.size },
       source: dragRuntime.source,
     };
@@ -394,11 +438,24 @@ export function useLaunchpadDrag(options) {
     dragReleaseResolveRaf = 0;
   }
 
+  function clearFolderCreateReleaseResolve() {
+    if (folderCreateReleaseResolveRaf) window.cancelAnimationFrame(folderCreateReleaseResolveRaf);
+    folderCreateReleaseResolveRaf = 0;
+  }
+
+  function clearFolderCreateRelease() {
+    if (folderCreateReleaseTimer) window.clearTimeout(folderCreateReleaseTimer);
+    clearFolderCreateReleaseResolve();
+    folderCreateReleaseTimer = null;
+    folderCreateReleaseState.value = null;
+  }
+
   function clearDragRelease() {
     if (dragReleaseTimer) window.clearTimeout(dragReleaseTimer);
     clearDragReleaseResolve();
     dragReleaseTimer = null;
     dragReleaseState.value = null;
+    clearFolderCreateRelease();
   }
 
   function scheduleDragReleaseClear() {
@@ -406,6 +463,14 @@ export function useLaunchpadDrag(options) {
     dragReleaseTimer = window.setTimeout(() => {
       dragReleaseTimer = null;
       dragReleaseState.value = null;
+    }, DRAG_RELEASE_FALLBACK_CLEAR_MS + DRAG_RELEASE_GHOST_PADDING_MS);
+  }
+
+  function scheduleFolderCreateReleaseClear() {
+    if (folderCreateReleaseTimer) window.clearTimeout(folderCreateReleaseTimer);
+    folderCreateReleaseTimer = window.setTimeout(() => {
+      folderCreateReleaseTimer = null;
+      folderCreateReleaseState.value = null;
     }, DRAG_RELEASE_FALLBACK_CLEAR_MS + DRAG_RELEASE_GHOST_PADDING_MS);
   }
 
@@ -446,27 +511,109 @@ export function useLaunchpadDrag(options) {
     };
   }
 
-  function makeReleaseTarget(clientRect, stageLayoutRect = null) {
+  function getBoundsRecord(kind, variant, keyInput, optionsArg = {}) {
+    return options.iconBoundsRegistry.getRecord?.(kind, variant, keyInput, optionsArg) || null;
+  }
+
+  function getRecordVisualSpec(record) {
+    return cloneIconVisualSpec(record?.meta?.visualSpec);
+  }
+
+  function getFirstRecordVisualSpec() {
+    for (const record of arguments) {
+      const visualSpec = getRecordVisualSpec(record);
+      if (visualSpec) return visualSpec;
+    }
+    return null;
+  }
+
+  function makeReleaseTarget(clientRect, stageLayoutRect = null, visualSpec = null) {
     const safeClientRect = cloneClientRect(clientRect);
     const safeStageLayoutRect = cloneClientRect(stageLayoutRect);
     if (!safeClientRect && !safeStageLayoutRect) return null;
     return {
       clientRect: safeClientRect,
       stageLayoutRect: safeStageLayoutRect,
+      visualSpec: cloneIconVisualSpec(visualSpec),
     };
   }
 
   function normalizeReleaseTarget(target) {
-    if (target?.clientRect || target?.stageLayoutRect) {
-      return makeReleaseTarget(target.clientRect, target.stageLayoutRect) || { clientRect: null, stageLayoutRect: null };
+    if (target?.clientRect || target?.stageLayoutRect || target?.visualSpec) {
+      return makeReleaseTarget(target.clientRect, target.stageLayoutRect, target.visualSpec) ||
+        { clientRect: null, stageLayoutRect: null, visualSpec: null };
     }
-    return makeReleaseTarget(target) || { clientRect: null, stageLayoutRect: null };
+    return makeReleaseTarget(target) || { clientRect: null, stageLayoutRect: null, visualSpec: null };
   }
 
   function getStableLayoutReleaseTarget(source, expected = null) {
-    const record = options.iconBoundsRegistry.getBounds(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, source, { expected });
+    const record = getBoundsRecord(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, source, { expected });
     const clientRect = stageLayoutRecordToClientRect(record);
-    return clientRect ? makeReleaseTarget(clientRect, record) : null;
+    return clientRect ? makeReleaseTarget(clientRect, record, getRecordVisualSpec(record)) : null;
+  }
+
+  function getStageLayoutClientReleaseTarget(kind, keyInput, fallbackClientRect = null) {
+    const stageLayoutRecord = getBoundsRecord(kind, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, keyInput);
+    const stageLayoutClientRect = stageLayoutRecordToClientRect(stageLayoutRecord);
+    const liveRecord = getBoundsRecord(kind, BOUNDS_VARIANT.LIVE_TARGET, keyInput);
+    const renderedRecord = getBoundsRecord(kind, BOUNDS_VARIANT.RENDERED, keyInput);
+    return makeReleaseTarget(
+      liveRecord || renderedRecord || stageLayoutClientRect || fallbackClientRect,
+      stageLayoutRecord,
+      getFirstRecordVisualSpec(liveRecord, renderedRecord, stageLayoutRecord)
+    );
+  }
+
+  function getTopLevelFolderThumbReleaseTarget(folderId, fallbackClientRect = null) {
+    return getStageLayoutClientReleaseTarget(BOUNDS_KIND.FOLDER_THUMB, folderId, fallbackClientRect);
+  }
+
+  function getFolderPreviewChildReleaseTarget(folderId, childId, slotIndex, fallbackClientRect = null) {
+    const childKey = { childId, folderId, slotIndex };
+    const directTarget = getStageLayoutClientReleaseTarget(BOUNDS_KIND.PREVIEW_CHILD, childKey);
+    if (directTarget?.clientRect || directTarget?.stageLayoutRect) return directTarget;
+
+    const thumbTarget = getTopLevelFolderThumbReleaseTarget(folderId, fallbackClientRect);
+    if (!thumbTarget?.clientRect && !thumbTarget?.stageLayoutRect) return null;
+    return makeReleaseTarget(
+      makeFolderThumbPreviewRect(thumbTarget.clientRect, slotIndex) || thumbTarget.clientRect,
+      makeFolderThumbPreviewRect(thumbTarget.stageLayoutRect, slotIndex)
+    );
+  }
+
+  function getFolderCenterAbsorbReleaseTarget(folderId, fallbackClientRect = null) {
+    const thumbTarget = getTopLevelFolderThumbReleaseTarget(folderId, fallbackClientRect);
+    if (!thumbTarget?.clientRect && !thumbTarget?.stageLayoutRect) return null;
+    return makeReleaseTarget(
+      makeFolderCenterCollapseRect(thumbTarget.clientRect) || thumbTarget.clientRect,
+      makeFolderCenterCollapseRect(thumbTarget.stageLayoutRect)
+    );
+  }
+
+  function getFolderCreateReleaseTargets(folderId, targetAppId, draggedAppId, fallbackThumbTarget = null) {
+    const fallbackTarget = normalizeReleaseTarget(fallbackThumbTarget);
+    const registeredThumbTarget = getTopLevelFolderThumbReleaseTarget(folderId, null);
+    const thumbTarget = registeredThumbTarget?.clientRect || registeredThumbTarget?.stageLayoutRect
+      ? registeredThumbTarget
+      : fallbackTarget;
+    const targetAppSlotTarget = getFolderPreviewChildReleaseTarget(folderId, targetAppId, 0, thumbTarget.clientRect) ||
+      makeReleaseTarget(
+        makeFolderThumbPreviewRect(thumbTarget.clientRect, 0),
+        makeFolderThumbPreviewRect(thumbTarget.stageLayoutRect, 0)
+      );
+    const draggedAppSlotTarget = getFolderPreviewChildReleaseTarget(folderId, draggedAppId, 1, thumbTarget.clientRect) ||
+      makeReleaseTarget(
+        makeFolderThumbPreviewRect(thumbTarget.clientRect, 1),
+        makeFolderThumbPreviewRect(thumbTarget.stageLayoutRect, 1)
+      );
+    return {
+      draggedAppSlotRect: draggedAppSlotTarget?.clientRect || null,
+      draggedAppSlotStageLayoutRect: draggedAppSlotTarget?.stageLayoutRect || null,
+      targetAppSlotRect: targetAppSlotTarget?.clientRect || null,
+      targetAppSlotStageLayoutRect: targetAppSlotTarget?.stageLayoutRect || null,
+      targetThumbRect: thumbTarget?.clientRect || null,
+      targetThumbStageLayoutRect: thumbTarget?.stageLayoutRect || null,
+    };
   }
 
   function getDesktopTargetIconSize(cellWidth, cellHeight, fallbackSize) {
@@ -479,7 +626,7 @@ export function useLaunchpadDrag(options) {
     return Math.max(1, Math.min(configuredSize, 56, cellWidth, cellHeight));
   }
 
-  function getPageSlotReleaseRect(pageIndex, index, fallbackSize) {
+  function getPageSlotReleaseTarget(pageIndex, index, fallbackSize) {
     const rect = getRefRect(options.pageRefs, pageIndex);
     if (!rect) return null;
     const cols = Math.max(1, Number(options.gridCols.value) || 1);
@@ -489,11 +636,27 @@ export function useLaunchpadDrag(options) {
     const safeIndex = clamp(index, 0, Math.max(0, cols * rows - 1));
     const col = safeIndex % cols;
     const row = Math.floor(safeIndex / cols);
+    const sizing = getDesktopIconSizing({
+      iconSize: Number(options.iconSize?.value) || Number(fallbackSize) || 64,
+      isTextlessMode: getReleaseTextless(),
+      width: rect.width,
+    }, { height: cellHeight, width: cellWidth });
     const size = getDesktopTargetIconSize(cellWidth, cellHeight, fallbackSize);
-    return makeCenteredRect(rect.left + col * cellWidth + cellWidth / 2, rect.top + row * cellHeight + cellHeight / 2 + getReleaseVisualOffsetY(), size);
+    return makeReleaseTarget(
+      makeCenteredRect(rect.left + col * cellWidth + cellWidth / 2, rect.top + row * cellHeight + cellHeight / 2 + getReleaseVisualOffsetY(), size),
+      null,
+      makeIconVisualSpec({
+        cellHeight,
+        cellWidth,
+        compact: sizing.compact,
+        iconSize: size,
+        singleLineLabel: sizing.singleLineLabel,
+        textless: getReleaseTextless(),
+      })
+    );
   }
 
-  function getFolderSlotReleaseRect(pageIndex, index, fallbackSize) {
+  function getFolderSlotReleaseTarget(pageIndex, index, fallbackSize) {
     const rect = getRefRect(options.folderPageRefs, pageIndex);
     if (!rect) return null;
     const cols = Math.max(1, Number(options.folderCols.value) || 1);
@@ -504,17 +667,28 @@ export function useLaunchpadDrag(options) {
     const col = safeIndex % cols;
     const row = Math.floor(safeIndex / cols);
     const size = getFolderTargetIconSize(cellWidth, cellHeight, fallbackSize);
-    return makeCenteredRect(rect.left + col * cellWidth + cellWidth / 2, rect.top + row * cellHeight + cellHeight / 2 + getReleaseVisualOffsetY(), size);
+    return makeReleaseTarget(
+      makeCenteredRect(rect.left + col * cellWidth + cellWidth / 2, rect.top + row * cellHeight + cellHeight / 2 + getReleaseVisualOffsetY(), size),
+      null,
+      makeIconVisualSpec({
+        cellHeight,
+        cellWidth,
+        compact: false,
+        iconSize: size,
+        singleLineLabel: false,
+        textless: getReleaseTextless(),
+      })
+    );
   }
 
-  function getCommittedTopLevelReleaseRect(itemId, fallbackSize) {
+  function getCommittedTopLevelReleaseTarget(itemId, fallbackSize) {
     const target = options.findTopLevel(options.pages.value, itemId);
-    return target ? getPageSlotReleaseRect(target.pageIndex, target.index, fallbackSize) : null;
+    return target ? getPageSlotReleaseTarget(target.pageIndex, target.index, fallbackSize) : null;
   }
 
-  function getCommittedFolderReleaseRect(folderId, itemId, fallbackSize) {
+  function getCommittedFolderReleaseTarget(folderId, itemId, fallbackSize) {
     const target = options.findInFolder(options.pages.value, folderId, itemId);
-    return target ? getFolderSlotReleaseRect(target.pageIndex, target.index, fallbackSize) : null;
+    return target ? getFolderSlotReleaseTarget(target.pageIndex, target.index, fallbackSize) : null;
   }
 
   function getCommittedTopLevelTargetBounds(itemId) {
@@ -522,8 +696,9 @@ export function useLaunchpadDrag(options) {
     if (!target) return null;
     const source = { area: "desktop", folderId: null, id: itemId, pageIndex: target.pageIndex };
     const expected = { area: "desktop", id: itemId, index: target.index, pageIndex: target.pageIndex };
+    const liveRecord = getBoundsRecord(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.LIVE_TARGET, source, { expected });
     return getStableLayoutReleaseTarget(source, expected) ||
-      makeReleaseTarget(options.iconBoundsRegistry.getBounds(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.LIVE_TARGET, source, { expected }));
+      makeReleaseTarget(liveRecord, null, getRecordVisualSpec(liveRecord));
   }
 
   function getCommittedFolderTargetBounds(folderId, itemId) {
@@ -531,8 +706,9 @@ export function useLaunchpadDrag(options) {
     if (!target) return null;
     const source = { area: "folder", folderId, id: itemId, pageIndex: target.pageIndex };
     const expected = { area: "folder", folderId, id: itemId, index: target.index, pageIndex: target.pageIndex };
+    const liveRecord = getBoundsRecord(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.LIVE_TARGET, source, { expected });
     return getStableLayoutReleaseTarget(source, expected) ||
-      makeReleaseTarget(options.iconBoundsRegistry.getBounds(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.LIVE_TARGET, source, { expected }));
+      makeReleaseTarget(liveRecord, null, getRecordVisualSpec(liveRecord));
   }
 
   function getPointerReleaseRect(activeDrag) {
@@ -549,7 +725,7 @@ export function useLaunchpadDrag(options) {
     };
   }
 
-  function startPendingDragRelease() {
+  function startPendingDragRelease(releaseOptions = {}) {
     const activeDrag = dragRuntime;
     if (!activeDrag) {
       clearDragRelease();
@@ -562,15 +738,23 @@ export function useLaunchpadDrag(options) {
     const key = `release-${dragReleaseKey}-${activeDrag.item.id}`;
     dragReleaseState.value = {
       cellSize: { ...activeDrag.cellSize },
+      compact: activeDrag.compact === true,
       duration: DRAG_RELEASE_DURATION_MS / 1000,
       item: options.cloneItem(activeDrag.item),
       key,
       offset: { ...activeDrag.offset },
       pointer: { ...activeDrag.pointer },
+      releaseMode: releaseOptions.releaseMode || DRAG_RELEASE_MODE_SLOT,
+      singleLineLabel: activeDrag.singleLineLabel === true,
       size: { ...activeDrag.size },
       source: activeDrag.source,
+      suppressFolderPreviewChildId: releaseOptions.suppressFolderPreviewChildId || null,
+      suppressFolderPreviewFolderId: releaseOptions.suppressFolderPreviewFolderId || null,
+      targetFolderId: releaseOptions.targetFolderId || null,
+      targetPreviewSlotIndex: releaseOptions.targetPreviewSlotIndex ?? null,
       targetRect: null,
       targetStageLayoutRect: null,
+      targetVisualSpec: null,
       targetVersion: 0,
       textless: getReleaseTextless(),
       velocity: { ...(activeDrag.velocity || makeZeroVelocity()) },
@@ -582,15 +766,21 @@ export function useLaunchpadDrag(options) {
     const current = dragReleaseState.value;
     if (!current || current.key !== releaseKey) return false;
     const releaseTarget = normalizeReleaseTarget(targetRect);
+    const fallbackTarget = normalizeReleaseTarget(fallbackRect);
     const targetCandidate = releaseTarget.clientRect;
     const stageLayoutCandidate = releaseTarget.stageLayoutRect;
-    const fallbackCandidate = cloneClientRect(fallbackRect);
+    const fallbackCandidate = fallbackTarget.clientRect;
     const pointerCandidate = getPointerReleaseRect(current);
     const safeTargetRect = targetCandidate?.width && targetCandidate?.height
       ? targetCandidate
       : fallbackCandidate?.width && fallbackCandidate?.height
         ? fallbackCandidate
         : pointerCandidate;
+    const safeTargetVisualSpec = targetCandidate?.width && targetCandidate?.height
+      ? releaseTarget.visualSpec || fallbackTarget.visualSpec
+      : fallbackCandidate?.width && fallbackCandidate?.height
+        ? fallbackTarget.visualSpec
+        : null;
     if (!safeTargetRect?.width || !safeTargetRect?.height) {
       clearDragRelease();
       return false;
@@ -599,6 +789,7 @@ export function useLaunchpadDrag(options) {
       ...current,
       targetRect: safeTargetRect,
       targetStageLayoutRect: targetCandidate?.width && targetCandidate?.height ? stageLayoutCandidate : null,
+      targetVisualSpec: safeTargetVisualSpec,
       targetVersion: (Number(current.targetVersion) || 0) + 1,
     };
     scheduleDragReleaseClear();
@@ -627,6 +818,130 @@ export function useLaunchpadDrag(options) {
       if (!dragReleaseState.value || dragReleaseState.value.key !== releaseKey) return;
       dragReleaseResolveRaf = window.requestAnimationFrame(tryResolve);
     });
+  }
+
+  function setFolderCreateReleaseTargets(releaseKey, targets = {}) {
+    const current = folderCreateReleaseState.value;
+    if (!current || current.key !== releaseKey) return false;
+    const hasTarget = Boolean(
+      targets.targetThumbRect?.width ||
+      targets.targetThumbStageLayoutRect?.width ||
+      targets.targetAppSlotRect?.width ||
+      targets.targetAppSlotStageLayoutRect?.width ||
+      targets.draggedAppSlotRect?.width ||
+      targets.draggedAppSlotStageLayoutRect?.width
+    );
+    if (!hasTarget) {
+      clearFolderCreateRelease();
+      return false;
+    }
+    folderCreateReleaseState.value = {
+      ...current,
+      draggedAppSlotRect: cloneClientRect(targets.draggedAppSlotRect),
+      draggedAppSlotStageLayoutRect: cloneClientRect(targets.draggedAppSlotStageLayoutRect),
+      targetAppSlotRect: cloneClientRect(targets.targetAppSlotRect),
+      targetAppSlotStageLayoutRect: cloneClientRect(targets.targetAppSlotStageLayoutRect),
+      targetThumbRect: cloneClientRect(targets.targetThumbRect),
+      targetThumbStageLayoutRect: cloneClientRect(targets.targetThumbStageLayoutRect),
+      targetVersion: (Number(current.targetVersion) || 0) + 1,
+    };
+    scheduleFolderCreateReleaseClear();
+    return true;
+  }
+
+  function scheduleFolderCreateReleaseTargetResolve(releaseKey, resolveTargets) {
+    clearFolderCreateReleaseResolve();
+    let attempts = 0;
+    const tryResolve = () => {
+      folderCreateReleaseResolveRaf = 0;
+      const current = folderCreateReleaseState.value;
+      if (!current || current.key !== releaseKey) return;
+      const targets = typeof resolveTargets === "function" ? resolveTargets() : null;
+      if (targets) {
+        setFolderCreateReleaseTargets(releaseKey, targets);
+        return;
+      }
+      attempts += 1;
+      if (attempts < DRAG_RELEASE_TARGET_RESOLVE_FRAMES) {
+        folderCreateReleaseResolveRaf = window.requestAnimationFrame(tryResolve);
+        return;
+      }
+      setFolderCreateReleaseTargets(releaseKey, {
+        draggedAppSlotRect: current.draggedAppSlotRect,
+        draggedAppSlotStageLayoutRect: current.draggedAppSlotStageLayoutRect,
+        targetAppSlotRect: current.targetAppSlotRect,
+        targetAppSlotStageLayoutRect: current.targetAppSlotStageLayoutRect,
+        targetThumbRect: current.targetThumbRect,
+        targetThumbStageLayoutRect: current.targetThumbStageLayoutRect,
+      });
+    };
+    nextTick(() => {
+      if (!folderCreateReleaseState.value || folderCreateReleaseState.value.key !== releaseKey) return;
+      folderCreateReleaseResolveRaf = window.requestAnimationFrame(tryResolve);
+    });
+  }
+
+  function startPendingFolderCreateRelease(createResult, releaseOptions = {}) {
+    const activeDrag = dragRuntime;
+    if (!activeDrag || !createResult?.folderId || !createResult.targetApp || !createResult.draggedApp) {
+      clearFolderCreateRelease();
+      return null;
+    }
+    if (folderCreateReleaseTimer) window.clearTimeout(folderCreateReleaseTimer);
+    clearFolderCreateReleaseResolve();
+    folderCreateReleaseTimer = null;
+    folderCreateReleaseKey += 1;
+    const key = `folder-create-release-${folderCreateReleaseKey}-${createResult.folderId}`;
+    const sourceTarget = normalizeReleaseTarget(releaseOptions.sourceTarget);
+    const initialTargets = getFolderCreateReleaseTargets(
+      createResult.folderId,
+      createResult.targetApp.id,
+      createResult.draggedApp.id,
+      sourceTarget
+    );
+    folderCreateReleaseState.value = {
+      draggedApp: options.cloneItem(createResult.draggedApp),
+      draggedAppSlotRect: null,
+      draggedAppSlotStageLayoutRect: null,
+      duration: DRAG_RELEASE_DURATION_MS / 1000,
+      folderId: createResult.folderId,
+      folderItem: options.cloneItem(createResult.folderItem),
+      key,
+      sourceDraggedRect: cloneClientRect(getPointerReleaseRect(activeDrag)),
+      sourceDraggedStageLayoutRect: null,
+      sourceDraggedVisualSpec: makeIconVisualSpec({
+        cellHeight: activeDrag.cellSize?.height,
+        cellWidth: activeDrag.cellSize?.width,
+        compact: activeDrag.compact === true,
+        iconSize: activeDrag.size?.width,
+        singleLineLabel: activeDrag.singleLineLabel === true,
+        textless: getReleaseTextless(),
+      }),
+      sourceTargetRect: sourceTarget.clientRect,
+      sourceTargetStageLayoutRect: sourceTarget.stageLayoutRect,
+      sourceTargetVisualSpec: sourceTarget.visualSpec,
+      targetApp: options.cloneItem(createResult.targetApp),
+      targetAppSlotRect: null,
+      targetAppSlotStageLayoutRect: null,
+      targetThumbRect: null,
+      targetThumbStageLayoutRect: null,
+      targetVersion: 0,
+      velocity: { ...(activeDrag.velocity || makeZeroVelocity()) },
+    };
+    setFolderCreateReleaseTargets(key, initialTargets);
+    scheduleFolderCreateReleaseTargetResolve(key, () => getFolderCreateReleaseTargets(
+      createResult.folderId,
+      createResult.targetApp.id,
+      createResult.draggedApp.id,
+      sourceTarget
+    ));
+    return key;
+  }
+
+  function completeFolderCreateRelease(release) {
+    const current = folderCreateReleaseState.value;
+    if (!current || current.key !== release?.key) return;
+    clearFolderCreateRelease();
   }
 
   function startDragRelease(targetRect) {
@@ -736,17 +1051,19 @@ export function useLaunchpadDrag(options) {
     const source = { area: "desktop", folderId: null, id: found.item.id, pageIndex: found.pageIndex };
     const exactExpected = { area: "desktop", id: found.item.id, index: found.index, pageIndex: found.pageIndex };
     const pageExpected = { area: "desktop", id: found.item.id, pageIndex: found.pageIndex };
+    const exactLiveRecord = getBoundsRecord(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.LIVE_TARGET, source, { expected: exactExpected });
+    const pageLiveRecord = getBoundsRecord(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.LIVE_TARGET, source, { expected: pageExpected });
     return getStableLayoutReleaseTarget(source, exactExpected) ||
       getStableLayoutReleaseTarget(source, pageExpected) ||
-      makeReleaseTarget(options.iconBoundsRegistry.getBounds(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.LIVE_TARGET, source, { expected: exactExpected })) ||
-      makeReleaseTarget(options.iconBoundsRegistry.getBounds(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.LIVE_TARGET, source, { expected: pageExpected }));
+      makeReleaseTarget(exactLiveRecord, null, getRecordVisualSpec(exactLiveRecord)) ||
+      makeReleaseTarget(pageLiveRecord, null, getRecordVisualSpec(pageLiveRecord));
   }
 
   function normalizeTopLevelTarget(found, fallbackRect = null, node = null) {
     if (!found?.item) return null;
     const target = getStableTopLevelTargetBounds(found);
     const rect = target?.clientRect || fallbackRect;
-    return rect ? { item: found.item, node, rect, stageLayoutRect: target?.stageLayoutRect || null } : null;
+    return rect ? { item: found.item, node, rect, stageLayoutRect: target?.stageLayoutRect || null, visualSpec: target?.visualSpec || null } : null;
   }
 
   function getTopLevelTargetById(targetId) {
@@ -881,30 +1198,53 @@ export function useLaunchpadDrag(options) {
     };
   }
 
-  function createFolderForDrop(targetAppId) {
+  function createTopLevelFolderFromAppTarget(targetAppId, createOptions = {}) {
     const activeDrag = dragRuntime;
-    if (!activeDrag || activeDrag.item.type !== "app") return;
+    if (!activeDrag || activeDrag.item.type !== "app") return { accepted: false };
 
     const withoutDragged = options.removeEverywhere(options.pages.value, activeDrag.item.id);
     const target = options.findTopLevel(withoutDragged, targetAppId);
-    if (!target || target.item.type !== "app") return;
+    if (!target || target.item.type !== "app") return { accepted: false };
 
     const folderId = options.makeId("folder");
+    const targetApp = options.cloneItem(target.item);
+    const draggedApp = options.cloneItem(activeDrag.item);
+    const childPage = [targetApp];
+    if (createOptions.includeDraggedApp) childPage.push(draggedApp);
+    const folderItem = options.withFolderPages(
+      { id: folderId, type: "folder", name: "新文件夹" },
+      [childPage]
+    );
     const originGeometry =
       options.getTopLevelIconMotionGeometry(targetAppId, folderId) ||
       options.getPageSlotMotionGeometry(folderId, target.pageIndex, target.index);
     const next = options.clonePages(withoutDragged);
-    next[target.pageIndex][target.index] = options.withFolderPages(
-      { id: folderId, type: "folder", name: "新文件夹" },
-      [[options.cloneItem(target.item)]]
-    );
+    next[target.pageIndex][target.index] = folderItem;
 
-    dragPlacement = placementKey("folder-open", folderId);
+    dragPlacement = placementKey(createOptions.openAfterCreate ? "folder-open" : "folder-drop", folderId);
     lastPlacementCommit = null;
     options.commitPages(options.compactPages(next));
-    options.commitOpenFolder(folderId, { originGeometry });
-    options.commitFolderSession({ mode: "created", folderId, targetApp: options.cloneItem(target.item), hasEntered: false, openedAt: Date.now() });
-    blockDragSorting();
+    if (createOptions.openAfterCreate) {
+      options.commitOpenFolder(folderId, { originGeometry });
+      options.commitFolderSession({ mode: "created", folderId, targetApp, hasEntered: false, openedAt: Date.now() });
+      blockDragSorting();
+    }
+    return {
+      accepted: true,
+      draggedApp,
+      folderId,
+      folderItem,
+      originGeometry,
+      targetApp,
+      targetInfo: createOptions.targetInfo || null,
+    };
+  }
+
+  function createFolderForDrop(targetAppId) {
+    createTopLevelFolderFromAppTarget(targetAppId, {
+      includeDraggedApp: false,
+      openAfterCreate: true,
+    });
   }
 
   function openExistingFolderForDrop(folderId) {
@@ -920,13 +1260,16 @@ export function useLaunchpadDrag(options) {
 
   function dropDraggedAppOnTopLevelTarget(targetInfo) {
     const activeDrag = dragRuntime;
-    if (!activeDrag || activeDrag.item.type !== "app" || !targetInfo?.item) return false;
+    if (!activeDrag || activeDrag.item.type !== "app" || !targetInfo?.item) return { accepted: false };
 
     const target = options.findTopLevel(options.pages.value, targetInfo.item.id);
-    if (!target || target.item.id === activeDrag.item.id) return false;
+    if (!target || target.item.id === activeDrag.item.id) return { accepted: false };
 
     if (target.item.type === "folder") {
       const childPages = options.getFolderChildPages(target.item, options.folderPageSize.value);
+      const previewLimit = Math.min(9, Math.max(0, Number(options.folderPageSize.value) || 0));
+      const firstPageCount = childPages[0]?.filter(Boolean).length || 0;
+      const canBecomePreviewChild = childPages.length === 1 && firstPageCount < previewLimit;
       const targetPageIndex = Math.max(0, childPages.length - 1);
       const insertIndex = childPages[targetPageIndex]?.length || 0;
       options.commitPages(
@@ -940,27 +1283,36 @@ export function useLaunchpadDrag(options) {
         )
       );
       dragPlacement = placementKey("folder-drop", target.item.id, targetPageIndex, insertIndex);
-      return true;
+      return {
+        accepted: true,
+        folderId: target.item.id,
+        previewSlotIndex: canBecomePreviewChild ? firstPageCount : null,
+        releaseMode: canBecomePreviewChild
+          ? DRAG_RELEASE_MODE_FOLDER_PREVIEW_SLOT
+          : DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB,
+        suppressFolderPreviewChildId: canBecomePreviewChild ? activeDrag.item.id : null,
+        suppressFolderPreviewFolderId: canBecomePreviewChild ? target.item.id : null,
+        targetInfo,
+      };
     }
 
-    const withoutDragged = options.removeEverywhere(options.pages.value, activeDrag.item.id);
-    const latestTarget = options.findTopLevel(withoutDragged, target.item.id);
-    if (!latestTarget || latestTarget.item.type !== "app") return false;
-
-    const folderId = options.makeId("folder");
-    const originGeometry =
-      options.getTopLevelIconMotionGeometry(latestTarget.item.id, folderId) ||
-      options.getPageSlotMotionGeometry(folderId, latestTarget.pageIndex, latestTarget.index);
-    const next = options.clonePages(withoutDragged);
-    next[latestTarget.pageIndex][latestTarget.index] = options.withFolderPages(
-      { id: folderId, type: "folder", name: "新文件夹" },
-      [[options.cloneItem(latestTarget.item), options.cloneItem(activeDrag.item)]]
-    );
-
-    dragPlacement = placementKey("folder-drop", folderId);
-    options.commitPages(options.compactPages(next));
-    options.commitOpenFolder(folderId, { originGeometry });
-    return true;
+    const created = createTopLevelFolderFromAppTarget(target.item.id, {
+      includeDraggedApp: true,
+      openAfterCreate: false,
+      targetInfo,
+    });
+    if (!created.accepted) return { accepted: false };
+    return {
+      accepted: true,
+      createRelease: true,
+      draggedApp: created.draggedApp,
+      folderId: created.folderId,
+      folderItem: created.folderItem,
+      previewSlotIndex: null,
+      releaseMode: DRAG_RELEASE_MODE_SLOT,
+      targetApp: created.targetApp,
+      targetInfo: created.targetInfo || targetInfo,
+    };
   }
 
   function commitDraggedItemToDesktop(session, commitOptions) {
@@ -1332,10 +1684,12 @@ export function useLaunchpadDrag(options) {
     const geometry = getLongPressDragGeometry(lp);
     const nextDrag = {
       cellSize: lp.cellSize,
+      compact: lp.dragVisualState?.compact === true,
       item: lp.item,
       source: lp.source,
       pointerId: lp.pointerId,
       pointer: { x: lp.startPoint.x, y: lp.startPoint.y },
+      singleLineLabel: lp.dragVisualState?.singleLineLabel === true,
       lastPointerTime: nowMs(),
       offset: geometry.offset,
       size: geometry.size,
@@ -1413,9 +1767,12 @@ export function useLaunchpadDrag(options) {
     cancelLongPress();
     clearDragRelease();
 
-    const rect = event.currentTarget.getBoundingClientRect?.() || null;
-    const cellSize = getSourceCellSize(source) || { height: rect.height, width: rect.width };
     const folderOriginBounds = cloneFolderOriginBounds(event.folderOriginBounds);
+    const dragVisualState = normalizeDragVisualState(event.dragVisualState);
+    const rect = event.currentTarget.getBoundingClientRect?.() || null;
+    const cellSize = getDragVisualCellSize(dragVisualState) ||
+      getSourceCellSize(source) ||
+      { height: rect.height, width: rect.width };
     if (item?.type === "folder" && source?.type === "page") {
       options.requestFolderOpenWarmup?.(item, folderOriginBounds);
     }
@@ -1423,6 +1780,7 @@ export function useLaunchpadDrag(options) {
     longPressState = {
       cellSize,
       item: options.cloneItem(item),
+      dragVisualState,
       folderOriginBounds,
       rect: cloneRect(rect),
       refreshBoundsOnStart: shouldRefreshLongPressBoundsOnStart(),
@@ -1500,11 +1858,48 @@ export function useLaunchpadDrag(options) {
 
     const session = options.folderSession.value;
     const folderId = options.openFolderId.value;
-    if (!session && shouldDropOnTopLevelTarget && dropDraggedAppOnTopLevelTarget(topLevelDropTarget)) {
-      startDragRelease({
-        clientRect: topLevelDropTarget.rect,
-        stageLayoutRect: topLevelDropTarget.stageLayoutRect,
+    const topLevelDropResult = !session && shouldDropOnTopLevelTarget
+      ? dropDraggedAppOnTopLevelTarget(topLevelDropTarget)
+      : null;
+    if (topLevelDropResult?.accepted) {
+      const fallbackReleaseTarget = makeReleaseTarget(topLevelDropTarget.rect, topLevelDropTarget.stageLayoutRect, topLevelDropTarget.visualSpec);
+      if (topLevelDropResult.createRelease) {
+        startPendingFolderCreateRelease(topLevelDropResult, {
+          sourceTarget: fallbackReleaseTarget,
+        });
+        options.commitFolderSession(null);
+        endDrag();
+        return;
+      }
+      const releaseKey = startPendingDragRelease({
+        releaseMode: topLevelDropResult.releaseMode,
+        suppressFolderPreviewChildId: topLevelDropResult.suppressFolderPreviewChildId,
+        suppressFolderPreviewFolderId: topLevelDropResult.suppressFolderPreviewFolderId,
+        targetFolderId: topLevelDropResult.folderId,
+        targetPreviewSlotIndex: topLevelDropResult.previewSlotIndex,
       });
+      if (releaseKey) {
+        if (topLevelDropResult.releaseMode === DRAG_RELEASE_MODE_FOLDER_PREVIEW_SLOT) {
+          scheduleDragReleaseTargetResolve(
+            releaseKey,
+            () => getFolderPreviewChildReleaseTarget(
+              topLevelDropResult.folderId,
+              activeDrag.item.id,
+              topLevelDropResult.previewSlotIndex,
+              fallbackReleaseTarget?.clientRect
+            ),
+            fallbackReleaseTarget?.clientRect
+          );
+        } else if (topLevelDropResult.releaseMode === DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB) {
+          scheduleDragReleaseTargetResolve(
+            releaseKey,
+            () => getFolderCenterAbsorbReleaseTarget(topLevelDropResult.folderId, fallbackReleaseTarget?.clientRect),
+            fallbackReleaseTarget?.clientRect
+          );
+        } else {
+          setDragReleaseTarget(releaseKey, fallbackReleaseTarget);
+        }
+      }
       options.commitFolderSession(null);
       endDrag();
       return;
@@ -1516,29 +1911,29 @@ export function useLaunchpadDrag(options) {
       const inside = rect ? isPointInsideRect(rect, event.clientX, event.clientY) : true;
       if (!inside) {
         const insertIndex = calcPageInsertIndex(event.clientX, event.clientY);
-        const fallbackReleaseRect = getPageSlotReleaseRect(options.pageIndex.value, insertIndex, activeDrag.size?.width);
+        const fallbackReleaseTarget = getPageSlotReleaseTarget(options.pageIndex.value, insertIndex, activeDrag.size?.width);
         cancelFolderSessionAndReturnToDesktop({ force: true });
         const releaseKey = startPendingDragRelease();
-        const releaseRect = getCommittedTopLevelReleaseRect(activeDrag.item.id, activeDrag.size?.width) || fallbackReleaseRect;
-        scheduleDragReleaseTargetResolve(releaseKey, () => getCommittedTopLevelTargetBounds(activeDrag.item.id), releaseRect);
+        const releaseTarget = getCommittedTopLevelReleaseTarget(activeDrag.item.id, activeDrag.size?.width) || fallbackReleaseTarget;
+        scheduleDragReleaseTargetResolve(releaseKey, () => getCommittedTopLevelTargetBounds(activeDrag.item.id), releaseTarget);
         endDrag();
         return;
       }
       const folderTarget = calcFolderInsertTarget(event.clientX, event.clientY);
-      const fallbackReleaseRect = getFolderSlotReleaseRect(folderTarget.pageIndex, folderTarget.index, activeDrag.size?.width);
+      const fallbackReleaseTarget = getFolderSlotReleaseTarget(folderTarget.pageIndex, folderTarget.index, activeDrag.size?.width);
       placeDraggedItemInFolder(folderId, event.clientX, event.clientY, { force: true });
       const releaseKey = startPendingDragRelease();
-      const releaseRect = getCommittedFolderReleaseRect(folderId, activeDrag.item.id, activeDrag.size?.width) || fallbackReleaseRect;
-      scheduleDragReleaseTargetResolve(releaseKey, () => getCommittedFolderTargetBounds(folderId, activeDrag.item.id), releaseRect);
+      const releaseTarget = getCommittedFolderReleaseTarget(folderId, activeDrag.item.id, activeDrag.size?.width) || fallbackReleaseTarget;
+      scheduleDragReleaseTargetResolve(releaseKey, () => getCommittedFolderTargetBounds(folderId, activeDrag.item.id), releaseTarget);
       options.commitOpenFolder(folderId);
       options.commitFolderSession(null);
     } else {
       const insertIndex = calcPageInsertIndex(event.clientX, event.clientY);
-      const fallbackReleaseRect = getPageSlotReleaseRect(options.pageIndex.value, insertIndex, activeDrag.size?.width);
+      const fallbackReleaseTarget = getPageSlotReleaseTarget(options.pageIndex.value, insertIndex, activeDrag.size?.width);
       placeDraggedItemOnDesktop(event.clientX, event.clientY, { force: true });
       const releaseKey = startPendingDragRelease();
-      const releaseRect = getCommittedTopLevelReleaseRect(activeDrag.item.id, activeDrag.size?.width) || fallbackReleaseRect;
-      scheduleDragReleaseTargetResolve(releaseKey, () => getCommittedTopLevelTargetBounds(activeDrag.item.id), releaseRect);
+      const releaseTarget = getCommittedTopLevelReleaseTarget(activeDrag.item.id, activeDrag.size?.width) || fallbackReleaseTarget;
+      scheduleDragReleaseTargetResolve(releaseKey, () => getCommittedTopLevelTargetBounds(activeDrag.item.id), releaseTarget);
       options.commitFolderSession(null);
     }
 
@@ -1551,15 +1946,18 @@ export function useLaunchpadDrag(options) {
     cancelPreviewRaf,
     clearFolderPageTurn,
     clearDragRelease,
+    clearFolderCreateRelease,
     clearLayoutProjectionRelease,
     clearPageTurn,
     clearPendingTarget,
+    completeFolderCreateRelease,
     detachDragListeners,
     dragFolderHoverState,
     dragFolderTargetId,
     dragMeta,
     dragPreviewState,
     dragReleaseState,
+    folderCreateReleaseState,
     isDragActive,
   };
 }

@@ -54,6 +54,7 @@ function createDragHarness(overrides = {}) {
   const pages = shallowRef([[app]]);
   const pageIndex = ref(0);
   const folderPageIndex = ref(0);
+  const folderPageSize = overrides.folderPageSize || ref(16);
   const isLayoutProjectionActive = ref(false);
   const folderSession = ref(null);
   const openFolderId = ref(null);
@@ -162,7 +163,7 @@ function createDragHarness(overrides = {}) {
     folderPageIndex,
     folderPageRefs,
     folderPages: ref([[]]),
-    folderPageSize: ref(16),
+    folderPageSize,
     folderPanelRef,
     folderSession,
     getFolderChildPages,
@@ -207,7 +208,22 @@ function putLaunchBounds(registry, variant, source, rect, meta = {}) {
   registry.registerBounds(K.LAUNCH, variant, source, rect, meta);
 }
 
-function makePointerDownEvent(pointerId, target) {
+function makeFolderApps(count, prefix = "folder-app") {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `${prefix}-${index}`,
+    name: `Folder App ${index}`,
+    type: "app",
+  }));
+}
+
+function registerDesktopFolderBounds(registry, folder, rect) {
+  const meta = { area: "desktop", id: folder.id, item: folder, pageIndex: 0 };
+  putLaunchBounds(registry, V.RENDERED, { area: "desktop", id: folder.id, pageIndex: 0 }, rect, meta);
+  registry.registerBounds(K.FOLDER_THUMB, V.RENDERED, folder.id, rect, meta);
+  registry.registerBounds(K.FOLDER_THUMB, V.LIVE_TARGET, folder.id, rect, meta);
+}
+
+function makePointerDownEvent(pointerId, target, overrides = {}) {
   return {
     button: 0,
     buttons: 1,
@@ -217,6 +233,7 @@ function makePointerDownEvent(pointerId, target) {
     pointerId,
     preventDefault: () => {},
     stopPropagation: () => {},
+    ...overrides,
   };
 }
 
@@ -284,6 +301,61 @@ export async function runLaunchpadDragTests() {
     assert(isLayoutProjectionActive.value, "layout projection should remain briefly active after drag end");
     flushTimers(timers);
     assert(!isLayoutProjectionActive.value, "layout projection should release after the drag settle window");
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const { app, drag } = createDragHarness();
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+    };
+
+    drag.beginDrag(makePointerDownEvent(44, target, {
+      dragVisualState: {
+        cellHeight: 91,
+        cellWidth: 123,
+        compact: true,
+        singleLineLabel: true,
+      },
+    }), app, { type: "page", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+
+    assert(drag.dragPreviewState.value?.compact === true, "drag preview should preserve source compact label layout");
+    assert(drag.dragPreviewState.value?.singleLineLabel === true, "drag preview should preserve source single-line label layout");
+    assert(drag.dragPreviewState.value?.cellSize.width === 123, "drag preview should use source node cell width for label wrapping");
+    assert(drag.dragPreviewState.value?.cellSize.height === 91, "drag preview should use source node cell height for label layout");
+
+    listeners.get("pointerup")({ type: "pointerup", pointerId: 44, button: 0, clientX: 40, clientY: 50 });
+    await nextTick();
+    assert(drag.dragReleaseState.value?.compact === true, "drag release should preserve source compact label layout");
+    assert(drag.dragReleaseState.value?.singleLineLabel === true, "drag release should preserve source single-line label layout");
+    assert(drag.dragReleaseState.value?.cellSize.width === 123, "drag release should preserve source node cell width for label wrapping");
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const { app, drag } = createDragHarness();
+    const target = {
+      getBoundingClientRect: () => ({ left: 11.12, top: 13.12, width: 61.76, height: 61.76 }),
+    };
+
+    drag.beginDrag(makePointerDownEvent(45, target, {
+      dragVisualState: {
+        cellHeight: 100,
+        cellWidth: 100,
+        iconSize: 64,
+      },
+    }), app, { type: "page", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+
+    assert(drag.dragPreviewState.value?.size.width === 64, "drag preview should use the source icon size instead of pressed visual bounds");
+    assert(drag.dragPreviewState.value?.size.height === 64, "drag preview should preserve the source icon height");
+    assert(Math.abs(drag.dragPreviewState.value?.offset.x - 14) < 0.0001, "drag preview should keep the pointer offset relative to the unpressed icon rect");
+    assert(Math.abs(drag.dragPreviewState.value?.offset.y - 20) < 0.0001, "drag preview should keep the pointer y offset relative to the unpressed icon rect");
+
+    listeners.get("pointerup")({ type: "pointerup", pointerId: 45, button: 0, clientX: 40, clientY: 50 });
+    await nextTick();
+    assert(drag.dragReleaseState.value?.size.width === 64, "drag release should use the source icon size instead of pressed visual bounds");
   });
 
   await withMockPointerEnvironment(async ({ timers }) => {
@@ -367,6 +439,91 @@ export async function runLaunchpadDragTests() {
     assert(drag.isDragActive(), "drag release animation should keep surface interactions blocked");
     flushTimers(timers);
     assert(!drag.isDragActive(), "drag should become inactive after release animation cleanup");
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const targetApp = { id: "app-b", type: "app", name: "App B" };
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    putLaunchBounds(
+      iconBoundsRegistry,
+      V.RENDERED,
+      { area: "desktop", id: targetApp.id, pageIndex: 0 },
+      { left: 120, top: 112, width: 64, height: 64 },
+      { area: "desktop", id: targetApp.id, index: 1, item: targetApp, pageIndex: 0 }
+    );
+    const { app, calls, drag, folderSession, openFolderId, pages } = createDragHarness({ iconBoundsRegistry });
+    pages.value = [[app, targetApp]];
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+    };
+
+    drag.beginDrag(makePointerDownEvent(89, target), app, { type: "page", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+
+    listeners.get("pointerup")({ type: "pointerup", pointerId: 89, button: 0, clientX: 132, clientY: 132 });
+    await nextTick();
+
+    const [folder] = pages.value[0];
+    const childIds = folder?.childPages?.[0]?.map((item) => item.id).join(",");
+    assert(folder?.type === "folder", "dropping an app on another app should create a desktop folder");
+    assert(childIds === "app-b,app-a", "direct app-on-app drop should create the folder with target and dragged apps");
+    assert(calls.commitOpenFolder.length === 0 && openFolderId.value == null, "direct app-on-app drop should not open the created folder");
+    assert(folderSession.value == null, "direct app-on-app drop should not enter a folder drag session");
+    assert(drag.dragReleaseState.value == null, "direct app-on-app drop should not use the single-icon release state");
+    assert(drag.folderCreateReleaseState.value?.folderId === folder.id, "direct app-on-app drop should start a folder-create release animation");
+    assert(drag.folderCreateReleaseState.value?.targetApp?.id === "app-b", "folder-create release should track the target app ghost");
+    assert(drag.folderCreateReleaseState.value?.draggedApp?.id === "app-a", "folder-create release should track the dragged app ghost");
+    assert(drag.folderCreateReleaseState.value?.targetAppSlotRect?.width > 0, "folder-create release should expose a target-app preview slot");
+    assert(drag.isDragActive(), "folder-create release should keep surface interactions blocked");
+    drag.completeFolderCreateRelease(drag.folderCreateReleaseState.value);
+    assert(!drag.isDragActive(), "folder-create release completion should unblock interactions");
+    iconBoundsRegistry.clearBounds();
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const targetApp = { id: "app-b", type: "app", name: "App B" };
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    putLaunchBounds(
+      iconBoundsRegistry,
+      V.RENDERED,
+      { area: "desktop", id: targetApp.id, pageIndex: 0 },
+      { left: 120, top: 112, width: 64, height: 64 },
+      { area: "desktop", id: targetApp.id, index: 1, item: targetApp, pageIndex: 0 }
+    );
+    const { app, calls, drag, folderSession, openFolderId, pages } = createDragHarness({ iconBoundsRegistry });
+    pages.value = [[app, targetApp]];
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+    };
+
+    drag.beginDrag(makePointerDownEvent(90, target), app, { type: "page", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+    listeners.get("pointermove")({
+      type: "pointermove",
+      pointerId: 90,
+      buttons: 1,
+      clientX: 132,
+      clientY: 132,
+      preventDefault: () => {},
+    });
+
+    runNextTimer(timers);
+    assert(drag.dragFolderHoverState.value?.targetId === "app-b", "hovering an app target should expose the folder-create hover target");
+    runNextTimer(timers);
+    runNextTimer(timers);
+    runNextTimer(timers);
+
+    const [folder] = pages.value[0];
+    const childIds = folder?.childPages?.[0]?.map((item) => item.id).join(",");
+    assert(folder?.type === "folder", "hovering an app target until open should create a folder");
+    assert(childIds === "app-b", "hover-created folder should contain only the target app until the dragged app is dropped inside");
+    assert(openFolderId.value === folder.id, "hover-created folder should still open for drag");
+    assert(calls.commitOpenFolder.length === 1, "hover-created folder should commit an open folder");
+    assert(folderSession.value?.mode === "created", "hover-created folder should enter a created-folder drag session");
+    assert(drag.folderCreateReleaseState.value == null, "hover-created folder should not start the create-only release animation");
+    iconBoundsRegistry.clearBounds();
   });
 
   await withMockPointerEnvironment(async ({ listeners, timers }) => {
@@ -467,6 +624,14 @@ export async function runLaunchpadDragTests() {
             stageHeight: 500,
             stageRect: { left: 100, top: 60, width: 500, height: 500 },
             stageWidth: 500,
+            visualSpec: {
+              cellHeight: 80,
+              cellWidth: 70,
+              compact: false,
+              iconSize: 56,
+              singleLineLabel: false,
+              textless: false,
+            },
           }
         );
       },
@@ -487,8 +652,10 @@ export async function runLaunchpadDragTests() {
 
     const rect = drag.dragReleaseState.value?.targetRect;
     const stageRect = drag.dragReleaseState.value?.targetStageLayoutRect;
+    const visualSpec = drag.dragReleaseState.value?.targetVisualSpec;
     assert(Math.round(rect?.left) === 128 && Math.round(rect?.top) === 106, "folder release should animate to the committed compact visual slot, not the empty pointer slot");
     assert(Math.round(stageRect?.left) === 28 && Math.round(stageRect?.top) === 46, "folder release should carry the committed stage layout target");
+    assert(visualSpec?.iconSize === 56 && visualSpec?.cellWidth === 70, "folder release should carry the target folder visual spec for 64-to-56 slot release");
     iconBoundsRegistry.clearBounds();
   });
 
@@ -760,6 +927,120 @@ export async function runLaunchpadDragTests() {
     listeners.get("pointerup")({ type: "pointerup", pointerId: 83, button: 0, clientX: 232, clientY: 132 });
     assert(calls.insertAppIntoFolder.length === 1, "pointerup should prefer the locked folder target over moving visual bounds");
     assert(calls.insertAppIntoFolder[0].folderId === "folder-3", "locked folder drop should use the original folder id");
+    iconBoundsRegistry.clearBounds();
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const folderApps = makeFolderApps(8, "preview-child");
+    const folder = { id: "folder-preview-drop", type: "folder", name: "Folder", childPages: [folderApps], children: folderApps };
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    registerDesktopFolderBounds(iconBoundsRegistry, folder, { left: 100, top: 100, width: 80, height: 80 });
+    const { app, calls, drag, pages } = createDragHarness({
+      iconBoundsRegistry,
+      onCommitPages: () => {
+        iconBoundsRegistry.registerBounds(
+          K.PREVIEW_CHILD,
+          V.LIVE_TARGET,
+          { childId: "app-a", folderId: "folder-preview-drop", slotIndex: 8 },
+          { left: 210, top: 220, width: 18, height: 18 }
+        );
+      },
+    });
+    pages.value = [[app, folder]];
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+    };
+
+    drag.beginDrag(makePointerDownEvent(84, target), app, { type: "page", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+
+    listeners.get("pointerup")({ type: "pointerup", pointerId: 84, button: 0, clientX: 132, clientY: 132 });
+    await nextTick();
+    await nextTick();
+
+    const release = drag.dragReleaseState.value;
+    assert(calls.insertAppIntoFolder.length === 1, "direct folder drop should insert the app into the target folder");
+    assert(release?.releaseMode === "folder-preview-slot", "one-page folder with visible preview room should release into a preview slot");
+    assert(release?.targetFolderId === "folder-preview-drop", "preview release should track the target folder id");
+    assert(release?.targetPreviewSlotIndex === 8, "preview release should target the first free visible preview slot");
+    assert(release?.suppressFolderPreviewChildId === "app-a", "preview release should suppress the real inserted preview child while the ghost flies in");
+    assert(Math.round(release?.targetRect?.left) === 210 && Math.round(release?.targetRect?.top) === 220, "preview release should resolve to the registered preview child bounds");
+    iconBoundsRegistry.clearBounds();
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const folderApps = makeFolderApps(9, "full-child");
+    const folder = { id: "folder-full-drop", type: "folder", name: "Folder", childPages: [folderApps], children: folderApps };
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    registerDesktopFolderBounds(iconBoundsRegistry, folder, { left: 100, top: 100, width: 80, height: 80 });
+    const { app, drag, pages } = createDragHarness({ iconBoundsRegistry });
+    pages.value = [[app, folder]];
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+    };
+
+    drag.beginDrag(makePointerDownEvent(85, target), app, { type: "page", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+
+    listeners.get("pointerup")({ type: "pointerup", pointerId: 85, button: 0, clientX: 132, clientY: 132 });
+    await nextTick();
+    await nextTick();
+
+    const release = drag.dragReleaseState.value;
+    assert(release?.releaseMode === "folder-center-absorb", "full visible preview should release into the folder center");
+    assert(release?.targetPreviewSlotIndex == null, "center absorb release should not expose a preview slot");
+    assert(!release?.suppressFolderPreviewChildId, "center absorb release should not suppress a preview child");
+    assert(release?.targetRect?.width < 20, "center absorb release should target a small center collapse rect");
+    iconBoundsRegistry.clearBounds();
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const firstPage = makeFolderApps(2, "first-page-child");
+    const secondPage = makeFolderApps(1, "second-page-child");
+    const folder = { id: "folder-multipage-drop", type: "folder", name: "Folder", childPages: [firstPage, secondPage], children: [...firstPage, ...secondPage] };
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    registerDesktopFolderBounds(iconBoundsRegistry, folder, { left: 100, top: 100, width: 80, height: 80 });
+    const { app, drag, pages } = createDragHarness({ iconBoundsRegistry });
+    pages.value = [[app, folder]];
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+    };
+
+    drag.beginDrag(makePointerDownEvent(86, target), app, { type: "page", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+
+    listeners.get("pointerup")({ type: "pointerup", pointerId: 86, button: 0, clientX: 132, clientY: 132 });
+    await nextTick();
+    await nextTick();
+
+    assert(drag.dragReleaseState.value?.releaseMode === "folder-center-absorb", "multi-page folder drops should release into the folder center");
+    iconBoundsRegistry.clearBounds();
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const folderApps = makeFolderApps(4, "small-page-child");
+    const folder = { id: "folder-small-page-drop", type: "folder", name: "Folder", childPages: [folderApps], children: folderApps };
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    registerDesktopFolderBounds(iconBoundsRegistry, folder, { left: 100, top: 100, width: 80, height: 80 });
+    const { app, calls, drag, pages } = createDragHarness({ folderPageSize: ref(4), iconBoundsRegistry });
+    pages.value = [[app, folder]];
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+    };
+
+    drag.beginDrag(makePointerDownEvent(87, target), app, { type: "page", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+
+    listeners.get("pointerup")({ type: "pointerup", pointerId: 87, button: 0, clientX: 132, clientY: 132 });
+    await nextTick();
+    await nextTick();
+
+    assert(drag.dragReleaseState.value?.releaseMode === "folder-center-absorb", "folderPageSize below 9 should treat a full first page as center absorb");
+    assert(calls.insertAppIntoFolder[0]?.insertIndex === 4, "small page folder drop should still append at the current last page");
     iconBoundsRegistry.clearBounds();
   });
 }

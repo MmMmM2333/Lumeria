@@ -72,6 +72,10 @@ export function runIconBoundsRegistryTests() {
     { area: "folder", folderId: "folder-2", id: "folder-app-2", index: 1, pageIndex: 0 }
   );
 
+  const renderedRecord = registry.getRecord(K.LAUNCH, V.RENDERED, { area: "desktop", id: "desktop-app", pageIndex: 0 });
+  assert(renderedRecord.meta.id === "desktop-app", "record lookup should preserve rendered bounds metadata");
+  assert(!registry.getBounds(K.LAUNCH, V.RENDERED, { area: "desktop", id: "desktop-app", pageIndex: 0 }).meta, "rendered bounds lookup should keep returning a plain rect");
+
   registry.clearBounds({ area: "folder", folderId: "folder-1" });
   assert(!registry.getBounds(K.LAUNCH, V.RENDERED, { area: "folder", folderId: "folder-1", id: "folder-app-1", pageIndex: 0 }), "folder scoped clear should remove the target folder bounds");
   assert(registry.getBounds(K.LAUNCH, V.RENDERED, { area: "folder", folderId: "folder-2", id: "folder-app-2", pageIndex: 0 }), "folder scoped clear should keep other folders");

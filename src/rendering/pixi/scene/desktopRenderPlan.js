@@ -135,10 +135,11 @@ export function shouldFinishFolderHandoff(state = {}, folderLayer = null) {
 export function shouldFinishFolderHandoffEntry(state = {}, folderLayer = null, folderId = null) {
   return !hasFolderClosingHandoffId(state, folderId) &&
     !isFolderLayerHandoffActive(folderLayer, folderId) &&
-    !isFolderLayerHoldingDesktopSource(folderLayer, folderId);
+    !isFolderLayerHoldingDesktopSource(folderLayer, folderId) &&
+    !isFolderLayerShowingSubstitute(folderLayer, folderId);
 }
 
-export function isStaleHiddenFolderHandoffEntry(entry = null, folderLayer = null, folderId = null) {
+export function isStaleHiddenFolderHandoffEntry(state = {}, entry = null, folderLayer = null, folderId = null) {
   // A handoff entry that is still HIDDEN (never revealed) yet has no live cover —
   // no coordinator activity, no desktop-source ownership, and no visible substitute.
   // This is the interrupted-close orphan: its close was preempted before the reveal
@@ -146,6 +147,7 @@ export function isStaleHiddenFolderHandoffEntry(entry = null, folderLayer = null
   // be revealed WITHOUT retiring (retiring would let isActiveFolderClosingHandoff
   // recreate + re-hide it every frame, flashing the icon/label).
   if (!entry || entry.visualReleased) return false;
+  if (hasRawFolderSourceGhosting(state, folderId)) return false;
   if (isFolderLayerHandoffActive(folderLayer, folderId)) return false;
   if (isFolderLayerHoldingDesktopSource(folderLayer, folderId)) return false;
   if (isFolderLayerShowingSubstitute(folderLayer, folderId)) return false;
@@ -450,11 +452,16 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
       const key = `${source.type}:${pageIndex}:${item.id}`;
       const isActiveDraggedItem = isActiveDraggedLaunchItem(item, state);
       const isReleaseGhostItem = isReleaseGhostLaunchItem(item, state);
+      const isFolderCreateReleaseItem = item.type === "folder" && state.folderCreateReleaseState?.folderId === item.id;
       const isFolderSourceGhosted = item.type === "folder" && !isFolderClosingHandoff && (
         effectiveFolderSourceGhostedIds.has(item.id) ||
         state.isFolderOpeningPreviewFrameGhosted?.(item.id)
       );
-      const suppressLabelRevealAfterGhost = isReleaseGhostItem || isFolderClosingHandoff;
+      const suppressedFolderPreviewChildId = item.type === "folder" &&
+        state.dragReleaseState?.suppressFolderPreviewFolderId === item.id
+        ? state.dragReleaseState.suppressFolderPreviewChildId || null
+        : null;
+      const suppressLabelRevealAfterGhost = isReleaseGhostItem || isFolderClosingHandoff || isFolderSourceGhosted;
 
       entries.push({
         boundsEntry: isInteractivePage ? {
@@ -477,6 +484,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
         isFolderSourceGhosted,
         isInteractivePage,
         isReleaseGhostItem,
+        isFolderCreateReleaseItem,
         item,
         key,
         layoutTarget,
@@ -493,7 +501,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
             : null,
           folderPreviewPageSize: state.folderPageSize,
           ghosted: !isFolderClosingHandoff && (
-            isReleaseGhostItem || (isInteractivePage && isFolderSourceGhosted)
+            isReleaseGhostItem || isFolderCreateReleaseItem || isFolderSourceGhosted
           ),
           hasCustomIcon: Boolean(item.customIconPath || item.customIconDataUrl),
           iconSize: sizing.iconSize,
@@ -509,6 +517,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
           singleLineLabel: sizing.singleLineLabel,
           stageHeight: state.height,
           stageWidth: state.width,
+          suppressedFolderPreviewChildId,
           suppressLabelRevealAfterGhost,
           textless: state.isTextlessMode,
         },

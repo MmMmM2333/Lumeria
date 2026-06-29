@@ -117,6 +117,145 @@ export async function runDragPreviewLayerTests() {
 
   {
     motionRuntime.reset();
+    const layer = new DragPreviewLayer();
+    const releaseState = {
+      cellSize: { height: 80, width: 80 },
+      item: { id: "app-hover", name: "App Hover", type: "app" },
+      key: "release-hover-scale",
+      offset: { x: 32, y: 32 },
+      pointer: { x: 180, y: 220 },
+      size: { height: 64, width: 64 },
+      source: { index: 0, pageIndex: 0, type: "page" },
+      targetRect: { height: 64, left: 240, top: 260, width: 64 },
+      targetVersion: 1,
+      velocity: { x: 0, y: 0 },
+    };
+    try {
+      layer.previewNode.scale.set(0.92);
+      layer.update({
+        folderPageSize: 9,
+        height: 600,
+        iconSize: 64,
+        isTextlessMode: false,
+        launchTargetStatusById: {},
+        releaseState,
+        showMissingLaunchTargetBadge: true,
+        stageRect: { height: 600, left: 0, top: 0, width: 800 },
+        width: 800,
+      });
+
+      assert(Math.abs(layer.previewNode.scale.x - 0.92) < 0.0001, "drag release should start from the current preview scale without jumping to the default drag scale");
+    } finally {
+      layer.destroy({ children: true });
+      motionRuntime.reset();
+    }
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = new DragPreviewLayer();
+    const releaseState = {
+      cellSize: { height: 80, width: 80 },
+      item: { id: "app-target-spec", name: "App Target Spec", type: "app" },
+      key: "release-target-spec",
+      offset: { x: 32, y: 32 },
+      pointer: { x: 180, y: 220 },
+      size: { height: 64, width: 64 },
+      source: { index: 0, pageIndex: 0, type: "page" },
+      targetRect: { height: 56, left: 240, top: 260, width: 56 },
+      targetVersion: 1,
+      targetVisualSpec: {
+        cellHeight: 90,
+        cellWidth: 76,
+        compact: false,
+        iconSize: 56,
+        singleLineLabel: false,
+        textless: false,
+      },
+      velocity: { x: 0, y: 0 },
+    };
+    try {
+      layer.previewNode.scale.set(1.12);
+      layer.update({
+        folderPageSize: 9,
+        height: 600,
+        iconSize: 64,
+        isTextlessMode: false,
+        launchTargetStatusById: {},
+        releaseState,
+        showMissingLaunchTargetBadge: true,
+        stageRect: { height: 600, left: 0, top: 0, width: 800 },
+        width: 800,
+      });
+
+      assert(layer.previewNode.state.iconSize === 56, "target-spec release should render the ghost with the target icon size");
+      assert(layer.previewNode.state.cellWidth === 76 && layer.previewNode.state.cellHeight === 90, "target-spec release should render with the target cell dimensions");
+      assert(Math.abs(layer.previewNode.scale.x - 1.28) < 0.0001, "target-spec release should compensate the current drag scale by the source-to-target icon ratio");
+    } finally {
+      layer.destroy({ children: true });
+      motionRuntime.reset();
+    }
+  }
+
+  {
+    motionRuntime.reset();
+    const calls = [];
+    const layer = new DragPreviewLayer({
+      onReleaseComplete: (release) => calls.push(release.key),
+    });
+    const releaseState = {
+      cellSize: { height: 80, width: 80 },
+      item: { id: "app-absorb", name: "App Absorb", type: "app" },
+      key: "release-center-absorb",
+      offset: { x: 32, y: 32 },
+      pointer: { x: 180, y: 220 },
+      releaseMode: "folder-center-absorb",
+      size: { height: 64, width: 64 },
+      source: { index: 0, pageIndex: 0, type: "page" },
+      targetRect: { height: 16, left: 240, top: 260, width: 16 },
+      targetVersion: 1,
+      velocity: { x: 0, y: 0 },
+    };
+    try {
+      layer.update({
+        folderPageSize: 9,
+        height: 600,
+        iconSize: 64,
+        isTextlessMode: false,
+        launchTargetStatusById: {},
+        releaseState,
+        showMissingLaunchTargetBadge: true,
+        stageRect: { height: 600, left: 0, top: 0, width: 800 },
+        width: 800,
+      });
+
+      motionRuntime.step(1 / 60);
+      const scaleAfterFirstStep = layer.previewNode.scale.x;
+      layer.update({
+        folderPageSize: 9,
+        height: 600,
+        iconSize: 64,
+        isTextlessMode: false,
+        launchTargetStatusById: {},
+        releaseState,
+        showMissingLaunchTargetBadge: true,
+        stageRect: { height: 600, left: 0, top: 0, width: 800 },
+        width: 800,
+      });
+      motionRuntime.step(1 / 60);
+      assert(layer.previewNode.scale.x < scaleAfterFirstStep, "re-rendering a release should not cancel the scale animation");
+      assert(runUntil(() => calls.length === 1), "center absorb release completion should wait for the full release animation group");
+      assert(layer.previewNode.alpha < 0.001, "center absorb release should fade the ghost out before completion");
+      assert(Math.abs(layer.previewNode.scale.x - 0.1) < 0.02, "center absorb release should shrink the ghost before completion");
+      assert(layer.previewNode.labelText.alpha < 0.001, "center absorb release should fade the label out before completion");
+    } finally {
+      layer.destroy({ children: true });
+      motionRuntime.reset();
+    }
+  }
+
+  {
+    motionRuntime.reset();
     motionRuntime.configureDebug({ enabled: true });
     const layer = new DragPreviewLayer();
     try {
@@ -184,6 +323,7 @@ export async function runDragPreviewLayerTests() {
     };
     try {
       layer.update({ ...baseState, previewState });
+      assert(layer.previewNode.state.compact === false, "drag preview should default to non-compact label layout");
       layer.update({ ...baseState, previewState: null });
       assert(
         (motionRuntime.debugSnapshot().counters.canceledByReason["drag-preview-clear"] || 0) >= 2,
@@ -210,6 +350,38 @@ export async function runDragPreviewLayerTests() {
     } finally {
       motionRuntime.reset();
       if (!layer.destroyed) layer.destroy({ children: true });
+    }
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = new DragPreviewLayer();
+    try {
+      layer.update({
+        folderPageSize: 9,
+        height: 600,
+        iconSize: 64,
+        isTextlessMode: false,
+        launchTargetStatusById: {},
+        previewState: {
+          cellSize: { height: 80, width: 80 },
+          compact: true,
+          item: { id: "app-compact", name: "Compact App", type: "app" },
+          offset: { x: 32, y: 32 },
+          pointer: { x: 180, y: 220 },
+          singleLineLabel: true,
+          size: { height: 64, width: 64 },
+          source: { index: 0, pageIndex: 0, type: "page" },
+        },
+        showMissingLaunchTargetBadge: true,
+        stageRect: { height: 600, left: 0, top: 0, width: 800 },
+        width: 800,
+      });
+      assert(layer.previewNode.state.compact === true, "drag preview layer should pass compact label layout to IconNode");
+      assert(layer.previewNode.state.singleLineLabel === true, "drag preview layer should pass single-line label layout to IconNode");
+    } finally {
+      layer.destroy({ children: true });
+      motionRuntime.reset();
     }
   }
 }

@@ -73,6 +73,7 @@
         :drag-preview-state="dragPreviewState"
         :drag-release-ghost-id="dragReleaseGhostId"
         :drag-release-state="dragReleaseState"
+        :folder-create-release-state="folderCreateReleaseState"
         :folder-overlay-state="folderOverlayState"
         :folder-page-size="folderPageSize"
         :folder-closing-handoff-id="folderClosingHandoffId"
@@ -101,6 +102,7 @@
         :single-stage-diagnostics-options="singleStageDiagnosticsOptions"
         @desktop-focus="keyboardFocusArea = 'desktop'"
         @drag-release-complete="clearDragRelease"
+        @folder-create-release-complete="completeFolderCreateRelease"
         @internal-activity="handleFolderPixiInternalActivity"
         @pointerdown-icon="beginDrag"
         @open-app="openApp"
@@ -270,6 +272,8 @@ const {
   dragMeta,
   dragPreviewState,
   dragReleaseState,
+  folderCreateReleaseState,
+  completeFolderCreateRelease,
   handleDesktopSurfacePointerDown,
   gridCols,
   gridRows,

@@ -70,6 +70,13 @@ export function runIconSceneHelpersTests() {
     type: "rightdown",
   };
   const node = {
+    state: {
+      cellHeight: 80,
+      cellWidth: 100,
+      compact: true,
+      iconSize: 56,
+      singleLineLabel: true,
+    },
     stageRect: { left: 5, top: 6 },
     getIconBounds: () => ({ left: 1, top: 2, width: 3, height: 4 }),
   };
@@ -79,5 +86,7 @@ export function runIconSceneHelpersTests() {
 
   assert(event.button === 2 && event.pointerId === 7, "synthetic event should preserve pointer metadata");
   assert(event.currentTarget.getBoundingClientRect().width === 3, "synthetic event should expose node bounds");
+  assert(event.dragVisualState.compact === true && event.dragVisualState.singleLineLabel === true, "synthetic event should expose source label layout state");
+  assert(event.dragVisualState.iconSize === 56, "synthetic event should expose source icon sizing state");
   assert(prevented && stopped, "synthetic event should forward prevention methods");
 }

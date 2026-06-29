@@ -63,6 +63,7 @@ import {
 import { resolveFolderOverlayTargets } from "./folderOverlayTargetResolver.js";
 import { makeIconRect, makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { IconNode } from "../nodes/IconNode.js";
+import { makeIconVisualSpecFromNodeState } from "./iconVisualSpec.js";
 import { getCachedIconTexture } from "../assets/iconTextureCache.js";
 import {
   cancelPageTrackMotion,
@@ -243,7 +244,8 @@ function registerFolderIconNodeBounds(options) {
   } = options;
   const iconBounds = node.getIconBounds(stageRect);
   if (!isInteractivePage || isPrewarm) return iconBounds;
-  const meta = { area: "folder", folderId, id: item.id, index, item, pageIndex };
+  const visualSpec = makeIconVisualSpecFromNodeState(node.state);
+  const meta = { area: "folder", folderId, id: item.id, index, item, pageIndex, visualSpec };
   iconBoundsRegistry.registerBounds(
     BOUNDS_KIND.LAUNCH,
     BOUNDS_VARIANT.RENDERED,
