@@ -92,7 +92,10 @@ export function runDesktopRenderPlanTests() {
     }), {
       effectiveFolderSourceGhostedIds: new Set([folder.id]),
       folderHandoffEntries: new Map([[folder.id, { folderId: folder.id, visualReleased: false }]]),
-      folderLayer: { folderHandoff: makeHandoffCoordinator(false, null) },
+      folderLayer: {
+        folderHandoff: makeHandoffCoordinator(false, null),
+        hasVisibleFolderSubstitute: () => false,
+      },
     });
 
     const [entry] = plan.entries;
@@ -161,5 +164,6 @@ export function runDesktopRenderPlanTests() {
     assert(entry.isInteractivePage === false, "static-real pages should stay non-interactive");
     assert(entry.nodeState.interactive === false, "static-real source ghosting should not re-enable interaction");
     assert(entry.nodeState.ghosted === true, "static-real source ghosting should still hide the real folder icon");
+    assert(entry.nodeState.suppressLabelRevealAfterGhost === true, "source ghosting should restore the folder label immediately instead of restarting a fade");
   }
 }

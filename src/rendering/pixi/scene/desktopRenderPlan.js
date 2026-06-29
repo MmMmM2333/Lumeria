@@ -135,10 +135,11 @@ export function shouldFinishFolderHandoff(state = {}, folderLayer = null) {
 export function shouldFinishFolderHandoffEntry(state = {}, folderLayer = null, folderId = null) {
   return !hasFolderClosingHandoffId(state, folderId) &&
     !isFolderLayerHandoffActive(folderLayer, folderId) &&
-    !isFolderLayerHoldingDesktopSource(folderLayer, folderId);
+    !isFolderLayerHoldingDesktopSource(folderLayer, folderId) &&
+    !isFolderLayerShowingSubstitute(folderLayer, folderId);
 }
 
-export function isStaleHiddenFolderHandoffEntry(entry = null, folderLayer = null, folderId = null) {
+export function isStaleHiddenFolderHandoffEntry(state = {}, entry = null, folderLayer = null, folderId = null) {
   // A handoff entry that is still HIDDEN (never revealed) yet has no live cover —
   // no coordinator activity, no desktop-source ownership, and no visible substitute.
   // This is the interrupted-close orphan: its close was preempted before the reveal
@@ -146,6 +147,7 @@ export function isStaleHiddenFolderHandoffEntry(entry = null, folderLayer = null
   // be revealed WITHOUT retiring (retiring would let isActiveFolderClosingHandoff
   // recreate + re-hide it every frame, flashing the icon/label).
   if (!entry || entry.visualReleased) return false;
+  if (hasRawFolderSourceGhosting(state, folderId)) return false;
   if (isFolderLayerHandoffActive(folderLayer, folderId)) return false;
   if (isFolderLayerHoldingDesktopSource(folderLayer, folderId)) return false;
   if (isFolderLayerShowingSubstitute(folderLayer, folderId)) return false;
@@ -459,7 +461,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
         state.dragReleaseState?.suppressFolderPreviewFolderId === item.id
         ? state.dragReleaseState.suppressFolderPreviewChildId || null
         : null;
-      const suppressLabelRevealAfterGhost = isReleaseGhostItem || isFolderClosingHandoff;
+      const suppressLabelRevealAfterGhost = isReleaseGhostItem || isFolderClosingHandoff || isFolderSourceGhosted;
 
       entries.push({
         boundsEntry: isInteractivePage ? {

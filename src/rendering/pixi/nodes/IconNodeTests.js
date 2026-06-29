@@ -167,12 +167,29 @@ export async function runIconNodeTests() {
     node.isFolder = true;
     node.visualWrap.alpha = 0.42;
     node.visualWrap.scale.set(0.86);
+    node.labelText.visible = true;
+    node.labelText.renderable = true;
+    node.labelText.alpha = 0.82;
     node.setFolderHandoffVisualHidden(true);
     assert(node.visualWrap.visible === false, "folder handoff should hide artwork while the overlay owns the thumbnail");
+    assert(node.labelText.renderable === false && node.labelText.alpha === 0, "folder handoff should hide the label with the source visual");
     node.setFolderHandoffVisualHidden(false);
     assert(node.visualWrap.visible === true, "folder handoff release should show real artwork");
+    assert(node.labelText.renderable === true, "folder handoff release should make the label renderable again");
     assert(node.visualWrap.alpha === 1, "folder handoff release should restore real artwork alpha to match the closing ghost");
     assert(node.visualWrap.scale.x === 1 && node.visualWrap.scale.y === 1, "folder handoff release should restore real artwork scale");
+    node.setFolderHandoffSourceHidden(true);
+    node.releaseFolderHandoffSource({ fadeLabel: false });
+    assert(node.labelText.renderable === true && nearlyEqual(node.labelText.alpha, 1), "explicit handoff source release should be able to restore the label immediately");
+    node.setFolderHandoffSourceHidden(true);
+    node.releaseFolderHandoffSource();
+    assert(node.labelText.renderable === true && nearlyEqual(node.labelText.alpha, 0), "default handoff source release should start the label fade from zero");
+
+    motionRuntime.reset();
+    node.labelText.visible = true;
+    node.labelText.alpha = 0.42;
+    node.revealLabelAfterGhost();
+    assert(nearlyEqual(node.labelText.alpha, 0.42), "label reveal should not restart an in-progress fade from zero");
 
     motionRuntime.reset();
     const folderChildA = { id: "folder-child-a", name: "Folder Child A", type: "app" };
