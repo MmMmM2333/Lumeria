@@ -34,7 +34,7 @@
         },
         "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI --ignore-gpu-blocklist --enable-gpu-rasterization --enable-zero-copy --enable-accelerated-2d-canvas",
         "visible": false,
-        "fullscreen": true
+        "fullscreen": false
       }
     ]
   },

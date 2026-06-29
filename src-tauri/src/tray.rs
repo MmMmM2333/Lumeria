@@ -24,6 +24,7 @@ pub(crate) const OPEN_DESKTOP_EVENT: &str = "launchpad-open-desktop";
 pub(crate) const TOGGLE_DESKTOP_EVENT: &str = "launchpad-toggle-desktop";
 pub(crate) const CLOSE_DESKTOP_EVENT: &str = "launchpad-close-desktop";
 const MAIN_WINDOW_EFFECT_REAPPLY_DELAYS_MS: [u64; 2] = [80, 180];
+const MAIN_WINDOW_RESTORE_TRANSITIONS_DELAY_MS: u64 = 80;
 const MAIN_WINDOW_DEFERRED_SHOW_DELAY_MS: u64 = 0;
 const MAIN_WINDOW_CLOAKED_REVEAL_FALLBACK_DELAY_MS: u64 = 160;
 const MAIN_WINDOW_NON_CLIENT_SUBCLASS_ID: usize = 1;
@@ -33,6 +34,16 @@ const WM_NCUAHDRAWFRAME: u32 = 0x00AF;
 static MAIN_WINDOW_EFFECT_DISABLE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static MAIN_WINDOW_OPEN_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static MAIN_WINDOW_MODE: Mutex<MainWindowMode> = Mutex::new(MainWindowMode::DEFAULT);
+#[cfg(target_os = "windows")]
+static MAIN_WINDOW_WINDOWED_PLACEMENT: Mutex<Option<MainWindowWindowedPlacement>> =
+    Mutex::new(None);
+
+#[cfg(target_os = "windows")]
+#[derive(Clone, Copy, Debug)]
+struct MainWindowWindowedPlacement {
+    placement: windows::Win32::UI::WindowsAndMessaging::WINDOWPLACEMENT,
+    was_maximized: bool,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MainWindowMode {
@@ -187,23 +198,37 @@ fn main_window_deferred_show_delay(app: &AppHandle) -> u64 {
 pub(crate) fn apply_main_window_mode(app: &AppHandle) -> Result<(), String> {
     let mode = current_main_window_mode()?;
     if let Some(window) = app.get_webview_window("main") {
+        if mode == MainWindowMode::Fullscreen {
+            save_initial_main_windowed_placement(&window)?;
+        }
         apply_main_window_mode_to_window(&window, mode)?;
     }
     Ok(())
 }
 
 pub(crate) fn set_main_window_mode(app: &AppHandle, mode: &str) -> Result<String, String> {
-    let mode = update_main_window_mode(mode)?;
+    let next = MainWindowMode::from_str(mode)
+        .ok_or_else(|| format!("Unsupported main window mode: {mode}"))?;
+    let previous = current_main_window_mode()?;
     if let Some(window) = app.get_webview_window("main") {
-        apply_main_window_mode_to_window(&window, mode)?;
-        apply_main_window_native_surface_policy(&window, mode)?;
-        if should_use_native_window_effects(mode) {
+        if previous == MainWindowMode::Windowed && next == MainWindowMode::Fullscreen {
+            save_main_windowed_placement(&window)?;
+        }
+        update_main_window_mode(next)?;
+        apply_main_window_mode_to_window(&window, next)?;
+        if previous == MainWindowMode::Fullscreen && next == MainWindowMode::Windowed {
+            restore_main_windowed_placement(&window)?;
+        }
+        apply_main_window_native_surface_policy(&window, next)?;
+        if should_use_native_window_effects(next) {
             let open_sequence = MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed);
             let disable_sequence = MAIN_WINDOW_EFFECT_DISABLE_SEQUENCE.load(Ordering::Relaxed);
             schedule_window_effect_reapply(window, open_sequence, disable_sequence);
         }
+    } else {
+        update_main_window_mode(next)?;
     }
-    Ok(mode.as_str().to_string())
+    Ok(next.as_str().to_string())
 }
 
 pub(crate) fn set_main_window_shadow_enabled(app: &AppHandle, enabled: bool) -> Result<(), String> {
@@ -289,13 +314,12 @@ unsafe extern "system" fn main_window_non_client_subclass_proc(
 
     match message {
         WM_NCCALCSIZE => {
-            let uses_borderless_non_client = matches!(
-                current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT),
-                MainWindowMode::Fullscreen | MainWindowMode::Windowed
-            );
+            let mode = current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT);
+            let uses_borderless_non_client =
+                matches!(mode, MainWindowMode::Fullscreen | MainWindowMode::Windowed);
             if uses_borderless_non_client {
                 if wparam.0 != 0 && lparam.0 != 0 {
-                    if IsZoomed(hwnd).as_bool() {
+                    if mode == MainWindowMode::Windowed && IsZoomed(hwnd).as_bool() {
                         let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
                         if !monitor.is_invalid() {
                             let mut info = MONITORINFO {
@@ -437,14 +461,154 @@ fn current_main_window_mode() -> Result<MainWindowMode, String> {
         .map_err(|_| "Failed to lock main window mode".to_string())
 }
 
-fn update_main_window_mode(mode: &str) -> Result<MainWindowMode, String> {
-    let next = MainWindowMode::from_str(mode)
-        .ok_or_else(|| format!("Unsupported main window mode: {mode}"))?;
+fn update_main_window_mode(next: MainWindowMode) -> Result<(), String> {
     let mut current = MAIN_WINDOW_MODE
         .lock()
         .map_err(|_| "Failed to lock main window mode".to_string())?;
     *current = next;
-    Ok(next)
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn save_initial_main_windowed_placement(window: &WebviewWindow) -> Result<(), String> {
+    let has_saved_placement = MAIN_WINDOW_WINDOWED_PLACEMENT
+        .lock()
+        .map(|placement| placement.is_some())
+        .map_err(|_| "Failed to lock main windowed placement".to_string())?;
+    if has_saved_placement {
+        return Ok(());
+    }
+    save_main_windowed_placement(window)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn save_initial_main_windowed_placement(_window: &WebviewWindow) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn save_main_windowed_placement(window: &WebviewWindow) -> Result<(), String> {
+    let placement = read_main_windowed_placement(window)?;
+    let rect = placement.placement.rcNormalPosition;
+    let mut saved = MAIN_WINDOW_WINDOWED_PLACEMENT
+        .lock()
+        .map_err(|_| "Failed to lock main windowed placement".to_string())?;
+    *saved = Some(placement);
+    log::debug!(
+        target: "tray",
+        "Saved windowed placement normal={}x{}@{},{} maximized={}",
+        rect.right - rect.left,
+        rect.bottom - rect.top,
+        rect.left,
+        rect.top,
+        placement.was_maximized
+    );
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn save_main_windowed_placement(_window: &WebviewWindow) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn read_main_windowed_placement(
+    window: &WebviewWindow,
+) -> Result<MainWindowWindowedPlacement, String> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowPlacement, IsZoomed, SW_MAXIMIZE, WINDOWPLACEMENT,
+    };
+
+    let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::hwnd for reading windowed placement",
+        source,
+    })?;
+    let mut placement = WINDOWPLACEMENT {
+        length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+        ..Default::default()
+    };
+    unsafe { GetWindowPlacement(hwnd, &mut placement) }.map_err(|source| NativeError::Win32 {
+        context: "GetWindowPlacement(main windowed placement)",
+        source,
+    })?;
+    if placement.rcNormalPosition.right <= placement.rcNormalPosition.left
+        || placement.rcNormalPosition.bottom <= placement.rcNormalPosition.top
+    {
+        return Err("Main windowed placement has an invalid normal rectangle".to_string());
+    }
+    Ok(MainWindowWindowedPlacement {
+        was_maximized: placement.showCmd == SW_MAXIMIZE.0 as u32
+            || unsafe { IsZoomed(hwnd).as_bool() },
+        placement,
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn restore_main_windowed_placement(window: &WebviewWindow) -> Result<(), String> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SetWindowPlacement, SW_MAXIMIZE, SW_SHOWNORMAL, WINDOWPLACEMENT,
+    };
+
+    let Some(saved_placement) = MAIN_WINDOW_WINDOWED_PLACEMENT
+        .lock()
+        .map_err(|_| "Failed to lock main windowed placement".to_string())?
+        .as_ref()
+        .copied()
+    else {
+        log::debug!(target: "tray", "No saved windowed placement to restore");
+        return Ok(());
+    };
+
+    let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::hwnd for restoring windowed placement",
+        source,
+    })?;
+    let mut placement = saved_placement.placement;
+    placement.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
+    placement.showCmd = if saved_placement.was_maximized {
+        SW_MAXIMIZE.0 as u32
+    } else {
+        SW_SHOWNORMAL.0 as u32
+    };
+    if saved_placement.was_maximized {
+        set_window_transitions_enabled(window, false)?;
+    }
+    unsafe { SetWindowPlacement(hwnd, &placement) }.map_err(|source| NativeError::Win32 {
+        context: "SetWindowPlacement(main windowed placement)",
+        source,
+    })?;
+    if saved_placement.was_maximized {
+        schedule_main_window_transitions_restore(window.clone());
+    }
+    let rect = placement.rcNormalPosition;
+    log::debug!(
+        target: "tray",
+        "Restored windowed placement normal={}x{}@{},{} maximized={}",
+        rect.right - rect.left,
+        rect.bottom - rect.top,
+        rect.left,
+        rect.top,
+        saved_placement.was_maximized
+    );
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn restore_main_windowed_placement(_window: &WebviewWindow) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn schedule_main_window_transitions_restore(window: WebviewWindow) {
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(
+            MAIN_WINDOW_RESTORE_TRANSITIONS_DELAY_MS,
+        ));
+        if current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT) == MainWindowMode::Windowed
+        {
+            let _ = set_window_transitions_enabled(&window, true);
+        }
+    });
 }
 
 fn apply_main_window_mode_to_window(
@@ -523,7 +687,8 @@ fn apply_main_window_borderless_fullscreen_bounds(window: &WebviewWindow) -> Res
             GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
         },
         UI::WindowsAndMessaging::{
-            SetWindowPos, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOSENDCHANGING, SWP_NOZORDER,
+            GetWindowPlacement, IsZoomed, SetWindowPlacement, SetWindowPos, SWP_NOACTIVATE,
+            SWP_NOOWNERZORDER, SWP_NOSENDCHANGING, SWP_NOZORDER, SW_SHOWNORMAL, WINDOWPLACEMENT,
         },
     };
 
@@ -543,6 +708,25 @@ fn apply_main_window_borderless_fullscreen_bounds(window: &WebviewWindow) -> Res
         return Err("Failed to read monitor info for borderless fullscreen bounds".to_string());
     }
     let rect = info.rcMonitor;
+    if unsafe { IsZoomed(hwnd).as_bool() } {
+        let mut placement = WINDOWPLACEMENT {
+            length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+            ..Default::default()
+        };
+        unsafe { GetWindowPlacement(hwnd, &mut placement) }.map_err(|source| {
+            NativeError::Win32 {
+                context: "GetWindowPlacement(borderless fullscreen from maximized)",
+                source,
+            }
+        })?;
+        placement.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
+        placement.showCmd = SW_SHOWNORMAL.0 as u32;
+        placement.rcNormalPosition = rect;
+        unsafe { SetWindowPlacement(hwnd, &placement) }.map_err(|source| NativeError::Win32 {
+            context: "SetWindowPlacement(borderless fullscreen from maximized)",
+            source,
+        })?;
+    }
     unsafe {
         SetWindowPos(
             hwnd,
