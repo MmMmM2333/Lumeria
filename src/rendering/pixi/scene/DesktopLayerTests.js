@@ -875,6 +875,13 @@ export async function runDesktopLayerTests() {
     assert(!layer.getFolderHandoffEntry("folder-1"), "new raw source ghosting should clear a stale handoff entry");
     assert(setStateCount === 1, "new raw source ghosting should be committed through normal icon state");
     assert(folder.state.ghosted === true && folder.visible === false, "new raw source ghosting should hide the real folder icon");
+
+    const rememberedState = layer.lastFolderSourceGhostingState;
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    }, { remember: false });
+    assert(layer.lastFolderSourceGhostingState === rememberedState, "immediate source ghosting should not replace the full remembered desktop state");
   }
 
   {

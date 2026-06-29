@@ -587,9 +587,9 @@ export class DesktopLayer extends Container {
     }));
   }
 
-  applyFolderSourceGhosting(state) {
+  applyFolderSourceGhosting(state, options = {}) {
     state = normalizeDesktopHandoffState(state);
-    this.lastFolderSourceGhostingState = state;
+    if (options.remember !== false) this.lastFolderSourceGhostingState = state;
     const rawIds = state.folderSourceGhostedIds;
     const ownershipIds = normalizeFolderIdSet(
       getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership),

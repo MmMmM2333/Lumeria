@@ -610,6 +610,17 @@ function renderPixi(options = {}) {
   return true;
 }
 
+function applyImmediateFolderSourceGhosting() {
+  if (!app || !layer || !hostRef.value) return false;
+  layer.applyFolderSourceGhosting?.({
+    folderSourceGhostedId: props.folderSourceGhostedId,
+    folderSourceGhostedIds: props.folderSourceGhostedIds,
+    isFolderOpeningPreviewFrameGhosted: props.isFolderOpeningPreviewFrameGhosted,
+  }, { remember: false });
+  app.render?.();
+  return true;
+}
+
 function cancelScheduledRenderPixi() {
   renderScheduler?.cancel();
   resizeSettleScheduler?.reset?.();
@@ -949,6 +960,15 @@ watch(
   () => props.pageGridMeasureStyle,
   () => requestRender("page-grid-measure", { invalidateGeometry: true }),
   { flush: "post" }
+);
+
+watch(
+  () => [props.folderSourceGhostedId, props.folderSourceGhostedIds],
+  () => {
+    // Source ghosting is the handoff boundary; do not wait for the next desktop frame.
+    if (applyImmediateFolderSourceGhosting()) publishFolderVisualDebugSnapshot();
+  },
+  { flush: "sync" }
 );
 
 watchEffect(() => {

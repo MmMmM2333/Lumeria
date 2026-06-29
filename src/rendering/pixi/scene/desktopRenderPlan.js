@@ -499,7 +499,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
             : null,
           folderPreviewPageSize: state.folderPageSize,
           ghosted: !isFolderClosingHandoff && (
-            isReleaseGhostItem || isFolderCreateReleaseItem || (isInteractivePage && isFolderSourceGhosted)
+            isReleaseGhostItem || isFolderCreateReleaseItem || isFolderSourceGhosted
           ),
           hasCustomIcon: Boolean(item.customIconPath || item.customIconDataUrl),
           iconSize: sizing.iconSize,

@@ -146,4 +146,20 @@ export function runDesktopRenderPlanTests() {
     assert(entry.nodeState.suppressedFolderPreviewChildId == null, "folder-create release should not reuse the single child suppression path");
     assert(entry.nodeState.suppressLabelRevealAfterGhost === false, "folder-create release should let the real folder label reveal after the handoff");
   }
+
+  {
+    const folder = { id: "folder-static", type: "folder" };
+    const plan = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[folder]],
+      folderSourceGhostedIds: new Set([folder.id]),
+      getDesktopPageRenderMode: () => "static-real",
+    }), {
+      effectiveFolderSourceGhostedIds: new Set([folder.id]),
+    });
+
+    const [entry] = plan.entries;
+    assert(entry.isInteractivePage === false, "static-real pages should stay non-interactive");
+    assert(entry.nodeState.interactive === false, "static-real source ghosting should not re-enable interaction");
+    assert(entry.nodeState.ghosted === true, "static-real source ghosting should still hide the real folder icon");
+  }
 }
