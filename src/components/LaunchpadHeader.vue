@@ -11,23 +11,28 @@
         (hasSearchQuery || isSearchInputFocused) && 'search-pill-left'
       )"
     >
-      <div class="search-pill-content">
-        <SearchIcon class="hint-icon" />
-        <input
-          :ref="(node) => bindRef(domRefs.searchInputRef, node)"
-          id="launchpad-search"
-          class="search-input"
-          name="launchpadSearch"
-          :value="searchQuery"
-          type="search"
-          placeholder="搜索"
-          aria-label="搜索应用"
-          @input="$emit('search-input', $event)"
-          @focus="handleSearchFocus"
-          @blur="handleSearchBlur"
-          @pointerdown.stop
-        />
-      </div>
+      <label class="search-pill-label" for="launchpad-search" @pointerdown.stop>
+        <span class="search-pill-content">
+          <SearchIcon class="hint-icon" @mousedown.prevent />
+          <input
+            :ref="(node) => bindRef(domRefs.searchInputRef, node)"
+            id="launchpad-search"
+            class="search-input"
+            :value="searchQuery"
+            type="search"
+            autocomplete="off"
+            autocapitalize="none"
+            autocorrect="off"
+            placeholder="搜索"
+            aria-label="搜索应用"
+            spellcheck="false"
+            @input="$emit('search-input', $event)"
+            @focus="handleSearchFocus"
+            @blur="handleSearchBlur"
+            @pointerdown.stop
+          />
+        </span>
+      </label>
       <button v-if="isSearchMode" class="search-clear-button" type="button" aria-label="清除搜索" @click="$emit('clear-search')">×</button>
     </div>
 
