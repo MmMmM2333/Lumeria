@@ -9,7 +9,7 @@
   >
     <section
       ref="settingsPanelRef"
-      class="settings-panel"
+      :class="cx('settings-panel', isSettingsNavigationCompact && 'settings-panel-navigation-compact')"
       role="dialog"
       aria-modal="true"
       aria-label="设置"
@@ -17,7 +17,7 @@
       @keydown="handleSettingsPanelKeydown"
     >
       <header class="settings-panel-header">
-        <div class="settings-header-start">
+        <div class="settings-panel-header-rail">
           <fluent-button
             appearance="subtle"
             icon-only
@@ -29,20 +29,22 @@
           >
             <NavigationIcon class="settings-navigation-toggle-icon" />
           </fluent-button>
+        </div>
+        <div class="settings-panel-header-main">
           <div class="settings-title-block">
             <h2>设置</h2>
           </div>
+          <fluent-button
+            appearance="subtle"
+            icon-only
+            class="settings-close-button"
+            type="button"
+            aria-label="关闭设置"
+            @click="state.closeSettingsPanel"
+          >
+            <DismissIcon class="settings-close-icon" />
+          </fluent-button>
         </div>
-        <fluent-button
-          appearance="subtle"
-          icon-only
-          class="settings-close-button"
-          type="button"
-          aria-label="关闭设置"
-          @click="state.closeSettingsPanel"
-        >
-          <DismissIcon class="settings-close-icon" />
-        </fluent-button>
       </header>
 
       <div :class="cx('settings-shell', isSettingsNavigationCompact && 'settings-shell-compact')">

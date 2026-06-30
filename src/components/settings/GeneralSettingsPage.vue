@@ -4,7 +4,6 @@
       <div class="settings-section-header">
         <div>
           <h3>通用</h3>
-          <p>控制 LaunchPad 的启动入口和全局快捷键。</p>
         </div>
       </div>
 

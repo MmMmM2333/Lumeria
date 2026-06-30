@@ -4,7 +4,6 @@
       <div class="settings-section-header">
         <div>
           <h3>窗口</h3>
-          <p>选择窗口形态和 Windows 11 系统底材。</p>
         </div>
       </div>
 
@@ -155,7 +154,6 @@
       <div class="settings-section-header">
         <div>
           <h3>背景</h3>
-          <p>设置底色、图片层和前端 Acrylic 合成效果。</p>
         </div>
       </div>
 
@@ -608,7 +606,6 @@
       <div class="settings-section-header">
         <div>
           <h3>布局</h3>
-          <p>调整桌面、文件夹和图标密度。</p>
         </div>
       </div>
 

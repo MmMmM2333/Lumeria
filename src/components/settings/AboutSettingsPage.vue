@@ -4,7 +4,6 @@
       <div class="settings-section-header">
         <div>
           <h3>关于</h3>
-          <p>当前应用版本和运行信息。</p>
         </div>
       </div>
 
