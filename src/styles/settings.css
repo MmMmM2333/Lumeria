@@ -1549,15 +1549,39 @@
   gap: 8px;
 }
 
-.scan-keyword-input {
+.settings-text-input {
+  display: block;
   width: 100%;
-  height: 34px;
+  max-width: none;
   min-width: 0;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 10px;
+}
+
+.settings-text-input::part(root) {
+  height: 32px;
+  border-color: rgba(255, 255, 255, 0.14);
+  border-bottom-color: rgba(255, 255, 255, 0.34);
+  border-radius: var(--borderRadiusMedium, 4px);
+  background: rgba(0, 0, 0, 0.16);
+  box-shadow: none;
+  transition:
+    background-color var(--durationUltraFast, 50ms) var(--curveEasyEase, ease),
+    border-color var(--durationUltraFast, 50ms) var(--curveEasyEase, ease);
+}
+
+.settings-text-input:hover::part(root) {
+  border-color: rgba(255, 255, 255, 0.22);
+  border-bottom-color: rgba(255, 255, 255, 0.48);
+  background: var(--settings-row-hover-bg);
+}
+
+.settings-text-input::part(control) {
+  color: var(--settings-text-primary);
+  background: transparent;
+}
+
+.scan-keyword-input::part(root) {
+  height: 34px;
   padding: 0 11px;
-  color: rgba(255, 255, 255, 0.9);
-  background: rgba(255, 255, 255, 0.08);
 }
 
 .scan-keyword-list {
@@ -1661,21 +1685,27 @@
 
 .scan-root-label {
   width: 100%;
-  height: 28px;
   min-width: 0;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 0 9px;
-  color: rgba(255, 255, 255, 0.9);
-  background: transparent;
-  font-size: 13px;
-  font-weight: 620;
 }
 
-.scan-root-label:hover,
-.scan-root-label:focus {
+.scan-root-label::part(root) {
+  height: 28px;
+  padding: 0 9px;
+  border-color: transparent;
+  border-bottom-color: transparent;
+  background: transparent;
+}
+
+.scan-root-label:hover::part(root),
+.scan-root-label:focus-within::part(root) {
   border-color: rgba(255, 255, 255, 0.18);
+  border-bottom-color: rgba(255, 255, 255, 0.34);
   background: rgba(255, 255, 255, 0.07);
+}
+
+.scan-root-label::part(control) {
+  font-size: 13px;
+  font-weight: 620;
 }
 
 .scan-root-path-row {
@@ -1687,13 +1717,15 @@
 
 .scan-root-path {
   width: 100%;
-  height: 30px;
   min-width: 0;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 6px;
+}
+
+.scan-root-path::part(root) {
+  height: 30px;
   padding: 0 10px;
-  color: white;
-  background: rgba(0, 0, 0, 0.18);
+}
+
+.scan-root-path::part(control) {
   font-size: 12px;
 }
 
@@ -1704,18 +1736,12 @@
 
 .app-manager-search {
   width: 100%;
-  height: 36px;
   margin-bottom: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 6px;
-  padding: 0 11px;
-  outline: none;
-  color: white;
-  background: rgba(0, 0, 0, 0.2);
 }
 
-.app-manager-search::placeholder {
-  color: rgba(255, 255, 255, 0.42);
+.app-manager-search::part(root) {
+  height: 36px;
+  padding: 0 11px;
 }
 
 .settings-list-actions {

@@ -33,7 +33,7 @@
           />
           <span class="scan-root-details">
             <fluent-text-input
-              class="scan-root-label"
+              class="settings-text-input scan-root-label"
               control-size="small"
               :name="`scanRootLabel-${root.id}`"
               :value.prop="root.label"
@@ -42,7 +42,7 @@
             />
             <span class="scan-root-path-row">
               <fluent-text-input
-                class="scan-root-path"
+                class="settings-text-input scan-root-path"
                 control-size="small"
                 :name="`scanRootPath-${root.id}`"
                 :value.prop="root.path"
@@ -88,7 +88,7 @@
         </div>
         <div class="scan-keyword-editor">
           <fluent-text-input
-            class="scan-keyword-input"
+            class="settings-text-input scan-keyword-input"
             name="newScanKeyword"
             placeholder="输入关键字"
             aria-label="新增扫描过滤关键字"
@@ -162,7 +162,7 @@
       </div>
 
       <fluent-text-input
-        class="app-manager-search"
+        class="settings-text-input app-manager-search"
         name="appManagerSearch"
         placeholder="搜索应用"
         aria-label="搜索应用"
