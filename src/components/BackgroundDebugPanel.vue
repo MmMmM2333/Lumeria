@@ -2871,7 +2871,7 @@ onBeforeUnmount(() => {
   position: fixed;
   right: 18px;
   bottom: 18px;
-  z-index: 132;
+  z-index: 88;
   display: flex;
   flex-direction: column;
   width: 380px;

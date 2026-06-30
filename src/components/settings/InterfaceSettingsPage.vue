@@ -1,0 +1,703 @@
+<template>
+  <div class="settings-tab-panel" role="tabpanel" aria-label="外观">
+    <section class="settings-section" aria-label="窗口">
+      <div class="settings-section-header">
+        <div>
+          <h3>窗口</h3>
+          <p>选择窗口形态和 Windows 11 系统底材。</p>
+        </div>
+      </div>
+
+      <div class="settings-grid">
+        <div class="settings-field settings-field-wide">
+          <span class="settings-field-copy">
+            <span>窗口模式</span>
+            <span class="settings-field-hint">选择打开 LaunchPad 时的窗口形态</span>
+          </span>
+          <div class="settings-segmented-control" aria-label="窗口模式">
+            <button
+              type="button"
+              :class="c.cx('settings-segmented-button', state.draftWindowMode.value === c.WINDOW_MODE_FULLSCREEN && 'settings-segmented-button-active')"
+              @click="state.setDraftWindowMode(c.WINDOW_MODE_FULLSCREEN)"
+            >
+              全屏
+            </button>
+            <button
+              type="button"
+              :class="c.cx('settings-segmented-button', state.draftWindowMode.value === c.WINDOW_MODE_WINDOWED && 'settings-segmented-button-active')"
+              @click="state.setDraftWindowMode(c.WINDOW_MODE_WINDOWED)"
+            >
+              窗口化
+            </button>
+          </div>
+        </div>
+
+        <div class="settings-field settings-field-wide settings-window-effect-field">
+          <span class="settings-field-copy">
+            <span>窗口底材</span>
+            <span class="settings-field-hint">{{ c.windowEffectsSupportHint.value }}</span>
+          </span>
+          <div class="settings-window-effect-controls">
+            <div class="settings-segmented-control" aria-label="窗口底材">
+              <button
+                type="button"
+                :class="c.cx('settings-segmented-button', state.draftWindowEffectMaterial.value === c.WINDOW_EFFECT_MATERIAL_NONE && 'settings-segmented-button-active')"
+                @click="state.setDraftWindowEffectMaterial(c.WINDOW_EFFECT_MATERIAL_NONE)"
+              >
+                无材质
+              </button>
+              <button
+                type="button"
+                :class="c.cx('settings-segmented-button', state.draftWindowEffectMaterial.value === c.WINDOW_EFFECT_MATERIAL_ACRYLIC && 'settings-segmented-button-active')"
+                :disabled="!state.canUseWindowEffectMaterial(c.WINDOW_EFFECT_MATERIAL_ACRYLIC)"
+                @click="state.setDraftWindowEffectMaterial(c.WINDOW_EFFECT_MATERIAL_ACRYLIC)"
+              >
+                Acrylic
+              </button>
+              <button
+                type="button"
+                :class="c.cx('settings-segmented-button', state.draftWindowEffectMaterial.value === c.WINDOW_EFFECT_MATERIAL_MICA && 'settings-segmented-button-active')"
+                :disabled="!state.canUseWindowEffectMaterial(c.WINDOW_EFFECT_MATERIAL_MICA)"
+                @click="state.setDraftWindowEffectMaterial(c.WINDOW_EFFECT_MATERIAL_MICA)"
+              >
+                Mica
+              </button>
+              <button
+                type="button"
+                :class="c.cx('settings-segmented-button', state.draftWindowEffectMaterial.value === c.WINDOW_EFFECT_MATERIAL_MICA_ALT && 'settings-segmented-button-active')"
+                :disabled="!state.canUseWindowEffectMaterial(c.WINDOW_EFFECT_MATERIAL_MICA_ALT)"
+                @click="state.setDraftWindowEffectMaterial(c.WINDOW_EFFECT_MATERIAL_MICA_ALT)"
+              >
+                Mica Alt
+              </button>
+            </div>
+            <div class="settings-segmented-control" aria-label="窗口底材明暗">
+              <button
+                type="button"
+                :class="c.cx('settings-segmented-button', state.draftWindowEffectAppearance.value === c.WINDOW_EFFECT_APPEARANCE_LIGHT && 'settings-segmented-button-active')"
+                :disabled="!c.canEditWindowEffectAppearance.value"
+                @click="state.setDraftWindowEffectAppearance(c.WINDOW_EFFECT_APPEARANCE_LIGHT)"
+              >
+                浅色
+              </button>
+              <button
+                type="button"
+                :class="c.cx('settings-segmented-button', state.draftWindowEffectAppearance.value === c.WINDOW_EFFECT_APPEARANCE_DARK && 'settings-segmented-button-active')"
+                :disabled="!c.canEditWindowEffectAppearance.value"
+                @click="state.setDraftWindowEffectAppearance(c.WINDOW_EFFECT_APPEARANCE_DARK)"
+              >
+                深色
+              </button>
+            </div>
+          </div>
+
+          <div class="settings-window-effect-previews" aria-label="窗口底材示意">
+            <button
+              v-for="item in c.windowEffectPreviewItems.value"
+              :key="`${item.material}-${item.appearance}`"
+              type="button"
+              :class="c.cx(
+                'settings-window-effect-preview',
+                `settings-window-effect-preview-${item.materialClass}`,
+                `settings-window-effect-preview-${item.appearance}`,
+                item.active && 'settings-window-effect-preview-active',
+                !item.available && 'settings-window-effect-preview-disabled'
+              )"
+              :disabled="!item.available"
+              @click="c.selectWindowEffectPreview(item.material, item.appearance)"
+            >
+              <span class="settings-window-effect-preview-scene" aria-hidden="true">
+                <span class="settings-window-effect-preview-icons" />
+                <span class="settings-window-effect-preview-pane">
+                  <span class="settings-window-effect-preview-titlebar" />
+                  <span class="settings-window-effect-preview-line settings-window-effect-preview-line-wide" />
+                  <span class="settings-window-effect-preview-line" />
+                </span>
+              </span>
+              <span class="settings-window-effect-preview-copy">
+                <span class="settings-window-effect-preview-title">
+                  <span>{{ item.label }}</span>
+                  <span>{{ item.appearanceLabel }}</span>
+                </span>
+                <span>{{ item.description }}</span>
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section" aria-label="背景">
+      <div class="settings-section-header">
+        <div>
+          <h3>背景</h3>
+          <p>设置底色、图片层和前端 Acrylic 合成效果。</p>
+        </div>
+      </div>
+
+      <div class="settings-grid">
+        <div class="settings-field settings-field-wide settings-background-field">
+          <span class="settings-field-copy">
+            <span>背景底色</span>
+            <span class="settings-field-hint">位于图片层下方</span>
+          </span>
+          <div class="settings-background-controls">
+            <div class="settings-background-mode-row">
+              <label class="settings-color-control">
+                <span>颜色</span>
+                <span class="settings-color-swatch">
+                  <input
+                    :value="state.draftBackgroundBaseColor.value"
+                    type="color"
+                    aria-label="背景底色"
+                    @input="state.setDraftBackgroundBaseColor($event.target.value)"
+                  />
+                </span>
+                <span class="settings-color-value">{{ state.draftBackgroundBaseColor.value }}</span>
+              </label>
+              <label class="settings-opacity-control">
+                <span>不透明度</span>
+                <SettingsSlider
+                  :value="state.draftBackgroundBaseOpacity.value"
+                  :min="c.BACKGROUND_BASE_OPACITY_MIN"
+                  :max="c.BACKGROUND_BASE_OPACITY_MAX"
+                  :step="c.BACKGROUND_BASE_OPACITY_STEP"
+                  aria-label="背景底色不透明度"
+                  @change="state.setDraftBackgroundBaseOpacity($event)"
+                />
+                <span class="settings-opacity-value">{{ state.draftBackgroundBaseOpacity.value }}%</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-field settings-field-wide settings-background-field">
+          <span class="settings-field-copy">
+            <span>背景层</span>
+            <span class="settings-field-hint">{{ c.backgroundSourceHint.value }}</span>
+          </span>
+          <div class="settings-background-controls">
+            <div class="settings-background-mode-row">
+              <div class="settings-segmented-control" aria-label="图片来源">
+                <button
+                  type="button"
+                  :class="c.cx('settings-segmented-button', state.draftBackgroundSource.value === c.BACKGROUND_SOURCE_SYSTEM_MATERIAL && 'settings-segmented-button-active')"
+                  @click="state.setDraftBackgroundSource(c.BACKGROUND_SOURCE_SYSTEM_MATERIAL)"
+                >
+                  无图片
+                </button>
+                <button
+                  type="button"
+                  :class="c.cx('settings-segmented-button', state.draftBackgroundSource.value === c.BACKGROUND_SOURCE_CUSTOM_IMAGE && 'settings-segmented-button-active')"
+                  :disabled="state.isChoosingBackgroundImage.value"
+                  @click="state.draftBackgroundImagePath.value ? state.setDraftBackgroundSource(c.BACKGROUND_SOURCE_CUSTOM_IMAGE) : state.chooseDraftBackgroundImage()"
+                >
+                  自定义图片
+                </button>
+                <button
+                  type="button"
+                  :class="c.cx('settings-segmented-button', state.draftBackgroundSource.value === c.BACKGROUND_SOURCE_WINDOWS_WALLPAPER && 'settings-segmented-button-active')"
+                  :disabled="state.isChoosingBackgroundImage.value"
+                  @click="state.useDraftDesktopWallpaper"
+                >
+                  桌面壁纸
+                </button>
+                <button
+                  v-if="c.canShowLiveDesktopControls.value"
+                  type="button"
+                  :class="c.cx('settings-segmented-button', state.draftBackgroundSource.value === c.BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP && 'settings-segmented-button-active')"
+                  :disabled="!state.canUseLiveDesktopBackground()"
+                  @click="state.setDraftBackgroundSource(c.BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP)"
+                >
+                  动态桌面
+                </button>
+              </div>
+              <label v-if="c.doesDraftBackgroundUseImage.value" class="settings-opacity-control">
+                <span>背景透明度</span>
+                <SettingsSlider
+                  :value="state.draftBackgroundImageOpacity.value"
+                  :min="c.BACKGROUND_IMAGE_OPACITY_MIN"
+                  :max="c.BACKGROUND_IMAGE_OPACITY_MAX"
+                  :step="c.BACKGROUND_IMAGE_OPACITY_STEP"
+                  aria-label="背景层透明度"
+                  @change="state.setDraftBackgroundImageOpacity($event)"
+                />
+                <span class="settings-opacity-value">{{ state.draftBackgroundImageOpacity.value }}%</span>
+              </label>
+              <label v-if="c.doesDraftBackgroundUseLiveDesktop.value" class="settings-opacity-control">
+                <span>动态桌面不透明度</span>
+                <SettingsSlider
+                  :value="state.draftBackgroundLiveDesktopOpacity.value"
+                  :min="c.BACKGROUND_LIVE_DESKTOP_OPACITY_MIN"
+                  :max="c.BACKGROUND_LIVE_DESKTOP_OPACITY_MAX"
+                  :step="c.BACKGROUND_LIVE_DESKTOP_OPACITY_STEP"
+                  aria-label="动态桌面不透明度"
+                  @change="state.setDraftBackgroundLiveDesktopOpacity($event)"
+                />
+                <span class="settings-opacity-value">{{ state.draftBackgroundLiveDesktopOpacity.value }}%</span>
+              </label>
+            </div>
+
+            <div v-if="c.doesDraftBackgroundUseImage.value" class="settings-background-image-controls">
+              <span class="settings-background-image-name">{{ c.draftBackgroundImageName.value }}</span>
+              <fluent-button
+                v-if="c.isDraftCustomImage.value"
+                appearance="outline"
+                size="small"
+                type="button"
+                :disabled.prop="state.isChoosingBackgroundImage.value"
+                @click="state.chooseDraftBackgroundImage"
+              >
+                {{ state.isChoosingBackgroundImage.value ? "选择中" : "选择图片" }}
+              </fluent-button>
+              <fluent-button
+                v-if="c.isDraftWindowsWallpaper.value"
+                appearance="outline"
+                size="small"
+                type="button"
+                :disabled.prop="state.isChoosingBackgroundImage.value"
+                @click="state.useDraftDesktopWallpaper"
+              >
+                {{ state.isChoosingBackgroundImage.value ? "同步中" : "刷新壁纸" }}
+              </fluent-button>
+              <fluent-button
+                appearance="subtle"
+                size="small"
+                type="button"
+                :disabled.prop="!state.draftBackgroundImagePath.value"
+                @click="state.clearDraftBackgroundImage"
+              >
+                恢复默认
+              </fluent-button>
+            </div>
+
+            <div v-if="c.doesDraftBackgroundUseImage.value" class="settings-background-image-layout-controls">
+              <span class="settings-acrylic-row-label">显示方式</span>
+              <div class="settings-segmented-control" aria-label="背景图片显示方式">
+                <button
+                  v-for="item in c.backgroundImageLayoutOptions"
+                  :key="item.layout"
+                  type="button"
+                  :class="c.cx('settings-segmented-button', state.draftBackgroundImageLayout.value === item.layout && 'settings-segmented-button-active')"
+                  @click="state.setDraftBackgroundImageLayout(item.layout)"
+                >
+                  {{ item.label }}
+                </button>
+              </div>
+            </div>
+
+            <BackgroundImagePreviewCanvas
+              aria-label="图片层预览"
+              :background-base-color="state.draftBackgroundBaseColor.value"
+              :background-base-opacity="state.draftBackgroundBaseOpacity.value"
+              :background-image-layout="state.draftBackgroundImageLayout.value"
+              :background-image-opacity="state.draftBackgroundImageOpacity.value"
+              :background-image-pixel-size="c.draftBackgroundImagePixelSize.value"
+              :background-image-url="c.hasDraftBackgroundImagePreview.value ? state.draftBackgroundImageUrl.value : null"
+              :background-layout-context="backgroundLayoutContext"
+              :empty-label="c.backgroundLayerPreviewLabel.value"
+            />
+          </div>
+        </div>
+
+        <div class="settings-field settings-field-wide settings-background-field">
+          <span class="settings-field-copy">
+            <span>背景效果</span>
+            <span class="settings-field-hint">{{ c.backgroundEffectHint.value }}</span>
+          </span>
+          <div class="settings-background-controls">
+            <div class="settings-background-mode-row">
+              <div class="settings-segmented-control" aria-label="图片效果">
+                <button
+                  type="button"
+                  :class="c.cx('settings-segmented-button', state.draftBackgroundEffect.value === c.BACKGROUND_EFFECT_NONE && 'settings-segmented-button-active')"
+                  :disabled="!c.canUseDraftBackgroundEffect(c.BACKGROUND_EFFECT_NONE)"
+                  @click="state.setDraftBackgroundEffect(c.BACKGROUND_EFFECT_NONE)"
+                >
+                  原图
+                </button>
+                <button
+                  type="button"
+                  :class="c.cx('settings-segmented-button', state.draftBackgroundEffect.value === c.BACKGROUND_EFFECT_DIMMED && 'settings-segmented-button-active')"
+                  :disabled="!c.canUseDraftBackgroundEffect(c.BACKGROUND_EFFECT_DIMMED)"
+                  @click="state.setDraftBackgroundEffect(c.BACKGROUND_EFFECT_DIMMED)"
+                >
+                  暗化
+                </button>
+                <button
+                  type="button"
+                  :class="c.cx('settings-segmented-button', state.draftBackgroundEffect.value === c.BACKGROUND_EFFECT_BLUR && 'settings-segmented-button-active')"
+                  :disabled="!c.canUseDraftBackgroundEffect(c.BACKGROUND_EFFECT_BLUR)"
+                  @click="state.setDraftBackgroundEffect(c.BACKGROUND_EFFECT_BLUR)"
+                >
+                  模糊
+                </button>
+                <button
+                  type="button"
+                  :class="c.cx('settings-segmented-button', state.draftBackgroundEffect.value === c.BACKGROUND_EFFECT_ACRYLIC_WEBGL && 'settings-segmented-button-active')"
+                  :disabled="!c.canUseDraftBackgroundEffect(c.BACKGROUND_EFFECT_ACRYLIC_WEBGL)"
+                  @click="state.setDraftBackgroundEffect(c.BACKGROUND_EFFECT_ACRYLIC_WEBGL)"
+                >
+                  Acrylic
+                </button>
+              </div>
+            </div>
+
+            <label v-if="c.doesDraftBackgroundUseLayer.value && state.draftBackgroundEffect.value === c.BACKGROUND_EFFECT_BLUR" class="settings-opacity-control">
+              <span>模糊强度</span>
+              <SettingsSlider
+                :value="state.draftBackgroundBlurStrength.value"
+                :min="c.BACKGROUND_BLUR_STRENGTH_MIN"
+                :max="c.BACKGROUND_BLUR_STRENGTH_MAX"
+                :step="c.BACKGROUND_BLUR_STRENGTH_STEP"
+                aria-label="背景模糊强度"
+                @change="state.setDraftBackgroundBlurStrength($event)"
+              />
+              <span class="settings-opacity-value">{{ state.draftBackgroundBlurStrength.value }}%</span>
+            </label>
+
+            <label v-if="c.doesDraftBackgroundUseLayer.value && state.draftBackgroundEffect.value === c.BACKGROUND_EFFECT_DIMMED" class="settings-color-control">
+              <span>暗化颜色</span>
+              <span class="settings-color-swatch">
+                <input
+                  :value="state.draftBackgroundDarkenColor.value"
+                  type="color"
+                  aria-label="背景暗化颜色"
+                  @input="state.setDraftBackgroundDarkenColor($event.target.value)"
+                />
+              </span>
+              <span class="settings-color-value">{{ state.draftBackgroundDarkenColor.value }}</span>
+            </label>
+
+            <label v-if="c.doesDraftBackgroundUseLayer.value && state.draftBackgroundEffect.value === c.BACKGROUND_EFFECT_DIMMED" class="settings-opacity-control">
+              <span>暗化强度</span>
+              <SettingsSlider
+                :value="state.draftBackgroundDarkenStrength.value"
+                :min="c.BACKGROUND_DARKEN_STRENGTH_MIN"
+                :max="c.BACKGROUND_DARKEN_STRENGTH_MAX"
+                :step="c.BACKGROUND_DARKEN_STRENGTH_STEP"
+                aria-label="背景暗化强度"
+                @change="state.setDraftBackgroundDarkenStrength($event)"
+              />
+              <span class="settings-opacity-value">{{ state.draftBackgroundDarkenStrength.value }}%</span>
+            </label>
+
+            <div v-if="c.doesDraftBackgroundUseLayer.value && state.draftBackgroundEffect.value === c.BACKGROUND_EFFECT_ACRYLIC_WEBGL" class="settings-acrylic-controls">
+              <label class="settings-opacity-control">
+                <span>模糊强度</span>
+                <SettingsSlider
+                  :value="state.draftBackgroundAcrylicBlurStrength.value"
+                  :min="c.BACKGROUND_BLUR_STRENGTH_MIN"
+                  :max="c.BACKGROUND_BLUR_STRENGTH_MAX"
+                  :step="c.BACKGROUND_BLUR_STRENGTH_STEP"
+                  aria-label="Acrylic 模糊强度"
+                  @change="state.setDraftBackgroundAcrylicBlurStrength($event)"
+                />
+                <span class="settings-opacity-value">{{ state.draftBackgroundAcrylicBlurStrength.value }}%</span>
+              </label>
+
+              <div class="settings-acrylic-row">
+                <span class="settings-acrylic-row-label">Acrylic 外观</span>
+                <div class="settings-segmented-control" aria-label="Acrylic 外观">
+                  <button
+                    type="button"
+                    :class="c.cx('settings-segmented-button', state.draftBackgroundAcrylicAppearance.value === c.BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM && 'settings-segmented-button-active')"
+                    @click="c.setDraftBackgroundAcrylicAppearance(c.BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM)"
+                  >
+                    跟随系统
+                  </button>
+                  <button
+                    type="button"
+                    :class="c.cx('settings-segmented-button', state.draftBackgroundAcrylicAppearance.value === c.BACKGROUND_ACRYLIC_APPEARANCE_DARK && 'settings-segmented-button-active')"
+                    @click="c.setDraftBackgroundAcrylicAppearance(c.BACKGROUND_ACRYLIC_APPEARANCE_DARK)"
+                  >
+                    深色
+                  </button>
+                  <button
+                    type="button"
+                    :class="c.cx('settings-segmented-button', state.draftBackgroundAcrylicAppearance.value === c.BACKGROUND_ACRYLIC_APPEARANCE_LIGHT && 'settings-segmented-button-active')"
+                    @click="c.setDraftBackgroundAcrylicAppearance(c.BACKGROUND_ACRYLIC_APPEARANCE_LIGHT)"
+                  >
+                    浅色
+                  </button>
+                </div>
+              </div>
+
+              <div class="settings-acrylic-row">
+                <span class="settings-acrylic-row-label">参数</span>
+                <div class="settings-segmented-control" aria-label="Acrylic 参数">
+                  <button
+                    type="button"
+                    :class="c.cx('settings-segmented-button', c.activeAcrylicParamsProfile.value === c.BACKGROUND_ACRYLIC_APPEARANCE_DARK && 'settings-segmented-button-active')"
+                    @click="c.activeAcrylicParamsProfile.value = c.BACKGROUND_ACRYLIC_APPEARANCE_DARK"
+                  >
+                    深色参数
+                  </button>
+                  <button
+                    type="button"
+                    :class="c.cx('settings-segmented-button', c.activeAcrylicParamsProfile.value === c.BACKGROUND_ACRYLIC_APPEARANCE_LIGHT && 'settings-segmented-button-active')"
+                    @click="c.activeAcrylicParamsProfile.value = c.BACKGROUND_ACRYLIC_APPEARANCE_LIGHT"
+                  >
+                    浅色参数
+                  </button>
+                </div>
+              </div>
+
+              <div class="settings-acrylic-params">
+                <label class="settings-color-control">
+                  <span>染色</span>
+                  <span class="settings-color-swatch">
+                    <input
+                      :value="c.activeAcrylicTintColorHex.value"
+                      type="color"
+                      aria-label="Acrylic 染色"
+                      @input="c.setActiveDraftBackgroundAcrylicParam('tintColor', $event.target.value)"
+                    />
+                  </span>
+                  <span class="settings-color-value">{{ c.activeAcrylicTintColorHex.value }}</span>
+                </label>
+
+                <label class="settings-opacity-control">
+                  <span>染色强度</span>
+                  <SettingsSlider
+                    :value="c.activeAcrylicParams.value.tintStrength"
+                    :min="c.ACRYLIC_TINT_STRENGTH_MIN"
+                    :max="c.ACRYLIC_TINT_STRENGTH_MAX"
+                    :step="c.ACRYLIC_PARAM_STEP"
+                    aria-label="Acrylic 染色强度"
+                    @change="c.setActiveDraftBackgroundAcrylicParam('tintStrength', $event)"
+                  />
+                  <span class="settings-opacity-value">{{ c.formatAcrylicPercent(c.activeAcrylicParams.value.tintStrength) }}</span>
+                </label>
+
+                <label class="settings-opacity-control">
+                  <span>亮度</span>
+                  <SettingsSlider
+                    :value="c.activeAcrylicParams.value.brightness"
+                    :min="c.ACRYLIC_BRIGHTNESS_MIN"
+                    :max="c.ACRYLIC_BRIGHTNESS_MAX"
+                    :step="c.ACRYLIC_PARAM_STEP"
+                    aria-label="Acrylic 亮度"
+                    @change="c.setActiveDraftBackgroundAcrylicParam('brightness', $event)"
+                  />
+                  <span class="settings-opacity-value">{{ c.formatAcrylicPercent(c.activeAcrylicParams.value.brightness) }}</span>
+                </label>
+
+                <label class="settings-opacity-control">
+                  <span>对比度</span>
+                  <SettingsSlider
+                    :value="c.activeAcrylicParams.value.contrast"
+                    :min="c.ACRYLIC_CONTRAST_MIN"
+                    :max="c.ACRYLIC_CONTRAST_MAX"
+                    :step="c.ACRYLIC_PARAM_STEP"
+                    aria-label="Acrylic 对比度"
+                    @change="c.setActiveDraftBackgroundAcrylicParam('contrast', $event)"
+                  />
+                  <span class="settings-opacity-value">{{ c.formatAcrylicPercent(c.activeAcrylicParams.value.contrast) }}</span>
+                </label>
+
+                <label class="settings-opacity-control">
+                  <span>饱和度</span>
+                  <SettingsSlider
+                    :value="c.activeAcrylicParams.value.saturation"
+                    :min="c.ACRYLIC_SATURATION_MIN"
+                    :max="c.ACRYLIC_SATURATION_MAX"
+                    :step="c.ACRYLIC_PARAM_STEP"
+                    aria-label="Acrylic 饱和度"
+                    @change="c.setActiveDraftBackgroundAcrylicParam('saturation', $event)"
+                  />
+                  <span class="settings-opacity-value">{{ c.formatAcrylicPercent(c.activeAcrylicParams.value.saturation) }}</span>
+                </label>
+
+                <fluent-button appearance="outline" type="button" @click="c.resetActiveDraftBackgroundAcrylicParams">
+                  恢复默认
+                </fluent-button>
+              </div>
+            </div>
+
+            <BackgroundEffectPreview
+              :active="state.isSettingsPanelOpen.value && c.activeSettingsTab.value === 'interface'"
+              :background-acrylic-params="c.draftBackgroundAcrylicPreviewParams.value"
+              :background-base-color="state.draftBackgroundBaseColor.value"
+              :background-base-opacity="state.draftBackgroundBaseOpacity.value"
+              :background-blur-strength="c.draftBackgroundEffectBlurStrength.value"
+              :background-darken-color="state.draftBackgroundDarkenColor.value"
+              :background-darken-strength="state.draftBackgroundDarkenStrength.value"
+              :background-effect="state.draftBackgroundEffect.value"
+              :background-image-layout="state.draftBackgroundImageLayout.value"
+              :background-image-opacity="state.draftBackgroundImageOpacity.value"
+              :background-image-path="state.draftBackgroundImagePath.value"
+              :background-image-pixel-size="c.draftBackgroundImagePixelSize.value"
+              :background-image-url="c.hasDraftBackgroundImagePreview.value ? state.draftBackgroundImageUrl.value : null"
+              :background-layout-context="backgroundLayoutContext"
+              :empty-label="c.backgroundEffectPreviewLabel.value"
+            />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section" aria-label="布局">
+      <div class="settings-section-header">
+        <div>
+          <h3>布局</h3>
+          <p>调整桌面、文件夹和图标密度。</p>
+        </div>
+      </div>
+
+      <div class="settings-grid">
+        <div class="settings-field settings-field-wide settings-grid-layout-field">
+          <span>桌面布局</span>
+          <div class="settings-grid-layout-control" aria-label="桌面布局">
+            <SettingsSpinButton
+              v-model="state.draftRows.value"
+              aria-label="桌面行数"
+              decrease-label="减少桌面行数"
+              increase-label="增加桌面行数"
+              name="desktopRows"
+              :min="2"
+              :max="8"
+            />
+            <span class="settings-grid-layout-separator">x</span>
+            <SettingsSpinButton
+              v-model="state.draftCols.value"
+              aria-label="桌面列数"
+              decrease-label="减少桌面列数"
+              increase-label="增加桌面列数"
+              name="desktopCols"
+              :min="3"
+              :max="10"
+            />
+          </div>
+        </div>
+
+        <div class="settings-field settings-field-wide settings-grid-layout-field">
+          <span>文件夹布局</span>
+          <div class="settings-grid-layout-control" aria-label="文件夹布局">
+            <SettingsSpinButton
+              v-model="state.draftFolderRows.value"
+              aria-label="文件夹行数"
+              decrease-label="减少文件夹行数"
+              increase-label="增加文件夹行数"
+              name="folderRows"
+              :min="2"
+              :max="6"
+            />
+            <span class="settings-grid-layout-separator">x</span>
+            <SettingsSpinButton
+              v-model="state.draftFolderCols.value"
+              aria-label="文件夹列数"
+              decrease-label="减少文件夹列数"
+              increase-label="增加文件夹列数"
+              name="folderCols"
+              :min="2"
+              :max="8"
+            />
+          </div>
+        </div>
+
+        <div class="settings-field settings-field-wide">
+          <span class="settings-field-copy">
+            <span>图标大小</span>
+            <span class="settings-field-hint">{{ c.ICON_SIZE_MIN }}-{{ c.ICON_SIZE_MAX }}px</span>
+          </span>
+          <SettingsSpinButton
+            v-model="state.draftIconSize.value"
+            aria-label="图标大小"
+            decrease-label="缩小图标"
+            increase-label="增大图标"
+            name="iconSize"
+            unit="px"
+            wide
+            :min="c.ICON_SIZE_MIN"
+            :max="c.ICON_SIZE_MAX"
+            :step="c.ICON_SIZE_STEP"
+          />
+        </div>
+
+        <div class="settings-field settings-field-wide settings-folder-icon-size-field">
+          <span class="settings-field-copy">
+            <span>文件夹图标大小</span>
+            <span class="settings-field-hint">{{ c.ICON_SIZE_MIN }}-{{ c.ICON_SIZE_MAX }}px</span>
+          </span>
+          <div class="settings-folder-icon-size-control">
+            <div class="settings-segmented-control" aria-label="文件夹图标大小模式">
+              <button
+                type="button"
+                :class="c.cx('settings-segmented-button', state.draftFolderIconSizeMode.value === 'global' && 'settings-segmented-button-active')"
+                @click="state.setDraftFolderIconSizeMode('global')"
+              >
+                跟随全局
+              </button>
+              <button
+                type="button"
+                :class="c.cx('settings-segmented-button', state.draftFolderIconSizeMode.value === 'custom' && 'settings-segmented-button-active')"
+                @click="state.setDraftFolderIconSizeMode('custom')"
+              >
+                自定义
+              </button>
+            </div>
+            <SettingsSpinButton
+              v-if="state.draftFolderIconSizeMode.value === 'custom'"
+              v-model="state.draftFolderIconSize.value"
+              aria-label="文件夹图标大小"
+              decrease-label="缩小文件夹图标"
+              increase-label="增大文件夹图标"
+              name="folderIconSize"
+              unit="px"
+              wide
+              :min="c.ICON_SIZE_MIN"
+              :max="c.ICON_SIZE_MAX"
+              :step="c.ICON_SIZE_STEP"
+            />
+          </div>
+        </div>
+
+        <div class="settings-row settings-field-wide">
+          <span class="settings-field-copy">
+            <span>无字模式</span>
+            <span class="settings-field-hint">隐藏应用名称，保留图标网格</span>
+          </span>
+          <fluent-switch
+            :checked.prop="state.draftIsTextlessMode.value"
+            name="textlessMode"
+            aria-label="无字模式"
+            @change="state.draftIsTextlessMode.value = $event.target.checked"
+          />
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section" aria-label="整理空位">
+      <div class="settings-section-header">
+        <div>
+          <h3>整理空位</h3>
+          <p>根据当前行列布局，将 App 向前整理以填补空位。</p>
+        </div>
+        <fluent-button
+          appearance="outline"
+          type="button"
+          :disabled.prop="!!state.dragMeta.value"
+          @click="state.confirmForceFillAllPages"
+        >
+          重新整理
+        </fluent-button>
+      </div>
+    </section>
+  </div>
+</template>
+
+<script setup>
+import BackgroundEffectPreview from "../BackgroundEffectPreview.vue";
+import BackgroundImagePreviewCanvas from "../BackgroundImagePreviewCanvas.vue";
+import SettingsSlider from "./SettingsSlider.vue";
+import SettingsSpinButton from "./SettingsSpinButton.vue";
+
+const props = defineProps({
+  backgroundLayoutContext: { type: Object, default: null },
+  context: { type: Object, required: true },
+  state: { type: Object, required: true },
+});
+
+const c = props.context;
+</script>

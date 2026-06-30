@@ -1,4 +1,5 @@
 import { createApp } from "vue";
+import "./fluent/registerFluentComponents.js";
 import { shouldMountMotionLab } from "./motionLab/motionLabGate.js";
 
 const search = typeof window === "undefined" ? "" : window.location.search;
