@@ -36,9 +36,10 @@ import {
 } from "./useLaunchpadSettingsConfig.js";
 
 function makeOptions(overrides = {}) {
-  const { pages: initialPages, ...optionOverrides } = overrides;
+  const { isSettingsPanelOpen: initialIsSettingsPanelOpen, pages: initialPages, ...optionOverrides } = overrides;
   const calls = {
     closeDesktop: 0,
+    closeSettingsPanel: [],
     commitFolderPageIndex: [],
     commitPageIndex: [],
     commitSearchPageIndex: [],
@@ -54,6 +55,7 @@ function makeOptions(overrides = {}) {
     closeDesktop: () => {
       calls.closeDesktop += 1;
     },
+    closeSettingsPanel: (closeOptions) => calls.closeSettingsPanel.push(closeOptions),
     commitFolderPageIndex: (value) => calls.commitFolderPageIndex.push(value),
     commitPageIndex: (value) => calls.commitPageIndex.push(value),
     commitSearchPageIndex: (value) => calls.commitSearchPageIndex.push(value),
@@ -101,6 +103,7 @@ function makeOptions(overrides = {}) {
     hiddenAppIds: ref([]),
     iconSize: ref(64),
     isDesktopOpen: ref(true),
+    isSettingsPanelOpen: ref(initialIsSettingsPanelOpen ?? false),
     isTextlessMode: ref(false),
     backgroundBaseColor: ref(DEFAULT_BACKGROUND_BASE_COLOR),
     backgroundBaseOpacity: ref(DEFAULT_BACKGROUND_BASE_OPACITY),
@@ -1207,6 +1210,30 @@ export async function runLaunchpadNativeTests() {
     },
     passWindowShadowCommand: true,
     passRevealMainWindowCommand: true,
+  });
+
+  const settingsToggleEventHandlers = new Map();
+  await withMockTauri(async (command) => {
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async (timers) => {
+    const { calls, options } = makeOptions({
+      isSettingsPanelOpen: true,
+    });
+    const native = useLaunchpadNative(options);
+
+    await native.registerNativeEventListeners();
+    await settingsToggleEventHandlers.get("launchpad-toggle-desktop")({ payload: 5 });
+    await flushMicrotasks(3);
+
+    assert(calls.closeSettingsPanel.length === 1, "native toggle shortcut should close an open settings panel");
+    assert(calls.closeSettingsPanel[0].mode === "desktop", "native toggle shortcut should use the desktop settings close motion");
+    assert(calls.closeDesktop === 1, "native toggle shortcut should still close the desktop when settings is open");
+    assert(timers.length === 1, "native toggle shortcut should schedule a native hide after closing settings and desktop");
+  }, {
+    listen: async (eventName, handler) => {
+      settingsToggleEventHandlers.set(eventName, handler);
+      return () => settingsToggleEventHandlers.delete(eventName);
+    },
   });
 
   const folderToggleEventHandlers = new Map();

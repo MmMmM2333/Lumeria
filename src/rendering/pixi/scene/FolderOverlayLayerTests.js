@@ -684,6 +684,56 @@ export async function runFolderOverlayLayerTests() {
 
   {
     motionRuntime.reset();
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    layer.currentFolderId = "folder-1";
+    layer.folderHandoff = new FolderHandoffCoordinator(layer);
+    layer.openingPanelReadyFrame = null;
+    layer.panelAlphaTarget = 1;
+    layer.panelOpenProgressDriven = true;
+    layer.panelOpenTargetKey = "folder-1:old";
+    layer.panelZoomFadeClosing = false;
+    layer.markRegisteredBoundsDirty = () => {};
+    layer.notifyPanelTitleFrame = () => {};
+    layer.panel = {
+      alpha: 0.7,
+      x: 406,
+      y: 326,
+      scale: {
+        x: 0.54,
+        y: 0.5888889,
+        set(x, y = x) {
+          this.x = x;
+          this.y = y;
+        },
+      },
+    };
+    layer.panel.position = {
+      set(x, y) {
+        layer.panel.x = x;
+        layer.panel.y = y;
+      },
+    };
+
+    layer.animatePanel({
+      folderOpenProgress: 0.25,
+      isFolderAppLaunchClosing: false,
+      isFolderClosing: false,
+      isFolderZoomFadeClosing: true,
+      renderedFolder: { id: "folder-1" },
+      stageRect: { height: 600, left: 0, top: 0, width: 1000 },
+    }, 580, 380, { height: 360, left: 180, top: 200, width: 800 }, { height: 64, left: 200, top: 240, width: 64 });
+
+    assert(layer.panel.x === 580 && layer.panel.y === 380, "open-folder zoom-fade should keep the folder panel centered instead of shrinking to the desktop source");
+    assert(layer.panel.scale.x === 1 && layer.panel.scale.y === 1, "open-folder zoom-fade should keep the panel at full size for the outer launchpad fade");
+    assert(layer.panel.alpha === 1, "open-folder zoom-fade should leave local panel alpha visible for the outer launchpad fade");
+    assert(!layer.panelOpenProgressDriven, "open-folder zoom-fade should not consume folder open progress as reverse opening");
+    assert(layer.panelZoomFadeClosing, "open-folder zoom-fade should mark the panel as being held for the outer fade");
+    assert(motionRuntime.debugSnapshot().summary.activeAnimationCount === 0, "open-folder zoom-fade should not start a competing source-close spring");
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
     motionRuntime.configureDebug({ enabled: true });
     const layer = Object.create(FolderOverlayLayer.prototype);
     layer.currentFolderId = null;
@@ -985,9 +1035,21 @@ export async function runFolderOverlayLayerTests() {
     };
     layer.frameGhostState = null;
 
+    const openFolderDesktopZoomFadeState = {
+      folderZoomFadeCloseReason: "desktop",
+      isDesktopClosing: true,
+      isFolderZoomFadeClosing: true,
+      renderedFolder: { id: "folder-a" },
+    };
+    assert(!layer.hasActiveDesktopCloseDetachedHandoff(openFolderDesktopZoomFadeState), "open-folder desktop zoom-fade should continue normal overlay rendering");
+    layer.syncDesktopCloseDetachedHandoff(openFolderDesktopZoomFadeState);
+    assert(layer.detachedClosingVisuals.length === 0, "open-folder desktop zoom-fade should not create a detached source lock");
+    assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "open-folder desktop zoom-fade should leave the real desktop source to normal ghosting");
+
     layer.syncDesktopCloseDetachedHandoff({
       folderZoomFadeCloseReason: "desktop",
       isDesktopClosing: true,
+      isFolderClosing: true,
       isFolderZoomFadeClosing: true,
       renderedFolder: { id: "folder-a" },
     });
@@ -1025,6 +1087,7 @@ export async function runFolderOverlayLayerTests() {
       folderZoomFadeCloseReason: "desktop",
       height: 800,
       isDesktopClosing: true,
+      isFolderClosing: true,
       isFolderZoomFadeClosing: true,
       renderedFolder: { childPages: [[]], id: "folder-a", name: "A", type: "folder" },
       stageRect: { height: 800, left: 0, top: 0, width: 1200 },

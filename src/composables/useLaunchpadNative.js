@@ -1595,6 +1595,11 @@ export function useLaunchpadNative(options) {
     }, DESKTOP_CLOSE_DURATION);
   }
 
+  function closeSettingsPanelForDesktopClose() {
+    if (!options.isSettingsPanelOpen?.value) return;
+    options.closeSettingsPanel?.({ mode: "desktop" });
+  }
+
   async function hideNativeWindow(expectedHideSequence = null) {
     if (!isNativeBridgeAvailable()) {
       setNativeWindowClosingInteractionBlocked(false);
@@ -1625,6 +1630,7 @@ export function useLaunchpadNative(options) {
   function toggleDesktopFromNativeShortcut(event) {
     rememberNativeWindowOpenSequence(event);
     if (options.isDesktopOpen.value) {
+      closeSettingsPanelForDesktopClose();
       if (options.renderedFolder?.value && options.startFolderZoomFadeClose?.({ reason: "desktop" })) {
         options.closeDesktop({ clearSearch: false });
         hideNativeWindowAfterCloseAnimation();
@@ -1640,6 +1646,7 @@ export function useLaunchpadNative(options) {
   function closeDesktopFromNativeWindow() {
     clearNativeWallpaperRefreshTimer();
     if (options.isDesktopOpen.value) {
+      closeSettingsPanelForDesktopClose();
       options.closeDesktop({ clearSearch: false });
     }
     hideNativeWindowAfterCloseAnimation();

@@ -1,5 +1,10 @@
 import { ref } from "vue";
 import {
+  DESKTOP_CLOSE_DURATION,
+  DESKTOP_CLOSE_SCALE,
+  SETTINGS_PANEL_CLOSE_DURATION,
+} from "./launchpadConstants.js";
+import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
   BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
@@ -190,6 +195,8 @@ export function runSettingsPanelFlowTests() {
 
     flow.closeSettingsPanel();
     assert(flow.isSettingsPanelOpen.value === false, "closing settings should hide the panel");
+    assert(flow.settingsPanelAnimate.value.scaleX < 1 && flow.settingsPanelAnimate.value.scaleY < 1, "panel close should shrink back to the settings button geometry");
+    assert(flow.settingsPanelCloseDurationSeconds.value === SETTINGS_PANEL_CLOSE_DURATION / 1000, "panel close should use the settings close duration");
     assert(state.draftRows.value === 4 && state.draftCols.value === 6, "closing settings should discard desktop grid drafts");
     assert(state.draftFolderRows.value === 3 && state.draftFolderCols.value === 5, "closing settings should discard folder grid drafts");
     assert(state.draftIconSize.value === 72, "closing settings should discard icon size draft");
@@ -224,5 +231,22 @@ export function runSettingsPanelFlowTests() {
     flow.openSettingsPanel();
     assert(flow.isSettingsPanelOpen.value === false, "drag-active settings should not open the panel");
     assert(state.draftRows.value === 8, "blocked settings open should not reset drafts");
+  });
+
+  withMockWindow((timers) => {
+    const { flow } = createSettingsPanelFlowHarness();
+    flow.openSettingsPanel();
+    flow.closeSettingsPanel({ mode: "desktop" });
+    assert(flow.isSettingsPanelOpen.value === false, "desktop close should close the settings panel");
+    assert(flow.settingsPanelAnimate.value.opacity === 0, "desktop close should fade the settings panel out");
+    assert(flow.settingsPanelAnimate.value.scaleX === DESKTOP_CLOSE_SCALE, "desktop close should scale the settings panel with the desktop");
+    assert(flow.settingsPanelAnimate.value.scaleY === DESKTOP_CLOSE_SCALE, "desktop close should scale the settings panel with the desktop");
+    assert(flow.settingsPanelAnimate.value.x === 0 && flow.settingsPanelAnimate.value.y === 0, "desktop close should keep the settings panel centered while scaling");
+    assert(flow.settingsPanelCloseDurationSeconds.value === DESKTOP_CLOSE_DURATION / 1000, "desktop close should match the desktop close duration");
+    assert(timers.length === 1, "desktop close should schedule the settings close cleanup");
+    timers[0]();
+    assert(flow.shouldRenderSettingsPanel.value === false, "desktop close cleanup should unmount the settings panel");
+    flow.openSettingsPanel();
+    assert(flow.settingsPanelAnimate.value.scaleX === 1 && flow.settingsPanelAnimate.value.scaleY === 1, "reopening settings should restore the normal panel animation mode");
   });
 }

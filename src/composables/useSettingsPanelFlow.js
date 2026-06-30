@@ -1,11 +1,19 @@
 import { computed, ref } from "vue";
 import { clamp } from "../domain/launchpadLayout.js";
-import { SETTINGS_PANEL_CLOSE_DURATION } from "./launchpadConstants.js";
+import {
+  DESKTOP_CLOSE_DURATION,
+  DESKTOP_CLOSE_SCALE,
+  SETTINGS_PANEL_CLOSE_DURATION,
+} from "./launchpadConstants.js";
 import { syncLaunchpadSettingsDraftsFromState } from "./useLaunchpadSettingsConfig.js";
+
+const SETTINGS_PANEL_CLOSE_MODE_PANEL = "panel";
+const SETTINGS_PANEL_CLOSE_MODE_DESKTOP = "desktop";
 
 export function useSettingsPanelFlow(options) {
   const isSettingsPanelOpen = ref(false);
   const isSettingsPanelClosing = ref(false);
+  const settingsPanelCloseMode = ref(SETTINGS_PANEL_CLOSE_MODE_PANEL);
   const settingsPanelMotionGeometry = ref({ x: 0, y: 0, scaleX: 0.08, scaleY: 0.06, borderRadius: 18 });
   let settingsPanelCloseTimer = null;
 
@@ -23,6 +31,16 @@ export function useSettingsPanelFlow(options) {
   }));
   const settingsPanelAnimate = computed(() => {
     if (isSettingsPanelClosing.value) {
+      if (settingsPanelCloseMode.value === SETTINGS_PANEL_CLOSE_MODE_DESKTOP) {
+        return {
+          opacity: 0,
+          scaleX: DESKTOP_CLOSE_SCALE,
+          scaleY: DESKTOP_CLOSE_SCALE,
+          x: 0,
+          y: 0,
+          borderRadius: "18px",
+        };
+      }
       return {
         opacity: 0,
         scaleX: settingsPanelMotionGeometry.value.scaleX,
@@ -34,6 +52,11 @@ export function useSettingsPanelFlow(options) {
     }
     return { opacity: 1, scaleX: 1, scaleY: 1, x: 0, y: 0, borderRadius: "18px" };
   });
+  const settingsPanelCloseDurationSeconds = computed(() => (
+    (settingsPanelCloseMode.value === SETTINGS_PANEL_CLOSE_MODE_DESKTOP
+      ? DESKTOP_CLOSE_DURATION
+      : SETTINGS_PANEL_CLOSE_DURATION) / 1000
+  ));
 
   function clearSettingsPanelCloseTimer() {
     if (settingsPanelCloseTimer) window.clearTimeout(settingsPanelCloseTimer);
@@ -81,24 +104,32 @@ export function useSettingsPanelFlow(options) {
   function openSettingsPanel(event) {
     if (options.isDragActive()) return;
     clearSettingsPanelCloseTimer();
+    settingsPanelCloseMode.value = SETTINGS_PANEL_CLOSE_MODE_PANEL;
     settingsPanelMotionGeometry.value = makeSettingsPanelGeometryFromRect(getSettingsButtonRect(event) || getCenterSettingsRect());
     syncLaunchpadSettingsDraftsFromState(options);
     isSettingsPanelClosing.value = false;
     isSettingsPanelOpen.value = true;
   }
 
-  function closeSettingsPanel() {
+  function closeSettingsPanel(closeOptions = {}) {
     if (!isSettingsPanelOpen.value || isSettingsPanelClosing.value) return;
     clearSettingsPanelCloseTimer();
+    settingsPanelCloseMode.value = closeOptions?.mode === SETTINGS_PANEL_CLOSE_MODE_DESKTOP
+      ? SETTINGS_PANEL_CLOSE_MODE_DESKTOP
+      : SETTINGS_PANEL_CLOSE_MODE_PANEL;
     syncLaunchpadSettingsDraftsFromState(options);
     options.closeAddManagedAppPage();
     options.closeScanResultDialog();
     isSettingsPanelOpen.value = false;
     isSettingsPanelClosing.value = true;
+    const closeDurationMs = settingsPanelCloseMode.value === SETTINGS_PANEL_CLOSE_MODE_DESKTOP
+      ? DESKTOP_CLOSE_DURATION
+      : SETTINGS_PANEL_CLOSE_DURATION;
     settingsPanelCloseTimer = window.setTimeout(() => {
       isSettingsPanelClosing.value = false;
+      settingsPanelCloseMode.value = SETTINGS_PANEL_CLOSE_MODE_PANEL;
       clearSettingsPanelCloseTimer();
-    }, SETTINGS_PANEL_CLOSE_DURATION);
+    }, closeDurationMs);
   }
 
   return {
@@ -108,6 +139,7 @@ export function useSettingsPanelFlow(options) {
     openSettingsPanel,
     settingsOverlayAnimate,
     settingsPanelAnimate,
+    settingsPanelCloseDurationSeconds,
     settingsPanelInitial,
     shouldRenderSettingsPanel,
   };

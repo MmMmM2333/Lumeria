@@ -85,6 +85,7 @@ const FOLDER_PANEL_DETACHED_CLOSE_REASON = "folder-panel-detached-close";
 const FOLDER_PANEL_HANDOFF_SNAP_REASON = "folder-panel-handoff-snap";
 const FOLDER_PANEL_OPEN_REASON = "folder-panel-open";
 const FOLDER_RESIZE_LAYOUT_REASON = "folder-resize-layout";
+const FOLDER_PANEL_ZOOM_FADE_REASON = "folder-panel-zoom-fade";
 const FOLDER_RESIZE_SYNC_MIN_RENDERS = 2;
 const FOLDER_PANEL_READY_PROGRESS = 0.985;
 const MAX_DETACHED_CLOSING_VISUALS = 2;
@@ -579,6 +580,7 @@ export class FolderOverlayLayer extends Container {
     this.panelAlphaTarget = null;
     this.panelOpenTargetKey = null;
     this.panelOpenProgressDriven = false;
+    this.panelZoomFadeClosing = false;
     this.resizeLayoutSync = null;
     this.resizeLayoutSignature = null;
     this.detachedClosingVisuals = [];
@@ -648,7 +650,7 @@ export class FolderOverlayLayer extends Container {
 
   hasActiveDesktopCloseDetachedHandoff(state = {}) {
     if (state.isDesktopClosing !== true) return false;
-    if (this.isDesktopCloseZoomFadeState(state)) return true;
+    if (this.isDesktopCloseDetachedZoomFadeState(state)) return true;
     return this.hasDesktopCloseDetachedVisual(this.getDesktopCloseDetachedFolderId(state));
   }
 
@@ -657,10 +659,14 @@ export class FolderOverlayLayer extends Container {
       this.requestDesktopCloseDetachedVisualRelease();
       return;
     }
-    if (!this.isDesktopCloseZoomFadeState(state)) return;
+    if (!this.isDesktopCloseDetachedZoomFadeState(state)) return;
     const folderId = this.getDesktopCloseDetachedFolderId(state);
     if (!folderId || this.hasDesktopCloseDetachedVisual(folderId)) return;
     this.detachClosingPresentationForDesktopClose(folderId);
+  }
+
+  isDesktopCloseDetachedZoomFadeState(state = {}) {
+    return Boolean(this.isDesktopCloseZoomFadeState(state) && state.isFolderClosing);
   }
 
   requestDesktopCloseDetachedVisualRelease() {
@@ -1223,6 +1229,7 @@ export class FolderOverlayLayer extends Container {
     this.panelOpenTargetKey = null;
     this.panelAlphaTarget = null;
     this.panelOpenProgressDriven = false;
+    this.panelZoomFadeClosing = false;
     this.resizeLayoutSync = null;
     this.resizeLayoutSignature = null;
     this.currentOpeningGeometrySnapshot = null;
@@ -2091,6 +2098,7 @@ export class FolderOverlayLayer extends Container {
 
   animatePanel(state, targetX, targetY, panelRect, sourceRect = null, options = {}) {
     const isClosing = Boolean(state.isFolderClosing || state.isFolderAppLaunchClosing);
+    const isOpenFolderZoomFadeClosing = Boolean(state.isFolderZoomFadeClosing && !state.isFolderClosing);
     const folderId = state.renderedFolder?.id || null;
     const markBoundsDirty = () => this.markRegisteredBoundsDirty();
     const isNewPanelSource = this.currentFolderId !== folderId;
@@ -2107,6 +2115,7 @@ export class FolderOverlayLayer extends Container {
       this.panelOpenTargetKey = null;
       this.panelAlphaTarget = null;
       this.panelOpenProgressDriven = false;
+      this.panelZoomFadeClosing = false;
       if (sourceRect) {
         const startGeometry = getPanelOpenStartGeometry(targetX, targetY, panelRect, sourceRect, state.stageRect);
         this.panel.position.set(startGeometry.x, startGeometry.y);
@@ -2122,6 +2131,26 @@ export class FolderOverlayLayer extends Container {
       this.panelTitleStartScaleY = this.panel.scale.y;
       if (!isClosing) this.notifyPanelTitleFrame(panelRect);
     }
+
+    if (isOpenFolderZoomFadeClosing) {
+      this.folderHandoff.cancelOpen();
+      this.cancelOpeningPanelReadyCheck();
+      this.panelTitleOpening = false;
+      this.panelOpenTargetKey = null;
+      this.panelOpenProgressDriven = false;
+      this.panelAlphaTarget = 1;
+      if (!this.panelZoomFadeClosing) {
+        this.resetPanelMotion(FOLDER_PANEL_ZOOM_FADE_REASON, { panelProps: "x,y,alpha", scaleProps: "x,y" });
+        this.panelZoomFadeClosing = true;
+      }
+      this.panel.position.set(targetX, targetY);
+      this.panel.scale.set(1);
+      this.panel.alpha = 1;
+      this.notifyPanelTitleFrame(panelRect);
+      markBoundsDirty();
+      return;
+    }
+    this.panelZoomFadeClosing = false;
 
     if (state.isFolderClosing && sourceRect) {
       this.panelTitleOpening = false;

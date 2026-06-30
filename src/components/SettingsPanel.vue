@@ -1296,9 +1296,14 @@ function resolveSettingsOverlayMotion() {
 function resolveSettingsPanelMotion() {
   const target = props.state.settingsPanelAnimate.value;
   const isClosing = Number(target.opacity) === 0;
+  const closeDuration = Number(props.state.settingsPanelCloseDurationSeconds?.value);
+  let duration = SETTINGS_PANEL_OPEN_DURATION;
+  if (isClosing) {
+    duration = Number.isFinite(closeDuration) ? closeDuration : SETTINGS_PANEL_CLOSE_DURATION;
+  }
   return {
     ...target,
-    duration: isClosing ? SETTINGS_PANEL_CLOSE_DURATION : SETTINGS_PANEL_OPEN_DURATION,
+    duration,
     ease: isClosing ? SETTINGS_PANEL_CLOSE_EASE : SETTINGS_PANEL_OPEN_EASE,
   };
 }
