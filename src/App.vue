@@ -591,6 +591,11 @@ function markStartupBackgroundComposited() {
   });
 }
 
+function restartStartupBackgroundComposite() {
+  resetStartupBackgroundComposite();
+  if (isStartupBackgroundTargetReady.value) markStartupBackgroundComposited();
+}
+
 function handlePixiBackgroundReady() {
   hasRenderedPixiBackground.value = true;
 }
@@ -726,7 +731,7 @@ watch(
   ],
   () => {
     hasRenderedPixiBackground.value = false;
-    resetStartupBackgroundComposite();
+    restartStartupBackgroundComposite();
   }
 );
 

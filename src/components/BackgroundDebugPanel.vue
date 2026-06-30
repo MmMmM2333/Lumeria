@@ -855,7 +855,7 @@ const isOverrideEnabled = useAcrylicDebugOverrideEnabled();
 const kawaseParams = useKawaseDebugParams();
 const isKawaseOverrideEnabled = useKawaseDebugOverrideEnabled();
 const layoutParams = computed(() => props.desktopLayoutDebugParams || DEFAULT_DESKTOP_LAYOUT_DEBUG_PARAMS);
-const isCollapsed = ref(false);
+const isCollapsed = ref(true);
 const activePanel = ref("acrylic");
 const canDebugLiveDesktop = computed(() => isLiveDesktopExperimentEnabled());
 const canDebugMotion = computed(() => Boolean(import.meta.env.DEV));
