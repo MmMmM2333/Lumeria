@@ -214,7 +214,7 @@ const windowEffectMaterialNotes = computed(() => [
   {
     material: WINDOW_EFFECT_MATERIAL_ACRYLIC,
     materialClass: "acrylic",
-    label: "透明磨砂",
+    label: "Acrylic",
     description: "半透明模糊，背景变化更明显",
     available: Boolean(windowEffectsSupport.value.supportsAcrylic),
   },

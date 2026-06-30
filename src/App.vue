@@ -179,6 +179,7 @@ import {
 } from "./composables/useLaunchpadViewAdapters.js";
 import appPackage from "../package.json";
 import "./styles/launchpad.css";
+import "./styles/settings.css";
 
 const controller = useLaunchpadController();
 const {

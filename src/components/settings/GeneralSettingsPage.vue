@@ -1,6 +1,6 @@
 <template>
   <div class="settings-tab-panel" role="tabpanel" aria-label="通用">
-    <section class="settings-section" aria-label="通用">
+    <section class="settings-section settings-section-plain" aria-label="通用">
       <div class="settings-section-header">
         <div>
           <h3>通用</h3>
@@ -8,51 +8,61 @@
         </div>
       </div>
 
-      <div class="settings-options">
-        <div class="settings-row settings-row-disabled">
-          <span class="settings-option-copy">
-            <span>开机自启</span>
-            <span class="settings-field-hint">登录 Windows 后自动打开 LaunchPad</span>
+      <div class="settings-list">
+        <div class="settings-list-row settings-row-disabled">
+          <span class="settings-list-icon" aria-hidden="true">
+            <PowerIcon />
           </span>
-          <fluent-switch :disabled.prop="true" aria-label="开机自启" />
+          <span class="settings-list-copy">
+            <span class="settings-list-title">开机自启</span>
+            <span class="settings-list-description">登录 Windows 后自动打开 LaunchPad</span>
+          </span>
+          <span class="settings-list-control">
+            <fluent-switch :disabled.prop="true" aria-label="开机自启" />
+          </span>
         </div>
 
-        <div class="settings-row settings-row-stackable">
-          <span class="settings-option-copy">
-            <span>快捷键</span>
-            <span class="settings-field-hint">{{ mainWindowShortcutHint }}</span>
+        <div class="settings-list-row">
+          <span class="settings-list-icon" aria-hidden="true">
+            <KeyboardIcon />
           </span>
-          <div class="settings-hotkey-control">
-            <div :class="cx('settings-hotkey-input', state.draftMainWindowShortcut.value === null && 'settings-hotkey-input-empty')">
-              <kbd>{{ mainWindowShortcutLabel }}</kbd>
-              <button
-                v-if="state.draftMainWindowShortcut.value !== null"
-                class="settings-hotkey-clear-button"
+          <span class="settings-list-copy">
+            <span class="settings-list-title">快捷键</span>
+            <span class="settings-list-description">{{ mainWindowShortcutHint }}</span>
+          </span>
+          <span class="settings-list-control">
+            <span class="settings-hotkey-control">
+              <span :class="cx('settings-hotkey-input', state.draftMainWindowShortcut.value === null && 'settings-hotkey-input-empty')">
+                <kbd>{{ mainWindowShortcutLabel }}</kbd>
+                <button
+                  v-if="state.draftMainWindowShortcut.value !== null"
+                  class="settings-hotkey-clear-button"
+                  type="button"
+                  aria-label="关闭快捷键"
+                  :disabled="state.isApplyingSettingsConfig.value"
+                  @click="clearMainWindowShortcut"
+                >
+                  <DismissIcon class="settings-hotkey-clear-icon" />
+                </button>
+              </span>
+              <fluent-button
+                appearance="outline"
                 type="button"
-                aria-label="关闭快捷键"
-                :disabled="state.isApplyingSettingsConfig.value"
-                @click="clearMainWindowShortcut"
+                :disabled.prop="state.isApplyingSettingsConfig.value"
+                @click="startMainWindowShortcutRecording"
               >
-                <DismissIcon class="settings-hotkey-clear-icon" />
-              </button>
-            </div>
-            <fluent-button
-              appearance="outline"
-              type="button"
-              :disabled.prop="state.isApplyingSettingsConfig.value"
-              @click="startMainWindowShortcutRecording"
-            >
-              {{ isRecordingMainWindowShortcut ? "录制中" : "录制" }}
-            </fluent-button>
-            <fluent-button
-              appearance="subtle"
-              type="button"
-              :disabled.prop="state.isApplyingSettingsConfig.value"
-              @click="resetMainWindowShortcut"
-            >
-              重置
-            </fluent-button>
-          </div>
+                {{ isRecordingMainWindowShortcut ? "录制中" : "录制" }}
+              </fluent-button>
+              <fluent-button
+                appearance="subtle"
+                type="button"
+                :disabled.prop="state.isApplyingSettingsConfig.value"
+                @click="resetMainWindowShortcut"
+              >
+                重置
+              </fluent-button>
+            </span>
+          </span>
         </div>
       </div>
     </section>
@@ -61,6 +71,8 @@
 
 <script setup>
 import DismissIcon from "~icons/fluent/dismiss-16-regular";
+import KeyboardIcon from "~icons/fluent/keyboard-24-regular";
+import PowerIcon from "~icons/fluent/power-24-regular";
 
 const props = defineProps({
   backgroundLayoutContext: { type: Object, default: null },

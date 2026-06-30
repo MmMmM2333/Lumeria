@@ -18,7 +18,7 @@
       class="settings-background-effect-preview-fallback"
       aria-label="图片效果预览 fallback"
       :background-base-color="backgroundBaseColor"
-      :background-base-opacity="backgroundBaseOpacity"
+      :background-base-opacity="0"
       :background-darken-color="backgroundDarkenColor"
       :background-darken-strength="canvasDarkenStrength"
       :background-image-layout="backgroundImageLayout"
