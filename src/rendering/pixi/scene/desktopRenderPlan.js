@@ -554,6 +554,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
       },
       pageIndex: activePageIndex,
       pageSpan: pageWidth,
+      scope: state.isSearchMode ? "search" : "desktop",
       scrub: state.pageTrackScrub,
       snap: state.shouldSnapTrack,
       sourceLabel: "desktop.pageTrack",

@@ -3,6 +3,7 @@ import { motionRuntime } from "../animation/motionRuntime.js";
 import { motionSprings } from "../animation/motionPresets.js";
 
 const PAGE_TRACK_REPLACE_REASON = "page-track-replace";
+const PAGE_TRACK_SNAP_REASON = "page-track-snap";
 const PAGE_TRACK_TARGET_EPSILON = 0.5;
 
 function readNumber(value, fallback = 0) {
@@ -212,6 +213,34 @@ export function updatePageTrackMotion(motionState, pageTrack, options = {}) {
 
   if (motionState.mode === "scrub" || motionState.mode === "settle") {
     cancelPageTrackMotion(motionState, PAGE_TRACK_REPLACE_REASON);
+  }
+  if (snap) {
+    motionState.control?.cancel?.(PAGE_TRACK_SNAP_REASON);
+    if (isSameTrackTarget(pageTrack.x, targetX)) {
+      motionState.control = null;
+      motionState.key = null;
+      motionState.mode = "spring";
+      motionState.settleToken = null;
+      motionState.targetX = targetX;
+      pageTrack.x = targetX;
+      return { control: null, mode: "spring", targetX };
+    }
+    motionState.control = motion(pageTrack)
+      .layout()
+      .spring(springConfig)
+      .interrupt("retarget")
+      .to({
+        onComplete: onFrame,
+        onUpdate: onFrame,
+        snap: true,
+        x: targetX,
+      })
+      .start({ runtime });
+    motionState.key = null;
+    motionState.mode = "spring";
+    motionState.settleToken = null;
+    motionState.targetX = targetX;
+    return { control: motionState.control, mode: "spring", targetX };
   }
   if (motionState.mode === "spring" && isSameTrackTarget(motionState.targetX, targetX)) {
     return { control: motionState.control, mode: "spring", targetX };

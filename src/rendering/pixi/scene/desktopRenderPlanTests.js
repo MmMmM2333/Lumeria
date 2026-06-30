@@ -67,6 +67,7 @@ export function runDesktopRenderPlanTests() {
     assert(plan.clearLaunchArea === "desktop", "plan should expose the launch bounds area to clear");
     assert(plan.clearFolderPreviewChildIds.join(",") === folder.id, "plan should expose folder preview child clears");
     assert(plan.pageTrack.pageIndex === 0 && plan.pageTrack.pageSpan === 400, "plan should expose page track target inputs");
+    assert(plan.pageTrack.scope === "desktop", "desktop plans should mark the page track scope as desktop");
 
     const appEntry = plan.entries[0];
     assert(appEntry.key === "page:0:app-a", "app entry should expose the stable desktop node key");
@@ -115,6 +116,7 @@ export function runDesktopRenderPlanTests() {
     assert(plan.emptyText.visible === true, "empty search page should show empty text");
     assert(plan.emptyText.x === 200 && plan.emptyText.y === 150, "empty text should be centered in the desktop frame");
     assert(plan.clearLaunchArea === "search", "search mode should clear search launch bounds");
+    assert(plan.pageTrack.scope === "search", "search plans should mark the page track scope as search");
   }
 
   {

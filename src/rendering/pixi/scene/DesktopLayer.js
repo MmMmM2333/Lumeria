@@ -296,6 +296,9 @@ export class DesktopLayer extends Container {
     const markBoundsDirty = () => this.markInteractiveBoundsDirty();
     const previousPlan = this.lastDesktopRenderPlan;
     const shouldApplyDesktopPlan = previousPlan?.signature !== plan.signature;
+    const pageTrackScopeChanged = Boolean(
+      previousPlan?.pageTrack && previousPlan.pageTrack.scope !== plan.pageTrack.scope
+    );
     this.lastDesktopRenderPlan = plan;
 
     if (shouldApplyDesktopPlan) {
@@ -392,9 +395,9 @@ export class DesktopLayer extends Container {
         onFrame: markBoundsDirty,
         pageIndex: plan.pageTrack.pageIndex,
         pageSpan: plan.pageTrack.pageSpan,
-        scrub: plan.pageTrack.scrub,
+        scrub: pageTrackScopeChanged ? null : plan.pageTrack.scrub,
         sourceLabel: plan.pageTrack.sourceLabel,
-        snap: plan.pageTrack.snap,
+        snap: plan.pageTrack.snap || pageTrackScopeChanged,
         springConfig: motionSprings.layout,
       });
       this.flushInteractiveBounds({ force: true });

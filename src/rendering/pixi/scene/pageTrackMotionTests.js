@@ -218,6 +218,31 @@ export function runPageTrackMotionTests() {
     const runtime = createMotionRuntime({ autoStart: false });
     const motionState = createPageTrackMotionState();
     const pageTrack = { x: 0 };
+
+    updatePageTrackMotion(motionState, pageTrack, {
+      pageIndex: 2,
+      pageSpan: 300,
+      runtime,
+    });
+    runtime.step(1 / 60);
+    assert(pageTrack.x < 0 && pageTrack.x > -600, "test setup should leave the ordinary page-track spring in flight");
+
+    const result = updatePageTrackMotion(motionState, pageTrack, {
+      pageIndex: 2,
+      pageSpan: 300,
+      runtime,
+      snap: true,
+    });
+
+    assert(result.mode === "spring", "snap should keep the page-track state in spring mode");
+    assert(nearlyEqual(pageTrack.x, -600), `snap should land immediately even when the target index is unchanged, got ${pageTrack.x}`);
+    assert(!runtime.hasActiveWork(), "snap should cancel the in-flight spring instead of letting it keep animating");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false });
+    const motionState = createPageTrackMotionState();
+    const pageTrack = { x: 0 };
     let frameCount = 0;
 
     updatePageTrackMotion(motionState, pageTrack, {
