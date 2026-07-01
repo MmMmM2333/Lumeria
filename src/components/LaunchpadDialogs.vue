@@ -248,52 +248,58 @@
     </section>
   </div>
 
-  <div v-if="state.layoutRecoveryNotice.value || state.layoutSaveNotice.value" class="layout-notice-stack">
-    <fluent-message-bar
+  <div
+    v-if="state.layoutRecoveryNotice.value || state.layoutSaveNotice.value"
+    class="layout-notice-stack"
+    @click.stop
+    @contextmenu.stop
+    @pointerdown.stop
+    @wheel.stop
+  >
+    <section
       v-if="state.layoutRecoveryNotice.value"
-      class="layout-notice-bar"
-      layout="multiline"
-      :intent="state.layoutRecoveryNotice.value.intent || 'warning'"
+      :class="['layout-notice-card', `layout-notice-card-${normalizeDialogIntent(state.layoutRecoveryNotice.value.intent || 'warning')}`]"
+      role="status"
       aria-live="polite"
     >
-      <component :is="getNoticeIcon(state.layoutRecoveryNotice.value.intent || 'warning')" slot="icon" class="layout-notice-icon" />
-      <span class="layout-recovery-copy">
+      <component :is="getNoticeIcon(state.layoutRecoveryNotice.value.intent || 'warning')" class="layout-notice-icon" aria-hidden="true" />
+      <span class="layout-notice-copy">
         <strong>{{ state.layoutRecoveryNotice.value.title }}</strong>
         <span>{{ state.layoutRecoveryNotice.value.message }}</span>
         <small v-if="state.layoutRecoveryNotice.value.backupPath">{{ state.layoutRecoveryNotice.value.backupPath }}</small>
       </span>
-      <SettingsFluentButton fluent-slot="dismiss" appearance="subtle" icon-only type="button" aria-label="关闭布局恢复提示" @click="state.closeLayoutRecoveryNotice">
+      <SettingsFluentButton appearance="subtle" icon-only class="layout-notice-dismiss-button" type="button" aria-label="关闭布局恢复提示" @click="state.closeLayoutRecoveryNotice">
         <DismissIcon class="layout-notice-dismiss-icon" />
       </SettingsFluentButton>
-    </fluent-message-bar>
+    </section>
 
-    <fluent-message-bar
+    <section
       v-if="state.layoutSaveNotice.value"
-      class="layout-notice-bar"
-      layout="multiline"
-      :intent="state.layoutSaveNotice.value.intent || 'info'"
+      :class="['layout-notice-card', `layout-notice-card-${normalizeDialogIntent(state.layoutSaveNotice.value.intent || 'info')}`]"
+      role="status"
       aria-live="polite"
     >
-      <component :is="getNoticeIcon(state.layoutSaveNotice.value.intent || 'info')" slot="icon" class="layout-notice-icon" />
-      <span class="layout-recovery-copy">
+      <component :is="getNoticeIcon(state.layoutSaveNotice.value.intent || 'info')" class="layout-notice-icon" aria-hidden="true" />
+      <span class="layout-notice-copy">
         <strong>{{ state.layoutSaveNotice.value.title }}</strong>
         <span>{{ state.layoutSaveNotice.value.message }}</span>
         <small v-if="state.layoutSaveNotice.value.detail">{{ state.layoutSaveNotice.value.detail }}</small>
       </span>
-      <SettingsFluentButton
-        v-if="state.layoutSaveNotice.value.actionText"
-        fluent-slot="actions"
-        appearance="outline"
-        size="small"
-        type="button"
-        @click="state.layoutSaveNotice.value.onAction?.()"
-      >
-        {{ state.layoutSaveNotice.value.actionText }}
-      </SettingsFluentButton>
-      <SettingsFluentButton fluent-slot="dismiss" appearance="subtle" icon-only type="button" aria-label="关闭布局保存提示" @click="state.closeLayoutSaveNotice">
+      <SettingsFluentButton appearance="subtle" icon-only class="layout-notice-dismiss-button" type="button" aria-label="关闭布局保存提示" @click="state.closeLayoutSaveNotice">
         <DismissIcon class="layout-notice-dismiss-icon" />
       </SettingsFluentButton>
-    </fluent-message-bar>
+      <div v-if="state.layoutSaveNotice.value.actionText" class="layout-notice-actions">
+        <SettingsFluentButton
+          class="layout-notice-action-button"
+          appearance="outline"
+          size="small"
+          type="button"
+          @click="state.layoutSaveNotice.value.onAction?.()"
+        >
+          {{ state.layoutSaveNotice.value.actionText }}
+        </SettingsFluentButton>
+      </div>
+    </section>
   </div>
 
   <div
@@ -343,7 +349,7 @@ import CheckmarkCircleIcon from "~icons/fluent/checkmark-circle-20-regular";
 import DismissIcon from "~icons/fluent/dismiss-16-regular";
 import ErrorCircleIcon from "~icons/fluent/error-circle-20-regular";
 import InfoIcon from "~icons/fluent/info-20-regular";
-import { AlertTriangleIcon } from "./Icons.js";
+import WarningIcon from "~icons/fluent/warning-20-regular";
 import SettingsFluentButton from "./settings/SettingsFluentButton.vue";
 import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
@@ -428,7 +434,7 @@ function getNoticeIcon(intent) {
     case "info":
       return InfoIcon;
     default:
-      return AlertTriangleIcon;
+      return WarningIcon;
   }
 }
 

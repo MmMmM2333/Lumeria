@@ -127,6 +127,7 @@
     <BackgroundDebugPanel
       v-if="isAcrylicDebugPanelEnabled"
       :state="settingsPanelState"
+      :dialog-state="dialogState"
       :desktop-layout-debug-params="desktopLayoutDebugParams"
       :reset-desktop-layout-debug-params="resetDesktopLayoutDebugParams"
       :update-desktop-layout-debug-params="updateDesktopLayoutDebugParams"

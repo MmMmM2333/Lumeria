@@ -676,7 +676,7 @@
         <div class="settings-list-row">
           <span class="settings-list-copy">
             <span class="settings-list-title">图标大小</span>
-            <span class="settings-list-description">{{ c.ICON_SIZE_MIN }}-{{ c.ICON_SIZE_MAX }}px</span>
+            <span class="settings-list-description">设置桌面图标的目标尺寸；实际显示会受行列布局和可用空间影响</span>
           </span>
           <span class="settings-list-control">
             <SettingsSpinButton
@@ -697,7 +697,7 @@
         <div class="settings-list-row">
           <span class="settings-list-copy">
             <span class="settings-list-title">文件夹图标大小</span>
-            <span class="settings-list-description">可跟随全局或单独设置</span>
+            <span class="settings-list-description">设置文件夹内图标的目标尺寸；可跟随桌面图标或单独设置</span>
           </span>
           <span class="settings-list-control">
             <span class="settings-folder-icon-size-control">

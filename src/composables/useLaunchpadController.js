@@ -1785,6 +1785,7 @@ export function useLaunchpadController() {
     editingManagedApp,
     getLaunchTargetPath,
     handleIconChooserUpload,
+    handleLayoutRecovered,
     iconChooser,
     iconChoices,
     iconChoicesError,
@@ -1813,6 +1814,10 @@ export function useLaunchpadController() {
     scanResultSelectedIds,
     scanResultWarnings,
     selectAllScanResultApps,
+    showLayoutLoadFailed,
+    showLayoutLoadRecovered,
+    showLayoutSaveFailed,
+    showLayoutSaveRecovered,
     toggleScanResultSelection,
     warningDialog,
   };

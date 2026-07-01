@@ -1,7 +1,10 @@
 <template>
   <section
-    class="background-debug-panel"
-    aria-label="Background debug panel"
+    :class="[
+      'background-debug-panel',
+      debugPanelDock === 'left' ? 'background-debug-panel-left' : 'background-debug-panel-right',
+    ]"
+    aria-label="Debug panel"
     @click.stop
     @contextmenu.stop
     @pointerdown.stop
@@ -9,12 +12,32 @@
   >
     <header class="background-debug-header">
       <div class="background-debug-title">
-        <strong>Background Debug</strong>
+        <strong>Debug Panel</strong>
         <span>dev only</span>
       </div>
-      <button type="button" class="background-debug-button" @click="isCollapsed = !isCollapsed">
-        {{ isCollapsed ? "展开" : "收起" }}
-      </button>
+      <div class="background-debug-header-actions">
+        <div class="background-debug-dock-toggle" role="group" aria-label="Debug 面板位置">
+          <button
+            type="button"
+            :class="['background-debug-dock-button', debugPanelDock === 'left' && 'background-debug-dock-button-active']"
+            :aria-pressed="debugPanelDock === 'left'"
+            @click="setDebugPanelDock('left')"
+          >
+            左下角
+          </button>
+          <button
+            type="button"
+            :class="['background-debug-dock-button', debugPanelDock === 'right' && 'background-debug-dock-button-active']"
+            :aria-pressed="debugPanelDock === 'right'"
+            @click="setDebugPanelDock('right')"
+          >
+            右下角
+          </button>
+        </div>
+        <button type="button" class="background-debug-button" @click="isCollapsed = !isCollapsed">
+          {{ isCollapsed ? "展开" : "收起" }}
+        </button>
+      </div>
     </header>
 
     <div v-if="!isCollapsed" class="background-debug-body">
@@ -23,9 +46,10 @@
           'background-debug-tabs',
           debugTabCount === 3 && 'background-debug-tabs-three',
           debugTabCount === 4 && 'background-debug-tabs-four',
+          debugTabCount === 5 && 'background-debug-tabs-five',
         ]"
         role="tablist"
-        aria-label="Background debug sections"
+        aria-label="Debug panel sections"
       >
         <button
           type="button"
@@ -40,6 +64,13 @@
           @click="activePanel = 'layout'"
         >
           Layout
+        </button>
+        <button
+          type="button"
+          :class="['background-debug-tab', activePanel === 'notice' && 'background-debug-tab-active']"
+          @click="activePanel = 'notice'"
+        >
+          Notice
         </button>
         <button
           v-if="canDebugMotion"
@@ -214,6 +245,53 @@
         <div class="background-debug-actions">
           <button type="button" class="background-debug-button" @click="resetLayoutDebugParams">
             重置
+          </button>
+        </div>
+      </div>
+
+      <div v-else-if="activePanel === 'notice'" class="background-debug-section">
+        <div class="background-debug-detail">
+          生成布局保存、载入和恢复通知，用来检查 LaunchPad 右下角 notice 的 Fluent 卡片样式。
+        </div>
+
+        <dl class="background-debug-status-grid">
+          <div
+            v-for="row in noticeDebugRows"
+            :key="row.label"
+            :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
+          >
+            <dt>{{ row.label }}</dt>
+            <dd>{{ row.value }}</dd>
+          </div>
+        </dl>
+
+        <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">Layout Notices</div>
+          <div class="background-debug-actions background-debug-notice-actions">
+            <button type="button" class="background-debug-button" :disabled="!canDebugNotice" @click="showDebugLayoutSaveFailed">
+              保存失败
+            </button>
+            <button type="button" class="background-debug-button" :disabled="!canDebugNotice" @click="showDebugLayoutSaveRecovered">
+              保存恢复
+            </button>
+            <button type="button" class="background-debug-button" :disabled="!canDebugNotice" @click="showDebugLayoutLoadFailed">
+              载入失败
+            </button>
+            <button type="button" class="background-debug-button" :disabled="!canDebugNotice" @click="showDebugLayoutLoadRecovered">
+              载入恢复
+            </button>
+            <button type="button" class="background-debug-button" :disabled="!canDebugNotice" @click="showDebugLayoutRecovered">
+              布局恢复
+            </button>
+            <button type="button" class="background-debug-button" :disabled="!canDebugNotice" @click="showDebugNoticeStack">
+              堆叠样例
+            </button>
+          </div>
+        </div>
+
+        <div class="background-debug-actions">
+          <button type="button" class="background-debug-button" :disabled="!canDebugNotice" @click="clearDebugNotices">
+            清空通知
           </button>
         </div>
       </div>
@@ -831,10 +909,16 @@ import {
 } from "../rendering/pixi/animation/motionReplayTrace.js";
 import { motionRuntime } from "../rendering/pixi/animation/motionRuntime.js";
 
+const DEBUG_PANEL_DOCK_STORAGE_KEY = "launchpadBackgroundDebugPanelDock";
+
 const props = defineProps({
   desktopLayoutDebugParams: {
     type: Object,
     default: () => ({ ...DEFAULT_DESKTOP_LAYOUT_DEBUG_PARAMS }),
+  },
+  dialogState: {
+    type: Object,
+    default: null,
   },
   resetDesktopLayoutDebugParams: {
     type: Function,
@@ -856,10 +940,18 @@ const kawaseParams = useKawaseDebugParams();
 const isKawaseOverrideEnabled = useKawaseDebugOverrideEnabled();
 const layoutParams = computed(() => props.desktopLayoutDebugParams || DEFAULT_DESKTOP_LAYOUT_DEBUG_PARAMS);
 const isCollapsed = ref(true);
+const debugPanelDock = ref(readDebugPanelDock());
 const activePanel = ref("acrylic");
 const canDebugLiveDesktop = computed(() => isLiveDesktopExperimentEnabled());
 const canDebugMotion = computed(() => Boolean(import.meta.env.DEV));
-const debugTabCount = computed(() => 2 + (canDebugMotion.value ? 1 : 0) + (canDebugLiveDesktop.value ? 1 : 0));
+const canDebugNotice = computed(() => Boolean(
+  props.dialogState?.showLayoutSaveFailed
+    && props.dialogState?.showLayoutSaveRecovered
+    && props.dialogState?.showLayoutLoadFailed
+    && props.dialogState?.showLayoutLoadRecovered
+    && props.dialogState?.handleLayoutRecovered
+));
+const debugTabCount = computed(() => 3 + (canDebugMotion.value ? 1 : 0) + (canDebugLiveDesktop.value ? 1 : 0));
 const hasCopiedAcrylic = ref(false);
 const hasCopiedDiagnostics = ref(false);
 const hasCopiedMotionFocused = ref(false);
@@ -915,6 +1007,16 @@ const liveDesktopRates = ref({
   timeoutsPerSecond: 0,
   copyErrorsPerSecond: 0,
 });
+const noticeDebugRows = computed(() => [
+  {
+    label: "Save",
+    value: props.dialogState?.layoutSaveNotice?.value?.title || "none",
+  },
+  {
+    label: "Recovery",
+    value: props.dialogState?.layoutRecoveryNotice?.value?.title || "none",
+  },
+]);
 let liveDesktopRateSample = null;
 let acrylicCopyStateTimer = null;
 let diagnosticsCopyStateTimer = null;
@@ -2331,6 +2433,33 @@ function updateLiveDesktopRates() {
   };
 }
 
+function normalizeDebugPanelDock(value) {
+  return value === "left" ? "left" : "right";
+}
+
+function readDebugPanelDock() {
+  if (typeof window === "undefined") return "right";
+  try {
+    return normalizeDebugPanelDock(window.localStorage.getItem(DEBUG_PANEL_DOCK_STORAGE_KEY));
+  } catch {
+    return "right";
+  }
+}
+
+function persistDebugPanelDock(dock) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(DEBUG_PANEL_DOCK_STORAGE_KEY, normalizeDebugPanelDock(dock));
+  } catch {
+    // The debug panel should still work when storage is unavailable.
+  }
+}
+
+function setDebugPanelDock(dock) {
+  debugPanelDock.value = normalizeDebugPanelDock(dock);
+  persistDebugPanelDock(debugPanelDock.value);
+}
+
 function updateNumber(key, event) {
   updateAcrylicDebugParams({ [key]: Number(event.target.value) });
 }
@@ -2375,6 +2504,48 @@ function updateLayoutNumber(key, event) {
 
 function resetLayoutDebugParams() {
   props.resetDesktopLayoutDebugParams?.();
+}
+
+function showDebugLayoutSaveFailed() {
+  props.dialogState?.showLayoutSaveFailed?.({
+    error: new Error("EACCES: permission denied, open C:/Users/233/AppData/Roaming/LaunchPad/layout.json"),
+    retryCount: 3,
+    onRetry: () => props.dialogState?.showLayoutSaveRecovered?.(),
+  });
+}
+
+function showDebugLayoutSaveRecovered() {
+  props.dialogState?.showLayoutSaveRecovered?.();
+}
+
+function showDebugLayoutLoadFailed() {
+  props.dialogState?.showLayoutLoadFailed?.({
+    error: new Error("Unexpected token at position 128 while parsing layout.json"),
+    retryCount: 2,
+    onRetry: () => props.dialogState?.showLayoutLoadRecovered?.(),
+  });
+}
+
+function showDebugLayoutLoadRecovered() {
+  props.dialogState?.showLayoutLoadRecovered?.();
+}
+
+function showDebugLayoutRecovered() {
+  props.dialogState?.handleLayoutRecovered?.({
+    payload: {
+      backupPath: "C:/Users/233/AppData/Roaming/LaunchPad/layout.corrupt.backup.json",
+    },
+  });
+}
+
+function showDebugNoticeStack() {
+  showDebugLayoutRecovered();
+  showDebugLayoutSaveFailed();
+}
+
+function clearDebugNotices() {
+  props.dialogState?.closeLayoutRecoveryNotice?.();
+  props.dialogState?.closeLayoutSaveNotice?.();
 }
 
 function resetBackgroundDebugParams() {
@@ -2869,7 +3040,7 @@ onBeforeUnmount(() => {
 <style>
 .background-debug-panel {
   position: fixed;
-  right: 18px;
+  --background-debug-panel-inset: 18px;
   bottom: 18px;
   z-index: 88;
   display: flex;
@@ -2890,6 +3061,16 @@ onBeforeUnmount(() => {
   line-height: 1.3;
 }
 
+.background-debug-panel-right {
+  right: var(--background-debug-panel-inset);
+  left: auto;
+}
+
+.background-debug-panel-left {
+  right: auto;
+  left: var(--background-debug-panel-inset);
+}
+
 .background-debug-panel *,
 .background-debug-panel *::before,
 .background-debug-panel *::after {
@@ -2908,6 +3089,45 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+.background-debug-header-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.background-debug-dock-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.background-debug-dock-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  height: 24px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.62);
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.background-debug-dock-button-active {
+  color: rgba(255, 255, 255, 0.94);
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .background-debug-title {
@@ -2978,6 +3198,10 @@ onBeforeUnmount(() => {
 
 .background-debug-tabs-four {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.background-debug-tabs-five {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .background-debug-mode-group {
@@ -4161,6 +4385,7 @@ onBeforeUnmount(() => {
 .background-debug-motion-replay-actions,
 .background-debug-motion-replay-viewer-actions,
 .background-debug-motion-replay-step-actions,
+.background-debug-notice-actions,
 .background-debug-live-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -4173,6 +4398,7 @@ onBeforeUnmount(() => {
 .background-debug-motion-replay-actions .background-debug-button,
 .background-debug-motion-replay-viewer-actions .background-debug-button,
 .background-debug-motion-replay-step-actions .background-debug-button,
+.background-debug-notice-actions .background-debug-button,
 .background-debug-live-actions .background-debug-button {
   width: 100%;
 }
@@ -4182,6 +4408,10 @@ onBeforeUnmount(() => {
 }
 
 .background-debug-motion-workspace-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.background-debug-notice-actions {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -4209,7 +4439,8 @@ onBeforeUnmount(() => {
 
 .background-debug-button:hover,
 .background-debug-tab:hover,
-.background-debug-mode-button:hover {
+.background-debug-mode-button:hover,
+.background-debug-dock-button:hover {
   color: white;
   background: rgba(255, 255, 255, 0.16);
 }
@@ -4223,6 +4454,7 @@ onBeforeUnmount(() => {
 .background-debug-button:focus-visible,
 .background-debug-tab:focus-visible,
 .background-debug-mode-button:focus-visible,
+.background-debug-dock-button:focus-visible,
 .motion-debug-track-chart-event-button:focus-visible {
   outline: 2px solid rgba(120, 190, 255, 0.55);
   outline-offset: 2px;
@@ -4651,7 +4883,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 760px) {
   .background-debug-panel {
-    right: 14px;
+    --background-debug-panel-inset: 14px;
     bottom: 14px;
     width: calc(100vw - 28px);
   }
