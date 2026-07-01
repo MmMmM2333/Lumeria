@@ -38,22 +38,22 @@
                   <DismissIcon class="settings-hotkey-clear-icon" />
                 </button>
               </span>
-              <fluent-button
+              <SettingsFluentButton
                 appearance="outline"
                 type="button"
-                :disabled.prop="state.isApplyingSettingsConfig.value"
+                :disabled="state.isApplyingSettingsConfig.value"
                 @click="startMainWindowShortcutRecording"
               >
                 {{ isRecordingMainWindowShortcut ? "录制中" : "录制" }}
-              </fluent-button>
-              <fluent-button
+              </SettingsFluentButton>
+              <SettingsFluentButton
                 appearance="subtle"
                 type="button"
-                :disabled.prop="state.isApplyingSettingsConfig.value"
+                :disabled="state.isApplyingSettingsConfig.value"
                 @click="resetMainWindowShortcut"
               >
                 重置
-              </fluent-button>
+              </SettingsFluentButton>
             </span>
           </span>
         </div>
@@ -66,6 +66,7 @@
 import DismissIcon from "~icons/fluent/dismiss-16-regular";
 import KeyboardIcon from "~icons/fluent/keyboard-24-regular";
 import PowerIcon from "~icons/fluent/power-24-regular";
+import SettingsFluentButton from "./SettingsFluentButton.vue";
 
 const props = defineProps({
   backgroundLayoutContext: { type: Object, default: null },

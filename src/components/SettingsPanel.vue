@@ -18,7 +18,7 @@
     >
       <header class="settings-panel-header">
         <div class="settings-panel-header-rail">
-          <fluent-button
+          <SettingsFluentButton
             appearance="subtle"
             icon-only
             class="settings-navigation-toggle-button"
@@ -28,12 +28,12 @@
             @click="isSettingsNavigationCompact = !isSettingsNavigationCompact"
           >
             <NavigationIcon class="settings-navigation-toggle-icon" />
-          </fluent-button>
+          </SettingsFluentButton>
         </div>
         <div class="settings-panel-header-main">
           <div class="settings-title-block">
             <div class="settings-title-row">
-              <fluent-button
+              <SettingsFluentButton
                 v-if="activeSettingsSubPage"
                 appearance="subtle"
                 icon-only
@@ -43,7 +43,7 @@
                 @click="closeSettingsSubPage"
               >
                 <ArrowLeftIcon class="settings-back-icon" />
-              </fluent-button>
+              </SettingsFluentButton>
               <nav class="settings-breadcrumb" aria-label="设置路径">
                 <button
                   v-if="activeSettingsSubPage"
@@ -66,7 +66,7 @@
               </nav>
             </div>
           </div>
-          <fluent-button
+          <SettingsFluentButton
             appearance="subtle"
             icon-only
             class="settings-close-button"
@@ -75,7 +75,7 @@
             @click="state.closeSettingsPanel"
           >
             <DismissIcon class="settings-close-icon" />
-          </fluent-button>
+          </SettingsFluentButton>
         </div>
       </header>
 
@@ -109,15 +109,15 @@
           </div>
 
           <footer v-if="!activeSettingsSubPage && (activeSettingsTab === 'general' || activeSettingsTab === 'interface')" class="settings-actions">
-            <fluent-button appearance="outline" type="button" @click="state.closeSettingsPanel">取消</fluent-button>
-            <fluent-button
+            <SettingsFluentButton appearance="outline" type="button" @click="state.closeSettingsPanel">取消</SettingsFluentButton>
+            <SettingsFluentButton
               appearance="primary"
               type="button"
-              :disabled.prop="!!state.dragMeta.value || state.isApplyingSettingsConfig.value"
+              :disabled="!!state.dragMeta.value || state.isApplyingSettingsConfig.value"
               @click="state.applySettingsConfig"
             >
               应用
-            </fluent-button>
+            </SettingsFluentButton>
           </footer>
         </div>
       </div>
@@ -139,6 +139,7 @@ import AboutSettingsPage from "./settings/AboutSettingsPage.vue";
 import AppsSettingsPage from "./settings/AppsSettingsPage.vue";
 import GeneralSettingsPage from "./settings/GeneralSettingsPage.vue";
 import InterfaceSettingsPage from "./settings/InterfaceSettingsPage.vue";
+import SettingsFluentButton from "./settings/SettingsFluentButton.vue";
 import { useBackgroundImagePixelSize } from "../composables/useBackgroundImagePixelSize.js";
 import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "../composables/launchpadConstants.js";

@@ -20,12 +20,12 @@
           <div v-if="selectedIgnoredAppCount > 0" class="app-manager-selection-bar">
             <span>已选择 {{ selectedIgnoredAppCount }} 个应用</span>
             <span class="app-manager-selection-actions">
-              <fluent-button appearance="outline" size="small" type="button" @click="restoreSelectedIgnoredApps">
+              <SettingsFluentButton appearance="outline" size="small" type="button" @click="restoreSelectedIgnoredApps">
                 恢复所选
-              </fluent-button>
-              <fluent-button appearance="subtle" size="small" type="button" @click="clearIgnoredAppSelection">
+              </SettingsFluentButton>
+              <SettingsFluentButton appearance="subtle" size="small" type="button" @click="clearIgnoredAppSelection">
                 清空选择
-              </fluent-button>
+              </SettingsFluentButton>
             </span>
           </div>
         </Transition>
@@ -60,7 +60,7 @@
               <span class="app-manager-target" :title="getIgnoredAppSubtitle(app)">{{ getIgnoredAppSubtitle(app) }}</span>
             </span>
             <span class="app-manager-actions">
-              <fluent-button
+              <SettingsFluentButton
                 class="ignored-app-restore-button"
                 appearance="subtle"
                 icon-only
@@ -70,7 +70,7 @@
                 @click.stop="restoreIgnoredApp(index, key)"
               >
                 <ArrowCounterclockwiseIcon class="ignored-app-restore-icon" />
-              </fluent-button>
+              </SettingsFluentButton>
             </span>
           </div>
         </div>
@@ -95,19 +95,19 @@
             <SearchIcon slot="start" class="app-manager-search-icon" />
           </fluent-text-input>
           <div class="app-manager-toolbar-actions">
-            <fluent-button
+            <SettingsFluentButton
               appearance="outline"
               type="button"
-              :disabled.prop="!state.canScanManagedApps.value || state.isScanningApps.value"
+              :disabled="!state.canScanManagedApps.value || state.isScanningApps.value"
               @click="state.rescanManagedApps"
             >
               <ArrowSyncIcon slot="start" class="settings-command-icon" />
               {{ state.isScanningApps.value ? "扫描中" : "扫描应用" }}
-            </fluent-button>
-            <fluent-button appearance="primary" type="button" @click="state.openAddManagedAppPage">
+            </SettingsFluentButton>
+            <SettingsFluentButton appearance="primary" type="button" @click="state.openAddManagedAppPage">
               <AddIcon slot="start" class="settings-command-icon" />
               新增应用
-            </fluent-button>
+            </SettingsFluentButton>
           </div>
         </div>
 
@@ -115,13 +115,13 @@
           <div v-if="state.selectedManagedAppCount.value > 0" class="app-manager-selection-bar">
             <span>已选择 {{ state.selectedManagedAppCount.value }} 个应用</span>
             <span class="app-manager-selection-actions">
-              <fluent-button appearance="outline" size="small" type="button" @click="state.ignoreSelectedManagedApps">
+              <SettingsFluentButton appearance="outline" size="small" type="button" @click="state.ignoreSelectedManagedApps">
                 批量忽略
-              </fluent-button>
-              <fluent-button appearance="subtle" size="small" type="button" @click="state.deleteSelectedManagedApps">
+              </SettingsFluentButton>
+              <SettingsFluentButton appearance="subtle" size="small" type="button" @click="state.deleteSelectedManagedApps">
                 <DeleteIcon slot="start" class="settings-command-icon" />
                 批量删除
-              </fluent-button>
+              </SettingsFluentButton>
             </span>
           </div>
         </Transition>
@@ -160,8 +160,8 @@
               </span>
               <span class="app-manager-actions">
                 <fluent-menu>
-                  <fluent-button
-                    slot="trigger"
+                  <SettingsFluentButton
+                    fluent-slot="trigger"
                     class="app-manager-more-button"
                     appearance="subtle"
                     icon-only
@@ -169,7 +169,7 @@
                     :aria-label="`${app.name} 更多操作`"
                   >
                     <MoreHorizontalIcon class="app-manager-more-icon" />
-                  </fluent-button>
+                  </SettingsFluentButton>
                   <fluent-menu-list>
                     <fluent-menu-item @click="state.openEditManagedApp(app)">编辑</fluent-menu-item>
                     <fluent-menu-item @click="state.ignoreManagedApp(app)">忽略</fluent-menu-item>
@@ -190,11 +190,11 @@
           <h3>扫描来源</h3>
         </div>
         <div class="settings-inline-actions">
-          <fluent-button appearance="outline" type="button" @click="state.confirmResetScanRoots">还原默认来源</fluent-button>
-          <fluent-button appearance="primary" type="button" @click="state.addScanRoot">
+          <SettingsFluentButton appearance="outline" type="button" @click="state.confirmResetScanRoots">还原默认来源</SettingsFluentButton>
+          <SettingsFluentButton appearance="primary" type="button" @click="state.addScanRoot">
             <AddIcon slot="start" class="settings-command-icon" />
             新增来源
-          </fluent-button>
+          </SettingsFluentButton>
         </div>
       </div>
 
@@ -243,28 +243,28 @@
                   autocomplete="off"
                   @change="state.changeScanRootPath(root.id, $event.target.value)"
                 />
-                <fluent-button
+                <SettingsFluentButton
                   class="scan-root-browse-button"
                   appearance="outline"
                   size="small"
                   type="button"
-                  :disabled.prop="!state.canBrowseScanRoots.value || state.isBrowsingScanRoot(root.id)"
+                  :disabled="!state.canBrowseScanRoots.value || state.isBrowsingScanRoot(root.id)"
                   @click="state.browseScanRootDirectory(root.id)"
                 >
                   {{ state.isBrowsingScanRoot(root.id) ? "选择中" : "浏览" }}
-                </fluent-button>
+                </SettingsFluentButton>
               </span>
               <span v-if="root.lastScannedAt" class="settings-field-hint">上次扫描 {{ formatScanTime(root.lastScannedAt) }}</span>
             </span>
-            <fluent-button
+            <SettingsFluentButton
               appearance="subtle"
               size="small"
               type="button"
-              :disabled.prop="!root.removable"
+              :disabled="!root.removable"
               @click="state.removeScanRoot(root.id)"
             >
               删除
-            </fluent-button>
+            </SettingsFluentButton>
           </div>
           <div v-if="!state.scanRoots.value.length" class="settings-empty-state">没有扫描来源</div>
           <div class="settings-list-summary-row">{{ enabledScanRootCount }} / {{ state.scanRoots.value.length }} 个来源已启用</div>
@@ -311,7 +311,7 @@
                       @input="state.newScanKeyword.value = $event.target.value"
                       @keydown.enter.prevent="state.addScanKeywordBlacklistItem"
                     />
-                    <fluent-button appearance="outline" type="button" @click="state.addScanKeywordBlacklistItem">添加</fluent-button>
+                    <SettingsFluentButton appearance="outline" type="button" @click="state.addScanKeywordBlacklistItem">添加</SettingsFluentButton>
                   </div>
                   <div v-if="state.scanKeywordBlacklist.value.length" class="scan-keyword-list">
                     <span v-for="(keyword, index) in state.scanKeywordBlacklist.value" :key="`${keyword}-${index}`" class="scan-keyword-chip">
@@ -376,14 +376,14 @@
               <span class="settings-list-description">{{ state.canScanManagedApps.value ? "从启用的扫描来源刷新应用" : "需要启用扫描来源" }}</span>
             </span>
             <span class="settings-list-control">
-              <fluent-button
+              <SettingsFluentButton
                 appearance="outline"
                 type="button"
-                :disabled.prop="!state.canScanManagedApps.value || state.isScanningApps.value"
+                :disabled="!state.canScanManagedApps.value || state.isScanningApps.value"
                 @click="state.rescanManagedApps"
               >
                 {{ state.isScanningApps.value ? "扫描中" : "扫描" }}
-              </fluent-button>
+              </SettingsFluentButton>
             </span>
           </div>
 
@@ -396,9 +396,9 @@
               <span class="settings-list-description">手动添加自定义应用</span>
             </span>
             <span class="settings-list-control">
-              <fluent-button appearance="outline" type="button" @click="state.openAddManagedAppPage">
+              <SettingsFluentButton appearance="outline" type="button" @click="state.openAddManagedAppPage">
                 新增
-              </fluent-button>
+              </SettingsFluentButton>
             </span>
           </div>
         </div>
@@ -425,6 +425,7 @@ import MoreHorizontalIcon from "~icons/fluent/more-horizontal-20-regular";
 import SearchIcon from "~icons/fluent/search-20-regular";
 
 import { getIconSource } from "../../domain/iconSource.js";
+import SettingsFluentButton from "./SettingsFluentButton.vue";
 
 const props = defineProps({
   backgroundLayoutContext: { type: Object, default: null },

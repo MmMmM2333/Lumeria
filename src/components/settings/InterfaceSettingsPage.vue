@@ -283,35 +283,35 @@
 
                   <div v-if="c.doesDraftBackgroundUseImage.value" class="settings-background-image-controls">
                     <span class="settings-background-image-name">{{ c.draftBackgroundImageName.value }}</span>
-                    <fluent-button
+                    <SettingsFluentButton
                       v-if="c.isDraftCustomImage.value"
                       appearance="outline"
                       size="small"
                       type="button"
-                      :disabled.prop="state.isChoosingBackgroundImage.value"
+                      :disabled="state.isChoosingBackgroundImage.value"
                       @click="state.chooseDraftBackgroundImage"
                     >
                       {{ state.isChoosingBackgroundImage.value ? "选择中" : "选择图片" }}
-                    </fluent-button>
-                    <fluent-button
+                    </SettingsFluentButton>
+                    <SettingsFluentButton
                       v-if="c.isDraftWindowsWallpaper.value"
                       appearance="outline"
                       size="small"
                       type="button"
-                      :disabled.prop="state.isChoosingBackgroundImage.value"
+                      :disabled="state.isChoosingBackgroundImage.value"
                       @click="state.useDraftDesktopWallpaper"
                     >
                       {{ state.isChoosingBackgroundImage.value ? "同步中" : "刷新壁纸" }}
-                    </fluent-button>
-                    <fluent-button
+                    </SettingsFluentButton>
+                    <SettingsFluentButton
                       appearance="subtle"
                       size="small"
                       type="button"
-                      :disabled.prop="!state.draftBackgroundImagePath.value"
+                      :disabled="!state.draftBackgroundImagePath.value"
                       @click="state.clearDraftBackgroundImage"
                     >
                       恢复默认
-                    </fluent-button>
+                    </SettingsFluentButton>
                   </div>
 
                   <div v-if="c.doesDraftBackgroundUseImage.value" class="settings-background-control-row">
@@ -574,9 +574,9 @@
                         <span class="settings-opacity-value">{{ c.formatAcrylicPercent(c.activeAcrylicParams.value.saturation) }}</span>
                       </label>
 
-                      <fluent-button appearance="outline" type="button" @click="c.resetActiveDraftBackgroundAcrylicParams">
+                      <SettingsFluentButton appearance="outline" type="button" @click="c.resetActiveDraftBackgroundAcrylicParams">
                         恢复默认
-                      </fluent-button>
+                      </SettingsFluentButton>
                     </div>
                   </div>
                 </div>
@@ -755,14 +755,14 @@
             <span class="settings-list-description">根据当前行列布局，将 App 向前整理以填补空位</span>
           </span>
           <span class="settings-list-control">
-            <fluent-button
+            <SettingsFluentButton
               appearance="outline"
               type="button"
-              :disabled.prop="!!state.dragMeta.value"
+              :disabled="!!state.dragMeta.value"
               @click="state.confirmForceFillAllPages"
             >
               重新整理
-            </fluent-button>
+            </SettingsFluentButton>
           </span>
         </div>
       </div>
@@ -780,6 +780,7 @@ import PaintBrushIcon from "~icons/fluent/paint-brush-24-regular";
 import WindowIcon from "~icons/fluent/window-24-regular";
 import BackgroundEffectPreview from "../BackgroundEffectPreview.vue";
 import BackgroundImagePreviewCanvas from "../BackgroundImagePreviewCanvas.vue";
+import SettingsFluentButton from "./SettingsFluentButton.vue";
 import SettingsSlider from "./SettingsSlider.vue";
 import SettingsSpinButton from "./SettingsSpinButton.vue";
 
