@@ -10,7 +10,7 @@ import {
   ICON_BOUNDS_KIND,
   ICON_BOUNDS_VARIANT,
 } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
-import { nextTick, ref, shallowRef } from "vue";
+import { computed, nextTick, ref, shallowRef } from "vue";
 
 const K = ICON_BOUNDS_KIND;
 const V = ICON_BOUNDS_VARIANT;
@@ -54,16 +54,21 @@ function createDragHarness(overrides = {}) {
   const pages = shallowRef([[app]]);
   const pageIndex = ref(0);
   const folderPageIndex = ref(0);
+  const folderPageTurnRequest = ref(null);
+  const visualFolderPageIndex = computed(() => folderPageTurnRequest.value?.targetIndex ?? folderPageIndex.value);
   const folderPageSize = overrides.folderPageSize || ref(16);
+  const folderPages = overrides.folderPages || ref([[]]);
   const isLayoutProjectionActive = ref(false);
   const folderSession = ref(null);
   const openFolderId = ref(null);
   const calls = {
     commitFolderSession: [],
+    commitFolderPageTurnRequest: [],
     commitOpenFolder: [],
     commitPageIndex: [],
     commitPages: [],
     insertAppIntoFolder: [],
+    requestFolderPageTurn: [],
   };
   function cloneItem(item) {
     return item ? { ...item } : item;
@@ -126,8 +131,19 @@ function createDragHarness(overrides = {}) {
   const drag = useLaunchpadDrag({
     canCreateDesktopPageAfterDrag: overrides.canCreateDesktopPageAfterDrag || (() => false),
     canCreateFolderPageAfterDrag: overrides.canCreateFolderPageAfterDrag || (() => false),
+    clearFolderPageTurnRequest: () => {
+      folderPageTurnRequest.value = null;
+    },
     cloneItem,
     clonePages,
+    commitFolderPageTurnRequest: (token) => {
+      calls.commitFolderPageTurnRequest.push(token);
+      const request = folderPageTurnRequest.value;
+      if (!request || request.token !== token) return false;
+      folderPageIndex.value = request.targetIndex;
+      folderPageTurnRequest.value = null;
+      return true;
+    },
     commitFolderPageIndex: (value) => {
       folderPageIndex.value = value;
     },
@@ -162,8 +178,9 @@ function createDragHarness(overrides = {}) {
     folderCols: ref(4),
     folderPageIndex,
     folderPageRefs,
-    folderPages: ref([[]]),
+    folderPages,
     folderPageSize,
+    folderPageTurnRequest,
     folderPanelRef,
     folderSession,
     getFolderChildPages,
@@ -194,14 +211,25 @@ function createDragHarness(overrides = {}) {
     previewTopLevelItemWithoutOverflow: insertTopLevelItem,
     removeEverywhere,
     renderedFolder: ref(null),
+    requestFolderPageTurn: (targetIndex, requestOptions = {}) => {
+      const token = calls.requestFolderPageTurn.length + 1;
+      calls.requestFolderPageTurn.push({ targetIndex, options: requestOptions, token });
+      folderPageTurnRequest.value = {
+        folderId: requestOptions.folderId ?? null,
+        targetIndex,
+        token,
+      };
+      return token;
+    },
     replaceFolderWithItem,
+    visualFolderPageIndex,
     visibleFolderRowCount: ref(4),
     withFolderPages: (folder, childPages) => ({ ...folder, childPages, children: childPages.flat() }),
     wouldFolderInsertOverflow: () => false,
     wouldTopLevelInsertOverflow: () => false,
   });
 
-  return { app, calls, drag, folderPanelRef, folderSession, iconBoundsRegistry, isLayoutProjectionActive, openFolderId, pages };
+  return { app, calls, drag, folderPageIndex, folderPageTurnRequest, folderPanelRef, folderSession, iconBoundsRegistry, isLayoutProjectionActive, openFolderId, pages, visualFolderPageIndex };
 }
 
 function putLaunchBounds(registry, variant, source, rect, meta = {}) {
@@ -717,6 +745,50 @@ export async function runLaunchpadDragTests() {
 
     assert(pages.value.length === 1, "pointercancel should clear page-turn timers before they can create a page");
     assert(!calls.commitPageIndex.includes(1), "pointercancel should not allow a delayed page turn after drag end");
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const folderPanelRef = ref({ getBoundingClientRect: () => ({ left: 100, top: 100, right: 500, bottom: 420, width: 400, height: 320 }) });
+    const folderPageRefs = [{ getBoundingClientRect: () => ({ left: 120, top: 130, right: 480, bottom: 360, width: 360, height: 230 }) }];
+    const secondPageApp = { id: "app-b", type: "app", name: "App B" };
+    const folderPages = ref([[{ id: "app-a", type: "app", name: "App A" }], [secondPageApp]]);
+    const { app, calls, drag, folderPageIndex, folderSession, openFolderId, pages, visualFolderPageIndex } = createDragHarness({
+      folderPageRefs,
+      folderPages,
+      folderPanelRef,
+    });
+    const folder = { id: "folder-edge", type: "folder", name: "Folder", childPages: folderPages.value, children: folderPages.value.flat() };
+    pages.value = [[folder]];
+    openFolderId.value = "folder-edge";
+    const target = {
+      getBoundingClientRect: () => ({ left: 130, top: 150, width: 64, height: 64 }),
+    };
+
+    drag.beginDrag(makePointerDownEvent(65, target), app, { type: "folder", folderId: "folder-edge", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+    assert(folderSession.value?.mode === "source-folder", "folder edge drag should start from the source folder");
+
+    listeners.get("pointermove")({
+      type: "pointermove",
+      pointerId: 65,
+      buttons: 1,
+      clientX: 492,
+      clientY: 180,
+      preventDefault: () => {},
+    });
+    runNextTimer(timers);
+    assert(calls.requestFolderPageTurn.length === 0, "folder edge drag should not request a page turn before the delay");
+    runNextTimer(timers);
+    assert(calls.requestFolderPageTurn.length === 1, "folder edge drag should request a visual folder page turn");
+    assert(calls.requestFolderPageTurn[0].options.source === "drag-edge", "folder edge drag should mark the turn source");
+    assert(folderPageIndex.value === 0, "folder edge drag should keep the committed page until release");
+    assert(visualFolderPageIndex.value === 1, "folder edge drag should expose the visual target page before release");
+
+    listeners.get("pointerup")({ type: "pointerup", pointerId: 65, button: 0, clientX: 492, clientY: 180 });
+    assert(calls.commitFolderPageTurnRequest.join(",") === "1", "releasing after a visual folder edge turn should commit the pending request");
+    assert(folderPageIndex.value === 1, "releasing after a visual folder edge turn should land on the visual page");
+    assert(calls.insertAppIntoFolder.at(-1)?.targetPageIndex === 1, "folder edge release should insert into the visual target page");
   });
 
   await withMockPointerEnvironment(async ({ listeners, timers }) => {

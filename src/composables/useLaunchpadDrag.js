@@ -150,6 +150,7 @@ export function useLaunchpadDrag(options) {
   let folderCreateReleaseKey = 0;
   let dragFolderHoverKey = 0;
   let settledDragStartRaf = 0;
+  let pendingFolderDragPageTurn = null;
 
   function isDragActive() {
     return Boolean(dragRuntime || dragReleaseState.value || folderCreateReleaseState.value);
@@ -275,6 +276,31 @@ export function useLaunchpadDrag(options) {
   function clearFolderPageTurn() {
     if (folderPageTurnTimer) window.clearTimeout(folderPageTurnTimer.timer);
     folderPageTurnTimer = null;
+  }
+
+  function clearPendingFolderDragPageTurn(reason = "drag-folder-page-turn-clear") {
+    if (!pendingFolderDragPageTurn) return false;
+    pendingFolderDragPageTurn = null;
+    options.clearFolderPageTurnRequest?.(reason);
+    return true;
+  }
+
+  function commitPendingFolderDragPageTurn() {
+    const pending = pendingFolderDragPageTurn;
+    if (!pending) return false;
+    pendingFolderDragPageTurn = null;
+    if (typeof options.commitFolderPageTurnRequest === "function" && pending.token != null) {
+      const committed = options.commitFolderPageTurnRequest(pending.token, {
+        allowCreate: pending.allowCreate,
+        folderId: pending.folderId,
+        phase: "open",
+      });
+      if (committed) return true;
+      options.clearFolderPageTurnRequest?.("drag-folder-page-turn-fallback");
+    }
+    if (pending.targetIndex == null) return false;
+    options.commitFolderPageIndex(pending.targetIndex, { allowCreate: pending.allowCreate });
+    return true;
   }
 
   function clearDragIntentTimer() {
@@ -957,6 +983,7 @@ export function useLaunchpadDrag(options) {
     clearDragSortGateTimer();
     clearPageTurn();
     clearFolderPageTurn();
+    clearPendingFolderDragPageTurn("drag-end");
     cancelPreviewRaf();
     dragRuntime = null;
     dragMeta.value = null;
@@ -986,8 +1013,26 @@ export function useLaunchpadDrag(options) {
     return clamp(row * options.gridCols.value + col, 0, options.pageSize.value - 1);
   }
 
+  function getActiveFolderPageIndex() {
+    const visualIndex = Number(options.visualFolderPageIndex?.value);
+    const requestedIndex = Number.isFinite(visualIndex)
+      ? visualIndex
+      : Number(pendingFolderDragPageTurn?.targetIndex);
+    const fallback = Number(options.folderPageIndex.value) || 0;
+    const maxIndex = Math.max(
+      0,
+      options.folderPages.value.length - 1,
+      Number.isFinite(requestedIndex) ? requestedIndex : fallback
+    );
+    return clamp(Number.isFinite(requestedIndex) ? requestedIndex : fallback, 0, maxIndex);
+  }
+
   function getCurrentFolderGridElement() {
-    return options.folderPageRefs[options.folderPageIndex.value] || null;
+    const activePageIndex = getActiveFolderPageIndex();
+    return options.folderPageRefs[activePageIndex] ||
+      options.folderPageRefs[options.folderPageIndex.value] ||
+      options.folderPageRefs.find(Boolean) ||
+      null;
   }
 
   function isInsideCurrentFolderGrid(clientX, clientY) {
@@ -998,10 +1043,11 @@ export function useLaunchpadDrag(options) {
 
   function calcFolderInsertTarget(clientX, clientY) {
     const grid = getCurrentFolderGridElement();
+    const activePageIndex = getActiveFolderPageIndex();
     const folder = options.openFolderId.value ? options.findFolder(options.pages.value, options.openFolderId.value)?.item : null;
     if (!grid || !folder) {
       const fallbackPages = options.getFolderChildPages(folder, options.folderPageSize.value);
-      const fallbackPageIndex = clamp(options.folderPageIndex.value, 0, Math.max(0, fallbackPages.length - 1));
+      const fallbackPageIndex = clamp(activePageIndex, 0, Math.max(0, fallbackPages.length - 1, activePageIndex));
       return { pageIndex: fallbackPageIndex, index: fallbackPages[fallbackPageIndex]?.length || 0 };
     }
 
@@ -1014,7 +1060,7 @@ export function useLaunchpadDrag(options) {
     const y = clamp(clientY - rect.top, 0, Math.max(1, rect.height - 1));
     const col = clamp(Math.floor(x / cellWidth), 0, columnCount - 1);
     const row = clamp(Math.floor(y / cellHeight), 0, rowCount - 1);
-    return { pageIndex: options.folderPageIndex.value, index: row * columnCount + col };
+    return { pageIndex: activePageIndex, index: row * columnCount + col };
   }
 
   function getDragVisualCenter(activeDrag) {
@@ -1522,7 +1568,7 @@ export function useLaunchpadDrag(options) {
     if (!rect || !isPointInsideRect(rect, clientX, clientY)) return 0;
 
     const direction = clientX < rect.left + FOLDER_PAGE_EDGE_SIZE ? -1 : clientX > rect.right - FOLDER_PAGE_EDGE_SIZE ? 1 : 0;
-    if (direction < 0 && options.folderPageIndex.value <= 0) return 0;
+    if (direction < 0 && getActiveFolderPageIndex() <= 0) return 0;
     return direction;
   }
 
@@ -1547,14 +1593,14 @@ export function useLaunchpadDrag(options) {
       direction,
       timer: window.setTimeout(() => {
         folderPageTurnTimer = null;
-        const currentPage = options.folderPageIndex.value;
+        const currentPage = getActiveFolderPageIndex();
+        const targetPage = currentPage + (direction < 0 ? -1 : 1);
         let didTurn = false;
         dragPlacement = null;
         lastPlacementCommit = null;
         if (direction < 0) {
           if (currentPage <= 0) return;
-          options.commitFolderPageIndex(currentPage - 1);
-          didTurn = true;
+          didTurn = requestOrCommitFolderDragPageTurn(targetPage, { allowCreate: false });
         } else {
           const isCreatingNewPage = currentPage >= options.folderPages.value.length - 1;
           if (isCreatingNewPage) {
@@ -1562,12 +1608,35 @@ export function useLaunchpadDrag(options) {
             const draggedItemId = dragRuntime?.item?.id;
             if (!options.canCreateFolderPageAfterDrag(folder, currentPage, draggedItemId, options.folderPageSize.value)) return;
           }
-          options.commitFolderPageIndex(currentPage + 1, { allowCreate: true });
-          didTurn = true;
+          didTurn = requestOrCommitFolderDragPageTurn(targetPage, { allowCreate: isCreatingNewPage });
         }
         if (didTurn) nextTick(scheduleFolderPageEdgeTurnFromCurrentPointer);
       }, PAGE_TURN_DELAY),
     };
+  }
+
+  function requestOrCommitFolderDragPageTurn(targetPage, turnOptions = {}) {
+    const folderId = options.openFolderId.value || options.renderedFolder.value?.id || null;
+    if (typeof options.requestFolderPageTurn === "function") {
+      const token = options.requestFolderPageTurn(targetPage, {
+        allowCreate: Boolean(turnOptions.allowCreate),
+        folderId,
+        phase: "open",
+        source: "drag-edge",
+      });
+      if (token != null) {
+        pendingFolderDragPageTurn = {
+          allowCreate: Boolean(turnOptions.allowCreate),
+          folderId,
+          targetIndex: targetPage,
+          token,
+        };
+        return true;
+      }
+    }
+    pendingFolderDragPageTurn = null;
+    options.commitFolderPageIndex(targetPage, { allowCreate: Boolean(turnOptions.allowCreate) });
+    return true;
   }
 
   function handleDefaultDesktopMove(clientX, clientY) {
@@ -1843,6 +1912,7 @@ export function useLaunchpadDrag(options) {
     activeDrag.pointer = { x: event.clientX, y: event.clientY };
     schedulePreviewPosition(event.clientX, event.clientY);
     clearDragIntentTimer();
+    if (options.folderSession.value || options.openFolderId.value) commitPendingFolderDragPageTurn();
     commitPendingDesktopReturn({ force: true });
 
     const center = getDragVisualCenter(activeDrag);
