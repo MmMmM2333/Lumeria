@@ -7,6 +7,7 @@ import "@fluentui/web-components/menu/define.js";
 import "@fluentui/web-components/menu-button/define.js";
 import "@fluentui/web-components/menu-item/define.js";
 import "@fluentui/web-components/menu-list/define.js";
+import "@fluentui/web-components/message-bar/define.js";
 import "@fluentui/web-components/slider/define.js";
 import "@fluentui/web-components/switch/define.js";
 import "@fluentui/web-components/text-input/define.js";

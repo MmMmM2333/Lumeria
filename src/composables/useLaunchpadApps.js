@@ -216,6 +216,7 @@ export function useLaunchpadApps(options) {
     options.openWarningDialog?.({
       title: "还原默认来源",
       message: "将移除当前自定义扫描来源，并恢复为用户开始菜单和系统开始菜单。",
+      intent: "warning",
       cancelText: "取消",
       confirmText: "还原",
       onConfirm: resetScanRootsToDefaults,
@@ -243,6 +244,7 @@ export function useLaunchpadApps(options) {
       title: config.title,
       message: config.message,
       suggestion: [config.suggestion, detail && `错误信息：${detail}`].filter(Boolean).join(" "),
+      intent: "error",
       confirmText: "知道了",
     });
   }
@@ -335,6 +337,7 @@ export function useLaunchpadApps(options) {
     options.openWarningDialog?.({
       title: "无法使用此图标",
       message,
+      intent: "error",
       confirmText: "知道了",
     });
   }

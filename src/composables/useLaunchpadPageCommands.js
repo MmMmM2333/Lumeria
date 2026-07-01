@@ -68,6 +68,7 @@ export function useLaunchpadPageCommands(options) {
     options.openWarningDialog({
       title: "重新整理桌面页面？",
       message: "这会按当前顺序压实所有桌面页面，可能改变当前分页布局。",
+      intent: "warning",
       confirmText: "重新整理",
       cancelText: "取消",
       onConfirm: forceFillAllPages,

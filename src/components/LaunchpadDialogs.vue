@@ -7,7 +7,9 @@
           <p>发现 {{ state.scanResultApps.value.length }} 个可添加应用 · 已选择 {{ state.scanResultSelectedCount.value }} 个</p>
           <p v-if="state.scanResultWarnings.value.length" class="settings-field-hint">部分目录因权限、链接或扫描限制被跳过</p>
         </div>
-        <button class="settings-close-button" type="button" aria-label="关闭扫描结果" @click="state.closeScanResultDialog">×</button>
+        <SettingsFluentButton appearance="subtle" icon-only class="settings-close-button" type="button" aria-label="关闭扫描结果" @click="state.closeScanResultDialog">
+          <DismissIcon class="settings-close-icon" />
+        </SettingsFluentButton>
       </header>
 
       <div class="scan-result-body">
@@ -17,14 +19,20 @@
         </div>
 
         <div v-if="state.scanResultApps.value.length" class="app-manager-list scan-result-list" role="list" aria-label="可添加应用">
-          <label v-for="app in state.scanResultApps.value" :key="app.id" class="app-manager-item scan-result-item" role="listitem">
-            <input
+          <div
+            v-for="app in state.scanResultApps.value"
+            :key="app.id"
+            :class="['app-manager-item', 'scan-result-item', isScanResultAppSelected(app.id) && 'app-manager-item-selected']"
+            role="listitem"
+            :aria-selected="isScanResultAppSelected(app.id)"
+            @click="state.toggleScanResultSelection(app.id, !isScanResultAppSelected(app.id))"
+          >
+            <fluent-checkbox
               :name="`scanResultSelection-${app.id}`"
-              type="checkbox"
               :aria-label="`选择 ${app.name}`"
-              autocomplete="off"
-              :checked="state.scanResultSelectedIds.value.includes(app.id)"
-              @change="state.toggleScanResultSelection(app.id, $event.target.checked)"
+              :checked.prop="isScanResultAppSelected(app.id)"
+              @click.stop
+              @change.stop="state.toggleScanResultSelection(app.id, $event.target.checked)"
             />
             <span class="app-manager-icon">
               <img v-if="getIconSource(app)" :src="getIconSource(app)" alt="" draggable="false" />
@@ -35,15 +43,15 @@
               <span class="app-manager-target">{{ state.getLaunchTargetPath(app) || "未设置启动路径" }}</span>
               <span v-if="app.launchTarget?.kind === 'executable' && app.launchArgs" class="app-manager-target">参数：{{ app.launchArgs }}</span>
             </span>
-          </label>
+          </div>
         </div>
 
         <div v-else class="scan-result-empty">没有发现可添加的应用</div>
       </div>
 
       <footer class="scan-result-actions">
-        <button class="settings-secondary-button" type="button" @click="state.closeScanResultDialog">取消</button>
-        <button class="settings-primary-button" type="button" :disabled="!state.canAddScannedApps.value" @click="state.addSelectedScannedApps">添加所选</button>
+        <SettingsFluentButton appearance="outline" type="button" @click="state.closeScanResultDialog">取消</SettingsFluentButton>
+        <SettingsFluentButton appearance="primary" type="button" :disabled="!state.canAddScannedApps.value" @click="state.addSelectedScannedApps">添加所选</SettingsFluentButton>
       </footer>
     </section>
   </div>
@@ -55,7 +63,9 @@
           <h2>新增应用</h2>
           <p>添加自定义应用到启动台</p>
         </div>
-        <button class="settings-close-button" type="button" aria-label="关闭新增窗口" @click="state.closeAddManagedAppPage">×</button>
+        <SettingsFluentButton appearance="subtle" icon-only class="settings-close-button" type="button" aria-label="关闭新增窗口" @click="state.closeAddManagedAppPage">
+          <DismissIcon class="settings-close-icon" />
+        </SettingsFluentButton>
       </header>
 
       <div class="app-edit-body">
@@ -65,33 +75,55 @@
             <span v-else>{{ state.newManagedAppGlyph.value }}</span>
           </span>
           <div class="app-edit-icon-actions">
-            <button class="settings-secondary-button" type="button" @click="state.openNewAppIconChooser">更换图标</button>
-            <button class="settings-secondary-button" type="button" @click="state.resetNewAppIcon">恢复默认</button>
+            <SettingsFluentButton appearance="outline" type="button" @click="state.openNewAppIconChooser">更换图标</SettingsFluentButton>
+            <SettingsFluentButton appearance="subtle" type="button" @click="state.resetNewAppIcon">恢复默认</SettingsFluentButton>
           </div>
         </div>
 
         <label class="app-edit-field">
           <span>应用名称</span>
-          <input v-model="state.newAppName.value" name="newAppName" type="text" maxlength="64" aria-label="应用名称" autocomplete="off" />
+          <fluent-text-input
+            class="settings-text-input app-edit-input"
+            name="newAppName"
+            maxlength="64"
+            aria-label="应用名称"
+            autocomplete="off"
+            :value.prop="state.newAppName.value"
+            @input="state.newAppName.value = $event.target.value"
+          />
         </label>
         <label class="app-edit-field">
           <span>启动路径或 URL</span>
           <span class="app-edit-target-row">
-            <input v-model="state.newAppTarget.value" name="newAppTarget" type="text" aria-label="启动路径或 URL" autocomplete="off" />
-            <button class="settings-secondary-button" type="button" :disabled="!state.canBrowseLaunchFile.value || state.isBrowsingNewAppTarget.value" @click="state.browseNewAppLaunchFile">
+            <fluent-text-input
+              class="settings-text-input app-edit-input"
+              name="newAppTarget"
+              aria-label="启动路径或 URL"
+              autocomplete="off"
+              :value.prop="state.newAppTarget.value"
+              @input="state.newAppTarget.value = $event.target.value"
+            />
+            <SettingsFluentButton appearance="outline" type="button" :disabled="!state.canBrowseLaunchFile.value || state.isBrowsingNewAppTarget.value" @click="state.browseNewAppLaunchFile">
               {{ state.isBrowsingNewAppTarget.value ? "选择中" : "浏览" }}
-            </button>
+            </SettingsFluentButton>
           </span>
         </label>
         <label v-if="state.canEditNewAppArgs.value" class="app-edit-field">
           <span>启动参数</span>
-          <input v-model="state.newAppArgs.value" name="newAppArgs" type="text" aria-label="启动参数" autocomplete="off" />
+          <fluent-text-input
+            class="settings-text-input app-edit-input"
+            name="newAppArgs"
+            aria-label="启动参数"
+            autocomplete="off"
+            :value.prop="state.newAppArgs.value"
+            @input="state.newAppArgs.value = $event.target.value"
+          />
         </label>
       </div>
 
       <footer class="app-edit-actions">
-        <button class="settings-secondary-button" type="button" @click="state.closeAddManagedAppPage">取消</button>
-        <button class="settings-primary-button" type="button" :disabled="!state.canAddManagedApp.value" @click="state.addManagedApp">保存</button>
+        <SettingsFluentButton appearance="outline" type="button" @click="state.closeAddManagedAppPage">取消</SettingsFluentButton>
+        <SettingsFluentButton appearance="primary" type="button" :disabled="!state.canAddManagedApp.value" @click="state.addManagedApp">保存</SettingsFluentButton>
       </footer>
     </section>
   </div>
@@ -103,7 +135,9 @@
           <h2>编辑应用</h2>
           <p>{{ state.editingManagedApp.value.name }}</p>
         </div>
-        <button class="settings-close-button" type="button" aria-label="关闭编辑窗口" @click="state.closeEditManagedApp">×</button>
+        <SettingsFluentButton appearance="subtle" icon-only class="settings-close-button" type="button" aria-label="关闭编辑窗口" @click="state.closeEditManagedApp">
+          <DismissIcon class="settings-close-icon" />
+        </SettingsFluentButton>
       </header>
 
       <div class="app-edit-body">
@@ -113,33 +147,55 @@
             <span v-else>{{ state.editingManagedApp.value.emoji }}</span>
           </span>
           <div class="app-edit-icon-actions">
-            <button class="settings-secondary-button" type="button" @click="state.openEditAppIconChooser">更换图标</button>
-            <button class="settings-secondary-button" type="button" @click="state.resetEditAppIcon">恢复默认</button>
+            <SettingsFluentButton appearance="outline" type="button" @click="state.openEditAppIconChooser">更换图标</SettingsFluentButton>
+            <SettingsFluentButton appearance="subtle" type="button" @click="state.resetEditAppIcon">恢复默认</SettingsFluentButton>
           </div>
         </div>
 
         <label class="app-edit-field">
           <span>应用名称</span>
-          <input v-model="state.editAppName.value" name="editAppName" type="text" maxlength="64" aria-label="应用名称" autocomplete="off" />
+          <fluent-text-input
+            class="settings-text-input app-edit-input"
+            name="editAppName"
+            maxlength="64"
+            aria-label="应用名称"
+            autocomplete="off"
+            :value.prop="state.editAppName.value"
+            @input="state.editAppName.value = $event.target.value"
+          />
         </label>
         <label class="app-edit-field">
           <span>启动路径或 URL</span>
           <span class="app-edit-target-row">
-            <input v-model="state.editAppTarget.value" name="editAppTarget" type="text" aria-label="启动路径或 URL" autocomplete="off" />
-            <button class="settings-secondary-button" type="button" :disabled="!state.canBrowseLaunchFile.value || state.isBrowsingEditAppTarget.value" @click="state.browseEditAppLaunchFile">
+            <fluent-text-input
+              class="settings-text-input app-edit-input"
+              name="editAppTarget"
+              aria-label="启动路径或 URL"
+              autocomplete="off"
+              :value.prop="state.editAppTarget.value"
+              @input="state.editAppTarget.value = $event.target.value"
+            />
+            <SettingsFluentButton appearance="outline" type="button" :disabled="!state.canBrowseLaunchFile.value || state.isBrowsingEditAppTarget.value" @click="state.browseEditAppLaunchFile">
               {{ state.isBrowsingEditAppTarget.value ? "选择中" : "浏览" }}
-            </button>
+            </SettingsFluentButton>
           </span>
         </label>
         <label v-if="state.canEditAppArgs.value" class="app-edit-field">
           <span>启动参数</span>
-          <input v-model="state.editAppArgs.value" name="editAppArgs" type="text" aria-label="启动参数" autocomplete="off" />
+          <fluent-text-input
+            class="settings-text-input app-edit-input"
+            name="editAppArgs"
+            aria-label="启动参数"
+            autocomplete="off"
+            :value.prop="state.editAppArgs.value"
+            @input="state.editAppArgs.value = $event.target.value"
+          />
         </label>
       </div>
 
       <footer class="app-edit-actions">
-        <button class="settings-secondary-button" type="button" @click="state.closeEditManagedApp">取消</button>
-        <button class="settings-primary-button" type="button" :disabled="!state.canSaveEditingManagedApp.value" @click="state.saveEditingManagedApp">保存</button>
+        <SettingsFluentButton appearance="outline" type="button" @click="state.closeEditManagedApp">取消</SettingsFluentButton>
+        <SettingsFluentButton appearance="primary" type="button" :disabled="!state.canSaveEditingManagedApp.value" @click="state.saveEditingManagedApp">保存</SettingsFluentButton>
       </footer>
     </section>
   </div>
@@ -151,7 +207,9 @@
           <h2>{{ state.iconChooser.value.title }}</h2>
           <p>{{ state.iconChooser.value.subtitle }}</p>
         </div>
-        <button class="settings-close-button" type="button" aria-label="关闭图标选择" @click="state.closeIconChooser">×</button>
+        <SettingsFluentButton appearance="subtle" icon-only class="settings-close-button" type="button" aria-label="关闭图标选择" @click="state.closeIconChooser">
+          <DismissIcon class="settings-close-icon" />
+        </SettingsFluentButton>
       </header>
 
       <div class="icon-chooser-body">
@@ -190,32 +248,52 @@
     </section>
   </div>
 
-  <div v-if="state.layoutRecoveryNotice.value" class="layout-recovery-notice" role="status" aria-live="polite">
-    <div class="layout-recovery-copy">
-      <strong>{{ state.layoutRecoveryNotice.value.title }}</strong>
-      <span>{{ state.layoutRecoveryNotice.value.message }}</span>
-      <small v-if="state.layoutRecoveryNotice.value.backupPath">{{ state.layoutRecoveryNotice.value.backupPath }}</small>
-    </div>
-    <button class="layout-recovery-close" type="button" aria-label="关闭布局恢复提示" @click="state.closeLayoutRecoveryNotice">×</button>
-  </div>
+  <div v-if="state.layoutRecoveryNotice.value || state.layoutSaveNotice.value" class="layout-notice-stack">
+    <fluent-message-bar
+      v-if="state.layoutRecoveryNotice.value"
+      class="layout-notice-bar"
+      layout="multiline"
+      :intent="state.layoutRecoveryNotice.value.intent || 'warning'"
+      aria-live="polite"
+    >
+      <component :is="getNoticeIcon(state.layoutRecoveryNotice.value.intent || 'warning')" slot="icon" class="layout-notice-icon" />
+      <span class="layout-recovery-copy">
+        <strong>{{ state.layoutRecoveryNotice.value.title }}</strong>
+        <span>{{ state.layoutRecoveryNotice.value.message }}</span>
+        <small v-if="state.layoutRecoveryNotice.value.backupPath">{{ state.layoutRecoveryNotice.value.backupPath }}</small>
+      </span>
+      <SettingsFluentButton fluent-slot="dismiss" appearance="subtle" icon-only type="button" aria-label="关闭布局恢复提示" @click="state.closeLayoutRecoveryNotice">
+        <DismissIcon class="layout-notice-dismiss-icon" />
+      </SettingsFluentButton>
+    </fluent-message-bar>
 
-  <div v-if="state.layoutSaveNotice.value" class="layout-recovery-notice layout-save-notice" role="status" aria-live="polite">
-    <div class="layout-recovery-copy">
-      <strong>{{ state.layoutSaveNotice.value.title }}</strong>
-      <span>{{ state.layoutSaveNotice.value.message }}</span>
-      <small v-if="state.layoutSaveNotice.value.detail">{{ state.layoutSaveNotice.value.detail }}</small>
-    </div>
-    <div class="layout-notice-actions">
-      <button
+    <fluent-message-bar
+      v-if="state.layoutSaveNotice.value"
+      class="layout-notice-bar"
+      layout="multiline"
+      :intent="state.layoutSaveNotice.value.intent || 'info'"
+      aria-live="polite"
+    >
+      <component :is="getNoticeIcon(state.layoutSaveNotice.value.intent || 'info')" slot="icon" class="layout-notice-icon" />
+      <span class="layout-recovery-copy">
+        <strong>{{ state.layoutSaveNotice.value.title }}</strong>
+        <span>{{ state.layoutSaveNotice.value.message }}</span>
+        <small v-if="state.layoutSaveNotice.value.detail">{{ state.layoutSaveNotice.value.detail }}</small>
+      </span>
+      <SettingsFluentButton
         v-if="state.layoutSaveNotice.value.actionText"
-        class="layout-notice-action"
+        fluent-slot="actions"
+        appearance="outline"
+        size="small"
         type="button"
         @click="state.layoutSaveNotice.value.onAction?.()"
       >
         {{ state.layoutSaveNotice.value.actionText }}
-      </button>
-      <button class="layout-recovery-close" type="button" aria-label="关闭布局保存提示" @click="state.closeLayoutSaveNotice">×</button>
-    </div>
+      </SettingsFluentButton>
+      <SettingsFluentButton fluent-slot="dismiss" appearance="subtle" icon-only type="button" aria-label="关闭布局保存提示" @click="state.closeLayoutSaveNotice">
+        <DismissIcon class="layout-notice-dismiss-icon" />
+      </SettingsFluentButton>
+    </fluent-message-bar>
   </div>
 
   <div
@@ -228,7 +306,7 @@
   >
     <section
       ref="warningDialogRef"
-      class="warning-dialog"
+      :class="['warning-dialog', `warning-dialog-${warningDialogIntent}`]"
       role="alertdialog"
       aria-modal="true"
       :aria-label="state.warningDialog.value.title"
@@ -236,7 +314,7 @@
       @keydown="handleDialogKeydown($event, warningDialogRef, state.closeWarningDialog)"
     >
       <div class="warning-dialog-icon">
-        <AlertTriangleIcon class="warning-dialog-svg" />
+        <component :is="warningDialogIcon" class="warning-dialog-svg" />
       </div>
       <div class="warning-dialog-content">
         <h2>{{ state.warningDialog.value.title }}</h2>
@@ -244,8 +322,16 @@
         <p v-if="state.warningDialog.value.suggestion" class="warning-dialog-suggestion">建议：{{ state.warningDialog.value.suggestion }}</p>
       </div>
       <footer class="warning-dialog-actions">
-        <button v-if="state.warningDialog.value.cancelText" class="settings-secondary-button" type="button" @click="state.closeWarningDialog">{{ state.warningDialog.value.cancelText }}</button>
-        <button v-if="state.warningDialog.value.confirmText" class="settings-warning-button" type="button" @click="state.confirmWarningDialog">{{ state.warningDialog.value.confirmText }}</button>
+        <SettingsFluentButton v-if="state.warningDialog.value.cancelText" appearance="outline" type="button" @click="state.closeWarningDialog">{{ state.warningDialog.value.cancelText }}</SettingsFluentButton>
+        <SettingsFluentButton
+          v-if="state.warningDialog.value.confirmText"
+          :appearance="warningConfirmAppearance"
+          :tone="warningConfirmTone"
+          type="button"
+          @click="state.confirmWarningDialog"
+        >
+          {{ state.warningDialog.value.confirmText }}
+        </SettingsFluentButton>
       </footer>
     </section>
   </div>
@@ -253,7 +339,12 @@
 
 <script setup>
 import { computed, nextTick, ref, watch } from "vue";
+import CheckmarkCircleIcon from "~icons/fluent/checkmark-circle-20-regular";
+import DismissIcon from "~icons/fluent/dismiss-16-regular";
+import ErrorCircleIcon from "~icons/fluent/error-circle-20-regular";
+import InfoIcon from "~icons/fluent/info-20-regular";
 import { AlertTriangleIcon } from "./Icons.js";
+import SettingsFluentButton from "./settings/SettingsFluentButton.vue";
 import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
 import { getDefaultIconSource, getIconSource } from "../domain/iconSource.js";
@@ -292,6 +383,11 @@ const editingAppIconSource = computed(() => {
   return getIconSource(props.state.editingManagedApp.value);
 });
 
+const warningDialogIntent = computed(() => normalizeDialogIntent(props.state.warningDialog.value?.intent));
+const warningDialogIcon = computed(() => getNoticeIcon(warningDialogIntent.value));
+const warningConfirmAppearance = computed(() => (warningDialogIntent.value === "error" ? "outline" : "primary"));
+const warningConfirmTone = computed(() => (warningDialogIntent.value === "error" ? "danger" : null));
+
 watch(
   () => activeDialog.value?.id,
   async () => {
@@ -313,6 +409,27 @@ watch(
 
 function handleDialogKeydown(event, dialogRef, onEscape) {
   handleModalKeydown(event, dialogRef, onEscape);
+}
+
+function isScanResultAppSelected(appId) {
+  return props.state.scanResultSelectedIds.value.includes(appId);
+}
+
+function normalizeDialogIntent(intent) {
+  return ["success", "warning", "error", "info"].includes(intent) ? intent : "warning";
+}
+
+function getNoticeIcon(intent) {
+  switch (normalizeDialogIntent(intent)) {
+    case "success":
+      return CheckmarkCircleIcon;
+    case "error":
+      return ErrorCircleIcon;
+    case "info":
+      return InfoIcon;
+    default:
+      return AlertTriangleIcon;
+  }
 }
 
 function resolveWarningDialogOverlayMotion() {
