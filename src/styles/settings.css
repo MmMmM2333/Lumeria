@@ -247,6 +247,32 @@
   line-height: 1;
 }
 
+.settings-fluent-button-danger {
+  --colorNeutralForeground1: rgba(255, 170, 160, 0.92);
+  --colorNeutralForeground1Hover: #ffb4a9;
+  --colorNeutralForeground1Pressed: #ff8f83;
+  --colorNeutralForeground2: rgba(255, 170, 160, 0.9);
+  --colorNeutralForeground2Hover: #ffb4a9;
+  --colorNeutralForeground2Pressed: #ff8f83;
+  --colorNeutralForeground2BrandHover: #ffb4a9;
+  --colorNeutralForeground2BrandPressed: #ff8f83;
+  --colorNeutralStroke1: rgba(255, 170, 160, 0.36);
+  --colorNeutralStroke1Hover: rgba(255, 180, 169, 0.58);
+  --colorNeutralStroke1Pressed: rgba(255, 143, 131, 0.68);
+  --colorSubtleBackgroundHover: rgba(196, 43, 28, 0.16);
+  --colorSubtleBackgroundPressed: rgba(196, 43, 28, 0.22);
+  --colorTransparentBackgroundHover: rgba(196, 43, 28, 0.1);
+  --colorTransparentBackgroundPressed: rgba(196, 43, 28, 0.16);
+}
+
+.settings-menu-item-danger {
+  --colorNeutralForeground2: rgba(255, 170, 160, 0.9);
+  --colorNeutralForeground2Hover: #ffb4a9;
+  --colorNeutralForeground2Pressed: #ff8f83;
+  --colorNeutralBackground1Hover: rgba(196, 43, 28, 0.16);
+  --colorNeutralBackground1Selected: rgba(196, 43, 28, 0.22);
+}
+
 .settings-navigation-toggle-icon {
   display: block;
   width: 20px;
@@ -516,6 +542,21 @@
 
 .settings-section-header:last-child {
   margin-bottom: 0;
+}
+
+.settings-section-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.settings-section-meta {
+  color: var(--settings-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.3;
 }
 
 .settings-section-header h3 {
@@ -1712,8 +1753,8 @@
 
 .scan-root-list {
   display: grid;
-  gap: 6px;
-  margin-top: 0;
+  gap: 8px;
+  margin-top: 2px;
 }
 
 .scan-filter-block {
@@ -1805,6 +1846,16 @@
   line-height: 1;
 }
 
+.scan-keyword-chip button:hover {
+  color: #ffb4a9;
+  background: rgba(196, 43, 28, 0.18);
+}
+
+.scan-keyword-chip button:active {
+  color: #ff8f83;
+  background: rgba(196, 43, 28, 0.24);
+}
+
 .scan-keyword-chip-icon {
   width: 12px;
   height: 12px;
@@ -1852,10 +1903,10 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   min-width: 0;
-  min-height: 74px;
-  padding: 11px 14px;
+  min-height: 80px;
+  padding: 10px 12px;
   border-radius: 8px;
   border: 1px solid var(--settings-row-border);
   background: var(--settings-row-bg);
@@ -1879,7 +1930,7 @@
 .scan-root-details {
   display: grid;
   min-width: 0;
-  gap: 4px;
+  gap: 5px;
 }
 
 .scan-root-name {
@@ -1889,13 +1940,13 @@
 }
 
 .scan-root-label {
-  width: 100%;
+  width: min(320px, 100%);
   min-width: 0;
 }
 
 .scan-root-label::part(root) {
-  height: 28px;
-  padding: 0 9px;
+  height: 26px;
+  padding: 0 6px;
   border-color: transparent;
   border-bottom-color: transparent;
   background: transparent;
@@ -1914,9 +1965,7 @@
 }
 
 .scan-root-path-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
+  display: block;
   min-width: 0;
 }
 
@@ -1928,23 +1977,31 @@
 .scan-root-path::part(root) {
   height: 30px;
   padding: 0 10px;
+  border-color: rgba(255, 255, 255, 0.1);
+  border-bottom-color: rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.1);
 }
 
 .scan-root-path::part(control) {
   font-size: 12px;
 }
 
-.scan-root-browse-button {
-  height: 32px;
-  padding: 0 12px;
+.scan-root-status {
+  padding-left: 10px;
 }
 
-.settings-list-summary-row {
-  justify-self: end;
-  padding: 2px 4px 0;
-  color: var(--settings-text-muted);
-  font-size: 12px;
-  line-height: 1.3;
+.scan-root-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: max-content;
+}
+
+.scan-root-browse-button,
+.scan-root-delete-button {
+  height: 32px;
+  padding: 0 12px;
 }
 
 .app-settings-detail-toolbar {
@@ -2866,7 +2923,16 @@
   .settings-folder-icon-size-control { width: 100%; flex-wrap: wrap; }
   .settings-section-header { align-items: flex-start; flex-direction: column; }
   .settings-inline-actions { justify-content: flex-start; }
-  .scan-root-path-row { grid-template-columns: 1fr; }
+  .scan-root-item {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+  .scan-root-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
   .scan-root-browse-button { justify-self: start; }
   .app-settings-detail-toolbar {
     grid-template-columns: 1fr;

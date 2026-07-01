@@ -20,11 +20,8 @@
           <div v-if="selectedIgnoredAppCount > 0" class="app-manager-selection-bar">
             <span>已选择 {{ selectedIgnoredAppCount }} 个应用</span>
             <span class="app-manager-selection-actions">
-              <SettingsFluentButton appearance="outline" size="small" type="button" @click="restoreSelectedIgnoredApps">
+              <SettingsFluentButton appearance="subtle" size="small" type="button" @click="restoreSelectedIgnoredApps">
                 恢复所选
-              </SettingsFluentButton>
-              <SettingsFluentButton appearance="subtle" size="small" type="button" @click="clearIgnoredAppSelection">
-                清空选择
               </SettingsFluentButton>
             </span>
           </div>
@@ -33,6 +30,7 @@
         <div v-if="filteredIgnoredApps.length" class="settings-list-actions app-manager-list-actions ignored-app-list-actions">
           <span>{{ filteredIgnoredApps.length }} 个结果</span>
           <button class="settings-link-button" type="button" @click="selectAllFilteredIgnoredApps">全选</button>
+          <button class="settings-link-button" type="button" @click="clearIgnoredAppSelection">清空选择</button>
         </div>
 
         <div v-if="filteredIgnoredApps.length" class="app-manager-list ignored-app-list" role="list" aria-label="忽略的应用">
@@ -115,10 +113,10 @@
           <div v-if="state.selectedManagedAppCount.value > 0" class="app-manager-selection-bar">
             <span>已选择 {{ state.selectedManagedAppCount.value }} 个应用</span>
             <span class="app-manager-selection-actions">
-              <SettingsFluentButton appearance="outline" size="small" type="button" @click="state.ignoreSelectedManagedApps">
+              <SettingsFluentButton appearance="subtle" size="small" type="button" @click="state.ignoreSelectedManagedApps">
                 批量忽略
               </SettingsFluentButton>
-              <SettingsFluentButton appearance="subtle" size="small" type="button" @click="state.deleteSelectedManagedApps">
+              <SettingsFluentButton appearance="subtle" tone="danger" size="small" type="button" @click="state.deleteSelectedManagedApps">
                 <DeleteIcon slot="start" class="settings-command-icon" />
                 批量删除
               </SettingsFluentButton>
@@ -173,7 +171,7 @@
                   <fluent-menu-list>
                     <fluent-menu-item @click="state.openEditManagedApp(app)">编辑</fluent-menu-item>
                     <fluent-menu-item @click="state.ignoreManagedApp(app)">忽略</fluent-menu-item>
-                    <fluent-menu-item @click="state.deleteManagedApp(app.id)">删除</fluent-menu-item>
+                    <fluent-menu-item class="settings-menu-item-danger" @click="state.deleteManagedApp(app.id)">删除</fluent-menu-item>
                   </fluent-menu-list>
                 </fluent-menu>
               </span>
@@ -186,8 +184,9 @@
     <template v-else>
       <section class="settings-section settings-section-plain" aria-label="扫描来源">
       <div class="settings-section-header">
-        <div>
+        <div class="settings-section-heading">
           <h3>扫描来源</h3>
+          <span class="settings-section-meta">{{ state.scanRoots.value.length }} 个来源 · {{ enabledScanRootCount }} 个已启用</span>
         </div>
         <div class="settings-inline-actions">
           <SettingsFluentButton appearance="outline" type="button" @click="state.confirmResetScanRoots">还原默认来源</SettingsFluentButton>
@@ -199,23 +198,6 @@
       </div>
 
       <div class="settings-list">
-        <div class="settings-list-row settings-app-row-compact">
-          <span class="settings-list-icon" aria-hidden="true">
-            <FolderProhibitedIcon />
-          </span>
-          <span class="settings-list-copy">
-            <span class="settings-list-title">显示失效路径标记</span>
-            <span class="settings-list-description">在启动目标丢失时提示</span>
-          </span>
-          <span class="settings-list-control">
-            <fluent-switch
-              :checked.prop="state.showMissingLaunchTargetBadge.value"
-              aria-label="显示失效路径标记"
-              @change="state.toggleMissingLaunchTargetBadge($event.target.checked)"
-            />
-          </span>
-        </div>
-
         <div class="scan-root-list">
           <div v-for="root in state.scanRoots.value" :key="root.id" class="scan-root-item">
             <fluent-switch
@@ -243,31 +225,34 @@
                   autocomplete="off"
                   @change="state.changeScanRootPath(root.id, $event.target.value)"
                 />
-                <SettingsFluentButton
-                  class="scan-root-browse-button"
-                  appearance="outline"
-                  size="small"
-                  type="button"
-                  :disabled="!state.canBrowseScanRoots.value || state.isBrowsingScanRoot(root.id)"
-                  @click="state.browseScanRootDirectory(root.id)"
-                >
-                  {{ state.isBrowsingScanRoot(root.id) ? "选择中" : "浏览" }}
-                </SettingsFluentButton>
               </span>
-              <span v-if="root.lastScannedAt" class="settings-field-hint">上次扫描 {{ formatScanTime(root.lastScannedAt) }}</span>
+              <span v-if="root.lastScannedAt" class="settings-field-hint scan-root-status">上次扫描 {{ formatScanTime(root.lastScannedAt) }}</span>
             </span>
-            <SettingsFluentButton
-              appearance="subtle"
-              size="small"
-              type="button"
-              :disabled="!root.removable"
-              @click="state.removeScanRoot(root.id)"
-            >
-              删除
-            </SettingsFluentButton>
+            <span class="scan-root-actions">
+              <SettingsFluentButton
+                class="scan-root-browse-button"
+                appearance="outline"
+                size="small"
+                type="button"
+                :disabled="!state.canBrowseScanRoots.value || state.isBrowsingScanRoot(root.id)"
+                @click="state.browseScanRootDirectory(root.id)"
+              >
+                {{ state.isBrowsingScanRoot(root.id) ? "选择中" : "浏览" }}
+              </SettingsFluentButton>
+              <SettingsFluentButton
+                class="scan-root-delete-button"
+                appearance="outline"
+                tone="danger"
+                size="small"
+                type="button"
+                :disabled="!root.removable"
+                @click="state.removeScanRoot(root.id)"
+              >
+                删除
+              </SettingsFluentButton>
+            </span>
           </div>
           <div v-if="!state.scanRoots.value.length" class="settings-empty-state">没有扫描来源</div>
-          <div class="settings-list-summary-row">{{ enabledScanRootCount }} / {{ state.scanRoots.value.length }} 个来源已启用</div>
         </div>
       </div>
     </section>
@@ -399,6 +384,23 @@
               <SettingsFluentButton appearance="outline" type="button" @click="state.openAddManagedAppPage">
                 新增
               </SettingsFluentButton>
+            </span>
+          </div>
+
+          <div class="settings-list-row">
+            <span class="settings-list-icon" aria-hidden="true">
+              <FolderProhibitedIcon />
+            </span>
+            <span class="settings-list-copy">
+              <span class="settings-list-title">失效启动目标标记</span>
+              <span class="settings-list-description">应用的启动路径或 URL 不可用时显示提示</span>
+            </span>
+            <span class="settings-list-control">
+              <fluent-switch
+                :checked.prop="state.showMissingLaunchTargetBadge.value"
+                aria-label="显示失效启动目标标记"
+                @change="state.toggleMissingLaunchTargetBadge($event.target.checked)"
+              />
             </span>
           </div>
         </div>
