@@ -19,6 +19,12 @@
   --settings-text-primary: rgba(255, 255, 255, 0.92);
   --settings-text-secondary: rgba(255, 255, 255, 0.74);
   --settings-text-muted: rgba(255, 255, 255, 0.56);
+  --settings-route-enter-duration: 160ms;
+  --settings-route-leave-duration: 90ms;
+  --settings-route-switch-duration: 140ms;
+  --settings-route-enter-curve: var(--curveDecelerateMin, cubic-bezier(0.33, 0, 0.1, 1));
+  --settings-route-leave-curve: var(--curveAccelerateMin, cubic-bezier(0.8, 0, 0.78, 1));
+  --settings-route-switch-curve: var(--curveEasyEase, cubic-bezier(0.33, 0, 0.67, 1));
 }
 
 .settings-button {
@@ -385,6 +391,81 @@
   padding: 18px 20px 20px;
   scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
   scrollbar-width: thin;
+}
+
+.settings-content > .settings-tab-panel {
+  width: 100%;
+}
+
+.settings-route-forward-enter-active,
+.settings-route-back-enter-active {
+  transition:
+    opacity var(--settings-route-enter-duration) var(--settings-route-enter-curve),
+    transform var(--settings-route-enter-duration) var(--settings-route-enter-curve);
+  will-change: opacity, transform;
+}
+
+.settings-route-forward-leave-active,
+.settings-route-back-leave-active {
+  transition:
+    opacity var(--settings-route-leave-duration) var(--settings-route-leave-curve),
+    transform var(--settings-route-leave-duration) var(--settings-route-leave-curve);
+  will-change: opacity, transform;
+}
+
+.settings-route-switch-enter-active,
+.settings-route-switch-leave-active {
+  transition:
+    opacity var(--settings-route-switch-duration) var(--settings-route-switch-curve),
+    transform var(--settings-route-switch-duration) var(--settings-route-switch-curve);
+  will-change: opacity, transform;
+}
+
+.settings-route-forward-leave-active,
+.settings-route-back-leave-active,
+.settings-route-switch-leave-active {
+  pointer-events: none;
+}
+
+.settings-route-forward-enter-from {
+  opacity: 0;
+  transform: translateX(14px);
+}
+
+.settings-route-forward-leave-to {
+  opacity: 0;
+  transform: translateX(-8px);
+}
+
+.settings-route-back-enter-from {
+  opacity: 0;
+  transform: translateX(-14px);
+}
+
+.settings-route-back-leave-to {
+  opacity: 0;
+  transform: translateX(8px);
+}
+
+.settings-route-switch-enter-from {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.settings-route-switch-leave-to {
+  opacity: 0;
+  transform: translateY(-3px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-route-forward-enter-active,
+  .settings-route-forward-leave-active,
+  .settings-route-back-enter-active,
+  .settings-route-back-leave-active,
+  .settings-route-switch-enter-active,
+  .settings-route-switch-leave-active {
+    transition-duration: 0.01ms;
+  }
 }
 
 .settings-content::-webkit-scrollbar,

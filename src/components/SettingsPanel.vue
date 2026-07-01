@@ -34,33 +34,33 @@
           <div class="settings-title-block">
             <div class="settings-title-row">
               <SettingsFluentButton
-                v-if="activeSettingsSubPage"
+                v-if="activeSettingsRoute.depth > 0"
                 appearance="subtle"
                 icon-only
                 class="settings-back-button"
                 type="button"
-                :aria-label="`返回${activeSettingsTabLabel}`"
+                :aria-label="`返回${activeSettingsRoute.parentLabel}`"
                 @click="closeSettingsSubPage"
               >
                 <ArrowLeftIcon class="settings-back-icon" />
               </SettingsFluentButton>
               <nav class="settings-breadcrumb" aria-label="设置路径">
                 <button
-                  v-if="activeSettingsSubPage"
+                  v-if="activeSettingsRoute.depth > 0"
                   type="button"
                   class="settings-breadcrumb-item settings-breadcrumb-parent"
-                  :aria-label="`返回${activeSettingsTabLabel}`"
+                  :aria-label="`返回${activeSettingsRoute.parentLabel}`"
                   @click="closeSettingsSubPage"
                 >
-                  {{ activeSettingsTabLabel }}
+                  {{ activeSettingsRoute.parentLabel }}
                 </button>
                 <span v-else class="settings-breadcrumb-item settings-breadcrumb-current">
-                  {{ activeSettingsTabLabel }}
+                  {{ activeSettingsRoute.label }}
                 </span>
-                <template v-if="activeSettingsSubPage">
+                <template v-if="activeSettingsRoute.depth > 0">
                   <ChevronRightIcon class="settings-breadcrumb-separator" />
                   <span class="settings-breadcrumb-item settings-breadcrumb-current">
-                    {{ activeSettingsSubPage.label }}
+                    {{ activeSettingsRoute.label }}
                   </span>
                 </template>
               </nav>
@@ -99,16 +99,19 @@
         </nav>
 
         <div class="settings-main">
-          <div class="settings-content">
-            <component
-              :is="activeSettingsPageComponent"
-              :state="state"
-              :context="settingsPanelContext"
-              :background-layout-context="backgroundLayoutContext"
-            />
+          <div ref="settingsContentRef" class="settings-content">
+            <Transition :name="settingsRouteTransitionName" mode="out-in" @before-enter="resetSettingsContentScroll">
+              <component
+                :is="activeSettingsPageComponent"
+                :key="settingsRouteKey"
+                :state="state"
+                :context="settingsPanelContext"
+                :background-layout-context="backgroundLayoutContext"
+              />
+            </Transition>
           </div>
 
-          <footer v-if="!activeSettingsSubPage && (activeSettingsTab === 'general' || activeSettingsTab === 'interface')" class="settings-actions">
+          <footer v-if="activeSettingsRoute.depth === 0 && (activeSettingsTab === 'general' || activeSettingsTab === 'interface')" class="settings-actions">
             <SettingsFluentButton appearance="outline" type="button" @click="state.closeSettingsPanel">取消</SettingsFluentButton>
             <SettingsFluentButton
               appearance="primary"
@@ -204,12 +207,17 @@ const props = defineProps({
   state: { type: Object, required: true },
 });
 
+const SETTINGS_ROUTE_TRANSITION_FORWARD = "settings-route-forward";
+const SETTINGS_ROUTE_TRANSITION_BACK = "settings-route-back";
+const SETTINGS_ROUTE_TRANSITION_SWITCH = "settings-route-switch";
 const activeSettingsTab = ref("general");
 const activeSettingsSubPage = ref(null);
 const isSettingsNavigationCompact = ref(true);
 const activeAcrylicParamsProfile = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
 const settingsOverlayRef = ref(null);
 const settingsPanelRef = ref(null);
+const settingsContentRef = ref(null);
+const settingsRouteTransitionName = ref(SETTINGS_ROUTE_TRANSITION_SWITCH);
 const settingsOverlayMotion = useGsapDomMotion(settingsOverlayRef, {
   initial: { opacity: 0 },
   motion: resolveSettingsOverlayMotion,
@@ -403,10 +411,36 @@ const settingsTabs = [
   { id: "apps", label: "应用", icon: AppsIcon },
   { id: "about", label: "关于", icon: InfoIcon },
 ];
+const settingsSubPages = Object.freeze({
+  appsIgnoredApps: Object.freeze({
+    id: "apps.ignoredApps",
+    label: "忽略的应用",
+    parentTabId: "apps",
+  }),
+  appsAppManager: Object.freeze({
+    id: "apps.appManager",
+    label: "应用管理",
+    parentTabId: "apps",
+  }),
+});
 const activeSettingsTabItem = computed(() => (
   settingsTabs.find((tab) => tab.id === activeSettingsTab.value) || settingsTabs[0]
 ));
-const activeSettingsTabLabel = computed(() => activeSettingsTabItem.value.label);
+const activeSettingsRoute = computed(() => {
+  const tab = activeSettingsTabItem.value;
+  const subPage = activeSettingsSubPage.value?.parentTabId === tab.id
+    ? activeSettingsSubPage.value
+    : null;
+  return {
+    depth: subPage ? 1 : 0,
+    key: subPage ? `${tab.id}/${subPage.id}` : `${tab.id}/index`,
+    label: subPage?.label || tab.label,
+    parentLabel: tab.label,
+    subPageId: subPage?.id || null,
+    tabId: tab.id,
+  };
+});
+const settingsRouteKey = computed(() => activeSettingsRoute.value.key);
 const settingsPageComponents = {
   general: GeneralSettingsPage,
   interface: InterfaceSettingsPage,
@@ -466,6 +500,7 @@ const settingsPanelContext = {
   activeAcrylicParams,
   activeAcrylicParamsProfile,
   activeAcrylicTintColorHex,
+  activeSettingsRoute,
   activeSettingsTab,
   activeSettingsSubPage,
   backgroundEffectHint,
@@ -501,6 +536,7 @@ const settingsPanelContext = {
   selectSettingsTab,
   setActiveDraftBackgroundAcrylicParam,
   setDraftBackgroundAcrylicAppearance,
+  settingsSubPages,
   startMainWindowShortcutRecording,
   windowEffectPreviewItems,
   windowEffectsSupportHint,
@@ -654,22 +690,53 @@ function clearMainWindowShortcut() {
 }
 
 function selectSettingsTab(tabId) {
-  activeSettingsTab.value = tabId;
-  closeSettingsSubPage();
+  updateSettingsRoute(tabId, null);
 }
 
 function openSettingsSubPage(page) {
-  if (!page?.id || !page?.label || !page?.parentTabId) return;
-  activeSettingsTab.value = page.parentTabId;
-  activeSettingsSubPage.value = {
+  const nextSubPage = normalizeSettingsSubPage(page);
+  if (!nextSubPage) return;
+  updateSettingsRoute(nextSubPage.parentTabId, nextSubPage);
+}
+
+function closeSettingsSubPage() {
+  if (!activeSettingsSubPage.value) return;
+  updateSettingsRoute(activeSettingsTab.value, null);
+}
+
+function resetSettingsContentScroll() {
+  if (settingsContentRef.value) {
+    settingsContentRef.value.scrollTop = 0;
+  }
+}
+
+function updateSettingsRoute(tabId, subPage) {
+  if (!settingsTabs.some((tab) => tab.id === tabId)) return;
+  const nextSubPage = subPage ? normalizeSettingsSubPage(subPage) : null;
+  if (nextSubPage && nextSubPage.parentTabId !== tabId) return;
+  settingsRouteTransitionName.value = resolveSettingsRouteTransition(tabId, nextSubPage);
+  activeSettingsSubPage.value = nextSubPage;
+  activeSettingsTab.value = tabId;
+}
+
+function normalizeSettingsSubPage(page) {
+  if (!page?.id || !page?.label || !page?.parentTabId) return null;
+  if (!settingsTabs.some((tab) => tab.id === page.parentTabId)) return null;
+  return {
     id: page.id,
     label: page.label,
     parentTabId: page.parentTabId,
   };
 }
 
-function closeSettingsSubPage() {
-  activeSettingsSubPage.value = null;
+function resolveSettingsRouteTransition(nextTabId, nextSubPage) {
+  if (nextTabId !== activeSettingsTab.value) return SETTINGS_ROUTE_TRANSITION_SWITCH;
+  const currentDepth = activeSettingsSubPage.value ? 1 : 0;
+  const nextDepth = nextSubPage ? 1 : 0;
+  if (nextDepth > currentDepth) return SETTINGS_ROUTE_TRANSITION_FORWARD;
+  if (nextDepth < currentDepth) return SETTINGS_ROUTE_TRANSITION_BACK;
+  if (nextSubPage?.id !== activeSettingsSubPage.value?.id) return SETTINGS_ROUTE_TRANSITION_SWITCH;
+  return settingsRouteTransitionName.value;
 }
 
 function handleSettingsPanelKeydown(event) {

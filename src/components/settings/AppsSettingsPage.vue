@@ -433,8 +433,10 @@ const props = defineProps({
   state: { type: Object, required: true },
 });
 
-const { activeSettingsSubPage, formatScanTime, openSettingsSubPage } = props.context;
+const { activeSettingsSubPage, formatScanTime, openSettingsSubPage, settingsSubPages } = props.context;
 const { state } = props;
+const ignoredAppsSubPage = settingsSubPages.appsIgnoredApps;
+const appManagerSubPage = settingsSubPages.appsAppManager;
 
 const isKeywordBlacklistExpanded = ref(false);
 const ignoredAppsSearchQuery = ref("");
@@ -447,8 +449,8 @@ const APP_MANAGER_OVERSCAN = 6;
 const appManagerListRef = ref(null);
 
 const enabledScanRootCount = computed(() => state.scanRoots.value.filter((root) => root.enabled).length);
-const isIgnoredAppsPage = computed(() => activeSettingsSubPage.value?.id === "apps.ignoredApps");
-const isAppManagerPage = computed(() => activeSettingsSubPage.value?.id === "apps.appManager");
+const isIgnoredAppsPage = computed(() => activeSettingsSubPage.value?.id === ignoredAppsSubPage.id);
+const isAppManagerPage = computed(() => activeSettingsSubPage.value?.id === appManagerSubPage.id);
 const isAppsDetailPage = computed(() => isIgnoredAppsPage.value || isAppManagerPage.value);
 const ignoredAppsSearchTerm = computed(() => ignoredAppsSearchQuery.value.trim().toLocaleLowerCase());
 const filteredIgnoredApps = computed(() => {
@@ -524,19 +526,11 @@ watch(isAppManagerPage, async (active) => {
 });
 
 function openIgnoredAppsPage() {
-  openSettingsSubPage({
-    id: "apps.ignoredApps",
-    label: "忽略的应用",
-    parentTabId: "apps",
-  });
+  openSettingsSubPage(ignoredAppsSubPage);
 }
 
 function openAppManagerPage() {
-  openSettingsSubPage({
-    id: "apps.appManager",
-    label: "应用管理",
-    parentTabId: "apps",
-  });
+  openSettingsSubPage(appManagerSubPage);
 }
 
 function getIgnoredAppKey(app, index) {
