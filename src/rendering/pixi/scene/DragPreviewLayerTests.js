@@ -199,6 +199,59 @@ export async function runDragPreviewLayerTests() {
 
   {
     motionRuntime.reset();
+    const layer = new DragPreviewLayer();
+    const pendingReleaseState = {
+      cellSize: { height: 80, width: 80 },
+      item: { id: "app-retarget", name: "App Retarget", type: "app" },
+      key: "release-retarget",
+      offset: { x: 32, y: 32 },
+      pointer: { x: 180, y: 220 },
+      size: { height: 64, width: 64 },
+      source: { index: 0, pageIndex: 0, type: "page" },
+      targetRect: null,
+      targetVersion: 0,
+      velocity: { x: 0, y: 0 },
+    };
+    const baseState = {
+      folderPageSize: 9,
+      height: 600,
+      iconSize: 64,
+      isTextlessMode: false,
+      launchTargetStatusById: {},
+      showMissingLaunchTargetBadge: true,
+      stageRect: { height: 600, left: 0, top: 0, width: 800 },
+      width: 800,
+    };
+    try {
+      layer.update({ ...baseState, releaseState: pendingReleaseState });
+      layer.previewNode.position.set(210, 230);
+      layer.update({
+        ...baseState,
+        releaseState: {
+          ...pendingReleaseState,
+          targetRect: { height: 56, left: 300, top: 320, width: 56 },
+          targetVersion: 1,
+          targetVisualSpec: {
+            cellHeight: 90,
+            cellWidth: 76,
+            compact: false,
+            iconSize: 56,
+            singleLineLabel: false,
+            textless: false,
+          },
+        },
+      });
+
+      assert(Math.abs(layer.previewNode.x - 210) < 0.0001 && Math.abs(layer.previewNode.y - 230) < 0.0001, "release retarget should continue from the current ghost position");
+      assert(Math.abs(layer.previewNode.scale.x - 64 / 56) < 0.0001, "release retarget should preserve visual size when target icon metrics arrive");
+    } finally {
+      layer.destroy({ children: true });
+      motionRuntime.reset();
+    }
+  }
+
+  {
+    motionRuntime.reset();
     const calls = [];
     const layer = new DragPreviewLayer({
       onReleaseComplete: (release) => calls.push(release.key),

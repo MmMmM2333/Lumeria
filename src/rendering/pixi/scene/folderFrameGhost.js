@@ -165,6 +165,7 @@ function startFrameGeometryMotion(layer, frame, toRect, options = {}, fadeContro
 
 export function clearFrameGhost(layer, options = {}) {
   cancelFrameGhostMotion(layer);
+  const wasOpeningFrame = layer.frameGhostPhase === "opening";
   layer.frameGhostState = null;
   layer.frameGhostPhase = null;
   layer.frameGhostFolderId = null;
@@ -176,6 +177,7 @@ export function clearFrameGhost(layer, options = {}) {
   clearClosingFrameMask(layer);
   layer.panelMaterial.visible = true;
   layer.panelMaterial.alpha = options.panelMaterialAlpha ?? 1;
+  if (wasOpeningFrame) layer.openingGhosts?.clearFrameTarget?.();
 }
 
 export function startFrameGhost(layer, fromRect, toRect, options = {}) {
@@ -204,18 +206,22 @@ export function startFrameGhost(layer, fromRect, toRect, options = {}) {
   const nextProgress = canReuseFrameState && options.preserveProgressOnReuse
     ? clamp01(layer.frameGhostState?.progress)
     : 0;
-  const frame = canReuseFrameState ? layer.frameGhostState : {
-    fillAlpha: options.fromFillAlpha ?? 0.22,
-    fillColor: fromFillColor,
-    height: fromRect.height,
-    left: fromRect.left,
-    radius: options.fromRadius ?? getFrameRadius(fromRect),
-    strokeAlpha: options.fromStrokeAlpha ?? 0.26,
-    strokeColor: fromStrokeColor,
-    strokeWidth: options.fromStrokeWidth ?? 1,
-    top: fromRect.top,
-    width: fromRect.width,
-  };
+  const frame = canReuseFrameState ? layer.frameGhostState : {};
+  if (!canReuseFrameState || options.preserveProgressOnReuse !== true) {
+    // Reusing the object is fine, but a fresh handoff must draw its first
+    // frame from the source rect. Otherwise an opening retarget can flash the
+    // stale full-size panel before the new morph starts.
+    frame.fillAlpha = options.fromFillAlpha ?? 0.22;
+    frame.fillColor = fromFillColor;
+    frame.height = fromRect.height;
+    frame.left = fromRect.left;
+    frame.radius = options.fromRadius ?? getFrameRadius(fromRect);
+    frame.strokeAlpha = options.fromStrokeAlpha ?? 0.26;
+    frame.strokeColor = fromStrokeColor;
+    frame.strokeWidth = options.fromStrokeWidth ?? 1;
+    frame.top = fromRect.top;
+    frame.width = fromRect.width;
+  }
   layer.frameGhostPhase = phase;
   layer.frameGhostFolderId = folderId;
   const currentFillColor = frame.fillColor ?? fromFillColor;

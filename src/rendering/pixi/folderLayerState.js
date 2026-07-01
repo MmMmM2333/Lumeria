@@ -19,6 +19,7 @@ export function createFolderLayerState(groups, overrides = {}) {
     completeFolderOpenFrameGhost: callbacks.completeFolderOpenFrameGhost,
     completeFolderOpenIconGhost: callbacks.completeFolderOpenIconGhost,
     dragMeta: drag.meta,
+    dragReleaseState: drag.releaseState || null,
     dragReleaseGhostId: drag.releaseState?.item?.id || null,
     folderCloseIconGhosts,
     desktopPageTrackOffset: folder.desktopPageTrackOffset || null,

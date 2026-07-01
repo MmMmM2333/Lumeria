@@ -117,6 +117,22 @@ function makeOpeningGhostTargetKey(target = {}) {
   ].join(":");
 }
 
+function roundFrameValue(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "";
+  return Math.round(number * 100) / 100;
+}
+
+function makeOpeningFrameTargetKey(rect = null) {
+  if (!rect) return "";
+  return [
+    roundFrameValue(rect.left),
+    roundFrameValue(rect.top),
+    roundFrameValue(rect.width),
+    roundFrameValue(rect.height),
+  ].join(":");
+}
+
 function startOpeningFrameGhost(transitionPort, state, options = {}) {
   const sourceRect = clientRectToStageVisualRect(options.frameSourceRect, state.stageRect);
   const targetRect = options.frameTargetRect;
@@ -155,10 +171,15 @@ export class FolderOpeningGhostController {
     this.transitionPort = options.transitionPort || ensureLayerTransitionPort(layer);
     this.scheduler = options.scheduler || globalThis;
     this.openingTargetKeysByItemId = new Map();
+    this.openingFrameTargetKey = null;
   }
 
   clearRevealTimer() {
     this.handoffCoordinator.clearOpeningRevealTimer(this.scheduler.clearTimeout?.bind(this.scheduler));
+  }
+
+  clearFrameTarget() {
+    this.openingFrameTargetKey = null;
   }
 
   scheduleRevealFallback(targets) {
@@ -227,6 +248,7 @@ export class FolderOpeningGhostController {
     this.transitionPort.clearOpeningGhostBounds();
     this.transitionPort.clearFrameGhost();
     this.openingTargetKeysByItemId.clear();
+    this.openingFrameTargetKey = null;
     const ghosts = this.transitionPort.removeOpeningGhosts();
     for (const ghost of ghosts) {
       killAllMotion(ghost);
@@ -296,6 +318,9 @@ export class FolderOpeningGhostController {
     };
     this.transitionPort.acquireDesktopSourceOwnership(owner);
     const startedFrameGhost = startOpeningFrameGhost(this.transitionPort, state, options);
+    this.openingFrameTargetKey = startedFrameGhost
+      ? makeOpeningFrameTargetKey(options.frameTargetRect)
+      : null;
     if (!startedFrameGhost) {
       this.transitionPort.setPanelMaterialVisible(true, 1);
       this.transitionPort.setFrameGhostVisible(false, 0);
@@ -367,16 +392,41 @@ export class FolderOpeningGhostController {
     }
   }
 
-  retarget(state, targets) {
-    if (!this.handoffCoordinator.hasActiveOpeningVisuals()) return 0;
+  retargetFrame(state, options = {}) {
+    const targetRect = options.frameTargetRect;
+    const targetKey = makeOpeningFrameTargetKey(targetRect);
+    if (!targetKey || !this.openingFrameTargetKey || this.openingFrameTargetKey === targetKey) return false;
+    const folderId = state.renderedFolder?.id || this.transitionPort.getCurrentFolderId() || null;
+    const requestId = getOpeningFrameGhostRequestId(state);
+    const retargeted = this.transitionPort.retargetFrameGhost(targetRect, {
+      duration: motionPresets.folderOpenGhost.duration,
+      ease: motionPresets.folderOpenGhost.ease,
+      folderId,
+      frameGhostPhase: "opening",
+      notifyTitleFrame: false,
+      preserveOnComplete: false,
+      toFillAlpha: 0.26,
+      toFillColor: 0xf7f8ff,
+      toRadius: 48,
+      toStrokeAlpha: 0.24,
+      toStrokeColor: 0xffffff,
+      toStrokeWidth: 1,
+      onArrive: () => state.completeFolderOpenFrameGhost?.(folderId, requestId),
+    });
+    if (retargeted) this.openingFrameTargetKey = targetKey;
+    return retargeted;
+  }
+
+  retarget(state, targets, options = {}) {
+    let retargeted = this.retargetFrame(state, options) ? 1 : 0;
+    if (!this.handoffCoordinator.hasActiveOpeningVisuals()) return retargeted;
     const usableTargets = (targets || []).filter((target) =>
       target?.item?.id &&
       hasUsableFolderGhostTarget(target) &&
       this.handoffCoordinator.hasOpeningGhost(target.item?.id)
     );
-    if (!usableTargets.length) return 0;
+    if (!usableTargets.length) return retargeted;
 
-    let retargeted = 0;
     const ghosts = this.transitionPort.getOpeningGhostChildren();
     for (const target of usableTargets) {
       const itemId = target.item?.id;

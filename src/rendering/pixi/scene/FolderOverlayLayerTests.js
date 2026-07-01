@@ -411,6 +411,101 @@ export async function runFolderOverlayLayerTests() {
       ...overrides,
     };
   };
+  const settleResizeUpdate = (layer, state, steps = 80) => {
+    for (let index = 0; index < steps; index += 1) {
+      motionRuntime.step(0.05);
+      layer.update(state);
+    }
+  };
+  const getPanelCenter = (folderGeometry) => ({
+    x: folderGeometry.panel.left + folderGeometry.panel.width / 2,
+    y: folderGeometry.panel.top + folderGeometry.panel.height / 2,
+  });
+  const getPageMaskHeight = (folderGeometry) => {
+    const localGridTop = folderGeometry.grid.top - folderGeometry.panel.top;
+    return Math.max(folderGeometry.grid.height, folderGeometry.panel.height - localGridTop - 20);
+  };
+
+  {
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    layer.pageTrackMotion = null;
+    layer.pageTrack = null;
+    const mode = layer.getResizeLayoutMode({
+      dragReleaseGhostId: "page-b-1",
+      dragReleaseState: {
+        source: { folderId: "folder-resize", pageIndex: 1, type: "folder" },
+      },
+      folderPageIndex: 0,
+      renderedFolder: { id: "folder-resize" },
+      visualFolderPageIndex: 0,
+    });
+    assert(mode === "page-turn", "cross-page folder releases should preserve page-turn resize mode after dragMeta clears");
+  }
+
+  {
+    const calls = [];
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    layer.bindFakeRefs({
+      folderPageIndex: 1,
+      height: 600,
+      renderedFolder: { id: "folder-resize" },
+      setFolderPageRef: (_element, pageIndex) => calls.push(pageIndex),
+      stageRect: { height: 600, left: 0, top: 0, width: 800 },
+      visualFolderPageIndex: 0,
+      width: 800,
+    }, {
+      grid: { height: 240, left: 120, top: 140, width: 560 },
+      panel: { height: 360, left: 80, top: 100, width: 640 },
+    });
+    assert(calls.join(",") === "0,1", "folder page refs should bind the visual page first during drag page turns");
+  }
+
+  {
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    const frame = {
+      fillAlpha: 0.22,
+      fillColor: 0xf7f8ff,
+      height: 64,
+      left: 240,
+      progress: 0.18,
+      radius: 14,
+      strokeAlpha: 0.26,
+      strokeColor: 0xffffff,
+      strokeWidth: 1,
+      top: 180,
+      width: 64,
+    };
+    layer.frameGhostState = frame;
+    layer.frameGhostPhase = "opening";
+    layer.frameGhost = {
+      clear() {
+        this.drawn = null;
+        return this;
+      },
+      fill() {
+        return this;
+      },
+      roundRect(left, top, width, height, radius) {
+        this.drawn = { height, left, radius, top, width };
+        return this;
+      },
+      stroke() {
+        return this;
+      },
+    };
+    layer.notifyTitleFrame = () => {};
+
+    layer.syncResizeFrameGhostShell({
+      panel: { height: 520, left: 100, top: 80, width: 900 },
+    }, {
+      resizeGeometryMode: "opening",
+      resizeLayoutSyncActive: true,
+    });
+
+    assert(frame.left === 240 && frame.top === 180, "opening resize sync should not snap the frame ghost to the full panel position");
+    assert(frame.width === 64 && frame.height === 64, "opening resize sync should not flash a full-size frame ghost shell");
+    assert(layer.frameGhost.drawn == null, "opening resize sync should leave the current frame ghost drawing to the active morph");
+  }
 
   {
     motionRuntime.reset();
@@ -435,10 +530,30 @@ export async function runFolderOverlayLayerTests() {
       onRenderRequest: (reason) => renderRequests.push(reason),
     });
 
-    layer.update(makeFolderResizeState({ folderPageIndex: 1, height: 746, visualFolderPageIndex: 1, width: 824 }));
+    const smallState = makeFolderResizeState({ folderPageIndex: 1, height: 746, visualFolderPageIndex: 1, width: 824 });
+    const smallGeometry = layer.update(smallState);
+    settleResizeUpdate(layer, smallState);
+    renderRequests.length = 0;
     const smallPageMask = layer.pageMask;
     const smallPanelClipMask = layer.panelClipMask;
-    const largeGeometry = layer.update(makeFolderResizeState({ folderPageIndex: 1, height: 912, visualFolderPageIndex: 1, width: 1707 }));
+    layer.frameGhostState = {
+      fillAlpha: 0.26,
+      fillColor: 0xf7f8ff,
+      height: smallGeometry.panel.height,
+      left: smallGeometry.panel.left,
+      progress: 1,
+      radius: 48,
+      strokeAlpha: 0.24,
+      strokeColor: 0xffffff,
+      strokeWidth: 1,
+      top: smallGeometry.panel.top,
+      width: smallGeometry.panel.width,
+    };
+    layer.frameGhostPhase = "opening";
+    layer.frameGhost.visible = true;
+    const largeState = makeFolderResizeState({ folderPageIndex: 1, height: 912, visualFolderPageIndex: 1, width: 1707 });
+    const largeGeometry = layer.update(largeState);
+    const largeCenter = getPanelCenter(largeGeometry);
 
     assert(layer.resizeLayoutSync?.remainingRenders === 1, "window resize should keep resize layout sync active for one follow-up render");
     assert(renderRequests.length === 1, "window resize should request the follow-up render needed to settle Pixi mask/layout state");
@@ -447,25 +562,36 @@ export async function runFolderOverlayLayerTests() {
     assert(smallPanelClipMask.destroyed === true, "resize should destroy the stale panel clip mask after replacement");
     assert(layer.panelContentLayer.mask === layer.panelClipMask, "resize should bind panel content to the rebuilt panel clip mask");
     assert(layer.openingGhostLayer.mask === layer.panelClipMask, "resize should bind opening ghosts to the rebuilt panel clip mask");
-    assert(nearlyEqual(layer.pageMaskRect.width, largeGeometry.panel.width), "resize should redraw the folder page mask to the new panel width");
+    assert(nearlyEqual(layer.pageMaskRect.width, smallGeometry.panel.width), "resize should begin from the previous visual panel width");
     assert(layer.pageMask !== smallPageMask, "resize should replace the page mask instance so Pixi does not keep a stale clip");
     assert(smallPageMask.destroyed === true, "resize should destroy the stale page mask after replacement");
     assert(layer.pageTrack.mask === layer.pageMask, "resize should bind pageTrack to the rebuilt page mask");
-    assert(nearlyEqual(layer.pageTrack.x, -largeGeometry.panel.width), "settled second-page resize should snap pageTrack to the new page span");
-    assert(nearlyEqual(layer.panel.x, largeGeometry.panel.left + largeGeometry.panel.width / 2), "resize should snap the panel x to the new geometry target");
-    assert(nearlyEqual(layer.panel.y, largeGeometry.panel.top + largeGeometry.panel.height / 2), "resize should snap the panel y to the new geometry target");
+    assert(!nearlyEqual(layer.pageTrack.x, -largeGeometry.panel.width), "resize should not snap pageTrack to the new page span immediately");
+    assert(!nearlyEqual(layer.panel.x, largeCenter.x), "resize should not snap the panel x to the new geometry target immediately");
+    assert(!nearlyEqual(layer.panel.y, largeCenter.y), "resize should not snap the panel y to the new geometry target immediately");
+    assert(nearlyEqual(layer.frameGhostState.height, smallGeometry.panel.height), "opening frame shell should begin resize from the previous visual panel height");
+    layer.update(largeState);
+    assert(layer.resizeLayoutSync === null, "resize layout sync should end after the follow-up render consumes the stable layout");
+    assert(layer.resizeVisualGeometryState !== null, "resize visual geometry should keep animating after the mask/layout sync settles");
+    const renderRequestCountBeforeSettle = renderRequests.length;
+    settleResizeUpdate(layer, largeState);
+    assert(layer.resizeVisualGeometryState === null, "resize visual geometry should clear after reaching the new geometry");
+    assert(renderRequests.length > renderRequestCountBeforeSettle, "resize visual geometry animation should request frames while settling");
+    assert(nearlyEqual(layer.pageMaskRect.width, largeGeometry.panel.width), "settled resize should redraw the folder page mask to the new panel width");
+    assert(nearlyEqual(layer.pageTrack.x, -largeGeometry.panel.width), "settled second-page resize should align pageTrack to the new page span");
+    assert(nearlyEqual(layer.panel.x, largeCenter.x), "settled resize should align the panel x to the new geometry target");
+    assert(nearlyEqual(layer.panel.y, largeCenter.y), "settled resize should align the panel y to the new geometry target");
+    assert(nearlyEqual(layer.frameGhostState.height, largeGeometry.panel.height), "opening frame shell should settle to the new visual panel height");
     for (const [key, target] of layer.folderIconLayoutTargets) {
       const node = layer.iconNodes.get(key);
       assert(node, `resize test setup should keep icon node ${key}`);
-      assert(nearlyEqual(node.x, target.x), `resize should snap ${key} icon x to the render plan target`);
-      assert(nearlyEqual(node.y, target.y), `resize should snap ${key} icon y to the render plan target`);
+      assert(nearlyEqual(node.x, target.x), `settled resize should align ${key} icon x to the render plan target`);
+      assert(nearlyEqual(node.y, target.y), `settled resize should align ${key} icon y to the render plan target`);
     }
 
-    layer.update(makeFolderResizeState({ folderPageIndex: 1, height: 912, visualFolderPageIndex: 1, width: 1707 }));
-    assert(layer.resizeLayoutSync === null, "resize layout sync should end after the follow-up render consumes the stable layout");
-    assert(renderRequests.length === 2, "settled resize follow-up should request one final stable render after resize sync clears");
-    layer.update(makeFolderResizeState({ folderPageIndex: 1, height: 912, visualFolderPageIndex: 1, width: 1707 }));
-    assert(renderRequests.length === 2, "final stable resize render should not request another frame");
+    const settledRenderRequestCount = renderRequests.length;
+    layer.update(largeState);
+    assert(renderRequests.length === settledRenderRequestCount, "final stable resize render should not request another frame");
 
     const firstIconNode = layer.iconNodes.values().next().value;
     firstIconNode.position.set(firstIconNode.x + 80, firstIconNode.y + 40);
@@ -484,7 +610,7 @@ export async function runFolderOverlayLayerTests() {
       width: 1707,
     }));
     assert(layer.resizeLayoutSync?.remainingRenders === 1, "late folder viewport style changes should restart resize layout sync");
-    assert(renderRequests.length === 3, "late folder viewport style changes should request another resize follow-up render");
+    assert(renderRequests.length > settledRenderRequestCount, "late folder viewport style changes should request another resize follow-up render");
     assert(layer.panelClipMask !== beforeLateStylePanelClipMask, "late folder viewport style changes should rebuild the panel clip mask instance");
     assert(layer.pageMask !== beforeLateStyleMask, "late folder viewport style changes should rebuild the page mask instance");
     assert(nearlyEqual(layer.pageTrack.x, -lateStyleGeometry.panel.width), "late folder viewport style changes should resnap pageTrack");
@@ -516,8 +642,84 @@ export async function runFolderOverlayLayerTests() {
     }));
 
     assert(layer.resizeLayoutSync?.mode === "page-turn", "resize during an active page turn should preserve page-turn mode");
+    assert(layer.resizeVisualGeometryState === null, "non-drag page-turn resizes should not start a visual geometry animation");
     assert(nearlyEqual(layer.pageTrack.x, livePageTrackX), "resize during an active page turn should not snap pageTrack to the destination page");
     assert(nearlyEqual(layer.pageTrackMotion.targetX, -resizedGeometry.panel.width), "page-turn resize should retarget motion to the new page span");
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const compactState = makeFolderResizeState({
+      folderGridStyle: {
+        gridTemplateRows: "repeat(2, var(--folder-icon-cell-height))",
+      },
+      folderPageIndex: 0,
+      folderPanelStyle: {
+        "--folder-shell-min-height": "410px",
+      },
+      height: 760,
+      visualFolderPageIndex: 0,
+      width: 1000,
+    });
+    const compactGeometry = layer.update(compactState);
+    settleResizeUpdate(layer, compactState);
+    const livePageTrackX = layer.pageTrack.x;
+    const stableIconKey = "folder-resize:0:page-a-2";
+    const stableIconNode = layer.iconNodes.get(stableIconKey);
+    const stableIconInitialTarget = layer.folderIconLayoutTargets.get(stableIconKey);
+    assert(stableIconNode && stableIconInitialTarget, "drag-driven page-turn resize test should start with a stable icon node");
+    const expandedPageTurnState = makeFolderResizeState({
+      dragMeta: {
+        item: { id: "page-a-1", name: "Page A 1", type: "app" },
+        source: { area: "folder", folderId: "folder-resize", pageIndex: 0 },
+      },
+      folderGridStyle: {
+        gridTemplateRows: "repeat(3, var(--folder-icon-cell-height))",
+      },
+      folderPageIndex: 0,
+      folderPageTurnToken: "drag-turn-1",
+      folderPanelStyle: {
+        "--folder-shell-min-height": "520px",
+      },
+      height: 760,
+      visualFolderPageIndex: 1,
+      width: 1000,
+    });
+    const expandedGeometry = layer.update(expandedPageTurnState);
+    const stableIconResizeTarget = layer.folderIconLayoutTargets.get(stableIconKey);
+    const stableIconBoundsKey = { area: "folder", folderId: "folder-resize", id: "page-a-2", pageIndex: 0 };
+    const liveIconTargetRecord = iconBoundsRegistry.getRecord(K.LAUNCH, V.LIVE_TARGET, stableIconBoundsKey);
+    const stableIconTargetRecord = iconBoundsRegistry.getRecord(K.LAUNCH, V.STABLE_STAGE_LAYOUT, stableIconBoundsKey);
+
+    assert(layer.resizeLayoutSync?.mode === "page-turn", "drag-driven page-turn resize should preserve page-turn mode");
+    assert(layer.resizeVisualGeometryState !== null, "drag-driven page-turn resize should start a visual geometry animation");
+    assert(layer.resizeVisualGeometryMode === "page-turn", "drag-driven page-turn resize should remember the page-turn geometry mode");
+    assert(nearlyEqual(layer.resizeVisualGeometryState.panelHeight, compactGeometry.panel.height), "drag-driven page-turn resize should begin from the previous panel height");
+    assert(nearlyEqual(layer.pageMaskRect.height, getPageMaskHeight(compactGeometry)), "drag-driven page-turn resize should keep the previous visual mask height initially");
+    assert(nearlyEqual(layer.pageTrack.x, livePageTrackX), "drag-driven page-turn resize should not snap the page track while the sync frame is active");
+    assert(liveIconTargetRecord && stableIconTargetRecord, "drag-driven page-turn resize should register both live and stable icon targets");
+    assert(!nearlyEqual(liveIconTargetRecord.top, stableIconTargetRecord.top), "stable icon targets should use final geometry instead of the resize animation frame");
+    assert(
+      !nearlyEqual(stableIconInitialTarget.x, stableIconResizeTarget.x) ||
+        !nearlyEqual(stableIconInitialTarget.y, stableIconResizeTarget.y),
+      "drag-driven page-turn resize setup should move stable icon targets"
+    );
+    assert(!nearlyEqual(stableIconNode.y, stableIconResizeTarget.y), "drag-driven page-turn resize should keep icon layout spring animation instead of snapping");
+
+    layer.update(expandedPageTurnState);
+    assert(layer.resizeLayoutSync === null, "drag-driven page-turn resize sync should settle after the follow-up render");
+    assert(layer.resizeVisualGeometryState !== null, "drag-driven page-turn resize should keep animating after layout sync clears");
+    assert(nearlyEqual(layer.pageTrack.x, livePageTrackX), "drag-driven page-turn resize should not snap the page track after layout sync clears");
+    settleResizeUpdate(layer, expandedPageTurnState);
+    assert(layer.resizeVisualGeometryState === null, "drag-driven page-turn resize should clear after reaching the new geometry");
+    assert(nearlyEqual(layer.pageMaskRect.height, getPageMaskHeight(expandedGeometry)), "drag-driven page-turn resize should settle the visual mask to the expanded target");
+    assert(nearlyEqual(layer.pageTrackMotion.targetX, -expandedGeometry.panel.width), "drag-driven page-turn resize should retarget page track motion to the visual page span");
 
     layer.destroy({ children: true });
     iconBoundsRegistry.clearBounds();
@@ -1761,6 +1963,54 @@ export async function runFolderOverlayLayerTests() {
     assert(layer.folderHandoff.isRevealPending(), "opening reveal should still be pending during active opening visuals");
     assert(retargets === 1, "active opening visuals should still retarget during folder overlay updates");
     assert(layer.pageTrack.visible === true, "opening reveal and opening ghosts should no longer hide the page track");
+  }
+
+  {
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    layer.folderHandoff = new FolderHandoffCoordinator(layer);
+    let retargetOptions = null;
+    layer.openingGhosts = {
+      retarget(_state, _targets, options) {
+        retargetOptions = options;
+      },
+      start() {
+        throw new Error("active opening frame should retarget instead of restarting");
+      },
+    };
+    layer.closingGhosts = {
+      clear() {},
+      start() {},
+    };
+    layer.iconNodes = new Map();
+    layer.pageTrack = { visible: false };
+    layer.frameGhostState = { height: 120, left: 10, top: 20, width: 220 };
+    layer.frameGhostPhase = "opening";
+    layer.notifyPanelTitleFrame = () => {};
+    layer.notifyTitleFrame = () => {};
+    layer.refreshRegisteredIconBounds = () => {};
+    layer.clearClosingFolderId = () => {};
+
+    const panel = { height: 480, left: 80, top: 90, width: 860 };
+    layer.startFolderOverlayTransitions({
+      closeIconRect: null,
+      closeThumbRect: null,
+      closingGhostTargets: [],
+      closingPreviewSwapTargets: [],
+      folderClientRect: null,
+      folderId: "folder-a",
+      folderThumbClientRect: null,
+      geometry: { panel },
+      isClosing: false,
+      isNewFolder: false,
+      openingGhostTargets: [],
+      seen: new Set(),
+      state: {
+        folderOpenIconGhosts: [],
+        isFolderClosing: false,
+      },
+    });
+
+    assert(retargetOptions?.frameTargetRect === panel, "active opening frame shell should receive the latest panel geometry even after icon ghosts finish");
   }
 
   {

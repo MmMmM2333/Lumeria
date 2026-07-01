@@ -23,6 +23,35 @@ function getInitialFolderViewportHeight(shellMinHeight) {
   return Math.max(FOLDER_VIEWPORT_MIN_HEIGHT, shellHeight - FOLDER_SHELL_VERTICAL_PADDING);
 }
 
+export function getFolderLayoutMetricsForRows(options = {}) {
+  const rowCount = Math.max(1, Number(options.rowCount) || 1);
+  const baseFolderIconSize = Math.max(1, Number(options.baseFolderIconSize) || 64);
+  const idealIconCellHeight = baseFolderIconSize + 56;
+  const idealSafeArea = FOLDER_GRID_SAFE_AREA;
+  const folderGridHeight = rowCount * idealIconCellHeight
+    + Math.max(0, rowCount - 1) * FOLDER_ROW_GAP
+    + idealSafeArea;
+  const folderShellMinHeight = folderGridHeight + 120;
+  const initialViewportHeight = getInitialFolderViewportHeight(folderShellMinHeight);
+  const availableHeight = Math.max(1, Number(options.folderViewportHeight) || initialViewportHeight || folderGridHeight);
+  const coarseScale = clamp(availableHeight / Math.max(1, folderGridHeight), 0, 1);
+  const rowGap = roundPx(clamp(FOLDER_ROW_GAP * coarseScale, FOLDER_MIN_ROW_GAP, FOLDER_ROW_GAP));
+  const safeArea = roundPx(idealSafeArea * coarseScale);
+  const gapTotal = Math.max(0, rowCount - 1) * rowGap;
+  const rowHeight = Math.max(0, (availableHeight - gapTotal - safeArea) / rowCount);
+  const minIconScale = Math.min(1, FOLDER_MIN_EFFECTIVE_ICON_SIZE / Math.max(1, baseFolderIconSize));
+  const contentScale = clamp(rowHeight / Math.max(1, idealIconCellHeight), minIconScale, 1);
+
+  return {
+    effectiveIconSize: roundPx(baseFolderIconSize * contentScale),
+    folderGridHeight,
+    folderShellMinHeight,
+    iconCellHeight: roundPx(idealIconCellHeight * contentScale),
+    rowGap,
+    safeArea,
+  };
+}
+
 export function useFolderLayoutStyles(options) {
   const visibleFolderRowCount = computed(() => {
     const columnCount = Math.max(1, options.folderCols.value);
@@ -39,40 +68,17 @@ export function useFolderLayoutStyles(options) {
       : options.iconSize.value
   );
 
-  const folderGridHeight = computed(() => {
-    const iconCellHeight = effectiveFolderIconSize.value + 56;
-    const gridSafeArea = FOLDER_GRID_SAFE_AREA;
-    return visibleFolderRowCount.value * iconCellHeight
-      + Math.max(0, visibleFolderRowCount.value - 1) * FOLDER_ROW_GAP
-      + gridSafeArea;
-  });
+  const folderLayoutMetrics = computed(() => getFolderLayoutMetricsForRows({
+    baseFolderIconSize: effectiveFolderIconSize.value,
+    folderViewportHeight: options.folderViewportHeight.value,
+    rowCount: visibleFolderRowCount.value,
+  }));
 
-  const folderShellMinHeight = computed(() => folderGridHeight.value + 120);
+  const folderGridHeight = computed(() => folderLayoutMetrics.value.folderGridHeight);
 
-  const folderCompressionMetrics = computed(() => {
-    const rowCount = Math.max(1, visibleFolderRowCount.value);
-    const baseFolderIconSize = effectiveFolderIconSize.value;
-    const idealIconCellHeight = baseFolderIconSize + 56;
-    const idealSafeArea = FOLDER_GRID_SAFE_AREA;
-    const idealHeight = Math.max(1, folderGridHeight.value);
-    const initialViewportHeight = getInitialFolderViewportHeight(folderShellMinHeight.value);
-    const availableHeight = Math.max(1, options.folderViewportHeight.value || initialViewportHeight || idealHeight);
-    const coarseScale = clamp(availableHeight / idealHeight, 0, 1);
-    const rowGap = roundPx(clamp(FOLDER_ROW_GAP * coarseScale, FOLDER_MIN_ROW_GAP, FOLDER_ROW_GAP));
-    const safeArea = roundPx(idealSafeArea * coarseScale);
-    const gapTotal = Math.max(0, rowCount - 1) * rowGap;
-    const rowHeight = Math.max(0, (availableHeight - gapTotal - safeArea) / rowCount);
-    const minIconScale = Math.min(1, FOLDER_MIN_EFFECTIVE_ICON_SIZE / Math.max(1, baseFolderIconSize));
-    const contentScale = clamp(rowHeight / Math.max(1, idealIconCellHeight), minIconScale, 1);
-    const iconCellHeight = roundPx(idealIconCellHeight * contentScale);
-    const effectiveIconSize = roundPx(baseFolderIconSize * contentScale);
+  const folderShellMinHeight = computed(() => folderLayoutMetrics.value.folderShellMinHeight);
 
-    return {
-      effectiveIconSize,
-      iconCellHeight,
-      rowGap,
-    };
-  });
+  const folderCompressionMetrics = computed(() => folderLayoutMetrics.value);
 
   const folderPanelStyle = computed(() => ({
     "--folder-shell-min-height": `${folderShellMinHeight.value}px`,

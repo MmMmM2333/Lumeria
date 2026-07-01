@@ -4,7 +4,7 @@ import { killAllMotion } from "../animation/motionCleanup.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { motionPresets, motionSprings } from "../animation/motionPresets.js";
 import { killMotionOf, motion } from "../animation/motionTween.js";
-import { getFolderGridMetrics, getFolderPanelGeometry, parseRepeatCount, readPx } from "../geometry/gridGeometry.js";
+import { getFolderGridMetrics, getFolderPanelGeometry, makeRect, parseRepeatCount, readPx } from "../geometry/gridGeometry.js";
 import {
   clearFrameGhost as clearFrameGhostState,
   drawClosingFrameMask as drawClosingFrameMaskState,
@@ -68,6 +68,7 @@ import { getCachedIconTexture } from "../assets/iconTextureCache.js";
 import {
   cancelPageTrackMotion,
   createPageTrackMotionState,
+  isPageTrackMotionActive,
   updatePageTrackMotion,
 } from "./pageTrackMotion.js";
 import { isLayoutTargetChanged } from "./desktopRenderPlan.js";
@@ -238,6 +239,7 @@ function registerFolderIconNodeBounds(options) {
     item,
     node,
     pageIndex,
+    stableTargetCenter,
     stageHeight,
     stageRect,
     stageWidth,
@@ -247,6 +249,7 @@ function registerFolderIconNodeBounds(options) {
   if (!isInteractivePage || isPrewarm) return iconBounds;
   const visualSpec = makeIconVisualSpecFromNodeState(node.state);
   const meta = { area: "folder", folderId, id: item.id, index, item, pageIndex, visualSpec };
+  const stableCenter = stableTargetCenter || targetCenter;
   iconBoundsRegistry.registerBounds(
     BOUNDS_KIND.LAUNCH,
     BOUNDS_VARIANT.RENDERED,
@@ -265,7 +268,7 @@ function registerFolderIconNodeBounds(options) {
     BOUNDS_KIND.LAUNCH,
     BOUNDS_VARIANT.STABLE_STAGE_LAYOUT,
     { area: "folder", folderId, id: item.id, pageIndex },
-    makeIconRect(targetCenter.x, targetCenter.y, iconSize),
+    makeIconRect(stableCenter.x, stableCenter.y, iconSize),
     {
       ...meta,
       stageHeight,
@@ -505,6 +508,57 @@ function springPanelGeometry(panel, target, options = {}) {
   motionSpringTo(panel.scale, { x: target.scaleX, y: target.scaleY }, springConfig, springOptions);
 }
 
+function cloneFolderGeometry(geometry) {
+  if (!geometry?.panel || !geometry?.grid) return null;
+  return {
+    panel: makeRect(geometry.panel.left, geometry.panel.top, geometry.panel.width, geometry.panel.height),
+    grid: makeRect(geometry.grid.left, geometry.grid.top, geometry.grid.width, geometry.grid.height),
+    sidePadding: Number(geometry.sidePadding) || 0,
+  };
+}
+
+function makeResizeGeometryState(geometry) {
+  if (!geometry?.panel || !geometry?.grid) return null;
+  return {
+    gridHeight: geometry.grid.height,
+    gridLeft: geometry.grid.left,
+    gridTop: geometry.grid.top,
+    gridWidth: geometry.grid.width,
+    panelHeight: geometry.panel.height,
+    panelLeft: geometry.panel.left,
+    panelTop: geometry.panel.top,
+    panelWidth: geometry.panel.width,
+    sidePadding: Number(geometry.sidePadding) || 0,
+  };
+}
+
+function makeResizeGeometryTarget(geometry) {
+  return makeResizeGeometryState(geometry) || {};
+}
+
+function makeGeometryFromResizeState(state) {
+  if (!state) return null;
+  return {
+    panel: makeRect(state.panelLeft, state.panelTop, Math.max(1, state.panelWidth), Math.max(1, state.panelHeight)),
+    grid: makeRect(state.gridLeft, state.gridTop, Math.max(1, state.gridWidth), Math.max(1, state.gridHeight)),
+    sidePadding: Number(state.sidePadding) || 0,
+  };
+}
+
+function makeFolderGeometryTargetKey(geometry) {
+  if (!geometry?.panel || !geometry?.grid) return "";
+  return [
+    geometry.panel.left,
+    geometry.panel.top,
+    geometry.panel.width,
+    geometry.panel.height,
+    geometry.grid.left,
+    geometry.grid.top,
+    geometry.grid.width,
+    geometry.grid.height,
+  ].map(readSignatureValue).join(":");
+}
+
 export class FolderOverlayLayer extends Container {
   constructor(options = {}) {
     super();
@@ -583,6 +637,12 @@ export class FolderOverlayLayer extends Container {
     this.panelZoomFadeClosing = false;
     this.resizeLayoutSync = null;
     this.resizeLayoutSignature = null;
+    this.resizeVisualGeometryState = null;
+    this.resizeVisualGeometryMode = null;
+    this.resizeVisualGeometryFinalMode = null;
+    this.resizeVisualGeometryFinalTargetKey = null;
+    this.resizeVisualGeometryTargetKey = null;
+    this.targetFolderGeometry = null;
     this.detachedClosingVisuals = [];
     this.closingDesktopPageTrackMirrorBaseline = null;
     this.closingDesktopPageTrackMirrorX = 0;
@@ -621,7 +681,7 @@ export class FolderOverlayLayer extends Container {
     const synced = this.syncFolderOverlayNodes(resolved);
     this.startFolderOverlayTransitions(synced);
     this.finishResizeLayoutSyncFrame(synced);
-    return resolved.geometry;
+    return resolved.targetGeometry || resolved.geometry;
   }
 
   isDesktopCloseZoomFadeState(state = {}) {
@@ -712,6 +772,8 @@ export class FolderOverlayLayer extends Container {
       this.sizeKey = null;
       this.resizeLayoutSync = null;
       this.resizeLayoutSignature = null;
+      this.clearResizeVisualGeometry(FOLDER_OVERLAY_CLEAR_REASON);
+      this.targetFolderGeometry = null;
       this.stableFolderCloseTarget = null;
       this.resetClosingDesktopPageTrackMirror();
       if (state.folderPanelRef) state.folderPanelRef.value = null;
@@ -749,7 +811,9 @@ export class FolderOverlayLayer extends Container {
     const isNewFolder = !isPrewarm && this.currentFolderId !== state.renderedFolder?.id;
     this.isClosing = isClosing;
     this.isUserFolderClosing = Boolean(renderState.isFolderClosing);
+    const previousGeometry = cloneFolderGeometry(this.targetFolderGeometry);
     this.panelGeometry = geometry.panel;
+    this.targetFolderGeometry = cloneFolderGeometry(geometry);
     const folderId = state.renderedFolder.id;
     this.describeMotionTargets(renderState, geometry);
     if (this.folderHandoff.folderId && (this.folderHandoff.folderId !== folderId || !isClosing)) {
@@ -762,6 +826,7 @@ export class FolderOverlayLayer extends Container {
       isClosing,
       isNewFolder,
       isPrewarm,
+      previousGeometry,
       resizeLayoutSignature: layoutSignature,
       state: renderState,
       wasClosing,
@@ -769,8 +834,27 @@ export class FolderOverlayLayer extends Container {
   }
 
   resolveFolderOverlayGeometry(context) {
-    const { folderId, geometry, isClosing, isNewFolder, isPrewarm, state, wasClosing } = context;
+    const { folderId, geometry: targetGeometry, isClosing, isNewFolder, isPrewarm, state, wasClosing } = context;
     const resizeLayoutSyncActive = this.isResizeLayoutSyncActive();
+    const geometry = this.resolveResizeVisualGeometry(context) || targetGeometry;
+    const targetGeometryKey = makeFolderGeometryTargetKey(targetGeometry);
+    const resizeVisualGeometryActive = Boolean(
+      this.resizeVisualGeometryState &&
+      this.resizeVisualGeometryTargetKey === targetGeometryKey
+    );
+    const resizeVisualGeometryFinalFrame = Boolean(
+      this.resizeVisualGeometryFinalTargetKey &&
+      this.resizeVisualGeometryFinalTargetKey === targetGeometryKey
+    );
+    const resizeGeometryMode = resizeVisualGeometryActive
+      ? this.resizeVisualGeometryMode
+      : resizeVisualGeometryFinalFrame
+        ? this.resizeVisualGeometryFinalMode
+        : this.resizeLayoutSync?.mode || null;
+    if (resizeVisualGeometryFinalFrame) {
+      this.resizeVisualGeometryFinalTargetKey = null;
+      this.resizeVisualGeometryFinalMode = null;
+    }
     const overlayTargets = resolveFolderOverlayTargets({
       desktopPageTrackOffset: state.desktopPageTrackOffset,
       folder: state.renderedFolder,
@@ -784,6 +868,13 @@ export class FolderOverlayLayer extends Container {
     this.stableFolderCloseTarget = overlayTargets.stableFolderCloseTarget;
     const { folderClientRect, folderThumbClientRect, getOpeningPreviewChildClientRect, previewSlots } = overlayTargets;
     this.drawPanel(geometry.panel);
+    this.syncResizeFrameGhostShell(geometry, {
+      isClosing,
+      resizeGeometryMode,
+      resizeLayoutSyncActive,
+      resizeVisualGeometryActive,
+      resizeVisualGeometryFinalFrame,
+    });
     if (resizeLayoutSyncActive) {
       this.rebuildPanelClipMask(geometry.panel);
     } else {
@@ -807,6 +898,8 @@ export class FolderOverlayLayer extends Container {
         getPreviewChildRect: getOpeningPreviewChildClientRect,
         previewSlots,
         resizeLayoutSyncActive,
+        resizeVisualGeometryActive,
+        resizeVisualGeometryFinalFrame,
       })?.openingGeometrySnapshot || null;
     }
 
@@ -826,6 +919,12 @@ export class FolderOverlayLayer extends Container {
     const localGridLeft = geometry.grid.left - geometry.panel.left;
     const localGridTop = geometry.grid.top - geometry.panel.top;
     const localMetrics = { ...metrics, gridLeft: localGridLeft, gridTop: localGridTop };
+    const stableMetrics = getFolderGridMetrics({ cols, fixedCellHeight, grid: targetGeometry.grid, rowGap, rows });
+    const stableLocalMetrics = {
+      ...stableMetrics,
+      gridLeft: targetGeometry.grid.left - targetGeometry.panel.left,
+      gridTop: targetGeometry.grid.top - targetGeometry.panel.top,
+    };
     this.pageMaskRect = getFolderPageMaskRect(geometry, localGridLeft, localGridTop);
     if (resizeLayoutSyncActive) {
       this.rebuildPageTrackMask();
@@ -834,9 +933,11 @@ export class FolderOverlayLayer extends Container {
       this.refreshPageTrackMask();
     }
     const folderPageSpan = geometry.panel.width;
+    const stableFolderPageSpan = targetGeometry.panel.width;
     const targetTrackX = -visualFolderPageIndex * folderPageSpan;
-    const shouldSnapResizePageTrack = resizeLayoutSyncActive &&
-      this.resizeLayoutSync?.mode !== "page-turn" &&
+    const stableTargetTrackX = -visualFolderPageIndex * stableFolderPageSpan;
+    const shouldSnapResizePageTrack = (resizeLayoutSyncActive || resizeVisualGeometryActive || resizeVisualGeometryFinalFrame) &&
+      resizeGeometryMode !== "page-turn" &&
       !state.folderPageTrackScrub;
     if ((isNewFolder && !isClosing) || shouldSnapResizePageTrack) {
       const reason = shouldSnapResizePageTrack ? FOLDER_RESIZE_LAYOUT_REASON : "replace";
@@ -874,7 +975,7 @@ export class FolderOverlayLayer extends Container {
       stableFolderCloseTarget: this.stableFolderCloseTarget,
     });
 
-    if (!isPrewarm) this.bindFakeRefs(state, geometry);
+    if (!isPrewarm) this.bindFakeRefs(state, targetGeometry);
     const renderPlan = makeFolderOverlayRenderPlan({
       closeThumbRect,
       closingGhostKeys: this.folderHandoff.getGhostKeys(),
@@ -905,7 +1006,11 @@ export class FolderOverlayLayer extends Container {
       previewSlots,
       rows,
       showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge,
+      stableFolderPageSpan,
       stableFolderCloseTarget: this.stableFolderCloseTarget,
+      stableGeometry: targetGeometry,
+      stableLocalMetrics,
+      stableTargetTrackX,
       stageHeight: state.height,
       stageWidth: state.width,
       targetTrackX,
@@ -917,10 +1022,15 @@ export class FolderOverlayLayer extends Container {
       closeThumbRect,
       folderClientRect,
       folderThumbClientRect,
+      geometry,
       getOpeningPreviewChildClientRect,
       iconSize,
       previewSlots,
       renderPlan,
+      resizeGeometryMode,
+      resizeVisualGeometryActive,
+      resizeVisualGeometryFinalFrame,
+      targetGeometry,
     };
   }
 
@@ -933,16 +1043,23 @@ export class FolderOverlayLayer extends Container {
       iconSize,
       isPrewarm,
       renderPlan,
+      resizeGeometryMode,
+      resizeVisualGeometryActive,
+      resizeVisualGeometryFinalFrame,
       state,
     } = context;
     const resizeLayoutSyncActive = this.isResizeLayoutSyncActive();
+    const shouldSnapIconLayoutForResize = Boolean(
+      (resizeLayoutSyncActive || resizeVisualGeometryActive || resizeVisualGeometryFinalFrame) &&
+      resizeGeometryMode !== "page-turn"
+    );
     const seen = new Set();
     const boundsRefreshers = new Map();
     const nextLayoutTargets = new Map();
     const openingGhostTargets = [];
     const closingGhostTargets = [];
     for (const entry of renderPlan.entries) {
-      const { index, isInteractivePage, item, key, nodeState, pageIndex, targetCenter, x, y } = entry;
+      const { index, isInteractivePage, item, key, nodeState, pageIndex, stableTargetCenter, targetCenter, x, y } = entry;
       seen.add(key);
       let node = this.iconNodes.get(key);
       const isNewNode = !node;
@@ -970,6 +1087,7 @@ export class FolderOverlayLayer extends Container {
         item,
         node,
         pageIndex,
+        stableTargetCenter,
         stageHeight: state.height,
         stageRect: state.stageRect,
         stageWidth: state.width,
@@ -987,7 +1105,7 @@ export class FolderOverlayLayer extends Container {
       }
       const layoutTarget = { x, y };
       nextLayoutTargets.set(key, layoutTarget);
-      if (resizeLayoutSyncActive) {
+      if (shouldSnapIconLayoutForResize) {
         killMotionOf(node, "x,y", { lane: "base", reason: FOLDER_RESIZE_LAYOUT_REASON });
         node.position.set(layoutTarget.x, layoutTarget.y);
         refreshNodeBounds();
@@ -1053,8 +1171,13 @@ export class FolderOverlayLayer extends Container {
         frameTargetRect: geometry.panel,
         sessionToken: this.folderHandoff.activeOpenToken,
       });
-    } else if (!isClosing && this.folderHandoff.hasActiveOpeningVisuals()) {
-      this.openingGhosts.retarget(state, openingGhostTargets);
+    } else if (!isClosing && (
+      this.folderHandoff.hasActiveOpeningVisuals() ||
+      (this.frameGhostState && this.frameGhostPhase === "opening")
+    )) {
+      this.openingGhosts.retarget(state, openingGhostTargets, {
+        frameTargetRect: geometry.panel,
+      });
     }
     if (!isNewFolder && !isClosing && state.folderOpenIconGhosts?.length && !this.folderHandoff.hasActiveOpeningVisuals()) {
       for (const ghost of state.folderOpenIconGhosts) {
@@ -1128,9 +1251,18 @@ export class FolderOverlayLayer extends Container {
     if (state.isFolderClosing || state.isFolderAppLaunchClosing || state.isFolderZoomFadeClosing) return "closing";
     const committedFolderPageIndex = state.folderPageIndex ?? 0;
     const visualFolderPageIndex = state.visualFolderPageIndex ?? committedFolderPageIndex;
+    const releaseSource = state.dragReleaseState?.source || null;
+    const isCrossPageFolderRelease = Boolean(
+      state.dragReleaseGhostId &&
+      releaseSource?.type === "folder" &&
+      (releaseSource.folderId == null || releaseSource.folderId === state.renderedFolder?.id) &&
+      Number(releaseSource.pageIndex) !== Number(committedFolderPageIndex)
+    );
     if (state.folderPageTrackScrub ||
       state.folderPageTurnToken != null ||
-      visualFolderPageIndex !== committedFolderPageIndex) {
+      visualFolderPageIndex !== committedFolderPageIndex ||
+      isCrossPageFolderRelease ||
+      (state.dragReleaseGhostId && isPageTrackMotionActive(this.pageTrackMotion, this.pageTrack))) {
       return "page-turn";
     }
     const openProgress = readProgress01(state.folderOpenProgress);
@@ -1146,11 +1278,6 @@ export class FolderOverlayLayer extends Container {
   cancelResizeLayoutMotions() {
     cancelPageTrackMotion(this.pageTrackMotion, FOLDER_RESIZE_LAYOUT_REASON);
     killMotionOf(this.pageTrack, "x", { lane: "base", reason: FOLDER_RESIZE_LAYOUT_REASON });
-    this.resetPanelMotion(FOLDER_RESIZE_LAYOUT_REASON, {
-      panelProps: "x,y",
-      scaleProps: "x,y",
-      stopSprings: false,
-    });
     for (const node of this.iconNodes.values()) {
       if (node?.destroyed) continue;
       killMotionOf(node, "x,y", { lane: "base", reason: FOLDER_RESIZE_LAYOUT_REASON });
@@ -1177,6 +1304,111 @@ export class FolderOverlayLayer extends Container {
     }
     if (this.resizeLayoutSync) this.resizeLayoutSync.layoutSignature = layoutSignature;
     this.resizeLayoutSignature = layoutSignature;
+  }
+
+  clearResizeVisualGeometry(reason = FOLDER_RESIZE_LAYOUT_REASON) {
+    if (this.resizeVisualGeometryState) {
+      killMotionOf(this.resizeVisualGeometryState, null, { lane: "base", reason });
+    }
+    this.resizeVisualGeometryState = null;
+    this.resizeVisualGeometryMode = null;
+    this.resizeVisualGeometryFinalMode = null;
+    this.resizeVisualGeometryFinalTargetKey = null;
+    this.resizeVisualGeometryTargetKey = null;
+  }
+
+  startResizeVisualGeometryMotion(fromGeometry, toGeometry, targetKey, mode = null) {
+    const startState = this.resizeVisualGeometryState || makeResizeGeometryState(fromGeometry);
+    if (!startState) return null;
+    const animationMode = mode || this.resizeVisualGeometryMode || this.resizeLayoutSync?.mode || null;
+    this.resizeVisualGeometryState = startState;
+    this.resizeVisualGeometryMode = animationMode;
+    this.resizeVisualGeometryFinalTargetKey = null;
+    this.resizeVisualGeometryFinalMode = null;
+    this.resizeVisualGeometryTargetKey = targetKey;
+    const requestFrame = () => {
+      this.markRegisteredBoundsDirty();
+      this.onRenderRequest(FOLDER_RESIZE_LAYOUT_REASON);
+    };
+    motion(startState)
+      .layout()
+      .spring(motionSprings.layout)
+      .interrupt("retarget")
+      .to({
+        ...makeResizeGeometryTarget(toGeometry),
+        onComplete: () => {
+          if (this.resizeVisualGeometryTargetKey !== targetKey) return;
+          this.resizeVisualGeometryState = null;
+          this.resizeVisualGeometryFinalTargetKey = targetKey;
+          this.resizeVisualGeometryFinalMode = animationMode;
+          this.resizeVisualGeometryTargetKey = null;
+          this.resizeVisualGeometryMode = null;
+          requestFrame();
+        },
+        onUpdate: requestFrame,
+      })
+      .start();
+    return startState;
+  }
+
+  resolveResizeVisualGeometry(context = {}) {
+    const targetGeometry = context.geometry;
+    const targetKey = makeFolderGeometryTargetKey(targetGeometry);
+    if (context.isClosing || context.isNewFolder || context.isPrewarm) {
+      this.clearResizeVisualGeometry("resize-visual-geometry-reset");
+      return targetGeometry;
+    }
+    const hasActiveVisualGeometry = Boolean(
+      this.resizeVisualGeometryState &&
+      this.resizeVisualGeometryTargetKey === targetKey
+    );
+    const canAnimatePageTurnResize = Boolean(
+      this.resizeLayoutSync?.mode === "page-turn" &&
+      (context.state?.dragMeta || context.state?.dragReleaseGhostId) &&
+      !context.state?.folderPageTrackScrub
+    );
+    const canAnimateResizeGeometry = Boolean(
+      (this.resizeLayoutSync?.mode === "layout" || canAnimatePageTurnResize) &&
+      context.previousGeometry &&
+      targetKey
+    );
+
+    if (canAnimateResizeGeometry && this.resizeVisualGeometryTargetKey !== targetKey) {
+      this.startResizeVisualGeometryMotion(
+        this.resizeVisualGeometryState ? makeGeometryFromResizeState(this.resizeVisualGeometryState) : context.previousGeometry,
+        targetGeometry,
+        targetKey,
+        this.resizeLayoutSync?.mode || null
+      );
+    } else if (!canAnimateResizeGeometry &&
+      !hasActiveVisualGeometry &&
+      this.resizeVisualGeometryFinalTargetKey !== targetKey) {
+      this.clearResizeVisualGeometry("resize-visual-geometry-clear");
+    }
+
+    return this.resizeVisualGeometryState && this.resizeVisualGeometryTargetKey === targetKey
+      ? makeGeometryFromResizeState(this.resizeVisualGeometryState)
+      : targetGeometry;
+  }
+
+  syncResizeFrameGhostShell(geometry, options = {}) {
+    const frame = this.frameGhostState;
+    const panel = geometry?.panel;
+    if (!frame || !panel || options.isClosing) return;
+    if (this.frameGhostPhase && this.frameGhostPhase !== "opening") return;
+    if (options.resizeGeometryMode === "opening") return;
+    const shouldSync = Boolean(
+      options.resizeLayoutSyncActive ||
+      options.resizeVisualGeometryActive ||
+      options.resizeVisualGeometryFinalFrame
+    );
+    if (!shouldSync) return;
+    frame.height = panel.height;
+    frame.left = panel.left;
+    frame.radius = getFrameRadius(panel, frame.radius ?? 48);
+    frame.top = panel.top;
+    frame.width = panel.width;
+    this.drawFrameGhost(frame, { notifyTitleFrame: false });
   }
 
   finishResizeLayoutSyncFrame(context = {}) {
@@ -1232,6 +1464,8 @@ export class FolderOverlayLayer extends Container {
     this.panelZoomFadeClosing = false;
     this.resizeLayoutSync = null;
     this.resizeLayoutSignature = null;
+    this.clearResizeVisualGeometry(FOLDER_OVERLAY_CLEAR_REASON);
+    this.targetFolderGeometry = null;
     this.currentOpeningGeometrySnapshot = null;
     this.openingGhosts.clear({ cancelSession: true });
     this.closingGhosts.clear();
@@ -1724,7 +1958,9 @@ export class FolderOverlayLayer extends Container {
   }
 
   clearFrameGhost(options = {}) {
+    const wasOpeningFrame = this.frameGhostPhase === "opening";
     clearFrameGhostState(this, options);
+    if (wasOpeningFrame) this.openingGhosts?.clearFrameTarget?.();
   }
 
   notifyTitleFrame(rect) {
@@ -2261,7 +2497,7 @@ export class FolderOverlayLayer extends Container {
         .start();
     }
 
-    if (options.resizeLayoutSyncActive) {
+    if (options.resizeLayoutSyncActive || options.resizeVisualGeometryActive || options.resizeVisualGeometryFinalFrame) {
       if (this.panelOpenTargetKey !== targetKey && sessionToken) {
         this.folderHandoff.markPanelPending(sessionToken, targetKey);
       }
@@ -2323,7 +2559,12 @@ export class FolderOverlayLayer extends Container {
     if (state.folderPanelRef) state.folderPanelRef.value = panelElement;
     if (state.folderViewportRef) state.folderViewportRef.value = gridElement;
     if (typeof state.setFolderPageRef === "function") {
-      state.setFolderPageRef(gridElement, state.folderPageIndex || 0);
+      const committedPageIndex = Number.isFinite(Number(state.folderPageIndex)) ? Number(state.folderPageIndex) : 0;
+      const visualPageIndex = Number.isFinite(Number(state.visualFolderPageIndex))
+        ? Number(state.visualFolderPageIndex)
+        : committedPageIndex;
+      state.setFolderPageRef(gridElement, visualPageIndex);
+      if (committedPageIndex !== visualPageIndex) state.setFolderPageRef(gridElement, committedPageIndex);
     }
   }
 

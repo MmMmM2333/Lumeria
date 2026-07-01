@@ -28,6 +28,7 @@ async function withMockPointerEnvironment(run) {
     },
     cancelAnimationFrame: () => {},
     clearTimeout: (id) => timers.delete(id),
+    innerHeight: 768,
     innerWidth: 1024,
     requestAnimationFrame: (callback) => {
       callback();
@@ -174,21 +175,25 @@ function createDragHarness(overrides = {}) {
       }
       return null;
     },
+    effectiveFolderIconSize: overrides.effectiveFolderIconSize || ref(56),
     finishHomeRevealSettleWindow: overrides.finishHomeRevealSettleWindow || (() => {}),
-    folderCols: ref(4),
+    folderCols: overrides.folderCols || ref(4),
     folderPageIndex,
     folderPageRefs,
     folderPages,
     folderPageSize,
     folderPageTurnRequest,
     folderPanelRef,
+    folderPanelStyle: overrides.folderPanelStyle || ref({}),
     folderSession,
+    folderViewportHeight: overrides.folderViewportHeight || ref(0),
     getFolderChildPages,
     getPageSlotMotionGeometry: () => null,
     getTopLevelIconMotionGeometry: () => null,
     gridCols: ref(7),
     gridRows: ref(5),
     iconBoundsRegistry,
+    iconSize: overrides.iconSize || ref(64),
     insertAppIntoFolder,
     insertTopLevelItem,
     isFolderLayerActive: overrides.isFolderLayerActive || ref(false),
@@ -223,7 +228,7 @@ function createDragHarness(overrides = {}) {
     },
     replaceFolderWithItem,
     visualFolderPageIndex,
-    visibleFolderRowCount: ref(4),
+    visibleFolderRowCount: overrides.visibleFolderRowCount || ref(4),
     withFolderPages: (folder, childPages) => ({ ...folder, childPages, children: childPages.flat() }),
     wouldFolderInsertOverflow: () => false,
     wouldTopLevelInsertOverflow: () => false,
@@ -688,6 +693,55 @@ export async function runLaunchpadDragTests() {
   });
 
   await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const folderPanelRef = ref({ getBoundingClientRect: () => ({ left: 100, top: 100, right: 500, bottom: 420, width: 400, height: 320 }) });
+    const folderPageRefs = [{ getBoundingClientRect: () => ({ left: 120, top: 120, right: 400, bottom: 340, width: 280, height: 220 }) }];
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const { app, drag, openFolderId, pages } = createDragHarness({
+      folderPageRefs,
+      folderPanelRef,
+      iconBoundsRegistry,
+    });
+    const otherApp = { id: "app-b", name: "App B", type: "app" };
+    const folder = { id: "folder-stale", type: "folder", name: "Folder", childPages: [[otherApp, app]], children: [otherApp, app] };
+    pages.value = [[folder]];
+    openFolderId.value = "folder-stale";
+    putLaunchBounds(
+      iconBoundsRegistry,
+      V.STABLE_STAGE_LAYOUT,
+      { area: "folder", folderId: "folder-stale", id: "app-a", pageIndex: 0 },
+      { left: 420, top: 430, width: 56, height: 56 },
+      {
+        area: "folder",
+        folderId: "folder-stale",
+        id: "app-a",
+        index: 0,
+        pageIndex: 0,
+        stageHeight: 500,
+        stageRect: { left: 100, top: 60, width: 500, height: 500 },
+        stageWidth: 500,
+      }
+    );
+    const target = {
+      getBoundingClientRect: () => ({ left: 200, top: 130, width: 64, height: 64 }),
+    };
+
+    drag.beginDrag(makePointerDownEvent(94, target, { clientX: 210, clientY: 140 }), app, { type: "folder", folderId: "folder-stale", pageIndex: 0, index: 1 });
+    runNextTimer(timers);
+    await nextTick();
+
+    listeners.get("pointerup")({ type: "pointerup", pointerId: 94, button: 0, clientX: 125, clientY: 135 });
+    const staleRecord = iconBoundsRegistry.getRecord(
+      K.LAUNCH,
+      V.STABLE_STAGE_LAYOUT,
+      { area: "folder", folderId: "folder-stale", id: "app-a", pageIndex: 0 }
+    );
+    assert(staleRecord == null, "folder placement should clear stale Pixi launch bounds before release target resolution");
+    await nextTick();
+    assert(drag.dragReleaseState.value?.targetStageLayoutRect == null, "folder release should not carry a stale stage layout target after clearing old bounds");
+    iconBoundsRegistry.clearBounds();
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
     const { app, drag, folderSession, pages } = createDragHarness();
     const target = {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
@@ -789,6 +843,59 @@ export async function runLaunchpadDragTests() {
     assert(calls.commitFolderPageTurnRequest.join(",") === "1", "releasing after a visual folder edge turn should commit the pending request");
     assert(folderPageIndex.value === 1, "releasing after a visual folder edge turn should land on the visual page");
     assert(calls.insertAppIntoFolder.at(-1)?.targetPageIndex === 1, "folder edge release should insert into the visual target page");
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const folderPanelRef = ref({ getBoundingClientRect: () => ({ left: 100, top: 100, right: 500, bottom: 420, width: 400, height: 320 }) });
+    const folderPageRefs = [
+      { getBoundingClientRect: () => ({ left: 120, top: 120, right: 480, bottom: 360, width: 360, height: 240 }) },
+      { getBoundingClientRect: () => ({ left: 120, top: 120, right: 480, bottom: 360, width: 360, height: 240 }) },
+    ];
+    const folderPages = ref([
+      makeFolderApps(4, "page-zero"),
+      [{ id: "app-a", type: "app", name: "App A" }],
+    ]);
+    const { app, calls, drag, folderPageIndex, openFolderId, pages } = createDragHarness({
+      folderCols: ref(2),
+      folderPageRefs,
+      folderPages,
+      folderPageSize: ref(6),
+      folderPanelRef,
+      visibleFolderRowCount: ref(2),
+    });
+    const folder = { id: "folder-edge-append", type: "folder", name: "Folder", childPages: folderPages.value, children: folderPages.value.flat() };
+    pages.value = [[folder]];
+    folderPageIndex.value = 1;
+    openFolderId.value = "folder-edge-append";
+    const target = {
+      getBoundingClientRect: () => ({ left: 140, top: 140, width: 64, height: 64 }),
+    };
+
+    drag.beginDrag(makePointerDownEvent(66, target, { clientX: 150, clientY: 150 }), app, { type: "folder", folderId: "folder-edge-append", pageIndex: 1, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+
+    listeners.get("pointermove")({
+      type: "pointermove",
+      pointerId: 66,
+      buttons: 1,
+      clientX: 108,
+      clientY: 150,
+      preventDefault: () => {},
+    });
+    runNextTimer(timers);
+    runNextTimer(timers);
+
+    listeners.get("pointerup")({ type: "pointerup", pointerId: 66, button: 0, clientX: 108, clientY: 150 });
+    assert(folderPageIndex.value === 0, "post-turn folder release should commit to the previous page");
+    assert(calls.insertAppIntoFolder.at(-1)?.targetPageIndex === 0, "post-turn folder release should target the committed page");
+    assert(calls.insertAppIntoFolder.at(-1)?.insertIndex === 4, "post-turn edge release should append after the target page items instead of using the edge slot");
+    await nextTick();
+    const releaseTarget = drag.dragReleaseState.value?.targetRect;
+    const releaseCenterX = releaseTarget ? releaseTarget.left + releaseTarget.width / 2 : 0;
+    const releaseCenterY = releaseTarget ? releaseTarget.top + releaseTarget.height / 2 : 0;
+    assert(Math.abs(releaseCenterX - 210) < 0.01, "post-turn edge release should target the appended column instead of the old edge slot");
+    assert(Math.abs(releaseCenterY - 305.07) < 0.1, "post-turn edge release should project the row created by the drop");
   });
 
   await withMockPointerEnvironment(async ({ listeners, timers }) => {

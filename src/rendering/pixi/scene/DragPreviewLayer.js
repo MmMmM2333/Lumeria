@@ -64,6 +64,7 @@ export class DragPreviewLayer extends Container {
     this.previewKey = null;
     this.previewScaleKey = null;
     this.releaseKey = null;
+    this.releaseMotionKey = null;
     this.releaseCompleteKey = null;
     this.visible = false;
   }
@@ -79,6 +80,7 @@ export class DragPreviewLayer extends Container {
       this.previewKey = null;
       this.previewScaleKey = null;
       this.releaseKey = null;
+      this.releaseMotionKey = null;
       this.releaseCompleteKey = null;
       killMotionOf(this.previewNode, null, { reason: DRAG_PREVIEW_CLEAR_REASON });
       stopPreviewScaleMotion(this.previewNode, { reason: DRAG_PREVIEW_CLEAR_REASON });
@@ -92,6 +94,7 @@ export class DragPreviewLayer extends Container {
 
     this.previewKey = layout.key;
     this.releaseKey = null;
+    this.releaseMotionKey = null;
     this.visible = true;
     this.previewNode.stageRect = layout.stageRect;
     this.previewNode.setState({
@@ -141,13 +144,16 @@ export class DragPreviewLayer extends Container {
   updateRelease(state) {
     const release = state.releaseState;
     const releaseMotion = getDragReleaseMotion(release, state);
-    const isNewRelease = this.releaseKey !== releaseMotion.key;
+    const releaseKey = release?.key || releaseMotion.key;
+    const isNewRelease = this.releaseKey !== releaseKey;
+    const isNewMotion = this.releaseMotionKey !== releaseMotion.key;
 
     if (isNewRelease) {
       killMotionOf(this.previewNode, null, { reason: DRAG_RELEASE_START_REASON });
       stopPreviewScaleMotion(this.previewNode, { reason: DRAG_RELEASE_START_REASON });
     }
 
+    const previousIconSize = Math.max(0.01, Number(this.previewNode.state?.iconSize) || releaseMotion.iconSize || 1);
     this.visible = true;
     this.previewNode.visible = true;
     this.previewNode.eventMode = "none";
@@ -181,29 +187,38 @@ export class DragPreviewLayer extends Container {
     describeDragPreviewTargets(this.previewNode, release, "release");
     this.previewNode.rotation = 0;
 
-    if (!isNewRelease) return;
-    this.releaseKey = releaseMotion.key;
-    this.releaseCompleteKey = null;
-    this.previewKey = null;
-    this.previewScaleKey = null;
-    const currentScale = Math.max(0.01, Number(this.previewNode.scale?.x) || DRAG_PREVIEW_SCALE);
-    const startScale = Math.max(0.01, currentScale * (Number(releaseMotion.startScaleMultiplier) || 1));
-    const startPosition = releaseMotion.startIconCenter
-      ? {
-        x: releaseMotion.startIconCenter.x,
-        y: releaseMotion.startIconCenter.y - releaseMotion.visualOffsetY * startScale,
+    if (!isNewMotion) return;
+    this.releaseKey = releaseKey;
+    this.releaseMotionKey = releaseMotion.key;
+    if (isNewRelease) {
+      this.releaseCompleteKey = null;
+      this.previewKey = null;
+      this.previewScaleKey = null;
+      const currentScale = Math.max(0.01, Number(this.previewNode.scale?.x) || DRAG_PREVIEW_SCALE);
+      const startScale = Math.max(0.01, currentScale * (Number(releaseMotion.startScaleMultiplier) || 1));
+      const startPosition = releaseMotion.startIconCenter
+        ? {
+          x: releaseMotion.startIconCenter.x,
+          y: releaseMotion.startIconCenter.y - releaseMotion.visualOffsetY * startScale,
+        }
+        : releaseMotion.start;
+      this.previewNode.position.set(startPosition.x, startPosition.y);
+      this.previewNode.scale.set(startScale);
+      this.previewNode.alpha = 1;
+      if (this.previewNode.labelText) {
+        this.previewNode.labelText.alpha = 1;
+        this.previewNode.labelText.scale.set(1);
       }
-      : releaseMotion.start;
-    this.previewNode.position.set(startPosition.x, startPosition.y);
-    this.previewNode.scale.set(startScale);
-    this.previewNode.alpha = 1;
-    if (this.previewNode.labelText) {
-      this.previewNode.labelText.alpha = 1;
-      this.previewNode.labelText.scale.set(1);
+    } else if (Math.abs(previousIconSize - releaseMotion.iconSize) > 0.0001) {
+      const scaleMultiplier = previousIconSize / Math.max(0.01, releaseMotion.iconSize);
+      this.previewNode.scale.set(
+        Math.max(0.01, this.previewNode.scale.x * scaleMultiplier),
+        Math.max(0.01, this.previewNode.scale.y * scaleMultiplier)
+      );
     }
     if (!releaseMotion.hasTargetRect) return;
     const completeRelease = () => {
-      if (this.releaseCompleteKey === releaseMotion.key || this.releaseKey !== releaseMotion.key) return;
+      if (this.releaseCompleteKey === releaseMotion.key || this.releaseMotionKey !== releaseMotion.key) return;
       this.releaseCompleteKey = releaseMotion.key;
       this.onReleaseComplete(release);
     };
