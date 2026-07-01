@@ -11,6 +11,7 @@
       :disabled="disabled"
       :inputmode="inputMode"
       :name="name"
+      autocomplete="off"
       role="spinbutton"
       type="text"
       :value="draftValue"

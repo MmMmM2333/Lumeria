@@ -1,12 +1,6 @@
 <template>
   <div class="settings-tab-panel" role="tabpanel" aria-label="关于">
     <section class="settings-section settings-section-plain" aria-label="关于">
-      <div class="settings-section-header">
-        <div>
-          <h3>关于</h3>
-        </div>
-      </div>
-
       <div class="settings-list">
         <div class="settings-list-row">
           <span class="settings-about-mark" aria-hidden="true">LP</span>

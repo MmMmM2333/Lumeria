@@ -32,7 +32,39 @@
         </div>
         <div class="settings-panel-header-main">
           <div class="settings-title-block">
-            <h2>设置</h2>
+            <div class="settings-title-row">
+              <fluent-button
+                v-if="activeSettingsSubPage"
+                appearance="subtle"
+                icon-only
+                class="settings-back-button"
+                type="button"
+                :aria-label="`返回${activeSettingsTabLabel}`"
+                @click="closeSettingsSubPage"
+              >
+                <ArrowLeftIcon class="settings-back-icon" />
+              </fluent-button>
+              <nav class="settings-breadcrumb" aria-label="设置路径">
+                <button
+                  v-if="activeSettingsSubPage"
+                  type="button"
+                  class="settings-breadcrumb-item settings-breadcrumb-parent"
+                  :aria-label="`返回${activeSettingsTabLabel}`"
+                  @click="closeSettingsSubPage"
+                >
+                  {{ activeSettingsTabLabel }}
+                </button>
+                <span v-else class="settings-breadcrumb-item settings-breadcrumb-current">
+                  {{ activeSettingsTabLabel }}
+                </span>
+                <template v-if="activeSettingsSubPage">
+                  <ChevronRightIcon class="settings-breadcrumb-separator" />
+                  <span class="settings-breadcrumb-item settings-breadcrumb-current">
+                    {{ activeSettingsSubPage.label }}
+                  </span>
+                </template>
+              </nav>
+            </div>
           </div>
           <fluent-button
             appearance="subtle"
@@ -57,7 +89,7 @@
             :aria-current="activeSettingsTab === tab.id ? 'page' : undefined"
             :aria-label="tab.label"
             :title="isSettingsNavigationCompact ? tab.label : undefined"
-            @click="activeSettingsTab = tab.id"
+            @click="selectSettingsTab(tab.id)"
           >
             <component :is="tab.icon" class="settings-nav-icon" />
             <span class="settings-nav-copy">
@@ -76,7 +108,7 @@
             />
           </div>
 
-          <footer v-if="activeSettingsTab === 'general' || activeSettingsTab === 'interface'" class="settings-actions">
+          <footer v-if="!activeSettingsSubPage && (activeSettingsTab === 'general' || activeSettingsTab === 'interface')" class="settings-actions">
             <fluent-button appearance="outline" type="button" @click="state.closeSettingsPanel">取消</fluent-button>
             <fluent-button
               appearance="primary"
@@ -96,6 +128,8 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import AppsIcon from "~icons/fluent/apps-24-regular";
+import ArrowLeftIcon from "~icons/fluent/arrow-left-20-regular";
+import ChevronRightIcon from "~icons/fluent/chevron-right-16-regular";
 import DismissIcon from "~icons/fluent/dismiss-16-regular";
 import InfoIcon from "~icons/fluent/info-24-regular";
 import NavigationIcon from "~icons/fluent/navigation-24-regular";
@@ -170,7 +204,8 @@ const props = defineProps({
 });
 
 const activeSettingsTab = ref("general");
-const isSettingsNavigationCompact = ref(false);
+const activeSettingsSubPage = ref(null);
+const isSettingsNavigationCompact = ref(true);
 const activeAcrylicParamsProfile = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
 const settingsOverlayRef = ref(null);
 const settingsPanelRef = ref(null);
@@ -367,6 +402,10 @@ const settingsTabs = [
   { id: "apps", label: "应用", icon: AppsIcon },
   { id: "about", label: "关于", icon: InfoIcon },
 ];
+const activeSettingsTabItem = computed(() => (
+  settingsTabs.find((tab) => tab.id === activeSettingsTab.value) || settingsTabs[0]
+));
+const activeSettingsTabLabel = computed(() => activeSettingsTabItem.value.label);
 const settingsPageComponents = {
   general: GeneralSettingsPage,
   interface: InterfaceSettingsPage,
@@ -427,6 +466,7 @@ const settingsPanelContext = {
   activeAcrylicParamsProfile,
   activeAcrylicTintColorHex,
   activeSettingsTab,
+  activeSettingsSubPage,
   backgroundEffectHint,
   backgroundEffectPreviewLabel,
   backgroundImageLayoutOptions,
@@ -454,7 +494,10 @@ const settingsPanelContext = {
   mainWindowShortcutLabel,
   resetActiveDraftBackgroundAcrylicParams,
   resetMainWindowShortcut,
+  closeSettingsSubPage,
+  openSettingsSubPage,
   selectWindowEffectPreview,
+  selectSettingsTab,
   setActiveDraftBackgroundAcrylicParam,
   setDraftBackgroundAcrylicAppearance,
   startMainWindowShortcutRecording,
@@ -504,12 +547,19 @@ watch(
   async (isOpen) => {
     if (!isOpen) {
       stopMainWindowShortcutRecording();
+      closeSettingsSubPage();
       return;
     }
     await nextTick();
     focusModalElement(settingsPanelRef);
   }
 );
+
+watch(activeSettingsTab, (tabId) => {
+  if (activeSettingsSubPage.value?.parentTabId !== tabId) {
+    closeSettingsSubPage();
+  }
+});
 
 watch(
   () => props.state.draftBackgroundAcrylicAppearance.value,
@@ -600,6 +650,25 @@ function resetMainWindowShortcut() {
 function clearMainWindowShortcut() {
   stopMainWindowShortcutRecording();
   props.state.setDraftMainWindowShortcut(null);
+}
+
+function selectSettingsTab(tabId) {
+  activeSettingsTab.value = tabId;
+  closeSettingsSubPage();
+}
+
+function openSettingsSubPage(page) {
+  if (!page?.id || !page?.label || !page?.parentTabId) return;
+  activeSettingsTab.value = page.parentTabId;
+  activeSettingsSubPage.value = {
+    id: page.id,
+    label: page.label,
+    parentTabId: page.parentTabId,
+  };
+}
+
+function closeSettingsSubPage() {
+  activeSettingsSubPage.value = null;
 }
 
 function handleSettingsPanelKeydown(event) {

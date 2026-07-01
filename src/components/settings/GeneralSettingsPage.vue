@@ -1,12 +1,6 @@
 <template>
   <div class="settings-tab-panel" role="tabpanel" aria-label="通用">
     <section class="settings-section settings-section-plain" aria-label="通用">
-      <div class="settings-section-header">
-        <div>
-          <h3>通用</h3>
-        </div>
-      </div>
-
       <div class="settings-list">
         <div class="settings-list-row settings-row-disabled">
           <span class="settings-list-icon" aria-hidden="true">

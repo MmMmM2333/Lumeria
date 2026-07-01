@@ -1,7 +1,7 @@
 /* Settings shell, pages, and related dialogs. */
 
 :root {
-  --settings-nav-width: 250px;
+  --settings-nav-width: 220px;
   --settings-nav-width-compact: 68px;
   --settings-accent: #4ba3f6;
   --settings-accent-muted: rgba(75, 163, 246, 0.88);
@@ -128,7 +128,76 @@
 
 .settings-title-block {
   display: grid;
+  min-width: 0;
   gap: 3px;
+}
+
+.settings-title-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.settings-back-button {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  color: var(--settings-text-secondary);
+}
+
+.settings-back-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.settings-breadcrumb {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+}
+
+.settings-breadcrumb-item {
+  overflow: hidden;
+  color: var(--settings-text-muted);
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-breadcrumb-parent {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.settings-breadcrumb-parent:hover {
+  color: var(--settings-text-secondary);
+}
+
+.settings-breadcrumb-parent:active {
+  color: var(--settings-text-primary);
+}
+
+.settings-breadcrumb-current {
+  color: var(--settings-text-primary);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.settings-breadcrumb-separator {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  color: rgba(255, 255, 255, 0.42);
 }
 
 .settings-panel-header h2 {
@@ -162,6 +231,14 @@
   display: block;
   width: 16px;
   height: 16px;
+}
+
+.settings-command-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  line-height: 1;
 }
 
 .settings-navigation-toggle-icon {
@@ -284,6 +361,18 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-height: 0;
+}
+
+.settings-tab-panel-fill {
+  flex: 1 1 auto;
+}
+
+.settings-section-fill {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .settings-content {
@@ -416,12 +505,26 @@
     color var(--durationUltraFast, 50ms) var(--curveEasyEase, ease);
 }
 
+.settings-list-row-button-simple {
+  grid-template-columns: 44px minmax(0, 1fr) 20px;
+}
+
 .settings-list-row-button:hover {
   background: var(--settings-row-hover-bg);
 }
 
 .settings-list-row-button:active {
   background: var(--settings-row-pressed-bg);
+}
+
+.settings-list-row-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.54;
+}
+
+.settings-list-row-button:disabled:hover,
+.settings-list-row-button:disabled:active {
+  background: var(--settings-row-bg);
 }
 
 .settings-list-icon {
@@ -1522,10 +1625,14 @@
   gap: 8px;
 }
 
+.settings-app-row-compact {
+  min-height: 64px;
+}
+
 .scan-root-list {
   display: grid;
-  gap: 8px;
-  margin-top: 12px;
+  gap: 6px;
+  margin-top: 0;
 }
 
 .scan-filter-block {
@@ -1617,9 +1724,14 @@
   line-height: 1;
 }
 
+.scan-keyword-chip-icon {
+  width: 12px;
+  height: 12px;
+}
+
 .scan-blocked-app-list {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .scan-blocked-app-item {
@@ -1628,10 +1740,11 @@
   align-items: center;
   gap: 12px;
   min-width: 0;
-  padding: 8px 10px;
+  min-height: 58px;
+  padding: 10px 12px;
   border-radius: 8px;
-  border: 1px solid var(--colorNeutralStroke2, rgba(255, 255, 255, 0.1));
-  background: var(--colorNeutralBackground2, rgba(255, 255, 255, 0.07));
+  border: 1px solid var(--settings-row-border);
+  background: var(--settings-row-bg);
 }
 
 .scan-blocked-app-path {
@@ -1658,12 +1771,23 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
-  padding: 8px 10px;
+  min-height: 74px;
+  padding: 11px 14px;
   border-radius: 8px;
-  border: 1px solid var(--colorNeutralStroke2, rgba(255, 255, 255, 0.1));
-  background: var(--colorNeutralBackground2, rgba(255, 255, 255, 0.07));
+  border: 1px solid var(--settings-row-border);
+  background: var(--settings-row-bg);
+  transition:
+    background-color var(--durationUltraFast, 50ms) var(--curveEasyEase, ease),
+    border-color var(--durationUltraFast, 50ms) var(--curveEasyEase, ease);
+}
+
+.scan-root-item:hover,
+.scan-blocked-app-item:hover,
+.app-manager-item:hover {
+  border-color: var(--settings-row-border-strong);
+  background: var(--settings-row-hover-bg);
 }
 
 .scan-root-item input[type="checkbox"] {
@@ -1734,9 +1858,60 @@
   padding: 0 12px;
 }
 
+.settings-list-summary-row {
+  justify-self: end;
+  padding: 2px 4px 0;
+  color: var(--settings-text-muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.app-settings-detail-toolbar {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(180px, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.app-settings-detail-count {
+  color: var(--settings-text-muted);
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.ignored-app-search::part(root) {
+  height: 34px;
+}
+
+.scan-blocked-app-list-detail {
+  gap: 6px;
+}
+
+.scan-blocked-app-list-detail .scan-blocked-app-item {
+  min-height: 64px;
+  padding: 9px 12px;
+}
+
+.app-settings-detail-empty {
+  justify-content: center;
+  min-height: 180px;
+}
+
+.app-manager-toolbar {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
 .app-manager-search {
   width: 100%;
-  margin-bottom: 10px;
+  margin-bottom: 0;
 }
 
 .app-manager-search::part(root) {
@@ -1744,10 +1919,74 @@
   padding: 0 11px;
 }
 
+.app-manager-search-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.app-manager-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: max-content;
+}
+
+.app-manager-selection-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  margin-bottom: 8px;
+  padding: 8px 10px 8px 12px;
+  border: 1px solid rgba(75, 163, 246, 0.22);
+  border-radius: 8px;
+  color: var(--settings-text-primary);
+  background: var(--settings-accent-soft);
+  font-size: 12px;
+}
+
+.app-manager-selection-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ignored-app-list-actions {
+  flex: 0 0 auto;
+  margin-bottom: 8px;
+}
+
+.settings-selection-bar-enter-active,
+.settings-selection-bar-leave-active {
+  transition:
+    opacity var(--durationFaster, 120ms) var(--curveEasyEase, ease),
+    transform var(--durationFaster, 120ms) var(--curveEasyEase, ease);
+}
+
+.settings-selection-bar-enter-from,
+.settings-selection-bar-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
 .settings-list-actions {
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 10px;
   margin-bottom: 8px;
+}
+
+.app-manager-list-actions {
+  flex: 0 0 auto;
+  color: var(--settings-text-muted);
+  font-size: 12px;
+}
+
+.app-manager-list-actions > span:first-child {
+  margin-right: auto;
 }
 
 .settings-link-button {
@@ -1759,10 +1998,15 @@
   font-size: 12px;
 }
 
+.settings-link-button:hover {
+  color: var(--settings-text-primary);
+}
+
 .app-manager-list {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 8px;
+  align-content: start;
+  gap: 6px;
   max-height: 360px;
   overflow-y: auto;
   padding-right: 4px;
@@ -1770,18 +2014,91 @@
   scrollbar-width: thin;
 }
 
+.ignored-app-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+}
+
+.app-manager-virtual-list {
+  position: relative;
+  display: block;
+  height: min(520px, 52vh);
+  max-height: 520px;
+  contain: strict;
+}
+
+.app-manager-detail-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  max-height: none;
+}
+
+.app-manager-virtual-inner {
+  position: relative;
+  width: 100%;
+  min-height: 100%;
+}
+
+.app-manager-virtual-list .app-manager-item {
+  position: absolute;
+  top: 0;
+  right: 4px;
+  left: 0;
+  height: 64px;
+  min-height: 0;
+  box-sizing: border-box;
+  will-change: transform;
+}
+
+.app-manager-empty-state {
+  height: 100%;
+  box-sizing: border-box;
+  justify-content: center;
+}
+
 .app-manager-item {
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-columns: auto 34px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   min-width: 0;
-  padding: 9px 10px;
+  min-height: 60px;
+  padding: 7px 12px;
   border-radius: 8px;
-  border: 1px solid var(--colorNeutralStroke2, rgba(255, 255, 255, 0.1));
-  background: var(--colorNeutralBackground2, rgba(255, 255, 255, 0.07));
-  color: rgba(255, 255, 255, 0.86);
+  border: 1px solid var(--settings-row-border);
+  background: var(--settings-row-bg);
+  color: var(--settings-text-primary);
   font-size: 13px;
+  transition:
+    background-color var(--durationUltraFast, 50ms) var(--curveEasyEase, ease),
+    border-color var(--durationUltraFast, 50ms) var(--curveEasyEase, ease);
+}
+
+.app-manager-item-selected {
+  border-color: rgba(75, 163, 246, 0.32);
+  background: rgba(75, 163, 246, 0.12);
+}
+
+.app-manager-item-selected:hover {
+  border-color: rgba(75, 163, 246, 0.42);
+  background: rgba(75, 163, 246, 0.16);
+}
+
+.ignored-app-item {
+  min-height: 64px;
+  cursor: pointer;
+}
+
+.ignored-app-restore-button {
+  width: 32px;
+  height: 32px;
+}
+
+.ignored-app-restore-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .app-manager-item input {
@@ -1899,18 +2216,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
   flex: 0 0 auto;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.1);
   overflow: hidden;
   font-size: 15px;
 }
 
 .app-manager-icon img {
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   object-fit: contain;
 }
 
@@ -1925,7 +2240,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  gap: 3px;
+  gap: 2px;
 }
 
 .app-manager-target {
@@ -1942,6 +2257,16 @@
   display: flex;
   gap: 8px;
   flex: 0 0 auto;
+}
+
+.app-manager-more-button {
+  width: 32px;
+  height: 32px;
+}
+
+.app-manager-more-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .app-manager-actions .settings-secondary-button,
@@ -2360,6 +2685,15 @@
   .settings-panel-header-main {
     padding: 16px 16px 16px 0;
   }
+  .settings-breadcrumb {
+    gap: 4px;
+  }
+  .settings-breadcrumb-item {
+    font-size: 12px;
+  }
+  .settings-breadcrumb-current {
+    font-size: 18px;
+  }
   .settings-shell {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);
@@ -2453,5 +2787,14 @@
   .settings-inline-actions { justify-content: flex-start; }
   .scan-root-path-row { grid-template-columns: 1fr; }
   .scan-root-browse-button { justify-self: start; }
+  .app-settings-detail-toolbar {
+    grid-template-columns: 1fr;
+  }
+  .app-settings-detail-count {
+    white-space: normal;
+  }
+  .ignored-app-search {
+    width: 100%;
+  }
   .app-manager-list { grid-template-columns: 1fr; }
 }

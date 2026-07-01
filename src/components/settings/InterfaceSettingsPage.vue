@@ -174,6 +174,7 @@
                   :value="state.draftBackgroundBaseColor.value"
                   type="color"
                   aria-label="背景底色"
+                  autocomplete="off"
                   @input="state.setDraftBackgroundBaseColor($event.target.value)"
                 />
               </span>
@@ -425,6 +426,7 @@
                         :value="state.draftBackgroundDarkenColor.value"
                         type="color"
                         aria-label="背景暗化颜色"
+                        autocomplete="off"
                         @input="state.setDraftBackgroundDarkenColor($event.target.value)"
                       />
                     </span>
@@ -513,6 +515,7 @@
                             :value="c.activeAcrylicTintColorHex.value"
                             type="color"
                             aria-label="Acrylic 染色"
+                            autocomplete="off"
                             @input="c.setActiveDraftBackgroundAcrylicParam('tintColor', $event.target.value)"
                           />
                         </span>
