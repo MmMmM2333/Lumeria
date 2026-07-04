@@ -8,6 +8,7 @@ import {
 } from "./dragVisibility.js";
 import { getDesktopIconSizing } from "./desktopIconSizing.js";
 import { makeTargetIconBounds } from "./iconSceneHelpers.js";
+import { resolveFolderPresentationState } from "./folderPresentationPlan.js";
 
 function sourceArea(source) {
   if (source.type === "folder") return "folder";
@@ -283,9 +284,10 @@ function makeNodeStateSignature(nodeState, item) {
 
 function makeBoundsEntrySignature(boundsEntry) {
   if (!boundsEntry) return null;
-  const { item: _item, ...rest } = boundsEntry;
+  const { folderPresentation, item: _item, ...rest } = boundsEntry;
   return {
     ...stableValue(rest),
+    folderPresentation: makeFolderPresentationSignature(folderPresentation),
     item: makeItemRenderSignature(boundsEntry.item),
   };
 }
@@ -293,6 +295,7 @@ function makeBoundsEntrySignature(boundsEntry) {
 function makeFolderHandoffEntrySignature(entry) {
   if (!entry) return null;
   return {
+    cleanupQueued: Boolean(entry.cleanupFrame && entry.cleanupFrame.cancelled !== true),
     folderId: entry.folderId || null,
     labelRevealStarted: entry.labelRevealStarted === true,
     layoutTarget: makeTargetSignature(entry.layoutTarget),
@@ -308,6 +311,54 @@ function makeTargetSignature(target) {
     scaleY: stableNumber(target.scaleY),
     x: stableNumber(target.x),
     y: stableNumber(target.y),
+  };
+}
+
+function makeRectSignature(rect) {
+  if (!rect) return null;
+  return {
+    height: stableNumber(rect.height),
+    left: stableNumber(rect.left),
+    top: stableNumber(rect.top),
+    width: stableNumber(rect.width),
+  };
+}
+
+function makeFolderDropTargetSignature(dropTarget) {
+  if (!dropTarget) return null;
+  return {
+    active: dropTarget.active === true,
+    geometryVersion: dropTarget.geometryVersion || null,
+    hoverRect: makeRectSignature(dropTarget.hoverRect),
+    iconSize: stableNumber(dropTarget.iconSize),
+    padding: stableNumber(dropTarget.padding),
+    phase: dropTarget.phase || null,
+    releaseRect: makeRectSignature(dropTarget.releaseRect),
+    targetId: dropTarget.targetId || null,
+  };
+}
+
+function makeFolderPresentationSignature(presentation) {
+  if (!presentation) return null;
+  return {
+    acceptsDropHover: presentation.acceptsDropHover === true,
+    dropTarget: makeFolderDropTargetSignature(presentation.dropTarget),
+    geometry: presentation.geometry ? {
+      geometryVersion: presentation.geometry.geometryVersion || null,
+      hitRect: makeRectSignature(presentation.geometry.hitRect),
+      hoverRect: makeRectSignature(presentation.geometry.hoverRect),
+      releaseRect: makeRectSignature(presentation.geometry.releaseRect),
+    } : null,
+    handoff: presentation.handoff ? {
+      blocksHover: presentation.handoff.blocksHover === true,
+      pinsLayout: presentation.handoff.pinsLayout === true,
+      retainsSourceVisibility: presentation.handoff.retainsSourceVisibility === true,
+      syncsNode: presentation.handoff.syncsNode === true,
+    } : null,
+    isReleasedHandoff: presentation.isReleasedHandoff === true,
+    isSourceGhosted: presentation.isSourceGhosted === true,
+    phase: presentation.phase || null,
+    sourceVisible: presentation.sourceVisible === true,
   };
 }
 
@@ -334,6 +385,7 @@ export function makeDesktopRenderPlanSignature(plan) {
     entries: plan.entries.map((entry) => ({
       boundsEntry: makeBoundsEntrySignature(entry.boundsEntry),
       effectiveFolderHandoffEntry: makeFolderHandoffEntrySignature(entry.effectiveFolderHandoffEntry),
+      folderPresentation: makeFolderPresentationSignature(entry.folderPresentation),
       handoffLayoutTarget: makeTargetSignature(entry.handoffLayoutTarget),
       isActiveDraggedItem: entry.isActiveDraggedItem,
       isActiveFolderClosingHandoff: entry.isActiveFolderClosingHandoff,
@@ -351,6 +403,7 @@ export function makeDesktopRenderPlanSignature(plan) {
       stableLayoutTarget: makeTargetSignature(entry.stableLayoutTarget),
       stableScreenTarget: entry.stableScreenTarget,
     })),
+    folderDropTarget: makeFolderDropTargetSignature(plan.folderDropTarget),
     height: state.height,
     pageRefs: plan.pageRefs.map((entry) => ({ pageIndex: entry.pageIndex })),
     pageTrack: plan.pageTrack,
@@ -381,11 +434,14 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
   const pageWidth = desktopFrame.width;
   const targetX = -activePageIndex * pageWidth;
   const effectiveFolderSourceGhostedIds = options.effectiveFolderSourceGhostedIds || state.folderSourceGhostedIds;
+  const folderDropFrameSuppressedIds = options.folderDropFrameSuppressedIds || new Set();
   const folderHandoffEntries = options.folderHandoffEntries || new Map();
+  const folderGeometryById = options.folderGeometryById || new Map();
   const folderLayer = options.folderLayer || null;
   const entries = [];
   const pageRefs = [];
   const clearFolderPreviewChildIds = [];
+  let folderDropTarget = null;
 
   for (const page of pages) {
     for (const item of page || []) {
@@ -441,22 +497,44 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
         isRawFolderSourceGhosted &&
         !existingFolderHandoffEntry.visualReleased
       );
-      const effectiveFolderHandoffEntry = shouldRetireStaleHandoff ? null : existingFolderHandoffEntry;
-      const isExistingFolderHandoff = Boolean(effectiveFolderHandoffEntry);
-      const isFolderClosingHandoff = isActiveFolderClosingHandoff || isExistingFolderHandoff;
-      const handoffLayoutTarget = isFolderClosingHandoff
+      const previousGeometry = item?.type === "folder" ? folderGeometryById.get(item.id) || null : null;
+      const folderPresentation = item?.type === "folder"
+        ? resolveFolderPresentationState({
+          dragFolderHoverState: state.dragFolderHoverState,
+          dragFolderTargetId: state.dragFolderTargetId,
+          existingHandoffEntry: existingFolderHandoffEntry,
+          folderId: item.id,
+          geometry: {
+            liveRect: previousGeometry?.liveRect,
+            renderedRect: previousGeometry?.renderedRect,
+            stableRect: stableScreenTarget || previousGeometry?.stableRect,
+          },
+          iconSize: sizing.iconSize,
+          isActiveClosingHandoff: isActiveFolderClosingHandoff,
+          isEffectiveSourceGhosted: effectiveFolderSourceGhostedIds.has(item.id) ||
+            state.isFolderOpeningPreviewFrameGhosted?.(item.id) === true,
+          isInteractivePage,
+          isRawSourceGhosted: isRawFolderSourceGhosted,
+          isSearchMode: state.isSearchMode,
+          shouldRetireStaleHandoff,
+        })
+        : null;
+      if (folderPresentation?.dropTarget?.active) folderDropTarget = folderPresentation.dropTarget;
+      const effectiveFolderHandoffEntry = item?.type === "folder" && !shouldRetireStaleHandoff
+        ? existingFolderHandoffEntry
+        : null;
+      const isFolderClosingHandoff = folderPresentation?.handoff.blocksHover === true;
+      const pinnedLayoutTarget = folderPresentation?.handoff.pinsLayout
         ? makeFolderPinnedLayoutTarget(state, targetX, stableScreenTarget, sizing.iconSize, visualOffsetY) || stableLayoutTarget
         : null;
-      const layoutTarget = handoffLayoutTarget || stableLayoutTarget;
+      const handoffLayoutTarget = folderPresentation?.handoff.syncsNode ? pinnedLayoutTarget : null;
+      const layoutTarget = pinnedLayoutTarget || stableLayoutTarget;
       const source = { type: state.isSearchMode ? "search" : "page", pageIndex, index };
       const key = `${source.type}:${pageIndex}:${item.id}`;
       const isActiveDraggedItem = isActiveDraggedLaunchItem(item, state);
       const isReleaseGhostItem = isReleaseGhostLaunchItem(item, state);
       const isFolderCreateReleaseItem = item.type === "folder" && state.folderCreateReleaseState?.folderId === item.id;
-      const isFolderSourceGhosted = item.type === "folder" && !isFolderClosingHandoff && (
-        effectiveFolderSourceGhostedIds.has(item.id) ||
-        state.isFolderOpeningPreviewFrameGhosted?.(item.id)
-      );
+      const isFolderSourceGhosted = item.type === "folder" && folderPresentation?.isSourceGhosted === true;
       const suppressedFolderPreviewChildId = item.type === "folder" &&
         state.dragReleaseState?.suppressFolderPreviewFolderId === item.id
         ? state.dragReleaseState.suppressFolderPreviewChildId || null
@@ -466,6 +544,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
       entries.push({
         boundsEntry: isInteractivePage ? {
           area: sourceArea(source),
+          folderPresentation,
           handoffLayoutTarget,
           index,
           item,
@@ -476,6 +555,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
           y: stableLayoutTarget.y,
         } : null,
         effectiveFolderHandoffEntry,
+        folderPresentation,
         handoffLayoutTarget,
         index,
         isActiveDraggedItem,
@@ -494,9 +574,13 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
           compact: sizing.compact,
           dragging: !isFolderClosingHandoff && !state.isSearchMode && isActiveDraggedItem,
           draggable: isInteractivePage && !state.isSearchMode && !isFolderClosingHandoff,
-          dropTarget: isInteractivePage && !state.isSearchMode && !isFolderClosingHandoff && state.dragFolderTargetId === item.id,
+          dropTarget: item.type === "folder"
+            ? false
+            : isInteractivePage && !state.isSearchMode && !isFolderClosingHandoff && state.dragFolderTargetId === item.id,
           editing: isInteractivePage && !isFolderClosingHandoff && state.isEditMode,
-          folderHoverState: isInteractivePage && !state.isSearchMode && !isFolderClosingHandoff && state.dragFolderHoverState?.targetId === item.id
+          folderHoverState: (item.type === "folder"
+            ? false
+            : isInteractivePage && !state.isSearchMode && !isFolderClosingHandoff) && state.dragFolderHoverState?.targetId === item.id
             ? state.dragFolderHoverState
             : null,
           folderPreviewPageSize: state.folderPageSize,
@@ -510,13 +594,17 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
           jiggleSeed: pageIndex * 100 + index,
           launchTargetStatus: isInteractivePage && !isFolderClosingHandoff && state.showMissingLaunchTargetBadge ? state.launchTargetStatusById?.[item.id] : null,
           opening: !isFolderClosingHandoff && isInteractivePage && state.isIconOpening?.(state.isSearchMode ? "search" : "desktop", item.id, pageIndex),
-          preserveNodeScale: isFolderClosingHandoff,
+          preserveNodeScale: folderPresentation?.handoff.pinsLayout === true || isFolderClosingHandoff,
           removable: item.type === "app",
           selected: !isFolderClosingHandoff && isInteractivePage && state.isIconSelected?.(state.isSearchMode ? "search" : "desktop", item.id, pageIndex),
           source,
           singleLineLabel: sizing.singleLineLabel,
           stageHeight: state.height,
           stageWidth: state.width,
+          suppressFolderThumbFrame: item.type === "folder" && (
+            folderPresentation?.dropTarget?.active === true ||
+            folderDropFrameSuppressedIds.has(item.id)
+          ),
           suppressedFolderPreviewChildId,
           suppressLabelRevealAfterGhost,
           textless: state.isTextlessMode,
@@ -545,6 +633,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
       y: desktopFrame.top + desktopFrame.height / 2,
     },
     entries,
+    folderDropTarget,
     pageRefs,
     pageTrack: {
       debugMetadata: {

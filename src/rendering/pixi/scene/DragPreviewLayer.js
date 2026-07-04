@@ -13,9 +13,16 @@ const DRAG_PREVIEW_ROTATION = 0;
 const DRAG_PREVIEW_CLEAR_REASON = "drag-preview-clear";
 const DRAG_PREVIEW_REPLACE_REASON = "drag-preview-replace";
 const DRAG_RELEASE_START_REASON = "drag-release-start";
+const DRAG_PREVIEW_LABEL_RESTORE_DURATION = 0.12;
+const DRAG_PREVIEW_FOLDER_HOVER_LABEL_SCALE = 0.72;
 
 function stopPreviewScaleMotion(node, options = {}) {
   killMotionOf(node.scale, null, { reason: options.reason });
+}
+
+function stopPreviewLabelMotion(node, options = {}) {
+  killMotionOf(node?.labelText, "alpha", { reason: options.reason });
+  killMotionOf(node?.labelText?.scale, null, { reason: options.reason });
 }
 
 function springPreviewScale(node, scale) {
@@ -54,6 +61,43 @@ function describeDragPreviewTargets(node, dragState, phase) {
   });
 }
 
+function getPreviewLabelTarget(folderHoverState) {
+  const phase = folderHoverState?.phase;
+  const hoveringFolder = folderHoverState?.targetType === "folder" && (phase === "hover" || phase === "flash");
+  return hoveringFolder
+    ? { alpha: 0, key: "folder-hover-hidden", scale: DRAG_PREVIEW_FOLDER_HOVER_LABEL_SCALE }
+    : { alpha: 1, key: "visible", scale: 1 };
+}
+
+function snapPreviewLabel(node, target) {
+  if (!node?.labelText) return;
+  stopPreviewLabelMotion(node, { reason: "drag-preview-label-snap" });
+  node.labelText.alpha = target.alpha;
+  node.labelText.scale.set(target.scale);
+}
+
+function tweenPreviewLabel(node, target) {
+  if (!node?.labelText?.visible) return;
+  if (Math.abs((Number(node.labelText.alpha) || 0) - target.alpha) > 0.001) {
+    motion(node.labelText)
+      .duration(DRAG_PREVIEW_LABEL_RESTORE_DURATION)
+      .ease("power2.out")
+      .overlay()
+      .interrupt("retarget")
+      .to({ alpha: target.alpha })
+      .start();
+  }
+  if (Math.abs((Number(node.labelText.scale?.x) || 1) - target.scale) > 0.001) {
+    motion(node.labelText.scale)
+      .duration(DRAG_PREVIEW_LABEL_RESTORE_DURATION)
+      .ease("power2.out")
+      .overlay()
+      .interrupt("retarget")
+      .to({ x: target.scale, y: target.scale })
+      .start();
+  }
+}
+
 export class DragPreviewLayer extends Container {
   constructor(options = {}) {
     super();
@@ -61,6 +105,7 @@ export class DragPreviewLayer extends Container {
     this.previewNode = new IconNode({ onAction: () => {} });
     this.previewNode.eventMode = "none";
     this.addChild(this.previewNode);
+    this.previewLabelStateKey = null;
     this.previewKey = null;
     this.previewScaleKey = null;
     this.releaseKey = null;
@@ -78,12 +123,14 @@ export class DragPreviewLayer extends Container {
     const preview = state.previewState;
     if (!preview?.item) {
       this.previewKey = null;
+      this.previewLabelStateKey = null;
       this.previewScaleKey = null;
       this.releaseKey = null;
       this.releaseMotionKey = null;
       this.releaseCompleteKey = null;
       killMotionOf(this.previewNode, null, { reason: DRAG_PREVIEW_CLEAR_REASON });
       stopPreviewScaleMotion(this.previewNode, { reason: DRAG_PREVIEW_CLEAR_REASON });
+      snapPreviewLabel(this.previewNode, { alpha: 1, scale: 1 });
       this.visible = false;
       this.previewNode.visible = false;
       return;
@@ -123,10 +170,7 @@ export class DragPreviewLayer extends Container {
       stageWidth: state.width,
       textless: layout.textless,
     });
-    if (this.previewNode.labelText) {
-      this.previewNode.labelText.alpha = 1;
-      this.previewNode.labelText.scale.set(1);
-    }
+    this.updatePreviewLabelState(state, { immediate: isNewPreview });
     describeDragPreviewTargets(this.previewNode, preview, "preview");
     this.previewNode.position.set(layout.position.x, layout.position.y);
     this.previewNode.rotation = DRAG_PREVIEW_ROTATION;
@@ -139,6 +183,22 @@ export class DragPreviewLayer extends Container {
     }
     this.previewScaleKey = layout.scaleKey;
     this.previewNode.eventMode = "none";
+  }
+
+  updatePreviewLabelState(state, options = {}) {
+    const target = getPreviewLabelTarget(state.folderHoverState);
+    const label = this.previewNode?.labelText;
+    const nextKey = `${target.key}:${label?.visible === false ? "label-hidden" : "label-visible"}`;
+    const isAtTarget = label
+      ? Math.abs((Number(label.alpha) || 0) - target.alpha) <= 0.001 &&
+        Math.abs((Number(label.scale?.x) || 1) - target.scale) <= 0.001
+      : true;
+    const shouldSnap = options.immediate || target.alpha === 0;
+    if (this.previewLabelStateKey === nextKey && isAtTarget) return;
+    if (this.previewLabelStateKey === nextKey && !shouldSnap) return;
+    this.previewLabelStateKey = nextKey;
+    if (shouldSnap) snapPreviewLabel(this.previewNode, target);
+    else tweenPreviewLabel(this.previewNode, target);
   }
 
   updateRelease(state) {
@@ -194,6 +254,7 @@ export class DragPreviewLayer extends Container {
       this.releaseCompleteKey = null;
       this.previewKey = null;
       this.previewScaleKey = null;
+      this.previewLabelStateKey = null;
       const currentScale = Math.max(0.01, Number(this.previewNode.scale?.x) || DRAG_PREVIEW_SCALE);
       const startScale = Math.max(0.01, currentScale * (Number(releaseMotion.startScaleMultiplier) || 1));
       const startPosition = releaseMotion.startIconCenter
@@ -206,8 +267,10 @@ export class DragPreviewLayer extends Container {
       this.previewNode.scale.set(startScale);
       this.previewNode.alpha = 1;
       if (this.previewNode.labelText) {
-        this.previewNode.labelText.alpha = 1;
-        this.previewNode.labelText.scale.set(1);
+        const startLabelTarget = releaseMotion.targetLabelAlpha <= 0.001
+          ? { alpha: 0, scale: releaseMotion.targetLabelScale }
+          : { alpha: 1, scale: 1 };
+        snapPreviewLabel(this.previewNode, startLabelTarget);
       }
     } else if (Math.abs(previousIconSize - releaseMotion.iconSize) > 0.0001) {
       const scaleMultiplier = previousIconSize / Math.max(0.01, releaseMotion.iconSize);

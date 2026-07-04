@@ -9,7 +9,7 @@ function getPadding(frame) {
   return Math.max(0, Number(frame?.padding) || 0);
 }
 
-function getFolderFrameRadius(thumb, padding) {
+export function getFolderFrameRadius(thumb, padding) {
   return thumb.radius + padding * 0.72;
 }
 

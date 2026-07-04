@@ -72,6 +72,10 @@ function makeNode(id) {
       this.labelText.renderable = true;
       this.labelText.visible = true;
     },
+    resetFolderPreviewAfterGhost() {
+      this.resetFolderPreviewAfterGhostCount += 1;
+    },
+    resetFolderPreviewAfterGhostCount: 0,
     visualWrap: { visible: true },
     visible: false,
   };
@@ -207,6 +211,7 @@ function prepareLayerForDesktopQuiescenceTest(layer, item) {
   node.item = item;
   node.setState = (nextState) => {
     node.state = nextState;
+    node.visible = !nextState.dragging && !nextState.ghosted;
   };
   layer.iconNodes.set(`page:0:${item.id}`, node);
   return node;
@@ -358,6 +363,49 @@ export async function runDesktopLayerTests() {
       assert(!layer.getFolderHandoffEntry("folder-a"), "settled cleanup frame should clear the handoff entry");
       motionRuntime.reset();
     }
+
+    {
+      // A released handoff entry can linger for an after-frame cleanup while the
+      // Vue closing id is still retained. That entry must not re-sync the folder
+      // handoff node or reset the active hover frame.
+      const folder = { id: "folder-a", type: "folder" };
+      const hoverState = {
+        key: "folder-hover-released",
+        phase: "hover",
+        targetId: folder.id,
+        targetType: "folder",
+      };
+      const pageTrack = makePageTrack([]);
+      const layer = makeLayer(DesktopLayer, pageTrack);
+      const node = prepareLayerForDesktopQuiescenceTest(layer, folder);
+      const releasedEntry = {
+        cleanupFrame: { cancelled: false },
+        folderId: folder.id,
+        node,
+        originalIndex: 0,
+        visualHidden: false,
+        visualReleased: true,
+      };
+      layer.getFolderHandoffNodes().set(folder.id, releasedEntry);
+      layer.primaryFolderHandoffId = folder.id;
+
+      layer.update({
+        ...makeDesktopQuiescenceState(folder),
+        dragFolderHoverState: hoverState,
+        dragFolderTargetId: folder.id,
+        folderClosingHandoffId: folder.id,
+        folderSourceGhostedIds: new Set([folder.id]),
+      });
+
+      const [entry] = layer.lastDesktopRenderPlan.entries;
+      assert(entry.isActiveFolderClosingHandoff === true, "test setup should retain the closing id while re-hovering the folder");
+      assert(entry.isFolderClosingHandoff === false, "released handoff entries should not be treated as hover-blocking handoffs");
+      assert(node.state.folderHoverState === null, "folder hover should be drawn by the independent drop target layer instead of IconNode");
+      assert(node.state.dropTarget === false, "folder drop target selection frame should stay disabled on IconNode");
+      assert(layer.lastDesktopRenderPlan.folderDropTarget?.targetId === folder.id, "released handoff entries should expose a folder drop target for the independent layer");
+      assert(node.state.ghosted === false && node.visible !== false, "released handoff entries should keep the real folder visible while source ghosting settles");
+      assert(node.resetFolderPreviewAfterGhostCount === 0, "released handoff entries should not re-sync and reset the folder hover preview");
+    }
   }
 
   {
@@ -407,6 +455,11 @@ export async function runDesktopLayerTests() {
     assert(shouldFinishFolderHandoffEntry({}, { folderHandoff: makeHandoffCoordinator({ active: true, folderId: "folder-2" }), hasVisibleFolderSubstitute: () => false }, "folder-1"), "different-folder Pixi activity should not keep an old handoff alive by itself");
 
     const actualLayer = new DesktopLayer({ iconBoundsRegistry: createIconBoundsRegistry() });
+    assert(
+      actualLayer.children.indexOf(actualLayer.folderDropFillLayer) <
+        actualLayer.children.indexOf(actualLayer.visualRoot),
+      "folder drop fill should render behind desktop icons so the folder thumb children stay visible"
+    );
     assert(
       actualLayer.children.indexOf(actualLayer.visualRoot) <
         actualLayer.children.indexOf(actualLayer.desktopClosingUnderlayLayer),

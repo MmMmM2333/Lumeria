@@ -118,6 +118,65 @@ export async function runDragPreviewLayerTests() {
   {
     motionRuntime.reset();
     const layer = new DragPreviewLayer();
+    const previewState = {
+      cellSize: { height: 80, width: 80 },
+      item: { id: "app-folder-hover", name: "Spreadsheet Compare", type: "app" },
+      offset: { x: 32, y: 32 },
+      pointer: { x: 180, y: 220 },
+      size: { height: 64, width: 64 },
+      source: { folderId: "folder-a", index: 0, pageIndex: 0, type: "folder" },
+    };
+    const baseState = {
+      folderPageSize: 9,
+      height: 600,
+      iconSize: 64,
+      isTextlessMode: false,
+      launchTargetStatusById: {},
+      previewState,
+      showMissingLaunchTargetBadge: true,
+      stageRect: { height: 600, left: 0, top: 0, width: 800 },
+      width: 800,
+    };
+    try {
+      layer.update({
+        ...baseState,
+        folderHoverState: { key: "folder-hover", phase: "hover", targetId: "folder-a", targetType: "folder" },
+      });
+
+      assert(runUntil(() => layer.previewNode.scale.x < 1), "folder hover should shrink the drag preview away from the target folder");
+      assert(layer.previewNode.labelText.alpha < 0.001, "folder hover should hide the drag preview label so it cannot cover the target folder");
+      assert(layer.previewNode.labelText.scale.x < 1, "folder hover should shrink the hidden preview label");
+
+      layer.update({ ...baseState, folderHoverState: null });
+      assert(runUntil(() => layer.previewNode.labelText.alpha > 0.98), "leaving folder hover should restore the drag preview label");
+      assert(runUntil(() => layer.previewNode.labelText.scale.x > 0.98), "leaving folder hover should restore the drag preview label scale");
+
+      layer.update({
+        ...baseState,
+        folderHoverState: { key: "folder-hover-release", phase: "hover", targetId: "folder-a", targetType: "folder" },
+      });
+      assert(layer.previewNode.labelText.alpha < 0.001, "folder hover re-entry should hide the drag preview label immediately");
+      layer.update({
+        ...baseState,
+        releaseState: {
+          ...previewState,
+          key: "release-folder-hover",
+          releaseMode: "folder-center-absorb",
+          targetRect: { height: 16, left: 240, top: 260, width: 16 },
+          targetVersion: 1,
+          velocity: { x: 0, y: 0 },
+        },
+      });
+      assert(layer.previewNode.labelText.alpha < 0.001, "folder release should not resurrect a hidden drag preview label over the target folder");
+    } finally {
+      layer.destroy({ children: true });
+      motionRuntime.reset();
+    }
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = new DragPreviewLayer();
     const releaseState = {
       cellSize: { height: 80, width: 80 },
       item: { id: "app-hover", name: "App Hover", type: "app" },
