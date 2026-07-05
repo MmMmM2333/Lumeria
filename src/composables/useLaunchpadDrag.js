@@ -341,7 +341,7 @@ export function useLaunchpadDrag(options) {
   function releaseDragSortGate() {
     dragSortGateTimer = null;
     dragSortBlocked = false;
-    evaluateDragIntent();
+    if (dragRuntime && !options.isLaunchpadInteractionBlocked()) scheduleDragIntentEvaluation();
   }
 
   function blockDragSorting(duration = FOLDER_DRAG_SORT_GATE_DURATION) {

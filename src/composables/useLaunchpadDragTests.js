@@ -10,6 +10,7 @@ import {
   ICON_BOUNDS_KIND,
   ICON_BOUNDS_VARIANT,
 } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
+import { DRAG_INTENT_IDLE_DELAY } from "./launchpadConstants.js";
 import { computed, nextTick, ref, shallowRef } from "vue";
 
 const K = ICON_BOUNDS_KIND;
@@ -997,7 +998,10 @@ export async function runLaunchpadDragTests() {
     assert(!pages.value[0].some((item) => item.id === "app-a"), "leaving a folder should not sort the dragged item onto the desktop before the close gate finishes");
 
     runNextTimer(timers);
-    assert(pages.value[0].some((item) => item.id === "app-a"), "close gate completion should return the dragged item to the desktop");
+    assert(!pages.value[0].some((item) => item.id === "app-a"), "close gate completion should not bypass the normal drag intent idle delay");
+    assert(Array.from(timers.values()).some((timer) => timer.delay === DRAG_INTENT_IDLE_DELAY), "close gate completion should reschedule a normal drag intent evaluation");
+    runNextTimer(timers);
+    assert(pages.value[0].some((item) => item.id === "app-a"), "post-gate drag intent should return the dragged item to the desktop");
   });
 
   await withMockPointerEnvironment(async ({ listeners, timers }) => {
@@ -1052,12 +1056,15 @@ export async function runLaunchpadDragTests() {
       clientY: 160,
       preventDefault: () => {},
     });
-    assert(Array.from(timers.values()).some((timer) => timer.delay === 140), "moving inside an opening folder should schedule a short drag intent evaluation");
+    assert(Array.from(timers.values()).some((timer) => timer.delay === DRAG_INTENT_IDLE_DELAY), "moving inside an opening folder should schedule a short drag intent evaluation");
     runNextTimer(timers);
     assert(calls.insertAppIntoFolder.length === 0, "folder open gate should delay folder sorting while the open animation is running");
 
-    for (let index = 0; index < 5 && calls.insertAppIntoFolder.length === 0; index += 1) runNextTimer(timers);
-    assert(calls.insertAppIntoFolder.length === 1, "folder open gate completion should allow folder sorting at the current pointer");
+    runNextTimer(timers);
+    assert(calls.insertAppIntoFolder.length === 0, "folder open gate completion should not bypass the normal drag intent idle delay");
+    assert(Array.from(timers.values()).some((timer) => timer.delay === DRAG_INTENT_IDLE_DELAY), "folder open gate completion should reschedule a normal drag intent evaluation");
+    runNextTimer(timers);
+    assert(calls.insertAppIntoFolder.length === 1, "folder sorting should commit only after the post-gate drag intent delay");
     iconBoundsRegistry.clearBounds();
   });
 
