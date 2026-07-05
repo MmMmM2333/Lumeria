@@ -86,6 +86,7 @@ export function resolveFolderPresentationState(options = {}) {
     iconSize = 64,
     isActiveClosingHandoff = false,
     isEffectiveSourceGhosted = false,
+    isOpeningSourceGhosted = false,
     isInteractivePage = true,
     isRawSourceGhosted = false,
     isSearchMode = false,
@@ -94,15 +95,16 @@ export function resolveFolderPresentationState(options = {}) {
 
   const effectiveHandoffEntry = shouldRetireStaleHandoff ? null : existingHandoffEntry;
   const isReleasedHandoff = effectiveHandoffEntry?.visualReleased === true;
+  const isReleasedClosingHandoff = Boolean(
+    isReleasedHandoff &&
+    !isOpeningSourceGhosted &&
+    (isActiveClosingHandoff || isRawSourceGhosted || effectiveHandoffEntry?.cleanupFrame != null)
+  );
   const hasHiddenHandoffEntry = Boolean(effectiveHandoffEntry && !isReleasedHandoff);
   const blocksHover = hasHiddenHandoffEntry || (isActiveClosingHandoff && !isReleasedHandoff);
   const retainsSourceVisibility = Boolean(
-    isReleasedHandoff &&
-    (
-      isActiveClosingHandoff ||
-      isRawSourceGhosted ||
-      effectiveHandoffEntry?.cleanupFrame != null
-    )
+    isReleasedClosingHandoff &&
+    (isEffectiveSourceGhosted || isRawSourceGhosted || effectiveHandoffEntry?.cleanupFrame != null)
   );
   const syncsNode = blocksHover;
   const pinsLayout = syncsNode || retainsSourceVisibility;
@@ -129,8 +131,8 @@ export function resolveFolderPresentationState(options = {}) {
 
   let phase = "idle";
   if (blocksHover) phase = "closingHandoffHidden";
-  else if (isReleasedHandoff) phase = "closingHandoffReleased";
   else if (isSourceGhosted) phase = "sourceGhosted";
+  else if (isReleasedClosingHandoff) phase = "closingHandoffReleased";
 
   return {
     acceptsDropHover,

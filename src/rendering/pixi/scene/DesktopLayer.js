@@ -19,7 +19,10 @@ import { makeFolderThumbPreviewRect } from "./folderOverlayTargets.js";
 import { makeSyntheticPointerEvent } from "./iconSceneHelpers.js";
 import { FolderOverlayLayer } from "./FolderOverlayLayer.js";
 import { FolderVisualCommitQueue } from "./folderVisualCommitQueue.js";
-import { FolderVisualOwnershipRegistry } from "./folderVisualOwnershipRegistry.js";
+import {
+  FolderVisualOwnershipRegistry,
+  makeDesktopSourceVisualKey,
+} from "./folderVisualOwnershipRegistry.js";
 import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import { makeIconVisualSpecFromNodeState } from "./iconVisualSpec.js";
 import { SingleStageDiagnosticsLayer } from "./singleStageDiagnostics.js";
@@ -44,7 +47,7 @@ import {
   hasFolderClosingHandoffId,
   isDesktopLayoutTargetChanged,
   isFolderLayerHandoffActive,
-  isFolderLayerHoldingDesktopSource,
+  isFolderOpeningSourceGhosted,
   isStaleHiddenFolderHandoffEntry,
   normalizeDesktopHandoffState,
   normalizeFolderIdSet,
@@ -70,6 +73,11 @@ const BOUNDS_VARIANT = ICON_BOUNDS_VARIANT;
 
 function projectStageLayoutRecordToClient(record) {
   return stageLayoutRecordToClientRect(record);
+}
+
+function getDesktopSourceOwnerKind(visualOwnership, folderId) {
+  const key = makeDesktopSourceVisualKey(folderId);
+  return key ? visualOwnership?.getOwner?.(key)?.kind || null : null;
 }
 
 function roundDebugObject(object) {
@@ -648,15 +656,24 @@ export class DesktopLayer extends Container {
       const nextGhosted = rawGhosted || ownershipGhosted;
       const handoffEntry = this.getFolderHandoffEntry(folderId);
       if (handoffEntry) {
-        const activeHandoff = hasFolderClosingHandoffId(state, folderId) ||
-          isFolderLayerHandoffActive(this.singleStageFolderLayer, folderId) ||
-          isFolderLayerHoldingDesktopSource(this.singleStageFolderLayer, folderId);
-        const retainsSourceVisibility = handoffEntry.visualReleased === true && rawGhosted;
+        const desktopSourceOwnerKind = getDesktopSourceOwnerKind(this.visualOwnership, folderId);
+        const openingSourceGhosted = desktopSourceOwnerKind === "opening" ||
+          isFolderOpeningSourceGhosted(state, folderId);
+        const activeClosingHandoff = hasFolderClosingHandoffId(state, folderId) ||
+          isFolderLayerHandoffActive(this.singleStageFolderLayer, folderId);
+        const shouldKeepPreparedHandoff = handoffEntry.visualReleased !== true &&
+          (activeClosingHandoff || (ownershipGhosted && !openingSourceGhosted));
+        const retainsSourceVisibility = handoffEntry.visualReleased === true &&
+          !openingSourceGhosted &&
+          (activeClosingHandoff || rawGhosted || handoffEntry.cleanupFrame != null) &&
+          nextGhosted;
         // Only retire the handoff node once the closing handoff is no longer
         // active; clearing it mid-handoff (rawGhosted is true throughout a close)
         // re-creates a fresh entry every frame, resetting visualReleased and
-        // re-hiding visualWrap, so the icon stays blank until activeHandoff ends.
-        if (!activeHandoff && !retainsSourceVisibility && (rawGhosted || (ownershipGhosted && handoffEntry.visualReleased === true))) {
+        // re-hiding visualWrap, so the icon stays blank until the active close ends.
+        // Opening ownership is different: it must hide the real desktop source
+        // through normal ghosted state instead of retaining a released close handoff.
+        if (!shouldKeepPreparedHandoff && !retainsSourceVisibility && (rawGhosted || (ownershipGhosted && handoffEntry.visualReleased === true))) {
           this.clearFolderHandoffNode(folderId);
         } else {
           node.__folderSourceGhostedByOwnership = Boolean(nextGhosted);

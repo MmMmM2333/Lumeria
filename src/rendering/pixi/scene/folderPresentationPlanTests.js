@@ -73,6 +73,50 @@ export function runFolderPresentationPlanTests() {
   }
 
   {
+    const folderId = "folder-opening-source";
+    const presentation = resolveFolderPresentationState({
+      existingHandoffEntry: makeReleasedEntry(folderId),
+      folderId,
+      geometry: {
+        stableRect: { height: 64, left: 100, top: 80, width: 64 },
+      },
+      isActiveClosingHandoff: false,
+      isEffectiveSourceGhosted: true,
+      isOpeningSourceGhosted: true,
+      isInteractivePage: true,
+      isRawSourceGhosted: true,
+      isSearchMode: false,
+    });
+
+    assert(presentation.phase === "sourceGhosted", "opening source ghosting should not inherit the released closing handoff phase");
+    assert(presentation.handoff.retainsSourceVisibility === false, "inactive released handoffs should not retain source visibility during a new open");
+    assert(presentation.handoff.pinsLayout === false, "inactive released handoffs should not pin layout during a new open");
+    assert(presentation.sourceVisible === false, "opening source ghosting should hide the real desktop folder");
+    assert(presentation.isSourceGhosted === true, "opening source ghosting should route through the normal source ghost path");
+  }
+
+  {
+    const folderId = "folder-close-tail";
+    const presentation = resolveFolderPresentationState({
+      existingHandoffEntry: makeReleasedEntry(folderId),
+      folderId,
+      geometry: {
+        stableRect: { height: 64, left: 100, top: 80, width: 64 },
+      },
+      isActiveClosingHandoff: false,
+      isEffectiveSourceGhosted: true,
+      isInteractivePage: true,
+      isRawSourceGhosted: true,
+      isSearchMode: false,
+    });
+
+    assert(presentation.phase === "closingHandoffReleased", "released close tail should keep the closing presentation phase while source ghosting settles");
+    assert(presentation.handoff.retainsSourceVisibility === true, "released close tail should retain source visibility after the close id clears");
+    assert(presentation.sourceVisible === true, "released close tail should keep the real desktop folder visible for handoff");
+    assert(presentation.isSourceGhosted === false, "released close tail should not re-hide the real desktop folder");
+  }
+
+  {
     const folderId = "folder-moving";
     const hoverState = {
       key: "hover-moving",

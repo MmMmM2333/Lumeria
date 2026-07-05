@@ -72,6 +72,17 @@ function hasRawFolderSourceGhosting(state = {}, folderId = null) {
     state.isFolderOpeningPreviewFrameGhosted?.(folderId) === true;
 }
 
+export function isFolderOpeningSourceGhosted(state = {}, folderId = null) {
+  if (!folderId) return false;
+  if (state.isFolderOpeningPreviewFrameGhosted?.(folderId) === true) return true;
+  const folderState = state.singleStageFolderState;
+  if (folderState?.renderedFolder?.id !== folderId) return false;
+  return !folderState.isFolderClosing &&
+    !folderState.isFolderAppLaunchClosing &&
+    !folderState.isFolderZoomFadeClosing &&
+    !folderState.isDesktopClosing;
+}
+
 export function hasFolderClosingHandoffId(state = {}, folderId) {
   if (!folderId) return false;
   return normalizeDesktopHandoffState(state).folderClosingHandoffIds.has(folderId);
@@ -513,6 +524,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
           isActiveClosingHandoff: isActiveFolderClosingHandoff,
           isEffectiveSourceGhosted: effectiveFolderSourceGhostedIds.has(item.id) ||
             state.isFolderOpeningPreviewFrameGhosted?.(item.id) === true,
+          isOpeningSourceGhosted: isFolderOpeningSourceGhosted(state, item.id),
           isInteractivePage,
           isRawSourceGhosted: isRawFolderSourceGhosted,
           isSearchMode: state.isSearchMode,

@@ -147,6 +147,63 @@ export function runDesktopRenderPlanTests() {
   }
 
   {
+    const folder = { id: "folder-opening-source", type: "folder" };
+    const plan = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[folder]],
+      folderSourceGhostedIds: new Set([folder.id]),
+      singleStageFolderState: {
+        renderedFolder: folder,
+      },
+    }), {
+      effectiveFolderSourceGhostedIds: new Set([folder.id]),
+      folderHandoffEntries: new Map([[folder.id, {
+        cleanupFrame: { cancelled: false },
+        folderId: folder.id,
+        visualReleased: true,
+      }]]),
+      folderLayer: {
+        folderHandoff: makeHandoffCoordinator(false, null),
+        getDesktopSourceGhostedIds: () => new Set(),
+        hasVisibleFolderSubstitute: () => false,
+      },
+    });
+
+    const [entry] = plan.entries;
+    assert(entry.isActiveFolderClosingHandoff === false, "test setup should model a new open without an active closing handoff");
+    assert(entry.folderPresentation.handoff.retainsSourceVisibility === false, "released closing handoff state should not retain visibility during a new open");
+    assert(entry.nodeState.ghosted === true, "opening source ghosting should hide the real desktop folder even with a released stale handoff entry");
+  }
+
+  {
+    const folder = { id: "folder-close-tail", type: "folder" };
+    const plan = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[folder]],
+      folderSourceGhostedIds: new Set([folder.id]),
+      singleStageFolderState: {
+        isFolderClosing: true,
+        renderedFolder: folder,
+      },
+    }), {
+      effectiveFolderSourceGhostedIds: new Set([folder.id]),
+      folderHandoffEntries: new Map([[folder.id, {
+        cleanupFrame: { cancelled: false },
+        folderId: folder.id,
+        visualReleased: true,
+      }]]),
+      folderLayer: {
+        folderHandoff: makeHandoffCoordinator(false, null),
+        getDesktopSourceGhostedIds: () => new Set(),
+        hasVisibleFolderSubstitute: () => false,
+      },
+    });
+
+    const [entry] = plan.entries;
+    assert(entry.isActiveFolderClosingHandoff === false, "test setup should model the frame after the closing id clears");
+    assert(entry.folderPresentation.handoff.retainsSourceVisibility === true, "released close tail should retain source visibility while source ghosting settles");
+    assert(entry.nodeState.ghosted === false, "released close tail should keep the real desktop folder visible for handoff");
+  }
+
+  {
     const app = { id: "app-create-target", type: "app" };
     const hoverState = {
       key: "app-create-hover",

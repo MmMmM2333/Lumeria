@@ -1021,6 +1021,67 @@ export async function runDesktopLayerTests() {
     const layer = makeLayer(DesktopLayer, pageTrack);
     layer.iconNodes.set("page:0:folder-1", folder);
     layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set();
+
+    layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 });
+    layer.releaseClosingFolderHandoffVisual("folder-1");
+    assert(layer.getFolderHandoffEntry("folder-1")?.visualReleased === true, "test setup should leave a released stale handoff entry");
+
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(["folder-1"]),
+      isFolderOpeningPreviewFrameGhosted: (folderId) => folderId === "folder-1",
+    });
+
+    assert(!layer.getFolderHandoffEntry("folder-1"), "new opening source ghosting should clear a released stale handoff entry");
+    assert(setStateCount === 1, "new opening source ghosting should be committed through normal icon state");
+    assert(folder.state.ghosted === true && folder.visible === false, "new opening source ghosting should hide the real desktop folder");
+  }
+
+  {
+    const folder = makeNode("folder");
+    folder.item = { id: "folder-1", type: "folder" };
+    folder.state = { ghosted: false };
+    let setStateCount = 0;
+    folder.setState = (nextState) => {
+      setStateCount += 1;
+      folder.state = nextState;
+      folder.visible = !nextState.ghosted;
+    };
+    const pageTrack = makePageTrack([folder]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.iconNodes.set("page:0:folder-1", folder);
+    layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set();
+
+    layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 });
+    layer.releaseClosingFolderHandoffVisual("folder-1");
+    const entry = layer.getFolderHandoffEntry("folder-1");
+    entry.cleanupFrame = { cancelled: false };
+    assert(entry?.visualReleased === true, "test setup should leave a released close-tail handoff entry");
+
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(["folder-1"]),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    });
+
+    assert(layer.getFolderHandoffEntry("folder-1") === entry, "released close tail should keep the handoff entry until cleanup");
+    assert(setStateCount === 0, "released close tail should not re-hide the real folder through ghosted state");
+    assert(folder.visible !== false, "released close tail should keep the real desktop folder visible for handoff");
+    assert(folder.__folderSourceGhostedByOwnership === true, "released close tail should still track source ownership ghosting");
+  }
+
+  {
+    const folder = makeNode("folder");
+    folder.item = { id: "folder-1", type: "folder" };
+    folder.state = { ghosted: false };
+    let setStateCount = 0;
+    folder.setState = (nextState) => {
+      setStateCount += 1;
+      folder.state = nextState;
+      folder.visible = !nextState.ghosted;
+    };
+    const pageTrack = makePageTrack([folder]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.iconNodes.set("page:0:folder-1", folder);
+    layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set();
     layer.visualOwnership = new FolderVisualOwnershipRegistry();
 
     layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 }, { revealLabel: false });
