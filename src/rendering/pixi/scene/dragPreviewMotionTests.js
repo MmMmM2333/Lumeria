@@ -60,6 +60,19 @@ export function runDragPreviewMotionTests() {
   assert(pendingRelease.releaseMode === "slot", "pending release should default to slot mode");
   assert(pendingRelease.velocity.x === 120 && pendingRelease.velocity.y === -60, "release motion should preserve velocity when stage scale is neutral");
 
+  const explicitStartRelease = getDragReleaseMotion({
+    ...preview,
+    pointer: { x: 120, y: 220 },
+    startPose: { pointer: { x: 520, y: 420 } },
+    targetVersion: 0,
+  }, {
+    iconSize: 56,
+    isTextlessMode: false,
+    stageRect: { left: 100, top: 200 },
+  });
+  assert(explicitStartRelease.startPose?.x === 442 && explicitStartRelease.startPose?.y === 246, "release motion should prefer the explicit pointer-up start pose over stale preview state");
+  assert(explicitStartRelease.start.x === explicitStartRelease.startPose.x && explicitStartRelease.start.y === explicitStartRelease.startPose.y, "explicit release start pose should drive the release start position");
+
   const targetedRelease = getDragReleaseMotion({
     ...preview,
     targetRect: { height: 32, left: 300, top: 400, width: 32 },
@@ -76,6 +89,18 @@ export function runDragPreviewMotionTests() {
   assert(targetedRelease.targetScale === 1, "slot release should return the preview to the real icon scale");
   assert(targetedRelease.targetAlpha === 1 && targetedRelease.targetLabelAlpha === 1, "slot release should keep icon and label visible");
   assert(!targetedRelease.textless, "release textless override should win over current state");
+
+  const provisionalRelease = getDragReleaseMotion({
+    ...preview,
+    provisionalLayoutTarget: true,
+    targetRect: { height: 32, left: 300, top: 400, width: 32 },
+    targetVersion: 4,
+  }, {
+    iconSize: 56,
+    stageRect: { left: 100, top: 200 },
+  });
+  assert(provisionalRelease.provisionalLayoutTarget === true, "release motion should expose provisional layout targets");
+  assert(provisionalRelease.key === "app-1:folder:folder-1:1:2:4:target:provisional", "provisional release key should force a final retarget");
 
   const targetSpecRelease = getDragReleaseMotion({
     ...preview,

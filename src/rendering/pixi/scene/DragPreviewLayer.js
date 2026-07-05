@@ -207,6 +207,27 @@ export class DragPreviewLayer extends Container {
     const releaseKey = release?.key || releaseMotion.key;
     const isNewRelease = this.releaseKey !== releaseKey;
     const isNewMotion = this.releaseMotionKey !== releaseMotion.key;
+    const hasExplicitStartPose = Boolean(releaseMotion.startPose);
+    const renderedPreviewScale = isNewRelease && this.previewNode.visible
+      ? {
+        scaleX: Math.max(0.01, Number(this.previewNode.scale?.x) || DRAG_PREVIEW_SCALE),
+        scaleY: Math.max(0.01, Number(this.previewNode.scale?.y) || DRAG_PREVIEW_SCALE),
+      }
+      : null;
+    const canPreservePreviewPose = Boolean(
+      !hasExplicitStartPose &&
+      isNewRelease &&
+      this.previewKey &&
+      this.previewNode.visible &&
+      this.previewNode.state?.item?.id === release?.item?.id
+    );
+    const preservedPreviewPose = canPreservePreviewPose
+      ? {
+        ...renderedPreviewScale,
+        x: Number(this.previewNode.x) || 0,
+        y: Number(this.previewNode.y) || 0,
+      }
+      : null;
 
     if (isNewRelease) {
       killMotionOf(this.previewNode, null, { reason: DRAG_RELEASE_START_REASON });
@@ -255,16 +276,27 @@ export class DragPreviewLayer extends Container {
       this.previewKey = null;
       this.previewScaleKey = null;
       this.previewLabelStateKey = null;
-      const currentScale = Math.max(0.01, Number(this.previewNode.scale?.x) || DRAG_PREVIEW_SCALE);
-      const startScale = Math.max(0.01, currentScale * (Number(releaseMotion.startScaleMultiplier) || 1));
-      const startPosition = releaseMotion.startIconCenter
-        ? {
-          x: releaseMotion.startIconCenter.x,
-          y: releaseMotion.startIconCenter.y - releaseMotion.visualOffsetY * startScale,
-        }
-        : releaseMotion.start;
-      this.previewNode.position.set(startPosition.x, startPosition.y);
-      this.previewNode.scale.set(startScale);
+      const startScaleMultiplier = Number(releaseMotion.startScaleMultiplier) || 1;
+      const currentScale = preservedPreviewPose?.scaleX ??
+        renderedPreviewScale?.scaleX ??
+        Math.max(0.01, Number(this.previewNode.scale?.x) || DRAG_PREVIEW_SCALE);
+      const currentScaleY = preservedPreviewPose?.scaleY ??
+        renderedPreviewScale?.scaleY ??
+        Math.max(0.01, Number(this.previewNode.scale?.y) || currentScale);
+      const startScale = Math.max(0.01, currentScale * startScaleMultiplier);
+      const startScaleY = Math.max(0.01, currentScaleY * startScaleMultiplier);
+      if (!canPreservePreviewPose) {
+        const startPosition = releaseMotion.startIconCenter
+          ? {
+            x: releaseMotion.startIconCenter.x,
+            y: releaseMotion.startIconCenter.y - releaseMotion.visualOffsetY * startScale,
+          }
+          : releaseMotion.start;
+        this.previewNode.position.set(startPosition.x, startPosition.y);
+      } else {
+        this.previewNode.position.set(preservedPreviewPose.x, preservedPreviewPose.y);
+      }
+      this.previewNode.scale.set(startScale, startScaleY);
       this.previewNode.alpha = 1;
       if (this.previewNode.labelText) {
         const startLabelTarget = releaseMotion.targetLabelAlpha <= 0.001
@@ -282,6 +314,7 @@ export class DragPreviewLayer extends Container {
     if (!releaseMotion.hasTargetRect) return;
     const completeRelease = () => {
       if (this.releaseCompleteKey === releaseMotion.key || this.releaseMotionKey !== releaseMotion.key) return;
+      if (releaseMotion.provisionalLayoutTarget) return;
       this.releaseCompleteKey = releaseMotion.key;
       this.onReleaseComplete(release);
     };

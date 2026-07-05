@@ -459,6 +459,13 @@ export function useLaunchpadDrag(options) {
     previewRafId = window.requestAnimationFrame(updatePreviewState);
   }
 
+  function makeDragReleaseStartPose(activeDrag) {
+    if (!activeDrag?.pointer) return null;
+    return {
+      pointer: { ...activeDrag.pointer },
+    };
+  }
+
   function sampleDragVelocity(activeDrag, event) {
     const sampled = samplePointerVelocity({
       pointer: activeDrag.pointer,
@@ -593,12 +600,21 @@ export function useLaunchpadDrag(options) {
     return null;
   }
 
-  function makeReleaseTarget(clientRect, stageLayoutRect = null, visualSpec = null) {
+  function isReleaseTargetProvisional(target) {
+    return target?.provisionalLayoutTarget === true ||
+      target?.clientRect?.meta?.provisionalLayoutTarget === true ||
+      target?.stageLayoutRect?.meta?.provisionalLayoutTarget === true;
+  }
+
+  function makeReleaseTarget(clientRect, stageLayoutRect = null, visualSpec = null, targetOptions = {}) {
     const safeClientRect = cloneClientRect(clientRect);
     const safeStageLayoutRect = cloneClientRect(stageLayoutRect);
     if (!safeClientRect && !safeStageLayoutRect) return null;
     return {
       clientRect: safeClientRect,
+      provisionalLayoutTarget: targetOptions.provisionalLayoutTarget === true ||
+        clientRect?.meta?.provisionalLayoutTarget === true ||
+        stageLayoutRect?.meta?.provisionalLayoutTarget === true,
       stageLayoutRect: safeStageLayoutRect,
       visualSpec: cloneIconVisualSpec(visualSpec),
     };
@@ -606,10 +622,18 @@ export function useLaunchpadDrag(options) {
 
   function normalizeReleaseTarget(target) {
     if (target?.clientRect || target?.stageLayoutRect || target?.visualSpec) {
-      return makeReleaseTarget(target.clientRect, target.stageLayoutRect, target.visualSpec) ||
-        { clientRect: null, stageLayoutRect: null, visualSpec: null };
+      return makeReleaseTarget(target.clientRect, target.stageLayoutRect, target.visualSpec, {
+        provisionalLayoutTarget: target.provisionalLayoutTarget === true,
+      }) || { clientRect: null, provisionalLayoutTarget: false, stageLayoutRect: null, visualSpec: null };
     }
-    return makeReleaseTarget(target) || { clientRect: null, stageLayoutRect: null, visualSpec: null };
+    return makeReleaseTarget(target) || { clientRect: null, provisionalLayoutTarget: false, stageLayoutRect: null, visualSpec: null };
+  }
+
+  function releaseTargetsAlmostEqual(a, b) {
+    return rectsAlmostEqual(a?.clientRect, b?.clientRect) &&
+      rectsAlmostEqual(a?.stageLayoutRect, b?.stageLayoutRect) &&
+      visualSpecsAlmostEqual(a?.visualSpec, b?.visualSpec) &&
+      isReleaseTargetProvisional(a) === isReleaseTargetProvisional(b);
   }
 
   function getStableLayoutReleaseTarget(source, expected = null) {
@@ -884,7 +908,10 @@ export function useLaunchpadDrag(options) {
         iconSize: size,
         singleLineLabel: false,
         textless: getReleaseTextless(),
-      })
+      }),
+      {
+        provisionalLayoutTarget: targetOptions.provisionalLayoutTarget === true,
+      }
     );
   }
 
@@ -957,6 +984,7 @@ export function useLaunchpadDrag(options) {
       singleLineLabel: activeDrag.singleLineLabel === true,
       size: { ...activeDrag.size },
       source: activeDrag.source,
+      startPose: makeDragReleaseStartPose(activeDrag),
       suppressFolderPreviewChildId: releaseOptions.suppressFolderPreviewChildId || null,
       suppressFolderPreviewFolderId: releaseOptions.suppressFolderPreviewFolderId || null,
       targetFolderId: releaseOptions.targetFolderId || null,
@@ -965,6 +993,7 @@ export function useLaunchpadDrag(options) {
       targetStageLayoutRect: null,
       targetVisualSpec: null,
       targetVersion: 0,
+      provisionalLayoutTarget: false,
       textless: getReleaseTextless(),
       velocity: { ...(activeDrag.velocity || makeZeroVelocity()) },
     };
@@ -990,6 +1019,11 @@ export function useLaunchpadDrag(options) {
       : fallbackCandidate?.width && fallbackCandidate?.height
         ? fallbackTarget.visualSpec
         : null;
+    const safeProvisionalLayoutTarget = targetCandidate?.width && targetCandidate?.height
+      ? releaseTarget.provisionalLayoutTarget === true
+      : fallbackCandidate?.width && fallbackCandidate?.height
+        ? fallbackTarget.provisionalLayoutTarget === true
+        : false;
     if (!safeTargetRect?.width || !safeTargetRect?.height) {
       clearDragRelease();
       return false;
@@ -998,13 +1032,15 @@ export function useLaunchpadDrag(options) {
     if (
       rectsAlmostEqual(current.targetRect, safeTargetRect) &&
       rectsAlmostEqual(current.targetStageLayoutRect, safeStageLayoutRect) &&
-      visualSpecsAlmostEqual(current.targetVisualSpec, safeTargetVisualSpec)
+      visualSpecsAlmostEqual(current.targetVisualSpec, safeTargetVisualSpec) &&
+      current.provisionalLayoutTarget === safeProvisionalLayoutTarget
     ) {
       scheduleDragReleaseClear();
       return true;
     }
     dragReleaseState.value = {
       ...current,
+      provisionalLayoutTarget: safeProvisionalLayoutTarget,
       targetRect: safeTargetRect,
       targetStageLayoutRect: safeStageLayoutRect,
       targetVisualSpec: safeTargetVisualSpec,
@@ -1025,6 +1061,11 @@ export function useLaunchpadDrag(options) {
     );
     const minAttempts = Math.max(1, Number(resolveOptions.minAttempts) || 1);
     const settleFrames = Math.max(0, Number(resolveOptions.settleFrames) || 0);
+    const continueWhileProvisional = resolveOptions.continueWhileProvisional === true;
+    const maxProvisionalAttempts = Math.max(
+      maxAttempts,
+      Number(resolveOptions.maxProvisionalAttempts) || 90
+    );
     const tryResolve = () => {
       dragReleaseResolveRaf = 0;
       if (!dragReleaseState.value || dragReleaseState.value.key !== releaseKey) return;
@@ -1032,13 +1073,16 @@ export function useLaunchpadDrag(options) {
       const targetRect = typeof resolveTargetRect === "function" ? resolveTargetRect() : null;
       if (targetRect) {
         const normalizedTarget = normalizeReleaseTarget(targetRect);
-        stableAttempts = rectsAlmostEqual(previousTarget?.clientRect, normalizedTarget.clientRect) &&
-          rectsAlmostEqual(previousTarget?.stageLayoutRect, normalizedTarget.stageLayoutRect) &&
-          visualSpecsAlmostEqual(previousTarget?.visualSpec, normalizedTarget.visualSpec)
+        const targetIsProvisional = isReleaseTargetProvisional(normalizedTarget);
+        stableAttempts = releaseTargetsAlmostEqual(previousTarget, normalizedTarget)
           ? stableAttempts + 1
           : 1;
         previousTarget = normalizedTarget;
         setDragReleaseTarget(releaseKey, targetRect, fallbackRect);
+        if (continueWhileProvisional && targetIsProvisional && attempts < maxProvisionalAttempts) {
+          dragReleaseResolveRaf = window.requestAnimationFrame(tryResolve);
+          return;
+        }
         if (
           settleFrames > 0 &&
           attempts < maxAttempts &&
@@ -2234,7 +2278,6 @@ export function useLaunchpadDrag(options) {
 
     sampleDragVelocity(activeDrag, event);
     activeDrag.pointer = { x: event.clientX, y: event.clientY };
-    schedulePreviewPosition(event.clientX, event.clientY);
     clearDragIntentTimer();
     const folderPageTurnCommit = options.folderSession.value || options.openFolderId.value
       ? commitPendingFolderDragPageTurn()
@@ -2316,15 +2359,36 @@ export function useLaunchpadDrag(options) {
         return;
       }
       const folderTarget = calcFolderReleaseInsertTarget(folderId, activeDrag, event.clientX, event.clientY, folderPageTurnCommit);
-      const fallbackReleaseTarget = getFolderSlotReleaseTarget(folderTarget.pageIndex, folderTarget.index, activeDrag.size?.width, folderTarget);
+      const visibleRows = Math.max(1, Number(options.visibleFolderRowCount.value) || 1);
+      const releaseTargetOptions = {
+        ...folderTarget,
+        provisionalLayoutTarget: Number(folderTarget.rows) > visibleRows,
+      };
+      const fallbackReleaseTarget = getFolderSlotReleaseTarget(
+        folderTarget.pageIndex,
+        folderTarget.index,
+        activeDrag.size?.width,
+        releaseTargetOptions
+      );
       placeDraggedItemInFolder(folderId, event.clientX, event.clientY, { force: true, target: folderTarget });
       const releaseKey = startPendingDragRelease();
-      const releaseTarget = getCommittedFolderReleaseTarget(folderId, activeDrag.item.id, activeDrag.size?.width, folderTarget) || fallbackReleaseTarget;
+      const releaseTarget = getCommittedFolderReleaseTarget(
+        folderId,
+        activeDrag.item.id,
+        activeDrag.size?.width,
+        releaseTargetOptions
+      ) || fallbackReleaseTarget;
+      if (releaseKey) setDragReleaseTarget(releaseKey, releaseTarget || fallbackReleaseTarget);
       scheduleDragReleaseTargetResolve(
         releaseKey,
         () => getCommittedFolderTargetBounds(folderId, activeDrag.item.id, { stableOnly: true }),
         releaseTarget,
-        { maxAttempts: DRAG_RELEASE_STABLE_TARGET_RESOLVE_FRAMES, minAttempts: 6, settleFrames: 3 }
+        {
+          continueWhileProvisional: true,
+          maxAttempts: DRAG_RELEASE_STABLE_TARGET_RESOLVE_FRAMES,
+          minAttempts: 6,
+          settleFrames: 3,
+        }
       );
       options.commitOpenFolder(folderId);
       options.commitFolderSession(null);

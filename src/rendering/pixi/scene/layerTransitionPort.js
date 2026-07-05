@@ -98,6 +98,9 @@ export function createLayerTransitionPort(layer) {
     getOpeningGhostChildren() {
       return layer.openingGhostLayer?.children || [];
     },
+    isOpeningGeometryTransitionActive() {
+      return layer.isOpeningGeometryTransitionActive?.() === true;
+    },
     hideIconNodesForTransition(itemId, owner) {
       return layer.hideIconNodesForTransition?.(itemId, owner);
     },
@@ -118,6 +121,9 @@ export function createLayerTransitionPort(layer) {
     },
     refreshRegisteredIconBounds() {
       return layer.refreshRegisteredIconBounds?.();
+    },
+    revealIconNodes() {
+      return layer.revealIconNodes?.();
     },
     registerOpeningGhostBounds(state, target, ghost) {
       return layer.registerOpeningGhostBounds?.(state, target, ghost);

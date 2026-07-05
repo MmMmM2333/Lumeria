@@ -117,6 +117,58 @@ export async function runDragPreviewLayerTests() {
 
   {
     motionRuntime.reset();
+    const calls = [];
+    const layer = new DragPreviewLayer({
+      onReleaseComplete: (release) => calls.push(release.key),
+    });
+    const releaseState = {
+      cellSize: { height: 80, width: 80 },
+      item: { id: "app-provisional", name: "App Provisional", type: "app" },
+      key: "release-provisional",
+      offset: { x: 32, y: 32 },
+      pointer: { x: 180, y: 220 },
+      provisionalLayoutTarget: true,
+      size: { height: 64, width: 64 },
+      source: { index: 0, pageIndex: 0, type: "page" },
+      targetRect: { height: 64, left: 240, top: 260, width: 64 },
+      targetVersion: 1,
+      velocity: { x: 0, y: 0 },
+    };
+    const baseState = {
+      folderPageSize: 9,
+      height: 600,
+      iconSize: 64,
+      isTextlessMode: false,
+      launchTargetStatusById: {},
+      showMissingLaunchTargetBadge: true,
+      stageRect: { height: 600, left: 0, top: 0, width: 800 },
+      width: 800,
+    };
+
+    try {
+      layer.update({ ...baseState, releaseState });
+      assert(runUntil(() => Math.abs(layer.previewNode.x - 272) < 0.5), "provisional release should still fly to the current target");
+      assert(calls.length === 0, "provisional release targets should not complete the release handoff");
+      assert(layer.previewNode.visible === true, "provisional release should keep the ghost visible while it waits for the final layout");
+
+      layer.update({
+        ...baseState,
+        releaseState: {
+          ...releaseState,
+          provisionalLayoutTarget: false,
+          targetVersion: 2,
+        },
+      });
+      assert(runUntil(() => calls.length === 1), "final release target should complete after a provisional target settles");
+      assert(calls.join(",") === "release-provisional", "final release target should complete the original release key");
+    } finally {
+      layer.destroy({ children: true });
+      motionRuntime.reset();
+    }
+  }
+
+  {
+    motionRuntime.reset();
     const layer = new DragPreviewLayer();
     const previewState = {
       cellSize: { height: 80, width: 80 },
@@ -204,6 +256,99 @@ export async function runDragPreviewLayerTests() {
       });
 
       assert(Math.abs(layer.previewNode.scale.x - 0.92) < 0.0001, "drag release should start from the current preview scale without jumping to the default drag scale");
+    } finally {
+      layer.destroy({ children: true });
+      motionRuntime.reset();
+    }
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = new DragPreviewLayer();
+    const previewState = {
+      cellSize: { height: 80, width: 80 },
+      item: { id: "app-release-preserve", name: "App Preserve", type: "app" },
+      offset: { x: 32, y: 32 },
+      pointer: { x: 520, y: 440 },
+      size: { height: 64, width: 64 },
+      source: { index: 0, pageIndex: 0, type: "page" },
+    };
+    const baseState = {
+      folderPageSize: 9,
+      height: 600,
+      iconSize: 64,
+      isTextlessMode: false,
+      launchTargetStatusById: {},
+      showMissingLaunchTargetBadge: true,
+      stageRect: { height: 600, left: 0, top: 0, width: 800 },
+      width: 800,
+    };
+    try {
+      layer.update({ ...baseState, previewState });
+      layer.previewNode.position.set(510, 422);
+      layer.previewNode.scale.set(1.12);
+
+      layer.update({
+        ...baseState,
+        releaseState: {
+          ...previewState,
+          key: "release-preserve-visible-preview",
+          pointer: { x: 120, y: 160 },
+          targetRect: null,
+          targetVersion: 0,
+          velocity: { x: 0, y: 0 },
+        },
+      });
+
+      assert(Math.abs(layer.previewNode.x - 510) < 0.0001 && Math.abs(layer.previewNode.y - 422) < 0.0001, "new release should preserve the currently visible preview pose instead of snapping back to the pointer-derived start");
+      assert(Math.abs(layer.previewNode.scale.x - 1.12) < 0.0001, "new release should preserve the visible preview scale when target metrics have not changed");
+    } finally {
+      layer.destroy({ children: true });
+      motionRuntime.reset();
+    }
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = new DragPreviewLayer();
+    const previewState = {
+      cellSize: { height: 80, width: 80 },
+      item: { id: "app-release-start-pose", name: "App Start Pose", type: "app" },
+      offset: { x: 32, y: 32 },
+      pointer: { x: 220, y: 240 },
+      size: { height: 64, width: 64 },
+      source: { index: 0, pageIndex: 0, type: "page" },
+    };
+    const baseState = {
+      folderPageSize: 9,
+      height: 600,
+      iconSize: 64,
+      isTextlessMode: false,
+      launchTargetStatusById: {},
+      showMissingLaunchTargetBadge: true,
+      stageRect: { height: 600, left: 0, top: 0, width: 800 },
+      width: 800,
+    };
+    try {
+      layer.update({ ...baseState, previewState });
+      layer.previewNode.position.set(510, 422);
+      layer.previewNode.scale.set(1.08);
+
+      layer.update({
+        ...baseState,
+        releaseState: {
+          ...previewState,
+          key: "release-explicit-start-pose",
+          pointer: { x: 120, y: 160 },
+          startPose: { pointer: { x: 520, y: 440 } },
+          targetRect: null,
+          targetVersion: 0,
+          velocity: { x: 0, y: 0 },
+        },
+      });
+
+      assert(Math.abs(layer.previewNode.x - 520) < 0.0001 && Math.abs(layer.previewNode.y - 454) < 0.0001, "explicit release start pose should win over the stale rendered preview position");
+      assert(Math.abs(layer.previewNode.scale.x - 1.08) < 0.0001, "explicit release start pose should still preserve the rendered preview scale");
     } finally {
       layer.destroy({ children: true });
       motionRuntime.reset();

@@ -98,13 +98,6 @@ function findOpeningGhostByItemId(children, itemId) {
   return (children || []).find((ghost) => ghost?.item?.id === itemId && !ghost.destroyed) || null;
 }
 
-function destroyOpeningGhostVisual(transitionPort, ghost, scheduler = globalThis) {
-  if (!ghost) return;
-  transitionPort.removeOpeningGhost(ghost);
-  killAllMotion(ghost);
-  destroyDisplayObjectAfterFrame(ghost, { children: true }, scheduler);
-}
-
 function makeOpeningGhostTargetKey(target = {}) {
   const rect = target.targetStageLayoutRect || {};
   return [
@@ -114,7 +107,12 @@ function makeOpeningGhostTargetKey(target = {}) {
     rect.width ?? "",
     rect.height ?? "",
     target.iconSize ?? "",
+    target.provisionalLayoutTarget === true ? "provisional" : "final",
   ].join(":");
+}
+
+function isProvisionalOpeningGhostTarget(target = {}) {
+  return target.provisionalLayoutTarget === true;
 }
 
 function roundFrameValue(value) {
@@ -172,6 +170,7 @@ export class FolderOpeningGhostController {
     this.scheduler = options.scheduler || globalThis;
     this.openingTargetKeysByItemId = new Map();
     this.openingFrameTargetKey = null;
+    this.settledOpeningGhostItemIds = new Set();
   }
 
   clearRevealTimer() {
@@ -191,6 +190,11 @@ export class FolderOpeningGhostController {
     this.handoffCoordinator.setOpeningRevealTimer(this.scheduler.setTimeout?.(() => {
       this.handoffCoordinator.clearOpeningRevealTimerRef();
       if (sessionToken && !this.handoffCoordinator.isCurrentOpeningVisualSession(sessionToken)) return;
+      if (this.handoffCoordinator.hasActiveOpeningVisuals() &&
+        this.transitionPort.isOpeningGeometryTransitionActive?.() === true) {
+        this.scheduleRevealFallback(targets);
+        return;
+      }
       if (this.handoffCoordinator.hasActiveOpeningVisuals()) this.clear();
     }, timeoutMs) || null);
   }
@@ -199,6 +203,23 @@ export class FolderOpeningGhostController {
     const controls = this.handoffCoordinator.consumeOpeningMotionControls();
     if (!controls?.size) return;
     for (const control of controls) control.cancel();
+  }
+
+  hasUnsettledOpeningGhosts() {
+    const activeItemIds = this.handoffCoordinator.getOpeningGhostKeys();
+    if (!activeItemIds?.size) return false;
+    for (const itemId of activeItemIds) {
+      if (!this.settledOpeningGhostItemIds.has(itemId)) return true;
+    }
+    return false;
+  }
+
+  canRevealSettledOpeningGhosts(options = {}) {
+    return !this.hasUnsettledOpeningGhosts() &&
+      (
+        options.ignoreGeometryGate === true ||
+        this.transitionPort.isOpeningGeometryTransitionActive?.() !== true
+      );
   }
 
   releaseGhost(itemId) {
@@ -220,6 +241,7 @@ export class FolderOpeningGhostController {
       killMotionOf(releasedGhost.labelText.scale);
     }
     this.handoffCoordinator.releaseOpeningGhost(itemId);
+    this.settledOpeningGhostItemIds.delete(itemId);
     this.openingTargetKeysByItemId.delete(itemId);
     this.transitionPort.deleteOpeningGhostBounds(itemId);
     this.transitionPort.removeOpeningGhost(releasedGhost);
@@ -249,6 +271,7 @@ export class FolderOpeningGhostController {
     this.transitionPort.clearFrameGhost();
     this.openingTargetKeysByItemId.clear();
     this.openingFrameTargetKey = null;
+    this.settledOpeningGhostItemIds.clear();
     const ghosts = this.transitionPort.removeOpeningGhosts();
     for (const ghost of ghosts) {
       killAllMotion(ghost);
@@ -257,37 +280,66 @@ export class FolderOpeningGhostController {
   }
 
   finishTransition(options = {}) {
-    if (this.handoffCoordinator.hasActiveOpeningVisuals()) return;
+    if (!this.canRevealSettledOpeningGhosts({
+      ignoreGeometryGate: options.ignoreGeometryGate === true,
+    })) return false;
     const sessionToken = options.sessionToken || this.handoffCoordinator.getOpeningSessionToken();
     this.clearRevealTimer();
     this.cancelMotionControls();
+    if (sessionToken == null) {
+      this.handoffCoordinator.completeOpeningControllerGhostKeys();
+      this.handoffCoordinator.clearOpeningVisuals();
+      this.transitionPort.clearOpeningGhostBounds();
+      this.transitionPort.revealIconNodes();
+      this.transitionPort.setPageTrackVisible(true);
+      this.openingTargetKeysByItemId.clear();
+      this.settledOpeningGhostItemIds.clear();
+      const ghosts = this.transitionPort.removeOpeningGhosts();
+      for (const ghost of ghosts) {
+        killAllMotion(ghost);
+        destroyDisplayObjectAfterFrame(ghost, { children: true }, this.scheduler);
+      }
+      return true;
+    }
     this.handoffCoordinator.markGhostsReady(sessionToken);
-    if (!this.handoffCoordinator.canReveal(sessionToken)) return;
+    if (!this.handoffCoordinator.canReveal(sessionToken)) return false;
     this.handoffCoordinator.finishReveal(sessionToken);
+    this.handoffCoordinator.completeOpeningControllerGhostKeys();
     this.handoffCoordinator.clearOpeningVisuals();
     this.transitionPort.clearOpeningGhostBounds();
     this.transitionPort.releaseTransitionOwnership(sessionToken, { restorePageTrack: true, reveal: true });
     this.transitionPort.refreshRegisteredIconBounds();
     this.transitionPort.rebuildPageTrackMask();
     this.openingTargetKeysByItemId.clear();
+    this.settledOpeningGhostItemIds.clear();
     const ghosts = this.transitionPort.removeOpeningGhosts();
     for (const ghost of ghosts) {
       killAllMotion(ghost);
       destroyDisplayObjectAfterFrame(ghost, { children: true }, this.scheduler);
     }
+    return true;
   }
 
   complete(state, target, ghost) {
     const sessionToken = this.handoffCoordinator.getOpeningSessionToken();
-    const controllerGhostKey = target.controllerGhostKey || state.getFolderOpenIconGhostKey?.(target.item.id, target.index);
-    this.handoffCoordinator.completeOpeningGhost(target.item.id, controllerGhostKey);
-    this.openingTargetKeysByItemId.delete(target.item.id);
+    const itemId = target.item.id;
+    this.settledOpeningGhostItemIds.add(itemId);
     ghost.alpha = 1;
     ghost.scale.set(1);
-    this.transitionPort.deleteOpeningGhostBounds(target.item.id);
-    this.transitionPort.releaseIconNodesForTransition(target.item.id, sessionToken, { reveal: true });
-    destroyOpeningGhostVisual(this.transitionPort, ghost, this.scheduler);
     this.finishTransition({ sessionToken });
+  }
+
+  completeIfFinalTarget(state, target, ghost, motionControl = null) {
+    if (isProvisionalOpeningGhostTarget(target)) {
+      ghost.alpha = 1;
+      ghost.scale.set(1);
+      return false;
+    }
+    if (motionControl) {
+      this.handoffCoordinator.deleteOpeningMotionControl(target.item.id, motionControl);
+    }
+    this.complete(state, target, ghost);
+    return true;
   }
 
   start(state, targets, options = {}) {
@@ -328,7 +380,7 @@ export class FolderOpeningGhostController {
     }
 
     if (!usableTargets.length) {
-      this.finishTransition({ sessionToken });
+      this.finishTransition({ ignoreGeometryGate: true, sessionToken });
       return;
     }
     this.scheduleRevealFallback(usableTargets);
@@ -377,16 +429,12 @@ export class FolderOpeningGhostController {
       refreshGhostBounds();
       this.transitionPort.hideIconNodesForTransition(target.item.id, owner);
 
-      let didComplete = false;
+      let didFinish = false;
       let motionControl = null;
       motionControl = animateOpeningGhost(ghost, ghostMotion, () => {
-        didComplete = true;
-        if (motionControl) {
-          this.handoffCoordinator.deleteOpeningMotionControl(target.item.id, motionControl);
-        }
-        this.complete(state, target, ghost);
+        didFinish = this.completeIfFinalTarget(state, target, ghost, motionControl);
       }, { scheduler: this.scheduler, onFrame: refreshGhostBounds });
-      if (!didComplete && this.handoffCoordinator.hasOpeningGhost(target.item.id)) {
+      if (!didFinish && this.handoffCoordinator.hasOpeningGhost(target.item.id)) {
         this.handoffCoordinator.addOpeningMotionControl(target.item.id, motionControl);
       }
     }
@@ -436,6 +484,7 @@ export class FolderOpeningGhostController {
       if (this.openingTargetKeysByItemId.get(itemId) === targetKey) continue;
 
       ghost.openingPageIndex = target.pageIndex;
+      const previousIconSize = Math.max(0.01, Number(ghost.state?.iconSize) || Number(target.iconSize) || 1);
       const ghostMotion = makeOpeningGhostMotion(target, {
         isTextlessMode: state.isTextlessMode,
         openDuration: motionPresets.folderOpenGhost.duration,
@@ -443,30 +492,38 @@ export class FolderOpeningGhostController {
         stageRect: state.stageRect,
         stageWidth: state.width,
       });
+      ghost.stageRect = state.stageRect;
+      ghost.setState?.(makeFolderGhostIconNodeState({ sourceType: "folder-open-ghost", state, target }));
+      const nextIconSize = Math.max(0.01, Number(target.iconSize) || previousIconSize);
+      if (Math.abs(previousIconSize - nextIconSize) > 0.0001) {
+        const scaleMultiplier = previousIconSize / nextIconSize;
+        ghost.scale.set(
+          Math.max(0.01, ghost.scale.x * scaleMultiplier),
+          Math.max(0.01, ghost.scale.y * scaleMultiplier)
+        );
+      }
       const refreshGhostBounds = () => this.transitionPort.registerOpeningGhostBounds(state, target, ghost);
       this.transitionPort.setOpeningGhostBoundsRefresher(itemId, refreshGhostBounds);
       refreshGhostBounds();
 
       const previousControl = this.handoffCoordinator.getOpeningMotionControl(itemId);
       if (previousControl) this.handoffCoordinator.deleteOpeningMotionControl(itemId, previousControl);
+      this.settledOpeningGhostItemIds.delete(itemId);
       this.openingTargetKeysByItemId.set(itemId, targetKey);
 
-      let didComplete = false;
+      let didFinish = false;
       let motionControl = null;
       motionControl = retargetOpeningGhost(ghost, ghostMotion, () => {
-        didComplete = true;
-        if (motionControl) {
-          this.handoffCoordinator.deleteOpeningMotionControl(itemId, motionControl);
-        }
-        this.complete(state, target, ghost);
+        didFinish = this.completeIfFinalTarget(state, target, ghost, motionControl);
       }, { scheduler: this.scheduler, onFrame: refreshGhostBounds });
-      if (didComplete) {
+      if (didFinish) {
         this.openingTargetKeysByItemId.delete(itemId);
       } else if (this.handoffCoordinator.hasOpeningGhost(itemId)) {
         this.handoffCoordinator.addOpeningMotionControl(itemId, motionControl);
       }
       retargeted += 1;
     }
+    this.finishTransition();
     return retargeted;
   }
 }

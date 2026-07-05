@@ -417,6 +417,40 @@ export async function runFolderOverlayLayerTests() {
       layer.update(state);
     }
   };
+  const getBaseAnimation = (target, prop) => {
+    const channel = motionRuntime.getChannel(target, prop);
+    return Array.from(channel?.base?.values?.() || [])[0] || null;
+  };
+  const makeOpeningGhostEntries = (keyPrefix, items) => items.map((item, slotIndex) => ({
+    item,
+    key: `${keyPrefix}-${item.id}-${slotIndex}-open-1`,
+    requestId: 1,
+    slotIndex,
+  }));
+  const makeOpeningOriginBounds = (folderId, items, options = {}) => {
+    const originLeft = Number(options.left) || 420;
+    const originTop = Number(options.top) || 260;
+    const childLeft = Number(options.childLeft) || 430;
+    const childTop = Number(options.childTop) || 270;
+    const childStep = Number(options.childStep) || 18;
+    const childSize = Number(options.childSize) || 14;
+    const previewCount = Math.max(0, Number(options.previewCount) || 9);
+    return {
+      folderId,
+      iconRect: { height: 72, left: originLeft, top: originTop, width: 72 },
+      previewChildRects: items.slice(0, previewCount).map((item, slotIndex) => ({
+        childId: item.id,
+        rect: {
+          height: childSize,
+          left: childLeft + (slotIndex % 3) * childStep,
+          top: childTop + Math.floor(slotIndex / 3) * childStep,
+          width: childSize,
+        },
+        slotIndex,
+      })),
+      thumbRect: { height: 64, left: originLeft + 4, top: originTop + 4, width: 64 },
+    };
+  };
   const getPanelCenter = (folderGeometry) => ({
     x: folderGeometry.panel.left + folderGeometry.panel.width / 2,
     y: folderGeometry.panel.top + folderGeometry.panel.height / 2,
@@ -655,6 +689,575 @@ export async function runFolderOverlayLayerTests() {
     motionRuntime.reset();
     const iconBoundsRegistry = createIconBoundsRegistry();
     const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const compactPages = [makeFolderResizeItems("opening-release", 14)];
+    const insertedItem = { id: "opening-release-dragged", name: "Dragged", type: "app" };
+    const compactState = makeFolderResizeState({
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(7, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(2, var(--folder-icon-cell-height))",
+      },
+      folderId: "folder-opening-release-row-grow",
+      folderOpenProgress: 0.52,
+      folderPages: compactPages,
+      folderPageSize: 35,
+      folderPanelStyle: {
+        "--folder-shell-min-height": "410px",
+      },
+    });
+    layer.update(compactState);
+    settleResizeUpdate(layer, compactState);
+
+    const expandedPage = compactPages[0].slice();
+    expandedPage.push(insertedItem);
+    const expandedState = makeFolderResizeState({
+      dragReleaseGhostId: insertedItem.id,
+      dragReleaseState: {
+        item: insertedItem,
+        source: { index: 0, pageIndex: 0, type: "page" },
+      },
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(7, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(3, var(--folder-icon-cell-height))",
+      },
+      folderId: "folder-opening-release-row-grow",
+      folderOpenProgress: 0.52,
+      folderPages: [expandedPage],
+      folderPageSize: 35,
+      folderPanelStyle: {
+        "--folder-shell-min-height": "520px",
+      },
+    });
+    layer.update(expandedState);
+    const initialReleaseTarget = iconBoundsRegistry.getRecord(K.LAUNCH, V.STABLE_STAGE_LAYOUT, {
+      area: "folder",
+      folderId: "folder-opening-release-row-grow",
+      id: insertedItem.id,
+      pageIndex: 0,
+    });
+    settleResizeUpdate(layer, expandedState);
+    const finalReleaseTarget = iconBoundsRegistry.getRecord(K.LAUNCH, V.STABLE_STAGE_LAYOUT, {
+      area: "folder",
+      folderId: "folder-opening-release-row-grow",
+      id: insertedItem.id,
+      pageIndex: 0,
+    });
+
+    assert(layer.resizeVisualGeometryState === null, "release row-growth setup should settle visual geometry before checking the final target");
+    assert(initialReleaseTarget && finalReleaseTarget, "row-growth release setup should register release ghost targets");
+    assert(initialReleaseTarget.meta?.provisionalLayoutTarget === true, "row-growth release target should be marked provisional while opening geometry is still animating");
+    assert(finalReleaseTarget.meta?.provisionalLayoutTarget === false, "row-growth release target should become final after opening geometry settles");
+    assert(!nearlyEqual(initialReleaseTarget.top, finalReleaseTarget.top), "release ghost target should follow the current opening geometry before settling to the final new row");
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const compactPages = [makeFolderResizeItems("opening-shift", 14)];
+    const insertedItem = { id: "opening-shift-dragged", name: "Dragged", type: "app" };
+    const shiftedItemId = "opening-shift-14";
+    const openingGhosts = makeOpeningGhostEntries("folder-opening-row-shift", compactPages[0]);
+    const compactState = makeFolderResizeState({
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(7, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(2, var(--folder-icon-cell-height))",
+      },
+      folderId: "folder-opening-row-shift",
+      folderOpenIconGhosts: openingGhosts,
+      folderOpenProgress: 0.52,
+      folderPages: compactPages,
+      folderPageSize: 35,
+      folderPanelStyle: {
+        "--folder-shell-min-height": "410px",
+      },
+    });
+    layer.update(compactState);
+    settleResizeUpdate(layer, compactState);
+    const compactShiftedTarget = iconBoundsRegistry.getRecord(K.LAUNCH, V.STABLE_STAGE_LAYOUT, {
+      area: "folder",
+      folderId: "folder-opening-row-shift",
+      id: shiftedItemId,
+      pageIndex: 0,
+    });
+    const sameRowShiftedItemId = "opening-shift-7";
+    const compactSameRowShiftedTarget = iconBoundsRegistry.getRecord(K.LAUNCH, V.STABLE_STAGE_LAYOUT, {
+      area: "folder",
+      folderId: "folder-opening-row-shift",
+      id: sameRowShiftedItemId,
+      pageIndex: 0,
+    });
+    const expandedPage = compactPages[0].slice();
+    expandedPage.splice(7, 0, insertedItem);
+    let retargetCall = null;
+    layer.folderHandoff.beginOpeningVisuals({ sessionToken: "opening-row-shift", state: compactState });
+    layer.folderHandoff.registerOpeningGhost(shiftedItemId, "opening-row-shift-ghost");
+    layer.folderHandoff.registerOpeningGhost(sameRowShiftedItemId, "opening-row-shift-same-row-ghost");
+    layer.openingGhosts = {
+      clear() {},
+      finishTransition() {},
+      retarget(_state, targets, options) {
+        retargetCall = { options, targets };
+      },
+    };
+
+    const expandedState = makeFolderResizeState({
+      dragMeta: {
+        item: insertedItem,
+        source: { index: 0, pageIndex: 0, type: "page" },
+      },
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(7, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(3, var(--folder-icon-cell-height))",
+      },
+      folderId: "folder-opening-row-shift",
+      folderOpenIconGhosts: openingGhosts,
+      folderOpenProgress: 0.52,
+      folderPages: [expandedPage],
+      folderPageSize: 35,
+      folderPanelStyle: {
+        "--folder-shell-min-height": "520px",
+      },
+    });
+    layer.update(expandedState);
+    const shiftedGhostTarget = retargetCall?.targets?.find((target) => target.item?.id === shiftedItemId);
+    const sameRowShiftedGhostTarget = retargetCall?.targets?.find((target) => target.item?.id === sameRowShiftedItemId);
+    const expandedShiftedTarget = iconBoundsRegistry.getRecord(K.LAUNCH, V.STABLE_STAGE_LAYOUT, {
+      area: "folder",
+      folderId: "folder-opening-row-shift",
+      id: shiftedItemId,
+      pageIndex: 0,
+    });
+    const expandedSameRowShiftedTarget = iconBoundsRegistry.getRecord(K.LAUNCH, V.STABLE_STAGE_LAYOUT, {
+      area: "folder",
+      folderId: "folder-opening-row-shift",
+      id: sameRowShiftedItemId,
+      pageIndex: 0,
+    });
+
+    assert(shiftedGhostTarget, "shifted opening ghost should be retargeted when insertion adds a row");
+    assert(nearlyEqual(shiftedGhostTarget.targetStageLayoutRect.left, expandedShiftedTarget.left), "row-growth insertion should retarget shifted ghosts to the stable final column");
+    assert(nearlyEqual(shiftedGhostTarget.targetStageLayoutRect.top, expandedShiftedTarget.top), "row-growth insertion should retarget shifted ghosts to the stable final row");
+    assert(sameRowShiftedGhostTarget, "same-row shifted opening ghost should be retargeted when row-growth insertion changes its slot");
+    assert(nearlyEqual(sameRowShiftedGhostTarget.targetStageLayoutRect.left, expandedSameRowShiftedTarget.left), "row-growth insertion should also target same-row shifts to the stable final column");
+    assert(nearlyEqual(sameRowShiftedGhostTarget.targetStageLayoutRect.top, expandedSameRowShiftedTarget.top), "row-growth insertion should also target same-row shifts to the stable final row");
+    assert(!nearlyEqual(expandedShiftedTarget.top, compactShiftedTarget.top), "row-growth insertion setup should move the shifted item to a new final row");
+    assert(nearlyEqual(expandedSameRowShiftedTarget.left, compactSameRowShiftedTarget.left), "same-row insertion setup should leave unaffected columns stable");
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const compactPages = [makeFolderResizeItems("opening-grow", 6)];
+    const expandedPages = [makeFolderResizeItems("opening-grow", 7)];
+    const compactState = makeFolderResizeState({
+      folderGridStyle: {
+        gridTemplateRows: "repeat(2, var(--folder-icon-cell-height))",
+      },
+      folderId: "folder-opening-row-grow",
+      folderOpenProgress: 0.52,
+      folderPages: compactPages,
+      folderPanelStyle: {
+        "--folder-shell-min-height": "410px",
+      },
+    });
+    const compactGeometry = layer.update(compactState);
+    settleResizeUpdate(layer, compactState);
+    const activeGhostItemId = "opening-grow-6";
+    const compactGhostTarget = iconBoundsRegistry.getRecord(K.LAUNCH, V.STABLE_STAGE_LAYOUT, {
+      area: "folder",
+      folderId: "folder-opening-row-grow",
+      id: activeGhostItemId,
+      pageIndex: 0,
+    });
+    let retargetCall = null;
+    layer.folderHandoff.beginOpeningVisuals({ sessionToken: "opening-row-grow", state: compactState });
+    layer.folderHandoff.registerOpeningGhost(activeGhostItemId, "opening-row-grow-ghost");
+    layer.openingGhosts = {
+      clear() {},
+      finishTransition() {},
+      retarget(_state, targets, options) {
+        retargetCall = { options, targets };
+      },
+    };
+
+    const expandedState = makeFolderResizeState({
+      folderGridStyle: {
+        gridTemplateRows: "repeat(3, var(--folder-icon-cell-height))",
+      },
+      folderId: "folder-opening-row-grow",
+      folderOpenProgress: 0.52,
+      folderPages: expandedPages,
+      folderPanelStyle: {
+        "--folder-shell-min-height": "520px",
+      },
+    });
+    const expandedGeometry = layer.update(expandedState);
+    const activeGhostTarget = retargetCall?.targets?.[0] || null;
+    const expandedGhostTarget = iconBoundsRegistry.getRecord(K.LAUNCH, V.STABLE_STAGE_LAYOUT, {
+      area: "folder",
+      folderId: "folder-opening-row-grow",
+      id: activeGhostItemId,
+      pageIndex: 0,
+    });
+
+    assert(layer.resizeLayoutSync?.mode === "opening", "row growth during open should be classified as opening layout sync");
+    assert(layer.resizeVisualGeometryState !== null, "row growth during open should start a visual geometry animation");
+    assert(layer.resizeVisualGeometryMode === "opening", "row growth visual geometry should remember the opening mode");
+    assert(nearlyEqual(layer.resizeVisualGeometryState.panelHeight, compactGeometry.panel.height), "row growth during open should begin from the previous panel height");
+    assert(nearlyEqual(layer.pageMaskRect.height, getPageMaskHeight(compactGeometry)), "row growth during open should keep the previous visual mask height initially");
+    assert(!nearlyEqual(layer.pageMaskRect.height, getPageMaskHeight(expandedGeometry)), "row growth during open should not jump the mask directly to the expanded height");
+    assert(activeGhostTarget?.item?.id === activeGhostItemId, "active opening ghost should be retargeted during row growth");
+    assert(nearlyEqual(activeGhostTarget.targetStageLayoutRect.top, expandedGhostTarget.top), "opening ghost retarget should use the stable expanded row target");
+    assert(!nearlyEqual(compactGhostTarget.top, expandedGhostTarget.top), "row growth setup should still prove the stable row moved");
+    assert(retargetCall?.options?.frameTargetRect === expandedGeometry.panel, "opening frame shell should still retarget toward the final expanded panel");
+
+    layer.update(expandedState);
+    assert(layer.resizeLayoutSync === null, "opening row growth sync should settle after the follow-up render");
+    assert(layer.resizeVisualGeometryState !== null, "opening row growth should keep animating after layout sync clears");
+    settleResizeUpdate(layer, expandedState);
+    assert(layer.resizeVisualGeometryState === null, "opening row growth visual geometry should clear after reaching the expanded geometry");
+    assert(nearlyEqual(layer.pageMaskRect.height, getPageMaskHeight(expandedGeometry)), "opening row growth should settle the visual mask to the expanded target");
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const compactPages = [makeFolderResizeItems("opening-held", 14)];
+    const insertedItem = { id: "opening-held-dragged", name: "Dragged", type: "app" };
+    const shiftedItemId = "opening-held-14";
+    const openingOriginBounds = makeOpeningOriginBounds("folder-opening-held", compactPages[0]);
+    const openingGhosts = makeOpeningGhostEntries("folder-opening-held", compactPages[0]);
+    const compactState = makeFolderResizeState({
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(7, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(2, var(--folder-icon-cell-height))",
+      },
+      folderId: "folder-opening-held",
+      folderOpeningOriginBounds: openingOriginBounds,
+      folderOpenIconGhosts: openingGhosts,
+      folderOpenProgress: 0.52,
+      folderPages: compactPages,
+      folderPageSize: 35,
+      folderPanelStyle: {
+        "--folder-shell-min-height": "410px",
+      },
+    });
+    layer.update(compactState);
+    for (let index = 0; index < 50; index += 1) {
+      motionRuntime.step(0.05);
+      layer.update(compactState);
+    }
+    const shiftedKey = `folder-opening-held:0:${shiftedItemId}`;
+    const shiftedNode = layer.iconNodes.get(shiftedKey);
+    assert(shiftedNode?.visible === false, "arrived opening ghosts should keep real icons hidden while the folder is still opening");
+    assert(layer.folderHandoff.hasOpeningGhost(shiftedItemId), "arrived opening ghosts should keep ownership so held-drag reorders can retarget them");
+    assert(
+      layer.openingGhostLayer.children.some((ghost) => ghost.item?.id === shiftedItemId),
+      "arrived opening ghosts should stay mounted while the folder is still opening"
+    );
+
+    const expandedPage = compactPages[0].slice();
+    expandedPage.splice(7, 0, insertedItem);
+    const expandedState = makeFolderResizeState({
+      dragMeta: {
+        item: insertedItem,
+        source: { index: 0, pageIndex: 0, type: "page" },
+      },
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(7, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(3, var(--folder-icon-cell-height))",
+      },
+      folderId: "folder-opening-held",
+      folderOpeningOriginBounds: openingOriginBounds,
+      folderOpenIconGhosts: openingGhosts,
+      folderOpenProgress: 0.72,
+      folderPages: [expandedPage],
+      folderPageSize: 35,
+      folderPanelStyle: {
+        "--folder-shell-min-height": "520px",
+      },
+    });
+    layer.update(expandedState);
+
+    assert(layer.resizeLayoutSync?.mode === "opening", "held-drag row growth should still be treated as opening resize geometry");
+    assert(layer.folderHandoff.hasOpeningGhost(shiftedItemId), "row-growth reorders should keep shifted opening ghosts owned");
+    assert(shiftedNode.visible === false, "row-growth reorders should keep shifted real icons hidden instead of exposing snapped layout nodes");
+    assert(
+      layer.openingGhostLayer.children.some((ghost) => ghost.item?.id === shiftedItemId),
+      "row-growth reorders should retarget the mounted opening ghost instead of revealing the real icon"
+    );
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const compactPages = [makeFolderResizeItems("opening-retarget", 14)];
+    const insertedItem = { id: "opening-retarget-dragged", name: "Dragged", type: "app" };
+    const shiftedItemId = "opening-retarget-14";
+    const openingOriginBounds = makeOpeningOriginBounds("folder-opening-retarget", compactPages[0]);
+    const openingGhosts = makeOpeningGhostEntries("folder-opening-retarget", compactPages[0]);
+    const compactState = makeFolderResizeState({
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(7, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(2, var(--folder-icon-cell-height))",
+      },
+      folderId: "folder-opening-retarget",
+      folderOpeningOriginBounds: openingOriginBounds,
+      folderOpenIconGhosts: openingGhosts,
+      folderOpenProgress: 0.58,
+      folderPages: compactPages,
+      folderPageSize: 35,
+      folderPanelStyle: {
+        "--folder-shell-min-height": "410px",
+      },
+    });
+    layer.update(compactState);
+    motionRuntime.step(0.05);
+    layer.update(compactState);
+
+    const expandedPage = compactPages[0].slice();
+    expandedPage.splice(7, 0, insertedItem);
+    const expandedState = makeFolderResizeState({
+      dragMeta: {
+        item: insertedItem,
+        source: { index: 0, pageIndex: 0, type: "page" },
+      },
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(7, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(3, var(--folder-icon-cell-height))",
+      },
+      folderId: "folder-opening-retarget",
+      folderOpeningOriginBounds: openingOriginBounds,
+      folderOpenIconGhosts: openingGhosts,
+      folderOpenProgress: 0.58,
+      folderPages: [expandedPage],
+      folderPageSize: 35,
+      folderPanelStyle: {
+        "--folder-shell-min-height": "520px",
+      },
+    });
+    layer.update(expandedState);
+    const shiftedGhost = layer.openingGhostLayer.children.find((ghost) => ghost.item?.id === shiftedItemId);
+    const firstTargetY = getBaseAnimation(shiftedGhost, "y")?.to;
+    motionRuntime.step(0.05);
+    layer.update(expandedState);
+    const secondTargetY = getBaseAnimation(shiftedGhost, "y")?.to;
+
+    assert(shiftedGhost, "row-growth retarget setup should keep the shifted opening ghost mounted");
+    assert(layer.resizeVisualGeometryState !== null, "row-growth retarget setup should keep resize geometry active");
+    assert(
+      nearlyEqual(firstTargetY, secondTargetY),
+      "opening ghosts should not retarget solely because row-growth geometry advanced without a drag reorder"
+    );
+
+    const movedPage = compactPages[0].slice();
+    movedPage.splice(14, 0, insertedItem);
+    layer.update({
+      ...expandedState,
+      folderPages: [movedPage],
+      renderedFolder: {
+        ...expandedState.renderedFolder,
+        childPages: [movedPage],
+      },
+    });
+    const movedTargetY = getBaseAnimation(shiftedGhost, "y")?.to;
+    assert(
+      !nearlyEqual(secondTargetY, movedTargetY),
+      "opening ghosts should still retarget when the held drag reorders the folder slot"
+    );
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const compactPages = [makeFolderResizeItems("opening-frame-layout", 7)];
+    const compactState = makeFolderResizeState({
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(7, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(1, var(--folder-icon-cell-height))",
+      },
+      folderId: "folder-opening-frame-layout",
+      folderOpenProgress: 1,
+      folderPages: compactPages,
+      folderPageSize: 35,
+      folderPanelStyle: {
+        "--folder-shell-min-height": "300px",
+      },
+    });
+    const compactGeometry = layer.update(compactState);
+    settleResizeUpdate(layer, compactState);
+
+    const iconKey = "folder-opening-frame-layout:0:opening-frame-layout-7";
+    const iconNode = layer.iconNodes.get(iconKey);
+    const initialTarget = layer.folderIconLayoutTargets.get(iconKey);
+    assert(iconNode && initialTarget, "opening frame layout setup should create a settled visible folder icon");
+
+    layer.frameGhostState = {
+      fillAlpha: 0.26,
+      fillColor: 0xf7f8ff,
+      height: compactGeometry.panel.height,
+      left: compactGeometry.panel.left,
+      progress: 0.82,
+      radius: 48,
+      strokeAlpha: 0.24,
+      strokeColor: 0xffffff,
+      strokeWidth: 1,
+      top: compactGeometry.panel.top,
+      width: compactGeometry.panel.width,
+    };
+    layer.frameGhostPhase = "opening";
+    layer.frameGhost.visible = true;
+
+    const draggedItem = { id: "opening-frame-layout-dragged", name: "Dragged", type: "app" };
+    const expandedPage = compactPages[0].slice();
+    expandedPage.splice(0, 0, draggedItem);
+    const expandedState = makeFolderResizeState({
+      dragMeta: {
+        item: draggedItem,
+        source: { index: 0, pageIndex: 0, type: "page" },
+      },
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(7, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(2, var(--folder-icon-cell-height))",
+      },
+      folderId: "folder-opening-frame-layout",
+      folderOpenProgress: 1,
+      folderPages: [expandedPage],
+      folderPageSize: 35,
+      folderPanelStyle: {
+        "--folder-shell-min-height": "410px",
+      },
+    });
+    layer.update(expandedState);
+    const movedTarget = layer.folderIconLayoutTargets.get(iconKey);
+
+    assert(layer.resizeLayoutSync?.mode === "opening", "active opening frame should keep row-growth resize in opening mode after progress settles");
+    assert(layer.resizeVisualGeometryState !== null, "active opening frame should still animate row-growth geometry");
+    assert(!nearlyEqual(initialTarget.y, movedTarget.y), "opening frame layout setup should move the icon target to a new row");
+    assert(
+      !nearlyEqual(iconNode.x, movedTarget.x) || !nearlyEqual(iconNode.y, movedTarget.y),
+      "visible icons should animate row-growth layout while the opening frame is still active"
+    );
+    assert(
+      getBaseAnimation(iconNode, "x") || getBaseAnimation(iconNode, "y"),
+      "visible icons should keep a layout spring instead of snapping during active opening frame row growth"
+    );
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const baseState = makeFolderResizeState({
+      folderId: "folder-opening-layout",
+      folderOpenProgress: 0.52,
+    });
+    layer.update(baseState);
+    settleResizeUpdate(layer, baseState);
+
+    const iconKey = "folder-opening-layout:0:page-a-2";
+    const iconNode = layer.iconNodes.get(iconKey);
+    const initialTarget = layer.folderIconLayoutTargets.get(iconKey);
+    assert(iconNode && initialTarget, "opening layout commit setup should create a visible folder icon node");
+    assert(nearlyEqual(iconNode.y, initialTarget.y), "opening layout commit setup should start from the settled layout target");
+    assert(iconNode.visible === true, "opening layout commit setup should leave released real icons visible");
+
+    const movedState = makeFolderResizeState({
+      folderId: "folder-opening-layout",
+      folderOpenProgress: 0.52,
+      folderPanelStyle: {
+        "--folder-icon-cell-height": "96px",
+      },
+    });
+    layer.update(movedState);
+
+    assert(layer.resizeLayoutSync?.mode === "opening", "folder commits during open should be classified as opening layout sync");
+    assert(layer.resizeVisualGeometryState !== null, "folder commits during open should start visual layout metric animation");
+    motionRuntime.step(0.05);
+    layer.update(movedState);
+    const movedTarget = layer.folderIconLayoutTargets.get(iconKey);
+    assert(!nearlyEqual(initialTarget.y, movedTarget.y), "opening layout commit setup should move the icon target after the visual metrics advance");
+    assert(!nearlyEqual(iconNode.y, movedTarget.y), "visible folder icons should animate opening-time layout commits instead of snapping");
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const baseState = makeFolderResizeState({
+      folderId: "folder-opening-owned",
+      folderOpenProgress: 0.52,
+    });
+    layer.update(baseState);
+    settleResizeUpdate(layer, baseState);
+
+    const iconKey = "folder-opening-owned:0:page-a-2";
+    const iconNode = layer.iconNodes.get(iconKey);
+    const visualKey = makeFolderIconVisualKey("folder-opening-owned", "page-a-2", 0);
+    layer.acquireVisualOwnership(visualKey, {
+      folderId: "folder-opening-owned",
+      kind: "opening",
+      token: "opening-token",
+    });
+    iconNode.visible = false;
+
+    const movedState = makeFolderResizeState({
+      folderId: "folder-opening-owned",
+      folderOpenProgress: 0.52,
+      folderPanelStyle: {
+        "--folder-icon-cell-height": "96px",
+      },
+    });
+    layer.update(movedState);
+    assert(layer.resizeLayoutSync?.mode === "opening", "owned icon setup should still exercise opening layout sync");
+    motionRuntime.step(0.05);
+    layer.update(movedState);
+    const movedTarget = layer.folderIconLayoutTargets.get(iconKey);
+
+    assert(iconNode.visible === false, "visual ownership should keep the real folder icon hidden across state sync");
+    assert(nearlyEqual(iconNode.y, movedTarget.y), "covered folder icons may snap to the current visual layout while their ghost owns the visible motion");
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
     const compactState = makeFolderResizeState({
       folderGridStyle: {
         gridTemplateRows: "repeat(2, var(--folder-icon-cell-height))",
@@ -705,17 +1308,21 @@ export async function runFolderOverlayLayerTests() {
     assert(nearlyEqual(layer.pageTrack.x, livePageTrackX), "drag-driven page-turn resize should not snap the page track while the sync frame is active");
     assert(liveIconTargetRecord && stableIconTargetRecord, "drag-driven page-turn resize should register both live and stable icon targets");
     assert(!nearlyEqual(liveIconTargetRecord.top, stableIconTargetRecord.top), "stable icon targets should use final geometry instead of the resize animation frame");
+    assert(nearlyEqual(stableIconInitialTarget.y, stableIconResizeTarget.y), "drag-driven page-turn resize should begin icon layout from the previous visual metrics");
+    motionRuntime.step(0.05);
+    layer.update(expandedPageTurnState);
+    const stableIconAdvancedTarget = layer.folderIconLayoutTargets.get(stableIconKey);
     assert(
-      !nearlyEqual(stableIconInitialTarget.x, stableIconResizeTarget.x) ||
-        !nearlyEqual(stableIconInitialTarget.y, stableIconResizeTarget.y),
-      "drag-driven page-turn resize setup should move stable icon targets"
+      !nearlyEqual(stableIconInitialTarget.x, stableIconAdvancedTarget.x) ||
+        !nearlyEqual(stableIconInitialTarget.y, stableIconAdvancedTarget.y),
+      "drag-driven page-turn resize should move visual icon targets after the resize metrics advance"
     );
-    assert(!nearlyEqual(stableIconNode.y, stableIconResizeTarget.y), "drag-driven page-turn resize should keep icon layout spring animation instead of snapping");
+    assert(!nearlyEqual(stableIconNode.y, stableIconAdvancedTarget.y), "drag-driven page-turn resize should keep icon layout spring animation instead of snapping");
 
     layer.update(expandedPageTurnState);
     assert(layer.resizeLayoutSync === null, "drag-driven page-turn resize sync should settle after the follow-up render");
     assert(layer.resizeVisualGeometryState !== null, "drag-driven page-turn resize should keep animating after layout sync clears");
-    assert(nearlyEqual(layer.pageTrack.x, livePageTrackX), "drag-driven page-turn resize should not snap the page track after layout sync clears");
+    assert(!nearlyEqual(layer.pageTrack.x, -expandedGeometry.panel.width), "drag-driven page-turn resize should not snap the page track after layout sync clears");
     settleResizeUpdate(layer, expandedPageTurnState);
     assert(layer.resizeVisualGeometryState === null, "drag-driven page-turn resize should clear after reaching the new geometry");
     assert(nearlyEqual(layer.pageMaskRect.height, getPageMaskHeight(expandedGeometry)), "drag-driven page-turn resize should settle the visual mask to the expanded target");

@@ -583,6 +583,7 @@ export async function runLaunchpadDragTests() {
 
     const rect = drag.dragReleaseState.value?.targetRect;
     assert(Math.round(rect?.left) === 18 && Math.round(rect?.top) === 4, "desktop release should animate to the committed compact visual slot, not the empty pointer slot");
+    assert(drag.dragReleaseState.value?.startPose?.pointer?.x === 690 && drag.dragReleaseState.value?.startPose?.pointer?.y === 490, "desktop release should carry the pointer-up start pose directly");
     assert(drag.dragReleaseState.value?.velocity.x > 0 && drag.dragReleaseState.value?.velocity.y > 0, "desktop release should carry the sampled pointer velocity");
   });
 
@@ -689,6 +690,74 @@ export async function runLaunchpadDragTests() {
     assert(Math.round(rect?.left) === 128 && Math.round(rect?.top) === 106, "folder release should animate to the committed compact visual slot, not the empty pointer slot");
     assert(Math.round(stageRect?.left) === 28 && Math.round(stageRect?.top) === 46, "folder release should carry the committed stage layout target");
     assert(visualSpec?.iconSize === 56 && visualSpec?.cellWidth === 70, "folder release should carry the target folder visual spec for 64-to-56 slot release");
+    iconBoundsRegistry.clearBounds();
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const folderPanelRef = ref({ getBoundingClientRect: () => ({ left: 100, top: 100, right: 500, bottom: 420, width: 400, height: 320 }) });
+    const folderPageRefs = [{ getBoundingClientRect: () => ({ left: 120, top: 120, right: 400, bottom: 340, width: 280, height: 220 }) }];
+    const baseRegistry = createIconBoundsRegistry();
+    let stableReads = 0;
+    const registerStableFolderTarget = (top, provisionalLayoutTarget) => {
+      putLaunchBounds(
+        baseRegistry,
+        V.STABLE_STAGE_LAYOUT,
+        { area: "folder", folderId: "folder-provisional", id: "app-a", pageIndex: 0 },
+        { left: 28, top, width: 56, height: 56 },
+        {
+          area: "folder",
+          folderId: "folder-provisional",
+          id: "app-a",
+          index: 0,
+          pageIndex: 0,
+          provisionalLayoutTarget,
+          stageHeight: 500,
+          stageRect: { left: 100, top: 60, width: 500, height: 500 },
+          stageWidth: 500,
+        }
+      );
+    };
+    const iconBoundsRegistry = {
+      ...baseRegistry,
+      getRecord(kind, variant, keyInput, optionsArg = {}) {
+        if (
+          kind === K.LAUNCH &&
+          variant === V.STABLE_STAGE_LAYOUT &&
+          keyInput?.area === "folder" &&
+          keyInput?.folderId === "folder-provisional" &&
+          keyInput?.id === "app-a"
+        ) {
+          stableReads += 1;
+          registerStableFolderTarget(stableReads >= 12 ? 146 : 46, stableReads < 12);
+        }
+        return baseRegistry.getRecord(kind, variant, keyInput, optionsArg);
+      },
+    };
+    const { app, drag, openFolderId, pages } = createDragHarness({
+      folderPageRefs,
+      folderPanelRef,
+      iconBoundsRegistry,
+      onCommitPages: () => registerStableFolderTarget(46, true),
+    });
+    const folder = { id: "folder-provisional", type: "folder", name: "Folder", childPages: [[app]], children: [app] };
+    pages.value = [[folder]];
+    openFolderId.value = "folder-provisional";
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+    };
+
+    drag.beginDrag(makePointerDownEvent(95, target), app, { type: "folder", folderId: "folder-provisional", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+
+    listeners.get("pointerup")({ type: "pointerup", pointerId: 95, button: 0, clientX: 390, clientY: 330 });
+    await nextTick();
+
+    const release = drag.dragReleaseState.value;
+    assert(stableReads >= 12, "folder release target resolver should keep polling while the registered target is provisional");
+    assert(release?.provisionalLayoutTarget === false, "folder release should wait for a final stable layout target");
+    assert(Math.round(release?.targetStageLayoutRect?.top) === 146, "folder release should retarget from provisional row geometry to the final row geometry");
+    assert(Math.round(release?.targetRect?.top) === 206, "folder release client rect should come from the final stage layout target");
     iconBoundsRegistry.clearBounds();
   });
 
