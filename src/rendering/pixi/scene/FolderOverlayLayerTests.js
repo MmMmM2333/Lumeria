@@ -689,6 +689,52 @@ export async function runFolderOverlayLayerTests() {
     motionRuntime.reset();
     const iconBoundsRegistry = createIconBoundsRegistry();
     const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+
+    const openingState = makeFolderResizeState({
+      folderOpenProgress: 0.42,
+      folderPageIndex: 0,
+      height: 853,
+      visualFolderPageIndex: 0,
+      width: 1365,
+    });
+    layer.update(openingState);
+
+    const openingResizeState = makeFolderResizeState({
+      ...openingState,
+      folderPanelStyle: {
+        "--folder-icon-cell-height": "112px",
+        "--folder-icon-size": "50px",
+        "--folder-row-gap": "18px",
+        "--folder-shell-min-height": "840px",
+      },
+    });
+    layer.update(openingResizeState);
+    assert(layer.resizeLayoutSync?.mode === "opening", "test setup should leave an opening resize sync active");
+
+    const turnGeometry = layer.update(makeFolderResizeState({
+      ...openingResizeState,
+      folderPageTurnToken: "turn-during-opening-resize",
+      visualFolderPageIndex: 1,
+    }));
+
+    assert(
+      !nearlyEqual(layer.pageTrack.x, -turnGeometry.panel.width),
+      "page turn during an opening resize sync should animate from the live page instead of snapping to the destination"
+    );
+    assert(
+      nearlyEqual(layer.pageTrackMotion.targetX, -turnGeometry.panel.width),
+      "page turn during an opening resize sync should still retarget the page track to the destination page"
+    );
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
     const compactPages = [makeFolderResizeItems("opening-release", 14)];
     const insertedItem = { id: "opening-release-dragged", name: "Dragged", type: "app" };
     const compactState = makeFolderResizeState({

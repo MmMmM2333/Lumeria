@@ -994,6 +994,11 @@ export class FolderOverlayLayer extends Container {
 
     const committedFolderPageIndex = state.folderPageIndex ?? 0;
     const visualFolderPageIndex = state.visualFolderPageIndex ?? committedFolderPageIndex;
+    const hasFolderPageTurnState = Boolean(
+      state.folderPageTrackScrub ||
+      state.folderPageTurnToken != null ||
+      visualFolderPageIndex !== committedFolderPageIndex
+    );
     const targetLayoutMetrics = context.targetLayoutMetrics || makeResizeLayoutMetricsSnapshot(state);
     const visualLayoutMetrics = resizeVisualGeometryActive
       ? makeLayoutMetricsFromResizeState(this.resizeVisualGeometryState, targetLayoutMetrics)
@@ -1032,7 +1037,7 @@ export class FolderOverlayLayer extends Container {
     const stableTargetTrackX = -visualFolderPageIndex * stableFolderPageSpan;
     const shouldSnapResizePageTrack = (resizeLayoutSyncActive || resizeVisualGeometryActive || resizeVisualGeometryFinalFrame) &&
       resizeGeometryMode !== "page-turn" &&
-      !state.folderPageTrackScrub;
+      !hasFolderPageTurnState;
     if ((isNewFolder && !isClosing) || shouldSnapResizePageTrack) {
       const reason = shouldSnapResizePageTrack ? FOLDER_RESIZE_LAYOUT_REASON : "replace";
       const killReason = shouldSnapResizePageTrack ? FOLDER_RESIZE_LAYOUT_REASON : FOLDER_PAGE_TRACK_REPLACE_REASON;
