@@ -548,7 +548,7 @@ export async function runLaunchpadDragTests() {
     runNextTimer(timers);
     assert(drag.dragFolderHoverState.value?.targetId === "app-b", "hovering an app target should expose the folder-create hover target");
     assert(drag.dragHitDebugState.value?.winner === "folder-create-hover", "drag hit debug should expose folder-create as the winning intent");
-    assert(drag.dragHitDebugState.value?.reason === "center-in-target", "drag hit debug should explain the folder-create hit reason");
+    assert(drag.dragHitDebugState.value?.reason === "center-in-folder-intent", "drag hit debug should explain the folder-create hit reason");
     assert(drag.dragHitDebugState.value?.target?.expandedTargetRect?.width === 76, "drag hit debug should expose the expanded target rect used by overlap hit testing");
     runNextTimer(timers);
     runNextTimer(timers);
@@ -562,6 +562,51 @@ export async function runLaunchpadDragTests() {
     assert(calls.commitOpenFolder.length === 1, "hover-created folder should commit an open folder");
     assert(folderSession.value?.mode === "created", "hover-created folder should enter a created-folder drag session");
     assert(drag.folderCreateReleaseState.value == null, "hover-created folder should not start the create-only release animation");
+    iconBoundsRegistry.clearBounds();
+  });
+
+  await withMockPointerEnvironment(async ({ listeners, timers }) => {
+    const targetApp = { id: "app-b", type: "app", name: "App B" };
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    putLaunchBounds(
+      iconBoundsRegistry,
+      V.RENDERED,
+      { area: "desktop", id: targetApp.id, pageIndex: 0 },
+      { left: 120, top: 112, width: 128, height: 128 },
+      { area: "desktop", id: targetApp.id, index: 1, item: targetApp, pageIndex: 0 }
+    );
+    const { app, drag, folderSession, openFolderId, pages } = createDragHarness({ iconBoundsRegistry });
+    pages.value = [[app, targetApp]];
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 128, height: 128 }),
+    };
+
+    drag.beginDrag(makePointerDownEvent(191, target), app, { type: "page", pageIndex: 0, index: 0 });
+    runNextTimer(timers);
+    await nextTick();
+    listeners.get("pointermove")({
+      type: "pointermove",
+      pointerId: 191,
+      buttons: 1,
+      clientX: 92,
+      clientY: 132,
+      preventDefault: () => {},
+    });
+
+    runNextTimer(timers);
+    assert(drag.dragFolderHoverState.value == null, "large icon edge overlap should not lock a folder-create hover");
+    assert(drag.dragHitDebugState.value?.winner === "page-sort", "large icon edge overlap should leave desktop sorting in control");
+    assert(drag.dragHitDebugState.value?.folderDecision?.centerInside === true, "test setup should put the drag center inside the large target");
+    assert(drag.dragHitDebugState.value?.folderDecision?.centerInsideIntent === false, "large target edges should sit outside the capped folder intent rect");
+    assert(drag.dragHitDebugState.value?.folderDecision?.dragIntersectsExpandedTarget === true, "large icon edge test should still discover the target as an overlap candidate");
+    assert(Math.round(drag.dragHitDebugState.value?.folderDecision?.intentRect?.width) === 64, "large icon folder intent should cap to the default icon size");
+
+    listeners.get("pointerup")({ type: "pointerup", pointerId: 191, button: 0, clientX: 92, clientY: 132 });
+    await nextTick();
+
+    assert(!pages.value.flat().some((item) => item?.type === "folder"), "large icon edge release should not create a folder");
+    assert(openFolderId.value == null, "large icon edge release should not open a folder");
+    assert(folderSession.value == null, "large icon edge release should not enter a folder drag session");
     iconBoundsRegistry.clearBounds();
   });
 

@@ -57,6 +57,8 @@ const FOLDER_HOVER_RESTORE_BEFORE_OPEN_MS = 90;
 const FOLDER_HOVER_OPEN_DELAY_MS = FOLDER_HOVER_SETTLE_MS + FOLDER_HOVER_FLASH_TOTAL_MS + FOLDER_HOVER_OPEN_BUFFER_MS;
 const FOLDER_HOVER_OPENING_DELAY_MS = Math.max(0, FOLDER_HOVER_OPEN_DELAY_MS - FOLDER_HOVER_RESTORE_BEFORE_OPEN_MS);
 const FOLDER_HOVER_ESCAPE_MARGIN = 64;
+const FOLDER_HIT_CANDIDATE_MARGIN = 6;
+const FOLDER_HIT_INTENT_MAX_SIZE = 64;
 const FIRST_FOLDER_OPEN_PREPARE_DELAY_MS = 48;
 const SETTLED_DRAG_START_FRAMES = 3;
 const DRAG_VELOCITY_SMOOTHING = 0.6;
@@ -1481,32 +1483,65 @@ export function useLaunchpadDrag(options) {
     return a.left <= b.right && a.right >= b.left && a.top <= b.bottom && a.bottom >= b.top;
   }
 
+  function makeCenteredClientRect(rect, width, height = width) {
+    if (!rect) return null;
+    return cloneClientRect(makeCenteredRect(
+      rect.left + rect.width / 2,
+      rect.top + rect.height / 2,
+      width,
+      height
+    ));
+  }
+
+  function getFolderIntentRect(targetRect) {
+    const rect = cloneClientRect(targetRect);
+    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+    return makeCenteredClientRect(
+      rect,
+      Math.min(rect.width, FOLDER_HIT_INTENT_MAX_SIZE),
+      Math.min(rect.height, FOLDER_HIT_INTENT_MAX_SIZE)
+    );
+  }
+
+  function getFolderStickyRect(targetInfo, margin) {
+    const intentRect = getFolderIntentRect(targetInfo?.rect);
+    return intentRect ? expandRect(intentRect, margin) : null;
+  }
+
   function getFolderHitDecision(targetInfo, clientX, clientY, activeDrag = null) {
-    const rect = targetInfo?.rect;
+    const rect = cloneClientRect(targetInfo?.rect);
     if (!rect) {
       return {
         accepted: false,
         centerInside: false,
+        centerInsideIntent: false,
         dragIntersectsExpandedTarget: false,
         expandedTargetRect: null,
+        intentRect: null,
         reason: "no-target-rect",
         targetRect: null,
       };
     }
 
-    const expandedTargetRect = expandRect(rect, 6);
+    const expandedTargetRect = expandRect(rect, FOLDER_HIT_CANDIDATE_MARGIN);
+    const intentRect = getFolderIntentRect(rect);
     const dragRect = getDragVisualRect(activeDrag);
     const centerInside = isPointInsideRect(rect, clientX, clientY);
+    const centerInsideIntent = intentRect ? isPointInsideRect(intentRect, clientX, clientY) : false;
     const dragIntersectsExpandedTarget = rectsIntersect(expandedTargetRect, dragRect);
     return {
-      accepted: centerInside || dragIntersectsExpandedTarget,
+      accepted: centerInsideIntent,
       centerInside,
+      centerInsideIntent,
       dragIntersectsExpandedTarget,
       expandedTargetRect: cloneClientRect(expandedTargetRect),
-      reason: centerInside
-        ? "center-in-target"
+      intentRect: cloneClientRect(intentRect),
+      reason: centerInsideIntent
+        ? "center-in-folder-intent"
+        : centerInside
+          ? "center-in-target-outside-folder-intent"
         : dragIntersectsExpandedTarget
-          ? "drag-rect-intersects-expanded-target"
+          ? "drag-rect-intersects-target-candidate"
           : "outside-target",
       targetRect: cloneClientRect(rect),
     };
@@ -1517,6 +1552,7 @@ export function useLaunchpadDrag(options) {
     return {
       expandedTargetRect: cloneClientRect(decision?.expandedTargetRect),
       id: targetInfo.item.id,
+      intentRect: cloneClientRect(decision?.intentRect),
       rect: cloneClientRect(targetInfo.rect),
       stageLayoutRect: cloneClientRect(targetInfo.stageLayoutRect),
       type: targetInfo.item.type || null,
@@ -1638,7 +1674,7 @@ export function useLaunchpadDrag(options) {
       const item = page[index];
       if (!item?.id || item.id === activeDrag.item.id) continue;
       const target = normalizeTopLevelTarget({ item, pageIndex, index });
-      if (target && rectsIntersect(expandRect(target.rect, 6), dragRect)) return target;
+      if (target && rectsIntersect(expandRect(target.rect, FOLDER_HIT_CANDIDATE_MARGIN), dragRect)) return target;
     }
     return null;
   }
@@ -1656,18 +1692,28 @@ export function useLaunchpadDrag(options) {
     const targetInfo = getTopLevelTargetById(targetId);
     if (!targetInfo) return null;
     const margin = pendingTimer?.targetId === targetId ? FOLDER_HOVER_ESCAPE_MARGIN : FOLDER_HOVER_STICKY_MARGIN;
-    folderHover = { targetId, stickyRect: expandRect(targetInfo.rect, margin) };
+    const stickyRect = getFolderStickyRect(targetInfo, margin);
+    folderHover = { targetId, stickyRect };
     return targetInfo;
   }
 
-  function getLockedTopLevelDropTarget(activeDrag) {
+  function getLockedTopLevelDropIntent(activeDrag) {
     const targetId = folderHover?.targetId || pendingTimer?.targetId;
     if (!targetId) return null;
     const targetInfo = refreshFolderHoverTarget(targetId);
     if (!targetInfo) return null;
     const center = getDragVisualCenter(activeDrag) || activeDrag?.pointer;
     if (!center) return null;
-    if (isInsideStickyFolderZone(center.x, center.y) || isInsideFolderHitZone(targetInfo, center.x, center.y, activeDrag)) return targetInfo;
+    const decision = getFolderHitDecision(targetInfo, center.x, center.y, activeDrag);
+    const stickyAccepted = isInsideStickyFolderZone(center.x, center.y);
+    if (stickyAccepted || decision.accepted) {
+      return {
+        decision,
+        reason: decision.accepted ? decision.reason : "sticky-folder-intent",
+        stickyAccepted,
+        targetInfo,
+      };
+    }
     return null;
   }
 
@@ -1684,7 +1730,7 @@ export function useLaunchpadDrag(options) {
     if (!rect) return;
     const targetId = targetInfo.item.id;
     const margin = pendingTimer?.targetId === targetId ? FOLDER_HOVER_ESCAPE_MARGIN : FOLDER_HOVER_STICKY_MARGIN;
-    folderHover = { targetId, stickyRect: expandRect(rect, margin) };
+    folderHover = { targetId, stickyRect: getFolderStickyRect(targetInfo, margin) };
     dragFolderTargetId.value = targetId;
     if (dragFolderHoverState.value?.targetId === targetId) return;
     dragFolderHoverKey += 1;
@@ -2147,20 +2193,19 @@ export function useLaunchpadDrag(options) {
 
     if (activeDrag.item.type === "app") {
       const center = getDragVisualCenter(activeDrag) || { x: clientX, y: clientY };
-      const lockedTarget = getLockedTopLevelDropTarget(activeDrag);
-      if (lockedTarget) {
-        const lockedDecision = getFolderHitDecision(lockedTarget, center.x, center.y, activeDrag);
+      const lockedIntent = getLockedTopLevelDropIntent(activeDrag);
+      if (lockedIntent) {
         publishDragHitDebugState("desktop-intent", {
           clientX,
           clientY,
-          folderDecision: lockedDecision,
-          lockedDecision,
-          lockedTargetInfo: lockedTarget,
-          reason: lockedDecision.reason,
-          targetInfo: lockedTarget,
+          folderDecision: lockedIntent.decision,
+          lockedDecision: lockedIntent.decision,
+          lockedTargetInfo: lockedIntent.targetInfo,
+          reason: lockedIntent.reason,
+          targetInfo: lockedIntent.targetInfo,
           winner: "folder-hover-locked",
         });
-        lockFolderHoverTarget(lockedTarget);
+        lockFolderHoverTarget(lockedIntent.targetInfo);
         return;
       }
       const targetInfo = getTopLevelTargetForDrag(activeDrag, center);
@@ -2462,20 +2507,22 @@ export function useLaunchpadDrag(options) {
     commitPendingDesktopReturn({ force: true });
 
     const center = getDragVisualCenter(activeDrag);
-    const lockedTopLevelDropTarget = getLockedTopLevelDropTarget(activeDrag);
+    const lockedDropIntent = getLockedTopLevelDropIntent(activeDrag);
+    const lockedTopLevelDropTarget = lockedDropIntent?.targetInfo || null;
     const topLevelDropTarget = lockedTopLevelDropTarget || (center ? getTopLevelTargetForDrag(activeDrag, center) : null);
-    const releaseDecision = topLevelDropTarget && center
+    const releaseDecision = lockedDropIntent?.decision || (topLevelDropTarget && center
       ? getFolderHitDecision(topLevelDropTarget, center.x, center.y, activeDrag)
-      : null;
+      : null);
     const shouldDropOnTopLevelTarget =
-      Boolean(lockedTopLevelDropTarget) ||
-      Boolean(topLevelDropTarget && isInsideFolderHitZone(topLevelDropTarget, center.x, center.y, activeDrag));
+      Boolean(lockedDropIntent) ||
+      Boolean(topLevelDropTarget && releaseDecision?.accepted);
     publishDragHitDebugState("release", {
       clientX: event.clientX,
       clientY: event.clientY,
       folderDecision: releaseDecision,
       lockedTargetInfo: lockedTopLevelDropTarget,
-      reason: lockedTopLevelDropTarget ? "locked-target-release" : releaseDecision?.reason || "no-top-level-target",
+      lockedDecision: lockedDropIntent?.decision,
+      reason: lockedDropIntent?.reason || releaseDecision?.reason || "no-top-level-target",
       targetInfo: topLevelDropTarget,
       winner: shouldDropOnTopLevelTarget ? "folder-release" : "page-release",
     });

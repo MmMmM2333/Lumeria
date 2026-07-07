@@ -9,6 +9,7 @@ import {
 const COLORS = Object.freeze({
   drag: 0xffffff,
   expandedTarget: 0xff9f0a,
+  intent: 0xffd60a,
   locked: 0xbf5af2,
   pageSlot: 0x0a84ff,
   pointer: 0x64d2ff,
@@ -142,6 +143,7 @@ export class DragHitDebugLayer extends Container {
     const lockedTarget = state.lockedTarget || null;
     const targetRect = target?.rect;
     const expandedTargetRect = target?.expandedTargetRect || state.folderDecision?.expandedTargetRect;
+    const intentRect = target?.intentRect || state.folderDecision?.intentRect;
     const lockedRect = lockedTarget?.rect;
     const stickyRect = state.folderHover?.stickyRect;
 
@@ -189,9 +191,25 @@ export class DragHitDebugLayer extends Container {
       this.drawRect(expandedTargetRect, stageRect, {
         alpha: 0.9,
         color: COLORS.expandedTarget,
-        fillAlpha: String(state.winner || "").startsWith("folder") ? 0.1 : 0.035,
+        fillAlpha: state.folderDecision?.dragIntersectsExpandedTarget ? 0.075 : 0.025,
         width: 2,
       });
+    }
+
+    if (intentRect) {
+      this.drawRect(intentRect, stageRect, {
+        alpha: 0.96,
+        color: COLORS.intent,
+        fillAlpha: state.folderDecision?.accepted ? 0.16 : 0.055,
+        width: 3,
+      });
+      labelIndex = this.drawLabel(
+        labelIndex,
+        "folder intent",
+        intentRect,
+        COLORS.intent,
+        stageRect
+      );
     }
 
     if (stickyRect) {
