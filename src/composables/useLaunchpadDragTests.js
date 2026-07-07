@@ -542,9 +542,14 @@ export async function runLaunchpadDragTests() {
       clientY: 132,
       preventDefault: () => {},
     });
+    assert(drag.dragHitDebugState.value?.winner === "pending", "drag hit debug should publish the pending pointer-move decision");
+    assert(drag.dragHitDebugState.value?.target?.id === "app-b", "drag hit debug should expose the current top-level target");
 
     runNextTimer(timers);
     assert(drag.dragFolderHoverState.value?.targetId === "app-b", "hovering an app target should expose the folder-create hover target");
+    assert(drag.dragHitDebugState.value?.winner === "folder-create-hover", "drag hit debug should expose folder-create as the winning intent");
+    assert(drag.dragHitDebugState.value?.reason === "center-in-target", "drag hit debug should explain the folder-create hit reason");
+    assert(drag.dragHitDebugState.value?.target?.expandedTargetRect?.width === 76, "drag hit debug should expose the expanded target rect used by overlap hit testing");
     runNextTimer(timers);
     runNextTimer(timers);
     runNextTimer(timers);

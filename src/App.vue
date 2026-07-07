@@ -69,6 +69,8 @@
         :dom-refs="desktopDomRefs"
         :drag-folder-hover-state="dragFolderHoverState"
         :drag-folder-target-id="dragFolderTargetId"
+        :drag-hit-debug-options="desktopDragHitDebugOptions"
+        :drag-hit-debug-state="dragHitDebugState"
         :drag-meta="dragMeta"
         :drag-preview-state="dragPreviewState"
         :drag-release-ghost-id="dragReleaseGhostId"
@@ -167,6 +169,7 @@ import { resolveCssBackgroundImagePlacement } from "./domain/backgroundImageLayo
 import { isLiveDesktopExperimentEnabled } from "./domain/experimentalFeatures.js";
 import {
   resetDesktopLayoutDebugParams,
+  resolveDesktopDragHitDebugOptions,
   resolveDesktopGridDebugOptions,
   resolveDesktopLayoutDebugStyle,
   updateDesktopLayoutDebugParams,
@@ -271,6 +274,7 @@ const {
   desktopVisualTransform,
   dragFolderHoverState,
   dragFolderTargetId,
+  dragHitDebugState,
   dragMeta,
   dragPreviewState,
   dragReleaseState,
@@ -317,6 +321,9 @@ const desktopLayoutDebugStyle = computed(() => (
 ));
 const desktopGridDebugOptions = computed(() => (
   import.meta.env.DEV ? resolveDesktopGridDebugOptions(desktopLayoutDebugParams) : null
+));
+const desktopDragHitDebugOptions = computed(() => (
+  import.meta.env.DEV ? resolveDesktopDragHitDebugOptions(desktopLayoutDebugParams) : null
 ));
 const isLiveDesktopExperimentActive = computed(() => isLiveDesktopExperimentEnabled());
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY = "launchpadLiveDesktopCompositorKeeper";

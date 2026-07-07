@@ -27,6 +27,7 @@ import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import { makeIconVisualSpecFromNodeState } from "./iconVisualSpec.js";
 import { SingleStageDiagnosticsLayer } from "./singleStageDiagnostics.js";
 import { DragPreviewLayer } from "./DragPreviewLayer.js";
+import { DragHitDebugLayer } from "./DragHitDebugLayer.js";
 import { FolderDropTargetLayer } from "./FolderDropTargetLayer.js";
 import { FolderCreateReleaseLayer } from "./FolderCreateReleaseLayer.js";
 import { IconNode } from "../nodes/IconNode.js";
@@ -245,6 +246,7 @@ export class DesktopLayer extends Container {
     this.folderCreateReleaseLayer = new FolderCreateReleaseLayer({
       onReleaseComplete: (release) => this.onFolderCreateReleaseComplete(release),
     });
+    this.dragHitDebugLayer = new DragHitDebugLayer();
     this.folderHandoffNodes = new Map();
     this.primaryFolderHandoffId = null;
     this.hasDesktopVisualAlpha = false;
@@ -274,6 +276,7 @@ export class DesktopLayer extends Container {
     this.addChild(this.folderCreateReleaseLayer);
     this.addChild(this.singleStageDiagnosticsLayer);
     this.addChild(this.handoffDebugLayer);
+    this.addChild(this.dragHitDebugLayer);
     this.describeMotionTargets();
   }
 
@@ -450,6 +453,10 @@ export class DesktopLayer extends Container {
     this.singleStageDiagnosticsLayer.update(state.singleStageFolderState, {
       enabled: state.singleStageDiagnosticsEnabled,
       iconBoundsRegistry: this.iconBoundsRegistry,
+    });
+    this.dragHitDebugLayer?.update?.(state.dragHitDebugState, {
+      enabled: state.dragHitDebugOptions?.enabled === true,
+      stageRect: state.stageRect,
     });
     let handoffReconciled = false;
     for (const entry of Array.from(this.getFolderHandoffNodes().values())) {

@@ -208,6 +208,16 @@
           <span>覆盖布局</span>
         </label>
 
+        <label class="background-debug-toggle">
+          <input
+            name="desktopDragHitZonesDebug"
+            type="checkbox"
+            :checked="layoutParams.dragHitZonesEnabled"
+            @change="setDragHitZonesDebugEnabled($event.target.checked)"
+          >
+          <span>显示拖拽命中区</span>
+        </label>
+
         <label
           v-for="slider in layoutSliders"
           :key="slider.key"
@@ -1176,6 +1186,7 @@ const layoutDebugRows = computed(() => {
   const params = layoutParams.value;
   return [
     { label: "enabled", value: params.enabled ? "true" : "false" },
+    { label: "dragHit", value: params.dragHitZonesEnabled ? "true" : "false" },
     { label: "hostMax", value: `${Number(params.hostMaxHeightPx).toFixed(0)}px` },
     { label: "heightOffset", value: `${Number(params.hostHeightOffsetPx).toFixed(0)}px` },
     { label: "mainPaddingY", value: `${Number(params.mainPaddingYPx).toFixed(0)}px` },
@@ -2496,6 +2507,10 @@ function updateKawaseNumber(key, event) {
 
 function setLayoutDebugEnabled(enabled) {
   props.updateDesktopLayoutDebugParams?.({ enabled });
+}
+
+function setDragHitZonesDebugEnabled(dragHitZonesEnabled) {
+  props.updateDesktopLayoutDebugParams?.({ dragHitZonesEnabled });
 }
 
 function updateLayoutNumber(key, event) {

@@ -3,6 +3,7 @@ import { reactive } from "vue";
 export const DESKTOP_LAYOUT_DEBUG_STORAGE_KEY = "launchpadDesktopLayoutDebugParams";
 
 export const DEFAULT_DESKTOP_LAYOUT_DEBUG_PARAMS = Object.freeze({
+  dragHitZonesEnabled: false,
   enabled: false,
   gridPaddingTopPx: 34,
   hostHeightOffsetPx: 0,
@@ -29,6 +30,7 @@ function normalizeNumber(value, fallback, limits) {
 
 export function normalizeDesktopLayoutDebugParams(params = {}) {
   return {
+    dragHitZonesEnabled: params.dragHitZonesEnabled === true,
     enabled: params.enabled === true,
     gridPaddingTopPx: normalizeNumber(
       params.gridPaddingTopPx,
@@ -118,5 +120,13 @@ export function resolveDesktopGridDebugOptions(params = desktopLayoutDebugParams
   if (!normalizedParams.enabled) return null;
   return {
     paddingTop: normalizedParams.gridPaddingTopPx,
+  };
+}
+
+export function resolveDesktopDragHitDebugOptions(params = desktopLayoutDebugParams) {
+  const normalizedParams = normalizeDesktopLayoutDebugParams(params);
+  if (!normalizedParams.dragHitZonesEnabled) return null;
+  return {
+    enabled: true,
   };
 }

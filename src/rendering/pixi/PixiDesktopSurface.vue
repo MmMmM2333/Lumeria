@@ -102,6 +102,8 @@ const props = defineProps({
   domRefs: { type: Object, required: true },
   dragFolderHoverState: { type: Object, default: null },
   dragFolderTargetId: { type: String, default: null },
+  dragHitDebugOptions: { type: Object, default: null },
+  dragHitDebugState: { type: Object, default: null },
   dragMeta: { type: Object, default: null },
   dragPreviewState: { type: Object, default: null },
   dragReleaseGhostId: { type: String, default: null },
@@ -566,6 +568,8 @@ function renderPixi(options = {}) {
       desktopTrackMotionKey: props.desktopTrackMotionKey,
       dragFolderHoverState: props.dragFolderHoverState,
       dragFolderTargetId: props.dragFolderTargetId,
+      dragHitDebugOptions: props.dragHitDebugOptions,
+      dragHitDebugState: props.dragHitDebugState,
       dragMeta: props.dragMeta,
       dragPreviewState: props.dragPreviewState,
       dragReleaseGhostId: props.dragReleaseGhostId,
@@ -983,6 +987,8 @@ watchEffect(() => {
   void props.desktopTrackMotionKey;
   void props.dragFolderHoverState;
   void props.dragFolderTargetId;
+  void props.dragHitDebugOptions;
+  void props.dragHitDebugState;
   void props.dragMeta;
   void props.dragPreviewState;
   void props.dragReleaseGhostId;
