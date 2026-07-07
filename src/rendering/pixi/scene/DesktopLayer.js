@@ -417,6 +417,10 @@ export class DesktopLayer extends Container {
         if (seen.has(key)) continue;
         this.iconNodes.delete(key);
         killMotionOf(node);
+        if (pageTrackScopeChanged) {
+          destroyDisplayObjectAfterFrame(node, { children: true });
+          continue;
+        }
         motion(node)
           .preset("fade")
           .layout()

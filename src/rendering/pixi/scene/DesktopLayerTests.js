@@ -1,6 +1,25 @@
 function makePageTrack(children) {
   const pageTrack = {
     children,
+    addChild(...nextChildren) {
+      nextChildren.forEach((child) => {
+        if (!child) return;
+        const existingIndex = this.children.indexOf(child);
+        if (existingIndex >= 0) this.children.splice(existingIndex, 1);
+        this.children.push(child);
+        child.parent = this;
+      });
+      return nextChildren[0] || null;
+    },
+    removeChild(...nextChildren) {
+      nextChildren.forEach((child) => {
+        const currentIndex = this.children.indexOf(child);
+        if (currentIndex < 0) return;
+        this.children.splice(currentIndex, 1);
+        if (child.parent === this) child.parent = null;
+      });
+      return nextChildren[0] || null;
+    },
     setChildIndex(child, index) {
       const currentIndex = this.children.indexOf(child);
       if (currentIndex < 0) return;
@@ -405,6 +424,94 @@ export async function runDesktopLayerTests() {
       assert(layer.lastDesktopRenderPlan.folderDropTarget?.targetId === folder.id, "released handoff entries should expose a folder drop target for the independent layer");
       assert(node.state.ghosted === false && node.visible !== false, "released handoff entries should keep the real folder visible while source ghosting settles");
       assert(node.resetFolderPreviewAfterGhostCount === 0, "released handoff entries should not re-sync and reset the folder hover preview");
+    }
+  }
+
+  {
+    motionRuntime.reset();
+    const firstPageNode = makeNode("first-page-app");
+    const secondPageNode = makeNode("second-page-app");
+    firstPageNode.alpha = 1;
+    firstPageNode.item = { id: "first-page-app", name: "First Page", type: "app" };
+    firstPageNode.renderable = true;
+    firstPageNode.visible = true;
+    secondPageNode.alpha = 1;
+    secondPageNode.item = { id: "second-page-app", name: "Second Page", type: "app" };
+    secondPageNode.renderable = true;
+    secondPageNode.visible = true;
+
+    const pageTrack = makePageTrack([firstPageNode, secondPageNode]);
+    pageTrack.x = -480;
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.applyDesktopVisualAlpha = () => {};
+    layer.applyDesktopVisualTransform = () => {};
+    layer.applyFolderOverlayAlpha = () => {};
+    layer.applyFolderOverlayTransform = () => {};
+    layer.flushInteractiveBounds = () => {};
+    layer.markInteractiveBoundsDirty = () => {};
+    layer.singleStageDiagnosticsLayer = { update() {} };
+    layer.singleStageFolderLayer = {
+      getDesktopSourceGhostedIds: () => new Set(),
+      hasVisibleFolderSubstitute: () => false,
+    };
+    layer.singleStageDragPreviewLayer = { update() {} };
+    layer.updateSingleStageFolderLayer = () => {};
+    layer.pageTrackMotion = {
+      control: null,
+      grabProgressOffset: 0,
+      grabToken: null,
+      key: null,
+      mode: null,
+      settleToken: null,
+    };
+    layer.iconNodes.set("page:0:first-page-app", firstPageNode);
+    layer.iconNodes.set("page:1:second-page-app", secondPageNode);
+    layer.lastDesktopRenderPlan = {
+      pageTrack: { scope: "desktop" },
+      signature: "desktop-before-search",
+    };
+
+    try {
+      layer.update({
+        activePageIndex: 0,
+        activePages: [[{ id: "search-result-app", name: "Search Result", type: "app" }]],
+        desktopFrame: { height: 320, left: 0, top: 0, width: 480 },
+        deviceResolution: 1,
+        folderPageSize: 9,
+        folderSourceGhostedIds: new Set(),
+        getDesktopPageRenderMode: () => "interactive",
+        getVisibleDesktopPage: (page) => page,
+        gridCols: 1,
+        gridRows: 1,
+        height: 320,
+        iconSize: 64,
+        isFolderOpeningPreviewFrameGhosted: () => false,
+        isIconOpening: () => false,
+        isIconSelected: () => false,
+        isSearchMode: true,
+        isTextlessMode: false,
+        launchTargetStatusById: {},
+        setPageRef: () => {},
+        shouldSnapTrack: false,
+        showMissingLaunchTargetBadge: false,
+        stageRect: { height: 320, left: 0, top: 0, width: 480 },
+        width: 480,
+      });
+
+      assert(pageTrack.x === 0, "scope change into search should still snap the page track to the search page");
+      assert(!pageTrack.children.includes(firstPageNode), "desktop first-page node should be detached immediately on search scope switch");
+      assert(!pageTrack.children.includes(secondPageNode), "desktop current-page node should be detached immediately on search scope switch");
+      assert(firstPageNode.visible === false && firstPageNode.renderable === false, "detached first-page node should be hidden without a fade tail");
+      assert(secondPageNode.visible === false && secondPageNode.renderable === false, "detached current-page node should be hidden without a fade tail");
+      assert(!layer.iconNodes.has("page:0:first-page-app") && !layer.iconNodes.has("page:1:second-page-app"), "old desktop nodes should leave the icon node registry");
+
+      const searchNode = layer.iconNodes.get("search:0:search-result-app");
+      const searchEntry = layer.lastDesktopRenderPlan.entries.find((entry) => entry.key === "search:0:search-result-app");
+      assert(searchNode, "search scope switch should create the new search node");
+      assert(pageTrack.children.includes(searchNode), "new search node should remain mounted in the page track");
+      assert(searchEntry && searchNode.y > searchEntry.layoutTarget.y, "new search node should keep the ordinary entry motion");
+    } finally {
+      motionRuntime.reset();
     }
   }
 
