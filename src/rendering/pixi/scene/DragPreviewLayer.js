@@ -15,6 +15,8 @@ const DRAG_PREVIEW_REPLACE_REASON = "drag-preview-replace";
 const DRAG_RELEASE_START_REASON = "drag-release-start";
 const DRAG_PREVIEW_LABEL_RESTORE_DURATION = 0.12;
 const DRAG_PREVIEW_FOLDER_HOVER_LABEL_SCALE = 0.72;
+const DRAG_RELEASE_EQUIVALENT_FINAL_DELTA = 0.75;
+const DRAG_RELEASE_EQUIVALENT_FINAL_SCALE_DELTA = 0.0125;
 
 function stopPreviewScaleMotion(node, options = {}) {
   killMotionOf(node.scale, null, { reason: options.reason });
@@ -98,6 +100,37 @@ function tweenPreviewLabel(node, target) {
   }
 }
 
+function numbersClose(a, b, epsilon) {
+  const left = Number(a);
+  const right = Number(b);
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
+  return Math.abs(left - right) <= epsilon;
+}
+
+function releaseMotionsVisuallyEquivalent(previous, next) {
+  if (!previous || !next) return false;
+  if (previous.releaseMode !== next.releaseMode) return false;
+  if (previous.textless !== next.textless) return false;
+  if (previous.singleLineLabel !== next.singleLineLabel) return false;
+  if (!numbersClose(previous.target?.x, next.target?.x, DRAG_RELEASE_EQUIVALENT_FINAL_DELTA)) return false;
+  if (!numbersClose(previous.target?.y, next.target?.y, DRAG_RELEASE_EQUIVALENT_FINAL_DELTA)) return false;
+  if (!numbersClose(previous.targetScale, next.targetScale, DRAG_RELEASE_EQUIVALENT_FINAL_SCALE_DELTA)) return false;
+  if (!numbersClose(previous.iconSize, next.iconSize, DRAG_RELEASE_EQUIVALENT_FINAL_DELTA)) return false;
+  if (!numbersClose(previous.cellWidth, next.cellWidth, DRAG_RELEASE_EQUIVALENT_FINAL_DELTA)) return false;
+  if (!numbersClose(previous.cellHeight, next.cellHeight, DRAG_RELEASE_EQUIVALENT_FINAL_DELTA)) return false;
+  if (!numbersClose(previous.targetAlpha, next.targetAlpha, 0.001)) return false;
+  if (!numbersClose(previous.targetLabelAlpha, next.targetLabelAlpha, 0.001)) return false;
+  return numbersClose(previous.targetLabelScale, next.targetLabelScale, DRAG_RELEASE_EQUIVALENT_FINAL_SCALE_DELTA);
+}
+
+function canReuseFinalizedReleaseMotion(previousContext, nextMotion, nextMotionKey, controlKey) {
+  const previousMotion = previousContext?.releaseMotion;
+  if (!previousMotion?.provisionalLayoutTarget || nextMotion?.provisionalLayoutTarget) return false;
+  if (!previousContext?.motionKey || controlKey !== previousContext.motionKey) return false;
+  if (!nextMotionKey) return false;
+  return releaseMotionsVisuallyEquivalent(previousMotion, nextMotion);
+}
+
 export class DragPreviewLayer extends Container {
   constructor(options = {}) {
     super();
@@ -110,6 +143,9 @@ export class DragPreviewLayer extends Container {
     this.previewScaleKey = null;
     this.releaseKey = null;
     this.releaseMotionKey = null;
+    this.releaseMotionControl = null;
+    this.releaseMotionControlKey = null;
+    this.releaseCompletionContext = null;
     this.releaseCompleteKey = null;
     this.visible = false;
   }
@@ -127,6 +163,9 @@ export class DragPreviewLayer extends Container {
       this.previewScaleKey = null;
       this.releaseKey = null;
       this.releaseMotionKey = null;
+      this.releaseMotionControl = null;
+      this.releaseMotionControlKey = null;
+      this.releaseCompletionContext = null;
       this.releaseCompleteKey = null;
       killMotionOf(this.previewNode, null, { reason: DRAG_PREVIEW_CLEAR_REASON });
       stopPreviewScaleMotion(this.previewNode, { reason: DRAG_PREVIEW_CLEAR_REASON });
@@ -142,6 +181,10 @@ export class DragPreviewLayer extends Container {
     this.previewKey = layout.key;
     this.releaseKey = null;
     this.releaseMotionKey = null;
+    this.releaseMotionControl = null;
+    this.releaseMotionControlKey = null;
+    this.releaseCompletionContext = null;
+    this.releaseCompleteKey = null;
     this.visible = true;
     this.previewNode.stageRect = layout.stageRect;
     this.previewNode.setState({
@@ -201,12 +244,36 @@ export class DragPreviewLayer extends Container {
     else tweenPreviewLabel(this.previewNode, target);
   }
 
+  completeActiveReleaseIfReady() {
+    const context = this.releaseCompletionContext;
+    if (!context) return;
+    const { motionKey, release, releaseKey, releaseMotion } = context;
+    if (!releaseKey || this.releaseCompleteKey === releaseKey) return;
+    if (this.releaseMotionKey !== motionKey || this.releaseMotionControlKey !== motionKey) return;
+    if (!releaseMotion?.hasTargetRect || releaseMotion.provisionalLayoutTarget) return;
+    if (this.releaseMotionControl && !this.releaseMotionControl.completed) return;
+    this.releaseCompleteKey = releaseKey;
+    this.onReleaseComplete(release);
+  }
+
   updateRelease(state) {
     const release = state.releaseState;
     const releaseMotion = getDragReleaseMotion(release, state);
-    const releaseKey = release?.key || releaseMotion.key;
+    const releaseKey = release?.key || releaseMotion.releaseKey || releaseMotion.key;
+    const releaseMotionKey = releaseMotion.motionKey || releaseMotion.key;
     const isNewRelease = this.releaseKey !== releaseKey;
-    const isNewMotion = this.releaseMotionKey !== releaseMotion.key;
+    const isNewMotion = this.releaseMotionKey !== releaseMotionKey;
+    const previousCompletionContext = this.releaseCompletionContext;
+    const shouldReuseFinalizedMotion = Boolean(
+      !isNewRelease &&
+      isNewMotion &&
+      canReuseFinalizedReleaseMotion(
+        previousCompletionContext,
+        releaseMotion,
+        releaseMotionKey,
+        this.releaseMotionControlKey
+      )
+    );
     const hasExplicitStartPose = Boolean(releaseMotion.startPose);
     const renderedPreviewScale = isNewRelease && this.previewNode.visible
       ? {
@@ -232,6 +299,29 @@ export class DragPreviewLayer extends Container {
     if (isNewRelease) {
       killMotionOf(this.previewNode, null, { reason: DRAG_RELEASE_START_REASON });
       stopPreviewScaleMotion(this.previewNode, { reason: DRAG_RELEASE_START_REASON });
+      this.releaseMotionControl = null;
+      this.releaseMotionControlKey = null;
+      this.releaseCompletionContext = null;
+    }
+
+    // Folder row-count resizes often finish with a sub-pixel stable target after
+    // the provisional ghost has already arrived. Reusing that motion avoids a
+    // tiny final label/icon rerender that reads as a twitch.
+    if (shouldReuseFinalizedMotion) {
+      this.visible = true;
+      this.previewNode.visible = true;
+      this.previewNode.eventMode = "none";
+      this.releaseKey = releaseKey;
+      this.releaseMotionKey = releaseMotionKey;
+      this.releaseMotionControlKey = releaseMotionKey;
+      this.releaseCompletionContext = {
+        motionKey: releaseMotionKey,
+        release,
+        releaseKey,
+        releaseMotion,
+      };
+      this.completeActiveReleaseIfReady();
+      return;
     }
 
     const previousIconSize = Math.max(0.01, Number(this.previewNode.state?.iconSize) || releaseMotion.iconSize || 1);
@@ -268,9 +358,14 @@ export class DragPreviewLayer extends Container {
     describeDragPreviewTargets(this.previewNode, release, "release");
     this.previewNode.rotation = 0;
 
-    if (!isNewMotion) return;
     this.releaseKey = releaseKey;
-    this.releaseMotionKey = releaseMotion.key;
+    this.releaseMotionKey = releaseMotionKey;
+    this.releaseCompletionContext = {
+      motionKey: releaseMotionKey,
+      release,
+      releaseKey,
+      releaseMotion,
+    };
     if (isNewRelease) {
       this.releaseCompleteKey = null;
       this.previewKey = null;
@@ -304,20 +399,22 @@ export class DragPreviewLayer extends Container {
           : { alpha: 1, scale: 1 };
         snapPreviewLabel(this.previewNode, startLabelTarget);
       }
-    } else if (Math.abs(previousIconSize - releaseMotion.iconSize) > 0.0001) {
+    } else if (isNewMotion && Math.abs(previousIconSize - releaseMotion.iconSize) > 0.0001) {
       const scaleMultiplier = previousIconSize / Math.max(0.01, releaseMotion.iconSize);
       this.previewNode.scale.set(
         Math.max(0.01, this.previewNode.scale.x * scaleMultiplier),
         Math.max(0.01, this.previewNode.scale.y * scaleMultiplier)
       );
     }
-    if (!releaseMotion.hasTargetRect) return;
-    const completeRelease = () => {
-      if (this.releaseCompleteKey === releaseMotion.key || this.releaseMotionKey !== releaseMotion.key) return;
-      if (releaseMotion.provisionalLayoutTarget) return;
-      this.releaseCompleteKey = releaseMotion.key;
-      this.onReleaseComplete(release);
-    };
+    if (!isNewMotion) {
+      this.completeActiveReleaseIfReady();
+      return;
+    }
+    if (!releaseMotion.hasTargetRect) {
+      this.releaseMotionControl = null;
+      this.releaseMotionControlKey = releaseMotionKey;
+      return;
+    }
     const duration = Math.max(0.01, Number(release.duration) || 0.18);
     const releaseAnimations = [
       motion(this.previewNode)
@@ -367,12 +464,19 @@ export class DragPreviewLayer extends Container {
         );
       }
     }
-    parallel(releaseAnimations, { onComplete: completeRelease });
+    this.releaseMotionControlKey = releaseMotionKey;
+    this.releaseMotionControl = parallel(releaseAnimations, {
+      onComplete: () => this.completeActiveReleaseIfReady(),
+    });
+    this.completeActiveReleaseIfReady();
   }
 
   destroy(options) {
     killMotionOf(this.previewNode, null, { reason: "destroyed" });
     stopPreviewScaleMotion(this.previewNode, { reason: "destroyed" });
+    this.releaseMotionControl = null;
+    this.releaseMotionControlKey = null;
+    this.releaseCompletionContext = null;
     super.destroy(options);
   }
 }

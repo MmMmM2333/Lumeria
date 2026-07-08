@@ -71,6 +71,7 @@ export {
 
 const BOUNDS_KIND = ICON_BOUNDS_KIND;
 const BOUNDS_VARIANT = ICON_BOUNDS_VARIANT;
+const DESKTOP_DRAG_HANDOFF_LAYOUT_REASON = "desktop-drag-handoff-layout";
 
 function projectStageLayoutRecordToClient(record) {
   return stageLayoutRecordToClientRect(record);
@@ -370,16 +371,17 @@ export class DesktopLayer extends Container {
         if (shouldRetireStaleHandoff) this.clearFolderHandoffNode(item.id);
         seen.add(key);
         let node = this.iconNodes.get(key);
+        const shouldSnapDragHandoffLayout = !isFolderClosingHandoff && (entry.isActiveDraggedItem || entry.isReleaseGhostItem);
         if (!node) {
           node = new IconNode({
             onAction: (action, originalEvent, actionItem, actionSource, iconNode) =>
               this.handleIconAction(action, originalEvent, actionItem, actionSource, iconNode),
           });
-          node.alpha = isFolderClosingHandoff ? 1 : 0;
-          node.position.set(layoutTarget.x, isFolderClosingHandoff ? layoutTarget.y : layoutTarget.y + 8);
+          node.alpha = isFolderClosingHandoff || shouldSnapDragHandoffLayout ? 1 : 0;
+          node.position.set(layoutTarget.x, isFolderClosingHandoff || shouldSnapDragHandoffLayout ? layoutTarget.y : layoutTarget.y + 8);
           this.iconNodes.set(key, node);
           this.pageTrack.addChild(node);
-          if (!isFolderClosingHandoff) {
+          if (!isFolderClosingHandoff && !shouldSnapDragHandoffLayout) {
             motion(node)
               .preset("fade")
               .layout()
@@ -388,6 +390,10 @@ export class DesktopLayer extends Container {
               .start();
             springIconLayoutPosition(node, layoutTarget, markBoundsDirty);
           }
+        } else if (shouldSnapDragHandoffLayout && shouldSpringLayout) {
+          killMotionOf(node, "x,y", { lane: "base", reason: DESKTOP_DRAG_HANDOFF_LAYOUT_REASON });
+          node.position.set(layoutTarget.x, layoutTarget.y);
+          markBoundsDirty();
         } else if (!isFolderClosingHandoff && shouldSpringLayout) {
           springIconLayoutPosition(node, layoutTarget, markBoundsDirty);
         }

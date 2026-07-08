@@ -273,6 +273,11 @@ export async function runDesktopLayerTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[DesktopLayer test failed] ${message}`);
   };
+  const nearlyEqual = (a, b, epsilon = 0.0001) => Math.abs((Number(a) || 0) - (Number(b) || 0)) <= epsilon;
+  const getBaseAnimation = (target, prop) => {
+    const channel = motionRuntime.getChannel(target, prop);
+    return Array.from(channel?.base?.values?.() || [])[0] || null;
+  };
 
   {
     const iconBoundsRegistry = createIconBoundsRegistry();
@@ -285,6 +290,57 @@ export async function runDesktopLayerTests() {
     assert(renderRequests[0] === "folder-resize-layout", "folder overlay render requests should be forwarded to the desktop surface scheduler");
     layer.destroy({ children: true });
     iconBoundsRegistry.clearBounds();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new DesktopLayer({ iconBoundsRegistry });
+    const movingItem = { id: "desktop-release-backed-node", name: "Desktop Release Backed", type: "app" };
+    const neighborItem = { id: "desktop-release-neighbor", name: "Desktop Release Neighbor", type: "app" };
+    const baseState = {
+      ...makeDesktopQuiescenceState(movingItem),
+      activePages: [[movingItem, neighborItem]],
+      desktopFrame: { height: 240, left: 0, top: 0, width: 480 },
+      gridCols: 2,
+      gridRows: 1,
+      height: 240,
+      stageRect: { height: 240, left: 0, top: 0, width: 480 },
+      width: 480,
+    };
+    layer.update(baseState);
+    for (let index = 0; index < 40; index += 1) {
+      motionRuntime.step(0.05);
+      layer.update(baseState);
+    }
+    const movingKey = `page:0:${movingItem.id}`;
+    const movingNode = layer.iconNodes.get(movingKey);
+    const initialX = movingNode?.x;
+    const releaseState = {
+      ...baseState,
+      activePages: [[neighborItem, movingItem]],
+      dragReleaseGhostId: movingItem.id,
+      dragReleaseState: {
+        item: movingItem,
+        source: { index: 0, pageIndex: 0, type: "page" },
+      },
+    };
+    layer.update(releaseState);
+    const targetRecord = iconBoundsRegistry.getRecord(K.LAUNCH, V.STABLE_STAGE_LAYOUT, {
+      area: "desktop",
+      id: movingItem.id,
+      pageIndex: 0,
+    });
+    const expectedX = targetRecord.left + targetRecord.width / 2;
+
+    assert(initialX !== expectedX, "desktop release-backed setup should move the hidden real icon to a new slot");
+    assert(movingNode.visible === false && movingNode.state.ghosted === true, "desktop release-backed real icon should stay hidden behind the drag preview");
+    assert(nearlyEqual(movingNode.x, expectedX), "desktop release-backed hidden real icon should snap to the release target before it is revealed");
+    assert(!getBaseAnimation(movingNode, "x"), "desktop release-backed hidden real icon should not keep a layout spring that can twitch after reveal");
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
   }
 
   {

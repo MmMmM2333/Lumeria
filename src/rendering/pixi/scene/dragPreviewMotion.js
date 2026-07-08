@@ -51,6 +51,44 @@ function getReleaseStartSource(release) {
   };
 }
 
+function keyNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(3) : "";
+}
+
+function makeReleaseMotionTargetKey(options = {}) {
+  const {
+    cellSize = {},
+    hasTargetRect = false,
+    iconSize = 0,
+    releaseMode = DRAG_RELEASE_MODE_SLOT,
+    releaseKey = "",
+    singleLineLabel = false,
+    target = {},
+    targetAlpha = 1,
+    targetLabelAlpha = 1,
+    targetLabelScale = 1,
+    targetScale = 1,
+    textless = false,
+  } = options;
+  return [
+    releaseKey,
+    releaseMode,
+    hasTargetRect ? "target" : "pending",
+    keyNumber(target.x),
+    keyNumber(target.y),
+    keyNumber(targetScale),
+    keyNumber(iconSize),
+    keyNumber(cellSize.width),
+    keyNumber(cellSize.height),
+    singleLineLabel ? "single" : "multi",
+    textless ? "textless" : "label",
+    keyNumber(targetAlpha),
+    keyNumber(targetLabelAlpha),
+    keyNumber(targetLabelScale),
+  ].join(":");
+}
+
 export function makeDragPreviewKey(preview) {
   return [
     preview?.item?.id || "",
@@ -95,6 +133,7 @@ export function getDragPreviewLayout(preview, state = {}) {
 export function getDragReleaseMotion(release, state = {}) {
   const releaseMode = release?.releaseMode || DRAG_RELEASE_MODE_SLOT;
   const provisionalLayoutTarget = release?.provisionalLayoutTarget === true;
+  const releaseKey = release?.key || makeDragPreviewKey(release);
   const sourceIconSize = getPreviewIconSize(release, state.iconSize);
   const targetVisualSpec = releaseMode === DRAG_RELEASE_MODE_SLOT
     ? cloneIconVisualSpec(release?.targetVisualSpec || release?.visualSpec)
@@ -159,8 +198,23 @@ export function getDragReleaseMotion(release, state = {}) {
     hasStageLayoutTargetRect,
     hasTargetRect,
     iconSize,
-    key: `${release?.key || makeDragPreviewKey(release)}:${release?.targetVersion ?? 0}:${hasTargetRect ? "target" : "pending"}${provisionalLayoutTarget ? ":provisional" : ""}`,
+    key: `${releaseKey}:${release?.targetVersion ?? 0}:${hasTargetRect ? "target" : "pending"}${provisionalLayoutTarget ? ":provisional" : ""}`,
+    motionKey: makeReleaseMotionTargetKey({
+      cellSize,
+      hasTargetRect,
+      iconSize,
+      releaseKey,
+      releaseMode,
+      singleLineLabel: targetVisualSpec ? targetVisualSpec.singleLineLabel === true : release?.singleLineLabel === true,
+      target,
+      targetAlpha,
+      targetLabelAlpha,
+      targetLabelScale,
+      targetScale,
+      textless,
+    }),
     provisionalLayoutTarget,
+    releaseKey,
     releaseMode,
     singleLineLabel: targetVisualSpec ? targetVisualSpec.singleLineLabel === true : release?.singleLineLabel === true,
     stageRect,

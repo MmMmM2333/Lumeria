@@ -169,6 +169,139 @@ export async function runDragPreviewLayerTests() {
 
   {
     motionRuntime.reset();
+    const calls = [];
+    const layer = new DragPreviewLayer({
+      onReleaseComplete: (release) => calls.push(release.key),
+    });
+    const releaseState = {
+      cellSize: { height: 80, width: 80 },
+      item: { id: "app-finalize", name: "App Finalize", type: "app" },
+      key: "release-finalize-without-retarget",
+      offset: { x: 32, y: 32 },
+      pointer: { x: 180, y: 220 },
+      provisionalLayoutTarget: true,
+      size: { height: 64, width: 64 },
+      source: { index: 0, pageIndex: 0, type: "page" },
+      targetRect: { height: 64, left: 520, top: 420, width: 64 },
+      targetVersion: 1,
+      velocity: { x: 0, y: 0 },
+    };
+    const baseState = {
+      folderPageSize: 9,
+      height: 600,
+      iconSize: 64,
+      isTextlessMode: false,
+      launchTargetStatusById: {},
+      showMissingLaunchTargetBadge: true,
+      stageRect: { height: 600, left: 0, top: 0, width: 800 },
+      width: 800,
+    };
+
+    try {
+      layer.update({ ...baseState, releaseState });
+      motionRuntime.step(1 / 60);
+      const xChannel = motionRuntime.getChannel(layer.previewNode, "x");
+      const xMotionBefore = Array.from(xChannel?.base?.values?.() || [])[0] || null;
+      assert(xMotionBefore && Math.abs(xMotionBefore.velocity) > 0, "test setup should have an in-flight provisional release x motion");
+      const fromBefore = xMotionBefore.from;
+      const xBefore = layer.previewNode.x;
+
+      layer.update({
+        ...baseState,
+        releaseState: {
+          ...releaseState,
+          provisionalLayoutTarget: false,
+          targetVersion: 2,
+        },
+      });
+
+      const xMotionAfter = Array.from(motionRuntime.getChannel(layer.previewNode, "x")?.base?.values?.() || [])[0] || null;
+      assert(xMotionAfter === xMotionBefore, "finalizing a provisional target with the same geometry should keep the existing release x motion");
+      assert(xMotionAfter.from === fromBefore, "finalizing a provisional target with the same geometry should not restart the release spring");
+      assert(layer.previewNode.x === xBefore, "finalizing a provisional target with the same geometry should not snap the ghost position");
+      assert(runUntil(() => calls.length === 1), "finalized same-geometry release should still complete after the existing motion settles");
+    } finally {
+      layer.destroy({ children: true });
+      motionRuntime.reset();
+    }
+  }
+
+  {
+    motionRuntime.reset();
+    const calls = [];
+    const layer = new DragPreviewLayer({
+      onReleaseComplete: (release) => calls.push(release.key),
+    });
+    const releaseState = {
+      cellSize: { height: 64, width: 64 },
+      item: { id: "app-finalize-equivalent", name: "App Finalize Equivalent", type: "app" },
+      key: "release-finalize-equivalent",
+      offset: { x: 32, y: 32 },
+      pointer: { x: 420, y: 420 },
+      provisionalLayoutTarget: true,
+      size: { height: 64, width: 64 },
+      source: { folderId: "folder-a", index: 18, pageIndex: 0, type: "folder" },
+      targetRect: { height: 63.75, left: 1098.125, top: 206.125, width: 63.75 },
+      targetVersion: 1,
+      targetVisualSpec: {
+        cellHeight: 119.53,
+        cellWidth: 172,
+        compact: false,
+        iconSize: 63.75,
+        singleLineLabel: false,
+        textless: false,
+      },
+      velocity: { x: 0, y: 0 },
+    };
+    const baseState = {
+      folderPageSize: 30,
+      height: 760,
+      iconSize: 64,
+      isTextlessMode: false,
+      launchTargetStatusById: {},
+      showMissingLaunchTargetBadge: true,
+      stageRect: { height: 760, left: 0, top: 0, width: 1400 },
+      width: 1400,
+    };
+
+    try {
+      layer.update({ ...baseState, releaseState });
+      assert(runUntil(() => layer.releaseMotionControl?.completed === true), "test setup should settle the provisional release motion");
+      assert(calls.length === 0, "settled provisional release should still wait for the stable target");
+      const iconSizeBefore = layer.previewNode.state.iconSize;
+      const labelSigBefore = layer.previewNode.labelRenderSig;
+      const xChannelBefore = motionRuntime.getChannel(layer.previewNode, "x");
+      const xMotionBefore = Array.from(xChannelBefore?.base?.values?.() || [])[0] || null;
+      assert(!xMotionBefore, "test setup should have no active x spring before finalization");
+
+      layer.update({
+        ...baseState,
+        releaseState: {
+          ...releaseState,
+          provisionalLayoutTarget: false,
+          targetRect: { height: 64, left: 1098, top: 206, width: 64 },
+          targetVersion: 2,
+          targetVisualSpec: {
+            ...releaseState.targetVisualSpec,
+            cellHeight: 120,
+            iconSize: 64,
+          },
+        },
+      });
+
+      const xMotionAfter = Array.from(motionRuntime.getChannel(layer.previewNode, "x")?.base?.values?.() || [])[0] || null;
+      assert(calls.join(",") === "release-finalize-equivalent", "visually equivalent stable target should complete immediately after the provisional motion has settled");
+      assert(!xMotionAfter, "visually equivalent stable target should not start a second release spring");
+      assert(layer.previewNode.state.iconSize === iconSizeBefore, "visually equivalent stable target should not rerender the preview icon for a sub-pixel finalization");
+      assert(layer.previewNode.labelRenderSig === labelSigBefore, "visually equivalent stable target should not rerender the preview label for a sub-pixel finalization");
+    } finally {
+      layer.destroy({ children: true });
+      motionRuntime.reset();
+    }
+  }
+
+  {
+    motionRuntime.reset();
     const layer = new DragPreviewLayer();
     const previewState = {
       cellSize: { height: 80, width: 80 },

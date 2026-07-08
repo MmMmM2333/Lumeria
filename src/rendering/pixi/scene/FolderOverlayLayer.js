@@ -61,9 +61,10 @@ import {
   makeOpeningGhostTarget,
 } from "./folderOverlayTargets.js";
 import { resolveFolderOverlayTargets } from "./folderOverlayTargetResolver.js";
+import { resolveFolderIconRenderSize } from "./folderIconSizing.js";
 import { makeIconRect, makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { IconNode } from "../nodes/IconNode.js";
-import { makeIconVisualSpecFromNodeState } from "./iconVisualSpec.js";
+import { makeIconVisualSpec, makeIconVisualSpecFromNodeState } from "./iconVisualSpec.js";
 import { getCachedIconTexture } from "../assets/iconTextureCache.js";
 import {
   cancelPageTrackMotion,
@@ -86,6 +87,7 @@ const FOLDER_PANEL_DETACHED_CLOSE_REASON = "folder-panel-detached-close";
 const FOLDER_PANEL_HANDOFF_SNAP_REASON = "folder-panel-handoff-snap";
 const FOLDER_PANEL_OPEN_REASON = "folder-panel-open";
 const FOLDER_RESIZE_LAYOUT_REASON = "folder-resize-layout";
+const FOLDER_DRAG_HANDOFF_LAYOUT_REASON = "folder-drag-handoff-layout";
 const FOLDER_PANEL_ZOOM_FADE_REASON = "folder-panel-zoom-fade";
 const FOLDER_RESIZE_SYNC_MIN_RENDERS = 2;
 const FOLDER_PANEL_READY_PROGRESS = 0.985;
@@ -172,17 +174,34 @@ function makeResizeLayoutSignature(state, geometry) {
   return parts.join("|");
 }
 
-function makeResizeLayoutMetricsSnapshot(state = {}) {
+function makeResizeLayoutMetricsSnapshot(state = {}, geometry = null) {
   const committedFolderPageIndex = state.folderPageIndex ?? 0;
   const visualFolderPageIndex = state.visualFolderPageIndex ?? committedFolderPageIndex;
   const cols = parseRepeatCount(state.folderGridStyle?.gridTemplateColumns, 5);
   const fallbackRows = Math.max(1, Math.ceil((state.folderPages?.[visualFolderPageIndex] || []).length / cols));
+  const fixedCellHeight = readPx(state.folderPanelStyle?.["--folder-icon-cell-height"], 0);
+  const rowGap = readPx(state.folderPanelStyle?.["--folder-row-gap"], 18);
+  const rows = parseRepeatCount(state.folderGridStyle?.gridTemplateRows, fallbackRows);
+  const cellWidth = Number(geometry?.grid?.width) > 0 ? Number(geometry.grid.width) / cols : null;
+  const availableCellHeight = Number(geometry?.grid?.height) > 0
+    ? Math.max(1, (Number(geometry.grid.height) - rowGap * Math.max(0, rows - 1)) / rows)
+    : null;
+  const cellHeight = fixedCellHeight > 0 && availableCellHeight
+    ? Math.min(fixedCellHeight, availableCellHeight)
+    : fixedCellHeight > 0
+      ? fixedCellHeight
+      : availableCellHeight;
   return {
     cols,
-    fixedCellHeight: readPx(state.folderPanelStyle?.["--folder-icon-cell-height"], 0),
-    iconSize: Math.min(readPx(state.folderPanelStyle?.["--folder-icon-size"], state.iconSize), 56),
-    rowGap: readPx(state.folderPanelStyle?.["--folder-row-gap"], 18),
-    rows: parseRepeatCount(state.folderGridStyle?.gridTemplateRows, fallbackRows),
+    fixedCellHeight,
+    iconSize: resolveFolderIconRenderSize({
+      cellHeight,
+      cellWidth,
+      fallbackSize: state.iconSize,
+      requestedSize: readPx(state.folderPanelStyle?.["--folder-icon-size"], state.iconSize),
+    }),
+    rowGap,
+    rows,
   };
 }
 
@@ -268,7 +287,9 @@ function registerFolderIconNodeBounds(options) {
     node,
     pageIndex,
     provisionalLayoutTarget = false,
+    stableIconSize = iconSize,
     stableTargetCenter,
+    stableVisualSpec = null,
     stageHeight,
     stageRect,
     stageWidth,
@@ -288,6 +309,8 @@ function registerFolderIconNodeBounds(options) {
     visualSpec,
   };
   const stableCenter = stableTargetCenter || targetCenter;
+  const stableSpec = stableVisualSpec || visualSpec;
+  const safeStableIconSize = Math.max(1, Number(stableIconSize) || Number(iconSize) || Number(stableSpec?.iconSize) || 1);
   iconBoundsRegistry.registerBounds(
     BOUNDS_KIND.LAUNCH,
     BOUNDS_VARIANT.RENDERED,
@@ -306,12 +329,13 @@ function registerFolderIconNodeBounds(options) {
     BOUNDS_KIND.LAUNCH,
     BOUNDS_VARIANT.STABLE_STAGE_LAYOUT,
     { area: "folder", folderId, id: item.id, pageIndex },
-    makeIconRect(stableCenter.x, stableCenter.y, iconSize),
+    makeIconRect(stableCenter.x, stableCenter.y, safeStableIconSize),
     {
       ...meta,
       stageHeight,
       stageRect,
       stageWidth,
+      visualSpec: stableSpec,
     }
   );
   return iconBounds;
@@ -624,15 +648,6 @@ function makeLayoutMetricsFromResizeState(state, fallback = {}) {
   };
 }
 
-function getOpeningRowGrowthProgress(startLayoutMetrics, targetLayoutMetrics, visualLayoutMetrics) {
-  const startRows = Number(startLayoutMetrics?.rows);
-  const targetRows = Number(targetLayoutMetrics?.rows);
-  const visualRows = Number(visualLayoutMetrics?.rows);
-  if (!Number.isFinite(startRows) || !Number.isFinite(targetRows) || !Number.isFinite(visualRows)) return null;
-  if (targetRows <= startRows) return null;
-  return clamp01((visualRows - startRows) / Math.max(0.0001, targetRows - startRows));
-}
-
 export class FolderOverlayLayer extends Container {
   constructor(options = {}) {
     super();
@@ -870,7 +885,7 @@ export class FolderOverlayLayer extends Container {
       panelStyle: state.folderPanelStyle,
       width: state.width,
     });
-    const targetLayoutMetrics = makeResizeLayoutMetricsSnapshot(state);
+    const targetLayoutMetrics = makeResizeLayoutMetricsSnapshot(state, geometry);
     const previousLayoutMetrics = this.resizeLayoutMetricsSnapshot
       ? { ...this.resizeLayoutMetricsSnapshot }
       : null;
@@ -999,16 +1014,24 @@ export class FolderOverlayLayer extends Container {
       state.folderPageTurnToken != null ||
       visualFolderPageIndex !== committedFolderPageIndex
     );
-    const targetLayoutMetrics = context.targetLayoutMetrics || makeResizeLayoutMetricsSnapshot(state);
-    const visualLayoutMetrics = resizeVisualGeometryActive
+    const targetLayoutMetrics = context.targetLayoutMetrics || makeResizeLayoutMetricsSnapshot(state, targetGeometry);
+    const rawVisualLayoutMetrics = resizeVisualGeometryActive
       ? makeLayoutMetricsFromResizeState(this.resizeVisualGeometryState, targetLayoutMetrics)
       : targetLayoutMetrics;
     const cols = targetLayoutMetrics.cols;
-    const rows = visualLayoutMetrics.rows;
-    const rowGap = visualLayoutMetrics.rowGap;
-    const fixedCellHeight = visualLayoutMetrics.fixedCellHeight;
-    const iconSize = visualLayoutMetrics.iconSize;
+    const rows = rawVisualLayoutMetrics.rows;
+    const rowGap = rawVisualLayoutMetrics.rowGap;
+    const fixedCellHeight = rawVisualLayoutMetrics.fixedCellHeight;
     const metrics = getFolderGridMetrics({ cols, fixedCellHeight, grid: geometry.grid, rowGap, rows });
+    const iconSize = resolveFolderIconRenderSize({
+      cellHeight: metrics.cellHeight,
+      cellWidth: metrics.cellWidth,
+      fallbackSize: state.iconSize,
+      requestedSize: rawVisualLayoutMetrics.iconSize,
+    });
+    const visualLayoutMetrics = iconSize === rawVisualLayoutMetrics.iconSize
+      ? rawVisualLayoutMetrics
+      : { ...rawVisualLayoutMetrics, iconSize };
     const localGridLeft = geometry.grid.left - geometry.panel.left;
     const localGridTop = geometry.grid.top - geometry.panel.top;
     const localMetrics = { ...metrics, gridLeft: localGridLeft, gridTop: localGridTop };
@@ -1018,6 +1041,20 @@ export class FolderOverlayLayer extends Container {
       grid: targetGeometry.grid,
       rowGap: targetLayoutMetrics.rowGap,
       rows: targetLayoutMetrics.rows,
+    });
+    const stableIconSize = resolveFolderIconRenderSize({
+      cellHeight: stableMetrics.cellHeight,
+      cellWidth: stableMetrics.cellWidth,
+      fallbackSize: state.iconSize,
+      requestedSize: targetLayoutMetrics.iconSize,
+    });
+    const stableVisualSpec = makeIconVisualSpec({
+      cellHeight: stableMetrics.cellHeight,
+      cellWidth: stableMetrics.cellWidth,
+      compact: false,
+      iconSize: stableIconSize,
+      singleLineLabel: false,
+      textless: state.isTextlessMode,
     });
     const stableLocalMetrics = {
       ...stableMetrics,
@@ -1129,7 +1166,8 @@ export class FolderOverlayLayer extends Container {
       resizeGeometryMode,
       resizeVisualGeometryActive,
       resizeVisualGeometryFinalFrame,
-      rowGrowthStartLayoutMetrics: this.resizeVisualLayoutStartMetrics || context.previousLayoutMetrics,
+      stableIconSize,
+      stableVisualSpec,
       targetGeometry,
       targetLayoutMetrics,
       visualLayoutMetrics,
@@ -1148,10 +1186,9 @@ export class FolderOverlayLayer extends Container {
       resizeGeometryMode,
       resizeVisualGeometryActive,
       resizeVisualGeometryFinalFrame,
-      rowGrowthStartLayoutMetrics,
+      stableIconSize,
+      stableVisualSpec,
       state,
-      targetLayoutMetrics,
-      visualLayoutMetrics,
     } = context;
     const resizeLayoutSyncActive = this.isResizeLayoutSyncActive();
     const shouldSnapIconLayoutForResize = Boolean(
@@ -1159,6 +1196,7 @@ export class FolderOverlayLayer extends Container {
       resizeGeometryMode !== "page-turn"
     );
     const hasProvisionalOpeningLayoutTarget = resizeGeometryMode === "opening" && resizeVisualGeometryActive;
+    const hasProvisionalDragLayoutTarget = resizeVisualGeometryActive;
     const seen = new Set();
     const boundsRefreshers = new Map();
     const nextLayoutTargets = new Map();
@@ -1186,16 +1224,11 @@ export class FolderOverlayLayer extends Container {
       const hasVisualOwner = Boolean(visualKey && this.visualOwnership.hasOwner(visualKey));
       if (hasVisualOwner) node.visible = false;
 
-      const rowGrowthProgress = resizeGeometryMode === "opening"
-        ? getOpeningRowGrowthProgress(rowGrowthStartLayoutMetrics, targetLayoutMetrics, visualLayoutMetrics)
-        : null;
-      const stableBoundsTargetCenter = entry.isReleaseGhostItem &&
-        rowGrowthProgress != null &&
-        rowGrowthProgress < 1
-        ? targetCenter
-        : stableTargetCenter;
-      const provisionalBoundsTarget = hasProvisionalOpeningLayoutTarget &&
-        (stableBoundsTargetCenter === targetCenter || !stableTargetCenter);
+      const stableBoundsTargetCenter = stableTargetCenter;
+      const isDragHandoffItem = entry.isActiveDraggedItem || entry.isReleaseGhostItem;
+      const provisionalBoundsTarget = isDragHandoffItem
+        ? hasProvisionalDragLayoutTarget
+        : hasProvisionalOpeningLayoutTarget && (stableBoundsTargetCenter === targetCenter || !stableTargetCenter);
       const refreshNodeBounds = () => registerFolderIconNodeBounds({
         folderId: state.renderedFolder.id,
         iconBoundsRegistry: this.iconBoundsRegistry,
@@ -1207,7 +1240,9 @@ export class FolderOverlayLayer extends Container {
         node,
         pageIndex,
         provisionalLayoutTarget: provisionalBoundsTarget,
+        stableIconSize,
         stableTargetCenter: stableBoundsTargetCenter,
+        stableVisualSpec,
         stageHeight: state.height,
         stageRect: state.stageRect,
         stageWidth: state.width,
@@ -1227,8 +1262,12 @@ export class FolderOverlayLayer extends Container {
       nextLayoutTargets.set(key, layoutTarget);
       const shouldSnapIconLayout = shouldSnapIconLayoutForResize &&
         (resizeGeometryMode !== "opening" || isFolderIconLayoutCoveredByVisual(node, hasVisualOwner));
-      if (shouldSnapIconLayout) {
-        killMotionOf(node, "x,y", { lane: "base", reason: FOLDER_RESIZE_LAYOUT_REASON });
+      const shouldSnapDragHandoffLayout = entry.isActiveDraggedItem || entry.isReleaseGhostItem;
+      if (shouldSnapIconLayout || shouldSnapDragHandoffLayout) {
+        killMotionOf(node, "x,y", {
+          lane: "base",
+          reason: shouldSnapDragHandoffLayout ? FOLDER_DRAG_HANDOFF_LAYOUT_REASON : FOLDER_RESIZE_LAYOUT_REASON,
+        });
         node.position.set(layoutTarget.x, layoutTarget.y);
         refreshNodeBounds();
       } else if (isNewNode || isLayoutTargetChanged(this.folderIconLayoutTargets?.get(key), layoutTarget)) {
@@ -1515,7 +1554,7 @@ export class FolderOverlayLayer extends Container {
 
   resolveResizeVisualGeometry(context = {}) {
     const targetGeometry = context.geometry;
-    const targetLayoutMetrics = context.targetLayoutMetrics || makeResizeLayoutMetricsSnapshot(context.state);
+    const targetLayoutMetrics = context.targetLayoutMetrics || makeResizeLayoutMetricsSnapshot(context.state, targetGeometry);
     const targetKey = makeResizeVisualTargetKey(targetGeometry, targetLayoutMetrics);
     if (context.isClosing || context.isNewFolder || context.isPrewarm) {
       this.clearResizeVisualGeometry("resize-visual-geometry-reset");

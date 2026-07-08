@@ -16,7 +16,7 @@ function roundPx(value) {
 
 function getInitialFolderViewportHeight(shellMinHeight) {
   const viewportHeight = Number(globalThis.window?.innerHeight);
-  if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) return Math.max(1, shellMinHeight - FOLDER_SHELL_VERTICAL_PADDING);
+  if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) return 0;
 
   const shellMaxHeight = Math.max(FOLDER_SHELL_MAX_HEIGHT_MIN, viewportHeight - FOLDER_SHELL_VIEWPORT_OFFSET);
   const shellHeight = Math.min(shellMinHeight, shellMaxHeight);
@@ -33,7 +33,8 @@ export function getFolderLayoutMetricsForRows(options = {}) {
     + idealSafeArea;
   const folderShellMinHeight = folderGridHeight + 120;
   const initialViewportHeight = getInitialFolderViewportHeight(folderShellMinHeight);
-  const availableHeight = Math.max(1, Number(options.folderViewportHeight) || initialViewportHeight || folderGridHeight);
+  const measuredViewportHeight = Number(options.folderViewportHeight) || 0;
+  const availableHeight = Math.max(1, measuredViewportHeight || initialViewportHeight || folderGridHeight, initialViewportHeight);
   const coarseScale = clamp(availableHeight / Math.max(1, folderGridHeight), 0, 1);
   const rowGap = roundPx(clamp(FOLDER_ROW_GAP * coarseScale, FOLDER_MIN_ROW_GAP, FOLDER_ROW_GAP));
   const safeArea = roundPx(idealSafeArea * coarseScale);

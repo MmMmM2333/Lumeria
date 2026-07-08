@@ -495,6 +495,227 @@ export async function runFolderOverlayLayerTests() {
   }
 
   {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const movingItem = { id: "release-backed-node", name: "Release Backed", type: "app" };
+    const neighborItem = { id: "release-neighbor", name: "Release Neighbor", type: "app" };
+    const folderId = "folder-release-backed-node";
+    const baseState = makeFolderResizeState({
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(3, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(1, var(--folder-icon-cell-height))",
+      },
+      folderId,
+      folderPages: [[movingItem, neighborItem]],
+      folderPageSize: 3,
+    });
+    layer.update(baseState);
+    settleResizeUpdate(layer, baseState);
+    const movingKey = `${folderId}:0:${movingItem.id}`;
+    const movingNode = layer.iconNodes.get(movingKey);
+    const initialX = movingNode?.x;
+
+    const releaseState = makeFolderResizeState({
+      ...baseState,
+      dragReleaseGhostId: movingItem.id,
+      dragReleaseState: {
+        item: movingItem,
+        source: { folderId, index: 0, pageIndex: 0, type: "folder" },
+      },
+      folderPages: [[neighborItem, movingItem]],
+    });
+    layer.update(releaseState);
+    const target = layer.folderIconLayoutTargets.get(movingKey);
+    const xMotion = getBaseAnimation(movingNode, "x");
+
+    assert(initialX !== target.x, "release-backed node setup should move the hidden real icon to a new slot");
+    assert(movingNode.visible === false && movingNode.state.ghosted === true, "release-backed real icon should stay hidden behind the drag preview");
+    assert(nearlyEqual(movingNode.x, target.x), "release-backed hidden real icon should snap to the release target before it is revealed");
+    assert(!xMotion, "release-backed hidden real icon should not keep a layout spring that can twitch after reveal");
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const largeIconItem = { id: "large-folder-icon", name: "Large Folder Icon", type: "app" };
+    const state = makeFolderResizeState({
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(3, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(1, var(--folder-icon-cell-height))",
+      },
+      folderId: "folder-large-icon-size",
+      folderPages: [[largeIconItem]],
+      folderPanelStyle: {
+        "--folder-icon-cell-height": "160px",
+        "--folder-icon-size": "88px",
+        "--folder-row-gap": "18px",
+        "--folder-shell-min-height": "520px",
+      },
+    });
+    layer.update(state);
+
+    const stableRecord = iconBoundsRegistry.getRecord(K.LAUNCH, V.STABLE_STAGE_LAYOUT, {
+      area: "folder",
+      folderId: "folder-large-icon-size",
+      id: largeIconItem.id,
+      pageIndex: 0,
+    });
+    const renderedRecord = iconBoundsRegistry.getRecord(K.LAUNCH, V.RENDERED, {
+      area: "folder",
+      folderId: "folder-large-icon-size",
+      id: largeIconItem.id,
+      pageIndex: 0,
+    });
+    const node = layer.iconNodes.get(`folder-large-icon-size:0:${largeIconItem.id}`);
+
+    assert(nearlyEqual(stableRecord?.width, 88), "folder stable layout bounds should allow icon sizes above 56px");
+    assert(nearlyEqual(renderedRecord?.meta?.visualSpec?.iconSize, 88), "folder rendered bounds should publish the larger visual spec");
+    assert(node?.state?.iconSize === 88, "folder icon node state should receive the larger icon size");
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const narrowCellItem = { id: "narrow-folder-icon", name: "Narrow Folder Icon", type: "app" };
+    const state = makeFolderResizeState({
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(6, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(1, var(--folder-icon-cell-height))",
+      },
+      folderId: "folder-narrow-icon-size",
+      folderPages: [[narrowCellItem]],
+      folderPanelStyle: {
+        "--folder-icon-cell-height": "180px",
+        "--folder-icon-size": "128px",
+        "--folder-row-gap": "18px",
+        "--folder-shell-min-height": "520px",
+      },
+      width: 800,
+    });
+    const geometry = layer.update(state);
+    const expectedCellWidth = geometry.grid.width / 6;
+    const stableRecord = iconBoundsRegistry.getRecord(K.LAUNCH, V.STABLE_STAGE_LAYOUT, {
+      area: "folder",
+      folderId: "folder-narrow-icon-size",
+      id: narrowCellItem.id,
+      pageIndex: 0,
+    });
+
+    assert(expectedCellWidth > 56 && expectedCellWidth < 128, "narrow-cell setup should isolate the cell-width clamp");
+    assert(nearlyEqual(stableRecord?.width, expectedCellWidth), "folder icon bounds should clamp to cell width rather than the old 56px cap");
+    assert(nearlyEqual(stableRecord?.meta?.visualSpec?.iconSize, expectedCellWidth), "folder visual spec should match the cell-width-clamped icon size");
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const compactPage = makeFolderResizeItems("layout-release", 12);
+    const insertedItem = { id: "layout-release-dragged", name: "Dragged", type: "app" };
+    const folderId = "folder-layout-release-resize";
+    const compactState = makeFolderResizeState({
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(4, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(3, var(--folder-icon-cell-height))",
+      },
+      folderId,
+      folderPages: [compactPage],
+      folderPageSize: 16,
+      folderPanelStyle: {
+        "--folder-icon-cell-height": "144px",
+        "--folder-icon-size": "88px",
+        "--folder-row-gap": "18px",
+        "--folder-shell-min-height": "520px",
+      },
+    });
+    layer.update(compactState);
+    settleResizeUpdate(layer, compactState);
+
+    const expandedPage = compactPage.slice();
+    expandedPage.push(insertedItem);
+    const expandedDragState = makeFolderResizeState({
+      dragMeta: {
+        item: insertedItem,
+        source: { folderId, index: 0, pageIndex: 0, type: "folder" },
+      },
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(4, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(4, var(--folder-icon-cell-height))",
+      },
+      folderId,
+      folderPages: [expandedPage],
+      folderPageSize: 16,
+      folderPanelStyle: {
+        "--folder-icon-cell-height": "112px",
+        "--folder-icon-size": "64px",
+        "--folder-row-gap": "14px",
+        "--folder-shell-min-height": "620px",
+      },
+    });
+    layer.update(expandedDragState);
+    const activeDragTarget = iconBoundsRegistry.getRecord(K.LAUNCH, V.STABLE_STAGE_LAYOUT, {
+      area: "folder",
+      folderId,
+      id: insertedItem.id,
+      pageIndex: 0,
+    });
+    const expandedState = makeFolderResizeState({
+      ...expandedDragState,
+      dragMeta: null,
+      dragReleaseGhostId: insertedItem.id,
+      dragReleaseState: {
+        item: insertedItem,
+        source: { folderId, index: 0, pageIndex: 0, type: "folder" },
+      },
+    });
+    layer.update(expandedState);
+    const initialReleaseTarget = iconBoundsRegistry.getRecord(K.LAUNCH, V.STABLE_STAGE_LAYOUT, {
+      area: "folder",
+      folderId,
+      id: insertedItem.id,
+      pageIndex: 0,
+    });
+    settleResizeUpdate(layer, expandedState);
+    const finalReleaseTarget = iconBoundsRegistry.getRecord(K.LAUNCH, V.STABLE_STAGE_LAYOUT, {
+      area: "folder",
+      folderId,
+      id: insertedItem.id,
+      pageIndex: 0,
+    });
+
+    assert(layer.resizeVisualGeometryState === null, "layout release resize setup should settle visual geometry before checking the final target");
+    assert(initialReleaseTarget && finalReleaseTarget, "layout release resize setup should register release ghost targets");
+    assert(layer.resizeVisualGeometryMode === null, "layout release resize should clear the active visual geometry mode after settling");
+    assert(activeDragTarget?.meta?.provisionalLayoutTarget === true, "active drag target should be provisional while folder icon size is still animating");
+    assert(initialReleaseTarget.meta?.provisionalLayoutTarget === true, "layout release target should be provisional while folder icon size is still animating");
+    assert(finalReleaseTarget.meta?.provisionalLayoutTarget === false, "layout release target should become final after folder icon size settles");
+    assert(nearlyEqual(initialReleaseTarget.top, finalReleaseTarget.top), "layout release target should already point at the final row geometry while resize is provisional");
+    assert(nearlyEqual(initialReleaseTarget.width, finalReleaseTarget.width), "layout release target should already use the final icon bounds while resize is provisional");
+    assert(nearlyEqual(initialReleaseTarget.meta?.visualSpec?.iconSize, finalReleaseTarget.meta?.visualSpec?.iconSize), "layout release target should publish the final icon size while resize is provisional");
+    assert(nearlyEqual(initialReleaseTarget.meta?.visualSpec?.iconSize, 64), "layout release target should use the compressed folder icon size before completion");
+    assert(nearlyEqual(finalReleaseTarget.meta?.visualSpec?.iconSize, 64), "layout release target should settle to the compressed folder icon size");
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
     const layer = Object.create(FolderOverlayLayer.prototype);
     const frame = {
       fillAlpha: 0.22,
@@ -792,7 +1013,9 @@ export async function runFolderOverlayLayerTests() {
     assert(initialReleaseTarget && finalReleaseTarget, "row-growth release setup should register release ghost targets");
     assert(initialReleaseTarget.meta?.provisionalLayoutTarget === true, "row-growth release target should be marked provisional while opening geometry is still animating");
     assert(finalReleaseTarget.meta?.provisionalLayoutTarget === false, "row-growth release target should become final after opening geometry settles");
-    assert(!nearlyEqual(initialReleaseTarget.top, finalReleaseTarget.top), "release ghost target should follow the current opening geometry before settling to the final new row");
+    assert(nearlyEqual(initialReleaseTarget.left, finalReleaseTarget.left), "row-growth release target should already use the final column geometry while opening is provisional");
+    assert(nearlyEqual(initialReleaseTarget.top, finalReleaseTarget.top), "row-growth release target should already use the final row geometry while opening is provisional");
+    assert(nearlyEqual(initialReleaseTarget.width, finalReleaseTarget.width), "row-growth release target should already use the final icon bounds while opening is provisional");
 
     layer.destroy({ children: true });
     iconBoundsRegistry.clearBounds();

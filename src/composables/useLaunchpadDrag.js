@@ -28,6 +28,7 @@ import {
   makeFolderCenterCollapseRect,
   makeFolderThumbPreviewRect,
 } from "../rendering/pixi/scene/folderOverlayTargets.js";
+import { resolveFolderIconRenderSize } from "../rendering/pixi/scene/folderIconSizing.js";
 import {
   cloneIconVisualSpec,
   makeIconVisualSpec,
@@ -641,6 +642,14 @@ export function useLaunchpadDrag(options) {
     return makeReleaseTarget(target) || { clientRect: null, provisionalLayoutTarget: false, stageLayoutRect: null, visualSpec: null };
   }
 
+  function makeProvisionalReleaseTarget(target) {
+    const normalized = normalizeReleaseTarget(target);
+    if (!normalized.clientRect && !normalized.stageLayoutRect) return null;
+    return makeReleaseTarget(normalized.clientRect, normalized.stageLayoutRect, normalized.visualSpec, {
+      provisionalLayoutTarget: true,
+    });
+  }
+
   function releaseTargetsAlmostEqual(a, b) {
     return rectsAlmostEqual(a?.clientRect, b?.clientRect) &&
       rectsAlmostEqual(a?.stageLayoutRect, b?.stageLayoutRect) &&
@@ -754,7 +763,7 @@ export function useLaunchpadDrag(options) {
     const baseFolderIconSize = Number(options.effectiveFolderIconSize?.value) ||
       readPx(currentStyle["--folder-icon-size"], 0) ||
       Number(fallbackSize) ||
-      56;
+      64;
     return getFolderLayoutMetricsForRows({
       baseFolderIconSize,
       folderViewportHeight: getFolderViewportHeight(),
@@ -851,14 +860,12 @@ export function useLaunchpadDrag(options) {
   }
 
   function getFolderTargetIconSize(cellWidth, cellHeight, fallbackSize, targetOptions = {}) {
-    const configuredSize = Math.max(
-      1,
-      Number(targetOptions.iconSize) ||
-        Number(options.effectiveFolderIconSize?.value) ||
-        Number(fallbackSize) ||
-        56
-    );
-    return Math.max(1, Math.min(configuredSize, 56, cellWidth, cellHeight));
+    return resolveFolderIconRenderSize({
+      cellHeight,
+      cellWidth,
+      fallbackSize: Number(fallbackSize) || 64,
+      requestedSize: Number(targetOptions.iconSize) || Number(options.effectiveFolderIconSize?.value) || null,
+    });
   }
 
   function getPageSlotReleaseTarget(pageIndex, index, fallbackSize) {
@@ -902,7 +909,7 @@ export function useLaunchpadDrag(options) {
     const row = Math.floor(safeIndex / cols);
     const cellWidth = metrics.cellWidth;
     const cellHeight = metrics.cellHeight;
-    const iconSize = Math.min(readPx(style["--folder-icon-size"], 0) * Math.min(scale.x, scale.y), 56 * Math.min(scale.x, scale.y));
+    const iconSize = readPx(style["--folder-icon-size"], 0) * Math.min(scale.x, scale.y);
     const size = getFolderTargetIconSize(cellWidth, cellHeight, fallbackSize, {
       iconSize: iconSize > 0 ? iconSize : null,
     });
@@ -957,6 +964,13 @@ export function useLaunchpadDrag(options) {
     if (stableTarget || targetOptions.stableOnly) return stableTarget;
     return stableTarget ||
       makeReleaseTarget(liveRecord, null, getRecordVisualSpec(liveRecord));
+  }
+
+  function getMatchingCommittedFolderTargetBounds(folderId, itemId, expectedTarget) {
+    const target = options.findInFolder(options.pages.value, folderId, itemId);
+    if (!target || !expectedTarget) return null;
+    if (target.pageIndex !== expectedTarget.pageIndex || target.index !== expectedTarget.index) return null;
+    return getCommittedFolderTargetBounds(folderId, itemId);
   }
 
   function getPointerReleaseRect(activeDrag) {
@@ -1074,10 +1088,12 @@ export function useLaunchpadDrag(options) {
     const minAttempts = Math.max(1, Number(resolveOptions.minAttempts) || 1);
     const settleFrames = Math.max(0, Number(resolveOptions.settleFrames) || 0);
     const continueWhileProvisional = resolveOptions.continueWhileProvisional === true;
+    const deferStableTargetUntilSettled = resolveOptions.deferStableTargetUntilSettled === true;
     const maxProvisionalAttempts = Math.max(
       maxAttempts,
       Number(resolveOptions.maxProvisionalAttempts) || 90
     );
+    let hasPublishedProvisionalTarget = false;
     const tryResolve = () => {
       dragReleaseResolveRaf = 0;
       if (!dragReleaseState.value || dragReleaseState.value.key !== releaseKey) return;
@@ -1090,16 +1106,27 @@ export function useLaunchpadDrag(options) {
           ? stableAttempts + 1
           : 1;
         previousTarget = normalizedTarget;
-        setDragReleaseTarget(releaseKey, targetRect, fallbackRect);
+        const shouldKeepSettling = settleFrames > 0 &&
+          attempts < maxAttempts &&
+          (attempts < minAttempts || stableAttempts < settleFrames);
+        if (deferStableTargetUntilSettled && !targetIsProvisional && shouldKeepSettling) {
+          dragReleaseResolveRaf = window.requestAnimationFrame(tryResolve);
+          return;
+        }
+        const shouldHoldProvisionalTarget = deferStableTargetUntilSettled &&
+          targetIsProvisional &&
+          hasPublishedProvisionalTarget;
+        if (shouldHoldProvisionalTarget) {
+          scheduleDragReleaseClear();
+        } else {
+          const didPublish = setDragReleaseTarget(releaseKey, targetRect, fallbackRect);
+          if (didPublish && targetIsProvisional) hasPublishedProvisionalTarget = true;
+        }
         if (continueWhileProvisional && targetIsProvisional && attempts < maxProvisionalAttempts) {
           dragReleaseResolveRaf = window.requestAnimationFrame(tryResolve);
           return;
         }
-        if (
-          settleFrames > 0 &&
-          attempts < maxAttempts &&
-          (attempts < minAttempts || stableAttempts < settleFrames)
-        ) {
+        if (shouldKeepSettling) {
           dragReleaseResolveRaf = window.requestAnimationFrame(tryResolve);
         }
         return;
@@ -2596,31 +2623,51 @@ export function useLaunchpadDrag(options) {
       }
       const folderTarget = calcFolderReleaseInsertTarget(folderId, activeDrag, event.clientX, event.clientY, folderPageTurnCommit);
       const visibleRows = Math.max(1, Number(options.visibleFolderRowCount.value) || 1);
-      const releaseTargetOptions = {
+      const projectedRows = Math.max(1, Number(folderTarget.rows) || visibleRows);
+      const isRowCountGrowth = projectedRows > visibleRows;
+      const initialReleaseTargetOptions = {
         ...folderTarget,
-        provisionalLayoutTarget: Number(folderTarget.rows) > visibleRows,
+        provisionalLayoutTarget: true,
+        rows: projectedRows,
       };
-      const fallbackReleaseTarget = getFolderSlotReleaseTarget(
+      const finalReleaseTargetOptions = {
+        ...folderTarget,
+        provisionalLayoutTarget: false,
+        rows: projectedRows,
+      };
+      const preCommitReleaseTarget = getMatchingCommittedFolderTargetBounds(folderId, activeDrag.item.id, folderTarget);
+      const initialFallbackReleaseTarget = getFolderSlotReleaseTarget(
         folderTarget.pageIndex,
         folderTarget.index,
         activeDrag.size?.width,
-        releaseTargetOptions
+        initialReleaseTargetOptions
+      );
+      const finalFallbackReleaseTarget = getFolderSlotReleaseTarget(
+        folderTarget.pageIndex,
+        folderTarget.index,
+        activeDrag.size?.width,
+        finalReleaseTargetOptions
       );
       placeDraggedItemInFolder(folderId, event.clientX, event.clientY, { force: true, target: folderTarget });
       const releaseKey = startPendingDragRelease();
-      const releaseTarget = getCommittedFolderReleaseTarget(
+      const finalReleaseTarget = getCommittedFolderReleaseTarget(
         folderId,
         activeDrag.item.id,
         activeDrag.size?.width,
-        releaseTargetOptions
-      ) || fallbackReleaseTarget;
-      if (releaseKey) setDragReleaseTarget(releaseKey, releaseTarget || fallbackReleaseTarget);
+        finalReleaseTargetOptions
+      ) || finalFallbackReleaseTarget;
+      const initialPreCommitReleaseTarget = isRowCountGrowth ? null : preCommitReleaseTarget;
+      const initialReleaseTarget = makeProvisionalReleaseTarget(initialPreCommitReleaseTarget) ||
+        initialFallbackReleaseTarget ||
+        makeProvisionalReleaseTarget(finalReleaseTarget);
+      if (releaseKey) setDragReleaseTarget(releaseKey, initialReleaseTarget || finalReleaseTarget || finalFallbackReleaseTarget);
       scheduleDragReleaseTargetResolve(
         releaseKey,
         () => getCommittedFolderTargetBounds(folderId, activeDrag.item.id, { stableOnly: true }),
-        releaseTarget,
+        finalReleaseTarget || finalFallbackReleaseTarget,
         {
           continueWhileProvisional: true,
+          deferStableTargetUntilSettled: true,
           maxAttempts: DRAG_RELEASE_STABLE_TARGET_RESOLVE_FRAMES,
           minAttempts: 6,
           settleFrames: 3,

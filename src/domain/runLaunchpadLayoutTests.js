@@ -83,6 +83,7 @@ import { runDesktopBoundsRegistrationTests } from "../rendering/pixi/scene/deskt
 import { runDesktopBoundsTargetsTests } from "../rendering/pixi/scene/desktopBoundsTargetsTests.js";
 import { runFolderGhostIconStateTests } from "../rendering/pixi/scene/folderGhostIconStateTests.js";
 import { runFolderIconGhostMotionTests } from "../rendering/pixi/scene/folderIconGhostMotionTests.js";
+import { runFolderIconSizingTests } from "../rendering/pixi/scene/folderIconSizingTests.js";
 import { runFolderOverlayIconPlanTests } from "../rendering/pixi/scene/folderOverlayIconPlanTests.js";
 import { runFolderOverlayRenderPlanTests } from "../rendering/pixi/scene/folderOverlayRenderPlanTests.js";
 import { runFolderCloseRaceTests } from "../rendering/pixi/scene/folderCloseRaceTests.js";
@@ -232,6 +233,7 @@ runDesktopBoundsTargetsTests();
 await runFolderFrameGhostTests();
 runFolderGhostIconStateTests();
 runFolderIconGhostMotionTests();
+runFolderIconSizingTests();
 runFolderOverlayIconPlanTests();
 runFolderOverlayRenderPlanTests();
 runDisplayObjectLifecycleTests();
