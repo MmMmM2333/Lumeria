@@ -351,6 +351,73 @@ export async function runFolderFrameGhostTests() {
 
   {
     const { startFrameGhost } = await import("./folderFrameGhost.js");
+    const { motionRuntime } = await import("../animation/motionRuntime.js");
+    const makeGraphics = () => ({
+      alpha: 0,
+      visible: false,
+      clear() {
+        return this;
+      },
+      fill() {
+        return this;
+      },
+      roundRect(left, top, width, height, radius) {
+        this.drawn = { height, left, radius, top, width };
+        return this;
+      },
+      stroke() {
+        return this;
+      },
+    });
+    const staleFullPanelFrame = {
+      fillAlpha: 0.26,
+      fillColor: 0xf7f8ff,
+      height: 520,
+      left: 100,
+      progress: 1,
+      radius: 48,
+      strokeAlpha: 0.24,
+      strokeColor: 0xffffff,
+      strokeWidth: 1,
+      top: 80,
+      width: 900,
+    };
+    const layer = {
+      closingGhostLayer: {},
+      closingPreviewSwapLayer: {},
+      frameGhost: makeGraphics(),
+      frameGhostFolderId: "folder-1",
+      frameGhostPhase: "opening",
+      frameGhostState: staleFullPanelFrame,
+      panelMaterial: { alpha: 1, visible: true },
+      notifyTitleFrame() {},
+    };
+    const fromRect = { height: 64, left: 240, top: 180, width: 64 };
+    const toRect = { height: 520, left: 100, top: 80, width: 900 };
+
+    motionRuntime.reset();
+    startFrameGhost(layer, fromRect, toRect, {
+      exclusivePanelMaterialHandoff: true,
+      folderId: "folder-1",
+      frameGhostPhase: "opening",
+      fromFillAlpha: 0.18,
+      fromRadius: 14,
+      preserveOnComplete: true,
+    });
+
+    assert(layer.frameGhostState === staleFullPanelFrame, "same opening frame can reuse its presentation object");
+    assert(layer.frameGhostState.progress === 0, "fresh opening handoff should restart frame progress");
+    assert(layer.frameGhostState.left === fromRect.left && layer.frameGhostState.top === fromRect.top, "fresh opening handoff should reset stale panel position to the source rect");
+    assert(layer.frameGhostState.width === fromRect.width && layer.frameGhostState.height === fromRect.height, "fresh opening handoff should reset stale panel size to the source rect");
+    assert(layer.frameGhostState.fillAlpha === 0.18 && layer.frameGhostState.radius === 14, "fresh opening handoff should reset stale source presentation");
+    assert(layer.frameGhost.drawn.left === fromRect.left && layer.frameGhost.drawn.width === fromRect.width, "first drawn opening frame should not flash the stale full-size panel");
+    assert(!layer.panelMaterial.visible && layer.panelMaterial.alpha === 0, "exclusive opening handoff should still hide the real panel material on the first frame");
+    layer.frameGhostMotionControl?.cancel?.();
+    motionRuntime.reset();
+  }
+
+  {
+    const { startFrameGhost } = await import("./folderFrameGhost.js");
     let arriveCount = 0;
     const makeGraphics = () => ({
       alpha: 0,

@@ -717,9 +717,14 @@ export class IconNode extends Container {
   }
 
   drawFolderThumbFrame(size, thumb) {
-    const sig = `${numberSig(size)}:${numberSig(thumb.radius)}:${numberSig(thumb.fillAlpha)}:${thumb.fillColor}:${numberSig(thumb.strokeAlpha)}:${thumb.strokeColor}:${numberSig(thumb.strokeWidth)}:${numberSig(this.getFolderHoverPadding())}`;
+    const suppressFrame = this.state?.suppressFolderThumbFrame === true;
+    const sig = `${numberSig(size)}:${numberSig(thumb.radius)}:${numberSig(thumb.fillAlpha)}:${thumb.fillColor}:${numberSig(thumb.strokeAlpha)}:${thumb.strokeColor}:${numberSig(thumb.strokeWidth)}:${numberSig(this.getFolderHoverPadding())}:${boolSig(suppressFrame)}`;
     if (this.folderThumbFrameSig === sig) return;
     this.folderThumbFrameSig = sig;
+    if (suppressFrame) {
+      this.folderThumb.clear();
+      return;
+    }
     drawFolderThumbFrameGraphic(this.folderThumb, size, thumb, this.getFolderHoverPadding());
   }
 
@@ -749,10 +754,12 @@ export class IconNode extends Container {
     const previousPadding = this.getFolderHoverPadding();
     const nextPadding = Math.max(0, Number(targetPadding) || 0);
     const previousScale = Math.max(0.01, Number(this.folderThumb.scale?.x) || 1);
-    const nextScale = previousScale * getPaddedFrameScale(this.iconSize, previousPadding, nextPadding);
+    const scaleBase = previousPadding <= 0.001 ? 1 : previousScale;
+    const nextScale = scaleBase * getPaddedFrameScale(this.iconSize, previousPadding, nextPadding);
     this.folderHoverFrame.padding = nextPadding;
     this.drawFolderThumbFrame(this.iconSize, getFolderThumbMetrics(this.iconSize));
     this.folderThumb.scale.set(nextScale);
+    return nextScale;
   }
 
   getActiveFolderHoverState(state) {
@@ -771,11 +778,15 @@ export class IconNode extends Container {
     }
 
     const wasActive = this.folderHoverActive;
+    const previousHoverKey = this.folderHoverKey;
     this.folderHoverActive = true;
     this.folderHoverClearing = false;
     this.visualWrap.scale.set(1);
-    this.prepareFolderHoverFrame(this.getFolderHoverTargetPadding());
-    if (!wasActive) {
+    const frameScale = this.prepareFolderHoverFrame(this.getFolderHoverTargetPadding());
+    const shouldAnimateFrame =
+      !wasActive ||
+      (previousHoverKey !== hoverState.key && Math.abs(frameScale - 1) > 0.001);
+    if (shouldAnimateFrame) {
       killMotionOf(this.folderHoverFrame);
       motion(this.folderThumb)
         .duration(FOLDER_HOVER_FRAME_DURATION)

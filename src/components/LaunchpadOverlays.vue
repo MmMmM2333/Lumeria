@@ -12,17 +12,25 @@
     </div>
   </div>
 
-  <div v-if="iconContextMenu" class="icon-context-menu-layer" @contextmenu.prevent>
-    <div class="icon-context-menu" :style="iconContextMenuStyle" role="menu" :aria-label="`${iconContextMenu.app.name} 菜单`" @pointerdown.stop>
-      <button type="button" role="menuitem" @click="openContextMenuApp">打开</button>
-      <button type="button" role="menuitem" @click="editContextMenuApp">编辑</button>
-    </div>
+  <div v-if="iconContextMenu" class="icon-context-menu-layer" @contextmenu.prevent @pointerdown.self="closeIconContextMenu">
+    <fluent-menu-list class="icon-context-menu" :style="iconContextMenuStyle" role="menu" :aria-label="`${iconContextMenu.app.name} 菜单`" @pointerdown.stop>
+      <fluent-menu-item @click="openContextMenuApp">
+        <OpenIcon slot="start" class="icon-context-menu-item-icon" />
+        打开
+      </fluent-menu-item>
+      <fluent-menu-item @click="editContextMenuApp">
+        <EditIcon slot="start" class="icon-context-menu-item-icon" />
+        编辑
+      </fluent-menu-item>
+    </fluent-menu-list>
   </div>
 
 </template>
 
 <script setup>
 import { computed, ref } from "vue";
+import EditIcon from "~icons/fluent/edit-20-regular";
+import OpenIcon from "~icons/fluent/open-20-regular";
 import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { getIconSource } from "../domain/iconSource.js";
 

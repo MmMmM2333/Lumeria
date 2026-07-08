@@ -1,4 +1,5 @@
 import { motionRuntime } from "../animation/motionRuntime.js";
+import { killMotionOf } from "../animation/motionTween.js";
 
 function installPixiTextTestDom() {
   if (!("CanvasRenderingContext2D" in globalThis)) {
@@ -138,6 +139,49 @@ export async function runIconNodeTests() {
     assert(node.folderHoverFrame.padding === 0 && node.folderHoverClearing === false, "folder hover clear should reset frame state");
 
     motionRuntime.reset();
+    node.folderHoverActive = false;
+    node.folderHoverKey = null;
+    node.folderHoverPhase = null;
+    node.folderHoverClearing = false;
+    node.folderHoverFrame.padding = 0;
+    node.folderPreviewPlanKey = null;
+    node.folderThumb.scale.set(1);
+    node.folderChildrenWrap.y = 0;
+    node.updateFolderHoverAnimation({
+      folderHoverState: { key: "folder-hover-stale", phase: "hover", targetId: "folder-1", targetType: "folder" },
+    }, folderHoverPlan);
+    motionRuntime.step(0.04);
+    const staleHoverScale = node.folderThumb.scale.x;
+    assert(staleHoverScale < 1, "folder hover stale repro should start with an in-flight frame scale");
+    killMotionOf(node.folderThumb, "scale");
+    node.updateFolderHoverAnimation({
+      folderHoverState: { key: "folder-hover-reenter", phase: "hover", targetId: "folder-1", targetType: "folder" },
+    }, folderHoverPlan);
+    snapshot = motionRuntime.debugSnapshot();
+    assert(
+      snapshot.animations.some((animation) => animation.laneKey === "overlay" && animation.prop === "x" && nearlyEqual(animation.to, 1)),
+      "re-entering a stale folder hover should restart the frame scale animation"
+    );
+    for (let index = 0; index < 20; index += 1) motionRuntime.step(0.05);
+    assert(nearlyEqual(node.folderThumb.scale.x, 1), "re-entering a stale folder hover should restore full highlight coverage");
+
+    motionRuntime.reset();
+    node.folderHoverActive = false;
+    node.folderHoverKey = null;
+    node.folderHoverPhase = null;
+    node.folderHoverClearing = false;
+    node.folderHoverFrame.padding = 0;
+    node.folderPreviewPlanKey = null;
+    node.folderThumb.scale.set(0.58);
+    node.folderChildrenWrap.y = 0;
+    node.updateFolderHoverAnimation({
+      folderHoverState: { key: "folder-hover-after-handoff", phase: "hover", targetId: "folder-1", targetType: "folder" },
+    }, folderHoverPlan);
+    assert(node.folderThumb.scale.x > 0.7 && node.folderThumb.scale.x < 1, "folder hover re-entry after handoff should not compound a stale thumb scale");
+    for (let index = 0; index < 20; index += 1) motionRuntime.step(0.05);
+    assert(nearlyEqual(node.folderThumb.scale.x, 1), "folder hover re-entry after handoff should restore full highlight coverage");
+
+    motionRuntime.reset();
     node.item = { id: "app-1", type: "app" };
     node.isFolder = false;
     node.iconSize = 64;
@@ -222,6 +266,12 @@ export async function runIconNodeTests() {
     assert(node.folderChildNodes[1].visible === false, "suppressed folder preview child should be hidden");
     node.setState(folderNodeState);
     assert(node.folderChildNodes[1].visible === true, "folder preview child should reappear after suppression is cleared");
+    assert(node.folderThumbFrameSig.endsWith(":0"), "normal folder rendering should draw the built-in folder thumb frame");
+    node.setState({ ...folderNodeState, suppressFolderThumbFrame: true });
+    assert(node.folderThumbFrameSig.endsWith(":1"), "folder drop hover should be able to suppress the built-in folder thumb frame while keeping preview children");
+    assert(node.folderChildNodes[0].visible === true, "folder preview children should remain visible when only the thumb frame is suppressed");
+    node.setState(folderNodeState);
+    assert(node.folderThumbFrameSig.endsWith(":0"), "folder thumb frame should redraw after drop hover suppression clears");
 
     motionRuntime.reset();
     motionRuntime.configureDebug({ enabled: true });

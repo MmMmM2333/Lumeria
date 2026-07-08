@@ -55,6 +55,7 @@ export function runFolderLayerStateTests() {
   assert(state.width === 1 && state.height === 1, "stage dimensions should have a minimum size");
   assert(state.stageRect.left === 4 && state.stageRect.top === 5, "stage rect should be preserved");
   assert(state.iconSize === 52, "folder icon size should be parsed from panel style");
+  assert(state.dragReleaseState?.item?.id === "released-app", "drag release state should be forwarded for release-time layout decisions");
   assert(state.dragReleaseGhostId === "released-app", "drag release ghost id should come from release state");
   assert(state.desktopPageTrackOffset.liveX === -120 && state.desktopPageTrackOffset.targetX === -400, "desktop page track offset should be forwarded");
   assert(state.getFolderOpenIconGhostKey("app-a", 0) === "open-a", "open ghost lookup should use current open ghosts");

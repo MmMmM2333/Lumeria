@@ -42,6 +42,53 @@ function getPointerIconCenter(preview, stageRect, iconSize) {
   };
 }
 
+function getReleaseStartSource(release) {
+  const pointer = release?.startPose?.pointer;
+  if (!pointer) return release;
+  return {
+    ...release,
+    pointer,
+  };
+}
+
+function keyNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(3) : "";
+}
+
+function makeReleaseMotionTargetKey(options = {}) {
+  const {
+    cellSize = {},
+    hasTargetRect = false,
+    iconSize = 0,
+    releaseMode = DRAG_RELEASE_MODE_SLOT,
+    releaseKey = "",
+    singleLineLabel = false,
+    target = {},
+    targetAlpha = 1,
+    targetLabelAlpha = 1,
+    targetLabelScale = 1,
+    targetScale = 1,
+    textless = false,
+  } = options;
+  return [
+    releaseKey,
+    releaseMode,
+    hasTargetRect ? "target" : "pending",
+    keyNumber(target.x),
+    keyNumber(target.y),
+    keyNumber(targetScale),
+    keyNumber(iconSize),
+    keyNumber(cellSize.width),
+    keyNumber(cellSize.height),
+    singleLineLabel ? "single" : "multi",
+    textless ? "textless" : "label",
+    keyNumber(targetAlpha),
+    keyNumber(targetLabelAlpha),
+    keyNumber(targetLabelScale),
+  ].join(":");
+}
+
 export function makeDragPreviewKey(preview) {
   return [
     preview?.item?.id || "",
@@ -85,6 +132,8 @@ export function getDragPreviewLayout(preview, state = {}) {
 
 export function getDragReleaseMotion(release, state = {}) {
   const releaseMode = release?.releaseMode || DRAG_RELEASE_MODE_SLOT;
+  const provisionalLayoutTarget = release?.provisionalLayoutTarget === true;
+  const releaseKey = release?.key || makeDragPreviewKey(release);
   const sourceIconSize = getPreviewIconSize(release, state.iconSize);
   const targetVisualSpec = releaseMode === DRAG_RELEASE_MODE_SLOT
     ? cloneIconVisualSpec(release?.targetVisualSpec || release?.visualSpec)
@@ -101,7 +150,9 @@ export function getDragReleaseMotion(release, state = {}) {
     ? targetVisualSpec.textless === true
     : Boolean(release?.textless ?? state.isTextlessMode);
   const sourceTextless = Boolean(release?.textless ?? state.isTextlessMode);
-  const startIconCenter = targetVisualSpec ? getPointerIconCenter(release, stageRect, sourceIconSize) : null;
+  const startSource = getReleaseStartSource(release);
+  const hasExplicitStartPose = Boolean(release?.startPose?.pointer);
+  const startIconCenter = targetVisualSpec ? getPointerIconCenter(startSource, stageRect, sourceIconSize) : null;
   const startScaleMultiplier = targetVisualSpec ? Math.max(0.01, sourceIconSize / iconSize) : 1;
   const visualOffsetY = getIconVisualOffsetY(textless);
   const start = startIconCenter
@@ -109,7 +160,7 @@ export function getDragReleaseMotion(release, state = {}) {
       x: startIconCenter.x,
       y: startIconCenter.y - visualOffsetY * startScaleMultiplier,
     }
-    : getPointerPlacement(release, stageRect, iconSize, sourceTextless);
+    : getPointerPlacement(startSource, stageRect, iconSize, sourceTextless);
   const targetRect = release?.targetRect;
   const targetStageLayoutRect = release?.targetStageLayoutRect;
   const hasStageLayoutTargetRect = Boolean(targetStageLayoutRect?.width && targetStageLayoutRect?.height);
@@ -147,12 +198,29 @@ export function getDragReleaseMotion(release, state = {}) {
     hasStageLayoutTargetRect,
     hasTargetRect,
     iconSize,
-    key: `${release?.key || makeDragPreviewKey(release)}:${release?.targetVersion ?? 0}:${hasTargetRect ? "target" : "pending"}`,
+    key: `${releaseKey}:${release?.targetVersion ?? 0}:${hasTargetRect ? "target" : "pending"}${provisionalLayoutTarget ? ":provisional" : ""}`,
+    motionKey: makeReleaseMotionTargetKey({
+      cellSize,
+      hasTargetRect,
+      iconSize,
+      releaseKey,
+      releaseMode,
+      singleLineLabel: targetVisualSpec ? targetVisualSpec.singleLineLabel === true : release?.singleLineLabel === true,
+      target,
+      targetAlpha,
+      targetLabelAlpha,
+      targetLabelScale,
+      targetScale,
+      textless,
+    }),
+    provisionalLayoutTarget,
+    releaseKey,
     releaseMode,
     singleLineLabel: targetVisualSpec ? targetVisualSpec.singleLineLabel === true : release?.singleLineLabel === true,
     stageRect,
     start,
     startIconCenter,
+    startPose: hasExplicitStartPose ? { ...start } : null,
     startScaleMultiplier,
     target,
     targetAlpha,

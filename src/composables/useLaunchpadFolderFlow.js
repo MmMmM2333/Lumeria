@@ -59,7 +59,11 @@ export function useLaunchpadFolderFlow(options) {
 
   const folderPages = computed(() => {
     if (!renderedFolder.value) return [];
-    const minPageCount = options.isDragActive() && openFolderId.value === renderedFolder.value.id ? options.folderPageIndex.value + 1 : 1;
+    const pendingPageTurnTarget = options.folderPageTurnRequest?.value?.folderId === renderedFolder.value.id
+      ? options.folderPageTurnRequest.value.targetIndex
+      : null;
+    const activeDragPageIndex = Math.max(options.folderPageIndex.value, Number(pendingPageTurnTarget) || 0);
+    const minPageCount = options.isDragActive() && openFolderId.value === renderedFolder.value.id ? activeDragPageIndex + 1 : 1;
     return options.getVisibleFolderPages(renderedFolder.value, options.folderPageSize.value, minPageCount);
   });
 

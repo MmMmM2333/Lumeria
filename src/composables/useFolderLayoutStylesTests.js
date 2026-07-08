@@ -79,6 +79,28 @@ export function runFolderLayoutStylesTests() {
   assert(customSize.folderPanelStyle.value["--folder-icon-size"] === "88px", "custom folder icon size should be exposed as CSS");
   assert(customSize.folderPanelStyle.value["--folder-icon-cell-height"] === "144px", "custom folder cells should still reserve label height");
 
+  const originalWindowBeforeGrowth = globalThis.window;
+  globalThis.window = { innerHeight: 746 };
+  try {
+    const rowGrowthWithStaleViewport = createFolderLayoutStyles({
+      folderIconSizeMode: "custom",
+      folderIconSize: 128,
+      folderPages: [makeItems(6)],
+      folderViewportHeight: 280,
+    });
+    assert(
+      rowGrowthWithStaleViewport.folderPanelStyle.value["--folder-icon-size"] === "128px",
+      "folder row growth should ignore a stale shorter viewport before compressing icons",
+    );
+    assert(
+      rowGrowthWithStaleViewport.folderPanelStyle.value["--folder-icon-cell-height"] === "184px",
+      "folder row growth should preserve the projected final cell height",
+    );
+  } finally {
+    if (originalWindowBeforeGrowth === undefined) delete globalThis.window;
+    else globalThis.window = originalWindowBeforeGrowth;
+  }
+
   const compressed = createFolderLayoutStyles({
     folderPages: [makeItems(35)],
     folderViewportHeight: 420,

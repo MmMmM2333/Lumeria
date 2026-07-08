@@ -1,6 +1,25 @@
 function makePageTrack(children) {
   const pageTrack = {
     children,
+    addChild(...nextChildren) {
+      nextChildren.forEach((child) => {
+        if (!child) return;
+        const existingIndex = this.children.indexOf(child);
+        if (existingIndex >= 0) this.children.splice(existingIndex, 1);
+        this.children.push(child);
+        child.parent = this;
+      });
+      return nextChildren[0] || null;
+    },
+    removeChild(...nextChildren) {
+      nextChildren.forEach((child) => {
+        const currentIndex = this.children.indexOf(child);
+        if (currentIndex < 0) return;
+        this.children.splice(currentIndex, 1);
+        if (child.parent === this) child.parent = null;
+      });
+      return nextChildren[0] || null;
+    },
     setChildIndex(child, index) {
       const currentIndex = this.children.indexOf(child);
       if (currentIndex < 0) return;
@@ -72,6 +91,10 @@ function makeNode(id) {
       this.labelText.renderable = true;
       this.labelText.visible = true;
     },
+    resetFolderPreviewAfterGhost() {
+      this.resetFolderPreviewAfterGhostCount += 1;
+    },
+    resetFolderPreviewAfterGhostCount: 0,
     visualWrap: { visible: true },
     visible: false,
   };
@@ -207,6 +230,7 @@ function prepareLayerForDesktopQuiescenceTest(layer, item) {
   node.item = item;
   node.setState = (nextState) => {
     node.state = nextState;
+    node.visible = !nextState.dragging && !nextState.ghosted;
   };
   layer.iconNodes.set(`page:0:${item.id}`, node);
   return node;
@@ -249,6 +273,11 @@ export async function runDesktopLayerTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[DesktopLayer test failed] ${message}`);
   };
+  const nearlyEqual = (a, b, epsilon = 0.0001) => Math.abs((Number(a) || 0) - (Number(b) || 0)) <= epsilon;
+  const getBaseAnimation = (target, prop) => {
+    const channel = motionRuntime.getChannel(target, prop);
+    return Array.from(channel?.base?.values?.() || [])[0] || null;
+  };
 
   {
     const iconBoundsRegistry = createIconBoundsRegistry();
@@ -261,6 +290,57 @@ export async function runDesktopLayerTests() {
     assert(renderRequests[0] === "folder-resize-layout", "folder overlay render requests should be forwarded to the desktop surface scheduler");
     layer.destroy({ children: true });
     iconBoundsRegistry.clearBounds();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new DesktopLayer({ iconBoundsRegistry });
+    const movingItem = { id: "desktop-release-backed-node", name: "Desktop Release Backed", type: "app" };
+    const neighborItem = { id: "desktop-release-neighbor", name: "Desktop Release Neighbor", type: "app" };
+    const baseState = {
+      ...makeDesktopQuiescenceState(movingItem),
+      activePages: [[movingItem, neighborItem]],
+      desktopFrame: { height: 240, left: 0, top: 0, width: 480 },
+      gridCols: 2,
+      gridRows: 1,
+      height: 240,
+      stageRect: { height: 240, left: 0, top: 0, width: 480 },
+      width: 480,
+    };
+    layer.update(baseState);
+    for (let index = 0; index < 40; index += 1) {
+      motionRuntime.step(0.05);
+      layer.update(baseState);
+    }
+    const movingKey = `page:0:${movingItem.id}`;
+    const movingNode = layer.iconNodes.get(movingKey);
+    const initialX = movingNode?.x;
+    const releaseState = {
+      ...baseState,
+      activePages: [[neighborItem, movingItem]],
+      dragReleaseGhostId: movingItem.id,
+      dragReleaseState: {
+        item: movingItem,
+        source: { index: 0, pageIndex: 0, type: "page" },
+      },
+    };
+    layer.update(releaseState);
+    const targetRecord = iconBoundsRegistry.getRecord(K.LAUNCH, V.STABLE_STAGE_LAYOUT, {
+      area: "desktop",
+      id: movingItem.id,
+      pageIndex: 0,
+    });
+    const expectedX = targetRecord.left + targetRecord.width / 2;
+
+    assert(initialX !== expectedX, "desktop release-backed setup should move the hidden real icon to a new slot");
+    assert(movingNode.visible === false && movingNode.state.ghosted === true, "desktop release-backed real icon should stay hidden behind the drag preview");
+    assert(nearlyEqual(movingNode.x, expectedX), "desktop release-backed hidden real icon should snap to the release target before it is revealed");
+    assert(!getBaseAnimation(movingNode, "x"), "desktop release-backed hidden real icon should not keep a layout spring that can twitch after reveal");
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
   }
 
   {
@@ -358,6 +438,137 @@ export async function runDesktopLayerTests() {
       assert(!layer.getFolderHandoffEntry("folder-a"), "settled cleanup frame should clear the handoff entry");
       motionRuntime.reset();
     }
+
+    {
+      // A released handoff entry can linger for an after-frame cleanup while the
+      // Vue closing id is still retained. That entry must not re-sync the folder
+      // handoff node or reset the active hover frame.
+      const folder = { id: "folder-a", type: "folder" };
+      const hoverState = {
+        key: "folder-hover-released",
+        phase: "hover",
+        targetId: folder.id,
+        targetType: "folder",
+      };
+      const pageTrack = makePageTrack([]);
+      const layer = makeLayer(DesktopLayer, pageTrack);
+      const node = prepareLayerForDesktopQuiescenceTest(layer, folder);
+      const releasedEntry = {
+        cleanupFrame: { cancelled: false },
+        folderId: folder.id,
+        node,
+        originalIndex: 0,
+        visualHidden: false,
+        visualReleased: true,
+      };
+      layer.getFolderHandoffNodes().set(folder.id, releasedEntry);
+      layer.primaryFolderHandoffId = folder.id;
+
+      layer.update({
+        ...makeDesktopQuiescenceState(folder),
+        dragFolderHoverState: hoverState,
+        dragFolderTargetId: folder.id,
+        folderClosingHandoffId: folder.id,
+        folderSourceGhostedIds: new Set([folder.id]),
+      });
+
+      const [entry] = layer.lastDesktopRenderPlan.entries;
+      assert(entry.isActiveFolderClosingHandoff === true, "test setup should retain the closing id while re-hovering the folder");
+      assert(entry.isFolderClosingHandoff === false, "released handoff entries should not be treated as hover-blocking handoffs");
+      assert(node.state.folderHoverState === null, "folder hover should be drawn by the independent drop target layer instead of IconNode");
+      assert(node.state.dropTarget === false, "folder drop target selection frame should stay disabled on IconNode");
+      assert(layer.lastDesktopRenderPlan.folderDropTarget?.targetId === folder.id, "released handoff entries should expose a folder drop target for the independent layer");
+      assert(node.state.ghosted === false && node.visible !== false, "released handoff entries should keep the real folder visible while source ghosting settles");
+      assert(node.resetFolderPreviewAfterGhostCount === 0, "released handoff entries should not re-sync and reset the folder hover preview");
+    }
+  }
+
+  {
+    motionRuntime.reset();
+    const firstPageNode = makeNode("first-page-app");
+    const secondPageNode = makeNode("second-page-app");
+    firstPageNode.alpha = 1;
+    firstPageNode.item = { id: "first-page-app", name: "First Page", type: "app" };
+    firstPageNode.renderable = true;
+    firstPageNode.visible = true;
+    secondPageNode.alpha = 1;
+    secondPageNode.item = { id: "second-page-app", name: "Second Page", type: "app" };
+    secondPageNode.renderable = true;
+    secondPageNode.visible = true;
+
+    const pageTrack = makePageTrack([firstPageNode, secondPageNode]);
+    pageTrack.x = -480;
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.applyDesktopVisualAlpha = () => {};
+    layer.applyDesktopVisualTransform = () => {};
+    layer.applyFolderOverlayAlpha = () => {};
+    layer.applyFolderOverlayTransform = () => {};
+    layer.flushInteractiveBounds = () => {};
+    layer.markInteractiveBoundsDirty = () => {};
+    layer.singleStageDiagnosticsLayer = { update() {} };
+    layer.singleStageFolderLayer = {
+      getDesktopSourceGhostedIds: () => new Set(),
+      hasVisibleFolderSubstitute: () => false,
+    };
+    layer.singleStageDragPreviewLayer = { update() {} };
+    layer.updateSingleStageFolderLayer = () => {};
+    layer.pageTrackMotion = {
+      control: null,
+      grabProgressOffset: 0,
+      grabToken: null,
+      key: null,
+      mode: null,
+      settleToken: null,
+    };
+    layer.iconNodes.set("page:0:first-page-app", firstPageNode);
+    layer.iconNodes.set("page:1:second-page-app", secondPageNode);
+    layer.lastDesktopRenderPlan = {
+      pageTrack: { scope: "desktop" },
+      signature: "desktop-before-search",
+    };
+
+    try {
+      layer.update({
+        activePageIndex: 0,
+        activePages: [[{ id: "search-result-app", name: "Search Result", type: "app" }]],
+        desktopFrame: { height: 320, left: 0, top: 0, width: 480 },
+        deviceResolution: 1,
+        folderPageSize: 9,
+        folderSourceGhostedIds: new Set(),
+        getDesktopPageRenderMode: () => "interactive",
+        getVisibleDesktopPage: (page) => page,
+        gridCols: 1,
+        gridRows: 1,
+        height: 320,
+        iconSize: 64,
+        isFolderOpeningPreviewFrameGhosted: () => false,
+        isIconOpening: () => false,
+        isIconSelected: () => false,
+        isSearchMode: true,
+        isTextlessMode: false,
+        launchTargetStatusById: {},
+        setPageRef: () => {},
+        shouldSnapTrack: false,
+        showMissingLaunchTargetBadge: false,
+        stageRect: { height: 320, left: 0, top: 0, width: 480 },
+        width: 480,
+      });
+
+      assert(pageTrack.x === 0, "scope change into search should still snap the page track to the search page");
+      assert(!pageTrack.children.includes(firstPageNode), "desktop first-page node should be detached immediately on search scope switch");
+      assert(!pageTrack.children.includes(secondPageNode), "desktop current-page node should be detached immediately on search scope switch");
+      assert(firstPageNode.visible === false && firstPageNode.renderable === false, "detached first-page node should be hidden without a fade tail");
+      assert(secondPageNode.visible === false && secondPageNode.renderable === false, "detached current-page node should be hidden without a fade tail");
+      assert(!layer.iconNodes.has("page:0:first-page-app") && !layer.iconNodes.has("page:1:second-page-app"), "old desktop nodes should leave the icon node registry");
+
+      const searchNode = layer.iconNodes.get("search:0:search-result-app");
+      const searchEntry = layer.lastDesktopRenderPlan.entries.find((entry) => entry.key === "search:0:search-result-app");
+      assert(searchNode, "search scope switch should create the new search node");
+      assert(pageTrack.children.includes(searchNode), "new search node should remain mounted in the page track");
+      assert(searchEntry && searchNode.y > searchEntry.layoutTarget.y, "new search node should keep the ordinary entry motion");
+    } finally {
+      motionRuntime.reset();
+    }
   }
 
   {
@@ -407,6 +618,11 @@ export async function runDesktopLayerTests() {
     assert(shouldFinishFolderHandoffEntry({}, { folderHandoff: makeHandoffCoordinator({ active: true, folderId: "folder-2" }), hasVisibleFolderSubstitute: () => false }, "folder-1"), "different-folder Pixi activity should not keep an old handoff alive by itself");
 
     const actualLayer = new DesktopLayer({ iconBoundsRegistry: createIconBoundsRegistry() });
+    assert(
+      actualLayer.children.indexOf(actualLayer.folderDropFillLayer) <
+        actualLayer.children.indexOf(actualLayer.visualRoot),
+      "folder drop fill should render behind desktop icons so the folder thumb children stay visible"
+    );
     assert(
       actualLayer.children.indexOf(actualLayer.visualRoot) <
         actualLayer.children.indexOf(actualLayer.desktopClosingUnderlayLayer),
@@ -952,6 +1168,67 @@ export async function runDesktopLayerTests() {
     assert(!layer.getFolderHandoffEntry("folder-1"), "ownership source ghosting should clear a released stale handoff entry");
     assert(setStateCount === 1, "ownership source ghosting should be committed through normal icon state after stale handoff cleanup");
     assert(folder.state.ghosted === true && folder.visible === false, "ownership source ghosting should hide the real folder icon");
+  }
+
+  {
+    const folder = makeNode("folder");
+    folder.item = { id: "folder-1", type: "folder" };
+    folder.state = { ghosted: false };
+    let setStateCount = 0;
+    folder.setState = (nextState) => {
+      setStateCount += 1;
+      folder.state = nextState;
+      folder.visible = !nextState.ghosted;
+    };
+    const pageTrack = makePageTrack([folder]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.iconNodes.set("page:0:folder-1", folder);
+    layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set();
+
+    layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 });
+    layer.releaseClosingFolderHandoffVisual("folder-1");
+    assert(layer.getFolderHandoffEntry("folder-1")?.visualReleased === true, "test setup should leave a released stale handoff entry");
+
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(["folder-1"]),
+      isFolderOpeningPreviewFrameGhosted: (folderId) => folderId === "folder-1",
+    });
+
+    assert(!layer.getFolderHandoffEntry("folder-1"), "new opening source ghosting should clear a released stale handoff entry");
+    assert(setStateCount === 1, "new opening source ghosting should be committed through normal icon state");
+    assert(folder.state.ghosted === true && folder.visible === false, "new opening source ghosting should hide the real desktop folder");
+  }
+
+  {
+    const folder = makeNode("folder");
+    folder.item = { id: "folder-1", type: "folder" };
+    folder.state = { ghosted: false };
+    let setStateCount = 0;
+    folder.setState = (nextState) => {
+      setStateCount += 1;
+      folder.state = nextState;
+      folder.visible = !nextState.ghosted;
+    };
+    const pageTrack = makePageTrack([folder]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.iconNodes.set("page:0:folder-1", folder);
+    layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set();
+
+    layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 });
+    layer.releaseClosingFolderHandoffVisual("folder-1");
+    const entry = layer.getFolderHandoffEntry("folder-1");
+    entry.cleanupFrame = { cancelled: false };
+    assert(entry?.visualReleased === true, "test setup should leave a released close-tail handoff entry");
+
+    layer.applyFolderSourceGhosting({
+      folderSourceGhostedIds: new Set(["folder-1"]),
+      isFolderOpeningPreviewFrameGhosted: () => false,
+    });
+
+    assert(layer.getFolderHandoffEntry("folder-1") === entry, "released close tail should keep the handoff entry until cleanup");
+    assert(setStateCount === 0, "released close tail should not re-hide the real folder through ghosted state");
+    assert(folder.visible !== false, "released close tail should keep the real desktop folder visible for handoff");
+    assert(folder.__folderSourceGhostedByOwnership === true, "released close tail should still track source ownership ghosting");
   }
 
   {

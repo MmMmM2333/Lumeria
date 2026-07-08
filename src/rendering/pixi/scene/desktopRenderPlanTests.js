@@ -107,6 +107,193 @@ export function runDesktopRenderPlanTests() {
   }
 
   {
+    const folder = { id: "folder-released", type: "folder" };
+    const hoverState = {
+      key: "folder-hover-released",
+      phase: "hover",
+      targetId: folder.id,
+      targetType: "folder",
+    };
+    const plan = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[folder]],
+      dragFolderHoverState: hoverState,
+      dragFolderTargetId: folder.id,
+      folderClosingHandoffIds: new Set([folder.id]),
+      folderSourceGhostedIds: new Set([folder.id]),
+    }), {
+      effectiveFolderSourceGhostedIds: new Set([folder.id]),
+      folderHandoffEntries: new Map([[folder.id, {
+        cleanupFrame: { cancelled: false },
+        folderId: folder.id,
+        visualReleased: true,
+      }]]),
+      folderLayer: {
+        folderHandoff: makeHandoffCoordinator(false, null),
+        getDesktopSourceGhostedIds: () => new Set(),
+        hasVisibleFolderSubstitute: () => false,
+      },
+    });
+
+    const [entry] = plan.entries;
+    assert(entry.isActiveFolderClosingHandoff === true, "test setup should retain the closing handoff id for this folder");
+    assert(entry.isFolderClosingHandoff === false, "released handoff entries should not keep suppressing desktop hover");
+    assert(entry.nodeState.folderHoverState === null, "folder drop hover should be owned by the independent drop target layer, not IconNode");
+    assert(entry.nodeState.dropTarget === false, "folder drop target selection frame should be disabled on IconNode");
+    assert(entry.nodeState.suppressFolderThumbFrame === true, "folder drop hover should suppress IconNode's original folder thumb frame to avoid double backgrounds");
+    assert(entry.nodeState.ghosted === false, "released handoff entries should keep the real folder visible while source ghosting settles");
+    assert(plan.folderDropTarget?.targetId === folder.id, "released handoff entries should expose an independent folder drop target");
+    assert(plan.folderDropTarget.iconSize === entry.nodeState.iconSize, "folder drop target should preserve the logical icon size for thumb geometry");
+    assert(entry.nodeState.interactive === true && entry.nodeState.draggable === true, "released handoff entries should restore ordinary desktop icon interaction");
+  }
+
+  {
+    const folder = { id: "folder-opening-source", type: "folder" };
+    const plan = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[folder]],
+      folderSourceGhostedIds: new Set([folder.id]),
+      singleStageFolderState: {
+        renderedFolder: folder,
+      },
+    }), {
+      effectiveFolderSourceGhostedIds: new Set([folder.id]),
+      folderHandoffEntries: new Map([[folder.id, {
+        cleanupFrame: { cancelled: false },
+        folderId: folder.id,
+        visualReleased: true,
+      }]]),
+      folderLayer: {
+        folderHandoff: makeHandoffCoordinator(false, null),
+        getDesktopSourceGhostedIds: () => new Set(),
+        hasVisibleFolderSubstitute: () => false,
+      },
+    });
+
+    const [entry] = plan.entries;
+    assert(entry.isActiveFolderClosingHandoff === false, "test setup should model a new open without an active closing handoff");
+    assert(entry.folderPresentation.handoff.retainsSourceVisibility === false, "released closing handoff state should not retain visibility during a new open");
+    assert(entry.nodeState.ghosted === true, "opening source ghosting should hide the real desktop folder even with a released stale handoff entry");
+  }
+
+  {
+    const folder = { id: "folder-close-tail", type: "folder" };
+    const plan = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[folder]],
+      folderSourceGhostedIds: new Set([folder.id]),
+      singleStageFolderState: {
+        isFolderClosing: true,
+        renderedFolder: folder,
+      },
+    }), {
+      effectiveFolderSourceGhostedIds: new Set([folder.id]),
+      folderHandoffEntries: new Map([[folder.id, {
+        cleanupFrame: { cancelled: false },
+        folderId: folder.id,
+        visualReleased: true,
+      }]]),
+      folderLayer: {
+        folderHandoff: makeHandoffCoordinator(false, null),
+        getDesktopSourceGhostedIds: () => new Set(),
+        hasVisibleFolderSubstitute: () => false,
+      },
+    });
+
+    const [entry] = plan.entries;
+    assert(entry.isActiveFolderClosingHandoff === false, "test setup should model the frame after the closing id clears");
+    assert(entry.folderPresentation.handoff.retainsSourceVisibility === true, "released close tail should retain source visibility while source ghosting settles");
+    assert(entry.nodeState.ghosted === false, "released close tail should keep the real desktop folder visible for handoff");
+  }
+
+  {
+    const app = { id: "app-create-target", type: "app" };
+    const hoverState = {
+      key: "app-create-hover",
+      phase: "hover",
+      targetId: app.id,
+      targetType: "app",
+    };
+    const plan = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[app]],
+      dragFolderHoverState: hoverState,
+      dragFolderTargetId: app.id,
+    }));
+
+    const [entry] = plan.entries;
+    assert(entry.nodeState.folderHoverState === hoverState, "app folder-create hover should still be handled by IconNode");
+    assert(entry.nodeState.dropTarget === true, "app folder-create target should still receive the drop target state");
+    assert(plan.folderDropTarget === null, "app folder-create hover should not use the folder drop target layer");
+  }
+
+  {
+    const folder = { id: "folder-exit-held", type: "folder" };
+    const plan = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[folder]],
+      dragFolderHoverState: null,
+      dragFolderTargetId: null,
+    }), {
+      folderDropFrameSuppressedIds: new Set([folder.id]),
+    });
+
+    const [entry] = plan.entries;
+    assert(plan.folderDropTarget === null, "held exit suppression should not create a new active folder drop target");
+    assert(entry.nodeState.suppressFolderThumbFrame === true, "held exit suppression should keep the IconNode thumb frame hidden until the shrink-out layer finishes");
+  }
+
+  {
+    const folder = { id: "folder-exit-restored", type: "folder" };
+    const plan = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[folder]],
+      dragFolderHoverState: null,
+      dragFolderTargetId: null,
+    }), {
+      folderDropFrameSuppressedIds: new Set(),
+    });
+
+    const [entry] = plan.entries;
+    assert(entry.nodeState.suppressFolderThumbFrame === false, "without active or held folder drop ownership, IconNode should draw its normal thumb frame");
+  }
+
+  {
+    const folder = { id: "folder-signature", type: "folder" };
+    let nodeTouched = false;
+    const node = {};
+    Object.defineProperty(node, "expensivePixiGraph", {
+      enumerable: true,
+      get() {
+        nodeTouched = true;
+        throw new Error("desktop render plan signature touched the Pixi node graph");
+      },
+    });
+
+    const plan = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[folder]],
+      dragFolderHoverState: {
+        key: "folder-hover-signature",
+        phase: "hover",
+        targetId: folder.id,
+        targetType: "folder",
+      },
+      folderClosingHandoffIds: new Set([folder.id]),
+      folderSourceGhostedIds: new Set([folder.id]),
+    }), {
+      effectiveFolderSourceGhostedIds: new Set([folder.id]),
+      folderHandoffEntries: new Map([[folder.id, {
+        cleanupFrame: { cancelled: false },
+        folderId: folder.id,
+        node,
+        visualReleased: true,
+      }]]),
+      folderLayer: {
+        folderHandoff: makeHandoffCoordinator(false, null),
+        getDesktopSourceGhostedIds: () => new Set(),
+        hasVisibleFolderSubstitute: () => false,
+      },
+    });
+
+    assert(plan.signature && typeof plan.signature === "string", "plan should still produce a stable signature");
+    assert(nodeTouched === false, "plan signature should summarize handoff presentation without traversing Pixi nodes");
+  }
+
+  {
     const plan = buildDesktopRenderPlan(makeBaseState({
       activePages: [[]],
       isSearchMode: true,

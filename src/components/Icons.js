@@ -44,19 +44,6 @@ export const ChevronDownIcon = defineComponent({
   },
 });
 
-export const AlertTriangleIcon = defineComponent({
-  name: "AlertTriangleIcon",
-  props: { class: { type: String, default: "" } },
-  setup(props) {
-    return () =>
-      h("svg", { class: props.class, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2.2", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" }, [
-        h("path", { d: "M10.3 4.2 2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0Z" }),
-        h("path", { d: "M12 9v4" }),
-        h("circle", { cx: "12", cy: "17", r: "1", fill: "currentColor", stroke: "none" }),
-      ]);
-  },
-});
-
 export const SearchIcon = defineComponent({
   name: "SearchIcon",
   props: { class: { type: String, default: "" } },

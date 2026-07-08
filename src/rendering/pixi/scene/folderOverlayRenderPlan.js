@@ -46,10 +46,14 @@ export function makeFolderOverlayRenderPlan(options = {}) {
     previewSlots = [],
     rows = 1,
     showMissingLaunchTargetBadge = true,
+    targetTrackX = 0,
+    stableFolderPageSpan = folderPageSpan,
     stableFolderCloseTarget = null,
+    stableGeometry = geometry,
+    stableLocalMetrics = localMetrics,
+    stableTargetTrackX = targetTrackX,
     stageHeight = 1,
     stageWidth = 1,
-    targetTrackX = 0,
     visualFolderPageIndex = folderPageIndex,
   } = options;
   const previewSlotById = makePreviewSlotById(previewSlots);
@@ -64,6 +68,7 @@ export function makeFolderOverlayRenderPlan(options = {}) {
 
     visibleItems.forEach((item, index) => {
       const slot = getGridSlotRect(localMetrics, index);
+      const stableSlot = getGridSlotRect(stableLocalMetrics || localMetrics, index);
       const iconPlan = makeFolderIconRenderPlan({
         folderId,
         geometry,
@@ -73,11 +78,27 @@ export function makeFolderOverlayRenderPlan(options = {}) {
         pageSpan: folderPageSpan,
         slot,
       });
+      const stableIconPlan = makeFolderIconRenderPlan({
+        folderId,
+        geometry: stableGeometry,
+        index,
+        item,
+        pageIndex,
+        pageSpan: stableFolderPageSpan,
+        slot: stableSlot,
+      });
       const { key, source, x, y } = iconPlan;
       const isActiveDraggedItem = isActiveDraggedLaunchItem(item, dragState);
       const isReleaseGhostItem = isReleaseGhostLaunchItem(item, dragState);
       const hasActiveOpeningGhost = openingGhostItemIds?.has(item.id) === true;
       const targetCenter = makeFolderIconTargetCenter({ geometry, isTextlessMode, targetTrackX, x, y });
+      const stableTargetCenter = makeFolderIconTargetCenter({
+        geometry: stableGeometry,
+        isTextlessMode,
+        targetTrackX: stableTargetTrackX,
+        x: stableIconPlan.x,
+        y: stableIconPlan.y,
+      });
       const nodeState = makeFolderIconNodeState({
         closingGhostKeys,
         folderId,
@@ -148,6 +169,7 @@ export function makeFolderOverlayRenderPlan(options = {}) {
         renderMode,
         slot,
         source,
+        stableTargetCenter,
         targetCenter,
         x,
         y,

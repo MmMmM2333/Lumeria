@@ -78,12 +78,14 @@ function makeLayer() {
   const calls = [];
   const ghosts = [];
   const frameGhostCalls = [];
+  const frameRetargetCalls = [];
   const iconNode = { alpha: 1, item: { id: "app-1" }, state: { source: { folderId: "folder-1", pageIndex: 0 } }, visible: true };
   const visualOwnership = new FolderVisualOwnershipRegistry();
   return {
     calls,
     currentFolderId: "folder-1",
     frameGhostCalls,
+    frameRetargetCalls,
     frameGhost: { alpha: 1, visible: true },
     iconNodes: new Map([["app-1", iconNode]]),
     lastOpeningBoundsTarget: null,
@@ -135,6 +137,10 @@ function makeLayer() {
     },
     rebuildPageTrackMask() {
       calls.push("rebuild-mask");
+    },
+    retargetFrameGhost(toRect, options) {
+      frameRetargetCalls.push({ options, toRect });
+      return true;
     },
     registerOpeningGhostBounds(_state, target) {
       this.lastOpeningBoundsTarget = target;
@@ -310,10 +316,10 @@ export function runFolderOpeningGhostControllerTests() {
     controller.start(makeState(completed), [target], { sessionToken: session.token });
     controller.complete(makeState(completed), target, layer.ghosts[0]);
 
-    assert(layer.folderHandoff.getOpeningGhostKeys().size === 0, "complete should clear ghost item ids even when reveal is gated");
-    assert(layer.iconNode.visible === true, "ghost completion before panel ready should reveal the completed real icon");
+    assert(layer.folderHandoff.getOpeningGhostKeys().size === 1, "complete should keep ghost item ids while reveal is gated");
+    assert(layer.iconNode.visible === false, "ghost completion before panel ready should keep the real icon hidden");
     assert(layer.pageTrack.visible === true, "ghost completion before panel ready should keep the page track visible");
-    assert(layer.ghosts.length === 0, "ghost completion before panel ready should remove completed ghost visuals");
+    assert(layer.ghosts.length === 1, "ghost completion before panel ready should keep completed ghost visuals mounted");
     assert(
       layer.visualOwnership.isOwnedBy(makeDesktopSourceVisualKey("folder-1"), session.token),
       "ghost completion before panel ready should keep desktop source ownership until reveal"
@@ -434,16 +440,20 @@ export function runFolderOpeningGhostControllerTests() {
     const initialControl = layer.folderHandoff.getOpeningMotionControl("app-1");
     const turnedPageTarget = {
       ...openingTarget,
+      iconSize: 32,
       pageIndex: 1,
       targetStageLayoutRect: { height: 64, left: 500, top: 520, width: 64 },
     };
 
     motionRuntime.step(0.016);
+    const scaleBeforeMetricRetarget = ghost.scale.x;
 
     assert(initialXAnimation?.to === 132, "opening ghost should target the page slot captured at start");
     assert(initialXAnimation?.driver?.config?.stiffness === 340, "initial opening ghost motion should keep the existing handoff spring");
     assert(controller.retarget(makeState(completed), [turnedPageTarget]) === 1, "folder page turn should retarget the active opening ghost");
     assert(layer.ghosts.length === 1, "retarget should reuse the existing opening ghost visual");
+    assert(ghost.state.iconSize === 32, "retarget should refresh the opening ghost visual metrics when row growth changes icon size");
+    assert(ghost.scale.x > scaleBeforeMetricRetarget, "retarget should compensate scale so an icon-size change does not snap the visible ghost size");
     assert(layer.folderHandoff.getOpeningMotionControl("app-1") !== initialControl, "retarget should replace the tracked motion control");
     assert(getBaseAnimation(ghost, "x")?.to === 532, "opening ghost should retarget x to the new visual page slot");
     assert(getBaseAnimation(ghost, "y")?.to !== initialYTarget, "opening ghost should retarget y to the new visual page slot");
@@ -454,6 +464,135 @@ export function runFolderOpeningGhostControllerTests() {
     for (let index = 0; index < 40; index += 1) motionRuntime.step(0.05);
     assert(completed.join(",") === "controller-open-key", "retargeted opening ghost should still complete the controller ghost key");
     assert(!layer.folderHandoff.hasOpeningGhost("app-1"), "retargeted opening ghost completion should clear the active item id");
+    controller.clear();
+    motionRuntime.reset();
+  }
+
+  {
+    const completed = [];
+    const layer = makeLayer();
+    const controller = new FolderOpeningGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: makeTimerHost(),
+    });
+    const sessionToken = beginReadyOpenSession(layer);
+    const provisionalTarget = {
+      ...makeTarget(),
+      provisionalLayoutTarget: true,
+    };
+    controller.start(makeState(completed), [provisionalTarget], { sessionToken });
+    const ghost = layer.ghosts[0];
+
+    for (let index = 0; index < 50; index += 1) motionRuntime.step(0.05);
+
+    assert(completed.join(",") === "", "provisional opening targets should not complete controller ghosts");
+    assert(layer.folderHandoff.hasOpeningGhost("app-1"), "provisional opening targets should keep visual ownership active");
+    assert(layer.iconNode.visible === false, "provisional opening targets should keep the real icon hidden");
+    assert(layer.ghosts[0] === ghost, "provisional opening targets should keep the ghost visual mounted");
+
+    assert(controller.retarget(makeState(completed), [{ ...provisionalTarget, provisionalLayoutTarget: false }]) === 1, "final opening target should retarget even when only the provisional flag changes");
+    for (let index = 0; index < 50; index += 1) motionRuntime.step(0.05);
+
+    assert(completed.join(",") === "controller-open-key", "final opening target should complete the controller ghost");
+    assert(!layer.folderHandoff.hasOpeningGhost("app-1"), "final opening target should release visual ownership");
+    assert(layer.iconNode.visible === true, "final opening target should reveal the real icon");
+    assert(layer.ghosts.length === 0, "final opening target should remove the ghost visual");
+    controller.clear();
+    motionRuntime.reset();
+  }
+
+  {
+    const completed = [];
+    const layer = makeLayer();
+    layer.openingGeometryActive = true;
+    layer.isOpeningGeometryTransitionActive = () => layer.openingGeometryActive;
+    const controller = new FolderOpeningGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: makeTimerHost(),
+    });
+    const sessionToken = beginReadyOpenSession(layer);
+    const state = makeState(completed);
+    const target = makeTarget();
+    controller.start(state, [target], { sessionToken });
+    const ghost = layer.ghosts[0];
+
+    for (let index = 0; index < 50; index += 1) motionRuntime.step(0.05);
+
+    assert(completed.join(",") === "", "final opening targets should not complete while opening resize geometry is active");
+    assert(layer.folderHandoff.hasOpeningGhost("app-1"), "opening resize geometry should keep visual ownership active after ghost arrival");
+    assert(layer.iconNode.visible === false, "opening resize geometry should keep the real icon hidden after ghost arrival");
+    assert(layer.ghosts[0] === ghost, "opening resize geometry should keep the arrived ghost mounted for later retargets");
+
+    layer.openingGeometryActive = false;
+    controller.retarget(state, [target]);
+
+    assert(completed.join(",") === "controller-open-key", "settled opening ghosts should complete after opening resize geometry ends");
+    assert(!layer.folderHandoff.hasOpeningGhost("app-1"), "settled opening ghosts should release visual ownership after resize geometry ends");
+    assert(layer.iconNode.visible === true, "settled opening ghosts should reveal the real icon after resize geometry ends");
+    assert(layer.ghosts.length === 0, "settled opening ghosts should unmount after resize geometry ends");
+    controller.clear();
+    motionRuntime.reset();
+  }
+
+  {
+    const completed = [];
+    const layer = makeLayer();
+    layer.openingGeometryActive = true;
+    layer.isOpeningGeometryTransitionActive = () => layer.openingGeometryActive;
+    const controller = new FolderOpeningGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: makeTimerHost(),
+    });
+    const sessionToken = beginReadyOpenSession(layer);
+    controller.start(makeState(completed), [], { sessionToken });
+
+    assert(layer.folderHandoff.activeOpenSession?.revealed === true, "targetless opening should reveal even while resize geometry reports active");
+    assert(!layer.visualOwnership.hasOwner(makeDesktopSourceVisualKey("folder-1")), "targetless opening should release desktop source ownership immediately");
+    assert(layer.iconNode.visible === true, "targetless opening should leave real icons visible after reveal");
+    controller.clear();
+    motionRuntime.reset();
+  }
+
+  {
+    const completed = [];
+    const frameCompletions = [];
+    const layer = makeLayer();
+    const controller = new FolderOpeningGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: makeTimerHost(),
+    });
+    const sessionToken = beginReadyOpenSession(layer);
+    const target = makeTarget();
+    const state = {
+      ...makeState(completed),
+      folderOpenIconGhosts: [{ key: "controller-open-key", requestId: 12 }],
+      renderedFolder: { id: "folder-1" },
+      completeFolderOpenFrameGhost: (folderId, requestId) => frameCompletions.push(`${folderId}:${requestId}`),
+    };
+    controller.start(state, [target], {
+      frameSourceRect: { height: 48, left: 10, top: 20, width: 48 },
+      frameTargetRect: { height: 360, left: 180, top: 200, width: 800 },
+      sessionToken,
+    });
+
+    assert(controller.retarget(state, [target], {
+      frameTargetRect: { height: 480, left: 180, top: 140, width: 800 },
+    }) === 1, "opening layout growth should retarget the active frame shell without restarting icon ghosts");
+    assert(layer.frameRetargetCalls.length === 1, "frame shell retarget should issue exactly one geometry retarget");
+    assert(layer.frameRetargetCalls[0].toRect.height === 480, "frame shell should retarget to the expanded panel height");
+    assert(layer.frameRetargetCalls[0].options.frameGhostPhase === "opening", "frame shell retarget should stay in the opening phase");
+    assert(layer.frameRetargetCalls[0].options.preserveOnComplete === false, "frame shell retarget should still reveal the real panel material when it completes");
+    layer.frameRetargetCalls[0].options.onArrive();
+    assert(frameCompletions.join(",") === "folder-1:12", "retargeted opening frame should still complete the current frame ghost request");
+    assert(controller.retarget(state, [target], {
+      frameTargetRect: { height: 480, left: 180, top: 140, width: 800 },
+    }) === 0, "unchanged opening frame targets should not restart the shell retarget");
+    controller.complete(state, target, layer.ghosts[0]);
+    assert(!layer.folderHandoff.hasActiveOpeningVisuals(), "frame-only retarget setup should have no active icon ghosts after reveal");
+    assert(controller.retarget(state, [], {
+      frameTargetRect: { height: 520, left: 180, top: 120, width: 800 },
+    }) === 1, "active opening frame shell should keep retargeting after icon ghosts finish");
+    assert(layer.frameRetargetCalls.length === 2, "frame-only opening retarget should not require an active icon ghost");
     controller.clear();
     motionRuntime.reset();
   }
