@@ -2748,9 +2748,7 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(0, 0, 0, 0.34);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(0, 0, 0, 0.5);
 }
 
 .warning-dialog-overlay-closing {
@@ -2765,7 +2763,7 @@
   padding: 20px;
   border-radius: 8px;
   border: 1px solid var(--settings-row-border-strong);
-  background: rgba(31, 31, 31, 0.96);
+  background: rgb(31, 31, 31);
   box-shadow: var(--shadow64, 0 32px 90px rgba(0, 0, 0, 0.42));
   transform-origin: center center;
   will-change: transform, opacity;

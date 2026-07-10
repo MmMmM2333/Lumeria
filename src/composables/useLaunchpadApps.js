@@ -715,11 +715,13 @@ export function useLaunchpadApps(options) {
     const ids = Array.from(new Set((appIds || []).filter(Boolean)));
     if (!ids.length) return;
 
+    options.cancelLongPress?.();
     let next = options.pages.value;
     for (const id of ids) next = options.removeEverywhere(next, id);
     options.hiddenAppIds.value = Array.from(new Set([...options.hiddenAppIds.value, ...ids]));
     options.commitPages(next);
     const deletedIds = new Set(ids);
+    if (deletedIds.has(options.selectedIcon?.value?.id)) options.clearSelectedIcon?.();
     appManagerSelectedIds.value = appManagerSelectedIds.value.filter((id) => !deletedIds.has(id));
     if (deletedIds.has(editingManagedAppId.value)) closeEditManagedApp();
     options.commitPageIndex(options.pageIndex.value);

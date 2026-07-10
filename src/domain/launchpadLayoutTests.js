@@ -14,6 +14,7 @@ export function runLaunchpadHelperTests(context) {
     canCreateFolderPageAfterDrag,
     collectAppsFromPages,
     countItemOccurrences,
+    dissolveFolder,
     filterAppsForSearch,
     findFolder,
     flattenTopLevelPages,
@@ -32,6 +33,8 @@ export function runLaunchpadHelperTests(context) {
   const a = { id: "a", type: "app", name: "A", emoji: "A" };
   const b = { id: "b", type: "app", name: "B", emoji: "B" };
   const c = { id: "c", type: "app", name: "C", emoji: "C" };
+  const d = { id: "d", type: "app", name: "D", emoji: "D" };
+  const e = { id: "e", type: "app", name: "E", emoji: "E" };
   const folder = { id: "folder", type: "folder", name: "Folder", children: [b] };
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Launchpad Vue helper test failed] ${message}`);
@@ -79,6 +82,15 @@ export function runLaunchpadHelperTests(context) {
   assert(getFolderPreviewSlots({ ...folder, childPages: [[a, b, c]] }, 12).length === 9, "folder preview should always render 3x3 slots");
   const collapsedBlankFolderPages = getFolderChildPages({ ...folder, childPages: [[a], [], [b]] }, 2);
   assert(collapsedBlankFolderPages.length === 2 && collapsedBlankFolderPages[0][0].id === "a" && collapsedBlankFolderPages[1][0].id === "b", "folder pages should remove empty middle pages automatically");
+
+  const dissolved = dissolveFolder([[
+    a,
+    { id: "folder-dissolve", type: "folder", name: "Dissolve", childPages: [[b], [c]], children: [b, c] },
+    d,
+  ], [e]], "folder-dissolve", 3);
+  assert(dissolved.map((page) => page.map((item) => item.id).join("")).join("|") === "abc|de", "dissolving a folder should replace it with children and cascade overflow in row-major order");
+  assert(!findFolder(dissolved, "folder-dissolve"), "dissolving should remove the folder container");
+  assert(countItemOccurrences(dissolved, "b") === 1 && countItemOccurrences(dissolved, "c") === 1, "dissolving should preserve each child exactly once");
 
   assert(!canCreateDesktopPageAfterDrag([[a]], 0, "a"), "desktop should not create a new page when the current page would become empty after dragging");
   assert(canCreateDesktopPageAfterDrag([[a, b]], 0, "a"), "desktop should create a new page when another item remains on the current page");

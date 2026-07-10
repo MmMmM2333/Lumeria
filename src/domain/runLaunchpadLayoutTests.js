@@ -32,6 +32,7 @@ import { runMotionReplayBookmarkModelTests } from "../components/backgroundDebug
 import { runMotionReplayAnomalyModelTests } from "../components/backgroundDebug/motionReplayAnomalyModelTests.js";
 import { runMotionReplayViewerModelTests } from "../components/backgroundDebug/motionReplayViewerModelTests.js";
 import { runMotionTrackChartModelTests } from "../components/backgroundDebug/motionTrackChartModelTests.js";
+import { runIconContextMenuGeometryTests } from "../components/iconContextMenuGeometryTests.js";
 import { runMotionLabModelTests } from "../motionLab/motionLabModelTests.js";
 import { runBackgroundImageLayoutTests } from "./backgroundImageLayoutTests.js";
 import { runLaunchpadDataTests } from "./launchpadDataTests.js";
@@ -181,6 +182,7 @@ runMotionReplayAnomalyModelTests();
 runMotionReplayBookmarkModelTests();
 runMotionReplayViewerModelTests();
 runMotionTrackChartModelTests();
+runIconContextMenuGeometryTests();
 runMotionLabModelTests();
 runFolderLayoutStylesTests();
 runFolderViewportMetricsTests();

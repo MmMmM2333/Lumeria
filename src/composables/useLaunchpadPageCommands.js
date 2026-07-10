@@ -75,23 +75,45 @@ export function useLaunchpadPageCommands(options) {
     });
   }
 
-  function removeAppById(appId) {
-    if (!appId || options.isDragActive()) return;
+  function dissolveFolderById(folderId) {
+    if (!folderId || options.isDragActive()) return;
+    const folder = options.findFolder(options.pages.value, folderId);
+    if (!folder) return;
     options.cancelLongPress();
-    const openedFolderId = options.openFolderId.value;
-    const next = options.removeEverywhere(options.pages.value, appId);
+    const next = options.dissolveFolder(options.pages.value, folderId, options.pageSize.value);
     commitPages(next);
-    if (openedFolderId && !options.findFolder(next, openedFolderId)) options.commitOpenFolder(null);
+    if (options.selectedIcon?.value?.id === folderId) options.clearSelectedIcon?.();
+    if (options.openFolderId.value === folderId || options.renderedFolder.value?.id === folderId) {
+      options.commitOpenFolder(null);
+    }
     options.commitPageIndex(options.pageIndex.value);
     options.commitSearchPageIndex(options.searchPageIndex.value);
+    options.schedulePageGridMetrics();
+  }
+
+  function confirmDissolveFolder(folderId) {
+    if (!folderId || options.isDragActive()) return;
+    const folder = options.findFolder(options.pages.value, folderId)?.item;
+    if (!folder) return;
+    options.openWarningDialog({
+      title: `解散“${folder.name}”？`,
+      message: "文件夹中的应用将按当前顺序移回桌面。此操作不会删除应用。",
+      intent: "warning",
+      confirmText: "解散文件夹",
+      cancelText: "取消",
+      confirmAppearance: "outline",
+      confirmTone: "danger",
+      onConfirm: () => dissolveFolderById(folderId),
+    });
   }
 
   return {
     commitChromePageIndex,
     commitPages,
+    confirmDissolveFolder,
+    dissolveFolderById,
     confirmForceFillAllPages,
     forceFillAllPages,
-    removeAppById,
     renameFolder,
   };
 }

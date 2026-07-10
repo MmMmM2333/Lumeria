@@ -290,6 +290,30 @@ export async function runIconNodeTests() {
     );
     assert(snapshot.animations.every((animation) => animation.sourceLabel), "IconNode active animations should expose source labels");
     assert(snapshot.warnings.length === 0, "described IconNode targets should not emit missing metadata warnings");
+
+    const contextActions = [];
+    const contextNode = new IconNode({
+      onAction: (...args) => contextActions.push(args),
+    });
+    try {
+      contextNode.item = { id: "folder-context", name: "Folder Context", type: "folder" };
+      contextNode.source = { index: 0, pageIndex: 0, type: "page" };
+      let prevented = false;
+      contextNode.handleContextMenu({
+        nativeEvent: {
+          clientX: 20,
+          clientY: 30,
+          preventDefault: () => { prevented = true; },
+          stopImmediatePropagation: () => {},
+          stopPropagation: () => {},
+        },
+      });
+      assert(prevented, "folder context menus should suppress the native browser menu");
+      assert(contextActions.length === 1 && contextActions[0][0] === "context-menu", "folder icons should emit the shared context-menu action");
+      assert(contextActions[0][2]?.id === "folder-context", "folder context-menu actions should preserve the folder item");
+    } finally {
+      contextNode.destroy({ children: true });
+    }
   } finally {
     node.destroy({ children: true });
     motionRuntime.reset();

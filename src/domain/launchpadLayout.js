@@ -358,6 +358,24 @@ export function createLaunchpadLayoutHelpers(options) {
     return compactPages(next, { deleteEmptyFolders: !safeOptions.keepEmptyFolders, preserveFolderIds: safeOptions.preserveFolderIds, folderPageSize: getFolderPageSize() });
   }
 
+  function dissolveFolder(sourcePages, folderId, size) {
+    const pageSize = Math.max(1, Number(size) || getPageSize());
+    const next = clonePages(sourcePages);
+    const folder = findFolder(next, folderId);
+    if (!folder) return compactPages(next);
+
+    const children = flattenFolderPages(getFolderChildPages(folder.item, getFolderPageSize()));
+    next[folder.pageIndex].splice(folder.index, 1, ...children);
+    // Carry overflow forward so replacing one folder preserves global row-major order.
+    for (let pageIndex = folder.pageIndex; pageIndex < next.length; pageIndex += 1) {
+      if (next[pageIndex].length <= pageSize) continue;
+      const overflow = next[pageIndex].splice(pageSize);
+      ensurePage(next, pageIndex + 1);
+      next[pageIndex + 1].unshift(...overflow);
+    }
+    return compactPages(next);
+  }
+
   function insertTopLevelItem(sourcePages, item, targetPageIndex, insertIndex, size) {
     const pageSize = Math.max(1, size || 1);
     const next = removeEverywhere(sourcePages, item.id);
@@ -502,6 +520,7 @@ export function createLaunchpadLayoutHelpers(options) {
     assertNoDuplicateItemIds,
     shouldPreserveEmptyFolder,
     removeEverywhere,
+    dissolveFolder,
     insertTopLevelItem,
     previewTopLevelItemWithoutOverflow,
     insertAppIntoFolder,

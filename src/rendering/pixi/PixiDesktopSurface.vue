@@ -25,6 +25,7 @@
         @contextmenu.stop.prevent
       >
         <input
+          ref="folderNameInputRef"
           class="folder-name-input pixi-folder-name-input"
           name="pixiSingleStageFolderName"
           :value="folderOverlayState.renderedFolder.value.name"
@@ -145,7 +146,7 @@ const emit = defineEmits([
   "internal-activity",
   "open-app",
   "pointerdown-icon",
-  "remove-app",
+  "delete-app",
   "reset-app-icon",
   "surface-pointerdown",
   "wheel",
@@ -165,6 +166,7 @@ function resolveMaybeRef(value) {
 
 const hostRef = ref(null);
 const mainRef = ref(null);
+const folderNameInputRef = ref(null);
 const rootStageHostStyle = ref(makeRootStageHostStyle());
 const singleStageFolderPanelGeometry = ref(null);
 const singleStageFolderTitleFrame = ref(null);
@@ -266,6 +268,32 @@ function restoreSingleStageEmptyFolderName(event) {
   if (input) input.value = fallback;
   state.renameFolder(folder.id, fallback);
 }
+
+watch(
+  [
+    () => props.folderOverlayState?.folderRenameRequest?.value?.token ?? null,
+    () => props.folderOverlayState?.openFolderId?.value ?? null,
+    () => props.folderOverlayState?.renderedFolder?.value?.id ?? null,
+    () => isSingleStageFolderInputDisabled.value,
+  ],
+  async ([token, openFolderId, renderedFolderId, inputDisabled]) => {
+    const request = props.folderOverlayState?.folderRenameRequest?.value;
+    if (!token || !request) return;
+    if (request.folderId !== openFolderId) {
+      props.folderOverlayState?.completeFolderRenameRequest?.(token);
+      return;
+    }
+    if (inputDisabled || request.folderId !== renderedFolderId) return;
+    // Reuse the existing title editor after the opening handoff releases it.
+    await nextTick();
+    if (props.folderOverlayState?.folderRenameRequest?.value?.token !== token) return;
+    const input = folderNameInputRef.value;
+    if (!input || input.disabled) return;
+    input.focus({ preventScroll: true });
+    input.select();
+    props.folderOverlayState?.completeFolderRenameRequest?.(token);
+  }
+);
 
 function syncPixiResizeTarget(metrics = null) {
   if (!app || !hostRef.value) return;
@@ -795,7 +823,7 @@ function handleIconAction(action, event, item, source) {
   if (action === "open") emit("open-app", item, source);
   if (action === "pointerdown") emit("pointerdown-icon", event, item, source);
   if (action === "context-menu") emit("context-menu-icon", event, item, source);
-  if (action === "remove") emit("remove-app", item.id);
+  if (action === "remove") emit("delete-app", item.id);
   if (action === "choose-icon") emit("choose-app-icon", item.id);
   if (action === "reset-icon") emit("reset-app-icon", item.id);
   requestRender(makeIconActionRenderReason(action));

@@ -391,8 +391,12 @@ const editingAppIconSource = computed(() => {
 
 const warningDialogIntent = computed(() => normalizeDialogIntent(props.state.warningDialog.value?.intent));
 const warningDialogIcon = computed(() => getNoticeIcon(warningDialogIntent.value));
-const warningConfirmAppearance = computed(() => (warningDialogIntent.value === "error" ? "outline" : "primary"));
-const warningConfirmTone = computed(() => (warningDialogIntent.value === "error" ? "danger" : null));
+const warningConfirmAppearance = computed(() => (
+  props.state.warningDialog.value?.confirmAppearance || (warningDialogIntent.value === "error" ? "outline" : "primary")
+));
+const warningConfirmTone = computed(() => (
+  props.state.warningDialog.value?.confirmTone || (warningDialogIntent.value === "error" ? "danger" : null)
+));
 
 watch(
   () => activeDialog.value?.id,

@@ -118,10 +118,18 @@ export async function runLaunchpadAppsTests() {
     const scanRoots = ref([{ id: "root", type: "customDirectory", label: "Root", path: "C:/Apps", enabled: true }]);
     const warningDialogs = [];
     const launchCriticalDirtyIds = [];
+    let canceledLongPressCount = 0;
+    let clearedSelectedIconCount = 0;
+    const selectedIcon = ref({ area: "desktop", id: "win-app-1", pageIndex: 0 });
     const apps = useLaunchpadApps({
       appendAppsToPages: (_sourcePages, selectedApps) => [selectedApps.map((app) => ({ ...app }))],
+      cancelLongPress: () => { canceledLongPressCount += 1; },
       cloneItem: (item) => (item ? { ...item } : item),
       clonePages: (sourcePages) => sourcePages.map((page) => page.map((item) => ({ ...item }))),
+      clearSelectedIcon: () => {
+        clearedSelectedIconCount += 1;
+        selectedIcon.value = null;
+      },
       collectAppsFromPages: (sourcePages) => sourcePages.flatMap((page) => page.filter((item) => item?.type === "app")),
       commitOpenFolder: () => {},
       commitPageIndex: () => {},
@@ -138,12 +146,13 @@ export async function runLaunchpadAppsTests() {
       openWarningDialog: (config) => warningDialogs.push(config),
       pageIndex: ref(0),
       pages,
-      removeEverywhere: (sourcePages) => sourcePages,
+      removeEverywhere: (sourcePages, appId) => sourcePages.map((page) => page.filter((item) => item.id !== appId)),
       renderedFolder: ref(null),
       schedulePageGridMetrics: () => {},
       scanAppBlacklist: ref([]),
       scanKeywordBlacklist: ref([]),
       scanRoots,
+      selectedIcon,
       shouldUseNativeCatalog: () => true,
       showMissingLaunchTargetBadge: ref(true),
       searchPageIndex: ref(0),
@@ -182,6 +191,12 @@ export async function runLaunchpadAppsTests() {
 
     assert(pages.value[0][0].id === "win-app-1", "adding scanned apps should preserve native stable ids");
     assert(hiddenAppIds.value.length === 0, "adding scanned apps should unhide the preserved native id");
+
+    apps.deleteManagedApp("win-app-1");
+    assert(pages.value[0].length === 0, "deleting an app should remove it from the launchpad layout");
+    assert(hiddenAppIds.value.includes("win-app-1"), "deleting a catalog app should keep it hidden across native layout merges");
+    assert(canceledLongPressCount === 1, "deleting an app should cancel pending long press state");
+    assert(clearedSelectedIconCount === 1, "deleting an app should clear a selection that referenced the removed icon");
 
     apps.openAddManagedAppPage();
     apps.newAppName.value = "URL App";

@@ -13,14 +13,36 @@
   </div>
 
   <div v-if="iconContextMenu" class="icon-context-menu-layer" @contextmenu.prevent @pointerdown.self="closeIconContextMenu">
-    <fluent-menu-list class="icon-context-menu" :style="iconContextMenuStyle" role="menu" :aria-label="`${iconContextMenu.app.name} 菜单`" @pointerdown.stop>
-      <fluent-menu-item @click="openContextMenuApp">
-        <OpenIcon slot="start" class="icon-context-menu-item-icon" />
+    <fluent-menu-list
+      ref="iconContextMenuRef"
+      class="icon-context-menu"
+      :style="iconContextMenuStyle"
+      role="menu"
+      :aria-label="`${iconContextMenu.item.name} 菜单`"
+      @keydown.esc.stop.prevent="closeIconContextMenu"
+      @pointerdown.stop
+    >
+      <fluent-menu-item @click="runIconContextMenuAction('open')">
+        <FolderOpenIcon v-if="iconContextMenu.item.type === 'folder'" slot="start" class="icon-context-menu-item-icon" />
+        <OpenIcon v-else slot="start" class="icon-context-menu-item-icon" />
         打开
       </fluent-menu-item>
-      <fluent-menu-item @click="editContextMenuApp">
+      <fluent-menu-item v-if="iconContextMenu.item.type === 'app'" @click="runIconContextMenuAction('edit')">
         <EditIcon slot="start" class="icon-context-menu-item-icon" />
         编辑
+      </fluent-menu-item>
+      <fluent-menu-item v-else @click="runIconContextMenuAction('rename')">
+        <RenameIcon slot="start" class="icon-context-menu-item-icon" />
+        重命名
+      </fluent-menu-item>
+      <fluent-divider class="icon-context-menu-divider" role="separator" />
+      <fluent-menu-item v-if="iconContextMenu.item.type === 'app'" class="icon-context-menu-item-danger" @click="runIconContextMenuAction('delete')">
+        <DeleteIcon slot="start" class="icon-context-menu-item-icon" />
+        删除
+      </fluent-menu-item>
+      <fluent-menu-item v-else class="icon-context-menu-item-danger" @click="runIconContextMenuAction('dissolve')">
+        <FolderArrowRightIcon slot="start" class="icon-context-menu-item-icon" />
+        解散文件夹
       </fluent-menu-item>
     </fluent-menu-list>
   </div>
@@ -28,17 +50,22 @@
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import DeleteIcon from "~icons/fluent/delete-20-regular";
 import EditIcon from "~icons/fluent/edit-20-regular";
+import FolderArrowRightIcon from "~icons/fluent/folder-arrow-right-20-regular";
+import FolderOpenIcon from "~icons/fluent/folder-open-20-regular";
 import OpenIcon from "~icons/fluent/open-20-regular";
+import RenameIcon from "~icons/fluent/rename-20-regular";
 import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { getIconSource } from "../domain/iconSource.js";
+import { clampIconContextMenuPosition } from "./iconContextMenuGeometry.js";
 
 const props = defineProps({
   state: { type: Object, required: true },
 });
 
-const emit = defineEmits(["open-context-app", "edit-context-app"]);
+const emit = defineEmits(["context-menu-action"]);
 const launchGhostRef = ref(null);
 useGsapDomMotion(launchGhostRef, {
   initial: { opacity: 1, scale: 1 },
@@ -50,49 +77,81 @@ useGsapDomMotion(launchGhostRef, {
   }),
 });
 const iconContextMenu = ref(null);
+const iconContextMenuRef = ref(null);
+let iconContextMenuRequestId = 0;
 const iconContextMenuStyle = computed(() => {
   if (!iconContextMenu.value) return {};
   return {
-    left: `${iconContextMenu.value.x}px`,
-    top: `${iconContextMenu.value.y}px`,
+    left: `${iconContextMenu.value.positioned ? iconContextMenu.value.x : iconContextMenu.value.anchorX}px`,
+    top: `${iconContextMenu.value.positioned ? iconContextMenu.value.y : iconContextMenu.value.anchorY}px`,
+    visibility: iconContextMenu.value.positioned ? "visible" : "hidden",
   };
 });
 
-function openIconContextMenu(event, app, source) {
-  if (!app || app.type !== "app") return false;
-  const menuWidth = 172;
-  const menuHeight = 116;
-  const margin = 8;
-  const maxX = Math.max(margin, window.innerWidth - menuWidth - margin);
-  const maxY = Math.max(margin, window.innerHeight - menuHeight - margin);
+async function positionIconContextMenu(requestId) {
+  await nextTick();
+  await new Promise((resolve) => window.requestAnimationFrame(resolve));
+  const menu = iconContextMenu.value;
+  const element = iconContextMenuRef.value;
+  if (!menu || requestId !== iconContextMenuRequestId || !element) return;
+  const rect = element.getBoundingClientRect();
+  const position = clampIconContextMenuPosition({
+    anchorX: menu.anchorX,
+    anchorY: menu.anchorY,
+    menuHeight: rect.height,
+    menuWidth: rect.width,
+    viewportHeight: window.innerHeight,
+    viewportWidth: window.innerWidth,
+  });
   iconContextMenu.value = {
-    app,
-    source,
-    x: Math.min(Math.max(event.clientX, margin), maxX),
-    y: Math.min(Math.max(event.clientY, margin), maxY),
+    ...menu,
+    ...position,
+    positioned: true,
   };
+  await nextTick();
+  iconContextMenuRef.value?.querySelector("fluent-menu-item")?.focus({ preventScroll: true });
+}
+
+function openIconContextMenu(event, item, source) {
+  if (!item || (item.type !== "app" && item.type !== "folder")) return false;
+  iconContextMenuRequestId += 1;
+  const requestId = iconContextMenuRequestId;
+  iconContextMenu.value = {
+    anchorX: Number(event?.clientX) || 0,
+    anchorY: Number(event?.clientY) || 0,
+    item,
+    positioned: false,
+    source,
+    x: 0,
+    y: 0,
+  };
+  void positionIconContextMenu(requestId);
   return true;
 }
 
 function closeIconContextMenu() {
   if (!iconContextMenu.value) return false;
+  iconContextMenuRequestId += 1;
   iconContextMenu.value = null;
   return true;
 }
 
-function openContextMenuApp() {
+function runIconContextMenuAction(action) {
   const menu = iconContextMenu.value;
   if (!menu) return;
   closeIconContextMenu();
-  emit("open-context-app", menu.app, menu.source);
+  emit("context-menu-action", action, menu.item, menu.source);
 }
 
-function editContextMenuApp() {
-  const menu = iconContextMenu.value;
-  if (!menu) return;
-  closeIconContextMenu();
-  emit("edit-context-app", menu.app);
-}
+onMounted(() => {
+  window.addEventListener("blur", closeIconContextMenu);
+  window.addEventListener("resize", closeIconContextMenu);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("blur", closeIconContextMenu);
+  window.removeEventListener("resize", closeIconContextMenu);
+});
 
 function resolveLaunchGhostDuration() {
   const duration = Number(props.state.appLaunchGhostTransition?.duration);

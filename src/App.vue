@@ -108,7 +108,7 @@
         @pointerdown-icon="beginDrag"
         @open-app="openApp"
         @context-menu-icon="openIconContextMenu"
-        @remove-app="removeAppById"
+        @delete-app="deleteManagedApp"
         @choose-app-icon="openExistingAppIconChooser"
         @reset-app-icon="resetAppCustomIcon"
         @surface-pointerdown="handleLaunchpadSurfacePointerDown"
@@ -121,8 +121,7 @@
     <LaunchpadOverlays
       ref="launchpadOverlaysRef"
       :state="overlayState"
-      @open-context-app="openApp"
-      @edit-context-app="openEditManagedApp"
+      @context-menu-action="handleIconContextMenuAction"
     />
     <WindowChromeOverlay :active="isWindowChromeOverlayActive" />
     <BackgroundDebugPanel
@@ -236,10 +235,10 @@ const {
   pageDotsRef,
 } = chrome;
 const {
+  deleteManagedApp,
   openEditManagedApp,
   openExistingAppIconChooser,
   openApp,
-  removeAppById,
   resetAppCustomIcon,
   showMissingLaunchTargetBadge,
 } = appActions;
@@ -308,6 +307,11 @@ const {
   isFolderZoomFadeClosing,
   isHomeRevealSettling,
 } = folderFlow;
+const {
+  commitOpenFolder,
+  confirmDissolveFolder,
+  requestFolderRename,
+} = folderOverlay;
 
 const appVersion = appPackage.version;
 const isAcrylicDebugPanelEnabled = import.meta.env.DEV;
@@ -889,8 +893,21 @@ watch(
   }
 );
 
-function openIconContextMenu(event, app, source) {
-  launchpadOverlaysRef.value?.openIconContextMenu(event, app, source);
+function openIconContextMenu(event, item, source) {
+  launchpadOverlaysRef.value?.openIconContextMenu(event, item, source);
+}
+
+function handleIconContextMenuAction(action, item, source) {
+  if (item?.type === "app") {
+    if (action === "open") openApp(item, source);
+    if (action === "edit") openEditManagedApp(item);
+    if (action === "delete") deleteManagedApp(item.id);
+    return;
+  }
+  if (item?.type !== "folder") return;
+  if (action === "open") commitOpenFolder(item.id);
+  if (action === "rename") requestFolderRename(item.id);
+  if (action === "dissolve") confirmDissolveFolder(item.id);
 }
 
 function handleLaunchpadSurfacePointerDown(event) {

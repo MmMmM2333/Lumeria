@@ -478,7 +478,7 @@ export class IconNode extends Container {
   handleContextMenu(event) {
     this.setPressed(false);
     const original = event?.nativeEvent || event;
-    if (this.item?.type !== "app") return;
+    if (this.item?.type !== "app" && this.item?.type !== "folder") return;
     original?.preventDefault?.();
     original?.stopPropagation?.();
     original?.stopImmediatePropagation?.();

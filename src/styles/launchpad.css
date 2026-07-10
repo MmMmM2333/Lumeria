@@ -737,7 +737,10 @@ body {
 
 .icon-context-menu {
   position: fixed;
-  min-width: 172px;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 144px;
+  max-width: min(240px, calc(100vw - 16px));
   --colorNeutralBackground1: rgba(31, 31, 31, 0.94);
   --colorTransparentStroke: rgba(255, 255, 255, 0.14);
   --shadow16: 0 18px 42px rgba(0, 0, 0, 0.32);
@@ -749,6 +752,18 @@ body {
 .icon-context-menu-item-icon {
   width: 18px;
   height: 18px;
+}
+
+.icon-context-menu-divider {
+  margin: 1px 4px;
+}
+
+.icon-context-menu-item-danger {
+  --colorNeutralForeground2: rgba(255, 170, 160, 0.9);
+  --colorNeutralForeground2Hover: #ffb4a9;
+  --colorNeutralForeground2Pressed: #ff8f83;
+  --colorNeutralBackground1Hover: rgba(196, 43, 28, 0.16);
+  --colorNeutralBackground1Selected: rgba(196, 43, 28, 0.22);
 }
 
 .pixi-folder-name-input {

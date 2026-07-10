@@ -266,6 +266,7 @@ export function useLaunchpadController() {
     collectAppsFromPages,
     compactPages,
     createLayoutSnapshot,
+    dissolveFolder,
     ensurePage,
     filterAppsForSearch,
     findFolder,
@@ -296,6 +297,8 @@ export function useLaunchpadController() {
     seedEnabled: !isNativeBridgeAvailable(),
   });
   let dragControls = null;
+  const folderRenameRequest = ref(null);
+  let folderRenameRequestToken = 0;
 
   const {
     disconnectFolderViewportObserver,
@@ -593,11 +596,11 @@ export function useLaunchpadController() {
     openDesktop,
   } = useLaunchpadLaunchFlow({
     cancelLongPress: () => cancelLongPress(),
+    clearSelectedIcon,
     clearOpeningIcon,
     clearFolderCloseIconGhosts,
     clearFolderOpenIconGhosts,
     clearSearch,
-    clearSelectedIcon,
     cloneItem,
     desktopMainRef,
     getLaunchIconRect,
@@ -731,12 +734,13 @@ export function useLaunchpadController() {
   const {
     commitChromePageIndex,
     commitPages,
+    confirmDissolveFolder,
     confirmForceFillAllPages,
-    removeAppById,
     renameFolder,
   } = useLaunchpadPageCommands({
     assertNoDuplicateItemIds,
     cancelLongPress: () => cancelLongPress(),
+    clearSelectedIcon,
     chunkIntoPages,
     clonePages,
     compactPages,
@@ -745,6 +749,7 @@ export function useLaunchpadController() {
     commitOpenFolder,
     commitPageIndex,
     commitSearchPageIndex,
+    dissolveFolder,
     findFolder,
     finishHomeRevealSettleWindow,
     flattenTopLevelPages,
@@ -758,11 +763,25 @@ export function useLaunchpadController() {
     pageIndex,
     pages,
     pageSize,
-    removeEverywhere,
     renderedFolder,
     schedulePageGridMetrics,
     searchPageIndex,
+    selectedIcon,
   });
+
+  function requestFolderRename(folderId) {
+    if (!folderId || isDragActive()) return;
+    const folder = findFolder(pages.value, folderId);
+    if (!folder) return;
+    folderRenameRequestToken += 1;
+    folderRenameRequest.value = { folderId, token: folderRenameRequestToken };
+    commitOpenFolder(folderId);
+  }
+
+  function completeFolderRenameRequest(token) {
+    if (folderRenameRequest.value?.token !== token) return;
+    folderRenameRequest.value = null;
+  }
   const {
     clearSettingsPanelCloseTimer,
     closeSettingsPanel,
@@ -1265,6 +1284,8 @@ export function useLaunchpadController() {
     updateAppCustomIcon,
   } = useLaunchpadApps({
     appendAppsToPages,
+    cancelLongPress: () => cancelLongPress(),
+    clearSelectedIcon,
     cloneItem,
     clonePages,
     collectAppsFromPages,
@@ -1286,6 +1307,7 @@ export function useLaunchpadController() {
     scanAppBlacklist,
     scanKeywordBlacklist,
     scanRoots,
+    selectedIcon,
     showMissingLaunchTargetBadge,
     shouldUseNativeCatalog,
   });
@@ -1565,11 +1587,11 @@ export function useLaunchpadController() {
   };
 
   const appActions = {
+    deleteManagedApp,
     getLaunchTargetPath,
     openApp,
     openEditManagedApp,
     openExistingAppIconChooser,
-    removeAppById,
     resetAppCustomIcon,
     showMissingLaunchTargetBadge,
   };
@@ -1615,7 +1637,6 @@ export function useLaunchpadController() {
     openExistingAppIconChooser,
     pageGridMeasureStyle,
     pageTrackScrub,
-    removeAppById,
     resetAppCustomIcon,
     schedulePageGridMetrics,
     selectedIcon,
@@ -1836,6 +1857,8 @@ export function useLaunchpadController() {
     beginDrag,
     commitFolderPageIndex,
     commitOpenFolder,
+    completeFolderRenameRequest,
+    confirmDissolveFolder,
     completeFolderCloseIconGhost,
     completeFolderOpenFrameGhost,
     completeFolderOpenIconGhost,
@@ -1848,11 +1871,13 @@ export function useLaunchpadController() {
     folderOpenIconGhosts,
     folderOpenPreviewFrameGhostedIds,
     folderOpenWarmupRequest,
+    openFolderId,
     folderPageIndex,
     folderPageTurnRequest,
     folderPages,
     folderPageSize,
     folderPageTrackScrub,
+    folderRenameRequest,
     folderPanelRef,
     folderPanelStyle,
     folderViewportRef,
@@ -1878,8 +1903,8 @@ export function useLaunchpadController() {
     isTextlessMode,
     launchTargetStatusById,
     openExistingAppIconChooser,
-    removeAppById,
     renderedFolder,
+    requestFolderRename,
     renameFolder,
     resetAppCustomIcon,
     setFolderPageRef,

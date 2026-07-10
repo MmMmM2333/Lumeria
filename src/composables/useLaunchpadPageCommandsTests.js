@@ -12,6 +12,8 @@ import {
 const appA = { id: "app-a", type: "app", name: "App A" };
 const appB = { id: "app-b", type: "app", name: "App B" };
 const appC = { id: "app-c", type: "app", name: "App C" };
+const appD = { id: "app-d", type: "app", name: "App D" };
+const appE = { id: "app-e", type: "app", name: "App E" };
 const folder = {
   id: "folder-1",
   type: "folder",
@@ -24,6 +26,7 @@ function createPageCommands(overrides = {}) {
   const calls = {
     assertNoDuplicateItemIds: 0,
     cancelLongPress: 0,
+    clearSelectedIcon: 0,
     commitActivePageIndex: [],
     commitFolderPageIndex: [],
     commitOpenFolder: [],
@@ -37,6 +40,7 @@ function createPageCommands(overrides = {}) {
   const pages = shallowRef(overrides.pages ?? [[appA, folder], [appC]]);
   const pageIndex = ref(overrides.pageIndex ?? 2);
   const searchPageIndex = ref(overrides.searchPageIndex ?? 1);
+  const selectedIcon = ref(overrides.selectedIcon ?? null);
   const folderPageIndex = ref(overrides.folderPageIndex ?? 3);
   const renderedFolder = ref(overrides.renderedFolder ?? null);
   const openFolderId = ref(overrides.openFolderId ?? null);
@@ -58,12 +62,17 @@ function createPageCommands(overrides = {}) {
     },
     chunkIntoPages,
     clonePages: helpers.clonePages,
+    clearSelectedIcon: () => {
+      calls.clearSelectedIcon += 1;
+      selectedIcon.value = null;
+    },
     compactPages: helpers.compactPages,
     commitActivePageIndex: (value) => calls.commitActivePageIndex.push(value),
     commitFolderPageIndex: (value) => calls.commitFolderPageIndex.push(value),
     commitOpenFolder: (value) => calls.commitOpenFolder.push(value),
     commitPageIndex: (value) => calls.commitPageIndex.push(value),
     commitSearchPageIndex: (value) => calls.commitSearchPageIndex.push(value),
+    dissolveFolder: helpers.dissolveFolder,
     finishHomeRevealSettleWindow: () => {
       calls.finishHomeRevealSettleWindow += 1;
       isHomeRevealSettling.value = false;
@@ -80,12 +89,12 @@ function createPageCommands(overrides = {}) {
     pageIndex,
     pages,
     pageSize,
-    removeEverywhere: helpers.removeEverywhere,
     renderedFolder,
     scheduleChromePageIndexCommit: (callback) => calls.scheduledChromePageIndexCommits.push(callback),
     schedulePageGridMetrics: () => {
       calls.schedulePageGridMetrics += 1;
     },
+    selectedIcon,
     searchPageIndex,
   });
 
@@ -158,6 +167,31 @@ export function runLaunchpadPageCommandsTests() {
   rename.commands.renameFolder("folder-1", "123456789012345678901234567890123");
   assert(rename.pages.value[0][1].name.length === 32, "renameFolder should clamp folder names to 32 characters");
 
+  const dissolveTarget = {
+    id: "folder-dissolve",
+    type: "folder",
+    name: "Work",
+    childPages: [[appB, appD]],
+    children: [appB, appD],
+  };
+  const dissolve = createPageCommands({
+    openFolderId: "folder-dissolve",
+    pageSize: 3,
+    pages: [[appA, dissolveTarget, appC], [appE]],
+    selectedIcon: { area: "desktop", id: "folder-dissolve", pageIndex: 0 },
+  });
+  dissolve.commands.confirmDissolveFolder("folder-dissolve");
+  assert(dissolve.calls.openWarningDialog.length === 1, "folder dissolve should require confirmation");
+  assert(dissolve.pages.value[0][1].id === "folder-dissolve", "folder dissolve should not mutate layout before confirmation");
+  const dissolveDialog = dissolve.calls.openWarningDialog[0];
+  assert(dissolveDialog.confirmTone === "danger" && dissolveDialog.confirmAppearance === "outline", "folder dissolve confirmation should use a danger action");
+  dissolveDialog.onConfirm();
+  assert(dissolve.pages.value.map((page) => page.map((item) => item.id).join(",")).join("|") === "app-a,app-b,app-d|app-c,app-e", "confirmed folder dissolve should preserve child order and cascade page overflow");
+  assert(dissolve.calls.cancelLongPress === 1, "confirmed folder dissolve should cancel pending long press state");
+  assert(dissolve.calls.clearSelectedIcon === 1, "confirmed folder dissolve should clear a selection that referenced the removed folder");
+  assert(dissolve.calls.commitOpenFolder.length === 1 && dissolve.calls.commitOpenFolder[0] === null, "confirmed folder dissolve should close the dissolved folder");
+  assert(dissolve.calls.schedulePageGridMetrics === 1, "confirmed folder dissolve should refresh desktop metrics");
+
   const forceFill = createPageCommands({
     pageSize: 2,
     pages: [[appA], [], [folder, appC]],
@@ -188,17 +222,4 @@ export function runLaunchpadPageCommandsTests() {
     else globalThis.window = originalWindow;
   }
 
-  const remove = createPageCommands({ openFolderId: "folder-1" });
-  remove.commands.removeAppById("app-b");
-  assert(remove.calls.cancelLongPress === 1, "removeAppById should cancel long press before removing");
-  assert(remove.pages.value[0].map((item) => item.id).join(",") === "app-a", "removeAppById should remove apps from folders");
-  assert(remove.calls.commitOpenFolder.join(",") === "", "removeAppById should close a folder that disappeared");
-  assert(remove.calls.commitOpenFolder.length === 1 && remove.calls.commitOpenFolder[0] === null, "removeAppById should pass null when closing a missing folder");
-  assert(remove.calls.commitPageIndex.join(",") === "2", "removeAppById should reclamp desktop page index");
-  assert(remove.calls.commitSearchPageIndex.join(",") === "1", "removeAppById should reclamp search page index");
-
-  const ignoredRemove = createPageCommands({ isDragActive: true });
-  ignoredRemove.commands.removeAppById("app-a");
-  assert(ignoredRemove.calls.cancelLongPress === 0, "drag-active removeAppById should be ignored");
-  assert(ignoredRemove.pages.value[0][0].id === "app-a", "drag-active removeAppById should not change pages");
 }
