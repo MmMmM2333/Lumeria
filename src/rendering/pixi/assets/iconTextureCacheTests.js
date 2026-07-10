@@ -54,14 +54,21 @@ export async function runIconTextureCacheTests() {
   const { Texture } = await import("pixi.js");
   const originalTextureFrom = Texture.from;
   const textureFromCalls = [];
-  Texture.from = (resource, skipCache) => {
+  const trackedTextureFrom = (resource, skipCache) => {
     const texture = originalTextureFrom(resource, skipCache);
     textureFromCalls.push({ resource, skipCache, texture });
     return texture;
   };
-  const { clearIconTextureCache, getCachedIconTexture } = await importIconTextureCache();
+  Texture.from = trackedTextureFrom;
+  const {
+    clearIconTextureCache,
+    getCachedIconTexture,
+    getIconTextureCacheDebugSnapshot,
+    setIconTextureCacheDebugOverride,
+  } = await importIconTextureCache();
 
   try {
+    setIconTextureCacheDebugOverride(true);
     clearIconTextureCache();
     const item = { id: "app-1", iconDataUrl: "data:image/png;base64,first" };
     const listenerKey = {};
@@ -72,6 +79,24 @@ export async function runIconTextureCacheTests() {
     images[0].onerror();
     await flushTextureLoad();
     assert(calls.join(",") === "second", "same listener key should keep only the latest callback");
+    const failedSnapshot = getIconTextureCacheDebugSnapshot();
+    assert(failedSnapshot.failed.length === 1, "failed icon sources should be visible to render diagnostics");
+    assert(failedSnapshot.recentErrors[0]?.error === "Failed to load icon texture", "texture diagnostics should retain the concrete load error");
+    assert(!JSON.stringify(failedSnapshot).includes("first"), "texture diagnostics should fingerprint sources instead of leaking data URLs");
+
+    clearIconTextureCache();
+    images.length = 0;
+    const rejectedItem = { id: "app-rejected", iconDataUrl: "data:image/png;base64,decoder-secret" };
+    Texture.from = (resource) => {
+      throw new Error(`Decoder rejected ${resource.src}`);
+    };
+    getCachedIconTexture(rejectedItem);
+    images[0].onload();
+    await flushTextureLoad();
+    const rejectedSnapshot = getIconTextureCacheDebugSnapshot();
+    assert(rejectedSnapshot.recentErrors[0]?.error.includes("Decoder rejected"), "texture diagnostics should preserve a useful decoder error");
+    assert(!JSON.stringify(rejectedSnapshot).includes("decoder-secret"), "decoder errors should redact embedded icon sources");
+    Texture.from = trackedTextureFrom;
 
     clearIconTextureCache();
     images.length = 0;
@@ -98,6 +123,9 @@ export async function runIconTextureCacheTests() {
     assert(textureFromCalls[0].skipCache === true, "Pixi texture creation should skip the global Pixi cache");
     const cachedTexture = getCachedIconTexture(loadedItem);
     assert(cachedTexture === textureFromCalls[0].texture, "loaded texture should be returned from the local icon cache");
+    const cachedSnapshot = getIconTextureCacheDebugSnapshot();
+    assert(cachedSnapshot.cached[0]?.source?.fingerprint, "loaded texture diagnostics should fingerprint cached sources");
+    assert(!JSON.stringify(cachedSnapshot).includes("third"), "cached texture diagnostics should not leak image data URLs");
     clearIconTextureCache();
     assert(cachedTexture.destroyed, "clearing the local icon cache should destroy cached textures");
 
@@ -117,6 +145,7 @@ export async function runIconTextureCacheTests() {
     assert(getCachedIconTexture(staleItem) === null, "stale pending texture load should not repopulate the local cache");
     assert(images.length === 2, "a fresh request should be required after stale pending load is ignored");
   } finally {
+    setIconTextureCacheDebugOverride(false);
     clearIconTextureCache();
     Texture.from = originalTextureFrom;
     if (previousImage === undefined) delete globalThis.Image;

@@ -52,7 +52,11 @@ import { DesktopLayer } from "./scene/DesktopLayer.js";
 import { createFolderLayerState } from "./folderLayerState.js";
 import { readFolderOverlayStateRenderDependencies } from "./folderOverlayStateDependencies.js";
 import { createDragRenderSnapshot } from "./dragRenderSnapshot.js";
-import { clearIconTextureCache, preloadIconTextures } from "./assets/iconTextureCache.js";
+import {
+  clearIconTextureCache,
+  getIconTextureCacheDebugSnapshot,
+  preloadIconTextures,
+} from "./assets/iconTextureCache.js";
 import {
   deleteLaunchpadDebugValue,
   readLaunchpadDebugValue,
@@ -178,6 +182,7 @@ let resizeObserver = null;
 let destroyed = false;
 let folderTexturePrewarmTimer = null;
 let renderScheduler = null;
+let renderProbe = null;
 let desktopDomGeometryCache = null;
 let pixiResizeSignature = "";
 let motionDebugCommands = null;
@@ -686,12 +691,33 @@ function getRenderScheduler() {
   renderScheduler = createPixiRenderScheduler({
     cancelAnimationFrame: cancelFrame,
     canRender: () => Boolean(!destroyed && app && layer && hostRef.value),
-    render: () => {
+    render: (reasons) => {
       const updateLayer = desktopLayerUpdatePending;
       desktopLayerUpdatePending = false;
+      const previousPlan = layer?.lastDesktopRenderPlan || null;
       const didRender = renderPixi({ updateLayer });
       if (!didRender && updateLayer) desktopLayerUpdatePending = true;
-      app?.render?.();
+      let probeToken = null;
+      if (import.meta.env.DEV && didRender) {
+        probeToken = renderProbe?.beforeRender?.({
+          dragMeta: props.dragMeta,
+          reasons,
+          renderer: app?.renderer,
+          updateLayer,
+        });
+        if (updateLayer) {
+          renderProbe?.recordDesktopPlan?.(previousPlan, layer?.lastDesktopRenderPlan || null);
+        }
+      }
+      if (import.meta.env.DEV && didRender) {
+        try {
+          app?.render?.();
+        } finally {
+          renderProbe?.afterRender?.(probeToken);
+        }
+      } else {
+        app?.render?.();
+      }
     },
     requestAnimationFrame: requestFrame,
   });
@@ -758,6 +784,12 @@ function scheduleDesktopFrame() {
 
 function requestRender(reason = "desktop-update", options = {}) {
   if (options.invalidateGeometry) invalidateDesktopDomGeometry();
+  if (import.meta.env.DEV) {
+    renderProbe?.record?.("render-request", {
+      invalidateGeometry: options.invalidateGeometry === true,
+      reason,
+    });
+  }
   desktopLayerUpdatePending = true;
   const didMark = getRenderScheduler().markRenderPending(reason);
   scheduleDesktopFrame();
@@ -821,7 +853,10 @@ function scheduleFolderTexturePrewarm() {
 
 function handleIconAction(action, event, item, source) {
   if (action === "open") emit("open-app", item, source);
-  if (action === "pointerdown") emit("pointerdown-icon", event, item, source);
+  if (action === "pointerdown") {
+    if (import.meta.env.DEV) renderProbe?.notePointerDown?.({ event, item, source });
+    emit("pointerdown-icon", event, item, source);
+  }
   if (action === "context-menu") emit("context-menu-icon", event, item, source);
   if (action === "remove") emit("delete-app", item.id);
   if (action === "choose-icon") emit("choose-app-icon", item.id);
@@ -871,6 +906,11 @@ function destroyPixi(options = {}) {
   folderClosingHandoffRetainer.reset();
   motionDebugCommands?.uninstall?.();
   motionDebugCommands = null;
+  if (import.meta.env.DEV) {
+    renderProbe?.destroy?.();
+    renderProbe = null;
+    deleteLaunchpadDebugValue("renderProbe");
+  }
   deleteLaunchpadDebugValue("folderVisual");
   if (import.meta.env.DEV && readLaunchpadDebugValue("motionOverlay")) {
     deleteLaunchpadDebugValue("motionOverlay");
@@ -928,6 +968,12 @@ onMounted(async () => {
     onFolderTitleFrameChange: handleSingleStageFolderTitleFrameChange,
     iconBoundsRegistry: props.iconBoundsRegistry,
     onDragReleaseComplete: (release) => {
+      if (import.meta.env.DEV) {
+        renderProbe?.record?.("drag-release-complete", {
+          item: release?.item ? { id: release.item.id || null, name: release.item.name || null, type: release.item.type || null } : null,
+          key: release?.key || null,
+        });
+      }
       emit("drag-release-complete", release);
       requestRender("drag-release-complete");
     },
@@ -959,16 +1005,28 @@ onMounted(async () => {
       { MotionDebugOverlayLayer },
       { installMotionDebugGlobal },
       { createMotionRuntimeDebugAdapter },
+      { capturePixiRenderSnapshot, createPixiRenderProbe },
     ] = await Promise.all([
       import("./animation/motionDebugOverlayLayer.js"),
       import("./animation/motionDebugReport.js"),
       import("./animation/motionRuntimeDebugAdapter.dev.js"),
+      import("./renderDebugProbe.dev.js"),
     ]);
     installMotionRuntimeDebugAdapterFactory(createMotionRuntimeDebugAdapter);
     motionDebugOverlay = new MotionDebugOverlayLayer();
     app.stage.addChild(motionDebugOverlay);
     setLaunchpadDebugValue("motionOverlay", () => motionDebugOverlay?.debugSnapshot?.() || null);
     motionDebugCommands = installMotionDebugGlobal();
+    renderProbe = createPixiRenderProbe({
+      capture: (captureOptions) => capturePixiRenderSnapshot({
+        ...captureOptions,
+        app,
+        getTextureCacheDebugSnapshot: getIconTextureCacheDebugSnapshot,
+        layer,
+      }),
+    });
+    renderProbe.attachCanvas(app.canvas);
+    setLaunchpadDebugValue("renderProbe", renderProbe.commands);
   }
   resizeObserver = new ResizeObserver(handleResize);
   resizeObserver.observe(hostRef.value);

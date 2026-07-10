@@ -10,11 +10,18 @@ export function createPixiRenderScheduler({
 
   let destroyed = false;
   let frame = null;
-  let pendingReason = null;
+  let pendingReasons = [];
+
+  const addPendingReason = (reason) => {
+    const normalized = String(reason || "update");
+    const wasEmpty = pendingReasons.length === 0;
+    if (!pendingReasons.includes(normalized)) pendingReasons.push(normalized);
+    return wasEmpty;
+  };
 
   const clearFrame = () => {
     frame = null;
-    pendingReason = null;
+    pendingReasons = [];
   };
 
   const run = () => {
@@ -24,7 +31,7 @@ export function createPixiRenderScheduler({
 
   function requestRender(reason = "update") {
     if (destroyed || !canRender()) return false;
-    pendingReason = pendingReason || reason;
+    addPendingReason(reason);
     if (frame != null) return false;
     if (typeof requestAnimationFrame === "function") {
       frame = requestAnimationFrame(run);
@@ -36,20 +43,18 @@ export function createPixiRenderScheduler({
 
   function markRenderPending(reason = "update") {
     if (destroyed || !canRender()) return false;
-    const hadPending = pendingReason != null;
-    pendingReason = pendingReason || reason;
-    return !hadPending;
+    return addPendingReason(reason);
   }
 
   function hasPendingRender() {
-    return pendingReason != null;
+    return pendingReasons.length > 0;
   }
 
   function runPendingRender() {
-    const reason = pendingReason;
-    pendingReason = null;
-    if (destroyed || !canRender() || reason == null) return false;
-    render(reason);
+    const reasons = pendingReasons;
+    pendingReasons = [];
+    if (destroyed || !canRender() || reasons.length === 0) return false;
+    render(reasons);
     return true;
   }
 

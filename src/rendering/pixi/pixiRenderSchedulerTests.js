@@ -153,8 +153,30 @@ export function runPixiRenderSchedulerTests() {
     assert(callbacks.length === 0, "marking pending render should not schedule an animation frame");
     assert(scheduler.hasPendingRender(), "marked render should be observable as pending");
     assert(scheduler.runPendingRender() === true, "pending render should run inline when the frame driver consumes it");
-    assert(reasons.join(",") === "motion-frame", "inline render should preserve the first pending reason");
+    assert(reasons.flat().join(",") === "motion-frame,resize", "inline render should preserve every merged pending reason");
     assert(!scheduler.hasPendingRender(), "inline render should clear pending work");
     assert(scheduler.runPendingRender() === false, "running without pending work should be a no-op");
+  }
+
+  {
+    const callbacks = [];
+    const reasons = [];
+    const scheduler = createPixiRenderScheduler({
+      cancelAnimationFrame: () => {},
+      render: (frameReasons) => reasons.push(frameReasons),
+      requestAnimationFrame: (callback) => {
+        callbacks.push(callback);
+        return callbacks.length;
+      },
+    });
+
+    scheduler.requestRender("watch-effect");
+    scheduler.requestRender("watch-effect");
+    scheduler.requestRender("icon-pointerdown");
+    callbacks[0]();
+    assert(
+      reasons[0].join(",") === "watch-effect,icon-pointerdown",
+      "merged render reasons should preserve order without duplicating the same cause"
+    );
   }
 }

@@ -59,7 +59,9 @@ export function runIconSceneHelpersTests() {
     buttons: 1,
     clientX: 12,
     clientY: 34,
+    isPrimary: true,
     pointerId: 7,
+    pointerType: "pen",
     preventDefault: () => {
       prevented = true;
     },
@@ -84,7 +86,10 @@ export function runIconSceneHelpersTests() {
   event.preventDefault();
   event.stopPropagation();
 
-  assert(event.button === 2 && event.pointerId === 7, "synthetic event should preserve pointer metadata");
+  assert(
+    event.button === 2 && event.pointerId === 7 && event.pointerType === "pen" && event.isPrimary === true,
+    "synthetic event should preserve pointer metadata"
+  );
   assert(event.currentTarget.getBoundingClientRect().width === 3, "synthetic event should expose node bounds");
   assert(event.dragVisualState.compact === true && event.dragVisualState.singleLineLabel === true, "synthetic event should expose source label layout state");
   assert(event.dragVisualState.iconSize === 56, "synthetic event should expose source icon sizing state");
