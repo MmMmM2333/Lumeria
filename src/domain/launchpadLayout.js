@@ -289,16 +289,6 @@ export function createLaunchpadLayoutHelpers(options) {
     return apps;
   }
 
-  function normalizeSearchText(value) {
-    return String(value || "").trim().toLocaleLowerCase();
-  }
-
-  function filterAppsForSearch(apps, query) {
-    const term = normalizeSearchText(query);
-    if (!term) return [];
-    return (apps || []).filter((app) => normalizeSearchText(app.name).includes(term));
-  }
-
   function hasItemsOtherThan(items, itemId) {
     return (items || []).some((item) => item && item.id !== itemId);
   }
@@ -511,8 +501,6 @@ export function createLaunchpadLayoutHelpers(options) {
     findInFolder,
     countItemOccurrences,
     collectAppsFromPages,
-    normalizeSearchText,
-    filterAppsForSearch,
     hasItemsOtherThan,
     canCreatePageFromItemsAfterDrag,
     canCreateDesktopPageAfterDrag,

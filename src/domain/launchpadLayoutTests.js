@@ -15,7 +15,6 @@ export function runLaunchpadHelperTests(context) {
     collectAppsFromPages,
     countItemOccurrences,
     dissolveFolder,
-    filterAppsForSearch,
     findFolder,
     flattenTopLevelPages,
     getFolderChildPages,
@@ -62,7 +61,6 @@ export function runLaunchpadHelperTests(context) {
   assert(countItemOccurrences(folderInsert, "c") === 1, "insertAppIntoFolder should not duplicate app");
   const searchApps = collectAppsFromPages([[a, { ...folder, childPages: [[b]], children: [b] }]]);
   assert(searchApps.length === 2 && searchApps.every((item) => item.type === "app"), "search collection should flatten apps and exclude folders");
-  assert(filterAppsForSearch(searchApps, " b ")[0].id === "b", "search should match app names case-insensitively after trimming");
   const folderSlots = insertAppIntoFolder([[{ ...folder, children: [b, null, c] }]], "folder", a, 0, 1, 4);
   assert(getFolderChildPages(findFolder(folderSlots, "folder")?.item, 4)[0].map((item) => item.id).join("") === "bac", "insertAppIntoFolder should compact a folder page before sorting");
   const fullFolder = { id: "full-folder", type: "folder", name: "Full", childPages: [[a, b]], children: [a, b] };
