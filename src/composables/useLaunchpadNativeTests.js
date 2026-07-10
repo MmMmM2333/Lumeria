@@ -24,6 +24,7 @@ import {
   DEFAULT_BACKGROUND_DARKEN_COLOR,
   DEFAULT_BACKGROUND_DARKEN_STRENGTH,
   DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY,
+  DEFAULT_SHOW_CUSTOM_TITLEBAR,
   DEFAULT_WINDOW_MODE,
   createDefaultBackgroundAcrylicParams,
   WINDOW_EFFECT_APPEARANCE_DARK,
@@ -87,6 +88,7 @@ function makeOptions(overrides = {}) {
     draftWindowEffectAppearance: ref(WINDOW_EFFECT_APPEARANCE_DARK),
     draftWindowEffectMaterial: ref(WINDOW_EFFECT_MATERIAL_ACRYLIC),
     draftWindowMode: ref(DEFAULT_WINDOW_MODE),
+    draftShowCustomTitlebar: ref(DEFAULT_SHOW_CUSTOM_TITLEBAR),
     draftMainWindowShortcut: ref(DEFAULT_MAIN_WINDOW_SHORTCUT),
     folderCols: ref(4),
     folderIconSize: ref(64),
@@ -124,6 +126,7 @@ function makeOptions(overrides = {}) {
     windowEffectAppearance: ref(WINDOW_EFFECT_APPEARANCE_DARK),
     windowEffectMaterial: ref(WINDOW_EFFECT_MATERIAL_ACRYLIC),
     windowMode: ref(DEFAULT_WINDOW_MODE),
+    showCustomTitlebar: ref(DEFAULT_SHOW_CUSTOM_TITLEBAR),
     mainWindowShortcut: ref(DEFAULT_MAIN_WINDOW_SHORTCUT),
     mainWindowShortcutError: ref(""),
     windowEffectsSupport: ref({
@@ -377,6 +380,7 @@ export async function runLaunchpadNativeTests() {
           windowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
           windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
           windowMode: WINDOW_MODE_WINDOWED,
+          showCustomTitlebar: false,
           mainWindowShortcut: "control+alt+KeyL",
           backgroundBaseColor: "#ABC",
           backgroundBaseOpacity: 73,
@@ -421,6 +425,8 @@ export async function runLaunchpadNativeTests() {
     assert(options.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "native load should apply saved window effect appearance");
     assert(options.windowMode.value === WINDOW_MODE_WINDOWED, "native load should apply saved window mode");
     assert(options.draftWindowMode.value === WINDOW_MODE_WINDOWED, "native load should sync window mode draft");
+    assert(options.showCustomTitlebar.value === false, "native load should apply saved custom titlebar visibility");
+    assert(options.draftShowCustomTitlebar.value === false, "native load should sync custom titlebar visibility draft");
     assert(options.mainWindowShortcut.value === "control+alt+KeyL", "native load should apply saved main window shortcut");
     assert(options.draftMainWindowShortcut.value === "control+alt+KeyL", "native load should sync main window shortcut draft");
     assert(options.backgroundBaseColor.value === "#aabbcc", "native load should apply saved background base color");

@@ -233,6 +233,12 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
         .ok_or_else(|| {
             "layout settings.showMissingLaunchTargetBadge must be a boolean".to_string()
         })?;
+    if object
+        .get("showCustomTitlebar")
+        .is_some_and(|value| !value.is_boolean())
+    {
+        return Err("layout settings.showCustomTitlebar must be a boolean".to_string());
+    }
     if let Some(value) = object.get("windowEffectMaterial") {
         match value.as_str() {
             Some("none" | "acrylic" | "mica" | "micaAlt" | "mica-alt") => {}
@@ -958,6 +964,21 @@ mod tests {
         let error = save_layout_to_path(&path, &invalid).expect_err("empty shortcut should fail");
 
         assert!(error.contains("mainWindowShortcut"));
+        assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_rejects_invalid_custom_titlebar_visibility() {
+        let dir = test_dir("invalid-custom-titlebar-visibility");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        invalid["settings"]["showCustomTitlebar"] = json!("yes");
+
+        let error = save_layout_to_path(&path, &invalid)
+            .expect_err("non-boolean custom titlebar visibility should fail");
+
+        assert!(error.contains("showCustomTitlebar"));
         assert!(!path.exists(), "invalid layout should not be written");
         fs::remove_dir_all(dir).expect("remove test directory");
     }

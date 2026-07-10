@@ -1,6 +1,6 @@
 <template>
   <div v-if="active" class="window-chrome-overlay">
-    <div class="window-chrome-bar" aria-label="窗口栏">
+    <div v-if="showTitlebar" class="window-chrome-bar" aria-label="窗口栏">
       <div
         class="window-chrome-drag-area"
         aria-label="拖动窗口"
@@ -23,6 +23,14 @@
         </button>
       </div>
     </div>
+    <div
+      v-else
+      class="window-chrome-drag-strip"
+      aria-label="拖动窗口"
+      @pointerdown.stop
+      @mousedown.left.stop="handleDragMouseDown"
+      @dblclick.left.stop="handleDragAreaDoubleClick"
+    />
     <div
       v-for="handle in resizeHandles"
       :key="handle.direction"
@@ -52,6 +60,10 @@ const props = defineProps({
   active: {
     type: Boolean,
     default: false,
+  },
+  showTitlebar: {
+    type: Boolean,
+    default: true,
   },
 });
 

@@ -78,6 +78,7 @@ import {
   normalizeBackgroundImagePath,
   normalizeBackgroundSource,
   normalizeLiveDesktopBackgroundSupport,
+  normalizeShowCustomTitlebar,
   normalizeWindowMode,
   normalizeWindowEffectAppearance,
   normalizeWindowEffectsSupport,
@@ -432,6 +433,7 @@ export function useLaunchpadNative(options) {
     );
     const nextWindowEffectAppearance = normalizeWindowEffectAppearance(settings.windowEffectAppearance);
     const nextWindowMode = normalizeWindowMode(settings.windowMode);
+    const nextShowCustomTitlebar = normalizeShowCustomTitlebar(settings.showCustomTitlebar);
     const nextMainWindowShortcut = normalizeMainWindowShortcut(settings.mainWindowShortcut);
     const nextBackgroundSource = normalizeBackgroundSource(settings.backgroundSource);
     const nextBackgroundEffect = normalizeBackgroundEffect(settings.backgroundEffect);
@@ -481,6 +483,8 @@ export function useLaunchpadNative(options) {
     options.draftWindowEffectAppearance.value = nextWindowEffectAppearance;
     options.windowMode.value = nextWindowMode;
     options.draftWindowMode.value = nextWindowMode;
+    options.showCustomTitlebar.value = nextShowCustomTitlebar;
+    options.draftShowCustomTitlebar.value = nextShowCustomTitlebar;
     options.mainWindowShortcut.value = nextMainWindowShortcut;
     options.draftMainWindowShortcut.value = nextMainWindowShortcut;
     if (options.mainWindowShortcutError) options.mainWindowShortcutError.value = "";
@@ -606,6 +610,7 @@ export function useLaunchpadNative(options) {
       windowEffectMaterial: options.windowEffectMaterial.value,
       windowEffectAppearance: options.windowEffectAppearance.value,
       windowMode: options.windowMode.value,
+      showCustomTitlebar: options.showCustomTitlebar.value,
       mainWindowShortcut: options.mainWindowShortcut.value,
     });
   }

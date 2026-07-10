@@ -1,7 +1,7 @@
 <template>
   <div
     ref="rootRef"
-    :class="cx('launchpad-root', 'launchpad-root-pixi-root-stage', 'launchpad-root-single-stage-folder-layer', isFolderLayerActive && 'launchpad-root-folder-layer-active', windowMode === 'windowed' && 'launchpad-root-windowed', isTextlessMode && 'launchpad-root-textless', isStartupMaskMounted && 'launchpad-root-startup-masked', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching', shouldUseLiveDesktopCssFallbackEffects && 'launchpad-root-live-desktop-css-fallback-effects')"
+    :class="cx('launchpad-root', 'launchpad-root-pixi-root-stage', 'launchpad-root-single-stage-folder-layer', isFolderLayerActive && 'launchpad-root-folder-layer-active', windowMode === 'windowed' && 'launchpad-root-windowed', isWindowTitlebarVisible && 'launchpad-root-windowed-titlebar', isTextlessMode && 'launchpad-root-textless', isStartupMaskMounted && 'launchpad-root-startup-masked', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching', shouldUseLiveDesktopCssFallbackEffects && 'launchpad-root-live-desktop-css-fallback-effects')"
     :style="launchpadRootStyle"
     @wheel="handleLaunchpadWheel"
     @pointerdown="handleLaunchpadSurfacePointerDown"
@@ -123,7 +123,7 @@
       :state="overlayState"
       @context-menu-action="handleIconContextMenuAction"
     />
-    <WindowChromeOverlay :active="isWindowChromeOverlayActive" />
+    <WindowChromeOverlay :active="isWindowChromeOverlayActive" :show-titlebar="isWindowTitlebarVisible" />
     <BackgroundDebugPanel
       v-if="isAcrylicDebugPanelEnabled"
       :state="settingsPanelState"
@@ -209,6 +209,7 @@ const {
   isEditMode,
   handleLaunchpadWheel,
   shellRef,
+  showCustomTitlebar,
   windowMode,
 } = shell;
 const {
@@ -377,6 +378,9 @@ const shouldUseLiveDesktopCssFallbackEffects = computed(() => Boolean(
   import.meta.env.DEV
     && isLiveDesktopExperimentActive.value
     && liveDesktopCssFallbackEffectsEnabled.value
+));
+const isWindowTitlebarVisible = computed(() => Boolean(
+  windowMode.value === "windowed" && showCustomTitlebar.value
 ));
 const isWindowChromeOverlayActive = computed(() => Boolean(
   windowMode.value === "windowed"

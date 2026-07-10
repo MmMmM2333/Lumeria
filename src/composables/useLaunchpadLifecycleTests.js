@@ -91,6 +91,7 @@ function createLifecycleOptions() {
       schedulePageGridMetrics: makeCall("schedulePageGridMetrics"),
       showNativeWindowAfterStartup: makeCall("showNativeWindowAfterStartup"),
       showMissingLaunchTargetBadge: ref(true),
+      showCustomTitlebar: ref(true),
       syncLiveDesktopBackgroundRuntime: makeCall("syncLiveDesktopBackgroundRuntime"),
       syncWindowsWallpaperRefreshTimer: makeCall("syncWindowsWallpaperRefreshTimer"),
       syncManagedAppState: makeCall("syncManagedAppState"),
@@ -144,6 +145,7 @@ export async function runLaunchpadLifecycleTests() {
   assert(watchers[4].source.includes(options.backgroundAcrylicDarkParams), "layout save watcher should track acrylic dark params");
   assert(watchers[4].source.includes(options.backgroundAcrylicLightParams), "layout save watcher should track acrylic light params");
   assert(watchers[4].source.includes(options.windowMode), "layout save watcher should track window mode");
+  assert(watchers[4].source.includes(options.showCustomTitlebar), "layout save watcher should track custom titlebar visibility");
   assert(watchers[5].callback === options.scheduleLaunchTargetStatusCheck, "launch target watcher should refresh path status");
   assert(watchers[6].callback === options.syncManagedAppState, "managed app watcher should sync app state");
   assert(watchers[7].callback === options.syncWindowsWallpaperRefreshTimer, "wallpaper source watcher should sync the wallpaper refresh timer");

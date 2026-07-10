@@ -24,6 +24,7 @@ import {
   DEFAULT_BACKGROUND_BASE_COLOR,
   DEFAULT_BACKGROUND_BASE_OPACITY,
   DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT,
+  DEFAULT_SHOW_CUSTOM_TITLEBAR,
   DEFAULT_WINDOW_MODE,
   FOLDER_ICON_SIZE_MODE_CUSTOM,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
@@ -50,6 +51,7 @@ import {
   normalizeBackgroundImagePath,
   normalizeBackgroundEffect,
   normalizeLiveDesktopBackgroundSupport,
+  normalizeShowCustomTitlebar,
   normalizeWindowEffectAppearance,
   normalizeWindowEffectMaterial,
   normalizeWindowMode,
@@ -110,6 +112,7 @@ function createSettingsConfig(overrides = {}) {
     draftWindowEffectMaterial: refValue(overrides.draftWindowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
     draftWindowEffectAppearance: refValue(overrides.draftWindowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_DARK),
     draftWindowMode: refValue(overrides.draftWindowMode ?? DEFAULT_WINDOW_MODE),
+    draftShowCustomTitlebar: refValue(overrides.draftShowCustomTitlebar ?? DEFAULT_SHOW_CUSTOM_TITLEBAR),
     draftMainWindowShortcut: refValue(Object.prototype.hasOwnProperty.call(overrides, "draftMainWindowShortcut") ? overrides.draftMainWindowShortcut : DEFAULT_MAIN_WINDOW_SHORTCUT),
     isTextlessMode: refValue(overrides.isTextlessMode ?? false),
     backgroundBaseColor: refValue(overrides.backgroundBaseColor ?? DEFAULT_BACKGROUND_BASE_COLOR),
@@ -131,6 +134,7 @@ function createSettingsConfig(overrides = {}) {
     windowEffectMaterial: refValue(overrides.windowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
     windowEffectAppearance: refValue(overrides.windowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_DARK),
     windowMode: refValue(overrides.windowMode ?? DEFAULT_WINDOW_MODE),
+    showCustomTitlebar: refValue(overrides.showCustomTitlebar ?? DEFAULT_SHOW_CUSTOM_TITLEBAR),
     mainWindowShortcut: refValue(Object.prototype.hasOwnProperty.call(overrides, "mainWindowShortcut") ? overrides.mainWindowShortcut : DEFAULT_MAIN_WINDOW_SHORTCUT),
     mainWindowShortcutError: refValue(""),
     isApplyingSettingsConfig: refValue(false),
@@ -233,6 +237,7 @@ function createSettingsConfig(overrides = {}) {
     draftWindowEffectAppearance: state.draftWindowEffectAppearance,
     draftWindowEffectMaterial: state.draftWindowEffectMaterial,
     draftWindowMode: state.draftWindowMode,
+    draftShowCustomTitlebar: state.draftShowCustomTitlebar,
     draftMainWindowShortcut: state.draftMainWindowShortcut,
     ensurePage: helpers.ensurePage,
     folderCols: state.folderCols,
@@ -275,6 +280,7 @@ function createSettingsConfig(overrides = {}) {
     windowEffectAppearance: state.windowEffectAppearance,
     windowEffectMaterial: state.windowEffectMaterial,
     windowMode: state.windowMode,
+    showCustomTitlebar: state.showCustomTitlebar,
     windowEffectsSupport: state.windowEffectsSupport,
     liveDesktopBackgroundSupport: state.liveDesktopBackgroundSupport,
     mainWindowShortcut: state.mainWindowShortcut,
@@ -346,6 +352,8 @@ export async function runLaunchpadSettingsConfigTests() {
   assert(normalizeWindowEffectAppearance("unknown") === WINDOW_EFFECT_APPEARANCE_DARK, "unknown window effect appearances should fall back to dark");
   assert(normalizeWindowMode(WINDOW_MODE_WINDOWED) === WINDOW_MODE_WINDOWED, "windowed mode should be preserved");
   assert(normalizeWindowMode("unknown") === DEFAULT_WINDOW_MODE, "unknown window modes should fall back to fullscreen");
+  assert(normalizeShowCustomTitlebar(false) === false, "disabled custom titlebar visibility should be preserved");
+  assert(normalizeShowCustomTitlebar(undefined) === DEFAULT_SHOW_CUSTOM_TITLEBAR, "missing custom titlebar visibility should use the compatible default");
   assert(
     resolveWindowEffectMaterialForSupport(WINDOW_EFFECT_MATERIAL_MICA, { supportsAcrylic: true, supportsMica: false, supportsMicaAlt: false }) === WINDOW_EFFECT_MATERIAL_ACRYLIC,
     "mica should fall back to acrylic when the system does not support mica"
@@ -410,6 +418,7 @@ export async function runLaunchpadSettingsConfigTests() {
     windowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
     windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
     windowMode: WINDOW_MODE_WINDOWED,
+    showCustomTitlebar: false,
     mainWindowShortcut: "control+alt+KeyL",
   });
   syncLaunchpadSettingsDraftsFromState(sync.state);
@@ -438,6 +447,7 @@ export async function runLaunchpadSettingsConfigTests() {
   assert(sync.state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "sync should reset window effect material draft from current settings");
   assert(sync.state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "sync should reset window effect appearance draft from current settings");
   assert(sync.state.draftWindowMode.value === WINDOW_MODE_WINDOWED, "sync should reset window mode draft from current settings");
+  assert(sync.state.draftShowCustomTitlebar.value === false, "sync should reset the custom titlebar draft from current settings");
   assert(sync.state.draftMainWindowShortcut.value === "control+alt+KeyL", "sync should reset main window shortcut draft from current settings");
 
   const draft = createSettingsConfig({
@@ -454,6 +464,8 @@ export async function runLaunchpadSettingsConfigTests() {
   assert(draft.state.draftCols.value === 10, "draft desktop columns should clamp to the maximum");
   assert(draft.state.draftFolderRows.value === 6, "draft folder rows should clamp to the maximum");
   assert(draft.state.draftFolderCols.value === 8, "draft folder columns should clamp to the maximum");
+  draft.config.setDraftShowCustomTitlebar(false);
+  assert(draft.state.draftShowCustomTitlebar.value === false, "custom titlebar draft should update from the settings switch");
 
   const folderIconMode = createSettingsConfig({
     draftFolderIconSizeMode: FOLDER_ICON_SIZE_MODE_GLOBAL,
@@ -608,6 +620,7 @@ export async function runLaunchpadSettingsConfigTests() {
     draftWindowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
     draftWindowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
     draftWindowMode: WINDOW_MODE_WINDOWED,
+    draftShowCustomTitlebar: false,
     pages: [makeItems(7)],
   });
   apply.config.applySettingsConfig();
@@ -636,6 +649,7 @@ export async function runLaunchpadSettingsConfigTests() {
   assert(apply.state.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "window effect material should apply from the draft value");
   assert(apply.state.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "window effect appearance should apply from the draft value");
   assert(apply.state.windowMode.value === WINDOW_MODE_WINDOWED, "window mode should apply from the draft value");
+  assert(apply.state.showCustomTitlebar.value === false, "custom titlebar visibility should apply from the draft value");
   assert(apply.state.mainWindowShortcut.value === DEFAULT_MAIN_WINDOW_SHORTCUT, "unchanged shortcuts should remain at the current value");
   assert(apply.calls.applyNativeMainWindowShortcut.length === 0, "unchanged shortcuts should not call native shortcut registration");
   assert(apply.calls.commitPages.length === 1, "applying settings should commit repacked pages");

@@ -36,6 +36,25 @@
           </span>
         </div>
 
+        <div :class="c.cx('settings-list-row', state.draftWindowMode.value !== c.WINDOW_MODE_WINDOWED && 'settings-row-disabled')">
+          <span class="settings-list-icon" aria-hidden="true">
+            <AppTitleIcon />
+          </span>
+          <span class="settings-list-copy">
+            <span class="settings-list-title">显示窗口标题栏</span>
+            <span class="settings-list-description">窗口化时显示标题和窗口控制按钮</span>
+          </span>
+          <span class="settings-list-control">
+            <fluent-switch
+              :checked.prop="state.draftShowCustomTitlebar.value"
+              :disabled.prop="state.draftWindowMode.value !== c.WINDOW_MODE_WINDOWED"
+              name="showCustomTitlebar"
+              aria-label="显示窗口标题栏"
+              @change="state.setDraftShowCustomTitlebar($event.target.checked)"
+            />
+          </span>
+        </div>
+
         <div class="settings-list-expandable">
           <button
             type="button"
@@ -772,6 +791,7 @@
 
 <script setup>
 import { computed, ref } from "vue";
+import AppTitleIcon from "~icons/fluent/app-title-24-regular";
 import BlurIcon from "~icons/fluent/blur-24-regular";
 import ChevronDownIcon from "~icons/fluent/chevron-down-20-regular";
 import ColorBackgroundIcon from "~icons/fluent/color-background-24-regular";

@@ -452,6 +452,7 @@ export function createLaunchpadDataHelpers(options) {
       ? state.windowEffectMaterial
       : "acrylic";
     const windowMode = state.windowMode === "windowed" ? "windowed" : "fullscreen";
+    const showCustomTitlebar = state.showCustomTitlebar !== false;
     const mainWindowShortcut = normalizeMainWindowShortcut(
       Object.prototype.hasOwnProperty.call(state, "mainWindowShortcut")
         ? state.mainWindowShortcut
@@ -495,6 +496,7 @@ export function createLaunchpadDataHelpers(options) {
         windowEffectMaterial,
         windowEffectAppearance: state.windowEffectAppearance === "light" ? "light" : "dark",
         windowMode,
+        showCustomTitlebar,
         mainWindowShortcut,
       },
     };

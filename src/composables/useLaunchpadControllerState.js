@@ -28,6 +28,7 @@ import {
   DEFAULT_BACKGROUND_IMAGE_OPACITY,
   DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY,
   DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT,
+  DEFAULT_SHOW_CUSTOM_TITLEBAR,
   DEFAULT_WINDOW_MODE,
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
@@ -115,6 +116,8 @@ export function useLaunchpadControllerState() {
   const draftWindowEffectAppearance = ref(WINDOW_EFFECT_APPEARANCE_DARK);
   const windowMode = ref(DEFAULT_WINDOW_MODE);
   const draftWindowMode = ref(DEFAULT_WINDOW_MODE);
+  const showCustomTitlebar = ref(DEFAULT_SHOW_CUSTOM_TITLEBAR);
+  const draftShowCustomTitlebar = ref(DEFAULT_SHOW_CUSTOM_TITLEBAR);
   const mainWindowShortcut = ref(DEFAULT_MAIN_WINDOW_SHORTCUT);
   const draftMainWindowShortcut = ref(DEFAULT_MAIN_WINDOW_SHORTCUT);
   const mainWindowShortcutError = ref("");
@@ -255,6 +258,7 @@ export function useLaunchpadControllerState() {
     draftIconSize,
     draftIsTextlessMode,
     draftRows,
+    draftShowCustomTitlebar,
     draftWindowMode,
     draftWindowEffectAppearance,
     draftWindowEffectMaterial,
@@ -298,6 +302,7 @@ export function useLaunchpadControllerState() {
     searchPageIndex,
     showMissingLaunchTargetBadge,
     searchRef,
+    showCustomTitlebar,
     clearFolderPageTurnRequest,
     commitFolderPageTurnRequest,
     requestFolderPageTurn,

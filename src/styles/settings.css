@@ -72,7 +72,10 @@
 
 .settings-overlay {
   position: fixed;
-  inset: 0;
+  top: var(--window-chrome-safe-top, 0px);
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 90;
   display: flex;
   align-items: center;
@@ -88,7 +91,7 @@
 .settings-panel {
   --settings-current-nav-width: var(--settings-nav-width);
   width: min(1040px, 94vw);
-  height: min(780px, calc(100vh - 48px));
+  height: min(780px, calc(100vh - var(--window-chrome-safe-top, 0px) - 48px));
   padding: 0;
   border-radius: 8px;
   background: var(--settings-panel-bg);
