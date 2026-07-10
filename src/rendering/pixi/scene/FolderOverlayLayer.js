@@ -1473,6 +1473,8 @@ export class FolderOverlayLayer extends Container {
       if (node?.destroyed) continue;
       killMotionOf(node, "x,y", { lane: "base", reason: FOLDER_RESIZE_LAYOUT_REASON });
     }
+    // A canceled spring can no longer fulfill its cached target, so unsnapped nodes must rebuild it.
+    this.folderIconLayoutTargets.clear();
     this.markRegisteredBoundsDirty();
   }
 

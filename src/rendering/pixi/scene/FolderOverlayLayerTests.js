@@ -543,6 +543,84 @@ export async function runFolderOverlayLayerTests() {
     motionRuntime.reset();
     const iconBoundsRegistry = createIconBoundsRegistry();
     const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const folderId = "folder-opening-subpixel-layout";
+    const initialState = makeFolderResizeState({
+      folderId,
+      folderOpenProgress: 0.52,
+      folderPanelStyle: {
+        "--folder-icon-cell-height": "119.2px",
+        "--folder-icon-size": "82.92px",
+        "--folder-row-gap": "15.55px",
+      },
+    });
+    layer.update(initialState);
+
+    const secondPageItem = folderResizePages[1][0];
+    const secondPageKey = `${folderId}:1:${secondPageItem.id}`;
+    const secondPageNode = layer.iconNodes.get(secondPageKey);
+    const initialTarget = layer.folderIconLayoutTargets.get(secondPageKey);
+    assert(secondPageNode && initialTarget, "subpixel opening layout setup should create the adjacent-page icon");
+    assert(secondPageNode.y > initialTarget.y, "adjacent-page icons should begin their opening layout spring below the target");
+
+    motionRuntime.step(0.05);
+    const interruptedY = secondPageNode.y;
+    assert(
+      interruptedY > initialTarget.y && interruptedY < initialTarget.y + 10,
+      "subpixel opening layout setup should interrupt an in-flight adjacent-page spring"
+    );
+
+    const measuredState = makeFolderResizeState({
+      folderId,
+      folderOpenProgress: 0.52,
+      folderPanelStyle: {
+        "--folder-icon-cell-height": "119.27px",
+        "--folder-icon-size": "82.97px",
+        "--folder-row-gap": "15.56px",
+      },
+    });
+    layer.update(measuredState);
+    const measuredTarget = layer.folderIconLayoutTargets.get(secondPageKey);
+
+    assert(layer.resizeLayoutSync?.mode === "opening", "subpixel viewport measurement should start opening layout sync");
+    assert(
+      Math.abs(measuredTarget.y - initialTarget.y) < 0.5,
+      "subpixel opening layout setup should keep the target delta below the layout-change epsilon"
+    );
+    assert(
+      getBaseAnimation(secondPageNode, "y"),
+      "canceling opening resize layout should restart the unsnapped adjacent-page spring"
+    );
+
+    settleResizeUpdate(layer, measuredState);
+    const settledTarget = layer.folderIconLayoutTargets.get(secondPageKey);
+    assert(
+      Math.abs(secondPageNode.y - settledTarget.y) < 0.5,
+      "adjacent-page icons should converge within the layout epsilon after subpixel opening sync"
+    );
+
+    const beforeDragY = secondPageNode.y;
+    const dragState = makeFolderResizeState({
+      ...measuredState,
+      dragMeta: {
+        item: secondPageItem,
+        source: { folderId, index: 0, pageIndex: 1, type: "folder" },
+      },
+    });
+    layer.update(dragState);
+    assert(
+      Math.abs(secondPageNode.y - beforeDragY) < 0.5,
+      "long-press handoff should not visibly move a settled adjacent-page icon"
+    );
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
     const largeIconItem = { id: "large-folder-icon", name: "Large Folder Icon", type: "app" };
     const state = makeFolderResizeState({
       folderGridStyle: {
