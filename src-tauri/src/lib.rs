@@ -59,6 +59,11 @@ const QUIT_REQUESTED_EVENT: &str = "launchpad-quit-requested";
 const MAIN_WINDOW_SHORTCUT_CAPTURED_EVENT: &str = "launchpad-main-window-shortcut-captured";
 const QUIT_FALLBACK_DELAY_MS: u64 = 15_000;
 const DEFAULT_MAIN_WINDOW_SHORTCUT: &str = "alt+space";
+
+#[cfg(all(target_os = "windows", debug_assertions))]
+const WEBVIEW2_REMOTE_DEBUGGING_ARGS: &str =
+    "--remote-debugging-address=127.0.0.1 --remote-debugging-port=9222";
+
 static QUIT_ACKNOWLEDGED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(all(target_os = "windows", debug_assertions))]
@@ -1015,6 +1020,30 @@ fn request_app_quit(app: &AppHandle) {
 }
 
 pub fn run() {
+    let context = tauri::generate_context!();
+
+    #[cfg(all(target_os = "windows", debug_assertions))]
+    let context = {
+        let mut context = context;
+        let main_window = context
+            .config_mut()
+            .app
+            .windows
+            .iter_mut()
+            .find(|window| window.label == "main")
+            .expect("main window configuration is required for WebView2 remote debugging");
+
+        let browser_args = main_window
+            .additional_browser_args
+            .get_or_insert_with(String::new);
+        if !browser_args.is_empty() {
+            browser_args.push(' ');
+        }
+        browser_args.push_str(WEBVIEW2_REMOTE_DEBUGGING_ARGS);
+
+        context
+    };
+
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::new().build())
         .manage(AppState::default())
@@ -1089,7 +1118,7 @@ pub fn run() {
             set_main_window_shortcut_capture_active,
             set_main_window_shadow_enabled
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri app");
 }
 
