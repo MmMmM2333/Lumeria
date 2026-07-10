@@ -442,7 +442,7 @@ export function useLaunchpadSettingsConfig(options) {
       options.draftBackgroundSource.value = BACKGROUND_SOURCE_CUSTOM_IMAGE;
       options.draftBackgroundEffect.value = BACKGROUND_EFFECT_DIMMED;
     } catch (error) {
-      console.error("Failed to choose LaunchPad background image", error);
+      console.error("Failed to choose Lumeria background image", error);
     } finally {
       options.isChoosingBackgroundImage.value = false;
     }

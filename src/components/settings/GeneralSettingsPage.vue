@@ -8,7 +8,7 @@
           </span>
           <span class="settings-list-copy">
             <span class="settings-list-title">开机自启</span>
-            <span class="settings-list-description">登录 Windows 后自动打开 LaunchPad</span>
+            <span class="settings-list-description">登录 Windows 后自动打开 Lumeria</span>
           </span>
           <span class="settings-list-control">
             <fluent-switch :disabled.prop="true" aria-label="开机自启" />

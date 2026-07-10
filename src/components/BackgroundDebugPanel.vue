@@ -270,7 +270,7 @@
 
       <div v-else-if="activePanel === 'notice'" class="background-debug-section">
         <div class="background-debug-detail">
-          生成布局保存、载入和恢复通知，用来检查 LaunchPad 右下角 notice 的 Fluent 卡片样式。
+          生成布局保存、载入和恢复通知，用来检查 Lumeria 右下角 notice 的 Fluent 卡片样式。
         </div>
 
         <dl class="background-debug-status-grid">

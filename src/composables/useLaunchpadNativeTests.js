@@ -1661,7 +1661,7 @@ export async function runLaunchpadNativeTests() {
         kind: "targetNotFound",
         title: "无法打开应用",
         message: "无法打开“Missing App”。\n\n找不到启动文件。",
-        suggestion: "请在 LaunchPad 中编辑此应用的启动路径。",
+        suggestion: "请在 Lumeria 中编辑此应用的启动路径。",
         detail: "missing",
       };
     }

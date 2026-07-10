@@ -290,7 +290,7 @@ const mainWindowShortcutLabel = computed(() => (
 ));
 const mainWindowShortcutHint = computed(() => {
   if (props.state.mainWindowShortcutError.value) return props.state.mainWindowShortcutError.value;
-  return isRecordingMainWindowShortcut.value ? "按 Esc 取消录制" : "快速显示或隐藏 LaunchPad";
+  return isRecordingMainWindowShortcut.value ? "按 Esc 取消录制" : "快速显示或隐藏 Lumeria";
 });
 const backgroundImageLayoutOptions = [
   { layout: BACKGROUND_IMAGE_LAYOUT_FILL, label: "填充" },

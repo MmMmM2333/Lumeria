@@ -20,7 +20,7 @@ commands.
 - `reveal_main_window(openSequence?: number | null) -> void`; uncloaks the native main window after the frontend has painted the opening frame. The optional sequence prevents stale reveal calls from affecting a newer open cycle.
 - `set_main_window_effects_enabled(enabled: boolean, openSequence?: number | null) -> void`
 - `set_main_window_mode(mode: "fullscreen" | "windowed") -> "fullscreen" | "windowed"`; the native window remains frameless in both modes.
-- `set_main_window_shortcut(shortcut: string | null) -> string | null`; registers the global shortcut used to show or hide LaunchPad, or unregisters it when `null`. Registration failure means the shortcut is occupied or invalid and the previous shortcut remains active.
+- `set_main_window_shortcut(shortcut: string | null) -> string | null`; registers the global shortcut used to show or hide Lumeria, or unregisters it when `null`. Registration failure means the shortcut is occupied or invalid and the previous shortcut remains active.
 - `set_main_window_shortcut_capture_active(active: boolean) -> void`; suppresses the registered main-window shortcut action while the renderer is recording a replacement shortcut.
 - `set_main_window_shadow_enabled(enabled: boolean) -> void`; close animations disable the native window shadow and the next open restores it.
 

@@ -581,7 +581,7 @@ function releaseStartupMask() {
 
 function releaseStartupMaskAfterTimeout() {
   if (!isStartupBackgroundReady.value) {
-    console.warn("LaunchPad startup mask timed out before the background was fully ready");
+    console.warn("Lumeria startup mask timed out before the background was fully ready");
   }
   releaseStartupMask();
 }

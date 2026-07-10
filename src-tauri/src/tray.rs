@@ -940,7 +940,7 @@ pub(crate) fn release_main_window_topmost(app: &AppHandle) {
 fn bump_main_window_z_order_for_open(window: &WebviewWindow) -> Result<(), String> {
     // Windows can place the taskbar above a borderless transparent fullscreen
     // window when focus is restored from another app. Keep topmost only while
-    // LaunchPad is foreground; Focused(false) and hide/windowed paths release it.
+    // Lumeria is foreground; Focused(false) and hide/windowed paths release it.
     set_main_window_topmost(window, true)
 }
 
@@ -955,7 +955,7 @@ fn is_main_window_foreground(window: &WebviewWindow) -> bool {
     };
     // Tauri focus state can lag after native fullscreen/topmost transitions.
     // Use the real Win32 foreground window so shortcut-triggered close handling
-    // only runs when LaunchPad, not another app, is actually active.
+    // only runs when Lumeria, not another app, is actually active.
     let foreground = unsafe { GetForegroundWindow() };
     if foreground.0.is_null() {
         return false;
@@ -1057,7 +1057,7 @@ pub(crate) fn open_settings(app: &AppHandle) {
 
 pub(crate) fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let menu = MenuBuilder::new(app)
-        .text("show", "显示 LaunchPad")
+        .text("show", "显示 Lumeria")
         .text("settings", "设置")
         .separator()
         .text("quit", "退出")
@@ -1065,7 +1065,7 @@ pub(crate) fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error:
     let mut builder = TrayIconBuilder::new()
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .tooltip("LaunchPad");
+        .tooltip("Lumeria");
 
     if let Some(icon) = app.default_window_icon().cloned() {
         builder = builder.icon(icon);

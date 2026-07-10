@@ -374,7 +374,7 @@ fn quit_app(app: AppHandle) {
 #[tauri::command]
 fn confirm_quit_after_save(app: AppHandle, saved: bool) {
     if !saved {
-        log::warn!(target: "launchpad", "Quitting LaunchPad after layout save failed or was skipped");
+        log::warn!(target: "launchpad", "Quitting Lumeria after layout save failed or was skipped");
     }
     QUIT_ACKNOWLEDGED.store(true, Ordering::Relaxed);
     app.exit(0);
@@ -590,15 +590,15 @@ impl LaunchFailure {
             ),
             LaunchFailureKind::BrokenShortcut => (
                 "这个快捷方式可能已损坏。",
-                "请在 LaunchPad 中重新选择快捷方式或目标程序。",
+                "请在 Lumeria 中重新选择快捷方式或目标程序。",
             ),
             LaunchFailureKind::LayoutReadFailed => (
-                "LaunchPad 无法读取此应用的保存信息。",
+                "Lumeria 无法读取此应用的保存信息。",
                 "请重新扫描应用，或重新添加此应用。",
             ),
             LaunchFailureKind::MissingLaunchInfo => (
                 "启动路径不完整，无法打开。",
-                "请在 LaunchPad 中重新选择启动文件。",
+                "请在 Lumeria 中重新选择启动文件。",
             ),
             LaunchFailureKind::NoAssociation => (
                 "系统没有可用于打开此目标的默认应用。",
@@ -606,7 +606,7 @@ impl LaunchFailure {
             ),
             LaunchFailureKind::TargetNotFound => (
                 "找不到启动文件。它可能已被移动、删除或卸载。",
-                "请在 LaunchPad 中编辑此应用的启动路径。",
+                "请在 Lumeria 中编辑此应用的启动路径。",
             ),
             LaunchFailureKind::UnsupportedTarget => {
                 ("暂不支持这种启动类型。", "请改用本地程序、快捷方式或链接。")
@@ -807,10 +807,10 @@ fn check_launch_target_status(target: &models::LaunchTarget) -> String {
 fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     setup_tray(app)?;
     if let Err(error) = apply_main_window_mode(app.handle()) {
-        log::warn!(target: "launchpad", "Failed to apply LaunchPad window mode: {error}");
+        log::warn!(target: "launchpad", "Failed to apply Lumeria window mode: {error}");
     }
     if let Err(error) = disable_main_window_transitions(app.handle()) {
-        log::warn!(target: "launchpad", "Failed to disable LaunchPad window transitions: {error}");
+        log::warn!(target: "launchpad", "Failed to disable Lumeria window transitions: {error}");
     }
     setup_global_shortcuts(app);
     Ok(())
@@ -820,23 +820,23 @@ fn setup_global_shortcuts(app: &mut tauri::App) {
     let plugin = tauri_plugin_global_shortcut::Builder::new().build();
 
     if let Err(error) = app.handle().plugin(plugin) {
-        log::error!(target: "shortcut", "Failed to install LaunchPad shortcut plugin: {error}");
+        log::error!(target: "shortcut", "Failed to install Lumeria shortcut plugin: {error}");
         return;
     }
 
     match load_initial_main_window_shortcut(app.handle()) {
         Ok(Some(shortcut)) => {
             if let Err(error) = set_main_window_shortcut_internal(app.handle(), Some(&shortcut)) {
-                log::warn!(target: "shortcut", "Failed to register configured LaunchPad shortcut: {error}");
+                log::warn!(target: "shortcut", "Failed to register configured Lumeria shortcut: {error}");
             }
         }
         Ok(None) => {}
         Err(error) => {
-            log::warn!(target: "shortcut", "Failed to load configured LaunchPad shortcut: {error}");
+            log::warn!(target: "shortcut", "Failed to load configured Lumeria shortcut: {error}");
             if let Err(error) =
                 set_main_window_shortcut_internal(app.handle(), Some(DEFAULT_MAIN_WINDOW_SHORTCUT))
             {
-                log::error!(target: "shortcut", "Failed to register default LaunchPad shortcut: {error}");
+                log::error!(target: "shortcut", "Failed to register default Lumeria shortcut: {error}");
             }
         }
     }
@@ -877,21 +877,21 @@ fn clear_main_window_shortcut_internal(app: &AppHandle) -> Result<Option<String>
     let previous_shortcut = state
         .main_window_shortcut
         .lock()
-        .map_err(|_| "Failed to lock LaunchPad shortcut state".to_string())?
+        .map_err(|_| "Failed to lock Lumeria shortcut state".to_string())?
         .clone();
 
     if let Some(previous_shortcut) = previous_shortcut {
         app.global_shortcut()
             .unregister(previous_shortcut.as_str())
             .map_err(|error| {
-                format!("Failed to unregister LaunchPad shortcut {previous_shortcut}: {error}")
+                format!("Failed to unregister Lumeria shortcut {previous_shortcut}: {error}")
             })?;
     }
 
     let mut registered_shortcut = state
         .main_window_shortcut
         .lock()
-        .map_err(|_| "Failed to lock LaunchPad shortcut state".to_string())?;
+        .map_err(|_| "Failed to lock Lumeria shortcut state".to_string())?;
     *registered_shortcut = None;
     Ok(None)
 }
@@ -908,7 +908,7 @@ fn set_main_window_shortcut_internal(
     let previous_shortcut = state
         .main_window_shortcut
         .lock()
-        .map_err(|_| "Failed to lock LaunchPad shortcut state".to_string())?
+        .map_err(|_| "Failed to lock Lumeria shortcut state".to_string())?
         .clone();
 
     if previous_shortcut.as_deref() == Some(next_shortcut.as_str()) {
@@ -928,7 +928,7 @@ fn set_main_window_shortcut_internal(
                     {
                         log::warn!(
                             target: "shortcut",
-                            "Failed to emit captured LaunchPad shortcut event: {error}"
+                            "Failed to emit captured Lumeria shortcut event: {error}"
                         );
                     }
                     return;
@@ -936,16 +936,14 @@ fn set_main_window_shortcut_internal(
                 trigger_main_window_shortcut(app);
             }
         })
-        .map_err(|error| {
-            format!("Failed to register LaunchPad shortcut {next_shortcut}: {error}")
-        })?;
+        .map_err(|error| format!("Failed to register Lumeria shortcut {next_shortcut}: {error}"))?;
 
     if let Some(previous_shortcut) = previous_shortcut {
         if previous_shortcut != next_shortcut {
             if let Err(error) = app.global_shortcut().unregister(previous_shortcut.as_str()) {
                 log::warn!(
                     target: "shortcut",
-                    "Failed to unregister previous LaunchPad shortcut {previous_shortcut}: {error}"
+                    "Failed to unregister previous Lumeria shortcut {previous_shortcut}: {error}"
                 );
             }
         }
@@ -954,7 +952,7 @@ fn set_main_window_shortcut_internal(
     let mut registered_shortcut = state
         .main_window_shortcut
         .lock()
-        .map_err(|_| "Failed to lock LaunchPad shortcut state".to_string())?;
+        .map_err(|_| "Failed to lock Lumeria shortcut state".to_string())?;
     *registered_shortcut = Some(next_shortcut.clone());
     Ok(Some(next_shortcut))
 }
@@ -968,7 +966,7 @@ fn request_app_quit(app: &AppHandle) {
     thread::spawn(move || {
         thread::sleep(Duration::from_millis(QUIT_FALLBACK_DELAY_MS));
         if !QUIT_ACKNOWLEDGED.load(Ordering::Relaxed) {
-            log::error!(target: "launchpad", "LaunchPad quit request timed out; forcing exit");
+            log::error!(target: "launchpad", "Lumeria quit request timed out; forcing exit");
             app.exit(0);
         }
     });

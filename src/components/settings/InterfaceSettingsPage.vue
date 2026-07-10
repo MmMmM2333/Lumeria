@@ -14,7 +14,7 @@
           </span>
           <span class="settings-list-copy">
             <span class="settings-list-title">窗口模式</span>
-            <span class="settings-list-description">选择打开 LaunchPad 时的窗口形态</span>
+            <span class="settings-list-description">选择打开 Lumeria 时的窗口形态</span>
           </span>
           <span class="settings-list-control">
             <span class="settings-segmented-control" aria-label="窗口模式">

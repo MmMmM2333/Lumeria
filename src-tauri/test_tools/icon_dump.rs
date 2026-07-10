@@ -139,7 +139,7 @@ fn run() -> Result<(), String> {
     println!("output: {}", output_dir.display());
 
     let production_path = output_dir.join(format!("{stem}_production.png"));
-    match launchpad_lib::debug_extract_icon_png(&source_path, &production_path) {
+    match lumeria_lib::debug_extract_icon_png(&source_path, &production_path) {
         Ok(()) => println!("production -> {}", production_path.display()),
         Err(error) => println!("production failed: {error}"),
     }
