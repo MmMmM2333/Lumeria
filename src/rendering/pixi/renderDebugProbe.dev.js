@@ -1,9 +1,13 @@
 import { getPixiIconTextureSource } from "../../domain/iconSource.js";
 import {
-  hashDebugBytes as hashBytes,
   hashDebugSample as hashSample,
   makeDebugSourceSnapshot,
 } from "./renderDebugFingerprint.js";
+import {
+  captureFolderFramebufferSample,
+  compareFolderPixelSnapshots,
+  makeFolderPixelSlotKey,
+} from "./folderFramebufferSampler.dev.js";
 import { getFolderPreviewMaskRect } from "./nodes/folderThumbDrawing.js";
 import { getFolderPreviewMotionPlan } from "./nodes/folderThumbPreviewMotion.js";
 import { getFolderThumbMetrics } from "./nodes/folderThumbMetrics.js";
@@ -12,9 +16,10 @@ import {
   summarizePixiBatchBindingCapture,
 } from "./pixiBatchBindingProbe.dev.js";
 
-const REPORT_VERSION = 1;
+const REPORT_VERSION = 2;
 const DEFAULT_MAX_EVENTS = 240;
 const DEFAULT_MAX_SESSIONS = 4;
+const LEGACY_RENDER_PROBE_OPTIONS = ["capturePixels", "filter", "folderId", "itemId", "itemName"];
 const MAX_PLAN_KEYS = 24;
 
 function readNumber(value, fallback = 0) {
@@ -276,78 +281,77 @@ function matchesText(value, expected) {
   return String(value || "").toLocaleLowerCase().includes(String(expected).toLocaleLowerCase());
 }
 
-function matchesItemFilter(item, filter = {}) {
-  if (filter.itemId && item?.id !== filter.itemId) return false;
-  if (filter.itemName && !matchesText(item?.name || item?.title, filter.itemName)) return false;
+function matchesItemTarget(item, target) {
+  if (target === "all-folders") return true;
+  if (target?.itemId && item?.id !== target.itemId) return false;
+  if (target?.itemName && !matchesText(item?.name || item?.title, target.itemName)) return false;
+  if (target?.folderId) return false;
   return true;
 }
 
-function matchesFolderFilter(folder, planItems, filter = {}) {
-  if (filter.folderId && folder?.id !== filter.folderId) return false;
-  if (!filter.itemId && !filter.itemName) return true;
-  if (matchesItemFilter(folder, filter)) return true;
-  return planItems.some((item) => matchesItemFilter(item, filter));
+function matchesFolderTarget(folder, planItems, target) {
+  if (target === "all-folders") return true;
+  if (target?.folderId) return folder?.id === target.folderId;
+  if (matchesItemTarget(folder, target)) return true;
+  return planItems.some((item) => matchesItemTarget(item, target));
 }
 
-function makePixelSnapshot(app, clientBounds) {
-  const gl = app?.renderer?.gl;
-  const canvas = app?.canvas;
-  if (!gl?.readPixels) return { error: "WebGL readPixels is unavailable" };
-  if (!canvas?.getBoundingClientRect) return { error: "Pixi canvas bounds are unavailable" };
-  if (!clientBounds || clientBounds.error) {
-    return { error: clientBounds?.error || "Folder preview child client bounds are unavailable" };
-  }
-  const canvasRect = canvas.getBoundingClientRect();
-  if (!canvasRect?.width || !canvasRect?.height || !canvas.width || !canvas.height) {
-    return { error: "Pixi canvas has no readable framebuffer dimensions" };
-  }
-  const scaleX = canvas.width / canvasRect.width;
-  const scaleY = canvas.height / canvasRect.height;
-  const rawX = Math.floor((clientBounds.left - canvasRect.left) * scaleX);
-  const rawWidth = Math.ceil(clientBounds.width * scaleX);
-  const rawHeight = Math.ceil(clientBounds.height * scaleY);
-  const rawY = Math.floor(canvas.height - ((clientBounds.top - canvasRect.top) * scaleY) - rawHeight);
-  const x = Math.max(0, Math.min(canvas.width - 1, rawX));
-  const y = Math.max(0, Math.min(canvas.height - 1, rawY));
-  const width = Math.max(1, Math.min(128, canvas.width - x, rawWidth));
-  const height = Math.max(1, Math.min(128, canvas.height - y, rawHeight));
-  try {
-    const pixels = new Uint8Array(width * height * 4);
-    gl.readPixels(x, y, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-    let alphaNonZero = 0;
-    let rgbNonZero = 0;
-    let alphaSum = 0;
-    for (let index = 0; index < pixels.length; index += 4) {
-      if (pixels[index] || pixels[index + 1] || pixels[index + 2]) rgbNonZero += 1;
-      if (pixels[index + 3]) alphaNonZero += 1;
-      alphaSum += pixels[index + 3];
-    }
-    return {
-      alphaNonZero,
-      alphaSum,
-      hash: hashBytes(pixels),
-      height,
-      rgbNonZero,
-      width,
-      x,
-      y,
-    };
-  } catch (error) {
-    return { error: String(error?.message || error), height, width, x, y };
-  }
+function makeChildSceneSignature(result, mask, folderNode) {
+  const values = [
+    result.itemId,
+    result.slot,
+    result.suppressed,
+    result.intersectsMask,
+    result.display?.visible,
+    result.display?.renderable,
+    result.display?.worldAlpha,
+    result.sprite?.visible,
+    result.sprite?.renderable,
+    result.sprite?.worldAlpha,
+    result.emoji?.display?.visible,
+    result.emoji?.display?.renderable,
+    result.emoji?.display?.worldAlpha,
+    result.emoji?.text,
+    result.source?.fingerprint,
+    result.texture?.textureUid,
+    result.texture?.sourceUid,
+    result.texture?.destroyed,
+    result.texture?.sourceDestroyed,
+    result.texture?.sourcePixelWidth,
+    result.texture?.sourcePixelHeight,
+    result.batch?.plannedSourceUid,
+    result.batch?.actualBoundSourceUid,
+    result.batch?.actualSourceMatches,
+    result.batch?.glHandleMatchesPlanned,
+    result.clientBounds?.left,
+    result.clientBounds?.top,
+    result.clientBounds?.width,
+    result.clientBounds?.height,
+    mask?.clipBounds?.left,
+    mask?.clipBounds?.top,
+    mask?.clipBounds?.width,
+    mask?.clipBounds?.height,
+    mask?.assigned,
+    mask?.effectPipes?.join(","),
+    mask?.display?.visible,
+    mask?.display?.renderable,
+    mask?.display?.worldAlpha,
+    folderNode?.state?.dragging === true,
+    folderNode?.state?.ghosted === true,
+    folderNode?.state?.opening === true,
+  ];
+  return hashSample(values.join("|"));
 }
 
 function makeChildSnapshot({
-  app,
   batchBindings,
-  capturePixels,
   child,
   childNode,
-  focused,
   folderNode,
   index,
   mask,
   renderer,
+  targeted,
 }) {
   const sprite = childNode?.children?.[0] || null;
   const emoji = childNode?.children?.[1] || null;
@@ -369,8 +373,7 @@ function makeChildSnapshot({
     ? rectsIntersect(clientBounds, mask.clipBounds)
     : rectsIntersect(childBounds, mask?.bounds);
   const pixelEligible = Boolean(
-    capturePixels &&
-    focused &&
+    targeted &&
     !suppressed &&
     folderVisible &&
     isDisplayNodeVisible(childNode) &&
@@ -385,20 +388,21 @@ function makeChildSnapshot({
       display: makeDisplaySnapshot(emoji),
       text: emoji?.text == null ? null : String(emoji.text),
     },
-    focused,
     intersectsMask,
     itemId: child?.id || null,
     itemName: child?.name || child?.title || null,
     itemType: child?.type || null,
-    pixel: pixelEligible ? makePixelSnapshot(app, clientBounds) : null,
+    pixel: null,
     pixelEligible,
     slot: index,
     source: makeSourceSnapshot(child),
     sprite: makeDisplaySnapshot(sprite),
     suppressed,
+    targeted,
     texture,
     violations: [],
   };
+  result.sceneSignature = makeChildSceneSignature(result, mask, folderNode);
 
   if (!childNode) {
     result.violations.push(makeViolation("preview-child-missing", folderNode?.item?.id, child?.id, index));
@@ -465,7 +469,7 @@ function makeChildSnapshot({
   return result;
 }
 
-function makeFolderSnapshots({ app, batchBindings, layer, filter, capturePixels }) {
+function makeFolderSnapshots({ app, batchBindings, layer, target }) {
   const folders = [];
   const violations = [];
   const renderer = app?.renderer || null;
@@ -474,7 +478,7 @@ function makeFolderSnapshots({ app, batchBindings, layer, filter, capturePixels 
     if (folder?.type !== "folder") continue;
     const metrics = getFolderThumbMetrics(folderNode.iconSize || 64);
     const plan = getFolderPreviewMotionPlan(folder, folderNode.state?.folderPreviewPageSize, metrics);
-    if (!matchesFolderFilter(folder, plan.items, filter)) continue;
+    if (!matchesFolderTarget(folder, plan.items, target)) continue;
     const mask = makeMaskSnapshot(folderNode, metrics);
     if (mask.readErrors.length || mask.bounds?.error || mask.clipBounds?.error) {
       violations.push(makeViolation("folder-mask-read-error", folder.id, null, null, {
@@ -484,23 +488,22 @@ function makeFolderSnapshots({ app, batchBindings, layer, filter, capturePixels 
       }));
     }
     const children = [];
-    const hasItemFilter = Boolean(filter.itemId || filter.itemName);
-    const focusFolderChildren = Boolean(filter.folderId) || (hasItemFilter && matchesItemFilter(folder, filter));
+    const targetFolderChildren = target === "all-folders" ||
+      (target?.folderId && folder.id === target.folderId) ||
+      (!target?.folderId && matchesItemTarget(folder, target));
     for (let index = 0; index < plan.items.length; index += 1) {
       const child = plan.items[index];
       const childNode = folderNode.folderChildNodes?.[index] || null;
-      const focused = focusFolderChildren || (hasItemFilter && matchesItemFilter(child, filter));
+      const targeted = targetFolderChildren || matchesItemTarget(child, target);
       const childSnapshot = makeChildSnapshot({
-        app,
         batchBindings,
-        capturePixels,
         child,
         childNode,
-        focused,
         folderNode,
         index,
         mask,
         renderer,
+        targeted,
       });
       children.push(childSnapshot);
       violations.push(...childSnapshot.violations);
@@ -521,6 +524,63 @@ function makeFolderSnapshots({ app, batchBindings, layer, filter, capturePixels 
     });
   }
   return { folders, violations };
+}
+
+function collectPixelSlots(folderResult) {
+  const slots = [];
+  for (const folder of folderResult.folders) {
+    for (const child of folder.children) {
+      if (!child.pixelEligible) continue;
+      slots.push({
+        clientBounds: child.clientBounds,
+        folderId: folder.folderId,
+        folderName: folder.folderName,
+        itemId: child.itemId,
+        itemName: child.itemName,
+        sceneSignature: child.sceneSignature,
+        slot: child.slot,
+      });
+    }
+  }
+  return slots;
+}
+
+function attachFramebufferPixels(folderResult, framebufferSample) {
+  const bySlot = new Map((framebufferSample?.slots || []).map((slot) => [
+    makeFolderPixelSlotKey(slot),
+    slot,
+  ]));
+  for (const folder of folderResult.folders) {
+    for (const child of folder.children) {
+      const slot = bySlot.get(makeFolderPixelSlotKey({ folderId: folder.folderId, itemId: child.itemId, slot: child.slot }));
+      if (!slot) continue;
+      const {
+        folderId: _folderId,
+        folderName: _folderName,
+        itemId: _itemId,
+        itemName: _itemName,
+        sceneSignature: _sceneSignature,
+        slot: _slot,
+        ...pixel
+      } = slot;
+      child.pixel = pixel;
+    }
+  }
+}
+
+function summarizeFramebufferSample(sample) {
+  if (!sample) return null;
+  return {
+    available: sample.available === true,
+    captureDurationMs: sample.captureDurationMs ?? 0,
+    detail: clonePlain(sample.detail),
+    readPixelsCallCount: sample.readPixelsCallCount ?? 0,
+    reason: sample.reason || null,
+    region: clonePlain(sample.region),
+    skippedSlots: clonePlain(sample.skippedSlots || []),
+    slotCount: sample.slots?.length || 0,
+    warnings: clonePlain(sample.warnings || []),
+  };
 }
 
 function makeStencilSnapshot(app) {
@@ -687,17 +747,36 @@ export function makeDesktopPlanDebugDelta(previousPlan, nextPlan) {
 }
 
 export function capturePixiRenderSnapshot(options = {}) {
+  assertNoLegacyRenderProbeOptions(options);
   const { app, layer } = options;
-  const filter = options.filter && typeof options.filter === "object" ? options.filter : {};
+  const pixels = normalizePixels(options.pixels);
+  const target = normalizeTarget(options.target);
   const stencil = makeStencilSnapshot(app);
   const folderResult = makeFolderSnapshots({
     app,
     batchBindings: options.batchBindings,
-    capturePixels: options.capturePixels === true,
-    filter,
     layer,
+    target,
   });
   const violations = [...folderResult.violations];
+  let framebuffer = null;
+  if (pixels === "phase-diff") {
+    const framebufferSample = captureFolderFramebufferSample({
+      app,
+      maxReadBytes: options.maxPixelReadBytes,
+      now: options.now,
+      slots: collectPixelSlots(folderResult),
+    });
+    attachFramebufferPixels(folderResult, framebufferSample);
+    framebuffer = summarizeFramebufferSample(framebufferSample);
+    if (framebufferSample.available !== true) {
+      violations.push(makeViolation("framebuffer-capture-unavailable", null, null, null, {
+        detail: framebufferSample.detail,
+        reason: framebufferSample.reason,
+        region: framebufferSample.region,
+      }));
+    }
+  }
   if (stencil.available === false) {
     violations.push(makeViolation("stencil-instructions-unavailable", null, null, null, {
       error: stencil.error,
@@ -739,9 +818,10 @@ export function capturePixiRenderSnapshot(options = {}) {
     : options.textureCacheSnapshot || null;
   return {
     batchBindingCapture,
-    filter: clonePlain(filter),
+    framebuffer,
     folders: folderResult.folders,
     phase: options.phase || "manual",
+    pixels,
     plan: layer?.lastDesktopRenderPlan ? {
       entryCount: layer.lastDesktopRenderPlan.entries?.length || 0,
       signature: {
@@ -752,24 +832,51 @@ export function capturePixiRenderSnapshot(options = {}) {
     reasons: Array.from(options.reasons || []),
     renderer: makeRendererSnapshot(app),
     stencil,
+    target: clonePlain(target),
     textureCache,
     version: REPORT_VERSION,
     violations,
   };
 }
 
+function assertNoLegacyRenderProbeOptions(options) {
+  const present = LEGACY_RENDER_PROBE_OPTIONS.filter((key) => Object.prototype.hasOwnProperty.call(options || {}, key));
+  if (present.length) {
+    throw new TypeError(`Render probe options ${present.join(", ")} were removed; use target and pixels`);
+  }
+}
+
+function normalizeTarget(target) {
+  if (target == null || target === "all-folders") return "all-folders";
+  if (!target || typeof target !== "object" || Array.isArray(target)) {
+    throw new TypeError('Render probe target must be "all-folders" or one target object');
+  }
+  const entries = ["folderId", "itemId", "itemName"]
+    .filter((key) => Object.prototype.hasOwnProperty.call(target, key) && target[key] != null);
+  if (entries.length !== 1) {
+    throw new TypeError("Render probe target must contain exactly one of folderId, itemId, or itemName");
+  }
+  const key = entries[0];
+  const value = String(target[key]).trim();
+  if (!value) throw new TypeError(`Render probe target ${key} must not be empty`);
+  return { [key]: value };
+}
+
+function normalizePixels(pixels) {
+  if (pixels == null || pixels === "off") return "off";
+  if (pixels === "phase-diff") return pixels;
+  throw new TypeError('Render probe pixels must be "off" or "phase-diff"');
+}
+
 function normalizeConfig(config = {}) {
+  assertNoLegacyRenderProbeOptions(config);
   return {
     autoFreeze: config.autoFreeze !== false,
-    capturePixels: config.capturePixels === true,
     enabled: config.enabled !== false,
-    filter: {
-      folderId: config.folderId || config.filter?.folderId || null,
-      itemId: config.itemId || config.filter?.itemId || null,
-      itemName: config.itemName || config.filter?.itemName || null,
-    },
     maxEvents: clampInteger(config.maxEvents, DEFAULT_MAX_EVENTS, 20, 2000),
     maxSessions: clampInteger(config.maxSessions, DEFAULT_MAX_SESSIONS, 1, 20),
+    pixels: normalizePixels(config.pixels),
+    target: normalizeTarget(config.target),
   };
 }
 
@@ -814,10 +921,10 @@ export function createPixiRenderProbe(options = {}) {
     try {
       return capture({
         batchBindings: captureOptions.batchBindings || null,
-        capturePixels: captureOptions.capturePixels === true,
-        filter: config.filter,
         phase,
+        pixels: normalizePixels(captureOptions.pixels),
         reasons: Array.from(reasons || []),
+        target: config.target,
       });
     } catch (error) {
       return {
@@ -870,6 +977,7 @@ export function createPixiRenderProbe(options = {}) {
       frozenEvents: null,
       frozenReason: null,
       id: `drag-render-${++sessionSequence}`,
+      pixelComparison: null,
       pointerDown: pointerPrelude?.pointerDown || null,
       source: drag.source,
       startedAt,
@@ -911,7 +1019,7 @@ export function createPixiRenderProbe(options = {}) {
     pointerPrelude = {
       capture: {
         phase: "pointerdown",
-        snapshot: captureCurrent("pointerdown", [], { capturePixels: false }),
+        snapshot: captureCurrent("pointerdown", [], { pixels: "off" }),
         timeMs: timestamp(),
       },
       event,
@@ -966,10 +1074,27 @@ export function createPixiRenderProbe(options = {}) {
     if (token.phase) {
       captureEntry = storeCapture(token.phase, token.reasons, {
         batchBindings,
-        capturePixels: config.capturePixels && token.phase !== "pointerdown",
+        pixels: config.pixels,
       });
     }
-    if (token.phase === "drag-end") finishSession("complete");
+    if (token.phase === "drag-end") {
+      if (activeSession && config.pixels === "phase-diff") {
+        const startEntry = activeSession.captures.find((entry) => entry.phase === "drag-start") || null;
+        const comparison = compareFolderPixelSnapshots(startEntry?.snapshot, captureEntry?.snapshot);
+        activeSession.pixelComparison = comparison;
+        record("pixel-comparison", {
+          available: comparison.available,
+          changedSlotCount: comparison.changedSlotCount,
+          comparableSlotCount: comparison.comparableSlotCount,
+          strongCandidateCount: comparison.strongCandidateCount,
+        });
+        const strongest = comparison.candidates?.find((candidate) => candidate.strongCandidate);
+        if (strongest && config.autoFreeze) {
+          freeze(`pixel-diff:${strongest.folderId || "unknown"}:${strongest.itemId || "unknown"}:${strongest.slot ?? "unknown"}`);
+        }
+      }
+      finishSession("complete");
+    }
     return captureEntry;
   }
 
@@ -990,10 +1115,6 @@ export function createPixiRenderProbe(options = {}) {
     config = normalizeConfig({
       ...previous,
       ...patch,
-      filter: {
-        ...previous.filter,
-        ...(patch.filter || {}),
-      },
     });
     if (patch.clear === true) clear();
     return clonePlain(config);
@@ -1010,7 +1131,7 @@ export function createPixiRenderProbe(options = {}) {
   }
 
   function inspect(label = "manual") {
-    return captureCurrent(String(label || "manual"), [], { capturePixels: config.capturePixels });
+    return captureCurrent(String(label || "manual"), [], { pixels: config.pixels });
   }
 
   function exportJson(space = 2) {
@@ -1052,7 +1173,7 @@ export function createPixiRenderProbe(options = {}) {
 
   const commands = {
     arm: (patch = {}) => configure({ ...patch, enabled: true }),
-    capture: (label = "manual") => storeCapture(String(label || "manual"), [], { capturePixels: config.capturePixels }).snapshot,
+    capture: (label = "manual") => storeCapture(String(label || "manual"), [], { pixels: config.pixels }).snapshot,
     clear,
     disarm: () => configure({ enabled: false }),
     download,

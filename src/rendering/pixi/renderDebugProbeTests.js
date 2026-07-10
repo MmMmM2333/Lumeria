@@ -88,14 +88,14 @@ function makeFolderHarness(options = {}) {
   const child = {
     emoji: "M",
     iconDataUrl: "data:image/png;base64,secret-icon-payload",
-    id: "mi-service",
-    name: "MiService",
+    id: options.childId || "mi-service",
+    name: options.childName || "MiService",
     type: "app",
   };
   const folder = {
     childPages: [[child]],
-    id: "folder-tools",
-    name: "工具",
+    id: options.folderId || "folder-tools",
+    name: options.folderName || "工具",
     type: "folder",
   };
   const folderNode = {
@@ -156,9 +156,9 @@ function makeFolderHarness(options = {}) {
     },
   };
   const layer = {
-    iconNodes: new Map([["page:0:folder-tools", folderNode]]),
+    iconNodes: new Map([[`page:0:${folder.id}`, folderNode]]),
     lastDesktopRenderPlan: {
-      entries: [{ key: "page:0:folder-tools", nodeState: { dragging: false }, item: folder }],
+      entries: [{ key: `page:0:${folder.id}`, nodeState: { dragging: false }, item: folder }],
       signature: "plan-signature",
     },
     stageRect: { height: 400, left: 0, top: 0, width: 533 },
@@ -209,21 +209,75 @@ export function runRenderDebugProbeTests() {
   {
     const harness = makeFolderHarness();
     harness.app.canvas.getBoundingClientRect = () => ({ height: 600, left: 0, top: 0, width: 800 });
+    let readPixelsCallCount = 0;
     harness.app.renderer.gl = {
+      NO_ERROR: 0,
       readPixels(_x, _y, _width, _height, _format, _type, pixels) {
+        readPixelsCallCount += 1;
         pixels.fill(255);
       },
       RGBA: 0x1908,
       UNSIGNED_BYTE: 0x1401,
+      getError: () => 0,
+      isContextLost: () => false,
     };
     const snapshot = capturePixiRenderSnapshot({
       app: harness.app,
-      capturePixels: true,
-      filter: { folderId: harness.folder.id },
       layer: harness.layer,
+      pixels: "phase-diff",
+      target: "all-folders",
     });
-    assert(snapshot.folders[0]?.children[0]?.focused === true, "folder filters should focus visible child slots for pixel capture");
-    assert(snapshot.folders[0]?.children[0]?.pixel?.alphaNonZero > 0, "folder filters should capture pixels inside the mask");
+    assert(snapshot.target === "all-folders", "global snapshots should identify their target scope");
+    assert(snapshot.folders[0]?.children[0]?.pixelEligible === true, "global snapshots should include every visible preview slot");
+    assert(snapshot.folders[0]?.children[0]?.pixel?.alphaNonZero > 0, "global snapshots should attach framebuffer summaries to preview slots");
+    assert(readPixelsCallCount === 1 && snapshot.framebuffer?.readPixelsCallCount === 1, "a global snapshot should read once per phase");
+  }
+
+  {
+    const first = makeFolderHarness();
+    const second = makeFolderHarness({
+      childId: "safari",
+      childName: "Safari",
+      folderId: "folder-browsers",
+      folderName: "浏览器",
+    });
+    first.layer.iconNodes.set("page:0:folder-browsers", second.folderNode);
+    const globalSnapshot = capturePixiRenderSnapshot({
+      app: first.app,
+      layer: first.layer,
+      target: "all-folders",
+    });
+    const targetedSnapshot = capturePixiRenderSnapshot({
+      app: first.app,
+      layer: first.layer,
+      target: { itemName: "Safari" },
+    });
+    const itemIdSnapshot = capturePixiRenderSnapshot({
+      app: first.app,
+      layer: first.layer,
+      target: { itemId: "safari" },
+    });
+    const folderIdSnapshot = capturePixiRenderSnapshot({
+      app: first.app,
+      layer: first.layer,
+      target: { folderId: "folder-browsers" },
+    });
+    assert(globalSnapshot.folders.length === 2, "the all-folders target should retain every folder in the rendered layer");
+    assert(targetedSnapshot.folders.length === 1 && targetedSnapshot.folders[0]?.folderId === "folder-browsers", "item targets should retain only matching folders");
+    assert(targetedSnapshot.folders[0]?.children[0]?.targeted === true, "item targets should mark the matching preview slot for sampling");
+    assert(itemIdSnapshot.folders[0]?.folderId === "folder-browsers", "itemId targets should retain the containing folder");
+    assert(folderIdSnapshot.folders[0]?.children[0]?.targeted === true, "folderId targets should include every preview slot in that folder");
+  }
+
+  {
+    const harness = makeFolderHarness();
+    const before = capturePixiRenderSnapshot({ app: harness.app, layer: harness.layer, target: "all-folders" });
+    harness.childNode.children[0].texture.uid = 32;
+    const after = capturePixiRenderSnapshot({ app: harness.app, layer: harness.layer, target: "all-folders" });
+    assert(
+      before.folders[0]?.children[0]?.sceneSignature !== after.folders[0]?.children[0]?.sceneSignature,
+      "a Texture change with the same TextureSource should make phase pixels incomparable"
+    );
   }
 
   {
@@ -346,6 +400,61 @@ export function runRenderDebugProbeTests() {
   }
 
   {
+    const probe = createPixiRenderProbe({
+      capture: ({ phase }) => ({ folders: [], phase, violations: [] }),
+    });
+    const config = probe.commands.arm({
+      clear: true,
+      pixels: "phase-diff",
+      target: "all-folders",
+    });
+    assert(config.target === "all-folders", "global diagnostics should expose an explicit all-folders target");
+    assert(config.pixels === "phase-diff", "global diagnostics should expose the requested pixel comparison mode");
+    assert(!("capturePixels" in config) && !("filter" in config), "the replaced pixel and filter config paths should be removed");
+    probe.destroy();
+  }
+
+  {
+    const probe = createPixiRenderProbe({
+      capture: ({ phase }) => ({ folders: [], phase, violations: [] }),
+    });
+    let legacyConfigRejected = false;
+    try {
+      probe.commands.arm({ capturePixels: true, itemName: "MiService" });
+    } catch (error) {
+      legacyConfigRejected = /removed.*target.*pixels/i.test(String(error?.message || error));
+    }
+    assert(legacyConfigRejected, "replaced filter and capturePixels options should fail explicitly instead of arming a different scope");
+    let ambiguousTargetRejected = false;
+    try {
+      probe.commands.arm({ target: { itemId: "mi-service", itemName: "MiService" } });
+    } catch (error) {
+      ambiguousTargetRejected = /exactly one/.test(String(error?.message || error));
+    }
+    assert(ambiguousTargetRejected, "ambiguous target objects should fail explicitly");
+    probe.destroy();
+  }
+
+  {
+    const captureOptions = [];
+    const item = { id: "app-global", name: "Global App", type: "app" };
+    const probe = createPixiRenderProbe({
+      capture: (options) => {
+        captureOptions.push(options);
+        return { folders: [], phase: options.phase, violations: [] };
+      },
+    });
+    probe.commands.arm({ clear: true, pixels: "phase-diff", target: "all-folders" });
+    probe.notePointerDown({ event: { pointerId: 1 }, item, source: { type: "page" } });
+    const start = probe.beforeRender({ dragMeta: { item, source: { type: "page" } }, renderer: { name: "canvas" } });
+    probe.afterRender(start);
+    assert(captureOptions[0]?.pixels === "off", "pointerdown should retain metadata without reading a stale framebuffer");
+    assert(captureOptions[1]?.pixels === "phase-diff", "drag-start should receive the armed phase pixel mode");
+    assert(captureOptions[1]?.target === "all-folders", "phase captures should receive the armed global target");
+    probe.destroy();
+  }
+
+  {
     let time = 0;
     const probe = createPixiRenderProbe({
       capture: ({ phase }) => ({
@@ -413,7 +522,49 @@ export function runRenderDebugProbeTests() {
     assert(report.sessions.length === 1, "completed drag sessions should remain available after the visual recovers");
     assert(report.sessions[0].captures.some((entry) => entry.phase === "drag-end"), "the recovery frame should be retained");
     assert(captures.join(",") === "pointerdown,drag-start,drag-end", "only diagnostic phase boundaries should take full snapshots");
-    assert(JSON.parse(probe.commands.exportJson()).version === 1, "debug reports should export as versioned JSON");
+    assert(JSON.parse(probe.commands.exportJson()).version === 2, "debug reports should export the migrated schema version");
+    probe.destroy();
+  }
+
+  {
+    const item = { id: "app-dragged", name: "Dragged App", type: "app" };
+    const makePixel = (phase) => ({
+      hash: phase === "drag-start" ? "missing" : "restored",
+      sample: Array.from({ length: 64 }, (_value, index) => [
+        phase === "drag-start" || index % 2 === 0 ? 20 : 220,
+        255,
+      ]).flat(),
+      sampleHeight: 8,
+      sampleWidth: 8,
+    });
+    const probe = createPixiRenderProbe({
+      capture: ({ phase }) => ({
+        framebuffer: phase === "pointerdown" ? null : { available: true },
+        folders: phase === "pointerdown" ? [] : [{
+          children: [{
+            itemId: "mi-service",
+            itemName: "MiService",
+            pixel: makePixel(phase),
+            sceneSignature: "stable-scene",
+            slot: 5,
+          }],
+          folderId: "folder-tools",
+          folderName: "工具",
+        }],
+        phase,
+        violations: [],
+      }),
+    });
+    probe.commands.arm({ clear: true, pixels: "phase-diff", target: "all-folders" });
+    probe.notePointerDown({ event: { pointerId: 7 }, item, source: { type: "page" } });
+    const start = probe.beforeRender({ dragMeta: { item, source: { type: "page" } }, renderer: { name: "canvas" } });
+    probe.afterRender(start);
+    const end = probe.beforeRender({ dragMeta: null, renderer: { name: "canvas" } });
+    probe.afterRender(end);
+
+    const comparison = probe.commands.snapshot().sessions[0]?.pixelComparison;
+    assert(comparison?.available === true, "completed phase-diff sessions should compare disappearance and recovery frames");
+    assert(comparison?.candidates[0]?.itemId === "mi-service", "session reports should identify the globally affected preview item");
     probe.destroy();
   }
 
