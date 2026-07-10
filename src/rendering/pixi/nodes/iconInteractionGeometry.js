@@ -1,7 +1,27 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 
-export const EDIT_BUTTON_HIT_PADDING = 12;
+export const ICON_INTERACTION_PADDING = 12;
+export const ICON_INTERACTION_CLEARANCE = 12;
+export const EDIT_BUTTON_HIT_PADDING = ICON_INTERACTION_PADDING;
 export const EDIT_BUTTON_HIT_RADIUS = 12;
+
+export function getIconCellContentMaxWidth(cellWidth) {
+  const width = Number(cellWidth);
+  if (!Number.isFinite(width) || width <= 0) return null;
+  return Math.max(1, width - ICON_INTERACTION_PADDING * 2);
+}
+
+export function getIconCellTopInteractionOverflow(options = {}) {
+  const cellHeight = Math.max(1, Number(options.cellHeight) || 1);
+  const iconSize = Math.max(1, Number(options.iconSize) || 1);
+  const visualOffsetY = Number(options.visualOffsetY) || 0;
+  const requestedClearance = Number(options.clearance);
+  const clearance = Number.isFinite(requestedClearance)
+    ? Math.max(0, requestedClearance)
+    : ICON_INTERACTION_CLEARANCE;
+  const hitTopFromCell = cellHeight / 2 + visualOffsetY - iconSize / 2 - ICON_INTERACTION_PADDING;
+  return Math.max(0, clearance - hitTopFromCell);
+}
 
 export function getIconHitAreaRect(options = {}) {
   const {

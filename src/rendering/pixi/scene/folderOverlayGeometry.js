@@ -22,12 +22,17 @@ function lerp(from, to, progress) {
   return from + (to - from) * progress;
 }
 
-export function getFolderPageMaskRect(geometry, localGridLeft, localGridTop) {
+export function getFolderPageMaskRect(geometry, localGridLeft, localGridTop, options = {}) {
+  const topOverflow = Math.max(0, Number(options.topOverflow) || 0);
+  const top = Math.max(0, localGridTop - topOverflow);
   return {
     left: 0,
-    top: localGridTop,
+    top,
     width: geometry.panel.width,
-    height: Math.max(geometry.grid.height, geometry.panel.height - localGridTop - 20),
+    height: Math.max(
+      geometry.grid.height + localGridTop - top,
+      geometry.panel.height - top - 20
+    ),
   };
 }
 

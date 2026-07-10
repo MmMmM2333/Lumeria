@@ -5,6 +5,7 @@ import { motionRuntime } from "../animation/motionRuntime.js";
 import { motionPresets, motionSprings } from "../animation/motionPresets.js";
 import { killMotionOf, motion } from "../animation/motionTween.js";
 import { getFolderGridMetrics, getFolderPanelGeometry, makeRect, parseRepeatCount, readPx } from "../geometry/gridGeometry.js";
+import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import {
   clearFrameGhost as clearFrameGhostState,
   drawClosingFrameMask as drawClosingFrameMaskState,
@@ -64,6 +65,7 @@ import { resolveFolderOverlayTargets } from "./folderOverlayTargetResolver.js";
 import { resolveFolderIconRenderSize } from "./folderIconSizing.js";
 import { makeIconRect, makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { IconNode } from "../nodes/IconNode.js";
+import { getIconCellTopInteractionOverflow } from "../nodes/iconInteractionGeometry.js";
 import { makeIconVisualSpec, makeIconVisualSpecFromNodeState } from "./iconVisualSpec.js";
 import { getCachedIconTexture } from "../assets/iconTextureCache.js";
 import {
@@ -1061,7 +1063,16 @@ export class FolderOverlayLayer extends Container {
       gridLeft: targetGeometry.grid.left - targetGeometry.panel.left,
       gridTop: targetGeometry.grid.top - targetGeometry.panel.top,
     };
-    this.pageMaskRect = getFolderPageMaskRect(geometry, localGridLeft, localGridTop);
+    const pageMaskTopOverflow = getIconCellTopInteractionOverflow({
+      cellHeight: metrics.cellHeight,
+      iconSize,
+      visualOffsetY: getIconVisualOffsetY(state.isTextlessMode),
+    });
+    // The page viewport includes interaction chrome above the content grid;
+    // expanding the mask keeps layout and drag targets at their existing slots.
+    this.pageMaskRect = getFolderPageMaskRect(geometry, localGridLeft, localGridTop, {
+      topOverflow: pageMaskTopOverflow,
+    });
     if (resizeLayoutSyncActive) {
       this.rebuildPageTrackMask();
     } else {

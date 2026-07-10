@@ -524,6 +524,7 @@ export class IconNode extends Container {
     return getSelectionFrameRectForIcon({
       iconSize: this.iconSize,
       labelText: this.labelText,
+      maxWidth: this.state?.cellWidth,
       visualOffsetY: this.getVisualOffsetY(),
     });
   }

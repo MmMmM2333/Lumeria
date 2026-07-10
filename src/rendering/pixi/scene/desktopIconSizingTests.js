@@ -30,4 +30,11 @@ export function runDesktopIconSizingTests() {
   );
   assert(spacious.iconSize === 128, "spacious cells should keep the configured icon size");
   assert(!spacious.compact, "spacious desktop cells should keep the regular label size");
+
+  const narrow = getDesktopIconSizing(
+    { iconSize: 128, isTextlessMode: false, width: 900 },
+    { height: 200, width: 90 }
+  );
+  assert(narrow.iconSize === 66, "narrow desktop cells should reserve horizontal interaction padding");
+  assert(narrow.compact, "width-constrained desktop icons should use compact label text");
 }

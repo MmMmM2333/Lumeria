@@ -1,5 +1,6 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getIconLabelLocalY } from "../geometry/iconMetrics.js";
+import { getIconCellContentMaxWidth } from "./iconInteractionGeometry.js";
 
 export function plainName(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -81,14 +82,22 @@ export function getIconLabelRenderState(options = {}) {
 
   const fontSize = compact ? 12 : 13;
   const singleLine = Boolean(singleLineLabel);
-  const wrapWidth = Math.max(72, Math.min(160, cellWidth * 0.84));
+  const availableContentWidth = getIconCellContentMaxWidth(cellWidth);
+  const unconstrainedWrapWidth = Math.max(72, Math.min(160, cellWidth * 0.84));
+  const wrapWidth = availableContentWidth == null
+    ? unconstrainedWrapWidth
+    : Math.min(unconstrainedWrapWidth, availableContentWidth);
+  const unconstrainedSingleLineWidth = Math.max(56, cellWidth * 0.9);
+  const singleLineWidth = availableContentWidth == null
+    ? unconstrainedSingleLineWidth
+    : Math.min(unconstrainedSingleLineWidth, availableContentWidth);
   return {
     anchorX: 0.5,
     anchorY: 0,
     fontSize,
     lineHeight: Math.round(fontSize * 1.22),
     text: singleLine
-      ? fitSingleLineName(itemName, fontSize, Math.max(56, cellWidth * 0.9))
+      ? fitSingleLineName(itemName, fontSize, singleLineWidth)
       : fitWrappedName(itemName, fontSize, wrapWidth),
     visible: true,
     wordWrap: !singleLine,

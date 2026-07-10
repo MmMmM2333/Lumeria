@@ -45,7 +45,7 @@ export function runIconLabelLayoutTests() {
   assert(singleLineState.visible && singleLineState.fontSize === 12, "compact single-line state should use compact font size");
   assert(singleLineState.lineHeight === 15, "compact single-line state should round line height");
   assert(!singleLineState.wordWrap && !singleLineState.text.includes("\n"), "single-line state should disable wrapping");
-  assert(singleLineState.wordWrapWidth === 84, "single-line state should still expose the measured wrap width");
+  assert(singleLineState.wordWrapWidth === 76, "single-line state should reserve the selection frame padding");
   assert(singleLineState.anchorX === 0.5 && singleLineState.anchorY === 0, "label state should keep the text anchor");
   assert(singleLineState.x === 0 && singleLineState.y === 32, "label state should keep the local label position");
 
@@ -54,6 +54,13 @@ export function runIconLabelLayoutTests() {
     iconSize: 64,
     itemName: "Alpha Beta Gamma Delta",
   });
-  assert(wrappedState.wordWrap && wrappedState.wordWrapWidth === 84, "wrapped state should enable wrapping with the cell width");
+  assert(wrappedState.wordWrap && wrappedState.wordWrapWidth === 76, "wrapped state should reserve the selection frame padding");
   assert(wrappedState.text.includes("\n"), "wrapped state should produce wrapped text when needed");
+
+  const constrainedState = getIconLabelRenderState({
+    cellWidth: 90,
+    iconSize: 66,
+    itemName: "Adobe After Effects",
+  });
+  assert(constrainedState.wordWrapWidth === 66, "narrow labels should reserve the selection frame padding inside the cell");
 }

@@ -1,5 +1,7 @@
 import {
   getEditButtonActionAt,
+  getIconCellContentMaxWidth,
+  getIconCellTopInteractionOverflow,
   getIconHitAreaRect,
   isPointInsideEditButton,
 } from "./iconInteractionGeometry.js";
@@ -23,6 +25,15 @@ export function runIconInteractionGeometryTests() {
 
   const editingFolderRect = getIconHitAreaRect({ editing: true, iconSize: 64, itemType: "folder", visualOffsetY: -14 });
   assert(editingFolderRect.width === 64 && editingFolderRect.height === 64, "folder hit area should not expand for app edit buttons");
+
+  assert(getIconCellContentMaxWidth(90) === 66, "cell content width should reserve interaction padding on both sides");
+  assert(getIconCellContentMaxWidth(null) === null, "missing cell widths should preserve unconstrained callers");
+  const compressedTopOverflow = getIconCellTopInteractionOverflow({
+    cellHeight: 89.89,
+    iconSize: 47.94,
+    visualOffsetY: -14,
+  });
+  assert(Math.abs(compressedTopOverflow - 17.025) < 0.0001, "compressed first rows should derive their mask overflow from the real hit area");
 
   assert(isPointInsideEditButton({ x: 12, y: 0 }, makeButton(0, 0)), "points on the edit button radius should hit");
   assert(!isPointInsideEditButton({ x: 13, y: 0 }, makeButton(0, 0)), "points outside the edit button radius should miss");

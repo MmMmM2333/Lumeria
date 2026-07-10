@@ -1,4 +1,5 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import { getIconCellContentMaxWidth } from "../nodes/iconInteractionGeometry.js";
 
 function positiveNumber(value, fallback = null) {
   const number = Number(value);
@@ -14,10 +15,11 @@ export function resolveFolderIconRenderSize(options = {}) {
   const requestedSize = positiveNumber(options.requestedSize);
   const fallbackSize = positiveNumber(options.fallbackSize, 64);
   const baseSize = requestedSize || fallbackSize;
+  const maxContentWidth = getIconCellContentMaxWidth(options.cellWidth);
   return Math.max(
     1,
     applyPositiveLimit(
-      applyPositiveLimit(baseSize, options.cellWidth),
+      applyPositiveLimit(baseSize, maxContentWidth),
       options.cellHeight
     )
   );

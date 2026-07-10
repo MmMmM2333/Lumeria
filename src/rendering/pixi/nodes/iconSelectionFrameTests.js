@@ -55,6 +55,38 @@ export function runIconSelectionFrameTests() {
   assert(labelRect.width === 156, "label frame should expand to label width plus padding");
   assert(labelRect.height === 42 + 34 - -32 + 10 + 8, "label frame should include the visible label bottom");
 
+  const heightDominatedRect = getSelectionFrameRect({
+    iconSize: 66,
+    labelText: {
+      height: 32,
+      style: { fontSize: 13, lineHeight: 16, wordWrapWidth: 66 },
+      text: "Adobe\nAfter Ef...",
+      visible: true,
+      width: 54,
+      y: 33,
+    },
+    maxWidth: 90,
+    visualOffsetY: -14,
+  });
+  assert(heightDominatedRect.width <= 90, "selection frames should stay within their cell width");
+  assert(heightDominatedRect.width < heightDominatedRect.height, "two-line label height should not force a square frame");
+
+  const spaciousLargeIconRect = getSelectionFrameRect({
+    iconSize: 128,
+    labelText: {
+      height: 16,
+      style: { fontSize: 13, lineHeight: 16, wordWrapWidth: 160 },
+      text: "New Folder",
+      visible: true,
+      width: 64,
+      y: 64,
+    },
+    maxWidth: 255,
+    visualOffsetY: -14,
+  });
+  assert(spaciousLargeIconRect.width === spaciousLargeIconRect.height, "large icons should keep a balanced frame when their cell has room");
+  assert(spaciousLargeIconRect.width < 255, "balanced frames should not expand to fill a spacious cell");
+
   assert(shouldDrawSelectionFrame({ selected: true }), "selected icons should draw a frame");
   assert(shouldDrawSelectionFrame({ dropTarget: true }), "drop targets should draw a frame");
   assert(!shouldDrawSelectionFrame({ dropTarget: true, isFolderDropHover: true }), "folder hovers should suppress drop frame");

@@ -101,6 +101,10 @@ export async function runFolderOverlayLayerTests() {
   assert(mask.top === 64, "folder page mask should preserve the grid top edge");
   assert(mask.height === 476, "folder page mask should keep the existing vertical panel coverage");
 
+  const interactionMask = getFolderPageMaskRect(geometry, 58, 64, { topOverflow: 17 });
+  assert(interactionMask.top === 47, "folder page mask should expand above the grid for interaction chrome");
+  assert(interactionMask.height === 493, "expanded page masks should keep the existing bottom edge");
+
   {
     const iconBoundsRegistry = createIconBoundsRegistry();
     const layer = new FolderOverlayLayer({ iconBoundsRegistry });
@@ -455,10 +459,89 @@ export async function runFolderOverlayLayerTests() {
     x: folderGeometry.panel.left + folderGeometry.panel.width / 2,
     y: folderGeometry.panel.top + folderGeometry.panel.height / 2,
   });
-  const getPageMaskHeight = (folderGeometry) => {
-    const localGridTop = folderGeometry.grid.top - folderGeometry.panel.top;
-    return Math.max(folderGeometry.grid.height, folderGeometry.panel.height - localGridTop - 20);
-  };
+  const getPageMaskBottom = (folderGeometry) => folderGeometry.panel.height - 20;
+  const getLayerPageMaskBottom = (layer) => layer.pageMaskRect.top + layer.pageMaskRect.height;
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const folderId = "folder-large-icon-frame";
+    const page = makeFolderResizeItems("large-icon", 14);
+    page[0] = { id: "adobe-after-effects", name: "Adobe After Effects", type: "app" };
+    const state = makeFolderResizeState({
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(7, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(2, var(--folder-icon-cell-height))",
+      },
+      folderId,
+      folderPageSize: 14,
+      folderPages: [page],
+      folderPanelStyle: {
+        "--folder-icon-cell-height": "184px",
+        "--folder-icon-size": "128px",
+        "--folder-row-gap": "24px",
+        "--folder-shell-min-height": "536px",
+      },
+      height: 767,
+      isEditMode: true,
+      selectedIcon: { area: "folder", folderId, id: page[0].id, pageIndex: 0 },
+      width: 900,
+    });
+    layer.update(state);
+    settleResizeUpdate(layer, state);
+
+    const key = `${folderId}:0:${page[0].id}`;
+    const node = layer.iconNodes.get(key);
+    const frame = node?.getSelectionFrameRect();
+    assert(node && frame, "large-icon frame setup should render the selected folder icon");
+    assert(node.state.iconSize + 24 <= node.state.cellWidth + 0.001, "large folder icons should reserve horizontal interaction padding");
+    assert(frame.width <= node.state.cellWidth + 0.001, "large folder selection frames should stay inside their cell");
+    assert(node.hitArea.width <= node.state.cellWidth + 0.001, "large folder edit hit areas should stay inside their cell");
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const folderId = "folder-compressed-top-chrome";
+    const page = makeFolderResizeItems("compressed-top", 35);
+    const state = makeFolderResizeState({
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(7, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(5, var(--folder-icon-cell-height))",
+      },
+      folderId,
+      folderPageSize: 35,
+      folderPages: [page],
+      folderPanelStyle: {
+        "--folder-icon-cell-height": "89.89px",
+        "--folder-icon-size": "47.94px",
+        "--folder-row-gap": "17.98px",
+        "--folder-shell-min-height": "840px",
+      },
+      height: 825,
+      isEditMode: true,
+      selectedIcon: { area: "folder", folderId, id: page[0].id, pageIndex: 0 },
+      width: 1415,
+    });
+    layer.update(state);
+    settleResizeUpdate(layer, state);
+
+    const key = `${folderId}:0:${page[0].id}`;
+    const node = layer.iconNodes.get(key);
+    const target = layer.folderIconLayoutTargets.get(key);
+    const hitTop = target.y + node.hitArea.y;
+    assert(hitTop - layer.pageMaskRect.top >= 11.999, "compressed first-row interaction chrome should keep 12px of mask clearance");
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
 
   {
     const layer = Object.create(FolderOverlayLayer.prototype);
@@ -683,6 +766,7 @@ export async function runFolderOverlayLayerTests() {
     });
     const geometry = layer.update(state);
     const expectedCellWidth = geometry.grid.width / 6;
+    const expectedIconWidth = expectedCellWidth - 24;
     const stableRecord = iconBoundsRegistry.getRecord(K.LAUNCH, V.STABLE_STAGE_LAYOUT, {
       area: "folder",
       folderId: "folder-narrow-icon-size",
@@ -691,8 +775,8 @@ export async function runFolderOverlayLayerTests() {
     });
 
     assert(expectedCellWidth > 56 && expectedCellWidth < 128, "narrow-cell setup should isolate the cell-width clamp");
-    assert(nearlyEqual(stableRecord?.width, expectedCellWidth), "folder icon bounds should clamp to cell width rather than the old 56px cap");
-    assert(nearlyEqual(stableRecord?.meta?.visualSpec?.iconSize, expectedCellWidth), "folder visual spec should match the cell-width-clamped icon size");
+    assert(nearlyEqual(stableRecord?.width, expectedIconWidth), "folder icon bounds should reserve interaction padding inside a narrow cell");
+    assert(nearlyEqual(stableRecord?.meta?.visualSpec?.iconSize, expectedIconWidth), "folder visual spec should match the decorated cell-width clamp");
 
     layer.destroy({ children: true });
     iconBoundsRegistry.clearBounds();
@@ -1260,8 +1344,8 @@ export async function runFolderOverlayLayerTests() {
     assert(layer.resizeVisualGeometryState !== null, "row growth during open should start a visual geometry animation");
     assert(layer.resizeVisualGeometryMode === "opening", "row growth visual geometry should remember the opening mode");
     assert(nearlyEqual(layer.resizeVisualGeometryState.panelHeight, compactGeometry.panel.height), "row growth during open should begin from the previous panel height");
-    assert(nearlyEqual(layer.pageMaskRect.height, getPageMaskHeight(compactGeometry)), "row growth during open should keep the previous visual mask height initially");
-    assert(!nearlyEqual(layer.pageMaskRect.height, getPageMaskHeight(expandedGeometry)), "row growth during open should not jump the mask directly to the expanded height");
+    assert(nearlyEqual(getLayerPageMaskBottom(layer), getPageMaskBottom(compactGeometry)), "row growth during open should keep the previous visual mask bottom initially");
+    assert(!nearlyEqual(getLayerPageMaskBottom(layer), getPageMaskBottom(expandedGeometry)), "row growth during open should not jump the mask directly to the expanded bottom");
     assert(activeGhostTarget?.item?.id === activeGhostItemId, "active opening ghost should be retargeted during row growth");
     assert(nearlyEqual(activeGhostTarget.targetStageLayoutRect.top, expandedGhostTarget.top), "opening ghost retarget should use the stable expanded row target");
     assert(!nearlyEqual(compactGhostTarget.top, expandedGhostTarget.top), "row growth setup should still prove the stable row moved");
@@ -1272,7 +1356,7 @@ export async function runFolderOverlayLayerTests() {
     assert(layer.resizeVisualGeometryState !== null, "opening row growth should keep animating after layout sync clears");
     settleResizeUpdate(layer, expandedState);
     assert(layer.resizeVisualGeometryState === null, "opening row growth visual geometry should clear after reaching the expanded geometry");
-    assert(nearlyEqual(layer.pageMaskRect.height, getPageMaskHeight(expandedGeometry)), "opening row growth should settle the visual mask to the expanded target");
+    assert(nearlyEqual(getLayerPageMaskBottom(layer), getPageMaskBottom(expandedGeometry)), "opening row growth should settle the visual mask to the expanded target");
 
     layer.destroy({ children: true });
     iconBoundsRegistry.clearBounds();
@@ -1651,7 +1735,7 @@ export async function runFolderOverlayLayerTests() {
     assert(layer.resizeVisualGeometryState !== null, "drag-driven page-turn resize should start a visual geometry animation");
     assert(layer.resizeVisualGeometryMode === "page-turn", "drag-driven page-turn resize should remember the page-turn geometry mode");
     assert(nearlyEqual(layer.resizeVisualGeometryState.panelHeight, compactGeometry.panel.height), "drag-driven page-turn resize should begin from the previous panel height");
-    assert(nearlyEqual(layer.pageMaskRect.height, getPageMaskHeight(compactGeometry)), "drag-driven page-turn resize should keep the previous visual mask height initially");
+    assert(nearlyEqual(getLayerPageMaskBottom(layer), getPageMaskBottom(compactGeometry)), "drag-driven page-turn resize should keep the previous visual mask bottom initially");
     assert(nearlyEqual(layer.pageTrack.x, livePageTrackX), "drag-driven page-turn resize should not snap the page track while the sync frame is active");
     assert(liveIconTargetRecord && stableIconTargetRecord, "drag-driven page-turn resize should register both live and stable icon targets");
     assert(!nearlyEqual(liveIconTargetRecord.top, stableIconTargetRecord.top), "stable icon targets should use final geometry instead of the resize animation frame");
@@ -1672,7 +1756,7 @@ export async function runFolderOverlayLayerTests() {
     assert(!nearlyEqual(layer.pageTrack.x, -expandedGeometry.panel.width), "drag-driven page-turn resize should not snap the page track after layout sync clears");
     settleResizeUpdate(layer, expandedPageTurnState);
     assert(layer.resizeVisualGeometryState === null, "drag-driven page-turn resize should clear after reaching the new geometry");
-    assert(nearlyEqual(layer.pageMaskRect.height, getPageMaskHeight(expandedGeometry)), "drag-driven page-turn resize should settle the visual mask to the expanded target");
+    assert(nearlyEqual(getLayerPageMaskBottom(layer), getPageMaskBottom(expandedGeometry)), "drag-driven page-turn resize should settle the visual mask to the expanded target");
     assert(nearlyEqual(layer.pageTrackMotion.targetX, -expandedGeometry.panel.width), "drag-driven page-turn resize should retarget page track motion to the visual page span");
 
     layer.destroy({ children: true });

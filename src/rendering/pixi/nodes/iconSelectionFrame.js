@@ -1,7 +1,7 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { estimateLabelWidth } from "./iconLabelLayout.js";
+import { ICON_INTERACTION_PADDING } from "./iconInteractionGeometry.js";
 
-const SELECTION_FRAME_MIN_PADDING_X = 12;
 const SELECTION_FRAME_PADDING_TOP = 10;
 const SELECTION_FRAME_PADDING_BOTTOM = 8;
 
@@ -13,6 +13,7 @@ export function getSelectionFrameRect(options = {}) {
   const {
     iconSize = 64,
     labelText = null,
+    maxWidth = null,
     visualOffsetY = 0,
   } = options;
   let left = -iconSize / 2;
@@ -36,10 +37,17 @@ export function getSelectionFrameRect(options = {}) {
     bottom = Math.max(bottom, labelText.y + labelHeight);
   }
 
-  const minWidth = iconSize + SELECTION_FRAME_MIN_PADDING_X * 2;
+  const minWidth = iconSize + ICON_INTERACTION_PADDING * 2;
   const contentWidth = right - left;
   const height = bottom - top + SELECTION_FRAME_PADDING_TOP + SELECTION_FRAME_PADDING_BOTTOM;
-  const width = Math.max(height, minWidth, contentWidth + SELECTION_FRAME_MIN_PADDING_X * 2);
+  const naturalWidth = Math.max(minWidth, contentWidth + ICON_INTERACTION_PADDING * 2);
+  const preferredWidth = Math.max(naturalWidth, height);
+  const numericMaxWidth = Number(maxWidth);
+  // Height is a soft visual target so spacious frames stay balanced; cell width
+  // remains the hard limit that prevents tall labels crossing adjacent slots.
+  const width = Number.isFinite(numericMaxWidth) && numericMaxWidth > 0
+    ? Math.min(preferredWidth, Math.max(iconSize, numericMaxWidth))
+    : preferredWidth;
   return {
     height,
     left: -width / 2,
