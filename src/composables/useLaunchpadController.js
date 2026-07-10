@@ -708,6 +708,7 @@ export function useLaunchpadController() {
     requestFolderPageTurn: requestFolderPageTurnState,
     searchPageIndex,
     searchPages,
+    visualFolderPageIndex,
   });
   const {
     clearLayoutSaveNoticeTimer,
@@ -1839,8 +1840,6 @@ export function useLaunchpadController() {
     completeFolderCloseIconGhost,
     completeFolderOpenFrameGhost,
     completeFolderOpenIconGhost,
-    dragMeta,
-    dragReleaseState,
     finishFolderZoomFadeClose,
     folderCloseIconGhosts,
     folderGridStyle,

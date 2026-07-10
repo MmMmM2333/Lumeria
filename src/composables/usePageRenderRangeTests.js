@@ -1,4 +1,4 @@
-import { nextTick, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { usePageRenderRange } from "./usePageRenderRange.js";
 
 function createPageRenderRange(overrides = {}) {
@@ -11,6 +11,12 @@ function createPageRenderRange(overrides = {}) {
   const folderPages = ref(overrides.folderPages ?? [[], [], []]);
   const isSearchMode = ref(overrides.isSearchMode ?? false);
   const dragMeta = ref(overrides.dragMeta ?? null);
+  const visualFolderPageIndex = computed(() => {
+    if (typeof overrides.getVisualFolderPageIndex === "function") {
+      return overrides.getVisualFolderPageIndex({ folderPageIndex, folderPageTurnRequest });
+    }
+    return folderPageTurnRequest.value?.targetIndex ?? folderPageIndex.value;
+  });
   let nextFolderPageTurnToken = 1;
 
   return {
@@ -62,6 +68,7 @@ function createPageRenderRange(overrides = {}) {
       },
       searchPageIndex,
       searchPages,
+      visualFolderPageIndex,
     }),
   };
 }
@@ -149,6 +156,19 @@ export async function runPageRenderRangeTests() {
     assert(range.getDesktopPageRenderMode(2) === "empty", "drag-active jumps should not create static transient pages");
   });
 
+  await withFakeWindow(async () => {
+    const { folderPageIndex, folderPageTurnRequest, range } = createPageRenderRange({
+      dragMeta: { id: "dragging" },
+      folderPageIndex: 0,
+      folderPages: [[], [], []],
+    });
+    range.requestFolderPageTurn(2, { folderId: "folder-1", phase: "open", source: "wheel" });
+    assert(folderPageIndex.value === 0, "visual folder page turns should not commit before their request is accepted");
+    assert(folderPageTurnRequest.value?.targetIndex === 2, "visual folder page turns should expose their requested page");
+    assert(range.getFolderPageRenderMode(2) === "interactive", "active drags should keep the visual folder page rendered when committed state lags");
+    assert(range.getFolderPageRenderMode(0) === "empty", "active drag culling should be centered on the visual folder page");
+  });
+
   await withFakeWindow(async ({ flushTimeouts }) => {
     const { folderPageIndex, range } = createPageRenderRange({
       folderPageIndex: 0,
@@ -216,6 +236,11 @@ export async function runPageRenderRangeTests() {
       },
       folderPageIndex: 0,
       folderPages: [[], [], [], [], []],
+      getVisualFolderPageIndex: ({ folderPageIndex, folderPageTurnRequest }) => (
+        phase === "open"
+          ? folderPageTurnRequest.value?.targetIndex ?? folderPageIndex.value
+          : folderPageIndex.value
+      ),
     });
     const token = range.requestFolderPageTurn(4, { folderId: "folder-1", phase: "open" });
     assert(range.commitFolderPageTurnRequest(token), "folder page turn request should schedule before close interrupts it");

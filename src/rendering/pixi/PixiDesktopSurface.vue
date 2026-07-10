@@ -50,6 +50,7 @@ import { createPixiApp } from "./createPixiApp.js";
 import { DesktopLayer } from "./scene/DesktopLayer.js";
 import { createFolderLayerState } from "./folderLayerState.js";
 import { readFolderOverlayStateRenderDependencies } from "./folderOverlayStateDependencies.js";
+import { createDragRenderSnapshot } from "./dragRenderSnapshot.js";
 import { clearIconTextureCache, preloadIconTextures } from "./assets/iconTextureCache.js";
 import {
   deleteLaunchpadDebugValue,
@@ -106,7 +107,6 @@ const props = defineProps({
   dragHitDebugState: { type: Object, default: null },
   dragMeta: { type: Object, default: null },
   dragPreviewState: { type: Object, default: null },
-  dragReleaseGhostId: { type: String, default: null },
   dragReleaseState: { type: Object, default: null },
   folderCreateReleaseState: { type: Object, default: null },
   folderClosingHandoffId: { type: String, default: null },
@@ -392,7 +392,12 @@ function resolveFolderClosingHandoffId(metrics) {
   return result.folderClosingHandoffId;
 }
 
-function createSingleStageFolderState(metrics, diagnosticsOptions = {}, renderGeometry = makeDesktopRenderGeometry(metrics)) {
+function createSingleStageFolderState(
+  metrics,
+  dragSnapshot,
+  diagnosticsOptions = {},
+  renderGeometry = makeDesktopRenderGeometry(metrics)
+) {
   const source = props.folderOverlayState;
   if (!source) return null;
   return createFolderLayerState({
@@ -407,8 +412,8 @@ function createSingleStageFolderState(metrics, diagnosticsOptions = {}, renderGe
       setFolderPageRef: source.setFolderPageRef,
     },
     drag: {
-      meta: source.dragMeta?.value,
-      releaseState: source.dragReleaseState?.value,
+      meta: dragSnapshot.dragMeta,
+      releaseState: dragSnapshot.dragReleaseState,
     },
     folder: {
       closeIconGhosts: source.folderCloseIconGhosts?.value,
@@ -556,6 +561,10 @@ function renderPixi(options = {}) {
   const folderClosingHandoffId = resolveFolderClosingHandoffId(metrics);
   if (shouldUpdateLayer) {
     const singleStageDiagnosticsOptions = getResolvedSingleStageDiagnosticsOptions();
+    // Nested controller refs can update before Vue flushes the matching props.
+    // Capture drag ownership once so real icons and the preview cannot disagree
+    // about the same release during this Pixi frame.
+    const dragSnapshot = createDragRenderSnapshot(props);
     layer.update({
       activePageIndex: props.activePageIndex,
       activePages: props.activePages,
@@ -570,15 +579,17 @@ function renderPixi(options = {}) {
       dragFolderTargetId: props.dragFolderTargetId,
       dragHitDebugOptions: props.dragHitDebugOptions,
       dragHitDebugState: props.dragHitDebugState,
-      dragMeta: props.dragMeta,
-      dragPreviewState: props.dragPreviewState,
-      dragReleaseGhostId: props.dragReleaseGhostId,
-      dragReleaseState: props.dragReleaseState,
+      ...dragSnapshot,
       folderCreateReleaseState: props.folderCreateReleaseState,
       deviceResolution: app.renderer?.resolution || 1,
       folderClosingHandoffId,
       singleStageDiagnosticsEnabled: singleStageDiagnosticsOptions,
-      singleStageFolderState: createSingleStageFolderState(metrics, singleStageDiagnosticsOptions, renderGeometry),
+      singleStageFolderState: createSingleStageFolderState(
+        metrics,
+        dragSnapshot,
+        singleStageDiagnosticsOptions,
+        renderGeometry
+      ),
       folderPageSize: props.folderPageSize,
       getDesktopPageRenderMode: props.getDesktopPageRenderMode,
       getVisibleDesktopPage: props.getVisibleDesktopPage,
@@ -604,7 +615,7 @@ function renderPixi(options = {}) {
       width: renderGeometry.width,
     });
     preloadIconTextures([
-      ...collectDragPreviewTextureItems(props.dragPreviewState || props.dragReleaseState),
+      ...collectDragPreviewTextureItems(dragSnapshot.dragPreviewState || dragSnapshot.dragReleaseState),
       ...collectFolderCreateReleaseTextureItems(props.folderCreateReleaseState),
     ]);
     publishFolderVisualDebugSnapshot();
@@ -991,7 +1002,6 @@ watchEffect(() => {
   void props.dragHitDebugState;
   void props.dragMeta;
   void props.dragPreviewState;
-  void props.dragReleaseGhostId;
   void props.dragReleaseState;
   void props.folderCreateReleaseState;
   void props.folderClosingHandoffId;

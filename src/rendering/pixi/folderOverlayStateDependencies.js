@@ -1,6 +1,4 @@
 export const FOLDER_OVERLAY_STATE_RENDER_REF_KEYS = Object.freeze([
-  "dragMeta",
-  "dragReleaseState",
   "folderCloseIconGhosts",
   "folderGridStyle",
   "folderOpeningOriginBounds",

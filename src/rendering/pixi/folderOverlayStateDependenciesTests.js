@@ -29,6 +29,17 @@ export function runFolderOverlayStateDependenciesTests() {
       }),
     });
   }
+  for (const key of ["dragMeta", "dragReleaseState"]) {
+    Object.defineProperty(state, key, {
+      configurable: true,
+      value: Object.defineProperty({}, "value", {
+        get() {
+          reads.push(key);
+          return { item: { id: "app-a" } };
+        },
+      }),
+    });
+  }
 
   const dependencies = readFolderOverlayStateRenderDependencies(state);
 
@@ -41,4 +52,6 @@ export function runFolderOverlayStateDependenciesTests() {
   assert(dependencies.folderOpenProgressTarget === 1, "folder open progress target should resolve through refs");
   assert(dependencies.folderPageTurnRequest.token === 7, "folder page turn request should resolve through refs");
   assert(dependencies.folderPageTrackScrub.progress === 0.5, "folder page scrub should resolve through refs");
+  assert(!reads.includes("dragMeta"), "folder overlay scheduling should not read drag meta through a second reactive path");
+  assert(!reads.includes("dragReleaseState"), "folder overlay scheduling should not read release state ahead of the frame-level drag snapshot");
 }

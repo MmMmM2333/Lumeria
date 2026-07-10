@@ -73,7 +73,6 @@
         :drag-hit-debug-state="dragHitDebugState"
         :drag-meta="dragMeta"
         :drag-preview-state="dragPreviewState"
-        :drag-release-ghost-id="dragReleaseGhostId"
         :drag-release-state="dragReleaseState"
         :folder-create-release-state="folderCreateReleaseState"
         :folder-overlay-state="folderOverlayState"
@@ -837,7 +836,6 @@ function resolveMaybeRef(value) {
   return value && typeof value === "object" && "value" in value ? value.value : value;
 }
 
-const dragReleaseGhostId = computed(() => dragReleaseState.value?.item?.id || null);
 const folderClosingHandoffId = computed(() => resolveFolderClosingHandoffId({
   activityFolderId: folderPixiInternalActivityFolderId.value,
   hasPixiActivity: folderPixiInternalActivity.value,

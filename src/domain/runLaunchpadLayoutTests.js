@@ -57,6 +57,7 @@ import { runIconBoundsRegistryTests } from "../rendering/pixi/geometry/iconBound
 import { runIconTextureCacheTests } from "../rendering/pixi/assets/iconTextureCacheTests.js";
 import { runFolderLayerStateTests } from "../rendering/pixi/folderLayerStateTests.js";
 import { runFolderOverlayStateDependenciesTests } from "../rendering/pixi/folderOverlayStateDependenciesTests.js";
+import { runDragRenderSnapshotTests } from "../rendering/pixi/dragRenderSnapshotTests.js";
 import { runPixiHostMetricsTests } from "../rendering/pixi/pixiHostMetricsTests.js";
 import { runPixiRenderSchedulerTests } from "../rendering/pixi/pixiRenderSchedulerTests.js";
 import { runPixiRenderTriggersTests } from "../rendering/pixi/pixiRenderTriggersTests.js";
@@ -201,6 +202,7 @@ runStageCoordinatesTests();
 runIconBoundsRegistryTests();
 runFolderLayerStateTests();
 runFolderOverlayStateDependenciesTests();
+runDragRenderSnapshotTests();
 runPixiHostMetricsTests();
 runPixiRenderSchedulerTests();
 runPixiRenderTriggersTests();

@@ -35,7 +35,11 @@ export function usePageRenderRange(options) {
   }
 
   function getFolderPageRenderMode(pageNumber) {
-    return getPageRenderMode(pageNumber, "folder", options.folderPageIndex.value);
+    // A deferred page turn moves the track before the committed index changes.
+    // Keep culling anchored to that same visual page so starting a drag cannot
+    // empty the page currently under the pointer.
+    const activePageIndex = options.visualFolderPageIndex?.value ?? options.folderPageIndex.value;
+    return getPageRenderMode(pageNumber, "folder", activePageIndex);
   }
 
   function clearPageJumpRenderRange() {
