@@ -528,8 +528,8 @@ fn set_main_window_shortcut_capture_active(
 }
 
 #[tauri::command]
-fn set_main_window_shadow_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
-    tray::set_main_window_shadow_enabled(&app, enabled)
+fn set_main_window_native_frame_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    tray::set_main_window_native_frame_enabled(&app, enabled)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1070,7 +1070,7 @@ pub fn run() {
             set_main_window_mode,
             set_main_window_shortcut,
             set_main_window_shortcut_capture_active,
-            set_main_window_shadow_enabled
+            set_main_window_native_frame_enabled
         ])
         .run(context)
         .expect("error while running tauri app");

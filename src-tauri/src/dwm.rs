@@ -6,8 +6,9 @@ use crate::native_error::NativeError;
 use windows::Win32::{
     Foundation::HWND,
     Graphics::Dwm::{
-        DwmSetWindowAttribute, DWMNCRP_DISABLED, DWMNCRP_USEWINDOWSTYLE, DWMWA_CLOAK,
-        DWMWA_NCRENDERING_POLICY, DWMWA_TRANSITIONS_FORCEDISABLED, DWMWA_USE_IMMERSIVE_DARK_MODE,
+        DwmSetWindowAttribute, DWMNCRP_DISABLED, DWMNCRP_USEWINDOWSTYLE, DWMWA_BORDER_COLOR,
+        DWMWA_CLOAK, DWMWA_COLOR_DEFAULT, DWMWA_COLOR_NONE, DWMWA_NCRENDERING_POLICY,
+        DWMWA_TRANSITIONS_FORCEDISABLED, DWMWA_USE_IMMERSIVE_DARK_MODE,
         DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND, DWMWINDOWATTRIBUTE,
     },
     UI::WindowsAndMessaging::{
@@ -17,7 +18,7 @@ use windows::Win32::{
 };
 
 #[cfg(target_os = "windows")]
-const WINDOWS_ROUNDED_CORNERS_MIN_BUILD: u32 = 22000;
+const WINDOWS_DWM_FRAME_ATTRIBUTES_MIN_BUILD: u32 = 22000;
 
 pub(crate) fn set_window_shadow_enabled(
     window: &WebviewWindow,
@@ -66,11 +67,43 @@ fn set_dwm_attribute<T>(
 }
 
 #[cfg(target_os = "windows")]
+pub(crate) fn set_window_border_enabled(
+    window: &WebviewWindow,
+    enabled: bool,
+) -> Result<(), String> {
+    if windows_version::OsVersion::current().build < WINDOWS_DWM_FRAME_ATTRIBUTES_MIN_BUILD {
+        return Ok(());
+    }
+    let color = if enabled {
+        DWMWA_COLOR_DEFAULT
+    } else {
+        DWMWA_COLOR_NONE
+    };
+    if let Err(error) = set_dwm_attribute(window, DWMWA_BORDER_COLOR, &color) {
+        let border_state = if enabled { "default" } else { "none" };
+        log::warn!(
+            target: "dwm",
+            "Failed to set window border color {border_state}: {error}"
+        );
+        return Err(error.into());
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn set_window_border_enabled(
+    _window: &WebviewWindow,
+    _enabled: bool,
+) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
 pub(crate) fn set_window_corner_rounding_enabled(
     window: &WebviewWindow,
     enabled: bool,
 ) -> Result<(), String> {
-    if windows_version::OsVersion::current().build < WINDOWS_ROUNDED_CORNERS_MIN_BUILD {
+    if windows_version::OsVersion::current().build < WINDOWS_DWM_FRAME_ATTRIBUTES_MIN_BUILD {
         return Ok(());
     }
     let preference = if enabled {

@@ -245,10 +245,10 @@ export async function setMainWindowShortcutCaptureActive(active) {
   return true;
 }
 
-export async function setMainWindowShadowEnabled(enabled) {
+export async function setMainWindowNativeFrameEnabled(enabled) {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
-  await invoke("set_main_window_shadow_enabled", { enabled: Boolean(enabled) });
+  await invoke("set_main_window_native_frame_enabled", { enabled: Boolean(enabled) });
   return true;
 }
 

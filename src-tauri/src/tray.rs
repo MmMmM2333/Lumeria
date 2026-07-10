@@ -10,8 +10,9 @@ use tauri::{menu::MenuBuilder, tray::TrayIconBuilder, AppHandle, Emitter, Manage
 
 use crate::{
     dwm::{
-        set_main_window_topmost, set_window_cloaked, set_window_corner_rounding_enabled,
-        set_window_non_client_rendering, set_window_shadow_enabled, set_window_transitions_enabled,
+        set_main_window_topmost, set_window_border_enabled, set_window_cloaked,
+        set_window_corner_rounding_enabled, set_window_non_client_rendering,
+        set_window_shadow_enabled, set_window_transitions_enabled,
     },
     native_error::NativeError,
     window_effects::{
@@ -31,9 +32,27 @@ const MAIN_WINDOW_NON_CLIENT_SUBCLASS_ID: usize = 1;
 const EXPERIMENT_WINDOWED_THICKFRAME_NCCALCSIZE: bool = true;
 const WM_NCUAHDRAWCAPTION: u32 = 0x00AE;
 const WM_NCUAHDRAWFRAME: u32 = 0x00AF;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct MainWindowSurfaceState {
+    revision: u64,
+    native_frame_enabled: bool,
+    effects_enabled: bool,
+}
+
+impl MainWindowSurfaceState {
+    const DEFAULT: Self = Self {
+        revision: 0,
+        native_frame_enabled: true,
+        effects_enabled: true,
+    };
+}
+
 static MAIN_WINDOW_EFFECT_DISABLE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static MAIN_WINDOW_OPEN_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static MAIN_WINDOW_MODE: Mutex<MainWindowMode> = Mutex::new(MainWindowMode::DEFAULT);
+static MAIN_WINDOW_SURFACE_STATE: Mutex<MainWindowSurfaceState> =
+    Mutex::new(MainWindowSurfaceState::DEFAULT);
 #[cfg(target_os = "windows")]
 static MAIN_WINDOW_WINDOWED_PLACEMENT: Mutex<Option<MainWindowWindowedPlacement>> =
     Mutex::new(None);
@@ -97,7 +116,7 @@ fn show_main_window_for_sequence(app: &AppHandle, open_sequence: u64) {
         }
         if should_apply_main_window_surface_policy_before_show(mode) {
             let _ = apply_main_window_mode_to_window(&window, mode);
-            let _ = apply_main_window_native_surface_policy(&window, mode);
+            let _ = apply_main_window_native_surface_policy(&window);
         }
         if !should_cloak {
             let _ = set_window_cloaked(&window, false);
@@ -119,12 +138,24 @@ fn show_main_window_for_sequence(app: &AppHandle, open_sequence: u64) {
             let _ = window.set_focus();
             let _ = activate_window(&window);
         }
+        if let Err(error) = apply_current_main_window_effects_until_stable(&window) {
+            log::warn!(target: "window-effects", "Failed to restore main window effects: {error}");
+        }
         let disable_sequence = MAIN_WINDOW_EFFECT_DISABLE_SEQUENCE.load(Ordering::Relaxed);
         if should_use_native_window_effects(mode) {
-            let _ = set_window_effects_enabled(&window, true);
-            schedule_window_effect_reapply(window, open_sequence, disable_sequence);
-        } else if mode == MainWindowMode::Fullscreen {
-            let _ = bump_main_window_z_order_for_open(&window);
+            schedule_window_effect_reapply(window.clone(), open_sequence, disable_sequence);
+        }
+        match current_main_window_surface_state() {
+            Ok(state) if mode == MainWindowMode::Fullscreen && !state.native_frame_enabled => {
+                let _ = bump_main_window_z_order_for_open(&window);
+            }
+            Ok(_) => {}
+            Err(error) => {
+                log::warn!(
+                    target: "window-effects",
+                    "Failed to read main window surface state after show: {error}"
+                );
+            }
         }
     }
 }
@@ -219,7 +250,7 @@ pub(crate) fn set_main_window_mode(app: &AppHandle, mode: &str) -> Result<String
         if previous == MainWindowMode::Fullscreen && next == MainWindowMode::Windowed {
             restore_main_windowed_placement(&window)?;
         }
-        apply_main_window_native_surface_policy(&window, next)?;
+        apply_main_window_native_surface_policy(&window)?;
         if should_use_native_window_effects(next) {
             let open_sequence = MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed);
             let disable_sequence = MAIN_WINDOW_EFFECT_DISABLE_SEQUENCE.load(Ordering::Relaxed);
@@ -231,11 +262,13 @@ pub(crate) fn set_main_window_mode(app: &AppHandle, mode: &str) -> Result<String
     Ok(next.as_str().to_string())
 }
 
-pub(crate) fn set_main_window_shadow_enabled(app: &AppHandle, enabled: bool) -> Result<(), String> {
+pub(crate) fn set_main_window_native_frame_enabled(
+    app: &AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    update_main_window_native_frame_state(enabled)?;
     if let Some(window) = app.get_webview_window("main") {
-        let mode = current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT);
-        set_window_shadow_enabled(&window, enabled && should_use_native_window_effects(mode))?;
-        apply_main_window_win32_surface_policy(&window, mode)?;
+        apply_main_window_native_surface_policy(&window)?;
     }
     Ok(())
 }
@@ -670,7 +703,8 @@ fn prepare_main_window_fullscreen_surface(window: &WebviewWindow) -> Result<(), 
     restore_main_window_resizable_frame_style(window)?;
     set_main_window_non_client_subclass(window, true)?;
     set_window_transitions_enabled(window, true)?;
-    set_window_non_client_rendering(window, true)?;
+    let state = current_main_window_surface_state()?;
+    set_window_non_client_rendering(window, state.native_frame_enabled)?;
     refresh_main_window_frame(window)?;
     apply_main_window_borderless_fullscreen_bounds(window)
 }
@@ -765,7 +799,7 @@ fn confirm_main_window_mode_after_show(
                         source,
                     })?;
             }
-            apply_main_window_win32_surface_policy(window, mode)
+            apply_main_window_native_surface_policy(window)
         }
         MainWindowMode::Windowed => Ok(()),
     }
@@ -775,24 +809,100 @@ fn should_use_native_window_effects(mode: MainWindowMode) -> bool {
     matches!(mode, MainWindowMode::Fullscreen | MainWindowMode::Windowed)
 }
 
-fn should_round_main_window(mode: MainWindowMode) -> bool {
-    mode == MainWindowMode::Windowed
+fn current_main_window_surface_state() -> Result<MainWindowSurfaceState, String> {
+    MAIN_WINDOW_SURFACE_STATE
+        .lock()
+        .map(|state| *state)
+        .map_err(|_| "Failed to lock main window surface state".to_string())
 }
 
-fn apply_main_window_native_surface_policy(
+fn update_main_window_native_frame_state(enabled: bool) -> Result<MainWindowSurfaceState, String> {
+    let mut state = MAIN_WINDOW_SURFACE_STATE
+        .lock()
+        .map_err(|_| "Failed to lock main window surface state".to_string())?;
+    state.native_frame_enabled = enabled;
+    state.revision = state.revision.wrapping_add(1);
+    Ok(*state)
+}
+
+fn update_main_window_effects_state(enabled: bool) -> Result<MainWindowSurfaceState, String> {
+    let mut state = MAIN_WINDOW_SURFACE_STATE
+        .lock()
+        .map_err(|_| "Failed to lock main window surface state".to_string())?;
+    state.effects_enabled = enabled;
+    state.revision = state.revision.wrapping_add(1);
+    Ok(*state)
+}
+
+fn apply_main_window_surface_state_until_stable<State>(
+    mut current_state: impl FnMut() -> Result<State, String>,
+    mut apply_state: impl FnMut(State) -> Result<(), String>,
+) -> Result<(), String>
+where
+    State: Copy + Eq,
+{
+    loop {
+        let state = current_state()?;
+        apply_state(state)?;
+        if current_state()? == state {
+            return Ok(());
+        }
+    }
+}
+
+fn should_enable_main_window_native_frame(mode: MainWindowMode, frame_enabled: bool) -> bool {
+    frame_enabled && should_use_native_window_effects(mode)
+}
+
+fn should_enable_main_window_effects(mode: MainWindowMode, state: MainWindowSurfaceState) -> bool {
+    state.effects_enabled
+        && should_enable_main_window_native_frame(mode, state.native_frame_enabled)
+}
+
+fn apply_current_main_window_effects_until_stable(window: &WebviewWindow) -> Result<(), String> {
+    apply_main_window_surface_state_until_stable(
+        || {
+            Ok((
+                current_main_window_surface_state()?,
+                current_main_window_mode()?,
+            ))
+        },
+        |(state, mode)| {
+            set_window_effects_enabled(window, should_enable_main_window_effects(mode, state))
+        },
+    )
+}
+
+fn should_round_main_window(mode: MainWindowMode, frame_enabled: bool) -> bool {
+    frame_enabled && mode == MainWindowMode::Windowed
+}
+
+fn apply_main_window_native_surface_policy(window: &WebviewWindow) -> Result<(), String> {
+    apply_main_window_surface_state_until_stable(
+        || {
+            Ok((
+                current_main_window_surface_state()?,
+                current_main_window_mode()?,
+            ))
+        },
+        |(state, mode)| apply_main_window_native_surface_state(window, mode, state),
+    )
+}
+
+fn apply_main_window_native_surface_state(
     window: &WebviewWindow,
     mode: MainWindowMode,
+    state: MainWindowSurfaceState,
 ) -> Result<(), String> {
-    let enabled = should_use_native_window_effects(mode);
-    if enabled {
-        apply_main_window_win32_surface_policy(window, mode)?;
+    let frame_enabled = should_enable_main_window_native_frame(mode, state.native_frame_enabled);
+    if frame_enabled {
+        apply_main_window_win32_surface_policy(window, mode, true)?;
         set_window_shadow_enabled(window, true)?;
-        set_window_effects_enabled(window, true)?;
     } else {
         set_window_shadow_enabled(window, false)?;
-        set_window_effects_enabled(window, false)?;
-        apply_main_window_win32_surface_policy(window, mode)?;
+        apply_main_window_win32_surface_policy(window, mode, false)?;
     }
+    set_window_effects_enabled(window, should_enable_main_window_effects(mode, state))?;
     Ok(())
 }
 
@@ -800,6 +910,7 @@ fn apply_main_window_native_surface_policy(
 fn apply_main_window_win32_surface_policy(
     window: &WebviewWindow,
     mode: MainWindowMode,
+    native_frame_enabled: bool,
 ) -> Result<(), String> {
     // `decorations: false` removes the regular frame, but Tao still owns
     // the underlying Win32 style. Keep the native caption/thickframe bits so
@@ -810,7 +921,7 @@ fn apply_main_window_win32_surface_policy(
             restore_main_window_resizable_frame_style(window)?;
             set_main_window_non_client_subclass(window, true)?;
             set_window_transitions_enabled(window, true)?;
-            set_window_non_client_rendering(window, true)?;
+            set_window_non_client_rendering(window, native_frame_enabled)?;
             set_main_window_topmost(window, true)?;
             refresh_main_window_frame(window)?;
             apply_main_window_borderless_fullscreen_bounds(window)?;
@@ -823,18 +934,20 @@ fn apply_main_window_win32_surface_policy(
             } else {
                 set_main_window_non_client_subclass(window, false)?;
             }
-            set_window_non_client_rendering(window, true)?;
+            set_window_non_client_rendering(window, native_frame_enabled)?;
             set_main_window_topmost(window, false)?;
             refresh_main_window_frame(window)?;
         }
     }
-    set_window_corner_rounding_enabled(window, should_round_main_window(mode))
+    set_window_border_enabled(window, native_frame_enabled)?;
+    set_window_corner_rounding_enabled(window, should_round_main_window(mode, native_frame_enabled))
 }
 
 #[cfg(not(target_os = "windows"))]
 fn apply_main_window_win32_surface_policy(
     _window: &WebviewWindow,
     _mode: MainWindowMode,
+    _native_frame_enabled: bool,
 ) -> Result<(), String> {
     Ok(())
 }
@@ -893,42 +1006,56 @@ pub(crate) fn set_main_window_effects_enabled(
     }
 
     let (settings, settings_changed) = update_main_window_effect_settings(material, appearance)?;
+    let requested_state = update_main_window_effects_state(enabled)?;
     if let Some(window) = app.get_webview_window("main") {
-        let mode = current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT);
+        let mode = current_main_window_mode()?;
         set_window_effects_enabled_with_config(
             &window,
-            enabled && should_use_native_window_effects(mode),
+            should_enable_main_window_effects(mode, requested_state),
             settings,
             settings_changed,
         )?;
-        apply_main_window_win32_surface_policy(&window, mode)?;
+        apply_main_window_win32_surface_policy(
+            &window,
+            mode,
+            should_enable_main_window_native_frame(mode, requested_state.native_frame_enabled),
+        )?;
+        if (
+            current_main_window_surface_state()?,
+            current_main_window_mode()?,
+        ) != (requested_state, mode)
+        {
+            apply_main_window_native_surface_policy(&window)?;
+        }
     }
     Ok(())
 }
 
 pub(crate) fn refresh_main_window_effects(app: &AppHandle) {
+    if let Err(error) = refresh_main_window_effects_inner(app) {
+        log::warn!(target: "window-effects", "Failed to refresh main window effects: {error}");
+    }
+}
+
+fn refresh_main_window_effects_inner(app: &AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
         if !window.is_visible().unwrap_or(false) {
-            return;
+            return Ok(());
         }
-        let mode = current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT);
-        if !should_use_native_window_effects(mode) {
-            let _ = set_window_effects_enabled(&window, false);
-            let _ = apply_main_window_win32_surface_policy(&window, mode);
-            if mode == MainWindowMode::Fullscreen {
-                let _ = set_main_window_topmost(&window, true);
-            }
-            return;
-        }
+        let mode = current_main_window_mode()?;
+        apply_current_main_window_effects_until_stable(&window)?;
+        let state = current_main_window_surface_state()?;
         let open_sequence = MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed);
         let disable_sequence = MAIN_WINDOW_EFFECT_DISABLE_SEQUENCE.load(Ordering::Relaxed);
-        let _ = set_window_effects_enabled(&window, true);
         if mode == MainWindowMode::Fullscreen {
-            let _ = set_main_window_topmost(&window, true);
-            let _ = apply_main_window_borderless_fullscreen_bounds(&window);
+            set_main_window_topmost(&window, true)?;
+            apply_main_window_borderless_fullscreen_bounds(&window)?;
         }
-        schedule_window_effect_reapply(window, open_sequence, disable_sequence);
+        if should_enable_main_window_effects(mode, state) {
+            schedule_window_effect_reapply(window, open_sequence, disable_sequence);
+        }
     }
+    Ok(())
 }
 
 pub(crate) fn release_main_window_topmost(app: &AppHandle) {
@@ -981,19 +1108,27 @@ fn schedule_window_effect_reapply(
         let window = window.clone();
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(delay_ms));
-            if MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed) != open_sequence {
-                return;
-            }
-            if MAIN_WINDOW_EFFECT_DISABLE_SEQUENCE.load(Ordering::Relaxed) != disable_sequence {
-                return;
-            }
-            if window.is_visible().unwrap_or(false) {
-                let mode = current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT);
-                if should_use_native_window_effects(mode) {
-                    let _ = set_window_effects_enabled(&window, true);
-                } else {
-                    let _ = set_window_effects_enabled(&window, false);
+            let result: Result<(), String> = (|| {
+                if MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed) != open_sequence {
+                    return Ok(());
                 }
+                if MAIN_WINDOW_EFFECT_DISABLE_SEQUENCE.load(Ordering::Relaxed) != disable_sequence {
+                    return Ok(());
+                }
+                let state = current_main_window_surface_state()?;
+                if !state.native_frame_enabled || !state.effects_enabled {
+                    return Ok(());
+                }
+                if window.is_visible().unwrap_or(false) {
+                    apply_current_main_window_effects_until_stable(&window)?;
+                }
+                Ok(())
+            })();
+            if let Err(error) = result {
+                log::warn!(
+                    target: "window-effects",
+                    "Failed to reapply main window effects after {delay_ms}ms: {error}"
+                );
             }
         });
     }
@@ -1031,8 +1166,7 @@ pub(crate) fn trigger_main_window_shortcut(app: &AppHandle) {
 
     if should_hide {
         if let Some(window) = app.get_webview_window("main") {
-            let mode = current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT);
-            let _ = apply_main_window_native_surface_policy(&window, mode);
+            let _ = apply_main_window_native_surface_policy(&window);
         }
         let open_sequence = MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed);
         if let Err(error) = app.emit(TOGGLE_DESKTOP_EVENT, open_sequence) {
@@ -1078,6 +1212,31 @@ pub(crate) fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn main_window_effect_reapply_converges_after_state_changes_during_apply() {
+        let revision = Cell::new(1_u64);
+        let effects_enabled = Cell::new(true);
+        let mut first_apply = true;
+        let mut applied = Vec::new();
+
+        apply_main_window_surface_state_until_stable(
+            || Ok((revision.get(), effects_enabled.get())),
+            |(_, enabled)| {
+                applied.push(enabled);
+                if first_apply {
+                    first_apply = false;
+                    effects_enabled.set(false);
+                    revision.set(2);
+                }
+                Ok(())
+            },
+        )
+        .expect("effect state should converge");
+
+        assert_eq!(applied, vec![true, false]);
+    }
 
     #[test]
     fn main_window_mode_accepts_known_modes() {
@@ -1103,7 +1262,24 @@ mod tests {
 
     #[test]
     fn main_window_corner_rounding_only_applies_to_windowed_mode() {
-        assert!(should_round_main_window(MainWindowMode::Windowed));
-        assert!(!should_round_main_window(MainWindowMode::Fullscreen));
+        assert!(should_round_main_window(MainWindowMode::Windowed, true));
+        assert!(!should_round_main_window(MainWindowMode::Fullscreen, true));
+        assert!(!should_round_main_window(MainWindowMode::Windowed, false));
+    }
+
+    #[test]
+    fn main_window_native_frame_requires_open_surface_state() {
+        assert!(should_enable_main_window_native_frame(
+            MainWindowMode::Windowed,
+            true
+        ));
+        assert!(should_enable_main_window_native_frame(
+            MainWindowMode::Fullscreen,
+            true
+        ));
+        assert!(!should_enable_main_window_native_frame(
+            MainWindowMode::Windowed,
+            false
+        ));
     }
 }

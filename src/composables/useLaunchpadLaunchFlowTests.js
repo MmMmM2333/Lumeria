@@ -48,7 +48,7 @@ function createLaunchFlow(overrides = {}) {
     openLaunchErrorDialog: [],
     schedulePageGridMetrics: 0,
     setNativeWindowEffectsEnabled: [],
-    setNativeWindowShadowEnabled: [],
+    setNativeWindowFrameEnabled: [],
     showNativeLaunchError: [],
     startFolderAppLaunchClose: 0,
     startFolderZoomFadeClose: [],
@@ -122,7 +122,7 @@ function createLaunchFlow(overrides = {}) {
     },
     searchInputRef,
     setNativeWindowEffectsEnabled: (enabled) => calls.setNativeWindowEffectsEnabled.push(enabled),
-    setNativeWindowShadowEnabled: (enabled) => calls.setNativeWindowShadowEnabled.push(enabled),
+    setNativeWindowFrameEnabled: (enabled) => calls.setNativeWindowFrameEnabled.push(enabled),
     showNativeLaunchError: (error) => calls.showNativeLaunchError.push(error),
     shouldValidateLaunchTarget: () => Boolean(overrides.shouldValidateLaunchTarget),
     startFolderAppLaunchClose: () => {
@@ -171,7 +171,7 @@ export async function runLaunchpadLaunchFlowTests() {
     assert(close.calls.clearSelectedIcon === 1, "closing the desktop should clear selected icon");
     assert(close.calls.searchInputBlur === 1, "closing the desktop should blur search input");
     assert(close.calls.setNativeWindowEffectsEnabled.join(",") === "false", "closing the desktop should disable native window effects");
-    assert(close.calls.setNativeWindowShadowEnabled.join(",") === "false", "closing the desktop should disable native window shadow");
+    assert(close.calls.setNativeWindowFrameEnabled.join(",") === "false", "closing the desktop should disable the native window frame");
     timers.runDelay(DESKTOP_CLOSE_DURATION);
     assert(!close.flow.isDesktopClosing.value, "desktop close timer should end the closing state");
     assert(close.calls.clearSearch.length === 1, "desktop close should clear search after the close animation");
@@ -215,7 +215,7 @@ export async function runLaunchpadLaunchFlowTests() {
     assert(launch.calls.startFolderZoomFadeClose.length === 1, "folder app launches should start folder zoom-fade close");
     assert(launch.calls.startFolderZoomFadeClose[0].reason === "app-launch", "folder app launches should mark zoom-fade as app launch");
     assert(launch.calls.startFolderAppLaunchClose === 0, "folder app launches should not use the folder shrink-close path");
-    assert(launch.calls.setNativeWindowShadowEnabled.join(",") === "false", "app launch close animation should disable native window shadow");
+    assert(launch.calls.setNativeWindowFrameEnabled.join(",") === "false", "app launch close animation should disable the native window frame");
     timers.runDelay(0);
     assert(launch.calls.launchNativeAppIfAvailable.join(",") === "launch-app", "app launch should call native launch on a zero delay timer");
     timers.runDelay(APP_LAUNCH_DURATION);

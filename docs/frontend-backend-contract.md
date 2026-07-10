@@ -22,7 +22,7 @@ commands.
 - `set_main_window_mode(mode: "fullscreen" | "windowed") -> "fullscreen" | "windowed"`; the native window remains frameless in both modes.
 - `set_main_window_shortcut(shortcut: string | null) -> string | null`; registers the global shortcut used to show or hide LaunchPad, or unregisters it when `null`. Registration failure means the shortcut is occupied or invalid and the previous shortcut remains active.
 - `set_main_window_shortcut_capture_active(active: boolean) -> void`; suppresses the registered main-window shortcut action while the renderer is recording a replacement shortcut.
-- `set_main_window_shadow_enabled(enabled: boolean) -> void`; close animations disable the native window shadow and the next open restores it.
+- `set_main_window_native_frame_enabled(enabled: boolean) -> void`; close animations disable the native window frame (shadow, border, corners, and non-client rendering) and the next open restores it.
 
 Windowed mode uses a frontend-rendered title bar for dragging, resizing, and window controls. It requires Tauri `core:window:allow-start-dragging`, `core:window:allow-start-resize-dragging`, `core:window:allow-minimize`, and `core:window:allow-toggle-maximize` permissions.
 

@@ -44,7 +44,7 @@ import {
   setLiveDesktopBackgroundVisible,
   setMainWindowEffectsEnabled,
   setMainWindowMode,
-  setMainWindowShadowEnabled,
+  setMainWindowNativeFrameEnabled,
   showMainWindow,
   showLaunchErrorMessage,
   startLiveDesktopBackground,
@@ -376,8 +376,7 @@ export function useLaunchpadNative(options) {
   let nativeLayoutReady = false;
   const isNativeLayoutReady = ref(!shouldUseNativeCatalog());
   let nativeWindowModeUpdate = Promise.resolve();
-  let nativeWindowEffectsUpdate = Promise.resolve();
-  let nativeWindowShadowUpdate = Promise.resolve();
+  let nativeWindowSurfaceUpdate = Promise.resolve();
   let nativeWindowRevealUpdate = Promise.resolve();
   let nativeSaveTimer = null;
   let nativeWindowHideTimer = null;
@@ -1307,7 +1306,7 @@ export function useLaunchpadNative(options) {
       options.windowEffectsSupport.value
     );
     const appearance = normalizeWindowEffectAppearance(options.windowEffectAppearance.value);
-    nativeWindowEffectsUpdate = nativeWindowEffectsUpdate
+    nativeWindowSurfaceUpdate = nativeWindowSurfaceUpdate
       .catch(() => {})
       .then(() => setMainWindowEffectsEnabled(enabled, openSequence, { material, appearance }))
       .catch((error) => {
@@ -1349,13 +1348,13 @@ export function useLaunchpadNative(options) {
     });
   }
 
-  function setNativeWindowShadowEnabled(enabled) {
+  function setNativeWindowFrameEnabled(enabled) {
     if (!isNativeBridgeAvailable()) return;
-    nativeWindowShadowUpdate = nativeWindowShadowUpdate
+    nativeWindowSurfaceUpdate = nativeWindowSurfaceUpdate
       .catch(() => {})
-      .then(() => setMainWindowShadowEnabled(Boolean(enabled)))
+      .then(() => setMainWindowNativeFrameEnabled(Boolean(enabled)))
       .catch((error) => {
-        console.error("Failed to update LaunchPad window shadow", error);
+        console.error("Failed to update LaunchPad native window frame", error);
       });
   }
 
@@ -1478,7 +1477,8 @@ export function useLaunchpadNative(options) {
 
   function openDesktopFromNativeShortcut(event) {
     rememberNativeWindowOpenSequence(event);
-    setNativeWindowShadowEnabled(true);
+    setNativeWindowFrameEnabled(true);
+    setNativeWindowEffectsEnabled(true);
     refreshWindowsWallpaperBackground().then((changed) => {
       if (changed) scheduleNativeLayoutSave();
     }).finally(syncWindowsWallpaperRefreshTimer);
@@ -1498,7 +1498,7 @@ export function useLaunchpadNative(options) {
     clearNativeWindowHideTimer();
     const hideSequence = ++nativeWindowHideSequence;
     setNativeWindowClosingInteractionBlocked(true);
-    setNativeWindowShadowEnabled(false);
+    setNativeWindowFrameEnabled(false);
     syncLiveDesktopBackgroundRuntime();
     nativeWindowHideTimer = window.setTimeout(async () => {
       if (hideSequence !== nativeWindowHideSequence) return;
@@ -1604,7 +1604,7 @@ export function useLaunchpadNative(options) {
     setNativeMainWindowShortcutCaptureActive,
     setNativeWindowMode,
     setNativeWindowEffectsEnabled,
-    setNativeWindowShadowEnabled,
+    setNativeWindowFrameEnabled,
     showNativeWindowAfterStartup,
     showNativeLaunchError,
     startNativeLiveDesktopBackground,
