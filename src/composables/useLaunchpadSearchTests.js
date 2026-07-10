@@ -1,5 +1,4 @@
 import { nextTick, ref } from "vue";
-import { buildAppSearchDocuments, searchAppDocuments } from "../domain/launchpadSearch.js";
 import { useLaunchpadSearch } from "./useLaunchpadSearch.js";
 
 const testApps = [
@@ -22,7 +21,6 @@ function createSearchFlow(overrides = {}) {
   const openFolderId = ref(overrides.openFolderId ?? "folder-1");
   const pageSize = ref(overrides.pageSize ?? 1);
   const search = useLaunchpadSearch({
-    buildAppSearchDocuments,
     clearSelectedIcon: () => {
       calls.clearSelectedIcon += 1;
     },
@@ -43,7 +41,6 @@ function createSearchFlow(overrides = {}) {
     schedulePageGridMetrics: () => {
       calls.schedulePageGridMetrics += 1;
     },
-    searchAppDocuments,
     searchPageIndex,
     selectFirstIconInCurrentScope: (options) => calls.selectFirstIconInCurrentScope.push(options),
   });
