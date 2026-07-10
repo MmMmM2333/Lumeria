@@ -47,6 +47,7 @@
           debugTabCount === 3 && 'background-debug-tabs-three',
           debugTabCount === 4 && 'background-debug-tabs-four',
           debugTabCount === 5 && 'background-debug-tabs-five',
+          debugTabCount === 6 && 'background-debug-tabs-six',
         ]"
         role="tablist"
         aria-label="Debug panel sections"
@@ -71,6 +72,14 @@
           @click="activePanel = 'notice'"
         >
           Notice
+        </button>
+        <button
+          v-if="canDebugRender"
+          type="button"
+          :class="['background-debug-tab', activePanel === 'render' && 'background-debug-tab-active']"
+          @click="activePanel = 'render'"
+        >
+          Render
         </button>
         <button
           v-if="canDebugMotion"
@@ -302,6 +311,151 @@
         <div class="background-debug-actions">
           <button type="button" class="background-debug-button" :disabled="!canDebugNotice" @click="clearDebugNotices">
             清空通知
+          </button>
+        </div>
+      </div>
+
+      <div v-else-if="activePanel === 'render' && canDebugRender" class="background-debug-section">
+        <div class="background-debug-subsection background-debug-render-config">
+          <div class="background-debug-subtitle">Capture target</div>
+          <div class="background-debug-mode-group background-debug-render-target-group" role="group" aria-label="Render probe capture target">
+            <button
+              v-for="target in RENDER_PROBE_TARGET_OPTIONS"
+              :key="target.value"
+              type="button"
+              :class="['background-debug-mode-button', renderProbeTargetKind === target.value && 'background-debug-mode-button-active']"
+              @click="renderProbeTargetKind = target.value"
+            >
+              {{ target.label }}
+            </button>
+          </div>
+
+          <label
+            v-if="renderProbeTargetKind !== RENDER_PROBE_TARGET_ALL"
+            class="background-debug-control background-debug-render-target-control"
+          >
+            <span>{{ renderProbeTargetInputLabel }}</span>
+            <input
+              v-model="renderProbeTargetValue"
+              name="renderProbeTargetValue"
+              type="text"
+              :placeholder="renderProbeTargetInputLabel"
+            >
+          </label>
+        </div>
+
+        <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">Framebuffer pixels</div>
+          <div class="background-debug-mode-group background-debug-render-pixel-group" role="group" aria-label="Render probe framebuffer pixels">
+            <button
+              type="button"
+              :class="['background-debug-mode-button', renderProbePixels === RENDER_PROBE_PIXELS_OFF && 'background-debug-mode-button-active']"
+              @click="renderProbePixels = RENDER_PROBE_PIXELS_OFF"
+            >
+              Off
+            </button>
+            <button
+              type="button"
+              :class="['background-debug-mode-button', renderProbePixels === RENDER_PROBE_PIXELS_PHASE_DIFF && 'background-debug-mode-button-active']"
+              @click="renderProbePixels = RENDER_PROBE_PIXELS_PHASE_DIFF"
+            >
+              Phase diff
+            </button>
+          </div>
+          <label class="background-debug-toggle">
+            <input v-model="renderProbeAutoFreeze" name="renderProbeAutoFreeze" type="checkbox">
+            <span>Auto freeze on invariant or strong pixel diff</span>
+          </label>
+        </div>
+
+        <div v-if="renderProbeError" class="background-debug-error" :title="renderProbeError">
+          {{ renderProbeError }}
+        </div>
+
+        <dl class="background-debug-status-grid">
+          <div
+            v-for="row in renderProbeStatusRows"
+            :key="row.label"
+            :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
+          >
+            <dt>{{ row.label }}</dt>
+            <dd :title="row.value">{{ row.value }}</dd>
+          </div>
+        </dl>
+
+        <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">Phase captures</div>
+          <div class="background-debug-render-list">
+            <article
+              v-for="row in renderProbePhaseRows"
+              :key="row.key"
+              class="background-debug-render-card"
+            >
+              <strong>
+                <span>{{ row.phase }}</span>
+                <span>{{ row.time }}</span>
+              </strong>
+              <span>Framebuffer: {{ row.framebuffer }}</span>
+              <span>Violations: {{ row.violations }}</span>
+            </article>
+            <article v-if="renderProbePhaseRows.length === 0" class="background-debug-render-card">
+              <strong>No phase captures</strong>
+              <span>Arm the probe, then long-press and release an icon.</span>
+            </article>
+          </div>
+        </div>
+
+        <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">Pixel candidates</div>
+          <div v-if="renderProbePixelComparison" class="background-debug-detail">
+            {{ renderProbePixelComparison.available ? "available" : `unavailable: ${renderProbePixelComparison.reason || 'unknown reason'}` }}
+            · {{ renderProbePixelComparison.strongCandidateCount || 0 }} strong
+            · {{ renderProbePixelComparison.changedSlotCount || 0 }} changed
+            / {{ renderProbePixelComparison.comparableSlotCount || 0 }} comparable
+          </div>
+          <div class="background-debug-render-list">
+            <article
+              v-for="row in renderProbeCandidateRows"
+              :key="row.key"
+              :class="['background-debug-render-card', row.strong && 'background-debug-render-card-strong']"
+            >
+              <strong>
+                <span>#{{ row.rank }} {{ row.title }}</span>
+                <span>{{ row.strong ? "strong" : "changed" }}</span>
+              </strong>
+              <span>{{ row.identity }}</span>
+              <span>{{ row.detail }}</span>
+            </article>
+            <article v-if="renderProbeCandidateRows.length === 0" class="background-debug-render-card">
+              <strong>No pixel candidates</strong>
+              <span>{{ renderProbePixelComparison ? "No ranked framebuffer differences in this session." : "Complete a phase-diff drag session first." }}</span>
+            </article>
+          </div>
+        </div>
+
+        <div class="background-debug-actions background-debug-render-actions">
+          <button
+            type="button"
+            class="background-debug-button"
+            :disabled="!renderProbeReady || !renderProbeCanArm"
+            @click="armRenderProbe"
+          >
+            Arm &amp; Clear
+          </button>
+          <button type="button" class="background-debug-button" :disabled="!renderProbeReady" @click="disarmRenderProbe">
+            Disarm
+          </button>
+          <button type="button" class="background-debug-button" :disabled="!renderProbeReady" @click="clearRenderProbe">
+            Clear
+          </button>
+          <button type="button" class="background-debug-button" @click="refreshRenderProbeSummary">
+            Refresh
+          </button>
+          <button type="button" class="background-debug-button" :disabled="!renderProbeReady" @click="copyRenderProbeJson">
+            {{ renderProbeCopyButtonLabel }}
+          </button>
+          <button type="button" class="background-debug-button" :disabled="!renderProbeReady" @click="downloadRenderProbeJson">
+            Download JSON
           </button>
         </div>
       </div>
@@ -804,6 +958,17 @@ import {
   normalizeLiveDesktopStatus,
 } from "./backgroundDebug/liveDesktopDiagnostics.js";
 import {
+  buildRenderProbeArmConfig,
+  buildRenderProbeCandidateRows,
+  buildRenderProbePhaseRows,
+  buildRenderProbeStatusRows,
+  RENDER_PROBE_PIXELS_OFF,
+  RENDER_PROBE_PIXELS_PHASE_DIFF,
+  RENDER_PROBE_TARGET_ALL,
+  RENDER_PROBE_TARGET_OPTIONS,
+  resolveRenderProbeDisplaySession,
+} from "./backgroundDebug/renderProbePanelModel.js";
+import {
   LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN,
   notifyLiveDesktopCompositorKeeperChanged,
   notifyLiveDesktopCssFallbackEffectsChanged,
@@ -917,6 +1082,7 @@ import {
   createMotionReplayCaptureController,
   normalizeMotionReplayCaptureSeconds,
 } from "../rendering/pixi/animation/motionReplayTrace.js";
+import { readLaunchpadDebugValue } from "../rendering/pixi/debugNamespace.js";
 import { motionRuntime } from "../rendering/pixi/animation/motionRuntime.js";
 
 const DEBUG_PANEL_DOCK_STORAGE_KEY = "launchpadBackgroundDebugPanelDock";
@@ -954,6 +1120,7 @@ const debugPanelDock = ref(readDebugPanelDock());
 const activePanel = ref("acrylic");
 const canDebugLiveDesktop = computed(() => isLiveDesktopExperimentEnabled());
 const canDebugMotion = computed(() => Boolean(import.meta.env.DEV));
+const canDebugRender = computed(() => Boolean(import.meta.env.DEV));
 const canDebugNotice = computed(() => Boolean(
   props.dialogState?.showLayoutSaveFailed
     && props.dialogState?.showLayoutSaveRecovered
@@ -961,9 +1128,13 @@ const canDebugNotice = computed(() => Boolean(
     && props.dialogState?.showLayoutLoadRecovered
     && props.dialogState?.handleLayoutRecovered
 ));
-const debugTabCount = computed(() => 3 + (canDebugMotion.value ? 1 : 0) + (canDebugLiveDesktop.value ? 1 : 0));
+const debugTabCount = computed(() => 3
+  + (canDebugRender.value ? 1 : 0)
+  + (canDebugMotion.value ? 1 : 0)
+  + (canDebugLiveDesktop.value ? 1 : 0));
 const hasCopiedAcrylic = ref(false);
 const hasCopiedDiagnostics = ref(false);
+const hasCopiedRenderJson = ref(false);
 const hasCopiedMotionFocused = ref(false);
 const hasCopiedMotionFull = ref(false);
 const hasCopiedMotionReplayInterval = ref(false);
@@ -976,6 +1147,13 @@ const liveDesktopCssFallbackEffects = ref(canDebugLiveDesktop.value ? readLiveDe
 const liveDesktopSkipBlankFrames = ref(canDebugLiveDesktop.value ? readLiveDesktopSkipBlankFrames() : false);
 const liveDesktopForceDwmFlush = ref(canDebugLiveDesktop.value ? readLiveDesktopForceDwmFlush() : false);
 const isLiveDesktopActionBusy = ref(false);
+const renderProbeAutoFreeze = ref(true);
+const renderProbeActionError = ref("");
+const renderProbePixels = ref(RENDER_PROBE_PIXELS_OFF);
+const renderProbeRefreshError = ref("");
+const renderProbeSummary = ref(null);
+const renderProbeTargetKind = ref(RENDER_PROBE_TARGET_ALL);
+const renderProbeTargetValue = ref("");
 const motionRuntimeDebugEnabled = ref(false);
 const motionOverlayEnabled = ref(false);
 const motionRecordEnabled = ref(false);
@@ -1017,6 +1195,22 @@ const liveDesktopRates = ref({
   timeoutsPerSecond: 0,
   copyErrorsPerSecond: 0,
 });
+const renderProbeError = computed(() => renderProbeActionError.value || renderProbeRefreshError.value);
+const renderProbeReady = computed(() => Boolean(renderProbeSummary.value));
+const renderProbeCanArm = computed(() => (
+  renderProbeTargetKind.value === RENDER_PROBE_TARGET_ALL
+  || Boolean(renderProbeTargetValue.value.trim())
+));
+const renderProbeTargetInputLabel = computed(() => (
+  RENDER_PROBE_TARGET_OPTIONS.find((option) => option.value === renderProbeTargetKind.value)?.label
+  || "Target value"
+));
+const renderProbeDisplaySession = computed(() => resolveRenderProbeDisplaySession(renderProbeSummary.value));
+const renderProbeStatusRows = computed(() => buildRenderProbeStatusRows(renderProbeSummary.value));
+const renderProbePhaseRows = computed(() => buildRenderProbePhaseRows(renderProbeDisplaySession.value));
+const renderProbeCandidateRows = computed(() => buildRenderProbeCandidateRows(renderProbeDisplaySession.value));
+const renderProbePixelComparison = computed(() => renderProbeDisplaySession.value?.pixelComparison || null);
+const renderProbeCopyButtonLabel = computed(() => (hasCopiedRenderJson.value ? "Copied" : "Copy JSON"));
 const noticeDebugRows = computed(() => [
   {
     label: "Save",
@@ -1030,6 +1224,8 @@ const noticeDebugRows = computed(() => [
 let liveDesktopRateSample = null;
 let acrylicCopyStateTimer = null;
 let diagnosticsCopyStateTimer = null;
+let renderProbeCopyStateTimer = null;
+let renderProbeRuntimePollTimer = null;
 let motionFocusedCopyStateTimer = null;
 let motionFullCopyStateTimer = null;
 let motionRuntimePollTimer = null;
@@ -2655,6 +2851,86 @@ async function reconfigureLiveDesktopRuntime(options = {}) {
   }
 }
 
+function requireRenderProbeCommands(commandName) {
+  const commands = readLaunchpadDebugValue("renderProbe");
+  if (!commands) throw new Error("render probe is not installed");
+  if (typeof commands[commandName] !== "function") {
+    throw new Error(`render probe command ${commandName} is unavailable`);
+  }
+  return commands;
+}
+
+function setRenderProbeActionError(action, error) {
+  renderProbeActionError.value = `${action}: ${String(error?.message || error || "unknown error")}`;
+}
+
+function refreshRenderProbeSummary() {
+  try {
+    const summary = requireRenderProbeCommands("summary").summary();
+    if (!summary || typeof summary !== "object") throw new Error("render probe returned an invalid summary");
+    renderProbeSummary.value = summary;
+    renderProbeRefreshError.value = "";
+  } catch (error) {
+    renderProbeSummary.value = null;
+    renderProbeRefreshError.value = `Refresh failed: ${String(error?.message || error || "unknown error")}`;
+  }
+}
+
+function armRenderProbe() {
+  try {
+    const config = buildRenderProbeArmConfig({
+      autoFreeze: renderProbeAutoFreeze.value,
+      pixels: renderProbePixels.value,
+      targetKind: renderProbeTargetKind.value,
+      targetValue: renderProbeTargetValue.value,
+    });
+    requireRenderProbeCommands("arm").arm(config);
+    renderProbeActionError.value = "";
+    refreshRenderProbeSummary();
+  } catch (error) {
+    setRenderProbeActionError("Arm failed", error);
+  }
+}
+
+function disarmRenderProbe() {
+  try {
+    requireRenderProbeCommands("disarm").disarm();
+    renderProbeActionError.value = "";
+    refreshRenderProbeSummary();
+  } catch (error) {
+    setRenderProbeActionError("Disarm failed", error);
+  }
+}
+
+function clearRenderProbe() {
+  try {
+    requireRenderProbeCommands("clear").clear();
+    renderProbeActionError.value = "";
+    refreshRenderProbeSummary();
+  } catch (error) {
+    setRenderProbeActionError("Clear failed", error);
+  }
+}
+
+async function copyRenderProbeJson() {
+  try {
+    const json = requireRenderProbeCommands("exportJson").exportJson();
+    await copyToClipboard(json, hasCopiedRenderJson, "renderProbe");
+    renderProbeActionError.value = "";
+  } catch (error) {
+    setRenderProbeActionError("Copy failed", error);
+  }
+}
+
+function downloadRenderProbeJson() {
+  try {
+    requireRenderProbeCommands("download").download();
+    renderProbeActionError.value = "";
+  } catch (error) {
+    setRenderProbeActionError("Download failed", error);
+  }
+}
+
 function copyToClipboard(text, copiedRef, timerName) {
   if (!navigator.clipboard?.writeText) throw new Error("Clipboard API is unavailable");
   return navigator.clipboard.writeText(text).then(() => {
@@ -2703,6 +2979,14 @@ function copyToClipboard(text, copiedRef, timerName) {
       if (motionReplayIntervalCopyStateTimer != null) window.clearTimeout(motionReplayIntervalCopyStateTimer);
       motionReplayIntervalCopyStateTimer = window.setTimeout(() => {
         motionReplayIntervalCopyStateTimer = null;
+        copiedRef.value = false;
+      }, 1200);
+      return;
+    }
+    if (timerName === "renderProbe") {
+      if (renderProbeCopyStateTimer != null) window.clearTimeout(renderProbeCopyStateTimer);
+      renderProbeCopyStateTimer = window.setTimeout(() => {
+        renderProbeCopyStateTimer = null;
         copiedRef.value = false;
       }, 1200);
       return;
@@ -2838,6 +3122,26 @@ function clearLiveDesktopRuntimePoller() {
   if (liveDesktopRuntimePollTimer == null) return;
   window.clearInterval(liveDesktopRuntimePollTimer);
   liveDesktopRuntimePollTimer = null;
+}
+
+function clearRenderProbePoller() {
+  if (renderProbeRuntimePollTimer == null) return;
+  window.clearInterval(renderProbeRuntimePollTimer);
+  renderProbeRuntimePollTimer = null;
+}
+
+function restartRenderProbePoller() {
+  clearRenderProbePoller();
+  if (
+    typeof window === "undefined"
+    || !canDebugRender.value
+    || isCollapsed.value
+    || activePanel.value !== "render"
+  ) {
+    return;
+  }
+  refreshRenderProbeSummary();
+  renderProbeRuntimePollTimer = window.setInterval(refreshRenderProbeSummary, 1000);
 }
 
 function clearMotionRuntimePoller() {
@@ -3024,18 +3328,25 @@ watch(canDebugMotion, (enabled) => {
   if (activePanel.value === "motion") activePanel.value = "acrylic";
 }, { immediate: true });
 
+watch(canDebugRender, (enabled) => {
+  if (!enabled && activePanel.value === "render") activePanel.value = "acrylic";
+}, { immediate: true });
+
 watch([isCollapsed, activePanel, canDebugLiveDesktop], restartLiveDesktopRuntimePoller, { flush: "post" });
 watch([isCollapsed, activePanel, canDebugMotion], restartMotionRuntimePoller, { flush: "post" });
+watch([isCollapsed, activePanel, canDebugRender], restartRenderProbePoller, { flush: "post" });
 
 onMounted(() => {
   window.addEventListener("keydown", handleMotionWorkspaceGlobalKeydown);
   restartLiveDesktopRuntimePoller();
   restartMotionRuntimePoller();
+  restartRenderProbePoller();
 });
 
 onBeforeUnmount(() => {
   if (acrylicCopyStateTimer != null) window.clearTimeout(acrylicCopyStateTimer);
   if (diagnosticsCopyStateTimer != null) window.clearTimeout(diagnosticsCopyStateTimer);
+  if (renderProbeCopyStateTimer != null) window.clearTimeout(renderProbeCopyStateTimer);
   if (motionFocusedCopyStateTimer != null) window.clearTimeout(motionFocusedCopyStateTimer);
   if (motionFullCopyStateTimer != null) window.clearTimeout(motionFullCopyStateTimer);
   if (motionReplayIntervalCopyStateTimer != null) window.clearTimeout(motionReplayIntervalCopyStateTimer);
@@ -3049,6 +3360,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleMotionWorkspaceGlobalKeydown);
   clearMotionRuntimePoller();
   clearLiveDesktopRuntimePoller();
+  clearRenderProbePoller();
 });
 </script>
 
@@ -3219,6 +3531,10 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+.background-debug-tabs-six {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .background-debug-mode-group {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -3228,6 +3544,14 @@ onBeforeUnmount(() => {
 }
 
 .background-debug-live-source-group {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.background-debug-render-target-group {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.background-debug-render-pixel-group {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -3352,6 +3676,7 @@ onBeforeUnmount(() => {
 }
 
 .background-debug-select-control select,
+.background-debug-render-target-control input[type="text"],
 .background-debug-motion-capture-filter-control input[type="text"],
 .background-debug-motion-capture-filter-control input[type="search"] {
   width: 100%;
@@ -3509,7 +3834,8 @@ onBeforeUnmount(() => {
   background: rgba(255, 70, 70, 0.08);
 }
 
-.background-debug-window-list {
+.background-debug-window-list,
+.background-debug-render-list {
   display: grid;
   gap: 6px;
   min-width: 0;
@@ -4363,7 +4689,8 @@ onBeforeUnmount(() => {
   line-height: 1.2;
 }
 
-.background-debug-window-card {
+.background-debug-window-card,
+.background-debug-render-card {
   display: grid;
   min-width: 0;
   gap: 3px;
@@ -4374,24 +4701,47 @@ onBeforeUnmount(() => {
 }
 
 .background-debug-window-card strong,
-.background-debug-window-card span {
+.background-debug-window-card span,
+.background-debug-render-card > strong,
+.background-debug-render-card > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.background-debug-window-card strong {
+.background-debug-window-card strong,
+.background-debug-render-card > strong {
   color: rgba(255, 255, 255, 0.9);
   font-size: 11.5px;
   font-weight: 650;
   line-height: 1.2;
 }
 
-.background-debug-window-card span {
+.background-debug-window-card span,
+.background-debug-render-card > span {
   color: rgba(255, 255, 255, 0.52);
   font-size: 10.5px;
   line-height: 1.2;
+}
+
+.background-debug-render-card > strong {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.background-debug-render-card > strong span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.background-debug-render-card-strong {
+  border-color: rgba(255, 190, 92, 0.32);
+  background: rgba(255, 170, 54, 0.08);
 }
 
 .background-debug-motion-actions,
@@ -4401,7 +4751,8 @@ onBeforeUnmount(() => {
 .background-debug-motion-replay-viewer-actions,
 .background-debug-motion-replay-step-actions,
 .background-debug-notice-actions,
-.background-debug-live-actions {
+.background-debug-live-actions,
+.background-debug-render-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   justify-content: stretch;
@@ -4414,7 +4765,8 @@ onBeforeUnmount(() => {
 .background-debug-motion-replay-viewer-actions .background-debug-button,
 .background-debug-motion-replay-step-actions .background-debug-button,
 .background-debug-notice-actions .background-debug-button,
-.background-debug-live-actions .background-debug-button {
+.background-debug-live-actions .background-debug-button,
+.background-debug-render-actions .background-debug-button {
   width: 100%;
 }
 

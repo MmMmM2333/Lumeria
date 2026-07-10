@@ -583,6 +583,58 @@ function summarizeFramebufferSample(sample) {
   };
 }
 
+function summarizeFramebufferForPanel(framebuffer) {
+  if (!framebuffer) return null;
+  return {
+    available: framebuffer.available === true,
+    captureDurationMs: framebuffer.captureDurationMs ?? null,
+    readPixelsCallCount: framebuffer.readPixelsCallCount ?? null,
+    reason: framebuffer.reason || null,
+    region: clonePlain(framebuffer.region),
+    skippedSlotCount: framebuffer.skippedSlots?.length ?? null,
+    slotCount: framebuffer.slotCount ?? null,
+    warningCount: framebuffer.warnings?.length ?? null,
+  };
+}
+
+function summarizePixelComparisonForPanel(comparison) {
+  if (!comparison) return null;
+  return {
+    available: comparison.available === true,
+    candidates: clonePlain(comparison.candidates || []),
+    changedSlotCount: comparison.changedSlotCount ?? 0,
+    comparableSlotCount: comparison.comparableSlotCount ?? 0,
+    from: comparison.from || null,
+    reason: comparison.reason || null,
+    skippedSlotCount: comparison.skippedSlotCount ?? 0,
+    strongCandidateCount: comparison.strongCandidateCount ?? 0,
+    to: comparison.to || null,
+    truncatedCandidateCount: comparison.truncatedCandidateCount ?? 0,
+  };
+}
+
+function summarizeSessionForPanel(session) {
+  if (!session) return null;
+  return {
+    captures: (session.captures || []).map((entry) => ({
+      firstViolation: clonePlain(entry.snapshot?.violations?.[0] || null),
+      framebuffer: summarizeFramebufferForPanel(entry.snapshot?.framebuffer),
+      phase: entry.phase || null,
+      timeMs: entry.timeMs ?? null,
+      violationCount: entry.snapshot?.violations?.length || 0,
+    })),
+    dragItem: clonePlain(session.dragItem),
+    finishedAt: session.finishedAt ?? null,
+    frozenAt: session.frozenAt ?? null,
+    frozenReason: session.frozenReason || null,
+    id: session.id || null,
+    pixelComparison: summarizePixelComparisonForPanel(session.pixelComparison),
+    source: clonePlain(session.source),
+    startedAt: session.startedAt ?? null,
+    status: session.status || null,
+  };
+}
+
 function makeStencilSnapshot(app) {
   const instructionSet = app?.stage?.renderGroup?.instructionSet || app?.stage?.parentRenderGroup?.instructionSet || null;
   if (!instructionSet || !instructionSet.instructions) {
@@ -1130,6 +1182,17 @@ export function createPixiRenderProbe(options = {}) {
     });
   }
 
+  function makeSummary() {
+    return {
+      activeSession: summarizeSessionForPanel(activeSession),
+      config: clonePlain(config),
+      lastSession: summarizeSessionForPanel(sessions.at(-1) || null),
+      recentEventCount: recentEvents.length,
+      sessionCount: sessions.length,
+      version: REPORT_VERSION,
+    };
+  }
+
   function inspect(label = "manual") {
     return captureCurrent(String(label || "manual"), [], { pixels: config.pixels });
   }
@@ -1182,6 +1245,7 @@ export function createPixiRenderProbe(options = {}) {
     inspect,
     snapshot: makeReport,
     status: () => clonePlain(config),
+    summary: makeSummary,
   };
 
   return {

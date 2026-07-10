@@ -565,6 +565,12 @@ export function runRenderDebugProbeTests() {
     const comparison = probe.commands.snapshot().sessions[0]?.pixelComparison;
     assert(comparison?.available === true, "completed phase-diff sessions should compare disappearance and recovery frames");
     assert(comparison?.candidates[0]?.itemId === "mi-service", "session reports should identify the globally affected preview item");
+    const summary = probe.commands.summary();
+    const summaryJson = JSON.stringify(summary);
+    assert(summary.sessionCount === 1 && summary.lastSession?.status === "complete", "lightweight summaries should expose completed session status");
+    assert(summary.lastSession?.pixelComparison?.candidates[0]?.itemId === "mi-service", "lightweight summaries should retain ranked pixel candidates");
+    assert(summary.lastSession?.captures.map((entry) => entry.phase).join(",") === "pointerdown,drag-start,drag-end", "lightweight summaries should retain phase coverage");
+    assert(!summaryJson.includes('"folders"') && !summaryJson.includes('"sample"'), "lightweight summaries should exclude heavyweight folder and pixel samples");
     probe.destroy();
   }
 

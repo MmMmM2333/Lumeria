@@ -23,6 +23,7 @@ import { runLaunchpadViewStateTests } from "../composables/useLaunchpadViewState
 import { runLaunchpadViewAdaptersTests } from "../composables/useLaunchpadViewAdaptersTests.js";
 import { runDesktopLayoutDebugSettingsTests } from "../components/backgroundDebug/desktopLayoutDebugSettingsTests.js";
 import { runLiveDesktopDiagnosticsTests } from "../components/backgroundDebug/liveDesktopDiagnosticsTests.js";
+import { runRenderProbePanelModelTests } from "../components/backgroundDebug/renderProbePanelModelTests.js";
 import { runMotionCaptureProfileModelTests } from "../components/backgroundDebug/motionCaptureProfileModelTests.js";
 import { runMotionDebugPanelModelTests } from "../components/backgroundDebug/motionDebugPanelModelTests.js";
 import { runMotionDebugWorkspaceModelTests } from "../components/backgroundDebug/motionDebugWorkspaceModelTests.js";
@@ -177,6 +178,7 @@ runLaunchpadViewStateTests();
 runLaunchpadViewAdaptersTests();
 runDesktopLayoutDebugSettingsTests();
 runLiveDesktopDiagnosticsTests();
+runRenderProbePanelModelTests();
 runMotionCaptureProfileModelTests();
 runMotionDebugPanelModelTests();
 runMotionDebugWorkspaceModelTests();
