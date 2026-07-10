@@ -395,7 +395,7 @@ export async function runFolderOverlayLayerTests() {
       isEditMode: false,
       isFolderClosing: false,
       isIconOpening: () => false,
-      isIconSelected: () => false,
+      selectedIcon: null,
       isTextlessMode: false,
       launchTargetStatusById: {},
       renderedFolder: {

@@ -619,8 +619,8 @@ export async function runDragPreviewLayerTests() {
         width: 800,
       });
 
-      motionRuntime.step(1 / 60);
-      const scaleAfterFirstStep = layer.previewNode.scale.x;
+      assert(runUntil(() => layer.previewNode.alpha < 0.001), "center absorb should fade the ghost completely");
+      const fadedAlpha = layer.previewNode.alpha;
       layer.update({
         folderPageSize: 9,
         height: 600,
@@ -632,9 +632,15 @@ export async function runDragPreviewLayerTests() {
         stageRect: { height: 600, left: 0, top: 0, width: 800 },
         width: 800,
       });
-      motionRuntime.step(1 / 60);
-      assert(layer.previewNode.scale.x < scaleAfterFirstStep, "re-rendering a release should not cancel the scale animation");
-      assert(runUntil(() => calls.length === 1), "center absorb release completion should wait for the full release animation group");
+      assert(layer.previewNode.alpha <= fadedAlpha + 0.001, "re-rendering a faded center absorb must not restore the ghost alpha");
+
+      let completionSteps = 0;
+      while (!calls.length && completionSteps < 120) {
+        motionRuntime.step(1 / 60);
+        completionSteps += 1;
+      }
+      assert(calls.length === 1, "center absorb release should complete");
+      assert(completionSteps <= 20, "center absorb should not wait on a long invisible spring tail");
       assert(layer.previewNode.alpha < 0.001, "center absorb release should fade the ghost out before completion");
       assert(Math.abs(layer.previewNode.scale.x - 0.1) < 0.02, "center absorb release should shrink the ghost before completion");
       assert(layer.previewNode.labelText.alpha < 0.001, "center absorb release should fade the label out before completion");

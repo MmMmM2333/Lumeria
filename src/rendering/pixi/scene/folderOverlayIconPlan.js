@@ -1,4 +1,5 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import { matchesIconSelection } from "../../../domain/iconSelection.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 
 export function makeFolderIconRenderPlan(options = {}) {
@@ -50,7 +51,6 @@ export function makeFolderIconNodeState(options = {}) {
     isActiveDraggedItem = false,
     isEditMode = false,
     isIconOpening = null,
-    isIconSelected = null,
     isInteractivePage = false,
     isReleaseGhostItem = false,
     isTextlessMode = false,
@@ -58,6 +58,7 @@ export function makeFolderIconNodeState(options = {}) {
     launchTargetStatusById = null,
     openingGhostItemIds = null,
     pageIndex = 0,
+    selectedIcon = null,
     showMissingLaunchTargetBadge = true,
     slot = null,
     source = null,
@@ -88,7 +89,7 @@ export function makeFolderIconNodeState(options = {}) {
     launchTargetStatus: isInteractivePage && showMissingLaunchTargetBadge ? launchTargetStatusById?.[itemId] : null,
     opening: isInteractivePage && isIconOpening?.("folder", itemId, pageIndex, folderId),
     removable: item?.type === "app",
-    selected: isInteractivePage && isIconSelected?.("folder", itemId, pageIndex, folderId),
+    selected: isInteractivePage && matchesIconSelection(selectedIcon, "folder", itemId, pageIndex, folderId),
     source,
     stageHeight,
     stageWidth,

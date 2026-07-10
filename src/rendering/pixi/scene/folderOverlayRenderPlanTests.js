@@ -40,7 +40,7 @@ export function runFolderOverlayRenderPlanTests() {
     isEditMode: true,
     isFolderClosing: false,
     isIconOpening: (area, itemId) => area === "folder" && itemId === "app-a",
-    isIconSelected: (area, itemId) => area === "folder" && itemId === "app-a",
+    selectedIcon: { area: "folder", folderId: folder.id, id: "app-a", pageIndex: 0 },
     isNewFolder: true,
     localMetrics,
     previewSlots: [appA],

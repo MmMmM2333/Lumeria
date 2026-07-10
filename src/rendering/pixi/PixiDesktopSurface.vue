@@ -125,7 +125,7 @@ const props = defineProps({
   isFolderOpeningPreviewFrameGhosted: { type: Function, default: () => false },
   isHomeRevealSettling: { type: Boolean, default: false },
   isIconOpening: { type: Function, required: true },
-  isIconSelected: { type: Function, required: true },
+  selectedIcon: { type: Object, default: null },
   isSearchMode: { type: Boolean, default: false },
   isTextlessMode: { type: Boolean, default: false },
   launchTargetStatusById: { type: Object, default: () => ({}) },
@@ -408,7 +408,6 @@ function createSingleStageFolderState(
       getFolderPageRenderMode: source.getFolderPageRenderMode,
       getVisibleFolderPage: source.getVisibleFolderPage,
       isIconOpening: source.isIconOpening,
-      isIconSelected: source.isIconSelected,
       setFolderPageRef: source.setFolderPageRef,
     },
     drag: {
@@ -445,6 +444,7 @@ function createSingleStageFolderState(
       isEditMode: source.isEditMode?.value,
       isTextlessMode: source.isTextlessMode?.value,
       launchTargetStatusById: source.launchTargetStatusById?.value,
+      selectedIcon: props.selectedIcon,
       showMissingLaunchTargetBadge: source.showMissingLaunchTargetBadge?.value,
     },
   }, {
@@ -603,11 +603,11 @@ function renderPixi(options = {}) {
       isFolderOpeningPreviewFrameGhosted: props.isFolderOpeningPreviewFrameGhosted,
       isHomeRevealSettling: props.isHomeRevealSettling,
       isIconOpening: props.isIconOpening,
-      isIconSelected: props.isIconSelected,
       isSearchMode: props.isSearchMode,
       isTextlessMode: props.isTextlessMode,
       launchTargetStatusById: props.launchTargetStatusById,
       pageTrackScrub: props.pageTrackScrub,
+      selectedIcon: props.selectedIcon,
       setPageRef: props.setPageRef,
       shouldSnapTrack: props.desktopTrackMotionKey.includes("snap"),
       showMissingLaunchTargetBadge: props.showMissingLaunchTargetBadge,
@@ -1019,6 +1019,9 @@ watchEffect(() => {
   void props.launchTargetStatusById;
   void props.pageGridMeasureStyle;
   void props.folderPageSize;
+  // Keyboard selection is a Pixi frame input; reading the descriptor here
+  // makes each replacement invalidate the scene instead of hiding in a closure.
+  void props.selectedIcon;
   void props.singleStageDiagnosticsOptions;
   requestRender("watch-effect");
   scheduleFolderTexturePrewarm();

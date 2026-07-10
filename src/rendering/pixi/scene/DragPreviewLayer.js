@@ -5,6 +5,7 @@ import { motionRuntime } from "../animation/motionRuntime.js";
 import { killMotionOf, motion, parallel } from "../animation/motionTween.js";
 import {
   DRAG_PREVIEW_SCALE,
+  DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB,
   getDragPreviewLayout,
   getDragReleaseMotion,
 } from "./dragPreviewMotion.js";
@@ -15,6 +16,9 @@ const DRAG_PREVIEW_REPLACE_REASON = "drag-preview-replace";
 const DRAG_RELEASE_START_REASON = "drag-release-start";
 const DRAG_PREVIEW_LABEL_RESTORE_DURATION = 0.12;
 const DRAG_PREVIEW_FOLDER_HOVER_LABEL_SCALE = 0.72;
+const DRAG_RELEASE_CENTER_ABSORB_DURATION = 0.24;
+const DRAG_RELEASE_CENTER_ABSORB_FADE_DELAY = 0.1;
+const DRAG_RELEASE_CENTER_ABSORB_FADE_DURATION = 0.14;
 const DRAG_RELEASE_EQUIVALENT_FINAL_DELTA = 0.75;
 const DRAG_RELEASE_EQUIVALENT_FINAL_SCALE_DELTA = 0.0125;
 
@@ -329,6 +333,7 @@ export class DragPreviewLayer extends Container {
     this.previewNode.visible = true;
     this.previewNode.eventMode = "none";
     this.previewNode.stageRect = releaseMotion.stageRect;
+    const animatedAlpha = isNewRelease ? null : this.previewNode.alpha;
     this.previewNode.setState({
       cellHeight: releaseMotion.cellHeight,
       cellWidth: releaseMotion.cellWidth,
@@ -355,6 +360,9 @@ export class DragPreviewLayer extends Container {
       stageWidth: state.width,
       textless: releaseMotion.textless,
     });
+    // During a release, the motion layer owns alpha. IconNode.setState() applies
+    // its normal scene alpha and must not revive a ghost that already faded out.
+    if (animatedAlpha !== null) this.previewNode.alpha = animatedAlpha;
     describeDragPreviewTargets(this.previewNode, release, "release");
     this.previewNode.rotation = 0;
 
@@ -416,27 +424,46 @@ export class DragPreviewLayer extends Container {
       return;
     }
     const duration = Math.max(0.01, Number(release.duration) || 0.18);
-    const releaseAnimations = [
-      motion(this.previewNode)
-        .preset("handoff")
-        .drag()
-        .interrupt("retarget")
-        .to({
-          velocity: releaseMotion.velocity,
-          x: releaseMotion.target.x,
-          y: releaseMotion.target.y,
-        }),
-      motion(this.previewNode.scale)
-        .preset("handoff")
-        .drag()
-        .interrupt("retarget")
-        .to({ x: releaseMotion.targetScale, y: releaseMotion.targetScale }),
-    ];
+    const isCenterAbsorb = releaseMotion.releaseMode === DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB;
+    // Center absorption ends at a hidden point, so a finite tween gives it a
+    // deterministic handoff instead of waiting for an invisible spring tail.
+    const releaseAnimations = isCenterAbsorb
+      ? [
+        motion(this.previewNode)
+          .duration(DRAG_RELEASE_CENTER_ABSORB_DURATION)
+          .ease("power2.in")
+          .handoff()
+          .interrupt("retarget")
+          .to({ x: releaseMotion.target.x, y: releaseMotion.target.y }),
+        motion(this.previewNode.scale)
+          .duration(DRAG_RELEASE_CENTER_ABSORB_DURATION)
+          .ease("power2.in")
+          .handoff()
+          .interrupt("retarget")
+          .to({ x: releaseMotion.targetScale, y: releaseMotion.targetScale }),
+      ]
+      : [
+        motion(this.previewNode)
+          .preset("handoff")
+          .drag()
+          .interrupt("retarget")
+          .to({
+            velocity: releaseMotion.velocity,
+            x: releaseMotion.target.x,
+            y: releaseMotion.target.y,
+          }),
+        motion(this.previewNode.scale)
+          .preset("handoff")
+          .drag()
+          .interrupt("retarget")
+          .to({ x: releaseMotion.targetScale, y: releaseMotion.targetScale }),
+      ];
     if (releaseMotion.targetAlpha !== this.previewNode.alpha) {
       releaseAnimations.push(
         motion(this.previewNode)
-          .duration(duration)
-          .ease("power2.out")
+          .delay(isCenterAbsorb ? DRAG_RELEASE_CENTER_ABSORB_FADE_DELAY : 0)
+          .duration(isCenterAbsorb ? DRAG_RELEASE_CENTER_ABSORB_FADE_DURATION : duration)
+          .ease(isCenterAbsorb ? "power2.in" : "power2.out")
           .handoff()
           .interrupt("retarget")
           .to({ alpha: releaseMotion.targetAlpha })

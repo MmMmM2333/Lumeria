@@ -90,7 +90,7 @@
         :folder-source-ghosted-ids="folderSourceGhostedIds"
         :is-folder-opening-preview-frame-ghosted="isFolderOpeningPreviewFrameGhosted"
         :is-icon-opening="isIconOpening"
-        :is-icon-selected="isIconSelected"
+        :selected-icon="selectedIcon"
         :is-home-reveal-settling="isHomeRevealSettling"
         :is-search-mode="isSearchMode"
         :is-textless-mode="isTextlessMode"
@@ -285,7 +285,6 @@ const {
   iconBoundsRegistry,
   iconSize,
   isIconOpening,
-  isIconSelected,
   launchTargetStatusById,
   launchpadVisualAlpha,
   launchpadVisualTransform,
@@ -294,6 +293,7 @@ const {
   pageGridMeasureStyle,
   pageTrackScrub,
   schedulePageGridMetrics,
+  selectedIcon,
   getVisibleDesktopPage,
   folderPageSize,
 } = desktopSurface;

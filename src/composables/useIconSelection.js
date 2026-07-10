@@ -24,17 +24,6 @@ export function useIconSelection(options) {
     };
   }
 
-  function isIconSelected(area, itemId, pageNumber, folderId) {
-    const selected = selectedIcon.value;
-    return Boolean(
-      selected &&
-        selected.area === area &&
-        selected.id === itemId &&
-        selected.pageIndex === pageNumber &&
-        (area !== "folder" || selected.folderId === folderId)
-    );
-  }
-
   function isIconOpening(area, itemId, pageNumber, folderId) {
     const opening = openingIcon.value;
     return Boolean(
@@ -112,7 +101,6 @@ export function useIconSelection(options) {
     clearSelectedIcon,
     findSelectedItem,
     isIconOpening,
-    isIconSelected,
     makeIconSelection,
     moveSelectionByArrow,
     openingIcon,

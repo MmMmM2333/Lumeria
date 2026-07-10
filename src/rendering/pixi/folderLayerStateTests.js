@@ -12,7 +12,6 @@ export function runFolderLayerStateTests() {
     getFolderPageRenderMode: () => "interactive",
     getVisibleFolderPage: (page) => page,
     isIconOpening: () => false,
-    isIconSelected: () => false,
     setFolderPageRef: () => {},
   };
   const state = createFolderLayerState({
@@ -48,6 +47,7 @@ export function runFolderLayerStateTests() {
       isEditMode: true,
       isTextlessMode: false,
       launchTargetStatusById: { "app-a": "ok" },
+      selectedIcon: { area: "folder", folderId: "folder-1", id: "app-a", pageIndex: 3 },
       showMissingLaunchTargetBadge: true,
     },
   }, { prewarm: true, singleStageDiagnostics: true });
@@ -65,6 +65,7 @@ export function runFolderLayerStateTests() {
   assert(state.folderPageTurnToken === 42, "folder page turn token should be forwarded for render state changes");
   assert(state.folderOpenProgress === 0.42, "folder open progress should be forwarded");
   assert(state.folderOpenProgressTarget === 1, "folder open progress target should be forwarded");
+  assert(state.selectedIcon?.id === "app-a", "the explicit selection descriptor should be forwarded to the folder layer");
   assert(state.completeFolderOpenIconGhost === callbacks.completeFolderOpenIconGhost, "callbacks should be forwarded");
   assert(state.completeFolderOpenFrameGhost === callbacks.completeFolderOpenFrameGhost, "frame completion callback should be forwarded");
   assert(state.isFolderAppLaunchClosing, "folder app-launch closing state should be forwarded");
