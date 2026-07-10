@@ -1,5 +1,6 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { cx } from "../domain/launchpadLayout.js";
+import { buildAppSearchDocuments, searchAppDocuments } from "../domain/launchpadSearch.js";
 import { isNativeBridgeAvailable } from "../api/launchpadApi.js";
 import { useAltEditMode } from "./useAltEditMode.js";
 import { useLaunchpadControllerHelpers } from "./useLaunchpadControllerHelpers.js";
@@ -270,7 +271,6 @@ export function useLaunchpadController() {
     createLayoutSnapshot,
     dissolveFolder,
     ensurePage,
-    filterAppsForSearch,
     findFolder,
     findInFolder,
     findTopLevel,
@@ -537,17 +537,18 @@ export function useLaunchpadController() {
     searchPages,
     searchQuery,
   } = useLaunchpadSearch({
+    buildAppSearchDocuments,
     clearSelectedIcon,
     collectAppsFromPages,
     commitOpenFolder,
     commitSearchPageIndex: (next) => commitSearchPageIndex(next),
-    filterAppsForSearch,
     isDragActive: () => isDragActive(),
     openFolderId,
     pageIndex,
     pages,
     pageSize,
     schedulePageGridMetrics: () => schedulePageGridMetrics(),
+    searchAppDocuments,
     searchPageIndex,
     selectFirstIconInCurrentScope,
   });

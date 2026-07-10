@@ -4,7 +4,9 @@ import { chunkIntoPages } from "../domain/launchpadLayout.js";
 export function useLaunchpadSearch(options) {
   const searchQuery = ref("");
   const isSearchMode = computed(() => searchQuery.value.trim().length > 0);
-  const searchApps = computed(() => options.filterAppsForSearch(options.collectAppsFromPages(options.pages.value), searchQuery.value));
+  const allSearchApps = computed(() => options.collectAppsFromPages(options.pages.value));
+  const searchDocuments = computed(() => options.buildAppSearchDocuments(allSearchApps.value));
+  const searchApps = computed(() => options.searchAppDocuments(searchDocuments.value, searchQuery.value));
   const searchPages = computed(() => chunkIntoPages(searchApps.value, options.pageSize.value));
   const activePages = computed(() => (isSearchMode.value ? searchPages.value : options.pages.value));
   const activePageIndex = computed(() => (isSearchMode.value ? options.searchPageIndex.value : options.pageIndex.value));

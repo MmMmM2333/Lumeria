@@ -1,4 +1,5 @@
 import { nextTick, ref } from "vue";
+import { buildAppSearchDocuments, searchAppDocuments } from "../domain/launchpadSearch.js";
 import { useLaunchpadSearch } from "./useLaunchpadSearch.js";
 
 const testApps = [
@@ -21,6 +22,7 @@ function createSearchFlow(overrides = {}) {
   const openFolderId = ref(overrides.openFolderId ?? "folder-1");
   const pageSize = ref(overrides.pageSize ?? 1);
   const search = useLaunchpadSearch({
+    buildAppSearchDocuments,
     clearSelectedIcon: () => {
       calls.clearSelectedIcon += 1;
     },
@@ -33,11 +35,6 @@ function createSearchFlow(overrides = {}) {
       calls.commitSearchPageIndex.push(value);
       searchPageIndex.value = value;
     },
-    filterAppsForSearch: (apps, query) => {
-      const normalized = query.trim().toLowerCase();
-      if (!normalized) return apps;
-      return apps.filter((app) => app.name.toLowerCase().includes(normalized));
-    },
     isDragActive: () => Boolean(overrides.isDragActive),
     openFolderId,
     pageIndex,
@@ -46,6 +43,7 @@ function createSearchFlow(overrides = {}) {
     schedulePageGridMetrics: () => {
       calls.schedulePageGridMetrics += 1;
     },
+    searchAppDocuments,
     searchPageIndex,
     selectFirstIconInCurrentScope: (options) => calls.selectFirstIconInCurrentScope.push(options),
   });
@@ -85,6 +83,17 @@ export async function runLaunchpadSearchTests() {
   assert(input.calls.selectFirstIconInCurrentScope.length === 1, "typing a search should select the first result on next tick");
   assert(input.calls.selectFirstIconInCurrentScope[0].force === true, "search result selection should force focus");
   assert(input.calls.clearSelectedIcon === 0, "typing a non-empty search should not clear selection immediately");
+
+  const chinese = createSearchFlow({
+    pages: [[{ id: "settings", type: "app", name: "设置" }]],
+    pageSize: 6,
+  });
+  chinese.search.handleSearchInput({ target: { value: "sz" } });
+  assert(chinese.search.searchApps.value[0]?.id === "settings", "search flow should expose pinyin-initial matches");
+  chinese.pages.value[0][0].name = "帮助";
+  assert(chinese.search.searchApps.value.length === 0, "renaming an app should invalidate its previous pinyin document");
+  chinese.search.handleSearchInput({ target: { value: "bz" } });
+  assert(chinese.search.searchApps.value[0]?.id === "settings", "renaming an app should expose its rebuilt pinyin document");
 
   input.search.clearSearch();
   assert(input.search.searchQuery.value === "", "clearSearch should clear the query");

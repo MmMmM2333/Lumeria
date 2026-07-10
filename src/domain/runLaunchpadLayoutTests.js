@@ -36,6 +36,7 @@ import { runIconContextMenuGeometryTests } from "../components/iconContextMenuGe
 import { runMotionLabModelTests } from "../motionLab/motionLabModelTests.js";
 import { runBackgroundImageLayoutTests } from "./backgroundImageLayoutTests.js";
 import { runLaunchpadDataTests } from "./launchpadDataTests.js";
+import { runLaunchpadSearchDomainTests } from "./launchpadSearchTests.js";
 import { runMainWindowShortcutTests } from "./mainWindowShortcutTests.js";
 import { runIconSourceTests } from "./iconSourceTests.js";
 import { runIconSelectionTests } from "./iconSelectionTests.js";
@@ -152,6 +153,7 @@ runLaunchpadHelperTests({
 });
 await runWindowChromeApiTests();
 runLaunchpadDataTests();
+runLaunchpadSearchDomainTests();
 runMainWindowShortcutTests();
 runBackgroundImageLayoutTests();
 runIconSourceTests();
