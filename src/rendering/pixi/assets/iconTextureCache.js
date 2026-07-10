@@ -1,5 +1,8 @@
 import { Texture } from "pixi.js";
-import { getPixiIconTextureSource } from "../../../domain/iconSource.js";
+import {
+  getPixiIconTextureSource,
+  isTauriAssetIconSource,
+} from "../../../domain/iconSource.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import {
   hashDebugSample,
@@ -8,11 +11,12 @@ import {
 
 const textureCache = new Map();
 const failedTextureSources = new Set();
+const textureLoadFailureCounts = new Map();
 const pendingTextureLoads = new Map();
 const textureLoadListeners = new Map();
+const textureLoadSettlementSubscribers = new Set();
 const recentTextureErrors = [];
 let textureCacheGeneration = 0;
-let textureDebugOverride = false;
 const TEXTURE_ERROR_LIMIT = 16;
 
 function makeTextureErrorDebugMessage(source, error) {
@@ -26,21 +30,25 @@ function makeTextureErrorDebugMessage(source, error) {
 }
 
 function recordTextureError(source, error) {
-  recentTextureErrors.push({
+  const entry = {
     error: makeTextureErrorDebugMessage(source, error),
     source: makeDebugSourceSnapshot(source),
     time: Date.now(),
-  });
+  };
+  recentTextureErrors.push(entry);
   if (recentTextureErrors.length > TEXTURE_ERROR_LIMIT) {
     recentTextureErrors.splice(0, recentTextureErrors.length - TEXTURE_ERROR_LIMIT);
   }
+  return entry;
 }
 
-function notifyTextureLoaded(source) {
+function notifyTextureLoadSettled(source) {
   const listeners = textureLoadListeners.get(source);
   textureLoadListeners.delete(source);
-  if (!listeners) return;
-  for (const listener of listeners.values()) listener();
+  if (listeners) {
+    for (const listener of listeners.values()) listener();
+  }
+  for (const subscriber of textureLoadSettlementSubscribers) subscriber(source);
 }
 
 function addTextureLoadListener(source, listener, listenerKey = listener) {
@@ -57,6 +65,7 @@ function loadTextureFromImage(source) {
   return new Promise((resolve, reject) => {
     const image = new Image();
     image.decoding = "async";
+    if (isTauriAssetIconSource(source)) image.crossOrigin = "anonymous";
     image.onload = () => {
       try {
         resolve(Texture.from(image, true));
@@ -86,15 +95,17 @@ function requestTextureLoad(source) {
       }
       textureCache.set(source, texture);
       failedTextureSources.delete(source);
-      notifyTextureLoaded(source);
+      textureLoadFailureCounts.delete(source);
+      notifyTextureLoadSettled(source);
     })
     .catch((error) => {
       if (generation !== textureCacheGeneration) return;
-      if ((import.meta.env && import.meta.env.DEV) || textureDebugOverride) {
-        recordTextureError(source, error);
-      }
-      failedTextureSources.add(source);
-      notifyTextureLoaded(source);
+      const diagnostic = recordTextureError(source, error);
+      console.error("Failed to load icon texture", diagnostic);
+      const failureCount = (textureLoadFailureCounts.get(source) || 0) + 1;
+      textureLoadFailureCounts.set(source, failureCount);
+      if (!isTauriAssetIconSource(source) || failureCount >= 2) failedTextureSources.add(source);
+      notifyTextureLoadSettled(source);
     })
     .finally(() => {
       if (pendingTextureLoads.get(source) === pending) pendingTextureLoads.delete(source);
@@ -127,6 +138,12 @@ export function preloadIconTextures(items) {
   }
 }
 
+export function subscribeIconTextureLoadSettlements(subscriber) {
+  if (typeof subscriber !== "function") throw new TypeError("Icon texture load subscriber must be a function");
+  textureLoadSettlementSubscribers.add(subscriber);
+  return () => textureLoadSettlementSubscribers.delete(subscriber);
+}
+
 export function preloadIconTexturesAsync(items, options = {}) {
   const seen = new Set();
   const loads = [];
@@ -150,6 +167,7 @@ export function clearIconTextureCache() {
   for (const texture of textureCache.values()) destroyCachedTexture(texture);
   textureCache.clear();
   failedTextureSources.clear();
+  textureLoadFailureCounts.clear();
   pendingTextureLoads.clear();
   textureLoadListeners.clear();
   recentTextureErrors.length = 0;
@@ -174,10 +192,6 @@ export function getIconTextureCacheDebugSnapshot() {
       source: { ...entry.source },
     })),
   };
-}
-
-export function setIconTextureCacheDebugOverride(enabled) {
-  textureDebugOverride = enabled === true;
 }
 
 reloadOnPixiHotUpdate(import.meta.hot);

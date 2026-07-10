@@ -1,5 +1,8 @@
 import { ref, shallowRef } from "vue";
-import { setLaunchpadApiBridgeForTests } from "../api/launchpadApi.js";
+import {
+  convertFilePathToAssetUrl,
+  setLaunchpadApiBridgeForTests,
+} from "../api/launchpadApi.js";
 import { DEFAULT_MAIN_WINDOW_SHORTCUT } from "../domain/mainWindowShortcut.js";
 import { setLiveDesktopExperimentEnabledForTests } from "../domain/experimentalFeatures.js";
 import { useLaunchpadNative } from "./useLaunchpadNative.js";
@@ -180,7 +183,7 @@ function withMockTauri(invoke, run, bridgeOverrides = {}) {
     supportsMicaAlt: true,
   };
   setLaunchpadApiBridgeForTests({
-    convertFileSrc: (path) => `asset://${path}`,
+    convertFileSrc: (path) => `http://asset.localhost/${path}`,
     invoke: (command, args) => {
       if (command === "get_main_window_effects_support" && !bridgeOverrides.passWindowEffectsSupport) {
         return defaultEffectsSupport;
@@ -257,17 +260,40 @@ export async function runLaunchpadNativeTests() {
   };
   setLiveDesktopExperimentEnabledForTests(true);
 
+  const assetConversionError = new Error("asset conversion failed");
+  setLaunchpadApiBridgeForTests({
+    convertFileSrc: () => {
+      throw assetConversionError;
+    },
+  });
+  try {
+    let conversionFailure = null;
+    try {
+      convertFilePathToAssetUrl("C:/Icons/app.png");
+    } catch (error) {
+      conversionFailure = error;
+    }
+    assert(conversionFailure === assetConversionError, "asset URL conversion failures should remain explicit");
+  } finally {
+    setLaunchpadApiBridgeForTests(null);
+  }
+
   const initialSaveLayouts = [];
   await withMockTauri(async (command, args) => {
     if (command === "load_layout") return null;
     if (command === "scan_apps") {
       assert(args.roots.length === 1 && args.roots[0].id === "root", "initial native scan should use enabled scan roots");
       return [
-        { id: "win-app-good", name: "Good", launchTarget: { kind: "shortcut", path: "C:/Apps/Good.lnk" } },
+        {
+          id: "win-app-good",
+          name: "Good",
+          iconPath: "C:/Icons/good.png",
+          iconDataUrl: "data:image/png;base64,legacy",
+          launchTarget: { kind: "shortcut", path: "C:/Apps/Good.lnk" },
+        },
         { id: "win-app-blocked", name: "Blocked", launchTarget: { kind: "shortcut", path: "C:/Apps/Blocked.lnk" } },
       ];
     }
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     if (command === "save_layout") {
       initialSaveLayouts.push(args.layout);
@@ -287,6 +313,8 @@ export async function runLaunchpadNativeTests() {
 
     assert(native.isNativeLayoutReady.value === true, "native layout should be ready after the initial native load");
     assert(options.pages.value[0].map((app) => app.id).join(",") === "win-app-good", "missing native layout should replace mock pages with scanned apps");
+    assert(options.pages.value[0][0].iconUrl === "http://asset.localhost/C:/Icons/good.png", "initial native scan should expose the cached asset URL");
+    assert(!("iconDataUrl" in options.pages.value[0][0]), "initial native scan should discard legacy catalog base64 data");
     assert(Boolean(options.scanRoots.value[0].lastScannedAt), "initial native scan should mark roots as scanned");
     assert(initialSaveLayouts.length === 1, "initial native scan should be persisted after load completes");
     assert(initialSaveLayouts[0].pages[0][0].id === "win-app-good", "initial native save should include scanned apps");
@@ -322,7 +350,6 @@ export async function runLaunchpadNativeTests() {
         settings: { textless: true },
       };
     }
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     throw new Error(`Unexpected invoke: ${command}`);
   }, async (timers) => {
@@ -400,7 +427,6 @@ export async function runLaunchpadNativeTests() {
         },
       };
     }
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     if (command === "set_main_window_effects_enabled") {
       effectsCommands.push(args);
@@ -444,7 +470,7 @@ export async function runLaunchpadNativeTests() {
     assert(options.backgroundAcrylicDarkParams.value.brightness === 0.7, "native load should apply saved acrylic dark params");
     assert(options.backgroundAcrylicLightParams.value.brightness === 1.2, "native load should apply saved acrylic light params");
     assert(options.backgroundImagePath.value === "C:/Images/wallpaper.webp", "native load should apply saved background image path");
-    assert(options.backgroundImageUrl.value === "asset://C:/Images/wallpaper.webp", "native load should derive a background image asset url");
+    assert(options.backgroundImageUrl.value === "http://asset.localhost/C:/Images/wallpaper.webp", "native load should derive a background image asset url");
     assert(options.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "native load should sync background source draft");
     assert(options.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should sync background effect draft");
     assert(options.draftBackgroundBaseColor.value === "#aabbcc", "native load should sync background base color draft");
@@ -460,7 +486,7 @@ export async function runLaunchpadNativeTests() {
     assert(options.draftBackgroundAcrylicDarkParams.value.brightness === 0.7, "native load should sync acrylic dark params draft");
     assert(options.draftBackgroundAcrylicLightParams.value.brightness === 1.2, "native load should sync acrylic light params draft");
     assert(options.draftBackgroundImagePath.value === "C:/Images/wallpaper.webp", "native load should sync background image path draft");
-    assert(options.draftBackgroundImageUrl.value === "asset://C:/Images/wallpaper.webp", "native load should sync background image url draft");
+    assert(options.draftBackgroundImageUrl.value === "http://asset.localhost/C:/Images/wallpaper.webp", "native load should sync background image url draft");
     assert(effectsCommands.length === 1, "native load should refresh window effects once");
     assert(effectsCommands[0].enabled === true, "window effect refresh should enable effects");
     assert(effectsCommands[0].material === WINDOW_EFFECT_MATERIAL_MICA_ALT, "window effect refresh should pass the selected material");
@@ -485,7 +511,6 @@ export async function runLaunchpadNativeTests() {
         },
       };
     }
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     throw new Error(`Unexpected invoke: ${command}`);
   }, async () => {
@@ -514,7 +539,6 @@ export async function runLaunchpadNativeTests() {
         },
       };
     }
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     throw new Error(`Unexpected invoke: ${command}`);
   }, async () => {
@@ -543,7 +567,6 @@ export async function runLaunchpadNativeTests() {
         },
       };
     }
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     if (command === "configure_live_desktop_background") {
       return {
@@ -589,7 +612,6 @@ export async function runLaunchpadNativeTests() {
         },
       };
     }
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     throw new Error(`Unexpected invoke: ${command}`);
   }, async () => {
@@ -617,7 +639,6 @@ export async function runLaunchpadNativeTests() {
         },
       };
     }
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     throw new Error(`Unexpected invoke: ${command}`);
   }, async () => {
@@ -648,7 +669,6 @@ export async function runLaunchpadNativeTests() {
         },
       };
     }
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     throw new Error(`Unexpected invoke: ${command}`);
   }, async () => {
@@ -706,7 +726,6 @@ export async function runLaunchpadNativeTests() {
         },
       };
     }
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     if (command === "configure_live_desktop_background") {
       return {
@@ -765,7 +784,6 @@ export async function runLaunchpadNativeTests() {
         },
       };
     }
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     if (command === "configure_live_desktop_background") {
       return {
@@ -1286,7 +1304,6 @@ export async function runLaunchpadNativeTests() {
     if (command === "get_desktop_wallpaper_background") {
       return { name: "Windows wallpaper", imagePath: "C:/Cached/current-wallpaper.jpg" };
     }
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     if (command === "save_layout") {
       wallpaperSaves.push(args.layout);
@@ -1305,7 +1322,7 @@ export async function runLaunchpadNativeTests() {
 
     assert(options.backgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER, "native load should keep windows wallpaper as the background source");
     assert(options.backgroundImagePath.value === "C:/Cached/current-wallpaper.jpg", "native load should refresh the cached desktop wallpaper path");
-    assert(options.backgroundImageUrl.value === "asset://C:/Cached/current-wallpaper.jpg", "native load should derive the refreshed wallpaper asset url");
+    assert(options.backgroundImageUrl.value === "http://asset.localhost/C:/Cached/current-wallpaper.jpg", "native load should derive the refreshed wallpaper asset url");
     assert(wallpaperSaves.length === 1, "refreshed desktop wallpaper backgrounds should be persisted after native load");
     assert(wallpaperSaves[0].settings.backgroundImagePath === "C:/Cached/current-wallpaper.jpg", "persisted layouts should include the refreshed wallpaper path");
   });
@@ -1330,7 +1347,6 @@ export async function runLaunchpadNativeTests() {
         },
       };
     }
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     if (command === "set_main_window_effects_enabled") return null;
     throw new Error(`Unexpected invoke: ${command}`);
@@ -1370,7 +1386,6 @@ export async function runLaunchpadNativeTests() {
         },
       };
     }
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     if (command === "set_main_window_effects_enabled") return null;
     throw new Error(`Unexpected invoke: ${command}`);
@@ -1410,7 +1425,6 @@ export async function runLaunchpadNativeTests() {
         },
       };
     }
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     if (command === "set_main_window_effects_enabled") return null;
     throw new Error(`Unexpected invoke: ${command}`);
@@ -1430,51 +1444,9 @@ export async function runLaunchpadNativeTests() {
     passWindowEffectsSupport: true,
   });
 
-  const pendingIconLoads = [];
-  await withMockTauri((command, args) => {
-    if (command === "load_layout") {
-      return {
-        version: 1,
-        pages: [[{
-          id: "icon-app",
-          type: "app",
-          name: "Icon App",
-          iconPath: "C:/Icons/old.png",
-          launchTarget: { kind: "shortcut", path: "Icon App.lnk" },
-        }]],
-        settings: {},
-      };
-    }
-    if (command === "load_cached_app_icons") {
-      return new Promise((resolve) => {
-        pendingIconLoads.push({ args, resolve });
-      });
-    }
-    if (command === "check_launch_targets") return [];
-    throw new Error(`Unexpected invoke: ${command}`);
-  }, async () => {
-    const { options } = makeOptions({
-      mergeNativeCatalogWithSavedLayout: (_apps, layout) => layout.pages,
-    });
-    const native = useLaunchpadNative(options);
-
-    await native.loadNativeLaunchpadData();
-    assert(pendingIconLoads.length === 1, "native load should request cached icon hydration");
-    assert(pendingIconLoads[0].args.icons[0].iconPath === "C:/Icons/old.png", "icon hydration should request the original icon path");
-
-    options.pages.value = [[{
-      ...options.pages.value[0][0],
-      iconPath: "C:/Icons/new.png",
-    }]];
-    pendingIconLoads[0].resolve([{ id: "icon-app", iconDataUrl: "data:image/png;base64,old" }]);
-    await flushMicrotasks(3);
-
-    assert(options.pages.value[0][0].iconPath === "C:/Icons/new.png", "current icon path should be preserved");
-    assert(!("iconDataUrl" in options.pages.value[0][0]), "stale cached icon data should not overwrite a newer icon path");
-  });
-
-  const iconHydrationRequests = [];
-  await withMockTauri((command, args) => {
+  const startupIconCommands = [];
+  await withMockTauri((command) => {
+    startupIconCommands.push(command);
     if (command === "load_layout") {
       return {
         version: 1,
@@ -1489,13 +1461,6 @@ export async function runLaunchpadNativeTests() {
         settings: {},
       };
     }
-    if (command === "load_cached_app_icons") {
-      iconHydrationRequests.push(args.icons);
-      return [
-        { id: "custom-icon-app", iconDataUrl: "data:image/png;base64,catalog" },
-        { id: "__custom_icon__:custom-icon-app", iconDataUrl: "data:image/png;base64,custom" },
-      ];
-    }
     if (command === "check_launch_targets") return [];
     throw new Error(`Unexpected invoke: ${command}`);
   }, async () => {
@@ -1507,12 +1472,11 @@ export async function runLaunchpadNativeTests() {
     await native.loadNativeLaunchpadData();
     await flushMicrotasks(3);
 
-    assert(iconHydrationRequests.length === 1, "native load should request icon hydration once");
-    assert(iconHydrationRequests[0].length === 2, "icon hydration should request catalog and custom icon paths");
-    assert(iconHydrationRequests[0][0].iconPath === "C:/Icons/catalog.png", "catalog hydration should request the catalog icon path");
-    assert(iconHydrationRequests[0][1].iconPath === "C:/Icons/custom.png", "custom hydration should request the custom icon path");
-    assert(options.pages.value[0][0].iconDataUrl === "data:image/png;base64,catalog", "catalog icon hydration should apply data URL");
-    assert(options.pages.value[0][0].customIconDataUrl === "data:image/png;base64,custom", "custom icon hydration should apply data URL");
+    assert(!startupIconCommands.includes("load_cached_app_icons"), "native startup should not hydrate cached icons through base64 IPC");
+    assert(options.pages.value[0][0].iconUrl === "http://asset.localhost/C:/Icons/catalog.png", "native startup should expose the catalog asset URL");
+    assert(options.pages.value[0][0].customIconUrl === "http://asset.localhost/C:/Icons/custom.png", "native startup should expose the custom asset URL");
+    assert(!("iconDataUrl" in options.pages.value[0][0]), "native startup should not attach catalog base64 data");
+    assert(!("customIconDataUrl" in options.pages.value[0][0]), "native startup should not attach custom base64 data");
   });
 
   const launchCommands = [];
@@ -1524,7 +1488,6 @@ export async function runLaunchpadNativeTests() {
         settings: {},
       };
     }
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     if (command === "save_layout") {
       launchCommands.push(command);
@@ -1572,7 +1535,6 @@ export async function runLaunchpadNativeTests() {
         settings: {},
       };
     }
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     if (command === "save_layout") {
       criticalCommands.push(command);
@@ -1625,7 +1587,6 @@ export async function runLaunchpadNativeTests() {
         settings: {},
       };
     }
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     if (command === "save_layout") {
       flushSaveCount += 1;
@@ -1663,7 +1624,6 @@ export async function runLaunchpadNativeTests() {
         settings: {},
       };
     }
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     if (command === "save_layout" || command === "confirm_quit_after_save") {
       if (command === "confirm_quit_after_save") {
@@ -1740,7 +1700,6 @@ export async function runLaunchpadNativeTests() {
         settings: {},
       };
     }
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     if (command === "save_layout") throw new Error("disk full");
     if (command === "launch_app") throw new Error("launch_app should not run after a failed critical save");
@@ -1780,6 +1739,8 @@ export async function runLaunchpadNativeTests() {
     const native = useLaunchpadNative(options);
 
     native.scheduleLaunchTargetStatusCheck();
+    native.scheduleLaunchTargetStatusCheck();
+    assert(timers.length === 1, "duplicate target signatures should share one scheduled status check");
     const firstCheck = timers.shift()();
     options.pages.value = [[{ id: "app-b", type: "app", name: "B", launchTarget: { kind: "shortcut", path: "B.lnk" } }]];
     native.scheduleLaunchTargetStatusCheck();
@@ -1842,7 +1803,6 @@ export async function runLaunchpadNativeTests() {
   await withMockTauri(async (command) => {
     if (command === "load_layout") return null;
     if (command === "scan_apps") return { apps: [], warnings: [], stats: null };
-    if (command === "load_cached_app_icons") return [];
     if (command === "check_launch_targets") return [];
     if (command === "save_layout") {
       saveAttempts += 1;

@@ -11,7 +11,15 @@ import {
   normalizeScanKeywordBlacklist,
   normalizeScanRoots,
 } from "../domain/launchpadData.js";
-import { cacheCustomIcon, loadAppIconChoices, pickLaunchFile, pickScanRootDirectory, scanApps } from "../api/launchpadApi.js";
+import { applyCachedIconAssetUrlsToApp } from "../domain/iconSource.js";
+import {
+  cacheCustomIcon,
+  convertFilePathToAssetUrl,
+  loadAppIconChoices,
+  pickLaunchFile,
+  pickScanRootDirectory,
+  scanApps,
+} from "../api/launchpadApi.js";
 import { ICON_SIZE_MAX } from "./launchpadConstants.js";
 
 const CUSTOM_ICON_SOURCE_MAX_BYTES = 10 * 1024 * 1024;
@@ -781,7 +789,10 @@ export function useLaunchpadApps(options) {
       const existingIds = new Set(existingApps.map((app) => app.id));
       const existingSourceKeys = new Set(existingApps.map((app) => app.sourceKey).filter(Boolean));
       const missingApps = (scanResult?.apps || [])
-        .map(normalizeNativeApp)
+        .map((app, index) => applyCachedIconAssetUrlsToApp(
+          normalizeNativeApp(app, index),
+          convertFilePathToAssetUrl
+        ))
         .filter((app) => !isAppBlockedByScanBlacklist(app, scanFilters.appBlacklist))
         .filter((app) => !existingIds.has(app.id) && !existingSourceKeys.has(app.sourceKey));
       scanResultApps.value = missingApps;

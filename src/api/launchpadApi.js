@@ -33,11 +33,7 @@ function getTauriInvoke() {
 export function convertFilePathToAssetUrl(filePath) {
   const convertFileSrc = getTauriBridge()?.convertFileSrc;
   if (!convertFileSrc || !filePath) return null;
-  try {
-    return convertFileSrc(filePath);
-  } catch {
-    return null;
-  }
+  return convertFileSrc(filePath);
 }
 
 export function isNativeBridgeAvailable() {
@@ -125,12 +121,6 @@ export async function cacheCustomIcon(dataUrl) {
   const invoke = getTauriInvoke();
   if (!invoke) return null;
   return invoke("cache_custom_icon", { dataUrl });
-}
-
-export async function loadCachedAppIcons(icons) {
-  const invoke = getTauriInvoke();
-  if (!invoke) return [];
-  return invoke("load_cached_app_icons", { icons });
 }
 
 export async function checkLaunchTargets(targets) {

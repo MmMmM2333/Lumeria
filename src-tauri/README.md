@@ -11,7 +11,6 @@ Implemented commands:
 - `pick_scan_root_directory`: opens a Windows folder picker for custom scan roots.
 - `load_app_icon_choices`: extracts available icon choices from `.exe`, `.dll`, `.ico`, or `.lnk` targets.
 - `check_launch_targets`: checks whether local launch paths still exist.
-- `load_cached_app_icons`: reads cached icon PNGs from the app icon cache for layout hydration.
 - `launch_app`: launches by app id/name after the frontend persists launch-critical changes for that app. The backend resolves the launch target from the native catalog, saved layout, or saved-root rescan, and does not accept renderer-supplied launch targets or arguments. Launch arguments are used only for saved `.exe` targets. Native launch failures are shown with a Windows message box that includes a reason and suggested action.
 - `hide_main_window`: hides the main LaunchPad window after close animations.
 - `show_main_window`: opens the initially hidden main window through the cloaked show flow.

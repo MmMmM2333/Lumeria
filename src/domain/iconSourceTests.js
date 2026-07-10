@@ -1,4 +1,9 @@
-import { getIconSource, getPixiIconTextureSource, isPixiTextureSafeIconSource } from "./iconSource.js";
+import {
+  applyCachedIconAssetUrlsToApp,
+  getIconSource,
+  getPixiIconTextureSource,
+  isPixiTextureSafeIconSource,
+} from "./iconSource.js";
 
 export function runIconSourceTests() {
   const assert = (condition, message) => {
@@ -8,7 +13,21 @@ export function runIconSourceTests() {
   assert(isPixiTextureSafeIconSource("data:image/png;base64,abc"), "Pixi should accept image data URLs");
   assert(isPixiTextureSafeIconSource("blob:http://localhost/icon"), "Pixi should accept blob URLs");
   assert(!isPixiTextureSafeIconSource("asset://C:/Icons/app.png"), "Pixi should reject Tauri asset URLs");
-  assert(!isPixiTextureSafeIconSource("http://asset.localhost/app.png"), "Pixi should reject remote asset URLs");
+  assert(isPixiTextureSafeIconSource("http://asset.localhost/app.png"), "Pixi should accept the Tauri HTTP asset origin");
+  assert(isPixiTextureSafeIconSource("https://asset.localhost/app.png"), "Pixi should accept the Tauri HTTPS asset origin");
+  assert(!isPixiTextureSafeIconSource("https://asset.localhost.evil.example/app.png"), "Pixi should reject lookalike asset origins");
+  assert(!isPixiTextureSafeIconSource("https://example.com/app.png"), "Pixi should reject arbitrary remote icon origins");
+
+  const cachedApp = applyCachedIconAssetUrlsToApp({
+    iconPath: "C:/Icons/default.png",
+    iconDataUrl: "data:image/png;base64,default",
+    customIconPath: "C:/Icons/custom.png",
+    customIconDataUrl: "data:image/png;base64,custom",
+  }, (path) => `http://asset.localhost/${path}`);
+  assert(cachedApp.iconUrl === "http://asset.localhost/C:/Icons/default.png", "cached catalog icons should derive an asset URL");
+  assert(cachedApp.customIconUrl === "http://asset.localhost/C:/Icons/custom.png", "cached custom icons should derive an asset URL");
+  assert(!("iconDataUrl" in cachedApp), "cached catalog base64 should be removed once an asset URL exists");
+  assert(!("customIconDataUrl" in cachedApp), "cached custom base64 should be removed once an asset URL exists");
 
   assert(
     getIconSource({
@@ -19,10 +38,10 @@ export function runIconSourceTests() {
   );
   assert(
     getPixiIconTextureSource({
-      customIconUrl: "asset://C:/Icons/custom.png",
+      customIconUrl: "http://asset.localhost/custom.png",
       iconDataUrl: "data:image/png;base64,default",
-    }) === "data:image/png;base64,default",
-    "Pixi should skip unsafe custom asset URLs and fall back to safe data URLs"
+    }) === "http://asset.localhost/custom.png",
+    "Pixi should preserve custom icon priority for safe Tauri asset URLs"
   );
   assert(
     getPixiIconTextureSource({
@@ -33,8 +52,8 @@ export function runIconSourceTests() {
   );
   assert(
     getPixiIconTextureSource({
-      iconUrl: "asset://C:/Icons/app.png",
-    }) === null,
-    "Pixi should not expose unsafe asset-only icons to WebGL"
+      iconUrl: "http://asset.localhost/app.png",
+    }) === "http://asset.localhost/app.png",
+    "Pixi should expose safe asset-only icons to WebGL"
   );
 }

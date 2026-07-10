@@ -3,7 +3,10 @@ import { setLaunchpadApiBridgeForTests } from "../api/launchpadApi.js";
 import { getCustomIconCanvasSize, useLaunchpadApps } from "./useLaunchpadApps.js";
 
 function withMockTauri(invoke, run) {
-  setLaunchpadApiBridgeForTests({ invoke });
+  setLaunchpadApiBridgeForTests({
+    convertFileSrc: (path) => `http://asset.localhost/${path}`,
+    invoke,
+  });
 
   return Promise.resolve()
     .then(run)
@@ -108,6 +111,8 @@ export async function runLaunchpadAppsTests() {
         id: "win-app-1",
         type: "app",
         name: "Native App",
+        iconPath: "C:/Icons/native.png",
+        iconDataUrl: "data:image/png;base64,native",
         launchTarget: { kind: "shortcut", path: "C:/Apps/Native.lnk" },
         sourceKey: "scan-root:root:native.lnk",
       },
@@ -190,6 +195,8 @@ export async function runLaunchpadAppsTests() {
     apps.addSelectedScannedApps();
 
     assert(pages.value[0][0].id === "win-app-1", "adding scanned apps should preserve native stable ids");
+    assert(pages.value[0][0].iconUrl === "http://asset.localhost/C:/Icons/native.png", "adding scanned apps should use the cached asset URL");
+    assert(!("iconDataUrl" in pages.value[0][0]), "adding scanned apps should discard cached base64 once an asset URL exists");
     assert(hiddenAppIds.value.length === 0, "adding scanned apps should unhide the preserved native id");
 
     apps.deleteManagedApp("win-app-1");

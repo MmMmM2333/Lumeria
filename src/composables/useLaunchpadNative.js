@@ -8,6 +8,7 @@ import {
 } from "./launchpadConstants.js";
 import { clamp } from "../domain/launchpadLayout.js";
 import { createBackgroundEffectPlan } from "../domain/backgroundEffectPlan.js";
+import { applyCachedIconAssetUrlsToApp } from "../domain/iconSource.js";
 import { getKawaseDebugEffectPlanParams } from "../rendering/pixi/background/kawaseDebugParams.js";
 import {
   DEFAULT_SCAN_KEYWORD_BLACKLIST,
@@ -34,7 +35,6 @@ import {
   isNativeBridgeAvailable,
   launchApp as launchNativeApp,
   listenNativeEvent,
-  loadCachedAppIcons,
   loadLayout,
   revealMainWindow,
   saveLayout,
@@ -89,9 +89,6 @@ import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.j
 const USE_MOCK_DATA_IN_NATIVE = false;
 const FOLDER_ICON_SIZE_MODE_CUSTOM = "custom";
 const FOLDER_ICON_SIZE_MODE_GLOBAL = "global";
-const CUSTOM_ICON_HYDRATION_ID_PREFIX = "__custom_icon__:";
-const MIN_ICON_HYDRATION_BATCH_SIZE = 20;
-const MAX_ICON_HYDRATION_BATCH_SIZE = 80;
 const WINDOWS_WALLPAPER_REFRESH_INTERVAL_MS = 5000;
 const LIVE_DESKTOP_IDLE_STOP_DELAY_MS = 10_000;
 const LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY = "launchpadLiveDesktopDebugFrameSourceOverride";
@@ -397,6 +394,7 @@ export function useLaunchpadNative(options) {
   let nativeSavePromise = null;
   let launchCriticalDirtyRevision = 0;
   let launchTargetStatusCheckRequestId = 0;
+  let launchTargetStatusCheckSignature = null;
   let launchTargetStatusRecordsById = {};
   let lastSavedLayoutSignature = "";
   let nativeLoadFailureCount = 0;
@@ -699,7 +697,6 @@ export function useLaunchpadNative(options) {
     if (hadNativeLoadFailure) options.showLayoutLoadRecovered?.();
     hadNativeLoadFailure = false;
     nativeLoadFailureCount = 0;
-    hydrateCachedAppIcons();
     options.schedulePageGridMetrics();
     scheduleLaunchTargetStatusCheck();
     setNativeWindowMode(options.windowMode.value);
@@ -1139,10 +1136,7 @@ export function useLaunchpadNative(options) {
   function applyCachedIconAssetUrlToItem(item) {
     if (!item) return item;
     if (item.type === "app") {
-      const iconUrl = item.iconPath ? convertFilePathToAssetUrl(item.iconPath) : null;
-      const customIconUrl = item.customIconPath ? convertFilePathToAssetUrl(item.customIconPath) : null;
-      if (iconUrl || customIconUrl) return { ...item, iconUrl, customIconUrl };
-      return item;
+      return applyCachedIconAssetUrlsToApp(item, convertFilePathToAssetUrl);
     }
     if (item.type !== "folder") return item;
     const childPages = (item.childPages || []).map((page) =>
@@ -1155,126 +1149,30 @@ export function useLaunchpadNative(options) {
     };
   }
 
-  async function hydrateCachedAppIcons() {
-    if (!isNativeBridgeAvailable()) return;
-    const requests = collectIconHydrationRequests();
-    if (!requests.length) return;
-    const batchSize = getIconHydrationBatchSize();
-    for (let index = 0; index < requests.length; index += batchSize) {
-      const batch = requests.slice(index, index + batchSize);
-      try {
-        const results = await loadCachedAppIcons(batch.map((item) => ({ id: item.id, iconPath: item.iconPath })));
-        const requestById = new Map(batch.map((item) => [item.id, item]));
-        const iconDataById = collectHydratedIconDataByAppId(results, requestById);
-        if (!iconDataById.size) continue;
-        options.pages.value = applyCachedIconDataUrls(options.pages.value, iconDataById);
-        options.schedulePageGridMetrics();
-      } catch (error) {
-        console.error("Failed to load cached LaunchPad icons", error);
-      }
-    }
-  }
-
-  function collectIconHydrationRequests() {
-    const requests = [];
-    for (const app of options.collectAppsFromPages(options.pages.value)) {
-      if (!app?.id) continue;
-      if (app.iconPath && !app.iconDataUrl) {
-        requests.push({
-          appId: app.id,
-          id: app.id,
-          iconPath: app.iconPath,
-          kind: "catalog",
-        });
-      }
-      if (app.customIconPath && !app.customIconDataUrl) {
-        requests.push({
-          appId: app.id,
-          id: `${CUSTOM_ICON_HYDRATION_ID_PREFIX}${app.id}`,
-          iconPath: app.customIconPath,
-          kind: "custom",
-        });
-      }
-    }
-    return requests;
-  }
-
-  function collectHydratedIconDataByAppId(results, requestById) {
-    const iconDataById = new Map();
-    for (const item of results || []) {
-      if (!item?.id || !item.iconDataUrl) continue;
-      const request = requestById.get(item.id);
-      if (!request) continue;
-      let record = iconDataById.get(request.appId);
-      if (!record) {
-        record = {};
-        iconDataById.set(request.appId, record);
-      }
-      record[request.kind] = {
-        iconDataUrl: item.iconDataUrl,
-        iconPath: request.iconPath,
-      };
-    }
-    return iconDataById;
-  }
-
-  function getIconHydrationBatchSize() {
-    const pageCapacity = Number(options.gridRows.value) * Number(options.gridCols.value);
-    if (!Number.isFinite(pageCapacity) || pageCapacity <= 0) {
-      return MIN_ICON_HYDRATION_BATCH_SIZE;
-    }
-    return clamp(
-      Math.floor(pageCapacity),
-      MIN_ICON_HYDRATION_BATCH_SIZE,
-      MAX_ICON_HYDRATION_BATCH_SIZE
-    );
-  }
-
-  function applyCachedIconDataUrls(sourcePages, iconDataById) {
-    return options.clonePages(sourcePages).map((page) =>
-      page.map((item) => applyCachedIconDataUrlToItem(item, iconDataById))
-    );
-  }
-
-  function applyCachedIconDataUrlToItem(item, iconDataById) {
-    if (!item) return item;
-    if (item.type === "app") {
-      const iconData = iconDataById.get(item.id);
-      if (!iconData) return item;
-      const next = { ...item };
-      if (iconData.catalog?.iconDataUrl && iconData.catalog.iconPath === item.iconPath) {
-        next.iconDataUrl = iconData.catalog.iconDataUrl;
-      }
-      if (iconData.custom?.iconDataUrl && iconData.custom.iconPath === item.customIconPath) {
-        next.customIconDataUrl = iconData.custom.iconDataUrl;
-      }
-      return next;
-    }
-    if (item.type !== "folder") return item;
-    const childPages = (item.childPages || []).map((page) =>
-      (page || []).map((child) => applyCachedIconDataUrlToItem(child, iconDataById))
-    );
-    return {
-      ...item,
-      childPages,
-      children: childPages.flat().filter(Boolean).map(options.cloneItem),
-    };
-  }
-
   function scheduleLaunchTargetStatusCheck() {
-    const requestId = (launchTargetStatusCheckRequestId += 1);
     if (!options.showMissingLaunchTargetBadge.value || !isNativeBridgeAvailable()) {
+      launchTargetStatusCheckRequestId += 1;
+      launchTargetStatusCheckSignature = null;
       clearLaunchTargetStatuses();
       return;
     }
+    const signature = collectLaunchTargetChecksSignature();
+    if (signature === launchTargetStatusCheckSignature) return;
     pruneLaunchTargetStatusesForCurrentApps();
-    window.setTimeout(() => checkCurrentLaunchTargets(requestId), 0);
+    launchTargetStatusCheckSignature = signature;
+    const requestId = (launchTargetStatusCheckRequestId += 1);
+    window.setTimeout(() => checkCurrentLaunchTargets(requestId, signature), 0);
   }
 
-  async function checkCurrentLaunchTargets(requestId) {
+  async function checkCurrentLaunchTargets(requestId, scheduledSignature) {
     if (requestId !== launchTargetStatusCheckRequestId) return;
     if (!options.showMissingLaunchTargetBadge.value || !isNativeBridgeAvailable()) return;
     const apps = collectLaunchTargetChecks();
+    if (scheduledSignature !== collectLaunchTargetChecksSignature(apps)) {
+      if (requestId === launchTargetStatusCheckRequestId) launchTargetStatusCheckSignature = null;
+      scheduleLaunchTargetStatusCheck();
+      return;
+    }
     if (!apps.length) {
       if (requestId !== launchTargetStatusCheckRequestId) return;
       clearLaunchTargetStatuses();
@@ -1301,6 +1199,7 @@ export function useLaunchpadNative(options) {
       );
       pruneLaunchTargetStatusesForCurrentApps();
     } catch (error) {
+      if (requestId === launchTargetStatusCheckRequestId) launchTargetStatusCheckSignature = null;
       console.error("Failed to check LaunchPad app paths", error);
     }
   }
@@ -1313,6 +1212,14 @@ export function useLaunchpadNative(options) {
         launchTarget: app.launchTarget,
         targetSignature: launchTargetSignature(app.launchTarget),
       }));
+  }
+
+  function collectLaunchTargetChecksSignature(apps = collectLaunchTargetChecks()) {
+    return JSON.stringify(
+      apps
+        .map((app) => [app.id, app.targetSignature])
+        .sort(([leftId], [rightId]) => leftId.localeCompare(rightId))
+    );
   }
 
   function launchTargetSignature(launchTarget) {

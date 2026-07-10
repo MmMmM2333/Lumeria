@@ -7,14 +7,25 @@ async function flushTextureLoad() {
 function installMockImage(images) {
   return class MockImage {
     constructor() {
+      this.assignments = [];
       this.height = 16;
       this.naturalHeight = 16;
       this.naturalWidth = 16;
       this.width = 16;
     }
 
+    set crossOrigin(value) {
+      this._crossOrigin = value;
+      this.assignments.push(`crossOrigin:${value}`);
+    }
+
+    get crossOrigin() {
+      return this._crossOrigin;
+    }
+
     set src(value) {
       this._src = value;
+      this.assignments.push(`src:${value}`);
       images.push(this);
     }
 
@@ -64,12 +75,37 @@ export async function runIconTextureCacheTests() {
     clearIconTextureCache,
     getCachedIconTexture,
     getIconTextureCacheDebugSnapshot,
-    setIconTextureCacheDebugOverride,
+    subscribeIconTextureLoadSettlements,
   } = await importIconTextureCache();
+  const loadedSources = [];
+  const unsubscribeTextureLoadSettlements = subscribeIconTextureLoadSettlements((source) => loadedSources.push(source));
+  const originalConsoleError = console.error;
+  const textureErrorLogs = [];
 
   try {
-    setIconTextureCacheDebugOverride(true);
+    console.error = (...args) => textureErrorLogs.push(args);
     clearIconTextureCache();
+    const assetItem = { id: "asset-app", iconUrl: "http://asset.localhost/app.png" };
+    getCachedIconTexture(assetItem);
+    assert(images.length === 1, "asset icons should start one image request");
+    assert(images[0].crossOrigin === "anonymous", "Tauri asset images should use anonymous CORS");
+    assert(images[0].assignments[0] === "crossOrigin:anonymous", "asset image CORS should be configured before assigning src");
+    images[0].onerror();
+    await flushTextureLoad();
+    let assetFailureSnapshot = getIconTextureCacheDebugSnapshot();
+    assert(assetFailureSnapshot.recentErrors.length === 1, "asset load failures should remain visible in production diagnostics");
+    assert(assetFailureSnapshot.failed.length === 0, "the first asset IO failure should remain retryable");
+    assert(textureErrorLogs.length === 1, "asset load failures should be logged explicitly");
+
+    getCachedIconTexture(assetItem);
+    assert(images.length === 2, "a transient asset failure should retry on the next render request");
+    images[1].onerror();
+    await flushTextureLoad();
+    assetFailureSnapshot = getIconTextureCacheDebugSnapshot();
+    assert(assetFailureSnapshot.failed.length === 1, "repeated asset failures should stop retrying for the session");
+
+    clearIconTextureCache();
+    images.length = 0;
     const item = { id: "app-1", iconDataUrl: "data:image/png;base64,first" };
     const listenerKey = {};
     const calls = [];
@@ -119,6 +155,7 @@ export async function runIconTextureCacheTests() {
     images[0].onload();
     await flushTextureLoad();
     assert(loadedCalls.join(",") === "loaded", "successful texture load should notify listeners");
+    assert(loadedSources.includes(loadedItem.iconDataUrl), "successful texture load should notify surface render subscribers");
     assert(textureFromCalls.length === 1, "successful texture load should create one Pixi texture");
     assert(textureFromCalls[0].skipCache === true, "Pixi texture creation should skip the global Pixi cache");
     const cachedTexture = getCachedIconTexture(loadedItem);
@@ -145,7 +182,8 @@ export async function runIconTextureCacheTests() {
     assert(getCachedIconTexture(staleItem) === null, "stale pending texture load should not repopulate the local cache");
     assert(images.length === 2, "a fresh request should be required after stale pending load is ignored");
   } finally {
-    setIconTextureCacheDebugOverride(false);
+    console.error = originalConsoleError;
+    unsubscribeTextureLoadSettlements();
     clearIconTextureCache();
     Texture.from = originalTextureFrom;
     if (previousImage === undefined) delete globalThis.Image;

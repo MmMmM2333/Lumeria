@@ -13,7 +13,6 @@ commands.
 - `pick_scan_root_directory() -> string | null`
 - `load_app_icon_choices(targetPath: string) -> AppIconChoice[]`
 - `cache_custom_icon(dataUrl: string) -> CachedCustomIconResult`
-- `load_cached_app_icons(icons: CachedAppIconRequest[]) -> CachedAppIconResult[]`
 - `check_launch_targets(targets: LaunchTargetCheckRequest[]) -> LaunchTargetCheckResult[]`
 - `launch_app(request: LaunchAppRequest) -> void`
 - `hide_main_window() -> void`
@@ -35,7 +34,7 @@ type AppCatalogItem = {
   type: "app";
   name: string;
   iconPath?: string;
-  iconDataUrl?: string;
+  iconUrl?: string;
   customIconPath?: string;
   customIconUrl?: string;
   emoji?: string;
@@ -139,16 +138,6 @@ type CachedCustomIconResult = {
   iconDataUrl: string;
 };
 
-type CachedAppIconRequest = {
-  id: string;
-  iconPath: string;
-};
-
-type CachedAppIconResult = {
-  id: string;
-  iconDataUrl: string;
-};
-
 type LaunchTargetCheckRequest = {
   id: string;
   launchTarget: AppCatalogItem["launchTarget"];
@@ -190,10 +179,12 @@ not hard-coded startup behavior.
 
 `scan_apps` is bounded by per-root recursion and entry limits. It skips repeated
 directories, symlinks, junctions, and reparse points; warnings describe skipped
-or truncated scans. It returns cached PNG icons as `iconDataUrl` when extraction succeeds.
-The frontend persists `iconPath` for scanned default icons and hydrates those
-paths with `load_cached_app_icons` on startup. It should not persist catalog
-`iconDataUrl` in layout JSON.
+or truncated scans. It returns cached PNG paths when extraction succeeds. The
+frontend persists `iconPath` for scanned default icons and derives `iconUrl`
+from Tauri's scoped asset protocol on startup. Cached icons are loaded directly
+by the renderer rather than being re-read and base64-encoded through IPC. Pixi
+image loads set anonymous CORS before assigning an asset URL. Catalog
+`iconDataUrl` must not be persisted in layout JSON.
 
 User-selected custom icons are normalized by the frontend before being passed to
 `cache_custom_icon`. The backend stores accepted PNG data URLs under the app data

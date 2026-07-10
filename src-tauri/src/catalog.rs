@@ -451,7 +451,6 @@ fn make_catalog_item(
     candidate: CatalogCandidate,
 ) -> AppCatalogItem {
     let icon_path = cache_app_icon(path, icon_dir, &candidate.id);
-    let icon_data_url = icon_path.as_deref().and_then(icon_file_data_url);
 
     AppCatalogItem {
         id: candidate.id,
@@ -462,7 +461,6 @@ fn make_catalog_item(
             candidate.name.clone()
         },
         icon_path,
-        icon_data_url,
         emoji: Some(app_glyph(&candidate.name)),
         launch_target: LaunchTarget {
             kind: candidate.kind,

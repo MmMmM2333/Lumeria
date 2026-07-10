@@ -85,20 +85,6 @@ struct AppIconChoice {
     icon_data_url: String,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CachedAppIconRequest {
-    id: String,
-    icon_path: String,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CachedAppIconResult {
-    id: String,
-    icon_data_url: String,
-}
-
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CachedCustomIconResult {
@@ -310,37 +296,6 @@ fn cache_custom_icon(app: AppHandle, data_url: String) -> Result<CachedCustomIco
         icon_path,
         icon_data_url,
     })
-}
-
-#[tauri::command]
-fn load_cached_app_icons(
-    app: AppHandle,
-    icons: Vec<CachedAppIconRequest>,
-) -> Result<Vec<CachedAppIconResult>, String> {
-    let icon_dir = icon_cache_dir(&app)?;
-    let canonical_icon_dir = icon_dir.canonicalize().map_err(|error| {
-        format!(
-            "Failed to resolve icon cache directory {}: {error}",
-            icon_dir.display()
-        )
-    })?;
-
-    let results = icons
-        .into_iter()
-        .filter_map(|icon| {
-            let path = std::path::PathBuf::from(icon.icon_path);
-            let canonical_path = path.canonicalize().ok()?;
-            if !canonical_path.starts_with(&canonical_icon_dir) {
-                return None;
-            }
-            let icon_data_url = icon_file_data_url(canonical_path.to_str()?)?;
-            Some(CachedAppIconResult {
-                id: icon.id,
-                icon_data_url,
-            })
-        })
-        .collect();
-    Ok(results)
 }
 
 #[tauri::command]
@@ -1096,7 +1051,6 @@ pub fn run() {
             pick_scan_root_directory,
             load_app_icon_choices,
             cache_custom_icon,
-            load_cached_app_icons,
             check_launch_targets,
             launch_app,
             hide_main_window,
@@ -1156,7 +1110,6 @@ mod tests {
             item_type: "app".to_string(),
             name: id.to_string(),
             icon_path: None,
-            icon_data_url: None,
             emoji: None,
             launch_target: LaunchTarget {
                 kind: "executable".to_string(),
@@ -1175,7 +1128,6 @@ mod tests {
             item_type: "app".to_string(),
             name: id.to_string(),
             icon_path: None,
-            icon_data_url: None,
             emoji: None,
             launch_target: LaunchTarget {
                 kind: kind.to_string(),

@@ -10,8 +10,6 @@ pub(crate) struct AppCatalogItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) icon_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) icon_data_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) emoji: Option<String>,
     pub(crate) launch_target: LaunchTarget,
     #[serde(default, skip_serializing_if = "Option::is_none")]

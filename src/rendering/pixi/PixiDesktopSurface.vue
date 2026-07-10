@@ -56,6 +56,8 @@ import {
   clearIconTextureCache,
   getIconTextureCacheDebugSnapshot,
   preloadIconTextures,
+  preloadIconTexturesAsync,
+  subscribeIconTextureLoadSettlements,
 } from "./assets/iconTextureCache.js";
 import {
   deleteLaunchpadDebugValue,
@@ -92,6 +94,7 @@ import {
 } from "./scene/singleStageFolderDomControls.js";
 
 const FOLDER_TEXTURE_PREWARM_LIMIT = 80;
+const VISIBLE_ICON_TEXTURE_PRELOAD_TIMEOUT_MS = 1500;
 const RESIZE_SETTLE_FRAMES = 3;
 const WINDOW_CHROME_RESIZE_SETTLE_FRAMES = 12;
 
@@ -181,12 +184,14 @@ let layer = null;
 let resizeObserver = null;
 let destroyed = false;
 let folderTexturePrewarmTimer = null;
+let folderTexturePrewarmGeneration = 0;
 let renderScheduler = null;
 let renderProbe = null;
 let desktopDomGeometryCache = null;
 let pixiResizeSignature = "";
 let motionDebugCommands = null;
 let motionDebugOverlay = null;
+let unsubscribeIconTextureLoadSettlements = null;
 let unsubscribeMotionRuntimeRenderSignal = null;
 let desktopMotionRuntimeSuspended = false;
 let desktopFrameHandle = null;
@@ -804,6 +809,7 @@ function shouldRunHandoffRenderLoop() {
 }
 
 function clearFolderTexturePrewarmTimer() {
+  folderTexturePrewarmGeneration += 1;
   if (folderTexturePrewarmTimer == null) return;
   window.clearTimeout(folderTexturePrewarmTimer);
   folderTexturePrewarmTimer = null;
@@ -830,6 +836,21 @@ function collectFolderTexturePrewarmItems() {
   return items;
 }
 
+function collectVisibleIconTextureItems() {
+  const page = props.activePages?.[props.activePageIndex] || [];
+  const visibleItems = props.getVisibleDesktopPage?.(page) || [];
+  const items = [];
+  for (const item of visibleItems) {
+    if (!item) continue;
+    if (item.type !== "folder") {
+      items.push(item);
+      continue;
+    }
+    items.push(...getFolderPreviewSlots(item, props.folderPageSize).filter(Boolean));
+  }
+  return items;
+}
+
 function collectDragPreviewTextureItems(previewState) {
   const item = previewState?.item;
   if (!item) return [];
@@ -844,11 +865,17 @@ function collectFolderCreateReleaseTextureItems(releaseState) {
 function scheduleFolderTexturePrewarm() {
   if (!app) return;
   clearFolderTexturePrewarmTimer();
-  folderTexturePrewarmTimer = window.setTimeout(() => {
-    folderTexturePrewarmTimer = null;
-    if (destroyed) return;
-    preloadIconTextures(collectFolderTexturePrewarmItems());
-  }, 0);
+  const generation = folderTexturePrewarmGeneration;
+  void preloadIconTexturesAsync(collectVisibleIconTextureItems(), {
+    timeoutMs: VISIBLE_ICON_TEXTURE_PRELOAD_TIMEOUT_MS,
+  }).then(() => {
+    if (destroyed || generation !== folderTexturePrewarmGeneration) return;
+    folderTexturePrewarmTimer = window.setTimeout(() => {
+      folderTexturePrewarmTimer = null;
+      if (destroyed || generation !== folderTexturePrewarmGeneration) return;
+      preloadIconTextures(collectFolderTexturePrewarmItems());
+    }, 0);
+  });
 }
 
 function handleIconAction(action, event, item, source) {
@@ -890,6 +917,8 @@ function destroyPixi(options = {}) {
   app = null;
   layer = null;
   motionDebugOverlay = null;
+  unsubscribeIconTextureLoadSettlements?.();
+  unsubscribeIconTextureLoadSettlements = null;
   unsubscribeMotionRuntimeRenderSignal?.();
   unsubscribeMotionRuntimeRenderSignal = null;
   if (desktopMotionRuntimeSuspended) {
@@ -984,6 +1013,9 @@ onMounted(async () => {
     onIconAction: handleIconAction,
   });
   app.stage.addChild(layer);
+  unsubscribeIconTextureLoadSettlements = subscribeIconTextureLoadSettlements(() => {
+    if (!destroyed && app && layer) requestRender("icon-texture-ready");
+  });
   unsubscribeMotionRuntimeRenderSignal = motionRuntime.onRenderSignal((
     activeAnimationCount,
     writesLastFrame,
