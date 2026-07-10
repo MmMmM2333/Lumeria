@@ -8,13 +8,16 @@ use windows::Win32::{
     Graphics::Dwm::{
         DwmSetWindowAttribute, DWMNCRP_DISABLED, DWMNCRP_USEWINDOWSTYLE, DWMWA_CLOAK,
         DWMWA_NCRENDERING_POLICY, DWMWA_TRANSITIONS_FORCEDISABLED, DWMWA_USE_IMMERSIVE_DARK_MODE,
-        DWMWINDOWATTRIBUTE,
+        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND, DWMWINDOWATTRIBUTE,
     },
     UI::WindowsAndMessaging::{
         SetWindowPos, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
         SWP_NOSENDCHANGING, SWP_NOSIZE,
     },
 };
+
+#[cfg(target_os = "windows")]
+const WINDOWS_ROUNDED_CORNERS_MIN_BUILD: u32 = 22000;
 
 pub(crate) fn set_window_shadow_enabled(
     window: &WebviewWindow,
@@ -60,6 +63,38 @@ fn set_dwm_attribute<T>(
         source,
     })?;
     unsafe { set_dwm_attribute_for_hwnd(hwnd, attribute, value) }
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn set_window_corner_rounding_enabled(
+    window: &WebviewWindow,
+    enabled: bool,
+) -> Result<(), String> {
+    if windows_version::OsVersion::current().build < WINDOWS_ROUNDED_CORNERS_MIN_BUILD {
+        return Ok(());
+    }
+    let preference = if enabled {
+        DWMWCP_ROUND
+    } else {
+        DWMWCP_DONOTROUND
+    };
+    if let Err(error) = set_dwm_attribute(window, DWMWA_WINDOW_CORNER_PREFERENCE, &preference) {
+        let preference_name = if enabled { "round" } else { "doNotRound" };
+        log::warn!(
+            target: "dwm",
+            "Failed to set window corner preference {preference_name}: {error}"
+        );
+        return Err(error.into());
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn set_window_corner_rounding_enabled(
+    _window: &WebviewWindow,
+    _enabled: bool,
+) -> Result<(), String> {
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]

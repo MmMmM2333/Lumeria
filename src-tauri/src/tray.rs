@@ -10,8 +10,8 @@ use tauri::{menu::MenuBuilder, tray::TrayIconBuilder, AppHandle, Emitter, Manage
 
 use crate::{
     dwm::{
-        set_main_window_topmost, set_window_cloaked, set_window_non_client_rendering,
-        set_window_shadow_enabled, set_window_transitions_enabled,
+        set_main_window_topmost, set_window_cloaked, set_window_corner_rounding_enabled,
+        set_window_non_client_rendering, set_window_shadow_enabled, set_window_transitions_enabled,
     },
     native_error::NativeError,
     window_effects::{
@@ -775,6 +775,10 @@ fn should_use_native_window_effects(mode: MainWindowMode) -> bool {
     matches!(mode, MainWindowMode::Fullscreen | MainWindowMode::Windowed)
 }
 
+fn should_round_main_window(mode: MainWindowMode) -> bool {
+    mode == MainWindowMode::Windowed
+}
+
 fn apply_main_window_native_surface_policy(
     window: &WebviewWindow,
     mode: MainWindowMode,
@@ -809,7 +813,7 @@ fn apply_main_window_win32_surface_policy(
             set_window_non_client_rendering(window, true)?;
             set_main_window_topmost(window, true)?;
             refresh_main_window_frame(window)?;
-            apply_main_window_borderless_fullscreen_bounds(window)
+            apply_main_window_borderless_fullscreen_bounds(window)?;
         }
         MainWindowMode::Windowed => {
             if EXPERIMENT_WINDOWED_THICKFRAME_NCCALCSIZE {
@@ -821,9 +825,10 @@ fn apply_main_window_win32_surface_policy(
             }
             set_window_non_client_rendering(window, true)?;
             set_main_window_topmost(window, false)?;
-            refresh_main_window_frame(window)
+            refresh_main_window_frame(window)?;
         }
     }
+    set_window_corner_rounding_enabled(window, should_round_main_window(mode))
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -1094,5 +1099,11 @@ mod tests {
     fn main_window_mode_rejects_unknown_modes() {
         assert_eq!(MainWindowMode::from_str("maximized"), None);
         assert_eq!(MainWindowMode::from_str(""), None);
+    }
+
+    #[test]
+    fn main_window_corner_rounding_only_applies_to_windowed_mode() {
+        assert!(should_round_main_window(MainWindowMode::Windowed));
+        assert!(!should_round_main_window(MainWindowMode::Fullscreen));
     }
 }
