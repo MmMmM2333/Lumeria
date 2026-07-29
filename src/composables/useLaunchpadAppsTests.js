@@ -25,7 +25,7 @@ function installCustomIconDomMocks() {
   const defer = (callback) => Promise.resolve().then(callback);
 
   if (!globalThis.URL) globalThis.URL = {};
-  globalThis.URL.createObjectURL = () => "blob:launchpad-test";
+  globalThis.URL.createObjectURL = () => "blob:lumeria-test";
   globalThis.URL.revokeObjectURL = () => {};
   globalThis.Image = class {
     constructor() {

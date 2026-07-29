@@ -5,7 +5,7 @@
         <div class="settings-list-row">
           <span class="settings-about-mark" aria-hidden="true">L</span>
           <span class="settings-list-copy">
-            <span class="settings-list-title">Lumeria LaunchPad</span>
+            <span class="settings-list-title">Lumeria</span>
             <span class="settings-list-description">Windows 应用启动台</span>
           </span>
           <span class="settings-list-control">

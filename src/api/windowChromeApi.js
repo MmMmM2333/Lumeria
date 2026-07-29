@@ -12,7 +12,7 @@ export const WINDOW_RESIZE_DIRECTIONS = Object.freeze([
   "SouthEast",
 ]);
 
-export const WINDOW_CHROME_STATE_CHANGE_EVENT = "launchpad-window-chrome-state-change";
+export const WINDOW_CHROME_STATE_CHANGE_EVENT = "lumeria-window-chrome-state-change";
 
 const WINDOW_RESIZE_DIRECTION_SET = new Set(WINDOW_RESIZE_DIRECTIONS);
 

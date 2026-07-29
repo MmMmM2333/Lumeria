@@ -55,8 +55,8 @@ use tray::{
     trigger_main_window_shortcut, CLOSE_DESKTOP_EVENT,
 };
 
-const QUIT_REQUESTED_EVENT: &str = "launchpad-quit-requested";
-const MAIN_WINDOW_SHORTCUT_CAPTURED_EVENT: &str = "launchpad-main-window-shortcut-captured";
+const QUIT_REQUESTED_EVENT: &str = "lumeria-quit-requested";
+const MAIN_WINDOW_SHORTCUT_CAPTURED_EVENT: &str = "lumeria-main-window-shortcut-captured";
 const QUIT_FALLBACK_DELAY_MS: u64 = 15_000;
 const DEFAULT_MAIN_WINDOW_SHORTCUT: &str = "alt+space";
 
@@ -171,7 +171,7 @@ fn check_launch_targets(
 fn load_layout(app: AppHandle) -> Result<Option<serde_json::Value>, String> {
     let result = load_saved_layout(&app)?;
     if let Some(recovery) = result.recovery {
-        if let Err(error) = app.emit("launchpad-layout-recovered", recovery) {
+        if let Err(error) = app.emit("lumeria-layout-recovered", recovery) {
             log::warn!(target: "layout_store", "Failed to emit layout recovery event: {error}");
         }
     }
@@ -374,7 +374,7 @@ fn quit_app(app: AppHandle) {
 #[tauri::command]
 fn confirm_quit_after_save(app: AppHandle, saved: bool) {
     if !saved {
-        log::warn!(target: "launchpad", "Quitting Lumeria after layout save failed or was skipped");
+        log::warn!(target: "lumeria", "Quitting Lumeria after layout save failed or was skipped");
     }
     QUIT_ACKNOWLEDGED.store(true, Ordering::Relaxed);
     app.exit(0);
@@ -807,10 +807,10 @@ fn check_launch_target_status(target: &models::LaunchTarget) -> String {
 fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     setup_tray(app)?;
     if let Err(error) = apply_main_window_mode(app.handle()) {
-        log::warn!(target: "launchpad", "Failed to apply Lumeria window mode: {error}");
+        log::warn!(target: "lumeria", "Failed to apply Lumeria window mode: {error}");
     }
     if let Err(error) = disable_main_window_transitions(app.handle()) {
-        log::warn!(target: "launchpad", "Failed to disable Lumeria window transitions: {error}");
+        log::warn!(target: "lumeria", "Failed to disable Lumeria window transitions: {error}");
     }
     setup_global_shortcuts(app);
     Ok(())
@@ -960,13 +960,13 @@ fn set_main_window_shortcut_internal(
 fn request_app_quit(app: &AppHandle) {
     QUIT_ACKNOWLEDGED.store(false, Ordering::Relaxed);
     if let Err(error) = app.emit(QUIT_REQUESTED_EVENT, ()) {
-        log::warn!(target: "launchpad", "Failed to emit quit request event: {error}");
+        log::warn!(target: "lumeria", "Failed to emit quit request event: {error}");
     }
     let app = app.clone();
     thread::spawn(move || {
         thread::sleep(Duration::from_millis(QUIT_FALLBACK_DELAY_MS));
         if !QUIT_ACKNOWLEDGED.load(Ordering::Relaxed) {
-            log::error!(target: "launchpad", "Lumeria quit request timed out; forcing exit");
+            log::error!(target: "lumeria", "Lumeria quit request timed out; forcing exit");
             app.exit(0);
         }
     });
@@ -1030,7 +1030,7 @@ pub fn run() {
             WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
                 if let Err(error) = window.emit(CLOSE_DESKTOP_EVENT, ()) {
-                    log::warn!(target: "launchpad", "Failed to emit close desktop event: {error}");
+                    log::warn!(target: "lumeria", "Failed to emit close desktop event: {error}");
                 }
             }
             WindowEvent::Focused(true) => refresh_main_window_effects(window.app_handle()),
@@ -1232,7 +1232,7 @@ mod tests {
         let error = launch_selected_app(app_item_with_kind(
             "app",
             "executable",
-            Some("C:/LaunchPad/Missing.exe"),
+            Some("C:/Lumeria/Missing.exe"),
         ))
         .expect_err("missing local paths should fail before shell launch");
 

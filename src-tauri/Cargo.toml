@@ -2,8 +2,8 @@
 license = "GPL-3.0-only"
 name = "lumeria"
 version = "0.1.0"
-description = "Windows Lumeria LaunchPad desktop shell"
-authors = ["Vibe Project"]
+description = "Lumeria application launcher for Windows"
+authors = ["Lumeria"]
 edition = "2021"
 default-run = "lumeria"
 

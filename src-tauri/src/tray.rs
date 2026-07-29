@@ -20,9 +20,9 @@ use crate::{
     },
 };
 
-pub(crate) const OPEN_DESKTOP_EVENT: &str = "launchpad-open-desktop";
-pub(crate) const TOGGLE_DESKTOP_EVENT: &str = "launchpad-toggle-desktop";
-pub(crate) const CLOSE_DESKTOP_EVENT: &str = "launchpad-close-desktop";
+pub(crate) const OPEN_DESKTOP_EVENT: &str = "lumeria-open-desktop";
+pub(crate) const TOGGLE_DESKTOP_EVENT: &str = "lumeria-toggle-desktop";
+pub(crate) const CLOSE_DESKTOP_EVENT: &str = "lumeria-close-desktop";
 const MAIN_WINDOW_EFFECT_REAPPLY_DELAYS_MS: [u64; 2] = [80, 180];
 const MAIN_WINDOW_RESTORE_TRANSITIONS_DELAY_MS: u64 = 80;
 const MAIN_WINDOW_DEFERRED_SHOW_DELAY_MS: u64 = 0;
@@ -363,7 +363,7 @@ unsafe extern "system" fn main_window_non_client_subclass_proc(
         WM_SYSCOMMAND => {
             let command = (wparam.0 & 0xfff0) as u32;
             if command == SC_KEYMENU {
-                // Alt+Space is our global launchpad shortcut, but Windows also
+                // Alt+Space is Lumeria's global shortcut, but Windows also
                 // treats it as the system-menu key for WS_SYSMENU windows. If
                 // the default handler opens that menu, the WebView enters a
                 // modal menu loop and the close-animation timer cannot fire
@@ -1050,7 +1050,7 @@ pub(crate) fn trigger_main_window_shortcut(app: &AppHandle) {
 
 pub(crate) fn open_settings(app: &AppHandle) {
     open_main_window(app);
-    if let Err(error) = app.emit("launchpad-open-settings", ()) {
+    if let Err(error) = app.emit("lumeria-open-settings", ()) {
         log::warn!(target: "tray", "Failed to emit open settings event: {error}");
     }
 }

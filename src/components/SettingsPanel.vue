@@ -632,7 +632,7 @@ async function startMainWindowShortcutRecording() {
   mainWindowShortcutRecordingSession += 1;
   const session = mainWindowShortcutRecordingSession;
   window.addEventListener("keydown", handleMainWindowShortcutRecordingKeydown, true);
-  const unlisten = await listenNativeEvent("launchpad-main-window-shortcut-captured", (event) => {
+  const unlisten = await listenNativeEvent("lumeria-main-window-shortcut-captured", (event) => {
     if (session !== mainWindowShortcutRecordingSession) return;
     const shortcut = String(event?.payload || "").trim();
     if (!shortcut) return;

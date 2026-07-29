@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Lumeria LaunchPad",
+  "productName": "Lumeria",
   "version": "0.1.0",
-  "identifier": "com.vibeproject.launchpad",
+  "identifier": "com.lumeria.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
@@ -41,6 +41,12 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.ico"]
+    "publisher": "Lumeria",
+    "icon": ["icons/icon.ico"],
+    "windows": {
+      "wix": {
+        "upgradeCode": "ef35e247-2f14-5bd6-9e22-9eb3713e7c9e"
+      }
+    }
   }
 }

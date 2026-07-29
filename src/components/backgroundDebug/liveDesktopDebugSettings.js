@@ -1,12 +1,12 @@
 export const LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN = "testPattern";
-export const LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY = "launchpadLiveDesktopDebugFrameSourceOverride";
-export const LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY = "launchpadLiveDesktopDisableMouseRelay";
-export const LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY = "launchpadLiveDesktopCompositorKeeper";
-export const LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT = "launchpad-live-desktop-compositor-keeper-change";
-export const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY = "launchpadLiveDesktopCssFallbackEffects";
-export const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT = "launchpad-live-desktop-css-fallback-effects-change";
-export const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "launchpadLiveDesktopSkipBlankFrames";
-export const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "launchpadLiveDesktopForceDwmFlush";
+export const LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY = "lumeriaLiveDesktopDebugFrameSourceOverride";
+export const LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY = "lumeriaLiveDesktopDisableMouseRelay";
+export const LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY = "lumeriaLiveDesktopCompositorKeeper";
+export const LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT = "lumeria-live-desktop-compositor-keeper-change";
+export const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY = "lumeriaLiveDesktopCssFallbackEffects";
+export const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT = "lumeria-live-desktop-css-fallback-effects-change";
+export const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "lumeriaLiveDesktopSkipBlankFrames";
+export const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "lumeriaLiveDesktopForceDwmFlush";
 
 function readLocalStorageItem(key) {
   if (typeof window === "undefined") return null;

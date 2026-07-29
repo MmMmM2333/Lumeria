@@ -1,5 +1,5 @@
 {
-  "name": "lumeria-launchpad",
+  "name": "lumeria",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -26,6 +26,9 @@
     "@vitejs/plugin-vue": "^5.2.0",
     "unplugin-icons": "^23.0.1",
     "vite": "^6.0.0"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
   },
   "license": "GPL-3.0-only"
 }

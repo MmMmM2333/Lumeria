@@ -696,7 +696,7 @@ mod tests {
     #[test]
     fn scan_respects_max_depth() {
         let base = env::temp_dir().join(format!(
-            "launchpad-scan-depth-{}",
+            "lumeria-scan-depth-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .expect("system time")

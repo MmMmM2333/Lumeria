@@ -5,7 +5,7 @@ import {
   MOTION_DEBUG_GLOBAL_KEY,
 } from "./motionDebugReport.js";
 import {
-  LAUNCHPAD_DEBUG_GLOBAL_KEY,
+  LUMERIA_DEBUG_GLOBAL_KEY,
   readLaunchpadDebugValue,
 } from "../debugNamespace.js";
 
@@ -151,7 +151,7 @@ export function runMotionDebugReportTests() {
     seedRuntime(runtime);
     const commands = installMotionDebugGlobal({ dev: true, runtime, target });
 
-    assert(target[LAUNCHPAD_DEBUG_GLOBAL_KEY]?.[MOTION_DEBUG_GLOBAL_KEY] === commands, "dev install should expose namespaced global motion debug commands");
+    assert(target[LUMERIA_DEBUG_GLOBAL_KEY]?.[MOTION_DEBUG_GLOBAL_KEY] === commands, "dev install should expose namespaced global motion debug commands");
     assert(typeof commands.summary === "function", "global commands should expose summary report");
     assert(typeof commands.full === "function", "global commands should expose full report");
     assert(typeof commands.selectedTarget === "function", "global commands should expose selected target report");

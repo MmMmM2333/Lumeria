@@ -1,6 +1,6 @@
 import { reactive } from "vue";
 
-export const DESKTOP_LAYOUT_DEBUG_STORAGE_KEY = "launchpadDesktopLayoutDebugParams";
+export const DESKTOP_LAYOUT_DEBUG_STORAGE_KEY = "lumeriaDesktopLayoutDebugParams";
 
 export const DEFAULT_DESKTOP_LAYOUT_DEBUG_PARAMS = Object.freeze({
   dragHitZonesEnabled: false,

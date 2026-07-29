@@ -951,7 +951,7 @@ unsafe fn resolve_live_desktop_output_context_for_adapter(
         };
         if !target_monitor.is_invalid() && output_desc.Monitor != target_monitor {
             last_detail = format!(
-                "Skipped DXGI output {adapter_index}, {output_index} ({}) because it does not match the launchpad window monitor",
+                "Skipped DXGI output {adapter_index}, {output_index} ({}) because it does not match the Lumeria window monitor",
                 live_desktop_output_name(&output_desc.DeviceName)
             );
             continue;

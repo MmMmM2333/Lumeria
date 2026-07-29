@@ -1,6 +1,6 @@
 # Tauri Native Backend
 
-This folder contains the Windows native shell for Lumeria LaunchPad.
+This folder contains the Windows native shell for Lumeria.
 
 Implemented commands:
 

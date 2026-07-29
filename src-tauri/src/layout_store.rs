@@ -703,7 +703,7 @@ mod tests {
     use serde_json::json;
 
     fn test_dir(name: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!("launchpad-{name}-{}", timestamp_nanos()));
+        let path = std::env::temp_dir().join(format!("lumeria-{name}-{}", timestamp_nanos()));
         fs::create_dir_all(&path).expect("create test directory");
         path
     }

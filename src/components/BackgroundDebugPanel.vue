@@ -1085,7 +1085,7 @@ import {
 import { readLaunchpadDebugValue } from "../rendering/pixi/debugNamespace.js";
 import { motionRuntime } from "../rendering/pixi/animation/motionRuntime.js";
 
-const DEBUG_PANEL_DOCK_STORAGE_KEY = "launchpadBackgroundDebugPanelDock";
+const DEBUG_PANEL_DOCK_STORAGE_KEY = "lumeriaBackgroundDebugPanelDock";
 
 const props = defineProps({
   desktopLayoutDebugParams: {
@@ -2719,7 +2719,7 @@ function resetLayoutDebugParams() {
 
 function showDebugLayoutSaveFailed() {
   props.dialogState?.showLayoutSaveFailed?.({
-    error: new Error("EACCES: permission denied, open C:/Users/233/AppData/Roaming/LaunchPad/layout.json"),
+    error: new Error("EACCES: permission denied, open C:/Users/233/AppData/Roaming/com.lumeria.app/layout.json"),
     retryCount: 3,
     onRetry: () => props.dialogState?.showLayoutSaveRecovered?.(),
   });
@@ -2744,7 +2744,7 @@ function showDebugLayoutLoadRecovered() {
 function showDebugLayoutRecovered() {
   props.dialogState?.handleLayoutRecovered?.({
     payload: {
-      backupPath: "C:/Users/233/AppData/Roaming/LaunchPad/layout.corrupt.backup.json",
+      backupPath: "C:/Users/233/AppData/Roaming/com.lumeria.app/layout.corrupt.backup.json",
     },
   });
 }

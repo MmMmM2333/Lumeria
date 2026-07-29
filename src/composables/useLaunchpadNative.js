@@ -91,10 +91,10 @@ const FOLDER_ICON_SIZE_MODE_CUSTOM = "custom";
 const FOLDER_ICON_SIZE_MODE_GLOBAL = "global";
 const WINDOWS_WALLPAPER_REFRESH_INTERVAL_MS = 5000;
 const LIVE_DESKTOP_IDLE_STOP_DELAY_MS = 10_000;
-const LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY = "launchpadLiveDesktopDebugFrameSourceOverride";
-const LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY = "launchpadLiveDesktopDisableMouseRelay";
-const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "launchpadLiveDesktopSkipBlankFrames";
-const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "launchpadLiveDesktopForceDwmFlush";
+const LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY = "lumeriaLiveDesktopDebugFrameSourceOverride";
+const LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY = "lumeriaLiveDesktopDisableMouseRelay";
+const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "lumeriaLiveDesktopSkipBlankFrames";
+const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "lumeriaLiveDesktopForceDwmFlush";
 const LIVE_DESKTOP_EXPERIMENT_DISABLED_REASON = "experimentDisabled";
 const LIVE_DESKTOP_EXPERIMENT_DISABLED_DETAIL = "Live desktop experiment flag is disabled.";
 const NATIVE_WINDOW_CLOSING_BLOCKED_EVENTS = [
@@ -1405,42 +1405,42 @@ export function useLaunchpadNative(options) {
       setter(unlisten);
     };
     return Promise.all([
-      listenNativeEvent("launchpad-open-desktop", openDesktopFromNativeShortcut)
+      listenNativeEvent("lumeria-open-desktop", openDesktopFromNativeShortcut)
         .then(keepUnlisten((unlisten) => {
           unlistenOpenDesktopEvent = unlisten;
         }))
         .catch((error) => {
           console.error("Failed to listen for native desktop open event", error);
         }),
-      listenNativeEvent("launchpad-toggle-desktop", toggleDesktopFromNativeShortcut)
+      listenNativeEvent("lumeria-toggle-desktop", toggleDesktopFromNativeShortcut)
         .then(keepUnlisten((unlisten) => {
           unlistenToggleDesktopEvent = unlisten;
         }))
         .catch((error) => {
           console.error("Failed to listen for native desktop toggle event", error);
         }),
-      listenNativeEvent("launchpad-close-desktop", closeDesktopFromNativeWindow)
+      listenNativeEvent("lumeria-close-desktop", closeDesktopFromNativeWindow)
         .then(keepUnlisten((unlisten) => {
           unlistenCloseDesktopEvent = unlisten;
         }))
         .catch((error) => {
           console.error("Failed to listen for native desktop close event", error);
         }),
-      listenNativeEvent("launchpad-open-settings", options.openSettingsPanel)
+      listenNativeEvent("lumeria-open-settings", options.openSettingsPanel)
         .then(keepUnlisten((unlisten) => {
           unlistenSettingsEvent = unlisten;
         }))
         .catch((error) => {
           console.error("Failed to listen for native settings event", error);
         }),
-      listenNativeEvent("launchpad-layout-recovered", options.handleLayoutRecovered)
+      listenNativeEvent("lumeria-layout-recovered", options.handleLayoutRecovered)
         .then(keepUnlisten((unlisten) => {
           unlistenLayoutRecoveredEvent = unlisten;
         }))
         .catch((error) => {
           console.error("Failed to listen for layout recovery event", error);
         }),
-      listenNativeEvent("launchpad-quit-requested", quitFromNativeRequest)
+      listenNativeEvent("lumeria-quit-requested", quitFromNativeRequest)
         .then(keepUnlisten((unlisten) => {
           unlistenQuitRequestedEvent = unlisten;
         }))

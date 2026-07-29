@@ -1201,7 +1201,7 @@ export function createPixiRenderProbe(options = {}) {
     return JSON.stringify(makeReport(), null, clampInteger(space, 2, 0, 4));
   }
 
-  function download(filename = `launchpad-render-trace-${Date.now()}.json`) {
+  function download(filename = `lumeria-render-trace-${Date.now()}.json`) {
     const document = globalThis.document;
     const URLApi = globalThis.URL;
     if (!document?.createElement || !URLApi?.createObjectURL || typeof Blob !== "function") {
@@ -1209,7 +1209,7 @@ export function createPixiRenderProbe(options = {}) {
     }
     const url = URLApi.createObjectURL(new Blob([exportJson()], { type: "application/json" }));
     const link = document.createElement("a");
-    link.download = String(filename || "launchpad-render-trace.json");
+    link.download = String(filename || "lumeria-render-trace.json");
     link.href = url;
     link.click();
     globalThis.setTimeout?.(() => URLApi.revokeObjectURL(url), 0);
