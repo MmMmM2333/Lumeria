@@ -157,7 +157,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .expect("system time should be after unix epoch")
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("launchpad-cache-addressed-{unique}"));
+        let dir = std::env::temp_dir().join(format!("lumeria-cache-addressed-{unique}"));
         std::fs::create_dir_all(&dir).expect("test cache directory should be created");
         let bytes = b"cache me";
 

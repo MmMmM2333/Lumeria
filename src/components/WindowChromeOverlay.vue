@@ -9,7 +9,7 @@
         @dblclick.left.stop="handleDragAreaDoubleClick"
       >
         <span class="window-chrome-title-icon" aria-hidden="true">L</span>
-        <span class="window-chrome-title-text">LaunchPad</span>
+        <span class="window-chrome-title-text">Lumeria</span>
       </div>
       <div class="window-chrome-controls" @pointerdown.stop>
         <button class="window-chrome-control" type="button" aria-label="最小化窗口" title="最小化" @click.stop="handleMinimizeClick">
@@ -88,7 +88,7 @@ function isPrimaryPointer(event) {
 }
 
 function handleWindowChromeError(action, error) {
-  console.error(`Failed to ${action} LaunchPad window`, error);
+  console.error(`Failed to ${action} Lumeria window`, error);
 }
 
 function handleDragMouseDown(event) {

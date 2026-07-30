@@ -133,7 +133,7 @@ pub(super) fn create_wallpaper_engine_popup_plan(
 ) -> LiveDesktopWallpaperEnginePopupPlan {
     LiveDesktopWallpaperEnginePopupPlan {
         window_name: format!(
-            "LaunchPad::LiveDesktop::display{}::{}x{}",
+            "Lumeria::LiveDesktop::display{}::{}x{}",
             output_context.output_index, output_context.output_width, output_context.output_height
         ),
         monitor_index: output_context.output_index,
@@ -154,7 +154,7 @@ pub(super) fn ensure_wallpaper_engine_named_popup(
         let executable_path = find_wallpaper_engine_executable_path(&before);
         return LiveDesktopWallpaperEnginePopupEnsureResult {
             detail: format!(
-                "popupOwner=launchpad popupLifecycle=foundExisting popupWindowName={} root={} size={}x{}",
+                "popupOwner=lumeria popupLifecycle=foundExisting popupWindowName={} root={} size={}x{}",
                 plan.window_name, existing.hwnd, existing.rect.width, existing.rect.height
             ),
             close_command: executable_path.map(|path| LiveDesktopWallpaperEnginePopupCloseCommand {
@@ -222,7 +222,7 @@ pub(super) fn ensure_wallpaper_engine_named_popup(
         {
             return LiveDesktopWallpaperEnginePopupEnsureResult {
                 detail: format!(
-                    "popupOwner=launchpad popupLifecycle=created popupWindowName={} root={} targetSize={}x{} wallpaper={} wallpaperSource={}",
+                    "popupOwner=lumeria popupLifecycle=created popupWindowName={} root={} targetSize={}x{} wallpaper={} wallpaperSource={}",
                     plan.window_name, created.hwnd, plan.width, plan.height, wallpaper_path, wallpaper_query.detail
                 ),
                 close_command: Some(LiveDesktopWallpaperEnginePopupCloseCommand {
@@ -799,7 +799,7 @@ pub(super) fn cleanup_wallpaper_engine_popup_after_failed_capture(
         return String::new();
     };
     match close_wallpaper_engine_named_popup(&command) {
-        Ok(()) => "; launchpad popup closed after failed WGC attempts".to_string(),
+        Ok(()) => "; Lumeria popup closed after failed WGC attempts".to_string(),
         Err(error) => format!("; {error}"),
     }
 }
@@ -915,7 +915,7 @@ mod tests {
             "wallpaperPopup",
             "WPEOverlappedWallpaper",
         );
-        launchpad_popup.title = "LaunchPad::LiveDesktop::display0::1920x1080".to_string();
+        launchpad_popup.title = "Lumeria::LiveDesktop::display0::1920x1080".to_string();
         let popup_child = info(
             "0x401",
             "0x400",
@@ -969,7 +969,7 @@ mod tests {
 
         let preferred_targets = collect_wallpaper_engine_popup_wgc_targets(
             &diagnostics,
-            Some("LaunchPad::LiveDesktop::display0::1920x1080"),
+            Some("Lumeria::LiveDesktop::display0::1920x1080"),
         );
         let preferred_hwnds: Vec<&str> = preferred_targets
             .iter()

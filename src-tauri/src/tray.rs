@@ -21,9 +21,9 @@ use crate::{
     },
 };
 
-pub(crate) const OPEN_DESKTOP_EVENT: &str = "launchpad-open-desktop";
-pub(crate) const TOGGLE_DESKTOP_EVENT: &str = "launchpad-toggle-desktop";
-pub(crate) const CLOSE_DESKTOP_EVENT: &str = "launchpad-close-desktop";
+pub(crate) const OPEN_DESKTOP_EVENT: &str = "lumeria-open-desktop";
+pub(crate) const TOGGLE_DESKTOP_EVENT: &str = "lumeria-toggle-desktop";
+pub(crate) const CLOSE_DESKTOP_EVENT: &str = "lumeria-close-desktop";
 const MAIN_WINDOW_EFFECT_REAPPLY_DELAYS_MS: [u64; 2] = [80, 180];
 const MAIN_WINDOW_RESTORE_TRANSITIONS_DELAY_MS: u64 = 80;
 const MAIN_WINDOW_DEFERRED_SHOW_DELAY_MS: u64 = 0;
@@ -396,7 +396,7 @@ unsafe extern "system" fn main_window_non_client_subclass_proc(
         WM_SYSCOMMAND => {
             let command = (wparam.0 & 0xfff0) as u32;
             if command == SC_KEYMENU {
-                // Alt+Space is our global launchpad shortcut, but Windows also
+                // Alt+Space is Lumeria's global shortcut, but Windows also
                 // treats it as the system-menu key for WS_SYSMENU windows. If
                 // the default handler opens that menu, the WebView enters a
                 // modal menu loop and the close-animation timer cannot fire
@@ -1067,7 +1067,7 @@ pub(crate) fn release_main_window_topmost(app: &AppHandle) {
 fn bump_main_window_z_order_for_open(window: &WebviewWindow) -> Result<(), String> {
     // Windows can place the taskbar above a borderless transparent fullscreen
     // window when focus is restored from another app. Keep topmost only while
-    // LaunchPad is foreground; Focused(false) and hide/windowed paths release it.
+    // Lumeria is foreground; Focused(false) and hide/windowed paths release it.
     set_main_window_topmost(window, true)
 }
 
@@ -1082,7 +1082,7 @@ fn is_main_window_foreground(window: &WebviewWindow) -> bool {
     };
     // Tauri focus state can lag after native fullscreen/topmost transitions.
     // Use the real Win32 foreground window so shortcut-triggered close handling
-    // only runs when LaunchPad, not another app, is actually active.
+    // only runs when Lumeria, not another app, is actually active.
     let foreground = unsafe { GetForegroundWindow() };
     if foreground.0.is_null() {
         return false;
@@ -1184,14 +1184,14 @@ pub(crate) fn trigger_main_window_shortcut(app: &AppHandle) {
 
 pub(crate) fn open_settings(app: &AppHandle) {
     open_main_window(app);
-    if let Err(error) = app.emit("launchpad-open-settings", ()) {
+    if let Err(error) = app.emit("lumeria-open-settings", ()) {
         log::warn!(target: "tray", "Failed to emit open settings event: {error}");
     }
 }
 
 pub(crate) fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let menu = MenuBuilder::new(app)
-        .text("show", "显示 LaunchPad")
+        .text("show", "显示 Lumeria")
         .text("settings", "设置")
         .separator()
         .text("quit", "退出")
@@ -1199,7 +1199,7 @@ pub(crate) fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error:
     let mut builder = TrayIconBuilder::new()
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .tooltip("LaunchPad");
+        .tooltip("Lumeria");
 
     if let Some(icon) = app.default_window_icon().cloned() {
         builder = builder.icon(icon);

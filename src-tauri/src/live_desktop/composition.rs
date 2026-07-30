@@ -181,7 +181,7 @@ impl LiveDesktopCompositionHost {
         let Some((width, height)) = (unsafe { read_live_desktop_window_client_size(owner_hwnd) })
         else {
             return Err(format!(
-                "Could not read launchpad WebView client size for {}",
+                "Could not read Lumeria WebView client size for {}",
                 format_live_desktop_window_handle(owner_hwnd)
             ));
         };

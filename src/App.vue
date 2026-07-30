@@ -330,11 +330,11 @@ const desktopDragHitDebugOptions = computed(() => (
   import.meta.env.DEV ? resolveDesktopDragHitDebugOptions(desktopLayoutDebugParams) : null
 ));
 const isLiveDesktopExperimentActive = computed(() => isLiveDesktopExperimentEnabled());
-const LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY = "launchpadLiveDesktopCompositorKeeper";
-const LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT = "launchpad-live-desktop-compositor-keeper-change";
+const LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY = "lumeriaLiveDesktopCompositorKeeper";
+const LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT = "lumeria-live-desktop-compositor-keeper-change";
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_INTERVAL_MS = 250;
-const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY = "launchpadLiveDesktopCssFallbackEffects";
-const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT = "launchpad-live-desktop-css-fallback-effects-change";
+const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY = "lumeriaLiveDesktopCssFallbackEffects";
+const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT = "lumeria-live-desktop-css-fallback-effects-change";
 const launchpadOverlaysRef = ref(null);
 const BACKGROUND_MEDIA_FADE_MS = 220;
 const PIXI_BACKGROUND_HANDOFF_DELAY_MS = 220;
@@ -581,7 +581,7 @@ function releaseStartupMask() {
 
 function releaseStartupMaskAfterTimeout() {
   if (!isStartupBackgroundReady.value) {
-    console.warn("LaunchPad startup mask timed out before the background was fully ready");
+    console.warn("Lumeria startup mask timed out before the background was fully ready");
   }
   releaseStartupMask();
 }

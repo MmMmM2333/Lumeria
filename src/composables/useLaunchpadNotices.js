@@ -38,7 +38,7 @@ export function useLaunchpadNotices() {
   function openLaunchErrorDialog(config) {
     showWarningDialog({
       title: config?.title || "无法打开应用",
-      message: config?.message || "LaunchPad 无法打开此应用。",
+      message: config?.message || "Lumeria 无法打开此应用。",
       suggestion: config?.suggestion || "",
       intent: "error",
       confirmText: "知道了",

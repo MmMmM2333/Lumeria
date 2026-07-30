@@ -884,14 +884,12 @@ export async function runLaunchpadNativeTests() {
     assert(liveDesktopRuntimeCommands.join(",") === "get_live_desktop_runtime_status", "runtime status should be fetched only on explicit refresh");
     assert(options.liveDesktopRuntimeStatus.value.phase === "stopped", "runtime status refresh should apply stopped status");
 
-    globalThis.window.localStorage = {
-      getItem: (key) => key === "launchpadLiveDesktopFrameSource" ? "unknownFrameSource" : null,
-    };
+    globalThis.window.localStorage = { getItem: () => null };
     await native.startNativeLiveDesktopBackground();
     assert(liveDesktopRuntimeCommands.join(",") === "get_live_desktop_runtime_status,configure_live_desktop_background,start_live_desktop_background", "runtime start should configure native effects before the native start command");
     assert(liveDesktopRuntimeConfigs.length === 1, "runtime start should send one live desktop config");
     assert(!("frameSource" in liveDesktopRuntimeConfigs[0]), "runtime config should not include a regular frame source field");
-    assert(liveDesktopRuntimeConfigs[0].debugFrameSourceOverride === null, "runtime config should ignore old frame source storage and keep debug frame source override empty by default");
+    assert(liveDesktopRuntimeConfigs[0].debugFrameSourceOverride === null, "runtime config should keep debug frame source override empty by default");
     assert(!("diagnosticMode" in liveDesktopRuntimeConfigs[0]), "runtime config should not include the old diagnostic mode field");
     assert(liveDesktopRuntimeConfigs[0].disableMouseRelay === true, "runtime config should disable mouse relay by default");
     assert(liveDesktopRuntimeConfigs[0].skipBlankFrames === false, "runtime config should keep blank frame skipping disabled by default");
@@ -919,10 +917,10 @@ export async function runLaunchpadNativeTests() {
 
     globalThis.window.localStorage = {
       getItem: (key) => {
-        if (key === "launchpadLiveDesktopDebugFrameSourceOverride") return "testPattern";
-        if (key === "launchpadLiveDesktopDisableMouseRelay") return "true";
-        if (key === "launchpadLiveDesktopSkipBlankFrames") return "true";
-        if (key === "launchpadLiveDesktopForceDwmFlush") return "true";
+        if (key === "lumeriaLiveDesktopDebugFrameSourceOverride") return "testPattern";
+        if (key === "lumeriaLiveDesktopDisableMouseRelay") return "true";
+        if (key === "lumeriaLiveDesktopSkipBlankFrames") return "true";
+        if (key === "lumeriaLiveDesktopForceDwmFlush") return "true";
         return null;
       },
     };
@@ -937,7 +935,7 @@ export async function runLaunchpadNativeTests() {
 
     globalThis.window.localStorage = {
       getItem: (key) => {
-        if (key === "launchpadLiveDesktopDisableMouseRelay") return "false";
+        if (key === "lumeriaLiveDesktopDisableMouseRelay") return "false";
         return null;
       },
     };
@@ -1169,7 +1167,7 @@ export async function runLaunchpadNativeTests() {
     assert(wheelEvent.defaultPrevented, "closing interaction blocker should prevent wheel defaults");
     assert(wheelEvent.propagationStopped, "closing interaction blocker should stop wheel propagation");
 
-    await cancelledHideEventHandlers.get("launchpad-open-desktop")({ payload: 3 });
+    await cancelledHideEventHandlers.get("lumeria-open-desktop")({ payload: 3 });
     await flushMicrotasks(8);
     assert(timers.length === 0, "native open events should cancel pending native hide timers");
     assert((eventListeners.get("wheel")?.size || 0) === 0, "native open events should unblock wheel events");
@@ -1226,7 +1224,7 @@ export async function runLaunchpadNativeTests() {
     const native = useLaunchpadNative(options);
 
     await native.registerNativeEventListeners();
-    await openEventHandlers.get("launchpad-open-desktop")({ payload: 2 });
+    await openEventHandlers.get("lumeria-open-desktop")({ payload: 2 });
     await flushMicrotasks(8);
 
     assert(openSurfaceCommands.join(",") === "frame:true,effects:true", "native open events should restore the native frame before window effects");
@@ -1290,7 +1288,7 @@ export async function runLaunchpadNativeTests() {
     const native = useLaunchpadNative(options);
 
     await native.registerNativeEventListeners();
-    await settingsToggleEventHandlers.get("launchpad-toggle-desktop")({ payload: 5 });
+    await settingsToggleEventHandlers.get("lumeria-toggle-desktop")({ payload: 5 });
     await flushMicrotasks(3);
 
     assert(calls.closeSettingsPanel.length === 1, "native toggle shortcut should close an open settings panel");
@@ -1315,7 +1313,7 @@ export async function runLaunchpadNativeTests() {
     const native = useLaunchpadNative(options);
 
     await native.registerNativeEventListeners();
-    await folderToggleEventHandlers.get("launchpad-toggle-desktop")({ payload: 4 });
+    await folderToggleEventHandlers.get("lumeria-toggle-desktop")({ payload: 4 });
     await flushMicrotasks(3);
 
     assert(calls.startFolderZoomFadeClose.length === 1, "native toggle shortcut should close an open folder with zoom-fade first");
@@ -1687,7 +1685,7 @@ export async function runLaunchpadNativeTests() {
     await native.registerNativeEventListeners();
     timers.length = 0;
     native.scheduleNativeLayoutSave();
-    await quitEventHandlers.get("launchpad-quit-requested")();
+    await quitEventHandlers.get("lumeria-quit-requested")();
 
     assert(quitCommands.join(",") === "save_layout,confirm_quit_after_save", "native quit requests should flush pending layout saves before confirming quit");
   }, {
@@ -1705,7 +1703,7 @@ export async function runLaunchpadNativeTests() {
         kind: "targetNotFound",
         title: "无法打开应用",
         message: "无法打开“Missing App”。\n\n找不到启动文件。",
-        suggestion: "请在 LaunchPad 中编辑此应用的启动路径。",
+        suggestion: "请在 Lumeria 中编辑此应用的启动路径。",
         detail: "missing",
       };
     }

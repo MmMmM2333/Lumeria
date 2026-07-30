@@ -91,10 +91,10 @@ const FOLDER_ICON_SIZE_MODE_CUSTOM = "custom";
 const FOLDER_ICON_SIZE_MODE_GLOBAL = "global";
 const WINDOWS_WALLPAPER_REFRESH_INTERVAL_MS = 5000;
 const LIVE_DESKTOP_IDLE_STOP_DELAY_MS = 10_000;
-const LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY = "launchpadLiveDesktopDebugFrameSourceOverride";
-const LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY = "launchpadLiveDesktopDisableMouseRelay";
-const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "launchpadLiveDesktopSkipBlankFrames";
-const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "launchpadLiveDesktopForceDwmFlush";
+const LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY = "lumeriaLiveDesktopDebugFrameSourceOverride";
+const LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY = "lumeriaLiveDesktopDisableMouseRelay";
+const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "lumeriaLiveDesktopSkipBlankFrames";
+const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "lumeriaLiveDesktopForceDwmFlush";
 const LIVE_DESKTOP_EXPERIMENT_DISABLED_REASON = "experimentDisabled";
 const LIVE_DESKTOP_EXPERIMENT_DISABLED_DETAIL = "Live desktop experiment flag is disabled.";
 const NATIVE_WINDOW_CLOSING_BLOCKED_EVENTS = [
@@ -641,7 +641,7 @@ export function useLaunchpadNative(options) {
         retryCount: nativeSaveFailureCount,
         onRetry: retryNativeLayoutSave,
       });
-      console.error("Failed to save LaunchPad layout", error);
+      console.error("Failed to save Lumeria layout", error);
       return false;
     }
   }
@@ -934,7 +934,7 @@ export function useLaunchpadNative(options) {
         retryCount: nativeLoadFailureCount,
         onRetry: retryNativeLayoutLoad,
       });
-      console.error("Failed to load native LaunchPad data", error);
+      console.error("Failed to load native Lumeria data", error);
     }
   }
 
@@ -947,7 +947,7 @@ export function useLaunchpadNative(options) {
       applyNativeWindowEffectsSupport(await getMainWindowEffectsSupport());
     } catch (error) {
       applyNativeWindowEffectsSupport(DEFAULT_WINDOW_EFFECTS_SUPPORT);
-      console.error("Failed to load LaunchPad window effects support", error);
+      console.error("Failed to load Lumeria window effects support", error);
     }
   }
 
@@ -1114,7 +1114,7 @@ export function useLaunchpadNative(options) {
     };
     const nativeApps = await scanApps(enabledRoots, scanFilters);
     if (nativeApps?.warnings?.length) {
-      console.warn("LaunchPad scan completed with warnings", nativeApps.warnings);
+      console.warn("Lumeria scan completed with warnings", nativeApps.warnings);
     }
     const now = new Date().toISOString();
     const scannedRootIds = new Set(enabledRoots.map((root) => root.id));
@@ -1199,7 +1199,7 @@ export function useLaunchpadNative(options) {
       pruneLaunchTargetStatusesForCurrentApps();
     } catch (error) {
       if (requestId === launchTargetStatusCheckRequestId) launchTargetStatusCheckSignature = null;
-      console.error("Failed to check LaunchPad app paths", error);
+      console.error("Failed to check Lumeria app paths", error);
     }
   }
 
@@ -1293,7 +1293,7 @@ export function useLaunchpadNative(options) {
       await showLaunchErrorMessage(error);
       return true;
     } catch (showError) {
-      console.error("Failed to show LaunchPad launch error", showError);
+      console.error("Failed to show Lumeria launch error", showError);
       return false;
     }
   }
@@ -1310,7 +1310,7 @@ export function useLaunchpadNative(options) {
       .catch(() => {})
       .then(() => setMainWindowEffectsEnabled(enabled, openSequence, { material, appearance }))
       .catch((error) => {
-        console.error("Failed to update LaunchPad window effects", error);
+        console.error("Failed to update Lumeria window effects", error);
       });
   }
 
@@ -1321,7 +1321,7 @@ export function useLaunchpadNative(options) {
       .catch(() => {})
       .then(() => setMainWindowMode(nextMode))
       .catch((error) => {
-        console.error("Failed to update LaunchPad window mode", error);
+        console.error("Failed to update Lumeria window mode", error);
       });
   }
 
@@ -1336,7 +1336,7 @@ export function useLaunchpadNative(options) {
       return true;
     } catch (error) {
       if (options.mainWindowShortcutError) options.mainWindowShortcutError.value = "快捷键已被占用或不可用";
-      console.error("Failed to update LaunchPad shortcut", error);
+      console.error("Failed to update Lumeria shortcut", error);
       return false;
     }
   }
@@ -1344,7 +1344,7 @@ export function useLaunchpadNative(options) {
   function setNativeMainWindowShortcutCaptureActive(active) {
     if (!isNativeBridgeAvailable()) return;
     setMainWindowShortcutCaptureActive(Boolean(active)).catch((error) => {
-      console.error("Failed to update LaunchPad shortcut capture state", error);
+      console.error("Failed to update Lumeria shortcut capture state", error);
     });
   }
 
@@ -1354,7 +1354,7 @@ export function useLaunchpadNative(options) {
       .catch(() => {})
       .then(() => setMainWindowNativeFrameEnabled(Boolean(enabled)))
       .catch((error) => {
-        console.error("Failed to update LaunchPad native window frame", error);
+        console.error("Failed to update Lumeria native window frame", error);
       });
   }
 
@@ -1380,7 +1380,7 @@ export function useLaunchpadNative(options) {
         await revealMainWindow(revealSequence);
       })
       .catch((error) => {
-        console.error("Failed to reveal LaunchPad window", error);
+        console.error("Failed to reveal Lumeria window", error);
       });
   }
 
@@ -1388,7 +1388,7 @@ export function useLaunchpadNative(options) {
     if (!isNativeBridgeAvailable() || hasRequestedStartupNativeWindowShow) return;
     hasRequestedStartupNativeWindowShow = true;
     showMainWindow().catch((error) => {
-      console.error("Failed to show LaunchPad window after startup", error);
+      console.error("Failed to show Lumeria window after startup", error);
     });
   }
 
@@ -1404,42 +1404,42 @@ export function useLaunchpadNative(options) {
       setter(unlisten);
     };
     return Promise.all([
-      listenNativeEvent("launchpad-open-desktop", openDesktopFromNativeShortcut)
+      listenNativeEvent("lumeria-open-desktop", openDesktopFromNativeShortcut)
         .then(keepUnlisten((unlisten) => {
           unlistenOpenDesktopEvent = unlisten;
         }))
         .catch((error) => {
           console.error("Failed to listen for native desktop open event", error);
         }),
-      listenNativeEvent("launchpad-toggle-desktop", toggleDesktopFromNativeShortcut)
+      listenNativeEvent("lumeria-toggle-desktop", toggleDesktopFromNativeShortcut)
         .then(keepUnlisten((unlisten) => {
           unlistenToggleDesktopEvent = unlisten;
         }))
         .catch((error) => {
           console.error("Failed to listen for native desktop toggle event", error);
         }),
-      listenNativeEvent("launchpad-close-desktop", closeDesktopFromNativeWindow)
+      listenNativeEvent("lumeria-close-desktop", closeDesktopFromNativeWindow)
         .then(keepUnlisten((unlisten) => {
           unlistenCloseDesktopEvent = unlisten;
         }))
         .catch((error) => {
           console.error("Failed to listen for native desktop close event", error);
         }),
-      listenNativeEvent("launchpad-open-settings", options.openSettingsPanel)
+      listenNativeEvent("lumeria-open-settings", options.openSettingsPanel)
         .then(keepUnlisten((unlisten) => {
           unlistenSettingsEvent = unlisten;
         }))
         .catch((error) => {
           console.error("Failed to listen for native settings event", error);
         }),
-      listenNativeEvent("launchpad-layout-recovered", options.handleLayoutRecovered)
+      listenNativeEvent("lumeria-layout-recovered", options.handleLayoutRecovered)
         .then(keepUnlisten((unlisten) => {
           unlistenLayoutRecoveredEvent = unlisten;
         }))
         .catch((error) => {
           console.error("Failed to listen for layout recovery event", error);
         }),
-      listenNativeEvent("launchpad-quit-requested", quitFromNativeRequest)
+      listenNativeEvent("lumeria-quit-requested", quitFromNativeRequest)
         .then(keepUnlisten((unlisten) => {
           unlistenQuitRequestedEvent = unlisten;
         }))
@@ -1534,7 +1534,7 @@ export function useLaunchpadNative(options) {
       await hideMainWindow();
       setNativeWindowClosingInteractionBlocked(false);
     } catch (error) {
-      console.error("Failed to hide LaunchPad window", error);
+      console.error("Failed to hide Lumeria window", error);
       setNativeWindowClosingInteractionBlocked(false);
     }
   }
@@ -1571,12 +1571,12 @@ export function useLaunchpadNative(options) {
     try {
       saved = await flushNativeLayoutSave();
     } catch (error) {
-      console.error("Failed to save LaunchPad layout before quit", error);
+      console.error("Failed to save Lumeria layout before quit", error);
     } finally {
       try {
         await confirmQuitAfterSave(saved);
       } catch (error) {
-        console.error("Failed to confirm LaunchPad quit", error);
+        console.error("Failed to confirm Lumeria quit", error);
         quitRequestInProgress = false;
       }
     }

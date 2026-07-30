@@ -267,7 +267,7 @@ export function useLaunchpadApps(options) {
     } catch (error) {
       openOperationFailedDialog({
         title: "无法选择扫描来源",
-        message: "LaunchPad 无法打开目录选择器。",
+        message: "Lumeria 无法打开目录选择器。",
         suggestion: "请重试，或检查系统文件选择权限。",
       }, error);
       console.error("Failed to pick scan root directory", error);
@@ -469,7 +469,7 @@ export function useLaunchpadApps(options) {
     } catch (error) {
       openOperationFailedDialog({
         title: "无法选择启动文件",
-        message: "LaunchPad 无法打开文件选择器。",
+        message: "Lumeria 无法打开文件选择器。",
         suggestion: "请重试，或手动填写启动路径。",
       }, error);
       console.error("Failed to pick launch file", error);
@@ -521,7 +521,7 @@ export function useLaunchpadApps(options) {
     } catch (error) {
       openOperationFailedDialog({
         title: "无法选择启动文件",
-        message: "LaunchPad 无法打开文件选择器。",
+        message: "Lumeria 无法打开文件选择器。",
         suggestion: "请重试，或手动填写启动路径。",
       }, error);
       console.error("Failed to pick launch file", error);
@@ -803,7 +803,7 @@ export function useLaunchpadApps(options) {
     } catch (error) {
       openOperationFailedDialog({
         title: "无法扫描应用",
-        message: "LaunchPad 无法扫描当前应用来源。",
+        message: "Lumeria 无法扫描当前应用来源。",
         suggestion: "请检查扫描来源是否仍可访问，然后重试。",
       }, error);
       console.error("Failed to scan apps", error);

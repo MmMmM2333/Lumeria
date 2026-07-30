@@ -1,12 +1,12 @@
-export const LAUNCHPAD_DEBUG_GLOBAL_KEY = "__LP_DEBUG__";
+export const LUMERIA_DEBUG_GLOBAL_KEY = "__LUMERIA_DEBUG__";
 
 function getNamespace(target = globalThis, options = {}) {
   if (!target) return null;
-  const existing = target[LAUNCHPAD_DEBUG_GLOBAL_KEY];
+  const existing = target[LUMERIA_DEBUG_GLOBAL_KEY];
   if (existing && typeof existing === "object") return existing;
   if (options.create === false) return null;
   const namespace = {};
-  target[LAUNCHPAD_DEBUG_GLOBAL_KEY] = namespace;
+  target[LUMERIA_DEBUG_GLOBAL_KEY] = namespace;
   return namespace;
 }
 
@@ -30,5 +30,5 @@ export function deleteLaunchpadDebugValue(key, target = globalThis) {
   const namespace = getNamespace(target, { create: false });
   if (!namespace) return;
   delete namespace[key];
-  if (!Object.keys(namespace).length) delete target[LAUNCHPAD_DEBUG_GLOBAL_KEY];
+  if (!Object.keys(namespace).length) delete target[LUMERIA_DEBUG_GLOBAL_KEY];
 }

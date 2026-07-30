@@ -63,11 +63,11 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn expand_windows_env_vars_uses_windows_api() {
-        std::env::set_var("LAUNCHPAD_TEST_EXPAND_ENV", r"C:\LaunchPadTest");
+        std::env::set_var("LUMERIA_TEST_EXPAND_ENV", r"C:\LumeriaTest");
         assert_eq!(
-            expand_windows_env_vars(r"%LAUNCHPAD_TEST_EXPAND_ENV%\App.exe"),
-            r"C:\LaunchPadTest\App.exe"
+            expand_windows_env_vars(r"%LUMERIA_TEST_EXPAND_ENV%\App.exe"),
+            r"C:\LumeriaTest\App.exe"
         );
-        std::env::remove_var("LAUNCHPAD_TEST_EXPAND_ENV");
+        std::env::remove_var("LUMERIA_TEST_EXPAND_ENV");
     }
 }
