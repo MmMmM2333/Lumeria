@@ -224,6 +224,7 @@ const {
   backgroundSource,
   liveDesktopCssFallbackEffectsEnabled,
   liveDesktopRuntimeStatus,
+  mainWindowDisplayRevision,
   shouldRenderPixiBackgroundEffect,
 } = backgroundDomain;
 const {
@@ -774,6 +775,8 @@ watch(
   },
   { immediate: true }
 );
+
+watch(mainWindowDisplayRevision, refreshBackgroundLayoutMetrics);
 
 watch(
   shouldRenderLiveDesktopCompositorKeeper,

@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 
+use serde::Serialize;
 use tauri::{menu::MenuBuilder, tray::TrayIconBuilder, AppHandle, Emitter, Manager, WebviewWindow};
 
 use crate::{
@@ -33,6 +34,66 @@ const EXPERIMENT_FULLSCREEN_OVERSCAN_PX: i32 = 1;
 const EXPERIMENT_WINDOWED_THICKFRAME_NCCALCSIZE: bool = true;
 const WM_NCUAHDRAWCAPTION: u32 = 0x00AE;
 const WM_NCUAHDRAWFRAME: u32 = 0x00AF;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct MainWindowRect {
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+}
+
+impl MainWindowRect {
+    const fn new(left: i32, top: i32, right: i32, bottom: i32) -> Self {
+        Self {
+            left,
+            top,
+            right,
+            bottom,
+        }
+    }
+
+    fn width(self) -> i32 {
+        self.right.saturating_sub(self.left).max(0)
+    }
+
+    fn height(self) -> i32 {
+        self.bottom.saturating_sub(self.top).max(0)
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl From<windows::Win32::Foundation::RECT> for MainWindowRect {
+    fn from(rect: windows::Win32::Foundation::RECT) -> Self {
+        Self::new(rect.left, rect.top, rect.right, rect.bottom)
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl From<MainWindowRect> for windows::Win32::Foundation::RECT {
+    fn from(rect: MainWindowRect) -> Self {
+        Self {
+            left: rect.left,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct MainWindowMonitorTarget {
+    monitor_rect: MainWindowRect,
+    work_rect: MainWindowRect,
+    display_changed: bool,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MainWindowActivationPayload {
+    open_sequence: u64,
+    display_changed: bool,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct MainWindowSurfaceState {
@@ -94,15 +155,16 @@ fn next_main_window_open_sequence() -> u64 {
     MAIN_WINDOW_OPEN_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1
 }
 
-fn show_main_window_for_sequence(app: &AppHandle, open_sequence: u64) {
+fn show_main_window_for_sequence(app: &AppHandle, open_sequence: u64, force_cloak: bool) {
     if MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed) != open_sequence {
         return;
     }
 
     if let Some(window) = app.get_webview_window("main") {
         let mode = current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT);
-        let should_cloak =
-            !window.is_visible().unwrap_or(false) || window.is_minimized().unwrap_or(false);
+        let should_cloak = force_cloak
+            || !window.is_visible().unwrap_or(false)
+            || window.is_minimized().unwrap_or(false);
         if should_cloak {
             // Hidden transparent WebView2 windows can flash a white/native
             // backing surface for one frame when they are shown. DWM cloaking
@@ -182,13 +244,27 @@ fn should_apply_main_window_surface_policy_before_show(mode: MainWindowMode) -> 
     mode == MainWindowMode::Fullscreen || !EXPERIMENT_WINDOWED_THICKFRAME_NCCALCSIZE
 }
 
-fn schedule_main_window_show(app: &AppHandle, open_sequence: u64, delay_ms: u64) {
+fn schedule_main_window_show(
+    app: &AppHandle,
+    open_sequence: u64,
+    delay_ms: u64,
+    force_cloak: bool,
+    activation_after_show: Option<MainWindowActivationPayload>,
+) {
     let app = app.clone();
     std::thread::spawn(move || {
         if delay_ms > 0 {
             std::thread::sleep(Duration::from_millis(delay_ms));
         }
-        show_main_window_for_sequence(&app, open_sequence);
+        show_main_window_for_sequence(&app, open_sequence, force_cloak);
+        if MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed) != open_sequence {
+            return;
+        }
+        if let Some(payload) = activation_after_show {
+            if let Err(error) = app.emit(OPEN_DESKTOP_EVENT, payload) {
+                log::warn!(target: "tray", "Failed to emit open desktop event after show: {error}");
+            }
+        }
     });
 }
 
@@ -590,6 +666,112 @@ fn update_main_window_mode(next: MainWindowMode) -> Result<(), String> {
     Ok(())
 }
 
+fn center_main_window_rect_in_work_area(
+    requested_width: i32,
+    requested_height: i32,
+    work_area: MainWindowRect,
+) -> MainWindowRect {
+    let width = requested_width.max(1).min(work_area.width());
+    let height = requested_height.max(1).min(work_area.height());
+    let left = work_area.left + (work_area.width() - width) / 2;
+    let top = work_area.top + (work_area.height() - height) / 2;
+    MainWindowRect::new(left, top, left + width, top + height)
+}
+
+fn screen_rect_to_window_placement_coordinates(
+    screen_rect: MainWindowRect,
+    monitor_rect: MainWindowRect,
+    work_rect: MainWindowRect,
+) -> MainWindowRect {
+    // WINDOWPLACEMENT uses workspace coordinates for regular top-level
+    // windows. Account for taskbars docked to the target monitor's top or
+    // left edge before storing a screen-space work-area rectangle there.
+    let offset_x = monitor_rect.left.saturating_sub(work_rect.left);
+    let offset_y = monitor_rect.top.saturating_sub(work_rect.top);
+    MainWindowRect::new(
+        screen_rect.left.saturating_add(offset_x),
+        screen_rect.top.saturating_add(offset_y),
+        screen_rect.right.saturating_add(offset_x),
+        screen_rect.bottom.saturating_add(offset_y),
+    )
+}
+
+fn should_hide_main_window_for_shortcut(
+    is_visible: bool,
+    is_minimized: bool,
+    is_foreground: bool,
+    display_changed: bool,
+) -> bool {
+    is_visible && !is_minimized && is_foreground && !display_changed
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_cursor_monitor_target(
+    window: &WebviewWindow,
+) -> Result<Option<MainWindowMonitorTarget>, String> {
+    use windows::Win32::{
+        Foundation::POINT,
+        Graphics::Gdi::{
+            GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, MONITORINFO,
+            MONITOR_DEFAULTTONEAREST,
+        },
+        UI::WindowsAndMessaging::GetCursorPos,
+    };
+
+    let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::hwnd for cursor monitor target",
+        source,
+    })?;
+    let mut cursor = POINT::default();
+    unsafe { GetCursorPos(&mut cursor) }.map_err(|source| NativeError::Win32 {
+        context: "GetCursorPos(main window shortcut)",
+        source,
+    })?;
+    let target_monitor = unsafe { MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST) };
+    if target_monitor.is_invalid() {
+        return Err("Failed to find the monitor under the cursor".to_string());
+    }
+    let current_monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
+    if current_monitor.is_invalid() {
+        return Err("Failed to find the monitor containing the main window".to_string());
+    }
+    let mut info = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    if !unsafe { GetMonitorInfoW(target_monitor, &mut info).as_bool() } {
+        return Err("Failed to read the monitor under the cursor".to_string());
+    }
+    let target = MainWindowMonitorTarget {
+        monitor_rect: info.rcMonitor.into(),
+        work_rect: info.rcWork.into(),
+        display_changed: target_monitor != current_monitor,
+    };
+    log::debug!(
+        target: "tray",
+        "Resolved shortcut cursor monitor cursor={},{} monitor={}x{}@{},{} work={}x{}@{},{} changed={}",
+        cursor.x,
+        cursor.y,
+        target.monitor_rect.width(),
+        target.monitor_rect.height(),
+        target.monitor_rect.left,
+        target.monitor_rect.top,
+        target.work_rect.width(),
+        target.work_rect.height(),
+        target.work_rect.left,
+        target.work_rect.top,
+        target.display_changed,
+    );
+    Ok(Some(target))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn resolve_cursor_monitor_target(
+    _window: &WebviewWindow,
+) -> Result<Option<MainWindowMonitorTarget>, String> {
+    Ok(None)
+}
+
 #[cfg(target_os = "windows")]
 fn save_initial_main_windowed_placement(window: &WebviewWindow) -> Result<(), String> {
     let has_saved_placement = MAIN_WINDOW_WINDOWED_PLACEMENT
@@ -637,7 +819,7 @@ fn read_main_windowed_placement(
     window: &WebviewWindow,
 ) -> Result<MainWindowWindowedPlacement, String> {
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowPlacement, IsZoomed, SW_MAXIMIZE, WINDOWPLACEMENT,
+        GetWindowPlacement, IsZoomed, SW_MAXIMIZE, WINDOWPLACEMENT, WPF_RESTORETOMAXIMIZED,
     };
 
     let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
@@ -659,7 +841,8 @@ fn read_main_windowed_placement(
     }
     Ok(MainWindowWindowedPlacement {
         was_maximized: placement.showCmd == SW_MAXIMIZE.0 as u32
-            || unsafe { IsZoomed(hwnd).as_bool() },
+            || unsafe { IsZoomed(hwnd).as_bool() }
+            || placement.flags.0 & WPF_RESTORETOMAXIMIZED.0 != 0,
         placement,
     })
 }
@@ -730,6 +913,193 @@ fn schedule_main_window_transitions_restore(window: WebviewWindow) {
             let _ = set_window_transitions_enabled(&window, true);
         }
     });
+}
+
+#[cfg(target_os = "windows")]
+fn relocate_saved_main_windowed_placement(
+    monitor_rect: MainWindowRect,
+    work_rect: MainWindowRect,
+) -> Result<(), String> {
+    let mut saved = MAIN_WINDOW_WINDOWED_PLACEMENT
+        .lock()
+        .map_err(|_| "Failed to lock main windowed placement".to_string())?;
+    let Some(saved) = saved.as_mut() else {
+        return Ok(());
+    };
+    let normal_rect: MainWindowRect = saved.placement.rcNormalPosition.into();
+    let target_screen_rect =
+        center_main_window_rect_in_work_area(normal_rect.width(), normal_rect.height(), work_rect);
+    saved.placement.rcNormalPosition =
+        screen_rect_to_window_placement_coordinates(target_screen_rect, monitor_rect, work_rect)
+            .into();
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn set_main_window_position_and_size(
+    window: &WebviewWindow,
+    rect: MainWindowRect,
+    context: &'static str,
+) -> Result<(), String> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOZORDER,
+    };
+
+    let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::hwnd for windowed monitor relocation",
+        source,
+    })?;
+    unsafe {
+        SetWindowPos(
+            hwnd,
+            None,
+            rect.left,
+            rect.top,
+            rect.width(),
+            rect.height(),
+            SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOZORDER,
+        )
+    }
+    .map_err(|source| NativeError::Win32 { context, source })?;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn relocate_windowed_main_window(
+    window: &WebviewWindow,
+    work_area: MainWindowRect,
+) -> Result<(), String> {
+    use windows::Win32::{
+        Foundation::RECT,
+        UI::WindowsAndMessaging::{
+            GetWindowPlacement, GetWindowRect, IsIconic, SetWindowPlacement, SW_MAXIMIZE,
+            SW_SHOWNORMAL, WINDOWPLACEMENT, WPF_RESTORETOMAXIMIZED,
+        },
+    };
+
+    let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::hwnd for relocating windowed main window",
+        source,
+    })?;
+    let mut placement = read_main_windowed_placement(window)?;
+    let normal_rect: MainWindowRect = placement.placement.rcNormalPosition.into();
+    let initial_target =
+        center_main_window_rect_in_work_area(normal_rect.width(), normal_rect.height(), work_area);
+    let was_minimized = unsafe { IsIconic(hwnd).as_bool() };
+
+    if placement.was_maximized || was_minimized {
+        if placement.was_maximized {
+            set_window_transitions_enabled(window, false)?;
+        }
+        placement.placement.length = std::mem::size_of_val(&placement.placement) as u32;
+        placement.placement.showCmd = SW_SHOWNORMAL.0 as u32;
+        placement.placement.flags.0 &= !WPF_RESTORETOMAXIMIZED.0;
+        unsafe { SetWindowPlacement(hwnd, &placement.placement) }.map_err(|source| {
+            NativeError::Win32 {
+                context: "SetWindowPlacement(restore before monitor relocation)",
+                source,
+            }
+        })?;
+    }
+
+    set_main_window_position_and_size(
+        window,
+        initial_target,
+        "SetWindowPos(initial windowed monitor relocation)",
+    )?;
+
+    // Moving between monitors can synchronously apply WM_DPICHANGED and alter
+    // the physical size. Re-read the actual outer rectangle and center the
+    // post-DPI size rather than preserving stale pixels from the old monitor.
+    let mut actual_rect = RECT::default();
+    unsafe { GetWindowRect(hwnd, &mut actual_rect) }.map_err(|source| NativeError::Win32 {
+        context: "GetWindowRect(after windowed monitor relocation)",
+        source,
+    })?;
+    let actual_rect: MainWindowRect = actual_rect.into();
+    let final_target =
+        center_main_window_rect_in_work_area(actual_rect.width(), actual_rect.height(), work_area);
+    set_main_window_position_and_size(
+        window,
+        final_target,
+        "SetWindowPos(final windowed monitor relocation)",
+    )?;
+
+    if placement.was_maximized {
+        let mut maximized_placement = WINDOWPLACEMENT {
+            length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+            ..Default::default()
+        };
+        unsafe { GetWindowPlacement(hwnd, &mut maximized_placement) }.map_err(|source| {
+            NativeError::Win32 {
+                context: "GetWindowPlacement(before remaximizing after monitor relocation)",
+                source,
+            }
+        })?;
+        maximized_placement.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
+        maximized_placement.showCmd = SW_MAXIMIZE.0 as u32;
+        unsafe { SetWindowPlacement(hwnd, &maximized_placement) }.map_err(|source| {
+            NativeError::Win32 {
+                context: "SetWindowPlacement(remaximize after monitor relocation)",
+                source,
+            }
+        })?;
+        schedule_main_window_transitions_restore(window.clone());
+    }
+
+    if let Err(error) = save_main_windowed_placement(window) {
+        log::warn!(
+            target: "tray",
+            "Relocated the windowed main window but failed to save its new placement: {error}"
+        );
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn apply_shortcut_monitor_target(
+    window: &WebviewWindow,
+    mode: MainWindowMode,
+    target: MainWindowMonitorTarget,
+) -> Result<(), String> {
+    if !target.display_changed {
+        return Ok(());
+    }
+    match mode {
+        MainWindowMode::Fullscreen => {
+            apply_main_window_borderless_fullscreen_rect(window, target.monitor_rect)?;
+            if let Err(error) =
+                relocate_saved_main_windowed_placement(target.monitor_rect, target.work_rect)
+            {
+                log::warn!(
+                    target: "tray",
+                    "Relocated the fullscreen main window but failed to move its saved windowed placement: {error}"
+                );
+            }
+        }
+        MainWindowMode::Windowed => {
+            relocate_windowed_main_window(window, target.work_rect)?;
+        }
+    }
+    log::debug!(
+        target: "tray",
+        "Relocated shortcut main window to {}x{}@{},{} in {} mode",
+        target.monitor_rect.width(),
+        target.monitor_rect.height(),
+        target.monitor_rect.left,
+        target.monitor_rect.top,
+        mode.as_str(),
+    );
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn apply_shortcut_monitor_target(
+    _window: &WebviewWindow,
+    _mode: MainWindowMode,
+    _target: MainWindowMonitorTarget,
+) -> Result<(), String> {
+    Ok(())
 }
 
 fn apply_main_window_mode_to_window(
@@ -803,14 +1173,8 @@ fn prepare_main_window_fullscreen_surface(_window: &WebviewWindow) -> Result<(),
 
 #[cfg(target_os = "windows")]
 fn apply_main_window_borderless_fullscreen_bounds(window: &WebviewWindow) -> Result<(), String> {
-    use windows::Win32::{
-        Graphics::Gdi::{
-            GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
-        },
-        UI::WindowsAndMessaging::{
-            GetWindowPlacement, IsZoomed, SetWindowPlacement, SetWindowPos, SWP_NOACTIVATE,
-            SWP_NOOWNERZORDER, SWP_NOSENDCHANGING, SWP_NOZORDER, SW_SHOWNORMAL, WINDOWPLACEMENT,
-        },
+    use windows::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
     };
 
     let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
@@ -828,7 +1192,23 @@ fn apply_main_window_borderless_fullscreen_bounds(window: &WebviewWindow) -> Res
     if !unsafe { GetMonitorInfoW(monitor, &mut info).as_bool() } {
         return Err("Failed to read monitor info for borderless fullscreen bounds".to_string());
     }
-    let monitor_rect = info.rcMonitor;
+    apply_main_window_borderless_fullscreen_rect(window, info.rcMonitor.into())
+}
+
+#[cfg(target_os = "windows")]
+fn apply_main_window_borderless_fullscreen_rect(
+    window: &WebviewWindow,
+    monitor_rect: MainWindowRect,
+) -> Result<(), String> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowPlacement, IsZoomed, SetWindowPlacement, SetWindowPos, SWP_NOACTIVATE,
+        SWP_NOOWNERZORDER, SWP_NOSENDCHANGING, SWP_NOZORDER, SW_SHOWNORMAL, WINDOWPLACEMENT,
+    };
+
+    let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::hwnd for explicit borderless fullscreen bounds",
+        source,
+    })?;
     // Keep the top-level surface larger than the output while constraining the
     // child WebView to the monitor's exact pixel bounds.
     let mut rect = monitor_rect;
@@ -849,7 +1229,7 @@ fn apply_main_window_borderless_fullscreen_bounds(window: &WebviewWindow) -> Res
         })?;
         placement.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
         placement.showCmd = SW_SHOWNORMAL.0 as u32;
-        placement.rcNormalPosition = rect;
+        placement.rcNormalPosition = rect.into();
         unsafe { SetWindowPlacement(hwnd, &placement) }.map_err(|source| NativeError::Win32 {
             context: "SetWindowPlacement(borderless fullscreen from maximized)",
             source,
@@ -879,10 +1259,7 @@ fn apply_main_window_borderless_fullscreen_bounds(window: &WebviewWindow) -> Res
         })?;
     set_main_window_fullscreen_webview_bounds(
         window,
-        tauri::PhysicalSize::new(
-            (monitor_rect.right - monitor_rect.left) as u32,
-            (monitor_rect.bottom - monitor_rect.top) as u32,
-        ),
+        tauri::PhysicalSize::new(monitor_rect.width() as u32, monitor_rect.height() as u32),
     )?;
     set_main_window_tauri_resize_border_visible(window, false)?;
     Ok(())
@@ -1288,12 +1665,57 @@ fn schedule_window_effect_reapply(
     }
 }
 
-pub(crate) fn open_main_window(app: &AppHandle) {
+fn request_main_window_open(app: &AppHandle, monitor_target: Option<MainWindowMonitorTarget>) {
     let open_sequence = next_main_window_open_sequence();
-    if let Err(error) = app.emit(OPEN_DESKTOP_EVENT, open_sequence) {
-        log::warn!(target: "tray", "Failed to emit open desktop event: {error}");
+    let force_cloak = monitor_target.is_some_and(|target| target.display_changed);
+    let mut display_changed = false;
+    if let (Some(window), Some(target)) = (app.get_webview_window("main"), monitor_target) {
+        if target.display_changed {
+            if let Err(error) = set_window_cloaked(&window, true) {
+                log::warn!(
+                    target: "tray",
+                    "Failed to cloak Lumeria before shortcut monitor relocation: {error}"
+                );
+            }
+            match current_main_window_mode() {
+                Ok(mode) => match apply_shortcut_monitor_target(&window, mode, target) {
+                    Ok(()) => display_changed = true,
+                    Err(error) => {
+                        log::warn!(
+                            target: "tray",
+                            "Failed to relocate Lumeria to the shortcut cursor monitor: {error}"
+                        );
+                    }
+                },
+                Err(error) => {
+                    log::warn!(
+                        target: "tray",
+                        "Failed to read the main window mode before shortcut monitor relocation: {error}"
+                    );
+                }
+            }
+        }
     }
-    schedule_main_window_show(app, open_sequence, main_window_deferred_show_delay(app));
+    let payload = MainWindowActivationPayload {
+        open_sequence,
+        display_changed,
+    };
+    if !force_cloak {
+        if let Err(error) = app.emit(OPEN_DESKTOP_EVENT, payload) {
+            log::warn!(target: "tray", "Failed to emit open desktop event: {error}");
+        }
+    }
+    schedule_main_window_show(
+        app,
+        open_sequence,
+        main_window_deferred_show_delay(app),
+        force_cloak,
+        force_cloak.then_some(payload),
+    );
+}
+
+pub(crate) fn open_main_window(app: &AppHandle) {
+    request_main_window_open(app, None);
 }
 
 pub(crate) fn hide_main_window(app: &AppHandle) {
@@ -1309,31 +1731,50 @@ pub(crate) fn hide_main_window(app: &AppHandle) {
 }
 
 pub(crate) fn trigger_main_window_shortcut(app: &AppHandle) {
-    let should_hide = app
-        .get_webview_window("main")
+    let window = app.get_webview_window("main");
+    let monitor_target = window.as_ref().and_then(|window| {
+        match resolve_cursor_monitor_target(window) {
+            Ok(target) => target,
+            Err(error) => {
+                log::warn!(
+                    target: "tray",
+                    "Failed to resolve shortcut cursor monitor; keeping the current monitor: {error}"
+                );
+                None
+            }
+        }
+    });
+    let display_changed = monitor_target.is_some_and(|target| target.display_changed);
+    let should_hide = window
+        .as_ref()
         .map(|window| {
             let is_visible = window.is_visible().unwrap_or(false);
             let is_minimized = window.is_minimized().unwrap_or(false);
-            is_visible && !is_minimized && is_main_window_foreground(&window)
+            should_hide_main_window_for_shortcut(
+                is_visible,
+                is_minimized,
+                is_main_window_foreground(window),
+                display_changed,
+            )
         })
         .unwrap_or(false);
 
     if should_hide {
-        if let Some(window) = app.get_webview_window("main") {
+        if let Some(window) = window {
             let _ = apply_main_window_native_surface_policy(&window);
         }
         let open_sequence = MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed);
-        if let Err(error) = app.emit(TOGGLE_DESKTOP_EVENT, open_sequence) {
+        let payload = MainWindowActivationPayload {
+            open_sequence,
+            display_changed: false,
+        };
+        if let Err(error) = app.emit(TOGGLE_DESKTOP_EVENT, payload) {
             log::warn!(target: "tray", "Failed to emit toggle desktop event: {error}");
         }
         return;
     }
 
-    let open_sequence = next_main_window_open_sequence();
-    if let Err(error) = app.emit(OPEN_DESKTOP_EVENT, open_sequence) {
-        log::warn!(target: "tray", "Failed to emit open desktop event: {error}");
-    }
-    schedule_main_window_show(app, open_sequence, main_window_deferred_show_delay(app));
+    request_main_window_open(app, monitor_target);
 }
 
 pub(crate) fn open_settings(app: &AppHandle) {
@@ -1435,5 +1876,60 @@ mod tests {
             MainWindowMode::Windowed,
             false
         ));
+    }
+
+    #[test]
+    fn shortcut_hides_only_when_foreground_on_the_cursor_monitor() {
+        assert!(should_hide_main_window_for_shortcut(
+            true, false, true, false
+        ));
+        assert!(!should_hide_main_window_for_shortcut(
+            true, false, true, true
+        ));
+        assert!(!should_hide_main_window_for_shortcut(
+            true, true, true, false
+        ));
+        assert!(!should_hide_main_window_for_shortcut(
+            true, false, false, false
+        ));
+    }
+
+    #[test]
+    fn windowed_target_rect_centers_and_clamps_inside_negative_work_area() {
+        let work_area = MainWindowRect::new(-1920, 0, 0, 1040);
+        let centered = center_main_window_rect_in_work_area(1280, 820, work_area);
+
+        assert_eq!(centered, MainWindowRect::new(-1600, 110, -320, 930));
+
+        let oversized = center_main_window_rect_in_work_area(2400, 1200, work_area);
+        assert_eq!(oversized, work_area);
+    }
+
+    #[test]
+    fn saved_window_placement_accounts_for_top_and_left_taskbars() {
+        let monitor = MainWindowRect::new(-1920, 0, 0, 1080);
+        let work = MainWindowRect::new(-1880, 30, 0, 1080);
+        let screen_rect = MainWindowRect::new(-1600, 130, -320, 950);
+
+        assert_eq!(
+            screen_rect_to_window_placement_coordinates(screen_rect, monitor, work),
+            MainWindowRect::new(-1640, 100, -360, 920)
+        );
+    }
+
+    #[test]
+    fn activation_payload_serializes_as_the_frontend_contract() {
+        let payload = MainWindowActivationPayload {
+            open_sequence: 7,
+            display_changed: true,
+        };
+
+        assert_eq!(
+            serde_json::to_value(payload).expect("activation payload should serialize"),
+            serde_json::json!({
+                "displayChanged": true,
+                "openSequence": 7,
+            })
+        );
     }
 }

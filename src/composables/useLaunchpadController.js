@@ -990,6 +990,7 @@ export function useLaunchpadController() {
     hideNativeWindow,
     hideNativeWindowAfterCloseAnimation,
     isNativeLayoutReady,
+    mainWindowDisplayRevision,
     loadNativeLaunchpadData,
     launchNativeAppIfAvailable,
     markLaunchCriticalLayoutDirty,
@@ -1566,6 +1567,7 @@ export function useLaunchpadController() {
     backgroundSource,
     liveDesktopCssFallbackEffectsEnabled,
     liveDesktopRuntimeStatus,
+    mainWindowDisplayRevision,
     shouldRenderPixiBackgroundEffect,
   };
 

@@ -1013,8 +1013,10 @@ export async function runLaunchpadNativeTests() {
     assert(liveDesktopSyncConfigs.at(-1).effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "runtime sync should send updated effects to a running runtime");
 
     liveDesktopSyncCommands.length = 0;
-    await native.restartLiveDesktopBackgroundRuntime();
-    assert(liveDesktopSyncCommands.join(",") === "stop_live_desktop_background,configure_live_desktop_background,start_live_desktop_background", "runtime restart should recreate an already running live desktop runtime");
+    const restartRequest = native.restartLiveDesktopBackgroundRuntime();
+    const overlappingSync = native.syncLiveDesktopBackgroundRuntime();
+    await Promise.all([restartRequest, overlappingSync]);
+    assert(liveDesktopSyncCommands.join(",") === "stop_live_desktop_background,configure_live_desktop_background,start_live_desktop_background", "runtime restart intent should survive an overlapping ordinary sync");
     assert(optionsForLiveDesktopSync.liveDesktopRuntimeStatus.value.phase === "running", "runtime restart should apply the restarted status");
 
     liveDesktopSyncCommands.length = 0;
@@ -1167,7 +1169,9 @@ export async function runLaunchpadNativeTests() {
     assert(wheelEvent.defaultPrevented, "closing interaction blocker should prevent wheel defaults");
     assert(wheelEvent.propagationStopped, "closing interaction blocker should stop wheel propagation");
 
-    await cancelledHideEventHandlers.get("lumeria-open-desktop")({ payload: 3 });
+    await cancelledHideEventHandlers.get("lumeria-open-desktop")({
+      payload: { displayChanged: false, openSequence: 3 },
+    });
     await flushMicrotasks(8);
     assert(timers.length === 0, "native open events should cancel pending native hide timers");
     assert((eventListeners.get("wheel")?.size || 0) === 0, "native open events should unblock wheel events");
@@ -1224,11 +1228,26 @@ export async function runLaunchpadNativeTests() {
     const native = useLaunchpadNative(options);
 
     await native.registerNativeEventListeners();
-    await openEventHandlers.get("lumeria-open-desktop")({ payload: 2 });
+    const invalidPayloadErrors = [];
+    const originalConsoleError = console.error;
+    console.error = (...args) => invalidPayloadErrors.push(args);
+    try {
+      await openEventHandlers.get("lumeria-open-desktop")({ payload: 2 });
+      await flushMicrotasks(3);
+    } finally {
+      console.error = originalConsoleError;
+    }
+    assert(invalidPayloadErrors.length === 1, "numeric native activation payloads should be rejected explicitly");
+    assert(openSurfaceCommands.length === 0, "rejected legacy activation payloads should not open the native surface");
+
+    await openEventHandlers.get("lumeria-open-desktop")({
+      payload: { displayChanged: true, openSequence: 2 },
+    });
     await flushMicrotasks(8);
 
     assert(openSurfaceCommands.join(",") === "frame:true,effects:true", "native open events should restore the native frame before window effects");
     assert(openRevealSequences.join(",") === "2", "native open events should reveal the cloaked native window after paint");
+    assert(native.mainWindowDisplayRevision.value === 1, "display-changing open events should advance the background display revision");
   }, {
     listen: async (eventName, handler) => {
       openEventHandlers.set(eventName, handler);
@@ -1236,6 +1255,60 @@ export async function runLaunchpadNativeTests() {
     },
     passWindowEffectsCommand: true,
     passWindowFrameCommand: true,
+    passRevealMainWindowCommand: true,
+  });
+
+  const crossDisplayOpenTimeline = [];
+  const crossDisplayFrameCallbacks = [];
+  const crossDisplayOpenEventHandlers = new Map();
+  await withMockTauri(async (command) => {
+    if (command === "reveal_main_window") {
+      crossDisplayOpenTimeline.push("reveal");
+      return null;
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    globalThis.window.requestAnimationFrame = (callback) => {
+      crossDisplayFrameCallbacks.push(callback);
+      return crossDisplayFrameCallbacks.length;
+    };
+    const { options } = makeOptions();
+    options.isDesktopOpen.value = false;
+    options.openDesktop = () => {
+      options.isDesktopOpen.value = true;
+      crossDisplayOpenTimeline.push("open");
+    };
+    const native = useLaunchpadNative(options);
+
+    await native.registerNativeEventListeners();
+    const activation = crossDisplayOpenEventHandlers.get("lumeria-open-desktop")({
+      payload: { displayChanged: true, openSequence: 4 },
+    });
+    await flushMicrotasks(12);
+
+    assert(crossDisplayOpenTimeline.length === 0, "cross-display open should keep the desktop closed while the target layout paints");
+    for (let frame = 0; frame < 10 && !crossDisplayOpenTimeline.includes("reveal"); frame += 1) {
+      const callback = crossDisplayFrameCallbacks.shift();
+      assert(callback, "cross-display open should request a frame while preparing the target display");
+      callback(frame * 16.67);
+      await flushMicrotasks(4);
+    }
+    assert(crossDisplayOpenTimeline.join(",") === "reveal", "cross-display open should reveal the native window before starting the desktop animation");
+
+    await flushMicrotasks(12);
+    const openingFrame = crossDisplayFrameCallbacks.shift();
+    assert(openingFrame, "cross-display open should wait one visible frame before starting the desktop animation");
+    openingFrame(200);
+    await Promise.resolve(activation);
+    await flushMicrotasks(4);
+
+    assert(crossDisplayOpenTimeline.join(",") === "reveal,open", "cross-display open should start the desktop animation only after the native reveal");
+    assert(options.isDesktopOpen.value, "cross-display open should finish by opening the desktop state");
+  }, {
+    listen: async (eventName, handler) => {
+      crossDisplayOpenEventHandlers.set(eventName, handler);
+      return () => crossDisplayOpenEventHandlers.delete(eventName);
+    },
     passRevealMainWindowCommand: true,
   });
 
@@ -1288,7 +1361,9 @@ export async function runLaunchpadNativeTests() {
     const native = useLaunchpadNative(options);
 
     await native.registerNativeEventListeners();
-    await settingsToggleEventHandlers.get("lumeria-toggle-desktop")({ payload: 5 });
+    await settingsToggleEventHandlers.get("lumeria-toggle-desktop")({
+      payload: { displayChanged: false, openSequence: 5 },
+    });
     await flushMicrotasks(3);
 
     assert(calls.closeSettingsPanel.length === 1, "native toggle shortcut should close an open settings panel");
@@ -1313,7 +1388,9 @@ export async function runLaunchpadNativeTests() {
     const native = useLaunchpadNative(options);
 
     await native.registerNativeEventListeners();
-    await folderToggleEventHandlers.get("lumeria-toggle-desktop")({ payload: 4 });
+    await folderToggleEventHandlers.get("lumeria-toggle-desktop")({
+      payload: { displayChanged: false, openSequence: 4 },
+    });
     await flushMicrotasks(3);
 
     assert(calls.startFolderZoomFadeClose.length === 1, "native toggle shortcut should close an open folder with zoom-fade first");

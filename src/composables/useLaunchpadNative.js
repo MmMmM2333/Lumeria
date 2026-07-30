@@ -97,6 +97,10 @@ const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "lumeriaLiveDesktopSkipBlankF
 const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "lumeriaLiveDesktopForceDwmFlush";
 const LIVE_DESKTOP_EXPERIMENT_DISABLED_REASON = "experimentDisabled";
 const LIVE_DESKTOP_EXPERIMENT_DISABLED_DETAIL = "Live desktop experiment flag is disabled.";
+// Pixi intentionally snaps monitor-resize layout for three frames. Keep the
+// closed visual state through that window so the later open transition starts
+// from its real initial values instead of being consumed behind DWM cloak.
+const NATIVE_DISPLAY_CHANGE_SETTLE_FRAME_COUNT = 3;
 const NATIVE_WINDOW_CLOSING_BLOCKED_EVENTS = [
   "pointerdown",
   "pointerup",
@@ -375,6 +379,7 @@ function makeLiveDesktopRuntimeConfig(options) {
 export function useLaunchpadNative(options) {
   let nativeLayoutReady = false;
   const isNativeLayoutReady = ref(!shouldUseNativeCatalog());
+  const mainWindowDisplayRevision = ref(0);
   let nativeWindowModeUpdate = Promise.resolve();
   let nativeWindowSurfaceUpdate = Promise.resolve();
   let nativeWindowRevealUpdate = Promise.resolve();
@@ -384,6 +389,7 @@ export function useLaunchpadNative(options) {
   let hasRequestedStartupNativeWindowShow = false;
   let liveDesktopIdleStopTimer = null;
   let liveDesktopBackgroundVisible = null;
+  let liveDesktopRuntimeRestartRequested = false;
   let liveDesktopRuntimeSync = Promise.resolve();
   let liveDesktopRuntimeSyncGeneration = 0;
   let nativeWindowOpenSequence = null;
@@ -808,7 +814,9 @@ export function useLaunchpadNative(options) {
   function enqueueLiveDesktopRuntimeSync(task) {
     const generation = ++liveDesktopRuntimeSyncGeneration;
     liveDesktopRuntimeSync = liveDesktopRuntimeSync
-      .catch(() => {})
+      .catch((error) => {
+        console.error("Live Desktop runtime sync failed", error);
+      })
       .then(() => task(generation));
     return liveDesktopRuntimeSync;
   }
@@ -819,7 +827,9 @@ export function useLaunchpadNative(options) {
     liveDesktopIdleStopTimer = window.setTimeout(() => {
       liveDesktopIdleStopTimer = null;
       liveDesktopRuntimeSync = liveDesktopRuntimeSync
-        .catch(() => {})
+        .catch((error) => {
+          console.error("Live Desktop runtime sync failed before idle stop", error);
+        })
         .then(async () => {
           if (!liveDesktopRuntimeSyncIsCurrent(generation)) return options.liveDesktopRuntimeStatus.value;
           if (shouldRunLiveDesktopBackground()) return options.liveDesktopRuntimeStatus.value;
@@ -836,12 +846,17 @@ export function useLaunchpadNative(options) {
       if (!liveDesktopRuntimeSyncIsCurrent(generation)) return options.liveDesktopRuntimeStatus.value;
       if (!isLiveDesktopExperimentEnabled()) {
         clearLiveDesktopIdleStopTimer();
+        liveDesktopRuntimeRestartRequested = false;
         return resetLiveDesktopRuntimeForDisabledExperiment();
       }
       if (!isNativeBridgeAvailable()) {
+        liveDesktopRuntimeRestartRequested = false;
         return resetLiveDesktopRuntimeForUnavailableBridge();
       }
       if (!shouldRunLiveDesktopBackground()) {
+        if (!canUseActiveLiveDesktopBackground()) {
+          liveDesktopRuntimeRestartRequested = false;
+        }
         const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
         if (shouldKeepLiveDesktopBackgroundWarm(current)) {
           await setNativeLiveDesktopBackgroundVisible(false);
@@ -855,6 +870,20 @@ export function useLaunchpadNative(options) {
       }
       clearLiveDesktopIdleStopTimer();
       const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
+      if (liveDesktopRuntimeRestartRequested) {
+        if (liveDesktopRuntimeStatusIsRunning(current)) {
+          await stopNativeLiveDesktopBackground();
+          if (!liveDesktopRuntimeSyncIsCurrent(generation)) return options.liveDesktopRuntimeStatus.value;
+        }
+        const started = await startNativeLiveDesktopBackground();
+        if (
+          liveDesktopRuntimeSyncIsCurrent(generation)
+          && liveDesktopRuntimeStatusIsRunning(started)
+        ) {
+          liveDesktopRuntimeRestartRequested = false;
+        }
+        return started;
+      }
       if (liveDesktopRuntimeStatusIsRunning(current)) {
         await setNativeLiveDesktopBackgroundVisible(true);
         if (!liveDesktopRuntimeSyncIsCurrent(generation)) return options.liveDesktopRuntimeStatus.value;
@@ -865,24 +894,8 @@ export function useLaunchpadNative(options) {
   }
 
   function restartLiveDesktopBackgroundRuntime() {
-    return enqueueLiveDesktopRuntimeSync(async (generation) => {
-      if (!liveDesktopRuntimeSyncIsCurrent(generation)) return options.liveDesktopRuntimeStatus.value;
-      if (!isLiveDesktopExperimentEnabled()) {
-        clearLiveDesktopIdleStopTimer();
-        return resetLiveDesktopRuntimeForDisabledExperiment();
-      }
-      if (!isNativeBridgeAvailable()) {
-        return resetLiveDesktopRuntimeForUnavailableBridge();
-      }
-      clearLiveDesktopIdleStopTimer();
-      if (!shouldRunLiveDesktopBackground()) return stopNativeLiveDesktopBackground();
-      const current = normalizeLiveDesktopRuntimeStatus(options.liveDesktopRuntimeStatus.value);
-      if (liveDesktopRuntimeStatusIsRunning(current)) {
-        await stopNativeLiveDesktopBackground();
-      }
-      if (!liveDesktopRuntimeSyncIsCurrent(generation)) return options.liveDesktopRuntimeStatus.value;
-      return startNativeLiveDesktopBackground();
-    });
+    liveDesktopRuntimeRestartRequested = true;
+    return syncLiveDesktopBackgroundRuntime();
   }
 
   async function loadNativeLaunchpadData() {
@@ -1307,7 +1320,6 @@ export function useLaunchpadNative(options) {
     );
     const appearance = normalizeWindowEffectAppearance(options.windowEffectAppearance.value);
     nativeWindowSurfaceUpdate = nativeWindowSurfaceUpdate
-      .catch(() => {})
       .then(() => setMainWindowEffectsEnabled(enabled, openSequence, { material, appearance }))
       .catch((error) => {
         console.error("Failed to update Lumeria window effects", error);
@@ -1318,7 +1330,6 @@ export function useLaunchpadNative(options) {
     if (!isNativeBridgeAvailable()) return;
     const nextMode = normalizeWindowMode(mode);
     nativeWindowModeUpdate = nativeWindowModeUpdate
-      .catch(() => {})
       .then(() => setMainWindowMode(nextMode))
       .catch((error) => {
         console.error("Failed to update Lumeria window mode", error);
@@ -1351,7 +1362,6 @@ export function useLaunchpadNative(options) {
   function setNativeWindowFrameEnabled(enabled) {
     if (!isNativeBridgeAvailable()) return;
     nativeWindowSurfaceUpdate = nativeWindowSurfaceUpdate
-      .catch(() => {})
       .then(() => setMainWindowNativeFrameEnabled(Boolean(enabled)))
       .catch((error) => {
         console.error("Failed to update Lumeria native window frame", error);
@@ -1367,21 +1377,30 @@ export function useLaunchpadNative(options) {
     return Promise.resolve();
   }
 
-  function revealNativeWindowAfterPaint(openSequence = nativeWindowOpenSequence) {
+  function revealNativeWindowAfterPaint(
+    openSequence = nativeWindowOpenSequence,
+    paintFrameCount = 2
+  ) {
     const revealSequence = Number(openSequence);
-    if (!isNativeBridgeAvailable() || !Number.isFinite(revealSequence) || revealSequence <= 0) return;
+    if (!isNativeBridgeAvailable() || !Number.isFinite(revealSequence) || revealSequence <= 0) {
+      return Promise.resolve(false);
+    }
+    const framesToWait = Math.max(0, Math.ceil(Number(paintFrameCount) || 0));
     nativeWindowRevealUpdate = nativeWindowRevealUpdate
-      .catch(() => {})
       .then(async () => {
         await nextTick();
-        await waitForNativeWindowRevealFrame();
-        await waitForNativeWindowRevealFrame();
-        if (nativeWindowOpenSequence !== revealSequence) return;
+        for (let frame = 0; frame < framesToWait; frame += 1) {
+          await waitForNativeWindowRevealFrame();
+        }
+        if (nativeWindowOpenSequence !== revealSequence) return false;
         await revealMainWindow(revealSequence);
+        return true;
       })
       .catch((error) => {
         console.error("Failed to reveal Lumeria window", error);
+        return false;
       });
+    return nativeWindowRevealUpdate;
   }
 
   function showNativeWindowAfterStartup() {
@@ -1468,29 +1487,70 @@ export function useLaunchpadNative(options) {
     unlistenQuitRequestedEvent = null;
   }
 
-  function rememberNativeWindowOpenSequence(event) {
-    const nextSequence = Number(event?.payload);
-    if (Number.isFinite(nextSequence) && nextSequence > 0) {
+  function readNativeWindowActivation(event) {
+    const payload = event?.payload;
+    if (
+      payload === null
+      || typeof payload !== "object"
+      || Array.isArray(payload)
+      || typeof payload.displayChanged !== "boolean"
+    ) {
+      console.error("Invalid native main window activation payload", payload);
+      return null;
+    }
+    const nextSequence = payload.openSequence;
+    if (!Number.isSafeInteger(nextSequence) || nextSequence < 0) {
+      console.error("Invalid native main window activation sequence", payload.openSequence);
+      return null;
+    }
+    if (nextSequence > 0) {
       nativeWindowOpenSequence = nextSequence;
     }
+    return {
+      displayChanged: payload.displayChanged,
+      openSequence: nextSequence,
+    };
+  }
+
+  async function openDesktopAfterNativeDisplayChange(activation) {
+    const didReveal = await revealNativeWindowAfterPaint(
+      activation.openSequence,
+      NATIVE_DISPLAY_CHANGE_SETTLE_FRAME_COUNT
+    );
+    if (!didReveal || nativeWindowOpenSequence !== activation.openSequence) return;
+    await waitForNativeWindowRevealFrame();
+    if (nativeWindowOpenSequence !== activation.openSequence || options.isDesktopOpen.value) return;
+    options.openDesktop();
   }
 
   function openDesktopFromNativeShortcut(event) {
-    rememberNativeWindowOpenSequence(event);
+    const activation = readNativeWindowActivation(event);
+    if (!activation) return;
+    if (activation.displayChanged) {
+      mainWindowDisplayRevision.value += 1;
+    }
     setNativeWindowFrameEnabled(true);
     setNativeWindowEffectsEnabled(true);
     refreshWindowsWallpaperBackground().then((changed) => {
       if (changed) scheduleNativeLayoutSave();
     }).finally(syncWindowsWallpaperRefreshTimer);
-    syncLiveDesktopBackgroundRuntime();
     clearNativeWindowHideTimer();
     if (options.isDesktopOpen.value) {
       options.focusDesktopSurface?.();
-      revealNativeWindowAfterPaint();
-      return;
+      if (activation.displayChanged) restartLiveDesktopBackgroundRuntime();
+      else syncLiveDesktopBackgroundRuntime();
+      return revealNativeWindowAfterPaint(
+        activation.openSequence,
+        activation.displayChanged ? NATIVE_DISPLAY_CHANGE_SETTLE_FRAME_COUNT : 2
+      );
+    }
+    if (activation.displayChanged) restartLiveDesktopBackgroundRuntime();
+    else syncLiveDesktopBackgroundRuntime();
+    if (activation.displayChanged) {
+      return openDesktopAfterNativeDisplayChange(activation);
     }
     options.openDesktop();
-    revealNativeWindowAfterPaint();
+    return revealNativeWindowAfterPaint(activation.openSequence);
   }
 
   function hideNativeWindowAfterCloseAnimation() {
@@ -1540,7 +1600,7 @@ export function useLaunchpadNative(options) {
   }
 
   function toggleDesktopFromNativeShortcut(event) {
-    rememberNativeWindowOpenSequence(event);
+    if (!readNativeWindowActivation(event)) return;
     if (options.isDesktopOpen.value) {
       closeSettingsPanelForDesktopClose();
       if (options.renderedFolder?.value && options.startFolderZoomFadeClose?.({ reason: "desktop" })) {
@@ -1551,7 +1611,7 @@ export function useLaunchpadNative(options) {
       options.closeDesktop({ clearSearch: false });
       hideNativeWindowAfterCloseAnimation();
     } else {
-      openDesktopFromNativeShortcut();
+      openDesktopFromNativeShortcut(event);
     }
   }
 
@@ -1591,6 +1651,7 @@ export function useLaunchpadNative(options) {
     hideNativeWindowAfterCloseAnimation,
     getLaunchTargetStatus,
     isNativeLayoutReady,
+    mainWindowDisplayRevision,
     loadNativeLaunchpadData,
     launchNativeAppIfAvailable,
     markLaunchCriticalLayoutDirty,
