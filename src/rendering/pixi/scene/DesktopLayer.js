@@ -72,6 +72,7 @@ export {
 const BOUNDS_KIND = ICON_BOUNDS_KIND;
 const BOUNDS_VARIANT = ICON_BOUNDS_VARIANT;
 const DESKTOP_DRAG_HANDOFF_LAYOUT_REASON = "desktop-drag-handoff-layout";
+const DESKTOP_RESIZE_LAYOUT_REASON = "desktop-resize-layout";
 
 function projectStageLayoutRecordToClient(record) {
   return stageLayoutRecordToClientRect(record);
@@ -164,6 +165,12 @@ function springIconLayoutPosition(node, layoutTarget, markBoundsDirty) {
       y: layoutTarget.y,
     })
     .start();
+}
+
+function snapIconLayoutPosition(node, layoutTarget, markBoundsDirty, reason) {
+  killMotionOf(node, "x,y", { lane: "base", reason });
+  node.position.set(layoutTarget.x, layoutTarget.y);
+  markBoundsDirty();
 }
 
 function motionSpringTo(target, vars, config, options = {}) {
@@ -372,6 +379,7 @@ export class DesktopLayer extends Container {
         seen.add(key);
         let node = this.iconNodes.get(key);
         const shouldSnapDragHandoffLayout = !isFolderClosingHandoff && (entry.isActiveDraggedItem || entry.isReleaseGhostItem);
+        const shouldSnapResizeLayout = !isFolderClosingHandoff && state.snapDesktopLayout === true;
         if (!node) {
           node = new IconNode({
             onAction: (action, originalEvent, actionItem, actionSource, iconNode) =>
@@ -390,10 +398,15 @@ export class DesktopLayer extends Container {
               .start();
             springIconLayoutPosition(node, layoutTarget, markBoundsDirty);
           }
-        } else if (shouldSnapDragHandoffLayout && shouldSpringLayout) {
-          killMotionOf(node, "x,y", { lane: "base", reason: DESKTOP_DRAG_HANDOFF_LAYOUT_REASON });
-          node.position.set(layoutTarget.x, layoutTarget.y);
-          markBoundsDirty();
+        } else if ((shouldSnapDragHandoffLayout || shouldSnapResizeLayout) && shouldSpringLayout) {
+          snapIconLayoutPosition(
+            node,
+            layoutTarget,
+            markBoundsDirty,
+            shouldSnapDragHandoffLayout
+              ? DESKTOP_DRAG_HANDOFF_LAYOUT_REASON
+              : DESKTOP_RESIZE_LAYOUT_REASON
+          );
         } else if (!isFolderClosingHandoff && shouldSpringLayout) {
           springIconLayoutPosition(node, layoutTarget, markBoundsDirty);
         }
@@ -446,7 +459,7 @@ export class DesktopLayer extends Container {
         pageSpan: plan.pageTrack.pageSpan,
         scrub: pageTrackScopeChanged ? null : plan.pageTrack.scrub,
         sourceLabel: plan.pageTrack.sourceLabel,
-        snap: plan.pageTrack.snap || pageTrackScopeChanged,
+        snap: plan.pageTrack.snap || pageTrackScopeChanged || state.snapDesktopLayout === true,
         springConfig: motionSprings.layout,
       });
       this.flushInteractiveBounds({ force: true });
@@ -558,6 +571,7 @@ export class DesktopLayer extends Container {
     const centerX = Math.max(1, readNumber(state.width, 1)) / 2;
     const centerY = Math.max(1, readNumber(state.height, 1)) / 2;
     const targetY = centerY + offsetY;
+    const shouldSnapResizeLayout = state.snapDesktopLayout === true;
     this.visualRoot.pivot.set(centerX, centerY);
     this.desktopClosingUnderlayLayer.pivot.set(centerX, centerY);
     if (!this.hasDesktopVisualTransform) {
@@ -569,10 +583,15 @@ export class DesktopLayer extends Container {
       return;
     }
     const markBoundsDirty = () => this.markInteractiveBoundsDirty();
-    motionSpringTo(this.visualRoot, { x: centerX, y: targetY }, motionSprings.settle, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
-    motionSpringTo(this.visualRoot.scale, { x: scale, y: scale }, motionSprings.settle, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
-    motionSpringTo(this.desktopClosingUnderlayLayer, { x: centerX, y: targetY }, motionSprings.settle, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
-    motionSpringTo(this.desktopClosingUnderlayLayer.scale, { x: scale, y: scale }, motionSprings.settle, { onComplete: markBoundsDirty, onUpdate: markBoundsDirty });
+    const motionOptions = {
+      onComplete: markBoundsDirty,
+      onUpdate: markBoundsDirty,
+      snap: shouldSnapResizeLayout,
+    };
+    motionSpringTo(this.visualRoot, { x: centerX, y: targetY }, motionSprings.settle, motionOptions);
+    motionSpringTo(this.visualRoot.scale, { x: scale, y: scale }, motionSprings.settle, motionOptions);
+    motionSpringTo(this.desktopClosingUnderlayLayer, { x: centerX, y: targetY }, motionSprings.settle, motionOptions);
+    motionSpringTo(this.desktopClosingUnderlayLayer.scale, { x: scale, y: scale }, motionSprings.settle, motionOptions);
   }
 
   applyDesktopVisualAlpha(state) {
@@ -613,7 +632,7 @@ export class DesktopLayer extends Container {
     const centerY = Math.max(1, readNumber(state.height, 1)) / 2;
     const targetY = centerY + transform.y;
     this.singleStageFolderLayer.pivot.set(centerX, centerY);
-    const shouldSnap = !this.hasSingleStageFolderOverlayContent(state);
+    const shouldSnap = state.snapDesktopLayout === true || !this.hasSingleStageFolderOverlayContent(state);
     if (!this.hasFolderOverlayTransform) {
       this.singleStageFolderLayer.position.set(centerX, targetY);
       this.singleStageFolderLayer.scale.set(transform.scale);

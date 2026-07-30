@@ -6,8 +6,8 @@ use crate::native_error::NativeError;
 use windows::Win32::{
     Foundation::HWND,
     Graphics::Dwm::{
-        DwmSetWindowAttribute, DWMNCRP_DISABLED, DWMNCRP_USEWINDOWSTYLE, DWMWA_BORDER_COLOR,
-        DWMWA_CLOAK, DWMWA_COLOR_DEFAULT, DWMWA_COLOR_NONE, DWMWA_NCRENDERING_POLICY,
+        DwmSetWindowAttribute, DWMNCRP_USEWINDOWSTYLE, DWMWA_BORDER_COLOR, DWMWA_CLOAK,
+        DWMWA_COLOR_DEFAULT, DWMWA_COLOR_NONE, DWMWA_NCRENDERING_POLICY,
         DWMWA_TRANSITIONS_FORCEDISABLED, DWMWA_USE_IMMERSIVE_DARK_MODE,
         DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND, DWMWINDOWATTRIBUTE,
     },
@@ -143,24 +143,14 @@ pub(crate) fn set_window_cloaked(_window: &WebviewWindow, _cloaked: bool) -> Res
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn set_window_non_client_rendering(
-    window: &WebviewWindow,
-    enabled: bool,
-) -> Result<(), String> {
-    let policy = if enabled {
-        DWMNCRP_USEWINDOWSTYLE
-    } else {
-        DWMNCRP_DISABLED
-    };
+pub(crate) fn set_window_non_client_rendering(window: &WebviewWindow) -> Result<(), String> {
+    let policy = DWMNCRP_USEWINDOWSTYLE;
     set_dwm_attribute(window, DWMWA_NCRENDERING_POLICY, &policy)?;
     Ok(())
 }
 
 #[cfg(not(target_os = "windows"))]
-pub(crate) fn set_window_non_client_rendering(
-    _window: &WebviewWindow,
-    _enabled: bool,
-) -> Result<(), String> {
+pub(crate) fn set_window_non_client_rendering(_window: &WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 

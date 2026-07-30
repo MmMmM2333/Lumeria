@@ -198,6 +198,7 @@ let desktopFrameHandle = null;
 let desktopFrameLastTime = 0;
 let desktopMotionFrameNeedsRender = false;
 let desktopLayerUpdatePending = false;
+let desktopResizeLayoutSnapPending = false;
 let resizeSettleScheduler = null;
 const folderClosingHandoffRetainer = createFolderClosingHandoffRetainer();
 let handoffDebugSequence = 0;
@@ -330,6 +331,7 @@ function getResizeSettleScheduler() {
       invalidateDesktopDomGeometry();
       refreshDesktopDomGeometry();
       desktopLayerUpdatePending = true;
+      desktopResizeLayoutSnapPending = true;
       getRenderScheduler().markRenderPending(reason);
     },
   });
@@ -648,6 +650,7 @@ function renderPixi(options = {}) {
       selectedIcon: props.selectedIcon,
       setPageRef: props.setPageRef,
       shouldSnapTrack: props.desktopTrackMotionKey.includes("snap"),
+      snapDesktopLayout: options.snapDesktopLayout === true,
       showMissingLaunchTargetBadge: props.showMissingLaunchTargetBadge,
       stageRect: renderGeometry.stageRect,
       width: renderGeometry.width,
@@ -683,6 +686,7 @@ function cancelScheduledRenderPixi() {
   }
   desktopFrameLastTime = 0;
   desktopLayerUpdatePending = false;
+  desktopResizeLayoutSnapPending = false;
 }
 
 function getRenderScheduler() {
@@ -699,8 +703,10 @@ function getRenderScheduler() {
     render: (reasons) => {
       const updateLayer = desktopLayerUpdatePending;
       desktopLayerUpdatePending = false;
+      const snapDesktopLayout = desktopResizeLayoutSnapPending;
       const previousPlan = layer?.lastDesktopRenderPlan || null;
-      const didRender = renderPixi({ updateLayer });
+      const didRender = renderPixi({ snapDesktopLayout, updateLayer });
+      if (didRender && updateLayer) desktopResizeLayoutSnapPending = false;
       if (!didRender && updateLayer) desktopLayerUpdatePending = true;
       let probeToken = null;
       if (import.meta.env.DEV && didRender) {
@@ -926,6 +932,7 @@ function destroyPixi(options = {}) {
     desktopMotionRuntimeSuspended = false;
   }
   desktopMotionFrameNeedsRender = false;
+  desktopResizeLayoutSnapPending = false;
   resizeSettleScheduler?.reset?.();
   cancelScheduledRenderPixi();
   renderScheduler?.destroy();

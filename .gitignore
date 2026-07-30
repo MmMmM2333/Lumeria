@@ -23,6 +23,7 @@ AGENTS.md
 docs-agents/
 goal-*/
 .agents/
+.codex-dev/
 
 # Logs
 *.log

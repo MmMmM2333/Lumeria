@@ -101,29 +101,50 @@ function makeNode(id) {
 }
 
 function makeLayer(DesktopLayer, pageTrack) {
-  const makeTransformNode = () => ({
-    alpha: 1,
-    interactiveChildren: true,
-    pivot: {
-      set(x, y) {
-        this.x = x;
-        this.y = y;
+  const makeTransformNode = () => {
+    const node = {
+      alpha: 1,
+      interactiveChildren: true,
+      pivot: {
+        set(x, y) {
+          this.x = x;
+          this.y = y;
+        },
       },
-    },
-    position: {
-      set(x, y) {
-        this.x = x;
-        this.y = y;
+      position: {
+        set(x, y) {
+          this.x = x;
+          this.y = y;
+        },
       },
-    },
-    scale: {
-      set(x, y = x) {
-        this.x = x;
-        this.y = y;
+      scale: {
+        set(x, y = x) {
+          this.x = x;
+          this.y = y;
+        },
       },
-    },
-    visible: false,
-  });
+      visible: false,
+    };
+    Object.defineProperties(node, {
+      x: {
+        get() {
+          return this.position.x;
+        },
+        set(value) {
+          this.position.x = value;
+        },
+      },
+      y: {
+        get() {
+          return this.position.y;
+        },
+        set(value) {
+          this.position.y = value;
+        },
+      },
+    });
+    return node;
+  };
   const layer = Object.create(DesktopLayer.prototype);
   layer.emptyText = {
     position: {
@@ -141,11 +162,9 @@ function makeLayer(DesktopLayer, pageTrack) {
   layer.iconBoundsRegistry = makeLayer.iconBoundsRegistry;
   layer.pageTrack = pageTrack;
   layer.desktopClosingUnderlayLayer = makeTransformNode();
-  layer.singleStageFolderLayer = {
-    ...makeTransformNode(),
-    getDesktopSourceGhostedIds: () => new Set(),
-    hasVisibleFolderSubstitute: () => false,
-  };
+  layer.singleStageFolderLayer = makeTransformNode();
+  layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set();
+  layer.singleStageFolderLayer.hasVisibleFolderSubstitute = () => false;
   layer.visualOwnership = { snapshot: () => [] };
   layer.visualRoot = makeTransformNode();
   return layer;
@@ -340,6 +359,40 @@ export async function runDesktopLayerTests() {
 
     layer.destroy({ children: true });
     iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const item = { id: "resize-snap-app", name: "Resize Snap", type: "app" };
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    const node = prepareLayerForDesktopQuiescenceTest(layer, item);
+    const initialState = makeDesktopQuiescenceState(item);
+    layer.update(initialState);
+    for (let frame = 0; frame < 600 && motionRuntime.hasActiveWork(); frame += 1) {
+      motionRuntime.step(1 / 60);
+    }
+
+    const resizedState = {
+      ...initialState,
+      desktopFrame: { ...initialState.desktopFrame, width: 640 },
+      snapDesktopLayout: true,
+      stageRect: { ...initialState.stageRect, width: 640 },
+      width: 640,
+    };
+    layer.update(resizedState);
+    const resizedEntry = layer.lastDesktopRenderPlan.entries[0];
+
+    assert(
+      nearlyEqual(node.position.x, resizedEntry.layoutTarget.x) &&
+        nearlyEqual(node.position.y, resizedEntry.layoutTarget.y),
+      "window resize layout sync should snap an existing desktop icon to its new target"
+    );
+    assert(
+      !getBaseAnimation(node, "x") && !getBaseAnimation(node, "y"),
+      "window resize layout sync should not leave a delayed icon layout spring"
+    );
     motionRuntime.reset();
   }
 
@@ -694,6 +747,81 @@ export async function runDesktopLayerTests() {
     assert(!closingLayer.hasSingleStageFolderOverlayContent({
       singleStageFolderState: null,
     }), "missing folder state should count as no overlay content");
+  }
+
+  {
+    motionRuntime.reset();
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.markInteractiveBoundsDirty = () => {};
+    layer.applyDesktopVisualTransform({
+      desktopVisualTransform: { scale: 1, y: 0 },
+      height: 600,
+      width: 800,
+    });
+    layer.applyDesktopVisualTransform({
+      desktopVisualTransform: { scale: 1, y: 0 },
+      height: 640,
+      snapDesktopLayout: true,
+      width: 800,
+    });
+
+    assert(
+      layer.visualRoot.position.x === 400 &&
+        layer.visualRoot.position.y === 320 &&
+        layer.desktopClosingUnderlayLayer.position.x === 400 &&
+        layer.desktopClosingUnderlayLayer.position.y === 320,
+      "window resize layout sync should snap desktop visual roots to the resized stage center"
+    );
+    assert(
+      !getBaseAnimation(layer.visualRoot, "x") &&
+        !getBaseAnimation(layer.visualRoot, "y") &&
+        !getBaseAnimation(layer.visualRoot.scale, "x") &&
+        !getBaseAnimation(layer.visualRoot.scale, "y") &&
+        !getBaseAnimation(layer.desktopClosingUnderlayLayer, "x") &&
+        !getBaseAnimation(layer.desktopClosingUnderlayLayer, "y") &&
+        !getBaseAnimation(layer.desktopClosingUnderlayLayer.scale, "x") &&
+        !getBaseAnimation(layer.desktopClosingUnderlayLayer.scale, "y"),
+      "window resize layout sync should not leave a delayed desktop visual-root spring"
+    );
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.markInteractiveBoundsDirty = () => {};
+    const folderState = {
+      renderedFolder: { id: "resize-snap-folder" },
+    };
+    layer.applyFolderOverlayTransform({
+      height: 600,
+      launchpadVisualTransform: { scale: 1, y: 0 },
+      singleStageFolderState: folderState,
+      width: 800,
+    });
+    layer.applyFolderOverlayTransform({
+      height: 640,
+      launchpadVisualTransform: { scale: 1, y: 0 },
+      singleStageFolderState: folderState,
+      snapDesktopLayout: true,
+      width: 800,
+    });
+
+    assert(
+      layer.singleStageFolderLayer.position.x === 400 &&
+        layer.singleStageFolderLayer.position.y === 320,
+      "window resize layout sync should snap an open folder overlay to the resized stage center"
+    );
+    assert(
+      !getBaseAnimation(layer.singleStageFolderLayer, "x") &&
+        !getBaseAnimation(layer.singleStageFolderLayer, "y") &&
+        !getBaseAnimation(layer.singleStageFolderLayer.scale, "x") &&
+        !getBaseAnimation(layer.singleStageFolderLayer.scale, "y"),
+      "window resize layout sync should not leave a delayed open-folder overlay spring"
+    );
+    motionRuntime.reset();
   }
 
   {

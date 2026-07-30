@@ -29,6 +29,7 @@ const MAIN_WINDOW_RESTORE_TRANSITIONS_DELAY_MS: u64 = 80;
 const MAIN_WINDOW_DEFERRED_SHOW_DELAY_MS: u64 = 0;
 const MAIN_WINDOW_CLOAKED_REVEAL_FALLBACK_DELAY_MS: u64 = 160;
 const MAIN_WINDOW_NON_CLIENT_SUBCLASS_ID: usize = 1;
+const EXPERIMENT_FULLSCREEN_OVERSCAN_PX: i32 = 1;
 const EXPERIMENT_WINDOWED_THICKFRAME_NCCALCSIZE: bool = true;
 const WM_NCUAHDRAWCAPTION: u32 = 0x00AE;
 const WM_NCUAHDRAWFRAME: u32 = 0x00AF;
@@ -131,12 +132,17 @@ fn show_main_window_for_sequence(app: &AppHandle, open_sequence: u64) {
             update_window_now(&window);
             schedule_main_window_cloak_fallback(app, open_sequence);
         }
-        let _ = window.set_focus();
-        let _ = activate_window(&window);
+        if let Err(error) = focus_and_activate_window(&window) {
+            log::warn!(target: "tray", "Failed to activate main window before reveal: {error}");
+        }
         let _ = confirm_main_window_mode_after_show(&window, mode);
         if mode == MainWindowMode::Fullscreen {
-            let _ = window.set_focus();
-            let _ = activate_window(&window);
+            if let Err(error) = focus_and_activate_window(&window) {
+                log::warn!(
+                    target: "tray",
+                    "Failed to reactivate fullscreen main window before reveal: {error}"
+                );
+            }
         }
         if let Err(error) = apply_current_main_window_effects_until_stable(&window) {
             log::warn!(target: "window-effects", "Failed to restore main window effects: {error}");
@@ -213,6 +219,9 @@ pub(crate) fn reveal_main_window(
         if should_enable_windowed_transitions_after_reveal(mode) {
             set_window_transitions_enabled(&window, true)?;
         }
+        if !is_main_window_foreground(&window) {
+            focus_and_activate_window(&window)?;
+        }
     }
     Ok(())
 }
@@ -288,6 +297,63 @@ fn update_window_now(window: &WebviewWindow) {
 fn update_window_now(_window: &WebviewWindow) {}
 
 #[cfg(target_os = "windows")]
+fn set_main_window_tauri_resize_border_visible(
+    window: &WebviewWindow,
+    visible: bool,
+) -> Result<(), String> {
+    use windows::{
+        core::w,
+        Win32::UI::WindowsAndMessaging::{
+            FindWindowExW, SetWindowPos, HWND_TOP, SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOMOVE,
+            SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW,
+        },
+    };
+
+    let parent = window.hwnd().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::hwnd for Tauri resize border visibility",
+        source,
+    })?;
+    let Ok(resize_border) = (unsafe {
+        FindWindowExW(
+            Some(parent),
+            None,
+            w!("TAURI_DRAG_RESIZE_BORDERS"),
+            w!("TAURI_DRAG_RESIZE_WINDOW"),
+        )
+    }) else {
+        log::debug!(
+            target: "tray",
+            "Tauri undecorated resize border not present while setting visible={visible}"
+        );
+        return Ok(());
+    };
+
+    let mut flags = SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOOWNERZORDER | SWP_NOSIZE;
+    let insert_after = if visible {
+        flags |= SWP_SHOWWINDOW;
+        Some(HWND_TOP)
+    } else {
+        flags |= SWP_HIDEWINDOW | SWP_NOZORDER;
+        None
+    };
+    unsafe { SetWindowPos(resize_border, insert_after, 0, 0, 0, 0, flags) }.map_err(|source| {
+        NativeError::Win32 {
+            context: if visible {
+                "SetWindowPos(show Tauri resize border)"
+            } else {
+                "SetWindowPos(hide Tauri resize border)"
+            },
+            source,
+        }
+    })?;
+    log::debug!(
+        target: "tray",
+        "Set Tauri undecorated resize border visible={visible}"
+    );
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
 fn set_main_window_non_client_subclass(
     window: &WebviewWindow,
     enabled: bool,
@@ -339,13 +405,35 @@ unsafe extern "system" fn main_window_non_client_subclass_proc(
         UI::{
             Shell::{DefSubclassProc, RemoveWindowSubclass},
             WindowsAndMessaging::{
-                IsZoomed, NCCALCSIZE_PARAMS, SC_KEYMENU, WM_NCACTIVATE, WM_NCCALCSIZE,
-                WM_NCDESTROY, WM_NCPAINT, WM_SYSCOMMAND,
+                IsZoomed, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCLIENT, HTLEFT, HTRIGHT, HTTOP,
+                HTTOPLEFT, HTTOPRIGHT, NCCALCSIZE_PARAMS, SC_KEYMENU, WM_NCACTIVATE, WM_NCCALCSIZE,
+                WM_NCDESTROY, WM_NCHITTEST, WM_NCPAINT, WM_SYSCOMMAND,
             },
         },
     };
 
     match message {
+        WM_NCHITTEST => {
+            let hit_test = DefSubclassProc(hwnd, message, wparam, lparam);
+            let is_resize_border = matches!(
+                hit_test.0 as u32,
+                HTLEFT
+                    | HTRIGHT
+                    | HTTOP
+                    | HTTOPLEFT
+                    | HTTOPRIGHT
+                    | HTBOTTOM
+                    | HTBOTTOMLEFT
+                    | HTBOTTOMRIGHT
+            );
+            if current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT)
+                == MainWindowMode::Fullscreen
+                && is_resize_border
+            {
+                return LRESULT(HTCLIENT as isize);
+            }
+            hit_test
+        }
         WM_NCCALCSIZE => {
             let mode = current_main_window_mode().unwrap_or(MainWindowMode::DEFAULT);
             let uses_borderless_non_client =
@@ -703,8 +791,7 @@ fn prepare_main_window_fullscreen_surface(window: &WebviewWindow) -> Result<(), 
     restore_main_window_resizable_frame_style(window)?;
     set_main_window_non_client_subclass(window, true)?;
     set_window_transitions_enabled(window, true)?;
-    let state = current_main_window_surface_state()?;
-    set_window_non_client_rendering(window, state.native_frame_enabled)?;
+    set_window_non_client_rendering(window)?;
     refresh_main_window_frame(window)?;
     apply_main_window_borderless_fullscreen_bounds(window)
 }
@@ -741,7 +828,14 @@ fn apply_main_window_borderless_fullscreen_bounds(window: &WebviewWindow) -> Res
     if !unsafe { GetMonitorInfoW(monitor, &mut info).as_bool() } {
         return Err("Failed to read monitor info for borderless fullscreen bounds".to_string());
     }
-    let rect = info.rcMonitor;
+    let monitor_rect = info.rcMonitor;
+    // Keep the top-level surface larger than the output while constraining the
+    // child WebView to the monitor's exact pixel bounds.
+    let mut rect = monitor_rect;
+    rect.left -= EXPERIMENT_FULLSCREEN_OVERSCAN_PX;
+    rect.top -= EXPERIMENT_FULLSCREEN_OVERSCAN_PX;
+    rect.right += EXPERIMENT_FULLSCREEN_OVERSCAN_PX;
+    rect.bottom += EXPERIMENT_FULLSCREEN_OVERSCAN_PX;
     if unsafe { IsZoomed(hwnd).as_bool() } {
         let mut placement = WINDOWPLACEMENT {
             length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
@@ -776,7 +870,45 @@ fn apply_main_window_borderless_fullscreen_bounds(window: &WebviewWindow) -> Res
         context: "SetWindowPos(borderless fullscreen bounds)",
         source,
     })?;
+    let webview: &tauri::Webview = window.as_ref();
+    webview
+        .set_auto_resize(false)
+        .map_err(|source| NativeError::Tauri {
+            context: "Webview::set_auto_resize(false) for fullscreen mode",
+            source,
+        })?;
+    set_main_window_fullscreen_webview_bounds(
+        window,
+        tauri::PhysicalSize::new(
+            (monitor_rect.right - monitor_rect.left) as u32,
+            (monitor_rect.bottom - monitor_rect.top) as u32,
+        ),
+    )?;
+    set_main_window_tauri_resize_border_visible(window, false)?;
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn set_main_window_fullscreen_webview_bounds(
+    window: &WebviewWindow,
+    monitor_size: tauri::PhysicalSize<u32>,
+) -> Result<(), String> {
+    let webview: &tauri::Webview = window.as_ref();
+    webview
+        .set_bounds(tauri::Rect {
+            position: tauri::Position::Physical(tauri::PhysicalPosition::new(
+                EXPERIMENT_FULLSCREEN_OVERSCAN_PX,
+                EXPERIMENT_FULLSCREEN_OVERSCAN_PX,
+            )),
+            size: tauri::Size::Physical(monitor_size),
+        })
+        .map_err(|source| {
+            NativeError::Tauri {
+                context: "Webview::set_bounds for fullscreen mode",
+                source,
+            }
+            .into()
+        })
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -921,7 +1053,7 @@ fn apply_main_window_win32_surface_policy(
             restore_main_window_resizable_frame_style(window)?;
             set_main_window_non_client_subclass(window, true)?;
             set_window_transitions_enabled(window, true)?;
-            set_window_non_client_rendering(window, native_frame_enabled)?;
+            set_window_non_client_rendering(window)?;
             set_main_window_topmost(window, true)?;
             refresh_main_window_frame(window)?;
             apply_main_window_borderless_fullscreen_bounds(window)?;
@@ -934,9 +1066,10 @@ fn apply_main_window_win32_surface_policy(
             } else {
                 set_main_window_non_client_subclass(window, false)?;
             }
-            set_window_non_client_rendering(window, native_frame_enabled)?;
+            set_window_non_client_rendering(window)?;
             set_main_window_topmost(window, false)?;
             refresh_main_window_frame(window)?;
+            set_main_window_tauri_resize_border_visible(window, true)?;
         }
     }
     set_window_border_enabled(window, native_frame_enabled)?;
@@ -977,16 +1110,37 @@ fn activate_window(window: &WebviewWindow) -> Result<(), String> {
         context: "WebviewWindow::hwnd for activation",
         source,
     })?;
-    unsafe {
-        let _ = BringWindowToTop(hwnd);
-        let _ = SetForegroundWindow(hwnd);
+    if is_main_window_foreground(window) {
+        return Ok(());
     }
-    Ok(())
+    let bring_result = unsafe { BringWindowToTop(hwnd) };
+    let foreground_requested = unsafe { SetForegroundWindow(hwnd) }.as_bool();
+    if is_main_window_foreground(window) {
+        return Ok(());
+    }
+    if let Err(source) = bring_result {
+        return Err(NativeError::Win32 {
+            context: "BringWindowToTop for activation",
+            source,
+        }
+        .into());
+    }
+    Err(format!(
+        "SetForegroundWindow returned {foreground_requested}, but the main window did not become foreground"
+    ))
 }
 
 #[cfg(not(target_os = "windows"))]
 fn activate_window(_window: &WebviewWindow) -> Result<(), String> {
     Ok(())
+}
+
+fn focus_and_activate_window(window: &WebviewWindow) -> Result<(), String> {
+    window.set_focus().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::set_focus for activation",
+        source,
+    })?;
+    activate_window(window)
 }
 
 pub(crate) fn set_main_window_effects_enabled(
