@@ -27,6 +27,7 @@ import {
   DEFAULT_BACKGROUND_IMAGE_LAYOUT,
   DEFAULT_BACKGROUND_IMAGE_OPACITY,
   DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY,
+  DEFAULT_FULLSCREEN_OVERSCAN_ENABLED,
   DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT,
   DEFAULT_SHOW_CUSTOM_TITLEBAR,
   DEFAULT_WINDOW_MODE,
@@ -116,6 +117,8 @@ export function useLaunchpadControllerState() {
   const draftWindowEffectAppearance = ref(WINDOW_EFFECT_APPEARANCE_DARK);
   const windowMode = ref(DEFAULT_WINDOW_MODE);
   const draftWindowMode = ref(DEFAULT_WINDOW_MODE);
+  const fullscreenOverscanEnabled = ref(DEFAULT_FULLSCREEN_OVERSCAN_ENABLED);
+  const draftFullscreenOverscanEnabled = ref(DEFAULT_FULLSCREEN_OVERSCAN_ENABLED);
   const showCustomTitlebar = ref(DEFAULT_SHOW_CUSTOM_TITLEBAR);
   const draftShowCustomTitlebar = ref(DEFAULT_SHOW_CUSTOM_TITLEBAR);
   const mainWindowShortcut = ref(DEFAULT_MAIN_WINDOW_SHORTCUT);
@@ -255,6 +258,7 @@ export function useLaunchpadControllerState() {
     draftFolderIconSize,
     draftFolderIconSizeMode,
     draftFolderRows,
+    draftFullscreenOverscanEnabled,
     draftIconSize,
     draftIsTextlessMode,
     draftRows,
@@ -272,6 +276,7 @@ export function useLaunchpadControllerState() {
     folderPanelRef,
     folderRows,
     folderViewportRef,
+    fullscreenOverscanEnabled,
     gridCols,
     gridRows,
     headerRef,

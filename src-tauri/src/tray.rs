@@ -1,6 +1,6 @@
 use std::{
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Mutex,
     },
     time::Duration,
@@ -30,7 +30,7 @@ const MAIN_WINDOW_RESTORE_TRANSITIONS_DELAY_MS: u64 = 80;
 const MAIN_WINDOW_DEFERRED_SHOW_DELAY_MS: u64 = 0;
 const MAIN_WINDOW_CLOAKED_REVEAL_FALLBACK_DELAY_MS: u64 = 160;
 const MAIN_WINDOW_NON_CLIENT_SUBCLASS_ID: usize = 1;
-const EXPERIMENT_FULLSCREEN_OVERSCAN_PX: i32 = 1;
+const FULLSCREEN_OVERSCAN_PX: i32 = 1;
 const EXPERIMENT_WINDOWED_THICKFRAME_NCCALCSIZE: bool = true;
 const WM_NCUAHDRAWCAPTION: u32 = 0x00AE;
 const WM_NCUAHDRAWFRAME: u32 = 0x00AF;
@@ -59,6 +59,34 @@ impl MainWindowRect {
 
     fn height(self) -> i32 {
         self.bottom.saturating_sub(self.top).max(0)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct MainWindowFullscreenGeometry {
+    window_rect: MainWindowRect,
+    webview_offset: (i32, i32),
+    webview_size: (u32, u32),
+}
+
+fn resolve_main_window_fullscreen_geometry(
+    monitor_rect: MainWindowRect,
+    overscan_enabled: bool,
+) -> MainWindowFullscreenGeometry {
+    let overscan_px = if overscan_enabled {
+        FULLSCREEN_OVERSCAN_PX
+    } else {
+        0
+    };
+    MainWindowFullscreenGeometry {
+        window_rect: MainWindowRect::new(
+            monitor_rect.left - overscan_px,
+            monitor_rect.top - overscan_px,
+            monitor_rect.right + overscan_px,
+            monitor_rect.bottom + overscan_px,
+        ),
+        webview_offset: (overscan_px, overscan_px),
+        webview_size: (monitor_rect.width() as u32, monitor_rect.height() as u32),
     }
 }
 
@@ -112,6 +140,7 @@ impl MainWindowSurfaceState {
 
 static MAIN_WINDOW_EFFECT_DISABLE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static MAIN_WINDOW_OPEN_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static MAIN_WINDOW_FULLSCREEN_OVERSCAN_ENABLED: AtomicBool = AtomicBool::new(true);
 static MAIN_WINDOW_MODE: Mutex<MainWindowMode> = Mutex::new(MainWindowMode::DEFAULT);
 static MAIN_WINDOW_SURFACE_STATE: Mutex<MainWindowSurfaceState> =
     Mutex::new(MainWindowSurfaceState::DEFAULT);
@@ -322,9 +351,14 @@ pub(crate) fn apply_main_window_mode(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn set_main_window_mode(app: &AppHandle, mode: &str) -> Result<String, String> {
+pub(crate) fn set_main_window_mode(
+    app: &AppHandle,
+    mode: &str,
+    fullscreen_overscan_enabled: bool,
+) -> Result<String, String> {
     let next = MainWindowMode::from_str(mode)
         .ok_or_else(|| format!("Unsupported main window mode: {mode}"))?;
+    MAIN_WINDOW_FULLSCREEN_OVERSCAN_ENABLED.store(fullscreen_overscan_enabled, Ordering::Relaxed);
     let previous = current_main_window_mode()?;
     if let Some(window) = app.get_webview_window("main") {
         if previous == MainWindowMode::Windowed && next == MainWindowMode::Fullscreen {
@@ -1209,13 +1243,11 @@ fn apply_main_window_borderless_fullscreen_rect(
         context: "WebviewWindow::hwnd for explicit borderless fullscreen bounds",
         source,
     })?;
-    // Keep the top-level surface larger than the output while constraining the
-    // child WebView to the monitor's exact pixel bounds.
-    let mut rect = monitor_rect;
-    rect.left -= EXPERIMENT_FULLSCREEN_OVERSCAN_PX;
-    rect.top -= EXPERIMENT_FULLSCREEN_OVERSCAN_PX;
-    rect.right += EXPERIMENT_FULLSCREEN_OVERSCAN_PX;
-    rect.bottom += EXPERIMENT_FULLSCREEN_OVERSCAN_PX;
+    let geometry = resolve_main_window_fullscreen_geometry(
+        monitor_rect,
+        MAIN_WINDOW_FULLSCREEN_OVERSCAN_ENABLED.load(Ordering::Relaxed),
+    );
+    let rect = geometry.window_rect;
     if unsafe { IsZoomed(hwnd).as_bool() } {
         let mut placement = WINDOWPLACEMENT {
             length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
@@ -1257,10 +1289,7 @@ fn apply_main_window_borderless_fullscreen_rect(
             context: "Webview::set_auto_resize(false) for fullscreen mode",
             source,
         })?;
-    set_main_window_fullscreen_webview_bounds(
-        window,
-        tauri::PhysicalSize::new(monitor_rect.width() as u32, monitor_rect.height() as u32),
-    )?;
+    set_main_window_fullscreen_webview_bounds(window, geometry)?;
     set_main_window_tauri_resize_border_visible(window, false)?;
     Ok(())
 }
@@ -1268,16 +1297,19 @@ fn apply_main_window_borderless_fullscreen_rect(
 #[cfg(target_os = "windows")]
 fn set_main_window_fullscreen_webview_bounds(
     window: &WebviewWindow,
-    monitor_size: tauri::PhysicalSize<u32>,
+    geometry: MainWindowFullscreenGeometry,
 ) -> Result<(), String> {
     let webview: &tauri::Webview = window.as_ref();
     webview
         .set_bounds(tauri::Rect {
             position: tauri::Position::Physical(tauri::PhysicalPosition::new(
-                EXPERIMENT_FULLSCREEN_OVERSCAN_PX,
-                EXPERIMENT_FULLSCREEN_OVERSCAN_PX,
+                geometry.webview_offset.0,
+                geometry.webview_offset.1,
             )),
-            size: tauri::Size::Physical(monitor_size),
+            size: tauri::Size::Physical(tauri::PhysicalSize::new(
+                geometry.webview_size.0,
+                geometry.webview_size.1,
+            )),
         })
         .map_err(|source| {
             NativeError::Tauri {
@@ -1915,6 +1947,29 @@ mod tests {
             screen_rect_to_window_placement_coordinates(screen_rect, monitor, work),
             MainWindowRect::new(-1640, 100, -360, 920)
         );
+    }
+
+    #[test]
+    fn fullscreen_overscan_expands_the_outer_surface_without_resizing_the_webview() {
+        let geometry =
+            resolve_main_window_fullscreen_geometry(MainWindowRect::new(-2560, 0, 0, 1080), true);
+
+        assert_eq!(
+            geometry.window_rect,
+            MainWindowRect::new(-2561, -1, 1, 1081)
+        );
+        assert_eq!(geometry.webview_offset, (1, 1));
+        assert_eq!(geometry.webview_size, (2560, 1080));
+    }
+
+    #[test]
+    fn disabled_fullscreen_overscan_uses_the_exact_monitor_bounds() {
+        let geometry =
+            resolve_main_window_fullscreen_geometry(MainWindowRect::new(-2560, 0, 0, 1080), false);
+
+        assert_eq!(geometry.window_rect, MainWindowRect::new(-2560, 0, 0, 1080));
+        assert_eq!(geometry.webview_offset, (0, 0));
+        assert_eq!(geometry.webview_size, (2560, 1080));
     }
 
     #[test]

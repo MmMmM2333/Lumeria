@@ -524,8 +524,12 @@ fn set_main_window_effects_enabled(
 }
 
 #[tauri::command]
-fn set_main_window_mode(app: AppHandle, mode: String) -> Result<String, String> {
-    tray::set_main_window_mode(&app, &mode)
+fn set_main_window_mode(
+    app: AppHandle,
+    mode: String,
+    fullscreen_overscan_enabled: bool,
+) -> Result<String, String> {
+    tray::set_main_window_mode(&app, &mode, fullscreen_overscan_enabled)
 }
 
 #[tauri::command]

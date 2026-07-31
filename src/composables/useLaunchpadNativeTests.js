@@ -26,6 +26,7 @@ import {
   DEFAULT_BACKGROUND_BLUR_STRENGTH,
   DEFAULT_BACKGROUND_DARKEN_COLOR,
   DEFAULT_BACKGROUND_DARKEN_STRENGTH,
+  DEFAULT_FULLSCREEN_OVERSCAN_ENABLED,
   DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY,
   DEFAULT_SHOW_CUSTOM_TITLEBAR,
   DEFAULT_WINDOW_MODE,
@@ -91,6 +92,7 @@ function makeOptions(overrides = {}) {
     draftWindowEffectAppearance: ref(WINDOW_EFFECT_APPEARANCE_DARK),
     draftWindowEffectMaterial: ref(WINDOW_EFFECT_MATERIAL_ACRYLIC),
     draftWindowMode: ref(DEFAULT_WINDOW_MODE),
+    draftFullscreenOverscanEnabled: ref(DEFAULT_FULLSCREEN_OVERSCAN_ENABLED),
     draftShowCustomTitlebar: ref(DEFAULT_SHOW_CUSTOM_TITLEBAR),
     draftMainWindowShortcut: ref(DEFAULT_MAIN_WINDOW_SHORTCUT),
     folderCols: ref(4),
@@ -129,6 +131,7 @@ function makeOptions(overrides = {}) {
     windowEffectAppearance: ref(WINDOW_EFFECT_APPEARANCE_DARK),
     windowEffectMaterial: ref(WINDOW_EFFECT_MATERIAL_ACRYLIC),
     windowMode: ref(DEFAULT_WINDOW_MODE),
+    fullscreenOverscanEnabled: ref(DEFAULT_FULLSCREEN_OVERSCAN_ENABLED),
     showCustomTitlebar: ref(DEFAULT_SHOW_CUSTOM_TITLEBAR),
     mainWindowShortcut: ref(DEFAULT_MAIN_WINDOW_SHORTCUT),
     mainWindowShortcutError: ref(""),
@@ -407,6 +410,7 @@ export async function runLaunchpadNativeTests() {
           windowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
           windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
           windowMode: WINDOW_MODE_WINDOWED,
+          fullscreenOverscanEnabled: false,
           showCustomTitlebar: false,
           mainWindowShortcut: "control+alt+KeyL",
           backgroundBaseColor: "#ABC",
@@ -451,6 +455,8 @@ export async function runLaunchpadNativeTests() {
     assert(options.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "native load should apply saved window effect appearance");
     assert(options.windowMode.value === WINDOW_MODE_WINDOWED, "native load should apply saved window mode");
     assert(options.draftWindowMode.value === WINDOW_MODE_WINDOWED, "native load should sync window mode draft");
+    assert(options.fullscreenOverscanEnabled.value === false, "native load should apply disabled fullscreen overscan");
+    assert(options.draftFullscreenOverscanEnabled.value === false, "native load should sync the fullscreen overscan draft");
     assert(options.showCustomTitlebar.value === false, "native load should apply saved custom titlebar visibility");
     assert(options.draftShowCustomTitlebar.value === false, "native load should sync custom titlebar visibility draft");
     assert(options.mainWindowShortcut.value === "control+alt+KeyL", "native load should apply saved main window shortcut");
@@ -493,6 +499,7 @@ export async function runLaunchpadNativeTests() {
     assert(effectsCommands[0].appearance === WINDOW_EFFECT_APPEARANCE_LIGHT, "window effect refresh should pass the selected appearance");
     assert(windowModeCommands.length === 1, "native load should refresh window mode once");
     assert(windowModeCommands[0].mode === WINDOW_MODE_WINDOWED, "window mode refresh should pass the selected mode");
+    assert(windowModeCommands[0].fullscreenOverscanEnabled === false, "window mode refresh should pass the fullscreen overscan preference");
   }, {
     passWindowEffectsCommand: true,
     passWindowEffectsSupport: true,

@@ -23,6 +23,7 @@ import {
   BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
   DEFAULT_BACKGROUND_BASE_COLOR,
   DEFAULT_BACKGROUND_BASE_OPACITY,
+  DEFAULT_FULLSCREEN_OVERSCAN_ENABLED,
   DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT,
   DEFAULT_SHOW_CUSTOM_TITLEBAR,
   DEFAULT_WINDOW_MODE,
@@ -51,6 +52,7 @@ import {
   normalizeBackgroundImagePath,
   normalizeBackgroundEffect,
   normalizeLiveDesktopBackgroundSupport,
+  normalizeFullscreenOverscanEnabled,
   normalizeShowCustomTitlebar,
   normalizeWindowEffectAppearance,
   normalizeWindowEffectMaterial,
@@ -112,6 +114,7 @@ function createSettingsConfig(overrides = {}) {
     draftWindowEffectMaterial: refValue(overrides.draftWindowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
     draftWindowEffectAppearance: refValue(overrides.draftWindowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_DARK),
     draftWindowMode: refValue(overrides.draftWindowMode ?? DEFAULT_WINDOW_MODE),
+    draftFullscreenOverscanEnabled: refValue(overrides.draftFullscreenOverscanEnabled ?? DEFAULT_FULLSCREEN_OVERSCAN_ENABLED),
     draftShowCustomTitlebar: refValue(overrides.draftShowCustomTitlebar ?? DEFAULT_SHOW_CUSTOM_TITLEBAR),
     draftMainWindowShortcut: refValue(Object.prototype.hasOwnProperty.call(overrides, "draftMainWindowShortcut") ? overrides.draftMainWindowShortcut : DEFAULT_MAIN_WINDOW_SHORTCUT),
     isTextlessMode: refValue(overrides.isTextlessMode ?? false),
@@ -134,6 +137,7 @@ function createSettingsConfig(overrides = {}) {
     windowEffectMaterial: refValue(overrides.windowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
     windowEffectAppearance: refValue(overrides.windowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_DARK),
     windowMode: refValue(overrides.windowMode ?? DEFAULT_WINDOW_MODE),
+    fullscreenOverscanEnabled: refValue(overrides.fullscreenOverscanEnabled ?? DEFAULT_FULLSCREEN_OVERSCAN_ENABLED),
     showCustomTitlebar: refValue(overrides.showCustomTitlebar ?? DEFAULT_SHOW_CUSTOM_TITLEBAR),
     mainWindowShortcut: refValue(Object.prototype.hasOwnProperty.call(overrides, "mainWindowShortcut") ? overrides.mainWindowShortcut : DEFAULT_MAIN_WINDOW_SHORTCUT),
     mainWindowShortcutError: refValue(""),
@@ -237,6 +241,7 @@ function createSettingsConfig(overrides = {}) {
     draftWindowEffectAppearance: state.draftWindowEffectAppearance,
     draftWindowEffectMaterial: state.draftWindowEffectMaterial,
     draftWindowMode: state.draftWindowMode,
+    draftFullscreenOverscanEnabled: state.draftFullscreenOverscanEnabled,
     draftShowCustomTitlebar: state.draftShowCustomTitlebar,
     draftMainWindowShortcut: state.draftMainWindowShortcut,
     ensurePage: helpers.ensurePage,
@@ -280,6 +285,7 @@ function createSettingsConfig(overrides = {}) {
     windowEffectAppearance: state.windowEffectAppearance,
     windowEffectMaterial: state.windowEffectMaterial,
     windowMode: state.windowMode,
+    fullscreenOverscanEnabled: state.fullscreenOverscanEnabled,
     showCustomTitlebar: state.showCustomTitlebar,
     windowEffectsSupport: state.windowEffectsSupport,
     liveDesktopBackgroundSupport: state.liveDesktopBackgroundSupport,
@@ -352,6 +358,8 @@ export async function runLaunchpadSettingsConfigTests() {
   assert(normalizeWindowEffectAppearance("unknown") === WINDOW_EFFECT_APPEARANCE_DARK, "unknown window effect appearances should fall back to dark");
   assert(normalizeWindowMode(WINDOW_MODE_WINDOWED) === WINDOW_MODE_WINDOWED, "windowed mode should be preserved");
   assert(normalizeWindowMode("unknown") === DEFAULT_WINDOW_MODE, "unknown window modes should fall back to fullscreen");
+  assert(normalizeFullscreenOverscanEnabled(false) === false, "disabled fullscreen overscan should be preserved");
+  assert(normalizeFullscreenOverscanEnabled(undefined) === DEFAULT_FULLSCREEN_OVERSCAN_ENABLED, "missing fullscreen overscan should use the compatible default");
   assert(normalizeShowCustomTitlebar(false) === false, "disabled custom titlebar visibility should be preserved");
   assert(normalizeShowCustomTitlebar(undefined) === DEFAULT_SHOW_CUSTOM_TITLEBAR, "missing custom titlebar visibility should use the compatible default");
   assert(
@@ -418,6 +426,7 @@ export async function runLaunchpadSettingsConfigTests() {
     windowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
     windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
     windowMode: WINDOW_MODE_WINDOWED,
+    fullscreenOverscanEnabled: false,
     showCustomTitlebar: false,
     mainWindowShortcut: "control+alt+KeyL",
   });
@@ -447,6 +456,7 @@ export async function runLaunchpadSettingsConfigTests() {
   assert(sync.state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "sync should reset window effect material draft from current settings");
   assert(sync.state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "sync should reset window effect appearance draft from current settings");
   assert(sync.state.draftWindowMode.value === WINDOW_MODE_WINDOWED, "sync should reset window mode draft from current settings");
+  assert(sync.state.draftFullscreenOverscanEnabled.value === false, "sync should reset the fullscreen overscan draft from current settings");
   assert(sync.state.draftShowCustomTitlebar.value === false, "sync should reset the custom titlebar draft from current settings");
   assert(sync.state.draftMainWindowShortcut.value === "control+alt+KeyL", "sync should reset main window shortcut draft from current settings");
 
@@ -620,6 +630,7 @@ export async function runLaunchpadSettingsConfigTests() {
     draftWindowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
     draftWindowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
     draftWindowMode: WINDOW_MODE_WINDOWED,
+    draftFullscreenOverscanEnabled: false,
     draftShowCustomTitlebar: false,
     pages: [makeItems(7)],
   });
@@ -649,6 +660,7 @@ export async function runLaunchpadSettingsConfigTests() {
   assert(apply.state.windowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "window effect material should apply from the draft value");
   assert(apply.state.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "window effect appearance should apply from the draft value");
   assert(apply.state.windowMode.value === WINDOW_MODE_WINDOWED, "window mode should apply from the draft value");
+  assert(apply.state.fullscreenOverscanEnabled.value === false, "fullscreen overscan should apply from the draft value");
   assert(apply.state.showCustomTitlebar.value === false, "custom titlebar visibility should apply from the draft value");
   assert(apply.state.mainWindowShortcut.value === DEFAULT_MAIN_WINDOW_SHORTCUT, "unchanged shortcuts should remain at the current value");
   assert(apply.calls.applyNativeMainWindowShortcut.length === 0, "unchanged shortcuts should not call native shortcut registration");

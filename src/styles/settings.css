@@ -698,6 +698,12 @@
   white-space: nowrap;
 }
 
+.settings-list-description-wrap {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .settings-list-control {
   display: inline-flex;
   align-items: center;

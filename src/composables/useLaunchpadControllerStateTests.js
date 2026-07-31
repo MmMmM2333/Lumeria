@@ -20,6 +20,7 @@ import {
   DEFAULT_BACKGROUND_DARKEN_STRENGTH,
   DEFAULT_BACKGROUND_IMAGE_LAYOUT,
   DEFAULT_BACKGROUND_IMAGE_OPACITY,
+  DEFAULT_FULLSCREEN_OVERSCAN_ENABLED,
   DEFAULT_SHOW_CUSTOM_TITLEBAR,
   FOLDER_ICON_SIZE_MODE_GLOBAL,
   DEFAULT_WINDOW_MODE,
@@ -80,6 +81,8 @@ export function runLaunchpadControllerStateTests() {
   assert(state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_DARK, "draft window effect appearance should default to dark");
   assert(state.windowMode.value === DEFAULT_WINDOW_MODE, "window mode should default to fullscreen");
   assert(state.draftWindowMode.value === DEFAULT_WINDOW_MODE, "draft window mode should default to fullscreen");
+  assert(state.fullscreenOverscanEnabled.value === DEFAULT_FULLSCREEN_OVERSCAN_ENABLED, "fullscreen overscan should be enabled by default");
+  assert(state.draftFullscreenOverscanEnabled.value === DEFAULT_FULLSCREEN_OVERSCAN_ENABLED, "draft fullscreen overscan should be enabled by default");
   assert(state.showCustomTitlebar.value === DEFAULT_SHOW_CUSTOM_TITLEBAR, "custom titlebar should be visible by default");
   assert(state.draftShowCustomTitlebar.value === DEFAULT_SHOW_CUSTOM_TITLEBAR, "draft custom titlebar should be visible by default");
   assert(state.mainWindowShortcut.value === DEFAULT_MAIN_WINDOW_SHORTCUT, "main window shortcut should use the default");

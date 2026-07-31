@@ -78,6 +78,7 @@ import {
   normalizeBackgroundImagePath,
   normalizeBackgroundSource,
   normalizeLiveDesktopBackgroundSupport,
+  normalizeFullscreenOverscanEnabled,
   normalizeShowCustomTitlebar,
   normalizeWindowMode,
   normalizeWindowEffectAppearance,
@@ -436,6 +437,7 @@ export function useLaunchpadNative(options) {
     );
     const nextWindowEffectAppearance = normalizeWindowEffectAppearance(settings.windowEffectAppearance);
     const nextWindowMode = normalizeWindowMode(settings.windowMode);
+    const nextFullscreenOverscanEnabled = normalizeFullscreenOverscanEnabled(settings.fullscreenOverscanEnabled);
     const nextShowCustomTitlebar = normalizeShowCustomTitlebar(settings.showCustomTitlebar);
     const nextMainWindowShortcut = normalizeMainWindowShortcut(settings.mainWindowShortcut);
     const nextBackgroundSource = normalizeBackgroundSource(settings.backgroundSource);
@@ -486,6 +488,8 @@ export function useLaunchpadNative(options) {
     options.draftWindowEffectAppearance.value = nextWindowEffectAppearance;
     options.windowMode.value = nextWindowMode;
     options.draftWindowMode.value = nextWindowMode;
+    options.fullscreenOverscanEnabled.value = nextFullscreenOverscanEnabled;
+    options.draftFullscreenOverscanEnabled.value = nextFullscreenOverscanEnabled;
     options.showCustomTitlebar.value = nextShowCustomTitlebar;
     options.draftShowCustomTitlebar.value = nextShowCustomTitlebar;
     options.mainWindowShortcut.value = nextMainWindowShortcut;
@@ -613,6 +617,7 @@ export function useLaunchpadNative(options) {
       windowEffectMaterial: options.windowEffectMaterial.value,
       windowEffectAppearance: options.windowEffectAppearance.value,
       windowMode: options.windowMode.value,
+      fullscreenOverscanEnabled: options.fullscreenOverscanEnabled.value,
       showCustomTitlebar: options.showCustomTitlebar.value,
       mainWindowShortcut: options.mainWindowShortcut.value,
     });
@@ -1330,7 +1335,9 @@ export function useLaunchpadNative(options) {
     if (!isNativeBridgeAvailable()) return;
     const nextMode = normalizeWindowMode(mode);
     nativeWindowModeUpdate = nativeWindowModeUpdate
-      .then(() => setMainWindowMode(nextMode))
+      .then(() => setMainWindowMode(nextMode, {
+        fullscreenOverscanEnabled: options.fullscreenOverscanEnabled.value,
+      }))
       .catch((error) => {
         console.error("Failed to update Lumeria window mode", error);
       });

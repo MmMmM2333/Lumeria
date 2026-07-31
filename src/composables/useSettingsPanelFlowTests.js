@@ -83,6 +83,7 @@ function createSettingsPanelFlowHarness(overrides = {}) {
     windowEffectMaterial: ref(overrides.windowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_MICA_ALT),
     windowEffectAppearance: ref(overrides.windowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_LIGHT),
     windowMode: ref(overrides.windowMode ?? WINDOW_MODE_WINDOWED),
+    fullscreenOverscanEnabled: ref(overrides.fullscreenOverscanEnabled ?? true),
     showCustomTitlebar: ref(overrides.showCustomTitlebar ?? false),
     draftRows: ref(overrides.draftRows ?? 8),
     draftCols: ref(overrides.draftCols ?? 10),
@@ -111,6 +112,7 @@ function createSettingsPanelFlowHarness(overrides = {}) {
     draftWindowEffectMaterial: ref(overrides.draftWindowEffectMaterial ?? WINDOW_EFFECT_MATERIAL_ACRYLIC),
     draftWindowEffectAppearance: ref(overrides.draftWindowEffectAppearance ?? WINDOW_EFFECT_APPEARANCE_DARK),
     draftWindowMode: ref(overrides.draftWindowMode ?? DEFAULT_WINDOW_MODE),
+    draftFullscreenOverscanEnabled: ref(overrides.draftFullscreenOverscanEnabled ?? false),
     draftShowCustomTitlebar: ref(overrides.draftShowCustomTitlebar ?? true),
   };
   const calls = {
@@ -166,6 +168,7 @@ export function runSettingsPanelFlowTests() {
     assert(state.draftWindowEffectMaterial.value === WINDOW_EFFECT_MATERIAL_MICA_ALT, "opening settings should reset window effect material draft");
     assert(state.draftWindowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_LIGHT, "opening settings should reset window effect appearance draft");
     assert(state.draftWindowMode.value === WINDOW_MODE_WINDOWED, "opening settings should reset window mode draft");
+    assert(state.draftFullscreenOverscanEnabled.value === true, "opening settings should reset the fullscreen overscan draft");
     assert(state.draftShowCustomTitlebar.value === false, "opening settings should reset custom titlebar visibility draft");
 
     state.draftRows.value = 2;

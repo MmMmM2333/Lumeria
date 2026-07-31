@@ -141,6 +141,7 @@ export function runLaunchpadDataTests() {
     windowEffectMaterial: "mica",
     windowEffectAppearance: "light",
     windowMode: "windowed",
+    fullscreenOverscanEnabled: false,
     showCustomTitlebar: false,
     mainWindowShortcut: "control+alt+KeyL",
   });
@@ -167,6 +168,7 @@ export function runLaunchpadDataTests() {
   assert(snapshot.settings.backgroundImagePath === "C:/Images/custom.webp", "layout snapshots should include the trimmed custom background image path");
   assert(snapshot.settings.windowEffectMaterial === "mica" && snapshot.settings.windowEffectAppearance === "light", "layout snapshots should include window effect settings");
   assert(snapshot.settings.windowMode === "windowed", "layout snapshots should include window mode settings");
+  assert(snapshot.settings.fullscreenOverscanEnabled === false, "layout snapshots should preserve disabled fullscreen overscan");
   assert(snapshot.settings.showCustomTitlebar === false, "layout snapshots should include custom titlebar visibility");
   assert(snapshot.settings.mainWindowShortcut === "control+alt+KeyL", "layout snapshots should include the main window shortcut");
   const disabledShortcutSnapshot = dataHelpers.createLayoutSnapshot({

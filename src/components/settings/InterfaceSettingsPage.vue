@@ -786,6 +786,55 @@
         </div>
       </div>
     </section>
+
+    <section class="settings-section settings-section-plain" aria-label="高级">
+      <div class="settings-section-header">
+        <div>
+          <h3>高级</h3>
+        </div>
+      </div>
+
+      <div class="settings-list">
+        <div class="settings-list-expandable">
+          <button
+            type="button"
+            class="settings-list-row settings-list-row-button"
+            :aria-expanded="isAdvancedExpanded"
+            @click="isAdvancedExpanded = !isAdvancedExpanded"
+          >
+            <span class="settings-list-icon" aria-hidden="true">
+              <SettingsIcon />
+            </span>
+            <span class="settings-list-copy">
+              <span class="settings-list-title">高级选项</span>
+              <span class="settings-list-description">兼容性与原生窗口行为</span>
+            </span>
+            <ChevronDownIcon :class="c.cx('settings-list-chevron', isAdvancedExpanded && 'settings-list-chevron-open')" />
+          </button>
+
+          <Transition name="settings-expand">
+            <div v-if="isAdvancedExpanded" class="settings-list-expand-shell">
+              <div class="settings-list-expand">
+                <label class="settings-toggle">
+                  <span class="settings-field-copy">
+                    <span class="settings-list-title">启用全屏超扫</span>
+                    <span class="settings-list-description settings-list-description-wrap">
+                      全屏时将窗口向显示器四边各扩展 1 个物理像素，可缓解多显示器环境下 Acrylic 背景闪烁；关闭可能重新出现该问题
+                    </span>
+                  </span>
+                  <fluent-switch
+                    :checked.prop="state.draftFullscreenOverscanEnabled.value"
+                    name="fullscreenOverscanEnabled"
+                    aria-label="启用全屏超扫"
+                    @change="state.setDraftFullscreenOverscanEnabled($event.target.checked)"
+                  />
+                </label>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -797,6 +846,7 @@ import ChevronDownIcon from "~icons/fluent/chevron-down-20-regular";
 import ColorBackgroundIcon from "~icons/fluent/color-background-24-regular";
 import ImageIcon from "~icons/fluent/image-24-regular";
 import PaintBrushIcon from "~icons/fluent/paint-brush-24-regular";
+import SettingsIcon from "~icons/fluent/settings-24-regular";
 import WindowIcon from "~icons/fluent/window-24-regular";
 import BackgroundEffectPreview from "../BackgroundEffectPreview.vue";
 import BackgroundImagePreviewCanvas from "../BackgroundImagePreviewCanvas.vue";
@@ -814,6 +864,7 @@ const c = props.context;
 const isWindowMaterialExpanded = ref(false);
 const isBackgroundLayerExpanded = ref(false);
 const isBackgroundEffectExpanded = ref(false);
+const isAdvancedExpanded = ref(false);
 const activeWindowEffectItem = computed(() => (
   c.windowEffectPreviewItems.value.find((item) => item.active)
   || c.windowEffectPreviewItems.value[0]

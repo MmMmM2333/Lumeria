@@ -225,10 +225,13 @@ export async function setMainWindowEffectsEnabled(enabled, openSequence = null, 
   return true;
 }
 
-export async function setMainWindowMode(mode) {
+export async function setMainWindowMode(mode, options = {}) {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
-  await invoke("set_main_window_mode", { mode });
+  await invoke("set_main_window_mode", {
+    mode,
+    fullscreenOverscanEnabled: options?.fullscreenOverscanEnabled !== false,
+  });
   return true;
 }
 

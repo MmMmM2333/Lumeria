@@ -239,6 +239,12 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
     {
         return Err("layout settings.showCustomTitlebar must be a boolean".to_string());
     }
+    if object
+        .get("fullscreenOverscanEnabled")
+        .is_some_and(|value| !value.is_boolean())
+    {
+        return Err("layout settings.fullscreenOverscanEnabled must be a boolean".to_string());
+    }
     if let Some(value) = object.get("windowEffectMaterial") {
         match value.as_str() {
             Some("none" | "acrylic" | "mica" | "micaAlt" | "mica-alt") => {}
@@ -988,6 +994,21 @@ mod tests {
             .expect_err("non-boolean custom titlebar visibility should fail");
 
         assert!(error.contains("showCustomTitlebar"));
+        assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_rejects_invalid_fullscreen_overscan_preference() {
+        let dir = test_dir("invalid-fullscreen-overscan-preference");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        invalid["settings"]["fullscreenOverscanEnabled"] = json!("yes");
+
+        let error = save_layout_to_path(&path, &invalid)
+            .expect_err("non-boolean fullscreen overscan preference should fail");
+
+        assert!(error.contains("fullscreenOverscanEnabled"));
         assert!(!path.exists(), "invalid layout should not be written");
         fs::remove_dir_all(dir).expect("remove test directory");
     }

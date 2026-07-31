@@ -138,6 +138,7 @@ export const WINDOW_EFFECT_APPEARANCE_LIGHT = "light";
 export const WINDOW_MODE_FULLSCREEN = "fullscreen";
 export const WINDOW_MODE_WINDOWED = "windowed";
 export const DEFAULT_WINDOW_MODE = WINDOW_MODE_FULLSCREEN;
+export const DEFAULT_FULLSCREEN_OVERSCAN_ENABLED = true;
 export const DEFAULT_SHOW_CUSTOM_TITLEBAR = true;
 export const DEFAULT_WINDOW_EFFECTS_SUPPORT = Object.freeze({
   platform: "unknown",
@@ -215,6 +216,10 @@ export function normalizeWindowMode(value) {
   return value === WINDOW_MODE_WINDOWED ? WINDOW_MODE_WINDOWED : WINDOW_MODE_FULLSCREEN;
 }
 
+export function normalizeFullscreenOverscanEnabled(value) {
+  return typeof value === "boolean" ? value : DEFAULT_FULLSCREEN_OVERSCAN_ENABLED;
+}
+
 export function normalizeShowCustomTitlebar(value) {
   return typeof value === "boolean" ? value : DEFAULT_SHOW_CUSTOM_TITLEBAR;
 }
@@ -281,6 +286,7 @@ export function syncLaunchpadSettingsDraftsFromState(options) {
   options.draftWindowEffectMaterial.value = options.windowEffectMaterial.value;
   options.draftWindowEffectAppearance.value = options.windowEffectAppearance.value;
   options.draftWindowMode.value = normalizeWindowMode(options.windowMode.value);
+  options.draftFullscreenOverscanEnabled.value = normalizeFullscreenOverscanEnabled(options.fullscreenOverscanEnabled.value);
   options.draftShowCustomTitlebar.value = normalizeShowCustomTitlebar(options.showCustomTitlebar.value);
   if (options.draftMainWindowShortcut && options.mainWindowShortcut) {
     options.draftMainWindowShortcut.value = normalizeMainWindowShortcut(options.mainWindowShortcut.value);
@@ -517,6 +523,10 @@ export function useLaunchpadSettingsConfig(options) {
     options.draftWindowMode.value = normalizeWindowMode(mode);
   }
 
+  function setDraftFullscreenOverscanEnabled(enabled) {
+    options.draftFullscreenOverscanEnabled.value = normalizeFullscreenOverscanEnabled(enabled);
+  }
+
   function setDraftShowCustomTitlebar(visible) {
     options.draftShowCustomTitlebar.value = normalizeShowCustomTitlebar(visible);
   }
@@ -624,6 +634,7 @@ export function useLaunchpadSettingsConfig(options) {
     );
     options.windowEffectAppearance.value = normalizeWindowEffectAppearance(options.draftWindowEffectAppearance.value);
     options.windowMode.value = normalizeWindowMode(options.draftWindowMode.value);
+    options.fullscreenOverscanEnabled.value = normalizeFullscreenOverscanEnabled(options.draftFullscreenOverscanEnabled.value);
     options.showCustomTitlebar.value = normalizeShowCustomTitlebar(options.draftShowCustomTitlebar.value);
     if (options.mainWindowShortcut && options.draftMainWindowShortcut) {
       options.mainWindowShortcut.value = nextMainWindowShortcut;
@@ -702,6 +713,7 @@ export function useLaunchpadSettingsConfig(options) {
     setDraftWindowEffectAppearance,
     setDraftWindowEffectMaterial,
     setDraftMainWindowShortcut,
+    setDraftFullscreenOverscanEnabled,
     setDraftShowCustomTitlebar,
     setDraftWindowMode,
     useDraftDesktopWallpaper,
