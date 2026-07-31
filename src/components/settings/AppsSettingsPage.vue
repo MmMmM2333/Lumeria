@@ -223,8 +223,12 @@
                   :value.prop="root.path"
                   :aria-label="`${root.label} 路径`"
                   autocomplete="off"
+                  :disabled="root.type === 'windowsAppCatalog'"
                   @change="state.changeScanRootPath(root.id, $event.target.value)"
                 />
+              </span>
+              <span v-if="root.type === 'windowsAppCatalog'" class="settings-field-hint">
+                由 Windows 管理的虚拟应用目录，包含商店应用和部分系统应用。
               </span>
               <span v-if="root.lastScannedAt" class="settings-field-hint scan-root-status">上次扫描 {{ formatScanTime(root.lastScannedAt) }}</span>
             </span>
@@ -234,7 +238,7 @@
                 appearance="outline"
                 size="small"
                 type="button"
-                :disabled="!state.canBrowseScanRoots.value || state.isBrowsingScanRoot(root.id)"
+                :disabled="root.type === 'windowsAppCatalog' || !state.canBrowseScanRoots.value || state.isBrowsingScanRoot(root.id)"
                 @click="state.browseScanRootDirectory(root.id)"
               >
                 {{ state.isBrowsingScanRoot(root.id) ? "选择中" : "浏览" }}

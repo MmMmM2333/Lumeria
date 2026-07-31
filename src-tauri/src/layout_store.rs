@@ -290,10 +290,10 @@ fn validate_scan_roots(value: &Value) -> Result<(), String> {
         let root_type = require_non_empty_string_field(object, "type", &label)?;
         if !matches!(
             root_type.as_str(),
-            "startMenuUser" | "startMenuSystem" | "customDirectory"
+            "startMenuUser" | "startMenuSystem" | "customDirectory" | "windowsAppCatalog"
         ) {
             return Err(format!(
-                "{label}.type must be startMenuUser, startMenuSystem, or customDirectory"
+                "{label}.type must be startMenuUser, startMenuSystem, customDirectory, or windowsAppCatalog"
             ));
         }
         require_non_empty_string_field(object, "label", &label)?;
@@ -772,6 +772,15 @@ mod tests {
                         "path": "%APPDATA%/Microsoft/Windows/Start Menu/Programs",
                         "enabled": true,
                         "removable": true
+                    },
+                    {
+                        "id": "root-windows-app-catalog",
+                        "type": "windowsAppCatalog",
+                        "label": "Windows 应用（商店与系统）",
+                        "path": "shell:AppsFolder",
+                        "enabled": true,
+                        "removable": false,
+                        "maxEntries": 5000
                     }
                 ],
                 "scanKeywordBlacklist": ["卸载", "uninstall"],

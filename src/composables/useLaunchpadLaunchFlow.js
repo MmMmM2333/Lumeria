@@ -97,11 +97,21 @@ export function useLaunchpadLaunchFlow(options) {
 
     const kind = String(target.kind || "");
     if (kind === "appUserModelId") {
-      return {
-        title: "无法打开应用",
-        message: `暂不支持打开“${name}”的这种启动类型。`,
-        suggestion: "请改用本地程序、快捷方式或链接。",
-      };
+      if (!String(target.appUserModelId || target.app_user_model_id || "").trim()) {
+        return {
+          title: "无法打开应用",
+          message: `“${name}”缺少 Windows 应用标识。`,
+          suggestion: "请重新扫描并添加此应用。",
+        };
+      }
+      if (currentLaunchTargetStatus(app) === "missing") {
+        return {
+          title: "无法打开应用",
+          message: `Windows 中找不到“${name}”。它可能已被卸载或不再为当前用户注册。`,
+          suggestion: "请重新扫描应用；如果它已卸载，请移除旧条目。",
+        };
+      }
+      return null;
     }
     if (!PATH_LAUNCH_TARGET_KINDS.has(kind)) {
       return {

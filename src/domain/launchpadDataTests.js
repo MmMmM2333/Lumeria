@@ -1,4 +1,5 @@
 import {
+  DEFAULT_SCAN_ROOTS,
   createLaunchpadDataHelpers,
   isAppBlockedByScanBlacklist,
   makeLaunchTarget,
@@ -57,6 +58,9 @@ export function runLaunchpadDataTests() {
   assert(makeLaunchTarget("C:/Tools/App.exe").kind === "executable", "local targets should become executable launch targets");
   assert(normalizeScanKeywordBlacklist([" uninstall ", "UNINSTALL", "", "卸载"]).join(",") === "uninstall,卸载", "scan keywords should be trimmed and deduplicated");
   assert(normalizeScanRoots([]).length === 0, "empty scan roots should stay empty");
+  const windowsAppRoot = DEFAULT_SCAN_ROOTS.find((root) => root.type === "windowsAppCatalog");
+  assert(windowsAppRoot?.path === "shell:AppsFolder", "default scan roots should include the Windows app catalog");
+  assert(windowsAppRoot?.removable === false, "the system-managed Windows app catalog should not be removable");
   const normalizedRoot = normalizeScanRoots([{ id: "root", label: "Root", path: "C:/Apps" }])[0];
   assert(!("lastScannedAt" in normalizedRoot), "scan roots should omit absent optional fields");
   const blockedEntry = makeScanAppBlacklistEntry({

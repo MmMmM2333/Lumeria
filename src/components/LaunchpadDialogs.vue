@@ -165,17 +165,18 @@
           />
         </label>
         <label class="app-edit-field">
-          <span>启动路径或 URL</span>
+          <span>{{ state.isEditingAppUserModelId.value ? "Windows 应用标识（由系统管理）" : "启动路径或 URL" }}</span>
           <span class="app-edit-target-row">
             <fluent-text-input
               class="settings-text-input app-edit-input"
               name="editAppTarget"
-              aria-label="启动路径或 URL"
+              :aria-label="state.isEditingAppUserModelId.value ? 'Windows 应用标识' : '启动路径或 URL'"
               autocomplete="off"
               :value.prop="state.editAppTarget.value"
+              :disabled="state.isEditingAppUserModelId.value"
               @input="state.editAppTarget.value = $event.target.value"
             />
-            <SettingsFluentButton appearance="outline" type="button" :disabled="!state.canBrowseLaunchFile.value || state.isBrowsingEditAppTarget.value" @click="state.browseEditAppLaunchFile">
+            <SettingsFluentButton appearance="outline" type="button" :disabled="state.isEditingAppUserModelId.value || !state.canBrowseLaunchFile.value || state.isBrowsingEditAppTarget.value" @click="state.browseEditAppLaunchFile">
               {{ state.isBrowsingEditAppTarget.value ? "选择中" : "浏览" }}
             </SettingsFluentButton>
           </span>

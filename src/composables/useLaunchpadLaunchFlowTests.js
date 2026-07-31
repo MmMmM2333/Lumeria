@@ -293,6 +293,38 @@ export async function runLaunchpadLaunchFlowTests() {
     assert(missingPath.calls.openLaunchErrorDialog[0].message.includes("找不到"), "known missing paths should explain that the file is missing");
     assert(missingPath.calls.openLaunchErrorDialog[0].suggestion.includes("编辑"), "known missing paths should put the suggestion in a separate field");
 
+    const missingAppUserModelId = createLaunchFlow({ shouldValidateLaunchTarget: true });
+    missingAppUserModelId.flow.openApp({
+      id: "invalid-windows-app",
+      type: "app",
+      name: "Invalid Windows App",
+      launchTarget: { kind: "appUserModelId" },
+    }, source);
+    assert(!missingAppUserModelId.flow.isAppLaunching.value, "missing AppUserModelIds should not start launch animation");
+    assert(missingAppUserModelId.calls.openLaunchErrorDialog[0].message.includes("Windows 应用标识"), "missing AppUserModelIds should explain the invalid metadata");
+
+    const uninstalledWindowsApp = createLaunchFlow({
+      shouldValidateLaunchTarget: true,
+      launchTargetStatusById: { "windows-app": "missing" },
+    });
+    uninstalledWindowsApp.flow.openApp({
+      id: "windows-app",
+      type: "app",
+      name: "Windows App",
+      launchTarget: { kind: "appUserModelId", appUserModelId: "Example.Package_123!App" },
+    }, source);
+    assert(!uninstalledWindowsApp.flow.isAppLaunching.value, "uninstalled Windows apps should not start launch animation");
+    assert(uninstalledWindowsApp.calls.openLaunchErrorDialog[0].message.includes("卸载"), "uninstalled Windows apps should have an app-specific error");
+
+    const installedWindowsApp = createLaunchFlow({ shouldValidateLaunchTarget: true });
+    installedWindowsApp.flow.openApp({
+      id: "installed-windows-app",
+      type: "app",
+      name: "Installed Windows App",
+      launchTarget: { kind: "appUserModelId", appUserModelId: "Example.Package_123!App" },
+    }, source);
+    assert(installedWindowsApp.flow.isAppLaunching.value, "valid AppUserModelIds should pass launch preflight");
+
     const refreshedPath = createLaunchFlow({
       shouldValidateLaunchTarget: true,
       launchTargetStatusById: { "missing-app": "missing" },

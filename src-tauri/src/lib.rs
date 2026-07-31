@@ -11,10 +11,12 @@ mod native_error;
 mod path_utils;
 mod tray;
 mod window_effects;
+#[cfg(target_os = "windows")]
+mod windows_app_catalog;
 mod windows_com;
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{
         atomic::{AtomicBool, Ordering},
         Mutex,
@@ -37,7 +39,7 @@ use file_dialog::{
     PickedLaunchFile,
 };
 use icons::cache_app_icon_choices;
-use launcher::{launch_path, LaunchPathError, LaunchPathErrorKind};
+use launcher::{launch_app_user_model_id, launch_path, LaunchPathError, LaunchPathErrorKind};
 use layout_store::{
     find_layout_app, load_layout as load_saved_layout, save_layout as save_saved_layout,
 };
@@ -136,15 +138,19 @@ struct LaunchFailureReport {
 }
 
 #[tauri::command]
-fn scan_apps(
+async fn scan_apps(
     app: AppHandle,
-    state: State<'_, AppState>,
     roots: Vec<ScanRoot>,
     filters: Option<ScanFilters>,
 ) -> Result<ScanAppsResult, String> {
     let icon_dir = icon_cache_dir(&app)?;
     let filters = filters.unwrap_or_default();
-    let result = scan_apps_from_roots(&roots, &icon_dir, &filters)?;
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        scan_apps_from_roots(&roots, &icon_dir, &filters)
+    })
+    .await
+    .map_err(|error| format!("App scan worker failed: {error}"))??;
+    let state = app.state::<AppState>();
     let mut catalog = state
         .catalog
         .lock()
@@ -155,16 +161,30 @@ fn scan_apps(
 }
 
 #[tauri::command]
-fn check_launch_targets(
+async fn check_launch_targets(
     targets: Vec<LaunchTargetCheckRequest>,
 ) -> Result<Vec<LaunchTargetCheckResult>, String> {
-    Ok(targets
-        .into_iter()
-        .map(|target| LaunchTargetCheckResult {
-            id: target.id,
-            status: check_launch_target_status(&target.launch_target),
-        })
-        .collect())
+    tauri::async_runtime::spawn_blocking(move || {
+        let needs_app_user_model_ids = targets
+            .iter()
+            .any(|target| target.launch_target.kind == "appUserModelId");
+        let installed_app_user_model_ids = needs_app_user_model_ids
+            .then(installed_app_user_model_ids_for_status)
+            .transpose()?;
+
+        Ok(targets
+            .into_iter()
+            .map(|target| LaunchTargetCheckResult {
+                id: target.id,
+                status: check_launch_target_status(
+                    &target.launch_target,
+                    installed_app_user_model_ids.as_ref(),
+                ),
+            })
+            .collect())
+    })
+    .await
+    .map_err(|error| format!("Launch target status worker failed: {error}"))?
 }
 
 #[tauri::command]
@@ -535,6 +555,7 @@ fn set_main_window_native_frame_enabled(app: AppHandle, enabled: bool) -> Result
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum LaunchFailureKind {
     AccessDenied,
+    AppNotInstalled,
     BrokenShortcut,
     LayoutReadFailed,
     MissingLaunchInfo,
@@ -581,12 +602,29 @@ impl LaunchFailure {
         Self::new(app_name, kind, error.detail)
     }
 
+    fn from_app_activation_error(app_name: impl Into<String>, error: LaunchPathError) -> Self {
+        let kind = match error.kind {
+            LaunchPathErrorKind::AccessDenied => LaunchFailureKind::AccessDenied,
+            LaunchPathErrorKind::BrokenShortcut => LaunchFailureKind::WindowsLaunchFailed,
+            LaunchPathErrorKind::NoAssociation => LaunchFailureKind::WindowsLaunchFailed,
+            LaunchPathErrorKind::TargetNotFound => LaunchFailureKind::AppNotInstalled,
+            #[cfg(not(target_os = "windows"))]
+            LaunchPathErrorKind::UnsupportedPlatform => LaunchFailureKind::WindowsLaunchFailed,
+            LaunchPathErrorKind::WindowsLaunchFailed => LaunchFailureKind::WindowsLaunchFailed,
+        };
+        Self::new(app_name, kind, error.detail)
+    }
+
     fn report(&self) -> LaunchFailureReport {
         let name = &self.app_name;
         let (reason, suggestion) = match self.kind {
             LaunchFailureKind::AccessDenied => (
                 "没有权限打开此应用。",
                 "请检查文件权限，或尝试以管理员身份运行目标程序。",
+            ),
+            LaunchFailureKind::AppNotInstalled => (
+                "Windows 中找不到这个应用。它可能已被卸载或不再为当前用户注册。",
+                "请重新扫描应用；如果它已卸载，请从 Lumeria 中移除旧条目。",
             ),
             LaunchFailureKind::BrokenShortcut => (
                 "这个快捷方式可能已损坏。",
@@ -628,6 +666,7 @@ impl LaunchFailure {
     fn kind_code(&self) -> &'static str {
         match self.kind {
             LaunchFailureKind::AccessDenied => "accessDenied",
+            LaunchFailureKind::AppNotInstalled => "appNotInstalled",
             LaunchFailureKind::BrokenShortcut => "brokenShortcut",
             LaunchFailureKind::LayoutReadFailed => "layoutReadFailed",
             LaunchFailureKind::MissingLaunchInfo => "missingLaunchInfo",
@@ -650,13 +689,6 @@ fn normalize_launch_app_name(name: String) -> String {
 
 fn resolve_launch_path(app: &AppCatalogItem) -> Result<(String, Option<&str>), LaunchFailure> {
     let kind = app.launch_target.kind.as_str();
-    if kind == "appUserModelId" {
-        return Err(LaunchFailure::new(
-            app.name.clone(),
-            LaunchFailureKind::UnsupportedTarget,
-            "AppUserModelId launch targets are not supported yet".to_string(),
-        ));
-    }
     if !matches!(kind, "executable" | "shortcut" | "url") {
         return Err(LaunchFailure::new(
             app.name.clone(),
@@ -694,6 +726,23 @@ fn resolve_launch_path(app: &AppCatalogItem) -> Result<(String, Option<&str>), L
 }
 
 fn launch_selected_app(app: AppCatalogItem) -> Result<(), LaunchFailure> {
+    if app.launch_target.kind == "appUserModelId" {
+        let app_user_model_id = app
+            .launch_target
+            .app_user_model_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                LaunchFailure::missing_launch_info(
+                    app.name.clone(),
+                    "App has no AppUserModelId".to_string(),
+                )
+            })?;
+        return launch_app_user_model_id(app_user_model_id)
+            .map_err(|error| LaunchFailure::from_app_activation_error(app.name, error));
+    }
+
     let (path, launch_args) = resolve_launch_path(&app)?;
     launch_path(&path, launch_args)
         .map_err(|error| LaunchFailure::from_launch_path_error(app.name, error))
@@ -791,7 +840,20 @@ fn select_launch_app(
     }
 }
 
-fn check_launch_target_status(target: &models::LaunchTarget) -> String {
+#[cfg(target_os = "windows")]
+fn installed_app_user_model_ids_for_status() -> Result<HashSet<String>, String> {
+    windows_app_catalog::installed_app_user_model_ids()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn installed_app_user_model_ids_for_status() -> Result<HashSet<String>, String> {
+    Err("AppUserModelId status checks are only available on Windows".to_string())
+}
+
+fn check_launch_target_status(
+    target: &models::LaunchTarget,
+    installed_app_user_model_ids: Option<&HashSet<String>>,
+) -> String {
     match target.kind.as_str() {
         "executable" | "shortcut" => match target.path.as_deref() {
             Some(path) if !path.trim().is_empty() && std::path::Path::new(path).exists() => {
@@ -799,7 +861,27 @@ fn check_launch_target_status(target: &models::LaunchTarget) -> String {
             }
             _ => "missing".to_string(),
         },
-        "url" | "appUserModelId" => "unknown".to_string(),
+        "appUserModelId" => {
+            let Some(app_user_model_id) = target
+                .app_user_model_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            else {
+                return "missing".to_string();
+            };
+            installed_app_user_model_ids
+                .map(|installed| {
+                    if installed.contains(&app_user_model_id.to_lowercase()) {
+                        "ok"
+                    } else {
+                        "missing"
+                    }
+                    .to_string()
+                })
+                .unwrap_or_else(|| "unknown".to_string())
+        }
+        "url" => "unknown".to_string(),
         _ => "unknown".to_string(),
     }
 }
@@ -1138,6 +1220,24 @@ mod tests {
         }
     }
 
+    fn app_item_with_aumid(id: &str, app_user_model_id: Option<&str>) -> AppCatalogItem {
+        AppCatalogItem {
+            id: id.to_string(),
+            item_type: "app".to_string(),
+            name: id.to_string(),
+            icon_path: None,
+            emoji: None,
+            launch_target: LaunchTarget {
+                kind: "appUserModelId".to_string(),
+                path: None,
+                app_user_model_id: app_user_model_id.map(str::to_string),
+            },
+            launch_args: None,
+            source_key: None,
+            source: None,
+        }
+    }
+
     #[test]
     fn launch_request_ignores_renderer_launch_fields() {
         let request: LaunchAppRequest = serde_json::from_value(json!({
@@ -1217,14 +1317,29 @@ mod tests {
     }
 
     #[test]
-    fn launch_selected_app_rejects_unsupported_target_before_shell() {
-        let error = launch_selected_app(app_item_with_kind("app", "appUserModelId", None))
-            .expect_err("unsupported targets should fail before shell launch");
+    fn launch_selected_app_rejects_missing_aumid_before_activation() {
+        let error = launch_selected_app(app_item_with_aumid("app", None))
+            .expect_err("missing AppUserModelIds should fail before activation");
 
-        assert_eq!(error.kind, LaunchFailureKind::UnsupportedTarget);
+        assert_eq!(error.kind, LaunchFailureKind::MissingLaunchInfo);
         let report = error.report();
-        assert!(report.message.contains("暂不支持"));
-        assert!(report.suggestion.contains("改用"));
+        assert!(report.message.contains("启动路径不完整"));
+    }
+
+    #[test]
+    fn missing_app_activation_is_reported_as_uninstalled() {
+        let error = LaunchFailure::from_app_activation_error(
+            "Store App",
+            LaunchPathError {
+                kind: LaunchPathErrorKind::TargetNotFound,
+                detail: "not registered".to_string(),
+            },
+        );
+
+        assert_eq!(error.kind, LaunchFailureKind::AppNotInstalled);
+        let report = error.report();
+        assert!(report.message.contains("卸载"));
+        assert!(report.suggestion.contains("重新扫描"));
     }
 
     #[test]
@@ -1250,6 +1365,18 @@ mod tests {
 
         assert_eq!(path, "https://example.com/app");
         assert_eq!(launch_args, None);
+    }
+
+    #[test]
+    fn app_user_model_id_status_uses_installed_catalog() {
+        let target = app_item_with_aumid("settings", Some("Example.Package_123!App")).launch_target;
+        let installed = HashSet::from(["example.package_123!app".to_string()]);
+
+        assert_eq!(check_launch_target_status(&target, Some(&installed)), "ok");
+        assert_eq!(
+            check_launch_target_status(&target, Some(&HashSet::new())),
+            "missing"
+        );
     }
 
     #[test]

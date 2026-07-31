@@ -6,6 +6,15 @@ import {
 
 export const DEFAULT_SCAN_ROOTS = [
   {
+    id: "root-windows-app-catalog",
+    type: "windowsAppCatalog",
+    label: "Windows 应用（商店与系统）",
+    path: "shell:AppsFolder",
+    enabled: true,
+    removable: false,
+    maxEntries: 5000,
+  },
+  {
     id: "root-start-menu-user",
     type: "startMenuUser",
     label: "用户开始菜单",

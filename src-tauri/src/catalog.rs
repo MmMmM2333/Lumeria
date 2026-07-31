@@ -17,6 +17,11 @@ use crate::{
     models::{AppCatalogItem, AppSource, LaunchTarget},
     path_utils::{expand_windows_env_vars, extension, windows_api_path},
 };
+#[cfg(target_os = "windows")]
+use crate::{
+    icons::cache_shell_item_icon,
+    windows_app_catalog::{enumerate_windows_apps, WindowsAppEntry},
+};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -103,6 +108,7 @@ const CUSTOM_DIRECTORY_MAX_DEPTH: usize = 3;
 const DEFAULT_MAX_ENTRIES: usize = 5_000;
 const MAX_CONFIGURED_DEPTH: usize = 32;
 const MAX_CONFIGURED_ENTRIES: usize = 50_000;
+const WINDOWS_APP_CATALOG_ROOT_TYPE: &str = "windowsAppCatalog";
 #[cfg(target_os = "windows")]
 const FILE_ATTRIBUTE_REPARSE_POINT_VALUE: u32 = 0x400;
 
@@ -131,15 +137,33 @@ pub(crate) fn scan_apps_from_roots(
 ) -> Result<ScanAppsResult, String> {
     let mut apps = Vec::new();
     let mut seen_paths = HashMap::new();
+    let mut seen_app_user_model_ids = HashSet::new();
     let filters = NormalizedScanFilters::from(filters);
     let mut warnings = Vec::new();
     let mut stats = ScanStats::default();
 
     for root in roots.iter().filter(|root| root.enabled) {
+        let limits = scan_limits(root);
+        if root.root_type == WINDOWS_APP_CATALOG_ROOT_TYPE {
+            #[cfg(target_os = "windows")]
+            collect_apps_from_windows_catalog(
+                root,
+                icon_dir,
+                &filters,
+                &mut apps,
+                &mut seen_app_user_model_ids,
+                &mut warnings,
+                &mut stats,
+                &limits,
+            )?;
+            #[cfg(not(target_os = "windows"))]
+            return Err("The Windows app catalog is only available on Windows".to_string());
+            continue;
+        }
+
         let root_path = expand_scan_root_path(&root.path);
         let mut visited_dirs = HashSet::new();
         let mut root_entries_seen = 0usize;
-        let limits = scan_limits(root);
         collect_apps_from_dir(
             root,
             &root_path,
@@ -169,6 +193,87 @@ pub(crate) fn scan_apps_from_roots(
         warnings,
         stats,
     })
+}
+
+#[cfg(target_os = "windows")]
+#[allow(clippy::too_many_arguments)]
+fn collect_apps_from_windows_catalog(
+    root: &ScanRoot,
+    icon_dir: &Path,
+    filters: &NormalizedScanFilters,
+    apps: &mut Vec<AppCatalogItem>,
+    seen_app_user_model_ids: &mut HashSet<String>,
+    warnings: &mut Vec<ScanWarning>,
+    stats: &mut ScanStats,
+    limits: &ScanLimits,
+) -> Result<(), String> {
+    let snapshot = enumerate_windows_apps()?;
+    stats.dirs_visited += 1;
+    stats.entries_seen += snapshot.entries_seen.min(limits.max_entries);
+
+    if snapshot.entries_seen > limits.max_entries {
+        stats.limit_reached = true;
+        push_scan_warning_once(
+            warnings,
+            root,
+            "maxEntriesReached",
+            format!("Stopped scanning after {} entries.", limits.max_entries),
+        );
+    }
+    if snapshot.skipped_entries > 0 {
+        push_scan_warning_once(
+            warnings,
+            root,
+            "invalidAppEntry",
+            format!(
+                "Skipped {} Windows app entries without readable names or launch identifiers.",
+                snapshot.skipped_entries
+            ),
+        );
+    }
+
+    for entry in snapshot.entries.into_iter().take(limits.max_entries) {
+        let Some(package_family_name) = entry.package_family_name.as_deref() else {
+            continue;
+        };
+        let app_user_model_id_key = entry.app_user_model_id.to_lowercase();
+        if !seen_app_user_model_ids.insert(app_user_model_id_key) {
+            continue;
+        }
+
+        let candidate = make_windows_app_candidate(entry.name.clone(), &entry.app_user_model_id);
+        if should_skip_candidate(&candidate, filters) {
+            continue;
+        }
+
+        let cache_identity = entry
+            .package_full_name
+            .as_deref()
+            .unwrap_or(package_family_name);
+        let icon_result =
+            cache_shell_item_icon(&entry.shell_item, icon_dir, &candidate.id, cache_identity);
+        let icon_path = match icon_result {
+            Ok(path) => Some(path),
+            Err(error) => {
+                log::warn!(
+                    target: "windows_app_catalog",
+                    "Failed to cache icon for {} ({}): {}",
+                    entry.name,
+                    entry.app_user_model_id,
+                    error
+                );
+                let warning_message = format!(
+                    "One or more Windows app icons could not be cached. First failure: {error}"
+                );
+                push_scan_warning_once(warnings, root, "iconExtractionFailed", warning_message);
+                None
+            }
+        };
+
+        apps.push(make_windows_app_item(root, candidate, entry, icon_path));
+    }
+
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -444,6 +549,19 @@ fn make_catalog_candidate(root: &ScanRoot, root_dir: &Path, path: &Path) -> Cata
     }
 }
 
+fn make_windows_app_candidate(name: String, app_user_model_id: &str) -> CatalogCandidate {
+    let normalized_aumid = normalize_match_text(app_user_model_id);
+    let path_string = format!("shell:AppsFolder\\{app_user_model_id}");
+    CatalogCandidate {
+        id: stable_app_id(&format!("aumid:{normalized_aumid}")),
+        name,
+        kind: "appUserModelId".to_string(),
+        path_string,
+        relative_path: app_user_model_id.to_string(),
+        source_key: format!("windows-app:{normalized_aumid}"),
+    }
+}
+
 fn make_catalog_item(
     root: &ScanRoot,
     path: &Path,
@@ -469,6 +587,40 @@ fn make_catalog_item(
         },
         launch_args: None,
         source_key: Some(candidate.source_key.clone()),
+        source: Some(AppSource {
+            source_type: root.root_type.clone(),
+            root_id: root.id.clone(),
+            root_label: root.label.clone(),
+            relative_path: candidate.relative_path,
+            absolute_path: candidate.path_string,
+        }),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn make_windows_app_item(
+    root: &ScanRoot,
+    candidate: CatalogCandidate,
+    entry: WindowsAppEntry,
+    icon_path: Option<String>,
+) -> AppCatalogItem {
+    AppCatalogItem {
+        id: candidate.id,
+        item_type: "app".to_string(),
+        name: if candidate.name.is_empty() {
+            "Application".to_string()
+        } else {
+            candidate.name.clone()
+        },
+        icon_path,
+        emoji: Some(app_glyph(&candidate.name)),
+        launch_target: LaunchTarget {
+            kind: candidate.kind,
+            path: None,
+            app_user_model_id: Some(entry.app_user_model_id),
+        },
+        launch_args: None,
+        source_key: Some(candidate.source_key),
         source: Some(AppSource {
             source_type: root.root_type.clone(),
             root_id: root.id.clone(),
@@ -673,6 +825,22 @@ mod tests {
     }
 
     #[test]
+    fn windows_app_candidates_use_aumid_identity() {
+        let candidate =
+            make_windows_app_candidate("Settings".to_string(), "Example.Package_123!App");
+        let same_candidate =
+            make_windows_app_candidate("Renamed".to_string(), "example.package_123!app");
+
+        assert_eq!(candidate.kind, "appUserModelId");
+        assert_eq!(candidate.source_key, "windows-app:example.package_123!app");
+        assert_eq!(
+            candidate.path_string,
+            "shell:AppsFolder\\Example.Package_123!App"
+        );
+        assert_eq!(candidate.id, same_candidate.id);
+    }
+
+    #[test]
     fn url_files_are_treated_as_local_shortcuts() {
         let root = ScanRoot {
             id: "root".to_string(),
@@ -724,6 +892,56 @@ mod tests {
             .warnings
             .iter()
             .any(|warning| warning.kind == "maxDepthReached"));
+        fs::remove_dir_all(base).expect("remove test directory");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    #[ignore = "requires a Windows shell user session"]
+    fn scan_windows_app_catalog_smoke() {
+        let base = env::temp_dir().join(format!(
+            "lumeria-windows-app-scan-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        let icon_dir = base.join("icons");
+        fs::create_dir_all(&icon_dir).expect("create icon directory");
+        let root = ScanRoot {
+            id: "root-windows-app-catalog".to_string(),
+            root_type: WINDOWS_APP_CATALOG_ROOT_TYPE.to_string(),
+            label: "Windows Apps".to_string(),
+            path: "shell:AppsFolder".to_string(),
+            enabled: true,
+            max_depth: None,
+            max_entries: Some(5000),
+        };
+
+        let result = scan_apps_from_roots(&[root], &icon_dir, &ScanFilters::default())
+            .expect("Windows app scan should complete");
+
+        assert!(
+            !result.apps.is_empty(),
+            "at least one packaged Windows app should be discoverable"
+        );
+        assert!(result
+            .apps
+            .iter()
+            .all(|app| app.launch_target.kind == "appUserModelId"));
+        for app in &result.apps {
+            println!(
+                "{} -> {:?} (icon: {:?})",
+                app.name, app.launch_target.app_user_model_id, app.icon_path
+            );
+        }
+        for warning in &result.warnings {
+            println!("warning {}: {}", warning.kind, warning.message);
+        }
+        assert!(
+            result.apps.iter().any(|app| app.icon_path.is_some()),
+            "at least one Windows app icon should be cached"
+        );
         fs::remove_dir_all(base).expect("remove test directory");
     }
 }

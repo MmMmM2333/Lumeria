@@ -116,6 +116,16 @@ export async function runLaunchpadAppsTests() {
         launchTarget: { kind: "shortcut", path: "C:/Apps/Native.lnk" },
         sourceKey: "scan-root:root:native.lnk",
       },
+      {
+        id: "win-app-store",
+        type: "app",
+        name: "Settings",
+        launchTarget: {
+          kind: "appUserModelId",
+          appUserModelId: "windows.settings_123!App",
+        },
+        sourceKey: "windows-app:windows.settings_123!app",
+      },
     ];
   }, async () => {
     const pages = shallowRef([[]]);
@@ -178,7 +188,13 @@ export async function runLaunchpadAppsTests() {
     assert(scanRoots.value[0].id === "root", "default reset should wait for confirmation");
     assert(warningDialogs.length === 1, "default reset should open a confirmation dialog");
     warningDialogs[0].onConfirm();
-    assert(scanRoots.value.map((root) => root.id).join(",") === "root-start-menu-user,root-start-menu-system", "confirmed reset should restore default scan roots");
+    assert(scanRoots.value.map((root) => root.id).join(",") === "root-windows-app-catalog,root-start-menu-user,root-start-menu-system", "confirmed reset should restore default scan roots");
+    apps.changeScanRootPath("root-windows-app-catalog", "C:/Not/AppsFolder");
+    assert(scanRoots.value[0].path === "shell:AppsFolder", "the Windows app catalog path should stay system-managed");
+    apps.removeScanRoot("root-windows-app-catalog");
+    assert(scanRoots.value.some((root) => root.id === "root-windows-app-catalog"), "the Windows app catalog root should not be removable");
+    await apps.browseScanRootDirectory("root-windows-app-catalog");
+    assert(scanRoots.value[0].path === "shell:AppsFolder", "the Windows app catalog should not open the directory picker");
 
     scanRoots.value = scanRoots.value.map((root) => ({ ...root, enabled: false }));
     assert(apps.canBrowseLaunchFile.value, "native file browsing should not require enabled scan roots");
@@ -198,9 +214,20 @@ export async function runLaunchpadAppsTests() {
     assert(pages.value[0][0].iconUrl === "http://asset.localhost/C:/Icons/native.png", "adding scanned apps should use the cached asset URL");
     assert(!("iconDataUrl" in pages.value[0][0]), "adding scanned apps should discard cached base64 once an asset URL exists");
     assert(hiddenAppIds.value.length === 0, "adding scanned apps should unhide the preserved native id");
+    const windowsApp = pages.value.flat().find((app) => app.id === "win-app-store");
+    assert(apps.getLaunchTargetPath(windowsApp) === "windows.settings_123!App", "managed app details should display AppUserModelIds");
+    apps.openEditManagedApp(windowsApp);
+    assert(apps.isEditingAppUserModelId.value, "Windows app identifiers should be treated as system-managed");
+    apps.editAppName.value = "Windows Settings";
+    apps.editAppTarget.value = "C:/Should/Not/Replace.exe";
+    apps.saveEditingManagedApp();
+    const editedWindowsApp = pages.value[0].find((app) => app.id === "win-app-store");
+    assert(editedWindowsApp.launchTarget.kind === "appUserModelId", "editing a Windows app should preserve its launch target kind");
+    assert(editedWindowsApp.launchTarget.appUserModelId === "windows.settings_123!App", "editing a Windows app should preserve its AppUserModelId");
 
     apps.deleteManagedApp("win-app-1");
-    assert(pages.value[0].length === 0, "deleting an app should remove it from the launchpad layout");
+    assert(!pages.value.flat().some((app) => app.id === "win-app-1"), "deleting an app should remove it from the launchpad layout");
+    assert(pages.value.flat().some((app) => app.id === "win-app-store"), "deleting a classic app should not remove a scanned Windows app");
     assert(hiddenAppIds.value.includes("win-app-1"), "deleting a catalog app should keep it hidden across native layout merges");
     assert(canceledLongPressCount === 1, "deleting an app should cancel pending long press state");
     assert(clearedSelectedIconCount === 1, "deleting an app should clear a selection that referenced the removed icon");

@@ -34,8 +34,8 @@ use windows::{
             },
         },
         UI::Shell::{
-            IShellItemImageFactory, IShellLinkW, SHCreateItemFromParsingName, ShellLink,
-            SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY, SIIGBF_SCALEUP, SLGP_UNCPRIORITY,
+            IShellItem, IShellItemImageFactory, IShellLinkW, SHCreateItemFromParsingName,
+            ShellLink, SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY, SIIGBF_SCALEUP, SLGP_UNCPRIORITY,
         },
         UI::WindowsAndMessaging::{RT_GROUP_ICON, RT_ICON},
     },
@@ -50,6 +50,35 @@ pub(crate) fn cache_app_icon(path: &Path, icon_dir: &Path, app_id: &str) -> Opti
     extract_icon_png(path, &icon_path)
         .ok()
         .map(|_| icon_path.to_string_lossy().to_string())
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn cache_shell_item_icon(
+    item: &IShellItem,
+    icon_dir: &Path,
+    app_id: &str,
+    cache_identity: &str,
+) -> Result<String, String> {
+    let icon_path = icon_dir.join(format!("{app_id}-windows-app-v1.png"));
+    let identity_path = icon_dir.join(format!("{app_id}-windows-app-v1.identity"));
+    if icon_path.exists()
+        && fs::read_to_string(&identity_path).is_ok_and(|identity| identity == cache_identity)
+    {
+        return Ok(icon_path.to_string_lossy().to_string());
+    }
+
+    let factory: IShellItemImageFactory = item.cast().map_err(|source| NativeError::Shell {
+        context: "IShellItem::cast(IShellItemImageFactory)",
+        source,
+    })?;
+    write_shell_icon_png(&factory, &icon_path)?;
+    fs::write(&identity_path, cache_identity).map_err(|error| {
+        format!(
+            "Failed to write icon cache identity {}: {error}",
+            identity_path.display()
+        )
+    })?;
+    Ok(icon_path.to_string_lossy().to_string())
 }
 
 #[cfg(target_os = "windows")]
@@ -132,10 +161,18 @@ fn extract_shell_icon_png(source_path: &Path, output_path: &Path) -> Result<(), 
             }
         })?
     };
-    let primary = read_shell_icon_bitmap(&factory, 256)?;
+    write_shell_icon_png(&factory, output_path)
+}
+
+#[cfg(target_os = "windows")]
+fn write_shell_icon_png(
+    factory: &IShellItemImageFactory,
+    output_path: &Path,
+) -> Result<(), String> {
+    let primary = read_shell_icon_bitmap(factory, 256)?;
     let primary_has_halo = has_suspicious_edge_halo(&primary);
     let selected = if primary_has_halo {
-        match read_shell_icon_bitmap(&factory, 48) {
+        match read_shell_icon_bitmap(factory, 48) {
             Ok(fallback) if !has_suspicious_edge_halo(&fallback) => fallback,
             _ => primary,
         }

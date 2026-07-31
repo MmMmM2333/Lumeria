@@ -27,6 +27,7 @@ const CUSTOM_ICON_DATA_URL_MAX_LENGTH = 1_400_000;
 const CUSTOM_ICON_MIN_SOURCE_SIZE = 16;
 const CUSTOM_ICON_OUTPUT_MIN_SIZE = ICON_SIZE_MAX;
 const CUSTOM_ICON_OUTPUT_MAX_SIZE = ICON_SIZE_MAX * 2;
+const WINDOWS_APP_CATALOG_ROOT_TYPE = "windowsAppCatalog";
 
 export function getCustomIconCanvasSize(width, height) {
   const sourceMax = Math.max(Number(width) || 0, Number(height) || 0);
@@ -81,16 +82,29 @@ export function useLaunchpadApps(options) {
   const canAddScannedApps = computed(() => scanResultSelectedCount.value > 0);
   const canAddManagedApp = computed(() => newAppName.value.trim().length > 0 && newAppTarget.value.trim().length > 0);
   const newManagedAppGlyph = computed(() => fallbackAppGlyph(newAppName.value));
-  const canSaveEditingManagedApp = computed(() => editAppName.value.trim().length > 0 && editAppTarget.value.trim().length > 0);
   const editingManagedApp = computed(() => managedApps.value.find((app) => app.id === editingManagedAppId.value) || null);
+  const isEditingAppUserModelId = computed(() => editingManagedApp.value?.launchTarget?.kind === "appUserModelId");
+  const canSaveEditingManagedApp = computed(() => editAppName.value.trim().length > 0 && editAppTarget.value.trim().length > 0);
   const canBrowseScanRoots = computed(() => options.shouldUseNativeCatalog());
   const canBrowseLaunchFile = computed(() => options.shouldUseNativeCatalog());
   const canScanManagedApps = computed(() => options.shouldUseNativeCatalog() && options.scanRoots.value.some((root) => root.enabled));
   const canEditNewAppArgs = computed(() => canUseLaunchArgsForTarget(newAppTarget.value));
-  const canEditAppArgs = computed(() => canUseLaunchArgsForTarget(editAppTarget.value));
+  const canEditAppArgs = computed(() => !isEditingAppUserModelId.value && canUseLaunchArgsForTarget(editAppTarget.value));
 
   function getLaunchTargetPath(app) {
-    return app?.launchTarget?.path || "";
+    const target = app?.launchTarget;
+    if (target?.kind === "appUserModelId") {
+      return target.appUserModelId || target.app_user_model_id || "";
+    }
+    return target?.path || "";
+  }
+
+  function getFilesystemLaunchTargetPath(app) {
+    return app?.launchTarget?.kind === "appUserModelId" ? "" : app?.launchTarget?.path || "";
+  }
+
+  function isWindowsAppCatalogRoot(root) {
+    return root?.type === WINDOWS_APP_CATALOG_ROOT_TYPE;
   }
 
   function canUseLaunchArgsForTarget(target) {
@@ -181,6 +195,8 @@ export function useLaunchpadApps(options) {
   }
 
   function changeScanRootPath(rootId, path) {
+    const root = options.scanRoots.value.find((item) => item.id === rootId);
+    if (!root || isWindowsAppCatalogRoot(root)) return;
     options.scanRoots.value = normalizeScanRoots(
       options.scanRoots.value.map((root) =>
         root.id === rootId ? { ...root, path: String(path || "") } : root
@@ -197,6 +213,8 @@ export function useLaunchpadApps(options) {
   }
 
   function removeScanRoot(rootId) {
+    const root = options.scanRoots.value.find((item) => item.id === rootId);
+    if (!root || root.removable === false) return;
     options.scanRoots.value = options.scanRoots.value.filter((root) => root.id !== rootId);
   }
 
@@ -223,7 +241,7 @@ export function useLaunchpadApps(options) {
   function confirmResetScanRoots() {
     options.openWarningDialog?.({
       title: "还原默认来源",
-      message: "将移除当前自定义扫描来源，并恢复为用户开始菜单和系统开始菜单。",
+      message: "将移除当前自定义扫描来源，并恢复用户开始菜单、系统开始菜单和 Windows 应用目录。",
       intent: "warning",
       cancelText: "取消",
       confirmText: "还原",
@@ -258,7 +276,8 @@ export function useLaunchpadApps(options) {
   }
 
   async function browseScanRootDirectory(rootId) {
-    if (!options.shouldUseNativeCatalog() || !rootId || isBrowsingScanRoot(rootId)) return;
+    const root = options.scanRoots.value.find((item) => item.id === rootId);
+    if (!options.shouldUseNativeCatalog() || !root || isWindowsAppCatalogRoot(root) || isBrowsingScanRoot(rootId)) return;
     setBrowsingScanRoot(rootId, true);
     try {
       const selectedPath = await pickScanRootDirectory();
@@ -507,7 +526,7 @@ export function useLaunchpadApps(options) {
   }
 
   async function browseEditAppLaunchFile() {
-    if (!options.shouldUseNativeCatalog() || isBrowsingEditAppTarget.value) return;
+    if (!options.shouldUseNativeCatalog() || isEditingAppUserModelId.value || isBrowsingEditAppTarget.value) return;
     isBrowsingEditAppTarget.value = true;
     try {
       const selectedFile = await pickLaunchFile();
@@ -542,10 +561,12 @@ export function useLaunchpadApps(options) {
 
   function getIconChooserSourcePath(chooser) {
     if (chooser?.target === "new") return newAppTarget.value.trim();
-    if (chooser?.target === "edit") return editAppTarget.value.trim();
+    if (chooser?.target === "edit") {
+      return isEditingAppUserModelId.value ? "" : editAppTarget.value.trim();
+    }
     if (chooser?.target === "existing") {
       const app = managedApps.value.find((item) => item.id === chooser.appId);
-      return getLaunchTargetPath(app).trim();
+      return getFilesystemLaunchTargetPath(app).trim();
     }
     return "";
   }
@@ -691,7 +712,13 @@ export function useLaunchpadApps(options) {
   function saveEditingManagedApp() {
     if (options.isDragActive() || !editingManagedAppId.value || !canSaveEditingManagedApp.value) return;
     const name = editAppName.value.trim().slice(0, 64);
-    const launchTarget = makeLaunchTarget(editAppTarget.value);
+    const originalLaunchTarget = editingManagedApp.value?.launchTarget;
+    const appUserModelId = originalLaunchTarget?.kind === "appUserModelId"
+      ? String(originalLaunchTarget.appUserModelId || originalLaunchTarget.app_user_model_id || "").trim()
+      : "";
+    const launchTarget = originalLaunchTarget?.kind === "appUserModelId"
+      ? (appUserModelId ? { kind: "appUserModelId", appUserModelId } : null)
+      : makeLaunchTarget(editAppTarget.value);
     if (!name || !launchTarget) return;
     const launchArgs = launchArgsForTarget(launchTarget, editAppArgs.value);
     const customIconPath = editAppIconPath.value;
@@ -909,6 +936,7 @@ export function useLaunchpadApps(options) {
     isBrowsingScanRoot,
     isEditAppIconReset,
     isLoadingIconChoices,
+    isEditingAppUserModelId,
     isScanningApps,
     isScanResultDialogOpen,
     managedApps,
