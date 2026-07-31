@@ -123,8 +123,8 @@ export async function runIconTextureCacheTests() {
     clearIconTextureCache();
     images.length = 0;
     const rejectedItem = { id: "app-rejected", iconDataUrl: "data:image/png;base64,decoder-secret" };
-    Texture.from = (resource) => {
-      throw new Error(`Decoder rejected ${resource.src}`);
+    Texture.from = (options) => {
+      throw new Error(`Decoder rejected ${options.resource.src}`);
     };
     getCachedIconTexture(rejectedItem);
     images[0].onload();
@@ -158,8 +158,10 @@ export async function runIconTextureCacheTests() {
     assert(loadedSources.includes(loadedItem.iconDataUrl), "successful texture load should notify surface render subscribers");
     assert(textureFromCalls.length === 1, "successful texture load should create one Pixi texture");
     assert(textureFromCalls[0].skipCache === true, "Pixi texture creation should skip the global Pixi cache");
+    assert(textureFromCalls[0].resource?.autoGenerateMipmaps === true, "icon textures should enable mipmap generation before their first GPU upload");
     const cachedTexture = getCachedIconTexture(loadedItem);
     assert(cachedTexture === textureFromCalls[0].texture, "loaded texture should be returned from the local icon cache");
+    assert(cachedTexture.source.autoGenerateMipmaps === true, "cached icon texture sources should retain automatic mipmap generation");
     const cachedSnapshot = getIconTextureCacheDebugSnapshot();
     assert(cachedSnapshot.cached[0]?.source?.fingerprint, "loaded texture diagnostics should fingerprint cached sources");
     assert(!JSON.stringify(cachedSnapshot).includes("third"), "cached texture diagnostics should not leak image data URLs");

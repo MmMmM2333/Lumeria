@@ -68,7 +68,10 @@ function loadTextureFromImage(source) {
     if (isTauriAssetIconSource(source)) image.crossOrigin = "anonymous";
     image.onload = () => {
       try {
-        resolve(Texture.from(image, true));
+        resolve(Texture.from({
+          autoGenerateMipmaps: true,
+          resource: image,
+        }, true));
       } catch (error) {
         reject(error);
       }
