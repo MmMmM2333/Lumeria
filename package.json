@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "test": "node src/domain/runLaunchpadLayoutTests.js",
+    "test:pixi-webgl": "playwright test tests/browser/pixi-drag-preview-mask-batch.spec.mjs --project=chromium --workers=1",
     "build": "vite build",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@iconify-json/fluent": "^1.2.51",
+    "@playwright/test": "^1.62.1",
     "@tauri-apps/cli": "^2.0.0",
     "@vitejs/plugin-vue": "^5.2.0",
     "unplugin-icons": "^23.0.1",

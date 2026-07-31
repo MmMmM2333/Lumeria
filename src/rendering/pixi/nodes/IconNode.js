@@ -178,6 +178,7 @@ export class IconNode extends Container {
     this.visualWrap = new Container();
     this.folderThumb = new Graphics();
     this.folderPreviewMask = new Graphics();
+    this.folderPreviewMask.visible = false;
     this.folderChildrenWrap = new Container();
     this.folderFlashOverlay = new Graphics();
     this.folderCreateBackdrop = new Graphics();
@@ -248,7 +249,6 @@ export class IconNode extends Container {
     this.visualWrap.addChild(this.removeButton);
     this.visualWrap.addChild(this.changeButton);
     this.visualWrap.addChild(this.resetButton);
-    this.folderChildrenWrap.mask = this.folderPreviewMask;
     this.folderFlashOverlay.visible = false;
     this.folderCreateBackdrop.visible = false;
     this.folderCreateFlashOverlay.visible = false;
@@ -581,8 +581,8 @@ export class IconNode extends Container {
   }
 
   hideFolderChildren() {
+    this.deactivateFolderPreviewMask();
     this.folderChildrenWrap.visible = false;
-    this.folderPreviewMask.clear();
     this.folderFlashOverlay.clear();
     this.folderFlashOverlay.visible = false;
     this.folderHoverActive = false;
@@ -592,7 +592,6 @@ export class IconNode extends Container {
     this.folderHoverFrame.padding = 0;
     this.folderPreviewPlanKey = null;
     this.folderFlashSig = "";
-    this.folderPreviewMaskSig = "";
     this.folderThumbFrameSig = "";
     this.folderThumb.scale.set(1);
     this.visualWrap.scale.set(1);
@@ -688,7 +687,7 @@ export class IconNode extends Container {
     const thumb = getFolderThumbMetrics(size);
     const plan = getFolderPreviewMotionPlan(this.item, state.folderPreviewPageSize, thumb);
     this.drawFolderThumbFrame(size, thumb);
-    this.drawFolderPreviewMask(thumb);
+    this.activateFolderPreviewMask(thumb);
     this.drawFolderFlashOverlay(size, thumb);
     this.folderChildrenWrap.visible = true;
 
@@ -759,6 +758,23 @@ export class IconNode extends Container {
       return;
     }
     drawFolderThumbFrameGraphic(this.folderThumb, size, thumb, this.getFolderHoverPadding());
+  }
+
+  activateFolderPreviewMask(thumb) {
+    this.drawFolderPreviewMask(thumb);
+    this.folderPreviewMask.visible = true;
+    if (this.folderChildrenWrap.mask !== this.folderPreviewMask) {
+      this.folderChildrenWrap.mask = this.folderPreviewMask;
+    }
+  }
+
+  deactivateFolderPreviewMask() {
+    const wasAttached = this.folderChildrenWrap.mask === this.folderPreviewMask;
+    const hadGeometry = Boolean(this.folderPreviewMaskSig);
+    if (wasAttached) this.folderChildrenWrap.mask = null;
+    this.folderPreviewMask.visible = false;
+    if (wasAttached || hadGeometry) this.folderPreviewMask.clear();
+    this.folderPreviewMaskSig = "";
   }
 
   drawFolderPreviewMask(thumb) {
@@ -1258,6 +1274,9 @@ export class IconNode extends Container {
     killMotionOf(this.folderHoverFrame);
     killMotionOf(this.appFolderCreateFrame);
     killAllMotion(this, { reason: "destroyed" });
+    if (this.folderChildrenWrap?.mask === this.folderPreviewMask) {
+      this.folderChildrenWrap.mask = null;
+    }
     super.destroy(options);
   }
 }

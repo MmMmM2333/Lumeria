@@ -304,6 +304,29 @@ export async function runIconNodeTests() {
     node.setState(folderNodeState);
     assert(node.folderChildNodes[1].visible === true, "folder preview child should reappear after suppression is cleared");
     assert(node.folderChildNodes[1].renderable === true, "clearing suppression should return draw ownership to the real preview child");
+    assert(node.folderChildrenWrap.mask === node.folderPreviewMask, "folder rendering should attach its preview mask");
+    assert(node.folderPreviewMask.visible === true, "folder rendering should make its preview mask active");
+
+    const appNodeState = {
+      ...folderNodeState,
+      item: { id: "app-mask-lifecycle", name: "App Mask Lifecycle", type: "app" },
+    };
+    node.setState(appNodeState);
+    assert(node.folderChildrenWrap.mask == null, "app rendering should detach the inactive folder preview mask");
+    assert(node.folderPreviewMask.visible === false, "app rendering should hide the inactive folder preview mask");
+    assert(node.folderChildrenWrap.visible === false, "app rendering should hide folder preview children");
+    assert(node.folderChildNodes.every((child) => !child.visible && !child.renderable), "app rendering should release every folder preview child");
+
+    node.setState(folderNodeState);
+    assert(node.folderChildrenWrap.mask === node.folderPreviewMask, "folder rendering should reattach the preview mask after node reuse");
+    assert(node.folderPreviewMask.visible === true, "folder rendering should reactivate its preview mask after node reuse");
+    assert(node.folderChildNodes[0].visible && node.folderChildNodes[0].renderable, "folder rendering should restore preview children after node reuse");
+
+    node.setState(appNodeState);
+    assert(node.folderChildrenWrap.mask == null, "reused app rendering should detach the preview mask on every transition");
+    assert(node.folderPreviewMask.visible === false, "reused app rendering should leave the preview mask inactive");
+
+    node.setState(folderNodeState);
     assert(node.folderThumbFrameSig.endsWith(":0"), "normal folder rendering should draw the built-in folder thumb frame");
     node.setState({ ...folderNodeState, suppressFolderThumbFrame: true });
     assert(node.folderThumbFrameSig.endsWith(":1"), "folder drop hover should be able to suppress the built-in folder thumb frame while keeping preview children");
