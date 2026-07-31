@@ -70,7 +70,7 @@ function makeFolderHarness(options = {}) {
     alpha: 1,
     destroyed: false,
     getBounds: () => makeBounds(12, 12, 16, 16),
-    renderable: true,
+    renderable: options.childRenderable !== false,
     visible: options.childVisible !== false,
     worldAlpha: 1,
     children: [childSprite, childEmoji],
@@ -318,6 +318,33 @@ export function runRenderDebugProbeTests() {
     assert(
       snapshot.violations.some((entry) => entry.code === "preview-child-hidden"),
       "a present unsuppressed preview child should never be hidden"
+    );
+  }
+
+  {
+    const harness = makeFolderHarness({ childRenderable: false, suppressed: true });
+    const snapshot = capturePixiRenderSnapshot({ app: harness.app, layer: harness.layer, phase: "folder-preview-slot-release" });
+    assert(
+      !snapshot.violations.some((entry) => entry.code.startsWith("suppressed-child-")),
+      "a suppressed preview child should stay transform-visible and non-renderable without a visual ownership violation"
+    );
+  }
+
+  {
+    const harness = makeFolderHarness({ suppressed: true });
+    const snapshot = capturePixiRenderSnapshot({ app: harness.app, layer: harness.layer, phase: "folder-preview-slot-release" });
+    assert(
+      snapshot.violations.some((entry) => entry.code === "suppressed-child-renderable"),
+      "a suppressed real preview child must not draw underneath the release ghost"
+    );
+  }
+
+  {
+    const harness = makeFolderHarness({ childRenderable: false, childVisible: false, suppressed: true });
+    const snapshot = capturePixiRenderSnapshot({ app: harness.app, layer: harness.layer, phase: "folder-preview-slot-release" });
+    assert(
+      snapshot.violations.some((entry) => entry.code === "suppressed-child-transform-hidden"),
+      "a suppressed preview child must remain transform-visible so the moving release target stays current"
     );
   }
 

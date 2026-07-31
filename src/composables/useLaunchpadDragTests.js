@@ -1386,17 +1386,7 @@ export async function runLaunchpadDragTests() {
     const folder = { id: "folder-preview-drop", type: "folder", name: "Folder", childPages: [folderApps], children: folderApps };
     const iconBoundsRegistry = createIconBoundsRegistry();
     registerDesktopFolderBounds(iconBoundsRegistry, folder, { left: 100, top: 100, width: 80, height: 80 });
-    const { app, calls, drag, pages } = createDragHarness({
-      iconBoundsRegistry,
-      onCommitPages: () => {
-        iconBoundsRegistry.registerBounds(
-          K.PREVIEW_CHILD,
-          V.LIVE_TARGET,
-          { childId: "app-a", folderId: "folder-preview-drop", slotIndex: 8 },
-          { left: 210, top: 220, width: 18, height: 18 }
-        );
-      },
-    });
+    const { app, calls, drag, pages } = createDragHarness({ iconBoundsRegistry });
     pages.value = [[app, folder]];
     const target = {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
@@ -1416,7 +1406,10 @@ export async function runLaunchpadDragTests() {
     assert(release?.targetFolderId === "folder-preview-drop", "preview release should track the target folder id");
     assert(release?.targetPreviewSlotIndex === 8, "preview release should target the first free visible preview slot");
     assert(release?.suppressFolderPreviewChildId === "app-a", "preview release should suppress the real inserted preview child while the ghost flies in");
-    assert(Math.round(release?.targetRect?.left) === 210 && Math.round(release?.targetRect?.top) === 220, "preview release should resolve to the registered preview child bounds");
+    assert(!("targetRect" in release), "preview release should not publish a stale final target rectangle");
+    assert(!("targetStageLayoutRect" in release), "preview release should not publish a stable-layout target rectangle");
+    assert(!("targetVersion" in release), "preview release should not retain the legacy geometry retarget version");
+    assert(!("provisionalLayoutTarget" in release), "preview release should not retain the legacy provisional geometry state");
     iconBoundsRegistry.clearBounds();
   });
 

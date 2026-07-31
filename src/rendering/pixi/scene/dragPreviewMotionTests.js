@@ -145,18 +145,20 @@ export function runDragPreviewMotionTests() {
   assert(stageTargetedRelease.targetScale === 1, "stage layout slot release should still return the preview to the real icon scale");
   assert(stageTargetedRelease.velocity.x === 400 && stageTargetedRelease.velocity.y === 200, "release motion should convert client velocity into stage velocity");
 
-  const folderPreviewRelease = getDragReleaseMotion({
-    ...preview,
-    releaseMode: "folder-preview-slot",
-    targetRect: { height: 18, left: 300, top: 400, width: 18 },
-    targetVersion: 6,
-  }, {
-    iconSize: 56,
-    stageRect: { left: 100, top: 200 },
-  });
-  assert(Math.round(folderPreviewRelease.targetScale * 10000) === 2813, "folder preview release should scale to the preview child rect");
-  assert(folderPreviewRelease.targetAlpha === 1, "folder preview release should keep the icon visible");
-  assert(folderPreviewRelease.targetLabelAlpha === 0, "folder preview release should fade the label out");
+  let unsupportedModeError = null;
+  try {
+    getDragReleaseMotion({
+      ...preview,
+      releaseMode: "folder-preview-slot",
+      targetRect: { height: 18, left: 300, top: 400, width: 18 },
+    }, {
+      iconSize: 56,
+      stageRect: { left: 100, top: 200 },
+    });
+  } catch (error) {
+    unsupportedModeError = error;
+  }
+  assert(unsupportedModeError instanceof Error, "specialized release modes should not silently fall back to generic target-rectangle motion");
 
   const folderCenterRelease = getDragReleaseMotion({
     ...preview,

@@ -1,5 +1,7 @@
+import { Container } from "pixi.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { killMotionOf } from "../animation/motionTween.js";
+import { getFolderThumbMetrics } from "./folderThumbMetrics.js";
 
 function installPixiTextTestDom() {
   if (!("CanvasRenderingContext2D" in globalThis)) {
@@ -263,9 +265,45 @@ export async function runIconNodeTests() {
     };
     node.setState({ ...folderNodeState, suppressedFolderPreviewChildId: "folder-child-b" });
     assert(node.folderChildNodes[0].visible === true, "unsuppressed folder preview child should remain visible");
-    assert(node.folderChildNodes[1].visible === false, "suppressed folder preview child should be hidden");
+    assert(node.folderChildNodes[1].visible === true, "suppressed folder preview child should stay transform-visible");
+    assert(node.folderChildNodes[1].renderable === false, "suppressed folder preview child should not be drawable while the release ghost owns it");
+
+    const releaseLayer = new Container();
+    releaseLayer.addChild(node);
+    node.position.set(300, 220);
+    node.scale.set(1.5);
+    node.rotation = Math.PI / 2;
+    node.jiggleWrap.position.set(0, 0);
+    node.jiggleWrap.rotation = 0;
+    const releasePose = node.getFolderPreviewChildReleasePose(releaseLayer, 1, {
+      expectedChildId: "folder-child-b",
+      previewIconSize: 64,
+    });
+    const expectedAxisScale = getFolderThumbMetrics(64).childSize / 64 * 1.5;
+    assert(releasePose?.targetChildId === "folder-child-b", "release pose should preserve the real target child identity");
+    assert(
+      nearlyEqual(releasePose.matrix.a, 0) &&
+        nearlyEqual(releasePose.matrix.b, expectedAxisScale) &&
+        nearlyEqual(releasePose.matrix.c, -expectedAxisScale) &&
+        nearlyEqual(releasePose.matrix.d, 0),
+      "release pose should expose the target child's full world transform basis instead of an axis-aligned bounds box"
+    );
+    assert(
+      node.getFolderPreviewChildReleasePose(releaseLayer, 1, {
+        expectedChildId: "another-child",
+        previewIconSize: 64,
+      }) == null,
+      "release pose should reject a recycled slot whose child identity no longer matches"
+    );
+    node.removeFromParent();
+    releaseLayer.destroy({ children: true });
+    node.position.set(0, 0);
+    node.scale.set(1);
+    node.rotation = 0;
+
     node.setState(folderNodeState);
     assert(node.folderChildNodes[1].visible === true, "folder preview child should reappear after suppression is cleared");
+    assert(node.folderChildNodes[1].renderable === true, "clearing suppression should return draw ownership to the real preview child");
     assert(node.folderThumbFrameSig.endsWith(":0"), "normal folder rendering should draw the built-in folder thumb frame");
     node.setState({ ...folderNodeState, suppressFolderThumbFrame: true });
     assert(node.folderThumbFrameSig.endsWith(":1"), "folder drop hover should be able to suppress the built-in folder thumb frame while keeping preview children");

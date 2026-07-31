@@ -6,7 +6,6 @@ import { cloneIconVisualSpec } from "./iconVisualSpec.js";
 export const DRAG_PREVIEW_SCALE = 1.12;
 export const DRAG_PREVIEW_FOLDER_HOVER_SCALE = 0.92;
 export const DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB = "folder-center-absorb";
-export const DRAG_RELEASE_MODE_FOLDER_PREVIEW_SLOT = "folder-preview-slot";
 export const DRAG_RELEASE_MODE_SLOT = "slot";
 
 function getPreviewIconSize(preview, fallbackIconSize) {
@@ -132,6 +131,9 @@ export function getDragPreviewLayout(preview, state = {}) {
 
 export function getDragReleaseMotion(release, state = {}) {
   const releaseMode = release?.releaseMode || DRAG_RELEASE_MODE_SLOT;
+  if (releaseMode !== DRAG_RELEASE_MODE_SLOT && releaseMode !== DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB) {
+    throw new Error(`Unsupported generic drag release mode: ${releaseMode}`);
+  }
   const provisionalLayoutTarget = release?.provisionalLayoutTarget === true;
   const releaseKey = release?.key || makeDragPreviewKey(release);
   const sourceIconSize = getPreviewIconSize(release, state.iconSize);

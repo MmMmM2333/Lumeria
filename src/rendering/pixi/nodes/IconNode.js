@@ -379,6 +379,32 @@ export class IconNode extends Container {
     return this.getLocalVisualBounds(this.visualWrap, stageRect, getFolderThumbChildLocalRect(thumb, slotIndex));
   }
 
+  getFolderPreviewChildReleasePose(relativeTo, slotIndex, options = {}) {
+    if (!this.isFolder || !relativeTo) return null;
+    const childNode = this.folderChildNodes?.[slotIndex];
+    const expectedChildId = options.expectedChildId || null;
+    if (!childNode || childNode.destroyed || !childNode.visible || !childNode.folderPreviewChildId) return null;
+    if (expectedChildId && childNode.folderPreviewChildId !== expectedChildId) return null;
+
+    const center = relativeTo.toLocal({ x: 0, y: 0 }, childNode);
+    const xUnit = relativeTo.toLocal({ x: 1, y: 0 }, childNode);
+    const yUnit = relativeTo.toLocal({ x: 0, y: 1 }, childNode);
+    if (![center.x, center.y, xUnit.x, xUnit.y, yUnit.x, yUnit.y].every(Number.isFinite)) return null;
+    const thumb = getFolderThumbMetrics(this.iconSize);
+    const previewIconSize = Math.max(1, Number(options.previewIconSize) || this.iconSize || 64);
+    const visualScale = thumb.childSize / previewIconSize;
+    return {
+      center: { x: center.x, y: center.y },
+      matrix: {
+        a: (xUnit.x - center.x) * visualScale,
+        b: (xUnit.y - center.y) * visualScale,
+        c: (yUnit.x - center.x) * visualScale,
+        d: (yUnit.y - center.y) * visualScale,
+      },
+      targetChildId: childNode.folderPreviewChildId,
+    };
+  }
+
   getVisualBounds(node, stageRect, size) {
     return mapDisplayObjectLocalRectToStageRect({
       allowGlobalFallback: true,
@@ -572,7 +598,11 @@ export class IconNode extends Container {
     this.visualWrap.scale.set(1);
     killMotionOf(this.folderHoverFrame);
     killMotionOf(this.folderThumb, "scale");
-    for (const node of this.folderChildNodes) node.visible = false;
+    for (const node of this.folderChildNodes) {
+      node.folderPreviewChildId = null;
+      node.renderable = false;
+      node.visible = false;
+    }
   }
 
   renderVisual(state) {
@@ -682,9 +712,11 @@ export class IconNode extends Container {
       const childRect = getFolderThumbChildLocalRect(thumb, index);
       node.position.set(childRect.left + childRect.width / 2, childRect.top + childRect.height / 2);
       node.visible = Boolean(child);
+      node.renderable = Boolean(child);
+      node.folderPreviewChildId = child?.id || null;
       if (!child) continue;
       if (child.id === state.suppressedFolderPreviewChildId) {
-        node.visible = false;
+        node.renderable = false;
         continue;
       }
       const childId = child.id;

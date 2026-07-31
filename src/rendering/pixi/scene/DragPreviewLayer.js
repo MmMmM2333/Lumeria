@@ -9,6 +9,10 @@ import {
   getDragPreviewLayout,
   getDragReleaseMotion,
 } from "./dragPreviewMotion.js";
+import {
+  FOLDER_PREVIEW_SLOT_RELEASE_MODE,
+  FolderPreviewSlotReleaseController,
+} from "./folderPreviewSlotReleaseController.js";
 
 const DRAG_PREVIEW_ROTATION = 0;
 const DRAG_PREVIEW_CLEAR_REASON = "drag-preview-clear";
@@ -142,6 +146,16 @@ export class DragPreviewLayer extends Container {
     this.previewNode = new IconNode({ onAction: () => {} });
     this.previewNode.eventMode = "none";
     this.addChild(this.previewNode);
+    this.folderPreviewSlotReleaseController = new FolderPreviewSlotReleaseController(this, {
+      onReleaseAbort: (release, reason) => {
+        this.releaseCompleteKey = release?.key || null;
+        this.onReleaseComplete({ ...release, aborted: true, abortReason: reason });
+      },
+      onReleaseComplete: (release) => {
+        this.releaseCompleteKey = release?.key || null;
+        this.onReleaseComplete(release);
+      },
+    });
     this.previewLabelStateKey = null;
     this.previewKey = null;
     this.previewScaleKey = null;
@@ -156,9 +170,16 @@ export class DragPreviewLayer extends Container {
 
   update(state) {
     if (state.releaseState?.item) {
+      if (state.releaseState.releaseMode === FOLDER_PREVIEW_SLOT_RELEASE_MODE) {
+        this.updateFolderPreviewSlotRelease(state);
+        return;
+      }
+      this.folderPreviewSlotReleaseController.clear("drag-preview-release-mode-change");
       this.updateRelease(state);
       return;
     }
+
+    this.folderPreviewSlotReleaseController.clear("drag-preview-release-finished");
 
     const preview = state.previewState;
     if (!preview?.item) {
@@ -230,6 +251,104 @@ export class DragPreviewLayer extends Container {
     }
     this.previewScaleKey = layout.scaleKey;
     this.previewNode.eventMode = "none";
+  }
+
+  updateFolderPreviewSlotRelease(state) {
+    const release = state.releaseState;
+    const releaseKey = release?.key;
+    const isNewRelease = this.releaseKey !== releaseKey;
+    const hasExplicitStartPose = Boolean(release?.startPose?.pointer);
+    const canPreservePreviewPose = Boolean(
+      !hasExplicitStartPose &&
+      isNewRelease &&
+      this.previewKey &&
+      this.previewNode.visible &&
+      this.previewNode.state?.item?.id === release?.item?.id
+    );
+    const preservedPose = canPreservePreviewPose
+      ? {
+        scaleX: Math.max(0.01, Number(this.previewNode.scale?.x) || DRAG_PREVIEW_SCALE),
+        scaleY: Math.max(0.01, Number(this.previewNode.scale?.y) || DRAG_PREVIEW_SCALE),
+        x: Number(this.previewNode.x) || 0,
+        y: Number(this.previewNode.y) || 0,
+      }
+      : null;
+    const startSource = hasExplicitStartPose
+      ? { ...release, pointer: release.startPose.pointer }
+      : release;
+    const layout = getDragPreviewLayout(startSource, state);
+
+    if (isNewRelease) {
+      killMotionOf(this.previewNode, null, { reason: DRAG_RELEASE_START_REASON });
+      stopPreviewScaleMotion(this.previewNode, { reason: DRAG_RELEASE_START_REASON });
+      this.releaseMotionControl = null;
+      this.releaseMotionControlKey = null;
+      this.releaseCompletionContext = null;
+      this.releaseCompleteKey = null;
+    }
+
+    this.visible = true;
+    this.previewNode.visible = true;
+    this.previewNode.eventMode = "none";
+    this.previewNode.stageRect = layout.stageRect;
+    this.previewNode.setState({
+      cellHeight: layout.cellHeight,
+      cellWidth: layout.cellWidth,
+      compact: layout.compact,
+      draggable: false,
+      dropTarget: false,
+      editing: false,
+      folderPreviewPageSize: state.folderPageSize,
+      ghosted: false,
+      hasCustomIcon: false,
+      iconSize: layout.iconSize,
+      interactive: false,
+      item: release.item,
+      launchTargetStatus: release.item.type === "app" && state.showMissingLaunchTargetBadge
+        ? state.launchTargetStatusById?.[release.item.id] || null
+        : null,
+      opening: false,
+      preserveNodeScale: true,
+      removable: false,
+      selected: false,
+      singleLineLabel: layout.singleLineLabel,
+      source: release.source,
+      stageHeight: state.height,
+      stageWidth: state.width,
+      textless: layout.textless,
+    });
+    describeDragPreviewTargets(this.previewNode, release, "folder-preview-slot-release");
+    this.previewNode.rotation = 0;
+
+    if (isNewRelease) {
+      this.previewKey = null;
+      this.previewScaleKey = null;
+      this.previewLabelStateKey = null;
+      this.previewNode.position.set(
+        preservedPose?.x ?? layout.position.x,
+        preservedPose?.y ?? layout.position.y
+      );
+      this.previewNode.scale.set(
+        preservedPose?.scaleX ?? Math.max(0.01, Number(this.previewNode.scale?.x) || DRAG_PREVIEW_SCALE),
+        preservedPose?.scaleY ?? Math.max(0.01, Number(this.previewNode.scale?.y) || DRAG_PREVIEW_SCALE)
+      );
+      this.previewNode.alpha = 1;
+      snapPreviewLabel(this.previewNode, {
+        alpha: 0,
+        scale: DRAG_PREVIEW_FOLDER_HOVER_LABEL_SCALE,
+      });
+    }
+
+    this.releaseKey = releaseKey;
+    this.releaseMotionKey = `folder-preview-slot:${releaseKey}`;
+    this.releaseMotionControlKey = null;
+    this.releaseCompletionContext = null;
+    this.folderPreviewSlotReleaseController.update({
+      ...state,
+      previewNode: this.previewNode,
+      release,
+      targetFolderNode: state.targetFolderNode,
+    });
   }
 
   updatePreviewLabelState(state, options = {}) {
@@ -499,6 +618,8 @@ export class DragPreviewLayer extends Container {
   }
 
   destroy(options) {
+    this.folderPreviewSlotReleaseController?.destroy?.();
+    this.folderPreviewSlotReleaseController = null;
     killMotionOf(this.previewNode, null, { reason: "destroyed" });
     stopPreviewScaleMotion(this.previewNode, { reason: "destroyed" });
     this.releaseMotionControl = null;

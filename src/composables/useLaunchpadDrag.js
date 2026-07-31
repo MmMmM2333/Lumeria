@@ -688,7 +688,7 @@ export function useLaunchpadDrag(options) {
     return getStageLayoutClientReleaseTarget(BOUNDS_KIND.FOLDER_THUMB, folderId, fallbackClientRect);
   }
 
-  function getFolderPreviewChildReleaseTarget(folderId, childId, slotIndex, fallbackClientRect = null) {
+  function getFolderCreatePreviewChildReleaseTarget(folderId, childId, slotIndex, fallbackClientRect = null) {
     const childKey = { childId, folderId, slotIndex };
     const directTarget = getStageLayoutClientReleaseTarget(BOUNDS_KIND.PREVIEW_CHILD, childKey);
     if (directTarget?.clientRect || directTarget?.stageLayoutRect) return directTarget;
@@ -716,12 +716,12 @@ export function useLaunchpadDrag(options) {
     const thumbTarget = registeredThumbTarget?.clientRect || registeredThumbTarget?.stageLayoutRect
       ? registeredThumbTarget
       : fallbackTarget;
-    const targetAppSlotTarget = getFolderPreviewChildReleaseTarget(folderId, targetAppId, 0, thumbTarget.clientRect) ||
+    const targetAppSlotTarget = getFolderCreatePreviewChildReleaseTarget(folderId, targetAppId, 0, thumbTarget.clientRect) ||
       makeReleaseTarget(
         makeFolderThumbPreviewRect(thumbTarget.clientRect, 0),
         makeFolderThumbPreviewRect(thumbTarget.stageLayoutRect, 0)
       );
-    const draggedAppSlotTarget = getFolderPreviewChildReleaseTarget(folderId, draggedAppId, 1, thumbTarget.clientRect) ||
+    const draggedAppSlotTarget = getFolderCreatePreviewChildReleaseTarget(folderId, draggedAppId, 1, thumbTarget.clientRect) ||
       makeReleaseTarget(
         makeFolderThumbPreviewRect(thumbTarget.clientRect, 1),
         makeFolderThumbPreviewRect(thumbTarget.stageLayoutRect, 1)
@@ -998,7 +998,8 @@ export function useLaunchpadDrag(options) {
     dragReleaseTimer = null;
     dragReleaseKey += 1;
     const key = `release-${dragReleaseKey}-${activeDrag.item.id}`;
-    dragReleaseState.value = {
+    const releaseMode = releaseOptions.releaseMode || DRAG_RELEASE_MODE_SLOT;
+    const nextReleaseState = {
       cellSize: { ...activeDrag.cellSize },
       compact: activeDrag.compact === true,
       duration: DRAG_RELEASE_DURATION_MS / 1000,
@@ -1006,7 +1007,7 @@ export function useLaunchpadDrag(options) {
       key,
       offset: { ...activeDrag.offset },
       pointer: { ...activeDrag.pointer },
-      releaseMode: releaseOptions.releaseMode || DRAG_RELEASE_MODE_SLOT,
+      releaseMode,
       singleLineLabel: activeDrag.singleLineLabel === true,
       size: { ...activeDrag.size },
       source: activeDrag.source,
@@ -1015,14 +1016,19 @@ export function useLaunchpadDrag(options) {
       suppressFolderPreviewFolderId: releaseOptions.suppressFolderPreviewFolderId || null,
       targetFolderId: releaseOptions.targetFolderId || null,
       targetPreviewSlotIndex: releaseOptions.targetPreviewSlotIndex ?? null,
-      targetRect: null,
-      targetStageLayoutRect: null,
-      targetVisualSpec: null,
-      targetVersion: 0,
-      provisionalLayoutTarget: false,
       textless: getReleaseTextless(),
       velocity: { ...(activeDrag.velocity || makeZeroVelocity()) },
     };
+    if (releaseMode !== DRAG_RELEASE_MODE_FOLDER_PREVIEW_SLOT) {
+      Object.assign(nextReleaseState, {
+        provisionalLayoutTarget: false,
+        targetRect: null,
+        targetStageLayoutRect: null,
+        targetVersion: 0,
+        targetVisualSpec: null,
+      });
+    }
+    dragReleaseState.value = nextReleaseState;
     return key;
   }
 
@@ -2582,16 +2588,7 @@ export function useLaunchpadDrag(options) {
       });
       if (releaseKey) {
         if (topLevelDropResult.releaseMode === DRAG_RELEASE_MODE_FOLDER_PREVIEW_SLOT) {
-          scheduleDragReleaseTargetResolve(
-            releaseKey,
-            () => getFolderPreviewChildReleaseTarget(
-              topLevelDropResult.folderId,
-              activeDrag.item.id,
-              topLevelDropResult.previewSlotIndex,
-              fallbackReleaseTarget?.clientRect
-            ),
-            fallbackReleaseTarget?.clientRect
-          );
+          scheduleDragReleaseClear();
         } else if (topLevelDropResult.releaseMode === DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB) {
           scheduleDragReleaseTargetResolve(
             releaseKey,

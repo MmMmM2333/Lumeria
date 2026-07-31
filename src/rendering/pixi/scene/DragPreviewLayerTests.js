@@ -8,6 +8,11 @@ function runUntil(condition, maxSteps = 600) {
   return false;
 }
 
+function readNodeCenter(relativeTo, node) {
+  const point = relativeTo.toLocal({ x: 0, y: 0 }, node);
+  return { x: point.x, y: point.y };
+}
+
 function installPixiTextTestDom() {
   if (!("CanvasRenderingContext2D" in globalThis)) {
     globalThis.CanvasRenderingContext2D = class CanvasRenderingContext2D {};
@@ -109,6 +114,93 @@ export async function runDragPreviewLayerTests() {
       });
       motionRuntime.step(1);
       assert(calls.join(",") === "release-1-app-a", "release completion should fire once per release key");
+    } finally {
+      layer.destroy({ children: true });
+      motionRuntime.reset();
+    }
+  }
+
+  {
+    motionRuntime.reset();
+    const calls = [];
+    const layer = new DragPreviewLayer({
+      onReleaseComplete: (release) => calls.push(release.key),
+    });
+    const previewState = {
+      cellSize: { height: 80, width: 80 },
+      item: { id: "app-preview-slot", name: "Preview Slot App", type: "app" },
+      offset: { x: 32, y: 32 },
+      pointer: { x: 180, y: 220 },
+      size: { height: 64, width: 64 },
+      source: { index: 0, pageIndex: 0, type: "page" },
+    };
+    const releaseState = {
+      ...previewState,
+      key: "release-folder-preview-slot",
+      releaseMode: "folder-preview-slot",
+      suppressFolderPreviewChildId: "app-preview-slot",
+      suppressFolderPreviewFolderId: "folder-preview-slot",
+      targetFolderId: "folder-preview-slot",
+      targetPreviewSlotIndex: 8,
+      velocity: { x: 0, y: 0 },
+    };
+    const targetPose = {
+      center: { x: 480, y: 360 },
+      matrix: { a: 0.28, b: 0, c: 0, d: 0.28 },
+    };
+    const targetFolderNode = {
+      destroyed: false,
+      item: { id: "folder-preview-slot", type: "folder" },
+      getFolderPreviewChildReleasePose(_relativeTo, slotIndex, options = {}) {
+        if (slotIndex !== 8 || options.expectedChildId !== "app-preview-slot") return null;
+        return {
+          center: { ...targetPose.center },
+          matrix: { ...targetPose.matrix },
+          targetChildId: "app-preview-slot",
+        };
+      },
+    };
+    const baseState = {
+      deviceResolution: 2,
+      folderPageSize: 9,
+      height: 600,
+      iconSize: 64,
+      isTextlessMode: false,
+      launchTargetStatusById: {},
+      showMissingLaunchTargetBadge: true,
+      stageRect: { height: 600, left: 0, top: 0, width: 800 },
+      targetFolderNode,
+      width: 800,
+    };
+
+    try {
+      layer.update({ ...baseState, previewState });
+      layer.update({ ...baseState, releaseState });
+      assert(!("targetRect" in releaseState), "test setup should exercise the semantic release path without a target rectangle");
+      const beforeMove = readNodeCenter(layer, layer.previewNode.visualWrap);
+      targetPose.center.x += 387.2;
+      targetPose.center.y -= 218.4;
+      layer.onRender?.();
+      const afterMove = readNodeCenter(layer, layer.previewNode.visualWrap);
+      assert(
+        Math.abs(afterMove.x - beforeMove.x - 387.2) < 0.001 &&
+          Math.abs(afterMove.y - beforeMove.y + 218.4) < 0.001,
+        "folder preview slot releases should inherit the live target node movement instead of waiting for a target rectangle"
+      );
+
+      for (let frame = 0; frame < 240 && calls.length === 0; frame += 1) {
+        targetPose.center.x += 1.5;
+        targetPose.center.y -= 0.25;
+        motionRuntime.step(1 / 60);
+        layer.onRender?.();
+      }
+      assert(calls.join(",") === "release-folder-preview-slot", "semantic folder preview slot release should complete through DragPreviewLayer");
+      const terminalCenter = readNodeCenter(layer, layer.previewNode.visualWrap);
+      assert(
+        Math.abs(terminalCenter.x - targetPose.center.x) < 0.25 &&
+          Math.abs(terminalCenter.y - targetPose.center.y) < 0.25,
+        "DragPreviewLayer should transfer visual ownership only after the ghost reaches the live target child"
+      );
     } finally {
       layer.destroy({ children: true });
       motionRuntime.reset();

@@ -763,7 +763,11 @@ export class DesktopLayer extends Container {
   }
 
   updateSingleStageDragPreviewLayer(state) {
+    const targetFolderNode = state.dragReleaseState?.targetFolderId
+      ? this.findIconNodeByItemId(state.dragReleaseState.targetFolderId)
+      : null;
     this.singleStageDragPreviewLayer.update({
+      deviceResolution: state.deviceResolution,
       folderHoverState: state.dragFolderHoverState,
       folderPageSize: state.folderPageSize,
       height: state.height,
@@ -774,6 +778,7 @@ export class DesktopLayer extends Container {
       releaseState: state.dragReleaseState,
       showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge,
       stageRect: state.stageRect,
+      targetFolderNode,
       width: state.width,
     });
   }

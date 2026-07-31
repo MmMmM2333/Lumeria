@@ -409,7 +409,12 @@ function makeChildSnapshot({
     return result;
   }
   if (suppressed) {
-    if (childNode?.visible !== false) result.violations.push(makeViolation("suppressed-child-visible", folderNode?.item?.id, child?.id, index));
+    if (childNode?.visible === false) {
+      result.violations.push(makeViolation("suppressed-child-transform-hidden", folderNode?.item?.id, child?.id, index));
+    }
+    if (childNode?.renderable !== false) {
+      result.violations.push(makeViolation("suppressed-child-renderable", folderNode?.item?.id, child?.id, index));
+    }
     return result;
   }
   if (childNode?.visible === false) result.violations.push(makeViolation("preview-child-hidden", folderNode?.item?.id, child?.id, index));

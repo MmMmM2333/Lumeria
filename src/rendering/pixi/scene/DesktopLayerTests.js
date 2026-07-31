@@ -1592,10 +1592,18 @@ export async function runDesktopLayerTests() {
         calls.push(state);
       },
     };
+    const targetFolderNode = makeNode("folder-preview-target");
+    targetFolderNode.item = { id: "folder-preview-target", type: "folder" };
+    layer.iconNodes.set("desktop:folder-preview-target", targetFolderNode);
     const previewState = { item: { id: "app-a", type: "app" } };
-    const releaseState = { item: { id: "app-a", type: "app" } };
+    const releaseState = {
+      item: { id: "app-a", type: "app" },
+      releaseMode: "folder-preview-slot",
+      targetFolderId: "folder-preview-target",
+    };
 
     layer.updateSingleStageDragPreviewLayer({
+      deviceResolution: 1.5,
       dragFolderHoverState: { phase: "hover", targetType: "folder" },
       dragPreviewState: previewState,
       dragReleaseState: releaseState,
@@ -1611,8 +1619,11 @@ export async function runDesktopLayerTests() {
 
     assert(calls[0].previewState === previewState, "root-stage drag preview should receive the active preview state");
     assert(calls[0].releaseState === releaseState, "root-stage drag preview should receive the active release state");
+    assert(calls[0].targetFolderNode === targetFolderNode, "folder preview slot release should receive the current real target IconNode");
+    assert(calls[0].deviceResolution === 1.5, "folder preview slot release should receive renderer resolution for device-pixel handoff thresholds");
 
     layer.updateSingleStageDragPreviewLayer({
+      deviceResolution: 2,
       dragPreviewState: null,
       dragReleaseState: null,
       folderPageSize: 9,
@@ -1627,6 +1638,7 @@ export async function runDesktopLayerTests() {
 
     assert(calls[1].previewState === null, "root-stage drag preview should clear when no preview state is active");
     assert(calls[1].releaseState === null, "root-stage drag preview should clear when no release state is active");
+    assert(calls[1].targetFolderNode == null, "root-stage drag preview should clear the live folder target with the release");
   }
 
   {
