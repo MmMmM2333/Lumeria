@@ -378,26 +378,16 @@ export class DesktopLayer extends Container {
         if (shouldRetireStaleHandoff) this.clearFolderHandoffNode(item.id);
         seen.add(key);
         let node = this.iconNodes.get(key);
+        const isNewNode = !node;
         const shouldSnapDragHandoffLayout = !isFolderClosingHandoff && (entry.isActiveDraggedItem || entry.isReleaseGhostItem);
         const shouldSnapResizeLayout = !isFolderClosingHandoff && state.snapDesktopLayout === true;
-        if (!node) {
+        if (isNewNode) {
           node = new IconNode({
             onAction: (action, originalEvent, actionItem, actionSource, iconNode) =>
               this.handleIconAction(action, originalEvent, actionItem, actionSource, iconNode),
           });
-          node.alpha = isFolderClosingHandoff || shouldSnapDragHandoffLayout ? 1 : 0;
-          node.position.set(layoutTarget.x, isFolderClosingHandoff || shouldSnapDragHandoffLayout ? layoutTarget.y : layoutTarget.y + 8);
           this.iconNodes.set(key, node);
           this.pageTrack.addChild(node);
-          if (!isFolderClosingHandoff && !shouldSnapDragHandoffLayout) {
-            motion(node)
-              .preset("fade")
-              .layout()
-              .interrupt("retarget")
-              .to({ alpha: 1 })
-              .start();
-            springIconLayoutPosition(node, layoutTarget, markBoundsDirty);
-          }
         } else if ((shouldSnapDragHandoffLayout || shouldSnapResizeLayout) && shouldSpringLayout) {
           snapIconLayoutPosition(
             node,
@@ -414,6 +404,19 @@ export class DesktopLayer extends Container {
         node.stageRect = state.stageRect;
         node.__folderSourceGhostedByOwnership = Boolean(entry.isFolderSourceGhosted);
         node.setState(nodeState);
+        if (isNewNode) {
+          node.alpha = isFolderClosingHandoff || shouldSnapDragHandoffLayout ? 1 : 0;
+          node.position.set(layoutTarget.x, isFolderClosingHandoff || shouldSnapDragHandoffLayout ? layoutTarget.y : layoutTarget.y + 8);
+          if (!isFolderClosingHandoff && !shouldSnapDragHandoffLayout) {
+            motion(node)
+              .preset("fade")
+              .layout()
+              .interrupt("retarget")
+              .to({ alpha: 1 })
+              .start();
+            springIconLayoutPosition(node, layoutTarget, markBoundsDirty);
+          }
+        }
         let folderHandoffEntry = effectiveFolderHandoffEntry;
         if (isFolderClosingHandoff && isActiveFolderClosingHandoff) {
           this.ensureFolderHandoffNode(item.id, node, layoutTarget, { revealLabel: false });

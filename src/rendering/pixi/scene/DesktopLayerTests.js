@@ -618,6 +618,7 @@ export async function runDesktopLayerTests() {
       const searchEntry = layer.lastDesktopRenderPlan.entries.find((entry) => entry.key === "search:0:search-result-app");
       assert(searchNode, "search scope switch should create the new search node");
       assert(pageTrack.children.includes(searchNode), "new search node should remain mounted in the page track");
+      assert(searchNode.alpha === 0, "new search node should stay at the fade start alpha until the motion runtime advances");
       assert(searchEntry && searchNode.y > searchEntry.layoutTarget.y, "new search node should keep the ordinary entry motion");
     } finally {
       motionRuntime.reset();
