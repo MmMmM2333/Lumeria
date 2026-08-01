@@ -14,6 +14,7 @@ import { runLaunchpadLaunchFlowTests } from "../composables/useLaunchpadLaunchFl
 import { runLaunchpadLifecycleTests } from "../composables/useLaunchpadLifecycleTests.js";
 import { runLaunchpadAppsTests } from "../composables/useLaunchpadAppsTests.js";
 import { runLaunchpadNativeTests } from "../composables/useLaunchpadNativeTests.js";
+import { runLaunchpadNoticesTests } from "../composables/useLaunchpadNoticesTests.js";
 import { runLaunchpadPageCommandsTests } from "../composables/useLaunchpadPageCommandsTests.js";
 import { runLaunchpadSearchTests } from "../composables/useLaunchpadSearchTests.js";
 import { runLaunchpadSettingsConfigTests } from "../composables/useLaunchpadSettingsConfigTests.js";
@@ -173,6 +174,7 @@ await runLaunchpadLaunchFlowTests();
 await runLaunchpadLifecycleTests();
 await runLaunchpadAppsTests();
 await runLaunchpadNativeTests();
+runLaunchpadNoticesTests();
 runLaunchpadPageCommandsTests();
 runLaunchpadSurfaceInteractionsTests();
 runLaunchpadViewStateTests();

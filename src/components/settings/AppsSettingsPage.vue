@@ -1,79 +1,82 @@
 <template>
   <div :class="['settings-tab-panel', isAppsDetailPage && 'settings-tab-panel-fill']" role="tabpanel" aria-label="应用">
-    <template v-if="isIgnoredAppsPage">
-      <section class="settings-section settings-section-plain settings-section-fill" aria-label="忽略的应用">
+    <template v-if="isExcludedAppsPage">
+      <section class="settings-section settings-section-plain settings-section-fill" aria-label="已排除的应用">
         <div class="app-settings-detail-toolbar">
           <fluent-text-input
-            class="settings-text-input ignored-app-search"
-            name="ignoredAppSearch"
-            placeholder="搜索忽略的应用"
-            aria-label="搜索忽略的应用"
+            class="settings-text-input excluded-app-search"
+            name="excludedAppSearch"
+            placeholder="搜索已排除的应用"
+            aria-label="搜索已排除的应用"
             autocomplete="off"
-            :value.prop="ignoredAppsSearchQuery"
-            @input="setIgnoredAppsSearchQuery($event.target.value)"
+            :value.prop="excludedAppsSearchQuery"
+            @input="setExcludedAppsSearchQuery($event.target.value)"
           >
             <SearchIcon slot="start" class="app-manager-search-icon" />
           </fluent-text-input>
         </div>
+        <p class="settings-field-hint excluded-app-description">
+          这些应用不会出现在后续扫描结果中。取消排除后，可以重新扫描并添加。
+        </p>
 
         <Transition name="settings-selection-bar">
-          <div v-if="selectedIgnoredAppCount > 0" class="app-manager-selection-bar">
-            <span>已选择 {{ selectedIgnoredAppCount }} 个应用</span>
+          <div v-if="selectedExcludedAppCount > 0" class="app-manager-selection-bar">
+            <span>已选择 {{ selectedExcludedAppCount }} 个应用</span>
             <span class="app-manager-selection-actions">
-              <SettingsFluentButton appearance="subtle" size="small" type="button" @click="restoreSelectedIgnoredApps">
-                恢复所选
+              <SettingsFluentButton appearance="subtle" size="small" type="button" @click="cancelSelectedScanExclusions">
+                取消所选排除
               </SettingsFluentButton>
             </span>
           </div>
         </Transition>
 
-        <div v-if="filteredIgnoredApps.length" class="settings-list-actions app-manager-list-actions ignored-app-list-actions">
-          <span>{{ filteredIgnoredApps.length }} 个结果</span>
-          <button class="settings-link-button" type="button" @click="selectAllFilteredIgnoredApps">全选</button>
-          <button class="settings-link-button" type="button" @click="clearIgnoredAppSelection">清空选择</button>
+        <div v-if="filteredExcludedApps.length" class="settings-list-actions app-manager-list-actions excluded-app-list-actions">
+          <span>{{ filteredExcludedApps.length }} 个结果</span>
+          <button class="settings-link-button" type="button" @click="selectAllFilteredExcludedApps">全选</button>
+          <button class="settings-link-button" type="button" @click="clearExcludedAppSelection">清空选择</button>
         </div>
 
-        <div v-if="filteredIgnoredApps.length" class="app-manager-list ignored-app-list" role="list" aria-label="忽略的应用">
+        <div v-if="filteredExcludedApps.length" class="app-manager-list excluded-app-list" role="list" aria-label="已排除的应用">
           <div
-            v-for="{ app, index, key } in filteredIgnoredApps"
+            v-for="{ app, index, key } in filteredExcludedApps"
             :key="key"
-            :class="['app-manager-item', 'ignored-app-item', isIgnoredAppSelected(key) && 'app-manager-item-selected']"
+            :class="['app-manager-item', 'excluded-app-item', isExcludedAppSelected(key) && 'app-manager-item-selected']"
             role="listitem"
-            :aria-selected="isIgnoredAppSelected(key)"
-            @click="toggleIgnoredAppSelection(key)"
+            :aria-selected="isExcludedAppSelected(key)"
+            @click="toggleExcludedAppSelection(key)"
           >
             <fluent-checkbox
-              :name="`ignoredAppSelection-${key}`"
-              :aria-label="`选择 ${getIgnoredAppName(app)}`"
-              :checked.prop="isIgnoredAppSelected(key)"
+              :name="`excludedAppSelection-${key}`"
+              :aria-label="`选择 ${getExcludedAppName(app)}`"
+              :checked.prop="isExcludedAppSelected(key)"
               @click.stop
-              @change.stop="toggleIgnoredAppSelection(key, $event.target.checked)"
+              @change.stop="toggleExcludedAppSelection(key, $event.target.checked)"
             />
             <span class="app-manager-icon">
               <img v-if="getIconSource(app)" :src="getIconSource(app)" alt="" draggable="false" />
-              <span v-else>{{ getIgnoredAppGlyph(app) }}</span>
+              <span v-else>{{ getExcludedAppGlyph(app) }}</span>
             </span>
             <span class="app-manager-details">
-              <span class="app-manager-name">{{ getIgnoredAppName(app) }}</span>
-              <span class="app-manager-target" :title="getIgnoredAppSubtitle(app)">{{ getIgnoredAppSubtitle(app) }}</span>
+              <span class="app-manager-name">{{ getExcludedAppName(app) }}</span>
+              <span class="app-manager-target" :title="getExcludedAppSubtitle(app)">{{ getExcludedAppSubtitle(app) }}</span>
             </span>
             <span class="app-manager-actions">
               <SettingsFluentButton
-                class="ignored-app-restore-button"
+                class="excluded-app-restore-button"
                 appearance="subtle"
                 icon-only
                 type="button"
-                aria-label="恢复扫描"
-                title="恢复扫描"
-                @click.stop="restoreIgnoredApp(index, key)"
+                :aria-label="`取消排除 ${getExcludedAppName(app)}`"
+                title="取消排除"
+                @click.stop="cancelScanExclusion(index, key)"
               >
-                <ArrowCounterclockwiseIcon class="ignored-app-restore-icon" />
+                <ArrowCounterclockwiseIcon class="excluded-app-restore-icon" />
               </SettingsFluentButton>
             </span>
           </div>
         </div>
         <div v-else class="settings-empty-state app-settings-detail-empty">
-          {{ state.scanAppBlacklist.value.length ? "没有匹配的应用" : "没有忽略的应用" }}
+          {{ state.scanAppBlacklist.value.length ? "没有匹配的应用" : "暂无已排除的应用" }}
         </div>
       </section>
     </template>
@@ -113,12 +116,21 @@
           <div v-if="state.selectedManagedAppCount.value > 0" class="app-manager-selection-bar">
             <span>已选择 {{ state.selectedManagedAppCount.value }} 个应用</span>
             <span class="app-manager-selection-actions">
-              <SettingsFluentButton appearance="subtle" size="small" type="button" @click="state.ignoreSelectedManagedApps">
-                批量忽略
-              </SettingsFluentButton>
-              <SettingsFluentButton appearance="subtle" tone="danger" size="small" type="button" @click="state.deleteSelectedManagedApps">
+              <SettingsFluentButton appearance="subtle" size="small" type="button" @click="state.removeSelectedManagedAppsFromLaunchpad">
                 <DeleteIcon slot="start" class="settings-command-icon" />
-                批量删除
+                从启动台移除
+              </SettingsFluentButton>
+              <SettingsFluentButton
+                appearance="subtle"
+                tone="danger"
+                size="small"
+                type="button"
+                :disabled="!state.canExcludeSelectedManagedAppsFromScan.value"
+                :title="state.canExcludeSelectedManagedAppsFromScan.value ? '' : '所选应用中包含没有扫描来源的项目'"
+                @click="state.excludeSelectedManagedAppsFromScan"
+              >
+                <DeleteDismissIcon slot="start" class="settings-command-icon" />
+                移除并从扫描中排除
               </SettingsFluentButton>
             </span>
           </div>
@@ -170,8 +182,15 @@
                   </SettingsFluentButton>
                   <fluent-menu-list>
                     <fluent-menu-item @click="state.openEditManagedApp(app)">编辑</fluent-menu-item>
-                    <fluent-menu-item @click="state.ignoreManagedApp(app)">忽略</fluent-menu-item>
-                    <fluent-menu-item class="settings-menu-item-danger" @click="state.deleteManagedApp(app.id)">删除</fluent-menu-item>
+                    <fluent-divider role="separator" />
+                    <fluent-menu-item @click="state.removeManagedAppFromLaunchpad(app.id)">从启动台移除</fluent-menu-item>
+                    <fluent-menu-item
+                      v-if="state.canExcludeManagedAppFromScan(app)"
+                      class="settings-menu-item-danger"
+                      @click="state.excludeManagedAppFromScan(app)"
+                    >
+                      移除并从扫描中排除
+                    </fluent-menu-item>
                   </fluent-menu-list>
                 </fluent-menu>
               </span>
@@ -280,7 +299,7 @@
                 <FilterIcon />
               </span>
               <span class="settings-list-copy">
-                <span class="settings-list-title">关键字黑名单</span>
+                <span class="settings-list-title">排除关键字</span>
                 <span class="settings-list-description">{{ state.scanKeywordBlacklist.value.length }} 个关键字</span>
               </span>
               <ChevronDownIcon :class="['settings-list-chevron', isKeywordBlacklistExpanded && 'settings-list-chevron-open']" />
@@ -293,8 +312,8 @@
                     <fluent-text-input
                       class="settings-text-input scan-keyword-input"
                       name="newScanKeyword"
-                      placeholder="输入关键字"
-                      aria-label="新增扫描过滤关键字"
+                      placeholder="输入排除关键字"
+                      aria-label="新增扫描排除关键字"
                       autocomplete="off"
                       :value.prop="state.newScanKeyword.value"
                       @input="state.newScanKeyword.value = $event.target.value"
@@ -310,7 +329,7 @@
                       </button>
                     </span>
                   </div>
-                  <div v-else class="settings-empty-state">没有关键字</div>
+                  <div v-else class="settings-empty-state">没有排除关键字</div>
                 </div>
               </div>
             </Transition>
@@ -319,13 +338,13 @@
           <button
             type="button"
             class="settings-list-row settings-list-row-button settings-list-row-button-simple"
-            @click="openIgnoredAppsPage"
+            @click="openExcludedAppsPage"
           >
             <span class="settings-list-icon" aria-hidden="true">
               <AppsListDetailIcon />
             </span>
             <span class="settings-list-copy">
-              <span class="settings-list-title">忽略的应用</span>
+              <span class="settings-list-title">已排除的应用</span>
               <span class="settings-list-description">{{ state.scanAppBlacklist.value.length }} 个应用</span>
             </span>
             <ChevronRightIcon class="settings-list-chevron" />
@@ -424,6 +443,7 @@ import ArrowSyncIcon from "~icons/fluent/arrow-sync-20-regular";
 import ChevronDownIcon from "~icons/fluent/chevron-down-20-regular";
 import ChevronRightIcon from "~icons/fluent/chevron-right-20-regular";
 import DeleteIcon from "~icons/fluent/delete-20-regular";
+import DeleteDismissIcon from "~icons/fluent/delete-dismiss-20-regular";
 import DismissIcon from "~icons/fluent/dismiss-12-regular";
 import FilterIcon from "~icons/fluent/filter-24-regular";
 import FolderProhibitedIcon from "~icons/fluent/folder-prohibited-24-regular";
@@ -441,12 +461,12 @@ const props = defineProps({
 
 const { activeSettingsSubPage, formatScanTime, openSettingsSubPage, settingsSubPages } = props.context;
 const { state } = props;
-const ignoredAppsSubPage = settingsSubPages.appsIgnoredApps;
+const excludedAppsSubPage = settingsSubPages.appsExcludedApps;
 const appManagerSubPage = settingsSubPages.appsAppManager;
 
 const isKeywordBlacklistExpanded = ref(false);
-const ignoredAppsSearchQuery = ref("");
-const selectedIgnoredAppKeys = ref(new Set());
+const excludedAppsSearchQuery = ref("");
+const selectedExcludedAppKeys = ref(new Set());
 
 const APP_MANAGER_ROW_HEIGHT = 64;
 const APP_MANAGER_ROW_GAP = 6;
@@ -455,14 +475,14 @@ const APP_MANAGER_OVERSCAN = 6;
 const appManagerListRef = ref(null);
 
 const enabledScanRootCount = computed(() => state.scanRoots.value.filter((root) => root.enabled).length);
-const isIgnoredAppsPage = computed(() => activeSettingsSubPage.value?.id === ignoredAppsSubPage.id);
+const isExcludedAppsPage = computed(() => activeSettingsSubPage.value?.id === excludedAppsSubPage.id);
 const isAppManagerPage = computed(() => activeSettingsSubPage.value?.id === appManagerSubPage.id);
-const isAppsDetailPage = computed(() => isIgnoredAppsPage.value || isAppManagerPage.value);
-const ignoredAppsSearchTerm = computed(() => ignoredAppsSearchQuery.value.trim().toLocaleLowerCase());
-const filteredIgnoredApps = computed(() => {
-  const term = ignoredAppsSearchTerm.value;
+const isAppsDetailPage = computed(() => isExcludedAppsPage.value || isAppManagerPage.value);
+const excludedAppsSearchTerm = computed(() => excludedAppsSearchQuery.value.trim().toLocaleLowerCase());
+const filteredExcludedApps = computed(() => {
+  const term = excludedAppsSearchTerm.value;
   return state.scanAppBlacklist.value
-    .map((app, index) => ({ app, index, key: getIgnoredAppKey(app, index) }))
+    .map((app, index) => ({ app, index, key: getExcludedAppKey(app, index) }))
     .filter(({ app }) => {
       if (!term) return true;
       return [
@@ -472,7 +492,7 @@ const filteredIgnoredApps = computed(() => {
       ].some((value) => String(value || "").toLocaleLowerCase().includes(term));
     });
 });
-const selectedIgnoredAppCount = computed(() => selectedIgnoredAppKeys.value.size);
+const selectedExcludedAppCount = computed(() => selectedExcludedAppKeys.value.size);
 
 const appManagerVirtualizer = useVirtualizer({
   get count() {
@@ -508,20 +528,20 @@ watch(
   },
 );
 
-watch(ignoredAppsSearchQuery, () => {
-  clearIgnoredAppSelection();
+watch(excludedAppsSearchQuery, () => {
+  clearExcludedAppSelection();
 });
 
 watch(
   () => state.scanAppBlacklist.value,
   () => {
-    const currentKeys = new Set(state.scanAppBlacklist.value.map((app, index) => getIgnoredAppKey(app, index)));
-    selectedIgnoredAppKeys.value = new Set([...selectedIgnoredAppKeys.value].filter((key) => currentKeys.has(key)));
+    const currentKeys = new Set(state.scanAppBlacklist.value.map((app, index) => getExcludedAppKey(app, index)));
+    selectedExcludedAppKeys.value = new Set([...selectedExcludedAppKeys.value].filter((key) => currentKeys.has(key)));
   },
 );
 
-watch(isIgnoredAppsPage, (active) => {
-  if (!active) clearIgnoredAppSelection();
+watch(isExcludedAppsPage, (active) => {
+  if (!active) clearExcludedAppSelection();
 });
 
 watch(isAppManagerPage, async (active) => {
@@ -531,76 +551,76 @@ watch(isAppManagerPage, async (active) => {
   appManagerVirtualizer.value.measure();
 });
 
-function openIgnoredAppsPage() {
-  openSettingsSubPage(ignoredAppsSubPage);
+function openExcludedAppsPage() {
+  openSettingsSubPage(excludedAppsSubPage);
 }
 
 function openAppManagerPage() {
   openSettingsSubPage(appManagerSubPage);
 }
 
-function getIgnoredAppKey(app, index) {
+function getExcludedAppKey(app, index) {
   if (app?.sourceKey) return `source:${String(app.sourceKey).toLocaleLowerCase()}`;
   if (app?.path) return `path:${String(app.path).replace(/\\/g, "/").toLocaleLowerCase()}`;
   if (app?.name) return `name:${String(app.name).toLocaleLowerCase()}:${index}`;
-  return `ignored-app:${index}`;
+  return `excluded-app:${index}`;
 }
 
-function getIgnoredAppName(app) {
+function getExcludedAppName(app) {
   return String(app?.name || app?.path || app?.sourceKey || "未命名应用");
 }
 
-function getIgnoredAppSubtitle(app) {
+function getExcludedAppSubtitle(app) {
   return String(app?.path || app?.sourceKey || "未设置路径");
 }
 
-function getIgnoredAppGlyph(app) {
+function getExcludedAppGlyph(app) {
   const label = String(app?.emoji || app?.name || app?.path || app?.sourceKey || "A").trim();
   return label.charAt(0).toLocaleUpperCase() || "A";
 }
 
-function isIgnoredAppSelected(key) {
-  return selectedIgnoredAppKeys.value.has(key);
+function isExcludedAppSelected(key) {
+  return selectedExcludedAppKeys.value.has(key);
 }
 
-function setIgnoredAppsSearchQuery(value) {
-  ignoredAppsSearchQuery.value = value;
+function setExcludedAppsSearchQuery(value) {
+  excludedAppsSearchQuery.value = value;
 }
 
-function toggleIgnoredAppSelection(key, checked = !isIgnoredAppSelected(key)) {
+function toggleExcludedAppSelection(key, checked = !isExcludedAppSelected(key)) {
   if (!key) return;
-  const next = new Set(selectedIgnoredAppKeys.value);
+  const next = new Set(selectedExcludedAppKeys.value);
   if (checked) next.add(key);
   else next.delete(key);
-  selectedIgnoredAppKeys.value = next;
+  selectedExcludedAppKeys.value = next;
 }
 
-function selectAllFilteredIgnoredApps() {
-  selectedIgnoredAppKeys.value = new Set(filteredIgnoredApps.value.map(({ key }) => key));
+function selectAllFilteredExcludedApps() {
+  selectedExcludedAppKeys.value = new Set(filteredExcludedApps.value.map(({ key }) => key));
 }
 
-function clearIgnoredAppSelection() {
-  if (selectedIgnoredAppKeys.value.size === 0) return;
-  selectedIgnoredAppKeys.value = new Set();
+function clearExcludedAppSelection() {
+  if (selectedExcludedAppKeys.value.size === 0) return;
+  selectedExcludedAppKeys.value = new Set();
 }
 
-function restoreIgnoredApp(index, key) {
-  state.removeScanAppBlacklistItem(index);
-  if (!key || !selectedIgnoredAppKeys.value.has(key)) return;
-  const next = new Set(selectedIgnoredAppKeys.value);
+function cancelScanExclusion(index, key) {
+  state.cancelScanAppExclusion(index);
+  if (!key || !selectedExcludedAppKeys.value.has(key)) return;
+  const next = new Set(selectedExcludedAppKeys.value);
   next.delete(key);
-  selectedIgnoredAppKeys.value = next;
+  selectedExcludedAppKeys.value = next;
 }
 
-function restoreSelectedIgnoredApps() {
-  if (selectedIgnoredAppKeys.value.size === 0) return;
-  const selectedKeys = selectedIgnoredAppKeys.value;
-  state.scanAppBlacklist.value
-    .map((app, index) => ({ index, key: getIgnoredAppKey(app, index) }))
+function cancelSelectedScanExclusions() {
+  if (selectedExcludedAppKeys.value.size === 0) return;
+  const selectedKeys = selectedExcludedAppKeys.value;
+  const indices = state.scanAppBlacklist.value
+    .map((app, index) => ({ index, key: getExcludedAppKey(app, index) }))
     .filter(({ key }) => selectedKeys.has(key))
-    .sort((left, right) => right.index - left.index)
-    .forEach(({ index }) => state.removeScanAppBlacklistItem(index));
-  clearIgnoredAppSelection();
+    .map(({ index }) => index);
+  state.cancelScanAppExclusions(indices);
+  clearExcludedAppSelection();
 }
 
 </script>

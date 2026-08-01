@@ -1,10 +1,11 @@
 import { computed, ref, shallowRef } from "vue";
 import {
   DEFAULT_SCAN_ROOTS,
+  canExcludeAppFromScan,
   compareAppsByDefaultOrder,
   fallbackAppGlyph,
-  isAppBlockedByScanBlacklist,
-  makeScanAppBlacklistEntry,
+  isAppExcludedFromScan,
+  makeScanAppExclusionEntry,
   makeLaunchTarget,
   normalizeNativeApp,
   normalizeScanAppBlacklist,
@@ -74,6 +75,10 @@ export function useLaunchpadApps(options) {
   let iconChooserRequestId = 0;
 
   const managedApps = computed(() => options.collectAppsFromPages(options.pages.value).sort(compareAppsByDefaultOrder));
+  const selectedManagedApps = computed(() => {
+    const selectedIds = new Set(appManagerSelectedIds.value);
+    return managedApps.value.filter((app) => selectedIds.has(app.id));
+  });
   const filteredManagedApps = computed(() => {
     const query = appManagerSearchQuery.value.trim().toLowerCase();
     if (!query) return managedApps.value;
@@ -85,6 +90,11 @@ export function useLaunchpadApps(options) {
     });
   });
   const selectedManagedAppCount = computed(() => appManagerSelectedIds.value.length);
+  const canExcludeSelectedManagedAppsFromScan = computed(() => (
+    selectedManagedAppCount.value > 0
+    && selectedManagedApps.value.length === selectedManagedAppCount.value
+    && selectedManagedApps.value.every(canExcludeManagedAppFromScan)
+  ));
   const scanResultSelectedCount = computed(() => scanResultSelectedIds.value.length);
   const canAddScannedApps = computed(() => scanResultSelectedCount.value > 0);
   const canAddManagedApp = computed(() => newAppName.value.trim().length > 0 && newAppTarget.value.trim().length > 0);
@@ -318,10 +328,37 @@ export function useLaunchpadApps(options) {
     );
   }
 
-  function removeScanAppBlacklistItem(index) {
+  function showAppActionNotice(config) {
+    options.showTransientNotice?.({
+      durationMs: 3600,
+      intent: "info",
+      ...config,
+    });
+  }
+
+  function cancelScanAppExclusions(indices) {
+    const selectedIndices = Array.from(new Set((indices || [])
+      .map(Number)
+      .filter((index) => Number.isInteger(index) && index >= 0 && index < options.scanAppBlacklist.value.length)));
+    if (!selectedIndices.length) return false;
+    const selectedIndexSet = new Set(selectedIndices);
+    const restoredEntries = options.scanAppBlacklist.value.filter((_, index) => selectedIndexSet.has(index));
     options.scanAppBlacklist.value = normalizeScanAppBlacklist(
-      options.scanAppBlacklist.value.filter((_, itemIndex) => itemIndex !== index)
+      options.scanAppBlacklist.value.filter((_, index) => !selectedIndexSet.has(index))
     );
+    const singleName = restoredEntries.length === 1 ? String(restoredEntries[0]?.name || "该应用") : "";
+    showAppActionNotice({
+      title: "已取消排除",
+      message: restoredEntries.length === 1
+        ? `“${singleName}”可在重新扫描后再次添加。`
+        : `已允许 ${restoredEntries.length} 个应用重新出现在扫描结果中。`,
+      intent: "success",
+    });
+    return true;
+  }
+
+  function cancelScanAppExclusion(index) {
+    return cancelScanAppExclusions([index]);
   }
 
   function toggleScanResultSelection(appId, checked) {
@@ -751,54 +788,118 @@ export function useLaunchpadApps(options) {
     options.schedulePageGridMetrics();
   }
 
-  function deleteManagedApps(appIds) {
+  function applyManagedAppRemoval(appIds) {
     if (options.isDragActive()) return;
     const ids = Array.from(new Set((appIds || []).filter(Boolean)));
-    if (!ids.length) return;
+    if (!ids.length) return [];
+    const idSet = new Set(ids);
+    const removedApps = managedApps.value.filter((app) => idSet.has(app.id));
+    if (!removedApps.length) return [];
+    const removedIds = removedApps.map((app) => app.id);
 
     options.cancelLongPress?.();
     let next = options.pages.value;
-    for (const id of ids) next = options.removeEverywhere(next, id);
-    options.hiddenAppIds.value = Array.from(new Set([...options.hiddenAppIds.value, ...ids]));
+    for (const id of removedIds) next = options.removeEverywhere(next, id);
+    options.hiddenAppIds.value = Array.from(new Set([...options.hiddenAppIds.value, ...removedIds]));
     options.commitPagesAfterDeletion(next);
-    const deletedIds = new Set(ids);
-    if (deletedIds.has(options.selectedIcon?.value?.id)) options.clearSelectedIcon?.();
-    appManagerSelectedIds.value = appManagerSelectedIds.value.filter((id) => !deletedIds.has(id));
-    if (deletedIds.has(editingManagedAppId.value)) closeEditManagedApp();
+    const removedIdSet = new Set(removedIds);
+    if (removedIdSet.has(options.selectedIcon?.value?.id)) options.clearSelectedIcon?.();
+    appManagerSelectedIds.value = appManagerSelectedIds.value.filter((id) => !removedIdSet.has(id));
+    if (removedIdSet.has(editingManagedAppId.value)) closeEditManagedApp();
     if (options.renderedFolder.value && options.openFolderId.value && !options.findFolder(options.pages.value, options.openFolderId.value)) {
       options.commitOpenFolder(null);
     }
     options.schedulePageGridMetrics();
+    return removedApps;
   }
 
-  function deleteManagedApp(appId) {
-    deleteManagedApps([appId]);
+  function showManagedAppsRemovedNotice(removedApps) {
+    if (!removedApps.length) return;
+    showAppActionNotice({
+      title: "已从启动台移除",
+      message: removedApps.length === 1
+        ? `“${removedApps[0].name}”已从启动台移除。此操作不会卸载应用或删除文件。`
+        : `已将 ${removedApps.length} 个应用从启动台移除。此操作不会卸载应用或删除文件。`,
+    });
   }
 
-  function deleteSelectedManagedApps() {
-    deleteManagedApps(appManagerSelectedIds.value);
+  function removeManagedAppsFromLaunchpad(appIds) {
+    const removedApps = applyManagedAppRemoval(appIds) || [];
+    showManagedAppsRemovedNotice(removedApps);
+    return removedApps.length > 0;
   }
 
-  function ignoreManagedApp(app) {
-    if (!app || options.isDragActive()) return;
-    const entry = makeScanAppBlacklistEntry(app);
-    options.scanAppBlacklist.value = normalizeScanAppBlacklist([
-      ...options.scanAppBlacklist.value,
-      entry,
+  function removeManagedAppFromLaunchpad(appId) {
+    return removeManagedAppsFromLaunchpad([appId]);
+  }
+
+  function removeSelectedManagedAppsFromLaunchpad() {
+    return removeManagedAppsFromLaunchpad(appManagerSelectedIds.value);
+  }
+
+  function canExcludeManagedAppFromScan(app) {
+    return canExcludeAppFromScan(app);
+  }
+
+  function excludeManagedAppsFromScan(apps) {
+    if (options.isDragActive()) return false;
+    const requestedApps = Array.from(new Map((apps || [])
+      .filter((app) => app?.id)
+      .map((app) => [app.id, app])).values());
+    if (!requestedApps.length) return false;
+    const currentById = new Map(managedApps.value.map((app) => [app.id, app]));
+    const currentApps = requestedApps.map((app) => currentById.get(app.id)).filter(Boolean);
+    if (currentApps.length !== requestedApps.length || !currentApps.every(canExcludeManagedAppFromScan)) {
+      showAppActionNotice({
+        title: "无法从扫描中排除",
+        message: "所选应用中包含没有稳定扫描来源的项目，未移除任何应用。",
+        intent: "error",
+      });
+      return false;
+    }
+
+    const entries = currentApps.map(makeScanAppExclusionEntry);
+    const previousBlacklist = normalizeScanAppBlacklist(options.scanAppBlacklist.value);
+    const nextBlacklist = normalizeScanAppBlacklist([
+      ...previousBlacklist,
+      ...entries,
     ]);
-    deleteManagedApps([app.id]);
+    if (!currentApps.every((app) => isAppExcludedFromScan(app, nextBlacklist))) {
+      showAppActionNotice({
+        title: "无法从扫描中排除",
+        message: "无法保存应用的扫描来源，未移除任何应用。",
+        intent: "error",
+      });
+      return false;
+    }
+
+    options.scanAppBlacklist.value = nextBlacklist;
+    const removedApps = applyManagedAppRemoval(currentApps.map((app) => app.id)) || [];
+    if (removedApps.length !== currentApps.length) {
+      options.scanAppBlacklist.value = previousBlacklist;
+      showAppActionNotice({
+        title: "扫描排除未完成",
+        message: "应用状态在操作期间发生变化，请重新扫描后重试。",
+        intent: "error",
+      });
+      return false;
+    }
+
+    showAppActionNotice({
+      title: "已从扫描中排除",
+      message: removedApps.length === 1
+        ? `“${removedApps[0].name}”已移除，后续扫描将跳过此应用。可在设置的“已排除的应用”中取消排除。`
+        : `已移除并排除 ${removedApps.length} 个应用。可在设置的“已排除的应用”中取消排除。`,
+    });
+    return true;
   }
 
-  function ignoreSelectedManagedApps() {
-    if (options.isDragActive() || selectedManagedAppCount.value === 0) return;
-    const selectedIds = new Set(appManagerSelectedIds.value);
-    const selectedApps = managedApps.value.filter((app) => selectedIds.has(app.id));
-    if (!selectedApps.length) return;
-    options.scanAppBlacklist.value = normalizeScanAppBlacklist([
-      ...options.scanAppBlacklist.value,
-      ...selectedApps.map(makeScanAppBlacklistEntry),
-    ]);
-    deleteManagedApps(selectedApps.map((app) => app.id));
+  function excludeManagedAppFromScan(app) {
+    return excludeManagedAppsFromScan([app]);
+  }
+
+  function excludeSelectedManagedAppsFromScan() {
+    return excludeManagedAppsFromScan(appManagerSelectedIds.value.map((id) => ({ id })));
   }
 
   async function rescanManagedApps() {
@@ -824,7 +925,7 @@ export function useLaunchpadApps(options) {
           normalizeNativeApp(app, index),
           convertFilePathToAssetUrl
         ))
-        .filter((app) => !isAppBlockedByScanBlacklist(app, scanFilters.appBlacklist))
+        .filter((app) => !isAppExcludedFromScan(app, scanFilters.appBlacklist))
         .filter((app) => !existingIds.has(app.id) && !existingSourceKeys.has(app.sourceKey));
       scanResultApps.value = missingApps;
       scanResultWarnings.value = scanResult?.warnings || [];
@@ -900,6 +1001,8 @@ export function useLaunchpadApps(options) {
     browseNewAppLaunchFile,
     canAddManagedApp,
     canAddScannedApps,
+    canExcludeManagedAppFromScan,
+    canExcludeSelectedManagedAppsFromScan,
     canSaveEditingManagedApp,
     canEditAppArgs,
     canEditNewAppArgs,
@@ -916,8 +1019,8 @@ export function useLaunchpadApps(options) {
     closeEditManagedApp,
     closeIconChooser,
     closeScanResultDialog,
-    deleteManagedApp,
-    deleteSelectedManagedApps,
+    cancelScanAppExclusion,
+    cancelScanAppExclusions,
     editAppArgs,
     editAppIconPath,
     editAppIconDataUrl,
@@ -931,8 +1034,8 @@ export function useLaunchpadApps(options) {
     iconChoices,
     iconChoicesError,
     isAddingManagedApp,
-    ignoreManagedApp,
-    ignoreSelectedManagedApps,
+    excludeManagedAppFromScan,
+    excludeSelectedManagedAppsFromScan,
     isBrowsingEditAppTarget,
     isBrowsingNewAppTarget,
     isBrowsingScanRoot,
@@ -973,7 +1076,8 @@ export function useLaunchpadApps(options) {
     toggleScanRootEnabled,
     removeScanRoot,
     confirmResetScanRoots,
-    removeScanAppBlacklistItem,
+    removeManagedAppFromLaunchpad,
+    removeSelectedManagedAppsFromLaunchpad,
     removeScanKeywordBlacklistItem,
     updateAppCustomIcon,
   };

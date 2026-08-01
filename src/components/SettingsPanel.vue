@@ -412,9 +412,9 @@ const settingsTabs = [
   { id: "about", label: "关于", icon: InfoIcon },
 ];
 const settingsSubPages = Object.freeze({
-  appsIgnoredApps: Object.freeze({
-    id: "apps.ignoredApps",
-    label: "忽略的应用",
+  appsExcludedApps: Object.freeze({
+    id: "apps.excludedApps",
+    label: "已排除的应用",
     parentTabId: "apps",
   }),
   appsAppManager: Object.freeze({

@@ -1,7 +1,7 @@
 import { ref, shallowRef } from "vue";
 
 const WARNING_DIALOG_CLOSE_DURATION = 180;
-const LAYOUT_SAVE_NOTICE_CLOSE_DURATION = 2200;
+const TRANSIENT_NOTICE_CLOSE_DURATION = 2200;
 
 function getTimerHost() {
   return typeof window === "undefined" ? globalThis : window;
@@ -11,18 +11,18 @@ export function useLaunchpadNotices() {
   const warningDialog = shallowRef(null);
   const isWarningDialogOpen = ref(false);
   const layoutRecoveryNotice = shallowRef(null);
-  const layoutSaveNotice = shallowRef(null);
+  const transientNotice = shallowRef(null);
   let warningDialogCloseTimer = null;
-  let layoutSaveNoticeTimer = null;
+  let transientNoticeTimer = null;
 
   function clearWarningDialogTimer() {
     if (warningDialogCloseTimer) getTimerHost().clearTimeout(warningDialogCloseTimer);
     warningDialogCloseTimer = null;
   }
 
-  function clearLayoutSaveNoticeTimer() {
-    if (layoutSaveNoticeTimer) getTimerHost().clearTimeout(layoutSaveNoticeTimer);
-    layoutSaveNoticeTimer = null;
+  function clearTransientNoticeTimer() {
+    if (transientNoticeTimer) getTimerHost().clearTimeout(transientNoticeTimer);
+    transientNoticeTimer = null;
   }
 
   function showWarningDialog(config) {
@@ -75,16 +75,31 @@ export function useLaunchpadNotices() {
     layoutRecoveryNotice.value = null;
   }
 
-  function closeLayoutSaveNotice() {
-    clearLayoutSaveNoticeTimer();
-    layoutSaveNotice.value = null;
+  function closeTransientNotice() {
+    clearTransientNoticeTimer();
+    transientNotice.value = null;
+  }
+
+  function showTransientNotice(config) {
+    clearTransientNoticeTimer();
+    transientNotice.value = {
+      title: String(config?.title || "操作已完成"),
+      message: String(config?.message || ""),
+      detail: String(config?.detail || ""),
+      intent: config?.intent || "info",
+      actionText: config?.actionText || "",
+      onAction: config?.onAction,
+    };
+    const durationMs = Number(config?.durationMs) || 0;
+    if (durationMs > 0) {
+      transientNoticeTimer = getTimerHost().setTimeout(closeTransientNotice, durationMs);
+    }
   }
 
   function showLayoutSaveFailed(config) {
-    clearLayoutSaveNoticeTimer();
     const retryCount = Number(config?.retryCount) || 1;
     const detail = String(config?.error?.message || config?.error || "").trim();
-    layoutSaveNotice.value = {
+    showTransientNotice({
       title: "布局暂未保存",
       message: retryCount > 1
         ? `本次更改仍在当前会话中，重启后可能丢失。已失败 ${retryCount} 次。`
@@ -93,24 +108,22 @@ export function useLaunchpadNotices() {
       intent: "error",
       actionText: "重试",
       onAction: config?.onRetry,
-    };
+    });
   }
 
   function showLayoutSaveRecovered() {
-    clearLayoutSaveNoticeTimer();
-    layoutSaveNotice.value = {
+    showTransientNotice({
       title: "布局已保存",
       message: "之前未保存的更改已经写入。",
       intent: "success",
-    };
-    layoutSaveNoticeTimer = getTimerHost().setTimeout(closeLayoutSaveNotice, LAYOUT_SAVE_NOTICE_CLOSE_DURATION);
+      durationMs: TRANSIENT_NOTICE_CLOSE_DURATION,
+    });
   }
 
   function showLayoutLoadFailed(config) {
-    clearLayoutSaveNoticeTimer();
     const retryCount = Number(config?.retryCount) || 1;
     const detail = String(config?.error?.message || config?.error || "").trim();
-    layoutSaveNotice.value = {
+    showTransientNotice({
       title: "本地布局载入失败",
       message: retryCount > 1
         ? `当前更改不会保存。已失败 ${retryCount} 次。`
@@ -119,36 +132,36 @@ export function useLaunchpadNotices() {
       intent: "error",
       actionText: "重试",
       onAction: config?.onRetry,
-    };
+    });
   }
 
   function showLayoutLoadRecovered() {
-    clearLayoutSaveNoticeTimer();
-    layoutSaveNotice.value = {
+    showTransientNotice({
       title: "本地布局已载入",
       message: "之后的更改会正常保存。",
       intent: "success",
-    };
-    layoutSaveNoticeTimer = getTimerHost().setTimeout(closeLayoutSaveNotice, LAYOUT_SAVE_NOTICE_CLOSE_DURATION);
+      durationMs: TRANSIENT_NOTICE_CLOSE_DURATION,
+    });
   }
 
   return {
-    clearLayoutSaveNoticeTimer,
+    clearTransientNoticeTimer,
     clearWarningDialogTimer,
     closeLayoutRecoveryNotice,
-    closeLayoutSaveNotice,
+    closeTransientNotice,
     closeWarningDialog,
     confirmWarningDialog,
     handleLayoutRecovered,
     isWarningDialogOpen,
     layoutRecoveryNotice,
-    layoutSaveNotice,
     openLaunchErrorDialog,
     openWarningDialog,
     showLayoutLoadFailed,
     showLayoutLoadRecovered,
     showLayoutSaveFailed,
     showLayoutSaveRecovered,
+    showTransientNotice,
+    transientNotice,
     warningDialog,
   };
 }

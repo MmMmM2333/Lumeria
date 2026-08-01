@@ -12,7 +12,7 @@ import { applyCachedIconAssetUrlsToApp } from "../domain/iconSource.js";
 import { getKawaseDebugEffectPlanParams } from "../rendering/pixi/background/kawaseDebugParams.js";
 import {
   DEFAULT_SCAN_KEYWORD_BLACKLIST,
-  isAppBlockedByScanBlacklist,
+  isAppExcludedFromScan,
   normalizeNativeApp,
   normalizeScanAppBlacklist,
   normalizeScanKeywordBlacklist,
@@ -1141,7 +1141,7 @@ export function useLaunchpadNative(options) {
     );
     return (nativeApps?.apps || [])
       .map(normalizeNativeApp)
-      .filter((app) => !isAppBlockedByScanBlacklist(app, scanFilters.appBlacklist));
+      .filter((app) => !isAppExcludedFromScan(app, scanFilters.appBlacklist));
   }
 
   function applyCachedIconAssetUrls(sourcePages) {

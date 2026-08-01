@@ -260,9 +260,24 @@ function normalizeLayoutBackgroundAcrylicParams(params, profile) {
   };
 }
 
-export function makeScanAppBlacklistEntry(app) {
-  const sourceKey = typeof app?.sourceKey === "string" ? app.sourceKey : null;
-  const path = app?.source?.absolutePath || app?.launchTarget?.path || null;
+function getScanExclusionPath(app) {
+  const sourcePath = typeof app?.source?.absolutePath === "string"
+    ? app.source.absolutePath.trim()
+    : "";
+  if (sourcePath) return sourcePath;
+
+  const launchTarget = app?.launchTarget;
+  const launchPath = typeof launchTarget?.path === "string" ? launchTarget.path.trim() : "";
+  const launchKind = String(launchTarget?.kind || "");
+  if (!launchPath || launchKind === "url" || launchKind === "appUserModelId") return "";
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(launchPath)) return "";
+  return launchPath;
+}
+
+export function makeScanAppExclusionEntry(app) {
+  const sourceKey = typeof app?.sourceKey === "string" ? app.sourceKey.trim() || null : null;
+  const path = getScanExclusionPath(app) || null;
+  if (!sourceKey && !path) return null;
   return {
     sourceKey,
     path,
@@ -271,11 +286,16 @@ export function makeScanAppBlacklistEntry(app) {
   };
 }
 
-export function isAppBlockedByScanBlacklist(app, blacklist) {
+export function canExcludeAppFromScan(app) {
+  const sourceKey = typeof app?.sourceKey === "string" ? app.sourceKey.trim() : "";
+  return Boolean(sourceKey || getScanExclusionPath(app));
+}
+
+export function isAppExcludedFromScan(app, blacklist) {
   const normalized = normalizeScanAppBlacklist(blacklist);
   if (!normalized.length) return false;
-  const sourceKey = typeof app?.sourceKey === "string" ? app.sourceKey.toLowerCase() : "";
-  const pathKey = normalizeAppPathKey(app?.source?.absolutePath || app?.launchTarget?.path);
+  const sourceKey = typeof app?.sourceKey === "string" ? app.sourceKey.trim().toLowerCase() : "";
+  const pathKey = normalizeAppPathKey(getScanExclusionPath(app));
   return normalized.some((blocked) => {
     if (blocked.sourceKey && sourceKey && blocked.sourceKey.toLowerCase() === sourceKey) return true;
     return Boolean(blocked.path && pathKey && normalizeAppPathKey(blocked.path) === pathKey);

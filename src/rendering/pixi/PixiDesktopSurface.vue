@@ -153,7 +153,7 @@ const emit = defineEmits([
   "internal-activity",
   "open-app",
   "pointerdown-icon",
-  "delete-app",
+  "remove-app",
   "reset-app-icon",
   "surface-pointerdown",
   "wheel",
@@ -891,7 +891,7 @@ function handleIconAction(action, event, item, source) {
     emit("pointerdown-icon", event, item, source);
   }
   if (action === "context-menu") emit("context-menu-icon", event, item, source);
-  if (action === "remove") emit("delete-app", item.id);
+  if (action === "remove") emit("remove-app", item.id);
   if (action === "choose-icon") emit("choose-app-icon", item.id);
   if (action === "reset-icon") emit("reset-app-icon", item.id);
   requestRender(makeIconActionRenderReason(action));

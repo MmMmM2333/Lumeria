@@ -1213,8 +1213,8 @@ const renderProbePixelComparison = computed(() => renderProbeDisplaySession.valu
 const renderProbeCopyButtonLabel = computed(() => (hasCopiedRenderJson.value ? "Copied" : "Copy JSON"));
 const noticeDebugRows = computed(() => [
   {
-    label: "Save",
-    value: props.dialogState?.layoutSaveNotice?.value?.title || "none",
+    label: "Transient",
+    value: props.dialogState?.transientNotice?.value?.title || "none",
   },
   {
     label: "Recovery",
@@ -2756,7 +2756,7 @@ function showDebugNoticeStack() {
 
 function clearDebugNotices() {
   props.dialogState?.closeLayoutRecoveryNotice?.();
-  props.dialogState?.closeLayoutSaveNotice?.();
+  props.dialogState?.closeTransientNotice?.();
 }
 
 function resetBackgroundDebugParams() {

@@ -89,16 +89,16 @@ async function waitForCondition(condition) {
   return false;
 }
 
-function createManagedAppDeletionHarness(pageIds, currentPageIndex) {
+function createManagedAppRemovalHarness(pageItems, currentPageIndex) {
   const helpers = createLaunchpadLayoutHelpers({
     getFolderPageSize: () => 9,
     getPageSize: () => 21,
   });
-  const pages = shallowRef(pageIds.map((ids) => ids.map((id) => ({
-    id,
-    type: "app",
-    name: id,
-  }))));
+  const pages = shallowRef(pageItems.map((items) => items.map((item) => (
+    typeof item === "string"
+      ? { id: item, type: "app", name: item }
+      : { ...item }
+  ))));
   const pageIndex = ref(currentPageIndex);
   const searchPageIndex = ref(0);
   const searchPages = shallowRef([[]]);
@@ -128,6 +128,9 @@ function createManagedAppDeletionHarness(pageIds, currentPageIndex) {
     renderedFolder,
     searchPageIndex,
   });
+  const hiddenAppIds = ref([]);
+  const scanAppBlacklist = ref([]);
+  const transientNotices = [];
   const apps = useLaunchpadApps({
     appendAppsToPages: helpers.insertTopLevelItem,
     cloneItem: helpers.cloneItem,
@@ -137,7 +140,7 @@ function createManagedAppDeletionHarness(pageIds, currentPageIndex) {
     commitPages: pageCommands.commitPages,
     commitPagesAfterDeletion: pageCommands.commitPagesAfterDeletion,
     findFolder: helpers.findFolder,
-    hiddenAppIds: ref([]),
+    hiddenAppIds,
     isDragActive,
     makeId: () => "generated-app-id",
     openFolderId: ref(null),
@@ -146,16 +149,17 @@ function createManagedAppDeletionHarness(pageIds, currentPageIndex) {
     reclampPageIndices: pageRange.reclampPageIndices,
     removeEverywhere: helpers.removeEverywhere,
     renderedFolder,
-    scanAppBlacklist: ref([]),
+    scanAppBlacklist,
     scanKeywordBlacklist: ref([]),
     scanRoots: ref([]),
     schedulePageGridMetrics: () => {},
     selectedIcon: ref(null),
     shouldUseNativeCatalog: () => false,
+    showTransientNotice: (notice) => transientNotices.push(notice),
     showMissingLaunchTargetBadge: ref(true),
   });
 
-  return { apps, pageIndex, pages };
+  return { apps, hiddenAppIds, pageIndex, pages, scanAppBlacklist, transientNotices };
 }
 
 export async function runLaunchpadAppsTests() {
@@ -168,56 +172,145 @@ export async function runLaunchpadAppsTests() {
   assert(getCustomIconCanvasSize(512, 256) === 256, "large non-square custom icons should be capped at the high-DPI size");
 
   {
-    const { apps, pageIndex, pages } = createManagedAppDeletionHarness(
+    const { apps, pageIndex, pages, scanAppBlacklist, transientNotices } = createManagedAppRemovalHarness(
       Array.from({ length: 10 }, (_, index) => [`page-${index + 1}-app`]),
       9
     );
 
-    apps.deleteManagedApp("page-10-app");
+    apps.removeManagedAppFromLaunchpad("page-10-app");
 
-    assert(pages.value.length === 9, "deleting the only app on the last page should remove that page");
-    assert(pageIndex.value === 8, "deleting the current last page should move the user to the new last page");
+    assert(pages.value.length === 9, "removing the only app on the last page should remove that page");
+    assert(pageIndex.value === 8, "removing the current last page should move the user to the new last page");
+    assert(scanAppBlacklist.value.length === 0, "removing from the launchpad should not add a scan exclusion");
+    assert(transientNotices.at(-1)?.title === "已从启动台移除", "launchpad removal should surface an explicit result notice");
   }
 
   {
-    const { apps, pageIndex, pages } = createManagedAppDeletionHarness(
+    const { apps, pageIndex, pages } = createManagedAppRemovalHarness(
       [["app-a"], ["app-b"], ["app-c"], ["app-d"], ["app-e"]],
       2
     );
 
-    apps.deleteManagedApp("app-c");
+    apps.removeManagedAppFromLaunchpad("app-c");
 
     assert(
       pages.value.map((page) => page.map((app) => app.id).join(",")).join("|") === "app-a|app-b|app-d|app-e",
-      "deleting the only app on a middle page should shift later pages forward without repacking their contents"
+      "removing the only app on a middle page should shift later pages forward without repacking their contents"
     );
-    assert(pageIndex.value === 2, "deleting the current middle page should keep its page number and show the shifted next page");
+    assert(pageIndex.value === 2, "removing the current middle page should keep its page number and show the shifted next page");
   }
 
   {
-    const { apps, pageIndex, pages } = createManagedAppDeletionHarness([["only-app"]], 0);
+    const { apps, pageIndex, pages } = createManagedAppRemovalHarness([["only-app"]], 0);
 
-    apps.deleteManagedApp("only-app");
+    apps.removeManagedAppFromLaunchpad("only-app");
 
-    assert(pages.value.length === 1 && pages.value[0].length === 0, "deleting every app should preserve one empty launchpad page");
-    assert(pageIndex.value === 0, "deleting every app should return the user to the first page");
+    assert(pages.value.length === 1 && pages.value[0].length === 0, "removing every app should preserve one empty launchpad page");
+    assert(pageIndex.value === 0, "removing every app should return the user to the first page");
   }
 
   {
-    const { apps, pageIndex, pages } = createManagedAppDeletionHarness(
+    const { apps, pageIndex, pages } = createManagedAppRemovalHarness(
       [["app-a"], [], ["app-b"], ["app-c"], ["app-d"], ["app-e"]],
       5
     );
     apps.toggleManagedAppSelection("app-b", true);
     apps.toggleManagedAppSelection("app-d", true);
 
-    apps.deleteSelectedManagedApps();
+    apps.removeSelectedManagedAppsFromLaunchpad();
 
     assert(
       pages.value.map((page) => page.map((app) => app.id).join(",")).join("|") === "app-a|app-c|app-e",
-      "bulk deletion should remove every empty page while preserving the remaining page contents"
+      "bulk removal should remove every empty page while preserving the remaining page contents"
     );
     assert(pageIndex.value === 2, "removing pages before the current page should keep the user on the same remaining content page");
+  }
+
+  {
+    const scannedApp = {
+      id: "scanned-app",
+      type: "app",
+      name: "Scanned App",
+      sourceKey: "scan-root:tools:scanned-app.lnk",
+      launchTarget: { kind: "shortcut", path: "C:/Tools/Scanned App.lnk" },
+    };
+    const manualWindowsApp = {
+      id: "manual-windows-app",
+      type: "app",
+      name: "Manual Windows App",
+      launchTarget: { kind: "appUserModelId", appUserModelId: "example.manual!App" },
+    };
+    const {
+      apps,
+      hiddenAppIds,
+      pages,
+      scanAppBlacklist,
+      transientNotices,
+    } = createManagedAppRemovalHarness([[scannedApp, manualWindowsApp]], 0);
+
+    assert(apps.canExcludeManagedAppFromScan(scannedApp), "scanned apps should expose scan exclusion");
+    assert(!apps.canExcludeManagedAppFromScan(manualWindowsApp), "apps without a stable scan identity should not expose scan exclusion");
+    apps.toggleManagedAppSelection(scannedApp.id, true);
+    apps.toggleManagedAppSelection(manualWindowsApp.id, true);
+    assert(!apps.canExcludeSelectedManagedAppsFromScan.value, "mixed bulk selections should not allow partial scan exclusion");
+    assert(!apps.excludeSelectedManagedAppsFromScan(), "mixed bulk exclusion should fail explicitly");
+    assert(pages.value[0].length === 2, "failed bulk exclusion should not remove any selected app");
+    assert(scanAppBlacklist.value.length === 0, "failed bulk exclusion should not write a partial exclusion list");
+    assert(transientNotices.at(-1)?.intent === "error", "failed bulk exclusion should explain the failure");
+
+    apps.clearManagedAppSelection();
+    apps.toggleManagedAppSelection("missing-app", true);
+    assert(!apps.canExcludeSelectedManagedAppsFromScan.value, "stale selections should not allow scan exclusion");
+    assert(!apps.excludeSelectedManagedAppsFromScan(), "stale bulk selections should fail without affecting current apps");
+    assert(pages.value[0].length === 2, "stale bulk exclusion should not remove a current app");
+
+    apps.clearManagedAppSelection();
+    assert(apps.excludeManagedAppFromScan(scannedApp), "eligible apps should be removable and excluded from future scans");
+    assert(!pages.value[0].some((app) => app.id === scannedApp.id), "scan exclusion should remove the app from the launchpad");
+    assert(pages.value[0].some((app) => app.id === manualWindowsApp.id), "scan exclusion should preserve unrelated apps");
+    assert(scanAppBlacklist.value[0]?.sourceKey === scannedApp.sourceKey, "scan exclusion should persist the stable source key");
+    assert(hiddenAppIds.value.includes(scannedApp.id), "scan exclusion should also prevent automatic layout reinsertion");
+    assert(transientNotices.at(-1)?.title === "已从扫描中排除", "scan exclusion should surface an explicit result notice");
+
+    assert(apps.cancelScanAppExclusion(0), "scan exclusions should be cancellable");
+    assert(scanAppBlacklist.value.length === 0, "cancelling scan exclusion should remove the filter entry");
+    assert(hiddenAppIds.value.includes(scannedApp.id), "cancelling exclusion should wait for an explicit rescan before restoring the app");
+    assert(transientNotices.at(-1)?.title === "已取消排除", "cancelling exclusion should explain the rescan recovery path");
+  }
+
+  {
+    const firstApp = {
+      id: "first-scanned-app",
+      type: "app",
+      name: "First Scanned App",
+      sourceKey: "scan-root:tools:first.lnk",
+      launchTarget: { kind: "shortcut", path: "C:/Tools/First.lnk" },
+    };
+    const secondApp = {
+      id: "second-scanned-app",
+      type: "app",
+      name: "Second Scanned App",
+      launchTarget: { kind: "executable", path: "C:/Tools/Second.exe" },
+    };
+    const {
+      apps,
+      hiddenAppIds,
+      pages,
+      scanAppBlacklist,
+      transientNotices,
+    } = createManagedAppRemovalHarness([[firstApp, secondApp]], 0);
+
+    apps.toggleManagedAppSelection(firstApp.id, true);
+    apps.toggleManagedAppSelection(secondApp.id, true);
+    assert(apps.canExcludeSelectedManagedAppsFromScan.value, "eligible bulk selections should allow scan exclusion");
+    assert(apps.excludeSelectedManagedAppsFromScan(), "eligible bulk exclusions should complete as one operation");
+    assert(pages.value.length === 1 && pages.value[0].length === 0, "bulk scan exclusion should remove every selected app");
+    assert(scanAppBlacklist.value.length === 2, "bulk scan exclusion should persist every stable identity");
+    assert(hiddenAppIds.value.includes(firstApp.id) && hiddenAppIds.value.includes(secondApp.id), "bulk scan exclusion should hide every removed app from automatic merges");
+    assert(transientNotices.at(-1)?.message.includes("2 个应用"), "bulk scan exclusion should report the affected count");
+
+    assert(apps.cancelScanAppExclusions([0, 1]), "scan exclusions should support batch cancellation");
+    assert(scanAppBlacklist.value.length === 0, "batch cancellation should remove every selected exclusion");
   }
 
   await withMockTauri(async (command) => {
@@ -350,12 +443,12 @@ export async function runLaunchpadAppsTests() {
     assert(editedWindowsApp.launchTarget.kind === "appUserModelId", "editing a Windows app should preserve its launch target kind");
     assert(editedWindowsApp.launchTarget.appUserModelId === "windows.settings_123!App", "editing a Windows app should preserve its AppUserModelId");
 
-    apps.deleteManagedApp("win-app-1");
-    assert(!pages.value.flat().some((app) => app.id === "win-app-1"), "deleting an app should remove it from the launchpad layout");
-    assert(pages.value.flat().some((app) => app.id === "win-app-store"), "deleting a classic app should not remove a scanned Windows app");
-    assert(hiddenAppIds.value.includes("win-app-1"), "deleting a catalog app should keep it hidden across native layout merges");
-    assert(canceledLongPressCount === 1, "deleting an app should cancel pending long press state");
-    assert(clearedSelectedIconCount === 1, "deleting an app should clear a selection that referenced the removed icon");
+    apps.removeManagedAppFromLaunchpad("win-app-1");
+    assert(!pages.value.flat().some((app) => app.id === "win-app-1"), "removing an app should remove it from the launchpad layout");
+    assert(pages.value.flat().some((app) => app.id === "win-app-store"), "removing a classic app should not remove a scanned Windows app");
+    assert(hiddenAppIds.value.includes("win-app-1"), "removing a catalog app should keep it hidden across native layout merges");
+    assert(canceledLongPressCount === 1, "removing an app should cancel pending long press state");
+    assert(clearedSelectedIconCount === 1, "removing an app should clear a selection that referenced the removed icon");
 
     apps.openAddManagedAppPage();
     apps.newAppName.value = "URL App";

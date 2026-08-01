@@ -36,11 +36,19 @@
         重命名
       </fluent-menu-item>
       <fluent-divider class="icon-context-menu-divider" role="separator" />
-      <fluent-menu-item v-if="iconContextMenu.item.type === 'app'" class="icon-context-menu-item-danger" @click="runIconContextMenuAction('delete')">
+      <fluent-menu-item v-if="iconContextMenu.item.type === 'app'" @click="runIconContextMenuAction('remove-from-launchpad')">
         <DeleteIcon slot="start" class="icon-context-menu-item-icon" />
-        删除
+        从启动台移除
       </fluent-menu-item>
-      <fluent-menu-item v-else class="icon-context-menu-item-danger" @click="runIconContextMenuAction('dissolve')">
+      <fluent-menu-item
+        v-if="iconContextMenu.item.type === 'app' && state.canExcludeManagedAppFromScan(iconContextMenu.item)"
+        class="icon-context-menu-item-danger"
+        @click="runIconContextMenuAction('exclude-from-scan')"
+      >
+        <DeleteDismissIcon slot="start" class="icon-context-menu-item-icon" />
+        移除并从扫描中排除
+      </fluent-menu-item>
+      <fluent-menu-item v-if="iconContextMenu.item.type === 'folder'" class="icon-context-menu-item-danger" @click="runIconContextMenuAction('dissolve')">
         <FolderArrowRightIcon slot="start" class="icon-context-menu-item-icon" />
         解散文件夹
       </fluent-menu-item>
@@ -52,6 +60,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import DeleteIcon from "~icons/fluent/delete-20-regular";
+import DeleteDismissIcon from "~icons/fluent/delete-dismiss-20-regular";
 import EditIcon from "~icons/fluent/edit-20-regular";
 import FolderArrowRightIcon from "~icons/fluent/folder-arrow-right-20-regular";
 import FolderOpenIcon from "~icons/fluent/folder-open-20-regular";

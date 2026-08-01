@@ -1,9 +1,10 @@
 import {
   DEFAULT_SCAN_ROOTS,
+  canExcludeAppFromScan,
   createLaunchpadDataHelpers,
-  isAppBlockedByScanBlacklist,
+  isAppExcludedFromScan,
   makeLaunchTarget,
-  makeScanAppBlacklistEntry,
+  makeScanAppExclusionEntry,
   normalizeNativeApp,
   normalizeScanAppBlacklist,
   normalizeScanKeywordBlacklist,
@@ -63,16 +64,22 @@ export function runLaunchpadDataTests() {
   assert(windowsAppRoot?.removable === false, "the system-managed Windows app catalog should not be removable");
   const normalizedRoot = normalizeScanRoots([{ id: "root", label: "Root", path: "C:/Apps" }])[0];
   assert(!("lastScannedAt" in normalizedRoot), "scan roots should omit absent optional fields");
-  const blockedEntry = makeScanAppBlacklistEntry({
+  const blockedEntry = makeScanAppExclusionEntry({
     name: "Blocked",
     sourceKey: "scan-root:root:blocked.lnk",
-    launchTarget: { path: "C:\\Apps\\Blocked.lnk" },
+    launchTarget: { kind: "shortcut", path: "C:\\Apps\\Blocked.lnk" },
   });
   const normalizedBlacklist = normalizeScanAppBlacklist([blockedEntry, { path: "C:/Apps/Blocked.lnk" }]);
   assert(normalizedBlacklist.length === 1, "scan app blacklist should deduplicate source-key matches");
   assert(!("path" in normalizeScanAppBlacklist([{ sourceKey: "source-only" }])[0]), "scan blacklist should omit absent optional paths");
-  assert(isAppBlockedByScanBlacklist({ sourceKey: "scan-root:root:blocked.lnk" }, normalizedBlacklist), "scan app blacklist should match source keys");
-  assert(isAppBlockedByScanBlacklist({ launchTarget: { path: "C:/Apps/Blocked.lnk" } }, normalizedBlacklist), "scan app blacklist should match normalized paths");
+  assert(isAppExcludedFromScan({ sourceKey: "scan-root:root:blocked.lnk" }, normalizedBlacklist), "scan app blacklist should match source keys");
+  assert(isAppExcludedFromScan({ launchTarget: { kind: "shortcut", path: "C:/Apps/Blocked.lnk" } }, normalizedBlacklist), "scan app blacklist should match normalized paths");
+  assert(canExcludeAppFromScan({ sourceKey: "windows-app:settings" }), "catalog source keys should support scan exclusion");
+  assert(!canExcludeAppFromScan({ sourceKey: "   " }), "blank source keys should not expose scan exclusion");
+  assert(canExcludeAppFromScan({ launchTarget: { kind: "executable", path: "C:/Apps/Tool.exe" } }), "local launch paths should support scan exclusion");
+  assert(!canExcludeAppFromScan({ launchTarget: { kind: "url", path: "https://example.com" } }), "URL-only custom apps should not expose scan exclusion");
+  assert(!canExcludeAppFromScan({ launchTarget: { kind: "appUserModelId", appUserModelId: "example!App" } }), "custom AppUserModelIds without a catalog source should not expose scan exclusion");
+  assert(makeScanAppExclusionEntry({ launchTarget: { kind: "url", path: "https://example.com" } }) === null, "scan exclusion entries should require a stable source identity");
 
   const catalogApps = [
     { id: "a", type: "app", name: "A", emoji: "A", iconPath: "C:/Icons/a.png", iconDataUrl: "data:a", launchTarget: { kind: "shortcut", path: "a.lnk" } },

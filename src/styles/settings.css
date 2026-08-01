@@ -2036,8 +2036,12 @@
   white-space: nowrap;
 }
 
-.ignored-app-search::part(root) {
+.excluded-app-search::part(root) {
   height: 34px;
+}
+
+.excluded-app-description {
+  margin: 0 0 10px;
 }
 
 .scan-blocked-app-list-detail {
@@ -2108,7 +2112,7 @@
   gap: 8px;
 }
 
-.ignored-app-list-actions {
+.excluded-app-list-actions {
   flex: 0 0 auto;
   margin-bottom: 8px;
 }
@@ -2168,7 +2172,7 @@
   scrollbar-width: thin;
 }
 
-.ignored-app-list {
+.excluded-app-list {
   flex: 1 1 auto;
   min-height: 0;
   max-height: none;
@@ -2240,17 +2244,17 @@
   background: rgba(75, 163, 246, 0.16);
 }
 
-.ignored-app-item {
+.excluded-app-item {
   min-height: 64px;
   cursor: pointer;
 }
 
-.ignored-app-restore-button {
+.excluded-app-restore-button {
   width: 32px;
   height: 32px;
 }
 
-.ignored-app-restore-icon {
+.excluded-app-restore-icon {
   width: 18px;
   height: 18px;
 }
@@ -2974,7 +2978,7 @@
   .app-settings-detail-count {
     white-space: normal;
   }
-  .ignored-app-search {
+  .excluded-app-search {
     width: 100%;
   }
   .app-manager-list { grid-template-columns: 1fr; }

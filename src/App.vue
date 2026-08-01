@@ -108,7 +108,7 @@
         @pointerdown-icon="beginDrag"
         @open-app="openApp"
         @context-menu-icon="openIconContextMenu"
-        @delete-app="deleteManagedApp"
+        @remove-app="removeManagedAppFromLaunchpad"
         @choose-app-icon="openExistingAppIconChooser"
         @reset-app-icon="resetAppCustomIcon"
         @surface-pointerdown="handleLaunchpadSurfacePointerDown"
@@ -237,10 +237,11 @@ const {
   pageDotsRef,
 } = chrome;
 const {
-  deleteManagedApp,
+  excludeManagedAppFromScan,
   openEditManagedApp,
   openExistingAppIconChooser,
   openApp,
+  removeManagedAppFromLaunchpad,
   resetAppCustomIcon,
   showMissingLaunchTargetBadge,
 } = appActions;
@@ -908,7 +909,8 @@ function handleIconContextMenuAction(action, item, source) {
   if (item?.type === "app") {
     if (action === "open") openApp(item, source);
     if (action === "edit") openEditManagedApp(item);
-    if (action === "delete") deleteManagedApp(item.id);
+    if (action === "remove-from-launchpad") removeManagedAppFromLaunchpad(item.id);
+    if (action === "exclude-from-scan") excludeManagedAppFromScan(item);
     return;
   }
   if (item?.type !== "folder") return;

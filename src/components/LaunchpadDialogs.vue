@@ -250,8 +250,8 @@
   </div>
 
   <div
-    v-if="state.layoutRecoveryNotice.value || state.layoutSaveNotice.value"
-    class="layout-notice-stack"
+    v-if="state.layoutRecoveryNotice.value || state.transientNotice.value"
+    class="launchpad-notice-stack"
     @click.stop
     @contextmenu.stop
     @pointerdown.stop
@@ -259,45 +259,45 @@
   >
     <section
       v-if="state.layoutRecoveryNotice.value"
-      :class="['layout-notice-card', `layout-notice-card-${normalizeDialogIntent(state.layoutRecoveryNotice.value.intent || 'warning')}`]"
+      :class="['launchpad-notice-card', `launchpad-notice-card-${normalizeDialogIntent(state.layoutRecoveryNotice.value.intent || 'warning')}`]"
       role="status"
       aria-live="polite"
     >
-      <component :is="getNoticeIcon(state.layoutRecoveryNotice.value.intent || 'warning')" class="layout-notice-icon" aria-hidden="true" />
-      <span class="layout-notice-copy">
+      <component :is="getNoticeIcon(state.layoutRecoveryNotice.value.intent || 'warning')" class="launchpad-notice-icon" aria-hidden="true" />
+      <span class="launchpad-notice-copy">
         <strong>{{ state.layoutRecoveryNotice.value.title }}</strong>
         <span>{{ state.layoutRecoveryNotice.value.message }}</span>
         <small v-if="state.layoutRecoveryNotice.value.backupPath">{{ state.layoutRecoveryNotice.value.backupPath }}</small>
       </span>
-      <SettingsFluentButton appearance="subtle" icon-only class="layout-notice-dismiss-button" type="button" aria-label="关闭布局恢复提示" @click="state.closeLayoutRecoveryNotice">
-        <DismissIcon class="layout-notice-dismiss-icon" />
+      <SettingsFluentButton appearance="subtle" icon-only class="launchpad-notice-dismiss-button" type="button" aria-label="关闭布局恢复提示" @click="state.closeLayoutRecoveryNotice">
+        <DismissIcon class="launchpad-notice-dismiss-icon" />
       </SettingsFluentButton>
     </section>
 
     <section
-      v-if="state.layoutSaveNotice.value"
-      :class="['layout-notice-card', `layout-notice-card-${normalizeDialogIntent(state.layoutSaveNotice.value.intent || 'info')}`]"
+      v-if="state.transientNotice.value"
+      :class="['launchpad-notice-card', `launchpad-notice-card-${normalizeDialogIntent(state.transientNotice.value.intent || 'info')}`]"
       role="status"
       aria-live="polite"
     >
-      <component :is="getNoticeIcon(state.layoutSaveNotice.value.intent || 'info')" class="layout-notice-icon" aria-hidden="true" />
-      <span class="layout-notice-copy">
-        <strong>{{ state.layoutSaveNotice.value.title }}</strong>
-        <span>{{ state.layoutSaveNotice.value.message }}</span>
-        <small v-if="state.layoutSaveNotice.value.detail">{{ state.layoutSaveNotice.value.detail }}</small>
+      <component :is="getNoticeIcon(state.transientNotice.value.intent || 'info')" class="launchpad-notice-icon" aria-hidden="true" />
+      <span class="launchpad-notice-copy">
+        <strong>{{ state.transientNotice.value.title }}</strong>
+        <span>{{ state.transientNotice.value.message }}</span>
+        <small v-if="state.transientNotice.value.detail">{{ state.transientNotice.value.detail }}</small>
       </span>
-      <SettingsFluentButton appearance="subtle" icon-only class="layout-notice-dismiss-button" type="button" aria-label="关闭布局保存提示" @click="state.closeLayoutSaveNotice">
-        <DismissIcon class="layout-notice-dismiss-icon" />
+      <SettingsFluentButton appearance="subtle" icon-only class="launchpad-notice-dismiss-button" type="button" aria-label="关闭提示" @click="state.closeTransientNotice">
+        <DismissIcon class="launchpad-notice-dismiss-icon" />
       </SettingsFluentButton>
-      <div v-if="state.layoutSaveNotice.value.actionText" class="layout-notice-actions">
+      <div v-if="state.transientNotice.value.actionText" class="launchpad-notice-actions">
         <SettingsFluentButton
-          class="layout-notice-action-button"
+          class="launchpad-notice-action-button"
           appearance="outline"
           size="small"
           type="button"
-          @click="state.layoutSaveNotice.value.onAction?.()"
+          @click="state.transientNotice.value.onAction?.()"
         >
-          {{ state.layoutSaveNotice.value.actionText }}
+          {{ state.transientNotice.value.actionText }}
         </SettingsFluentButton>
       </div>
     </section>
