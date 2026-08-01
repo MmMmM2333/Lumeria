@@ -5,7 +5,6 @@
     tabindex="-1"
     :style="pageGridMeasureStyle"
     @focus="$emit('desktop-focus')"
-    @contextmenu.stop.prevent
   >
     <Teleport to="body">
       <div
@@ -15,6 +14,7 @@
           isSingleStageDragPreviewActive && 'pixi-desktop-host-root-stage-drag-active',
         ]"
         :style="rootStageHostStyle"
+        @contextmenu.prevent
         @pointerdown="$emit('surface-pointerdown', $event)"
         @wheel="$emit('wheel', $event)"
       />

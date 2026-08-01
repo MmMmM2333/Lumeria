@@ -1,5 +1,5 @@
 <template>
-  <div :ref="(node) => bindRef(frameRefs.shellRef, node)" class="launchpad-shell">
+  <div :ref="(node) => bindRef(frameRefs.shellRef, node)" class="launchpad-shell" @contextmenu="handleShellContextMenu">
     <div
       :key="`launchpad-chrome-${renderKey}`"
       ref="headerMotionRef"
@@ -92,6 +92,12 @@ watch(
 
 function bindRef(target, node) {
   if (target && typeof target === "object" && "value" in target) target.value = node;
+}
+
+function handleShellContextMenu(event) {
+  const target = event.target;
+  if (target instanceof HTMLElement && (target.isContentEditable || target.matches("input, textarea"))) return;
+  event.preventDefault();
 }
 
 function resolveChromeMotion() {

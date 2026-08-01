@@ -12,7 +12,13 @@
     </div>
   </div>
 
-  <div v-if="iconContextMenu" class="icon-context-menu-layer" @contextmenu.prevent @pointerdown.self="closeIconContextMenu">
+  <div
+    v-if="iconContextMenu"
+    class="icon-context-menu-layer"
+    @contextmenu.prevent
+    @pointerdown.self="closeIconContextMenu"
+    @wheel.capture="closeIconContextMenu"
+  >
     <fluent-menu-list
       ref="iconContextMenuRef"
       class="icon-context-menu"

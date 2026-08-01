@@ -2624,8 +2624,6 @@
   justify-content: center;
   padding: 24px;
   background: rgba(0, 0, 0, 0.36);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
 }
 
 .icon-chooser-dialog {
