@@ -204,13 +204,13 @@ fn save_layout(app: AppHandle, layout: serde_json::Value) -> Result<(), String> 
 }
 
 #[tauri::command]
-fn pick_launch_file(app: AppHandle) -> Result<Option<PickedLaunchFile>, String> {
-    pick_native_launch_file(&app)
+async fn pick_launch_file(app: AppHandle) -> Result<Option<PickedLaunchFile>, String> {
+    pick_native_launch_file(app).await
 }
 
 #[tauri::command]
-fn pick_background_image(app: AppHandle) -> Result<Option<PickedBackgroundImage>, String> {
-    pick_native_background_image(&app)
+async fn pick_background_image(app: AppHandle) -> Result<Option<PickedBackgroundImage>, String> {
+    pick_native_background_image(app).await
 }
 
 #[tauri::command]
@@ -266,8 +266,8 @@ fn load_cached_background_image_data_url(
 }
 
 #[tauri::command]
-fn pick_scan_root_directory() -> Result<Option<String>, String> {
-    pick_native_scan_root_directory()
+async fn pick_scan_root_directory(app: AppHandle) -> Result<Option<String>, String> {
+    pick_native_scan_root_directory(app).await
 }
 
 #[tauri::command]

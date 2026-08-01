@@ -2,7 +2,10 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
     time::SystemTime,
 };
 
@@ -12,7 +15,7 @@ use serde::Serialize;
 use windows::{
     core::{HRESULT, HSTRING, PCWSTR, PWSTR},
     Win32::{
-        Foundation::{ERROR_CANCELLED, RECT},
+        Foundation::{ERROR_CANCELLED, HWND, RECT},
         Graphics::Gdi::{
             GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
         },
@@ -75,38 +78,102 @@ struct DesktopWallpaperCacheRecord {
 static DESKTOP_WALLPAPER_CACHE: Mutex<Option<DesktopWallpaperCacheRecord>> = Mutex::new(None);
 
 #[cfg(target_os = "windows")]
-pub(crate) fn pick_launch_file(app: &AppHandle) -> Result<Option<PickedLaunchFile>, String> {
-    let _com_guard = ComGuard::new()?;
-    let result = unsafe { pick_launch_file_inner() };
-    match result {
-        Ok(path) => make_picked_launch_file(app, Path::new(&path)).map(Some),
-        Err(error) if error.windows_code() == Some(HRESULT::from_win32(ERROR_CANCELLED.0)) => {
-            Ok(None)
-        }
-        Err(error) => Err(String::from(error)),
+const NATIVE_DIALOG_BUSY_MESSAGE: &str = "Another native file dialog is already open";
+
+#[cfg(target_os = "windows")]
+static NATIVE_DIALOG_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+#[cfg(target_os = "windows")]
+struct NativeDialogPermit;
+
+#[cfg(target_os = "windows")]
+impl NativeDialogPermit {
+    fn acquire() -> Result<Self, String> {
+        NATIVE_DIALOG_ACTIVE
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map(|_| Self)
+            .map_err(|_| NATIVE_DIALOG_BUSY_MESSAGE.to_string())
     }
 }
 
+#[cfg(target_os = "windows")]
+impl Drop for NativeDialogPermit {
+    fn drop(&mut self) {
+        NATIVE_DIALOG_ACTIVE.store(false, Ordering::Release);
+    }
+}
+
+#[cfg(target_os = "windows")]
+async fn run_native_dialog<T, F>(work: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    let permit = NativeDialogPermit::acquire()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _permit = permit;
+        work()
+    })
+    .await
+    .map_err(|error| format!("Native file dialog worker failed: {error}"))?
+}
+
+#[cfg(target_os = "windows")]
+fn main_window_dialog_owner(app: &AppHandle) -> Result<isize, String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Main window is unavailable for the native file dialog".to_string())?;
+    window
+        .hwnd()
+        .map(|hwnd| hwnd.0 as isize)
+        .map_err(|source| NativeError::Tauri {
+            context: "WebviewWindow::hwnd(native file dialog)",
+            source,
+        })
+        .map_err(String::from)
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) async fn pick_launch_file(app: AppHandle) -> Result<Option<PickedLaunchFile>, String> {
+    let owner = main_window_dialog_owner(&app)?;
+    run_native_dialog(move || {
+        let _com_guard = ComGuard::new()?;
+        let result = unsafe { pick_launch_file_inner(HWND(owner as _)) };
+        match result {
+            Ok(path) => make_picked_launch_file(&app, Path::new(&path)).map(Some),
+            Err(error) if error.windows_code() == Some(HRESULT::from_win32(ERROR_CANCELLED.0)) => {
+                Ok(None)
+            }
+            Err(error) => Err(String::from(error)),
+        }
+    })
+    .await
+}
+
 #[cfg(not(target_os = "windows"))]
-pub(crate) fn pick_launch_file(
-    _app: &tauri::AppHandle,
+pub(crate) async fn pick_launch_file(
+    _app: tauri::AppHandle,
 ) -> Result<Option<PickedLaunchFile>, String> {
     Err("Picking launch files is only implemented on Windows".to_string())
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn pick_background_image(
-    app: &AppHandle,
+pub(crate) async fn pick_background_image(
+    app: AppHandle,
 ) -> Result<Option<PickedBackgroundImage>, String> {
-    let _com_guard = ComGuard::new()?;
-    let result = unsafe { pick_background_image_inner() };
-    match result {
-        Ok(path) => cache_picked_background_image(app, Path::new(&path)).map(Some),
-        Err(error) if error.windows_code() == Some(HRESULT::from_win32(ERROR_CANCELLED.0)) => {
-            Ok(None)
+    let owner = main_window_dialog_owner(&app)?;
+    run_native_dialog(move || {
+        let _com_guard = ComGuard::new()?;
+        let result = unsafe { pick_background_image_inner(HWND(owner as _)) };
+        match result {
+            Ok(path) => cache_picked_background_image(&app, Path::new(&path)).map(Some),
+            Err(error) if error.windows_code() == Some(HRESULT::from_win32(ERROR_CANCELLED.0)) => {
+                Ok(None)
+            }
+            Err(error) => Err(String::from(error)),
         }
-        Err(error) => Err(String::from(error)),
-    }
+    })
+    .await
 }
 
 #[cfg(target_os = "windows")]
@@ -192,32 +259,38 @@ pub(crate) fn cached_background_image_data_url(
 }
 
 #[cfg(not(target_os = "windows"))]
-pub(crate) fn pick_background_image(
-    _app: &tauri::AppHandle,
+pub(crate) async fn pick_background_image(
+    _app: tauri::AppHandle,
 ) -> Result<Option<PickedBackgroundImage>, String> {
     Err("Picking background images is only implemented on Windows".to_string())
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn pick_scan_root_directory() -> Result<Option<String>, String> {
-    let _com_guard = ComGuard::new()?;
-    let result = unsafe { pick_scan_root_directory_inner() };
-    match result {
-        Ok(path) => Ok(Some(path)),
-        Err(error) if error.windows_code() == Some(HRESULT::from_win32(ERROR_CANCELLED.0)) => {
-            Ok(None)
+pub(crate) async fn pick_scan_root_directory(app: AppHandle) -> Result<Option<String>, String> {
+    let owner = main_window_dialog_owner(&app)?;
+    run_native_dialog(move || {
+        let _com_guard = ComGuard::new()?;
+        let result = unsafe { pick_scan_root_directory_inner(HWND(owner as _)) };
+        match result {
+            Ok(path) => Ok(Some(path)),
+            Err(error) if error.windows_code() == Some(HRESULT::from_win32(ERROR_CANCELLED.0)) => {
+                Ok(None)
+            }
+            Err(error) => Err(String::from(error)),
         }
-        Err(error) => Err(String::from(error)),
-    }
+    })
+    .await
 }
 
 #[cfg(not(target_os = "windows"))]
-pub(crate) fn pick_scan_root_directory() -> Result<Option<String>, String> {
+pub(crate) async fn pick_scan_root_directory(
+    _app: tauri::AppHandle,
+) -> Result<Option<String>, String> {
     Err("Picking scan root directories is only implemented on Windows".to_string())
 }
 
 #[cfg(target_os = "windows")]
-unsafe fn pick_launch_file_inner() -> Result<String, NativeError> {
+unsafe fn pick_launch_file_inner(owner: HWND) -> Result<String, NativeError> {
     let dialog: IFileOpenDialog = unsafe {
         CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).map_err(|source| {
             NativeError::Com {
@@ -252,10 +325,12 @@ unsafe fn pick_launch_file_inner() -> Result<String, NativeError> {
                 context: "IFileOpenDialog::SetOptions(launch file)",
                 source,
             })?;
-        dialog.Show(None).map_err(|source| NativeError::Com {
-            context: "IFileOpenDialog::Show(launch file)",
-            source,
-        })?;
+        dialog
+            .Show(Some(owner))
+            .map_err(|source| NativeError::Com {
+                context: "IFileOpenDialog::Show(launch file)",
+                source,
+            })?;
     }
 
     let item = unsafe { dialog.GetResult() }.map_err(|source| NativeError::Com {
@@ -286,7 +361,7 @@ unsafe fn pick_launch_file_inner() -> Result<String, NativeError> {
 }
 
 #[cfg(target_os = "windows")]
-unsafe fn pick_background_image_inner() -> Result<String, NativeError> {
+unsafe fn pick_background_image_inner(owner: HWND) -> Result<String, NativeError> {
     let dialog: IFileOpenDialog = unsafe {
         CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).map_err(|source| {
             NativeError::Com {
@@ -321,10 +396,12 @@ unsafe fn pick_background_image_inner() -> Result<String, NativeError> {
                 context: "IFileOpenDialog::SetOptions(background image)",
                 source,
             })?;
-        dialog.Show(None).map_err(|source| NativeError::Com {
-            context: "IFileOpenDialog::Show(background image)",
-            source,
-        })?;
+        dialog
+            .Show(Some(owner))
+            .map_err(|source| NativeError::Com {
+                context: "IFileOpenDialog::Show(background image)",
+                source,
+            })?;
     }
 
     let item = unsafe { dialog.GetResult() }.map_err(|source| NativeError::Com {
@@ -343,7 +420,7 @@ unsafe fn pick_background_image_inner() -> Result<String, NativeError> {
 }
 
 #[cfg(target_os = "windows")]
-unsafe fn pick_scan_root_directory_inner() -> Result<String, NativeError> {
+unsafe fn pick_scan_root_directory_inner(owner: HWND) -> Result<String, NativeError> {
     let dialog: IFileOpenDialog = unsafe {
         CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).map_err(|source| {
             NativeError::Com {
@@ -366,10 +443,12 @@ unsafe fn pick_scan_root_directory_inner() -> Result<String, NativeError> {
                 context: "IFileOpenDialog::SetOptions(scan root)",
                 source,
             })?;
-        dialog.Show(None).map_err(|source| NativeError::Com {
-            context: "IFileOpenDialog::Show(scan root)",
-            source,
-        })?;
+        dialog
+            .Show(Some(owner))
+            .map_err(|source| NativeError::Com {
+                context: "IFileOpenDialog::Show(scan root)",
+                source,
+            })?;
     }
 
     let item = unsafe { dialog.GetResult() }.map_err(|source| NativeError::Com {
@@ -795,5 +874,38 @@ mod tests {
 
         assert!(rect_intersection_area(launchpad_monitor, same_monitor) > 0);
         assert_eq!(rect_intersection_area(launchpad_monitor, other_monitor), 0);
+    }
+
+    #[test]
+    fn native_dialog_jobs_run_off_thread_and_reject_concurrent_requests() {
+        let calling_thread = std::thread::current().id();
+        tauri::async_runtime::block_on(async {
+            let (started_sender, started_receiver) = std::sync::mpsc::channel();
+            let (release_sender, release_receiver) = std::sync::mpsc::channel();
+            let first = tauri::async_runtime::spawn(async move {
+                run_native_dialog(move || {
+                    started_sender.send(()).unwrap();
+                    release_receiver.recv().unwrap();
+                    Ok::<_, String>("first")
+                })
+                .await
+            });
+
+            started_receiver
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .expect("first native dialog job did not start");
+
+            let busy = run_native_dialog(|| Ok::<_, String>("second"))
+                .await
+                .expect_err("a concurrent native dialog should be rejected");
+            assert_eq!(busy, NATIVE_DIALOG_BUSY_MESSAGE);
+
+            release_sender.send(()).unwrap();
+            assert_eq!(first.await.unwrap().unwrap(), "first");
+            let worker_thread = run_native_dialog(|| Ok::<_, String>(std::thread::current().id()))
+                .await
+                .unwrap();
+            assert_ne!(worker_thread, calling_thread);
+        });
     }
 }
