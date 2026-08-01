@@ -6,6 +6,10 @@ export function shouldAssertLaunchpadLayout() {
 }
 
 export function useLaunchpadPageCommands(options) {
+  if (typeof options.rebasePageIndices !== "function") {
+    throw new TypeError("useLaunchpadPageCommands requires rebasePageIndices");
+  }
+
   function requestAnimationFrameOnce(callback) {
     if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
       callback();
@@ -38,6 +42,22 @@ export function useLaunchpadPageCommands(options) {
     if (shouldAssertLaunchpadLayout() && !options.isDragActive()) options.assertNoDuplicateItemIds(next);
     options.pages.value = next;
     if (options.renderedFolder.value) options.commitFolderPageIndex(options.folderPageIndex.value);
+  }
+
+  function commitPagesAfterDeletion(next) {
+    const currentPageIndex = options.pageIndex.value;
+    const nonEmptyPagesBeforeCurrent = next
+      .slice(0, currentPageIndex)
+      .filter((page) => page.length > 0)
+      .length;
+    const compacted = next.filter((page) => page.length > 0);
+    const nextPages = compacted.length ? compacted : [[]];
+    const nextPageIndex = compacted.length
+      ? Math.min(nonEmptyPagesBeforeCurrent, compacted.length - 1)
+      : 0;
+
+    commitPages(nextPages);
+    options.rebasePageIndices(nextPageIndex);
   }
 
   function renameFolder(folderId, name) {
@@ -110,6 +130,7 @@ export function useLaunchpadPageCommands(options) {
   return {
     commitChromePageIndex,
     commitPages,
+    commitPagesAfterDeletion,
     confirmDissolveFolder,
     dissolveFolderById,
     confirmForceFillAllPages,

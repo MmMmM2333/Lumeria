@@ -1,6 +1,9 @@
 import { ref, shallowRef } from "vue";
 import { setLaunchpadApiBridgeForTests } from "../api/launchpadApi.js";
+import { createLaunchpadLayoutHelpers } from "../domain/launchpadLayout.js";
 import { getCustomIconCanvasSize, useLaunchpadApps } from "./useLaunchpadApps.js";
+import { useLaunchpadPageCommands } from "./useLaunchpadPageCommands.js";
+import { usePageRenderRange } from "./usePageRenderRange.js";
 
 function withMockTauri(invoke, run) {
   setLaunchpadApiBridgeForTests({
@@ -86,6 +89,75 @@ async function waitForCondition(condition) {
   return false;
 }
 
+function createManagedAppDeletionHarness(pageIds, currentPageIndex) {
+  const helpers = createLaunchpadLayoutHelpers({
+    getFolderPageSize: () => 9,
+    getPageSize: () => 21,
+  });
+  const pages = shallowRef(pageIds.map((ids) => ids.map((id) => ({
+    id,
+    type: "app",
+    name: id,
+  }))));
+  const pageIndex = ref(currentPageIndex);
+  const searchPageIndex = ref(0);
+  const searchPages = shallowRef([[]]);
+  const folderPageIndex = ref(0);
+  const renderedFolder = ref(null);
+  const isDragActive = () => false;
+  const pageRange = usePageRenderRange({
+    activePageIndex: pageIndex,
+    folderPageIndex,
+    folderPages: shallowRef([[]]),
+    getDragMeta: () => null,
+    isDragActive,
+    isSearchMode: ref(false),
+    pageIndex,
+    pages,
+    searchPageIndex,
+    searchPages,
+  });
+  const pageCommands = useLaunchpadPageCommands({
+    assertNoDuplicateItemIds: helpers.assertNoDuplicateItemIds,
+    commitFolderPageIndex: () => {},
+    folderPageIndex,
+    isDragActive,
+    pageIndex,
+    pages,
+    rebasePageIndices: pageRange.rebasePageIndices,
+    renderedFolder,
+    searchPageIndex,
+  });
+  const apps = useLaunchpadApps({
+    appendAppsToPages: helpers.insertTopLevelItem,
+    cloneItem: helpers.cloneItem,
+    clonePages: helpers.clonePages,
+    collectAppsFromPages: helpers.collectAppsFromPages,
+    commitOpenFolder: () => {},
+    commitPages: pageCommands.commitPages,
+    commitPagesAfterDeletion: pageCommands.commitPagesAfterDeletion,
+    findFolder: helpers.findFolder,
+    hiddenAppIds: ref([]),
+    isDragActive,
+    makeId: () => "generated-app-id",
+    openFolderId: ref(null),
+    openWarningDialog: () => {},
+    pages,
+    reclampPageIndices: pageRange.reclampPageIndices,
+    removeEverywhere: helpers.removeEverywhere,
+    renderedFolder,
+    scanAppBlacklist: ref([]),
+    scanKeywordBlacklist: ref([]),
+    scanRoots: ref([]),
+    schedulePageGridMetrics: () => {},
+    selectedIcon: ref(null),
+    shouldUseNativeCatalog: () => false,
+    showMissingLaunchTargetBadge: ref(true),
+  });
+
+  return { apps, pageIndex, pages };
+}
+
 export async function runLaunchpadAppsTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Launchpad apps test failed] ${message}`);
@@ -94,6 +166,59 @@ export async function runLaunchpadAppsTests() {
   assert(getCustomIconCanvasSize(128, 128) === 128, "128px custom icons should not be upscaled to 256px");
   assert(getCustomIconCanvasSize(64, 64) === 128, "small custom icons should be normalized to the UI max size");
   assert(getCustomIconCanvasSize(512, 256) === 256, "large non-square custom icons should be capped at the high-DPI size");
+
+  {
+    const { apps, pageIndex, pages } = createManagedAppDeletionHarness(
+      Array.from({ length: 10 }, (_, index) => [`page-${index + 1}-app`]),
+      9
+    );
+
+    apps.deleteManagedApp("page-10-app");
+
+    assert(pages.value.length === 9, "deleting the only app on the last page should remove that page");
+    assert(pageIndex.value === 8, "deleting the current last page should move the user to the new last page");
+  }
+
+  {
+    const { apps, pageIndex, pages } = createManagedAppDeletionHarness(
+      [["app-a"], ["app-b"], ["app-c"], ["app-d"], ["app-e"]],
+      2
+    );
+
+    apps.deleteManagedApp("app-c");
+
+    assert(
+      pages.value.map((page) => page.map((app) => app.id).join(",")).join("|") === "app-a|app-b|app-d|app-e",
+      "deleting the only app on a middle page should shift later pages forward without repacking their contents"
+    );
+    assert(pageIndex.value === 2, "deleting the current middle page should keep its page number and show the shifted next page");
+  }
+
+  {
+    const { apps, pageIndex, pages } = createManagedAppDeletionHarness([["only-app"]], 0);
+
+    apps.deleteManagedApp("only-app");
+
+    assert(pages.value.length === 1 && pages.value[0].length === 0, "deleting every app should preserve one empty launchpad page");
+    assert(pageIndex.value === 0, "deleting every app should return the user to the first page");
+  }
+
+  {
+    const { apps, pageIndex, pages } = createManagedAppDeletionHarness(
+      [["app-a"], [], ["app-b"], ["app-c"], ["app-d"], ["app-e"]],
+      5
+    );
+    apps.toggleManagedAppSelection("app-b", true);
+    apps.toggleManagedAppSelection("app-d", true);
+
+    apps.deleteSelectedManagedApps();
+
+    assert(
+      pages.value.map((page) => page.map((app) => app.id).join(",")).join("|") === "app-a|app-c|app-e",
+      "bulk deletion should remove every empty page while preserving the remaining page contents"
+    );
+    assert(pageIndex.value === 2, "removing pages before the current page should keep the user on the same remaining content page");
+  }
 
   await withMockTauri(async (command) => {
     if (command === "pick_scan_root_directory") return "D:\\Tools";
@@ -147,11 +272,12 @@ export async function runLaunchpadAppsTests() {
       },
       collectAppsFromPages: (sourcePages) => sourcePages.flatMap((page) => page.filter((item) => item?.type === "app")),
       commitOpenFolder: () => {},
-      commitPageIndex: () => {},
+      commitPagesAfterDeletion: (next) => {
+        pages.value = next;
+      },
       commitPages: (next) => {
         pages.value = next;
       },
-      commitSearchPageIndex: () => {},
       findFolder: () => null,
       hiddenAppIds,
       isDragActive: () => false,
@@ -159,8 +285,8 @@ export async function runLaunchpadAppsTests() {
       markLaunchCriticalLayoutDirty: (appId) => launchCriticalDirtyIds.push(appId),
       openFolderId: ref(null),
       openWarningDialog: (config) => warningDialogs.push(config),
-      pageIndex: ref(0),
       pages,
+      reclampPageIndices: () => {},
       removeEverywhere: (sourcePages, appId) => sourcePages.map((page) => page.filter((item) => item.id !== appId)),
       renderedFolder: ref(null),
       schedulePageGridMetrics: () => {},
@@ -170,7 +296,6 @@ export async function runLaunchpadAppsTests() {
       selectedIcon,
       shouldUseNativeCatalog: () => true,
       showMissingLaunchTargetBadge: ref(true),
-      searchPageIndex: ref(0),
     });
 
     apps.addScanRoot();
@@ -276,20 +401,21 @@ export async function runLaunchpadAppsTests() {
         clonePages: (sourcePages) => sourcePages.map((page) => page.map((item) => ({ ...item }))),
         collectAppsFromPages: (sourcePages) => sourcePages.flatMap((page) => page.filter((item) => item?.type === "app")),
         commitOpenFolder: () => {},
-        commitPageIndex: () => {},
+        commitPagesAfterDeletion: (next) => {
+          pages.value = next;
+        },
         commitPages: (next) => {
           commitCount += 1;
           pages.value = next;
         },
-        commitSearchPageIndex: () => {},
         findFolder: () => null,
         hiddenAppIds: ref([]),
         isDragActive: () => false,
         makeId: () => "generated-app-id",
         openFolderId: ref(null),
         openWarningDialog: () => {},
-        pageIndex: ref(0),
         pages,
+        reclampPageIndices: () => {},
         removeEverywhere: (sourcePages) => sourcePages,
         renderedFolder: ref(null),
         schedulePageGridMetrics: () => {},
@@ -298,7 +424,6 @@ export async function runLaunchpadAppsTests() {
         scanRoots: ref([{ id: "root", type: "customDirectory", label: "Root", path: "C:/Apps", enabled: true }]),
         shouldUseNativeCatalog: () => true,
         showMissingLaunchTargetBadge: ref(true),
-        searchPageIndex: ref(0),
       });
       const uploadInput = {
         files: [{ type: "image/png", size: 512 }],
@@ -340,19 +465,20 @@ export async function runLaunchpadAppsTests() {
         clonePages: (sourcePages) => sourcePages.map((page) => page.map((item) => ({ ...item }))),
         collectAppsFromPages: (sourcePages) => sourcePages.flatMap((page) => page.filter((item) => item?.type === "app")),
         commitOpenFolder: () => {},
-        commitPageIndex: () => {},
+        commitPagesAfterDeletion: (next) => {
+          pages.value = next;
+        },
         commitPages: (next) => {
           pages.value = next;
         },
-        commitSearchPageIndex: () => {},
         findFolder: () => null,
         hiddenAppIds: ref([]),
         isDragActive: () => false,
         makeId: () => "generated-app-id",
         openFolderId: ref(null),
         openWarningDialog: (config) => warningDialogs.push(config),
-        pageIndex: ref(0),
         pages,
+        reclampPageIndices: () => {},
         removeEverywhere: (sourcePages) => sourcePages,
         renderedFolder: ref(null),
         schedulePageGridMetrics: () => {},
@@ -361,7 +487,6 @@ export async function runLaunchpadAppsTests() {
         scanRoots: ref([{ id: "root", type: "customDirectory", label: "Root", path: "C:/Apps", enabled: true }]),
         shouldUseNativeCatalog: () => true,
         showMissingLaunchTargetBadge: ref(true),
-        searchPageIndex: ref(0),
       });
 
       await apps.browseScanRootDirectory("root");

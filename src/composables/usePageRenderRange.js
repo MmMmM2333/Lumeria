@@ -139,6 +139,17 @@ export function usePageRenderRange(options) {
     commitPageIndexWithRenderRange("search", options.searchPageIndex.value, next, Math.max(0, options.searchPages.value.length - 1), commitSearchPageIndexNow);
   }
 
+  function reclampPageIndices() {
+    commitPageIndex(options.pageIndex.value);
+    commitSearchPageIndex(options.searchPageIndex.value);
+  }
+
+  function rebasePageIndices(nextPageIndex) {
+    clearPageJumpRenderRange();
+    commitPageIndexNow(nextPageIndex);
+    commitSearchPageIndexNow(options.searchPageIndex.value);
+  }
+
   function commitActivePageIndex(next) {
     if (options.isSearchMode.value) commitSearchPageIndex(next);
     else commitPageIndex(next);
@@ -188,6 +199,8 @@ export function usePageRenderRange(options) {
     commitSearchPageIndex,
     getDesktopPageRenderMode,
     getFolderPageRenderMode,
+    rebasePageIndices,
+    reclampPageIndices,
     requestFolderPageTurn,
   };
 }

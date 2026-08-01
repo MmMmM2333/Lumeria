@@ -36,6 +36,13 @@ export function getCustomIconCanvasSize(width, height) {
 }
 
 export function useLaunchpadApps(options) {
+  if (typeof options.commitPagesAfterDeletion !== "function") {
+    throw new TypeError("useLaunchpadApps requires commitPagesAfterDeletion");
+  }
+  if (typeof options.reclampPageIndices !== "function") {
+    throw new TypeError("useLaunchpadApps requires reclampPageIndices");
+  }
+
   const appManagerSelectedIds = ref([]);
   const appManagerSearchQuery = ref("");
   const isScanResultDialogOpen = ref(false);
@@ -738,10 +745,9 @@ export function useLaunchpadApps(options) {
     });
 
     if (!changed) return;
+    options.reclampPageIndices();
     options.markLaunchCriticalLayoutDirty?.(editingManagedAppId.value);
     closeEditManagedApp();
-    options.commitPageIndex(options.pageIndex.value);
-    options.commitSearchPageIndex(options.searchPageIndex.value);
     options.schedulePageGridMetrics();
   }
 
@@ -754,13 +760,11 @@ export function useLaunchpadApps(options) {
     let next = options.pages.value;
     for (const id of ids) next = options.removeEverywhere(next, id);
     options.hiddenAppIds.value = Array.from(new Set([...options.hiddenAppIds.value, ...ids]));
-    options.commitPages(next);
+    options.commitPagesAfterDeletion(next);
     const deletedIds = new Set(ids);
     if (deletedIds.has(options.selectedIcon?.value?.id)) options.clearSelectedIcon?.();
     appManagerSelectedIds.value = appManagerSelectedIds.value.filter((id) => !deletedIds.has(id));
     if (deletedIds.has(editingManagedAppId.value)) closeEditManagedApp();
-    options.commitPageIndex(options.pageIndex.value);
-    options.commitSearchPageIndex(options.searchPageIndex.value);
     if (options.renderedFolder.value && options.openFolderId.value && !options.findFolder(options.pages.value, options.openFolderId.value)) {
       options.commitOpenFolder(null);
     }
@@ -855,9 +859,8 @@ export function useLaunchpadApps(options) {
     const restoredIds = new Set(selectedApps.map((app) => app.id));
     options.hiddenAppIds.value = options.hiddenAppIds.value.filter((id) => !restoredIds.has(id));
     options.commitPages(options.appendAppsToPages(options.pages.value, selectedApps));
+    options.reclampPageIndices();
     closeScanResultDialog();
-    options.commitPageIndex(options.pageIndex.value);
-    options.commitSearchPageIndex(options.searchPageIndex.value);
     syncManagedAppState();
     options.schedulePageGridMetrics();
   }
@@ -880,10 +883,9 @@ export function useLaunchpadApps(options) {
     if (newAppIconPath.value) app.customIconPath = newAppIconPath.value;
     if (newAppIconDataUrl.value) app.customIconDataUrl = newAppIconDataUrl.value;
     options.commitPages(options.appendAppsToPages(options.pages.value, [app]));
+    options.reclampPageIndices();
     options.markLaunchCriticalLayoutDirty?.(app.id);
     closeAddManagedAppPage();
-    options.commitPageIndex(options.pageIndex.value);
-    options.commitSearchPageIndex(options.searchPageIndex.value);
     options.schedulePageGridMetrics();
   }
 

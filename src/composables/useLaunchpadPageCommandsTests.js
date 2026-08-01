@@ -34,6 +34,7 @@ function createPageCommands(overrides = {}) {
     commitSearchPageIndex: [],
     finishHomeRevealSettleWindow: 0,
     openWarningDialog: [],
+    rebasePageIndices: [],
     schedulePageGridMetrics: 0,
     scheduledChromePageIndexCommits: [],
   };
@@ -89,6 +90,10 @@ function createPageCommands(overrides = {}) {
     pageIndex,
     pages,
     pageSize,
+    rebasePageIndices: (value) => {
+      calls.rebasePageIndices.push(value);
+      pageIndex.value = value;
+    },
     renderedFolder,
     scheduleChromePageIndexCommit: (callback) => calls.scheduledChromePageIndexCommits.push(callback),
     schedulePageGridMetrics: () => {
