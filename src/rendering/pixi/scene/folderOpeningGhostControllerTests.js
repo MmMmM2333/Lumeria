@@ -241,6 +241,61 @@ export function runFolderOpeningGhostControllerTests() {
     const completed = [];
     const timerHost = makeTimerHost();
     const layer = makeLayer();
+    const controller = new FolderOpeningGhostController(layer, {
+      ghostFactory: () => {
+        const ghost = makeGhost();
+        ghost.labelText = {
+          alpha: 1,
+          scale: {
+            set(x, y = x) {
+              this.x = x;
+              this.y = y;
+            },
+            x: 1,
+            y: 1,
+          },
+          visible: true,
+        };
+        return ghost;
+      },
+      scheduler: timerHost,
+    });
+    const sessionToken = layer.folderHandoff.beginOpen("folder-1", "target-a", { forceNew: true }).session.token;
+    const target = {
+      ...makeTarget(),
+      columnCount: 7,
+      index: 9,
+      isThumbnailChild: false,
+      sourceRect: { height: 8, left: 10, top: 20, width: 8 },
+    };
+
+    controller.start(makeState(completed), [target], { sessionToken });
+    const ghost = layer.ghosts[0];
+    assert(ghost.alpha === 0, "synthetic opening ghosts should start fully transparent");
+
+    motionRuntime.step(0.06);
+
+    assert(ghost.scale.x < 0.25, "collapsed synthetic opening ghosts should still be near thumbnail scale");
+    assert(ghost.alpha <= 0.001, "collapsed synthetic opening ghosts should remain transparent instead of forming a visible pile");
+    assert(ghost.labelText.alpha === 0, "synthetic labels should remain transparent while their icons are collapsed");
+
+    let previousAlpha = ghost.alpha;
+    for (let index = 0; index < 40; index += 1) {
+      motionRuntime.step(0.05);
+      assert(ghost.alpha + 0.0001 >= previousAlpha, "synthetic opening ghost alpha should remain monotonic while the spring settles");
+      previousAlpha = ghost.alpha;
+    }
+    assert(ghost.alpha === 1, "synthetic opening ghosts should finish fully opaque");
+    assert(ghost.labelText.alpha === 1 && ghost.labelText.scale.x === 1, "synthetic labels should finish fully visible with their icons");
+
+    controller.clear();
+    motionRuntime.reset();
+  }
+
+  {
+    const completed = [];
+    const timerHost = makeTimerHost();
+    const layer = makeLayer();
     layer.currentFolderId = "folder-1";
     layer.visualOwnership = new FolderVisualOwnershipRegistry();
     layer.acquireVisualOwnership = (key, owner) => layer.visualOwnership.acquire(key, owner);

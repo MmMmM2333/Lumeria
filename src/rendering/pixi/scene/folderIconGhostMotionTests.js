@@ -1,6 +1,7 @@
 import {
   getFolderGhostGridDelay,
   getMaxFolderGhostGridDelay,
+  getSyntheticOpeningGhostRevealState,
   makeClosingGhostMotion,
   makeCompletedClosingPreviewMotion,
   makeOpeningGhostMotion,
@@ -35,9 +36,22 @@ export function runFolderIconGhostMotionTests() {
     stageWidth: 1200,
   });
   assert(opening.alpha === 0, "non-thumbnail opening ghosts should fade in from transparent");
+  assert(opening.isThumbnailChild === false, "opening motion should preserve synthetic-child presentation semantics");
   assert(opening.fromX === 34 && opening.fromY === 51, "opening motion should map source bounds into local stage coordinates");
   assert(opening.toX === 128 && opening.toY === 242, "opening motion should target the folder grid icon center");
   assert(nearlyEqual(opening.labelDelay, opening.delay + 0.29), "opening label delay should follow the open duration");
+
+  const collapsedReveal = getSyntheticOpeningGhostRevealState(0.2, 0.16);
+  assert(collapsedReveal.alpha === 0, "synthetic ghosts should remain invisible while still near thumbnail scale");
+  assert(collapsedReveal.labelAlpha === 0 && collapsedReveal.labelScale === 0.94, "synthetic labels should remain hidden with collapsed icons");
+  const partialReveal = getSyntheticOpeningGhostRevealState(0.52, 0.16);
+  assert(partialReveal.alpha > 0 && partialReveal.alpha < 1, "synthetic ghosts should fade in after their geometry visibly expands");
+  assert(partialReveal.labelAlpha === 0, "synthetic labels should wait until the icon has substantially expanded");
+  const monotonicReveal = getSyntheticOpeningGhostRevealState(0.24, 0.16, partialReveal.progress);
+  assert(nearlyEqual(monotonicReveal.alpha, partialReveal.alpha), "synthetic reveal progress should not move backward when a spring retargets");
+  const expandedReveal = getSyntheticOpeningGhostRevealState(1, 0.16, monotonicReveal.progress);
+  assert(expandedReveal.alpha === 1, "fully expanded synthetic ghosts should become opaque");
+  assert(expandedReveal.labelAlpha === 1 && expandedReveal.labelScale === 1, "fully expanded synthetic labels should become opaque at full scale");
 
   const layoutOpening = makeOpeningGhostMotion({
     columnCount: 5,

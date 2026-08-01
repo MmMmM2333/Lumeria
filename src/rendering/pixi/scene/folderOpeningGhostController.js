@@ -3,7 +3,11 @@ import { killMotionOf, parallel, motion } from "../animation/motionTween.js";
 import { motionPresets } from "../animation/motionPresets.js";
 import { clientRectToStageVisualRect } from "../geometry/stageCoordinates.js";
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
-import { getMaxFolderGhostGridDelay, makeOpeningGhostMotion } from "./folderIconGhostMotion.js";
+import {
+  getMaxFolderGhostGridDelay,
+  getSyntheticOpeningGhostRevealState,
+  makeOpeningGhostMotion,
+} from "./folderIconGhostMotion.js";
 import { makeFolderGhostIconNodeState } from "./folderGhostIconState.js";
 import { ensureFolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
 import { hasUsableFolderGhostTarget } from "./folderOverlayTargets.js";
@@ -28,12 +32,14 @@ function completeOpeningFrameGhost(transitionPort, state) {
 
 function animateOpeningGhost(ghost, ghostMotion, onArrive, options = {}) {
   const springOptions = { delay: ghostMotion.delay, onUpdate: options.onFrame };
-  const fadeControl = motion(ghost)
-    .preset("folderOpenGhost", { delay: ghostMotion.delay })
-    .overlay()
-    .interrupt("retarget")
-    .to({ alpha: 1 })
-    .start();
+  const fadeControl = ghostMotion.isThumbnailChild
+    ? motion(ghost)
+      .preset("folderOpenGhost", { delay: ghostMotion.delay })
+      .overlay()
+      .interrupt("retarget")
+      .to({ alpha: 1 })
+      .start()
+    : null;
   const geometryControl = parallel([
     motion(ghost)
       .preset("handoff")
@@ -51,17 +57,40 @@ function animateOpeningGhost(ghost, ghostMotion, onArrive, options = {}) {
   });
   return {
     cancel() {
-      fadeControl.cancel();
+      fadeControl?.cancel();
       geometryControl.cancel();
     },
     get completed() {
       return geometryControl.completed;
     },
     release() {
-      fadeControl.cancel();
+      fadeControl?.cancel();
       geometryControl.release();
     },
   };
+}
+
+function updateSyntheticOpeningGhostReveal(ghost, ghostMotion) {
+  if (!ghost || ghostMotion.isThumbnailChild) return;
+  const reveal = getSyntheticOpeningGhostRevealState(
+    Math.min(Number(ghost.scale?.x) || 0, Number(ghost.scale?.y) || 0),
+    ghostMotion.scale,
+    ghost.syntheticOpeningRevealProgress
+  );
+  ghost.syntheticOpeningRevealProgress = reveal.progress;
+  ghost.alpha = reveal.alpha;
+  if (ghost.labelText?.visible) {
+    ghost.labelText.alpha = reveal.labelAlpha;
+    ghost.labelText.scale.set(reveal.labelScale);
+  }
+}
+
+function finishOpeningGhostReveal(ghost) {
+  ghost.alpha = 1;
+  if (ghost.labelText?.visible) {
+    ghost.labelText.alpha = 1;
+    ghost.labelText.scale.set(1);
+  }
 }
 
 function retargetOpeningGhost(ghost, ghostMotion, onArrive, options = {}) {
@@ -324,14 +353,14 @@ export class FolderOpeningGhostController {
     const sessionToken = this.handoffCoordinator.getOpeningSessionToken();
     const itemId = target.item.id;
     this.settledOpeningGhostItemIds.add(itemId);
-    ghost.alpha = 1;
+    finishOpeningGhostReveal(ghost);
     ghost.scale.set(1);
     this.finishTransition({ sessionToken });
   }
 
   completeIfFinalTarget(state, target, ghost, motionControl = null) {
     if (isProvisionalOpeningGhostTarget(target)) {
-      ghost.alpha = 1;
+      finishOpeningGhostReveal(ghost);
       ghost.scale.set(1);
       return false;
     }
@@ -412,18 +441,20 @@ export class FolderOpeningGhostController {
       if (ghost.labelText?.visible) {
         ghost.labelText.alpha = 0;
         ghost.labelText.scale.set(0.94);
-        motion(ghost.labelText)
-          .preset("fade", { delay: ghostMotion.labelDelay, duration: 0.13 })
-          .overlay()
-          .interrupt("retarget")
-          .to({ alpha: 1 })
-          .start();
-        motion(ghost.labelText.scale)
-          .preset("fade", { delay: ghostMotion.labelDelay, duration: 0.13 })
-          .overlay()
-          .interrupt("retarget")
-          .to({ x: 1, y: 1 })
-          .start();
+        if (ghostMotion.isThumbnailChild) {
+          motion(ghost.labelText)
+            .preset("fade", { delay: ghostMotion.labelDelay, duration: 0.13 })
+            .overlay()
+            .interrupt("retarget")
+            .to({ alpha: 1 })
+            .start();
+          motion(ghost.labelText.scale)
+            .preset("fade", { delay: ghostMotion.labelDelay, duration: 0.13 })
+            .overlay()
+            .interrupt("retarget")
+            .to({ x: 1, y: 1 })
+            .start();
+        }
       }
       this.transitionPort.addOpeningGhost(ghost);
       refreshGhostBounds();
@@ -431,9 +462,13 @@ export class FolderOpeningGhostController {
 
       let didFinish = false;
       let motionControl = null;
+      const updateGhostFrame = () => {
+        updateSyntheticOpeningGhostReveal(ghost, ghostMotion);
+        refreshGhostBounds();
+      };
       motionControl = animateOpeningGhost(ghost, ghostMotion, () => {
         didFinish = this.completeIfFinalTarget(state, target, ghost, motionControl);
-      }, { scheduler: this.scheduler, onFrame: refreshGhostBounds });
+      }, { scheduler: this.scheduler, onFrame: updateGhostFrame });
       if (!didFinish && this.handoffCoordinator.hasOpeningGhost(target.item.id)) {
         this.handoffCoordinator.addOpeningMotionControl(target.item.id, motionControl);
       }
@@ -513,9 +548,13 @@ export class FolderOpeningGhostController {
 
       let didFinish = false;
       let motionControl = null;
+      const updateGhostFrame = () => {
+        updateSyntheticOpeningGhostReveal(ghost, ghostMotion);
+        refreshGhostBounds();
+      };
       motionControl = retargetOpeningGhost(ghost, ghostMotion, () => {
         didFinish = this.completeIfFinalTarget(state, target, ghost, motionControl);
-      }, { scheduler: this.scheduler, onFrame: refreshGhostBounds });
+      }, { scheduler: this.scheduler, onFrame: updateGhostFrame });
       if (didFinish) {
         this.openingTargetKeysByItemId.delete(itemId);
       } else if (this.handoffCoordinator.hasOpeningGhost(itemId)) {

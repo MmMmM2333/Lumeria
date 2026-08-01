@@ -3,6 +3,39 @@ import { motionPresets } from "../animation/motionPresets.js";
 import { getIconNodeOffsetFromVisualCenter } from "../geometry/iconMetrics.js";
 import { clientRectToStageVisualRect, stageLayoutRectToStageVisualRect } from "../geometry/stageCoordinates.js";
 
+const SYNTHETIC_OPEN_REVEAL_START = 0.18;
+const SYNTHETIC_OPEN_REVEAL_END = 0.68;
+const SYNTHETIC_OPEN_LABEL_REVEAL_START = 0.52;
+const SYNTHETIC_OPEN_LABEL_REVEAL_END = 0.82;
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+function smoothstep(start, end, value) {
+  const progress = clamp01((value - start) / Math.max(0.0001, end - start));
+  return progress * progress * (3 - 2 * progress);
+}
+
+export function getSyntheticOpeningGhostRevealState(currentScale, sourceScale, previousProgress = 0) {
+  const fromScale = Math.max(0.01, Number(sourceScale) || 0.01);
+  const scaleRange = Math.max(0.0001, 1 - fromScale);
+  const geometryProgress = clamp01((Number(currentScale) - fromScale) / scaleRange);
+  const progress = Math.max(clamp01(previousProgress), geometryProgress);
+  const alpha = smoothstep(SYNTHETIC_OPEN_REVEAL_START, SYNTHETIC_OPEN_REVEAL_END, progress);
+  const labelAlpha = smoothstep(
+    SYNTHETIC_OPEN_LABEL_REVEAL_START,
+    SYNTHETIC_OPEN_LABEL_REVEAL_END,
+    progress
+  );
+  return {
+    alpha,
+    labelAlpha,
+    labelScale: 0.94 + labelAlpha * 0.06,
+    progress,
+  };
+}
+
 export function getFolderGhostGridDelay(index, columnCount, maxDelay = 0.18) {
   const safeIndex = Math.max(0, Number(index) || 0);
   const columns = Math.max(1, Number(columnCount) || 1);
@@ -61,6 +94,7 @@ export function makeOpeningGhostMotion(target, options = {}) {
     labelDelay: delay + openDuration * 0.58,
     scale,
     sourceRect,
+    isThumbnailChild: target.isThumbnailChild === true,
     targetRect,
     toX,
     toY,
