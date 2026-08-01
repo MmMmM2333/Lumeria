@@ -1939,6 +1939,7 @@ dependencies = [
  "tauri-plugin-global-shortcut",
  "tauri-plugin-log",
  "thiserror 2.0.18",
+ "webview2-com",
  "windows",
  "windows-version",
 ]

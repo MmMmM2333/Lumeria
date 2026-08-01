@@ -17,7 +17,7 @@ commands.
 - `launch_app(request: LaunchAppRequest) -> void`
 - `hide_main_window() -> void`
 - `show_main_window() -> void`; opens the hidden main window through the same cloaked show path used by tray and shortcut activation. The renderer calls this once after native event listeners are registered so cold startup does not expose an uncomposited white WebView frame.
-- `reveal_main_window(openSequence?: number | null) -> void`; uncloaks the native main window after the frontend has painted the opening frame. The optional sequence prevents stale reveal calls from affecting a newer open cycle.
+- `reveal_main_window(openSequence: number) -> void`; confirms that the renderer has painted the matching opening frame. Native code reveals only that pending sequence; stale, missing, failed, or timed-out opens remain hidden.
 - `set_main_window_effects_enabled(enabled: boolean, openSequence?: number | null) -> void`
 - `set_main_window_mode(mode: "fullscreen" | "windowed") -> "fullscreen" | "windowed"`; the native window remains frameless in both modes.
 - `set_main_window_shortcut(shortcut: string | null) -> string | null`; registers the global shortcut used to show or hide Lumeria, or unregisters it when `null`. Registration failure means the shortcut is occupied or invalid and the previous shortcut remains active.
@@ -41,6 +41,10 @@ type MainWindowActivationPayload = {
 - `lumeria-toggle-desktop` asks the renderer to run its close path. The backend emits it only when the main window is visible, not minimized, foreground, and already on the cursor monitor. Its `displayChanged` value is always `false`.
 
 `openSequence` identifies the latest native open cycle. The renderer passes it back to `reveal_main_window` after its opening frame has painted, and the backend ignores stale reveal requests. The event payload is always the object above; numeric legacy payloads are not part of the contract.
+
+An opening native window remains DWM-cloaked, non-topmost, and unfocused until the renderer confirms the matching `openSequence`. If confirmation times out or WebView2 fails, native code invalidates that sequence and hides the HWND; there is no forced-reveal fallback.
+
+The native main-window supervisor observes WebView2 process failures independently of the renderer. Browser/main-renderer exit or unresponsiveness immediately cloaks, de-topmosts, and hides the HWND. The first fatal failure in a five-minute stability window restarts the whole app once; another failure in that window stays hidden and uses a native recovery dialog plus the tray's log/restart/quit actions. Recovery never waits for the failed renderer to save state.
 
 ## Data Shapes
 

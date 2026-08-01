@@ -12,8 +12,8 @@ use windows::Win32::{
         DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND, DWMWINDOWATTRIBUTE,
     },
     UI::WindowsAndMessaging::{
-        SetWindowPos, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
-        SWP_NOSENDCHANGING, SWP_NOSIZE,
+        IsWindowVisible, SetWindowPos, ShowWindow, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE,
+        SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSENDCHANGING, SWP_NOSIZE, SW_HIDE,
     },
 };
 
@@ -229,5 +229,29 @@ pub(crate) fn set_main_window_topmost(
     _window: &WebviewWindow,
     _topmost: bool,
 ) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn hide_window_immediately(window: &WebviewWindow) -> Result<(), String> {
+    let hwnd = window.hwnd().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::hwnd for immediate hide",
+        source,
+    })?;
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_HIDE);
+    }
+    if unsafe { IsWindowVisible(hwnd).as_bool() } {
+        return Err("ShowWindow(SW_HIDE) left the main window visible".to_string());
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn hide_window_immediately(window: &WebviewWindow) -> Result<(), String> {
+    window.hide().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::hide immediately",
+        source,
+    })?;
     Ok(())
 }

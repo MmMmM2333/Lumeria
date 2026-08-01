@@ -6,6 +6,7 @@ mod icons;
 mod launcher;
 mod layout_store;
 mod live_desktop;
+mod main_window_supervisor;
 mod models;
 mod native_error;
 mod path_utils;
@@ -43,6 +44,11 @@ use launcher::{launch_app_user_model_id, launch_path, LaunchPathError, LaunchPat
 use layout_store::{
     find_layout_app, load_layout as load_saved_layout, save_layout as save_saved_layout,
 };
+use main_window_supervisor::{
+    apply_main_window_mode, disable_main_window_transitions, open_main_window, open_settings,
+    refresh_main_window_effects, reveal_main_window as reveal_supervised_main_window,
+    trigger_main_window_shortcut, CLOSE_DESKTOP_EVENT,
+};
 use models::AppCatalogItem;
 use native_error::NativeError;
 use serde::{Deserialize, Serialize};
@@ -51,11 +57,7 @@ use tauri::{
     AppHandle, Emitter, Manager, State, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
-use tray::{
-    apply_main_window_mode, disable_main_window_transitions, open_main_window, open_settings,
-    refresh_main_window_effects, reveal_main_window as reveal_tray_main_window, setup_tray,
-    trigger_main_window_shortcut, CLOSE_DESKTOP_EVENT,
-};
+use tray::setup_tray;
 
 const QUIT_REQUESTED_EVENT: &str = "lumeria-quit-requested";
 const MAIN_WINDOW_SHORTCUT_CAPTURED_EVENT: &str = "lumeria-main-window-shortcut-captured";
@@ -67,6 +69,7 @@ const WEBVIEW2_REMOTE_DEBUGGING_ARGS: &str =
     "--remote-debugging-address=127.0.0.1 --remote-debugging-port=9222";
 
 static QUIT_ACKNOWLEDGED: AtomicBool = AtomicBool::new(false);
+static RESTART_AFTER_QUIT_ACKNOWLEDGEMENT: AtomicBool = AtomicBool::new(false);
 
 #[cfg(all(target_os = "windows", debug_assertions))]
 pub use icons::debug_extract_icon_png;
@@ -373,7 +376,7 @@ fn launch_app_inner(
 
 #[tauri::command]
 fn hide_main_window(app: AppHandle) {
-    tray::hide_main_window(&app);
+    main_window_supervisor::hide_main_window(&app);
 }
 
 #[tauri::command]
@@ -382,22 +385,32 @@ fn show_main_window(app: AppHandle) {
 }
 
 #[tauri::command]
-fn reveal_main_window(app: AppHandle, open_sequence: Option<u64>) -> Result<(), String> {
-    reveal_tray_main_window(&app, open_sequence)
+fn reveal_main_window(app: AppHandle, open_sequence: u64) -> Result<(), String> {
+    reveal_supervised_main_window(&app, open_sequence)
 }
 
 #[tauri::command]
 fn quit_app(app: AppHandle) {
-    app.exit(0);
+    finish_app_termination(&app, false);
 }
 
 #[tauri::command]
 fn confirm_quit_after_save(app: AppHandle, saved: bool) {
     if !saved {
-        log::warn!(target: "lumeria", "Quitting Lumeria after layout save failed or was skipped");
+        log::warn!(target: "lumeria", "Terminating Lumeria after layout save failed or was skipped");
     }
     QUIT_ACKNOWLEDGED.store(true, Ordering::Relaxed);
-    app.exit(0);
+    let restart = RESTART_AFTER_QUIT_ACKNOWLEDGEMENT.swap(false, Ordering::Relaxed);
+    finish_app_termination(&app, restart);
+}
+
+fn finish_app_termination(app: &AppHandle, restart: bool) {
+    main_window_supervisor::prepare_for_app_termination();
+    if restart {
+        app.request_restart();
+    } else {
+        app.exit(0);
+    }
 }
 
 #[tauri::command]
@@ -514,7 +527,7 @@ fn set_main_window_effects_enabled(
     material: Option<String>,
     appearance: Option<String>,
 ) -> Result<(), String> {
-    tray::set_main_window_effects_enabled(
+    main_window_supervisor::set_main_window_effects_enabled(
         &app,
         enabled,
         open_sequence,
@@ -529,7 +542,7 @@ fn set_main_window_mode(
     mode: String,
     fullscreen_overscan_enabled: bool,
 ) -> Result<String, String> {
-    tray::set_main_window_mode(&app, &mode, fullscreen_overscan_enabled)
+    main_window_supervisor::set_main_window_mode(&app, &mode, fullscreen_overscan_enabled)
 }
 
 #[tauri::command]
@@ -553,7 +566,7 @@ fn set_main_window_shortcut_capture_active(
 
 #[tauri::command]
 fn set_main_window_native_frame_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
-    tray::set_main_window_native_frame_enabled(&app, enabled)
+    main_window_supervisor::set_main_window_native_frame_enabled(&app, enabled)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -891,6 +904,7 @@ fn check_launch_target_status(
 }
 
 fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    main_window_supervisor::setup_main_window_supervisor(app)?;
     setup_tray(app)?;
     if let Err(error) = apply_main_window_mode(app.handle()) {
         log::warn!(target: "lumeria", "Failed to apply Lumeria window mode: {error}");
@@ -1043,17 +1057,32 @@ fn set_main_window_shortcut_internal(
     Ok(Some(next_shortcut))
 }
 
-fn request_app_quit(app: &AppHandle) {
+fn request_app_termination(app: &AppHandle, restart: bool) {
+    if !main_window_supervisor::webview_is_healthy() {
+        log::warn!(
+            target: "lumeria",
+            "{} without renderer save because WebView2 is unavailable",
+            if restart { "Restarting" } else { "Quitting" }
+        );
+        finish_app_termination(app, restart);
+        return;
+    }
+    RESTART_AFTER_QUIT_ACKNOWLEDGEMENT.store(restart, Ordering::Relaxed);
     QUIT_ACKNOWLEDGED.store(false, Ordering::Relaxed);
     if let Err(error) = app.emit(QUIT_REQUESTED_EVENT, ()) {
-        log::warn!(target: "lumeria", "Failed to emit quit request event: {error}");
+        log::warn!(target: "lumeria", "Failed to emit termination save request event: {error}");
     }
     let app = app.clone();
     thread::spawn(move || {
         thread::sleep(Duration::from_millis(QUIT_FALLBACK_DELAY_MS));
         if !QUIT_ACKNOWLEDGED.load(Ordering::Relaxed) {
-            log::error!(target: "lumeria", "Lumeria quit request timed out; forcing exit");
-            app.exit(0);
+            let restart = RESTART_AFTER_QUIT_ACKNOWLEDGEMENT.swap(false, Ordering::Relaxed);
+            log::error!(
+                target: "lumeria",
+                "Lumeria termination save request timed out; forcing {}",
+                if restart { "restart" } else { "exit" }
+            );
+            finish_app_termination(&app, restart);
         }
     });
 }
@@ -1092,8 +1121,14 @@ pub fn run() {
                 open_main_window(app);
             } else if event.id() == "settings" {
                 open_settings(app);
+            } else if event.id() == "logs" {
+                if let Err(error) = main_window_supervisor::open_log_directory(app) {
+                    log::error!(target: "lumeria", "Failed to open Lumeria log directory: {error}");
+                }
+            } else if event.id() == "restart" {
+                request_app_termination(app, true);
             } else if event.id() == "quit" {
-                request_app_quit(app);
+                request_app_termination(app, false);
             }
         })
         .on_tray_icon_event(|app, event| match event {
@@ -1120,7 +1155,9 @@ pub fn run() {
                 }
             }
             WindowEvent::Focused(true) => refresh_main_window_effects(window.app_handle()),
-            WindowEvent::Focused(false) => tray::release_main_window_topmost(window.app_handle()),
+            WindowEvent::Focused(false) => {
+                main_window_supervisor::release_main_window_topmost(window.app_handle())
+            }
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![

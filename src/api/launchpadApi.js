@@ -164,7 +164,7 @@ export async function showMainWindow() {
   return true;
 }
 
-export async function revealMainWindow(openSequence = null) {
+export async function revealMainWindow(openSequence) {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
   await invoke("reveal_main_window", { openSequence });
