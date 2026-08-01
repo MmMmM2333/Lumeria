@@ -5,9 +5,13 @@ import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getStageScale } from "../geometry/stageCoordinates.js";
 
 export const FOLDER_PREVIEW_SLOT_RELEASE_MODE = "folder-preview-slot";
+export const FOLDER_CENTER_ABSORB_RELEASE_MODE = "folder-center-absorb";
 
-const CLEAR_REASON = "folder-preview-slot-release-clear";
+const CLEAR_REASON = "folder-release-clear";
 const DESTROY_REASON = "destroyed";
+const CENTER_ABSORB_DURATION = 0.24;
+const CENTER_ABSORB_FADE_DELAY = 0.1;
+const CENTER_ABSORB_FADE_DURATION = 0.14;
 const TARGET_CENTER_DEVICE_EPSILON = 0.5;
 const TARGET_SIZE_DEVICE_EPSILON = 0.5;
 const TARGET_ROTATION_EPSILON = Math.PI / 360;
@@ -169,15 +173,19 @@ function resetContainerTransform(node) {
   node.rotation = 0;
 }
 
-export class FolderPreviewSlotReleaseController {
+function isFolderReleaseMode(mode) {
+  return mode === FOLDER_PREVIEW_SLOT_RELEASE_MODE || mode === FOLDER_CENTER_ABSORB_RELEASE_MODE;
+}
+
+export class FolderReleaseController {
   constructor(layer, options = {}) {
-    if (!layer) throw new Error("FolderPreviewSlotReleaseController requires a release layer");
+    if (!layer) throw new Error("FolderReleaseController requires a release layer");
     this.layer = layer;
     this.onReleaseComplete = options.onReleaseComplete || (() => {});
     this.onReleaseAbort = options.onReleaseAbort || (() => {});
-    this.targetFollower = new Container({ label: "folder-preview-slot-target-follower" });
-    this.approachFrame = new Container({ label: "folder-preview-slot-approach-frame" });
-    this.poseFrame = new Container({ label: "folder-preview-slot-pose-frame" });
+    this.targetFollower = new Container({ label: "folder-release-target-follower" });
+    this.approachFrame = new Container({ label: "folder-release-approach-frame" });
+    this.poseFrame = new Container({ label: "folder-release-pose-frame" });
     this.targetFollower.eventMode = "none";
     this.approachFrame.eventMode = "none";
     this.poseFrame.eventMode = "none";
@@ -186,6 +194,7 @@ export class FolderPreviewSlotReleaseController {
     this.targetFollower.visible = false;
     this.layer.addChild(this.targetFollower);
     this.poseProgress = { value: 0 };
+    this.centerTimelineProgress = { value: 0 };
     this.active = null;
     this.motionControl = null;
     this.completeKey = null;
@@ -201,6 +210,24 @@ export class FolderPreviewSlotReleaseController {
     const targetFolderNode = active?.targetFolderNode;
     const release = active?.release;
     if (!targetFolderNode || targetFolderNode.destroyed || targetFolderNode.item?.id !== release?.targetFolderId) return null;
+    if (release.releaseMode === FOLDER_CENTER_ABSORB_RELEASE_MODE) {
+      const pose = targetFolderNode.getFolderCenterReleasePose?.(this.layer);
+      const center = {
+        x: readFinite(pose?.center?.x, Number.NaN),
+        y: readFinite(pose?.center?.y, Number.NaN),
+      };
+      if (![center.x, center.y].every(Number.isFinite)) return null;
+      const previewIconSize = Math.max(1, readFinite(release.size?.width, 64));
+      const folderIconSize = Math.max(1, readFinite(targetFolderNode.iconSize, 64));
+      const targetScale = Math.max(
+        0.06,
+        Math.min(0.1, Math.max(4, folderIconSize * 0.18) / previewIconSize)
+      );
+      return {
+        center,
+        matrix: { a: targetScale, b: 0, c: 0, d: targetScale },
+      };
+    }
     const pose = targetFolderNode.getFolderPreviewChildReleasePose?.(
       this.layer,
       release.targetPreviewSlotIndex,
@@ -223,14 +250,14 @@ export class FolderPreviewSlotReleaseController {
 
   update(options = {}) {
     const { previewNode, release, targetFolderNode } = options;
-    if (release?.releaseMode !== FOLDER_PREVIEW_SLOT_RELEASE_MODE || !release?.key || !previewNode) {
+    if (!isFolderReleaseMode(release?.releaseMode) || !release?.key || !previewNode) {
       this.clear(CLEAR_REASON);
       return false;
     }
 
     const isNewRelease = this.active?.release?.key !== release.key;
     if (isNewRelease) {
-      this.clear("folder-preview-slot-release-replace");
+      this.clear("folder-release-replace");
       this.completeKey = null;
       this.active = {
         alignedRenderFrames: 0,
@@ -245,10 +272,11 @@ export class FolderPreviewSlotReleaseController {
         targetMatrix: null,
       };
       motionRuntime.recordCoordinationEvent({
-        action: "folder-preview-slot-release",
+        action: "folder-release",
         event: "start",
         folderId: release.targetFolderId || null,
         itemId: release.item?.id || null,
+        mode: release.releaseMode,
         releaseKey: release.key,
         slotIndex: release.targetPreviewSlotIndex ?? null,
       });
@@ -304,18 +332,59 @@ export class FolderPreviewSlotReleaseController {
   startReleaseMotion(velocity) {
     const active = this.active;
     if (!active) return;
-    const animations = [
-      motion(this.approachFrame)
-        .preset("handoff")
-        .drag()
-        .interrupt("retarget")
-        .to({ velocity, x: 0, y: 0 }),
-      motion(this.poseProgress)
-        .preset("handoff")
-        .handoff()
-        .interrupt("retarget")
-        .to({ value: 1 }),
-    ];
+    const isCenterAbsorb = active.release.releaseMode === FOLDER_CENTER_ABSORB_RELEASE_MODE;
+    const centerTimelineValue = Math.max(0, Math.min(1, readFinite(this.centerTimelineProgress.value, 0)));
+    const centerElapsed = CENTER_ABSORB_DURATION * centerTimelineValue;
+    const centerRemainingDuration = Math.max(0.001, CENTER_ABSORB_DURATION - centerElapsed);
+    const animations = isCenterAbsorb
+      ? [
+        motion(this.approachFrame)
+          .duration(centerRemainingDuration)
+          .ease("power2.in")
+          .handoff()
+          .interrupt("retarget")
+          .to({ x: 0, y: 0 }),
+        motion(this.poseProgress)
+          .duration(centerRemainingDuration)
+          .ease("power2.in")
+          .handoff()
+          .interrupt("retarget")
+          .to({ value: 1 }),
+        motion(this.centerTimelineProgress)
+          .duration(centerRemainingDuration)
+          .ease("linear")
+          .handoff()
+          .interrupt("retarget")
+          .to({ value: 1 }),
+      ]
+      : [
+        motion(this.approachFrame)
+          .preset("handoff")
+          .drag()
+          .interrupt("retarget")
+          .to({ velocity, x: 0, y: 0 }),
+        motion(this.poseProgress)
+          .preset("handoff")
+          .handoff()
+          .interrupt("retarget")
+          .to({ value: 1 }),
+      ];
+    if (isCenterAbsorb && readFinite(active.previewNode.alpha, 1) > 0.001) {
+      const fadeDelay = Math.max(0, CENTER_ABSORB_FADE_DELAY - centerElapsed);
+      const fadeDuration = Math.max(
+        0.001,
+        CENTER_ABSORB_DURATION - Math.max(centerElapsed, CENTER_ABSORB_FADE_DELAY)
+      );
+      animations.push(
+        motion(active.previewNode)
+          .delay(fadeDelay)
+          .duration(Math.min(CENTER_ABSORB_FADE_DURATION, fadeDuration))
+          .ease("power2.in")
+          .handoff()
+          .interrupt("retarget")
+          .to({ alpha: 0 })
+      );
+    }
     const label = active.previewNode.labelText;
     if (label?.visible !== false) {
       if (readFinite(label.alpha, 1) > 0.001) {
@@ -363,11 +432,12 @@ export class FolderPreviewSlotReleaseController {
     }
 
     if (this.motionControl && !this.motionControl.completed) {
-      this.motionControl.cancel("folder-preview-slot-target-rebuilt");
+      this.motionControl.cancel("folder-release-target-rebuilt");
     }
     this.motionControl = null;
-    killMotionOf(this.approachFrame, null, { reason: "folder-preview-slot-target-rebuilt" });
-    killMotionOf(this.poseProgress, null, { reason: "folder-preview-slot-target-rebuilt" });
+    killMotionOf(this.approachFrame, null, { reason: "folder-release-target-rebuilt" });
+    killMotionOf(this.poseProgress, null, { reason: "folder-release-target-rebuilt" });
+    killMotionOf(this.centerTimelineProgress, null, { reason: "folder-release-target-rebuilt" });
     active.motionSettled = false;
     active.alignedRenderFrames = 0;
     active.alignmentFrameRequested = false;
@@ -387,10 +457,11 @@ export class FolderPreviewSlotReleaseController {
     this.startReleaseMotion(relativeVelocity);
     this.syncTargetPose(targetPose);
     motionRuntime.recordCoordinationEvent({
-      action: "folder-preview-slot-release",
+      action: "folder-release",
       event: "target-rebound",
       folderId: active.release.targetFolderId || null,
       itemId: active.release.item?.id || null,
+      mode: active.release.releaseMode,
       releaseKey: active.release.key,
       slotIndex: active.release.targetPreviewSlotIndex ?? null,
     });
@@ -413,6 +484,10 @@ export class FolderPreviewSlotReleaseController {
   isAligned(targetPose) {
     const active = this.active;
     if (!active?.started || !active.motionSettled || !this.motionControl?.completed) return false;
+    if (
+      active.release.releaseMode === FOLDER_CENTER_ABSORB_RELEASE_MODE &&
+      readFinite(active.previewNode.alpha, 1) > 0.001
+    ) return false;
     const deviceScale = getDeviceScales(active.state);
     const centerErrorX = Math.abs(readFinite(this.approachFrame.x, Number.POSITIVE_INFINITY)) * deviceScale.x;
     const centerErrorY = Math.abs(readFinite(this.approachFrame.y, Number.POSITIVE_INFINITY)) * deviceScale.y;
@@ -471,10 +546,11 @@ export class FolderPreviewSlotReleaseController {
     if (!active || this.completeKey === active.release.key) return;
     this.completeKey = active.release.key;
     motionRuntime.recordCoordinationEvent({
-      action: "folder-preview-slot-release",
+      action: "folder-release",
       event: "complete",
       folderId: active.release.targetFolderId || null,
       itemId: active.release.item?.id || null,
+      mode: active.release.releaseMode,
       releaseKey: active.release.key,
       slotIndex: active.release.targetPreviewSlotIndex ?? null,
     });
@@ -486,10 +562,11 @@ export class FolderPreviewSlotReleaseController {
     if (!active || this.completeKey === active.release.key) return;
     this.completeKey = active.release.key;
     motionRuntime.recordCoordinationEvent({
-      action: "folder-preview-slot-release",
+      action: "folder-release",
       event: "abort",
       folderId: active.release.targetFolderId || null,
       itemId: active.release.item?.id || null,
+      mode: active.release.releaseMode,
       reason,
       releaseKey: active.release.key,
       slotIndex: active.release.targetPreviewSlotIndex ?? null,
@@ -512,7 +589,9 @@ export class FolderPreviewSlotReleaseController {
     this.motionControl = null;
     killMotionOf(this.approachFrame, null, { reason });
     killMotionOf(this.poseProgress, null, { reason });
+    killMotionOf(this.centerTimelineProgress, null, { reason });
     const previewNode = this.active?.previewNode;
+    if (previewNode) killMotionOf(previewNode, "alpha", { reason });
     if (previewNode?.labelText) {
       killMotionOf(previewNode.labelText, null, { reason });
       killMotionOf(previewNode.labelText.scale, null, { reason });
@@ -524,6 +603,7 @@ export class FolderPreviewSlotReleaseController {
     resetContainerTransform(this.approachFrame);
     resetContainerTransform(this.poseFrame);
     this.poseProgress.value = 0;
+    this.centerTimelineProgress.value = 0;
   }
 
   destroy() {

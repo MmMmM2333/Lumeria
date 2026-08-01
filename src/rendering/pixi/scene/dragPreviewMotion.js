@@ -5,7 +5,6 @@ import { cloneIconVisualSpec } from "./iconVisualSpec.js";
 
 export const DRAG_PREVIEW_SCALE = 1.12;
 export const DRAG_PREVIEW_FOLDER_HOVER_SCALE = 0.92;
-export const DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB = "folder-center-absorb";
 export const DRAG_RELEASE_MODE_SLOT = "slot";
 
 function getPreviewIconSize(preview, fallbackIconSize) {
@@ -131,15 +130,13 @@ export function getDragPreviewLayout(preview, state = {}) {
 
 export function getDragReleaseMotion(release, state = {}) {
   const releaseMode = release?.releaseMode || DRAG_RELEASE_MODE_SLOT;
-  if (releaseMode !== DRAG_RELEASE_MODE_SLOT && releaseMode !== DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB) {
+  if (releaseMode !== DRAG_RELEASE_MODE_SLOT) {
     throw new Error(`Unsupported generic drag release mode: ${releaseMode}`);
   }
   const provisionalLayoutTarget = release?.provisionalLayoutTarget === true;
   const releaseKey = release?.key || makeDragPreviewKey(release);
   const sourceIconSize = getPreviewIconSize(release, state.iconSize);
-  const targetVisualSpec = releaseMode === DRAG_RELEASE_MODE_SLOT
-    ? cloneIconVisualSpec(release?.targetVisualSpec || release?.visualSpec)
-    : null;
+  const targetVisualSpec = cloneIconVisualSpec(release?.targetVisualSpec || release?.visualSpec);
   const iconSize = targetVisualSpec?.iconSize || sourceIconSize;
   const cellSize = targetVisualSpec
     ? {
@@ -171,21 +168,16 @@ export function getDragReleaseMotion(release, state = {}) {
   const targetLocalRect = hasStageLayoutTargetRect
     ? targetStageLayoutRect
     : clientRectToStageVisualRect(targetRect, stageRect);
-  const rawTargetScale = hasTargetRect ? Math.max(0.1, targetLocalRect.width / iconSize) : 1;
-  const targetScale = releaseMode === DRAG_RELEASE_MODE_SLOT
-    ? 1
-    : releaseMode === DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB
-      ? Math.max(0.06, Math.min(0.1, rawTargetScale))
-      : rawTargetScale;
+  const targetScale = 1;
   const target = hasTargetRect
     ? {
       x: targetLocalRect.left + targetLocalRect.width / 2,
       y: targetLocalRect.top + targetLocalRect.height / 2 - visualOffsetY * targetScale,
     }
     : start;
-  const targetAlpha = releaseMode === DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB ? 0 : 1;
-  const targetLabelAlpha = releaseMode === DRAG_RELEASE_MODE_SLOT ? 1 : 0;
-  const targetLabelScale = releaseMode === DRAG_RELEASE_MODE_SLOT ? 1 : 0.72;
+  const targetAlpha = 1;
+  const targetLabelAlpha = 1;
+  const targetLabelScale = 1;
   const stageScale = getStageScale(stageRect, state.width, state.height);
   const clientVelocity = release?.velocity || {};
   const velocity = {

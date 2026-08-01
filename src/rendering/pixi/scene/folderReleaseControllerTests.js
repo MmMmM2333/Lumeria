@@ -1,6 +1,8 @@
 import { Container } from "pixi.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
-import { FolderPreviewSlotReleaseController } from "./folderPreviewSlotReleaseController.js";
+import { FolderReleaseController } from "./folderReleaseController.js";
+
+const CENTER_ABSORB_TEST_DURATION = 0.24;
 
 function nearlyEqual(a, b, epsilon = 0.001) {
   return Math.abs((Number(a) || 0) - (Number(b) || 0)) <= epsilon;
@@ -40,9 +42,19 @@ function makeTargetFolderNode(pose) {
   return node;
 }
 
-export function runFolderPreviewSlotReleaseControllerTests() {
+function makeCenterTargetFolderNode(pose) {
+  const node = new Container();
+  node.iconSize = 64;
+  node.item = { id: "folder-moving", type: "folder" };
+  node.getFolderCenterReleasePose = () => ({
+    center: { ...pose.center },
+  });
+  return node;
+}
+
+export function runFolderReleaseControllerTests() {
   const assert = (condition, message) => {
-    if (!condition) throw new Error(`[Folder preview slot release controller test failed] ${message}`);
+    if (!condition) throw new Error(`[Folder release controller test failed] ${message}`);
   };
 
   {
@@ -64,7 +76,7 @@ export function runFolderPreviewSlotReleaseControllerTests() {
     const targetFolderNode = makeTargetFolderNode(targetPose);
     const completions = [];
     const samples = [];
-    const controller = new FolderPreviewSlotReleaseController(layer, {
+    const controller = new FolderReleaseController(layer, {
       onReleaseComplete: (release) => {
         completions.push(release.key);
         samples.push({
@@ -188,7 +200,122 @@ export function runFolderPreviewSlotReleaseControllerTests() {
     previewNode.position.set(120, 160);
     layer.addChild(previewNode);
     const aborts = [];
-    const controller = new FolderPreviewSlotReleaseController(layer, {
+    const controller = new FolderReleaseController(layer, {
+      onReleaseAbort: (release, reason) => aborts.push(`${release.key}:${reason}`),
+    });
+    const release = {
+      item: { id: "app-dragged", type: "app" },
+      key: "release-missing-center-target",
+      releaseMode: "folder-center-absorb",
+      size: { height: 64, width: 64 },
+      targetFolderId: "folder-moving",
+    };
+    const targetFolderNode = makeCenterTargetFolderNode({
+      center: { x: Number.NaN, y: Number.NaN },
+    });
+
+    try {
+      controller.update({
+        height: 600,
+        previewNode,
+        release,
+        stageRect: { height: 600, left: 0, top: 0, width: 800 },
+        targetFolderNode,
+        width: 800,
+      });
+      layer.onRender?.();
+      assert(aborts.length === 0, "a center target may be absent during the first two rendered reconciliation frames");
+      layer.onRender?.();
+      assert(
+        aborts.join(",") === "release-missing-center-target:target-unavailable",
+        "a center target that never materializes should abort explicitly after two rendered frames"
+      );
+    } finally {
+      controller.destroy();
+      if (!layer.destroyed) layer.destroy({ children: true });
+      motionRuntime.reset();
+    }
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = new Container();
+    const previewNode = new Container();
+    previewNode.visualWrap = new Container();
+    previewNode.visualWrap.position.set(0, -14);
+    previewNode.labelText = new Container();
+    previewNode.addChild(previewNode.visualWrap, previewNode.labelText);
+    previewNode.position.set(160, 520);
+    previewNode.scale.set(1.12);
+    layer.addChild(previewNode);
+
+    const targetPose = { center: { x: 420, y: 520 } };
+    const targetFolderNode = makeCenterTargetFolderNode(targetPose);
+    const controller = new FolderReleaseController(layer);
+    const release = {
+      item: { id: "app-dragged", name: "Dragged App", type: "app" },
+      key: "release-moving-folder-center",
+      releaseMode: "folder-center-absorb",
+      size: { height: 64, width: 64 },
+      targetFolderId: "folder-moving",
+      velocity: { x: 0, y: 0 },
+    };
+
+    try {
+      const initialGhostCenter = readCenter(layer, previewNode.visualWrap);
+      controller.update({
+        deviceResolution: 2,
+        height: 800,
+        previewNode,
+        release,
+        stageRect: { height: 800, left: 0, top: 0, width: 1400 },
+        targetFolderNode,
+        width: 1400,
+      });
+      const reboundGhostCenter = readCenter(layer, previewNode.visualWrap);
+      assert(
+        nearlyEqual(reboundGhostCenter.x, initialGhostCenter.x) &&
+          nearlyEqual(reboundGhostCenter.y, initialGhostCenter.y),
+        "starting a center absorb should preserve the currently rendered ghost center"
+      );
+
+      const relativeBeforeMove = {
+        x: reboundGhostCenter.x - targetPose.center.x,
+        y: reboundGhostCenter.y - targetPose.center.y,
+      };
+      const crossRowShift = { x: 1161.6, y: -218.4 };
+      targetPose.center.x += crossRowShift.x;
+      targetPose.center.y += crossRowShift.y;
+      layer.onRender?.();
+
+      const ghostAfterMove = readCenter(layer, previewNode.visualWrap);
+      assert(
+        nearlyEqual(ghostAfterMove.x - reboundGhostCenter.x, crossRowShift.x) &&
+          nearlyEqual(ghostAfterMove.y - reboundGhostCenter.y, crossRowShift.y),
+        "a center absorb should inherit the target folder's full cross-row movement in the same render frame"
+      );
+      assert(
+        nearlyEqual(ghostAfterMove.x - targetPose.center.x, relativeBeforeMove.x) &&
+          nearlyEqual(ghostAfterMove.y - targetPose.center.y, relativeBeforeMove.y),
+        "moving the target folder must not restart or distort the center-absorb trajectory"
+      );
+    } finally {
+      controller.destroy();
+      if (!layer.destroyed) layer.destroy({ children: true });
+      motionRuntime.reset();
+    }
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = new Container();
+    const previewNode = new Container();
+    previewNode.labelText = new Container();
+    previewNode.addChild(previewNode.labelText);
+    previewNode.position.set(120, 160);
+    layer.addChild(previewNode);
+    const aborts = [];
+    const controller = new FolderReleaseController(layer, {
       onReleaseAbort: (release, reason) => aborts.push(`${release.key}:${reason}`),
     });
     const release = {
@@ -256,7 +383,7 @@ export function runFolderPreviewSlotReleaseControllerTests() {
     const firstTargetNode = makeTargetFolderNode(firstPose);
     const rebuiltTargetNode = makeTargetFolderNode(rebuiltPose);
     const completions = [];
-    const controller = new FolderPreviewSlotReleaseController(layer, {
+    const controller = new FolderReleaseController(layer, {
       onReleaseComplete: (completedRelease) => completions.push(completedRelease.key),
     });
     const makeUpdate = (targetFolderNode) => ({
@@ -303,6 +430,87 @@ export function runFolderPreviewSlotReleaseControllerTests() {
     }
   }
 
+  {
+    motionRuntime.reset();
+    const layer = new Container();
+    const previewNode = new Container();
+    previewNode.visualWrap = new Container();
+    previewNode.visualWrap.position.set(0, -14);
+    previewNode.labelText = new Container();
+    previewNode.addChild(previewNode.visualWrap, previewNode.labelText);
+    previewNode.position.set(180, 420);
+    previewNode.scale.set(1.12);
+    layer.addChild(previewNode);
+    const release = {
+      item: { id: "app-dragged", type: "app" },
+      key: "release-rebuilt-center-target",
+      releaseMode: "folder-center-absorb",
+      size: { height: 64, width: 64 },
+      targetFolderId: "folder-moving",
+      velocity: { x: 0, y: 0 },
+    };
+    const firstPose = { center: { x: 520, y: 420 } };
+    const rebuiltPose = { center: { x: 860, y: 260 } };
+    const firstTargetNode = makeCenterTargetFolderNode(firstPose);
+    const rebuiltTargetNode = makeCenterTargetFolderNode(rebuiltPose);
+    const completions = [];
+    const controller = new FolderReleaseController(layer, {
+      onReleaseComplete: (completedRelease) => completions.push(completedRelease.key),
+    });
+    const makeUpdate = (targetFolderNode) => ({
+      deviceResolution: 1.5,
+      height: 600,
+      previewNode,
+      release,
+      stageRect: { height: 600, left: 0, top: 0, width: 1000 },
+      targetFolderNode,
+      width: 1000,
+    });
+
+    try {
+      controller.update(makeUpdate(firstTargetNode));
+      for (let frame = 0; frame < 10; frame += 1) {
+        motionRuntime.step(1 / 60);
+        layer.onRender?.();
+      }
+      const beforeRebind = readCenter(layer, previewNode.visualWrap);
+      const alphaBeforeRebind = previewNode.alpha;
+      controller.update(makeUpdate(rebuiltTargetNode));
+      const afterRebind = readCenter(layer, previewNode.visualWrap);
+      assert(
+        nearlyEqual(afterRebind.x, beforeRebind.x) && nearlyEqual(afterRebind.y, beforeRebind.y),
+        "rebinding a center-absorb target should preserve the currently rendered ghost center"
+      );
+      assert(
+        previewNode.alpha <= alphaBeforeRebind + 0.0001,
+        "rebinding a center-absorb target must not resurrect an already fading ghost"
+      );
+
+      let remainingFrames = 0;
+      for (; remainingFrames < 30 && completions.length === 0; remainingFrames += 1) {
+        rebuiltPose.center.x += 0.75;
+        rebuiltPose.center.y -= 0.2;
+        motionRuntime.step(1 / 60);
+        layer.onRender?.();
+      }
+      assert(completions.join(",") === "release-rebuilt-center-target", "a rebound center absorb should still complete");
+      assert(
+        remainingFrames <= 9,
+        "rebinding a center absorb should keep the original remaining duration instead of restarting the full tween"
+      );
+      const terminalCenter = readCenter(layer, previewNode.visualWrap);
+      assert(
+        nearlyEqual(terminalCenter.x, rebuiltPose.center.x, 0.25) &&
+          nearlyEqual(terminalCenter.y, rebuiltPose.center.y, 0.25),
+        "a rebound center absorb should finish at the rebuilt target's live center"
+      );
+    } finally {
+      controller.destroy();
+      if (!layer.destroyed) layer.destroy({ children: true });
+      motionRuntime.reset();
+    }
+  }
+
   for (const framesPerSecond of [30, 60, 120]) {
     for (const deviceResolution of [1, 1.25, 1.5, 2]) {
       motionRuntime.reset();
@@ -319,7 +527,7 @@ export function runFolderPreviewSlotReleaseControllerTests() {
       };
       const targetFolderNode = makeTargetFolderNode(targetPose);
       const completions = [];
-      const controller = new FolderPreviewSlotReleaseController(layer, {
+      const controller = new FolderReleaseController(layer, {
         onReleaseComplete: (release) => completions.push(release.key),
       });
       const release = {
@@ -355,6 +563,80 @@ export function runFolderPreviewSlotReleaseControllerTests() {
         assert(
           completions.length === 1 && centerErrorInDevicePixels <= 0.5,
           `release should hand off within half a device pixel at ${framesPerSecond}fps and ${deviceResolution}x resolution`
+        );
+      } finally {
+        controller.destroy();
+        if (!layer.destroyed) layer.destroy({ children: true });
+        motionRuntime.reset();
+      }
+    }
+  }
+
+  for (const framesPerSecond of [30, 60, 120]) {
+    for (const deviceResolution of [1, 1.25, 1.5, 2]) {
+      motionRuntime.reset();
+      const layer = new Container();
+      const previewNode = new Container();
+      previewNode.visualWrap = new Container();
+      previewNode.visualWrap.position.set(0, -14);
+      previewNode.labelText = new Container();
+      previewNode.addChild(previewNode.visualWrap, previewNode.labelText);
+      previewNode.position.set(140, 360);
+      previewNode.scale.set(1.12);
+      layer.addChild(previewNode);
+      const targetPose = { center: { x: 620, y: 280 } };
+      const targetFolderNode = makeCenterTargetFolderNode(targetPose);
+      const completions = [];
+      const controller = new FolderReleaseController(layer, {
+        onReleaseComplete: (release) => completions.push(release.key),
+      });
+      const release = {
+        item: { id: "app-dragged", type: "app" },
+        key: `center-release-${framesPerSecond}fps-${deviceResolution}x`,
+        releaseMode: "folder-center-absorb",
+        size: { height: 64, width: 64 },
+        targetFolderId: "folder-moving",
+        velocity: { x: 0, y: 0 },
+      };
+
+      try {
+        controller.update({
+          deviceResolution,
+          height: 600,
+          previewNode,
+          release,
+          stageRect: { height: 600, left: 0, top: 0, width: 900 },
+          targetFolderNode,
+          width: 900,
+        });
+        const maxFrames = framesPerSecond * 2;
+        let frame = 0;
+        for (; frame < maxFrames && completions.length === 0; frame += 1) {
+          targetPose.center.x += 90 / framesPerSecond;
+          targetPose.center.y -= 24 / framesPerSecond;
+          motionRuntime.step(1 / framesPerSecond);
+          layer.onRender?.();
+        }
+        const terminal = readPose(layer, previewNode.visualWrap);
+        const centerErrorInDevicePixels = Math.max(
+          Math.abs(terminal.center.x - targetPose.center.x),
+          Math.abs(terminal.center.y - targetPose.center.y)
+        ) * deviceResolution;
+        assert(
+          completions.length === 1 && centerErrorInDevicePixels <= 0.5,
+          `center absorb should finish within half a device pixel at ${framesPerSecond}fps and ${deviceResolution}x resolution`
+        );
+        assert(
+          frame <= Math.ceil(CENTER_ABSORB_TEST_DURATION * framesPerSecond) + 3,
+          `center absorb should keep its finite duration at ${framesPerSecond}fps`
+        );
+        assert(previewNode.alpha <= 0.001, "center absorb should be fully transparent before completion");
+        assert(
+          nearlyEqual(terminal.matrix.a, 0.1, 0.0001) &&
+            nearlyEqual(terminal.matrix.b, 0, 0.0001) &&
+            nearlyEqual(terminal.matrix.c, 0, 0.0001) &&
+            nearlyEqual(terminal.matrix.d, 0.1, 0.0001),
+          "center absorb should finish at the configured tiny visual scale"
         );
       } finally {
         controller.destroy();

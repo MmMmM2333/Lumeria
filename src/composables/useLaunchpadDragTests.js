@@ -1434,9 +1434,13 @@ export async function runLaunchpadDragTests() {
 
     const release = drag.dragReleaseState.value;
     assert(release?.releaseMode === "folder-center-absorb", "full visible preview should release into the folder center");
+    assert(release?.targetFolderId === "folder-full-drop", "center absorb release should retain the semantic target folder id");
     assert(release?.targetPreviewSlotIndex == null, "center absorb release should not expose a preview slot");
     assert(!release?.suppressFolderPreviewChildId, "center absorb release should not suppress a preview child");
-    assert(release?.targetRect?.width < 20, "center absorb release should target a small center collapse rect");
+    assert(!("targetRect" in release), "center absorb release should not publish a stale final target rectangle");
+    assert(!("targetStageLayoutRect" in release), "center absorb release should not publish a stable-layout target rectangle");
+    assert(!("targetVersion" in release), "center absorb release should not retain the legacy geometry retarget version");
+    assert(!("provisionalLayoutTarget" in release), "center absorb release should not retain legacy provisional geometry state");
     iconBoundsRegistry.clearBounds();
   });
 
@@ -1460,7 +1464,9 @@ export async function runLaunchpadDragTests() {
     await nextTick();
     await nextTick();
 
-    assert(drag.dragReleaseState.value?.releaseMode === "folder-center-absorb", "multi-page folder drops should release into the folder center");
+    const release = drag.dragReleaseState.value;
+    assert(release?.releaseMode === "folder-center-absorb", "multi-page folder drops should release into the folder center");
+    assert(!("targetRect" in release), "multi-page center absorb should remain independent of target rectangles");
     iconBoundsRegistry.clearBounds();
   });
 
@@ -1483,7 +1489,9 @@ export async function runLaunchpadDragTests() {
     await nextTick();
     await nextTick();
 
-    assert(drag.dragReleaseState.value?.releaseMode === "folder-center-absorb", "folderPageSize below 9 should treat a full first page as center absorb");
+    const release = drag.dragReleaseState.value;
+    assert(release?.releaseMode === "folder-center-absorb", "folderPageSize below 9 should treat a full first page as center absorb");
+    assert(!("targetRect" in release), "small-page center absorb should remain independent of target rectangles");
     assert(calls.insertAppIntoFolder[0]?.insertIndex === 4, "small page folder drop should still append at the current last page");
     iconBoundsRegistry.clearBounds();
   });

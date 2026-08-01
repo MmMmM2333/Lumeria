@@ -5,14 +5,14 @@ import { motionRuntime } from "../animation/motionRuntime.js";
 import { killMotionOf, motion, parallel } from "../animation/motionTween.js";
 import {
   DRAG_PREVIEW_SCALE,
-  DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB,
   getDragPreviewLayout,
   getDragReleaseMotion,
 } from "./dragPreviewMotion.js";
 import {
+  FOLDER_CENTER_ABSORB_RELEASE_MODE,
   FOLDER_PREVIEW_SLOT_RELEASE_MODE,
-  FolderPreviewSlotReleaseController,
-} from "./folderPreviewSlotReleaseController.js";
+  FolderReleaseController,
+} from "./folderReleaseController.js";
 
 const DRAG_PREVIEW_ROTATION = 0;
 const DRAG_PREVIEW_CLEAR_REASON = "drag-preview-clear";
@@ -20,9 +20,6 @@ const DRAG_PREVIEW_REPLACE_REASON = "drag-preview-replace";
 const DRAG_RELEASE_START_REASON = "drag-release-start";
 const DRAG_PREVIEW_LABEL_RESTORE_DURATION = 0.12;
 const DRAG_PREVIEW_FOLDER_HOVER_LABEL_SCALE = 0.72;
-const DRAG_RELEASE_CENTER_ABSORB_DURATION = 0.24;
-const DRAG_RELEASE_CENTER_ABSORB_FADE_DELAY = 0.1;
-const DRAG_RELEASE_CENTER_ABSORB_FADE_DURATION = 0.14;
 const DRAG_RELEASE_EQUIVALENT_FINAL_DELTA = 0.75;
 const DRAG_RELEASE_EQUIVALENT_FINAL_SCALE_DELTA = 0.0125;
 
@@ -146,7 +143,7 @@ export class DragPreviewLayer extends Container {
     this.previewNode = new IconNode({ onAction: () => {} });
     this.previewNode.eventMode = "none";
     this.addChild(this.previewNode);
-    this.folderPreviewSlotReleaseController = new FolderPreviewSlotReleaseController(this, {
+    this.folderReleaseController = new FolderReleaseController(this, {
       onReleaseAbort: (release, reason) => {
         this.releaseCompleteKey = release?.key || null;
         this.onReleaseComplete({ ...release, aborted: true, abortReason: reason });
@@ -170,16 +167,19 @@ export class DragPreviewLayer extends Container {
 
   update(state) {
     if (state.releaseState?.item) {
-      if (state.releaseState.releaseMode === FOLDER_PREVIEW_SLOT_RELEASE_MODE) {
-        this.updateFolderPreviewSlotRelease(state);
+      if (
+        state.releaseState.releaseMode === FOLDER_PREVIEW_SLOT_RELEASE_MODE ||
+        state.releaseState.releaseMode === FOLDER_CENTER_ABSORB_RELEASE_MODE
+      ) {
+        this.updateFolderRelease(state);
         return;
       }
-      this.folderPreviewSlotReleaseController.clear("drag-preview-release-mode-change");
+      this.folderReleaseController.clear("drag-preview-release-mode-change");
       this.updateRelease(state);
       return;
     }
 
-    this.folderPreviewSlotReleaseController.clear("drag-preview-release-finished");
+    this.folderReleaseController.clear("drag-preview-release-finished");
 
     const preview = state.previewState;
     if (!preview?.item) {
@@ -253,7 +253,7 @@ export class DragPreviewLayer extends Container {
     this.previewNode.eventMode = "none";
   }
 
-  updateFolderPreviewSlotRelease(state) {
+  updateFolderRelease(state) {
     const release = state.releaseState;
     const releaseKey = release?.key;
     const isNewRelease = this.releaseKey !== releaseKey;
@@ -291,6 +291,7 @@ export class DragPreviewLayer extends Container {
     this.previewNode.visible = true;
     this.previewNode.eventMode = "none";
     this.previewNode.stageRect = layout.stageRect;
+    const animatedAlpha = isNewRelease ? null : this.previewNode.alpha;
     this.previewNode.setState({
       cellHeight: layout.cellHeight,
       cellWidth: layout.cellWidth,
@@ -317,7 +318,8 @@ export class DragPreviewLayer extends Container {
       stageWidth: state.width,
       textless: layout.textless,
     });
-    describeDragPreviewTargets(this.previewNode, release, "folder-preview-slot-release");
+    if (animatedAlpha !== null) this.previewNode.alpha = animatedAlpha;
+    describeDragPreviewTargets(this.previewNode, release, `${release.releaseMode}-release`);
     this.previewNode.rotation = 0;
 
     if (isNewRelease) {
@@ -340,10 +342,10 @@ export class DragPreviewLayer extends Container {
     }
 
     this.releaseKey = releaseKey;
-    this.releaseMotionKey = `folder-preview-slot:${releaseKey}`;
+    this.releaseMotionKey = `${release.releaseMode}:${releaseKey}`;
     this.releaseMotionControlKey = null;
     this.releaseCompletionContext = null;
-    this.folderPreviewSlotReleaseController.update({
+    this.folderReleaseController.update({
       ...state,
       previewNode: this.previewNode,
       release,
@@ -543,46 +545,27 @@ export class DragPreviewLayer extends Container {
       return;
     }
     const duration = Math.max(0.01, Number(release.duration) || 0.18);
-    const isCenterAbsorb = releaseMotion.releaseMode === DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB;
-    // Center absorption ends at a hidden point, so a finite tween gives it a
-    // deterministic handoff instead of waiting for an invisible spring tail.
-    const releaseAnimations = isCenterAbsorb
-      ? [
-        motion(this.previewNode)
-          .duration(DRAG_RELEASE_CENTER_ABSORB_DURATION)
-          .ease("power2.in")
-          .handoff()
-          .interrupt("retarget")
-          .to({ x: releaseMotion.target.x, y: releaseMotion.target.y }),
-        motion(this.previewNode.scale)
-          .duration(DRAG_RELEASE_CENTER_ABSORB_DURATION)
-          .ease("power2.in")
-          .handoff()
-          .interrupt("retarget")
-          .to({ x: releaseMotion.targetScale, y: releaseMotion.targetScale }),
-      ]
-      : [
-        motion(this.previewNode)
-          .preset("handoff")
-          .drag()
-          .interrupt("retarget")
-          .to({
-            velocity: releaseMotion.velocity,
-            x: releaseMotion.target.x,
-            y: releaseMotion.target.y,
-          }),
-        motion(this.previewNode.scale)
-          .preset("handoff")
-          .drag()
-          .interrupt("retarget")
-          .to({ x: releaseMotion.targetScale, y: releaseMotion.targetScale }),
-      ];
+    const releaseAnimations = [
+      motion(this.previewNode)
+        .preset("handoff")
+        .drag()
+        .interrupt("retarget")
+        .to({
+          velocity: releaseMotion.velocity,
+          x: releaseMotion.target.x,
+          y: releaseMotion.target.y,
+        }),
+      motion(this.previewNode.scale)
+        .preset("handoff")
+        .drag()
+        .interrupt("retarget")
+        .to({ x: releaseMotion.targetScale, y: releaseMotion.targetScale }),
+    ];
     if (releaseMotion.targetAlpha !== this.previewNode.alpha) {
       releaseAnimations.push(
         motion(this.previewNode)
-          .delay(isCenterAbsorb ? DRAG_RELEASE_CENTER_ABSORB_FADE_DELAY : 0)
-          .duration(isCenterAbsorb ? DRAG_RELEASE_CENTER_ABSORB_FADE_DURATION : duration)
-          .ease(isCenterAbsorb ? "power2.in" : "power2.out")
+          .duration(duration)
+          .ease("power2.out")
           .handoff()
           .interrupt("retarget")
           .to({ alpha: releaseMotion.targetAlpha })
@@ -618,8 +601,8 @@ export class DragPreviewLayer extends Container {
   }
 
   destroy(options) {
-    this.folderPreviewSlotReleaseController?.destroy?.();
-    this.folderPreviewSlotReleaseController = null;
+    this.folderReleaseController?.destroy?.();
+    this.folderReleaseController = null;
     killMotionOf(this.previewNode, null, { reason: "destroyed" });
     stopPreviewScaleMotion(this.previewNode, { reason: "destroyed" });
     this.releaseMotionControl = null;

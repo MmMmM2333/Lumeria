@@ -24,10 +24,7 @@ import {
 } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 import { stageLayoutRecordToClientRect } from "../rendering/pixi/geometry/stageCoordinates.js";
 import { getDesktopIconSizing } from "../rendering/pixi/scene/desktopIconSizing.js";
-import {
-  makeFolderCenterCollapseRect,
-  makeFolderThumbPreviewRect,
-} from "../rendering/pixi/scene/folderOverlayTargets.js";
+import { makeFolderThumbPreviewRect } from "../rendering/pixi/scene/folderOverlayTargets.js";
 import { resolveFolderIconRenderSize } from "../rendering/pixi/scene/folderIconSizing.js";
 import {
   cloneIconVisualSpec,
@@ -701,15 +698,6 @@ export function useLaunchpadDrag(options) {
     );
   }
 
-  function getFolderCenterAbsorbReleaseTarget(folderId, fallbackClientRect = null) {
-    const thumbTarget = getTopLevelFolderThumbReleaseTarget(folderId, fallbackClientRect);
-    if (!thumbTarget?.clientRect && !thumbTarget?.stageLayoutRect) return null;
-    return makeReleaseTarget(
-      makeFolderCenterCollapseRect(thumbTarget.clientRect) || thumbTarget.clientRect,
-      makeFolderCenterCollapseRect(thumbTarget.stageLayoutRect)
-    );
-  }
-
   function getFolderCreateReleaseTargets(folderId, targetAppId, draggedAppId, fallbackThumbTarget = null) {
     const fallbackTarget = normalizeReleaseTarget(fallbackThumbTarget);
     const registeredThumbTarget = getTopLevelFolderThumbReleaseTarget(folderId, null);
@@ -1019,7 +1007,7 @@ export function useLaunchpadDrag(options) {
       textless: getReleaseTextless(),
       velocity: { ...(activeDrag.velocity || makeZeroVelocity()) },
     };
-    if (releaseMode !== DRAG_RELEASE_MODE_FOLDER_PREVIEW_SLOT) {
+    if (releaseMode === DRAG_RELEASE_MODE_SLOT) {
       Object.assign(nextReleaseState, {
         provisionalLayoutTarget: false,
         targetRect: null,
@@ -2587,14 +2575,11 @@ export function useLaunchpadDrag(options) {
         targetPreviewSlotIndex: topLevelDropResult.previewSlotIndex,
       });
       if (releaseKey) {
-        if (topLevelDropResult.releaseMode === DRAG_RELEASE_MODE_FOLDER_PREVIEW_SLOT) {
+        if (
+          topLevelDropResult.releaseMode === DRAG_RELEASE_MODE_FOLDER_PREVIEW_SLOT ||
+          topLevelDropResult.releaseMode === DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB
+        ) {
           scheduleDragReleaseClear();
-        } else if (topLevelDropResult.releaseMode === DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB) {
-          scheduleDragReleaseTargetResolve(
-            releaseKey,
-            () => getFolderCenterAbsorbReleaseTarget(topLevelDropResult.folderId, fallbackReleaseTarget?.clientRect),
-            fallbackReleaseTarget?.clientRect
-          );
         } else {
           setDragReleaseTarget(releaseKey, fallbackReleaseTarget);
         }

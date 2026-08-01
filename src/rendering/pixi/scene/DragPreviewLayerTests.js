@@ -439,9 +439,14 @@ export async function runDragPreviewLayerTests() {
           ...previewState,
           key: "release-folder-hover",
           releaseMode: "folder-center-absorb",
-          targetRect: { height: 16, left: 240, top: 260, width: 16 },
-          targetVersion: 1,
+          targetFolderId: "folder-a",
           velocity: { x: 0, y: 0 },
+        },
+        targetFolderNode: {
+          destroyed: false,
+          iconSize: 64,
+          item: { id: "folder-a", type: "folder" },
+          getFolderCenterReleasePose: () => ({ center: { x: 248, y: 268 } }),
         },
       });
       assert(layer.previewNode.labelText.alpha < 0.001, "folder release should not resurrect a hidden drag preview label over the target folder");
@@ -694,47 +699,67 @@ export async function runDragPreviewLayerTests() {
       releaseMode: "folder-center-absorb",
       size: { height: 64, width: 64 },
       source: { index: 0, pageIndex: 0, type: "page" },
-      targetRect: { height: 16, left: 240, top: 260, width: 16 },
-      targetVersion: 1,
+      targetFolderId: "folder-absorb",
       velocity: { x: 0, y: 0 },
     };
+    const targetPose = { center: { x: 248, y: 268 } };
+    const targetFolderNode = {
+      destroyed: false,
+      iconSize: 64,
+      item: { id: "folder-absorb", type: "folder" },
+      getFolderCenterReleasePose() {
+        return { center: { ...targetPose.center } };
+      },
+    };
+    const baseState = {
+      deviceResolution: 2,
+      folderPageSize: 9,
+      height: 600,
+      iconSize: 64,
+      isTextlessMode: false,
+      launchTargetStatusById: {},
+      releaseState,
+      showMissingLaunchTargetBadge: true,
+      stageRect: { height: 600, left: 0, top: 0, width: 800 },
+      targetFolderNode,
+      width: 800,
+    };
     try {
-      layer.update({
-        folderPageSize: 9,
-        height: 600,
-        iconSize: 64,
-        isTextlessMode: false,
-        launchTargetStatusById: {},
-        releaseState,
-        showMissingLaunchTargetBadge: true,
-        stageRect: { height: 600, left: 0, top: 0, width: 800 },
-        width: 800,
-      });
-
-      assert(runUntil(() => layer.previewNode.alpha < 0.001), "center absorb should fade the ghost completely");
-      const fadedAlpha = layer.previewNode.alpha;
-      layer.update({
-        folderPageSize: 9,
-        height: 600,
-        iconSize: 64,
-        isTextlessMode: false,
-        launchTargetStatusById: {},
-        releaseState,
-        showMissingLaunchTargetBadge: true,
-        stageRect: { height: 600, left: 0, top: 0, width: 800 },
-        width: 800,
-      });
-      assert(layer.previewNode.alpha <= fadedAlpha + 0.001, "re-rendering a faded center absorb must not restore the ghost alpha");
+      layer.update(baseState);
+      assert(!("targetRect" in releaseState), "center absorb should be driven by semantic target identity without a target rectangle");
+      const beforeMove = readNodeCenter(layer, layer.previewNode.visualWrap);
+      targetPose.center.x += 180;
+      targetPose.center.y -= 120;
+      layer.onRender?.();
+      const afterMove = readNodeCenter(layer, layer.previewNode.visualWrap);
+      assert(
+        Math.abs(afterMove.x - beforeMove.x - 180) < 0.001 &&
+          Math.abs(afterMove.y - beforeMove.y + 120) < 0.001,
+        "center absorb should follow the live folder center in the same render frame"
+      );
 
       let completionSteps = 0;
       while (!calls.length && completionSteps < 120) {
+        targetPose.center.x += 0.75;
+        targetPose.center.y -= 0.2;
         motionRuntime.step(1 / 60);
+        layer.onRender?.();
         completionSteps += 1;
       }
       assert(calls.length === 1, "center absorb release should complete");
       assert(completionSteps <= 20, "center absorb should not wait on a long invisible spring tail");
-      assert(layer.previewNode.alpha < 0.001, "center absorb release should fade the ghost out before completion");
-      assert(Math.abs(layer.previewNode.scale.x - 0.1) < 0.02, "center absorb release should shrink the ghost before completion");
+      assert(layer.previewNode.alpha < 0.001, "center absorb should fade the ghost completely before completion");
+      const fadedAlpha = layer.previewNode.alpha;
+      layer.update(baseState);
+      assert(layer.previewNode.alpha <= fadedAlpha + 0.001, "re-rendering a faded center absorb must not restore the ghost alpha");
+
+      const terminalPose = readNodeCenter(layer, layer.previewNode.visualWrap);
+      assert(
+        Math.abs(terminalPose.x - targetPose.center.x) < 0.25 &&
+          Math.abs(terminalPose.y - targetPose.center.y) < 0.25,
+        "center absorb should finish at the live folder center"
+      );
+      assert(Math.abs(layer.previewNode.visualWrap.getGlobalTransform().a - 0.1) < 0.02, "center absorb release should shrink the visual ghost before completion");
       assert(layer.previewNode.labelText.alpha < 0.001, "center absorb release should fade the label out before completion");
     } finally {
       layer.destroy({ children: true });

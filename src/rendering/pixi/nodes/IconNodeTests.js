@@ -288,6 +288,11 @@ export async function runIconNodeTests() {
         nearlyEqual(releasePose.matrix.d, 0),
       "release pose should expose the target child's full world transform basis instead of an axis-aligned bounds box"
     );
+    const centerReleasePose = node.getFolderCenterReleasePose(releaseLayer);
+    assert(
+      nearlyEqual(centerReleasePose?.center.x, 321) && nearlyEqual(centerReleasePose?.center.y, 220),
+      "center release pose should follow the folder thumb origin through the visual offset and live node transform"
+    );
     assert(
       node.getFolderPreviewChildReleasePose(releaseLayer, 1, {
         expectedChildId: "another-child",

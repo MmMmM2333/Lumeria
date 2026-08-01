@@ -145,31 +145,23 @@ export function runDragPreviewMotionTests() {
   assert(stageTargetedRelease.targetScale === 1, "stage layout slot release should still return the preview to the real icon scale");
   assert(stageTargetedRelease.velocity.x === 400 && stageTargetedRelease.velocity.y === 200, "release motion should convert client velocity into stage velocity");
 
-  let unsupportedModeError = null;
-  try {
-    getDragReleaseMotion({
-      ...preview,
-      releaseMode: "folder-preview-slot",
-      targetRect: { height: 18, left: 300, top: 400, width: 18 },
-    }, {
-      iconSize: 56,
-      stageRect: { left: 100, top: 200 },
-    });
-  } catch (error) {
-    unsupportedModeError = error;
+  for (const releaseMode of ["folder-preview-slot", "folder-center-absorb"]) {
+    let unsupportedModeError = null;
+    try {
+      getDragReleaseMotion({
+        ...preview,
+        releaseMode,
+        targetRect: { height: 18, left: 300, top: 400, width: 18 },
+      }, {
+        iconSize: 56,
+        stageRect: { left: 100, top: 200 },
+      });
+    } catch (error) {
+      unsupportedModeError = error;
+    }
+    assert(
+      unsupportedModeError instanceof Error,
+      `${releaseMode} should not silently fall back to generic target-rectangle motion`
+    );
   }
-  assert(unsupportedModeError instanceof Error, "specialized release modes should not silently fall back to generic target-rectangle motion");
-
-  const folderCenterRelease = getDragReleaseMotion({
-    ...preview,
-    releaseMode: "folder-center-absorb",
-    targetRect: { height: 20, left: 300, top: 400, width: 20 },
-    targetVersion: 7,
-  }, {
-    iconSize: 56,
-    stageRect: { left: 100, top: 200 },
-  });
-  assert(folderCenterRelease.targetScale === 0.1, "folder center absorb release should shrink to a small terminal scale");
-  assert(folderCenterRelease.targetAlpha === 0, "folder center absorb release should fade out");
-  assert(folderCenterRelease.targetLabelAlpha === 0, "folder center absorb release should hide the label");
 }

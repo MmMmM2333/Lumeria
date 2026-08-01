@@ -405,6 +405,13 @@ export class IconNode extends Container {
     };
   }
 
+  getFolderCenterReleasePose(relativeTo) {
+    if (!this.isFolder || !relativeTo || !this.folderThumb || this.folderThumb.destroyed) return null;
+    const center = relativeTo.toLocal({ x: 0, y: 0 }, this.folderThumb);
+    if (![center.x, center.y].every(Number.isFinite)) return null;
+    return { center: { x: center.x, y: center.y } };
+  }
+
   getVisualBounds(node, stageRect, size) {
     return mapDisplayObjectLocalRectToStageRect({
       allowGlobalFallback: true,
