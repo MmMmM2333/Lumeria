@@ -499,10 +499,6 @@ function createSettingsPanelModel(options) {
       : state.draftBackgroundAcrylicDarkParams.value
   ));
   const activeAcrylicTintColorHex = computed(() => rgbArrayToHex(activeAcrylicParams.value?.tintColor));
-  const windowEffectsSupportHint = computed(() => {
-    const labels = windowEffectMaterialNotes.value.filter((item) => item.available).map((item) => item.label);
-    return labels.length ? `${labels.join(" / ")} 可用` : "当前系统不可用";
-  });
   const backgroundImageLayoutOptions = [
     { layout: BACKGROUND_IMAGE_LAYOUT_FILL, label: "填充" },
     { layout: BACKGROUND_IMAGE_LAYOUT_FIT, label: "适应" },
@@ -655,7 +651,6 @@ function createSettingsPanelModel(options) {
     systemAppearance: options.systemAppearance,
     windowEffectPreviewItems,
     windowEffectSummary,
-    windowEffectsSupportHint,
   });
 
   const excludedAppsSearchQuery = ref("");

@@ -122,6 +122,7 @@ import { runAcrylicFiltersTests } from "../rendering/pixi/background/acrylicFilt
 import { runAcrylicParamsTests } from "../rendering/pixi/background/acrylicParamsTests.js";
 import { runAcrylicNoiseTextureTests } from "../rendering/pixi/background/acrylicNoiseTextureTests.js";
 import { runAcrylicBackgroundPlanTests } from "../rendering/pixi/background/acrylicBackgroundPlanTests.js";
+import { runBackgroundEffectPreviewRendererTests } from "../rendering/pixi/background/backgroundEffectPreviewRendererTests.js";
 import { runBackgroundEffectPipelineTests } from "../rendering/pixi/background/backgroundEffectPipelineTests.js";
 import { runBackgroundTextureLoaderTests } from "../rendering/pixi/background/backgroundTextureLoaderTests.js";
 
@@ -234,6 +235,7 @@ await runAcrylicFiltersTests();
 runAcrylicParamsTests();
 await runAcrylicNoiseTextureTests();
 runAcrylicBackgroundPlanTests();
+await runBackgroundEffectPreviewRendererTests();
 await runBackgroundEffectPipelineTests();
 await runBackgroundTextureLoaderTests();
 runIconControlDrawingTests();

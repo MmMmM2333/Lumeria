@@ -13,13 +13,24 @@ import { BackgroundEffectPipeline, destroyTexture } from "./backgroundEffectPipe
 
 const DEFAULT_PREVIEW_WIDTH = 320;
 const DEFAULT_PREVIEW_HEIGHT = 180;
-const DEFAULT_RENDER_WIDTH = 960;
-const DEFAULT_RENDER_HEIGHT = 540;
+const PREVIEW_TEXTURE_SCALE = 2;
 
 function clampRenderSize(value, fallback) {
   const size = Number(value);
   if (!Number.isFinite(size)) return fallback;
   return Math.max(16, Math.round(size));
+}
+
+export function resolveBackgroundEffectPreviewSizes(config = {}) {
+  const renderWidth = clampRenderSize(config.renderWidth, DEFAULT_PREVIEW_WIDTH);
+  const renderHeight = clampRenderSize(config.renderHeight, DEFAULT_PREVIEW_HEIGHT);
+  return {
+    layoutSize: {
+      height: clampRenderSize(config.layoutHeight, renderHeight),
+      width: clampRenderSize(config.layoutWidth, renderWidth),
+    },
+    renderSize: resolveAcrylicRenderSize(renderWidth, renderHeight),
+  };
 }
 
 async function resolveTextureSource(config) {
@@ -42,6 +53,8 @@ function makePlacementKey(config) {
     imageHeight: config.backgroundImagePixelSize?.height || null,
     imageWidth: config.backgroundImagePixelSize?.width || null,
     layout: config.backgroundImageLayout || null,
+    layoutHeight: config.layoutHeight || null,
+    layoutWidth: config.layoutWidth || null,
     monitorPhysicalHeight: config.backgroundLayoutContext?.monitorPhysicalHeight || null,
     monitorPhysicalWidth: config.backgroundLayoutContext?.monitorPhysicalWidth || null,
     monitorPhysicalX: config.backgroundLayoutContext?.monitorPhysicalX || null,
@@ -166,7 +179,12 @@ export class BackgroundEffectPreviewRenderer {
 
     try {
       const textureSource = await resolveTextureSource(this.config);
-      const texture = await loadBackgroundTextureFromImage(textureSource);
+      const renderSize = this.getRenderSize();
+      const textureMaxSize = Math.max(renderSize.width, renderSize.height) * PREVIEW_TEXTURE_SCALE;
+      const texture = await loadBackgroundTextureFromImage(textureSource, {
+        maxHeight: textureMaxSize,
+        maxWidth: textureMaxSize,
+      });
       if (this.destroyed || generation !== this.textureLoadGeneration) {
         destroyTexture(texture);
         return;
@@ -193,15 +211,11 @@ export class BackgroundEffectPreviewRenderer {
   }
 
   getRenderSize() {
-    const { height: renderHeight, width: renderWidth } = this.getConfiguredRenderSize();
-    return resolveAcrylicRenderSize(renderWidth, renderHeight);
+    return resolveBackgroundEffectPreviewSizes(this.config).renderSize;
   }
 
-  getConfiguredRenderSize() {
-    return {
-      height: clampRenderSize(this.config.renderHeight, DEFAULT_RENDER_HEIGHT),
-      width: clampRenderSize(this.config.renderWidth, DEFAULT_RENDER_WIDTH),
-    };
+  getLayoutSize() {
+    return resolveBackgroundEffectPreviewSizes(this.config).layoutSize;
   }
 
   getRenderSizeKey() {
@@ -211,6 +225,7 @@ export class BackgroundEffectPreviewRenderer {
 
   getBlurKey() {
     const renderSize = this.getRenderSize();
+    const layoutSize = this.getLayoutSize();
     const blur = createBackgroundEffectPlan(this.config).blur;
     return JSON.stringify({
       downOffsets: blur.downOffsets,
@@ -219,6 +234,8 @@ export class BackgroundEffectPreviewRenderer {
       height: renderSize.height,
       imageLayout: this.config.backgroundImageLayout || "",
       kernel: blur.kernel,
+      layoutHeight: layoutSize.height,
+      layoutWidth: layoutSize.width,
       offsetScale: blur.offsetScale,
       passCount: blur.passCount,
       upOffsets: blur.upOffsets,
@@ -261,9 +278,9 @@ export class BackgroundEffectPreviewRenderer {
       return;
     }
 
-    const { height: configuredHeight, width: configuredWidth } = this.getConfiguredRenderSize();
-    const renderScaleX = Math.max(0.0001, renderSize.width / configuredWidth);
-    const renderScaleY = Math.max(0.0001, renderSize.height / configuredHeight);
+    const { height: layoutHeight, width: layoutWidth } = this.getLayoutSize();
+    const renderScaleX = Math.max(0.0001, renderSize.width / layoutWidth);
+    const renderScaleY = Math.max(0.0001, renderSize.height / layoutHeight);
     const layout = resolveBackgroundImagePlacement({
       imagePixelSize: this.config.backgroundImagePixelSize,
       layout: this.config.backgroundImageLayout,
@@ -272,8 +289,8 @@ export class BackgroundEffectPreviewRenderer {
       renderScaleY,
       sourceHeight: this.sourceTexture.height,
       sourceWidth: this.sourceTexture.width,
-      targetHeight: configuredHeight,
-      targetWidth: configuredWidth,
+      targetHeight: layoutHeight,
+      targetWidth: layoutWidth,
     });
     if (layout.tile) {
       this.sourceSprite.visible = false;
@@ -283,7 +300,14 @@ export class BackgroundEffectPreviewRenderer {
       this.sourceTilingSprite.position.set(layout.x, layout.y);
       this.sourceTilingSprite.setSize(layout.width, layout.height);
       this.sourceTilingSprite.tilePosition.set(layout.tileX || 0, layout.tileY || 0);
-      this.sourceTilingSprite.tileScale.set(layout.tileScaleX, layout.tileScaleY);
+      const sourceScaleX = Math.max(0.0001, Number(this.config.backgroundImagePixelSize?.width) || this.sourceTexture.width)
+        / Math.max(0.0001, this.sourceTexture.width);
+      const sourceScaleY = Math.max(0.0001, Number(this.config.backgroundImagePixelSize?.height) || this.sourceTexture.height)
+        / Math.max(0.0001, this.sourceTexture.height);
+      this.sourceTilingSprite.tileScale.set(
+        layout.tileScaleX * sourceScaleX,
+        layout.tileScaleY * sourceScaleY
+      );
     } else {
       this.sourceTilingSprite.visible = false;
       this.sourceTilingSprite.texture = Texture.EMPTY;
@@ -327,7 +351,7 @@ export class BackgroundEffectPreviewRenderer {
 
     const blurKey = this.getBlurKey();
     if (this.blurDirty || blurKey !== this.lastBlurKey) {
-      this.effectPipeline.renderBlur(effectPlan, this.getConfiguredRenderSize());
+      this.effectPipeline.renderBlur(effectPlan, this.getLayoutSize());
       this.lastBlurKey = blurKey;
       this.blurDirty = false;
       this.compositeDirty = true;

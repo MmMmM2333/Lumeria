@@ -67,7 +67,6 @@
             </span>
             <span class="settings-list-copy">
               <span class="settings-list-title">窗口底材</span>
-              <span class="settings-list-description">{{ c.windowEffectsSupportHint.value }}</span>
             </span>
             <span class="settings-list-summary">{{ windowEffectSummary }}</span>
             <ChevronDownIcon :class="c.cx('settings-list-chevron', isWindowMaterialExpanded && 'settings-list-chevron-open')" />
@@ -384,7 +383,7 @@
           </button>
 
           <Transition name="settings-expand">
-            <div v-if="isBackgroundEffectExpanded" class="settings-list-expand-shell">
+            <div v-show="isBackgroundEffectExpanded" class="settings-list-expand-shell">
               <div class="settings-list-expand settings-background-expand">
                 <div class="settings-background-detail">
                   <div class="settings-background-control-row">

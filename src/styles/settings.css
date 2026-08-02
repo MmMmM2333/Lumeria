@@ -1485,7 +1485,7 @@
   aspect-ratio: 16 / 9;
   overflow: hidden;
   border-radius: 8px;
-  border: 1px solid var(--settings-row-border-strong);
+  border: 1px solid rgb(80, 80, 80);
   background:
     linear-gradient(45deg, rgba(255, 255, 255, 0.08) 25%, transparent 25% 75%, rgba(255, 255, 255, 0.08) 75%),
     linear-gradient(45deg, rgba(255, 255, 255, 0.08) 25%, transparent 25% 75%, rgba(255, 255, 255, 0.08) 75%),
@@ -1543,12 +1543,10 @@
 
 .settings-background-preview-canvas {
   position: absolute;
-  left: 50%;
-  top: 50%;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
-  transform: translate(-50%, -50%);
 }
 
 .settings-background-preview-canvas-layer {
@@ -1564,8 +1562,8 @@
   max-width: none;
   aspect-ratio: auto;
   border: 0;
-  border-radius: inherit;
-  background: transparent;
+  border-radius: 0;
+  background-color: rgb(38, 38, 38);
   box-shadow: none;
 }
 

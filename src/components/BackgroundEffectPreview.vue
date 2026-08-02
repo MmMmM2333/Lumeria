@@ -48,6 +48,7 @@ import {
   BACKGROUND_EFFECT_ACRYLIC_WEBGL,
   BACKGROUND_EFFECT_BLUR,
   BACKGROUND_EFFECT_DIMMED,
+  backgroundEffectUsesPixi,
   clampBackgroundBaseOpacity,
   normalizeBackgroundBaseColor,
 } from "../composables/useLaunchpadSettingsConfig.js";
@@ -97,11 +98,9 @@ let renderedRendererConfigKey = "";
 const hasImage = computed(() => Boolean(props.backgroundImageUrl));
 const usesPixiEffect = computed(() => Boolean(
   hasImage.value
-  && (props.backgroundEffect === BACKGROUND_EFFECT_BLUR || props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL)
+  && backgroundEffectUsesPixi(props.backgroundEffect)
 ));
-const shouldRenderPixiHost = computed(() => Boolean(
-  props.active && hasImage.value
-));
+const shouldRenderPixiHost = computed(() => usesPixiEffect.value);
 const shouldShowPixiHost = computed(() => Boolean(usesPixiEffect.value && isPixiReady.value));
 const isCanvasPreviewVisible = computed(() => !shouldShowPixiHost.value);
 const canvasDarkenStrength = computed(() => (
@@ -139,15 +138,11 @@ function makePixiTextureKey() {
   return `${props.backgroundImagePath || ""}|${props.backgroundImageUrl || ""}`;
 }
 
-function resolveRendererEffect() {
-  return usesPixiEffect.value ? props.backgroundEffect : BACKGROUND_EFFECT_BLUR;
-}
-
 function getRendererConfig() {
   return {
     backgroundAcrylicParams: props.backgroundAcrylicParams,
     backgroundBlurStrength: props.backgroundBlurStrength,
-    backgroundEffect: resolveRendererEffect(),
+    backgroundEffect: props.backgroundEffect,
     backgroundImageLayout: props.backgroundImageLayout,
     backgroundImageOpacity: props.backgroundImageOpacity,
     backgroundImagePath: props.backgroundImagePath,
@@ -156,8 +151,10 @@ function getRendererConfig() {
     backgroundImageUrl: props.backgroundImageUrl,
     backgroundLayoutContext: props.backgroundLayoutContext,
     dualKawaseParams: isKawaseDebugEnabled && kawaseDebugOverrideEnabled.value ? kawaseDebugParams : null,
-    renderHeight: renderSize.value.height,
-    renderWidth: renderSize.value.width,
+    layoutHeight: renderSize.value.height,
+    layoutWidth: renderSize.value.width,
+    renderHeight: previewSize.value.height,
+    renderWidth: previewSize.value.width,
   };
 }
 
@@ -192,6 +189,8 @@ function makeRendererConfigKey(config) {
     monitorPhysicalX: config.backgroundLayoutContext?.monitorPhysicalX,
     monitorPhysicalY: config.backgroundLayoutContext?.monitorPhysicalY,
     monitorScaleFactor: config.backgroundLayoutContext?.monitorScaleFactor,
+    layoutHeight: config.layoutHeight,
+    layoutWidth: config.layoutWidth,
     renderHeight: config.renderHeight,
     renderWidth: config.renderWidth,
     windowPhysicalX: config.backgroundLayoutContext?.windowPhysicalX,
@@ -210,10 +209,11 @@ function destroyPreviewRenderer() {
 }
 
 async function ensurePreviewRenderer() {
-  if (!props.active || !hasImage.value) {
+  if (!usesPixiEffect.value) {
     destroyPreviewRenderer();
     return;
   }
+  if (!props.active) return;
 
   const nextTextureKey = makePixiTextureKey();
   if (!previewRenderer || nextTextureKey !== pixiTextureKey) {
@@ -296,6 +296,7 @@ function observePreviewSize() {
 
 watch(
   () => [
+    props.active,
     usesPixiEffect.value,
     props.backgroundImagePath,
     props.backgroundImagePixelSize?.width,
