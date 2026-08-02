@@ -110,9 +110,24 @@ export function useLaunchpadApps(options) {
   function getLaunchTargetPath(app) {
     const target = app?.launchTarget;
     if (target?.kind === "appUserModelId") {
-      return target.appUserModelId || target.app_user_model_id || "";
+      return target.appUserModelId || "";
     }
     return target?.path || "";
+  }
+
+  function getAppSourceSummary(app) {
+    if (app?.origin !== "catalog") return "手动添加";
+    const sources = Array.isArray(app?.sources) ? app.sources : [];
+    const primary = sources.find((source) => source?.state === "primary") || sources[0];
+    const sourceLabel = String(primary?.rootLabel || primary?.type || "Catalog").trim();
+    const relativePath = String(primary?.relativePath || "").trim();
+    const mergedCount = sources.filter((source) => source?.state === "equivalent").length;
+    const shadowedCount = sources.filter((source) => source?.state === "shadowed").length;
+    const parts = [relativePath ? `${sourceLabel} · ${relativePath}` : sourceLabel];
+    if (mergedCount) parts.push(`另有 ${mergedCount} 个等价来源`);
+    if (shadowedCount) parts.push(`已覆盖 ${shadowedCount} 个系统来源`);
+    if (app?.identityStatus === "unresolved") parts.push("启动身份未解析");
+    return parts.filter(Boolean).join(" · ");
   }
 
   function getFilesystemLaunchTargetPath(app) {
@@ -143,6 +158,12 @@ export function useLaunchpadApps(options) {
       if (item.type === "app" && item.id === appId) {
         if (customIconPath) item.customIconPath = customIconPath;
         else delete item.customIconPath;
+        if (item.origin === "catalog") {
+          const overrides = { ...(item.presentationOverrides || {}) };
+          if (customIconPath) overrides.customIconPath = customIconPath;
+          else delete overrides.customIconPath;
+          item.presentationOverrides = overrides;
+        }
         delete item.customIconUrl;
         if (customIconDataUrl) item.customIconDataUrl = customIconDataUrl;
         else delete item.customIconDataUrl;
@@ -568,8 +589,8 @@ export function useLaunchpadApps(options) {
     return (choices || [])
       .map((choice, index) => ({
         id: String(choice?.id || `icon-choice-${index}`),
-        iconPath: choice?.iconPath || choice?.icon_path || null,
-        iconDataUrl: choice?.iconDataUrl || choice?.icon_data_url || null,
+        iconPath: choice?.iconPath || null,
+        iconDataUrl: choice?.iconDataUrl || null,
       }))
       .filter((choice) => choice.iconDataUrl);
   }
@@ -716,7 +737,7 @@ export function useLaunchpadApps(options) {
     const name = editorName.value.trim().slice(0, 64);
     const originalLaunchTarget = editingManagedApp.value?.launchTarget;
     const appUserModelId = originalLaunchTarget?.kind === "appUserModelId"
-      ? String(originalLaunchTarget.appUserModelId || originalLaunchTarget.app_user_model_id || "").trim()
+      ? String(originalLaunchTarget.appUserModelId || "").trim()
       : "";
     const launchTarget = originalLaunchTarget?.kind === "appUserModelId"
       ? (appUserModelId ? { kind: "appUserModelId", appUserModelId } : null)
@@ -725,23 +746,53 @@ export function useLaunchpadApps(options) {
     const launchArgs = launchArgsForTarget(launchTarget, editorArgs.value);
     const customIconPath = editorIconPath.value;
     const customIconDataUrl = editorIconDataUrl.value;
+    const isCatalogApp = editingManagedApp.value.origin === "catalog";
+    const targetChanged = launchTargetSignature(originalLaunchTarget) !== launchTargetSignature(launchTarget)
+      || String(editingManagedApp.value.launchArgs || "").trim() !== launchArgs;
+    const nextAppId = isCatalogApp && targetChanged ? options.makeId("manual-app") : appId;
 
     const changed = updateManagedAppEverywhere(appId, (item) => {
+      if (isCatalogApp && targetChanged) {
+        item.id = nextAppId;
+        item.origin = "manual";
+        delete item.catalogPresentation;
+        delete item.presentationOverrides;
+        delete item.trackingKey;
+        delete item.identityStatus;
+        delete item.sources;
+      }
       item.name = name;
       item.emoji = fallbackAppGlyph(name);
-      item.launchTarget = launchTarget;
-      if (launchArgs) item.launchArgs = launchArgs;
-      else delete item.launchArgs;
+      if (!isCatalogApp || targetChanged) {
+        item.launchTarget = launchTarget;
+        if (launchArgs) item.launchArgs = launchArgs;
+        else delete item.launchArgs;
+      }
       if (customIconPath) item.customIconPath = customIconPath;
       else delete item.customIconPath;
       delete item.customIconUrl;
       if (customIconDataUrl) item.customIconDataUrl = customIconDataUrl;
       else delete item.customIconDataUrl;
+      if (isCatalogApp && !targetChanged) {
+        const overrides = { ...(item.presentationOverrides || {}) };
+        const catalogName = String(item.catalogPresentation?.name || "");
+        const catalogEmoji = String(item.catalogPresentation?.emoji || "");
+        if (name && name !== catalogName) overrides.name = name;
+        else delete overrides.name;
+        if (item.emoji && item.emoji !== catalogEmoji) overrides.emoji = item.emoji;
+        else delete overrides.emoji;
+        if (customIconPath) overrides.customIconPath = customIconPath;
+        else delete overrides.customIconPath;
+        item.presentationOverrides = overrides;
+      }
     });
 
     if (!changed) return false;
+    if (isCatalogApp && targetChanged) {
+      hiddenAppIds.value = Array.from(new Set([...hiddenAppIds.value, appId]));
+    }
     options.reclampPageIndices();
-    options.markLaunchCriticalLayoutDirty?.(appId);
+    options.markLaunchCriticalLayoutDirty?.(nextAppId);
     options.schedulePageGridMetrics();
     return true;
   }
@@ -758,7 +809,10 @@ export function useLaunchpadApps(options) {
     options.cancelLongPress?.();
     let next = options.pages.value;
     for (const id of removedIds) next = options.removeEverywhere(next, id);
-    hiddenAppIds.value = Array.from(new Set([...hiddenAppIds.value, ...removedIds]));
+    const removedCatalogIds = removedApps
+      .filter((app) => app.origin === "catalog")
+      .map((app) => app.id);
+    hiddenAppIds.value = Array.from(new Set([...hiddenAppIds.value, ...removedCatalogIds]));
     options.commitPagesAfterDeletion(next);
     const removedIdSet = new Set(removedIds);
     if (removedIdSet.has(options.selectedIcon?.value?.id)) options.clearSelectedIcon?.();
@@ -877,14 +931,13 @@ export function useLaunchpadApps(options) {
       );
       const existingApps = options.collectAppsFromPages(options.pages.value);
       const existingIds = new Set(existingApps.map((app) => app.id));
-      const existingSourceKeys = new Set(existingApps.map((app) => app.sourceKey).filter(Boolean));
       const missingApps = (scanResult?.apps || [])
-        .map((app, index) => applyCachedIconAssetUrlsToApp(
-          normalizeNativeApp(app, index),
+        .map((app) => applyCachedIconAssetUrlsToApp(
+          normalizeNativeApp(app),
           catalog.toAssetUrl
         ))
         .filter((app) => !isAppExcludedFromScan(app, scanFilters.appBlacklist))
-        .filter((app) => !existingIds.has(app.id) && !existingSourceKeys.has(app.sourceKey));
+        .filter((app) => !existingIds.has(app.id));
       scanResultApps.value = missingApps;
       scanResultWarnings.value = scanResult?.warnings || [];
       scanResultSelectedIds.value = missingApps.map((app) => app.id);
@@ -907,16 +960,24 @@ export function useLaunchpadApps(options) {
     const selectedIds = new Set(scanResultSelectedIds.value);
     const existingApps = options.collectAppsFromPages(options.pages.value);
     const existingIds = new Set(existingApps.map((app) => app.id));
-    const existingSourceKeys = new Set(existingApps.map((app) => app.sourceKey).filter(Boolean));
+    const admittedIds = new Set(
+      scanResultApps.value.filter((app) => selectedIds.has(app.id)).map((app) => app.id)
+    );
+    const deferredIds = scanResultApps.value
+      .filter((app) => !selectedIds.has(app.id))
+      .map((app) => app.id);
+    hiddenAppIds.value = Array.from(new Set([
+      ...hiddenAppIds.value.filter((id) => !admittedIds.has(id)),
+      ...deferredIds,
+    ]));
     const selectedApps = scanResultApps.value
-      .filter((app) => selectedIds.has(app.id) && !existingIds.has(app.id) && !existingSourceKeys.has(app.sourceKey));
+      .filter((app) => selectedIds.has(app.id) && !existingIds.has(app.id));
     if (!selectedApps.length) {
       closeScanResultDialog();
+      syncManagedAppState();
       return;
     }
 
-    const restoredIds = new Set(selectedApps.map((app) => app.id));
-    hiddenAppIds.value = hiddenAppIds.value.filter((id) => !restoredIds.has(id));
     options.commitPages(options.appendAppsToPages(options.pages.value, selectedApps));
     options.reclampPageIndices();
     closeScanResultDialog();
@@ -931,8 +992,9 @@ export function useLaunchpadApps(options) {
     if (!launchTarget) return false;
     const launchArgs = launchArgsForTarget(launchTarget, editorArgs.value);
     const app = {
-      id: options.makeId("custom-app"),
+      id: options.makeId("manual-app"),
       type: "app",
+      origin: "manual",
       name,
       emoji: fallbackAppGlyph(name),
       launchTarget,
@@ -983,7 +1045,7 @@ export function useLaunchpadApps(options) {
     return JSON.stringify([
       String(launchTarget?.kind || ""),
       String(launchTarget?.path || "").trim(),
-      String(launchTarget?.appUserModelId || launchTarget?.app_user_model_id || "").trim(),
+      String(launchTarget?.appUserModelId || "").trim(),
     ]);
   }
 
@@ -1065,15 +1127,35 @@ export function useLaunchpadApps(options) {
 
   async function scanInitialCatalog() {
     const request = captureNativeScanRequest();
-    if (!request.roots.length) return [];
+    if (!request.roots.length) {
+      return {
+        apps: [],
+        warnings: [],
+        stats: {
+          dirsVisited: 0,
+          entriesSeen: 0,
+          physicalAppsFound: 0,
+          startMenuOverlays: 0,
+          equivalentAppsMerged: 0,
+          unresolvedApps: 0,
+          excludedApps: 0,
+          appsFound: 0,
+          limitReached: false,
+        },
+      };
+    }
     const result = await catalog.scan(request.roots, request.filters);
     if (result?.warnings?.length) {
       console.warn("Lumeria scan completed with warnings", result.warnings);
     }
     markScanRootsScanned(request.roots.map((root) => root.id));
-    return (result?.apps || [])
-      .map((app, index) => normalizeNativeApp(app, index))
-      .filter((app) => !isAppExcludedFromScan(app, request.filters.appBlacklist));
+    return {
+      apps: (result?.apps || [])
+        .map((app) => normalizeNativeApp(app))
+        .filter((app) => !isAppExcludedFromScan(app, request.filters.appBlacklist)),
+      warnings: result?.warnings || [],
+      stats: result?.stats || {},
+    };
   }
 
   const editorModel = Object.freeze({
@@ -1173,6 +1255,7 @@ export function useLaunchpadApps(options) {
     excludeManagedAppFromScan,
     excludeSelectedManagedAppsFromScan,
     filteredManagedApps,
+    getAppSourceSummary,
     getLaunchTargetPath,
     iconChooserModel,
     isBrowsingScanRoot,

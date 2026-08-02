@@ -15,6 +15,8 @@ mod window_effects;
 #[cfg(target_os = "windows")]
 mod windows_app_catalog;
 mod windows_com;
+#[cfg(target_os = "windows")]
+mod windows_shell_link;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -42,7 +44,8 @@ use file_dialog::{
 use icons::cache_app_icon_choices;
 use launcher::{launch_app_user_model_id, launch_path, LaunchPathError, LaunchPathErrorKind};
 use layout_store::{
-    find_layout_app, load_layout as load_saved_layout, save_layout as save_saved_layout,
+    find_layout_manual_app, load_layout as load_saved_layout, save_layout as save_saved_layout,
+    SavedManualApp,
 };
 use main_window_supervisor::{
     apply_main_window_mode, disable_main_window_transitions, open_main_window, open_settings,
@@ -80,6 +83,44 @@ struct AppState {
     live_desktop_runtime: Mutex<live_desktop::LiveDesktopRuntime>,
     main_window_shortcut: Mutex<Option<String>>,
     main_window_shortcut_capture_active: AtomicBool,
+}
+
+#[derive(Clone, Debug)]
+struct LaunchableApp {
+    name: String,
+    launch_target: models::LaunchTarget,
+    launch_args: Option<String>,
+    fallback_launch_paths: Vec<String>,
+}
+
+impl From<AppCatalogItem> for LaunchableApp {
+    fn from(app: AppCatalogItem) -> Self {
+        let primary_path = app.launch_target.path.as_deref();
+        let fallback_launch_paths = app
+            .sources
+            .iter()
+            .filter(|source| source.state == "equivalent")
+            .map(|source| source.absolute_path.clone())
+            .filter(|path| Some(path.as_str()) != primary_path)
+            .collect();
+        Self {
+            name: app.name,
+            launch_target: app.launch_target,
+            launch_args: app.launch_args,
+            fallback_launch_paths,
+        }
+    }
+}
+
+impl From<SavedManualApp> for LaunchableApp {
+    fn from(app: SavedManualApp) -> Self {
+        Self {
+            name: app.name,
+            launch_target: app.launch_target,
+            launch_args: app.launch_args,
+            fallback_launch_paths: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -343,12 +384,6 @@ fn launch_app_inner(
         ));
     }
 
-    let saved_layout = load_saved_layout(app_handle)
-        .map(|result| result.layout)
-        .map_err(|error| LaunchFailure::layout_read_failed(request.name.clone(), error))?;
-    let saved_app = saved_layout
-        .as_ref()
-        .and_then(|layout| find_layout_app(layout, &app_id));
     let catalog_app = {
         let catalog = state.catalog.lock().map_err(|_| {
             LaunchFailure::layout_read_failed(
@@ -358,20 +393,29 @@ fn launch_app_inner(
         })?;
         catalog.get(&app_id).cloned()
     };
+    if let Some(app) = catalog_app {
+        return launch_selected_app(app.into());
+    }
 
-    let app = match select_launch_app(catalog_app, saved_app) {
-        Some(app) => app,
-        None => find_app_in_saved_scan_roots(app_handle, saved_layout.as_ref(), &app_id)
-            .map_err(|error| LaunchFailure::layout_read_failed(request.name.clone(), error))?
-            .ok_or_else(|| {
-                LaunchFailure::missing_launch_info(
-                    request.name.clone(),
-                    format!("Unknown app id: {app_id}"),
-                )
-            })?,
-    };
+    let saved_layout = load_saved_layout(app_handle)
+        .map(|result| result.layout)
+        .map_err(|error| LaunchFailure::layout_read_failed(request.name.clone(), error))?;
+    if let Some(manual_app) = saved_layout
+        .as_ref()
+        .and_then(|layout| find_layout_manual_app(layout, &app_id))
+    {
+        return launch_selected_app(manual_app.into());
+    }
+    let app = find_app_in_saved_scan_roots(app_handle, saved_layout.as_ref(), &app_id)
+        .map_err(|error| LaunchFailure::layout_read_failed(request.name.clone(), error))?
+        .ok_or_else(|| {
+            LaunchFailure::missing_launch_info(
+                request.name.clone(),
+                format!("Unknown app id: {app_id}"),
+            )
+        })?;
 
-    launch_selected_app(app)
+    launch_selected_app(app.into())
 }
 
 #[tauri::command]
@@ -710,7 +754,7 @@ fn normalize_launch_app_name(name: String) -> String {
     }
 }
 
-fn resolve_launch_path(app: &AppCatalogItem) -> Result<(String, Option<&str>), LaunchFailure> {
+fn resolve_launch_path(app: &LaunchableApp) -> Result<(String, Option<&str>), LaunchFailure> {
     let kind = app.launch_target.kind.as_str();
     if !matches!(kind, "executable" | "shortcut" | "url") {
         return Err(LaunchFailure::new(
@@ -720,7 +764,7 @@ fn resolve_launch_path(app: &AppCatalogItem) -> Result<(String, Option<&str>), L
         ));
     }
 
-    let path = app
+    let mut path = app
         .launch_target
         .path
         .as_ref()
@@ -733,11 +777,19 @@ fn resolve_launch_path(app: &AppCatalogItem) -> Result<(String, Option<&str>), L
             )
         })?;
     if matches!(kind, "executable" | "shortcut") && !std::path::Path::new(&path).exists() {
-        return Err(LaunchFailure::new(
-            app.name.clone(),
-            LaunchFailureKind::TargetNotFound,
-            format!("Launch target does not exist: {path}"),
-        ));
+        if let Some(fallback) = app
+            .fallback_launch_paths
+            .iter()
+            .find(|fallback| std::path::Path::new(fallback).exists())
+        {
+            path = fallback.clone();
+        } else {
+            return Err(LaunchFailure::new(
+                app.name.clone(),
+                LaunchFailureKind::TargetNotFound,
+                format!("Launch target does not exist: {path}"),
+            ));
+        }
     }
 
     let launch_args = if kind == "executable" {
@@ -748,7 +800,7 @@ fn resolve_launch_path(app: &AppCatalogItem) -> Result<(String, Option<&str>), L
     Ok((path, launch_args))
 }
 
-fn launch_selected_app(app: AppCatalogItem) -> Result<(), LaunchFailure> {
+fn launch_selected_app(app: LaunchableApp) -> Result<(), LaunchFailure> {
     if app.launch_target.kind == "appUserModelId" {
         let app_user_model_id = app
             .launch_target
@@ -845,22 +897,6 @@ fn saved_scan_filters(settings: &serde_json::Value) -> ScanFilters {
             .unwrap_or_else(|| serde_json::Value::Array(Vec::new())),
     );
     serde_json::from_value(serde_json::Value::Object(value)).unwrap_or_default()
-}
-
-fn select_launch_app(
-    catalog_app: Option<AppCatalogItem>,
-    saved_app: Option<AppCatalogItem>,
-) -> Option<AppCatalogItem> {
-    match (catalog_app, saved_app) {
-        (Some(mut catalog), Some(saved)) => {
-            catalog.launch_target = saved.launch_target;
-            catalog.launch_args = saved.launch_args;
-            Some(catalog)
-        }
-        (Some(catalog), None) => Some(catalog),
-        (None, Some(saved)) => Some(saved),
-        (None, None) => None,
-    }
 }
 
 #[cfg(target_os = "windows")]
@@ -1245,8 +1281,9 @@ mod tests {
                 app_user_model_id: None,
             },
             launch_args: None,
-            source_key: None,
-            source: None,
+            tracking_key: String::new(),
+            identity_status: String::new(),
+            sources: Vec::new(),
         }
     }
 
@@ -1263,8 +1300,9 @@ mod tests {
                 app_user_model_id: None,
             },
             launch_args: None,
-            source_key: None,
-            source: None,
+            tracking_key: String::new(),
+            identity_status: String::new(),
+            sources: Vec::new(),
         }
     }
 
@@ -1281,8 +1319,9 @@ mod tests {
                 app_user_model_id: app_user_model_id.map(str::to_string),
             },
             launch_args: None,
-            source_key: None,
-            source: None,
+            tracking_key: String::new(),
+            identity_status: String::new(),
+            sources: Vec::new(),
         }
     }
 
@@ -1304,27 +1343,12 @@ mod tests {
     }
 
     #[test]
-    fn select_launch_app_uses_saved_launch_fields_over_catalog() {
-        let selected = select_launch_app(
-            Some(app_item("app", "C:/Current/App.exe")),
-            Some(app_item("app", "C:/Saved/App.exe")),
-        )
-        .expect("app should be selected");
+    fn catalog_launchable_keeps_current_catalog_launch_fields() {
+        let selected = LaunchableApp::from(app_item("app", "C:/Current/App.exe"));
 
         assert_eq!(
             selected.launch_target.path.as_deref(),
-            Some("C:/Saved/App.exe")
-        );
-    }
-
-    #[test]
-    fn select_launch_app_falls_back_to_saved_layout() {
-        let selected = select_launch_app(None, Some(app_item("app", "C:/Saved/App.exe")))
-            .expect("saved app should be selected");
-
-        assert_eq!(
-            selected.launch_target.path.as_deref(),
-            Some("C:/Saved/App.exe")
+            Some("C:/Current/App.exe")
         );
     }
 
@@ -1344,8 +1368,7 @@ mod tests {
                 "scanKeywordBlacklist": ["uninstall"],
                 "scanAppBlacklist": [
                     {
-                        "sourceKey": "scan-root:root:blocked.lnk",
-                        "path": "C:/Tools/Blocked.lnk",
+                        "catalogId": "catalog-blocked",
                         "name": "Blocked"
                     }
                 ]
@@ -1359,14 +1382,14 @@ mod tests {
         assert_eq!(filters.keyword_blacklist, vec!["uninstall"]);
         assert_eq!(filters.app_blacklist.len(), 1);
         assert_eq!(
-            filters.app_blacklist[0].source_key.as_deref(),
-            Some("scan-root:root:blocked.lnk")
+            filters.app_blacklist[0].catalog_id.as_deref(),
+            Some("catalog-blocked")
         );
     }
 
     #[test]
     fn launch_selected_app_rejects_missing_aumid_before_activation() {
-        let error = launch_selected_app(app_item_with_aumid("app", None))
+        let error = launch_selected_app(app_item_with_aumid("app", None).into())
             .expect_err("missing AppUserModelIds should fail before activation");
 
         assert_eq!(error.kind, LaunchFailureKind::MissingLaunchInfo);
@@ -1392,11 +1415,9 @@ mod tests {
 
     #[test]
     fn launch_selected_app_rejects_missing_local_path_before_shell() {
-        let error = launch_selected_app(app_item_with_kind(
-            "app",
-            "executable",
-            Some("C:/Lumeria/Missing.exe"),
-        ))
+        let error = launch_selected_app(
+            app_item_with_kind("app", "executable", Some("C:/Lumeria/Missing.exe")).into(),
+        )
         .expect_err("missing local paths should fail before shell launch");
 
         assert_eq!(error.kind, LaunchFailureKind::TargetNotFound);
@@ -1407,12 +1428,74 @@ mod tests {
 
     #[test]
     fn resolve_launch_path_allows_urls_without_local_path_check() {
-        let app = app_item_with_kind("web-app", "url", Some("https://example.com/app"));
+        let app = LaunchableApp::from(app_item_with_kind(
+            "web-app",
+            "url",
+            Some("https://example.com/app"),
+        ));
 
         let (path, launch_args) = resolve_launch_path(&app).expect("urls should be launchable");
 
         assert_eq!(path, "https://example.com/app");
         assert_eq!(launch_args, None);
+    }
+
+    #[test]
+    fn resolve_launch_path_falls_back_only_to_equivalent_catalog_sources() {
+        let base = std::env::temp_dir().join(format!(
+            "lumeria-launch-fallback-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&base).expect("create test directory");
+        let missing_primary = base.join("missing-primary.lnk");
+        let equivalent = base.join("equivalent.lnk");
+        let shadowed = base.join("shadowed.lnk");
+        std::fs::write(&equivalent, []).expect("create equivalent shortcut");
+        std::fs::write(&shadowed, []).expect("create shadowed shortcut");
+        let mut app = app_item("catalog-app", missing_primary.to_string_lossy().as_ref());
+        app.sources = vec![
+            models::AppSource {
+                key: "primary".to_string(),
+                source_type: "customDirectory".to_string(),
+                state: "primary".to_string(),
+                root_id: "custom".to_string(),
+                root_label: "Custom".to_string(),
+                relative_path: "primary.lnk".to_string(),
+                absolute_path: missing_primary.to_string_lossy().to_string(),
+            },
+            models::AppSource {
+                key: "equivalent".to_string(),
+                source_type: "startMenuUser".to_string(),
+                state: "equivalent".to_string(),
+                root_id: "user".to_string(),
+                root_label: "User".to_string(),
+                relative_path: "equivalent.lnk".to_string(),
+                absolute_path: equivalent.to_string_lossy().to_string(),
+            },
+            models::AppSource {
+                key: "shadowed".to_string(),
+                source_type: "startMenuSystem".to_string(),
+                state: "shadowed".to_string(),
+                root_id: "system".to_string(),
+                root_label: "System".to_string(),
+                relative_path: "shadowed.lnk".to_string(),
+                absolute_path: shadowed.to_string_lossy().to_string(),
+            },
+        ];
+
+        let launchable = LaunchableApp::from(app);
+        let (path, _) = resolve_launch_path(&launchable)
+            .expect("equivalent source should keep the app launchable");
+
+        assert_eq!(path, equivalent.to_string_lossy());
+        std::fs::remove_file(&equivalent).expect("remove equivalent shortcut");
+        let error = resolve_launch_path(&launchable)
+            .expect_err("shadowed sources must not be launch fallbacks");
+        assert_eq!(error.kind, LaunchFailureKind::TargetNotFound);
+        std::fs::remove_dir_all(base).expect("remove test directory");
     }
 
     #[test]

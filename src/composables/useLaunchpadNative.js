@@ -49,6 +49,44 @@ const NATIVE_WINDOW_CLOSING_BLOCKED_EVENTS = [
   "wheel",
   "keydown",
 ];
+const NON_DESTRUCTIVE_CATALOG_WARNING_KINDS = new Set([
+  "cycleSkipped",
+  "iconExtractionFailed",
+]);
+
+function collectSavedCatalogReferenceIds(savedDocument) {
+  const ids = new Set();
+  const stack = Array.isArray(savedDocument?.pages) ? savedDocument.pages.flat() : [];
+  while (stack.length) {
+    const item = stack.pop();
+    if (!item || typeof item !== "object") continue;
+    if (item.type === "catalogApp") {
+      const id = String(item.id || "").trim();
+      if (id) ids.add(id);
+      continue;
+    }
+    if (item.type === "folder" && Array.isArray(item.childPages)) {
+      stack.push(...item.childPages.flat());
+    }
+  }
+  return ids;
+}
+
+function assertCatalogRefreshCanRestoreDocument(savedDocument, scanResult) {
+  const savedCatalogIds = collectSavedCatalogReferenceIds(savedDocument);
+  if (!savedCatalogIds.size) return;
+  const currentCatalogIds = new Set((scanResult?.apps || []).map((app) => String(app?.id || "")));
+  const missingCount = Array.from(savedCatalogIds).filter((id) => !currentCatalogIds.has(id)).length;
+  if (!missingCount) return;
+  const warnings = Array.isArray(scanResult?.warnings) ? scanResult.warnings : [];
+  const mayBeIncomplete = Boolean(scanResult?.stats?.limitReached)
+    || warnings.some((warning) => !NON_DESTRUCTIVE_CATALOG_WARNING_KINDS.has(String(warning?.kind || "")));
+  if (!mayBeIncomplete) return;
+  throw new Error(
+    `应用目录扫描不完整；为防止丢弃 ${missingCount} 个已保存的 Catalog 引用，本次未载入布局。`
+  );
+}
+
 function isLiveDesktopDebugRuntimeConfigEnabled() {
   return Boolean(import.meta.env?.DEV && isLiveDesktopExperimentEnabled());
 }
@@ -138,7 +176,8 @@ export function useLaunchpadNative(options) {
   if (
     typeof document?.capture !== "function"
     || typeof document?.createFromCatalog !== "function"
-    || typeof document?.restore !== "function"
+    || typeof document?.restoreConfiguration !== "function"
+    || typeof document?.restorePages !== "function"
     || typeof document?.signature !== "function"
   ) {
     throw new TypeError("useLaunchpadNative requires a document coordinator");
@@ -482,14 +521,18 @@ export function useLaunchpadNative(options) {
       await refreshLiveDesktopBackgroundSupport();
       const savedLayout = await store.load();
       if (!savedLayout) {
-        document.createFromCatalog(await apps.scanInitialCatalog());
+        const scanResult = await apps.scanInitialCatalog();
+        document.createFromCatalog(scanResult.apps);
         requireEventHandlers().reclampLayoutPageIndices();
         await finishNativeLayoutLoad();
         scheduleNativeLayoutSave();
         return;
       }
 
-      document.restore(savedLayout, []);
+      document.restoreConfiguration(savedLayout);
+      const scanResult = await apps.scanInitialCatalog();
+      assertCatalogRefreshCanRestoreDocument(savedLayout, scanResult);
+      document.restorePages(savedLayout, scanResult.apps);
       const shortcutOutcome = await settings.registerCurrentShortcut();
       if (!shortcutOutcome.ok) console.error("Failed to update Lumeria shortcut", shortcutOutcome.error);
       const refreshedWallpaperBackground = await refreshWindowsWallpaperBackground();

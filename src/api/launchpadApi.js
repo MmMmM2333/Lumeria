@@ -3,6 +3,17 @@ import { listen as tauriListen } from "@tauri-apps/api/event";
 
 let bridgeOverride = null;
 
+const SCAN_COUNT_STAT_FIELDS = [
+  "dirsVisited",
+  "entriesSeen",
+  "physicalAppsFound",
+  "startMenuOverlays",
+  "equivalentAppsMerged",
+  "unresolvedApps",
+  "excludedApps",
+  "appsFound",
+];
+
 export function setLaunchpadApiBridgeForTests(bridge) {
   bridgeOverride = bridge || null;
 }
@@ -53,13 +64,27 @@ export async function scanApps(roots = [], filters = {}) {
 }
 
 export function normalizeScanAppsResult(result) {
-  if (Array.isArray(result)) {
-    return { apps: result, warnings: [], stats: null };
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    throw new TypeError("scan_apps must return a catalog result object");
+  }
+  if (!Array.isArray(result.apps) || !Array.isArray(result.warnings)) {
+    throw new TypeError("scan_apps result must include apps and warnings arrays");
+  }
+  if (!result.stats || typeof result.stats !== "object" || Array.isArray(result.stats)) {
+    throw new TypeError("scan_apps result must include scan stats");
+  }
+  for (const field of SCAN_COUNT_STAT_FIELDS) {
+    if (!Number.isSafeInteger(result.stats[field]) || result.stats[field] < 0) {
+      throw new TypeError(`scan_apps result stats.${field} must be a non-negative safe integer`);
+    }
+  }
+  if (typeof result.stats.limitReached !== "boolean") {
+    throw new TypeError("scan_apps result stats.limitReached must be a boolean");
   }
   return {
-    apps: Array.isArray(result?.apps) ? result.apps : [],
-    warnings: Array.isArray(result?.warnings) ? result.warnings : [],
-    stats: result?.stats || null,
+    apps: result.apps,
+    warnings: result.warnings,
+    stats: result.stats,
   };
 }
 

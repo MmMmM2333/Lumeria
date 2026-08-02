@@ -264,11 +264,7 @@ export function useLaunchpadLayout(options = {}) {
       pages: layoutHelpers.clonePages(pagesState.value),
     }),
     createSnapshot: dataHelpers.createLayoutSnapshot,
-    mergeCatalog: (catalog, savedPages, hiddenAppIds) => dataHelpers.mergeNativeCatalogWithSavedLayout(
-      catalog,
-      { version: 1, pages: savedPages },
-      hiddenAppIds
-    ),
+    reconcileDocument: dataHelpers.reconcileDocument,
     restoreConfiguration: applyConfiguration,
     restorePages,
   });

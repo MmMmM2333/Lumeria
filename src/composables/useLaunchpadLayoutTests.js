@@ -75,5 +75,5 @@ export function runLaunchpadLayoutOwnerTests() {
     folderCols: 4,
     pages: seeded.documentPersistence.capture().pages,
   });
-  assert(snapshot.pages[0][0].type === "app", "layout persistence should share the owner operations");
+  assert(snapshot.pages[0][0].type === "manualApp", "layout persistence should share the owner operations");
 }

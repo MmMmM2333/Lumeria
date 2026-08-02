@@ -9,9 +9,18 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
-use crate::models::AppCatalogItem;
+use crate::models::LaunchTarget;
 
 const MAX_LAYOUT_LOOKUP_DEPTH: usize = 32;
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SavedManualApp {
+    pub(crate) name: String,
+    pub(crate) launch_target: LaunchTarget,
+    #[serde(default)]
+    pub(crate) launch_args: Option<String>,
+}
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,8 +44,8 @@ pub(crate) fn save_layout(app: &AppHandle, layout: &Value) -> Result<(), String>
     save_layout_to_path(&path, layout)
 }
 
-pub(crate) fn find_layout_app(layout: &Value, app_id: &str) -> Option<AppCatalogItem> {
-    find_app_in_layout_value(layout, app_id, 0)
+pub(crate) fn find_layout_manual_app(layout: &Value, app_id: &str) -> Option<SavedManualApp> {
+    find_manual_app_in_layout_value(layout, app_id, 0)
 }
 
 fn load_layout_from_path(path: &Path) -> Result<LoadLayoutResult, String> {
@@ -130,8 +139,8 @@ fn validate_layout_value(layout: &Value) -> Result<(), String> {
         .as_object()
         .ok_or_else(|| "layout must be an object".to_string())?;
 
-    if object.get("version").and_then(Value::as_u64) != Some(1) {
-        return Err("layout version must be 1".to_string());
+    if object.get("version").and_then(Value::as_u64) != Some(2) {
+        return Err("layout version must be 2".to_string());
     }
 
     let pages = object
@@ -322,21 +331,9 @@ fn validate_scan_app_blacklist(value: &Value) -> Result<(), String> {
         let object = item
             .as_object()
             .ok_or_else(|| format!("{label} must be an object"))?;
-        validate_optional_object_string_field(object, "sourceKey", &label)?;
-        validate_optional_object_string_field(object, "path", &label)?;
+        require_non_empty_string_field(object, "catalogId", &label)?;
         validate_optional_object_string_field(object, "name", &label)?;
         validate_optional_object_string_field(object, "blockedAt", &label)?;
-        let has_source_key = object
-            .get("sourceKey")
-            .and_then(Value::as_str)
-            .is_some_and(|value| !value.is_empty());
-        let has_path = object
-            .get("path")
-            .and_then(Value::as_str)
-            .is_some_and(|value| !value.is_empty());
-        if !has_source_key && !has_path {
-            return Err(format!("{label} must include sourceKey or path"));
-        }
     }
     Ok(())
 }
@@ -400,16 +397,64 @@ fn validate_layout_item(item: &Value, label: &str) -> Result<(), String> {
         .ok_or_else(|| format!("layout item {label}.type must be a string"))?;
 
     require_string_field(object, "id", label)?;
-    require_string_field(object, "name", label)?;
-
     match item_type {
-        "app" => validate_layout_app_item(object, label),
+        "catalogApp" => validate_layout_catalog_app_item(object, label),
+        "manualApp" => {
+            require_string_field(object, "name", label)?;
+            validate_layout_manual_app_item(object, label)
+        }
         "folder" => validate_layout_folder_item(object, label),
-        _ => Err(format!("layout item {label}.type must be app or folder")),
+        _ => Err(format!(
+            "layout item {label}.type must be catalogApp, manualApp, or folder"
+        )),
     }
 }
 
-fn validate_layout_app_item(
+fn validate_layout_catalog_app_item(
+    object: &serde_json::Map<String, Value>,
+    label: &str,
+) -> Result<(), String> {
+    for forbidden in [
+        "name",
+        "emoji",
+        "iconPath",
+        "customIconPath",
+        "launchTarget",
+        "launchArgs",
+        "source",
+        "sourceKey",
+        "sources",
+        "trackingKey",
+        "identityStatus",
+        "iconDataUrl",
+        "customIconDataUrl",
+    ] {
+        if object.contains_key(forbidden) {
+            return Err(format!(
+                "layout item {label}.{forbidden} must not be persisted on catalog references"
+            ));
+        }
+    }
+    let Some(overrides) = object.get("overrides") else {
+        return Ok(());
+    };
+    let overrides = overrides
+        .as_object()
+        .ok_or_else(|| format!("layout item {label}.overrides must be an object"))?;
+    for key in overrides.keys() {
+        if !matches!(key.as_str(), "name" | "emoji" | "customIconPath") {
+            return Err(format!(
+                "layout item {label}.overrides.{key} is not a supported presentation override"
+            ));
+        }
+    }
+    for key in ["name", "emoji", "customIconPath"] {
+        validate_optional_string_field(overrides, key, &format!("{label}.overrides"))?;
+    }
+    Ok(())
+}
+
+fn validate_layout_manual_app_item(
     object: &serde_json::Map<String, Value>,
     label: &str,
 ) -> Result<(), String> {
@@ -468,6 +513,7 @@ fn validate_layout_folder_item(
     object: &serde_json::Map<String, Value>,
     label: &str,
 ) -> Result<(), String> {
+    require_string_field(object, "name", label)?;
     let child_pages = object
         .get("childPages")
         .ok_or_else(|| format!("layout item {label}.childPages is required"))?;
@@ -515,8 +561,13 @@ fn validate_layout_folder_child(child: &Value, label: &str) -> Result<(), String
     let object = child
         .as_object()
         .ok_or_else(|| format!("layout item {label} must be an object"))?;
-    if object.get("type").and_then(Value::as_str) != Some("app") {
-        return Err(format!("layout item {label}.type must be app"));
+    if !matches!(
+        object.get("type").and_then(Value::as_str),
+        Some("catalogApp" | "manualApp")
+    ) {
+        return Err(format!(
+            "layout item {label}.type must be catalogApp or manualApp"
+        ));
     }
     validate_layout_item(child, label)
 }
@@ -659,7 +710,11 @@ fn replace_file(source: &Path, target: &Path) -> Result<(), String> {
         .map_err(|error| format!("Failed to replace layout {}: {error}", target.display()))
 }
 
-fn find_app_in_layout_value(value: &Value, app_id: &str, depth: usize) -> Option<AppCatalogItem> {
+fn find_manual_app_in_layout_value(
+    value: &Value,
+    app_id: &str,
+    depth: usize,
+) -> Option<SavedManualApp> {
     if depth > MAX_LAYOUT_LOOKUP_DEPTH {
         log::warn!(
             target: "layout_store",
@@ -668,11 +723,11 @@ fn find_app_in_layout_value(value: &Value, app_id: &str, depth: usize) -> Option
         return None;
     }
 
-    if value.get("type").and_then(Value::as_str) == Some("app")
+    if value.get("type").and_then(Value::as_str) == Some("manualApp")
         && value.get("id").and_then(Value::as_str) == Some(app_id)
         && value.get("launchTarget").is_some()
     {
-        return match AppCatalogItem::deserialize(value) {
+        return match SavedManualApp::deserialize(value) {
             Ok(app) => Some(app),
             Err(error) => {
                 log::warn!(
@@ -687,10 +742,10 @@ fn find_app_in_layout_value(value: &Value, app_id: &str, depth: usize) -> Option
     match value {
         Value::Array(items) => items
             .iter()
-            .find_map(|item| find_app_in_layout_value(item, app_id, depth + 1)),
+            .find_map(|item| find_manual_app_in_layout_value(item, app_id, depth + 1)),
         Value::Object(map) => map
             .values()
-            .find_map(|item| find_app_in_layout_value(item, app_id, depth + 1)),
+            .find_map(|item| find_manual_app_in_layout_value(item, app_id, depth + 1)),
         _ => None,
     }
 }
@@ -716,12 +771,12 @@ mod tests {
 
     fn valid_layout() -> Value {
         json!({
-            "version": 1,
+            "version": 2,
             "pages": [
                 [
                     {
                         "id": "app-a",
-                        "type": "app",
+                        "type": "manualApp",
                         "name": "App A",
                         "emoji": "A",
                         "launchTarget": {
@@ -737,7 +792,7 @@ mod tests {
                             [
                                 {
                                     "id": "app-b",
-                                    "type": "app",
+                                    "type": "manualApp",
                                     "name": "App B",
                                     "launchTarget": {
                                         "kind": "url",
@@ -749,7 +804,7 @@ mod tests {
                         "children": [
                             {
                                 "id": "app-b",
-                                "type": "app",
+                                "type": "manualApp",
                                 "name": "App B",
                                 "launchTarget": {
                                     "kind": "url",
@@ -792,7 +847,7 @@ mod tests {
                 "scanKeywordBlacklist": ["卸载", "uninstall"],
                 "scanAppBlacklist": [
                     {
-                        "sourceKey": "scan-root:root-start-menu-user:blocked.lnk",
+                        "catalogId": "catalog-blocked",
                         "name": "Blocked",
                         "blockedAt": "2026-05-31T00:00:00.000Z"
                     }
@@ -808,7 +863,7 @@ mod tests {
     fn nested_folder_item(depth: usize) -> Value {
         let mut item = json!({
             "id": "deep-app",
-            "type": "app",
+            "type": "manualApp",
             "name": "Deep App",
             "launchTarget": {
                 "kind": "shortcut",
@@ -869,11 +924,87 @@ mod tests {
     }
 
     #[test]
+    fn save_layout_to_path_accepts_v2_catalog_references_without_launch_snapshots() {
+        let dir = test_dir("v2-catalog-reference");
+        let path = dir.join("layout.json");
+        let mut layout = valid_layout();
+        layout["version"] = json!(2);
+        layout["pages"] = json!([[
+            {
+                "id": "catalog-steam",
+                "type": "catalogApp",
+                "overrides": {
+                    "name": "My Steam",
+                    "customIconPath": "C:/Icons/steam.png"
+                }
+            },
+            {
+                "id": "manual-tool",
+                "type": "manualApp",
+                "name": "Tool",
+                "launchTarget": {
+                    "kind": "executable",
+                    "path": "C:/Tools/Tool.exe"
+                },
+                "launchArgs": "--profile work"
+            }
+        ]]);
+
+        save_layout_to_path(&path, &layout).expect("version 2 layout should save");
+
+        assert!(path.exists());
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_rejects_launch_snapshots_on_catalog_references() {
+        let dir = test_dir("catalog-launch-snapshot");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        invalid["pages"][0][0] = json!({
+            "id": "catalog-app-a",
+            "type": "catalogApp",
+            "launchTarget": {
+                "kind": "shortcut",
+                "path": "C:/Apps/App A.lnk"
+            }
+        });
+
+        let error =
+            save_layout_to_path(&path, &invalid).expect_err("catalog launch snapshots should fail");
+
+        assert!(error.contains("launchTarget"));
+        assert!(!path.exists());
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn load_layout_from_path_rejects_unreleased_v1_without_migration() {
+        let dir = test_dir("v1-no-migration");
+        let path = dir.join("layout.json");
+        let mut old = valid_layout();
+        old["version"] = json!(1);
+        fs::write(
+            &path,
+            serde_json::to_string(&old).expect("serialize v1 layout"),
+        )
+        .expect("write v1 layout");
+
+        let result = load_layout_from_path(&path).expect("v1 layout should recover explicitly");
+
+        assert!(result.layout.is_none());
+        assert!(result.recovery.is_some());
+        assert!(!path.exists());
+        assert_eq!(corrupt_backups(&dir).len(), 1);
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
     fn save_layout_to_path_rejects_invalid_layout_schema() {
         let dir = test_dir("invalid-save");
         let path = dir.join("layout.json");
         let invalid = json!({
-            "version": 1,
+            "version": 2,
             "pages": [],
             "settings": {
                 "gridRows": 4,
@@ -1103,12 +1234,12 @@ mod tests {
     }
 
     #[test]
-    fn find_layout_app_deserializes_matching_app_and_reports_corrupt_match() {
+    fn find_layout_manual_app_deserializes_matching_app_and_reports_corrupt_match() {
         let layout = valid_layout();
 
-        let app = find_layout_app(&layout, "app-a").expect("saved app should deserialize");
+        let app =
+            find_layout_manual_app(&layout, "app-a").expect("saved manual app should deserialize");
 
-        assert_eq!(app.id, "app-a");
         assert_eq!(app.name, "App A");
 
         let mut corrupt = valid_layout();
@@ -1118,7 +1249,7 @@ mod tests {
             .remove("name");
 
         assert!(
-            find_layout_app(&corrupt, "app-a").is_none(),
+            find_layout_manual_app(&corrupt, "app-a").is_none(),
             "corrupt matching app should not be treated as missing silently"
         );
     }
@@ -1134,16 +1265,16 @@ mod tests {
 
         let error = save_layout_to_path(&path, &invalid).expect_err("nested folder should fail");
 
-        assert!(error.contains("type must be app"));
+        assert!(error.contains("type must be catalogApp or manualApp"));
         assert!(!path.exists(), "invalid layout should not be written");
         fs::remove_dir_all(dir).expect("remove test directory");
     }
 
     #[test]
-    fn find_layout_app_stops_at_maximum_nesting_depth() {
+    fn find_layout_manual_app_stops_at_maximum_nesting_depth() {
         let mut layout = json!({
             "id": "deep-app",
-            "type": "app",
+            "type": "manualApp",
             "name": "Deep App",
             "launchTarget": {
                 "kind": "shortcut",
@@ -1154,7 +1285,7 @@ mod tests {
             layout = json!([layout]);
         }
 
-        assert!(find_layout_app(&layout, "deep-app").is_none());
+        assert!(find_layout_manual_app(&layout, "deep-app").is_none());
     }
 
     #[test]
@@ -1168,7 +1299,7 @@ mod tests {
             .layout
             .expect("layout should exist");
 
-        assert_eq!(loaded["version"], 1);
+        assert_eq!(loaded["version"], 2);
         assert!(path.exists(), "valid layout should remain in place");
         fs::remove_dir_all(dir).expect("remove test directory");
     }

@@ -7,8 +7,8 @@ import { useLaunchpadSettings } from "../composables/useLaunchpadSettings.js";
 import { useLiveDesktopRuntime } from "../composables/useLiveDesktopRuntime.js";
 import { createLaunchpadDocumentCoordinator } from "./launchpadDocumentCoordinator.js";
 
-const layoutV1RoundTripFixture = JSON.parse(
-  readFileSync(new URL("../domain/fixtures/layout-v1-roundtrip.json", import.meta.url), "utf8")
+const layoutV2RoundTripFixture = JSON.parse(
+  readFileSync(new URL("../domain/fixtures/layout-v2-roundtrip.json", import.meta.url), "utf8")
 );
 
 function createHarness() {
@@ -59,14 +59,17 @@ export function runLaunchpadDocumentCoordinatorTests() {
 
   {
     const { document } = createHarness();
-    const outcome = document.restore(structuredClone(layoutV1RoundTripFixture), []);
-    assert(outcome.kind === "restored", "restore should return an explicit restored outcome");
+    const savedDocument = structuredClone(layoutV2RoundTripFixture);
+    const configurationOutcome = document.restoreConfiguration(savedDocument);
+    const pagesOutcome = document.restorePages(savedDocument, []);
+    assert(configurationOutcome.kind === "configurationRestored", "configuration restore should return an explicit outcome");
+    assert(pagesOutcome.kind === "pagesRestored", "page restore should return an explicit outcome");
     deepStrictEqual(
       JSON.parse(JSON.stringify(document.capture())),
-      layoutV1RoundTripFixture,
-      "the coordinator should preserve the complete version-1 document across restore/capture"
+      layoutV2RoundTripFixture,
+      "the coordinator should preserve the complete version-2 document across restore/capture"
     );
-    assert(document.signature() === JSON.stringify(layoutV1RoundTripFixture), "signature should describe the current captured document without storing a second copy");
+    assert(document.signature() === JSON.stringify(document.capture()), "signature should describe the current captured document without storing a second copy");
   }
 
   {
@@ -94,14 +97,16 @@ export function runLaunchpadDocumentCoordinatorTests() {
     assert(layout.presentation.pages.value[0][0].id === "catalog-visible", "catalog initialization should restore the visible catalog app");
     assert(layout.presentation.pages.value[0][0].iconUrl === "asset:///C:/Icons/visible.png", "runtime pages should resolve cached icon paths through the injected asset capability");
     assert(!("iconDataUrl" in layout.presentation.pages.value[0][0]), "resolved cached icons should discard stale base64 runtime data");
-    assert(document.capture().pages[0][0].iconPath === "C:/Icons/visible.png", "captured documents should persist icon paths rather than runtime asset URLs");
+    assert(document.capture().pages[0][0].type === "catalogApp", "captured catalog apps should persist as references");
+    assert(!("iconPath" in document.capture().pages[0][0]), "catalog references should not persist scanned icon paths");
+    assert(!("launchTarget" in document.capture().pages[0][0]), "catalog references should not persist scanned launch data");
   }
 
   {
     const { document } = createHarness();
     let error = null;
     try {
-      document.restore(null, []);
+      document.restoreConfiguration(null);
     } catch (caught) {
       error = caught;
     }

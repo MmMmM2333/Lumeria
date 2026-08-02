@@ -1,10 +1,10 @@
 {
-  "version": 1,
+  "version": 2,
   "pages": [
     [
       {
         "id": "custom-editor",
-        "type": "app",
+        "type": "manualApp",
         "name": "Editor",
         "emoji": "E",
         "customIconPath": "C:/Lumeria/Icons/editor.png",
@@ -23,52 +23,48 @@
           [
             {
               "id": "tool-shortcut",
-              "type": "app",
+              "type": "manualApp",
               "name": "Tool Shortcut",
               "emoji": "T",
               "iconPath": "C:/Tools/tool.png",
               "launchTarget": {
                 "kind": "shortcut",
                 "path": "C:/Tools/Tool.lnk"
-              },
-              "sourceKey": "scan-root:root-custom:tool.lnk"
+              }
             },
             {
               "id": "windows-settings",
-              "type": "app",
+              "type": "manualApp",
               "name": "Windows Settings",
               "emoji": "W",
               "launchTarget": {
                 "kind": "appUserModelId",
                 "appUserModelId": "windows.settings.test!App"
-              },
-              "sourceKey": "windows-app:windows.settings.test!app"
+              }
             }
           ]
         ],
         "children": [
           {
             "id": "tool-shortcut",
-            "type": "app",
+            "type": "manualApp",
             "name": "Tool Shortcut",
             "emoji": "T",
             "iconPath": "C:/Tools/tool.png",
             "launchTarget": {
               "kind": "shortcut",
               "path": "C:/Tools/Tool.lnk"
-            },
-            "sourceKey": "scan-root:root-custom:tool.lnk"
+            }
           },
           {
             "id": "windows-settings",
-            "type": "app",
+            "type": "manualApp",
             "name": "Windows Settings",
             "emoji": "W",
             "launchTarget": {
               "kind": "appUserModelId",
               "appUserModelId": "windows.settings.test!App"
-            },
-            "sourceKey": "windows-app:windows.settings.test!app"
+            }
           }
         ]
       }
@@ -76,7 +72,7 @@
     [
       {
         "id": "documentation",
-        "type": "app",
+        "type": "manualApp",
         "name": "Documentation",
         "emoji": "D",
         "launchTarget": {
@@ -117,9 +113,8 @@
     ],
     "scanAppBlacklist": [
       {
+        "catalogId": "catalog-blocked-tool",
         "name": "Blocked Tool",
-        "sourceKey": "scan-root:root-custom:blocked.lnk",
-        "path": "C:/Tools/Blocked.lnk",
         "blockedAt": "2026-07-30T12:00:00.000Z"
       }
     ],

@@ -76,22 +76,39 @@ export function compareAppsByDefaultOrder(left, right) {
   return 0;
 }
 
-export function normalizeNativeApp(app, index) {
+export function normalizeNativeApp(app) {
+  const id = String(app?.id || "").trim();
+  if (!id) throw new TypeError("Catalog apps require a canonical id");
+  if (!app?.launchTarget || typeof app.launchTarget !== "object") {
+    throw new TypeError(`Catalog app ${id} requires a launch target`);
+  }
+  const trackingKey = String(app?.trackingKey || "").trim();
+  if (!trackingKey) throw new TypeError(`Catalog app ${id} requires a tracking key`);
+  const identityStatus = String(app?.identityStatus || "");
+  if (identityStatus !== "exact" && identityStatus !== "unresolved") {
+    throw new TypeError(`Catalog app ${id} has an invalid identity status`);
+  }
+  if (!Array.isArray(app?.sources) || !app.sources.length) {
+    throw new TypeError(`Catalog app ${id} requires provenance sources`);
+  }
   const name = String(app?.name || "Application").trim() || "Application";
-  const launchTarget = app?.launchTarget || app?.launch_target || null;
+  const launchTarget = app.launchTarget;
   return {
     ...app,
-    id: String(app?.id || `native-app-${index}`),
+    id,
     type: "app",
     name,
     launchTarget,
     launchArgs: launchTarget?.kind === "executable" && typeof app?.launchArgs === "string" ? app.launchArgs : "",
     iconDataUrl: app?.iconDataUrl || null,
-    iconPath: app?.iconPath || app?.icon_path || null,
-    customIconPath: app?.customIconPath || app?.custom_icon_path || null,
+    iconPath: app?.iconPath || null,
+    customIconPath: app?.customIconPath || null,
     emoji: app?.emoji || fallbackAppGlyph(name),
-    sourceKey: typeof app?.sourceKey === "string" ? app.sourceKey : app?.source_key || null,
-    source: app?.source || null,
+    origin: "catalog",
+    presentationOverrides: {},
+    trackingKey,
+    identityStatus,
+    sources: Array.isArray(app?.sources) ? app.sources.map((source) => ({ ...source })) : [],
   };
 }
 
@@ -132,29 +149,20 @@ export function normalizeScanKeywordBlacklist(keywords) {
     });
 }
 
-export function normalizeAppPathKey(path) {
-  return String(path || "").trim().replace(/\\/g, "/").toLowerCase();
-}
-
 export function normalizeScanAppBlacklist(apps) {
   const seen = new Set();
   return (Array.isArray(apps) ? apps : [])
     .map((app) => {
-      const sourceKey = typeof app?.sourceKey === "string" ? app.sourceKey.trim() : "";
-      const path = typeof app?.path === "string" ? app.path.trim() : "";
+      const catalogId = typeof app?.catalogId === "string" ? app.catalogId.trim() : "";
       const name = typeof app?.name === "string" ? app.name.trim() : "";
       const blockedAt = typeof app?.blockedAt === "string" ? app.blockedAt : null;
-      if (!sourceKey && !path) return null;
-      const sourceKeyKey = sourceKey ? `source:${sourceKey.toLowerCase()}` : "";
-      const pathKey = path ? `path:${normalizeAppPathKey(path)}` : "";
-      if ((sourceKeyKey && seen.has(sourceKeyKey)) || (pathKey && seen.has(pathKey))) return null;
-      if (sourceKeyKey) seen.add(sourceKeyKey);
-      if (pathKey) seen.add(pathKey);
+      const key = catalogId.toLowerCase();
+      if (!key || seen.has(key)) return null;
+      seen.add(key);
       const normalized = {
-        name: name || path || sourceKey,
+        catalogId,
+        name: name || catalogId,
       };
-      if (sourceKey) normalized.sourceKey = sourceKey;
-      if (path) normalized.path = path;
       if (blockedAt) normalized.blockedAt = blockedAt;
       return normalized;
     })
@@ -261,46 +269,26 @@ function normalizeLayoutBackgroundAcrylicParams(params, profile) {
   };
 }
 
-function getScanExclusionPath(app) {
-  const sourcePath = typeof app?.source?.absolutePath === "string"
-    ? app.source.absolutePath.trim()
-    : "";
-  if (sourcePath) return sourcePath;
-
-  const launchTarget = app?.launchTarget;
-  const launchPath = typeof launchTarget?.path === "string" ? launchTarget.path.trim() : "";
-  const launchKind = String(launchTarget?.kind || "");
-  if (!launchPath || launchKind === "url" || launchKind === "appUserModelId") return "";
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(launchPath)) return "";
-  return launchPath;
-}
-
 export function makeScanAppExclusionEntry(app) {
-  const sourceKey = typeof app?.sourceKey === "string" ? app.sourceKey.trim() || null : null;
-  const path = getScanExclusionPath(app) || null;
-  if (!sourceKey && !path) return null;
+  if (app?.origin !== "catalog") return null;
+  const catalogId = String(app?.id || "").trim();
+  if (!catalogId) return null;
   return {
-    sourceKey,
-    path,
-    name: String(app?.name || path || sourceKey || "Application"),
+    catalogId,
+    name: String(app?.name || catalogId || "Application"),
     blockedAt: new Date().toISOString(),
   };
 }
 
 export function canExcludeAppFromScan(app) {
-  const sourceKey = typeof app?.sourceKey === "string" ? app.sourceKey.trim() : "";
-  return Boolean(sourceKey || getScanExclusionPath(app));
+  return app?.origin === "catalog" && Boolean(String(app?.id || "").trim());
 }
 
 export function isAppExcludedFromScan(app, blacklist) {
   const normalized = normalizeScanAppBlacklist(blacklist);
   if (!normalized.length) return false;
-  const sourceKey = typeof app?.sourceKey === "string" ? app.sourceKey.trim().toLowerCase() : "";
-  const pathKey = normalizeAppPathKey(getScanExclusionPath(app));
-  return normalized.some((blocked) => {
-    if (blocked.sourceKey && sourceKey && blocked.sourceKey.toLowerCase() === sourceKey) return true;
-    return Boolean(blocked.path && pathKey && normalizeAppPathKey(blocked.path) === pathKey);
-  });
+  const catalogId = String(app?.id || "").trim().toLowerCase();
+  return Boolean(catalogId && normalized.some((blocked) => blocked.catalogId.toLowerCase() === catalogId));
 }
 
 export function createLaunchpadDataHelpers(options) {
@@ -316,55 +304,83 @@ export function createLaunchpadDataHelpers(options) {
     withFolderPages,
   } = options;
 
-  function mergeAppWithSavedIcon(app, savedItem) {
+  function normalizePresentationOverrides(value) {
+    const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    const overrides = {};
+    const name = typeof source.name === "string" ? source.name.trim().slice(0, 64) : "";
+    const emoji = typeof source.emoji === "string" ? source.emoji.trim() : "";
+    const customIconPath = typeof source.customIconPath === "string" ? source.customIconPath.trim() : "";
+    if (name) overrides.name = name;
+    if (emoji) overrides.emoji = emoji;
+    if (customIconPath) overrides.customIconPath = customIconPath;
+    return overrides;
+  }
+
+  function makeCatalogRuntimeApp(app, savedReference = null) {
     const next = cloneItem(app);
-    if (savedItem?.id) next.id = String(savedItem.id);
-    if (savedItem?.name) next.name = String(savedItem.name).slice(0, 64);
-    if (savedItem?.emoji) next.emoji = savedItem.emoji;
-    if (savedItem?.launchTarget) next.launchTarget = savedItem.launchTarget;
-    if (next.launchTarget?.kind === "executable" && typeof savedItem?.launchArgs === "string") next.launchArgs = savedItem.launchArgs;
-    else delete next.launchArgs;
-    if (savedItem?.customIconPath) next.customIconPath = savedItem.customIconPath;
-    if (savedItem?.iconPath) next.iconPath = savedItem.iconPath;
-    if (savedItem?.sourceKey) next.sourceKey = savedItem.sourceKey;
-    if (savedItem?.source) next.source = savedItem.source;
+    const overrides = normalizePresentationOverrides(savedReference?.overrides);
+    next.catalogPresentation = {
+      name: String(app?.name || "Application"),
+      emoji: app?.emoji || fallbackAppGlyph(app?.name),
+    };
+    next.type = "app";
+    next.origin = "catalog";
+    next.presentationOverrides = overrides;
+    if (overrides.name) next.name = overrides.name;
+    if (overrides.emoji) next.emoji = overrides.emoji;
+    if (overrides.customIconPath) next.customIconPath = overrides.customIconPath;
+    else delete next.customIconPath;
     return next;
   }
 
-  function normalizeSavedCustomApp(item) {
-    if (!item || item.type !== "app" || !item.launchTarget) return null;
+  function normalizeSavedManualApp(item) {
+    if (!item || item.type !== "manualApp" || !item.launchTarget) return null;
     const name = String(item.name || "Application").trim() || "Application";
-    return {
+    const app = {
       ...item,
-      id: String(item.id || makeId("custom-app")),
+      id: String(item.id || makeId("manual-app")),
       type: "app",
+      origin: "manual",
       name,
       emoji: item.emoji || fallbackAppGlyph(name),
       launchTarget: item.launchTarget,
-      launchArgs: item.launchTarget?.kind === "executable" && typeof item.launchArgs === "string" ? item.launchArgs : "",
       iconPath: item.iconPath || null,
       customIconPath: item.customIconPath || null,
-      sourceKey: item.sourceKey || null,
-      source: item.source || null,
     };
+    delete app.launchArgs;
+    if (item.launchTarget?.kind === "executable" && typeof item.launchArgs === "string" && item.launchArgs) {
+      app.launchArgs = item.launchArgs;
+    }
+    delete app.sources;
+    delete app.trackingKey;
+    delete app.identityStatus;
+    return app;
   }
 
-  function mergeFolderWithCatalog(folder, catalog, catalogBySourceKey, usedAppIds, usedSourceKeys) {
+  function restoreSavedItem(item, catalog, usedAppIds) {
+    if (item?.type === "catalogApp") {
+      const app = catalog.get(String(item.id || ""));
+      if (!app || usedAppIds.has(app.id)) return null;
+      usedAppIds.add(app.id);
+      return makeCatalogRuntimeApp(app, item);
+    }
+    if (item?.type === "manualApp") {
+      const app = normalizeSavedManualApp(item);
+      if (!app || usedAppIds.has(app.id)) return null;
+      usedAppIds.add(app.id);
+      return app;
+    }
+    return null;
+  }
+
+  function restoreFolder(folder, catalog, usedAppIds) {
     const sourcePages = Array.isArray(folder?.childPages)
       ? folder.childPages
       : chunkIntoPages(folder?.children || [], getFolderPageSize());
     const childPages = sourcePages
       .map((page) =>
         (page || [])
-          .map((child) => {
-            const app = child?.sourceKey
-              ? catalogBySourceKey.get(child.sourceKey) || catalog.get(child.id) || normalizeSavedCustomApp(child)
-              : child?.id ? catalog.get(child.id) || normalizeSavedCustomApp(child) : null;
-            if (!app || usedAppIds.has(app.id)) return null;
-            usedAppIds.add(app.id);
-            if (child?.sourceKey || app.sourceKey) usedSourceKeys.add(child?.sourceKey || app.sourceKey);
-            return mergeAppWithSavedIcon(app, child);
-          })
+          .map((child) => restoreSavedItem(child, catalog, usedAppIds))
           .filter(Boolean)
       )
       .filter((page) => page.length > 0);
@@ -401,30 +417,22 @@ export function createLaunchpadDataHelpers(options) {
     return compactPages(next, { folderPageSize: getFolderPageSize() });
   }
 
-  function mergeNativeCatalogWithSavedLayout(apps, savedLayout, hiddenAppIds) {
+  function reconcileDocument(apps, savedDocument, hiddenAppIds) {
     const catalog = new Map(apps.map((app) => [app.id, app]));
-    const catalogBySourceKey = new Map(
-      apps.filter((app) => app.sourceKey).map((app) => [app.sourceKey, app])
-    );
     const usedAppIds = new Set();
-    const usedSourceKeys = new Set();
-    const sourcePages = Array.isArray(savedLayout?.pages) ? savedLayout.pages : [];
+    const sourcePages = Array.isArray(savedDocument?.pages) ? savedDocument.pages : [];
     const mergedPages = sourcePages.map((page) =>
       (page || [])
         .map((item) => {
-          if (item?.type === "folder") return mergeFolderWithCatalog(item, catalog, catalogBySourceKey, usedAppIds, usedSourceKeys);
-          const app = item?.sourceKey
-            ? catalogBySourceKey.get(item.sourceKey) || catalog.get(item.id) || normalizeSavedCustomApp(item)
-            : item?.id ? catalog.get(item.id) || normalizeSavedCustomApp(item) : null;
-          if (!app || usedAppIds.has(app.id)) return null;
-          usedAppIds.add(app.id);
-          if (item?.sourceKey || app.sourceKey) usedSourceKeys.add(item?.sourceKey || app.sourceKey);
-          return mergeAppWithSavedIcon(app, item);
+          if (item?.type === "folder") return restoreFolder(item, catalog, usedAppIds);
+          return restoreSavedItem(item, catalog, usedAppIds);
         })
         .filter(Boolean)
     );
     const hidden = new Set(hiddenAppIds || []);
-    const newApps = apps.filter((app) => !usedAppIds.has(app.id) && !usedSourceKeys.has(app.sourceKey) && !hidden.has(app.id));
+    const newApps = apps
+      .filter((app) => !usedAppIds.has(app.id) && !hidden.has(app.id))
+      .map((app) => makeCatalogRuntimeApp(app));
     return fitPagesToGrid(appendAppsToPages(mergedPages, newApps));
   }
 
@@ -447,18 +455,18 @@ export function createLaunchpadDataHelpers(options) {
       };
     }
 
-    const clean = {
-      id: item.id,
-      type: "app",
-      name: item.name,
-      emoji: item.emoji,
-    };
+    if (item.origin === "catalog") {
+      const clean = { id: item.id, type: "catalogApp" };
+      const overrides = normalizePresentationOverrides(item.presentationOverrides);
+      if (Object.keys(overrides).length) clean.overrides = overrides;
+      return clean;
+    }
+
+    const clean = { id: item.id, type: "manualApp", name: item.name, emoji: item.emoji };
     if (item.customIconPath) clean.customIconPath = item.customIconPath;
     if (item.iconPath) clean.iconPath = item.iconPath;
     if (item.launchTarget) clean.launchTarget = item.launchTarget;
     if (item.launchTarget?.kind === "executable" && item.launchArgs) clean.launchArgs = item.launchArgs;
-    if (item.sourceKey) clean.sourceKey = item.sourceKey;
-    if (item.source) clean.source = item.source;
     return clean;
   }
 
@@ -491,7 +499,7 @@ export function createLaunchpadDataHelpers(options) {
         : DEFAULT_MAIN_WINDOW_SHORTCUT
     );
     return {
-      version: 1,
+      version: 2,
       pages: makeLayoutPages(state.pages),
       settings: {
         gridRows: state.gridRows,
@@ -540,6 +548,6 @@ export function createLaunchpadDataHelpers(options) {
     appendAppsToPages,
     createLayoutSnapshot,
     fitPagesToGrid,
-    mergeNativeCatalogWithSavedLayout,
+    reconcileDocument,
   };
 }

@@ -13,9 +13,11 @@ use std::{
 use crate::encoding::PNG_SIGNATURE;
 #[cfg(target_os = "windows")]
 use crate::native_error::NativeError;
-use crate::path_utils::{expand_windows_env_vars, extension, windows_api_path};
+use crate::path_utils::{extension, windows_api_path};
 #[cfg(target_os = "windows")]
 use crate::windows_com::ComGuard;
+#[cfg(target_os = "windows")]
+use crate::windows_shell_link::load_shell_link;
 
 #[cfg(target_os = "windows")]
 use windows::{
@@ -27,29 +29,61 @@ use windows::{
             BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
         },
         System::{
-            Com::{CoCreateInstance, IBindCtx, IPersistFile, CLSCTX_INPROC_SERVER, STGM_READ},
+            Com::IBindCtx,
             LibraryLoader::{
                 EnumResourceNamesW, FindResourceW, LoadLibraryExW, LoadResource, LockResource,
                 SizeofResource, LOAD_LIBRARY_AS_DATAFILE, LOAD_LIBRARY_AS_IMAGE_RESOURCE,
             },
         },
         UI::Shell::{
-            IShellItem, IShellItemImageFactory, IShellLinkW, SHCreateItemFromParsingName,
-            ShellLink, SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY, SIIGBF_SCALEUP, SLGP_UNCPRIORITY,
+            IShellItem, IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_BIGGERSIZEOK,
+            SIIGBF_ICONONLY, SIIGBF_SCALEUP,
         },
         UI::WindowsAndMessaging::{RT_GROUP_ICON, RT_ICON},
     },
 };
 #[cfg(target_os = "windows")]
 pub(crate) fn cache_app_icon(path: &Path, icon_dir: &Path, app_id: &str) -> Option<String> {
+    cache_app_icon_for_identity(path, icon_dir, app_id, &windows_api_path(path))
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn cache_app_icon_for_identity(
+    path: &Path,
+    icon_dir: &Path,
+    app_id: &str,
+    cache_identity: &str,
+) -> Option<String> {
     let icon_path = icon_dir.join(format!("{app_id}-v4.png"));
-    if icon_path.exists() {
+    let identity_path = icon_dir.join(format!("{app_id}-v4.identity"));
+    if icon_path.exists()
+        && fs::read_to_string(&identity_path).is_ok_and(|identity| identity == cache_identity)
+    {
         return Some(icon_path.to_string_lossy().to_string());
     }
 
-    extract_icon_png(path, &icon_path)
-        .ok()
-        .map(|_| icon_path.to_string_lossy().to_string())
+    match extract_icon_png(path, &icon_path) {
+        Ok(()) => {
+            if let Err(error) = fs::write(&identity_path, cache_identity) {
+                log::warn!(
+                    target: "icons",
+                    "Failed to write app icon cache identity {}: {}",
+                    identity_path.display(),
+                    error
+                );
+            }
+            Some(icon_path.to_string_lossy().to_string())
+        }
+        Err(error) => {
+            log::debug!(
+                target: "icons",
+                "Failed to cache app icon from {}: {}",
+                path.display(),
+                error
+            );
+            None
+        }
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -124,6 +158,16 @@ pub(crate) fn cache_app_icon_choices(
 
 #[cfg(not(target_os = "windows"))]
 pub(crate) fn cache_app_icon(_path: &Path, _icon_dir: &Path, _app_id: &str) -> Option<String> {
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn cache_app_icon_for_identity(
+    _path: &Path,
+    _icon_dir: &Path,
+    _app_id: &str,
+    _cache_identity: &str,
+) -> Option<String> {
     None
 }
 
@@ -382,87 +426,37 @@ fn icon_index_key(icon_index: Option<i32>) -> String {
 
 #[cfg(target_os = "windows")]
 fn resolve_shortcut_icon_sources(path: &Path) -> Result<Vec<IconSource>, String> {
-    let _com_guard = ComGuard::new()?;
     let mut sources = Vec::new();
-    let shell_link =
-        match unsafe { CoCreateInstance::<_, IShellLinkW>(&ShellLink, None, CLSCTX_INPROC_SERVER) }
-            .map_err(|source| NativeError::Com {
-                context: "CoCreateInstance(ShellLink)",
-                source,
-            }) {
-            Ok(shell_link) => shell_link,
-            Err(_) => return Ok(sources),
-        };
-    let persist_file = match shell_link
-        .cast::<IPersistFile>()
-        .map_err(|source| NativeError::Com {
-            context: "IShellLinkW::cast(IPersistFile)",
-            source,
-        }) {
-        Ok(persist_file) => persist_file,
-        Err(_) => return Ok(sources),
+    let shortcut = match load_shell_link(path) {
+        Ok(shortcut) => shortcut,
+        Err(error) => {
+            log::debug!(
+                target: "icons",
+                "Failed to read shortcut icon metadata from {}: {}",
+                path.display(),
+                error
+            );
+            return Ok(sources);
+        }
     };
-    let shortcut = HSTRING::from(windows_api_path(path));
-    if unsafe { persist_file.Load(&shortcut, STGM_READ) }
-        .map_err(|source| NativeError::Com {
-            context: "IPersistFile::Load(shortcut)",
-            source,
-        })
-        .is_err()
-    {
-        return Ok(sources);
+
+    if let Some(path) = shortcut.icon_path.filter(|path| path.exists()) {
+        sources.push(IconSource {
+            path,
+            icon_index: Some(shortcut.icon_index),
+        });
     }
 
-    let mut icon_path = [0u16; 1024];
-    let mut icon_index = 0;
-    if unsafe { shell_link.GetIconLocation(&mut icon_path, &mut icon_index) }.is_ok() {
-        if let Some(path) = path_from_wide_buffer(&icon_path) {
+    if let Some(path) = shortcut.target_path.filter(|path| path.exists()) {
+        if !sources.iter().any(|source| source.path == path) {
             sources.push(IconSource {
                 path,
-                icon_index: Some(icon_index),
+                icon_index: None,
             });
         }
     }
 
-    let mut target_path = [0u16; 1024];
-    if unsafe {
-        shell_link.GetPath(
-            &mut target_path,
-            std::ptr::null_mut(),
-            SLGP_UNCPRIORITY.0 as u32,
-        )
-    }
-    .is_ok()
-    {
-        if let Some(path) = path_from_wide_buffer(&target_path) {
-            if !sources.iter().any(|source| source.path == path) {
-                sources.push(IconSource {
-                    path,
-                    icon_index: None,
-                });
-            }
-        }
-    }
-
     Ok(sources)
-}
-
-#[cfg(target_os = "windows")]
-fn path_from_wide_buffer(buffer: &[u16]) -> Option<PathBuf> {
-    let length = buffer
-        .iter()
-        .position(|value| *value == 0)
-        .unwrap_or(buffer.len());
-    if length == 0 {
-        return None;
-    }
-    let value = String::from_utf16_lossy(&buffer[..length]);
-    let value = expand_windows_env_vars(value.trim_matches('"').trim());
-    if value.is_empty() {
-        return None;
-    }
-    let path = PathBuf::from(value);
-    path.exists().then_some(path)
 }
 
 #[cfg(target_os = "windows")]
@@ -1084,4 +1078,39 @@ fn read_hbitmap_rgba(
         height: height as u32,
         pixels: bgra,
     })
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn app_icon_cache_is_invalidated_when_the_primary_catalog_source_changes() {
+        let dir = std::env::temp_dir().join(format!(
+            "lumeria-app-icon-cache-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).expect("create icon cache test directory");
+        let icon_path = dir.join("catalog-app-v4.png");
+        let identity_path = dir.join("catalog-app-v4.identity");
+        fs::write(&icon_path, b"cached-icon").expect("write cached icon");
+        fs::write(&identity_path, "source:user").expect("write cached identity");
+        let missing_source = dir.join("missing-source.lnk");
+
+        assert!(
+            cache_app_icon_for_identity(&missing_source, &dir, "catalog-app", "source:user")
+                .is_some(),
+            "a matching primary source identity should reuse the cached icon"
+        );
+        assert!(
+            cache_app_icon_for_identity(&missing_source, &dir, "catalog-app", "source:custom")
+                .is_none(),
+            "a changed primary source identity must not reuse the previous source icon"
+        );
+
+        fs::remove_dir_all(dir).expect("remove icon cache test directory");
+    }
 }

@@ -97,7 +97,7 @@ export function useLaunchpadLaunchFlow(options) {
 
     const kind = String(target.kind || "");
     if (kind === "appUserModelId") {
-      if (!String(target.appUserModelId || target.app_user_model_id || "").trim()) {
+      if (!String(target.appUserModelId || "").trim()) {
         return {
           title: "无法打开应用",
           message: `“${name}”缺少 Windows 应用标识。`,

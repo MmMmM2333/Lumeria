@@ -54,9 +54,6 @@ type AppCatalogItem = {
   type: "app";
   name: string;
   iconPath?: string;
-  iconUrl?: string;
-  customIconPath?: string;
-  customIconUrl?: string;
   emoji?: string;
   launchTarget: {
     kind: "shortcut" | "executable" | "url" | "appUserModelId";
@@ -64,19 +61,22 @@ type AppCatalogItem = {
     appUserModelId?: string;
   };
   launchArgs?: string;
-  sourceKey?: string;
-  source?: {
-    type: "startMenuUser" | "startMenuSystem" | "customDirectory";
+  trackingKey: string;
+  identityStatus: "exact" | "unresolved";
+  sources: Array<{
+    key: string;
+    type: "windowsAppCatalog" | "startMenuUser" | "startMenuSystem" | "customDirectory";
+    state: "primary" | "equivalent" | "shadowed";
     rootId: string;
     rootLabel: string;
     relativePath: string;
     absolutePath: string;
-  };
+  }>;
 };
 
 type ScanRoot = {
   id: string;
-  type: "startMenuUser" | "startMenuSystem" | "customDirectory";
+  type: "windowsAppCatalog" | "startMenuUser" | "startMenuSystem" | "customDirectory";
   label: string;
   path: string;
   enabled: boolean;
@@ -92,6 +92,11 @@ type ScanAppsResult = {
   stats: {
     dirsVisited: number;
     entriesSeen: number;
+    physicalAppsFound: number;
+    startMenuOverlays: number;
+    equivalentAppsMerged: number;
+    unresolvedApps: number;
+    excludedApps: number;
     appsFound: number;
     limitReached: boolean;
   };
@@ -110,14 +115,13 @@ type ScanFilters = {
 };
 
 type ScanAppBlacklistItem = {
-  sourceKey?: string;
-  path?: string;
+  catalogId: string;
   name?: string;
   blockedAt?: string;
 };
 
 type LaunchpadLayout = {
-  version: 1;
+  version: 2;
   pages: LaunchpadPage[];
   settings: {
     gridRows: number;
@@ -176,20 +180,61 @@ type LaunchAppRequest = {
 type LaunchpadPage = LaunchpadItem[];
 
 type LaunchpadItem =
-  | AppCatalogItem
+  | CatalogAppReference
+  | ManualApp
   | {
       id: string;
       type: "folder";
       name: string;
-      childPages: AppCatalogItem[][];
-      children: AppCatalogItem[];
+      childPages: Array<Array<CatalogAppReference | ManualApp>>;
+      children: Array<CatalogAppReference | ManualApp>;
     };
+
+type CatalogAppReference = {
+  id: string;
+  type: "catalogApp";
+  overrides?: {
+    name?: string;
+    emoji?: string;
+    customIconPath?: string;
+  };
+};
+
+type ManualApp = {
+  id: string;
+  type: "manualApp";
+  name: string;
+  emoji?: string;
+  iconPath?: string;
+  customIconPath?: string;
+  launchTarget: AppCatalogItem["launchTarget"];
+  launchArgs?: string;
+};
 ```
 
 Layout item ids must be unique across top-level items and folder
 `childPages`. Folder `children` is a flattened compatibility mirror of
 `childPages`; the backend validates that it matches `childPages` rather than
-treating it as a second set of items.
+treating it as a second set of items. Folder children cannot be folders.
+
+Catalog items in layout v2 are references, not snapshots. Their name, default
+icon, launch target, arguments, identity, and provenance always come from the
+current native catalog. Only explicit presentation overrides are persisted.
+Manual items own and persist their launch configuration. Changing a catalog
+item's target or arguments converts that item to a manual item and hides the
+original catalog id. Layout v1 is intentionally rejected; this unreleased
+project has no v1 migration path.
+
+Loading an existing v2 document is a two-phase operation: restore its scan
+configuration first, refresh the current native catalog with that configuration,
+then reconcile the saved pages against the refreshed catalog. Catalog references
+must never be reconciled against an empty placeholder catalog. If a bounded scan
+is incomplete and one or more saved catalog ids are missing from its partial
+result, layout loading remains not-ready and retryable; the partial result must
+not replace or be saved over the existing layout. Unreadable directory entries
+and skipped links/reparse points count as potentially incomplete because a path
+that was previously scanned may have changed into either state. Icon extraction
+failures do not make the catalog itself incomplete.
 
 ## Native Backend Notes
 
@@ -199,17 +244,47 @@ not hard-coded startup behavior.
 
 `scan_apps` is bounded by per-root recursion and entry limits. It skips repeated
 directories, symlinks, junctions, and reparse points; warnings describe skipped
-or truncated scans. It returns cached PNG paths when extraction succeeds. The
-frontend persists `iconPath` for scanned default icons and derives `iconUrl`
-from Tauri's scoped asset protocol on startup. Cached icons are loaded directly
-by the renderer rather than being re-read and base64-encoded through IPC. Pixi
-image loads set anonymous CORS before assigning an asset URL. Catalog
-`iconDataUrl` must not be persisted in layout JSON.
+or truncated scans. The first-level `Startup` directory is omitted only for the
+two built-in Start Menu roots. When user and system Start Menu entries have the
+same normalized relative path, the user entry is primary and the system entry
+is retained as `shadowed` provenance instead of becoming a second app.
+
+After Start Menu overlay, the backend groups entries only when it can resolve an
+exact launch identity. That identity includes executable arguments and Windows
+Shell Link launch metadata; unresolved shortcuts remain separate. Equal entries
+from a custom directory and a Start Menu root form one logical app, with the
+custom source primary and the remaining physical paths retained as
+`equivalent` provenance. Source precedence is `customDirectory`,
+`startMenuUser`, `windowsAppCatalog`, then `startMenuSystem`. Display-name
+equality alone never merges applications.
+
+Catalog ids are derived from the exact semantic launch identity and remain
+stable when an equivalent physical source is added or removed. Unresolved
+entries use a source-scoped id. `scanAppBlacklist` filters the canonical catalog
+id after overlay and grouping, so excluding an app excludes every equivalent
+source. `hiddenAppIds` controls layout visibility independently and uses the same
+canonical id. When the user confirms only part of a scan result, unselected
+catalog ids are added to `hiddenAppIds`; selecting them in a later scan removes
+those ids again. This keeps a deliberate partial selection stable across startup
+catalog reconciliation.
+
+Icon extraction runs after overlay, grouping, and exclusion and returns a cached
+PNG path for the primary logical app when extraction succeeds. The renderer
+derives runtime asset URLs from Tauri's scoped asset protocol; cached icons are
+not re-read and base64-encoded through IPC. Catalog default `iconPath`, runtime
+asset URLs, provenance, tracking keys, identity state, launch targets, and
+arguments must not be persisted in layout JSON.
+
+The catalog icon cache is keyed by both the canonical catalog id and the current
+primary source identity. Promoting a custom-directory source over a Start Menu
+source must invalidate the previous source's cached icon instead of reusing it
+under the stable catalog id.
 
 User-selected custom icons are normalized by the frontend before being passed to
 `cache_custom_icon`. The backend stores accepted PNG data URLs under the app data
-icon cache and returns `customIconPath`. Layout JSON must persist
-`customIconPath`, not `customIconDataUrl`; any data URL is runtime-only preview
+icon cache and returns `customIconPath`. A catalog app stores it under
+`overrides.customIconPath`; a manual app stores it on the manual item. Layout
+JSON never persists a custom-icon data URL; any data URL is runtime-only preview
 state.
 
 Scanned `.url` files are local shell shortcuts. They should be returned as
@@ -230,14 +305,16 @@ non-executable targets.
 local `.exe`, `.dll`, `.ico`, or `.lnk` target.
 
 Before calling `launch_app`, the frontend ensures launch-critical layout changes
-for that app, such as newly added custom apps or edited launch fields, are
+for a manual app, such as a newly added app or edited launch fields, are
 persisted. Non-critical layout changes such as drag ordering, page placement,
 settings, and icons may remain on the debounced save path. The request carries
 only app `id` and `name`; the backend does not trust renderer-supplied launch
-targets or arguments. It resolves launch fields from the current native catalog
-item and saved layout item. If those are unavailable, it rescans the saved
-layout's `scanRoots` with the saved `scanKeywordBlacklist` and
-`scanAppBlacklist` filters.
+targets or arguments. It resolves a catalog id from the current native catalog,
+using an existing `equivalent` physical path if the primary shortcut disappears;
+`shadowed` Start Menu entries are not launch fallbacks. A manual id resolves only
+from a saved `manualApp`. If a catalog id is not currently cached, the backend
+rescans the saved layout's `scanRoots` with its saved keyword and canonical-id
+filters. Saved `catalogApp` references never supply launch data.
 
 Launch UX is intentionally optimistic: the frontend performs only synchronous
 preflight validation before starting the close/ghost animation, then calls

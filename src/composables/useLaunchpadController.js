@@ -301,7 +301,6 @@ export function useLaunchpadController(options = {}) {
     insertTopLevelItem,
     insertAppIntoFolder,
     makeId,
-    mergeNativeCatalogWithSavedLayout,
     previewAppIntoFolderWithoutOverflow,
     previewTopLevelItemWithoutOverflow,
     removeEverywhere,

@@ -44,9 +44,24 @@ import {
   WINDOW_MODE_WINDOWED,
 } from "./useLaunchpadSettingsConfig.js";
 
-const layoutV1RoundTripFixture = JSON.parse(
-  readFileSync(new URL("../domain/fixtures/layout-v1-roundtrip.json", import.meta.url), "utf8")
+const layoutV2RoundTripFixture = JSON.parse(
+  readFileSync(new URL("../domain/fixtures/layout-v2-roundtrip.json", import.meta.url), "utf8")
 );
+
+function makeScanStats(overrides = {}) {
+  return {
+    dirsVisited: 0,
+    entriesSeen: 0,
+    physicalAppsFound: 0,
+    startMenuOverlays: 0,
+    equivalentAppsMerged: 0,
+    unresolvedApps: 0,
+    excludedApps: 0,
+    appsFound: 0,
+    limitReached: false,
+    ...overrides,
+  };
+}
 
 function makeOptions(overrides = {}) {
   const {
@@ -241,6 +256,9 @@ function withMockTauri(invoke, run, bridgeOverrides = {}) {
           reason: "nativeRendererUnavailable",
         };
       }
+      if (command === "scan_apps" && !bridgeOverrides.passScanAppsCommand) {
+        return { apps: [], warnings: [], stats: makeScanStats() };
+      }
       return invoke(command, args);
     },
     listen: bridgeOverrides.listen || (async () => () => {}),
@@ -304,7 +322,8 @@ export async function runLaunchpadNativeTests() {
 
   const roundTripSaves = [];
   await withMockTauri(async (command, args) => {
-    if (command === "load_layout") return structuredClone(layoutV1RoundTripFixture);
+    if (command === "load_layout") return structuredClone(layoutV2RoundTripFixture);
+    if (command === "scan_apps") return { apps: [], warnings: [], stats: makeScanStats() };
     if (command === "check_launch_targets") return [];
     if (command === "save_layout") {
       roundTripSaves.push(args.layout);
@@ -327,28 +346,189 @@ export async function runLaunchpadNativeTests() {
     await Promise.all(timers.splice(0).map((timer) => timer()));
 
     assert(roundTripSaves.length === 1, "a loaded layout should be persisted once when explicitly scheduled");
+    const expectedRoundTrip = structuredClone(layoutV2RoundTripFixture);
+    expectedRoundTrip.settings.scanRoots[0].lastScannedAt = roundTripSaves[0].settings.scanRoots[0].lastScannedAt;
+    assert(
+      expectedRoundTrip.settings.scanRoots[0].lastScannedAt !== layoutV2RoundTripFixture.settings.scanRoots[0].lastScannedAt,
+      "loading a saved layout should refresh its scan timestamp"
+    );
     deepStrictEqual(
       JSON.parse(JSON.stringify(roundTripSaves[0])),
-      layoutV1RoundTripFixture,
-      "a complete version-1 layout should survive native load and save without losing persisted fields"
+      expectedRoundTrip,
+      "a complete version-2 layout should survive native load and save without losing persisted fields"
     );
   });
+
+  {
+    const savedCatalogLayout = structuredClone(layoutV2RoundTripFixture);
+    savedCatalogLayout.pages = [[{ id: "catalog-refresh", type: "catalogApp" }]];
+    savedCatalogLayout.settings.scanRoots = [
+      {
+        id: "saved-root",
+        type: "customDirectory",
+        label: "Saved Root",
+        path: "C:/Saved Apps",
+        enabled: true,
+        removable: true,
+      },
+    ];
+    savedCatalogLayout.settings.scanKeywordBlacklist = ["saved-keyword"];
+    savedCatalogLayout.settings.scanAppBlacklist = [];
+    let savedCatalogScanCount = 0;
+
+    await withMockTauri(async (command, args) => {
+      if (command === "load_layout") return structuredClone(savedCatalogLayout);
+      if (command === "scan_apps") {
+        savedCatalogScanCount += 1;
+        assert(
+          args.roots.length === 1 && args.roots[0].id === "saved-root",
+          "saved catalog refresh should scan with roots restored from the saved document"
+        );
+        assert(
+          args.filters.keywordBlacklist.join(",") === "saved-keyword",
+          "saved catalog refresh should scan with filters restored from the saved document"
+        );
+        return {
+          apps: [{
+            id: "catalog-refresh",
+            name: "Restored Catalog App",
+            launchTarget: { kind: "shortcut", path: "C:/Saved Apps/Restored.lnk" },
+            trackingKey: "launch:catalog-refresh",
+            identityStatus: "exact",
+            sources: [{ key: "saved", type: "customDirectory", state: "primary" }],
+          }],
+          warnings: [],
+          stats: makeScanStats({ appsFound: 1 }),
+        };
+      }
+      if (command === "check_launch_targets") return [];
+      throw new Error(`Unexpected invoke: ${command}`);
+    }, async () => {
+      const { options } = makeOptions();
+      const native = createNative(options);
+
+      await native.loadNativeLaunchpadData();
+
+      assert(savedCatalogScanCount === 1, "saved version-2 catalog references should trigger one catalog refresh");
+      assert(
+        options.layout.presentation.pages.value[0]?.[0]?.id === "catalog-refresh",
+        "saved version-2 catalog references should survive a native reload"
+      );
+    }, { passScanAppsCommand: true });
+  }
+
+  {
+    const incompleteCatalogLayout = structuredClone(layoutV2RoundTripFixture);
+    incompleteCatalogLayout.pages = [[{ id: "catalog-unavailable", type: "catalogApp" }]];
+    const loadFailures = [];
+    let incompleteScanAttempts = 0;
+    const originalConsoleError = console.error;
+    const originalConsoleWarn = console.warn;
+    console.error = () => {};
+    console.warn = () => {};
+    try {
+      await withMockTauri(async (command) => {
+        if (command === "load_layout") return structuredClone(incompleteCatalogLayout);
+        if (command === "scan_apps") {
+          incompleteScanAttempts += 1;
+          return {
+            apps: [],
+            warnings: incompleteScanAttempts === 1
+              ? [{
+                rootId: "saved-root",
+                rootLabel: "Saved Root",
+                kind: "linkSkipped",
+                message: "The saved root became a reparse point.",
+              }]
+              : incompleteScanAttempts === 2
+                ? [{
+                  rootId: "saved-root",
+                  rootLabel: "Saved Root",
+                  kind: "skippedEntry",
+                  message: "One directory entry could not be inspected.",
+                }]
+                : [{
+                rootId: "saved-root",
+                rootLabel: "Saved Root",
+                kind: "iconExtractionFailed",
+                message: "An unrelated icon could not be cached.",
+              }],
+            stats: makeScanStats(),
+          };
+        }
+        throw new Error(`Unexpected invoke: ${command}`);
+      }, async () => {
+        const { options } = makeOptions({
+          pages: [[{
+            id: "existing-runtime",
+            type: "app",
+            origin: "manual",
+            name: "Existing Runtime App",
+            launchTarget: { kind: "shortcut", path: "C:/Existing.lnk" },
+          }]],
+          showLayoutLoadFailed: (config) => loadFailures.push(config),
+        });
+        const native = createNative(options);
+
+        await native.loadNativeLaunchpadData();
+
+        assert(native.isNativeLayoutReady.value === false, "an incomplete catalog refresh should not mark the saved layout ready");
+        assert(loadFailures.length === 1, "an incomplete catalog refresh should surface a retryable load failure");
+        assert(
+          String(loadFailures[0].error?.message || "").includes("已保存的 Catalog 引用"),
+          "an incomplete catalog refresh should explain that saved catalog references were protected"
+        );
+        assert(
+          options.layout.presentation.pages.value[0]?.[0]?.id === "existing-runtime",
+          "an incomplete catalog refresh should not replace runtime pages with a partial result"
+        );
+
+        await loadFailures[0].onRetry();
+        assert(native.isNativeLayoutReady.value === false, "a skipped directory entry should keep the saved layout protected");
+        assert(loadFailures.length === 2, "each incomplete catalog retry should remain retryable");
+        assert(
+          options.layout.presentation.pages.value[0]?.[0]?.id === "existing-runtime",
+          "an incomplete catalog retry should continue preserving the previous runtime pages"
+        );
+
+        await loadFailures[1].onRetry();
+        assert(native.isNativeLayoutReady.value === true, "a non-destructive scan warning should allow a saved layout retry to finish");
+        assert(
+          options.layout.presentation.pages.value.length === 1 && options.layout.presentation.pages.value[0].length === 0,
+          "a complete retry should remove a catalog reference that is genuinely absent"
+        );
+      }, { passScanAppsCommand: true });
+    } finally {
+      console.error = originalConsoleError;
+      console.warn = originalConsoleWarn;
+    }
+  }
 
   const initialSaveLayouts = [];
   await withMockTauri(async (command, args) => {
     if (command === "load_layout") return null;
     if (command === "scan_apps") {
       assert(args.roots.length === 1 && args.roots[0].id === "root", "initial native scan should use enabled scan roots");
-      return [
+      return { apps: [
         {
           id: "win-app-good",
           name: "Good",
           iconPath: "C:/Icons/good.png",
           iconDataUrl: "data:image/png;base64,legacy",
           launchTarget: { kind: "shortcut", path: "C:/Apps/Good.lnk" },
+          trackingKey: "launch:good",
+          identityStatus: "exact",
+          sources: [{ key: "good", type: "startMenuUser", state: "primary" }],
         },
-        { id: "win-app-blocked", name: "Blocked", launchTarget: { kind: "shortcut", path: "C:/Apps/Blocked.lnk" } },
-      ];
+        {
+          id: "win-app-blocked",
+          name: "Blocked",
+          launchTarget: { kind: "shortcut", path: "C:/Apps/Blocked.lnk" },
+          trackingKey: "launch:blocked",
+          identityStatus: "exact",
+          sources: [{ key: "blocked", type: "startMenuUser", state: "primary" }],
+        },
+      ], warnings: [], stats: makeScanStats({ appsFound: 2 }) };
     }
     if (command === "check_launch_targets") return [];
     if (command === "save_layout") {
@@ -359,7 +539,7 @@ export async function runLaunchpadNativeTests() {
   }, async (timers) => {
     const { calls, options } = makeOptions({
       pages: [[{ id: "mock", type: "app", name: "Mock" }]],
-      scanAppBlacklist: [{ path: "C:/Apps/Blocked.lnk" }],
+      scanAppBlacklist: [{ catalogId: "win-app-blocked", name: "Blocked" }],
     });
     const native = createNative(options);
     assert(native.isNativeLayoutReady.value === false, "native layout should not be ready before the initial native load");
@@ -393,7 +573,7 @@ export async function runLaunchpadNativeTests() {
     assert(initialSaveLayouts[0].settings.mainWindowShortcut === DEFAULT_MAIN_WINDOW_SHORTCUT, "native saves should include the main window shortcut");
     assert(calls.commitPageIndex.join(",") === "0", "initial native load should reclamp desktop page");
     assert(calls.schedulePageGridMetrics === 1, "initial native load should refresh grid metrics");
-  });
+  }, { passScanAppsCommand: true });
 
   let loadAttempts = 0;
   await withMockTauri(async (command, args) => {
@@ -401,8 +581,8 @@ export async function runLaunchpadNativeTests() {
       loadAttempts += 1;
       if (loadAttempts === 1) throw new Error("layout locked");
       return {
-        version: 1,
-        pages: [[{ id: "loaded-app", type: "app", name: "Loaded", launchTarget: { kind: "shortcut", path: "Loaded.lnk" } }]],
+        version: 2,
+        pages: [[{ id: "loaded-app", type: "manualApp", name: "Loaded", launchTarget: { kind: "shortcut", path: "Loaded.lnk" } }]],
         settings: { textless: true },
       };
     }
@@ -456,8 +636,8 @@ export async function runLaunchpadNativeTests() {
     }
     if (command === "load_layout") {
       return {
-        version: 1,
-        pages: [[{ id: "effects-app", type: "app", name: "Effects", launchTarget: { kind: "shortcut", path: "Effects.lnk" } }]],
+        version: 2,
+        pages: [[{ id: "effects-app", type: "manualApp", name: "Effects", launchTarget: { kind: "shortcut", path: "Effects.lnk" } }]],
         settings: {
           windowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
           windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
@@ -560,8 +740,8 @@ export async function runLaunchpadNativeTests() {
   await withMockTauri(async (command) => {
     if (command === "load_layout") {
       return {
-        version: 1,
-        pages: [[{ id: "acrylic-app", type: "app", name: "Acrylic", launchTarget: { kind: "shortcut", path: "Acrylic.lnk" } }]],
+        version: 2,
+        pages: [[{ id: "acrylic-app", type: "manualApp", name: "Acrylic", launchTarget: { kind: "shortcut", path: "Acrylic.lnk" } }]],
         settings: {
           backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
           backgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
@@ -587,8 +767,8 @@ export async function runLaunchpadNativeTests() {
   await withMockTauri(async (command) => {
     if (command === "load_layout") {
       return {
-        version: 1,
-        pages: [[{ id: "blur-app", type: "app", name: "Blur", launchTarget: { kind: "shortcut", path: "Blur.lnk" } }]],
+        version: 2,
+        pages: [[{ id: "blur-app", type: "manualApp", name: "Blur", launchTarget: { kind: "shortcut", path: "Blur.lnk" } }]],
         settings: {
           backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
           backgroundEffect: BACKGROUND_EFFECT_BLUR,
@@ -614,7 +794,7 @@ export async function runLaunchpadNativeTests() {
   await withMockTauri(async (command) => {
     if (command === "load_layout") {
       return {
-        version: 1,
+        version: 2,
         pages: [[]],
         settings: {
           backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
@@ -658,7 +838,7 @@ export async function runLaunchpadNativeTests() {
   await withMockTauri(async (command) => {
     if (command === "load_layout") {
       return {
-        version: 1,
+        version: 2,
         pages: [[]],
         settings: {
           backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
@@ -684,8 +864,8 @@ export async function runLaunchpadNativeTests() {
   await withMockTauri(async (command) => {
     if (command === "load_layout") {
       return {
-        version: 1,
-        pages: [[{ id: "live-app", type: "app", name: "Live", launchTarget: { kind: "shortcut", path: "Live.lnk" } }]],
+        version: 2,
+        pages: [[{ id: "live-app", type: "manualApp", name: "Live", launchTarget: { kind: "shortcut", path: "Live.lnk" } }]],
         settings: {
           backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
           backgroundEffect: BACKGROUND_EFFECT_DIMMED,
@@ -714,8 +894,8 @@ export async function runLaunchpadNativeTests() {
     disabledLiveDesktopCommands.push(command);
     if (command === "load_layout") {
       return {
-        version: 1,
-        pages: [[{ id: "disabled-live-app", type: "app", name: "Disabled Live", launchTarget: { kind: "shortcut", path: "Disabled Live.lnk" } }]],
+        version: 2,
+        pages: [[{ id: "disabled-live-app", type: "manualApp", name: "Disabled Live", launchTarget: { kind: "shortcut", path: "Disabled Live.lnk" } }]],
         settings: {
           backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
           backgroundEffect: BACKGROUND_EFFECT_BLUR,
@@ -762,8 +942,8 @@ export async function runLaunchpadNativeTests() {
     }
     if (command === "load_layout") {
       return {
-        version: 1,
-        pages: [[{ id: "live-acrylic-app", type: "app", name: "Live Acrylic", launchTarget: { kind: "shortcut", path: "Live Acrylic.lnk" } }]],
+        version: 2,
+        pages: [[{ id: "live-acrylic-app", type: "manualApp", name: "Live Acrylic", launchTarget: { kind: "shortcut", path: "Live Acrylic.lnk" } }]],
         settings: {
           backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
           backgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
@@ -819,8 +999,8 @@ export async function runLaunchpadNativeTests() {
     }
     if (command === "load_layout") {
       return {
-        version: 1,
-        pages: [[{ id: "live-blur-app", type: "app", name: "Live Blur", launchTarget: { kind: "shortcut", path: "Live Blur.lnk" } }]],
+        version: 2,
+        pages: [[{ id: "live-blur-app", type: "manualApp", name: "Live Blur", launchTarget: { kind: "shortcut", path: "Live Blur.lnk" } }]],
         settings: {
           backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
           backgroundEffect: BACKGROUND_EFFECT_BLUR,
@@ -1468,8 +1648,8 @@ export async function runLaunchpadNativeTests() {
   await withMockTauri(async (command, args) => {
     if (command === "load_layout") {
       return {
-        version: 1,
-        pages: [[{ id: "wallpaper-app", type: "app", name: "Wallpaper", launchTarget: { kind: "shortcut", path: "Wallpaper.lnk" } }]],
+        version: 2,
+        pages: [[{ id: "wallpaper-app", type: "manualApp", name: "Wallpaper", launchTarget: { kind: "shortcut", path: "Wallpaper.lnk" } }]],
         settings: {
           backgroundSource: BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
           backgroundEffect: BACKGROUND_EFFECT_DIMMED,
@@ -1515,7 +1695,7 @@ export async function runLaunchpadNativeTests() {
     }
     if (command === "load_layout") {
       return {
-        version: 1,
+        version: 2,
         pages: [[]],
         settings: {
           windowEffectMaterial: "mica",
@@ -1553,7 +1733,7 @@ export async function runLaunchpadNativeTests() {
     }
     if (command === "load_layout") {
       return {
-        version: 1,
+        version: 2,
         pages: [[]],
         settings: {
           windowEffectMaterial: WINDOW_EFFECT_MATERIAL_MICA_ALT,
@@ -1591,7 +1771,7 @@ export async function runLaunchpadNativeTests() {
     }
     if (command === "load_layout") {
       return {
-        version: 1,
+        version: 2,
         pages: [[]],
         settings: {
           windowEffectMaterial: WINDOW_EFFECT_MATERIAL_NONE,
@@ -1622,10 +1802,10 @@ export async function runLaunchpadNativeTests() {
     startupIconCommands.push(command);
     if (command === "load_layout") {
       return {
-        version: 1,
+        version: 2,
         pages: [[{
           id: "custom-icon-app",
-          type: "app",
+          type: "manualApp",
           name: "Custom Icon App",
           iconPath: "C:/Icons/catalog.png",
           customIconPath: "C:/Icons/custom.png",
@@ -1655,8 +1835,8 @@ export async function runLaunchpadNativeTests() {
   await withMockTauri(async (command, args) => {
     if (command === "load_layout") {
       return {
-        version: 1,
-        pages: [[{ id: "custom-app", type: "app", name: "Custom App", launchTarget: { kind: "executable", path: "C:/Tools/Custom.exe" } }]],
+        version: 2,
+        pages: [[{ id: "custom-app", type: "manualApp", name: "Custom App", launchTarget: { kind: "executable", path: "C:/Tools/Custom.exe" } }]],
         settings: {},
       };
     }
@@ -1701,8 +1881,8 @@ export async function runLaunchpadNativeTests() {
   await withMockTauri(async (command, args) => {
     if (command === "load_layout") {
       return {
-        version: 1,
-        pages: [[{ id: "custom-app", type: "app", name: "Custom App", launchTarget: { kind: "shortcut", path: "C:/Tools/Custom.lnk" } }]],
+        version: 2,
+        pages: [[{ id: "custom-app", type: "manualApp", name: "Custom App", launchTarget: { kind: "shortcut", path: "C:/Tools/Custom.lnk" } }]],
         settings: {},
       };
     }
@@ -1752,8 +1932,8 @@ export async function runLaunchpadNativeTests() {
   await withMockTauri(async (command, args) => {
     if (command === "load_layout") {
       return {
-        version: 1,
-        pages: [[{ id: "flush-app", type: "app", name: "Flush App", launchTarget: { kind: "shortcut", path: "C:/Tools/Flush.lnk" } }]],
+        version: 2,
+        pages: [[{ id: "flush-app", type: "manualApp", name: "Flush App", launchTarget: { kind: "shortcut", path: "C:/Tools/Flush.lnk" } }]],
         settings: {},
       };
     }
@@ -1788,8 +1968,8 @@ export async function runLaunchpadNativeTests() {
   await withMockTauri(async (command, args) => {
     if (command === "load_layout") {
       return {
-        version: 1,
-        pages: [[{ id: "quit-app", type: "app", name: "Quit App", launchTarget: { kind: "shortcut", path: "C:/Tools/Quit.lnk" } }]],
+        version: 2,
+        pages: [[{ id: "quit-app", type: "manualApp", name: "Quit App", launchTarget: { kind: "shortcut", path: "C:/Tools/Quit.lnk" } }]],
         settings: {},
       };
     }
@@ -1863,8 +2043,8 @@ export async function runLaunchpadNativeTests() {
   await withMockTauri(async (command) => {
     if (command === "load_layout") {
       return {
-        version: 1,
-        pages: [[{ id: "custom-app", type: "app", name: "Custom App", launchTarget: { kind: "shortcut", path: "C:/Tools/Custom.lnk" } }]],
+        version: 2,
+        pages: [[{ id: "custom-app", type: "manualApp", name: "Custom App", launchTarget: { kind: "shortcut", path: "C:/Tools/Custom.lnk" } }]],
         settings: {},
       };
     }
@@ -1969,7 +2149,7 @@ export async function runLaunchpadNativeTests() {
   let saveAttempts = 0;
   await withMockTauri(async (command) => {
     if (command === "load_layout") return null;
-    if (command === "scan_apps") return { apps: [], warnings: [], stats: null };
+    if (command === "scan_apps") return { apps: [], warnings: [], stats: makeScanStats() };
     if (command === "check_launch_targets") return [];
     if (command === "save_layout") {
       saveAttempts += 1;

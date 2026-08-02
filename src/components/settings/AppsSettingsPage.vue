@@ -166,6 +166,7 @@
               </span>
               <span class="app-manager-details">
                 <span class="app-manager-name">{{ app.name }}</span>
+                <span class="app-manager-target">{{ state.getAppSourceSummary(app) }}</span>
                 <span class="app-manager-target">{{ state.getLaunchTargetPath(app) || "未设置启动路径" }}</span>
               </span>
               <span class="app-manager-actions">

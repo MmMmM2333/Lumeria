@@ -14,10 +14,9 @@ pub(crate) struct AppCatalogItem {
     pub(crate) launch_target: LaunchTarget,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) launch_args: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) source_key: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) source: Option<AppSource>,
+    pub(crate) tracking_key: String,
+    pub(crate) identity_status: String,
+    pub(crate) sources: Vec<AppSource>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -33,8 +32,10 @@ pub(crate) struct LaunchTarget {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AppSource {
+    pub(crate) key: String,
     #[serde(rename = "type")]
     pub(crate) source_type: String,
+    pub(crate) state: String,
     pub(crate) root_id: String,
     pub(crate) root_label: String,
     pub(crate) relative_path: String,

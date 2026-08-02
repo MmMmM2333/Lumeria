@@ -163,6 +163,7 @@ const APPS_CAPABILITIES = [
   "excludeManagedAppFromScan",
   "excludeSelectedManagedAppsFromScan",
   "filteredManagedApps",
+  "getAppSourceSummary",
   "getLaunchTargetPath",
   "isBrowsingScanRoot",
   "isScanningApps",
@@ -195,8 +196,7 @@ function normalizeSettingsSubPage(page) {
 }
 
 function getExcludedAppKey(app, index) {
-  if (app?.sourceKey) return `source:${String(app.sourceKey).toLocaleLowerCase()}`;
-  if (app?.path) return `path:${String(app.path).replace(/\\/g, "/").toLocaleLowerCase()}`;
+  if (app?.catalogId) return `catalog:${String(app.catalogId).toLocaleLowerCase()}`;
   if (app?.name) return `name:${String(app.name).toLocaleLowerCase()}:${index}`;
   return `excluded-app:${index}`;
 }
@@ -702,7 +702,7 @@ function createSettingsPanelModel(options) {
     const term = excludedAppsSearchTerm.value;
     return (state.scanAppBlacklist.value || [])
       .map((app, index) => ({ app, index, key: getExcludedAppKey(app, index) }))
-      .filter(({ app }) => !term || [app.name, app.path, app.sourceKey]
+      .filter(({ app }) => !term || [app.name, app.catalogId]
         .some((value) => String(value || "").toLocaleLowerCase().includes(term)));
   });
   const selectedExcludedAppCount = computed(() => selectedExcludedAppKeys.value.size);
@@ -755,15 +755,15 @@ function createSettingsPanelModel(options) {
   }
 
   function getExcludedAppName(app) {
-    return String(app?.name || app?.path || app?.sourceKey || "未命名应用");
+    return String(app?.name || app?.catalogId || "未命名应用");
   }
 
   function getExcludedAppSubtitle(app) {
-    return String(app?.path || app?.sourceKey || "未设置路径");
+    return String(app?.catalogId || "未设置 Catalog ID");
   }
 
   function getExcludedAppGlyph(app) {
-    const label = String(app?.emoji || app?.name || app?.path || app?.sourceKey || "A").trim();
+    const label = String(app?.emoji || app?.name || app?.catalogId || "A").trim();
     return label.charAt(0).toLocaleUpperCase() || "A";
   }
 

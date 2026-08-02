@@ -5,6 +5,21 @@ import { getCustomIconCanvasSize, useLaunchpadApps } from "./useLaunchpadApps.js
 import { useLaunchpadPageCommands } from "./useLaunchpadPageCommands.js";
 import { usePageRenderRange } from "./usePageRenderRange.js";
 
+function makeScanStats(overrides = {}) {
+  return {
+    dirsVisited: 0,
+    entriesSeen: 0,
+    physicalAppsFound: 0,
+    startMenuOverlays: 0,
+    equivalentAppsMerged: 0,
+    unresolvedApps: 0,
+    excludedApps: 0,
+    appsFound: 0,
+    limitReached: false,
+    ...overrides,
+  };
+}
+
 function withMockTauri(invoke, run) {
   setLaunchpadApiBridgeForTests({
     convertFileSrc: (path) => `http://asset.localhost/${path}`,
@@ -171,6 +186,24 @@ export async function runLaunchpadAppsTests() {
   assert(getCustomIconCanvasSize(512, 256) === 256, "large non-square custom icons should be capped at the high-DPI size");
 
   {
+    const { apps } = createManagedAppRemovalHarness([[]], 0);
+    const summary = apps.getAppSourceSummary({
+      id: "catalog-steam",
+      origin: "catalog",
+      identityStatus: "exact",
+      sources: [
+        { type: "customDirectory", state: "primary", rootLabel: "游戏", relativePath: "Steam.lnk" },
+        { type: "startMenuUser", state: "equivalent", rootLabel: "用户开始菜单", relativePath: "Steam/Steam.lnk" },
+        { type: "startMenuSystem", state: "shadowed", rootLabel: "系统开始菜单", relativePath: "Steam/Steam.lnk" },
+      ],
+    });
+    assert(
+      summary === "游戏 · Steam.lnk · 另有 1 个等价来源 · 已覆盖 1 个系统来源",
+      "catalog provenance summaries should explain both semantic merges and Start Menu overlays"
+    );
+  }
+
+  {
     const { apps, pages } = createManagedAppRemovalHarness([[
       {
         id: "owner-contract-app",
@@ -183,7 +216,7 @@ export async function runLaunchpadAppsTests() {
       hiddenAppIds: ["hidden-app", "hidden-app"],
       scanRoots: [{ id: "custom-root", type: "customDirectory", label: "Tools", path: "C:/Tools", enabled: true }],
       scanKeywordBlacklist: ["setup", "Setup"],
-      scanAppBlacklist: [{ name: "Ignored", sourceKey: "ignored-source" }],
+      scanAppBlacklist: [{ name: "Ignored", catalogId: "catalog-ignored" }],
       showMissingLaunchTargetBadge: false,
     };
 
@@ -289,13 +322,15 @@ export async function runLaunchpadAppsTests() {
     const scannedApp = {
       id: "scanned-app",
       type: "app",
+      origin: "catalog",
       name: "Scanned App",
-      sourceKey: "scan-root:tools:scanned-app.lnk",
+      sources: [{ key: "scan-root:tools:scanned-app.lnk", type: "customDirectory", state: "primary" }],
       launchTarget: { kind: "shortcut", path: "C:/Tools/Scanned App.lnk" },
     };
     const manualWindowsApp = {
       id: "manual-windows-app",
       type: "app",
+      origin: "manual",
       name: "Manual Windows App",
       launchTarget: { kind: "appUserModelId", appUserModelId: "example.manual!App" },
     };
@@ -327,7 +362,7 @@ export async function runLaunchpadAppsTests() {
     assert(apps.excludeManagedAppFromScan(scannedApp), "eligible apps should be removable and excluded from future scans");
     assert(!pages.value[0].some((app) => app.id === scannedApp.id), "scan exclusion should remove the app from the launchpad");
     assert(pages.value[0].some((app) => app.id === manualWindowsApp.id), "scan exclusion should preserve unrelated apps");
-    assert(scanAppBlacklist.value[0]?.sourceKey === scannedApp.sourceKey, "scan exclusion should persist the stable source key");
+    assert(scanAppBlacklist.value[0]?.catalogId === scannedApp.id, "scan exclusion should persist the canonical catalog id");
     assert(hiddenAppIds.value.includes(scannedApp.id), "scan exclusion should also prevent automatic layout reinsertion");
     assert(transientNotices.at(-1)?.title === "已从扫描中排除", "scan exclusion should surface an explicit result notice");
 
@@ -341,13 +376,14 @@ export async function runLaunchpadAppsTests() {
     const firstApp = {
       id: "first-scanned-app",
       type: "app",
+      origin: "catalog",
       name: "First Scanned App",
-      sourceKey: "scan-root:tools:first.lnk",
       launchTarget: { kind: "shortcut", path: "C:/Tools/First.lnk" },
     };
     const secondApp = {
       id: "second-scanned-app",
       type: "app",
+      origin: "catalog",
       name: "Second Scanned App",
       launchTarget: { kind: "executable", path: "C:/Tools/Second.exe" },
     };
@@ -372,6 +408,42 @@ export async function runLaunchpadAppsTests() {
     assert(scanAppBlacklist.value.length === 0, "batch cancellation should remove every selected exclusion");
   }
 
+  {
+    const catalogApp = {
+      id: "catalog-editor",
+      type: "app",
+      origin: "catalog",
+      name: "Editor",
+      emoji: "E",
+      catalogPresentation: { name: "Editor", emoji: "E" },
+      presentationOverrides: {},
+      trackingKey: "launch:editor",
+      identityStatus: "exact",
+      sources: [{ key: "editor", type: "startMenuUser", state: "primary" }],
+      launchTarget: { kind: "executable", path: "C:/Apps/Editor.exe" },
+    };
+    const { apps, hiddenAppIds, pages } = createManagedAppRemovalHarness([[catalogApp]], 0);
+
+    apps.openEditManagedApp(catalogApp);
+    apps.editorModel.name.value = "Work Editor";
+    assert(apps.editorModel.actions.save(), "catalog presentation edits should save");
+    assert(pages.value[0][0].id === "catalog-editor", "presentation-only edits should preserve the catalog id");
+    assert(pages.value[0][0].origin === "catalog", "presentation-only edits should preserve catalog ownership");
+    assert(pages.value[0][0].presentationOverrides.name === "Work Editor", "catalog name edits should persist as presentation overrides");
+    assert(pages.value[0][0].launchTarget.path === "C:/Apps/Editor.exe", "presentation-only edits should preserve catalog launch data");
+
+    apps.openEditManagedApp(pages.value[0][0]);
+    apps.editorModel.target.value = "C:/Portable/Editor.exe";
+    apps.editorModel.args.value = "--portable";
+    assert(apps.editorModel.actions.save(), "catalog launch edits should save by converting to manual");
+    const converted = pages.value[0][0];
+    assert(converted.id === "generated-app-id", "catalog launch edits should allocate a manual app id");
+    assert(converted.origin === "manual", "catalog launch edits should convert the item to manual ownership");
+    assert(converted.launchTarget.path === "C:/Portable/Editor.exe" && converted.launchArgs === "--portable", "converted manual apps should own the edited launch data");
+    assert(!("sources" in converted) && !("trackingKey" in converted), "converted manual apps should drop catalog provenance");
+    assert(hiddenAppIds.value.includes("catalog-editor"), "conversion should hide the original catalog app from automatic reinsertion");
+  }
+
   await withMockTauri(async (command) => {
     if (command === "pick_scan_root_directory") return "D:\\Tools";
     if (command === "pick_launch_file") {
@@ -383,7 +455,7 @@ export async function runLaunchpadAppsTests() {
       };
     }
     if (command !== "scan_apps") throw new Error(`Unexpected invoke: ${command}`);
-    return [
+    return { apps: [
       {
         id: "win-app-1",
         type: "app",
@@ -391,7 +463,9 @@ export async function runLaunchpadAppsTests() {
         iconPath: "C:/Icons/native.png",
         iconDataUrl: "data:image/png;base64,native",
         launchTarget: { kind: "shortcut", path: "C:/Apps/Native.lnk" },
-        sourceKey: "scan-root:root:native.lnk",
+        trackingKey: "launch:native",
+        identityStatus: "exact",
+        sources: [{ key: "scan-root:root:native.lnk", type: "customDirectory", state: "primary" }],
       },
       {
         id: "win-app-store",
@@ -401,9 +475,11 @@ export async function runLaunchpadAppsTests() {
           kind: "appUserModelId",
           appUserModelId: "windows.settings_123!App",
         },
-        sourceKey: "windows-app:windows.settings_123!app",
+        trackingKey: "launch:settings",
+        identityStatus: "exact",
+        sources: [{ key: "windows-app:windows.settings_123!app", type: "windowsAppCatalog", state: "primary" }],
       },
-    ];
+    ], warnings: [], stats: makeScanStats({ appsFound: 2 }) };
   }, async () => {
     const pages = shallowRef([[]]);
     const warningDialogs = [];
@@ -412,7 +488,10 @@ export async function runLaunchpadAppsTests() {
     let clearedSelectedIconCount = 0;
     const selectedIcon = ref({ area: "desktop", id: "win-app-1", pageIndex: 0 });
     const apps = useLaunchpadApps({
-      appendAppsToPages: (_sourcePages, selectedApps) => [selectedApps.map((app) => ({ ...app }))],
+      appendAppsToPages: (sourcePages, selectedApps) => [[
+        ...selectedApps.map((app) => ({ ...app })),
+        ...(sourcePages[0] || []).map((app) => ({ ...app })),
+      ]],
       cancelLongPress: () => { canceledLongPressCount += 1; },
       cloneItem: (item) => (item ? { ...item } : item),
       clonePages: (sourcePages) => sourcePages.map((page) => page.map((item) => ({ ...item }))),
@@ -494,11 +573,17 @@ export async function runLaunchpadAppsTests() {
     setAllScanRootsEnabled(true);
 
     await apps.rescanManagedApps();
+    apps.scanResultModel.actions.toggleSelection("win-app-store", false);
     apps.scanResultModel.actions.addSelected();
 
     assert(pages.value[0][0].id === "win-app-1", "adding scanned apps should preserve native stable ids");
     assert(pages.value[0][0].iconUrl === "http://asset.localhost/C:/Icons/native.png", "adding scanned apps should use the cached asset URL");
     assert(!("iconDataUrl" in pages.value[0][0]), "adding scanned apps should discard cached base64 once an asset URL exists");
+    assert(hiddenAppIds.value.includes("win-app-store"), "confirming a partial scan selection should keep unselected catalog apps hidden after restart");
+
+    await apps.rescanManagedApps();
+    apps.scanResultModel.actions.addSelected();
+
     assert(hiddenAppIds.value.length === 0, "adding scanned apps should unhide the preserved native id");
     const windowsApp = pages.value.flat().find((app) => app.id === "win-app-store");
     assert(apps.getLaunchTargetPath(windowsApp) === "windows.settings_123!App", "managed app details should display AppUserModelIds");

@@ -19,8 +19,8 @@ function createCapabilities() {
     isSettingsPanelOpen: ref(true),
     mainWindowShortcutError,
     scanAppBlacklist: ref([
-      { name: "Blocked Tool", path: "C:/Tools/Blocked.exe", sourceKey: "blocked-tool" },
-      { name: "Hidden Editor", path: "C:/Apps/Editor.exe", sourceKey: "hidden-editor" },
+      { name: "Blocked Tool", catalogId: "catalog-blocked-tool" },
+      { name: "Hidden Editor", catalogId: "catalog-hidden-editor" },
     ]),
     setDraftMainWindowShortcut: (value) => {
       draftMainWindowShortcut.value = value;

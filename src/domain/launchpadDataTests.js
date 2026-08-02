@@ -48,9 +48,16 @@ export function runLaunchpadDataTests() {
     if (!condition) throw new Error(`[Launchpad data test failed] ${message}`);
   };
 
-  const normalized = normalizeNativeApp({ name: "Native", launch_target: { kind: "shortcut", path: "native.lnk" } }, 4);
-  assert(normalized.id === "native-app-4", "native app fallback id should use the supplied index");
-  assert(normalized.launchTarget.path === "native.lnk", "native app should normalize snake_case launch targets");
+  const normalized = normalizeNativeApp({
+    id: "catalog-native",
+    name: "Native",
+    launchTarget: { kind: "shortcut", path: "native.lnk" },
+    trackingKey: "launch:native",
+    identityStatus: "exact",
+    sources: [{ key: "native", type: "customDirectory", state: "primary" }],
+  });
+  assert(normalized.id === "catalog-native", "native apps should preserve canonical catalog ids");
+  assert(normalized.launchTarget.path === "native.lnk", "native apps should preserve launch targets");
   assert(normalized.emoji === "N", "native app should derive a fallback glyph");
   assert(makeLaunchTarget("https://example.com").kind === "url", "http targets should become url launch targets");
   assert(makeLaunchTarget("https://example.com/file.url").kind === "url", "http targets ending in .url should stay url launch targets");
@@ -65,21 +72,71 @@ export function runLaunchpadDataTests() {
   const normalizedRoot = normalizeScanRoots([{ id: "root", label: "Root", path: "C:/Apps" }])[0];
   assert(!("lastScannedAt" in normalizedRoot), "scan roots should omit absent optional fields");
   const blockedEntry = makeScanAppExclusionEntry({
+    id: "catalog-blocked",
+    origin: "catalog",
     name: "Blocked",
-    sourceKey: "scan-root:root:blocked.lnk",
-    launchTarget: { kind: "shortcut", path: "C:\\Apps\\Blocked.lnk" },
   });
-  const normalizedBlacklist = normalizeScanAppBlacklist([blockedEntry, { path: "C:/Apps/Blocked.lnk" }]);
-  assert(normalizedBlacklist.length === 1, "scan app blacklist should deduplicate source-key matches");
-  assert(!("path" in normalizeScanAppBlacklist([{ sourceKey: "source-only" }])[0]), "scan blacklist should omit absent optional paths");
-  assert(isAppExcludedFromScan({ sourceKey: "scan-root:root:blocked.lnk" }, normalizedBlacklist), "scan app blacklist should match source keys");
-  assert(isAppExcludedFromScan({ launchTarget: { kind: "shortcut", path: "C:/Apps/Blocked.lnk" } }, normalizedBlacklist), "scan app blacklist should match normalized paths");
-  assert(canExcludeAppFromScan({ sourceKey: "windows-app:settings" }), "catalog source keys should support scan exclusion");
-  assert(!canExcludeAppFromScan({ sourceKey: "   " }), "blank source keys should not expose scan exclusion");
-  assert(canExcludeAppFromScan({ launchTarget: { kind: "executable", path: "C:/Apps/Tool.exe" } }), "local launch paths should support scan exclusion");
-  assert(!canExcludeAppFromScan({ launchTarget: { kind: "url", path: "https://example.com" } }), "URL-only custom apps should not expose scan exclusion");
-  assert(!canExcludeAppFromScan({ launchTarget: { kind: "appUserModelId", appUserModelId: "example!App" } }), "custom AppUserModelIds without a catalog source should not expose scan exclusion");
-  assert(makeScanAppExclusionEntry({ launchTarget: { kind: "url", path: "https://example.com" } }) === null, "scan exclusion entries should require a stable source identity");
+  const normalizedBlacklist = normalizeScanAppBlacklist([blockedEntry, { catalogId: "CATALOG-BLOCKED" }]);
+  assert(normalizedBlacklist.length === 1, "scan app blacklist should deduplicate canonical catalog ids");
+  assert(normalizedBlacklist[0].catalogId === "catalog-blocked", "scan blacklist should persist the canonical catalog id");
+  assert(isAppExcludedFromScan({ id: "catalog-blocked" }, normalizedBlacklist), "scan app blacklist should match canonical catalog ids");
+  assert(canExcludeAppFromScan({ id: "catalog-settings", origin: "catalog" }), "catalog apps should support logical scan exclusion");
+  assert(!canExcludeAppFromScan({ id: "manual-tool", origin: "manual" }), "manual apps should not expose scan exclusion");
+  assert(makeScanAppExclusionEntry({ id: "manual-web", origin: "manual" }) === null, "scan exclusion entries should require catalog ownership");
+
+  const reconciledV2 = dataHelpers.reconcileDocument(
+    [
+      {
+        id: "catalog-steam",
+        type: "app",
+        name: "Steam",
+        iconPath: "C:/Catalog/steam.png",
+        launchTarget: { kind: "shortcut", path: "C:/Current/Steam.lnk" },
+        sources: [{ key: "steam-current", type: "customDirectory", state: "primary" }],
+      },
+      {
+        id: "catalog-new",
+        type: "app",
+        name: "New App",
+        launchTarget: { kind: "executable", path: "C:/Apps/New.exe" },
+        sources: [{ key: "new", type: "startMenuUser", state: "primary" }],
+      },
+      {
+        id: "catalog-hidden",
+        type: "app",
+        name: "Hidden",
+        launchTarget: { kind: "executable", path: "C:/Apps/Hidden.exe" },
+        sources: [{ key: "hidden", type: "startMenuUser", state: "primary" }],
+      },
+    ],
+    {
+      version: 2,
+      pages: [[
+        {
+          id: "catalog-steam",
+          type: "catalogApp",
+          overrides: { name: "My Steam", customIconPath: "C:/Custom/steam.png" },
+          launchTarget: { kind: "executable", path: "C:/Stale/Steam.exe" },
+        },
+        {
+          id: "manual-web",
+          type: "manualApp",
+          name: "Web",
+          emoji: "W",
+          launchTarget: { kind: "url", path: "https://example.com" },
+        },
+      ]],
+      settings: {},
+    },
+    ["catalog-hidden"]
+  );
+  assert(reconciledV2[0][0].origin === "catalog", "catalog references should become catalog-owned runtime apps");
+  assert(reconciledV2[0][0].name === "My Steam", "catalog references should apply explicit presentation overrides");
+  assert(reconciledV2[0][0].launchTarget.path === "C:/Current/Steam.lnk", "saved catalog references must not override current launch data");
+  assert(reconciledV2[0][0].sources[0].key === "steam-current", "catalog references should use current provenance");
+  assert(reconciledV2[0][1].origin === "manual", "manual apps should retain their saved launch configuration");
+  assert(reconciledV2[1][0].id === "catalog-new", "new catalog apps should append after restored placements");
+  assert(!reconciledV2.flat().some((item) => item.id === "catalog-hidden"), "hidden catalog ids should not be appended");
 
   const catalogApps = [
     { id: "a", type: "app", name: "A", emoji: "A", iconPath: "C:/Icons/a.png", iconDataUrl: "data:a", launchTarget: { kind: "shortcut", path: "a.lnk" } },
@@ -88,19 +145,19 @@ export function runLaunchpadDataTests() {
     { id: "hidden", type: "app", name: "Hidden", emoji: "H", launchTarget: { kind: "shortcut", path: "hidden.lnk" } },
   ];
   const savedLayout = {
-    version: 1,
+    version: 2,
     pages: [
       [
-        { id: "a", type: "app", name: "Renamed A", customIconPath: "C:/Icons/custom-a.png", iconDataUrl: "data:saved-a" },
+        { id: "a", type: "catalogApp", overrides: { name: "Renamed A", customIconPath: "C:/Icons/custom-a.png" } },
         {
           id: "folder",
           type: "folder",
           name: "Tools",
           childPages: [
             [
-              { id: "b", type: "app", name: "Saved B" },
-              { id: "custom", type: "app", name: "Custom App", emoji: "C", launchTarget: { kind: "url", path: "https://example.com" }, launchArgs: "--safe" },
-              { id: "a", type: "app", name: "Duplicate A" },
+              { id: "b", type: "catalogApp", overrides: { name: "Saved B" } },
+              { id: "custom", type: "manualApp", name: "Custom App", emoji: "C", launchTarget: { kind: "url", path: "https://example.com" }, launchArgs: "--safe" },
+              { id: "a", type: "catalogApp", overrides: { name: "Duplicate A" } },
             ],
           ],
         },
@@ -109,7 +166,7 @@ export function runLaunchpadDataTests() {
     settings: {},
   };
 
-  const merged = dataHelpers.mergeNativeCatalogWithSavedLayout(catalogApps, savedLayout, ["hidden"]);
+  const merged = dataHelpers.reconcileDocument(catalogApps, savedLayout, ["hidden"]);
   assert(merged.length === 2, "new non-hidden catalog apps should overflow to a second page when the first page is full");
   assert(merged[0][0].name === "Renamed A", "saved app names should override catalog names");
   assert(merged[0][0].iconDataUrl === "data:a", "saved catalog icon data should not override native catalog icons");
@@ -152,7 +209,7 @@ export function runLaunchpadDataTests() {
     showCustomTitlebar: false,
     mainWindowShortcut: "control+alt+KeyL",
   });
-  assert(snapshot.version === 1, "layout snapshots should use version 1");
+  assert(snapshot.version === 2, "layout snapshots should use version 2");
   assert(snapshot.settings.textless === true && snapshot.settings.hiddenAppIds[0] === "hidden", "layout snapshots should include settings");
   assert(snapshot.settings.folderIconSizeMode === "custom" && snapshot.settings.folderIconSize === 88, "layout snapshots should include folder icon size settings");
   assert(Array.isArray(snapshot.settings.scanRoots), "layout snapshots should include scan roots");
@@ -220,9 +277,11 @@ export function runLaunchpadDataTests() {
   assert(plainSnapshot.settings.windowEffectMaterial === "none", "layout snapshots should preserve disabled window material");
   assert(plainSnapshot.settings.windowMode === "fullscreen", "layout snapshots should fall back to fullscreen for missing window mode");
   assert(plainSnapshot.settings.backgroundImagePath === null, "layout snapshots should clear image paths when no image layer is selected");
-  assert(!("iconDataUrl" in snapshot.pages[0][0]), "layout snapshots should omit catalog icon data");
-  assert(snapshot.pages[0][0].iconPath === "C:/Icons/a.png", "layout snapshots should preserve cached icon paths");
-  assert(snapshot.pages[0][0].customIconPath === "C:/Icons/custom-a.png", "layout snapshots should preserve custom icon paths");
+  assert(snapshot.pages[0][0].type === "catalogApp", "layout snapshots should persist catalog references");
+  assert(!("iconDataUrl" in snapshot.pages[0][0]), "catalog references should omit runtime icon data");
+  assert(!("iconPath" in snapshot.pages[0][0]), "catalog references should omit scanned icon paths");
+  assert(!("launchTarget" in snapshot.pages[0][0]), "catalog references should omit scanned launch targets");
+  assert(snapshot.pages[0][0].overrides.customIconPath === "C:/Icons/custom-a.png", "catalog references should preserve explicit presentation overrides");
   assert(snapshot.pages[0][1].children.length === 2, "folder snapshots should include flat children for compatibility");
   assert(!("launchArgs" in snapshot.pages[0][1].children[1]), "layout snapshots should omit non-executable launch args");
 }

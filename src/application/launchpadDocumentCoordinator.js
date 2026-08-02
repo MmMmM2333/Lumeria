@@ -44,7 +44,7 @@ export function createLaunchpadDocumentCoordinator(options) {
   const apps = options?.apps;
   requireCapability(layout, "capture", "layout");
   requireCapability(layout, "createSnapshot", "layout");
-  requireCapability(layout, "mergeCatalog", "layout");
+  requireCapability(layout, "reconcileDocument", "layout");
   requireCapability(layout, "restoreConfiguration", "layout");
   requireCapability(layout, "restorePages", "layout");
   requireCapability(settings, "capture", "settings");
@@ -63,12 +63,9 @@ export function createLaunchpadDocumentCoordinator(options) {
     ));
   }
 
-  function restore(savedDocument, nativeCatalog = []) {
+  function restoreConfiguration(savedDocument) {
     if (!isDocument(savedDocument)) {
-      throw new TypeError("restore requires a saved launchpad document");
-    }
-    if (!Array.isArray(nativeCatalog)) {
-      throw new TypeError("restore requires a native catalog array");
+      throw new TypeError("restoreConfiguration requires a saved launchpad document");
     }
 
     const savedSettings = savedDocument.settings;
@@ -77,16 +74,27 @@ export function createLaunchpadDocumentCoordinator(options) {
       settings.restore(savedSettings);
       apps.restore(savedSettings);
     }
+    return { kind: "configurationRestored" };
+  }
+
+  function restorePages(savedDocument, nativeCatalog = []) {
+    if (!isDocument(savedDocument)) {
+      throw new TypeError("restorePages requires a saved launchpad document");
+    }
+    if (!Array.isArray(nativeCatalog)) {
+      throw new TypeError("restorePages requires a native catalog array");
+    }
+
     const hiddenAppIds = apps.capture().hiddenAppIds;
-    const mergedPages = layout.mergeCatalog(
+    const mergedPages = layout.reconcileDocument(
       nativeCatalog,
-      Array.isArray(savedDocument.pages) ? savedDocument.pages : [],
+      savedDocument,
       hiddenAppIds
     );
     const runtimePages = applyCachedIconAssetUrlsToPages(mergedPages, options.toAssetUrl);
     layout.restorePages(runtimePages);
     return {
-      kind: "restored",
+      kind: "pagesRestored",
       pageCount: runtimePages.length,
     };
   }
@@ -96,7 +104,11 @@ export function createLaunchpadDocumentCoordinator(options) {
       throw new TypeError("createFromCatalog requires a native catalog array");
     }
     const hiddenAppIds = apps.capture().hiddenAppIds;
-    const mergedPages = layout.mergeCatalog(nativeCatalog, [], hiddenAppIds);
+    const mergedPages = layout.reconcileDocument(
+      nativeCatalog,
+      { version: 2, pages: [], settings: {} },
+      hiddenAppIds
+    );
     const runtimePages = applyCachedIconAssetUrlsToPages(mergedPages, options.toAssetUrl);
     layout.restorePages(runtimePages);
     return {
@@ -113,7 +125,8 @@ export function createLaunchpadDocumentCoordinator(options) {
   return Object.freeze({
     capture,
     createFromCatalog,
-    restore,
+    restoreConfiguration,
+    restorePages,
     signature,
   });
 }

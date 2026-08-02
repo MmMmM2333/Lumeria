@@ -13,7 +13,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::{
     encoding::{encode_base64, short_blake3_hex},
-    icons::cache_app_icon,
+    icons::cache_app_icon_for_identity,
     models::{AppCatalogItem, AppSource, LaunchTarget},
     path_utils::{expand_windows_env_vars, extension, windows_api_path},
 };
@@ -21,6 +21,7 @@ use crate::{
 use crate::{
     icons::cache_shell_item_icon,
     windows_app_catalog::{enumerate_windows_apps, WindowsAppEntry},
+    windows_shell_link::load_shell_link,
 };
 
 #[derive(Clone, Debug, Deserialize)]
@@ -52,15 +53,12 @@ pub(crate) struct ScanFilters {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ScanAppBlacklistItem {
     #[serde(default)]
-    pub(crate) source_key: Option<String>,
-    #[serde(default)]
-    pub(crate) path: Option<String>,
+    pub(crate) catalog_id: Option<String>,
 }
 
 struct NormalizedScanFilters {
     keyword_blacklist: Vec<String>,
-    blocked_source_keys: HashSet<String>,
-    blocked_paths: HashSet<String>,
+    blocked_catalog_ids: HashSet<String>,
 }
 
 struct CatalogCandidate {
@@ -94,6 +92,11 @@ pub(crate) struct ScanWarning {
 pub(crate) struct ScanStats {
     dirs_visited: usize,
     entries_seen: usize,
+    physical_apps_found: usize,
+    start_menu_overlays: usize,
+    equivalent_apps_merged: usize,
+    unresolved_apps: usize,
+    excluded_apps: usize,
     apps_found: usize,
     limit_reached: bool,
 }
@@ -136,7 +139,6 @@ pub(crate) fn scan_apps_from_roots(
     filters: &ScanFilters,
 ) -> Result<ScanAppsResult, String> {
     let mut apps = Vec::new();
-    let mut seen_paths = HashMap::new();
     let mut seen_app_user_model_ids = HashSet::new();
     let filters = NormalizedScanFilters::from(filters);
     let mut warnings = Vec::new();
@@ -162,13 +164,13 @@ pub(crate) fn scan_apps_from_roots(
         }
 
         let root_path = expand_scan_root_path(&root.path);
+        let mut seen_paths = HashMap::new();
         let mut visited_dirs = HashSet::new();
         let mut root_entries_seen = 0usize;
         collect_apps_from_dir(
             root,
             &root_path,
             &root_path,
-            icon_dir,
             &filters,
             &mut apps,
             &mut seen_paths,
@@ -181,6 +183,25 @@ pub(crate) fn scan_apps_from_roots(
         )?;
     }
 
+    stats.physical_apps_found = apps.len();
+    let before_overlay = apps.len();
+    let apps = overlay_start_menu_entries(apps);
+    stats.start_menu_overlays = before_overlay.saturating_sub(apps.len());
+    let before_semantic_merge = apps.len();
+    let mut apps = merge_semantically_equivalent_apps(apps);
+    stats.equivalent_apps_merged = before_semantic_merge.saturating_sub(apps.len());
+    stats.unresolved_apps = apps
+        .iter()
+        .filter(|app| app.identity_status == "unresolved")
+        .count();
+    let before_exclusions = apps.len();
+    apps.retain(|app| {
+        !filters
+            .blocked_catalog_ids
+            .contains(&normalize_match_text(&app.id))
+    });
+    stats.excluded_apps = before_exclusions.saturating_sub(apps.len());
+    cache_catalog_icons(&mut apps, icon_dir);
     apps.sort_by(|left, right| {
         left.name
             .to_lowercase()
@@ -193,6 +214,238 @@ pub(crate) fn scan_apps_from_roots(
         warnings,
         stats,
     })
+}
+
+fn overlay_start_menu_entries(apps: Vec<AppCatalogItem>) -> Vec<AppCatalogItem> {
+    let mut merged = Vec::with_capacity(apps.len());
+    let mut slots = HashMap::new();
+
+    for mut app in apps {
+        let Some(source) = primary_source(&app) else {
+            merged.push(app);
+            continue;
+        };
+        let source_type = source.source_type.clone();
+        if !matches!(source_type.as_str(), "startMenuUser" | "startMenuSystem") {
+            merged.push(app);
+            continue;
+        }
+
+        let slot_key = normalize_source_relative_path(&source.relative_path);
+        let Some(existing_index) = slots.get(&slot_key).copied() else {
+            slots.insert(slot_key, merged.len());
+            merged.push(app);
+            continue;
+        };
+
+        let existing_is_user = primary_source(&merged[existing_index])
+            .is_some_and(|existing| existing.source_type == "startMenuUser");
+        if source_type == "startMenuUser" && !existing_is_user {
+            let mut shadowed = std::mem::take(&mut merged[existing_index].sources);
+            set_equivalent_source_state(&mut shadowed, "shadowed");
+            app.sources.extend(shadowed);
+            merged[existing_index] = app;
+        } else {
+            let mut shadowed = app.sources;
+            set_equivalent_source_state(&mut shadowed, "shadowed");
+            merged[existing_index].sources.extend(shadowed);
+        }
+    }
+
+    merged
+}
+
+fn merge_semantically_equivalent_apps(apps: Vec<AppCatalogItem>) -> Vec<AppCatalogItem> {
+    let mut merged = Vec::with_capacity(apps.len());
+    let mut identities = HashMap::new();
+
+    for mut app in apps {
+        let Some(identity) = semantic_launch_identity(&app) else {
+            let source_key = primary_source(&app)
+                .map(|source| normalize_match_text(&source.key))
+                .unwrap_or_else(|| normalize_match_text(&app.id));
+            app.id = unresolved_app_id(&source_key);
+            app.tracking_key = format!("source:{source_key}");
+            app.identity_status = "unresolved".to_string();
+            merged.push(app);
+            continue;
+        };
+        app.id = semantic_app_id(&identity);
+        app.tracking_key = semantic_tracking_key(&identity);
+        app.identity_status = "exact".to_string();
+        let Some(existing_index) = identities.get(&identity).copied() else {
+            identities.insert(identity, merged.len());
+            merged.push(app);
+            continue;
+        };
+
+        if app_source_priority(&app) > app_source_priority(&merged[existing_index]) {
+            let mut equivalent = std::mem::take(&mut merged[existing_index].sources);
+            set_equivalent_source_state(&mut equivalent, "equivalent");
+            app.sources.extend(equivalent);
+            merged[existing_index] = app;
+        } else {
+            let mut equivalent = app.sources;
+            set_equivalent_source_state(&mut equivalent, "equivalent");
+            merged[existing_index].sources.extend(equivalent);
+        }
+    }
+
+    merged
+}
+
+fn set_equivalent_source_state(sources: &mut [AppSource], state: &str) {
+    for source in sources {
+        if source.state != "shadowed" {
+            source.state = state.to_string();
+        }
+    }
+}
+
+fn semantic_launch_identity(app: &AppCatalogItem) -> Option<String> {
+    match app.launch_target.kind.as_str() {
+        "appUserModelId" => app
+            .launch_target
+            .app_user_model_id
+            .as_deref()
+            .map(normalize_match_text)
+            .filter(|value| !value.is_empty())
+            .map(|value| format!("aumid:{value}")),
+        "executable" => app
+            .launch_target
+            .path
+            .as_deref()
+            .map(normalize_path_key)
+            .filter(|value| !value.is_empty())
+            .map(|path| {
+                format!(
+                    "executable:{path}\u{0}{}",
+                    app.launch_args.as_deref().unwrap_or_default()
+                )
+            }),
+        "url" => app
+            .launch_target
+            .path
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| format!("url:{value}")),
+        "shortcut" => {
+            let path = Path::new(app.launch_target.path.as_deref()?);
+            match extension(path).as_deref() {
+                Some("url") => read_internet_shortcut_url(path).map(|url| format!("url:{url}")),
+                #[cfg(target_os = "windows")]
+                Some("lnk") => shell_link_launch_identity(path),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn shell_link_launch_identity(path: &Path) -> Option<String> {
+    let shortcut = load_shell_link(path).ok()?;
+    let target_path = normalize_path_key(shortcut.target_path?.to_string_lossy().as_ref());
+    if target_path.is_empty() {
+        return None;
+    }
+    let working_directory = shortcut
+        .working_directory
+        .as_deref()
+        .map(|path| normalize_path_key(path.to_string_lossy().as_ref()))
+        .unwrap_or_default();
+    Some(format!(
+        "shell-link:{target_path}\u{0}{}\u{0}{working_directory}\u{0}{}\u{0}{}",
+        shortcut.arguments, shortcut.show_command, shortcut.run_as
+    ))
+}
+
+fn read_internet_shortcut_url(path: &Path) -> Option<String> {
+    let bytes = fs::read(path).ok()?;
+    let text = decode_shortcut_text(&bytes)?;
+    text.lines().find_map(|line| {
+        let (key, value) = line.split_once('=')?;
+        key.trim()
+            .eq_ignore_ascii_case("URL")
+            .then(|| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    })
+}
+
+fn decode_shortcut_text(bytes: &[u8]) -> Option<String> {
+    if bytes.starts_with(&[0xff, 0xfe]) {
+        let units = bytes[2..]
+            .chunks_exact(2)
+            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<_>>();
+        return String::from_utf16(&units).ok();
+    }
+    if bytes.starts_with(&[0xfe, 0xff]) {
+        let units = bytes[2..]
+            .chunks_exact(2)
+            .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<_>>();
+        return String::from_utf16(&units).ok();
+    }
+    String::from_utf8(
+        bytes
+            .strip_prefix(&[0xef, 0xbb, 0xbf])
+            .unwrap_or(bytes)
+            .to_vec(),
+    )
+    .ok()
+}
+
+fn semantic_app_id(identity: &str) -> String {
+    format!("catalog-{}", short_blake3_hex(identity.as_bytes()))
+}
+
+fn semantic_tracking_key(identity: &str) -> String {
+    format!("launch:{}", short_blake3_hex(identity.as_bytes()))
+}
+
+fn unresolved_app_id(source_key: &str) -> String {
+    format!("catalog-source-{}", short_blake3_hex(source_key.as_bytes()))
+}
+
+fn primary_source(app: &AppCatalogItem) -> Option<&AppSource> {
+    app.sources.iter().find(|source| source.state == "primary")
+}
+
+fn app_source_priority(app: &AppCatalogItem) -> u8 {
+    match primary_source(app).map(|source| source.source_type.as_str()) {
+        Some("customDirectory") => 4,
+        Some("startMenuUser") => 3,
+        Some("windowsAppCatalog") => 2,
+        Some("startMenuSystem") => 1,
+        _ => 0,
+    }
+}
+
+fn cache_catalog_icons(apps: &mut [AppCatalogItem], icon_dir: &Path) {
+    for app in apps {
+        if app.icon_path.is_some() {
+            continue;
+        }
+        let Some(source) = primary_source(app)
+            .filter(|source| source.source_type != WINDOWS_APP_CATALOG_ROOT_TYPE)
+        else {
+            continue;
+        };
+        let source_path = source.absolute_path.clone();
+        let cache_identity = format!(
+            "{}|{}",
+            source.key,
+            normalize_path_key(&source.absolute_path)
+        );
+        app.icon_path = cache_app_icon_for_identity(
+            Path::new(&source_path),
+            icon_dir,
+            &app.id,
+            &cache_identity,
+        );
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -281,7 +534,6 @@ fn collect_apps_from_dir(
     root: &ScanRoot,
     root_dir: &Path,
     dir: &Path,
-    icon_dir: &Path,
     filters: &NormalizedScanFilters,
     apps: &mut Vec<AppCatalogItem>,
     seen_paths: &mut HashMap<String, ()>,
@@ -367,7 +619,17 @@ fn collect_apps_from_dir(
     for entry in entries {
         let entry = match entry {
             Ok(entry) => entry,
-            Err(_) => continue,
+            Err(error) => {
+                push_scan_warning_once(
+                    warnings,
+                    root,
+                    "skippedEntry",
+                    format!(
+                        "One or more directory entries could not be read. First failure: {error}"
+                    ),
+                );
+                continue;
+            }
         };
         let path = entry.path();
         if *root_entries_seen >= limits.max_entries {
@@ -385,7 +647,17 @@ fn collect_apps_from_dir(
 
         let file_type = match entry.file_type() {
             Ok(file_type) => file_type,
-            Err(_) => continue,
+            Err(error) => {
+                push_scan_warning_once(
+                    warnings,
+                    root,
+                    "skippedEntry",
+                    format!(
+                        "One or more directory entries could not be inspected. First failure: {error}"
+                    ),
+                );
+                continue;
+            }
         };
         if file_type.is_symlink() || is_reparse_point(&path) {
             push_scan_warning_once(
@@ -398,11 +670,13 @@ fn collect_apps_from_dir(
         }
 
         if file_type.is_dir() {
+            if should_skip_start_menu_directory(root, &path, depth) {
+                continue;
+            }
             collect_apps_from_dir(
                 root,
                 root_dir,
                 &path,
-                icon_dir,
                 filters,
                 apps,
                 seen_paths,
@@ -430,10 +704,19 @@ fn collect_apps_from_dir(
             continue;
         }
 
-        apps.push(make_catalog_item(root, &path, icon_dir, candidate));
+        apps.push(make_catalog_item(root, candidate));
     }
 
     Ok(())
+}
+
+fn should_skip_start_menu_directory(root: &ScanRoot, path: &Path, parent_depth: usize) -> bool {
+    parent_depth == 0
+        && matches!(root.root_type.as_str(), "startMenuUser" | "startMenuSystem")
+        && path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.eq_ignore_ascii_case("Startup"))
 }
 
 fn scan_limits(root: &ScanRoot) -> ScanLimits {
@@ -552,8 +835,9 @@ fn make_catalog_candidate(root: &ScanRoot, root_dir: &Path, path: &Path) -> Cata
 fn make_windows_app_candidate(name: String, app_user_model_id: &str) -> CatalogCandidate {
     let normalized_aumid = normalize_match_text(app_user_model_id);
     let path_string = format!("shell:AppsFolder\\{app_user_model_id}");
+    let identity = format!("aumid:{normalized_aumid}");
     CatalogCandidate {
-        id: stable_app_id(&format!("aumid:{normalized_aumid}")),
+        id: semantic_app_id(&identity),
         name,
         kind: "appUserModelId".to_string(),
         path_string,
@@ -562,13 +846,16 @@ fn make_windows_app_candidate(name: String, app_user_model_id: &str) -> CatalogC
     }
 }
 
-fn make_catalog_item(
-    root: &ScanRoot,
-    path: &Path,
-    icon_dir: &Path,
-    candidate: CatalogCandidate,
-) -> AppCatalogItem {
-    let icon_path = cache_app_icon(path, icon_dir, &candidate.id);
+fn make_catalog_item(root: &ScanRoot, candidate: CatalogCandidate) -> AppCatalogItem {
+    let source = AppSource {
+        key: candidate.source_key.clone(),
+        source_type: root.root_type.clone(),
+        state: "primary".to_string(),
+        root_id: root.id.clone(),
+        root_label: root.label.clone(),
+        relative_path: candidate.relative_path,
+        absolute_path: candidate.path_string.clone(),
+    };
 
     AppCatalogItem {
         id: candidate.id,
@@ -578,7 +865,7 @@ fn make_catalog_item(
         } else {
             candidate.name.clone()
         },
-        icon_path,
+        icon_path: None,
         emoji: Some(app_glyph(&candidate.name)),
         launch_target: LaunchTarget {
             kind: candidate.kind,
@@ -586,14 +873,9 @@ fn make_catalog_item(
             app_user_model_id: None,
         },
         launch_args: None,
-        source_key: Some(candidate.source_key.clone()),
-        source: Some(AppSource {
-            source_type: root.root_type.clone(),
-            root_id: root.id.clone(),
-            root_label: root.label.clone(),
-            relative_path: candidate.relative_path,
-            absolute_path: candidate.path_string,
-        }),
+        tracking_key: String::new(),
+        identity_status: String::new(),
+        sources: vec![source],
     }
 }
 
@@ -604,6 +886,16 @@ fn make_windows_app_item(
     entry: WindowsAppEntry,
     icon_path: Option<String>,
 ) -> AppCatalogItem {
+    let source = AppSource {
+        key: candidate.source_key.clone(),
+        source_type: root.root_type.clone(),
+        state: "primary".to_string(),
+        root_id: root.id.clone(),
+        root_label: root.label.clone(),
+        relative_path: candidate.relative_path,
+        absolute_path: candidate.path_string,
+    };
+
     AppCatalogItem {
         id: candidate.id,
         item_type: "app".to_string(),
@@ -620,14 +912,9 @@ fn make_windows_app_item(
             app_user_model_id: Some(entry.app_user_model_id),
         },
         launch_args: None,
-        source_key: Some(candidate.source_key),
-        source: Some(AppSource {
-            source_type: root.root_type.clone(),
-            root_id: root.id.clone(),
-            root_label: root.label.clone(),
-            relative_path: candidate.relative_path,
-            absolute_path: candidate.path_string,
-        }),
+        tracking_key: String::new(),
+        identity_status: String::new(),
+        sources: vec![source],
     }
 }
 
@@ -646,38 +933,23 @@ impl NormalizedScanFilters {
             })
             .collect();
 
-        let blocked_source_keys = filters
+        let blocked_catalog_ids = filters
             .app_blacklist
             .iter()
-            .filter_map(|item| item.source_key.as_deref())
+            .filter_map(|item| item.catalog_id.as_deref())
             .map(normalize_match_text)
-            .filter(|value| !value.is_empty())
-            .collect();
-
-        let blocked_paths = filters
-            .app_blacklist
-            .iter()
-            .filter_map(|item| item.path.as_deref())
-            .map(normalize_path_key)
             .filter(|value| !value.is_empty())
             .collect();
 
         Self {
             keyword_blacklist,
-            blocked_source_keys,
-            blocked_paths,
+            blocked_catalog_ids,
         }
     }
 }
 
 fn should_skip_candidate(candidate: &CatalogCandidate, filters: &NormalizedScanFilters) -> bool {
     matches_keyword_blacklist(candidate, filters)
-        || filters
-            .blocked_source_keys
-            .contains(&normalize_match_text(&candidate.source_key))
-        || filters
-            .blocked_paths
-            .contains(&normalize_path_key(&candidate.path_string))
 }
 
 fn matches_keyword_blacklist(
@@ -741,6 +1013,42 @@ mod tests {
     use super::*;
     use std::env;
 
+    #[cfg(target_os = "windows")]
+    use crate::windows_com::ComGuard;
+    #[cfg(target_os = "windows")]
+    use windows::{
+        core::{Interface, HSTRING},
+        Win32::{
+            System::Com::{CoCreateInstance, IPersistFile, CLSCTX_INPROC_SERVER},
+            UI::Shell::{IShellLinkW, ShellLink},
+        },
+    };
+
+    #[cfg(target_os = "windows")]
+    fn create_shell_link(path: &Path, target: &Path, arguments: &str) {
+        let _com_guard = ComGuard::new().expect("initialize COM");
+        let shell_link: IShellLinkW = unsafe {
+            CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)
+                .expect("create Windows shell link")
+        };
+        let target = HSTRING::from(windows_api_path(target));
+        unsafe {
+            shell_link.SetPath(&target).expect("set shell link target");
+            if !arguments.is_empty() {
+                let arguments = HSTRING::from(arguments);
+                shell_link
+                    .SetArguments(&arguments)
+                    .expect("set shell link arguments");
+            }
+        }
+        let persist_file: IPersistFile =
+            shell_link.cast().expect("cast shell link to IPersistFile");
+        let path = HSTRING::from(windows_api_path(path));
+        unsafe {
+            persist_file.Save(&path, true).expect("save shell link");
+        }
+    }
+
     fn test_candidate(name: &str, path: &str, relative_path: &str) -> CatalogCandidate {
         CatalogCandidate {
             id: "app".to_string(),
@@ -780,36 +1088,6 @@ mod tests {
         ));
         assert!(!should_skip_candidate(
             &test_candidate("Example", r"C:\Apps\Example\App.lnk", "Example/App.lnk"),
-            &filters
-        ));
-    }
-
-    #[test]
-    fn scan_filters_match_blocked_source_key_or_path() {
-        let filters = NormalizedScanFilters::from(&ScanFilters {
-            keyword_blacklist: Vec::new(),
-            app_blacklist: vec![
-                ScanAppBlacklistItem {
-                    source_key: Some("scan-root:root:tools/app.lnk".to_string()),
-                    path: None,
-                },
-                ScanAppBlacklistItem {
-                    source_key: None,
-                    path: Some(r"C:\Apps\Other\App.url".to_string()),
-                },
-            ],
-        });
-
-        assert!(should_skip_candidate(
-            &test_candidate("App", r"C:\Apps\Tools\App.lnk", "Tools/App.lnk"),
-            &filters
-        ));
-        assert!(should_skip_candidate(
-            &test_candidate("Other", r"C:\Apps\Other\App.url", "Other/App.url"),
-            &filters
-        ));
-        assert!(!should_skip_candidate(
-            &test_candidate("Keep", r"C:\Apps\Keep\App.lnk", "Keep/App.lnk"),
             &filters
         ));
     }
@@ -859,6 +1137,423 @@ mod tests {
 
         assert_eq!(candidate.kind, "shortcut");
         assert_eq!(candidate.path_string, r"C:\Apps\Example.url");
+    }
+
+    #[test]
+    fn user_start_menu_entry_overlays_the_same_system_relative_path() {
+        let base = env::temp_dir().join(format!(
+            "lumeria-start-menu-overlay-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        let user_root = base.join("user");
+        let system_root = base.join("system");
+        let user_app = user_root.join("Steam").join("Steam.exe");
+        let system_app = system_root.join("Steam").join("Steam.exe");
+        fs::create_dir_all(user_app.parent().expect("user app parent"))
+            .expect("create user start menu");
+        fs::create_dir_all(system_app.parent().expect("system app parent"))
+            .expect("create system start menu");
+        fs::write(&user_app, []).expect("create user app");
+        fs::write(&system_app, []).expect("create system app");
+        let icon_dir = base.join("icons");
+        fs::create_dir_all(&icon_dir).expect("create icon directory");
+        let roots = [
+            ScanRoot {
+                id: "root-start-menu-system".to_string(),
+                root_type: "startMenuSystem".to_string(),
+                label: "System Start Menu".to_string(),
+                path: system_root.to_string_lossy().to_string(),
+                enabled: true,
+                max_depth: None,
+                max_entries: None,
+            },
+            ScanRoot {
+                id: "root-start-menu-user".to_string(),
+                root_type: "startMenuUser".to_string(),
+                label: "User Start Menu".to_string(),
+                path: user_root.to_string_lossy().to_string(),
+                enabled: true,
+                max_depth: None,
+                max_entries: None,
+            },
+        ];
+
+        let result = scan_apps_from_roots(&roots, &icon_dir, &ScanFilters::default())
+            .expect("scan should complete");
+
+        assert_eq!(result.apps.len(), 1);
+        assert_eq!(
+            primary_source(&result.apps[0]).map(|source| source.source_type.as_str()),
+            Some("startMenuUser")
+        );
+        assert_eq!(
+            result.apps[0].launch_target.path.as_deref(),
+            Some(user_app.to_string_lossy().as_ref())
+        );
+        fs::remove_dir_all(base).expect("remove test directory");
+    }
+
+    #[test]
+    fn start_menu_startup_entries_are_not_catalog_apps() {
+        let base = env::temp_dir().join(format!(
+            "lumeria-start-menu-startup-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        let start_menu_root = base.join("start-menu");
+        let normal_app = start_menu_root.join("QuickLook.exe");
+        let startup_app = start_menu_root.join("Startup").join("QuickLook.exe");
+        fs::create_dir_all(startup_app.parent().expect("startup app parent"))
+            .expect("create startup directory");
+        fs::write(&normal_app, []).expect("create normal app");
+        fs::write(&startup_app, []).expect("create startup app");
+        let icon_dir = base.join("icons");
+        fs::create_dir_all(&icon_dir).expect("create icon directory");
+        let root = ScanRoot {
+            id: "root-start-menu-user".to_string(),
+            root_type: "startMenuUser".to_string(),
+            label: "User Start Menu".to_string(),
+            path: start_menu_root.to_string_lossy().to_string(),
+            enabled: true,
+            max_depth: None,
+            max_entries: None,
+        };
+
+        let result = scan_apps_from_roots(&[root], &icon_dir, &ScanFilters::default())
+            .expect("scan should complete");
+
+        assert_eq!(result.apps.len(), 1);
+        assert_eq!(
+            result.apps[0].launch_target.path.as_deref(),
+            Some(normal_app.to_string_lossy().as_ref())
+        );
+        fs::remove_dir_all(base).expect("remove test directory");
+    }
+
+    #[test]
+    fn equivalent_custom_and_start_menu_shortcuts_are_one_catalog_app() {
+        let base = env::temp_dir().join(format!(
+            "lumeria-semantic-catalog-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        let start_menu_root = base.join("start-menu");
+        let custom_root = base.join("custom");
+        let start_menu_app = start_menu_root.join("Steam").join("Steam.url");
+        let custom_app = custom_root.join("Steam.url");
+        fs::create_dir_all(start_menu_app.parent().expect("start menu app parent"))
+            .expect("create start menu directory");
+        fs::create_dir_all(&custom_root).expect("create custom directory");
+        let shortcut = b"[InternetShortcut]\r\nURL=https://store.steampowered.com/\r\n";
+        fs::write(&start_menu_app, shortcut).expect("create start menu shortcut");
+        fs::write(&custom_app, shortcut).expect("create custom shortcut");
+        let icon_dir = base.join("icons");
+        fs::create_dir_all(&icon_dir).expect("create icon directory");
+        let roots = [
+            ScanRoot {
+                id: "root-start-menu-user".to_string(),
+                root_type: "startMenuUser".to_string(),
+                label: "User Start Menu".to_string(),
+                path: start_menu_root.to_string_lossy().to_string(),
+                enabled: true,
+                max_depth: None,
+                max_entries: None,
+            },
+            ScanRoot {
+                id: "root-custom".to_string(),
+                root_type: "customDirectory".to_string(),
+                label: "Custom".to_string(),
+                path: custom_root.to_string_lossy().to_string(),
+                enabled: true,
+                max_depth: None,
+                max_entries: None,
+            },
+        ];
+
+        let result = scan_apps_from_roots(&roots, &icon_dir, &ScanFilters::default())
+            .expect("scan should complete");
+
+        assert_eq!(result.apps.len(), 1);
+        assert_eq!(
+            primary_source(&result.apps[0]).map(|source| source.source_type.as_str()),
+            Some("customDirectory")
+        );
+        assert_eq!(result.apps[0].sources.len(), 2);
+        assert!(result.apps[0].sources.iter().any(|source| {
+            source.source_type == "customDirectory" && source.state == "primary"
+        }));
+        assert!(result.apps[0].sources.iter().any(|source| {
+            source.source_type == "startMenuUser" && source.state == "equivalent"
+        }));
+        assert_eq!(result.apps[0].identity_status, "exact");
+        assert!(result.apps[0].tracking_key.starts_with("launch:"));
+        assert_eq!(result.stats.physical_apps_found, 2);
+        assert_eq!(result.stats.equivalent_apps_merged, 1);
+        fs::remove_dir_all(base).expect("remove test directory");
+    }
+
+    #[test]
+    fn unresolved_shortcuts_are_never_semantically_merged() {
+        let base = env::temp_dir().join(format!(
+            "lumeria-unresolved-catalog-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        let first_root = base.join("first");
+        let second_root = base.join("second");
+        fs::create_dir_all(&first_root).expect("create first root");
+        fs::create_dir_all(&second_root).expect("create second root");
+        fs::write(first_root.join("Broken.lnk"), b"not a shell link")
+            .expect("create first broken shortcut");
+        fs::write(second_root.join("Broken.lnk"), b"not a shell link")
+            .expect("create second broken shortcut");
+        let icon_dir = base.join("icons");
+        fs::create_dir_all(&icon_dir).expect("create icon directory");
+        let roots = [
+            ScanRoot {
+                id: "root-first".to_string(),
+                root_type: "customDirectory".to_string(),
+                label: "First".to_string(),
+                path: first_root.to_string_lossy().to_string(),
+                enabled: true,
+                max_depth: None,
+                max_entries: None,
+            },
+            ScanRoot {
+                id: "root-second".to_string(),
+                root_type: "customDirectory".to_string(),
+                label: "Second".to_string(),
+                path: second_root.to_string_lossy().to_string(),
+                enabled: true,
+                max_depth: None,
+                max_entries: None,
+            },
+        ];
+
+        let result = scan_apps_from_roots(&roots, &icon_dir, &ScanFilters::default())
+            .expect("scan should complete");
+
+        assert_eq!(result.apps.len(), 2);
+        assert_ne!(result.apps[0].id, result.apps[1].id);
+        assert!(result
+            .apps
+            .iter()
+            .all(|app| app.identity_status == "unresolved"));
+        assert_eq!(result.stats.unresolved_apps, 2);
+        fs::remove_dir_all(base).expect("remove test directory");
+    }
+
+    #[test]
+    fn custom_root_provenance_is_kept_when_it_points_at_a_builtin_root() {
+        let base = env::temp_dir().join(format!(
+            "lumeria-overlapping-roots-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        let root_path = base.join("apps");
+        fs::create_dir_all(&root_path).expect("create apps directory");
+        fs::write(
+            root_path.join("Steam.url"),
+            b"[InternetShortcut]\r\nURL=https://store.steampowered.com/\r\n",
+        )
+        .expect("create shortcut");
+        let icon_dir = base.join("icons");
+        fs::create_dir_all(&icon_dir).expect("create icon directory");
+        let roots = [
+            ScanRoot {
+                id: "root-start-menu-user".to_string(),
+                root_type: "startMenuUser".to_string(),
+                label: "User Start Menu".to_string(),
+                path: root_path.to_string_lossy().to_string(),
+                enabled: true,
+                max_depth: None,
+                max_entries: None,
+            },
+            ScanRoot {
+                id: "root-custom".to_string(),
+                root_type: "customDirectory".to_string(),
+                label: "Custom".to_string(),
+                path: root_path.to_string_lossy().to_string(),
+                enabled: true,
+                max_depth: None,
+                max_entries: None,
+            },
+        ];
+
+        let result = scan_apps_from_roots(&roots, &icon_dir, &ScanFilters::default())
+            .expect("scan should complete");
+
+        assert_eq!(result.apps.len(), 1);
+        assert_eq!(result.apps[0].sources.len(), 2);
+        assert_eq!(
+            primary_source(&result.apps[0]).map(|source| source.source_type.as_str()),
+            Some("customDirectory")
+        );
+        fs::remove_dir_all(base).expect("remove test directory");
+    }
+
+    #[test]
+    fn catalog_blacklist_excludes_a_logical_app_from_every_source() {
+        let base = env::temp_dir().join(format!(
+            "lumeria-logical-exclusion-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        let start_menu_root = base.join("start-menu");
+        let custom_root = base.join("custom");
+        let start_menu_app = start_menu_root.join("Steam").join("Steam.url");
+        let custom_app = custom_root.join("Steam.url");
+        fs::create_dir_all(start_menu_app.parent().expect("start menu app parent"))
+            .expect("create start menu directory");
+        fs::create_dir_all(&custom_root).expect("create custom directory");
+        let shortcut = b"[InternetShortcut]\r\nURL=https://store.steampowered.com/\r\n";
+        fs::write(&start_menu_app, shortcut).expect("create start menu shortcut");
+        fs::write(&custom_app, shortcut).expect("create custom shortcut");
+        let icon_dir = base.join("icons");
+        fs::create_dir_all(&icon_dir).expect("create icon directory");
+        let roots = [
+            ScanRoot {
+                id: "root-start-menu-user".to_string(),
+                root_type: "startMenuUser".to_string(),
+                label: "User Start Menu".to_string(),
+                path: start_menu_root.to_string_lossy().to_string(),
+                enabled: true,
+                max_depth: None,
+                max_entries: None,
+            },
+            ScanRoot {
+                id: "root-custom".to_string(),
+                root_type: "customDirectory".to_string(),
+                label: "Custom".to_string(),
+                path: custom_root.to_string_lossy().to_string(),
+                enabled: true,
+                max_depth: None,
+                max_entries: None,
+            },
+        ];
+        let first = scan_apps_from_roots(&roots, &icon_dir, &ScanFilters::default())
+            .expect("initial scan should complete");
+        let catalog_id = first.apps[0].id.clone();
+
+        let excluded = scan_apps_from_roots(
+            &roots,
+            &icon_dir,
+            &ScanFilters {
+                keyword_blacklist: Vec::new(),
+                app_blacklist: vec![ScanAppBlacklistItem {
+                    catalog_id: Some(catalog_id),
+                }],
+            },
+        )
+        .expect("excluded scan should complete");
+
+        assert!(excluded.apps.is_empty());
+        fs::remove_dir_all(base).expect("remove test directory");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn equivalent_windows_shell_links_are_one_catalog_app() {
+        let base = env::temp_dir().join(format!(
+            "lumeria-shell-link-catalog-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        let start_menu_root = base.join("start-menu");
+        let custom_root = base.join("custom");
+        let target = base.join("Steam.exe");
+        let start_menu_app = start_menu_root.join("Steam").join("Steam.lnk");
+        let custom_app = custom_root.join("Steam.lnk");
+        fs::create_dir_all(start_menu_app.parent().expect("start menu app parent"))
+            .expect("create start menu directory");
+        fs::create_dir_all(&custom_root).expect("create custom directory");
+        fs::write(&target, []).expect("create target executable");
+        create_shell_link(&start_menu_app, &target, "-silent");
+        create_shell_link(&custom_app, &target, "-silent");
+        let icon_dir = base.join("icons");
+        fs::create_dir_all(&icon_dir).expect("create icon directory");
+        let roots = [
+            ScanRoot {
+                id: "root-start-menu-user".to_string(),
+                root_type: "startMenuUser".to_string(),
+                label: "User Start Menu".to_string(),
+                path: start_menu_root.to_string_lossy().to_string(),
+                enabled: true,
+                max_depth: None,
+                max_entries: None,
+            },
+            ScanRoot {
+                id: "root-custom".to_string(),
+                root_type: "customDirectory".to_string(),
+                label: "Custom".to_string(),
+                path: custom_root.to_string_lossy().to_string(),
+                enabled: true,
+                max_depth: None,
+                max_entries: None,
+            },
+        ];
+
+        let result = scan_apps_from_roots(&roots, &icon_dir, &ScanFilters::default())
+            .expect("scan should complete");
+
+        assert_eq!(result.apps.len(), 1);
+        assert_eq!(result.apps[0].sources.len(), 2);
+        assert_eq!(
+            primary_source(&result.apps[0]).map(|source| source.source_type.as_str()),
+            Some("customDirectory")
+        );
+        fs::remove_dir_all(base).expect("remove test directory");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_shell_links_with_different_arguments_stay_distinct() {
+        let base = env::temp_dir().join(format!(
+            "lumeria-shell-link-arguments-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        let root_path = base.join("apps");
+        let target = base.join("Tool.exe");
+        fs::create_dir_all(&root_path).expect("create apps directory");
+        fs::write(&target, []).expect("create target executable");
+        create_shell_link(&root_path.join("Tool Safe.lnk"), &target, "--safe");
+        create_shell_link(&root_path.join("Tool Admin.lnk"), &target, "--admin");
+        let icon_dir = base.join("icons");
+        fs::create_dir_all(&icon_dir).expect("create icon directory");
+        let root = ScanRoot {
+            id: "root-custom".to_string(),
+            root_type: "customDirectory".to_string(),
+            label: "Custom".to_string(),
+            path: root_path.to_string_lossy().to_string(),
+            enabled: true,
+            max_depth: None,
+            max_entries: None,
+        };
+
+        let result = scan_apps_from_roots(&[root], &icon_dir, &ScanFilters::default())
+            .expect("scan should complete");
+
+        assert_eq!(result.apps.len(), 2);
+        assert_ne!(result.apps[0].id, result.apps[1].id);
+        fs::remove_dir_all(base).expect("remove test directory");
     }
 
     #[test]
