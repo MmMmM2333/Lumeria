@@ -52,7 +52,7 @@ use main_window_supervisor::{
     refresh_main_window_effects, reveal_main_window as reveal_supervised_main_window,
     trigger_main_window_shortcut, CLOSE_DESKTOP_EVENT,
 };
-use models::AppCatalogItem;
+use models::{AppCatalogItem, AppSourceState};
 use native_error::NativeError;
 use serde::{Deserialize, Serialize};
 use tauri::{
@@ -99,7 +99,7 @@ impl From<AppCatalogItem> for LaunchableApp {
         let fallback_launch_paths = app
             .sources
             .iter()
-            .filter(|source| source.state == "equivalent")
+            .filter(|source| source.state == AppSourceState::Equivalent)
             .map(|source| source.absolute_path.clone())
             .filter(|path| Some(path.as_str()) != primary_path)
             .collect();
@@ -1265,7 +1265,7 @@ fn decode_custom_icon_data_url(data_url: &str) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::LaunchTarget;
+    use crate::models::{AppSourceType, CatalogIdentityStatus, LaunchTarget};
     use serde_json::json;
 
     fn app_item(id: &str, path: &str) -> AppCatalogItem {
@@ -1282,7 +1282,7 @@ mod tests {
             },
             launch_args: None,
             tracking_key: String::new(),
-            identity_status: String::new(),
+            identity_status: CatalogIdentityStatus::Unresolved,
             sources: Vec::new(),
         }
     }
@@ -1301,7 +1301,7 @@ mod tests {
             },
             launch_args: None,
             tracking_key: String::new(),
-            identity_status: String::new(),
+            identity_status: CatalogIdentityStatus::Unresolved,
             sources: Vec::new(),
         }
     }
@@ -1320,7 +1320,7 @@ mod tests {
             },
             launch_args: None,
             tracking_key: String::new(),
-            identity_status: String::new(),
+            identity_status: CatalogIdentityStatus::Unresolved,
             sources: Vec::new(),
         }
     }
@@ -1459,8 +1459,8 @@ mod tests {
         app.sources = vec![
             models::AppSource {
                 key: "primary".to_string(),
-                source_type: "customDirectory".to_string(),
-                state: "primary".to_string(),
+                source_type: AppSourceType::CustomDirectory,
+                state: AppSourceState::Primary,
                 root_id: "custom".to_string(),
                 root_label: "Custom".to_string(),
                 relative_path: "primary.lnk".to_string(),
@@ -1468,8 +1468,8 @@ mod tests {
             },
             models::AppSource {
                 key: "equivalent".to_string(),
-                source_type: "startMenuUser".to_string(),
-                state: "equivalent".to_string(),
+                source_type: AppSourceType::StartMenuUser,
+                state: AppSourceState::Equivalent,
                 root_id: "user".to_string(),
                 root_label: "User".to_string(),
                 relative_path: "equivalent.lnk".to_string(),
@@ -1477,8 +1477,8 @@ mod tests {
             },
             models::AppSource {
                 key: "shadowed".to_string(),
-                source_type: "startMenuSystem".to_string(),
-                state: "shadowed".to_string(),
+                source_type: AppSourceType::StartMenuSystem,
+                state: AppSourceState::Shadowed,
                 root_id: "system".to_string(),
                 root_label: "System".to_string(),
                 relative_path: "shadowed.lnk".to_string(),

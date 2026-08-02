@@ -14,7 +14,10 @@ use tauri::{AppHandle, Manager};
 use crate::{
     encoding::{encode_base64, short_blake3_hex},
     icons::cache_app_icon_for_identity,
-    models::{AppCatalogItem, AppSource, LaunchTarget},
+    models::{
+        AppCatalogItem, AppSource, AppSourceState, AppSourceType, CatalogIdentityStatus,
+        LaunchTarget,
+    },
     path_utils::{expand_windows_env_vars, extension, windows_api_path},
 };
 #[cfg(target_os = "windows")]
@@ -29,7 +32,7 @@ use crate::{
 pub(crate) struct ScanRoot {
     pub(crate) id: String,
     #[serde(rename = "type")]
-    pub(crate) root_type: String,
+    pub(crate) root_type: AppSourceType,
     pub(crate) label: String,
     pub(crate) path: String,
     #[serde(default = "default_enabled")]
@@ -111,7 +114,6 @@ const CUSTOM_DIRECTORY_MAX_DEPTH: usize = 3;
 const DEFAULT_MAX_ENTRIES: usize = 5_000;
 const MAX_CONFIGURED_DEPTH: usize = 32;
 const MAX_CONFIGURED_ENTRIES: usize = 50_000;
-const WINDOWS_APP_CATALOG_ROOT_TYPE: &str = "windowsAppCatalog";
 #[cfg(target_os = "windows")]
 const FILE_ATTRIBUTE_REPARSE_POINT_VALUE: u32 = 0x400;
 
@@ -146,7 +148,7 @@ pub(crate) fn scan_apps_from_roots(
 
     for root in roots.iter().filter(|root| root.enabled) {
         let limits = scan_limits(root);
-        if root.root_type == WINDOWS_APP_CATALOG_ROOT_TYPE {
+        if root.root_type == AppSourceType::WindowsAppCatalog {
             #[cfg(target_os = "windows")]
             collect_apps_from_windows_catalog(
                 root,
@@ -192,7 +194,7 @@ pub(crate) fn scan_apps_from_roots(
     stats.equivalent_apps_merged = before_semantic_merge.saturating_sub(apps.len());
     stats.unresolved_apps = apps
         .iter()
-        .filter(|app| app.identity_status == "unresolved")
+        .filter(|app| app.identity_status == CatalogIdentityStatus::Unresolved)
         .count();
     let before_exclusions = apps.len();
     apps.retain(|app| {
@@ -225,8 +227,11 @@ fn overlay_start_menu_entries(apps: Vec<AppCatalogItem>) -> Vec<AppCatalogItem> 
             merged.push(app);
             continue;
         };
-        let source_type = source.source_type.clone();
-        if !matches!(source_type.as_str(), "startMenuUser" | "startMenuSystem") {
+        let source_type = source.source_type;
+        if !matches!(
+            source_type,
+            AppSourceType::StartMenuUser | AppSourceType::StartMenuSystem
+        ) {
             merged.push(app);
             continue;
         }
@@ -239,15 +244,15 @@ fn overlay_start_menu_entries(apps: Vec<AppCatalogItem>) -> Vec<AppCatalogItem> 
         };
 
         let existing_is_user = primary_source(&merged[existing_index])
-            .is_some_and(|existing| existing.source_type == "startMenuUser");
-        if source_type == "startMenuUser" && !existing_is_user {
+            .is_some_and(|existing| existing.source_type == AppSourceType::StartMenuUser);
+        if source_type == AppSourceType::StartMenuUser && !existing_is_user {
             let mut shadowed = std::mem::take(&mut merged[existing_index].sources);
-            set_equivalent_source_state(&mut shadowed, "shadowed");
+            update_non_shadowed_source_states(&mut shadowed, AppSourceState::Shadowed);
             app.sources.extend(shadowed);
             merged[existing_index] = app;
         } else {
             let mut shadowed = app.sources;
-            set_equivalent_source_state(&mut shadowed, "shadowed");
+            update_non_shadowed_source_states(&mut shadowed, AppSourceState::Shadowed);
             merged[existing_index].sources.extend(shadowed);
         }
     }
@@ -266,13 +271,13 @@ fn merge_semantically_equivalent_apps(apps: Vec<AppCatalogItem>) -> Vec<AppCatal
                 .unwrap_or_else(|| normalize_match_text(&app.id));
             app.id = unresolved_app_id(&source_key);
             app.tracking_key = format!("source:{source_key}");
-            app.identity_status = "unresolved".to_string();
+            app.identity_status = CatalogIdentityStatus::Unresolved;
             merged.push(app);
             continue;
         };
         app.id = semantic_app_id(&identity);
         app.tracking_key = semantic_tracking_key(&identity);
-        app.identity_status = "exact".to_string();
+        app.identity_status = CatalogIdentityStatus::Exact;
         let Some(existing_index) = identities.get(&identity).copied() else {
             identities.insert(identity, merged.len());
             merged.push(app);
@@ -281,12 +286,12 @@ fn merge_semantically_equivalent_apps(apps: Vec<AppCatalogItem>) -> Vec<AppCatal
 
         if app_source_priority(&app) > app_source_priority(&merged[existing_index]) {
             let mut equivalent = std::mem::take(&mut merged[existing_index].sources);
-            set_equivalent_source_state(&mut equivalent, "equivalent");
+            update_non_shadowed_source_states(&mut equivalent, AppSourceState::Equivalent);
             app.sources.extend(equivalent);
             merged[existing_index] = app;
         } else {
             let mut equivalent = app.sources;
-            set_equivalent_source_state(&mut equivalent, "equivalent");
+            update_non_shadowed_source_states(&mut equivalent, AppSourceState::Equivalent);
             merged[existing_index].sources.extend(equivalent);
         }
     }
@@ -294,10 +299,10 @@ fn merge_semantically_equivalent_apps(apps: Vec<AppCatalogItem>) -> Vec<AppCatal
     merged
 }
 
-fn set_equivalent_source_state(sources: &mut [AppSource], state: &str) {
+fn update_non_shadowed_source_states(sources: &mut [AppSource], state: AppSourceState) {
     for source in sources {
-        if source.state != "shadowed" {
-            source.state = state.to_string();
+        if source.state != AppSourceState::Shadowed {
+            source.state = state;
         }
     }
 }
@@ -410,16 +415,18 @@ fn unresolved_app_id(source_key: &str) -> String {
 }
 
 fn primary_source(app: &AppCatalogItem) -> Option<&AppSource> {
-    app.sources.iter().find(|source| source.state == "primary")
+    app.sources
+        .iter()
+        .find(|source| source.state == AppSourceState::Primary)
 }
 
 fn app_source_priority(app: &AppCatalogItem) -> u8 {
-    match primary_source(app).map(|source| source.source_type.as_str()) {
-        Some("customDirectory") => 4,
-        Some("startMenuUser") => 3,
-        Some("windowsAppCatalog") => 2,
-        Some("startMenuSystem") => 1,
-        _ => 0,
+    match primary_source(app).map(|source| source.source_type) {
+        Some(AppSourceType::CustomDirectory) => 4,
+        Some(AppSourceType::StartMenuUser) => 3,
+        Some(AppSourceType::WindowsAppCatalog) => 2,
+        Some(AppSourceType::StartMenuSystem) => 1,
+        None => 0,
     }
 }
 
@@ -429,7 +436,7 @@ fn cache_catalog_icons(apps: &mut [AppCatalogItem], icon_dir: &Path) {
             continue;
         }
         let Some(source) = primary_source(app)
-            .filter(|source| source.source_type != WINDOWS_APP_CATALOG_ROOT_TYPE)
+            .filter(|source| source.source_type != AppSourceType::WindowsAppCatalog)
         else {
             continue;
         };
@@ -712,7 +719,10 @@ fn collect_apps_from_dir(
 
 fn should_skip_start_menu_directory(root: &ScanRoot, path: &Path, parent_depth: usize) -> bool {
     parent_depth == 0
-        && matches!(root.root_type.as_str(), "startMenuUser" | "startMenuSystem")
+        && matches!(
+            root.root_type,
+            AppSourceType::StartMenuUser | AppSourceType::StartMenuSystem
+        )
         && path
             .file_name()
             .and_then(|name| name.to_str())
@@ -720,7 +730,7 @@ fn should_skip_start_menu_directory(root: &ScanRoot, path: &Path, parent_depth: 
 }
 
 fn scan_limits(root: &ScanRoot) -> ScanLimits {
-    let default_depth = if root.root_type == "customDirectory" {
+    let default_depth = if root.root_type == AppSourceType::CustomDirectory {
         CUSTOM_DIRECTORY_MAX_DEPTH
     } else {
         START_MENU_MAX_DEPTH
@@ -849,8 +859,8 @@ fn make_windows_app_candidate(name: String, app_user_model_id: &str) -> CatalogC
 fn make_catalog_item(root: &ScanRoot, candidate: CatalogCandidate) -> AppCatalogItem {
     let source = AppSource {
         key: candidate.source_key.clone(),
-        source_type: root.root_type.clone(),
-        state: "primary".to_string(),
+        source_type: root.root_type,
+        state: AppSourceState::Primary,
         root_id: root.id.clone(),
         root_label: root.label.clone(),
         relative_path: candidate.relative_path,
@@ -874,7 +884,7 @@ fn make_catalog_item(root: &ScanRoot, candidate: CatalogCandidate) -> AppCatalog
         },
         launch_args: None,
         tracking_key: String::new(),
-        identity_status: String::new(),
+        identity_status: CatalogIdentityStatus::Unresolved,
         sources: vec![source],
     }
 }
@@ -888,8 +898,8 @@ fn make_windows_app_item(
 ) -> AppCatalogItem {
     let source = AppSource {
         key: candidate.source_key.clone(),
-        source_type: root.root_type.clone(),
-        state: "primary".to_string(),
+        source_type: root.root_type,
+        state: AppSourceState::Primary,
         root_id: root.id.clone(),
         root_label: root.label.clone(),
         relative_path: candidate.relative_path,
@@ -913,7 +923,7 @@ fn make_windows_app_item(
         },
         launch_args: None,
         tracking_key: String::new(),
-        identity_status: String::new(),
+        identity_status: CatalogIdentityStatus::Unresolved,
         sources: vec![source],
     }
 }
@@ -1122,7 +1132,7 @@ mod tests {
     fn url_files_are_treated_as_local_shortcuts() {
         let root = ScanRoot {
             id: "root".to_string(),
-            root_type: "customDirectory".to_string(),
+            root_type: AppSourceType::CustomDirectory,
             label: "Root".to_string(),
             path: r"C:\Apps".to_string(),
             enabled: true,
@@ -1163,7 +1173,7 @@ mod tests {
         let roots = [
             ScanRoot {
                 id: "root-start-menu-system".to_string(),
-                root_type: "startMenuSystem".to_string(),
+                root_type: AppSourceType::StartMenuSystem,
                 label: "System Start Menu".to_string(),
                 path: system_root.to_string_lossy().to_string(),
                 enabled: true,
@@ -1172,7 +1182,7 @@ mod tests {
             },
             ScanRoot {
                 id: "root-start-menu-user".to_string(),
-                root_type: "startMenuUser".to_string(),
+                root_type: AppSourceType::StartMenuUser,
                 label: "User Start Menu".to_string(),
                 path: user_root.to_string_lossy().to_string(),
                 enabled: true,
@@ -1186,8 +1196,8 @@ mod tests {
 
         assert_eq!(result.apps.len(), 1);
         assert_eq!(
-            primary_source(&result.apps[0]).map(|source| source.source_type.as_str()),
-            Some("startMenuUser")
+            primary_source(&result.apps[0]).map(|source| source.source_type),
+            Some(AppSourceType::StartMenuUser)
         );
         assert_eq!(
             result.apps[0].launch_target.path.as_deref(),
@@ -1216,7 +1226,7 @@ mod tests {
         fs::create_dir_all(&icon_dir).expect("create icon directory");
         let root = ScanRoot {
             id: "root-start-menu-user".to_string(),
-            root_type: "startMenuUser".to_string(),
+            root_type: AppSourceType::StartMenuUser,
             label: "User Start Menu".to_string(),
             path: start_menu_root.to_string_lossy().to_string(),
             enabled: true,
@@ -1259,7 +1269,7 @@ mod tests {
         let roots = [
             ScanRoot {
                 id: "root-start-menu-user".to_string(),
-                root_type: "startMenuUser".to_string(),
+                root_type: AppSourceType::StartMenuUser,
                 label: "User Start Menu".to_string(),
                 path: start_menu_root.to_string_lossy().to_string(),
                 enabled: true,
@@ -1268,7 +1278,7 @@ mod tests {
             },
             ScanRoot {
                 id: "root-custom".to_string(),
-                root_type: "customDirectory".to_string(),
+                root_type: AppSourceType::CustomDirectory,
                 label: "Custom".to_string(),
                 path: custom_root.to_string_lossy().to_string(),
                 enabled: true,
@@ -1282,17 +1292,19 @@ mod tests {
 
         assert_eq!(result.apps.len(), 1);
         assert_eq!(
-            primary_source(&result.apps[0]).map(|source| source.source_type.as_str()),
-            Some("customDirectory")
+            primary_source(&result.apps[0]).map(|source| source.source_type),
+            Some(AppSourceType::CustomDirectory)
         );
         assert_eq!(result.apps[0].sources.len(), 2);
         assert!(result.apps[0].sources.iter().any(|source| {
-            source.source_type == "customDirectory" && source.state == "primary"
+            source.source_type == AppSourceType::CustomDirectory
+                && source.state == AppSourceState::Primary
         }));
         assert!(result.apps[0].sources.iter().any(|source| {
-            source.source_type == "startMenuUser" && source.state == "equivalent"
+            source.source_type == AppSourceType::StartMenuUser
+                && source.state == AppSourceState::Equivalent
         }));
-        assert_eq!(result.apps[0].identity_status, "exact");
+        assert_eq!(result.apps[0].identity_status, CatalogIdentityStatus::Exact);
         assert!(result.apps[0].tracking_key.starts_with("launch:"));
         assert_eq!(result.stats.physical_apps_found, 2);
         assert_eq!(result.stats.equivalent_apps_merged, 1);
@@ -1321,7 +1333,7 @@ mod tests {
         let roots = [
             ScanRoot {
                 id: "root-first".to_string(),
-                root_type: "customDirectory".to_string(),
+                root_type: AppSourceType::CustomDirectory,
                 label: "First".to_string(),
                 path: first_root.to_string_lossy().to_string(),
                 enabled: true,
@@ -1330,7 +1342,7 @@ mod tests {
             },
             ScanRoot {
                 id: "root-second".to_string(),
-                root_type: "customDirectory".to_string(),
+                root_type: AppSourceType::CustomDirectory,
                 label: "Second".to_string(),
                 path: second_root.to_string_lossy().to_string(),
                 enabled: true,
@@ -1347,7 +1359,7 @@ mod tests {
         assert!(result
             .apps
             .iter()
-            .all(|app| app.identity_status == "unresolved"));
+            .all(|app| app.identity_status == CatalogIdentityStatus::Unresolved));
         assert_eq!(result.stats.unresolved_apps, 2);
         fs::remove_dir_all(base).expect("remove test directory");
     }
@@ -1373,7 +1385,7 @@ mod tests {
         let roots = [
             ScanRoot {
                 id: "root-start-menu-user".to_string(),
-                root_type: "startMenuUser".to_string(),
+                root_type: AppSourceType::StartMenuUser,
                 label: "User Start Menu".to_string(),
                 path: root_path.to_string_lossy().to_string(),
                 enabled: true,
@@ -1382,7 +1394,7 @@ mod tests {
             },
             ScanRoot {
                 id: "root-custom".to_string(),
-                root_type: "customDirectory".to_string(),
+                root_type: AppSourceType::CustomDirectory,
                 label: "Custom".to_string(),
                 path: root_path.to_string_lossy().to_string(),
                 enabled: true,
@@ -1397,8 +1409,8 @@ mod tests {
         assert_eq!(result.apps.len(), 1);
         assert_eq!(result.apps[0].sources.len(), 2);
         assert_eq!(
-            primary_source(&result.apps[0]).map(|source| source.source_type.as_str()),
-            Some("customDirectory")
+            primary_source(&result.apps[0]).map(|source| source.source_type),
+            Some(AppSourceType::CustomDirectory)
         );
         fs::remove_dir_all(base).expect("remove test directory");
     }
@@ -1427,7 +1439,7 @@ mod tests {
         let roots = [
             ScanRoot {
                 id: "root-start-menu-user".to_string(),
-                root_type: "startMenuUser".to_string(),
+                root_type: AppSourceType::StartMenuUser,
                 label: "User Start Menu".to_string(),
                 path: start_menu_root.to_string_lossy().to_string(),
                 enabled: true,
@@ -1436,7 +1448,7 @@ mod tests {
             },
             ScanRoot {
                 id: "root-custom".to_string(),
-                root_type: "customDirectory".to_string(),
+                root_type: AppSourceType::CustomDirectory,
                 label: "Custom".to_string(),
                 path: custom_root.to_string_lossy().to_string(),
                 enabled: true,
@@ -1490,7 +1502,7 @@ mod tests {
         let roots = [
             ScanRoot {
                 id: "root-start-menu-user".to_string(),
-                root_type: "startMenuUser".to_string(),
+                root_type: AppSourceType::StartMenuUser,
                 label: "User Start Menu".to_string(),
                 path: start_menu_root.to_string_lossy().to_string(),
                 enabled: true,
@@ -1499,7 +1511,7 @@ mod tests {
             },
             ScanRoot {
                 id: "root-custom".to_string(),
-                root_type: "customDirectory".to_string(),
+                root_type: AppSourceType::CustomDirectory,
                 label: "Custom".to_string(),
                 path: custom_root.to_string_lossy().to_string(),
                 enabled: true,
@@ -1514,8 +1526,8 @@ mod tests {
         assert_eq!(result.apps.len(), 1);
         assert_eq!(result.apps[0].sources.len(), 2);
         assert_eq!(
-            primary_source(&result.apps[0]).map(|source| source.source_type.as_str()),
-            Some("customDirectory")
+            primary_source(&result.apps[0]).map(|source| source.source_type),
+            Some(AppSourceType::CustomDirectory)
         );
         fs::remove_dir_all(base).expect("remove test directory");
     }
@@ -1540,7 +1552,7 @@ mod tests {
         fs::create_dir_all(&icon_dir).expect("create icon directory");
         let root = ScanRoot {
             id: "root-custom".to_string(),
-            root_type: "customDirectory".to_string(),
+            root_type: AppSourceType::CustomDirectory,
             label: "Custom".to_string(),
             path: root_path.to_string_lossy().to_string(),
             enabled: true,
@@ -1571,7 +1583,7 @@ mod tests {
         fs::create_dir_all(&icon_dir).expect("create icon directory");
         let root = ScanRoot {
             id: "root".to_string(),
-            root_type: "customDirectory".to_string(),
+            root_type: AppSourceType::CustomDirectory,
             label: "Root".to_string(),
             path: base.to_string_lossy().to_string(),
             enabled: true,
@@ -1605,7 +1617,7 @@ mod tests {
         fs::create_dir_all(&icon_dir).expect("create icon directory");
         let root = ScanRoot {
             id: "root-windows-app-catalog".to_string(),
-            root_type: WINDOWS_APP_CATALOG_ROOT_TYPE.to_string(),
+            root_type: AppSourceType::WindowsAppCatalog,
             label: "Windows Apps".to_string(),
             path: "shell:AppsFolder".to_string(),
             enabled: true,
