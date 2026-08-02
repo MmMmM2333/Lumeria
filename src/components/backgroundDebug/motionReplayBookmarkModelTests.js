@@ -6,19 +6,7 @@ import {
   removeMotionReplayBookmark,
 } from "./motionReplayBookmarkModel.js";
 
-function makeTrace() {
-  return {
-    schema: "pixi-motion-replay-trace/v1",
-    timeline: {
-      events: [],
-      frames: [
-        { frame: 0, timeMs: 0, values: [] },
-        { frame: 1, timeMs: 100, values: [] },
-      ],
-      timeRangeMs: { max: 100, min: 0 },
-    },
-  };
-}
+const normalizeTime = (value) => Math.max(0, Math.min(100, Number(value) || 0));
 
 export function runMotionReplayBookmarkModelTests() {
   const assert = (condition, message) => {
@@ -47,7 +35,7 @@ export function runMotionReplayBookmarkModelTests() {
   }, {
     createdAt: "2026-06-22T00:00:00.000Z",
     index: 2,
-    trace: makeTrace(),
+    normalizeTime,
   });
   assert(bookmark.id === "bookmark-3-40-80", "bookmark should get deterministic id from normalized interval");
   assert(bookmark.label === "desktop.icon.node.x 40ms..80ms", "bookmark should derive readable track label");
@@ -57,15 +45,15 @@ export function runMotionReplayBookmarkModelTests() {
   assert(bookmark.selection.targetId === 7 && bookmark.track.targetId === 7, "bookmark should normalize target ids");
   assert(!JSON.stringify(bookmark).includes("rawTarget"), "bookmark should not retain raw target refs");
 
-  const clamped = createMotionReplayBookmark({ endMs: 999, startMs: -20 }, { trace: makeTrace() });
-  assert(clamped.startMs === 0 && clamped.endMs === 100, "bookmark should clamp to trace range when trace is provided");
+  const clamped = createMotionReplayBookmark({ endMs: 999, startMs: -20 }, { normalizeTime });
+  assert(clamped.startMs === 0 && clamped.endMs === 100, "bookmark should clamp through the owning document time normalizer");
 
   const added = addMotionReplayBookmark([bookmark], {
     endMs: 80,
     id: bookmark.id,
     startMs: 40,
   }, {
-    trace: makeTrace(),
+    normalizeTime,
   });
   assert(added.length === 2, "add should append bookmark");
   assert(added[1].id === `${bookmark.id}-2`, "add should avoid duplicate ids");

@@ -325,7 +325,9 @@ export function useLiveDesktopRuntime(options = {}) {
       backgroundVisible = null;
       return success(statusState.value);
     } catch (error) {
-      return failure(error, publishUnavailableStatus());
+      statusState.value = makeFailedStatus(statusState.value, "statusRefreshFailed", error);
+      backgroundVisible = null;
+      return failure(error, statusState.value);
     }
   }
 
@@ -339,7 +341,7 @@ export function useLiveDesktopRuntime(options = {}) {
       backgroundVisible = nextVisible;
       return success(statusState.value);
     } catch (error) {
-      statusState.value = makeFailedStatus(statusState.value, "visibilityFailed", error);
+      statusState.value = makeFailedStatus(statusState.value, "visibilityUpdateFailed", error);
       return failure(error, statusState.value);
     }
   }

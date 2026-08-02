@@ -15,7 +15,8 @@ import {
   MOTION_LAB_QUERY_PARAM,
   shouldMountMotionLab,
 } from "./motionLabGate.js";
-import { createMotionFocusedDebugExport } from "../components/backgroundDebug/motionFocusedDebugExportModel.js";
+import { createMotionReplayDocument } from "../diagnostics/motionReplayDocument.js";
+import { createDiagnosticPresentation } from "../diagnostics/diagnosticPresentation.js";
 
 export { MOTION_LAB_SCENARIOS };
 export {
@@ -92,7 +93,7 @@ function formatSignedDelta(value, digits = 0) {
   return `${number > 0 ? "+" : "-"}${formatted}`;
 }
 
-function makeMetric(label, current, previous, digits = 0) {
+function makeMetric(label, current, previous, digits = 0, machineName = label) {
   const currentNumber = readNumber(current, 0);
   const previousNumber = readNumber(previous, 0);
   return {
@@ -100,6 +101,7 @@ function makeMetric(label, current, previous, digits = 0) {
     current: digits > 0 ? formatNumber(currentNumber, digits) : formatCount(currentNumber),
     delta: formatSignedDelta(currentNumber - previousNumber, digits),
     label,
+    machineName,
     previous: digits > 0 ? formatNumber(previousNumber, digits) : formatCount(previousNumber),
     value: currentNumber - previousNumber,
   };
@@ -119,13 +121,14 @@ function makeMotionLabParamCompareRows(currentParams = {}, previousParams = {}, 
       const currentValue = current[key];
       const previousValue = previous[key];
       if (typeof currentValue === "number" && typeof previousValue === "number") {
-        return makeMetric(`param:${key}`, currentValue, previousValue, getMotionLabParamDigits(key));
+        return makeMetric(`参数：${key}`, currentValue, previousValue, getMotionLabParamDigits(key), `param:${key}`);
       }
       return {
         changed: currentValue !== previousValue,
         current: String(currentValue),
-        delta: currentValue === previousValue ? "0" : "changed",
-        label: `param:${key}`,
+        delta: currentValue === previousValue ? "0" : "已变化",
+        label: `参数：${key}`,
+        machineName: `param:${key}`,
         previous: String(previousValue),
         value: currentValue === previousValue ? 0 : 1,
       };
@@ -139,7 +142,7 @@ export function buildMotionLabScenarioRows(scenarios = MOTION_LAB_SCENARIOS, sel
     assertionCount: Array.isArray(scenario.assertions) ? scenario.assertions.length : 0,
     description: scenario.description || "",
     id: scenario.id || `scenario-${index}`,
-    label: scenario.label || scenario.id || `Scenario ${index + 1}`,
+    label: scenario.label || scenario.id || `场景 ${index + 1}`,
     selected: scenario.id === selectedId || (!selectedId && index === 0),
     stage: scenario.stage || "draft",
   }));
@@ -151,12 +154,12 @@ export function buildMotionLabOverviewRows(report = {}, trace = null) {
   const config = report.config || {};
   const traceSummary = trace?.summary || {};
   return [
-    { label: "runtime", value: config.enabled ? "debug" : "idle" },
-    { label: "active", value: formatCount(summary.activeAnimationCount) },
-    { label: "warnings", value: formatCount(summary.warningCount) },
-    { label: "events/samples", value: `${formatCount(history.events?.length)} / ${formatCount(history.samples?.length)}`, wide: true },
-    { label: "trace", value: trace ? "ready" : "none" },
-    { label: "trace frames/events", value: `${formatCount(traceSummary.frameCount)} / ${formatCount(traceSummary.eventCount)}`, wide: true },
+    { label: "运行时", value: config.enabled ? "调试中" : "空闲" },
+    { label: "活动动画", value: formatCount(summary.activeAnimationCount) },
+    { label: "警告", value: formatCount(summary.warningCount) },
+    { label: "事件 / 采样", value: `${formatCount(history.events?.length)} / ${formatCount(history.samples?.length)}`, wide: true },
+    { label: "回放轨迹", value: trace ? "就绪" : "无" },
+    { label: "轨迹帧 / 事件", value: `${formatCount(traceSummary.frameCount)} / ${formatCount(traceSummary.eventCount)}`, wide: true },
   ];
 }
 
@@ -164,7 +167,7 @@ export function buildMotionLabAssertionRows(assertions = []) {
   return assertions.map((assertion, index) => ({
     detail: assertion.detail || assertion.label || "-",
     id: assertion.id || `assertion-${index}`,
-    label: assertion.label || assertion.id || `Assertion ${index + 1}`,
+    label: assertion.label || assertion.id || `断言 ${index + 1}`,
     passed: assertion.passed === true,
     status: assertion.status || (assertion.passed ? "pass" : "fail"),
   }));
@@ -222,7 +225,7 @@ export function createMotionLabRunSnapshot({ assertions = [], params = {}, repor
     params: normalizeMotionLabParams(params),
     scenario: {
       id: scenario?.id || "unknown",
-      label: scenario?.label || scenario?.id || "Scenario",
+      label: scenario?.label || scenario?.id || "场景",
     },
     summary: {
       activeAnimationCount: readNumber(summary.activeAnimationCount, 0),
@@ -252,18 +255,18 @@ export function buildMotionLabCompareRows(current = null, previous = null) {
   const paramRows = makeMotionLabParamCompareRows(current.params, previous.params);
   return [
     ...paramRows,
-    makeMetric("assert pass", currentSummary.assertionPassedCount, previousSummary.assertionPassedCount),
-    makeMetric("assert fail", currentSummary.assertionFailedCount, previousSummary.assertionFailedCount),
-    makeMetric("events", currentSummary.eventCount, previousSummary.eventCount),
-    makeMetric("samples", currentSummary.sampleCount, previousSummary.sampleCount),
-    makeMetric("curves", currentSummary.curveCount, previousSummary.curveCount),
-    makeMetric("warnings", currentSummary.warningCount, previousSummary.warningCount),
-    makeMetric("duration", currentSummary.durationMs, previousSummary.durationMs),
-    makeMetric("max velocity", currentSummary.maxVelocity, previousSummary.maxVelocity, 2),
-    makeMetric("retargets", currentSummary.retargetCount, previousSummary.retargetCount),
-    makeMetric("overshoots", currentSummary.overshootCount, previousSummary.overshootCount),
-    makeMetric("trace frames", currentSummary.traceFrameCount, previousSummary.traceFrameCount),
-    makeMetric("trace values", currentSummary.traceValueCount, previousSummary.traceValueCount),
+    makeMetric("断言通过", currentSummary.assertionPassedCount, previousSummary.assertionPassedCount, 0, "assert pass"),
+    makeMetric("断言失败", currentSummary.assertionFailedCount, previousSummary.assertionFailedCount, 0, "assert fail"),
+    makeMetric("事件", currentSummary.eventCount, previousSummary.eventCount, 0, "events"),
+    makeMetric("采样", currentSummary.sampleCount, previousSummary.sampleCount, 0, "samples"),
+    makeMetric("曲线", currentSummary.curveCount, previousSummary.curveCount, 0, "curves"),
+    makeMetric("警告", currentSummary.warningCount, previousSummary.warningCount, 0, "warnings"),
+    makeMetric("时长", currentSummary.durationMs, previousSummary.durationMs, 0, "duration"),
+    makeMetric("最大速度", currentSummary.maxVelocity, previousSummary.maxVelocity, 2, "max velocity"),
+    makeMetric("重定向", currentSummary.retargetCount, previousSummary.retargetCount, 0, "retargets"),
+    makeMetric("过冲", currentSummary.overshootCount, previousSummary.overshootCount, 0, "overshoots"),
+    makeMetric("轨迹帧", currentSummary.traceFrameCount, previousSummary.traceFrameCount, 0, "trace frames"),
+    makeMetric("轨迹值", currentSummary.traceValueCount, previousSummary.traceValueCount, 0, "trace values"),
   ];
 }
 
@@ -278,23 +281,23 @@ function makeTraceMetricRows(currentTrace = null, previousTrace = null) {
   const current = currentTrace?.summary || {};
   const previous = previousTrace?.summary || {};
   return [
-    makeMetric("frames", current.frameCount, previous.frameCount),
-    makeMetric("events", current.eventCount, previous.eventCount),
-    makeMetric("tracks", current.trackCount, previous.trackCount),
-    makeMetric("targets", current.targetCount, previous.targetCount),
-    makeMetric("values", current.valueCount, previous.valueCount),
-    makeMetric("warnings", current.warningCount, previous.warningCount),
-    makeMetric("duration", countTraceDuration(currentTrace), countTraceDuration(previousTrace)),
+    makeMetric("帧", current.frameCount, previous.frameCount, 0, "frames"),
+    makeMetric("事件", current.eventCount, previous.eventCount, 0, "events"),
+    makeMetric("轨道", current.trackCount, previous.trackCount, 0, "tracks"),
+    makeMetric("目标", current.targetCount, previous.targetCount, 0, "targets"),
+    makeMetric("值", current.valueCount, previous.valueCount, 0, "values"),
+    makeMetric("警告", current.warningCount, previous.warningCount, 0, "warnings"),
+    makeMetric("时长", countTraceDuration(currentTrace), countTraceDuration(previousTrace), 0, "duration"),
   ];
 }
 
-function makeCountDiffRows(labelPrefix, currentCounts = {}, previousCounts = {}, limit = 6) {
+function makeCountDiffRows(labelPrefix, machinePrefix, currentCounts = {}, previousCounts = {}, limit = 6) {
   const keys = Array.from(new Set([
     ...Object.keys(previousCounts || {}),
     ...Object.keys(currentCounts || {}),
   ])).sort();
   return keys
-    .map((key) => makeMetric(`${labelPrefix}:${key}`, currentCounts?.[key], previousCounts?.[key]))
+    .map((key) => makeMetric(`${labelPrefix}：${key}`, currentCounts?.[key], previousCounts?.[key], 0, `${machinePrefix}:${key}`))
     .filter((row) => row.changed)
     .slice(0, Math.max(0, Math.floor(readNumber(limit, 6))));
 }
@@ -302,8 +305,8 @@ function makeCountDiffRows(labelPrefix, currentCounts = {}, previousCounts = {},
 export function buildMotionLabTraceDiffRows(currentTrace = null, previousTrace = null, limit = 14) {
   if (!currentTrace || !previousTrace) return [];
   const summaryRows = makeTraceMetricRows(currentTrace, previousTrace);
-  const propRows = makeCountDiffRows("prop", currentTrace.summary?.byProp, previousTrace.summary?.byProp);
-  const driverRows = makeCountDiffRows("driver", currentTrace.summary?.byDriver, previousTrace.summary?.byDriver);
+  const propRows = makeCountDiffRows("属性", "prop", currentTrace.summary?.byProp, previousTrace.summary?.byProp);
+  const driverRows = makeCountDiffRows("驱动器", "driver", currentTrace.summary?.byDriver, previousTrace.summary?.byDriver);
   return [...summaryRows, ...propRows, ...driverRows]
     .slice(0, Math.max(0, Math.floor(readNumber(limit, 14))));
 }
@@ -341,7 +344,7 @@ function sanitizeMotionLabScenario(scenario = {}) {
   return {
     description: scenario?.description || "",
     id: scenario?.id || "unknown",
-    label: scenario?.label || scenario?.id || "Scenario",
+    label: scenario?.label || scenario?.id || "场景",
     stage: scenario?.stage || "draft",
   };
 }
@@ -350,7 +353,7 @@ function sanitizeMotionLabAssertions(assertions = []) {
   return (Array.isArray(assertions) ? assertions : []).map((assertion, index) => ({
     detail: assertion?.detail || assertion?.label || "-",
     id: assertion?.id || `assertion-${index}`,
-    label: assertion?.label || assertion?.id || `Assertion ${index + 1}`,
+    label: assertion?.label || assertion?.id || `断言 ${index + 1}`,
     passed: assertion?.passed === true,
     status: assertion?.status || (assertion?.passed ? "pass" : "fail"),
   }));
@@ -467,8 +470,11 @@ function sanitizeMotionLabTraceSummary(trace = null) {
 
 function createMotionLabReplayFocus(trace = null, options = {}, generatedAt = "") {
   if (!trace) return null;
+  let document = null;
   try {
-    return createMotionFocusedDebugExport(trace, {
+    document = createMotionReplayDocument(trace);
+    return document.export({
+      format: "focused",
       generatedAt,
       ...options,
     }).data;
@@ -478,6 +484,8 @@ function createMotionLabReplayFocus(trace = null, options = {}, generatedAt = ""
       schema: trace?.schema || null,
       summary: sanitizeMotionLabTraceSummary(trace),
     };
+  } finally {
+    document?.dispose();
   }
 }
 
@@ -490,7 +498,7 @@ function formatMotionLabParamLine(params = {}) {
   ].join(", ");
 }
 
-function formatMotionLabFocusedList(rows = [], formatter = (row) => String(row), empty = "- none") {
+function formatMotionLabFocusedList(rows = [], formatter = (row) => String(row), empty = "- 无") {
   if (!rows.length) return empty;
   return rows.map(formatter).join("\n");
 }
@@ -547,14 +555,10 @@ export function createMotionLabFocusedExport(input = {}, options = {}) {
     },
     version: 1,
   };
-  const json = JSON.stringify(data, null, 2);
-  const markdown = formatMotionLabFocusedDebugMarkdown(data);
-  return {
-    copyText: `${markdown}\n\n## JSON\n\n\`\`\`json\n${json}\n\`\`\``,
-    data,
-    json,
-    markdown,
-  };
+  return createDiagnosticPresentation(data, {
+    formatMarkdown: formatMotionLabFocusedDebugMarkdown,
+    presentation: options.presentation,
+  });
 }
 
 export function formatMotionLabFocusedDebugMarkdown(data = {}) {
@@ -564,35 +568,35 @@ export function formatMotionLabFocusedDebugMarkdown(data = {}) {
   const report = data.report || {};
   const params = data.params || {};
   return [
-    "# Pixi Motion Lab Focused Debug",
+    "# Pixi Motion Lab 聚焦调试报告",
     "",
-    `Schema: ${data.schema || MOTION_LAB_FOCUSED_DEBUG_SCHEMA}`,
-    `Generated: ${data.generatedAt || "-"}`,
-    `Scenario: ${scenario.label || scenario.id || "Scenario"} (${scenario.id || "unknown"})`,
-    `Params: ${formatMotionLabParamLine(params)}`,
-    `Assertions: pass ${assertions.passed || 0} / fail ${assertions.failed || 0} / total ${assertions.total || 0}`,
-    `Trace: ${data.replay?.schema || "none"} frames=${replay.frameCount || 0}, events=${replay.eventCount || 0}, tracks=${replay.trackCount || 0}, targets=${replay.targetCount || 0}`,
-    `Compare: ${data.compare?.mode || "last"} rows=${data.compare?.rows?.length || 0}`,
+    `协议：${data.schema || MOTION_LAB_FOCUSED_DEBUG_SCHEMA}`,
+    `生成时间：${data.generatedAt || "-"}`,
+    `场景：${scenario.label || scenario.id || "场景"}（${scenario.id || "未知"}）`,
+    `参数：${formatMotionLabParamLine(params)}`,
+    `断言：通过 ${assertions.passed || 0} / 失败 ${assertions.failed || 0} / 总计 ${assertions.total || 0}`,
+    `轨迹：${data.replay?.schema || "无"}，帧=${replay.frameCount || 0}，事件=${replay.eventCount || 0}，轨道=${replay.trackCount || 0}，目标=${replay.targetCount || 0}`,
+    `对比：${data.compare?.mode || "last"}，行数=${data.compare?.rows?.length || 0}`,
     "",
-    "## Failed Assertions",
+    "## 失败断言",
     formatMotionLabFocusedList(
       (data.assertions?.rows || []).filter((row) => !row.passed),
       (row) => `- ${row.label}: ${row.detail}`,
     ),
     "",
-    "## Recent Events",
+    "## 最近事件",
     formatMotionLabFocusedList(
       report.timeline?.recentEvents || [],
-      (event) => `- ${event.timeMs}ms ${event.type}: ${event.sourceLabel || `target ${event.targetId}`}.${event.prop || "-"} ${event.value ?? "-"} -> ${event.to ?? "-"}`,
+      (event) => `- ${event.timeMs}ms ${event.type}：${event.sourceLabel || `目标 ${event.targetId}`}.${event.prop || "-"} ${event.value ?? "-"} → ${event.to ?? "-"}`,
     ),
     "",
-    "## Curves",
+    "## 曲线",
     formatMotionLabFocusedList(
       report.curves?.rows || [],
-      (curve) => `- ${curve.label}: ${curve.samples} samples, lane=${curve.lane}, v=${curve.maxVelocity}`,
+      (curve) => `- ${curve.label}：${curve.samples} 个采样，通道=${curve.lane}，最大速度=${curve.maxVelocity}`,
     ),
     "",
-    "## Compare Rows",
+    "## 对比明细",
     formatMotionLabFocusedList(
       data.compare?.rows || [],
       (row) => `- ${row.label}: ${row.previous} -> ${row.current} (${row.delta})`,

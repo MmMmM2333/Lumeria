@@ -28,13 +28,13 @@ import {
   normalizeWindowEffectAppearance,
 } from "./useLaunchpadSettingsConfig.js";
 import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
+import {
+  DEFAULT_LIVE_DESKTOP_DEBUG_SETTINGS,
+  readLiveDesktopDebugSettings,
+} from "../diagnostics/liveDesktopDebugSettings.js";
 
 const USE_MOCK_DATA_IN_NATIVE = false;
 const WINDOWS_WALLPAPER_REFRESH_INTERVAL_MS = 5000;
-const LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY = "lumeriaLiveDesktopDebugFrameSourceOverride";
-const LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY = "lumeriaLiveDesktopDisableMouseRelay";
-const LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY = "lumeriaLiveDesktopSkipBlankFrames";
-const LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY = "lumeriaLiveDesktopForceDwmFlush";
 // Pixi intentionally snaps monitor-resize layout for three frames. Keep the
 // closed visual state through that window so the later open transition starts
 // from its real initial values instead of being consumed behind DWM cloak.
@@ -91,41 +91,15 @@ function isLiveDesktopDebugRuntimeConfigEnabled() {
   return Boolean(import.meta.env?.DEV && isLiveDesktopExperimentEnabled());
 }
 
-function resolveLiveDesktopDebugFrameSourceOverride() {
-  if (!isLiveDesktopDebugRuntimeConfigEnabled() || typeof window === "undefined") return null;
-  try {
-    const frameSourceOverride = window.localStorage?.getItem(LIVE_DESKTOP_DEBUG_FRAME_SOURCE_OVERRIDE_STORAGE_KEY);
-    return frameSourceOverride === "testPattern" ? "testPattern" : null;
-  } catch {
-    return null;
+function resolveLiveDesktopDebugRuntimeSettings() {
+  if (!isLiveDesktopDebugRuntimeConfigEnabled() || typeof window === "undefined") {
+    return DEFAULT_LIVE_DESKTOP_DEBUG_SETTINGS;
   }
-}
-
-function resolveLiveDesktopDisableMouseRelay() {
-  if (!isLiveDesktopDebugRuntimeConfigEnabled() || typeof window === "undefined") return true;
-  try {
-    return window.localStorage?.getItem(LIVE_DESKTOP_DISABLE_MOUSE_RELAY_STORAGE_KEY) !== "false";
-  } catch {
-    return true;
+  const snapshot = readLiveDesktopDebugSettings();
+  if (snapshot.issues.length) {
+    console.error("读取 Live Desktop 运行时调试设置不完整", snapshot.issues);
   }
-}
-
-function resolveLiveDesktopSkipBlankFrames() {
-  if (!isLiveDesktopDebugRuntimeConfigEnabled() || typeof window === "undefined") return false;
-  try {
-    return window.localStorage?.getItem(LIVE_DESKTOP_SKIP_BLANK_FRAMES_STORAGE_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
-function resolveLiveDesktopForceDwmFlush() {
-  if (!isLiveDesktopDebugRuntimeConfigEnabled() || typeof window === "undefined") return false;
-  try {
-    return window.localStorage?.getItem(LIVE_DESKTOP_FORCE_DWM_FLUSH_STORAGE_KEY) === "true";
-  } catch {
-    return false;
-  }
+  return snapshot.values;
 }
 
 function resolveLiveDesktopAcrylicProfile(config) {
@@ -137,6 +111,7 @@ function resolveLiveDesktopAcrylicProfile(config) {
 }
 
 function makeLiveDesktopRuntimeConfig(config) {
+  const debugSettings = resolveLiveDesktopDebugRuntimeSettings();
   const acrylicAppearance = normalizeBackgroundAcrylicAppearance(config.backgroundAcrylicAppearance);
   const acrylicProfile = resolveLiveDesktopAcrylicProfile(config);
   const acrylicParams = normalizeBackgroundAcrylicParams(
@@ -151,7 +126,7 @@ function makeLiveDesktopRuntimeConfig(config) {
     : clampBackgroundBlurStrength(config.backgroundBlurStrength);
   return {
     effect,
-    debugFrameSourceOverride: resolveLiveDesktopDebugFrameSourceOverride(),
+    debugFrameSourceOverride: debugSettings.debugFrameSourceOverride,
     blurStrength,
     darkenStrength: clampBackgroundDarkenStrength(config.backgroundDarkenStrength),
     darkenColor: normalizeBackgroundDarkenColor(config.backgroundDarkenColor),
@@ -164,9 +139,9 @@ function makeLiveDesktopRuntimeConfig(config) {
       effect,
       opacity: config.backgroundLiveDesktopOpacity,
     }),
-    disableMouseRelay: resolveLiveDesktopDisableMouseRelay(),
-    skipBlankFrames: resolveLiveDesktopSkipBlankFrames(),
-    forceDwmFlush: resolveLiveDesktopForceDwmFlush(),
+    disableMouseRelay: debugSettings.disableMouseRelay,
+    skipBlankFrames: debugSettings.skipBlankFrames,
+    forceDwmFlush: debugSettings.forceDwmFlush,
     opacity: clampBackgroundLiveDesktopOpacity(config.backgroundLiveDesktopOpacity),
   };
 }
@@ -567,7 +542,11 @@ export function useLaunchpadNative(options) {
 
   async function refreshLiveDesktopRuntimeStatus() {
     const outcome = await liveDesktopRuntime.refreshStatus();
-    return reportLiveDesktopRuntimeOutcome("refresh", outcome);
+    if (!outcome.ok) {
+      console.error("Failed to refresh live desktop background", outcome.error);
+      throw outcome.error;
+    }
+    return outcome.status;
   }
 
   async function configureNativeLiveDesktopBackground() {

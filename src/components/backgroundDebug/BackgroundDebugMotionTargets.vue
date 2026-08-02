@@ -1,8 +1,8 @@
 <template>
       <section class="motion-debug-workspace-region">
         <header>
-          <strong>Targets</strong>
-          <span>{{ motionLayerTreeRows.length }} layers / {{ motionAnimationRows.length }} active</span>
+          <strong>目标</strong>
+          <span>{{ motionLayerTreeRows.length }} 个图层 / {{ motionAnimationRows.length }} 个活动动画</span>
         </header>
         <div class="motion-debug-workspace-section-list">
         <dl class="background-debug-status-grid">
@@ -16,10 +16,10 @@
           </div>
         </dl>
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Capture Profile</div>
+          <div class="background-debug-subtitle">捕获配置</div>
           <label class="background-debug-control background-debug-select-control">
             <span>
-              Profile
+              配置
               <output>{{ motionCaptureProfile.label }}</output>
             </span>
             <select
@@ -37,7 +37,7 @@
               </option>
             </select>
           </label>
-          <div class="background-debug-motion-capture-props" role="group" aria-label="Capture properties">
+          <div class="background-debug-motion-capture-props" role="group" aria-label="捕获属性">
             <label
               v-for="prop in motionCaptureAllowedProps"
               :key="prop"
@@ -56,8 +56,8 @@
           <div class="background-debug-motion-capture-filter-grid">
             <label class="background-debug-control background-debug-motion-capture-filter-control">
               <span>
-                Layers
-                <output>{{ motionCaptureTargetFilterText.layers || "all" }}</output>
+                图层（layers）
+                <output>{{ motionCaptureTargetFilterText.layers || "全部" }}</output>
               </span>
               <input
                 name="motionCaptureLayerFilter"
@@ -70,8 +70,8 @@
             </label>
             <label class="background-debug-control background-debug-motion-capture-filter-control">
               <span>
-                Kinds
-                <output>{{ motionCaptureTargetFilterText.kinds || "all" }}</output>
+                类型（kinds）
+                <output>{{ motionCaptureTargetFilterText.kinds || "全部" }}</output>
               </span>
               <input
                 name="motionCaptureKindFilter"
@@ -84,8 +84,8 @@
             </label>
             <label class="background-debug-control background-debug-motion-capture-filter-control">
               <span>
-                Sources
-                <output>{{ motionCaptureTargetFilterText.sourceLabels || "all" }}</output>
+                来源标签（sourceLabels）
+                <output>{{ motionCaptureTargetFilterText.sourceLabels || "全部" }}</output>
               </span>
               <input
                 name="motionCaptureSourceLabelFilter"
@@ -98,8 +98,8 @@
             </label>
             <label class="background-debug-control background-debug-motion-capture-filter-control">
               <span>
-                Source query
-                <output>{{ motionCaptureTargetFilterText.sourceQuery || "all" }}</output>
+                来源搜索
+                <output>{{ motionCaptureTargetFilterText.sourceQuery || "全部" }}</output>
               </span>
               <input
                 name="motionCaptureSourceQuery"
@@ -123,8 +123,8 @@
           </dl>
         </div>
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Filters</div>
-          <div class="background-debug-mode-group background-debug-motion-filter-group" role="group" aria-label="Motion filter presets">
+          <div class="background-debug-subtitle">过滤器</div>
+          <div class="background-debug-mode-group background-debug-motion-filter-group" role="group" aria-label="Motion 过滤预设">
             <button
               v-for="preset in MOTION_FILTER_PRESETS"
               :key="preset.value"
@@ -137,20 +137,20 @@
           </div>
           <label class="background-debug-control background-debug-motion-filter-control">
             <span>
-              Filter
+              搜索条件
               <output>{{ motionFilterSummary.text }}</output>
             </span>
             <input
               name="motionFilterQuery"
               type="search"
-              placeholder="target / lane / prop / event"
+              placeholder="目标 / 通道 / 属性 / 事件"
               :value="motionFilterQuery"
               @input="updateMotionFilterQuery"
             >
           </label>
         </div>
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Layer Tree</div>
+          <div class="background-debug-subtitle">图层树</div>
           <div class="background-debug-motion-layer-tree">
             <section
               v-for="row in motionLayerTreeRows"
@@ -171,10 +171,10 @@
                 <span>{{ row.summary }}</span>
               </header>
               <div class="background-debug-motion-layer-row">
-                <span>{{ row.targetCount }} targets</span>
-                <span>{{ row.activeCount }} active</span>
-                <span>{{ row.warningCount }} warnings</span>
-                <span>{{ row.eventCount }} events</span>
+                <span>{{ row.targetCount }} 个目标</span>
+                <span>{{ row.activeCount }} 个活动动画</span>
+                <span>{{ row.warningCount }} 个警告</span>
+                <span>{{ row.eventCount }} 个事件</span>
               </div>
               <div class="background-debug-motion-layer-row">
                 <span :title="row.detail">{{ row.detail }}</span>
@@ -182,20 +182,20 @@
               </div>
             </section>
             <div v-if="motionLayerTreeRows.length === 0" class="background-debug-motion-empty">
-              no matching layers
+              没有匹配的图层
             </div>
           </div>
         </div>
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Active Animations</div>
-          <div class="background-debug-motion-table" role="table" aria-label="Active Pixi motion animations">
+          <div class="background-debug-subtitle">活动动画</div>
+          <div class="background-debug-motion-table" role="table" aria-label="活动中的 Pixi Motion 动画">
             <div class="background-debug-motion-row background-debug-motion-row-head" role="row">
-              <span role="columnheader">target</span>
-              <span role="columnheader">prop</span>
-              <span role="columnheader">value -> to</span>
-              <span role="columnheader">driver</span>
-              <span role="columnheader">lane</span>
-              <span role="columnheader">velocity</span>
+              <span role="columnheader">目标</span>
+              <span role="columnheader">属性（prop）</span>
+              <span role="columnheader">当前值 → 目标值</span>
+              <span role="columnheader">驱动器</span>
+              <span role="columnheader">通道（lane）</span>
+              <span role="columnheader">速度</span>
             </div>
             <div
               v-for="(row, index) in motionAnimationRows"
@@ -211,12 +211,12 @@
               <span role="cell" :title="row.velocity">{{ row.velocity }}</span>
             </div>
             <div v-if="motionAnimationRows.length === 0" class="background-debug-motion-empty">
-              no active animations
+              当前没有活动动画
             </div>
           </div>
         </div>
           <div class="background-debug-subsection">
-            <div class="background-debug-subtitle">Pins</div>
+            <div class="background-debug-subtitle">固定目标</div>
             <div class="background-debug-motion-replay-overlay-list">
               <article
                 v-for="pin in motionWorkspaceSession.pinnedTargets"
@@ -227,7 +227,7 @@
                 <span :title="pin.sourceLabel || pin.layer || pin.kind">{{ pin.sourceLabel || pin.layer || pin.kind || pin.key }}</span>
               </article>
               <div v-if="motionWorkspaceSession.pinnedTargets.length === 0" class="background-debug-motion-empty">
-                no pinned targets
+                尚未固定目标
               </div>
             </div>
           </div>
@@ -236,7 +236,7 @@
 </template>
 
 <script setup>
-import { useMotionDebugWorkspaceContext } from "./motionDebugWorkspaceContext.js";
+import { useMotionDebugWorkspaceRegion } from "./motionDebugWorkspaceContext.js";
 
 const {
   MOTION_FILTER_PRESETS,
@@ -261,5 +261,5 @@ const {
   updateMotionFilterQuery,
   updateMotionWorkspaceCaptureProfile,
   updateMotionWorkspaceCaptureTargetFilter,
-} = useMotionDebugWorkspaceContext();
+} = useMotionDebugWorkspaceRegion("targets");
 </script>

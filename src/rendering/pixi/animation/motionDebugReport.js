@@ -1,14 +1,6 @@
 import { motionRuntime } from "./motionRuntime.js";
-import {
-  deleteLaunchpadDebugValue,
-  hasLaunchpadDebugValue,
-  readLaunchpadDebugValue,
-  setLaunchpadDebugValue,
-} from "../debugNamespace.js";
-import {
-  createMotionReplayCaptureController,
-  createMotionReplayTraceFromRuntime,
-} from "./motionReplayTrace.js";
+import { createDiagnosticPresentation } from "../../../diagnostics/diagnosticPresentation.js";
+import { DiagnosticError } from "../../../diagnostics/diagnosticError.js";
 import {
   aggregateMotionTracks,
   collectMotionTrackRecordsFromHistory,
@@ -16,13 +8,17 @@ import {
   makeTrackKey,
 } from "./motionTraceShared.js";
 
-export const MOTION_DEBUG_GLOBAL_KEY = "motion";
 const REPORT_SCHEMA = "pixi-motion-ai-report/v1";
 const REPORT_VERSION = 1;
 const REPORT_MODES = new Set(["summary", "full", "selectedTarget"]);
 
 function normalizeMode(mode) {
-  return REPORT_MODES.has(mode) ? mode : "summary";
+  const normalized = mode == null ? "summary" : String(mode);
+  if (REPORT_MODES.has(normalized)) return normalized;
+  throw new DiagnosticError("diagnostic-params-invalid", "Motion 报告模式不受支持", {
+    details: { mode: normalized, supportedModes: [...REPORT_MODES] },
+    nextActions: ["使用 summary、full 或 selectedTarget 模式"],
+  });
 }
 
 function countMapToTopEntries(counts = {}, limit = 8) {
@@ -180,48 +176,48 @@ function makeReportData(runtime, options = {}) {
   };
 }
 
-function formatTable(entries, emptyText = "none") {
+function formatTable(entries, emptyText = "无") {
   if (!entries?.length) return `- ${emptyText}`;
   return entries.map((entry) => `- ${entry.key}: ${entry.count}`).join("\n");
 }
 
 function formatWarnings(warnings = []) {
-  if (!warnings.length) return "- none";
+  if (!warnings.length) return "- 无";
   return warnings
     .slice(0, 12)
-    .map((warning) => `- ${warning.type}: target ${warning.targetId ?? "unknown"} ${warning.prop ?? "?"} ${warning.laneKey ?? ""}`.trim())
+    .map((warning) => `- ${warning.type}：目标 ${warning.targetId ?? "未知"} ${warning.prop ?? "?"} ${warning.laneKey ?? ""}`.trim())
     .join("\n");
 }
 
 function formatAnimations(animations = []) {
-  if (!animations.length) return "- none";
+  if (!animations.length) return "- 无";
   return animations
     .slice(0, 16)
     .map((animation) => {
-      const label = animation.sourceLabel || animation.targetLabel || `target ${animation.targetId ?? "unknown"}`;
-      return `- ${label}: ${animation.prop}=${animation.value} -> ${animation.to} (${animation.driver}/${animation.lane}/${animation.laneKey})`;
+      const label = animation.sourceLabel || animation.targetLabel || `目标 ${animation.targetId ?? "未知"}`;
+      return `- ${label}：${animation.prop}=${animation.value} → ${animation.to}（${animation.driver}/${animation.lane}/${animation.laneKey}）`;
     })
     .join("\n");
 }
 
 function formatCurveStats(curveStats = []) {
-  if (!curveStats.length) return "- none";
+  if (!curveStats.length) return "- 无";
   return curveStats
     .slice(0, 12)
     .map((stats) => {
       const label = stats.sourceLabel || `${stats.targetId}:${stats.prop}:${stats.laneKey}`;
-      return `- ${label}: maxDelta=${stats.maxDelta}, maxVelocity=${stats.maxVelocity}, overshoot=${stats.overshootCount}, retarget=${stats.retargetCount}`;
+      return `- ${label}：最大差值=${stats.maxDelta}，最大速度=${stats.maxVelocity}，过冲=${stats.overshootCount}，重定向=${stats.retargetCount}`;
     })
     .join("\n");
 }
 
 function formatCurveSummary(curveSummary = {}) {
-  if (!curveSummary.tracks?.length) return "- none";
+  if (!curveSummary.tracks?.length) return "- 无";
   return curveSummary.tracks
     .slice(0, 12)
     .map((track) => {
       const label = track.sourceLabel || `${track.targetId}:${track.prop}:${track.laneKey}`;
-      return `- ${label}: samples=${track.sampleCount}, events=${track.eventCount}, value=${track.valueRange.min}..${track.valueRange.max}, velocity=${track.velocityRange.min}..${track.velocityRange.max}`;
+      return `- ${label}：采样=${track.sampleCount}，事件=${track.eventCount}，值域=${track.valueRange.min}..${track.valueRange.max}，速度范围=${track.velocityRange.min}..${track.velocityRange.max}`;
     })
     .join("\n");
 }
@@ -229,143 +225,48 @@ function formatCurveSummary(curveSummary = {}) {
 export function formatMotionDebugMarkdown(data) {
   const overview = data.overview;
   return [
-    "# Pixi Motion Debug AI Report",
+    "# Pixi Motion AI 调试报告",
     "",
-    `Mode: ${data.mode}`,
-    `Generated: ${data.generatedAt}`,
-    data.selection ? `Selection: ${JSON.stringify(data.selection)}` : null,
+    `模式：${data.mode}`,
+    `生成时间：${data.generatedAt}`,
+    data.selection ? `选择范围：${JSON.stringify(data.selection)}` : null,
     "",
-    "## Overview",
-    `- active animations: ${overview.activeAnimationCount}`,
-    `- active targets: ${overview.activeTargetCount}`,
-    `- active channels: ${overview.activeChannelCount}`,
-    `- warnings: ${overview.warningCount}`,
-    `- targets with metadata: ${overview.targetMetadataCount}`,
-    `- curve stats: ${overview.curveStatsCount}`,
-    `- history events/samples: ${overview.eventCount}/${overview.sampleCount}`,
+    "## 概览",
+    `- 活动动画：${overview.activeAnimationCount}`,
+    `- 活动目标：${overview.activeTargetCount}`,
+    `- 活动通道：${overview.activeChannelCount}`,
+    `- 警告：${overview.warningCount}`,
+    `- 有元数据的目标：${overview.targetMetadataCount}`,
+    `- 曲线统计：${overview.curveStatsCount}`,
+    `- 历史事件 / 采样：${overview.eventCount}/${overview.sampleCount}`,
     "",
-    "## Top Props",
+    "## 高频属性",
     formatTable(overview.topProps),
     "",
-    "## Top Lane Keys",
+    "## 高频通道键",
     formatTable(overview.topLaneKeys),
     "",
-    "## Top Cancel Reasons",
+    "## 主要取消原因",
     formatTable(overview.topCancelReasons),
     "",
-    "## Warnings",
+    "## 警告",
     formatWarnings(data.report.warnings),
     "",
-    "## Active Animations",
+    "## 活动动画",
     formatAnimations(data.report.animations),
     "",
-    "## Curve Stats",
+    "## 曲线统计",
     formatCurveStats(data.report.curveStats),
     "",
-    "## Curve Summary",
+    "## 曲线摘要",
     formatCurveSummary(data.curveSummary),
   ].filter((line) => line != null).join("\n");
 }
 
 export function createMotionDebugAIReport(runtime = motionRuntime, options = {}) {
   const data = makeReportData(runtime, options);
-  const json = JSON.stringify(data, null, 2);
-  const markdown = formatMotionDebugMarkdown(data);
-  return {
-    copyText: `${markdown}\n\n## JSON\n\n\`\`\`json\n${json}\n\`\`\``,
-    data,
-    json,
-    markdown,
-  };
-}
-
-export function createMotionDebugCommands(runtime = motionRuntime, options = {}) {
-  const target = options.target || globalThis;
-  const commandOptions = { target };
-  const replayCapture = createMotionReplayCaptureController(runtime);
-  const commands = {
-    aiReport(reportOptions = {}) {
-      return createMotionDebugAIReport(runtime, reportOptions);
-    },
-    clear() {
-      runtime.clearDebugHistory();
-      return runtime.debugReport({ includeChannels: true, includeTargets: true });
-    },
-    configure(config = {}) {
-      return runtime.configureDebug(config);
-    },
-    copy(reportOptions = {}) {
-      const report = createMotionDebugAIReport(runtime, reportOptions);
-      target?.navigator?.clipboard?.writeText?.(report.copyText);
-      return report;
-    },
-    copyReplayTrace(traceOptions = {}) {
-      const trace = createMotionReplayTraceFromRuntime(runtime, traceOptions);
-      const json = JSON.stringify(trace, null, 2);
-      target?.navigator?.clipboard?.writeText?.(json);
-      return { json, trace };
-    },
-    full(reportOptions = {}) {
-      return createMotionDebugAIReport(runtime, { ...reportOptions, mode: "full" });
-    },
-    report(reportOptions = {}) {
-      return runtime.debugReport(reportOptions);
-    },
-    replayTrace(traceOptions = {}) {
-      const trace = createMotionReplayTraceFromRuntime(runtime, traceOptions);
-      return { json: JSON.stringify(trace, null, 2), trace };
-    },
-    selectedTarget(selection, reportOptions = {}) {
-      return createMotionDebugAIReport(runtime, {
-        ...reportOptions,
-        mode: "selectedTarget",
-        selection,
-      });
-    },
-    snapshot(snapshotOptions = {}) {
-      return runtime.debugSnapshot(snapshotOptions);
-    },
-    startReplayCapture(captureOptions = {}) {
-      return replayCapture.start(captureOptions);
-    },
-    stopReplayCapture(captureOptions = {}) {
-      return replayCapture.stop(captureOptions);
-    },
-    summary(reportOptions = {}) {
-      return createMotionDebugAIReport(runtime, { ...reportOptions, mode: "summary" });
-    },
-    uninstall() {
-      uninstallMotionDebugGlobal(commandOptions);
-    },
-  };
-  return commands;
-}
-
-export function installMotionDebugGlobal(options = {}) {
-  const {
-    dev = Boolean(import.meta.env?.DEV),
-    key = MOTION_DEBUG_GLOBAL_KEY,
-    runtime = motionRuntime,
-    target = globalThis,
-  } = options;
-  if (!dev || !target) return null;
-  const hadPrevious = hasLaunchpadDebugValue(key, target);
-  const previous = readLaunchpadDebugValue(key, target);
-  const commands = createMotionDebugCommands(runtime, { target });
-  commands.uninstall = () => {
-    if (readLaunchpadDebugValue(key, target) !== commands) return;
-    if (hadPrevious) setLaunchpadDebugValue(key, previous, target);
-    else deleteLaunchpadDebugValue(key, target);
-  };
-  setLaunchpadDebugValue(key, commands, target);
-  return commands;
-}
-
-export function uninstallMotionDebugGlobal(options = {}) {
-  const {
-    key = MOTION_DEBUG_GLOBAL_KEY,
-    target = globalThis,
-  } = options;
-  if (!target) return;
-  deleteLaunchpadDebugValue(key, target);
+  return createDiagnosticPresentation(data, {
+    formatMarkdown: formatMotionDebugMarkdown,
+    presentation: options.presentation,
+  });
 }

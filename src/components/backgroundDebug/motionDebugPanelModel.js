@@ -13,12 +13,12 @@ export const MOTION_RECORD_WINDOW_PRESETS = [
   { label: "30s", value: "30000" },
   { label: "60s", value: "60000" },
   { label: "120s", value: "120000" },
-  { label: "Custom", value: MOTION_RECORD_WINDOW_CUSTOM },
+  { label: "自定义", value: MOTION_RECORD_WINDOW_CUSTOM },
 ];
 export const MOTION_FILTER_PRESETS = [
-  { label: "All", value: "all" },
-  { label: "Active", value: "active" },
-  { label: "Warnings", value: "warnings" },
+  { label: "全部", value: "all" },
+  { label: "活动中", value: "active" },
+  { label: "警告", value: "warnings" },
 ];
 
 const DEFAULT_RECORD_WINDOW_MS = 30000;
@@ -77,7 +77,7 @@ function formatWindow(ms) {
   return `${formatMotionNumber(readNumber(ms, DEFAULT_RECORD_WINDOW_MS) / 1000, 0)}s`;
 }
 
-function makeEmptyRow(label = "none") {
+function makeEmptyRow(label = "无") {
   return { detail: "-", key: label, value: "0" };
 }
 
@@ -267,15 +267,15 @@ export function buildMotionOverviewRows(report = {}) {
   const eventCount = Array.isArray(history.events) ? history.events.length : 0;
   const sampleCount = Array.isArray(history.samples) ? history.samples.length : 0;
   return [
-    { label: "active", value: formatCount(summary.activeAnimationCount) },
-    { label: "targets", value: formatCount(summary.activeTargetCount) },
-    { label: "channels", value: formatCount(summary.activeChannelCount) },
-    { label: "warnings", value: formatCount(summary.warningCount) },
-    { label: "record", value: config.recordHistory ? "on" : "off" },
-    { label: "overlay", value: config.overlayEnabled ? "on" : "off" },
-    { label: "window", value: formatWindow(config.recordWindowMs) },
-    { label: "timeScale", value: `${formatMotionNumber(config.timeScale ?? 1, 2)}x` },
-    { label: "events/samples", value: `${formatCount(eventCount)} / ${formatCount(sampleCount)}`, wide: true },
+    { label: "活动动画", value: formatCount(summary.activeAnimationCount) },
+    { label: "目标", value: formatCount(summary.activeTargetCount) },
+    { label: "通道", value: formatCount(summary.activeChannelCount) },
+    { label: "警告", value: formatCount(summary.warningCount) },
+    { label: "记录历史", value: config.recordHistory ? "开" : "关" },
+    { label: "覆盖层", value: config.overlayEnabled ? "开" : "关" },
+    { label: "记录窗口", value: formatWindow(config.recordWindowMs) },
+    { label: "时间倍率", value: `${formatMotionNumber(config.timeScale ?? 1, 2)}x` },
+    { label: "事件 / 采样", value: `${formatCount(eventCount)} / ${formatCount(sampleCount)}`, wide: true },
   ];
 }
 
@@ -287,20 +287,20 @@ export function buildMotionReplayCaptureRows(status = {}, trace = null, options 
   const actualBytes = options.actualBytes ?? (trace ? JSON.stringify(trace).length : 0);
   const requestedSeconds = status.seconds ?? (capture.requestedDurationMs != null ? capture.requestedDurationMs / 1000 : 30);
   const sampleHz = status.sampleHz ?? capture.sampleHz ?? 60;
-  const profileLabel = profile.label || profile.id || "none";
+  const profileLabel = profile.label || profile.id || "无";
   const estimateLabel = estimate.jsonSizeLabel
     ? `${formatCount(estimate.frameCount)}f / ${formatCount(estimate.eventCount)}e / ${estimate.jsonSizeLabel}`
     : "-";
   return [
-    { label: "capture", value: status.active ? "active" : "idle" },
-    { label: "profile", value: profileLabel, wide: true },
-    { label: "window", value: `${formatMotionNumber(normalizeMotionCustomSeconds(requestedSeconds), 0)}s` },
-    { label: "sampleHz", value: `${formatMotionNumber(sampleHz, 0)}Hz` },
-    { label: "estimate", value: estimateLabel, wide: true },
-    { label: "actual JSON", value: trace ? formatBytes(actualBytes) : "-", wide: true },
-    { label: "frames/events", value: `${formatCount(summary.frameCount)} / ${formatCount(summary.eventCount)}`, wide: true },
-    { label: "tracks/targets", value: `${formatCount(summary.trackCount)} / ${formatCount(summary.targetCount)}`, wide: true },
-    { label: "schema", value: trace?.schema || "none", wide: true },
+    { label: "捕获状态", value: status.active ? "捕获中" : "空闲" },
+    { label: "捕获配置", value: profileLabel, wide: true },
+    { label: "捕获窗口", value: `${formatMotionNumber(normalizeMotionCustomSeconds(requestedSeconds), 0)}s` },
+    { label: "采样率", value: `${formatMotionNumber(sampleHz, 0)}Hz` },
+    { label: "预计规模", value: estimateLabel, wide: true },
+    { label: "实际 JSON", value: trace ? formatBytes(actualBytes) : "-", wide: true },
+    { label: "帧 / 事件", value: `${formatCount(summary.frameCount)} / ${formatCount(summary.eventCount)}`, wide: true },
+    { label: "轨道 / 目标", value: `${formatCount(summary.trackCount)} / ${formatCount(summary.targetCount)}`, wide: true },
+    { label: "协议", value: trace?.schema || "无", wide: true },
   ];
 }
 
@@ -409,13 +409,13 @@ export function buildMotionLayerTreeRows(report = {}, filters = {}, limit = MAX_
     .slice(0, Math.max(0, Math.floor(readNumber(limit, MAX_LAYER_TREE_ROW_COUNT))))
     .map((group) => ({
       activeCount: formatCount(group.activeTargetCount),
-      detail: `${formatCompactList(group.kinds)} / props ${formatCompactList(group.props)}`,
+      detail: `${formatCompactList(group.kinds)} / 属性 ${formatCompactList(group.props)}`,
       eventCount: formatCount(group.eventCount),
       key: `layer:${group.layer}`,
       layer: group.layer,
       props: formatCompactList(group.props),
       sources: formatCompactList(group.sources, 5),
-      summary: `${formatCount(group.targetCount)} targets / ${formatCount(group.activeTargetCount)} active / ${formatCount(group.warningCount)} warnings`,
+      summary: `${formatCount(group.targetCount)} 个目标 / ${formatCount(group.activeTargetCount)} 个活动动画 / ${formatCount(group.warningCount)} 个警告`,
       targetCount: formatCount(group.targetCount),
       warningCount: formatCount(group.warningCount),
     }));
@@ -578,7 +578,7 @@ export function buildMotionCurveChartGroups(report = {}, filters = {}, options =
           overshootCount: stats.overshootCount ?? 0,
           retargetCount: stats.retargetCount ?? 0,
         },
-        summary: `${formatCount(points.length)} samples / ${formatCount(events.length)} events / normalized`,
+        summary: `${formatCount(points.length)} 个采样 / ${formatCount(events.length)} 个事件 / 已归一化`,
         targetId: track.targetId,
         toPath: makeSvgPath(to),
         valuePath: makeSvgPath(value),
@@ -597,6 +597,6 @@ export function buildMotionFilterSummary(report = {}, filters = {}) {
   return {
     preset: normalizeMotionFilterPreset(filters.preset),
     query: normalizeQuery(filters.query),
-    text: `${formatCount(properties)} props / ${formatCount(events)} events`,
+    text: `${formatCount(properties)} 个属性 / ${formatCount(events)} 个事件`,
   };
 }

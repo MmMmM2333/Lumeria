@@ -1,10 +1,6 @@
 import { FolderClosingGhostController } from "./folderClosingGhostController.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
-import {
-  deleteLaunchpadDebugValue,
-  readLaunchpadDebugValue,
-  setLaunchpadDebugValue,
-} from "../debugNamespace.js";
+import { sceneDiagnosticsState } from "../../../diagnostics/sceneDiagnosticsState.js";
 import {
   clearMotionPreferencesForTests,
   setReducedMotionForTests,
@@ -536,10 +532,9 @@ export function runFolderClosingGhostControllerTests() {
     const layer = makeLayer();
     const completed = [];
     const logs = [];
-    const originalDebug = readLaunchpadDebugValue("folderHandoff");
-    const originalLastDebug = readLaunchpadDebugValue("lastFolderHandoff");
     const originalLog = console.log;
-    setLaunchpadDebugValue("folderHandoff", { log: true, timeline: true });
+    sceneDiagnosticsState.reset();
+    sceneDiagnosticsState.configureFolderHandoff({ log: true, timeline: true });
     console.log = (...args) => logs.push(args);
     try {
       const ghost = makeGhost();
@@ -564,17 +559,14 @@ export function runFolderClosingGhostControllerTests() {
         "visual handoff release debug should log before overlay visuals are cleared"
       );
       assert(
-        readLaunchpadDebugValue("lastFolderHandoff")?.folderId === "folder-1" &&
-          readLaunchpadDebugValue("lastFolderHandoff")?.phase === "overlay-release-after-clear",
+        sceneDiagnosticsState.read("folderHandoff")?.folderId === "folder-1" &&
+          sceneDiagnosticsState.read("folderHandoff")?.phase === "overlay-release-after-clear",
         "visual handoff debug should publish the latest folder handoff snapshot"
       );
       assert(completed.join(",") === "close-key", "debug logging should not change visual arrival completion");
     } finally {
       console.log = originalLog;
-      if (originalDebug === undefined) deleteLaunchpadDebugValue("folderHandoff");
-      else setLaunchpadDebugValue("folderHandoff", originalDebug);
-      if (originalLastDebug === undefined) deleteLaunchpadDebugValue("lastFolderHandoff");
-      else setLaunchpadDebugValue("lastFolderHandoff", originalLastDebug);
+      sceneDiagnosticsState.reset();
       motionRuntime.reset();
     }
   }

@@ -1,4 +1,6 @@
 import { MOTION_REPLAY_TRACE_SCHEMA } from "../../rendering/pixi/animation/motionReplayTraceSchema.js";
+import { DiagnosticError } from "../../diagnostics/diagnosticError.js";
+import { createDiagnosticPresentation } from "../../diagnostics/diagnosticPresentation.js";
 import {
   clamp,
   collectRecordText,
@@ -16,6 +18,7 @@ const MAX_REPLAY_FRAME_ROWS = 10;
 const MAX_REPLAY_EVENT_ROWS = 16;
 const MAX_REPLAY_CURVE_GROUPS = 4;
 const MAX_REPLAY_OVERLAY_ROWS = 8;
+const NORMALIZED_MOTION_REPLAY_TRACES = new WeakSet();
 
 function formatNumber(value, digits = 2) {
   const number = Number(value);
@@ -113,9 +116,17 @@ function normalizeEvent(event = {}) {
 }
 
 export function normalizeMotionReplayTrace(trace) {
-  if (!trace || typeof trace !== "object") throw new Error("Replay trace is missing.");
+  if (!trace || typeof trace !== "object") {
+    throw new DiagnosticError("motion-replay-trace-missing", "缺少 Motion 回放捕获数据", {
+      nextActions: ["先载入或捕获一份 Motion 回放轨迹"],
+    });
+  }
+  if (NORMALIZED_MOTION_REPLAY_TRACES.has(trace)) return trace;
   if (trace.schema !== MOTION_REPLAY_TRACE_SCHEMA) {
-    throw new Error(`Unsupported replay trace schema: ${trace.schema || "unknown"}`);
+    throw new DiagnosticError("motion-replay-schema-not-supported", "不支持该 Motion 回放协议", {
+      details: { receivedSchema: trace.schema || "unknown", supportedSchema: MOTION_REPLAY_TRACE_SCHEMA },
+      nextActions: [`提供 ${MOTION_REPLAY_TRACE_SCHEMA} 格式的捕获数据`],
+    });
   }
   const frames = (trace.timeline?.frames || [])
     .map(normalizeFrame)
@@ -124,7 +135,7 @@ export function normalizeMotionReplayTrace(trace) {
     .map(normalizeEvent)
     .sort((a, b) => readNumber(a.timeMs, 0) - readNumber(b.timeMs, 0));
   const timeRangeMs = makeTimeRange(frames, events);
-  return {
+  const normalized = {
     ...trace,
     summary: trace.summary || {},
     targets: Array.isArray(trace.targets) ? trace.targets.map((target) => ({ ...target })) : [],
@@ -137,6 +148,8 @@ export function normalizeMotionReplayTrace(trace) {
     tracks: Array.isArray(trace.tracks) ? trace.tracks.map((track) => ({ ...track })) : [],
     warnings: Array.isArray(trace.warnings) ? trace.warnings.map((warning) => ({ ...warning })) : [],
   };
+  NORMALIZED_MOTION_REPLAY_TRACES.add(normalized);
+  return normalized;
 }
 
 export function assertMotionReplayImportSize(size, maxBytes = MOTION_REPLAY_IMPORT_MAX_BYTES) {
@@ -144,14 +157,26 @@ export function assertMotionReplayImportSize(size, maxBytes = MOTION_REPLAY_IMPO
   const limit = Math.max(1, Math.floor(readNumber(maxBytes, MOTION_REPLAY_IMPORT_MAX_BYTES)));
   if (byteCount > limit) {
     const mb = (limit / (1024 * 1024)).toFixed(0);
-    throw new Error(`Replay trace import is too large. Maximum supported size is ${mb}MB.`);
+    throw new DiagnosticError("motion-replay-import-too-large", `Motion 回放导入过大；最大支持 ${mb} MB`, {
+      details: { byteCount, maxBytes: limit },
+      nextActions: ["缩短捕获时长、减少轨道数量，或导入更小的捕获文件"],
+    });
   }
 }
 
 export function parseMotionReplayTraceJson(json, options = {}) {
   const text = String(json || "");
   assertMotionReplayImportSize(text.length, options.maxBytes);
-  return normalizeMotionReplayTrace(JSON.parse(text));
+  try {
+    return normalizeMotionReplayTrace(JSON.parse(text));
+  } catch (error) {
+    if (error instanceof DiagnosticError) throw error;
+    throw new DiagnosticError("motion-replay-json-invalid", "Motion 回放 JSON 解析失败", {
+      cause: error,
+      details: { technicalDetail: String(error?.message || error) },
+      nextActions: ["检查 JSON 语法与文件内容后重试"],
+    });
+  }
 }
 
 export function getMotionReplayTimeRange(trace = {}) {
@@ -255,20 +280,20 @@ export function findMotionReplayEventStepTime(trace = {}, timeMs = 0, direction 
 export function buildMotionReplayOverviewRows(trace = null, timeMs = 0) {
   if (!trace) {
     return [
-      { label: "viewer", value: "empty" },
-      { label: "schema", value: "none", wide: true },
+      { label: "查看器", value: "空" },
+      { label: "协议", value: "无", wide: true },
     ];
   }
   const range = getMotionReplayTimeRange(trace);
   const currentTime = normalizeMotionReplayTime(trace, timeMs);
   return [
-    { label: "viewer", value: "loaded" },
-    { label: "schema", value: trace.schema || "unknown", wide: true },
-    { label: "mode", value: trace.mode || "-", wide: true },
-    { label: "time", value: `${formatNumber(currentTime, 0)}ms` },
-    { label: "duration", value: `${formatNumber(readNumber(range.max) - readNumber(range.min), 0)}ms` },
-    { label: "frames/events", value: `${formatCount(trace.timeline?.frames?.length)} / ${formatCount(trace.timeline?.events?.length)}`, wide: true },
-    { label: "tracks/targets", value: `${formatCount(trace.tracks?.length)} / ${formatCount(trace.targets?.length)}`, wide: true },
+    { label: "查看器", value: "已载入" },
+    { label: "协议", value: trace.schema || "未知", wide: true },
+    { label: "模式", value: trace.mode || "-", wide: true },
+    { label: "当前时间", value: `${formatNumber(currentTime, 0)}ms` },
+    { label: "时长", value: `${formatNumber(readNumber(range.max) - readNumber(range.min), 0)}ms` },
+    { label: "帧 / 事件", value: `${formatCount(trace.timeline?.frames?.length)} / ${formatCount(trace.timeline?.events?.length)}`, wide: true },
+    { label: "轨道 / 目标", value: `${formatCount(trace.tracks?.length)} / ${formatCount(trace.targets?.length)}`, wide: true },
   ];
 }
 
@@ -427,7 +452,7 @@ export function buildMotionReplayCurveGroups(trace = {}, timeMs = 0, filters = {
         },
         sampleCount: points.length,
         sourceLabel: track.sourceLabel || resolveRecordLabel(track, targetsById),
-        summary: `${formatCount(points.length)} samples / ${formatCount(track.events.length)} events`,
+        summary: `${formatCount(points.length)} 个采样 / ${formatCount(track.events.length)} 个事件`,
         toPath: makeSvgPath(to),
         valuePath: makeSvgPath(value),
         velocityPath: makeSvgPath(velocity),
@@ -530,6 +555,24 @@ function collectUsedTrackKeys(frames = [], events = []) {
   return keys;
 }
 
+function formatMotionReplayIntervalMarkdown(data) {
+  const summary = data.summary || {};
+  return [
+    "# Motion 回放区间",
+    "",
+    `- 时间：${data.interval?.startMs ?? 0}ms..${data.interval?.endMs ?? 0}ms`,
+    `- 帧 / 事件：${summary.frameCount ?? 0} / ${summary.eventCount ?? 0}`,
+    `- 目标 / 轨道：${summary.targetCount ?? 0} / ${summary.trackCount ?? 0}`,
+    `- 属性值：${summary.valueCount ?? 0}`,
+    "",
+    "## 完整结构化数据",
+    "",
+    "```json",
+    JSON.stringify(data, null, 2),
+    "```",
+  ].join("\n");
+}
+
 export function createMotionReplayIntervalExport(trace = {}, options = {}) {
   const normalized = normalizeMotionReplayTrace(trace);
   const filters = options.filters || {};
@@ -584,10 +627,10 @@ export function createMotionReplayIntervalExport(trace = {}, options = {}) {
     tracks,
     warnings,
   };
-  return {
-    data,
-    json: JSON.stringify(data, null, 2),
-  };
+  return createDiagnosticPresentation(data, {
+    formatMarkdown: formatMotionReplayIntervalMarkdown,
+    presentation: options.presentation,
+  });
 }
 
 export function buildMotionReplayFilterSummary(trace = {}, timeMs = 0, filters = {}) {
@@ -595,6 +638,6 @@ export function buildMotionReplayFilterSummary(trace = {}, timeMs = 0, filters =
   const eventRows = buildMotionReplayEventRows(trace, timeMs, filters, 100000);
   return {
     query: normalizeQuery(filters.query),
-    text: `${formatCount(frameRows.length)} props / ${formatCount(eventRows.length)} events`,
+    text: `${formatCount(frameRows.length)} 个属性 / ${formatCount(eventRows.length)} 个事件`,
   };
 }

@@ -59,11 +59,6 @@ import {
   preloadIconTexturesAsync,
   subscribeIconTextureLoadSettlements,
 } from "./assets/iconTextureCache.js";
-import {
-  deleteLaunchpadDebugValue,
-  readLaunchpadDebugValue,
-  setLaunchpadDebugValue,
-} from "./debugNamespace.js";
 import { createPixiRenderScheduler } from "./pixiRenderScheduler.js";
 import {
   makeFolderInternalActivityRenderReason,
@@ -137,6 +132,7 @@ const props = defineProps({
   isSearchMode: { type: Boolean, default: false },
   isTextlessMode: { type: Boolean, default: false },
   launchTargetStatusById: { type: Object, default: () => ({}) },
+  liveDesktopDiagnosticsPort: { type: Object, default: null },
   pageGridMeasureStyle: { type: Object, required: true },
   pageTrackScrub: { type: Object, default: null },
   setPageRef: { type: Function, required: true },
@@ -187,9 +183,10 @@ let folderTexturePrewarmTimer = null;
 let folderTexturePrewarmGeneration = 0;
 let renderScheduler = null;
 let renderProbe = null;
+let diagnosticHub = null;
+let diagnosticGlobalInstallation = null;
 let desktopDomGeometryCache = null;
 let pixiResizeSignature = "";
-let motionDebugCommands = null;
 let motionDebugOverlay = null;
 let unsubscribeIconTextureLoadSettlements = null;
 let unsubscribeMotionRuntimeRenderSignal = null;
@@ -571,11 +568,6 @@ function logFolderHandoffTimeline(metrics, folderClosingHandoffId) {
   folderClosingHandoffRetainer.consumePostReleaseFrame(folderClosingHandoffId);
 }
 
-function publishFolderVisualDebugSnapshot() {
-  if (!import.meta.env.DEV) return;
-  setLaunchpadDebugValue("folderVisual", () => layer?.getFolderVisualDebugSnapshot?.() || null);
-}
-
 function updateMotionDebugOverlay() {
   if (!import.meta.env.DEV || !motionDebugOverlay) return;
   const config = motionRuntime.configureDebug();
@@ -659,7 +651,6 @@ function renderPixi(options = {}) {
       ...collectDragPreviewTextureItems(dragSnapshot.dragPreviewState || dragSnapshot.dragReleaseState),
       ...collectFolderCreateReleaseTextureItems(props.folderCreateReleaseState),
     ]);
-    publishFolderVisualDebugSnapshot();
     logFolderHandoffTimeline(metrics, folderClosingHandoffId);
   }
   updateMotionDebugOverlay();
@@ -910,6 +901,17 @@ function handleSingleStageFolderTitleFrameChange(frame) {
   singleStageFolderTitleFrame.value = frame || null;
 }
 
+function disposeDiagnosticHub(hub) {
+  if (!hub || typeof hub.dispose !== "function") return;
+  void Promise.resolve(hub.dispose()).then((result) => {
+    if (result?.ok === false) {
+      console.error("诊断入口释放不完整", result.error);
+    }
+  }).catch((error) => {
+    console.error("诊断入口释放失败", error);
+  });
+}
+
 function destroyPixi(options = {}) {
   const deep = options.deep !== false;
   destroyed = true;
@@ -940,16 +942,12 @@ function destroyPixi(options = {}) {
   invalidateDesktopDomGeometry();
   pixiResizeSignature = "";
   folderClosingHandoffRetainer.reset();
-  motionDebugCommands?.uninstall?.();
-  motionDebugCommands = null;
   if (import.meta.env.DEV) {
-    renderProbe?.destroy?.();
+    diagnosticGlobalInstallation?.uninstall?.();
+    diagnosticGlobalInstallation = null;
+    disposeDiagnosticHub(diagnosticHub);
+    diagnosticHub = null;
     renderProbe = null;
-    deleteLaunchpadDebugValue("renderProbe");
-  }
-  deleteLaunchpadDebugValue("folderVisual");
-  if (import.meta.env.DEV && readLaunchpadDebugValue("motionOverlay")) {
-    deleteLaunchpadDebugValue("motionOverlay");
   }
   singleStageFolderPanelGeometry.value = null;
   singleStageFolderTitleFrame.value = null;
@@ -1042,20 +1040,35 @@ onMounted(async () => {
   if (import.meta.env.DEV) {
     const [
       { MotionDebugOverlayLayer },
-      { installMotionDebugGlobal },
       { createMotionRuntimeDebugAdapter },
       { capturePixiRenderSnapshot, createPixiRenderProbe },
+      { createDiagnosticArtifactStore },
+      { createDiagnosticHub },
+      { installDiagnosticHubGlobal },
+      { createMotionDiagnosticAdapter },
+      { createRenderDiagnosticAdapter },
+      { createSceneDiagnosticAdapter },
+      { createBrowserLiveDesktopDebugSettingsStore },
+      { createLiveDesktopDiagnosticsController },
+      { createLiveDesktopDiagnosticAdapter },
     ] = await Promise.all([
       import("./animation/motionDebugOverlayLayer.js"),
-      import("./animation/motionDebugReport.js"),
       import("./animation/motionRuntimeDebugAdapter.dev.js"),
       import("./renderDebugProbe.dev.js"),
+      import("../../diagnostics/diagnosticArtifactStore.js"),
+      import("../../diagnostics/diagnosticHub.js"),
+      import("../../diagnostics/diagnosticGlobal.js"),
+      import("../../diagnostics/motionDiagnosticAdapter.js"),
+      import("../../diagnostics/renderDiagnosticAdapter.js"),
+      import("../../diagnostics/sceneDiagnosticAdapter.js"),
+      import("../../diagnostics/liveDesktopDebugSettings.js"),
+      import("../../diagnostics/liveDesktopDiagnosticsController.js"),
+      import("../../diagnostics/liveDesktopDiagnosticAdapter.js"),
     ]);
+    if (destroyed || !app || !layer) return;
     installMotionRuntimeDebugAdapterFactory(createMotionRuntimeDebugAdapter);
     motionDebugOverlay = new MotionDebugOverlayLayer();
     app.stage.addChild(motionDebugOverlay);
-    setLaunchpadDebugValue("motionOverlay", () => motionDebugOverlay?.debugSnapshot?.() || null);
-    motionDebugCommands = installMotionDebugGlobal();
     renderProbe = createPixiRenderProbe({
       capture: (captureOptions) => capturePixiRenderSnapshot({
         ...captureOptions,
@@ -1065,13 +1078,40 @@ onMounted(async () => {
       }),
     });
     renderProbe.attachCanvas(app.canvas);
-    setLaunchpadDebugValue("renderProbe", renderProbe.commands);
+    const diagnosticAdapters = [
+      createMotionDiagnosticAdapter({
+        getOverlaySnapshot: () => motionDebugOverlay?.debugSnapshot?.() || null,
+        runtime: motionRuntime,
+      }),
+      createRenderDiagnosticAdapter({
+        getFolderVisualSnapshot: () => layer?.getFolderVisualDebugSnapshot?.() || null,
+        probe: renderProbe,
+      }),
+      createSceneDiagnosticAdapter(),
+    ];
+    if (props.liveDesktopDiagnosticsPort) {
+      const liveDesktopController = createLiveDesktopDiagnosticsController({
+        applyRuntime: (request) => props.liveDesktopDiagnosticsPort.applyRuntime(request),
+        getRuntimeStatus: () => props.liveDesktopDiagnosticsPort.getRuntimeStatus(),
+        refreshRuntime: () => props.liveDesktopDiagnosticsPort.refreshRuntime(),
+        settingsStore: createBrowserLiveDesktopDebugSettingsStore(),
+      });
+      diagnosticAdapters.push(createLiveDesktopDiagnosticAdapter({
+        controller: liveDesktopController,
+      }));
+    }
+    diagnosticHub = createDiagnosticHub({
+      adapters: diagnosticAdapters,
+      artifactStore: createDiagnosticArtifactStore(),
+    });
+    diagnosticGlobalInstallation = installDiagnosticHubGlobal({ hub: diagnosticHub });
   }
   resizeObserver = new ResizeObserver(handleResize);
   resizeObserver.observe(hostRef.value);
   window.addEventListener("resize", handleResize);
   window.addEventListener(WINDOW_CHROME_STATE_CHANGE_EVENT, handleWindowChromeStateChange);
   await nextTick();
+  if (destroyed || !app || !layer) return;
   refreshDesktopDomGeometry();
   requestRender("mount");
   scheduleFolderTexturePrewarm();
@@ -1106,7 +1146,7 @@ watch(
   () => [props.folderSourceGhostedId, props.folderSourceGhostedIds],
   () => {
     // Source ghosting is the handoff boundary; do not wait for the next desktop frame.
-    if (applyImmediateFolderSourceGhosting()) publishFolderVisualDebugSnapshot();
+    applyImmediateFolderSourceGhosting();
   },
   { flush: "sync" }
 );

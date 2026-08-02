@@ -224,6 +224,19 @@ export function createMotionReplayCaptureController(runtime = motionRuntime, opt
     return status();
   }
 
+  function leaveCapture(options = {}) {
+    if (options.restore !== false && previousConfig) runtime.configureDebug(previousConfig);
+    active = false;
+    previousConfig = null;
+    startedAt = null;
+  }
+
+  function cancel(cancelOptions = {}) {
+    if (!active) return status();
+    leaveCapture(cancelOptions);
+    return status();
+  }
+
   function stop(stopOptions = {}) {
     const stoppedAt = stopOptions.stoppedAt || new Date().toISOString();
     const trace = createMotionReplayTraceFromRuntime(runtime, {
@@ -233,18 +246,15 @@ export function createMotionReplayCaptureController(runtime = motionRuntime, opt
       startedAt,
       stoppedAt,
     });
-    if (stopOptions.restore !== false && previousConfig) runtime.configureDebug(previousConfig);
-    active = false;
-    previousConfig = null;
-    startedAt = null;
+    leaveCapture(stopOptions);
     return {
-      json: JSON.stringify(trace, null, 2),
       status: status(),
       trace,
     };
   }
 
   return {
+    cancel,
     start,
     status,
     stop,

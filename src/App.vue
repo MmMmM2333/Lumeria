@@ -95,6 +95,7 @@
         :is-search-mode="isSearchMode"
         :is-textless-mode="isTextlessMode"
         :launch-target-status-by-id="launchTargetStatusById"
+        :live-desktop-diagnostics-port="liveDesktopDiagnosticsPort"
         :page-grid-measure-style="pageGridMeasureStyle"
         :page-track-scrub="resolveMaybeRef(pageTrackScrub)"
         :desktop-grid-debug-options="desktopGridDebugOptions"
@@ -165,6 +166,12 @@ import { useLaunchpadController } from "./composables/useLaunchpadController.js"
 import { backgroundSourceUsesLiveDesktop } from "./composables/useLaunchpadSettingsConfig.js";
 import { resolveCssBackgroundImagePlacement } from "./domain/backgroundImageLayout.js";
 import { isLiveDesktopExperimentEnabled } from "./domain/experimentalFeatures.js";
+import {
+  DEFAULT_LIVE_DESKTOP_DEBUG_SETTINGS,
+  LIVE_DESKTOP_DEBUG_SETTINGS_CHANGED_EVENT,
+  LIVE_DESKTOP_DEBUG_STORAGE_KEYS,
+  readLiveDesktopDebugSettings,
+} from "./diagnostics/liveDesktopDebugSettings.js";
 import {
   resetDesktopLayoutDebugParams,
   resolveDesktopDragHitDebugOptions,
@@ -328,11 +335,7 @@ const desktopDragHitDebugOptions = computed(() => (
   import.meta.env.DEV ? resolveDesktopDragHitDebugOptions(desktopLayoutDebugParams) : null
 ));
 const isLiveDesktopExperimentActive = computed(() => isLiveDesktopExperimentEnabled());
-const LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY = "lumeriaLiveDesktopCompositorKeeper";
-const LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT = "lumeria-live-desktop-compositor-keeper-change";
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_INTERVAL_MS = 250;
-const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY = "lumeriaLiveDesktopCssFallbackEffects";
-const LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT = "lumeria-live-desktop-css-fallback-effects-change";
 const launchpadOverlaysRef = ref(null);
 const BACKGROUND_MEDIA_FADE_MS = 220;
 const PIXI_BACKGROUND_HANDOFF_DELAY_MS = 220;
@@ -346,13 +349,15 @@ const isStartupMaskMounted = ref(true);
 const isStartupMaskVisible = ref(true);
 const backgroundImagePixelSize = ref(null);
 const backgroundViewportSize = ref({ height: 1, width: 1 });
-const isLiveDesktopCompositorKeeperEnabled = ref(isLiveDesktopExperimentEnabled()
-  ? readLiveDesktopCompositorKeeperSetting()
-  : false);
+const initialLiveDesktopDebugSettings = import.meta.env.DEV && isLiveDesktopExperimentEnabled()
+  ? readLiveDesktopDebugSettings()
+  : { issues: [], values: DEFAULT_LIVE_DESKTOP_DEBUG_SETTINGS };
+if (initialLiveDesktopDebugSettings.issues.length) {
+  console.error("读取 Live Desktop 调试设置不完整", initialLiveDesktopDebugSettings.issues);
+}
+const isLiveDesktopCompositorKeeperEnabled = ref(initialLiveDesktopDebugSettings.values.compositorKeeper);
 const liveDesktopCompositorTick = ref(0);
-liveDesktopCssFallbackEffectsEnabled.value = isLiveDesktopExperimentEnabled()
-  ? readLiveDesktopCssFallbackEffectsSetting()
-  : false;
+liveDesktopCssFallbackEffectsEnabled.value = initialLiveDesktopDebugSettings.values.cssFallbackEffects;
 const backgroundImageLayers = ref([
   { id: "background-image-a", url: null, visible: false },
   { id: "background-image-b", url: null, visible: false },
@@ -404,52 +409,29 @@ function backgroundImageUrlStyle(url) {
   return `url(${JSON.stringify(url)})`;
 }
 
-function readLiveDesktopCompositorKeeperSetting() {
-  if (!isLiveDesktopExperimentEnabled()) return false;
-  if (typeof window === "undefined") return false;
-  try {
-    return window.localStorage?.getItem(LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY) === "true";
-  } catch {
-    return false;
+function applyLiveDesktopFrontendDebugSettings(values = DEFAULT_LIVE_DESKTOP_DEBUG_SETTINGS) {
+  isLiveDesktopCompositorKeeperEnabled.value = Boolean(values.compositorKeeper);
+  liveDesktopCssFallbackEffectsEnabled.value = Boolean(values.cssFallbackEffects);
+}
+
+function handleLiveDesktopDebugSettingsChanged(event) {
+  if (!isLiveDesktopExperimentEnabled()) return;
+  const values = event?.detail?.values;
+  if (values) {
+    applyLiveDesktopFrontendDebugSettings(values);
+    return;
   }
-}
-
-function readLiveDesktopCssFallbackEffectsSetting() {
-  if (!isLiveDesktopExperimentEnabled()) return false;
-  if (typeof window === "undefined") return false;
-  try {
-    return window.localStorage?.getItem(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY) === "true";
-  } catch {
-    return false;
+  const snapshot = readLiveDesktopDebugSettings();
+  if (snapshot.issues.length) {
+    console.error("刷新 Live Desktop 前端调试设置失败", snapshot.issues);
   }
+  applyLiveDesktopFrontendDebugSettings(snapshot.values);
 }
 
-function handleLiveDesktopCompositorKeeperChanged(event) {
+function handleLiveDesktopDebugSettingsStorage(event) {
   if (!isLiveDesktopExperimentEnabled()) return;
-  const enabled = event?.detail?.enabled;
-  isLiveDesktopCompositorKeeperEnabled.value = typeof enabled === "boolean"
-    ? enabled
-    : readLiveDesktopCompositorKeeperSetting();
-}
-
-function handleLiveDesktopCssFallbackEffectsChanged(event) {
-  if (!isLiveDesktopExperimentEnabled()) return;
-  const enabled = event?.detail?.enabled;
-  liveDesktopCssFallbackEffectsEnabled.value = typeof enabled === "boolean"
-    ? enabled
-    : readLiveDesktopCssFallbackEffectsSetting();
-}
-
-function handleLiveDesktopCompositorKeeperStorage(event) {
-  if (!isLiveDesktopExperimentEnabled()) return;
-  if (event?.key !== LIVE_DESKTOP_COMPOSITOR_KEEPER_STORAGE_KEY) return;
-  isLiveDesktopCompositorKeeperEnabled.value = event.newValue === "true";
-}
-
-function handleLiveDesktopCssFallbackEffectsStorage(event) {
-  if (!isLiveDesktopExperimentEnabled()) return;
-  if (event?.key !== LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_STORAGE_KEY) return;
-  liveDesktopCssFallbackEffectsEnabled.value = event.newValue === "true";
+  if (![LIVE_DESKTOP_DEBUG_STORAGE_KEYS.compositorKeeper, LIVE_DESKTOP_DEBUG_STORAGE_KEYS.cssFallbackEffects].includes(event?.key)) return;
+  handleLiveDesktopDebugSettingsChanged();
 }
 
 function clearLiveDesktopCompositorKeeperTimer() {
@@ -815,19 +797,15 @@ onMounted(() => {
   refreshBackgroundLayoutMetrics();
   window.addEventListener("resize", refreshBackgroundLayoutMetrics);
   window.addEventListener("focus", refreshBackgroundLayoutMetrics);
-  window.addEventListener(LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT, handleLiveDesktopCompositorKeeperChanged);
-  window.addEventListener(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT, handleLiveDesktopCssFallbackEffectsChanged);
-  window.addEventListener("storage", handleLiveDesktopCompositorKeeperStorage);
-  window.addEventListener("storage", handleLiveDesktopCssFallbackEffectsStorage);
+  window.addEventListener(LIVE_DESKTOP_DEBUG_SETTINGS_CHANGED_EVENT, handleLiveDesktopDebugSettingsChanged);
+  window.addEventListener("storage", handleLiveDesktopDebugSettingsStorage);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("resize", refreshBackgroundLayoutMetrics);
   window.removeEventListener("focus", refreshBackgroundLayoutMetrics);
-  window.removeEventListener(LIVE_DESKTOP_COMPOSITOR_KEEPER_CHANGED_EVENT, handleLiveDesktopCompositorKeeperChanged);
-  window.removeEventListener(LIVE_DESKTOP_CSS_FALLBACK_EFFECTS_CHANGED_EVENT, handleLiveDesktopCssFallbackEffectsChanged);
-  window.removeEventListener("storage", handleLiveDesktopCompositorKeeperStorage);
-  window.removeEventListener("storage", handleLiveDesktopCssFallbackEffectsStorage);
+  window.removeEventListener(LIVE_DESKTOP_DEBUG_SETTINGS_CHANGED_EVENT, handleLiveDesktopDebugSettingsChanged);
+  window.removeEventListener("storage", handleLiveDesktopDebugSettingsStorage);
 });
 
 const headerDomRefs = { headerRef, searchRef, searchInputRef };
@@ -835,6 +813,29 @@ const desktopDomRefs = { desktopMainRef, rootRef, shellRef };
 const chromeFrameRefs = { pageDotsRef, shellRef };
 
 const settingsPanelState = { ...settingsPanel, appVersion };
+const liveDesktopDiagnosticsPort = import.meta.env.DEV
+  ? Object.freeze({
+    async applyRuntime({ restart }) {
+      if (typeof restart !== "boolean") {
+        throw new TypeError("Live Desktop runtime restart must be a boolean");
+      }
+      const method = restart
+        ? settingsPanelState.restartLiveDesktopBackgroundRuntime
+        : settingsPanelState.syncLiveDesktopBackgroundRuntime;
+      if (typeof method !== "function") throw new Error("Live Desktop runtime apply method is unavailable");
+      return method();
+    },
+    getRuntimeStatus() {
+      return settingsPanelState.liveDesktopRuntimeStatus?.value || null;
+    },
+    async refreshRuntime() {
+      if (typeof settingsPanelState.refreshLiveDesktopRuntimeStatus !== "function") {
+        throw new Error("Live Desktop runtime refresh method is unavailable");
+      }
+      return settingsPanelState.refreshLiveDesktopRuntimeStatus();
+    },
+  })
+  : null;
 
 function resolveMaybeRef(value) {
   return value && typeof value === "object" && "value" in value ? value.value : value;

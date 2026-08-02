@@ -223,24 +223,30 @@ export function runMotionReplayViewerModelTests() {
     assertMotionReplayImportSize(MOTION_REPLAY_IMPORT_MAX_BYTES + 1);
     assert(false, "oversized replay imports should throw before parsing");
   } catch (error) {
-    assert(String(error.message).includes("too large"), "oversized replay import error should be readable");
+    assert(error?.code === "motion-replay-import-too-large" && String(error.message).includes("过大"), "oversized replay import error should be readable and machine-identifiable");
   }
   try {
     parseMotionReplayTraceJson(JSON.stringify(makeTrace()), { maxBytes: 10 });
     assert(false, "parse should reject oversized JSON text");
   } catch (error) {
-    assert(String(error.message).includes("too large"), "parse size guard error should be readable");
+    assert(error?.code === "motion-replay-import-too-large" && String(error.message).includes("过大"), "parse size guard error should be readable and machine-identifiable");
   }
   try {
     normalizeMotionReplayTrace({ schema: "bad" });
     assert(false, "unsupported schema should throw");
   } catch (error) {
-    assert(String(error.message).includes("Unsupported"), "unsupported schema error should be readable");
+    assert(error?.code === "motion-replay-schema-not-supported" && String(error.message).includes("不支持"), "unsupported schema error should be readable and machine-identifiable");
+  }
+  try {
+    parseMotionReplayTraceJson("{");
+    assert(false, "invalid replay JSON should throw");
+  } catch (error) {
+    assert(error?.code === "motion-replay-json-invalid" && String(error.message).includes("解析失败"), "invalid replay JSON should expose a readable stable error");
   }
 
   const overviewRows = buildMotionReplayOverviewRows(trace, 50);
-  assert(overviewRows.some((row) => row.label === "viewer" && row.value === "loaded"), "overview should expose loaded state");
-  assert(overviewRows.some((row) => row.label === "frames/events" && row.value === "3 / 3"), "overview should expose frame/event counts");
+  assert(overviewRows.some((row) => row.label === "查看器" && row.value === "已载入"), "overview should expose loaded state");
+  assert(overviewRows.some((row) => row.label === "帧 / 事件" && row.value === "3 / 3"), "overview should expose frame/event counts");
 
   const frameRows = buildMotionReplayFrameRows(trace, 75, { query: "" });
   assert(frameRows.length === 2, "frame rows should show current frame values");
@@ -288,18 +294,31 @@ export function runMotionReplayViewerModelTests() {
   assert(!JSON.stringify(filteredOverlayRows).includes("rawTarget"), "overlay rows should not leak raw target references");
 
   const filterSummary = buildMotionReplayFilterSummary(trace, 50, { query: "icon" });
-  assert(filterSummary.text === "1 props / 2 events", "filter summary should count filtered frame values and events");
+  assert(filterSummary.text === "1 个属性 / 2 个事件", "filter summary should count filtered frame values and events");
 
   const exported = createMotionReplayIntervalExport(trace, {
     endMs: 60,
     filters: { query: "icon" },
+    presentation: "structured",
     startMs: 0,
   });
-  const data = JSON.parse(exported.json);
+  assert(exported.presentation === "structured" && Object.hasOwn(exported, "data"), "structured interval exports should expose one structured presentation");
+  assert(!Object.hasOwn(exported, "content") && !Object.hasOwn(exported, "json"), "structured interval exports must not duplicate the full interval as text");
+  const data = exported.data;
   assert(data.schema === MOTION_REPLAY_INTERVAL_SCHEMA, "interval export should expose interval schema");
   assert(data.interval.startMs === 0 && data.interval.endMs === 60, "interval export should preserve requested range");
   assert(data.summary.frameCount === 2, "interval export should include matching frames in range");
   assert(data.summary.eventCount === 2, "interval export should include matching events in range");
   assert(data.summary.targetCount === 1, "interval export should include used targets only");
   assert(data.timeline.frames.every((frame) => frame.values.length === 1), "interval export should filter frame values by query");
+
+  const jsonExport = createMotionReplayIntervalExport(trace, {
+    endMs: 60,
+    filters: { query: "icon" },
+    presentation: "json",
+    startMs: 0,
+  });
+  assert(jsonExport.presentation === "json" && Object.hasOwn(jsonExport, "content"), "JSON interval exports should expose one text presentation");
+  assert(!Object.hasOwn(jsonExport, "data") && !Object.hasOwn(jsonExport, "json"), "JSON interval exports must not retain a structured duplicate");
+  assert(JSON.parse(jsonExport.content).summary.valueCount === data.summary.valueCount, "JSON interval presentation should preserve the structured facts");
 }

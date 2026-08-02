@@ -1,6 +1,6 @@
 import { Container, Graphics, Text } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { setLaunchpadDebugValue } from "../debugNamespace.js";
+import { sceneDiagnosticsState } from "../../../diagnostics/sceneDiagnosticsState.js";
 import {
   clientPointToStageVisualPoint,
   clientRectToStageVisualRect,
@@ -79,12 +79,12 @@ export class DragHitDebugLayer extends Container {
   update(state, options = {}) {
     if (!options.enabled || !state?.active) {
       this.clearOverlay();
-      setLaunchpadDebugValue("dragHit", null);
+      sceneDiagnosticsState.publish("dragHit", null);
       return null;
     }
     this.visible = true;
     this.lastSnapshot = state;
-    setLaunchpadDebugValue("dragHit", state);
+    sceneDiagnosticsState.publish("dragHit", state);
     this.draw(state, options.stageRect || {});
     return state;
   }

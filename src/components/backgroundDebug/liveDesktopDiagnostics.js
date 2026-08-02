@@ -168,29 +168,29 @@ export function formatCount(value) {
 
 export function formatLastFrame(diagnostics) {
   if (!diagnostics.lastFrameWidth || !diagnostics.lastFrameHeight) return "-";
-  return `${diagnostics.lastFrameWidth}x${diagnostics.lastFrameHeight} fmt ${diagnostics.lastFrameFormat}`;
+  return `${diagnostics.lastFrameWidth}x${diagnostics.lastFrameHeight} · 格式 ${diagnostics.lastFrameFormat}`;
 }
 
 export function formatPixelProbe(diagnostics) {
   if (!diagnostics.pixelProbeSamples && !diagnostics.pixelProbeErrors) return "-";
   const size = diagnostics.lastPixelProbeWidth && diagnostics.lastPixelProbeHeight
-    ? `${diagnostics.lastPixelProbeWidth}x${diagnostics.lastPixelProbeHeight} `
+    ? `${diagnostics.lastPixelProbeWidth}x${diagnostics.lastPixelProbeHeight} · `
     : "";
-  return `${diagnostics.pixelProbeSamples} ok / ${diagnostics.pixelProbeErrors} err ${size}rgb ${diagnostics.lastPixelProbeMinRgb}/${diagnostics.lastPixelProbeMaxRgb}/${diagnostics.lastPixelProbeAvgRgb} alpha ${diagnostics.lastPixelProbeMinAlpha}/${diagnostics.lastPixelProbeMaxAlpha}/${diagnostics.lastPixelProbeAvgAlpha}`;
+  return `成功 ${diagnostics.pixelProbeSamples} / 错误 ${diagnostics.pixelProbeErrors} · ${size}RGB ${diagnostics.lastPixelProbeMinRgb}/${diagnostics.lastPixelProbeMaxRgb}/${diagnostics.lastPixelProbeAvgRgb} · Alpha ${diagnostics.lastPixelProbeMinAlpha}/${diagnostics.lastPixelProbeMaxAlpha}/${diagnostics.lastPixelProbeAvgAlpha}`;
 }
 
 export function formatFrameArrived(diagnostics) {
   if (!diagnostics.frameArrivedEvents && !diagnostics.frameArrivedDroppedSignals) return "-";
-  return `${diagnostics.frameArrivedEvents} events / ${diagnostics.frameArrivedDroppedSignals} dropped`;
+  return `到达 ${diagnostics.frameArrivedEvents} / 丢弃 ${diagnostics.frameArrivedDroppedSignals}`;
 }
 
 export function formatFrameTiming(samples, totalMicros, lastMicros, maxMicros) {
   if (!samples) return "-";
   const averageMicros = totalMicros / samples;
   return [
-    `avg ${formatMicrosAsMillis(averageMicros)}ms`,
-    `last ${formatMicrosAsMillis(lastMicros)}ms`,
-    `max ${formatMicrosAsMillis(maxMicros)}ms`,
+    `平均 ${formatMicrosAsMillis(averageMicros)}ms`,
+    `最近 ${formatMicrosAsMillis(lastMicros)}ms`,
+    `最大 ${formatMicrosAsMillis(maxMicros)}ms`,
   ].join(" / ");
 }
 
@@ -200,24 +200,24 @@ export function formatMicrosAsMillis(micros) {
 
 export function formatLiveDesktopRates(rates) {
   return [
-    `frames ${rates.framesPerSecond.toFixed(1)}/s`,
-    `arrived ${rates.arrivedPerSecond.toFixed(1)}/s`,
-    `dropped ${rates.droppedPerSecond.toFixed(1)}/s`,
-    `timeouts ${rates.timeoutsPerSecond.toFixed(1)}/s`,
-    `copyErr ${rates.copyErrorsPerSecond.toFixed(1)}/s`,
+    `帧 ${rates.framesPerSecond.toFixed(1)}/s`,
+    `到达 ${rates.arrivedPerSecond.toFixed(1)}/s`,
+    `丢弃 ${rates.droppedPerSecond.toFixed(1)}/s`,
+    `超时 ${rates.timeoutsPerSecond.toFixed(1)}/s`,
+    `复制错误 ${rates.copyErrorsPerSecond.toFixed(1)}/s`,
   ].join(" · ");
 }
 
 export function formatWindowTitle(windowInfo) {
-  return `${windowInfo.role || "window"} ${windowInfo.hwnd || "-"}`;
+  return `${windowInfo.role || "窗口"} ${windowInfo.hwnd || "-"}`;
 }
 
 export function formatWindowMeta(windowInfo) {
   const process = windowInfo.processName || `pid ${windowInfo.pid}`;
-  const className = windowInfo.className || "unknown class";
-  const reason = windowInfo.candidateReason || "diagnostic";
+  const className = windowInfo.className || "未知类名";
+  const reason = windowInfo.candidateReason || "诊断候选";
   const title = windowInfo.title ? ` · ${windowInfo.title}` : "";
-  return `${reason} · ${className} · ${process} · parent ${windowInfo.parentHwnd || "-"} · root ${windowInfo.rootHwnd || "-"} · style ${windowInfo.style || "-"} · ex ${windowInfo.exStyle || "-"} · cloaked ${windowInfo.cloaked}${title}`;
+  return `${reason} · ${className} · ${process} · 父窗口 ${windowInfo.parentHwnd || "-"} · 根窗口 ${windowInfo.rootHwnd || "-"} · 样式 ${windowInfo.style || "-"} · 扩展样式 ${windowInfo.exStyle || "-"} · Cloaked ${windowInfo.cloaked}${title}`;
 }
 
 export function formatWindowRect(rect) {

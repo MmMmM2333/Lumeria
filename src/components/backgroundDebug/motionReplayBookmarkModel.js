@@ -1,7 +1,3 @@
-import {
-  normalizeMotionReplayTime,
-} from "./motionReplayViewerModel.js";
-
 export const MOTION_REPLAY_BOOKMARK_LIMIT = 12;
 
 function readNumber(value, fallback = 0) {
@@ -18,21 +14,16 @@ function formatTimeLabel(value) {
   return `${Math.round(readNumber(value, 0))}ms`;
 }
 
-function normalizeBookmarkTime(trace, value, fallback = 0) {
+function normalizeBookmarkTime(normalizeTime, value, fallback = 0) {
   const timeMs = readNumber(value, fallback);
-  if (!trace) return timeMs;
-  try {
-    return normalizeMotionReplayTime(trace, timeMs);
-  } catch {
-    return timeMs;
-  }
+  return typeof normalizeTime === "function" ? normalizeTime(timeMs) : timeMs;
 }
 
-function normalizeBookmarkInterval(trace, input = {}) {
+function normalizeBookmarkInterval(normalizeTime, input = {}) {
   const startSource = input.startMs ?? input.interval?.startMs ?? 0;
   const endSource = input.endMs ?? input.interval?.endMs ?? startSource;
-  const start = normalizeBookmarkTime(trace, startSource, 0);
-  const end = normalizeBookmarkTime(trace, endSource, start);
+  const start = normalizeBookmarkTime(normalizeTime, startSource, 0);
+  const end = normalizeBookmarkTime(normalizeTime, endSource, start);
   return {
     endMs: Math.max(start, end),
     startMs: Math.min(start, end),
@@ -83,7 +74,7 @@ function makeBookmarkLabel(interval, input = {}) {
 }
 
 export function createMotionReplayBookmark(input = {}, options = {}) {
-  const interval = normalizeBookmarkInterval(options.trace, input);
+  const interval = normalizeBookmarkInterval(options.normalizeTime, input);
   const index = readNumber(options.index, 0);
   return {
     createdAt: readString(input.createdAt, options.createdAt || ""),
@@ -105,7 +96,7 @@ export function normalizeMotionReplayBookmarks(bookmarks = [], options = {}) {
     const next = createMotionReplayBookmark(bookmark, {
       createdAt: options.createdAt,
       index,
-      trace: options.trace,
+      normalizeTime: options.normalizeTime,
     });
     if (!next.id || seen.has(next.id)) continue;
     seen.add(next.id);
@@ -120,7 +111,7 @@ export function addMotionReplayBookmark(bookmarks = [], input = {}, options = {}
   const next = createMotionReplayBookmark(input, {
     createdAt: options.createdAt,
     index: current.length,
-    trace: options.trace,
+    normalizeTime: options.normalizeTime,
   });
   const baseId = next.id;
   let suffix = 2;

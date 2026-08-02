@@ -1,18 +1,7 @@
-import { readLaunchpadDebugValue } from "../debugNamespace.js";
+import { sceneDiagnosticsState } from "../../../diagnostics/sceneDiagnosticsState.js";
 
 export function getFolderHandoffDebugOptions() {
-  const value = readLaunchpadDebugValue("folderHandoff");
-  if (!value) return null;
-  if (value === true) return { lineWidth: 3, log: true, overlay: true, timeline: false };
-  if (typeof value === "object") {
-    return {
-      lineWidth: Math.max(1, Number(value.lineWidth) || 3),
-      log: value.log !== false,
-      overlay: value.overlay !== false,
-      timeline: value.timeline === true,
-    };
-  }
-  return null;
+  return sceneDiagnosticsState.folderHandoffOptions();
 }
 
 export function roundNumber(value, digits = 3) {
