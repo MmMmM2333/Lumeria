@@ -769,12 +769,14 @@
 .settings-expand-leave-active .settings-list-expand {
   transition:
     opacity var(--durationFaster, 120ms) var(--curveEasyEase, ease),
-    transform var(--durationFaster, 120ms) var(--curveEasyEase, ease);
+    transform var(--durationFaster, 120ms) var(--curveEasyEase, ease),
+    padding-block var(--durationNormal, 200ms) var(--curveDecelerateMid, ease);
 }
 
 .settings-expand-enter-from .settings-list-expand,
 .settings-expand-leave-to .settings-list-expand {
   opacity: 0;
+  padding-block: 0;
   transform: translateY(-3px);
 }
 
@@ -1391,19 +1393,33 @@
   width: 28px;
   height: 28px;
   overflow: hidden;
-  border: 1px solid var(--settings-row-border-strong);
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.14);
 }
 
 .settings-color-swatch input[type="color"] {
-  width: 38px;
-  height: 38px;
+  display: block;
+  width: 100%;
+  height: 100%;
   padding: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: inherit;
   background: transparent;
   cursor: pointer;
+}
+
+.settings-color-swatch input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.settings-color-swatch input[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: inherit;
+}
+
+.settings-color-swatch input[type="color"]::-moz-color-swatch {
+  border: 0;
+  border-radius: inherit;
 }
 
 .settings-color-value {
