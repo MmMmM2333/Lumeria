@@ -257,7 +257,7 @@ function withMockTauri(invoke, run, bridgeOverrides = {}) {
         };
       }
       if (command === "scan_apps" && !bridgeOverrides.passScanAppsCommand) {
-        return { apps: [], warnings: [], stats: makeScanStats() };
+        return { apps: [], excludedApps: [], warnings: [], stats: makeScanStats() };
       }
       return invoke(command, args);
     },
@@ -323,7 +323,7 @@ export async function runLaunchpadNativeTests() {
   const roundTripSaves = [];
   await withMockTauri(async (command, args) => {
     if (command === "load_layout") return structuredClone(layoutV2RoundTripFixture);
-    if (command === "scan_apps") return { apps: [], warnings: [], stats: makeScanStats() };
+    if (command === "scan_apps") return { apps: [], excludedApps: [], warnings: [], stats: makeScanStats() };
     if (command === "check_launch_targets") return [];
     if (command === "save_layout") {
       roundTripSaves.push(args.layout);
@@ -397,6 +397,7 @@ export async function runLaunchpadNativeTests() {
             identityStatus: "exact",
             sources: [{ key: "saved", type: "customDirectory", state: "primary" }],
           }],
+          excludedApps: [],
           warnings: [],
           stats: makeScanStats({ appsFound: 1 }),
         };
@@ -433,6 +434,7 @@ export async function runLaunchpadNativeTests() {
           incompleteScanAttempts += 1;
           return {
             apps: [],
+            excludedApps: [],
             warnings: incompleteScanAttempts === 1
               ? [{
                 rootId: "saved-root",
@@ -528,7 +530,7 @@ export async function runLaunchpadNativeTests() {
           identityStatus: "exact",
           sources: [{ key: "blocked", type: "startMenuUser", state: "primary" }],
         },
-      ], warnings: [], stats: makeScanStats({ appsFound: 2 }) };
+      ], excludedApps: [], warnings: [], stats: makeScanStats({ appsFound: 2 }) };
     }
     if (command === "check_launch_targets") return [];
     if (command === "save_layout") {
@@ -2149,7 +2151,7 @@ export async function runLaunchpadNativeTests() {
   let saveAttempts = 0;
   await withMockTauri(async (command) => {
     if (command === "load_layout") return null;
-    if (command === "scan_apps") return { apps: [], warnings: [], stats: makeScanStats() };
+    if (command === "scan_apps") return { apps: [], excludedApps: [], warnings: [], stats: makeScanStats() };
     if (command === "check_launch_targets") return [];
     if (command === "save_layout") {
       saveAttempts += 1;

@@ -50,6 +50,7 @@ export function useLaunchpadApps(options) {
   const scanRoots = ref(DEFAULT_SCAN_ROOTS.map((root) => ({ ...root })));
   const scanKeywordBlacklist = ref([]);
   const scanAppBlacklist = ref([]);
+  const excludedCatalogApps = ref([]);
   const showMissingLaunchTargetBadge = ref(true);
   const launchTargetStatusRecordsById = ref({});
   const launchTargetStatusById = computed(() => Object.fromEntries(
@@ -86,6 +87,21 @@ export function useLaunchpadApps(options) {
       return name.includes(query) || target.includes(query) || args.includes(query);
     });
   });
+  const excludedScanApps = computed(() => {
+    const catalogAppsById = new Map(
+      excludedCatalogApps.value.map((app) => [String(app.id).toLowerCase(), app])
+    );
+    return scanAppBlacklist.value.map((entry) => {
+      const catalogApp = catalogAppsById.get(String(entry.catalogId).toLowerCase());
+      if (!catalogApp) return entry;
+      return {
+        ...entry,
+        ...catalogApp,
+        catalogId: entry.catalogId,
+        blockedAt: entry.blockedAt,
+      };
+    });
+  });
   const selectedManagedAppCount = computed(() => appManagerSelectedIds.value.length);
   const canExcludeSelectedManagedAppsFromScan = computed(() => (
     selectedManagedAppCount.value > 0
@@ -115,19 +131,28 @@ export function useLaunchpadApps(options) {
     return target?.path || "";
   }
 
-  function getAppSourceSummary(app) {
-    if (app?.origin !== "catalog") return "手动添加";
-    const sources = Array.isArray(app?.sources) ? app.sources : [];
-    const primary = sources.find((source) => source?.state === "primary") || sources[0];
-    const sourceLabel = String(primary?.rootLabel || primary?.type || "Catalog").trim();
-    const relativePath = String(primary?.relativePath || "").trim();
-    const mergedCount = sources.filter((source) => source?.state === "equivalent").length;
-    const shadowedCount = sources.filter((source) => source?.state === "shadowed").length;
-    const parts = [relativePath ? `${sourceLabel} · ${relativePath}` : sourceLabel];
-    if (mergedCount) parts.push(`另有 ${mergedCount} 个等价来源`);
-    if (shadowedCount) parts.push(`已覆盖 ${shadowedCount} 个系统来源`);
-    if (app?.identityStatus === "unresolved") parts.push("启动身份未解析");
-    return parts.filter(Boolean).join(" · ");
+  function toRuntimeCatalogApp(app) {
+    return applyCachedIconAssetUrlsToApp(normalizeNativeApp(app), catalog.toAssetUrl);
+  }
+
+  function replaceExcludedCatalogApps(apps) {
+    excludedCatalogApps.value = apps.map(toRuntimeCatalogApp);
+  }
+
+  function rememberExcludedCatalogApps(apps) {
+    const catalogAppsById = new Map(
+      excludedCatalogApps.value.map((app) => [String(app.id).toLowerCase(), app])
+    );
+    for (const app of apps) {
+      if (app?.origin !== "catalog" || !app.id) continue;
+      catalogAppsById.set(String(app.id).toLowerCase(), { ...app });
+    }
+    excludedCatalogApps.value = Array.from(catalogAppsById.values());
+  }
+
+  function forgetExcludedCatalogApps(catalogIds) {
+    const ids = new Set(catalogIds.map((id) => String(id).toLowerCase()));
+    excludedCatalogApps.value = excludedCatalogApps.value.filter((app) => !ids.has(String(app.id).toLowerCase()));
   }
 
   function getFilesystemLaunchTargetPath(app) {
@@ -366,12 +391,13 @@ export function useLaunchpadApps(options) {
     scanAppBlacklist.value = normalizeScanAppBlacklist(
       scanAppBlacklist.value.filter((_, index) => !selectedIndexSet.has(index))
     );
+    forgetExcludedCatalogApps(restoredEntries.map((entry) => entry.catalogId));
     const singleName = restoredEntries.length === 1 ? String(restoredEntries[0]?.name || "该应用") : "";
     showAppActionNotice({
-      title: "已取消排除",
+      title: "已从排除列表移出",
       message: restoredEntries.length === 1
-        ? `“${singleName}”可在重新扫描后再次添加。`
-        : `已允许 ${restoredEntries.length} 个应用重新出现在扫描结果中。`,
+        ? `“${singleName}”已从排除列表移出，可在重新扫描后再次添加。`
+        : `已将 ${restoredEntries.length} 个应用从排除列表移出，可在重新扫描后再次添加。`,
       intent: "success",
     });
     return true;
@@ -896,12 +922,13 @@ export function useLaunchpadApps(options) {
       });
       return false;
     }
+    rememberExcludedCatalogApps(removedApps);
 
     showAppActionNotice({
       title: "已从扫描中排除",
       message: removedApps.length === 1
-        ? `“${removedApps[0].name}”已移除，后续扫描将跳过此应用。可在设置的“已排除的应用”中取消排除。`
-        : `已移除并排除 ${removedApps.length} 个应用。可在设置的“已排除的应用”中取消排除。`,
+        ? `“${removedApps[0].name}”已移除，后续扫描将跳过此应用。可在设置的“已排除的应用”中将其移出排除列表。`
+        : `已移除并排除 ${removedApps.length} 个应用。可在设置的“已排除的应用”中将这些应用移出排除列表。`,
     });
     return true;
   }
@@ -924,6 +951,7 @@ export function useLaunchpadApps(options) {
         appBlacklist: normalizeScanAppBlacklist(scanAppBlacklist.value),
       };
       const scanResult = await catalog.scan(enabledRoots, scanFilters);
+      replaceExcludedCatalogApps(scanResult.excludedApps);
       const now = new Date().toISOString();
       const scannedRootIds = new Set(enabledRoots.map((root) => root.id));
       scanRoots.value = scanRoots.value.map((root) =>
@@ -1037,6 +1065,7 @@ export function useLaunchpadApps(options) {
       ? normalizeScanKeywordBlacklist(fragment.scanKeywordBlacklist)
       : [...DEFAULT_SCAN_KEYWORD_BLACKLIST];
     scanAppBlacklist.value = normalizeScanAppBlacklist(fragment.scanAppBlacklist);
+    excludedCatalogApps.value = [];
     showMissingLaunchTargetBadge.value = fragment.showMissingLaunchTargetBadge !== false;
     syncManagedAppState();
   }
@@ -1128,8 +1157,10 @@ export function useLaunchpadApps(options) {
   async function scanInitialCatalog() {
     const request = captureNativeScanRequest();
     if (!request.roots.length) {
+      replaceExcludedCatalogApps([]);
       return {
         apps: [],
+        excludedApps: [],
         warnings: [],
         stats: {
           dirsVisited: 0,
@@ -1148,11 +1179,13 @@ export function useLaunchpadApps(options) {
     if (result?.warnings?.length) {
       console.warn("Lumeria scan completed with warnings", result.warnings);
     }
+    replaceExcludedCatalogApps(result.excludedApps);
     markScanRootsScanned(request.roots.map((root) => root.id));
     return {
       apps: (result?.apps || [])
         .map((app) => normalizeNativeApp(app))
         .filter((app) => !isAppExcludedFromScan(app, request.filters.appBlacklist)),
+      excludedApps: [...excludedCatalogApps.value],
       warnings: result?.warnings || [],
       stats: result?.stats || {},
     };
@@ -1215,6 +1248,7 @@ export function useLaunchpadApps(options) {
     }),
   });
   const presentation = Object.freeze({
+    excludedScanApps: readonly(excludedScanApps),
     hiddenAppIds: readonly(hiddenAppIds),
     launchTargetStatusById: readonly(launchTargetStatusById),
     scanAppBlacklist: readonly(scanAppBlacklist),
@@ -1255,7 +1289,6 @@ export function useLaunchpadApps(options) {
     excludeManagedAppFromScan,
     excludeSelectedManagedAppsFromScan,
     filteredManagedApps,
-    getAppSourceSummary,
     getLaunchTargetPath,
     iconChooserModel,
     isBrowsingScanRoot,

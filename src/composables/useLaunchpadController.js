@@ -890,6 +890,7 @@ export function useLaunchpadController(options = {}) {
     updateAppCustomIcon,
   } = apps;
   const {
+    excludedScanApps,
     hiddenAppIds,
     launchTargetStatusById,
     scanAppBlacklist,
@@ -1543,6 +1544,7 @@ export function useLaunchpadController(options = {}) {
     draftWindowMode,
     dragMeta,
     editorModel,
+    excludedScanApps,
     filteredManagedApps,
     getLaunchTargetPath,
     excludeManagedAppFromScan,

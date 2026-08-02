@@ -16,7 +16,7 @@
           </fluent-text-input>
         </div>
         <p class="settings-field-hint excluded-app-description">
-          这些应用不会出现在后续扫描结果中。取消排除后，可以重新扫描并添加。
+          这些应用不会出现在后续扫描结果中。从排除列表移出后，可以重新扫描并添加。
         </p>
 
         <Transition name="settings-selection-bar">
@@ -24,7 +24,7 @@
             <span>已选择 {{ selectedExcludedAppCount }} 个应用</span>
             <span class="app-manager-selection-actions">
               <SettingsFluentButton appearance="subtle" size="small" type="button" @click="cancelSelectedScanExclusions">
-                取消所选排除
+                移出所选应用
               </SettingsFluentButton>
             </span>
           </div>
@@ -66,8 +66,8 @@
                 appearance="subtle"
                 icon-only
                 type="button"
-                :aria-label="`取消排除 ${getExcludedAppName(app)}`"
-                title="取消排除"
+                :aria-label="`将 ${getExcludedAppName(app)} 移出排除列表`"
+                title="移出排除列表"
                 @click.stop="cancelScanExclusion(index, key)"
               >
                 <ArrowCounterclockwiseIcon class="excluded-app-restore-icon" />
@@ -166,7 +166,6 @@
               </span>
               <span class="app-manager-details">
                 <span class="app-manager-name">{{ app.name }}</span>
-                <span class="app-manager-target">{{ state.getAppSourceSummary(app) }}</span>
                 <span class="app-manager-target">{{ state.getLaunchTargetPath(app) || "未设置启动路径" }}</span>
               </span>
               <span class="app-manager-actions">

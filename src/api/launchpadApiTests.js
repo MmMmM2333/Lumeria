@@ -11,7 +11,7 @@ export async function runLaunchpadApiTests() {
   const invocations = [];
   let malformedStatsError = null;
   try {
-    normalizeScanAppsResult({ apps: [], warnings: [], stats: {} });
+    normalizeScanAppsResult({ apps: [], excludedApps: [], warnings: [], stats: {} });
   } catch (error) {
     malformedStatsError = error;
   }
@@ -27,10 +27,20 @@ export async function runLaunchpadApiTests() {
     appsFound: 0,
     limitReached: false,
   };
+  let missingExcludedAppsError = null;
+  try {
+    normalizeScanAppsResult({ apps: [], warnings: [], stats: validStats });
+  } catch (error) {
+    missingExcludedAppsError = error;
+  }
+  assert(missingExcludedAppsError instanceof TypeError, "scan results should require runtime excluded-app presentation data");
+  const excludedApps = [{ id: "catalog-blocked", name: "Blocked" }];
+  const normalizedResult = normalizeScanAppsResult({ apps: [], excludedApps, warnings: [], stats: validStats });
   assert(
-    normalizeScanAppsResult({ apps: [], warnings: [], stats: validStats }).stats === validStats,
-    "complete scan stats should pass through unchanged"
+    normalizedResult.excludedApps === excludedApps,
+    "complete scan results should preserve runtime excluded-app presentation data"
   );
+  assert(normalizedResult.stats === validStats, "complete scan stats should pass through unchanged");
 
   setLaunchpadApiBridgeForTests({
     invoke: async (command, args) => {

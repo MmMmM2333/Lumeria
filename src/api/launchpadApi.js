@@ -67,8 +67,8 @@ export function normalizeScanAppsResult(result) {
   if (!result || typeof result !== "object" || Array.isArray(result)) {
     throw new TypeError("scan_apps must return a catalog result object");
   }
-  if (!Array.isArray(result.apps) || !Array.isArray(result.warnings)) {
-    throw new TypeError("scan_apps result must include apps and warnings arrays");
+  if (!Array.isArray(result.apps) || !Array.isArray(result.excludedApps) || !Array.isArray(result.warnings)) {
+    throw new TypeError("scan_apps result must include apps, excludedApps, and warnings arrays");
   }
   if (!result.stats || typeof result.stats !== "object" || Array.isArray(result.stats)) {
     throw new TypeError("scan_apps result must include scan stats");
@@ -83,6 +83,7 @@ export function normalizeScanAppsResult(result) {
   }
   return {
     apps: result.apps,
+    excludedApps: result.excludedApps,
     warnings: result.warnings,
     stats: result.stats,
   };

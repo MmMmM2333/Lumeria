@@ -62,11 +62,16 @@ export async function runLaunchpadControllerTests() {
     renderedFolder: ref({ id: "folder" }),
   }), "reopening the same closing folder should not wait for a detached close handoff");
 
+  let controller;
   const app = createSSRApp({
     setup() {
-      useLaunchpadController({ appVersion: "controller-setup-test" });
+      controller = useLaunchpadController({ appVersion: "controller-setup-test" });
       return () => h("div");
     },
   });
   await renderToString(app);
+  assert(
+    Array.isArray(controller.settingsPanelModel.pages.apps.excludedScanApps.value),
+    "the Apps settings model should expose runtime excluded-app presentation data"
+  );
 }

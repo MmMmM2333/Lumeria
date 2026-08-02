@@ -12,7 +12,7 @@
       <header class="app-edit-header">
         <div>
           <h2>{{ isEditing ? "编辑应用" : "新增应用" }}</h2>
-          <p>{{ isEditing ? model.app.value?.name : "添加自定义应用到启动台" }}</p>
+          <p v-if="!isEditing">添加自定义应用到启动台</p>
         </div>
         <SettingsFluentButton appearance="subtle" icon-only class="settings-close-button" type="button" :aria-label="isEditing ? '关闭编辑窗口' : '关闭新增窗口'" @click="model.actions.cancel">
           <DismissIcon class="settings-close-icon" />

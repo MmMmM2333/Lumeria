@@ -162,8 +162,8 @@ const APPS_CAPABILITIES = [
   "editorModel",
   "excludeManagedAppFromScan",
   "excludeSelectedManagedAppsFromScan",
+  "excludedScanApps",
   "filteredManagedApps",
-  "getAppSourceSummary",
   "getLaunchTargetPath",
   "isBrowsingScanRoot",
   "isScanningApps",
@@ -700,7 +700,7 @@ function createSettingsPanelModel(options) {
   const excludedAppsSearchTerm = computed(() => excludedAppsSearchQuery.value.trim().toLocaleLowerCase());
   const filteredExcludedApps = computed(() => {
     const term = excludedAppsSearchTerm.value;
-    return (state.scanAppBlacklist.value || [])
+    return state.excludedScanApps.value
       .map((app, index) => ({ app, index, key: getExcludedAppKey(app, index) }))
       .filter(({ app }) => !term || [app.name, app.catalogId]
         .some((value) => String(value || "").toLocaleLowerCase().includes(term)));

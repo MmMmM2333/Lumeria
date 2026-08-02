@@ -15,6 +15,10 @@ function createCapabilities() {
     draftBackgroundSource: ref("systemMaterial"),
     draftMainWindowShortcut,
     dragMeta: ref(null),
+    excludedScanApps: ref([
+      { name: "Blocked Tool", catalogId: "catalog-blocked-tool", iconUrl: "http://asset.localhost/blocked.png" },
+      { name: "Hidden Editor", catalogId: "catalog-hidden-editor" },
+    ]),
     isApplyingSettingsConfig: ref(false),
     isSettingsPanelOpen: ref(true),
     mainWindowShortcutError,
@@ -64,6 +68,10 @@ export async function runSettingsPanelModelTests() {
   model.pages.apps.actions.openAppManager();
   assert(model.shell.activeRoute.value.subPageId === "apps.appManager", "Apps should own navigation to its manager subpage");
   assert(model.shell.activePageModel.value === model.pages.apps, "the shell should expose only the selected page model");
+  assert(
+    model.pages.apps.filteredExcludedApps.value[0].app.iconUrl === "http://asset.localhost/blocked.png",
+    "Apps should preserve runtime icon presentation for excluded rows"
+  );
   model.shell.actions.closeSubPage();
   assert(model.shell.activeRoute.value.depth === 0, "closing a subpage should return to the Apps root");
 

@@ -186,24 +186,6 @@ export async function runLaunchpadAppsTests() {
   assert(getCustomIconCanvasSize(512, 256) === 256, "large non-square custom icons should be capped at the high-DPI size");
 
   {
-    const { apps } = createManagedAppRemovalHarness([[]], 0);
-    const summary = apps.getAppSourceSummary({
-      id: "catalog-steam",
-      origin: "catalog",
-      identityStatus: "exact",
-      sources: [
-        { type: "customDirectory", state: "primary", rootLabel: "游戏", relativePath: "Steam.lnk" },
-        { type: "startMenuUser", state: "equivalent", rootLabel: "用户开始菜单", relativePath: "Steam/Steam.lnk" },
-        { type: "startMenuSystem", state: "shadowed", rootLabel: "系统开始菜单", relativePath: "Steam/Steam.lnk" },
-      ],
-    });
-    assert(
-      summary === "游戏 · Steam.lnk · 另有 1 个等价来源 · 已覆盖 1 个系统来源",
-      "catalog provenance summaries should explain both semantic merges and Start Menu overlays"
-    );
-  }
-
-  {
     const { apps, pages } = createManagedAppRemovalHarness([[
       {
         id: "owner-contract-app",
@@ -324,6 +306,7 @@ export async function runLaunchpadAppsTests() {
       type: "app",
       origin: "catalog",
       name: "Scanned App",
+      iconUrl: "http://asset.localhost/scanned-app.png",
       sources: [{ key: "scan-root:tools:scanned-app.lnk", type: "customDirectory", state: "primary" }],
       launchTarget: { kind: "shortcut", path: "C:/Tools/Scanned App.lnk" },
     };
@@ -363,13 +346,17 @@ export async function runLaunchpadAppsTests() {
     assert(!pages.value[0].some((app) => app.id === scannedApp.id), "scan exclusion should remove the app from the launchpad");
     assert(pages.value[0].some((app) => app.id === manualWindowsApp.id), "scan exclusion should preserve unrelated apps");
     assert(scanAppBlacklist.value[0]?.catalogId === scannedApp.id, "scan exclusion should persist the canonical catalog id");
+    assert(
+      apps.presentation.excludedScanApps.value[0]?.iconUrl === scannedApp.iconUrl,
+      "new scan exclusions should retain their runtime icon without waiting for another scan"
+    );
     assert(hiddenAppIds.value.includes(scannedApp.id), "scan exclusion should also prevent automatic layout reinsertion");
     assert(transientNotices.at(-1)?.title === "已从扫描中排除", "scan exclusion should surface an explicit result notice");
 
     assert(apps.cancelScanAppExclusion(0), "scan exclusions should be cancellable");
     assert(scanAppBlacklist.value.length === 0, "cancelling scan exclusion should remove the filter entry");
     assert(hiddenAppIds.value.includes(scannedApp.id), "cancelling exclusion should wait for an explicit rescan before restoring the app");
-    assert(transientNotices.at(-1)?.title === "已取消排除", "cancelling exclusion should explain the rescan recovery path");
+    assert(transientNotices.at(-1)?.title === "已从排除列表移出", "removing an exclusion should explain the rescan recovery path");
   }
 
   {
@@ -479,7 +466,16 @@ export async function runLaunchpadAppsTests() {
         identityStatus: "exact",
         sources: [{ key: "windows-app:windows.settings_123!app", type: "windowsAppCatalog", state: "primary" }],
       },
-    ], warnings: [], stats: makeScanStats({ appsFound: 2 }) };
+    ], excludedApps: [{
+      id: "catalog-blocked",
+      type: "app",
+      name: "Blocked Current Name",
+      iconPath: "C:/Icons/blocked.png",
+      launchTarget: { kind: "shortcut", path: "C:/Apps/Blocked.lnk" },
+      trackingKey: "launch:blocked",
+      identityStatus: "exact",
+      sources: [{ key: "scan-root:root:blocked.lnk", type: "customDirectory", state: "primary" }],
+    }], warnings: [], stats: makeScanStats({ physicalAppsFound: 3, excludedApps: 1, appsFound: 2 }) };
   }, async () => {
     const pages = shallowRef([[]]);
     const warningDialogs = [];
@@ -525,7 +521,7 @@ export async function runLaunchpadAppsTests() {
       hiddenAppIds: ["win-app-1"],
       scanRoots: [{ id: "root", type: "customDirectory", label: "Root", path: "C:/Apps", enabled: true }],
       scanKeywordBlacklist: [],
-      scanAppBlacklist: [],
+      scanAppBlacklist: [{ catalogId: "catalog-blocked", name: "Blocked Saved Name" }],
       showMissingLaunchTargetBadge: true,
     });
     const hiddenAppIds = apps.presentation.hiddenAppIds;
@@ -573,6 +569,11 @@ export async function runLaunchpadAppsTests() {
     setAllScanRootsEnabled(true);
 
     await apps.rescanManagedApps();
+    const excludedApp = apps.presentation.excludedScanApps.value[0];
+    assert(excludedApp.name === "Blocked Current Name", "excluded app rows should use current runtime catalog presentation");
+    assert(excludedApp.iconUrl === "http://asset.localhost/C:/Icons/blocked.png", "excluded app rows should expose cached asset URLs");
+    const persistedExcludedApp = apps.persistence.capture().scanAppBlacklist[0];
+    assert(!("iconPath" in persistedExcludedApp) && !("iconUrl" in persistedExcludedApp), "excluded app icons should remain runtime-only");
     apps.scanResultModel.actions.toggleSelection("win-app-store", false);
     apps.scanResultModel.actions.addSelected();
 

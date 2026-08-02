@@ -77,6 +77,7 @@ struct CatalogCandidate {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ScanAppsResult {
     pub(crate) apps: Vec<AppCatalogItem>,
+    pub(crate) excluded_apps: Vec<AppCatalogItem>,
     pub(crate) warnings: Vec<ScanWarning>,
     pub(crate) stats: ScanStats,
 }
@@ -190,21 +191,27 @@ pub(crate) fn scan_apps_from_roots(
     let apps = overlay_start_menu_entries(apps);
     stats.start_menu_overlays = before_overlay.saturating_sub(apps.len());
     let before_semantic_merge = apps.len();
-    let mut apps = merge_semantically_equivalent_apps(apps);
+    let apps = merge_semantically_equivalent_apps(apps);
     stats.equivalent_apps_merged = before_semantic_merge.saturating_sub(apps.len());
     stats.unresolved_apps = apps
         .iter()
         .filter(|app| app.identity_status == CatalogIdentityStatus::Unresolved)
         .count();
-    let before_exclusions = apps.len();
-    apps.retain(|app| {
-        !filters
+    let (mut excluded_apps, mut apps): (Vec<_>, Vec<_>) = apps.into_iter().partition(|app| {
+        filters
             .blocked_catalog_ids
             .contains(&normalize_match_text(&app.id))
     });
-    stats.excluded_apps = before_exclusions.saturating_sub(apps.len());
+    stats.excluded_apps = excluded_apps.len();
     cache_catalog_icons(&mut apps, icon_dir);
+    cache_catalog_icons(&mut excluded_apps, icon_dir);
     apps.sort_by(|left, right| {
+        left.name
+            .to_lowercase()
+            .cmp(&right.name.to_lowercase())
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    excluded_apps.sort_by(|left, right| {
         left.name
             .to_lowercase()
             .cmp(&right.name.to_lowercase())
@@ -213,6 +220,7 @@ pub(crate) fn scan_apps_from_roots(
     stats.apps_found = apps.len();
     Ok(ScanAppsResult {
         apps,
+        excluded_apps,
         warnings,
         stats,
     })
@@ -1473,6 +1481,9 @@ mod tests {
         .expect("excluded scan should complete");
 
         assert!(excluded.apps.is_empty());
+        assert_eq!(excluded.excluded_apps.len(), 1);
+        assert_eq!(excluded.excluded_apps[0].id, first.apps[0].id);
+        assert_eq!(excluded.excluded_apps[0].sources.len(), 2);
         fs::remove_dir_all(base).expect("remove test directory");
     }
 

@@ -88,6 +88,7 @@ type ScanRoot = {
 
 type ScanAppsResult = {
   apps: AppCatalogItem[];
+  excludedApps: AppCatalogItem[];
   warnings: ScanWarning[];
   stats: {
     dirsVisited: number;
@@ -262,18 +263,21 @@ Catalog ids are derived from the exact semantic launch identity and remain
 stable when an equivalent physical source is added or removed. Unresolved
 entries use a source-scoped id. `scanAppBlacklist` filters the canonical catalog
 id after overlay and grouping, so excluding an app excludes every equivalent
-source. `hiddenAppIds` controls layout visibility independently and uses the same
-canonical id. When the user confirms only part of a scan result, unselected
-catalog ids are added to `hiddenAppIds`; selecting them in a later scan removes
-those ids again. This keeps a deliberate partial selection stable across startup
-catalog reconciliation.
+source. Matching entries are returned separately in `ScanAppsResult.excludedApps`
+for runtime settings presentation while remaining absent from `apps` and layout
+reconciliation. `hiddenAppIds` controls layout visibility independently and uses
+the same canonical id. When the user confirms only part of a scan result,
+unselected catalog ids are added to `hiddenAppIds`; selecting them in a later
+scan removes those ids again. This keeps a deliberate partial selection stable
+across startup catalog reconciliation.
 
-Icon extraction runs after overlay, grouping, and exclusion and returns a cached
-PNG path for the primary logical app when extraction succeeds. The renderer
-derives runtime asset URLs from Tauri's scoped asset protocol; cached icons are
-not re-read and base64-encoded through IPC. Catalog default `iconPath`, runtime
-asset URLs, provenance, tracking keys, identity state, launch targets, and
-arguments must not be persisted in layout JSON.
+Icon extraction runs after overlay, grouping, and the visible/excluded partition
+and returns a cached PNG path for both visible and matched excluded logical apps
+when extraction succeeds. The renderer derives runtime asset URLs from Tauri's
+scoped asset protocol; cached icons are not re-read and base64-encoded through
+IPC. `excludedApps` is runtime-only. Catalog default `iconPath`, runtime asset
+URLs, provenance, tracking keys, identity state, launch targets, and arguments
+must not be persisted in layout JSON.
 
 The catalog icon cache is keyed by both the canonical catalog id and the current
 primary source identity. Promoting a custom-directory source over a Start Menu
