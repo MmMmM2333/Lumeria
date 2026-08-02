@@ -264,6 +264,7 @@ export class DesktopLayer extends Container {
     this.lastFolderHandoffDebugSnapshot = null;
     this.lastDesktopRenderPlan = null;
     this.iconNodes = new Map();
+    this.retiredIconNodes = new WeakSet();
     this.pageTrackMotion = createPageTrackMotionState();
     this.boundsRegistration = null;
     this.boundsFlushQueued = false;
@@ -315,6 +316,52 @@ export class DesktopLayer extends Container {
       });
     }
     return geometryById;
+  }
+
+  getRetiredIconNodes() {
+    if (!(this.retiredIconNodes instanceof WeakSet)) this.retiredIconNodes = new WeakSet();
+    return this.retiredIconNodes;
+  }
+
+  isIconNodeRetired(node) {
+    return Boolean(node && this.getRetiredIconNodes().has(node));
+  }
+
+  discardFolderHandoffForRetiredNode(node) {
+    const entries = this.getFolderHandoffNodes();
+    for (const entry of Array.from(entries.values())) {
+      if (entry.node !== node) continue;
+      if (entry.cleanupFrame != null) entry.cleanupFrame.cancelled = true;
+      entries.delete(entry.folderId);
+      if (this.primaryFolderHandoffId === entry.folderId) this.setPrimaryFolderHandoffNode(null);
+    }
+  }
+
+  retireIconNode(key, node, options = {}) {
+    if (!node || !this.iconNodes.delete(key)) return false;
+    const retiredNodes = this.getRetiredIconNodes();
+    if (retiredNodes.has(node)) return true;
+    retiredNodes.add(node);
+    this.discardFolderHandoffForRetiredNode(node);
+    killMotionOf(node);
+
+    let finalized = false;
+    const finalize = () => {
+      if (finalized) return;
+      finalized = true;
+      destroyDisplayObjectAfterFrame(node, { children: true });
+    };
+    if (options.immediate === true) {
+      finalize();
+      return true;
+    }
+    motion(node)
+      .preset("fade")
+      .layout()
+      .interrupt("retarget")
+      .to({ alpha: 0, onCancel: finalize, onComplete: finalize })
+      .start();
+    return true;
   }
 
   update(state) {
@@ -440,18 +487,7 @@ export class DesktopLayer extends Container {
       this.emptyText.position.set(plan.emptyText.x, plan.emptyText.y);
       for (const [key, node] of this.iconNodes) {
         if (seen.has(key)) continue;
-        this.iconNodes.delete(key);
-        killMotionOf(node);
-        if (pageTrackScopeChanged) {
-          destroyDisplayObjectAfterFrame(node, { children: true });
-          continue;
-        }
-        motion(node)
-          .preset("fade")
-          .layout()
-          .interrupt("retarget")
-          .to({ alpha: 0, onComplete: () => destroyDisplayObjectAfterFrame(node, { children: true }) })
-          .start();
+        this.retireIconNode(key, node, { immediate: pageTrackScopeChanged });
       }
 
       this.boundsRegistration = makeDesktopBoundsRegistration(state, boundsEntries, plan.desktopFrame);
@@ -830,13 +866,12 @@ export class DesktopLayer extends Container {
     const existing = this.getFolderHandoffEntry(folderId);
     const node = entry?.node || existing?.node || this.findIconNodeByItemId(folderId);
     const layoutTarget = entry?.handoffLayoutTarget || (entry ? { x: entry.x, y: entry.y } : existing?.layoutTarget);
-    if (!folderId || !node || node.destroyed || !layoutTarget) return false;
-    this.ensureFolderHandoffNode(folderId, node, layoutTarget, { revealLabel: false, ...options });
-    return true;
+    if (!folderId || !node || node.destroyed || this.isIconNodeRetired(node) || !layoutTarget) return false;
+    return this.ensureFolderHandoffNode(folderId, node, layoutTarget, { revealLabel: false, ...options });
   }
 
   ensureFolderHandoffNode(folderId, node, layoutTarget, options = {}) {
-    if (!folderId || !node || node.destroyed) return;
+    if (!folderId || !node || node.destroyed || this.isIconNodeRetired(node)) return false;
     const entries = this.getFolderHandoffNodes();
     let entry = entries.get(folderId) || null;
     if (!entry) {
@@ -869,13 +904,14 @@ export class DesktopLayer extends Container {
     this.setPrimaryFolderHandoffNode(entry);
     this.syncFolderHandoffNode(node, layoutTarget, entry);
     if (options.revealLabel !== false && entry.visualReleased) this.revealFolderHandoffLabel(entry);
+    return true;
   }
 
   syncFolderHandoffNode(node = this.folderHandoffNode?.node, layoutTarget = null, handoffEntry = null) {
     const entry = handoffEntry || this.getFolderHandoffEntry(node?.item?.id || this.folderHandoffNode?.folderId || null);
-    if (!entry || !node || node.destroyed) return;
+    if (!entry || !node || node.destroyed || this.isIconNodeRetired(node)) return false;
     const target = layoutTarget || entry.layoutTarget;
-    if (!target) return;
+    if (!target) return false;
     entry.node = node;
     entry.layoutTarget = target;
     killMotionOf(node);
@@ -904,6 +940,7 @@ export class DesktopLayer extends Container {
     if (node.parent === this.pageTrack && this.pageTrack.children.length > 1) {
       this.pageTrack.setChildIndex(node, this.pageTrack.children.length - 1);
     }
+    return true;
   }
 
   finishFolderHandoffNodeAfterFrame(folderId = null) {
@@ -932,7 +969,7 @@ export class DesktopLayer extends Container {
 
   restoreFolderHandoffVisual(entry, options = {}) {
     const node = entry?.node;
-    if (!node || node.destroyed) return;
+    if (!node || node.destroyed || this.isIconNodeRetired(node)) return;
     entry.visualHidden = false;
     entry.visualReleased = true;
     const labelFadeActive = node.folderHandoffLabelRevealInProgress === true &&
@@ -1013,7 +1050,7 @@ export class DesktopLayer extends Container {
 
   restoreFolderHandoffNode(entry) {
     const node = entry?.node;
-    if (!node || node.destroyed) return;
+    if (!node || node.destroyed || this.isIconNodeRetired(node)) return;
     this.restoreFolderHandoffVisual(entry, { fadeLabel: true });
     if (node.parent !== this.pageTrack) return;
     const childCount = this.pageTrack.children.length;

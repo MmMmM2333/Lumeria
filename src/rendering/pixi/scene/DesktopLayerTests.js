@@ -626,6 +626,44 @@ export async function runDesktopLayerTests() {
   }
 
   {
+    motionRuntime.reset();
+    const folder = { id: "retiring-folder", name: "Retiring Folder", type: "folder" };
+    const pageTrack = makePageTrack([]);
+    pageTrack.x = 0;
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    const folderNode = prepareLayerForDesktopQuiescenceTest(layer, folder);
+    folderNode.alpha = 1;
+    folderNode.renderable = true;
+    folderNode.visible = true;
+    pageTrack.addChild(folderNode);
+    layer.onFolderRenderRequest = () => {};
+
+    try {
+      const desktopState = makeDesktopQuiescenceState(folder);
+      layer.update(desktopState);
+      const layoutTarget = layer.lastDesktopRenderPlan.entries[0]?.layoutTarget;
+      layer.ensureFolderHandoffNode(folder.id, folderNode, layoutTarget, { revealLabel: false });
+
+      layer.update({
+        ...desktopState,
+        activePages: [[]],
+      });
+
+      assert(
+        layer.startClosingFolderHandoffNow(folder.id, { revealLabel: false }) === false,
+        "a late folder handoff should not reclaim a node that already left the desktop render plan"
+      );
+      motionRuntime.reset();
+
+      assert(!pageTrack.children.includes(folderNode), "a retired folder should not survive exit-motion cancellation as an orphan page-track child");
+      assert(folderNode.visible === false && folderNode.renderable === false, "a retired folder should stay hidden after a late handoff");
+      assert(!layer.getFolderHandoffEntry(folder.id), "retirement should discard the stale folder handoff entry");
+    } finally {
+      motionRuntime.reset();
+    }
+  }
+
+  {
     const originalRaf = globalThis.requestAnimationFrame;
     globalThis.requestAnimationFrame = () => 1;
     try {
