@@ -14,6 +14,7 @@ import {
   listenNativeEvent,
   loadLayout,
   loadAppIconChoices,
+  openDeveloperConsole,
   pickBackgroundImage,
   pickLaunchFile,
   pickScanRootDirectory,
@@ -58,6 +59,11 @@ export const mainWindowPort = Object.freeze({
   setMode: setMainWindowMode,
   setShortcutCaptureActive: setMainWindowShortcutCaptureActive,
   show: showMainWindow,
+});
+
+export const developerToolsPort = Object.freeze({
+  isAvailable: isNativeBridgeAvailable,
+  openConsole: openDeveloperConsole,
 });
 
 export const liveDesktopPort = Object.freeze({

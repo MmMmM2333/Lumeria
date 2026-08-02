@@ -38,15 +38,23 @@ function createCapabilities() {
   };
 }
 
-export function runSettingsPanelModelTests() {
+export async function runSettingsPanelModelTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Settings panel model test failed] ${message}`);
   };
   const capabilities = createCapabilities();
+  let developerConsoleOpenCount = 0;
   const model = useSettingsPanelModel({
     appVersion: "0.1.0-test",
     backgroundLayoutContext: ref({ viewportWidth: 1920 }),
     capabilities,
+    developerTools: {
+      isAvailable: () => true,
+      openConsole: async () => {
+        developerConsoleOpenCount += 1;
+        return true;
+      },
+    },
     nativeEvents: { listen: async () => () => {} },
     systemAppearance: ref("light"),
   });
@@ -67,6 +75,9 @@ export function runSettingsPanelModelTests() {
 
   model.pages.general.actions.clearShortcut();
   assert(capabilities.draftMainWindowShortcut.value === null, "General should update shortcut drafts through an owner command");
+  assert(model.pages.general.canOpenDeveloperConsole.value, "General should expose developer console availability");
+  assert(await model.pages.general.actions.openDeveloperConsole(), "General should report a successful developer console open");
+  assert(developerConsoleOpenCount === 1, "General should open the developer console through its injected port");
   assert(!("scanRoots" in model.pages.general), "General should not expose Apps page state");
   assert(!("draftBackgroundSource" in model.pages.apps), "Apps should not expose Interface page drafts");
   assert(model.pages.about.appVersion === "0.1.0-test", "About should receive the app version explicitly");

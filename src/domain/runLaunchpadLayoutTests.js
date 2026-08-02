@@ -1,4 +1,5 @@
 import { createLaunchpadLayoutHelpers, makePageSize } from "./launchpadLayout.js";
+import { runLaunchpadApiTests } from "../api/launchpadApiTests.js";
 import { runWindowChromeApiTests } from "../api/windowChromeApiTests.js";
 import { runLaunchpadDocumentCoordinatorTests } from "../application/launchpadDocumentCoordinatorTests.js";
 import { runFolderLayoutStylesTests } from "../composables/useFolderLayoutStylesTests.js";
@@ -203,10 +204,11 @@ runMotionLabModelTests();
 runFolderLayoutStylesTests();
 runFolderViewportMetricsTests();
 await runFolderPrewarmTests();
+await runLaunchpadApiTests();
 await runLaunchpadSettingsConfigTests();
 await runLaunchpadSettingsTests();
 runSettingsPanelFlowTests();
-runSettingsPanelModelTests();
+await runSettingsPanelModelTests();
 await runLaunchpadSearchTests();
 await runPageRenderRangeTests();
 runMotionPresetsTests();

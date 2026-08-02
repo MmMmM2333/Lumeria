@@ -6,7 +6,7 @@ import {
   formatMainWindowShortcut,
   mainWindowShortcutFromKeyboardEvent,
 } from "../domain/mainWindowShortcut.js";
-import { nativeLifecyclePort } from "../platform/launchpadPorts.js";
+import { developerToolsPort, nativeLifecyclePort } from "../platform/launchpadPorts.js";
 import { rgbArrayToHex } from "../rendering/pixi/background/acrylicParams.js";
 import { useBackgroundImagePixelSize } from "./useBackgroundImagePixelSize.js";
 import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "./launchpadConstants.js";
@@ -228,6 +228,7 @@ export function useSettingsPanelModel(options) {
 
 function createSettingsPanelModel(options) {
   const state = options?.capabilities;
+  const developerTools = options?.developerTools || developerToolsPort;
   const nativeEvents = options?.nativeEvents || nativeLifecyclePort;
   if (!state || typeof state.closeSettingsPanel !== "function" || typeof state.applySettingsConfig !== "function") {
     throw new TypeError("useSettingsPanelModel requires settings capabilities");
@@ -240,6 +241,9 @@ function createSettingsPanelModel(options) {
   }
   if (typeof nativeEvents?.listen !== "function") {
     throw new TypeError("useSettingsPanelModel requires native events");
+  }
+  if (typeof developerTools?.isAvailable !== "function" || typeof developerTools?.openConsole !== "function") {
+    throw new TypeError("useSettingsPanelModel requires developer tools");
   }
 
   const activeTab = ref("general");
@@ -372,9 +376,46 @@ function createSettingsPanelModel(options) {
     state.setDraftMainWindowShortcut(null);
   }
 
+  const isOpeningDeveloperConsole = ref(false);
+  const developerConsoleError = ref("");
+  const canOpenDeveloperConsole = computed(() => developerTools.isAvailable());
+
+  async function openDeveloperConsole() {
+    if (isOpeningDeveloperConsole.value) return false;
+    developerConsoleError.value = "";
+    if (!canOpenDeveloperConsole.value) {
+      developerConsoleError.value = "控制台仅在 Lumeria 桌面应用中可用。";
+      return false;
+    }
+
+    isOpeningDeveloperConsole.value = true;
+    try {
+      const opened = await developerTools.openConsole();
+      if (!opened) {
+        developerConsoleError.value = "当前环境无法打开控制台。";
+        return false;
+      }
+      return true;
+    } catch (error) {
+      developerConsoleError.value = "无法打开控制台，请重试。";
+      console.error("Failed to open developer console", error);
+      return false;
+    } finally {
+      isOpeningDeveloperConsole.value = false;
+    }
+  }
+
   const general = Object.freeze({
     ...pickCapabilities(state, GENERAL_CAPABILITIES),
+    canOpenDeveloperConsole,
     cx,
+    developerConsoleHint: computed(() => (
+      developerConsoleError.value
+      || (canOpenDeveloperConsole.value
+        ? "打开当前窗口的 WebView 开发者工具"
+        : "仅在 Lumeria 桌面应用中可用")
+    )),
+    isOpeningDeveloperConsole,
     isRecordingMainWindowShortcut: isRecordingShortcut,
     mainWindowShortcutHint: computed(() => {
       if (state.mainWindowShortcutError.value) return state.mainWindowShortcutError.value;
@@ -385,6 +426,7 @@ function createSettingsPanelModel(options) {
     )),
     actions: Object.freeze({
       clearShortcut,
+      openDeveloperConsole,
       resetShortcut,
       startShortcutRecording,
       stopShortcutRecording,

@@ -255,6 +255,13 @@ export async function setMainWindowNativeFrameEnabled(enabled) {
   return true;
 }
 
+export async function openDeveloperConsole() {
+  const invoke = getTauriInvoke();
+  if (!invoke) return false;
+  await invoke("open_developer_console");
+  return true;
+}
+
 export async function quitApp() {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
