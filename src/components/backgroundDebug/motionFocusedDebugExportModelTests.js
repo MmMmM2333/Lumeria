@@ -203,7 +203,7 @@ export function runMotionFocusedDebugExportModelTests() {
     if (!condition) throw new Error(`[Motion focused debug export model test failed] ${message}`);
   };
 
-  const focused = createMotionFocusedDebugExport(makeTrace(), {
+  const focusedOptions = {
     captureProfile: {
       id: "custom",
       includeEvents: true,
@@ -230,8 +230,10 @@ export function runMotionFocusedDebugExportModelTests() {
       targetId: 1,
     },
     visibleTracks: ["1:x:base:layout", "2:y:base:panel-y"],
-  });
-  const data = JSON.parse(focused.json);
+  };
+  const focused = createMotionFocusedDebugExport(makeTrace(), focusedOptions);
+  const data = focused.data;
+  const serialized = JSON.stringify(data);
   assert(data.schema === MOTION_FOCUSED_DEBUG_SCHEMA, "focused export should expose the focused schema");
   assert(data.version === 1, "focused export should expose a schema version");
   assert(data.context.interval.startMs === 0 && data.context.interval.endMs === 60, "focused export should preserve normalized interval");
@@ -240,7 +242,7 @@ export function runMotionFocusedDebugExportModelTests() {
   assert(data.context.filters.query === "icon", "focused export should include filter context");
   assert(data.context.visibleTracks.length === 2, "focused export should include visible track context");
   assert(data.context.bookmark.label === "retarget window", "focused export should include bookmark context");
-  assert(!focused.json.includes("shouldNotLeak"), "focused export should not serialize raw bookmark refs");
+  assert(!serialized.includes("shouldNotLeak"), "focused export should not serialize raw bookmark refs");
   assert(data.summary.frameCount === 2, "focused export should include matching frames in interval");
   assert(data.summary.eventCount === 2, "focused export should include matching events in interval");
   assert(data.summary.trackCount === 1 && data.tracks[0].key === "1:x:base:layout", "focused export should keep only matching visible tracks");
@@ -250,9 +252,11 @@ export function runMotionFocusedDebugExportModelTests() {
   assert(data.timeline.frames.every((frame) => frame.values[0].prop === "x"), "focused export should only include selected prop");
   assert(data.timeline.events.every((event) => event.prop === "x"), "focused export should only include selected events");
   assert(data.warnings.length === 1 && data.warnings[0].type === "overshoot", "focused export should keep warnings for used targets");
-  assert(!focused.json.includes("rawTarget"), "focused export should not serialize raw target references");
-  assert(focused.copyText.includes("```json"), "copy text should include fenced JSON");
-  assert(focused.markdown.includes("Pixi Motion Focused Debug"), "markdown should be readable");
+  assert(!serialized.includes("rawTarget"), "focused export should not serialize raw target references");
+  assert(focused.presentation === "structured" && !Object.hasOwn(focused, "content"), "structured focused exports should not materialize text copies");
+  const focusedMarkdown = createMotionFocusedDebugExport(makeTrace(), { ...focusedOptions, presentation: "markdown" });
+  assert(focusedMarkdown.content.includes("Pixi Motion 聚焦调试报告"), "markdown should be readable when requested");
+  assert(!Object.hasOwn(focusedMarkdown, "data"), "markdown focused exports should not duplicate structured data");
 
   const alphaFocused = createMotionFocusedDebugExport(makeTrace(), {
     captureProfile: {
@@ -287,6 +291,6 @@ export function runMotionFocusedDebugExportModelTests() {
 
   const markdown = formatMotionFocusedDebugMarkdown(data);
   assert(markdown.includes(MOTION_FOCUSED_DEBUG_SCHEMA), "standalone markdown formatter should include schema");
-  assert(markdown.includes("Bookmark: retarget window"), "standalone markdown formatter should include bookmark context");
-  assert(markdown.includes("frames/events: 2/2"), "standalone markdown formatter should include summary counts");
+  assert(markdown.includes("书签：retarget window"), "standalone markdown formatter should include bookmark context");
+  assert(markdown.includes("帧 / 事件：2/2"), "standalone markdown formatter should include summary counts");
 }

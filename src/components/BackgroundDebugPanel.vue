@@ -4,7 +4,7 @@
       'background-debug-panel',
       debugPanelDock === 'left' ? 'background-debug-panel-left' : 'background-debug-panel-right',
     ]"
-    aria-label="Debug panel"
+    aria-label="开发者调试面板"
     @click.stop
     @contextmenu.stop
     @pointerdown.stop
@@ -12,11 +12,11 @@
   >
     <header class="background-debug-header">
       <div class="background-debug-title">
-        <strong>Debug Panel</strong>
-        <span>dev only</span>
+        <strong>开发者调试面板</strong>
+        <span>仅开发环境</span>
       </div>
       <div class="background-debug-header-actions">
-        <div class="background-debug-dock-toggle" role="group" aria-label="Debug 面板位置">
+        <div class="background-debug-dock-toggle" role="group" aria-label="调试面板位置">
           <button
             type="button"
             :class="['background-debug-dock-button', debugPanelDock === 'left' && 'background-debug-dock-button-active']"
@@ -50,28 +50,28 @@
           debugTabCount === 6 && 'background-debug-tabs-six',
         ]"
         role="tablist"
-        aria-label="Debug panel sections"
+        aria-label="调试面板分区"
       >
         <button
           type="button"
           :class="['background-debug-tab', activePanel === 'acrylic' && 'background-debug-tab-active']"
           @click="activePanel = 'acrylic'"
         >
-          Acrylic
+          亚克力
         </button>
         <button
           type="button"
           :class="['background-debug-tab', activePanel === 'layout' && 'background-debug-tab-active']"
           @click="activePanel = 'layout'"
         >
-          Layout
+          布局
         </button>
         <button
           type="button"
           :class="['background-debug-tab', activePanel === 'notice' && 'background-debug-tab-active']"
           @click="activePanel = 'notice'"
         >
-          Notice
+          通知
         </button>
         <button
           v-if="canDebugRender"
@@ -79,7 +79,7 @@
           :class="['background-debug-tab', activePanel === 'render' && 'background-debug-tab-active']"
           @click="activePanel = 'render'"
         >
-          Render
+          渲染
         </button>
         <button
           v-if="canDebugMotion"
@@ -87,7 +87,7 @@
           :class="['background-debug-tab', activePanel === 'motion' && 'background-debug-tab-active']"
           @click="activePanel = 'motion'"
         >
-          Motion
+          动画
         </button>
         <button
           v-if="canDebugLiveDesktop"
@@ -95,9 +95,21 @@
           :class="['background-debug-tab', activePanel === 'liveDesktop' && 'background-debug-tab-active']"
           @click="activePanel = 'liveDesktop'"
         >
-          Live Desktop
+          动态桌面
         </button>
       </div>
+
+      <BackgroundDebugRenderPanel
+        v-if="canDebugRender"
+        v-show="activePanel === 'render'"
+        :active="!isCollapsed && activePanel === 'render'"
+      />
+      <BackgroundDebugLiveDesktopPanel
+        v-if="canDebugLiveDesktop"
+        v-show="activePanel === 'liveDesktop'"
+        :active="!isCollapsed && activePanel === 'liveDesktop'"
+        :support="props.state?.liveDesktopBackgroundSupport?.value || null"
+      />
 
       <div v-if="activePanel === 'acrylic'" class="background-debug-section">
         <label class="background-debug-toggle">
@@ -131,14 +143,14 @@
 
         <label class="background-debug-control background-debug-color-control">
           <span>
-            tintColor
+            染色颜色（tintColor）
             <output>{{ tintHex }}</output>
           </span>
           <input type="color" :value="tintHex" @input="updateTintColor">
         </label>
 
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Blur Kernel</div>
+          <div class="background-debug-subtitle">模糊内核</div>
           <label class="background-debug-toggle">
             <input
               name="kawaseDebugOverride"
@@ -149,27 +161,27 @@
             <span>覆盖半径/pass</span>
           </label>
 
-          <div class="background-debug-mode-group background-debug-kernel-group" role="group" aria-label="Blur kernel">
+          <div class="background-debug-mode-group background-debug-kernel-group" role="group" aria-label="模糊内核">
             <button
               type="button"
               :class="['background-debug-mode-button', kawaseParams.kernel === BLUR_KERNEL_AUTO && 'background-debug-mode-button-active']"
               @click="setBlurKernel(BLUR_KERNEL_AUTO)"
             >
-              Auto
+              自动
             </button>
             <button
               type="button"
               :class="['background-debug-mode-button', kawaseParams.kernel === BLUR_KERNEL_DUAL_KAWASE && 'background-debug-mode-button-active']"
               @click="setBlurKernel(BLUR_KERNEL_DUAL_KAWASE)"
             >
-              Dual
+              双重 Kawase
             </button>
             <button
               type="button"
               :class="['background-debug-mode-button', kawaseParams.kernel === BLUR_KERNEL_GAUSSIAN && 'background-debug-mode-button-active']"
               @click="setBlurKernel(BLUR_KERNEL_GAUSSIAN)"
             >
-              Gaussian
+              高斯
             </button>
           </div>
 
@@ -258,7 +270,7 @@
         </dl>
 
         <div class="background-debug-detail">
-          CSS controls host/main sizing; gridTop controls the Pixi first-row offset.
+          CSS 控制宿主与主区域尺寸；gridTop 控制 Pixi 第一行的偏移。
         </div>
 
         <div class="background-debug-actions">
@@ -285,7 +297,7 @@
         </dl>
 
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Layout Notices</div>
+          <div class="background-debug-subtitle">布局通知</div>
           <div class="background-debug-actions background-debug-notice-actions">
             <button type="button" class="background-debug-button" :disabled="!canDebugNotice" @click="showDebugLayoutSaveFailed">
               保存失败
@@ -315,152 +327,15 @@
         </div>
       </div>
 
-      <div v-else-if="activePanel === 'render' && canDebugRender" class="background-debug-section">
-        <div class="background-debug-subsection background-debug-render-config">
-          <div class="background-debug-subtitle">Capture target</div>
-          <div class="background-debug-mode-group background-debug-render-target-group" role="group" aria-label="Render probe capture target">
-            <button
-              v-for="target in RENDER_PROBE_TARGET_OPTIONS"
-              :key="target.value"
-              type="button"
-              :class="['background-debug-mode-button', renderProbeTargetKind === target.value && 'background-debug-mode-button-active']"
-              @click="renderProbeTargetKind = target.value"
-            >
-              {{ target.label }}
-            </button>
-          </div>
-
-          <label
-            v-if="renderProbeTargetKind !== RENDER_PROBE_TARGET_ALL"
-            class="background-debug-control background-debug-render-target-control"
-          >
-            <span>{{ renderProbeTargetInputLabel }}</span>
-            <input
-              v-model="renderProbeTargetValue"
-              name="renderProbeTargetValue"
-              type="text"
-              :placeholder="renderProbeTargetInputLabel"
-            >
-          </label>
-        </div>
-
-        <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Framebuffer pixels</div>
-          <div class="background-debug-mode-group background-debug-render-pixel-group" role="group" aria-label="Render probe framebuffer pixels">
-            <button
-              type="button"
-              :class="['background-debug-mode-button', renderProbePixels === RENDER_PROBE_PIXELS_OFF && 'background-debug-mode-button-active']"
-              @click="renderProbePixels = RENDER_PROBE_PIXELS_OFF"
-            >
-              Off
-            </button>
-            <button
-              type="button"
-              :class="['background-debug-mode-button', renderProbePixels === RENDER_PROBE_PIXELS_PHASE_DIFF && 'background-debug-mode-button-active']"
-              @click="renderProbePixels = RENDER_PROBE_PIXELS_PHASE_DIFF"
-            >
-              Phase diff
-            </button>
-          </div>
-          <label class="background-debug-toggle">
-            <input v-model="renderProbeAutoFreeze" name="renderProbeAutoFreeze" type="checkbox">
-            <span>Auto freeze on invariant or strong pixel diff</span>
-          </label>
-        </div>
-
-        <div v-if="renderProbeError" class="background-debug-error" :title="renderProbeError">
-          {{ renderProbeError }}
-        </div>
-
-        <dl class="background-debug-status-grid">
-          <div
-            v-for="row in renderProbeStatusRows"
-            :key="row.label"
-            :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
-          >
-            <dt>{{ row.label }}</dt>
-            <dd :title="row.value">{{ row.value }}</dd>
-          </div>
-        </dl>
-
-        <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Phase captures</div>
-          <div class="background-debug-render-list">
-            <article
-              v-for="row in renderProbePhaseRows"
-              :key="row.key"
-              class="background-debug-render-card"
-            >
-              <strong>
-                <span>{{ row.phase }}</span>
-                <span>{{ row.time }}</span>
-              </strong>
-              <span>Framebuffer: {{ row.framebuffer }}</span>
-              <span>Violations: {{ row.violations }}</span>
-            </article>
-            <article v-if="renderProbePhaseRows.length === 0" class="background-debug-render-card">
-              <strong>No phase captures</strong>
-              <span>Arm the probe, then long-press and release an icon.</span>
-            </article>
-          </div>
-        </div>
-
-        <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Pixel candidates</div>
-          <div v-if="renderProbePixelComparison" class="background-debug-detail">
-            {{ renderProbePixelComparison.available ? "available" : `unavailable: ${renderProbePixelComparison.reason || 'unknown reason'}` }}
-            · {{ renderProbePixelComparison.strongCandidateCount || 0 }} strong
-            · {{ renderProbePixelComparison.changedSlotCount || 0 }} changed
-            / {{ renderProbePixelComparison.comparableSlotCount || 0 }} comparable
-          </div>
-          <div class="background-debug-render-list">
-            <article
-              v-for="row in renderProbeCandidateRows"
-              :key="row.key"
-              :class="['background-debug-render-card', row.strong && 'background-debug-render-card-strong']"
-            >
-              <strong>
-                <span>#{{ row.rank }} {{ row.title }}</span>
-                <span>{{ row.strong ? "strong" : "changed" }}</span>
-              </strong>
-              <span>{{ row.identity }}</span>
-              <span>{{ row.detail }}</span>
-            </article>
-            <article v-if="renderProbeCandidateRows.length === 0" class="background-debug-render-card">
-              <strong>No pixel candidates</strong>
-              <span>{{ renderProbePixelComparison ? "No ranked framebuffer differences in this session." : "Complete a phase-diff drag session first." }}</span>
-            </article>
-          </div>
-        </div>
-
-        <div class="background-debug-actions background-debug-render-actions">
-          <button
-            type="button"
-            class="background-debug-button"
-            :disabled="!renderProbeReady || !renderProbeCanArm"
-            @click="armRenderProbe"
-          >
-            Arm &amp; Clear
-          </button>
-          <button type="button" class="background-debug-button" :disabled="!renderProbeReady" @click="disarmRenderProbe">
-            Disarm
-          </button>
-          <button type="button" class="background-debug-button" :disabled="!renderProbeReady" @click="clearRenderProbe">
-            Clear
-          </button>
-          <button type="button" class="background-debug-button" @click="refreshRenderProbeSummary">
-            Refresh
-          </button>
-          <button type="button" class="background-debug-button" :disabled="!renderProbeReady" @click="copyRenderProbeJson">
-            {{ renderProbeCopyButtonLabel }}
-          </button>
-          <button type="button" class="background-debug-button" :disabled="!renderProbeReady" @click="downloadRenderProbeJson">
-            Download JSON
-          </button>
-        </div>
-      </div>
-
       <div v-else-if="activePanel === 'motion' && canDebugMotion" class="background-debug-section">
+        <p
+          v-if="motionDiagnosticError"
+          class="background-debug-error"
+          role="alert"
+          :title="motionDiagnosticError"
+        >
+          {{ motionDiagnosticError }}
+        </p>
         <label class="background-debug-toggle">
           <input
             name="motionRuntimeDebugEnabled"
@@ -469,7 +344,7 @@
             :disabled="motionReplayCaptureActive"
             @change="setMotionRuntimeDebugEnabled($event.target.checked)"
           >
-          <span>Enable</span>
+          <span>启用 Motion 诊断</span>
         </label>
 
         <label class="background-debug-toggle">
@@ -480,7 +355,7 @@
             :disabled="motionReplayCaptureActive || !motionRuntimeDebugEnabled"
             @change="setMotionRecordEnabled($event.target.checked)"
           >
-          <span>Record</span>
+          <span>记录历史</span>
         </label>
 
         <label class="background-debug-toggle">
@@ -491,10 +366,10 @@
             :disabled="motionReplayCaptureActive || !motionRuntimeDebugEnabled"
             @change="setMotionOverlayEnabled($event.target.checked)"
           >
-          <span>Overlay</span>
+          <span>显示覆盖层</span>
         </label>
 
-        <div class="background-debug-mode-group background-debug-motion-window-group" role="group" aria-label="Motion record window">
+        <div class="background-debug-mode-group background-debug-motion-window-group" role="group" aria-label="Motion 记录窗口">
           <button
             v-for="preset in MOTION_RECORD_WINDOW_PRESETS"
             :key="preset.value"
@@ -509,7 +384,7 @@
 
         <label class="background-debug-control background-debug-number-control">
           <span>
-            Custom seconds
+            自定义秒数
             <output>{{ motionWindowSeconds.toFixed(0) }}s</output>
           </span>
           <input
@@ -526,7 +401,7 @@
 
         <label class="background-debug-control">
           <span>
-            Time Scale
+            时间倍率
             <output>{{ Number(motionTimeScale).toFixed(2) }}x</output>
           </span>
           <input
@@ -542,30 +417,30 @@
         </label>
 
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Workspace</div>
+          <div class="background-debug-subtitle">分析工作区</div>
           <div class="background-debug-actions background-debug-motion-workspace-actions">
             <button
               type="button"
               class="background-debug-button"
               @click="openMotionWorkspace(MOTION_DEBUG_WORKSPACE_MODE_DOCK)"
             >
-              Open Workspace
+              打开工作区
             </button>
             <button
               type="button"
               class="background-debug-button"
               @click="openMotionWorkspace(MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN)"
             >
-              Fullscreen
+              全屏打开
             </button>
           </div>
         </div>
 
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">Replay Capture</div>
+          <div class="background-debug-subtitle">回放捕获</div>
           <label class="background-debug-control background-debug-number-control">
             <span>
-              Capture seconds
+              捕获秒数
               <output>{{ motionReplayCaptureSeconds }}s / 60Hz</output>
             </span>
             <input
@@ -596,7 +471,7 @@
               :disabled="motionReplayCaptureActive"
               @click="startMotionReplayCapture"
             >
-              Start Capture
+              开始捕获
             </button>
             <button
               type="button"
@@ -604,12 +479,12 @@
               :disabled="!motionReplayCaptureActive"
               @click="stopMotionReplayCapture"
             >
-              Stop Capture
+              停止捕获
             </button>
             <button
               type="button"
               class="background-debug-button"
-              :disabled="motionReplayCaptureActive || !motionReplayTraceJson"
+              :disabled="motionReplayCaptureActive || !motionReplayCaptureArtifact"
               @click="copyMotionReplayTrace"
             >
               {{ motionReplayTraceCopyButtonLabel }}
@@ -624,153 +499,6 @@
         </div>
       </div>
 
-      <div v-else-if="activePanel === 'liveDesktop' && canDebugLiveDesktop" class="background-debug-section">
-        <dl class="background-debug-status-grid">
-          <div
-            v-for="row in liveDesktopStatusRows"
-            :key="row.label"
-            :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
-          >
-            <dt>{{ row.label }}</dt>
-            <dd>{{ row.value }}</dd>
-          </div>
-        </dl>
-
-        <pre class="background-debug-detail" :title="liveDesktopStatus.detail">{{ liveDesktopStatus.detail || "no detail" }}</pre>
-
-        <div class="background-debug-mode-group background-debug-live-source-group" role="group" aria-label="Live desktop debug frame source override">
-          <button
-            type="button"
-            :class="['background-debug-mode-button', !liveDesktopDebugFrameSourceOverride && 'background-debug-mode-button-active']"
-            :disabled="isLiveDesktopActionBusy"
-            @click="setLiveDesktopDebugFrameSourceOverride(null)"
-          >
-            WE Popup
-          </button>
-          <button
-            type="button"
-            :class="['background-debug-mode-button', liveDesktopDebugFrameSourceOverride === 'testPattern' && 'background-debug-mode-button-active']"
-            :disabled="isLiveDesktopActionBusy"
-            @click="setLiveDesktopDebugFrameSourceOverride('testPattern')"
-          >
-            Test Pattern
-          </button>
-        </div>
-
-        <label class="background-debug-toggle">
-          <input
-            name="liveDesktopDisableMouseRelay"
-            type="checkbox"
-            :checked="liveDesktopDisableMouseRelay"
-            :disabled="isLiveDesktopActionBusy"
-            @change="setLiveDesktopDisableMouseRelay($event.target.checked)"
-          >
-          <span>禁用鼠标转发</span>
-        </label>
-
-        <label class="background-debug-toggle">
-          <input
-            name="liveDesktopCompositorKeeper"
-            type="checkbox"
-            :checked="liveDesktopCompositorKeeper"
-            :disabled="isLiveDesktopActionBusy"
-            @change="setLiveDesktopCompositorKeeper($event.target.checked)"
-          >
-          <span>合成稳定器</span>
-        </label>
-
-        <label class="background-debug-toggle">
-          <input
-            name="liveDesktopCssFallbackEffects"
-            type="checkbox"
-            :checked="liveDesktopCssFallbackEffects"
-            :disabled="isLiveDesktopActionBusy"
-            @change="setLiveDesktopCssFallbackEffects($event.target.checked)"
-          >
-          <span>CSS fallback 效果</span>
-        </label>
-
-        <label class="background-debug-toggle">
-          <input
-            name="liveDesktopSkipBlankFrames"
-            type="checkbox"
-            :checked="liveDesktopSkipBlankFrames"
-            :disabled="isLiveDesktopActionBusy"
-            @change="setLiveDesktopSkipBlankFrames($event.target.checked)"
-          >
-          <span>跳过疑似空白帧</span>
-        </label>
-
-        <label class="background-debug-toggle">
-          <input
-            name="liveDesktopForceDwmFlush"
-            type="checkbox"
-            :checked="liveDesktopForceDwmFlush"
-            :disabled="isLiveDesktopActionBusy"
-            @change="setLiveDesktopForceDwmFlush($event.target.checked)"
-          >
-          <span>强制 DWM Flush</span>
-        </label>
-
-        <dl class="background-debug-diagnostics">
-          <div
-            v-for="row in liveDesktopDiagnosticsRows"
-            :key="row.label"
-            :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
-          >
-            <dt>{{ row.label }}</dt>
-            <dd>{{ row.value }}</dd>
-          </div>
-        </dl>
-
-        <dl class="background-debug-diagnostics">
-          <div
-            v-for="row in liveDesktopWindowRows"
-            :key="row.label"
-            :class="['background-debug-stat', row.wide && 'background-debug-stat-wide']"
-          >
-            <dt>{{ row.label }}</dt>
-            <dd>{{ row.value }}</dd>
-          </div>
-        </dl>
-
-        <div class="background-debug-window-list">
-          <article
-            v-for="windowInfo in liveDesktopCandidateWindows"
-            :key="windowInfo.hwnd"
-            class="background-debug-window-card"
-          >
-            <strong>{{ formatWindowTitle(windowInfo) }}</strong>
-            <span>{{ formatWindowMeta(windowInfo) }}</span>
-            <span>{{ formatWindowRect(windowInfo.rect) }}</span>
-          </article>
-          <article v-if="liveDesktopCandidateWindows.length === 0" class="background-debug-window-card">
-            <strong>No live desktop candidates</strong>
-            <span>{{ liveDesktopWindowDiagnostics.detail || liveDesktopWindowDiagnostics.reason }}</span>
-          </article>
-        </div>
-
-        <div v-if="liveDesktopLastError" class="background-debug-error" :title="liveDesktopLastError">
-          {{ liveDesktopLastError }}
-        </div>
-
-        <div class="background-debug-actions background-debug-live-actions">
-          <button type="button" class="background-debug-button" @click="refreshLiveDesktopRuntimeStatus">
-            刷新
-          </button>
-          <button
-            type="button"
-            class="background-debug-button"
-            :disabled="isLiveDesktopActionBusy"
-            @click="reconfigureLiveDesktopRuntime"
-          >
-            {{ isLiveDesktopActionBusy ? "处理中" : "重配" }}
-          </button>
-          <button type="button" class="background-debug-button" @click="copyDiagnostics">
-            {{ diagnosticsCopyButtonLabel }}
-          </button>
-        </div>
-      </div>
     </div>
   </section>
 
@@ -782,7 +510,7 @@
       motionWorkspaceDockResizeActive && 'motion-debug-workspace-resizing',
     ]"
     :style="motionWorkspaceStyle"
-    aria-label="Motion debug workspace"
+    aria-label="Motion 调试工作区"
     @click.stop
     @contextmenu.stop
     @pointerdown.stop
@@ -794,7 +522,7 @@
       data-motion-workspace-resize-handle
       role="separator"
       tabindex="0"
-      aria-label="Resize workspace dock"
+      aria-label="调整工作区停靠宽度"
       aria-orientation="vertical"
       :aria-valuemin="MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MIN"
       :aria-valuemax="MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MAX"
@@ -805,11 +533,11 @@
     />
     <header class="motion-debug-workspace-toolbar">
       <div class="motion-debug-workspace-title">
-        <strong>Motion Debug Workspace</strong>
-        <span>{{ motionWorkspaceModeLabel }} / dev only</span>
+        <strong>Motion 调试工作区</strong>
+        <span>{{ motionWorkspaceModeLabel }} / 仅开发环境</span>
       </div>
       <div class="motion-debug-workspace-toolbar-actions">
-        <div class="background-debug-mode-group motion-debug-workspace-mode-group" role="group" aria-label="Workspace mode">
+        <div class="background-debug-mode-group motion-debug-workspace-mode-group" role="group" aria-label="工作区模式">
           <button
             type="button"
             :class="[
@@ -818,7 +546,7 @@
             ]"
             @click="setMotionWorkspaceMode(MOTION_DEBUG_WORKSPACE_MODE_DOCK)"
           >
-            Dock
+            停靠
           </button>
           <button
             type="button"
@@ -828,18 +556,18 @@
             ]"
             @click="setMotionWorkspaceMode(MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN)"
           >
-            Fullscreen
+            全屏
           </button>
         </div>
         <button type="button" class="background-debug-button" @click="closeMotionWorkspace">
-          Close
+          关闭
         </button>
       </div>
     </header>
 
     <label v-if="!motionWorkspaceFullscreen" class="motion-debug-workspace-dock-control">
       <span>
-        Dock width
+        停靠宽度
         <output>{{ motionWorkspaceDockWidthPx }}px</output>
       </span>
       <input
@@ -853,22 +581,22 @@
       >
     </label>
 
-    <div class="motion-debug-workspace-selection" aria-label="Workspace selection">
+    <div class="motion-debug-workspace-selection" aria-label="工作区选择">
       <dl>
         <div>
-          <dt>Target</dt>
+          <dt>目标</dt>
           <dd :title="motionWorkspaceSelectedTargetLabel">{{ motionWorkspaceSelectedTargetLabel }}</dd>
         </div>
         <div>
-          <dt>Track</dt>
+          <dt>轨道</dt>
           <dd :title="motionWorkspaceSelectedTrackLabel">{{ motionWorkspaceSelectedTrackLabel }}</dd>
         </div>
         <div>
-          <dt>Time</dt>
+          <dt>时间</dt>
           <dd>{{ formatMotionReplayTime(motionWorkspaceSelectedTimeMs) }}</dd>
         </div>
         <div>
-          <dt>Filter</dt>
+          <dt>筛选</dt>
           <dd :title="motionWorkspaceFilterLabel">{{ motionWorkspaceFilterLabel }}</dd>
         </div>
       </dl>
@@ -882,7 +610,7 @@
           {{ motionWorkspacePinButtonLabel }}
         </button>
         <button type="button" class="background-debug-button" @click="clearMotionWorkspaceSelection">
-          Clear Selection
+          清除选择
         </button>
       </div>
     </div>
@@ -897,10 +625,15 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
+import BackgroundDebugLiveDesktopPanel from "./backgroundDebug/BackgroundDebugLiveDesktopPanel.vue";
 import BackgroundDebugMotionInspector from "./backgroundDebug/BackgroundDebugMotionInspector.vue";
 import BackgroundDebugMotionTargets from "./backgroundDebug/BackgroundDebugMotionTargets.vue";
 import BackgroundDebugMotionTimeline from "./backgroundDebug/BackgroundDebugMotionTimeline.vue";
-import { MOTION_DEBUG_WORKSPACE_CONTEXT_KEY } from "./backgroundDebug/motionDebugWorkspaceContext.js";
+import BackgroundDebugRenderPanel from "./backgroundDebug/BackgroundDebugRenderPanel.vue";
+import {
+  createMotionDebugWorkspaceContext,
+  MOTION_DEBUG_WORKSPACE_CONTEXT_KEY,
+} from "./backgroundDebug/motionDebugWorkspaceContext.js";
 import {
   formatAcrylicDebugParams,
   hexToRgbArray,
@@ -946,46 +679,6 @@ import {
 } from "../composables/useLaunchpadSettingsConfig.js";
 import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 import {
-  formatCount,
-  formatFrameArrived,
-  formatFrameTiming,
-  formatLastFrame,
-  formatLiveDesktopRates,
-  formatPixelProbe,
-  formatWindowMeta,
-  formatWindowRect,
-  formatWindowTitle,
-  normalizeLiveDesktopStatus,
-} from "./backgroundDebug/liveDesktopDiagnostics.js";
-import {
-  buildRenderProbeArmConfig,
-  buildRenderProbeCandidateRows,
-  buildRenderProbePhaseRows,
-  buildRenderProbeStatusRows,
-  RENDER_PROBE_PIXELS_OFF,
-  RENDER_PROBE_PIXELS_PHASE_DIFF,
-  RENDER_PROBE_TARGET_ALL,
-  RENDER_PROBE_TARGET_OPTIONS,
-  resolveRenderProbeDisplaySession,
-} from "./backgroundDebug/renderProbePanelModel.js";
-import {
-  LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN,
-  notifyLiveDesktopCompositorKeeperChanged,
-  notifyLiveDesktopCssFallbackEffectsChanged,
-  persistLiveDesktopCompositorKeeper,
-  persistLiveDesktopCssFallbackEffects,
-  persistLiveDesktopDebugFrameSourceOverride,
-  persistLiveDesktopDisableMouseRelay,
-  persistLiveDesktopForceDwmFlush,
-  persistLiveDesktopSkipBlankFrames,
-  readLiveDesktopCompositorKeeper,
-  readLiveDesktopCssFallbackEffects,
-  readLiveDesktopDebugFrameSourceOverride,
-  readLiveDesktopDisableMouseRelay,
-  readLiveDesktopForceDwmFlush,
-  readLiveDesktopSkipBlankFrames,
-} from "./backgroundDebug/liveDesktopDebugSettings.js";
-import {
   DEFAULT_DESKTOP_LAYOUT_DEBUG_PARAMS,
   DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS,
 } from "./backgroundDebug/desktopLayoutDebugSettings.js";
@@ -1010,21 +703,8 @@ import {
   resolveMotionRecordWindowMs,
 } from "./backgroundDebug/motionDebugPanelModel.js";
 import {
-  buildMotionReplayCurveGroups,
-  buildMotionReplayEventRows,
-  buildMotionReplayFilterSummary,
-  buildMotionReplayFrameRows,
-  buildMotionReplayOverlayRows,
-  buildMotionReplayOverviewRows,
-  createMotionReplayIntervalExport,
-  findMotionReplayEventStep,
-  findMotionReplayFrameStepTime,
-  getMotionReplayTimeRange,
   assertMotionReplayImportSize,
   MOTION_REPLAY_IMPORT_MAX_BYTES,
-  normalizeMotionReplayTime,
-  normalizeMotionReplayTrace,
-  parseMotionReplayTraceJson,
 } from "./backgroundDebug/motionReplayViewerModel.js";
 import {
   addMotionReplayBookmark,
@@ -1038,24 +718,15 @@ import {
   MOTION_CAPTURE_DEFAULT_SAMPLE_HZ,
 } from "./backgroundDebug/motionCaptureProfileModel.js";
 import {
-  createMotionFocusedDebugExport,
   MOTION_FOCUSED_DEBUG_SCHEMA,
 } from "./backgroundDebug/motionFocusedDebugExportModel.js";
 import {
-  buildMotionInspectorModel,
-} from "./backgroundDebug/motionInspectorModel.js";
-import {
-  buildMotionReplayAnomalyJumps,
-  MOTION_REPLAY_ANOMALY_TYPES,
-} from "./backgroundDebug/motionReplayAnomalyModel.js";
-import {
-  buildMotionTrackChartModel,
   MOTION_TRACK_CHART_DISPLAY_NORMALIZED,
   MOTION_TRACK_CHART_DISPLAY_RAW,
   MOTION_TRACK_CHART_SERIES_KEYS,
-  normalizeMotionTrackChartZoomWindow,
   normalizeMotionTrackChartSeriesVisibility,
 } from "./backgroundDebug/motionTrackChartModel.js";
+import { motionDiagnosticSession } from "../diagnostics/motionDiagnosticSession.js";
 import {
   buildMotionDebugWorkspaceCaptureProfile,
   closeMotionDebugWorkspace,
@@ -1077,15 +748,20 @@ import {
   toggleMotionDebugWorkspaceCaptureProp,
   toggleMotionDebugWorkspacePin,
 } from "./backgroundDebug/motionDebugWorkspaceModel.js";
-import { createMotionDebugAIReport } from "../rendering/pixi/animation/motionDebugReport.js";
 import {
-  createMotionReplayCaptureController,
   normalizeMotionReplayCaptureSeconds,
 } from "../rendering/pixi/animation/motionReplayTrace.js";
-import { readLaunchpadDebugValue } from "../rendering/pixi/debugNamespace.js";
-import { motionRuntime } from "../rendering/pixi/animation/motionRuntime.js";
+import { diagnosticClient } from "../diagnostics/diagnosticClient.js";
+import { formatDiagnosticActionError } from "./backgroundDebug/diagnosticUiError.js";
 
 const DEBUG_PANEL_DOCK_STORAGE_KEY = "lumeriaBackgroundDebugPanelDock";
+const consumeDiagnosticArtifactText = diagnosticClient.consumeArtifactText;
+const consumeDiagnosticArtifactValue = diagnosticClient.consumeArtifactValue;
+const describeDiagnosticTool = diagnosticClient.describe;
+const invokeDiagnosticTool = diagnosticClient.invoke;
+const readDiagnosticArtifactJsonText = diagnosticClient.readArtifactJsonText;
+const readDiagnosticArtifactValue = diagnosticClient.readArtifactValue;
+const releaseDiagnosticArtifact = diagnosticClient.releaseArtifact;
 
 const props = defineProps({
   desktopLayoutDebugParams: {
@@ -1133,27 +809,11 @@ const debugTabCount = computed(() => 3
   + (canDebugMotion.value ? 1 : 0)
   + (canDebugLiveDesktop.value ? 1 : 0));
 const hasCopiedAcrylic = ref(false);
-const hasCopiedDiagnostics = ref(false);
-const hasCopiedRenderJson = ref(false);
 const hasCopiedMotionFocused = ref(false);
 const hasCopiedMotionFull = ref(false);
 const hasCopiedMotionReplayInterval = ref(false);
 const hasCopiedMotionReplayTrace = ref(false);
 const hasCopiedMotionSummary = ref(false);
-const liveDesktopDebugFrameSourceOverride = ref(canDebugLiveDesktop.value ? readLiveDesktopDebugFrameSourceOverride() : null);
-const liveDesktopDisableMouseRelay = ref(canDebugLiveDesktop.value ? readLiveDesktopDisableMouseRelay() : true);
-const liveDesktopCompositorKeeper = ref(canDebugLiveDesktop.value ? readLiveDesktopCompositorKeeper() : false);
-const liveDesktopCssFallbackEffects = ref(canDebugLiveDesktop.value ? readLiveDesktopCssFallbackEffects() : false);
-const liveDesktopSkipBlankFrames = ref(canDebugLiveDesktop.value ? readLiveDesktopSkipBlankFrames() : false);
-const liveDesktopForceDwmFlush = ref(canDebugLiveDesktop.value ? readLiveDesktopForceDwmFlush() : false);
-const isLiveDesktopActionBusy = ref(false);
-const renderProbeAutoFreeze = ref(true);
-const renderProbeActionError = ref("");
-const renderProbePixels = ref(RENDER_PROBE_PIXELS_OFF);
-const renderProbeRefreshError = ref("");
-const renderProbeSummary = ref(null);
-const renderProbeTargetKind = ref(RENDER_PROBE_TARGET_ALL);
-const renderProbeTargetValue = ref("");
 const motionRuntimeDebugEnabled = ref(false);
 const motionOverlayEnabled = ref(false);
 const motionRecordEnabled = ref(false);
@@ -1162,14 +822,21 @@ const motionCustomSeconds = ref(30);
 const motionTimeScale = ref(1);
 const motionFilterPreset = ref("all");
 const motionFilterQuery = ref("");
-const motionSnapshot = ref(readMotionRuntimeSnapshot());
+const motionSnapshot = ref({});
 const motionReport = ref({});
-const motionReplayCapture = createMotionReplayCaptureController(motionRuntime);
+const motionActionError = ref("");
+const motionRefreshError = ref("");
 const motionReplayCaptureSeconds = ref(30);
-const motionReplayCaptureStatus = ref(motionReplayCapture.status());
-const motionReplayTrace = ref(null);
-const motionReplayTraceJson = ref("");
-const motionReplayViewerTrace = ref(null);
+const motionReplayCaptureStatus = ref({
+  active: false,
+  captureProfile: null,
+  sampleHz: 60,
+  seconds: 30,
+  startedAt: null,
+});
+const motionReplayCaptureArtifact = ref(null);
+const motionReplayCaptureSummary = ref(null);
+const motionReplayDocument = ref(null);
 const motionReplayImportText = ref("");
 const motionReplayImportError = ref("");
 const motionReplayCurrentTimeMs = ref(0);
@@ -1188,44 +855,17 @@ const motionWorkspaceDockResize = ref(null);
 const motionWorkspaceSession = ref(createMotionDebugWorkspaceSession({
   viewportWidth: typeof window === "undefined" ? undefined : window.innerWidth,
 }));
-const liveDesktopRates = ref({
-  framesPerSecond: 0,
-  arrivedPerSecond: 0,
-  droppedPerSecond: 0,
-  timeoutsPerSecond: 0,
-  copyErrorsPerSecond: 0,
-});
-const renderProbeError = computed(() => renderProbeActionError.value || renderProbeRefreshError.value);
-const renderProbeReady = computed(() => Boolean(renderProbeSummary.value));
-const renderProbeCanArm = computed(() => (
-  renderProbeTargetKind.value === RENDER_PROBE_TARGET_ALL
-  || Boolean(renderProbeTargetValue.value.trim())
-));
-const renderProbeTargetInputLabel = computed(() => (
-  RENDER_PROBE_TARGET_OPTIONS.find((option) => option.value === renderProbeTargetKind.value)?.label
-  || "Target value"
-));
-const renderProbeDisplaySession = computed(() => resolveRenderProbeDisplaySession(renderProbeSummary.value));
-const renderProbeStatusRows = computed(() => buildRenderProbeStatusRows(renderProbeSummary.value));
-const renderProbePhaseRows = computed(() => buildRenderProbePhaseRows(renderProbeDisplaySession.value));
-const renderProbeCandidateRows = computed(() => buildRenderProbeCandidateRows(renderProbeDisplaySession.value));
-const renderProbePixelComparison = computed(() => renderProbeDisplaySession.value?.pixelComparison || null);
-const renderProbeCopyButtonLabel = computed(() => (hasCopiedRenderJson.value ? "Copied" : "Copy JSON"));
 const noticeDebugRows = computed(() => [
   {
-    label: "Transient",
-    value: props.dialogState?.transientNotice?.value?.title || "none",
+    label: "临时通知",
+    value: props.dialogState?.transientNotice?.value?.title || "无",
   },
   {
-    label: "Recovery",
-    value: props.dialogState?.layoutRecoveryNotice?.value?.title || "none",
+    label: "恢复通知",
+    value: props.dialogState?.layoutRecoveryNotice?.value?.title || "无",
   },
 ]);
-let liveDesktopRateSample = null;
 let acrylicCopyStateTimer = null;
-let diagnosticsCopyStateTimer = null;
-let renderProbeCopyStateTimer = null;
-let renderProbeRuntimePollTimer = null;
 let motionFocusedCopyStateTimer = null;
 let motionFullCopyStateTimer = null;
 let motionRuntimePollTimer = null;
@@ -1234,36 +874,41 @@ let motionReplayPlaybackLastTime = 0;
 let motionReplayPlaybackTimer = null;
 let motionReplayTraceCopyStateTimer = null;
 let motionSummaryCopyStateTimer = null;
-let liveDesktopRuntimePollTimer = null;
 let kawaseLiveDesktopSyncTimer = null;
 
 const motionCaptureProfiles = getMotionCaptureProfiles();
 const motionCaptureAllowedProps = MOTION_CAPTURE_ALLOWED_PROPS;
+const MOTION_TRACK_CHART_SERIES_LABELS = Object.freeze({
+  delta: "差值（delta）",
+  to: "目标值（to）",
+  value: "当前值（value）",
+  velocity: "速度（velocity）",
+});
 const motionTrackChartSeriesOptions = MOTION_TRACK_CHART_SERIES_KEYS.map((key) => ({
   key,
-  label: key,
+  label: MOTION_TRACK_CHART_SERIES_LABELS[key] || key,
 }));
 const MOTION_WORKSPACE_DOCK_RESIZE_STEP_PX = 20;
 const MOTION_WORKSPACE_DOCK_RESIZE_FAST_STEP_PX = 80;
 
 const sliders = [
-  { key: "saturation", label: "saturation", min: 0.8, max: 1.8, step: 0.01, digits: 2 },
-  { key: "contrast", label: "contrast", min: 0.75, max: 1.25, step: 0.01, digits: 2 },
-  { key: "brightness", label: "brightness", min: 0.5, max: 1.2, step: 0.01, digits: 2 },
-  { key: "tintStrength", label: "tintStrength", min: 0, max: 0.6, step: 0.01, digits: 2 },
-  { key: "noise", label: "noise", min: 0, max: 0.06, step: 0.001, digits: 3 },
-  { key: "seed", label: "seed", min: 0, max: 100, step: 0.01, digits: 2 },
+  { key: "saturation", label: "饱和度（saturation）", min: 0.8, max: 1.8, step: 0.01, digits: 2 },
+  { key: "contrast", label: "对比度（contrast）", min: 0.75, max: 1.25, step: 0.01, digits: 2 },
+  { key: "brightness", label: "亮度（brightness）", min: 0.5, max: 1.2, step: 0.01, digits: 2 },
+  { key: "tintStrength", label: "染色强度（tintStrength）", min: 0, max: 0.6, step: 0.01, digits: 2 },
+  { key: "noise", label: "噪点（noise）", min: 0, max: 0.06, step: 0.001, digits: 3 },
+  { key: "seed", label: "噪点种子（seed）", min: 0, max: 100, step: 0.01, digits: 2 },
 ];
 const layoutSliders = [
-  { key: "hostMaxHeightPx", label: "hostMaxHeight", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostMaxHeightPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostMaxHeightPx.max, step: 10, digits: 0 },
-  { key: "hostHeightOffsetPx", label: "hostHeightOffset", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostHeightOffsetPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostHeightOffsetPx.max, step: 4, digits: 0 },
-  { key: "mainPaddingYPx", label: "mainPaddingY", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.mainPaddingYPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.mainPaddingYPx.max, step: 1, digits: 0 },
-  { key: "gridPaddingTopPx", label: "gridPaddingTop", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.gridPaddingTopPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.gridPaddingTopPx.max, step: 1, digits: 0 },
+  { key: "hostMaxHeightPx", label: "宿主最大高度（hostMaxHeight）", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostMaxHeightPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostMaxHeightPx.max, step: 10, digits: 0 },
+  { key: "hostHeightOffsetPx", label: "宿主高度偏移（hostHeightOffset）", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostHeightOffsetPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostHeightOffsetPx.max, step: 4, digits: 0 },
+  { key: "mainPaddingYPx", label: "主区域纵向内边距（mainPaddingY）", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.mainPaddingYPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.mainPaddingYPx.max, step: 1, digits: 0 },
+  { key: "gridPaddingTopPx", label: "网格顶部内边距（gridPaddingTop）", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.gridPaddingTopPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.gridPaddingTopPx.max, step: 1, digits: 0 },
 ];
 const kawaseSliders = [
   {
     key: "passCount",
-    label: "passCount",
+    label: "迭代次数（passCount）",
     min: KAWASE_DEBUG_PASS_COUNT_MIN,
     max: KAWASE_DEBUG_PASS_COUNT_MAX,
     step: 1,
@@ -1271,7 +916,7 @@ const kawaseSliders = [
   },
   {
     key: "offsetScale",
-    label: "radiusScale",
+    label: "半径倍率（radiusScale）",
     min: KAWASE_DEBUG_OFFSET_SCALE_MIN,
     max: KAWASE_DEBUG_OFFSET_SCALE_MAX,
     step: 0.01,
@@ -1281,7 +926,7 @@ const kawaseSliders = [
 const gaussianSliders = [
   {
     key: "gaussianRadiusPx",
-    label: "gaussianRadius",
+    label: "高斯半径（gaussianRadius）",
     min: KAWASE_DEBUG_GAUSSIAN_RADIUS_PX_MIN,
     max: KAWASE_DEBUG_GAUSSIAN_RADIUS_PX_MAX,
     step: 0.25,
@@ -1291,7 +936,7 @@ const gaussianSliders = [
 const autoBlurKernelSliders = [
   {
     key: "testStrength",
-    label: "testStrength",
+    label: "测试强度（testStrength）",
     min: KAWASE_DEBUG_TEST_STRENGTH_MIN,
     max: KAWASE_DEBUG_TEST_STRENGTH_MAX,
     step: 1,
@@ -1299,7 +944,7 @@ const autoBlurKernelSliders = [
   },
   {
     key: "gaussianCutoff",
-    label: "blurCutoff<=",
+    label: "模糊阈值上限（blurCutoff）",
     min: KAWASE_DEBUG_GAUSSIAN_CUTOFF_MIN,
     max: KAWASE_DEBUG_GAUSSIAN_CUTOFF_MAX,
     step: 1,
@@ -1307,7 +952,7 @@ const autoBlurKernelSliders = [
   },
   {
     key: "acrylicGaussianCutoff",
-    label: "acrylicCutoff<=",
+    label: "亚克力阈值上限（acrylicCutoff）",
     min: KAWASE_DEBUG_GAUSSIAN_CUTOFF_MIN,
     max: KAWASE_DEBUG_GAUSSIAN_CUTOFF_MAX,
     step: 1,
@@ -1315,7 +960,7 @@ const autoBlurKernelSliders = [
   },
   {
     key: "gaussianRadiusScale",
-    label: "gaussianScale",
+    label: "高斯缩放（gaussianScale）",
     min: KAWASE_DEBUG_GAUSSIAN_RADIUS_SCALE_MIN,
     max: KAWASE_DEBUG_GAUSSIAN_RADIUS_SCALE_MAX,
     step: 0.01,
@@ -1323,7 +968,7 @@ const autoBlurKernelSliders = [
   },
   {
     key: "gaussianMaxRadiusPx",
-    label: "gaussianMax",
+    label: "高斯最大值（gaussianMax）",
     min: KAWASE_DEBUG_GAUSSIAN_RADIUS_PX_MIN,
     max: KAWASE_DEBUG_GAUSSIAN_RADIUS_PX_MAX,
     step: 0.25,
@@ -1356,107 +1001,38 @@ const blurKernelStatus = computed(() => {
       : kawaseParams.gaussianCutoff;
     const offsetScale = resolveAutoDualKawaseOffsetScale(effect, testStrength, kawaseParams);
     const branchDetail = resolvedKernel === BLUR_KERNEL_GAUSSIAN
-      ? ` radius=${radius.toFixed(2)}px`
-      : ` pass=${Number(kawaseParams.passCount).toFixed(0)} radiusScale=${offsetScale.toFixed(2)} base=${Number(kawaseParams.offsetScale).toFixed(2)}`;
-    return `auto ${formatEffectLabel(effect)} actual=${actualStrength} test=${testStrength} cutoff<=${Number(cutoff).toFixed(0)} -> ${resolvedKernel}${branchDetail}`;
+      ? ` 半径=${radius.toFixed(2)}px`
+      : ` pass=${Number(kawaseParams.passCount).toFixed(0)} 半径倍率=${offsetScale.toFixed(2)} 基准=${Number(kawaseParams.offsetScale).toFixed(2)}`;
+    return `自动 ${formatEffectLabel(effect)} 实际强度=${actualStrength} 测试强度=${testStrength} 阈值<=${Number(cutoff).toFixed(0)} → ${resolvedKernel}${branchDetail}`;
   }
   if (kawaseParams.kernel === BLUR_KERNEL_GAUSSIAN) {
-    return `manual gaussian radius=${Number(kawaseParams.gaussianRadiusPx).toFixed(2)}px`;
+    return `手动高斯 半径=${Number(kawaseParams.gaussianRadiusPx).toFixed(2)}px`;
   }
-  return `manual dual pass=${Number(kawaseParams.passCount).toFixed(0)} radiusScale=${Number(kawaseParams.offsetScale).toFixed(2)}`;
+  return `手动双重 Kawase pass=${Number(kawaseParams.passCount).toFixed(0)} 半径倍率=${Number(kawaseParams.offsetScale).toFixed(2)}`;
 });
 const acrylicCopyButtonLabel = computed(() => (hasCopiedAcrylic.value ? "已复制" : "复制 JSON"));
-const diagnosticsCopyButtonLabel = computed(() => (hasCopiedDiagnostics.value ? "已复制" : "复制诊断"));
-const motionFullCopyButtonLabel = computed(() => (hasCopiedMotionFull.value ? "已复制" : "Copy AI Report"));
+const motionFullCopyButtonLabel = computed(() => (hasCopiedMotionFull.value ? "已复制" : "复制 AI 报告"));
 const motionReplayCaptureActive = computed(() => Boolean(motionReplayCaptureStatus.value.active));
-const motionReplayIntervalCopyButtonLabel = computed(() => (hasCopiedMotionReplayInterval.value ? "Copied" : "Copy Interval"));
-const motionReplayPlayButtonLabel = computed(() => (motionReplayPlaying.value ? "Pause Replay" : "Play Replay"));
-const motionReplayTraceCopyButtonLabel = computed(() => (hasCopiedMotionReplayTrace.value ? "Copied" : "Copy Trace"));
-const motionReplayViewerLoaded = computed(() => Boolean(motionReplayViewerTrace.value));
+const motionReplayCaptureAvailable = computed(() => Boolean(motionReplayCaptureArtifact.value));
+const motionReplayIntervalCopyButtonLabel = computed(() => (hasCopiedMotionReplayInterval.value ? "已复制" : "复制区间"));
+const motionReplayPlayButtonLabel = computed(() => (motionReplayPlaying.value ? "暂停回放" : "播放回放"));
+const motionReplayTraceCopyButtonLabel = computed(() => (hasCopiedMotionReplayTrace.value ? "已复制" : "复制捕获"));
+const motionReplayViewerLoaded = computed(() => Boolean(motionReplayDocument.value));
+const motionDiagnosticError = computed(() => motionActionError.value || motionRefreshError.value);
 const motionReplayImportStatus = computed(() => {
-  if (motionReplayImportError.value) return "error";
-  return motionReplayViewerLoaded.value ? "loaded" : "empty";
+  if (motionReplayImportError.value) return "错误";
+  return motionReplayViewerLoaded.value ? "已载入" : "空";
 });
-const motionSummaryCopyButtonLabel = computed(() => (hasCopiedMotionSummary.value ? "已复制" : "Copy Summary"));
+const motionSummaryCopyButtonLabel = computed(() => (hasCopiedMotionSummary.value ? "已复制" : "复制摘要"));
 const layoutDebugRows = computed(() => {
   const params = layoutParams.value;
   return [
-    { label: "enabled", value: params.enabled ? "true" : "false" },
-    { label: "dragHit", value: params.dragHitZonesEnabled ? "true" : "false" },
-    { label: "hostMax", value: `${Number(params.hostMaxHeightPx).toFixed(0)}px` },
-    { label: "heightOffset", value: `${Number(params.hostHeightOffsetPx).toFixed(0)}px` },
-    { label: "mainPaddingY", value: `${Number(params.mainPaddingYPx).toFixed(0)}px` },
-    { label: "gridTop", value: `${Number(params.gridPaddingTopPx).toFixed(0)}px`, wide: true },
-  ];
-});
-const liveDesktopStatus = computed(() => normalizeLiveDesktopStatus(props.state?.liveDesktopRuntimeStatus?.value));
-const liveDesktopStatusRows = computed(() => {
-  const status = liveDesktopStatus.value;
-  return [
-    { label: "phase", value: status.phase },
-    { label: "active", value: status.active ? "true" : "false" },
-    { label: "generation", value: formatCount(status.generation) },
-    { label: "reason", value: status.reason || "-", wide: true },
-  ];
-});
-const liveDesktopDiagnosticsRows = computed(() => {
-  const diagnostics = liveDesktopStatus.value.diagnostics;
-  return [
-    { label: "framesCopied", value: formatCount(diagnostics.framesCopied) },
-    { label: "timeouts", value: formatCount(diagnostics.frameTimeouts) },
-    { label: "copyErrors", value: formatCount(diagnostics.copyErrors) },
-    { label: "commitErrors", value: formatCount(diagnostics.commitErrors) },
-    { label: "shaderFallbacks", value: formatCount(diagnostics.shaderCopyFallbacks) },
-    { label: "rates", value: formatLiveDesktopRates(liveDesktopRates.value), wide: true },
-    { label: "frameArrived", value: formatFrameArrived(diagnostics), wide: true },
-    {
-      label: "copyTiming",
-      value: formatFrameTiming(
-        diagnostics.frameCopySamples,
-        diagnostics.frameCopyMicrosTotal,
-        diagnostics.lastFrameCopyMicros,
-        diagnostics.maxFrameCopyMicros,
-      ),
-      wide: true,
-    },
-    {
-      label: "commitTiming",
-      value: formatFrameTiming(
-        diagnostics.frameCommitSamples,
-        diagnostics.frameCommitMicrosTotal,
-        diagnostics.lastFrameCommitMicros,
-        diagnostics.maxFrameCommitMicros,
-      ),
-      wide: true,
-    },
-    { label: "configUpdates", value: formatCount(diagnostics.configUpdates) },
-    { label: "configErrors", value: formatCount(diagnostics.configErrors) },
-    { label: "testPatternFrames", value: formatCount(diagnostics.testPatternFrames) },
-    { label: "blankFrameSkips", value: formatCount(diagnostics.blankFrameSkips) },
-    {
-      label: "abandonedWorkers",
-      value: `${formatCount(diagnostics.abandonedRendererWorkers)} active / ${formatCount(diagnostics.reapedAbandonedRendererWorkers)} reaped`,
-      wide: true,
-    },
-    { label: "pixelProbe", value: formatPixelProbe(diagnostics), wide: true },
-    { label: "lastFrame", value: formatLastFrame(diagnostics), wide: true },
-    ...(diagnostics.lastAbandonedRendererReason
-      ? [{ label: "lastAbandoned", value: diagnostics.lastAbandonedRendererReason, wide: true }]
-      : []),
-    ...(diagnostics.lastShaderCopyError
-      ? [{ label: "lastShaderFallback", value: diagnostics.lastShaderCopyError, wide: true }]
-      : []),
-  ];
-});
-const liveDesktopLastError = computed(() => liveDesktopStatus.value.diagnostics.lastError);
-const liveDesktopWindowDiagnostics = computed(() => liveDesktopStatus.value.windowDiagnostics);
-const liveDesktopCandidateWindows = computed(() => liveDesktopWindowDiagnostics.value.candidates.slice(0, 5));
-const liveDesktopWindowRows = computed(() => {
-  const diagnostics = liveDesktopWindowDiagnostics.value;
-  return [
-    { label: "windowDiag", value: diagnostics.available ? "available" : diagnostics.reason || "-", wide: true },
-    { label: "windows", value: formatCount(diagnostics.windowCount) },
-    { label: "candidates", value: formatCount(diagnostics.candidateCount) },
+    { label: "覆盖布局 (enabled)", value: params.enabled ? "是" : "否" },
+    { label: "拖拽命中区 (dragHit)", value: params.dragHitZonesEnabled ? "显示" : "隐藏" },
+    { label: "宿主最大高度 (hostMax)", value: `${Number(params.hostMaxHeightPx).toFixed(0)}px` },
+    { label: "高度偏移 (heightOffset)", value: `${Number(params.hostHeightOffsetPx).toFixed(0)}px` },
+    { label: "主区纵向内边距 (mainPaddingY)", value: `${Number(params.mainPaddingYPx).toFixed(0)}px` },
+    { label: "网格顶部 (gridTop)", value: `${Number(params.gridPaddingTopPx).toFixed(0)}px`, wide: true },
   ];
 });
 const motionOverviewRows = computed(() => buildMotionOverviewRows(motionSnapshot.value));
@@ -1484,9 +1060,9 @@ const motionReplayCaptureEstimate = computed(() => estimateMotionCaptureProfileS
 ));
 const motionReplayCaptureRows = computed(() => buildMotionReplayCaptureRows(
   motionReplayCaptureStatus.value,
-  motionReplayTrace.value,
+  motionReplayCaptureSummary.value,
   {
-    actualBytes: motionReplayTraceJson.value.length,
+    actualBytes: motionReplayCaptureArtifact.value?.artifact?.byteLength || 0,
     estimate: motionReplayCaptureEstimate.value,
     profile: motionCaptureProfile.value,
   }
@@ -1502,59 +1078,75 @@ const motionCaptureTargetFilterText = computed(() => {
   };
 });
 const motionCaptureEstimateRows = computed(() => [
-  { label: "profile", value: motionCaptureProfile.value.label, wide: true },
-  { label: "props", value: motionCaptureProfile.value.propAllowlist.join(", "), wide: true },
-  { label: "targets", value: formatMotionCaptureTargetFilterSummary(motionCaptureProfile.value.targetFilters), wide: true },
+  { label: "捕获配置 (profile)", value: motionCaptureProfile.value.label, wide: true },
+  { label: "属性 (props)", value: motionCaptureProfile.value.propAllowlist.join(", "), wide: true },
+  { label: "目标 (targets)", value: formatMotionCaptureTargetFilterSummary(motionCaptureProfile.value.targetFilters), wide: true },
   {
-    label: "frames/events",
-    value: `${formatCount(motionReplayCaptureEstimate.value.frameCount)} / ${formatCount(motionReplayCaptureEstimate.value.eventCount)}`,
+    label: "帧/事件 (frames/events)",
+    value: `${formatDebugCount(motionReplayCaptureEstimate.value.frameCount)} / ${formatDebugCount(motionReplayCaptureEstimate.value.eventCount)}`,
     wide: true,
   },
   {
-    label: "tracks/targets",
-    value: `${formatCount(motionReplayCaptureEstimate.value.trackCount)} / ${formatCount(motionReplayCaptureEstimate.value.targetCount)}`,
+    label: "轨道/目标 (tracks/targets)",
+    value: `${formatDebugCount(motionReplayCaptureEstimate.value.trackCount)} / ${formatDebugCount(motionReplayCaptureEstimate.value.targetCount)}`,
     wide: true,
   },
-  { label: "json", value: motionReplayCaptureEstimate.value.jsonSizeLabel, wide: true },
+  { label: "预计 JSON", value: motionReplayCaptureEstimate.value.jsonSizeLabel, wide: true },
 ]);
-const motionReplayTimeRange = computed(() => motionReplayViewerTrace.value ? getMotionReplayTimeRange(motionReplayViewerTrace.value) : { max: 0, min: 0 });
+const motionReplayTimeRange = computed(() => motionReplayDocument.value?.timeRange() || { max: 0, min: 0 });
 const motionReplayFilters = computed(() => ({
   query: motionReplayFilterQuery.value,
 }));
-const motionReplayOverviewRows = computed(() => buildMotionReplayOverviewRows(motionReplayViewerTrace.value, motionReplayCurrentTimeMs.value));
-const motionReplayFilterSummary = computed(() => motionReplayViewerTrace.value
-  ? buildMotionReplayFilterSummary(motionReplayViewerTrace.value, motionReplayCurrentTimeMs.value, motionReplayFilters.value)
-  : { query: "", text: "0 props / 0 events" });
-const motionReplayFrameRows = computed(() => motionReplayViewerTrace.value
-  ? buildMotionReplayFrameRows(motionReplayViewerTrace.value, motionReplayCurrentTimeMs.value, motionReplayFilters.value)
-  : []);
-const motionReplayEventRows = computed(() => motionReplayViewerTrace.value
-  ? buildMotionReplayEventRows(motionReplayViewerTrace.value, motionReplayCurrentTimeMs.value, motionReplayFilters.value)
-  : []);
-const motionReplayCurveGroups = computed(() => motionReplayViewerTrace.value
-  ? buildMotionReplayCurveGroups(motionReplayViewerTrace.value, motionReplayCurrentTimeMs.value, motionReplayFilters.value)
-  : []);
-const motionReplayOverlayRows = computed(() => motionReplayViewerTrace.value
-  ? buildMotionReplayOverlayRows(motionReplayViewerTrace.value, motionReplayCurrentTimeMs.value, motionReplayFilters.value, {
-    selectedTarget: motionWorkspaceSession.value.selectedTarget,
-    selectedTrack: motionWorkspaceSession.value.selectedTrack,
+const motionReplayOverviewRows = computed(() => motionReplayDocument.value
+  ? motionReplayDocument.value.getView("overview", { timeMs: motionReplayCurrentTimeMs.value })
+  : [{ label: "查看器", value: "空" }, { label: "协议", value: "无", wide: true }]);
+const motionReplayFilterSummary = computed(() => motionReplayDocument.value
+  ? motionReplayDocument.value.getView("filter-summary", {
+    filters: motionReplayFilters.value,
+    timeMs: motionReplayCurrentTimeMs.value,
+  })
+  : { query: "", text: "0 个属性 / 0 个事件" });
+const motionReplayFrameRows = computed(() => motionReplayDocument.value
+  ? motionReplayDocument.value.getView("frame-rows", {
+    filters: motionReplayFilters.value,
+    timeMs: motionReplayCurrentTimeMs.value,
   })
   : []);
-const motionTrackChartZoomWindow = computed(() => motionReplayViewerTrace.value
-  ? normalizeMotionTrackChartZoomWindow(motionReplayViewerTrace.value, {
+const motionReplayEventRows = computed(() => motionReplayDocument.value
+  ? motionReplayDocument.value.getView("event-rows", {
+    filters: motionReplayFilters.value,
+    timeMs: motionReplayCurrentTimeMs.value,
+  })
+  : []);
+const motionReplayCurveGroups = computed(() => motionReplayDocument.value
+  ? motionReplayDocument.value.getView("curve-groups", {
+    filters: motionReplayFilters.value,
+    timeMs: motionReplayCurrentTimeMs.value,
+  })
+  : []);
+const motionReplayOverlayRows = computed(() => motionReplayDocument.value
+  ? motionReplayDocument.value.getView("overlay-rows", {
+    filters: motionReplayFilters.value,
+    selectedTarget: motionWorkspaceSession.value.selectedTarget,
+    selectedTrack: motionWorkspaceSession.value.selectedTrack,
+    timeMs: motionReplayCurrentTimeMs.value,
+  })
+  : []);
+const motionTrackChartZoomWindow = computed(() => motionReplayDocument.value
+  ? motionReplayDocument.value.getView("track-chart.zoom", {
     endMs: motionTrackChartZoomEndMs.value ?? motionReplayTimeRange.value.max,
     startMs: motionTrackChartZoomStartMs.value ?? motionReplayTimeRange.value.min,
   })
   : { endMs: 0, startMs: 0 });
 const motionTrackChartZoomActive = computed(() => {
-  if (!motionReplayViewerTrace.value) return false;
+  if (!motionReplayDocument.value) return false;
   const range = motionReplayTimeRange.value;
   const zoom = motionTrackChartZoomWindow.value;
   return Math.round(zoom.startMs) !== Math.round(range.min)
     || Math.round(zoom.endMs) !== Math.round(range.max);
 });
-const motionTrackChartModel = computed(() => motionReplayViewerTrace.value
-  ? buildMotionTrackChartModel(motionReplayViewerTrace.value, {
+const motionTrackChartModel = computed(() => motionReplayDocument.value
+  ? motionReplayDocument.value.getView("track-chart", {
     cursorTimeMs: motionWorkspaceSelectedTimeMs.value,
     displayMode: motionTrackChartDisplayMode.value,
     filters: motionReplayFilters.value,
@@ -1565,27 +1157,28 @@ const motionTrackChartModel = computed(() => motionReplayViewerTrace.value
   : null);
 const motionTrackChartHeaderLabel = computed(() => {
   const chart = motionTrackChartModel.value;
-  if (!chart) return `${motionTimelineGroups.value.length} live tracks / no replay trace`;
-  return `${chart.summary.visibleTrackCount}/${chart.summary.trackCount} chart tracks / ${chart.summary.eventCount} events`;
+  if (!chart) return `${motionTimelineGroups.value.length} 条实时轨道 / 未载入回放轨迹`;
+  return `${chart.summary.visibleTrackCount}/${chart.summary.trackCount} 条图表轨道 / ${chart.summary.eventCount} 个事件`;
 });
 const motionTrackChartSummaryRows = computed(() => {
   const chart = motionTrackChartModel.value;
   if (!chart) return [];
   return [
-    { label: "window", value: `${formatMotionReplayTime(chart.zoomWindow.startMs)}..${formatMotionReplayTime(chart.zoomWindow.endMs)}`, wide: true },
-    { label: "samples", value: formatCount(chart.summary.sampleCount) },
-    { label: "events", value: formatCount(chart.summary.eventCount) },
-    { label: "tracks", value: `${formatCount(chart.summary.visibleTrackCount)} / ${formatCount(chart.summary.trackCount)}` },
-    { label: "points", value: `<=${formatCount(chart.limits.maxPointsPerSeries)} / series` },
-    { label: "cursor", value: formatMotionReplayTime(chart.cursor.timeMs) },
+    { label: "时间窗口", value: `${formatMotionReplayTime(chart.zoomWindow.startMs)}..${formatMotionReplayTime(chart.zoomWindow.endMs)}`, wide: true },
+    { label: "采样", value: formatDebugCount(chart.summary.sampleCount) },
+    { label: "事件", value: formatDebugCount(chart.summary.eventCount) },
+    { label: "轨道", value: `${formatDebugCount(chart.summary.visibleTrackCount)} / ${formatDebugCount(chart.summary.trackCount)}` },
+    { label: "曲线点数", value: `每条曲线 ≤ ${formatDebugCount(chart.limits.maxPointsPerSeries)}` },
+    { label: "时间游标", value: formatMotionReplayTime(chart.cursor.timeMs) },
   ];
 });
-const motionReplayAnomalyRows = computed(() => motionReplayViewerTrace.value
-  ? buildMotionReplayAnomalyJumps(motionReplayViewerTrace.value, {
+const motionReplayAnalysis = computed(() => motionReplayDocument.value
+  ? motionReplayDocument.value.analyze({
     filters: motionReplayFilters.value,
   })
-  : []);
-const motionReplayAnomalyStatusLabel = computed(() => `${motionReplayAnomalyRows.value.length}/${MOTION_REPLAY_ANOMALY_TYPES.length} signals`);
+  : null);
+const motionReplayFindingRows = computed(() => motionReplayAnalysis.value?.findings || []);
+const motionReplayFindingStatusLabel = computed(() => motionReplayAnalysis.value?.summary?.headline || "暂无诊断发现");
 const motionTrackChartIntervalOverlay = computed(() => {
   const chart = motionTrackChartModel.value;
   if (!chart) return { active: false, width: 0, x: 0 };
@@ -1602,18 +1195,18 @@ const motionTrackChartIntervalOverlay = computed(() => {
   };
 });
 const motionTrackChartIntervalActive = computed(() => Boolean(
-  motionReplayViewerTrace.value
+  motionReplayDocument.value
     && Math.round(motionReplayIntervalStartMs.value) !== Math.round(motionReplayIntervalEndMs.value)
 ));
-const motionReplayBookmarkCanSave = computed(() => Boolean(motionReplayViewerTrace.value && motionTrackChartIntervalActive.value));
+const motionReplayBookmarkCanSave = computed(() => Boolean(motionReplayDocument.value && motionTrackChartIntervalActive.value));
 const motionReplayBookmarkRows = computed(() => motionReplayBookmarks.value);
 const motionReplayBookmarkStatusLabel = computed(() => `${motionReplayBookmarkRows.value.length}/${MOTION_REPLAY_BOOKMARK_LIMIT}`);
-const motionFocusedDebugExportAvailable = computed(() => Boolean(motionReplayViewerTrace.value));
+const motionFocusedDebugExportAvailable = computed(() => Boolean(motionReplayDocument.value));
 const motionWorkspaceOpen = computed(() => canDebugMotion.value && motionWorkspaceSession.value.isOpen);
 const motionWorkspaceFullscreen = computed(() => motionWorkspaceSession.value.mode === MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN);
 const motionWorkspaceDockWidthPx = computed(() => motionWorkspaceSession.value.dockWidthPx);
 const motionWorkspaceDockResizeActive = computed(() => motionWorkspaceDockResize.value != null);
-const motionWorkspaceModeLabel = computed(() => (motionWorkspaceFullscreen.value ? "Fullscreen" : "Dock"));
+const motionWorkspaceModeLabel = computed(() => (motionWorkspaceFullscreen.value ? "全屏" : "停靠"));
 const motionWorkspaceStyle = computed(() => (motionWorkspaceFullscreen.value
   ? undefined
   : { width: `${motionWorkspaceDockWidthPx.value}px` }));
@@ -1622,15 +1215,16 @@ const motionWorkspaceSelectedTargetLabel = computed(() => formatMotionWorkspaceT
 const motionWorkspaceSelectedTrackLabel = computed(() => formatMotionWorkspaceTrack(motionWorkspaceSession.value.selectedTrack));
 const motionWorkspaceFilterLabel = computed(() => {
   const filters = motionWorkspaceSession.value.filters;
-  return `${filters.preset || "all"}${filters.query ? ` / ${filters.query}` : ""}`;
+  const preset = MOTION_FILTER_PRESETS.find((entry) => entry.value === filters.preset);
+  return `${preset?.label || "全部"}${filters.query ? ` / ${filters.query}` : ""}`;
 });
 const motionWorkspaceSelectedTargetPinned = computed(() => {
   const selectedKey = getMotionWorkspaceTargetKey(motionWorkspaceSession.value.selectedTarget);
   return Boolean(selectedKey && motionWorkspaceSession.value.pinnedTargets.some((pin) => pin.key === selectedKey));
 });
-const motionWorkspacePinButtonLabel = computed(() => (motionWorkspaceSelectedTargetPinned.value ? "Unpin Target" : "Pin Target"));
-const motionInspectorModel = computed(() => motionReplayViewerTrace.value
-  ? buildMotionInspectorModel(motionReplayViewerTrace.value, {
+const motionWorkspacePinButtonLabel = computed(() => (motionWorkspaceSelectedTargetPinned.value ? "取消固定目标" : "固定目标"));
+const motionInspectorModel = computed(() => motionReplayDocument.value
+  ? motionReplayDocument.value.getView("inspector", {
     selectedTarget: motionWorkspaceSession.value.selectedTarget,
     selectedTimeMs: motionWorkspaceSelectedTimeMs.value,
     selectedTrack: motionWorkspaceSession.value.selectedTrack,
@@ -1639,62 +1233,67 @@ const motionInspectorModel = computed(() => motionReplayViewerTrace.value
 const motionInspectorStatusRows = computed(() => {
   const current = motionInspectorModel.value?.current;
   return [
-    { label: "value", value: current?.valueLabel || "-" },
-    { label: "to", value: current?.toLabel || "-" },
-    { label: "delta", value: current?.deltaLabel || "-" },
-    { label: "velocity", value: current?.velocityLabel || "-" },
-    { label: "driver", value: current?.driver || "-" },
-    { label: "lane", value: current ? `${current.lane}/${current.laneKey}` : "-", wide: true },
-    { label: "source", value: current?.sourceLabel || "-", wide: true },
+    { label: "当前值 (value)", value: current?.valueLabel || "-" },
+    { label: "目标值 (to)", value: current?.toLabel || "-" },
+    { label: "差值 (delta)", value: current?.deltaLabel || "-" },
+    { label: "速度 (velocity)", value: current?.velocityLabel || "-" },
+    { label: "驱动器 (driver)", value: current?.driver || "-" },
+    { label: "通道 (lane)", value: current ? `${current.lane}/${current.laneKey}` : "-", wide: true },
+    { label: "来源 (source)", value: current?.sourceLabel || "-", wide: true },
   ];
 });
 const motionInspectorLaneRows = computed(() => motionInspectorModel.value?.laneBreakdown || []);
 const motionInspectorWhyRows = computed(() => motionInspectorModel.value?.whyRows || []);
 const motionInspectorEventRows = computed(() => motionInspectorModel.value?.recentEvents || []);
 const motionInspectorWarningRows = computed(() => motionInspectorModel.value?.warnings || []);
-const motionFocusedCopyButtonLabel = computed(() => (hasCopiedMotionFocused.value ? "Copied" : "Copy Focused AI"));
+const motionFocusedCopyButtonLabel = computed(() => (hasCopiedMotionFocused.value ? "已复制" : "复制聚焦 AI 数据"));
 const motionFocusedDebugScopeRows = computed(() => [
   {
-    label: "trace",
-    value: motionReplayViewerTrace.value ? "loaded" : "none",
+    label: "捕获文档 (trace)",
+    value: motionReplayDocument.value ? "已载入" : "无",
   },
   {
-    label: "schema",
+    label: "协议 (schema)",
     value: MOTION_FOCUSED_DEBUG_SCHEMA,
     wide: true,
   },
   {
-    label: "interval",
-    value: motionReplayViewerTrace.value
+    label: "区间 (interval)",
+    value: motionReplayDocument.value
       ? `${formatMotionReplayTime(motionReplayIntervalStartMs.value)}..${formatMotionReplayTime(motionReplayIntervalEndMs.value)}`
       : "-",
     wide: true,
   },
   {
-    label: "selection",
+    label: "选择 (selection)",
     value: formatMotionFocusedDebugSelectionLabel(),
     wide: true,
   },
   {
-    label: "tracks",
-    value: motionWorkspaceSession.value.selectedTrack ? "selected track" : "all matching",
+    label: "轨道 (tracks)",
+    value: motionWorkspaceSession.value.selectedTrack ? "所选轨道" : "全部匹配轨道",
   },
   {
-    label: "profile",
+    label: "捕获配置 (profile)",
     value: motionCaptureProfile.value.label,
   },
   {
-    label: "filter",
-    value: motionReplayFilters.value.query || "none",
+    label: "筛选 (filter)",
+    value: motionReplayFilters.value.query || "无",
   },
   {
-    label: "bookmarks",
+    label: "书签 (bookmarks)",
     value: motionReplayBookmarkStatusLabel.value,
   },
 ]);
 
 function formatValue(value, digits) {
   return Number(value).toFixed(digits);
+}
+
+function formatDebugCount(value) {
+  const count = Math.max(0, Math.floor(Number(value) || 0));
+  return count.toLocaleString("zh-CN");
 }
 
 function formatMotionChartStat(value) {
@@ -1873,20 +1472,20 @@ function handleMotionWorkspaceGlobalKeydown(event) {
 }
 
 function formatMotionWorkspaceTarget(target) {
-  if (!target) return "none";
-  return target.label || target.sourceLabel || target.layer || target.kind || `target ${target.targetId ?? "-"}`;
+  if (!target) return "无";
+  return target.label || target.sourceLabel || target.layer || target.kind || `目标 ${target.targetId ?? "-"}`;
 }
 
 function formatMotionWorkspaceTrack(track) {
-  if (!track) return "none";
-  return `${track.prop || "unknown"} / ${track.lane || "base"}`;
+  if (!track) return "无";
+  return `${track.prop || "未知属性"} / ${track.lane || "base"}`;
 }
 
 function formatMotionFocusedDebugSelectionLabel() {
   const targetLabel = motionWorkspaceSelectedTargetLabel.value;
   const trackLabel = motionWorkspaceSelectedTrackLabel.value;
-  if (targetLabel === "none" && trackLabel === "none") return "all visible replay tracks";
-  if (trackLabel === "none") return targetLabel;
+  if (targetLabel === "无" && trackLabel === "无") return "全部可见回放轨道";
+  if (trackLabel === "无") return targetLabel;
   return `${targetLabel} / ${trackLabel}`;
 }
 
@@ -1895,10 +1494,10 @@ function formatMotionReplayBookmarkMeta(bookmark = {}) {
     `${formatMotionReplayTime(bookmark.startMs)}..${formatMotionReplayTime(bookmark.endMs)}`,
   ];
   const trackLabel = formatMotionWorkspaceTrack(bookmark.track);
-  if (trackLabel !== "none") parts.push(trackLabel);
+  if (trackLabel !== "无") parts.push(trackLabel);
   const targetLabel = formatMotionWorkspaceTarget(bookmark.selection);
-  if (targetLabel !== "none") parts.push(targetLabel);
-  if (bookmark.filters?.query) parts.push(`filter:${bookmark.filters.query}`);
+  if (targetLabel !== "无") parts.push(targetLabel);
+  if (bookmark.filters?.query) parts.push(`过滤器：${bookmark.filters.query}`);
   return parts.join(" / ");
 }
 
@@ -1908,11 +1507,11 @@ function formatMotionCaptureFilterList(values = []) {
 
 function formatMotionCaptureTargetFilterSummary(filters = {}) {
   const parts = [];
-  if (filters.layers?.length) parts.push(`${filters.layers.length} layer`);
-  if (filters.kinds?.length) parts.push(`${filters.kinds.length} kind`);
-  if (filters.sourceLabels?.length) parts.push(`${filters.sourceLabels.length} source`);
-  if (filters.sourceQuery) parts.push(`query:${filters.sourceQuery}`);
-  return parts.length ? parts.join(" / ") : "all targets";
+  if (filters.layers?.length) parts.push(`${filters.layers.length} 个图层`);
+  if (filters.kinds?.length) parts.push(`${filters.kinds.length} 种类型`);
+  if (filters.sourceLabels?.length) parts.push(`${filters.sourceLabels.length} 个来源`);
+  if (filters.sourceQuery) parts.push(`搜索：${filters.sourceQuery}`);
+  return parts.length ? parts.join(" / ") : "全部目标";
 }
 
 function parseMotionCaptureFilterList(value) {
@@ -1962,39 +1561,69 @@ function formatEffectLabel(effect) {
   return effect;
 }
 
-function readMotionRuntimeSnapshot() {
-  if (!canDebugMotion.value) return {};
-  const config = motionRuntime.configureDebug();
-  const includeDebugDetails = Boolean(config.enabled);
-  return {
-    ...motionRuntime.debugSnapshot({
+function syncMotionControlsFromConfig(config = {}) {
+  motionRuntimeDebugEnabled.value = Boolean(config.enabled);
+  motionOverlayEnabled.value = Boolean(config.enabled && config.overlayEnabled);
+  motionRecordEnabled.value = Boolean(config.enabled && config.recordHistory);
+  motionTimeScale.value = normalizeMotionTimeScale(config.timeScale);
+}
+
+function recordMotionActionError(action, error, technicalLabel) {
+  motionActionError.value = formatDiagnosticActionError(action, error);
+  console.warn(technicalLabel, error);
+}
+
+function recordMotionRefreshError(action, error, technicalLabel) {
+  motionRefreshError.value = formatDiagnosticActionError(action, error);
+  console.warn(technicalLabel, error);
+}
+
+async function refreshMotionSnapshot() {
+  if (!canDebugMotion.value) return;
+  try {
+    const currentConfig = motionSnapshot.value?.config || {};
+    const includeDebugDetails = Boolean(currentConfig.enabled || motionRuntimeDebugEnabled.value);
+    const snapshot = await invokeDiagnosticTool("motion", "runtime.snapshot", {
       includeChannels: includeDebugDetails,
       includeTargets: includeDebugDetails,
-    }),
-    config,
-  };
+    });
+    motionSnapshot.value = snapshot;
+    if (snapshot?.capture) motionReplayCaptureStatus.value = snapshot.capture;
+    syncMotionControlsFromConfig(snapshot?.config);
+    const sharedDocument = motionDiagnosticSession.getDocument();
+    if (sharedDocument && sharedDocument !== motionReplayDocument.value) {
+      useMotionReplayDocument(sharedDocument, "", { updateImportText: false });
+    } else if (!sharedDocument && motionReplayDocument.value) {
+      clearMotionReplayViewer();
+    }
+    motionRefreshError.value = "";
+    return snapshot;
+  } catch (error) {
+    recordMotionRefreshError("刷新 Motion 状态", error, "Failed to refresh motion diagnostics");
+    return null;
+  }
 }
 
-function refreshMotionSnapshot() {
+async function refreshMotionHistoryReport(_reason = "manual") {
   if (!canDebugMotion.value) return;
-  motionSnapshot.value = readMotionRuntimeSnapshot();
+  try {
+    const delivery = await invokeDiagnosticTool("motion", "report.read", {
+      includeChannels: true,
+      includeCurveStats: true,
+      includeHistory: true,
+      includeTargets: true,
+    });
+    motionReport.value = await consumeDiagnosticArtifactValue(delivery);
+    await refreshMotionSnapshot();
+  } catch (error) {
+    recordMotionRefreshError("刷新 Motion 历史", error, "Failed to refresh motion diagnostic history");
+  }
 }
 
-function refreshMotionHistoryReport(_reason = "manual") {
-  if (!canDebugMotion.value) return;
-  motionReport.value = motionRuntime.debugReport({
-    includeChannels: true,
-    includeCurveStats: true,
-    includeHistory: true,
-    includeTargets: true,
-  });
-  refreshMotionSnapshot();
-}
-
-function applyMotionRuntimeDebugConfig() {
+async function applyMotionRuntimeDebugConfig() {
   if (!canDebugMotion.value) return;
   if (motionReplayCaptureActive.value) {
-    refreshMotionSnapshot();
+    await refreshMotionSnapshot();
     return;
   }
   const config = buildMotionRuntimeDebugConfig({
@@ -2007,22 +1636,36 @@ function applyMotionRuntimeDebugConfig() {
   });
   motionCustomSeconds.value = normalizeMotionCustomSeconds(motionCustomSeconds.value);
   motionTimeScale.value = config.timeScale;
-  motionRuntime.configureDebug(config);
-  refreshMotionSnapshot();
+  try {
+    const applied = await invokeDiagnosticTool("motion", "runtime.configure", config);
+    syncMotionControlsFromConfig(applied);
+    motionActionError.value = "";
+    await refreshMotionSnapshot();
+  } catch (error) {
+    recordMotionActionError("应用 Motion 设置", error, "Failed to apply motion diagnostic config");
+    await refreshMotionSnapshot();
+  }
 }
 
-function disableMotionRuntimeDebug() {
+async function disableMotionRuntimeDebug() {
   motionRuntimeDebugEnabled.value = false;
   motionRecordEnabled.value = false;
   motionOverlayEnabled.value = false;
   if (motionTimeScale.value !== 1) motionTimeScale.value = 1;
-  motionRuntime.configureDebug({
-    enabled: false,
-    overlayEnabled: false,
-    recordHistory: false,
-    timeScale: 1,
-  });
-  refreshMotionSnapshot();
+  try {
+    const config = await invokeDiagnosticTool("motion", "runtime.configure", {
+      enabled: false,
+      overlayEnabled: false,
+      recordHistory: false,
+      timeScale: 1,
+    });
+    syncMotionControlsFromConfig(config);
+    motionActionError.value = "";
+    await refreshMotionSnapshot();
+  } catch (error) {
+    recordMotionActionError("停用 Motion 诊断", error, "Failed to disable motion diagnostics");
+    await refreshMotionSnapshot();
+  }
 }
 
 function setMotionRuntimeDebugEnabled(enabled) {
@@ -2153,13 +1796,13 @@ function toggleMotionTrackChartSeries(key, event) {
 }
 
 function setMotionTrackChartSelectedTime(timeMs) {
-  if (!motionReplayViewerTrace.value) return;
-  const normalizedTime = normalizeMotionReplayTime(motionReplayViewerTrace.value, timeMs);
+  if (!motionReplayDocument.value) return;
+  const normalizedTime = motionReplayDocument.value.getView("time.normalize", { timeMs });
   motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, normalizedTime);
 }
 
 function setMotionTrackChartBrushInterval(startMs, endMs) {
-  if (!motionReplayViewerTrace.value) return;
+  if (!motionReplayDocument.value) return;
   const start = normalizeMotionReplayIntervalTime(startMs);
   const end = normalizeMotionReplayIntervalTime(endMs);
   motionReplayIntervalStartMs.value = Math.min(start, end);
@@ -2176,7 +1819,7 @@ function updateMotionTrackChartPointer(event) {
 }
 
 function startMotionTrackChartBrush(event) {
-  if (!motionReplayViewerTrace.value || event.button !== 0) return;
+  if (!motionReplayDocument.value || event.button !== 0) return;
   const timeMs = readMotionTrackChartPointerTime(event);
   if (timeMs == null) return;
   stopMotionReplayPlayback();
@@ -2208,8 +1851,8 @@ function cancelMotionTrackChartBrush(event) {
 }
 
 function setMotionTrackChartZoomWindow(startMs, endMs) {
-  if (!motionReplayViewerTrace.value) return;
-  const zoom = normalizeMotionTrackChartZoomWindow(motionReplayViewerTrace.value, { endMs, startMs });
+  if (!motionReplayDocument.value) return;
+  const zoom = motionReplayDocument.value.getView("track-chart.zoom", { endMs, startMs });
   motionTrackChartZoomStartMs.value = zoom.startMs;
   motionTrackChartZoomEndMs.value = zoom.endMs;
   setMotionTrackChartSelectedTime(clampMotionTrackChartValue(
@@ -2233,7 +1876,7 @@ function resetMotionTrackChartZoom() {
 }
 
 function ensureMotionTrackChartTimeVisible(timeMs) {
-  if (!motionReplayViewerTrace.value || !motionTrackChartZoomActive.value) return;
+  if (!motionReplayDocument.value || !motionTrackChartZoomActive.value) return;
   const zoom = motionTrackChartZoomWindow.value;
   const time = Number(timeMs);
   if (!Number.isFinite(time)) return;
@@ -2258,11 +1901,12 @@ function selectMotionTrackChartEvent(track, marker) {
   setMotionReplayCurrentTime(marker.timeMs, { pause: true });
 }
 
-function jumpMotionReplayAnomaly(row = {}) {
-  if (!motionReplayViewerTrace.value || !row) return;
-  if (row.track) selectMotionWorkspaceTrack(row.track);
-  ensureMotionTrackChartTimeVisible(row.timeMs);
-  setMotionReplayCurrentTime(row.timeMs, { pause: true });
+function jumpMotionReplayFinding(finding = {}) {
+  const location = finding.location;
+  if (!motionReplayDocument.value || !location) return;
+  if (location.track) selectMotionWorkspaceTrack(location.track);
+  ensureMotionTrackChartTimeVisible(location.timeMs);
+  setMotionReplayCurrentTime(location.timeMs, { pause: true });
 }
 
 function clearMotionWorkspaceSelection() {
@@ -2325,104 +1969,160 @@ function updateMotionWorkspaceCaptureTargetFilter(key, event) {
   });
 }
 
-function clearMotionDebugHistory() {
+async function clearMotionDebugHistory() {
   if (!canDebugMotion.value) return;
   if (motionReplayCaptureActive.value) return;
-  motionRuntime.clearDebugHistory();
-  refreshMotionHistoryReport("clear-history");
+  try {
+    await invokeDiagnosticTool("motion", "history.clear");
+    motionActionError.value = "";
+    await refreshMotionHistoryReport("clear-history");
+  } catch (error) {
+    recordMotionActionError("清空 Motion 历史", error, "Failed to clear motion diagnostic history");
+    await refreshMotionSnapshot();
+  }
 }
 
 function updateMotionReplayCaptureSeconds(event) {
   motionReplayCaptureSeconds.value = normalizeMotionReplayCaptureSeconds(event.target.value);
 }
 
-function syncMotionControlsFromRuntimeConfig() {
-  const config = motionRuntime.configureDebug();
-  motionRuntimeDebugEnabled.value = Boolean(config.enabled);
-  motionOverlayEnabled.value = Boolean(config.enabled && config.overlayEnabled);
-  motionRecordEnabled.value = Boolean(config.enabled && config.recordHistory);
-  motionTimeScale.value = normalizeMotionTimeScale(config.timeScale);
+async function syncMotionControlsFromRuntimeConfig() {
+  try {
+    const description = await describeDiagnosticTool("motion");
+    syncMotionControlsFromConfig(description.status?.config);
+    if (description.status?.capture) motionReplayCaptureStatus.value = description.status.capture;
+    motionRefreshError.value = "";
+  } catch (error) {
+    recordMotionRefreshError("同步 Motion 控件", error, "Failed to synchronize motion diagnostic controls");
+  }
 }
 
-function startMotionReplayCapture() {
+async function startMotionReplayCapture() {
   if (!canDebugMotion.value || motionReplayCaptureActive.value) return;
   motionReplayCaptureSeconds.value = normalizeMotionReplayCaptureSeconds(motionReplayCaptureSeconds.value);
-  motionReplayTrace.value = null;
-  motionReplayTraceJson.value = "";
-  hasCopiedMotionReplayTrace.value = false;
-  motionReplayCaptureStatus.value = motionReplayCapture.start({
-    captureProfile: motionCaptureProfile.value,
-    seconds: motionReplayCaptureSeconds.value,
-  });
-  syncMotionControlsFromRuntimeConfig();
-  refreshMotionSnapshot();
-  restartMotionRuntimePoller();
+  try {
+    await releaseMotionReplayCaptureArtifact();
+    motionReplayCaptureSummary.value = null;
+    hasCopiedMotionReplayTrace.value = false;
+    motionReplayCaptureStatus.value = await invokeDiagnosticTool("motion", "replay.capture.start", {
+      captureProfile: motionCaptureProfile.value,
+      seconds: motionReplayCaptureSeconds.value,
+    });
+    motionActionError.value = "";
+    await syncMotionControlsFromRuntimeConfig();
+    await refreshMotionSnapshot();
+    restartMotionRuntimePoller();
+  } catch (error) {
+    recordMotionActionError("开始 Motion 捕获", error, "Failed to start motion replay capture");
+    await refreshMotionSnapshot();
+  }
 }
 
-function stopMotionReplayCapture(options = {}) {
+async function stopMotionReplayCapture(options = {}) {
   if (!canDebugMotion.value || !motionReplayCaptureActive.value) return null;
-  const result = motionReplayCapture.stop({
-    restore: options.restore !== false,
-  });
-  motionReplayCaptureStatus.value = result.status;
-  motionReplayTrace.value = result.trace;
-  motionReplayTraceJson.value = result.json;
-  loadMotionReplayTrace(result.trace, result.json, { updateImportText: false });
-  syncMotionControlsFromRuntimeConfig();
-  refreshMotionSnapshot();
-  restartMotionRuntimePoller();
-  return result;
+  try {
+    const delivery = await invokeDiagnosticTool("motion", "replay.capture.stop", {
+      restore: options.restore !== false,
+    });
+    motionReplayCaptureArtifact.value = delivery;
+    const capturedDocument = motionDiagnosticSession.getDocument();
+    if (!capturedDocument) throw new Error("Motion 捕获已停止，但共享捕获文档没有发布");
+    motionReplayCaptureSummary.value = {
+      capture: { profile: motionCaptureProfile.value },
+      schema: capturedDocument.sourceSchema || capturedDocument.schema,
+      summary: capturedDocument.summary(),
+    };
+    useMotionReplayDocument(capturedDocument, "", { updateImportText: false });
+    motionActionError.value = "";
+    await syncMotionControlsFromRuntimeConfig();
+    await refreshMotionSnapshot();
+    restartMotionRuntimePoller();
+    return delivery;
+  } catch (error) {
+    recordMotionActionError("停止 Motion 捕获", error, "Failed to stop motion replay capture");
+    await refreshMotionSnapshot();
+    return null;
+  }
 }
 
-function syncMotionReplayIntervalToRange(trace) {
-  const range = trace ? getMotionReplayTimeRange(trace) : { max: 0, min: 0 };
+function syncMotionReplayIntervalToRange(document) {
+  const range = document?.timeRange() || { max: 0, min: 0 };
   motionReplayIntervalStartMs.value = Number(range.min) || 0;
   motionReplayIntervalEndMs.value = Number(range.max) || 0;
 }
 
 function normalizeMotionReplayIntervalTime(timeMs) {
-  if (!motionReplayViewerTrace.value) return 0;
-  return Math.round(normalizeMotionReplayTime(motionReplayViewerTrace.value, timeMs));
+  if (!motionReplayDocument.value) return 0;
+  return Math.round(motionReplayDocument.value.getView("time.normalize", { timeMs }));
 }
 
 function setMotionReplayCurrentTime(timeMs, options = {}) {
-  if (!motionReplayViewerTrace.value) return;
+  if (!motionReplayDocument.value) return;
   if (options.pause) stopMotionReplayPlayback();
-  const normalizedTime = normalizeMotionReplayTime(motionReplayViewerTrace.value, timeMs);
+  const normalizedTime = motionReplayDocument.value.getView("time.normalize", { timeMs });
   motionReplayCurrentTimeMs.value = normalizedTime;
   motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, normalizedTime);
+}
+
+function useMotionReplayDocument(document, json = "", options = {}) {
+  motionReplayDocument.value = document;
+  if (options.updateImportText) {
+    motionReplayImportText.value = json || document.export({ format: "json" }).content;
+  }
+  motionReplayImportError.value = "";
+  motionReplayFilterQuery.value = "";
+  const range = document.timeRange();
+  motionReplayCurrentTimeMs.value = document.getView("time.normalize", { timeMs: range.min });
+  motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, motionReplayCurrentTimeMs.value);
+  syncMotionReplayIntervalToRange(document);
+  clearMotionReplayBookmarks();
+  resetMotionTrackChartZoom();
+  stopMotionReplayPlayback();
 }
 
 function loadMotionReplayTrace(trace, json = "", options = {}) {
   if (!canDebugMotion.value) return;
   try {
-    const normalized = normalizeMotionReplayTrace(trace);
-    motionReplayViewerTrace.value = normalized;
-    if (options.updateImportText) {
-      motionReplayImportText.value = json || JSON.stringify(normalized, null, 2);
-    }
-    motionReplayImportError.value = "";
-    motionReplayFilterQuery.value = "";
-    const range = getMotionReplayTimeRange(normalized);
-    motionReplayCurrentTimeMs.value = normalizeMotionReplayTime(normalized, range.min);
-    motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, motionReplayCurrentTimeMs.value);
-    syncMotionReplayIntervalToRange(normalized);
-    clearMotionReplayBookmarks();
-    resetMotionTrackChartZoom();
-    stopMotionReplayPlayback();
+    useMotionReplayDocument(motionDiagnosticSession.load(trace), json, options);
   } catch (error) {
     motionReplayImportError.value = error instanceof Error ? error.message : String(error);
   }
 }
 
-function loadCapturedMotionReplayTrace() {
-  if (!motionReplayTrace.value) return;
-  loadMotionReplayTrace(motionReplayTrace.value, motionReplayTraceJson.value, { updateImportText: false });
+function loadMotionReplayJson(json, options = {}) {
+  if (!canDebugMotion.value) return;
+  try {
+    useMotionReplayDocument(
+      motionDiagnosticSession.loadJson(json, { maxBytes: MOTION_REPLAY_IMPORT_MAX_BYTES }),
+      json,
+      options,
+    );
+  } catch (error) {
+    motionReplayImportError.value = error instanceof Error ? error.message : String(error);
+  }
+}
+
+async function loadCapturedMotionReplayTrace() {
+  if (!motionReplayCaptureArtifact.value) return;
+  try {
+    const trace = await readDiagnosticArtifactValue(motionReplayCaptureArtifact.value);
+    loadMotionReplayTrace(trace, "", { updateImportText: false });
+  } catch (error) {
+    motionReplayImportError.value = error instanceof Error ? error.message : String(error);
+  }
+}
+
+async function releaseMotionReplayCaptureArtifact() {
+  const delivery = motionReplayCaptureArtifact.value;
+  if (!delivery) return;
+  await releaseDiagnosticArtifact(delivery);
+  if (motionReplayCaptureArtifact.value === delivery) motionReplayCaptureArtifact.value = null;
 }
 
 function clearMotionReplayViewer() {
   stopMotionReplayPlayback();
-  motionReplayViewerTrace.value = null;
+  motionDiagnosticSession.close();
+  motionReplayDocument.value = null;
   motionReplayImportText.value = "";
   motionReplayImportError.value = "";
   motionReplayCurrentTimeMs.value = 0;
@@ -2440,11 +2140,7 @@ function updateMotionReplayImportText(event) {
 }
 
 function loadMotionReplayImportText() {
-  try {
-    loadMotionReplayTrace(parseMotionReplayTraceJson(motionReplayImportText.value), motionReplayImportText.value, { updateImportText: true });
-  } catch (error) {
-    motionReplayImportError.value = error instanceof Error ? error.message : String(error);
-  }
+  loadMotionReplayJson(motionReplayImportText.value, { updateImportText: true });
 }
 
 async function importMotionReplayFile(event) {
@@ -2453,7 +2149,7 @@ async function importMotionReplayFile(event) {
   try {
     assertMotionReplayImportSize(file.size);
     const text = await file.text();
-    loadMotionReplayTrace(parseMotionReplayTraceJson(text), text, { updateImportText: false });
+    loadMotionReplayJson(text, { updateImportText: false });
   } catch (error) {
     motionReplayImportError.value = error instanceof Error ? error.message : String(error);
   } finally {
@@ -2466,23 +2162,21 @@ function updateMotionReplayCurrentTime(event) {
 }
 
 function stepMotionReplayFrame(direction) {
-  if (!motionReplayViewerTrace.value) return;
-  const timeMs = findMotionReplayFrameStepTime(
-    motionReplayViewerTrace.value,
-    motionReplayCurrentTimeMs.value,
+  if (!motionReplayDocument.value) return;
+  const timeMs = motionReplayDocument.value.getView("step.frame", {
     direction,
-  );
+    timeMs: motionReplayCurrentTimeMs.value,
+  });
   setMotionReplayCurrentTime(timeMs, { pause: true });
 }
 
 function stepMotionReplayEvent(direction) {
-  if (!motionReplayViewerTrace.value) return;
-  const event = findMotionReplayEventStep(
-    motionReplayViewerTrace.value,
-    motionReplayCurrentTimeMs.value,
+  if (!motionReplayDocument.value) return;
+  const event = motionReplayDocument.value.getView("step.event", {
     direction,
-    motionReplayFilters.value,
-  );
+    filters: motionReplayFilters.value,
+    timeMs: motionReplayCurrentTimeMs.value,
+  });
   if (!event) return;
   selectMotionWorkspaceTrack(event);
   setMotionReplayCurrentTime(event.timeMs, { pause: true });
@@ -2493,12 +2187,12 @@ function updateMotionReplayFilterQuery(event) {
 }
 
 function updateMotionReplayIntervalStart(event) {
-  if (!motionReplayViewerTrace.value) return;
+  if (!motionReplayDocument.value) return;
   motionReplayIntervalStartMs.value = normalizeMotionReplayIntervalTime(event.target.value);
 }
 
 function updateMotionReplayIntervalEnd(event) {
-  if (!motionReplayViewerTrace.value) return;
+  if (!motionReplayDocument.value) return;
   motionReplayIntervalEndMs.value = normalizeMotionReplayIntervalTime(event.target.value);
 }
 
@@ -2514,19 +2208,19 @@ function buildMotionReplayBookmarkInput() {
 }
 
 function saveMotionReplayBookmark() {
-  if (!motionReplayViewerTrace.value || !motionReplayBookmarkCanSave.value) return;
+  if (!motionReplayDocument.value || !motionReplayBookmarkCanSave.value) return;
   motionReplayBookmarks.value = addMotionReplayBookmark(
     motionReplayBookmarks.value,
     buildMotionReplayBookmarkInput(),
     {
       createdAt: new Date().toISOString(),
-      trace: motionReplayViewerTrace.value,
+      normalizeTime: (timeMs) => motionReplayDocument.value.getView("time.normalize", { timeMs }),
     },
   );
 }
 
 function applyMotionReplayBookmark(bookmark = {}) {
-  if (!motionReplayViewerTrace.value || !bookmark) return;
+  if (!motionReplayDocument.value || !bookmark) return;
   stopMotionReplayPlayback();
   motionReplayIntervalStartMs.value = normalizeMotionReplayIntervalTime(bookmark.startMs);
   motionReplayIntervalEndMs.value = normalizeMotionReplayIntervalTime(bookmark.endMs);
@@ -2555,15 +2249,15 @@ function stopMotionReplayPlayback() {
 }
 
 function startMotionReplayPlayback() {
-  if (!motionReplayViewerTrace.value || motionReplayPlaying.value) return;
-  const range = getMotionReplayTimeRange(motionReplayViewerTrace.value);
+  if (!motionReplayDocument.value || motionReplayPlaying.value) return;
+  const range = motionReplayDocument.value.timeRange();
   if (motionReplayCurrentTimeMs.value >= range.max) {
-    motionReplayCurrentTimeMs.value = normalizeMotionReplayTime(motionReplayViewerTrace.value, range.min);
+    motionReplayCurrentTimeMs.value = motionReplayDocument.value.getView("time.normalize", { timeMs: range.min });
   }
   motionReplayPlaying.value = true;
   motionReplayPlaybackLastTime = performance.now();
   motionReplayPlaybackTimer = window.setInterval(() => {
-    if (!motionReplayViewerTrace.value) {
+    if (!motionReplayDocument.value) {
       stopMotionReplayPlayback();
       return;
     }
@@ -2571,7 +2265,7 @@ function startMotionReplayPlayback() {
     const delta = now - motionReplayPlaybackLastTime;
     motionReplayPlaybackLastTime = now;
     const nextTime = motionReplayCurrentTimeMs.value + delta;
-    const currentRange = getMotionReplayTimeRange(motionReplayViewerTrace.value);
+    const currentRange = motionReplayDocument.value.timeRange();
     if (nextTime >= currentRange.max) {
       setMotionReplayCurrentTime(currentRange.max);
       stopMotionReplayPlayback();
@@ -2584,60 +2278,6 @@ function startMotionReplayPlayback() {
 function toggleMotionReplayPlayback() {
   if (motionReplayPlaying.value) stopMotionReplayPlayback();
   else startMotionReplayPlayback();
-}
-
-function updateLiveDesktopRates() {
-  const diagnostics = liveDesktopStatus.value.diagnostics;
-  const now = Date.now();
-  if (!liveDesktopRateSample || now <= liveDesktopRateSample.measuredAt) {
-    liveDesktopRateSample = {
-      measuredAt: now,
-      framesCopied: diagnostics.framesCopied,
-      frameArrivedEvents: diagnostics.frameArrivedEvents,
-      frameArrivedDroppedSignals: diagnostics.frameArrivedDroppedSignals,
-      frameTimeouts: diagnostics.frameTimeouts,
-      copyErrors: diagnostics.copyErrors,
-    };
-    liveDesktopRates.value = {
-      framesPerSecond: 0,
-      arrivedPerSecond: 0,
-      droppedPerSecond: 0,
-      timeoutsPerSecond: 0,
-      copyErrorsPerSecond: 0,
-    };
-    return;
-  }
-  const elapsedSeconds = Math.max(0.001, (now - liveDesktopRateSample.measuredAt) / 1000);
-  liveDesktopRates.value = {
-    framesPerSecond: Math.max(
-      0,
-      (diagnostics.framesCopied - liveDesktopRateSample.framesCopied) / elapsedSeconds,
-    ),
-    arrivedPerSecond: Math.max(
-      0,
-      (diagnostics.frameArrivedEvents - liveDesktopRateSample.frameArrivedEvents) / elapsedSeconds,
-    ),
-    droppedPerSecond: Math.max(
-      0,
-      (diagnostics.frameArrivedDroppedSignals - liveDesktopRateSample.frameArrivedDroppedSignals) / elapsedSeconds,
-    ),
-    timeoutsPerSecond: Math.max(
-      0,
-      (diagnostics.frameTimeouts - liveDesktopRateSample.frameTimeouts) / elapsedSeconds,
-    ),
-    copyErrorsPerSecond: Math.max(
-      0,
-      (diagnostics.copyErrors - liveDesktopRateSample.copyErrors) / elapsedSeconds,
-    ),
-  };
-  liveDesktopRateSample = {
-    measuredAt: now,
-    framesCopied: diagnostics.framesCopied,
-    frameArrivedEvents: diagnostics.frameArrivedEvents,
-    frameArrivedDroppedSignals: diagnostics.frameArrivedDroppedSignals,
-    frameTimeouts: diagnostics.frameTimeouts,
-    copyErrors: diagnostics.copyErrors,
-  };
 }
 
 function normalizeDebugPanelDock(value) {
@@ -2771,166 +2411,6 @@ function updateTintColor(event) {
   });
 }
 
-async function setLiveDesktopDisableMouseRelay(disabled) {
-  if (!canDebugLiveDesktop.value) return;
-  liveDesktopDisableMouseRelay.value = Boolean(disabled);
-  liveDesktopRateSample = null;
-  persistLiveDesktopDisableMouseRelay(liveDesktopDisableMouseRelay.value);
-  await reconfigureLiveDesktopRuntime({
-    restart: liveDesktopDebugFrameSourceOverride.value !== LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN,
-  });
-}
-
-function setLiveDesktopCompositorKeeper(enabled) {
-  if (!canDebugLiveDesktop.value) return;
-  liveDesktopCompositorKeeper.value = Boolean(enabled);
-  persistLiveDesktopCompositorKeeper(liveDesktopCompositorKeeper.value);
-  notifyLiveDesktopCompositorKeeperChanged(liveDesktopCompositorKeeper.value);
-}
-
-async function setLiveDesktopCssFallbackEffects(enabled) {
-  if (!canDebugLiveDesktop.value) return;
-  liveDesktopCssFallbackEffects.value = Boolean(enabled);
-  persistLiveDesktopCssFallbackEffects(liveDesktopCssFallbackEffects.value);
-  notifyLiveDesktopCssFallbackEffectsChanged(liveDesktopCssFallbackEffects.value);
-  await reconfigureLiveDesktopRuntime();
-}
-
-async function setLiveDesktopSkipBlankFrames(enabled) {
-  if (!canDebugLiveDesktop.value) return;
-  liveDesktopSkipBlankFrames.value = Boolean(enabled);
-  liveDesktopRateSample = null;
-  persistLiveDesktopSkipBlankFrames(liveDesktopSkipBlankFrames.value);
-  await reconfigureLiveDesktopRuntime();
-}
-
-async function setLiveDesktopForceDwmFlush(enabled) {
-  if (!canDebugLiveDesktop.value) return;
-  liveDesktopForceDwmFlush.value = Boolean(enabled);
-  liveDesktopRateSample = null;
-  persistLiveDesktopForceDwmFlush(liveDesktopForceDwmFlush.value);
-  await reconfigureLiveDesktopRuntime();
-}
-
-async function setLiveDesktopDebugFrameSourceOverride(frameSourceOverride) {
-  if (!canDebugLiveDesktop.value) return;
-  const normalizedFrameSourceOverride = frameSourceOverride === LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN
-    ? LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN
-    : null;
-  liveDesktopDebugFrameSourceOverride.value = normalizedFrameSourceOverride;
-  liveDesktopRateSample = null;
-  persistLiveDesktopDebugFrameSourceOverride(normalizedFrameSourceOverride);
-  await reconfigureLiveDesktopRuntime({ restart: true });
-}
-
-async function refreshLiveDesktopRuntimeStatus() {
-  if (!canDebugLiveDesktop.value) return;
-  try {
-    await props.state?.refreshLiveDesktopRuntimeStatus?.();
-    updateLiveDesktopRates();
-  } catch (error) {
-    console.warn("Failed to refresh live desktop runtime status", error);
-  }
-}
-
-async function reconfigureLiveDesktopRuntime(options = {}) {
-  if (!canDebugLiveDesktop.value) return;
-  if (isLiveDesktopActionBusy.value) return;
-  isLiveDesktopActionBusy.value = true;
-  try {
-    if (options.restart && typeof props.state?.restartLiveDesktopBackgroundRuntime === "function") {
-      await props.state.restartLiveDesktopBackgroundRuntime();
-    } else if (typeof props.state?.syncLiveDesktopBackgroundRuntime === "function") {
-      await props.state.syncLiveDesktopBackgroundRuntime();
-    }
-    await refreshLiveDesktopRuntimeStatus();
-  } catch (error) {
-    console.warn("Failed to reconfigure live desktop runtime", error);
-  } finally {
-    isLiveDesktopActionBusy.value = false;
-  }
-}
-
-function requireRenderProbeCommands(commandName) {
-  const commands = readLaunchpadDebugValue("renderProbe");
-  if (!commands) throw new Error("render probe is not installed");
-  if (typeof commands[commandName] !== "function") {
-    throw new Error(`render probe command ${commandName} is unavailable`);
-  }
-  return commands;
-}
-
-function setRenderProbeActionError(action, error) {
-  renderProbeActionError.value = `${action}: ${String(error?.message || error || "unknown error")}`;
-}
-
-function refreshRenderProbeSummary() {
-  try {
-    const summary = requireRenderProbeCommands("summary").summary();
-    if (!summary || typeof summary !== "object") throw new Error("render probe returned an invalid summary");
-    renderProbeSummary.value = summary;
-    renderProbeRefreshError.value = "";
-  } catch (error) {
-    renderProbeSummary.value = null;
-    renderProbeRefreshError.value = `Refresh failed: ${String(error?.message || error || "unknown error")}`;
-  }
-}
-
-function armRenderProbe() {
-  try {
-    const config = buildRenderProbeArmConfig({
-      autoFreeze: renderProbeAutoFreeze.value,
-      pixels: renderProbePixels.value,
-      targetKind: renderProbeTargetKind.value,
-      targetValue: renderProbeTargetValue.value,
-    });
-    requireRenderProbeCommands("arm").arm(config);
-    renderProbeActionError.value = "";
-    refreshRenderProbeSummary();
-  } catch (error) {
-    setRenderProbeActionError("Arm failed", error);
-  }
-}
-
-function disarmRenderProbe() {
-  try {
-    requireRenderProbeCommands("disarm").disarm();
-    renderProbeActionError.value = "";
-    refreshRenderProbeSummary();
-  } catch (error) {
-    setRenderProbeActionError("Disarm failed", error);
-  }
-}
-
-function clearRenderProbe() {
-  try {
-    requireRenderProbeCommands("clear").clear();
-    renderProbeActionError.value = "";
-    refreshRenderProbeSummary();
-  } catch (error) {
-    setRenderProbeActionError("Clear failed", error);
-  }
-}
-
-async function copyRenderProbeJson() {
-  try {
-    const json = requireRenderProbeCommands("exportJson").exportJson();
-    await copyToClipboard(json, hasCopiedRenderJson, "renderProbe");
-    renderProbeActionError.value = "";
-  } catch (error) {
-    setRenderProbeActionError("Copy failed", error);
-  }
-}
-
-function downloadRenderProbeJson() {
-  try {
-    requireRenderProbeCommands("download").download();
-    renderProbeActionError.value = "";
-  } catch (error) {
-    setRenderProbeActionError("Download failed", error);
-  }
-}
-
 function copyToClipboard(text, copiedRef, timerName) {
   if (!navigator.clipboard?.writeText) throw new Error("Clipboard API is unavailable");
   return navigator.clipboard.writeText(text).then(() => {
@@ -2983,19 +2463,7 @@ function copyToClipboard(text, copiedRef, timerName) {
       }, 1200);
       return;
     }
-    if (timerName === "renderProbe") {
-      if (renderProbeCopyStateTimer != null) window.clearTimeout(renderProbeCopyStateTimer);
-      renderProbeCopyStateTimer = window.setTimeout(() => {
-        renderProbeCopyStateTimer = null;
-        copiedRef.value = false;
-      }, 1200);
-      return;
-    }
-    if (diagnosticsCopyStateTimer != null) window.clearTimeout(diagnosticsCopyStateTimer);
-    diagnosticsCopyStateTimer = window.setTimeout(() => {
-      diagnosticsCopyStateTimer = null;
-      copiedRef.value = false;
-    }, 1200);
+    throw new Error(`Unknown copy state timer: ${timerName}`);
   });
 }
 
@@ -3007,47 +2475,27 @@ async function copyParams() {
   }
 }
 
-async function copyDiagnostics() {
-  if (!canDebugLiveDesktop.value) return;
-  try {
-    await copyToClipboard(
-      JSON.stringify(
-        {
-          debugFrameSourceOverride: liveDesktopDebugFrameSourceOverride.value,
-          disableMouseRelay: liveDesktopDisableMouseRelay.value,
-          cssFallbackEffects: liveDesktopCssFallbackEffects.value,
-          skipBlankFrames: liveDesktopSkipBlankFrames.value,
-          forceDwmFlush: liveDesktopForceDwmFlush.value,
-          support: props.state?.liveDesktopBackgroundSupport?.value || null,
-          runtimeStatus: liveDesktopStatus.value,
-        },
-        null,
-        2
-      ),
-      hasCopiedDiagnostics,
-      "diagnostics"
-    );
-  } catch (error) {
-    console.warn("Failed to copy live desktop diagnostics", error);
-  }
-}
-
 async function copyMotionReport(mode) {
   if (!canDebugMotion.value) return;
   try {
-    const report = createMotionDebugAIReport(motionRuntime, { mode });
+    const delivery = await invokeDiagnosticTool("motion", "report.generate", {
+      mode,
+      presentation: "markdown",
+    });
+    const copyText = await consumeDiagnosticArtifactText(delivery, { path: ["content"] });
     await copyToClipboard(
-      report.copyText,
+      copyText,
       mode === "full" ? hasCopiedMotionFull : hasCopiedMotionSummary,
       mode === "full" ? "motionFull" : "motionSummary",
     );
+    motionActionError.value = "";
     if (mode === "full") {
       refreshMotionHistoryReport("copy-full-ai-report");
     } else {
       refreshMotionSnapshot();
     }
   } catch (error) {
-    console.warn("Failed to copy Pixi motion debug report", error);
+    recordMotionActionError("复制 Motion 报告", error, "Failed to copy Pixi motion debug report");
   }
 }
 
@@ -3071,77 +2519,58 @@ function buildMotionFocusedDebugExportOptions(bookmark = null) {
 }
 
 async function copyMotionFocusedDebugExport(bookmark = null) {
-  if (!canDebugMotion.value || !motionReplayViewerTrace.value) return;
+  if (!canDebugMotion.value || !motionReplayDocument.value) return;
   try {
-    const focused = createMotionFocusedDebugExport(
-      motionReplayViewerTrace.value,
-      buildMotionFocusedDebugExportOptions(bookmark?.id ? bookmark : null),
-    );
+    const focused = motionReplayDocument.value.export({
+      ...buildMotionFocusedDebugExportOptions(bookmark?.id ? bookmark : null),
+      format: "focused",
+      presentation: "markdown",
+    });
     await copyToClipboard(
-      focused.copyText,
+      focused.content,
       hasCopiedMotionFocused,
       "motionFocused",
     );
+    motionActionError.value = "";
   } catch (error) {
-    console.warn("Failed to copy focused Pixi motion debug export", error);
+    recordMotionActionError("复制 Motion 聚焦报告", error, "Failed to copy focused Pixi motion debug export");
   }
 }
 
 async function copyMotionReplayTrace() {
-  if (!canDebugMotion.value || !motionReplayTraceJson.value) return;
+  if (!canDebugMotion.value || !motionReplayCaptureArtifact.value) return;
   try {
+    const json = await readDiagnosticArtifactJsonText(motionReplayCaptureArtifact.value);
     await copyToClipboard(
-      motionReplayTraceJson.value,
+      json,
       hasCopiedMotionReplayTrace,
       "motionReplayTrace",
     );
+    motionActionError.value = "";
   } catch (error) {
-    console.warn("Failed to copy Pixi motion replay trace", error);
+    recordMotionActionError("复制 Motion 捕获", error, "Failed to copy Pixi motion replay trace");
   }
 }
 
 async function copyMotionReplayInterval() {
-  if (!canDebugMotion.value || !motionReplayViewerTrace.value) return;
+  if (!canDebugMotion.value || !motionReplayDocument.value) return;
   try {
-    const interval = createMotionReplayIntervalExport(motionReplayViewerTrace.value, {
+    const interval = motionReplayDocument.value.export({
       endMs: motionReplayIntervalEndMs.value,
       filters: motionReplayFilters.value,
+      format: "interval",
+      presentation: "json",
       startMs: motionReplayIntervalStartMs.value,
     });
     await copyToClipboard(
-      interval.json,
+      interval.content,
       hasCopiedMotionReplayInterval,
       "motionReplayInterval",
     );
+    motionActionError.value = "";
   } catch (error) {
-    console.warn("Failed to copy Pixi motion replay interval", error);
+    recordMotionActionError("复制 Motion 区间", error, "Failed to copy Pixi motion replay interval");
   }
-}
-
-function clearLiveDesktopRuntimePoller() {
-  if (liveDesktopRuntimePollTimer == null) return;
-  window.clearInterval(liveDesktopRuntimePollTimer);
-  liveDesktopRuntimePollTimer = null;
-}
-
-function clearRenderProbePoller() {
-  if (renderProbeRuntimePollTimer == null) return;
-  window.clearInterval(renderProbeRuntimePollTimer);
-  renderProbeRuntimePollTimer = null;
-}
-
-function restartRenderProbePoller() {
-  clearRenderProbePoller();
-  if (
-    typeof window === "undefined"
-    || !canDebugRender.value
-    || isCollapsed.value
-    || activePanel.value !== "render"
-  ) {
-    return;
-  }
-  refreshRenderProbeSummary();
-  renderProbeRuntimePollTimer = window.setInterval(refreshRenderProbeSummary, 1000);
 }
 
 function clearMotionRuntimePoller() {
@@ -3169,152 +2598,152 @@ function restartMotionRuntimePoller() {
   }
 }
 
-function restartLiveDesktopRuntimePoller() {
-  clearLiveDesktopRuntimePoller();
-  if (
-    typeof window === "undefined"
-    || !canDebugLiveDesktop.value
-    || isCollapsed.value
-    || activePanel.value !== "liveDesktop"
-    || typeof props.state?.refreshLiveDesktopRuntimeStatus !== "function"
-  ) {
-    return;
-  }
-  liveDesktopDebugFrameSourceOverride.value = readLiveDesktopDebugFrameSourceOverride();
-  liveDesktopCssFallbackEffects.value = readLiveDesktopCssFallbackEffects();
-  liveDesktopSkipBlankFrames.value = readLiveDesktopSkipBlankFrames();
-  liveDesktopForceDwmFlush.value = readLiveDesktopForceDwmFlush();
-  liveDesktopRateSample = null;
-  refreshLiveDesktopRuntimeStatus();
-  liveDesktopRuntimePollTimer = window.setInterval(refreshLiveDesktopRuntimeStatus, 1000);
+async function disposeMotionDebugPanelState() {
+  stopMotionReplayPlayback();
+  await stopMotionReplayCapture();
+  await releaseMotionReplayCaptureArtifact();
+  motionDiagnosticSession.close();
+  motionReplayDocument.value = null;
+  await disableMotionRuntimeDebug();
 }
 
-const motionDebugWorkspaceContext = {
-  MOTION_FILTER_PRESETS,
-  MOTION_REPLAY_IMPORT_MAX_BYTES,
-  MOTION_TRACK_CHART_DISPLAY_NORMALIZED,
-  MOTION_TRACK_CHART_DISPLAY_RAW,
-  applyMotionReplayBookmark,
-  cancelMotionTrackChartBrush,
-  clearMotionDebugHistory,
-  clearMotionReplayBookmarks,
-  clearMotionReplayViewer,
-  copyMotionFocusedDebugExport,
-  copyMotionReplayInterval,
-  copyMotionReport,
-  deleteMotionReplayBookmark,
-  endMotionTrackChartBrush,
-  formatMotionChartStat,
-  formatMotionReplayBookmarkMeta,
-  formatMotionReplayTime,
-  formatMotionTrackChartValue,
-  importMotionReplayFile,
-  isMotionWorkspaceLayerSelected,
-  isMotionWorkspaceTimelineEventSelected,
-  isMotionWorkspaceTrackSelected,
-  jumpMotionReplayAnomaly,
-  loadCapturedMotionReplayTrace,
-  loadMotionReplayImportText,
-  motionAnimationRows,
-  motionCancelReasonRows,
-  motionCaptureAllowedProps,
-  motionCaptureEstimateRows,
-  motionCaptureProfile,
-  motionCaptureProfiles,
-  motionCaptureSelectedPropCount,
-  motionCaptureTargetFilterText,
-  motionCurveChartGroups,
-  motionFilterPreset,
-  motionFilterQuery,
-  motionFilterSummary,
-  motionFocusedCopyButtonLabel,
-  motionFocusedDebugExportAvailable,
-  motionFocusedDebugScopeRows,
-  motionFullCopyButtonLabel,
-  motionInspectorEventRows,
-  motionInspectorLaneRows,
-  motionInspectorModel,
-  motionInspectorStatusRows,
-  motionInspectorWarningRows,
-  motionInspectorWhyRows,
-  motionLayerTreeRows,
-  motionOverviewRows,
-  motionPropertyRows,
-  motionReplayAnomalyRows,
-  motionReplayAnomalyStatusLabel,
-  motionReplayBookmarkCanSave,
-  motionReplayBookmarkRows,
-  motionReplayBookmarkStatusLabel,
-  motionReplayCaptureActive,
-  motionReplayCurrentTimeMs,
-  motionReplayCurveGroups,
-  motionReplayEventRows,
-  motionReplayFilterQuery,
-  motionReplayFilterSummary,
-  motionReplayFrameRows,
-  motionReplayImportError,
-  motionReplayImportStatus,
-  motionReplayImportText,
-  motionReplayIntervalCopyButtonLabel,
-  motionReplayIntervalEndMs,
-  motionReplayIntervalStartMs,
-  motionReplayOverlayRows,
-  motionReplayOverviewRows,
-  motionReplayPlayButtonLabel,
-  motionReplayTimeRange,
-  motionReplayTrace,
-  motionReplayViewerLoaded,
-  motionSummaryCopyButtonLabel,
-  motionTimelineGroups,
-  motionTrackChartBrushPointerId,
-  motionTrackChartDisplayMode,
-  motionTrackChartHeaderLabel,
-  motionTrackChartIntervalActive,
-  motionTrackChartIntervalOverlay,
-  motionTrackChartModel,
-  motionTrackChartSeriesOptions,
-  motionTrackChartSeriesVisibility,
-  motionTrackChartSummaryRows,
-  motionTrackChartZoomActive,
-  motionTrackChartZoomWindow,
-  motionWarningRows,
-  motionWorkspaceFilterLabel,
-  motionWorkspaceSelectedTargetLabel,
-  motionWorkspaceSelectedTimeMs,
-  motionWorkspaceSelectedTrackLabel,
-  motionWorkspaceSession,
-  resetMotionTrackChartZoom,
-  saveMotionReplayBookmark,
-  selectMotionTrackChartEvent,
-  selectMotionTrackChartTrack,
-  selectMotionWorkspaceCurve,
-  selectMotionWorkspaceLayer,
-  selectMotionWorkspacePropertyByEvent,
-  selectMotionWorkspaceReplayOverlay,
-  selectMotionWorkspaceTimelineEvent,
-  selectMotionWorkspaceTrack,
-  setMotionFilterPreset,
-  setMotionReplayCurrentTime,
-  setMotionTrackChartDisplayMode,
-  startMotionTrackChartBrush,
-  stepMotionReplayEvent,
-  stepMotionReplayFrame,
-  toggleMotionReplayPlayback,
-  toggleMotionTrackChartSeries,
-  toggleMotionWorkspaceCaptureProp,
-  updateMotionFilterQuery,
-  updateMotionReplayCurrentTime,
-  updateMotionReplayFilterQuery,
-  updateMotionReplayImportText,
-  updateMotionReplayIntervalEnd,
-  updateMotionReplayIntervalStart,
-  updateMotionTrackChartPointer,
-  updateMotionTrackChartZoomEnd,
-  updateMotionTrackChartZoomStart,
-  updateMotionWorkspaceCaptureProfile,
-  updateMotionWorkspaceCaptureTargetFilter,
-  zoomMotionTrackChartToInterval,
-};
+const motionDebugWorkspaceContext = createMotionDebugWorkspaceContext({
+  targets: {
+    MOTION_FILTER_PRESETS,
+    isMotionWorkspaceLayerSelected,
+    motionAnimationRows,
+    motionCaptureAllowedProps,
+    motionCaptureEstimateRows,
+    motionCaptureProfile,
+    motionCaptureProfiles,
+    motionCaptureSelectedPropCount,
+    motionCaptureTargetFilterText,
+    motionFilterPreset,
+    motionFilterQuery,
+    motionFilterSummary,
+    motionLayerTreeRows,
+    motionOverviewRows,
+    motionReplayCaptureActive,
+    motionWorkspaceSession,
+    selectMotionWorkspaceLayer,
+    setMotionFilterPreset,
+    toggleMotionWorkspaceCaptureProp,
+    updateMotionFilterQuery,
+    updateMotionWorkspaceCaptureProfile,
+    updateMotionWorkspaceCaptureTargetFilter,
+  },
+  timeline: {
+    MOTION_REPLAY_IMPORT_MAX_BYTES,
+    MOTION_TRACK_CHART_DISPLAY_NORMALIZED,
+    MOTION_TRACK_CHART_DISPLAY_RAW,
+    applyMotionReplayBookmark,
+    cancelMotionTrackChartBrush,
+    clearMotionReplayBookmarks,
+    clearMotionReplayViewer,
+    copyMotionFocusedDebugExport,
+    copyMotionReplayInterval,
+    deleteMotionReplayBookmark,
+    endMotionTrackChartBrush,
+    formatMotionChartStat,
+    formatMotionReplayBookmarkMeta,
+    formatMotionReplayTime,
+    formatMotionTrackChartValue,
+    importMotionReplayFile,
+    isMotionWorkspaceTimelineEventSelected,
+    isMotionWorkspaceTrackSelected,
+    jumpMotionReplayFinding,
+    loadCapturedMotionReplayTrace,
+    loadMotionReplayImportText,
+    motionCurveChartGroups,
+    motionReplayFindingRows,
+    motionReplayFindingStatusLabel,
+    motionReplayBookmarkCanSave,
+    motionReplayBookmarkRows,
+    motionReplayBookmarkStatusLabel,
+    motionReplayCaptureActive,
+    motionReplayCurrentTimeMs,
+    motionReplayCurveGroups,
+    motionReplayEventRows,
+    motionReplayFilterQuery,
+    motionReplayFilterSummary,
+    motionReplayFrameRows,
+    motionReplayImportError,
+    motionReplayImportStatus,
+    motionReplayImportText,
+    motionReplayIntervalCopyButtonLabel,
+    motionReplayIntervalEndMs,
+    motionReplayIntervalStartMs,
+    motionReplayOverlayRows,
+    motionReplayOverviewRows,
+    motionReplayPlayButtonLabel,
+    motionReplayTimeRange,
+    motionReplayCaptureAvailable,
+    motionReplayViewerLoaded,
+    motionTimelineGroups,
+    motionTrackChartBrushPointerId,
+    motionTrackChartDisplayMode,
+    motionTrackChartHeaderLabel,
+    motionTrackChartIntervalActive,
+    motionTrackChartIntervalOverlay,
+    motionTrackChartModel,
+    motionTrackChartSeriesOptions,
+    motionTrackChartSeriesVisibility,
+    motionTrackChartSummaryRows,
+    motionTrackChartZoomActive,
+    motionTrackChartZoomWindow,
+    resetMotionTrackChartZoom,
+    saveMotionReplayBookmark,
+    selectMotionTrackChartEvent,
+    selectMotionTrackChartTrack,
+    selectMotionWorkspaceCurve,
+    selectMotionWorkspaceReplayOverlay,
+    selectMotionWorkspaceTimelineEvent,
+    selectMotionWorkspaceTrack,
+    setMotionReplayCurrentTime,
+    setMotionTrackChartDisplayMode,
+    startMotionTrackChartBrush,
+    stepMotionReplayEvent,
+    stepMotionReplayFrame,
+    toggleMotionReplayPlayback,
+    toggleMotionTrackChartSeries,
+    updateMotionReplayCurrentTime,
+    updateMotionReplayFilterQuery,
+    updateMotionReplayImportText,
+    updateMotionReplayIntervalEnd,
+    updateMotionReplayIntervalStart,
+    updateMotionTrackChartPointer,
+    updateMotionTrackChartZoomEnd,
+    updateMotionTrackChartZoomStart,
+    zoomMotionTrackChartToInterval,
+  },
+  inspector: {
+    clearMotionDebugHistory,
+    copyMotionFocusedDebugExport,
+    copyMotionReport,
+    formatMotionReplayTime,
+    isMotionWorkspaceTrackSelected,
+    motionCancelReasonRows,
+    motionFocusedCopyButtonLabel,
+    motionFocusedDebugExportAvailable,
+    motionFocusedDebugScopeRows,
+    motionFullCopyButtonLabel,
+    motionInspectorEventRows,
+    motionInspectorLaneRows,
+    motionInspectorModel,
+    motionInspectorStatusRows,
+    motionInspectorWarningRows,
+    motionInspectorWhyRows,
+    motionPropertyRows,
+    motionReplayCaptureActive,
+    motionSummaryCopyButtonLabel,
+    motionWarningRows,
+    motionWorkspaceFilterLabel,
+    motionWorkspaceSelectedTargetLabel,
+    motionWorkspaceSelectedTimeMs,
+    motionWorkspaceSelectedTrackLabel,
+    selectMotionWorkspacePropertyByEvent,
+  },
+});
 
 provide(MOTION_DEBUG_WORKSPACE_CONTEXT_KEY, motionDebugWorkspaceContext);
 
@@ -3332,35 +2761,27 @@ watch(canDebugRender, (enabled) => {
   if (!enabled && activePanel.value === "render") activePanel.value = "acrylic";
 }, { immediate: true });
 
-watch([isCollapsed, activePanel, canDebugLiveDesktop], restartLiveDesktopRuntimePoller, { flush: "post" });
 watch([isCollapsed, activePanel, canDebugMotion], restartMotionRuntimePoller, { flush: "post" });
-watch([isCollapsed, activePanel, canDebugRender], restartRenderProbePoller, { flush: "post" });
 
 onMounted(() => {
   window.addEventListener("keydown", handleMotionWorkspaceGlobalKeydown);
-  restartLiveDesktopRuntimePoller();
   restartMotionRuntimePoller();
-  restartRenderProbePoller();
 });
 
 onBeforeUnmount(() => {
   if (acrylicCopyStateTimer != null) window.clearTimeout(acrylicCopyStateTimer);
-  if (diagnosticsCopyStateTimer != null) window.clearTimeout(diagnosticsCopyStateTimer);
-  if (renderProbeCopyStateTimer != null) window.clearTimeout(renderProbeCopyStateTimer);
   if (motionFocusedCopyStateTimer != null) window.clearTimeout(motionFocusedCopyStateTimer);
   if (motionFullCopyStateTimer != null) window.clearTimeout(motionFullCopyStateTimer);
   if (motionReplayIntervalCopyStateTimer != null) window.clearTimeout(motionReplayIntervalCopyStateTimer);
   if (motionReplayTraceCopyStateTimer != null) window.clearTimeout(motionReplayTraceCopyStateTimer);
   if (motionSummaryCopyStateTimer != null) window.clearTimeout(motionSummaryCopyStateTimer);
   if (kawaseLiveDesktopSyncTimer != null) window.clearTimeout(kawaseLiveDesktopSyncTimer);
-  stopMotionReplayPlayback();
-  stopMotionReplayCapture();
-  disableMotionRuntimeDebug();
+  void disposeMotionDebugPanelState().catch((error) => {
+    console.error("释放 Motion 调试面板状态失败", error);
+  });
   clearMotionWorkspaceDockResize();
   window.removeEventListener("keydown", handleMotionWorkspaceGlobalKeydown);
   clearMotionRuntimePoller();
-  clearLiveDesktopRuntimePoller();
-  clearRenderProbePoller();
 });
 </script>
 
@@ -4242,13 +3663,13 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
-.motion-debug-anomaly-panel {
+.motion-debug-finding-panel {
   display: grid;
   gap: 7px;
   min-width: 0;
 }
 
-.motion-debug-anomaly-panel header {
+.motion-debug-finding-panel header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4259,18 +3680,25 @@ onBeforeUnmount(() => {
   line-height: 1.2;
 }
 
-.motion-debug-anomaly-panel header strong {
+.motion-debug-finding-panel header strong {
   color: rgba(255, 255, 255, 0.84);
 }
 
-.motion-debug-anomaly-grid {
+.motion-debug-finding-panel header span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.motion-debug-finding-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   min-width: 0;
 }
 
-.motion-debug-anomaly-button {
+.motion-debug-finding-button {
   display: grid;
   min-width: 0;
   gap: 3px;
@@ -4283,18 +3711,29 @@ onBeforeUnmount(() => {
   text-align: left;
 }
 
-.motion-debug-anomaly-button:hover {
+.motion-debug-finding-button-info {
+  border-color: rgba(112, 190, 255, 0.24);
+  background: rgba(88, 170, 255, 0.08);
+}
+
+.motion-debug-finding-button-error,
+.motion-debug-finding-button-critical {
+  border-color: rgba(255, 112, 112, 0.34);
+  background: rgba(255, 88, 88, 0.1);
+}
+
+.motion-debug-finding-button:hover {
   border-color: rgba(255, 215, 130, 0.42);
   background: rgba(255, 205, 105, 0.12);
 }
 
-.motion-debug-anomaly-button:focus-visible {
+.motion-debug-finding-button:focus-visible {
   outline: 2px solid rgba(255, 215, 130, 0.55);
   outline-offset: 2px;
 }
 
-.motion-debug-anomaly-button strong,
-.motion-debug-anomaly-button span {
+.motion-debug-finding-button strong,
+.motion-debug-finding-button span {
   min-width: 0;
   overflow: hidden;
   line-height: 1.2;
@@ -4302,13 +3741,13 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.motion-debug-anomaly-button strong {
+.motion-debug-finding-button strong {
   color: rgba(255, 245, 220, 0.92);
   font-size: 10.5px;
   font-weight: 700;
 }
 
-.motion-debug-anomaly-button span {
+.motion-debug-finding-button span {
   color: rgba(255, 255, 255, 0.55);
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   font-size: 9.5px;
@@ -5231,7 +4670,7 @@ onBeforeUnmount(() => {
 
   .motion-debug-workspace-selection-actions,
   .motion-debug-track-chart-window-actions,
-  .motion-debug-anomaly-grid {
+  .motion-debug-finding-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 

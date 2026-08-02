@@ -137,34 +137,34 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
   createScenario({
     assertions: [{
       id: "folder-open-track",
-      label: "folder panel tracks scale/alpha",
+      label: "文件夹面板记录 scale/alpha 轨道",
       test: ({ report }) => hasTrack(report, "motionLab.folder.panel", "alpha") && hasTrack(report, "motionLab.folder.panel", "x"),
     }],
-    description: "folder panel scale, y and alpha enter motion",
+    description: "文件夹面板进入时的 scale、y 与 alpha 动画",
     id: "folder-open",
-    label: "Folder Open",
+    label: "打开文件夹",
     run: playFolderOpen,
   }),
   createScenario({
     assertions: [{
       id: "folder-close-track",
-      label: "folder close emits panel events",
+      label: "文件夹关闭产生面板事件",
       test: ({ report }) => hasTrack(report, "motionLab.folder.panel", "alpha") && hasTrack(report, "motionLab.folder.panel", "x"),
     }],
-    description: "folder panel exits with scale and alpha",
+    description: "文件夹面板退出时的 scale 与 alpha 动画",
     id: "folder-close",
-    label: "Folder Close",
+    label: "关闭文件夹",
     run: playFolderClose,
   }),
   createScenario({
     assertions: [{
       id: "open-close-cancel",
-      label: "open is interrupted by close",
+      label: "打开动作被关闭动作中断",
       test: ({ report }) => hasEvent(report, (event) => event.type === "cancel" && event.reason === "replace" && event.sourceLabel === "motionLab.folder.panel"),
     }],
-    description: "open starts, then close replaces the same lane",
+    description: "开始打开后，由关闭动作替换同一通道",
     id: "folder-open-interrupted-by-close",
-    label: "Open Interrupted By Close",
+    label: "打开被关闭中断",
     run: (context) => {
       playFolderOpen(context, "folder-panel-interrupt");
       stepInterruptionDelay(context);
@@ -174,12 +174,12 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
   createScenario({
     assertions: [{
       id: "close-open-cancel",
-      label: "close is interrupted by open",
+      label: "关闭动作被打开动作中断",
       test: ({ report }) => hasEvent(report, (event) => event.type === "cancel" && event.reason === "replace" && event.sourceLabel === "motionLab.folder.panel"),
     }],
-    description: "close starts, then open replaces the same lane",
+    description: "开始关闭后，由打开动作替换同一通道",
     id: "folder-close-interrupted-by-open",
-    label: "Close Interrupted By Open",
+    label: "关闭被打开中断",
     run: (context) => {
       playFolderClose(context, "folder-panel-interrupt");
       stepInterruptionDelay(context);
@@ -189,12 +189,12 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
   createScenario({
     assertions: [{
       id: "desktop-page-retarget",
-      label: "desktop page scrub retargets page track",
+      label: "桌面翻页拖动会重定向页面轨道",
       test: ({ report }) => hasEvent(report, (event) => event.type === "retarget" && event.sourceLabel === "motionLab.pageTrack"),
     }],
-    description: "desktop page track springs to another page and retargets",
+    description: "桌面页面轨道弹向另一页并发生 retarget",
     id: "desktop-page-scrub",
-    label: "Desktop Page Scrub",
+    label: "桌面翻页拖动",
     run: ({ motionParams, runtime, scene }) => {
       const params = normalizeMotionLabParams(motionParams);
       motionTo(scene.pageTrack, {
@@ -226,12 +226,12 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
   createScenario({
     assertions: [{
       id: "folder-page-progress",
-      label: "folder page scrub emits progress lane",
+      label: "文件夹翻页拖动产生 progress 通道",
       test: ({ report }) => hasTrack(report, "motionLab.folder.pageTrack", "x"),
     }],
-    description: "folder inner page track uses progress scrub",
+    description: "文件夹内部页面轨道使用 progress 拖动",
     id: "folder-page-scrub",
-    label: "Folder Page Scrub",
+    label: "文件夹翻页拖动",
     run: ({ motionParams, runtime, scene }) => {
       const params = normalizeMotionLabParams(motionParams);
       scene.folderPanel.alpha = 1;
@@ -253,12 +253,12 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
   createScenario({
     assertions: [{
       id: "drag-release-track",
-      label: "drag ghost releases on x and y",
+      label: "拖拽幽灵在 x/y 方向释放",
       test: ({ report }) => hasTrack(report, "motionLab.drag.ghost", "x") && hasTrack(report, "motionLab.drag.ghost", "y"),
     }],
-    description: "drag ghost settles back into the grid",
+    description: "拖拽幽灵回落到网格",
     id: "drag-release",
-    label: "Drag Release",
+    label: "拖拽释放",
     run: ({ motionParams, runtime, scene }) => {
       const params = normalizeMotionLabParams(motionParams);
       scene.dragGhost.alpha = 0.85;
@@ -281,12 +281,12 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
   createScenario({
     assertions: [{
       id: "icon-press-factor",
-      label: "icon press uses factor lane",
+      label: "图标按压使用 factor 通道",
       test: ({ report }) => hasEvent(report, (event) => event.sourceLabel === "motionLab.icon.1" && event.lane === "factor" && event.laneKey === "press"),
     }],
-    description: "icon presses down and releases through factor scale",
+    description: "图标通过 factor 缩放完成按下与释放",
     id: "icon-press-release",
-    label: "Icon Press / Release",
+    label: "图标按压 / 释放",
     run: ({ motionParams, runtime, scene }) => {
       const params = normalizeMotionLabParams(motionParams);
       motionSequence(scene.icons[0], [
@@ -313,12 +313,12 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
   createScenario({
     assertions: [{
       id: "folder-hover",
-      label: "folder hover animates hover lane",
+      label: "文件夹悬停驱动 hover 通道",
       test: ({ report }) => hasEvent(report, (event) => event.sourceLabel === "motionLab.folder.hover" && event.laneKey === "folder-hover"),
     }],
-    description: "folder target hover ring and icon scale",
+    description: "文件夹目标悬停环与图标缩放",
     id: "folder-hover",
-    label: "Folder Hover",
+    label: "文件夹悬停",
     run: ({ motionParams, runtime, scene }) => {
       const params = normalizeMotionLabParams(motionParams);
       scene.folderHover.alpha = 0;
@@ -348,12 +348,12 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
   createScenario({
     assertions: [{
       id: "app-folder-create-hover",
-      label: "app-folder-create hover emits create lane",
+      label: "应用成组悬停产生 create 通道",
       test: ({ report }) => hasEvent(report, (event) => event.sourceLabel === "motionLab.appFolderCreate.hover" && event.laneKey === "app-folder-create-hover"),
     }],
-    description: "app folder create hover flash target",
+    description: "应用成组创建时的悬停闪烁目标",
     id: "app-folder-create-hover",
-    label: "App-Folder-Create Hover",
+    label: "应用成组创建悬停",
     run: ({ motionParams, runtime, scene }) => {
       const params = normalizeMotionLabParams(motionParams);
       scene.createHover.alpha = 0;
@@ -373,12 +373,12 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
   createScenario({
     assertions: [{
       id: "edit-jiggle-additive",
-      label: "edit jiggle uses additive lane",
+      label: "编辑抖动使用 additive 通道",
       test: ({ report }) => hasEvent(report, (event) => event.sourceLabel === "motionLab.icon.1" && event.lane === "additive" && event.laneKey === "edit-jiggle"),
     }],
-    description: "edit mode jiggle drives additive rotation",
+    description: "编辑模式抖动驱动叠加旋转",
     id: "edit-jiggle",
-    label: "Edit Jiggle",
+    label: "编辑模式抖动",
     run: ({ motionParams, runtime, scene }) => {
       const params = normalizeMotionLabParams(motionParams);
       motionTo(scene.icons[0], {
@@ -407,12 +407,12 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
     assertAfterMs: 900,
     assertions: [{
       id: "hundred-icon-retarget",
-      label: "100+ icon retarget emits retarget events",
+      label: "100+ 图标重定向会产生 retarget 事件",
       test: ({ report }) => countEvents(report, (event) => event.type === "retarget" && String(event.sourceLabel || "").startsWith("motionLab.massIcon.")) >= 100,
     }],
-    description: "100+ icon layout spring retarget stress case",
+    description: "100+ 图标布局弹簧 retarget 压力场景",
     id: "hundred-icon-layout-retarget",
-    label: "100+ Icon Layout Retarget",
+    label: "100+ 图标布局重定向",
     run: ({ motionParams, runtime, scene }) => {
       const params = normalizeMotionLabParams(motionParams);
       scene.massIconLayer.alpha = 1;

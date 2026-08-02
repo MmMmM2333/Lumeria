@@ -119,20 +119,20 @@ export function runRenderProbePanelModelTests() {
   assert(session?.id === "drag-render-2", "the latest completed session should drive panel detail when no drag is active");
 
   const statusRows = buildRenderProbeStatusRows(summary);
-  assert(statusRows.some((row) => row.label === "State" && row.value === "armed"), "status rows should expose whether the probe is armed");
-  assert(statusRows.some((row) => row.label === "Target" && row.value === "itemName: MiService"), "status rows should expose the active target");
-  assert(statusRows.some((row) => row.label === "Sessions / events" && row.value === "2 / 12"), "status rows should expose retained session and event counts");
-  assert(statusRows.some((row) => row.label === "Frozen" && row.value.includes("pixel-diff")), "status rows should expose the latest freeze reason");
+  assert(statusRows.some((row) => row.label === "状态" && row.value === "已布防"), "status rows should expose whether the probe is armed in Chinese");
+  assert(statusRows.some((row) => row.label === "目标" && row.value === "项目名称: MiService"), "status rows should expose the active target with a readable field label");
+  assert(statusRows.some((row) => row.label === "会话 / 事件" && row.value === "2 / 12"), "status rows should expose retained session and event counts");
+  assert(statusRows.some((row) => row.label === "冻结原因" && row.value.includes("pixel-diff")), "status rows should expose the latest freeze reason");
 
   const phaseRows = buildRenderProbePhaseRows(session);
   assert(phaseRows.map((row) => row.phase).join(",") === "pointerdown,drag-start,drag-end", "phase rows should preserve diagnostic capture order");
-  assert(phaseRows[0].framebuffer === "off", "phase rows should distinguish metadata-only captures");
-  assert(phaseRows[1].framebuffer.includes("6 slots") && phaseRows[1].framebuffer.includes("2.35ms"), "phase rows should summarize successful framebuffer work");
+  assert(phaseRows[0].framebuffer === "未采样", "phase rows should distinguish metadata-only captures");
+  assert(phaseRows[1].framebuffer.includes("6 个槽位") && phaseRows[1].framebuffer.includes("2.35ms"), "phase rows should summarize successful framebuffer work in Chinese");
   assert(phaseRows[2].framebuffer.includes("pixel-read-failed"), "phase rows should expose framebuffer failure reasons");
   assert(phaseRows[2].violations === "1 · framebuffer-capture-unavailable", "phase rows should expose the first invariant failure");
 
   const candidateRows = buildRenderProbeCandidateRows(session);
   assert(candidateRows[0]?.title === "MiService", "candidate rows should prefer the icon name");
-  assert(candidateRows[0]?.identity.includes("folder-tools") && candidateRows[0]?.identity.includes("slot 5"), "candidate rows should retain stable folder and slot identity");
-  assert(candidateRows[0]?.detail.includes("strong") && candidateRows[0]?.detail.includes("Δ 25.0%"), "candidate rows should format ranking evidence");
+  assert(candidateRows[0]?.identity.includes("folder-tools") && candidateRows[0]?.identity.includes("槽位 5"), "candidate rows should retain stable folder and slot identity");
+  assert(candidateRows[0]?.detail.includes("强候选") && candidateRows[0]?.detail.includes("Δ 25.0%"), "candidate rows should format ranking evidence in Chinese");
 }

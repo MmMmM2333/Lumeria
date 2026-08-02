@@ -284,12 +284,14 @@ function buildEventMarkers(track = {}, zoomWindow = {}) {
 function findCursorSample(samples = [], cursorTimeMs = 0) {
   if (!samples.length) return null;
   const cursor = readNumber(cursorTimeMs, 0);
-  let selected = samples[0];
-  for (const sample of samples) {
-    if (readNumber(sample.timeMs, 0) > cursor) break;
-    selected = sample;
+  let low = 0;
+  let high = samples.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (readNumber(samples[middle].timeMs, 0) <= cursor) low = middle + 1;
+    else high = middle;
   }
-  return selected;
+  return samples[Math.max(0, low - 1)];
 }
 
 function buildCurrentValues(track = {}, cursorTimeMs = 0, zoomWindow = {}) {
@@ -324,19 +326,13 @@ function normalizeSelectedTrackKey(selectedTrack = null) {
   return selectedTrack.key || makeTrackKey(selectedTrack);
 }
 
-export function buildMotionTrackChartModel(traceInput = {}, options = {}) {
+export function createMotionTrackChartProjector(traceInput = {}, options = {}) {
   const trace = normalizeMotionReplayTrace(traceInput);
   const displayMode = normalizeDisplayMode(options.displayMode);
   const maxPointsPerSeries = normalizePointLimit(options.maxPointsPerSeries);
-  const selectedTrackKey = normalizeSelectedTrackKey(options.selectedTrack);
   const trackLimit = normalizeTrackLimit(options.trackLimit);
   const zoomWindow = normalizeMotionTrackChartZoomWindow(trace, options.zoomWindow || options.interval || {});
   const seriesVisibility = normalizeMotionTrackChartSeriesVisibility(options.seriesVisibility);
-  const cursorTimeMs = clamp(
-    readNumber(options.cursorTimeMs, zoomWindow.startMs),
-    zoomWindow.startMs,
-    Math.max(zoomWindow.startMs, zoomWindow.endMs),
-  );
   const allTracks = collectTrackRecords(trace, zoomWindow, options.filters)
     .map((track) => {
       const series = MOTION_TRACK_CHART_SERIES_KEYS.reduce((result, key) => ({
@@ -353,57 +349,85 @@ export function buildMotionTrackChartModel(traceInput = {}, options = {}) {
         [key]: series[key].rangeLabel,
       }), {});
       return {
-        current: buildCurrentValues(track, cursorTimeMs, zoomWindow),
-        driver: track.driver,
-        eventCount: track.events.length,
-        eventMarkers: buildEventMarkers(track, zoomWindow),
-        isSelected: Boolean(selectedTrackKey && selectedTrackKey === track.key),
-        key: track.key,
-        label: track.label,
-        lane: track.lane,
-        laneLabel: [track.lane, track.laneKey].filter(Boolean).join("/") || "-",
-        laneKey: track.laneKey,
-        layer: track.layer,
-        prop: track.prop,
-        rangeLabels,
-        sampleCount: track.samples.length,
-        series,
-        sourceLabel: track.sourceLabel,
-        stats: buildStats(track),
-        summary: `${track.samples.length} samples / ${track.events.length} events`,
-        targetId: track.targetId,
-        targetProp: track.label,
-        timeline: buildTrackTimeline(track, zoomWindow),
-        visibleSeries: MOTION_TRACK_CHART_SERIES_KEYS.filter((key) => seriesVisibility[key]),
+        model: {
+          driver: track.driver,
+          eventCount: track.events.length,
+          eventMarkers: buildEventMarkers(track, zoomWindow),
+          key: track.key,
+          label: track.label,
+          lane: track.lane,
+          laneLabel: [track.lane, track.laneKey].filter(Boolean).join("/") || "-",
+          laneKey: track.laneKey,
+          layer: track.layer,
+          prop: track.prop,
+          rangeLabels,
+          sampleCount: track.samples.length,
+          series,
+          sourceLabel: track.sourceLabel,
+          stats: buildStats(track),
+          summary: `${track.samples.length} 个采样 / ${track.events.length} 个事件`,
+          targetId: track.targetId,
+          targetProp: track.label,
+          timeline: buildTrackTimeline(track, zoomWindow),
+          visibleSeries: MOTION_TRACK_CHART_SERIES_KEYS.filter((key) => seriesVisibility[key]),
+        },
+        samples: track.samples,
       };
     })
-    .sort((a, b) => (b.sampleCount - a.sampleCount) || a.label.localeCompare(b.label));
-  const tracks = allTracks.slice(0, trackLimit);
-  const totalSampleCount = allTracks.reduce((total, track) => total + track.sampleCount, 0);
-  const totalEventCount = allTracks.reduce((total, track) => total + track.eventCount, 0);
-  return {
+    .sort((a, b) => (b.model.sampleCount - a.model.sampleCount) || a.model.label.localeCompare(b.model.label));
+  const visibleTracks = allTracks.slice(0, trackLimit);
+  const totalSampleCount = allTracks.reduce((total, track) => total + track.model.sampleCount, 0);
+  const totalEventCount = allTracks.reduce((total, track) => total + track.model.eventCount, 0);
+  const staticModel = {
     axis: buildTimeAxis(zoomWindow, options.axisTickCount),
-    cursor: {
-      timeMs: cursorTimeMs,
-      x: normalizeTimePercent(zoomWindow, cursorTimeMs),
-    },
     displayMode,
     limits: {
       maxPointsPerSeries,
       trackLimit,
-      tracksLimited: allTracks.length > tracks.length,
+      tracksLimited: allTracks.length > visibleTracks.length,
     },
     seriesVisibility,
     summary: {
       eventCount: totalEventCount,
-      hiddenTrackCount: Math.max(0, allTracks.length - tracks.length),
+      hiddenTrackCount: Math.max(0, allTracks.length - visibleTracks.length),
       sampleCount: totalSampleCount,
       trackCount: allTracks.length,
-      visibleTrackCount: tracks.length,
+      visibleTrackCount: visibleTracks.length,
       windowDurationMs: Math.max(0, readNumber(zoomWindow.endMs, 0) - readNumber(zoomWindow.startMs, 0)),
     },
     timeRangeMs: getMotionReplayTimeRange(trace),
-    tracks,
     zoomWindow,
   };
+  let projectionCache = null;
+
+  function project(projectionOptions = {}) {
+    const cursorTimeMs = clamp(
+      readNumber(projectionOptions.cursorTimeMs, zoomWindow.startMs),
+      zoomWindow.startMs,
+      Math.max(zoomWindow.startMs, zoomWindow.endMs),
+    );
+    const selectedTrackKey = normalizeSelectedTrackKey(projectionOptions.selectedTrack);
+    const key = `${cursorTimeMs}:${selectedTrackKey}`;
+    if (projectionCache?.key === key) return projectionCache.value;
+    const value = {
+      ...staticModel,
+      cursor: {
+        timeMs: cursorTimeMs,
+        x: normalizeTimePercent(zoomWindow, cursorTimeMs),
+      },
+      tracks: visibleTracks.map((track) => ({
+        ...track.model,
+        current: buildCurrentValues(track, cursorTimeMs, zoomWindow),
+        isSelected: Boolean(selectedTrackKey && selectedTrackKey === track.model.key),
+      })),
+    };
+    projectionCache = { key, value };
+    return value;
+  }
+
+  return Object.freeze({ project });
+}
+
+export function buildMotionTrackChartModel(traceInput = {}, options = {}) {
+  return createMotionTrackChartProjector(traceInput, options).project(options);
 }

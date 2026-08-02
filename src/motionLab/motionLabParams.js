@@ -36,6 +36,29 @@ export const DEFAULT_MOTION_LAB_PARAMS = Object.freeze({
   springStiffness: 360,
 });
 
+function makeNumericRange(minimum, maximum) {
+  return Object.freeze({ maximum, minimum });
+}
+
+export const MOTION_LAB_NUMERIC_PARAM_RANGES = Object.freeze({
+  blendDurationMs: makeNumericRange(0, 500),
+  dragDistancePx: makeNumericRange(40, 480),
+  dragReleaseYPx: makeNumericRange(120, 340),
+  durationMs: makeNumericRange(80, 1200),
+  folderClosedScale: makeNumericRange(0.58, 1),
+  folderHoverScale: makeNumericRange(0.92, 1.3),
+  folderOpenScale: makeNumericRange(0.8, 1.22),
+  folderTravelPx: makeNumericRange(0, 120),
+  iconHoverScale: makeNumericRange(0.92, 1.28),
+  iconPressScale: makeNumericRange(0.62, 1),
+  interruptDelayMs: makeNumericRange(0, 400),
+  jiggleRotationDeg: makeNumericRange(0, 12),
+  pageDistancePx: makeNumericRange(40, 480),
+  springDamping: makeNumericRange(4, 120),
+  springMass: makeNumericRange(0.2, 3),
+  springStiffness: makeNumericRange(40, 1200),
+});
+
 const MOTION_LAB_PARAM_KEYS = Object.freeze(Object.keys(DEFAULT_MOTION_LAB_PARAMS));
 
 function readNumber(value, fallback = 0) {
@@ -47,6 +70,11 @@ function clampNumber(value, min, max, fallback) {
   return Math.min(max, Math.max(min, readNumber(value, fallback)));
 }
 
+function clampMotionLabParam(name, value) {
+  const range = MOTION_LAB_NUMERIC_PARAM_RANGES[name];
+  return clampNumber(value, range.minimum, range.maximum, DEFAULT_MOTION_LAB_PARAMS[name]);
+}
+
 function readOption(value, options, fallback) {
   const text = String(value ?? "").trim();
   return options.includes(text) ? text : fallback;
@@ -55,24 +83,24 @@ function readOption(value, options, fallback) {
 export function normalizeMotionLabParams(params = {}) {
   const source = params && typeof params === "object" ? params : {};
   return {
-    blendDurationMs: clampNumber(source.blendDurationMs, 0, 500, DEFAULT_MOTION_LAB_PARAMS.blendDurationMs),
-    dragDistancePx: clampNumber(source.dragDistancePx ?? source.distancePx, 40, 480, DEFAULT_MOTION_LAB_PARAMS.dragDistancePx),
-    dragReleaseYPx: clampNumber(source.dragReleaseYPx, 120, 340, DEFAULT_MOTION_LAB_PARAMS.dragReleaseYPx),
-    durationMs: clampNumber(source.durationMs, 80, 1200, DEFAULT_MOTION_LAB_PARAMS.durationMs),
+    blendDurationMs: clampMotionLabParam("blendDurationMs", source.blendDurationMs),
+    dragDistancePx: clampMotionLabParam("dragDistancePx", source.dragDistancePx ?? source.distancePx),
+    dragReleaseYPx: clampMotionLabParam("dragReleaseYPx", source.dragReleaseYPx),
+    durationMs: clampMotionLabParam("durationMs", source.durationMs),
     ease: readOption(source.ease, MOTION_LAB_EASE_OPTIONS, DEFAULT_MOTION_LAB_PARAMS.ease),
-    folderClosedScale: clampNumber(source.folderClosedScale, 0.58, 1, DEFAULT_MOTION_LAB_PARAMS.folderClosedScale),
-    folderHoverScale: clampNumber(source.folderHoverScale, 0.92, 1.3, DEFAULT_MOTION_LAB_PARAMS.folderHoverScale),
-    folderOpenScale: clampNumber(source.folderOpenScale, 0.8, 1.22, DEFAULT_MOTION_LAB_PARAMS.folderOpenScale),
-    folderTravelPx: clampNumber(source.folderTravelPx, 0, 120, DEFAULT_MOTION_LAB_PARAMS.folderTravelPx),
-    iconHoverScale: clampNumber(source.iconHoverScale, 0.92, 1.28, DEFAULT_MOTION_LAB_PARAMS.iconHoverScale),
-    iconPressScale: clampNumber(source.iconPressScale, 0.62, 1, DEFAULT_MOTION_LAB_PARAMS.iconPressScale),
-    interruptDelayMs: clampNumber(source.interruptDelayMs, 0, 400, DEFAULT_MOTION_LAB_PARAMS.interruptDelayMs),
+    folderClosedScale: clampMotionLabParam("folderClosedScale", source.folderClosedScale),
+    folderHoverScale: clampMotionLabParam("folderHoverScale", source.folderHoverScale),
+    folderOpenScale: clampMotionLabParam("folderOpenScale", source.folderOpenScale),
+    folderTravelPx: clampMotionLabParam("folderTravelPx", source.folderTravelPx),
+    iconHoverScale: clampMotionLabParam("iconHoverScale", source.iconHoverScale),
+    iconPressScale: clampMotionLabParam("iconPressScale", source.iconPressScale),
+    interruptDelayMs: clampMotionLabParam("interruptDelayMs", source.interruptDelayMs),
     interruptPolicy: readOption(source.interruptPolicy, MOTION_LAB_INTERRUPT_OPTIONS, DEFAULT_MOTION_LAB_PARAMS.interruptPolicy),
-    jiggleRotationDeg: clampNumber(source.jiggleRotationDeg, 0, 12, DEFAULT_MOTION_LAB_PARAMS.jiggleRotationDeg),
-    pageDistancePx: clampNumber(source.pageDistancePx ?? source.distancePx, 40, 480, DEFAULT_MOTION_LAB_PARAMS.pageDistancePx),
-    springDamping: clampNumber(source.springDamping ?? source.damping, 4, 120, DEFAULT_MOTION_LAB_PARAMS.springDamping),
-    springMass: clampNumber(source.springMass, 0.2, 3, DEFAULT_MOTION_LAB_PARAMS.springMass),
-    springStiffness: clampNumber(source.springStiffness ?? source.stiffness, 40, 1200, DEFAULT_MOTION_LAB_PARAMS.springStiffness),
+    jiggleRotationDeg: clampMotionLabParam("jiggleRotationDeg", source.jiggleRotationDeg),
+    pageDistancePx: clampMotionLabParam("pageDistancePx", source.pageDistancePx ?? source.distancePx),
+    springDamping: clampMotionLabParam("springDamping", source.springDamping ?? source.damping),
+    springMass: clampMotionLabParam("springMass", source.springMass),
+    springStiffness: clampMotionLabParam("springStiffness", source.springStiffness ?? source.stiffness),
   };
 }
 
@@ -90,7 +118,7 @@ function makeMotionLabParamPreset(id, label, description, patch) {
 }
 
 export const MOTION_LAB_PARAM_PRESETS = Object.freeze([
-  makeMotionLabParamPreset("snappy", "Snappy", "fast settle / short tweens", {
+  makeMotionLabParamPreset("snappy", "敏捷", "快速收敛 / 短补间", {
     blendDurationMs: 40,
     durationMs: 220,
     ease: "power3.out",
@@ -100,7 +128,7 @@ export const MOTION_LAB_PARAM_PRESETS = Object.freeze([
     springMass: 0.72,
     springStiffness: 620,
   }),
-  makeMotionLabParamPreset("soft", "Soft", "gentle spring / relaxed hover", {
+  makeMotionLabParamPreset("soft", "柔和", "柔和弹簧 / 舒缓悬停", {
     blendDurationMs: 120,
     durationMs: 460,
     ease: "sine.inOut",
@@ -112,7 +140,7 @@ export const MOTION_LAB_PARAM_PRESETS = Object.freeze([
     springMass: 1.15,
     springStiffness: 240,
   }),
-  makeMotionLabParamPreset("slow", "Slow", "long tween / heavy settle", {
+  makeMotionLabParamPreset("slow", "缓慢", "长补间 / 厚重收敛", {
     blendDurationMs: 180,
     durationMs: 760,
     ease: "power2.inOut",
@@ -123,7 +151,7 @@ export const MOTION_LAB_PARAM_PRESETS = Object.freeze([
     springMass: 1.55,
     springStiffness: 170,
   }),
-  makeMotionLabParamPreset("interrupt-heavy", "Interrupt Heavy", "short delay / replacement stress", {
+  makeMotionLabParamPreset("interrupt-heavy", "高频中断", "短延迟 / 替换压力测试", {
     blendDurationMs: 20,
     durationMs: 260,
     ease: "power2.out",

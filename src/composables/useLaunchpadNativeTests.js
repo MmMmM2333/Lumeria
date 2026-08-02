@@ -296,6 +296,16 @@ async function flushMicrotasks(count = 1) {
   }
 }
 
+async function withSuppressedConsoleError(run) {
+  const originalConsoleError = console.error;
+  console.error = () => {};
+  try {
+    return await run();
+  } finally {
+    console.error = originalConsoleError;
+  }
+}
+
 export async function runLaunchpadNativeTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Launchpad native test failed] ${message}`);
@@ -1168,6 +1178,25 @@ export async function runLaunchpadNativeTests() {
     };
     await native.configureNativeLiveDesktopBackground();
     assert(liveDesktopRuntimeConfigs.at(-1).disableMouseRelay === true, "runtime config should ignore mouse relay storage outside DEV");
+  });
+
+  const runtimeRefreshError = new Error("native status channel closed");
+  await withMockTauri(async (command) => {
+    if (command === "get_live_desktop_runtime_status") throw runtimeRefreshError;
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions();
+    const native = createNative(options);
+    let refreshFailure = null;
+    try {
+      await withSuppressedConsoleError(() => native.refreshLiveDesktopRuntimeStatus());
+    } catch (error) {
+      refreshFailure = error;
+    }
+    assert(refreshFailure === runtimeRefreshError, "runtime status refresh failures should reject the caller");
+    assert(options.liveDesktopRuntime.status.value.phase === "failed", "runtime status refresh failures should remain visible in runtime state");
+    assert(options.liveDesktopRuntime.status.value.reason === "statusRefreshFailed", "runtime status refresh failures should use a stable reason");
+    assert(options.liveDesktopRuntime.status.value.detail === runtimeRefreshError.message, "runtime status refresh failures should preserve technical detail");
   });
 
   const liveDesktopSyncCommands = [];

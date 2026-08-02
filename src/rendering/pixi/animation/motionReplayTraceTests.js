@@ -98,9 +98,22 @@ export function runMotionReplayTraceTests() {
     assert(trace.tracks.some((track) => track.prop === "x"), "trace should include track summaries");
     assert(trace.summary.frameCount === trace.timeline.frames.length, "trace summary should count frames");
     assert(trace.summary.trackCount === trace.tracks.length, "trace summary should count tracks");
-    assert(typeof stopped.json === "string" && JSON.parse(stopped.json).schema === MOTION_REPLAY_TRACE_SCHEMA, "controller should return parseable trace JSON");
+    assert(!Object.hasOwn(stopped, "json"), "capture stop should not eagerly duplicate a large trace as pretty JSON");
     assert(typeof JSON.stringify(trace) === "string", "trace should be JSON serializable");
     assert(!containsReference(trace, icon), "trace should not retain raw target references");
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
+    runtime.configureDebug({ enabled: true, recordHistory: false, sampleHz: 10, timeScale: 0.75 });
+    const controller = createMotionReplayCaptureController(runtime);
+    controller.start({ seconds: 2 });
+    const canceled = controller.cancel();
+
+    assert(canceled.active === false, "cancel should leave replay capture state without materializing a trace");
+    assert(runtime.configureDebug().sampleHz === 10, "cancel should restore the previous runtime sample rate");
+    assert(runtime.configureDebug().timeScale === 0.75, "cancel should restore the previous runtime time scale");
+    assert(controller.cancel().active === false, "cancel should be idempotent when no capture is active");
   }
 
   {

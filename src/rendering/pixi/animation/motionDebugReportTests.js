@@ -1,17 +1,5 @@
 import { createMotionRuntime, spring, tween } from "./motionRuntime.js";
-import {
-  createMotionDebugAIReport,
-  installMotionDebugGlobal,
-  MOTION_DEBUG_GLOBAL_KEY,
-} from "./motionDebugReport.js";
-import {
-  LUMERIA_DEBUG_GLOBAL_KEY,
-  readLaunchpadDebugValue,
-} from "../debugNamespace.js";
-
-function parseReportJson(report) {
-  return JSON.parse(report.json);
-}
+import { createMotionDebugAIReport } from "./motionDebugReport.js";
 
 function seedRuntime(runtime) {
   const icon = { alpha: 1, scale: { x: 1, y: 1 } };
@@ -89,10 +77,15 @@ export function runMotionDebugReportTests() {
     seedRuntime(runtime);
 
     const summary = createMotionDebugAIReport(runtime, { mode: "summary" });
-    const data = parseReportJson(summary);
+    const data = summary.data;
+    const markdown = createMotionDebugAIReport(runtime, { mode: "summary", presentation: "markdown" });
+    const json = createMotionDebugAIReport(runtime, { mode: "summary", presentation: "json" });
 
-    assert(summary.markdown.includes("# Pixi Motion Debug AI Report"), "summary report should produce Markdown");
-    assert(summary.copyText.includes("```json"), "summary copy text should include a fenced JSON payload");
+    assert(markdown.content.includes("# Pixi Motion AI 调试报告"), "summary report should produce Markdown on request");
+    assert(JSON.parse(json.content).schema === "pixi-motion-ai-report/v1", "summary report should produce JSON on request");
+    assert(summary.presentation === "structured" && !Object.hasOwn(summary, "content"), "structured reports should not materialize text copies");
+    assert(markdown.presentation === "markdown" && !Object.hasOwn(markdown, "data"), "Markdown reports should not duplicate structured data");
+    assert(json.presentation === "json" && !Object.hasOwn(json, "data"), "JSON reports should not duplicate structured data");
     assert(data.schema === "pixi-motion-ai-report/v1", "summary JSON should expose the report schema");
     assert(data.mode === "summary", "summary JSON should preserve the mode");
     assert(data.report.animations.length > 0, "summary JSON should include active animations");
@@ -107,7 +100,7 @@ export function runMotionDebugReportTests() {
     seedRuntime(runtime);
 
     const full = createMotionDebugAIReport(runtime, { mode: "full" });
-    const data = parseReportJson(full);
+    const data = full.data;
 
     assert(data.mode === "full", "full JSON should preserve the mode");
     assert(data.report.history?.events?.length > 0, "full report should include lifecycle history");
@@ -125,7 +118,7 @@ export function runMotionDebugReportTests() {
       mode: "selectedTarget",
       selection: { sourceLabel: "folder.panel" },
     });
-    const data = parseReportJson(selected);
+    const data = selected.data;
 
     assert(data.mode === "selectedTarget", "selected target JSON should preserve the mode");
     assert(data.selection.sourceLabel === "folder.panel", "selected target report should preserve the selection");
@@ -138,39 +131,28 @@ export function runMotionDebugReportTests() {
     assert(data.curveSummary.tracks[0].sourceLabel === "folder.panel", "selected curve summary should retain source label");
     assert(data.curveSummary.tracks[0].sampleCount > 0, "selected curve summary should count sampled points");
     assert(data.curveSummary.tracks[0].eventCount > 0, "selected curve summary should count lifecycle events");
-    assert(data.markdown == null, "selected target JSON should not include generated markdown internally");
+    assert(!Object.hasOwn(selected, "content"), "selected target structured output should not include generated text internally");
   }
 
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
-    const target = {};
+    let invalidModeError = null;
+    try {
+      createMotionDebugAIReport(runtime, { mode: "typo" });
+    } catch (error) {
+      invalidModeError = error;
+    }
+    assert(invalidModeError?.code === "diagnostic-params-invalid", "unknown report modes should fail instead of falling back to summary");
 
-    assert(installMotionDebugGlobal({ dev: false, runtime, target }) == null, "global commands should not install outside dev mode");
-    assert(readLaunchpadDebugValue(MOTION_DEBUG_GLOBAL_KEY, target) == null, "non-dev install should not mutate the target");
-
-    seedRuntime(runtime);
-    const commands = installMotionDebugGlobal({ dev: true, runtime, target });
-
-    assert(target[LUMERIA_DEBUG_GLOBAL_KEY]?.[MOTION_DEBUG_GLOBAL_KEY] === commands, "dev install should expose namespaced global motion debug commands");
-    assert(typeof commands.summary === "function", "global commands should expose summary report");
-    assert(typeof commands.full === "function", "global commands should expose full report");
-    assert(typeof commands.selectedTarget === "function", "global commands should expose selected target report");
-    assert(typeof commands.configure === "function", "global commands should expose runtime configuration");
-    assert(typeof commands.replayTrace === "function", "global commands should expose replay trace export");
-    assert(typeof commands.startReplayCapture === "function", "global commands should expose replay capture start");
-    assert(typeof commands.stopReplayCapture === "function", "global commands should expose replay capture stop");
-    assert(JSON.parse(commands.summary().json).mode === "summary", "global summary should return parseable report JSON");
-    assert(JSON.parse(commands.full().json).mode === "full", "global full should return parseable report JSON");
-    assert(JSON.parse(commands.replayTrace().json).schema === "pixi-motion-replay-trace/v1", "global replay trace should return parseable trace JSON");
-    assert(
-      JSON.parse(commands.selectedTarget({ sourceLabel: "folder.panel" }).json).report.targets[0].sourceLabel === "folder.panel",
-      "global selected target should return the requested target",
-    );
-    assert(commands.startReplayCapture({ seconds: 1 }).active === true, "global replay capture should start");
-    runtime.step(1 / 60);
-    assert(JSON.parse(commands.stopReplayCapture().json).schema === "pixi-motion-replay-trace/v1", "global replay capture should stop with a trace");
-
-    commands.uninstall();
-    assert(readLaunchpadDebugValue(MOTION_DEBUG_GLOBAL_KEY, target) == null, "global commands should uninstall cleanly");
+    for (const presentation of [false, null, ""]) {
+      let invalidPresentationError = null;
+      try {
+        createMotionDebugAIReport(runtime, { presentation });
+      } catch (error) {
+        invalidPresentationError = error;
+      }
+      assert(invalidPresentationError?.code === "diagnostic-presentation-invalid", "invalid presentation values should fail instead of falling back to structured");
+    }
   }
+
 }

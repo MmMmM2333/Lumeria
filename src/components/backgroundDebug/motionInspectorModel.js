@@ -205,22 +205,22 @@ function buildWhyRows({ current, laneBreakdown, recentEvents, warnings }) {
   const rows = [];
   if (!current) {
     rows.push({
-      detail: "No replay sample matches the current target/track at the selected time.",
+      detail: "所选时刻没有与当前目标或轨道匹配的回放采样。",
       key: "no-current-sample",
-      label: "No current sample",
+      label: "当前无采样",
       tone: "muted",
     });
   } else {
     rows.push({
-      detail: `${current.sourceLabel}.${current.prop} is ${current.valueLabel}, target ${current.toLabel}, delta ${current.deltaLabel}, velocity ${current.velocityLabel}.`,
+      detail: `${current.sourceLabel}.${current.prop} 当前值 ${current.valueLabel}，目标值 ${current.toLabel}，差值 ${current.deltaLabel}，速度 ${current.velocityLabel}。`,
       key: "current-value",
-      label: "Current value",
+      label: "当前值",
       tone: Math.abs(current.delta) > 0.001 || Math.abs(current.velocity) > 0.001 ? "active" : "muted",
     });
     rows.push({
-      detail: `${current.driver} driver on ${current.lane}/${current.laneKey} is the selected lane contribution.`,
+      detail: `${current.lane}/${current.laneKey} 上的 ${current.driver} 驱动器是当前选中的通道贡献。`,
       key: "selected-lane",
-      label: "Selected lane",
+      label: "选中通道",
       tone: "info",
     });
   }
@@ -228,7 +228,7 @@ function buildWhyRows({ current, laneBreakdown, recentEvents, warnings }) {
     rows.push({
       detail: laneBreakdown.map((lane) => `${lane.lane}/${lane.laneKey}:${lane.valueLabel}->${lane.toLabel}`).join(" | "),
       key: "lane-breakdown",
-      label: "Multiple lanes",
+      label: "多通道叠加",
       tone: "info",
     });
   }
@@ -237,9 +237,9 @@ function buildWhyRows({ current, laneBreakdown, recentEvents, warnings }) {
     .sort((a, b) => b.timeMs - a.timeMs)[0] || recentEvents[0];
   if (latestPastEvent) {
     rows.push({
-      detail: `${latestPastEvent.type} at ${latestPastEvent.timeLabel}${latestPastEvent.reason ? ` (${latestPastEvent.reason})` : ""}: ${latestPastEvent.detail}.`,
+      detail: `${latestPastEvent.timeLabel} 发生 ${latestPastEvent.type}${latestPastEvent.reason ? `（${latestPastEvent.reason}）` : ""}：${latestPastEvent.detail}。`,
       key: "recent-event",
-      label: "Recent event",
+      label: "最近事件",
       tone: latestPastEvent.type === "cancel" || latestPastEvent.type === "retarget" ? "warning" : "info",
     });
   }
@@ -247,7 +247,7 @@ function buildWhyRows({ current, laneBreakdown, recentEvents, warnings }) {
     rows.push({
       detail: warnings.map((warning) => warning.detail).join(" | "),
       key: "warnings",
-      label: "Warnings",
+      label: "警告",
       tone: "warning",
     });
   }

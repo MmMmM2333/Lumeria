@@ -1,5 +1,6 @@
 import {
   buildMotionTrackChartModel,
+  createMotionTrackChartProjector,
   MOTION_TRACK_CHART_DEFAULT_POINT_LIMIT,
   MOTION_TRACK_CHART_DEFAULT_TRACK_LIMIT,
   MOTION_TRACK_CHART_DISPLAY_NORMALIZED,
@@ -172,7 +173,7 @@ export function runMotionTrackChartModelTests() {
   assert(iconTrack.label === "desktop.icon.smoke.x", "track label should use source label and prop");
   assert(iconTrack.targetProp === "desktop.icon.smoke.x", "track should expose targetProp for table UI");
   assert(iconTrack.laneLabel === "base/default", "track should expose lane label");
-  assert(iconTrack.summary === "3 samples / 3 events", "track should expose compact summary");
+  assert(iconTrack.summary === "3 个采样 / 3 个事件", "track should expose compact summary");
   assert(iconTrack.sampleCount === 3 && iconTrack.eventCount === 3, "track should expose sample and event counts");
   assert(iconTrack.timeline.startMs === 0 && iconTrack.timeline.endMs === 100, "track timeline should expose active time range");
   assert(iconTrack.timeline.startX === 0 && iconTrack.timeline.endX === 100 && iconTrack.timeline.width === 100, "track timeline should expose percent bounds");
@@ -209,6 +210,16 @@ export function runMotionTrackChartModelTests() {
   });
   assert(selectedChart.tracks.find((track) => track.key === iconTrack.key).isSelected === true, "selected track object should mark matching chart track");
   assert(selectedChart.tracks.find((track) => track.key === "2:alpha:base:fade").isSelected === false, "nonmatching track should not be selected");
+
+  const projector = createMotionTrackChartProjector(trace);
+  const projectedAtStart = projector.project({ cursorTimeMs: 0 });
+  const projectedAtEnd = projector.project({ cursorTimeMs: 100 });
+  const projectedIconAtStart = projectedAtStart.tracks.find((track) => track.key === iconTrack.key);
+  const projectedIconAtEnd = projectedAtEnd.tracks.find((track) => track.key === iconTrack.key);
+  assert(projectedIconAtStart.current.value === 0 && projectedIconAtEnd.current.value === 100, "projector should update current values for a new cursor");
+  assert(projectedIconAtStart.series === projectedIconAtEnd.series, "cursor projection should reuse the expensive series model");
+  assert(projectedIconAtStart.eventMarkers === projectedIconAtEnd.eventMarkers, "cursor projection should reuse event markers");
+  assert(projector.project({ cursorTimeMs: 100 }) === projectedAtEnd, "identical projection options should return the cached chart model");
 
   const visibility = normalizeMotionTrackChartSeriesVisibility({
     delta: true,

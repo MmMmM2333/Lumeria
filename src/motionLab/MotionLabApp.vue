@@ -2,12 +2,12 @@
   <div class="motion-lab-root" data-motion-lab-root>
     <aside class="motion-lab-sidebar">
       <header class="motion-lab-header">
-        <span>Pixi Motion Lab</span>
-        <strong>dev only</strong>
+        <span>Pixi Motion 实验室</span>
+        <strong>仅开发环境</strong>
       </header>
 
       <section class="motion-lab-section">
-        <h2>Scenarios</h2>
+        <h2>场景</h2>
         <button
           v-for="scenario in scenarioRows"
           :key="scenario.id"
@@ -17,14 +17,14 @@
         >
           <span>{{ scenario.label }}</span>
           <strong>{{ scenario.stage }}</strong>
-          <small>{{ scenario.description }} / {{ scenario.assertionCount }} assertion</small>
+          <small>{{ scenario.description }} / {{ scenario.assertionCount }} 条断言</small>
         </button>
       </section>
 
       <section class="motion-lab-section">
-        <h2>Presets</h2>
+        <h2>参数预设</h2>
         <div class="motion-lab-preset-status">
-          <span>current</span>
+          <span>当前</span>
           <strong>{{ activeParamPresetLabel }}</strong>
         </div>
         <div class="motion-lab-preset-grid">
@@ -78,12 +78,12 @@
       </section>
 
       <section class="motion-lab-toolbar">
-        <button type="button" @click="runSelectedScenario">Run</button>
-        <button type="button" @click="resetLabScene">Reset</button>
-        <button type="button" @click="captureReplayTrace">Capture Replay</button>
-        <button type="button" :disabled="!canSaveBaseline" @click="saveBaselineRun">Save Baseline</button>
-        <button type="button" :disabled="!canCompareBaseline" @click="compareBaselineRun">Compare Baseline</button>
-        <button type="button" :disabled="!canCompareLast" @click="compareLastRun">Compare Last</button>
+        <button type="button" @click="runSelectedScenario">运行</button>
+        <button type="button" @click="resetLabScene">重置</button>
+        <button type="button" @click="captureReplayTrace">捕获回放</button>
+        <button type="button" :disabled="!canSaveBaseline" @click="saveBaselineRun">保存基线</button>
+        <button type="button" :disabled="!canCompareBaseline" @click="compareBaselineRun">对比基线</button>
+        <button type="button" :disabled="!canCompareLast" @click="compareLastRun">对比上次</button>
         <button type="button" @click="copyLabReport">{{ reportCopyLabel }}</button>
         <button type="button" :disabled="!canCopyFocused" @click="copyFocusedExport">{{ focusedCopyLabel }}</button>
         <button type="button" :disabled="!replayTraceJson" @click="copyReplayTrace">{{ traceCopyLabel }}</button>
@@ -94,7 +94,7 @@
       <section class="motion-lab-grid">
         <div class="motion-lab-panel">
           <header>
-            <h2>Runtime</h2>
+            <h2>运行时</h2>
           </header>
           <dl class="motion-lab-stats">
             <div v-for="row in overviewRows" :key="row.label" :class="row.wide && 'motion-lab-stat-wide'">
@@ -106,7 +106,7 @@
 
         <div class="motion-lab-panel">
           <header>
-            <h2>Warnings</h2>
+            <h2>警告</h2>
           </header>
           <div class="motion-lab-list">
             <div v-for="row in warningRows" :key="`${row.key}-${row.detail}`" class="motion-lab-list-row">
@@ -118,7 +118,7 @@
 
         <div class="motion-lab-panel motion-lab-panel-wide">
           <header>
-            <h2>Assertions</h2>
+            <h2>断言</h2>
           </header>
           <div class="motion-lab-list">
             <div
@@ -126,11 +126,11 @@
               :key="row.id"
               :class="['motion-lab-list-row', 'motion-lab-assertion-row', row.passed && 'motion-lab-assertion-pass']"
             >
-              <span>{{ row.status }}</span>
+              <span>{{ row.passed ? "通过" : "失败" }}</span>
               <strong>{{ row.label }}</strong>
               <small>{{ row.detail }}</small>
             </div>
-            <div v-if="assertionRows.length === 0" class="motion-lab-empty">no assertions run</div>
+            <div v-if="assertionRows.length === 0" class="motion-lab-empty">尚未运行断言</div>
           </div>
         </div>
 
@@ -156,7 +156,7 @@
 
         <div class="motion-lab-panel motion-lab-panel-wide">
           <header>
-            <h2>Timeline</h2>
+            <h2>时间线</h2>
           </header>
           <div class="motion-lab-list">
             <div v-for="row in timelineRows" :key="row.key" class="motion-lab-list-row motion-lab-timeline-row">
@@ -164,43 +164,43 @@
               <span>{{ row.type }}</span>
               <strong>{{ row.detail }}</strong>
             </div>
-            <div v-if="timelineRows.length === 0" class="motion-lab-empty">no events</div>
+            <div v-if="timelineRows.length === 0" class="motion-lab-empty">暂无事件</div>
           </div>
         </div>
 
         <div class="motion-lab-panel motion-lab-panel-wide">
           <header>
-            <h2>Curves</h2>
+            <h2>曲线</h2>
           </header>
           <div class="motion-lab-curve-grid">
             <article v-for="row in curveRows" :key="row.key" class="motion-lab-curve-row">
               <strong>{{ row.label }}</strong>
               <span>{{ row.lane }} / {{ row.driver }}</span>
-              <span>{{ row.samples }} samples / v {{ row.maxVelocity }}</span>
+              <span>{{ row.samples }} 个采样 / 最大速度 {{ row.maxVelocity }}</span>
             </article>
-            <div v-if="curveRows.length === 0" class="motion-lab-empty">no curves</div>
+            <div v-if="curveRows.length === 0" class="motion-lab-empty">暂无曲线</div>
           </div>
         </div>
 
         <div class="motion-lab-panel motion-lab-panel-wide">
           <header>
-            <h2>Replay</h2>
+            <h2>回放</h2>
           </header>
           <dl class="motion-lab-stats">
             <div>
-              <dt>schema</dt>
-              <dd>{{ replayTrace?.schema || "none" }}</dd>
+              <dt>协议（schema）</dt>
+              <dd>{{ replayTrace?.schema || "无" }}</dd>
             </div>
             <div>
-              <dt>mode</dt>
+              <dt>模式</dt>
               <dd>{{ replayTrace?.mode || "-" }}</dd>
             </div>
             <div>
-              <dt>frames/events</dt>
+              <dt>帧 / 事件</dt>
               <dd>{{ replayTrace?.summary?.frameCount || 0 }} / {{ replayTrace?.summary?.eventCount || 0 }}</dd>
             </div>
             <div>
-              <dt>tracks/targets</dt>
+              <dt>轨道 / 目标</dt>
               <dd>{{ replayTrace?.summary?.trackCount || 0 }} / {{ replayTrace?.summary?.targetCount || 0 }}</dd>
             </div>
           </dl>
@@ -208,7 +208,7 @@
 
         <div class="motion-lab-panel motion-lab-panel-wide">
           <header>
-            <h2>Trace Diff</h2>
+            <h2>轨迹差异</h2>
           </header>
           <div class="motion-lab-list">
             <div v-for="row in traceDiffRows" :key="row.label" class="motion-lab-list-row motion-lab-diff-row">
@@ -216,7 +216,7 @@
               <strong>{{ row.previous }} -> {{ row.current }}</strong>
               <small>{{ row.delta }}</small>
             </div>
-            <div v-if="traceDiffRows.length === 0" class="motion-lab-empty">capture two traces</div>
+            <div v-if="traceDiffRows.length === 0" class="motion-lab-empty">请先捕获两条轨迹</div>
           </div>
         </div>
       </section>
@@ -233,10 +233,10 @@ import {
   createMotionRuntime,
   installMotionRuntimeDebugAdapterFactory,
 } from "../rendering/pixi/animation/motionRuntime.js";
-import {
-  deleteLaunchpadDebugValue,
-  setLaunchpadDebugValue,
-} from "../rendering/pixi/debugNamespace.js";
+import { createDiagnosticArtifactStore } from "../diagnostics/diagnosticArtifactStore.js";
+import { installDiagnosticHubGlobal } from "../diagnostics/diagnosticGlobal.js";
+import { createDiagnosticHub } from "../diagnostics/diagnosticHub.js";
+import { createMotionLabDiagnosticAdapter } from "../diagnostics/motionLabDiagnosticAdapter.js";
 import {
   applyMotionLabParamPreset,
   buildMotionLabParamPresetRows,
@@ -268,7 +268,7 @@ import "./motionLab.css";
 
 const pixiHostRef = ref(null);
 const selectedScenarioId = ref(MOTION_LAB_SCENARIOS[0]?.id || "folder-open");
-const previewStatus = ref("ready");
+const previewStatus = ref("就绪");
 const motionSnapshot = ref(makeEmptyReport());
 const motionReport = ref(makeEmptyReport());
 const replayTrace = ref(null);
@@ -292,62 +292,62 @@ const compareMode = ref("last");
 
 const parameterGroups = Object.freeze([
   {
-    title: "Spring",
+    title: "弹簧参数",
     controls: [
-      { key: "springStiffness", label: "stiffness", max: 720, min: 120, step: 10, type: "range" },
-      { key: "springDamping", label: "damping", max: 80, min: 12, step: 1, type: "range" },
-      { digits: 2, key: "springMass", label: "mass", max: 2, min: 0.4, step: 0.05, type: "range" },
+      { key: "springStiffness", label: "刚度（stiffness）", max: 720, min: 120, step: 10, type: "range" },
+      { key: "springDamping", label: "阻尼（damping）", max: 80, min: 12, step: 1, type: "range" },
+      { digits: 2, key: "springMass", label: "质量（mass）", max: 2, min: 0.4, step: 0.05, type: "range" },
     ],
   },
   {
-    title: "Timing",
+    title: "定时参数",
     controls: [
-      { key: "durationMs", label: "duration", max: 900, min: 120, step: 20, suffix: "ms", type: "range" },
-      { key: "ease", label: "ease", options: MOTION_LAB_EASE_OPTIONS, type: "select" },
+      { key: "durationMs", label: "时长（duration）", max: 900, min: 120, step: 20, suffix: "ms", type: "range" },
+      { key: "ease", label: "缓动函数（ease）", options: MOTION_LAB_EASE_OPTIONS, type: "select" },
     ],
   },
   {
-    title: "Interruption",
+    title: "中断策略",
     controls: [
-      { key: "interruptPolicy", label: "policy", options: MOTION_LAB_INTERRUPT_OPTIONS, type: "select" },
-      { key: "interruptDelayMs", label: "delay", max: 240, min: 0, step: 10, suffix: "ms", type: "range" },
-      { key: "blendDurationMs", label: "blend", max: 240, min: 0, step: 10, suffix: "ms", type: "range" },
+      { key: "interruptPolicy", label: "策略（policy）", options: MOTION_LAB_INTERRUPT_OPTIONS, type: "select" },
+      { key: "interruptDelayMs", label: "延迟（delay）", max: 240, min: 0, step: 10, suffix: "ms", type: "range" },
+      { key: "blendDurationMs", label: "混合时长（blend）", max: 240, min: 0, step: 10, suffix: "ms", type: "range" },
     ],
   },
   {
-    title: "Drag",
+    title: "拖拽",
     controls: [
-      { key: "dragDistancePx", label: "distance", max: 360, min: 80, step: 10, suffix: "px", type: "range" },
-      { key: "dragReleaseYPx", label: "release y", max: 320, min: 160, step: 8, suffix: "px", type: "range" },
+      { key: "dragDistancePx", label: "距离（distance）", max: 360, min: 80, step: 10, suffix: "px", type: "range" },
+      { key: "dragReleaseYPx", label: "释放 Y 坐标", max: 320, min: 160, step: 8, suffix: "px", type: "range" },
     ],
   },
   {
-    title: "Icon",
+    title: "图标",
     controls: [
-      { digits: 2, key: "iconPressScale", label: "press scale", max: 0.98, min: 0.7, step: 0.01, type: "range" },
-      { digits: 2, key: "iconHoverScale", label: "hover scale", max: 1.2, min: 1, step: 0.01, type: "range" },
-      { digits: 1, key: "jiggleRotationDeg", label: "jiggle", max: 9, min: 0, step: 0.3, suffix: "deg", type: "range" },
+      { digits: 2, key: "iconPressScale", label: "按压缩放", max: 0.98, min: 0.7, step: 0.01, type: "range" },
+      { digits: 2, key: "iconHoverScale", label: "悬停缩放", max: 1.2, min: 1, step: 0.01, type: "range" },
+      { digits: 1, key: "jiggleRotationDeg", label: "抖动角度（jiggle）", max: 9, min: 0, step: 0.3, suffix: "deg", type: "range" },
     ],
   },
   {
-    title: "Folder",
+    title: "文件夹",
     controls: [
-      { digits: 2, key: "folderClosedScale", label: "closed scale", max: 0.98, min: 0.68, step: 0.01, type: "range" },
-      { digits: 2, key: "folderOpenScale", label: "open scale", max: 1.12, min: 0.9, step: 0.01, type: "range" },
-      { key: "folderTravelPx", label: "travel", max: 100, min: 0, step: 4, suffix: "px", type: "range" },
-      { digits: 2, key: "folderHoverScale", label: "hover scale", max: 1.22, min: 1, step: 0.01, type: "range" },
-      { key: "pageDistancePx", label: "page distance", max: 360, min: 80, step: 10, suffix: "px", type: "range" },
+      { digits: 2, key: "folderClosedScale", label: "关闭缩放", max: 0.98, min: 0.68, step: 0.01, type: "range" },
+      { digits: 2, key: "folderOpenScale", label: "打开缩放", max: 1.12, min: 0.9, step: 0.01, type: "range" },
+      { key: "folderTravelPx", label: "位移距离（travel）", max: 100, min: 0, step: 4, suffix: "px", type: "range" },
+      { digits: 2, key: "folderHoverScale", label: "悬停缩放", max: 1.22, min: 1, step: 0.01, type: "range" },
+      { key: "pageDistancePx", label: "翻页距离", max: 360, min: 80, step: 10, suffix: "px", type: "range" },
     ],
   },
 ]);
 
 const scenarioRows = computed(() => buildMotionLabScenarioRows(MOTION_LAB_SCENARIOS, selectedScenarioId.value));
 const selectedScenario = computed(() => getMotionLabScenario(selectedScenarioId.value));
-const selectedScenarioLabel = computed(() => selectedScenario.value?.label || "Scenario");
+const selectedScenarioLabel = computed(() => selectedScenario.value?.label || "场景");
 const paramPresetRows = computed(() => buildMotionLabParamPresetRows(motionParams));
 const activeParamPresetLabel = computed(() => {
   const selectedRow = paramPresetRows.value.find((row) => row.selected);
-  return selectedRow?.label || "Custom";
+  return selectedRow?.label || "自定义";
 });
 const overviewReport = computed(() => ({
   ...motionSnapshot.value,
@@ -364,32 +364,35 @@ const canCompareLast = computed(() => Boolean(currentRunSnapshot.value && previo
 const canCompareBaseline = computed(() => Boolean(currentRunSnapshot.value && savedBaselineSnapshot.value));
 const compareRows = computed(() => buildMotionLabCompareRows(compareCurrentSnapshot.value, compareBaselineSnapshot.value));
 const traceDiffRows = computed(() => buildMotionLabTraceDiffRows(traceDiffCurrent.value, traceDiffBaseline.value));
-const reportCopyLabel = computed(() => copiedReport.value ? "Copied Report" : "Copy Report");
-const focusedCopyLabel = computed(() => copiedFocused.value ? "Copied Focused" : "Copy Focused AI");
-const traceCopyLabel = computed(() => copiedTrace.value ? "Copied Trace" : "Copy Trace");
+const reportCopyLabel = computed(() => copiedReport.value ? "已复制报告" : "复制报告");
+const focusedCopyLabel = computed(() => copiedFocused.value ? "已复制聚焦报告" : "复制聚焦 AI 报告");
+const traceCopyLabel = computed(() => copiedTrace.value ? "已复制轨迹" : "复制轨迹");
 const compareCopyLabel = computed(() => {
-  if (copiedCompare.value) return compareMode.value === "baseline" ? "Copied Baseline" : "Copied Compare";
-  return compareMode.value === "baseline" ? "Copy Baseline" : "Copy Compare";
+  if (copiedCompare.value) return compareMode.value === "baseline" ? "已复制基线对比" : "已复制对比";
+  return compareMode.value === "baseline" ? "复制基线对比" : "复制对比";
 });
-const diffCopyLabel = computed(() => copiedDiff.value ? "Copied Diff" : "Copy Diff");
-const comparePanelTitle = computed(() => compareMode.value === "baseline" ? "Baseline Compare" : "Compare Last");
+const diffCopyLabel = computed(() => copiedDiff.value ? "已复制差异" : "复制差异");
+const comparePanelTitle = computed(() => compareMode.value === "baseline" ? "基线对比" : "与上次运行对比");
 const compareEmptyLabel = computed(() => {
   if (compareMode.value === "baseline") {
-    if (!savedBaselineSnapshot.value) return "save a baseline run";
-    return "run a current scenario";
+    if (!savedBaselineSnapshot.value) return "请先保存一次基线运行";
+    return "请运行当前场景";
   }
-  return "run two scenarios";
+  return "请至少运行两次场景";
 });
 const compareStatusRows = computed(() => [
-  { label: "mode", value: compareMode.value === "baseline" ? "baseline" : "last" },
-  { label: "baseline", value: formatRunSnapshotLabel(compareBaselineSnapshot.value) },
-  { label: "current", value: formatRunSnapshotLabel(compareCurrentSnapshot.value), wide: true },
+  { label: "对比模式", value: compareMode.value === "baseline" ? "基线" : "上次运行" },
+  { label: "基准", value: formatRunSnapshotLabel(compareBaselineSnapshot.value) },
+  { label: "当前", value: formatRunSnapshotLabel(compareCurrentSnapshot.value), wide: true },
 ]);
 
 let pixiApp = null;
 let runtime = null;
 let scene = null;
 let snapshotTimer = null;
+let diagnosticGlobalInstallation = null;
+let diagnosticHub = null;
+let destroyed = false;
 let copyReportTimer = null;
 let copyTraceTimer = null;
 let copyCompareTimer = null;
@@ -412,12 +415,12 @@ function formatParamOutput(control) {
 }
 
 function formatRunSnapshotLabel(snapshot = null) {
-  if (!snapshot) return "none";
-  const scenarioLabel = snapshot.scenario?.label || snapshot.scenario?.id || "Scenario";
+  if (!snapshot) return "无";
+  const scenarioLabel = snapshot.scenario?.label || snapshot.scenario?.id || "场景";
   const summary = snapshot.summary || {};
   const passCount = Number(summary.assertionPassedCount) || 0;
   const failCount = Number(summary.assertionFailedCount) || 0;
-  return `${scenarioLabel} / pass ${passCount} / fail ${failCount}`;
+  return `${scenarioLabel} / 通过 ${passCount} / 失败 ${failCount}`;
 }
 
 function makeEmptyReport() {
@@ -712,7 +715,7 @@ function resetLabScene() {
   replayTrace.value = null;
   replayTraceJson.value = "";
   assertionResults.value = [];
-  previewStatus.value = "ready";
+  previewStatus.value = "就绪";
   motionReport.value = makeEmptyReport();
   refreshMotionSnapshot();
 }
@@ -744,12 +747,12 @@ function updateScenarioAssertions(reason = "scenario-assertions") {
 async function runSelectedScenario() {
   if (!runtime || !scene) return;
   resetLabScene();
-  previewStatus.value = "running";
+  previewStatus.value = "运行中";
   runMotionLabScenario(selectedScenarioId.value, makeScenarioContext());
   refreshMotionSnapshot();
   await wait(selectedScenario.value?.assertAfterMs ?? 760);
   const assertions = updateScenarioAssertions();
-  previewStatus.value = assertions.every((assertion) => assertion.passed) ? "passed" : "failed";
+  previewStatus.value = assertions.every((assertion) => assertion.passed) ? "通过" : "失败";
   recordRunSnapshot();
 }
 
@@ -768,6 +771,7 @@ async function captureReplayTrace() {
   if (!runtime) return;
   updateScenarioAssertions("capture-replay-trace");
   const { createMotionReplayTrace } = await import("../rendering/pixi/animation/motionReplayTrace.js");
+  if (destroyed || !runtime) return null;
   const trace = createMotionReplayTrace(motionReport.value, {
     durationMs: 30000,
     sampleHz: 30,
@@ -778,6 +782,7 @@ async function captureReplayTrace() {
   replayTrace.value = trace;
   replayTraceJson.value = JSON.stringify(trace, null, 2);
   recordRunSnapshot(trace, { replaceCurrent: true });
+  return trace;
 }
 
 async function copyText(text) {
@@ -786,9 +791,9 @@ async function copyText(text) {
   return true;
 }
 
-async function copyLabReport() {
+function createLabReportPayload() {
   updateScenarioAssertions("copy-lab-report");
-  const payload = {
+  return {
     assertions: assertionResults.value,
     params: getMotionParams(),
     report: motionReport.value,
@@ -797,6 +802,10 @@ async function copyLabReport() {
       label: selectedScenario.value?.label,
     },
   };
+}
+
+async function copyLabReport() {
+  const payload = createLabReportPayload();
   const ok = await copyText(JSON.stringify(payload, null, 2));
   if (!ok) return;
   copiedReport.value = true;
@@ -818,7 +827,7 @@ async function copyReplayTrace() {
   }, 1200);
 }
 
-function createFocusedExportPayload() {
+function createFocusedExportPayload(presentation = "structured") {
   if (!currentRunSnapshot.value) return null;
   updateScenarioAssertions();
   const currentSnapshot = makeRunSnapshot(replayTrace.value);
@@ -833,7 +842,7 @@ function createFocusedExportPayload() {
     scenario: selectedScenario.value,
     trace: replayTrace.value,
     traceDiffRows: traceDiffRows.value,
-  });
+  }, { presentation });
 }
 
 function makeRunSnapshot(trace = replayTrace.value) {
@@ -884,12 +893,17 @@ function compareBaselineRun() {
   return compareRows.value;
 }
 
-async function copyCompareExport() {
-  const rows = compareMode.value === "baseline" ? compareBaselineRun() : compareLastRun();
-  if (!rows || rows.length === 0) return;
-  const payload = compareMode.value === "baseline"
+function createCompareExportPayload(mode = compareMode.value) {
+  const rows = mode === "baseline" ? compareBaselineRun() : compareLastRun();
+  if (!rows || rows.length === 0) return null;
+  return mode === "baseline"
     ? createMotionLabBaselineCompareExport(compareCurrentSnapshot.value, compareBaselineSnapshot.value)
     : createMotionLabCompareExport(compareCurrentSnapshot.value, compareBaselineSnapshot.value);
+}
+
+async function copyCompareExport() {
+  const payload = createCompareExportPayload();
+  if (!payload) return;
   const ok = await copyText(JSON.stringify(payload, null, 2));
   if (!ok) return;
   copiedCompare.value = true;
@@ -901,9 +915,9 @@ async function copyCompareExport() {
 }
 
 async function copyFocusedExport() {
-  const payload = createFocusedExportPayload();
+  const payload = createFocusedExportPayload("markdown");
   if (!payload) return;
-  const ok = await copyText(payload.copyText);
+  const ok = await copyText(payload.content);
   if (!ok) return;
   copiedFocused.value = true;
   if (copyFocusedTimer != null) window.clearTimeout(copyFocusedTimer);
@@ -925,64 +939,94 @@ async function copyTraceDiffExport() {
   }, 1200);
 }
 
-function installDebugApi() {
-  setLaunchpadDebugValue("motionLab", {
-    captureReplayTrace,
-    assertions: () => assertionResults.value,
-    baseline: () => savedBaselineSnapshot.value,
-    baselineCompareExport: () => createMotionLabBaselineCompareExport(currentRunSnapshot.value, savedBaselineSnapshot.value),
-    compareBaseline: compareBaselineRun,
-    compareExport: () => (compareMode.value === "baseline"
-      ? createMotionLabBaselineCompareExport(compareCurrentSnapshot.value, compareBaselineSnapshot.value)
-      : createMotionLabCompareExport(compareCurrentSnapshot.value, compareBaselineSnapshot.value)),
-    compareLast: compareLastRun,
-    compareMode: () => compareMode.value,
-    compareRows: () => compareRows.value,
-    copyCompare: copyCompareExport,
-    copyDiff: copyTraceDiffExport,
-    copyFocused: copyFocusedExport,
-    copyReport: copyLabReport,
-    copyTrace: copyReplayTrace,
-    focusedExport: createFocusedExportPayload,
+function createMotionLabStatus() {
+  return {
+    canCompareBaseline: canCompareBaseline.value,
+    canCompareLast: canCompareLast.value,
+    canCopyFocused: canCopyFocused.value,
+    hasBaseline: Boolean(savedBaselineSnapshot.value),
+    hasPixiApp: Boolean(pixiApp),
+    mounted: true,
+    scenarioCount: scenarioRows.value.length,
+    selectedScenarioId: selectedScenarioId.value,
+    state: previewStatus.value,
+    traceDiffRowCount: traceDiffRows.value.length,
+    traceSchema: replayTrace.value?.schema || null,
+  };
+}
+
+function createMotionLabDiagnosticsPort() {
+  return Object.freeze({
     applyPreset: applyParamPreset,
-    params: () => getMotionParams(),
-    presetId: () => resolveMotionLabParamPresetId(motionParams),
-    presets: () => paramPresetRows.value,
-    report: () => motionReport.value,
-    reset: resetLabScene,
-    run: runSelectedScenario,
-    runScenario: async (id) => {
-      selectScenario(id);
+    captureReplay: captureReplayTrace,
+    compare: (mode) => createCompareExportPayload(mode),
+    exportData: (format) => {
+      if (format === "focused") return createFocusedExportPayload();
+      if (format === "compare") return createCompareExportPayload();
+      if (format === "trace-diff") return createMotionLabTraceDiffExport(traceDiffCurrent.value, traceDiffBaseline.value);
+      if (format === "trace") return replayTrace.value;
+      return createLabReportPayload();
+    },
+    readState: () => ({
+      assertions: assertionResults.value,
+      compare: {
+        mode: compareMode.value,
+        rows: compareRows.value,
+      },
+      params: getMotionParams(),
+      presetId: resolveMotionLabParamPresetId(motionParams),
+      presets: paramPresetRows.value,
+      scenarios: scenarioRows.value,
+      status: createMotionLabStatus(),
+    }),
+    reset: () => {
+      resetLabScene();
+      return createMotionLabStatus();
+    },
+    runScenario: async (scenarioId) => {
+      if (scenarioId) selectScenario(scenarioId);
       await runSelectedScenario();
       return {
         assertions: assertionResults.value,
         report: motionReport.value,
         scenarioId: selectedScenarioId.value,
+        status: createMotionLabStatus(),
       };
     },
-    scenarios: () => scenarioRows.value,
-    selectScenario,
-    saveBaseline: saveBaselineRun,
-    setParams: (patch = {}) => {
+    saveBaseline: () => {
+      const rows = saveBaselineRun();
+      return rows
+        ? createMotionLabBaselineCompareExport(currentRunSnapshot.value, savedBaselineSnapshot.value)
+        : null;
+    },
+    selectScenario: (scenarioId) => {
+      selectScenario(scenarioId);
+      return { scenarioId: selectedScenarioId.value, status: createMotionLabStatus() };
+    },
+    status: createMotionLabStatus,
+    updateParams: (patch) => {
       Object.assign(motionParams, normalizeMotionLabParams({ ...motionParams, ...patch }));
       return getMotionParams();
     },
-    status: () => ({
-      canCompareLast: canCompareLast.value,
-      canCompareBaseline: canCompareBaseline.value,
-      canCopyFocused: canCopyFocused.value,
-      hasBaseline: Boolean(savedBaselineSnapshot.value),
-      hasPixiApp: Boolean(pixiApp),
-      mounted: true,
-      scenarioCount: scenarioRows.value.length,
-      selectedScenarioId: selectedScenarioId.value,
-      traceDiffRowCount: traceDiffRows.value.length,
-      traceSchema: replayTrace.value?.schema || null,
-    }),
-    trace: () => replayTrace.value,
-    traceDiffExport: () => createMotionLabTraceDiffExport(traceDiffCurrent.value, traceDiffBaseline.value),
-    traceDiffRows: () => traceDiffRows.value,
   });
+}
+
+function installDiagnostics() {
+  diagnosticHub = createDiagnosticHub({
+    adapters: [createMotionLabDiagnosticAdapter({ port: createMotionLabDiagnosticsPort() })],
+    artifactStore: createDiagnosticArtifactStore(),
+  });
+  diagnosticGlobalInstallation = installDiagnosticHubGlobal({ hub: diagnosticHub });
+}
+
+async function disposeDiagnostics() {
+  diagnosticGlobalInstallation?.uninstall();
+  diagnosticGlobalInstallation = null;
+  const hub = diagnosticHub;
+  diagnosticHub = null;
+  if (!hub) return;
+  const result = await hub.dispose();
+  if (!result.ok) throw new Error(`${result.error?.code || "diagnostic-dispose-failed"}: ${result.error?.message || "Motion Lab 诊断释放失败"}`);
 }
 
 function clearCopyTimers() {
@@ -999,23 +1043,32 @@ function clearCopyTimers() {
 }
 
 onMounted(async () => {
+  destroyed = false;
   const { createMotionRuntimeDebugAdapter } = await import("../rendering/pixi/animation/motionRuntimeDebugAdapter.dev.js");
+  if (destroyed) return;
   installMotionRuntimeDebugAdapterFactory(createMotionRuntimeDebugAdapter);
-  runtime = createMotionRuntime();
+  const mountedRuntime = createMotionRuntime();
+  runtime = mountedRuntime;
   configureRuntime();
-  pixiApp = await createPixiApp(pixiHostRef.value, {
+  const nextPixiApp = await createPixiApp(pixiHostRef.value, {
     autoStart: true,
     className: "motion-lab-canvas",
   });
+  if (destroyed || runtime !== mountedRuntime) {
+    nextPixiApp.destroy(false, { children: true });
+    return;
+  }
+  pixiApp = nextPixiApp;
   scene = createScene(pixiApp);
   setSceneDefaults();
   describeSceneTargets();
   refreshMotionSnapshot();
   snapshotTimer = window.setInterval(refreshMotionSnapshot, 180);
-  installDebugApi();
+  installDiagnostics();
 });
 
 onBeforeUnmount(() => {
+  destroyed = true;
   clearCopyTimers();
   if (snapshotTimer != null) window.clearInterval(snapshotTimer);
   snapshotTimer = null;
@@ -1024,6 +1077,8 @@ onBeforeUnmount(() => {
   pixiApp?.destroy(false, { children: true });
   pixiApp = null;
   scene = null;
-  deleteLaunchpadDebugValue("motionLab");
+  void disposeDiagnostics().catch((error) => {
+    console.error("释放 Motion Lab 诊断入口失败", error);
+  });
 });
 </script>

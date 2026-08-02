@@ -851,7 +851,10 @@ function createSettingsPanelModel(options) {
     liveDesktopStatusTimer = null;
   }
   function refreshLiveDesktopRuntimeStatus() {
-    if (canShowLiveDesktopControls.value) state.refreshLiveDesktopRuntimeStatus?.();
+    if (!canShowLiveDesktopControls.value) return;
+    Promise.resolve(state.refreshLiveDesktopRuntimeStatus?.()).catch((error) => {
+      console.error("Live Desktop 运行时状态刷新失败，失败信息已写入状态", error);
+    });
   }
   function syncLiveDesktopStatusTimer() {
     clearLiveDesktopStatusTimer();

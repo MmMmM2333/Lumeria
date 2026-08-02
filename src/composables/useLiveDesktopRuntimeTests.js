@@ -27,6 +27,7 @@ function makePort(overrides = {}) {
     },
     getStatus: async () => {
       calls.push(["status"]);
+      if (overrides.statusError) throw overrides.statusError;
       return { phase: "stopped", active: false, generation, reason: null, detail: "" };
     },
     getSupport: async () => {
@@ -43,6 +44,7 @@ function makePort(overrides = {}) {
     isAvailable: () => overrides.available !== false,
     setVisible: async (visible) => {
       calls.push(["visible", visible]);
+      if (overrides.visibilityError) throw overrides.visibilityError;
       return runningStatus();
     },
     start: async () => {
@@ -143,4 +145,35 @@ export async function runLiveDesktopRuntimeTests() {
   const failedOutcome = await failed.sync({ enabled: true, visible: true, config: firstConfig });
   assert(!failedOutcome.ok && failedOutcome.error === startError, "runtime start failures should remain explicit outcomes");
   assert(failed.status.value.phase === "failed" && failed.status.value.reason === "startFailed", "runtime start failures should publish failed status");
+
+  const statusError = new Error("native status channel closed");
+  const failedRefresh = useLiveDesktopRuntime({
+    isExperimentEnabled: () => true,
+    port: makePort({ statusError }).port,
+    timers: makeTimerAdapter(),
+  });
+  const failedRefreshOutcome = await failedRefresh.refreshStatus();
+  assert(!failedRefreshOutcome.ok && failedRefreshOutcome.error === statusError, "status refresh failures should remain explicit outcomes");
+  assert(failedRefresh.status.value.phase === "failed", "status refresh failures should remain visible in runtime state");
+  assert(failedRefresh.status.value.reason === "statusRefreshFailed", "status refresh failures should use a stable reason");
+  assert(failedRefresh.status.value.detail === statusError.message, "status refresh failures should preserve technical detail");
+
+  const visibilityError = new Error("native visibility channel closed");
+  const visibilityTimers = makeTimerAdapter();
+  const failedVisibilityPort = makePort({ visibilityError });
+  const failedVisibility = useLiveDesktopRuntime({
+    isExperimentEnabled: () => true,
+    port: failedVisibilityPort.port,
+    timers: visibilityTimers,
+  });
+  await failedVisibility.refreshSupport();
+  await failedVisibility.sync({ enabled: true, visible: true, config: firstConfig });
+  failedVisibilityPort.calls.length = 0;
+  const failedVisibilityOutcome = await failedVisibility.sync({ enabled: true, visible: false, config: firstConfig });
+  assert(!failedVisibilityOutcome.ok && failedVisibilityOutcome.error === visibilityError, "visibility failures should stop the current runtime sync");
+  assert(failedVisibilityPort.calls.map(([name]) => name).join(",") === "visible", "visibility failures should not continue into another runtime command");
+  assert(failedVisibility.status.value.phase === "failed", "visibility failures should remain visible in runtime state");
+  assert(failedVisibility.status.value.reason === "visibilityUpdateFailed", "visibility failures should use a stable reason");
+  assert(failedVisibility.status.value.detail === visibilityError.message, "visibility failures should preserve technical detail");
+  assert(visibilityTimers.pending.length === 0, "failed hiding should not schedule an idle stop");
 }

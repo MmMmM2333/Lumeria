@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "benchmark:diagnostics": "node --expose-gc scripts/benchmarkMotionDiagnostics.mjs",
     "dev": "vite",
     "test": "node src/domain/runLaunchpadLayoutTests.js",
     "test:pixi-webgl": "playwright test tests/browser/pixi-drag-preview-mask-batch.spec.mjs --project=chromium --workers=1",

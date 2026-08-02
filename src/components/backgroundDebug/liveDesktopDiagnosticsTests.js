@@ -1,6 +1,8 @@
 import {
+  formatFrameArrived,
   formatFrameTiming,
   formatLastFrame,
+  formatLiveDesktopRates,
   formatPixelProbe,
   formatWindowMeta,
   normalizeLiveDesktopStatus,
@@ -48,10 +50,15 @@ export function runLiveDesktopDiagnosticsTests() {
   assert(status.diagnostics.frameTimeouts === 0, "diagnostics counts should clamp negative values to zero");
   assert(status.diagnostics.shaderCopyFallbacks === 1, "diagnostics should include shader fallback counts");
   assert(status.diagnostics.lastShaderCopyError === "shader failed", "diagnostics should include the latest shader fallback error");
-  assert(formatLastFrame(status.diagnostics) === "2560x1440 fmt 87", "last frame formatter should include size and format");
-  assert(formatPixelProbe(status.diagnostics).includes("16x16 rgb 10/220/115"), "pixel probe formatter should include sample size and rgb range");
+  assert(formatLastFrame(status.diagnostics) === "2560x1440 · 格式 87", "last frame formatter should include size and format in Chinese");
+  assert(formatPixelProbe(status.diagnostics).includes("16x16 · RGB 10/220/115"), "pixel probe formatter should include sample size and rgb range in Chinese");
   assert(status.windowDiagnostics.candidates.length === 1, "window diagnostics should normalize candidates");
   assert(status.windowDiagnostics.candidates[0].rect.top === -2, "window rect coordinates should keep signed integers");
   assert(formatWindowMeta(status.windowDiagnostics.candidates[0]).includes("WPEOverlappedWallpaper"), "window meta should include class name");
-  assert(formatFrameTiming(2, 6000, 2500, 4000) === "avg 3.00ms / last 2.50ms / max 4.00ms", "frame timing should format micros as millis");
+  assert(formatFrameTiming(2, 6000, 2500, 4000) === "平均 3.00ms / 最近 2.50ms / 最大 4.00ms", "frame timing should format micros as millis in Chinese");
+  assert(formatFrameArrived({ frameArrivedEvents: 3, frameArrivedDroppedSignals: 1 }) === "到达 3 / 丢弃 1", "frame arrival formatter should use readable Chinese labels");
+  assert(
+    formatLiveDesktopRates({ arrivedPerSecond: 2, copyErrorsPerSecond: 1, droppedPerSecond: 0, framesPerSecond: 60, timeoutsPerSecond: 0 }).includes("帧 60.0/s"),
+    "rate formatter should use readable Chinese labels",
+  );
 }

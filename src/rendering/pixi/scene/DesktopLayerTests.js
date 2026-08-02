@@ -284,11 +284,7 @@ export async function runDesktopLayerTests() {
     makeDesktopSourceVisualKey,
   } = await import("./folderVisualOwnershipRegistry.js");
   const { motionRuntime } = await import("../animation/motionRuntime.js");
-  const {
-    deleteLaunchpadDebugValue,
-    readLaunchpadDebugValue,
-    setLaunchpadDebugValue,
-  } = await import("../debugNamespace.js");
+  const { sceneDiagnosticsState } = await import("../../../diagnostics/sceneDiagnosticsState.js");
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[DesktopLayer test failed] ${message}`);
   };
@@ -1244,10 +1240,9 @@ export async function runDesktopLayerTests() {
 
   {
     const logs = [];
-    const originalDebug = readLaunchpadDebugValue("folderHandoff");
-    const originalLastDebug = readLaunchpadDebugValue("lastFolderHandoff");
     const originalLog = console.log;
-    setLaunchpadDebugValue("folderHandoff", { log: true });
+    sceneDiagnosticsState.reset();
+    sceneDiagnosticsState.configureFolderHandoff({ log: true });
     console.log = (...args) => logs.push(args);
     try {
       const folder = makeNode("folder");
@@ -1268,7 +1263,7 @@ export async function runDesktopLayerTests() {
       assert(after?.[1]?.node?.visualWrapVisible === true, "desktop restore debug should capture restored artwork after release");
       assert(after?.[1]?.visualRoot, "desktop restore debug should include desktop transform context");
       assert(after?.[1]?.singleStageFolderLayer, "desktop restore debug should include folder overlay transform context");
-      const lastDebug = readLaunchpadDebugValue("lastFolderHandoff");
+      const lastDebug = sceneDiagnosticsState.read("folderHandoff");
       assert(
         lastDebug?.folderId === "folder-1" &&
           lastDebug?.phase === "desktop-restore-after",
@@ -1276,10 +1271,7 @@ export async function runDesktopLayerTests() {
       );
     } finally {
       console.log = originalLog;
-      if (originalDebug === undefined) deleteLaunchpadDebugValue("folderHandoff");
-      else setLaunchpadDebugValue("folderHandoff", originalDebug);
-      if (originalLastDebug === undefined) deleteLaunchpadDebugValue("lastFolderHandoff");
-      else setLaunchpadDebugValue("lastFolderHandoff", originalLastDebug);
+      sceneDiagnosticsState.reset();
     }
   }
 
