@@ -397,6 +397,9 @@ export class DesktopLayer extends Container {
 
     if (shouldApplyDesktopPlan) {
       const previousEntries = new Map((previousPlan?.entries || []).map((entry) => [entry.key, entry]));
+      if (pageTrackScopeChanged) {
+        this.iconBoundsRegistry.clearBounds(previousPlan.clearLaunchArea);
+      }
       this.iconBoundsRegistry.clearBounds(plan.clearLaunchArea);
       for (const folderId of plan.clearFolderPreviewChildIds) {
         this.iconBoundsRegistry.clearBounds({ folderId, kind: BOUNDS_KIND.PREVIEW_CHILD });

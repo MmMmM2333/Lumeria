@@ -552,6 +552,8 @@ export async function runDesktopLayerTests() {
     const pageTrack = makePageTrack([firstPageNode, secondPageNode]);
     pageTrack.x = -480;
     const layer = makeLayer(DesktopLayer, pageTrack);
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    layer.iconBoundsRegistry = iconBoundsRegistry;
     layer.applyDesktopVisualAlpha = () => {};
     layer.applyDesktopVisualTransform = () => {};
     layer.applyFolderOverlayAlpha = () => {};
@@ -576,9 +578,24 @@ export async function runDesktopLayerTests() {
     layer.iconNodes.set("page:0:first-page-app", firstPageNode);
     layer.iconNodes.set("page:1:second-page-app", secondPageNode);
     layer.lastDesktopRenderPlan = {
+      clearLaunchArea: "desktop",
       pageTrack: { scope: "desktop" },
       signature: "desktop-before-search",
     };
+    iconBoundsRegistry.registerBounds(
+      K.LAUNCH,
+      V.RENDERED,
+      { area: "desktop", id: "first-page-app", pageIndex: 0 },
+      { height: 64, left: 0, top: 0, width: 64 },
+      { area: "desktop", id: "first-page-app", pageIndex: 0 }
+    );
+    iconBoundsRegistry.registerBounds(
+      K.LAUNCH,
+      V.RENDERED,
+      { area: "folder", folderId: "folder-1", id: "folder-app", pageIndex: 0 },
+      { height: 64, left: 96, top: 0, width: 64 },
+      { area: "folder", folderId: "folder-1", id: "folder-app", pageIndex: 0 }
+    );
 
     try {
       layer.update({
@@ -620,7 +637,34 @@ export async function runDesktopLayerTests() {
       assert(pageTrack.children.includes(searchNode), "new search node should remain mounted in the page track");
       assert(searchNode.alpha === 0, "new search node should stay at the fade start alpha until the motion runtime advances");
       assert(searchEntry && searchNode.y > searchEntry.layoutTarget.y, "new search node should keep the ordinary entry motion");
+      assert(
+        !iconBoundsRegistry.getBounds(K.LAUNCH, V.RENDERED, { area: "desktop", id: "first-page-app", pageIndex: 0 }),
+        "scope change into search should clear outgoing desktop launch bounds"
+      );
+      assert(
+        iconBoundsRegistry.getBounds(K.LAUNCH, V.RENDERED, { area: "folder", folderId: "folder-1", id: "folder-app", pageIndex: 0 }),
+        "top-level scope changes should preserve folder launch bounds"
+      );
+
+      iconBoundsRegistry.registerBounds(
+        K.LAUNCH,
+        V.RENDERED,
+        { area: "search", id: "search-result-app", pageIndex: 0 },
+        { height: 64, left: 0, top: 0, width: 64 },
+        { area: "search", id: "search-result-app", pageIndex: 0 }
+      );
+      layer.update(makeDesktopQuiescenceState({ id: "returned-desktop-app", name: "Returned Desktop", type: "app" }));
+
+      assert(
+        !iconBoundsRegistry.getBounds(K.LAUNCH, V.RENDERED, { area: "search", id: "search-result-app", pageIndex: 0 }),
+        "scope change back to desktop should clear outgoing search launch bounds"
+      );
+      assert(
+        iconBoundsRegistry.getBounds(K.LAUNCH, V.RENDERED, { area: "folder", folderId: "folder-1", id: "folder-app", pageIndex: 0 }),
+        "returning to desktop should preserve folder launch bounds"
+      );
     } finally {
+      iconBoundsRegistry.clearBounds();
       motionRuntime.reset();
     }
   }
