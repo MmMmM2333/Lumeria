@@ -107,6 +107,9 @@ function createManagedAppRemovalHarness(pageItems, currentPageIndex) {
   const isDragActive = () => false;
   const pageRange = usePageRenderRange({
     activePageIndex: pageIndex,
+    commitFolderPageIndexState: (value) => { folderPageIndex.value = value; },
+    commitPageIndexState: (value) => { pageIndex.value = value; },
+    commitSearchPageIndexState: (value) => { searchPageIndex.value = value; },
     folderPageIndex,
     folderPages: shallowRef([[]]),
     getDragMeta: () => null,
@@ -120,6 +123,7 @@ function createManagedAppRemovalHarness(pageItems, currentPageIndex) {
   const pageCommands = useLaunchpadPageCommands({
     assertNoDuplicateItemIds: helpers.assertNoDuplicateItemIds,
     commitFolderPageIndex: () => {},
+    commitPagesState: (next) => { pages.value = next; },
     folderPageIndex,
     isDragActive,
     pageIndex,
@@ -128,8 +132,6 @@ function createManagedAppRemovalHarness(pageItems, currentPageIndex) {
     renderedFolder,
     searchPageIndex,
   });
-  const hiddenAppIds = ref([]);
-  const scanAppBlacklist = ref([]);
   const transientNotices = [];
   const apps = useLaunchpadApps({
     appendAppsToPages: helpers.insertTopLevelItem,
@@ -140,7 +142,6 @@ function createManagedAppRemovalHarness(pageItems, currentPageIndex) {
     commitPages: pageCommands.commitPages,
     commitPagesAfterDeletion: pageCommands.commitPagesAfterDeletion,
     findFolder: helpers.findFolder,
-    hiddenAppIds,
     isDragActive,
     makeId: () => "generated-app-id",
     openFolderId: ref(null),
@@ -149,15 +150,13 @@ function createManagedAppRemovalHarness(pageItems, currentPageIndex) {
     reclampPageIndices: pageRange.reclampPageIndices,
     removeEverywhere: helpers.removeEverywhere,
     renderedFolder,
-    scanAppBlacklist,
-    scanKeywordBlacklist: ref([]),
-    scanRoots: ref([]),
     schedulePageGridMetrics: () => {},
     selectedIcon: ref(null),
     shouldUseNativeCatalog: () => false,
     showTransientNotice: (notice) => transientNotices.push(notice),
-    showMissingLaunchTargetBadge: ref(true),
   });
+  const hiddenAppIds = apps.presentation.hiddenAppIds;
+  const scanAppBlacklist = apps.presentation.scanAppBlacklist;
 
   return { apps, hiddenAppIds, pageIndex, pages, scanAppBlacklist, transientNotices };
 }
@@ -170,6 +169,66 @@ export async function runLaunchpadAppsTests() {
   assert(getCustomIconCanvasSize(128, 128) === 128, "128px custom icons should not be upscaled to 256px");
   assert(getCustomIconCanvasSize(64, 64) === 128, "small custom icons should be normalized to the UI max size");
   assert(getCustomIconCanvasSize(512, 256) === 256, "large non-square custom icons should be capped at the high-DPI size");
+
+  {
+    const { apps, pages } = createManagedAppRemovalHarness([[
+      {
+        id: "owner-contract-app",
+        type: "app",
+        name: "Owner Contract",
+        launchTarget: { kind: "executable", path: "C:/Apps/Owner.exe" },
+      },
+    ]], 0);
+    const persisted = {
+      hiddenAppIds: ["hidden-app", "hidden-app"],
+      scanRoots: [{ id: "custom-root", type: "customDirectory", label: "Tools", path: "C:/Tools", enabled: true }],
+      scanKeywordBlacklist: ["setup", "Setup"],
+      scanAppBlacklist: [{ name: "Ignored", sourceKey: "ignored-source" }],
+      showMissingLaunchTargetBadge: false,
+    };
+
+    apps.persistence.restore(persisted);
+    const firstCapture = apps.persistence.capture();
+    apps.persistence.restore(firstCapture);
+    assert(
+      JSON.stringify(apps.persistence.capture()) === JSON.stringify(firstCapture),
+      "apps persistence should be stable across restore/capture round-trips"
+    );
+
+    apps.editorModel.actions.openCreate();
+    assert(apps.editorModel.mode.value === "create", "the editor should expose one create session");
+    apps.editorModel.name.value = "unsaved create draft";
+    apps.editorModel.actions.openEdit(pages.value[0][0]);
+    assert(apps.editorModel.mode.value === "edit", "opening edit should replace the create session instead of opening a parallel draft");
+    assert(apps.editorModel.name.value === "Owner Contract", "replacing a create session should hydrate the single editor draft from the edited app");
+
+    const requestedChecks = apps.nativeIntegration.listLaunchTargets();
+    apps.nativeIntegration.applyLaunchTargetStatuses([
+      { id: "owner-contract-app", status: "missing" },
+    ], requestedChecks);
+    assert(apps.nativeIntegration.getLaunchTargetStatus(pages.value[0][0]) === "missing", "matching launch-target results should be accepted");
+    apps.editorModel.target.value = "C:/Apps/Owner-v2.exe";
+    assert(apps.editorModel.actions.save(), "the unified editor should save an executable target change");
+    apps.nativeIntegration.applyLaunchTargetStatuses([
+      { id: "owner-contract-app", status: "missing" },
+    ], requestedChecks);
+    assert(apps.nativeIntegration.getLaunchTargetStatus(pages.value[0][0]) === null, "stale launch-target results should not attach to an edited target");
+
+    const removedParallelEditorKeys = [
+      "newAppName",
+      "newAppTarget",
+      "newAppArgs",
+      "editAppName",
+      "editAppTarget",
+      "editAppArgs",
+      "isAddingManagedApp",
+      "editingManagedApp",
+    ];
+    assert(
+      removedParallelEditorKeys.every((key) => !(key in apps)),
+      "the apps owner should not expose the removed create/edit state machines"
+    );
+  }
 
   {
     const { apps, pageIndex, pages, scanAppBlacklist, transientNotices } = createManagedAppRemovalHarness(
@@ -347,8 +406,6 @@ export async function runLaunchpadAppsTests() {
     ];
   }, async () => {
     const pages = shallowRef([[]]);
-    const hiddenAppIds = ref(["win-app-1"]);
-    const scanRoots = ref([{ id: "root", type: "customDirectory", label: "Root", path: "C:/Apps", enabled: true }]);
     const warningDialogs = [];
     const launchCriticalDirtyIds = [];
     let canceledLongPressCount = 0;
@@ -372,7 +429,6 @@ export async function runLaunchpadAppsTests() {
         pages.value = next;
       },
       findFolder: () => null,
-      hiddenAppIds,
       isDragActive: () => false,
       makeId: () => "generated-app-id",
       markLaunchCriticalLayoutDirty: (appId) => launchCriticalDirtyIds.push(appId),
@@ -383,13 +439,25 @@ export async function runLaunchpadAppsTests() {
       removeEverywhere: (sourcePages, appId) => sourcePages.map((page) => page.filter((item) => item.id !== appId)),
       renderedFolder: ref(null),
       schedulePageGridMetrics: () => {},
-      scanAppBlacklist: ref([]),
-      scanKeywordBlacklist: ref([]),
-      scanRoots,
       selectedIcon,
       shouldUseNativeCatalog: () => true,
-      showMissingLaunchTargetBadge: ref(true),
     });
+    apps.persistence.restore({
+      hiddenAppIds: ["win-app-1"],
+      scanRoots: [{ id: "root", type: "customDirectory", label: "Root", path: "C:/Apps", enabled: true }],
+      scanKeywordBlacklist: [],
+      scanAppBlacklist: [],
+      showMissingLaunchTargetBadge: true,
+    });
+    const hiddenAppIds = apps.presentation.hiddenAppIds;
+    const scanRoots = apps.presentation.scanRoots;
+    const setAllScanRootsEnabled = (enabled) => {
+      const current = apps.persistence.capture();
+      apps.persistence.restore({
+        ...current,
+        scanRoots: current.scanRoots.map((root) => ({ ...root, enabled })),
+      });
+    };
 
     apps.addScanRoot();
     const addedRoot = scanRoots.value[1];
@@ -414,19 +482,19 @@ export async function runLaunchpadAppsTests() {
     await apps.browseScanRootDirectory("root-windows-app-catalog");
     assert(scanRoots.value[0].path === "shell:AppsFolder", "the Windows app catalog should not open the directory picker");
 
-    scanRoots.value = scanRoots.value.map((root) => ({ ...root, enabled: false }));
-    assert(apps.canBrowseLaunchFile.value, "native file browsing should not require enabled scan roots");
+    setAllScanRootsEnabled(false);
+    apps.openCreateManagedApp();
+    assert(apps.editorModel.canBrowseTarget.value, "native file browsing should not require enabled scan roots");
     assert(!apps.canScanManagedApps.value, "app scanning should still require enabled scan roots");
-    apps.openAddManagedAppPage();
-    await apps.browseNewAppLaunchFile();
-    assert(apps.newAppTarget.value === "C:\\Tools\\Shortcut.lnk", "launch file browse should use the native launch target path");
-    assert(apps.canAddManagedApp.value, "browsed shortcut files should be addable");
-    assert(!apps.canEditNewAppArgs.value, "shortcut targets should not expose launch args");
-    apps.closeAddManagedAppPage();
-    scanRoots.value = scanRoots.value.map((root) => ({ ...root, enabled: true }));
+    await apps.editorModel.actions.browseTarget();
+    assert(apps.editorModel.target.value === "C:\\Tools\\Shortcut.lnk", "launch file browse should use the native launch target path");
+    assert(apps.editorModel.canSave.value, "browsed shortcut files should be addable");
+    assert(!apps.editorModel.canEditArgs.value, "shortcut targets should not expose launch args");
+    apps.editorModel.actions.cancel();
+    setAllScanRootsEnabled(true);
 
     await apps.rescanManagedApps();
-    apps.addSelectedScannedApps();
+    apps.scanResultModel.actions.addSelected();
 
     assert(pages.value[0][0].id === "win-app-1", "adding scanned apps should preserve native stable ids");
     assert(pages.value[0][0].iconUrl === "http://asset.localhost/C:/Icons/native.png", "adding scanned apps should use the cached asset URL");
@@ -435,10 +503,10 @@ export async function runLaunchpadAppsTests() {
     const windowsApp = pages.value.flat().find((app) => app.id === "win-app-store");
     assert(apps.getLaunchTargetPath(windowsApp) === "windows.settings_123!App", "managed app details should display AppUserModelIds");
     apps.openEditManagedApp(windowsApp);
-    assert(apps.isEditingAppUserModelId.value, "Windows app identifiers should be treated as system-managed");
-    apps.editAppName.value = "Windows Settings";
-    apps.editAppTarget.value = "C:/Should/Not/Replace.exe";
-    apps.saveEditingManagedApp();
+    assert(apps.editorModel.targetReadOnly.value, "Windows app identifiers should be treated as system-managed");
+    apps.editorModel.name.value = "Windows Settings";
+    apps.editorModel.target.value = "C:/Should/Not/Replace.exe";
+    apps.editorModel.actions.save();
     const editedWindowsApp = pages.value[0].find((app) => app.id === "win-app-store");
     assert(editedWindowsApp.launchTarget.kind === "appUserModelId", "editing a Windows app should preserve its launch target kind");
     assert(editedWindowsApp.launchTarget.appUserModelId === "windows.settings_123!App", "editing a Windows app should preserve its AppUserModelId");
@@ -450,24 +518,24 @@ export async function runLaunchpadAppsTests() {
     assert(canceledLongPressCount === 1, "removing an app should cancel pending long press state");
     assert(clearedSelectedIconCount === 1, "removing an app should clear a selection that referenced the removed icon");
 
-    apps.openAddManagedAppPage();
-    apps.newAppName.value = "URL App";
-    apps.newAppTarget.value = "https://example.com";
-    apps.newAppArgs.value = "--ignored";
-    apps.addManagedApp();
+    apps.openCreateManagedApp();
+    apps.editorModel.name.value = "URL App";
+    apps.editorModel.target.value = "https://example.com";
+    apps.editorModel.args.value = "--ignored";
+    apps.editorModel.actions.save();
     assert(!("launchArgs" in pages.value[0][0]), "URL apps should not save launch args");
     assert(launchCriticalDirtyIds.includes("generated-app-id"), "new custom apps should mark launch-critical layout dirty");
 
-    apps.openAddManagedAppPage();
-    apps.newAppName.value = "Exe App";
-    apps.newAppTarget.value = "C:/Tools/App.exe";
-    apps.newAppArgs.value = "--profile dev";
-    assert(apps.canEditNewAppArgs.value, "executable targets should expose launch args");
-    apps.addManagedApp();
+    apps.openCreateManagedApp();
+    apps.editorModel.name.value = "Exe App";
+    apps.editorModel.target.value = "C:/Tools/App.exe";
+    apps.editorModel.args.value = "--profile dev";
+    assert(apps.editorModel.canEditArgs.value, "executable targets should expose launch args");
+    apps.editorModel.actions.save();
     assert(pages.value[0][0].launchArgs === "--profile dev", "executable apps should save launch args");
     apps.openEditManagedApp(pages.value[0][0]);
-    apps.editAppArgs.value = "--profile prod";
-    apps.saveEditingManagedApp();
+    apps.editorModel.args.value = "--profile prod";
+    apps.editorModel.actions.save();
     assert(launchCriticalDirtyIds.length >= 3, "edited app launch fields should mark launch-critical layout dirty");
   });
 
@@ -502,7 +570,6 @@ export async function runLaunchpadAppsTests() {
           pages.value = next;
         },
         findFolder: () => null,
-        hiddenAppIds: ref([]),
         isDragActive: () => false,
         makeId: () => "generated-app-id",
         openFolderId: ref(null),
@@ -512,11 +579,7 @@ export async function runLaunchpadAppsTests() {
         removeEverywhere: (sourcePages) => sourcePages,
         renderedFolder: ref(null),
         schedulePageGridMetrics: () => {},
-        scanAppBlacklist: ref([]),
-        scanKeywordBlacklist: ref([]),
-        scanRoots: ref([{ id: "root", type: "customDirectory", label: "Root", path: "C:/Apps", enabled: true }]),
         shouldUseNativeCatalog: () => true,
-        showMissingLaunchTargetBadge: ref(true),
       });
       const uploadInput = {
         files: [{ type: "image/png", size: 512 }],
@@ -524,7 +587,7 @@ export async function runLaunchpadAppsTests() {
       };
 
       apps.openExistingAppIconChooser("app-a");
-      apps.handleIconChooserUpload({ target: uploadInput });
+      apps.iconChooserModel.actions.upload({ target: uploadInput });
       assert(await waitForCondition(() => pendingCustomIconCaches.length === 1), "custom icon upload should reach the native cache");
       apps.openExistingAppIconChooser("app-b");
       pendingCustomIconCaches[0]({
@@ -565,7 +628,6 @@ export async function runLaunchpadAppsTests() {
           pages.value = next;
         },
         findFolder: () => null,
-        hiddenAppIds: ref([]),
         isDragActive: () => false,
         makeId: () => "generated-app-id",
         openFolderId: ref(null),
@@ -575,23 +637,22 @@ export async function runLaunchpadAppsTests() {
         removeEverywhere: (sourcePages) => sourcePages,
         renderedFolder: ref(null),
         schedulePageGridMetrics: () => {},
-        scanAppBlacklist: ref([]),
-        scanKeywordBlacklist: ref([]),
-        scanRoots: ref([{ id: "root", type: "customDirectory", label: "Root", path: "C:/Apps", enabled: true }]),
         shouldUseNativeCatalog: () => true,
-        showMissingLaunchTargetBadge: ref(true),
+      });
+      apps.persistence.restore({
+        scanRoots: [{ id: "root", type: "customDirectory", label: "Root", path: "C:/Apps", enabled: true }],
       });
 
       await apps.browseScanRootDirectory("root");
-      apps.openAddManagedAppPage();
-      await apps.browseNewAppLaunchFile();
+      apps.openCreateManagedApp();
+      await apps.editorModel.actions.browseTarget();
       await apps.rescanManagedApps();
-      apps.newAppTarget.value = "C:/Apps/App.exe";
-      apps.openNewAppIconChooser();
+      apps.editorModel.target.value = "C:/Apps/App.exe";
+      apps.editorModel.actions.openIconChooser();
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       assert(warningDialogs.map((dialog) => dialog.title).join(",") === "无法选择扫描来源,无法选择启动文件,无法扫描应用", "failed native app actions should show warning dialogs");
-      assert(apps.iconChoicesError.value.includes("无法读取应用内图标"), "failed icon choice loads should show an inline error");
+      assert(apps.iconChooserModel.error.value.includes("无法读取应用内图标"), "failed icon choice loads should show an inline error");
     } finally {
       console.error = originalConsoleError;
     }

@@ -21,19 +21,19 @@
           </span>
           <span class="settings-list-copy">
             <span class="settings-list-title">快捷键</span>
-            <span class="settings-list-description">{{ mainWindowShortcutHint }}</span>
+            <span class="settings-list-description">{{ model.mainWindowShortcutHint.value }}</span>
           </span>
           <span class="settings-list-control">
             <span class="settings-hotkey-control">
-              <span :class="cx('settings-hotkey-input', state.draftMainWindowShortcut.value === null && 'settings-hotkey-input-empty')">
-                <kbd>{{ mainWindowShortcutLabel }}</kbd>
+              <span :class="model.cx('settings-hotkey-input', model.draftMainWindowShortcut.value === null && 'settings-hotkey-input-empty')">
+                <kbd>{{ model.mainWindowShortcutLabel.value }}</kbd>
                 <button
-                  v-if="state.draftMainWindowShortcut.value !== null"
+                  v-if="model.draftMainWindowShortcut.value !== null"
                   class="settings-hotkey-clear-button"
                   type="button"
                   aria-label="关闭快捷键"
-                  :disabled="state.isApplyingSettingsConfig.value"
-                  @click="clearMainWindowShortcut"
+                  :disabled="model.isApplyingSettingsConfig.value"
+                  @click="model.actions.clearShortcut"
                 >
                   <DismissIcon class="settings-hotkey-clear-icon" />
                 </button>
@@ -41,16 +41,16 @@
               <SettingsFluentButton
                 appearance="outline"
                 type="button"
-                :disabled="state.isApplyingSettingsConfig.value"
-                @click="startMainWindowShortcutRecording"
+                :disabled="model.isApplyingSettingsConfig.value"
+                @click="model.actions.startShortcutRecording"
               >
-                {{ isRecordingMainWindowShortcut ? "录制中" : "录制" }}
+                {{ model.isRecordingMainWindowShortcut.value ? "录制中" : "录制" }}
               </SettingsFluentButton>
               <SettingsFluentButton
                 appearance="subtle"
                 type="button"
-                :disabled="state.isApplyingSettingsConfig.value"
-                @click="resetMainWindowShortcut"
+                :disabled="model.isApplyingSettingsConfig.value"
+                @click="model.actions.resetShortcut"
               >
                 重置
               </SettingsFluentButton>
@@ -68,19 +68,5 @@ import KeyboardIcon from "~icons/fluent/keyboard-24-regular";
 import PowerIcon from "~icons/fluent/power-24-regular";
 import SettingsFluentButton from "./SettingsFluentButton.vue";
 
-const props = defineProps({
-  backgroundLayoutContext: { type: Object, default: null },
-  context: { type: Object, required: true },
-  state: { type: Object, required: true },
-});
-
-const {
-  clearMainWindowShortcut,
-  cx,
-  isRecordingMainWindowShortcut,
-  mainWindowShortcutHint,
-  mainWindowShortcutLabel,
-  resetMainWindowShortcut,
-  startMainWindowShortcutRecording,
-} = props.context;
+defineProps({ model: { type: Object, required: true } });
 </script>

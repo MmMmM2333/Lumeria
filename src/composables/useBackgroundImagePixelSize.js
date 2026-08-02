@@ -1,4 +1,4 @@
-import { onBeforeUnmount, ref, watch } from "vue";
+import { onScopeDispose, ref, watch } from "vue";
 
 export function loadBackgroundImagePixelSize(url) {
   if (!url || typeof Image !== "function") return Promise.resolve(null);
@@ -56,7 +56,7 @@ export function useBackgroundImagePixelSize(urlSource) {
     { immediate: true }
   );
 
-  onBeforeUnmount(() => {
+  onScopeDispose(() => {
     generation += 1;
   });
 

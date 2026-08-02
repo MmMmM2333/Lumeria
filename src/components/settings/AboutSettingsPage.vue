@@ -9,7 +9,7 @@
             <span class="settings-list-description">Windows 应用启动台</span>
           </span>
           <span class="settings-list-control">
-            <span class="settings-list-summary">版本 {{ state.appVersion }}</span>
+            <span class="settings-list-summary">版本 {{ model.appVersion }}</span>
           </span>
         </div>
       </div>
@@ -18,9 +18,5 @@
 </template>
 
 <script setup>
-defineProps({
-  backgroundLayoutContext: { type: Object, default: null },
-  context: { type: Object, default: null },
-  state: { type: Object, required: true },
-});
+defineProps({ model: { type: Object, required: true } });
 </script>

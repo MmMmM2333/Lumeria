@@ -9,6 +9,9 @@ export function useLaunchpadPageCommands(options) {
   if (typeof options.rebasePageIndices !== "function") {
     throw new TypeError("useLaunchpadPageCommands requires rebasePageIndices");
   }
+  if (typeof options.commitPagesState !== "function") {
+    throw new TypeError("useLaunchpadPageCommands requires commitPagesState");
+  }
 
   function requestAnimationFrameOnce(callback) {
     if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
@@ -40,7 +43,7 @@ export function useLaunchpadPageCommands(options) {
 
   function commitPages(next) {
     if (shouldAssertLaunchpadLayout() && !options.isDragActive()) options.assertNoDuplicateItemIds(next);
-    options.pages.value = next;
+    options.commitPagesState(next);
     if (options.renderedFolder.value) options.commitFolderPageIndex(options.folderPageIndex.value);
   }
 

@@ -72,6 +72,7 @@ function createPageCommands(overrides = {}) {
     commitFolderPageIndex: (value) => calls.commitFolderPageIndex.push(value),
     commitOpenFolder: (value) => calls.commitOpenFolder.push(value),
     commitPageIndex: (value) => calls.commitPageIndex.push(value),
+    commitPagesState: (next) => { pages.value = next; },
     commitSearchPageIndex: (value) => calls.commitSearchPageIndex.push(value),
     dissolveFolder: helpers.dissolveFolder,
     finishHomeRevealSettleWindow: () => {

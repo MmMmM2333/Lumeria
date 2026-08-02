@@ -75,7 +75,7 @@
         :drag-preview-state="dragPreviewState"
         :drag-release-state="dragReleaseState"
         :folder-create-release-state="folderCreateReleaseState"
-        :folder-overlay-state="folderOverlayState"
+        :folder-overlay-state="folderOverlay"
         :folder-page-size="folderPageSize"
         :folder-closing-handoff-id="folderClosingHandoffId"
         :get-desktop-page-render-mode="getDesktopPageRenderMode"
@@ -116,18 +116,18 @@
       />
     </LaunchpadChromeFrame>
 
-    <SettingsPanel :state="settingsPanelState" :background-layout-context="backgroundLayoutContext" />
-    <LaunchpadDialogs :state="dialogState" />
+    <SettingsPanel :model="settingsPanelModel" />
+    <LaunchpadDialogs :state="dialogs" />
     <LaunchpadOverlays
       ref="launchpadOverlaysRef"
-      :state="overlayState"
+      :state="overlays"
       @context-menu-action="handleIconContextMenuAction"
     />
     <WindowChromeOverlay :active="isWindowChromeOverlayActive" :show-titlebar="isWindowTitlebarVisible" />
     <BackgroundDebugPanel
       v-if="isAcrylicDebugPanelEnabled"
       :state="settingsPanelState"
-      :dialog-state="dialogState"
+      :dialog-state="dialogs"
       :desktop-layout-debug-params="desktopLayoutDebugParams"
       :reset-desktop-layout-debug-params="resetDesktopLayoutDebugParams"
       :update-desktop-layout-debug-params="updateDesktopLayoutDebugParams"
@@ -173,17 +173,12 @@ import {
   updateDesktopLayoutDebugParams,
   useDesktopLayoutDebugParams,
 } from "./components/backgroundDebug/desktopLayoutDebugSettings.js";
-import {
-  createDialogState,
-  createFolderOverlayState,
-  createOverlayState,
-  createSettingsPanelState,
-} from "./composables/useLaunchpadViewAdapters.js";
 import appPackage from "../package.json";
 import "./styles/launchpad.css";
 import "./styles/settings.css";
 
-const controller = useLaunchpadController();
+const appVersion = appPackage.version;
+const controller = useLaunchpadController({ appVersion });
 const {
   appActions,
   background: backgroundDomain,
@@ -195,6 +190,7 @@ const {
   overlays,
   search: searchDomain,
   settingsPanel,
+  settingsPanelModel,
   shell,
 } = controller;
 const {
@@ -221,6 +217,7 @@ const {
   backgroundImageLayout,
   backgroundImagePath,
   backgroundImageUrl,
+  backgroundLayoutContext,
   backgroundSource,
   liveDesktopCssFallbackEffectsEnabled,
   liveDesktopRuntimeStatus,
@@ -316,7 +313,6 @@ const {
   requestFolderRename,
 } = folderOverlay;
 
-const appVersion = appPackage.version;
 const isAcrylicDebugPanelEnabled = import.meta.env.DEV;
 const BackgroundDebugPanel = import.meta.env.DEV
   ? defineAsyncComponent(() => import("./components/BackgroundDebugPanel.vue"))
@@ -348,7 +344,6 @@ const hasRenderedPixiBackground = ref(false);
 const hasCompositedStartupBackground = ref(false);
 const isStartupMaskMounted = ref(true);
 const isStartupMaskVisible = ref(true);
-const backgroundLayoutContext = ref(null);
 const backgroundImagePixelSize = ref(null);
 const backgroundViewportSize = ref({ height: 1, width: 1 });
 const isLiveDesktopCompositorKeeperEnabled = ref(isLiveDesktopExperimentEnabled()
@@ -839,10 +834,7 @@ const headerDomRefs = { headerRef, searchRef, searchInputRef };
 const desktopDomRefs = { desktopMainRef, rootRef, shellRef };
 const chromeFrameRefs = { pageDotsRef, shellRef };
 
-const settingsPanelState = createSettingsPanelState(settingsPanel, appVersion);
-const dialogState = createDialogState(dialogs);
-const folderOverlayState = createFolderOverlayState(folderOverlay);
-const overlayState = createOverlayState(overlays);
+const settingsPanelState = { ...settingsPanel, appVersion };
 
 function resolveMaybeRef(value) {
   return value && typeof value === "object" && "value" in value ? value.value : value;

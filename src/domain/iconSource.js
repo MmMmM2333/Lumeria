@@ -23,6 +23,31 @@ export function applyCachedIconAssetUrlsToApp(app, convertFilePathToAssetUrl) {
   return next;
 }
 
+export function applyCachedIconAssetUrlsToPages(sourcePages, convertFilePathToAssetUrl) {
+  if (!Array.isArray(sourcePages)) {
+    throw new TypeError("applyCachedIconAssetUrlsToPages requires page data");
+  }
+  if (typeof convertFilePathToAssetUrl !== "function") {
+    throw new TypeError("applyCachedIconAssetUrlsToPages requires an asset URL converter");
+  }
+
+  function resolveItem(item) {
+    if (!item || item.type !== "folder") {
+      return applyCachedIconAssetUrlsToApp(item, convertFilePathToAssetUrl);
+    }
+    const childPages = (item.childPages || []).map((page) =>
+      (page || []).filter(Boolean).map(resolveItem)
+    );
+    return {
+      ...item,
+      childPages,
+      children: childPages.flat().filter(Boolean),
+    };
+  }
+
+  return sourcePages.map((page) => (page || []).filter(Boolean).map(resolveItem));
+}
+
 export function isTauriAssetIconSource(source) {
   const value = String(source || "").trim();
   if (!value) return false;

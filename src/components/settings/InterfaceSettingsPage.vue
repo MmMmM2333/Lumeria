@@ -839,7 +839,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { ref } from "vue";
 import AppTitleIcon from "~icons/fluent/app-title-24-regular";
 import BlurIcon from "~icons/fluent/blur-24-regular";
 import ChevronDownIcon from "~icons/fluent/chevron-down-20-regular";
@@ -855,61 +855,19 @@ import SettingsSlider from "./SettingsSlider.vue";
 import SettingsSpinButton from "./SettingsSpinButton.vue";
 
 const props = defineProps({
-  backgroundLayoutContext: { type: Object, default: null },
-  context: { type: Object, required: true },
-  state: { type: Object, required: true },
+  model: { type: Object, required: true },
 });
 
-const c = props.context;
+const state = props.model;
+const c = props.model;
+const backgroundLayoutContext = props.model.backgroundLayoutContext;
+const {
+  backgroundEffectSummary,
+  backgroundLayerSummary,
+  windowEffectSummary,
+} = props.model;
 const isWindowMaterialExpanded = ref(false);
 const isBackgroundLayerExpanded = ref(false);
 const isBackgroundEffectExpanded = ref(false);
 const isAdvancedExpanded = ref(false);
-const activeWindowEffectItem = computed(() => (
-  c.windowEffectPreviewItems.value.find((item) => item.active)
-  || c.windowEffectPreviewItems.value[0]
-));
-const windowEffectSummary = computed(() => {
-  const item = activeWindowEffectItem.value;
-  if (!item) return "未设置";
-  return `${item.label} · ${item.appearanceLabel}`;
-});
-const activeBackgroundImageLayoutLabel = computed(() => (
-  c.backgroundImageLayoutOptions.find((item) => item.layout === props.state.draftBackgroundImageLayout.value)?.label
-  || c.backgroundImageLayoutOptions[0]?.label
-  || "填充"
-));
-const backgroundLayerSourceLabel = computed(() => {
-  if (props.state.draftBackgroundSource.value === c.BACKGROUND_SOURCE_CUSTOM_IMAGE) return "自定义图片";
-  if (props.state.draftBackgroundSource.value === c.BACKGROUND_SOURCE_WINDOWS_WALLPAPER) return "桌面壁纸";
-  if (props.state.draftBackgroundSource.value === c.BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP && c.canShowLiveDesktopControls.value) return "动态桌面";
-  return "无图片";
-});
-const backgroundLayerSummary = computed(() => {
-  if (c.doesDraftBackgroundUseLiveDesktop.value) {
-    return `${backgroundLayerSourceLabel.value} · ${props.state.draftBackgroundLiveDesktopOpacity.value}%`;
-  }
-  if (c.doesDraftBackgroundUseImage.value) {
-    return `${backgroundLayerSourceLabel.value} · ${activeBackgroundImageLayoutLabel.value} · ${props.state.draftBackgroundImageOpacity.value}%`;
-  }
-  return backgroundLayerSourceLabel.value;
-});
-const backgroundAcrylicAppearanceLabel = computed(() => {
-  if (props.state.draftBackgroundAcrylicAppearance.value === c.BACKGROUND_ACRYLIC_APPEARANCE_DARK) return "深色";
-  if (props.state.draftBackgroundAcrylicAppearance.value === c.BACKGROUND_ACRYLIC_APPEARANCE_LIGHT) return "浅色";
-  return "跟随系统";
-});
-const backgroundEffectSummary = computed(() => {
-  if (!c.doesDraftBackgroundUseLayer.value) return "选择背景层后可用";
-  if (props.state.draftBackgroundEffect.value === c.BACKGROUND_EFFECT_BLUR) {
-    return `模糊 · ${props.state.draftBackgroundBlurStrength.value}%`;
-  }
-  if (props.state.draftBackgroundEffect.value === c.BACKGROUND_EFFECT_ACRYLIC_WEBGL) {
-    return `Acrylic · ${backgroundAcrylicAppearanceLabel.value} · ${props.state.draftBackgroundAcrylicBlurStrength.value}%`;
-  }
-  if (props.state.draftBackgroundEffect.value === c.BACKGROUND_EFFECT_DIMMED) {
-    return `暗化 · ${props.state.draftBackgroundDarkenStrength.value}%`;
-  }
-  return "原图";
-});
 </script>

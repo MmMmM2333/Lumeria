@@ -144,6 +144,7 @@ export function runLaunchpadBeforeUnmountEffects(options, layoutResizeObserver =
     clearWarningDialogTimer,
     detachDragListeners,
     disconnectFolderViewportObserver,
+    disposeSettingsPanelModel,
     handleAltKeyUp,
     handleGlobalKeydown,
     handleWindowBlur,
@@ -165,6 +166,7 @@ export function runLaunchpadBeforeUnmountEffects(options, layoutResizeObserver =
   clearFolderAppLaunchTimer();
   clearLayoutProjectionRelease?.(true);
   clearSettingsPanelCloseTimer();
+  disposeSettingsPanelModel();
   clearWarningDialogTimer();
   clearHomeRevealSettleTimer();
   clearDesktopCloseTimer();

@@ -105,7 +105,7 @@
               <ArrowSyncIcon slot="start" class="settings-command-icon" />
               {{ state.isScanningApps.value ? "扫描中" : "扫描应用" }}
             </SettingsFluentButton>
-            <SettingsFluentButton appearance="primary" type="button" @click="state.openAddManagedAppPage">
+            <SettingsFluentButton appearance="primary" type="button" @click="state.editorModel.actions.openCreate">
               <AddIcon slot="start" class="settings-command-icon" />
               新增应用
             </SettingsFluentButton>
@@ -181,7 +181,7 @@
                     <MoreHorizontalIcon class="app-manager-more-icon" />
                   </SettingsFluentButton>
                   <fluent-menu-list>
-                    <fluent-menu-item @click="state.openEditManagedApp(app)">编辑</fluent-menu-item>
+                    <fluent-menu-item @click="state.editorModel.actions.openEdit(app)">编辑</fluent-menu-item>
                     <fluent-divider role="separator" />
                     <fluent-menu-item @click="state.removeManagedAppFromLaunchpad(app.id)">从启动台移除</fluent-menu-item>
                     <fluent-menu-item
@@ -404,7 +404,7 @@
               <span class="settings-list-description">手动添加自定义应用</span>
             </span>
             <span class="settings-list-control">
-              <SettingsFluentButton appearance="outline" type="button" @click="state.openAddManagedAppPage">
+              <SettingsFluentButton appearance="outline" type="button" @click="state.editorModel.actions.openCreate">
                 新增
               </SettingsFluentButton>
             </span>
@@ -454,45 +454,42 @@ import { getIconSource } from "../../domain/iconSource.js";
 import SettingsFluentButton from "./SettingsFluentButton.vue";
 
 const props = defineProps({
-  backgroundLayoutContext: { type: Object, default: null },
-  context: { type: Object, required: true },
-  state: { type: Object, required: true },
+  model: { type: Object, required: true },
 });
 
-const { activeSettingsSubPage, formatScanTime, openSettingsSubPage, settingsSubPages } = props.context;
-const { state } = props;
-const excludedAppsSubPage = settingsSubPages.appsExcludedApps;
-const appManagerSubPage = settingsSubPages.appsAppManager;
+const state = props.model;
+const {
+  enabledScanRootCount,
+  excludedAppsSearchQuery,
+  filteredExcludedApps,
+  formatScanTime,
+  getExcludedAppGlyph,
+  getExcludedAppName,
+  getExcludedAppSubtitle,
+  isAppManagerPage,
+  isAppsDetailPage,
+  isExcludedAppSelected,
+  isExcludedAppsPage,
+  selectedExcludedAppCount,
+} = props.model;
+const {
+  cancelScanExclusion,
+  cancelSelectedScanExclusions,
+  clearExcludedAppSelection,
+  openAppManager: openAppManagerPage,
+  openExcludedApps: openExcludedAppsPage,
+  selectAllFilteredExcludedApps,
+  setExcludedAppsSearchQuery,
+  toggleExcludedAppSelection,
+} = props.model.actions;
 
 const isKeywordBlacklistExpanded = ref(false);
-const excludedAppsSearchQuery = ref("");
-const selectedExcludedAppKeys = ref(new Set());
 
 const APP_MANAGER_ROW_HEIGHT = 64;
 const APP_MANAGER_ROW_GAP = 6;
 const APP_MANAGER_OVERSCAN = 6;
 
 const appManagerListRef = ref(null);
-
-const enabledScanRootCount = computed(() => state.scanRoots.value.filter((root) => root.enabled).length);
-const isExcludedAppsPage = computed(() => activeSettingsSubPage.value?.id === excludedAppsSubPage.id);
-const isAppManagerPage = computed(() => activeSettingsSubPage.value?.id === appManagerSubPage.id);
-const isAppsDetailPage = computed(() => isExcludedAppsPage.value || isAppManagerPage.value);
-const excludedAppsSearchTerm = computed(() => excludedAppsSearchQuery.value.trim().toLocaleLowerCase());
-const filteredExcludedApps = computed(() => {
-  const term = excludedAppsSearchTerm.value;
-  return state.scanAppBlacklist.value
-    .map((app, index) => ({ app, index, key: getExcludedAppKey(app, index) }))
-    .filter(({ app }) => {
-      if (!term) return true;
-      return [
-        app.name,
-        app.path,
-        app.sourceKey,
-      ].some((value) => String(value || "").toLocaleLowerCase().includes(term));
-    });
-});
-const selectedExcludedAppCount = computed(() => selectedExcludedAppKeys.value.size);
 
 const appManagerVirtualizer = useVirtualizer({
   get count() {
@@ -528,99 +525,11 @@ watch(
   },
 );
 
-watch(excludedAppsSearchQuery, () => {
-  clearExcludedAppSelection();
-});
-
-watch(
-  () => state.scanAppBlacklist.value,
-  () => {
-    const currentKeys = new Set(state.scanAppBlacklist.value.map((app, index) => getExcludedAppKey(app, index)));
-    selectedExcludedAppKeys.value = new Set([...selectedExcludedAppKeys.value].filter((key) => currentKeys.has(key)));
-  },
-);
-
-watch(isExcludedAppsPage, (active) => {
-  if (!active) clearExcludedAppSelection();
-});
-
 watch(isAppManagerPage, async (active) => {
   if (!active) return;
   await nextTick();
   appManagerVirtualizer.value.scrollToOffset(0);
   appManagerVirtualizer.value.measure();
 });
-
-function openExcludedAppsPage() {
-  openSettingsSubPage(excludedAppsSubPage);
-}
-
-function openAppManagerPage() {
-  openSettingsSubPage(appManagerSubPage);
-}
-
-function getExcludedAppKey(app, index) {
-  if (app?.sourceKey) return `source:${String(app.sourceKey).toLocaleLowerCase()}`;
-  if (app?.path) return `path:${String(app.path).replace(/\\/g, "/").toLocaleLowerCase()}`;
-  if (app?.name) return `name:${String(app.name).toLocaleLowerCase()}:${index}`;
-  return `excluded-app:${index}`;
-}
-
-function getExcludedAppName(app) {
-  return String(app?.name || app?.path || app?.sourceKey || "未命名应用");
-}
-
-function getExcludedAppSubtitle(app) {
-  return String(app?.path || app?.sourceKey || "未设置路径");
-}
-
-function getExcludedAppGlyph(app) {
-  const label = String(app?.emoji || app?.name || app?.path || app?.sourceKey || "A").trim();
-  return label.charAt(0).toLocaleUpperCase() || "A";
-}
-
-function isExcludedAppSelected(key) {
-  return selectedExcludedAppKeys.value.has(key);
-}
-
-function setExcludedAppsSearchQuery(value) {
-  excludedAppsSearchQuery.value = value;
-}
-
-function toggleExcludedAppSelection(key, checked = !isExcludedAppSelected(key)) {
-  if (!key) return;
-  const next = new Set(selectedExcludedAppKeys.value);
-  if (checked) next.add(key);
-  else next.delete(key);
-  selectedExcludedAppKeys.value = next;
-}
-
-function selectAllFilteredExcludedApps() {
-  selectedExcludedAppKeys.value = new Set(filteredExcludedApps.value.map(({ key }) => key));
-}
-
-function clearExcludedAppSelection() {
-  if (selectedExcludedAppKeys.value.size === 0) return;
-  selectedExcludedAppKeys.value = new Set();
-}
-
-function cancelScanExclusion(index, key) {
-  state.cancelScanAppExclusion(index);
-  if (!key || !selectedExcludedAppKeys.value.has(key)) return;
-  const next = new Set(selectedExcludedAppKeys.value);
-  next.delete(key);
-  selectedExcludedAppKeys.value = next;
-}
-
-function cancelSelectedScanExclusions() {
-  if (selectedExcludedAppKeys.value.size === 0) return;
-  const selectedKeys = selectedExcludedAppKeys.value;
-  const indices = state.scanAppBlacklist.value
-    .map((app, index) => ({ index, key: getExcludedAppKey(app, index) }))
-    .filter(({ key }) => selectedKeys.has(key))
-    .map(({ index }) => index);
-  state.cancelScanAppExclusions(indices);
-  clearExcludedAppSelection();
-}
 
 </script>

@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "pages": [
+    [
+      {
+        "id": "custom-editor",
+        "type": "app",
+        "name": "Editor",
+        "emoji": "E",
+        "customIconPath": "C:/Lumeria/Icons/editor.png",
+        "iconPath": "C:/Apps/Editor/editor.png",
+        "launchTarget": {
+          "kind": "executable",
+          "path": "C:/Apps/Editor/editor.exe"
+        },
+        "launchArgs": "--profile work"
+      },
+      {
+        "id": "tools-folder",
+        "type": "folder",
+        "name": "Tools",
+        "childPages": [
+          [
+            {
+              "id": "tool-shortcut",
+              "type": "app",
+              "name": "Tool Shortcut",
+              "emoji": "T",
+              "iconPath": "C:/Tools/tool.png",
+              "launchTarget": {
+                "kind": "shortcut",
+                "path": "C:/Tools/Tool.lnk"
+              },
+              "sourceKey": "scan-root:root-custom:tool.lnk"
+            },
+            {
+              "id": "windows-settings",
+              "type": "app",
+              "name": "Windows Settings",
+              "emoji": "W",
+              "launchTarget": {
+                "kind": "appUserModelId",
+                "appUserModelId": "windows.settings.test!App"
+              },
+              "sourceKey": "windows-app:windows.settings.test!app"
+            }
+          ]
+        ],
+        "children": [
+          {
+            "id": "tool-shortcut",
+            "type": "app",
+            "name": "Tool Shortcut",
+            "emoji": "T",
+            "iconPath": "C:/Tools/tool.png",
+            "launchTarget": {
+              "kind": "shortcut",
+              "path": "C:/Tools/Tool.lnk"
+            },
+            "sourceKey": "scan-root:root-custom:tool.lnk"
+          },
+          {
+            "id": "windows-settings",
+            "type": "app",
+            "name": "Windows Settings",
+            "emoji": "W",
+            "launchTarget": {
+              "kind": "appUserModelId",
+              "appUserModelId": "windows.settings.test!App"
+            },
+            "sourceKey": "windows-app:windows.settings.test!app"
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "id": "documentation",
+        "type": "app",
+        "name": "Documentation",
+        "emoji": "D",
+        "launchTarget": {
+          "kind": "url",
+          "path": "https://example.invalid/docs"
+        }
+      }
+    ]
+  ],
+  "settings": {
+    "gridRows": 4,
+    "gridCols": 6,
+    "folderRows": 3,
+    "folderCols": 4,
+    "iconSize": 72,
+    "folderIconSizeMode": "custom",
+    "folderIconSize": 64,
+    "textless": true,
+    "hiddenAppIds": [
+      "catalog-hidden"
+    ],
+    "scanRoots": [
+      {
+        "id": "root-custom",
+        "type": "customDirectory",
+        "label": "Tools",
+        "path": "C:/Tools",
+        "enabled": true,
+        "removable": true,
+        "lastScannedAt": "2026-07-31T08:00:00.000Z",
+        "maxDepth": 4,
+        "maxEntries": 500
+      }
+    ],
+    "scanKeywordBlacklist": [
+      "uninstall",
+      "卸载"
+    ],
+    "scanAppBlacklist": [
+      {
+        "name": "Blocked Tool",
+        "sourceKey": "scan-root:root-custom:blocked.lnk",
+        "path": "C:/Tools/Blocked.lnk",
+        "blockedAt": "2026-07-30T12:00:00.000Z"
+      }
+    ],
+    "showMissingLaunchTargetBadge": false,
+    "backgroundBaseColor": "#203040",
+    "backgroundBaseOpacity": 37,
+    "backgroundSource": "customImage",
+    "backgroundEffect": "acrylicWebgl",
+    "backgroundImageOpacity": 63,
+    "backgroundLiveDesktopOpacity": 88,
+    "backgroundImageLayout": "tile",
+    "backgroundBlurStrength": 71,
+    "backgroundAcrylicBlurStrength": 82,
+    "backgroundDarkenStrength": 41,
+    "backgroundDarkenColor": "#102030",
+    "backgroundAcrylicAppearance": "light",
+    "backgroundAcrylicDarkParams": {
+      "brightness": 0.72,
+      "contrast": 0.9,
+      "noise": 0.01,
+      "saturation": 1.25,
+      "seed": 7,
+      "tintColor": [
+        0.1,
+        0.2,
+        0.3
+      ],
+      "tintStrength": 0.3
+    },
+    "backgroundAcrylicLightParams": {
+      "brightness": 1.15,
+      "contrast": 0.95,
+      "noise": 0.02,
+      "saturation": 1.1,
+      "seed": 11,
+      "tintColor": [
+        0.8,
+        0.85,
+        0.9
+      ],
+      "tintStrength": 0.25
+    },
+    "backgroundImagePath": "C:/Wallpapers/launchpad.png",
+    "windowEffectMaterial": "micaAlt",
+    "windowEffectAppearance": "light",
+    "windowMode": "windowed",
+    "fullscreenOverscanEnabled": false,
+    "showCustomTitlebar": false,
+    "mainWindowShortcut": "control+alt+KeyL"
+  }
+}

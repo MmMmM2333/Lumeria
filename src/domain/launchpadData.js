@@ -3,6 +3,7 @@ import {
   DEFAULT_MAIN_WINDOW_SHORTCUT,
   normalizeMainWindowShortcut,
 } from "./mainWindowShortcut.js";
+import { normalizeBackgroundImageLayout } from "./backgroundImageLayout.js";
 
 export const DEFAULT_SCAN_ROOTS = [
   {
@@ -465,6 +466,7 @@ export function createLaunchpadDataHelpers(options) {
     const backgroundBaseOpacity = Number(state.backgroundBaseOpacity);
     const backgroundImageOpacity = Number(state.backgroundImageOpacity);
     const backgroundLiveDesktopOpacity = Number(state.backgroundLiveDesktopOpacity);
+    const backgroundImageLayout = normalizeBackgroundImageLayout(state.backgroundImageLayout);
     const backgroundBlurStrength = normalizeLayoutBackgroundBlurStrength(state.backgroundBlurStrength);
     const backgroundAcrylicBlurStrength = normalizeLayoutBackgroundBlurStrength(state.backgroundAcrylicBlurStrength);
     const backgroundDarkenStrength = normalizeLayoutBackgroundDarkenStrength(state.backgroundDarkenStrength);
@@ -513,6 +515,7 @@ export function createLaunchpadDataHelpers(options) {
           : "dimmed",
         backgroundImageOpacity: Number.isFinite(backgroundImageOpacity) ? clamp(Math.round(backgroundImageOpacity), 0, 100) : 46,
         backgroundLiveDesktopOpacity: Number.isFinite(backgroundLiveDesktopOpacity) ? clamp(Math.round(backgroundLiveDesktopOpacity), 0, 100) : 100,
+        backgroundImageLayout,
         backgroundBlurStrength,
         backgroundAcrylicBlurStrength,
         backgroundDarkenStrength,

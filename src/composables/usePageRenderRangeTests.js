@@ -29,6 +29,9 @@ function createPageRenderRange(overrides = {}) {
     folderPages,
     range: usePageRenderRange({
       activePageIndex: overrides.activePageIndex ?? pageIndex,
+      commitFolderPageIndexState: (value) => { folderPageIndex.value = value; },
+      commitPageIndexState: (value) => { pageIndex.value = value; },
+      commitSearchPageIndexState: (value) => { searchPageIndex.value = value; },
       folderPageIndex,
       folderPageTurnRequest,
       folderPages,

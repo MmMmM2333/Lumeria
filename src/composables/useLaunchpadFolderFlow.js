@@ -25,6 +25,9 @@ function createDefaultFolderOpenProgressAnimation({ onArrive, progress, target }
 }
 
 export function useLaunchpadFolderFlow(options) {
+  if (typeof options.commitFolderPageIndex !== "function") {
+    throw new TypeError("useLaunchpadFolderFlow requires commitFolderPageIndex");
+  }
   const openFolderId = ref(null);
   const renderedFolderId = ref(null);
   const folderOpenProgress = ref(0);
@@ -178,7 +181,7 @@ export function useLaunchpadFolderFlow(options) {
     folderZoomFadeCloseReason.value = null;
     folderOpeningOriginBounds.value = null;
     options.clearFolderPageTurnRequest?.("folder-close-finish");
-    options.folderPageIndex.value = 0;
+    options.commitFolderPageIndex(0);
     options.folderPageRefs.length = 0;
     options.resetFolderViewportMetrics?.();
     clearFolderCloseTimer();
@@ -231,7 +234,7 @@ export function useLaunchpadFolderFlow(options) {
     folderOpeningOriginBounds.value = null;
     setFolderOpenProgressImmediate(0, "folder-app-launch-finish");
     options.clearFolderPageTurnRequest?.("folder-app-launch-finish");
-    options.folderPageIndex.value = 0;
+    options.commitFolderPageIndex(0);
     options.folderPageRefs.length = 0;
     options.resetFolderViewportMetrics?.();
     return true;
@@ -283,7 +286,7 @@ export function useLaunchpadFolderFlow(options) {
       options.setFolderMotionGeometry(originGeometry ? { ...originGeometry, id: next } : options.getFolderIconMotionGeometry(next));
       openFolderId.value = next;
       renderedFolderId.value = next;
-      if (!isSameFolder) options.folderPageIndex.value = 0;
+      if (!isSameFolder) options.commitFolderPageIndex(0);
       animateFolderOpenProgress(1, "folder-open");
       return;
     }
@@ -352,7 +355,7 @@ export function useLaunchpadFolderFlow(options) {
     folderZoomFadeCloseReason.value = null;
     folderOpeningOriginBounds.value = null;
     options.clearFolderPageTurnRequest?.("folder-zoom-fade-finish");
-    options.folderPageIndex.value = 0;
+    options.commitFolderPageIndex(0);
     options.folderPageRefs.length = 0;
     options.resetFolderViewportMetrics?.();
     return true;

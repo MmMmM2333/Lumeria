@@ -128,6 +128,9 @@ function createFolderFlow(overrides = {}) {
       calls.clearFolderPageTurnRequest += 1;
       folderPageTurnRequest.value = null;
     },
+    commitFolderPageIndex: (value) => {
+      folderPageIndex.value = value;
+    },
     commitFolderPageTurnRequest: (token, commitOptions = {}) => {
       calls.commitFolderPageTurnRequest += 1;
       const request = folderPageTurnRequest.value;

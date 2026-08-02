@@ -7,6 +7,13 @@ const PAGE_RENDER_INTERACTIVE = "interactive";
 const PAGE_RENDER_STATIC_REAL = "static-real";
 
 export function usePageRenderRange(options) {
+  if (
+    typeof options.commitPageIndexState !== "function"
+    || typeof options.commitSearchPageIndexState !== "function"
+    || typeof options.commitFolderPageIndexState !== "function"
+  ) {
+    throw new TypeError("usePageRenderRange requires layout index commands");
+  }
   const transientPageRenderRange = ref(null);
   let pageJumpRenderTimer = null;
   let pageJumpRenderRequestId = 0;
@@ -66,15 +73,17 @@ export function usePageRenderRange(options) {
   }
 
   function commitPageIndexNow(next) {
-    options.pageIndex.value = clamp(next, 0, Math.max(0, options.pages.value.length - 1));
+    const maxIndex = Math.max(0, options.pages.value.length - 1);
+    options.commitPageIndexState(next, maxIndex);
   }
 
   function commitSearchPageIndexNow(next) {
-    options.searchPageIndex.value = clamp(next, 0, Math.max(0, options.searchPages.value.length - 1));
+    const maxIndex = Math.max(0, options.searchPages.value.length - 1);
+    options.commitSearchPageIndexState(next, maxIndex);
   }
 
   function commitFolderPageIndexNow(next, maxIndex) {
-    options.folderPageIndex.value = clamp(next, 0, maxIndex);
+    options.commitFolderPageIndexState(next, maxIndex);
   }
 
   function commitPageIndexWithRenderRange(mode, current, requested, maxIndex, commitNow) {

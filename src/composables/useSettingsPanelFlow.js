@@ -5,12 +5,14 @@ import {
   DESKTOP_CLOSE_SCALE,
   SETTINGS_PANEL_CLOSE_DURATION,
 } from "./launchpadConstants.js";
-import { syncLaunchpadSettingsDraftsFromState } from "./useLaunchpadSettingsConfig.js";
 
 const SETTINGS_PANEL_CLOSE_MODE_PANEL = "panel";
 const SETTINGS_PANEL_CLOSE_MODE_DESKTOP = "desktop";
 
 export function useSettingsPanelFlow(options) {
+  if (typeof options?.beginSettingsEdit !== "function" || typeof options?.cancelSettingsEdit !== "function") {
+    throw new TypeError("useSettingsPanelFlow requires settings edit session commands");
+  }
   const isSettingsPanelOpen = ref(false);
   const isSettingsPanelClosing = ref(false);
   const settingsPanelCloseMode = ref(SETTINGS_PANEL_CLOSE_MODE_PANEL);
@@ -106,7 +108,7 @@ export function useSettingsPanelFlow(options) {
     clearSettingsPanelCloseTimer();
     settingsPanelCloseMode.value = SETTINGS_PANEL_CLOSE_MODE_PANEL;
     settingsPanelMotionGeometry.value = makeSettingsPanelGeometryFromRect(getSettingsButtonRect(event) || getCenterSettingsRect());
-    syncLaunchpadSettingsDraftsFromState(options);
+    options.beginSettingsEdit();
     isSettingsPanelClosing.value = false;
     isSettingsPanelOpen.value = true;
   }
@@ -117,9 +119,9 @@ export function useSettingsPanelFlow(options) {
     settingsPanelCloseMode.value = closeOptions?.mode === SETTINGS_PANEL_CLOSE_MODE_DESKTOP
       ? SETTINGS_PANEL_CLOSE_MODE_DESKTOP
       : SETTINGS_PANEL_CLOSE_MODE_PANEL;
-    syncLaunchpadSettingsDraftsFromState(options);
-    options.closeAddManagedAppPage();
-    options.closeScanResultDialog();
+    options.cancelSettingsEdit();
+    options.closeManagedAppEditor();
+    options.closeScanResults();
     isSettingsPanelOpen.value = false;
     isSettingsPanelClosing.value = true;
     const closeDurationMs = settingsPanelCloseMode.value === SETTINGS_PANEL_CLOSE_MODE_DESKTOP
